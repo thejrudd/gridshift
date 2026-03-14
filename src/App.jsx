@@ -15,10 +15,19 @@ import { usePWAInstall } from './hooks/usePWAInstall';
 import NavBar from './components/NavBar';
 import BottomTabBar from './components/BottomTabBar';
 import SeasonSubNav from './components/SeasonSubNav';
+import CompanionSubNav from './components/CompanionSubNav';
 import ActionSheet from './components/ActionSheet';
 import Sidebar from './components/Sidebar';
+import { SleeperProvider, useSleeper } from './context/SleeperContext';
+import CompanionConnect from './components/companion/CompanionConnect';
+import CompanionRoster from './components/companion/CompanionRoster';
+import CompanionRankings from './components/companion/CompanionRankings';
+import CompanionMatchup from './components/companion/CompanionMatchup';
+import CompanionWaiver from './components/companion/CompanionWaiver';
+import CompanionScoring from './components/companion/CompanionScoring';
+import ScoringSettings from './components/companion/ScoringSettings';
 
-function App() {
+function AppInner() {
   const [scheduleData, setScheduleData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -27,6 +36,10 @@ function App() {
   // Two-level navigation
   const [activeTab, setActiveTab] = useState('predictions');
   const [seasonView, setSeasonView] = useState('predictions');
+  const [companionView, setCompanionView] = useState('roster');
+  const [scoringSettingsOpen, setScoringSettingsOpen] = useState(false);
+
+  const { hasLeague, season, changeSeason, league, disconnect, sleeperUser, statsLoading, loadSeasonStats, seasonStats } = useSleeper();
 
   const { getPredictionCount, resetAllPredictions, predictions, importPredictions, generateRandomPredictions } = usePredictions();
   const { darkMode, toggleDarkMode } = useTheme();
@@ -130,6 +143,7 @@ function App() {
         isInstallable={isInstallable}
         isInstalled={isInstalled}
         onInstall={handleInstall}
+        onScoringSettings={() => setScoringSettingsOpen(true)}
       />
 
       {/* ── Main panel ───────────────────────────────────────── */}
@@ -164,6 +178,13 @@ function App() {
               </span>
             </div>
             <SeasonSubNav activeView={seasonView} onViewChange={setSeasonView} />
+          </div>
+        )}
+
+        {/* Companion sub-navigation */}
+        {activeTab === 'companion' && hasLeague && (
+          <div className="season-subnav">
+            <CompanionSubNav activeView={companionView} onViewChange={setCompanionView} />
           </div>
         )}
 
@@ -233,46 +254,79 @@ function App() {
 
           {activeTab === 'statistics' && <PlayerBrowser teams={scheduleData.teams} />}
 
-          {activeTab === 'companion' && (
-            <div className="flex flex-col items-center justify-center py-20 px-6 text-center">
-              <div
-                className="w-16 h-16 rounded-2xl flex items-center justify-center mb-5"
-                style={{ background: 'var(--color-fill)' }}
-              >
-                <svg width="32" height="32" viewBox="0 0 26 26" fill="none" style={{ color: 'var(--color-signature)' }}>
-                  <path d="M13 3l2.5 5 5.5.8-4 3.9.95 5.5L13 15.7l-4.95 2.5.95-5.5-4-3.9 5.5-.8z"
-                    stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" fill="currentColor" />
-                </svg>
+{activeTab === 'companion' && !hasLeague && (
+            <CompanionConnect />
+          )}
+
+          {activeTab === 'companion' && hasLeague && (
+            <>
+              {/* League + season header */}
+              <div className="flex items-center gap-2 mb-3 px-1">
+                <div className="flex-1 min-w-0">
+                  <span className="text-xs font-semibold truncate" style={{ color: 'var(--color-label-secondary)' }}>
+                    {league?.name ?? 'League'}
+                  </span>
+                </div>
+                {/* Season picker */}
+                <div className="flex gap-1 shrink-0">
+                  {['2025', '2024', '2023'].map(s => (
+                    <button
+                      key={s}
+                      onClick={() => changeSeason(s)}
+                      className="px-2 py-0.5 rounded text-xs font-semibold transition-colors"
+                      style={{
+                        background: season === s ? 'var(--color-signature)' : 'var(--color-fill)',
+                        color: season === s ? '#0C0F14' : 'var(--color-label-tertiary)',
+                      }}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+                {/* Stats reload / status */}
+                {statsLoading ? (
+                  <span className="text-xs shrink-0" style={{ color: 'var(--color-label-tertiary)' }}>
+                    Loading…
+                  </span>
+                ) : (!seasonStats || Object.keys(seasonStats).length === 0) ? (
+                  <button
+                    onClick={loadSeasonStats}
+                    className="text-xs font-semibold shrink-0 px-2 py-0.5 rounded"
+                    style={{ background: 'var(--color-signature)', color: '#0C0F14' }}
+                  >
+                    Load Stats
+                  </button>
+                ) : (
+                  <span className="text-xs shrink-0" style={{ color: 'var(--color-label-quaternary)' }}>
+                    {Object.keys(seasonStats).length.toLocaleString()} players
+                  </span>
+                )}
+                {/* Disconnect */}
+                <button
+                  onClick={disconnect}
+                  className="text-xs shrink-0"
+                  style={{ color: 'var(--color-label-quaternary)' }}
+                >
+                  ✕
+                </button>
               </div>
-              <h2
-                className="font-display font-bold mb-2"
-                style={{ fontSize: '22px', letterSpacing: '0.06em', color: 'var(--color-label)' }}
-              >
-                COMPANION
-              </h2>
-              <p
-                className="text-sm max-w-xs leading-relaxed mb-1"
-                style={{ color: 'var(--color-label-secondary)' }}
-              >
-                Fantasy league integration, Sleeper sync, and advanced analytics — coming in v4.0.
-              </p>
-              <span
-                className="inline-block mt-4 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-widest"
-                style={{
-                  background: 'rgba(245,183,0,0.12)',
-                  color: 'var(--color-signature)',
-                  letterSpacing: '0.10em',
-                }}
-              >
-                Coming Soon
-              </span>
-            </div>
+              {companionView === 'roster'    && <CompanionRoster />}
+              {companionView === 'rankings'  && <CompanionRankings />}
+              {companionView === 'matchup'   && <CompanionMatchup />}
+              {companionView === 'waiver'    && <CompanionWaiver />}
+              {companionView === 'scoring'   && <CompanionScoring />}
+            </>
           )}
         </div>
 
         {/* Bottom tab bar — mobile/tablet only, hidden lg+ via CSS */}
         <BottomTabBar activeTab={activeTab} onTabChange={setActiveTab} />
       </div>
+
+      {/* ── Scoring Settings modal ────────────────────────────── */}
+      {scoringSettingsOpen && (
+        <ScoringSettings onClose={() => setScoringSettingsOpen(false)} />
+      )}
 
       {/* ── Action Sheet (mobile menu) ───────────────────────── */}
       {actionSheetOpen && (
@@ -307,6 +361,14 @@ function App() {
 
       <input ref={fileInputRef} type="file" accept=".json" onChange={handleImport} className="hidden" />
     </div>
+  );
+}
+
+function App() {
+  return (
+    <SleeperProvider>
+      <AppInner />
+    </SleeperProvider>
   );
 }
 

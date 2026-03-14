@@ -1,3 +1,5 @@
+import { useSleeper } from '../context/SleeperContext';
+
 export default function Sidebar({
   activeTab,
   onTabChange,
@@ -15,8 +17,10 @@ export default function Sidebar({
   isInstallable,
   isInstalled,
   onInstall,
+  onScoringSettings,
 }) {
   const progress = totalTeams > 0 ? (predictionCount / totalTeams) * 100 : 0;
+  const { isConnected, hasLeague, disconnect } = useSleeper();
 
   return (
     <aside className="app-sidebar">
@@ -111,6 +115,14 @@ export default function Sidebar({
             <SidebarAction label="Randomize Predictions" onClick={onRandom} />
           </>
         )}
+        {activeTab === 'companion' && (
+          <>
+            <SidebarAction label="Scoring Settings" onClick={onScoringSettings} />
+            {isConnected && (
+              <SidebarAction label="Disconnect Sleeper" onClick={disconnect} />
+            )}
+          </>
+        )}
         {isInstallable && !isInstalled && (
           <SidebarAction label="Install App" onClick={onInstall} />
         )}
@@ -163,7 +175,7 @@ export default function Sidebar({
           className="px-5 py-3 text-xs"
           style={{ color: 'var(--color-label-tertiary)' }}
         >
-          v3.0
+          v4.0
         </div>
       </div>
     </aside>

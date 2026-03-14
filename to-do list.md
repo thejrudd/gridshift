@@ -18,14 +18,18 @@ A ground-up redesign of the app's visual language and UI consistency. Goals:
 - Smoother transitions and micro-animations throughout
 - **Team color theming** — when viewing a specific team's detail or profile, the UI adopts that team's colors: styled buttons, accent highlights, and iconography derived from the team identity. Requires separate light and dark palettes per team since some primaries contrast better on dark backgrounds and others on light. Highlight/accent colors should be derived from the team's secondary color where the primary is too saturated or low-contrast.
 
-### v4.0 — Fantasy Football / Sleeper League Integration
-Allow users to connect their Sleeper league and surface fantasy-relevant insights from player stat data. Should include:
-- Sleeper league import (connect via Sleeper username or league ID)
-- Custom scoring rule input (PPR, half-PPR, standard; passing/rushing/receiving TD values; bonus thresholds; defensive scoring; etc.)
-- Per-player fantasy point totals calculated from historical and current-season stats
-- Start/sit recommendations based on recent performance, matchup, and depth chart position
+### ~~v4.0 — Fantasy Football / Sleeper League Integration~~ **Shipped in v4.0.**
+~~Allow users to connect their Sleeper league and surface fantasy-relevant insights from player stat data. Should include:~~
+- ~~Sleeper league import (connect via Sleeper username or league ID)~~ ✓
+- ~~Per-player fantasy point totals calculated from historical and current-season stats~~ ✓
+- ~~Week to week fantasy scoring updates, rankings, insights, and projections~~ ✓
+- ~~Minimum and maximum scoring predictions for each rostered player based on opponent's strength/weakness against their specific position~~ ✓
+- ~~Season-long projections and rankings by position under the user's scoring system~~ ✓
+
+**Remaining v4.0 backlog (future):**
+- Start/sit recommendations surfaced as an explicit view
+- Team rankings for defense against each position (QB, RB, WR, TE) as a standalone table
 - Waiver wire / pickup suggestions based on available players and projected output
-- Season-long projections and rankings by position under the user's scoring system
 
 ### v4.5 — Week-by-Week View
 Browse the full schedule by week — see all matchups for a given week, with current predictions reflected. Navigate between weeks via prev/next controls. **Blocked on 2026 season schedule data.** When the NFL releases the 2026 schedule, update the schedule data source and implement this view. Read-only in v4.5 (reflects existing team-level picks); interactive game picking from the week view is a future enhancement.

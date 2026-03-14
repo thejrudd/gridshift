@@ -1,6 +1,6 @@
 # NFL Season Predictor
 
-An interactive web app for predicting the 2026 NFL season. Pick game-by-game outcomes for all 32 teams, view projected standings, generate playoff seeding, and create a shareable infographic of your predictions — all in the browser.
+An interactive web app for predicting the 2026 NFL season — with full Sleeper fantasy league integration. Pick game-by-game outcomes for all 32 teams, view projected standings, generate playoff seeding, create a shareable infographic, and analyze your fantasy roster with week-by-week scoring breakdowns and projections — all in the browser.
 
 ![React](https://img.shields.io/badge/React-19-blue) ![Vite](https://img.shields.io/badge/Vite-7-purple) ![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-3-38bdf8)
 
@@ -15,10 +15,14 @@ An interactive web app for predicting the 2026 NFL season. Pick game-by-game out
 - **Player Browser** — Browse all 32 rosters by conference, division, and position; search players by name across the league
 - **Player Profiles** — Full profile pages with headshot, career stats, game log, and Pro Bowl / All-Pro honors
 - **Export/Import** — Save predictions as JSON; import JSON to restore picks
+- **Sleeper League Integration** — Connect your Sleeper account, import a league, and analyze your fantasy roster with custom scoring settings synced from your league
+- **Fantasy Matchup View** — Head-to-head starter comparison with week-by-week points, projections, positional rankings (week and season), weather context, and game location
+- **Scoring Breakdowns** — Drill into any player or your full team score to see a stat-by-stat fantasy point breakdown (e.g. Rush Yards · 112 · +11.2 pts)
+- **Player Projections** — Min/max/projected point ranges factoring opponent strength, home/away, weather, and scoring format
 - **Dark Mode** — Toggle between light and dark themes
 - **PWA / Installable** — Install to your home screen on iOS and Android; runs in standalone mode with asset caching
-- **Responsive Design** — Works on desktop and mobile
-- **Client-Side Only** — All data stored in localStorage, nothing leaves your browser
+- **Responsive Design** — Two-panel layout on desktop (sidebar + content), tab bar on mobile
+- **Client-Side Only** — All prediction data stored in localStorage; Sleeper data fetched live from the Sleeper API
 
 ## Getting Started
 
@@ -65,6 +69,23 @@ PORT=8080 docker compose up -d --build
 - **react-grid-layout** — Drag-and-resize bento grid for the export infographic
 - **nginx** — Production static file serving (Docker)
 
+## What's New in v4.0
+
+- **Sleeper Integration** — Connect via Sleeper username, select a league, and sync scoring settings with one tap. Supports 2023–2025 seasons.
+- **Companion Tab** — Dedicated bottom-tab section for fantasy tools: Connect, Roster, Matchup, and Scoring views
+- **Fantasy Matchup** — Side-by-side starter comparison for your weekly matchup. Tap either team's score to see a full scoring category breakdown (TDs, rush yards, receptions, etc.) aggregated across all starters. Tap any player to drill into their individual stat-by-stat breakdown for that week.
+- **Positional Rankings** — Each matchup player shows their positional rank for both the selected week (e.g. RB3 week) and the full season (e.g. RB14 season)
+- **Projections** — Min/max/projected scoring range per player factoring opponent strength, home/away, weather conditions (via Open-Meteo), and indoor/outdoor stadium
+- **Custom Scoring Engine** — Full PPR / Half-PPR / Standard support with per-stat multipliers; imports directly from your Sleeper league's scoring settings
+- **Week Selector** — Navigate any week 1–18; regular season and playoff weeks are visually distinguished
+
+## What's New in v3.0
+
+- **Broadcast Editorial Design** — New visual language: deep slate-charcoal dark mode, warm newsprint light mode, amber `#F5B700` signature accent, Barlow Condensed display font, Figtree body font
+- **Desktop Sidebar** — Persistent 240px left sidebar on large screens with brand, nav, dark mode toggle, and league progress
+- **Mobile Bottom Tab Bar** — Bottom tab navigation splitting Season and Companion (fantasy) sections
+- **Two-Panel Layout** — Sidebar + full-width content on desktop; tab bar + scroll on mobile/tablet
+
 ## What's New in v2.3.1
 
 - **iOS Auto-Zoom Fix** — All text inputs (player search, team filter bar, export username field) bumped to `font-size: 16px`; iOS Safari no longer zooms in when tapping a search field
@@ -102,42 +123,58 @@ PORT=8080 docker compose up -d --build
 
 ## Roadmap
 
-**v3.0** — Visual overhaul (unified design system, bottom tab bar splitting Predictions/Stats & Fantasy, redesigned cards, polished mobile experience)
-**v3.1** — Historical comparison (predicted records vs. each team's actual past results, surfaced in the redesigned Predictions section)
-**v4.0** — Fantasy football / Sleeper league integration (custom scoring, start/sit recommendations, projections)
+**v3.1** — Historical comparison (predicted records vs. each team's actual past results)
 **v4.5** — Week-by-week schedule view *(blocked on 2026 season schedule data)*
 
 ## Project Structure
 
 ```
 src/
-├── App.jsx                  # Main app container and header controls
+├── App.jsx                        # Main app shell — sidebar, tab bar, routing
 ├── components/
-│   ├── PlayerBrowser.jsx    # Team/roster browser with position filter and player search
-│   ├── PlayerProfile.jsx    # Player profile page with hero card, stats, and game log
-│   ├── PlayerStatTable.jsx  # Accordion stat table with standard/advanced toggle and honors badges
-│   ├── TeamList.jsx         # Division cards with team rows and tooltips
-│   ├── TeamDetail.jsx       # Modal for editing team predictions
-│   ├── StandingsTable.jsx   # Division standings view
-│   ├── PlayoffSeeding.jsx   # Playoff bracket view
-│   ├── RecordSetter.jsx     # Win-loss-tie record controls
-│   ├── GameResultToggle.jsx # Individual game outcome toggle
-│   ├── DivisionMatrix.jsx   # Head-to-head results grid
-│   ├── ExportPreview.jsx    # Export modal with section toggles and layout controls
-│   ├── ShareableImage.jsx   # Interactive bento-grid infographic with 11 sections
-│   └── Guide.jsx            # Getting-started guide modal
+│   ├── Sidebar.jsx                # Desktop sidebar: brand, nav, progress, dark mode toggle
+│   ├── NavBar.jsx                 # Mobile sticky top nav bar
+│   ├── BottomTabBar.jsx           # Mobile bottom tab bar (Season / Companion)
+│   ├── SeasonSubNav.jsx           # Season sub-view tabs (Predictions / Standings / Playoffs)
+│   ├── ActionSheet.jsx            # iOS-style bottom sheet for overflow menu
+│   ├── companion/
+│   │   ├── CompanionConnect.jsx   # Sleeper connect + league selection flow
+│   │   ├── CompanionRoster.jsx    # Roster view with season ranks and avg PPG
+│   │   ├── CompanionMatchup.jsx   # Weekly matchup: head-to-head, projections, breakdowns
+│   │   ├── CompanionScoring.jsx   # Scoring settings viewer (synced from league)
+│   │   └── PlayerMatchupBreakdown.jsx  # Per-player stat → fantasy point breakdown modal
+│   ├── PlayerBrowser.jsx          # Team/roster browser with position filter and search
+│   ├── PlayerProfile.jsx          # Player profile page with hero card, stats, and game log
+│   ├── PlayerStatTable.jsx        # Accordion stat table with standard/advanced toggle
+│   ├── TeamList.jsx               # Division cards with team rows and tooltips
+│   ├── TeamDetail.jsx             # Modal for editing team predictions
+│   ├── StandingsTable.jsx         # Division standings view
+│   ├── PlayoffSeeding.jsx         # Playoff bracket view
+│   ├── RecordSetter.jsx           # Win-loss-tie record controls
+│   ├── GameResultToggle.jsx       # Individual game outcome toggle
+│   ├── DivisionMatrix.jsx         # Head-to-head results grid
+│   ├── ExportPreview.jsx          # Export modal with section toggles and layout controls
+│   ├── ShareableImage.jsx         # Interactive bento-grid infographic with 11 sections
+│   └── Guide.jsx                  # Getting-started guide modal
 ├── context/
-│   ├── PredictionContext.jsx # Prediction state and localStorage sync
-│   └── ThemeContext.jsx      # Dark mode state
+│   ├── PredictionContext.jsx      # Prediction state and localStorage sync
+│   ├── ThemeContext.jsx           # Dark mode state
+│   └── SleeperContext.jsx         # Sleeper API state: user, league, rosters, stats, scoring
+├── api/
+│   ├── sleeperApi.js              # Sleeper API fetches: users, leagues, rosters, stats
+│   └── weatherApi.js              # Open-Meteo archive weather for game-day conditions
 ├── data/
-│   └── honors.json          # Static Pro Bowl / All-Pro records by player and season
+│   ├── honors.json                # Static Pro Bowl / All-Pro records by player and season
+│   └── stadiums.js                # All 32 NFL stadiums: indoor flag, coordinates, week dates
 └── utils/
-    ├── playerApi.js         # ESPN API fetches: roster, stats, game log, bio, depth chart
-    ├── playerCache.js       # localStorage cache with per-key TTLs
-    ├── playerMetrics.js     # Stat row definitions, headline metrics, and career highlights
-    ├── scheduleParser.js    # Team/division queries, strength of schedule
-    ├── validation.js        # Constraint checking and balance validation
-    ├── exportImport.js      # JSON export/import
-    ├── exportStats.js       # Highlight stat computations for the infographic
-    └── layoutUtils.js       # Bento grid layout constants, sizing, and RGL helpers
+    ├── playerApi.js               # ESPN API fetches: roster, stats, game log, bio
+    ├── playerCache.js             # localStorage cache with per-key TTLs
+    ├── playerMetrics.js           # Stat row definitions, headline metrics, career highlights
+    ├── projectionEngine.js        # PPG averages, positional ranks, opponent strength, projections
+    ├── scoringEngine.js           # Fantasy point calculation and DEFAULT_SCORING config
+    ├── scheduleParser.js          # Team/division queries, strength of schedule
+    ├── validation.js              # Constraint checking and balance validation
+    ├── exportImport.js            # JSON export/import
+    ├── exportStats.js             # Highlight stat computations for the infographic
+    └── layoutUtils.js             # Bento grid layout constants, sizing, and RGL helpers
 ```

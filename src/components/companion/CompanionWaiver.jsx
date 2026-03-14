@@ -1,0 +1,207 @@
+import { useEffect, useMemo, useState } from 'react';
+import { useSleeper } from '../../context/SleeperContext';
+import { calcPointsFromTotals, getRecentAvg } from '../../utils/scoringEngine';
+
+const POSITIONS = ['ALL', 'QB', 'RB', 'WR', 'TE', 'K'];
+const POSITION_COLORS = {
+  QB: '#ef4444', RB: '#22c55e', WR: '#3b82f6', TE: '#f59e0b', K: '#8b5cf6',
+};
+
+export default function CompanionWaiver() {
+  const {
+    players, loadPlayers,
+    rosters,
+    seasonStats, loadSeasonStats,
+    weeklyStats,
+    statsLoading, statsProgress,
+    scoringSettings,
+    myRoster,
+  } = useSleeper();
+
+  const [posFilter, setPosFilter] = useState('ALL');
+  const [search, setSearch] = useState('');
+
+  useEffect(() => { loadPlayers(); }, [loadPlayers]);
+  useEffect(() => {
+    if (!seasonStats && !statsLoading) loadSeasonStats();
+  }, [seasonStats, statsLoading, loadSeasonStats]);
+
+  // Build set of all rostered player IDs across the whole league
+  const rosteredIds = useMemo(() => {
+    const ids = new Set();
+    for (const r of rosters) {
+      for (const id of (r.players || [])) ids.add(id);
+      for (const id of (r.reserve || [])) ids.add(id);
+    }
+    return ids;
+  }, [rosters]);
+
+  // My roster IDs (for "add" context)
+  const myRosterData = myRoster();
+  const myPlayerIds = useMemo(() => {
+    if (!myRosterData) return new Set();
+    return new Set([...(myRosterData.players || []), ...(myRosterData.reserve || [])]);
+  }, [myRosterData]);
+
+  const available = useMemo(() => {
+    if (!players || !seasonStats) return [];
+
+    return Object.entries(seasonStats)
+      .map(([id, stats]) => {
+        if (rosteredIds.has(id)) return null; // already on a team
+        const p = players[id];
+        if (!p) return null;
+        const pos = p.position;
+        if (!['QB', 'RB', 'WR', 'TE', 'K'].includes(pos)) return null;
+        if (posFilter !== 'ALL' && pos !== posFilter) return null;
+
+        const q = search.trim().toLowerCase();
+        if (q && !p.full_name?.toLowerCase().includes(q) && !p.team?.toLowerCase().includes(q)) return null;
+
+        const pts = calcPointsFromTotals(stats, scoringSettings);
+        if (pts <= 0) return null;
+        const recentAvg = getRecentAvg(weeklyStats?.[id] ?? [], scoringSettings, 4);
+
+        return {
+          id,
+          name: p.full_name || `${p.first_name} ${p.last_name}`,
+          position: pos,
+          team: p.team || 'FA',
+          pts,
+          recentAvg,
+          injuryStatus: p.injury_status,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.recentAvg - a.recentAvg || b.pts - a.pts)
+      .slice(0, 100);
+  }, [players, seasonStats, weeklyStats, scoringSettings, posFilter, search, rosteredIds]);
+
+  return (
+    <div className="pb-6">
+      {/* Filters */}
+      <div className="px-4 pb-3 flex flex-col gap-2">
+        <div className="flex gap-1.5 flex-wrap">
+          {POSITIONS.map(pos => (
+            <button
+              key={pos}
+              onClick={() => setPosFilter(pos)}
+              className="px-3 py-1 rounded-lg text-xs font-semibold transition-colors"
+              style={{
+                background: posFilter === pos ? 'var(--color-signature)' : 'var(--color-fill)',
+                color: posFilter === pos ? '#0C0F14' : 'var(--color-label-secondary)',
+              }}
+            >
+              {pos}
+            </button>
+          ))}
+        </div>
+        <div className="relative">
+          <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: 'var(--color-label-tertiary)' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search players…"
+            className="w-full pl-9 pr-3 py-2 rounded-xl font-medium focus:outline-none"
+            style={{ fontSize: '16px', background: 'var(--color-fill-secondary)', color: 'var(--color-label)' }}
+          />
+        </div>
+      </div>
+
+      {statsLoading && (
+        <div className="mx-4 mb-3 px-4 py-2.5 rounded-xl flex items-center gap-3" style={{ background: 'var(--color-fill)' }}>
+          <div className="h-1 flex-1 rounded-full overflow-hidden" style={{ background: 'var(--color-fill-secondary)' }}>
+            <div className="h-full rounded-full transition-all duration-300" style={{ width: `${statsProgress}%`, background: 'var(--color-signature)' }} />
+          </div>
+          <span className="text-xs tabular-nums shrink-0" style={{ color: 'var(--color-label-tertiary)' }}>{statsProgress}%</span>
+        </div>
+      )}
+
+      {/* Sorting note */}
+      <div className="px-4 pb-2">
+        <span className="text-xs" style={{ color: 'var(--color-label-tertiary)' }}>
+          Sorted by recent avg (last 4 weeks)
+        </span>
+      </div>
+
+      {/* Column headers — match: avatar(w-9) + gap(3) + name(flex-1) + Season(w-16) + Avg(w-16) */}
+      <div className="flex items-center gap-3 px-4 pb-2 mb-1" style={{ borderBottom: '1px solid var(--color-separator)' }}>
+        <div className="w-9 shrink-0" />
+        <span className="flex-1 text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>Player</span>
+        <span className="w-16 text-right text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>Season</span>
+        <span className="w-16 text-right text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>4-Wk Avg</span>
+      </div>
+
+      {!seasonStats && !statsLoading && (
+        <div className="flex items-center justify-center py-16">
+          <span className="text-sm" style={{ color: 'var(--color-label-secondary)' }}>Loading stats…</span>
+        </div>
+      )}
+
+      {available.map(player => (
+        <WaiverRow key={player.id} player={player} />
+      ))}
+
+      {available.length === 0 && seasonStats && (
+        <div className="flex items-center justify-center py-16 px-6 text-center">
+          <span className="text-sm" style={{ color: 'var(--color-label-secondary)' }}>
+            {rosteredIds.size === 0
+              ? 'Connect a league to see available players.'
+              : 'No available players found.'}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function WaiverRow({ player }) {
+  const isInjured = player.injuryStatus && !['Questionable', 'Probable'].includes(player.injuryStatus);
+  const posColor = POSITION_COLORS[player.position] ?? 'var(--color-label-tertiary)';
+
+  return (
+    <div className="flex items-center px-4 py-2.5 gap-3" style={{ borderBottom: '1px solid var(--color-separator)' }}>
+      <img
+        src={`https://sleepercdn.com/content/nfl/players/thumb/${player.id}.jpg`}
+        alt={player.name}
+        className="w-9 h-9 rounded-full shrink-0 object-cover"
+        style={{ background: 'var(--color-fill)' }}
+        onError={e => { e.target.src = 'https://sleepercdn.com/images/v2/icons/player_default.webp'; }}
+      />
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1.5">
+          <span className="font-semibold text-sm truncate" style={{ color: 'var(--color-label)' }}>{player.name}</span>
+          {player.injuryStatus && (
+            <span
+              className="text-xs font-bold px-1 py-0.5 rounded shrink-0"
+              style={{
+                background: isInjured ? 'rgba(239,68,68,0.12)' : 'rgba(245,183,0,0.12)',
+                color: isInjured ? 'var(--color-accent-red)' : 'var(--color-signature)',
+                fontSize: '10px',
+              }}
+            >
+              {player.injuryStatus}
+            </span>
+          )}
+        </div>
+        <div className="text-xs mt-0.5 flex items-center gap-1.5">
+          <span style={{ color: posColor, fontWeight: 600 }}>{player.position}</span>
+          <span style={{ color: 'var(--color-label-tertiary)' }}>{player.team}</span>
+        </div>
+      </div>
+      <div className="w-16 text-right">
+        <span className="font-bold tabular-nums text-sm" style={{ color: 'var(--color-label)' }}>
+          {player.pts.toFixed(1)}
+        </span>
+      </div>
+      <div className="w-16 text-right">
+        <span className="tabular-nums text-sm" style={{ color: player.recentAvg >= 15 ? 'var(--color-accent-green)' : 'var(--color-label-secondary)' }}>
+          {player.recentAvg > 0 ? player.recentAvg.toFixed(1) : '—'}
+        </span>
+      </div>
+    </div>
+  );
+}
