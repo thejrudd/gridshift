@@ -18,7 +18,7 @@ An interactive web app for predicting the 2026 NFL season — with full Sleeper 
 - **Sleeper League Integration** — Connect your Sleeper account, import a league, and analyze your fantasy roster with custom scoring settings synced from your league
 - **Fantasy Matchup View** — Head-to-head starter comparison with week-by-week points, projections, positional rankings (week and season), weather context, and game location
 - **Scoring Breakdowns** — Drill into any player or your full team score to see a stat-by-stat fantasy point breakdown (e.g. Rush Yards · 112 · +11.2 pts)
-- **Player Projections** — Min/max/projected point ranges factoring opponent strength, home/away, weather, and scoring format
+- **Player Projections** — Min/max/projected point ranges factoring opponent strength, home/away, weather, snap % trend, and scoring format
 - **Dark Mode** — Toggle between light and dark themes
 - **PWA / Installable** — Install to your home screen on iOS and Android; runs in standalone mode with asset caching
 - **Responsive Design** — Two-panel layout on desktop (sidebar + content), tab bar on mobile
@@ -68,6 +68,14 @@ PORT=8080 docker compose up -d --build
 - **Tailwind CSS** — Utility-first styling
 - **react-grid-layout** — Drag-and-resize bento grid for the export infographic
 - **nginx** — Production static file serving (Docker)
+
+## What's New in v4.1
+
+- **Matchup Difficulty Badge** — Each player card now shows an Easy / Avg / Hard matchup badge based on how many points the opposing defense allows to that position relative to the league average (requires 3+ games of data). Powered by `getOpponentStrength()` + the ESPN scoreboard schedule so it works for historical matchups where Sleeper's stats API omits opponent info.
+- **Redesigned Matchup Player Card** — Cleaner three-line layout: player name + team, points scored / projected range, and vs OPP + location + matchup difficulty. Rankings and detailed game context moved to the player drilldown.
+- **Enhanced Player Drilldown** — Two new sections above the stat breakdown: **Rankings** (week rank, season rank, avg PPG in a compact horizontal layout) and **Game Context** (opponent, venue, average points allowed to that position with game count, projection with range).
+- **Snap % Projection Factor** — Projections now include a fourth multiplier: recent snap usage (last 4 games) vs season average. Captures dual-back committees, emerging WR roles, and depth-chart shifts without double-counting the player's baseline. Applies to QB/RB/WR/TE only; returns neutral (1.0×) until 3+ weeks of snap data are available.
+- **Companion Guide** — The "?" guide for the Companion tab now contains full instructional content: how to read the matchup screen, the complete projection formula, what each badge and label means, and how scoring settings are applied.
 
 ## What's New in v4.0
 
@@ -125,6 +133,15 @@ PORT=8080 docker compose up -d --build
 
 **v3.1** — Historical comparison (predicted records vs. each team's actual past results)
 **v4.5** — Week-by-week schedule view *(blocked on 2026 season schedule data)*
+
+### v4.0 Remaining Backlog
+
+- ~~**Matchup view — opponent defensive strength**~~ — shipped in v4.1
+- **Start/sit recommendations** — explicit Companion view ranking rostered players by projected output per position slot
+- **Defense rankings table** — all 32 teams ranked by pts allowed per game at QB / RB / WR / TE
+- **Waiver wire with projections** — projected pts column, projection-based sort, and trending indicator in the waiver view
+- **Fantasy player comparison** (Companion) — side-by-side Sleeper stats for two players: season pts, avg PPG, recent form, positional rank, projection range
+- **Stats player comparison** (Statistics) — side-by-side ESPN career/season stats for two players with per-stat deltas
 
 ## Project Structure
 

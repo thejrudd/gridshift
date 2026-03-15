@@ -60,19 +60,35 @@ const GUIDE_CONTENT = {
     ],
   },
   companion: {
-    title: 'COMPANION',
+    title: 'HOW TO USE COMPANION',
     steps: [
       {
-        title: 'Coming in v4.0',
-        description: 'The Companion section will include fantasy league integration, Sleeper sync, and advanced analytics.',
+        title: 'Connect Your League',
+        description: 'Enter your Sleeper username to get started, then select your league from the list. The app imports your roster, lineup, scoring rules, and weekly matchup data directly from Sleeper.',
       },
       {
-        title: 'Sleeper Sync',
-        description: 'Connect your Sleeper account to overlay your fantasy roster onto NFL team pages and prediction cards.',
+        title: 'Reading the Matchup Screen',
+        description: 'The Matchup tab compares your starters against your opponent\'s at each lineup slot side-by-side. Each card shows the player\'s actual points scored this week, the projected point range for the game, and who they\'re facing. Tap any player to see a full breakdown.',
       },
       {
-        title: 'Advanced Analytics',
-        description: 'Historical win-rate comparisons, strength-of-schedule breakdowns, and prediction accuracy tracking.',
+        title: 'How Projections Are Calculated',
+        description: 'Projections start from a player\'s season average and apply four multipliers: (1) Location — home vs away splits, if 3+ games each are available. (2) Opponent — how many points the opposing defense allows at this position vs league average, clamped between 0.65× and 1.45×. (3) Weather — cold temps, high winds, and heavy rain reduce projections for passing positions more than rushing. (4) Snap % trend — compares the player\'s snap usage over the last 4 games vs their season average, capturing role changes like dual-back committees, emerging receivers, and depth-chart shifts. The formula is: season avg × location × opponent × weather × snap trend.',
+      },
+      {
+        title: 'Matchup Difficulty',
+        description: 'Each player card shows an "Easy matchup," "Avg matchup," or "Hard matchup" badge. This reflects how the opposing defense ranks against this position league-wide. Easy (green) means the defense allows 10%+ more points than average; Hard (red) means 10%+ fewer. At least 3 games of data against that defense are required before a badge appears.',
+      },
+      {
+        title: 'Projection Range',
+        description: 'The range shown (e.g. proj 6.1–18.2) represents the floor and ceiling based on the player\'s 10th–90th percentile historical games, adjusted for opponent difficulty and weather. It shows the realistic spread of outcomes — not a guarantee. The single projected number is the adjusted season average.',
+      },
+      {
+        title: 'Player Drilldown',
+        description: 'Tap any player to open a detailed panel with three sections: Rankings (week and season position rank, average PPG), Game Context (opponent, venue, defense stats showing average points allowed to that position, and the projection range), and a stat-by-stat Fantasy Score breakdown showing exactly how this week\'s points were earned.',
+      },
+      {
+        title: 'Scoring Settings',
+        description: 'All projections and rankings use your league\'s actual scoring rules, imported automatically from Sleeper when you connect. If your league uses custom settings, you can review or adjust them in the Scoring tab. Changes take effect immediately across all projections.',
       },
     ],
   },

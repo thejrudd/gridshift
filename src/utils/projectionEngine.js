@@ -3,6 +3,8 @@ import { calcPoints } from './scoringEngine';
 
 const IDP_POSITIONS = new Set(['DL', 'LB', 'DB', 'DE', 'DT', 'CB', 'S', 'ILB', 'OLB', 'SS', 'FS']);
 const PASSING_POSITIONS = new Set(['QB', 'WR', 'TE']);
+// Positions for which offensive snap % is a meaningful usage signal
+const SNAP_POSITIONS = new Set(['QB', 'RB', 'WR', 'TE']);
 
 /**
  * Compute season avg PPG for a player (only counts active weeks, pts > 0).
@@ -62,8 +64,13 @@ function normalizePos(pos) {
  * Requires weeklyStats (all players) and players DB.
  * Returns { ptsAllowedPerGame, gamesAnalyzed } or null if insufficient data.
  */
-export function getOpponentStrength(oppTeam, pos, allWeeklyStats, players, scoringSettings) {
+/**
+ * scheduleMap (optional): { [week]: { [teamAbbr]: { opp, home } } } from fetchSeasonSchedule.
+ *   Used to determine each player's opponent when w.opp is absent from the stats entry.
+ */
+export function getOpponentStrength(oppTeam, pos, allWeeklyStats, players, scoringSettings, scheduleMap = null) {
   const normPos = normalizePos(pos);
+  const normOpp = oppTeam?.toUpperCase();
   let totalPts = 0;
   let games = 0;
 
@@ -73,7 +80,12 @@ export function getOpponentStrength(oppTeam, pos, allWeeklyStats, players, scori
     if (normalizePos(player.position) !== normPos) continue;
 
     for (const w of weeks) {
-      if (w.opp !== oppTeam) continue;
+      // Prefer opp stored on the stat entry; fall back to schedule lookup
+      let playerOpp = w.opp?.toUpperCase() ?? null;
+      if (!playerOpp && scheduleMap && player.team) {
+        playerOpp = scheduleMap[w.week]?.[player.team]?.opp ?? null;
+      }
+      if (!playerOpp || playerOpp !== normOpp) continue;
       const pts = calcPoints(w, scoringSettings);
       if (pts <= 0) continue; // skip DNPs
       totalPts += pts;
@@ -103,6 +115,48 @@ function getLeagueAvgPPG(pos, allWeeklyStats, players, scoringSettings) {
 }
 
 /**
+ * Compute a snap-usage trend factor for a player.
+ *
+ * Compares recent snap % (last 4 games) vs season-average snap %.
+ * A player whose role is expanding (e.g. RBBC back gaining carries, emerging WR)
+ * gets a modest upward adjustment; one whose role is shrinking (injury return,
+ * depth-chart demotion, team switching to multi-back sets) gets a downward adjustment.
+ *
+ * Important: the season-average pts already embed the player's historical snap rate,
+ * so this factor only adjusts for *changes* in usage — it will not penalise a player
+ * who has consistently played 55 % of snaps all year.
+ *
+ * Only applied to offensive skill positions (QB, RB, WR, TE).
+ * Returns 1.0 when snap data is insufficient or the position is ineligible.
+ */
+function getSnapFactor(weeklyArr, pos, recentWeeks = 4) {
+  if (!SNAP_POSITIONS.has(pos)) return 1.0;
+
+  // Build a snap-% reading for each week the team ran an offensive play
+  const snapPcts = weeklyArr
+    .filter(w => w.tm_off_snp > 0 && w.off_snp != null)
+    .map(w => ({ week: w.week, pct: w.off_snp / w.tm_off_snp }));
+
+  if (snapPcts.length < 3) return 1.0; // not enough data to form a trend
+
+  const seasonAvg = snapPcts.reduce((s, e) => s + e.pct, 0) / snapPcts.length;
+
+  // If the player has always been a deep role player (< 35 % snaps on average)
+  // their pts baseline already prices in low usage — don't compound the adjustment.
+  if (seasonAvg < 0.35) return 1.0;
+
+  // Use the most-recent N games (sorted by week number)
+  const sorted = [...snapPcts].sort((a, b) => a.week - b.week);
+  const recent = sorted.slice(-recentWeeks);
+  if (recent.length < 2) return 1.0;
+
+  const recentAvg = recent.reduce((s, e) => s + e.pct, 0) / recent.length;
+
+  // Ratio of recent usage to season baseline, clamped to avoid extremes
+  return Math.max(0.75, Math.min(1.25, recentAvg / seasonAvg));
+}
+
+/**
  * Project min / max / projected fantasy pts for a player in a specific game.
  *
  * @param {Object[]} weeklyArr   - Player's weekly stats array
@@ -118,7 +172,7 @@ function getLeagueAvgPPG(pos, allWeeklyStats, players, scoringSettings) {
  */
 export function projectPlayer({
   weeklyArr, pos, oppTeam, isHome, isIndoor, weather,
-  allWeeklyStats, players, scoringSettings,
+  allWeeklyStats, players, scoringSettings, scheduleMap,
 }) {
   if (!weeklyArr?.length) return null;
 
@@ -145,7 +199,7 @@ export function projectPlayer({
   let oppFactor = 1.0;
   let oppData = null;
   if (oppTeam && allWeeklyStats && players) {
-    const strength = getOpponentStrength(oppTeam, pos, allWeeklyStats, players, scoringSettings);
+    const strength = getOpponentStrength(oppTeam, pos, allWeeklyStats, players, scoringSettings, scheduleMap);
     const leagueAvg = getLeagueAvgPPG(pos, allWeeklyStats, players, scoringSettings);
     if (strength && leagueAvg > 0) {
       oppData = strength;
@@ -175,8 +229,14 @@ export function projectPlayer({
     }
   }
 
+  // ── Snap usage trend factor ───────────────────────────────────────────────
+  // Compares recent snap % (last 4 games) vs season average.
+  // Captures RBBC shifts, emerging roles, and depth-chart changes without
+  // double-counting the baseline (which already reflects historical snap rate).
+  const snapFactor = getSnapFactor(weeklyArr, pos);
+
   // ── Projected score ───────────────────────────────────────────────────────
-  const projected = seasonAvg * locationFactor * oppFactor * weatherFactor;
+  const projected = seasonAvg * locationFactor * oppFactor * weatherFactor * snapFactor;
 
   // ── Floor / ceiling from historical distribution ──────────────────────────
   const sorted = [...gamePts].sort((a, b) => a - b);
@@ -185,8 +245,8 @@ export function projectPlayer({
   const floor = sorted[p10idx];
   const ceiling = sorted[p90idx];
 
-  const min = Math.max(0, Math.round(floor  * oppFactor * weatherFactor * 10) / 10);
-  const max =            Math.round(ceiling * oppFactor * (isPassingPos ? weatherFactor : Math.max(0.95, weatherFactor)) * 10) / 10;
+  const min = Math.max(0, Math.round(floor  * oppFactor * weatherFactor * snapFactor * 10) / 10);
+  const max =            Math.round(ceiling * oppFactor * (isPassingPos ? weatherFactor : Math.max(0.95, weatherFactor)) * snapFactor * 10) / 10;
 
   return {
     projected: Math.round(projected * 10) / 10,
@@ -196,6 +256,7 @@ export function projectPlayer({
       locationFactor: Math.round(locationFactor * 100) / 100,
       oppFactor:      Math.round(oppFactor * 100) / 100,
       weatherFactor:  Math.round(weatherFactor * 100) / 100,
+      snapFactor:     Math.round(snapFactor * 100) / 100,
       oppGames:       oppData?.gamesAnalyzed ?? 0,
     },
   };

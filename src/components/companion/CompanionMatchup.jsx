@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSleeper } from '../../context/SleeperContext';
 import { calcPoints, DEFAULT_SCORING } from '../../utils/scoringEngine';
-import { computePositionalRanks, getAvgPPG, projectPlayer } from '../../utils/projectionEngine';
+import { computePositionalRanks, getAvgPPG, getOpponentStrength, projectPlayer } from '../../utils/projectionEngine';
 import { STADIUMS, WEEK_DATES_2025 } from '../../data/stadiums';
 import { fetchGameWeather, formatWeather } from '../../api/weatherApi';
 import { getMatchups } from '../../api/sleeperApi';
@@ -16,7 +16,7 @@ export default function CompanionMatchup() {
   const {
     sleeperUser, selectedLeagueId, league,
     rosters, leagueUsers, players, loadPlayers,
-    weeklyStats, seasonStats, loadSeasonStats,
+    weeklyStats, seasonStats, scheduleMap, loadSeasonStats,
     statsLoading, statsProgress, scoringSettings,
     myRoster, getUserDisplayName,
   } = useSleeper();
@@ -121,12 +121,19 @@ export default function CompanionMatchup() {
     const stats = seasonStats?.[id] ?? null;
     const weekly = weeklyStats?.[id] ?? [];
     const weekEntry = weekly.find(w => w.week === week) ?? null;
-    const oppTeam = weekEntry?.opp ?? null;
-    const isHome = weekEntry != null ? (weekEntry.home === 1) : null;
     const myTeam = p.team || 'FA';
+    // Derive opponent + home/away: prefer stat entry fields, fall back to ESPN schedule
+    const schedEntry = scheduleMap?.[week]?.[myTeam] ?? null;
+    const oppTeam = weekEntry?.opp?.toUpperCase() ?? schedEntry?.opp ?? null;
+    const isHome = weekEntry != null
+      ? (weekEntry.home === 1 || weekEntry.home === true)
+      : schedEntry != null ? schedEntry.home : null;
     // Home team hosts → determines whose stadium we use
     const homeTeam = isHome === true ? myTeam : isHome === false ? oppTeam : null;
     const stadium = homeTeam ? (STADIUMS[homeTeam] ?? null) : null;
+    const defStrength = oppTeam
+      ? getOpponentStrength(oppTeam, p.position, weeklyStats, players, scoringSettings, scheduleMap)
+      : null;
 
     return {
       id,
@@ -144,8 +151,9 @@ export default function CompanionMatchup() {
       isIndoor: stadium?.indoor ?? null,
       weekly,
       injuryStatus: p.injury_status,
+      defStrength,
     };
-  }, [players, seasonStats, weeklyStats, scoringSettings, positionalRanks, weeklyRanks, week]);
+  }, [players, seasonStats, weeklyStats, scoringSettings, positionalRanks, weeklyRanks, week, scheduleMap]);
 
   // Zip starters by slot index for side-by-side display
   const starterSlots = useMemo(() => {
@@ -215,6 +223,7 @@ export default function CompanionMatchup() {
         allWeeklyStats: weeklyStats,
         players,
         scoringSettings,
+        scheduleMap,
       });
       return { ...player, projection: proj, weather };
     }
@@ -223,7 +232,7 @@ export default function CompanionMatchup() {
       mine: addProjection(slot.mine),
       opp: addProjection(slot.opp),
     }));
-  }, [starterSlots, weatherMap, week, weeklyStats, players, scoringSettings]);
+  }, [starterSlots, weatherMap, week, weeklyStats, players, scoringSettings, scheduleMap]);
 
   if (!matchups && !matchupLoading) {
     return <EmptyState message="No matchup data available." />;
@@ -322,8 +331,8 @@ export default function CompanionMatchup() {
               key={i}
               mine={slot.mine}
               opp={slot.opp}
-              onSelectMine={() => slot.mine?.id && setSelectedPlayer({ id: slot.mine.id, projection: slot.mine.projection ?? null })}
-              onSelectOpp={() => slot.opp?.id && setSelectedPlayer({ id: slot.opp.id, projection: slot.opp.projection ?? null })}
+              onSelectMine={() => slot.mine?.id && setSelectedPlayer({ id: slot.mine.id, projection: slot.mine.projection ?? null, enriched: slot.mine })}
+              onSelectOpp={() => slot.opp?.id && setSelectedPlayer({ id: slot.opp.id, projection: slot.opp.projection ?? null, enriched: slot.opp })}
             />
           ))}
 
@@ -348,8 +357,8 @@ export default function CompanionMatchup() {
                     mine={myBench[i] ?? null}
                     opp={oppBench[i] ?? null}
                     bench
-                    onSelectMine={() => myBench[i]?.id && setSelectedPlayer({ id: myBench[i].id, projection: null })}
-                    onSelectOpp={() => oppBench[i]?.id && setSelectedPlayer({ id: oppBench[i].id, projection: null })}
+                    onSelectMine={() => myBench[i]?.id && setSelectedPlayer({ id: myBench[i].id, projection: null, enriched: myBench[i] })}
+                    onSelectOpp={() => oppBench[i]?.id && setSelectedPlayer({ id: oppBench[i].id, projection: null, enriched: oppBench[i] })}
                   />
                 ));
               })()}
@@ -363,6 +372,7 @@ export default function CompanionMatchup() {
           playerId={selectedPlayer.id}
           week={week}
           projection={selectedPlayer.projection}
+          enrichedPlayer={selectedPlayer.enriched ?? null}
           onClose={() => setSelectedPlayer(null)}
         />
       )}
@@ -384,114 +394,110 @@ function HeadToHeadRow({ mine, opp, bench, onSelectMine, onSelectOpp }) {
   const posColor = POSITION_COLORS[position] ?? 'var(--color-label-tertiary)';
 
   return (
-    <div style={{ borderBottom: '1px solid var(--color-separator)', opacity: bench ? 0.6 : 1 }}>
-      {/* Player row — default flex stretch keeps center column same height as buttons */}
-      <div className="flex">
-        {/* My player — left */}
-        <button
-          onClick={onSelectMine}
-          disabled={!mine}
-          className="flex-1 flex items-start gap-2 px-3 py-2.5 text-left active:opacity-60 transition-opacity"
-        >
-          <PlayerThumb player={mine} />
-          <PlayerInfo player={mine} />
-        </button>
+    <div className="flex" style={{ borderBottom: '1px solid var(--color-separator)', opacity: bench ? 0.6 : 1 }}>
+      {/* My player — left */}
+      <button
+        onClick={onSelectMine}
+        disabled={!mine}
+        className="flex-1 flex items-center gap-2 px-3 py-2.5 text-left active:opacity-60 transition-opacity"
+      >
+        <PlayerThumb player={mine} />
+        <PlayerInfo player={mine} />
+      </button>
 
-        {/* Position badge — center, vertically centered within stretched column */}
-        <div className="w-10 flex-shrink-0 flex items-center justify-center">
-          <span
-            className="text-xs font-bold px-1.5 py-0.5 rounded"
-            style={{ background: `${posColor}20`, color: posColor, fontSize: '10px' }}
-          >
-            {position}
-          </span>
-        </div>
-
-        {/* Opponent — right (mirrored) */}
-        <button
-          onClick={onSelectOpp}
-          disabled={!opp}
-          className="flex-1 flex items-start gap-2 px-3 py-2.5 text-right active:opacity-60 transition-opacity flex-row-reverse"
+      {/* Position badge — center */}
+      <div className="w-10 flex-shrink-0 flex items-center justify-center">
+        <span
+          className="font-bold px-1.5 py-0.5 rounded"
+          style={{ background: `${posColor}20`, color: posColor, fontSize: '10px' }}
         >
-          <PlayerThumb player={opp} />
-          <PlayerInfo player={opp} align="right" />
-        </button>
+          {position}
+        </span>
       </div>
 
-      {/* Game context strip — only for starters with data */}
-      {!bench && (mine?.oppTeam || opp?.oppTeam) && (
-        <div className="flex px-3 pb-2 gap-2">
-          <GameContext player={mine} />
-          <div className="w-10 shrink-0" />
-          <GameContext player={opp} align="right" />
-        </div>
-      )}
+      {/* Opponent — right (mirrored) */}
+      <button
+        onClick={onSelectOpp}
+        disabled={!opp}
+        className="flex-1 flex items-center gap-2 px-3 py-2.5 text-right active:opacity-60 transition-opacity flex-row-reverse"
+      >
+        <PlayerThumb player={opp} />
+        <PlayerInfo player={opp} align="right" />
+      </button>
     </div>
   );
 }
 
 function PlayerInfo({ player, align = 'left' }) {
   const isRight = align === 'right';
-  if (!player || player.name === 'Empty') {
-    return <div className="flex-1" />;
-  }
-  const ssnRank = player.rank ? `${player.rank.posLabel}${player.rank.rank}` : null;
-  const wkRank = player.weekRank ? `${player.weekRank.posLabel}${player.weekRank.rank}` : null;
+  if (!player || player.name === 'Empty') return <div className="flex-1" />;
 
-  // Week pts vs projection diff
   const proj = player.projection?.projected ?? null;
   const weekPts = player.weekPts ?? null;
-  const diff = weekPts != null && proj != null
-    ? Math.round((weekPts - proj) * 10) / 10
-    : null;
+  const diff = weekPts != null && proj != null ? Math.round((weekPts - proj) * 10) / 10 : null;
   const metProj = diff != null ? diff >= 0 : null;
+  const projMin = player.projection?.min ?? null;
+  const projMax = player.projection?.max ?? null;
+
+  // Matchup difficulty badge
+  const oppFactor = player.projection?.factors?.oppFactor ?? null;
+  let badge = null;
+  if (oppFactor !== null) {
+    if (oppFactor >= 1.10)      badge = { label: 'Easy matchup', bg: 'rgba(34,197,94,0.18)',  color: '#22c55e' };
+    else if (oppFactor <= 0.90) badge = { label: 'Hard matchup', bg: 'rgba(239,68,68,0.18)',  color: '#ef4444' };
+    else                        badge = { label: 'Avg matchup',  bg: 'rgba(120,120,128,0.16)', color: 'var(--color-label-tertiary)' };
+  }
+  const locationStr = player.isHome === true ? 'Home' : player.isHome === false ? 'Away' : null;
+  const weatherStr  = formatWeather(player.weather, player.isIndoor ?? false);
 
   return (
     <div className={`flex-1 min-w-0 ${isRight ? 'text-right' : ''}`}>
-      {/* Name */}
-      <div className="font-semibold text-xs truncate" style={{ color: 'var(--color-label)' }}>
-        {player.name}
-      </div>
-      {/* Week pts + proj diff */}
-      <div className={`flex items-center gap-1 mt-0.5 ${isRight ? 'justify-end' : ''}`}>
-        <span className="text-xs tabular-nums font-bold" style={{ color: 'var(--color-label)' }}>
-          {weekPts != null ? weekPts.toFixed(1) : '—'}
+      {/* Name · Team [Injury] */}
+      <div className={`flex items-center gap-1 flex-wrap ${isRight ? 'justify-end' : ''}`}>
+        <span className="font-semibold text-xs truncate" style={{ color: 'var(--color-label)' }}>
+          {player.name}
         </span>
-        {proj != null && (
-          <span className="text-xs tabular-nums" style={{ color: 'var(--color-label-quaternary)' }}>
-            · proj {proj.toFixed(1)}
-          </span>
-        )}
-        {diff != null && (
+        <span className="text-xs shrink-0" style={{ color: 'var(--color-label-tertiary)' }}>
+          · {player.team}
+        </span>
+        {player.injuryStatus && (
           <span
-            className="text-xs tabular-nums font-semibold"
-            style={{ color: metProj ? '#22c55e' : 'var(--color-accent-red)' }}
+            className="text-[10px] font-bold px-1 py-px rounded shrink-0"
+            style={{ background: 'rgba(239,68,68,0.15)', color: '#ef4444' }}
           >
-            ({diff >= 0 ? '+' : ''}{diff.toFixed(1)})
+            {player.injuryStatus}
           </span>
         )}
       </div>
-      {/* Team · wk rank · ssn rank · PPG */}
-      <div className={`flex items-center gap-1 mt-0.5 ${isRight ? 'justify-end' : ''}`}>
-        <span className="text-xs" style={{ color: 'var(--color-label-tertiary)' }}>
-          {player.team}
-        </span>
-        {wkRank && (
-          <span className="text-xs font-bold" style={{ color: 'var(--color-signature)' }}>
-            · {wkRank} week
+      {/* Scored X pts · proj range */}
+      <div className={`flex items-center gap-1.5 mt-0.5 flex-wrap ${isRight ? 'justify-end' : ''}`}>
+        {weekPts != null && (
+          <span className="text-xs tabular-nums font-bold" style={{ color: 'var(--color-label)' }}>
+            {weekPts.toFixed(1)} pts scored
           </span>
         )}
-        {ssnRank && (
-          <span className="text-xs font-bold" style={{ color: 'var(--color-label-quaternary)' }}>
-            · {ssnRank} season
-          </span>
-        )}
-        {player.avgPPG > 0 && (
+        {projMin != null && projMax != null && (
           <span className="text-xs tabular-nums" style={{ color: 'var(--color-label-quaternary)' }}>
-            · {player.avgPPG.toFixed(1)} PPG
+            {weekPts != null ? '·' : ''} proj {projMin}–{projMax}
           </span>
         )}
       </div>
+      {/* vs OPP · Home/Away · weather · matchup badge */}
+      {player.oppTeam && (
+        <div className={`flex items-center gap-1 flex-wrap mt-0.5 ${isRight ? 'justify-end' : ''}`}>
+          <span className="text-xs" style={{ color: 'var(--color-label-tertiary)' }}>
+            vs {player.oppTeam}{locationStr ? ` · ${locationStr}` : ''}{weatherStr ? ` · ${weatherStr}` : ''}
+          </span>
+          {badge && (
+            <span
+              className="text-[10px] font-bold px-1.5 py-px rounded-full shrink-0"
+              style={{ background: badge.bg, color: badge.color }}
+            >
+              {badge.label}
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -503,35 +509,66 @@ function GameContext({ player, align = 'left' }) {
   const locationStr = player.isHome === true ? 'Home' : player.isHome === false ? 'Away' : null;
   const weatherStr = formatWeather(player.weather, player.isIndoor ?? false);
   const proj = player.projection;
+  const def = player.defStrength;
+  const oppFactor = proj?.factors?.oppFactor ?? null;
+
+  // Use rgba() so the pill background works for all badge types
+  let defLabel = null;
+  let defBg = null;
+  let defText = null;
+  if (oppFactor !== null) {
+    if (oppFactor >= 1.10)      { defLabel = 'Easy'; defBg = 'rgba(34,197,94,0.18)';  defText = '#22c55e'; }
+    else if (oppFactor <= 0.90) { defLabel = 'Hard'; defBg = 'rgba(239,68,68,0.18)';  defText = '#ef4444'; }
+    else                        { defLabel = 'Avg';  defBg = 'rgba(120,120,128,0.16)'; defText = 'var(--color-label-tertiary)'; }
+  }
+
+  const hasDetail = def || proj;
 
   return (
-    <div className={`flex-1 min-w-0 ${isRight ? 'text-right' : ''}`}>
-      {/* vs OPP · Home/Away */}
-      <div className={`flex items-center gap-1 flex-wrap ${isRight ? 'justify-end' : ''}`}>
-        <span className="text-xs font-semibold" style={{ color: 'var(--color-label-secondary)' }}>
+    // text-xs on the parent gives all children a consistent base size + line-height
+    <div className={`flex-1 min-w-0 text-xs ${isRight ? 'text-right' : ''}`}>
+      {/* Line 1: vs OPP · Home/Away · venue/weather */}
+      <div className={`flex items-baseline gap-1 flex-wrap ${isRight ? 'justify-end' : ''}`}>
+        <span className="font-semibold" style={{ color: 'var(--color-label-secondary)' }}>
           vs {player.oppTeam}
         </span>
         {locationStr && (
-          <span className="text-xs" style={{ color: 'var(--color-label-tertiary)' }}>
-            · {locationStr}
-          </span>
+          <span style={{ color: 'var(--color-label-tertiary)' }}>· {locationStr}</span>
+        )}
+        {weatherStr && (
+          <span style={{ color: 'var(--color-label-tertiary)' }}>· {weatherStr}</span>
         )}
       </div>
-      {/* Weather */}
-      <div className="mt-0.5">
-        <span className="text-xs" style={{ color: 'var(--color-label-tertiary)' }}>
-          {weatherStr}
-        </span>
-      </div>
-      {/* Projection range */}
-      {proj && (
-        <div className="mt-0.5">
-          <span className="text-xs font-semibold tabular-nums" style={{ color: 'var(--color-signature)' }}>
-            {proj.min}–{proj.max} pts
-          </span>
-          <span className="text-xs tabular-nums" style={{ color: 'var(--color-label-quaternary)' }}>
-            {' '}({proj.projected} proj)
-          </span>
+
+      {/* Line 2: difficulty badge · defense pts/gm · projected range */}
+      {hasDetail && (
+        <div className={`flex items-center gap-1.5 flex-wrap mt-0.5 ${isRight ? 'justify-end' : ''}`}>
+          {defLabel && (
+            <span
+              className="font-bold px-1.5 py-px rounded-full shrink-0"
+              style={{ fontSize: '10px', background: defBg, color: defText }}
+            >
+              {defLabel}
+            </span>
+          )}
+          {def && (
+            <span className="tabular-nums" style={{ color: 'var(--color-label-tertiary)' }}>
+              {def.ptsAllowedPerGame.toFixed(1)} vs {player.position}
+            </span>
+          )}
+          {proj && def && (
+            <span style={{ color: 'var(--color-separator)' }}>·</span>
+          )}
+          {proj && (
+            <>
+              <span className="font-semibold tabular-nums" style={{ color: 'var(--color-signature)' }}>
+                {proj.min}–{proj.max} pts
+              </span>
+              <span className="tabular-nums" style={{ color: 'var(--color-label-quaternary)' }}>
+                ({proj.projected} proj)
+              </span>
+            </>
+          )}
         </div>
       )}
     </div>

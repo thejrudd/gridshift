@@ -296,4 +296,50 @@ export async function fetchDepthChart(teamId) {
   }, TTL.roster);
 }
 
+// ── Season schedule lookup ────────────────────────────────────────────────────
+
+// ESPN uses "WSH" for Washington; Sleeper and the rest of the app use "WAS".
+const ESPN_ABBR_TO_SLEEPER = { WSH: 'WAS' };
+const normalizeEspnAbbr = a => ESPN_ABBR_TO_SLEEPER[a?.toUpperCase()] ?? a?.toUpperCase() ?? '';
+
+/**
+ * Fetch one week of the NFL schedule from ESPN's scoreboard.
+ * Returns { [sleeperTeamAbbr]: { opp: sleeperTeamAbbr, home: boolean } }
+ * Cached indefinitely — past schedules never change.
+ */
+async function fetchWeekSchedule(season, week) {
+  const url = `${ESPN_BASE}/scoreboard?seasontype=2&week=${week}&dates=${season}`;
+  return cachedFetch(`sched_v1_${season}_${week}`, async () => {
+    const res = await fetch(url);
+    if (!res.ok) return {};
+    const data = await res.json();
+    const map = {};
+    for (const event of data?.events ?? []) {
+      const comps = event?.competitions?.[0]?.competitors ?? [];
+      const homeC = comps.find(c => c.homeAway === 'home');
+      const awayC = comps.find(c => c.homeAway === 'away');
+      if (!homeC || !awayC) continue;
+      const homeAbbr = normalizeEspnAbbr(homeC.team?.abbreviation);
+      const awayAbbr = normalizeEspnAbbr(awayC.team?.abbreviation);
+      if (!homeAbbr || !awayAbbr) continue;
+      map[homeAbbr] = { opp: awayAbbr, home: true };
+      map[awayAbbr] = { opp: homeAbbr, home: false };
+    }
+    return map;
+  }, TTL.historical);
+}
+
+/**
+ * Fetch the full NFL season schedule from ESPN, all 18 regular-season weeks.
+ * Returns { [week]: { [sleeperTeamAbbr]: { opp: string, home: boolean } } }
+ * Individual weeks are cached indefinitely once fetched.
+ */
+export async function fetchSeasonSchedule(season) {
+  const weeks = Array.from({ length: 18 }, (_, i) => i + 1);
+  const results = await Promise.all(weeks.map(w => fetchWeekSchedule(season, w).catch(() => ({}))));
+  const map = {};
+  weeks.forEach((w, i) => { map[w] = results[i]; });
+  return map;
+}
+
 export { CURRENT_SEASON, toEspnTeamId };

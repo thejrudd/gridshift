@@ -9,6 +9,7 @@ import {
   getAllWeeklyStats,
   aggregateSeasonStats,
 } from '../api/sleeperApi';
+import { fetchSeasonSchedule } from '../utils/playerApi';
 import { DEFAULT_SCORING, importLeagueScoring } from '../utils/scoringEngine';
 
 const SleeperContext = createContext(null);
@@ -58,6 +59,7 @@ export function SleeperProvider({ children }) {
   // Stats
   const [weeklyStats, setWeeklyStats] = useState(null); // { [playerId]: weekArray[] }
   const [seasonStats, setSeasonStats] = useState(null);  // { [playerId]: aggregated }
+  const [scheduleMap, setScheduleMap] = useState(null);  // { [week]: { [teamAbbr]: { opp, home } } }
   const [statsLoading, setStatsLoading] = useState(false);
   const [statsProgress, setStatsProgress] = useState(0);
 
@@ -142,6 +144,8 @@ export function SleeperProvider({ children }) {
     setPlayers(null);
     setWeeklyStats(null);
     setSeasonStats(null);
+    setScheduleMap(null);
+    statsAbortRef.current = false; // allow fresh load after reconnect
     localStorage.removeItem(STORAGE_KEY);
   }, []);
 
@@ -185,11 +189,15 @@ export function SleeperProvider({ children }) {
     setStatsProgress(0);
 
     try {
-      const weekly = await getAllWeeklyStats(season, 18, (week, total) => {
-        setStatsProgress(Math.round((week / total) * 100));
-      });
+      const [weekly, schedule] = await Promise.all([
+        getAllWeeklyStats(season, 18, (week, total) => {
+          setStatsProgress(Math.round((week / total) * 100));
+        }),
+        fetchSeasonSchedule(season).catch(() => null),
+      ]);
       setWeeklyStats(weekly);
       setSeasonStats(aggregateSeasonStats(weekly));
+      setScheduleMap(schedule);
     } catch (err) {
       console.error('Failed to load stats:', err);
     } finally {
@@ -232,6 +240,7 @@ export function SleeperProvider({ children }) {
       players,
       weeklyStats,
       seasonStats,
+      scheduleMap,
       statsLoading,
       statsProgress,
       connectError,

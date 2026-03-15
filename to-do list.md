@@ -27,9 +27,12 @@ A ground-up redesign of the app's visual language and UI consistency. Goals:
 - ~~Season-long projections and rankings by position under the user's scoring system~~ ✓
 
 **Remaining v4.0 backlog (future):**
-- Start/sit recommendations surfaced as an explicit view
-- Team rankings for defense against each position (QB, RB, WR, TE) as a standalone table
-- Waiver wire / pickup suggestions based on available players and projected output
+- ~~**Matchup view — opponent defensive strength**: Show how many pts/gm the opponent allows to the player's position alongside an Easy / Avg / Hard difficulty badge. Data already computed by `getOpponentStrength()` in `projectionEngine.js`; needs to be surfaced in the `GameContext` strip of `CompanionMatchup.jsx`.~~ **Shipped in v4.1.**
+- **Start/sit recommendations**: Explicit Companion view that runs `projectPlayer()` across all rostered players and ranks them by projected output within each position group. Surfaces a clear start recommendation for each roster slot.
+- **Defense rankings table**: Standalone Companion tab showing all 32 teams ranked by pts allowed per game at each position (QB, RB, WR, TE). Powered by `getOpponentStrength()` across the full player pool.
+- **Waiver wire with projections**: Enhance `CompanionWaiver.jsx` with a projected pts column (next-game projection via `projectPlayer()`), a projection-based sort option, and a "trending" indicator for players with recent breakout weeks.
+- **Fantasy player comparison (Companion)**: New Companion tab — pick two players from the Sleeper player pool and compare them side-by-side: season pts, avg PPG, recent form, positional rank, projection range, and scoring breakdown.
+- **Stats player comparison (Statistics)**: Compare mode in `PlayerBrowser` — select two players and view their ESPN career/season stats side-by-side with per-stat deltas highlighted.
 
 ### v4.5 — Week-by-Week View
 Browse the full schedule by week — see all matchups for a given week, with current predictions reflected. Navigate between weeks via prev/next controls. **Blocked on 2026 season schedule data.** When the NFL releases the 2026 schedule, update the schedule data source and implement this view. Read-only in v4.5 (reflects existing team-level picks); interactive game picking from the week view is a future enhancement.
