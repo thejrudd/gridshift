@@ -181,6 +181,36 @@ function heatColorTeam(t, hexLow, hexHigh) {
   return `rgba(${Math.round(r1 + t * (r2 - r1))}, ${Math.round(g1 + t * (g2 - g1))}, ${Math.round(b1 + t * (b2 - b1))}, 0.85)`;
 }
 
+// ── Filter UI helpers ─────────────────────────────────────────────────────────
+
+function Btn({ active, onClick, children }) {
+  return (
+    <button
+      onClick={onClick}
+      className="px-2 py-0.5 rounded text-[10px] font-semibold transition-colors shrink-0"
+      style={{
+        background: active ? 'var(--color-signature)' : 'var(--color-fill)',
+        color: active ? '#000' : 'var(--color-label-secondary)',
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function FilterGroup({ label, children }) {
+  return (
+    <div className="flex items-center gap-1.5 shrink-0">
+      <span className="text-[10px] font-semibold uppercase tracking-wide shrink-0" style={{ color: 'var(--color-label-tertiary)' }}>
+        {label}
+      </span>
+      <div className="flex items-center gap-1 flex-wrap">
+        {children}
+      </div>
+    </div>
+  );
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function CompanionDefense({ onViewPlayer }) {
@@ -448,113 +478,56 @@ export default function CompanionDefense({ onViewPlayer }) {
   const loaded = viewMode === 'offense' ? !!offenseAllowedTable : !!defenseScoredTable;
 
   return (
-    <div className="pb-6">
-      {/* View mode toggle */}
-      <div className="px-4 pb-2 flex gap-2">
-        {[{ id: 'offense', label: 'Allowed' }, { id: 'defense', label: 'Scored' }].map(m => (
-          <button
-            key={m.id}
-            onClick={() => { setViewMode(m.id); resetSort(); }}
-            className="px-3 py-1 rounded-lg text-xs font-semibold transition-colors"
-            style={{
-              background: viewMode === m.id ? 'var(--color-signature)' : 'var(--color-fill)',
-              color: viewMode === m.id ? '#000' : 'var(--color-label-secondary)',
-            }}
-          >
-            {m.label}
-          </button>
-        ))}
-      </div>
+    <div className="pb-6 -mx-4 sm:-mx-6 lg:-mx-8">
+      {/* Unified filter bar — single row on wide screens, wraps on mobile */}
+      <div className="px-4 sm:px-6 lg:px-8 pb-3 flex flex-wrap items-center gap-x-5 gap-y-2">
+        <FilterGroup label="View">
+          {[{ id: 'offense', label: 'Allowed' }, { id: 'defense', label: 'Scored' }].map(m => (
+            <Btn key={m.id} active={viewMode === m.id} onClick={() => { setViewMode(m.id); resetSort(); }}>
+              {m.label}
+            </Btn>
+          ))}
+        </FilterGroup>
 
-      {/* Controls */}
-      <div className="px-4 pb-3 flex flex-col gap-2">
-        {/* Position filter — hidden in game score mode */}
         {!(viewMode === 'offense' && statMode === 'game_score') && (
-          <div className="flex items-center gap-2 flex-wrap">
+          <FilterGroup label="Position">
             {activePositions.map(p => (
-              <button
-                key={p}
-                onClick={() => { setActivePos(p); resetSort(); }}
-                className="px-3 py-1 rounded-lg text-xs font-semibold transition-colors"
-                style={{
-                  background: activePos === p ? 'var(--color-signature)' : 'var(--color-fill)',
-                  color: activePos === p ? '#000' : 'var(--color-label-secondary)',
-                }}
-              >
+              <Btn key={p} active={activePos === p} onClick={() => { setActivePos(p); resetSort(); }}>
                 {p}
-              </button>
+              </Btn>
             ))}
-          </div>
+          </FilterGroup>
         )}
 
-        {/* Stat mode + Heatmap scope */}
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="flex items-center gap-1">
-            <span style={{ fontSize: '10px', color: 'var(--color-label-secondary)', marginRight: '2px' }}>Stat</span>
-            {viewMode === 'offense'
-              ? STAT_MODES.map(m => (
-                  <button
-                    key={m.id}
-                    onClick={() => setStatMode(m.id)}
-                    className="px-2 py-0.5 rounded text-[10px] font-semibold transition-colors"
-                    style={{
-                      background: statMode === m.id ? 'var(--color-signature)' : 'var(--color-fill)',
-                      color: statMode === m.id ? '#000' : 'var(--color-label-secondary)',
-                    }}
-                  >
-                    {m.label}
-                  </button>
-                ))
-              : DEF_STAT_MODES.map(m => (
-                  <button
-                    key={m.id}
-                    onClick={() => setDefStatMode(m.id)}
-                    className="px-2 py-0.5 rounded text-[10px] font-semibold transition-colors"
-                    style={{
-                      background: defStatMode === m.id ? 'var(--color-signature)' : 'var(--color-fill)',
-                      color: defStatMode === m.id ? '#000' : 'var(--color-label-secondary)',
-                    }}
-                  >
-                    {m.label}
-                  </button>
-                ))
-            }
-          </div>
-          {favoriteTeam && (
-            <div className="flex items-center gap-1 ml-auto">
-              <button
-                onClick={() => setUseTeamColors(v => !v)}
-                className="px-2 py-0.5 rounded text-[10px] font-semibold transition-colors"
-                style={{
-                  background: useTeamColors ? 'var(--color-signature)' : 'var(--color-fill)',
-                  color: useTeamColors ? '#000' : 'var(--color-label-secondary)',
-                }}
-              >
-                {favoriteTeam.toUpperCase()} Colors
-              </button>
-            </div>
-          )}
-          <div className={`flex items-center gap-1${favoriteTeam ? '' : ' ml-auto'}`}>
-            <span style={{ fontSize: '10px', color: 'var(--color-label-secondary)', marginRight: '2px' }}>Color</span>
-            {HEATMAP_SCOPES.map(s => (
-              <button
-                key={s.id}
-                onClick={() => setHeatmapScope(s.id)}
-                className="px-2 py-0.5 rounded text-[10px] font-semibold transition-colors"
-                style={{
-                  background: heatmapScope === s.id ? 'var(--color-signature)' : 'var(--color-fill)',
-                  color: heatmapScope === s.id ? '#000' : 'var(--color-label-secondary)',
-                }}
-              >
-                {s.label}
-              </button>
-            ))}
-          </div>
-        </div>
+        <FilterGroup label="Stat">
+          {(viewMode === 'offense' ? STAT_MODES : DEF_STAT_MODES).map(m => (
+            <Btn
+              key={m.id}
+              active={viewMode === 'offense' ? statMode === m.id : defStatMode === m.id}
+              onClick={() => viewMode === 'offense' ? setStatMode(m.id) : setDefStatMode(m.id)}
+            >
+              {m.label}
+            </Btn>
+          ))}
+        </FilterGroup>
+
+        <FilterGroup label="Color">
+          {HEATMAP_SCOPES.map(s => (
+            <Btn key={s.id} active={heatmapScope === s.id} onClick={() => setHeatmapScope(s.id)}>
+              {s.label}
+            </Btn>
+          ))}
+        </FilterGroup>
+
+        {favoriteTeam && (
+          <Btn active={useTeamColors} onClick={() => setUseTeamColors(v => !v)}>
+            {favoriteTeam.toUpperCase()} Colors
+          </Btn>
+        )}
       </div>
 
       {!loaded ? (
-        <div className="flex items-center justify-center py-16">
+        <div className="flex items-center justify-center py-16 px-4">
           <span className="text-sm" style={{ color: 'var(--color-label-secondary)' }}>
             Load season stats to see defensive rankings.
           </span>

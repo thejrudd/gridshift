@@ -1,7 +1,7 @@
 {
   "name": "nfl-predictor",
   "private": true,
-  "version": "4.3.2",
+  "version": "4.3.3",
   "type": "module",
   "scripts": {
     "dev": "vite",

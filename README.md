@@ -75,6 +75,11 @@ PORT=8080 docker compose up -d --build
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) |
 
+## What's New in v4.3.3
+
+- **Defense tab — full-bleed layout** — Table now runs edge-to-edge on all screen sizes, taking full advantage of available width
+- **Defense tab — unified filter bar** — View, Position, Stat, Color, and Team Colors controls are now labeled and arranged in a single horizontal row on wide screens, wrapping naturally on mobile
+
 ## What's New in v4.3.2
 
 - **Projection footnotes** — Matchup and Snap use factors now have plain-English explanations in the projection math drilldown, alongside the existing Floor/Ceiling footnote

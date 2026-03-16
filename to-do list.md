@@ -34,6 +34,10 @@
 - **Fantasy player comparison (Companion)**: New Companion tab — pick two players from the Sleeper player pool and compare them side-by-side: season pts, avg PPG, recent form, positional rank, projection range, and scoring breakdown.
 - **Stats player comparison (Statistics)**: Compare mode in `PlayerBrowser` — select two players and view their ESPN career/season stats side-by-side with per-stat deltas highlighted.
 
+### v4.3.3 — Defense Tab Layout *(shipped)*
+- ~~Full-bleed table layout on all screen sizes~~ ✓
+- ~~Unified labeled filter bar, side-by-side on wide screens~~ ✓
+
 ### v4.3.2 — Projection Footnotes *(shipped)*
 - ~~Matchup and Snap use plain-English explanations added to projection math drilldown~~ ✓
 
