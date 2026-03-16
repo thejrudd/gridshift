@@ -75,6 +75,10 @@ PORT=8080 docker compose up -d --build
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) |
 
+## What's New in v4.3.2
+
+- **Projection footnotes** — Matchup and Snap use factors now have plain-English explanations in the projection math drilldown, alongside the existing Floor/Ceiling footnote
+
 ## What's New in v4.3.1
 
 - **Defense drilldown scroll lock** — Background page no longer scrolls while the drilldown panel is open

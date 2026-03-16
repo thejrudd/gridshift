@@ -208,9 +208,15 @@ function ProjectionMath({ baseAvg, factors, projected, projMin, projMax, oppTeam
       </div>
 
       {/* Plain-English footnote */}
-      <div className="px-4 py-3" style={{ borderTop: '1px solid var(--color-separator)' }}>
+      <div className="px-4 py-3 space-y-2" style={{ borderTop: '1px solid var(--color-separator)' }}>
         <p className="text-[10px] leading-relaxed" style={{ color: 'var(--color-label-quaternary)' }}>
           <strong style={{ color: 'var(--color-label-tertiary)' }}>Floor</strong> is the average of this player's bottom 25% of games this season — their realistic bad week. <strong style={{ color: 'var(--color-label-tertiary)' }}>Ceiling</strong> is the average of their top 25% — their realistic big week. Both are then adjusted for matchup difficulty, weather, and snap usage trends.
+        </p>
+        <p className="text-[10px] leading-relaxed" style={{ color: 'var(--color-label-quaternary)' }}>
+          <strong style={{ color: 'var(--color-label-tertiary)' }}>Matchup</strong> compares how many fantasy points the opposing defense allows to this position on average (prior weeks only) against all 32 teams. The result is a multiplier clamped between 0.65× and 1.45×. Requires at least 3 games of data against that defense.
+        </p>
+        <p className="text-[10px] leading-relaxed" style={{ color: 'var(--color-label-quaternary)' }}>
+          <strong style={{ color: 'var(--color-label-tertiary)' }}>Snap use</strong> compares this player's snap share over the last 4 games against their season average. A recently expanding role gets a modest upward nudge (max 1.25×); a shrinking role gets a downward one (min 0.75×). Applies to QB, RB, WR, and TE only — and only when at least 3 games of snap data are available.
         </p>
       </div>
     </div>
