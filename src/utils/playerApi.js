@@ -298,35 +298,47 @@ export async function fetchDepthChart(teamId) {
 
 // ── Season schedule lookup ────────────────────────────────────────────────────
 
-// ESPN uses "WSH" for Washington; Sleeper and the rest of the app use "WAS".
-const ESPN_ABBR_TO_SLEEPER = { WSH: 'WAS' };
+// ESPN uses different abbreviations than Sleeper for some teams.
+const ESPN_ABBR_TO_SLEEPER = { WSH: 'WAS', JAC: 'JAX' };
 const normalizeEspnAbbr = a => ESPN_ABBR_TO_SLEEPER[a?.toUpperCase()] ?? a?.toUpperCase() ?? '';
 
 /**
  * Fetch one week of the NFL schedule from ESPN's scoreboard.
  * Returns { [sleeperTeamAbbr]: { opp: sleeperTeamAbbr, home: boolean } }
- * Cached indefinitely — past schedules never change.
+ *
+ * Cache strategy: permanently cached (TTL.historical) only when the week has
+ * actual game data. Unplayed/future weeks are fetched fresh each session so
+ * they pick up real data once games are scheduled and completed.
+ * Cache key v2 busts old v1 entries that may have been permanently stored empty
+ * (happened when a user first loaded stats before those weeks were played).
  */
 async function fetchWeekSchedule(season, week) {
   const url = `${ESPN_BASE}/scoreboard?seasontype=2&week=${week}&dates=${season}`;
-  return cachedFetch(`sched_v1_${season}_${week}`, async () => {
-    const res = await fetch(url);
-    if (!res.ok) return {};
-    const data = await res.json();
-    const map = {};
-    for (const event of data?.events ?? []) {
-      const comps = event?.competitions?.[0]?.competitors ?? [];
-      const homeC = comps.find(c => c.homeAway === 'home');
-      const awayC = comps.find(c => c.homeAway === 'away');
-      if (!homeC || !awayC) continue;
-      const homeAbbr = normalizeEspnAbbr(homeC.team?.abbreviation);
-      const awayAbbr = normalizeEspnAbbr(awayC.team?.abbreviation);
-      if (!homeAbbr || !awayAbbr) continue;
-      map[homeAbbr] = { opp: awayAbbr, home: true };
-      map[awayAbbr] = { opp: homeAbbr, home: false };
-    }
-    return map;
-  }, TTL.historical);
+  return cachedFetch(
+    `sched_v2_${season}_${week}`,
+    async () => {
+      const res = await fetch(url);
+      if (!res.ok) return {};
+      const data = await res.json();
+      const map = {};
+      for (const event of data?.events ?? []) {
+        const comps = event?.competitions?.[0]?.competitors ?? [];
+        const homeC = comps.find(c => c.homeAway === 'home');
+        const awayC = comps.find(c => c.homeAway === 'away');
+        if (!homeC || !awayC) continue;
+        const homeAbbr = normalizeEspnAbbr(homeC.team?.abbreviation);
+        const awayAbbr = normalizeEspnAbbr(awayC.team?.abbreviation);
+        if (!homeAbbr || !awayAbbr) continue;
+        map[homeAbbr] = { opp: awayAbbr, home: true };
+        map[awayAbbr] = { opp: homeAbbr, home: false };
+      }
+      return map;
+    },
+    TTL.historical,
+    // Only permanently cache weeks that have actual game data.
+    // Unplayed weeks return an empty map and will be re-fetched next session.
+    (data) => data != null && Object.keys(data).length > 0,
+  );
 }
 
 /**

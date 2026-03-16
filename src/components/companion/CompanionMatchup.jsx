@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSleeper } from '../../context/SleeperContext';
 import { calcPoints, DEFAULT_SCORING } from '../../utils/scoringEngine';
-import { computePositionalRanks, getAvgPPG, getOpponentStrength, projectPlayer } from '../../utils/projectionEngine';
+import { computePositionalRanks, getAvgPPG, getDefenseStrength, buildDefenseTable, projectPlayer } from '../../utils/projectionEngine';
 import { STADIUMS, WEEK_DATES_2025 } from '../../data/stadiums';
 import { fetchGameWeather, formatWeather } from '../../api/weatherApi';
 import { getMatchups } from '../../api/sleeperApi';
@@ -15,7 +15,7 @@ const POSITION_COLORS = {
 export default function CompanionMatchup() {
   const {
     sleeperUser, selectedLeagueId, league,
-    rosters, leagueUsers, players, loadPlayers,
+    rosters, players, loadPlayers,
     weeklyStats, seasonStats, scheduleMap, loadSeasonStats,
     statsLoading, statsProgress, scoringSettings,
     myRoster, getUserDisplayName,
@@ -113,12 +113,20 @@ export default function CompanionMatchup() {
     return ranks;
   }, [weeklyStats, players, scoringSettings, week]);
 
+  // Pre-computed defense table: { [teamAbbr]: { [normPos]: { [week]: totalPts } } }
+  // Built once when all data is available; used for O(1) opponent strength lookups.
+  const defenseTable = useMemo(
+    () => weeklyStats && players && scheduleMap
+      ? buildDefenseTable(weeklyStats, players, scheduleMap, scoringSettings)
+      : null,
+    [weeklyStats, players, scheduleMap, scoringSettings],
+  );
+
   const enrichPlayer = useCallback((id) => {
     if (!id || !players) return null;
     const p = players[id];
     if (!p) return { id, name: 'Empty', position: '?', team: '', pts: null, avgPPG: 0, rank: null, oppTeam: null, isHome: null, isIndoor: null, homeTeam: null, injuryStatus: null, weekly: [] };
 
-    const stats = seasonStats?.[id] ?? null;
     const weekly = weeklyStats?.[id] ?? [];
     const weekEntry = weekly.find(w => w.week === week) ?? null;
     const myTeam = p.team || 'FA';
@@ -131,8 +139,8 @@ export default function CompanionMatchup() {
     // Home team hosts → determines whose stadium we use
     const homeTeam = isHome === true ? myTeam : isHome === false ? oppTeam : null;
     const stadium = homeTeam ? (STADIUMS[homeTeam] ?? null) : null;
-    const defStrength = oppTeam
-      ? getOpponentStrength(oppTeam, p.position, weeklyStats, players, scoringSettings, scheduleMap)
+    const defStrength = oppTeam && defenseTable
+      ? getDefenseStrength(defenseTable, oppTeam, p.position, week)
       : null;
 
     return {
@@ -153,7 +161,7 @@ export default function CompanionMatchup() {
       injuryStatus: p.injury_status,
       defStrength,
     };
-  }, [players, seasonStats, weeklyStats, scoringSettings, positionalRanks, weeklyRanks, week, scheduleMap]);
+  }, [players, seasonStats, weeklyStats, scoringSettings, positionalRanks, weeklyRanks, week, scheduleMap, defenseTable]);
 
   // Zip starters by slot index for side-by-side display
   const starterSlots = useMemo(() => {
@@ -224,6 +232,8 @@ export default function CompanionMatchup() {
         players,
         scoringSettings,
         scheduleMap,
+        week,
+        defStrength: player.defStrength ?? null,
       });
       return { ...player, projection: proj, weather };
     }
@@ -469,17 +479,38 @@ function PlayerInfo({ player, align = 'left' }) {
           </span>
         )}
       </div>
-      {/* Scored X pts · proj range */}
+      {/* Points / projection line — emphasis flips based on whether player has scored */}
       <div className={`flex items-center gap-1.5 mt-0.5 flex-wrap ${isRight ? 'justify-end' : ''}`}>
-        {weekPts != null && (
-          <span className="text-xs tabular-nums font-bold" style={{ color: 'var(--color-label)' }}>
-            {weekPts.toFixed(1)} pts scored
-          </span>
-        )}
-        {projMin != null && projMax != null && (
-          <span className="text-xs tabular-nums" style={{ color: 'var(--color-label-quaternary)' }}>
-            {weekPts != null ? '·' : ''} proj {projMin}–{projMax}
-          </span>
+        {weekPts == null ? (
+          /* Pre-game: projection is the headline */
+          projMin != null && projMax != null ? (
+            <span className="text-xs tabular-nums font-semibold" style={{ color: 'var(--color-label)' }}>
+              proj {projMin}–{projMax}
+            </span>
+          ) : null
+        ) : (
+          /* Post-game: score is the headline, projection + diff are secondary */
+          <>
+            <span className="text-xs tabular-nums font-bold" style={{ color: 'var(--color-label)' }}>
+              {weekPts.toFixed(1)} pts
+            </span>
+            {projMin != null && projMax != null && (
+              <span className="text-xs tabular-nums" style={{ color: 'var(--color-label-quaternary)' }}>
+                · proj {projMin}–{projMax}
+              </span>
+            )}
+            {diff != null && (
+              <span
+                className="text-[10px] tabular-nums font-bold px-1 py-px rounded"
+                style={{
+                  background: metProj ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)',
+                  color: metProj ? '#22c55e' : '#ef4444',
+                }}
+              >
+                {diff >= 0 ? '+' : ''}{diff.toFixed(1)}
+              </span>
+            )}
+          </>
         )}
       </div>
       {/* vs OPP · Home/Away · weather · matchup badge */}
@@ -495,79 +526,6 @@ function PlayerInfo({ player, align = 'left' }) {
             >
               {badge.label}
             </span>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function GameContext({ player, align = 'left' }) {
-  const isRight = align === 'right';
-  if (!player || player.name === 'Empty' || !player.oppTeam) return <div className="flex-1" />;
-
-  const locationStr = player.isHome === true ? 'Home' : player.isHome === false ? 'Away' : null;
-  const weatherStr = formatWeather(player.weather, player.isIndoor ?? false);
-  const proj = player.projection;
-  const def = player.defStrength;
-  const oppFactor = proj?.factors?.oppFactor ?? null;
-
-  // Use rgba() so the pill background works for all badge types
-  let defLabel = null;
-  let defBg = null;
-  let defText = null;
-  if (oppFactor !== null) {
-    if (oppFactor >= 1.10)      { defLabel = 'Easy'; defBg = 'rgba(34,197,94,0.18)';  defText = '#22c55e'; }
-    else if (oppFactor <= 0.90) { defLabel = 'Hard'; defBg = 'rgba(239,68,68,0.18)';  defText = '#ef4444'; }
-    else                        { defLabel = 'Avg';  defBg = 'rgba(120,120,128,0.16)'; defText = 'var(--color-label-tertiary)'; }
-  }
-
-  const hasDetail = def || proj;
-
-  return (
-    // text-xs on the parent gives all children a consistent base size + line-height
-    <div className={`flex-1 min-w-0 text-xs ${isRight ? 'text-right' : ''}`}>
-      {/* Line 1: vs OPP · Home/Away · venue/weather */}
-      <div className={`flex items-baseline gap-1 flex-wrap ${isRight ? 'justify-end' : ''}`}>
-        <span className="font-semibold" style={{ color: 'var(--color-label-secondary)' }}>
-          vs {player.oppTeam}
-        </span>
-        {locationStr && (
-          <span style={{ color: 'var(--color-label-tertiary)' }}>· {locationStr}</span>
-        )}
-        {weatherStr && (
-          <span style={{ color: 'var(--color-label-tertiary)' }}>· {weatherStr}</span>
-        )}
-      </div>
-
-      {/* Line 2: difficulty badge · defense pts/gm · projected range */}
-      {hasDetail && (
-        <div className={`flex items-center gap-1.5 flex-wrap mt-0.5 ${isRight ? 'justify-end' : ''}`}>
-          {defLabel && (
-            <span
-              className="font-bold px-1.5 py-px rounded-full shrink-0"
-              style={{ fontSize: '10px', background: defBg, color: defText }}
-            >
-              {defLabel}
-            </span>
-          )}
-          {def && (
-            <span className="tabular-nums" style={{ color: 'var(--color-label-tertiary)' }}>
-              {def.ptsAllowedPerGame.toFixed(1)} vs {player.position}
-            </span>
-          )}
-          {proj && def && (
-            <span style={{ color: 'var(--color-separator)' }}>·</span>
-          )}
-          {proj && (
-            <>
-              <span className="font-semibold tabular-nums" style={{ color: 'var(--color-signature)' }}>
-                {proj.min}–{proj.max} pts
-              </span>
-              <span className="tabular-nums" style={{ color: 'var(--color-label-quaternary)' }}>
-                ({proj.projected} proj)
-              </span>
-            </>
           )}
         </div>
       )}

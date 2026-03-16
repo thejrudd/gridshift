@@ -8,6 +8,7 @@ import {
   getAllPlayers,
   getAllWeeklyStats,
   aggregateSeasonStats,
+  getPlayerSeasonStats,
 } from '../api/sleeperApi';
 import { fetchSeasonSchedule } from '../utils/playerApi';
 import { DEFAULT_SCORING, importLeagueScoring } from '../utils/scoringEngine';
@@ -68,6 +69,7 @@ export function SleeperProvider({ children }) {
   const [connectLoading, setConnectLoading] = useState(false);
 
   const statsAbortRef = useRef(null);
+  const qbOppSeasonRef = useRef(null); // tracks which season QB opp data has been merged
 
   // Persist key state to localStorage
   useEffect(() => {
@@ -146,6 +148,7 @@ export function SleeperProvider({ children }) {
     setSeasonStats(null);
     setScheduleMap(null);
     statsAbortRef.current = false; // allow fresh load after reconnect
+    qbOppSeasonRef.current = null;
     localStorage.removeItem(STORAGE_KEY);
   }, []);
 
@@ -154,6 +157,7 @@ export function SleeperProvider({ children }) {
     setWeeklyStats(null);
     setSeasonStats(null);
     statsAbortRef.current = false; // allow reload on season change
+    qbOppSeasonRef.current = null;
 
     if (sleeperUser) {
       try {
@@ -185,6 +189,7 @@ export function SleeperProvider({ children }) {
   const loadSeasonStats = useCallback(async () => {
     if (statsAbortRef.current) return; // guard against concurrent calls
     statsAbortRef.current = true;
+    qbOppSeasonRef.current = null; // allow QB opp enhancement to re-run
     setStatsLoading(true);
     setStatsProgress(0);
 
@@ -205,6 +210,86 @@ export function SleeperProvider({ children }) {
       setStatsLoading(false);
     }
   }, [season]); // removed statsLoading — guarded by ref instead
+
+  /**
+   * After bulk weekly stats + players DB are both loaded, fetch per-QB stats
+   * via the individual player endpoint which includes game-time `opp` metadata.
+   * The bulk endpoint never includes `opp`, making it impossible to build an
+   * accurate defense table for players who changed teams in the offseason.
+   * Results are cached in localStorage (permanently for past seasons).
+   */
+  useEffect(() => {
+    if (statsLoading || !weeklyStats || !players || qbOppSeasonRef.current === season) return;
+
+    let cancelled = false;
+    const capturedSeason = season;
+    const CACHE_KEY = `nfl_pc_qb_opp_v1_${capturedSeason}`;
+    const IS_HISTORICAL = parseInt(capturedSeason) < 2025;
+
+    const run = async () => {
+      // Try localStorage cache first
+      let qbOppMap = null;
+      try {
+        const raw = localStorage.getItem(CACHE_KEY);
+        if (raw) {
+          const { ts, data } = JSON.parse(raw);
+          const stale = !IS_HISTORICAL && Date.now() - ts > 60 * 60 * 1000; // 1h for current season
+          if (!stale) qbOppMap = data;
+        }
+      } catch { /* corrupted — re-fetch */ }
+
+      if (!qbOppMap) {
+        // Identify QBs that had stats this season (limit per-player fetches to active QBs)
+        const qbIds = Object.keys(weeklyStats).filter(id => players[id]?.position === 'QB');
+        qbOppMap = {};
+
+        await Promise.all(qbIds.map(async (qbId) => {
+          try {
+            const stats = await getPlayerSeasonStats(qbId, capturedSeason);
+            // Handle both array and object (keyed by week) response shapes
+            const entries = Array.isArray(stats)
+              ? stats
+              : Object.entries(stats ?? {}).map(([wk, s]) => ({ week: Number(wk), ...s }));
+            for (const entry of entries) {
+              if (entry.week && entry.opp) {
+                if (!qbOppMap[qbId]) qbOppMap[qbId] = {};
+                qbOppMap[qbId][entry.week] = entry.opp.toUpperCase();
+              }
+            }
+          } catch { /* skip failed QB silently */ }
+        }));
+
+        // Cache: permanently for past seasons, 1h TTL for current
+        try {
+          localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), data: qbOppMap }));
+        } catch { /* quota */ }
+      }
+
+      if (cancelled) return;
+
+      // Merge opp into weeklyStats QB entries
+      const qbsWithOpp = Object.keys(qbOppMap).filter(id => Object.keys(qbOppMap[id]).length > 0);
+      if (qbsWithOpp.length > 0) {
+        setWeeklyStats(prev => {
+          const next = { ...prev };
+          for (const qbId of qbsWithOpp) {
+            if (!next[qbId]) continue;
+            const weekOppMap = qbOppMap[qbId];
+            next[qbId] = next[qbId].map(wEntry => {
+              const opp = weekOppMap[wEntry.week];
+              return opp ? { ...wEntry, opp } : wEntry;
+            });
+          }
+          return next;
+        });
+      }
+
+      qbOppSeasonRef.current = capturedSeason;
+    };
+
+    run();
+    return () => { cancelled = true; };
+  }, [statsLoading, weeklyStats, players, season]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Derived helpers ─────────────────────────────────────────────────────────
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSleeper } from '../../context/SleeperContext';
 import { DEFAULT_SCORING } from '../../utils/scoringEngine';
 import { formatWeather } from '../../api/weatherApi';
@@ -75,6 +75,148 @@ export const STAT_LABELS = {
   xpmiss:       'Extra Point Missed',
 };
 
+function ProjectionMath({ baseAvg, factors, projected, projMin, projMax, oppTeam, locationStr, weatherStr, defLabel }) {
+  function fc(f) {
+    if (f > 1.02) return '#22c55e';
+    if (f < 0.98) return '#ef4444';
+    return 'var(--color-label-quaternary)';
+  }
+  function fmt(f) { return `${f.toFixed(2)}×`; }
+
+  const opp   = factors.oppFactor ?? 1;
+  const loc   = factors.locationFactor ?? 1;
+  const wth   = factors.weatherFactor ?? 1;
+  const cWth  = factors.ceilingWeatherFactor ?? wth;
+  const snap  = factors.snapFactor ?? 1;
+  const floor = factors.floorBase ?? null;
+  const ceil  = factors.ceilingBase ?? null;
+
+  const snapDetail = (() => {
+    if (snap > 1.05) return 'Usage ↑';
+    if (snap < 0.95) return 'Usage ↓';
+    return 'On trend';
+  })();
+
+  // Each row: label | detail | [floor val, proj val, ceil val]
+  const rows = [
+    {
+      label: 'Base',
+      detail: null,
+      values: [
+        floor != null ? `${floor.toFixed(1)}` : '—',
+        baseAvg != null ? `${baseAvg.toFixed(1)}` : '—',
+        ceil  != null ? `${ceil.toFixed(1)}`  : '—',
+      ],
+      valueColors: ['var(--color-label-secondary)', 'var(--color-label-secondary)', 'var(--color-label-secondary)'],
+      note: ['low 25% avg', 'season avg', 'top 25% avg'],
+    },
+    {
+      label: '× Home/Away',
+      detail: locationStr ?? 'Neutral',
+      // Floor/ceiling use raw historical percentiles — no location split, so neutral 1.00×
+      values: ['1.00×', fmt(loc), '1.00×'],
+      valueColors: ['var(--color-label-quaternary)', fc(loc), 'var(--color-label-quaternary)'],
+    },
+    {
+      label: '× Matchup',
+      detail: oppTeam ? `vs ${oppTeam}${defLabel ? ` · ${defLabel}` : ''}` : 'No data',
+      values: [fmt(opp), fmt(opp), fmt(opp)],
+      valueColors: [fc(opp), fc(opp), fc(opp)],
+    },
+    {
+      label: '× Weather',
+      detail: weatherStr || 'Indoor / N/A',
+      values: [fmt(wth), fmt(wth), fmt(cWth)],
+      valueColors: [fc(wth), fc(wth), fc(cWth)],
+    },
+    {
+      label: '× Snap use',
+      detail: snapDetail,
+      values: [fmt(snap), fmt(snap), fmt(snap)],
+      valueColors: [fc(snap), fc(snap), fc(snap)],
+    },
+  ];
+
+  const COL = 'w-[52px] text-right shrink-0';
+
+  return (
+    <div style={{ background: 'var(--color-fill)', borderBottom: '1px solid var(--color-separator)' }}>
+
+      {/* Column headers */}
+      <div className="flex items-center px-4 pt-2.5 pb-1 gap-1">
+        <span className="flex-1" />
+        {['Floor', 'Proj', 'Ceiling'].map(h => (
+          <span key={h} className={`${COL} text-[10px] font-bold uppercase tracking-wide`} style={{ color: 'var(--color-label-tertiary)' }}>
+            {h}
+          </span>
+        ))}
+      </div>
+
+      {/* Factor rows */}
+      {rows.map((row, i) => (
+        <div
+          key={i}
+          className="flex items-start px-4 py-1.5 gap-1"
+          style={{ borderTop: '1px solid var(--color-separator)' }}
+        >
+          <div className="flex-1 min-w-0">
+            <div className="text-[11px] font-semibold" style={{ color: 'var(--color-label-secondary)' }}>
+              {row.label}
+            </div>
+            {row.detail && (
+              <div className="text-[10px] truncate" style={{ color: 'var(--color-label-quaternary)' }}>
+                {row.detail}
+              </div>
+            )}
+            {row.note && (
+              <div className="flex gap-1 mt-0.5">
+                {row.note.map((n, ni) => (
+                  <span key={ni} className={`${COL} text-[9px]`} style={{ color: 'var(--color-label-quaternary)' }}>
+                    {n}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+          {row.values.map((v, vi) => (
+            <span
+              key={vi}
+              className={`${COL} text-[11px] font-semibold tabular-nums pt-0.5`}
+              style={{ color: row.valueColors[vi] }}
+            >
+              {v}
+            </span>
+          ))}
+        </div>
+      ))}
+
+      {/* Result row */}
+      <div
+        className="flex items-center px-4 py-2.5 gap-1"
+        style={{ borderTop: '2px solid var(--color-separator)' }}
+      >
+        <span className="flex-1 text-[11px] font-bold" style={{ color: 'var(--color-label)' }}>=</span>
+        {[projMin, projected, projMax].map((v, i) => (
+          <span
+            key={i}
+            className={`${COL} text-sm font-bold tabular-nums`}
+            style={{ color: i === 1 ? 'var(--color-signature)' : 'var(--color-label-secondary)' }}
+          >
+            {v != null ? v.toFixed(1) : '—'}
+          </span>
+        ))}
+      </div>
+
+      {/* Plain-English footnote */}
+      <div className="px-4 py-3" style={{ borderTop: '1px solid var(--color-separator)' }}>
+        <p className="text-[10px] leading-relaxed" style={{ color: 'var(--color-label-quaternary)' }}>
+          <strong style={{ color: 'var(--color-label-tertiary)' }}>Floor</strong> is the average of this player's bottom 25% of games this season — their realistic bad week. <strong style={{ color: 'var(--color-label-tertiary)' }}>Ceiling</strong> is the average of their top 25% — their realistic big week. Both are then adjusted for matchup difficulty, weather, and snap usage trends.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function SectionHeader({ label }) {
   return (
     <div
@@ -150,6 +292,20 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, enr
 
   const projMin = projection?.min ?? null;
   const projMax = projection?.max ?? null;
+  const factors = projection?.factors ?? null;
+
+  // Projection math reveal — hover/focus for mouse+keyboard, click-pin for touch
+  const [mathPinned, setMathPinned] = useState(false);
+  const [mathHover, setMathHover] = useState(false);
+  const mathVisible = mathPinned || mathHover;
+
+  // Season avg base back-calculated from projected (excludes floor/ceiling bases)
+  const baseAvg = useMemo(() => {
+    if (!projectedScore || !factors) return null;
+    const denom = (factors.locationFactor ?? 1) * (factors.oppFactor ?? 1) *
+                  (factors.weatherFactor ?? 1) * (factors.snapFactor ?? 1);
+    return denom > 0 ? Math.round((projectedScore / denom) * 10) / 10 : null;
+  }, [projectedScore, factors]);
 
   // Lock background scroll while open
   useEffect(() => {
@@ -281,16 +437,49 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, enr
                   );
                 })()}
                 {projectedScore !== null && (
-                  <InfoRow label="Projection">
-                    <span className="text-xs font-semibold tabular-nums" style={{ color: 'var(--color-signature)' }}>
-                      {projectedScore.toFixed(1)} pts
-                    </span>
-                    {projMin != null && projMax != null && (
-                      <span className="text-xs tabular-nums" style={{ color: 'var(--color-label-tertiary)' }}>
-                        · range {projMin}–{projMax}
+                  <>
+                    <InfoRow label="Projection">
+                      <span className="text-xs font-semibold tabular-nums" style={{ color: 'var(--color-signature)' }}>
+                        {projectedScore.toFixed(1)} pts
                       </span>
+                      {projMin != null && projMax != null && (
+                        <span className="text-xs tabular-nums" style={{ color: 'var(--color-label-tertiary)' }}>
+                          · range {projMin}–{projMax}
+                        </span>
+                      )}
+                      {factors && (
+                        <button
+                          className="ml-auto shrink-0 text-[11px] font-bold w-5 h-5 rounded-full flex items-center justify-center transition-colors"
+                          style={{
+                            background: mathPinned ? 'var(--color-accent)' : 'var(--color-fill-secondary)',
+                            color: mathPinned ? '#fff' : 'var(--color-label-tertiary)',
+                          }}
+                          onMouseEnter={() => setMathHover(true)}
+                          onMouseLeave={() => setMathHover(false)}
+                          onFocus={() => setMathHover(true)}
+                          onBlur={() => setMathHover(false)}
+                          onClick={() => setMathPinned(v => !v)}
+                          aria-expanded={mathVisible}
+                          aria-label="Show projection formula"
+                        >
+                          i
+                        </button>
+                      )}
+                    </InfoRow>
+                    {mathVisible && factors && (
+                      <ProjectionMath
+                        baseAvg={baseAvg}
+                        factors={factors}
+                        projected={projectedScore}
+                        projMin={projMin}
+                        projMax={projMax}
+                        oppTeam={oppTeam}
+                        locationStr={locationStr}
+                        weatherStr={weatherStr}
+                        defLabel={defLabel}
+                      />
                     )}
-                  </InfoRow>
+                  </>
                 )}
               </>
             )}

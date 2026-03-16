@@ -3,6 +3,7 @@ const VIEWS = [
   { id: 'rankings',  label: 'Rankings' },
   { id: 'matchup',   label: 'Matchup' },
   { id: 'waiver',    label: 'Waiver' },
+  { id: 'defense',   label: 'Defense' },
   { id: 'scoring',   label: 'Scoring' },
 ];
 

@@ -98,6 +98,7 @@ export default function Sidebar({
           onClick={() => onTabChange('companion')}
           icon={<CompanionIcon />}
           label="Companion"
+          beta
         />
       </nav>
 
@@ -182,7 +183,7 @@ export default function Sidebar({
   );
 }
 
-function SidebarNavItem({ active, onClick, icon, label }) {
+function SidebarNavItem({ active, onClick, icon, label, beta }) {
   return (
     <button
       onClick={onClick}
@@ -190,8 +191,29 @@ function SidebarNavItem({ active, onClick, icon, label }) {
       aria-current={active ? 'page' : undefined}
     >
       <span className="sidebar-nav-icon">{icon}</span>
-      <span>{label}</span>
+      <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        {label}
+        {beta && <BetaBadge />}
+      </span>
     </button>
+  );
+}
+
+function BetaBadge() {
+  return (
+    <span style={{
+      fontSize: '9px',
+      fontWeight: 700,
+      letterSpacing: '0.06em',
+      textTransform: 'uppercase',
+      padding: '1px 5px',
+      borderRadius: '4px',
+      background: 'var(--color-signature)',
+      color: '#000',
+      lineHeight: '14px',
+    }}>
+      Beta
+    </span>
   );
 }
 

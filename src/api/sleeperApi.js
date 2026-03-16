@@ -59,6 +59,16 @@ export function getWeeklyStats(season, week) {
 }
 
 /**
+ * Fetch per-player weekly stats for a full season.
+ * Unlike the bulk endpoint, this per-player response includes game-time
+ * metadata: opp, team, home, gp — making it reliable for defense table builds.
+ * Returns an array or object of weekly stat entries.
+ */
+export function getPlayerSeasonStats(playerId, season) {
+  return get(`/stats/nfl/player/${playerId}?season_type=regular&season=${season}&grouping=week`);
+}
+
+/**
  * Fetch all weekly stats for a season, weeks 1–totalWeeks.
  * Returns { [player_id]: Array<{ week, ...stats }> }
  * Calls onProgress(completedWeek, totalWeeks) after each week resolves.

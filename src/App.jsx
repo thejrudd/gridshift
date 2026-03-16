@@ -25,6 +25,7 @@ import CompanionRankings from './components/companion/CompanionRankings';
 import CompanionMatchup from './components/companion/CompanionMatchup';
 import CompanionWaiver from './components/companion/CompanionWaiver';
 import CompanionScoring from './components/companion/CompanionScoring';
+import CompanionDefense from './components/companion/CompanionDefense';
 import ScoringSettings from './components/companion/ScoringSettings';
 
 function AppInner() {
@@ -314,6 +315,7 @@ function AppInner() {
               {companionView === 'rankings'  && <CompanionRankings />}
               {companionView === 'matchup'   && <CompanionMatchup />}
               {companionView === 'waiver'    && <CompanionWaiver />}
+              {companionView === 'defense'   && <CompanionDefense />}
               {companionView === 'scoring'   && <CompanionScoring />}
             </>
           )}
