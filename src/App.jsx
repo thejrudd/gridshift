@@ -40,6 +40,7 @@ function AppInner() {
   const [seasonView, setSeasonView] = useState('predictions');
   const [companionView, setCompanionView] = useState('roster');
   const [scoringSettingsOpen, setScoringSettingsOpen] = useState(false);
+  const [statsInitPlayer, setStatsInitPlayer] = useState(null);
 
   const { hasLeague, season, changeSeason, league, disconnect, sleeperUser, statsLoading, loadSeasonStats, seasonStats } = useSleeper();
 
@@ -258,7 +259,7 @@ function AppInner() {
             </>
           )}
 
-          {activeTab === 'statistics' && <PlayerBrowser teams={scheduleData.teams} />}
+          {activeTab === 'statistics' && <PlayerBrowser teams={scheduleData.teams} initialPlayer={statsInitPlayer} onInitialPlayerConsumed={() => setStatsInitPlayer(null)} />}
 
 {activeTab === 'companion' && !hasLeague && (
             <CompanionConnect />
@@ -273,22 +274,30 @@ function AppInner() {
                     {league?.name ?? 'League'}
                   </span>
                 </div>
-                {/* Season picker */}
-                <div className="flex gap-1 shrink-0">
-                  {['2025', '2024', '2023'].map(s => (
-                    <button
-                      key={s}
-                      onClick={() => changeSeason(s)}
-                      className="px-2 py-0.5 rounded text-xs font-semibold transition-colors"
-                      style={{
-                        background: season === s ? 'var(--color-signature)' : 'var(--color-fill)',
-                        color: season === s ? '#0C0F14' : 'var(--color-label-tertiary)',
-                      }}
-                    >
-                      {s}
-                    </button>
-                  ))}
-                </div>
+                {/* Season picker — only show seasons this league has existed for */}
+                {(() => {
+                  const currentYear = parseInt(league?.season ?? new Date().getFullYear());
+                  const years = [String(currentYear)];
+                  if (league?.previous_league_id) years.push(String(currentYear - 1));
+                  if (years.length < 2) return null;
+                  return (
+                    <div className="flex gap-1 shrink-0">
+                      {years.map(s => (
+                        <button
+                          key={s}
+                          onClick={() => changeSeason(s)}
+                          className="px-2 py-0.5 rounded text-xs font-semibold transition-colors"
+                          style={{
+                            background: season === s ? 'var(--color-signature)' : 'var(--color-fill)',
+                            color: season === s ? '#0C0F14' : 'var(--color-label-tertiary)',
+                          }}
+                        >
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  );
+                })()}
                 {/* Stats reload / status */}
                 {statsLoading ? (
                   <span className="text-xs shrink-0" style={{ color: 'var(--color-label-tertiary)' }}>
@@ -302,11 +311,7 @@ function AppInner() {
                   >
                     Load Stats
                   </button>
-                ) : (
-                  <span className="text-xs shrink-0" style={{ color: 'var(--color-label-quaternary)' }}>
-                    {Object.keys(seasonStats).length.toLocaleString()} players
-                  </span>
-                )}
+                ) : null}
                 {/* Disconnect */}
                 <button
                   onClick={disconnect}
@@ -320,7 +325,7 @@ function AppInner() {
               {companionView === 'rankings'  && <CompanionRankings />}
               {companionView === 'matchup'   && <CompanionMatchup />}
               {companionView === 'waiver'    && <CompanionWaiver />}
-              {companionView === 'defense'   && <CompanionDefense />}
+              {companionView === 'defense'   && <CompanionDefense onViewPlayer={(id, meta) => { setStatsInitPlayer({ id, ...meta }); setActiveTab('statistics'); }} />}
               {companionView === 'scoring'   && <CompanionScoring />}
             </>
           )}

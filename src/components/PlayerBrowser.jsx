@@ -28,9 +28,16 @@ function matchesFilter(position, filter) {
   return position === filter;
 }
 
-const PlayerBrowser = ({ teams }) => {
+const PlayerBrowser = ({ teams, initialPlayer, onInitialPlayerConsumed }) => {
   const [selectedTeam, setSelectedTeam]     = useState(null);
-  const [selectedPlayer, setSelectedPlayer] = useState(null);
+  const [selectedPlayer, setSelectedPlayer] = useState(initialPlayer ?? null);
+
+  useEffect(() => {
+    if (initialPlayer) {
+      setSelectedPlayer(initialPlayer);
+      onInitialPlayerConsumed?.();
+    }
+  }, [initialPlayer]);
 
   const [searchQuery, setSearchQuery]               = useState('');
   const [searchResults, setSearchResults]           = useState([]);

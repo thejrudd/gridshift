@@ -28,8 +28,8 @@
 
 **Remaining v4.0 backlog (future):**
 - ~~**Matchup view — opponent defensive strength**: Show how many pts/gm the opponent allows to the player's position alongside an Easy / Avg / Hard difficulty badge. Data already computed by `getOpponentStrength()` in `projectionEngine.js`; needs to be surfaced in the `GameContext` strip of `CompanionMatchup.jsx`.~~ **Shipped in v4.1.**
+- ~~**Defense rankings table**: Standalone Companion tab showing all 32 teams ranked by pts allowed per game at each position (QB, RB, WR, TE).~~ **Shipped as Defense Matrix in v4.2/v4.3** — full heatmap with per-position filters, stat modes, team color tinting, drilldown, and sorting.
 - **Start/sit recommendations**: Explicit Companion view that runs `projectPlayer()` across all rostered players and ranks them by projected output within each position group. Surfaces a clear start recommendation for each roster slot.
-- **Defense rankings table**: Standalone Companion tab showing all 32 teams ranked by pts allowed per game at each position (QB, RB, WR, TE). Powered by `getOpponentStrength()` across the full player pool.
 - **Waiver wire with projections**: Enhance `CompanionWaiver.jsx` with a projected pts column (next-game projection via `projectPlayer()`), a projection-based sort option, and a "trending" indicator for players with recent breakout weeks.
 - **Fantasy player comparison (Companion)**: New Companion tab — pick two players from the Sleeper player pool and compare them side-by-side: season pts, avg PPG, recent form, positional rank, projection range, and scoring breakdown.
 - **Stats player comparison (Statistics)**: Compare mode in `PlayerBrowser` — select two players and view their ESPN career/season stats side-by-side with per-stat deltas highlighted.

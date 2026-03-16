@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSleeper } from '../../context/SleeperContext';
 import { calcPoints, DEFAULT_SCORING } from '../../utils/scoringEngine';
-import { computePositionalRanks, getAvgPPG, getDefenseStrength, buildDefenseTable, projectPlayer } from '../../utils/projectionEngine';
+import { computePositionalRanks, getAvgPPG, getDefenseStrength, buildDefenseTable, projectPlayer, getDefensePercentile } from '../../utils/projectionEngine';
 import { STADIUMS, WEEK_DATES_2025 } from '../../data/stadiums';
 import { fetchGameWeather, formatWeather } from '../../api/weatherApi';
 import { getMatchups } from '../../api/sleeperApi';
@@ -133,14 +133,19 @@ export default function CompanionMatchup() {
     // Derive opponent + home/away: prefer stat entry fields, fall back to ESPN schedule
     const schedEntry = scheduleMap?.[week]?.[myTeam] ?? null;
     const oppTeam = weekEntry?.opp?.toUpperCase() ?? schedEntry?.opp ?? null;
-    const isHome = weekEntry != null
-      ? (weekEntry.home === 1 || weekEntry.home === true)
-      : schedEntry != null ? schedEntry.home : null;
+    // Prefer ESPN schedEntry.home (reliable) over Sleeper weekEntry.home (often unreliable/zero)
+    const isHome = schedEntry != null
+      ? schedEntry.home
+      : weekEntry != null ? (weekEntry.home === 1 || weekEntry.home === true) : null;
     // Home team hosts → determines whose stadium we use
     const homeTeam = isHome === true ? myTeam : isHome === false ? oppTeam : null;
     const stadium = homeTeam ? (STADIUMS[homeTeam] ?? null) : null;
     const defStrength = oppTeam && defenseTable
       ? getDefenseStrength(defenseTable, oppTeam, p.position, week)
+      : null;
+    const isDefensivePos = ['DL', 'DE', 'DT', 'LB', 'ILB', 'OLB', 'DB', 'CB', 'S', 'SS', 'FS'].includes(p.position);
+    const defPercentile = oppTeam && defenseTable && !isDefensivePos
+      ? getDefensePercentile(defenseTable, oppTeam, p.position, week)
       : null;
 
     return {
@@ -160,8 +165,15 @@ export default function CompanionMatchup() {
       weekly,
       injuryStatus: p.injury_status,
       defStrength,
+      defPercentile,
     };
   }, [players, seasonStats, weeklyStats, scoringSettings, positionalRanks, weeklyRanks, week, scheduleMap, defenseTable]);
+
+  // Ordered slot positions for each starter slot (filters out BN/IR)
+  const starterPositions = useMemo(
+    () => (league?.roster_positions ?? []).filter(p => p !== 'BN' && p !== 'IR'),
+    [league],
+  );
 
   // Zip starters by slot index for side-by-side display
   const starterSlots = useMemo(() => {
@@ -171,8 +183,9 @@ export default function CompanionMatchup() {
     return Array.from({ length: len }, (_, i) => ({
       mine: enrichPlayer(myIds[i]),
       opp: enrichPlayer(oppIds[i]),
+      slotPos: starterPositions[i] ?? null,
     }));
-  }, [myMatchup, opponentMatchup, enrichPlayer]);
+  }, [myMatchup, opponentMatchup, enrichPlayer, starterPositions]);
 
   // Bench players
   const myBench = useMemo(() => {
@@ -241,6 +254,7 @@ export default function CompanionMatchup() {
     return starterSlots.map(slot => ({
       mine: addProjection(slot.mine),
       opp: addProjection(slot.opp),
+      slotPos: slot.slotPos,
     }));
   }, [starterSlots, weatherMap, week, weeklyStats, players, scoringSettings, scheduleMap]);
 
@@ -341,6 +355,7 @@ export default function CompanionMatchup() {
               key={i}
               mine={slot.mine}
               opp={slot.opp}
+              slotPos={slot.slotPos}
               onSelectMine={() => slot.mine?.id && setSelectedPlayer({ id: slot.mine.id, projection: slot.mine.projection ?? null, enriched: slot.mine })}
               onSelectOpp={() => slot.opp?.id && setSelectedPlayer({ id: slot.opp.id, projection: slot.opp.projection ?? null, enriched: slot.opp })}
             />
@@ -399,9 +414,15 @@ export default function CompanionMatchup() {
   );
 }
 
-function HeadToHeadRow({ mine, opp, bench, onSelectMine, onSelectOpp }) {
-  const position = mine?.position ?? opp?.position ?? '?';
-  const posColor = POSITION_COLORS[position] ?? 'var(--color-label-tertiary)';
+// Sleeper flex/special slot names → short display labels
+const SLOT_LABELS = {
+  FLEX: 'FLX', REC_FLEX: 'FLX', WRRB_FLEX: 'FLX',
+  SUPER_FLEX: 'SF', IDP_FLEX: 'IDP', DEF: 'DST',
+};
+
+function HeadToHeadRow({ mine, opp, bench, slotPos, onSelectMine, onSelectOpp }) {
+  const slotLabel = slotPos ? (SLOT_LABELS[slotPos] ?? slotPos) : (mine?.position ?? opp?.position ?? '?');
+  const posColor = POSITION_COLORS[slotPos] ?? POSITION_COLORS[mine?.position ?? opp?.position] ?? 'var(--color-label-tertiary)';
 
   return (
     <div className="flex" style={{ borderBottom: '1px solid var(--color-separator)', opacity: bench ? 0.6 : 1 }}>
@@ -421,7 +442,7 @@ function HeadToHeadRow({ mine, opp, bench, onSelectMine, onSelectOpp }) {
           className="font-bold px-1.5 py-0.5 rounded"
           style={{ background: `${posColor}20`, color: posColor, fontSize: '10px' }}
         >
-          {position}
+          {slotLabel}
         </span>
       </div>
 
@@ -442,20 +463,32 @@ function PlayerInfo({ player, align = 'left' }) {
   const isRight = align === 'right';
   if (!player || player.name === 'Empty') return <div className="flex-1" />;
 
-  const proj = player.projection?.projected ?? null;
   const weekPts = player.weekPts ?? null;
-  const diff = weekPts != null && proj != null ? Math.round((weekPts - proj) * 10) / 10 : null;
-  const metProj = diff != null ? diff >= 0 : null;
   const projMin = player.projection?.min ?? null;
   const projMax = player.projection?.max ?? null;
 
-  // Matchup difficulty badge
-  const oppFactor = player.projection?.factors?.oppFactor ?? null;
+  // Color the final score based on where it falls relative to the projected range
+  const scoreColor = (() => {
+    if (weekPts == null || projMin == null || projMax == null) return 'var(--color-label)';
+    if (weekPts < projMin) return '#ef4444';
+    if (weekPts > projMax) return '#22c55e';
+    const range = projMax - projMin;
+    if (range <= 0) return 'var(--color-label)';
+    const pos = (weekPts - projMin) / range;
+    if (pos <= 0.30) return '#f97316';
+    if (pos <= 0.70) return 'var(--color-label)';
+    return '#84cc16';
+  })();
+
+  // Matchup difficulty badge (5-level percentile ranking)
+  const defPercentile = player.defPercentile ?? null;
   let badge = null;
-  if (oppFactor !== null) {
-    if (oppFactor >= 1.10)      badge = { label: 'Easy matchup', bg: 'rgba(34,197,94,0.18)',  color: '#22c55e' };
-    else if (oppFactor <= 0.90) badge = { label: 'Hard matchup', bg: 'rgba(239,68,68,0.18)',  color: '#ef4444' };
-    else                        badge = { label: 'Avg matchup',  bg: 'rgba(120,120,128,0.16)', color: 'var(--color-label-tertiary)' };
+  if (defPercentile !== null) {
+    if (defPercentile <= 0.20)      badge = { label: 'Difficult matchup',   bg: 'rgba(239,68,68,0.18)',   color: '#ef4444' };
+    else if (defPercentile <= 0.40) badge = { label: 'Challenging matchup', bg: 'rgba(249,115,22,0.18)',  color: '#f97316' };
+    else if (defPercentile <= 0.60) badge = { label: 'Average matchup',     bg: 'rgba(120,120,128,0.16)', color: 'var(--color-label-tertiary)' };
+    else if (defPercentile <= 0.80) badge = { label: 'Favorable matchup',   bg: 'rgba(132,204,22,0.18)',  color: '#84cc16' };
+    else                            badge = { label: 'Easy matchup',         bg: 'rgba(34,197,94,0.18)',   color: '#22c55e' };
   }
   const locationStr = player.isHome === true ? 'Home' : player.isHome === false ? 'Away' : null;
   const weatherStr  = formatWeather(player.weather, player.isIndoor ?? false);
@@ -489,25 +522,14 @@ function PlayerInfo({ player, align = 'left' }) {
             </span>
           ) : null
         ) : (
-          /* Post-game: score is the headline, projection + diff are secondary */
+          /* Post-game: score is the headline, colored by position within projected range */
           <>
-            <span className="text-xs tabular-nums font-bold" style={{ color: 'var(--color-label)' }}>
+            <span className="text-xs tabular-nums font-bold" style={{ color: scoreColor }}>
               {weekPts.toFixed(1)} pts
             </span>
             {projMin != null && projMax != null && (
               <span className="text-xs tabular-nums" style={{ color: 'var(--color-label-quaternary)' }}>
                 · proj {projMin}–{projMax}
-              </span>
-            )}
-            {diff != null && (
-              <span
-                className="text-[10px] tabular-nums font-bold px-1 py-px rounded"
-                style={{
-                  background: metProj ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)',
-                  color: metProj ? '#22c55e' : '#ef4444',
-                }}
-              >
-                {diff >= 0 ? '+' : ''}{diff.toFixed(1)}
               </span>
             )}
           </>

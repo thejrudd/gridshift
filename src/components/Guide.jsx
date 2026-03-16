@@ -72,23 +72,43 @@ const GUIDE_CONTENT = {
       },
       {
         title: 'How Projections Are Calculated',
-        description: 'Projections start from a player\'s season average and apply four multipliers: (1) Location — home vs away splits, if 3+ games each are available. (2) Opponent — how many points the opposing defense allows at this position vs league average, clamped between 0.65× and 1.45×. (3) Weather — cold temps, high winds, and heavy rain reduce projections for passing positions more than rushing. (4) Snap % trend — compares the player\'s snap usage over the last 4 games vs their season average, capturing role changes like dual-back committees, emerging receivers, and depth-chart shifts. The formula is: season avg × location × opponent × weather × snap trend.',
+        description: 'Projections start from a player\'s season average (prior weeks only) and apply four multipliers: (1) Location — home vs. away averages, used only when 3+ games of each are available. (2) Opponent — how many fantasy points the opposing defense has allowed to this position vs. league average, clamped between 0.65× and 1.45×. Requires at least 3 games of data. (3) Weather — cold temps, high winds, and rain each apply separate reductions, with passing positions penalized more than rushing. Indoor games skip weather entirely. (4) Snap % trend — compares snap share over the last 4 games vs. the season average, clamped between 0.75× and 1.25×. Captures role changes like RBBC shifts and depth-chart demotions. Applied to QB, RB, WR, and TE only. Formula: season avg × location × opponent × weather × snap trend.',
+      },
+      {
+        title: 'Projection Floor & Ceiling',
+        description: 'The range (e.g. proj 6.1–18.2) is built from the player\'s scoring history. The floor is the average of their bottom 25% of games — a realistic bad week. The ceiling is the average of their top 25% — a realistic big week. Both are then adjusted by the same opponent and weather multipliers as the main projection. The range shows the realistic spread of outcomes, not a guarantee.',
       },
       {
         title: 'Matchup Difficulty',
-        description: 'Each player card shows an "Easy matchup," "Avg matchup," or "Hard matchup" badge. This reflects how the opposing defense ranks against this position league-wide. Easy (green) means the defense allows 10%+ more points than average; Hard (red) means 10%+ fewer. At least 3 games of data against that defense are required before a badge appears.',
-      },
-      {
-        title: 'Projection Range',
-        description: 'The range shown (e.g. proj 6.1–18.2) represents the floor and ceiling based on the player\'s 10th–90th percentile historical games, adjusted for opponent difficulty and weather. It shows the realistic spread of outcomes — not a guarantee. The single projected number is the adjusted season average.',
+        description: 'Each player card shows a matchup difficulty badge: Easy, Favorable, Average, Challenging, or Difficult. The badge is based on a percentile ranking — the opposing defense is ranked against all 32 teams by how many fantasy points they allow to that position on average (prior weeks only). The top 20% most generous defenses are Easy; the bottom 20% stingiest are Difficult. The badge only appears once at least 3 games of data are available for 5 or more teams.',
       },
       {
         title: 'Player Drilldown',
-        description: 'Tap any player to open a detailed panel with three sections: Rankings (week and season position rank, average PPG), Game Context (opponent, venue, defense stats showing average points allowed to that position, and the projection range), and a stat-by-stat Fantasy Score breakdown showing exactly how this week\'s points were earned.',
+        description: 'Tap any player to open a detailed panel with three sections: Rankings (week and season position rank, average PPG), Game Context (opponent, venue, average points allowed to this position by the opposing defense, and the projection range), and a stat-by-stat Fantasy Score breakdown showing exactly how this week\'s points were earned.',
       },
       {
         title: 'Scoring Settings',
-        description: 'All projections and rankings use your league\'s actual scoring rules, imported automatically from Sleeper when you connect. If your league uses custom settings, you can review or adjust them in the Scoring tab. Changes take effect immediately across all projections.',
+        description: 'All projections and rankings use your league\'s actual scoring rules, imported automatically from Sleeper when you connect. You can review or adjust them in the Scoring tab. Changes take effect immediately across all projections.',
+      },
+      {
+        title: 'Defense Tab — Overview',
+        description: 'The Defense tab is a full-season heatmap grid showing every NFL team\'s defensive performance week by week. Use the Allowed / Scored toggle at the top to switch views. Allowed shows what opposing offenses scored against each defense (fantasy points, yards, or actual game score). Scored shows what each defense\'s own IDP players earned in fantasy points or individual defensive stats.',
+      },
+      {
+        title: 'Defense Tab — Allowed View',
+        description: 'Filter by offensive position (All, QB, RB, WR, TE, K) to isolate matchup data by position group. Switch the Stat mode to Fantasy Points, Receiving Yards, Rushing Yards, or Game Score (the actual NFL points allowed that week). Each cell shows the stat value and a small opponent label. The AVG column reflects the season per-game average weighted by games played — weeks where the defense held the opponent to zero count toward the denominator.',
+      },
+      {
+        title: 'Defense Tab — Scored View',
+        description: 'Filter by defensive position group (All, DL, LB, DB). Use the Stat toggle to isolate specific stats: Fantasy Points, Sacks, Interceptions, Forced Fumbles, Tackles for Loss, Passes Defended, QB Hits, or Defensive Touchdowns. Color coding is flipped in this view — green means more points or stats (better IDP output), red means fewer.',
+      },
+      {
+        title: 'Defense Tab — Heatmap & Color',
+        description: 'The Color toggle controls the scale: Overall compares every cell against the full-season range; By Week normalizes each column independently (good for spotting weekly outliers); By Team normalizes each row independently (good for comparing a team\'s relative highs and lows). In Allowed view, green = harder matchup (defense is stingy). In Scored view, green = more production. If you\'ve set a favorite team under My Team, a team colors toggle appears to replace the default heatmap palette with your team\'s colors.',
+      },
+      {
+        title: 'Defense Tab — Sorting & Drilldown',
+        description: 'Click any column header to sort by that column; click again to reverse. The Team column has three sort modes: A–Z, Conference (AFC then NFC, alphabetical within), and Division (grouped by division). Tap any data cell to open a drilldown showing which players contributed to that week\'s total, with a point breakdown per player. Tap a player\'s name in the drilldown to jump directly to their profile in the Statistics section.',
       },
     ],
   },

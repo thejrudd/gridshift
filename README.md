@@ -75,6 +75,30 @@ PORT=8080 docker compose up -d --build
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) |
 
+## What's New in v4.3
+
+### Defense Matrix — Enhancements
+- **Team Colors & Logos** — Each team row in the grid is tinted with its official primary color and shows its ESPN logo for faster visual scanning
+- **Opponent Labels** — Each cell shows the opponent abbreviation in small text below the value
+- **Game Score Mode** — New "Game Score" stat filter in Allowed view shows the actual NFL score for each game (pulled from ESPN schedule data)
+- **Scored View Stat Filters** — Defense Scored view now has 8 stat filters: Fantasy Pts, Sacks, INT, Forced Fumbles, TFL, Passes Defended, QB Hits, Defensive TDs
+- **View Labels** — "Offense Allowed" → "Allowed", "Defense Scored" → "Scored"
+- **Team Color Heatmap Toggle** — Optional toggle (when a favorite team is set) to use team colors instead of the default red–green heatmap palette
+- **Conference/Division Labels** — Team cells show a conference or division sub-label when sorting by those modes
+- **Drilldown Redesign** — Compact one-line player rows (name · pos · value); header shows "Week N — Away @ Home" with team logos; player names link directly to their Statistics profile page
+- **Bug Fixes** — Average calculation now divides by games played (not weeks with data); Conference sort no longer falls through to Division sort
+
+### Matchup — Enhancements
+- **5-Level Matchup Difficulty** — Replaced the 3-level ±10% threshold system with a percentile-based ranking across all 32 teams. Levels: Difficult / Challenging / Average / Favorable / Easy. Requires ≥ 3 games of data per team and ≥ 5 teams with data; does not apply to IDP/defensive players
+- **Score Range Coloring** — Post-game final score is now color-coded by where it lands relative to the projected range: red (below range), orange (bottom 30%), white (middle 40%), light green (top 30%), green (above range). Replaces the +/- diff badge
+- **Roster Slot Labels** — Center badge now shows the actual roster slot (FLEX, SF, IDP, FLX, DST, etc.) from the league's `roster_positions` instead of the player's raw position
+- **Home/Away Fix** — Matchup screen was incorrectly showing all players as Away; fixed by preferring ESPN schedule data over Sleeper's unreliable `home` field
+- **Season Picker** — Header now derives available seasons from `league.season` and `previous_league_id`; hidden entirely for first-year leagues. Removed the confusing "N players" stat count
+
+### Other
+- **Statistics Deep-Link Fix** — Clicking a player name in the Defense drilldown now correctly routes to their ESPN stats page (was using Sleeper player IDs instead of ESPN IDs)
+- **Guide Updates** — Companion guide rewritten to accurately describe the projection formula, floor/ceiling calculation, and all Defense tab features
+
 ## What's New in v4.2
 
 - **Defense Matrix** — New Companion tab showing all 32 teams' fantasy points allowed (Offense Allowed) or scored (Defense Scored) per position per week in a scrollable heat-mapped table

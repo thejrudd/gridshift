@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react';
 import { useSleeper } from '../../context/SleeperContext';
+import { useTheme } from '../../context/ThemeContext';
 import { buildDefenseTable } from '../../utils/projectionEngine';
 import { calcPoints, DEFAULT_SCORING } from '../../utils/scoringEngine';
 import { STADIUMS } from '../../data/stadiums';
+import { TEAM_COLORS } from '../../data/teamColors';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -15,9 +17,21 @@ const DEF_POS_GROUPS = { DL: ['DL','DE','DT'], LB: ['LB','ILB','OLB'], DB: ['DB'
 const normDefPos = (pos) => { for (const [n, s] of Object.entries(DEF_POS_GROUPS)) if (s.includes(pos)) return n; return null; };
 
 const STAT_MODES = [
-  { id: 'pts',     label: 'Fantasy Pts' },
-  { id: 'rec_yd',  label: 'Rec Yds' },
-  { id: 'rush_yd', label: 'Rush Yds' },
+  { id: 'pts',        label: 'Fantasy Pts' },
+  { id: 'rec_yd',     label: 'Rec Yds' },
+  { id: 'rush_yd',    label: 'Rush Yds' },
+  { id: 'game_score', label: 'Game Score' },
+];
+
+const DEF_STAT_MODES = [
+  { id: 'pts',          label: 'Fantasy Pts', statKey: null },
+  { id: 'idp_sack',     label: 'Sacks',       statKey: 'idp_sack' },
+  { id: 'idp_int',      label: 'INT',         statKey: 'idp_int' },
+  { id: 'idp_ff',       label: 'FF',          statKey: 'idp_ff' },
+  { id: 'idp_tkl_loss', label: 'TFL',         statKey: 'idp_tkl_loss' },
+  { id: 'idp_pd',       label: 'Pass Def',    statKey: 'idp_pd' },
+  { id: 'idp_qbhit',    label: 'QB Hit',      statKey: 'idp_qbhit' },
+  { id: 'idp_def_td',   label: 'TD',          statKey: 'idp_def_td' },
 ];
 
 const HEATMAP_SCOPES = [
@@ -143,20 +157,47 @@ function heatColor(t) {
   return 'rgba(30, 155, 55, 0.78)';
 }
 
+// ESPN CDN uses different abbreviations for a handful of teams
+const ESPN_ID = { WAS: 'wsh' };
+const espnLogoUrl = (team) =>
+  `https://a.espncdn.com/i/teamlogos/nfl/500/${(ESPN_ID[team] ?? team).toLowerCase()}.png`;
+
+function hexToRgba(hex, alpha) {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+// Interpolate between two hex colors at position t (0→1)
+function heatColorTeam(t, hexLow, hexHigh) {
+  const parse = (hex) => [
+    parseInt(hex.slice(1, 3), 16),
+    parseInt(hex.slice(3, 5), 16),
+    parseInt(hex.slice(5, 7), 16),
+  ];
+  const [r1, g1, b1] = parse(hexLow);
+  const [r2, g2, b2] = parse(hexHigh);
+  return `rgba(${Math.round(r1 + t * (r2 - r1))}, ${Math.round(g1 + t * (g2 - g1))}, ${Math.round(b1 + t * (b2 - b1))}, 0.85)`;
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export default function CompanionDefense() {
+export default function CompanionDefense({ onViewPlayer }) {
   const { weeklyStats, players, scheduleMap, scoringSettings } = useSleeper();
+  const { favoriteTeam, darkMode } = useTheme();
 
   const [viewMode, setViewMode] = useState('offense');  // 'offense' | 'defense'
   const [pos, setPos]       = useState('ALL');           // offense position
   const [defPos, setDefPos] = useState('ALL');           // defense position
   const [statMode, setStatMode]         = useState('pts');
+  const [defStatMode, setDefStatMode]   = useState('pts');
   const [heatmapScope, setHeatmapScope] = useState('overall');
   const [sortKey, setSortKey] = useState('avg');
   const [sortDir, setSortDir] = useState('desc');
   const [teamSort, setTeamSort] = useState('alpha');
   const [drilldown, setDrilldown] = useState(null); // { team, week }
+  const [useTeamColors, setUseTeamColors] = useState(false);
 
   // ── Tables ─────────────────────────────────────────────────────────────────
 
@@ -172,6 +213,10 @@ export default function CompanionDefense() {
   // Defense-scored table: keyed by the defensive player's own team
   const defenseScoredTable = useMemo(() => {
     if (!weeklyStats || !players) return null;
+    const defMode = DEF_STAT_MODES.find(m => m.id === defStatMode);
+    const getValue = defMode?.statKey
+      ? (wEntry) => wEntry[defMode.statKey] ?? 0
+      : (wEntry) => calcPoints(wEntry, scoringSettings);
     const table = {};
     for (const [playerId, playerWeeks] of Object.entries(weeklyStats)) {
       const player = players[playerId];
@@ -179,17 +224,17 @@ export default function CompanionDefense() {
       const normPos = normDefPos(player.position);
       if (!normPos) continue;
       for (const wEntry of playerWeeks) {
-        const pts = calcPoints(wEntry, scoringSettings);
-        if (pts <= 0) continue;
+        const val = getValue(wEntry);
+        if (val <= 0) continue;
         const team = (wEntry.team || player.team)?.toUpperCase();
         if (!team) continue;
         if (!table[team]) table[team] = {};
         if (!table[team][normPos]) table[team][normPos] = {};
-        table[team][normPos][wEntry.week] = (table[team][normPos][wEntry.week] ?? 0) + pts;
+        table[team][normPos][wEntry.week] = (table[team][normPos][wEntry.week] ?? 0) + val;
       }
     }
     return table;
-  }, [weeklyStats, players, scoringSettings]);
+  }, [weeklyStats, players, scoringSettings, defStatMode]);
 
   const activeTable = viewMode === 'offense' ? offenseAllowedTable : defenseScoredTable;
   const activePositions = viewMode === 'offense' ? OFF_POSITIONS : DEF_POSITIONS;
@@ -199,6 +244,23 @@ export default function CompanionDefense() {
   // ── Rows ───────────────────────────────────────────────────────────────────
 
   const baseRows = useMemo(() => {
+    // Game Score mode: pull actual points-allowed directly from scheduleMap
+    if (viewMode === 'offense' && statMode === 'game_score') {
+      return ALL_TEAMS.map(team => {
+        const weekPts = {};
+        if (scheduleMap) {
+          for (const w of WEEKS) {
+            const entry = scheduleMap[w]?.[team];
+            if (entry?.ptsAgainst != null) weekPts[w] = entry.ptsAgainst;
+          }
+        }
+        const total = Object.values(weekPts).reduce((s, v) => s + v, 0);
+        const weeksPlayed = scheduleMap ? WEEKS.filter(w => scheduleMap[w]?.[team] != null).length : Object.keys(weekPts).length;
+        const avg = weeksPlayed > 0 && Object.keys(weekPts).length > 0 ? total / weeksPlayed : null;
+        return { team, weekPts, avg };
+      });
+    }
+
     const posList = viewMode === 'offense' ? ['QB','RB','WR','TE','K'] : Object.keys(DEF_POS_GROUPS);
     return ALL_TEAMS.map(team => {
       let weekData = {};
@@ -214,19 +276,23 @@ export default function CompanionDefense() {
           weekData = teamData[activePos] ?? {};
         }
       }
-      const entries = Object.values(weekData);
-      const avg = entries.length ? entries.reduce((s, v) => s + v, 0) / entries.length : null;
+      const total = Object.values(weekData).reduce((s, v) => s + v, 0);
+      const weeksPlayed = scheduleMap ? WEEKS.filter(w => scheduleMap[w]?.[team] != null).length : Object.keys(weekData).length;
+      const avg = weeksPlayed > 0 && Object.keys(weekData).length > 0 ? total / weeksPlayed : null;
       return { team, weekPts: weekData, avg };
     });
-  }, [activeTable, activePos, viewMode]);
+  }, [activeTable, activePos, viewMode, statMode, scheduleMap]);
 
   const rows = useMemo(() => {
     if (sortKey === 'team') {
       return [...baseRows].sort((a, b) => {
         const am = TEAM_META[a.team] ?? { conf: 'ZZZ', div: 'ZZZ' };
         const bm = TEAM_META[b.team] ?? { conf: 'ZZZ', div: 'ZZZ' };
-        if (teamSort === 'conf') { const c = am.conf.localeCompare(bm.conf); if (c) return c; }
-        if (teamSort !== 'alpha') { const d = am.div.localeCompare(bm.div); if (d) return d; }
+        if (teamSort === 'division') {
+          const d = am.div.localeCompare(bm.div); if (d) return d;
+        } else if (teamSort === 'conf') {
+          const c = am.conf.localeCompare(bm.conf); if (c) return c;
+        }
         return a.team.localeCompare(b.team);
       });
     }
@@ -293,8 +359,15 @@ export default function CompanionDefense() {
       min = heatRanges.overallMin; max = heatRanges.overallMax;
     }
     if (min == null || max == null || max === min) return undefined;
-    const t = (pts - min) / (max - min);
-    return heatColor(viewMode === 'defense' ? t : 1 - t);
+    const raw = (pts - min) / (max - min);
+    const t = viewMode === 'defense' ? raw : 1 - raw;
+    if (useTeamColors && favoriteTeam && TEAM_COLORS[favoriteTeam]) {
+      const tc = TEAM_COLORS[favoriteTeam];
+      const hexLow  = darkMode ? (tc.darkSecondary ?? tc.secondary) : tc.secondary;
+      const hexHigh = darkMode ? (tc.darkPrimary   ?? tc.primary)   : tc.primary;
+      return heatColorTeam(t, hexLow, hexHigh);
+    }
+    return heatColor(t);
   }
 
   const sortIndicator = (key) => sortKey === key
@@ -332,11 +405,15 @@ export default function CompanionDefense() {
         if (val <= 0) continue;
         const breakdown = statMode === 'pts' ? getScoreBreakdown(wEntry, scoringSettings) : null;
         const name = player.full_name || `${player.first_name ?? ''} ${player.last_name ?? ''}`.trim() || playerId;
-        results.push({ name, position: player.position, val, breakdown });
+        results.push({ playerId, name, position: player.position, val, breakdown });
       }
     } else {
       // Defense scored: players who scored FOR that team
       const matchNorm = activePos === 'ALL' ? null : activePos;
+      const defMode = DEF_STAT_MODES.find(m => m.id === defStatMode);
+      const getDefVal = defMode?.statKey
+        ? (wEntry) => wEntry[defMode.statKey] ?? 0
+        : (wEntry) => calcPoints(wEntry, scoringSettings);
       for (const [playerId, playerWeeks] of Object.entries(weeklyStats)) {
         const player = players[playerId];
         if (!player) continue;
@@ -347,16 +424,16 @@ export default function CompanionDefense() {
         if (!wEntry) continue;
         const playerTeam = (wEntry.team || player.team)?.toUpperCase();
         if (playerTeam !== team) continue;
-        const val = calcPoints(wEntry, scoringSettings);
+        const val = getDefVal(wEntry);
         if (val <= 0) continue;
-        const breakdown = getScoreBreakdown(wEntry, scoringSettings);
+        const breakdown = defStatMode === 'pts' ? getScoreBreakdown(wEntry, scoringSettings) : null;
         const name = player.full_name || `${player.first_name ?? ''} ${player.last_name ?? ''}`.trim() || playerId;
-        results.push({ name, position: player.position, val, breakdown });
+        results.push({ playerId, name, position: player.position, val, breakdown });
       }
     }
 
     return results.sort((a, b) => b.val - a.val);
-  }, [drilldown, weeklyStats, players, viewMode, activePos, statMode, scoringSettings, scheduleMap]);
+  }, [drilldown, weeklyStats, players, viewMode, activePos, statMode, defStatMode, scoringSettings, scheduleMap]);
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -366,14 +443,14 @@ export default function CompanionDefense() {
     <div className="pb-6">
       {/* View mode toggle */}
       <div className="px-4 pb-2 flex gap-2">
-        {[{ id: 'offense', label: 'Offense Allowed' }, { id: 'defense', label: 'Defense Scored' }].map(m => (
+        {[{ id: 'offense', label: 'Allowed' }, { id: 'defense', label: 'Scored' }].map(m => (
           <button
             key={m.id}
             onClick={() => { setViewMode(m.id); resetSort(); }}
             className="px-3 py-1 rounded-lg text-xs font-semibold transition-colors"
             style={{
-              background: viewMode === m.id ? 'var(--color-interactive)' : 'var(--color-fill)',
-              color: viewMode === m.id ? '#fff' : 'var(--color-label-secondary)',
+              background: viewMode === m.id ? 'var(--color-signature)' : 'var(--color-fill)',
+              color: viewMode === m.id ? '#000' : 'var(--color-label-secondary)',
             }}
           >
             {m.label}
@@ -383,53 +460,82 @@ export default function CompanionDefense() {
 
       {/* Controls */}
       <div className="px-4 pb-3 flex flex-col gap-2">
-        {/* Position filter */}
-        <div className="flex items-center gap-2 flex-wrap">
-          {activePositions.map(p => (
-            <button
-              key={p}
-              onClick={() => { setActivePos(p); resetSort(); }}
-              className="px-3 py-1 rounded-lg text-xs font-semibold transition-colors"
-              style={{
-                background: activePos === p ? 'var(--color-signature)' : 'var(--color-fill)',
-                color: activePos === p ? '#fff' : 'var(--color-label-secondary)',
-              }}
-            >
-              {p}
-            </button>
-          ))}
-        </div>
+        {/* Position filter — hidden in game score mode */}
+        {!(viewMode === 'offense' && statMode === 'game_score') && (
+          <div className="flex items-center gap-2 flex-wrap">
+            {activePositions.map(p => (
+              <button
+                key={p}
+                onClick={() => { setActivePos(p); resetSort(); }}
+                className="px-3 py-1 rounded-lg text-xs font-semibold transition-colors"
+                style={{
+                  background: activePos === p ? 'var(--color-signature)' : 'var(--color-fill)',
+                  color: activePos === p ? '#000' : 'var(--color-label-secondary)',
+                }}
+              >
+                {p}
+              </button>
+            ))}
+          </div>
+        )}
 
-        {/* Stat mode (offense only) + Heatmap scope */}
+        {/* Stat mode + Heatmap scope */}
         <div className="flex items-center gap-3 flex-wrap">
-          {viewMode === 'offense' && (
-            <div className="flex items-center gap-1">
-              <span style={{ fontSize: '10px', color: 'var(--color-label-quaternary)', marginRight: '2px' }}>Stat</span>
-              {STAT_MODES.map(m => (
-                <button
-                  key={m.id}
-                  onClick={() => setStatMode(m.id)}
-                  className="px-2 py-0.5 rounded text-[10px] font-semibold transition-colors"
-                  style={{
-                    background: statMode === m.id ? 'var(--color-interactive)' : 'var(--color-fill)',
-                    color: statMode === m.id ? '#fff' : 'var(--color-label-secondary)',
-                  }}
-                >
-                  {m.label}
-                </button>
-              ))}
+          <div className="flex items-center gap-1">
+            <span style={{ fontSize: '10px', color: 'var(--color-label-secondary)', marginRight: '2px' }}>Stat</span>
+            {viewMode === 'offense'
+              ? STAT_MODES.map(m => (
+                  <button
+                    key={m.id}
+                    onClick={() => setStatMode(m.id)}
+                    className="px-2 py-0.5 rounded text-[10px] font-semibold transition-colors"
+                    style={{
+                      background: statMode === m.id ? 'var(--color-signature)' : 'var(--color-fill)',
+                      color: statMode === m.id ? '#000' : 'var(--color-label-secondary)',
+                    }}
+                  >
+                    {m.label}
+                  </button>
+                ))
+              : DEF_STAT_MODES.map(m => (
+                  <button
+                    key={m.id}
+                    onClick={() => setDefStatMode(m.id)}
+                    className="px-2 py-0.5 rounded text-[10px] font-semibold transition-colors"
+                    style={{
+                      background: defStatMode === m.id ? 'var(--color-signature)' : 'var(--color-fill)',
+                      color: defStatMode === m.id ? '#000' : 'var(--color-label-secondary)',
+                    }}
+                  >
+                    {m.label}
+                  </button>
+                ))
+            }
+          </div>
+          {favoriteTeam && (
+            <div className="flex items-center gap-1 ml-auto">
+              <button
+                onClick={() => setUseTeamColors(v => !v)}
+                className="px-2 py-0.5 rounded text-[10px] font-semibold transition-colors"
+                style={{
+                  background: useTeamColors ? 'var(--color-signature)' : 'var(--color-fill)',
+                  color: useTeamColors ? '#000' : 'var(--color-label-secondary)',
+                }}
+              >
+                {favoriteTeam.toUpperCase()} Colors
+              </button>
             </div>
           )}
-          <div className="flex items-center gap-1 ml-auto">
-            <span style={{ fontSize: '10px', color: 'var(--color-label-quaternary)', marginRight: '2px' }}>Color</span>
+          <div className={`flex items-center gap-1${favoriteTeam ? '' : ' ml-auto'}`}>
+            <span style={{ fontSize: '10px', color: 'var(--color-label-secondary)', marginRight: '2px' }}>Color</span>
             {HEATMAP_SCOPES.map(s => (
               <button
                 key={s.id}
                 onClick={() => setHeatmapScope(s.id)}
                 className="px-2 py-0.5 rounded text-[10px] font-semibold transition-colors"
                 style={{
-                  background: heatmapScope === s.id ? 'var(--color-interactive)' : 'var(--color-fill)',
-                  color: heatmapScope === s.id ? '#fff' : 'var(--color-label-secondary)',
+                  background: heatmapScope === s.id ? 'var(--color-signature)' : 'var(--color-fill)',
+                  color: heatmapScope === s.id ? '#000' : 'var(--color-label-secondary)',
                 }}
               >
                 {s.label}
@@ -437,12 +543,6 @@ export default function CompanionDefense() {
             ))}
           </div>
         </div>
-
-        <span style={{ fontSize: '10px', color: 'var(--color-label-quaternary)' }}>
-          {viewMode === 'offense'
-            ? 'green = harder matchup · red = easier matchup'
-            : 'green = fewer pts scored · red = more pts scored'}
-        </span>
       </div>
 
       {!loaded ? (
@@ -470,7 +570,7 @@ export default function CompanionDefense() {
                             background: sortKey === 'team' && teamSort === opt.id
                               ? 'var(--color-signature)' : 'var(--color-fill)',
                             color: sortKey === 'team' && teamSort === opt.id
-                              ? '#fff' : 'var(--color-label-tertiary)',
+                              ? '#000' : 'var(--color-label-secondary)',
                           }}
                         >
                           {opt.label}
@@ -486,7 +586,7 @@ export default function CompanionDefense() {
                   <th key={w} style={{ ...headStyle(false), cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort(w)}>
                     <div>Wk {w}{sortIndicator(w)}</div>
                     {colAvgs[w] != null && (
-                      <div style={{ color: 'var(--color-label-quaternary)', fontWeight: 400, fontSize: '10px' }}>
+                      <div style={{ color: 'var(--color-label-secondary)', fontWeight: 400, fontSize: '10px' }}>
                         {colAvgs[w].toFixed(1)}
                       </div>
                     )}
@@ -497,16 +597,41 @@ export default function CompanionDefense() {
             <tbody>
               {rows.map(({ team, weekPts, avg }, idx) => {
                 const rowBg = idx % 2 === 0 ? 'var(--color-bg)' : 'var(--color-fill)';
+                const tc = TEAM_COLORS[team.toLowerCase()];
+                const teamBg = tc
+                  ? hexToRgba(darkMode ? (tc.darkPrimary ?? tc.primary) : tc.primary, darkMode ? 0.55 : 0.75)
+                  : rowBg;
                 return (
                   <tr key={team}>
-                    <td style={{ ...stickyBodyStyle, background: rowBg }}>{team}</td>
+                    <td style={{ ...stickyBodyStyle, background: teamBg }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <img
+                          src={espnLogoUrl(team)}
+                          alt={team}
+                          width={18}
+                          height={18}
+                          style={{ objectFit: 'contain', flexShrink: 0 }}
+                        />
+                        {team}
+                        {sortKey === 'team' && teamSort === 'conf' && TEAM_META[team] && (
+                          <span style={{ fontSize: '9px', fontWeight: 500, color: 'var(--color-label-tertiary)', marginLeft: 4 }}>
+                            {TEAM_META[team].conf}
+                          </span>
+                        )}
+                        {sortKey === 'team' && teamSort === 'division' && TEAM_META[team] && (
+                          <span style={{ fontSize: '9px', fontWeight: 500, color: 'var(--color-label-tertiary)', marginLeft: 4 }}>
+                            {TEAM_META[team].div}
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td style={{ ...cellStyle(true), background: avg != null ? cellBg(avg, team, null) : rowBg, color: avg != null ? '#000' : 'var(--color-label)' }}>
                       {avg != null ? avg.toFixed(1) : '—'}
                     </td>
                     {WEEKS.map(w => {
                       const pts = weekPts[w];
                       const played = scheduleMap?.[w]?.[team] != null;
-                      const clickable = pts != null;
+                      const clickable = pts != null && !(viewMode === 'offense' && statMode === 'game_score');
                       return (
                         <td
                           key={w}
@@ -514,11 +639,20 @@ export default function CompanionDefense() {
                           style={{
                             ...cellStyle(false),
                             background: pts != null ? cellBg(pts, team, w) : rowBg,
-                            color: pts != null ? '#000' : 'var(--color-label-quaternary)',
+                            color: pts != null ? '#000' : 'var(--color-label-secondary)',
                             cursor: clickable ? 'pointer' : 'default',
                           }}
                         >
-                          {pts != null ? pts.toFixed(1) : played ? '—' : ''}
+                          {pts != null ? (
+                            <>
+                              <div>{statMode === 'game_score' || (viewMode === 'defense' && DEF_STAT_MODES.find(m => m.id === defStatMode)?.statKey) ? (Number.isInteger(pts) ? pts : pts.toFixed(1)) : pts.toFixed(1)}</div>
+                              {scheduleMap?.[w]?.[team]?.opp && (
+                                <div style={{ fontSize: '8px', opacity: 0.6, marginTop: '1px' }}>
+                                  {scheduleMap[w][team].opp}
+                                </div>
+                              )}
+                            </>
+                          ) : played ? '—' : ''}
                         </td>
                       );
                     })}
@@ -556,63 +690,92 @@ export default function CompanionDefense() {
             }}
           >
             {/* Header */}
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--color-label)' }}>
-                Wk {drilldown.week} — {drilldown.team}
-              </div>
-              <div style={{ fontSize: 11, color: 'var(--color-label-tertiary)', marginTop: 3 }}>
-                {viewMode === 'offense' ? `${activePos === 'ALL' ? 'All positions' : activePos} · ` : `${activePos === 'ALL' ? 'All defense' : activePos} · `}
-                {viewMode === 'offense'
-                  ? STAT_MODES.find(m => m.id === statMode)?.label
-                  : 'Fantasy Pts'} · {drilldownPlayers.length} player{drilldownPlayers.length !== 1 ? 's' : ''}
-              </div>
-            </div>
+            {(() => {
+              const sched = scheduleMap?.[drilldown.week]?.[drilldown.team];
+              const opp = sched?.opp;
+              const homeTeam = sched?.home ? drilldown.team : opp;
+              const awayTeam = sched?.home ? opp : drilldown.team;
+              return (
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 13, color: 'var(--color-label-secondary)', marginBottom: 6 }}>
+                    Week {drilldown.week}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+                    {awayTeam && <img src={espnLogoUrl(awayTeam)} width={28} height={28} style={{ objectFit: 'contain' }} alt={awayTeam} />}
+                    <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--color-label)' }}>
+                      {awayTeam ?? drilldown.team}
+                    </span>
+                    <span style={{ fontSize: 12, color: 'var(--color-label-tertiary)' }}>vs</span>
+                    <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--color-label)' }}>
+                      {homeTeam ?? '—'}
+                    </span>
+                    {homeTeam && <img src={espnLogoUrl(homeTeam)} width={28} height={28} style={{ objectFit: 'contain' }} alt={homeTeam} />}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--color-label-tertiary)', marginTop: 6 }}>
+                    {viewMode === 'offense' ? (activePos === 'ALL' ? 'All positions' : activePos) : (activePos === 'ALL' ? 'All defense' : activePos)}
+                    {' · '}
+                    {viewMode === 'offense'
+                      ? STAT_MODES.find(m => m.id === statMode)?.label
+                      : DEF_STAT_MODES.find(m => m.id === defStatMode)?.label}
+                    {' · '}{drilldownPlayers.length} player{drilldownPlayers.length !== 1 ? 's' : ''}
+                  </div>
+                </div>
+              );
+            })()}
 
             {drilldownPlayers.length === 0 ? (
               <div style={{ fontSize: 12, color: 'var(--color-label-tertiary)', padding: '16px 0' }}>
                 No data found for this matchup.
               </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {drilldownPlayers.map(({ name, position, val, breakdown }, i) => (
-                  <div
-                    key={i}
-                    style={{
-                      padding: '10px 12px',
-                      borderRadius: 10,
-                      background: 'var(--color-fill)',
-                    }}
-                  >
-                    {/* Player name + total */}
-                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-label)', marginBottom: breakdown?.length ? 6 : 0 }}>
-                      {name}
-                      {activePos === 'ALL' && (
-                        <span style={{ fontSize: 10, fontWeight: 500, color: 'var(--color-label-tertiary)', marginLeft: 6 }}>
-                          {position}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {drilldownPlayers.map(({ name, position, val, breakdown, playerId }, i) => {
+                  const valLabel = viewMode === 'offense'
+                    ? (statMode === 'rec_yd' || statMode === 'rush_yd' ? 'yds' : 'pts')
+                    : (DEF_STAT_MODES.find(m => m.id === defStatMode)?.statKey
+                        ? DEF_STAT_MODES.find(m => m.id === defStatMode)?.label.toLowerCase()
+                        : 'pts');
+                  return (
+                    <div
+                      key={i}
+                      style={{ padding: '8px 12px', borderRadius: 10, background: 'var(--color-fill)' }}
+                    >
+                      {/* Compact header: name · pos · value */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: breakdown?.length ? 6 : 0 }}>
+                        <button
+                          onClick={onViewPlayer && players?.[playerId]?.espn_id ? () => { setDrilldown(null); onViewPlayer(String(players[playerId].espn_id), { displayName: name, teamId: players[playerId].team?.toUpperCase() }); } : undefined}
+                          style={{
+                            fontSize: 13, fontWeight: 700, color: onViewPlayer && players?.[playerId]?.espn_id ? 'var(--color-interactive)' : 'var(--color-label)',
+                            background: 'none', border: 'none', padding: 0, cursor: onViewPlayer && players?.[playerId]?.espn_id ? 'pointer' : 'default',
+                            textAlign: 'left',
+                          }}
+                        >
+                          {name}
+                        </button>
+                        <span style={{ fontSize: 10, color: 'var(--color-label-tertiary)' }}>{position}</span>
+                        <span style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 800, color: 'var(--color-label)', fontVariantNumeric: 'tabular-nums' }}>
+                          {val % 1 === 0 ? val : val.toFixed(1)} {valLabel}
                         </span>
+                      </div>
+
+                      {/* Score breakdown */}
+                      {breakdown?.length > 0 && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                          {breakdown.map((item, j) => (
+                            <div key={j} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--color-label-secondary)' }}>
+                              <span>
+                                {item.label}{item.statVal != null ? `: ${Number.isInteger(item.statVal) ? item.statVal : item.statVal.toFixed(1)}` : ''}
+                              </span>
+                              <span style={{ fontWeight: 600, color: item.pts < 0 ? 'rgba(220,60,60,0.9)' : 'var(--color-label)', fontVariantNumeric: 'tabular-nums' }}>
+                                {item.pts > 0 ? '+' : ''}{item.pts.toFixed(1)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
                       )}
                     </div>
-                    <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--color-label)', marginBottom: breakdown?.length ? 8 : 0 }}>
-                      {val.toFixed(1)} {statMode === 'rec_yd' || statMode === 'rush_yd' ? 'yds' : 'pts'}
-                    </div>
-
-                    {/* Score breakdown */}
-                    {breakdown?.length > 0 && (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                        {breakdown.map((item, j) => (
-                          <div key={j} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--color-label-secondary)' }}>
-                            <span>
-                              {item.label}{item.statVal != null ? `: ${Number.isInteger(item.statVal) ? item.statVal : item.statVal.toFixed(1)}` : ''}
-                            </span>
-                            <span style={{ fontWeight: 600, color: item.pts < 0 ? 'rgba(220,60,60,0.9)' : 'var(--color-label)', fontVariantNumeric: 'tabular-nums' }}>
-                              {item.pts > 0 ? '+' : ''}{item.pts.toFixed(1)}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 
@@ -642,7 +805,7 @@ const stickyHeadStyle = {
   background: 'var(--color-fill-secondary)',
   padding: '6px 10px',
   textAlign: 'left',
-  color: 'var(--color-label-tertiary)',
+  color: 'var(--color-label-secondary)',
   fontWeight: 600,
   textTransform: 'uppercase',
   letterSpacing: '0.06em',
@@ -658,7 +821,7 @@ function headStyle(isAvg) {
     position: 'sticky', top: 0, zIndex: 3,
     padding: '6px 8px',
     textAlign: 'center',
-    color: 'var(--color-label-tertiary)',
+    color: 'var(--color-label-secondary)',
     fontWeight: 600,
     fontSize: '10px',
     textTransform: 'uppercase',

@@ -315,7 +315,7 @@ const normalizeEspnAbbr = a => ESPN_ABBR_TO_SLEEPER[a?.toUpperCase()] ?? a?.toUp
 async function fetchWeekSchedule(season, week) {
   const url = `${ESPN_BASE}/scoreboard?seasontype=2&week=${week}&dates=${season}`;
   return cachedFetch(
-    `sched_v2_${season}_${week}`,
+    `sched_v3_${season}_${week}`,
     async () => {
       const res = await fetch(url);
       if (!res.ok) return {};
@@ -329,8 +329,19 @@ async function fetchWeekSchedule(season, week) {
         const homeAbbr = normalizeEspnAbbr(homeC.team?.abbreviation);
         const awayAbbr = normalizeEspnAbbr(awayC.team?.abbreviation);
         if (!homeAbbr || !awayAbbr) continue;
-        map[homeAbbr] = { opp: awayAbbr, home: true };
-        map[awayAbbr] = { opp: homeAbbr, home: false };
+        const completed = event.competitions?.[0]?.status?.type?.completed ?? false;
+        const parseScore = (c) => {
+          const s = c.score;
+          if (!completed || s == null || s === '') return null;
+          if (typeof s === 'string' || typeof s === 'number') return Number(s);
+          if (s.value != null) return Number(s.value);
+          if (s.displayValue != null) return Number(s.displayValue);
+          return null;
+        };
+        const homePts = parseScore(homeC);
+        const awayPts = parseScore(awayC);
+        map[homeAbbr] = { opp: awayAbbr, home: true,  ptsFor: homePts, ptsAgainst: awayPts };
+        map[awayAbbr] = { opp: homeAbbr, home: false, ptsFor: awayPts, ptsAgainst: homePts };
       }
       return map;
     },

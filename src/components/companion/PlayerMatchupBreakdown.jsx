@@ -281,13 +281,15 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, enr
   const stadium    = enrichedPlayer?.stadium ?? null;
   const weatherStr = enrichedPlayer ? formatWeather(enrichedPlayer.weather, enrichedPlayer.isIndoor ?? false) : null;
   const def        = enrichedPlayer?.defStrength ?? null;
-  const oppFactor  = projection?.factors?.oppFactor ?? null;
+  const defPercentile = enrichedPlayer?.defPercentile ?? null;
 
   let defLabel = null, defBg = null, defText = null;
-  if (oppFactor !== null) {
-    if (oppFactor >= 1.10)      { defLabel = 'Easy'; defBg = 'rgba(34,197,94,0.18)';  defText = '#22c55e'; }
-    else if (oppFactor <= 0.90) { defLabel = 'Hard'; defBg = 'rgba(239,68,68,0.18)';  defText = '#ef4444'; }
-    else                        { defLabel = 'Avg';  defBg = 'rgba(120,120,128,0.16)'; defText = 'var(--color-label-tertiary)'; }
+  if (defPercentile !== null) {
+    if (defPercentile <= 0.20)      { defLabel = 'Difficult';   defBg = 'rgba(239,68,68,0.18)';   defText = '#ef4444'; }
+    else if (defPercentile <= 0.40) { defLabel = 'Challenging'; defBg = 'rgba(249,115,22,0.18)';  defText = '#f97316'; }
+    else if (defPercentile <= 0.60) { defLabel = 'Average';     defBg = 'rgba(120,120,128,0.16)'; defText = 'var(--color-label-tertiary)'; }
+    else if (defPercentile <= 0.80) { defLabel = 'Favorable';   defBg = 'rgba(132,204,22,0.18)';  defText = '#84cc16'; }
+    else                            { defLabel = 'Easy';         defBg = 'rgba(34,197,94,0.18)';   defText = '#22c55e'; }
   }
 
   const projMin = projection?.min ?? null;
@@ -429,9 +431,6 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, enr
                       )}
                       <span className="text-xs tabular-nums" style={{ color: 'var(--color-label)' }}>
                         {def.ptsAllowedPerGame.toFixed(1)} average points allowed to {posPlural}
-                      </span>
-                      <span className="text-xs" style={{ color: 'var(--color-label-quaternary)' }}>
-                        ({def.gamesAnalyzed} games)
                       </span>
                     </InfoRow>
                   );

@@ -232,6 +232,38 @@ export function getOpponentStrength(oppTeam, pos, allWeeklyStats, players, scori
 }
 
 /**
+ * Compute a percentile rank (0–1) for how easy/hard a matchup is against oppTeam at pos.
+ * 0 = hardest matchup (stingiest defense), 1 = easiest (most generous defense).
+ * Ranks oppTeam against all teams in defenseTable that have ≥ 3 games of data.
+ * Returns null if fewer than 5 teams have enough data, or if oppTeam is not found.
+ */
+export function getDefensePercentile(defenseTable, oppTeam, pos, beforeWeek = null) {
+  const normPos = normalizePos(pos);
+  if (!normPos || !defenseTable) return null;
+  const normOpp = oppTeam?.toUpperCase();
+
+  const teamAvgs = [];
+  for (const [team, posData] of Object.entries(defenseTable)) {
+    const weekData = posData[normPos] ?? {};
+    const relevant = Object.entries(weekData)
+      .filter(([wk]) => beforeWeek == null || Number(wk) < beforeWeek)
+      .map(([, pts]) => pts);
+    if (relevant.length < 3) continue;
+    teamAvgs.push({ team, avg: relevant.reduce((s, p) => s + p, 0) / relevant.length });
+  }
+
+  if (teamAvgs.length < 5) return null;
+
+  // Sort ascending: index 0 = stingiest (hardest matchup for fantasy)
+  teamAvgs.sort((a, b) => a.avg - b.avg);
+
+  const idx = teamAvgs.findIndex(t => t.team === normOpp);
+  if (idx === -1) return null;
+
+  return idx / (teamAvgs.length - 1);
+}
+
+/**
  * League-wide average PPG for a position group (for normalizing opponent factor).
  */
 function getLeagueAvgPPG(pos, allWeeklyStats, players, scoringSettings, beforeWeek = null) {
