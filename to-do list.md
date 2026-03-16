@@ -18,14 +18,21 @@
 
 > **Note:** Per-team color theming inside the team detail modal (adopting that specific team's colors when you open their schedule) was part of the original v3.0 spec but was deferred. The v3.1 global favorite-team theming covers the app-wide accent; in-context detail theming remains a future enhancement.
 
-### v4.0 — Fantasy Football / Sleeper League Integration
-Allow users to connect their Sleeper league and surface fantasy-relevant insights from player stat data. Should include:
-- Sleeper league import (connect via Sleeper username or league ID)
-- Custom scoring rule input (PPR, half-PPR, standard; passing/rushing/receiving TD values; bonus thresholds; defensive scoring; etc.)
-- Per-player fantasy point totals calculated from historical and current-season stats
-- Start/sit recommendations based on recent performance, matchup, and depth chart position
-- Waiver wire / pickup suggestions based on available players and projected output
-- Season-long projections and rankings by position under the user's scoring system
+### ~~v4.0 — Fantasy Football / Sleeper League Integration~~ **Shipped in v4.0.**
+~~Allow users to connect their Sleeper league and surface fantasy-relevant insights from player stat data. Should include:~~
+- ~~Sleeper league import (connect via Sleeper username or league ID)~~ ✓
+- ~~Per-player fantasy point totals calculated from historical and current-season stats~~ ✓
+- ~~Week to week fantasy scoring updates, rankings, insights, and projections~~ ✓
+- ~~Minimum and maximum scoring predictions for each rostered player based on opponent's strength/weakness against their specific position~~ ✓
+- ~~Season-long projections and rankings by position under the user's scoring system~~ ✓
+
+**Remaining v4.0 backlog (future):**
+- ~~**Matchup view — opponent defensive strength**: Show how many pts/gm the opponent allows to the player's position alongside an Easy / Avg / Hard difficulty badge. Data already computed by `getOpponentStrength()` in `projectionEngine.js`; needs to be surfaced in the `GameContext` strip of `CompanionMatchup.jsx`.~~ **Shipped in v4.1.**
+- **Start/sit recommendations**: Explicit Companion view that runs `projectPlayer()` across all rostered players and ranks them by projected output within each position group. Surfaces a clear start recommendation for each roster slot.
+- **Defense rankings table**: Standalone Companion tab showing all 32 teams ranked by pts allowed per game at each position (QB, RB, WR, TE). Powered by `getOpponentStrength()` across the full player pool.
+- **Waiver wire with projections**: Enhance `CompanionWaiver.jsx` with a projected pts column (next-game projection via `projectPlayer()`), a projection-based sort option, and a "trending" indicator for players with recent breakout weeks.
+- **Fantasy player comparison (Companion)**: New Companion tab — pick two players from the Sleeper player pool and compare them side-by-side: season pts, avg PPG, recent form, positional rank, projection range, and scoring breakdown.
+- **Stats player comparison (Statistics)**: Compare mode in `PlayerBrowser` — select two players and view their ESPN career/season stats side-by-side with per-stat deltas highlighted.
 
 ### v4.5 — Week-by-Week View
 Browse the full schedule by week — see all matchups for a given week, with current predictions reflected. Navigate between weeks via prev/next controls. **Blocked on 2026 season schedule data.** When the NFL releases the 2026 schedule, update the schedule data source and implement this view. Read-only in v4.5 (reflects existing team-level picks); interactive game picking from the week view is a future enhancement.

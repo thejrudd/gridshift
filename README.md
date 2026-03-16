@@ -1,6 +1,6 @@
 # NFL Season Predictor
 
-An interactive web app for predicting the 2026 NFL season. Pick game-by-game outcomes for all 32 teams, view projected standings and playoff seeding, browse live player stats, and create a shareable infographic — all in the browser, with nothing leaving your device.
+An interactive web app for predicting the 2026 NFL season — with full Sleeper fantasy league integration. Pick game-by-game outcomes for all 32 teams, view projected standings, generate playoff seeding, create a shareable infographic, and analyze your fantasy roster with week-by-week scoring breakdowns and projections — all in the browser.
 
 ![React](https://img.shields.io/badge/React-19-blue) ![Vite](https://img.shields.io/badge/Vite-7-purple) ![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-3-38bdf8) ![PWA](https://img.shields.io/badge/PWA-installable-green)
 
@@ -13,13 +13,18 @@ An interactive web app for predicting the 2026 NFL season. Pick game-by-game out
 - **Shareable Infographic** — Build a custom bento-grid graphic with up to 11 insight sections (Best & Worst Records, Playoff Seeds, Division Winners, Conference Showdown, Toughest Division, Bold Predictions, Worst Division, Strength of Schedule, Closest Division Race, Wild Card Teams, Parity Index). Drag and resize sections, add your name/handle, and export as an image.
 - **Team Search & Filter** — Search teams by name or abbreviation and filter by conference (AFC/NFC) from the predictions view
 - **Player Browser** — Browse all 32 rosters by conference, division, and position; search players by name across the league
-- **Player Profiles** — Full profile pages with headshot, career stats, per-game log, and Pro Bowl / All-Pro honors
-- **Favorite Team Theming** — Pick your favorite NFL team to theme the app around their official colors; accent color applies to tab indicators, nav highlights, the progress bar, filter toggles, and more. Persists across sessions and respects dark/light mode.
-- **Export / Import** — Save predictions as JSON and restore them on any device
+- **Player Profiles** — Full profile pages with headshot, career stats, game log, and Pro Bowl / All-Pro honors
+- **Favorite Team Theming** — Pick your favorite NFL team to theme the app; accent color applies to nav indicators, progress bar, and filter toggles
+- **Export/Import** — Save predictions as JSON; import JSON to restore picks
+- **Sleeper League Integration** — Connect your Sleeper account, import a league, and analyze your fantasy roster with custom scoring settings synced from your league
+- **Fantasy Matchup View** — Head-to-head starter comparison with week-by-week points, projections, positional rankings (week and season), weather context, and game location
+- **Defense Matrix** — 32-team heatmap of fantasy points allowed (or scored) per position per week; clickable cells drill into per-player stat breakdowns
+- **Scoring Breakdowns** — Drill into any player or your full team score to see a stat-by-stat fantasy point breakdown (e.g. Rush Yards · 112 · +11.2 pts)
+- **Player Projections** — Min/max/projected point ranges factoring opponent strength, home/away, weather, snap % trend, and scoring format
 - **Dark Mode** — Toggle between light and dark themes; persists across sessions
-- **PWA / Installable** — Install to your home screen on iOS and Android; runs in standalone mode with full asset and API caching via a service worker
-- **Responsive Layout** — Desktop: fixed sidebar with full navigation. Mobile/tablet: sticky top nav bar + bottom tab bar. Both layouts share the same content.
-- **Client-Side Only** — All prediction data is stored in `localStorage`; nothing is sent to a server
+- **PWA / Installable** — Install to your home screen on iOS and Android; runs in standalone mode with asset caching
+- **Responsive Design** — Two-panel layout on desktop (sidebar + content), tab bar on mobile
+- **Client-Side Only** — All prediction data stored in localStorage; Sleeper data fetched live from the Sleeper API
 
 ## Getting Started
 
@@ -65,65 +70,96 @@ PORT=8080 docker compose up -d --build
 | Styling | Tailwind CSS 3 + CSS custom properties |
 | Bento grid | react-grid-layout |
 | Image export | html2canvas |
+| Fantasy data | Sleeper API (client-side) |
 | Player data | ESPN public APIs (client-side) |
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) |
 
+## What's New in v4.2
+
+- **Defense Matrix** — New Companion tab showing all 32 teams' fantasy points allowed (Offense Allowed) or scored (Defense Scored) per position per week in a scrollable heat-mapped table
+- **Heatmap** — Multi-stop red→orange→yellow→green color spectrum; three scope options (Overall, By Week, By Team) each with independent scales; AVG column has its own scale
+- **Drilldown** — Tap any cell to see the per-player stat breakdown with signed point contributions for that matchup
+- **Position & Stat Filters** — Offense mode: All/QB/RB/WR/TE/K + Fantasy Pts/Rec Yds/Rush Yds; Defense mode: All/DL/LB/DB
+- **Column Sorting** — Click any column header to sort; Team column has A–Z, Conference, and Division sub-sorts
+- **QB Opp Fix** — Fetches per-QB Sleeper stats to get game-time `opp` field (bulk stats endpoint never includes it), resolving under-counted defensive game totals for QBs who changed teams in the offseason
+- **Beta Badge** — Companion tab marked Beta in sidebar and bottom tab bar
+
+## What's New in v4.1
+
+- **Matchup Difficulty Badge** — Easy / Avg / Hard badge per player based on defensive points allowed to that position vs league average (requires 3+ games of data)
+- **Redesigned Matchup Player Card** — Cleaner three-line layout: name + team, scored / projected range, vs OPP + location + badge
+- **Enhanced Player Drilldown** — Rankings (week rank, season rank, avg PPG) and Game Context sections above the stat breakdown
+- **Snap % Projection Factor** — Recent snap usage (last 4 games) vs season average as a fourth projection multiplier
+- **Companion Guide** — Full guide content for the Companion tab
+
+## What's New in v4.0
+
+- **Sleeper Integration** — Connect via Sleeper username, select a league, sync scoring settings
+- **Companion Tab** — Fantasy tools: Connect, Roster, Matchup, Waiver, and Scoring views
+- **Fantasy Matchup** — Side-by-side starter comparison with full scoring breakdowns
+- **Positional Rankings** — Week and season rank per player in the matchup view
+- **Projections** — Min/max/projected ranges factoring opponent strength, home/away, weather, and snap trend
+- **Custom Scoring Engine** — PPR / Half-PPR / Standard with per-stat multipliers; imports from Sleeper league
+
 ## Roadmap
 
-| Version | Status | Description |
-|---|---|---|
-| v3.0 | ✅ Released | Broadcast Editorial visual overhaul — unified design token system, sidebar/bottom-tab navigation, Barlow Condensed editorial type, signature amber accent |
-| v3.1 | ✅ Released | Favorite team theming — accent color system driven by official NFL team palettes, persisted team picker |
-| v4.0 | Planned | Fantasy football / Sleeper league integration — custom scoring, start/sit recommendations, projections |
-| v4.5 | Planned | Week-by-week schedule view *(blocked on 2026 season schedule data)* |
+**v4.5** — Week-by-week schedule view *(blocked on 2026 season schedule data)*
 
 ## Project Structure
 
 ```
 src/
-├── App.jsx                    # Root: layout, navigation state, modal orchestration
-├── index.css                  # Design token system (CSS custom properties, light/dark)
-├── main.jsx                   # React entry point
-│
+├── App.jsx                        # Main app shell — sidebar, tab bar, routing
 ├── components/
-│   ├── NavBar.jsx             # Mobile/tablet sticky top bar (hidden lg+)
-│   ├── BottomTabBar.jsx       # Mobile/tablet fixed bottom tab bar (hidden lg+)
-│   ├── Sidebar.jsx            # Desktop fixed sidebar with nav, actions, and footer
-│   ├── SeasonSubNav.jsx       # Editorial tab row (Predictions / Standings / Playoffs)
-│   ├── ActionSheet.jsx        # Mobile slide-up menu
-│   ├── FavoriteTeamPicker.jsx # Full-screen team color theme picker
-│   ├── TeamList.jsx           # Division cards with team rows
-│   ├── TeamDetail.jsx         # Modal for editing a team's game-by-game predictions
-│   ├── StandingsTable.jsx     # Division standings view
-│   ├── PlayoffSeeding.jsx     # Playoff bracket view
-│   ├── RecordSetter.jsx       # Win-loss-tie record controls
-│   ├── GameResultToggle.jsx   # Individual game outcome toggle (W / L / T)
-│   ├── DivisionMatrix.jsx     # Head-to-head results grid
-│   ├── ExportPreview.jsx      # Export modal with section toggles and layout controls
-│   ├── ShareableImage.jsx     # Interactive bento-grid infographic (11 sections)
-│   ├── PlayerBrowser.jsx      # Roster browser with conference/division/position filter
-│   ├── PlayerProfile.jsx      # Player profile page with hero card and stats
-│   ├── PlayerStatTable.jsx    # Stat accordion with standard/advanced toggle and honors
-│   ├── ErrorBoundary.jsx      # Top-level error boundary
-│   └── Guide.jsx              # Getting-started guide modal
-│
+│   ├── Sidebar.jsx                # Desktop sidebar: brand, nav, progress, dark mode toggle
+│   ├── NavBar.jsx                 # Mobile sticky top nav bar
+│   ├── BottomTabBar.jsx           # Mobile bottom tab bar (Season / Companion)
+│   ├── SeasonSubNav.jsx           # Season sub-view tabs (Predictions / Standings / Playoffs)
+│   ├── CompanionSubNav.jsx        # Companion sub-view tabs
+│   ├── ActionSheet.jsx            # iOS-style bottom sheet for overflow menu
+│   ├── FavoriteTeamPicker.jsx     # Full-screen team color theme picker
+│   ├── companion/
+│   │   ├── CompanionConnect.jsx   # Sleeper connect + league selection flow
+│   │   ├── CompanionRoster.jsx    # Roster view with season ranks and avg PPG
+│   │   ├── CompanionMatchup.jsx   # Weekly matchup: head-to-head, projections, breakdowns
+│   │   ├── CompanionDefense.jsx   # Defense matrix: heatmap of pts allowed/scored per team/week
+│   │   ├── CompanionWaiver.jsx    # Waiver wire view
+│   │   ├── CompanionScoring.jsx   # Scoring settings viewer (synced from league)
+│   │   └── PlayerMatchupBreakdown.jsx  # Per-player stat → fantasy point breakdown modal
+│   ├── PlayerBrowser.jsx          # Team/roster browser with position filter and search
+│   ├── PlayerProfile.jsx          # Player profile page with hero card, stats, and game log
+│   ├── PlayerStatTable.jsx        # Accordion stat table with standard/advanced toggle
+│   ├── TeamList.jsx               # Division cards with team rows and tooltips
+│   ├── TeamDetail.jsx             # Modal for editing team predictions
+│   ├── StandingsTable.jsx         # Division standings view
+│   ├── PlayoffSeeding.jsx         # Playoff bracket view
+│   ├── RecordSetter.jsx           # Win-loss-tie record controls
+│   ├── GameResultToggle.jsx       # Individual game outcome toggle
+│   ├── DivisionMatrix.jsx         # Head-to-head results grid
+│   ├── ExportPreview.jsx          # Export modal with section toggles and layout controls
+│   ├── ShareableImage.jsx         # Interactive bento-grid infographic with 11 sections
+│   └── Guide.jsx                  # Getting-started guide modal
 ├── context/
-│   ├── PredictionContext.jsx  # Game prediction state and localStorage sync
-│   └── ThemeContext.jsx       # Dark mode + favorite team theming state and CSS var injection
-│
+│   ├── PredictionContext.jsx      # Prediction state and localStorage sync
+│   ├── ThemeContext.jsx           # Dark mode + favorite team theming state
+│   └── SleeperContext.jsx         # Sleeper API state: user, league, rosters, stats, scoring
+├── api/
+│   ├── sleeperApi.js              # Sleeper API fetches: users, leagues, rosters, stats
+│   └── weatherApi.js              # Open-Meteo archive weather for game-day conditions
 ├── data/
-│   ├── teamColors.js          # Official color palettes for all 32 teams (light + dark variants)
-│   ├── teamHistory.js         # Historical team records and context
-│   └── honors.json            # Static Pro Bowl / All-Pro records by player and season
-│
+│   ├── teamColors.js              # Official color palettes for all 32 teams (light + dark)
+│   ├── honors.json                # Static Pro Bowl / All-Pro records by player and season
+│   └── stadiums.js                # All 32 NFL stadiums: indoor flag, coordinates, week dates
 └── utils/
-    ├── playerApi.js           # ESPN API fetches: roster, stats, game log, bio, depth chart
-    ├── playerCache.js         # localStorage cache with per-key TTLs
-    ├── playerMetrics.js       # Stat row definitions, headline metrics, and career highlights
-    ├── scheduleParser.js      # Team/division queries and strength of schedule
-    ├── validation.js          # Constraint checking and league-wide balance validation
-    ├── exportImport.js        # JSON export and import
-    ├── exportStats.js         # Highlight stat computations for the infographic sections
-    └── layoutUtils.js         # Bento grid layout constants, sizing, and RGL helpers
+    ├── playerApi.js               # ESPN API fetches: roster, stats, game log, bio
+    ├── playerCache.js             # localStorage cache with per-key TTLs
+    ├── playerMetrics.js           # Stat row definitions, headline metrics, career highlights
+    ├── projectionEngine.js        # PPG averages, positional ranks, opponent strength, projections
+    ├── scoringEngine.js           # Fantasy point calculation and DEFAULT_SCORING config
+    ├── scheduleParser.js          # Team/division queries, strength of schedule
+    ├── validation.js              # Constraint checking and balance validation
+    ├── exportImport.js            # JSON export/import
+    ├── exportStats.js             # Highlight stat computations for the infographic
+    └── layoutUtils.js             # Bento grid layout constants, sizing, and RGL helpers
 ```

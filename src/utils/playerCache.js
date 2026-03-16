@@ -9,11 +9,15 @@ export const TTL = {
 
 /**
  * Fetch with localStorage caching.
- * @param {string} key   Cache key (without prefix)
- * @param {Function} fetchFn  Async function that returns the data to cache
- * @param {number} ttl   TTL in ms; use Infinity to never expire
+ * @param {string} key         Cache key (without prefix)
+ * @param {Function} fetchFn   Async function that returns the data to cache
+ * @param {number} ttl         TTL in ms; use Infinity to never expire
+ * @param {Function} [shouldCache]  Optional predicate — if provided and returns false,
+ *                             the result is returned but NOT stored in the cache.
+ *                             Useful for conditionally skipping permanent caching of
+ *                             empty or incomplete data (e.g. schedule weeks not yet played).
  */
-export async function cachedFetch(key, fetchFn, ttl) {
+export async function cachedFetch(key, fetchFn, ttl, shouldCache) {
   try {
     const raw = localStorage.getItem(PREFIX + key);
     if (raw) {
@@ -26,10 +30,12 @@ export async function cachedFetch(key, fetchFn, ttl) {
 
   const data = await fetchFn();
 
-  try {
-    localStorage.setItem(PREFIX + key, JSON.stringify({ ts: Date.now(), data }));
-  } catch {
-    // localStorage quota exceeded — skip caching silently
+  if (!shouldCache || shouldCache(data)) {
+    try {
+      localStorage.setItem(PREFIX + key, JSON.stringify({ ts: Date.now(), data }));
+    } catch {
+      // localStorage quota exceeded — skip caching silently
+    }
   }
 
   return data;

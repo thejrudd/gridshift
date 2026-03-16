@@ -1,3 +1,5 @@
+import { useSleeper } from '../context/SleeperContext';
+
 export default function Sidebar({
   activeTab,
   onTabChange,
@@ -17,8 +19,10 @@ export default function Sidebar({
   onInstall,
   favoriteTeam,
   onMyTeam,
+  onScoringSettings,
 }) {
   const progress = totalTeams > 0 ? (predictionCount / totalTeams) * 100 : 0;
+  const { isConnected, hasLeague, disconnect } = useSleeper();
 
   return (
     <aside className="app-sidebar">
@@ -110,6 +114,7 @@ export default function Sidebar({
           onClick={() => onTabChange('companion')}
           icon={<CompanionIcon />}
           label="Companion"
+          beta
         />
       </nav>
 
@@ -125,6 +130,14 @@ export default function Sidebar({
             <SidebarAction label="Export JSON" onClick={onExportJSON} disabled={predictionCount === 0} />
             <SidebarAction label="Import JSON" onClick={onImportJSON} />
             <SidebarAction label="Randomize Predictions" onClick={onRandom} />
+          </>
+        )}
+        {activeTab === 'companion' && (
+          <>
+            <SidebarAction label="Scoring Settings" onClick={onScoringSettings} />
+            {isConnected && (
+              <SidebarAction label="Disconnect Sleeper" onClick={disconnect} />
+            )}
           </>
         )}
         {isInstallable && !isInstalled && (
@@ -197,14 +210,14 @@ export default function Sidebar({
           className="px-5 py-3 text-xs"
           style={{ color: 'var(--color-label-tertiary)' }}
         >
-          v3.1
+          v4.0
         </div>
       </div>
     </aside>
   );
 }
 
-function SidebarNavItem({ active, onClick, icon, label }) {
+function SidebarNavItem({ active, onClick, icon, label, beta }) {
   return (
     <button
       onClick={onClick}
@@ -212,8 +225,29 @@ function SidebarNavItem({ active, onClick, icon, label }) {
       aria-current={active ? 'page' : undefined}
     >
       <span className="sidebar-nav-icon">{icon}</span>
-      <span>{label}</span>
+      <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        {label}
+        {beta && <BetaBadge />}
+      </span>
     </button>
+  );
+}
+
+function BetaBadge() {
+  return (
+    <span style={{
+      fontSize: '9px',
+      fontWeight: 700,
+      letterSpacing: '0.06em',
+      textTransform: 'uppercase',
+      padding: '1px 5px',
+      borderRadius: '4px',
+      background: 'var(--color-signature)',
+      color: '#000',
+      lineHeight: '14px',
+    }}>
+      Beta
+    </span>
   );
 }
 

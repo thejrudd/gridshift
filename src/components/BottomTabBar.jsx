@@ -2,13 +2,13 @@ export default function BottomTabBar({ activeTab, onTabChange }) {
   const tabs = [
     { id: 'predictions', label: 'Predictions', Icon: SeasonIcon },
     { id: 'statistics', label: 'Statistics', Icon: PlayersIcon },
-    { id: 'companion', label: 'Companion', Icon: CompanionIcon },
+    { id: 'companion', label: 'Companion', Icon: CompanionIcon, beta: true },
   ];
 
   return (
     <nav className="tab-bar" aria-label="Main navigation">
       <div className="tab-bar-inner">
-        {tabs.map(({ id, label, Icon }) => {
+        {tabs.map(({ id, label, Icon, beta }) => {
           const active = activeTab === id;
           return (
             <button
@@ -18,7 +18,27 @@ export default function BottomTabBar({ activeTab, onTabChange }) {
               aria-label={label}
               aria-current={active ? 'page' : undefined}
             >
-              <Icon active={active} />
+              <span style={{ position: 'relative', display: 'inline-flex', justifyContent: 'center' }}>
+                <Icon active={active} />
+                {beta && (
+                  <span style={{
+                    position: 'absolute',
+                    top: '-4px',
+                    right: '-10px',
+                    fontSize: '7px',
+                    fontWeight: 700,
+                    letterSpacing: '0.05em',
+                    textTransform: 'uppercase',
+                    padding: '1px 3px',
+                    borderRadius: '3px',
+                    background: 'var(--color-signature)',
+                    color: '#000',
+                    lineHeight: '11px',
+                  }}>
+                    β
+                  </span>
+                )}
+              </span>
               <span className="tab-label">{label}</span>
             </button>
           );
