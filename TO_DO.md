@@ -7,24 +7,16 @@ New features requested or planned should be added here.
 
 ## Planned Versions
 
-### v4.4.1 — Defense Grid Polish *(in progress)*
+### v4.5.1 — Heatmap Continued
 
-- **Defense Scored drilldown attribution fix** — Apply inferred-season-team fallback (same logic as v4.4 Allowed fix) to IDP players (DL/LB/DB) in the Scored drilldown. Show `est.` badge when attribution is unverified.
-- **Player name navigation from Defense grid** — Clicking a player name in the Defense grid drilldown now navigates to their statistics page. Fixed for Pass 2 players (espn_id: null) by storing resolved ESPN IDs in context (`espnIdOverrides`).
-- **Back navigation from Statistics page** — When navigating to a player's stats page from the Defense grid drilldown, add a back arrow / breadcrumb so the user can return to the Defense grid without losing their place.
-
-### v4.5 — Heatmap Refresh
-
-- **Rename "Defense" tab to "Heatmap"** — Update the companion sub-navigation label and any internal references from "Defense" to "Heatmap".
-- **Rename view filter to "Phase"** — Change the "View: Allowed / Scored" filter to "Phase: Offense / Defense" for clearer terminology.
-- **Reorder filter bar** — New filter order: Stat → Phase → Position → Color.
+- **Vegas Odds stat mode** — Add a "Vegas Odds" option to the Stat filter. Instead of Position, show a spread/moneyline/total filter. Color cells red-to-green based on whether the odds were covered (e.g. favored team won by more than the spread = green). Requires a historical odds data source.
+- **Game Score box score drill-in** — When the Stat is set to Game Score, tapping a cell opens a box score for that game (final score, key stats) rather than the standard player drilldown.
 
 ### v4.6 — Week-by-Week View *(blocked)*
 
 Browse the full schedule by week — see all matchups for a given week, with current predictions reflected. Navigate between weeks via prev/next controls. **Blocked on 2026 season schedule data.** When the NFL releases the 2026 schedule, update the schedule data source and implement this view. Read-only in v4.5 (reflects existing team-level picks); interactive game picking from the week view is a future enhancement.
 
 ---
-
 ## Backlog (Unversioned)
 
 ### Fantasy Companion

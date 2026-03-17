@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSleeper } from '../../context/SleeperContext';
 import { calcPointsFromTotals } from '../../utils/scoringEngine';
 import { computePositionalRanks, getAvgPPG } from '../../utils/projectionEngine';
-import LeagueScoringBadge from './LeagueScoringBadge';
 import PlayerWeeklySheet from './PlayerWeeklySheet';
 
 const POSITION_ORDER = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF', 'DL', 'LB', 'DB', 'DE', 'DT', 'CB', 'S'];
@@ -102,8 +101,6 @@ export default function CompanionRoster() {
 
   return (
     <div className="pb-6">
-      <LeagueScoringBadge />
-
       {/* Stats loading banner */}
       {statsLoading && (
         <div

@@ -174,3 +174,15 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Contextual back navigation** — When navigating from the Defense grid drilldown to a player's Statistics page, the back button now reads **"← Defense"** and returns to the Defense grid. In all other cases the button continues to read **"← Statistics"** and returns to the statistics browser.
 - **Home/away in drilldown header** — The drilldown matchup header now uses `@` notation (standard NFL: AWAY @ HOME) instead of `vs` when home/away data is available from the scheduleMap. Falls back to `vs` when home/away is unknown.
 - **Roadmap file renamed** — `to-do list.md` renamed to `TO_DO.md`; restructured to chronological version order with backlog at the bottom.
+
+---
+
+## v4.5 — Heatmap Refresh
+*2026-03-17*
+
+- **Renamed "Defense" tab to "Heatmap"** — Companion sub-navigation label updated across the app, including the back-navigation label from the Statistics page.
+- **Phase filter** — The "View: Allowed / Scored" toggle is now "Phase: Offense / Defense" for clearer terminology.
+- **Filter bar reordered** — New order: Stat → Phase → Position → Color → Location.
+- **Home/Away location filter** — New Location filter (All / Home / Away) on the Heatmap. Filters both the cell values and the AVG column denominator to only include games matching the selection. Filtered-out weeks show a dimmed dash and are not drillable.
+- **Companion sub-nav overflow fix** — Tabs (Roster, Rankings, Matchup, etc.) now scroll horizontally within the nav strip on mobile instead of overflowing the page and causing erroneous horizontal scrolling.
+- **Scoring badge removed from Roster** — The league scoring summary badge has been removed from the Roster screen. Scoring details are available in the dedicated Scoring tab.

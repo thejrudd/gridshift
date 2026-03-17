@@ -339,6 +339,12 @@ body {
   gap: 0;
   margin: 0 -16px; /* bleed to edges on mobile */
   padding: 0 16px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none; /* Firefox */
+}
+.season-tabs::-webkit-scrollbar {
+  display: none; /* Chrome/Safari */
 }
 
 @media (min-width: 1024px) {

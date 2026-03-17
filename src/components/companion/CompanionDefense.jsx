@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSleeper } from '../../context/SleeperContext';
 import { useTheme } from '../../context/ThemeContext';
 import { buildDefenseTable } from '../../utils/projectionEngine';
@@ -251,6 +251,7 @@ export default function CompanionDefense({ onViewPlayer }) {
   const [statMode, setStatMode]         = useState('pts');
   const [defStatMode, setDefStatMode]   = useState('pts');
   const [heatmapScope, setHeatmapScope] = useState('overall');
+  const [locationFilter, setLocationFilter] = useState('all'); // 'all' | 'home' | 'away'
   const [sortKey, setSortKey] = useState('avg');
   const [sortDir, setSortDir] = useState('desc');
   const [teamSort, setTeamSort] = useState('alpha');
@@ -311,6 +312,14 @@ export default function CompanionDefense({ onViewPlayer }) {
 
   // ── Rows ───────────────────────────────────────────────────────────────────
 
+  // Returns true if a given team/week passes the current location filter.
+  const weekMatchesLocation = useCallback((team, w) => {
+    if (locationFilter === 'all') return true;
+    const entry = scheduleMap?.[w]?.[team];
+    if (!entry) return false;
+    return locationFilter === 'home' ? entry.home === true : entry.home === false;
+  }, [locationFilter, scheduleMap]);
+
   const baseRows = useMemo(() => {
     // Game Score mode: pull actual points-allowed directly from scheduleMap
     if (viewMode === 'offense' && statMode === 'game_score') {
@@ -319,11 +328,11 @@ export default function CompanionDefense({ onViewPlayer }) {
         if (scheduleMap) {
           for (const w of WEEKS) {
             const entry = scheduleMap[w]?.[team];
-            if (entry?.ptsAgainst != null) weekPts[w] = entry.ptsAgainst;
+            if (entry?.ptsAgainst != null && weekMatchesLocation(team, w)) weekPts[w] = entry.ptsAgainst;
           }
         }
         const total = Object.values(weekPts).reduce((s, v) => s + v, 0);
-        const weeksPlayed = scheduleMap ? WEEKS.filter(w => scheduleMap[w]?.[team] != null).length : Object.keys(weekPts).length;
+        const weeksPlayed = scheduleMap ? WEEKS.filter(w => scheduleMap[w]?.[team] != null && weekMatchesLocation(team, w)).length : Object.keys(weekPts).length;
         const avg = weeksPlayed > 0 && Object.keys(weekPts).length > 0 ? total / weeksPlayed : null;
         return { team, weekPts, avg };
       });
@@ -337,19 +346,21 @@ export default function CompanionDefense({ onViewPlayer }) {
         if (activePos === 'ALL') {
           for (const p of posList) {
             for (const [w, v] of Object.entries(teamData[p] ?? {})) {
-              weekData[w] = (weekData[w] ?? 0) + v;
+              if (weekMatchesLocation(team, w)) weekData[w] = (weekData[w] ?? 0) + v;
             }
           }
         } else {
-          weekData = teamData[activePos] ?? {};
+          for (const [w, v] of Object.entries(teamData[activePos] ?? {})) {
+            if (weekMatchesLocation(team, w)) weekData[w] = v;
+          }
         }
       }
       const total = Object.values(weekData).reduce((s, v) => s + v, 0);
-      const weeksPlayed = scheduleMap ? WEEKS.filter(w => scheduleMap[w]?.[team] != null).length : Object.keys(weekData).length;
+      const weeksPlayed = scheduleMap ? WEEKS.filter(w => scheduleMap[w]?.[team] != null && weekMatchesLocation(team, w)).length : Object.keys(weekData).length;
       const avg = weeksPlayed > 0 && Object.keys(weekData).length > 0 ? total / weeksPlayed : null;
       return { team, weekPts: weekData, avg };
     });
-  }, [activeTable, activePos, viewMode, statMode, scheduleMap]);
+  }, [activeTable, activePos, viewMode, statMode, scheduleMap, weekMatchesLocation]);
 
   const rows = useMemo(() => {
     if (sortKey === 'team') {
@@ -548,8 +559,20 @@ export default function CompanionDefense({ onViewPlayer }) {
     <div className="pb-6 -mx-4 sm:-mx-6 lg:-mx-8">
       {/* Unified filter bar — single row on wide screens, wraps on mobile */}
       <div className="px-4 sm:px-6 lg:px-8 pb-3 flex flex-wrap items-center gap-x-5 gap-y-2">
-        <FilterGroup label="View">
-          {[{ id: 'offense', label: 'Allowed' }, { id: 'defense', label: 'Scored' }].map(m => (
+        <FilterGroup label="Stat">
+          {(viewMode === 'offense' ? STAT_MODES : DEF_STAT_MODES).map(m => (
+            <Btn
+              key={m.id}
+              active={viewMode === 'offense' ? statMode === m.id : defStatMode === m.id}
+              onClick={() => viewMode === 'offense' ? setStatMode(m.id) : setDefStatMode(m.id)}
+            >
+              {m.label}
+            </Btn>
+          ))}
+        </FilterGroup>
+
+        <FilterGroup label="Phase">
+          {[{ id: 'offense', label: 'Offense' }, { id: 'defense', label: 'Defense' }].map(m => (
             <Btn key={m.id} active={viewMode === m.id} onClick={() => { setViewMode(m.id); resetSort(); }}>
               {m.label}
             </Btn>
@@ -566,22 +589,18 @@ export default function CompanionDefense({ onViewPlayer }) {
           </FilterGroup>
         )}
 
-        <FilterGroup label="Stat">
-          {(viewMode === 'offense' ? STAT_MODES : DEF_STAT_MODES).map(m => (
-            <Btn
-              key={m.id}
-              active={viewMode === 'offense' ? statMode === m.id : defStatMode === m.id}
-              onClick={() => viewMode === 'offense' ? setStatMode(m.id) : setDefStatMode(m.id)}
-            >
-              {m.label}
-            </Btn>
-          ))}
-        </FilterGroup>
-
         <FilterGroup label="Color">
           {HEATMAP_SCOPES.map(s => (
             <Btn key={s.id} active={heatmapScope === s.id} onClick={() => setHeatmapScope(s.id)}>
               {s.label}
+            </Btn>
+          ))}
+        </FilterGroup>
+
+        <FilterGroup label="Location">
+          {[{ id: 'all', label: 'All' }, { id: 'home', label: 'Home' }, { id: 'away', label: 'Away' }].map(opt => (
+            <Btn key={opt.id} active={locationFilter === opt.id} onClick={() => setLocationFilter(opt.id)}>
+              {opt.label}
             </Btn>
           ))}
         </FilterGroup>
@@ -682,10 +701,13 @@ export default function CompanionDefense({ onViewPlayer }) {
                     {WEEKS.map(w => {
                       const pts = weekPts[w];
                       const played = scheduleMap?.[w]?.[team] != null;
+                      const matchesLoc = weekMatchesLocation(team, w);
                       // A bye is a week that has game data for other teams but not this one
                       const weekHasGames = !!scheduleMap && Object.keys(scheduleMap[w] ?? {}).length > 0;
                       const isBye = weekHasGames && !played;
-                      const clickable = pts != null && !(viewMode === 'offense' && statMode === 'game_score');
+                      // Filtered-out: team played this week but it doesn't match location filter
+                      const isFiltered = played && !matchesLoc;
+                      const clickable = pts != null && !isFiltered && !(viewMode === 'offense' && statMode === 'game_score');
                       return (
                         <td
                           key={w}
@@ -708,6 +730,8 @@ export default function CompanionDefense({ onViewPlayer }) {
                             </>
                           ) : isBye ? (
                             <span style={{ fontSize: '8px', fontWeight: 700, letterSpacing: '0.04em', opacity: 0.55 }}>BYE</span>
+                          ) : isFiltered ? (
+                            <span style={{ fontSize: '8px', opacity: 0.35 }}>—</span>
                           ) : played ? '—' : ''}
                         </td>
                       );

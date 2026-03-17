@@ -91,23 +91,23 @@ const GUIDE_CONTENT = {
         description: 'All projections and rankings use your league\'s actual scoring rules, imported automatically from Sleeper when you connect. You can review or adjust them in the Scoring tab. Changes take effect immediately across all projections.',
       },
       {
-        title: 'Defense Tab — Overview',
-        description: 'The Defense tab is a full-season heatmap grid showing every NFL team\'s defensive performance week by week. Use the Allowed / Scored toggle at the top to switch views. Allowed shows what opposing offenses scored against each defense (fantasy points, yards, or actual game score). Scored shows what each defense\'s own IDP players earned in fantasy points or individual defensive stats.',
+        title: 'Heatmap Tab — Overview',
+        description: 'The Heatmap tab is a full-season grid showing every NFL team\'s performance week by week. Use the Phase filter to switch between Offense (what opposing offenses scored against each defense — useful for spotting matchup strengths and weaknesses) and Defense (what each team\'s own IDP players produced in fantasy points or individual defensive stats).',
       },
       {
-        title: 'Defense Tab — Allowed View',
-        description: 'Filter by offensive position (All, QB, RB, WR, TE, K) to isolate matchup data by position group. Switch the Stat mode to Fantasy Points, Receiving Yards, Rushing Yards, or Game Score (the actual NFL points allowed that week). Each cell shows the stat value and a small opponent label. The AVG column reflects the season per-game average weighted by games played — weeks where the defense held the opponent to zero count toward the denominator.',
+        title: 'Heatmap Tab — Offense Phase',
+        description: 'Filter by offensive position (All, QB, RB, WR, TE, K) to isolate matchup data by position group. Switch the Stat to Fantasy Points, Receiving Yards, Rushing Yards, or Game Score (the actual NFL points allowed that week). Each cell shows the stat value and a small opponent label. The AVG column reflects the season per-game average weighted by games played — weeks where the defense held the opponent to zero count toward the denominator.',
       },
       {
-        title: 'Defense Tab — Scored View',
-        description: 'Filter by defensive position group (All, DL, LB, DB). Use the Stat toggle to isolate specific stats: Fantasy Points, Sacks, Interceptions, Forced Fumbles, Tackles for Loss, Passes Defended, QB Hits, or Defensive Touchdowns. Color coding is flipped in this view — green means more points or stats (better IDP output), red means fewer.',
+        title: 'Heatmap Tab — Defense Phase',
+        description: 'Filter by defensive position group (All, DL, LB, DB). Use the Stat filter to isolate specific stats: Fantasy Points, Sacks, Interceptions, Forced Fumbles, Tackles for Loss, Passes Defended, QB Hits, or Defensive Touchdowns. Color coding is flipped in this phase — green means more points or stats (better IDP output), red means fewer.',
       },
       {
-        title: 'Defense Tab — Heatmap & Color',
-        description: 'The Color toggle controls the scale: Overall compares every cell against the full-season range; By Week normalizes each column independently (good for spotting weekly outliers); By Team normalizes each row independently (good for comparing a team\'s relative highs and lows). In Allowed view, green = harder matchup (defense is stingy). In Scored view, green = more production. If you\'ve set a favorite team under My Team, a team colors toggle appears to replace the default heatmap palette with your team\'s colors.',
+        title: 'Heatmap Tab — Color',
+        description: 'The Color toggle controls the scale: Overall compares every cell against the full-season range; By Week normalizes each column independently (good for spotting weekly outliers); By Team normalizes each row independently (good for comparing a team\'s relative highs and lows). In Offense phase, green = harder matchup (defense is stingy). In Defense phase, green = more production. If you\'ve set a favorite team under My Team, a team colors toggle appears to replace the default heatmap palette with your team\'s colors.',
       },
       {
-        title: 'Defense Tab — Sorting & Drilldown',
+        title: 'Heatmap Tab — Sorting & Drilldown',
         description: 'Click any column header to sort by that column; click again to reverse. The Team column has three sort modes: A–Z, Conference (AFC then NFC, alphabetical within), and Division (grouped by division). Tap any data cell to open a drilldown showing which players contributed to that week\'s total, with a point breakdown per player. Tap a player\'s name in the drilldown to jump directly to their profile in the Statistics section.',
       },
     ],

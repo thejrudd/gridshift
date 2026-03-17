@@ -327,7 +327,7 @@ function AppInner() {
               {companionView === 'rankings'  && <CompanionRankings />}
               {companionView === 'matchup'   && <CompanionMatchup />}
               {companionView === 'waiver'    && <CompanionWaiver />}
-              {companionView === 'defense'   && <CompanionDefense onViewPlayer={(id, meta) => { setStatsInitPlayer({ id, ...meta }); setStatsNavBack({ label: 'Defense', onBack: () => { setActiveTab('companion'); setStatsNavBack(null); } }); setActiveTab('statistics'); }} />}
+              {companionView === 'defense'   && <CompanionDefense onViewPlayer={(id, meta) => { setStatsInitPlayer({ id, ...meta }); setStatsNavBack({ label: 'Heatmap', onBack: () => { setActiveTab('companion'); setStatsNavBack(null); } }); setActiveTab('statistics'); }} />}
               {companionView === 'scoring'   && <CompanionScoring />}
             </>
           )}

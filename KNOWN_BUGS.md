@@ -11,6 +11,7 @@ Open bugs are listed first, fixed bugs below. Add new entries at the bottom of e
 | When clicking "Load stats", the page doens't auto refresh so the user is required to click away from the tab they're on and back in order to see the data they want. |
 | Player data cache isn't automatically clearing when a new version is detected, so any fixes pertaining to player data are not shown to the user if they most recently used an older version from before the fix was introduced. |
 
+
 ---
 
 ## Fixed
@@ -37,3 +38,4 @@ Open bugs are listed first, fixed bugs below. Add new entries at the bottom of e
 | Defense grid — wrong player attribution for traded/signed players | v4.4 |
 | Defense Scored drilldown — wrong player attribution for traded/signed defensive players (IDP: DL/LB/DB); used `player.team` instead of ESPN-confirmed or inferred season team | v4.4.1 |
 | Defense grid drilldown — player names not clickable for Pass 2 players (espn_id: null in Sleeper DB, resolved via ESPN roster name-match) because resolved ESPN IDs were not stored in context | v4.4.1 |
+| Companion sub-navigation tabs overflow the screen on mobile, causing erroneous horizontal page scrolling | v4.5 |
