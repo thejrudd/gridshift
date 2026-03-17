@@ -210,7 +210,7 @@ export default function Sidebar({
           className="px-5 py-3 text-xs"
           style={{ color: 'var(--color-label-tertiary)' }}
         >
-          v4.3.4
+          v4.3.5
         </div>
       </div>
     </aside>

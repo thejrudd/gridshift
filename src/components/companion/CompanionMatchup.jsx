@@ -147,6 +147,9 @@ export default function CompanionMatchup() {
     const defPercentile = oppTeam && defenseTable && !isDefensivePos
       ? getDefensePercentile(defenseTable, oppTeam, p.position, week)
       : null;
+    // Bye detection: week has games for other teams but not this team
+    const weekHasGames = !!scheduleMap && Object.keys(scheduleMap[week] ?? {}).length > 0;
+    const isBye = weekHasGames && !schedEntry && myTeam !== 'FA';
 
     return {
       id,
@@ -166,6 +169,7 @@ export default function CompanionMatchup() {
       injuryStatus: p.injury_status,
       defStrength,
       defPercentile,
+      isBye,
     };
   }, [players, seasonStats, weeklyStats, scoringSettings, positionalRanks, weeklyRanks, week, scheduleMap, defenseTable]);
 
@@ -535,8 +539,8 @@ function PlayerInfo({ player, align = 'left' }) {
           </>
         )}
       </div>
-      {/* vs OPP · Home/Away · weather · matchup badge */}
-      {player.oppTeam && (
+      {/* vs OPP · Home/Away · weather · matchup badge — or BYE WEEK label */}
+      {player.oppTeam ? (
         <div className={`flex items-center gap-1 flex-wrap mt-0.5 ${isRight ? 'justify-end' : ''}`}>
           <span className="text-xs" style={{ color: 'var(--color-label-tertiary)' }}>
             vs {player.oppTeam}{locationStr ? ` · ${locationStr}` : ''}{weatherStr ? ` · ${weatherStr}` : ''}
@@ -550,7 +554,16 @@ function PlayerInfo({ player, align = 'left' }) {
             </span>
           )}
         </div>
-      )}
+      ) : player.isBye ? (
+        <div className={`mt-0.5 ${isRight ? 'text-right' : ''}`}>
+          <span
+            className="text-[10px] font-bold px-1.5 py-px rounded-full"
+            style={{ background: 'var(--color-fill)', color: 'var(--color-label-tertiary)' }}
+          >
+            BYE WEEK
+          </span>
+        </div>
+      ) : null}
     </div>
   );
 }

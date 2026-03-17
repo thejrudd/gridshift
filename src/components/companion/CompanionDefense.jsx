@@ -276,13 +276,15 @@ export default function CompanionDefense({ onViewPlayer }) {
         if (val <= 0) continue;
         const team = (wEntry.team || player.team)?.toUpperCase();
         if (!team) continue;
+        // Only count weeks the team actually played — filters out phantom bye-week data
+        if (scheduleMap && !scheduleMap[wEntry.week]?.[team]) continue;
         if (!table[team]) table[team] = {};
         if (!table[team][normPos]) table[team][normPos] = {};
         table[team][normPos][wEntry.week] = (table[team][normPos][wEntry.week] ?? 0) + val;
       }
     }
     return table;
-  }, [weeklyStats, players, scoringSettings, defStatMode]);
+  }, [weeklyStats, players, scoringSettings, defStatMode, scheduleMap]);
 
   const activeTable = viewMode === 'offense' ? offenseAllowedTable : defenseScoredTable;
   const activePositions = viewMode === 'offense' ? OFF_POSITIONS : DEF_POSITIONS;

@@ -35,8 +35,10 @@ const IDP_STAT_DISPLAY = [
 
 const IDP_POSITIONS = new Set(['DL', 'LB', 'DB', 'DE', 'DT', 'CB', 'S', 'ILB', 'OLB', 'SS', 'FS']);
 
+const SEASON_WEEKS = Array.from({ length: 18 }, (_, i) => i + 1);
+
 export default function PlayerWeeklySheet({ playerId, onClose }) {
-  const { players, weeklyStats, scoringSettings } = useSleeper();
+  const { players, weeklyStats, scoringSettings, scheduleMap } = useSleeper();
 
   const player = players?.[playerId];
   const weeks = weeklyStats?.[playerId] ?? [];
@@ -45,14 +47,26 @@ export default function PlayerWeeklySheet({ playerId, onClose }) {
   const statDisplay = isIDP ? IDP_STAT_DISPLAY : OFFENSE_STAT_DISPLAY;
 
   const weekRows = useMemo(() => {
-    return [...weeks]
-      .sort((a, b) => a.week - b.week)
-      .map(w => ({
-        week: w.week,
-        pts: calcPoints(w, scoringSettings),
-        stats: w,
-      }));
-  }, [weeks, scoringSettings]);
+    const playerTeam = player?.team?.toUpperCase();
+    const rows = [];
+    for (const w of SEASON_WEEKS) {
+      const wEntry = weeks.find(e => e.week === w);
+      const schedEntry = playerTeam ? (scheduleMap?.[w]?.[playerTeam] ?? null) : null;
+      const weekHasGames = !!scheduleMap && Object.keys(scheduleMap?.[w] ?? {}).length > 0;
+      if (wEntry) {
+        const opp = wEntry.opp?.toUpperCase() ?? schedEntry?.opp?.toUpperCase() ?? null;
+        rows.push({ week: w, pts: calcPoints(wEntry, scoringSettings), stats: wEntry, opp, isBye: false });
+      } else if (weekHasGames && playerTeam && !schedEntry) {
+        // Bye week — other teams played but not this team
+        rows.push({ week: w, pts: 0, stats: null, opp: null, isBye: true });
+      } else if (weekHasGames && schedEntry) {
+        // Game played but no Sleeper stats (DNP / zero week not in dataset)
+        rows.push({ week: w, pts: 0, stats: null, opp: schedEntry.opp?.toUpperCase() ?? null, isBye: false });
+      }
+      // Future weeks (no game data yet) are omitted
+    }
+    return rows;
+  }, [weeks, scoringSettings, player, scheduleMap]);
 
   const seasonTotal = weekRows.reduce((s, r) => s + r.pts, 0);
   const weeksPlayed = weekRows.filter(r => r.pts > 0).length;
@@ -138,13 +152,14 @@ export default function PlayerWeeklySheet({ playerId, onClose }) {
           ) : (
             <div className="overflow-x-auto">
               {/* min-w ensures all columns are always visible on narrow screens */}
-              <div style={{ minWidth: `${20 + 56 + statDisplay.length * 52 + 8}px` }}>
+              <div style={{ minWidth: `${20 + 40 + 56 + statDisplay.length * 52 + 8}px` }}>
                 {/* Column headers */}
                 <div
                   className="flex items-center px-5 py-2 sticky top-0"
                   style={{ background: 'var(--color-bg-secondary)', borderBottom: '1px solid var(--color-separator)' }}
                 >
                   <span className="w-8 shrink-0 text-xs font-semibold" style={{ color: 'var(--color-label-tertiary)' }}>WK</span>
+                  <span className="w-10 shrink-0 text-xs font-semibold" style={{ color: 'var(--color-label-tertiary)' }}>OPP</span>
                   <div className="flex flex-1 gap-2">
                     {statDisplay.map(s => (
                       <span key={s.key} className="w-12 shrink-0 text-right text-xs font-semibold" style={{ color: 'var(--color-label-tertiary)' }}>
@@ -169,7 +184,7 @@ export default function PlayerWeeklySheet({ playerId, onClose }) {
 
 function WeekRow({ row, statDisplay, best }) {
   const isBest = row.pts > 0 && row.pts === best;
-  const isDnp = row.pts === 0;
+  const isDnp = !row.isBye && row.pts === 0;
 
   return (
     <div
@@ -177,15 +192,18 @@ function WeekRow({ row, statDisplay, best }) {
       style={{
         borderBottom: '1px solid var(--color-separator)',
         background: isBest ? 'rgba(245,183,0,0.06)' : 'transparent',
-        opacity: isDnp ? 0.45 : 1,
+        opacity: row.isBye || isDnp ? 0.45 : 1,
       }}
     >
       <span className="w-8 shrink-0 text-xs font-bold tabular-nums" style={{ color: 'var(--color-label-tertiary)' }}>
         {row.week}
       </span>
+      <span className="w-10 shrink-0 text-xs tabular-nums font-semibold" style={{ color: 'var(--color-label-secondary)' }}>
+        {row.isBye ? 'BYE' : (row.opp ? row.opp : '—')}
+      </span>
       <div className="flex flex-1 gap-2">
         {statDisplay.map(s => {
-          const val = row.stats[s.key];
+          const val = row.stats?.[s.key];
           return (
             <span
               key={s.key}
@@ -199,9 +217,9 @@ function WeekRow({ row, statDisplay, best }) {
       </div>
       <span
         className="w-14 shrink-0 text-right font-bold tabular-nums text-sm"
-        style={{ color: isBest ? 'var(--color-signature)' : isDnp ? 'var(--color-label-quaternary)' : 'var(--color-label)' }}
+        style={{ color: isBest ? 'var(--color-signature)' : (row.isBye || isDnp) ? 'var(--color-label-quaternary)' : 'var(--color-label)' }}
       >
-        {isDnp ? 'DNP' : row.pts.toFixed(2)}
+        {row.isBye ? 'BYE' : isDnp ? 'DNP' : row.pts.toFixed(2)}
       </span>
     </div>
   );

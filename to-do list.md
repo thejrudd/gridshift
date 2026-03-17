@@ -35,10 +35,15 @@
 - **Stats player comparison (Statistics)**: Compare mode in `PlayerBrowser` — select two players and view their ESPN career/season stats side-by-side with per-stat deltas highlighted.
 
 ### Known bugs:
-- Player stats on "Matchup" page don't seem to include bye weeks.
-- Player stat weeks on Roster drilldown don't include opponents or defensive skill for that week.
+- There is a slight gap between each of the team boxes in the first frozen column on the defense grid. The background is visible in these gaps.
+- On the defense grid, the top row is translucent
+- The defense grid is not taking full advantage of the available vertical screen space on computer screens
+- On the defense grid, WAS is fully transparent.
 
-### v4.3.5
+### v4.3.5 — Bye Week + Roster Drilldown *(shipped)*
+- ~~Player stats on "Matchup" page don't seem to include bye weeks.~~ ✓
+- ~~Player stat weeks on Roster drilldown don't include opponents or defensive skill for that week.~~ ✓
+- ~~No bye weeks on Defense grid for "Scored", for some reason every week has recorded stats which shouldn't be possible.~~ ✓
 - On Matchup drilldown, include a link to player stats page
 - On Roster player drilldown, allow for filtering stats by action like "Pass," "Rush," "Defense", "All," etc. Have the default for each position be based on that specific position.
 

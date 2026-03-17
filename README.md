@@ -75,6 +75,13 @@ PORT=8080 docker compose up -d --build
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) |
 
+## What's New in v4.3.5
+
+- **Defense Scored — bye week fix** — Scored view no longer shows phantom stats for weeks a team was on bye; `scheduleMap` is now used to filter out Sleeper data entries that fall on a team's bye week
+- **Matchup — BYE WEEK badge** — When a starter's team has no game scheduled for the current week, their matchup card now shows a "BYE WEEK" badge instead of a blank opponent line
+- **Roster drilldown — OPP column** — Player weekly sheet now includes an opponent column (e.g. `KC`, `BUF`) for each played week, sourced from the week's stat entry or the ESPN schedule
+- **Roster drilldown — BYE rows** — Bye weeks now appear as a dedicated "BYE" row in the weekly sheet instead of being silently omitted; DNP rows (game played, no stats logged) are also preserved
+
 ## What's New in v4.3.4
 
 - **Defense grid — frozen header row** — Header row now sticks to the top of the table viewport as you scroll down, and the Team column sticks to the left as you scroll right; the corner cell is anchored in both axes
