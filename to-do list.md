@@ -34,6 +34,21 @@
 - **Fantasy player comparison (Companion)**: New Companion tab — pick two players from the Sleeper player pool and compare them side-by-side: season pts, avg PPG, recent form, positional rank, projection range, and scoring breakdown.
 - **Stats player comparison (Statistics)**: Compare mode in `PlayerBrowser` — select two players and view their ESPN career/season stats side-by-side with per-stat deltas highlighted.
 
+### Known bugs:
+- Player stats on "Matchup" page don't seem to include bye weeks.
+- Player stat weeks on Roster drilldown don't include opponents or defensive skill for that week.
+
+### v4.3.5
+- On Matchup drilldown, include a link to player stats page
+- On Roster player drilldown, allow for filtering stats by action like "Pass," "Rush," "Defense", "All," etc. Have the default for each position be based on that specific position.
+
+### v4.3.4 — Defense Grid Bug Fixes *(shipped)*
+- ~~Top row of Defense grid not frozen, first column not opaque. On mobile, the grid needs to be scrollable separate from the full page.~~ ✓
+- ~~No bye weeks on "Scored" filter of Defense tab of companion section.~~ ✓
+- ~~On the defense grid, bye weeks should be labeled as "BYE"~~ ✓
+- ~~When drilling into defense grid sections, clicking on a player name should bring you to their stats page.~~ **Shipped in v4.3.**
+
+
 ### v4.3.3 — Defense Tab Layout *(shipped)*
 - ~~Full-bleed table layout on all screen sizes~~ ✓
 - ~~Unified labeled filter bar, side-by-side on wide screens~~ ✓

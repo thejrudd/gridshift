@@ -75,6 +75,13 @@ PORT=8080 docker compose up -d --build
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) |
 
+## What's New in v4.3.4
+
+- **Defense grid — frozen header row** — Header row now sticks to the top of the table viewport as you scroll down, and the Team column sticks to the left as you scroll right; the corner cell is anchored in both axes
+- **Defense grid — opaque sticky column** — Team column background is now a solid blended color instead of semi-transparent, so scrolled content no longer bleeds through
+- **Defense grid — independent scroll on mobile** — The table now scrolls independently from the page on all screen sizes
+- **Defense grid — BYE week labels** — Bye weeks are now labeled "BYE" in the grid instead of showing blank cells
+
 ## What's New in v4.3.3
 
 - **Defense tab — full-bleed layout** — Table now runs edge-to-edge on all screen sizes, taking full advantage of available width

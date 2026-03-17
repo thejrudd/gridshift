@@ -169,6 +169,16 @@ function hexToRgba(hex, alpha) {
   return `rgba(${r},${g},${b},${alpha})`;
 }
 
+// Blend a hex color with the app background to produce a fully opaque color.
+// Used for sticky cells so scrolled content doesn't bleed through.
+function blendColor(hex, alpha, isDark) {
+  const [bgR, bgG, bgB] = isDark ? [12, 15, 20] : [242, 241, 236];
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgb(${Math.round(bgR + (r - bgR) * alpha)}, ${Math.round(bgG + (g - bgG) * alpha)}, ${Math.round(bgB + (b - bgB) * alpha)})`;
+}
+
 // Interpolate between two hex colors at position t (0→1)
 function heatColorTeam(t, hexLow, hexHigh) {
   const parse = (hex) => [
@@ -533,7 +543,7 @@ export default function CompanionDefense({ onViewPlayer }) {
           </span>
         </div>
       ) : (
-        <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+        <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100svh - 280px)', WebkitOverflowScrolling: 'touch' }}>
           <table style={{ borderCollapse: 'collapse', minWidth: 'max-content', width: '100%', fontSize: '11px' }}>
             <thead>
               <tr>
@@ -579,9 +589,11 @@ export default function CompanionDefense({ onViewPlayer }) {
               {rows.map(({ team, weekPts, avg }, idx) => {
                 const rowBg = idx % 2 === 0 ? 'var(--color-bg)' : 'var(--color-fill)';
                 const tc = TEAM_COLORS[team.toLowerCase()];
-                const teamBg = tc
-                  ? hexToRgba(darkMode ? (tc.darkPrimary ?? tc.primary) : tc.primary, darkMode ? 0.55 : 0.75)
-                  : rowBg;
+                const teamHex = tc ? (darkMode ? (tc.darkPrimary ?? tc.primary) : tc.primary) : null;
+                const colorAlpha = darkMode ? 0.55 : 0.75;
+                // Use a fully opaque blended color for the sticky column so scrolled
+                // content doesn't bleed through the semi-transparent team color.
+                const teamBg = teamHex ? blendColor(teamHex, colorAlpha, darkMode) : rowBg;
                 return (
                   <tr key={team}>
                     <td style={{ ...stickyBodyStyle, background: teamBg }}>
@@ -612,6 +624,9 @@ export default function CompanionDefense({ onViewPlayer }) {
                     {WEEKS.map(w => {
                       const pts = weekPts[w];
                       const played = scheduleMap?.[w]?.[team] != null;
+                      // A bye is a week that has game data for other teams but not this one
+                      const weekHasGames = !!scheduleMap && Object.keys(scheduleMap[w] ?? {}).length > 0;
+                      const isBye = weekHasGames && !played;
                       const clickable = pts != null && !(viewMode === 'offense' && statMode === 'game_score');
                       return (
                         <td
@@ -633,6 +648,8 @@ export default function CompanionDefense({ onViewPlayer }) {
                                 </div>
                               )}
                             </>
+                          ) : isBye ? (
+                            <span style={{ fontSize: '8px', fontWeight: 700, letterSpacing: '0.04em', opacity: 0.55 }}>BYE</span>
                           ) : played ? '—' : ''}
                         </td>
                       );
