@@ -68,6 +68,7 @@ export function getPlayerSeasonStats(playerId, season) {
   return get(`/stats/nfl/player/${playerId}?season_type=regular&season=${season}&grouping=week`);
 }
 
+
 /**
  * Fetch all weekly stats for a season, weeks 1–totalWeeks.
  * Returns { [player_id]: Array<{ week, ...stats }> }

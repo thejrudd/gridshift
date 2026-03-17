@@ -458,14 +458,37 @@ export default function CompanionDefense({ onViewPlayer }) {
         if (!matchPos && !['QB','RB','WR','TE','K'].includes(player.position)) continue;
         const wEntry = playerWeeks.find(w => w.week === week);
         if (!wEntry) continue;
-        const entryOpp = wEntry.opp?.toUpperCase();
-        if (entryOpp) { if (entryOpp !== team) continue; }
-        else {
-          const currentTeam = player.team?.toUpperCase();
-          if (!currentTeam || !scheduleMap) continue;
-          const inferred = scheduleMap[week]?.[currentTeam]?.opp?.toUpperCase();
-          if (inferred !== team) continue;
+
+        // scheduleMap is the authoritative source for who played who each week.
+        // Only show players in team T's drilldown if their game-time team actually
+        // faced T in this specific week — verified via the schedule, not Sleeper fields
+        // that may be stale or updated after a trade.
+        const actualOpp = scheduleMap?.[week]?.[team]?.opp?.toUpperCase();
+        if (!actualOpp) continue; // T had no game this week
+
+        // Determine this player's team for this game.
+        // wEntry.team (set by per-player ESPN enhancement) is game-stable and takes precedence.
+        // For un-enhanced weeks, infer from other enhanced weeks in the same season —
+        // a player traded after the season will have their real historical team on all
+        // ESPN-resolved entries, making that a far better signal than player.team (current roster).
+        // Only fall back to player.team if no enhanced weeks exist at all.
+        const gameTeam = wEntry.team?.toUpperCase();
+        const currentTeam = player.team?.toUpperCase();
+        let playerTeam = gameTeam;
+        if (!playerTeam) {
+          const enhancedEntry = playerWeeks.find(w => w._teamSource === 'espn' && w.team);
+          playerTeam = enhancedEntry?.team?.toUpperCase() ?? currentTeam;
         }
+        if (!playerTeam) continue;
+
+        // The player must have been on the actual opponent's team this week.
+        // Cross-check via scheduleMap — if playerTeam faced T this week, include them.
+        const scheduleVerified = scheduleMap?.[week]?.[playerTeam]?.opp?.toUpperCase() === team;
+        if (!scheduleVerified) continue;
+
+        // Safety: if using fallback (not ESPN-confirmed) and the inferred team IS T,
+        // the player plays FOR T's offense — not against T's defense.
+        if (!gameTeam && playerTeam === team) continue;
         let val;
         if (statMode === 'rec_yd')       val = wEntry.rec_yd  ?? 0;
         else if (statMode === 'rush_yd') val = wEntry.rush_yd ?? 0;
@@ -473,7 +496,11 @@ export default function CompanionDefense({ onViewPlayer }) {
         if (val <= 0) continue;
         const breakdown = statMode === 'pts' ? getScoreBreakdown(wEntry, scoringSettings) : null;
         const name = player.full_name || `${player.first_name ?? ''} ${player.last_name ?? ''}`.trim() || playerId;
-        results.push({ playerId, name, position: player.position, val, breakdown });
+        // _teamSource: 'espn' = confirmed game-time attribution via ESPN eventlog.
+        // Absent = fell back to player.team (current roster), which may be wrong
+        // for players who were traded or signed after the season ended.
+        const teamSource = wEntry._teamSource ?? 'fallback';
+        results.push({ playerId, name, position: player.position, val, breakdown, teamSource });
       }
     } else {
       // Defense scored: players who scored FOR that team
@@ -748,7 +775,7 @@ export default function CompanionDefense({ onViewPlayer }) {
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {drilldownPlayers.map(({ name, position, val, breakdown, playerId }, i) => {
+                {drilldownPlayers.map(({ name, position, val, breakdown, playerId, teamSource }, i) => {
                   const valLabel = viewMode === 'offense'
                     ? (statMode === 'rec_yd' || statMode === 'rush_yd' ? 'yds' : 'pts')
                     : (DEF_STAT_MODES.find(m => m.id === defStatMode)?.statKey
@@ -772,6 +799,19 @@ export default function CompanionDefense({ onViewPlayer }) {
                           {name}
                         </button>
                         <span style={{ fontSize: 10, color: 'var(--color-label-tertiary)' }}>{position}</span>
+                        {teamSource !== 'espn' && (
+                          <span
+                            title="Team attribution estimated — this player may have been traded or signed after the season. Stats may be misattributed."
+                            style={{
+                              fontSize: 9, fontWeight: 700, padding: '1px 4px', borderRadius: 3,
+                              background: 'var(--color-fill-secondary)',
+                              color: 'var(--color-label-tertiary)',
+                              letterSpacing: '0.02em',
+                            }}
+                          >
+                            est.
+                          </span>
+                        )}
                         <span style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 800, color: 'var(--color-label)', fontVariantNumeric: 'tabular-nums' }}>
                           {val % 1 === 0 ? val : val.toFixed(1)} {valLabel}
                         </span>

@@ -148,3 +148,18 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Sticky column/header borders** — Fixed the frozen Team column and header row visually bleeding scrolled content through their borders. Root cause: `borderCollapse: 'collapse'` shares borders between sticky and non-sticky cells; browsers render shared borders on the wrong compositing layer during scroll. Fixed by switching to `borderCollapse: 'separate'` + `borderSpacing: 0` and replacing sticky cell borders with `box-shadow`, which always renders in the element's own stacking context above scrolled content.
 - **Team color opacity in light mode** — Row team color tints in the Defense grid were too washed out in light mode. Increased blend alpha from 0.75 → 0.90 for a richer, more readable tint.
 - **Team name contrast** — Defense grid team name text now uses WCAG-luminance-aware contrast color (`#111` or `#fff`) based on the blended background, ensuring readability against any team color in both light and dark mode.
+
+---
+
+## v4.4 — Defense Grid Team Attribution Fix
+*2026-03-17*
+
+**Problem:** The Defense Matrix grid and drilldown incorrectly attributed stats for any player who was traded or signed after the season ended. Sleeper's bulk stats endpoint (`/stats/nfl/regular/{season}/{week}`) returns raw stats only — no team, opponent, or game metadata. The only available signal was `player.team` from Sleeper's players DB, which always reflects the player's *current* roster, not the team they played for during the season. For example, Justin Fields (traded to KC after the 2025 season) had all his NYJ stats attributed to KC's opponents, corrupting the defensive rankings for multiple teams.
+
+**Solution — three-layer ESPN cross-reference:**
+
+- **Pass 1: ESPN eventlog enhancement** — ESPN's per-athlete eventlog endpoint returns a `statistics.$ref` URL per game that embeds the ESPN competitor ID (franchise ID). This ID is baked into the game record at game time and never changes on a trade. The `fetchSeasonSchedule` call now also captures ESPN event IDs and competitor IDs from the scoreboard, enabling a cross-reference: for each offensive player (QB/RB/WR/TE/K) with an `espn_id`, one eventlog fetch resolves every game to a confirmed `{ team, opp }` pair, merged into the weekly stat entry as `wEntry.team`, `wEntry.opp`, and `wEntry._teamSource = 'espn'`.
+- **Pass 2: ESPN roster name-match for null-espn_id players** — Nearly two-thirds of offensive players in Sleeper's DB have `espn_id: null`, excluding them from Pass 1. A second pass fetches each team's ESPN roster, matches players by normalized name (stripping periods, suffixes like Jr/II/III), resolves the missing ESPN athlete ID, then runs the same eventlog pipeline. This resolved ~511 of 531 affected players.
+- **Inferred season team fallback** — For partially-resolved players (some weeks enhanced, others not), `buildDefenseTable` and the drilldown filter now infer the player's historical season team from their other ESPN-enhanced weeks rather than falling back to `player.team`.
+- **est. badge** — The drilldown displays an **est.** badge with a tooltip on any player whose team attribution is using the `player.team` fallback, so users can identify potentially misattributed entries at a glance.
+- **WAS/JAX abbreviation aliases** — Added `WAS: 'wsh'` and `JAX: 'jax'` to `TEAM_ESPN_ID` to bridge Sleeper ↔ ESPN team abbreviation mismatches that caused roster lookups to fail for Washington (20 players) and Jacksonville.

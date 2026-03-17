@@ -75,6 +75,10 @@ PORT=8080 docker compose up -d --build
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) |
 
+## What's New in v4.4
+
+- **Defense grid — team attribution fix** — The Defense Matrix grid and drilldown were incorrectly attributing stats for traded/signed players (e.g. Justin Fields' NYJ stats showing under KC's opponents). Root cause: Sleeper's bulk stats endpoint has no game-time team metadata, so attribution fell back to `player.team` (current roster). Fixed with a three-layer ESPN cross-reference: (1) ESPN eventlog enhancement resolves game-time team via competitor IDs embedded in each game record, (2) ESPN roster name-matching resolves the ~2/3 of players missing `espn_id` in Sleeper's DB, and (3) inferred season team fallback uses other enhanced weeks for partially-resolved players. Unresolved entries show an **est.** badge in the drilldown.
+
 ## What's New in v4.3.7
 
 - **Defense grid — sticky border fix** — The frozen Team column and header row no longer bleed scrolled content through their borders. Root cause: `borderCollapse: 'collapse'` shares borders between sticky and non-sticky cells, causing browsers to render shared borders on the wrong compositing layer during scroll. Fixed by switching to `borderCollapse: 'separate'` + `borderSpacing: 0` and replacing sticky cell borders with `box-shadow`, which always renders above scrolled content.

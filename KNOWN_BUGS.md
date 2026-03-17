@@ -32,3 +32,4 @@ Open bugs are listed first, fixed bugs below. Add new entries at the bottom of e
 | Defense grid frozen header row and first column borders showed scrolled grid content behind them when scrolling | v4.3.7 |
 | Defense grid team color tints too washed out in light mode | v4.3.7 |
 | Defense grid team name text had low contrast against team color row tints in light mode | v4.3.7 |
+| Defense grid — wrong player attribution for traded/signed players | v4.4 |

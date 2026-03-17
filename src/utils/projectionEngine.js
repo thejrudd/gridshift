@@ -72,6 +72,16 @@ export function buildDefenseTable(weeklyStats, players, scheduleMap, scoringSett
 
   const getValue = valueFn ?? ((wEntry) => calcPoints(wEntry, scoringSettings));
 
+  // Pre-compute the inferred season team for each player.
+  // For players with ESPN-enhanced weeks, use the team from those weeks — this is
+  // the game-time team and survives trades. Only fall back to player.team (current
+  // roster) when no enhanced weeks exist at all (fringe/unresolved players).
+  const inferredSeasonTeam = {};
+  for (const [playerId, playerWeeks] of Object.entries(weeklyStats)) {
+    const enhanced = playerWeeks.find(w => w._teamSource === 'espn' && w.team);
+    inferredSeasonTeam[playerId] = enhanced?.team?.toUpperCase() ?? players[playerId]?.team?.toUpperCase();
+  }
+
   const table = {};
   const addVal = (opp, normPos, week, val) => {
     if (!table[opp]) table[opp] = {};
@@ -89,18 +99,26 @@ export function buildDefenseTable(weeklyStats, players, scheduleMap, scoringSett
       const val = getValue(wEntry);
       if (val <= 0) continue;
 
-      // Primary: use the opp field directly (set at game time by per-player stats fetch)
-      const entryOpp = wEntry.opp?.toUpperCase();
-      if (entryOpp) {
-        addVal(entryOpp, normPos, wEntry.week, val);
-        continue;
+      // Priority 1: per-player game-time team + scheduleMap → most reliable.
+      const gameTeam = wEntry.team?.toUpperCase();
+      if (gameTeam && scheduleMap?.[wEntry.week]?.[gameTeam]) {
+        const opp = scheduleMap[wEntry.week][gameTeam].opp?.toUpperCase();
+        // Never attribute a player's stats to their own team's "allowed" column.
+        if (opp && opp !== gameTeam) { addVal(opp, normPos, wEntry.week, val); continue; }
       }
 
-      // Fallback: use player.team (current team — may be wrong for traded/released players)
-      const currentTeam = player.team?.toUpperCase();
-      if (scheduleMap && currentTeam) {
-        const inferred = scheduleMap[wEntry.week]?.[currentTeam]?.opp?.toUpperCase();
-        if (inferred) addVal(inferred, normPos, wEntry.week, val);
+      // Priority 2: opp field from per-player enhancement.
+      // Tied to the actual game record — does not change when a player is traded.
+      const entryOpp = wEntry.opp?.toUpperCase();
+      if (entryOpp) { addVal(entryOpp, normPos, wEntry.week, val); continue; }
+
+      // Priority 3: inferred season team fallback.
+      // Uses enhanced weeks' team if available (far more accurate for traded players
+      // than player.team, which reflects the current roster not the historical one).
+      const fallbackTeam = inferredSeasonTeam[playerId];
+      if (scheduleMap && fallbackTeam) {
+        const opp = scheduleMap[wEntry.week]?.[fallbackTeam]?.opp?.toUpperCase();
+        if (opp) addVal(opp, normPos, wEntry.week, val);
       }
     }
   }

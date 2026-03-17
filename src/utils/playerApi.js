@@ -7,6 +7,7 @@ const CURRENT_SEASON = 2025;
 // Some app IDs differ from ESPN's roster endpoint slug
 const TEAM_ESPN_ID = {
   WSH: 'wsh',
+  WAS: 'wsh',  // Sleeper uses WAS, ESPN uses WSH
   LAR: 'lar',
   NE:  'ne',
   LV:  'lv',
@@ -18,6 +19,7 @@ const TEAM_ESPN_ID = {
   KC:  'kc',
   SF:  'sf',
   GB:  'gb',
+  JAX: 'jax',  // Sleeper uses JAX (ESPN abbreviation is JAC but API slug is jax)
 };
 const toEspnTeamId = id => TEAM_ESPN_ID[id] ?? id.toLowerCase();
 
@@ -315,7 +317,7 @@ const normalizeEspnAbbr = a => ESPN_ABBR_TO_SLEEPER[a?.toUpperCase()] ?? a?.toUp
 async function fetchWeekSchedule(season, week) {
   const url = `${ESPN_BASE}/scoreboard?seasontype=2&week=${week}&dates=${season}`;
   return cachedFetch(
-    `sched_v3_${season}_${week}`,
+    `sched_v4_${season}_${week}`,
     async () => {
       const res = await fetch(url);
       if (!res.ok) return {};
@@ -340,8 +342,15 @@ async function fetchWeekSchedule(season, week) {
         };
         const homePts = parseScore(homeC);
         const awayPts = parseScore(awayC);
-        map[homeAbbr] = { opp: awayAbbr, home: true,  ptsFor: homePts, ptsAgainst: awayPts };
-        map[awayAbbr] = { opp: homeAbbr, home: false, ptsFor: awayPts, ptsAgainst: homePts };
+        // espnEventId and espnCompetitorId are captured here so the per-player
+        // enhancement can cross-reference a player's eventlog competitor IDs
+        // (extracted from stats $ref URLs) against the schedule to determine
+        // which team they were actually on for each specific game.
+        // competitor.team.id is the ESPN franchise ID (e.g. "12" for KC) — the
+        // same ID embedded in the core API eventlog stats $ref competitor path.
+        // competitor.id is a competition-specific ID and does NOT match.
+        map[homeAbbr] = { opp: awayAbbr, home: true,  ptsFor: homePts, ptsAgainst: awayPts, espnEventId: event.id, espnCompetitorId: homeC.team?.id };
+        map[awayAbbr] = { opp: homeAbbr, home: false, ptsFor: awayPts, ptsAgainst: homePts, espnEventId: event.id, espnCompetitorId: awayC.team?.id };
       }
       return map;
     },
@@ -350,6 +359,40 @@ async function fetchWeekSchedule(season, week) {
     // Unplayed weeks return an empty map and will be re-fetched next session.
     (data) => data != null && Object.keys(data).length > 0,
   );
+}
+
+/**
+ * Fetch the ESPN eventlog for a player and return a map of ESPN event IDs to
+ * ESPN competitor IDs extracted from the statistics $ref URL of each game entry.
+ *
+ * The competitor ID embedded in the stats $ref URL is set at game time and never
+ * updated when a player is traded — it always reflects the team they actually
+ * played for in that specific game.
+ *
+ * Returns { [espnEventId]: espnCompetitorId } or null on failure.
+ * Cached permanently for past seasons; 1-hour TTL for the current season.
+ */
+export async function fetchPlayerGameTeamMap(espnPlayerId, season) {
+  const isHistorical = parseInt(season) < CURRENT_SEASON;
+  const ttl = isHistorical ? TTL.historical : 60 * 60 * 1000;
+  return cachedFetch(`nfl_gt_v1_${espnPlayerId}_${season}`, async () => {
+    const res = await fetch(
+      `${ESPN_CORE}/seasons/${season}/athletes/${espnPlayerId}/eventlog?lang=en&region=us`
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    const rawItems = data.events?.items ?? [];
+    const items = Array.isArray(rawItems) ? rawItems : Object.values(rawItems);
+    const map = {};
+    for (const item of items) {
+      const statsRef = item.statistics?.$ref ?? '';
+      // Stats $ref format: .../events/{eventId}/competitors/{competitorId}/roster/...
+      const eventId    = statsRef.match(/events\/(\d+)/)?.[1];
+      const competitorId = statsRef.match(/competitors\/(\d+)/)?.[1];
+      if (eventId && competitorId) map[eventId] = competitorId;
+    }
+    return Object.keys(map).length > 0 ? map : null;
+  }, ttl, (d) => d != null);
 }
 
 /**
