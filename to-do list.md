@@ -35,10 +35,13 @@
 - **Stats player comparison (Statistics)**: Compare mode in `PlayerBrowser` — select two players and view their ESPN career/season stats side-by-side with per-stat deltas highlighted.
 
 ### Known bugs:
-- There is a slight gap between each of the team boxes in the first frozen column on the defense grid. The background is visible in these gaps.
-- On the defense grid, the top row is translucent
-- The defense grid is not taking full advantage of the available vertical screen space on computer screens
-- On the defense grid, WAS is fully transparent.
+*(none currently tracked)*
+
+### v4.3.6 — Defense Grid Visual Fixes *(shipped)*
+- ~~There is a slight gap between each of the team boxes in the first frozen column on the defense grid. The background is visible in these gaps.~~ ✓
+- ~~On the defense grid, the top row is translucent~~ ✓
+- ~~The defense grid is not taking full advantage of the available vertical screen space on computer screens~~ ✓
+- ~~On the defense grid, WAS is fully transparent.~~ ✓
 
 ### v4.3.5 — Bye Week + Roster Drilldown *(shipped)*
 - ~~Player stats on "Matchup" page don't seem to include bye weeks.~~ ✓

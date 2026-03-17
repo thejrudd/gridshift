@@ -162,6 +162,9 @@ const ESPN_ID = { WAS: 'wsh' };
 const espnLogoUrl = (team) =>
   `https://a.espncdn.com/i/teamlogos/nfl/500/${(ESPN_ID[team] ?? team).toLowerCase()}.png`;
 
+// STADIUMS / Sleeper use WAS and LAR; TEAM_COLORS uses wsh and la
+const TEAM_COLOR_KEY = { WAS: 'wsh', LAR: 'la' };
+
 function hexToRgba(hex, alpha) {
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
@@ -545,7 +548,7 @@ export default function CompanionDefense({ onViewPlayer }) {
           </span>
         </div>
       ) : (
-        <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100svh - 280px)', WebkitOverflowScrolling: 'touch' }}>
+        <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'var(--defense-grid-max-height)', WebkitOverflowScrolling: 'touch' }}>
           <table style={{ borderCollapse: 'collapse', minWidth: 'max-content', width: '100%', fontSize: '11px' }}>
             <thead>
               <tr>
@@ -590,7 +593,7 @@ export default function CompanionDefense({ onViewPlayer }) {
             <tbody>
               {rows.map(({ team, weekPts, avg }, idx) => {
                 const rowBg = idx % 2 === 0 ? 'var(--color-bg)' : 'var(--color-fill)';
-                const tc = TEAM_COLORS[team.toLowerCase()];
+                const tc = TEAM_COLORS[TEAM_COLOR_KEY[team] ?? team.toLowerCase()];
                 const teamHex = tc ? (darkMode ? (tc.darkPrimary ?? tc.primary) : tc.primary) : null;
                 const colorAlpha = darkMode ? 0.55 : 0.75;
                 // Use a fully opaque blended color for the sticky column so scrolled
@@ -800,9 +803,10 @@ export default function CompanionDefense({ onViewPlayer }) {
 // ── Styles ────────────────────────────────────────────────────────────────────
 
 // Corner cell: sticky both top + left, highest z-index
+// Uses --color-bg (opaque) instead of --color-fill-secondary (semi-transparent)
 const stickyHeadStyle = {
   position: 'sticky', left: 0, top: 0, zIndex: 4,
-  background: 'var(--color-fill-secondary)',
+  background: 'var(--color-bg)',
   padding: '6px 10px',
   textAlign: 'left',
   color: 'var(--color-label-secondary)',
@@ -810,8 +814,8 @@ const stickyHeadStyle = {
   textTransform: 'uppercase',
   letterSpacing: '0.06em',
   fontSize: '10px',
-  borderBottom: '1px solid var(--color-separator)',
-  borderRight: '1px solid var(--color-separator)',
+  borderBottom: '1px solid var(--color-separator-opaque)',
+  borderRight: '1px solid var(--color-separator-opaque)',
   whiteSpace: 'nowrap',
 };
 
@@ -826,23 +830,24 @@ function headStyle(isAvg) {
     fontSize: '10px',
     textTransform: 'uppercase',
     letterSpacing: '0.06em',
-    background: 'var(--color-fill-secondary)',
-    borderBottom: '1px solid var(--color-separator)',
+    background: 'var(--color-bg)',
+    borderBottom: '1px solid var(--color-separator-opaque)',
     borderLeft: '1px solid var(--color-separator)',
     whiteSpace: 'nowrap',
     minWidth: isAvg ? '44px' : '40px',
   };
 }
 
-// Body first-column cells: sticky left, fully opaque background set inline
+// Body first-column cells: sticky left, fully opaque background set inline.
+// Uses opaque separators so scrolled heatmap cells don't bleed through the border gap.
 const stickyBodyStyle = {
   position: 'sticky', left: 0, zIndex: 2,
   padding: '5px 10px',
   fontWeight: 700,
   fontSize: '11px',
   color: 'var(--color-label)',
-  borderRight: '1px solid var(--color-separator)',
-  borderBottom: '1px solid var(--color-separator)',
+  borderRight: '1px solid var(--color-separator-opaque)',
+  borderBottom: '1px solid var(--color-separator-opaque)',
   whiteSpace: 'nowrap',
 };
 

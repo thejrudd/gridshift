@@ -75,6 +75,13 @@ PORT=8080 docker compose up -d --build
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) |
 
+## What's New in v4.3.6
+
+- **Defense grid — WAS/LAR color fix** — Washington and LA Rams rows now show their correct team colors; STADIUMS uses `WAS`/`LAR` while TEAM_COLORS uses `wsh`/`la` — added an alias map to bridge the mismatch
+- **Defense grid — opaque header row** — Header row background changed from semi-transparent `--color-fill-secondary` (~5% opacity) to `--color-bg`, making the header fully opaque when scrolling
+- **Defense grid — opaque sticky column borders** — Borders on the frozen Team column and header corner now use `--color-separator-opaque` (solid color) instead of the semi-transparent `--color-separator`, eliminating the bleedthrough gap between rows
+- **Defense grid — responsive height** — Table container max-height is now a CSS variable with distinct values for mobile (`100dvh - 260px`) and desktop (`100dvh - 160px`), giving the grid more vertical space on larger screens
+
 ## What's New in v4.3.5
 
 - **Defense Scored — bye week fix** — Scored view no longer shows phantom stats for weeks a team was on bye; `scheduleMap` is now used to filter out Sleeper data entries that fall on a team's bye week
