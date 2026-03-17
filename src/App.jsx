@@ -41,6 +41,7 @@ function AppInner() {
   const [companionView, setCompanionView] = useState('roster');
   const [scoringSettingsOpen, setScoringSettingsOpen] = useState(false);
   const [statsInitPlayer, setStatsInitPlayer] = useState(null);
+  const [statsNavBack, setStatsNavBack] = useState(null); // { label, onBack } | null — contextual back from external nav
 
   const { hasLeague, season, changeSeason, league, disconnect, sleeperUser, statsLoading, loadSeasonStats, seasonStats } = useSleeper();
 
@@ -68,6 +69,7 @@ function AppInner() {
   useEffect(() => {
     setTeamSearch('');
     setDivisionFilter('');
+    if (activeTab !== 'statistics') setStatsNavBack(null);
   }, [activeTab]);
 
   useEffect(() => {
@@ -259,7 +261,7 @@ function AppInner() {
             </>
           )}
 
-          {activeTab === 'statistics' && <PlayerBrowser teams={scheduleData.teams} initialPlayer={statsInitPlayer} onInitialPlayerConsumed={() => setStatsInitPlayer(null)} />}
+          {activeTab === 'statistics' && <PlayerBrowser teams={scheduleData.teams} initialPlayer={statsInitPlayer} onInitialPlayerConsumed={() => setStatsInitPlayer(null)} navBack={statsNavBack} />}
 
 {activeTab === 'companion' && !hasLeague && (
             <CompanionConnect />
@@ -325,7 +327,7 @@ function AppInner() {
               {companionView === 'rankings'  && <CompanionRankings />}
               {companionView === 'matchup'   && <CompanionMatchup />}
               {companionView === 'waiver'    && <CompanionWaiver />}
-              {companionView === 'defense'   && <CompanionDefense onViewPlayer={(id, meta) => { setStatsInitPlayer({ id, ...meta }); setActiveTab('statistics'); }} />}
+              {companionView === 'defense'   && <CompanionDefense onViewPlayer={(id, meta) => { setStatsInitPlayer({ id, ...meta }); setStatsNavBack({ label: 'Defense', onBack: () => { setActiveTab('companion'); setStatsNavBack(null); } }); setActiveTab('statistics'); }} />}
               {companionView === 'scoring'   && <CompanionScoring />}
             </>
           )}

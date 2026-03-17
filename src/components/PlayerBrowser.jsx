@@ -28,7 +28,7 @@ function matchesFilter(position, filter) {
   return position === filter;
 }
 
-const PlayerBrowser = ({ teams, initialPlayer, onInitialPlayerConsumed }) => {
+const PlayerBrowser = ({ teams, initialPlayer, onInitialPlayerConsumed, navBack }) => {
   const [selectedTeam, setSelectedTeam]     = useState(null);
   const [selectedPlayer, setSelectedPlayer] = useState(initialPlayer ?? null);
 
@@ -114,7 +114,8 @@ const PlayerBrowser = ({ teams, initialPlayer, onInitialPlayerConsumed }) => {
         playerMeta={selectedPlayer}
         teamId={selectedPlayer.teamId}
         teams={teams}
-        onBack={() => setSelectedPlayer(null)}
+        onBack={navBack?.onBack ?? (() => setSelectedPlayer(null))}
+        backLabel={navBack?.label}
       />
     );
   }

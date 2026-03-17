@@ -242,7 +242,7 @@ function FilterGroup({ label, children }) {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function CompanionDefense({ onViewPlayer }) {
-  const { weeklyStats, players, scheduleMap, scoringSettings } = useSleeper();
+  const { weeklyStats, players, scheduleMap, scoringSettings, espnIdOverrides } = useSleeper();
   const { favoriteTeam, darkMode } = useTheme();
 
   const [viewMode, setViewMode] = useState('offense');  // 'offense' | 'defense'
@@ -517,13 +517,23 @@ export default function CompanionDefense({ onViewPlayer }) {
         if (matchNorm && normPos !== matchNorm) continue;
         const wEntry = playerWeeks.find(w => w.week === week);
         if (!wEntry) continue;
-        const playerTeam = (wEntry.team || player.team)?.toUpperCase();
+
+        // Same inferred-team logic as the Allowed side: prefer ESPN-confirmed game-time
+        // team, fall back to other enhanced weeks, then player.team.
+        const gameTeam = wEntry.team?.toUpperCase();
+        let playerTeam = gameTeam;
+        if (!playerTeam) {
+          const enhancedEntry = playerWeeks.find(w => w._teamSource === 'espn' && w.team);
+          playerTeam = enhancedEntry?.team?.toUpperCase() ?? player.team?.toUpperCase();
+        }
         if (playerTeam !== team) continue;
+
         const val = getDefVal(wEntry);
         if (val <= 0) continue;
         const breakdown = defStatMode === 'pts' ? getScoreBreakdown(wEntry, scoringSettings) : null;
         const name = player.full_name || `${player.first_name ?? ''} ${player.last_name ?? ''}`.trim() || playerId;
-        results.push({ playerId, name, position: player.position, val, breakdown });
+        const teamSource = wEntry._teamSource ?? 'fallback';
+        results.push({ playerId, name, position: player.position, val, breakdown, teamSource });
       }
     }
 
@@ -739,23 +749,24 @@ export default function CompanionDefense({ onViewPlayer }) {
             {(() => {
               const sched = scheduleMap?.[drilldown.week]?.[drilldown.team];
               const opp = sched?.opp;
-              const homeTeam = sched?.home ? drilldown.team : opp;
-              const awayTeam = sched?.home ? opp : drilldown.team;
+              const homeKnown = sched?.home != null;
+              const homeTeam = homeKnown ? (sched.home ? drilldown.team : opp) : null;
+              const awayTeam = homeKnown ? (sched.home ? opp : drilldown.team) : null;
               return (
                 <div style={{ marginBottom: 16 }}>
                   <div style={{ fontSize: 13, color: 'var(--color-label-secondary)', marginBottom: 6 }}>
                     Week {drilldown.week}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
-                    {awayTeam && <img src={espnLogoUrl(awayTeam)} width={28} height={28} style={{ objectFit: 'contain' }} alt={awayTeam} />}
+                    {(awayTeam ?? drilldown.team) && <img src={espnLogoUrl(awayTeam ?? drilldown.team)} width={28} height={28} style={{ objectFit: 'contain' }} alt={awayTeam ?? drilldown.team} />}
                     <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--color-label)' }}>
                       {awayTeam ?? drilldown.team}
                     </span>
-                    <span style={{ fontSize: 12, color: 'var(--color-label-tertiary)' }}>vs</span>
+                    <span style={{ fontSize: 12, color: 'var(--color-label-tertiary)' }}>{homeKnown ? '@' : 'vs'}</span>
                     <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--color-label)' }}>
-                      {homeTeam ?? '—'}
+                      {homeTeam ?? opp ?? '—'}
                     </span>
-                    {homeTeam && <img src={espnLogoUrl(homeTeam)} width={28} height={28} style={{ objectFit: 'contain' }} alt={homeTeam} />}
+                    {(homeTeam ?? opp) && <img src={espnLogoUrl(homeTeam ?? opp)} width={28} height={28} style={{ objectFit: 'contain' }} alt={homeTeam ?? opp} />}
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--color-label-tertiary)', marginTop: 6 }}>
                     {viewMode === 'offense' ? (activePos === 'ALL' ? 'All positions' : activePos) : (activePos === 'ALL' ? 'All defense' : activePos)}
@@ -788,18 +799,25 @@ export default function CompanionDefense({ onViewPlayer }) {
                     >
                       {/* Compact header: name · pos · value */}
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: breakdown?.length ? 6 : 0 }}>
-                        <button
-                          onClick={onViewPlayer && players?.[playerId]?.espn_id ? () => { setDrilldown(null); onViewPlayer(String(players[playerId].espn_id), { displayName: name, teamId: players[playerId].team?.toUpperCase() }); } : undefined}
-                          style={{
-                            fontSize: 13, fontWeight: 700, color: onViewPlayer && players?.[playerId]?.espn_id ? 'var(--color-interactive)' : 'var(--color-label)',
-                            background: 'none', border: 'none', padding: 0, cursor: onViewPlayer && players?.[playerId]?.espn_id ? 'pointer' : 'default',
-                            textAlign: 'left',
-                          }}
-                        >
-                          {name}
-                        </button>
+                        {(() => {
+                          const espnId = players?.[playerId]?.espn_id ?? espnIdOverrides?.[playerId];
+                          const canNav = !!(onViewPlayer && espnId);
+                          const teamId = players?.[playerId]?.team?.toUpperCase();
+                          return (
+                            <button
+                              onClick={canNav ? () => { setDrilldown(null); onViewPlayer(String(espnId), { displayName: name, teamId }); } : undefined}
+                              style={{
+                                fontSize: 13, fontWeight: 700, color: canNav ? 'var(--color-interactive)' : 'var(--color-label)',
+                                background: 'none', border: 'none', padding: 0, cursor: canNav ? 'pointer' : 'default',
+                                textAlign: 'left',
+                              }}
+                            >
+                              {name}
+                            </button>
+                          );
+                        })()}
                         <span style={{ fontSize: 10, color: 'var(--color-label-tertiary)' }}>{position}</span>
-                        {teamSource !== 'espn' && (
+                        {teamSource === 'fallback' && (
                           <span
                             title="Team attribution estimated — this player may have been traded or signed after the season. Stats may be misattributed."
                             style={{

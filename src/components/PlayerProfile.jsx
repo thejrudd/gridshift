@@ -24,7 +24,7 @@ function darkenHex(hex, amount = 0.28) {
 
 const YEARS_TO_SHOW = 10;
 
-const PlayerProfile = ({ playerId, playerMeta, teamId, teams, onBack }) => {
+const PlayerProfile = ({ playerId, playerMeta, teamId, teams, onBack, backLabel }) => {
   const { getTeamRecord } = usePredictions();
 
   // statsJson for each year, fetched lazily
@@ -181,7 +181,7 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, onBack }) => {
         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
         </svg>
-        Statistics
+        {backLabel ?? 'Statistics'}
       </button>
 
       {/* Profile hero card */}

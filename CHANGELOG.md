@@ -163,3 +163,14 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Inferred season team fallback** — For partially-resolved players (some weeks enhanced, others not), `buildDefenseTable` and the drilldown filter now infer the player's historical season team from their other ESPN-enhanced weeks rather than falling back to `player.team`.
 - **est. badge** — The drilldown displays an **est.** badge with a tooltip on any player whose team attribution is using the `player.team` fallback, so users can identify potentially misattributed entries at a glance.
 - **WAS/JAX abbreviation aliases** — Added `WAS: 'wsh'` and `JAX: 'jax'` to `TEAM_ESPN_ID` to bridge Sleeper ↔ ESPN team abbreviation mismatches that caused roster lookups to fail for Washington (20 players) and Jacksonville.
+
+---
+
+## v4.4.1 — Defense Grid Polish
+*2026-03-17*
+
+- **Defense Scored drilldown attribution fix** — Applied the same inferred-season-team fallback from v4.4 to the Scored (defensive player) drilldown. Previously, IDP players (DL/LB/DB) in the Scored drilldown used `player.team` directly instead of ESPN-confirmed game-time team data, causing the same misattribution bug for traded defensive players. The fix uses `wEntry.team` (ESPN-confirmed) first, falls back to other enhanced weeks in the same season, then `player.team`. The **est.** badge now also appears in the Scored drilldown for unverified entries.
+- **Player name navigation** — Player names in the Defense grid drilldown are now clickable for all players, including those whose `espn_id` is null in Sleeper's DB. Pass 2 resolved ESPN IDs are now stored in a `espnIdOverrides` context map and used as a fallback for navigation.
+- **Contextual back navigation** — When navigating from the Defense grid drilldown to a player's Statistics page, the back button now reads **"← Defense"** and returns to the Defense grid. In all other cases the button continues to read **"← Statistics"** and returns to the statistics browser.
+- **Home/away in drilldown header** — The drilldown matchup header now uses `@` notation (standard NFL: AWAY @ HOME) instead of `vs` when home/away data is available from the scheduleMap. Falls back to `vs` when home/away is unknown.
+- **Roadmap file renamed** — `to-do list.md` renamed to `TO_DO.md`; restructured to chronological version order with backlog at the bottom.

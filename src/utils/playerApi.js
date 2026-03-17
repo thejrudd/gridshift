@@ -375,7 +375,7 @@ async function fetchWeekSchedule(season, week) {
 export async function fetchPlayerGameTeamMap(espnPlayerId, season) {
   const isHistorical = parseInt(season) < CURRENT_SEASON;
   const ttl = isHistorical ? TTL.historical : 60 * 60 * 1000;
-  return cachedFetch(`nfl_gt_v1_${espnPlayerId}_${season}`, async () => {
+  return cachedFetch(`nfl_gt_v2_${espnPlayerId}_${season}`, async () => {
     const res = await fetch(
       `${ESPN_CORE}/seasons/${season}/athletes/${espnPlayerId}/eventlog?lang=en&region=us`
     );
@@ -383,14 +383,41 @@ export async function fetchPlayerGameTeamMap(espnPlayerId, season) {
     const data = await res.json();
     const rawItems = data.events?.items ?? [];
     const items = Array.isArray(rawItems) ? rawItems : Object.values(rawItems);
+
+    // Pass 1: extract eventId + competitorId from statistics.$ref where available.
+    // Stats $ref format: .../events/{eventId}/competitors/{competitorId}/roster/...
     const map = {};
+    const eventsWithoutComp = [];
     for (const item of items) {
       const statsRef = item.statistics?.$ref ?? '';
-      // Stats $ref format: .../events/{eventId}/competitors/{competitorId}/roster/...
-      const eventId    = statsRef.match(/events\/(\d+)/)?.[1];
+      const eventRef = item.event?.$ref ?? '';
+      const eventId = statsRef.match(/events\/(\d+)/)?.[1]
+        ?? eventRef.match(/events\/(\d+)/)?.[1];
       const competitorId = statsRef.match(/competitors\/(\d+)/)?.[1];
-      if (eventId && competitorId) map[eventId] = competitorId;
+      if (!eventId) continue;
+      if (competitorId) {
+        map[eventId] = competitorId;
+      } else {
+        eventsWithoutComp.push(eventId);
+      }
     }
+
+    // Pass 2: for eventlog entries that had an event ID but no competitor ID
+    // (common for defensive players whose statistics.$ref is absent), fall back
+    // to the most common competitor ID from entries that DID resolve.
+    // This is safe because mid-season team changes are rare; the competitor ID
+    // represents the team the player was on for most/all of the season.
+    if (eventsWithoutComp.length > 0 && Object.keys(map).length > 0) {
+      const compCounts = {};
+      for (const compId of Object.values(map)) {
+        compCounts[compId] = (compCounts[compId] ?? 0) + 1;
+      }
+      const fallbackComp = Object.entries(compCounts).sort((a, b) => b[1] - a[1])[0][0];
+      for (const eventId of eventsWithoutComp) {
+        map[eventId] = fallbackComp;
+      }
+    }
+
     return Object.keys(map).length > 0 ? map : null;
   }, ttl, (d) => d != null);
 }

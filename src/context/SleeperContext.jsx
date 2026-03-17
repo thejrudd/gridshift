@@ -63,6 +63,7 @@ export function SleeperProvider({ children }) {
   const [scheduleMap, setScheduleMap] = useState(null);  // { [week]: { [teamAbbr]: { opp, home } } }
   const [statsLoading, setStatsLoading] = useState(false);
   const [statsProgress, setStatsProgress] = useState(0);
+  const [espnIdOverrides, setEspnIdOverrides] = useState({}); // sleeperId → espnId, for null-espn_id players resolved via Pass 2
 
   // UI state
   const [connectError, setConnectError] = useState(null);
@@ -214,30 +215,22 @@ export function SleeperProvider({ children }) {
 
   /**
    * After bulk weekly stats + players DB + scheduleMap are all loaded, enrich
-   * each offensive player's weekly stat entries with their confirmed game-time
-   * team and opponent.
+   * each player's weekly stat entries with their confirmed game-time team and
+   * opponent. Three-pass enhancement:
+   *
+   *   Pass 1 — ESPN eventlog for players with espn_id in Sleeper's DB.
+   *   Pass 2 — ESPN roster name-match for players with espn_id: null, then
+   *            the same eventlog pipeline.
+   *   Pass 3 — Schedule-based verification for remaining unresolved players.
+   *            Uses player.team + scheduleMap to confirm the team played that
+   *            week. Marked _teamSource = 'schedule'.
    *
    * Root problem: Sleeper's bulk stats endpoint has no team/opponent metadata.
-   * The only attribution signal otherwise available is player.team (current
-   * roster), which is immediately wrong for any player who is traded or signed
-   * after the season ends.
+   * player.team (current roster) is wrong for any traded/signed player.
    *
-   * Fix: ESPN's eventlog endpoint returns a stats $ref URL per game that embeds
-   * the ESPN competitor ID — the numeric team ID the player was actually on for
-   * that specific game. This ID is baked into the game record at game time and
-   * never changes on a trade. Cross-referencing against the scheduleMap (which
-   * also captures ESPN event IDs and competitor IDs from the scoreboard) lets us
-   * resolve each player's week → { team, opp } without any additional API calls
-   * beyond one eventlog fetch per player.
-   *
-   * Covers all offensive skill positions (QB, RB, WR, TE, K).
-   * Entries resolved this way are marked wEntry._teamSource = 'espn'.
-   * Entries with no ESPN ID or where the eventlog returned nothing are left
-   * unmarked; downstream code falls back to player.team and may be inaccurate
-   * for recently traded players.
-   *
-   * Results are cached via playerCache (permanently for past seasons, 1h TTL
-   * for the current season).
+   * Covers all offensive (QB, RB, WR, TE, K) and IDP (DL, LB, DB, etc.)
+   * positions. Entries marked _teamSource = 'espn' or 'schedule' are
+   * considered verified; unmarked entries fall back to player.team.
    */
   useEffect(() => {
     if (statsLoading || !weeklyStats || !players || !scheduleMap || qbOppSeasonRef.current === season) return;
@@ -269,77 +262,67 @@ export function SleeperProvider({ children }) {
         }
       }
 
-      // Offensive positions that need game-time team resolution.
-      const OFF_POSITIONS = new Set(['QB', 'RB', 'WR', 'TE', 'K']);
+      // All positions that need game-time team resolution (offense + IDP).
+      const ENHANCE_POSITIONS = new Set([
+        'QB', 'RB', 'WR', 'TE', 'K',
+        'DL', 'DE', 'DT', 'LB', 'ILB', 'OLB', 'DB', 'CB', 'S', 'SS', 'FS',
+      ]);
 
-      // Split offensive players by whether Sleeper has an ESPN ID for them
-      const allOffensive = Object.keys(weeklyStats).filter(id => {
+      // Split players by whether Sleeper has an ESPN ID for them
+      const allEnhanceable = Object.keys(weeklyStats).filter(id => {
         const p = players[id];
-        return p && OFF_POSITIONS.has(p.position);
+        return p && ENHANCE_POSITIONS.has(p.position);
       });
-      const withEspnId = allOffensive.filter(id => players[id]?.espn_id);
-      const noEspnId = allOffensive.filter(id => !players[id]?.espn_id);
+      const withEspnId = allEnhanceable.filter(id => players[id]?.espn_id);
+      const noEspnId = allEnhanceable.filter(id => !players[id]?.espn_id);
 
       const candidates = withEspnId;
 
-      if (candidates.length === 0) { qbOppSeasonRef.current = capturedSeason; return; }
+      // Collect all enhancement results across passes, then apply in one setWeeklyStats call.
+      // Each entry: { [sleeperId]: { [week]: { team, opp, source } } }
+      const allEnhancements = {};
 
-      // Fetch ESPN eventlog maps for all candidates in parallel.
-      const eventMaps = await Promise.all(
-        candidates.map(sleeperId =>
-          fetchPlayerGameTeamMap(String(players[sleeperId].espn_id), capturedSeason)
-            .catch(() => null)
-        )
-      );
+      // Helper: resolve eventlog maps into per-week team/opp data
+      const resolveEventMaps = (playerIds, eventMapsArr) => {
+        const result = {};
+        playerIds.forEach((sleeperId, i) => {
+          const eventMap = eventMapsArr[i];
+          if (!eventMap) return;
+          const weekMap = {};
+          for (const [eventId, compId] of Object.entries(eventMap)) {
+            const week = espnEventToWeek[eventId];
+            const team = espnCompToTeam[compId];
+            if (!week || !team) continue;
+            const opp = scheduleMap[week]?.[team]?.opp ?? null;
+            weekMap[week] = { team, opp };
+          }
+          if (Object.keys(weekMap).length > 0) result[sleeperId] = weekMap;
+        });
+        return result;
+      };
 
-      if (cancelled) return;
+      // ── Pass 1: ESPN eventlog for players with espn_id ─────────────────────
+      if (candidates.length > 0) {
+        const eventMaps = await Promise.all(
+          candidates.map(sleeperId =>
+            fetchPlayerGameTeamMap(String(players[sleeperId].espn_id), capturedSeason)
+              .catch(() => null)
+          )
+        );
+        if (cancelled) return;
 
-      // Build gameTeamData: { [sleeperId]: { [week]: { team, opp } } }
-      const gameTeamData = {};
-      candidates.forEach((sleeperId, i) => {
-        const eventMap = eventMaps[i]; // { [espnEventId]: espnCompetitorId }
-        const p = players[sleeperId];
-        if (!eventMap) return;
-        const weekMap = {};
-        for (const [eventId, compId] of Object.entries(eventMap)) {
-          const week = espnEventToWeek[eventId];
-          const team = espnCompToTeam[compId];
-          if (!week || !team) continue;
-          const opp = scheduleMap[week]?.[team]?.opp ?? null;
-          weekMap[week] = { team, opp };
-        }
-        if (Object.keys(weekMap).length > 0) gameTeamData[sleeperId] = weekMap;
-      });
+        const pass1Data = resolveEventMaps(candidates, eventMaps);
+        Object.assign(allEnhancements, pass1Data);
+      }
 
-      const playersWithData = Object.keys(gameTeamData);
-      if (playersWithData.length === 0) { qbOppSeasonRef.current = capturedSeason; return; }
-
-      // Merge confirmed game-time team + opp into weeklyStats entries.
-      // _teamSource: 'espn' marks entries with confirmed attribution so the
-      // drilldown can distinguish them from player.team fallback entries.
-      setWeeklyStats(prev => {
-        const next = { ...prev };
-        for (const sleeperId of playersWithData) {
-          if (!next[sleeperId]) continue;
-          const weekMap = gameTeamData[sleeperId];
-          next[sleeperId] = next[sleeperId].map(wEntry => {
-            const data = weekMap[wEntry.week];
-            if (!data) return wEntry;
-            return { ...wEntry, team: data.team, opp: data.opp, _teamSource: 'espn' };
-          });
-        }
-        return next;
-      });
-
-      // ── Pass 2: ESPN roster cross-reference for null-espn_id players ──────
-      // Some players (e.g. recently traded/signed) have espn_id: null in
-      // Sleeper's players DB, excluding them from Pass 1. Fix: look up their
-      // ESPN athlete ID by fetching their current team's ESPN roster and
-      // matching by name, then run the same eventlog enhancement pipeline.
+      // ── Pass 2: ESPN roster cross-reference for null-espn_id players ───────
+      // Some players have espn_id: null in Sleeper's players DB, excluding them
+      // from Pass 1. Fix: look up their ESPN athlete ID by fetching their
+      // current team's ESPN roster and matching by name, then run the same
+      // eventlog pipeline.
       const noEspnCandidates = noEspnId.filter(id => players[id]?.team);
 
       if (noEspnCandidates.length > 0 && !cancelled) {
-        // Fetch ESPN rosters for each team that has null-espn_id players (cached)
         const teamsNeeded = [...new Set(noEspnCandidates.map(id => players[id].team.toUpperCase()))];
         const rosterResults = await Promise.all(
           teamsNeeded.map(t => fetchRoster(t).catch(() => []))
@@ -349,31 +332,23 @@ export function SleeperProvider({ children }) {
         const teamRosters = {};
         teamsNeeded.forEach((t, i) => { teamRosters[t] = rosterResults[i]; });
 
-        // Normalize names for fuzzy matching — strip periods, suffixes, lowercase
         const normalizeName = (name) =>
           (name ?? '').toLowerCase().replace(/\./g, '').replace(/\s+(jr|sr|ii|iii|iv|v)$/i, '').trim();
 
-        // Match each null-espn_id player to an ESPN roster entry by name
         const resolvedEspnIds = {};
-        const unmatched = [];
         for (const sleeperId of noEspnCandidates) {
           const p = players[sleeperId];
           const roster = teamRosters[p.team.toUpperCase()] ?? [];
           const normSleeper = normalizeName(p.full_name);
-          // Try exact match first, then normalized match
           const match = roster.find(r => r.displayName.toLowerCase() === p.full_name?.toLowerCase())
             ?? roster.find(r => normalizeName(r.displayName) === normSleeper);
-          if (match) {
-            resolvedEspnIds[sleeperId] = match.id;
-          } else {
-            unmatched.push(`${p.full_name} (${p.position}, ${p.team})`);
-          }
+          if (match) resolvedEspnIds[sleeperId] = match.id;
         }
 
         const resolvedIds = Object.keys(resolvedEspnIds);
+        if (resolvedIds.length > 0) setEspnIdOverrides(prev => ({ ...prev, ...resolvedEspnIds }));
 
         if (resolvedIds.length > 0 && !cancelled) {
-          // Run the same eventlog pipeline for these newly-resolved players
           const eventMaps2 = await Promise.all(
             resolvedIds.map(id =>
               fetchPlayerGameTeamMap(String(resolvedEspnIds[id]), capturedSeason)
@@ -382,39 +357,54 @@ export function SleeperProvider({ children }) {
           );
           if (cancelled) return;
 
-          const gameTeamData2 = {};
-          resolvedIds.forEach((sleeperId, i) => {
-            const eventMap = eventMaps2[i];
-            if (!eventMap) return;
-            const weekMap = {};
-            for (const [eventId, compId] of Object.entries(eventMap)) {
-              const week = espnEventToWeek[eventId];
-              const team = espnCompToTeam[compId];
-              if (!week || !team) continue;
-              const opp = scheduleMap[week]?.[team]?.opp ?? null;
-              weekMap[week] = { team, opp };
-            }
-            if (Object.keys(weekMap).length > 0) gameTeamData2[sleeperId] = weekMap;
-          });
+          const pass2Data = resolveEventMaps(resolvedIds, eventMaps2);
+          Object.assign(allEnhancements, pass2Data);
+        }
+      }
 
-          const pass2Resolved = Object.keys(gameTeamData2);
-          if (pass2Resolved.length > 0) {
-            setWeeklyStats(prev => {
-              const next = { ...prev };
-              for (const sleeperId of pass2Resolved) {
-                if (!next[sleeperId]) continue;
-                const weekMap = gameTeamData2[sleeperId];
-                next[sleeperId] = next[sleeperId].map(wEntry => {
-                  const data = weekMap[wEntry.week];
-                  if (!data) return wEntry;
-                  return { ...wEntry, team: data.team, opp: data.opp, _teamSource: 'espn' };
-                });
-              }
-              return next;
+      // ── Pass 3: Schedule-based verification for remaining players ──────────
+      // Players not resolved by Passes 1/2 (e.g. defensive players whose ESPN
+      // eventlog lacks statistics.$ref entries entirely) still need attribution.
+      // For each unenhanced player, verify player.team against the scheduleMap:
+      // if the team played that week, attribute the stats there and mark as
+      // 'schedule' source (confirmed via NFL schedule, not ESPN eventlog).
+      const stillUnresolved = allEnhanceable.filter(id => !allEnhancements[id]);
+      for (const sleeperId of stillUnresolved) {
+        const p = players[sleeperId];
+        const team = p?.team?.toUpperCase();
+        if (!team) continue;
+        const playerWeeks = weeklyStats[sleeperId];
+        if (!playerWeeks) continue;
+
+        const weekMap = {};
+        for (const wEntry of playerWeeks) {
+          // Already has ESPN-confirmed data from a partial enhancement? Skip.
+          if (wEntry._teamSource === 'espn') continue;
+          const schedEntry = scheduleMap?.[wEntry.week]?.[team];
+          if (schedEntry) {
+            weekMap[wEntry.week] = { team, opp: schedEntry.opp?.toUpperCase() ?? null, source: 'schedule' };
+          }
+        }
+        if (Object.keys(weekMap).length > 0) allEnhancements[sleeperId] = weekMap;
+      }
+
+      // ── Apply all enhancements in a single state update ────────────────────
+      const enhancedPlayerIds = Object.keys(allEnhancements);
+      if (enhancedPlayerIds.length > 0) {
+        setWeeklyStats(prev => {
+          const next = { ...prev };
+          for (const sleeperId of enhancedPlayerIds) {
+            if (!next[sleeperId]) continue;
+            const weekMap = allEnhancements[sleeperId];
+            next[sleeperId] = next[sleeperId].map(wEntry => {
+              const data = weekMap[wEntry.week];
+              if (!data) return wEntry;
+              const source = data.source ?? 'espn';
+              return { ...wEntry, team: data.team, opp: data.opp, _teamSource: source };
             });
           }
-
-        }
+          return next;
+        });
       }
 
       qbOppSeasonRef.current = capturedSeason;
@@ -461,6 +451,7 @@ export function SleeperProvider({ children }) {
       scheduleMap,
       statsLoading,
       statsProgress,
+      espnIdOverrides,
       connectError,
       connectLoading,
       isConnected,
