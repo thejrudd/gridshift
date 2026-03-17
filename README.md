@@ -75,6 +75,12 @@ PORT=8080 docker compose up -d --build
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) |
 
+## What's New in v4.3.7
+
+- **Defense grid — sticky border fix** — The frozen Team column and header row no longer bleed scrolled content through their borders. Root cause: `borderCollapse: 'collapse'` shares borders between sticky and non-sticky cells, causing browsers to render shared borders on the wrong compositing layer during scroll. Fixed by switching to `borderCollapse: 'separate'` + `borderSpacing: 0` and replacing sticky cell borders with `box-shadow`, which always renders above scrolled content.
+- **Defense grid — richer light mode tints** — Team color row tints in the Defense grid are now more vivid in light mode (blend alpha increased from 0.75 → 0.90).
+- **Defense grid — team name contrast** — Team name text now uses WCAG luminance-aware contrast color (dark or white) based on the blended background, ensuring readability against any team color in both light and dark mode.
+
 ## What's New in v4.3.6
 
 - **Defense grid — WAS/LAR color fix** — Washington and LA Rams rows now show their correct team colors; STADIUMS uses `WAS`/`LAR` while TEAM_COLORS uses `wsh`/`la` — added an alias map to bridge the mismatch

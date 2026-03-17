@@ -182,6 +182,21 @@ function blendColor(hex, alpha, isDark) {
   return `rgb(${Math.round(bgR + (r - bgR) * alpha)}, ${Math.round(bgG + (g - bgG) * alpha)}, ${Math.round(bgB + (b - bgB) * alpha)})`;
 }
 
+// Returns '#fff' or '#111' based on the WCAG relative luminance of the blended color,
+// so team name text is always readable against the team-tinted row background.
+function getContrastColor(hex, alpha, isDark) {
+  const [bgR, bgG, bgB] = isDark ? [12, 15, 20] : [242, 241, 236];
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  const toLinear = (c) => { const s = c / 255; return s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4); };
+  const bR = Math.round(bgR + (r - bgR) * alpha);
+  const bG = Math.round(bgG + (g - bgG) * alpha);
+  const bB = Math.round(bgB + (b - bgB) * alpha);
+  const L = 0.2126 * toLinear(bR) + 0.7152 * toLinear(bG) + 0.0722 * toLinear(bB);
+  return L > 0.35 ? '#111111' : '#ffffff';
+}
+
 // Interpolate between two hex colors at position t (0→1)
 function heatColorTeam(t, hexLow, hexHigh) {
   const parse = (hex) => [
@@ -549,7 +564,7 @@ export default function CompanionDefense({ onViewPlayer }) {
         </div>
       ) : (
         <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'var(--defense-grid-max-height)', WebkitOverflowScrolling: 'touch' }}>
-          <table style={{ borderCollapse: 'collapse', minWidth: 'max-content', width: '100%', fontSize: '11px' }}>
+          <table style={{ borderCollapse: 'separate', borderSpacing: 0, minWidth: 'max-content', width: '100%', fontSize: '11px' }}>
             <thead>
               <tr>
                 <th style={stickyHeadStyle}>
@@ -595,13 +610,14 @@ export default function CompanionDefense({ onViewPlayer }) {
                 const rowBg = idx % 2 === 0 ? 'var(--color-bg)' : 'var(--color-fill)';
                 const tc = TEAM_COLORS[TEAM_COLOR_KEY[team] ?? team.toLowerCase()];
                 const teamHex = tc ? (darkMode ? (tc.darkPrimary ?? tc.primary) : tc.primary) : null;
-                const colorAlpha = darkMode ? 0.55 : 0.75;
+                const colorAlpha = darkMode ? 0.55 : 0.90;
                 // Use a fully opaque blended color for the sticky column so scrolled
                 // content doesn't bleed through the semi-transparent team color.
                 const teamBg = teamHex ? blendColor(teamHex, colorAlpha, darkMode) : rowBg;
+                const teamTextColor = teamHex ? getContrastColor(teamHex, colorAlpha, darkMode) : 'var(--color-label)';
                 return (
                   <tr key={team}>
-                    <td style={{ ...stickyBodyStyle, background: teamBg }}>
+                    <td style={{ ...stickyBodyStyle, background: teamBg, color: teamTextColor }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                         <img
                           src={espnLogoUrl(team)}
@@ -814,8 +830,9 @@ const stickyHeadStyle = {
   textTransform: 'uppercase',
   letterSpacing: '0.06em',
   fontSize: '10px',
-  borderBottom: '1px solid var(--color-separator-opaque)',
-  borderRight: '1px solid var(--color-separator-opaque)',
+  // box-shadow renders in the element's own stacking context, so it always
+  // appears above scrolled content — unlike borders which can bleed through.
+  boxShadow: '1px 0 0 0 var(--color-separator-opaque), 0 1px 0 0 var(--color-separator-opaque)',
   whiteSpace: 'nowrap',
 };
 
@@ -831,7 +848,7 @@ function headStyle(isAvg) {
     textTransform: 'uppercase',
     letterSpacing: '0.06em',
     background: 'var(--color-bg)',
-    borderBottom: '1px solid var(--color-separator-opaque)',
+    boxShadow: '0 1px 0 0 var(--color-separator-opaque)',
     borderLeft: '1px solid var(--color-separator)',
     whiteSpace: 'nowrap',
     minWidth: isAvg ? '44px' : '40px',
@@ -846,8 +863,7 @@ const stickyBodyStyle = {
   fontWeight: 700,
   fontSize: '11px',
   color: 'var(--color-label)',
-  borderRight: '1px solid var(--color-separator-opaque)',
-  borderBottom: '1px solid var(--color-separator-opaque)',
+  boxShadow: '1px 0 0 0 var(--color-separator-opaque), 0 1px 0 0 var(--color-separator-opaque)',
   whiteSpace: 'nowrap',
 };
 
