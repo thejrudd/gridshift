@@ -9,11 +9,7 @@ New features requested or planned should be added here.
 
 ### v4.6 — Heatmap Continued
 
-- **Vegas Odds stat mode** — Add a "Vegas Odds" option to the Stat filter. Instead of Position, show a spread/moneyline/total filter. Color cells red-to-green based on whether the odds were covered (e.g. favored team won by more than the spread = green). Requires a historical odds data source.
-- **Game Score box score drill-in** — When the Stat is set to Game Score, tapping a cell opens a box score for that game (final score, key stats) rather than the standard player drilldown.
-- **Filters when in Vegas odds** - When "Vegas Odds" is selected as a filter in the Heatmap, hide the options for Color selection, except for if the user has selected a favorite team, in which case present them with the option to use their team colors. 
-- **Vegas Odds "Avg" column** - When filtering by Vegas odds, change the header of the "Avg" column to "Covers" since that is the record being shown.
-- **Rename filters** - Rename "Vegas Odds" filter to "Spread" and "Game Score" to "Score."
+- **O/U filter** - Add a filter when viewing in "Spread" on the heatmap to see a heatmap of which matchups hit the over vs. the under.
 
 ### v5.0 — Draft Coach
 
