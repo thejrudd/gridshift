@@ -64,7 +64,9 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, onBack, backLabel 
   // ESPN increments experience.years at end-of-season to count total seasons played (including the
   // one just completed), so firstSeason = CURRENT_SEASON - (experience - 1), not - experience.
   // Math.max(0, ...) guards against experience=0 mid-season rookies yielding a future year.
-  const firstSeason = CURRENT_SEASON - Math.max(0, (playerMeta.experience ?? 0) - 1);
+  const firstSeason = playerMeta.experience != null
+    ? CURRENT_SEASON - Math.max(0, playerMeta.experience - 1)
+    : CURRENT_SEASON - (YEARS_TO_SHOW - 1);
   const years = Array.from({ length: YEARS_TO_SHOW }, (_, i) => CURRENT_SEASON - i)
     .filter(year => year >= firstSeason);
 

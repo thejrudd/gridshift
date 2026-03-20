@@ -46,17 +46,11 @@
   --bar-border:            rgba(12, 15, 20, 0.12);
   --bar-height-nav:        44px;
   --bar-height-tab:        49px;
-
-  /* Defense grid — table container max height.
-     Mobile: subtract nav (44) + subnav (~44) + filter bar (~80) + bottom tab (~60) + padding (~20) = 248px */
-  --defense-grid-max-height: calc(100dvh - 260px);
+  /* Readable by JS via getComputedStyle for dynamic height calculations */
+  --safe-area-inset-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 @media (min-width: 1024px) {
-  :root {
-    /* Desktop: no top nav, no bottom tab bar — subtract subnav (~44) + filter bar (~60) + padding (~24) = 128px */
-    --defense-grid-max-height: calc(100dvh - 160px);
-  }
 }
 
 .dark {
@@ -340,6 +334,7 @@ body {
   margin: 0 -16px; /* bleed to edges on mobile */
   padding: 0 16px;
   overflow-x: auto;
+  overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none; /* Firefox */
 }

@@ -1,8 +1,14 @@
 import { defineConfig } from 'vite'
+import { readFileSync } from 'fs'
 import react from '@vitejs/plugin-react-swc'
 import { VitePWA } from 'vite-plugin-pwa'
 
+const { version } = JSON.parse(readFileSync('./package.json', 'utf8'))
+
 export default defineConfig({
+  define: {
+    __APP_VERSION__: JSON.stringify(version),
+  },
   plugins: [
     react(),
     VitePWA({

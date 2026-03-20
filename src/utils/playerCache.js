@@ -46,3 +46,22 @@ export function clearPlayerCache() {
     .filter(k => k.startsWith(PREFIX))
     .forEach(k => localStorage.removeItem(k));
 }
+
+// Stored outside the nfl_pc_ prefix so it survives clearPlayerCache().
+const VERSION_KEY = 'nfl_pc_version';
+
+/**
+ * Called once at app startup. If the stored cache version doesn't match the
+ * current build version, wipe all player cache entries so stale data from a
+ * prior version is never served. Updates the stored version afterward.
+ */
+export function checkAndBustCacheIfNeeded() {
+  try {
+    const stored = localStorage.getItem(VERSION_KEY);
+    const current = __APP_VERSION__;
+    if (stored !== current) {
+      clearPlayerCache();
+      localStorage.setItem(VERSION_KEY, current);
+    }
+  } catch { /* ignore — Safari private mode, quota errors, etc. */ }
+}

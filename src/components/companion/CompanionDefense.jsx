@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSleeper } from '../../context/SleeperContext';
 import { useTheme } from '../../context/ThemeContext';
 import { buildDefenseTable } from '../../utils/projectionEngine';
 import { calcPoints, DEFAULT_SCORING } from '../../utils/scoringEngine';
 import { STADIUMS } from '../../data/stadiums';
 import { TEAM_COLORS } from '../../data/teamColors';
+import { NFL_ODDS } from '../../data/odds';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -20,8 +21,15 @@ const STAT_MODES = [
   { id: 'pts',        label: 'Fantasy Pts' },
   { id: 'rec_yd',     label: 'Rec Yds' },
   { id: 'rush_yd',    label: 'Rush Yds' },
-  { id: 'game_score', label: 'Game Score' },
+  { id: 'game_score', label: 'Score' },
+  { id: 'vegas_odds', label: 'Spread' },
 ];
+
+// Use the most recent season available in the bundled odds data.
+// Re-run scripts/extract_odds.py after each season to add new data.
+const ODDS_SEASON = Object.keys(NFL_ODDS).length
+  ? Math.max(...Object.keys(NFL_ODDS).map(Number))
+  : null;
 
 const DEF_STAT_MODES = [
   { id: 'pts',          label: 'Fantasy Pts', statKey: null },
@@ -242,7 +250,8 @@ function FilterGroup({ label, children }) {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function CompanionDefense({ onViewPlayer }) {
-  const { weeklyStats, players, scheduleMap, scoringSettings, espnIdOverrides } = useSleeper();
+  const { weeklyStats, players, scheduleMap, scoringSettings, espnIdOverrides, loadPlayers } = useSleeper();
+  useEffect(() => { loadPlayers(); }, [loadPlayers]);
   const { favoriteTeam, darkMode } = useTheme();
 
   const [viewMode, setViewMode] = useState('offense');  // 'offense' | 'defense'
@@ -257,6 +266,35 @@ export default function CompanionDefense({ onViewPlayer }) {
   const [teamSort, setTeamSort] = useState('alpha');
   const [drilldown, setDrilldown] = useState(null); // { team, week }
   const [useTeamColors, setUseTeamColors] = useState(false);
+  const [gridMaxHeight, setGridMaxHeight] = useState('60vh');
+  const filterBarRef = useRef(null);
+  const tableContainerRef = useRef(null);
+
+  // Dynamically compute the table container's max-height based on its actual
+  // top position in the viewport. This correctly handles variable filter bar
+  // heights (wrapping on narrow screens) and device safe-area insets (PWA).
+  useEffect(() => {
+    const compute = () => {
+      requestAnimationFrame(() => {
+        if (!tableContainerRef.current) return;
+        const top = tableContainerRef.current.getBoundingClientRect().top;
+        const isDesktop = window.innerWidth >= 1024;
+        const bottomPad = isDesktop
+          ? 4
+          : (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--bar-height-tab')) || 0)
+            + (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--safe-area-inset-bottom')) || 0)
+            + 8;
+        const available = window.innerHeight - top - bottomPad;
+        setGridMaxHeight(`${Math.max(200, available)}px`);
+      });
+    };
+
+    compute();
+    const ro = new ResizeObserver(compute);
+    if (filterBarRef.current) ro.observe(filterBarRef.current);
+    window.addEventListener('resize', compute);
+    return () => { ro.disconnect(); window.removeEventListener('resize', compute); };
+  }, []);
 
   // Lock body scroll while drilldown is open
   useEffect(() => {
@@ -265,6 +303,13 @@ export default function CompanionDefense({ onViewPlayer }) {
     document.body.style.overflow = 'hidden';
     return () => { document.body.style.overflow = prev; };
   }, [drilldown]);
+
+  // Lock page scroll so only the grid scrolls (applies on all viewport sizes)
+  useEffect(() => {
+    const prev = document.body.style.overflowY;
+    document.body.style.overflowY = 'hidden';
+    return () => { document.body.style.overflowY = prev; };
+  }, []);
 
   // ── Tables ─────────────────────────────────────────────────────────────────
 
@@ -321,6 +366,32 @@ export default function CompanionDefense({ onViewPlayer }) {
   }, [locationFilter, scheduleMap]);
 
   const baseRows = useMemo(() => {
+    // Vegas Odds mode: cover margin = (teamScore - oppScore) + spread
+    // Positive = covered the spread, negative = didn't cover.
+    if (viewMode === 'offense' && statMode === 'vegas_odds') {
+      const seasonOdds = ODDS_SEASON ? NFL_ODDS[ODDS_SEASON] : null;
+      return ALL_TEAMS.map(team => {
+        const weekPts = {};
+        if (scheduleMap && seasonOdds) {
+          for (const w of WEEKS) {
+            const sched = scheduleMap[w]?.[team];
+            if (!sched || !weekMatchesLocation(team, w)) continue;
+            const opp = sched.opp?.toUpperCase();
+            if (!opp) continue;
+            const oddsEntry = seasonOdds[w]?.[team];
+            if (!oddsEntry) continue;
+            const teamScore = scheduleMap[w]?.[opp]?.ptsAgainst ?? null;
+            const oppScore  = sched.ptsAgainst ?? null;
+            if (teamScore == null || oppScore == null) continue;
+            weekPts[w] = (teamScore - oppScore) + oddsEntry.spread;
+          }
+        }
+        const vals = Object.values(weekPts);
+        const avg = vals.length > 0 ? vals.reduce((s, v) => s + v, 0) / vals.length : null;
+        return { team, weekPts, avg };
+      });
+    }
+
     // Game Score mode: pull actual points-allowed directly from scheduleMap
     if (viewMode === 'offense' && statMode === 'game_score') {
       return ALL_TEAMS.map(team => {
@@ -427,6 +498,18 @@ export default function CompanionDefense({ onViewPlayer }) {
 
   function cellBg(pts, team, week) {
     if (pts == null) return undefined;
+
+    // Vegas Odds: binary covered/missed — no gradient, just green or red.
+    if (viewMode === 'offense' && statMode === 'vegas_odds') {
+      if (pts === 0) return 'rgba(130, 130, 130, 0.55)'; // push
+      if (pts > 0 && useTeamColors && favoriteTeam && TEAM_COLORS[favoriteTeam]) {
+        const tc = TEAM_COLORS[favoriteTeam];
+        return hexToRgba(darkMode ? (tc.darkPrimary ?? tc.primary) : tc.primary, 0.82);
+      }
+      if (pts > 0) return 'rgba(30, 155, 55, 0.82)';   // covered
+      return 'rgba(200, 35, 35, 0.82)';                 // missed
+    }
+
     let min, max;
     if (week === null) {
       min = heatRanges.avgMin; max = heatRanges.avgMax;
@@ -457,6 +540,7 @@ export default function CompanionDefense({ onViewPlayer }) {
 
   const drilldownPlayers = useMemo(() => {
     if (!drilldown || !weeklyStats || !players) return [];
+    if (viewMode === 'offense' && (statMode === 'game_score' || statMode === 'vegas_odds')) return []; // box score mode
     const { team, week } = drilldown;
     const results = [];
 
@@ -551,14 +635,84 @@ export default function CompanionDefense({ onViewPlayer }) {
     return results.sort((a, b) => b.val - a.val);
   }, [drilldown, weeklyStats, players, viewMode, activePos, statMode, defStatMode, scoringSettings, scheduleMap]);
 
+  // ── Game box score (Game Score stat mode) ─────────────────────────────────
+
+  const gameBoxScore = useMemo(() => {
+    if (!drilldown || !(viewMode === 'offense' && (statMode === 'game_score' || statMode === 'vegas_odds'))) return null;
+    if (!scheduleMap || !weeklyStats || !players) return null;
+    const { team, week } = drilldown;
+    const sched = scheduleMap?.[week]?.[team];
+    if (!sched) return null;
+    const opp = sched.opp?.toUpperCase();
+    if (!opp) return null;
+
+    const homeKnown = sched.home != null;
+    // Broadcast convention: AWAY on left, HOME on right
+    const leftTeam  = homeKnown ? (sched.home ? opp  : team) : team;
+    const rightTeam = homeKnown ? (sched.home ? team : opp)  : opp;
+    // Each team's score = how many points the other side allowed (ptsAgainst)
+    const leftScore  = scheduleMap?.[week]?.[rightTeam]?.ptsAgainst ?? null;
+    const rightScore = scheduleMap?.[week]?.[leftTeam]?.ptsAgainst  ?? null;
+
+    const buildTeamData = (teamCode) => {
+      const totals = { passYds: 0, rushYds: 0, tds: 0, int: 0, fum: 0, sacks: 0 };
+      const performers = [];
+      for (const [playerId, playerWeeks] of Object.entries(weeklyStats)) {
+        const player = players[playerId];
+        if (!player || !['QB','RB','WR','TE','K'].includes(player.position)) continue;
+        const wEntry = playerWeeks.find(e => e.week === week);
+        if (!wEntry) continue;
+        if (!scheduleMap?.[week]?.[teamCode]) continue;
+        const gameTeam = wEntry.team?.toUpperCase();
+        let playerTeam = gameTeam;
+        if (!playerTeam) {
+          const enhanced = playerWeeks.find(e => e._teamSource === 'espn' && e.team);
+          playerTeam = enhanced?.team?.toUpperCase() ?? player.team?.toUpperCase();
+        }
+        if (!playerTeam || playerTeam !== teamCode) continue;
+        const tds = (wEntry.pass_td ?? 0) + (wEntry.rush_td ?? 0) + (wEntry.rec_td ?? 0) + (wEntry.ret_td ?? 0) + (wEntry.st_td ?? 0);
+        totals.passYds += wEntry.pass_yd ?? 0;
+        totals.rushYds += wEntry.rush_yd ?? 0;
+        totals.tds += tds;
+        totals.int += wEntry.pass_int ?? 0;
+        totals.fum += wEntry.fum_lost ?? 0;
+        totals.sacks += wEntry.pass_sack ?? 0;
+        const name = player.full_name || `${player.first_name ?? ''} ${player.last_name ?? ''}`.trim();
+        const espnId = player.espn_id ?? espnIdOverrides?.[playerId];
+        const passYds = wEntry.pass_yd ?? 0;
+        const rushYds = wEntry.rush_yd ?? 0;
+        const recYds  = wEntry.rec_yd  ?? 0;
+        performers.push({
+          name, position: player.position, playerId, espnId,
+          passYds, rushYds, recYds, tds,
+          passCmp: wEntry.pass_cmp ?? 0,
+          passAtt: (wEntry.pass_cmp ?? 0) + (wEntry.pass_inc ?? 0),
+          passInt: wEntry.pass_int ?? 0,
+          rec:     wEntry.rec     ?? 0,
+          // Sort key: dominant yardage for the position
+          sortYds: passYds || (rushYds + recYds),
+        });
+      }
+      performers.sort((a, b) => b.sortYds - a.sortYds);
+      return { totals, performers: performers.slice(0, 4) };
+    };
+
+    return {
+      leftTeam, rightTeam, leftScore, rightScore,
+      separator: homeKnown ? '@' : 'vs',
+      left: buildTeamData(leftTeam),
+      right: buildTeamData(rightTeam),
+    };
+  }, [drilldown, viewMode, statMode, scheduleMap, weeklyStats, players, scoringSettings, espnIdOverrides]);
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
   const loaded = viewMode === 'offense' ? !!offenseAllowedTable : !!defenseScoredTable;
 
   return (
-    <div className="pb-6 -mx-4 sm:-mx-6 lg:-mx-8">
+    <div className="-mx-4 sm:-mx-6 lg:-mx-8">
       {/* Unified filter bar — single row on wide screens, wraps on mobile */}
-      <div className="px-4 sm:px-6 lg:px-8 pb-3 flex flex-wrap items-center gap-x-5 gap-y-2">
+      <div ref={filterBarRef} className="px-4 sm:px-6 lg:px-8 pb-3 flex flex-wrap items-center gap-x-5 gap-y-2">
         <FilterGroup label="Stat">
           {(viewMode === 'offense' ? STAT_MODES : DEF_STAT_MODES).map(m => (
             <Btn
@@ -571,15 +725,17 @@ export default function CompanionDefense({ onViewPlayer }) {
           ))}
         </FilterGroup>
 
-        <FilterGroup label="Phase">
-          {[{ id: 'offense', label: 'Offense' }, { id: 'defense', label: 'Defense' }].map(m => (
-            <Btn key={m.id} active={viewMode === m.id} onClick={() => { setViewMode(m.id); resetSort(); }}>
-              {m.label}
-            </Btn>
-          ))}
-        </FilterGroup>
+        {!['rec_yd', 'rush_yd', 'game_score', 'vegas_odds'].includes(statMode) && (
+          <FilterGroup label="Phase">
+            {[{ id: 'offense', label: 'Offense' }, { id: 'defense', label: 'Defense' }].map(m => (
+              <Btn key={m.id} active={viewMode === m.id} onClick={() => { setViewMode(m.id); resetSort(); }}>
+                {m.label}
+              </Btn>
+            ))}
+          </FilterGroup>
+        )}
 
-        {!(viewMode === 'offense' && statMode === 'game_score') && (
+        {!(viewMode === 'offense' && (statMode === 'game_score' || statMode === 'vegas_odds')) && (
           <FilterGroup label="Position">
             {activePositions.map(p => (
               <Btn key={p} active={activePos === p} onClick={() => { setActivePos(p); resetSort(); }}>
@@ -589,13 +745,15 @@ export default function CompanionDefense({ onViewPlayer }) {
           </FilterGroup>
         )}
 
-        <FilterGroup label="Color">
-          {HEATMAP_SCOPES.map(s => (
-            <Btn key={s.id} active={heatmapScope === s.id} onClick={() => setHeatmapScope(s.id)}>
-              {s.label}
-            </Btn>
-          ))}
-        </FilterGroup>
+        {!(viewMode === 'offense' && statMode === 'vegas_odds') && (
+          <FilterGroup label="Color">
+            {HEATMAP_SCOPES.map(s => (
+              <Btn key={s.id} active={heatmapScope === s.id} onClick={() => setHeatmapScope(s.id)}>
+                {s.label}
+              </Btn>
+            ))}
+          </FilterGroup>
+        )}
 
         <FilterGroup label="Location">
           {[{ id: 'all', label: 'All' }, { id: 'home', label: 'Home' }, { id: 'away', label: 'Away' }].map(opt => (
@@ -612,6 +770,12 @@ export default function CompanionDefense({ onViewPlayer }) {
         )}
       </div>
 
+      {viewMode === 'offense' && statMode === 'vegas_odds' && (
+        <p className="px-4 sm:px-6 lg:px-8 pb-2 text-xs" style={{ color: 'var(--color-label-tertiary)' }}>
+          Odds via nflverse · {ODDS_SEASON} season · spread shown is from each team's perspective (− = favored)
+        </p>
+      )}
+
       {!loaded ? (
         <div className="flex items-center justify-center py-16 px-4">
           <span className="text-sm" style={{ color: 'var(--color-label-secondary)' }}>
@@ -619,7 +783,7 @@ export default function CompanionDefense({ onViewPlayer }) {
           </span>
         </div>
       ) : (
-        <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'var(--defense-grid-max-height)', WebkitOverflowScrolling: 'touch' }}>
+        <div ref={tableContainerRef} style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: gridMaxHeight, WebkitOverflowScrolling: 'touch' }}>
           <table style={{ borderCollapse: 'separate', borderSpacing: 0, minWidth: 'max-content', width: '100%', fontSize: '11px' }}>
             <thead>
               <tr>
@@ -647,7 +811,7 @@ export default function CompanionDefense({ onViewPlayer }) {
                   </div>
                 </th>
                 <th style={{ ...headStyle(true), cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('avg')}>
-                  <div>AVG{sortIndicator('avg')}</div>
+                  <div>{viewMode === 'offense' && statMode === 'vegas_odds' ? 'Covers' : 'AVG'}{sortIndicator('avg')}</div>
                 </th>
                 {WEEKS.map(w => (
                   <th key={w} style={{ ...headStyle(false), cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort(w)}>
@@ -696,7 +860,11 @@ export default function CompanionDefense({ onViewPlayer }) {
                       </div>
                     </td>
                     <td style={{ ...cellStyle(true), background: avg != null ? cellBg(avg, team, null) : rowBg, color: avg != null ? '#000' : 'var(--color-label)' }}>
-                      {avg != null ? avg.toFixed(1) : '—'}
+                      {(viewMode === 'offense' && statMode === 'vegas_odds') ? (() => {
+                        const wins   = Object.values(weekPts).filter(v => v > 0).length;
+                        const losses = Object.values(weekPts).filter(v => v < 0).length;
+                        return wins + losses > 0 ? `${wins}-${losses}` : '—';
+                      })() : avg != null ? avg.toFixed(1) : '—'}
                     </td>
                     {WEEKS.map(w => {
                       const pts = weekPts[w];
@@ -707,22 +875,39 @@ export default function CompanionDefense({ onViewPlayer }) {
                       const isBye = weekHasGames && !played;
                       // Filtered-out: team played this week but it doesn't match location filter
                       const isFiltered = played && !matchesLoc;
-                      const clickable = pts != null && !isFiltered && !(viewMode === 'offense' && statMode === 'game_score');
+                      const isVegasOdds = viewMode === 'offense' && statMode === 'vegas_odds';
+                      const clickable = pts != null && !isFiltered;
                       return (
                         <td
                           key={w}
                           onClick={clickable ? () => setDrilldown({ team, week: w }) : undefined}
                           style={{
                             ...cellStyle(false),
-                            background: pts != null ? cellBg(pts, team, w) : rowBg,
-                            color: pts != null ? '#000' : 'var(--color-label-secondary)',
+                            background: pts != null && !isFiltered ? cellBg(pts, team, w) : rowBg,
+                            color: pts != null && !isFiltered ? '#000' : 'var(--color-label-secondary)',
                             cursor: clickable ? 'pointer' : 'default',
                           }}
                         >
-                          {pts != null ? (
+                          {pts != null && !isFiltered ? (
                             <>
-                              <div>{statMode === 'game_score' || (viewMode === 'defense' && DEF_STAT_MODES.find(m => m.id === defStatMode)?.statKey) ? (Number.isInteger(pts) ? pts : pts.toFixed(1)) : pts.toFixed(1)}</div>
-                              {scheduleMap?.[w]?.[team]?.opp && (
+                              <div>{isVegasOdds ? (() => {
+                                  const s = NFL_ODDS[ODDS_SEASON]?.[w]?.[team]?.spread;
+                                  if (s == null) return '—';
+                                  const n = s % 1 === 0 ? String(Math.round(s)) : s.toFixed(1);
+                                  return s > 0 ? `+${n}` : n;
+                                })()
+                                : statMode === 'game_score' ? (() => {
+                                  const opp = scheduleMap?.[w]?.[team]?.opp?.toUpperCase();
+                                  return opp ? (scheduleMap?.[w]?.[opp]?.ptsAgainst ?? (Number.isInteger(pts) ? pts : pts.toFixed(1))) : (Number.isInteger(pts) ? pts : pts.toFixed(1));
+                                })()
+                                : (viewMode === 'defense' && DEF_STAT_MODES.find(m => m.id === defStatMode)?.statKey)
+                                  ? (Number.isInteger(pts) ? pts : pts.toFixed(1))
+                                  : pts.toFixed(1)}</div>
+                              {statMode === 'game_score' ? (
+                                <div style={{ fontSize: '8px', opacity: 0.6, marginTop: '1px' }}>
+                                  {Number.isInteger(pts) ? pts : Math.round(pts)}
+                                </div>
+                              ) : scheduleMap?.[w]?.[team]?.opp && (
                                 <div style={{ fontSize: '8px', opacity: 0.6, marginTop: '1px' }}>
                                   {scheduleMap[w][team].opp}
                                 </div>
@@ -792,19 +977,192 @@ export default function CompanionDefense({ onViewPlayer }) {
                     </span>
                     {(homeTeam ?? opp) && <img src={espnLogoUrl(homeTeam ?? opp)} width={28} height={28} style={{ objectFit: 'contain' }} alt={homeTeam ?? opp} />}
                   </div>
+                  {/* Vegas odds line — shown directly under the team row */}
+                  {statMode === 'vegas_odds' && ODDS_SEASON && awayTeam && homeTeam && (() => {
+                    const fmtSpread = (s) => {
+                      if (s == null) return null;
+                      const n = s % 1 === 0 ? String(Math.round(s)) : s.toFixed(1);
+                      return s > 0 ? `+${n}` : n;
+                    };
+                    const awayEntry = NFL_ODDS[ODDS_SEASON]?.[drilldown.week]?.[awayTeam];
+                    const homeEntry = NFL_ODDS[ODDS_SEASON]?.[drilldown.week]?.[homeTeam];
+                    if (!awayEntry && !homeEntry) return null;
+                    // scores: each team's points = the opponent's ptsAgainst
+                    const awayScore = scheduleMap?.[drilldown.week]?.[homeTeam]?.ptsAgainst ?? null;
+                    const homeScore = scheduleMap?.[drilldown.week]?.[awayTeam]?.ptsAgainst ?? null;
+                    const coverResult = (spread, teamScore, oppScore) => {
+                      if (spread == null || teamScore == null || oppScore == null) return null;
+                      const margin = (teamScore - oppScore) + spread;
+                      if (margin > 0) return { text: 'Covered',       color: 'rgb(30,155,55)' };
+                      if (margin < 0) return { text: "Didn't cover",  color: 'rgb(200,35,35)' };
+                      return               { text: 'Push',            color: 'var(--color-label-secondary)' };
+                    };
+                    const awayResult = coverResult(awayEntry?.spread, awayScore, homeScore);
+                    const homeResult = coverResult(homeEntry?.spread, homeScore, awayScore);
+                    const total    = awayEntry?.total ?? homeEntry?.total;
+                    const totalPts = awayScore != null && homeScore != null ? awayScore + homeScore : null;
+                    const ouResult = total != null && totalPts != null
+                      ? (totalPts > total ? 'Over' : totalPts < total ? 'Under' : 'Push')
+                      : null;
+                    return (
+                      <div style={{ marginTop: 8 }}>
+                        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'baseline', gap: 5, fontSize: 12, flexWrap: 'wrap' }}>
+                          <span style={{ fontWeight: 700, color: 'var(--color-label)' }}>
+                            {awayTeam} {fmtSpread(awayEntry?.spread) ?? '—'}
+                          </span>
+                          <span style={{ color: 'var(--color-label-tertiary)' }}>·</span>
+                          <span style={{ color: 'var(--color-label-secondary)' }}>O/U {total ?? '—'}</span>
+                          <span style={{ color: 'var(--color-label-tertiary)' }}>·</span>
+                          <span style={{ fontWeight: 700, color: 'var(--color-label)' }}>
+                            {fmtSpread(homeEntry?.spread) ?? '—'} {homeTeam}
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 6, fontSize: 11, marginTop: 3, flexWrap: 'wrap' }}>
+                          {awayResult && <span style={{ fontWeight: 600, color: awayResult.color }}>{awayResult.text}</span>}
+                          {ouResult && (
+                            <>
+                              <span style={{ color: 'var(--color-label-tertiary)' }}>·</span>
+                              <span style={{ color: 'var(--color-label-secondary)' }}>
+                                {ouResult}{totalPts != null ? ` (${totalPts} pts)` : ''}
+                              </span>
+                            </>
+                          )}
+                          {homeResult && (
+                            <>
+                              <span style={{ color: 'var(--color-label-tertiary)' }}>·</span>
+                              <span style={{ fontWeight: 600, color: homeResult.color }}>{homeResult.text}</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
                   <div style={{ fontSize: 11, color: 'var(--color-label-tertiary)', marginTop: 6 }}>
-                    {viewMode === 'offense' ? (activePos === 'ALL' ? 'All positions' : activePos) : (activePos === 'ALL' ? 'All defense' : activePos)}
-                    {' · '}
-                    {viewMode === 'offense'
-                      ? STAT_MODES.find(m => m.id === statMode)?.label
-                      : DEF_STAT_MODES.find(m => m.id === defStatMode)?.label}
-                    {' · '}{drilldownPlayers.length} player{drilldownPlayers.length !== 1 ? 's' : ''}
+                    {viewMode === 'offense' && (statMode === 'game_score' || statMode === 'vegas_odds')
+                      ? 'Score'
+                      : <>
+                          {viewMode === 'offense' ? (activePos === 'ALL' ? 'All positions' : activePos) : (activePos === 'ALL' ? 'All defense' : activePos)}
+                          {' · '}
+                          {viewMode === 'offense'
+                            ? STAT_MODES.find(m => m.id === statMode)?.label
+                            : DEF_STAT_MODES.find(m => m.id === defStatMode)?.label}
+                          {' · '}{drilldownPlayers.length} player{drilldownPlayers.length !== 1 ? 's' : ''}
+                        </>
+                    }
                   </div>
                 </div>
               );
             })()}
 
-            {drilldownPlayers.length === 0 ? (
+            {viewMode === 'offense' && (statMode === 'game_score' || statMode === 'vegas_odds') ? (
+              /* ── Box Score ── */
+              gameBoxScore ? (
+                <>
+                  {/* Score */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 16 }}>
+                    <div style={{ textAlign: 'center', flex: 1 }}>
+                      <div style={{ fontSize: 36, fontWeight: 900, color: 'var(--color-label)', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
+                        {gameBoxScore.leftScore ?? '—'}
+                      </div>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-label-secondary)', marginTop: 4 }}>{gameBoxScore.leftTeam}</div>
+                    </div>
+                    <div style={{ fontSize: 13, color: 'var(--color-label-tertiary)', flexShrink: 0 }}>
+                      {gameBoxScore.separator}
+                    </div>
+                    <div style={{ textAlign: 'center', flex: 1 }}>
+                      <div style={{ fontSize: 36, fontWeight: 900, color: 'var(--color-label)', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
+                        {gameBoxScore.rightScore ?? '—'}
+                      </div>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-label-secondary)', marginTop: 4 }}>{gameBoxScore.rightTeam}</div>
+                    </div>
+                  </div>
+
+                  {/* Team stat comparison */}
+                  <div style={{
+                    display: 'grid', gridTemplateColumns: '1fr auto 1fr',
+                    gap: '3px 8px', marginBottom: 16, fontSize: 12,
+                    padding: '10px 12px', borderRadius: 10, background: 'var(--color-fill)',
+                  }}>
+                    {[
+                      { label: 'Pass Yds',  l: gameBoxScore.left.totals.passYds, r: gameBoxScore.right.totals.passYds },
+                      { label: 'Rush Yds',  l: gameBoxScore.left.totals.rushYds, r: gameBoxScore.right.totals.rushYds },
+                      { label: 'TDs',       l: gameBoxScore.left.totals.tds,     r: gameBoxScore.right.totals.tds     },
+                      { label: 'INT',       l: gameBoxScore.left.totals.int,     r: gameBoxScore.right.totals.int     },
+                      { label: 'Fum Lost',  l: gameBoxScore.left.totals.fum,     r: gameBoxScore.right.totals.fum     },
+                      { label: 'Sacked',    l: gameBoxScore.left.totals.sacks,   r: gameBoxScore.right.totals.sacks   },
+                    ].map(({ label, l, r }) => (
+                      <Fragment key={label}>
+                        <div style={{ textAlign: 'right', fontWeight: 700, color: 'var(--color-label)' }}>{l}</div>
+                        <div style={{ textAlign: 'center', color: 'var(--color-label-tertiary)' }}>{label}</div>
+                        <div style={{ textAlign: 'left', fontWeight: 700, color: 'var(--color-label)' }}>{r}</div>
+                      </Fragment>
+                    ))}
+                  </div>
+
+                  {/* Top performers per team */}
+                  {[
+                    { teamCode: gameBoxScore.leftTeam, data: gameBoxScore.left },
+                    { teamCode: gameBoxScore.rightTeam, data: gameBoxScore.right },
+                  ].map(({ teamCode, data }) => (
+                    <div key={teamCode} style={{ marginBottom: 12, textAlign: 'left' }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--color-label-tertiary)', marginBottom: 6 }}>
+                        {teamCode} Leaders
+                      </div>
+                      {data.performers.length === 0 ? (
+                        <div style={{ fontSize: 11, color: 'var(--color-label-tertiary)', padding: '4px 0' }}>No data</div>
+                      ) : data.performers.map(({ name, position, passYds, rushYds, recYds, tds, passCmp, passAtt, passInt, rec, playerId, espnId }, i) => {
+                        const canNav = !!(onViewPlayer && espnId);
+                        const teamId = players?.[playerId]?.team?.toUpperCase();
+                        let statLine = '';
+                        if (position === 'QB') {
+                          const parts = [];
+                          if (passAtt > 0) parts.push(`${passCmp}/${passAtt}, ${passYds} yds`);
+                          if (tds > 0) parts.push(`${tds} TD`);
+                          if (passInt > 0) parts.push(`${passInt} INT`);
+                          if (rushYds > 0) parts.push(`${rushYds} rush yds`);
+                          statLine = parts.join(', ');
+                        } else if (position === 'RB') {
+                          const parts = [];
+                          if (rushYds > 0) parts.push(`${rushYds} rush yds`);
+                          if (rec > 0) parts.push(`${rec} rec, ${recYds} yds`);
+                          if (tds > 0) parts.push(`${tds} TD`);
+                          statLine = parts.join(' · ');
+                        } else {
+                          const parts = [];
+                          if (rec > 0) parts.push(`${rec} rec, ${recYds} yds`);
+                          if (rushYds > 0) parts.push(`${rushYds} rush yds`);
+                          if (tds > 0) parts.push(`${tds} TD`);
+                          statLine = parts.join(' · ');
+                        }
+                        return (
+                          <div key={i} style={{
+                            padding: '5px 0',
+                            borderBottom: i < data.performers.length - 1 ? '1px solid var(--color-separator)' : 'none',
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                              <button
+                                onClick={canNav ? () => { setDrilldown(null); onViewPlayer(String(espnId), { displayName: name, teamId }); } : undefined}
+                                style={{ fontSize: 12, fontWeight: 700, color: canNav ? 'var(--color-accent)' : 'var(--color-label)', background: 'none', border: 'none', padding: 0, cursor: canNav ? 'pointer' : 'default', textAlign: 'left' }}
+                              >
+                                {name}
+                              </button>
+                              <span style={{ fontSize: 10, color: 'var(--color-label-tertiary)' }}>{position}</span>
+                            </div>
+                            {statLine && (
+                              <div style={{ fontSize: 11, color: 'var(--color-label-secondary)', marginTop: 1 }}>{statLine}</div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </>
+              ) : (
+                <div style={{ fontSize: 12, color: 'var(--color-label-tertiary)', padding: '16px 0' }}>
+                  No score data available.
+                </div>
+              )
+            ) : drilldownPlayers.length === 0 ? (
               <div style={{ fontSize: 12, color: 'var(--color-label-tertiary)', padding: '16px 0' }}>
                 No data found for this matchup.
               </div>
@@ -831,7 +1189,7 @@ export default function CompanionDefense({ onViewPlayer }) {
                             <button
                               onClick={canNav ? () => { setDrilldown(null); onViewPlayer(String(espnId), { displayName: name, teamId }); } : undefined}
                               style={{
-                                fontSize: 13, fontWeight: 700, color: canNav ? 'var(--color-interactive)' : 'var(--color-label)',
+                                fontSize: 13, fontWeight: 700, color: canNav ? 'var(--color-accent)' : 'var(--color-label)',
                                 background: 'none', border: 'none', padding: 0, cursor: canNav ? 'pointer' : 'default',
                                 textAlign: 'left',
                               }}
@@ -958,5 +1316,6 @@ function cellStyle(isAvg) {
     borderBottom: '1px solid var(--color-separator)',
     whiteSpace: 'nowrap',
     color: 'var(--color-label)',
+    minWidth: isAvg ? '44px' : '40px',
   };
 }

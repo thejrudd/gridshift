@@ -11,7 +11,10 @@ import {
 } from '../api/sleeperApi';
 import { fetchSeasonSchedule, fetchPlayerGameTeamMap, fetchRoster } from '../utils/playerApi';
 import { DEFAULT_SCORING, importLeagueScoring } from '../utils/scoringEngine';
-import { clearPlayerCache } from '../utils/playerCache';
+import { clearPlayerCache, checkAndBustCacheIfNeeded } from '../utils/playerCache';
+
+// Run once when this module first loads — wipes stale player cache if app version changed.
+checkAndBustCacheIfNeeded();
 
 const SleeperContext = createContext(null);
 

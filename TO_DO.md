@@ -7,17 +7,51 @@ New features requested or planned should be added here.
 
 ## Planned Versions
 
-### v4.5.1 — Heatmap Continued
+### v4.6 — Heatmap Continued
 
 - **Vegas Odds stat mode** — Add a "Vegas Odds" option to the Stat filter. Instead of Position, show a spread/moneyline/total filter. Color cells red-to-green based on whether the odds were covered (e.g. favored team won by more than the spread = green). Requires a historical odds data source.
 - **Game Score box score drill-in** — When the Stat is set to Game Score, tapping a cell opens a box score for that game (final score, key stats) rather than the standard player drilldown.
+- **Filters when in Vegas odds** - When "Vegas Odds" is selected as a filter in the Heatmap, hide the options for Color selection, except for if the user has selected a favorite team, in which case present them with the option to use their team colors. 
+- **Vegas Odds "Avg" column** - When filtering by Vegas odds, change the header of the "Avg" column to "Covers" since that is the record being shown.
+- **Rename filters** - Rename "Vegas Odds" filter to "Spread" and "Game Score" to "Score."
 
-### v4.6 — Week-by-Week View *(blocked)*
+### v5.0 — Draft Coach
 
-Browse the full schedule by week — see all matchups for a given week, with current predictions reflected. Navigate between weeks via prev/next controls. **Blocked on 2026 season schedule data.** When the NFL releases the 2026 schedule, update the schedule data source and implement this view. Read-only in v4.5 (reflects existing team-level picks); interactive game picking from the week view is a future enhancement.
+A new Companion tab to assist with fantasy football drafts, focused on rookies and newly-available players. Surfaces publicly available scouting and evaluation data to help users make informed draft decisions.
+
+#### Scope
+
+**Draft Profile Card** — Per-player card showing:
+- NFL Draft slot (round, pick, overall, drafting team)
+- College (school, conference, final season stats by position — e.g. completions/attempts/TDs/INTs for QBs, carries/yards/TDs for RBs, targets/catches/yards/TDs for WRs/TEs)
+- NFL Combine results: 40-yard dash, vertical, broad jump, 3-cone, shuttle, bench press, height/weight — with percentile grades relative to positional peers
+- Consensus big-board rank at time of draft (e.g. Pro Football Focus, The Athletic, PFF dynasty)
+- Dynasty rookie ADP (average draft position in dynasty/rookie drafts)
+
+**Position Filters** — Filter the full rookie list by QB, RB, WR, TE (IDP stretch: DL, LB, DB)
+
+**Sort Controls** — Sort by: Overall Draft Pick, Dynasty ADP, Big Board Rank, 40-yard dash, College Production (yards, TDs)
+
+**Rookie Comparison** — Select two rookies to view side-by-side: draft slot, combine, college stats, rankings
+
+**Data Sources** — All data is static/bundled (no live API dependency at launch). Sources:
+- Draft results: published post-NFL Draft (April) — scraped or hand-entered into `/src/data/rookies.js`
+- Combine stats: publicly available via NFL.com and Pro Football Reference
+- Dynasty ADP: KeepTradeCut or Sleeper dynasty consensus at draft time
+- Big-board ranks: aggregated from 2–3 major sources, stored as an average rank
+
+**Stretch Goals (post-launch)**
+- Prospect comparison against historical rookie comps (e.g. "similar combine profile to Justin Jefferson")
+- Live dynasty ADP via KeepTradeCut public API (if available)
+- Depth chart position within the drafting team (Day 1 starter vs. depth)
+
 
 ---
 ## Backlog (Unversioned)
+
+### Season Predictions (Unblocked When Data Available)
+
+- **Week-by-Week View** *(blocked on 2026 schedule data)* — Browse the full schedule by week: all matchups for a given week with current predictions reflected. Navigate between weeks via prev/next controls. When the NFL releases the 2026 schedule, update the schedule data source and implement this view. Read-only at launch (reflects existing team-level picks); interactive game picking from the week view is a future enhancement.
 
 ### Fantasy Companion
 
