@@ -356,7 +356,7 @@ function AppInner() {
               {companionView === 'roster'    && <CompanionRoster />}
               {companionView === 'rankings'  && <CompanionRankings />}
               {companionView === 'matchup'   && <CompanionMatchup onViewPlayer={(id, meta) => { setStatsInitPlayer({ id, ...meta }); setStatsNavBack({ label: 'Matchup', onBack: () => { setActiveTab('companion'); setStatsNavBack(null); } }); setActiveTab('statistics'); }} />}
-              {companionView === 'waiver'    && <CompanionWaiver />}
+              {companionView === 'waiver'    && <CompanionWaiver onViewPlayer={(id, meta) => { setStatsInitPlayer({ id, ...meta }); setStatsNavBack({ label: 'Waiver', onBack: () => { setActiveTab('companion'); setStatsNavBack(null); } }); setActiveTab('statistics'); }} />}
               {companionView === 'defense'   && <CompanionDefense onViewPlayer={(id, meta) => { setStatsInitPlayer({ id, ...meta }); setStatsNavBack({ label: 'Heatmap', onBack: () => { setActiveTab('companion'); setStatsNavBack(null); } }); setActiveTab('statistics'); }} />}
               {companionView === 'scoring'   && <CompanionScoring />}
             </>

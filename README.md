@@ -74,13 +74,15 @@ PORT=8080 docker compose up -d --build
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) |
 
-## What's New in v4.6.3
+## What's New in v4.7
 
-- **Browser back button** — The browser back button now navigates within the app. Tab switches, sub-navigation changes, and Statistics team/player drill-downs are tracked as browser history entries so pressing back walks through navigation in reverse
-- **Statistics external navigation fix** — Player profiles opened via links from the Heatmap or Matchup drilldown now render identically to manually browsed profiles — correct stat columns, jersey number, and full position name
-- **Heatmap offense color fix** — High points allowed (easy matchup) now correctly shows green; low points (tough matchup) shows red. The gradient was previously inverted in Offense phase
+- **Waiver player links** — Player names in the Waiver list now link directly to the player's Statistics page
+- **Projected points column** — New Proj column shows each player's projected fantasy points for the upcoming week, factoring opponent strength, home/away, and recent form
+- **Sortable columns** — Click any column header (Proj, Season, 4-Wk Avg) to sort the waiver list; active sort is highlighted
+- **Trending indicator** — Players on a hot streak (recent avg ≥ 25% above season avg) show a green ↑ HOT badge
+- **Upcoming opponent** — Each row now shows the player's next opponent abbreviation
 
-For full version history, see [CHANGELOG.md](CHANGELOG.md).
+For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Roadmap
 

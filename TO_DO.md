@@ -7,14 +7,7 @@ New features requested or planned should be added here.
 
 ## Planned Versions
 
-### v4.7 — Waiver Wire Enhancements
-
-Improve the Waiver tab with player navigation and actionable projections.
-
-- **Player links** — Player names in the Waiver list link to their Statistics page, consistent with the Heatmap and Matchup drilldown navigation pattern
-- **Projected points** — Add a projected pts column to the waiver list using `projectPlayer()` for the upcoming week's matchup
-- **Projection sort** — Allow sorting the waiver list by projected points in addition to existing sort options
-- **Trending indicator** — Surface a "trending" badge on players whose recent average (last 4 weeks) is notably above their season average
+### ~~v4.7 — Waiver Wire Enhancements~~ ✓ Complete — see CHANGELOG
 
 ---
 

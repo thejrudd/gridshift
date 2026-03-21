@@ -248,3 +248,14 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Browser back button** — The browser back button now navigates within the app. Tab changes, sub-navigation, and Statistics team/player drill-downs are each tracked as browser history entries. Pressing back walks through navigation in reverse instead of exiting the app.
 - **Statistics external navigation fix** — The Statistics page now renders identically whether accessed via manual browse or an external link (Heatmap player link, Matchup Stats → link). External navigation now passes the player's position at all call sites, and `PlayerBrowser` enriches the player object from the cached ESPN roster to fill in jersey number, full position name, and status — making the hero card and stat columns complete.
 - **Heatmap offense color scheme fix** — High points allowed (easy matchup) now correctly shows green and low points (tough matchup) shows red in Offense phase. The gradient was previously inverted.
+
+---
+
+## v4.7 — Waiver Wire Enhancements
+*2026-03-21*
+
+- **Player links** — Player names in the Waiver list now link to the player's Statistics page, with a contextual "← Waiver" back button matching the pattern used in the Heatmap and Matchup drilldown
+- **Projected points column** — A new Proj column shows each player's projected fantasy points for the upcoming week using `projectPlayer()`, factoring in opponent strength, home/away, and recent form
+- **Sortable columns** — All three data columns (Proj, Season, 4-Wk Avg) are now clickable column headers that sort the list; the active sort column is highlighted and shows a ↓ indicator
+- **Trending indicator** — Players whose recent 4-week average is ≥ 25% above their season average (and at least 2 pts higher) show a green ↑ HOT badge next to their name
+- **Upcoming opponent** — Each player row now shows their next opponent abbreviation in small text below their position/team line
