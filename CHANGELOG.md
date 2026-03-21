@@ -270,3 +270,13 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Projection/filter memo split** — Projection enrichment is now a separate memo from filtering and sorting. Changing position filter, sort column, or search term no longer triggers projection recomputation — only underlying data changes do.
 - **Debounced search** — The search input is debounced at 200ms, preventing per-keystroke re-renders of the player list.
 - **`myRoster()` memoized** — The `myRoster()` context function is now called inside a `useMemo` in the waiver component instead of on every render.
+
+---
+
+## v4.8 — League Browser
+*2026-03-21*
+
+- **League tab** — New "League" sub-tab added to the Companion section, positioned between Waiver and Heatmap.
+- **Opponent roster view** — Browse any league member's full roster via a scrollable owner selector that defaults to your own team. Each roster shows the same depth as the Roster tab: players grouped by position with season pts, avg PPG, positional rank, and a tappable weekly breakdown sheet.
+- **Draft capital grid** — League-wide horizontally scrollable grid showing every team's currently owned draft picks organized by year and round (capped at 5 rounds). Own picks show as filled amber dots; acquired picks show the originating team's abbreviation as a blue badge; traded-away picks show as an empty dim circle. Teams are sorted by total picks held so pick-rich teams surface to the top. Year columns are grouped with round sub-headers (R1, R2…).
+- **Picks data** — Fetches `/league/{leagueId}/traded_picks` from the Sleeper API on demand. Constructs the full pick ownership matrix: each team implicitly owns all their own picks; traded picks are resolved to their current owner. Handles edge cases including picks traded back to the original team.

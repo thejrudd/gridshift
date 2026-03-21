@@ -15,6 +15,7 @@ An interactive web app for predicting the 2026 NFL season — with full Sleeper 
 - **Player Browser** — Browse all 32 rosters by conference, division, and position; search players by name across the league
 - **Player Profiles** — Full profile pages with headshot, career stats, game log, and Pro Bowl / All-Pro honors
 - **Sleeper League Integration** — Connect your Sleeper account, import a league, and sync custom scoring settings
+- **League Browser** — Browse any league member's full roster with stats and weekly breakdowns; view a league-wide draft capital grid showing pick ownership by round and year
 - **Fantasy Matchup View** — Head-to-head starter comparison with week-by-week points, projections, positional rankings, weather context, and game location
 - **Player Projections** — Min/max/projected ranges using a recent-weighted blend of form and season average, factoring opponent strength, home/away, weather, and snap % trend
 - **Heatmap** — 32-team grid of fantasy points allowed or scored per position per week; three scope modes, Vegas spread/O/U overlay, location filter, and per-cell player drilldowns
@@ -74,20 +75,16 @@ PORT=8080 docker compose up -d --build
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) |
 
-## What's New in v4.7
+## What's New in v4.8
 
-- **Waiver player links** — Player names in the Waiver list now link directly to the player's Statistics page
-- **Projected points column** — New Proj column shows each player's projected fantasy points for the upcoming week, factoring opponent strength, home/away, and recent form
-- **Sortable columns** — Click any column header (Proj, Season, 4-Wk Avg) to sort the waiver list; active sort is highlighted
-- **Trending indicator** — Players on a hot streak (recent avg ≥ 25% above season avg) show a green ↑ HOT badge
-- **Upcoming opponent** — Each row now shows the player's next opponent abbreviation
+- **League tab** — New League sub-tab in the Companion section gives full visibility into the rest of the league
+- **Opponent roster view** — Browse any league member's full roster with season pts, avg PPG, positional rank, and weekly breakdown; same depth as your own Roster view
+- **Draft capital grid** — League-wide picks grid showing every team's currently owned draft picks by round and year; color-coded to distinguish own picks from acquired picks, with trading-away shown as empty slots
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Roadmap
 
-- **v4.7 — Waiver Wire Enhancements** — Player links to Statistics, projected points column, projection-based sorting, and trending indicators
-- **v4.8 — League Browser** — Full opponent roster view with stats and a league-wide draft picks grid
 - **v4.9 — Player Comparison** — Side-by-side comparison in Companion (fantasy stats + projection) and Statistics (ESPN career stats with per-stat deltas)
 - **v5.0 — Draft Coach & Trade Agent** — Rookie scouting hub (draft slot, combine, college stats, dynasty ADP) plus a trade value evaluator powered by KeepTradeCut with in-app fallback
 - **Week-by-Week View** *(blocked on 2026 schedule data)* — Browse the full schedule by week with predictions reflected

@@ -27,6 +27,7 @@ import CompanionMatchup from './components/companion/CompanionMatchup';
 import CompanionWaiver from './components/companion/CompanionWaiver';
 import CompanionScoring from './components/companion/CompanionScoring';
 import CompanionDefense from './components/companion/CompanionDefense';
+import CompanionLeague from './components/companion/CompanionLeague';
 import ScoringSettings from './components/companion/ScoringSettings';
 
 function AppInner() {
@@ -357,6 +358,7 @@ function AppInner() {
               {companionView === 'rankings'  && <CompanionRankings />}
               {companionView === 'matchup'   && <CompanionMatchup onViewPlayer={(id, meta) => { setStatsInitPlayer({ id, ...meta }); setStatsNavBack({ label: 'Matchup', onBack: () => { setActiveTab('companion'); setStatsNavBack(null); } }); setActiveTab('statistics'); }} />}
               {companionView === 'waiver'    && <CompanionWaiver onViewPlayer={(id, meta) => { setStatsInitPlayer({ id, ...meta }); setStatsNavBack({ label: 'Waiver', onBack: () => { setActiveTab('companion'); setStatsNavBack(null); } }); setActiveTab('statistics'); }} />}
+              {companionView === 'league'   && <CompanionLeague />}
               {companionView === 'defense'   && <CompanionDefense onViewPlayer={(id, meta) => { setStatsInitPlayer({ id, ...meta }); setStatsNavBack({ label: 'Heatmap', onBack: () => { setActiveTab('companion'); setStatsNavBack(null); } }); setActiveTab('statistics'); }} />}
               {companionView === 'scoring'   && <CompanionScoring />}
             </>

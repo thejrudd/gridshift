@@ -11,12 +11,7 @@ New features requested or planned should be added here.
 
 ---
 
-### v4.8 — League Browser
-
-Give users full visibility into the league: opponent rosters and the draft pick landscape across all teams.
-
-- **Opponent roster view** — Browse any league member's full roster with the same depth as the existing Roster view: season stats, avg PPG, positional rank, and weekly breakdown. Accessible via a team selector on the Roster view or a new League sub-tab in Companion
-- **Draft capital overview** — A league-wide picks grid showing every team's currently owned draft picks (round, originating team, year) pulled from Sleeper's picks/transactions data. Shows at a glance who is pick-rich and who has traded away future capital
+### ~~v4.8 — League Browser~~ ✓ Complete — see CHANGELOG
 
 ---
 
