@@ -7,38 +7,65 @@ New features requested or planned should be added here.
 
 ## Planned Versions
 
-### v5.0 — Draft Coach
+### v4.7 — Waiver Wire Enhancements
 
-A new Companion tab to assist with fantasy football drafts, focused on rookies and newly-available players. Surfaces publicly available scouting and evaluation data to help users make informed draft decisions.
+Improve the Waiver tab with player navigation and actionable projections.
 
-#### Scope
+- **Player links** — Player names in the Waiver list link to their Statistics page, consistent with the Heatmap and Matchup drilldown navigation pattern
+- **Projected points** — Add a projected pts column to the waiver list using `projectPlayer()` for the upcoming week's matchup
+- **Projection sort** — Allow sorting the waiver list by projected points in addition to existing sort options
+- **Trending indicator** — Surface a "trending" badge on players whose recent average (last 4 weeks) is notably above their season average
 
-**Draft Profile Card** — Per-player card showing:
-- NFL Draft slot (round, pick, overall, drafting team)
-- College (school, conference, final season stats by position — e.g. completions/attempts/TDs/INTs for QBs, carries/yards/TDs for RBs, targets/catches/yards/TDs for WRs/TEs)
-- NFL Combine results: 40-yard dash, vertical, broad jump, 3-cone, shuttle, bench press, height/weight — with percentile grades relative to positional peers
-- Consensus big-board rank at time of draft (e.g. Pro Football Focus, The Athletic, PFF dynasty)
-- Dynasty rookie ADP (average draft position in dynasty/rookie drafts)
+---
 
-**Position Filters** — Filter the full rookie list by QB, RB, WR, TE (IDP stretch: DL, LB, DB)
+### v4.8 — League Browser
 
-**Sort Controls** — Sort by: Overall Draft Pick, Dynasty ADP, Big Board Rank, 40-yard dash, College Production (yards, TDs)
+Give users full visibility into the league: opponent rosters and the draft pick landscape across all teams.
 
-**Rookie Comparison** — Select two rookies to view side-by-side: draft slot, combine, college stats, rankings
+- **Opponent roster view** — Browse any league member's full roster with the same depth as the existing Roster view: season stats, avg PPG, positional rank, and weekly breakdown. Accessible via a team selector on the Roster view or a new League sub-tab in Companion
+- **Draft capital overview** — A league-wide picks grid showing every team's currently owned draft picks (round, originating team, year) pulled from Sleeper's picks/transactions data. Shows at a glance who is pick-rich and who has traded away future capital
 
-**Data Sources** — All data is static/bundled (no live API dependency at launch). Sources:
-- Draft results: published post-NFL Draft (April) — scraped or hand-entered into `/src/data/rookies.js`
-- Combine stats: publicly available via NFL.com and Pro Football Reference
-- Dynasty ADP: KeepTradeCut or Sleeper dynasty consensus at draft time
-- Big-board ranks: aggregated from 2–3 major sources, stored as an average rank
+---
+
+### v4.9 — Player Comparison
+
+Side-by-side player comparison in both the Companion (fantasy) and Statistics (career) contexts.
+
+- **Companion comparison** — Pick any two players from the Sleeper player pool (rostered or on waivers in the league) and compare side-by-side: season pts, avg PPG, recent form (last 4 weeks), positional rank, projection range for the upcoming week, and scoring breakdown. Accessible via a Compare button on player cards or a dedicated Compare sub-tab
+- **Statistics comparison** — Compare mode in `PlayerBrowser`: search and select any two ESPN players to view their career/season stats side-by-side with per-stat delta highlighting. Integrated into the existing Statistics tab as a toggle mode rather than a separate top-level tab
+
+---
+
+### v5.0 — Draft Coach & Trade Agent
+
+Two new Companion tools: a rookie scouting hub for draft season, and an AI-assisted trade evaluator.
+
+#### Draft Coach
+
+Surfaces publicly available scouting and evaluation data to help users make informed draft decisions.
+
+- **Draft Profile Card** — Per-player card showing: NFL Draft slot (round, pick, overall, drafting team), college stats by position (completions/attempts/TDs/INTs for QBs, carries/yards/TDs for RBs, targets/catches/yards/TDs for WRs/TEs), NFL Combine results (40-yard dash, vertical, broad jump, 3-cone, shuttle, bench press, height/weight) with percentile grades relative to positional peers, consensus big-board rank, and dynasty rookie ADP
+- **Position Filters** — Filter the full rookie list by QB, RB, WR, TE (IDP stretch: DL, LB, DB)
+- **Sort Controls** — Sort by: Overall Draft Pick, Dynasty ADP, Big Board Rank, 40-yard dash, College Production (yards, TDs)
+- **Rookie Comparison** — Select two rookies to view side-by-side: draft slot, combine results, college stats, rankings
+- **Data Sources** — All data is static/bundled (no live API dependency at launch): draft results hand-entered into `/src/data/rookies.js`, combine stats from NFL.com / Pro Football Reference, dynasty ADP from KeepTradeCut or Sleeper consensus, big-board ranks averaged from 2–3 major sources
 
 **Stretch Goals (post-launch)**
 - Prospect comparison against historical rookie comps (e.g. "similar combine profile to Justin Jefferson")
 - Live dynasty ADP via KeepTradeCut public API (if available)
 - Depth chart position within the drafting team (Day 1 starter vs. depth)
 
+#### Trade Agent
+
+Assess trade value for any player and generate trade proposals in either direction.
+
+- **Trade value assessment** — For any player in the league, display their estimated trade value and generate trade proposals: what you could offer from your roster + draft capital to acquire them, or what you could expect to receive in return for trading them away
+- **Trade value data** — Primary: KeepTradeCut public API for live dynasty/redraft values. Fallback: in-app calculated value derived from projected pts, positional rank, roster scarcity, and draft capital position when KTC is unavailable or the player isn't found
+- **Roster context** — Trade recommendations account for current roster composition (positional depth, starter quality), available waiver alternatives at that position, and draft capital — leveraging the data infrastructure built in v4.8
+- **Two directions** — Evaluate trades involving your own players (what to give up) or target players on other rosters (what to offer), using the league roster browser from v4.8 and the comparison framework from v4.9
 
 ---
+
 ## Backlog (Unversioned)
 
 ### Season Predictions (Unblocked When Data Available)
@@ -47,12 +74,8 @@ A new Companion tab to assist with fantasy football drafts, focused on rookies a
 
 ### Fantasy Companion
 
-- **Matchup player drilldown — stats page link** — Include a link to the player's stats page from within the Matchup player drilldown.
 - **Roster player drilldown — stat category filter** — Allow filtering weekly stats by category (Pass, Rush, Rec, Defense, All) with a position-appropriate default.
 - **Start/sit recommendations** — Companion view that runs `projectPlayer()` across all rostered players and ranks them by projected output within each position group. Surfaces a clear start recommendation for each roster slot.
-- **Waiver wire with projections** — Enhance `CompanionWaiver.jsx` with a projected pts column (next-game projection via `projectPlayer()`), a projection-based sort option, and a "trending" indicator for players with recent breakout weeks.
-- **Fantasy player comparison (Companion)** — New Companion tab: pick two players from the Sleeper player pool and compare side-by-side: season pts, avg PPG, recent form, positional rank, projection range, and scoring breakdown.
-- **Stats player comparison (Statistics)** — Compare mode in `PlayerBrowser`: select two players and view their ESPN career/season stats side-by-side with per-stat deltas highlighted.
 
 ### Season Predictions
 

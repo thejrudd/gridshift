@@ -84,8 +84,11 @@ For full version history, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Roadmap
 
-- **Week-by-Week View** *(planned — blocked on 2026 schedule data)* — Browse the full 18-week schedule, see all matchups for a given week, and navigate between weeks with your predictions reflected
-- **v5.0 — Draft Coach** — A new Companion tab surfacing rookie scouting data: NFL Draft slot, college stats, combine results, consensus big-board rank, and dynasty ADP for every incoming class
+- **v4.7 — Waiver Wire Enhancements** — Player links to Statistics, projected points column, projection-based sorting, and trending indicators
+- **v4.8 — League Browser** — Full opponent roster view with stats and a league-wide draft picks grid
+- **v4.9 — Player Comparison** — Side-by-side comparison in Companion (fantasy stats + projection) and Statistics (ESPN career stats with per-stat deltas)
+- **v5.0 — Draft Coach & Trade Agent** — Rookie scouting hub (draft slot, combine, college stats, dynasty ADP) plus a trade value evaluator powered by KeepTradeCut with in-app fallback
+- **Week-by-Week View** *(blocked on 2026 schedule data)* — Browse the full schedule by week with predictions reflected
 
 ## Project Structure
 
