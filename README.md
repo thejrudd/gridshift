@@ -10,21 +10,20 @@ An interactive web app for predicting the 2026 NFL season — with full Sleeper 
 - **Real-Time Validation** — Enforces league-wide balance (272 total wins), division constraints, and pairwise game limits
 - **Division Standings** — Auto-generated standings sorted by wins, division record, and strength of schedule
 - **Playoff Seeding** — AFC and NFC brackets with division winners and wild card spots
-- **Shareable Infographic** — Build a custom bento-grid graphic with up to 11 insight sections (Best & Worst Records, Playoff Seeds, Division Winners, Conference Showdown, Toughest Division, Bold Predictions, Worst Division, Strength of Schedule, Closest Division Race, Wild Card Teams, Parity Index). Drag and resize sections, add your name/handle, and export as an image.
-- **Team Search & Filter** — Search teams by name or abbreviation and filter by conference (AFC/NFC) from the predictions view
+- **Shareable Infographic** — Build a custom bento-grid graphic with up to 11 insight sections. Drag and resize sections, add your name/handle, and export as an image
+- **Team Search & Filter** — Search teams by name or abbreviation and filter by conference from the predictions view
 - **Player Browser** — Browse all 32 rosters by conference, division, and position; search players by name across the league
 - **Player Profiles** — Full profile pages with headshot, career stats, game log, and Pro Bowl / All-Pro honors
-- **Favorite Team Theming** — Pick your favorite NFL team to theme the app; accent color applies to nav indicators, progress bar, and filter toggles
+- **Sleeper League Integration** — Connect your Sleeper account, import a league, and sync custom scoring settings
+- **Fantasy Matchup View** — Head-to-head starter comparison with week-by-week points, projections, positional rankings, weather context, and game location
+- **Player Projections** — Min/max/projected ranges using a recent-weighted blend of form and season average, factoring opponent strength, home/away, weather, and snap % trend
+- **Heatmap** — 32-team grid of fantasy points allowed or scored per position per week; three scope modes, Vegas spread/O/U overlay, location filter, and per-cell player drilldowns
+- **Scoring Breakdowns** — Drill into any player or full team score to see a stat-by-stat fantasy point breakdown
+- **Favorite Team Theming** — Pick your favorite NFL team to theme the app; accent color applies across nav, progress bar, and filter toggles
 - **Export/Import** — Save predictions as JSON; import JSON to restore picks
-- **Sleeper League Integration** — Connect your Sleeper account, import a league, and analyze your fantasy roster with custom scoring settings synced from your league
-- **Fantasy Matchup View** — Head-to-head starter comparison with week-by-week points, projections, positional rankings (week and season), weather context, and game location
-- **Defense Matrix** — 32-team heatmap of fantasy points allowed (or scored) per position per week; clickable cells drill into per-player stat breakdowns
-- **Scoring Breakdowns** — Drill into any player or your full team score to see a stat-by-stat fantasy point breakdown (e.g. Rush Yards · 112 · +11.2 pts)
-- **Player Projections** — Min/max/projected point ranges factoring opponent strength, home/away, weather, snap % trend, and scoring format
 - **Dark Mode** — Toggle between light and dark themes; persists across sessions
 - **PWA / Installable** — Install to your home screen on iOS and Android; runs in standalone mode with asset caching
 - **Responsive Design** — Two-panel layout on desktop (sidebar + content), tab bar on mobile
-- **Client-Side Only** — All prediction data stored in localStorage; Sleeper data fetched live from the Sleeper API
 
 ## Getting Started
 
@@ -75,106 +74,18 @@ PORT=8080 docker compose up -d --build
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) |
 
-## What's New in v4.4
+## What's New in v4.6.3
 
-- **Defense grid — team attribution fix** — The Defense Matrix grid and drilldown were incorrectly attributing stats for traded/signed players (e.g. Justin Fields' NYJ stats showing under KC's opponents). Root cause: Sleeper's bulk stats endpoint has no game-time team metadata, so attribution fell back to `player.team` (current roster). Fixed with a three-layer ESPN cross-reference: (1) ESPN eventlog enhancement resolves game-time team via competitor IDs embedded in each game record, (2) ESPN roster name-matching resolves the ~2/3 of players missing `espn_id` in Sleeper's DB, and (3) inferred season team fallback uses other enhanced weeks for partially-resolved players. Unresolved entries show an **est.** badge in the drilldown.
+- **Browser back button** — The browser back button now navigates within the app. Tab switches, sub-navigation changes, and Statistics team/player drill-downs are tracked as browser history entries so pressing back walks through navigation in reverse
+- **Statistics external navigation fix** — Player profiles opened via links from the Heatmap or Matchup drilldown now render identically to manually browsed profiles — correct stat columns, jersey number, and full position name
+- **Heatmap offense color fix** — High points allowed (easy matchup) now correctly shows green; low points (tough matchup) shows red. The gradient was previously inverted in Offense phase
 
-## What's New in v4.3.7
-
-- **Defense grid — sticky border fix** — The frozen Team column and header row no longer bleed scrolled content through their borders. Root cause: `borderCollapse: 'collapse'` shares borders between sticky and non-sticky cells, causing browsers to render shared borders on the wrong compositing layer during scroll. Fixed by switching to `borderCollapse: 'separate'` + `borderSpacing: 0` and replacing sticky cell borders with `box-shadow`, which always renders above scrolled content.
-- **Defense grid — richer light mode tints** — Team color row tints in the Defense grid are now more vivid in light mode (blend alpha increased from 0.75 → 0.90).
-- **Defense grid — team name contrast** — Team name text now uses WCAG luminance-aware contrast color (dark or white) based on the blended background, ensuring readability against any team color in both light and dark mode.
-
-## What's New in v4.3.6
-
-- **Defense grid — WAS/LAR color fix** — Washington and LA Rams rows now show their correct team colors; STADIUMS uses `WAS`/`LAR` while TEAM_COLORS uses `wsh`/`la` — added an alias map to bridge the mismatch
-- **Defense grid — opaque header row** — Header row background changed from semi-transparent `--color-fill-secondary` (~5% opacity) to `--color-bg`, making the header fully opaque when scrolling
-- **Defense grid — opaque sticky column borders** — Borders on the frozen Team column and header corner now use `--color-separator-opaque` (solid color) instead of the semi-transparent `--color-separator`, eliminating the bleedthrough gap between rows
-- **Defense grid — responsive height** — Table container max-height is now a CSS variable with distinct values for mobile (`100dvh - 260px`) and desktop (`100dvh - 160px`), giving the grid more vertical space on larger screens
-
-## What's New in v4.3.5
-
-- **Defense Scored — bye week fix** — Scored view no longer shows phantom stats for weeks a team was on bye; `scheduleMap` is now used to filter out Sleeper data entries that fall on a team's bye week
-- **Matchup — BYE WEEK badge** — When a starter's team has no game scheduled for the current week, their matchup card now shows a "BYE WEEK" badge instead of a blank opponent line
-- **Roster drilldown — OPP column** — Player weekly sheet now includes an opponent column (e.g. `KC`, `BUF`) for each played week, sourced from the week's stat entry or the ESPN schedule
-- **Roster drilldown — BYE rows** — Bye weeks now appear as a dedicated "BYE" row in the weekly sheet instead of being silently omitted; DNP rows (game played, no stats logged) are also preserved
-
-## What's New in v4.3.4
-
-- **Defense grid — frozen header row** — Header row now sticks to the top of the table viewport as you scroll down, and the Team column sticks to the left as you scroll right; the corner cell is anchored in both axes
-- **Defense grid — opaque sticky column** — Team column background is now a solid blended color instead of semi-transparent, so scrolled content no longer bleeds through
-- **Defense grid — independent scroll on mobile** — The table now scrolls independently from the page on all screen sizes
-- **Defense grid — BYE week labels** — Bye weeks are now labeled "BYE" in the grid instead of showing blank cells
-
-## What's New in v4.3.3
-
-- **Defense tab — full-bleed layout** — Table now runs edge-to-edge on all screen sizes, taking full advantage of available width
-- **Defense tab — unified filter bar** — View, Position, Stat, Color, and Team Colors controls are now labeled and arranged in a single horizontal row on wide screens, wrapping naturally on mobile
-
-## What's New in v4.3.2
-
-- **Projection footnotes** — Matchup and Snap use factors now have plain-English explanations in the projection math drilldown, alongside the existing Floor/Ceiling footnote
-
-## What's New in v4.3.1
-
-- **Defense drilldown scroll lock** — Background page no longer scrolls while the drilldown panel is open
-- **Season progress bar** — "Season X/32" progress bar in the sidebar is now hidden when not on the Predictions tab
-- **PWA cache bust** — `package.json` version bumped to force service worker refresh so users receive the latest build automatically
-
-## What's New in v4.3
-
-### Defense Matrix — Enhancements
-- **Team Colors & Logos** — Each team row in the grid is tinted with its official primary color and shows its ESPN logo for faster visual scanning
-- **Opponent Labels** — Each cell shows the opponent abbreviation in small text below the value
-- **Game Score Mode** — New "Game Score" stat filter in Allowed view shows the actual NFL score for each game (pulled from ESPN schedule data)
-- **Scored View Stat Filters** — Defense Scored view now has 8 stat filters: Fantasy Pts, Sacks, INT, Forced Fumbles, TFL, Passes Defended, QB Hits, Defensive TDs
-- **View Labels** — "Offense Allowed" → "Allowed", "Defense Scored" → "Scored"
-- **Team Color Heatmap Toggle** — Optional toggle (when a favorite team is set) to use team colors instead of the default red–green heatmap palette
-- **Conference/Division Labels** — Team cells show a conference or division sub-label when sorting by those modes
-- **Drilldown Redesign** — Compact one-line player rows (name · pos · value); header shows "Week N — Away @ Home" with team logos; player names link directly to their Statistics profile page
-- **Bug Fixes** — Average calculation now divides by games played (not weeks with data); Conference sort no longer falls through to Division sort
-
-### Matchup — Enhancements
-- **5-Level Matchup Difficulty** — Replaced the 3-level ±10% threshold system with a percentile-based ranking across all 32 teams. Levels: Difficult / Challenging / Average / Favorable / Easy. Requires ≥ 3 games of data per team and ≥ 5 teams with data; does not apply to IDP/defensive players
-- **Score Range Coloring** — Post-game final score is now color-coded by where it lands relative to the projected range: red (below range), orange (bottom 30%), white (middle 40%), light green (top 30%), green (above range). Replaces the +/- diff badge
-- **Roster Slot Labels** — Center badge now shows the actual roster slot (FLEX, SF, IDP, FLX, DST, etc.) from the league's `roster_positions` instead of the player's raw position
-- **Home/Away Fix** — Matchup screen was incorrectly showing all players as Away; fixed by preferring ESPN schedule data over Sleeper's unreliable `home` field
-- **Season Picker** — Header now derives available seasons from `league.season` and `previous_league_id`; hidden entirely for first-year leagues. Removed the confusing "N players" stat count
-
-### Other
-- **Statistics Deep-Link Fix** — Clicking a player name in the Defense drilldown now correctly routes to their ESPN stats page (was using Sleeper player IDs instead of ESPN IDs)
-- **Guide Updates** — Companion guide rewritten to accurately describe the projection formula, floor/ceiling calculation, and all Defense tab features
-
-## What's New in v4.2
-
-- **Defense Matrix** — New Companion tab showing all 32 teams' fantasy points allowed (Offense Allowed) or scored (Defense Scored) per position per week in a scrollable heat-mapped table
-- **Heatmap** — Multi-stop red→orange→yellow→green color spectrum; three scope options (Overall, By Week, By Team) each with independent scales; AVG column has its own scale
-- **Drilldown** — Tap any cell to see the per-player stat breakdown with signed point contributions for that matchup
-- **Position & Stat Filters** — Offense mode: All/QB/RB/WR/TE/K + Fantasy Pts/Rec Yds/Rush Yds; Defense mode: All/DL/LB/DB
-- **Column Sorting** — Click any column header to sort; Team column has A–Z, Conference, and Division sub-sorts
-- **QB Opp Fix** — Fetches per-QB Sleeper stats to get game-time `opp` field (bulk stats endpoint never includes it), resolving under-counted defensive game totals for QBs who changed teams in the offseason
-- **Beta Badge** — Companion tab marked Beta in sidebar and bottom tab bar
-
-## What's New in v4.1
-
-- **Matchup Difficulty Badge** — Easy / Avg / Hard badge per player based on defensive points allowed to that position vs league average (requires 3+ games of data)
-- **Redesigned Matchup Player Card** — Cleaner three-line layout: name + team, scored / projected range, vs OPP + location + badge
-- **Enhanced Player Drilldown** — Rankings (week rank, season rank, avg PPG) and Game Context sections above the stat breakdown
-- **Snap % Projection Factor** — Recent snap usage (last 4 games) vs season average as a fourth projection multiplier
-- **Companion Guide** — Full guide content for the Companion tab
-
-## What's New in v4.0
-
-- **Sleeper Integration** — Connect via Sleeper username, select a league, sync scoring settings
-- **Companion Tab** — Fantasy tools: Connect, Roster, Matchup, Waiver, and Scoring views
-- **Fantasy Matchup** — Side-by-side starter comparison with full scoring breakdowns
-- **Positional Rankings** — Week and season rank per player in the matchup view
-- **Projections** — Min/max/projected ranges factoring opponent strength, home/away, weather, and snap trend
-- **Custom Scoring Engine** — PPR / Half-PPR / Standard with per-stat multipliers; imports from Sleeper league
+For full version history, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Roadmap
 
-**v4.5** — Week-by-week schedule view *(blocked on 2026 season schedule data)*
+- **Week-by-Week View** *(planned — blocked on 2026 schedule data)* — Browse the full 18-week schedule, see all matchups for a given week, and navigate between weeks with your predictions reflected
+- **v5.0 — Draft Coach** — A new Companion tab surfacing rookie scouting data: NFL Draft slot, college stats, combine results, consensus big-board rank, and dynasty ADP for every incoming class
 
 ## Project Structure
 
@@ -193,7 +104,7 @@ src/
 │   │   ├── CompanionConnect.jsx   # Sleeper connect + league selection flow
 │   │   ├── CompanionRoster.jsx    # Roster view with season ranks and avg PPG
 │   │   ├── CompanionMatchup.jsx   # Weekly matchup: head-to-head, projections, breakdowns
-│   │   ├── CompanionDefense.jsx   # Defense matrix: heatmap of pts allowed/scored per team/week
+│   │   ├── CompanionDefense.jsx   # Heatmap: pts allowed/scored per team/week with drilldowns
 │   │   ├── CompanionWaiver.jsx    # Waiver wire view
 │   │   ├── CompanionScoring.jsx   # Scoring settings viewer (synced from league)
 │   │   └── PlayerMatchupBreakdown.jsx  # Per-player stat → fantasy point breakdown modal
