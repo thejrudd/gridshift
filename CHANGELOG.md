@@ -280,3 +280,10 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Opponent roster view** — Browse any league member's full roster via a scrollable owner selector that defaults to your own team. Each roster shows the same depth as the Roster tab: players grouped by position with season pts, avg PPG, positional rank, and a tappable weekly breakdown sheet.
 - **Draft capital grid** — League-wide horizontally scrollable grid showing every team's currently owned draft picks organized by year and round (capped at 5 rounds). Own picks show as filled amber dots; acquired picks show the originating team's abbreviation as a blue badge; traded-away picks show as an empty dim circle. Teams are sorted by total picks held so pick-rich teams surface to the top. Year columns are grouped with round sub-headers (R1, R2…).
 - **Picks data** — Fetches `/league/{leagueId}/traded_picks` from the Sleeper API on demand. Constructs the full pick ownership matrix: each team implicitly owns all their own picks; traded picks are resolved to their current owner. Handles edge cases including picks traded back to the original team.
+
+---
+
+## v4.8.1 — Draft Picks Round Cap Fix
+*2026-03-21*
+
+- **Raised round limit** — Draft capital grid now shows all rounds from the league's `draft_rounds` setting instead of truncating at 5. Raises the internal cap to 36 to accommodate dynasty startup drafts (25+ rounds) and deep redraft leagues.
