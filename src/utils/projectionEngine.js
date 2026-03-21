@@ -293,7 +293,7 @@ export function getDefensePercentile(defenseTable, oppTeam, pos, beforeWeek = nu
  * Aggregates by (opponent team, week) — the same scale as ptsAllowedPerGame in getDefenseStrength —
  * so that oppFactor = ptsAllowedPerGame / leagueAvg is a true relative comparison.
  */
-function getLeagueAvgPPG(pos, allWeeklyStats, players, scoringSettings, beforeWeek = null) {
+export function getLeagueAvgPPG(pos, allWeeklyStats, players, scoringSettings, beforeWeek = null) {
   const normPos = normalizePos(pos);
   const teamWeekTotals = {}; // `${opp}_${week}` → total pts scored against that defense
   for (const [playerId, weeks] of Object.entries(allWeeklyStats ?? {})) {
@@ -373,6 +373,8 @@ export function projectPlayer({
   weeklyArr, pos, oppTeam, isHome, isIndoor, weather,
   allWeeklyStats, players, scoringSettings, scheduleMap, week,
   defStrength,
+  leagueAvg,           // optional pre-computed league avg PPG for this position
+  skipOpponentLookup,  // when true, skip getOpponentStrength fallback if defStrength is null
 }) {
   if (!weeklyArr?.length) return null;
 
@@ -418,16 +420,20 @@ export function projectPlayer({
   let oppFactor = 1.0;
   let oppData = null;
   // Use pre-computed defStrength when available (preferred — from buildDefenseTable).
-  // Falls back to on-demand getOpponentStrength for callers that don't provide it.
+  // Falls back to on-demand getOpponentStrength for callers that don't provide it,
+  // unless skipOpponentLookup is set (for bulk callers that pre-compute the table).
   const strengthData = defStrength
-    ?? (oppTeam && allWeeklyStats && players
-        ? getOpponentStrength(oppTeam, pos, allWeeklyStats, players, scoringSettings, scheduleMap, week)
-        : null);
-  if (strengthData && allWeeklyStats && players) {
-    const leagueAvg = getLeagueAvgPPG(pos, allWeeklyStats, players, scoringSettings, week);
-    if (leagueAvg > 0) {
+    ?? (skipOpponentLookup ? null
+        : (oppTeam && allWeeklyStats && players
+            ? getOpponentStrength(oppTeam, pos, allWeeklyStats, players, scoringSettings, scheduleMap, week)
+            : null));
+  if (strengthData) {
+    const avgPPG = leagueAvg ?? (allWeeklyStats && players
+      ? getLeagueAvgPPG(pos, allWeeklyStats, players, scoringSettings, week)
+      : 0);
+    if (avgPPG > 0) {
       oppData = strengthData;
-      oppFactor = Math.max(0.65, Math.min(1.45, strengthData.ptsAllowedPerGame / leagueAvg));
+      oppFactor = Math.max(0.65, Math.min(1.45, strengthData.ptsAllowedPerGame / avgPPG));
     }
   }
 

@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSleeper } from '../../context/SleeperContext';
 import { calcPoints, calcPointsFromTotals, getRecentAvg } from '../../utils/scoringEngine';
-import { projectPlayer } from '../../utils/projectionEngine';
+import { projectPlayer, buildDefenseTable, getDefenseStrength, getLeagueAvgPPG } from '../../utils/projectionEngine';
 import { STADIUMS } from '../../data/stadiums';
 
 const POSITIONS = ['ALL', 'QB', 'RB', 'WR', 'TE', 'K'];
+const SKILL_POSITIONS = new Set(['QB', 'RB', 'WR', 'TE', 'K']);
 const POSITION_COLORS = {
   QB: '#ef4444', RB: '#22c55e', WR: '#3b82f6', TE: '#f59e0b', K: '#8b5cf6',
 };
@@ -24,8 +25,10 @@ export default function CompanionWaiver({ onViewPlayer }) {
   } = useSleeper();
 
   const [posFilter, setPosFilter] = useState('ALL');
+  const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState('recent'); // 'projected' | 'recent' | 'season'
+  const debounceRef = useRef(null);
 
   useEffect(() => { loadPlayers(); }, [loadPlayers]);
   useEffect(() => {
@@ -42,12 +45,13 @@ export default function CompanionWaiver({ onViewPlayer }) {
     return ids;
   }, [rosters]);
 
-  // My roster IDs (for "add" context)
-  const myRosterData = myRoster();
+  // My roster IDs (memoized — myRoster() is a function, not a value)
+  const myRosterData = useMemo(() => myRoster(), [myRoster]);
   const myPlayerIds = useMemo(() => {
     if (!myRosterData) return new Set();
     return new Set([...(myRosterData.players || []), ...(myRosterData.reserve || [])]);
   }, [myRosterData]);
+  void myPlayerIds; // used for "add" context in future
 
   // Projection week: last scored leg + 1, or last regular-season week
   const week = useMemo(() => {
@@ -57,7 +61,26 @@ export default function CompanionWaiver({ onViewPlayer }) {
     return Math.max(1, playoffStart - 1);
   }, [league]);
 
-  const available = useMemo(() => {
+  // ── Pre-compute defense table once (replaces per-player getOpponentStrength calls) ──
+  const defenseTable = useMemo(() => {
+    if (!weeklyStats || !players) return null;
+    return buildDefenseTable(weeklyStats, players, scheduleMap, scoringSettings);
+  }, [weeklyStats, players, scheduleMap, scoringSettings]);
+
+  // ── Pre-compute league avg PPG per position (replaces per-player getLeagueAvgPPG calls) ──
+  const leagueAvgByPos = useMemo(() => {
+    if (!weeklyStats || !players) return {};
+    const result = {};
+    for (const pos of SKILL_POSITIONS) {
+      result[pos] = getLeagueAvgPPG(pos, weeklyStats, players, scoringSettings, week);
+    }
+    return result;
+  }, [weeklyStats, players, scoringSettings, week]);
+
+  // ── Enrich all available players with projections (no filter/sort deps) ──────
+  // This is the expensive memo. It only recomputes when the underlying data changes,
+  // not when the user changes position filter, search, or sort column.
+  const enrichedPlayers = useMemo(() => {
     if (!players || !seasonStats) return [];
 
     return Object.entries(seasonStats)
@@ -66,11 +89,7 @@ export default function CompanionWaiver({ onViewPlayer }) {
         const p = players[id];
         if (!p) return null;
         const pos = p.position;
-        if (!['QB', 'RB', 'WR', 'TE', 'K'].includes(pos)) return null;
-        if (posFilter !== 'ALL' && pos !== posFilter) return null;
-
-        const q = search.trim().toLowerCase();
-        if (q && !p.full_name?.toLowerCase().includes(q) && !p.team?.toLowerCase().includes(q)) return null;
+        if (!SKILL_POSITIONS.has(pos)) return null;
 
         const pts = calcPointsFromTotals(stats, scoringSettings);
         if (pts <= 0) return null;
@@ -97,23 +116,29 @@ export default function CompanionWaiver({ onViewPlayer }) {
         const venueTeam = isHome === true ? team : isHome === false ? oppTeam : null;
         const isIndoor = venueTeam ? (STADIUMS[venueTeam]?.indoor ?? false) : false;
 
-        // Projection for the upcoming week
-        const proj = weekly.length >= 2
-          ? projectPlayer({
-              weeklyArr: weekly,
-              pos,
-              oppTeam,
-              isHome,
-              isIndoor,
-              weather: null,
-              allWeeklyStats: weeklyStats,
-              players,
-              scoringSettings,
-              scheduleMap,
-              week,
-              defStrength: null,
-            })
-          : null;
+        // Projection using pre-computed defense table (O(1) lookup, no full scan)
+        let proj = null;
+        if (weekly.length >= 2 && defenseTable) {
+          const defStrength = oppTeam
+            ? getDefenseStrength(defenseTable, oppTeam, pos, week)
+            : null;
+          proj = projectPlayer({
+            weeklyArr: weekly,
+            pos,
+            oppTeam,
+            isHome,
+            isIndoor,
+            weather: null,
+            allWeeklyStats: null,  // not needed — skipOpponentLookup prevents fallback
+            players: null,
+            scoringSettings,
+            scheduleMap,
+            week,
+            defStrength,
+            leagueAvg: leagueAvgByPos[pos] ?? 0,
+            skipOpponentLookup: true,
+          });
+        }
 
         const espnId = p.espn_id ?? espnIdOverrides?.[id] ?? null;
 
@@ -133,7 +158,15 @@ export default function CompanionWaiver({ onViewPlayer }) {
           yearsExp: p.years_exp,
         };
       })
-      .filter(Boolean)
+      .filter(Boolean);
+  }, [players, seasonStats, weeklyStats, scheduleMap, scoringSettings, rosteredIds, week, espnIdOverrides, defenseTable, leagueAvgByPos]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Filter, sort, and slice (cheap — no projection math) ─────────────────────
+  const available = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return enrichedPlayers
+      .filter(p => posFilter === 'ALL' || p.position === posFilter)
+      .filter(p => !q || p.name.toLowerCase().includes(q) || p.team.toLowerCase().includes(q))
       .sort((a, b) => {
         if (sortBy === 'projected') {
           const ap = a.projected ?? -1;
@@ -144,7 +177,7 @@ export default function CompanionWaiver({ onViewPlayer }) {
         return b.recentAvg - a.recentAvg || b.pts - a.pts;
       })
       .slice(0, 100);
-  }, [players, seasonStats, weeklyStats, scheduleMap, scoringSettings, posFilter, search, rosteredIds, sortBy, week, espnIdOverrides]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [enrichedPlayers, posFilter, search, sortBy]);
 
   const sortLabel = sortBy === 'projected' ? 'projected pts' : sortBy === 'season' ? 'season total' : 'recent avg (last 4 weeks)';
 
@@ -173,8 +206,12 @@ export default function CompanionWaiver({ onViewPlayer }) {
           </svg>
           <input
             type="text"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
+            value={searchInput}
+            onChange={e => {
+              setSearchInput(e.target.value);
+              clearTimeout(debounceRef.current);
+              debounceRef.current = setTimeout(() => setSearch(e.target.value), 200);
+            }}
             placeholder="Search players…"
             className="w-full pl-9 pr-3 py-2 rounded-xl font-medium focus:outline-none"
             style={{ fontSize: '16px', background: 'var(--color-fill-secondary)', color: 'var(--color-label)' }}

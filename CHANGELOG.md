@@ -259,3 +259,14 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Sortable columns** — All three data columns (Proj, Season, 4-Wk Avg) are now clickable column headers that sort the list; the active sort column is highlighted and shows a ↓ indicator
 - **Trending indicator** — Players whose recent 4-week average is ≥ 25% above their season average (and at least 2 pts higher) show a green ↑ HOT badge next to their name
 - **Upcoming opponent** — Each player row now shows their next opponent abbreviation in small text below their position/team line
+
+---
+
+## v4.7.1 — Waiver Performance Patch
+*2026-03-21*
+
+- **Defense table pre-computation** — `buildDefenseTable()` now runs once when stats load instead of `getOpponentStrength()` being called per player. Defense strength lookups are now O(1) table reads instead of a full weekly-stats scan per player.
+- **League average pre-computation** — `getLeagueAvgPPG()` is pre-computed once per position (5 total) and passed into `projectPlayer()` instead of recomputing it for every waiver player. `getLeagueAvgPPG` is now exported from `projectionEngine.js`; `projectPlayer` accepts optional `leagueAvg` and `skipOpponentLookup` params to allow callers to bypass the internal scan entirely.
+- **Projection/filter memo split** — Projection enrichment is now a separate memo from filtering and sorting. Changing position filter, sort column, or search term no longer triggers projection recomputation — only underlying data changes do.
+- **Debounced search** — The search input is debounced at 200ms, preventing per-keystroke re-renders of the player list.
+- **`myRoster()` memoized** — The `myRoster()` context function is now called inside a `useMemo` in the waiver component instead of on every render.
