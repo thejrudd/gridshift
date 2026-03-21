@@ -219,3 +219,32 @@ All notable changes, oldest first. Add new entries at the bottom.
 *2026-03-19*
 
 - **Score mode inline display** — Heatmap cells in Score mode now show the final score as `X-X` (team score · opponent score) with both team abbreviations in small text underneath (e.g. `28-14` / `KC · DEN`), replacing the previous stacked single-number layout.
+
+---
+
+## v4.6.2 — Matchup Projection Overhaul
+*2026-03-20*
+
+- **Recent-weighted projection base** — Projection now blends recent form (60% last 4 games) with season average (40%), so hot or cold streaks propagate into the projected value within weeks instead of waiting for the full season average to move.
+- **oppFactor accuracy fix** — `getLeagueAvgPPG` now aggregates fantasy points by team-game (matching the scale of `ptsAllowedPerGame`). Previously it returned a per-player-game average (~10 pts) while `ptsAllowedPerGame` was a team-game aggregate (~30 pts), causing `oppFactor` to always be inflated and pinned to the 1.45× cap regardless of actual defense quality.
+- **Projection range fix** — Floor/ceiling are now expressed as fractions of `seasonAvg` applied to the projected value, guaranteeing the projection always falls within its own min–max range. Previously, percentile bounds anchored to `seasonAvg` could produce a ceiling below the `blendedBase`-driven projected value.
+- **IQR floor/ceiling** — Floor/ceiling now use the true 25th/75th percentile (IQR) of historical game scores instead of averaging the lower/upper quartile halves, producing a tighter and more representative range.
+- **Home/Away factor threshold** — Lowered from ≥3 games to ≥1 game, so the location factor activates from the first game played.
+- **Home/Away row hidden when neutral** — The Home/Away breakdown row is no longer shown when the location factor is effectively 1.00× (no meaningful split data).
+- **Matchup drilldown Stats link** — Player name header in the matchup drilldown now includes a **Stats →** button that navigates directly to the player's Statistics page.
+- **Heatmap filter bar tooltip** — Vegas Odds info text replaced with an ℹ icon tooltip inline in the filter bar row; no longer pushes the heatmap grid down when switching stat modes.
+- **AVG column hidden in Spread mode** — The AVG column is hidden when viewing Spread/O/U mode since it has no meaningful signal (was showing 0.0).
+- **Heatmap tile width consistency** — Score mode cells are now the same width as all other stat modes (40px).
+- **Heatmap filter bar wrapping fix** — Filter bar no longer wraps to a second line when switching stat modes.
+- **Player stats year range fix** — Statistics page accordion no longer lists years a player had no recorded activity. Years with no data are now silently probed and hidden before the user expands them.
+- **Heatmap offense mode data fix** — Fantasy Points / Rec Yds / Rush Yds in offense mode now shows each team's own offensive output (points allowed by that defense) instead of the opposing offense's stats.
+- **Heatmap player link year range fix** — Player links from the heatmap now open the correct full career year range on the Statistics page.
+
+---
+
+## v4.6.3 — Browser Back Navigation + Bug Fixes
+*2026-03-21*
+
+- **Browser back button** — The browser back button now navigates within the app. Tab changes, sub-navigation, and Statistics team/player drill-downs are each tracked as browser history entries. Pressing back walks through navigation in reverse instead of exiting the app.
+- **Statistics external navigation fix** — The Statistics page now renders identically whether accessed via manual browse or an external link (Heatmap player link, Matchup Stats → link). External navigation now passes the player's position at all call sites, and `PlayerBrowser` enriches the player object from the cached ESPN roster to fill in jersey number, full position name, and status — making the hero card and stat columns complete.
+- **Heatmap offense color scheme fix** — High points allowed (easy matchup) now correctly shows green and low points (tough matchup) shows red in Offense phase. The gradient was previously inverted.
