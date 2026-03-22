@@ -7,41 +7,6 @@ New features requested or planned should be added here.
 
 ## Planned Versions
 
-### ~~v4.7 — Waiver Wire Enhancements~~ ✓ Complete — see CHANGELOG
-
----
-
-### ~~v4.8 — League Browser~~ ✓ Complete — see CHANGELOG
-
----
-
-### ~~v4.9 — Player Comparison~~ ✓ Complete — see CHANGELOG
-
-Side-by-side player comparison in both the Companion (fantasy) and Statistics (career) contexts.
-
-- **Companion comparison** — Pick any two players from the Sleeper player pool (rostered or on waivers in the league) and compare side-by-side: season pts, avg PPG, recent form (last 4 weeks), positional rank, projection range for the upcoming week, and scoring breakdown. Accessible via a Compare button on player cards or a dedicated Compare sub-tab
-- **Statistics comparison** — Compare mode in `PlayerBrowser`: search and select any two ESPN players to view their career/season stats side-by-side with per-stat delta highlighting. Integrated into the existing Statistics tab as a toggle mode rather than a separate top-level tab
-
----
-### v5.0.1 - Compare Mode fixes
-
-- **Fantasy Total** - Add each player's fantasy total points for the year to the top of the compare chart in the Fantasy filter.
-- **Point values** - Show the fantasy point value of each metric in the center under the label.
-- **Compare mode in "Statistics" view** - Add button to player card in statistics view that links to compare and automatically populates that player. 
-- **Compare search box fix** - Instead of aligning the search box on the bottom, have it pop out in the middle of the screen. That way, it doesn't move every time the list of search results changes. Additionally, ensure that the background doesn't scroll while the search window is active. 
-- **Floor & Ceiling** - Floor and Ceiling values in Fantasy comparison should be the highest and lowest point values earned in a single game for that season.
-- **Snap % and Game %** - Fantasy comparison should include how % of snaps and # of games played.
-- **Player status** - Statistics mode and compare mode should both include data about a player's current status, such as Injured Reserve, DNP, etc.
-
-### v5.1 — Compare Upgrades
-
-#### Unified Compare Tab ✓ Shipped in v5.0
-
-- **Player backgrounds** — Add team-colored hero backgrounds for players being compared, similar to the team banner in the Statistics player profile.
-- **Table label cleanup** — Audit and expand all abbreviated stat labels in Compare mode so they match the full names used in Statistics mode.
-
----
-
 ### v5.5 — Trade Agent
 
 Assess trade value for any player and generate trade proposals in either direction.
@@ -67,6 +32,7 @@ Surfaces publicly available scouting and evaluation data to help users make info
 - Prospect comparison against historical rookie comps (e.g. "similar combine profile to Justin Jefferson")
 - Live dynasty ADP via KeepTradeCut public API (if available)
 - Depth chart position within the drafting team (Day 1 starter vs. depth)
+
 ---
 
 ## Backlog (Unversioned)

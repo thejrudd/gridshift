@@ -70,17 +70,43 @@ export default function CompareStatsPanel({
 }) {
   const [showAdvanced, setShowAdvanced] = useState(false);
 
-  const position = playerA?.position ?? playerB?.position ?? '';
+  const posA = playerA?.position ?? '';
+  const posB = playerB?.position ?? '';
   const safeMapA = mapA ?? {};
   const safeMapB = mapB ?? {};
   const safeRankA = rankMapA ?? {};
   const safeRankB = rankMapB ?? {};
 
-  // Merge both players' maps so getStatRows produces all rows either player has data for
+  // Merge both players' maps so getStatRows can find data from either player
   const mergedMap = mergeMaps(safeMapA, safeMapB);
-  const { standard, advanced } = (playerA || playerB)
-    ? getStatRows(mergedMap, position, {})
+
+  // Call getStatRows for each position separately so cross-position comparisons
+  // (e.g. RB vs QB) show stats from both positions, not just one.
+  // Sections with the same heading are merged; duplicate row labels are deduplicated.
+  function mergeStatSections(secA, secB) {
+    const result = new Map();
+    for (const sec of [...secA, ...secB]) {
+      if (result.has(sec.heading)) {
+        const existing = result.get(sec.heading);
+        const seen = new Set(existing.rows.map(r => r.label));
+        const toAdd = sec.rows.filter(r => !seen.has(r.label));
+        result.set(sec.heading, { heading: sec.heading, rows: [...existing.rows, ...toAdd] });
+      } else {
+        result.set(sec.heading, { heading: sec.heading, rows: [...sec.rows] });
+      }
+    }
+    return [...result.values()];
+  }
+
+  const { standard: stdA, advanced: advA } = (playerA || playerB) && posA
+    ? getStatRows(mergedMap, posA, {})
     : { standard: [], advanced: [] };
+  const { standard: stdB, advanced: advB } = (playerA || playerB) && posB && posB !== posA
+    ? getStatRows(mergedMap, posB, {})
+    : { standard: [], advanced: [] };
+
+  const standard = mergeStatSections(stdA, stdB);
+  const advanced = mergeStatSections(advA, advB);
 
   const displaySections = showAdvanced ? [...standard, ...advanced] : standard;
   const hasAdvanced = advanced.length > 0;
@@ -207,7 +233,7 @@ export default function CompareStatsPanel({
 
                   let winA = false, winB = false;
                   if (validA && validB && key != null) {
-                    const lower = isLowerBetter(key, position);
+                    const lower = isLowerBetter(key, posA);
                     winA = lower ? nA < nB : nA > nB;
                     winB = lower ? nB < nA : nB > nA;
                   }

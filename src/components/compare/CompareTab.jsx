@@ -8,10 +8,27 @@ import { fetchPlayerStats, fetchPlayerCareerStats, CURRENT_SEASON } from '../../
 import { buildStatMap, buildRankMap } from '../../utils/playerMetrics';
 import { matchEspnToSleeper } from '../../utils/espnSleeperMatch';
 import { useSleeper } from '../../context/SleeperContext';
+import { useTheme } from '../../context/ThemeContext';
+import { TEAM_COLORS } from '../../data/teamColors';
 import ComparePickerSheet from './ComparePickerSheet';
 import CompareStatsPanel from './CompareStatsPanel';
 import CompareFantasyPanel from './CompareFantasyPanel';
 import CompareTradePanel from './CompareTradePanel';
+
+function hexLuminance(hex) {
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  const lin = c => c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+}
+
+function darkenHex(hex, amount = 0.28) {
+  const r = Math.max(0, Math.round(parseInt(hex.slice(1, 3), 16) * (1 - amount)));
+  const g = Math.max(0, Math.round(parseInt(hex.slice(3, 5), 16) * (1 - amount)));
+  const b = Math.max(0, Math.round(parseInt(hex.slice(5, 7), 16) * (1 - amount)));
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+}
 
 const POSITION_COLORS = {
   QB: '#ef4444', RB: '#22c55e', WR: '#3b82f6', TE: '#f59e0b', K: '#8b5cf6',
@@ -262,6 +279,8 @@ export default function CompareTab({ teams, initialPlayerA, onConsumeInitialPlay
 // ── PlayerSlot ────────────────────────────────────────────────────────────────
 
 function PlayerSlot({ label, player, onPick, onClear }) {
+  const { darkMode } = useTheme();
+
   if (!player) {
     return (
       <button
@@ -284,18 +303,53 @@ function PlayerSlot({ label, player, onPick, onClear }) {
     );
   }
 
-  const posColor = POSITION_COLORS[player.position] ?? 'var(--color-label-tertiary)';
+  const palette  = TEAM_COLORS[player.teamId?.toLowerCase()];
+  const heroBg   = palette ? (darkMode ? palette.darkPrimary : palette.primary) : null;
+  const onBg     = heroBg ? (hexLuminance(heroBg) > 0.3 ? '#0C0F14' : '#FFFFFF') : null;
+  const onBgMuted = onBg === '#FFFFFF' ? 'rgba(255,255,255,0.65)' : 'rgba(12,15,20,0.55)';
+  const overlayBg = onBg === '#FFFFFF' ? 'rgba(255,255,255,0.15)' : 'rgba(12,15,20,0.12)';
+
+  const cardBg = heroBg
+    ? `linear-gradient(150deg, ${heroBg} 0%, ${darkenHex(heroBg, 0.3)} 100%)`
+    : 'var(--color-fill)';
 
   return (
     <div
-      className="flex-1 flex flex-col items-center gap-2 rounded-2xl py-4 px-3 relative"
-      style={{ background: 'var(--color-fill)' }}
+      className="flex-1 flex flex-col items-center gap-2 rounded-2xl py-4 px-3 relative overflow-hidden"
+      style={{ background: cardBg }}
     >
+      {/* City map background */}
+      {heroBg && player.teamId && (
+        <img
+          src={`/maps/${player.teamId.toLowerCase()}.png`}
+          aria-hidden="true"
+          className="absolute inset-0 w-full h-full object-cover pointer-events-none"
+          style={{ opacity: 0.12, mixBlendMode: 'luminosity' }}
+          onError={e => { e.target.style.display = 'none'; }}
+        />
+      )}
+
+      {/* Team logo watermark — vertically centered, right-aligned */}
+      {heroBg && player.teamId && (
+        <div
+          className="absolute inset-y-0 right-0 flex items-center pointer-events-none"
+          aria-hidden="true"
+          style={{ paddingRight: '8px' }}
+        >
+          <img
+            src={`https://a.espncdn.com/i/teamlogos/nfl/500/${player.teamId.toLowerCase()}.png`}
+            alt=""
+            style={{ width: '108px', height: '108px', objectFit: 'contain', opacity: 0.13 }}
+            onError={e => { e.target.style.display = 'none'; }}
+          />
+        </div>
+      )}
+
       {/* Clear */}
       <button
         onClick={onClear}
         className="absolute top-2 right-2 p-1"
-        style={{ color: 'var(--color-label-quaternary)' }}
+        style={{ color: heroBg ? onBgMuted : 'var(--color-label-quaternary)' }}
         aria-label="Remove player"
       >
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
@@ -303,24 +357,24 @@ function PlayerSlot({ label, player, onPick, onClear }) {
         </svg>
       </button>
 
-      <PlayerThumb id={player.id} name={player.displayName} />
+      <PlayerThumb id={player.id} name={player.displayName} heroBg={heroBg} onBgMuted={onBgMuted} />
 
-      <div className="text-center min-w-0 w-full">
+      <div className="text-center min-w-0 w-full relative">
         <div
           className="font-semibold text-sm truncate"
-          style={{ color: 'var(--color-label)' }}
+          style={{ color: heroBg ? onBg : 'var(--color-label)' }}
           title={player.displayName}
         >
           {player.displayName}
         </div>
         <div className="flex items-center justify-center gap-1 mt-0.5 flex-wrap">
-          <span className="text-xs font-bold" style={{ color: posColor }}>
+          <span className="text-xs font-bold" style={{ color: heroBg ? onBg : (POSITION_COLORS[player.position] ?? 'var(--color-label-tertiary)') }}>
             {player.position}
           </span>
           {player.teamName && (
             <>
-              <span className="text-xs" style={{ color: 'var(--color-label-quaternary)' }}>·</span>
-              <span className="text-xs" style={{ color: 'var(--color-label-tertiary)' }}>
+              <span className="text-xs" style={{ color: heroBg ? onBgMuted : 'var(--color-label-quaternary)' }}>·</span>
+              <span className="text-xs" style={{ color: heroBg ? onBgMuted : 'var(--color-label-tertiary)' }}>
                 {player.teamName}
               </span>
             </>
@@ -346,8 +400,8 @@ function PlayerSlot({ label, player, onPick, onClear }) {
 
       <button
         onClick={onPick}
-        className="text-xs font-semibold px-2.5 py-1 rounded-lg transition-opacity active:opacity-60"
-        style={{ background: 'var(--color-fill-secondary)', color: 'var(--color-label-tertiary)' }}
+        className="text-xs font-semibold px-2.5 py-1 rounded-lg transition-opacity active:opacity-60 relative"
+        style={{ background: heroBg ? overlayBg : 'var(--color-fill-secondary)', color: heroBg ? onBg : 'var(--color-label-tertiary)' }}
       >
         Change
       </button>
@@ -355,15 +409,18 @@ function PlayerSlot({ label, player, onPick, onClear }) {
   );
 }
 
-function PlayerThumb({ id, name }) {
+function PlayerThumb({ id, name, heroBg, onBgMuted }) {
   const [err, setErr] = useState(false);
   const initials = (name ?? '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
   const src = `https://a.espncdn.com/i/headshots/nfl/players/full/${id}.png`;
 
   return err ? (
     <div
-      className="w-12 h-12 rounded-full flex items-center justify-center shrink-0 text-xs font-bold"
-      style={{ background: 'var(--color-fill-secondary)', color: 'var(--color-label-quaternary)' }}
+      className="w-20 h-20 rounded-full flex items-center justify-center shrink-0 text-sm font-bold"
+      style={{
+        background: heroBg ? 'rgba(0,0,0,0.2)' : 'var(--color-fill-secondary)',
+        color: heroBg ? onBgMuted : 'var(--color-label-quaternary)',
+      }}
     >
       {initials}
     </div>
@@ -371,7 +428,7 @@ function PlayerThumb({ id, name }) {
     <img
       src={src}
       alt=""
-      className="w-12 h-12 rounded-full object-cover shrink-0"
+      className="w-20 h-20 rounded-full object-cover shrink-0"
       style={{ background: 'var(--color-fill-secondary)' }}
       onError={() => setErr(true)}
     />

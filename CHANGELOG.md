@@ -310,6 +310,14 @@ All notable changes, oldest first. Add new entries at the bottom.
 
 ---
 
+## v5.1 — Compare Upgrades
+*2026-03-22*
+
+- **Team-colored player slot backgrounds** — Each filled player slot in the Compare tab now renders a team-colored hero gradient (matching the Statistics player profile style), complete with a city map watermark at low opacity and a vertically centered team logo watermark on the right edge. Text and button colors adapt to light/dark based on background luminance.
+- **Cross-position stat coverage** — Compare mode now calls `getStatRows()` for each player's position independently and merges the resulting sections. A RB vs QB comparison shows both Rushing and Passing stat sections, with `—` where a player has no data for the opposing position's stats.
+
+---
+
 ## v5.0.1 — Compare Mode Fixes
 *2026-03-22*
 
