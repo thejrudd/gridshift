@@ -41,6 +41,10 @@ export function getTradedPicks(leagueId) {
   return get(`/league/${leagueId}/traded_picks`);
 }
 
+export function getLeagueDrafts(leagueId) {
+  return get(`/league/${leagueId}/drafts`);
+}
+
 // ── Players ──────────────────────────────────────────────────────────────────
 
 // Cache in module scope — the players DB is ~5MB and rarely changes

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSleeper } from '../../context/SleeperContext';
 import { calcPointsFromTotals } from '../../utils/scoringEngine';
 import { computePositionalRanks, getAvgPPG } from '../../utils/projectionEngine';
-import { getTradedPicks } from '../../api/sleeperApi';
+import { getTradedPicks, getLeagueDrafts } from '../../api/sleeperApi';
 import PlayerWeeklySheet from './PlayerWeeklySheet';
 
 const POSITION_ORDER = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF', 'DL', 'LB', 'DB', 'DE', 'DT', 'CB', 'S'];
@@ -280,27 +280,34 @@ function LeaguePlayerRow({ player, onSelect }) {
 function LeaguePicksView() {
   const { selectedLeagueId, rosters, leagueUsers, league, season, getUserDisplayName } = useSleeper();
   const [tradedPicks, setTradedPicks] = useState(null);
+  const [draftRounds, setDraftRounds] = useState(null); // max rounds across all league drafts
   const [picksLoading, setPicksLoading] = useState(false);
 
   useEffect(() => {
     if (!selectedLeagueId) return;
     setPicksLoading(true);
-    getTradedPicks(selectedLeagueId)
-      .then(data => setTradedPicks(data ?? []))
-      .catch(() => setTradedPicks([]))
-      .finally(() => setPicksLoading(false));
+    Promise.all([
+      getTradedPicks(selectedLeagueId).catch(() => []),
+      getLeagueDrafts(selectedLeagueId).catch(() => []),
+    ]).then(([picks, drafts]) => {
+      setTradedPicks(picks ?? []);
+      // Take the highest rounds value across all drafts (startup > rookie in dynasty)
+      const maxFromDrafts = (drafts ?? []).reduce((max, d) => Math.max(max, d.settings?.rounds ?? 0), 0);
+      setDraftRounds(maxFromDrafts || null);
+    }).finally(() => setPicksLoading(false));
   }, [selectedLeagueId]);
 
   // Build the picks matrix from traded_picks data
   const { slots, years, rosterPicks } = useMemo(() => {
     if (!tradedPicks || !rosters || !league) return { slots: [], years: [], rosterPicks: {} };
 
-    // Use the highest round found in traded picks data — dynasty startup drafts can have
-    // many more rounds than the rookie draft setting (league.settings.draft_rounds).
-    // Fall back to league setting if no trades exist yet.
+    // Priority for round count:
+    //   1. Max rounds across all league drafts (startup draft in dynasty can be 17+)
+    //   2. Highest round number seen in traded picks data
+    //   3. league.settings.draft_rounds (rookie draft rounds, typically 3 — last resort)
     const maxRoundsFromData = tradedPicks.reduce((max, p) => Math.max(max, p.round), 0);
     const maxRounds = Math.min(
-      Math.max(maxRoundsFromData, league.settings?.draft_rounds ?? 3, 3),
+      Math.max(draftRounds ?? 0, maxRoundsFromData, league.settings?.draft_rounds ?? 3, 3),
       MAX_ROUNDS,
     );
     const baseYear = parseInt(season);
@@ -359,7 +366,7 @@ function LeaguePicksView() {
     }
 
     return { slots, years, rosterPicks };
-  }, [tradedPicks, rosters, league, season]);
+  }, [tradedPicks, draftRounds, rosters, league, season]);
 
   // Sort rosters by total picks currently held (most to least), then by owner name
   const sortedRosters = useMemo(() => {
