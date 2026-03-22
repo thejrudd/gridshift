@@ -396,16 +396,19 @@ function LeaguePicksView() {
         {/* Legend */}
         <div className="flex items-center gap-4 px-4 pb-3 pt-1">
           <div className="flex items-center gap-1.5">
-            <PickDot status="own" />
+            <OwnDot />
             <span className="text-xs" style={{ color: 'var(--color-label-tertiary)' }}>Own</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <PickDot status="traded_away" />
-            <span className="text-xs" style={{ color: 'var(--color-label-tertiary)' }}>Traded away</span>
+            <div className="flex flex-col items-center" style={{ gap: '1px' }}>
+              <AcquiredDot />
+              <span style={{ fontSize: '7px', fontWeight: 700, color: 'var(--color-accent)', lineHeight: 1 }}>OAK</span>
+            </div>
+            <span className="text-xs" style={{ color: 'var(--color-label-tertiary)' }}>Acquired</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <AcquiredBadge label="OAK" />
-            <span className="text-xs" style={{ color: 'var(--color-label-tertiary)' }}>Acquired</span>
+            <EmptyDot />
+            <span className="text-xs" style={{ color: 'var(--color-label-tertiary)' }}>Traded away</span>
           </div>
         </div>
 
@@ -529,63 +532,58 @@ function LeaguePicksView() {
 
 function PickCell({ cell, rosters, getUserDisplayName, width, borderLeft }) {
   const { ownStatus, acquired } = cell;
-  const hasOwn = ownStatus === 'own';
+  const hasAnyPick = ownStatus === 'own' || acquired.length > 0;
 
   return (
     <div
-      className="flex flex-col items-center justify-center gap-0.5 shrink-0"
+      className="flex flex-col items-center justify-center gap-1 shrink-0"
       style={{
         width,
         minHeight: '44px',
+        padding: '3px 0',
         borderLeft: borderLeft ? '1px solid var(--color-separator)' : undefined,
       }}
     >
-      {/* Own pick indicator */}
-      <PickDot status={ownStatus} />
+      {/* Own pick: amber filled dot */}
+      {ownStatus === 'own' && <OwnDot />}
 
-      {/* Acquired picks */}
+      {/* Acquired picks: filled accent dot + team abbreviation label */}
       {acquired.map(fromRosterId => {
-        const name = getUserDisplayName(
+        const ownerName = getUserDisplayName(
           rosters.find(r => r.roster_id === fromRosterId)?.owner_id
         );
-        const abbr = (name || '?').slice(0, 3).toUpperCase();
-        return <AcquiredBadge key={fromRosterId} label={abbr} />;
+        const abbr = (ownerName || '?').slice(0, 3).toUpperCase();
+        return (
+          <div key={fromRosterId} className="flex flex-col items-center" style={{ gap: '1px' }}>
+            <AcquiredDot />
+            <span style={{ fontSize: '7px', fontWeight: 700, color: 'var(--color-accent)', letterSpacing: '0.02em', lineHeight: 1 }}>
+              {abbr}
+            </span>
+          </div>
+        );
       })}
+
+      {/* No pick at all: dim empty circle */}
+      {!hasAnyPick && <EmptyDot />}
     </div>
   );
 }
 
-function PickDot({ status }) {
-  const isOwn = status === 'own';
+function OwnDot() {
   return (
-    <div
-      className="rounded-full shrink-0"
-      style={{
-        width: 10,
-        height: 10,
-        background: isOwn ? 'var(--color-signature)' : 'transparent',
-        border: isOwn ? 'none' : '1.5px solid var(--color-label-quaternary)',
-        opacity: isOwn ? 1 : 0.4,
-      }}
-    />
+    <div className="rounded-full shrink-0" style={{ width: 10, height: 10, background: 'var(--color-signature)' }} />
   );
 }
 
-function AcquiredBadge({ label }) {
+function AcquiredDot() {
   return (
-    <span
-      className="font-bold rounded"
-      style={{
-        fontSize: '8px',
-        letterSpacing: '0.03em',
-        padding: '1px 3px',
-        background: 'rgba(74, 144, 226, 0.15)',
-        color: 'var(--color-accent)',
-        lineHeight: '12px',
-      }}
-    >
-      {label}
-    </span>
+    <div className="rounded-full shrink-0" style={{ width: 10, height: 10, background: 'var(--color-accent)' }} />
+  );
+}
+
+function EmptyDot() {
+  return (
+    <div className="rounded-full shrink-0" style={{ width: 10, height: 10, border: '1.5px solid var(--color-label-quaternary)', opacity: 0.35 }} />
   );
 }
 
