@@ -287,3 +287,23 @@ All notable changes, oldest first. Add new entries at the bottom.
 *2026-03-21*
 
 - **Raised round limit** — Draft capital grid now shows all rounds from the league's `draft_rounds` setting instead of truncating at 5. Raises the internal cap to 36 to accommodate dynasty startup drafts (25+ rounds) and deep redraft leagues.
+
+---
+
+## v4.9 — Player Comparison
+*2026-03-21*
+
+- **Companion Compare tab** — New "Compare" sub-tab in the Companion view. Search any two players from your Sleeper player pool (rostered or free agents) and compare them side-by-side: season pts, avg PPG, last 4-week form, positional rank, projected points, floor/ceiling range, and season stat totals. The winner of each stat is highlighted in amber. Supports all skill positions (QB/RB/WR/TE/K).
+- **Statistics Compare mode** — "Compare" toggle button in the Statistics player browser launches a side-by-side mode. Search any two ESPN-rostered players and view their current-season and career stats head-to-head with per-stat delta highlighting. Compare mode is position-aware — stat rows shown depend on the position group of the selected players.
+
+---
+
+## v5.0 — Unified Compare Tab
+*2026-03-22*
+
+- **New top-level Compare tab** — Replaces the separate compare experiences in Statistics and Companion with a single unified 4th top-level tab ("Compare"), accessible from the sidebar (desktop) and bottom tab bar (mobile). Removed the "Compare" sub-tab from Companion and the "Compare" toggle from Statistics.
+- **Single picker, all 32 rosters** — Player search uses the shared ESPN roster search with full smart-search: player names, team nicknames/cities/abbreviations, position full names and plurals, conference, division, and natural language ("RBs in Detroit", "QBs playing for the Bears"). Tappable search guide chips shown when the picker is empty.
+- **Stats panel** — Year navigation (2018–current + Career totals) with on-demand fetching and per-year caching. Shows GP, GS, Snap%, and full position-specific stats. Inline loading spinners per slot. Win highlighting in amber.
+- **Fantasy panel** — Visible when a Sleeper league is connected. Shows season pts, avg PPG, last 4 weeks, positional rank, and projection range (floor/projected/ceiling). Automatically matches ESPN players to Sleeper IDs via `espn_id` field with name+position fallback.
+- **Trade panel** — Stub placeholder for the Trade Agent (coming later in v5.0).
+- **Shared utilities** — Extracted `parseSearchQuery`, `SEARCH_PATTERNS`, `matchesFilter` to `src/utils/parseSearchQuery.js`. Added `src/utils/espnSleeperMatch.js` for ESPN→Sleeper player ID matching.

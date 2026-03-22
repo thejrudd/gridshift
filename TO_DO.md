@@ -15,7 +15,7 @@ New features requested or planned should be added here.
 
 ---
 
-### v4.9 — Player Comparison
+### ~~v4.9 — Player Comparison~~ ✓ Complete — see CHANGELOG
 
 Side-by-side player comparison in both the Companion (fantasy) and Statistics (career) contexts.
 
@@ -24,9 +24,21 @@ Side-by-side player comparison in both the Companion (fantasy) and Statistics (c
 
 ---
 
-### v5.0 — Draft Coach & Trade Agent
+### v5.0 — Unified Compare Tab + Draft Coach & Trade Agent
 
-Two new Companion tools: a rookie scouting hub for draft season, and an AI-assisted trade evaluator.
+#### Unified Compare Tab ✓ Shipped in v5.0
+
+Replaces the separate Compare views in Statistics and Companion with a single 4th top-level tab.
+
+- **ESPN player search** — Searches all 32 NFL rosters with full smart-search (names, nicknames, cities, positions, conference, division, natural language) via the shared `parseSearchQuery` utility
+- **Stats panel** — Year navigation (2018–current + Career totals), per-position stat table (GP, GS, Snap%, position-specific stats), per-year caching, inline loading spinners, win highlighting
+- **Fantasy panel** — Sleeper-connected season points, avg PPG, last 4 weeks, positional rank, projection range (floor/projected/ceiling), season stat breakdown. Automatically matches ESPN players to Sleeper IDs via `espn_id` field or name+position fallback
+- **Trade panel** — Stub placeholder for Trade Agent (v5.0 remainder)
+- **Search guide** — Tappable example chips shown when picker is empty, covering all search modes
+
+#### Draft Coach
+
+Surfaces publicly available scouting and evaluation data to help users make informed draft decisions.
 
 #### Draft Coach
 

@@ -28,6 +28,7 @@ import CompanionWaiver from './components/companion/CompanionWaiver';
 import CompanionScoring from './components/companion/CompanionScoring';
 import CompanionDefense from './components/companion/CompanionDefense';
 import CompanionLeague from './components/companion/CompanionLeague';
+import CompareTab from './components/compare/CompareTab';
 import ScoringSettings from './components/companion/ScoringSettings';
 
 function AppInner() {
@@ -37,8 +38,8 @@ function AppInner() {
   const [selectedTeam, setSelectedTeam] = useState(null);
 
   // Two-level navigation
-  const [activeTab, setActiveTab] = useState('predictions');
-  const [seasonView, setSeasonView] = useState('predictions');
+  const [activeTab, setActiveTab]     = useState('predictions');
+  const [seasonView, setSeasonView]   = useState('predictions');
   const [companionView, setCompanionView] = useState('roster');
   const [scoringSettingsOpen, setScoringSettingsOpen] = useState(false);
   const [statsInitPlayer, setStatsInitPlayer] = useState(null);
@@ -294,7 +295,9 @@ function AppInner() {
 
           {activeTab === 'statistics' && <PlayerBrowser teams={scheduleData.teams} initialPlayer={statsInitPlayer} onInitialPlayerConsumed={() => setStatsInitPlayer(null)} navBack={statsNavBack} />}
 
-{activeTab === 'companion' && !hasLeague && (
+          {activeTab === 'compare' && <CompareTab teams={scheduleData.teams} />}
+
+          {activeTab === 'companion' && !hasLeague && (
             <CompanionConnect />
           )}
 

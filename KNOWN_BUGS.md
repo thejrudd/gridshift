@@ -8,7 +8,11 @@ Open bugs are listed first, fixed bugs below. Add new entries at the bottom of e
 
 | Bug |
 |-----|
-
+| Year selector for compare mode should only be for years that both players have recorded stats, not all years available in the system. |
+| Table labels in Compare mode are abbreviated in a way that doesn't make sense sometimes. |
+| Compare mode should have all available stats from the Statistics screen in the Stats filter. |
+| When comapring QBs in Compare mode, TD/INT has a null value. If this isn't available in ESPN, it should be calculated manually from the available TD and INT values. |
+| Fantasy view in Compare mode has null values for everything. Every category of fantasy stat that the compared players achieved value in needs to be represented in this view. |
 ---
 
 ## Fixed
@@ -61,3 +65,6 @@ Open bugs are listed first, fixed bugs below. Add new entries at the bottom of e
 | Heatmap Offense phase color scheme reversed — high points allowed (easy matchup) showed red and low points (tough matchup) showed green; `t` was incorrectly inverted (`1 - raw`) for offense mode | v4.6.3 |
 | Waiver tab running extremely slowly — `projectPlayer()` called `getOpponentStrength()` and `getLeagueAvgPPG()` per player (each an O(n) full scan of all weekly stats); projections recomputed on every filter/sort/search change; search not debounced | v4.7.1 |
 | Draft capital grid truncated all leagues to 5 rounds — `MAX_ROUNDS` constant capped at 5 regardless of `league.settings.draft_rounds` | v4.8.1 |
+| Compare mode showed "Select two players to compare side-by-side" twice — once in CompareStatsPanel, once in CompareTab | v5.0.1 |
+| Compare mode stat table sub-header showed "Jr.", "III", etc. instead of last name for players with name suffixes — `.split(' ').pop()` returned the suffix token | v5.0.1 |
+| Fantasy panel in Compare mode always showed empty state — Sleeper player DB (`players`) was null at match time; fixed by awaiting `loadPlayers()` before calling `matchEspnToSleeper` | v5.0.1 |

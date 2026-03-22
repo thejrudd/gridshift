@@ -112,6 +112,39 @@ const GUIDE_CONTENT = {
       },
     ],
   },
+  compare: {
+    title: 'HOW TO USE COMPARE',
+    steps: [
+      {
+        title: 'Select Two Players',
+        description: 'Tap either player slot to open the search sheet. Type any name, nickname, position, team, city, conference, or division — the search covers all 32 NFL rosters. Examples: "Lamar", "Bills RB", "AFC East receivers", "slot WRs in Dallas". Tap a result to lock that player into the slot.',
+      },
+      {
+        title: 'Stats Panel',
+        description: 'The Stats tab shows a full side-by-side stat table for the selected season. Stats are grouped by category (Passing, Rushing, Receiving, Tackling, etc.) based on position, using the same source as the Statistics tab — every stat available from ESPN is shown. A gold ▲ marks the better value in each row. Toggle Advanced to reveal deeper metrics like QBR, yards after catch, 50+ yard field goals, and more.',
+      },
+      {
+        title: 'Year Navigation',
+        description: 'Use the year pills at the top of the Stats panel to switch between seasons (2018–present) or Career totals. Each player\'s data loads independently — switching years fetches both players\' stats for that season. A dimmed pill means that year is still loading.',
+      },
+      {
+        title: 'Fantasy Panel',
+        description: 'The Fantasy tab requires a connected Sleeper league (connect in Companion). It shows season total points, avg PPG, last 4-week average, positional rank, and a projected floor/ceiling for the upcoming week. The stat breakdown below shows how many fantasy points each scoring category contributed — pass yards × scoring rate, touchdowns × points per TD, and so on — using your league\'s actual scoring rules.',
+      },
+      {
+        title: 'Stat Category Rankings',
+        description: 'Each row in the Fantasy stat breakdown shows a small positional rank below each player\'s value (e.g. 3rd, 12th). Rankings are computed against all players at the same position in the Sleeper database, sorted by fantasy points earned in that category — so rank 1 means the most fantasy value generated from that stat.',
+      },
+      {
+        title: 'ESPN → Sleeper Matching',
+        description: 'When you select an ESPN player, the app automatically looks them up in your Sleeper player database using their ESPN ID, then falls back to a name and position match. If a player can\'t be matched — typically because they\'re not in the Sleeper database at all — their Fantasy panel column will show "—" throughout.',
+      },
+      {
+        title: 'Trade Panel',
+        description: 'The Trade tab is a placeholder for the upcoming Trade Agent feature, which will show KeepTradeCut trade values and generate trade proposals in either direction based on your roster and league context.',
+      },
+    ],
+  },
 };
 
 const Guide = ({ onClose, activeTab = 'predictions' }) => {

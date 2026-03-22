@@ -1,14 +1,15 @@
 export default function BottomTabBar({ activeTab, onTabChange }) {
   const tabs = [
     { id: 'predictions', label: 'Predictions', Icon: SeasonIcon },
-    { id: 'statistics', label: 'Statistics', Icon: PlayersIcon },
-    { id: 'companion', label: 'Companion', Icon: CompanionIcon, beta: true },
+    { id: 'statistics',  label: 'Statistics',  Icon: PlayersIcon },
+    { id: 'companion',   label: 'Companion',   Icon: CompanionIcon, beta: true },
+    { id: 'compare',     label: 'Compare',     Icon: CompareIcon, alpha: true },
   ];
 
   return (
     <nav className="tab-bar" aria-label="Main navigation">
       <div className="tab-bar-inner">
-        {tabs.map(({ id, label, Icon, beta }) => {
+        {tabs.map(({ id, label, Icon, beta, alpha }) => {
           const active = activeTab === id;
           return (
             <button
@@ -36,6 +37,24 @@ export default function BottomTabBar({ activeTab, onTabChange }) {
                     lineHeight: '11px',
                   }}>
                     β
+                  </span>
+                )}
+                {alpha && (
+                  <span style={{
+                    position: 'absolute',
+                    top: '-4px',
+                    right: '-10px',
+                    fontSize: '7px',
+                    fontWeight: 700,
+                    letterSpacing: '0.05em',
+                    textTransform: 'uppercase',
+                    padding: '1px 3px',
+                    borderRadius: '3px',
+                    background: '#8b5cf6',
+                    color: '#fff',
+                    lineHeight: '11px',
+                  }}>
+                    α
                   </span>
                 )}
               </span>
@@ -103,6 +122,24 @@ function PlayersIcon({ active }) {
         <g>
           <circle cx="13" cy="8.5" r="4" stroke="currentColor" strokeWidth="1.5" />
           <path d="M4.5 23c0-4.69 3.81-8.5 8.5-8.5s8.5 3.81 8.5 8.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        </g>
+      )}
+    </svg>
+  );
+}
+
+function CompareIcon({ active }) {
+  return (
+    <svg width="26" height="26" viewBox="0 0 26 26" fill="none" className="tab-icon" aria-hidden="true">
+      {active ? (
+        <g fill="currentColor">
+          <rect x="3" y="5" width="8" height="16" rx="2" />
+          <rect x="15" y="5" width="8" height="16" rx="2" />
+        </g>
+      ) : (
+        <g>
+          <rect x="3" y="5" width="8" height="16" rx="2" stroke="currentColor" strokeWidth="1.5" />
+          <rect x="15" y="5" width="8" height="16" rx="2" stroke="currentColor" strokeWidth="1.5" />
         </g>
       )}
     </svg>

@@ -270,12 +270,12 @@ export function getStatRows(statsMap, position, rankMap = {}) {
       const val = n(statsMap[key]);
       if (val !== null) {
         const rank = showRank ? (rankMap[key] ?? null) : null;
-        rows.push({ label, value: `${fmt(val, decimals)}${suffix}`, rank });
+        rows.push({ label, key, value: `${fmt(val, decimals)}${suffix}`, rank, decimals, suffix });
       }
     };
     const pushVal = (label, val, decimals = 0, suffix = '') => {
       if (val !== null && val !== undefined) {
-        rows.push({ label, value: `${fmt(val, decimals)}${suffix}` });
+        rows.push({ label, key: null, value: `${fmt(val, decimals)}${suffix}`, decimals, suffix });
       }
     };
     return { push, pushVal, done: () => rows.length > 0 ? { heading, rows } : null };

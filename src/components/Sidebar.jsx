@@ -116,6 +116,13 @@ export default function Sidebar({
           label="Companion"
           beta
         />
+        <SidebarNavItem
+          active={activeTab === 'compare'}
+          onClick={() => onTabChange('compare')}
+          icon={<CompareIcon />}
+          label="Compare"
+          alpha
+        />
       </nav>
 
       <div className="sidebar-divider" />
@@ -210,14 +217,14 @@ export default function Sidebar({
           className="px-5 py-3 text-xs"
           style={{ color: 'var(--color-label-tertiary)' }}
         >
-          v4.8.1
+          v5.0
         </div>
       </div>
     </aside>
   );
 }
 
-function SidebarNavItem({ active, onClick, icon, label, beta }) {
+function SidebarNavItem({ active, onClick, icon, label, beta, alpha }) {
   return (
     <button
       onClick={onClick}
@@ -228,6 +235,7 @@ function SidebarNavItem({ active, onClick, icon, label, beta }) {
       <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
         {label}
         {beta && <BetaBadge />}
+        {alpha && <AlphaBadge />}
       </span>
     </button>
   );
@@ -251,6 +259,24 @@ function BetaBadge() {
   );
 }
 
+function AlphaBadge() {
+  return (
+    <span style={{
+      fontSize: '9px',
+      fontWeight: 700,
+      letterSpacing: '0.06em',
+      textTransform: 'uppercase',
+      padding: '1px 5px',
+      borderRadius: '4px',
+      background: '#8b5cf6',
+      color: '#fff',
+      lineHeight: '14px',
+    }}>
+      Alpha
+    </span>
+  );
+}
+
 function SidebarAction({ label, onClick, disabled, destructive }) {
   return (
     <button
@@ -268,6 +294,15 @@ function CompanionIcon() {
     <svg width="18" height="18" viewBox="0 0 26 26" fill="none" aria-hidden="true">
       <path d="M13 3l2.5 5 5.5.8-4 3.9.95 5.5L13 15.7l-4.95 2.5.95-5.5-4-3.9 5.5-.8z"
         stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function CompareIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 26 26" fill="none" aria-hidden="true">
+      <rect x="3" y="5" width="8" height="16" rx="2" stroke="currentColor" strokeWidth="1.5" />
+      <rect x="15" y="5" width="8" height="16" rx="2" stroke="currentColor" strokeWidth="1.5" />
     </svg>
   );
 }

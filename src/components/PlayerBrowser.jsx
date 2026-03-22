@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { fetchRoster, headshot } from '../utils/playerApi';
+import { parseSearchQuery, matchesFilter } from '../utils/parseSearchQuery';
 import PlayerProfile from './PlayerProfile';
 import TeamPage from './TeamPage';
 
@@ -17,16 +18,6 @@ const CONFERENCES = [
     divisions: ['NFC East', 'NFC North', 'NFC South', 'NFC West'],
   },
 ];
-
-// Does a player's position match the active filter?
-function matchesFilter(position, filter) {
-  if (filter === 'ALL') return true;
-  if (filter === 'OL') return ['OT', 'OG', 'C', 'OL', 'G', 'T'].includes(position);
-  if (filter === 'DL') return ['DE', 'DT', 'NT', 'DL', 'ED'].includes(position);
-  if (filter === 'LB') return ['LB', 'ILB', 'OLB', 'MLB'].includes(position);
-  if (filter === 'DB') return ['CB', 'S', 'SS', 'FS', 'DB'].includes(position);
-  return position === filter;
-}
 
 const PlayerBrowser = ({ teams, initialPlayer, onInitialPlayerConsumed, navBack }) => {
   const [selectedTeam, setSelectedTeam]     = useState(null);
@@ -68,6 +59,17 @@ const PlayerBrowser = ({ teams, initialPlayer, onInitialPlayerConsumed, navBack 
   const searchRef  = useRef(null);
   const debounceRef = useRef(null);
 
+  // Build a lookup: teamId (lowercase) → { division, conference } from the teams prop
+  const teamLookup = useRef({});
+  useEffect(() => {
+    const map = {};
+    for (const team of teams) {
+      const id = team.id.toLowerCase();
+      map[id] = { name: team.name, division: team.division, conference: team.division?.split(' ')[0] ?? '' };
+    }
+    teamLookup.current = map;
+  }, [teams]);
+
   // ── Browser history ──────────────────────────────────────────────────────
   const skipFirstTeam   = useRef(true);
   const skipFirstPlayer = useRef(true);
@@ -98,14 +100,16 @@ const PlayerBrowser = ({ teams, initialPlayer, onInitialPlayerConsumed, navBack 
   }, [selectedPlayer, selectedTeam]);
   // ────────────────────────────────────────────────────────────────────────
 
-  // Debounced client-side search across all team rosters (rosters are cached in localStorage)
+  // Debounced smart search across all team rosters (rosters are cached in localStorage).
+  // Supports position names/abbreviations, team names/cities/nicknames,
+  // conference/division terms, and name search — all AND-combined.
   const handleSearchInput = useCallback((e) => {
     const q = e.target.value;
     setSearchQuery(q);
     setShowSearchDropdown(true);
 
     clearTimeout(debounceRef.current);
-    if (q.trim().length < 2) {
+    if (q.trim().length < 1) {
       setSearchResults([]);
       setSearchLoading(false);
       return;
@@ -113,23 +117,58 @@ const PlayerBrowser = ({ teams, initialPlayer, onInitialPlayerConsumed, navBack 
     setSearchLoading(true);
     debounceRef.current = setTimeout(async () => {
       try {
+        const filters = parseSearchQuery(q);
+
+        // If nothing was parsed at all, bail early
+        const hasFilters = filters.pos.size || filters.team.size ||
+                           filters.div.size || filters.conf.size || filters.name.length;
+        if (!hasFilters) { setSearchResults([]); setSearchLoading(false); return; }
+
         const allRosters = await Promise.all(
           teams.map(team =>
             fetchRoster(team.id)
-              .then(players => players.map(p => ({ ...p, teamName: team.name })))
+              .then(players => players.map(p => ({ ...p, teamId: team.id.toLowerCase(), teamName: team.name })))
               .catch(() => [])
           )
         );
-        const lower = q.trim().toLowerCase();
+
+        const lookup = teamLookup.current;
+        // Effective position filter: query overrides chip; fall back to chip if chip ≠ ALL
+        const effectivePos = filters.pos.size > 0 ? filters.pos
+          : (positionFilter !== 'ALL' ? new Set([positionFilter]) : new Set());
+
         const results = allRosters
           .flat()
-          .filter(p =>
-            p.displayName.toLowerCase().includes(lower) &&
-            matchesFilter(p.position, positionFilter)
-          )
-          .slice(0, 20);
+          .filter(p => {
+            // Name terms (AND — all must appear in name)
+            if (filters.name.length > 0) {
+              const name = p.displayName.toLowerCase();
+              if (!filters.name.every(t => name.includes(t))) return false;
+            }
+            // Position (OR within the set)
+            if (effectivePos.size > 0) {
+              if (![...effectivePos].some(pos => matchesFilter(p.position, pos))) return false;
+            }
+            const teamInfo = lookup[p.teamId];
+            // Team (OR within the set — multiple teams allowed e.g. "New York")
+            if (filters.team.size > 0) {
+              if (!filters.team.has(p.teamId)) return false;
+            }
+            // Division (OR within the set)
+            if (filters.div.size > 0) {
+              if (!teamInfo || !filters.div.has(teamInfo.division)) return false;
+            }
+            // Conference (OR within the set)
+            if (filters.conf.size > 0) {
+              if (!teamInfo || !filters.conf.has(teamInfo.conference)) return false;
+            }
+            return true;
+          })
+          .slice(0, 30);
         setSearchResults(results);
-      } catch {
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('[PlayerBrowser search] error:', err);
         setSearchResults([]);
       } finally {
         setSearchLoading(false);
@@ -155,7 +194,7 @@ const PlayerBrowser = ({ teams, initialPlayer, onInitialPlayerConsumed, navBack 
     setSearchResults([]);
   };
 
-  // ── Render priority: player profile → team page → browser list ────────────
+  // ── Render priority: player profile → team page → browser list
 
   if (selectedPlayer) {
     return (
@@ -194,8 +233,8 @@ const PlayerBrowser = ({ teams, initialPlayer, onInitialPlayerConsumed, navBack 
               type="text"
               value={searchQuery}
               onChange={handleSearchInput}
-              onFocus={() => searchQuery.length >= 2 && setShowSearchDropdown(true)}
-              placeholder="Search for a player…"
+              onFocus={() => searchQuery.length >= 1 && setShowSearchDropdown(true)}
+              placeholder="Search by name, position, team, division…"
               className="w-full pl-9 pr-4 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
             />
             {searchLoading && (
@@ -207,7 +246,7 @@ const PlayerBrowser = ({ teams, initialPlayer, onInitialPlayerConsumed, navBack 
           </div>
 
           {/* Search dropdown */}
-          {showSearchDropdown && searchQuery.length >= 2 && (
+          {showSearchDropdown && searchQuery.length >= 1 && (
             <div className="absolute z-20 left-0 right-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-xl overflow-hidden max-h-72 overflow-y-auto">
               {searchResults.length === 0 && !searchLoading && (
                 <p className="px-4 py-3 text-sm text-gray-400 italic">No players found.</p>
@@ -231,8 +270,8 @@ const PlayerBrowser = ({ teams, initialPlayer, onInitialPlayerConsumed, navBack 
           )}
         </div>
 
-        {/* Position filter chips */}
-        <div className="flex flex-wrap gap-1.5">
+        {/* Position filter chips + Compare toggle */}
+        <div className="flex flex-wrap gap-1.5 items-center">
           {POSITION_FILTERS.map(pos => (
             <button
               key={pos}
@@ -303,17 +342,19 @@ const TeamCard = ({ team, onClick }) => (
   </button>
 );
 
-// Small headshot with initials fallback (used in search dropdown)
-const PlayerThumbnail = ({ id, name }) => {
+// Headshot with initials fallback
+const PlayerThumbnail = ({ id, name, size = 'sm' }) => {
   const [err, setErr] = useState(false);
   const initials = (name ?? '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+  const cls = size === 'lg' ? 'w-12 h-12' : 'w-8 h-8';
   return err ? (
-    <div className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-600 flex items-center justify-center shrink-0">
+    <div className={`${cls} rounded-full bg-gray-200 dark:bg-gray-600 flex items-center justify-center shrink-0`}>
       <span className="text-[10px] font-bold text-gray-400">{initials}</span>
     </div>
   ) : (
-    <img src={headshot(id)} alt="" className="w-8 h-8 rounded-full object-cover bg-gray-100 dark:bg-gray-700 shrink-0" onError={() => setErr(true)} />
+    <img src={headshot(id)} alt="" className={`${cls} rounded-full object-cover bg-gray-100 dark:bg-gray-700 shrink-0`} onError={() => setErr(true)} />
   );
 };
+
 
 export default PlayerBrowser;
