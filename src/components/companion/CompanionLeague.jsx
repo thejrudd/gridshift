@@ -295,7 +295,14 @@ function LeaguePicksView() {
   const { slots, years, rosterPicks } = useMemo(() => {
     if (!tradedPicks || !rosters || !league) return { slots: [], years: [], rosterPicks: {} };
 
-    const maxRounds = Math.min(league.settings?.draft_rounds ?? MAX_ROUNDS, MAX_ROUNDS);
+    // Use the highest round found in traded picks data — dynasty startup drafts can have
+    // many more rounds than the rookie draft setting (league.settings.draft_rounds).
+    // Fall back to league setting if no trades exist yet.
+    const maxRoundsFromData = tradedPicks.reduce((max, p) => Math.max(max, p.round), 0);
+    const maxRounds = Math.min(
+      Math.max(maxRoundsFromData, league.settings?.draft_rounds ?? 3, 3),
+      MAX_ROUNDS,
+    );
     const baseYear = parseInt(season);
 
     // Always show up to 3 future draft years, plus any additional years found in traded picks
