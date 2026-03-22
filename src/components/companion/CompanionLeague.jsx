@@ -78,7 +78,8 @@ function LeagueRosterView() {
 
   const rosterPlayers = useMemo(() => {
     if (!selectedRoster || !players) return [];
-    const playerIds = [...(selectedRoster.players || []), ...(selectedRoster.reserve || [])];
+    // Sleeper includes IR players in both `players` and `reserve` — deduplicate via Set
+    const playerIds = [...new Set([...(selectedRoster.players || []), ...(selectedRoster.reserve || [])])];
     return playerIds.map(id => {
       const p = players[id];
       if (!p) return null;

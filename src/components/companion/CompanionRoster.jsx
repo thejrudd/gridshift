@@ -44,10 +44,8 @@ export default function CompanionRoster() {
   const rosterPlayers = useMemo(() => {
     if (!roster || !players) return [];
 
-    const playerIds = [
-      ...(roster.players || []),
-      ...(roster.reserve || []),
-    ];
+    // Sleeper includes IR players in both `players` and `reserve` — deduplicate via Set
+    const playerIds = [...new Set([...(roster.players || []), ...(roster.reserve || [])])];
 
     return playerIds.map(id => {
       const p = players[id];
