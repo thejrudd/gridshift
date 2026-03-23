@@ -238,17 +238,6 @@ export default function TradeRosterPicker({
                           : 'transparent',
                       }}>
 
-                      {/* Team logo watermark */}
-                      {p.teamKey && (
-                        <img
-                          src={`https://a.espncdn.com/i/teamlogos/nfl/500/${p.teamKey}.png`}
-                          aria-hidden="true"
-                          className="absolute right-20 top-1/2 -translate-y-1/2 pointer-events-none select-none"
-                          style={{ width: 44, height: 44, objectFit: 'contain', opacity: 0.10 }}
-                          onError={e => { e.target.style.display = 'none'; }}
-                        />
-                      )}
-
                       {/* Player avatar */}
                       <img src={`https://sleepercdn.com/content/nfl/players/thumb/${p.id}.jpg`}
                         alt="" className="w-9 h-9 rounded-full shrink-0 object-cover"
@@ -256,7 +245,17 @@ export default function TradeRosterPicker({
                         onError={e => { e.target.style.display = 'none'; }} />
 
                       {/* Name + meta */}
-                      <div className="flex-1 min-w-0 text-left">
+                      <div className="flex-1 min-w-0 text-left relative">
+                        {/* Team logo watermark — scoped to text area so it never overlaps the value column */}
+                        {p.teamKey && (
+                          <img
+                            src={`https://a.espncdn.com/i/teamlogos/nfl/500/${p.teamKey}.png`}
+                            aria-hidden="true"
+                            className="absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none select-none"
+                            style={{ width: 44, height: 44, objectFit: 'contain', opacity: 0.10 }}
+                            onError={e => { e.target.style.display = 'none'; }}
+                          />
+                        )}
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <span className="text-sm font-semibold truncate" style={{ color: 'var(--color-label)' }}>
                             {p.name}

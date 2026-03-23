@@ -12,6 +12,8 @@ import {
   valueSide, evaluateTrade, suggestPackage, buildCandidatePool,
 } from '../../utils/tradeEngine';
 import { TEAM_COLORS } from '../../data/teamColors';
+import { computePositionalRanks } from '../../utils/projectionEngine';
+import { calcPointsFromTotals } from '../../utils/scoringEngine';
 import TradeRosterPicker from './TradeRosterPicker';
 import TradePickPicker from './TradePickPicker';
 
@@ -68,6 +70,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer }
     rosters, leagueUsers, players: sleeperPlayers, myRoster,
     selectedLeagueId, league, season, getUserDisplayName,
     scoringSettings, seasonStats, weeklyStats,
+    loadPlayers, loadSeasonStats, statsLoading,
   } = useSleeper();
 
   const myRosterData = myRoster();
@@ -142,6 +145,11 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer }
     });
   }, [selectedLeagueId]);
 
+  useEffect(() => { loadPlayers(); }, [loadPlayers]);
+  useEffect(() => {
+    if (!seasonStats && !statsLoading) loadSeasonStats();
+  }, [seasonStats, statsLoading, loadSeasonStats]);
+
   // ── Pre-populate from entry points ──────────────────────────────────────────
 
   useEffect(() => {
@@ -214,16 +222,45 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer }
       .sort((a, b) => getUserDisplayName(a.owner_id).localeCompare(getUserDisplayName(b.owner_id)));
   }, [rosters, myRosterData, getUserDisplayName]);
 
-  // Value calculations
-  const yourSide = useMemo(
-    () => adjustedKtcPlayers ? valueSide(yourPlayers, yourPicks, sleeperPlayers, adjustedKtcPlayers, leagueType, rosters) : { total: 0, items: [] },
-    [yourPlayers, yourPicks, sleeperPlayers, adjustedKtcPlayers, leagueType, rosters],
+  // Positional ranks across all rostered players (for trade card display)
+  const rankMap = useMemo(
+    () => computePositionalRanks(seasonStats, sleeperPlayers, scoringSettings),
+    [seasonStats, sleeperPlayers, scoringSettings],
   );
 
-  const theirSide = useMemo(
-    () => adjustedKtcPlayers ? valueSide(theirPlayers, theirPicks, sleeperPlayers, adjustedKtcPlayers, leagueType, rosters) : { total: 0, items: [] },
-    [theirPlayers, theirPicks, sleeperPlayers, adjustedKtcPlayers, leagueType, rosters],
-  );
+  // Enrich a valueSide result with avgPPG + rankInfo per player item
+  function enrichItems(side) {
+    if (!side.items.length) return side;
+    const enriched = side.items.map(it => {
+      if (it.type !== 'player') return it;
+      const stats = seasonStats?.[it.id];
+      const pts = stats ? calcPointsFromTotals(stats, scoringSettings, it.position) : null;
+      const gp = stats?.gp ?? null;
+      return {
+        ...it,
+        avgPPG: pts != null && gp ? Math.round((pts / gp) * 10) / 10 : null,
+        rankInfo: rankMap[it.id] ?? null,
+      };
+    });
+    return { ...side, items: enriched };
+  }
+
+  // Value calculations
+  const yourSide = useMemo(() => {
+    const side = adjustedKtcPlayers
+      ? valueSide(yourPlayers, yourPicks, sleeperPlayers, adjustedKtcPlayers, leagueType, rosters)
+      : { total: 0, items: [] };
+    return enrichItems(side);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [yourPlayers, yourPicks, sleeperPlayers, adjustedKtcPlayers, leagueType, rosters, seasonStats, scoringSettings, rankMap]);
+
+  const theirSide = useMemo(() => {
+    const side = adjustedKtcPlayers
+      ? valueSide(theirPlayers, theirPicks, sleeperPlayers, adjustedKtcPlayers, leagueType, rosters)
+      : { total: 0, items: [] };
+    return enrichItems(side);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [theirPlayers, theirPicks, sleeperPlayers, adjustedKtcPlayers, leagueType, rosters, seasonStats, scoringSettings, rankMap]);
 
   const verdict = useMemo(
     () => evaluateTrade(yourSide.total, theirSide.total),
@@ -690,21 +727,21 @@ function PartnerPreview({ preview, partnerName, rosters, getUserDisplayName, lea
                   background: tp.tint ?? 'var(--color-fill)',
                   borderLeft: tp.color ? `3px solid ${tp.color}` : '3px solid transparent',
                 }}>
-                {/* Team logo watermark */}
-                {tp.logoKey && (
-                  <img
-                    src={`https://a.espncdn.com/i/teamlogos/nfl/500/${tp.logoKey}.png`}
-                    aria-hidden="true"
-                    className="absolute right-8 top-1/2 -translate-y-1/2 pointer-events-none select-none"
-                    style={{ width: 32, height: 32, objectFit: 'contain', opacity: 0.10 }}
-                    onError={e => { e.target.style.display = 'none'; }}
-                  />
-                )}
                 <img src={`https://sleepercdn.com/content/nfl/players/thumb/${p.id}.jpg`}
                   alt="" className="w-7 h-7 rounded-full shrink-0 object-cover"
                   style={{ background: 'var(--color-fill-secondary)' }}
                   onError={e => { e.target.style.display = 'none'; }} />
-                <div className="flex-1 min-w-0 text-left">
+                <div className="flex-1 min-w-0 text-left relative">
+                  {/* Team logo watermark — scoped to text area */}
+                  {tp.logoKey && (
+                    <img
+                      src={`https://a.espncdn.com/i/teamlogos/nfl/500/${tp.logoKey}.png`}
+                      aria-hidden="true"
+                      className="absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none select-none"
+                      style={{ width: 28, height: 28, objectFit: 'contain', opacity: 0.12 }}
+                      onError={e => { e.target.style.display = 'none'; }}
+                    />
+                  )}
                   <div className="text-xs font-semibold truncate" style={{ color: 'var(--color-label)' }}>
                     {p.name}
                   </div>
@@ -794,17 +831,6 @@ function TradeSide({ label, items, total, onRemovePlayer, onRemovePick, onAddPla
               borderLeft: tp.color ? `3px solid ${tp.color}` : '3px solid transparent',
             }}>
 
-            {/* Team logo watermark */}
-            {it.type === 'player' && tp.logoKey && (
-              <img
-                src={`https://a.espncdn.com/i/teamlogos/nfl/500/${tp.logoKey}.png`}
-                aria-hidden="true"
-                className="absolute right-8 top-1/2 -translate-y-1/2 pointer-events-none select-none"
-                style={{ width: 36, height: 36, objectFit: 'contain', opacity: 0.10 }}
-                onError={e => { e.target.style.display = 'none'; }}
-              />
-            )}
-
             {it.type === 'player' && (
               <img src={`https://sleepercdn.com/content/nfl/players/thumb/${it.id}.jpg`}
                 alt="" className="w-7 h-7 rounded-full shrink-0 object-cover"
@@ -817,13 +843,36 @@ function TradeSide({ label, items, total, onRemovePlayer, onRemovePick, onAddPla
                 PICK
               </div>
             )}
-            <div className="flex-1 min-w-0">
+            <div className="flex-1 min-w-0 relative">
+              {/* Team logo watermark — scoped to text area so it never overlaps values */}
+              {it.type === 'player' && tp.logoKey && (
+                <img
+                  src={`https://a.espncdn.com/i/teamlogos/nfl/500/${tp.logoKey}.png`}
+                  aria-hidden="true"
+                  className="absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none select-none"
+                  style={{ width: 32, height: 32, objectFit: 'contain', opacity: 0.12 }}
+                  onError={e => { e.target.style.display = 'none'; }}
+                />
+              )}
               <div className="text-xs font-semibold truncate" style={{ color: 'var(--color-label)' }}>
                 {it.label}
               </div>
               {it.position && (
-                <div className="text-xs" style={{ color: 'var(--color-label-tertiary)' }}>
-                  {it.position}{it.team ? ` · ${it.team}` : ''}
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-xs" style={{ color: 'var(--color-label-tertiary)' }}>
+                    {it.position}{it.team ? ` · ${it.team}` : ''}
+                  </span>
+                  {it.rankInfo && (
+                    <span className="text-xs font-bold tabular-nums"
+                      style={{ color: tp.color ?? 'var(--color-label-quaternary)' }}>
+                      #{it.rankInfo.rank} {it.rankInfo.posLabel}
+                    </span>
+                  )}
+                  {it.avgPPG != null && (
+                    <span className="text-xs tabular-nums" style={{ color: 'var(--color-label-quaternary)' }}>
+                      {it.avgPPG.toFixed(1)} avg
+                    </span>
+                  )}
                 </div>
               )}
             </div>

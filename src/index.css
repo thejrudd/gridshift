@@ -469,6 +469,10 @@ body {
    Action Sheet  (mobile menu)
    ───────────────────────────────────────────────────────────── */
 
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
 @keyframes sheet-slide-up {
   from { transform: translateY(100%); opacity: 0; }
   to   { transform: translateY(0);    opacity: 1; }

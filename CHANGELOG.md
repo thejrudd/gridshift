@@ -387,3 +387,11 @@ All notable changes, oldest first. Add new entries at the bottom.
 
 - **Their Side unthemed** — Team color theming (tint bg, left border, logo watermark) now only applies to "Your Side" player cards. "Their Side" cards use the flat neutral fill background.
 - **ValueBar simplified** — The value comparison bar now uses `var(--color-accent)` (blue) for your share and `var(--color-label-quaternary)` (dim) for their share, consistently, regardless of who is leading. Removed the signature/team color from the bar.
+
+---
+
+## v5.5.5 — Trade Agent Stats & Logo Fix
+*2026-03-22*
+
+- **Positional rank + avg PPG in Trade Agent** — Player cards in the main Trade Agent builder now show positional rank (e.g. `#3 RB`) and average fantasy PPG for the season, matching the detail level of the picker modal.
+- **Logo overlap fix** — Team logo watermark in the trade picker modal is now scoped inside the player text area, preventing it from overlapping the KTC value column when browsing opponent rosters.

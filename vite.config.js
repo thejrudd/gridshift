@@ -6,6 +6,15 @@ import { VitePWA } from 'vite-plugin-pwa'
 const { version } = JSON.parse(readFileSync('./package.json', 'utf8'))
 
 export default defineConfig({
+  server: {
+    proxy: {
+      '/ktc-proxy': {
+        target: 'https://keeptradecut.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/ktc-proxy/, ''),
+      },
+    },
+  },
   define: {
     __APP_VERSION__: JSON.stringify(version),
   },
