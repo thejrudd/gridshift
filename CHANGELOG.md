@@ -419,3 +419,14 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Compare Trade hero cards** — Player cards in Compare → Trade now use the full Trade Agent card style: team color 3px left border, tint background, headshot avatar, and team logo watermark. Light/dark mode aware.
 - **Build Full Trade roster guard** — Button is now disabled and greyed out unless exactly one of the two compared players is on your own roster. The player on your roster is always routed to the "Your Side" of the trade. If neither or both players are on your roster, the button is non-clickable.
 - **Roster → Trade entry point** — Clicking Trade on a player in Companion Roster now immediately shows the player card in the Trade Agent even before KTC data finishes loading. Player name and avatar appear instantly; the KTC value populates once the data resolves.
+
+---
+
+## v5.5.8 — Compare & Trade Agent Polish
+*2026-03-23*
+
+- **Compare tabs at top** — Stats/Fantasy/Trade tab bar is now always rendered at the very top of the Compare view, above the player slot headers, matching the position of tabs in Statistics and Companion. Tabs are always visible regardless of whether players are selected.
+- **Compare Trade — no duplicate player headers** — Player name and avatar removed from the Compare Trade value cards; the player slots above already show this information. Cards now show only the KTC value, value bar, and "not in KTC data" notice.
+- **Build Full Trade — disabled explanation** — When the Build Full Trade button is greyed out, a hint line now explains why: "One player must be on your roster to build a trade."
+- **Roster → Trade entry point fixed** — Clicking Trade on a player in Companion Roster now correctly pre-populates that player on Your Side when you subsequently select a trade partner. Previously, selecting a partner cleared the entire trade (including pre-populated players from entry points); now only Their Side and picks are reset on partner change.
+- **Their Side team color theming** — Opponent player cards on Their Side in the Trade Agent now display the same team color treatment as Your Side: team primary color 3px left border, subtle tint background, and team logo watermark. Light/dark mode aware.

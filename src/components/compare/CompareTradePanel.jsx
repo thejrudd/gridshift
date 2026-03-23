@@ -202,18 +202,25 @@ export default function CompareTradePanel({ playerA, playerB, sleeperPlayerA, sl
 
           {/* Build Full Trade button — only enabled when exactly one player is on own roster */}
           {hasLeague && (playerA || playerB) && (
-            <button
-              onClick={onBuildTrade ?? undefined}
-              disabled={!onBuildTrade}
-              className="w-full py-2.5 rounded-xl text-sm font-semibold transition-colors"
-              style={{
-                background: onBuildTrade ? 'var(--color-signature)' : 'var(--color-fill)',
-                color: onBuildTrade ? 'var(--color-signature-fg)' : 'var(--color-label-quaternary)',
-                cursor: onBuildTrade ? 'pointer' : 'default',
-              }}
-            >
-              Build Full Trade
-            </button>
+            <div className="flex flex-col gap-1.5">
+              <button
+                onClick={onBuildTrade ?? undefined}
+                disabled={!onBuildTrade}
+                className="w-full py-2.5 rounded-xl text-sm font-semibold transition-colors"
+                style={{
+                  background: onBuildTrade ? 'var(--color-signature)' : 'var(--color-fill)',
+                  color: onBuildTrade ? 'var(--color-signature-fg)' : 'var(--color-label-quaternary)',
+                  cursor: onBuildTrade ? 'pointer' : 'default',
+                }}
+              >
+                Build Full Trade
+              </button>
+              {!onBuildTrade && (
+                <p className="text-xs text-center" style={{ color: 'var(--color-label-quaternary)' }}>
+                  One player must be on your roster to build a trade.
+                </p>
+              )}
+            </div>
           )}
 
           {/* KTC attribution */}
@@ -261,39 +268,18 @@ function ValueCard({ player, ktcEntry, val, maxVal, isLeader, side, darkMode }) 
         />
       )}
 
-      {/* Avatar + name */}
-      <div className="flex items-center gap-2">
-        {player && (
-          <img
-            src={`https://a.espncdn.com/combiner/i?img=/i/headshots/nfl/players/full/${player.id}.png&w=80&h=58&scale=crop&location=origin&transparent=true`}
-            className="w-9 h-9 rounded-full shrink-0 object-cover"
-            style={{ background: 'var(--color-fill-secondary)' }}
-            onError={e => { e.target.style.display = 'none'; }}
-            alt={player.displayName}
-          />
-        )}
-        <div className="flex-1 min-w-0">
-          <div className="truncate text-xs font-semibold" style={{ color: 'var(--color-label)' }}>
-            {player
-              ? player.displayName
-              : <span style={{ color: 'var(--color-label-quaternary)' }}>Player {side}</span>
-            }
-          </div>
-          {player && (
-            <div className="text-xs truncate" style={{ color: 'var(--color-label-tertiary)' }}>
-              {player.position}{player.teamId ? ` · ${player.teamId.toUpperCase()}` : ''}
-            </div>
-          )}
-        </div>
-      </div>
-
       {/* Value */}
       <div
         className="text-2xl font-bold tabular-nums leading-none"
-        style={{ color: isLeader ? 'var(--color-signature)' : 'var(--color-label)' }}
+        style={{ color: isLeader ? 'var(--color-signature)' : (player ? 'var(--color-label)' : 'var(--color-label-quaternary)') }}
       >
         {player ? fmtKtcValue(val) : '—'}
       </div>
+      {!player && (
+        <div className="text-xs" style={{ color: 'var(--color-label-quaternary)' }}>
+          Player {side} not selected
+        </div>
+      )}
 
       {/* Not found label */}
       {player && ktcEntry === null && (

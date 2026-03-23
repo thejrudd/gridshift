@@ -166,7 +166,25 @@ export default function CompareTab({ teams, initialPlayerA, onConsumeInitialPlay
 
   return (
     <div className="pb-8">
-      {/* ── Player slot row ──────────────────────────────────────────────── */}
+      {/* ── Panel tab selector — always at top ───────────────────────────── */}
+      <div className="season-tabs" role="tablist">
+        {PANELS.map(({ id, label }) => {
+          if (id === 'fantasy' && !hasLeague) return null;
+          return (
+            <button
+              key={id}
+              role="tab"
+              aria-selected={panel === id}
+              onClick={() => setPanel(id)}
+              className={`season-tab${panel === id ? ' active' : ''}`}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ── Player slot row — always visible below tabs ──────────────────── */}
       <div
         className="flex gap-3 px-4 py-4"
         style={{ borderBottom: '1px solid var(--color-separator)' }}
@@ -190,26 +208,6 @@ export default function CompareTab({ teams, initialPlayerA, onConsumeInitialPlay
           onClear={() => handleClear('B')}
         />
       </div>
-
-      {/* ── Panel tab selector ───────────────────────────────────────────── */}
-      {(playerA || playerB) && (
-        <div className="season-tabs" role="tablist">
-          {PANELS.map(({ id, label }) => {
-            if (id === 'fantasy' && !hasLeague) return null;
-            return (
-              <button
-                key={id}
-                role="tab"
-                aria-selected={panel === id}
-                onClick={() => setPanel(id)}
-                className={`season-tab${panel === id ? ' active' : ''}`}
-              >
-                {label}
-              </button>
-            );
-          })}
-        </div>
-      )}
 
       {/* ── Panel content ────────────────────────────────────────────────── */}
       {panel === 'stats' && (
@@ -256,8 +254,8 @@ export default function CompareTab({ teams, initialPlayerA, onConsumeInitialPlay
         />
       )}
 
-      {/* Empty state — no players selected, no panel tabs yet */}
-      {!playerA && !playerB && panel === 'stats' && (
+      {/* Empty state — no players selected */}
+      {!playerA && !playerB && (
         <div className="flex flex-col items-center justify-center py-20 px-6 gap-2">
           <span className="text-sm text-center" style={{ color: 'var(--color-label-secondary)' }}>
             Select two players to compare side-by-side.

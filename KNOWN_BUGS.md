@@ -9,8 +9,8 @@ Open bugs are listed first, fixed bugs below. Add new entries at the bottom of e
 | Bug |
 |-----|
 | Table labels in Compare mode are abbreviated in a way that doesn't make sense sometimes. |
-| In light mode, the team color has extremely low contrast with background text if the backgorund text is a dark color. |
-| Opponent's players in Trade Agent view are not themed for their team, nor is there emphasis on some of the text as there is for the players on my team. |
+| In light mode, the team color has extremely low contrast with background text if the background text is a dark color. |
+
 ---
 
 ## Fixed
@@ -80,3 +80,8 @@ Open bugs are listed first, fixed bugs below. Add new entries at the bottom of e
 | Compare → Trade player hero cards used plain fill style instead of Trade Agent card style (avatar, tint, left border, logo) | v5.5.7 |
 | Build Full Trade button always enabled even when neither or both compared players were on own roster | v5.5.7 |
 | Roster → Trade entry point — player not visible in Trade Agent until KTC data finished loading (~1-2s) | v5.5.7 |
+| Compare tabs appeared below player slots instead of at the top like other views | v5.5.8 |
+| Compare → Trade value cards duplicated player name/avatar already shown in the player slot headers | v5.5.8 |
+| Build Full Trade button greyed out with no explanation | v5.5.8 |
+| Roster → Trade: selecting a trade partner after arriving from Roster wiped the pre-populated player (clearTrade reset yourPlayers) | v5.5.8 |
+| Their Side player cards in Trade Agent had no team color theming | v5.5.8 |

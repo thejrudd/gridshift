@@ -408,7 +408,13 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer }
               return (
                 <button
                   key={roster.roster_id}
-                  onClick={() => { setPartnerRosterId(roster.roster_id); clearTrade(); }}
+                  onClick={() => {
+                    setPartnerRosterId(roster.roster_id);
+                    // Reset their side only — preserve what's already on your side
+                    setTheirPlayers([]);
+                    setTheirPicks([]);
+                    setSuggestions(null);
+                  }}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl transition-colors shrink-0"
                   style={{
                     background: isSelected ? 'var(--color-signature)' : 'var(--color-fill)',
@@ -535,6 +541,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer }
               onAddPlayer={() => setPickerOpen({ side: 'theirs', type: 'player' })}
               onAddPick={() => setPickerOpen({ side: 'theirs', type: 'pick' })}
               isLeader={verdict.verdict === 'favors_you'}
+              showTeamColors
             />
           </div>
 
