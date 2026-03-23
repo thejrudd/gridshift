@@ -395,3 +395,12 @@ All notable changes, oldest first. Add new entries at the bottom.
 
 - **Positional rank + avg PPG in Trade Agent** — Player cards in the main Trade Agent builder now show positional rank (e.g. `#3 RB`) and average fantasy PPG for the season, matching the detail level of the picker modal.
 - **Logo overlap fix** — Team logo watermark in the trade picker modal is now scoped inside the player text area, preventing it from overlapping the KTC value column when browsing opponent rosters.
+
+---
+
+## v5.5.6 — Compare Mode Theming & Navigation
+*2026-03-22*
+
+- **Stats / Fantasy / Trade tab bar** — Replaced the pill-style panel selector in the Compare tab with a proper horizontal tab bar using the `season-tabs` / `season-tab` pattern, consistent with the Companion sub-navigation. Active tab has the signature underline indicator.
+- **Team color theming in Compare player slots** — Filled player slots now use the same treatment as Trade Agent cards: team primary color 3px left border, subtle ~13% opacity tint background, and a team logo watermark scoped inside the text area. Light/dark mode aware. Replaces the previous gradient + city map hero style.
+- **Team color theming in Compare picker** — Player rows in the search modal now show team color tint background, left border, and logo watermark — matching `TradeRosterPicker`. Headshot size unified to 36px.

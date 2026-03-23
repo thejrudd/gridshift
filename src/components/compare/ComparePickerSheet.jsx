@@ -1,6 +1,23 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { fetchRoster } from '../../utils/playerApi';
 import { parseSearchQuery, matchesFilter } from '../../utils/parseSearchQuery';
+import { TEAM_COLORS } from '../../data/teamColors';
+import { useTheme } from '../../context/ThemeContext';
+
+const ESPN_TEAM_MAP = { lar: 'la', was: 'wsh' };
+function toTeamKey(espnTeamId) {
+  if (!espnTeamId) return '';
+  const lower = espnTeamId.toLowerCase();
+  return ESPN_TEAM_MAP[lower] ?? lower;
+}
+
+function hexLuminance(hex) {
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  const lin = c => c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+}
 
 // ── Search guide chips ────────────────────────────────────────────────────────
 
@@ -80,6 +97,7 @@ function SearchGuide({ onExample }) {
  *   onClose    - dismiss the sheet
  */
 export default function ComparePickerSheet({ teams, excludeId, onSelect, onClose }) {
+  const { darkMode } = useTheme();
   const [query, setQuery]     = useState('');
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -230,24 +248,43 @@ export default function ComparePickerSheet({ teams, excludeId, onSelect, onClose
               </span>
             </div>
           )}
-          {results.map(player => (
-            <button
-              key={player.id}
-              onClick={() => onSelect(player)}
-              className="w-full flex items-center gap-3 px-4 py-3 text-left transition-opacity active:opacity-70"
-              style={{ borderBottom: '1px solid var(--color-separator)' }}
-            >
-              <PlayerThumb id={player.id} name={player.displayName} />
-              <div className="min-w-0 flex-1">
-                <div className="font-semibold text-sm truncate" style={{ color: 'var(--color-label)' }}>
-                  {player.displayName}
+          {results.map(player => {
+            const teamKey = toTeamKey(player.teamId);
+            const palette = TEAM_COLORS[teamKey] ?? null;
+            const teamColor = palette ? (darkMode ? palette.darkPrimary : palette.primary) : null;
+            const isLight = teamColor ? hexLuminance(teamColor) > 0.35 : false;
+            return (
+              <button
+                key={player.id}
+                onClick={() => onSelect(player)}
+                className="flex items-center w-full px-4 py-3 gap-3 relative overflow-hidden transition-colors"
+                style={{
+                  borderBottom: '1px solid var(--color-separator)',
+                  borderLeft: teamColor ? `3px solid ${teamColor}` : '3px solid transparent',
+                  background: teamColor ? `${teamColor}${isLight ? '18' : '22'}` : 'transparent',
+                }}
+              >
+                <PlayerThumb id={player.id} name={player.displayName} />
+                <div className="min-w-0 flex-1 text-left relative">
+                  {teamKey && (
+                    <img
+                      src={`https://a.espncdn.com/i/teamlogos/nfl/500/${teamKey}.png`}
+                      aria-hidden="true"
+                      className="absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none select-none"
+                      style={{ width: 40, height: 40, objectFit: 'contain', opacity: 0.10 }}
+                      onError={e => { e.target.style.display = 'none'; }}
+                    />
+                  )}
+                  <div className="font-semibold text-sm truncate" style={{ color: 'var(--color-label)' }}>
+                    {player.displayName}
+                  </div>
+                  <div className="text-xs" style={{ color: 'var(--color-label-tertiary)' }}>
+                    {player.position}{player.teamName ? ` · ${player.teamName}` : ''}
+                  </div>
                 </div>
-                <div className="text-xs" style={{ color: 'var(--color-label-tertiary)' }}>
-                  {player.position}{player.teamName ? ` · ${player.teamName}` : ''}
-                </div>
-              </div>
-            </button>
-          ))}
+              </button>
+            );
+          })}
         </div>
       </div>
     </div>
@@ -257,20 +294,19 @@ export default function ComparePickerSheet({ teams, excludeId, onSelect, onClose
 function PlayerThumb({ id, name }) {
   const [err, setErr] = useState(false);
   const initials = (name ?? '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
-  const src = `https://a.espncdn.com/i/headshots/nfl/players/full/${id}.png`;
 
   return err ? (
     <div
-      className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-[10px] font-bold"
-      style={{ background: 'var(--color-fill)', color: 'var(--color-label-quaternary)' }}
+      className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-xs font-bold"
+      style={{ background: 'var(--color-fill-secondary)', color: 'var(--color-label-quaternary)' }}
     >
       {initials}
     </div>
   ) : (
     <img
-      src={src}
+      src={`https://a.espncdn.com/i/headshots/nfl/players/full/${id}.png`}
       alt=""
-      className="w-8 h-8 rounded-full object-cover shrink-0"
+      className="w-9 h-9 rounded-full object-cover shrink-0"
       style={{ background: 'var(--color-fill-secondary)' }}
       onError={() => setErr(true)}
     />

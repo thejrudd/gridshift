@@ -217,7 +217,7 @@ export default function Sidebar({
           className="px-5 py-3 text-xs"
           style={{ color: 'var(--color-label-tertiary)' }}
         >
-          v5.5.5
+          v5.5.6
         </div>
       </div>
     </aside>
