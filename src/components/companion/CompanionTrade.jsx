@@ -479,6 +479,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer }
               onAddPlayer={() => setPickerOpen({ side: 'yours', type: 'player' })}
               onAddPick={() => setPickerOpen({ side: 'yours', type: 'pick' })}
               isLeader={verdict.verdict === 'favors_them'}
+              showTeamColors
             />
 
             <div className="flex items-center justify-center shrink-0 text-xs font-bold pt-6"
@@ -762,7 +763,7 @@ function PartnerPreview({ preview, partnerName, rosters, getUserDisplayName, lea
   );
 }
 
-function TradeSide({ label, items, total, onRemovePlayer, onRemovePick, onAddPlayer, onAddPick, isLeader }) {
+function TradeSide({ label, items, total, onRemovePlayer, onRemovePick, onAddPlayer, onAddPick, isLeader, showTeamColors }) {
   const { darkMode } = useTheme();
 
   return (
@@ -782,7 +783,9 @@ function TradeSide({ label, items, total, onRemovePlayer, onRemovePick, onAddPla
       </div>
 
       {items.map(it => {
-        const tp = it.type === 'player' ? teamPalette(it.team, darkMode) : { color: null, tint: null, logoKey: '' };
+        const tp = (showTeamColors && it.type === 'player')
+          ? teamPalette(it.team, darkMode)
+          : { color: null, tint: null, logoKey: '' };
         return (
           <div key={it.id}
             className="rounded-lg px-2.5 py-2 flex items-center gap-2 relative overflow-hidden"
@@ -864,9 +867,9 @@ function ValueBar({ yourTotal, theirTotal }) {
   return (
     <div className="flex gap-1 h-2 rounded-full overflow-hidden" style={{ background: 'var(--color-fill)' }}>
       <div className="h-full rounded-full transition-all duration-500"
-        style={{ width: `${yourPct}%`, background: yourTotal >= theirTotal ? 'var(--color-signature)' : 'var(--color-accent)' }} />
+        style={{ width: `${yourPct}%`, background: 'var(--color-accent)' }} />
       <div className="h-full rounded-full transition-all duration-500"
-        style={{ width: `${theirPct}%`, background: theirTotal > yourTotal ? 'var(--color-signature)' : 'var(--color-accent)' }} />
+        style={{ width: `${theirPct}%`, background: 'var(--color-label-quaternary)' }} />
     </div>
   );
 }

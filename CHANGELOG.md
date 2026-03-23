@@ -379,3 +379,11 @@ All notable changes, oldest first. Add new entries at the bottom.
 *2026-03-22*
 
 - **Team colors in trade builder** — Player cards in the main Trade Agent view (both sides of the trade and the partner roster preview) now use the same team color theming introduced in v5.5.2: a 3px left border in the team primary color, a subtle tint background (~13% opacity), and a team logo watermark at 10% opacity. Light/dark mode aware via `TEAM_COLORS`.
+
+---
+
+## v5.5.4 — Trade Theming Refinements
+*2026-03-22*
+
+- **Their Side unthemed** — Team color theming (tint bg, left border, logo watermark) now only applies to "Your Side" player cards. "Their Side" cards use the flat neutral fill background.
+- **ValueBar simplified** — The value comparison bar now uses `var(--color-accent)` (blue) for your share and `var(--color-label-quaternary)` (dim) for their share, consistently, regardless of who is leading. Removed the signature/team color from the bar.
