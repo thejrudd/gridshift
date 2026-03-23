@@ -42,7 +42,7 @@ const PANELS = [
 
 // ── CompareTab ────────────────────────────────────────────────────────────────
 
-export default function CompareTab({ teams, initialPlayerA, onConsumeInitialPlayerA }) {
+export default function CompareTab({ teams, initialPlayerA, onConsumeInitialPlayerA, onBuildTrade }) {
   const { players: sleeperPlayers, hasLeague, loadPlayers } = useSleeper();
 
   // ESPN player selections
@@ -248,7 +248,13 @@ export default function CompareTab({ teams, initialPlayerA, onConsumeInitialPlay
       )}
 
       {panel === 'trade' && (
-        <CompareTradePanel />
+        <CompareTradePanel
+          playerA={playerA}
+          playerB={playerB}
+          sleeperPlayerA={sleeperIdA && sleeperPlayers ? sleeperPlayers[sleeperIdA] : null}
+          sleeperPlayerB={sleeperIdB && sleeperPlayers ? sleeperPlayers[sleeperIdB] : null}
+          onBuildTrade={onBuildTrade && sleeperIdA ? () => onBuildTrade(sleeperIdA, sleeperIdB) : null}
+        />
       )}
 
       {/* Empty state — no players selected, no panel tabs yet */}

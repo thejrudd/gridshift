@@ -14,7 +14,7 @@ const POSITION_COLORS = {
   DEF: '#6b7280',
 };
 
-export default function CompanionRoster() {
+export default function CompanionRoster({ onTradePlayer }) {
   const {
     sleeperUser, leagueUsers, rosters,
     players, loadPlayers,
@@ -147,7 +147,8 @@ export default function CompanionRoster() {
             {pos}
           </div>
           {grouped[pos].map(player => (
-            <PlayerRow key={player.id} player={player} onSelect={() => setSelectedPlayerId(player.id)} />
+            <PlayerRow key={player.id} player={player} onSelect={() => setSelectedPlayerId(player.id)}
+              onTrade={onTradePlayer ? () => onTradePlayer(player.id) : null} />
           ))}
         </div>
       ))}
@@ -163,75 +164,86 @@ export default function CompanionRoster() {
   );
 }
 
-function PlayerRow({ player, onSelect }) {
+function PlayerRow({ player, onSelect, onTrade }) {
   const isInjured = player.injuryStatus && player.injuryStatus !== 'Questionable';
   const rankLabel = player.rank ? `${player.rank.posLabel}${player.rank.rank}` : null;
 
   return (
-    <button
-      onClick={onSelect}
-      className="flex items-center w-full px-4 py-2.5 gap-3 text-left active:opacity-60 transition-opacity"
-      style={{ borderBottom: '1px solid var(--color-separator)' }}
-    >
-      {/* Avatar */}
-      <img
-        src={`https://sleepercdn.com/content/nfl/players/thumb/${player.id}.jpg`}
-        alt={player.name}
-        className="w-9 h-9 rounded-full shrink-0 object-cover"
-        style={{ background: 'var(--color-fill)' }}
-        onError={e => { e.target.src = 'https://sleepercdn.com/images/v2/icons/player_default.webp'; }}
-      />
+    <div className="flex items-center w-full" style={{ borderBottom: '1px solid var(--color-separator)' }}>
+      <button
+        onClick={onSelect}
+        className="flex items-center flex-1 min-w-0 px-4 py-2.5 gap-3 text-left active:opacity-60 transition-opacity"
+      >
+        {/* Avatar */}
+        <img
+          src={`https://sleepercdn.com/content/nfl/players/thumb/${player.id}.jpg`}
+          alt={player.name}
+          className="w-9 h-9 rounded-full shrink-0 object-cover"
+          style={{ background: 'var(--color-fill)' }}
+          onError={e => { e.target.src = 'https://sleepercdn.com/images/v2/icons/player_default.webp'; }}
+        />
 
-      {/* Name / meta */}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1.5">
-          <span className="font-semibold text-sm truncate" style={{ color: 'var(--color-label)' }}>
-            {player.name}
-          </span>
-          {player.injuryStatus && (
-            <span
-              className="text-xs font-bold px-1 py-0.5 rounded shrink-0"
-              style={{
-                background: isInjured ? 'rgba(239,68,68,0.12)' : 'rgba(245,183,0,0.12)',
-                color: isInjured ? 'var(--color-accent-red)' : 'var(--color-signature)',
-                fontSize: '10px',
-              }}
-            >
-              {player.injuryStatus}
+        {/* Name / meta */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5">
+            <span className="font-semibold text-sm truncate" style={{ color: 'var(--color-label)' }}>
+              {player.name}
             </span>
-          )}
-        </div>
-        <div className="flex items-center gap-1.5 mt-0.5">
-          <span className="text-xs" style={{ color: 'var(--color-label-tertiary)' }}>
-            {player.team}{player.isReserve && ' · IR'}
-          </span>
-          {rankLabel && (
-            <span className="text-xs font-bold tabular-nums" style={{ color: 'var(--color-label-quaternary)' }}>
-              · {rankLabel}
+            {player.injuryStatus && (
+              <span
+                className="text-xs font-bold px-1 py-0.5 rounded shrink-0"
+                style={{
+                  background: isInjured ? 'rgba(239,68,68,0.12)' : 'rgba(245,183,0,0.12)',
+                  color: isInjured ? 'var(--color-accent-red)' : 'var(--color-signature)',
+                  fontSize: '10px',
+                }}
+              >
+                {player.injuryStatus}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-1.5 mt-0.5">
+            <span className="text-xs" style={{ color: 'var(--color-label-tertiary)' }}>
+              {player.team}{player.isReserve && ' · IR'}
             </span>
-          )}
+            {rankLabel && (
+              <span className="text-xs font-bold tabular-nums" style={{ color: 'var(--color-label-quaternary)' }}>
+                · {rankLabel}
+              </span>
+            )}
+          </div>
         </div>
-      </div>
 
-      {/* Season pts */}
-      <div className="w-16 text-right">
-        <span className="font-bold tabular-nums text-sm" style={{ color: 'var(--color-label)' }}>
-          {player.pts !== null ? player.pts.toFixed(1) : '—'}
-        </span>
-      </div>
+        {/* Season pts */}
+        <div className="w-16 text-right">
+          <span className="font-bold tabular-nums text-sm" style={{ color: 'var(--color-label)' }}>
+            {player.pts !== null ? player.pts.toFixed(1) : '—'}
+          </span>
+        </div>
 
-      {/* Avg PPG */}
-      <div className="w-14 text-right">
-        <span className="tabular-nums text-sm" style={{ color: 'var(--color-label-secondary)' }}>
-          {player.avgPPG > 0 ? player.avgPPG.toFixed(1) : '—'}
-        </span>
-      </div>
+        {/* Avg PPG */}
+        <div className="w-14 text-right">
+          <span className="tabular-nums text-sm" style={{ color: 'var(--color-label-secondary)' }}>
+            {player.avgPPG > 0 ? player.avgPPG.toFixed(1) : '—'}
+          </span>
+        </div>
 
-      {/* Drill-in chevron */}
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--color-label-quaternary)', flexShrink: 0 }}>
-        <polyline points="9 18 15 12 9 6"/>
-      </svg>
-    </button>
+        {/* Drill-in chevron */}
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--color-label-quaternary)', flexShrink: 0 }}>
+          <polyline points="9 18 15 12 9 6"/>
+        </svg>
+      </button>
+
+      {onTrade && (
+        <button
+          onClick={onTrade}
+          className="shrink-0 px-3 py-1.5 mr-3 rounded-lg text-xs font-semibold transition-colors active:opacity-60"
+          style={{ background: 'var(--color-fill)', color: 'var(--color-accent)' }}
+        >
+          Trade
+        </button>
+      )}
+    </div>
   );
 }
 

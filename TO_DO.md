@@ -7,17 +7,6 @@ New features requested or planned should be added here.
 
 ## Planned Versions
 
-### v5.5 — Trade Agent
-
-Assess trade value for any player and generate trade proposals in either direction.
-
-- **Trade value assessment** — For any player in the league, display their estimated trade value and generate trade proposals: what you could offer from your roster + draft capital to acquire them, or what you could expect to receive in return for trading them away
-- **Trade value data** — Primary: KeepTradeCut public API for live dynasty/redraft values. Fallback: in-app calculated value derived from projected pts, positional rank, roster scarcity, and draft capital position when KTC is unavailable or the player isn't found
-- **Roster context** — Trade recommendations account for current roster composition (positional depth, starter quality), available waiver alternatives at that position, and draft capital — leveraging the data infrastructure built in v4.8
-- **Two directions** — Evaluate trades involving your own players (what to give up) or target players on other rosters (what to offer), using the league roster browser from v4.8 and the comparison framework from v4.9
-
----
-
 ### v6.0 — Draft Coach
 
 Surfaces publicly available scouting and evaluation data to help users make informed draft decisions.
@@ -43,6 +32,7 @@ Surfaces publicly available scouting and evaluation data to help users make info
 
 ### Fantasy Companion
 
+- **IDP trade valuation** — KTC has no IDP player data. Build an in-app IDP value engine: compute each IDP player's fantasy points from `seasonStats` + league IDP scoring settings, rank by position (DL/LB/DB), and scale to a 0–10,000 KTC-equivalent value so defensive players can be included in trade proposals on the Trade tab.
 - **Roster player drilldown — stat category filter** — Allow filtering weekly stats by category (Pass, Rush, Rec, Defense, All) with a position-appropriate default.
 - **Start/sit recommendations** — Companion view that runs `projectPlayer()` across all rostered players and ranks them by projected output within each position group. Surfaces a clear start recommendation for each roster slot.
 

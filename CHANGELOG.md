@@ -334,3 +334,19 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Player status** — Injury and roster status now displayed as colored badges in the Statistics player profile hero, the Compare tab player slots (ESPN status), and the Fantasy panel player header (Sleeper `injury_status`).
 - **Alpha badge** — Compare tab now shows an α badge in the sidebar nav and bottom tab bar.
 - **Guide** — Added Compare mode content to the Guide modal with 7 steps covering search, stats, year navigation, fantasy, rankings, ESPN→Sleeper matching, and the Trade panel stub.
+
+---
+
+## v5.5 — Trade Agent
+*2026-03-22*
+
+- **Trade tab** — New "Trade" sub-tab in the Companion section. Build full multi-player, multi-pick trade proposals with live KTC-powered valuations.
+- **Two-column trade builder** — Your side and their side displayed side-by-side (stacked on mobile). Add players and draft picks to either side; each asset shows its individual KTC value and the projected new side total after adding it.
+- **Owner carousel** — Select a trade partner from the league's owner list. The partner's roster automatically populates the "Their Side" picker. "Search All Players" remains available at all times to add players from any roster.
+- **Live KTC values** — Trade values fetched from KeepTradeCut via the existing proxy. Format (Dynasty/Redraft) and league type (1QB/Superflex) are auto-detected from your Sleeper league settings — no manual toggles.
+- **Draft pick valuation** — Draft picks are valued using KTC's RDP (dynasty pick) entries. Pick quality (Early/Mid/Late) is determined from current standings. Dynasty data is always fetched alongside redraft data so picks have values regardless of league type.
+- **League-adjusted values** — KTC baseline values are tuned to your league's specific scoring settings. Adjustments cover: reception scoring (PPR/HPPR), passing TD points, TE premium, interception penalty, fumble penalty, big-play yardage bonuses (300/400 pass, 100/200 rush, 100/200 receiving), first-down bonuses, and positional scarcity from starter slot counts. Multipliers are clamped to ±40% to prevent distortion. Recalculate automatically from live Sleeper settings.
+- **Trade verdict** — Value gap bar and verdict label (Fair / Favors You / Favors Them) update live as assets are added or removed.
+- **Suggest Package** — Auto-suggests 1–3 asset combinations from the deficit side's available roster to close the value gap.
+- **Valuation info modal** — "How values are calculated" modal explains KTC methodology, baseline assumptions, and all league-specific adjustments applied to your league with a position multiplier table.
+- **Entry points** — "Trade" button on your own Roster player rows pre-populates that player on your side. "Trade" button on opponent players in the League tab pre-populates the player on their side and auto-sets the trade partner. "Build Full Trade" button in the Compare tab's Trade panel navigates to the Trade tab with both compared players pre-loaded.
