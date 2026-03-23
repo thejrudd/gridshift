@@ -9,8 +9,39 @@
 import { useState, useEffect, useMemo } from 'react';
 import { findKtcPlayerFromSleeper, getKtcValue, fmtKtcValue } from '../../utils/ktcApi';
 import { calcPointsFromTotals } from '../../utils/scoringEngine';
+import { computePositionalRanks } from '../../utils/projectionEngine';
+import { TEAM_COLORS } from '../../data/teamColors';
+import { useTheme } from '../../context/ThemeContext';
 
 const POSITION_ORDER = ['QB', 'RB', 'WR', 'TE', 'K', 'DL', 'LB', 'DB'];
+
+// ── Sleeper → TEAM_COLORS key normalization ───────────────────────────────────
+// Sleeper uses a few abbreviations that differ from TEAM_COLORS keys.
+
+const SLEEPER_TEAM_MAP = {
+  lar: 'la',   // Los Angeles Rams
+  was: 'wsh',  // Washington Commanders
+  jac: 'jax',  // Jacksonville Jaguars (Sleeper uses both)
+  lvr: 'lv',   // Las Vegas Raiders (Sleeper sometimes uses LVR)
+};
+
+function toTeamKey(sleeperTeam) {
+  if (!sleeperTeam) return '';
+  const lower = sleeperTeam.toLowerCase();
+  return SLEEPER_TEAM_MAP[lower] ?? lower;
+}
+
+// ── Color helpers (inline — same as PlayerProfile / CompareTab) ───────────────
+
+function hexLuminance(hex) {
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  const lin = c => c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
 
 export default function TradeRosterPicker({
   rosterId,           // null = all-rosters mode, number = locked to that roster
@@ -28,12 +59,19 @@ export default function TradeRosterPicker({
   onClose,
 }) {
   const [search, setSearch] = useState('');
+  const { darkMode } = useTheme();
   const isAllMode = rosterId == null;
 
   useEffect(() => {
     document.body.style.overflow = 'hidden';
     return () => { document.body.style.overflow = ''; };
   }, []);
+
+  // Positional ranks across all rostered players
+  const rankMap = useMemo(
+    () => computePositionalRanks(seasonStats, sleeperPlayers, scoringSettings),
+    [seasonStats, sleeperPlayers, scoringSettings],
+  );
 
   // Build a map: playerId → rosterId (which roster owns this player)
   const playerRosterMap = useMemo(() => {
@@ -51,7 +89,6 @@ export default function TradeRosterPicker({
   const players = useMemo(() => {
     let sourceIds;
     if (isAllMode) {
-      // All rosters except user's own
       sourceIds = [];
       for (const r of rosters) {
         if (r.roster_id === myRosterId) continue;
@@ -72,25 +109,34 @@ export default function TradeRosterPicker({
         const val = getKtcValue(ktc, leagueType);
         const stats = seasonStats?.[id];
         const pts = stats ? calcPointsFromTotals(stats, scoringSettings, sp.position) : null;
+        const gp = stats?.gp ?? null;
+        const avgPPG = pts != null && gp ? Math.round((pts / gp) * 10) / 10 : null;
         const ownerRosterId = playerRosterMap[id];
         const ownerName = isAllMode && ownerRosterId
           ? getUserDisplayName(rosters.find(r => r.roster_id === ownerRosterId)?.owner_id ?? '')
           : null;
+        const teamKey = toTeamKey(sp.team);
+        const palette = TEAM_COLORS[teamKey] ?? null;
+        const rankInfo = rankMap[id] ?? null;
         return {
           id,
           name: sp.full_name ?? `${sp.first_name ?? ''} ${sp.last_name ?? ''}`.trim(),
           position: sp.position ?? '',
           team: sp.team ?? '',
+          teamKey,
+          palette,
           injuryStatus: sp.injury_status,
           val,
           pts,
+          avgPPG,
+          rankInfo,
           ownerRosterId,
           ownerName,
         };
       })
       .filter(Boolean);
   }, [isAllMode, rosters, rosterId, myRosterId, excludeSet, sleeperPlayers, ktcPlayers,
-      leagueType, seasonStats, scoringSettings, playerRosterMap, getUserDisplayName]);
+      leagueType, seasonStats, scoringSettings, playerRosterMap, getUserDisplayName, rankMap]);
 
   const filtered = useMemo(() => {
     if (!search.trim()) return players;
@@ -173,44 +219,93 @@ export default function TradeRosterPicker({
                   style={{ background: 'var(--color-bg)', color: 'var(--color-label-tertiary)', letterSpacing: '0.08em' }}>
                   {pos}
                 </div>
-                {list.map(p => (
-                  <button key={p.id} onClick={() => handleSelect(p)}
-                    className="flex items-center w-full px-4 py-2.5 gap-3 transition-colors"
-                    style={{ borderBottom: '1px solid var(--color-separator)' }}>
-                    <img src={`https://sleepercdn.com/content/nfl/players/thumb/${p.id}.jpg`}
-                      alt="" className="w-8 h-8 rounded-full shrink-0 object-cover bg-gray-700"
-                      onError={e => { e.target.style.display = 'none'; }} />
-                    <div className="flex-1 min-w-0 text-left">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-sm font-medium truncate" style={{ color: 'var(--color-label)' }}>
-                          {p.name}
+                {list.map(p => {
+                  const teamColor = p.palette
+                    ? (darkMode ? p.palette.darkPrimary : p.palette.primary)
+                    : null;
+                  // Text needs to stay on var(--color-label) since tint is subtle —
+                  // only use luminance to decide border/accent visibility
+                  const isLightColor = teamColor ? hexLuminance(teamColor) > 0.35 : false;
+
+                  return (
+                    <button key={p.id} onClick={() => handleSelect(p)}
+                      className="flex items-center w-full px-4 py-3 gap-3 relative overflow-hidden transition-colors"
+                      style={{
+                        borderBottom: '1px solid var(--color-separator)',
+                        borderLeft: teamColor ? `3px solid ${teamColor}` : '3px solid transparent',
+                        background: teamColor
+                          ? `${teamColor}${isLightColor ? '18' : '22'}`
+                          : 'transparent',
+                      }}>
+
+                      {/* Team logo watermark */}
+                      {p.teamKey && (
+                        <img
+                          src={`https://a.espncdn.com/i/teamlogos/nfl/500/${p.teamKey}.png`}
+                          aria-hidden="true"
+                          className="absolute right-20 top-1/2 -translate-y-1/2 pointer-events-none select-none"
+                          style={{ width: 44, height: 44, objectFit: 'contain', opacity: 0.10 }}
+                          onError={e => { e.target.style.display = 'none'; }}
+                        />
+                      )}
+
+                      {/* Player avatar */}
+                      <img src={`https://sleepercdn.com/content/nfl/players/thumb/${p.id}.jpg`}
+                        alt="" className="w-9 h-9 rounded-full shrink-0 object-cover"
+                        style={{ background: 'var(--color-fill-secondary)' }}
+                        onError={e => { e.target.style.display = 'none'; }} />
+
+                      {/* Name + meta */}
+                      <div className="flex-1 min-w-0 text-left">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-sm font-semibold truncate" style={{ color: 'var(--color-label)' }}>
+                            {p.name}
+                          </span>
+                          {p.injuryStatus && p.injuryStatus !== 'Active' && (
+                            <span className="shrink-0 px-1.5 py-0.5 rounded"
+                              style={{ background: 'var(--color-fill-secondary)', color: 'var(--color-label-tertiary)', fontSize: '9px', fontWeight: 700 }}>
+                              {p.injuryStatus}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                          <span className="text-xs" style={{ color: 'var(--color-label-secondary)' }}>
+                            {p.position}{p.team ? ` · ${p.team}` : ''}
+                          </span>
+                          {p.rankInfo && (
+                            <span className="text-xs font-bold tabular-nums"
+                              style={{ color: teamColor ?? 'var(--color-label-tertiary)' }}>
+                              #{p.rankInfo.rank} {p.rankInfo.posLabel}
+                            </span>
+                          )}
+                          {p.avgPPG != null && (
+                            <span className="text-xs tabular-nums" style={{ color: 'var(--color-label-tertiary)' }}>
+                              {p.avgPPG.toFixed(1)} avg
+                            </span>
+                          )}
+                          {p.ownerName && (
+                            <span className="text-xs" style={{ color: 'var(--color-label-quaternary)' }}>
+                              · {p.ownerName}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* KTC value + projected total */}
+                      <div className="flex flex-col items-end shrink-0 gap-0.5">
+                        <span className="text-sm font-bold tabular-nums"
+                          style={{ color: p.val != null ? 'var(--color-label)' : 'var(--color-label-quaternary)' }}>
+                          {fmtKtcValue(p.val)}
                         </span>
-                        {p.injuryStatus && p.injuryStatus !== 'Active' && (
-                          <span className="text-xs px-1.5 py-0.5 rounded"
-                            style={{ background: 'var(--color-fill-secondary)', color: 'var(--color-label-tertiary)', fontSize: '9px', fontWeight: 700 }}>
-                            {p.injuryStatus}
+                        {p.val != null && currentTotal != null && (
+                          <span className="text-xs tabular-nums" style={{ color: 'var(--color-accent)' }}>
+                            → {fmtKtcValue(currentTotal + p.val)}
                           </span>
                         )}
                       </div>
-                      <span className="text-xs" style={{ color: 'var(--color-label-tertiary)' }}>
-                        {p.position} · {p.team}
-                        {p.pts != null ? ` · ${p.pts.toFixed(1)} pts` : ''}
-                        {p.ownerName && <> · <span style={{ color: 'var(--color-label-quaternary)' }}>{p.ownerName}</span></>}
-                      </span>
-                    </div>
-                    <div className="flex flex-col items-end shrink-0 gap-0.5">
-                      <span className="text-sm font-bold tabular-nums"
-                        style={{ color: p.val != null ? 'var(--color-label)' : 'var(--color-label-quaternary)' }}>
-                        {fmtKtcValue(p.val)}
-                      </span>
-                      {p.val != null && currentTotal != null && (
-                        <span className="text-xs tabular-nums" style={{ color: 'var(--color-accent)' }}>
-                          → {fmtKtcValue(currentTotal + p.val)}
-                        </span>
-                      )}
-                    </div>
-                  </button>
-                ))}
+                    </button>
+                  );
+                })}
               </div>
             );
           })}

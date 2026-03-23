@@ -361,3 +361,14 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Search All Players** — Moved from a small inline button to a full-width prominent button below the roster carousel in Trade Agent view. Always visible when KTC data is loaded.
 - **"Trade Agent" label** — Section header renamed from "Trade Partner" to "Trade Agent".
 - **"Refine Trade" button** — "Suggest Package" renamed to "Refine Trade" throughout the Trade Agent UI.
+
+---
+
+## v5.5.2 — Trade Picker Player Cards
+*2026-03-22*
+
+- **Team-colored player rows** — Each player row in the Trade picker is tinted with the player's team primary color (light/dark mode aware via `TEAM_COLORS`). A 3px left border uses the full team color as an accent; the background is a subtle `~13%` opacity tint so text remains legible against `var(--color-label)`.
+- **Team logo watermark** — Each row renders the team logo at 10% opacity as a watermark behind the player info, via ESPN's logo CDN.
+- **Positional rank** — Shows `#N POS` (e.g., `#3 WR`) next to position/team using `computePositionalRanks` across all rostered players. Rank label inherits the team accent color.
+- **Avg PPG** — Displays the player's season average points-per-game (`season pts ÷ gp`) as `X.X avg` on the subtitle line.
+- **Sleeper → TEAM_COLORS key normalization** — Added `SLEEPER_TEAM_MAP` to handle abbreviation differences (LAR → la, WAS → wsh, JAC → jax, LVR → lv) so Rams, Commanders, Jaguars, and Raiders rows render correctly.
