@@ -3,7 +3,7 @@ export default function BottomTabBar({ activeTab, onTabChange }) {
     { id: 'predictions', label: 'Predictions', Icon: SeasonIcon },
     { id: 'statistics',  label: 'Statistics',  Icon: PlayersIcon },
     { id: 'companion',   label: 'Companion',   Icon: CompanionIcon, beta: true },
-    { id: 'compare',     label: 'Compare',     Icon: CompareIcon, alpha: true },
+    { id: 'compare',     label: 'Compare',     Icon: CompareIcon, beta: true },
   ];
 
   return (
@@ -33,7 +33,7 @@ export default function BottomTabBar({ activeTab, onTabChange }) {
                     padding: '1px 3px',
                     borderRadius: '3px',
                     background: 'var(--color-signature)',
-                    color: '#000',
+                    color: 'var(--color-signature-fg)',
                     lineHeight: '11px',
                   }}>
                     β

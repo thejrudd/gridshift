@@ -53,8 +53,8 @@ export default function CompanionRoster({ onTradePlayer }) {
 
       const stats = seasonStats?.[id] ?? null;
       const weekly = weeklyStats?.[id] ?? [];
-      const pts = stats ? calcPointsFromTotals(stats, scoringSettings) : null;
-      const avgPPG = getAvgPPG(weekly, scoringSettings);
+      const pts = stats ? calcPointsFromTotals(stats, scoringSettings, p.position) : null;
+      const avgPPG = getAvgPPG(weekly, scoringSettings, p.position);
       const rank = positionalRanks[id] ?? null;
       const isReserve = roster.reserve?.includes(id);
 

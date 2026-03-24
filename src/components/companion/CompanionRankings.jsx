@@ -63,7 +63,7 @@ export default function CompanionRankings() {
         const q = search.trim().toLowerCase();
         if (q && !p.full_name?.toLowerCase().includes(q) && !p.team?.toLowerCase().includes(q)) return null;
 
-        const pts = calcPointsFromTotals(stats, scoringSettings);
+        const pts = calcPointsFromTotals(stats, scoringSettings, p.position);
         if (pts <= 0) return null;
 
         return {
@@ -93,7 +93,7 @@ export default function CompanionRankings() {
               className="px-3 py-1 rounded-lg text-xs font-semibold transition-colors"
               style={{
                 background: posFilter === pos ? 'var(--color-signature)' : 'var(--color-fill)',
-                color: posFilter === pos ? '#0C0F14' : 'var(--color-label-secondary)',
+                color: posFilter === pos ? 'var(--color-signature-fg)' : 'var(--color-label-secondary)',
               }}
             >
               {pos}

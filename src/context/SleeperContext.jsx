@@ -52,10 +52,16 @@ export function SleeperProvider({ children }) {
   const [leagueUsers, setLeagueUsers] = useState(persisted?.leagueUsers ?? []);
   const [season, setSeason] = useState(persisted?.season ?? DEFAULT_SEASON);
 
-  // Scoring
-  const [scoringSettings, setScoringSettings] = useState(
-    persisted?.scoringSettings ?? DEFAULT_SCORING
-  );
+  // Scoring — always re-derive from persisted league on startup so newly
+  // supported scoring fields (bonus_rec_te, bonus_rec_rb, etc.) are picked
+  // up without requiring the user to manually re-select their league.
+  const [scoringSettings, setScoringSettings] = useState(() => {
+    if (persisted?.league?.scoring_settings) {
+      const imported = importLeagueScoring(persisted.league.scoring_settings);
+      return { ...DEFAULT_SCORING, ...imported };
+    }
+    return persisted?.scoringSettings ?? DEFAULT_SCORING;
+  });
 
   // Players DB
   const [players, setPlayers] = useState(null); // loaded on demand

@@ -25,7 +25,7 @@ export default function CompanionLeague({ onTradePlayer }) {
             className="px-4 py-1.5 rounded-lg text-sm font-semibold transition-colors"
             style={{
               background: subView === id ? 'var(--color-signature)' : 'var(--color-fill)',
-              color: subView === id ? '#0C0F14' : 'var(--color-label-secondary)',
+              color: subView === id ? 'var(--color-signature-fg)' : 'var(--color-label-secondary)',
             }}
           >
             {label}
@@ -85,8 +85,8 @@ function LeagueRosterView({ onTradePlayer }) {
       if (!p) return null;
       const stats = seasonStats?.[id] ?? null;
       const weekly = weeklyStats?.[id] ?? [];
-      const pts = stats ? calcPointsFromTotals(stats, scoringSettings) : null;
-      const avgPPG = getAvgPPG(weekly, scoringSettings);
+      const pts = stats ? calcPointsFromTotals(stats, scoringSettings, p.position) : null;
+      const avgPPG = getAvgPPG(weekly, scoringSettings, p.position);
       const rank = positionalRanks[id] ?? null;
       const isReserve = selectedRoster.reserve?.includes(id);
       return {
@@ -144,7 +144,7 @@ function LeagueRosterView({ onTradePlayer }) {
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl transition-colors shrink-0"
                 style={{
                   background: isSelected ? 'var(--color-signature)' : 'var(--color-fill)',
-                  color: isSelected ? '#0C0F14' : 'var(--color-label-secondary)',
+                  color: isSelected ? 'var(--color-signature-fg)' : 'var(--color-label-secondary)',
                   fontWeight: isSelected ? 700 : 500,
                 }}
               >

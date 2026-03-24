@@ -59,59 +59,165 @@ const GUIDE_CONTENT = {
       },
     ],
   },
-  companion: {
-    title: 'HOW TO USE COMPANION',
+
+  // ── Companion — per sub-tab ───────────────────────────────────────────────
+
+  companion_roster: {
+    title: 'ROSTER',
     steps: [
       {
-        title: 'Connect Your League',
-        description: 'Enter your Sleeper username to get started, then select your league from the list. The app imports your roster, lineup, scoring rules, and weekly matchup data directly from Sleeper.',
-      },
-      {
-        title: 'Reading the Matchup Screen',
-        description: 'The Matchup tab compares your starters against your opponent\'s at each lineup slot side-by-side. Each card shows the player\'s actual points scored this week, the projected point range for the game, and who they\'re facing. Tap any player to see a full breakdown.',
-      },
-      {
-        title: 'How Projections Are Calculated',
-        description: 'Projections start from a player\'s season average (prior weeks only) and apply four multipliers: (1) Location — home vs. away averages, used only when 3+ games of each are available. (2) Opponent — how many fantasy points the opposing defense has allowed to this position vs. league average, clamped between 0.65× and 1.45×. Requires at least 3 games of data. (3) Weather — cold temps, high winds, and rain each apply separate reductions, with passing positions penalized more than rushing. Indoor games skip weather entirely. (4) Snap % trend — compares snap share over the last 4 games vs. the season average, clamped between 0.75× and 1.25×. Captures role changes like RBBC shifts and depth-chart demotions. Applied to QB, RB, WR, and TE only. Formula: season avg × location × opponent × weather × snap trend.',
-      },
-      {
-        title: 'Projection Floor & Ceiling',
-        description: 'The range (e.g. proj 6.1–18.2) is built from the player\'s scoring history. The floor is the average of their bottom 25% of games — a realistic bad week. The ceiling is the average of their top 25% — a realistic big week. Both are then adjusted by the same opponent and weather multipliers as the main projection. The range shows the realistic spread of outcomes, not a guarantee.',
-      },
-      {
-        title: 'Matchup Difficulty',
-        description: 'Each player card shows a matchup difficulty badge: Easy, Favorable, Average, Challenging, or Difficult. The badge is based on a percentile ranking — the opposing defense is ranked against all 32 teams by how many fantasy points they allow to that position on average (prior weeks only). The top 20% most generous defenses are Easy; the bottom 20% stingiest are Difficult. The badge only appears once at least 3 games of data are available for 5 or more teams.',
+        title: 'Your Lineup',
+        description: 'Active starters are listed at the top by position slot, bench below. Season totals, avg PPG, and positional rank are shown for each player.',
       },
       {
         title: 'Player Drilldown',
-        description: 'Tap any player to open a detailed panel with three sections: Rankings (week and season position rank, average PPG), Game Context (opponent, venue, average points allowed to this position by the opposing defense, and the projection range), and a stat-by-stat Fantasy Score breakdown showing exactly how this week\'s points were earned.',
+        description: 'Tap any player to open their weekly breakdown, projected range for the current week, and matchup context.',
       },
       {
-        title: 'Scoring Settings',
-        description: 'All projections and rankings use your league\'s actual scoring rules, imported automatically from Sleeper when you connect. You can review or adjust them in the Scoring tab. Changes take effect immediately across all projections.',
-      },
-      {
-        title: 'Heatmap Tab — Overview',
-        description: 'The Heatmap tab is a full-season grid showing every NFL team\'s performance week by week. Use the Phase filter to switch between Offense (what opposing offenses scored against each defense — useful for spotting matchup strengths and weaknesses) and Defense (what each team\'s own IDP players produced in fantasy points or individual defensive stats).',
-      },
-      {
-        title: 'Heatmap Tab — Offense Phase',
-        description: 'Filter by offensive position (All, QB, RB, WR, TE, K) to isolate matchup data by position group. Switch the Stat to Fantasy Points, Receiving Yards, Rushing Yards, or Game Score (the actual NFL points allowed that week). Each cell shows the stat value and a small opponent label. The AVG column reflects the season per-game average weighted by games played — weeks where the defense held the opponent to zero count toward the denominator.',
-      },
-      {
-        title: 'Heatmap Tab — Defense Phase',
-        description: 'Filter by defensive position group (All, DL, LB, DB). Use the Stat filter to isolate specific stats: Fantasy Points, Sacks, Interceptions, Forced Fumbles, Tackles for Loss, Passes Defended, QB Hits, or Defensive Touchdowns. Color coding is flipped in this phase — green means more points or stats (better IDP output), red means fewer.',
-      },
-      {
-        title: 'Heatmap Tab — Color',
-        description: 'The Color toggle controls the scale: Overall compares every cell against the full-season range; By Week normalizes each column independently (good for spotting weekly outliers); By Team normalizes each row independently (good for comparing a team\'s relative highs and lows). In Offense phase, green = harder matchup (defense is stingy). In Defense phase, green = more production. If you\'ve set a favorite team under My Team, a team colors toggle appears to replace the default heatmap palette with your team\'s colors.',
-      },
-      {
-        title: 'Heatmap Tab — Sorting & Drilldown',
-        description: 'Click any column header to sort by that column; click again to reverse. The Team column has three sort modes: A–Z, Conference (AFC then NFC, alphabetical within), and Division (grouped by division). Tap any data cell to open a drilldown showing which players contributed to that week\'s total, with a point breakdown per player. Tap a player\'s name in the drilldown to jump directly to their profile in the Statistics section.',
+        title: 'Trade from Here',
+        description: 'Tap the Trade button on any player row to open Trade Agent with that player pre-loaded on your side.',
       },
     ],
   },
+
+  companion_rankings: {
+    title: 'RANKINGS',
+    steps: [
+      {
+        title: 'League-Wide Rankings',
+        description: 'All rostered players in your league ranked by season fantasy points under your scoring settings.',
+      },
+      {
+        title: 'Filter & Search',
+        description: 'Use the position chips to filter by position group, or search by name. Players on a roster are highlighted.',
+      },
+      {
+        title: 'Weekly Breakdown',
+        description: 'Tap any player to view their week-by-week scoring history.',
+      },
+    ],
+  },
+
+  companion_matchup: {
+    title: 'MATCHUP',
+    steps: [
+      {
+        title: 'Side-by-Side Starters',
+        description: 'Your lineup vs. your opponent\'s — each position slot shown side by side with actual points scored and a projected range for this week.',
+      },
+      {
+        title: 'Projections',
+        description: 'Projection = season average × location factor × opponent strength × weather × snap trend. The range (floor–ceiling) reflects 25th–75th percentile of the player\'s scoring history, adjusted for the same matchup factors.',
+      },
+      {
+        title: 'Matchup Difficulty',
+        description: 'Each card shows a difficulty badge (Easy → Difficult) based on how many fantasy points the opposing defense has allowed to that position this season, percentile-ranked against all 32 teams.',
+      },
+      {
+        title: 'Player Drilldown',
+        description: 'Tap any player card for a detailed breakdown: positional rank, opponent context, points allowed by the defense to this position, and a line-by-line scoring summary.',
+      },
+    ],
+  },
+
+  companion_waiver: {
+    title: 'WAIVER',
+    steps: [
+      {
+        title: 'Available Players',
+        description: 'Players not currently on any roster in your league, ranked by projected value under your scoring settings.',
+      },
+      {
+        title: 'Filter & Search',
+        description: 'Filter by position or search by name. Ownership percentage is shown for players rostered in other leagues.',
+      },
+      {
+        title: 'Player Drilldown',
+        description: 'Tap any player to view their season stats, recent form, and projected range for the current week.',
+      },
+    ],
+  },
+
+  companion_league: {
+    title: 'LEAGUE',
+    steps: [
+      {
+        title: 'All Rosters',
+        description: 'Every team in your league with their full roster, sorted by KTC value. Your team is pinned at the top.',
+      },
+      {
+        title: 'Roster Drilldown',
+        description: 'Tap any team to expand their depth chart with season stats and weekly splits for each player.',
+      },
+      {
+        title: 'Trade from Here',
+        description: 'Tap the Trade button on any opponent\'s player to open Trade Agent with that player pre-loaded on their side.',
+      },
+    ],
+  },
+
+  companion_defense: {
+    title: 'HEATMAP',
+    steps: [
+      {
+        title: 'What You\'re Seeing',
+        description: 'A week-by-week grid of every NFL team\'s performance. Each cell is one team\'s stat for one week.',
+      },
+      {
+        title: 'Offense Phase',
+        description: 'Shows points (or yards) allowed to each offensive position — useful for spotting favorable matchups. Green = more allowed (easier for your player), red = stingier. Filter by position to focus on QB, RB, WR, TE, or K.',
+      },
+      {
+        title: 'Defense Phase',
+        description: 'Shows IDP production per team per week. Green = more production. Filter by defensive position group (DL, LB, DB) and stat.',
+      },
+      {
+        title: 'Drilldown',
+        description: 'Tap any cell to see which players drove that week\'s total. Tap a player\'s name to jump to their profile.',
+      },
+    ],
+  },
+
+  companion_trade: {
+    title: 'TRADE AGENT',
+    steps: [
+      {
+        title: 'Build a Trade',
+        description: 'Select a trade partner from the carousel above, then tap + Player or + Pick to add assets to each side. Or tap Search All Players to find any rostered player — including your own — from across the whole league.',
+      },
+      {
+        title: 'Trade Values',
+        description: 'Values come from KeepTradeCut (KTC), automatically calibrated for your league format (dynasty/redraft, 1QB/Superflex) and adjusted for your scoring settings.',
+      },
+      {
+        title: 'Fairness Verdict',
+        description: 'The value bar shows the gap between sides. A trade is considered fair when the gap is less than 5% of the higher side\'s total.',
+      },
+      {
+        title: 'Refine Trade',
+        description: 'Once items are added, tap Refine Trade to get suggested additions, removals, or swaps that move the deal closer to even.',
+      },
+    ],
+  },
+
+  companion_scoring: {
+    title: 'SCORING SETTINGS',
+    steps: [
+      {
+        title: 'Your League\'s Rules',
+        description: 'Scoring settings are imported directly from Sleeper when you connect. All projections, rankings, and trade values in Companion use these rules.',
+      },
+      {
+        title: 'Active vs. All',
+        description: 'Active shows only fields your league has set to a non-zero value. All reveals every supported scoring field, including those at 0.',
+      },
+      {
+        title: 'Sync',
+        description: 'Tap Sync to re-import the latest settings from your Sleeper league at any time.',
+      },
+    ],
+  },
+
   compare: {
     title: 'HOW TO USE COMPARE',
     steps: [
@@ -121,49 +227,36 @@ const GUIDE_CONTENT = {
       },
       {
         title: 'Stats Panel',
-        description: 'The Stats tab shows a full side-by-side stat table for the selected season. Stats are grouped by category (Passing, Rushing, Receiving, Tackling, etc.) based on position, using the same source as the Statistics tab — every stat available from ESPN is shown. A gold ▲ marks the better value in each row. Toggle Advanced to reveal deeper metrics like QBR, yards after catch, 50+ yard field goals, and more.',
+        description: 'Side-by-side stat table for the selected season, grouped by category. A gold ▲ marks the better value in each row. Toggle Advanced to reveal deeper metrics like QBR, yards after catch, and more.',
       },
       {
         title: 'Year Navigation',
-        description: 'Use the year pills at the top of the Stats panel to switch between seasons (2018–present) or Career totals. Each player\'s data loads independently — switching years fetches both players\' stats for that season. A dimmed pill means that year is still loading.',
+        description: 'Use the year pills to switch between seasons or Career totals. Each player\'s data loads independently.',
       },
       {
         title: 'Fantasy Panel',
-        description: 'The Fantasy tab requires a connected Sleeper league (connect in Companion). It shows season total points, avg PPG, last 4-week average, positional rank, and a projected floor/ceiling for the upcoming week. The stat breakdown below shows how many fantasy points each scoring category contributed — pass yards × scoring rate, touchdowns × points per TD, and so on — using your league\'s actual scoring rules.',
-      },
-      {
-        title: 'Stat Category Rankings',
-        description: 'Each row in the Fantasy stat breakdown shows a small positional rank below each player\'s value (e.g. 3rd, 12th). Rankings are computed against all players at the same position in the Sleeper database, sorted by fantasy points earned in that category — so rank 1 means the most fantasy value generated from that stat.',
-      },
-      {
-        title: 'ESPN → Sleeper Matching',
-        description: 'When you select an ESPN player, the app automatically looks them up in your Sleeper player database using their ESPN ID, then falls back to a name and position match. If a player can\'t be matched — typically because they\'re not in the Sleeper database at all — their Fantasy panel column will show "—" throughout.',
+        description: 'Requires a connected Sleeper league. Shows season total points, avg PPG, last 4-week average, positional rank, and projected floor/ceiling — all under your league\'s scoring rules.',
       },
       {
         title: 'Trade Panel',
-        description: 'The Trade tab is a placeholder for the upcoming Trade Agent feature, which will show KeepTradeCut trade values and generate trade proposals in either direction based on your roster and league context.',
+        description: 'Shows KTC trade values for both players with league-adjusted multipliers. Tap Build Full Trade to open Trade Agent with both players pre-loaded.',
       },
     ],
   },
 };
 
-const Guide = ({ onClose, activeTab = 'predictions' }) => {
-  const content = GUIDE_CONTENT[activeTab] ?? GUIDE_CONTENT.predictions;
+const Guide = ({ onClose, activeTab = 'predictions', companionView = 'roster' }) => {
+  const key = activeTab === 'companion' ? `companion_${companionView}` : activeTab;
+  const content = GUIDE_CONTENT[key] ?? GUIDE_CONTENT[activeTab] ?? GUIDE_CONTENT.predictions;
+
   const handleBackdropClick = (e) => {
-    if (e.target === e.currentTarget) {
-      onClose();
-    }
+    if (e.target === e.currentTarget) onClose();
   };
 
   useEffect(() => {
-    const handleEscape = (e) => {
-      if (e.key === 'Escape') onClose();
-    };
+    const handleEscape = (e) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', handleEscape);
-
-    // Lock body scroll while guide is open
     document.body.style.overflow = 'hidden';
-
     return () => {
       document.removeEventListener('keydown', handleEscape);
       document.body.style.overflow = '';

@@ -223,13 +223,21 @@ export function computeKtcMultipliers(scoringSettings, rosterPositions) {
     mults.RB += recDelta * 0.08; // ±4% per full PPR step
   }
 
-  // ── TE premium (bonus_rec_te) ─────────────────────────────────────────────
-  // A 0.5pt TE premium raises elite TE value considerably; we apply a uniform
-  // positional lift as a first-order approximation.
+  // ── Per-position reception bonuses ───────────────────────────────────────
+  // bonus_rec_te/rb/wr are extra pts per catch for that position only, stacked
+  // on top of the base rec value. KTC baseline has none of these.
   const teBonus = scoringSettings.bonus_rec_te ?? 0;
-  if (teBonus > 0) {
-    mults.TE += teBonus * 0.40; // 0.5 bonus → +20%, 1.0 bonus → +40%
-  }
+  const rbBonus = scoringSettings.bonus_rec_rb ?? 0;
+  const wrBonus = scoringSettings.bonus_rec_wr ?? 0;
+  if (teBonus > 0) mults.TE += teBonus * 0.40; // 0.25 → +10%, 0.5 → +20%
+  if (rbBonus > 0) mults.RB += rbBonus * 0.10; // 0.5 → +5%, 1.0 → +10%
+  if (wrBonus > 0) mults.WR += wrBonus * 0.12; // 0.25 → +3%, 0.5 → +6%
+
+  // ── Per-carry bonus (bonus_rush_att) ──────────────────────────────────────
+  // Rewards high-volume RBs; a 0.1 pt/carry bonus adds ~2 pts/game for a
+  // 20-carry back, raising workhorse RB values relative to pass-catchers.
+  const rushAttBonus = scoringSettings.bonus_rush_att ?? 0;
+  if (rushAttBonus > 0) mults.RB += rushAttBonus * 0.15; // 0.1 → +1.5%, 0.5 → +7.5%
 
   // ── Passing TD value (baseline = 4pts) ────────────────────────────────────
   const passTd = scoringSettings.pass_td ?? 4;
@@ -242,6 +250,13 @@ export function computeKtcMultipliers(scoringSettings, rosterPositions) {
   const passInt = scoringSettings.pass_int ?? -2;
   if (passInt < -2) {
     mults.QB += (passInt - (-2)) * 0.03; // each -1 beyond baseline → QB -3%
+  }
+
+  // ── Pick 6 penalty (baseline = 0, i.e. not scored separately) ─────────────
+  // An extra penalty when a thrown INT is returned for a TD. Hurts turnover-prone QBs.
+  const passIntTd = scoringSettings.pass_int_td ?? 0;
+  if (passIntTd < 0) {
+    mults.QB += passIntTd * 0.015; // -5 pts → QB -7.5%; rare event (~0.3 pick-6s/game for avg QB)
   }
 
   // ── Fumble lost penalty (baseline = -2 pts) ───────────────────────────────
@@ -278,6 +293,30 @@ export function computeKtcMultipliers(scoringSettings, rosterPositions) {
     mults.WR += bonusRecYd200 * 0.008;
     mults.TE += bonusRecYd200 * 0.005;
   }
+
+  // ── Big-play TD / completion bonuses ─────────────────────────────────────
+  // Leagues rewarding 40/50-yd TDs or completions lift explosive players.
+  // QBs who throw them, WRs/TEs who catch them, RBs who run them all benefit.
+  // Frequency: elite QB ~3-5 deep TDs/season; top WR ~2-4 big catches/game; RB rare.
+  const bonusPassTd40p  = scoringSettings.bonus_pass_td_40p  ?? 0;
+  const bonusPassTd50p  = scoringSettings.bonus_pass_td_50p  ?? 0;
+  const bonusPassCmp40p = scoringSettings.bonus_pass_cmp_40p ?? 0;
+  const bonusRushTd40p  = scoringSettings.bonus_rush_td_40p  ?? 0;
+  const bonusRushTd50p  = scoringSettings.bonus_rush_td_50p  ?? 0;
+  const bonusRecTd40p   = scoringSettings.bonus_rec_td_40p   ?? 0;
+  const bonusRecTd50p   = scoringSettings.bonus_rec_td_50p   ?? 0;
+  const bonusRec40p     = scoringSettings.bonus_rec_40p      ?? 0;
+  const bonusRush40p    = scoringSettings.bonus_rush_40p     ?? 0;
+
+  if (bonusPassTd40p > 0)  mults.QB += bonusPassTd40p  * 0.015; // 2pt bonus → +3%
+  if (bonusPassTd50p > 0)  mults.QB += bonusPassTd50p  * 0.010;
+  if (bonusPassCmp40p > 0) mults.QB += bonusPassCmp40p * 0.008; // ~4 deep comps/game for elite QBs
+  if (bonusRushTd40p > 0)  mults.RB += bonusRushTd40p  * 0.012; // rare; speed backs benefit most
+  if (bonusRushTd50p > 0)  mults.RB += bonusRushTd50p  * 0.008;
+  if (bonusRecTd40p > 0) { mults.WR += bonusRecTd40p * 0.015; mults.TE += bonusRecTd40p * 0.008; }
+  if (bonusRecTd50p > 0) { mults.WR += bonusRecTd50p * 0.010; mults.TE += bonusRecTd50p * 0.005; }
+  if (bonusRec40p > 0)   { mults.WR += bonusRec40p   * 0.020; mults.TE += bonusRec40p   * 0.010; } // ~2-4 big plays/game for top WRs
+  if (bonusRush40p > 0)    mults.RB += bonusRush40p   * 0.015; // speed/breakaway backs benefit
 
   // ── First down bonuses ────────────────────────────────────────────────────
   // First-down points reward high-volume, efficient players who convert.
@@ -341,7 +380,12 @@ export function applyKtcMultipliers(ktcPlayers, multipliers) {
 
 // ── Draft pick matching ───────────────────────────────────────────────────────
 
-const ORDINALS = { 1: '1st', 2: '2nd', 3: '3rd', 4: '4th', 5: '5th' };
+const ORDINALS = { 1: '1st', 2: '2nd', 3: '3rd', 4: '4th', 5: '5th', 6: '6th', 7: '7th', 8: '8th', 9: '9th', 10: '10th' };
+
+// Decay factors for rounds beyond what KTC explicitly lists.
+// Round 4 = ~25% of a Mid 3rd, round 5 = ~12%, round 6+ = ~5%.
+const LATE_ROUND_DECAY = { 4: 0.25, 5: 0.12 };
+const LATE_ROUND_DEFAULT_DECAY = 0.05;
 
 /**
  * Find a KTC draft pick entry matching a specific year/round/quality.
@@ -390,6 +434,34 @@ export function findKtcDraftPick(year, round, quality, ktcPlayers) {
       return n.includes(alt) && n.includes(ord.toLowerCase());
     });
     if (byAlt) return byAlt;
+  }
+
+  // 4. Late-round synthetic fallback (rounds 4+): KTC doesn't publish values for
+  //    these rounds. Estimate by scaling a mid-3rd pick down by a decay factor.
+  if (round >= 4) {
+    const anchor = rdp.find(k => {
+      const n = k.playerName?.toLowerCase() ?? '';
+      return n.includes('mid') && n.includes('3rd');
+    }) ?? rdp.find(k => {
+      const n = k.playerName?.toLowerCase() ?? '';
+      return n.includes('3rd');
+    });
+    if (anchor) {
+      const factor = LATE_ROUND_DECAY[round] ?? LATE_ROUND_DEFAULT_DECAY;
+      const scale = v => Math.round((v ?? 0) * factor);
+      const ord2 = ORDINALS[round] ?? `${round}th`;
+      return {
+        ...anchor,
+        playerName: `${year} ${quality} ${ord2}`,
+        isSynthetic: true,
+        oneQBValues: anchor.oneQBValues
+          ? { ...anchor.oneQBValues, value: scale(anchor.oneQBValues.value) }
+          : anchor.oneQBValues,
+        superflexValues: anchor.superflexValues
+          ? { ...anchor.superflexValues, value: scale(anchor.superflexValues.value) }
+          : anchor.superflexValues,
+      };
+    }
   }
 
   return null;

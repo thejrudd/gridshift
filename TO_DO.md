@@ -7,6 +7,41 @@ New features requested or planned should be added here.
 
 ## Planned Versions
 
+### v5.8 — Scoring True-Up ✅ Shipped
+
+Completed in v5.7.4–v5.8.1. See CHANGELOG.md for full details.
+
+**Remaining backlog (not in scope for v5.8):**
+- Full IDP trade valuation — KTC has no IDP player data; see Backlog section
+- `pass_2pt`, `rush_2pt`, `rec_2pt` — already handled in `STAT_TO_SCORING_KEY` (were not missing)
+- `pass_fd`, `sack`, `st_td` — already handled in `STAT_TO_SCORING_KEY` (were not missing)
+
+### v5.9 — Areas of Opportunity
+
+A new **Companion sub-tab** that analyzes any roster in the league (defaulting to your own) for weaknesses and surfaces them as actionable trade or waiver targets.
+
+**Weakness Analysis (in priority order):**
+1. **Position depth** — Rosters with thin starter depth at a position (e.g., only one viable WR2) are flagged as exploitable.
+2. **Bye week clustering** — If multiple starters share the same bye week, that's a roster construction vulnerability.
+3. **Glaring positional hole** — A roster position that has no viable starter (empty slot or only low-floor options).
+4. **Age/decline risk** — A position anchored by aging starters past their dynasty prime window with no heir apparent on the roster.
+
+**Output per weakness:**
+- Weakness title + explanation (e.g. "Your weakest position is RB2 — here's why")
+- CTA: "Trade for..." (shows players from your surplus that could be offered) or "Check Waivers" (links to Waiver tab filtered to that position)
+
+**Player Suggestions:**
+- When recommending a trade, surface 2–3 specific players from your roster surplus that could be used as trade chips
+- Offer options (not a single answer) so the user can choose the best fit
+
+**Roster scope:**
+- Default view: analyze your own roster
+- Toggle to analyze a specific opponent's roster (same output, different framing — useful for identifying what they need before proposing a trade)
+
+**Data used:** `rosters`, `players`, `seasonStats`, `weeklyStats`, `scoringSettings`, `positionalRanks`, `scheduleMap`, `league.roster_positions`, KTC values (for surplus identification)
+
+---
+
 ### v6.0 — Draft Coach
 
 Surfaces publicly available scouting and evaluation data to help users make informed draft decisions.

@@ -151,13 +151,13 @@ function buildPlayerData(id, players, seasonStats, weeklyStats, scoringSettings,
   const weekly = weeklyStats?.[id] ?? [];
   const pos    = p.position;
 
-  const seasonPts = stats ? calcPointsFromTotals(stats, scoringSettings) : null;
-  const avgPPG    = getAvgPPG(weekly, scoringSettings);
-  const last4     = getRecentAvg(weekly, scoringSettings, 4);
+  const seasonPts = stats ? calcPointsFromTotals(stats, scoringSettings, pos) : null;
+  const avgPPG    = getAvgPPG(weekly, scoringSettings, pos);
+  const last4     = getRecentAvg(weekly, scoringSettings, 4, pos);
   const rank      = positionalRanks[id] ?? null;
 
   // Season high/low single-game scores (actual floor & ceiling)
-  const weekPts = weekly.map(w => calcPoints(w, scoringSettings)).filter(s => s > 0);
+  const weekPts = weekly.map(w => calcPoints(w, scoringSettings, pos)).filter(s => s > 0);
   const seasonHigh = weekPts.length > 0 ? Math.max(...weekPts) : null;
   const seasonLow  = weekPts.length > 0 ? Math.min(...weekPts) : null;
 
@@ -364,9 +364,19 @@ export default function CompareFantasyPanel({ sleeperIdA, sleeperIdB }) {
             {dataA?.seasonPts != null ? dataA.seasonPts.toFixed(1) : '—'}
           </span>
           <span className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: 'var(--color-label-quaternary)' }}>Season pts</span>
+          {dataA?.avgPPG > 0 && (
+            <span className="text-xs tabular-nums" style={{ color: 'var(--color-label-secondary)' }}>
+              {dataA.avgPPG.toFixed(1)} avg
+            </span>
+          )}
+          {dataA?.rank && (
+            <span className="text-xs font-semibold" style={{ color: 'var(--color-signature)' }}>
+              {dataA.rank.posLabel}{dataA.rank.rank}
+            </span>
+          )}
           {badgeA && (
             <span
-              className="mt-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase"
+              className="mt-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase"
               style={{ background: badgeA.color, color: '#fff' }}
             >
               {badgeA.label}
@@ -383,9 +393,19 @@ export default function CompareFantasyPanel({ sleeperIdA, sleeperIdB }) {
             {dataB?.seasonPts != null ? dataB.seasonPts.toFixed(1) : '—'}
           </span>
           <span className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: 'var(--color-label-quaternary)' }}>Season pts</span>
+          {dataB?.avgPPG > 0 && (
+            <span className="text-xs tabular-nums" style={{ color: 'var(--color-label-secondary)' }}>
+              {dataB.avgPPG.toFixed(1)} avg
+            </span>
+          )}
+          {dataB?.rank && (
+            <span className="text-xs font-semibold" style={{ color: 'var(--color-signature)' }}>
+              {dataB.rank.posLabel}{dataB.rank.rank}
+            </span>
+          )}
           {badgeB && (
             <span
-              className="mt-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase"
+              className="mt-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase"
               style={{ background: badgeB.color, color: '#fff' }}
             >
               {badgeB.label}

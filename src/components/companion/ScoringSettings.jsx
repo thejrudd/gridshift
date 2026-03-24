@@ -170,7 +170,7 @@ export default function ScoringSettings({ onClose }) {
                   className="px-4 py-2 rounded-xl text-sm font-semibold transition-colors"
                   style={{
                     background: preset === key ? 'var(--color-signature)' : 'var(--color-fill)',
-                    color: preset === key ? '#0C0F14' : 'var(--color-label-secondary)',
+                    color: preset === key ? 'var(--color-signature-fg)' : 'var(--color-label-secondary)',
                   }}
                 >
                   {label}

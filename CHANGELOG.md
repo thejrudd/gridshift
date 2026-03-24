@@ -430,3 +430,260 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Build Full Trade — disabled explanation** — When the Build Full Trade button is greyed out, a hint line now explains why: "One player must be on your roster to build a trade."
 - **Roster → Trade entry point fixed** — Clicking Trade on a player in Companion Roster now correctly pre-populates that player on Your Side when you subsequently select a trade partner. Previously, selecting a partner cleared the entire trade (including pre-populated players from entry points); now only Their Side and picks are reset on partner change.
 - **Their Side team color theming** — Opponent player cards on Their Side in the Trade Agent now display the same team color treatment as Your Side: team primary color 3px left border, subtle tint background, and team logo watermark. Light/dark mode aware.
+
+---
+
+## v5.5.9 — Compare Hero Card Unification & Light Mode Border Fix
+*2026-03-23*
+
+- **Compare Trade unified hero card** — The KTC asset value is now embedded directly inside the player slot hero card in the Trade tab. The value number and value bar appear below the player name/position as an inline extension of the card, so the team logo watermark, player identity, and trade value all live in one unified card. The separate value card section below has been removed.
+- **Light mode team color border contrast** — Team color left borders on player cards (Compare player slots, Trade Agent cards) are now darkened by 45% when the team's primary color has high luminance in light mode (e.g. Steelers gold `#FFB612`). The border is now clearly visible against the light cream background without affecting the subtle tint background or dark mode appearance.
+
+---
+
+## v5.6.0 — Compare Polish & Trade Analysis
+*2026-03-23*
+
+- **Compare hero card logo overlap fixed** — The KTC value bar and divider line in the Trade tab player hero card no longer render behind the team logo watermark. Right padding (`pr-10`) pushes the bar and border to clear the logo area.
+- **Beta badge contrast fixed** — The "Beta" label on the Companion tab (sidebar and bottom tab bar) now uses `var(--color-signature-fg)` instead of hardcoded `#000`. When a dark team color overrides `--color-signature`, the badge text remains legible.
+- **Compare → Statistics link** — Player names in the Compare view hero card are now clickable links (underlined, accent-colored) that navigate directly to that player's Statistics page with a "← Compare" back button.
+- **Compare → Fantasy hero card** — The season total hero now also shows the player's average PPG and fantasy positional rank (e.g. `WR7`) in addition to season points.
+- **Trade Analysis — fairness tier** — A color-coded verdict label ("Fair Trade", "Minor Edge", "Moderate Overpay", "Significant Overpay") is now shown at the top of the Trade Analysis section based on the gap percentage.
+- **Trade Analysis — pick equivalence** — When there is a value gap, the analysis now includes a note showing the closest KTC draft pick entry by value (e.g. "Gap is roughly equivalent to a 2026 Mid 2nd (2,100)"), giving a concrete reference point for what the deficit is worth.
+
+---
+
+## v5.6.1 — Trade Analysis KTC Enrichment
+*2026-03-23*
+
+- **Trade Analysis — age & dynasty window** — Each player's age (from KTC) is now shown in a compact two-column row at the bottom of the Trade Analysis section, with a dynasty window label: Emerging (< 23), Prime (23–26), Late prime (27–29), Veteran (30+).
+- **Trade Analysis — 7-day value trend** — KTC's `overall7DayTrend` for each player is shown as a color-coded "7d Trend" row (▲ green for rising, ▼ red for falling). Only displayed when at least one player has a trend of ±5 or greater; flat weeks are suppressed.
+- **Compare Trade hero card cleanup** — Removed the divider line and value bar from the player hero card KTC extension. Now shows a clean "Trade Value X,XXX" label in-line with the player info.
+
+---
+
+## v5.6.2 — Global Signature Color Contrast Fix
+*2026-03-23*
+
+- **Signature background text contrast — global fix** — All pill filters, tab buttons, carousel selections, and section headers that use `var(--color-signature)` as a background were using hardcoded `#0C0F14` (near-black) for the text color. When a dark team color overrides `--color-signature` (e.g. Ravens purple, Bears navy), this produced dark-on-dark unreadable text. All instances now use `var(--color-signature-fg)`, which is computed dynamically (white for dark signature colors, dark for light ones). Fixed in: `CompanionLeague`, `CompanionTrade` (owner carousel + YOUR SIDE header), `CompanionDefense`, `CompanionWaiver`, `CompanionRankings`, `CompanionConnect`, `ScoringSettings`, `App.jsx`.
+
+---
+
+## v5.6.3 — Trade Analysis Deep Insights
+*2026-03-23*
+
+- **Position-adjusted dynasty windows** — Age phase labels (Emerging, Prime, Late Prime, Veteran) are now calibrated per position. QBs peak later and age more gracefully than RBs (QB prime: 25–35, RB prime: 22–26, WR prime: 23–29, TE prime: 24–30).
+- **Trade Analysis — Buy/Hold/Sell signal** — Each player now shows a color-coded signal badge (green Buy / amber Hold / red Sell) derived from their career phase and 7-day market trend.
+- **Trade Analysis — Prime Years Left** — In dynasty mode, each player shows how many prime seasons they likely have remaining based on their age and position. Color-coded: green (4+), amber (2–3), red (0–1).
+- **Trade Analysis — Player Outlook blurbs** — A concise narrative sentence per player now synthesizes their age, position, prime window, and prime years remaining into an actionable insight (e.g. "Mahomes has ~5 prime years left as a QB — a core dynasty asset.").
+- **Trade Analysis layout** — The analysis section now uses a labeled "Player Outlook" sub-header, and the two-column rows for Age, Signal, Prime Left, and 7d Trend are consistently formatted.
+
+---
+
+## v5.6.4 — Trade Agent Polish
+*2026-03-23*
+
+- **"Your Side" / "Their Side" header contrast fixed** — The header label text in Trade Agent used hardcoded `#0C0F14` when that side was the leader (highlighted with `var(--color-signature)` background). Now uses `var(--color-signature-fg)` so dark team color overrides remain readable.
+- **Refine Trade — % difference shown** — Each suggested package now shows the point delta as a percentage of the total gap (e.g. "+500 (+8%)"), making it easier to judge how close a suggestion comes to balancing the trade.
+- **Value comparison bar redesigned** — The favorability bar section is now a card with both side totals prominently labeled, the gap value and % displayed center-stage, a taller bar, and the verdict label below. Values are immediately scannable without reading the side cards.
+- **Draft picks beyond round 3 now valued** — `MAX_ROUNDS` cap removed from `buildRosterPicks`; the round count is now driven entirely by `league.settings.draft_rounds` and traded pick data. Picks in rounds 4+ that KTC doesn't publish values for are now estimated by scaling a mid-3rd round pick by a decay factor (Round 4 ≈ 25%, Round 5 ≈ 12%, Round 6+ ≈ 5% of mid-3rd value), so they appear in the trade builder with a reasonable non-zero value rather than "—".
+
+---
+
+## v5.6.5 — Trade Refinement: Remove & Swap Suggestions
+*2026-03-23*
+
+- **Refinement Options now suggest removals and swaps, not just additions** — "Refine Trade" previously only added assets to the weaker side (trade creep). It now evaluates four strategies:
+  - **Add** (existing): add assets from the deficit side's roster to close the gap
+  - **Remove**: drop an asset from the surplus side whose value is closest to the gap
+  - **Swap (surplus side)**: replace an expensive asset on the stronger side with a cheaper one from that same roster
+  - **Swap (deficit side)**: upgrade a lower-value asset on the weaker side to a higher-value one from that same roster
+- **Refinement Options renamed** — Section header changed from "Suggested Additions (Your/Their Side)" to "Refinement Options", with per-option colored action badges (ADD / REMOVE / SWAP) and the target side labeled in the description line.
+- **Remaining gap shown per suggestion** — Each option now shows the gap that would remain after applying it (e.g. "~500 remaining (8% of gap)") rather than the raw delta, making it easy to compare how close each option gets to even.
+
+---
+
+## v5.6.6 — Redraft Pick Valuation Overhaul
+*2026-03-23*
+
+- **Draft picks now valued correctly for redraft leagues** — KTC's RDP (dynasty pick) values are designed for dynasty leagues and wildly misprice picks in a redraft context: they front-load nearly all value into rounds 1–3 and make later rounds near-worthless. For redraft leagues, pick values are now computed from KTC's actual redraft player rankings: all non-pick KTC players are sorted by their redraft value and bucketed into draft rounds (league size players per round). The value for each round is the median player value in that bucket, discounted 15% for pick uncertainty. This model scales correctly to any number of rounds (e.g. 17-round bestball drafts), and ensures that a 5th-round pick is valued like a 5th-round player — not like a throwaway.
+- **Pick valuation is league-size aware** — A 3rd-round pick in a 10-team league corresponds to picks 21–30 overall, while in a 14-team league it's picks 29–42. The bucketing accounts for this automatically.
+- **Dynasty leagues unchanged** — KTC RDP entries continue to be used directly for dynasty-format leagues, where they are the correct model.
+---
+
+## v5.6.7 — Trade Analysis: Fantasy Performance Stats
+*2026-03-23*
+
+- **Buy/Hold/Sell signals removed from Trade Analysis** — These signals were derived from KTC 7-day market trends and dynasty career phase logic. They are not applicable to redraft leagues, and misleading when used outside a dynasty context. The Signal row has been removed from the Player Outlook section.
+- **Season PPG added to Trade Analysis** — Player Outlook now shows each player's points-per-game for the current season, calculated using the league's actual scoring settings. Requires Sleeper stats to be loaded.
+- **Recent Form added to Trade Analysis** — Shows the player's average fantasy points over their last 1–4 active (non-zero) weeks, with a green/red color indicator for hot/cold streaks relative to season average. Labeled with the number of weeks used (e.g. "18.4 L4").
+
+---
+
+## v5.6.8 — Player Outlook Enhancements
+*2026-03-23*
+
+- **Team row added to Player Outlook** — Always shows each player's NFL team (from Sleeper roster data) without requiring stats to be loaded.
+- **Season Rank row added to Player Outlook** — Shows each player's positional rank for the season (e.g. "WR4") once stats are loaded, using the same ranking computation as the Trade Agent.
+- **Stats auto-load when Compare Trade panel is open** — Previously, Season PPG and Recent Form only appeared if the user had already visited the Companion tab. The Trade panel now triggers `loadSeasonStats` and `loadPlayers` automatically when a Sleeper league is connected and stats aren't loaded yet. A "loading stats…" label appears next to "Player Outlook" while loading.
+
+---
+
+## v5.6.9 — Player Outlook: Top-10 Finishes + Defense Split
+*2026-03-23*
+
+- **Top-10 Wks row** — Shows how many weeks each player finished in the top 10 at their position (e.g. "8/16"). Color-coded: green ≥50%, amber ≥30%, red <30%. Requires Sleeper stats.
+- **D Split row** — Shows each player's average fantasy score against tough defenses (bottom-third pts allowed) vs. soft defenses (top-third pts allowed), displayed as "14.2 · 22.8". Red = tough, green = soft. A wide gap indicates a matchup-dependent player; similar values indicate consistency. Uses the same defense table as the heatmap defense view. Requires Sleeper stats + schedule map.
+- Both metrics are scored using your league's actual scoring settings, not KTC data.
+
+---
+
+## v5.7.0 — Trade Analysis: Per-Stat Position Rankings
+*2026-03-23*
+
+- **Stat Rankings section in Player Outlook** — Shows a row for each stat category where either player ranks in the top 15 at their position. Both players' ranks are shown side by side even if one doesn't crack the top 10 (shown as `—` if no meaningful output in that category). Sorted by the stronger rank between the two players. Color-coded: green = top 5, amber = top 10, default = 11–15.
+- **Position-specific stat categories**: QB (Pass TDs, Pass Yds, Rush TDs, Rush Yds), RB (Rush TDs, Rush Yds, Rec TDs, Rec Yds, Receptions), WR/TE (Rec TDs, Rec Yds, Receptions). All ranked within the player's own position group.
+- **Works across positions** — When comparing a QB to a RB (e.g., evaluating a trade), each player is ranked within their own position group. Overlapping categories (e.g., Rush TDs) show both players' ranks from their respective pools.
+- **Team row removed** from Player Outlook — redundant with the player hero card.
+- **Top-10 Wks row removed** — replaced by the per-stat ranking breakdown.
+- All rankings are based on Sleeper season stats scored with your league's settings.
+
+---
+
+## v5.7.1 — Player Outlook Clarity: Fantasy vs Raw vs Defense
+*2026-03-23*
+
+- **Player Outlook reorganized into labeled sections**:
+  - **Fantasy Performance** — Szn Rank, Szn PPG, Recent L4. All use your league's scoring settings.
+  - **Raw Stat Leaders** — Per-stat positional rankings (Pass TDs, Rush Yds, etc.). In-game stats only, not fantasy-scored.
+  - **vs [Position] D** — Defense analysis with fpts by tier (see below).
+  - Career metadata (Age, Prime Left) and KTC market data (7d Trend) remain at top/bottom.
+- **Defense analysis redesigned**:
+  - Position-specific sub-header: "vs Pass D" for QB, "vs Rush D" for RB, "vs WR D" for WR, "vs TE D" for TE.
+  - Three tiers shown as separate rows: **Tough D** (red), **Mid D** (neutral), **Soft D** (green). Values are fantasy points from your scoring settings.
+  - Defenses ranked by pts allowed to the player's own position group (QB fpts for Pass D, RB fpts for Rush D, etc.).
+  - **TE combination view**: TE players also show a "vs WR D · passing game context" section — defenses ranked by WR pts allowed, TE player's fpts measured against those same defenses. Shows whether a TE's production tracks with passing game quality regardless of specific TE coverage.
+
+---
+
+## v5.7.2 — Player Outlook Tooltip & Label Polish
+*2026-03-23*
+
+- **Defense tier labels renamed** — "Tough D", "Mid D", and "Soft D" rows are now labeled "Tough Defense", "Mid Defense", and "Soft Defense" for clarity.
+- **InfoTooltip added to Player Outlook sub-sections** — An ℹ icon appears next to each sub-section header explaining what data is shown and how it's computed:
+  - **Fantasy Performance** — explains pts use league scoring settings; defines Szn Rank, Szn PPG, and Recent.
+  - **Raw Stat Leaders** — clarifies in-game production only, not fantasy-scored; explains what "top 15" means.
+  - **vs [Position] D** — explains defense tier split (thirds by pts allowed), what fpts values represent, and the specific position being ranked.
+  - **vs WR D · passing game context** (TE only) — explains the WR defense proxy and what the TE's fpts values represent.
+- **OutlookRow center column widened** — Increased from 68px to 96px to accommodate the longer "Tough Defense" / "Mid Defense" / "Soft Defense" labels without wrapping.
+
+---
+
+## v5.8.6 — Per-Tab Companion Guide
+*2026-03-24*
+
+- **Guide is now tab-aware in Companion** — The Guide action opens a guide specific to whichever Companion sub-tab is active (Roster, Rankings, Matchup, Waiver, League, Heatmap, Trade, Scoring). Each guide is concise: 2–4 steps covering what the tab does and how to use it. The previous single monolithic Companion guide has been replaced.
+- **Trade Agent instructional text updated** — "Build your trade" card copy revised to: "Select a trade partner above, or begin adding players or picks to either side. Or tap Search All Players to search for any rostered player, including your own."
+
+---
+
+## v5.8.5 — Trade Agent: Natural Language Search & Inline Builder
+*2026-03-24*
+
+- **Natural language player search** — Trade Agent's "Search All Players" picker now uses the same `parseSearchQuery` engine as Compare. Supports name, team nickname/city/abbreviation, position (full name, plural, abbreviation), conference, division, and combined queries ("WRs in Detroit", "QBs in the AFC North"). Shows a SearchGuide with example chips when the field is empty, identical to the Compare experience.
+- **Trade builder always visible** — The Your Side / Their Side columns are shown immediately on load instead of behind a "select a trade partner" gate. No blank launch screen.
+- **Instructions instead of favorability bar** — Before any player or pick is added, a "Build your trade" card explains how to use the builder. The Favorability bar and all analysis sections appear only after the first item is added to either side. KTC loading and error states are surfaced inline in the same card.
+- **Their Side pick button disabled without partner** — The "+ Pick" button on Their Side is dimmed and non-interactive until a trade partner is selected, since pick ownership requires a specific roster.
+- **Picker UI polish** — Picker modal header now matches Compare's style: bold title, × close button, magnifying glass icon in the search field, and click-outside-to-dismiss.
+
+---
+
+## v5.8.4 — Trade Agent: Own-Roster Search
+*2026-03-23*
+
+- **Search All Players includes your own roster** — The global "Search All Players" button now searches every rostered player in the league, including your own team. Own players are labeled "Your Roster" in accent color to distinguish them from opponents. Selecting your own player from global search routes the addition to Your Side automatically (no partner change, no reset). Selecting an opponent still sets the trade partner as before.
+- **Correct empty-state copy** — Instructional text under the launch icon now reads "Choose a league member above, or tap Search All Players to find any opposing player."
+- **Duplicate exclusion in global search** — Players already on either side of the trade are excluded from global search results (previously only the "Their Side" list was excluded).
+
+---
+
+## v5.8.3 — Full Sleeper API Scoring Coverage
+*2026-03-23*
+
+- **Complete Companion → Scoring coverage** — Every scoring option available in the Sleeper API now has a corresponding row visible when the "All" toggle is selected. Nine new sections added: Tiered Reception Bonuses (`rec_0_4` through `rec_30_39`), Position First Down Bonuses (`bonus_fd_qb/rb/wr/te`), Special Teams Player stats (`kr_yd`, `pr_yd`, `st_tkl_solo`, etc.), Game Threshold Bonuses (`bonus_pass_cmp_25`, `bonus_rush_att_20`), Combined Yardage Bonuses (`bonus_rush_rec_yd_100/200`), 2+ Sack and 10+ Tackle game bonuses, Kicker per-yard scoring (`fgm_yds`, `fgm_yds_over_30`), and three Team DST sections (Turnovers & Scoring, Points Allowed tiers ×7, Yards Allowed tiers ×9 + miscellaneous team stats). Defense big-play bonuses (`bonus_def_fum_td_50p/int_td_50p`) and the 3+ Pass Deflection bonus (`idp_pass_def_3p`) also added to existing IDP/Big-Play sections.
+
+---
+
+## v5.8.2 — Scoring Import Fix & Active-Only Toggle
+*2026-03-23*
+
+- **Big-play bonus values now import correctly from Sleeper** — Sleeper's `scoring_settings` endpoint omits the `bonus_` prefix for big-play fields (e.g. `pass_td_40p: 1` instead of `bonus_pass_td_40p: 1`). `importLeagueScoring` was storing the value under the short key but `calcPoints` looks up the `bonus_*` key, so all 9 big-play bonuses silently stayed at 0. Fixed by adding the 9 short-form keys to `SCORING_SETTINGS_ALIASES` so they resolve to the correct internal `bonus_*` keys on import.
+- **Companion → Scoring active-only toggle** — A segmented control ("Active" / "All") now appears next to the Sync button. Both options are always visible so the current selection is unambiguous. Default is "Active" — only scoring categories with non-zero values are shown. Switching to "All" reveals every supported scoring field including zeros.
+- **Pick 6 Thrown now scored** — `pass_int_td` added to `DEFAULT_SCORING`, `STAT_TO_SCORING_KEY`, and `SCORING_SETTINGS_ALIASES` (maps Sleeper's `int_ret_td` key). Added to Companion → Scoring Passing section and to `ValuationInfoSheet` adjustment rows. KTC multiplier: a -5 pt/pick-6 penalty reduces QB values by ~7.5% vs baseline (rare event, ~0.3 pick-6s per game for an average QB).
+
+---
+
+## v5.8.1 — Big-Play Bonus Scoring
+*2026-03-23*
+
+- **9 big-play bonus fields now supported** — All Sleeper `bonus_*` fields for explosive plays are now scored, imported from Sleeper, displayed in Companion → Scoring, and factored into KTC value multipliers:
+  - `bonus_pass_td_40p` / `bonus_pass_td_50p` — bonus pts per 40+/50+ yard passing TD (boosts QB)
+  - `bonus_pass_cmp_40p` — bonus pts per 40+ yard completion (boosts QB)
+  - `bonus_rush_td_40p` / `bonus_rush_td_50p` — bonus pts per 40+/50+ yard rushing TD (boosts RB)
+  - `bonus_rec_td_40p` / `bonus_rec_td_50p` — bonus pts per 40+/50+ yard receiving TD (boosts WR/TE)
+  - `bonus_rec_40p` — bonus pts per 40+ yard reception (boosts WR/TE)
+  - `bonus_rush_40p` — bonus pts per 40+ yard run (boosts RB)
+- **`STAT_TO_SCORING_KEY` extended** — Sleeper's weekly stat keys (`pass_td_40p`, `rec_40p`, etc.) now map to the correct scoring settings, so these events are counted from raw game data.
+- **Companion → Scoring** — New "Big-Play Bonuses" section lists all nine fields with position context notes.
+- **KTC multipliers updated** — `computeKtcMultipliers` factors each big-play setting into positional adjustments. Elite QBs, explosive WRs/TEs, and speed RBs are proportionally boosted when these settings are active.
+- **ValuationInfoSheet** — Three new adjustment rows ("Big passing play bonus", "Big rushing play bonus", "Big receiving play bonus") appear when any of these settings are non-zero. KTC baseline now notes "Big-play TD/completion bonuses: None."
+- **Matchup point values now show two decimal places** — Player scores in the head-to-head row were displaying to one decimal (e.g. `14.3 pts`) instead of two (`14.32 pts`).
+- **IDP Hit on QB and Pass Defended now score correctly** — Sleeper's weekly stats use `idp_qb_hit` and `idp_pass_def` as stat keys, but `STAT_TO_SCORING_KEY` only mapped `idp_qbhit` and `idp_pd`. Both alternate keys are now aliased so these stats are picked up when calculating fantasy points from raw weekly data.
+- **Position context propagated to all remaining scoring call sites** — 7 additional `calcPoints` calls were missing position, causing position-specific bonuses (`bonus_rec_te`, `bonus_rec_rb`, `bonus_rec_wr`, `bonus_rush_att`, big-play bonuses) to be silently skipped in the following paths:
+  - `projectPlayer` in `projectionEngine.js` — `gamePts`, `recentPts`, and home/away split calculations all passed `pos` to `calcPoints`; projections for TEs/RBs/WRs in leagues with position bonuses were underestimating
+  - `getDefenseStrength` — both the primary (opp-field) and secondary (schedule-derived) accumulation passes now pass `player.position`; defense strength ratings and matchup difficulty were understating pts allowed to premium-position players
+  - `getLeagueAvgPPG` — league average PPG baseline now position-aware; affected `oppFactor` normalization in all projections
+  - `CompanionDefense.jsx` — Defense Scored table computation and drilldown `getDefVal` callback both updated to pass `player.position`; IDP fantasy totals were undercounted for any position bonus setting
+
+---
+
+## v5.8.0 — Scoring True-Up
+*2026-03-23*
+
+- **`bonus_rush_att` now scored** — Per-carry bonus (e.g. 0.1 pts/carry for high-volume rushers) added to `DEFAULT_SCORING`, applied in `calcPoints` for RBs, surfaced in Companion → Scoring, and factored into KTC value multipliers (+1.5% per 0.1 bonus unit for RBs).
+- **Position context threaded through all scoring call sites** — `bonus_rec_te`, `bonus_rec_rb`, `bonus_rec_wr`, and `bonus_rush_att` require knowing a player's position to apply correctly. Previously these bonuses were silently skipped everywhere except Companion → Trade. Fixed in:
+  - `calcSeasonPoints`, `getRecentForm`, `getRecentAvg` in `scoringEngine.js` — all now accept optional `position` param
+  - `getAvgPPG` in `projectionEngine.js` — accepts `position`; season PPG for TEs, RBs, and WRs now includes position-specific bonuses
+  - `computePositionalRanks` — season scores use player's own position when ranking, so TE rankings properly include TE premium
+  - `buildDefenseTable` — default value function now passes player position to `calcPoints`, fixing defense pts-allowed accuracy for TE/RB/WR-heavy weeks
+  - **Companion → Roster, League, Rankings, Waiver, Matchup**: all per-player PPG and season pts calculations now pass position
+  - **Compare → Fantasy panel**: Season Pts, Avg PPG, Last 4, Season High/Low all position-aware
+  - **PlayerWeeklySheet**: per-week pts now includes position bonuses
+  - **CompanionDefense drilldown**: pts breakdown and `getScoreBreakdown` now show position-specific bonus line items (e.g. "TE Rec Bonus", "Carry Bonus")
+- **`ValuationInfoSheet`**: Carry bonus adjustment row added; baseline assumptions updated to list "Position reception bonuses" and "Per-carry bonus."
+
+---
+
+## v5.7.5 — Reception Bonus Import Fix
+*2026-03-23*
+
+- **Scoring settings now re-derived on startup** — `scoringSettings` was initialized from stale localStorage on every app load instead of re-importing from the persisted league data. `bonus_rec_te`, `bonus_rec_rb`, `bonus_rec_wr`, and any other fields added after the user's last league selection were silently missing. Now, if a league is saved, scoring settings are freshly derived from `league.scoring_settings` on every startup — no re-connection required.
+- **TE/RB/WR reception bonuses visible in Companion → Scoring** — "TE Reception Bonus", "RB Reception Bonus", and "WR Reception Bonus" rows added to the Receiving section so per-position bonuses are visible alongside the base reception rate.
+
+---
+
+## v5.7.4 — Per-Position Reception Bonus Scoring
+*2026-03-23*
+
+- **`bonus_rec_rb` and `bonus_rec_wr` now scored** — Leagues that award extra per-reception points to RBs or WRs (independent of the base PPR rate) now have those bonuses applied when computing fantasy points. Previously only `bonus_rec_te` (the TE premium) was handled; RB and WR equivalents were silently dropped when importing from Sleeper.
+- **KTC value multipliers updated** — `computeKtcMultipliers` now factors in `bonus_rec_rb` (+10% per bonus unit) and `bonus_rec_wr` (+12% per bonus unit) so league-adjusted trade values reflect per-position reception bonuses.
+- **ValuationInfoSheet updated** — RB/WR reception bonus rows now appear in the "Your League's Adjustments" section when those settings are non-zero, alongside the existing TE premium row. The KTC baseline note now references TE/RB/WR reception bonuses collectively.
+
+---
+
+## v5.7.3 — Fantasy Stat Leaders
+*2026-03-23*
+
+- **Fantasy Stat Leaders section added to Player Outlook** — New section between Fantasy Performance and Raw Stat Leaders. Shows each player's positional rank for each stat category ranked by fantasy points earned, not counting stats. Only stat categories that have a non-zero scoring multiplier in your league are shown (e.g. receptions are excluded in standard scoring, included in PPR). Top-10 only. Color-coded: green = top 3, amber = top 7, default = 8–10.
+- **TE premium aware** — For TEs, the receptions rank accounts for both the base reception points and the TE premium (`bonus_rec_te`), giving an accurate fantasy-weighted ranking.
+- **Distinct from Raw Stat Leaders** — Fantasy Stat Leaders reflects scoring value (how many pts did this player generate from each stat); Raw Stat Leaders reflects production volume (how many yards, TDs, receptions). A player can rank lower in raw stats but higher in fantasy pts if their league values that stat heavily.

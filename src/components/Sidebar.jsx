@@ -121,7 +121,7 @@ export default function Sidebar({
           onClick={() => onTabChange('compare')}
           icon={<CompareIcon />}
           label="Compare"
-          alpha
+          beta
         />
       </nav>
 
@@ -217,7 +217,7 @@ export default function Sidebar({
           className="px-5 py-3 text-xs"
           style={{ color: 'var(--color-label-tertiary)' }}
         >
-          v5.5.8
+          v5.8.6
         </div>
       </div>
     </aside>
@@ -251,7 +251,7 @@ function BetaBadge() {
       padding: '1px 5px',
       borderRadius: '4px',
       background: 'var(--color-signature)',
-      color: '#000',
+      color: 'var(--color-signature-fg)',
       lineHeight: '14px',
     }}>
       Beta

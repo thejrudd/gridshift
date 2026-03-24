@@ -10,6 +10,7 @@ import { getTradedPicks, getLeagueDrafts } from '../../api/sleeperApi';
 import {
   buildRosterPicks, getPicksForRoster, getPickQuality,
   valueSide, evaluateTrade, suggestPackage, buildCandidatePool,
+  computeRedraftPickValues,
 } from '../../utils/tradeEngine';
 import { TEAM_COLORS } from '../../data/teamColors';
 import { computePositionalRanks } from '../../utils/projectionEngine';
@@ -40,14 +41,22 @@ function hexLuminance(hex) {
   return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
 }
 
+function darkenHex(hex, factor) {
+  const r = Math.round(parseInt(hex.slice(1, 3), 16) * factor);
+  const g = Math.round(parseInt(hex.slice(3, 5), 16) * factor);
+  const b = Math.round(parseInt(hex.slice(5, 7), 16) * factor);
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+}
+
 function teamPalette(sleeperTeam, darkMode) {
   const key = toTeamKey(sleeperTeam);
   const palette = TEAM_COLORS[key] ?? null;
-  if (!palette) return { color: null, tint: null, isLight: false, logoKey: key };
+  if (!palette) return { color: null, tint: null, borderColor: null, isLight: false, logoKey: key };
   const color = darkMode ? palette.darkPrimary : palette.primary;
   const isLight = hexLuminance(color) > 0.35;
   const alpha = isLight ? '18' : '22';
-  return { color, tint: `${color}${alpha}`, isLight, logoKey: key };
+  const borderColor = (!darkMode && isLight) ? darkenHex(color, 0.55) : color;
+  return { color, tint: `${color}${alpha}`, borderColor, isLight, logoKey: key };
 }
 
 // Derive league format and type from Sleeper league settings
@@ -214,6 +223,13 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer }
     [ktcMultipliers],
   );
 
+  // Redraft pick values — derived from KTC player tier buckets rather than dynasty RDP entries.
+  // null for dynasty leagues (KTC RDP values are used directly instead).
+  const pickValueMap = useMemo(() => {
+    if (format !== 'redraft' || !adjustedKtcPlayers?.length || !rosters?.length) return null;
+    return computeRedraftPickValues(adjustedKtcPlayers, rosters.length, leagueType);
+  }, [format, adjustedKtcPlayers, leagueType, rosters]);
+
   // Sort rosters: my team first, then alphabetically (excluding self for partner list)
   const partnerRosters = useMemo(() => {
     if (!rosters.length || !myRosterData) return [];
@@ -249,19 +265,19 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer }
   // even if KTC hasn't resolved yet (values show "—" until KTC finishes).
   const yourSide = useMemo(() => {
     const side = sleeperPlayers
-      ? valueSide(yourPlayers, yourPicks, sleeperPlayers, adjustedKtcPlayers ?? [], leagueType, rosters)
+      ? valueSide(yourPlayers, yourPicks, sleeperPlayers, adjustedKtcPlayers ?? [], leagueType, rosters, pickValueMap, season)
       : { total: 0, items: [] };
     return enrichItems(side);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [yourPlayers, yourPicks, sleeperPlayers, adjustedKtcPlayers, leagueType, rosters, seasonStats, scoringSettings, rankMap]);
+  }, [yourPlayers, yourPicks, sleeperPlayers, adjustedKtcPlayers, leagueType, rosters, pickValueMap, season, seasonStats, scoringSettings, rankMap]);
 
   const theirSide = useMemo(() => {
     const side = sleeperPlayers
-      ? valueSide(theirPlayers, theirPicks, sleeperPlayers, adjustedKtcPlayers ?? [], leagueType, rosters)
+      ? valueSide(theirPlayers, theirPicks, sleeperPlayers, adjustedKtcPlayers ?? [], leagueType, rosters, pickValueMap, season)
       : { total: 0, items: [] };
     return enrichItems(side);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [theirPlayers, theirPicks, sleeperPlayers, adjustedKtcPlayers, leagueType, rosters, seasonStats, scoringSettings, rankMap]);
+  }, [theirPlayers, theirPicks, sleeperPlayers, adjustedKtcPlayers, leagueType, rosters, pickValueMap, season, seasonStats, scoringSettings, rankMap]);
 
   const verdict = useMemo(
     () => evaluateTrade(yourSide.total, theirSide.total),
@@ -299,14 +315,17 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer }
   // ── Actions ─────────────────────────────────────────────────────────────────
 
   const addPlayer = useCallback((side, playerIdOrObj) => {
-    if (side === 'yours') {
-      // Your side: always a plain ID (locked to your roster)
+    if (side === 'yours' && typeof playerIdOrObj !== 'object') {
+      // Your side locked picker: plain ID from your roster
       setYourPlayers(prev => [...prev, playerIdOrObj]);
     } else if (typeof playerIdOrObj === 'object') {
-      // Their side from all-rosters search: { id, rosterId }
+      // All-rosters search: { id, rosterId }
       const { id, rosterId: playerRosterId } = playerIdOrObj;
-      if (playerRosterId && playerRosterId !== partnerRosterId) {
-        // Auto-set partner and clear existing trade items from old partner
+      if (playerRosterId === myRosterData?.roster_id) {
+        // Own player selected from global search → always goes to Your Side
+        setYourPlayers(prev => [...prev, id]);
+      } else if (playerRosterId && playerRosterId !== partnerRosterId) {
+        // Different partner selected → set partner and reset their side
         setPartnerRosterId(playerRosterId);
         setTheirPlayers([id]);
         setTheirPicks([]);
@@ -320,7 +339,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer }
     }
     setPickerOpen(null);
     setSuggestions(null);
-  }, [partnerRosterId]);
+  }, [partnerRosterId, myRosterData?.roster_id]);
 
   const removePlayer = useCallback((side, playerId) => {
     if (side === 'yours') setYourPlayers(prev => prev.filter(id => id !== playerId));
@@ -346,36 +365,70 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer }
     const gap = Math.abs(yourSide.total - theirSide.total);
     if (gap <= 0) return;
 
-    // Build candidates from the deficit side
     const deficitSide = yourSide.total < theirSide.total ? 'yours' : 'theirs';
+    const surplusRosterId = deficitSide === 'yours' ? partnerRosterId : myRosterData?.roster_id;
     const deficitRosterId = deficitSide === 'yours' ? myRosterData?.roster_id : partnerRosterId;
-    const excludeIds = deficitSide === 'yours' ? yourPlayers : theirPlayers;
-    const excludePickKeys = (deficitSide === 'yours' ? yourPicks : theirPicks).map(p => p.key);
 
-    const candidates = buildCandidatePool(
-      deficitRosterId, rosters, excludeIds, excludePickKeys,
-      sleeperPlayers, adjustedKtcPlayers, leagueType, rosterPicks, slots,
+    const deficitExcludeIds     = deficitSide === 'yours' ? yourPlayers : theirPlayers;
+    const deficitExcludePickKeys = (deficitSide === 'yours' ? yourPicks : theirPicks).map(p => p.key);
+    const surplusExcludeIds     = deficitSide === 'yours' ? theirPlayers : yourPlayers;
+    const surplusExcludePickKeys = (deficitSide === 'yours' ? theirPicks : yourPicks).map(p => p.key);
+
+    const deficitCandidates = buildCandidatePool(
+      deficitRosterId, rosters, deficitExcludeIds, deficitExcludePickKeys,
+      sleeperPlayers, adjustedKtcPlayers, leagueType, rosterPicks, slots, pickValueMap, season,
+    );
+    const surplusCandidates = buildCandidatePool(
+      surplusRosterId, rosters, surplusExcludeIds, surplusExcludePickKeys,
+      sleeperPlayers, adjustedKtcPlayers, leagueType, rosterPicks, slots, pickValueMap, season,
     );
 
-    const options = suggestPackage(gap, candidates);
-    setSuggestions({ side: deficitSide, options });
+    const options = suggestPackage({
+      gap,
+      deficitSide,
+      deficitCandidates,
+      deficitItems:    deficitSide === 'yours' ? yourSide.items : theirSide.items,
+      surplusItems:    deficitSide === 'yours' ? theirSide.items : yourSide.items,
+      surplusCandidates,
+    });
+    setSuggestions({ options, deficitSide });
   }, [adjustedKtcPlayers, partnerRosterId, yourSide, theirSide, myRosterData, rosters,
-      yourPlayers, theirPlayers, yourPicks, theirPicks, sleeperPlayers, leagueType, rosterPicks, slots]);
+      yourPlayers, theirPlayers, yourPicks, theirPicks, sleeperPlayers, leagueType, rosterPicks, slots, pickValueMap]);
 
   const applySuggestion = useCallback((option) => {
-    if (!suggestions) return;
-    const { side } = suggestions;
-    for (const item of option.items) {
-      if (item.type === 'player') {
-        if (side === 'yours') setYourPlayers(prev => [...prev, item.id]);
-        else setTheirPlayers(prev => [...prev, item.id]);
-      } else if (item.pickData) {
-        if (side === 'yours') setYourPicks(prev => [...prev, item.pickData]);
-        else setTheirPicks(prev => [...prev, item.pickData]);
+    const applyAdd = (side, items) => {
+      for (const item of items) {
+        if (item.type === 'player') {
+          if (side === 'yours') setYourPlayers(prev => [...prev, item.id]);
+          else setTheirPlayers(prev => [...prev, item.id]);
+        } else if (item.pickData) {
+          if (side === 'yours') setYourPicks(prev => [...prev, item.pickData]);
+          else setTheirPicks(prev => [...prev, item.pickData]);
+        }
       }
+    };
+    const applyRemove = (side, items) => {
+      for (const item of items) {
+        if (item.type === 'player') {
+          if (side === 'yours') setYourPlayers(prev => prev.filter(id => id !== item.id));
+          else setTheirPlayers(prev => prev.filter(id => id !== item.id));
+        } else {
+          if (side === 'yours') setYourPicks(prev => prev.filter(p => p.key !== item.id));
+          else setTheirPicks(prev => prev.filter(p => p.key !== item.id));
+        }
+      }
+    };
+
+    if (option.action === 'add') {
+      applyAdd(option.side, option.items);
+    } else if (option.action === 'remove') {
+      applyRemove(option.side, option.items);
+    } else if (option.action === 'swap') {
+      applyRemove(option.side, [option.remove]);
+      applyAdd(option.side, [option.add]);
     }
     setSuggestions(null);
-  }, [suggestions]);
+  }, []);
 
   const clearTrade = useCallback(() => {
     setYourPlayers([]);
@@ -418,7 +471,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer }
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl transition-colors shrink-0"
                   style={{
                     background: isSelected ? 'var(--color-signature)' : 'var(--color-fill)',
-                    color: isSelected ? '#0C0F14' : 'var(--color-label-secondary)',
+                    color: isSelected ? 'var(--color-signature-fg)' : 'var(--color-label-secondary)',
                     fontWeight: isSelected ? 700 : 500,
                   }}
                 >
@@ -454,104 +507,83 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer }
         )}
       </div>
 
-      {/* ── Empty state: no partner selected ─────────────────────────────── */}
-      {!partnerRosterId && (
-        <div className="flex flex-col items-center justify-center py-10 px-8 gap-2">
-          <div className="w-12 h-12 rounded-2xl flex items-center justify-center"
+      {/* ── Trade builder — always shown ────────────────────────────────── */}
+      <>
+        <div className="flex gap-3 px-4 pt-2">
+          {/* YOUR SIDE */}
+          <TradeSide
+            label="Your Side"
+            items={yourSide.items}
+            total={yourSide.total}
+            onRemovePlayer={id => removePlayer('yours', id)}
+            onRemovePick={key => removePick('yours', key)}
+            onAddPlayer={() => setPickerOpen({ side: 'yours', type: 'player' })}
+            onAddPick={() => setPickerOpen({ side: 'yours', type: 'pick' })}
+            isLeader={hasItems && verdict.verdict === 'favors_them'}
+            showTeamColors
+          />
+
+          <div className="flex items-center justify-center shrink-0 text-xs font-bold pt-6"
+            style={{ color: 'var(--color-label-quaternary)', width: 24 }}>
+            vs
+          </div>
+
+          {/* THEIR SIDE */}
+          <TradeSide
+            label="Their Side"
+            items={theirSide.items}
+            total={theirSide.total}
+            onRemovePlayer={id => removePlayer('theirs', id)}
+            onRemovePick={key => removePick('theirs', key)}
+            onAddPlayer={() => setPickerOpen({ side: 'theirs', type: 'player', allRosters: !partnerRosterId })}
+            onAddPick={partnerRosterId ? () => setPickerOpen({ side: 'theirs', type: 'pick' }) : null}
+            isLeader={hasItems && verdict.verdict === 'favors_you'}
+            showTeamColors
+          />
+        </div>
+
+        {/* ── Instructions / status (shown when no items yet) ─────────── */}
+        {!hasItems && (
+          <div className="mx-4 mt-4 rounded-xl px-4 py-4 flex flex-col gap-1.5"
             style={{ background: 'var(--color-fill)' }}>
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
-              style={{ color: 'var(--color-label-tertiary)' }}>
-              <path d="M7 16V4m0 0L3 8m4-4l4 4" />
-              <path d="M17 8v12m0 0l4-4m-4 4l-4-4" />
-            </svg>
+            {ktcLoading ? (
+              <div className="flex items-center gap-2.5">
+                <Spinner />
+                <span className="text-sm font-medium" style={{ color: 'var(--color-label-secondary)' }}>
+                  Loading trade values…
+                </span>
+              </div>
+            ) : ktcError ? (
+              <>
+                <span className="text-sm font-semibold" style={{ color: 'var(--color-label)' }}>
+                  KTC values unavailable
+                </span>
+                <span className="text-xs leading-relaxed" style={{ color: 'var(--color-label-tertiary)' }}>
+                  The KeepTradeCut proxy could not be reached. Trade values require the nginx proxy in production.
+                </span>
+                <span className="text-xs font-mono mt-1" style={{ color: 'var(--color-label-quaternary)' }}>
+                  {ktcError}
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="text-sm font-semibold" style={{ color: 'var(--color-label)' }}>
+                  Build your trade
+                </span>
+                <span className="text-xs leading-relaxed" style={{ color: 'var(--color-label-tertiary)' }}>
+                  Select a trade partner above, or begin adding players or picks to either side. Or tap Search All Players to search for any rostered player, including your own.
+                </span>
+              </>
+            )}
           </div>
-          <span className="text-sm font-semibold" style={{ color: 'var(--color-label)' }}>
-            Select a trade partner or search for a player
-          </span>
-          <span className="text-xs text-center" style={{ color: 'var(--color-label-tertiary)' }}>
-            Choose a league member above, or tap Search All Players to find any player.
-          </span>
-        </div>
-      )}
+        )}
 
-      {/* ── Partner roster preview ───────────────────────────────────────── */}
-      {partnerRosterId && partnerPreview && !hasItems && !ktcLoading && !ktcError && (
-        <PartnerPreview
-          preview={partnerPreview}
-          partnerName={getUserDisplayName(rosters.find(r => r.roster_id === partnerRosterId)?.owner_id ?? '')}
-          rosters={rosters}
-          getUserDisplayName={getUserDisplayName}
-          leagueType={leagueType}
-          ktcPlayers={adjustedKtcPlayers}
-          onSelectPlayer={id => addPlayer('theirs', id)}
-        />
-      )}
-
-      {/* ── KTC loading / error ─────────────────────────────────────────── */}
-      {partnerRosterId && ktcLoading && (
-        <div className="flex items-center justify-center py-8 gap-3"
-          style={{ color: 'var(--color-label-tertiary)' }}>
-          <Spinner />
-          <span className="text-sm">Loading KTC data…</span>
-        </div>
-      )}
-
-      {partnerRosterId && !ktcLoading && ktcError && (
-        <div className="mx-4 rounded-xl px-4 py-4 flex flex-col gap-1.5" style={{ background: 'var(--color-fill)' }}>
-          <span className="text-sm font-semibold" style={{ color: 'var(--color-label)' }}>
-            KTC data unavailable
-          </span>
-          <span className="text-xs leading-relaxed" style={{ color: 'var(--color-label-tertiary)' }}>
-            The KeepTradeCut proxy could not be reached. Trade values require the nginx proxy in production.
-          </span>
-          <span className="text-xs font-mono mt-1" style={{ color: 'var(--color-label-quaternary)' }}>{ktcError}</span>
-        </div>
-      )}
-
-      {/* ── Trade builder ───────────────────────────────────────────────── */}
-      {partnerRosterId && !ktcLoading && !ktcError && (
-        <>
-          <div className="flex gap-3 px-4 pt-2">
-            {/* YOUR SIDE */}
-            <TradeSide
-              label="Your Side"
-              items={yourSide.items}
-              total={yourSide.total}
-              onRemovePlayer={id => removePlayer('yours', id)}
-              onRemovePick={key => removePick('yours', key)}
-              onAddPlayer={() => setPickerOpen({ side: 'yours', type: 'player' })}
-              onAddPick={() => setPickerOpen({ side: 'yours', type: 'pick' })}
-              isLeader={verdict.verdict === 'favors_them'}
-              showTeamColors
-            />
-
-            <div className="flex items-center justify-center shrink-0 text-xs font-bold pt-6"
-              style={{ color: 'var(--color-label-quaternary)', width: 24 }}>
-              vs
-            </div>
-
-            {/* THEIR SIDE */}
-            <TradeSide
-              label="Their Side"
-              items={theirSide.items}
-              total={theirSide.total}
-              onRemovePlayer={id => removePlayer('theirs', id)}
-              onRemovePick={key => removePick('theirs', key)}
-              onAddPlayer={() => setPickerOpen({ side: 'theirs', type: 'player' })}
-              onAddPick={() => setPickerOpen({ side: 'theirs', type: 'pick' })}
-              isLeader={verdict.verdict === 'favors_you'}
-              showTeamColors
-            />
+        {/* ── Value comparison bar ────────────────────────────────────── */}
+        {hasItems && (
+          <div className="px-4 pt-4">
+            <ValueBar yourTotal={yourSide.total} theirTotal={theirSide.total} verdict={verdict} />
           </div>
-
-          {/* ── Value comparison bar ────────────────────────────────────── */}
-          {hasItems && (
-            <div className="px-4 pt-4 flex flex-col gap-2">
-              <ValueBar yourTotal={yourSide.total} theirTotal={theirSide.total} />
-              <VerdictLabel verdict={verdict} />
-            </div>
-          )}
+        )}
 
           {/* ── Refine Trade ─────────────────────────────────────────────── */}
           {hasItems && verdict.verdict !== 'fair' && verdict.gap > 0 && (
@@ -569,26 +601,64 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer }
             <div className="px-4 pt-3 flex flex-col gap-2">
               <span className="text-xs font-semibold uppercase tracking-widest"
                 style={{ color: 'var(--color-label-tertiary)', letterSpacing: '0.08em' }}>
-                Suggested Additions ({suggestions.side === 'yours' ? 'Your Side' : 'Their Side'})
+                Refinement Options
               </span>
-              {suggestions.options.map((opt, i) => (
-                <div key={i} className="rounded-xl px-3 py-3 flex items-center justify-between gap-2"
-                  style={{ background: 'var(--color-fill)' }}>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-xs font-medium truncate" style={{ color: 'var(--color-label)' }}>
-                      {opt.items.map(it => it.label).join(' + ')}
+              {suggestions.options.map((opt, i) => {
+                const absRemaining = Math.abs(opt.newGap);
+                const isNearEven = absRemaining < verdict.gap * 0.05;
+                // Which side holds the value advantage after this adjustment?
+                // "Your Side" / "Their Side" = what each party gives away.
+                // If the giving side with more value is "theirs" → trade favors YOU.
+                // If it's "yours" → trade favors THEM.
+                const currentSurplusSide = opt.newGap > 0
+                  ? (suggestions.deficitSide === 'yours' ? 'theirs' : 'yours')
+                  : suggestions.deficitSide;
+                const favoredLabel = currentSurplusSide === 'theirs' ? 'You' : 'Them';
+                const remainingLabel = isNearEven
+                  ? 'Near-even trade'
+                  : `Favors ${favoredLabel} · ${fmtKtcValue(absRemaining)}`;
+
+                const ACTION_META = {
+                  add:    { label: 'ADD',    bg: '#22c55e22', color: '#22c55e' },
+                  remove: { label: 'REMOVE', bg: '#f59e0b22', color: '#f59e0b' },
+                  swap:   { label: 'SWAP',   bg: 'var(--color-accent)22', color: 'var(--color-accent)' },
+                };
+                const meta = ACTION_META[opt.action] ?? ACTION_META.add;
+
+                let descLine;
+                if (opt.action === 'add') {
+                  descLine = `Add to ${opt.side === 'yours' ? 'Your' : 'Their'} Side: ${opt.items.map(it => it.label).join(' + ')}`;
+                } else if (opt.action === 'remove') {
+                  descLine = `Remove from ${opt.side === 'yours' ? 'Your' : 'Their'} Side: ${opt.items[0]?.label}`;
+                } else {
+                  descLine = `${opt.side === 'yours' ? 'Your' : 'Their'} Side: ${opt.remove?.label} → ${opt.add?.label}`;
+                }
+
+                return (
+                  <div key={i} className="rounded-xl px-3 py-2.5 flex items-center justify-between gap-2"
+                    style={{ background: 'var(--color-fill)' }}>
+                    <div className="flex-1 min-w-0 flex flex-col gap-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded tracking-widest shrink-0"
+                          style={{ background: meta.bg, color: meta.color }}>
+                          {meta.label}
+                        </span>
+                        <span className="text-xs font-medium truncate" style={{ color: 'var(--color-label)' }}>
+                          {descLine}
+                        </span>
+                      </div>
+                      <span className="text-xs tabular-nums" style={{ color: 'var(--color-label-quaternary)' }}>
+                        {remainingLabel}
+                      </span>
                     </div>
-                    <div className="text-xs mt-0.5" style={{ color: 'var(--color-label-tertiary)' }}>
-                      {fmtKtcValue(opt.total)} total · {opt.delta >= 0 ? '+' : ''}{fmtKtcValue(opt.delta)} vs gap
-                    </div>
+                    <button onClick={() => applySuggestion(opt)}
+                      className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold"
+                      style={{ background: 'var(--color-signature)', color: 'var(--color-signature-fg)' }}>
+                      Apply
+                    </button>
                   </div>
-                  <button onClick={() => applySuggestion(opt)}
-                    className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold"
-                    style={{ background: 'var(--color-signature)', color: 'var(--color-signature-fg)' }}>
-                    Apply
-                  </button>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
 
@@ -650,8 +720,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer }
               </svg>
             </button>
           </div>
-        </>
-      )}
+      </>
 
       {/* ── Picker modals ───────────────────────────────────────────────── */}
       {showValInfo && (
@@ -675,7 +744,10 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer }
           sleeperPlayers={sleeperPlayers}
           ktcPlayers={adjustedKtcPlayers}
           leagueType={leagueType}
-          excludeIds={pickerOpen.side === 'yours' ? yourPlayers : theirPlayers}
+          excludeIds={pickerOpen.allRosters
+            ? [...yourPlayers, ...theirPlayers]
+            : (pickerOpen.side === 'yours' ? yourPlayers : theirPlayers)}
+          includeOwnRoster={pickerOpen.allRosters === true}
           seasonStats={seasonStats}
           scoringSettings={scoringSettings}
           getUserDisplayName={getUserDisplayName}
@@ -694,6 +766,8 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer }
           rosters={rosters}
           ktcPlayers={adjustedKtcPlayers}
           leagueType={leagueType}
+          pickValueMap={pickValueMap}
+          currentSeason={season}
           excludeKeys={(pickerOpen.side === 'yours' ? yourPicks : theirPicks).map(p => p.key)}
           getUserDisplayName={getUserDisplayName}
           currentTotal={pickerOpen.side === 'yours' ? yourSide.total : theirSide.total}
@@ -733,7 +807,7 @@ function PartnerPreview({ preview, partnerName, rosters, getUserDisplayName, lea
                 className="rounded-lg px-2.5 py-2 flex items-center gap-2 relative overflow-hidden transition-colors"
                 style={{
                   background: tp.tint ?? 'var(--color-fill)',
-                  borderLeft: tp.color ? `3px solid ${tp.color}` : '3px solid transparent',
+                  borderLeft: tp.borderColor ? `3px solid ${tp.borderColor}` : '3px solid transparent',
                 }}>
                 <img src={`https://sleepercdn.com/content/nfl/players/thumb/${p.id}.jpg`}
                   alt="" className="w-7 h-7 rounded-full shrink-0 object-cover"
@@ -818,10 +892,10 @@ function TradeSide({ label, items, total, onRemovePlayer, onRemovePick, onAddPla
       <div className="rounded-lg px-2.5 py-2 flex items-center justify-between mb-0.5"
         style={{
           background: isLeader ? 'var(--color-signature)' : 'var(--color-fill)',
-          color: isLeader ? '#0C0F14' : 'var(--color-label)',
+          color: isLeader ? 'var(--color-signature-fg)' : 'var(--color-label)',
         }}>
         <span className="text-xs font-semibold uppercase tracking-widest"
-          style={{ color: isLeader ? '#0C0F14' : 'var(--color-label-tertiary)', letterSpacing: '0.08em' }}>
+          style={{ color: isLeader ? 'var(--color-signature-fg)' : 'var(--color-label-tertiary)', letterSpacing: '0.08em' }}>
           {label}
         </span>
         <span className="text-sm font-bold tabular-nums">{fmtKtcValue(total)}</span>
@@ -836,7 +910,7 @@ function TradeSide({ label, items, total, onRemovePlayer, onRemovePick, onAddPla
             className="rounded-lg px-2.5 py-2 flex items-center gap-2 relative overflow-hidden"
             style={{
               background: tp.tint ?? 'var(--color-fill)',
-              borderLeft: tp.color ? `3px solid ${tp.color}` : '3px solid transparent',
+              borderLeft: tp.borderColor ? `3px solid ${tp.borderColor}` : '3px solid transparent',
             }}>
 
             {it.type === 'player' && (
@@ -904,9 +978,14 @@ function TradeSide({ label, items, total, onRemovePlayer, onRemovePick, onAddPla
           style={{ border: '1px dashed var(--color-separator)', color: 'var(--color-label-tertiary)' }}>
           + Player
         </button>
-        <button onClick={onAddPick}
+        <button onClick={onAddPick ?? undefined} disabled={!onAddPick}
           className="flex-1 py-2 rounded-lg text-xs font-medium transition-colors"
-          style={{ border: '1px dashed var(--color-separator)', color: 'var(--color-label-tertiary)' }}>
+          style={{
+            border: '1px dashed var(--color-separator)',
+            color: 'var(--color-label-tertiary)',
+            opacity: onAddPick ? 1 : 0.35,
+            cursor: onAddPick ? 'pointer' : 'default',
+          }}>
           + Pick
         </button>
       </div>
@@ -916,39 +995,65 @@ function TradeSide({ label, items, total, onRemovePlayer, onRemovePick, onAddPla
 
 // ── ValueBar ──────────────────────────────────────────────────────────────────
 
-function ValueBar({ yourTotal, theirTotal }) {
+function ValueBar({ yourTotal, theirTotal, verdict: { verdict, gap, pct } }) {
   const max = Math.max(yourTotal, theirTotal, 1);
-  const yourPct = Math.round((yourTotal / max) * 100);
-  const theirPct = Math.round((theirTotal / max) * 100);
+  const yourFrac = yourTotal / max;
+  const theirFrac = theirTotal / max;
 
-  return (
-    <div className="flex gap-1 h-2 rounded-full overflow-hidden" style={{ background: 'var(--color-fill)' }}>
-      <div className="h-full rounded-full transition-all duration-500"
-        style={{ width: `${yourPct}%`, background: 'var(--color-accent)' }} />
-      <div className="h-full rounded-full transition-all duration-500"
-        style={{ width: `${theirPct}%`, background: 'var(--color-label-quaternary)' }} />
-    </div>
-  );
-}
-
-// ── VerdictLabel ──────────────────────────────────────────────────────────────
-
-function VerdictLabel({ verdict: { verdict, gap, pct } }) {
-  const labels = {
-    fair: { text: 'Fair Trade', color: 'var(--color-accent-green, #22c55e)' },
-    favors_you: { text: 'Favors You', color: 'var(--color-signature)' },
-    favors_them: { text: 'Favors Them', color: 'var(--color-destructive, #ef4444)' },
+  const verdictMeta = {
+    fair:        { text: 'Fair Trade',   color: '#22c55e' },
+    favors_you:  { text: 'Favors You',   color: 'var(--color-signature)' },
+    favors_them: { text: 'Favors Them',  color: '#ef4444' },
   };
-  const { text, color } = labels[verdict] ?? labels.fair;
+  const { text, color } = verdictMeta[verdict] ?? verdictMeta.fair;
 
   return (
-    <div className="flex items-center justify-between">
-      <span className="text-sm font-bold" style={{ color }}>{text}</span>
-      {gap > 0 && verdict !== 'fair' && (
-        <span className="text-xs tabular-nums" style={{ color: 'var(--color-label-secondary)' }}>
-          {fmtKtcValue(gap)} gap ({pct}%)
-        </span>
-      )}
+    <div className="flex flex-col gap-2 rounded-xl px-3 py-3" style={{ background: 'var(--color-fill)' }}>
+      {/* Side totals */}
+      <div className="flex items-end justify-between">
+        <div className="flex flex-col gap-0.5">
+          <span className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: 'var(--color-label-quaternary)' }}>
+            Your Side
+          </span>
+          <span className="text-lg font-bold tabular-nums leading-none"
+            style={{ color: verdict === 'favors_them' ? 'var(--color-label)' : 'var(--color-accent)' }}>
+            {fmtKtcValue(yourTotal)}
+          </span>
+        </div>
+        <div className="text-center flex flex-col items-center gap-0.5">
+          {verdict !== 'fair' && gap > 0 && (
+            <>
+              <span className="text-sm font-bold tabular-nums" style={{ color }}>{fmtKtcValue(gap)}</span>
+              <span className="text-xs font-semibold" style={{ color }}>{pct}% gap</span>
+            </>
+          )}
+        </div>
+        <div className="flex flex-col items-end gap-0.5">
+          <span className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: 'var(--color-label-quaternary)' }}>
+            Their Side
+          </span>
+          <span className="text-lg font-bold tabular-nums leading-none"
+            style={{ color: verdict === 'favors_you' ? 'var(--color-label)' : 'var(--color-accent)' }}>
+            {fmtKtcValue(theirTotal)}
+          </span>
+        </div>
+      </div>
+
+      {/* Bar */}
+      <div className="flex gap-0.5 h-2.5 rounded-full overflow-hidden" style={{ background: 'var(--color-fill-secondary)' }}>
+        <div className="h-full rounded-l-full transition-all duration-500"
+          style={{ width: `${yourFrac * 100}%`, background: verdict === 'favors_them' ? 'var(--color-label-tertiary)' : 'var(--color-accent)' }} />
+        <div className="h-full rounded-r-full transition-all duration-500"
+          style={{ width: `${theirFrac * 100}%`, background: verdict === 'favors_you' ? 'var(--color-label-tertiary)' : 'var(--color-accent)' }} />
+      </div>
+
+      {/* Verdict label */}
+      <div className="text-center">
+        <span className="text-sm font-bold" style={{ color }}>{text}</span>
+        {verdict === 'fair' && (
+          <span className="text-xs ml-2" style={{ color: 'var(--color-label-quaternary)' }}>straight swap is reasonable</span>
+        )}
+      </div>
     </div>
   );
 }
@@ -998,7 +1103,11 @@ function ValuationInfoSheet({ format, leagueType, scoringSettings, rosterPositio
   const rec           = scoringSettings?.rec ?? 0.5;
   const passTd        = scoringSettings?.pass_td ?? 4;
   const teBonus       = scoringSettings?.bonus_rec_te ?? 0;
+  const rbBonus       = scoringSettings?.bonus_rec_rb ?? 0;
+  const wrBonus       = scoringSettings?.bonus_rec_wr ?? 0;
+  const rushAttBonus  = scoringSettings?.bonus_rush_att ?? 0;
   const passInt       = scoringSettings?.pass_int ?? -2;
+  const passIntTd     = scoringSettings?.pass_int_td ?? 0;
   const fumLost       = scoringSettings?.fum_lost ?? -2;
   const bonusPassYd300 = scoringSettings?.bonus_pass_yd_300 ?? 0;
   const bonusPassYd400 = scoringSettings?.bonus_pass_yd_400 ?? 0;
@@ -1008,6 +1117,15 @@ function ValuationInfoSheet({ format, leagueType, scoringSettings, rosterPositio
   const bonusRecYd200  = scoringSettings?.bonus_rec_yd_200 ?? 0;
   const rushFd        = scoringSettings?.rush_fd ?? 0;
   const recFd         = scoringSettings?.rec_fd ?? 0;
+  const bonusPassTd40p  = scoringSettings?.bonus_pass_td_40p  ?? 0;
+  const bonusPassTd50p  = scoringSettings?.bonus_pass_td_50p  ?? 0;
+  const bonusPassCmp40p = scoringSettings?.bonus_pass_cmp_40p ?? 0;
+  const bonusRushTd40p  = scoringSettings?.bonus_rush_td_40p  ?? 0;
+  const bonusRushTd50p  = scoringSettings?.bonus_rush_td_50p  ?? 0;
+  const bonusRecTd40p   = scoringSettings?.bonus_rec_td_40p   ?? 0;
+  const bonusRecTd50p   = scoringSettings?.bonus_rec_td_50p   ?? 0;
+  const bonusRec40p     = scoringSettings?.bonus_rec_40p      ?? 0;
+  const bonusRush40p    = scoringSettings?.bonus_rush_40p     ?? 0;
 
   // Count TE/RB/WR starters for the scarcity note
   const posCounts = {};
@@ -1083,7 +1201,9 @@ function ValuationInfoSheet({ format, leagueType, scoringSettings, rosterPositio
               {[
                 ['Reception scoring', '½ PPR (0.5 pts/catch)'],
                 ['Passing touchdowns', '4 pts per TD'],
-                ['TE premium', 'None'],
+                ['Position reception bonuses', 'None'],
+                ['Per-carry bonus', 'None'],
+                ['Big-play TD/completion bonuses', 'None'],
                 ['Roster construction', '1 TE, standard flex'],
               ].map(([label, val]) => (
                 <div key={label} className="flex items-center justify-between py-1.5 px-3 rounded-lg"
@@ -1127,12 +1247,44 @@ function ValuationInfoSheet({ format, leagueType, scoringSettings, rosterPositio
                 baseline="None"
                 note={teBonus > 0 ? `TE values ${pct(multipliers.TE) ?? 'unchanged'} vs baseline` : null}
               />
+              {rbBonus > 0 && (
+                <AdjustmentRow
+                  label="RB reception bonus"
+                  leagueValue={`+${rbBonus} pts/catch`}
+                  baseline="None"
+                  note={`RB values ${pct(multipliers.RB) ?? 'unchanged'} vs baseline (includes all RB adjustments)`}
+                />
+              )}
+              {wrBonus > 0 && (
+                <AdjustmentRow
+                  label="WR reception bonus"
+                  leagueValue={`+${wrBonus} pts/catch`}
+                  baseline="None"
+                  note={`WR values ${pct(multipliers.WR) ?? 'unchanged'} vs baseline (includes all WR adjustments)`}
+                />
+              )}
+              {rushAttBonus > 0 && (
+                <AdjustmentRow
+                  label="Carry bonus"
+                  leagueValue={`+${rushAttBonus} pts/carry`}
+                  baseline="None"
+                  note={`RB values ${pct(multipliers.RB) ?? 'unchanged'} vs baseline (includes all RB adjustments)`}
+                />
+              )}
               {passInt < -2 && (
                 <AdjustmentRow
                   label="Interception penalty"
                   leagueValue={`${passInt} pts/INT`}
                   baseline="-2 pts/INT"
                   note={`QB values reduced vs baseline`}
+                />
+              )}
+              {passIntTd < 0 && (
+                <AdjustmentRow
+                  label="Pick 6 thrown"
+                  leagueValue={`${passIntTd} pts`}
+                  baseline="None"
+                  note={`QB values reduced for turnover risk`}
                 />
               )}
               {fumLost < -2 && (
@@ -1190,6 +1342,42 @@ function ValuationInfoSheet({ format, leagueType, scoringSettings, rosterPositio
                   leagueValue={`+${recFd} pts/FD`}
                   baseline="None"
                   note={`WR and TE values boosted for route-running volume`}
+                />
+              )}
+              {(bonusPassTd40p > 0 || bonusPassTd50p > 0 || bonusPassCmp40p > 0) && (
+                <AdjustmentRow
+                  label="Big passing play bonus"
+                  leagueValue={[
+                    bonusPassTd40p  > 0 && `+${bonusPassTd40p} per 40+ yd TD`,
+                    bonusPassTd50p  > 0 && `+${bonusPassTd50p} per 50+ yd TD`,
+                    bonusPassCmp40p > 0 && `+${bonusPassCmp40p} per 40+ yd cmp`,
+                  ].filter(Boolean).join(', ')}
+                  baseline="None"
+                  note="QB values boosted for explosive play upside"
+                />
+              )}
+              {(bonusRushTd40p > 0 || bonusRushTd50p > 0 || bonusRush40p > 0) && (
+                <AdjustmentRow
+                  label="Big rushing play bonus"
+                  leagueValue={[
+                    bonusRushTd40p > 0 && `+${bonusRushTd40p} per 40+ yd TD`,
+                    bonusRushTd50p > 0 && `+${bonusRushTd50p} per 50+ yd TD`,
+                    bonusRush40p   > 0 && `+${bonusRush40p} per 40+ yd run`,
+                  ].filter(Boolean).join(', ')}
+                  baseline="None"
+                  note="RB values boosted for breakaway speed"
+                />
+              )}
+              {(bonusRecTd40p > 0 || bonusRecTd50p > 0 || bonusRec40p > 0) && (
+                <AdjustmentRow
+                  label="Big receiving play bonus"
+                  leagueValue={[
+                    bonusRecTd40p > 0 && `+${bonusRecTd40p} per 40+ yd TD`,
+                    bonusRecTd50p > 0 && `+${bonusRecTd50p} per 50+ yd TD`,
+                    bonusRec40p   > 0 && `+${bonusRec40p} per 40+ yd rec`,
+                  ].filter(Boolean).join(', ')}
+                  baseline="None"
+                  note="WR and TE values boosted for big-play ability"
                 />
               )}
               {(posCounts.TE ?? 0) >= 2 && (
@@ -1252,12 +1440,36 @@ function ValuationInfoSheet({ format, leagueType, scoringSettings, rosterPositio
               style={{ color: 'var(--color-label-tertiary)', letterSpacing: '0.08em' }}>
               Draft Pick Values
             </h3>
-            <p className="text-sm leading-relaxed" style={{ color: 'var(--color-label-secondary)' }}>
-              Draft picks use KTC's dynasty pick values directly (labeled Early/Mid/Late
-              based on current standings) and are <span className="font-semibold">not adjusted</span> by
-              league scoring settings. Pick values reflect community consensus on future
-              asset value, which is largely scoring-agnostic.
-            </p>
+            {format === 'dynasty' ? (
+              <p className="text-sm leading-relaxed" style={{ color: 'var(--color-label-secondary)' }}>
+                Dynasty picks use <span className="font-semibold">KTC's published RDP values</span> directly.
+                Quality (Early / Mid / Late) is determined by current standings — the worst-record
+                teams produce Early picks. Pick values are <span className="font-semibold">not adjusted</span> by
+                league scoring settings, as KTC community consensus already prices future asset value
+                on a scoring-agnostic basis.
+              </p>
+            ) : (
+              <>
+                <p className="text-sm leading-relaxed" style={{ color: 'var(--color-label-secondary)' }}>
+                  Redraft pick values are <span className="font-semibold">computed from KTC's player rankings</span> rather
+                  than dynasty RDP entries, since redraft picks represent access to players in a
+                  specific draft slot — not long-term dynasty asset value.
+                </p>
+                <div className="flex flex-col gap-1 mt-0.5">
+                  {[
+                    ['Early / Mid / Late', 'Each round is split into thirds by draft position. Early picks cover the top third of the round, Late picks the bottom third.'],
+                    ['Round depth discount', 'Later rounds carry more uncertainty. Round 1 ≈ 10% off the median player value in that tier. Round 5 ≈ 38% off. Round 10+ ≈ 70–80% off.'],
+                    ['Year discount', 'Picks usable sooner are worth more. Each additional year in the future reduces value by ~10%, floored at 40% off for picks 4+ years out.'],
+                  ].map(([label, desc]) => (
+                    <div key={label} className="rounded-lg px-3 py-2.5 flex flex-col gap-0.5"
+                      style={{ background: 'var(--color-fill)' }}>
+                      <span className="text-xs font-semibold" style={{ color: 'var(--color-label)' }}>{label}</span>
+                      <span className="text-xs leading-relaxed" style={{ color: 'var(--color-label-tertiary)' }}>{desc}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
           </section>
 
           <div className="pb-2 text-xs text-center" style={{ color: 'var(--color-label-quaternary)' }}>

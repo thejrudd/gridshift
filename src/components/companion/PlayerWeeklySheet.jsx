@@ -55,7 +55,7 @@ export default function PlayerWeeklySheet({ playerId, onClose }) {
       const weekHasGames = !!scheduleMap && Object.keys(scheduleMap?.[w] ?? {}).length > 0;
       if (wEntry) {
         const opp = wEntry.opp?.toUpperCase() ?? schedEntry?.opp?.toUpperCase() ?? null;
-        rows.push({ week: w, pts: calcPoints(wEntry, scoringSettings), stats: wEntry, opp, isBye: false });
+        rows.push({ week: w, pts: calcPoints(wEntry, scoringSettings, player?.position), stats: wEntry, opp, isBye: false });
       } else if (weekHasGames && playerTeam && !schedEntry) {
         // Bye week — other teams played but not this team
         rows.push({ week: w, pts: 0, stats: null, opp: null, isBye: true });

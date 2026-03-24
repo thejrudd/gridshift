@@ -298,7 +298,7 @@ function AppInner() {
 
           {activeTab === 'statistics' && <PlayerBrowser teams={scheduleData.teams} initialPlayer={statsInitPlayer} onInitialPlayerConsumed={() => setStatsInitPlayer(null)} navBack={statsNavBack} onComparePlayer={(player) => { setCompareInitPlayerA(player); setActiveTab('compare'); }} />}
 
-          {activeTab === 'compare' && <CompareTab teams={scheduleData.teams} initialPlayerA={compareInitPlayerA} onConsumeInitialPlayerA={() => setCompareInitPlayerA(null)} onBuildTrade={(sleeperIdA, sleeperIdB) => { setTradeInitPlayer({ sleeperId: sleeperIdA, side: 'give', otherSleeperId: sleeperIdB }); setActiveTab('companion'); setCompanionView('trade'); }} />}
+          {activeTab === 'compare' && <CompareTab teams={scheduleData.teams} initialPlayerA={compareInitPlayerA} onConsumeInitialPlayerA={() => setCompareInitPlayerA(null)} onBuildTrade={(sleeperIdA, sleeperIdB) => { setTradeInitPlayer({ sleeperId: sleeperIdA, side: 'give', otherSleeperId: sleeperIdB }); setActiveTab('companion'); setCompanionView('trade'); }} onViewPlayer={(player) => { setStatsInitPlayer({ id: player.id, displayName: player.displayName, teamId: player.teamId, position: player.position, experience: player.experience }); setStatsNavBack({ label: 'Compare', onBack: () => { setActiveTab('compare'); setStatsNavBack(null); } }); setActiveTab('statistics'); }} />}
 
           {activeTab === 'companion' && !hasLeague && (
             <CompanionConnect />
@@ -328,7 +328,7 @@ function AppInner() {
                           className="px-2 py-0.5 rounded text-xs font-semibold transition-colors"
                           style={{
                             background: season === s ? 'var(--color-signature)' : 'var(--color-fill)',
-                            color: season === s ? '#0C0F14' : 'var(--color-label-tertiary)',
+                            color: season === s ? 'var(--color-signature-fg)' : 'var(--color-label-tertiary)',
                           }}
                         >
                           {s}
@@ -346,7 +346,7 @@ function AppInner() {
                   <button
                     onClick={loadSeasonStats}
                     className="text-xs font-semibold shrink-0 px-2 py-0.5 rounded"
-                    style={{ background: 'var(--color-signature)', color: '#0C0F14' }}
+                    style={{ background: 'var(--color-signature)', color: 'var(--color-signature-fg)' }}
                   >
                     Load Stats
                   </button>
@@ -400,7 +400,7 @@ function AppInner() {
       )}
 
       {/* ── Modals ────────────────────────────────────────────── */}
-      {guideOpen && <Guide onClose={() => setGuideOpen(false)} activeTab={activeTab} />}
+      {guideOpen && <Guide onClose={() => setGuideOpen(false)} activeTab={activeTab} companionView={companionView} />}
       {teamPickerOpen && <FavoriteTeamPicker onClose={() => setTeamPickerOpen(false)} />}
 
       {exportPreviewOpen && (

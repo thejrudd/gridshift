@@ -10,6 +10,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { findKtcPlayerFromSleeper, getKtcValue, fmtKtcValue } from '../../utils/ktcApi';
 import { calcPointsFromTotals } from '../../utils/scoringEngine';
 import { computePositionalRanks } from '../../utils/projectionEngine';
+import { parseSearchQuery, matchesFilter } from '../../utils/parseSearchQuery';
 import { TEAM_COLORS } from '../../data/teamColors';
 import { useTheme } from '../../context/ThemeContext';
 
@@ -31,7 +32,7 @@ function toTeamKey(sleeperTeam) {
   return SLEEPER_TEAM_MAP[lower] ?? lower;
 }
 
-// ── Color helpers (inline — same as PlayerProfile / CompareTab) ───────────────
+// ── Color helpers ────────────────────────────────────────────────────────────
 
 function hexLuminance(hex) {
   const r = parseInt(hex.slice(1, 3), 16) / 255;
@@ -41,10 +42,69 @@ function hexLuminance(hex) {
   return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
 }
 
+// ── NFL division / conference lookup ─────────────────────────────────────────
+
+const NFL_TEAM_INFO = {
+  buf: { division: 'AFC East',  conference: 'AFC' }, mia: { division: 'AFC East',  conference: 'AFC' },
+  ne:  { division: 'AFC East',  conference: 'AFC' }, nyj: { division: 'AFC East',  conference: 'AFC' },
+  bal: { division: 'AFC North', conference: 'AFC' }, cin: { division: 'AFC North', conference: 'AFC' },
+  cle: { division: 'AFC North', conference: 'AFC' }, pit: { division: 'AFC North', conference: 'AFC' },
+  hou: { division: 'AFC South', conference: 'AFC' }, ind: { division: 'AFC South', conference: 'AFC' },
+  jax: { division: 'AFC South', conference: 'AFC' }, ten: { division: 'AFC South', conference: 'AFC' },
+  den: { division: 'AFC West',  conference: 'AFC' }, kc:  { division: 'AFC West',  conference: 'AFC' },
+  lv:  { division: 'AFC West',  conference: 'AFC' }, lac: { division: 'AFC West',  conference: 'AFC' },
+  dal: { division: 'NFC East',  conference: 'NFC' }, nyg: { division: 'NFC East',  conference: 'NFC' },
+  phi: { division: 'NFC East',  conference: 'NFC' }, wsh: { division: 'NFC East',  conference: 'NFC' },
+  chi: { division: 'NFC North', conference: 'NFC' }, det: { division: 'NFC North', conference: 'NFC' },
+  gb:  { division: 'NFC North', conference: 'NFC' }, min: { division: 'NFC North', conference: 'NFC' },
+  atl: { division: 'NFC South', conference: 'NFC' }, car: { division: 'NFC South', conference: 'NFC' },
+  no:  { division: 'NFC South', conference: 'NFC' }, tb:  { division: 'NFC South', conference: 'NFC' },
+  ari: { division: 'NFC West',  conference: 'NFC' }, la:  { division: 'NFC West',  conference: 'NFC' },
+  sf:  { division: 'NFC West',  conference: 'NFC' }, sea: { division: 'NFC West',  conference: 'NFC' },
+};
+
+// ── Search guide chips ────────────────────────────────────────────────────────
+
+const GUIDE_SECTIONS = [
+  { label: 'By player name', chips: ['Patrick Mahomes', 'Josh', 'Jefferson'] },
+  { label: 'By team — nickname, city, or abbreviation', chips: ['Bears', 'Detroit', 'KC', '49ers', 'New England'] },
+  { label: 'By position — abbreviation, full name, or plural', chips: ['QB', 'RBs', 'Wide Receiver', 'Tight Ends', 'Kicker'] },
+  { label: 'By conference or division', chips: ['NFC', 'AFC', 'NFC West', 'AFC North'] },
+  { label: "Combine terms — order doesn't matter", chips: ['RB Bears', 'QB NFC West', 'WRs in Detroit', 'Receivers on the Chiefs'] },
+  { label: 'Natural language — filler words are ignored', chips: ['Running backs in Detroit', 'QBs playing for the Bears', 'Tight ends in the AFC'] },
+];
+
+function SearchGuide({ onExample }) {
+  return (
+    <div className="px-4 py-4 flex flex-col gap-5">
+      <p className="text-xs leading-relaxed" style={{ color: 'var(--color-label-tertiary)' }}>
+        Search by any combination of name, team, position, conference, or division. Tap an example to try it.
+      </p>
+      {GUIDE_SECTIONS.map(({ label, chips }) => (
+        <div key={label}>
+          <div className="text-xs font-semibold mb-2 uppercase tracking-wide"
+            style={{ color: 'var(--color-label-quaternary)' }}>
+            {label}
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {chips.map(chip => (
+              <button key={chip} onClick={() => onExample(chip)}
+                className="px-2.5 py-1 rounded-full text-xs font-medium transition-opacity active:opacity-60"
+                style={{ background: 'var(--color-fill)', color: 'var(--color-label-secondary)' }}>
+                {chip}
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function TradeRosterPicker({
-  rosterId,           // null = all-rosters mode, number = locked to that roster
+  rosterId,              // null = all-rosters mode, number = locked to that roster
   rosters,
   sleeperPlayers,
   ktcPlayers,
@@ -52,10 +112,11 @@ export default function TradeRosterPicker({
   excludeIds,
   seasonStats,
   scoringSettings,
-  getUserDisplayName, // needed for all-rosters mode owner labels
-  myRosterId,         // to exclude own roster in all-rosters mode
-  currentTotal,       // current KTC total for this side of the trade
-  onSelect,           // (playerId) for locked mode, ({ id, rosterId }) for all-rosters mode
+  getUserDisplayName,    // needed for all-rosters mode owner labels
+  myRosterId,            // to label/include own roster in all-rosters mode
+  includeOwnRoster,      // when true (all-rosters mode), include own roster in results
+  currentTotal,          // current KTC total for this side of the trade
+  onSelect,              // (playerId) for locked mode, ({ id, rosterId }) for all-rosters mode
   onClose,
 }) {
   const [search, setSearch] = useState('');
@@ -85,13 +146,13 @@ export default function TradeRosterPicker({
 
   const excludeSet = useMemo(() => new Set(excludeIds ?? []), [excludeIds]);
 
-  // Build player list — either from one roster or all (excluding own roster in all mode)
+  // Build player list — either from one roster or all (optionally including own roster)
   const players = useMemo(() => {
     let sourceIds;
     if (isAllMode) {
       sourceIds = [];
       for (const r of rosters) {
-        if (r.roster_id === myRosterId) continue;
+        if (!includeOwnRoster && r.roster_id === myRosterId) continue;
         const ids = [...new Set([...(r.players ?? []), ...(r.reserve ?? [])])];
         sourceIds.push(...ids);
       }
@@ -112,8 +173,9 @@ export default function TradeRosterPicker({
         const gp = stats?.gp ?? null;
         const avgPPG = pts != null && gp ? Math.round((pts / gp) * 10) / 10 : null;
         const ownerRosterId = playerRosterMap[id];
+        const isOwnPlayer = ownerRosterId === myRosterId;
         const ownerName = isAllMode && ownerRosterId
-          ? getUserDisplayName(rosters.find(r => r.roster_id === ownerRosterId)?.owner_id ?? '')
+          ? (isOwnPlayer ? 'Your Roster' : getUserDisplayName(rosters.find(r => r.roster_id === ownerRosterId)?.owner_id ?? ''))
           : null;
         const teamKey = toTeamKey(sp.team);
         const palette = TEAM_COLORS[teamKey] ?? null;
@@ -132,21 +194,33 @@ export default function TradeRosterPicker({
           rankInfo,
           ownerRosterId,
           ownerName,
+          isOwnPlayer,
         };
       })
       .filter(Boolean);
-  }, [isAllMode, rosters, rosterId, myRosterId, excludeSet, sleeperPlayers, ktcPlayers,
-      leagueType, seasonStats, scoringSettings, playerRosterMap, getUserDisplayName, rankMap]);
+  }, [isAllMode, includeOwnRoster, rosters, rosterId, myRosterId, excludeSet, sleeperPlayers,
+      ktcPlayers, leagueType, seasonStats, scoringSettings, playerRosterMap,
+      getUserDisplayName, rankMap]);
 
   const filtered = useMemo(() => {
     if (!search.trim()) return players;
-    const q = search.toLowerCase();
-    return players.filter(p =>
-      p.name.toLowerCase().includes(q) ||
-      p.position.toLowerCase().includes(q) ||
-      p.team.toLowerCase().includes(q) ||
-      (p.ownerName && p.ownerName.toLowerCase().includes(q))
-    );
+    const filters = parseSearchQuery(search);
+    const hasFilters = filters.pos.size || filters.team.size || filters.div.size || filters.conf.size || filters.name.length;
+    if (!hasFilters) return players;
+    return players.filter(p => {
+      if (filters.name.length > 0) {
+        const hay = (p.name + (p.ownerName ? ' ' + p.ownerName : '')).toLowerCase();
+        if (!filters.name.every(t => hay.includes(t))) return false;
+      }
+      if (filters.pos.size > 0) {
+        if (![...filters.pos].some(pos => matchesFilter(p.position, pos))) return false;
+      }
+      if (filters.team.size > 0 && !filters.team.has(p.teamKey)) return false;
+      const teamInfo = NFL_TEAM_INFO[p.teamKey];
+      if (filters.div.size > 0 && (!teamInfo || !filters.div.has(teamInfo.division))) return false;
+      if (filters.conf.size > 0 && (!teamInfo || !filters.conf.has(teamInfo.conference))) return false;
+      return true;
+    });
   }, [players, search]);
 
   const grouped = useMemo(() => {
@@ -171,46 +245,50 @@ export default function TradeRosterPicker({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ background: 'rgba(0,0,0,0.5)' }} onClick={onClose}>
-      <div className="flex flex-col rounded-2xl overflow-hidden w-full mx-4"
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: 'rgba(0,0,0,0.5)' }}
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="flex flex-col rounded-2xl overflow-hidden w-full"
         style={{ background: 'var(--color-bg)', maxWidth: 520, height: '72vh', maxHeight: 640 }}
         onClick={e => e.stopPropagation()}>
 
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3"
-          style={{ borderBottom: '1px solid var(--color-separator)' }}>
-          <span className="text-sm font-semibold" style={{ color: 'var(--color-label)' }}>
-            {isAllMode ? 'Search All Rosters' : 'Add Player'}
-          </span>
-          <button onClick={onClose} className="text-xs font-semibold"
-            style={{ color: 'var(--color-accent)' }}>
-            Cancel
-          </button>
+        {/* Header + search */}
+        <div className="px-4 pt-4 pb-3 shrink-0" style={{ borderBottom: '1px solid var(--color-separator)' }}>
+          <div className="flex items-center justify-between mb-3">
+            <span className="font-bold text-base" style={{ color: 'var(--color-label)' }}>
+              {isAllMode ? 'Search All Players' : 'Add Player'}
+            </span>
+            <button onClick={onClose} className="p-1" style={{ color: 'var(--color-label-secondary)' }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            </button>
+          </div>
+          <div className="relative">
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none"
+              style={{ color: 'var(--color-label-quaternary)' }} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+            </svg>
+            <input
+              type="text"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Name, team, position, or natural language…"
+              autoFocus
+              className="w-full pl-9 pr-4 py-2.5 rounded-xl text-sm outline-none"
+              style={{ background: 'var(--color-fill)', color: 'var(--color-label)', fontSize: '16px' }}
+            />
+          </div>
         </div>
 
-        {/* Search */}
-        <div className="px-4 py-2" style={{ borderBottom: '1px solid var(--color-separator)' }}>
-          <input
-            type="text"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder={isAllMode ? 'Search by name, position, team, or owner…' : 'Search by name, position, or team…'}
-            autoFocus
-            className="w-full px-3 py-2 rounded-lg text-sm"
-            style={{
-              background: 'var(--color-fill)',
-              color: 'var(--color-label)',
-              border: 'none',
-              outline: 'none',
-              fontSize: '16px',
-            }}
-          />
-        </div>
-
-        {/* Player list */}
+        {/* Results / guide — scrollable */}
         <div className="flex-1 overflow-y-auto">
-          {POSITION_ORDER.map(pos => {
+          {/* Search guide shown in all-mode when no query typed */}
+          {isAllMode && !search.trim() && (
+            <SearchGuide onExample={q => setSearch(q)} />
+          )}
+          {/* Player list — always shown in locked mode; shown when query exists in all-mode */}
+          {(!isAllMode || search.trim()) && POSITION_ORDER.map(pos => {
             const list = grouped[pos];
             if (!list?.length) return null;
             return (
@@ -283,7 +361,8 @@ export default function TradeRosterPicker({
                             </span>
                           )}
                           {p.ownerName && (
-                            <span className="text-xs" style={{ color: 'var(--color-label-quaternary)' }}>
+                            <span className="text-xs font-semibold"
+                              style={{ color: p.isOwnPlayer ? 'var(--color-signature)' : 'var(--color-label-quaternary)' }}>
                               · {p.ownerName}
                             </span>
                           )}
@@ -308,9 +387,9 @@ export default function TradeRosterPicker({
               </div>
             );
           })}
-          {filtered.length === 0 && (
+          {(!isAllMode || search.trim()) && filtered.length === 0 && (
             <div className="py-12 text-sm text-center" style={{ color: 'var(--color-label-tertiary)' }}>
-              No players found
+              {search.trim() ? `No players found for "${search}"` : 'No players found'}
             </div>
           )}
         </div>

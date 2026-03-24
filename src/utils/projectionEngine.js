@@ -9,9 +9,9 @@ const SNAP_POSITIONS = new Set(['QB', 'RB', 'WR', 'TE']);
 /**
  * Compute season avg PPG for a player (only counts active weeks, pts > 0).
  */
-export function getAvgPPG(weeklyArr, scoring) {
+export function getAvgPPG(weeklyArr, scoring, position = null) {
   if (!weeklyArr?.length) return 0;
-  const scored = weeklyArr.map(w => calcPoints(w, scoring)).filter(p => p > 0);
+  const scored = weeklyArr.map(w => calcPoints(w, scoring, position)).filter(p => p > 0);
   if (!scored.length) return 0;
   return Math.round((scored.reduce((s, p) => s + p, 0) / scored.length) * 10) / 10;
 }
@@ -31,7 +31,7 @@ export function computePositionalRanks(seasonStats, players, scoringSettings) {
     if (!p) continue;
     const pos = normalizePos(p.position);
     if (!pos) continue;
-    const pts = calcPoints(stats, scoringSettings);
+    const pts = calcPoints(stats, scoringSettings, p.position);
     if (pts <= 0) continue;
     if (!byPos[pos]) byPos[pos] = [];
     byPos[pos].push({ id, pts });
@@ -72,7 +72,7 @@ function normalizePos(pos) {
 export function buildDefenseTable(weeklyStats, players, scheduleMap, scoringSettings, valueFn, keyBySelf = false) {
   if (!weeklyStats || !players) return {};
 
-  const getValue = valueFn ?? ((wEntry) => calcPoints(wEntry, scoringSettings));
+  const getValue = valueFn ?? ((wEntry, position) => calcPoints(wEntry, scoringSettings, position));
 
   // Pre-compute the inferred season team for each player.
   // For players with ESPN-enhanced weeks, use the team from those weeks — this is
@@ -98,7 +98,7 @@ export function buildDefenseTable(weeklyStats, players, scheduleMap, scoringSett
     if (!normPos) continue;
 
     for (const wEntry of playerWeeks) {
-      const val = getValue(wEntry);
+      const val = getValue(wEntry, player.position);
       if (val <= 0) continue;
 
       // Priority 1: per-player game-time team + scheduleMap → most reliable.
@@ -181,7 +181,7 @@ export function getOpponentStrength(oppTeam, pos, allWeeklyStats, players, scori
     for (const wEntry of playerWeeks) {
       if (beforeWeek != null && wEntry.week >= beforeWeek) continue;
       if (wEntry.opp?.toUpperCase() !== normOpp) continue;
-      const pts = calcPoints(wEntry, scoringSettings);
+      const pts = calcPoints(wEntry, scoringSettings, player.position);
       if (pts > 0) weekTotals[wEntry.week] = (weekTotals[wEntry.week] ?? 0) + pts;
     }
   }
@@ -244,7 +244,7 @@ export function getOpponentStrength(oppTeam, pos, allWeeklyStats, players, scori
       const entryOpp = wEntry.opp?.toUpperCase();
       const currentTeam = player.team?.toUpperCase();
       if (entryOpp !== normOpp && currentTeam !== facingTeam) continue;
-      const pts = calcPoints(wEntry, scoringSettings);
+      const pts = calcPoints(wEntry, scoringSettings, player.position);
       if (pts > 0) { weekPts += pts; hasData = true; }
     }
     if (hasData) weekTotals[wk] = weekPts;
@@ -301,7 +301,7 @@ export function getLeagueAvgPPG(pos, allWeeklyStats, players, scoringSettings, b
     if (!player || normalizePos(player.position) !== normPos) continue;
     for (const w of weeks) {
       if (beforeWeek != null && w.week >= beforeWeek) continue;
-      const pts = calcPoints(w, scoringSettings);
+      const pts = calcPoints(w, scoringSettings, player.position);
       if (pts <= 0) continue;
       const opp = w.opp?.toUpperCase();
       if (!opp) continue;
@@ -384,7 +384,7 @@ export function projectPlayer({
     .sort((a, b) => a.week - b.week);
 
   const gamePts = priorWeekly
-    .map(w => calcPoints(w, scoringSettings))
+    .map(w => calcPoints(w, scoringSettings, pos))
     .filter(p => p > 0);
 
   if (gamePts.length < 2) return null;
@@ -395,7 +395,7 @@ export function projectPlayer({
   // Weighted 60% recent / 40% season so hot/cold streaks propagate quickly
   // into the next projection without completely discarding the season baseline.
   const recentPts = priorWeekly
-    .map(w => calcPoints(w, scoringSettings))
+    .map(w => calcPoints(w, scoringSettings, pos))
     .filter(p => p > 0)
     .slice(-4);
   const recentAvg = recentPts.length >= 2
@@ -408,7 +408,7 @@ export function projectPlayer({
   // ── Home/away factor ──────────────────────────────────────────────────────
   const homeGames = [], awayGames = [];
   for (const w of priorWeekly) {
-    const pts = calcPoints(w, scoringSettings);
+    const pts = calcPoints(w, scoringSettings, pos);
     if (pts > 0) (w.home ? homeGames : awayGames).push(pts);
   }
   const homeAvg = homeGames.length >= 1 ? homeGames.reduce((s,p)=>s+p,0)/homeGames.length : seasonAvg;

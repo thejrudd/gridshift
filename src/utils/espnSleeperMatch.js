@@ -11,7 +11,8 @@
 function normalizeName(name) {
   return (name ?? '')
     .toLowerCase()
-    .replace(/[.''-]/g, '')   // strip punctuation common in names
+    .replace(/\s+(jr|sr|ii|iii|iv|v)\.?$/i, '') // strip generational suffixes
+    .replace(/[.''-]/g, '')                       // strip punctuation common in names
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -34,15 +35,23 @@ export function matchEspnToSleeper(espnPlayer, sleeperPlayers) {
     if (sp.espn_id != null && String(sp.espn_id) === espnId) return sid;
   }
 
-  // Pass 2: normalized name + position
+  // Pass 2: normalized name + position — collect all matches, prefer active player
   const espnName = normalizeName(espnPlayer.displayName);
   const espnPos  = (espnPlayer.position ?? '').toUpperCase();
 
+  const nameMatches = [];
   for (const [sid, sp] of Object.entries(sleeperPlayers)) {
     const sleeperName = normalizeName(sp.full_name ?? `${sp.first_name ?? ''} ${sp.last_name ?? ''}`);
     const sleeperPos  = (sp.position ?? '').toUpperCase();
-    if (sleeperName === espnName && sleeperPos === espnPos) return sid;
+    if (sleeperName === espnName && sleeperPos === espnPos) nameMatches.push([sid, sp]);
   }
 
-  return null;
+  if (nameMatches.length === 0) return null;
+  if (nameMatches.length === 1) return nameMatches[0][0];
+
+  // Multiple matches (e.g. historical players with same name+position):
+  // prefer the active player (has a current team)
+  const active = nameMatches.find(([, sp]) => sp.team);
+  if (active) return active[0];
+  return nameMatches[0][0];
 }

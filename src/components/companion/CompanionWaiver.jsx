@@ -91,14 +91,14 @@ export default function CompanionWaiver({ onViewPlayer }) {
         const pos = p.position;
         if (!SKILL_POSITIONS.has(pos)) return null;
 
-        const pts = calcPointsFromTotals(stats, scoringSettings);
+        const pts = calcPointsFromTotals(stats, scoringSettings, pos);
         if (pts <= 0) return null;
 
         const weekly = weeklyStats?.[id] ?? [];
-        const recentAvg = getRecentAvg(weekly, scoringSettings, 4);
+        const recentAvg = getRecentAvg(weekly, scoringSettings, 4, pos);
 
         // Season average from weekly game scores
-        const gamePts = weekly.map(w => calcPoints(w, scoringSettings)).filter(p => p > 0);
+        const gamePts = weekly.map(w => calcPoints(w, scoringSettings, pos)).filter(p => p > 0);
         const seasonAvg = gamePts.length > 0 ? gamePts.reduce((s, v) => s + v, 0) / gamePts.length : 0;
 
         // Trending: recent avg ≥ 25% above season avg and at least 2 pts higher
@@ -193,7 +193,7 @@ export default function CompanionWaiver({ onViewPlayer }) {
               className="px-3 py-1 rounded-lg text-xs font-semibold transition-colors"
               style={{
                 background: posFilter === pos ? 'var(--color-signature)' : 'var(--color-fill)',
-                color: posFilter === pos ? '#0C0F14' : 'var(--color-label-secondary)',
+                color: posFilter === pos ? 'var(--color-signature-fg)' : 'var(--color-label-secondary)',
               }}
             >
               {pos}

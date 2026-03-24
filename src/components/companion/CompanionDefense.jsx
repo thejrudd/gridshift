@@ -134,7 +134,7 @@ const BREAKDOWN_DEFS = [
   { statKey: 'idp_blk_kick',      scoringKey: 'idp_blk_kick',      label: 'Blk Kick',         showStat: true  },
 ];
 
-function getScoreBreakdown(wEntry, scoringSettings) {
+function getScoreBreakdown(wEntry, scoringSettings, position = null) {
   const settings = { ...DEFAULT_SCORING, ...scoringSettings };
   const items = [];
   for (const { statKey, scoringKey, label, showStat } of BREAKDOWN_DEFS) {
@@ -143,6 +143,19 @@ function getScoreBreakdown(wEntry, scoringSettings) {
     const pts = statVal * settings[scoringKey];
     if (Math.abs(pts) < 0.005) continue;
     items.push({ label, statVal: showStat ? statVal : null, pts });
+  }
+  // Position-specific reception bonuses
+  if (position && wEntry.rec) {
+    const bonusKey = position === 'TE' ? 'bonus_rec_te' : position === 'RB' ? 'bonus_rec_rb' : position === 'WR' ? 'bonus_rec_wr' : null;
+    if (bonusKey && settings[bonusKey]) {
+      const pts = wEntry.rec * settings[bonusKey];
+      if (Math.abs(pts) >= 0.005) items.push({ label: `${position} Rec Bonus`, statVal: wEntry.rec, pts });
+    }
+  }
+  // Per-carry bonus
+  if (position === 'RB' && wEntry.rush_att && settings.bonus_rush_att) {
+    const pts = wEntry.rush_att * settings.bonus_rush_att;
+    if (Math.abs(pts) >= 0.005) items.push({ label: 'Carry Bonus', statVal: wEntry.rush_att, pts });
   }
   return items.sort((a, b) => Math.abs(b.pts) - Math.abs(a.pts));
 }
@@ -226,7 +239,7 @@ function Btn({ active, onClick, children }) {
       className="px-2 py-0.5 rounded text-[10px] font-semibold transition-colors shrink-0"
       style={{
         background: active ? 'var(--color-signature)' : 'var(--color-fill)',
-        color: active ? '#000' : 'var(--color-label-secondary)',
+        color: active ? 'var(--color-signature-fg)' : 'var(--color-label-secondary)',
       }}
     >
       {children}
@@ -330,7 +343,7 @@ export default function CompanionDefense({ onViewPlayer }) {
     const defMode = DEF_STAT_MODES.find(m => m.id === defStatMode);
     const getValue = defMode?.statKey
       ? (wEntry) => wEntry[defMode.statKey] ?? 0
-      : (wEntry) => calcPoints(wEntry, scoringSettings);
+      : (wEntry, pos) => calcPoints(wEntry, scoringSettings, pos);
     const table = {};
     for (const [playerId, playerWeeks] of Object.entries(weeklyStats)) {
       const player = players[playerId];
@@ -338,7 +351,7 @@ export default function CompanionDefense({ onViewPlayer }) {
       const normPos = normDefPos(player.position);
       if (!normPos) continue;
       for (const wEntry of playerWeeks) {
-        const val = getValue(wEntry);
+        const val = getValue(wEntry, player.position);
         if (val <= 0) continue;
         const team = (wEntry.team || player.team)?.toUpperCase();
         if (!team) continue;
@@ -579,9 +592,9 @@ export default function CompanionDefense({ onViewPlayer }) {
         let val;
         if (statMode === 'rec_yd')       val = wEntry.rec_yd  ?? 0;
         else if (statMode === 'rush_yd') val = wEntry.rush_yd ?? 0;
-        else val = calcPoints(wEntry, scoringSettings);
+        else val = calcPoints(wEntry, scoringSettings, player.position);
         if (val <= 0) continue;
-        const breakdown = statMode === 'pts' ? getScoreBreakdown(wEntry, scoringSettings) : null;
+        const breakdown = statMode === 'pts' ? getScoreBreakdown(wEntry, scoringSettings, player.position) : null;
         const name = player.full_name || `${player.first_name ?? ''} ${player.last_name ?? ''}`.trim() || playerId;
         const teamSource = wEntry._teamSource ?? 'fallback';
         results.push({ playerId, name, position: player.position, val, breakdown, teamSource });
@@ -592,7 +605,7 @@ export default function CompanionDefense({ onViewPlayer }) {
       const defMode = DEF_STAT_MODES.find(m => m.id === defStatMode);
       const getDefVal = defMode?.statKey
         ? (wEntry) => wEntry[defMode.statKey] ?? 0
-        : (wEntry) => calcPoints(wEntry, scoringSettings);
+        : (wEntry, pos) => calcPoints(wEntry, scoringSettings, pos);
       for (const [playerId, playerWeeks] of Object.entries(weeklyStats)) {
         const player = players[playerId];
         if (!player) continue;
@@ -612,9 +625,9 @@ export default function CompanionDefense({ onViewPlayer }) {
         }
         if (playerTeam !== team) continue;
 
-        const val = getDefVal(wEntry);
+        const val = getDefVal(wEntry, player.position);
         if (val <= 0) continue;
-        const breakdown = defStatMode === 'pts' ? getScoreBreakdown(wEntry, scoringSettings) : null;
+        const breakdown = defStatMode === 'pts' ? getScoreBreakdown(wEntry, scoringSettings, player.position) : null;
         const name = player.full_name || `${player.first_name ?? ''} ${player.last_name ?? ''}`.trim() || playerId;
         const teamSource = wEntry._teamSource ?? 'fallback';
         results.push({ playerId, name, position: player.position, val, breakdown, teamSource });

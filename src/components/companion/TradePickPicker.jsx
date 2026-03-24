@@ -2,13 +2,13 @@
 // Modal showing draft picks owned by a specific roster for the Trade Agent.
 
 import { useEffect, useMemo } from 'react';
-import { getPicksForRoster, getPickQuality } from '../../utils/tradeEngine';
+import { getPicksForRoster, getPickQuality, pickYearDiscount } from '../../utils/tradeEngine';
 import { findKtcDraftPick, getKtcValue, fmtKtcValue } from '../../utils/ktcApi';
 
 const ORDINALS = { 1: '1st', 2: '2nd', 3: '3rd', 4: '4th', 5: '5th' };
 
 export default function TradePickPicker({
-  rosterId, rosterPicks, slots, rosters, ktcPlayers, leagueType,
+  rosterId, rosterPicks, slots, rosters, ktcPlayers, leagueType, pickValueMap, currentSeason,
   excludeKeys, getUserDisplayName, currentTotal, onSelect, onClose,
 }) {
   useEffect(() => {
@@ -24,8 +24,12 @@ export default function TradePickPicker({
       .filter(p => !excludeSet.has(p.key))
       .map(p => {
         const quality = getPickQuality(p.fromRosterId, rosters);
-        const ktc = findKtcDraftPick(p.year, p.round, quality, ktcPlayers);
-        const val = getKtcValue(ktc, leagueType);
+        const tierVal = pickValueMap?.[p.round] != null
+          ? (pickValueMap[p.round][quality] ?? pickValueMap[p.round].Mid ?? null)
+          : null;
+        const val = tierVal != null
+          ? Math.round(tierVal * pickYearDiscount(p.year, currentSeason))
+          : getKtcValue(findKtcDraftPick(p.year, p.round, quality, ktcPlayers), leagueType);
         const ord = ORDINALS[p.round] ?? `${p.round}th`;
         const originLabel = p.isOwn ? '(Own)' : `(from ${getUserDisplayName(
           rosters.find(r => r.roster_id === p.fromRosterId)?.owner_id ?? ''

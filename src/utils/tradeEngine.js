@@ -4,6 +4,70 @@
 
 import { findKtcPlayerFromSleeper, findKtcDraftPick, getKtcValue } from './ktcApi';
 
+// ── Redraft pick valuation ────────────────────────────────────────────────────
+
+/**
+ * Compute draft pick values for a REDRAFT league by bucketing KTC player values
+ * into draft rounds (leagueSize players per round), then splitting each round
+ * into Early / Mid / Late thirds.
+ *
+ * Uncertainty discount scales with round depth: a 1st-round pick is
+ * relatively predictable; a 15th-round pick is nearly a lottery ticket.
+ * Discount = max(20%, 90% - (round-1) × 7%) — so round 1 ≈ 10% off,
+ * round 5 ≈ 38% off, round 10 ≈ 73% off, round 13+ ≈ 80% off.
+ *
+ * @param {Array}  ktcPlayers - KTC player dataset (redraft-format values)
+ * @param {number} leagueSize - Number of teams (picks per round)
+ * @param {string} leagueType - '1qb' | 'sf'
+ * @returns {{ [round: number]: { Early: number, Mid: number, Late: number } }}
+ */
+export function computeRedraftPickValues(ktcPlayers, leagueSize, leagueType) {
+  if (!ktcPlayers?.length || !leagueSize) return {};
+
+  // All non-RDP players sorted by value desc
+  const ranked = ktcPlayers
+    .filter(k => k.position !== 'RDP')
+    .map(k => getKtcValue(k, leagueType) ?? 0)
+    .filter(v => v > 0)
+    .sort((a, b) => b - a);
+
+  const median = arr => {
+    if (!arr.length) return 0;
+    const s = [...arr].sort((a, b) => a - b);
+    return s[Math.floor(s.length / 2)] ?? 0;
+  };
+
+  const third = Math.max(1, Math.floor(leagueSize / 3));
+  const map = {};
+
+  for (let round = 1; round <= 25; round++) {
+    const start  = (round - 1) * leagueSize;
+    const bucket = ranked.slice(start, start + leagueSize);
+    if (bucket.length === 0) break;
+
+    // Uncertainty increases sharply for later rounds
+    const discount = Math.max(0.20, 0.90 - (round - 1) * 0.07);
+
+    map[round] = {
+      Early: Math.round(median(bucket.slice(0, third))          * discount),
+      Mid:   Math.round(median(bucket.slice(third, third * 2))  * discount),
+      Late:  Math.round(median(bucket.slice(third * 2))         * discount),
+    };
+  }
+
+  return map;
+}
+
+/**
+ * Year-based discount for redraft pick values.
+ * Picks usable sooner are worth more — 10% off per year into the future,
+ * floored at 60% (picks 4+ years out).
+ */
+export function pickYearDiscount(year, currentSeason) {
+  const yearsOut = Math.max(0, parseInt(year) - parseInt(currentSeason));
+  return Math.max(0.60, 1.0 - yearsOut * 0.10);
+}
+
 // ── Draft pick ownership ──────────────────────────────────────────────────────
 
 /**
@@ -21,12 +85,8 @@ import { findKtcPlayerFromSleeper, findKtcDraftPick, getKtcValue } from './ktcAp
 export function buildRosterPicks(tradedPicks, rosters, league, season, draftRounds) {
   if (!tradedPicks || !rosters || !league) return { slots: [], years: [], rosterPicks: {} };
 
-  const MAX_ROUNDS = 5;
   const maxRoundsFromData = tradedPicks.reduce((max, p) => Math.max(max, p.round), 0);
-  const maxRounds = Math.min(
-    Math.max(draftRounds ?? 0, maxRoundsFromData, league.settings?.draft_rounds ?? 3, 3),
-    MAX_ROUNDS,
-  );
+  const maxRounds = Math.max(draftRounds ?? 0, maxRoundsFromData, league.settings?.draft_rounds ?? 3, 3);
   const baseYear = parseInt(season);
 
   const yearSet = new Set([
@@ -147,9 +207,10 @@ export function getPickQuality(rosterId, rosters) {
  * @param {Array}    ktcPlayers     - KTC dataset
  * @param {string}   leagueType     - '1qb' | 'sf'
  * @param {Array}    rosters        - For pick quality estimation
+ * @param {string}   currentSeason  - e.g. "2025" — for year-based pick discount
  * @returns {{ total: number, items: Array<{ id, label, val, type }> }}
  */
-export function valueSide(playerIds, pickItems, sleeperPlayers, ktcPlayers, leagueType, rosters) {
+export function valueSide(playerIds, pickItems, sleeperPlayers, ktcPlayers, leagueType, rosters, pickValueMap, currentSeason) {
   const items = [];
 
   for (const pid of playerIds) {
@@ -169,9 +230,20 @@ export function valueSide(playerIds, pickItems, sleeperPlayers, ktcPlayers, leag
 
   for (const pick of pickItems) {
     const quality = getPickQuality(pick.fromRosterId, rosters);
-    const ktc = findKtcDraftPick(pick.year, pick.round, quality, ktcPlayers);
-    const val = getKtcValue(ktc, leagueType);
     const ord = { 1: '1st', 2: '2nd', 3: '3rd' }[pick.round] ?? `${pick.round}th`;
+
+    // Redraft: use tier-based value derived from actual player rankings
+    // Dynasty / fallback: use KTC RDP entry (already priced by year)
+    let val, ktc;
+    if (pickValueMap?.[pick.round] != null) {
+      const tierVal = pickValueMap[pick.round][quality] ?? pickValueMap[pick.round].Mid ?? null;
+      val = tierVal != null ? Math.round(tierVal * pickYearDiscount(pick.year, currentSeason)) : null;
+      ktc = null;
+    } else {
+      ktc = findKtcDraftPick(pick.year, pick.round, quality, ktcPlayers);
+      val = getKtcValue(ktc, leagueType);
+    }
+
     items.push({
       id: pick.key,
       label: `${pick.year} ${quality} ${ord}`,
@@ -205,89 +277,175 @@ export function evaluateTrade(yourTotal, theirTotal) {
 // ── Package suggestion ────────────────────────────────────────────────────────
 
 /**
- * Suggest trade packages to close a value gap.
+ * Suggest ways to balance a trade: add assets to the weaker side, remove
+ * assets from the stronger side, or swap an asset on either side.
  *
- * @param {number}  gap        - Positive value gap to close
- * @param {Array}   candidates - Array of { id, val, type, label } (available assets on deficit side)
- * @returns Array of up to 3 package options, each: { items: [...], total: number, delta: number }
+ * @param {object} opts
+ *   gap               - Absolute value gap (surplus total − deficit total)
+ *   deficitSide       - 'yours' | 'theirs' (side that needs more value)
+ *   deficitCandidates - Assets on the deficit roster NOT yet in the trade
+ *   deficitItems      - Assets currently in the trade on the deficit side
+ *   surplusItems      - Assets currently in the trade on the surplus side
+ *   surplusCandidates - Assets on the surplus roster NOT yet in the trade
+ *
+ * Each returned option has:
+ *   action  - 'add' | 'remove' | 'swap'
+ *   side    - 'yours' | 'theirs'  (which side the action targets)
+ *   items   - array of assets (for add/remove; for swap, the item being removed)
+ *   remove  - (swap only) item to remove
+ *   add     - (swap only) item to add
+ *   newGap  - gap remaining after this action (negative = over-corrected)
  */
-export function suggestPackage(gap, candidates) {
-  if (gap <= 0 || !candidates?.length) return [];
+export function suggestPackage({ gap, deficitSide, deficitCandidates, deficitItems, surplusItems, surplusCandidates }) {
+  if (gap <= 0) return [];
 
-  // Only consider candidates with known values
-  const pool = candidates.filter(c => c.val != null && c.val > 0).sort((a, b) => b.val - a.val);
-  if (!pool.length) return [];
-
+  const surplusSide = deficitSide === 'yours' ? 'theirs' : 'yours';
   const results = [];
 
-  // Strategy A: Closest single asset
-  let bestSingle = null;
-  let bestSingleDelta = Infinity;
-  for (const c of pool) {
-    const delta = Math.abs(c.val - gap);
-    if (delta < bestSingleDelta && c.val >= gap * 0.80) {
+  // Deduplicate: track suggestion fingerprints already added
+  const seen = new Set();
+  const dedup = (key, fn) => { if (!seen.has(key)) { seen.add(key); fn(); } };
+
+  // ── ADD to deficit side ────────────────────────────────────────────────────
+  const addPool = (deficitCandidates ?? [])
+    .filter(c => c.val != null && c.val > 0)
+    .sort((a, b) => b.val - a.val);
+
+  // A: Closest single asset
+  let bestSingle = null, bestSingleDist = Infinity;
+  for (const c of addPool) {
+    const dist = Math.abs(c.val - gap);
+    if (dist < bestSingleDist && c.val >= gap * 0.75) {
       bestSingle = c;
-      bestSingleDelta = delta;
+      bestSingleDist = dist;
     }
   }
   if (bestSingle) {
-    results.push({
-      items: [bestSingle],
-      total: bestSingle.val,
-      delta: bestSingle.val - gap,
-    });
+    dedup(`add:${bestSingle.id}`, () => results.push({
+      action: 'add', side: deficitSide,
+      items: [bestSingle], newGap: gap - bestSingle.val,
+    }));
   }
 
-  // Strategy B: Greedy best fit (combine multiple assets)
+  // B: Greedy multi-asset (combine assets to fill 85–115% of gap)
   const greedyItems = [];
   let greedyTotal = 0;
-  for (const c of pool) {
+  for (const c of addPool) {
     if (greedyTotal >= gap * 1.15) break;
-    if (greedyTotal + c.val <= gap * 1.15) {
-      greedyItems.push(c);
-      greedyTotal += c.val;
-    }
+    if (greedyTotal + c.val <= gap * 1.15) { greedyItems.push(c); greedyTotal += c.val; }
   }
-  if (greedyItems.length > 1 || (greedyItems.length === 1 && greedyTotal >= gap * 0.80)) {
-    const key = greedyItems.map(i => i.id).sort().join(',');
-    const singleKey = results[0]?.items.map(i => i.id).sort().join(',');
-    if (key !== singleKey) {
-      results.push({ items: greedyItems, total: greedyTotal, delta: greedyTotal - gap });
-    }
+  if (greedyItems.length > 1 && greedyTotal >= gap * 0.85) {
+    const key = `add:${greedyItems.map(i => i.id).sort().join(',')}`;
+    dedup(key, () => results.push({
+      action: 'add', side: deficitSide,
+      items: greedyItems, newGap: gap - greedyTotal,
+    }));
   }
 
-  // Strategy C: Pick-heavy (prefer draft picks over players)
-  const pickFirst = [...pool].sort((a, b) => {
+  // C: Pick-heavy add (prefer draft picks)
+  const pickFirst = [...addPool].sort((a, b) => {
     if (a.type === 'pick' && b.type !== 'pick') return -1;
     if (a.type !== 'pick' && b.type === 'pick') return 1;
     return b.val - a.val;
   });
-  const pickItems = [];
-  let pickTotal = 0;
+  const pickItems = []; let pickTotal = 0;
   for (const c of pickFirst) {
     if (pickTotal >= gap * 1.15) break;
-    if (pickTotal + c.val <= gap * 1.15) {
-      pickItems.push(c);
-      pickTotal += c.val;
-    }
+    if (pickTotal + c.val <= gap * 1.15) { pickItems.push(c); pickTotal += c.val; }
   }
-  if (pickItems.length > 0 && pickTotal >= gap * 0.80) {
-    const key = pickItems.map(i => i.id).sort().join(',');
-    const existing = results.map(r => r.items.map(i => i.id).sort().join(','));
-    if (!existing.includes(key)) {
-      results.push({ items: pickItems, total: pickTotal, delta: pickTotal - gap });
+  if (pickItems.length > 0 && pickTotal >= gap * 0.85) {
+    const key = `add:${pickItems.map(i => i.id).sort().join(',')}`;
+    dedup(key, () => results.push({
+      action: 'add', side: deficitSide,
+      items: pickItems, newGap: gap - pickTotal,
+    }));
+  }
+
+  // ── REMOVE from surplus side ───────────────────────────────────────────────
+  // Find a surplus-side item whose removal brings the gap closest to 0
+  const surplusPool = (surplusItems ?? [])
+    .filter(it => it.val != null && it.val > 0)
+    .sort((a, b) => Math.abs(a.val - gap) - Math.abs(b.val - gap));
+
+  for (const item of surplusPool) {
+    const newGap = gap - item.val;
+    // Accept if it meaningfully closes gap and doesn't over-correct by more than 25%
+    if (Math.abs(newGap) < gap && (newGap >= 0 || Math.abs(newGap) <= gap * 0.25)) {
+      dedup(`remove:${item.id}`, () => results.push({
+        action: 'remove', side: surplusSide,
+        items: [item], newGap,
+      }));
+      break;
     }
   }
 
-  // Sort by closeness to the gap, then fewest items
+  // ── SWAP on surplus side (downgrade a surplus item) ────────────────────────
+  const surplusItemsPool = (surplusItems ?? [])
+    .filter(it => it.val != null && it.val > 0)
+    .sort((a, b) => b.val - a.val);
+  const surplusCandPool = (surplusCandidates ?? [])
+    .filter(c => c.val != null && c.val > 0);
+
+  let bestSurplusSwap = null, bestSurplusSwapDist = Infinity;
+  for (const x of surplusItemsPool) {
+    for (const z of surplusCandPool) {
+      if (z.val >= x.val) continue;          // must be a downgrade
+      if (z.type === x.type && z.type === 'pick') continue; // pick-for-pick swap rarely helpful
+      const newGap = gap - x.val + z.val;
+      const dist = Math.abs(newGap);
+      if (dist < bestSurplusSwapDist && (newGap >= -gap * 0.25)) {
+        bestSurplusSwapDist = dist;
+        bestSurplusSwap = { remove: x, add: z, newGap };
+      }
+    }
+  }
+  if (bestSurplusSwap && bestSurplusSwapDist < gap * 0.9) {
+    const key = `swap:${bestSurplusSwap.remove.id}:${bestSurplusSwap.add.id}`;
+    dedup(key, () => results.push({
+      action: 'swap', side: surplusSide,
+      remove: bestSurplusSwap.remove, add: bestSurplusSwap.add,
+      items: [bestSurplusSwap.remove], newGap: bestSurplusSwap.newGap,
+    }));
+  }
+
+  // ── SWAP on deficit side (upgrade a deficit item) ──────────────────────────
+  const deficitItemsPool = (deficitItems ?? [])
+    .filter(it => it.val != null && it.val > 0)
+    .sort((a, b) => a.val - b.val);
+  const deficitCandPool = (deficitCandidates ?? [])
+    .filter(c => c.val != null && c.val > 0);
+
+  let bestDeficitSwap = null, bestDeficitSwapDist = Infinity;
+  for (const x of deficitItemsPool) {
+    for (const z of deficitCandPool) {
+      if (z.val <= x.val) continue;          // must be an upgrade
+      if (z.type === x.type && z.type === 'pick') continue;
+      const newGap = gap - (z.val - x.val);
+      const dist = Math.abs(newGap);
+      if (dist < bestDeficitSwapDist && (newGap >= -gap * 0.25)) {
+        bestDeficitSwapDist = dist;
+        bestDeficitSwap = { remove: x, add: z, newGap };
+      }
+    }
+  }
+  if (bestDeficitSwap && bestDeficitSwapDist < gap * 0.9) {
+    const key = `swap:${bestDeficitSwap.remove.id}:${bestDeficitSwap.add.id}`;
+    dedup(key, () => results.push({
+      action: 'swap', side: deficitSide,
+      remove: bestDeficitSwap.remove, add: bestDeficitSwap.add,
+      items: [bestDeficitSwap.remove], newGap: bestDeficitSwap.newGap,
+    }));
+  }
+
+  // Sort: closest remaining gap first, then fewest assets touched
   results.sort((a, b) => {
-    const aDelta = Math.abs(a.delta);
-    const bDelta = Math.abs(b.delta);
-    if (aDelta !== bDelta) return aDelta - bDelta;
-    return a.items.length - b.items.length;
+    const da = Math.abs(a.newGap), db = Math.abs(b.newGap);
+    if (da !== db) return da - db;
+    return (a.action === 'add' ? (a.items?.length ?? 1) : 1) -
+           (b.action === 'add' ? (b.items?.length ?? 1) : 1);
   });
 
-  return results.slice(0, 3);
+  return results.slice(0, 4);
 }
 
 /**
@@ -305,7 +463,7 @@ export function suggestPackage(gap, candidates) {
  */
 export function buildCandidatePool(
   rosterId, rosters, excludeIds, excludePickKeys,
-  sleeperPlayers, ktcPlayers, leagueType, rosterPicks, slots
+  sleeperPlayers, ktcPlayers, leagueType, rosterPicks, slots, pickValueMap, currentSeason
 ) {
   const candidates = [];
   const roster = rosters.find(r => r.roster_id === rosterId);
@@ -335,9 +493,13 @@ export function buildCandidatePool(
   for (const pick of ownedPicks) {
     if (excludePickSet.has(pick.key)) continue;
     const quality = getPickQuality(pick.fromRosterId, rosters);
-    const ktc = findKtcDraftPick(pick.year, pick.round, quality, ktcPlayers);
-    const val = getKtcValue(ktc, leagueType);
     const ord = { 1: '1st', 2: '2nd', 3: '3rd' }[pick.round] ?? `${pick.round}th`;
+    const tierVal = pickValueMap?.[pick.round] != null
+      ? (pickValueMap[pick.round][quality] ?? pickValueMap[pick.round].Mid ?? null)
+      : null;
+    const val = tierVal != null
+      ? Math.round(tierVal * pickYearDiscount(pick.year, currentSeason))
+      : getKtcValue(findKtcDraftPick(pick.year, pick.round, quality, ktcPlayers), leagueType);
     candidates.push({
       id: pick.key,
       label: `${pick.year} ${quality} ${ord}`,

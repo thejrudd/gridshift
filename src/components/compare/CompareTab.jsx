@@ -23,6 +23,14 @@ function hexLuminance(hex) {
   return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
 }
 
+// Darken a hex color by multiplying each channel by `factor` (0–1)
+function darkenHex(hex, factor) {
+  const r = Math.round(parseInt(hex.slice(1, 3), 16) * factor);
+  const g = Math.round(parseInt(hex.slice(3, 5), 16) * factor);
+  const b = Math.round(parseInt(hex.slice(5, 7), 16) * factor);
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+}
+
 // ESPN teamId → TEAM_COLORS key (same mismatches as Sleeper)
 const ESPN_TEAM_MAP = { lar: 'la', was: 'wsh' };
 function toTeamKey(espnTeamId) {
@@ -39,7 +47,7 @@ const PANELS = [
 
 // ── CompareTab ────────────────────────────────────────────────────────────────
 
-export default function CompareTab({ teams, initialPlayerA, onConsumeInitialPlayerA, onBuildTrade }) {
+export default function CompareTab({ teams, initialPlayerA, onConsumeInitialPlayerA, onBuildTrade, onViewPlayer }) {
   const { players: sleeperPlayers, hasLeague, loadPlayers, myRoster } = useSleeper();
 
   // ESPN player selections
@@ -65,6 +73,7 @@ export default function CompareTab({ teams, initialPlayerA, onConsumeInitialPlay
   const [pickingSlot, setPickingSlot] = useState(null); // 'A' | 'B' | null
   const [selectedYear, setSelectedYear] = useState(CURRENT_SEASON);
   const [panel, setPanel] = useState('stats');
+  const [tradeVals, setTradeVals] = useState({ valA: null, valB: null, leader: null, maxVal: null, notFoundA: false, notFoundB: false });
 
   // ── Pre-populate player A from Statistics view ──────────────────────────────
 
@@ -194,6 +203,10 @@ export default function CompareTab({ teams, initialPlayerA, onConsumeInitialPlay
           player={playerA}
           onPick={() => setPickingSlot('A')}
           onClear={() => handleClear('A')}
+          onViewPlayer={onViewPlayer}
+          ktcValue={panel === 'trade' ? tradeVals.valA : null}
+          isKtcLeader={panel === 'trade' && tradeVals.leader === 'A'}
+          ktcNotFound={panel === 'trade' && tradeVals.notFoundA}
         />
         <div
           className="flex items-center justify-center shrink-0 text-xs font-bold"
@@ -206,6 +219,10 @@ export default function CompareTab({ teams, initialPlayerA, onConsumeInitialPlay
           player={playerB}
           onPick={() => setPickingSlot('B')}
           onClear={() => handleClear('B')}
+          onViewPlayer={onViewPlayer}
+          ktcValue={panel === 'trade' ? tradeVals.valB : null}
+          isKtcLeader={panel === 'trade' && tradeVals.leader === 'B'}
+          ktcNotFound={panel === 'trade' && tradeVals.notFoundB}
         />
       </div>
 
@@ -241,6 +258,7 @@ export default function CompareTab({ teams, initialPlayerA, onConsumeInitialPlay
           playerB={playerB}
           sleeperPlayerA={sleeperIdA && sleeperPlayers ? sleeperPlayers[sleeperIdA] : null}
           sleeperPlayerB={sleeperIdB && sleeperPlayers ? sleeperPlayers[sleeperIdB] : null}
+          onValuesChange={setTradeVals}
           onBuildTrade={(() => {
             if (!onBuildTrade || !hasLeague) return null;
             const rosterPlayers = myRoster()?.players ?? [];
@@ -281,7 +299,7 @@ export default function CompareTab({ teams, initialPlayerA, onConsumeInitialPlay
 
 // ── PlayerSlot ────────────────────────────────────────────────────────────────
 
-function PlayerSlot({ label, player, onPick, onClear }) {
+function PlayerSlot({ label, player, onPick, onClear, onViewPlayer, ktcValue, isKtcLeader, ktcNotFound }) {
   const { darkMode } = useTheme();
 
   if (!player) {
@@ -311,6 +329,12 @@ function PlayerSlot({ label, player, onPick, onClear }) {
   const teamColor = palette ? (darkMode ? palette.darkPrimary : palette.primary) : null;
   const isLight = teamColor ? hexLuminance(teamColor) > 0.35 : false;
   const tintBg = teamColor ? `${teamColor}${isLight ? '18' : '22'}` : 'var(--color-fill)';
+  // Darken light-colored borders in light mode so they're visible on the cream background
+  const borderColor = teamColor
+    ? (!darkMode && isLight ? darkenHex(teamColor, 0.55) : teamColor)
+    : null;
+
+  const showKtcExtension = ktcValue != null || ktcNotFound;
 
   return (
     <div
@@ -321,7 +345,7 @@ function PlayerSlot({ label, player, onPick, onClear }) {
       className="flex-1 rounded-xl px-3 py-2.5 flex items-center gap-2.5 relative overflow-hidden cursor-pointer"
       style={{
         background: tintBg,
-        borderLeft: teamColor ? `3px solid ${teamColor}` : '3px solid transparent',
+        borderLeft: borderColor ? `3px solid ${borderColor}` : '3px solid transparent',
       }}
     >
       <PlayerThumb id={player.id} name={player.displayName} />
@@ -336,7 +360,11 @@ function PlayerSlot({ label, player, onPick, onClear }) {
             onError={e => { e.target.style.display = 'none'; }}
           />
         )}
-        <div className="text-sm font-semibold truncate" style={{ color: 'var(--color-label)' }}>
+        <div
+          className="text-sm font-semibold truncate"
+          style={{ color: onViewPlayer ? 'var(--color-accent)' : 'var(--color-label)', cursor: onViewPlayer ? 'pointer' : 'default', textDecoration: onViewPlayer ? 'underline' : 'none', textUnderlineOffset: '2px' }}
+          onClick={onViewPlayer ? e => { e.stopPropagation(); onViewPlayer(player); } : undefined}
+        >
           {player.displayName}
         </div>
         <div className="text-xs truncate" style={{ color: 'var(--color-label-secondary)' }}>
@@ -355,6 +383,21 @@ function PlayerSlot({ label, player, onPick, onClear }) {
           >
             {player.status}
           </span>
+        )}
+
+        {/* KTC value extension — only shown in Trade tab */}
+        {showKtcExtension && (
+          <div className="mt-1.5">
+            <span className="text-[10px] uppercase tracking-widest" style={{ color: 'var(--color-label-quaternary)' }}>
+              Trade Value{' '}
+            </span>
+            <span
+              className="text-xs font-bold tabular-nums"
+              style={{ color: isKtcLeader ? 'var(--color-signature)' : 'var(--color-label)' }}
+            >
+              {ktcValue != null ? ktcValue.toLocaleString() : 'Not in KTC'}
+            </span>
+          </div>
         )}
       </div>
 

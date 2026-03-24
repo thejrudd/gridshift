@@ -63,7 +63,7 @@ export default function CompanionConnect() {
                   className="px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors"
                   style={{
                     background: season === s ? 'var(--color-signature)' : 'var(--color-fill)',
-                    color: season === s ? '#0C0F14' : 'var(--color-label-secondary)',
+                    color: season === s ? 'var(--color-signature-fg)' : 'var(--color-label-secondary)',
                   }}
                 >
                   {s}

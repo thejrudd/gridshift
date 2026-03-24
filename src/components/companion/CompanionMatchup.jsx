@@ -100,7 +100,7 @@ export default function CompanionMatchup({ onViewPlayer }) {
       if (!p) continue;
       const pos = normalizePos(p.position);
       if (!pos) continue;
-      const pts = calcPoints(weekEntry, scoringSettings);
+      const pts = calcPoints(weekEntry, scoringSettings, p.position);
       if (pts <= 0) continue;
       if (!byPos[pos]) byPos[pos] = [];
       byPos[pos].push({ id: playerId, pts });
@@ -156,8 +156,8 @@ export default function CompanionMatchup({ onViewPlayer }) {
       name: p.full_name || `${p.first_name} ${p.last_name}`,
       position: p.position,
       team: myTeam,
-      weekPts: weekEntry ? calcPoints(weekEntry, scoringSettings) : null,
-      avgPPG: getAvgPPG(weekly, scoringSettings),
+      weekPts: weekEntry ? calcPoints(weekEntry, scoringSettings, p.position) : null,
+      avgPPG: getAvgPPG(weekly, scoringSettings, p.position),
       rank: positionalRanks[id] ?? null,
       weekRank: weeklyRanks[id] ?? null,
       oppTeam,
@@ -530,7 +530,7 @@ function PlayerInfo({ player, align = 'left' }) {
           /* Post-game: score is the headline, colored by position within projected range */
           <>
             <span className="text-xs tabular-nums font-bold" style={{ color: scoreColor }}>
-              {weekPts.toFixed(1)} pts
+              {weekPts.toFixed(2)} pts
             </span>
             {projMin != null && projMax != null && (
               <span className="text-xs tabular-nums" style={{ color: 'var(--color-label-quaternary)' }}>

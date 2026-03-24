@@ -8,8 +8,6 @@ Open bugs are listed first, fixed bugs below. Add new entries at the bottom of e
 
 | Bug |
 |-----|
-| Table labels in Compare mode are abbreviated in a way that doesn't make sense sometimes. |
-| In light mode, the team color has extremely low contrast with background text if the background text is a dark color. |
 
 ---
 
@@ -85,3 +83,31 @@ Open bugs are listed first, fixed bugs below. Add new entries at the bottom of e
 | Build Full Trade button greyed out with no explanation | v5.5.8 |
 | Roster → Trade: selecting a trade partner after arriving from Roster wiped the pre-populated player (clearTrade reset yourPlayers) | v5.5.8 |
 | Their Side player cards in Trade Agent had no team color theming | v5.5.8 |
+| Compare Trade value cards separate from player slot headers — KTC value now shown inline in the player hero card, extending it to include the asset value and bar | v5.5.9 |
+| Light mode team color borders nearly invisible for teams with light primary colors (e.g. Steelers gold) — border color now darkened by 45% when the team's primary color has high luminance in light mode | v5.5.9 |
+| Compare → Trade: KTC value bar/divider lines overlap the team logo watermark in the player hero card — right padding added to KTC extension div | v5.6.0 |
+| Beta badge used hardcoded `color: '#000'` which becomes unreadable when a dark team color overrides `--color-signature` — changed to `var(--color-signature-fg)` | v5.6.0 |
+| Compare → Trade hero card KTC value shown with divider line and bar — replaced with clean "Trade Value X,XXX" label text | v5.6.1 |
+| All active pill filters, tab buttons, and section headers using `var(--color-signature)` as background had hardcoded `#0C0F14` text — unreadable when a dark team color overrides the signature variable. Fixed across 9 files. | v5.6.2 |
+| Trade Analysis dynasty window labels (Emerging/Prime/Late Prime/Veteran) used flat age thresholds instead of position-adjusted ones — RBs and QBs were treated identically | v5.6.3 |
+| Trade Agent "Your Side" / "Their Side" header text used hardcoded `#0C0F14` when highlighted — unreadable against dark team color overrides | v5.6.4 |
+| Draft picks in rounds 4+ had no value in Trade Agent — `MAX_ROUNDS` capped at 5 and KTC has no RDP entries for late rounds; fixed by removing cap and adding late-round decay estimation | v5.6.4 |
+| Trade refinement only suggested additions, leading to trade creep — now also suggests removals from the surplus side and swaps on either side | v5.6.5 |
+| Draft pick values in redraft leagues used KTC dynasty RDP entries — wildly front-loaded (rounds 4+ near zero) and not calibrated to redraft; replaced with tier-based model derived from KTC redraft player rankings | v5.6.6 |
+| Refinement Options "Favors You/Them" label was inverted — "Your Side"/"Their Side" refer to what each party gives, so the surplus giver determines who benefits; logic corrected | v5.6.6 |
+| Trade Analysis showed Buy/Hold/Sell signals not applicable to redraft leagues — removed Signal row; replaced with Season PPG and Recent Form rows computed from Sleeper stats | v5.6.7 |
+| Compare → Trade Analysis Player Outlook only showed Age — Season PPG/Recent Form required stats that never loaded in Compare tab; fixed by auto-triggering loadSeasonStats + loadPlayers; added Team and Season Rank rows | v5.6.8 |
+| Player Outlook had no defense context or weekly ranking data — added Top-10 Wks (weekly positional finishes) and D Split (avg pts vs tough/soft defenses) using heatmap defense table | v5.6.9 |
+| Player Outlook Top-10 Wks was an aggregate count with no per-stat detail — replaced with Stat Rankings section showing each player's positional rank per stat category, both shown side-by-side | v5.7.0 |
+| D Split was unlabeled and binary (tough/soft) with no position context — redesigned with position-specific sub-header (Pass D/Rush D/WR D/TE D), 3 tiers (Tough/Mid/Soft), and TE combination WR D view | v5.7.1 |
+| Player Outlook mixed fantasy and raw stat rows with no labeling — reorganized into Fantasy Performance, Raw Stat Leaders, and Defense Analysis sub-sections | v5.7.1 |
+| `bonus_rec_te`, `bonus_rec_rb`, `bonus_rec_wr` not imported from Sleeper — `scoringSettings` was initialized from stale localStorage instead of re-deriving from persisted `league.scoring_settings` on startup; TE premium showed as "None" even when set in Sleeper | v5.7.5 |
+| TE/RB/WR per-position reception bonuses not visible in Companion → Scoring — missing from `STAT_GROUPS` | v5.7.5 |
+| Position-specific scoring bonuses (`bonus_rec_te`, `bonus_rec_rb`, `bonus_rec_wr`, `bonus_rush_att`) silently skipped in all Companion views, rankings, projections, and Compare except Trade — `calcPoints` was called without position context at 14+ call sites | v5.8.0 |
+| `bonus_rush_att` (per-carry bonus) not scored or displayed anywhere — missing from DEFAULT_SCORING, calcPoints, and CompanionScoring | v5.8.0 |
+| 9 big-play bonus fields (`bonus_pass_td_40p`, `bonus_pass_cmp_40p`, `bonus_rec_40p`, etc.) not scored, not displayed in Companion → Scoring, and missing from KTC multipliers | v5.8.1 |
+| Point values in Companion → Matchup player rows rounded to 1 decimal place instead of 2 | v5.8.1 |
+| IDP Hit on QB and Pass Defended not scoring — Sleeper weekly stats use `idp_qb_hit` / `idp_pass_def` but `STAT_TO_SCORING_KEY` only had `idp_qbhit` / `idp_pd` | v5.8.1 |
+| Position-specific bonuses silently skipped in `projectPlayer`, `getDefenseStrength`, `getLeagueAvgPPG`, and CompanionDefense Defense Scored — 7 `calcPoints` calls missing the position argument | v5.8.1 |
+| Big-play bonus fields (`bonus_pass_td_40p`, etc.) imported from Sleeper under wrong key — Sleeper `scoring_settings` uses short form (`pass_td_40p`) but `calcPoints` looks up `bonus_pass_td_40p`; all 9 big-play bonuses stayed at 0 despite non-zero league settings | v5.8.2 |
+| Pick 6 Thrown (`pass_int_td` / `int_ret_td`) missing entirely — not in DEFAULT_SCORING, STAT_TO_SCORING_KEY, or CompanionScoring | v5.8.2 |
