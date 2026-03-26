@@ -216,7 +216,7 @@ export function getPickQuality(rosterId, rosters) {
  * @param {string}   currentSeason  - e.g. "2025" — for year-based pick discount
  * @returns {{ total: number, items: Array<{ id, label, val, type }> }}
  */
-export function valueSide(playerIds, pickItems, sleeperPlayers, ktcPlayers, leagueType, rosters, pickValueMap, currentSeason, dynastyFallbackPlayers = null) {
+export function valueSide(playerIds, pickItems, sleeperPlayers, ktcPlayers, leagueType, rosters, pickValueMap, currentSeason, dynastyFallbackPlayers = null, idpValueMap = null) {
   const items = [];
 
   for (const pid of playerIds) {
@@ -235,6 +235,13 @@ export function valueSide(playerIds, pickItems, sleeperPlayers, ktcPlayers, leag
       }
     }
 
+    // IDP/DST fallback — production-computed value (already on same scale as KTC)
+    let idpFallback = false;
+    if (rawVal == null && idpValueMap?.has(pid)) {
+      rawVal = idpValueMap.get(pid);
+      idpFallback = true;
+    }
+
     // Null = KTC not loaded yet (shows "—"). 0 = loaded but no value found.
     const val = rawVal ?? (ktcPlayers.length > 0 ? 0 : null);
     items.push({
@@ -244,6 +251,7 @@ export function valueSide(playerIds, pickItems, sleeperPlayers, ktcPlayers, leag
       team: sp?.team ?? '',
       val,
       dynastyFallback,
+      idpFallback,
       type: 'player',
       ktcEntry: ktc,
     });
@@ -485,7 +493,7 @@ export function suggestPackage({ gap, deficitSide, deficitCandidates, deficitIte
 export function buildCandidatePool(
   rosterId, rosters, excludeIds, excludePickKeys,
   sleeperPlayers, ktcPlayers, leagueType, rosterPicks, slots, pickValueMap, currentSeason,
-  { dynastyKtcPlayers, seasonStats, scoringSettings, positionalValuePerPPG, positionalAvgPPG, rankMap } = {},
+  { dynastyKtcPlayers, seasonStats, scoringSettings, positionalValuePerPPG, positionalAvgPPG, rankMap, idpValueMap } = {},
 ) {
   const candidates = [];
   const roster = rosters.find(r => r.roster_id === rosterId);
@@ -506,12 +514,16 @@ export function buildCandidatePool(
       const dVal = getKtcValue(dKtc, leagueType);
       if (dVal != null) { rawVal = Math.round(dVal * DYNASTY_FALLBACK_MULT); dynastyFallback = true; }
     }
+    // IDP/DST fallback — production-computed value (already calibrated to skill position scale)
+    const isIDPDSTFallback = rawVal == null && idpValueMap?.has(pid);
+    if (isIDPDSTFallback) rawVal = idpValueMap.get(pid);
     rawVal = rawVal ?? (ktcPlayers?.length > 0 ? 0 : null);
 
-    // Production adjustment for all players; dynasty-fallback uses PPG-calibrated path
+    // Production adjustment for skill positions only.
+    // IDP/DST values from idpValueMap are already production-derived — skip further adjustment.
     let val = rawVal;
     const pos = sp?.position ?? '';
-    if (seasonStats && scoringSettings) {
+    if (seasonStats && scoringSettings && !isIDPDSTFallback) {
       const stats = seasonStats[pid];
       const gp = stats?.gp ?? 0;
       const pts = stats ? calcPointsFromTotals(stats, scoringSettings, pos) : null;
@@ -528,8 +540,8 @@ export function buildCandidatePool(
       }
     }
 
-    // Layer 2 — rank-percentile nudge (±12%)
-    const rankInfo = rankMap?.[pid] ?? null;
+    // Layer 2 — rank-percentile nudge (±12%, skill positions only)
+    const rankInfo = (!isIDPDSTFallback && rankMap?.[pid]) ?? null;
     if (rankInfo?.rank != null && rankInfo?.posCount > 1) {
       const percentile = 1 - (rankInfo.rank - 1) / (rankInfo.posCount - 1);
       val = Math.round((val ?? 0) * (0.88 + 0.24 * percentile));

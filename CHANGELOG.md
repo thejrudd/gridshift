@@ -703,3 +703,15 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Fantasy Stat Leaders section added to Player Outlook** — New section between Fantasy Performance and Raw Stat Leaders. Shows each player's positional rank for each stat category ranked by fantasy points earned, not counting stats. Only stat categories that have a non-zero scoring multiplier in your league are shown (e.g. receptions are excluded in standard scoring, included in PPR). Top-10 only. Color-coded: green = top 3, amber = top 7, default = 8–10.
 - **TE premium aware** — For TEs, the receptions rank accounts for both the base reception points and the TE premium (`bonus_rec_te`), giving an accurate fantasy-weighted ranking.
 - **Distinct from Raw Stat Leaders** — Fantasy Stat Leaders reflects scoring value (how many pts did this player generate from each stat); Raw Stat Leaders reflects production volume (how many yards, TDs, receptions). A player can rank lower in raw stats but higher in fantasy pts if their league values that stat heavily.
+
+---
+
+## v5.8.8 — Trade Agent Defensive Values & Wiki Seed
+*2026-03-26*
+
+- **IDP / D/ST fallback values in Trade Agent** — Defensive players with no KTC listing now get production-based fallback trade values anchored to the same value-per-PPG scale as skill positions. `aggregateSeasonStats()` now backfills `gp` from weekly entry count when Sleeper omits it for defensive rows, preventing active IDP/DST assets from collapsing to zero.
+- **Trade pickers aligned for defensive players** — The selected-roster `+ Player` modal now uses the same defensive fallback value path as `View Roster & Picks`, exposes LB / DB / D/ST filter chips in global search, groups defensive sub-positions under DL / LB / DB / DEF, adds inline multi-add with persistent checkmarks in roster pickers, and suppresses misleading additive side totals when selecting a player would switch partners.
+- **Trade picker UX polish** — Search inputs in the player picker now disable browser autocomplete/autofill behavior, sticky position headers in roster pickers render with an opaque background while scrolling, and already-added assets are visibly dimmed and locked from re-selection.
+- **Valuation modal defensive scoring cleanup** — "How Values Are Calculated" now shows a shorter defensive valuation explanation and only renders IDP or D/ST scoring rows when that scoring type is actually enabled and active for the league.
+- **Heatmap load-time optimization** — Companion → Heatmap now builds offense tables through a cached local path, shows a lightweight "Preparing heatmap…" loading state during stat enhancement, and avoids unnecessary table work while background enhancement is still running.
+- **Repo docs starter** — Added an Obsidian-friendly `docs/` folder with linked notes for architecture, feature areas, edit entry points, and project conventions to seed a future in-repo wiki.

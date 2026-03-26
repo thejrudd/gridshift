@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef, startTransition } from 'react';
 import {
   getUserByUsername,
   getLeaguesForUser,
@@ -71,6 +71,7 @@ export function SleeperProvider({ children }) {
   const [seasonStats, setSeasonStats] = useState(null);  // { [playerId]: aggregated }
   const [scheduleMap, setScheduleMap] = useState(null);  // { [week]: { [teamAbbr]: { opp, home } } }
   const [statsLoading, setStatsLoading] = useState(false);
+  const [statsEnhancing, setStatsEnhancing] = useState(false);
   const [statsProgress, setStatsProgress] = useState(0);
   const [espnIdOverrides, setEspnIdOverrides] = useState({}); // sleeperId → espnId, for null-espn_id players resolved via Pass 2
 
@@ -80,6 +81,13 @@ export function SleeperProvider({ children }) {
 
   const statsAbortRef = useRef(null);
   const qbOppSeasonRef = useRef(null); // tracks which season QB opp data has been merged
+  const enhancementRunRef = useRef({
+    token: 0,
+    season: null,
+    weeklyStats: null,
+    players: null,
+    scheduleMap: null,
+  });
 
   // Persist key state to localStorage
   useEffect(() => {
@@ -157,6 +165,7 @@ export function SleeperProvider({ children }) {
     setWeeklyStats(null);
     setSeasonStats(null);
     setScheduleMap(null);
+    setStatsEnhancing(false);
     statsAbortRef.current = false; // allow fresh load after reconnect
     qbOppSeasonRef.current = null;
     localStorage.removeItem(STORAGE_KEY);
@@ -167,6 +176,7 @@ export function SleeperProvider({ children }) {
     setSeason(newSeason);
     setWeeklyStats(null);
     setSeasonStats(null);
+    setStatsEnhancing(false);
     statsAbortRef.current = false; // allow reload on season change
     qbOppSeasonRef.current = null;
 
@@ -202,6 +212,7 @@ export function SleeperProvider({ children }) {
     statsAbortRef.current = true;
     qbOppSeasonRef.current = null; // allow player team enhancement to re-run
     setStatsLoading(true);
+    setStatsEnhancing(true);
     setStatsProgress(0);
 
     try {
@@ -216,6 +227,7 @@ export function SleeperProvider({ children }) {
       setScheduleMap(schedule);
     } catch (err) {
       console.error('Failed to load stats:', err);
+      setStatsEnhancing(false);
     } finally {
       statsAbortRef.current = false;
       setStatsLoading(false);
@@ -244,8 +256,22 @@ export function SleeperProvider({ children }) {
   useEffect(() => {
     if (statsLoading || !weeklyStats || !players || !scheduleMap || qbOppSeasonRef.current === season) return;
 
-    let cancelled = false;
     const capturedSeason = season;
+    const sameRunInputs =
+      enhancementRunRef.current.season === capturedSeason &&
+      enhancementRunRef.current.weeklyStats === weeklyStats &&
+      enhancementRunRef.current.players === players &&
+      enhancementRunRef.current.scheduleMap === scheduleMap;
+    if (sameRunInputs) return;
+
+    const token = enhancementRunRef.current.token + 1;
+    enhancementRunRef.current = {
+      token,
+      season: capturedSeason,
+      weeklyStats,
+      players,
+      scheduleMap,
+    };
 
     const run = async () => {
       // Build reverse-lookup maps from the scheduleMap so we can resolve
@@ -286,7 +312,6 @@ export function SleeperProvider({ children }) {
       const noEspnId = allEnhanceable.filter(id => !players[id]?.espn_id);
 
       const candidates = withEspnId;
-
       // Collect all enhancement results across passes, then apply in one setWeeklyStats call.
       // Each entry: { [sleeperId]: { [week]: { team, opp, source } } }
       const allEnhancements = {};
@@ -318,7 +343,7 @@ export function SleeperProvider({ children }) {
               .catch(() => null)
           )
         );
-        if (cancelled) return;
+        if (enhancementRunRef.current.token !== token) return;
 
         const pass1Data = resolveEventMaps(candidates, eventMaps);
         Object.assign(allEnhancements, pass1Data);
@@ -330,46 +355,6 @@ export function SleeperProvider({ children }) {
       // current team's ESPN roster and matching by name, then run the same
       // eventlog pipeline.
       const noEspnCandidates = noEspnId.filter(id => players[id]?.team);
-
-      if (noEspnCandidates.length > 0 && !cancelled) {
-        const teamsNeeded = [...new Set(noEspnCandidates.map(id => players[id].team.toUpperCase()))];
-        const rosterResults = await Promise.all(
-          teamsNeeded.map(t => fetchRoster(t).catch(() => []))
-        );
-        if (cancelled) return;
-
-        const teamRosters = {};
-        teamsNeeded.forEach((t, i) => { teamRosters[t] = rosterResults[i]; });
-
-        const normalizeName = (name) =>
-          (name ?? '').toLowerCase().replace(/\./g, '').replace(/\s+(jr|sr|ii|iii|iv|v)$/i, '').trim();
-
-        const resolvedEspnIds = {};
-        for (const sleeperId of noEspnCandidates) {
-          const p = players[sleeperId];
-          const roster = teamRosters[p.team.toUpperCase()] ?? [];
-          const normSleeper = normalizeName(p.full_name);
-          const match = roster.find(r => r.displayName.toLowerCase() === p.full_name?.toLowerCase())
-            ?? roster.find(r => normalizeName(r.displayName) === normSleeper);
-          if (match) resolvedEspnIds[sleeperId] = match.id;
-        }
-
-        const resolvedIds = Object.keys(resolvedEspnIds);
-        if (resolvedIds.length > 0) setEspnIdOverrides(prev => ({ ...prev, ...resolvedEspnIds }));
-
-        if (resolvedIds.length > 0 && !cancelled) {
-          const eventMaps2 = await Promise.all(
-            resolvedIds.map(id =>
-              fetchPlayerGameTeamMap(String(resolvedEspnIds[id]), capturedSeason)
-                .catch(() => null)
-            )
-          );
-          if (cancelled) return;
-
-          const pass2Data = resolveEventMaps(resolvedIds, eventMaps2);
-          Object.assign(allEnhancements, pass2Data);
-        }
-      }
 
       // ── Pass 3: Schedule-based verification for remaining players ──────────
       // Players not resolved by Passes 1/2 (e.g. defensive players whose ESPN
@@ -399,28 +384,103 @@ export function SleeperProvider({ children }) {
 
       // ── Apply all enhancements in a single state update ────────────────────
       const enhancedPlayerIds = Object.keys(allEnhancements);
-      if (enhancedPlayerIds.length > 0) {
-        setWeeklyStats(prev => {
-          const next = { ...prev };
-          for (const sleeperId of enhancedPlayerIds) {
-            if (!next[sleeperId]) continue;
-            const weekMap = allEnhancements[sleeperId];
-            next[sleeperId] = next[sleeperId].map(wEntry => {
-              const data = weekMap[wEntry.week];
-              if (!data) return wEntry;
-              const source = data.source ?? 'espn';
-              return { ...wEntry, team: data.team, opp: data.opp, _teamSource: source };
+      const queueBackgroundPass2 = () => {
+        if (!noEspnCandidates.length) return;
+        const runBackgroundPass2 = async () => {
+          const teamsNeeded = [...new Set(noEspnCandidates.map(id => players[id].team.toUpperCase()))];
+          const rosterResults = await Promise.all(
+            teamsNeeded.map(t => fetchRoster(t).catch(() => []))
+          );
+          if (enhancementRunRef.current.token !== token) return;
+
+          const teamRosters = {};
+          teamsNeeded.forEach((t, i) => { teamRosters[t] = rosterResults[i]; });
+
+          const normalizeName = (name) =>
+            (name ?? '').toLowerCase().replace(/\./g, '').replace(/\s+(jr|sr|ii|iii|iv|v)$/i, '').trim();
+
+          const resolvedEspnIds = {};
+          for (const sleeperId of noEspnCandidates) {
+            const p = players[sleeperId];
+            const roster = teamRosters[p.team.toUpperCase()] ?? [];
+            const normSleeper = normalizeName(p.full_name);
+            const match = roster.find(r => r.displayName.toLowerCase() === p.full_name?.toLowerCase())
+              ?? roster.find(r => normalizeName(r.displayName) === normSleeper);
+            if (match) resolvedEspnIds[sleeperId] = match.id;
+          }
+
+          const resolvedIds = Object.keys(resolvedEspnIds);
+          if (resolvedIds.length > 0) {
+            startTransition(() => {
+              setEspnIdOverrides(prev => ({ ...prev, ...resolvedEspnIds }));
             });
           }
-          return next;
+
+          if (resolvedIds.length > 0) {
+            const eventMaps2 = await Promise.all(
+              resolvedIds.map(id =>
+                fetchPlayerGameTeamMap(String(resolvedEspnIds[id]), capturedSeason)
+                  .catch(() => null)
+              )
+            );
+            if (enhancementRunRef.current.token !== token) return;
+
+            const pass2Data = resolveEventMaps(resolvedIds, eventMaps2);
+            const pass2PlayerIds = Object.keys(pass2Data);
+            if (pass2PlayerIds.length > 0) {
+              startTransition(() => {
+                setWeeklyStats(prev => {
+                  const next = { ...prev };
+                  for (const sleeperId of pass2PlayerIds) {
+                    if (!next[sleeperId]) continue;
+                    const weekMap = pass2Data[sleeperId];
+                    next[sleeperId] = next[sleeperId].map(wEntry => {
+                      const data = weekMap[wEntry.week];
+                      if (!data) return wEntry;
+                      return { ...wEntry, team: data.team, opp: data.opp, _teamSource: 'espn' };
+                    });
+                  }
+                  return next;
+                });
+              });
+            }
+          }
+        };
+
+        setTimeout(() => {
+          void runBackgroundPass2();
+        }, 0);
+      };
+
+      if (enhancedPlayerIds.length > 0) {
+        startTransition(() => {
+          setWeeklyStats(prev => {
+            const next = { ...prev };
+            for (const sleeperId of enhancedPlayerIds) {
+              if (!next[sleeperId]) continue;
+              const weekMap = allEnhancements[sleeperId];
+              next[sleeperId] = next[sleeperId].map(wEntry => {
+                const data = weekMap[wEntry.week];
+                if (!data) return wEntry;
+                const source = data.source ?? 'espn';
+                return { ...wEntry, team: data.team, opp: data.opp, _teamSource: source };
+              });
+            }
+            return next;
+          });
+          setStatsEnhancing(false);
+        });
+      } else {
+        startTransition(() => {
+          setStatsEnhancing(false);
         });
       }
 
       qbOppSeasonRef.current = capturedSeason;
+      queueBackgroundPass2();
     };
 
     run();
-    return () => { cancelled = true; };
   }, [statsLoading, weeklyStats, players, scheduleMap, season]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Derived helpers ─────────────────────────────────────────────────────────
@@ -459,6 +519,7 @@ export function SleeperProvider({ children }) {
       seasonStats,
       scheduleMap,
       statsLoading,
+      statsEnhancing,
       statsProgress,
       espnIdOverrides,
       connectError,

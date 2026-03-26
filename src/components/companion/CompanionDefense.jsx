@@ -1,7 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSleeper } from '../../context/SleeperContext';
 import { useTheme } from '../../context/ThemeContext';
-import { buildDefenseTable } from '../../utils/projectionEngine';
 import { calcPoints, DEFAULT_SCORING } from '../../utils/scoringEngine';
 import { STADIUMS } from '../../data/stadiums';
 import { TEAM_COLORS } from '../../data/teamColors';
@@ -13,9 +12,78 @@ const OFF_POSITIONS = ['ALL', 'QB', 'RB', 'WR', 'TE', 'K'];
 const DEF_POSITIONS = ['ALL', 'DL', 'LB', 'DB'];
 const WEEKS = Array.from({ length: 18 }, (_, i) => i + 1);
 const ALL_TEAMS = Object.keys(STADIUMS).sort();
+const OFFENSE_POS_SET = new Set(['QB', 'RB', 'WR', 'TE', 'K']);
 
 const DEF_POS_GROUPS = { DL: ['DL','DE','DT'], LB: ['LB','ILB','OLB'], DB: ['DB','CB','S','SS','FS'] };
 const normDefPos = (pos) => { for (const [n, s] of Object.entries(DEF_POS_GROUPS)) if (s.includes(pos)) return n; return null; };
+
+const HEATMAP_OFFENSE_TABLE_CACHE = new WeakMap();
+
+function getCachedOffenseAllowedTable(weeklyStats, players, scheduleMap, scoringSettings, statMode) {
+  let byPlayers = HEATMAP_OFFENSE_TABLE_CACHE.get(weeklyStats);
+  if (!byPlayers) {
+    byPlayers = new WeakMap();
+    HEATMAP_OFFENSE_TABLE_CACHE.set(weeklyStats, byPlayers);
+  }
+
+  let bySchedule = byPlayers.get(players);
+  if (!bySchedule) {
+    bySchedule = new WeakMap();
+    byPlayers.set(players, bySchedule);
+  }
+
+  let byScoring = bySchedule.get(scheduleMap);
+  if (!byScoring) {
+    byScoring = new WeakMap();
+    bySchedule.set(scheduleMap, byScoring);
+  }
+
+  let byStatMode = byScoring.get(scoringSettings);
+  if (!byStatMode) {
+    byStatMode = new Map();
+    byScoring.set(scoringSettings, byStatMode);
+  }
+
+  if (byStatMode.has(statMode)) return byStatMode.get(statMode);
+
+  const table = {};
+  const fallbackSeasonTeam = {};
+
+  const addVal = (team, position, week, val) => {
+    if (!table[team]) table[team] = {};
+    if (!table[team][position]) table[team][position] = {};
+    table[team][position][week] = (table[team][position][week] ?? 0) + val;
+  };
+
+  for (const [playerId, playerWeeks] of Object.entries(weeklyStats)) {
+    const player = players[playerId];
+    const position = player?.position;
+    if (!OFFENSE_POS_SET.has(position)) continue;
+
+    for (const wEntry of playerWeeks) {
+      let val;
+      if (statMode === 'rec_yd') val = wEntry.rec_yd ?? 0;
+      else if (statMode === 'rush_yd') val = wEntry.rush_yd ?? 0;
+      else val = calcPoints(wEntry, scoringSettings, position);
+      if (val <= 0) continue;
+
+      let team = wEntry.team?.toUpperCase() ?? null;
+      if (!team) {
+        team = fallbackSeasonTeam[playerId];
+        if (team === undefined) {
+          const enhanced = playerWeeks.find(w => w._teamSource === 'espn' && w.team);
+          team = enhanced?.team?.toUpperCase() ?? player.team?.toUpperCase() ?? null;
+          fallbackSeasonTeam[playerId] = team;
+        }
+      }
+      if (!team) continue;
+      addVal(team, position, wEntry.week, val);
+    }
+  }
+
+  byStatMode.set(statMode, table);
+  return table;
+}
 
 const STAT_MODES = [
   { id: 'pts',        label: 'Fantasy Pts' },
@@ -263,7 +331,7 @@ function FilterGroup({ label, children }) {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function CompanionDefense({ onViewPlayer }) {
-  const { weeklyStats, players, scheduleMap, scoringSettings, espnIdOverrides, loadPlayers } = useSleeper();
+  const { weeklyStats, players, scheduleMap, scoringSettings, espnIdOverrides, loadPlayers, statsEnhancing } = useSleeper();
   useEffect(() => { loadPlayers(); }, [loadPlayers]);
   const { favoriteTeam, darkMode } = useTheme();
 
@@ -330,15 +398,16 @@ export default function CompanionDefense({ onViewPlayer }) {
 
   // Offense-allowed table: keyed by opponent team
   const offenseAllowedTable = useMemo(() => {
+    if (statsEnhancing) return null;
+    if (viewMode !== 'offense') return null;
     if (!weeklyStats || !players || !scheduleMap) return null;
-    let valueFn;
-    if (statMode === 'rec_yd')  valueFn = (w) => w.rec_yd  ?? 0;
-    if (statMode === 'rush_yd') valueFn = (w) => w.rush_yd ?? 0;
-    return buildDefenseTable(weeklyStats, players, scheduleMap, scoringSettings, valueFn, true);
-  }, [weeklyStats, players, scheduleMap, scoringSettings, statMode]);
+    return getCachedOffenseAllowedTable(weeklyStats, players, scheduleMap, scoringSettings, statMode);
+  }, [statsEnhancing, viewMode, weeklyStats, players, scheduleMap, scoringSettings, statMode]);
 
   // Defense-scored table: keyed by the defensive player's own team
   const defenseScoredTable = useMemo(() => {
+    if (statsEnhancing) return null;
+    if (viewMode !== 'defense') return null;
     if (!weeklyStats || !players) return null;
     const defMode = DEF_STAT_MODES.find(m => m.id === defStatMode);
     const getValue = defMode?.statKey
@@ -363,7 +432,7 @@ export default function CompanionDefense({ onViewPlayer }) {
       }
     }
     return table;
-  }, [weeklyStats, players, scoringSettings, defStatMode, scheduleMap]);
+  }, [statsEnhancing, viewMode, weeklyStats, players, scoringSettings, defStatMode, scheduleMap]);
 
   const activeTable = viewMode === 'offense' ? offenseAllowedTable : defenseScoredTable;
   const activePositions = viewMode === 'offense' ? OFF_POSITIONS : DEF_POSITIONS;
@@ -817,7 +886,7 @@ export default function CompanionDefense({ onViewPlayer }) {
       {!loaded ? (
         <div className="flex items-center justify-center py-16 px-4">
           <span className="text-sm" style={{ color: 'var(--color-label-secondary)' }}>
-            Load season stats to see defensive rankings.
+            {statsEnhancing ? 'Preparing heatmap…' : 'Load season stats to see defensive rankings.'}
           </span>
         </div>
       ) : (

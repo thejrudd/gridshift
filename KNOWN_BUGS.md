@@ -119,3 +119,11 @@ Open bugs are listed first, fixed bugs below. Add new entries at the bottom of e
 | Companion → Rankings rank numbers changed during search — rank was derived from filtered list index instead of overall sorted position | v5.8.7 |
 | Trade Agent "+Player" on Their Side showed global player search even when a partner was selected — should lock to partner's roster | v5.8.7 |
 | Trade Agent: tapping a different team chip showed their roster modal but did not update the selected partner — chip highlight and "+Player"/"+Pick" still targeted the original partner | v5.8.7 |
+| Trade Agent: IDP players can show 0 trade value even when they have season production — defensive fallback valuation relied on `seasonStats.gp` that may be missing from aggregated Sleeper IDP stats, and `TradeRosterPicker` did not use the IDP/DST fallback map | v5.8.8 |
+| Trade Agent: selected-roster `+ Player` modal can show defensive players as `0` even when the same roster’s `View Roster & Picks` modal shows a non-zero estimated asset value | v5.8.8 |
+| Trade Agent: selected-roster `+ Player` modal and `View Roster & Picks` modal do not expose the same player set — some rostered players appear in one view but not the other | v5.8.8 |
+| Trade Agent: selected-roster `+ Player` modal lacks the inline `+` multi-add affordance used in `View Roster & Picks`, and sticky section headers in roster modals render partially transparent while scrolling | v5.8.8 |
+| Trade Agent: not all players on your own roster appear in the `+ Player` modal — some defensive positions are omitted from the rendered position groups | v5.8.8 |
+| Trade Agent: `+ Player` search input can trigger browser autofill/autocomplete suggestions instead of behaving like a plain player search field | v5.8.8 |
+| Trade Agent: `Search All Rostered Players` lacks defensive position filter chips for LB / DB / D/ST | v5.8.8 |
+| Trade Agent: `Search All Rostered Players` shows projected side totals for players from other rosters even when selecting them would switch partners and replace the current opponent assets | v5.8.8 |

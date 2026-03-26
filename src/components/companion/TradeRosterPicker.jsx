@@ -15,13 +15,23 @@ import { parseSearchQuery, matchesFilter } from '../../utils/parseSearchQuery';
 import { TEAM_COLORS } from '../../data/teamColors';
 import { useTheme } from '../../context/ThemeContext';
 
-const POSITION_ORDER = ['QB', 'RB', 'WR', 'TE', 'K', 'DL', 'LB', 'DB'];
-const POSITION_FILTER_CHIPS = ['ALL', 'QB', 'RB', 'WR', 'TE', 'K', 'DL'];
+const POSITION_ORDER = ['QB', 'RB', 'WR', 'TE', 'K', 'DL', 'LB', 'DB', 'DEF', 'Other'];
+const POSITION_FILTER_CHIPS = ['ALL', 'QB', 'RB', 'WR', 'TE', 'K', 'DL', 'LB', 'DB', 'DEF'];
 const POSITION_FILTER_GROUPS = {
   DL: new Set(['DL', 'DE', 'DT']),
   LB: new Set(['LB', 'ILB', 'OLB']),
   DB: new Set(['DB', 'CB', 'S', 'SS', 'FS']),
+  DEF: new Set(['DEF']),
 };
+
+function toDisplayPosition(pos) {
+  if (POSITION_FILTER_GROUPS.DL.has(pos)) return 'DL';
+  if (POSITION_FILTER_GROUPS.LB.has(pos)) return 'LB';
+  if (POSITION_FILTER_GROUPS.DB.has(pos)) return 'DB';
+  if (POSITION_FILTER_GROUPS.DEF.has(pos)) return 'DEF';
+  if (POSITION_ORDER.includes(pos)) return pos;
+  return 'Other';
+}
 
 // Team city + nickname map for partial name matching (e.g. "New" → Saints)
 const TEAM_CITY_NAMES = {
@@ -136,6 +146,8 @@ export default function TradeRosterPicker({
   myRosterId,            // to label/include own roster in all-rosters mode
   includeOwnRoster,      // when true (all-rosters mode), include own roster in results
   currentTotal,          // current KTC total for this side of the trade
+  activeRosterId,        // roster currently selected for this trade side
+  mergedIDPMap,          // production-based fallback values for IDP / D/ST players
   onSelect,              // (playerId) for locked mode, ({ id, rosterId }) for all-rosters mode
   onClose,
 }) {
@@ -198,17 +210,22 @@ export default function TradeRosterPicker({
     }
 
     return sourceIds
-      .filter(id => !excludeSet.has(id))
+      .filter(id => !isAllMode || !excludeSet.has(id))
       .map(id => {
         const sp = sleeperPlayers?.[id];
         if (!sp) return null;
         const ktc = findKtcPlayerFromSleeper(id, sleeperPlayers, ktcPlayers);
         let rawVal = getKtcValue(ktc, leagueType);
         let dynastyFallback = false;
+        let idpFallback = false;
         if (rawVal == null && dynastyKtcPlayers?.length) {
           const dKtc = findKtcPlayerFromSleeper(id, sleeperPlayers, dynastyKtcPlayers);
           const dVal = getKtcValue(dKtc, leagueType);
           if (dVal != null) { rawVal = Math.round(dVal * DYNASTY_FALLBACK_MULT); dynastyFallback = true; }
+        }
+        if (rawVal == null && mergedIDPMap?.has(id)) {
+          rawVal = mergedIDPMap.get(id);
+          idpFallback = true;
         }
         rawVal = rawVal ?? (ktcPlayers?.length > 0 ? 0 : null);
         const stats = seasonStats?.[id];
@@ -218,7 +235,9 @@ export default function TradeRosterPicker({
         const rankInfo = rankMap[id] ?? null;
 
         let val;
-        if (dynastyFallback && gp >= 3 && avgPPG != null && positionalValuePerPPG[sp.position] != null) {
+        if (idpFallback) {
+          val = rawVal;
+        } else if (dynastyFallback && gp >= 3 && avgPPG != null && positionalValuePerPPG[sp.position] != null) {
           // PPG-calibrated estimation: anchor dynasty-fallback players to the same
           // value-per-PPG ratio as direct-KTC-ranked players at this position.
           val = Math.round(avgPPG * positionalValuePerPPG[sp.position]);
@@ -228,7 +247,7 @@ export default function TradeRosterPicker({
         }
 
         // Layer 2 — rank-percentile nudge (±12%)
-        if (rankInfo?.rank != null && rankInfo?.posCount > 1) {
+        if (!idpFallback && rankInfo?.rank != null && rankInfo?.posCount > 1) {
           const percentile = 1 - (rankInfo.rank - 1) / (rankInfo.posCount - 1);
           val = Math.round(val * (0.88 + 0.24 * percentile));
         }
@@ -251,6 +270,7 @@ export default function TradeRosterPicker({
           injuryStatus: sp.injury_status,
           val,
           dynastyFallback,
+          idpFallback,
           pts,
           avgPPG,
           rankInfo,
@@ -258,11 +278,13 @@ export default function TradeRosterPicker({
           ownerName,
           isOwnPlayer,
           cityName,
+          isAdded: excludeSet.has(id),
         };
       })
       .filter(Boolean);
   }, [isAllMode, includeOwnRoster, rosters, rosterId, myRosterId, excludeSet, sleeperPlayers,
       ktcPlayers, dynastyKtcPlayers, leagueType, seasonStats, scoringSettings, playerRosterMap,
+      mergedIDPMap,
       getUserDisplayName, rankMap, positionalAvgPPG, positionalValuePerPPG]);
 
   // Position chip filter applied first (independent of text search)
@@ -297,7 +319,7 @@ export default function TradeRosterPicker({
   const grouped = useMemo(() => {
     const groups = {};
     for (const p of filtered) {
-      const pos = POSITION_ORDER.includes(p.position) ? p.position : 'Other';
+      const pos = toDisplayPosition(p.position);
       if (!groups[pos]) groups[pos] = [];
       groups[pos].push(p);
     }
@@ -308,11 +330,19 @@ export default function TradeRosterPicker({
   }, [filtered]);
 
   function handleSelect(player) {
+    if (player.isAdded) return;
     if (isAllMode) {
       onSelect({ id: player.id, rosterId: player.ownerRosterId });
     } else {
       onSelect(player.id);
     }
+  }
+
+  function showsAdditiveTotal(player) {
+    if (player.val == null || currentTotal == null) return false;
+    if (!isAllMode) return true;
+    if (activeRosterId == null) return false;
+    return player.ownerRosterId === activeRosterId;
   }
 
   return (
@@ -346,6 +376,13 @@ export default function TradeRosterPicker({
               onChange={e => setSearch(e.target.value)}
               placeholder="Name, team, city, or position…"
               autoFocus
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="none"
+              spellCheck={false}
+              name="player_search"
+              inputMode="search"
+              data-form-type="other"
               className="w-full pl-9 pr-4 py-2.5 rounded-xl text-sm outline-none"
               style={{ background: 'var(--color-fill)', color: 'var(--color-label)', fontSize: '16px' }}
             />
@@ -379,8 +416,8 @@ export default function TradeRosterPicker({
             return (
               <div key={pos}>
                 <div className="sticky top-0 px-4 py-1.5 text-xs font-semibold uppercase tracking-widest"
-                  style={{ background: 'var(--color-bg)', color: 'var(--color-label-tertiary)', letterSpacing: '0.08em' }}>
-                  {pos}
+                  style={{ background: 'var(--color-bg-secondary)', color: 'var(--color-label-tertiary)', letterSpacing: '0.08em', borderBottom: '1px solid var(--color-separator)', zIndex: 1 }}>
+                  {pos === 'Other' ? 'OTHER' : pos}
                 </div>
                 {list.map(p => {
                   const teamColor = p.palette
@@ -391,7 +428,7 @@ export default function TradeRosterPicker({
                   const isLightColor = teamColor ? hexLuminance(teamColor) > 0.35 : false;
 
                   return (
-                    <button key={p.id} onClick={() => handleSelect(p)}
+                    <div key={p.id}
                       className="flex items-center w-full px-4 py-3 gap-3 relative overflow-hidden transition-colors"
                       style={{
                         borderBottom: '1px solid var(--color-separator)',
@@ -399,6 +436,7 @@ export default function TradeRosterPicker({
                         background: teamColor
                           ? `${teamColor}${isLightColor ? '18' : '22'}`
                           : 'transparent',
+                        opacity: p.isAdded ? 0.5 : 1,
                       }}>
 
                       {/* Player avatar */}
@@ -457,21 +495,41 @@ export default function TradeRosterPicker({
                       {/* KTC value + projected total */}
                       <div className="flex flex-col items-end shrink-0 gap-0.5">
                         <span className="text-sm font-bold tabular-nums"
+                          title={p.idpFallback ? 'Estimated from season production (no KTC data)' : undefined}
                           style={{ color: p.val != null ? 'var(--color-label)' : 'var(--color-label-quaternary)' }}>
-                          {p.dynastyFallback ? '~' : ''}{fmtKtcValue(p.val)}
+                          {(p.dynastyFallback || p.idpFallback) ? '~' : ''}{fmtKtcValue(p.val)}
                         </span>
                         {p.dynastyFallback && (
                           <span style={{ color: 'var(--color-label-quaternary)', fontSize: '9px', fontWeight: 600 }}>
                             DYN est.
                           </span>
                         )}
-                        {p.val != null && !p.dynastyFallback && currentTotal != null && (
+                        {p.idpFallback && (
+                          <span style={{ color: 'var(--color-label-quaternary)', fontSize: '9px', fontWeight: 600 }}>
+                            est.
+                          </span>
+                        )}
+                        {showsAdditiveTotal(p) && (
                           <span className="text-xs tabular-nums" style={{ color: 'var(--color-accent)' }}>
                             → {fmtKtcValue(currentTotal + p.val)}
                           </span>
                         )}
                       </div>
-                    </button>
+                      {p.isAdded ? (
+                        <div className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center"
+                          style={{ background: 'rgba(0,168,68,0.15)', color: 'var(--color-accent-green)' }}>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="20 6 9 17 4 12"/>
+                          </svg>
+                        </div>
+                      ) : (
+                        <button onClick={() => handleSelect(p)}
+                          className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center transition-colors active:opacity-60"
+                          style={{ background: 'var(--color-fill)', color: 'var(--color-label-secondary)', fontSize: '20px', lineHeight: 1 }}>
+                          +
+                        </button>
+                      )}
+                    </div>
                   );
                 })}
               </div>

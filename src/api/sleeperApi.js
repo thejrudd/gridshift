@@ -125,6 +125,12 @@ export function aggregateSeasonStats(weeklyStats) {
         }
       }
     }
+    // Sleeper defensive weekly rows do not always include a numeric gp field.
+    // Fall back to the number of weekly entries so downstream PPG/value logic
+    // can still treat active IDP/DST players as having games played.
+    if ((totals.gp ?? totals.games_played ?? 0) <= 0 && weeks.length > 0) {
+      totals.gp = weeks.length;
+    }
     season[playerId] = totals;
   }
   return season;

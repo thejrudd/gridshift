@@ -7,15 +7,6 @@ New features requested or planned should be added here.
 
 ## Planned Versions
 
-### v5.8 — Scoring True-Up ✅ Shipped
-
-Completed in v5.7.4–v5.8.1. See CHANGELOG.md for full details.
-
-**Remaining backlog (not in scope for v5.8):**
-- Full IDP trade valuation — KTC has no IDP player data; see Backlog section
-- `pass_2pt`, `rush_2pt`, `rec_2pt` — already handled in `STAT_TO_SCORING_KEY` (were not missing)
-- `pass_fd`, `sack`, `st_td` — already handled in `STAT_TO_SCORING_KEY` (were not missing)
-
 ### v5.9 — Areas of Opportunity
 
 A new **Companion sub-tab** that analyzes any roster in the league (defaulting to your own) for weaknesses and surfaces them as actionable trade or waiver targets.
@@ -59,6 +50,14 @@ Surfaces publicly available scouting and evaluation data to help users make info
 
 ---
 
+## Optimizations
+
+- **Lint modernization / cleanup pass** — Resolve the current ESLint backlog across the app so `npm run lint` passes cleanly. Prioritize Trade Agent and active Companion surfaces first, then address broader React hook/state-effect warnings, unused vars, Fast Refresh export issues, and config globals like `__APP_VERSION__`.
+- **Trade Agent valuation path deduplication** — Consolidate roster search, roster browse, partner preview, and side-card value calculations onto a shared helper so player availability, estimated values, and additive totals stay consistent across all Trade Agent entry points.
+- **Companion tab load-time optimization** — Improve initial and first-open load times across all Companion tabs by preloading shared data more intentionally, deferring non-critical derivations, reducing duplicate calculations between tabs, and minimizing context-driven rerenders.
+- **Companion Heatmap first-open performance** — Optimize initial load by reducing eager table computation, avoiding unnecessary recomputes after stat enrichment, and limiting context-driven rerenders from unrelated state like progress updates.
+- **Reduce Heatmap `loadSeasonStats` fetch time** — Companion → Heatmap now avoids blocking on pass-2 enhancement and uses a faster local offense table builder, but the next likely optimization is reducing the raw `loadSeasonStats` fetch cost. This is a different class of optimization and riskier because it touches the shared season-stats loading path.
+
 ## Backlog (Unversioned)
 
 ### Season Predictions (Unblocked When Data Available)
@@ -67,7 +66,6 @@ Surfaces publicly available scouting and evaluation data to help users make info
 
 ### Fantasy Companion
 
-- **IDP trade valuation** — KTC has no IDP player data. Build an in-app IDP value engine: compute each IDP player's fantasy points from `seasonStats` + league IDP scoring settings, rank by position (DL/LB/DB), and scale to a 0–10,000 KTC-equivalent value so defensive players can be included in trade proposals on the Trade tab.
 - **Roster player drilldown — stat category filter** — Allow filtering weekly stats by category (Pass, Rush, Rec, Defense, All) with a position-appropriate default.
 - **Start/sit recommendations** — Companion view that runs `projectPlayer()` across all rostered players and ranks them by projected output within each position group. Surfaces a clear start recommendation for each roster slot.
 

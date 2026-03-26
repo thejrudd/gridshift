@@ -15,6 +15,7 @@ import {
 import { TEAM_COLORS } from '../../data/teamColors';
 import { computePositionalRanks, computePositionalAvgPPG, computePositionalValuePerPPG, computeLeagueAvgMult } from '../../utils/projectionEngine';
 import { calcPointsFromTotals } from '../../utils/scoringEngine';
+import { detectLeagueDefensiveType, computeIDPValues, computeDSTValues, normalizeIDPPos } from '../../utils/idpEngine';
 import TradeRosterPicker from './TradeRosterPicker';
 import TradePickPicker from './TradePickPicker';
 
@@ -70,6 +71,11 @@ function detectLeagueType(league) {
   // If roster_positions includes SUPER_FLEX, it's a superflex league
   const hasSF = (league?.roster_positions ?? []).includes('SUPER_FLEX');
   return hasSF ? 'sf' : '1qb';
+}
+
+/** True for IDP (DL/LB/DB sub-positions) or D/ST (DEF) players. */
+function isIDPDSTPos(position) {
+  return normalizeIDPPos(position) !== null || position === 'DEF';
 }
 
 // ── Main component ───────────────────────────────────────────────────────────
@@ -276,6 +282,36 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer }
     [rosters, seasonStats, sleeperPlayers, scoringSettings],
   );
 
+  // IDP / D/ST league detection and production-based value computation.
+  // Values are anchored to the same PPG → value ratio as skill positions so if
+  // league scoring brings IDP in line with WR/RB/TE, values will reflect that.
+  const { hasIDP, hasDST } = useMemo(
+    () => detectLeagueDefensiveType(league?.roster_positions),
+    [league],
+  );
+
+  const idpComputedMap = useMemo(
+    () => hasIDP
+      ? computeIDPValues(sleeperPlayers, seasonStats, scoringSettings, league?.roster_positions, positionalValuePerPPG)
+      : null,
+    [hasIDP, sleeperPlayers, seasonStats, scoringSettings, league?.roster_positions, positionalValuePerPPG],
+  );
+
+  const dstComputedMap = useMemo(
+    () => hasDST
+      ? computeDSTValues(sleeperPlayers, seasonStats, scoringSettings, positionalValuePerPPG)
+      : null,
+    [hasDST, sleeperPlayers, seasonStats, scoringSettings, positionalValuePerPPG],
+  );
+
+  // Single merged IDP+DST map — the last fallback before 0 in all value lookups
+  const mergedIDPMap = useMemo(() => {
+    if (!idpComputedMap && !dstComputedMap) return null;
+    const m = new Map(idpComputedMap ?? []);
+    if (dstComputedMap) for (const [k, v] of dstComputedMap) m.set(k, v);
+    return m;
+  }, [idpComputedMap, dstComputedMap]);
+
   // Enrich a valueSide result: apply production adjustment to player vals, scale picks by leagueAvgMult
   function enrichItems(side) {
     if (!side.items.length) return side;
@@ -291,7 +327,12 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer }
       const rankInfo = rankMap[it.id] ?? null;
 
       let adjVal;
-      if (it.dynastyFallback && gp >= 3 && avgPPG != null && positionalValuePerPPG[it.position] != null) {
+      if (it.idpFallback) {
+        // IDP/DST: value is already production-derived from idpEngine — use as-is.
+        // Skip production adjustment (would be a no-op anyway) and rank nudge
+        // (would double-count production since ranking also uses season stats).
+        adjVal = it.val;
+      } else if (it.dynastyFallback && gp >= 3 && avgPPG != null && positionalValuePerPPG[it.position] != null) {
         // PPG-calibrated estimation: derive value from the same value-per-PPG ratio
         // as direct-KTC-ranked players, so dynasty-fallback players sit on the same scale.
         adjVal = Math.round(avgPPG * positionalValuePerPPG[it.position]);
@@ -301,8 +342,9 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer }
         adjVal = productionAdjustedValue(it.val, avgPPG, positionalAvgPPG[it.position], 0.50);
       }
 
-      // Layer 2 — rank-percentile nudge (±12%) applied to all rostered players
-      if (rankInfo?.rank != null && rankInfo?.posCount > 1) {
+      // Layer 2 — rank-percentile nudge (±12%) for KTC-based players only.
+      // IDP/DST players skip this since their value is already production-proportional.
+      if (!it.idpFallback && rankInfo?.rank != null && rankInfo?.posCount > 1) {
         const percentile = 1 - (rankInfo.rank - 1) / (rankInfo.posCount - 1);
         const rankMult = 0.88 + 0.24 * percentile;
         adjVal = Math.round(adjVal * rankMult);
@@ -324,19 +366,19 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer }
   // even if KTC hasn't resolved yet (values show "—" until KTC finishes).
   const yourSide = useMemo(() => {
     const side = sleeperPlayers
-      ? valueSide(yourPlayers, yourPicks, sleeperPlayers, adjustedKtcPlayers ?? [], leagueType, rosters, pickValueMap, season, adjustedDynastyKtcPlayers)
+      ? valueSide(yourPlayers, yourPicks, sleeperPlayers, adjustedKtcPlayers ?? [], leagueType, rosters, pickValueMap, season, adjustedDynastyKtcPlayers, mergedIDPMap)
       : { total: 0, items: [] };
     return enrichItems(side);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [yourPlayers, yourPicks, sleeperPlayers, adjustedKtcPlayers, adjustedDynastyKtcPlayers, leagueType, rosters, pickValueMap, season, seasonStats, scoringSettings, rankMap, positionalAvgPPG, positionalValuePerPPG, leagueAvgMult]);
+  }, [yourPlayers, yourPicks, sleeperPlayers, adjustedKtcPlayers, adjustedDynastyKtcPlayers, mergedIDPMap, leagueType, rosters, pickValueMap, season, seasonStats, scoringSettings, rankMap, positionalAvgPPG, positionalValuePerPPG, leagueAvgMult]);
 
   const theirSide = useMemo(() => {
     const side = sleeperPlayers
-      ? valueSide(theirPlayers, theirPicks, sleeperPlayers, adjustedKtcPlayers ?? [], leagueType, rosters, pickValueMap, season, adjustedDynastyKtcPlayers)
+      ? valueSide(theirPlayers, theirPicks, sleeperPlayers, adjustedKtcPlayers ?? [], leagueType, rosters, pickValueMap, season, adjustedDynastyKtcPlayers, mergedIDPMap)
       : { total: 0, items: [] };
     return enrichItems(side);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [theirPlayers, theirPicks, sleeperPlayers, adjustedKtcPlayers, adjustedDynastyKtcPlayers, leagueType, rosters, pickValueMap, season, seasonStats, scoringSettings, rankMap, positionalAvgPPG, positionalValuePerPPG, leagueAvgMult]);
+  }, [theirPlayers, theirPicks, sleeperPlayers, adjustedKtcPlayers, adjustedDynastyKtcPlayers, mergedIDPMap, leagueType, rosters, pickValueMap, season, seasonStats, scoringSettings, rankMap, positionalAvgPPG, positionalValuePerPPG, leagueAvgMult]);
 
   const verdict = useMemo(
     () => evaluateTrade(yourSide.total, theirSide.total),
@@ -360,26 +402,36 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer }
       const ktc = findKtcPlayerFromSleeper(id, sleeperPlayers, ktcArr);
       let rawVal = getKtcValue(ktc, leagueType);
       let dynastyFallback = false;
+      let idpFallback = false;
       if (rawVal == null && adjustedDynastyKtcPlayers?.length) {
         const dKtc = findKtcPlayerFromSleeper(id, sleeperPlayers, adjustedDynastyKtcPlayers);
         const dVal = getKtcValue(dKtc, leagueType);
         if (dVal != null) { rawVal = Math.round(dVal * DYNASTY_FALLBACK_MULT); dynastyFallback = true; }
       }
+      // IDP/DST fallback
+      if (rawVal == null && mergedIDPMap?.has(id)) {
+        rawVal = mergedIDPMap.get(id);
+        idpFallback = true;
+      }
       rawVal = rawVal ?? (ktcArr.length > 0 ? 0 : null);
+      const isIDPDST = isIDPDSTPos(sp.position);
       const stats = seasonStats?.[id];
       const pts = stats ? calcPointsFromTotals(stats, scoringSettings, sp.position) : null;
       const gp = stats?.gp ?? 0;
       const avgPPG = pts != null && gp ? pts / gp : null;
       let val;
-      if (dynastyFallback && gp >= 3 && avgPPG != null && positionalValuePerPPG[sp.position] != null) {
+      if (isIDPDST && mergedIDPMap?.has(id)) {
+        // IDP/DST: value already production-derived — use as-is, no adjustment
+        val = rawVal;
+      } else if (dynastyFallback && gp >= 3 && avgPPG != null && positionalValuePerPPG[sp.position] != null) {
         val = Math.round(avgPPG * positionalValuePerPPG[sp.position]);
       } else {
         val = productionAdjustedValue(rawVal, avgPPG, positionalAvgPPG[sp.position], 0.50);
       }
 
-      // Layer 2 — rank-percentile nudge (±12%)
+      // Layer 2 — rank-percentile nudge (±12%, skill positions only)
       const rankInfo = rankMap[id] ?? null;
-      if (rankInfo?.rank != null && rankInfo?.posCount > 1) {
+      if (!isIDPDST && rankInfo?.rank != null && rankInfo?.posCount > 1) {
         const percentile = 1 - (rankInfo.rank - 1) / (rankInfo.posCount - 1);
         val = Math.round(val * (0.88 + 0.24 * percentile));
       }
@@ -390,13 +442,15 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer }
         position: sp.position ?? '',
         team: sp.team ?? '',
         val,
+        dynastyFallback,
+        idpFallback,
       };
     }).filter(Boolean).sort((a, b) => (b.val ?? -1) - (a.val ?? -1));
 
     const ownedPicks = getPicksForRoster(partnerRosterId, rosterPicks, slots);
 
     return { players, picks: ownedPicks };
-  }, [partnerRosterId, sleeperPlayers, adjustedKtcPlayers, adjustedDynastyKtcPlayers, leagueType, rosters, rosterPicks, slots, seasonStats, scoringSettings, positionalAvgPPG, positionalValuePerPPG, rankMap]);
+  }, [partnerRosterId, sleeperPlayers, adjustedKtcPlayers, adjustedDynastyKtcPlayers, mergedIDPMap, leagueType, rosters, rosterPicks, slots, seasonStats, scoringSettings, positionalAvgPPG, positionalValuePerPPG, rankMap]);
 
   // ── Actions ─────────────────────────────────────────────────────────────────
 
@@ -462,6 +516,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer }
     const dynFallbackOpts = {
       dynastyKtcPlayers: adjustedDynastyKtcPlayers,
       seasonStats, scoringSettings, positionalValuePerPPG, positionalAvgPPG, rankMap,
+      idpValueMap: mergedIDPMap,
     };
     const deficitCandidates = buildCandidatePool(
       deficitRosterId, rosters, deficitExcludeIds, deficitExcludePickKeys,
@@ -584,6 +639,20 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer }
           </div>
         </div>
 
+        {/* "View Roster & Picks" — shown directly under carousel when a partner is selected */}
+        {partnerRosterId && !ktcLoading && !ktcError && (
+          <button
+            onClick={() => setRosterModalRosterId(partnerRosterId)}
+            className="w-full flex items-center justify-center gap-2 mt-2 py-2 rounded-xl text-sm font-semibold transition-colors"
+            style={{ background: 'var(--color-fill)', color: 'var(--color-label-secondary)', border: '1px solid var(--color-separator)' }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
+            </svg>
+            View Roster &amp; Picks
+          </button>
+        )}
+
       </div>
 
       {/* ── Trade builder — always shown ────────────────────────────────── */}
@@ -621,21 +690,9 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer }
           />
         </div>
 
-        {/* ── Browse / search buttons — below trade builder ───────────── */}
+        {/* ── Search button — below trade builder ──────────────────────── */}
         {!ktcLoading && !ktcError && (
-          <div className="px-4 mt-2 flex flex-col gap-1.5">
-            {partnerRosterId && (
-              <button
-                onClick={() => setRosterModalRosterId(partnerRosterId)}
-                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold transition-colors"
-                style={{ background: 'var(--color-fill)', color: 'var(--color-label-secondary)', border: '1px solid var(--color-separator)' }}
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
-                </svg>
-                View Roster &amp; Picks
-              </button>
-            )}
+          <div className="px-4 mt-2">
             <button
               onClick={() => setPickerOpen({ side: 'theirs', type: 'player', allRosters: true })}
               className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold transition-colors"
@@ -871,6 +928,8 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer }
           getUserDisplayName={getUserDisplayName}
           myRosterId={myRosterData?.roster_id}
           currentTotal={pickerOpen.side === 'yours' ? yourSide.total : theirSide.total}
+          activeRosterId={pickerOpen.side === 'yours' ? myRosterData?.roster_id : partnerRosterId}
+          mergedIDPMap={mergedIDPMap}
           onSelect={result => addPlayer(pickerOpen.side, result)}
           onClose={() => setPickerOpen(null)}
         />
@@ -911,9 +970,17 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer }
           pickValueMap={pickValueMap}
           rosters={rosters}
           getUserDisplayName={getUserDisplayName}
+          seasonStats={seasonStats}
+          scoringSettings={scoringSettings}
+          positionalAvgPPG={positionalAvgPPG}
+          positionalValuePerPPG={positionalValuePerPPG}
+          rankMap={rankMap}
           theirPlayers={theirPlayers}
           theirPicks={theirPicks}
           theirSideItems={theirSide.items}
+          mergedIDPMap={mergedIDPMap}
+          hasIDP={hasIDP}
+          hasDST={hasDST}
           onAddPlayer={id => addPlayer('theirs', { id, rosterId: rosterModalRosterId })}
           onAddPick={pick => addPick('theirs', pick)}
           onClose={() => setRosterModalRosterId(null)}
@@ -975,9 +1042,22 @@ function PartnerPreview({ preview, partnerName, rosters, getUserDisplayName, lea
                     {p.position} · {p.team}
                   </div>
                 </div>
-                <div className="text-xs font-semibold tabular-nums shrink-0"
-                  style={{ color: p.val != null ? 'var(--color-label-secondary)' : 'var(--color-label-quaternary)' }}>
-                  {fmtKtcValue(p.val)}
+                <div className="flex flex-col items-end shrink-0">
+                  <div className="text-xs font-semibold tabular-nums"
+                    title={p.idpFallback ? 'Estimated from season production (no KTC data)' : undefined}
+                    style={{ color: p.val != null ? 'var(--color-label-secondary)' : 'var(--color-label-quaternary)' }}>
+                    {(p.dynastyFallback || p.idpFallback) ? '~' : ''}{fmtKtcValue(p.val)}
+                  </div>
+                  {p.dynastyFallback && (
+                    <div style={{ color: 'var(--color-label-quaternary)', fontSize: '9px', fontWeight: 600 }}>
+                      DYN est.
+                    </div>
+                  )}
+                  {p.idpFallback && (
+                    <div style={{ color: 'var(--color-label-quaternary)', fontSize: '9px', fontWeight: 600 }}>
+                      est.
+                    </div>
+                  )}
                 </div>
               </button>
             );
@@ -1104,12 +1184,18 @@ function TradeSide({ label, items, total, onRemovePlayer, onRemovePick, onAddPla
             </div>
             <div className="flex flex-col items-end shrink-0">
               <span className="text-sm font-bold tabular-nums"
+                title={it.idpFallback ? 'Estimated from season production (no KTC data)' : undefined}
                 style={{ color: (it.adjVal ?? it.val) != null ? 'var(--color-label)' : 'var(--color-label-quaternary)' }}>
-                {it.dynastyFallback ? '~' : ''}{fmtKtcValue(it.adjVal ?? it.val)}
+                {(it.dynastyFallback || it.idpFallback) ? '~' : ''}{fmtKtcValue(it.adjVal ?? it.val)}
               </span>
               {it.dynastyFallback && (
                 <span className="text-xs" style={{ color: 'var(--color-label-quaternary)', fontSize: '9px' }}>
                   DYN est.
+                </span>
+              )}
+              {it.idpFallback && (
+                <span className="text-xs" style={{ color: 'var(--color-label-quaternary)', fontSize: '9px' }}>
+                  est.
                 </span>
               )}
             </div>
@@ -1277,10 +1363,58 @@ function ValuationInfoSheet({ format, leagueType, scoringSettings, rosterPositio
   const bonusRecTd50p   = scoringSettings?.bonus_rec_td_50p   ?? 0;
   const bonusRec40p     = scoringSettings?.bonus_rec_40p      ?? 0;
   const bonusRush40p    = scoringSettings?.bonus_rush_40p     ?? 0;
+  const { hasIDP, hasDST } = detectLeagueDefensiveType(rosterPositions);
 
   // Count TE/RB/WR starters for the scarcity note
   const posCounts = {};
   for (const p of rosterPositions ?? []) posCounts[p] = (posCounts[p] ?? 0) + 1;
+
+  const idpRows = [
+    ['Tackles', scoringSettings?.idp_tkl ?? 0, '0 pts'],
+    ['Solo tackles', scoringSettings?.idp_tkl_solo ?? 0, '0 pts'],
+    ['Assisted tackles', scoringSettings?.idp_tkl_ast ?? 0, '0 pts'],
+    ['Tackles for loss', scoringSettings?.idp_tkl_loss ?? 0, '0 pts'],
+    ['Sacks', scoringSettings?.idp_sack ?? 0, '0 pts'],
+    ['Sack yards', scoringSettings?.idp_sack_yd ?? 0, '0 pts'],
+    ['Interceptions', scoringSettings?.idp_int ?? 0, '0 pts'],
+    ['INT return yards', scoringSettings?.idp_int_ret_yd ?? 0, '0 pts'],
+    ['INT TDs', scoringSettings?.idp_int_td ?? 0, '0 pts'],
+    ['Forced fumbles', scoringSettings?.idp_ff ?? 0, '0 pts'],
+    ['Fumble recoveries', scoringSettings?.idp_fr ?? 0, '0 pts'],
+    ['Fumble return yards', scoringSettings?.idp_fr_yd ?? 0, '0 pts'],
+    ['Fumble return TDs', scoringSettings?.idp_fr_td ?? 0, '0 pts'],
+    ['Defensive TDs', scoringSettings?.idp_def_td ?? 0, '0 pts'],
+    ['Passes defended', scoringSettings?.idp_pd ?? 0, '0 pts'],
+    ['QB hits', scoringSettings?.idp_qbhit ?? 0, '0 pts'],
+    ['Safeties', scoringSettings?.idp_safety ?? 0, '0 pts'],
+    ['Blocked kicks', scoringSettings?.idp_blk_kick ?? 0, '0 pts'],
+    ['2+ sack bonus', scoringSettings?.bonus_sack_2p ?? 0, 'None'],
+    ['10+ tackle bonus', scoringSettings?.bonus_tkl_10p ?? 0, 'None'],
+    ['3+ pass defense bonus', scoringSettings?.idp_pass_def_3p ?? 0, 'None'],
+  ].filter(([, value]) => value !== 0);
+
+  const dstRows = [
+    ['Team D/ST TDs', scoringSettings?.def_td ?? 0, '0 pts'],
+    ['Team sacks', scoringSettings?.sack ?? 0, '0 pts'],
+    ['Team INTs', scoringSettings?.int ?? 0, '0 pts'],
+    ['Team safeties', scoringSettings?.safe ?? 0, '0 pts'],
+    ['3-and-outs', scoringSettings?.def_3_and_out ?? 0, '0 pts'],
+    ['4th-down stops', scoringSettings?.def_4_and_stop ?? 0, '0 pts'],
+    ['Forced punts', scoringSettings?.def_forced_punts ?? 0, '0 pts'],
+    ['Team pass defenses', scoringSettings?.def_pass_def ?? 0, '0 pts'],
+    ['Points allowed', scoringSettings?.pts_allow ?? 0, '0 pts'],
+    ['Points allowed: 0', scoringSettings?.pts_allow_0 ?? 0, '0 pts'],
+    ['Points allowed: 1-6', scoringSettings?.pts_allow_1_6 ?? 0, '0 pts'],
+    ['Points allowed: 7-13', scoringSettings?.pts_allow_7_13 ?? 0, '0 pts'],
+    ['Points allowed: 14-20', scoringSettings?.pts_allow_14_20 ?? 0, '0 pts'],
+    ['Points allowed: 21-27', scoringSettings?.pts_allow_21_27 ?? 0, '0 pts'],
+    ['Points allowed: 28-34', scoringSettings?.pts_allow_28_34 ?? 0, '0 pts'],
+    ['Points allowed: 35+', scoringSettings?.pts_allow_35p ?? 0, '0 pts'],
+  ].filter(([, value]) => value !== 0);
+
+  const showIDPDetails = hasIDP && idpRows.length > 0;
+  const showDSTDetails = hasDST && dstRows.length > 0;
+  const showDefenseSection = showIDPDetails || showDSTDetails || hasIDP || hasDST;
 
   function pct(mult) {
     const delta = Math.round((mult - 1) * 100);
@@ -1585,6 +1719,67 @@ function ValuationInfoSheet({ format, leagueType, scoringSettings, rosterPositio
             )}
           </section>
 
+          {showDefenseSection && (
+            <section className="flex flex-col gap-2">
+              <h3 className="text-xs font-bold uppercase tracking-widest"
+                style={{ color: 'var(--color-label-tertiary)', letterSpacing: '0.08em' }}>
+                Defensive Scoring
+              </h3>
+              <p className="text-sm leading-relaxed" style={{ color: 'var(--color-label-secondary)' }}>
+                Defensive values are based on <span className="font-semibold">live season production in your Sleeper scoring</span>,
+                then translated onto the same value-per-PPG scale as offensive players.
+              </p>
+              <div className="rounded-xl px-3 py-2.5 flex gap-4"
+                style={{ background: 'var(--color-fill)' }}>
+                <InfoPill label="IDP" value={hasIDP ? 'Enabled' : 'Off'} />
+                <InfoPill label="D/ST" value={hasDST ? 'Enabled' : 'Off'} />
+              </div>
+
+              {showIDPDetails && (
+                <div className="flex flex-col gap-1">
+                  <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-label-tertiary)' }}>
+                    IDP scoring used in valuations
+                  </span>
+                  {idpRows.map(([label, value, baseline]) => (
+                    <AdjustmentRow
+                      key={`idp-${label}`}
+                      label={label}
+                      leagueValue={typeof value === 'number' ? `${value} pts` : String(value)}
+                      baseline={baseline}
+                      note={null}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {showDSTDetails && (
+                <div className="flex flex-col gap-1">
+                  <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-label-tertiary)' }}>
+                    D/ST scoring used in valuations
+                  </span>
+                  {dstRows.map(([label, value, baseline]) => (
+                    <AdjustmentRow
+                      key={`dst-${label}`}
+                      label={label}
+                      leagueValue={typeof value === 'number' ? `${value} pts` : String(value)}
+                      baseline={baseline}
+                      note={null}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {!showIDPDetails && !showDSTDetails && (
+                <div className="rounded-lg px-3 py-2.5"
+                  style={{ background: 'var(--color-fill)' }}>
+                  <span className="text-sm" style={{ color: 'var(--color-label-secondary)' }}>
+                    Defensive roster slots are enabled, but all tracked defensive scoring weights are currently zero.
+                  </span>
+                </div>
+              )}
+            </section>
+          )}
+
           {/* Season performance adjustments section */}
           <section className="flex flex-col gap-3">
             <h3 className="text-xs font-bold uppercase tracking-widest"
@@ -1705,7 +1900,9 @@ function RosterBrowseModal({
   roster, partnerName,
   sleeperPlayers, adjustedKtcPlayers, adjustedDynastyKtcPlayers, leagueType,
   rosterPicks, slots, season, pickValueMap, rosters, getUserDisplayName,
+  seasonStats, scoringSettings, positionalAvgPPG, positionalValuePerPPG, rankMap,
   theirPlayers, theirPicks, theirSideItems,
+  mergedIDPMap, hasIDP, hasDST,
   onAddPlayer, onAddPick, onClose,
 }) {
   const { darkMode } = useTheme();
@@ -1731,21 +1928,53 @@ function RosterBrowseModal({
       const enriched = theirSideItems?.find(it => it.id === id);
       const ktc = findKtcPlayerFromSleeper(id, sleeperPlayers, adjustedKtcPlayers ?? []);
       let rawVal = getKtcValue(ktc, leagueType);
+      let dynastyFallback = false;
       if (rawVal == null && adjustedDynastyKtcPlayers?.length) {
         const dKtc = findKtcPlayerFromSleeper(id, sleeperPlayers, adjustedDynastyKtcPlayers);
         const dVal = getKtcValue(dKtc, leagueType);
-        if (dVal != null) rawVal = Math.round(dVal * DYNASTY_FALLBACK_MULT);
+        if (dVal != null) {
+          rawVal = Math.round(dVal * DYNASTY_FALLBACK_MULT);
+          dynastyFallback = true;
+        }
       }
-      const val = enriched?.adjVal ?? rawVal ?? (adjustedKtcPlayers?.length > 0 ? 0 : null);
+      // IDP/DST fallback — production-computed value
+      const idpFallback = rawVal == null && mergedIDPMap?.has(id);
+      if (idpFallback) rawVal = mergedIDPMap.get(id);
+      rawVal = rawVal ?? (adjustedKtcPlayers?.length > 0 ? 0 : null);
+
+      const isIDPDST = isIDPDSTPos(sp.position);
+      const stats = seasonStats?.[id];
+      const pts = stats ? calcPointsFromTotals(stats, scoringSettings, sp.position) : null;
+      const gp = stats?.gp ?? 0;
+      const avgPPG = pts != null && gp ? pts / gp : null;
+      let val;
+      if (enriched?.adjVal != null) {
+        val = enriched.adjVal;
+      } else if (isIDPDST && mergedIDPMap?.has(id)) {
+        val = rawVal;
+      } else if (dynastyFallback && gp >= 3 && avgPPG != null && positionalValuePerPPG?.[sp.position] != null) {
+        val = Math.round(avgPPG * positionalValuePerPPG[sp.position]);
+      } else {
+        val = productionAdjustedValue(rawVal, avgPPG, positionalAvgPPG?.[sp.position], 0.50);
+      }
+
+      const rankInfo = rankMap?.[id] ?? null;
+      if (!isIDPDST && enriched?.adjVal == null && rankInfo?.rank != null && rankInfo?.posCount > 1) {
+        const percentile = 1 - (rankInfo.rank - 1) / (rankInfo.posCount - 1);
+        val = Math.round(val * (0.88 + 0.24 * percentile));
+      }
+
       return {
         id,
         name: sp.full_name ?? `${sp.first_name ?? ''} ${sp.last_name ?? ''}`.trim(),
         position: sp.position ?? '',
         team: sp.team ?? '',
         val,
+        isEstimated: idpFallback,
+        dynastyFallback,
       };
     }).filter(Boolean).sort((a, b) => (b.val ?? -1) - (a.val ?? -1));
-  }, [roster, sleeperPlayers, adjustedKtcPlayers, adjustedDynastyKtcPlayers, leagueType, theirSideItems]);
+  }, [roster, sleeperPlayers, adjustedKtcPlayers, adjustedDynastyKtcPlayers, mergedIDPMap, leagueType, theirSideItems, seasonStats, scoringSettings, positionalAvgPPG, positionalValuePerPPG, rankMap]);
 
   // Pick list — enriched with quality label and value
   const picks = useMemo(() => {
@@ -1796,62 +2025,88 @@ function RosterBrowseModal({
         {/* Scrollable list */}
         <div className="flex-1 overflow-y-auto">
 
-          {/* Players */}
-          {players.length > 0 && (
-            <div>
-              <div className="sticky top-0 px-4 py-1.5 text-xs font-semibold uppercase tracking-widest"
-                style={{ background: 'var(--color-bg)', color: 'var(--color-label-tertiary)', letterSpacing: '0.08em', borderBottom: '1px solid var(--color-separator)' }}>
-                Players
-              </div>
-              {players.map(p => {
-                const tp = teamPalette(p.team, darkMode);
-                const isAdded = addedPlayerIds.has(p.id);
-                return (
-                  <div key={p.id}
-                    className="flex items-center px-4 py-3 gap-3 relative overflow-hidden"
-                    style={{
-                      borderBottom: '1px solid var(--color-separator)',
-                      borderLeft: tp.borderColor ? `3px solid ${tp.borderColor}` : '3px solid transparent',
-                      background: tp.tint ?? 'transparent',
-                      opacity: isAdded ? 0.5 : 1,
-                    }}>
-                    <img src={`https://sleepercdn.com/content/nfl/players/thumb/${p.id}.jpg`}
-                      alt="" className="w-9 h-9 rounded-full shrink-0 object-cover"
-                      style={{ background: 'var(--color-fill-secondary)' }}
-                      onError={e => { e.target.style.display = 'none'; }} />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-semibold truncate" style={{ color: 'var(--color-label)' }}>{p.name}</div>
-                      <div className="text-xs" style={{ color: 'var(--color-label-secondary)' }}>{p.position} · {p.team}</div>
-                    </div>
-                    <span className="text-sm font-bold tabular-nums shrink-0"
-                      style={{ color: p.val != null ? 'var(--color-label-secondary)' : 'var(--color-label-quaternary)' }}>
-                      {fmtKtcValue(p.val)}
-                    </span>
-                    {isAdded ? (
-                      <div className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center"
-                        style={{ background: 'rgba(0,168,68,0.15)', color: 'var(--color-accent-green)' }}>
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                          <polyline points="20 6 9 17 4 12"/>
-                        </svg>
-                      </div>
-                    ) : (
-                      <button onClick={() => onAddPlayer(p.id)}
-                        className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center transition-colors active:opacity-60"
-                        style={{ background: 'var(--color-fill)', color: 'var(--color-label-secondary)', fontSize: '20px', lineHeight: 1 }}>
-                        +
-                      </button>
-                    )}
+          {/* Players — split into Offense/Defense sections for IDP/D/ST leagues */}
+          {players.length > 0 && (() => {
+            const OFFENSE_POS = new Set(['QB', 'RB', 'WR', 'TE', 'K']);
+            const offPlayers = players.filter(p => OFFENSE_POS.has(p.position));
+            const defPlayers = players.filter(p => !OFFENSE_POS.has(p.position));
+            const showSections = (hasIDP || hasDST) && offPlayers.length > 0 && defPlayers.length > 0;
+
+            const renderPlayerRow = p => {
+              const tp = teamPalette(p.team, darkMode);
+              const isAdded = addedPlayerIds.has(p.id);
+              return (
+                <div key={p.id}
+                  className="flex items-center px-4 py-3 gap-3 relative overflow-hidden"
+                  style={{
+                    borderBottom: '1px solid var(--color-separator)',
+                    borderLeft: tp.borderColor ? `3px solid ${tp.borderColor}` : '3px solid transparent',
+                    background: tp.tint ?? 'transparent',
+                    opacity: isAdded ? 0.5 : 1,
+                  }}>
+                  <img src={`https://sleepercdn.com/content/nfl/players/thumb/${p.id}.jpg`}
+                    alt="" className="w-9 h-9 rounded-full shrink-0 object-cover"
+                    style={{ background: 'var(--color-fill-secondary)' }}
+                    onError={e => { e.target.style.display = 'none'; }} />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-semibold truncate" style={{ color: 'var(--color-label)' }}>{p.name}</div>
+                    <div className="text-xs" style={{ color: 'var(--color-label-secondary)' }}>{p.position} · {p.team}</div>
                   </div>
-                );
-              })}
-            </div>
-          )}
+                  <span className="text-sm font-bold tabular-nums shrink-0"
+                    title={p.isEstimated ? 'Estimated from season production (no KTC data)' : undefined}
+                    style={{ color: p.val != null ? 'var(--color-label-secondary)' : 'var(--color-label-quaternary)' }}>
+                    {(p.isEstimated || p.dynastyFallback) ? '~' : ''}{fmtKtcValue(p.val)}
+                  </span>
+                  {p.dynastyFallback && (
+                    <span className="text-xs shrink-0" style={{ color: 'var(--color-label-quaternary)', fontSize: '9px' }}>
+                      DYN est.
+                    </span>
+                  )}
+                  {isAdded ? (
+                    <div className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center"
+                      style={{ background: 'rgba(0,168,68,0.15)', color: 'var(--color-accent-green)' }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="20 6 9 17 4 12"/>
+                      </svg>
+                    </div>
+                  ) : (
+                    <button onClick={() => onAddPlayer(p.id)}
+                      className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center transition-colors active:opacity-60"
+                      style={{ background: 'var(--color-fill)', color: 'var(--color-label-secondary)', fontSize: '20px', lineHeight: 1 }}>
+                      +
+                    </button>
+                  )}
+                </div>
+              );
+            };
+
+            const SectionHeader = ({ label }) => (
+              <div className="sticky top-0 px-4 py-1.5 text-xs font-semibold uppercase tracking-widest"
+                style={{ background: 'var(--color-bg-secondary)', color: 'var(--color-label-tertiary)', letterSpacing: '0.08em', borderBottom: '1px solid var(--color-separator)', zIndex: 1 }}>
+                {label}
+              </div>
+            );
+
+            return showSections ? (
+              <>
+                <SectionHeader label="Offense" />
+                {offPlayers.map(renderPlayerRow)}
+                <SectionHeader label="Defense" />
+                {defPlayers.map(renderPlayerRow)}
+              </>
+            ) : (
+              <>
+                <SectionHeader label="Players" />
+                {players.map(renderPlayerRow)}
+              </>
+            );
+          })()}
 
           {/* Picks */}
           {picks.length > 0 && (
             <div>
               <div className="sticky top-0 px-4 py-1.5 text-xs font-semibold uppercase tracking-widest"
-                style={{ background: 'var(--color-bg)', color: 'var(--color-label-tertiary)', letterSpacing: '0.08em', borderBottom: '1px solid var(--color-separator)' }}>
+                style={{ background: 'var(--color-bg-secondary)', color: 'var(--color-label-tertiary)', letterSpacing: '0.08em', borderBottom: '1px solid var(--color-separator)', zIndex: 1 }}>
                 Draft Capital
               </div>
               {picks.map(pick => {

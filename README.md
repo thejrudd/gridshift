@@ -75,18 +75,18 @@ PORT=8080 docker compose up -d --build
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) |
 
-## What's New in v5.8.7
+## What's New in v5.8.8
 
-- **Trade Agent UX overhaul** — Team chips now switch partner without opening a modal; new "View Roster & Picks" button opens a multi-add modal for adding multiple players/picks at once; "Search All Rostered Players" shows all players by default with position filter chips and partial city name matching (type "New" → Saints, "Kansas" → Chiefs)
-- **Own-roster Trade button** — Companion → League now shows a Trade button on your own players, pre-populating Your Side of the trade
-- **Bug fixes** — Adding a player to Their Side no longer wipes Your Side; Rankings rank numbers stay stable during search; Their Side +Player correctly locks to the selected partner's roster
+- **Trade Agent defensive valuation fixes** — IDP and D/ST players now get production-based fallback values when KTC has no listing, including in roster pickers and refinement flows. Defensive players no longer appear as `0` just because Sleeper omitted `gp` in aggregated season stats.
+- **Trade picker parity + polish** — The selected-roster `+ Player` modal now uses the same defensive position grouping and inline multi-add pattern as `View Roster & Picks`, adds LB / DB / D/ST filter chips to global search, disables browser autofill on the search field, and only shows additive side totals when adding a player would actually preserve the current partner.
+- **Heatmap and docs groundwork** — Companion → Heatmap now uses a cached local offense table path and exposes a lightweight "Preparing heatmap…" state during stat enhancement, and the repo now includes an Obsidian-friendly `docs/` starter wiki for architecture, feature maps, and edit guides.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Roadmap
 
-- **v4.9 — Player Comparison** — Side-by-side comparison in Companion (fantasy stats + projection) and Statistics (ESPN career stats with per-stat deltas)
-- **v5.0 — Draft Coach & Trade Agent** — Rookie scouting hub (draft slot, combine, college stats, dynasty ADP) plus a trade value evaluator powered by KeepTradeCut with in-app fallback
+- **v5.9 — Areas of Opportunity** — New Companion sub-tab for roster weakness analysis, surfacing thin depth, bye-week clustering, positional holes, and age-risk with trade or waiver CTAs.
+- **v6.0 — Draft Coach** — Rookie scouting hub with draft slot, college production, combine metrics, consensus ranking, and dynasty rookie ADP.
 - **Week-by-Week View** *(blocked on 2026 schedule data)* — Browse the full schedule by week with predictions reflected
 
 ## Project Structure
