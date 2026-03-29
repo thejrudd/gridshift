@@ -75,16 +75,17 @@ PORT=8080 docker compose up -d --build
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) |
 
-## What's New in v6.0.3
+## What's New in v6.0.4
 
-- **Upgrades selected-card layout polish** — Trade → Upgrades Step 2 now keeps selected player cards aligned to a shared height, so multi-player packages no longer look uneven.
-- **Desktop card proportions refined** — Selected cards in Upgrades now size more naturally on desktop, with a slightly wider card silhouette that feels closer to a real trading card while keeping mobile behavior stable.
-- **Card detail cleanup** — Stat headers now read `Stats`, and the Step 2 remove interaction now swaps the team-logo badge into an `X` in the same corner location for a cleaner hover state.
+- **Trade pickers and stale results cleaned up** — Intelligence no longer exposes the stale `View Roster and Picks` entry point, Agent pickers now support multi-add flows, and Upgrades invalidates stale loaded results when the selected pool changes.
+- **Empty-pool upgrade logic corrected** — Intelligence and Upgrades no longer invent outgoing player packages when no outgoing players are selected, so pick-led searches now behave more like the UI describes.
+- **Mixed-package draft cards expanded** — Intelligence mixed player-plus-pick proposals now render draft picks as full cards instead of collapsing them into pill callouts, and proposal card widths push a bit wider as equal-height syncing makes packages taller.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Roadmap
 
+- **v6.1 — Trade Detail Drilldowns** — Clickable Trade asset cards that open a shared player-stats modal backed by the same data used in Statistics, with a direct link into each player's full stats page.
 - **v7.0 — Draft Coach** — Rookie scouting hub with draft slot, college production, combine metrics, consensus ranking, and dynasty rookie ADP.
 - **Week-by-Week View** *(blocked on 2026 schedule data)* — Browse the full schedule by week with predictions reflected
 

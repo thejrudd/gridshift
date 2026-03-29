@@ -554,6 +554,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
   // ── Actions ─────────────────────────────────────────────────────────────────
 
   const addPlayer = useCallback((side, playerIdOrObj) => {
+    const fromGlobalSearch = typeof playerIdOrObj === 'object';
     if (side === 'yours' && typeof playerIdOrObj !== 'object') {
       // Your side locked picker: plain ID from your roster
       setYourPlayers(prev => [...prev, playerIdOrObj]);
@@ -575,7 +576,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
     } else {
       setTheirPlayers(prev => [...prev, playerIdOrObj]);
     }
-    setPickerOpen(null);
+    if (fromGlobalSearch) setPickerOpen(null);
     setSuggestions(null);
   }, [partnerRosterId, myRosterData?.roster_id]);
 
@@ -588,7 +589,6 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
   const addPick = useCallback((side, pick) => {
     if (side === 'yours') setYourPicks(prev => [...prev, pick]);
     else setTheirPicks(prev => [...prev, pick]);
-    setPickerOpen(null);
     setSuggestions(null);
   }, []);
 
@@ -706,6 +706,30 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
     });
   }, [upgradeTargetId, upgradeOfferPlayerIds, upgradeTradePostureLevel, upgradeAllowPackages, upgradeAllowOutgoingPicks, upgradeAllowIncomingPicks]);
 
+  useEffect(() => {
+    if (!submittedUpgradeSearch) return;
+    const sortedCurrentIds = [...upgradeOfferPlayerIds].sort();
+    const sortedSubmittedIds = [...(submittedUpgradeSearch.allowedOutgoingPlayerIds ?? [])].sort();
+    const sameOutgoingIds = sortedCurrentIds.length === sortedSubmittedIds.length
+      && sortedCurrentIds.every((id, index) => id === sortedSubmittedIds[index]);
+    const stillMatches =
+      submittedUpgradeSearch.targetPlayerId === upgradeTargetId
+      && submittedUpgradeSearch.tradePostureLevel === upgradeTradePostureLevel
+      && submittedUpgradeSearch.allowOutgoingPicks === upgradeAllowOutgoingPicks
+      && submittedUpgradeSearch.allowIncomingPicks === upgradeAllowIncomingPicks
+      && submittedUpgradeSearch.allowPackages === upgradeAllowPackages
+      && sameOutgoingIds;
+    if (!stillMatches) setSubmittedUpgradeSearch(null);
+  }, [
+    submittedUpgradeSearch,
+    upgradeTargetId,
+    upgradeOfferPlayerIds,
+    upgradeTradePostureLevel,
+    upgradeAllowOutgoingPicks,
+    upgradeAllowIncomingPicks,
+    upgradeAllowPackages,
+  ]);
+
   const upgradeFinderPage = (
     <UpgradeFinderPage
       players={myRosterOpportunityPlayers}
@@ -811,8 +835,8 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
           </div>
         </div>
 
-        {/* "View Roster & Picks" — shown directly under carousel when a partner is selected */}
-        {partnerRosterId && !ktcLoading && !ktcError && (
+        {/* "View Roster & Picks" — Agent only */}
+        {showAgent && partnerRosterId && !ktcLoading && !ktcError && (
           <button
             onClick={() => setRosterModalRosterId(partnerRosterId)}
             className="w-full flex items-center justify-center gap-2 mt-2 py-2 rounded-xl text-sm font-semibold transition-colors"
@@ -1878,18 +1902,24 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
   );
 }
 
-function getProposalCardSlotStyle(assetCount) {
+function getProposalCardSlotStyle(assetCount, equalizedCardHeight = null) {
   const count = Math.max(assetCount || 1, 1);
   const availableWidth = `calc((100% - (${count - 1} * var(--proposal-card-gap, 0.625rem))) / ${count})`;
-  const cardMaxWidth = count >= 3
-    ? '12rem'
+  const baseWidthRem = count >= 3
+    ? 12.5
     : count === 2
-      ? '13rem'
-      : '14rem';
+      ? 13.75
+      : 14.75;
+  const widthBonusPx = equalizedCardHeight && equalizedCardHeight > 385
+    ? Math.min(Math.round((equalizedCardHeight - 385) * 0.18), 28)
+    : 0;
+  const cardMaxWidth = widthBonusPx > 0
+    ? `calc(${baseWidthRem}rem + ${widthBonusPx}px)`
+    : `${baseWidthRem}rem`;
   return {
     flex: `1 1 ${cardMaxWidth}`,
     maxWidth: `min(${availableWidth}, ${cardMaxWidth})`,
-    minWidth: 'min(100%, 10.25rem)',
+    minWidth: count >= 3 ? 'min(100%, 10.5rem)' : 'min(100%, 11rem)',
     width: '100%',
   };
 }
@@ -1934,19 +1964,25 @@ function TradeProposalItem({
   const outgoingPlayers = proposal.outgoingAssets.filter(a => a.type === 'player');
   const incomingPicks = proposal.incomingAssets.filter(a => a.type === 'pick');
   const outgoingPicks = proposal.outgoingAssets.filter(a => a.type === 'pick');
-  const incomingCardAssets = renderAllAssetsAsCards ? proposal.incomingAssets : (incomingPlayers.length ? incomingPlayers : incomingPicks);
-  const outgoingCardAssets = renderAllAssetsAsCards ? proposal.outgoingAssets : (outgoingPlayers.length ? outgoingPlayers : outgoingPicks);
-  const incomingAssetsForCallout = renderAllAssetsAsCards ? [] : (incomingPlayers.length ? incomingPicks : []);
-  const outgoingAssetsForCallout = renderAllAssetsAsCards ? [] : (outgoingPlayers.length ? outgoingPicks : []);
+  const incomingMixedPackage = incomingPlayers.length > 0 && incomingPicks.length > 0;
+  const outgoingMixedPackage = outgoingPlayers.length > 0 && outgoingPicks.length > 0;
+  const renderIncomingAssetsAsCards = renderAllAssetsAsCards || incomingMixedPackage;
+  const renderOutgoingAssetsAsCards = renderAllAssetsAsCards || outgoingMixedPackage;
+  const incomingCardAssets = renderIncomingAssetsAsCards ? proposal.incomingAssets : (incomingPlayers.length ? incomingPlayers : incomingPicks);
+  const outgoingCardAssets = renderOutgoingAssetsAsCards ? proposal.outgoingAssets : (outgoingPlayers.length ? outgoingPlayers : outgoingPicks);
+  const incomingAssetsForCallout = renderIncomingAssetsAsCards ? [] : (incomingPlayers.length ? incomingPicks : []);
+  const outgoingAssetsForCallout = renderOutgoingAssetsAsCards ? [] : (outgoingPlayers.length ? outgoingPicks : []);
+  const incomingMobilePickCards = renderIncomingAssetsAsCards ? [] : (incomingPlayers.length ? incomingPicks : []);
+  const outgoingMobilePickCards = renderOutgoingAssetsAsCards ? [] : (outgoingPlayers.length ? outgoingPicks : []);
   const cardCount = incomingCardAssets.length + outgoingCardAssets.length;
   const wideDesktopLayout = cardCount >= 3;
   const outgoingCardCount = outgoingCardAssets.length || 1;
   const incomingCardCount = incomingCardAssets.length || 1;
   const sharedCardCount = Math.max(outgoingCardCount, incomingCardCount);
-  const sharedCardSlotStyle = getProposalCardSlotStyle(sharedCardCount);
   const cardRefs = useRef(new Map());
   const [equalizedCardHeight, setEqualizedCardHeight] = useState(null);
   const measureFrameRef = useRef(null);
+  const sharedCardSlotStyle = getProposalCardSlotStyle(sharedCardCount, equalizedCardHeight);
 
   const registerCardRef = useCallback((slotId, node) => {
     if (!slotId) return;
@@ -2033,6 +2069,28 @@ function TradeProposalItem({
               </div>
             ))}
           </div>
+          {outgoingMobilePickCards.length > 0 && (
+            <div className="flex flex-col gap-2 xl:hidden">
+              {outgoingMobilePickCards.map((asset, index) => (
+                <div
+                  key={`give-mobile-pick:${asset.id}:${index}`}
+                  className="w-full flex"
+                  style={{ ...sharedCardSlotStyle, minHeight: equalizedCardHeight ? `${equalizedCardHeight}px` : undefined }}
+                >
+                  <ProposalPlayerCard
+                    cardRef={(node) => registerCardRef(`give-mobile-pick:${asset.id}:${index}`, node)}
+                    player={null}
+                    palette={null}
+                    pick={asset}
+                    side="give"
+                    showSideBadge={false}
+                    seasonStats={seasonStats}
+                    forcedHeight={equalizedCardHeight}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
         </div>
         <div className="shrink-0 text-base font-bold self-center"
           style={{ color: 'var(--color-label-quaternary)' }}>
@@ -2063,11 +2121,33 @@ function TradeProposalItem({
               </div>
             ))}
           </div>
+          {incomingMobilePickCards.length > 0 && (
+            <div className="flex flex-col gap-2 xl:hidden">
+              {incomingMobilePickCards.map((asset, index) => (
+                <div
+                  key={`get-mobile-pick:${asset.id}:${index}`}
+                  className="w-full flex"
+                  style={{ ...sharedCardSlotStyle, minHeight: equalizedCardHeight ? `${equalizedCardHeight}px` : undefined }}
+                >
+                  <ProposalPlayerCard
+                    cardRef={(node) => registerCardRef(`get-mobile-pick:${asset.id}:${index}`, node)}
+                    player={null}
+                    palette={null}
+                    pick={asset}
+                    side="get"
+                    showSideBadge={false}
+                    seasonStats={seasonStats}
+                    forcedHeight={equalizedCardHeight}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
       {(outgoingAssetsForCallout.length > 0 || incomingAssetsForCallout.length > 0) && (
-        <div className="flex items-start justify-center gap-2.5 px-3 pb-2"
+        <div className="hidden xl:flex items-start justify-center gap-2.5 px-3 pb-2"
           style={{ background: 'var(--color-fill)' }}>
           <div className={`flex-1 flex flex-wrap justify-center gap-1.5 ${wideDesktopLayout ? 'max-w-[640px]' : 'max-w-[520px]'}`}>
             {outgoingAssetsForCallout.map(asset => (
@@ -2197,16 +2277,9 @@ function TradeProposalPanel({
           </h3>
           <p className="text-xs mt-1 max-w-2xl" style={{ color: 'var(--color-label-secondary)' }}>
             {partnerRosterId
-              ? 'Switch between needs-based ideas and surplus-driven ideas without changing the proposal cards.'
+              ? 'Review needs-based or surplus-driven ideas with this manager.'
               : 'Select a manager above to look for trade ideas.'}
           </p>
-          {partnerRosterId && (
-            <p className="text-[11px] mt-2 max-w-2xl" style={{ color: 'var(--color-label-tertiary)' }}>
-              {activeMode === 'needs'
-                ? 'Fix Needs: you always receive at least one player; picks only appear as compensation.'
-                : 'Use Surplus: you can receive players, picks, or a mix.'}
-            </p>
-          )}
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <button
               onClick={() => onModeChange?.('needs')}
@@ -2700,9 +2773,6 @@ function UpgradeFinderPage({
           >
             Search The League For Upgrade Paths
           </h2>
-          <p className="text-sm mt-2 max-w-2xl" style={{ color: 'var(--color-label-secondary)' }}>
-            Pick your target, choose what you are willing to move, then search the league for realistic upgrade paths.
-          </p>
         </div>
       </div>
       <div className="mt-6 flex flex-col gap-6">
@@ -2797,7 +2867,7 @@ function UpgradeFinderPage({
                 cta: 'Add players',
               })}
               <div className="text-xs" style={{ color: 'var(--color-label-secondary)' }}>
-                You can leave this empty if you want to search pick-led offers instead.
+                Leave this empty only if you want the search restricted to pick-led offers you send.
               </div>
             </div>
           )}
@@ -2822,9 +2892,6 @@ function UpgradeFinderPage({
               description: 'Let the search ask for their picks when the return package should tilt back toward you.',
               onClick: () => onAllowIncomingPicksChange(!allowIncomingPicks),
             })}
-          </div>
-          <div className="text-xs mt-2" style={{ color: 'var(--color-label-secondary)' }}>
-            In Fix Needs mode, incoming picks act as compensation around the player upgrade rather than replacing it.
           </div>
         </section>
 

@@ -750,3 +750,15 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Upgrades Step 2 selected cards now stay uniform** — The selected-player rail in Trade → Upgrades now uses its own shared height sync, so multiple outgoing cards stay aligned instead of ending up at different heights.
 - **Desktop selected-card proportions improved** — Upgrades selected cards now size more responsively on desktop and use a slightly wider desktop image proportion so they feel closer to real trading cards without changing the mobile layout.
 - **Card copy and micro-interactions cleaned up** — Player-card stat headers now read `Stats`, and the Step 2 remove affordance now swaps the team-logo badge into an `X` in the exact same corner position instead of overlaying a second control.
+
+---
+
+## v6.0.4 — Trade Flow Cleanup + Mixed Asset Cards
+*2026-03-29*
+
+- **Stale Trade entry points removed** — Trade → Intelligence no longer exposes `View Roster and Picks`, so that page can no longer mutate Agent selections through an outdated control path.
+- **Agent pickers now support multi-add** — Your Side player selection and both pick pickers in Trade → Agent now stay open for multi-select flows instead of closing after a single add.
+- **Upgrades search state now invalidates correctly** — Trade → Upgrades clears stale loaded results when the selected target, outgoing pool, or pick/posture settings change, including after removing a selected player.
+- **Empty outgoing pools now stay pick-led** — Trade → Intelligence / Upgrades no longer fabricate outgoing player packages when no outgoing players are selected, keeping search results aligned with the UI copy.
+- **Mixed player-plus-pick proposals now render full draft cards** — Trade → Intelligence now renders draft picks as full cards in mixed packages instead of collapsing them into pill callouts, including mobile layouts.
+- **Proposal card proportions tuned further** — Desktop card slots now widen more as equal-height syncing makes a package taller, improving the trading-card silhouette while preserving the shared-height behavior.

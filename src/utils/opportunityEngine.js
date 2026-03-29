@@ -2656,12 +2656,15 @@ export function findLeagueWideUpgradeGroups({
     myCards.find((card) => card.position === targetPlayer.normPos || card.weakStarter?.id === targetPlayer.id) ?? null,
   );
 
-  const allowedPlayerAssets = resolveOutgoingPlayerAssets(
-    myRosterAnalysis,
-    targetPlayer.id,
-    allowedOutgoingPlayerIds,
-    playerValueMap,
-  );
+  const hasSelectedOutgoingPlayers = Boolean(allowedOutgoingPlayerIds?.length);
+  const allowedPlayerAssets = hasSelectedOutgoingPlayers
+    ? resolveOutgoingPlayerAssets(
+        myRosterAnalysis,
+        targetPlayer.id,
+        allowedOutgoingPlayerIds,
+        playerValueMap,
+      )
+    : [];
   const allowedPickAssets = resolveOutgoingPickAssets({
     myRosterId: opportunityLayer.myRosterId,
     rosterPicks,
@@ -2673,7 +2676,6 @@ export function findLeagueWideUpgradeGroups({
   });
 
   const groups = [];
-  const hasSelectedOutgoingPlayers = Boolean(allowedOutgoingPlayerIds?.length);
 
   for (const partnerAnalysis of opportunityLayer.rosterAnalyses ?? []) {
     if (partnerAnalysis.roster_id === opportunityLayer.myRosterId) continue;

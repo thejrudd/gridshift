@@ -7,6 +7,14 @@ New features requested or planned should be added here.
 
 ## Planned Versions
 
+### v6.1 — Trade Detail Drilldowns
+
+Builds on the Trade suite by making proposal assets interactive and easier to evaluate without leaving the flow.
+
+- **Clickable Trade Asset Cards** — Allow player cards in Trade → Intelligence, Agent, and Upgrades to be tapped/clicked to open a centered player detail modal
+- **Shared Player Stats Modal** — Use the same underlying player-stat data source that powers the Statistics section so modal data stays aligned with the rest of the app
+- **Direct Link to Full Player Stats Page** — Include a clear CTA from the modal to jump straight into that player’s dedicated Statistics view for deeper analysis
+
 ### v7.0 — Draft Coach
 
 Surfaces publicly available scouting and evaluation data to help users make informed draft decisions.
