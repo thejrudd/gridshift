@@ -117,10 +117,10 @@ export default function Sidebar({
           beta
         />
         <SidebarNavItem
-          active={activeTab === 'compare'}
-          onClick={() => onTabChange('compare')}
-          icon={<CompareIcon />}
-          label="Compare"
+          active={activeTab === 'trade'}
+          onClick={() => onTabChange('trade')}
+          icon={<TradeIcon />}
+          label="Trade"
           beta
         />
       </nav>
@@ -139,7 +139,7 @@ export default function Sidebar({
             <SidebarAction label="Randomize Predictions" onClick={onRandom} />
           </>
         )}
-        {activeTab === 'companion' && (
+        {(activeTab === 'companion' || activeTab === 'trade') && (
           <>
             <SidebarAction label="Scoring Settings" onClick={onScoringSettings} />
             {isConnected && (
@@ -217,7 +217,7 @@ export default function Sidebar({
           className="px-5 py-3 text-xs"
           style={{ color: 'var(--color-label-tertiary)' }}
         >
-          v5.8.8
+          v6.0.0
         </div>
       </div>
     </aside>
@@ -298,11 +298,11 @@ function CompanionIcon() {
   );
 }
 
-function CompareIcon() {
+function TradeIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 26 26" fill="none" aria-hidden="true">
-      <rect x="3" y="5" width="8" height="16" rx="2" stroke="currentColor" strokeWidth="1.5" />
-      <rect x="15" y="5" width="8" height="16" rx="2" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M5 9h11l-2-2 1.4-1.4L20.8 9l-5.4 3.4L14 11l2-2H5z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+      <path d="M21 17H10l2 2-1.4 1.4L5.2 17l5.4-3.4L12 15l-2 2h11z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
     </svg>
   );
 }

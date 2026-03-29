@@ -7,9 +7,9 @@ New features requested or planned should be added here.
 
 ## Planned Versions
 
-### v5.9 — Areas of Opportunity
+### v6.0 — Trade Suite
 
-A new **Companion sub-tab** that analyzes any roster in the league (defaulting to your own) for weaknesses and surfaces them as actionable trade or waiver targets.
+A new top-level **Trade** section with dedicated **Agent**, **Intelligence**, **Upgrades**, and **Compare** tabs. The release centers on roster weakness analysis, package-building, partner-aware trade ideas, and surplus-driven upgrade paths.
 
 **Weakness Analysis (in priority order):**
 1. **Position depth** — Rosters with thin starter depth at a position (e.g., only one viable WR2) are flagged as exploitable.
@@ -19,7 +19,7 @@ A new **Companion sub-tab** that analyzes any roster in the league (defaulting t
 
 **Output per weakness:**
 - Weakness title + explanation (e.g. "Your weakest position is RB2 — here's why")
-- CTA: "Trade for..." (shows players from your surplus that could be offered) or "Check Waivers" (links to Waiver tab filtered to that position)
+- CTA into a relevant Trade flow, such as Intelligence proposals, Upgrades, or a manual Agent build with preselected context
 
 **Player Suggestions:**
 - When recommending a trade, surface 2–3 specific players from your roster surplus that could be used as trade chips
@@ -33,7 +33,7 @@ A new **Companion sub-tab** that analyzes any roster in the league (defaulting t
 
 ---
 
-### v6.0 — Draft Coach
+### v7.0 — Draft Coach
 
 Surfaces publicly available scouting and evaluation data to help users make informed draft decisions.
 
@@ -52,8 +52,8 @@ Surfaces publicly available scouting and evaluation data to help users make info
 
 ## Optimizations
 
-- **Lint modernization / cleanup pass** — Resolve the current ESLint backlog across the app so `npm run lint` passes cleanly. Prioritize Trade Agent and active Companion surfaces first, then address broader React hook/state-effect warnings, unused vars, Fast Refresh export issues, and config globals like `__APP_VERSION__`.
-- **Trade Agent valuation path deduplication** — Consolidate roster search, roster browse, partner preview, and side-card value calculations onto a shared helper so player availability, estimated values, and additive totals stay consistent across all Trade Agent entry points.
+- **Lint modernization / cleanup pass** — Resolve the current ESLint backlog across the app so `npm run lint` passes cleanly. Prioritize the new Trade surfaces and active Companion areas first, then address broader React hook/state-effect warnings, unused vars, Fast Refresh export issues, and config globals like `__APP_VERSION__`.
+- **Trade valuation path deduplication** — Consolidate roster search, roster browse, partner preview, and side-card value calculations onto a shared helper so player availability, estimated values, and additive totals stay consistent across all Trade entry points.
 - **Companion tab load-time optimization** — Improve initial and first-open load times across all Companion tabs by preloading shared data more intentionally, deferring non-critical derivations, reducing duplicate calculations between tabs, and minimizing context-driven rerenders.
 - **Companion Heatmap first-open performance** — Optimize initial load by reducing eager table computation, avoiding unnecessary recomputes after stat enrichment, and limiting context-driven rerenders from unrelated state like progress updates.
 - **Reduce Heatmap `loadSeasonStats` fetch time** — Companion → Heatmap now avoids blocking on pass-2 enhancement and uses a faster local offense table builder, but the next likely optimization is reducing the raw `loadSeasonStats` fetch cost. This is a different class of optimization and riskier because it touches the shared season-stats loading path.

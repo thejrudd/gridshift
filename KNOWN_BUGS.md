@@ -8,6 +8,20 @@ Open bugs are listed first, fixed bugs below. Add new entries at the bottom of e
 
 | Bug |
 |-----|
+| Trade Intelligence proposal apply actions can mismatch the displayed package by pairing the incoming target with the wrong outgoing asset, or by adding only one side of the proposal instead of the full deal |
+| Trade → Upgrades can appear unresponsive after clicking "Find Matches" because the results state is not surfaced clearly enough and the returned matches may render below the fold with little immediate feedback |
+| Trade → Upgrades can still suggest unrealistic one-sided upgrades because it underweights the other roster's actual needs and does not always treat the selected outgoing pool as true payment pressure |
+| Trade → Upgrades and Trade Intelligence proposals can diverge from Agent's displayed asset values because the opportunity engine still uses a separate player-value proxy instead of the shared Trade valuation model |
+| Trade Intelligence can still render pick-only multi-pick packages as one draft-pick card plus text chips instead of showing the full pick package consistently |
+| Trade Intelligence lacks a `0 players` package filter and still under-surfaces pick-only or pick-heavy alternatives even when equivalent draft-capital offers should be possible |
+| Trade Intelligence player cards can show blank Game Stats for some defensive players such as Myles Garrett, Maxx Crosby, and Montez Sweat even when season production exists |
+| Trade Intelligence → Fix Needs can return no visible ideas after filtering to `With Picks` because viable pick-inclusive proposals are often crowded out by player-only packages before the final proposal set is chosen |
+| Trade Intelligence → Use Surplus can combine multiple individually-movable players into one package without rechecking the full package depth, causing explanations to claim playable depth remains after a deal that actually clears out the position |
+| Trade Intelligence → Fix Needs can skew too heavily toward 2-player and 3-player incoming packages, crowding out more balanced player-plus-pick returns on the other team’s side |
+| Trade Intelligence → Use Surplus can stamp unrelated package shapes with the `Two-Player Swap` label because proposal labeling is still derived too narrowly from one side of the trade |
+| Trade Intelligence still shows stale `Upgrade Finder` and `Hide` controls inside the standalone Intelligence tab even though Upgrades now lives in its own Trade tab |
+| Trade Intelligence proposal cards can fall out of shared height sync, leaving player and draft-pick cards mismatched within the same package |
+| Trade Intelligence midpoint swap arrow can sit above center on mobile instead of aligning vertically between both sides of the package |
 
 ---
 

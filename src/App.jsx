@@ -16,6 +16,7 @@ import NavBar from './components/NavBar';
 import BottomTabBar from './components/BottomTabBar';
 import SeasonSubNav from './components/SeasonSubNav';
 import CompanionSubNav from './components/CompanionSubNav';
+import TradeSubNav from './components/TradeSubNav';
 import ActionSheet from './components/ActionSheet';
 import Sidebar from './components/Sidebar';
 import FavoriteTeamPicker from './components/FavoriteTeamPicker';
@@ -42,11 +43,13 @@ function AppInner() {
   const [activeTab, setActiveTab]     = useState('predictions');
   const [seasonView, setSeasonView]   = useState('predictions');
   const [companionView, setCompanionView] = useState('roster');
+  const [tradeView, setTradeView] = useState('agent');
   const [scoringSettingsOpen, setScoringSettingsOpen] = useState(false);
   const [statsInitPlayer, setStatsInitPlayer] = useState(null);
   const [statsNavBack, setStatsNavBack] = useState(null); // { label, onBack } | null — contextual back from external nav
   const [compareInitPlayerA, setCompareInitPlayerA] = useState(null);
   const [tradeInitPlayer, setTradeInitPlayer] = useState(null); // { sleeperId, side: 'give'|'get', partnerRosterId? }
+  const [waiverInitRequest, setWaiverInitRequest] = useState(null); // { position, nonce }
 
   const { hasLeague, season, changeSeason, league, disconnect, sleeperUser, statsLoading, loadSeasonStats, seasonStats } = useSleeper();
 
@@ -71,15 +74,15 @@ function AppInner() {
   useEffect(() => {
     if (isFirstNavRender.current) {
       isFirstNavRender.current = false;
-      history.replaceState({ activeTab, seasonView, companionView, _nav: 'app' }, '');
+      history.replaceState({ activeTab, seasonView, companionView, tradeView, _nav: 'app' }, '');
       return;
     }
     if (historyRestoring.current) {
       historyRestoring.current = false;
       return;
     }
-    history.pushState({ activeTab, seasonView, companionView, _nav: 'app' }, '');
-  }, [activeTab, seasonView, companionView]); // eslint-disable-line react-hooks/exhaustive-deps
+    history.pushState({ activeTab, seasonView, companionView, tradeView, _nav: 'app' }, '');
+  }, [activeTab, seasonView, companionView, tradeView]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const onPopState = (e) => {
@@ -88,6 +91,7 @@ function AppInner() {
       setActiveTab(e.state.activeTab ?? 'predictions');
       setSeasonView(e.state.seasonView ?? 'predictions');
       setCompanionView(e.state.companionView ?? 'roster');
+      setTradeView(e.state.tradeView ?? 'agent');
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
@@ -105,6 +109,10 @@ function AppInner() {
     setTeamSearch('');
     setDivisionFilter('');
     if (activeTab !== 'statistics') setStatsNavBack(null);
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab !== 'trade') setTradeView('agent');
   }, [activeTab]);
 
   useEffect(() => {
@@ -232,11 +240,17 @@ function AppInner() {
           </div>
         )}
 
+        {activeTab === 'trade' && hasLeague && (
+          <div className="season-subnav">
+            <TradeSubNav activeView={tradeView} onViewChange={setTradeView} />
+          </div>
+        )}
+
         {/* ── Content area ─────────────────────────────────── */}
-        <div className="content-area px-4 sm:px-6 lg:px-8 pt-4 lg:pt-6">
+        <div className="content-area lg:px-8 pt-4 lg:pt-6">
 
           {activeTab === 'predictions' && (
-            <>
+            <div className="px-4">
               {seasonView === 'predictions' && (
                 <>
                   {/* Search + filter */}
@@ -293,21 +307,106 @@ function AppInner() {
 
               {seasonView === 'standings' && <StandingsTable teams={scheduleData.teams} />}
               {seasonView === 'playoffs' && <PlayoffSeeding teams={scheduleData.teams} />}
-            </>
+            </div>
           )}
 
-          {activeTab === 'statistics' && <PlayerBrowser teams={scheduleData.teams} initialPlayer={statsInitPlayer} onInitialPlayerConsumed={() => setStatsInitPlayer(null)} navBack={statsNavBack} onComparePlayer={(player) => { setCompareInitPlayerA(player); setActiveTab('compare'); }} />}
-
-          {activeTab === 'compare' && <CompareTab teams={scheduleData.teams} initialPlayerA={compareInitPlayerA} onConsumeInitialPlayerA={() => setCompareInitPlayerA(null)} onBuildTrade={(sleeperIdA, sleeperIdB) => { setTradeInitPlayer({ sleeperId: sleeperIdA, side: 'give', otherSleeperId: sleeperIdB }); setActiveTab('companion'); setCompanionView('trade'); }} onViewPlayer={(player) => { setStatsInitPlayer({ id: player.id, displayName: player.displayName, teamId: player.teamId, position: player.position, experience: player.experience }); setStatsNavBack({ label: 'Compare', onBack: () => { setActiveTab('compare'); setStatsNavBack(null); } }); setActiveTab('statistics'); }} />}
+          {activeTab === 'statistics' && <PlayerBrowser teams={scheduleData.teams} initialPlayer={statsInitPlayer} onInitialPlayerConsumed={() => setStatsInitPlayer(null)} navBack={statsNavBack} onComparePlayer={(player) => { setCompareInitPlayerA(player); setActiveTab('trade'); setTradeView('compare'); }} />}
 
           {activeTab === 'companion' && !hasLeague && (
             <CompanionConnect />
           )}
 
+          {activeTab === 'trade' && !hasLeague && (
+            <CompanionConnect />
+          )}
+
+          {activeTab === 'trade' && hasLeague && (
+            <>
+              <div className="flex items-center gap-2 mb-3 px-4">
+                <div className="flex-1 min-w-0">
+                  <span className="text-xs font-semibold truncate" style={{ color: 'var(--color-label-secondary)' }}>
+                    {league?.name ?? 'League'}
+                  </span>
+                </div>
+                {(() => {
+                  const currentYear = parseInt(league?.season ?? new Date().getFullYear());
+                  const years = [String(currentYear)];
+                  if (league?.previous_league_id) years.push(String(currentYear - 1));
+                  if (years.length < 2) return null;
+                  return (
+                    <div className="flex gap-1 shrink-0">
+                      {years.map(s => (
+                        <button
+                          key={s}
+                          onClick={() => changeSeason(s)}
+                          className="px-2 py-0.5 rounded text-xs font-semibold transition-colors"
+                          style={{
+                            background: season === s ? 'var(--color-signature)' : 'var(--color-fill)',
+                            color: season === s ? 'var(--color-signature-fg)' : 'var(--color-label-tertiary)',
+                          }}
+                        >
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  );
+                })()}
+                {statsLoading ? (
+                  <span className="text-xs shrink-0" style={{ color: 'var(--color-label-tertiary)' }}>
+                    Loading…
+                  </span>
+                ) : (!seasonStats || Object.keys(seasonStats).length === 0) ? (
+                  <button
+                    onClick={loadSeasonStats}
+                    className="text-xs font-semibold shrink-0 px-2 py-0.5 rounded"
+                    style={{ background: 'var(--color-signature)', color: 'var(--color-signature-fg)' }}
+                  >
+                    Load Stats
+                  </button>
+                ) : null}
+                <button
+                  onClick={disconnect}
+                  className="text-xs shrink-0"
+                  style={{ color: 'var(--color-label-quaternary)' }}
+                >
+                  ✕
+                </button>
+              </div>
+              {tradeView === 'compare' ? (
+                <CompareTab
+                  teams={scheduleData.teams}
+                  initialPlayerA={compareInitPlayerA}
+                  onConsumeInitialPlayerA={() => setCompareInitPlayerA(null)}
+                  onBuildTrade={(sleeperIdA, sleeperIdB) => {
+                    setTradeInitPlayer({ sleeperId: sleeperIdA, side: 'give', otherSleeperId: sleeperIdB });
+                    setTradeView('agent');
+                  }}
+                  onViewPlayer={(player) => {
+                    setStatsInitPlayer({ id: player.id, displayName: player.displayName, teamId: player.teamId, position: player.position, experience: player.experience });
+                    setStatsNavBack({ label: 'Compare', onBack: () => { setActiveTab('trade'); setTradeView('compare'); setStatsNavBack(null); } });
+                    setActiveTab('statistics');
+                  }}
+                />
+              ) : (
+                <CompanionTrade
+                  initialPlayer={tradeInitPlayer}
+                  onConsumeInitialPlayer={() => setTradeInitPlayer(null)}
+                  onOpenWaiver={(position) => {
+                    if (!position) return;
+                    setWaiverInitRequest({ position, nonce: Date.now() });
+                    setCompanionView('waiver');
+                  }}
+                  view={tradeView}
+                  onViewChange={setTradeView}
+                />
+              )}
+            </>
+          )}
+
           {activeTab === 'companion' && hasLeague && (
             <>
               {/* League + season header */}
-              <div className="flex items-center gap-2 mb-3 px-1">
+              <div className="flex items-center gap-2 mb-3 px-4">
                 <div className="flex-1 min-w-0">
                   <span className="text-xs font-semibold truncate" style={{ color: 'var(--color-label-secondary)' }}>
                     {league?.name ?? 'League'}
@@ -360,13 +459,12 @@ function AppInner() {
                   ✕
                 </button>
               </div>
-              {companionView === 'roster'    && <CompanionRoster onTradePlayer={(sleeperId) => { setTradeInitPlayer({ sleeperId, side: 'give' }); setCompanionView('trade'); }} />}
+              {companionView === 'roster'    && <CompanionRoster onTradePlayer={(sleeperId) => { setTradeInitPlayer({ sleeperId, side: 'give' }); setActiveTab('trade'); setTradeView('agent'); }} />}
               {companionView === 'rankings'  && <CompanionRankings />}
               {companionView === 'matchup'   && <CompanionMatchup onViewPlayer={(id, meta) => { setStatsInitPlayer({ id, ...meta }); setStatsNavBack({ label: 'Matchup', onBack: () => { setActiveTab('companion'); setStatsNavBack(null); } }); setActiveTab('statistics'); }} />}
-              {companionView === 'waiver'    && <CompanionWaiver onViewPlayer={(id, meta) => { setStatsInitPlayer({ id, ...meta }); setStatsNavBack({ label: 'Waiver', onBack: () => { setActiveTab('companion'); setStatsNavBack(null); } }); setActiveTab('statistics'); }} />}
-              {companionView === 'league'   && <CompanionLeague onTradePlayer={(sleeperId, partnerRosterId, side = 'get') => { setTradeInitPlayer({ sleeperId, side, partnerRosterId }); setCompanionView('trade'); }} />}
+              {companionView === 'waiver'    && <CompanionWaiver initialPositionRequest={waiverInitRequest} onConsumeInitialPositionRequest={() => setWaiverInitRequest(null)} onViewPlayer={(id, meta) => { setStatsInitPlayer({ id, ...meta }); setStatsNavBack({ label: 'Waiver', onBack: () => { setActiveTab('companion'); setStatsNavBack(null); } }); setActiveTab('statistics'); }} />}
+              {companionView === 'league'   && <CompanionLeague onTradePlayer={(sleeperId, partnerRosterId, side = 'get') => { setTradeInitPlayer({ sleeperId, side, partnerRosterId }); setActiveTab('trade'); setTradeView('agent'); }} />}
               {companionView === 'defense'   && <CompanionDefense onViewPlayer={(id, meta) => { setStatsInitPlayer({ id, ...meta }); setStatsNavBack({ label: 'Heatmap', onBack: () => { setActiveTab('companion'); setStatsNavBack(null); } }); setActiveTab('statistics'); }} />}
-              {companionView === 'trade'     && <CompanionTrade initialPlayer={tradeInitPlayer} onConsumeInitialPlayer={() => setTradeInitPlayer(null)} />}
               {companionView === 'scoring'   && <CompanionScoring />}
             </>
           )}
@@ -400,7 +498,7 @@ function AppInner() {
       )}
 
       {/* ── Modals ────────────────────────────────────────────── */}
-      {guideOpen && <Guide onClose={() => setGuideOpen(false)} activeTab={activeTab} companionView={companionView} />}
+      {guideOpen && <Guide onClose={() => setGuideOpen(false)} activeTab={activeTab} companionView={companionView} tradeView={tradeView} />}
       {teamPickerOpen && <FavoriteTeamPicker onClose={() => setTeamPickerOpen(false)} />}
 
       {exportPreviewOpen && (

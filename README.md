@@ -85,8 +85,8 @@ For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Roadmap
 
-- **v5.9 — Areas of Opportunity** — New Companion sub-tab for roster weakness analysis, surfacing thin depth, bye-week clustering, positional holes, and age-risk with trade or waiver CTAs.
-- **v6.0 — Draft Coach** — Rookie scouting hub with draft slot, college production, combine metrics, consensus ranking, and dynasty rookie ADP.
+- **v6.0 — Trade Suite** — New top-level Trade section with Agent, Intelligence, Upgrades, and Compare, surfacing roster weakness analysis, partner-aware trade ideas, and package-driven upgrade paths.
+- **v7.0 — Draft Coach** — Rookie scouting hub with draft slot, college production, combine metrics, consensus ranking, and dynasty rookie ADP.
 - **Week-by-Week View** *(blocked on 2026 schedule data)* — Browse the full schedule by week with predictions reflected
 
 ## Project Structure

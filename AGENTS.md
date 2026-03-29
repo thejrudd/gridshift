@@ -9,8 +9,8 @@
 - **Current version**: v5.8.6
 
 ## Versioning Roadmap
-- **v5.9** — Areas of Opportunity (Companion sub-tab: roster weakness analysis + trade/waiver CTAs)
-- **v6.0** — Draft Coach (rookie scouting data, combine results, dynasty ADP)
+- **v6.0** — Trade Suite (top-level Trade section with Agent, Intelligence, Upgrades, and Compare)
+- **v7.0** — Draft Coach (rookie scouting data, combine results, dynasty ADP)
 
 ---
 
@@ -85,7 +85,7 @@ Decorative only: sidebar active border, season tab underline, progress bar fill,
 ## Commit & Version Workflow
 
 ### Never auto-commit
-Do NOT create commits, bump versions, or update any of the 6 tracked files unless the user explicitly asks. Mentioning a version number (e.g. "let's work on v5.9") means that's the version context — not a commit instruction. Only commit when the user says something like "commit this", "make a commit", or "bump the version".
+Do NOT create commits, bump versions, or update any of the 6 tracked files unless the user explicitly asks. Mentioning a version number (e.g. "let's work on v6.0") means that's the version context — not a commit instruction. Only commit when the user says something like "commit this", "make a commit", or "bump the version".
 
 **Why:** Auto-committing causes version creep and races ahead of planned roadmap milestones.
 

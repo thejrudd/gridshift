@@ -75,7 +75,7 @@ const GUIDE_CONTENT = {
       },
       {
         title: 'Trade from Here',
-        description: 'Tap the Trade button on any player row to open Trade Agent with that player pre-loaded on your side.',
+        description: 'Tap the Trade button on any player row to open Agent with that player pre-loaded on your side.',
       },
     ],
   },
@@ -151,7 +151,7 @@ const GUIDE_CONTENT = {
       },
       {
         title: 'Trade from Here',
-        description: 'Tap the Trade button on any opponent\'s player to open Trade Agent with that player pre-loaded on their side.',
+        description: 'Tap the Trade button on any opponent\'s player to open Agent with that player pre-loaded on their side.',
       },
     ],
   },
@@ -178,8 +178,8 @@ const GUIDE_CONTENT = {
     ],
   },
 
-  companion_trade: {
-    title: 'TRADE AGENT',
+  trade_agent: {
+    title: 'AGENT',
     steps: [
       {
         title: 'Build a Trade',
@@ -196,6 +196,42 @@ const GUIDE_CONTENT = {
       {
         title: 'Refine Trade',
         description: 'Once items are added, tap Refine Trade to get suggested additions, removals, or swaps that move the deal closer to even.',
+      },
+    ],
+  },
+
+  trade_intelligence: {
+    title: 'INTELLIGENCE',
+    steps: [
+      {
+        title: 'Choose a Partner',
+        description: 'Select a manager above to load trade ideas tailored to that roster matchup.',
+      },
+      {
+        title: 'Switch Modes',
+        description: 'Fix Needs focuses on starter upgrades. Use Surplus looks for deals where you can move depth or strength for picks and roster help.',
+      },
+      {
+        title: 'Apply a Proposal',
+        description: 'Tap Apply on any idea to send the full package into Agent, where you can review or edit the trade.',
+      },
+    ],
+  },
+
+  trade_upgrade: {
+    title: 'UPGRADE FINDER',
+    steps: [
+      {
+        title: 'Pick Your Target',
+        description: 'Choose one of your players to upgrade, then select which outgoing players or picks you are willing to use.',
+      },
+      {
+        title: 'Set Your Price',
+        description: 'Use the posture controls to decide whether to underpay, stay fair, or overpay for the upgrade.',
+      },
+      {
+        title: 'Search the League',
+        description: 'Results show upgrade packages across every roster, including optional picks coming back when the value needs to balance.',
       },
     ],
   },
@@ -239,14 +275,24 @@ const GUIDE_CONTENT = {
       },
       {
         title: 'Trade Panel',
-        description: 'Shows KTC trade values for both players with league-adjusted multipliers. Tap Build Full Trade to open Trade Agent with both players pre-loaded.',
+        description: 'Shows KTC trade values for both players with league-adjusted multipliers. Tap Build Full Trade to open Agent with both players pre-loaded.',
       },
     ],
   },
 };
 
-const Guide = ({ onClose, activeTab = 'predictions', companionView = 'roster' }) => {
-  const key = activeTab === 'companion' ? `companion_${companionView}` : activeTab;
+const Guide = ({ onClose, activeTab = 'predictions', companionView = 'roster', tradeView = 'agent' }) => {
+  const key = activeTab === 'companion'
+    ? `companion_${companionView}`
+    : activeTab === 'trade'
+      ? (tradeView === 'compare'
+        ? 'compare'
+        : tradeView === 'intelligence'
+          ? 'trade_intelligence'
+          : tradeView === 'upgrade'
+            ? 'trade_upgrade'
+            : 'trade_agent')
+      : activeTab;
   const content = GUIDE_CONTENT[key] ?? GUIDE_CONTENT[activeTab] ?? GUIDE_CONTENT.predictions;
 
   const handleBackdropClick = (e) => {

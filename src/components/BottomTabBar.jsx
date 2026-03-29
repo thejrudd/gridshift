@@ -3,7 +3,7 @@ export default function BottomTabBar({ activeTab, onTabChange }) {
     { id: 'predictions', label: 'Predictions', Icon: SeasonIcon },
     { id: 'statistics',  label: 'Statistics',  Icon: PlayersIcon },
     { id: 'companion',   label: 'Companion',   Icon: CompanionIcon, beta: true },
-    { id: 'compare',     label: 'Compare',     Icon: CompareIcon, beta: true },
+    { id: 'trade',       label: 'Trade',       Icon: TradeIcon, beta: true },
   ];
 
   return (
@@ -128,18 +128,18 @@ function PlayersIcon({ active }) {
   );
 }
 
-function CompareIcon({ active }) {
+function TradeIcon({ active }) {
   return (
     <svg width="26" height="26" viewBox="0 0 26 26" fill="none" className="tab-icon" aria-hidden="true">
       {active ? (
         <g fill="currentColor">
-          <rect x="3" y="5" width="8" height="16" rx="2" />
-          <rect x="15" y="5" width="8" height="16" rx="2" />
+          <path d="M5 9h11l-2-2 1.4-1.4L20.8 9l-5.4 3.4L14 11l2-2H5z" />
+          <path d="M21 17H10l2 2-1.4 1.4L5.2 17l5.4-3.4L12 15l-2 2h11z" />
         </g>
       ) : (
         <g>
-          <rect x="3" y="5" width="8" height="16" rx="2" stroke="currentColor" strokeWidth="1.5" />
-          <rect x="15" y="5" width="8" height="16" rx="2" stroke="currentColor" strokeWidth="1.5" />
+          <path d="M5 9h11l-2-2 1.4-1.4L20.8 9l-5.4 3.4L14 11l2-2H5z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+          <path d="M21 17H10l2 2-1.4 1.4L5.2 17l5.4-3.4L12 15l-2 2h11z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
         </g>
       )}
     </svg>

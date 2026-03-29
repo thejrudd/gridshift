@@ -5,7 +5,6 @@ const VIEWS = [
   { id: 'waiver',    label: 'Waiver' },
   { id: 'league',    label: 'League' },
   { id: 'defense',   label: 'Heatmap' },
-  { id: 'trade',     label: 'Trade', alpha: true },
   { id: 'scoring',   label: 'Scoring' },
 ];
 

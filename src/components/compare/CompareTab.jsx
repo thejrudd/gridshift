@@ -176,6 +176,7 @@ export default function CompareTab({ teams, initialPlayerA, onConsumeInitialPlay
   return (
     <div className="pb-8">
       {/* ── Panel tab selector — always at top ───────────────────────────── */}
+      <div className="px-4">
       <div className="season-tabs" role="tablist">
         {PANELS.map(({ id, label }) => {
           if (id === 'fantasy' && !hasLeague) return null;
@@ -191,6 +192,7 @@ export default function CompareTab({ teams, initialPlayerA, onConsumeInitialPlay
             </button>
           );
         })}
+      </div>
       </div>
 
       {/* ── Player slot row — always visible below tabs ──────────────────── */}

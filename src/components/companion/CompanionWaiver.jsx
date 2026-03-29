@@ -10,7 +10,7 @@ const POSITION_COLORS = {
   QB: '#ef4444', RB: '#22c55e', WR: '#3b82f6', TE: '#f59e0b', K: '#8b5cf6',
 };
 
-export default function CompanionWaiver({ onViewPlayer }) {
+export default function CompanionWaiver({ onViewPlayer, initialPositionRequest, onConsumeInitialPositionRequest }) {
   const {
     players, loadPlayers,
     rosters,
@@ -29,6 +29,10 @@ export default function CompanionWaiver({ onViewPlayer }) {
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState('recent'); // 'projected' | 'recent' | 'season'
   const debounceRef = useRef(null);
+  const requestedPosition = initialPositionRequest?.position;
+  const activePosFilter = requestedPosition && POSITIONS.includes(requestedPosition)
+    ? requestedPosition
+    : posFilter;
 
   useEffect(() => { loadPlayers(); }, [loadPlayers]);
   useEffect(() => {
@@ -159,13 +163,13 @@ export default function CompanionWaiver({ onViewPlayer }) {
         };
       })
       .filter(Boolean);
-  }, [players, seasonStats, weeklyStats, scheduleMap, scoringSettings, rosteredIds, week, espnIdOverrides, defenseTable, leagueAvgByPos]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [players, seasonStats, weeklyStats, scheduleMap, scoringSettings, rosteredIds, week, espnIdOverrides, defenseTable, leagueAvgByPos]);
 
   // ── Filter, sort, and slice (cheap — no projection math) ─────────────────────
   const available = useMemo(() => {
     const q = search.trim().toLowerCase();
     return enrichedPlayers
-      .filter(p => posFilter === 'ALL' || p.position === posFilter)
+      .filter(p => activePosFilter === 'ALL' || p.position === activePosFilter)
       .filter(p => !q || p.name.toLowerCase().includes(q) || p.team.toLowerCase().includes(q))
       .sort((a, b) => {
         if (sortBy === 'projected') {
@@ -177,7 +181,7 @@ export default function CompanionWaiver({ onViewPlayer }) {
         return b.recentAvg - a.recentAvg || b.pts - a.pts;
       })
       .slice(0, 100);
-  }, [enrichedPlayers, posFilter, search, sortBy]);
+  }, [enrichedPlayers, activePosFilter, search, sortBy]);
 
   const sortLabel = sortBy === 'projected' ? 'projected pts' : sortBy === 'season' ? 'season total' : 'recent avg (last 4 weeks)';
 
@@ -189,11 +193,14 @@ export default function CompanionWaiver({ onViewPlayer }) {
           {POSITIONS.map(pos => (
             <button
               key={pos}
-              onClick={() => setPosFilter(pos)}
+              onClick={() => {
+                onConsumeInitialPositionRequest?.();
+                setPosFilter(pos);
+              }}
               className="px-3 py-1 rounded-lg text-xs font-semibold transition-colors"
               style={{
-                background: posFilter === pos ? 'var(--color-signature)' : 'var(--color-fill)',
-                color: posFilter === pos ? 'var(--color-signature-fg)' : 'var(--color-label-secondary)',
+                background: activePosFilter === pos ? 'var(--color-signature)' : 'var(--color-fill)',
+                color: activePosFilter === pos ? 'var(--color-signature-fg)' : 'var(--color-label-secondary)',
               }}
             >
               {pos}

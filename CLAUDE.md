@@ -153,6 +153,11 @@ Keep Guide content succinct, instructional, and not verbose.
 - Skip background explanation; don't restate what the UI already shows
 - 2–4 steps per tab is the right range
 
+## Communication Preference
+
+- Prefer plain-language labels over niche or non-standardized acronyms in UI copy.
+- Avoid acronyms when they speed up communication at the expense of understanding.
+
 ---
 
 ## Scoring Call Sites

@@ -715,3 +715,19 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Valuation modal defensive scoring cleanup** — "How Values Are Calculated" now shows a shorter defensive valuation explanation and only renders IDP or D/ST scoring rows when that scoring type is actually enabled and active for the league.
 - **Heatmap load-time optimization** — Companion → Heatmap now builds offense tables through a cached local path, shows a lightweight "Preparing heatmap…" loading state during stat enhancement, and avoids unnecessary table work while background enhancement is still running.
 - **Repo docs starter** — Added an Obsidian-friendly `docs/` folder with linked notes for architecture, feature areas, edit entry points, and project conventions to seed a future in-repo wiki.
+
+---
+
+## v6.0 — Trade Suite
+*2026-03-28*
+
+- **Trade promoted to a top-level section** — Trade now lives outside Companion as its own app area, with sub-tabs for Agent, Intelligence, Upgrades, and Compare. Compare was moved under Trade, and the guide/navigation flows were updated to match.
+- **Agent page simplified around the manual builder** — The former Trade Agent view now focuses on the core builder while proposal-heavy UI moved into its own Intelligence tab, reducing visual clutter in the main trade workflow.
+- **Trade Intelligence split into two proposal modes** — Added `Fix Needs` for starter/depth upgrades and `Use Surplus` for moving roster strength into picks, need-fit players, or mixed return packages.
+- **Partner-aware proposal engine expanded** — Trade Intelligence can now build packages up to three assets on either side, including player-plus-pick bundles, compensation picks coming back, and broader surplus-driven offers instead of only simple one-for-one ideas.
+- **Proposal reasoning overhauled** — Suggestions now carry structured reason types and clearer copy for starter upgrades, thin depth, no playable fallback, surplus, schedule pressure, bye pressure, and pick compensation. Position labels in explanations remain uppercase, and low-value partner benefits now use depth language instead of misleading `0.0 PPG` upgrade phrasing.
+- **Pick logic explained in the UI** — When draft picks are included, the reasoning text now explains why the pick is part of the package for both sides instead of treating picks as silent throw-ins.
+- **Trade Intelligence cards redesigned as trading cards** — Proposal assets now render as portrait-style cards with team-color gradients, player headshots, featured KTC values, Give/Get badges, and responsive stat layouts that scale from compact mobile summaries to fuller desktop breakdowns.
+- **Multi-asset proposal layout cleaned up** — Each player in a package now renders as its own card, picks are shown as distinct supporting chips instead of duplicated card content, and desktop rows pack more efficiently with wrap-aware layouts, orphan-row centering, and dense backfilling.
+- **Trade entry points were rewired across the app** — Roster, League, Compare, and Trade proposal apply actions now route into the correct Trade sub-view, and Trade CTAs can send position-specific requests into Waiver with the relevant filter preselected.
+- **Trade labeling and release badges updated** — The top-level Trade section is now marked Beta, Agent and Intelligence are tagged Beta, Upgrades is tagged Alpha, and Compare no longer carries a beta badge.

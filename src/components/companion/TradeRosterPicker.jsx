@@ -140,6 +140,7 @@ export default function TradeRosterPicker({
   dynastyKtcPlayers,     // fallback for players absent from the primary (redraft) list
   leagueType,
   excludeIds,
+  allowedIds,
   seasonStats,
   scoringSettings,
   getUserDisplayName,    // needed for all-rosters mode owner labels
@@ -193,6 +194,7 @@ export default function TradeRosterPicker({
   }, [rosters]);
 
   const excludeSet = useMemo(() => new Set(excludeIds ?? []), [excludeIds]);
+  const allowedSet = useMemo(() => allowedIds?.length ? new Set(allowedIds) : null, [allowedIds]);
 
   // Build player list — either from one roster or all (optionally including own roster)
   const players = useMemo(() => {
@@ -210,6 +212,7 @@ export default function TradeRosterPicker({
     }
 
     return sourceIds
+      .filter(id => !allowedSet || allowedSet.has(id))
       .filter(id => !isAllMode || !excludeSet.has(id))
       .map(id => {
         const sp = sleeperPlayers?.[id];
@@ -282,7 +285,7 @@ export default function TradeRosterPicker({
         };
       })
       .filter(Boolean);
-  }, [isAllMode, includeOwnRoster, rosters, rosterId, myRosterId, excludeSet, sleeperPlayers,
+  }, [isAllMode, includeOwnRoster, rosters, rosterId, myRosterId, excludeSet, allowedSet, sleeperPlayers,
       ktcPlayers, dynastyKtcPlayers, leagueType, seasonStats, scoringSettings, playerRosterMap,
       mergedIDPMap,
       getUserDisplayName, rankMap, positionalAvgPPG, positionalValuePerPPG]);

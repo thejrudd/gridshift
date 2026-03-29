@@ -544,4 +544,3 @@ body {
 .react-grid-item > .react-resizable-handle:hover::after {
   border-color: rgba(96, 165, 250, 0.9) !important;
 }
-
