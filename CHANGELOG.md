@@ -741,3 +741,12 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Desktop stat panels made more readable** — The `Game Stats`, `Fantasy`, and draft-card `Proj. Pick` sections now use larger desktop typography and spacing, improving legibility inside the lower info boxes.
 - **Height syncing changed to content-safe min-height** — Proposal-card equalization now uses a synced minimum height instead of a fixed height, so larger cards can still grow tall enough for stat content without clipping while both sides of a package remain aligned.
 - **Project memory updated for future card changes** — Added an explicit repo note that any proposal-card size adjustment must also be checked for desktop text fit, vertical expansion, and equal-height behavior.
+
+---
+
+## v6.0.3 — Upgrades Card Polish
+*2026-03-29*
+
+- **Upgrades Step 2 selected cards now stay uniform** — The selected-player rail in Trade → Upgrades now uses its own shared height sync, so multiple outgoing cards stay aligned instead of ending up at different heights.
+- **Desktop selected-card proportions improved** — Upgrades selected cards now size more responsively on desktop and use a slightly wider desktop image proportion so they feel closer to real trading cards without changing the mobile layout.
+- **Card copy and micro-interactions cleaned up** — Player-card stat headers now read `Stats`, and the Step 2 remove affordance now swaps the team-logo badge into an `X` in the exact same corner position instead of overlaying a second control.

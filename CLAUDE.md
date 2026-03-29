@@ -6,7 +6,7 @@
 - **Dark mode**: `.dark` class on `<html>`
 - **PWA**: vite-plugin-pwa + nginx in Docker
 - **Active branch**: `main` — all work ships directly here
-- **Current version**: v6.0.1
+- **Current version**: v6.0.3
 
 ## Versioning Roadmap
 - **v6.0** — Trade Suite (shipped)

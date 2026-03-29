@@ -1390,7 +1390,7 @@ const CARD_STAT_DEFS = {
 };
 
 // Portrait trading card for one asset in a proposal side.
-function ProposalPlayerCard({ player = null, palette = null, pick = null, side, seasonStats, showSideBadge = true, forcedHeight = null, cardRef = null }) {
+function ProposalPlayerCard({ player = null, palette = null, pick = null, side, seasonStats, showSideBadge = true, forcedHeight = null, cardRef = null, topRightSlot = null }) {
   const primary = player ?? null;
   const primaryPalette = palette ?? null;
   const primaryPick = pick ?? null;
@@ -1511,7 +1511,7 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
             minHeight: forcedHeight ? `${forcedHeight}px` : undefined,
           }}
         >
-        <div className="relative w-full overflow-hidden" style={{ aspectRatio: '5 / 4', flexShrink: 0 }}>
+        <div className="relative w-full overflow-hidden aspect-[5/4] lg:aspect-[4/3]" style={{ flexShrink: 0 }}>
           <div className="absolute inset-0" style={{ background: pt.bg }} />
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none select-none overflow-hidden">
             <span
@@ -1635,7 +1635,7 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
       }}
     >
       {/* ── Photo area (~45% of card height) ──────────────────── */}
-      <div className="relative w-full overflow-hidden" style={{ aspectRatio: '5 / 4', flexShrink: 0 }}>
+      <div className="relative w-full overflow-hidden aspect-[5/4] lg:aspect-[4/3]" style={{ flexShrink: 0 }}>
         {/* Background fill + gradient fade (behind the player image) */}
         <div className="absolute inset-0"
           style={{ background: teamColor ? `${teamColor}44` : 'var(--color-fill)' }} />
@@ -1674,7 +1674,11 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
         )}
 
         {/* Team logo badge — top right */}
-        {primaryPalette?.logoKey && (
+        {topRightSlot ? (
+          <div className="absolute top-1.5 right-1.5 lg:top-2 lg:right-2 z-10">
+            {topRightSlot}
+          </div>
+        ) : primaryPalette?.logoKey ? (
           <div className="absolute top-1.5 right-1.5 lg:top-2 lg:right-2 z-10">
             <span
               className="w-6 h-6 lg:w-8 lg:h-8 rounded-full flex items-center justify-center"
@@ -1693,7 +1697,7 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
               />
             </span>
           </div>
-        )}
+        ) : null}
       </div>
 
       {/* ── Name banner ──────────────────────────────────────── */}
@@ -1723,7 +1727,7 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
         {primary?.value != null && (
           <div className="flex items-center justify-center py-1 lg:py-1.5">
             <span className="text-sm lg:text-[18px] font-bold tabular-nums leading-tight"
-              style={{ color: accentColor, textShadow: '0 1px 3px rgba(0,0,0,0.4)', WebkitTextStroke: darkMode ? '0.4px rgba(0,0,0,0.28)' : '0.4px rgba(255,255,255,0.25)' }}>
+              style={{ color: accentColor }}>
               {fmtKtcValue(primary.value)}
             </span>
           </div>
@@ -1759,59 +1763,109 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
             <div className="hidden lg:flex gap-1.5 w-full">
               {/* Left: Game Stats */}
               <div className="flex-1 rounded-lg p-2 flex flex-col gap-0.5" style={{ background: 'rgba(0,0,0,0.35)' }}>
-                <span className="text-[8px] font-bold uppercase tracking-wide mb-0.5" style={{ color: 'rgba(255,255,255,0.45)' }}>Game Stats</span>
+                <span
+                  className="text-[9px] font-semibold uppercase tracking-wide mb-0.5"
+                  style={{ color: 'rgba(255,255,255,0.6)', fontFamily: "'Figtree', sans-serif" }}
+                >
+                  Stats
+                </span>
                 {statDefs.length > 0 && playerStats ? (
                   statDefs.map(sd => (
                     <div key={sd.key} className="flex justify-between items-baseline">
-                      <span className="text-[9px]" style={{ color: 'rgba(255,255,255,0.55)' }}>{sd.label}</span>
-                      <span className="text-[10px] font-semibold tabular-nums" style={{ color: 'white' }}>
+                      <span
+                        className="text-[10px] font-medium"
+                        style={{ color: 'rgba(255,255,255,0.68)', fontFamily: "'Figtree', sans-serif" }}
+                      >
+                        {sd.label}
+                      </span>
+                      <span
+                        className="text-[11px] font-semibold tabular-nums"
+                        style={{ color: 'white', fontFamily: "'Figtree', sans-serif" }}
+                      >
                         {fmtStat(playerStats[sd.key])}
                       </span>
                     </div>
                   ))
                 ) : (
-                  <span className="text-[9px]" style={{ color: 'rgba(255,255,255,0.35)' }}>—</span>
+                  <span className="text-[10px]" style={{ color: 'rgba(255,255,255,0.4)', fontFamily: "'Figtree', sans-serif" }}>—</span>
                 )}
               </div>
 
               {/* Right: Fantasy Stats */}
               <div className="flex-1 rounded-lg p-2 flex flex-col gap-0.5" style={{ background: 'rgba(0,0,0,0.35)' }}>
-                <span className="text-[8px] font-bold uppercase tracking-wide mb-0.5" style={{ color: 'rgba(255,255,255,0.45)' }}>Fantasy</span>
+                <span
+                  className="text-[9px] font-semibold uppercase tracking-wide mb-0.5"
+                  style={{ color: 'rgba(255,255,255,0.6)', fontFamily: "'Figtree', sans-serif" }}
+                >
+                  Fantasy
+                </span>
                 {primary ? (
                   <>
                     <div className="flex justify-between items-baseline">
-                      <span className="text-[9px]" style={{ color: 'rgba(255,255,255,0.55)' }}>PPG</span>
-                      <span className="text-[10px] font-semibold tabular-nums" style={{ color: 'white' }}>
+                      <span
+                        className="text-[10px] font-medium"
+                        style={{ color: 'rgba(255,255,255,0.68)', fontFamily: "'Figtree', sans-serif" }}
+                      >
+                        PPG
+                      </span>
+                      <span
+                        className="text-[11px] font-semibold tabular-nums"
+                        style={{ color: 'white', fontFamily: "'Figtree', sans-serif" }}
+                      >
                         {primary.ppg > 0 ? primary.ppg.toFixed(1) : '—'}
                       </span>
                     </div>
                     {primary.recentAvg > 0 && (
                       <div className="flex justify-between items-baseline">
-                        <span className="text-[9px]" style={{ color: 'rgba(255,255,255,0.55)' }}>L3 Avg</span>
-                        <span className="text-[10px] font-semibold tabular-nums" style={{ color: 'white' }}>
+                        <span
+                          className="text-[10px] font-medium"
+                          style={{ color: 'rgba(255,255,255,0.68)', fontFamily: "'Figtree', sans-serif" }}
+                        >
+                          L3 Avg
+                        </span>
+                        <span
+                          className="text-[11px] font-semibold tabular-nums"
+                          style={{ color: 'white', fontFamily: "'Figtree', sans-serif" }}
+                        >
                           {primary.recentAvg.toFixed(1)}
                         </span>
                       </div>
                     )}
                     {primary.seasonPts > 0 && (
                       <div className="flex justify-between items-baseline">
-                        <span className="text-[9px]" style={{ color: 'rgba(255,255,255,0.55)' }}>Season</span>
-                        <span className="text-[10px] font-semibold tabular-nums" style={{ color: 'white' }}>
+                        <span
+                          className="text-[10px] font-medium"
+                          style={{ color: 'rgba(255,255,255,0.68)', fontFamily: "'Figtree', sans-serif" }}
+                        >
+                          Season
+                        </span>
+                        <span
+                          className="text-[11px] font-semibold tabular-nums"
+                          style={{ color: 'white', fontFamily: "'Figtree', sans-serif" }}
+                        >
                           {primary.seasonPts.toFixed(1)}
                         </span>
                       </div>
                     )}
                     {primary.rank?.posLabel && (
                       <div className="flex justify-between items-baseline">
-                        <span className="text-[9px]" style={{ color: 'rgba(255,255,255,0.55)' }}>Rank</span>
-                        <span className="text-[10px] font-semibold tabular-nums" style={{ color: 'rgba(255,255,255,0.85)' }}>
+                        <span
+                          className="text-[10px] font-medium"
+                          style={{ color: 'rgba(255,255,255,0.68)', fontFamily: "'Figtree', sans-serif" }}
+                        >
+                          Rank
+                        </span>
+                        <span
+                          className="text-[11px] font-semibold tabular-nums"
+                          style={{ color: 'rgba(255,255,255,0.9)', fontFamily: "'Figtree', sans-serif" }}
+                        >
                           {primary.rank.posLabel}
                         </span>
                       </div>
                     )}
                   </>
                 ) : (
-                  <span className="text-[9px]" style={{ color: 'rgba(255,255,255,0.35)' }}>—</span>
+                  <span className="text-[10px]" style={{ color: 'rgba(255,255,255,0.4)', fontFamily: "'Figtree', sans-serif" }}>—</span>
                 )}
               </div>
             </div>
@@ -2345,6 +2399,9 @@ function UpgradeFinderPage({
   const resultsRef = useRef(null);
   const [targetPickerOpen, setTargetPickerOpen] = useState(false);
   const [offerPickerOpen, setOfferPickerOpen] = useState(false);
+  const selectionCardRefs = useRef(new Map());
+  const selectionMeasureFrameRef = useRef(null);
+  const [equalizedSelectionCardHeight, setEqualizedSelectionCardHeight] = useState(null);
 
   const selectableCards = useMemo(() => players.map((player) => {
     const sleeperPlayer = sleeperPlayers?.[player.id] ?? {};
@@ -2376,6 +2433,26 @@ function UpgradeFinderPage({
   const outgoingReady = hasSelectedOutgoingPlayers || allowOutgoingPicks;
   const canSearch = Boolean(selectedPlayerId) && outgoingReady;
 
+  const registerSelectionCardRef = useCallback((slotId, node) => {
+    if (!slotId) return;
+    if (node) selectionCardRefs.current.set(slotId, node);
+    else selectionCardRefs.current.delete(slotId);
+  }, []);
+
+  const measureSelectionCardHeights = useCallback(() => {
+    if (selectionMeasureFrameRef.current) cancelAnimationFrame(selectionMeasureFrameRef.current);
+    selectionMeasureFrameRef.current = requestAnimationFrame(() => {
+      selectionMeasureFrameRef.current = requestAnimationFrame(() => {
+        const tallest = Array.from(selectionCardRefs.current.values()).reduce((max, node) => {
+          if (!node) return max;
+          return Math.max(max, node.getBoundingClientRect().height);
+        }, 0);
+        const nextHeight = tallest ? Math.ceil(tallest) : null;
+        setEqualizedSelectionCardHeight((prev) => (prev === nextHeight ? prev : nextHeight));
+      });
+    });
+  }, []);
+
   const steps = [
     { label: 'Target', active: true, complete: Boolean(selectedPlayerId) },
     { label: 'Offer', active: Boolean(selectedPlayerId), complete: hasSelectedOutgoingPlayers },
@@ -2391,6 +2468,36 @@ function UpgradeFinderPage({
     if (!searchSubmitted || !resultsRef.current) return;
     resultsRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, [searchSubmitted, results]);
+
+  useLayoutEffect(() => {
+    if (!hasSelectedOutgoingPlayers) {
+      setEqualizedSelectionCardHeight(null);
+      selectionCardRefs.current.clear();
+      return;
+    }
+    measureSelectionCardHeights();
+    return () => {
+      if (selectionMeasureFrameRef.current) cancelAnimationFrame(selectionMeasureFrameRef.current);
+    };
+  }, [hasSelectedOutgoingPlayers, measureSelectionCardHeights, seasonStats, selectedOutgoingPlayerIds]);
+
+  useEffect(() => {
+    if (!hasSelectedOutgoingPlayers) return undefined;
+    const onResize = () => measureSelectionCardHeights();
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [hasSelectedOutgoingPlayers, measureSelectionCardHeights]);
+
+  useEffect(() => {
+    if (!hasSelectedOutgoingPlayers || typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(() => {
+      measureSelectionCardHeights();
+    });
+    Array.from(selectionCardRefs.current.values()).forEach((node) => {
+      if (node) observer.observe(node);
+    });
+    return () => observer.disconnect();
+  }, [hasSelectedOutgoingPlayers, measureSelectionCardHeights, seasonStats, selectedOutgoingPlayerIds]);
 
   const selectionButton = ({ title, description, onClick, cta }) => (
     <button
@@ -2423,31 +2530,68 @@ function UpgradeFinderPage({
     </button>
   );
 
-  const renderSelectedCard = ({ player, side, onRemove }) => (
-    <div key={player.id} className="group relative w-[210px] max-w-full flex-none self-start">
-      {onRemove && (
-        <button
-          onClick={() => onRemove(player.id)}
-          className="absolute top-2 right-2 z-20 w-7 h-7 rounded-full flex items-center justify-center border transition-opacity sm:opacity-0 sm:group-hover:opacity-100"
-          style={{
-            background: 'rgba(12,15,20,0.82)',
-            color: '#fff',
-            borderColor: 'rgba(255,255,255,0.2)',
-          }}
-          aria-label={`Remove ${player.name}`}
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
-            <path d="M18 6 6 18" />
-            <path d="M6 6l12 12" />
-          </svg>
-        </button>
-      )}
+  const getSelectionCardSlotStyle = (count) => {
+    const safeCount = Math.max(count || 1, 1);
+    const desktopBasis = safeCount >= 3
+      ? 'clamp(13rem, 15vw, 15rem)'
+      : safeCount === 2
+        ? 'clamp(13.5rem, 16vw, 15.5rem)'
+        : 'clamp(14rem, 17vw, 16rem)';
+    return {
+      width: '100%',
+      minWidth: 'min(100%, 13.5rem)',
+      maxWidth: '16rem',
+      flex: `0 1 ${desktopBasis}`,
+    };
+  };
+
+  const renderSelectedCard = ({ player, side, onRemove, cardCount = 1, forcedHeight = null }) => (
+    <div
+      key={player.id}
+      className="group relative max-w-full flex-none self-start lg:w-auto"
+      style={getSelectionCardSlotStyle(cardCount)}
+    >
       <ProposalPlayerCard
+        cardRef={(node) => {
+          if (onRemove) registerSelectionCardRef(`upgrade:${side}:${player.id}`, node);
+        }}
         player={player}
         palette={player.palette}
         side={side}
         seasonStats={seasonStats}
         showSideBadge={false}
+        forcedHeight={forcedHeight}
+        topRightSlot={onRemove ? (
+          <button
+            onClick={() => onRemove(player.id)}
+            className="relative w-6 h-6 lg:w-8 lg:h-8 rounded-full flex items-center justify-center"
+            style={{
+              background: player.palette?.logoBadgeBg ?? 'var(--color-bg-secondary)',
+              border: `1px solid ${player.palette?.logoBadgeBorder ?? 'rgba(255,255,255,0.2)'}`,
+              boxShadow: '0 1px 4px rgba(0,0,0,0.28)',
+            }}
+            aria-label={`Remove ${player.name}`}
+          >
+            {player.palette?.logoKey && (
+              <img
+                src={`https://a.espncdn.com/i/teamlogos/nfl/500/${player.palette.logoKey}.png`}
+                aria-hidden="true"
+                className="pointer-events-none select-none w-4 h-4 lg:w-6 lg:h-6 opacity-100 transition-opacity duration-150 ease-out group-hover:opacity-0"
+                style={{ objectFit: 'contain', filter: darkMode ? 'drop-shadow(0 1px 2px rgba(0,0,0,0.22))' : 'drop-shadow(0 1px 3px rgba(0,0,0,0.35))' }}
+                onError={e => { e.target.style.display = 'none'; }}
+              />
+            )}
+            <span
+              className="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity duration-150 ease-out group-hover:opacity-100"
+              style={{ color: darkMode ? 'var(--color-signature-fg)' : '#fff' }}
+            >
+              <svg width="12" height="12" className="lg:w-[14px] lg:h-[14px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round">
+                <path d="M18 6 6 18" />
+                <path d="M6 6l12 12" />
+              </svg>
+            </span>
+          </button>
+        ) : null}
       />
     </div>
   );
@@ -2571,7 +2715,7 @@ function UpgradeFinderPage({
 {selectedPlayer ? (
             <div className="flex flex-col items-center gap-3">
               <div className="flex justify-center w-full">
-                {renderSelectedCard({ player: selectedPlayer, side: 'get' })}
+                {renderSelectedCard({ player: selectedPlayer, side: 'get', cardCount: 1 })}
               </div>
               <div className="flex justify-center w-full">
                 <button
@@ -2613,6 +2757,8 @@ function UpgradeFinderPage({
                   player,
                   side: 'give',
                   onRemove: onToggleOutgoingPlayer,
+                  cardCount: selectedOutgoingPlayers.length,
+                  forcedHeight: equalizedSelectionCardHeight,
                 }))}
               </div>
               <div className="flex flex-wrap justify-center gap-2 w-full">

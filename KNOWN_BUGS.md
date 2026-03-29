@@ -141,3 +141,4 @@ Open bugs are listed first, fixed bugs below. Add new entries at the bottom of e
 | Trade Agent: `Search All Rostered Players` lacks defensive position filter chips for LB / DB / D/ST | v5.8.8 |
 | Trade Agent: `Search All Rostered Players` shows projected side totals for players from other rosters even when selecting them would switch partners and replace the current opponent assets | v5.8.8 |
 | Trade Intelligence proposal cards could fall out of shared height sync, leaving player and draft-pick cards mismatched within the same package | v6.0.1 |
+| Trade → Upgrades Step 2 selected player cards could render at mismatched heights and feel too narrow on desktop, making the selected package look uneven and harder to read | v6.0.3 |

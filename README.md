@@ -75,11 +75,11 @@ PORT=8080 docker compose up -d --build
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) |
 
-## What's New in v6.0.1
+## What's New in v6.0.3
 
-- **Desktop trade-card readability** — Trade proposal player and draft cards are larger on desktop, with more readable stat-box text and better spacing in the lower `Game Stats`, `Fantasy`, and `Proj. Pick` sections.
-- **Content-safe height syncing** — Proposal cards now sync using a shared minimum height instead of a fixed height, so both sides of a package stay aligned without clipping text when a card needs more vertical room.
-- **Follow-up polish for Trade Suite** — This is a patch release on top of `v6.0` focused on making the new Trade proposal cards read more cleanly in real desktop usage.
+- **Upgrades selected-card layout polish** — Trade → Upgrades Step 2 now keeps selected player cards aligned to a shared height, so multi-player packages no longer look uneven.
+- **Desktop card proportions refined** — Selected cards in Upgrades now size more naturally on desktop, with a slightly wider card silhouette that feels closer to a real trading card while keeping mobile behavior stable.
+- **Card detail cleanup** — Stat headers now read `Stats`, and the Step 2 remove interaction now swaps the team-logo badge into an `X` in the same corner location for a cleaner hover state.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 
