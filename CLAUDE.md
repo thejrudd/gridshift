@@ -8,6 +8,10 @@
 - **Active branch**: `main` — all work ships directly here
 - **Current version**: v6.0.3
 
+## API Secret Handling
+- Any BALLDONTLIE or similar paid API key must be treated as a secret and must never be committed into the repo or exposed in the client bundle.
+- If the project upgrades to a paid BALLDONTLIE subscription, rotate the existing key and move all access behind a server-side or proxy boundary before production use.
+
 ## Versioning Roadmap
 - **v6.0** — Trade Suite (shipped)
 - **v7.0** — Draft Coach (rookie scouting data, combine results, dynasty ADP)

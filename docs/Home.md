@@ -10,6 +10,10 @@ Use this note as the entry point.
 - [[Feature Map]]
 - [[Where To Edit]]
 - [[Conventions And Gotchas]]
+- [[Open Pencil Integration]]
+- [[Pretext Integration]]
+- [[BALLDONTLIE NFL Integration]]
+- [[Authentication And Memberships]]
 
 ## Suggested Obsidian Use
 
@@ -33,6 +37,10 @@ flowchart TD
   A --> C[Feature Map]
   A --> D[Where To Edit]
   A --> E[Conventions And Gotchas]
+  A --> F[Open Pencil Integration]
+  A --> G[Pretext Integration]
+  A --> H[BALLDONTLIE NFL Integration]
+  A --> I[Authentication And Memberships]
 
   B --> B1[src/main.jsx]
   B --> B2[src/App.jsx]

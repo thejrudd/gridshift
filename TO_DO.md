@@ -34,6 +34,8 @@ Surfaces publicly available scouting and evaluation data to help users make info
 
 ## Optimizations
 
+- **Shell visual refinement** — Targeted CSS/JSX-only polish pass on the desktop sidebar and navigation shell. Full proposal and rationale in [`docs/Shell Redesign Proposal.md`](docs/Shell%20Redesign%20Proposal.md). Five changes: (1) unify sidebar background to match canvas, (2) redesign brand wordmark, (3) strengthen active nav state to a single amber signal, (4) add visual hierarchy to the actions section, (5) replace `visibility: hidden` on the progress bar with conditional rendering to reclaim space on non-Predictions tabs.
+
 - **Trade proposal card desktop sizing polish** — Continue refining desktop card sizing so larger cards remain crisp and readable without reintroducing vertical text overflow or awkward package wrapping on narrower desktop widths.
 - **Lint modernization / cleanup pass** — Resolve the current ESLint backlog across the app so `npm run lint` passes cleanly. Prioritize the new Trade surfaces and active Companion areas first, then address broader React hook/state-effect warnings, unused vars, Fast Refresh export issues, and config globals like `__APP_VERSION__`.
 - **Trade valuation path deduplication** — Consolidate roster search, roster browse, partner preview, and side-card value calculations onto a shared helper so player availability, estimated values, and additive totals stay consistent across all Trade entry points.
@@ -42,6 +44,13 @@ Surfaces publicly available scouting and evaluation data to help users make info
 - **Reduce Heatmap `loadSeasonStats` fetch time** — Companion → Heatmap now avoids blocking on pass-2 enhancement and uses a faster local offense table builder, but the next likely optimization is reducing the raw `loadSeasonStats` fetch cost. This is a different class of optimization and riskier because it touches the shared season-stats loading path.
 
 ## Backlog (Unversioned)
+
+### New Technologies
+
+- **Open Pencil evaluation** — Investigate how Open Pencil's drafting, editing, and text-workflow concepts could inform future NFL Predictor writing surfaces such as player narratives, matchup writeups, trade explanations, export copy, or guided content-generation tools.
+- **Pretext evaluation** — Investigate how Pretext's rich-text / structured-editor concepts could support future in-app note-taking, report building, annotation, or editorial workflows tied to Trade, Draft Coach, or Statistics drilldowns.
+- **balldontlie NFL API evaluation** — Evaluate whether BALLDONTLIE NFL can power a live scoring layer for games, drives, injuries, standings, play-by-play, and betting-adjacent context, with strict rate-limit protection and a server-side key boundary before any production use.
+- **Authentication / memberships architecture** — Design a self-host-friendly auth system that lets hosts control access, optionally charge memberships to cover hosting/API costs, and leaves room for a future licensing model that could support commercial hosting with royalties back to the project owner.
 
 ### Season Predictions (Unblocked When Data Available)
 
@@ -58,6 +67,10 @@ Surfaces publicly available scouting and evaluation data to help users make info
 - **Historical Comparison** — Show how your predicted record compares to each team's actual results from recent seasons. Highlight where you're more bullish or bearish than history.
 - **Compare Mode** — Import a friend's exported JSON predictions and diff against yours: side-by-side records, agree/disagree highlights, biggest divergences.
 - **Image Export Redesign** — Redesign as a compact ~1080x1080 shareable summary instead of a raw page screenshot.
+
+### Player Stats Visualization
+
+- **Weekly Performance Chart** — Per-player chart showing season-long performance week by week. X axis is each game week. The user selects a stat to visualize via position-specific toggles (QB: passing yards, completion %, rushing yards, passing TDs, interceptions, etc.; RB: rushing yards, carries, receiving yards, rush TDs, etc.; WR/TE: targets, receptions, receiving yards, receiving TDs, etc.). When a stat is selected, the chart renders two lines: one for the raw stat value (left Y axis) and one for the fantasy points that stat contributed that week (right Y axis), since their scales are incompatible. In addition, a bar is rendered for each week showing the opposing defense's performance allowed against the selected stat category, giving context for whether a production week was impressive or expected given the matchup. All stat toggles and both Y axes update together when the selection changes.
 
 ### Player Info
 
