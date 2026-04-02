@@ -156,3 +156,4 @@ Open bugs are listed first, fixed bugs below. Add new entries at the bottom of e
 | Heatmap Pass Def / QB Hit drilldowns could show "No data found for this matchup" even when the cell had a value because alias stat keys were ignored in the modal path | v6.1 |
 | Heatmap team rows changed height when Team sort switched to Conference or Division because the sticky cell only rendered the second metadata line in those modes | v6.1 |
 | Matchup team score breakdown modal total could differ from the displayed matchup score because it omitted some scoring mappings and position-specific bonus rows | v6.1 |
+| Heatmap → Phase `Defense` with Stat `INT` could render valued grid cells without any heat coloring when all populated cells shared the same value | v6.1.1 |

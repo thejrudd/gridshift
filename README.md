@@ -75,11 +75,10 @@ PORT=8080 docker compose up -d --build
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) |
 
-## What's New in v6.1
+## What's New in v6.1.1
 
-- **Companion visuals normalized** - League now matches the newer Roster card treatment, list-view team tints are more consistent across Companion, and Matchup has been restyled into the Broadcast Editorial system with stronger score panels and mirrored player cards.
-- **Heatmap sizing and data cleanup** - Team/metric columns now stay stable across filters, visible weeks follow the league fantasy season, and Pass Def / QB Hit heatmap tiles and drilldowns now honor Sleeper alias keys.
-- **Matchup score breakdown accuracy fix** - Team header breakdowns now total through the same scoring-engine paths as the displayed matchup score, including position-specific bonuses.
+- **Heatmap INT color fix** - Defensive interception tiles now keep their heat coloring even when every populated cell shares the same value.
+- **Heatmap AVG precision increased** - The AVG column now shows two decimal places so small differences are visible in low-volume stat modes.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 

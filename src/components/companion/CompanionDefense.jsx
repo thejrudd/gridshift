@@ -702,7 +702,18 @@ export default function CompanionDefense({ onViewPlayer }) {
     } else {
       min = heatRanges.overallMin; max = heatRanges.overallMax;
     }
-    if (min == null || max == null || max === min) return undefined;
+    if (min == null || max == null) return undefined;
+    if (max === min) {
+      if (pts === 0) return undefined;
+      const t = pts > 0 ? 1 : 0;
+      if (useTeamColors && favoriteTeam && TEAM_COLORS[favoriteTeam]) {
+        const tc = TEAM_COLORS[favoriteTeam];
+        const hexLow  = darkMode ? (tc.darkSecondary ?? tc.secondary) : tc.secondary;
+        const hexHigh = darkMode ? (tc.darkPrimary   ?? tc.primary)   : tc.primary;
+        return heatColorTeam(t, hexLow, hexHigh);
+      }
+      return heatColor(t);
+    }
     const raw = (pts - min) / (max - min);
     const t = raw;
     if (useTeamColors && favoriteTeam && TEAM_COLORS[favoriteTeam]) {
@@ -1174,7 +1185,7 @@ export default function CompanionDefense({ onViewPlayer }) {
                     {/* AVG column — always rendered; empty placeholder when hidden */}
                     {showAvg ? (
                       <td style={{ ...cellStyle(true), background: avg != null ? cellBg(avg, team, null) : rowBg, color: avg != null ? '#000' : 'var(--color-label)' }}>
-                        {avg != null ? avg.toFixed(1) : '—'}
+                        {avg != null ? avg.toFixed(2) : '—'}
                       </td>
                     ) : (
                       <td style={{ ...cellStyle(false), background: rowBg }} />

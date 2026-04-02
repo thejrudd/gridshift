@@ -785,3 +785,11 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Matchup team score breakdowns now reconcile to the displayed total** - The team-header modal now aggregates through the actual scoring-engine mappings and position-specific bonus paths instead of a smaller stat-label subset, preventing missing scoring rows from silently lowering the modal total.
 - **Heatmap team-column and week-window logic refined** - The sticky Team column now sizes to its visible content shape, the number of displayed weeks follows the league's actual fantasy season, and stat columns stay width-stable across filters including Spread.
 - **Heatmap stat and layout correctness fixes** - Pass Def / QB Hit cells and drilldowns now respect Sleeper alias keys, Conference / Division team sorting no longer changes row height, and the sticky Team logo / abbreviation alignment was corrected.
+
+---
+
+## v6.1.1 â€” Heatmap INT Color Fix
+*2026-04-01*
+
+- **Heatmap `INT` tiles now color correctly** - Defensive interception cells could show live values with no heat fill when every populated cell shared the same value. Uniform non-zero ranges now still receive a color treatment instead of falling back to the plain row background.
+- **Heatmap AVG column now shows hundredths** - The AVG column now renders to two decimal places so low-volume stat modes expose small differences numerically and line up better with the heat range.
