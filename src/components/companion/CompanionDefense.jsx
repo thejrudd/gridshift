@@ -886,7 +886,7 @@ export default function CompanionDefense({ onViewPlayer }) {
   const showAvg = !(viewMode === 'offense' && statMode === 'vegas_odds');
 
   return (
-    <div className="-mx-4 sm:-mx-6 lg:-mx-8">
+    <div className="lg:-mx-8">
       {/* Filter bar — scrollable strip + pinned info icon in the same row */}
       <div ref={filterBarRef} className="px-4 sm:px-6 lg:px-8 pb-3 flex items-center gap-2">
         {/* Horizontally scrollable filter strip — never wraps to a second line */}
@@ -995,7 +995,17 @@ export default function CompanionDefense({ onViewPlayer }) {
           </span>
         </div>
       ) : (
-        <div ref={tableContainerRef} style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: gridMaxHeight, WebkitOverflowScrolling: 'touch' }}>
+        <div
+          ref={tableContainerRef}
+          style={{
+            overflowX: 'auto',
+            overflowY: 'auto',
+            maxHeight: gridMaxHeight,
+            WebkitOverflowScrolling: 'touch',
+            overscrollBehaviorX: 'contain',
+            width: '100%',
+          }}
+        >
           <table style={{
             borderCollapse: 'separate',
             borderSpacing: 0,

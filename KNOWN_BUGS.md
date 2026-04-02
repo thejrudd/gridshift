@@ -157,3 +157,8 @@ Open bugs are listed first, fixed bugs below. Add new entries at the bottom of e
 | Heatmap team rows changed height when Team sort switched to Conference or Division because the sticky cell only rendered the second metadata line in those modes | v6.1 |
 | Matchup team score breakdown modal total could differ from the displayed matchup score because it omitted some scoring mappings and position-specific bonus rows | v6.1 |
 | Heatmap → Phase `Defense` with Stat `INT` could render valued grid cells without any heat coloring when all populated cells shared the same value | v6.1.1 |
+| Companion mobile list-view refresh caused text truncation, metadata collisions, and decorative team-logo overlap across Roster / Rankings / League / Waiver on narrow screens | v6.1.2 |
+| Companion -> Waiver grid could collapse after column-sizing changes, stacking metric columns under player content; free-agent rows could render taller than rostered rows and the Season metric could drift out of alignment | v6.1.2 |
+| Companion -> Matchup mobile layout could clip header text and overcrowd row metadata because the side headers, shared team-name sizing, center slot rail, and row details did not compress enough on narrow viewports | v6.1.2 |
+| Heatmap mobile layout could drag the whole page off-screen horizontally instead of keeping movement contained to the tab strip, filter bar, and grid scroller | v6.1.2 |
+

@@ -404,7 +404,7 @@ function RankRow({ rank, player, onSelect, nameColumnWidth }) {
 
       <div
         className="flex-1 min-w-0 grid items-center gap-2"
-        style={{ gridTemplateColumns: `minmax(0, ${Math.max(nameColumnWidth, 0)}px) auto` }}
+        style={{ gridTemplateColumns: (player.isRostered || player.teamTheme.logoKey) ? 'minmax(0, 1fr) auto' : 'minmax(0, 1fr)' }}
       >
         <div className="min-w-0">
           <div className="flex items-center gap-1.5 min-w-0">
@@ -412,7 +412,7 @@ function RankRow({ rank, player, onSelect, nameColumnWidth }) {
               {player.name}
             </span>
           </div>
-          <div className="text-xs mt-0.5 flex items-center gap-1.5">
+          <div className="text-xs mt-0.5 flex items-center gap-1.5 min-w-0">
             <span style={{ color: posColor, fontWeight: 600 }}>{player.position}</span>
             <span style={{ color: 'var(--color-label-tertiary)' }}>{player.team}</span>
           </div>
@@ -421,7 +421,7 @@ function RankRow({ rank, player, onSelect, nameColumnWidth }) {
         {(player.isRostered || player.teamTheme.logoKey) && (
           <div className="shrink-0 flex items-center justify-start gap-1.5 self-center">
             <span
-              className="w-[68px] text-[10px] font-bold uppercase tracking-[0.12em] leading-none text-left"
+              className="shrink-0 text-[9px] sm:w-[68px] sm:text-[10px] font-bold uppercase tracking-[0.12em] leading-none text-left"
               style={{ color: player.isRostered ? rosteredColor : 'transparent' }}
             >
               {player.isRostered ? 'ROSTERED' : 'ROSTERED'}
@@ -431,7 +431,7 @@ function RankRow({ rank, player, onSelect, nameColumnWidth }) {
                 src={`https://a.espncdn.com/i/teamlogos/nfl/500/${player.teamTheme.logoKey}.png`}
                 alt=""
                 aria-hidden="true"
-                className="block shrink-0"
+                className="hidden sm:block shrink-0"
                 style={{ width: 'auto', height: 44, maxWidth: 44, objectFit: 'contain', opacity: 0.72 }}
                 onError={e => { e.target.style.display = 'none'; }}
               />

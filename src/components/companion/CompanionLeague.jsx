@@ -516,7 +516,7 @@ function LeagueStyledPlayerRow({ player, onSelect, onTrade, nameColumnWidth }) {
             setIsHovered(false);
             glowHandlers.onMouseLeave?.(event);
           }}
-          className="relative grid items-center flex-1 min-w-0 px-4 py-3 text-left active:opacity-60"
+          className="relative grid items-center flex-1 min-w-0 px-3 sm:px-4 py-3 text-left active:opacity-60"
           style={{
             gridTemplateColumns: LEAGUE_ROW_TEMPLATE,
             columnGap: LEAGUE_ROW_GAP,
@@ -542,7 +542,7 @@ function LeagueStyledPlayerRow({ player, onSelect, onTrade, nameColumnWidth }) {
           />
           <div
             className="flex-1 min-w-0 grid items-center gap-2"
-            style={{ gridTemplateColumns: `minmax(0, ${Math.max(nameColumnWidth, 0)}px) auto` }}
+            style={{ gridTemplateColumns: player.teamTheme.logoKey ? 'minmax(0, 1fr) auto' : 'minmax(0, 1fr)' }}
           >
             <div className="min-w-0">
               <div className="flex items-center gap-1.5">
@@ -559,7 +559,7 @@ function LeagueStyledPlayerRow({ player, onSelect, onTrade, nameColumnWidth }) {
                   </span>
                 )}
               </div>
-              <div className="flex items-center gap-1.5 mt-0.5">
+              <div className="flex items-center gap-1.5 mt-0.5 min-w-0">
                 <span className="text-xs" style={{ color: 'var(--color-label-tertiary)' }}>
                   {player.team}{player.isReserve ? ' · IR' : ''}
                 </span>
@@ -571,17 +571,17 @@ function LeagueStyledPlayerRow({ player, onSelect, onTrade, nameColumnWidth }) {
               </div>
             </div>
             {player.teamTheme.logoKey ? (
-              <img
-                src={`https://a.espncdn.com/i/teamlogos/nfl/500/${player.teamTheme.logoKey}.png`}
-                alt=""
-                aria-hidden="true"
-                className="block shrink-0 self-center"
-                style={{ width: 'auto', height: 44, maxWidth: 44, objectFit: 'contain', opacity: 0.72 }}
-                onError={e => { e.target.style.display = 'none'; }}
-              />
-            ) : (
-              <div className="w-11 shrink-0" />
-            )}
+                <img
+                  src={`https://a.espncdn.com/i/teamlogos/nfl/500/${player.teamTheme.logoKey}.png`}
+                  alt=""
+                  aria-hidden="true"
+                  className="hidden sm:block shrink-0 self-center"
+                  style={{ width: 'auto', height: 44, maxWidth: 44, objectFit: 'contain', opacity: 0.72 }}
+                  onError={e => { e.target.style.display = 'none'; }}
+                />
+              ) : (
+                <div className="hidden sm:block w-11 shrink-0" />
+              )}
           </div>
           <div className="grid place-items-center w-16">
             <span className="block w-full text-center font-bold tabular-nums text-sm" style={{ color: 'var(--color-label)' }}>

@@ -793,3 +793,13 @@ All notable changes, oldest first. Add new entries at the bottom.
 
 - **Heatmap `INT` tiles now color correctly** - Defensive interception cells could show live values with no heat fill when every populated cell shared the same value. Uniform non-zero ranges now still receive a color treatment instead of falling back to the plain row background.
 - **Heatmap AVG column now shows hundredths** - The AVG column now renders to two decimal places so low-volume stat modes expose small differences numerically and line up better with the heat range.
+
+---
+
+## v6.1.2 â€” Companion Mobile Layout Stabilization
+*2026-04-01*
+
+- **Companion list rows stabilized on mobile** - Roster, Rankings, League, and Waiver were tightened for phone-width layouts so decorative team logos no longer steal space from player names and the rows stop colliding with surrounding metadata.
+- **Waiver layout corrections** - Waiver's shared grid was repaired after a column-sizing regression, the HOT/logo cluster now aligns with the right edge of the player-name block instead of the stat columns, free-agent row height was normalized, and the `Season` metric header/cell alignment was corrected.
+- **Matchup mobile hierarchy simplified** - Matchup row content was reduced to a cleaner mobile information stack, winner/loser background glyphs were removed on small screens, and the side headers now share a dynamic team-name font size so both panels shrink together before single-word overflow.
+- **Heatmap mobile containment fixed** - Heatmap no longer drags the whole page off-screen on mobile; the page stays anchored to the viewport while horizontal movement remains inside the intended scrollable strips and grid.

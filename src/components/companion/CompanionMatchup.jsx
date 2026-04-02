@@ -17,6 +17,21 @@ const POSITION_COLORS = {
 };
 const MATCHUP_CARD_SHADOW = '0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06)';
 
+function getLongestTokenLength(label) {
+  return String(label ?? '')
+    .trim()
+    .split(/\s+/)
+    .reduce((max, token) => Math.max(max, token.length), 0);
+}
+
+function getSharedHeaderTeamNameFontSize(leftLabel, rightLabel) {
+  const maxTokenLength = Math.max(getLongestTokenLength(leftLabel), getLongestTokenLength(rightLabel));
+  if (maxTokenLength >= 14) return 'clamp(16px, 4.5vw, 20px)';
+  if (maxTokenLength >= 11) return 'clamp(18px, 4.9vw, 24px)';
+  if (maxTokenLength >= 9) return 'clamp(20px, 5.2vw, 28px)';
+  return 'clamp(22px, 5.6vw, 32px)';
+}
+
 function hexLuminance(hex) {
   const r = parseInt(hex.slice(1, 3), 16) / 255;
   const g = parseInt(hex.slice(3, 5), 16) / 255;
@@ -225,6 +240,10 @@ export default function CompanionMatchup({ onViewPlayer, initialWeekRequest = nu
       ? { mine: 'win', opp: 'loss' }
       : { mine: 'loss', opp: 'win' };
   }, [myMatchup, opponentMatchup]);
+  const sharedTeamNameFontSize = useMemo(
+    () => getSharedHeaderTeamNameFontSize(myName, opponentName),
+    [myName, opponentName],
+  );
 
   const positionalRanks = useMemo(
     () => computePositionalRanks(seasonStats, players, scoringSettings),
@@ -537,7 +556,7 @@ export default function CompanionMatchup({ onViewPlayer, initialWeekRequest = nu
             </div>
             <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3">
               <button
-                className="min-w-0 px-4 py-3 text-center active:opacity-60 transition-opacity"
+                className="min-w-0 px-3 sm:px-4 py-3 text-center active:opacity-60 transition-opacity"
                 onClick={() => setSelectedTeam('mine')}
                 style={{
                   border: '1px solid var(--color-separator)',
@@ -554,13 +573,14 @@ export default function CompanionMatchup({ onViewPlayer, initialWeekRequest = nu
                 {matchupOutcome.mine !== 'pending' && matchupOutcome.mine !== 'tie' && (
                   <div
                     aria-hidden="true"
+                    className="hidden sm:block"
                     style={{
                       position: 'absolute',
                       top: '50%',
-                      right: '18px',
+                      right: 'clamp(8px, 2vw, 18px)',
                       transform: 'translateY(-50%)',
                       fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif",
-                      fontSize: '64px',
+                      fontSize: 'clamp(40px, 8vw, 64px)',
                       fontWeight: 800,
                       lineHeight: 0.9,
                       color: matchupOutcome.mine === 'win' ? 'rgba(46,213,120,0.30)' : 'rgba(255,68,51,0.28)',
@@ -570,17 +590,17 @@ export default function CompanionMatchup({ onViewPlayer, initialWeekRequest = nu
                     {matchupOutcome.mine === 'win' ? 'W' : 'L'}
                   </div>
                 )}
-                <div className="relative z-[1] text-[11px] font-bold uppercase tracking-[0.2em]" style={{ color: 'var(--color-label-secondary)', fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif" }}>Your Side</div>
-                <div className="relative z-[1] mt-1 truncate uppercase" style={{ color: 'var(--color-label)', fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif", fontSize: '32px', fontWeight: 800, lineHeight: 0.96 }}>
+                <div className="relative z-[1] text-[10px] sm:text-[11px] font-bold uppercase tracking-[0.18em] sm:tracking-[0.2em]" style={{ color: 'var(--color-label-secondary)', fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif" }}>Your Side</div>
+                <div className="relative z-[1] mt-1 uppercase whitespace-normal" style={{ color: 'var(--color-label)', fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif", fontSize: sharedTeamNameFontSize, fontWeight: 800, lineHeight: 0.96, wordBreak: 'normal', overflowWrap: 'normal' }}>
                   {myName}
                 </div>
-                <div className="relative z-[1] mt-1 tabular-nums" style={{ color: 'var(--color-signature)', fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif", fontSize: '38px', fontWeight: 800, lineHeight: 0.92 }}>
+                <div className="relative z-[1] mt-1 tabular-nums" style={{ color: 'var(--color-signature)', fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif", fontSize: 'clamp(30px, 7vw, 38px)', fontWeight: 800, lineHeight: 0.92 }}>
                   {myMatchup.points?.toFixed(2) ?? '?'}
                 </div>
               </button>
               <div className="px-3 py-1 text-xs font-bold uppercase tracking-[0.18em]" style={{ background: 'var(--color-fill)', color: 'var(--color-label-tertiary)', borderRadius: 0 }}>vs</div>
               <button
-                className="min-w-0 px-4 py-3 text-center active:opacity-60 transition-opacity"
+                className="min-w-0 px-3 sm:px-4 py-3 text-center active:opacity-60 transition-opacity"
                 onClick={() => setSelectedTeam('opp')}
                 style={{
                   border: '1px solid var(--color-separator)',
@@ -597,13 +617,14 @@ export default function CompanionMatchup({ onViewPlayer, initialWeekRequest = nu
                 {matchupOutcome.opp !== 'pending' && matchupOutcome.opp !== 'tie' && (
                   <div
                     aria-hidden="true"
+                    className="hidden sm:block"
                     style={{
                       position: 'absolute',
                       top: '50%',
-                      left: '18px',
+                      left: 'clamp(8px, 2vw, 18px)',
                       transform: 'translateY(-50%)',
                       fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif",
-                      fontSize: '64px',
+                      fontSize: 'clamp(40px, 8vw, 64px)',
                       fontWeight: 800,
                       lineHeight: 0.9,
                       color: matchupOutcome.opp === 'win' ? 'rgba(46,213,120,0.30)' : 'rgba(255,68,51,0.28)',
@@ -613,11 +634,11 @@ export default function CompanionMatchup({ onViewPlayer, initialWeekRequest = nu
                     {matchupOutcome.opp === 'win' ? 'W' : 'L'}
                   </div>
                 )}
-                <div className="relative z-[1] text-[11px] font-bold uppercase tracking-[0.2em]" style={{ color: 'var(--color-label-secondary)', fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif" }}>Opponent</div>
-                <div className="relative z-[1] mt-1 truncate uppercase" style={{ color: 'var(--color-label)', fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif", fontSize: '32px', fontWeight: 800, lineHeight: 0.96 }}>
+                <div className="relative z-[1] text-[10px] sm:text-[11px] font-bold uppercase tracking-[0.18em] sm:tracking-[0.2em]" style={{ color: 'var(--color-label-secondary)', fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif" }}>Opponent</div>
+                <div className="relative z-[1] mt-1 uppercase whitespace-normal" style={{ color: 'var(--color-label)', fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif", fontSize: sharedTeamNameFontSize, fontWeight: 800, lineHeight: 0.96, wordBreak: 'normal', overflowWrap: 'normal' }}>
                   {opponentName}
                 </div>
-                <div className="relative z-[1] mt-1 tabular-nums" style={{ color: 'var(--color-label)', fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif", fontSize: '38px', fontWeight: 800, lineHeight: 0.92 }}>
+                <div className="relative z-[1] mt-1 tabular-nums" style={{ color: 'var(--color-label)', fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif", fontSize: 'clamp(30px, 7vw, 38px)', fontWeight: 800, lineHeight: 0.92 }}>
                   {opponentMatchup?.points?.toFixed(2) ?? '?'}
                 </div>
               </button>
@@ -626,7 +647,7 @@ export default function CompanionMatchup({ onViewPlayer, initialWeekRequest = nu
 
           {/* Column headers */}
           <div className="px-4 pb-2 mb-1" style={{ borderBottom: '1px solid var(--color-separator)' }}>
-            <div className="grid grid-cols-[minmax(0,1fr)_44px_minmax(0,1fr)] items-center gap-2">
+            <div className="grid grid-cols-[minmax(0,1fr)_36px_minmax(0,1fr)] sm:grid-cols-[minmax(0,1fr)_44px_minmax(0,1fr)] items-center gap-2">
               <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>{myName}</span>
               <span className="text-center text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>Slot</span>
               <span className="text-right text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>{opponentName}</span>
@@ -758,10 +779,11 @@ function HeadToHeadRow({ mine, opp, bench, slotPos, onSelectMine, onSelectOpp })
   });
   const mineRowShadow = mineGlow.glowShadow ? `${mineGlow.glowShadow}, ${MATCHUP_CARD_SHADOW}` : MATCHUP_CARD_SHADOW;
   const oppRowShadow = oppGlow.glowShadow ? `${oppGlow.glowShadow}, ${MATCHUP_CARD_SHADOW}` : MATCHUP_CARD_SHADOW;
+  const slotBadgeLabel = slotLabel === 'SUPER FLEX' ? 'SF' : slotLabel === 'WRRB_FLEX' ? 'FLEX' : slotLabel;
 
   return (
     <div className="px-4" style={{ opacity: bench ? 0.72 : 1 }}>
-      <div className="grid grid-cols-[minmax(0,1fr)_44px_minmax(0,1fr)] items-stretch gap-2">
+      <div className="grid grid-cols-[minmax(0,1fr)_36px_minmax(0,1fr)] sm:grid-cols-[minmax(0,1fr)_44px_minmax(0,1fr)] items-stretch gap-2">
       {/* My player — left */}
       <button
         onClick={onSelectMine}
@@ -771,7 +793,7 @@ function HeadToHeadRow({ mine, opp, bench, slotPos, onSelectMine, onSelectOpp })
         onFocus={() => setIsMineHovered(true)}
         onBlur={() => setIsMineHovered(false)}
         onMouseMove={mineGlow.glowHandlers.onMouseMove}
-        className="min-w-0 flex items-center gap-3 px-4 py-3 text-left active:opacity-60 transition-opacity"
+        className="min-w-0 flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-3 text-left active:opacity-60 transition-opacity"
         style={{
           border: '1px solid var(--color-separator)',
           borderLeft: mineTheme.accent ? `4px solid ${mineTheme.accent}` : '4px solid var(--color-separator)',
@@ -790,10 +812,10 @@ function HeadToHeadRow({ mine, opp, bench, slotPos, onSelectMine, onSelectOpp })
       {/* Position badge — center */}
       <div className="flex items-center justify-center">
         <span
-          className="font-bold px-1.5 py-0.5 rounded"
-          style={{ background: `${posColor}20`, color: posColor, fontSize: '10px' }}
+          className="font-bold px-1 py-0.5 rounded text-center"
+          style={{ background: `${posColor}20`, color: posColor, fontSize: '9px' }}
         >
-          {slotLabel}
+          {slotBadgeLabel}
         </span>
       </div>
 
@@ -806,7 +828,7 @@ function HeadToHeadRow({ mine, opp, bench, slotPos, onSelectMine, onSelectOpp })
         onFocus={() => setIsOppHovered(true)}
         onBlur={() => setIsOppHovered(false)}
         onMouseMove={oppGlow.glowHandlers.onMouseMove}
-        className="min-w-0 flex items-center gap-3 px-4 py-3 text-right active:opacity-60 transition-opacity flex-row-reverse"
+        className="min-w-0 flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-3 text-right active:opacity-60 transition-opacity flex-row-reverse"
         style={{
           border: '1px solid var(--color-separator)',
           borderLeft: oppTheme.accent ? `4px solid ${oppTheme.accent}` : '4px solid var(--color-separator)',
@@ -828,11 +850,10 @@ function HeadToHeadRow({ mine, opp, bench, slotPos, onSelectMine, onSelectOpp })
 
 function PlayerInfo({ player, align = 'left' }) {
   const isRight = align === 'right';
-  const { darkMode } = useTheme();
-  const rankLabel = player?.weekRank ? `${player.weekRank.posLabel}${player.weekRank.rank}` : (player?.rank ? `${player.rank.posLabel}${player.rank.rank}` : null);
   if (!player || player.name === 'Empty') return <div className="flex-1 min-w-0" />;
 
   const weekPts = player.weekPts ?? null;
+  const projectedPts = player.projection?.projected ?? null;
   const projMin = player.projection?.min ?? null;
   const projMax = player.projection?.max ?? null;
 
@@ -849,27 +870,24 @@ function PlayerInfo({ player, align = 'left' }) {
   })();
 
   const defPercentile = player.defPercentile ?? null;
-  let badge = null;
-  if (defPercentile !== null) {
-    if (defPercentile <= 0.20)      badge = { label: 'Difficult matchup',   bg: 'rgba(239,68,68,0.18)',   color: '#ef4444' };
-    else if (defPercentile <= 0.40) badge = { label: 'Challenging matchup', bg: 'rgba(249,115,22,0.18)',  color: '#f97316' };
-    else if (defPercentile <= 0.60) badge = { label: 'Average matchup',     bg: 'rgba(120,120,128,0.16)', color: 'var(--color-label-tertiary)' };
-    else if (defPercentile <= 0.80) badge = { label: 'Favorable matchup',   bg: 'rgba(132,204,22,0.18)',  color: '#84cc16' };
-    else                            badge = { label: 'Easy matchup',         bg: 'rgba(34,197,94,0.18)',   color: '#22c55e' };
-  }
-  const locationStr = player.isHome === true ? 'Home' : player.isHome === false ? 'Away' : null;
-  const weatherStr  = formatWeather(player.weather, player.isIndoor ?? false);
-  const metaColor = darkMode ? 'rgba(228,235,244,0.78)' : 'rgba(12,15,20,0.72)';
-  const subduedColor = darkMode ? 'rgba(228,235,244,0.62)' : 'rgba(12,15,20,0.56)';
+  const projectionColor = (() => {
+    if (defPercentile == null) return 'var(--color-label)';
+    if (defPercentile <= 0.20) return '#ef4444';
+    if (defPercentile <= 0.40) return '#f97316';
+    if (defPercentile <= 0.60) return 'var(--color-label-secondary)';
+    if (defPercentile <= 0.80) return '#84cc16';
+    return '#22c55e';
+  })();
+  const metaColor = 'var(--color-label-secondary)';
+  const matchupMeta = [player.position, player.team, player.oppTeam ? `vs. ${player.oppTeam}` : null]
+    .filter(Boolean)
+    .join(' ');
 
   return (
     <div className={`flex-1 min-w-0 ${isRight ? 'text-right' : ''}`}>
       <div className={`flex items-center gap-1 flex-wrap ${isRight ? 'justify-end' : ''}`}>
-        <span className="font-semibold text-sm truncate" style={{ color: 'var(--color-label)' }}>
+        <span className="font-semibold text-[13px] sm:text-sm truncate" style={{ color: 'var(--color-label)' }}>
           {player.name}
-        </span>
-        <span className="text-xs shrink-0" style={{ color: metaColor }}>
-          {player.position} - {player.team}
         </span>
         {player.injuryStatus && (
           <span
@@ -880,50 +898,29 @@ function PlayerInfo({ player, align = 'left' }) {
           </span>
         )}
       </div>
+      <div className={`mt-0.5 text-[11px] sm:text-xs ${isRight ? 'text-right' : ''}`} style={{ color: metaColor }}>
+        {matchupMeta}
+      </div>
       <div className={`flex items-center gap-1.5 mt-0.5 flex-wrap ${isRight ? 'justify-end' : ''}`}>
         {weekPts == null ? (
-          projMin != null && projMax != null ? (
-            <span className="text-xs tabular-nums font-semibold" style={{ color: 'var(--color-label)' }}>
-              proj {projMin}-{projMax}
+          projectedPts != null ? (
+            <span className="text-[11px] sm:text-xs tabular-nums font-semibold" style={{ color: projectionColor }}>
+              proj {projectedPts.toFixed(1)} pts
             </span>
           ) : null
         ) : (
           <>
-            <span className="text-xs tabular-nums font-bold" style={{ color: scoreColor }}>
+            <span className="text-[11px] sm:text-xs tabular-nums font-bold" style={{ color: scoreColor }}>
               {weekPts.toFixed(2)} pts
             </span>
-            {projMin != null && projMax != null && (
-              <span className="text-xs tabular-nums" style={{ color: subduedColor }}>
-                - proj {projMin}-{projMax}
-              </span>
-            )}
           </>
         )}
-        {rankLabel && (
-          <span className="text-xs font-bold tabular-nums" style={{ color: subduedColor }}>
-            - {rankLabel}
-          </span>
-        )}
       </div>
-      {player.oppTeam ? (
-        <div className={`flex items-center gap-1 flex-wrap mt-0.5 ${isRight ? 'justify-end' : ''}`}>
-          <span className="text-xs" style={{ color: metaColor }}>
-            vs {player.oppTeam}{locationStr ? ` - ${locationStr}` : ''}{weatherStr ? ` - ${weatherStr}` : ''}
-          </span>
-          {badge && (
-            <span
-              className="text-[10px] font-bold px-1.5 py-px rounded-full shrink-0"
-              style={{ background: badge.bg, color: badge.color }}
-            >
-              {badge.label}
-            </span>
-          )}
-        </div>
-      ) : player.isBye ? (
+      {player.isBye ? (
         <div className={`mt-0.5 ${isRight ? 'text-right' : ''}`}>
           <span
             className="text-[10px] font-bold px-1.5 py-px rounded-full"
-            style={{ background: 'var(--color-fill)', color: metaColor }}
+            style={{ background: 'var(--color-fill)', color: 'var(--color-label-secondary)' }}
           >
             BYE WEEK
           </span>
@@ -935,13 +932,13 @@ function PlayerInfo({ player, align = 'left' }) {
 
 function PlayerThumb({ player }) {
   if (!player || player.name === 'Empty') {
-    return <div className="w-14 h-14 rounded-full shrink-0" style={{ background: 'var(--color-fill)' }} />;
+    return <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full shrink-0" style={{ background: 'var(--color-fill)' }} />;
   }
   return (
     <img
       src={`https://sleepercdn.com/content/nfl/players/thumb/${player.id}.jpg`}
       alt={player.name}
-      className="w-14 h-14 rounded-full shrink-0 object-cover"
+      className="w-12 h-12 sm:w-14 sm:h-14 rounded-full shrink-0 object-cover"
       style={{
         background: 'var(--color-fill)',
         border: player.teamTheme?.avatarBorder ? `2px solid ${player.teamTheme.avatarBorder}` : '2px solid transparent',

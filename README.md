@@ -75,10 +75,11 @@ PORT=8080 docker compose up -d --build
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) |
 
-## What's New in v6.1.1
+## What's New in v6.1.2
 
-- **Heatmap INT color fix** - Defensive interception tiles now keep their heat coloring even when every populated cell shares the same value.
-- **Heatmap AVG precision increased** - The AVG column now shows two decimal places so small differences are visible in low-volume stat modes.
+- **Companion mobile layout stabilization** - Roster, Rankings, League, Waiver, and Matchup were tightened for phone-width layouts so rows no longer collide with logos, badges, or oversized metadata.
+- **Waiver alignment and row fixes** - Waiver's metric grid was repaired, free-agent row height was normalized, and the `Season` header/value column was re-centered.
+- **Heatmap mobile containment fix** - Heatmap no longer pulls the whole page off-screen on mobile; horizontal movement now stays inside the intended scrollable strips and grid.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 

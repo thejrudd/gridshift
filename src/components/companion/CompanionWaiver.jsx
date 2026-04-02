@@ -16,9 +16,9 @@ const POSITION_COLORS = {
   TE: '#f59e0b',
   K: '#8b5cf6',
 };
-const METRIC_COL_WIDTH = 72;
-const WAIVER_ROW_GAP = 12;
-const WAIVER_ROW_SIDE_PADDING = 16;
+const METRIC_COL_WIDTH = 58;
+const WAIVER_ROW_GAP = 6;
+const WAIVER_ROW_SIDE_PADDING = 12;
 const WAIVER_ROW_LEFT_BORDER = 4;
 const WAIVER_HEADER_LEFT_INSET = WAIVER_ROW_SIDE_PADDING + WAIVER_ROW_LEFT_BORDER;
 const WAIVER_TABLE_TEMPLATE = `44px minmax(0, 1fr) repeat(3, ${METRIC_COL_WIDTH}px)`;
@@ -437,23 +437,34 @@ function ColHeader({ label, active, onClick }) {
   return (
     <button
       onClick={onClick}
-      className="shrink-0 grid items-center"
-      style={{ width: METRIC_COL_WIDTH, gridTemplateColumns: '10px 1fr 10px', color: active ? 'var(--color-label)' : 'var(--color-label-tertiary)' }}
+      className="min-w-0 w-full grid items-center relative"
+      style={{ color: active ? 'var(--color-label)' : 'var(--color-label-tertiary)' }}
     >
-      <span aria-hidden="true" />
       <span className="w-full text-xs font-semibold uppercase tracking-widest text-center">
         {label}
       </span>
-      <span style={{ fontSize: '9px', visibility: active ? 'visible' : 'hidden' }}>↓</span>
+      <span
+        aria-hidden="true"
+        style={{
+          position: 'absolute',
+          right: 0,
+          top: '50%',
+          transform: 'translateY(-50%)',
+          fontSize: '9px',
+          visibility: active ? 'visible' : 'hidden',
+        }}
+      >
+        ↓
+      </span>
     </button>
   );
 }
 
 function MetricCell({ children, emphasis = false, color }) {
   return (
-    <div className="shrink-0 grid place-items-center" style={{ width: METRIC_COL_WIDTH }}>
+    <div className="min-w-0 w-full grid place-items-center">
       <span
-        className={`${emphasis ? 'font-semibold' : ''} block w-full tabular-nums text-sm text-center`}
+        className={`${emphasis ? 'font-semibold' : ''} tabular-nums text-sm text-center`}
         style={{ color }}
       >
         {children}
@@ -508,7 +519,7 @@ function WaiverRow({ player, onViewPlayer, sortBy, nameColumnWidth }) {
           setIsHovered(false);
           glowHandlers.onMouseLeave?.(event);
         }}
-        className="relative grid items-center w-full px-4 py-3 text-left active:opacity-60"
+        className="relative grid items-center w-full px-3 py-3 text-left active:opacity-60"
         style={{
           gridTemplateColumns: WAIVER_TABLE_TEMPLATE,
           columnGap: WAIVER_ROW_GAP,
@@ -536,10 +547,15 @@ function WaiverRow({ player, onViewPlayer, sortBy, nameColumnWidth }) {
 
         <div
           className="min-w-0 grid items-center gap-2"
-          style={{ gridTemplateColumns: `minmax(0, ${Math.max(nameColumnWidth, 0)}px) auto` }}
+          style={{
+            gridTemplateColumns: 'minmax(0, 1fr) auto',
+            justifySelf: 'start',
+            width: '100%',
+            maxWidth: `${Math.max(nameColumnWidth, 0) + 90}px`,
+          }}
         >
           <div className="min-w-0">
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 min-w-0">
               <span
                 className="font-semibold text-sm truncate"
                 style={{ color: canNav ? 'var(--color-accent)' : 'var(--color-label)' }}
@@ -558,11 +574,11 @@ function WaiverRow({ player, onViewPlayer, sortBy, nameColumnWidth }) {
                 </span>
               )}
             </div>
-            <div className="text-xs mt-0.5 flex items-center gap-1.5">
+            <div className="text-xs mt-0.5 flex items-center gap-1.5 min-w-0" style={{ minHeight: 16 }}>
               <span style={{ color: posColor, fontWeight: 600 }}>{player.position}</span>
               <span style={{ color: 'var(--color-label-tertiary)' }}>{player.team}</span>
               {player.oppTeam && (
-                <span style={{ color: 'var(--color-label-quaternary)', fontSize: '10px' }}>
+                <span className="hidden sm:inline" style={{ color: 'var(--color-label-quaternary)', fontSize: '10px' }}>
                   vs {player.oppTeam}
                 </span>
               )}
@@ -571,13 +587,14 @@ function WaiverRow({ player, onViewPlayer, sortBy, nameColumnWidth }) {
 
           <div className="shrink-0 flex items-center justify-start gap-1.5 self-center">
             <span
-              className="w-[54px] shrink-0 text-[9px] font-bold px-2 py-1 rounded-lg text-center"
+              className="w-[28px] sm:w-[54px] shrink-0 text-[8px] sm:text-[9px] font-bold px-1 sm:px-2 py-1 rounded-lg text-center"
               style={{
                 background: player.isTrending ? 'rgba(30,155,55,0.12)' : 'transparent',
                 color: player.isTrending ? 'var(--color-accent-green)' : 'transparent',
               }}
             >
-              ↑ HOT
+              <span className="sm:hidden">↑</span>
+              <span className="hidden sm:inline">↑ HOT</span>
             </span>
 
             {player.teamTheme.logoKey ? (
@@ -585,12 +602,12 @@ function WaiverRow({ player, onViewPlayer, sortBy, nameColumnWidth }) {
                 src={`https://a.espncdn.com/i/teamlogos/nfl/500/${player.teamTheme.logoKey}.png`}
                 alt=""
                 aria-hidden="true"
-                className="block shrink-0 self-center"
+                className="hidden sm:block shrink-0 self-center"
                 style={{ width: 'auto', height: 44, maxWidth: 44, objectFit: 'contain', opacity: 0.72 }}
                 onError={e => { e.target.style.display = 'none'; }}
               />
             ) : (
-              <div className="w-11 shrink-0" />
+              <div className="hidden sm:block w-11 shrink-0" />
             )}
           </div>
         </div>
