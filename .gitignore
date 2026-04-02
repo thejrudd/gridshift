@@ -24,6 +24,14 @@ dist-ssr
 *.sw?
 
 # Claude Code
-.claude/settings.json
-.claude/settings.local.json
+.claude/
+.agents/
+.continue/
+.interface-design/
+skills-lock.json
 cache/
+tmp/
+scripts/ollama-broker.js
+docs/Ollama Delegation.md
+docs/examples/ollama-tasks.example.json
+docs/examples/ollama-observations.md

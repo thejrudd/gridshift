@@ -108,6 +108,15 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
 /* ─────────────────────────────────────────────────────────────
    App Shell — two-panel layout on lg+
    ───────────────────────────────────────────────────────────── */
@@ -480,6 +489,15 @@ body {
 
 .action-sheet {
   animation: sheet-slide-up 240ms cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.career-stat-enter {
+  animation: fade-in 150ms ease both;
 }
 
 /* ─────────────────────────────────────────────────────────────

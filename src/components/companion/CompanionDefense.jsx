@@ -10,9 +10,45 @@ import { NFL_ODDS } from '../../data/odds';
 
 const OFF_POSITIONS = ['ALL', 'QB', 'RB', 'WR', 'TE', 'K'];
 const DEF_POSITIONS = ['ALL', 'DL', 'LB', 'DB'];
-const WEEKS = Array.from({ length: 18 }, (_, i) => i + 1);
 const ALL_TEAMS = Object.keys(STADIUMS).sort();
 const OFFENSE_POS_SET = new Set(['QB', 'RB', 'WR', 'TE', 'K']);
+const TEAM_CELL_PAD_X = 10;
+const TEAM_CELL_PAD_Y = 5;
+const TEAM_LOGO_SIZE = 18;
+const TEAM_CELL_GAP = 6;
+const TEAM_PRIMARY_LINE_HEIGHT = 13;
+const TEAM_META_LINE_HEIGHT = 11;
+const HEATMAP_METRIC_PAD_X = 2;
+const HEATMAP_CELL_HEIGHT = 40; // fixed row height: accommodates 2-line content + 10px vertical padding
+const HEATMAP_METRIC_PRIMARY_SAMPLES = ['99-99', '999.9', '+10.5', '-10.5', 'PU'];
+const HEATMAP_METRIC_SECONDARY_SAMPLES = ['O/U 70.5', 'WAS', 'JAX'];
+const HEATMAP_METRIC_HEADER_SAMPLES = ['Wk 18', 'AVG'];
+
+function getHeatmapMetricColWidth() {
+  if (typeof document === 'undefined') return 44;
+  const canvas = document.createElement('canvas');
+  const context = canvas.getContext('2d');
+  if (!context) return 44;
+
+  let max = 0;
+
+  context.font = '600 10px Figtree, sans-serif';
+  for (const sample of HEATMAP_METRIC_HEADER_SAMPLES) {
+    max = Math.max(max, context.measureText(sample).width);
+  }
+
+  context.font = '700 11px Figtree, sans-serif';
+  for (const sample of HEATMAP_METRIC_PRIMARY_SAMPLES) {
+    max = Math.max(max, context.measureText(sample).width);
+  }
+
+  context.font = '400 8px Figtree, sans-serif';
+  for (const sample of HEATMAP_METRIC_SECONDARY_SAMPLES) {
+    max = Math.max(max, context.measureText(sample).width);
+  }
+
+  return Math.max(HEATMAP_CELL_HEIGHT, Math.ceil(max + HEATMAP_METRIC_PAD_X * 2));
+}
 
 const DEF_POS_GROUPS = { DL: ['DL','DE','DT'], LB: ['LB','ILB','OLB'], DB: ['DB','CB','S','SS','FS'] };
 const normDefPos = (pos) => { for (const [n, s] of Object.entries(DEF_POS_GROUPS)) if (s.includes(pos)) return n; return null; };
@@ -105,10 +141,21 @@ const DEF_STAT_MODES = [
   { id: 'idp_int',      label: 'INT',         statKey: 'idp_int' },
   { id: 'idp_ff',       label: 'FF',          statKey: 'idp_ff' },
   { id: 'idp_tkl_loss', label: 'TFL',         statKey: 'idp_tkl_loss' },
-  { id: 'idp_pd',       label: 'Pass Def',    statKey: 'idp_pd' },
-  { id: 'idp_qbhit',    label: 'QB Hit',      statKey: 'idp_qbhit' },
+  { id: 'idp_pd',       label: 'Pass Def',    statKey: 'idp_pd', aliases: ['idp_pass_def'] },
+  { id: 'idp_qbhit',    label: 'QB Hit',      statKey: 'idp_qbhit', aliases: ['idp_qb_hit'] },
   { id: 'idp_def_td',   label: 'TD',          statKey: 'idp_def_td' },
 ];
+
+function getModeStatValue(wEntry, mode) {
+  if (!mode?.statKey) return null;
+  const direct = wEntry[mode.statKey];
+  if (direct != null) return direct;
+  for (const alias of (mode.aliases ?? [])) {
+    const aliased = wEntry[alias];
+    if (aliased != null) return aliased;
+  }
+  return 0;
+}
 
 const HEATMAP_SCOPES = [
   { id: 'overall', label: 'Overall' },
@@ -137,8 +184,8 @@ const TEAM_META = {
 
 const TEAM_SORT_OPTIONS = [
   { id: 'alpha',    label: 'A–Z' },
-  { id: 'conf',     label: 'Conference' },
-  { id: 'division', label: 'Division' },
+  { id: 'conf',     label: 'Conf' },
+  { id: 'division', label: 'Div' },
 ];
 
 // Stat breakdown labels (statKey → display label + whether to show raw value)
@@ -331,7 +378,7 @@ function FilterGroup({ label, children }) {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function CompanionDefense({ onViewPlayer }) {
-  const { weeklyStats, players, scheduleMap, scoringSettings, espnIdOverrides, loadPlayers, statsEnhancing } = useSleeper();
+  const { weeklyStats, players, scheduleMap, scoringSettings, espnIdOverrides, loadPlayers, statsEnhancing, league } = useSleeper();
   useEffect(() => { loadPlayers(); }, [loadPlayers]);
   const { favoriteTeam, darkMode } = useTheme();
 
@@ -352,6 +399,13 @@ export default function CompanionDefense({ onViewPlayer }) {
   const [gridMaxHeight, setGridMaxHeight] = useState('60vh');
   const filterBarRef = useRef(null);
   const tableContainerRef = useRef(null);
+  const lastScoredLeg = Number(league?.settings?.last_scored_leg);
+  const fantasySeasonWeeks = useMemo(() => {
+    const maxWeek = Number.isFinite(lastScoredLeg) && lastScoredLeg > 0
+      ? Math.min(lastScoredLeg, 18)
+      : 17;
+    return Array.from({ length: maxWeek }, (_, i) => i + 1);
+  }, [lastScoredLeg]);
 
   // Dynamically compute the table container's max-height based on its actual
   // top position in the viewport. This correctly handles variable filter bar
@@ -411,7 +465,7 @@ export default function CompanionDefense({ onViewPlayer }) {
     if (!weeklyStats || !players) return null;
     const defMode = DEF_STAT_MODES.find(m => m.id === defStatMode);
     const getValue = defMode?.statKey
-      ? (wEntry) => wEntry[defMode.statKey] ?? 0
+      ? (wEntry) => getModeStatValue(wEntry, defMode)
       : (wEntry, pos) => calcPoints(wEntry, scoringSettings, pos);
     const table = {};
     for (const [playerId, playerWeeks] of Object.entries(weeklyStats)) {
@@ -459,7 +513,7 @@ export default function CompanionDefense({ onViewPlayer }) {
       return ALL_TEAMS.map(team => {
         const weekPts = {};
         if (scheduleMap && seasonOdds) {
-          for (const w of WEEKS) {
+          for (const w of fantasySeasonWeeks) {
             const sched = scheduleMap[w]?.[team];
             if (!sched || !weekMatchesLocation(team, w)) continue;
             const opp = sched.opp?.toUpperCase();
@@ -485,13 +539,13 @@ export default function CompanionDefense({ onViewPlayer }) {
       return ALL_TEAMS.map(team => {
         const weekPts = {};
         if (scheduleMap) {
-          for (const w of WEEKS) {
+          for (const w of fantasySeasonWeeks) {
             const entry = scheduleMap[w]?.[team];
             if (entry?.ptsAgainst != null && weekMatchesLocation(team, w)) weekPts[w] = entry.ptsAgainst;
           }
         }
         const total = Object.values(weekPts).reduce((s, v) => s + v, 0);
-        const weeksPlayed = scheduleMap ? WEEKS.filter(w => scheduleMap[w]?.[team] != null && weekMatchesLocation(team, w)).length : Object.keys(weekPts).length;
+        const weeksPlayed = scheduleMap ? fantasySeasonWeeks.filter(w => scheduleMap[w]?.[team] != null && weekMatchesLocation(team, w)).length : Object.keys(weekPts).length;
         const avg = weeksPlayed > 0 && Object.keys(weekPts).length > 0 ? total / weeksPlayed : null;
         return { team, weekPts, avg };
       });
@@ -515,11 +569,11 @@ export default function CompanionDefense({ onViewPlayer }) {
         }
       }
       const total = Object.values(weekData).reduce((s, v) => s + v, 0);
-      const weeksPlayed = scheduleMap ? WEEKS.filter(w => scheduleMap[w]?.[team] != null && weekMatchesLocation(team, w)).length : Object.keys(weekData).length;
+        const weeksPlayed = scheduleMap ? fantasySeasonWeeks.filter(w => scheduleMap[w]?.[team] != null && weekMatchesLocation(team, w)).length : Object.keys(weekData).length;
       const avg = weeksPlayed > 0 && Object.keys(weekData).length > 0 ? total / weeksPlayed : null;
       return { team, weekPts: weekData, avg };
     });
-  }, [activeTable, activePos, viewMode, statMode, scheduleMap, weekMatchesLocation, vegasOddsView]);
+  }, [activeTable, activePos, viewMode, statMode, scheduleMap, weekMatchesLocation, vegasOddsView, fantasySeasonWeeks]);
 
   const rows = useMemo(() => {
     if (sortKey === 'team') {
@@ -544,6 +598,45 @@ export default function CompanionDefense({ onViewPlayer }) {
     });
   }, [baseRows, sortKey, sortDir, teamSort]);
 
+  // Computed from ALL_TEAMS (module constant) with empty deps so it never
+  // recomputes when sort/filter state changes — keeps column width stable.
+  // Always measures conf + div meta widths so the column never grows when
+  // the user toggles team sort between alpha / conf / division.
+  const teamColumnWidth = useMemo(() => {
+    if (typeof document === 'undefined') return 132;
+
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    if (!context) return 132;
+
+    context.font = '700 11px Figtree, sans-serif';
+    const mainLineWidth = ALL_TEAMS.reduce((max, team) => {
+      const textWidth = context.measureText(team).width;
+      return Math.max(max, TEAM_LOGO_SIZE + TEAM_CELL_GAP + textWidth);
+    }, 0);
+
+    // Always measure both conf and div labels so width covers all sort states.
+    context.font = '500 9px Figtree, sans-serif';
+    const metaLineWidth = ALL_TEAMS.reduce((max, team) => {
+      const conf = TEAM_META[team]?.conf ?? '';
+      const div  = TEAM_META[team]?.div  ?? '';
+      return Math.max(max, context.measureText(conf).width, context.measureText(div).width);
+    }, 0);
+
+    // Measure the sort-chips row inside the header cell.
+    // Each chip: text + 4px padding each side (8px). Gaps between chips: 3px each.
+    context.font = '600 9px Figtree, sans-serif';
+    const chipTextTotal = TEAM_SORT_OPTIONS.reduce((sum, opt) => sum + context.measureText(opt.label).width, 0);
+    const chipsRowContentWidth = chipTextTotal
+      + TEAM_SORT_OPTIONS.length * 8          // 4px padding × 2 per chip
+      + (TEAM_SORT_OPTIONS.length - 1) * 3;   // 3px gap between chips
+
+    const contentWidth = Math.max(mainLineWidth, metaLineWidth, chipsRowContentWidth);
+    return Math.ceil(contentWidth + TEAM_CELL_PAD_X * 2);
+  }, []);
+
+  const metricColumnWidth = useMemo(() => getHeatmapMetricColWidth(), []);
+
   function handleSort(key) {
     if (sortKey === key) setSortDir(d => d === 'desc' ? 'asc' : 'desc');
     else { setSortKey(key); setSortDir('desc'); }
@@ -555,12 +648,12 @@ export default function CompanionDefense({ onViewPlayer }) {
 
   const colAvgs = useMemo(() => {
     const avgs = {};
-    for (const w of WEEKS) {
+    for (const w of fantasySeasonWeeks) {
       const vals = baseRows.map(r => r.weekPts[w]).filter(v => v != null);
       if (vals.length) avgs[w] = vals.reduce((s, v) => s + v, 0) / vals.length;
     }
     return avgs;
-  }, [baseRows]);
+  }, [baseRows, fantasySeasonWeeks]);
 
   // ── Heatmap ────────────────────────────────────────────────────────────────
 
@@ -569,7 +662,7 @@ export default function CompanionDefense({ onViewPlayer }) {
     const overallMin = allVals.length ? Math.min(...allVals) : 0;
     const overallMax = allVals.length ? Math.max(...allVals) : 1;
     const weekMin = {}, weekMax = {};
-    for (const w of WEEKS) {
+    for (const w of fantasySeasonWeeks) {
       const vals = baseRows.map(r => r.weekPts[w]).filter(v => v != null);
       if (vals.length) { weekMin[w] = Math.min(...vals); weekMax[w] = Math.max(...vals); }
     }
@@ -582,7 +675,7 @@ export default function CompanionDefense({ onViewPlayer }) {
     const avgMin = avgVals.length ? Math.min(...avgVals) : 0;
     const avgMax = avgVals.length ? Math.max(...avgVals) : 1;
     return { overallMin, overallMax, weekMin, weekMax, teamMin, teamMax, avgMin, avgMax };
-  }, [baseRows, viewMode]);
+  }, [baseRows, viewMode, fantasySeasonWeeks]);
 
   function cellBg(pts, team, week) {
     if (pts == null) return undefined;
@@ -673,7 +766,7 @@ export default function CompanionDefense({ onViewPlayer }) {
       const matchNorm = activePos === 'ALL' ? null : activePos;
       const defMode = DEF_STAT_MODES.find(m => m.id === defStatMode);
       const getDefVal = defMode?.statKey
-        ? (wEntry) => wEntry[defMode.statKey] ?? 0
+        ? (wEntry) => getModeStatValue(wEntry, defMode)
         : (wEntry, pos) => calcPoints(wEntry, scoringSettings, pos);
       for (const [playerId, playerWeeks] of Object.entries(weeklyStats)) {
         const player = players[playerId];
@@ -779,6 +872,7 @@ export default function CompanionDefense({ onViewPlayer }) {
   // ── Render ─────────────────────────────────────────────────────────────────
 
   const loaded = viewMode === 'offense' ? !!offenseAllowedTable : !!defenseScoredTable;
+  const showAvg = !(viewMode === 'offense' && statMode === 'vegas_odds');
 
   return (
     <div className="-mx-4 sm:-mx-6 lg:-mx-8">
@@ -891,13 +985,23 @@ export default function CompanionDefense({ onViewPlayer }) {
         </div>
       ) : (
         <div ref={tableContainerRef} style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: gridMaxHeight, WebkitOverflowScrolling: 'touch' }}>
-          <table style={{ borderCollapse: 'separate', borderSpacing: 0, minWidth: 'max-content', width: '100%', fontSize: '11px' }}>
+          <table style={{
+            borderCollapse: 'separate',
+            borderSpacing: 0,
+            tableLayout: 'fixed',
+            width: '100%',
+            minWidth: `${teamColumnWidth + (fantasySeasonWeeks.length + 1) * metricColumnWidth}px`,
+            fontSize: '11px',
+          }}>
+            <colgroup>
+              <col style={{ width: `${teamColumnWidth}px` }} />
+            </colgroup>
             <thead>
               <tr>
-                <th style={stickyHeadStyle}>
+                <th style={stickyHeadStyleFor(teamColumnWidth)}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     <span>Team</span>
-                    <div style={{ display: 'flex', gap: '3px' }}>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px' }}>
                       {TEAM_SORT_OPTIONS.map(opt => (
                         <button
                           key={opt.id}
@@ -917,13 +1021,8 @@ export default function CompanionDefense({ onViewPlayer }) {
                     </div>
                   </div>
                 </th>
-                {!(viewMode === 'offense' && statMode === 'vegas_odds') && (
-                  <th style={{ ...headStyle(true), cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('avg')}>
-                    <div>AVG{sortIndicator('avg')}</div>
-                  </th>
-                )}
-                {WEEKS.map(w => (
-                  <th key={w} style={{ ...headStyle(false), cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort(w)}>
+                {fantasySeasonWeeks.map(w => (
+                  <th key={w} style={{ ...headStyle(), cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort(w)}>
                     <div>Wk {w}{sortIndicator(w)}</div>
                     {colAvgs[w] != null && (
                       <div style={{ color: 'var(--color-label-secondary)', fontWeight: 400, fontSize: '10px' }}>
@@ -932,6 +1031,14 @@ export default function CompanionDefense({ onViewPlayer }) {
                     )}
                   </th>
                 ))}
+                {/* AVG column — always rendered; placeholder when hidden to keep column count stable */}
+                {showAvg ? (
+                  <th style={{ ...headStyle(), cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('avg')}>
+                    <div>AVG{sortIndicator('avg')}</div>
+                  </th>
+                ) : (
+                  <th style={headStyle()} />
+                )}
               </tr>
             </thead>
             <tbody>
@@ -940,40 +1047,56 @@ export default function CompanionDefense({ onViewPlayer }) {
                 const tc = TEAM_COLORS[TEAM_COLOR_KEY[team] ?? team.toLowerCase()];
                 const teamHex = tc ? (darkMode ? (tc.darkPrimary ?? tc.primary) : tc.primary) : null;
                 const colorAlpha = darkMode ? 0.55 : 0.90;
+                const teamMeta = sortKey === 'team'
+                  ? (teamSort === 'conf'
+                    ? (TEAM_META[team]?.conf ?? '')
+                    : (teamSort === 'division' ? (TEAM_META[team]?.div ?? '') : ''))
+                  : '';
                 // Use a fully opaque blended color for the sticky column so scrolled
                 // content doesn't bleed through the semi-transparent team color.
                 const teamBg = teamHex ? blendColor(teamHex, colorAlpha, darkMode) : rowBg;
                 const teamTextColor = teamHex ? getContrastColor(teamHex, colorAlpha, darkMode) : 'var(--color-label)';
                 return (
                   <tr key={team}>
-                    <td style={{ ...stickyBodyStyle, background: teamBg, color: teamTextColor }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <td style={{ ...stickyBodyStyleFor(teamColumnWidth), background: teamBg, color: teamTextColor }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: `${TEAM_LOGO_SIZE}px minmax(0, 1fr)`, columnGap: TEAM_CELL_GAP, alignItems: 'center' }}>
                         <img
                           src={espnLogoUrl(team)}
                           alt={team}
-                          width={18}
-                          height={18}
-                          style={{ objectFit: 'contain', flexShrink: 0 }}
+                          width={TEAM_LOGO_SIZE}
+                          height={TEAM_LOGO_SIZE}
+                          style={{ objectFit: 'contain', flexShrink: 0, alignSelf: 'center' }}
                         />
-                        {team}
-                        {sortKey === 'team' && teamSort === 'conf' && TEAM_META[team] && (
-                          <span style={{ fontSize: '9px', fontWeight: 500, color: 'var(--color-label-tertiary)', marginLeft: 4 }}>
-                            {TEAM_META[team].conf}
-                          </span>
-                        )}
-                        {sortKey === 'team' && teamSort === 'division' && TEAM_META[team] && (
-                          <span style={{ fontSize: '9px', fontWeight: 500, color: 'var(--color-label-tertiary)', marginLeft: 4 }}>
-                            {TEAM_META[team].div}
-                          </span>
-                        )}
+                        <div
+                          style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            justifyContent: 'center',
+                            minHeight: `${HEATMAP_CELL_HEIGHT - TEAM_CELL_PAD_Y * 2}px`,
+                            minWidth: 0,
+                          }}
+                        >
+                          <span style={{ lineHeight: `${TEAM_PRIMARY_LINE_HEIGHT}px` }}>{team}</span>
+                          {teamMeta && (
+                            <span
+                              style={{
+                                fontSize: '9px',
+                                lineHeight: `${TEAM_META_LINE_HEIGHT}px`,
+                                height: `${TEAM_META_LINE_HEIGHT}px`,
+                                fontWeight: 500,
+                                color: teamTextColor === '#ffffff' ? 'rgba(255,255,255,0.72)' : 'var(--color-label-secondary)',
+                                whiteSpace: 'nowrap',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                              }}
+                            >
+                              {teamMeta}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </td>
-                    {!(viewMode === 'offense' && statMode === 'vegas_odds') && (
-                      <td style={{ ...cellStyle(true), background: avg != null ? cellBg(avg, team, null) : rowBg, color: avg != null ? '#000' : 'var(--color-label)' }}>
-                        {avg != null ? avg.toFixed(1) : '—'}
-                      </td>
-                    )}
-                    {WEEKS.map(w => {
+                    {fantasySeasonWeeks.map(w => {
                       const pts = weekPts[w];
                       const played = scheduleMap?.[w]?.[team] != null;
                       const matchesLoc = weekMatchesLocation(team, w);
@@ -1048,6 +1171,14 @@ export default function CompanionDefense({ onViewPlayer }) {
                         </td>
                       );
                     })}
+                    {/* AVG column — always rendered; empty placeholder when hidden */}
+                    {showAvg ? (
+                      <td style={{ ...cellStyle(true), background: avg != null ? cellBg(avg, team, null) : rowBg, color: avg != null ? '#000' : 'var(--color-label)' }}>
+                        {avg != null ? avg.toFixed(1) : '—'}
+                      </td>
+                    ) : (
+                      <td style={{ ...cellStyle(false), background: rowBg }} />
+                    )}
                   </tr>
                 );
               })}
@@ -1403,11 +1534,22 @@ const stickyHeadStyle = {
   whiteSpace: 'nowrap',
 };
 
+function stickyHeadStyleFor(teamColumnWidth) {
+  return {
+    ...stickyHeadStyle,
+    width: `${teamColumnWidth}px`,
+    minWidth: `${teamColumnWidth}px`,
+    maxWidth: `${teamColumnWidth}px`,
+  };
+}
+
 // Regular header cells: sticky top only
-function headStyle(isAvg) {
+// With table-layout: fixed, column widths are distributed by the table —
+// no explicit width/minWidth/maxWidth needed on individual cells.
+function headStyle() {
   return {
     position: 'sticky', top: 0, zIndex: 3,
-    padding: '6px 8px',
+    padding: `6px ${HEATMAP_METRIC_PAD_X}px`,
     textAlign: 'center',
     color: 'var(--color-label-secondary)',
     fontWeight: 600,
@@ -1418,7 +1560,6 @@ function headStyle(isAvg) {
     boxShadow: '0 1px 0 0 var(--color-separator-opaque)',
     borderLeft: '1px solid var(--color-separator)',
     whiteSpace: 'nowrap',
-    minWidth: isAvg ? '44px' : '40px',
   };
 }
 
@@ -1427,6 +1568,8 @@ function headStyle(isAvg) {
 const stickyBodyStyle = {
   position: 'sticky', left: 0, zIndex: 2,
   padding: '5px 10px',
+  height: `${HEATMAP_CELL_HEIGHT}px`,
+  verticalAlign: 'middle',
   fontWeight: 700,
   fontSize: '11px',
   color: 'var(--color-label)',
@@ -1434,15 +1577,26 @@ const stickyBodyStyle = {
   whiteSpace: 'nowrap',
 };
 
+function stickyBodyStyleFor(teamColumnWidth) {
+  return {
+    ...stickyBodyStyle,
+    padding: `${TEAM_CELL_PAD_Y}px ${TEAM_CELL_PAD_X}px`,
+    width: `${teamColumnWidth}px`,
+    minWidth: `${teamColumnWidth}px`,
+    maxWidth: `${teamColumnWidth}px`,
+  };
+}
+
 function cellStyle(isAvg) {
   return {
-    padding: '5px 6px',
+    padding: `5px ${HEATMAP_METRIC_PAD_X}px`,
     textAlign: 'center',
+    verticalAlign: 'middle',
     fontWeight: isAvg ? 700 : 400,
     borderLeft: '1px solid var(--color-separator)',
     borderBottom: '1px solid var(--color-separator)',
     whiteSpace: 'nowrap',
     color: 'var(--color-label)',
-    minWidth: isAvg ? '54px' : '50px',
+    height: `${HEATMAP_CELL_HEIGHT}px`,
   };
 }

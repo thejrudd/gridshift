@@ -405,7 +405,7 @@ function RosterGroup({ group, expanded, onToggle, accentColor, onSelectPlayer })
       >
         <span
           className="font-semibold text-sm shrink-0"
-          style={expanded && accentColor ? { color: accentColor } : { color: 'var(--color-label)' }}
+          style={{ color: 'var(--color-label)' }}
         >
           {group.label}
         </span>
@@ -415,7 +415,7 @@ function RosterGroup({ group, expanded, onToggle, accentColor, onSelectPlayer })
           </span>
           <svg
             className={`w-4 h-4 transition-transform ${expanded ? 'rotate-180' : ''}`}
-            style={{ color: expanded && accentColor ? accentColor : 'rgb(156,163,175)' }}
+            style={{ color: 'var(--color-label-tertiary)' }}
             fill="none" viewBox="0 0 24 24" stroke="currentColor"
           >
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />

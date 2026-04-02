@@ -9,17 +9,17 @@ const POSITION_FILTERS = ['ALL', 'QB', 'RB', 'WR', 'TE', 'OL', 'DL', 'LB', 'DB',
 const CONFERENCES = [
   {
     name: 'AFC',
-    color: 'text-blue-600 dark:text-blue-400',
+    color: 'var(--color-accent)',
     divisions: ['AFC East', 'AFC North', 'AFC South', 'AFC West'],
   },
   {
     name: 'NFC',
-    color: 'text-red-600 dark:text-red-400',
+    color: 'var(--color-accent-red)',
     divisions: ['NFC East', 'NFC North', 'NFC South', 'NFC West'],
   },
 ];
 
-const PlayerBrowser = ({ teams, initialPlayer, onInitialPlayerConsumed, navBack, onComparePlayer }) => {
+const PlayerBrowser = ({ teams, initialPlayer, onInitialPlayerConsumed, navBack, onComparePlayer, onBuildTrade }) => {
   const [selectedTeam, setSelectedTeam]     = useState(null);
   const [selectedPlayer, setSelectedPlayer] = useState(initialPlayer ?? null);
 
@@ -206,6 +206,7 @@ const PlayerBrowser = ({ teams, initialPlayer, onInitialPlayerConsumed, navBack,
         onBack={navBack?.onBack ?? (() => history.back())}
         backLabel={navBack?.label}
         onCompare={onComparePlayer}
+        onBuildTrade={onBuildTrade}
       />
     );
   }
@@ -223,11 +224,18 @@ const PlayerBrowser = ({ teams, initialPlayer, onInitialPlayerConsumed, navBack,
   return (
     <div className="space-y-6">
       {/* Search + position filter bar */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 space-y-3">
+      <div
+        className="rounded-xl p-4 space-y-3"
+        style={{
+          background: 'var(--color-bg-secondary)',
+          border: '1px solid var(--color-separator)',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06)',
+        }}
+      >
         {/* Search */}
         <div ref={searchRef} className="relative">
           <div className="relative">
-            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: 'var(--color-label-tertiary)' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
             <input
@@ -236,10 +244,16 @@ const PlayerBrowser = ({ teams, initialPlayer, onInitialPlayerConsumed, navBack,
               onChange={handleSearchInput}
               onFocus={() => searchQuery.length >= 1 && setShowSearchDropdown(true)}
               placeholder="Search by name, position, team, division…"
-              className="w-full pl-9 pr-4 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
+              className="w-full pl-9 pr-4 py-2 rounded-lg text-base focus:outline-none"
+              style={{
+                background: 'var(--color-bg-tertiary)',
+                border: '1px solid var(--color-separator)',
+                color: 'var(--color-label)',
+                '--tw-ring-color': 'var(--color-accent)',
+              }}
             />
             {searchLoading && (
-              <svg className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin w-4 h-4 text-blue-500" fill="none" viewBox="0 0 24 24">
+              <svg className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin w-4 h-4" style={{ color: 'var(--color-accent)' }} fill="none" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
               </svg>
@@ -248,20 +262,30 @@ const PlayerBrowser = ({ teams, initialPlayer, onInitialPlayerConsumed, navBack,
 
           {/* Search dropdown */}
           {showSearchDropdown && searchQuery.length >= 1 && (
-            <div className="absolute z-20 left-0 right-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-xl overflow-hidden max-h-72 overflow-y-auto">
+            <div
+              className="absolute z-20 left-0 right-0 top-full mt-1 rounded-xl overflow-hidden max-h-72 overflow-y-auto"
+              style={{
+                background: 'var(--color-bg-secondary)',
+                border: '1px solid var(--color-separator)',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.04)',
+              }}
+            >
               {searchResults.length === 0 && !searchLoading && (
-                <p className="px-4 py-3 text-sm text-gray-400 italic">No players found.</p>
+                <p className="px-4 py-3 text-sm italic" style={{ color: 'var(--color-label-tertiary)' }}>No players found.</p>
               )}
               {searchResults.map(player => (
                 <button
                   key={player.id}
                   onClick={() => handleSelectPlayer(player)}
-                  className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700 text-left transition-colors"
+                  className="w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors duration-150 active:opacity-80"
+                  style={{ '--hover-bg': 'var(--color-fill)' }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'var(--color-fill)'}
+                  onMouseLeave={e => e.currentTarget.style.background = ''}
                 >
                   <PlayerThumbnail id={player.id} name={player.displayName} />
                   <div className="min-w-0">
-                    <div className="font-semibold text-gray-800 dark:text-gray-100 text-sm truncate">{player.displayName}</div>
-                    <div className="text-xs text-gray-400">
+                    <div className="font-semibold text-sm truncate" style={{ color: 'var(--color-label)' }}>{player.displayName}</div>
+                    <div className="text-xs" style={{ color: 'var(--color-label-tertiary)' }}>
                       {player.position}{player.teamName ? ` · ${player.teamName}` : ''}
                     </div>
                   </div>
@@ -271,17 +295,17 @@ const PlayerBrowser = ({ teams, initialPlayer, onInitialPlayerConsumed, navBack,
           )}
         </div>
 
-        {/* Position filter chips + Compare toggle */}
-        <div className="flex flex-wrap gap-1.5 items-center">
+        {/* Position filter chips */}
+        <div className="flex flex-wrap gap-2 items-center">
           {POSITION_FILTERS.map(pos => (
             <button
               key={pos}
               onClick={() => setPositionFilter(pos)}
-              className={`px-2.5 py-0.5 rounded-full text-xs font-semibold transition-colors ${
-                positionFilter === pos
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
-              }`}
+              className="px-2.5 py-0.5 rounded-lg text-xs font-semibold transition-colors duration-150 active:scale-95"
+              style={positionFilter === pos
+                ? { background: 'var(--color-signature)', color: 'var(--color-signature-fg)' }
+                : { background: 'var(--color-fill)', color: 'var(--color-label-secondary)' }
+              }
             >
               {pos}
             </button>
@@ -292,13 +316,16 @@ const PlayerBrowser = ({ teams, initialPlayer, onInitialPlayerConsumed, navBack,
       {/* Team browser — AFC then NFC */}
       {CONFERENCES.map(conf => (
         <div key={conf.name}>
-          <h2 className={`text-2xl font-display tracking-wider mb-3 ${conf.color}`}>{conf.name}</h2>
+          <h2 className="text-2xl font-display tracking-wider mb-3" style={{ color: conf.color }}>{conf.name}</h2>
           <div className="space-y-4">
             {conf.divisions.map(division => {
               const divTeams = teams.filter(t => t.division === division);
               return (
                 <div key={division}>
-                  <h3 className="text-xs uppercase tracking-widest text-gray-400 dark:text-gray-500 font-semibold mb-2 px-1">
+                  <h3
+                    className="text-xs uppercase tracking-widest font-semibold mb-2 px-1"
+                    style={{ color: 'var(--color-label-tertiary)' }}
+                  >
                     {division}
                   </h3>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -325,8 +352,15 @@ const PlayerBrowser = ({ teams, initialPlayer, onInitialPlayerConsumed, navBack,
 const TeamCard = ({ team, onClick }) => (
   <button
     onClick={onClick}
-    className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-3 flex items-center gap-3 w-full hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-left"
-    style={{ height: '64px' }}
+    className="rounded-xl p-3 flex items-center gap-3 w-full transition-all duration-150 text-left active:scale-[0.98]"
+    style={{
+      height: '64px',
+      background: 'var(--color-bg-secondary)',
+      border: '1px solid var(--color-separator)',
+      boxShadow: '0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06)',
+    }}
+    onMouseEnter={e => e.currentTarget.style.background = 'var(--color-fill)'}
+    onMouseLeave={e => e.currentTarget.style.background = 'var(--color-bg-secondary)'}
   >
     <img
       src={`https://a.espncdn.com/i/teamlogos/nfl/500/${team.id.toLowerCase()}.png`}
@@ -335,9 +369,9 @@ const TeamCard = ({ team, onClick }) => (
       onError={e => { e.target.style.display = 'none'; }}
     />
     <div className="flex-1 min-w-0">
-      <div className="font-bold text-gray-800 dark:text-gray-100 text-sm leading-tight">{team.name}</div>
+      <div className="font-bold text-sm leading-tight" style={{ color: 'var(--color-label)' }}>{team.name}</div>
     </div>
-    <svg className="w-4 h-4 text-gray-300 dark:text-gray-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <svg className="w-4 h-4 shrink-0" style={{ color: 'var(--color-label-quaternary)' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
     </svg>
   </button>
@@ -349,11 +383,11 @@ const PlayerThumbnail = ({ id, name, size = 'sm' }) => {
   const initials = (name ?? '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
   const cls = size === 'lg' ? 'w-12 h-12' : 'w-8 h-8';
   return err ? (
-    <div className={`${cls} rounded-full bg-gray-200 dark:bg-gray-600 flex items-center justify-center shrink-0`}>
-      <span className="text-[10px] font-bold text-gray-400">{initials}</span>
+    <div className={`${cls} rounded-full flex items-center justify-center shrink-0`} style={{ background: 'var(--color-fill)' }}>
+      <span className="text-[10px] font-bold" style={{ color: 'var(--color-label-tertiary)' }}>{initials}</span>
     </div>
   ) : (
-    <img src={headshot(id)} alt="" className={`${cls} rounded-full object-cover bg-gray-100 dark:bg-gray-700 shrink-0`} onError={() => setErr(true)} />
+    <img src={headshot(id)} alt="" className={`${cls} rounded-full object-cover shrink-0`} style={{ background: 'var(--color-fill)' }} onError={() => setErr(true)} />
   );
 };
 

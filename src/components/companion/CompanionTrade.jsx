@@ -19,6 +19,8 @@ import { detectLeagueDefensiveType, computeIDPValues, computeDSTValues, normaliz
 import { buildRosterOpportunityLayer, buildPartnerTradeIntelligence, findLeagueWideUpgradeGroups } from '../../utils/opportunityEngine';
 import TradeRosterPicker from './TradeRosterPicker';
 import TradePickPicker from './TradePickPicker';
+import PlayerStatsModal from '../PlayerStatsModal';
+import useCardGlow from '../../hooks/useCardGlow.jsx';
 
 const UPGRADE_TRADE_POSTURES = [
   { level: 0, label: 'Underpay', description: 'Try to buy low' },
@@ -125,12 +127,12 @@ function isIDPDSTPos(position) {
 
 // ── Main component ───────────────────────────────────────────────────────────
 
-export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, view = 'agent', onViewChange }) {
+export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, view = 'agent', onViewChange, onViewPlayer }) {
   const {
     rosters, leagueUsers, players: sleeperPlayers, myRoster,
     selectedLeagueId, league, season, getUserDisplayName,
     scoringSettings, seasonStats, weeklyStats,
-    loadPlayers, loadSeasonStats, statsLoading,
+    loadPlayers, loadSeasonStats, statsLoading, espnIdOverrides,
   } = useSleeper();
   const { darkMode } = useTheme();
 
@@ -175,6 +177,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
   const [upgradeAllowIncomingPicks, setUpgradeAllowIncomingPicks] = useState(false);
   const [submittedUpgradeSearch, setSubmittedUpgradeSearch] = useState(null);
   const [tradeProposalMode, setTradeProposalMode] = useState('needs');
+  const [statsModalPlayer, setStatsModalPlayer] = useState(null);
 
   // ── Data loading ────────────────────────────────────────────────────────────
 
@@ -450,6 +453,32 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
 
   const tradeProposals = tradeIntelligence?.tradeProposals ?? [];
   const surplusTradeProposals = tradeIntelligence?.surplusTradeProposals ?? [];
+
+  const resolvePlayerModalMeta = useCallback((player) => {
+    if (!player?.id || !sleeperPlayers) return null;
+    const sleeperPlayer = sleeperPlayers[player.id];
+    const espnId = sleeperPlayer?.espn_id ?? espnIdOverrides?.[player.id] ?? null;
+    const teamId = sleeperPlayer?.team ?? player.team ?? null;
+    if (!espnId || !teamId) return null;
+
+    const yearsExp = sleeperPlayer?.years_exp;
+    return {
+      id: String(espnId),
+      sleeperId: player.id,
+      displayName: sleeperPlayer?.full_name ?? player.name ?? player.label ?? 'Player',
+      teamId,
+      position: sleeperPlayer?.position ?? player.position ?? '',
+      positionName: player.positionName ?? '',
+      jersey: sleeperPlayer?.number ?? '',
+      experience: yearsExp != null ? yearsExp + 1 : undefined,
+    };
+  }, [espnIdOverrides, sleeperPlayers]);
+
+  const openStatsModalForPlayer = useCallback((player) => {
+    const meta = resolvePlayerModalMeta(player);
+    if (!meta) return;
+    setStatsModalPlayer(meta);
+  }, [resolvePlayerModalMeta]);
 
   const myRosterOpportunityPlayers = useMemo(
     () => [...(opportunityLayer?.rosterAnalysesById?.[myRosterData?.roster_id]?.rosterPlayers ?? [])]
@@ -769,6 +798,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
       onTradePostureChange={setUpgradeTradePostureLevel}
       onRunSearch={runUpgradeFinderSearch}
       onApplyProposal={applyTradeProposal}
+      onOpenPlayer={openStatsModalForPlayer}
       onBack={() => onViewChange?.('agent')}
     />
   );
@@ -863,6 +893,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
             onRemovePick={key => removePick('yours', key)}
             onAddPlayer={() => setPickerOpen({ side: 'yours', type: 'player' })}
             onAddPick={() => setPickerOpen({ side: 'yours', type: 'pick' })}
+            onOpenPlayer={openStatsModalForPlayer}
             isLeader={hasItems && verdict.verdict === 'favors_them'}
             showTeamColors
           />
@@ -877,6 +908,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
             onRemovePick={key => removePick('theirs', key)}
             onAddPlayer={() => setPickerOpen({ side: 'theirs', type: 'player', allRosters: !partnerRosterId })}
             onAddPick={partnerRosterId ? () => setPickerOpen({ side: 'theirs', type: 'pick' }) : null}
+            onOpenPlayer={openStatsModalForPlayer}
             isLeader={hasItems && verdict.verdict === 'favors_you'}
             showTeamColors
           />
@@ -1099,6 +1131,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
             activeMode={tradeProposalMode}
             onModeChange={setTradeProposalMode}
             onApplyProposal={applyTradeProposal}
+            onOpenPlayer={openStatsModalForPlayer}
           />
         </div>
       ) : null}
@@ -1194,13 +1227,25 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
           onClose={() => setRosterModalRosterId(null)}
         />
       )}
+
+      {statsModalPlayer && (
+        <PlayerStatsModal
+          playerId={statsModalPlayer.id}
+          playerMeta={statsModalPlayer}
+          onClose={() => setStatsModalPlayer(null)}
+          onOpenFullProfile={() => {
+            onViewPlayer?.(statsModalPlayer.id, statsModalPlayer);
+            setStatsModalPlayer(null);
+          }}
+        />
+      )}
     </div>
   );
 }
 
 // ── TradeSide ─────────────────────────────────────────────────────────────────
 
-function TradeSide({ label, items, total, onRemovePlayer, onRemovePick, onAddPlayer, onAddPick, isLeader, showTeamColors }) {
+function TradeSide({ label, items, total, onRemovePlayer, onRemovePick, onAddPlayer, onAddPick, onOpenPlayer, isLeader, showTeamColors }) {
   const { darkMode } = useTheme();
 
   return (
@@ -1258,7 +1303,17 @@ function TradeSide({ label, items, total, onRemovePlayer, onRemovePick, onAddPla
               <div className="flex items-baseline gap-1.5">
                 <div className="flex-1 min-w-0 text-xs font-semibold leading-snug"
                   style={{ color: 'var(--color-label)' }}>
-                  {it.label}
+                  {it.type === 'player' && onOpenPlayer ? (
+                    <button
+                      onClick={() => onOpenPlayer(it)}
+                      className="text-left underline-offset-2 hover:underline"
+                      style={{ color: 'var(--color-label)' }}
+                    >
+                      {it.label}
+                    </button>
+                  ) : (
+                    it.label
+                  )}
                 </div>
                 <span className="text-sm font-bold tabular-nums shrink-0"
                   title={it.idpFallback ? 'Estimated from season production (no KTC data)' : undefined}
@@ -1414,7 +1469,7 @@ const CARD_STAT_DEFS = {
 };
 
 // Portrait trading card for one asset in a proposal side.
-function ProposalPlayerCard({ player = null, palette = null, pick = null, side, seasonStats, showSideBadge = true, forcedHeight = null, cardRef = null, topRightSlot = null }) {
+function ProposalPlayerCard({ player = null, palette = null, pick = null, side, seasonStats, showSideBadge = true, forcedHeight = null, cardRef = null, topRightSlot = null, onClick = null }) {
   const primary = player ?? null;
   const primaryPalette = palette ?? null;
   const primaryPick = pick ?? null;
@@ -1648,6 +1703,21 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
     );
   }
 
+  const isInteractive = !!(primary && onClick);
+  // Use the team's vivid primary color for the glow, not accentColor
+  // (accentColor is contrast-adjusted for text and is often near-white in light mode)
+  const interactiveGlowColor = teamColor ?? (darkMode ? '#5AADFF' : '#1A6EFF');
+  const { isGlowing, glowHandlers, borderOverlay, glowShadow } = useCardGlow({
+    enabled: isInteractive,
+    color: interactiveGlowColor,
+    cardColor: teamColor,
+    darkMode,
+  });
+  const baseShadow = darkMode ? '0 8px 20px rgba(0,0,0,0.12)' : '0 8px 18px rgba(12,15,20,0.10)';
+  const cardBoxShadow = glowShadow
+    ? `${glowShadow}, ${baseShadow}`
+    : baseShadow;
+
   return (
     <div
       ref={cardRef}
@@ -1656,8 +1726,26 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
         background: cardBg,
         border: `2px solid ${cardBorder}`,
         minHeight: forcedHeight ? `${forcedHeight}px` : undefined,
+        cursor: isInteractive ? 'pointer' : undefined,
+        boxShadow: cardBoxShadow,
+        transition: 'box-shadow 200ms cubic-bezier(0.32, 0.72, 0, 1)',
       }}
+      onClick={isInteractive ? () => onClick(primary) : undefined}
+      {...glowHandlers}
+      onFocus={isInteractive ? glowHandlers.onMouseEnter : undefined}
+      onBlur={isInteractive ? glowHandlers.onMouseLeave : undefined}
+      onKeyDown={isInteractive ? (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onClick(primary);
+        }
+      } : undefined}
+      role={isInteractive ? 'button' : undefined}
+      tabIndex={isInteractive ? 0 : undefined}
+      aria-label={isInteractive ? `Open player stats for ${primary.name}` : undefined}
     >
+      {/* Mouse-tracking border glow */}
+      {borderOverlay}
       {/* ── Photo area (~45% of card height) ──────────────────── */}
       <div className="relative w-full overflow-hidden aspect-[5/4] lg:aspect-[4/3]" style={{ flexShrink: 0 }}>
         {/* Background fill + gradient fade (behind the player image) */}
@@ -1957,6 +2045,7 @@ function TradeProposalItem({
   darkMode,
   seasonStats,
   onApplyProposal,
+  onOpenPlayer,
   containerClassName = '',
   renderAllAssetsAsCards = false,
 }) {
@@ -2065,6 +2154,7 @@ function TradeProposalItem({
                   showSideBadge={false}
                   seasonStats={seasonStats}
                   forcedHeight={equalizedCardHeight}
+                  onClick={asset.type === 'player' ? onOpenPlayer : null}
                 />
               </div>
             ))}
@@ -2117,6 +2207,7 @@ function TradeProposalItem({
                   showSideBadge={false}
                   seasonStats={seasonStats}
                   forcedHeight={equalizedCardHeight}
+                  onClick={asset.type === 'player' ? onOpenPlayer : null}
                 />
               </div>
             ))}
@@ -2235,6 +2326,7 @@ function TradeProposalPanel({
   activeMode,
   onModeChange,
   onApplyProposal,
+  onOpenPlayer,
 }) {
   const { darkMode } = useTheme();
   const { seasonStats } = useSleeper();
@@ -2393,6 +2485,7 @@ function TradeProposalPanel({
                 darkMode={darkMode}
                 seasonStats={seasonStats}
                 onApplyProposal={onApplyProposal}
+                onOpenPlayer={onOpenPlayer}
               />
             ))}
           </div>
@@ -2409,6 +2502,7 @@ function TradeProposalPanel({
                       darkMode={darkMode}
                       seasonStats={seasonStats}
                       onApplyProposal={onApplyProposal}
+                      onOpenPlayer={onOpenPlayer}
                       containerClassName={centeredSingle ? 'w-full max-w-[720px]' : 'w-full'}
                     />
                   </div>
@@ -2424,6 +2518,7 @@ function TradeProposalPanel({
                       darkMode={darkMode}
                       seasonStats={seasonStats}
                       onApplyProposal={onApplyProposal}
+                      onOpenPlayer={onOpenPlayer}
                       containerClassName="w-full"
                     />
                   ))}
@@ -2467,6 +2562,7 @@ function UpgradeFinderPage({
   onTradePostureChange,
   onRunSearch,
   onApplyProposal,
+  onOpenPlayer,
   onBack,
 }) {
   const resultsRef = useRef(null);
@@ -2634,9 +2730,13 @@ function UpgradeFinderPage({
         seasonStats={seasonStats}
         showSideBadge={false}
         forcedHeight={forcedHeight}
+        onClick={onOpenPlayer}
         topRightSlot={onRemove ? (
           <button
-            onClick={() => onRemove(player.id)}
+            onClick={(event) => {
+              event.stopPropagation();
+              onRemove(player.id);
+            }}
             className="relative w-6 h-6 lg:w-8 lg:h-8 rounded-full flex items-center justify-center"
             style={{
               background: player.palette?.logoBadgeBg ?? 'var(--color-bg-secondary)',
@@ -3008,6 +3108,7 @@ function UpgradeFinderPage({
                               darkMode={darkMode}
                               seasonStats={seasonStats}
                               onApplyProposal={onApplyProposal}
+                              onOpenPlayer={onOpenPlayer}
                               renderAllAssetsAsCards
                             />
                             <div className="grid gap-2 lg:grid-cols-3">

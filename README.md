@@ -75,17 +75,17 @@ PORT=8080 docker compose up -d --build
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) |
 
-## What's New in v6.0.4
+## What's New in v6.1
 
-- **Trade pickers and stale results cleaned up** — Intelligence no longer exposes the stale `View Roster and Picks` entry point, Agent pickers now support multi-add flows, and Upgrades invalidates stale loaded results when the selected pool changes.
-- **Empty-pool upgrade logic corrected** — Intelligence and Upgrades no longer invent outgoing player packages when no outgoing players are selected, so pick-led searches now behave more like the UI describes.
-- **Mixed-package draft cards expanded** — Intelligence mixed player-plus-pick proposals now render draft picks as full cards instead of collapsing them into pill callouts, and proposal card widths push a bit wider as equal-height syncing makes packages taller.
+- **Companion visuals normalized** - League now matches the newer Roster card treatment, list-view team tints are more consistent across Companion, and Matchup has been restyled into the Broadcast Editorial system with stronger score panels and mirrored player cards.
+- **Heatmap sizing and data cleanup** - Team/metric columns now stay stable across filters, visible weeks follow the league fantasy season, and Pass Def / QB Hit heatmap tiles and drilldowns now honor Sleeper alias keys.
+- **Matchup score breakdown accuracy fix** - Team header breakdowns now total through the same scoring-engine paths as the displayed matchup score, including position-specific bonuses.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Roadmap
 
-- **v6.1 — Trade Detail Drilldowns** — Clickable Trade asset cards that open a shared player-stats modal backed by the same data used in Statistics, with a direct link into each player's full stats page.
+- **v6.2 - URL Routing, Navigation, and Shareable Links Foundation** - Real routes, reload-safe navigation, and deep-link groundwork across the app.
 - **v7.0 — Draft Coach** — Rookie scouting hub with draft slot, college production, combine metrics, consensus ranking, and dynasty rookie ADP.
 - **Week-by-Week View** *(blocked on 2026 schedule data)* — Browse the full schedule by week with predictions reflected
 

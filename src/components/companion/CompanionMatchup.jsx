@@ -1,18 +1,153 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSleeper } from '../../context/SleeperContext';
-import { calcPoints, DEFAULT_SCORING } from '../../utils/scoringEngine';
+import { useTheme } from '../../context/ThemeContext';
+import { calcPoints, DEFAULT_SCORING, STAT_TO_SCORING_KEY } from '../../utils/scoringEngine';
 import { computePositionalRanks, getAvgPPG, getDefenseStrength, buildDefenseTable, projectPlayer, getDefensePercentile } from '../../utils/projectionEngine';
 import { STADIUMS, WEEK_DATES_2025 } from '../../data/stadiums';
+import { getTeamColorKey, getTeamPalette } from '../../data/teamColors.js';
 import { fetchGameWeather, formatWeather } from '../../api/weatherApi';
 import { getMatchups } from '../../api/sleeperApi';
 import PlayerMatchupBreakdown, { STAT_LABELS } from './PlayerMatchupBreakdown';
+import PlayerWeeklySheet from './PlayerWeeklySheet';
+import useCardGlow from '../../hooks/useCardGlow.jsx';
 
 const TOTAL_WEEKS = 18;
 const POSITION_COLORS = {
   QB: '#ef4444', RB: '#22c55e', WR: '#3b82f6', TE: '#f59e0b', K: '#8b5cf6',
 };
+const MATCHUP_CARD_SHADOW = '0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06)';
 
-export default function CompanionMatchup({ onViewPlayer }) {
+function hexLuminance(hex) {
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  const lin = c => c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+}
+
+function darkenHex(hex, factor) {
+  const r = Math.round(parseInt(hex.slice(1, 3), 16) * factor);
+  const g = Math.round(parseInt(hex.slice(3, 5), 16) * factor);
+  const b = Math.round(parseInt(hex.slice(5, 7), 16) * factor);
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+}
+
+function hexToRgb(hex) {
+  return {
+    r: parseInt(hex.slice(1, 3), 16),
+    g: parseInt(hex.slice(3, 5), 16),
+    b: parseInt(hex.slice(5, 7), 16),
+  };
+}
+
+function getColorChroma(hex) {
+  const { r, g, b } = hexToRgb(hex);
+  return Math.max(r, g, b) - Math.min(r, g, b);
+}
+
+function mixHex(baseHex, mixHexColor, mixAmount) {
+  const base = hexToRgb(baseHex);
+  const mix = hexToRgb(mixHexColor);
+  const blend = (a, b) => Math.round(a + (b - a) * mixAmount);
+  return `#${blend(base.r, mix.r).toString(16).padStart(2, '0')}${blend(base.g, mix.g).toString(16).padStart(2, '0')}${blend(base.b, mix.b).toString(16).padStart(2, '0')}`;
+}
+
+function getContrastRatio(foreground, background) {
+  const fg = hexLuminance(foreground);
+  const bg = hexLuminance(background);
+  const lighter = Math.max(fg, bg);
+  const darker = Math.min(fg, bg);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+function liftColorForDarkCanvas(hex, minContrast = 2.25) {
+  const darkCanvas = '#0C0F14';
+  if (getContrastRatio(hex, darkCanvas) >= minContrast) return hex;
+
+  for (let step = 0.18; step <= 0.72; step += 0.06) {
+    const lifted = mixHex(hex, '#FFFFFF', step);
+    if (getContrastRatio(lifted, darkCanvas) >= minContrast) return lifted;
+  }
+
+  return mixHex(hex, '#FFFFFF', 0.72);
+}
+
+function isWarmRedAccent(hex) {
+  const { r, g, b } = hexToRgb(hex);
+  return r >= 140 && r > g + 35 && r > b + 20;
+}
+
+function getDarkModeAccent(palette) {
+  const darkCanvas = '#0C0F14';
+  const primaryContrast = getContrastRatio(palette.darkPrimary, darkCanvas);
+  if (primaryContrast >= 3.2) return palette.darkPrimary;
+
+  const fallbackCandidates = [
+    palette.darkSecondary,
+    palette.secondary,
+    palette.primary,
+  ].filter(Boolean);
+
+  const rankedFallbacks = fallbackCandidates
+    .map(color => ({ color, contrast: getContrastRatio(color, darkCanvas) }))
+    .sort((a, b) => b.contrast - a.contrast);
+
+  return rankedFallbacks[0]?.color ?? palette.darkPrimary ?? '#F2F1EC';
+}
+
+function getDarkModeGlowCore(palette, accent) {
+  if (!accent || !palette?.primary) return '#FFFFFF';
+  if (!isWarmRedAccent(accent)) return '#FFFFFF';
+  if (palette.primary.toLowerCase() === accent.toLowerCase()) return '#FFFFFF';
+  return liftColorForDarkCanvas(palette.primary);
+}
+
+function getLightModeTintBase(palette) {
+  const primary = palette.primary;
+  const secondary = palette.secondary ?? primary;
+  const primaryChroma = getColorChroma(primary);
+  const secondaryChroma = getColorChroma(secondary);
+  const primaryLuminance = hexLuminance(primary);
+
+  if ((primaryLuminance < 0.1 || primaryChroma < 42) && secondaryChroma >= primaryChroma + 24) {
+    return secondary;
+  }
+
+  return primary;
+}
+
+function teamRowTheme(team, darkMode) {
+  const palette = getTeamPalette(team);
+  const logoKey = getTeamColorKey(team) ?? '';
+  if (!palette) {
+    return {
+      logoKey,
+      rowBg: 'var(--color-bg-secondary)',
+      hoverBg: 'var(--color-fill)',
+      accent: null,
+      glowCore: darkMode ? '#FFFFFF' : null,
+      avatarBorder: null,
+    };
+  }
+
+  const color = darkMode ? palette.darkPrimary : getLightModeTintBase(palette);
+  const isLight = hexLuminance(color) > 0.35;
+  const accent = darkMode
+    ? getDarkModeAccent(palette)
+    : (isLight ? darkenHex(color, 0.55) : color);
+
+  return {
+    logoKey,
+    rowBg: `${color}${isLight ? '54' : '48'}`,
+    hoverBg: `${color}${isLight ? '70' : '62'}`,
+    accent,
+    glowCore: darkMode ? getDarkModeGlowCore(palette, accent) : null,
+    avatarBorder: accent,
+  };
+}
+
+export default function CompanionMatchup({ onViewPlayer, initialWeekRequest = null, onConsumeInitialWeekRequest = null }) {
+  const { darkMode } = useTheme();
   const {
     sleeperUser, selectedLeagueId, league,
     rosters, players, loadPlayers,
@@ -32,6 +167,7 @@ export default function CompanionMatchup({ onViewPlayer }) {
   const [showBench, setShowBench] = useState(false);
   const [selectedPlayer, setSelectedPlayer] = useState(null); // { id, projection }
   const [selectedTeam, setSelectedTeam] = useState(null); // 'mine' | 'opp'
+  const [selectedRosterPlayerId, setSelectedRosterPlayerId] = useState(null);
   const [weatherMap, setWeatherMap] = useState({}); // { 'TEAM-DATE': weather }
 
   useEffect(() => { loadPlayers(); }, [loadPlayers]);
@@ -47,6 +183,11 @@ export default function CompanionMatchup({ onViewPlayer }) {
       .catch(() => setMatchups([]))
       .finally(() => setMatchupLoading(false));
   }, [selectedLeagueId, week]);
+
+  useEffect(() => {
+    if (!initialWeekRequest?.week) return;
+    setWeek(Math.max(1, Math.min(TOTAL_WEEKS, Number(initialWeekRequest.week) || 1)));
+  }, [initialWeekRequest]);
 
   const myRosterData = myRoster();
 
@@ -74,6 +215,16 @@ export default function CompanionMatchup({ onViewPlayer }) {
     if (!sleeperUser) return 'You';
     return getUserDisplayName(sleeperUser.user_id);
   }, [sleeperUser, getUserDisplayName]);
+
+  const matchupOutcome = useMemo(() => {
+    const myPoints = myMatchup?.points ?? null;
+    const oppPoints = opponentMatchup?.points ?? null;
+    if (myPoints == null || oppPoints == null) return { mine: 'pending', opp: 'pending' };
+    if (myPoints === oppPoints) return { mine: 'tie', opp: 'tie' };
+    return myPoints > oppPoints
+      ? { mine: 'win', opp: 'loss' }
+      : { mine: 'loss', opp: 'win' };
+  }, [myMatchup, opponentMatchup]);
 
   const positionalRanks = useMemo(
     () => computePositionalRanks(seasonStats, players, scoringSettings),
@@ -170,8 +321,9 @@ export default function CompanionMatchup({ onViewPlayer }) {
       defStrength,
       defPercentile,
       isBye,
+      teamTheme: teamRowTheme(myTeam, darkMode),
     };
-  }, [players, seasonStats, weeklyStats, scoringSettings, positionalRanks, weeklyRanks, week, scheduleMap, defenseTable]);
+  }, [players, seasonStats, weeklyStats, scoringSettings, positionalRanks, weeklyRanks, week, scheduleMap, defenseTable, darkMode]);
 
   // Ordered slot positions for each starter slot (filters out BN/IR)
   const starterPositions = useMemo(
@@ -262,6 +414,28 @@ export default function CompanionMatchup({ onViewPlayer }) {
     }));
   }, [starterSlots, weatherMap, week, weeklyStats, players, scoringSettings, scheduleMap]);
 
+  useEffect(() => {
+    const requestedPlayerId = initialWeekRequest?.playerId;
+    const requestedWeek = Number(initialWeekRequest?.week);
+    if (!requestedPlayerId || requestedWeek !== week) return;
+
+    const matchupPlayers = [
+      ...enrichedSlots.flatMap((slot) => [slot.mine, slot.opp]),
+      ...myBench,
+      ...oppBench,
+    ].filter(Boolean);
+
+    const match = matchupPlayers.find((player) => player?.id === requestedPlayerId);
+    if (!match) return;
+
+    setSelectedPlayer({
+      id: match.id,
+      projection: match.projection ?? null,
+      enriched: match,
+    });
+    onConsumeInitialWeekRequest?.();
+  }, [enrichedSlots, initialWeekRequest, myBench, oppBench, onConsumeInitialWeekRequest, week]);
+
   if (!matchups && !matchupLoading) {
     return <EmptyState message="No matchup data available." />;
   }
@@ -269,7 +443,7 @@ export default function CompanionMatchup({ onViewPlayer }) {
   return (
     <div className="pb-6">
       {/* Week selector */}
-      <div className="px-4 pb-3 flex items-center gap-2 overflow-x-auto" style={{ touchAction: 'pan-x', WebkitOverflowScrolling: 'touch' }}>
+      <div className="px-4 pb-3 flex items-center gap-2 overflow-x-auto scrollbar-hide" style={{ touchAction: 'pan-x', WebkitOverflowScrolling: 'touch' }}>
         {Array.from({ length: totalWeeks }, (_, i) => i + 1).map(w => {
           const isPlayoff = w >= playoffStart;
           const isSelected = week === w;
@@ -307,11 +481,11 @@ export default function CompanionMatchup({ onViewPlayer }) {
       </div>
 
       {statsLoading && (
-        <div className="mx-4 mb-3 px-4 py-2.5 rounded-xl flex items-center gap-3" style={{ background: 'var(--color-fill)' }}>
+        <div className="mx-4 mb-4 px-4 py-3 rounded-xl flex items-center gap-3" style={{ background: 'var(--color-fill)', border: '1px solid var(--color-separator)' }}>
           <div className="h-1 flex-1 rounded-full overflow-hidden" style={{ background: 'var(--color-fill-secondary)' }}>
             <div className="h-full rounded-full transition-all duration-300" style={{ width: `${statsProgress}%`, background: 'var(--color-signature)' }} />
           </div>
-          <span className="text-xs tabular-nums shrink-0" style={{ color: 'var(--color-label-tertiary)' }}>{statsProgress}%</span>
+          <span className="text-xs tabular-nums shrink-0" style={{ color: 'var(--color-label-tertiary)' }}>Loading stats {statsProgress}%</span>
         </div>
       )}
 
@@ -324,72 +498,177 @@ export default function CompanionMatchup({ onViewPlayer }) {
       ) : (
         <>
           {/* Scoreboard header */}
-          <div className="mx-4 mb-3 px-4 py-3 rounded-xl flex items-center gap-4" style={{ background: 'var(--color-fill-secondary)' }}>
-            <button
-              className="flex-1 text-center active:opacity-60 transition-opacity"
-              onClick={() => setSelectedTeam('mine')}
-            >
-              <div className="font-semibold text-sm truncate" style={{ color: 'var(--color-label)' }}>{myName}</div>
-              <div className="font-bold tabular-nums text-2xl mt-0.5" style={{ color: 'var(--color-signature)' }}>
-                {myMatchup.points?.toFixed(2) ?? '—'}
+          <div
+            className="mx-4 mb-4 px-4 py-4 rounded-xl"
+            style={{
+              background: 'var(--color-bg-secondary)',
+              border: '1px solid var(--color-separator)',
+              boxShadow: MATCHUP_CARD_SHADOW,
+            }}
+          >
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <div className="text-[10px] font-bold uppercase tracking-[0.2em]" style={{ color: 'var(--color-label-tertiary)' }}>
+                  Matchup
+                </div>
+                <div className="mt-1 text-sm" style={{ color: 'var(--color-label-secondary)' }}>
+                  Week {week}
+                </div>
               </div>
-            </button>
-            <div className="text-xs font-bold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>vs</div>
-            <button
-              className="flex-1 text-center active:opacity-60 transition-opacity"
-              onClick={() => setSelectedTeam('opp')}
-            >
-              <div className="font-semibold text-sm truncate" style={{ color: 'var(--color-label)' }}>{opponentName}</div>
-              <div className="font-bold tabular-nums text-2xl mt-0.5" style={{ color: 'var(--color-label)' }}>
-                {opponentMatchup?.points?.toFixed(2) ?? '—'}
-              </div>
-            </button>
+              <button
+                onClick={() => setShowBench(v => !v)}
+                className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-[0.18em] active:opacity-60"
+                style={{
+                  fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif",
+                  background: showBench ? 'var(--color-signature)' : 'var(--color-fill)',
+                  color: showBench ? 'var(--color-signature-fg)' : 'var(--color-signature)',
+                  border: `1px solid ${showBench ? 'var(--color-signature)' : 'var(--color-signature)'}`,
+                  borderRadius: 0,
+                  boxShadow: showBench ? '0 1px 3px rgba(0,0,0,0.08)' : '0 1px 2px rgba(0,0,0,0.05)',
+                }}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M3 7h18" />
+                  <path d="M6 12h12" />
+                  <path d="M9 17h6" />
+                </svg>
+                {showBench ? 'Bench On' : 'Show Bench'}
+              </button>
+            </div>
+            <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3">
+              <button
+                className="min-w-0 px-4 py-3 text-center active:opacity-60 transition-opacity"
+                onClick={() => setSelectedTeam('mine')}
+                style={{
+                  border: '1px solid var(--color-separator)',
+                  background: matchupOutcome.mine === 'win'
+                    ? 'rgba(46,213,120,0.18)'
+                    : matchupOutcome.mine === 'loss'
+                      ? 'rgba(255,68,51,0.16)'
+                      : 'var(--color-fill-secondary)',
+                  borderRadius: 0,
+                  position: 'relative',
+                  overflow: 'hidden',
+                }}
+              >
+                {matchupOutcome.mine !== 'pending' && matchupOutcome.mine !== 'tie' && (
+                  <div
+                    aria-hidden="true"
+                    style={{
+                      position: 'absolute',
+                      top: '50%',
+                      right: '18px',
+                      transform: 'translateY(-50%)',
+                      fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif",
+                      fontSize: '64px',
+                      fontWeight: 800,
+                      lineHeight: 0.9,
+                      color: matchupOutcome.mine === 'win' ? 'rgba(46,213,120,0.30)' : 'rgba(255,68,51,0.28)',
+                      pointerEvents: 'none',
+                    }}
+                  >
+                    {matchupOutcome.mine === 'win' ? 'W' : 'L'}
+                  </div>
+                )}
+                <div className="relative z-[1] text-[11px] font-bold uppercase tracking-[0.2em]" style={{ color: 'var(--color-label-secondary)', fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif" }}>Your Side</div>
+                <div className="relative z-[1] mt-1 truncate uppercase" style={{ color: 'var(--color-label)', fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif", fontSize: '32px', fontWeight: 800, lineHeight: 0.96 }}>
+                  {myName}
+                </div>
+                <div className="relative z-[1] mt-1 tabular-nums" style={{ color: 'var(--color-signature)', fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif", fontSize: '38px', fontWeight: 800, lineHeight: 0.92 }}>
+                  {myMatchup.points?.toFixed(2) ?? '?'}
+                </div>
+              </button>
+              <div className="px-3 py-1 text-xs font-bold uppercase tracking-[0.18em]" style={{ background: 'var(--color-fill)', color: 'var(--color-label-tertiary)', borderRadius: 0 }}>vs</div>
+              <button
+                className="min-w-0 px-4 py-3 text-center active:opacity-60 transition-opacity"
+                onClick={() => setSelectedTeam('opp')}
+                style={{
+                  border: '1px solid var(--color-separator)',
+                  background: matchupOutcome.opp === 'win'
+                    ? 'rgba(46,213,120,0.18)'
+                    : matchupOutcome.opp === 'loss'
+                      ? 'rgba(255,68,51,0.16)'
+                      : 'var(--color-fill-secondary)',
+                  borderRadius: 0,
+                  position: 'relative',
+                  overflow: 'hidden',
+                }}
+              >
+                {matchupOutcome.opp !== 'pending' && matchupOutcome.opp !== 'tie' && (
+                  <div
+                    aria-hidden="true"
+                    style={{
+                      position: 'absolute',
+                      top: '50%',
+                      left: '18px',
+                      transform: 'translateY(-50%)',
+                      fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif",
+                      fontSize: '64px',
+                      fontWeight: 800,
+                      lineHeight: 0.9,
+                      color: matchupOutcome.opp === 'win' ? 'rgba(46,213,120,0.30)' : 'rgba(255,68,51,0.28)',
+                      pointerEvents: 'none',
+                    }}
+                  >
+                    {matchupOutcome.opp === 'win' ? 'W' : 'L'}
+                  </div>
+                )}
+                <div className="relative z-[1] text-[11px] font-bold uppercase tracking-[0.2em]" style={{ color: 'var(--color-label-secondary)', fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif" }}>Opponent</div>
+                <div className="relative z-[1] mt-1 truncate uppercase" style={{ color: 'var(--color-label)', fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif", fontSize: '32px', fontWeight: 800, lineHeight: 0.96 }}>
+                  {opponentName}
+                </div>
+                <div className="relative z-[1] mt-1 tabular-nums" style={{ color: 'var(--color-label)', fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif", fontSize: '38px', fontWeight: 800, lineHeight: 0.92 }}>
+                  {opponentMatchup?.points?.toFixed(2) ?? '?'}
+                </div>
+              </button>
+            </div>
           </div>
 
           {/* Column headers */}
-          <div className="flex items-center px-4 pb-1 mb-1" style={{ borderBottom: '1px solid var(--color-separator)' }}>
-            <span className="flex-1 text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>{myName}</span>
-            <span className="w-10 text-center text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>Slot</span>
-            <span className="flex-1 text-right text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>{opponentName}</span>
+          <div className="px-4 pb-2 mb-1" style={{ borderBottom: '1px solid var(--color-separator)' }}>
+            <div className="grid grid-cols-[minmax(0,1fr)_44px_minmax(0,1fr)] items-center gap-2">
+              <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>{myName}</span>
+              <span className="text-center text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>Slot</span>
+              <span className="text-right text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>{opponentName}</span>
+            </div>
           </div>
 
           {/* Head-to-head starter rows */}
-          {enrichedSlots.map((slot, i) => (
-            <HeadToHeadRow
-              key={i}
-              mine={slot.mine}
-              opp={slot.opp}
-              slotPos={slot.slotPos}
-              onSelectMine={() => slot.mine?.id && setSelectedPlayer({ id: slot.mine.id, projection: slot.mine.projection ?? null, enriched: slot.mine })}
-              onSelectOpp={() => slot.opp?.id && setSelectedPlayer({ id: slot.opp.id, projection: slot.opp.projection ?? null, enriched: slot.opp })}
-            />
-          ))}
+          <div>
+            {enrichedSlots.map((slot, i) => (
+              <HeadToHeadRow
+                key={i}
+                mine={slot.mine}
+                opp={slot.opp}
+                slotPos={slot.slotPos}
+                onSelectMine={() => slot.mine?.id && setSelectedPlayer({ id: slot.mine.id, projection: slot.mine.projection ?? null, enriched: slot.mine })}
+                onSelectOpp={() => slot.opp?.id && setSelectedPlayer({ id: slot.opp.id, projection: slot.opp.projection ?? null, enriched: slot.opp })}
+              />
+            ))}
+          </div>
 
           {/* Bench section */}
           {(myBench.length > 0 || oppBench.length > 0) && (
             <>
-              <div className="flex items-center justify-between px-4 mt-4 mb-1" style={{ borderBottom: '1px solid var(--color-separator)', paddingBottom: '6px' }}>
-                <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>Bench</span>
-                <button
-                  onClick={() => setShowBench(v => !v)}
-                  className="text-xs font-semibold"
-                  style={{ color: 'var(--color-accent)' }}
-                >
-                  {showBench ? 'Hide' : 'Show'}
-                </button>
+              <div className="mx-4 mt-5 mb-2 px-4 py-2 text-xs font-bold uppercase tracking-widest" style={{ color: 'white', background: 'var(--color-label)' }}>
+                Bench
               </div>
               {showBench && (() => {
                 const len = Math.max(myBench.length, oppBench.length);
-                return Array.from({ length: len }, (_, i) => (
-                  <HeadToHeadRow
-                    key={i}
-                    mine={myBench[i] ?? null}
-                    opp={oppBench[i] ?? null}
-                    bench
-                    onSelectMine={() => myBench[i]?.id && setSelectedPlayer({ id: myBench[i].id, projection: null, enriched: myBench[i] })}
-                    onSelectOpp={() => oppBench[i]?.id && setSelectedPlayer({ id: oppBench[i].id, projection: null, enriched: oppBench[i] })}
-                  />
-                ));
+                return (
+                  <div>
+                    {Array.from({ length: len }, (_, i) => (
+                      <HeadToHeadRow
+                        key={i}
+                        mine={myBench[i] ?? null}
+                        opp={oppBench[i] ?? null}
+                        bench
+                        onSelectMine={() => myBench[i]?.id && setSelectedPlayer({ id: myBench[i].id, projection: null, enriched: myBench[i] })}
+                        onSelectOpp={() => oppBench[i]?.id && setSelectedPlayer({ id: oppBench[i].id, projection: null, enriched: oppBench[i] })}
+                      />
+                    ))}
+                  </div>
+                );
               })()}
             </>
           )}
@@ -404,6 +683,32 @@ export default function CompanionMatchup({ onViewPlayer }) {
           enrichedPlayer={selectedPlayer.enriched ?? null}
           onClose={() => setSelectedPlayer(null)}
           onViewStats={onViewPlayer}
+          onOpenRosterPlayer={(playerId) => setSelectedRosterPlayerId(playerId)}
+        />
+      )}
+
+      {selectedRosterPlayerId && (
+        <PlayerWeeklySheet
+          playerId={selectedRosterPlayerId}
+          onClose={() => setSelectedRosterPlayerId(null)}
+          onOpenWeek={(playerId, requestedWeek) => {
+            setSelectedRosterPlayerId(null);
+            setSelectedPlayer(null);
+            setWeek(requestedWeek);
+            const matchupPlayers = [
+              ...enrichedSlots.flatMap((slot) => [slot.mine, slot.opp]),
+              ...myBench,
+              ...oppBench,
+            ].filter(Boolean);
+            const match = matchupPlayers.find((player) => player?.id === playerId);
+            if (match) {
+              setSelectedPlayer({
+                id: match.id,
+                projection: match.projection ?? null,
+                enriched: match,
+              });
+            }
+          }}
         />
       )}
 
@@ -426,23 +731,64 @@ const SLOT_LABELS = {
 };
 
 function HeadToHeadRow({ mine, opp, bench, slotPos, onSelectMine, onSelectOpp }) {
+  const { darkMode } = useTheme();
+  const [isMineHovered, setIsMineHovered] = useState(false);
+  const [isOppHovered, setIsOppHovered] = useState(false);
   const slotLabel = slotPos ? (SLOT_LABELS[slotPos] ?? slotPos) : (mine?.position ?? opp?.position ?? '?');
   const posColor = POSITION_COLORS[slotPos] ?? POSITION_COLORS[mine?.position ?? opp?.position] ?? 'var(--color-label-tertiary)';
+  const mineTheme = mine?.teamTheme ?? teamRowTheme('', darkMode);
+  const oppTheme = opp?.teamTheme ?? teamRowTheme('', darkMode);
+  const mineGlowColor = mineTheme.accent ?? (darkMode ? '#5AADFF' : '#1A6EFF');
+  const oppGlowColor = oppTheme.accent ?? (darkMode ? '#5AADFF' : '#1A6EFF');
+  const mineGlow = useCardGlow({
+    enabled: isMineHovered && !!mine,
+    color: mineGlowColor,
+    cardColor: mineTheme.accent ?? null,
+    darkMode,
+    coreColor: darkMode ? (mineTheme.glowCore ?? '#FFFFFF') : null,
+    outerColor: mineTheme.accent ?? mineGlowColor,
+  });
+  const oppGlow = useCardGlow({
+    enabled: isOppHovered && !!opp,
+    color: oppGlowColor,
+    cardColor: oppTheme.accent ?? null,
+    darkMode,
+    coreColor: darkMode ? (oppTheme.glowCore ?? '#FFFFFF') : null,
+    outerColor: oppTheme.accent ?? oppGlowColor,
+  });
+  const mineRowShadow = mineGlow.glowShadow ? `${mineGlow.glowShadow}, ${MATCHUP_CARD_SHADOW}` : MATCHUP_CARD_SHADOW;
+  const oppRowShadow = oppGlow.glowShadow ? `${oppGlow.glowShadow}, ${MATCHUP_CARD_SHADOW}` : MATCHUP_CARD_SHADOW;
 
   return (
-    <div className="flex" style={{ borderBottom: '1px solid var(--color-separator)', opacity: bench ? 0.6 : 1 }}>
+    <div className="px-4" style={{ opacity: bench ? 0.72 : 1 }}>
+      <div className="grid grid-cols-[minmax(0,1fr)_44px_minmax(0,1fr)] items-stretch gap-2">
       {/* My player — left */}
       <button
         onClick={onSelectMine}
         disabled={!mine}
-        className="flex-1 flex items-center gap-2 px-3 py-2.5 text-left active:opacity-60 transition-opacity"
+        onMouseEnter={() => setIsMineHovered(true)}
+        onMouseLeave={() => setIsMineHovered(false)}
+        onFocus={() => setIsMineHovered(true)}
+        onBlur={() => setIsMineHovered(false)}
+        onMouseMove={mineGlow.glowHandlers.onMouseMove}
+        className="min-w-0 flex items-center gap-3 px-4 py-3 text-left active:opacity-60 transition-opacity"
+        style={{
+          border: '1px solid var(--color-separator)',
+          borderLeft: mineTheme.accent ? `4px solid ${mineTheme.accent}` : '4px solid var(--color-separator)',
+          background: isMineHovered ? mineTheme.hoverBg : mineTheme.rowBg,
+          boxShadow: mineRowShadow,
+          transform: isMineHovered ? 'translateY(-1px)' : 'translateY(0)',
+          transition: 'background 150ms cubic-bezier(0.32, 0.72, 0, 1), box-shadow 200ms cubic-bezier(0.32, 0.72, 0, 1), transform 200ms cubic-bezier(0.32, 0.72, 0, 1)',
+          cursor: mine ? 'pointer' : 'default',
+        }}
       >
+        {mineGlow.borderOverlay}
         <PlayerThumb player={mine} />
         <PlayerInfo player={mine} />
       </button>
 
       {/* Position badge — center */}
-      <div className="w-10 flex-shrink-0 flex items-center justify-center">
+      <div className="flex items-center justify-center">
         <span
           className="font-bold px-1.5 py-0.5 rounded"
           style={{ background: `${posColor}20`, color: posColor, fontSize: '10px' }}
@@ -455,24 +801,41 @@ function HeadToHeadRow({ mine, opp, bench, slotPos, onSelectMine, onSelectOpp })
       <button
         onClick={onSelectOpp}
         disabled={!opp}
-        className="flex-1 flex items-center gap-2 px-3 py-2.5 text-right active:opacity-60 transition-opacity flex-row-reverse"
+        onMouseEnter={() => setIsOppHovered(true)}
+        onMouseLeave={() => setIsOppHovered(false)}
+        onFocus={() => setIsOppHovered(true)}
+        onBlur={() => setIsOppHovered(false)}
+        onMouseMove={oppGlow.glowHandlers.onMouseMove}
+        className="min-w-0 flex items-center gap-3 px-4 py-3 text-right active:opacity-60 transition-opacity flex-row-reverse"
+        style={{
+          border: '1px solid var(--color-separator)',
+          borderLeft: oppTheme.accent ? `4px solid ${oppTheme.accent}` : '4px solid var(--color-separator)',
+          background: isOppHovered ? oppTheme.hoverBg : oppTheme.rowBg,
+          boxShadow: oppRowShadow,
+          transform: isOppHovered ? 'translateY(-1px)' : 'translateY(0)',
+          transition: 'background 150ms cubic-bezier(0.32, 0.72, 0, 1), box-shadow 200ms cubic-bezier(0.32, 0.72, 0, 1), transform 200ms cubic-bezier(0.32, 0.72, 0, 1)',
+          cursor: opp ? 'pointer' : 'default',
+        }}
       >
+        {oppGlow.borderOverlay}
         <PlayerThumb player={opp} />
         <PlayerInfo player={opp} align="right" />
       </button>
+      </div>
     </div>
   );
 }
 
 function PlayerInfo({ player, align = 'left' }) {
   const isRight = align === 'right';
-  if (!player || player.name === 'Empty') return <div className="flex-1" />;
+  const { darkMode } = useTheme();
+  const rankLabel = player?.weekRank ? `${player.weekRank.posLabel}${player.weekRank.rank}` : (player?.rank ? `${player.rank.posLabel}${player.rank.rank}` : null);
+  if (!player || player.name === 'Empty') return <div className="flex-1 min-w-0" />;
 
   const weekPts = player.weekPts ?? null;
   const projMin = player.projection?.min ?? null;
   const projMax = player.projection?.max ?? null;
 
-  // Color the final score based on where it falls relative to the projected range
   const scoreColor = (() => {
     if (weekPts == null || projMin == null || projMax == null) return 'var(--color-label)';
     if (weekPts < projMin) return '#ef4444';
@@ -485,7 +848,6 @@ function PlayerInfo({ player, align = 'left' }) {
     return '#84cc16';
   })();
 
-  // Matchup difficulty badge (5-level percentile ranking)
   const defPercentile = player.defPercentile ?? null;
   let badge = null;
   if (defPercentile !== null) {
@@ -497,54 +859,56 @@ function PlayerInfo({ player, align = 'left' }) {
   }
   const locationStr = player.isHome === true ? 'Home' : player.isHome === false ? 'Away' : null;
   const weatherStr  = formatWeather(player.weather, player.isIndoor ?? false);
+  const metaColor = darkMode ? 'rgba(228,235,244,0.78)' : 'rgba(12,15,20,0.72)';
+  const subduedColor = darkMode ? 'rgba(228,235,244,0.62)' : 'rgba(12,15,20,0.56)';
 
   return (
     <div className={`flex-1 min-w-0 ${isRight ? 'text-right' : ''}`}>
-      {/* Name · Team [Injury] */}
       <div className={`flex items-center gap-1 flex-wrap ${isRight ? 'justify-end' : ''}`}>
-        <span className="font-semibold text-xs truncate" style={{ color: 'var(--color-label)' }}>
+        <span className="font-semibold text-sm truncate" style={{ color: 'var(--color-label)' }}>
           {player.name}
         </span>
-        <span className="text-xs shrink-0" style={{ color: 'var(--color-label-tertiary)' }}>
-          · {player.team}
+        <span className="text-xs shrink-0" style={{ color: metaColor }}>
+          {player.position} - {player.team}
         </span>
         {player.injuryStatus && (
           <span
-            className="text-[10px] font-bold px-1 py-px rounded shrink-0"
-            style={{ background: 'rgba(239,68,68,0.15)', color: '#ef4444' }}
+            className="text-[10px] font-bold px-2 py-1 rounded-lg shrink-0"
+            style={{ background: 'rgba(239,68,68,0.15)', color: 'var(--color-accent-red)' }}
           >
             {player.injuryStatus}
           </span>
         )}
       </div>
-      {/* Points / projection line — emphasis flips based on whether player has scored */}
       <div className={`flex items-center gap-1.5 mt-0.5 flex-wrap ${isRight ? 'justify-end' : ''}`}>
         {weekPts == null ? (
-          /* Pre-game: projection is the headline */
           projMin != null && projMax != null ? (
             <span className="text-xs tabular-nums font-semibold" style={{ color: 'var(--color-label)' }}>
-              proj {projMin}–{projMax}
+              proj {projMin}-{projMax}
             </span>
           ) : null
         ) : (
-          /* Post-game: score is the headline, colored by position within projected range */
           <>
             <span className="text-xs tabular-nums font-bold" style={{ color: scoreColor }}>
               {weekPts.toFixed(2)} pts
             </span>
             {projMin != null && projMax != null && (
-              <span className="text-xs tabular-nums" style={{ color: 'var(--color-label-quaternary)' }}>
-                · proj {projMin}–{projMax}
+              <span className="text-xs tabular-nums" style={{ color: subduedColor }}>
+                - proj {projMin}-{projMax}
               </span>
             )}
           </>
         )}
+        {rankLabel && (
+          <span className="text-xs font-bold tabular-nums" style={{ color: subduedColor }}>
+            - {rankLabel}
+          </span>
+        )}
       </div>
-      {/* vs OPP · Home/Away · weather · matchup badge — or BYE WEEK label */}
       {player.oppTeam ? (
         <div className={`flex items-center gap-1 flex-wrap mt-0.5 ${isRight ? 'justify-end' : ''}`}>
-          <span className="text-xs" style={{ color: 'var(--color-label-tertiary)' }}>
-            vs {player.oppTeam}{locationStr ? ` · ${locationStr}` : ''}{weatherStr ? ` · ${weatherStr}` : ''}
+          <span className="text-xs" style={{ color: metaColor }}>
+            vs {player.oppTeam}{locationStr ? ` - ${locationStr}` : ''}{weatherStr ? ` - ${weatherStr}` : ''}
           </span>
           {badge && (
             <span
@@ -559,7 +923,7 @@ function PlayerInfo({ player, align = 'left' }) {
         <div className={`mt-0.5 ${isRight ? 'text-right' : ''}`}>
           <span
             className="text-[10px] font-bold px-1.5 py-px rounded-full"
-            style={{ background: 'var(--color-fill)', color: 'var(--color-label-tertiary)' }}
+            style={{ background: 'var(--color-fill)', color: metaColor }}
           >
             BYE WEEK
           </span>
@@ -571,52 +935,175 @@ function PlayerInfo({ player, align = 'left' }) {
 
 function PlayerThumb({ player }) {
   if (!player || player.name === 'Empty') {
-    return <div className="w-8 h-8 rounded-full shrink-0" style={{ background: 'var(--color-fill)' }} />;
+    return <div className="w-14 h-14 rounded-full shrink-0" style={{ background: 'var(--color-fill)' }} />;
   }
   return (
     <img
       src={`https://sleepercdn.com/content/nfl/players/thumb/${player.id}.jpg`}
       alt={player.name}
-      className="w-8 h-8 rounded-full shrink-0 object-cover"
-      style={{ background: 'var(--color-fill)' }}
+      className="w-14 h-14 rounded-full shrink-0 object-cover"
+      style={{
+        background: 'var(--color-fill)',
+        border: player.teamTheme?.avatarBorder ? `2px solid ${player.teamTheme.avatarBorder}` : '2px solid transparent',
+      }}
       onError={e => { e.target.src = 'https://sleepercdn.com/images/v2/icons/player_default.webp'; }}
     />
   );
 }
 
+const TEAM_SCORE_LABELS = {
+  ...STAT_LABELS,
+  bonus_rush_rec_yd_100: '100+ Rush/Rec Yd Bonus',
+  bonus_rush_rec_yd_200: '200+ Rush/Rec Yd Bonus',
+  bonus_pass_cmp_25: '25+ Completion Bonus',
+  bonus_rush_att_20: '20+ Carry Bonus',
+  pass_td_40p: '40+ Pass TD Bonus',
+  pass_td_50p: '50+ Pass TD Bonus',
+  pass_cmp_40p: '40+ Completion Bonus',
+  rush_td_40p: '40+ Rush TD Bonus',
+  rush_td_50p: '50+ Rush TD Bonus',
+  rec_td_40p: '40+ Rec TD Bonus',
+  rec_td_50p: '50+ Rec TD Bonus',
+  rec_40p: '40+ Reception Bonus',
+  rush_40p: '40+ Rush Bonus',
+  bonus_def_fum_td_50p: '50+ Fumble TD Bonus',
+  bonus_def_int_td_50p: '50+ INT TD Bonus',
+  idp_qb_hit: 'QB Hit',
+  idp_pass_def: 'Pass Deflection',
+  idp_fum_rec: 'Fumble Recovery',
+  idp_fum_ret_yd: 'Fumble Return Yds',
+  idp_safe: 'Safety',
+  idp_sack_yd: 'Sack Yards',
+  idp_int_ret_yd: 'INT Return Yds',
+  idp_int_td: 'INT Return TD',
+  idp_fr_yd: 'Fumble Return Yds',
+  idp_fr_td: 'Fumble Return TD',
+  def_td: 'DST TD',
+  def_2pt: 'DST 2PT Return',
+  def_3_and_out: '3 and Out',
+  def_4_and_stop: '4th Down Stop',
+  def_forced_punts: 'Forced Punt',
+  def_pass_def: 'Pass Deflection',
+  def_st_tkl_solo: 'ST Solo Tackle',
+  def_kr_yd: 'Kick Return Yds',
+  def_pr_yd: 'Punt Return Yds',
+  sack: 'DST Sack',
+};
+
+function formatScoringKeyLabel(key) {
+  return key
+    .replace(/^bonus_/, '')
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, letter => letter.toUpperCase());
+}
+
 function TeamScoreBreakdown({ teamName, playerIds, week, onClose }) {
-  const { weeklyStats, scoringSettings } = useSleeper();
+  const { weeklyStats, scoringSettings, players } = useSleeper();
 
-  const rows = useMemo(() => {
-    if (!weeklyStats) return [];
+  const { rows, total } = useMemo(() => {
+    if (!weeklyStats) return { rows: [], total: 0 };
     const settings = { ...DEFAULT_SCORING, ...scoringSettings };
+    const totals = new Map();
+    let exactTotal = 0;
 
-    // Aggregate each stat key across all starters
-    const totals = {};
+    const addRow = (key, label, statVal, pts, showStat = true) => {
+      if (Math.abs(pts) < 0.005) return;
+      const existing = totals.get(key);
+      if (existing) {
+        existing.pts += pts;
+        existing.statVal = showStat
+          ? ((existing.statVal ?? 0) + (statVal ?? 0))
+          : null;
+        return;
+      }
+      totals.set(key, {
+        key,
+        label,
+        statVal: showStat ? (statVal ?? 0) : null,
+        pts,
+      });
+    };
+
     for (const id of playerIds) {
       const weekly = weeklyStats[id] ?? [];
       const entry = weekly.find(w => w.week === week);
       if (!entry) continue;
-      for (const statKey of Object.keys(STAT_LABELS)) {
-        const val = entry[statKey];
-        if (val) totals[statKey] = (totals[statKey] ?? 0) + val;
+      const position = players?.[id]?.position ?? null;
+      exactTotal += calcPoints(entry, settings, position);
+
+      for (const [statKey, statVal] of Object.entries(entry)) {
+        if (!statVal) continue;
+        const scoringKey = STAT_TO_SCORING_KEY[statKey];
+        if (!scoringKey || !settings[scoringKey]) continue;
+        addRow(
+          scoringKey,
+          TEAM_SCORE_LABELS[statKey] ?? TEAM_SCORE_LABELS[scoringKey] ?? formatScoringKeyLabel(scoringKey),
+          Number(statVal),
+          Number(statVal) * settings[scoringKey],
+          true,
+        );
+      }
+
+      if (position && entry.rec) {
+        const bonusKey = position === 'TE'
+          ? 'bonus_rec_te'
+          : position === 'RB'
+            ? 'bonus_rec_rb'
+            : position === 'WR'
+              ? 'bonus_rec_wr'
+              : null;
+        if (bonusKey && settings[bonusKey]) {
+          addRow(bonusKey, `${position} Rec Bonus`, Number(entry.rec), Number(entry.rec) * settings[bonusKey], true);
+        }
+      }
+
+      if (position === 'RB' && entry.rush_att && settings.bonus_rush_att) {
+        addRow('bonus_rush_att', 'Carry Bonus', Number(entry.rush_att), Number(entry.rush_att) * settings.bonus_rush_att, true);
+      }
+
+      if (position === 'QB' && settings.bonus_fd_qb) {
+        const fdTotal = Number(entry.pass_fd ?? 0) + Number(entry.rush_fd ?? 0);
+        if (fdTotal) addRow('bonus_fd_qb', 'QB First Down Bonus', fdTotal, fdTotal * settings.bonus_fd_qb, true);
+      }
+
+      if (position === 'RB' && settings.bonus_fd_rb) {
+        const fdTotal = Number(entry.rush_fd ?? 0) + Number(entry.rec_fd ?? 0);
+        if (fdTotal) addRow('bonus_fd_rb', 'RB First Down Bonus', fdTotal, fdTotal * settings.bonus_fd_rb, true);
+      }
+
+      if (position === 'WR' && settings.bonus_fd_wr && entry.rec_fd) {
+        addRow('bonus_fd_wr', 'WR First Down Bonus', Number(entry.rec_fd), Number(entry.rec_fd) * settings.bonus_fd_wr, true);
+      }
+
+      if (position === 'TE' && settings.bonus_fd_te && entry.rec_fd) {
+        addRow('bonus_fd_te', 'TE First Down Bonus', Number(entry.rec_fd), Number(entry.rec_fd) * settings.bonus_fd_te, true);
       }
     }
 
-    return Object.entries(STAT_LABELS)
-      .map(([statKey, label]) => {
-        const statVal = totals[statKey];
-        if (!statVal) return null;
-        const multiplier = settings[statKey] ?? 0;
-        if (multiplier === 0) return null;
-        const pts = Math.round(statVal * multiplier * 100) / 100;
-        return { label, statKey, statVal, pts };
-      })
-      .filter(Boolean)
-      .sort((a, b) => b.pts - a.pts);
-  }, [weeklyStats, scoringSettings, playerIds, week]);
+    const rows = Array.from(totals.values())
+      .map(row => ({
+        ...row,
+        pts: Math.round(row.pts * 100) / 100,
+        statVal: row.statVal != null ? Math.round(row.statVal * 100) / 100 : null,
+      }))
+      .sort((a, b) => Math.abs(b.pts) - Math.abs(a.pts));
 
-  const total = Math.round(rows.reduce((s, r) => s + r.pts, 0) * 100) / 100;
+    const breakdownTotal = rows.reduce((sum, row) => sum + row.pts, 0);
+    const remainder = Math.round((exactTotal - breakdownTotal) * 100) / 100;
+    if (Math.abs(remainder) >= 0.01) {
+      rows.push({
+        key: 'other_adjustments',
+        label: 'Other Scoring Adjustments',
+        statVal: null,
+        pts: remainder,
+      });
+    }
+
+    return {
+      rows,
+      total: Math.round(exactTotal * 100) / 100,
+    };
+  }, [weeklyStats, scoringSettings, playerIds, week, players]);
 
   // Lock background scroll while open
   useEffect(() => {

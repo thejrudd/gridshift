@@ -1,7 +1,50 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSleeper } from '../../context/SleeperContext';
+import { useTheme } from '../../context/ThemeContext';
 import { DEFAULT_SCORING } from '../../utils/scoringEngine';
 import { formatWeather } from '../../api/weatherApi';
+import { getTeamPalette } from '../../data/teamColors.js';
+
+function hexLuminance(hex) {
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  const lin = c => c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+}
+
+function darkenHex(hex, amount = 0.28) {
+  const r = Math.max(0, Math.round(parseInt(hex.slice(1, 3), 16) * (1 - amount)));
+  const g = Math.max(0, Math.round(parseInt(hex.slice(3, 5), 16) * (1 - amount)));
+  const b = Math.max(0, Math.round(parseInt(hex.slice(5, 7), 16) * (1 - amount)));
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+}
+
+function HeaderActionButton({ label, onClick, heroBg, heroOnBg, icon }) {
+  const [isHovered, setIsHovered] = useState(false);
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      onFocus={() => setIsHovered(true)}
+      onBlur={() => setIsHovered(false)}
+      className="shrink-0 px-3 py-2 rounded-lg text-xs font-semibold transition-colors duration-150 flex items-center gap-1 cursor-pointer"
+      style={{
+        background: heroBg
+          ? (isHovered ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.15)')
+          : (isHovered ? 'var(--color-fill)' : 'transparent'),
+        border: heroBg ? '1px solid rgba(255,255,255,0.25)' : '1px solid var(--color-separator)',
+        color: heroBg ? heroOnBg : 'var(--color-accent)',
+      }}
+    >
+      <span>{label}</span>
+      {icon}
+    </button>
+  );
+}
 
 // Human-readable labels for every stat key we score
 export const STAT_LABELS = {
@@ -256,10 +299,18 @@ function InfoRow({ label, children }) {
   );
 }
 
-export default function PlayerMatchupBreakdown({ playerId, week, projection, enrichedPlayer, onClose, onViewStats }) {
+export default function PlayerMatchupBreakdown({ playerId, week, projection, enrichedPlayer, onClose, onViewStats, onOpenRosterPlayer = null }) {
   const { players, weeklyStats, scoringSettings, espnIdOverrides } = useSleeper();
+  const { darkMode } = useTheme();
 
   const player = players?.[playerId];
+
+  // Team color palette
+  const palette = getTeamPalette(player?.team);
+  const heroBg = palette ? (darkMode ? palette.darkPrimary : palette.primary) : null;
+  const heroAccent = palette ? (darkMode ? palette.darkSecondary : palette.secondary) : null;
+  const heroOnBg = heroBg && hexLuminance(heroBg) > 0.3 ? '#0C0F14' : '#FFFFFF';
+  const heroOnBgMuted = heroOnBg === '#FFFFFF' ? 'rgba(255,255,255,0.65)' : 'rgba(12,15,20,0.60)';
   const weekEntry = weeklyStats?.[playerId]?.find(w => w.week === week) ?? null;
 
   const breakdown = useMemo(() => {
@@ -314,6 +365,7 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, enr
   // Projection math reveal — hover/focus for mouse+keyboard, click-pin for touch
   const [mathPinned, setMathPinned] = useState(false);
   const [mathHover, setMathHover] = useState(false);
+  const [closeHover, setCloseHover] = useState(false);
   const mathVisible = mathPinned || mathHover;
 
   // Season avg base back-calculated from projected (excludes floor/ceiling bases)
@@ -347,6 +399,8 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, enr
           className="w-full rounded-2xl overflow-hidden pointer-events-auto"
           style={{
             background: 'var(--color-bg-secondary)',
+            border: '1px solid var(--color-separator)',
+            boxShadow: '0 12px 40px rgba(0,0,0,0.12), 0 4px 12px rgba(0,0,0,0.06)',
             maxWidth: '480px',
             maxHeight: '80vh',
             display: 'flex',
@@ -356,44 +410,91 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, enr
           aria-modal="true"
         >
           {/* Player header */}
-          <div className="flex items-center gap-3 px-5 pt-4 pb-3 shrink-0" style={{ borderBottom: '1px solid var(--color-separator)' }}>
+          <div
+            className="flex items-center gap-3 px-5 pt-4 pb-3 shrink-0 relative overflow-hidden"
+            style={{
+              background: heroBg
+                ? `linear-gradient(135deg, ${heroBg} 0%, ${darkenHex(heroBg, 0.32)} 100%)`
+                : 'var(--color-bg-secondary)',
+              borderBottom: heroBg ? 'none' : '1px solid var(--color-separator)',
+              borderLeft: heroAccent ? `4px solid ${heroAccent}` : undefined,
+            }}
+          >
             <img
               src={`https://sleepercdn.com/content/nfl/players/thumb/${playerId}.jpg`}
               alt={player?.full_name}
               className="w-12 h-12 rounded-full object-cover shrink-0"
-              style={{ background: 'var(--color-fill)' }}
+              style={{
+                background: heroBg ? 'rgba(255,255,255,0.15)' : 'var(--color-fill)',
+                border: heroBg ? `2px solid ${heroAccent ?? 'rgba(255,255,255,0.25)'}` : 'none',
+              }}
               onError={e => { e.target.src = 'https://sleepercdn.com/images/v2/icons/player_default.webp'; }}
             />
             <div className="flex-1 min-w-0">
-              <div className="font-bold text-base truncate" style={{ color: 'var(--color-label)' }}>
+              <div className="font-bold text-base truncate" style={{ color: heroBg ? heroOnBg : 'var(--color-label)' }}>
                 {player?.full_name ?? 'Unknown Player'}
               </div>
-              <div className="text-xs mt-0.5" style={{ color: 'var(--color-label-tertiary)' }}>
+              <div className="text-xs mt-0.5" style={{ color: heroBg ? heroOnBgMuted : 'var(--color-label-tertiary)' }}>
                 {player?.position} · {player?.team ?? 'FA'} · Week {week}
               </div>
             </div>
-            {(() => {
-              const espnId = player?.espn_id ?? espnIdOverrides?.[playerId];
-              return onViewStats && espnId ? (
-                <button
+            <div className="shrink-0 flex items-center gap-2">
+              {onOpenRosterPlayer && (
+                <HeaderActionButton
+                  label="Fantasy"
                   onClick={() => {
                     onClose();
-                    const yearsExp = player?.years_exp;
-                    onViewStats(String(espnId), {
-                      displayName: player?.full_name,
-                      teamId: player?.team?.toUpperCase(),
-                      position: player?.position,
-                      experience: yearsExp != null ? yearsExp + 1 : undefined,
-                    });
+                    onOpenRosterPlayer(playerId);
                   }}
-                  className="shrink-0 text-xs font-semibold"
-                  style={{ color: 'var(--color-accent)' }}
-                >
-                  Stats →
-                </button>
-              ) : null;
-            })()}
-            <button onClick={onClose} className="shrink-0 p-1" style={{ color: 'var(--color-label-secondary)' }}>
+                  heroBg={heroBg}
+                  heroOnBg={heroOnBg}
+                  icon={(
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M9 6l6 6-6 6" />
+                    </svg>
+                  )}
+                />
+              )}
+              {(() => {
+                const espnId = player?.espn_id ?? espnIdOverrides?.[playerId];
+                return onViewStats && espnId ? (
+                  <HeaderActionButton
+                    label="Statistics"
+                    onClick={() => {
+                      onClose();
+                      const yearsExp = player?.years_exp;
+                      onViewStats(String(espnId), {
+                        displayName: player?.full_name,
+                        teamId: player?.team?.toUpperCase(),
+                        position: player?.position,
+                        experience: yearsExp != null ? yearsExp + 1 : undefined,
+                      });
+                    }}
+                    heroBg={heroBg}
+                    heroOnBg={heroOnBg}
+                    icon={(
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M9 6l6 6-6 6" />
+                      </svg>
+                    )}
+                  />
+                ) : null;
+              })()}
+            </div>
+            <button
+              onClick={onClose}
+              onMouseEnter={() => setCloseHover(true)}
+              onMouseLeave={() => setCloseHover(false)}
+              onFocus={() => setCloseHover(true)}
+              onBlur={() => setCloseHover(false)}
+              className="shrink-0 p-2 rounded-lg transition-colors duration-150 cursor-pointer"
+              style={{
+                color: heroBg ? heroOnBgMuted : 'var(--color-label-secondary)',
+                background: closeHover
+                  ? (heroBg ? 'rgba(255,255,255,0.14)' : 'var(--color-fill)')
+                  : 'transparent',
+              }}
+            >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                 <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
               </svg>

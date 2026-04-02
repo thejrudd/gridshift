@@ -257,3 +257,20 @@ export const TEAM_COLORS = {
     darkSecondary: '#A5ACAF', // Wolf Gray (PMS 429 C)
   },
 };
+
+const TEAM_COLOR_ALIASES = {
+  lar: 'la',
+  was: 'wsh',
+  jac: 'jax',
+};
+
+export function getTeamColorKey(team) {
+  if (!team) return null;
+  const normalized = String(team).trim().toLowerCase();
+  return TEAM_COLOR_ALIASES[normalized] ?? normalized;
+}
+
+export function getTeamPalette(team) {
+  const key = getTeamColorKey(team);
+  return key ? (TEAM_COLORS[key] ?? null) : null;
+}

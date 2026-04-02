@@ -187,7 +187,7 @@ export const DEFAULT_SCORING = {
 
 // Stat keys that Sleeper uses, mapped to our scoring setting keys
 // (Most are 1:1; entries with different keys use explicit mapping)
-const STAT_TO_SCORING_KEY = {
+export const STAT_TO_SCORING_KEY = {
   // Passing
   pass_yd: 'pass_yd',
   pass_td: 'pass_td',

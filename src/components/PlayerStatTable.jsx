@@ -1,5 +1,11 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { buildStatMap, buildRankMap, getStatRows, getGameLogColumns } from '../utils/playerMetrics';
+import { CURRENT_SEASON } from '../utils/playerApi';
+import { useSleeper } from '../context/SleeperContext';
+import {
+  buildFantasyRankByKey,
+  getFantasyContribution,
+} from '../utils/fantasyStatContributions';
 
 // Extract a formatted stat value from a per-game statsJson
 function statVal(statsJson, key, decimals = 0, suffix = '') {
@@ -11,20 +17,44 @@ function statVal(statsJson, key, decimals = 0, suffix = '') {
   return `${Number(num).toFixed(decimals)}${suffix}`;
 }
 
-const PlayerStatTable = ({ year, statsJson, position, expanded, onToggle, loading, error, gameLog, gameLogLoading, honors = [], accentColor }) => {
+const PlayerStatTable = ({ year, statsJson, position, sleeperId = null, expanded, onToggle, loading, error, gameLog, gameLogLoading, honors = [], accentColor }) => {
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showFantasyValue, setShowFantasyValue] = useState(false);
+  const { scoringSettings, players: sleeperPlayers, seasonStats: sleeperSeasonStats } = useSleeper();
 
-  const { standard, advanced } = (() => {
+  const { standard, advanced, statsMap } = useMemo(() => {
     if (!statsJson) return { standard: [], advanced: [] };
     const map = buildStatMap(statsJson);
     const rankMap = buildRankMap(statsJson);
-    return getStatRows(map, position, rankMap);
-  })();
+    const sections = getStatRows(map, position, rankMap);
+    return { ...sections, statsMap: map };
+  }, [position, statsJson]);
 
   const label = year === 'career' ? 'Career' : `${year} Season`;
+  const canShowFantasyValue = year === CURRENT_SEASON && !!scoringSettings;
+  const fantasyRankByKey = useMemo(
+    () => buildFantasyRankByKey(sleeperSeasonStats, sleeperPlayers, scoringSettings),
+    [scoringSettings, sleeperPlayers, sleeperSeasonStats],
+  );
+
+  const enrichRows = (sections) => sections.map((section) => ({
+    ...section,
+    rows: section.rows.map((row) => ({
+      ...row,
+      fantasyPoints: canShowFantasyValue && showFantasyValue
+        ? getFantasyContribution(row.key, statsMap, position, scoringSettings)
+        : null,
+      fantasyRank: canShowFantasyValue && showFantasyValue && sleeperId
+        ? (fantasyRankByKey.get(row.key)?.get(sleeperId) ?? null)
+        : null,
+    })),
+  }));
 
   // Merge advanced sections into display when toggle is on
-  const displaySections = showAdvanced ? [...standard, ...advanced] : standard;
+  const displaySections = useMemo(() => {
+    const sections = showAdvanced ? [...standard, ...advanced] : standard;
+    return canShowFantasyValue && showFantasyValue ? enrichRows(sections) : sections;
+  }, [advanced, canShowFantasyValue, fantasyRankByKey, scoringSettings, showAdvanced, showFantasyValue, sleeperId, standard, statsMap, position]);
   const hasAdvanced = advanced.length > 0;
 
   return (
@@ -38,10 +68,7 @@ const PlayerStatTable = ({ year, statsJson, position, expanded, onToggle, loadin
         className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-left"
       >
         <div className="flex items-center gap-2 min-w-0">
-          <span
-            className="font-semibold shrink-0"
-            style={expanded && accentColor ? { color: accentColor } : { color: undefined }}
-          >
+          <span className="font-semibold shrink-0">
             {label}
           </span>
           {honors.length > 0 && (
@@ -63,7 +90,6 @@ const PlayerStatTable = ({ year, statsJson, position, expanded, onToggle, loadin
           )}
           <svg
             className={`w-4 h-4 transition-transform ${expanded ? 'rotate-180' : ''}`}
-            style={{ color: expanded && accentColor ? accentColor : undefined }}
             fill="none" viewBox="0 0 24 24" stroke="currentColor"
           >
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -84,33 +110,57 @@ const PlayerStatTable = ({ year, statsJson, position, expanded, onToggle, loadin
             <>
               {/* Season totals — grouped by category */}
               <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-800">
-                <StatSections sections={displaySections} accentColor={accentColor} />
+                {(hasAdvanced || canShowFantasyValue) && (
+                  <div className="mb-3 pb-3 border-b border-gray-100 dark:border-gray-700 flex flex-wrap gap-x-5 gap-y-2">
+                    {canShowFantasyValue && (
+                      <button
+                        role="switch"
+                        aria-checked={showFantasyValue}
+                        onClick={() => setShowFantasyValue(v => !v)}
+                        className="flex items-center gap-2 group"
+                      >
+                        <span
+                          className={`relative inline-flex h-4 w-7 shrink-0 rounded-full border transition-colors duration-200 ${!showFantasyValue ? 'bg-gray-200 dark:bg-gray-700 border-gray-300 dark:border-gray-600' : ''}`}
+                          style={showFantasyValue && accentColor ? { background: accentColor, borderColor: accentColor } : undefined}
+                        >
+                          <span className={`absolute top-0.5 left-0.5 h-3 w-3 rounded-full bg-white shadow transition-transform duration-200 ${showFantasyValue ? 'translate-x-3' : 'translate-x-0'}`} />
+                        </span>
+                        <span
+                          className={`text-xs font-semibold transition-colors ${!showFantasyValue ? 'text-gray-400 dark:text-gray-500 group-hover:text-gray-600 dark:group-hover:text-gray-400' : ''}`}
+                          style={showFantasyValue && accentColor ? { color: accentColor } : undefined}
+                        >
+                          Fantasy value
+                        </span>
+                      </button>
+                    )}
 
-                {/* Advanced stats toggle */}
-                {hasAdvanced && (
-                  <div className="mt-3 pt-2 border-t border-gray-100 dark:border-gray-700">
-                    <button
-                      role="switch"
-                      aria-checked={showAdvanced}
-                      onClick={() => setShowAdvanced(v => !v)}
-                      className="flex items-center gap-2 group"
-                    >
-                      {/* Pill track */}
-                      <span
-                        className={`relative inline-flex h-4 w-7 shrink-0 rounded-full border transition-colors duration-200 ${!showAdvanced ? 'bg-gray-200 dark:bg-gray-700 border-gray-300 dark:border-gray-600' : ''}`}
-                        style={showAdvanced && accentColor ? { background: accentColor, borderColor: accentColor } : undefined}
+                    {/* Advanced stats toggle */}
+                    {hasAdvanced && (
+                      <button
+                        role="switch"
+                        aria-checked={showAdvanced}
+                        onClick={() => setShowAdvanced(v => !v)}
+                        className="flex items-center gap-2 group"
                       >
-                        <span className={`absolute top-0.5 left-0.5 h-3 w-3 rounded-full bg-white shadow transition-transform duration-200 ${showAdvanced ? 'translate-x-3' : 'translate-x-0'}`} />
-                      </span>
-                      <span
-                        className={`text-xs font-semibold transition-colors ${!showAdvanced ? 'text-gray-400 dark:text-gray-500 group-hover:text-gray-600 dark:group-hover:text-gray-400' : ''}`}
-                        style={showAdvanced && accentColor ? { color: accentColor } : undefined}
-                      >
-                        Advanced stats
-                      </span>
-                    </button>
+                        {/* Pill track */}
+                        <span
+                          className={`relative inline-flex h-4 w-7 shrink-0 rounded-full border transition-colors duration-200 ${!showAdvanced ? 'bg-gray-200 dark:bg-gray-700 border-gray-300 dark:border-gray-600' : ''}`}
+                          style={showAdvanced && accentColor ? { background: accentColor, borderColor: accentColor } : undefined}
+                        >
+                          <span className={`absolute top-0.5 left-0.5 h-3 w-3 rounded-full bg-white shadow transition-transform duration-200 ${showAdvanced ? 'translate-x-3' : 'translate-x-0'}`} />
+                        </span>
+                        <span
+                          className={`text-xs font-semibold transition-colors ${!showAdvanced ? 'text-gray-400 dark:text-gray-500 group-hover:text-gray-600 dark:group-hover:text-gray-400' : ''}`}
+                          style={showAdvanced && accentColor ? { color: accentColor } : undefined}
+                        >
+                          Advanced stats
+                        </span>
+                      </button>
+                    )}
                   </div>
                 )}
+
+                <StatSections sections={displaySections} accentColor={accentColor} />
               </div>
 
               {/* Game-by-game log (not shown for career row) */}
@@ -168,7 +218,7 @@ const StatSections = ({ sections, accentColor }) => (
           <span className={accentColor ? '' : 'text-gray-400 dark:text-gray-500'}>{heading}</span>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-x-6 gap-y-2">
-          {rows.map(({ label, value, rank }) => (
+          {rows.map(({ label, value, rank, fantasyPoints, fantasyRank }) => (
             <div key={label} className="flex flex-col">
               <span className="text-[10px] uppercase tracking-wider text-gray-400 dark:text-gray-500 font-semibold">{label}</span>
               <div className="flex items-baseline gap-1">
@@ -177,6 +227,12 @@ const StatSections = ({ sections, accentColor }) => (
                   <span className="text-[10px] text-gray-400 dark:text-gray-500 tabular-nums">({rank})</span>
                 )}
               </div>
+              {fantasyPoints != null && fantasyPoints !== 0 && (
+                <div className="text-[10px] text-gray-400 dark:text-gray-500 tabular-nums">
+                  {fantasyPoints.toFixed(2)} pts
+                  {fantasyRank != null ? ` · #${fantasyRank}` : ''}
+                </div>
+              )}
             </div>
           ))}
         </div>

@@ -18,6 +18,9 @@ Open bugs are listed first, fixed bugs below. Add new entries at the bottom of e
 | Trade Intelligence → Fix Needs can skew too heavily toward 2-player and 3-player incoming packages, crowding out more balanced player-plus-pick returns on the other team’s side |
 | Trade section pages still repeat too much instructional copy, making Agent, Intelligence, and Upgrades feel more verbose than necessary |
 | Trade proposal cards can keep matching height while still drifting into a too-tall, too-narrow silhouette on desktop because width does not yet expand enough to preserve a more realistic trading-card proportion as card content grows |
+| Companion → Roster player weekly fantasy modal can omit the player's bye week and instead show fantasy output for every week, even though each player should always have one bye week represented |
+| Companion → Roster player weekly fantasy modal can render weeks outside the league's fantasy season, including Week 18 even when the league season should stop earlier |
+| Companion -> Roster week-row handoff into Companion -> Matchup can feel laggy and unresponsive, with a noticeable 1-2 second delay before the destination week and player drilldown are ready |
 
 ---
 
@@ -149,3 +152,7 @@ Open bugs are listed first, fixed bugs below. Add new entries at the bottom of e
 | Trade → Intelligence / Upgrades could still model outgoing player packages even when no outgoing players were selected, contradicting the pick-led search copy | v6.0.4 |
 | Trade → Upgrades could keep stale loaded results visible after the selected target, outgoing pool, or pick/posture settings changed, including after removing a selected player | v6.0.4 |
 | Trade → Intelligence mixed player-plus-pick packages could collapse draft picks into pill callouts instead of rendering them as full cards | v6.0.4 |
+| Trade clickable player-card hover glow is effectively invisible in light mode, so interactive cards do not provide a clear mouse affordance outside dark mode | v6.1 |
+| Heatmap Pass Def / QB Hit drilldowns could show "No data found for this matchup" even when the cell had a value because alias stat keys were ignored in the modal path | v6.1 |
+| Heatmap team rows changed height when Team sort switched to Conference or Division because the sticky cell only rendered the second metadata line in those modes | v6.1 |
+| Matchup team score breakdown modal total could differ from the displayed matchup score because it omitted some scoring mappings and position-specific bonus rows | v6.1 |

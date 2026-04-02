@@ -50,6 +50,7 @@ function AppInner() {
   const [compareInitPlayerA, setCompareInitPlayerA] = useState(null);
   const [tradeInitPlayer, setTradeInitPlayer] = useState(null); // { sleeperId, side: 'give'|'get', partnerRosterId? }
   const [waiverInitRequest, setWaiverInitRequest] = useState(null); // { position, nonce }
+  const [matchupInitRequest, setMatchupInitRequest] = useState(null); // { week, playerId, nonce }
 
   const { hasLeague, season, changeSeason, league, disconnect, sleeperUser, statsLoading, loadSeasonStats, seasonStats } = useSleeper();
 
@@ -310,7 +311,7 @@ function AppInner() {
             </div>
           )}
 
-          {activeTab === 'statistics' && <PlayerBrowser teams={scheduleData.teams} initialPlayer={statsInitPlayer} onInitialPlayerConsumed={() => setStatsInitPlayer(null)} navBack={statsNavBack} onComparePlayer={(player) => { setCompareInitPlayerA(player); setActiveTab('trade'); setTradeView('compare'); }} />}
+          {activeTab === 'statistics' && <PlayerBrowser teams={scheduleData.teams} initialPlayer={statsInitPlayer} onInitialPlayerConsumed={() => setStatsInitPlayer(null)} navBack={statsNavBack} onComparePlayer={(player) => { setCompareInitPlayerA(player); setActiveTab('trade'); setTradeView('compare'); }} onBuildTrade={(initialTrade) => { setTradeInitPlayer(initialTrade); setActiveTab('trade'); setTradeView('agent'); }} />}
 
           {activeTab === 'companion' && !hasLeague && (
             <CompanionConnect />
@@ -391,6 +392,19 @@ function AppInner() {
                 <CompanionTrade
                   initialPlayer={tradeInitPlayer}
                   onConsumeInitialPlayer={() => setTradeInitPlayer(null)}
+                  onViewPlayer={(id, meta) => {
+                    const returnTradeView = tradeView;
+                    setStatsInitPlayer({ id, ...meta });
+                    setStatsNavBack({
+                      label: 'Trade',
+                      onBack: () => {
+                        setActiveTab('trade');
+                        setTradeView(returnTradeView);
+                        setStatsNavBack(null);
+                      },
+                    });
+                    setActiveTab('statistics');
+                  }}
                   onOpenWaiver={(position) => {
                     if (!position) return;
                     setWaiverInitRequest({ position, nonce: Date.now() });
@@ -459,9 +473,23 @@ function AppInner() {
                   ✕
                 </button>
               </div>
-              {companionView === 'roster'    && <CompanionRoster onTradePlayer={(sleeperId) => { setTradeInitPlayer({ sleeperId, side: 'give' }); setActiveTab('trade'); setTradeView('agent'); }} />}
+              {companionView === 'roster'    && (
+                <CompanionRoster
+                  onTradePlayer={(sleeperId) => { setTradeInitPlayer({ sleeperId, side: 'give' }); setActiveTab('trade'); setTradeView('agent'); }}
+                  onOpenMatchupWeek={(playerId, week) => {
+                    setMatchupInitRequest({ playerId, week, nonce: Date.now() });
+                    setCompanionView('matchup');
+                  }}
+                />
+              )}
               {companionView === 'rankings'  && <CompanionRankings />}
-              {companionView === 'matchup'   && <CompanionMatchup onViewPlayer={(id, meta) => { setStatsInitPlayer({ id, ...meta }); setStatsNavBack({ label: 'Matchup', onBack: () => { setActiveTab('companion'); setStatsNavBack(null); } }); setActiveTab('statistics'); }} />}
+              {companionView === 'matchup'   && (
+                <CompanionMatchup
+                  initialWeekRequest={matchupInitRequest}
+                  onConsumeInitialWeekRequest={() => setMatchupInitRequest(null)}
+                  onViewPlayer={(id, meta) => { setStatsInitPlayer({ id, ...meta }); setStatsNavBack({ label: 'Matchup', onBack: () => { setActiveTab('companion'); setStatsNavBack(null); } }); setActiveTab('statistics'); }}
+                />
+              )}
               {companionView === 'waiver'    && <CompanionWaiver initialPositionRequest={waiverInitRequest} onConsumeInitialPositionRequest={() => setWaiverInitRequest(null)} onViewPlayer={(id, meta) => { setStatsInitPlayer({ id, ...meta }); setStatsNavBack({ label: 'Waiver', onBack: () => { setActiveTab('companion'); setStatsNavBack(null); } }); setActiveTab('statistics'); }} />}
               {companionView === 'league'   && <CompanionLeague onTradePlayer={(sleeperId, partnerRosterId, side = 'get') => { setTradeInitPlayer({ sleeperId, side, partnerRosterId }); setActiveTab('trade'); setTradeView('agent'); }} />}
               {companionView === 'defense'   && <CompanionDefense onViewPlayer={(id, meta) => { setStatsInitPlayer({ id, ...meta }); setStatsNavBack({ label: 'Heatmap', onBack: () => { setActiveTab('companion'); setStatsNavBack(null); } }); setActiveTab('statistics'); }} />}
