@@ -5,6 +5,7 @@ import { calcPointsFromTotals } from '../../utils/scoringEngine';
 import PlayerWeeklySheet from './PlayerWeeklySheet';
 import { getTeamColorKey, getTeamPalette } from '../../data/teamColors.js';
 import useCardGlow from '../../hooks/useCardGlow.jsx';
+import useMediaQuery from '../../hooks/useMediaQuery.js';
 
 const POSITIONS = ['ALL', 'QB', 'RB', 'WR', 'TE', 'K', 'DL', 'LB', 'DB'];
 
@@ -21,6 +22,27 @@ const POSITION_COLORS = {
   TE: '#f59e0b',
   K: '#8b5cf6',
 };
+const COMPACT_PHONE_QUERY = '(max-width: 480px)';
+const HIDE_AVG_QUERY = '(max-width: 900px)';
+const RANKINGS_ROW_GAP = 10;
+
+function measureMaxNameWidth(players) {
+  if (typeof document === 'undefined' || !players.length) return 0;
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return 0;
+  ctx.font = '600 14px Figtree, sans-serif';
+  return Math.ceil(players.reduce((max, p) =>
+    Math.max(max, ctx.measureText(p.name ?? '').width), 0)) + 8;
+}
+
+function getRankingsGridTemplate({ hideAvgColumn, isCompactPhone, nameColPx }) {
+  // On compact phones, names truncate freely; on larger screens, size to the longest name
+  if (isCompactPhone) return `32px 44px minmax(0,1fr) auto 80px 12px`;
+  const nameCol = nameColPx ? `minmax(0,${nameColPx}px)` : 'minmax(0,1fr)';
+  if (hideAvgColumn) return `32px 44px ${nameCol} auto 80px 12px`;
+  return `32px 44px ${nameCol} auto 64px 80px 12px`;
+}
 
 function hexLuminance(hex) {
   const r = parseInt(hex.slice(1, 3), 16) / 255;
@@ -152,18 +174,6 @@ function teamRowTheme(team, darkMode) {
   };
 }
 
-function getSharedNameColumnWidth(players) {
-  if (typeof document === 'undefined' || !players.length) return 0;
-  const canvas = document.createElement('canvas');
-  const context = canvas.getContext('2d');
-  if (!context) return 0;
-
-  context.font = '600 14px Figtree, sans-serif';
-  return Math.ceil(players.reduce((max, player) => (
-    Math.max(max, context.measureText(player.name ?? '').width)
-  ), 0)) + 6;
-}
-
 export default function CompanionRankings() {
   const {
     players, loadPlayers,
@@ -173,10 +183,13 @@ export default function CompanionRankings() {
     rosters,
   } = useSleeper();
   const { darkMode } = useTheme();
+  const isCompactPhone = useMediaQuery(COMPACT_PHONE_QUERY);
+  const hideAvgColumn = useMediaQuery(HIDE_AVG_QUERY);
 
   const [posFilter, setPosFilter] = useState('ALL');
   const [search, setSearch] = useState('');
   const [selectedPlayerId, setSelectedPlayerId] = useState(null);
+  const [sortBy, setSortBy] = useState('season');
 
   useEffect(() => { loadPlayers(); }, [loadPlayers]);
   useEffect(() => {
@@ -217,15 +230,22 @@ export default function CompanionRankings() {
           position: pos,
           team: p.team || 'FA',
           pts,
+          avgPPG: stats?.gp ? pts / stats.gp : null,
           isRostered: rosteredIds.has(id),
           teamTheme: teamRowTheme(p.team || '', darkMode),
         };
       })
       .filter(Boolean)
-      .sort((a, b) => b.pts - a.pts)
+      .sort((a, b) => {
+        if (sortBy === 'avg') {
+          const avgDiff = (b.avgPPG ?? -Infinity) - (a.avgPPG ?? -Infinity);
+          if (avgDiff !== 0) return avgDiff;
+        }
+        return b.pts - a.pts;
+      })
       .slice(0, 100)
       .map((player, i) => ({ ...player, rank: i + 1 }));
-  }, [players, seasonStats, scoringSettings, posFilter, rosteredIds, darkMode]);
+  }, [players, seasonStats, scoringSettings, posFilter, rosteredIds, darkMode, sortBy]);
 
   // Apply search on top of the ranked list - rank numbers are preserved from above.
   const ranked = useMemo(() => {
@@ -236,10 +256,7 @@ export default function CompanionRankings() {
     );
   }, [allRanked, search]);
 
-  const sharedNameColumnWidth = useMemo(
-    () => getSharedNameColumnWidth(ranked),
-    [ranked],
-  );
+  const nameColPx = useMemo(() => measureMaxNameWidth(ranked), [ranked]);
 
   return (
     <div className="pb-6">
@@ -298,13 +315,32 @@ export default function CompanionRankings() {
         </div>
       )}
 
-      {/* Column headers - match: rank(w-8) + gap(2) + avatar(w-8) + gap(2) + name(flex-1) + pts(w-20) + chevron(w-3) */}
-      <div className="flex items-center gap-2 px-4 pb-2 mb-1" style={{ borderBottom: '1px solid var(--color-separator)' }}>
-        <span className="w-8 text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>#</span>
-        <div className="w-8 shrink-0" />
-        <span className="flex-1 text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>Player</span>
-        <span className="w-20 text-right text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>Pts</span>
-        <div className="w-3 shrink-0" />
+      {/* Column headers */}
+      <div
+        className="grid items-center px-4 pb-2 mb-1"
+        style={{
+          borderBottom: '1px solid var(--color-separator)',
+          gridTemplateColumns: getRankingsGridTemplate({ hideAvgColumn, isCompactPhone, nameColPx }),
+          columnGap: RANKINGS_ROW_GAP,
+        }}
+      >
+        <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>#</span>
+        <div />
+        <span className="min-w-0 text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>Player</span>
+        <div />
+        {!hideAvgColumn && (
+          <SortHeader
+            label="Avg/G"
+            active={sortBy === 'avg'}
+            onClick={() => setSortBy('avg')}
+          />
+        )}
+        <SortHeader
+          label="Season"
+          active={sortBy === 'season'}
+          onClick={() => setSortBy('season')}
+        />
+        <div />
       </div>
 
       {!seasonStats && !statsLoading && (
@@ -318,7 +354,9 @@ export default function CompanionRankings() {
           key={player.id}
           rank={player.rank}
           player={player}
-          nameColumnWidth={sharedNameColumnWidth}
+          hideAvgColumn={hideAvgColumn}
+          isCompactPhone={isCompactPhone}
+          nameColPx={nameColPx}
           onSelect={() => setSelectedPlayerId(player.id)}
         />
       ))}
@@ -336,7 +374,25 @@ export default function CompanionRankings() {
   );
 }
 
-function RankRow({ rank, player, onSelect, nameColumnWidth }) {
+function SortHeader({ label, active, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      className="relative w-full grid place-items-center text-xs font-semibold uppercase tracking-widest transition-colors"
+      style={{ color: active ? 'var(--color-label)' : 'var(--color-label-tertiary)' }}
+    >
+      <span className="text-center">{label}</span>
+      <span
+        className="absolute right-0 top-1/2 inline-block text-[9px]"
+        style={{ transform: 'translateY(-50%)', visibility: active ? 'visible' : 'hidden' }}
+      >
+        ↓
+      </span>
+    </button>
+  );
+}
+
+function RankRow({ rank, player, onSelect, hideAvgColumn, isCompactPhone, nameColPx }) {
   const [isHovered, setIsHovered] = useState(false);
   const posColor = POSITION_COLORS[player.position] ?? 'var(--color-label-tertiary)';
   const rosteredColor = player.teamTheme.accent ?? 'var(--color-signature)';
@@ -376,8 +432,10 @@ function RankRow({ rank, player, onSelect, nameColumnWidth }) {
         setIsHovered(false);
         glowHandlers.onMouseLeave?.(event);
       }}
-      className="relative flex items-center w-full px-4 py-3 gap-3 text-left active:opacity-60"
+      className="relative grid items-center w-full px-3 py-2.5 text-left active:opacity-60"
       style={{
+        gridTemplateColumns: getRankingsGridTemplate({ hideAvgColumn, isCompactPhone, nameColPx }),
+        columnGap: RANKINGS_ROW_GAP,
         borderBottom: '1px solid var(--color-separator)',
         borderLeft: player.teamTheme.accent ? `4px solid ${player.teamTheme.accent}` : '4px solid transparent',
         background: isHovered ? player.teamTheme.hoverBg : player.teamTheme.rowBg,
@@ -387,7 +445,7 @@ function RankRow({ rank, player, onSelect, nameColumnWidth }) {
       }}
     >
       {borderOverlay}
-      <span className="w-8 text-xs tabular-nums" style={{ color: 'var(--color-label-quaternary)' }}>
+      <span className="text-xs tabular-nums" style={{ color: 'var(--color-label-quaternary)' }}>
         {rank}
       </span>
 
@@ -402,47 +460,52 @@ function RankRow({ rank, player, onSelect, nameColumnWidth }) {
         onError={e => { e.target.src = 'https://sleepercdn.com/images/v2/icons/player_default.webp'; }}
       />
 
-      <div
-        className="flex-1 min-w-0 grid items-center gap-2"
-        style={{ gridTemplateColumns: (player.isRostered || player.teamTheme.logoKey) ? 'minmax(0, 1fr) auto' : 'minmax(0, 1fr)' }}
-      >
-        <div className="min-w-0">
-          <div className="flex items-center gap-1.5 min-w-0">
-            <span className="font-semibold text-sm truncate" style={{ color: 'var(--color-label)' }}>
-              {player.name}
-            </span>
-          </div>
-          <div className="text-xs mt-0.5 flex items-center gap-1.5 min-w-0">
-            <span style={{ color: posColor, fontWeight: 600 }}>{player.position}</span>
-            <span style={{ color: 'var(--color-label-tertiary)' }}>{player.team}</span>
-          </div>
+      <div className="min-w-0">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="font-semibold text-sm truncate" style={{ color: 'var(--color-label)' }}>
+            {player.name}
+          </span>
         </div>
+        <div className="text-xs mt-0.5 flex items-center gap-1.5 min-w-0 whitespace-nowrap overflow-hidden">
+          <span style={{ color: posColor, fontWeight: 600 }}>{player.position}</span>
+          <span style={{ color: 'var(--color-label-tertiary)' }}>{player.team}</span>
+        </div>
+      </div>
 
-        {(player.isRostered || player.teamTheme.logoKey) && (
-          <div className="shrink-0 flex items-center justify-start gap-1.5 self-center">
-            <span
-              className="shrink-0 text-[9px] sm:w-[68px] sm:text-[10px] font-bold uppercase tracking-[0.12em] leading-none text-left"
-              style={{ color: player.isRostered ? rosteredColor : 'transparent' }}
-            >
-              {player.isRostered ? 'ROSTERED' : 'ROSTERED'}
-            </span>
-            {player.teamTheme.logoKey && (
-              <img
-                src={`https://a.espncdn.com/i/teamlogos/nfl/500/${player.teamTheme.logoKey}.png`}
-                alt=""
-                aria-hidden="true"
-                className="hidden sm:block shrink-0"
-                style={{ width: 'auto', height: 44, maxWidth: 44, objectFit: 'contain', opacity: 0.72 }}
-                onError={e => { e.target.style.display = 'none'; }}
-              />
-            )}
-          </div>
+      <div className="flex items-center gap-1.5 self-center" style={{ minHeight: 18 }}>
+        {player.isRostered && (
+          <span
+            className="shrink-0 text-[9px] sm:text-[10px] font-bold uppercase tracking-[0.12em] leading-none"
+            style={{ color: rosteredColor }}
+          >
+            {isCompactPhone ? 'R' : 'ROSTERED'}
+          </span>
+        )}
+        {!isCompactPhone && player.teamTheme.logoKey && (
+          <img
+            src={`https://a.espncdn.com/i/teamlogos/nfl/500/${player.teamTheme.logoKey}.png`}
+            alt=""
+            aria-hidden="true"
+            className="shrink-0"
+            style={{ width: 'auto', height: 44, maxWidth: 44, objectFit: 'contain', opacity: 0.72 }}
+            onError={e => { e.target.style.display = 'none'; }}
+          />
         )}
       </div>
 
-      <span className="w-20 text-right font-bold tabular-nums text-sm" style={{ color: 'var(--color-label)' }}>
-        {player.pts.toFixed(1)}
-      </span>
+      {!hideAvgColumn && (
+        <div className="w-full grid place-items-center">
+          <span className="font-semibold tabular-nums text-sm text-center" style={{ color: 'var(--color-label-secondary)' }}>
+            {player.avgPPG != null ? player.avgPPG.toFixed(1) : '—'}
+          </span>
+        </div>
+      )}
+
+      <div className="w-full grid place-items-center">
+        <span className="font-bold tabular-nums text-sm text-center" style={{ color: 'var(--color-label)' }}>
+          {player.pts.toFixed(1)}
+        </span>
+      </div>
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--color-label-quaternary)', flexShrink: 0 }}>
         <polyline points="9 18 15 12 9 6"/>
       </svg>

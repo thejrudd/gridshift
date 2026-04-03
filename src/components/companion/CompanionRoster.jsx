@@ -6,6 +6,7 @@ import { computePositionalRanks, getAvgPPG } from '../../utils/projectionEngine'
 import PlayerWeeklySheet from './PlayerWeeklySheet';
 import { getTeamColorKey, getTeamPalette } from '../../data/teamColors.js';
 import useCardGlow from '../../hooks/useCardGlow.jsx';
+import useMediaQuery from '../../hooks/useMediaQuery.js';
 
 const POSITION_ORDER = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF', 'DL', 'LB', 'DB', 'DE', 'DT', 'CB', 'S'];
 const POSITION_COLORS = {
@@ -16,12 +17,60 @@ const POSITION_COLORS = {
   K: '#8b5cf6',
   DEF: '#6b7280',
 };
-const ROSTER_ROW_GAP = 12;
-const ROSTER_ROW_SIDE_PADDING = 16;
+const COMPACT_PHONE_QUERY = '(max-width: 480px)';
 const ROSTER_ROW_LEFT_BORDER = 4;
-const ROSTER_HEADER_LEFT_INSET = ROSTER_ROW_SIDE_PADDING + ROSTER_ROW_LEFT_BORDER;
-const ROSTER_ROW_TEMPLATE = '44px minmax(0, 1fr) 64px 56px 12px';
-const ROSTER_TRADE_PLACEHOLDER_WIDTH = 84;
+
+function measureMaxNameWidth(players) {
+  if (typeof document === 'undefined' || !players.length) return 0;
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return 0;
+  ctx.font = '600 14px Figtree, sans-serif';
+  return Math.ceil(players.reduce((max, p) =>
+    Math.max(max, ctx.measureText(p.name ?? '').width), 0)) + 8;
+}
+
+function getRosterLayout(isCompactPhone, nameColPx) {
+  if (isCompactPhone) {
+    return {
+      avatarSize: 38,
+      gap: 8,
+      nameFontSize: 13,
+      metaFontSize: 11,
+      rowTemplate: '38px minmax(0,1fr) 54px 48px 10px',
+      sidePadding: 10,
+      tradeWidth: 32,
+      verticalPadding: 11,
+    };
+  }
+
+  const nameCol = nameColPx ? `minmax(0,${nameColPx}px)` : 'minmax(0,1fr)';
+  return {
+    avatarSize: 44,
+    gap: 10,
+    nameFontSize: 14,
+    metaFontSize: 12,
+    rowTemplate: `44px ${nameCol} auto 1fr 64px 56px 12px`,
+    sidePadding: 14,
+    tradeWidth: 84,
+    verticalPadding: 10,
+  };
+}
+
+function getInjuryStatusLabel(status, compact) {
+  if (!compact || !status) return status;
+
+  const LABELS = {
+    'Questionable': 'Q',
+    'Probable': 'P',
+    'Doubtful': 'D',
+    'Out': 'OUT',
+    'Injured Reserve': 'IR',
+    'Physically Unable to Perform': 'PUP',
+  };
+
+  return LABELS[status] ?? status.slice(0, 3).toUpperCase();
+}
 
 function hexLuminance(hex) {
   const r = parseInt(hex.slice(1, 3), 16) / 255;
@@ -152,18 +201,6 @@ function teamRowTheme(team, darkMode) {
   };
 }
 
-function getSharedNameColumnWidth(players) {
-  if (typeof document === 'undefined' || !players.length) return 0;
-  const canvas = document.createElement('canvas');
-  const context = canvas.getContext('2d');
-  if (!context) return 0;
-
-  context.font = '600 14px Figtree, sans-serif';
-  return Math.ceil(players.reduce((max, player) => (
-    Math.max(max, context.measureText(player.name ?? '').width)
-  ), 0)) + 6;
-}
-
 export default function CompanionRoster({ onTradePlayer, onOpenMatchupWeek }) {
   const {
     players, loadPlayers,
@@ -173,6 +210,7 @@ export default function CompanionRoster({ onTradePlayer, onOpenMatchupWeek }) {
     myRoster,
   } = useSleeper();
   const { darkMode } = useTheme();
+  const isCompactPhone = useMediaQuery(COMPACT_PHONE_QUERY);
 
   const [selectedPlayerId, setSelectedPlayerId] = useState(null);
 
@@ -220,6 +258,9 @@ export default function CompanionRoster({ onTradePlayer, onOpenMatchupWeek }) {
     }).filter(Boolean);
   }, [roster, players, seasonStats, weeklyStats, scoringSettings, positionalRanks, darkMode]);
 
+  const nameColPx = useMemo(() => measureMaxNameWidth(rosterPlayers), [rosterPlayers]);
+  const layout = useMemo(() => getRosterLayout(isCompactPhone, nameColPx), [isCompactPhone, nameColPx]);
+
   const grouped = useMemo(() => {
     const groups = {};
     for (const p of rosterPlayers) {
@@ -232,11 +273,6 @@ export default function CompanionRoster({ onTradePlayer, onOpenMatchupWeek }) {
     }
     return groups;
   }, [rosterPlayers]);
-
-  const sharedNameColumnWidth = useMemo(
-    () => getSharedNameColumnWidth(rosterPlayers),
-    [rosterPlayers],
-  );
 
   if (!roster) {
     return <EmptyState message="Could not find your roster in this league." />;
@@ -273,25 +309,27 @@ export default function CompanionRoster({ onTradePlayer, onOpenMatchupWeek }) {
           <div
             className="grid items-center flex-1 min-w-0"
             style={{
-              gridTemplateColumns: ROSTER_ROW_TEMPLATE,
-              columnGap: ROSTER_ROW_GAP,
-              paddingLeft: ROSTER_HEADER_LEFT_INSET,
-              paddingRight: ROSTER_ROW_SIDE_PADDING,
+              gridTemplateColumns: layout.rowTemplate,
+              columnGap: layout.gap,
+              paddingLeft: layout.sidePadding + ROSTER_ROW_LEFT_BORDER,
+              paddingRight: layout.sidePadding,
             }}
           >
             <div />
-            <span className="min-w-0 text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>
+            <span className="min-w-0 text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--color-label-tertiary)' }}>
               Player
             </span>
-            <span className="text-center text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>
+            {!isCompactPhone && <div />}
+            {!isCompactPhone && <div />}
+            <span className="text-center text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--color-label-tertiary)' }}>
               Season
             </span>
-            <span className="text-center text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>
+            <span className="text-center text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--color-label-tertiary)' }}>
               Avg/G
             </span>
             <div />
           </div>
-          <div className="shrink-0 ml-3" style={{ width: ROSTER_TRADE_PLACEHOLDER_WIDTH }} />
+          <div className="shrink-0 ml-2 sm:ml-3" style={{ width: layout.tradeWidth }} />
         </div>
       </div>
 
@@ -310,7 +348,8 @@ export default function CompanionRoster({ onTradePlayer, onOpenMatchupWeek }) {
             <PlayerRow
               key={player.id}
               player={player}
-              nameColumnWidth={sharedNameColumnWidth}
+              layout={layout}
+              isCompactPhone={isCompactPhone}
               onSelect={() => setSelectedPlayerId(player.id)}
               onTrade={onTradePlayer ? () => onTradePlayer(player.id) : null}
             />
@@ -333,11 +372,12 @@ export default function CompanionRoster({ onTradePlayer, onOpenMatchupWeek }) {
   );
 }
 
-function PlayerRow({ player, onSelect, onTrade, nameColumnWidth }) {
+function PlayerRow({ player, onSelect, onTrade, layout, isCompactPhone }) {
   const { darkMode } = useTheme();
   const [isHovered, setIsHovered] = useState(false);
   const isInjured = player.injuryStatus && player.injuryStatus !== 'Questionable';
   const rankLabel = player.rank ? `${player.rank.posLabel}${player.rank.rank}` : null;
+  const injuryLabel = getInjuryStatusLabel(player.injuryStatus, isCompactPhone);
   const glowColor = player.teamTheme.accent ?? (darkMode ? '#5AADFF' : '#1A6EFF');
   const { glowHandlers, borderOverlay, glowShadow } = useCardGlow({
     enabled: isHovered,
@@ -374,15 +414,16 @@ function PlayerRow({ player, onSelect, onTrade, nameColumnWidth }) {
             setIsHovered(false);
             glowHandlers.onMouseLeave?.(event);
           }}
-          className="relative grid items-center flex-1 min-w-0 px-3 sm:px-4 py-3 text-left active:opacity-60"
+          className="relative grid items-center flex-1 min-w-0 text-left active:opacity-60"
           style={{
-            gridTemplateColumns: ROSTER_ROW_TEMPLATE,
-            columnGap: ROSTER_ROW_GAP,
+            gridTemplateColumns: layout.rowTemplate,
+            columnGap: layout.gap,
             border: '1px solid var(--color-separator)',
             borderLeft: player.teamTheme.accent ? `4px solid ${player.teamTheme.accent}` : '4px solid var(--color-separator)',
             borderRadius: 0,
             background: isHovered ? player.teamTheme.hoverBg : player.teamTheme.rowBg,
             boxShadow: rowShadow,
+            padding: `${layout.verticalPadding}px ${layout.sidePadding}px`,
             transform: isHovered ? 'translateY(-1px)' : 'translateY(0)',
             transition: 'background 150ms cubic-bezier(0.32, 0.72, 0, 1), box-shadow 200ms cubic-bezier(0.32, 0.72, 0, 1), transform 200ms cubic-bezier(0.32, 0.72, 0, 1)',
           }}
@@ -391,74 +432,82 @@ function PlayerRow({ player, onSelect, onTrade, nameColumnWidth }) {
           <img
             src={`https://sleepercdn.com/content/nfl/players/thumb/${player.id}.jpg`}
             alt={player.name}
-            className="w-11 h-11 rounded-full shrink-0 object-cover"
+            className="rounded-full shrink-0 object-cover"
             style={{
+              width: layout.avatarSize,
+              height: layout.avatarSize,
               background: 'var(--color-fill)',
               border: player.teamTheme.avatarBorder ? `2px solid ${player.teamTheme.avatarBorder}` : '2px solid transparent',
             }}
             onError={e => { e.target.src = 'https://sleepercdn.com/images/v2/icons/player_default.webp'; }}
           />
 
-          <div
-            className="flex-1 min-w-0 grid items-center gap-2"
-            style={{ gridTemplateColumns: player.teamTheme.logoKey ? 'minmax(0, 1fr) auto' : 'minmax(0, 1fr)' }}
-          >
-            <div className="min-w-0">
-              <div className="flex items-center gap-1.5">
-                <span className="font-semibold text-sm truncate" style={{ color: 'var(--color-label)' }}>
-                  {player.name}
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="min-w-0 font-semibold truncate" style={{ color: 'var(--color-label)', fontSize: layout.nameFontSize, lineHeight: 1.15 }}>
+                {player.name}
+              </span>
+              {player.injuryStatus && (
+                <span
+                  className="font-bold px-1.5 py-0.5 rounded-lg shrink-0"
+                  style={{
+                    background: isInjured ? 'rgba(239,68,68,0.12)' : 'rgba(245,183,0,0.12)',
+                    color: isInjured ? 'var(--color-accent-red)' : 'var(--color-signature)',
+                    fontSize: isCompactPhone ? 9 : 10,
+                  }}
+                >
+                  {injuryLabel}
                 </span>
-                {player.injuryStatus && (
-                  <span
-                    className="text-[10px] font-bold px-2 py-1 rounded-lg shrink-0"
-                    style={{
-                      background: isInjured ? 'rgba(239,68,68,0.12)' : 'rgba(245,183,0,0.12)',
-                      color: isInjured ? 'var(--color-accent-red)' : 'var(--color-signature)',
-                    }}
-                  >
-                    {player.injuryStatus}
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center gap-1.5 mt-0.5 min-w-0">
-                <span className="text-xs" style={{ color: 'var(--color-label-tertiary)' }}>
-                  {player.team}{player.isReserve ? ' · IR' : ''}
-                </span>
-                {rankLabel && (
-                  <span className="text-xs font-bold tabular-nums" style={{ color: 'var(--color-label-quaternary)' }}>
-                    · {rankLabel}
-                  </span>
-                )}
-              </div>
+              )}
             </div>
-
-            {player.teamTheme.logoKey ? (
+            <div className="flex items-center gap-1 mt-0.5 min-w-0 whitespace-nowrap overflow-hidden">
+              <span className="shrink-0 font-semibold" style={{ color: POSITION_COLORS[player.position] ?? 'var(--color-label-tertiary)', fontSize: layout.metaFontSize }}>
+                {player.position}
+              </span>
+              <span className="shrink-0" style={{ color: 'var(--color-label-tertiary)', fontSize: layout.metaFontSize }}>
+                {player.team}
+              </span>
+              {player.isReserve && (
+                <span className="shrink-0 font-bold" style={{ color: 'var(--color-label-tertiary)', fontSize: layout.metaFontSize - 1 }}>
+                  IR
+                </span>
+              )}
+              {rankLabel && (
+                <span className="shrink-0 font-bold tabular-nums" style={{ color: 'var(--color-label-quaternary)', fontSize: layout.metaFontSize }}>
+                  {rankLabel}
+                </span>
+              )}
+            </div>
+          </div>
+          {!isCompactPhone && (
+            <div className="flex items-center justify-start self-center" style={{ minHeight: 18 }}>
+              {player.teamTheme.logoKey ? (
                 <img
                   src={`https://a.espncdn.com/i/teamlogos/nfl/500/${player.teamTheme.logoKey}.png`}
                   alt=""
                   aria-hidden="true"
-                  className="hidden sm:block shrink-0 self-center"
+                  className="shrink-0"
                   style={{ width: 'auto', height: 44, maxWidth: 44, objectFit: 'contain', opacity: 0.72 }}
                   onError={e => { e.target.style.display = 'none'; }}
                 />
-              ) : (
-              <div className="hidden sm:block w-11 shrink-0" />
-              )}
-          </div>
+              ) : null}
+            </div>
+          )}
+          {!isCompactPhone && <div />}
 
-          <div className="grid place-items-center w-16">
-            <span className="block w-full text-center font-bold tabular-nums text-sm" style={{ color: 'var(--color-label)' }}>
-              {player.pts !== null ? player.pts.toFixed(1) : '—'}
+          <div className="grid place-items-center min-w-0">
+            <span className="block w-full text-center font-bold tabular-nums" style={{ color: 'var(--color-label)', fontSize: layout.nameFontSize }}>
+              {player.pts !== null ? player.pts.toFixed(1) : '-'}
             </span>
           </div>
 
-          <div className="grid place-items-center w-14">
-            <span className="block w-full text-center tabular-nums text-sm" style={{ color: 'var(--color-label-secondary)' }}>
-              {player.avgPPG > 0 ? player.avgPPG.toFixed(1) : '—'}
+          <div className="grid place-items-center min-w-0">
+            <span className="block w-full text-center tabular-nums" style={{ color: 'var(--color-label-secondary)', fontSize: layout.nameFontSize }}>
+              {player.avgPPG > 0 ? player.avgPPG.toFixed(1) : '-'}
             </span>
           </div>
 
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--color-label-quaternary)', flexShrink: 0 }}>
+          <svg width={isCompactPhone ? 10 : 12} height={isCompactPhone ? 10 : 12} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--color-label-quaternary)', flexShrink: 0 }}>
             <polyline points="9 18 15 12 9 6" />
           </svg>
         </button>
@@ -466,11 +515,17 @@ function PlayerRow({ player, onSelect, onTrade, nameColumnWidth }) {
         {onTrade && (
           <button
             onClick={onTrade}
-            className="shrink-0 ml-3 px-3 py-2 rounded-lg text-xs font-semibold transition-colors active:opacity-60 inline-flex items-center gap-1.5"
+            aria-label={`Trade ${player.name}`}
+            className="shrink-0 rounded-lg font-semibold transition-colors active:opacity-60 inline-flex items-center justify-center gap-1.5"
             style={{
               background: 'transparent',
               border: `1px solid ${player.teamTheme.accent ?? 'var(--color-signature)'}`,
               color: player.teamTheme.accent ?? 'var(--color-signature)',
+              width: layout.tradeWidth,
+              height: isCompactPhone ? layout.tradeWidth : undefined,
+              marginLeft: isCompactPhone ? 8 : 12,
+              padding: isCompactPhone ? 0 : '8px 12px',
+              fontSize: isCompactPhone ? 0 : 12,
             }}
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -479,7 +534,7 @@ function PlayerRow({ player, onSelect, onTrade, nameColumnWidth }) {
               <path d="m21 3-7 7" />
               <path d="m3 21 7-7" />
             </svg>
-            <span>Trade</span>
+            {!isCompactPhone && <span>Trade</span>}
           </button>
         )}
       </div>

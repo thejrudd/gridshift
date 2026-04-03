@@ -48,6 +48,7 @@ function AppInner() {
   const [statsInitPlayer, setStatsInitPlayer] = useState(null);
   const [statsNavBack, setStatsNavBack] = useState(null); // { label, onBack } | null — contextual back from external nav
   const [compareInitPlayerA, setCompareInitPlayerA] = useState(null);
+  const [compareInitPlayerB, setCompareInitPlayerB] = useState(null);
   const [tradeInitPlayer, setTradeInitPlayer] = useState(null); // { sleeperId, side: 'give'|'get', partnerRosterId? }
   const [waiverInitRequest, setWaiverInitRequest] = useState(null); // { position, nonce }
   const [matchupInitRequest, setMatchupInitRequest] = useState(null); // { week, playerId, nonce }
@@ -377,7 +378,9 @@ function AppInner() {
                 <CompareTab
                   teams={scheduleData.teams}
                   initialPlayerA={compareInitPlayerA}
+                  initialPlayerB={compareInitPlayerB}
                   onConsumeInitialPlayerA={() => setCompareInitPlayerA(null)}
+                  onConsumeInitialPlayerB={() => setCompareInitPlayerB(null)}
                   onBuildTrade={(sleeperIdA, sleeperIdB) => {
                     setTradeInitPlayer({ sleeperId: sleeperIdA, side: 'give', otherSleeperId: sleeperIdB });
                     setTradeView('agent');
@@ -487,6 +490,7 @@ function AppInner() {
                 <CompanionMatchup
                   initialWeekRequest={matchupInitRequest}
                   onConsumeInitialWeekRequest={() => setMatchupInitRequest(null)}
+                  onComparePlayers={(playerA, playerB) => { setCompareInitPlayerA(playerA); setCompareInitPlayerB(playerB); setActiveTab('trade'); setTradeView('compare'); }}
                   onViewPlayer={(id, meta) => { setStatsInitPlayer({ id, ...meta }); setStatsNavBack({ label: 'Matchup', onBack: () => { setActiveTab('companion'); setStatsNavBack(null); } }); setActiveTab('statistics'); }}
                 />
               )}

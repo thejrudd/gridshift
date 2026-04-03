@@ -47,7 +47,7 @@ const PANELS = [
 
 // ── CompareTab ────────────────────────────────────────────────────────────────
 
-export default function CompareTab({ teams, initialPlayerA, onConsumeInitialPlayerA, onBuildTrade, onViewPlayer }) {
+export default function CompareTab({ teams, initialPlayerA, initialPlayerB, onConsumeInitialPlayerA, onConsumeInitialPlayerB, onBuildTrade, onViewPlayer }) {
   const { players: sleeperPlayers, hasLeague, loadPlayers, myRoster } = useSleeper();
 
   // ESPN player selections
@@ -94,6 +94,24 @@ export default function CompareTab({ teams, initialPlayerA, onConsumeInitialPlay
       })();
     }
   }, [initialPlayerA]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!initialPlayerB) return;
+    onConsumeInitialPlayerB?.();
+    setPlayerB(initialPlayerB);
+    setCacheB({});
+    setRankCacheB({});
+    setLoadingYearsB(new Set());
+    loadYear('B', initialPlayerB, selectedYear);
+    setPanel('stats');
+    if (hasLeague) {
+      (async () => {
+        const playersData = sleeperPlayers ?? await loadPlayers();
+        const sid = playersData ? matchEspnToSleeper(initialPlayerB, playersData) : null;
+        setSleeperIdB(sid);
+      })();
+    }
+  }, [initialPlayerB]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Stat fetching ───────────────────────────────────────────────────────────
 
