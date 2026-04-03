@@ -163,4 +163,5 @@ Open bugs are listed first, fixed bugs below. Add new entries at the bottom of e
 | Companion mobile list views could keep using desktop spacing on real iPhone-sized screens, causing Roster / Rankings / League / Waiver rows to truncate names and mis-balance metadata, logos, and action columns | v6.1.5 |
 | Matchup slot compare controls could lose their compact-phone affordance on real devices, leaving the position color, compare glyph, and tap target too cramped to read or use reliably | v6.1.5 |
 | Companion -> Matchup week picker could expose weeks outside the connected fantasy league's actual season length and did not clearly distinguish playoff weeks from regular-season weeks | v6.1.5 |
+| Desktop sidebar could scroll with the full page instead of remaining fixed in place, causing the shell navigation to drift vertically with content | v6.1.6 |
 

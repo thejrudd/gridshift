@@ -819,3 +819,10 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Matchup header and row system refined** - Matchup now separates desktop and mobile density more deliberately, restores richer row context on desktop, keeps compact-phone rows tighter, equalizes the week and bench controls, improves side-panel hover affordance, and keeps the team result panels aligned more cleanly with the player rows below.
 - **Matchup slot-to-Trade Compare handoff added** - Tapping a slot label now seeds both players from that row directly into `Trade -> Compare`, with compact-phone sizing and layout adjusted so the slot control stays visible and tappable on real devices.
 - **Matchup week picker now respects the league fantasy season** - The Select Week modal now caps selectable weeks to the connected league's `last_scored_leg`, visually marks playoff weeks with a clearer Broadcast Editorial treatment, and keeps every week button on the same footprint.
+
+---
+
+## v6.1.6 - Sidebar Shell Fix
+*2026-04-02*
+
+- **Desktop sidebar fixed back in place** - The shell sidebar now uses a true fixed desktop rail instead of scrolling with the document. The main content panel is offset to the same `240px` width so navigation remains stationary while page content scrolls independently.

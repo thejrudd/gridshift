@@ -75,11 +75,10 @@ PORT=8080 docker compose up -d --build
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) |
 
-## What's New in v6.1.5
+## What's New in v6.1.6
 
-- **Companion real-phone layout correction** - Roster, Rankings, League, Waiver, and Matchup now switch into their intended compact iPhone layouts more reliably on real devices, not just simulator widths.
-- **Matchup mobile + compare polish** - Matchup now has a tighter mobile row/header system, better desktop/mobile separation, slot controls that can send both players from a row straight into `Trade -> Compare`, and a league-aware week picker with clearer playoff labeling.
-- **Waiver trend and spacing cleanup** - Waiver adds mirrored `HOT` / `COLD` trend indicators, keeps compact-phone rows denser, and preserves the corrected desktop header/value alignment.
+- **Desktop sidebar shell fix** - The desktop navigation rail is fixed in place again instead of drifting with page scroll.
+- **Main panel offset restored** - Desktop content now respects the sidebar's `240px` rail width so the shell stays aligned after the sidebar positioning fix.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 
