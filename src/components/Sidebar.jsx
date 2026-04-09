@@ -1,4 +1,4 @@
-import { useSleeper } from '../context/SleeperContext';
+import { useSleeperLeague } from '../context/SleeperContext';
 
 export default function Sidebar({
   activeTab,
@@ -9,7 +9,6 @@ export default function Sidebar({
   darkMode,
   onToggleDarkMode,
   onGuide,
-  onExportImage,
   onExportJSON,
   onImportJSON,
   onRandom,
@@ -22,7 +21,7 @@ export default function Sidebar({
   onScoringSettings,
 }) {
   const progress = totalTeams > 0 ? (predictionCount / totalTeams) * 100 : 0;
-  const { isConnected, hasLeague, disconnect } = useSleeper();
+  const { isConnected, hasLeague, disconnect } = useSleeperLeague();
 
   return (
     <aside className="app-sidebar">
@@ -133,7 +132,6 @@ export default function Sidebar({
         <SidebarAction label="Guide" onClick={onGuide} />
         {activeTab === 'predictions' && (
           <>
-            <SidebarAction label="Create Image" onClick={onExportImage} disabled={predictionCount === 0} />
             <SidebarAction label="Export JSON" onClick={onExportJSON} disabled={predictionCount === 0} />
             <SidebarAction label="Import JSON" onClick={onImportJSON} />
             <SidebarAction label="Randomize Predictions" onClick={onRandom} />
@@ -217,7 +215,7 @@ export default function Sidebar({
           className="px-5 py-3 text-xs"
           style={{ color: 'var(--color-label-tertiary)' }}
         >
-          v6.1.6
+          v6.2.0
         </div>
       </div>
     </aside>
@@ -327,3 +325,5 @@ function PlayersIcon() {
     </svg>
   );
 }
+
+

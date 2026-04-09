@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useSleeper } from '../../context/SleeperContext';
+import { useSleeperLeague, useSleeperBase, useSleeperStatsProgress } from '../../context/SleeperContext';
 import { useTheme } from '../../context/ThemeContext';
 import { calcPointsFromTotals } from '../../utils/scoringEngine';
 import { computePositionalRanks, getAvgPPG } from '../../utils/projectionEngine';
@@ -201,8 +201,8 @@ function teamRowTheme(team, darkMode) {
   };
 }
 
-export default function CompanionLeague({ onTradePlayer }) {
-  const [subView, setSubView] = useState('roster');
+export default function CompanionLeague({ onTradePlayer, routeState = null, onRouteStateChange = null }) {
+  const subView = routeState?.subView ?? 'roster';
 
   return (
     <div className="pb-6">
@@ -211,7 +211,7 @@ export default function CompanionLeague({ onTradePlayer }) {
         {[['roster', 'Rosters'], ['picks', 'Draft Picks']].map(([id, label]) => (
           <button
             key={id}
-            onClick={() => setSubView(id)}
+            onClick={() => onRouteStateChange?.({ ...(routeState ?? {}), subView: id })}
             className="px-4 py-1.5 rounded-lg text-sm font-semibold transition-colors"
             style={{
               background: subView === id ? 'var(--color-signature)' : 'var(--color-fill)',
@@ -223,7 +223,13 @@ export default function CompanionLeague({ onTradePlayer }) {
         ))}
       </div>
 
-      {subView === 'roster' && <LeagueRosterView onTradePlayer={onTradePlayer} />}
+      {subView === 'roster' && (
+        <LeagueRosterView
+          onTradePlayer={onTradePlayer}
+          selectedRosterIdProp={routeState?.rosterId ?? null}
+          onSelectedRosterChange={(rosterId) => onRouteStateChange?.({ ...(routeState ?? {}), subView: 'roster', rosterId })}
+        />
+      )}
       {subView === 'picks' && <LeaguePicksView />}
     </div>
   );
@@ -231,14 +237,14 @@ export default function CompanionLeague({ onTradePlayer }) {
 
 // ── Roster sub-view ───────────────────────────────────────────────────────────
 
-function LeagueRosterView({ onTradePlayer }) {
+function LeagueRosterView({ onTradePlayer, selectedRosterIdProp = null, onSelectedRosterChange = null }) {
   const {
     leagueUsers, rosters, myRoster, getUserDisplayName,
     players, loadPlayers,
     weeklyStats, seasonStats, loadSeasonStats,
-    statsLoading, statsProgress,
+    statsLoading,
     scoringSettings,
-  } = useSleeper();
+  } = useSleeperBase();
   const { darkMode } = useTheme();
   const isCompactPhone = useMediaQuery(COMPACT_PHONE_QUERY);
 
@@ -252,6 +258,16 @@ function LeagueRosterView({ onTradePlayer }) {
       setSelectedRosterId(myRosterData.roster_id);
     }
   }, [myRosterData, selectedRosterId]);
+
+  useEffect(() => {
+    if (selectedRosterIdProp == null) return;
+    setSelectedRosterId(Number(selectedRosterIdProp));
+  }, [selectedRosterIdProp]);
+
+  useEffect(() => {
+    if (selectedRosterId == null) return;
+    onSelectedRosterChange?.(String(selectedRosterId));
+  }, [selectedRosterId, onSelectedRosterChange]);
 
   useEffect(() => { loadPlayers(); }, [loadPlayers]);
   useEffect(() => {
@@ -365,19 +381,7 @@ function LeagueRosterView({ onTradePlayer }) {
       </div>
 
       {/* Stats loading banner */}
-      {statsLoading && (
-        <div
-          className="mx-4 mb-4 px-4 py-3 rounded-xl flex items-center gap-3"
-          style={{ background: 'var(--color-fill)', border: '1px solid var(--color-separator)' }}
-        >
-          <div className="h-1 flex-1 rounded-full overflow-hidden" style={{ background: 'var(--color-fill-secondary)' }}>
-            <div className="h-full rounded-full transition-all duration-300" style={{ width: `${statsProgress}%`, background: 'var(--color-signature)' }} />
-          </div>
-          <span className="text-xs tabular-nums shrink-0" style={{ color: 'var(--color-label-tertiary)' }}>
-            Loading stats {statsProgress}%
-          </span>
-        </div>
-      )}
+      {statsLoading && <LeagueStatsLoadingBanner />}
 
       {/* Column headers */}
       <div className="px-4 pb-2 mb-1" style={{ borderBottom: '1px solid var(--color-separator)' }}>
@@ -441,6 +445,24 @@ function LeagueRosterView({ onTradePlayer }) {
         <PlayerWeeklySheet playerId={selectedPlayerId} onClose={() => setSelectedPlayerId(null)} />
       )}
     </>
+  );
+}
+
+function LeagueStatsLoadingBanner() {
+  const statsProgress = useSleeperStatsProgress();
+
+  return (
+    <div
+      className="mx-4 mb-4 px-4 py-3 rounded-xl flex items-center gap-3"
+      style={{ background: 'var(--color-fill)', border: '1px solid var(--color-separator)' }}
+    >
+      <div className="h-1 flex-1 rounded-full overflow-hidden" style={{ background: 'var(--color-fill-secondary)' }}>
+        <div className="h-full rounded-full transition-all duration-300" style={{ width: `${statsProgress}%`, background: 'var(--color-signature)' }} />
+      </div>
+      <span className="text-xs tabular-nums shrink-0" style={{ color: 'var(--color-label-tertiary)' }}>
+        Loading stats {statsProgress}%
+      </span>
+    </div>
   );
 }
 
@@ -831,7 +853,7 @@ function LeagueResponsivePlayerRow({ player, onSelect, onTrade, layout, isCompac
 }
 
 function LeaguePicksView() {
-  const { selectedLeagueId, rosters, leagueUsers, league, season, getUserDisplayName } = useSleeper();
+  const { selectedLeagueId, rosters, leagueUsers, league, season, getUserDisplayName } = useSleeperLeague();
   const [tradedPicks, setTradedPicks] = useState(null);
   const [draftRounds, setDraftRounds] = useState(null); // max rounds across all league drafts
   const [picksLoading, setPicksLoading] = useState(false);

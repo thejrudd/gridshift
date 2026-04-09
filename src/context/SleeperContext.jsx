@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback, useRef, startTransition } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo, startTransition } from 'react';
 import {
   getUserByUsername,
   getLeaguesForUser,
@@ -16,18 +16,39 @@ import { clearPlayerCache, checkAndBustCacheIfNeeded } from '../utils/playerCach
 // Run once when this module first loads — wipes stale player cache if app version changed.
 checkAndBustCacheIfNeeded();
 
-const SleeperContext = createContext(null);
+const SleeperLeagueContext = createContext(null);
+const SleeperStatsContext = createContext(null);
+const SleeperStatsProgressContext = createContext(0);
+const SleeperStatsEnhancingContext = createContext(false);
 
 const STORAGE_KEY = 'sleeper_state_v1';
-const DEFAULT_SEASON = '2025';
+const LEAGUE_YEAR_START_MONTH = 2; // March, zero-based
+const MIN_SLEEPER_SEASON = 2017;
+
+function getCurrentLeagueYear(date = new Date()) {
+  return date.getMonth() >= LEAGUE_YEAR_START_MONTH ? date.getFullYear() : date.getFullYear() - 1;
+}
+
+function getSeasonRange() {
+  const currentLeagueYear = getCurrentLeagueYear();
+  return Array.from(
+    { length: Math.max(1, currentLeagueYear - MIN_SLEEPER_SEASON + 1) },
+    (_, index) => String(currentLeagueYear - index),
+  );
+}
+
+export const AVAILABLE_SLEEPER_SEASONS = getSeasonRange();
+const DEFAULT_SEASON = AVAILABLE_SLEEPER_SEASONS[0];
 
 function loadPersistedState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const state = JSON.parse(raw);
-      // Reset season if persisted value has no data (e.g. '2026')
-      if (!state.season || parseInt(state.season) > 2025) state.season = DEFAULT_SEASON;
+      // Reset season if the persisted value falls outside the supported Sleeper season window.
+      if (state.season == null || AVAILABLE_SLEEPER_SEASONS.includes(String(state.season)) === false) state.season = DEFAULT_SEASON;
+      if (!Array.isArray(state.availableSeasons)) state.availableSeasons = [];
+      if (!state.leaguesBySeason || typeof state.leaguesBySeason !== 'object') state.leaguesBySeason = {};
       return state;
     }
   } catch { /* ignore */ }
@@ -51,6 +72,8 @@ export function SleeperProvider({ children }) {
   const [rosters, setRosters] = useState(persisted?.rosters ?? []);
   const [leagueUsers, setLeagueUsers] = useState(persisted?.leagueUsers ?? []);
   const [season, setSeason] = useState(persisted?.season ?? DEFAULT_SEASON);
+  const [availableSeasons, setAvailableSeasons] = useState(persisted?.availableSeasons ?? []);
+  const [leaguesBySeason, setLeaguesBySeason] = useState(persisted?.leaguesBySeason ?? {});
 
   // Scoring — always re-derive from persisted league on startup so newly
   // supported scoring fields (bonus_rec_te, bonus_rec_rb, etc.) are picked
@@ -88,6 +111,10 @@ export function SleeperProvider({ children }) {
     players: null,
     scheduleMap: null,
   });
+  const leagueUserById = useMemo(
+    () => new Map((leagueUsers ?? []).map((user) => [user.user_id, user])),
+    [leagueUsers],
+  );
 
   // Persist key state to localStorage
   useEffect(() => {
@@ -99,11 +126,44 @@ export function SleeperProvider({ children }) {
       rosters,
       leagueUsers,
       season,
+      availableSeasons,
+      leaguesBySeason,
       scoringSettings,
     });
-  }, [sleeperUser, leagues, selectedLeagueId, league, rosters, leagueUsers, season, scoringSettings]);
+  }, [sleeperUser, leagues, selectedLeagueId, league, rosters, leagueUsers, season, availableSeasons, leaguesBySeason, scoringSettings]);
 
   // ── Connection flow ─────────────────────────────────────────────────────────
+
+  const discoverUserLeagueSeasons = useCallback(async (userId, preferredSeason = null) => {
+    const seasonEntries = await Promise.all(
+      AVAILABLE_SLEEPER_SEASONS.map(async (seasonKey) => {
+        try {
+          const seasonLeagues = await getLeaguesForUser(userId, seasonKey);
+          return [seasonKey, seasonLeagues ?? []];
+        } catch {
+          return [seasonKey, []];
+        }
+      }),
+    );
+
+    const nextLeaguesBySeason = Object.fromEntries(seasonEntries);
+    const nextAvailableSeasons = AVAILABLE_SLEEPER_SEASONS.filter((seasonKey) => (nextLeaguesBySeason[seasonKey]?.length ?? 0) > 0);
+    const nextSeason =
+      (preferredSeason && nextAvailableSeasons.includes(preferredSeason) ? preferredSeason : null)
+      ?? nextAvailableSeasons[0]
+      ?? DEFAULT_SEASON;
+
+    setAvailableSeasons(nextAvailableSeasons);
+    setLeaguesBySeason(nextLeaguesBySeason);
+    setSeason(nextSeason);
+    setLeagues(nextLeaguesBySeason[nextSeason] ?? []);
+
+    return {
+      leaguesBySeason: nextLeaguesBySeason,
+      availableSeasons: nextAvailableSeasons,
+      season: nextSeason,
+    };
+  }, []);
 
   const connect = useCallback(async (username) => {
     setConnectError(null);
@@ -112,9 +172,7 @@ export function SleeperProvider({ children }) {
       const user = await getUserByUsername(username.trim().toLowerCase());
       if (!user?.user_id) throw new Error('User not found. Check your Sleeper username.');
       setSleeperUser(user);
-
-      const userLeagues = await getLeaguesForUser(user.user_id, season);
-      setLeagues(userLeagues ?? []);
+      await discoverUserLeagueSeasons(user.user_id, season);
 
       return user;
     } catch (err) {
@@ -123,7 +181,7 @@ export function SleeperProvider({ children }) {
     } finally {
       setConnectLoading(false);
     }
-  }, [season]);
+  }, [discoverUserLeagueSeasons, season]);
 
   const selectLeague = useCallback(async (leagueId) => {
     setConnectError(null);
@@ -160,6 +218,8 @@ export function SleeperProvider({ children }) {
     setLeague(null);
     setRosters([]);
     setLeagueUsers([]);
+    setAvailableSeasons([]);
+    setLeaguesBySeason({});
     setScoringSettings(DEFAULT_SCORING);
     setPlayers(null);
     setWeeklyStats(null);
@@ -173,6 +233,9 @@ export function SleeperProvider({ children }) {
   }, []);
 
   const changeSeason = useCallback(async (newSeason) => {
+    if (newSeason === season) return;
+
+    setConnectError(null);
     setSeason(newSeason);
     setWeeklyStats(null);
     setSeasonStats(null);
@@ -182,7 +245,15 @@ export function SleeperProvider({ children }) {
 
     if (sleeperUser) {
       try {
-        const userLeagues = await getLeaguesForUser(sleeperUser.user_id, newSeason);
+        const cachedLeagues = leaguesBySeason[newSeason];
+        if (cachedLeagues == null) setConnectLoading(true);
+        const userLeagues = cachedLeagues ?? await getLeaguesForUser(sleeperUser.user_id, newSeason);
+        if (cachedLeagues == null) {
+          setLeaguesBySeason((prev) => ({ ...prev, [newSeason]: userLeagues ?? [] }));
+          if ((userLeagues?.length ?? 0) > 0) {
+            setAvailableSeasons((prev) => (prev.includes(newSeason) ? prev : [...prev, newSeason].sort((a, b) => Number(b) - Number(a))));
+          }
+        }
         setLeagues(userLeagues ?? []);
         // Reset league selection if current league isn't in the new season
         const stillExists = userLeagues?.find(l => l.league_id === selectedLeagueId);
@@ -193,8 +264,40 @@ export function SleeperProvider({ children }) {
           setLeagueUsers([]);
         }
       } catch { /* ignore */ }
+      finally {
+        setConnectLoading(false);
+      }
     }
-  }, [sleeperUser, selectedLeagueId]);
+  }, [sleeperUser, selectedLeagueId, leaguesBySeason, season]);
+
+  useEffect(() => {
+    if (!sleeperUser?.user_id || connectLoading) return;
+    if (Object.keys(leaguesBySeason).length === AVAILABLE_SLEEPER_SEASONS.length) return;
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const discovered = await discoverUserLeagueSeasons(sleeperUser.user_id, season);
+        if (cancelled) return;
+
+        if (selectedLeagueId) {
+          const stillExists = (discovered.leaguesBySeason[discovered.season] ?? []).some((item) => item.league_id === selectedLeagueId);
+          if (!stillExists) {
+            setSelectedLeagueId(null);
+            setLeague(null);
+            setRosters([]);
+            setLeagueUsers([]);
+          }
+        }
+      } catch {
+        // Ignore background refresh failures and keep persisted state.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sleeperUser, connectLoading, leaguesBySeason, season, selectedLeagueId, discoverUserLeagueSeasons]);
 
   // ── Player DB ───────────────────────────────────────────────────────────────
 
@@ -487,67 +590,124 @@ export function SleeperProvider({ children }) {
 
   // Find this user's roster in the league
   const myRoster = useCallback(() => {
-    if (!sleeperUser || !rosters.length || !leagueUsers.length) return null;
-    const myUser = leagueUsers.find(u => u.user_id === sleeperUser.user_id);
-    if (!myUser) return null;
-    return rosters.find(r => r.owner_id === myUser.user_id) ?? null;
-  }, [sleeperUser, rosters, leagueUsers]);
+    if (!sleeperUser || !rosters.length) return null;
+    return rosters.find(r => r.owner_id === sleeperUser.user_id) ?? null;
+  }, [sleeperUser, rosters]);
 
   // Map user_id → display name from leagueUsers
   const getUserDisplayName = useCallback((userId) => {
-    const u = leagueUsers.find(u => u.user_id === userId);
+    const u = leagueUserById.get(userId);
     if (!u) return 'Unknown';
     return u.metadata?.team_name || u.display_name || u.username || 'Unknown';
-  }, [leagueUsers]);
+  }, [leagueUserById]);
 
   const isConnected = !!sleeperUser;
   const hasLeague = !!selectedLeagueId && !!league;
+  const leagueValue = useMemo(() => ({
+    sleeperUser,
+    leagues,
+    selectedLeagueId,
+    league,
+    rosters,
+    leagueUsers,
+    season,
+    availableSeasons,
+    leaguesBySeason,
+    scoringSettings,
+    connectError,
+    connectLoading,
+    isConnected,
+    hasLeague,
+    connect,
+    selectLeague,
+    disconnect,
+    changeSeason,
+    setScoringSettings,
+    setConnectError,
+    myRoster,
+    getUserDisplayName,
+  }), [
+    sleeperUser,
+    leagues,
+    selectedLeagueId,
+    league,
+    rosters,
+    leagueUsers,
+    season,
+    availableSeasons,
+    leaguesBySeason,
+    scoringSettings,
+    connectError,
+    connectLoading,
+    isConnected,
+    hasLeague,
+    connect,
+    selectLeague,
+    disconnect,
+    changeSeason,
+    myRoster,
+    getUserDisplayName,
+  ]);
+  const statsValue = useMemo(() => ({
+    players,
+    weeklyStats,
+    seasonStats,
+    scheduleMap,
+    statsLoading,
+    espnIdOverrides,
+    loadPlayers,
+    loadSeasonStats,
+  }), [
+    players,
+    weeklyStats,
+    seasonStats,
+    scheduleMap,
+    statsLoading,
+    espnIdOverrides,
+    loadPlayers,
+    loadSeasonStats,
+  ]);
 
   return (
-    <SleeperContext.Provider value={{
-      // State
-      sleeperUser,
-      leagues,
-      selectedLeagueId,
-      league,
-      rosters,
-      leagueUsers,
-      season,
-      scoringSettings,
-      players,
-      weeklyStats,
-      seasonStats,
-      scheduleMap,
-      statsLoading,
-      statsEnhancing,
-      statsProgress,
-      espnIdOverrides,
-      connectError,
-      connectLoading,
-      isConnected,
-      hasLeague,
-
-      // Actions
-      connect,
-      selectLeague,
-      disconnect,
-      changeSeason,
-      loadPlayers,
-      loadSeasonStats,
-      setScoringSettings,
-      setConnectError,
-
-      // Helpers
-      myRoster,
-      getUserDisplayName,
-    }}>
-      {children}
-    </SleeperContext.Provider>
+    <SleeperLeagueContext.Provider value={leagueValue}>
+      <SleeperStatsContext.Provider value={statsValue}>
+        <SleeperStatsEnhancingContext.Provider value={statsEnhancing}>
+          <SleeperStatsProgressContext.Provider value={statsProgress}>
+            {children}
+          </SleeperStatsProgressContext.Provider>
+        </SleeperStatsEnhancingContext.Provider>
+      </SleeperStatsContext.Provider>
+    </SleeperLeagueContext.Provider>
   );
 }
 
-export function useSleeper() {
-  const ctx = useContext(SleeperContext);
-  if (!ctx) throw new Error('useSleeper must be used inside <SleeperProvider>');
+export function useSleeperLeague() {
+  const ctx = useContext(SleeperLeagueContext);
+  if (!ctx) throw new Error('useSleeperLeague must be used inside <SleeperProvider>');
   return ctx;
+}
+
+export function useSleeperStats() {
+  const ctx = useContext(SleeperStatsContext);
+  if (!ctx) throw new Error('useSleeperStats must be used inside <SleeperProvider>');
+  return ctx;
+}
+
+export function useSleeperBase() {
+  return { ...useSleeperLeague(), ...useSleeperStats() };
+}
+
+export function useSleeperStatsProgress() {
+  return useContext(SleeperStatsProgressContext);
+}
+
+export function useSleeperStatsEnhancing() {
+  return useContext(SleeperStatsEnhancingContext);
+}
+
+export function useSleeper() {
+  const ctx = useSleeperBase();
+  const statsProgress = useSleeperStatsProgress();
+  const statsEnhancing = useSleeperStatsEnhancing();
+  return { ...ctx, statsProgress, statsEnhancing };
 }

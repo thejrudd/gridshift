@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { useSleeper } from '../../context/SleeperContext';
+import { useSleeperLeague } from '../../context/SleeperContext';
 import {
   DEFAULT_SCORING, importLeagueScoring,
 } from '../../utils/scoringEngine';
+import { formatScoringSettingValue } from '../../utils/scoringDisplay';
 
 const STAT_GROUPS = [
   {
@@ -240,7 +241,7 @@ const STAT_GROUPS = [
 ];
 
 export default function CompanionScoring() {
-  const { scoringSettings, setScoringSettings, league } = useSleeper();
+  const { scoringSettings, setScoringSettings, league } = useSleeperLeague();
   const [showActiveOnly, setShowActiveOnly] = useState(true);
   const settings = { ...DEFAULT_SCORING, ...scoringSettings };
 
@@ -331,7 +332,7 @@ export default function CompanionScoring() {
                         : 'var(--color-label-quaternary)',
                     }}
                   >
-                    {val !== 0 ? val : '—'}
+                    {formatScoringSettingValue(stat.key, val)}
                   </span>
                 </div>
               );

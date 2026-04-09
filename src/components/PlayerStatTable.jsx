@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { buildStatMap, buildRankMap, getStatRows, getGameLogColumns } from '../utils/playerMetrics';
 import { CURRENT_SEASON } from '../utils/playerApi';
-import { useSleeper } from '../context/SleeperContext';
+import { useSleeperLeague, useSleeperStats } from '../context/SleeperContext';
 import {
   buildFantasyRankByKey,
   getFantasyContribution,
@@ -20,7 +20,8 @@ function statVal(statsJson, key, decimals = 0, suffix = '') {
 const PlayerStatTable = ({ year, statsJson, position, sleeperId = null, expanded, onToggle, loading, error, gameLog, gameLogLoading, honors = [], accentColor }) => {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showFantasyValue, setShowFantasyValue] = useState(false);
-  const { scoringSettings, players: sleeperPlayers, seasonStats: sleeperSeasonStats } = useSleeper();
+  const { scoringSettings } = useSleeperLeague();
+  const { players: sleeperPlayers, seasonStats: sleeperSeasonStats } = useSleeperStats();
 
   const { standard, advanced, statsMap } = useMemo(() => {
     if (!statsJson) return { standard: [], advanced: [] };

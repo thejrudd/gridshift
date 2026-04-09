@@ -1,5 +1,5 @@
 import { useMemo, useEffect, useState } from 'react';
-import { useSleeper } from '../../context/SleeperContext';
+import { useSleeperLeague, useSleeperStats } from '../../context/SleeperContext';
 import { useTheme } from '../../context/ThemeContext';
 import { calcPoints } from '../../utils/scoringEngine';
 import { getTeamPalette } from '../../data/teamColors.js';
@@ -53,7 +53,8 @@ const IDP_STAT_DISPLAY = [
 const IDP_POSITIONS = new Set(['DL', 'LB', 'DB', 'DE', 'DT', 'CB', 'S', 'ILB', 'OLB', 'SS', 'FS']);
 
 export default function PlayerWeeklySheet({ playerId, onClose, onOpenWeek = null }) {
-  const { players, weeklyStats, scoringSettings, scheduleMap, league } = useSleeper();
+  const { scoringSettings, league } = useSleeperLeague();
+  const { players, weeklyStats, scheduleMap } = useSleeperStats();
   const { darkMode } = useTheme();
   const [closeHover, setCloseHover] = useState(false);
 

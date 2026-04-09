@@ -3,7 +3,7 @@
 // Calls useSleeper() internally; takes matched Sleeper IDs from CompareTab.
 
 import { useMemo, useEffect } from 'react';
-import { useSleeper } from '../../context/SleeperContext';
+import { useSleeperBase } from '../../context/SleeperContext';
 import { calcPoints, calcPointsFromTotals, getRecentAvg, DEFAULT_SCORING } from '../../utils/scoringEngine';
 import {
   computePositionalRanks, getAvgPPG,
@@ -237,7 +237,7 @@ export default function CompareFantasyPanel({ sleeperIdA, sleeperIdB }) {
     rosters, seasonStats, weeklyStats,
     scoringSettings, scheduleMap,
     statsLoading, loadSeasonStats,
-  } = useSleeper();
+  } = useSleeperBase();
 
   // Trigger stats load if not yet loaded (same pattern as all Companion views)
   useEffect(() => {

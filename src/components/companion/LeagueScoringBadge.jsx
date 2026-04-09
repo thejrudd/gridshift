@@ -1,8 +1,9 @@
-import { useSleeper } from '../../context/SleeperContext';
+import { useSleeperLeague } from '../../context/SleeperContext';
 import { detectPreset, SCORING_PRESETS } from '../../utils/scoringEngine';
+import { formatScoringSettingValue } from '../../utils/scoringDisplay';
 
 export default function LeagueScoringBadge() {
-  const { league, scoringSettings } = useSleeper();
+  const { league, scoringSettings } = useSleeperLeague();
   if (!league) return null;
 
   const preset = detectPreset(scoringSettings);
@@ -10,7 +11,7 @@ export default function LeagueScoringBadge() {
 
   const passTd = scoringSettings.pass_td ?? 4;
   const rushTd = scoringSettings.rush_td ?? 6;
-  const passYd = scoringSettings.pass_yd ? (1 / scoringSettings.pass_yd).toFixed(0) : 25;
+  const passYd = formatScoringSettingValue('pass_yd', scoringSettings.pass_yd ?? 0, { compact: true, zero: 'Off' });
 
   const hasIDP = Object.entries(scoringSettings).some(
     ([k, v]) => k.startsWith('idp_') && v > 0
@@ -40,7 +41,7 @@ export default function LeagueScoringBadge() {
         <ScoringPill label="REC" value={`${scoringSettings.rec ?? 1} pt`} />
         <ScoringPill label="PASS TD" value={`${passTd} pts`} />
         <ScoringPill label="RUSH/REC TD" value={`${rushTd} pts`} />
-        <ScoringPill label="PASS YD" value={`1 / ${passYd} yds`} />
+        <ScoringPill label="PASS YD" value={passYd} />
         {scoringSettings.pass_int !== 0 && (
           <ScoringPill label="INT" value={`${scoringSettings.pass_int} pts`} negative />
         )}

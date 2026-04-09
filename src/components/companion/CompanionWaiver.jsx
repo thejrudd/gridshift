@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useSleeper } from '../../context/SleeperContext';
+import { useSleeperBase, useSleeperStatsProgress } from '../../context/SleeperContext';
 import { useTheme } from '../../context/ThemeContext';
 import { calcPoints, calcPointsFromTotals, getRecentAvg } from '../../utils/scoringEngine';
 import { projectPlayer, buildDefenseTable, getDefenseStrength, getLeagueAvgPPG } from '../../utils/projectionEngine';
@@ -218,7 +218,13 @@ function getSharedNameColumnWidth(players) {
   return Math.min(measured, 168);
 }
 
-export default function CompanionWaiver({ onViewPlayer, initialPositionRequest, onConsumeInitialPositionRequest }) {
+export default function CompanionWaiver({
+  onViewPlayer,
+  initialPositionRequest,
+  onConsumeInitialPositionRequest,
+  positionFilter = 'ALL',
+  onPositionFilterChange,
+}) {
   const {
     players, loadPlayers,
     rosters,
@@ -227,15 +233,15 @@ export default function CompanionWaiver({ onViewPlayer, initialPositionRequest, 
     weeklyStats,
     scheduleMap,
     espnIdOverrides,
-    statsLoading, statsProgress,
+    statsLoading,
     scoringSettings,
     myRoster,
-  } = useSleeper();
+  } = useSleeperBase();
   const { darkMode } = useTheme();
   const isCompactPhone = useMediaQuery(COMPACT_PHONE_QUERY);
   const layout = useMemo(() => getWaiverLayout(isCompactPhone), [isCompactPhone]);
 
-  const [posFilter, setPosFilter] = useState('ALL');
+  const [posFilter, setPosFilter] = useState(positionFilter);
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState('recent');
@@ -244,6 +250,11 @@ export default function CompanionWaiver({ onViewPlayer, initialPositionRequest, 
   const activePosFilter = requestedPosition && POSITIONS.includes(requestedPosition)
     ? requestedPosition
     : posFilter;
+
+  useEffect(() => {
+    if (requestedPosition && POSITIONS.includes(requestedPosition)) return;
+    setPosFilter(POSITIONS.includes(positionFilter) ? positionFilter : 'ALL');
+  }, [positionFilter, requestedPosition]);
 
   useEffect(() => { loadPlayers(); }, [loadPlayers]);
   useEffect(() => {
@@ -399,6 +410,7 @@ export default function CompanionWaiver({ onViewPlayer, initialPositionRequest, 
               onClick={() => {
                 onConsumeInitialPositionRequest?.();
                 setPosFilter(pos);
+                onPositionFilterChange?.(pos);
               }}
               className="px-3 py-1 rounded-lg text-xs font-semibold transition-colors"
               style={{
@@ -429,14 +441,7 @@ export default function CompanionWaiver({ onViewPlayer, initialPositionRequest, 
         </div>
       </div>
 
-      {statsLoading && (
-        <div className="mx-4 mb-3 px-4 py-2.5 rounded-xl flex items-center gap-3" style={{ background: 'var(--color-fill)' }}>
-          <div className="h-1 flex-1 rounded-full overflow-hidden" style={{ background: 'var(--color-fill-secondary)' }}>
-            <div className="h-full rounded-full transition-all duration-300" style={{ width: `${statsProgress}%`, background: 'var(--color-signature)' }} />
-          </div>
-          <span className="text-xs tabular-nums shrink-0" style={{ color: 'var(--color-label-tertiary)' }}>{statsProgress}%</span>
-        </div>
-      )}
+      {statsLoading && <WaiverStatsLoadingBanner />}
 
       <div className="px-4">
         <div
@@ -512,6 +517,19 @@ function ColHeader({ label, active, onClick }) {
         ↓
       </span>
     </button>
+  );
+}
+
+function WaiverStatsLoadingBanner() {
+  const statsProgress = useSleeperStatsProgress();
+
+  return (
+    <div className="mx-4 mb-3 px-4 py-2.5 rounded-xl flex items-center gap-3" style={{ background: 'var(--color-fill)' }}>
+      <div className="h-1 flex-1 rounded-full overflow-hidden" style={{ background: 'var(--color-fill-secondary)' }}>
+        <div className="h-full rounded-full transition-all duration-300" style={{ width: `${statsProgress}%`, background: 'var(--color-signature)' }} />
+      </div>
+      <span className="text-xs tabular-nums shrink-0" style={{ color: 'var(--color-label-tertiary)' }}>{statsProgress}%</span>
+    </div>
   );
 }
 

@@ -6,7 +6,7 @@
 // When in "All Rosters" mode, selecting a player returns { id, rosterId }
 // so CompanionTrade can auto-set the trade partner.
 
-import { useState, useEffect, useMemo } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { findKtcPlayerFromSleeper, getKtcValue, fmtKtcValue, productionAdjustedValue } from '../../utils/ktcApi';
 import { DYNASTY_FALLBACK_MULT } from '../../utils/tradeEngine';
 import { calcPointsFromTotals } from '../../utils/scoringEngine';
@@ -14,6 +14,7 @@ import { computePositionalRanks, computePositionalAvgPPG, computePositionalValue
 import { parseSearchQuery, matchesFilter } from '../../utils/parseSearchQuery';
 import { TEAM_COLORS } from '../../data/teamColors';
 import { useTheme } from '../../context/ThemeContext';
+import useBodyScrollLock from '../../hooks/useBodyScrollLock';
 
 const POSITION_ORDER = ['QB', 'RB', 'WR', 'TE', 'K', 'DL', 'LB', 'DB', 'DEF', 'Other'];
 const POSITION_FILTER_CHIPS = ['ALL', 'QB', 'RB', 'WR', 'TE', 'K', 'DL', 'LB', 'DB', 'DEF'];
@@ -103,6 +104,10 @@ const GUIDE_SECTIONS = [
   { label: 'Natural language — filler words are ignored', chips: ['Running backs in Detroit', 'QBs playing for the Bears', 'Tight ends in the AFC'] },
 ];
 
+const PICKER_HEADER_ROW_HEIGHT = 35;
+const PICKER_PLAYER_ROW_HEIGHT = 76;
+const PICKER_OVERSCAN_PX = 320;
+
 function SearchGuide({ onExample }) {
   return (
     <div className="px-4 py-4 flex flex-col gap-5">
@@ -149,6 +154,10 @@ export default function TradeRosterPicker({
   currentTotal,          // current KTC total for this side of the trade
   activeRosterId,        // roster currently selected for this trade side
   mergedIDPMap,          // production-based fallback values for IDP / D/ST players
+  sharedRankMap,
+  sharedPositionalAvgPPG,
+  sharedPositionalValuePerPPG,
+  sharedPlayerTradeValueDetailsMap,
   onSelect,              // (playerId) for locked mode, ({ id, rosterId }) for all-rosters mode
   onClose,
 }) {
@@ -156,31 +165,32 @@ export default function TradeRosterPicker({
   const [posFilter, setPosFilter] = useState('ALL');
   const { darkMode } = useTheme();
   const isAllMode = rosterId == null;
+  const deferredSearch = useDeferredValue(search);
+  const trimmedSearch = deferredSearch.trim();
+  const showSearchGuide = isAllMode && !trimmedSearch && posFilter === 'ALL';
+  const enrichedPlayerCacheRef = useRef(new Map());
 
-  useEffect(() => {
-    document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = ''; };
-  }, []);
+  useBodyScrollLock();
 
   // Positional ranks across all rostered players
   const rankMap = useMemo(
-    () => computePositionalRanks(seasonStats, sleeperPlayers, scoringSettings),
-    [seasonStats, sleeperPlayers, scoringSettings],
+    () => sharedRankMap ?? computePositionalRanks(seasonStats, sleeperPlayers, scoringSettings),
+    [sharedRankMap, seasonStats, sleeperPlayers, scoringSettings],
   );
 
   // Average PPG per position — used to calibrate per-player production multipliers
   const positionalAvgPPG = useMemo(
-    () => computePositionalAvgPPG(rosters, seasonStats, sleeperPlayers, scoringSettings),
-    [rosters, seasonStats, sleeperPlayers, scoringSettings],
+    () => sharedPositionalAvgPPG ?? computePositionalAvgPPG(rosters, seasonStats, sleeperPlayers, scoringSettings),
+    [sharedPositionalAvgPPG, rosters, seasonStats, sleeperPlayers, scoringSettings],
   );
 
   // KTC value per PPG for each position — used to estimate dynasty-fallback player values
   const positionalValuePerPPG = useMemo(
-    () => computePositionalValuePerPPG(
+    () => sharedPositionalValuePerPPG ?? computePositionalValuePerPPG(
       rosters, sleeperPlayers, ktcPlayers, leagueType,
       seasonStats, scoringSettings, findKtcPlayerFromSleeper, getKtcValue, productionAdjustedValue,
     ),
-    [rosters, sleeperPlayers, ktcPlayers, leagueType, seasonStats, scoringSettings],
+    [sharedPositionalValuePerPPG, rosters, sleeperPlayers, ktcPlayers, leagueType, seasonStats, scoringSettings],
   );
 
   // Build a map: playerId → rosterId (which roster owns this player)
@@ -195,21 +205,34 @@ export default function TradeRosterPicker({
 
   const excludeSet = useMemo(() => new Set(excludeIds ?? []), [excludeIds]);
   const allowedSet = useMemo(() => allowedIds?.length ? new Set(allowedIds) : null, [allowedIds]);
-
-  // Build player list — either from one roster or all (optionally including own roster)
-  const players = useMemo(() => {
-    let sourceIds;
-    if (isAllMode) {
-      sourceIds = [];
-      for (const r of rosters) {
-        if (!includeOwnRoster && r.roster_id === myRosterId) continue;
-        const ids = [...new Set([...(r.players ?? []), ...(r.reserve ?? [])])];
-        sourceIds.push(...ids);
-      }
-    } else {
-      const roster = rosters.find(r => r.roster_id === rosterId);
-      sourceIds = roster ? [...new Set([...(roster.players ?? []), ...(roster.reserve ?? [])])] : [];
+  const rosterOwnerNameMap = useMemo(() => {
+    const map = {};
+    for (const roster of rosters) {
+      const isOwnRoster = roster.roster_id === myRosterId;
+      map[roster.roster_id] = isOwnRoster
+        ? 'Your Roster'
+        : getUserDisplayName(roster.owner_id ?? '');
     }
+    return map;
+  }, [rosters, myRosterId, getUserDisplayName]);
+
+  const sourceIds = useMemo(() => {
+    if (isAllMode) {
+      const ids = [];
+      for (const roster of rosters) {
+        if (!includeOwnRoster && roster.roster_id === myRosterId) continue;
+        ids.push(...new Set([...(roster.players ?? []), ...(roster.reserve ?? [])]));
+      }
+      return ids;
+    }
+
+    const roster = rosters.find((entry) => entry.roster_id === rosterId);
+    return roster ? [...new Set([...(roster.players ?? []), ...(roster.reserve ?? [])])] : [];
+  }, [isAllMode, rosters, includeOwnRoster, myRosterId, rosterId]);
+
+  // Build the lightweight searchable list first, then enrich only visible results.
+  const basePlayers = useMemo(() => {
+    if (showSearchGuide) return [];
 
     return sourceIds
       .filter(id => !allowedSet || allowedSet.has(id))
@@ -217,96 +240,51 @@ export default function TradeRosterPicker({
       .map(id => {
         const sp = sleeperPlayers?.[id];
         if (!sp) return null;
-        const ktc = findKtcPlayerFromSleeper(id, sleeperPlayers, ktcPlayers);
-        let rawVal = getKtcValue(ktc, leagueType);
-        let dynastyFallback = false;
-        let idpFallback = false;
-        if (rawVal == null && dynastyKtcPlayers?.length) {
-          const dKtc = findKtcPlayerFromSleeper(id, sleeperPlayers, dynastyKtcPlayers);
-          const dVal = getKtcValue(dKtc, leagueType);
-          if (dVal != null) { rawVal = Math.round(dVal * DYNASTY_FALLBACK_MULT); dynastyFallback = true; }
-        }
-        if (rawVal == null && mergedIDPMap?.has(id)) {
-          rawVal = mergedIDPMap.get(id);
-          idpFallback = true;
-        }
-        rawVal = rawVal ?? (ktcPlayers?.length > 0 ? 0 : null);
-        const stats = seasonStats?.[id];
-        const pts = stats ? calcPointsFromTotals(stats, scoringSettings, sp.position) : null;
-        const gp = stats?.gp ?? 0;
-        const avgPPG = pts != null && gp ? Math.round((pts / gp) * 10) / 10 : null;
-        const rankInfo = rankMap[id] ?? null;
-
-        let val;
-        if (idpFallback) {
-          val = rawVal;
-        } else if (dynastyFallback && gp >= 3 && avgPPG != null && positionalValuePerPPG[sp.position] != null) {
-          // PPG-calibrated estimation: anchor dynasty-fallback players to the same
-          // value-per-PPG ratio as direct-KTC-ranked players at this position.
-          val = Math.round(avgPPG * positionalValuePerPPG[sp.position]);
-        } else {
-          // 50% PPG blend weight for trade agent (higher than default 35%)
-          val = productionAdjustedValue(rawVal, avgPPG, positionalAvgPPG[sp.position], 0.50);
-        }
-
-        // Layer 2 — rank-percentile nudge (±12%)
-        if (!idpFallback && rankInfo?.rank != null && rankInfo?.posCount > 1) {
-          const percentile = 1 - (rankInfo.rank - 1) / (rankInfo.posCount - 1);
-          val = Math.round(val * (0.88 + 0.24 * percentile));
-        }
-
         const ownerRosterId = playerRosterMap[id];
-        const isOwnPlayer = ownerRosterId === myRosterId;
-        const ownerName = isAllMode && ownerRosterId
-          ? (isOwnPlayer ? 'Your Roster' : getUserDisplayName(rosters.find(r => r.roster_id === ownerRosterId)?.owner_id ?? ''))
-          : null;
         const teamKey = toTeamKey(sp.team);
         const cityName = TEAM_CITY_NAMES[teamKey] ?? '';
-        const palette = TEAM_COLORS[teamKey] ?? null;
+        const ownerName = isAllMode && ownerRosterId ? rosterOwnerNameMap[ownerRosterId] ?? null : null;
         return {
           id,
           name: sp.full_name ?? `${sp.first_name ?? ''} ${sp.last_name ?? ''}`.trim(),
           position: sp.position ?? '',
           team: sp.team ?? '',
           teamKey,
-          palette,
+          palette: TEAM_COLORS[teamKey] ?? null,
           injuryStatus: sp.injury_status,
-          val,
-          dynastyFallback,
-          idpFallback,
-          pts,
-          avgPPG,
-          rankInfo,
           ownerRosterId,
           ownerName,
-          isOwnPlayer,
+          isOwnPlayer: ownerRosterId === myRosterId,
           cityName,
+          searchText: [
+            sp.full_name ?? `${sp.first_name ?? ''} ${sp.last_name ?? ''}`.trim(),
+            ownerName ?? '',
+            sp.team ?? '',
+            cityName,
+          ].join(' ').toLowerCase(),
           isAdded: excludeSet.has(id),
         };
       })
       .filter(Boolean);
-  }, [isAllMode, includeOwnRoster, rosters, rosterId, myRosterId, excludeSet, allowedSet, sleeperPlayers,
-      ktcPlayers, dynastyKtcPlayers, leagueType, seasonStats, scoringSettings, playerRosterMap,
-      mergedIDPMap,
-      getUserDisplayName, rankMap, positionalAvgPPG, positionalValuePerPPG]);
+  }, [showSearchGuide, sourceIds, allowedSet, isAllMode, excludeSet, sleeperPlayers, playerRosterMap, myRosterId, rosterOwnerNameMap]);
 
   // Position chip filter applied first (independent of text search)
   const posFiltered = useMemo(() => {
-    if (posFilter === 'ALL') return players;
+    if (posFilter === 'ALL') return basePlayers;
     const group = POSITION_FILTER_GROUPS[posFilter];
-    return players.filter(p => group ? group.has(p.position) : p.position === posFilter);
-  }, [players, posFilter]);
+    return basePlayers.filter(p => group ? group.has(p.position) : p.position === posFilter);
+  }, [basePlayers, posFilter]);
+
+  const parsedSearch = useMemo(() => parseSearchQuery(trimmedSearch), [trimmedSearch]);
 
   const filtered = useMemo(() => {
-    if (!search.trim()) return posFiltered;
-    const filters = parseSearchQuery(search);
+    if (!trimmedSearch) return posFiltered;
+    const filters = parsedSearch;
     const hasFilters = filters.pos.size || filters.team.size || filters.div.size || filters.conf.size || filters.name.length;
     if (!hasFilters) return posFiltered;
     return posFiltered.filter(p => {
       if (filters.name.length > 0) {
-        // Include city name so partial matches like "New" hit "new orleans saints"
-        const hay = [p.name, p.ownerName ?? '', p.team, p.cityName].join(' ').toLowerCase();
-        if (!filters.name.every(t => hay.includes(t))) return false;
+        if (!filters.name.every(t => p.searchText.includes(t))) return false;
       }
       if (filters.pos.size > 0) {
         if (![...filters.pos].some(pos => matchesFilter(p.position, pos))) return false;
@@ -317,11 +295,118 @@ export default function TradeRosterPicker({
       if (filters.conf.size > 0 && (!teamInfo || !filters.conf.has(teamInfo.conference))) return false;
       return true;
     });
-  }, [posFiltered, search]);
+  }, [posFiltered, trimmedSearch, parsedSearch]);
+
+  useEffect(() => {
+    enrichedPlayerCacheRef.current.clear();
+  }, [
+    sleeperPlayers,
+    ktcPlayers,
+    dynastyKtcPlayers,
+    leagueType,
+    sharedPlayerTradeValueDetailsMap,
+    mergedIDPMap,
+    seasonStats,
+    scoringSettings,
+    rankMap,
+    positionalAvgPPG,
+    positionalValuePerPPG,
+  ]);
+
+  const getEnrichedPlayerMeta = useCallback((player) => {
+    const cached = enrichedPlayerCacheRef.current.get(player.id);
+    if (cached) return cached;
+
+    const sharedTradeValue = sharedPlayerTradeValueDetailsMap?.get(player.id) ?? null;
+    if (sharedTradeValue) {
+      const stats = seasonStats?.[player.id];
+      const pts = stats ? calcPointsFromTotals(stats, scoringSettings, player.position) : null;
+      const gp = stats?.gp ?? 0;
+      const avgPPG = pts != null && gp ? Math.round((pts / gp) * 10) / 10 : null;
+      const next = {
+        val: sharedTradeValue.value,
+        dynastyFallback: sharedTradeValue.dynastyFallback,
+        idpFallback: sharedTradeValue.isEstimated,
+        pts,
+        avgPPG,
+        rankInfo: rankMap[player.id] ?? null,
+      };
+      enrichedPlayerCacheRef.current.set(player.id, next);
+      return next;
+    }
+
+    const ktc = findKtcPlayerFromSleeper(player.id, sleeperPlayers, ktcPlayers);
+    let rawVal = getKtcValue(ktc, leagueType);
+    let dynastyFallback = false;
+    let idpFallback = false;
+    if (rawVal == null && dynastyKtcPlayers?.length) {
+      const dKtc = findKtcPlayerFromSleeper(player.id, sleeperPlayers, dynastyKtcPlayers);
+      const dVal = getKtcValue(dKtc, leagueType);
+      if (dVal != null) {
+        rawVal = Math.round(dVal * DYNASTY_FALLBACK_MULT);
+        dynastyFallback = true;
+      }
+    }
+    if (rawVal == null && mergedIDPMap?.has(player.id)) {
+      rawVal = mergedIDPMap.get(player.id);
+      idpFallback = true;
+    }
+    rawVal = rawVal ?? (ktcPlayers?.length > 0 ? 0 : null);
+
+    const stats = seasonStats?.[player.id];
+    const pts = stats ? calcPointsFromTotals(stats, scoringSettings, player.position) : null;
+    const gp = stats?.gp ?? 0;
+    const avgPPG = pts != null && gp ? Math.round((pts / gp) * 10) / 10 : null;
+    const rankInfo = rankMap[player.id] ?? null;
+
+    let val;
+    if (idpFallback) {
+      val = rawVal;
+    } else if (dynastyFallback && gp >= 3 && avgPPG != null && positionalValuePerPPG[player.position] != null) {
+      val = Math.round(avgPPG * positionalValuePerPPG[player.position]);
+    } else {
+      val = productionAdjustedValue(rawVal, avgPPG, positionalAvgPPG[player.position], 0.50);
+    }
+
+    if (!idpFallback && rankInfo?.rank != null && rankInfo?.posCount > 1) {
+      const percentile = 1 - (rankInfo.rank - 1) / (rankInfo.posCount - 1);
+      val = Math.round(val * (0.88 + 0.24 * percentile));
+    }
+
+    const next = {
+      val,
+      dynastyFallback,
+      idpFallback,
+      pts,
+      avgPPG,
+      rankInfo,
+    };
+    enrichedPlayerCacheRef.current.set(player.id, next);
+    return next;
+  }, [
+    sleeperPlayers,
+    ktcPlayers,
+    dynastyKtcPlayers,
+    leagueType,
+    sharedPlayerTradeValueDetailsMap,
+    mergedIDPMap,
+    seasonStats,
+    scoringSettings,
+    rankMap,
+    positionalAvgPPG,
+    positionalValuePerPPG,
+  ]);
+
+  const players = useMemo(() => (
+    filtered.map((player) => ({
+      ...player,
+      ...getEnrichedPlayerMeta(player),
+    }))
+  ), [filtered, getEnrichedPlayerMeta]);
 
   const grouped = useMemo(() => {
     const groups = {};
-    for (const p of filtered) {
+    for (const p of players) {
       const pos = toDisplayPosition(p.position);
       if (!groups[pos]) groups[pos] = [];
       groups[pos].push(p);
@@ -330,7 +415,38 @@ export default function TradeRosterPicker({
       groups[pos].sort((a, b) => (b.val ?? -1) - (a.val ?? -1));
     }
     return groups;
-  }, [filtered]);
+  }, [players]);
+
+  const virtualRows = useMemo(() => {
+    const rows = [];
+    for (const pos of POSITION_ORDER) {
+      const list = grouped[pos];
+      if (!list?.length) continue;
+      rows.push({
+        type: 'header',
+        id: `header:${pos}`,
+        label: pos === 'Other' ? 'OTHER' : pos,
+        height: PICKER_HEADER_ROW_HEIGHT,
+      });
+      for (const player of list) {
+        rows.push({
+          type: 'player',
+          id: player.id,
+          player,
+          height: PICKER_PLAYER_ROW_HEIGHT,
+        });
+      }
+    }
+    return rows;
+  }, [grouped]);
+  const shouldVirtualize = isAllMode && virtualRows.length > 80;
+  const {
+    containerRef: resultsContainerRef,
+    totalHeight: virtualTotalHeight,
+    visibleRows,
+    stickyHeader,
+    handleScroll,
+  } = useVirtualRows(virtualRows, shouldVirtualize);
 
   function handleSelect(player) {
     if (player.isAdded) return;
@@ -347,6 +463,139 @@ export default function TradeRosterPicker({
     if (activeRosterId == null) return false;
     return player.ownerRosterId === activeRosterId;
   }
+
+  const renderHeaderRow = useCallback((label, key, style = null) => (
+    <div
+      key={key}
+      className="px-4 py-1.5 text-xs font-semibold uppercase tracking-widest"
+      style={{
+        background: 'var(--color-bg-secondary)',
+        color: 'var(--color-label-tertiary)',
+        letterSpacing: '0.08em',
+        borderBottom: '1px solid var(--color-separator)',
+        zIndex: 1,
+        ...(style ?? {}),
+      }}
+    >
+      {label}
+    </div>
+  ), []);
+
+  const renderPlayerRow = useCallback((player, key = player.id, style = null) => {
+    const teamColor = player.palette
+      ? (darkMode ? player.palette.darkPrimary : player.palette.primary)
+      : null;
+    const isLightColor = teamColor ? hexLuminance(teamColor) > 0.35 : false;
+
+    return (
+      <div
+        key={key}
+        className="flex items-center w-full px-4 py-3 gap-3 relative overflow-hidden transition-colors"
+        style={{
+          borderBottom: '1px solid var(--color-separator)',
+          borderLeft: teamColor ? `3px solid ${teamColor}` : '3px solid transparent',
+          background: teamColor
+            ? `${teamColor}${isLightColor ? '18' : '22'}`
+            : 'transparent',
+          opacity: player.isAdded ? 0.5 : 1,
+          contentVisibility: shouldVirtualize ? undefined : 'auto',
+          containIntrinsicSize: shouldVirtualize ? undefined : '76px',
+          ...(style ?? {}),
+        }}
+      >
+        <img src={`https://sleepercdn.com/content/nfl/players/thumb/${player.id}.jpg`}
+          alt="" className="w-9 h-9 rounded-full shrink-0 object-cover"
+          style={{ background: 'var(--color-fill-secondary)' }}
+          loading="lazy"
+          decoding="async"
+          onError={e => { e.target.style.display = 'none'; }} />
+
+        <div className="flex-1 min-w-0 text-left relative">
+          {player.teamKey && (
+            <img
+              src={`https://a.espncdn.com/i/teamlogos/nfl/500/${player.teamKey}.png`}
+              aria-hidden="true"
+              className="absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none select-none"
+              style={{ width: 44, height: 44, objectFit: 'contain', opacity: 0.10 }}
+              loading="lazy"
+              decoding="async"
+              onError={e => { e.target.style.display = 'none'; }}
+            />
+          )}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-sm font-semibold truncate" style={{ color: 'var(--color-label)' }}>
+              {player.name}
+            </span>
+            {player.injuryStatus && player.injuryStatus !== 'Active' && (
+              <span className="shrink-0 px-1.5 py-0.5 rounded"
+                style={{ background: 'var(--color-fill-secondary)', color: 'var(--color-label-tertiary)', fontSize: '9px', fontWeight: 700 }}>
+                {player.injuryStatus}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+            <span className="text-xs" style={{ color: 'var(--color-label-secondary)' }}>
+              {player.position}{player.team ? ` · ${player.team}` : ''}
+            </span>
+            {player.rankInfo && (
+              <span className="text-xs font-bold tabular-nums"
+                style={{ color: teamColor ?? 'var(--color-label-tertiary)' }}>
+                #{player.rankInfo.rank} {player.rankInfo.posLabel}
+              </span>
+            )}
+            {player.avgPPG != null && (
+              <span className="text-xs tabular-nums" style={{ color: 'var(--color-label-tertiary)' }}>
+                {player.avgPPG.toFixed(1)} avg
+              </span>
+            )}
+            {player.ownerName && (
+              <span className="text-xs font-semibold"
+                style={{ color: player.isOwnPlayer ? 'var(--color-signature)' : 'var(--color-label-quaternary)' }}>
+                · {player.ownerName}
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="flex flex-col items-end shrink-0 gap-0.5">
+          <span className="text-sm font-bold tabular-nums"
+            title={player.idpFallback ? 'Estimated from season production (no KTC data)' : undefined}
+            style={{ color: player.val != null ? 'var(--color-label)' : 'var(--color-label-quaternary)' }}>
+            {(player.dynastyFallback || player.idpFallback) ? '~' : ''}{fmtKtcValue(player.val)}
+          </span>
+          {player.dynastyFallback && (
+            <span style={{ color: 'var(--color-label-quaternary)', fontSize: '9px', fontWeight: 600 }}>
+              DYN est.
+            </span>
+          )}
+          {player.idpFallback && (
+            <span style={{ color: 'var(--color-label-quaternary)', fontSize: '9px', fontWeight: 600 }}>
+              est.
+            </span>
+          )}
+          {showsAdditiveTotal(player) && (
+            <span className="text-xs tabular-nums" style={{ color: 'var(--color-accent)' }}>
+              → {fmtKtcValue(currentTotal + player.val)}
+            </span>
+          )}
+        </div>
+        {player.isAdded ? (
+          <div className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center"
+            style={{ background: 'rgba(0,168,68,0.15)', color: 'var(--color-accent-green)' }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+          </div>
+        ) : (
+          <button onClick={() => handleSelect(player)}
+            className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center transition-colors active:opacity-60"
+            style={{ background: 'var(--color-fill)', color: 'var(--color-label-secondary)', fontSize: '20px', lineHeight: 1 }}>
+            +
+          </button>
+        )}
+      </div>
+    );
+  }, [activeRosterId, currentTotal, darkMode, handleSelect, shouldVirtualize]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
@@ -411,140 +660,197 @@ export default function TradeRosterPicker({
         </div>
 
         {/* Results — scrollable */}
-        <div className="flex-1 overflow-y-auto">
-          {/* Player list — always shown */}
-          {POSITION_ORDER.map(pos => {
-            const list = grouped[pos];
-            if (!list?.length) return null;
-            return (
-              <div key={pos}>
-                <div className="sticky top-0 px-4 py-1.5 text-xs font-semibold uppercase tracking-widest"
-                  style={{ background: 'var(--color-bg-secondary)', color: 'var(--color-label-tertiary)', letterSpacing: '0.08em', borderBottom: '1px solid var(--color-separator)', zIndex: 1 }}>
-                  {pos === 'Other' ? 'OTHER' : pos}
+        <div
+          ref={resultsContainerRef}
+          className="flex-1 overflow-y-auto"
+          onScroll={shouldVirtualize ? handleScroll : undefined}
+        >
+          {showSearchGuide ? (
+            <SearchGuide onExample={setSearch} />
+          ) : (
+            <>
+              {shouldVirtualize && stickyHeader
+                ? renderHeaderRow(stickyHeader.label, `sticky:${stickyHeader.id}`, {
+                    position: 'sticky',
+                    top: 0,
+                    zIndex: 2,
+                    transform: `translateY(${stickyHeader.translateY}px)`,
+                    pointerEvents: 'none',
+                  })
+                : null}
+              {shouldVirtualize ? (
+                <div style={{ height: `${virtualTotalHeight}px`, position: 'relative' }}>
+                  {visibleRows.map((row) => (
+                    row.type === 'header'
+                      ? renderHeaderRow(row.label, row.id, {
+                          position: 'absolute',
+                          top: `${row.top}px`,
+                          left: 0,
+                          right: 0,
+                        })
+                      : renderPlayerRow(row.player, row.id, {
+                          position: 'absolute',
+                          top: `${row.top}px`,
+                          left: 0,
+                          right: 0,
+                          height: `${row.height}px`,
+                        })
+                  ))}
                 </div>
-                {list.map(p => {
-                  const teamColor = p.palette
-                    ? (darkMode ? p.palette.darkPrimary : p.palette.primary)
-                    : null;
-                  // Text needs to stay on var(--color-label) since tint is subtle —
-                  // only use luminance to decide border/accent visibility
-                  const isLightColor = teamColor ? hexLuminance(teamColor) > 0.35 : false;
-
+              ) : (
+                POSITION_ORDER.map((pos) => {
+                  const list = grouped[pos];
+                  if (!list?.length) return null;
                   return (
-                    <div key={p.id}
-                      className="flex items-center w-full px-4 py-3 gap-3 relative overflow-hidden transition-colors"
-                      style={{
-                        borderBottom: '1px solid var(--color-separator)',
-                        borderLeft: teamColor ? `3px solid ${teamColor}` : '3px solid transparent',
-                        background: teamColor
-                          ? `${teamColor}${isLightColor ? '18' : '22'}`
-                          : 'transparent',
-                        opacity: p.isAdded ? 0.5 : 1,
-                      }}>
-
-                      {/* Player avatar */}
-                      <img src={`https://sleepercdn.com/content/nfl/players/thumb/${p.id}.jpg`}
-                        alt="" className="w-9 h-9 rounded-full shrink-0 object-cover"
-                        style={{ background: 'var(--color-fill-secondary)' }}
-                        onError={e => { e.target.style.display = 'none'; }} />
-
-                      {/* Name + meta */}
-                      <div className="flex-1 min-w-0 text-left relative">
-                        {/* Team logo watermark — scoped to text area so it never overlaps the value column */}
-                        {p.teamKey && (
-                          <img
-                            src={`https://a.espncdn.com/i/teamlogos/nfl/500/${p.teamKey}.png`}
-                            aria-hidden="true"
-                            className="absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none select-none"
-                            style={{ width: 44, height: 44, objectFit: 'contain', opacity: 0.10 }}
-                            onError={e => { e.target.style.display = 'none'; }}
-                          />
-                        )}
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="text-sm font-semibold truncate" style={{ color: 'var(--color-label)' }}>
-                            {p.name}
-                          </span>
-                          {p.injuryStatus && p.injuryStatus !== 'Active' && (
-                            <span className="shrink-0 px-1.5 py-0.5 rounded"
-                              style={{ background: 'var(--color-fill-secondary)', color: 'var(--color-label-tertiary)', fontSize: '9px', fontWeight: 700 }}>
-                              {p.injuryStatus}
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                          <span className="text-xs" style={{ color: 'var(--color-label-secondary)' }}>
-                            {p.position}{p.team ? ` · ${p.team}` : ''}
-                          </span>
-                          {p.rankInfo && (
-                            <span className="text-xs font-bold tabular-nums"
-                              style={{ color: teamColor ?? 'var(--color-label-tertiary)' }}>
-                              #{p.rankInfo.rank} {p.rankInfo.posLabel}
-                            </span>
-                          )}
-                          {p.avgPPG != null && (
-                            <span className="text-xs tabular-nums" style={{ color: 'var(--color-label-tertiary)' }}>
-                              {p.avgPPG.toFixed(1)} avg
-                            </span>
-                          )}
-                          {p.ownerName && (
-                            <span className="text-xs font-semibold"
-                              style={{ color: p.isOwnPlayer ? 'var(--color-signature)' : 'var(--color-label-quaternary)' }}>
-                              · {p.ownerName}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* KTC value + projected total */}
-                      <div className="flex flex-col items-end shrink-0 gap-0.5">
-                        <span className="text-sm font-bold tabular-nums"
-                          title={p.idpFallback ? 'Estimated from season production (no KTC data)' : undefined}
-                          style={{ color: p.val != null ? 'var(--color-label)' : 'var(--color-label-quaternary)' }}>
-                          {(p.dynastyFallback || p.idpFallback) ? '~' : ''}{fmtKtcValue(p.val)}
-                        </span>
-                        {p.dynastyFallback && (
-                          <span style={{ color: 'var(--color-label-quaternary)', fontSize: '9px', fontWeight: 600 }}>
-                            DYN est.
-                          </span>
-                        )}
-                        {p.idpFallback && (
-                          <span style={{ color: 'var(--color-label-quaternary)', fontSize: '9px', fontWeight: 600 }}>
-                            est.
-                          </span>
-                        )}
-                        {showsAdditiveTotal(p) && (
-                          <span className="text-xs tabular-nums" style={{ color: 'var(--color-accent)' }}>
-                            → {fmtKtcValue(currentTotal + p.val)}
-                          </span>
-                        )}
-                      </div>
-                      {p.isAdded ? (
-                        <div className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center"
-                          style={{ background: 'rgba(0,168,68,0.15)', color: 'var(--color-accent-green)' }}>
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                            <polyline points="20 6 9 17 4 12"/>
-                          </svg>
-                        </div>
-                      ) : (
-                        <button onClick={() => handleSelect(p)}
-                          className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center transition-colors active:opacity-60"
-                          style={{ background: 'var(--color-fill)', color: 'var(--color-label-secondary)', fontSize: '20px', lineHeight: 1 }}>
-                          +
-                        </button>
-                      )}
+                    <div key={pos}>
+                      {renderHeaderRow(pos === 'Other' ? 'OTHER' : pos, `header:${pos}`, {
+                        position: 'sticky',
+                        top: 0,
+                      })}
+                      {list.map((player) => renderPlayerRow(player))}
                     </div>
                   );
-                })}
-              </div>
-            );
-          })}
+                })
+              )}
           {filtered.length === 0 && (
             <div className="py-12 text-sm text-center" style={{ color: 'var(--color-label-tertiary)' }}>
-              {search.trim() ? `No players found for "${search}"` : 'No players found'}
+              {trimmedSearch ? `No players found for "${search}"` : 'No players found'}
             </div>
+          )}
+            </>
           )}
         </div>
       </div>
     </div>
   );
+}
+
+function findRowIndexForOffset(offsets, target) {
+  if (!offsets.length) return 0;
+  let low = 0;
+  let high = offsets.length - 1;
+  let best = 0;
+
+  while (low <= high) {
+    const mid = (low + high) >> 1;
+    if (offsets[mid] <= target) {
+      best = mid;
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
+  }
+
+  return best;
+}
+
+function useVirtualRows(rows, enabled) {
+  const containerRef = useRef(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(0);
+
+  useEffect(() => {
+    if (!enabled) {
+      setScrollTop(0);
+      return undefined;
+    }
+
+    const node = containerRef.current;
+    if (!node) return undefined;
+
+    const updateViewportHeight = () => {
+      setViewportHeight(node.clientHeight || 0);
+    };
+
+    updateViewportHeight();
+
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', updateViewportHeight);
+      return () => window.removeEventListener('resize', updateViewportHeight);
+    }
+
+    const observer = new ResizeObserver(() => {
+      updateViewportHeight();
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [enabled, rows.length]);
+
+  const { offsets, totalHeight } = useMemo(() => {
+    const nextOffsets = [];
+    let offset = 0;
+    for (const row of rows) {
+      nextOffsets.push(offset);
+      offset += row.height;
+    }
+    return { offsets: nextOffsets, totalHeight: offset };
+  }, [rows]);
+
+  const visibleRange = useMemo(() => {
+    if (!enabled || !rows.length) {
+      return { start: 0, end: rows.length };
+    }
+
+    const startTarget = Math.max(0, scrollTop - PICKER_OVERSCAN_PX);
+    const endTarget = scrollTop + viewportHeight + PICKER_OVERSCAN_PX;
+    const start = findRowIndexForOffset(offsets, startTarget);
+    let end = findRowIndexForOffset(offsets, endTarget);
+
+    while (end < rows.length && offsets[end] < endTarget) end += 1;
+
+    return {
+      start,
+      end: Math.min(rows.length, Math.max(end + 1, start + 1)),
+    };
+  }, [enabled, offsets, rows, scrollTop, viewportHeight]);
+
+  const visibleRows = useMemo(() => rows
+    .slice(visibleRange.start, visibleRange.end)
+    .map((row, index) => ({
+      ...row,
+      top: offsets[visibleRange.start + index] ?? 0,
+    })), [offsets, rows, visibleRange.end, visibleRange.start]);
+
+  const stickyHeader = useMemo(() => {
+    if (!enabled || !rows.length) return null;
+
+    let currentHeader = null;
+    let nextHeaderTop = null;
+
+    for (let i = 0; i < rows.length; i += 1) {
+      if (rows[i].type !== 'header') continue;
+      const top = offsets[i];
+      if (top <= scrollTop) {
+        currentHeader = rows[i];
+        continue;
+      }
+      nextHeaderTop = top;
+      break;
+    }
+
+    if (!currentHeader) currentHeader = rows.find((row) => row.type === 'header') ?? null;
+    if (!currentHeader) return null;
+
+    const translateY = nextHeaderTop != null
+      ? Math.min(0, nextHeaderTop - scrollTop - PICKER_HEADER_ROW_HEIGHT)
+      : 0;
+
+    return {
+      id: currentHeader.id,
+      label: currentHeader.label,
+      translateY,
+    };
+  }, [enabled, offsets, rows, scrollTop]);
+
+  const handleScroll = useCallback((event) => {
+    setScrollTop(event.currentTarget.scrollTop);
+  }, []);
+
+  return {
+    containerRef,
+    totalHeight,
+    visibleRows,
+    stickyHeader,
+    handleScroll,
+  };
 }

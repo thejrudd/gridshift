@@ -1,9 +1,10 @@
 // ── TradePickPicker ───────────────────────────────────────────────────────────
 // Modal showing draft picks owned by a specific roster for the Trade Agent.
 
-import { useEffect, useMemo } from 'react';
+import { useMemo } from 'react';
 import { getPicksForRoster, getPickQuality, pickYearDiscount } from '../../utils/tradeEngine';
 import { findKtcDraftPick, getKtcValue, fmtKtcValue } from '../../utils/ktcApi';
+import useBodyScrollLock from '../../hooks/useBodyScrollLock';
 
 const ORDINALS = { 1: '1st', 2: '2nd', 3: '3rd', 4: '4th', 5: '5th' };
 
@@ -11,10 +12,7 @@ export default function TradePickPicker({
   rosterId, rosterPicks, slots, rosters, ktcPlayers, leagueType, pickValueMap, currentSeason,
   excludeKeys, getUserDisplayName, currentTotal, onSelect, onClose,
 }) {
-  useEffect(() => {
-    document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = ''; };
-  }, []);
+  useBodyScrollLock();
 
   const excludeSet = useMemo(() => new Set(excludeKeys ?? []), [excludeKeys]);
 

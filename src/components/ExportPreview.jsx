@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { usePredictions } from '../context/PredictionContext';
 import ShareableImage from './ShareableImage';
+import useBodyScrollLock from '../hooks/useBodyScrollLock';
 import {
   BENTO_LAYOUTS, SECTION_ORDER, RGL_TOTAL_ROWS,
   getCellInfo, matchSectionsToCells, bentoToRGL12,
@@ -43,6 +44,7 @@ function computeDefaultLayout(enabledSections) {
 
 const ExportPreview = ({ teams, onClose }) => {
   const { predictions } = usePredictions();
+  useBodyScrollLock();
   const [userName, setUserName] = useState('');
   const [enabledSections, setEnabledSections] = useState({
     bestWorst: true,
@@ -78,10 +80,8 @@ const ExportPreview = ({ teams, onClose }) => {
       if (e.key === 'Escape') onClose();
     };
     document.addEventListener('keydown', handleEscape);
-    document.body.style.overflow = 'hidden';
     return () => {
       document.removeEventListener('keydown', handleEscape);
-      document.body.style.overflow = '';
     };
   }, [onClose]);
 

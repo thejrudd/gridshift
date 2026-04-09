@@ -1,8 +1,9 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { fetchRoster } from '../../utils/playerApi';
 import { parseSearchQuery, matchesFilter } from '../../utils/parseSearchQuery';
 import { TEAM_COLORS } from '../../data/teamColors';
 import { useTheme } from '../../context/ThemeContext';
+import useBodyScrollLock from '../../hooks/useBodyScrollLock';
 
 const ESPN_TEAM_MAP = { lar: 'la', was: 'wsh' };
 function toTeamKey(espnTeamId) {
@@ -17,6 +18,69 @@ function hexLuminance(hex) {
   const b = parseInt(hex.slice(5, 7), 16) / 255;
   const lin = c => c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
   return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+}
+
+function buildTeamLookup(teams = []) {
+  const map = {};
+  for (const team of teams) {
+    const id = team.id.toLowerCase();
+    map[id] = {
+      division: team.division,
+      conference: team.division?.split(' ')[0] ?? '',
+      teamName: team.name,
+    };
+  }
+  return map;
+}
+
+function buildSearchCorpusKey(teams = []) {
+  return teams.map((team) => team.id.toLowerCase()).sort().join('|');
+}
+
+let compareSearchCorpusCacheKey = '';
+let compareSearchCorpusCache = null;
+let compareSearchCorpusPromise = null;
+
+async function loadCompareSearchCorpus(teams, teamLookup) {
+  const cacheKey = buildSearchCorpusKey(teams);
+  if (!cacheKey) return [];
+
+  if (compareSearchCorpusCacheKey === cacheKey && compareSearchCorpusCache) {
+    return compareSearchCorpusCache;
+  }
+  if (compareSearchCorpusCacheKey === cacheKey && compareSearchCorpusPromise) {
+    return compareSearchCorpusPromise;
+  }
+
+  compareSearchCorpusCacheKey = cacheKey;
+  compareSearchCorpusPromise = Promise.all(
+    teams.map((team) =>
+      fetchRoster(team.id)
+        .then((players) => players.map((player) => {
+          const teamId = team.id.toLowerCase();
+          const teamInfo = teamLookup[teamId] ?? {};
+          return {
+            ...player,
+            teamId,
+            teamName: teamInfo.teamName ?? team.name,
+            division: teamInfo.division ?? '',
+            conference: teamInfo.conference ?? '',
+            searchName: (player.displayName ?? '').toLowerCase(),
+          };
+        }))
+        .catch(() => [])
+    )
+  ).then((allRosters) => {
+    const corpus = allRosters.flat();
+    compareSearchCorpusCache = corpus;
+    compareSearchCorpusPromise = null;
+    return corpus;
+  }).catch((error) => {
+    compareSearchCorpusPromise = null;
+    throw error;
+  });
+
+  return compareSearchCorpusPromise;
 }
 
 // ── Search guide chips ────────────────────────────────────────────────────────
@@ -98,88 +162,80 @@ function SearchGuide({ onExample }) {
  */
 export default function ComparePickerSheet({ teams, excludeId, onSelect, onClose }) {
   const { darkMode } = useTheme();
-  const [query, setQuery]     = useState('');
-  const [results, setResults] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const debounceRef = useRef(null);
+  useBodyScrollLock();
+  const [query, setQuery] = useState('');
+  const [searchCorpus, setSearchCorpus] = useState(() => {
+    const cacheKey = buildSearchCorpusKey(teams);
+    return compareSearchCorpusCacheKey === cacheKey ? (compareSearchCorpusCache ?? []) : null;
+  });
+  const [corpusLoading, setCorpusLoading] = useState(() => {
+    const cacheKey = buildSearchCorpusKey(teams);
+    return Boolean(cacheKey && !(compareSearchCorpusCacheKey === cacheKey && compareSearchCorpusCache));
+  });
+  const deferredQuery = useDeferredValue(query);
+  const teamLookup = useMemo(() => buildTeamLookup(teams), [teams]);
 
-  // teamLookup for div/conference filtering
-  const teamLookupRef = useRef({});
   useEffect(() => {
-    const map = {};
-    for (const team of teams) {
-      const id = team.id.toLowerCase();
-      map[id] = { division: team.division, conference: team.division?.split(' ')[0] ?? '' };
+    let isActive = true;
+    const cacheKey = buildSearchCorpusKey(teams);
+
+    if (!cacheKey) {
+      setSearchCorpus([]);
+      setCorpusLoading(false);
+      return undefined;
     }
-    teamLookupRef.current = map;
-  }, [teams]);
 
-  const runSearch = useCallback(async (q) => {
-    if (q.trim().length < 1) { setResults([]); setLoading(false); return; }
-    setLoading(true);
-    try {
-      const filters = parseSearchQuery(q);
-      const hasFilters = filters.pos.size || filters.team.size ||
-                         filters.div.size || filters.conf.size || filters.name.length;
-      if (!hasFilters) { setResults([]); setLoading(false); return; }
-
-      const allRosters = await Promise.all(
-        teams.map(team =>
-          fetchRoster(team.id)
-            .then(players => players.map(p => ({ ...p, teamId: team.id.toLowerCase(), teamName: team.name })))
-            .catch(() => [])
-        )
-      );
-
-      const lookup = teamLookupRef.current;
-      const found = allRosters
-        .flat()
-        .filter(p => {
-          if (String(p.id) === String(excludeId)) return false;
-          if (filters.name.length > 0) {
-            const name = p.displayName.toLowerCase();
-            if (!filters.name.every(t => name.includes(t))) return false;
-          }
-          if (filters.pos.size > 0) {
-            if (![...filters.pos].some(pos => matchesFilter(p.position, pos))) return false;
-          }
-          const teamInfo = lookup[p.teamId];
-          if (filters.team.size > 0 && !filters.team.has(p.teamId)) return false;
-          if (filters.div.size > 0 && (!teamInfo || !filters.div.has(teamInfo.division))) return false;
-          if (filters.conf.size > 0 && (!teamInfo || !filters.conf.has(teamInfo.conference))) return false;
-          return true;
-        })
-        .slice(0, 30);
-      setResults(found);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('[ComparePickerSheet] search error:', err);
-      setResults([]);
-    } finally {
-      setLoading(false);
+    if (compareSearchCorpusCacheKey === cacheKey && compareSearchCorpusCache) {
+      setSearchCorpus(compareSearchCorpusCache);
+      setCorpusLoading(false);
+      return undefined;
     }
-  }, [teams, excludeId]);
 
-  function handleInput(e) {
-    const q = e.target.value;
-    setQuery(q);
-    clearTimeout(debounceRef.current);
-    if (q.trim().length < 1) { setResults([]); setLoading(false); return; }
-    setLoading(true);
-    debounceRef.current = setTimeout(() => runSearch(q), 350);
-  }
+    setCorpusLoading(true);
+    loadCompareSearchCorpus(teams, teamLookup)
+      .then((corpus) => {
+        if (!isActive) return;
+        setSearchCorpus(corpus);
+        setCorpusLoading(false);
+      })
+      .catch((err) => {
+        if (!isActive) return;
+        // eslint-disable-next-line no-console
+        console.error('[ComparePickerSheet] corpus load error:', err);
+        setSearchCorpus([]);
+        setCorpusLoading(false);
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [teamLookup, teams]);
+
+  const results = useMemo(() => {
+    const trimmedQuery = deferredQuery.trim();
+    if (!trimmedQuery || !searchCorpus?.length) return [];
+
+    const filters = parseSearchQuery(trimmedQuery);
+    const hasFilters = filters.pos.size || filters.team.size ||
+      filters.div.size || filters.conf.size || filters.name.length;
+    if (!hasFilters) return [];
+
+    return searchCorpus.filter((player) => {
+      if (String(player.id) === String(excludeId)) return false;
+      if (filters.name.length > 0 && !filters.name.every((term) => player.searchName.includes(term))) return false;
+      if (filters.pos.size > 0 && ![...filters.pos].some((pos) => matchesFilter(player.position, pos))) return false;
+      if (filters.team.size > 0 && !filters.team.has(player.teamId)) return false;
+      if (filters.div.size > 0 && !filters.div.has(player.division)) return false;
+      if (filters.conf.size > 0 && !filters.conf.has(player.conference)) return false;
+      return true;
+    }).slice(0, 30);
+  }, [deferredQuery, excludeId, searchCorpus]);
+
+  const loading = query.trim().length > 0 && corpusLoading;
 
   function handleExample(text) {
     setQuery(text);
-    clearTimeout(debounceRef.current);
-    runSearch(text);
   }
-
-  // Lock body scroll while modal is open
-  useEffect(() => {
-    document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = ''; };
-  }, []);
 
   return (
     <div
@@ -219,7 +275,7 @@ export default function ComparePickerSheet({ teams, excludeId, onSelect, onClose
             <input
               type="text"
               value={query}
-              onChange={handleInput}
+              onChange={(e) => setQuery(e.target.value)}
               autoFocus
               placeholder="Name, team, position, or natural language…"
               className="w-full pl-9 pr-9 py-2.5 rounded-xl text-sm outline-none"
@@ -272,6 +328,8 @@ export default function ComparePickerSheet({ teams, excludeId, onSelect, onClose
                       aria-hidden="true"
                       className="absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none select-none"
                       style={{ width: 40, height: 40, objectFit: 'contain', opacity: 0.10 }}
+                      loading="lazy"
+                      decoding="async"
                       onError={e => { e.target.style.display = 'none'; }}
                     />
                   )}
@@ -308,6 +366,8 @@ function PlayerThumb({ id, name }) {
       alt=""
       className="w-9 h-9 rounded-full object-cover shrink-0"
       style={{ background: 'var(--color-fill-secondary)' }}
+      loading="lazy"
+      decoding="async"
       onError={() => setErr(true)}
     />
   );

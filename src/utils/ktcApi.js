@@ -8,6 +8,7 @@
 
 const CACHE = {};   // { dynasty: [...], redraft: [...] }
 const PENDING = {}; // In-flight deduplication
+const LOOKUP_CACHE = new WeakMap();
 
 // ── Array extraction ──────────────────────────────────────────────────────────
 
@@ -101,6 +102,42 @@ function normName(name) {
     .trim();
 }
 
+function getKtcLookupTables(ktcPlayers) {
+  if (!Array.isArray(ktcPlayers) || !ktcPlayers.length) {
+    return { byMfl: new Map(), byName: new Map(), byNamePos: new Map() };
+  }
+
+  const cached = LOOKUP_CACHE.get(ktcPlayers);
+  if (cached) return cached;
+
+  const byMfl = new Map();
+  const byName = new Map();
+  const byNamePos = new Map();
+
+  for (const player of ktcPlayers) {
+    if (!player) continue;
+
+    if (player.mflid != null) {
+      const mfl = String(player.mflid);
+      if (!byMfl.has(mfl)) byMfl.set(mfl, player);
+    }
+
+    const name = normName(player.playerName);
+    if (!name) continue;
+    if (!byName.has(name)) byName.set(name, player);
+
+    const pos = player.position?.toUpperCase() ?? '';
+    if (pos) {
+      const namePosKey = `${name}|${pos}`;
+      if (!byNamePos.has(namePosKey)) byNamePos.set(namePosKey, player);
+    }
+  }
+
+  const lookup = { byMfl, byName, byNamePos };
+  LOOKUP_CACHE.set(ktcPlayers, lookup);
+  return lookup;
+}
+
 /**
  * Match an ESPN player object to a KTC player entry.
  *
@@ -116,11 +153,12 @@ function normName(name) {
  */
 export function findKtcPlayer(espnPlayer, ktcPlayers, sleeperPlayer) {
   if (!espnPlayer || !ktcPlayers?.length) return null;
+  const lookup = getKtcLookupTables(ktcPlayers);
 
   // 1. mflid — most reliable, bridges Sleeper ↔ KTC IDs directly
   if (sleeperPlayer?.mflid) {
     const mfl = String(sleeperPlayer.mflid);
-    const byMfl = ktcPlayers.find(k => k.mflid && String(k.mflid) === mfl);
+    const byMfl = lookup.byMfl.get(mfl);
     if (byMfl) return byMfl;
   }
 
@@ -128,13 +166,11 @@ export function findKtcPlayer(espnPlayer, ktcPlayers, sleeperPlayer) {
   const espnPos  = espnPlayer.position?.toUpperCase() ?? '';
 
   // 2. Normalized name + position
-  const byNamePos = ktcPlayers.find(
-    k => normName(k.playerName) === espnName && k.position?.toUpperCase() === espnPos
-  );
+  const byNamePos = lookup.byNamePos.get(`${espnName}|${espnPos}`);
   if (byNamePos) return byNamePos;
 
   // 3. Normalized name only (handles position label differences e.g. FB vs RB)
-  const byName = ktcPlayers.find(k => normName(k.playerName) === espnName) ?? null;
+  const byName = lookup.byName.get(espnName) ?? null;
 
   return byName;
 }
@@ -172,11 +208,12 @@ export function fmtKtcValue(val) {
 export function findKtcPlayerFromSleeper(sleeperId, sleeperPlayers, ktcPlayers) {
   const sp = sleeperPlayers?.[sleeperId];
   if (!sp || !ktcPlayers?.length) return null;
+  const lookup = getKtcLookupTables(ktcPlayers);
 
   // 1. mflid — authoritative bridge
   if (sp.mflid) {
     const mfl = String(sp.mflid);
-    const byMfl = ktcPlayers.find(k => k.mflid && String(k.mflid) === mfl);
+    const byMfl = lookup.byMfl.get(mfl);
     if (byMfl) return byMfl;
   }
 
@@ -184,13 +221,11 @@ export function findKtcPlayerFromSleeper(sleeperId, sleeperPlayers, ktcPlayers) 
   const name = normName(sp.full_name ?? `${sp.first_name ?? ''} ${sp.last_name ?? ''}`);
   const pos  = sp.position?.toUpperCase() ?? '';
 
-  const byNamePos = ktcPlayers.find(
-    k => normName(k.playerName) === name && k.position?.toUpperCase() === pos
-  );
+  const byNamePos = lookup.byNamePos.get(`${name}|${pos}`);
   if (byNamePos) return byNamePos;
 
   // 3. Name only fallback
-  return ktcPlayers.find(k => normName(k.playerName) === name) ?? null;
+  return lookup.byName.get(name) ?? null;
 }
 
 // ── League-specific value adjustment ─────────────────────────────────────────

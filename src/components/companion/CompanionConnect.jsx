@@ -1,13 +1,11 @@
 import { useState } from 'react';
 import { useSleeper } from '../../context/SleeperContext';
 
-const SEASONS = ['2025', '2024', '2023'];
-
 export default function CompanionConnect() {
   const {
     connect, selectLeague, disconnect,
-    sleeperUser, leagues, selectedLeagueId,
-    season, changeSeason,
+    sleeperUser, leagues,
+    season, changeSeason, availableSeasons,
     connectLoading, connectError, setConnectError,
     isConnected, hasLeague,
   } = useSleeper();
@@ -46,32 +44,10 @@ export default function CompanionConnect() {
           CONNECT SLEEPER
         </h2>
         <p className="text-sm mb-6 text-center max-w-xs" style={{ color: 'var(--color-label-secondary)' }}>
-          Enter your Sleeper username to import your fantasy league.
+          Enter your Sleeper username to find the league years and leagues available on your account.
         </p>
 
         <form onSubmit={handleConnect} className="w-full max-w-sm flex flex-col gap-3">
-          <div className="flex gap-2">
-            <label className="text-xs font-semibold uppercase tracking-widest mb-1 block" style={{ color: 'var(--color-label-tertiary)' }}>
-              Season
-            </label>
-            <div className="flex gap-1.5 ml-auto">
-              {SEASONS.map(s => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => changeSeason(s)}
-                  className="px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors"
-                  style={{
-                    background: season === s ? 'var(--color-signature)' : 'var(--color-fill)',
-                    color: season === s ? 'var(--color-signature-fg)' : 'var(--color-label-secondary)',
-                  }}
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
-          </div>
-
           <input
             type="text"
             value={username}
@@ -103,26 +79,25 @@ export default function CompanionConnect() {
               color: '#fff',
             }}
           >
-            {connectLoading ? 'Connecting…' : 'Connect'}
+            {connectLoading ? 'Looking Up Leagues…' : 'Find My Leagues'}
           </button>
         </form>
       </div>
     );
   }
 
-  // ── Step 2: connected, pick a league ─────────────────────────────────────
+  // ── Step 2: connected, pick a season and league ──────────────────────────
   if (!hasLeague) {
     return (
       <div className="flex flex-col py-8 px-4 max-w-lg mx-auto">
-        {/* User header */}
         <div className="flex items-center gap-3 mb-6">
           <img
             src={sleeperUser.avatar
               ? `https://sleepercdn.com/avatars/thumbs/${sleeperUser.avatar}`
-              : `https://sleepercdn.com/images/v2/icons/player_default.webp`}
+              : 'https://sleepercdn.com/images/v2/icons/player_default.webp'}
             alt={sleeperUser.display_name}
             className="w-10 h-10 rounded-full"
-            onError={e => { e.target.src = `https://sleepercdn.com/images/v2/icons/player_default.webp`; }}
+            onError={e => { e.target.src = 'https://sleepercdn.com/images/v2/icons/player_default.webp'; }}
           />
           <div>
             <div className="font-semibold text-sm" style={{ color: 'var(--color-label)' }}>
@@ -141,85 +116,102 @@ export default function CompanionConnect() {
           </button>
         </div>
 
-        {/* Season switcher */}
-        <div className="flex items-center gap-2 mb-4">
-          <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>
-            Season
-          </span>
-          <div className="flex gap-1.5 ml-auto">
-            {SEASONS.map(s => (
-              <button
-                key={s}
-                type="button"
-                onClick={() => changeSeason(s)}
-                className="px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors"
-                style={{
-                  background: season === s ? 'var(--color-signature)' : 'var(--color-fill)',
-                  color: season === s ? '#0C0F14' : 'var(--color-label-secondary)',
-                }}
-              >
-                {s}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <h3
-          className="font-display font-bold mb-3"
-          style={{ fontSize: '13px', letterSpacing: '0.1em', color: 'var(--color-label-tertiary)' }}
-        >
-          SELECT A LEAGUE
-        </h3>
-
-        {connectError && (
-          <p className="text-xs mb-3" style={{ color: 'var(--color-accent-red)' }}>{connectError}</p>
-        )}
-
-        {leagues.length === 0 ? (
-          <p className="text-sm" style={{ color: 'var(--color-label-secondary)' }}>
-            No leagues found for the {season} season.
-          </p>
-        ) : (
-          <div className="flex flex-col gap-2">
-            {leagues.map(l => (
-              <button
-                key={l.league_id}
-                onClick={() => handleSelectLeague(l.league_id)}
-                disabled={connectLoading}
-                className="flex items-center gap-3 px-4 py-3 rounded-xl text-left transition-opacity active:opacity-60 disabled:opacity-40"
-                style={{ background: 'var(--color-fill-secondary)' }}
-              >
-                {l.avatar ? (
-                  <img
-                    src={`https://sleepercdn.com/avatars/thumbs/${l.avatar}`}
-                    alt={l.name}
-                    className="w-9 h-9 rounded-lg shrink-0"
-                    onError={e => { e.target.style.display = 'none'; }}
-                  />
-                ) : (
-                  <div
-                    className="w-9 h-9 rounded-lg shrink-0 flex items-center justify-center"
-                    style={{ background: 'var(--color-fill)' }}
-                  >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--color-label-tertiary)' }}>
-                      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-                    </svg>
-                  </div>
-                )}
-                <div className="flex-1 min-w-0">
-                  <div className="font-semibold text-sm truncate" style={{ color: 'var(--color-label)' }}>
-                    {l.name}
-                  </div>
-                  <div className="text-xs mt-0.5" style={{ color: 'var(--color-label-tertiary)' }}>
-                    {l.total_rosters} teams · {l.settings?.type === 2 ? 'Dynasty' : l.settings?.type === 1 ? 'Keeper' : 'Redraft'}
-                    {l.scoring_settings?.rec === 1 ? ' · PPR' : l.scoring_settings?.rec === 0.5 ? ' · Half PPR' : ' · Standard'}
-                  </div>
+        {availableSeasons.length > 0 ? (
+          <>
+            <div className="flex items-start gap-3 mb-4">
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-widest mb-1" style={{ color: 'var(--color-label-tertiary)' }}>
+                  Season
                 </div>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--color-label-quaternary)', shrink: 0 }}>
-                  <polyline points="9 18 15 12 9 6"/>
-                </svg>
-              </button>
-            ))}
+                <p className="text-xs max-w-xs" style={{ color: 'var(--color-label-secondary)' }}>
+                  Choose from the Sleeper league years available for this account.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-1.5 ml-auto justify-end">
+                {availableSeasons.map((seasonOption) => (
+                  <button
+                    key={seasonOption}
+                    type="button"
+                    onClick={() => changeSeason(seasonOption)}
+                    className="px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors"
+                    style={{
+                      background: season === seasonOption ? 'var(--color-signature)' : 'var(--color-fill)',
+                      color: season === seasonOption ? 'var(--color-signature-fg)' : 'var(--color-label-secondary)',
+                    }}
+                  >
+                    {seasonOption}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <h3
+              className="font-display font-bold mb-3"
+              style={{ fontSize: '13px', letterSpacing: '0.1em', color: 'var(--color-label-tertiary)' }}
+            >
+              SELECT A LEAGUE
+            </h3>
+
+            {connectError && (
+              <p className="text-xs mb-3" style={{ color: 'var(--color-accent-red)' }}>{connectError}</p>
+            )}
+
+            {leagues.length === 0 ? (
+              <p className="text-sm" style={{ color: 'var(--color-label-secondary)' }}>
+                No leagues found for {season} on this account.
+              </p>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {leagues.map((leagueOption) => (
+                  <button
+                    key={leagueOption.league_id}
+                    onClick={() => handleSelectLeague(leagueOption.league_id)}
+                    disabled={connectLoading}
+                    className="flex items-center gap-3 px-4 py-3 rounded-xl text-left transition-opacity active:opacity-60 disabled:opacity-40"
+                    style={{ background: 'var(--color-fill-secondary)' }}
+                  >
+                    {leagueOption.avatar ? (
+                      <img
+                        src={`https://sleepercdn.com/avatars/thumbs/${leagueOption.avatar}`}
+                        alt={leagueOption.name}
+                        className="w-9 h-9 rounded-lg shrink-0"
+                        onError={e => { e.target.style.display = 'none'; }}
+                      />
+                    ) : (
+                      <div
+                        className="w-9 h-9 rounded-lg shrink-0 flex items-center justify-center"
+                        style={{ background: 'var(--color-fill)' }}
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--color-label-tertiary)' }}>
+                          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                        </svg>
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold text-sm truncate" style={{ color: 'var(--color-label)' }}>
+                        {leagueOption.name}
+                      </div>
+                      <div className="text-xs mt-0.5" style={{ color: 'var(--color-label-tertiary)' }}>
+                        {leagueOption.total_rosters} teams · {leagueOption.settings?.type === 2 ? 'Dynasty' : leagueOption.settings?.type === 1 ? 'Keeper' : 'Redraft'}
+                        {leagueOption.scoring_settings?.rec === 1 ? ' · PPR' : leagueOption.scoring_settings?.rec === 0.5 ? ' · Half PPR' : ' · Standard'}
+                      </div>
+                    </div>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--color-label-quaternary)', shrink: 0 }}>
+                      <polyline points="9 18 15 12 9 6"/>
+                    </svg>
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="rounded-2xl px-4 py-5" style={{ background: 'var(--color-fill-secondary)' }}>
+            <h3 className="font-display font-bold mb-2" style={{ fontSize: '13px', letterSpacing: '0.1em', color: 'var(--color-label-tertiary)' }}>
+              NO LEAGUES FOUND
+            </h3>
+            <p className="text-sm" style={{ color: 'var(--color-label-secondary)' }}>
+              This Sleeper account does not currently return any NFL leagues from the API for the supported league years.
+            </p>
           </div>
         )}
       </div>
