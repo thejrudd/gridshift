@@ -1,4 +1,6 @@
 import { forwardRef } from 'react';
+import 'react-grid-layout/css/styles.css';
+import 'react-resizable/css/styles.css';
 import { ReactGridLayout } from 'react-grid-layout/legacy';
 import { getBestAndWorstTeams, getToughestDivision, getBoldPredictions, getConferenceChampions, getDivisionWinners, getWorstDivision, getStrengthOfScheduleExtremes, getClosestDivisionRace, getWildCardTeams, getParityIndex } from '../utils/exportStats';
 import {

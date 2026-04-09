@@ -11,7 +11,7 @@ import {
   getCareerHighlights,
   getStatRows,
 } from '../utils/playerMetrics';
-import { useSleeper } from '../context/SleeperContext';
+import { useSleeperLeague, useSleeperStats } from '../context/SleeperContext';
 import { calcPointsFromTotals } from '../utils/scoringEngine';
 import {
   buildFantasyRankByKey,
@@ -19,6 +19,7 @@ import {
 } from '../utils/fantasyStatContributions';
 import { getTeamPalette } from '../data/teamColors';
 import { useTheme } from '../context/ThemeContext';
+import useBodyScrollLock from '../hooks/useBodyScrollLock';
 
 function hexLuminance(hex) {
   const r = parseInt(hex.slice(1, 3), 16) / 255;
@@ -81,17 +82,15 @@ export default function PlayerStatsModal({
   onOpenFullProfile,
 }) {
   const { darkMode } = useTheme();
-  const { scoringSettings, players: sleeperPlayers, seasonStats: sleeperSeasonStats } = useSleeper();
+  const { scoringSettings } = useSleeperLeague();
+  const { players: sleeperPlayers, seasonStats: sleeperSeasonStats } = useSleeperStats();
   const [seasonStats, setSeasonStats] = useState(null);
   const [careerStats, setCareerStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [headshotError, setHeadshotError] = useState(false);
 
-  useEffect(() => {
-    document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = ''; };
-  }, []);
+  useBodyScrollLock();
 
   useEffect(() => {
     let cancelled = false;

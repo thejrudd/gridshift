@@ -61,6 +61,16 @@ The app will be available on port 80 by default. To use a different port:
 PORT=8080 docker compose up -d --build
 ```
 
+Direct client routes are already configured for SPA-safe refreshes in both places that matter for `v6.2` routing:
+- `nginx.conf` uses `try_files ... /index.html` for direct browser loads
+- `vite-plugin-pwa` uses `navigateFallback: '/index.html'` for navigations inside the installed PWA
+
+To validate that setup after a production build:
+
+```bash
+npm run validate:routing
+```
+
 ## Tech Stack
 
 | Layer | Technology |
@@ -75,16 +85,19 @@ PORT=8080 docker compose up -d --build
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) |
 
-## What's New in v6.1.6
+## What's New in v6.2.0
 
-- **Desktop sidebar shell fix** - The desktop navigation rail is fixed in place again instead of drifting with page scroll.
-- **Main panel offset restored** - Desktop content now respects the sidebar's `240px` rail width so the shell stays aligned after the sidebar positioning fix.
+- **Real app routing shipped** - Predictions, Statistics, Companion, and Trade now use canonical URL-backed navigation with refresh-safe deep links across major views.
+- **Companion filter URLs expanded** - Rankings, Matchup, Waiver, League, and Heatmap now preserve their major filter and drilldown state in the URL so links and refreshes stay context-aware.
+- **Trade and Companion performance pass** - Heavy Trade and Companion views were split, cached, narrowed, and deferred so tab switches and analysis flows feel materially faster.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Roadmap
 
-- **v6.2 - URL Routing, Navigation, and Shareable Links Foundation** - Real routes, reload-safe navigation, and deep-link groundwork across the app.
+- **v6.3 - Trade + Companion Performance Patch** - Continued responsiveness, result-surface polish, and heavy-work deferral after the routing foundation shipped.
+- **v6.4 - Statistics / Fantasy Drilldown Unification** - One canonical player-analysis destination with mode-aware drilldowns across Statistics and Companion.
+- **v6.5 - League-Scoped Shareable Links** - Share URLs that resolve against the intended Sleeper league and validate league ownership before opening.
 - **v7.0 — Draft Coach** — Rookie scouting hub with draft slot, college production, combine metrics, consensus ranking, and dynasty rookie ADP.
 - **Week-by-Week View** *(blocked on 2026 schedule data)* — Browse the full schedule by week with predictions reflected
 

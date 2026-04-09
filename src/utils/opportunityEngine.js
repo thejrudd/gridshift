@@ -333,7 +333,22 @@ function assignStarters(rosterPlayers, starterSlots) {
     benchByPos[player.normPos].push(player);
   }
 
-  return { assignments, startersByPos, benchByPos };
+  const positionPlayersByPos = {};
+  const benchIdSetByPos = {};
+  const positions = new Set([
+    ...Object.keys(startersByPos),
+    ...Object.keys(benchByPos),
+  ]);
+
+  for (const position of positions) {
+    positionPlayersByPos[position] = [
+      ...(startersByPos[position] ?? []),
+      ...(benchByPos[position] ?? []),
+    ].sort(comparePlayers);
+    benchIdSetByPos[position] = new Set((benchByPos[position] ?? []).map((player) => player.id));
+  }
+
+  return { assignments, startersByPos, benchByPos, positionPlayersByPos, benchIdSetByPos };
 }
 
 function buildLeagueBenchmarks(rosterAnalyses, positions) {
@@ -522,10 +537,20 @@ function getBestBackup(benchPlayers, playableThreshold) {
 }
 
 function getPositionPlayers(rosterAnalysis, position) {
+  if (rosterAnalysis?.positionPlayersByPos?.[position]) {
+    return rosterAnalysis.positionPlayersByPos[position];
+  }
   return [
-    ...(rosterAnalysis.startersByPos[position] ?? []),
-    ...(rosterAnalysis.benchByPos[position] ?? []),
+    ...(rosterAnalysis?.startersByPos?.[position] ?? []),
+    ...(rosterAnalysis?.benchByPos?.[position] ?? []),
   ].sort(comparePlayers);
+}
+
+function isBenchPlayer(rosterAnalysis, position, playerId) {
+  if (!rosterAnalysis || !position || !playerId) return false;
+  const benchIdSet = rosterAnalysis.benchIdSetByPos?.[position];
+  if (benchIdSet) return benchIdSet.has(playerId);
+  return (rosterAnalysis.benchByPos?.[position] ?? []).some((candidate) => candidate.id === playerId);
 }
 
 function getPositionSurplus(rosterAnalysis, position, benchmark) {
@@ -657,6 +682,18 @@ function getRosterPickAssets(rosterId, rosterPicks, slots, rosters, pickValueMap
     });
 }
 
+function buildRosterPickAssetsById(rosterIds, rosterPicks, slots, rosters, pickValueMap, currentSeason) {
+  const pickAssetsByRosterId = new Map();
+  const ids = [...new Set((rosterIds ?? []).filter(Boolean))];
+  for (const rosterId of ids) {
+    pickAssetsByRosterId.set(
+      rosterId,
+      getRosterPickAssets(rosterId, rosterPicks, slots, rosters, pickValueMap, currentSeason),
+    );
+  }
+  return pickAssetsByRosterId;
+}
+
 function pickSpareDraftCapital(pickAssets, upgradeDelta) {
   if (!pickAssets?.length) return null;
   const sorted = [...pickAssets].sort((a, b) => {
@@ -674,11 +711,12 @@ function pickSpareDraftCapital(pickAssets, upgradeDelta) {
 function pickOutgoingPlayerChip(myRosterAnalysis, myCards, partnerCards, myNeedPosition, targetPlayer) {
   if (!myRosterAnalysis || !partnerCards?.length) return null;
 
+  const myCardsByPos = Object.fromEntries((myCards ?? []).map((card) => [card.position, card]));
   const scored = [];
   for (const partnerNeed of partnerCards) {
     const needPos = partnerNeed.position;
     if (needPos === myNeedPosition) continue;
-    const myCardAtNeed = (myCards ?? []).find((card) => card.position === needPos) ?? null;
+    const myCardAtNeed = myCardsByPos[needPos] ?? null;
     const mySeverityAtNeed = myCardAtNeed?.severity ?? 0;
     const benchPlayers = [...(myRosterAnalysis.benchByPos[needPos] ?? [])]
       .filter((player) => (player.ppg > 0 || player.seasonPts > 0))
@@ -707,11 +745,12 @@ function pickOutgoingPlayerChip(myRosterAnalysis, myCards, partnerCards, myNeedP
 function pickOutgoingPlayerChoices(myRosterAnalysis, myCards, partnerCards, myNeedPosition, targetPlayer, playerValueMap = null, limit = 3) {
   if (!myRosterAnalysis || !partnerCards?.length) return [];
 
+  const myCardsByPos = Object.fromEntries((myCards ?? []).map((card) => [card.position, card]));
   const scored = [];
   for (const partnerNeed of partnerCards) {
     const needPos = partnerNeed.position;
     if (needPos === myNeedPosition) continue;
-    const myCardAtNeed = (myCards ?? []).find((card) => card.position === needPos) ?? null;
+    const myCardAtNeed = myCardsByPos[needPos] ?? null;
     const mySeverityAtNeed = myCardAtNeed?.severity ?? 0;
     const benchPlayers = [...(myRosterAnalysis.benchByPos[needPos] ?? [])]
       .filter((player) => (player.ppg > 0 || player.seasonPts > 0))
@@ -1045,6 +1084,49 @@ function buildTradeProposal({
   };
 }
 
+function buildTradeProposalShell({
+  myNeedCard,
+  partnerNeedCard,
+  incomingAsset,
+  incomingAssets = null,
+  outgoingAssets,
+  partnerRosterId,
+  plausibilityScore,
+  paymentType,
+}) {
+  const resolvedIncomingAssets = incomingAssets?.length ? incomingAssets : (incomingAsset ? [incomingAsset] : []);
+  const primaryIncomingAsset = incomingAsset ?? resolvedIncomingAssets.find((asset) => asset.type === 'player') ?? resolvedIncomingAssets[0] ?? null;
+  const upgradeDelta = Math.max(0, (primaryIncomingAsset?.ppg ?? 0) - (myNeedCard?.weakStarter?.ppg ?? 0));
+  const incomingValue = Math.round(sumAssetValues(resolvedIncomingAssets));
+  const outgoingValue = Math.round(sumAssetValues(outgoingAssets));
+  return {
+    id: [
+      partnerRosterId,
+      myNeedCard?.position,
+      ...resolvedIncomingAssets.map((asset) => asset.id),
+      ...outgoingAssets.map((asset) => asset.id),
+    ].filter(Boolean).join(':'),
+    targetRosterId: partnerRosterId,
+    incomingAssets: resolvedIncomingAssets,
+    outgoingAssets,
+    myNeedPosition: myNeedCard?.position ?? null,
+    theirNeedPosition: partnerNeedCard?.position ?? null,
+    myCurrentStarter: myNeedCard?.weakStarter ?? null,
+    theirCurrentNeedStarter: partnerNeedCard?.weakStarter ?? null,
+    upgradeDelta: toFixedNumber(upgradeDelta, 1),
+    plausibilityScore: Math.round(plausibilityScore),
+    incomingValue,
+    outgoingValue,
+    valueGap: outgoingValue - incomingValue,
+    context: null,
+    myReasonType: 'pending',
+    theirReasonType: 'pending',
+    whyItHelpsMe: 'pending',
+    whyItHelpsThem: 'pending',
+    paymentType,
+  };
+}
+
 function getPaymentTypeForAssets(assets = []) {
   const playerCount = assets.filter((asset) => asset.type === 'player').length;
   const pickCount = assets.filter((asset) => asset.type === 'pick').length;
@@ -1270,6 +1352,55 @@ function buildSurplusTradeProposal({
   };
 }
 
+function buildSurplusTradeProposalShell({
+  myNeedCard,
+  partnerNeedCard,
+  outgoingAssets,
+  incomingAssets,
+  partnerRosterId,
+  plausibilityScore,
+}) {
+  const incomingPlayer = incomingAssets.find((asset) => asset.type === 'player') ?? null;
+  const incomingValue = Math.round(sumAssetValues(incomingAssets));
+  const outgoingValue = Math.round(sumAssetValues(outgoingAssets));
+  const upgradeDelta = myNeedCard?.weakStarter && incomingPlayer
+    ? Math.max(0, (incomingPlayer.ppg ?? 0) - (myNeedCard.weakStarter.ppg ?? 0))
+    : 0;
+
+  return {
+    id: [
+      partnerRosterId,
+      'surplus',
+      ...outgoingAssets.map((asset) => asset.id),
+      ...incomingAssets.map((asset) => asset.id),
+    ].filter(Boolean).join(':'),
+    targetRosterId: partnerRosterId,
+    incomingAssets,
+    outgoingAssets,
+    myNeedPosition: myNeedCard?.position ?? null,
+    theirNeedPosition: partnerNeedCard?.position ?? null,
+    myCurrentStarter: myNeedCard?.weakStarter ?? null,
+    theirCurrentNeedStarter: partnerNeedCard?.weakStarter ?? null,
+    upgradeDelta: toFixedNumber(upgradeDelta, 1),
+    plausibilityScore: Math.round(plausibilityScore),
+    incomingValue,
+    outgoingValue,
+    valueGap: outgoingValue - incomingValue,
+    context: null,
+    myReasonType: 'pending',
+    theirReasonType: 'pending',
+    whyItHelpsMe: 'pending',
+    whyItHelpsThem: 'pending',
+    paymentType: outgoingAssets.length > 1
+      ? getPaymentTypeForAssets(outgoingAssets)
+      : getPaymentTypeForAssets(incomingAssets),
+  };
+}
+
+function finalizeDeferredProposal(proposal) {
+  return proposal?.deferHydration ? proposal.deferHydration() : proposal;
+}
+
 function findMySurplusTradeCandidates({
   myRosterAnalysis,
   myCards,
@@ -1353,7 +1484,7 @@ function pickIncomingNeedPlayerChoices({
     const players = getPositionPlayers(partnerAnalysis, position).slice(0, 5);
 
     for (const player of players) {
-      const isBenchTarget = (partnerAnalysis.benchByPos[position] ?? []).some((candidate) => candidate.id === player.id);
+      const isBenchTarget = isBenchPlayer(partnerAnalysis, position, player.id);
       const depthAfter = getPositionDepthCount(partnerAnalysis, position, benchmark, player.id);
       const canMove = isBenchTarget || partnerSurplus.hasBenchSurplus || depthAfter > 0;
       if (!canMove) continue;
@@ -1527,17 +1658,19 @@ function buildSurplusTradeProposals({
   currentSeason,
   pickValueMap,
   playerValueMap,
+  pickAssetsByRosterId = null,
 }) {
   if (!myCards?.length || !partnerCards?.length || !myRosterAnalysis || !partnerAnalysis) return [];
 
-  const partnerPickAssets = getRosterPickAssets(
-    partnerAnalysis.roster_id,
-    rosterPicks,
-    slots,
-    rosters,
-    pickValueMap,
-    currentSeason,
-  );
+  const partnerPickAssets = pickAssetsByRosterId?.get(partnerAnalysis.roster_id)
+    ?? getRosterPickAssets(
+      partnerAnalysis.roster_id,
+      rosterPicks,
+      slots,
+      rosters,
+      pickValueMap,
+      currentSeason,
+    );
 
   const surplusCandidates = findMySurplusTradeCandidates({
     myRosterAnalysis,
@@ -1605,18 +1738,7 @@ function buildSurplusTradeProposals({
         });
         if (!evaluation.isViable) continue;
 
-        const context = buildSurplusProposalContext({
-          myNeedCard: null,
-          partnerNeedCard,
-          outgoingAssets,
-          incomingAssets: pickCombo,
-          myRosterAnalysis,
-          partnerAnalysis,
-          benchmarkByPos,
-          playerValueMap,
-        });
-
-        proposals.push(buildSurplusTradeProposal({
+        const proposalShell = buildSurplusTradeProposalShell({
           myNeedCard: null,
           partnerNeedCard,
           outgoingAssets,
@@ -1628,8 +1750,28 @@ function buildSurplusTradeProposals({
             + Math.min(10, pickCombo.length * 4)
             - (evaluation.postureDistance * 58)
             + Math.min(18, outgoingCombo.score / 14),
-          context,
-        }));
+        });
+        proposals.push({
+          ...proposalShell,
+          deferHydration: () => buildSurplusTradeProposal({
+            myNeedCard: null,
+            partnerNeedCard,
+            outgoingAssets,
+            incomingAssets: pickCombo,
+            partnerRosterId: partnerAnalysis.roster_id,
+            plausibilityScore: proposalShell.plausibilityScore,
+            context: buildSurplusProposalContext({
+              myNeedCard: null,
+              partnerNeedCard,
+              outgoingAssets,
+              incomingAssets: pickCombo,
+              myRosterAnalysis,
+              partnerAnalysis,
+              benchmarkByPos,
+              playerValueMap,
+            }),
+          }),
+        });
       }
 
       for (const incomingPlayerPackage of incomingPlayerPackages) {
@@ -1653,18 +1795,7 @@ function buildSurplusTradeProposals({
           });
           if (!evaluation.isViable) continue;
 
-          const context = buildSurplusProposalContext({
-            myNeedCard: incomingPlayerPackage.primaryNeedCard,
-            partnerNeedCard,
-            outgoingAssets,
-            incomingAssets,
-            myRosterAnalysis,
-            partnerAnalysis,
-            benchmarkByPos,
-            playerValueMap,
-          });
-
-          proposals.push(buildSurplusTradeProposal({
+          const proposalShell = buildSurplusTradeProposalShell({
             myNeedCard: incomingPlayerPackage.primaryNeedCard,
             partnerNeedCard,
             outgoingAssets,
@@ -1680,8 +1811,28 @@ function buildSurplusTradeProposals({
               - (evaluation.postureDistance * 62)
               + Math.min(18, outgoingCombo.score / 14)
               - Math.max(0, incomingAssets.length - 2) * 1.25,
-            context,
-          }));
+          });
+          proposals.push({
+            ...proposalShell,
+            deferHydration: () => buildSurplusTradeProposal({
+              myNeedCard: incomingPlayerPackage.primaryNeedCard,
+              partnerNeedCard,
+              outgoingAssets,
+              incomingAssets,
+              partnerRosterId: partnerAnalysis.roster_id,
+              plausibilityScore: proposalShell.plausibilityScore,
+              context: buildSurplusProposalContext({
+                myNeedCard: incomingPlayerPackage.primaryNeedCard,
+                partnerNeedCard,
+                outgoingAssets,
+                incomingAssets,
+                myRosterAnalysis,
+                partnerAnalysis,
+                benchmarkByPos,
+                playerValueMap,
+              }),
+            }),
+          });
         }
       }
     }
@@ -1694,7 +1845,7 @@ function buildSurplusTradeProposals({
     3,
     3,
     3,
-  );
+  ).map(finalizeDeferredProposal);
 }
 
 function buildTradeProposals({
@@ -1709,25 +1860,28 @@ function buildTradeProposals({
   currentSeason,
   pickValueMap,
   playerValueMap,
+  pickAssetsByRosterId = null,
 }) {
   if (!myCards?.length || !partnerAnalysis || !myRosterAnalysis) return [];
 
-  const myPickAssets = getRosterPickAssets(
-    myRosterAnalysis.roster_id,
-    rosterPicks,
-    slots,
-    rosters,
-    pickValueMap,
-    currentSeason,
-  );
-  const partnerPickAssets = getRosterPickAssets(
-    partnerAnalysis.roster_id,
-    rosterPicks,
-    slots,
-    rosters,
-    pickValueMap,
-    currentSeason,
-  );
+  const myPickAssets = pickAssetsByRosterId?.get(myRosterAnalysis.roster_id)
+    ?? getRosterPickAssets(
+      myRosterAnalysis.roster_id,
+      rosterPicks,
+      slots,
+      rosters,
+      pickValueMap,
+      currentSeason,
+    );
+  const partnerPickAssets = pickAssetsByRosterId?.get(partnerAnalysis.roster_id)
+    ?? getRosterPickAssets(
+      partnerAnalysis.roster_id,
+      rosterPicks,
+      slots,
+      rosters,
+      pickValueMap,
+      currentSeason,
+    );
 
   const proposals = [];
 
@@ -1743,7 +1897,7 @@ function buildTradeProposals({
       .map((player) => {
         const incomingAsset = buildPlayerAsset(player, partnerAnalysis.roster_id, playerValueMap);
         const upgradeDelta = Math.max(0, (player.ppg ?? 0) - (myNeedCard.weakStarter?.ppg ?? 0));
-        const isBenchTarget = (partnerAnalysis.benchByPos[myNeedCard.position] ?? []).some((candidate) => candidate.id === player.id);
+        const isBenchTarget = isBenchPlayer(partnerAnalysis, myNeedCard.position, player.id);
         const tradableSurplus = isBenchTarget || partnerSurplus.hasBenchSurplus;
         const outgoingPlayerChoices = pickOutgoingPlayerChoices(
           myRosterAnalysis,
@@ -1815,14 +1969,7 @@ function buildTradeProposals({
               const packageValueBonus = Math.min(24, sumAssetValues(packageCandidate.outgoingAssets) / 150);
               const extraIncomingPlayers = Math.max(0, incomingPlayerPackage.assets.length - 1);
               const incomingPlayerPackagePenalty = extraIncomingPlayers * (incomingCompAssets.length ? 2.5 : 5.5);
-              packages.push(buildTradeProposal({
-                myNeedCard,
-                partnerNeedCard: packageCandidate.partnerNeedCard,
-                incomingAsset: primaryIncomingAsset,
-                incomingAssets: allIncomingAssets,
-                outgoingAssets: packageCandidate.outgoingAssets,
-                partnerRosterId: partnerAnalysis.roster_id,
-              plausibilityScore: (primaryUpgradeDelta * 13.5)
+              const plausibilityScore = (primaryUpgradeDelta * 13.5)
                 + (myNeedCard.severity * 0.9)
                 + ((packageCandidate.partnerNeedCard?.severity ?? 0) * 1.1)
                 + (tradableSurplus ? 16 : -14)
@@ -1834,21 +1981,42 @@ function buildTradeProposals({
                 - (evaluation.postureDistance * 68)
                 - incomingPlayerPackagePenalty
                 - Math.max(0, packageCandidate.outgoingAssets.length - 2) * 1.5
-                - Math.max(0, allIncomingAssets.length - 2) * 1.25,
-                paymentType: packageCandidate.paymentType,
-                partnerHasSurplus: tradableSurplus,
-              context: buildProposalContext({
+                - Math.max(0, allIncomingAssets.length - 2) * 1.25;
+              const proposalShell = buildTradeProposalShell({
                 myNeedCard,
                 partnerNeedCard: packageCandidate.partnerNeedCard,
                 incomingAsset: primaryIncomingAsset,
                 incomingAssets: allIncomingAssets,
                 outgoingAssets: packageCandidate.outgoingAssets,
-                myRosterAnalysis,
-                partnerAnalysis,
-                benchmarkByPos,
-                playerValueMap,
-              }),
-              }));
+                partnerRosterId: partnerAnalysis.roster_id,
+                plausibilityScore,
+                paymentType: packageCandidate.paymentType,
+              });
+              packages.push({
+                ...proposalShell,
+                deferHydration: () => buildTradeProposal({
+                  myNeedCard,
+                  partnerNeedCard: packageCandidate.partnerNeedCard,
+                  incomingAsset: primaryIncomingAsset,
+                  incomingAssets: allIncomingAssets,
+                  outgoingAssets: packageCandidate.outgoingAssets,
+                  partnerRosterId: partnerAnalysis.roster_id,
+                  plausibilityScore: proposalShell.plausibilityScore,
+                  paymentType: packageCandidate.paymentType,
+                  partnerHasSurplus: tradableSurplus,
+                  context: buildProposalContext({
+                    myNeedCard,
+                    partnerNeedCard: packageCandidate.partnerNeedCard,
+                    incomingAsset: primaryIncomingAsset,
+                    incomingAssets: allIncomingAssets,
+                    outgoingAssets: packageCandidate.outgoingAssets,
+                    myRosterAnalysis,
+                    partnerAnalysis,
+                    benchmarkByPos,
+                    playerValueMap,
+                  }),
+                }),
+              });
             }
           }
         }
@@ -1870,7 +2038,7 @@ function buildTradeProposals({
     2,
     2,
     4,
-  );
+  ).map(finalizeDeferredProposal);
 }
 
 function buildOpportunityCards(
@@ -1959,19 +2127,6 @@ function buildOpportunityCards(
   return cards.sort((a, b) => b.severity - a.severity || b.leagueStarterAvgPPG - a.leagueStarterAvgPPG);
 }
 
-function cloneAnalysesByRosterId(analysesByRosterId) {
-  const clone = {};
-  for (const [rosterId, analysis] of Object.entries(analysesByRosterId ?? {})) {
-    clone[rosterId] = {
-      ...analysis,
-      cards: (analysis.cards ?? []).map((card) => ({ ...card })),
-      topNeeds: [...(analysis.topNeeds ?? [])],
-      strengths: [...(analysis.strengths ?? [])],
-    };
-  }
-  return clone;
-}
-
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
@@ -2038,23 +2193,12 @@ function resolveOutgoingPlayerAssets(myRosterAnalysis, targetPlayerId, allowedOu
 
 function resolveOutgoingPickAssets({
   myRosterId,
-  rosterPicks,
-  slots,
-  rosters,
-  pickValueMap,
-  currentSeason,
+  rosterPickAssets = [],
   allowOutgoingPicks,
 }) {
   if (!allowOutgoingPicks) return [];
-  const allPickAssets = getRosterPickAssets(
-    myRosterId,
-    rosterPicks,
-    slots,
-    rosters,
-    pickValueMap,
-    currentSeason,
-  );
-  return allPickAssets;
+  if (!myRosterId) return [];
+  return rosterPickAssets;
 }
 
 function scoreAllowedOutgoingPlayers({
@@ -2066,9 +2210,10 @@ function scoreAllowedOutgoingPlayers({
 }) {
   if (!allowedPlayerAssets?.length) return [];
   const posture = getTradePostureSettings(tradePostureLevel);
+  const partnerNeedByPos = Object.fromEntries((partnerCards ?? []).map((card) => [card.position, card]));
   const scored = [];
   for (const asset of allowedPlayerAssets) {
-    const matchingNeed = (partnerCards ?? []).find((card) => card.position === asset.normPos) ?? null;
+    const matchingNeed = partnerNeedByPos[asset.normPos] ?? null;
     const helpsNeed = matchingNeed?.weakStarter
       ? Math.max(0, (asset.ppg ?? 0) - (matchingNeed.weakStarter.ppg ?? 0))
       : 0;
@@ -2454,6 +2599,7 @@ export function buildRosterOpportunityLayer({
   scheduleMap,
   myRosterId = null,
   targetRosterIds = null,
+  rankMap: precomputedRankMap = null,
 }) {
   if (!league || !rosters?.length || !players || !seasonStats || !weeklyStats) {
     return {
@@ -2475,7 +2621,7 @@ export function buildRosterOpportunityLayer({
     .filter((slot) => getSlotEligiblePositions(slot).length > 0);
 
   const positionOrder = [...new Set(starterSlots.flatMap((slot) => getSlotEligiblePositions(slot)))];
-  const rankMap = computePositionalRanks(seasonStats, players, scoringSettings);
+  const rankMap = precomputedRankMap ?? computePositionalRanks(seasonStats, players, scoringSettings);
   const defenseTable = buildDefenseTable(weeklyStats, players, scheduleMap, scoringSettings);
   const analysisWeek = getAnalysisWeek(league);
   const availableByPos = buildAvailablePlayersByPos(rosters, players, seasonStats, weeklyStats, scoringSettings);
@@ -2562,7 +2708,7 @@ export function buildPartnerTradeIntelligence({
     return { analysesByRosterId: {}, tradeProposals: [], surplusTradeProposals: [] };
   }
 
-  const analysesByRosterId = cloneAnalysesByRosterId(opportunityLayer.analysesByRosterId);
+  const analysesByRosterId = opportunityLayer.analysesByRosterId ?? {};
   const myRosterAnalysis = opportunityLayer.myRosterId != null
     ? (opportunityLayer.rosterAnalysesById?.[opportunityLayer.myRosterId] ?? null)
     : null;
@@ -2575,6 +2721,14 @@ export function buildPartnerTradeIntelligence({
   const partnerCards = selectedPartnerAnalysis
     ? (opportunityLayer.allAnalysesByRosterId?.[selectedPartnerAnalysis.roster_id]?.cards ?? [])
     : [];
+  const pickAssetsByRosterId = buildRosterPickAssetsById(
+    [myRosterAnalysis?.roster_id, selectedPartnerAnalysis?.roster_id],
+    rosterPicks,
+    slots,
+    opportunityLayer.rosters,
+    pickValueMap,
+    currentSeason ?? opportunityLayer.currentSeason,
+  );
 
   const tradeProposals = selectedPartnerAnalysis && myRosterAnalysis
     ? buildTradeProposals({
@@ -2589,6 +2743,7 @@ export function buildPartnerTradeIntelligence({
       currentSeason: currentSeason ?? opportunityLayer.currentSeason,
       pickValueMap,
       playerValueMap,
+      pickAssetsByRosterId,
     })
     : [];
   const surplusTradeProposals = selectedPartnerAnalysis && myRosterAnalysis
@@ -2604,6 +2759,7 @@ export function buildPartnerTradeIntelligence({
       currentSeason: currentSeason ?? opportunityLayer.currentSeason,
       pickValueMap,
       playerValueMap,
+      pickAssetsByRosterId,
     })
     : [];
 
@@ -2657,6 +2813,17 @@ export function findLeagueWideUpgradeGroups({
   );
 
   const hasSelectedOutgoingPlayers = Boolean(allowedOutgoingPlayerIds?.length);
+  const pickAssetsByRosterId = buildRosterPickAssetsById(
+    [
+      opportunityLayer.myRosterId,
+      ...(opportunityLayer.rosterAnalyses ?? []).map((roster) => roster.roster_id),
+    ],
+    rosterPicks,
+    slots,
+    opportunityLayer.rosters,
+    pickValueMap,
+    currentSeason ?? opportunityLayer.currentSeason,
+  );
   const allowedPlayerAssets = hasSelectedOutgoingPlayers
     ? resolveOutgoingPlayerAssets(
         myRosterAnalysis,
@@ -2667,11 +2834,7 @@ export function findLeagueWideUpgradeGroups({
     : [];
   const allowedPickAssets = resolveOutgoingPickAssets({
     myRosterId: opportunityLayer.myRosterId,
-    rosterPicks,
-    slots,
-    rosters: opportunityLayer.rosters,
-    pickValueMap,
-    currentSeason: currentSeason ?? opportunityLayer.currentSeason,
+    rosterPickAssets: pickAssetsByRosterId.get(opportunityLayer.myRosterId) ?? [],
     allowOutgoingPicks,
   });
 
@@ -2681,14 +2844,7 @@ export function findLeagueWideUpgradeGroups({
     if (partnerAnalysis.roster_id === opportunityLayer.myRosterId) continue;
 
     const partnerCards = opportunityLayer.allAnalysesByRosterId?.[partnerAnalysis.roster_id]?.cards ?? [];
-    const partnerPickAssets = getRosterPickAssets(
-      partnerAnalysis.roster_id,
-      rosterPicks,
-      slots,
-      opportunityLayer.rosters,
-      pickValueMap,
-      currentSeason ?? opportunityLayer.currentSeason,
-    );
+    const partnerPickAssets = pickAssetsByRosterId.get(partnerAnalysis.roster_id) ?? [];
     const benchmark = opportunityLayer.benchmarkByPos?.[targetCard.position] ?? null;
     const partnerSurplus = getPositionSurplus(partnerAnalysis, targetCard.position, benchmark);
     const partnerPlayers = getPositionPlayers(partnerAnalysis, targetCard.position)
@@ -2696,7 +2852,7 @@ export function findLeagueWideUpgradeGroups({
       .filter((player) => (player.ppg ?? 0) > ((targetPlayer.ppg ?? 0) + minUpgradeDelta))
       .filter((player) => {
         if (normalizedTradePostureLevel >= 3) return true;
-        const isBenchTarget = (partnerAnalysis.benchByPos[targetCard.position] ?? []).some((candidate) => candidate.id === player.id);
+        const isBenchTarget = isBenchPlayer(partnerAnalysis, targetCard.position, player.id);
         return isBenchTarget || partnerSurplus.hasBenchSurplus;
       })
       .slice(0, 8);
@@ -2706,7 +2862,7 @@ export function findLeagueWideUpgradeGroups({
     for (const player of partnerPlayers) {
       const incomingAsset = buildPlayerAsset(player, partnerAnalysis.roster_id, playerValueMap);
       const upgradeDelta = Math.max(0, (player.ppg ?? 0) - (targetPlayer.ppg ?? 0));
-      const isBenchTarget = (partnerAnalysis.benchByPos[targetCard.position] ?? []).some((candidate) => candidate.id === player.id);
+      const isBenchTarget = isBenchPlayer(partnerAnalysis, targetCard.position, player.id);
       const partnerHasSurplus = isBenchTarget || partnerSurplus.hasBenchSurplus;
       const playerChoices = scoreAllowedOutgoingPlayers({
         allowedPlayerAssets,

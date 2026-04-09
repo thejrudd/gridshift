@@ -93,6 +93,13 @@ Do NOT create commits, bump versions, or update any of the 6 tracked files unles
 
 **Why:** Auto-committing causes version creep and races ahead of planned roadmap milestones.
 
+### Commit Message Format
+- Release and merge commits must use a descriptive subject, not a bare `release: vX.Y.Z` summary.
+- Preferred format for release commits:
+  `vX.Y.Z — Short Release Title`
+- The commit body should start with a one-sentence summary, followed by a `Highlights:` section with flat bullets covering the major shipped changes and the release-metadata/documentation updates.
+- Match the style used by `v6.1.6 — Sidebar shell fix`: concise title line, one short summary paragraph, then a `Highlights:` list.
+
 ### 6-File Commit Checklist
 On every commit that bumps the version, update ALL of these before committing:
 
@@ -143,7 +150,7 @@ All modals must be center-aligned. Never bottom-sheet style unless it's a delibe
 
 - **Backdrop**: `fixed inset-0 z-50 flex items-center justify-center` with `background: rgba(0,0,0,0.5)`
 - **Container**: `rounded-2xl` (not `rounded-t-2xl`), `w-full mx-4`, `maxWidth` as needed
-- **Body scroll lock**: `document.body.style.overflow = 'hidden'` on mount; cleanup with `return () => { document.body.style.overflow = ''; }`
+- **Body scroll lock**: freeze the page in place on mount, not just overflow-hide it. Use the shared `useBodyScrollLock` hook so the current scroll offset is preserved, the background cannot move while the modal is open, and scroll position is restored on cleanup.
 - Scrollable content goes in the **inner** content div (`overflow-y-auto`), not the outer container
 - Close on backdrop click (`onClick={onClose}`); stop propagation on inner div
 
@@ -220,3 +227,14 @@ Always compute rank (`i + 1`) on the full sorted list, then filter for display. 
 
 ### `productionAdjustedValue` null propagation
 The early-return guard must be `return ktcVal` (not `return ktcVal ?? 0`). Returning `0` for players with no KTC match causes `fmtKtcValue(0)` to render "0" instead of "—", since `adjVal ?? it.val` only falls back on null/undefined, not `0`.
+
+### Team logo alignment in grid rows
+When team logos (or any element like "ROSTERED" badges) must sit immediately after a player name **and** be horizontally aligned across all rows, use this three-part pattern:
+
+1. **Measure the longest name** with a canvas — `measureMaxNameWidth(players)` renders each name at the exact CSS font and returns the widest pixel width.
+2. **Set the name column to `minmax(0, <measured>px)`** in `gridTemplateColumns`. This caps the column at the widest name so no names truncate, but allows it to shrink on narrow viewports.
+3. **Put the logo/badge in a separate `auto` column**, and add a **`1fr` spacer column** between the logo and the stat columns to absorb leftover row width.
+
+The `1fr` spacer is critical — without it, `minmax(0, Npx)` leaves unallocated space in the grid that pushes the logo toward the center instead of keeping it tight against the name. On compact phones, skip the measured column, the logo column, and the spacer entirely (use `minmax(0,1fr)` for the name and don't render the logo/spacer divs).
+
+Reference implementations: `CompanionRankings.jsx` and `CompanionLeague.jsx`.

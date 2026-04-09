@@ -7,7 +7,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { fetchPlayerStats, fetchPlayerCareerStats, CURRENT_SEASON } from '../../utils/playerApi';
 import { buildStatMap, buildRankMap } from '../../utils/playerMetrics';
 import { matchEspnToSleeper } from '../../utils/espnSleeperMatch';
-import { useSleeper } from '../../context/SleeperContext';
+import { useSleeperLeague, useSleeperStats } from '../../context/SleeperContext';
 import { useTheme } from '../../context/ThemeContext';
 import { TEAM_COLORS } from '../../data/teamColors';
 import ComparePickerSheet from './ComparePickerSheet';
@@ -48,7 +48,8 @@ const PANELS = [
 // ── CompareTab ────────────────────────────────────────────────────────────────
 
 export default function CompareTab({ teams, initialPlayerA, initialPlayerB, onConsumeInitialPlayerA, onConsumeInitialPlayerB, onBuildTrade, onViewPlayer }) {
-  const { players: sleeperPlayers, hasLeague, loadPlayers, myRoster } = useSleeper();
+  const { hasLeague, myRoster } = useSleeperLeague();
+  const { players: sleeperPlayers, loadPlayers } = useSleeperStats();
 
   // ESPN player selections
   const [playerA, setPlayerA] = useState(null);

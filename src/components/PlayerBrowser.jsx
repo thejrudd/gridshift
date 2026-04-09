@@ -19,47 +19,54 @@ const CONFERENCES = [
   },
 ];
 
-const PlayerBrowser = ({ teams, initialPlayer, onInitialPlayerConsumed, navBack, onComparePlayer, onBuildTrade }) => {
-  const [selectedTeam, setSelectedTeam]     = useState(null);
-  const [selectedPlayer, setSelectedPlayer] = useState(initialPlayer ?? null);
+function buildPlayerMeta(player = {}, fallback = {}) {
+  return {
+    id: String(player.id ?? fallback.id ?? ''),
+    displayName: player.displayName || fallback.displayName || '',
+    jersey: player.jersey || fallback.jersey || '',
+    position: player.position || fallback.position || '',
+    positionName: player.positionName || fallback.positionName || '',
+    experience: player.experience ?? fallback.experience,
+    status: player.status || fallback.status || '',
+    teamId: player.teamId || fallback.teamId || null,
+  };
+}
 
-  useEffect(() => {
-    if (initialPlayer) {
-      setSelectedPlayer(initialPlayer);
-      onInitialPlayerConsumed?.();
-      // Enrich with full ESPN roster data (jersey, positionName, etc.) if missing.
-      // Rosters are cached in localStorage, so this completes near-instantly on repeat visits.
-      if (initialPlayer.teamId) {
-        fetchRoster(initialPlayer.teamId).then(roster => {
-          const match = roster.find(p => String(p.id) === String(initialPlayer.id));
-          if (match) {
-            setSelectedPlayer(prev =>
-              prev?.id === initialPlayer.id
-                ? {
-                    ...prev,
-                    jersey:       prev.jersey       || match.jersey,
-                    position:     prev.position     || match.position,
-                    positionName: prev.positionName || match.positionName,
-                    status:       prev.status       || match.status,
-                  }
-                : prev
-            );
-          }
-        }).catch(() => {});
-      }
-    }
-  }, [initialPlayer]);
+const PlayerBrowser = ({
+  teams,
+  statsView = 'browser',
+  selectedTeamId = null,
+  selectedPlayerId = null,
+  selectedPlayerMeta = null,
+  navBack,
+  onNavigateHome,
+  onNavigateTeam,
+  onNavigatePlayer,
+  onComparePlayer,
+  onBuildTrade,
+}) => {
+  const [resolvedPlayer, setResolvedPlayer] = useState(() => (
+    selectedPlayerMeta && selectedPlayerId ? buildPlayerMeta(selectedPlayerMeta, { id: selectedPlayerId }) : null
+  ));
+  const [playerLoading, setPlayerLoading] = useState(false);
+  const [playerLoadError, setPlayerLoadError] = useState(null);
 
-  const [searchQuery, setSearchQuery]               = useState('');
-  const [searchResults, setSearchResults]           = useState([]);
-  const [searchLoading, setSearchLoading]           = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searchLoading, setSearchLoading] = useState(false);
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
-  const [positionFilter, setPositionFilter]         = useState('ALL');
+  const [positionFilter, setPositionFilter] = useState('ALL');
 
-  const searchRef  = useRef(null);
+  const searchRef = useRef(null);
   const debounceRef = useRef(null);
 
-  // Build a lookup: teamId (lowercase) → { division, conference } from the teams prop
+  const normalizedSelectedTeamId = typeof selectedTeamId === 'string'
+    ? selectedTeamId.trim().toUpperCase()
+    : null;
+  const normalizedSelectedPlayerId = selectedPlayerId != null
+    ? String(selectedPlayerId)
+    : null;
+
   const teamLookup = useRef({});
   useEffect(() => {
     const map = {};
@@ -70,39 +77,87 @@ const PlayerBrowser = ({ teams, initialPlayer, onInitialPlayerConsumed, navBack,
     teamLookup.current = map;
   }, [teams]);
 
-  // ── Browser history ──────────────────────────────────────────────────────
-  const skipFirstTeam   = useRef(true);
-  const skipFirstPlayer = useRef(true);
+  const selectedTeam = statsView === 'team'
+    ? (teams.find((team) => team.id.toUpperCase() === normalizedSelectedTeamId) ?? null)
+    : null;
+  const selectedPlayer = statsView === 'player' ? resolvedPlayer : null;
 
   useEffect(() => {
-    if (skipFirstTeam.current) { skipFirstTeam.current = false; return; }
-    if (selectedTeam) history.pushState({ _nav: 'browser', type: 'team' }, '');
-  }, [selectedTeam]);
+    if (statsView !== 'player' || !normalizedSelectedPlayerId) {
+      setResolvedPlayer(null);
+      setPlayerLoading(false);
+      setPlayerLoadError(null);
+      return;
+    }
+
+    const nextMeta = selectedPlayerMeta
+      ? buildPlayerMeta(selectedPlayerMeta, { id: normalizedSelectedPlayerId })
+      : null;
+
+    if (nextMeta?.id === normalizedSelectedPlayerId) {
+      setResolvedPlayer((prev) => {
+        if (prev?.id !== normalizedSelectedPlayerId) return nextMeta;
+        return buildPlayerMeta(nextMeta, prev);
+      });
+      setPlayerLoadError(null);
+    } else {
+      setResolvedPlayer((prev) => (prev?.id === normalizedSelectedPlayerId ? prev : null));
+    }
+  }, [statsView, normalizedSelectedPlayerId, selectedPlayerMeta]);
 
   useEffect(() => {
-    if (skipFirstPlayer.current) { skipFirstPlayer.current = false; return; }
-    if (selectedPlayer) history.pushState({ _nav: 'browser', type: 'player' }, '');
-  }, [selectedPlayer]);
+    if (statsView !== 'player' || !normalizedSelectedPlayerId) return;
 
-  useEffect(() => {
-    const onPopState = (e) => {
-      if (e.state?._nav === 'browser') {
-        if (selectedPlayer) setSelectedPlayer(null);
-        else if (selectedTeam) setSelectedTeam(null);
-      } else if (e.state?._nav === 'app') {
-        // Navigated above browser level — clear selections
-        setSelectedPlayer(null);
-        setSelectedTeam(null);
+    let cancelled = false;
+    const initialMeta = selectedPlayerMeta
+      ? buildPlayerMeta(selectedPlayerMeta, { id: normalizedSelectedPlayerId })
+      : null;
+    const hasEnoughData = !!(initialMeta?.displayName && initialMeta?.teamId && initialMeta?.position);
+
+    if (hasEnoughData) {
+      setPlayerLoading(false);
+      setPlayerLoadError(null);
+      return () => { cancelled = true; };
+    }
+
+    setPlayerLoading(true);
+    setPlayerLoadError(null);
+
+    const prioritizedTeamIds = initialMeta?.teamId
+      ? [initialMeta.teamId, ...teams.map((team) => team.id).filter((teamId) => teamId !== initialMeta.teamId)]
+      : teams.map((team) => team.id);
+
+    (async () => {
+      for (const teamId of prioritizedTeamIds) {
+        try {
+          const roster = await fetchRoster(teamId);
+          if (cancelled) return;
+          const match = roster.find((player) => String(player.id) === normalizedSelectedPlayerId);
+          if (!match) continue;
+
+          setResolvedPlayer(buildPlayerMeta(match, initialMeta ?? { id: normalizedSelectedPlayerId }));
+          setPlayerLoading(false);
+          setPlayerLoadError(null);
+          return;
+        } catch {
+          // Try the next team; a missing roster should not break direct player routes.
+        }
       }
-    };
-    window.addEventListener('popstate', onPopState);
-    return () => window.removeEventListener('popstate', onPopState);
-  }, [selectedPlayer, selectedTeam]);
-  // ────────────────────────────────────────────────────────────────────────
 
-  // Debounced smart search across all team rosters (rosters are cached in localStorage).
-  // Supports position names/abbreviations, team names/cities/nicknames,
-  // conference/division terms, and name search — all AND-combined.
+      if (cancelled) return;
+      setPlayerLoading(false);
+      if (initialMeta) {
+        setResolvedPlayer(initialMeta);
+        setPlayerLoadError(null);
+      } else {
+        setResolvedPlayer(null);
+        setPlayerLoadError('Player details are unavailable.');
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [statsView, normalizedSelectedPlayerId, selectedPlayerMeta, teams]);
+
   const handleSearchInput = useCallback((e) => {
     const q = e.target.value;
     setSearchQuery(q);
@@ -118,50 +173,45 @@ const PlayerBrowser = ({ teams, initialPlayer, onInitialPlayerConsumed, navBack,
     debounceRef.current = setTimeout(async () => {
       try {
         const filters = parseSearchQuery(q);
-
-        // If nothing was parsed at all, bail early
-        const hasFilters = filters.pos.size || filters.team.size ||
-                           filters.div.size || filters.conf.size || filters.name.length;
-        if (!hasFilters) { setSearchResults([]); setSearchLoading(false); return; }
+        const hasFilters = filters.pos.size || filters.team.size
+          || filters.div.size || filters.conf.size || filters.name.length;
+        if (!hasFilters) {
+          setSearchResults([]);
+          setSearchLoading(false);
+          return;
+        }
 
         const allRosters = await Promise.all(
-          teams.map(team =>
+          teams.map((team) => (
             fetchRoster(team.id)
-              .then(players => players.map(p => ({ ...p, teamId: team.id.toLowerCase(), teamName: team.name })))
+              .then((players) => players.map((player) => ({
+                ...player,
+                teamId: team.id.toLowerCase(),
+                teamName: team.name,
+              })))
               .catch(() => [])
-          )
+          )),
         );
 
         const lookup = teamLookup.current;
-        // Effective position filter: query overrides chip; fall back to chip if chip ≠ ALL
-        const effectivePos = filters.pos.size > 0 ? filters.pos
+        const effectivePos = filters.pos.size > 0
+          ? filters.pos
           : (positionFilter !== 'ALL' ? new Set([positionFilter]) : new Set());
 
         const results = allRosters
           .flat()
-          .filter(p => {
-            // Name terms (AND — all must appear in name)
+          .filter((player) => {
             if (filters.name.length > 0) {
-              const name = p.displayName.toLowerCase();
-              if (!filters.name.every(t => name.includes(t))) return false;
+              const name = player.displayName.toLowerCase();
+              if (!filters.name.every((term) => name.includes(term))) return false;
             }
-            // Position (OR within the set)
             if (effectivePos.size > 0) {
-              if (![...effectivePos].some(pos => matchesFilter(p.position, pos))) return false;
+              if (![...effectivePos].some((pos) => matchesFilter(player.position, pos))) return false;
             }
-            const teamInfo = lookup[p.teamId];
-            // Team (OR within the set — multiple teams allowed e.g. "New York")
-            if (filters.team.size > 0) {
-              if (!filters.team.has(p.teamId)) return false;
-            }
-            // Division (OR within the set)
-            if (filters.div.size > 0) {
-              if (!teamInfo || !filters.div.has(teamInfo.division)) return false;
-            }
-            // Conference (OR within the set)
-            if (filters.conf.size > 0) {
-              if (!teamInfo || !filters.conf.has(teamInfo.conference)) return false;
-            }
+            const teamInfo = lookup[player.teamId];
+            if (filters.team.size > 0 && !filters.team.has(player.teamId)) return false;
+            if (filters.div.size > 0 && (!teamInfo || !filters.div.has(teamInfo.division))) return false;
+            if (filters.conf.size > 0 && (!teamInfo || !filters.conf.has(teamInfo.conference))) return false;
             return true;
           })
           .slice(0, 30);
@@ -176,7 +226,6 @@ const PlayerBrowser = ({ teams, initialPlayer, onInitialPlayerConsumed, navBack,
     }, 400);
   }, [teams, positionFilter]);
 
-  // Close search dropdown on outside click
   useEffect(() => {
     const handler = (e) => {
       if (searchRef.current && !searchRef.current.contains(e.target)) {
@@ -187,43 +236,96 @@ const PlayerBrowser = ({ teams, initialPlayer, onInitialPlayerConsumed, navBack,
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  const handleSelectPlayer = (player) => {
-    setSelectedPlayer(player);
+  useEffect(() => () => clearTimeout(debounceRef.current), []);
+
+  const handleSelectPlayer = useCallback((player) => {
+    onNavigatePlayer?.(player);
     setShowSearchDropdown(false);
     setSearchQuery('');
     setSearchResults([]);
-  };
+  }, [onNavigatePlayer]);
 
-  // ── Render priority: player profile → team page → browser list
+  if (statsView === 'player') {
+    if (selectedPlayer) {
+      return (
+        <PlayerProfile
+          playerId={selectedPlayer.id}
+          playerMeta={selectedPlayer}
+          teamId={selectedPlayer.teamId}
+          teams={teams}
+          onBack={navBack?.onBack ?? (() => window.history.back())}
+          backLabel={navBack?.label}
+          onCompare={onComparePlayer}
+          onBuildTrade={onBuildTrade}
+        />
+      );
+    }
 
-  if (selectedPlayer) {
     return (
-      <PlayerProfile
-        playerId={selectedPlayer.id}
-        playerMeta={selectedPlayer}
-        teamId={selectedPlayer.teamId}
-        teams={teams}
-        onBack={navBack?.onBack ?? (() => history.back())}
-        backLabel={navBack?.label}
-        onCompare={onComparePlayer}
-        onBuildTrade={onBuildTrade}
-      />
+      <div className="space-y-4">
+        <button
+          onClick={navBack?.onBack ?? onNavigateHome}
+          className="inline-flex items-center gap-1.5 text-sm font-semibold transition-colors"
+          style={{ color: 'var(--color-accent)' }}
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+          {navBack?.label ?? 'Statistics'}
+        </button>
+        <div
+          className="rounded-xl p-5 text-sm"
+          style={{
+            background: 'var(--color-bg-secondary)',
+            border: '1px solid var(--color-separator)',
+            color: playerLoadError ? 'var(--color-accent-red)' : 'var(--color-label-secondary)',
+          }}
+        >
+          {playerLoading ? 'Loading player…' : (playerLoadError || 'Player details are unavailable.')}
+        </div>
+      </div>
     );
   }
 
-  if (selectedTeam) {
+  if (statsView === 'team') {
+    if (selectedTeam) {
+      return (
+        <TeamPage
+          team={selectedTeam}
+          onBack={onNavigateHome}
+          onSelectPlayer={handleSelectPlayer}
+        />
+      );
+    }
+
     return (
-      <TeamPage
-        team={selectedTeam}
-        onBack={() => history.back()}
-        onSelectPlayer={handleSelectPlayer}
-      />
+      <div className="space-y-4">
+        <button
+          onClick={onNavigateHome}
+          className="inline-flex items-center gap-1.5 text-sm font-semibold transition-colors"
+          style={{ color: 'var(--color-accent)' }}
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+          Statistics
+        </button>
+        <div
+          className="rounded-xl p-5 text-sm"
+          style={{
+            background: 'var(--color-bg-secondary)',
+            border: '1px solid var(--color-separator)',
+            color: 'var(--color-accent-red)',
+          }}
+        >
+          Team details are unavailable.
+        </div>
+      </div>
     );
   }
 
   return (
     <div className="space-y-6">
-      {/* Search + position filter bar */}
       <div
         className="rounded-xl p-4 space-y-3"
         style={{
@@ -232,7 +334,6 @@ const PlayerBrowser = ({ teams, initialPlayer, onInitialPlayerConsumed, navBack,
           boxShadow: '0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06)',
         }}
       >
-        {/* Search */}
         <div ref={searchRef} className="relative">
           <div className="relative">
             <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: 'var(--color-label-tertiary)' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -260,7 +361,6 @@ const PlayerBrowser = ({ teams, initialPlayer, onInitialPlayerConsumed, navBack,
             )}
           </div>
 
-          {/* Search dropdown */}
           {showSearchDropdown && searchQuery.length >= 1 && (
             <div
               className="absolute z-20 left-0 right-0 top-full mt-1 rounded-xl overflow-hidden max-h-72 overflow-y-auto"
@@ -273,14 +373,14 @@ const PlayerBrowser = ({ teams, initialPlayer, onInitialPlayerConsumed, navBack,
               {searchResults.length === 0 && !searchLoading && (
                 <p className="px-4 py-3 text-sm italic" style={{ color: 'var(--color-label-tertiary)' }}>No players found.</p>
               )}
-              {searchResults.map(player => (
+              {searchResults.map((player) => (
                 <button
                   key={player.id}
                   onClick={() => handleSelectPlayer(player)}
                   className="w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors duration-150 active:opacity-80"
                   style={{ '--hover-bg': 'var(--color-fill)' }}
-                  onMouseEnter={e => e.currentTarget.style.background = 'var(--color-fill)'}
-                  onMouseLeave={e => e.currentTarget.style.background = ''}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--color-fill)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = ''; }}
                 >
                   <PlayerThumbnail id={player.id} name={player.displayName} />
                   <div className="min-w-0">
@@ -295,17 +395,15 @@ const PlayerBrowser = ({ teams, initialPlayer, onInitialPlayerConsumed, navBack,
           )}
         </div>
 
-        {/* Position filter chips */}
         <div className="flex flex-wrap gap-2 items-center">
-          {POSITION_FILTERS.map(pos => (
+          {POSITION_FILTERS.map((pos) => (
             <button
               key={pos}
               onClick={() => setPositionFilter(pos)}
               className="px-2.5 py-0.5 rounded-lg text-xs font-semibold transition-colors duration-150 active:scale-95"
               style={positionFilter === pos
                 ? { background: 'var(--color-signature)', color: 'var(--color-signature-fg)' }
-                : { background: 'var(--color-fill)', color: 'var(--color-label-secondary)' }
-              }
+                : { background: 'var(--color-fill)', color: 'var(--color-label-secondary)' }}
             >
               {pos}
             </button>
@@ -313,13 +411,12 @@ const PlayerBrowser = ({ teams, initialPlayer, onInitialPlayerConsumed, navBack,
         </div>
       </div>
 
-      {/* Team browser — AFC then NFC */}
-      {CONFERENCES.map(conf => (
+      {CONFERENCES.map((conf) => (
         <div key={conf.name}>
           <h2 className="text-2xl font-display tracking-wider mb-3" style={{ color: conf.color }}>{conf.name}</h2>
           <div className="space-y-4">
-            {conf.divisions.map(division => {
-              const divTeams = teams.filter(t => t.division === division);
+            {conf.divisions.map((division) => {
+              const divTeams = teams.filter((team) => team.division === division);
               return (
                 <div key={division}>
                   <h3
@@ -329,11 +426,11 @@ const PlayerBrowser = ({ teams, initialPlayer, onInitialPlayerConsumed, navBack,
                     {division}
                   </h3>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    {divTeams.map(team => (
+                    {divTeams.map((team) => (
                       <TeamCard
                         key={team.id}
                         team={team}
-                        onClick={() => setSelectedTeam(team)}
+                        onClick={() => onNavigateTeam?.(team)}
                       />
                     ))}
                   </div>
@@ -347,8 +444,6 @@ const PlayerBrowser = ({ teams, initialPlayer, onInitialPlayerConsumed, navBack,
   );
 };
 
-// ── Team Card — simple drill-down button ──────────────────────────────────────
-
 const TeamCard = ({ team, onClick }) => (
   <button
     onClick={onClick}
@@ -359,14 +454,14 @@ const TeamCard = ({ team, onClick }) => (
       border: '1px solid var(--color-separator)',
       boxShadow: '0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06)',
     }}
-    onMouseEnter={e => e.currentTarget.style.background = 'var(--color-fill)'}
-    onMouseLeave={e => e.currentTarget.style.background = 'var(--color-bg-secondary)'}
+    onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--color-fill)'; }}
+    onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--color-bg-secondary)'; }}
   >
     <img
       src={`https://a.espncdn.com/i/teamlogos/nfl/500/${team.id.toLowerCase()}.png`}
       alt={team.name}
       className="w-10 h-10 object-contain shrink-0"
-      onError={e => { e.target.style.display = 'none'; }}
+      onError={(e) => { e.target.style.display = 'none'; }}
     />
     <div className="flex-1 min-w-0">
       <div className="font-bold text-sm leading-tight" style={{ color: 'var(--color-label)' }}>{team.name}</div>
@@ -377,10 +472,9 @@ const TeamCard = ({ team, onClick }) => (
   </button>
 );
 
-// Headshot with initials fallback
 const PlayerThumbnail = ({ id, name, size = 'sm' }) => {
   const [err, setErr] = useState(false);
-  const initials = (name ?? '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+  const initials = (name ?? '?').split(' ').map((word) => word[0]).join('').slice(0, 2).toUpperCase();
   const cls = size === 'lg' ? 'w-12 h-12' : 'w-8 h-8';
   return err ? (
     <div className={`${cls} rounded-full flex items-center justify-center shrink-0`} style={{ background: 'var(--color-fill)' }}>
@@ -390,6 +484,5 @@ const PlayerThumbnail = ({ id, name, size = 'sm' }) => {
     <img src={headshot(id)} alt="" className={`${cls} rounded-full object-cover shrink-0`} style={{ background: 'var(--color-fill)' }} onError={() => setErr(true)} />
   );
 };
-
 
 export default PlayerBrowser;

@@ -28,6 +28,9 @@ Open bugs are listed first, fixed bugs below. Add new entries at the bottom of e
 
 | Bug | Fixed In |
 |-----|----------|
+| Desktop sidebar can still scroll on shorter laptop viewports in Predictions because the shell allows sidebar overflow instead of keeping the desktop rail fixed in place | v6.2.0 |
+| Sleeper league connect flow only exposes a limited season window and asks for season before username, instead of discovering the account's actual available league years from the API after username lookup | v6.2.0 |
+| Statistics excludes kickers from team rosters, search results, and player views because ESPN roster position abbreviations are not normalized to the app's expected `K` format | v6.2.0 |
 | Defense drilldown allowed background page scrolling while open | v4.3.1 |
 | Season X/32 progress bar visible on non-Predictions tabs | v4.3.1 |
 | Defense drilldown player links used Sleeper player IDs instead of ESPN IDs | v4.3 |
@@ -164,4 +167,6 @@ Open bugs are listed first, fixed bugs below. Add new entries at the bottom of e
 | Matchup slot compare controls could lose their compact-phone affordance on real devices, leaving the position color, compare glyph, and tap target too cramped to read or use reliably | v6.1.5 |
 | Companion -> Matchup week picker could expose weeks outside the connected fantasy league's actual season length and did not clearly distinguish playoff weeks from regular-season weeks | v6.1.5 |
 | Desktop sidebar could scroll with the full page instead of remaining fixed in place, causing the shell navigation to drift vertically with content | v6.1.6 |
+
+
 

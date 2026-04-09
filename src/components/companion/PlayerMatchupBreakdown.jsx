@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useSleeper } from '../../context/SleeperContext';
+import { useSleeperBase } from '../../context/SleeperContext';
 import { useTheme } from '../../context/ThemeContext';
 import { DEFAULT_SCORING } from '../../utils/scoringEngine';
 import { formatWeather } from '../../api/weatherApi';
@@ -300,7 +300,7 @@ function InfoRow({ label, children }) {
 }
 
 export default function PlayerMatchupBreakdown({ playerId, week, projection, enrichedPlayer, onClose, onViewStats, onOpenRosterPlayer = null }) {
-  const { players, weeklyStats, scoringSettings, espnIdOverrides } = useSleeper();
+  const { players, weeklyStats, scoringSettings, espnIdOverrides } = useSleeperBase();
   const { darkMode } = useTheme();
 
   const player = players?.[playerId];

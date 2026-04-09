@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useSleeper } from '../../context/SleeperContext';
+import { useSleeperBase, useSleeperStatsEnhancing } from '../../context/SleeperContext';
 import { useTheme } from '../../context/ThemeContext';
 import { calcPoints, DEFAULT_SCORING } from '../../utils/scoringEngine';
 import { STADIUMS } from '../../data/stadiums';
@@ -377,9 +377,24 @@ function FilterGroup({ label, children }) {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export default function CompanionDefense({ onViewPlayer }) {
-  const { weeklyStats, players, scheduleMap, scoringSettings, espnIdOverrides, loadPlayers, statsEnhancing, league } = useSleeper();
+export default function CompanionDefense({ onViewPlayer, routeState = null, onRouteStateChange = null }) {
+  const {
+    weeklyStats,
+    players,
+    scheduleMap,
+    scoringSettings,
+    espnIdOverrides,
+    loadPlayers,
+    loadSeasonStats,
+    statsLoading,
+    league,
+  } = useSleeperBase();
+  const statsEnhancing = useSleeperStatsEnhancing();
   useEffect(() => { loadPlayers(); }, [loadPlayers]);
+  useEffect(() => {
+    if ((weeklyStats && scheduleMap) || statsLoading) return;
+    loadSeasonStats();
+  }, [weeklyStats, scheduleMap, statsLoading, loadSeasonStats]);
   const { favoriteTeam, darkMode } = useTheme();
 
   const [viewMode, setViewMode] = useState('offense');  // 'offense' | 'defense'
@@ -399,6 +414,9 @@ export default function CompanionDefense({ onViewPlayer }) {
   const [gridMaxHeight, setGridMaxHeight] = useState('60vh');
   const filterBarRef = useRef(null);
   const tableContainerRef = useRef(null);
+  const routeHydratingRef = useRef(false);
+  const previousIncomingRouteRef = useRef(null);
+  const skipNextRouteEmitRef = useRef(false);
   const lastScoredLeg = Number(league?.settings?.last_scored_leg);
   const fantasySeasonWeeks = useMemo(() => {
     const maxWeek = Number.isFinite(lastScoredLeg) && lastScoredLeg > 0
@@ -407,31 +425,118 @@ export default function CompanionDefense({ onViewPlayer }) {
     return Array.from({ length: maxWeek }, (_, i) => i + 1);
   }, [lastScoredLeg]);
 
+  const localRouteState = useMemo(() => ({
+    viewMode,
+    position: pos,
+    defensePosition: defPos,
+    statMode,
+    defenseStatMode: defStatMode,
+    scope: heatmapScope,
+    location: locationFilter,
+    sortKey,
+    sortDir,
+    teamSort,
+    useTeamColors,
+    vegasView: vegasOddsView,
+  }), [
+    viewMode,
+    pos,
+    defPos,
+    statMode,
+    defStatMode,
+    heatmapScope,
+    locationFilter,
+    sortKey,
+    sortDir,
+    teamSort,
+    useTeamColors,
+    vegasOddsView,
+  ]);
+
+  const normalizedIncomingRouteState = useMemo(() => {
+    if (!routeState) return null;
+    return {
+      viewMode: routeState.viewMode ?? 'offense',
+      position: routeState.position ?? 'ALL',
+      defensePosition: routeState.defensePosition ?? 'ALL',
+      statMode: routeState.statMode ?? 'pts',
+      defenseStatMode: routeState.defenseStatMode ?? 'pts',
+      scope: routeState.scope ?? 'overall',
+      location: routeState.location ?? 'all',
+      sortKey: routeState.sortKey ?? 'avg',
+      sortDir: routeState.sortDir ?? 'desc',
+      teamSort: routeState.teamSort ?? 'alpha',
+      useTeamColors: Boolean(routeState.useTeamColors),
+      vegasView: routeState.vegasView ?? 'spread',
+    };
+  }, [routeState]);
+
+  useEffect(() => {
+    if (!normalizedIncomingRouteState) return;
+    const incomingSerialized = JSON.stringify(normalizedIncomingRouteState);
+    if (previousIncomingRouteRef.current === incomingSerialized) return;
+    previousIncomingRouteRef.current = incomingSerialized;
+    skipNextRouteEmitRef.current = true;
+    if (incomingSerialized === JSON.stringify(localRouteState)) return;
+
+    routeHydratingRef.current = true;
+    setViewMode(normalizedIncomingRouteState.viewMode);
+    setPos(normalizedIncomingRouteState.position);
+    setDefPos(normalizedIncomingRouteState.defensePosition);
+    setStatMode(normalizedIncomingRouteState.statMode);
+    setDefStatMode(normalizedIncomingRouteState.defenseStatMode);
+    setHeatmapScope(normalizedIncomingRouteState.scope);
+    setLocationFilter(normalizedIncomingRouteState.location);
+    setSortKey(normalizedIncomingRouteState.sortKey);
+    setSortDir(normalizedIncomingRouteState.sortDir);
+    setTeamSort(normalizedIncomingRouteState.teamSort);
+    setUseTeamColors(normalizedIncomingRouteState.useTeamColors);
+    setVegasOddsView(normalizedIncomingRouteState.vegasView);
+  }, [normalizedIncomingRouteState, localRouteState]);
+
+  useEffect(() => {
+    if (skipNextRouteEmitRef.current) {
+      skipNextRouteEmitRef.current = false;
+      return;
+    }
+    if (routeHydratingRef.current) {
+      routeHydratingRef.current = false;
+      return;
+    }
+    if (normalizedIncomingRouteState && JSON.stringify(normalizedIncomingRouteState) === JSON.stringify(localRouteState)) {
+      return;
+    }
+    onRouteStateChange?.(localRouteState);
+  }, [onRouteStateChange, normalizedIncomingRouteState, localRouteState]);
+
   // Dynamically compute the table container's max-height based on its actual
   // top position in the viewport. This correctly handles variable filter bar
   // heights (wrapping on narrow screens) and device safe-area insets (PWA).
-  useEffect(() => {
-    const compute = () => {
-      requestAnimationFrame(() => {
-        if (!tableContainerRef.current) return;
-        const top = tableContainerRef.current.getBoundingClientRect().top;
-        const isDesktop = window.innerWidth >= 1024;
-        const bottomPad = isDesktop
-          ? 4
-          : (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--bar-height-tab')) || 0)
-            + (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--safe-area-inset-bottom')) || 0)
-            + 8;
-        const available = window.innerHeight - top - bottomPad;
-        setGridMaxHeight(`${Math.max(200, available)}px`);
-      });
-    };
-
-    compute();
-    const ro = new ResizeObserver(compute);
-    if (filterBarRef.current) ro.observe(filterBarRef.current);
-    window.addEventListener('resize', compute);
-    return () => { ro.disconnect(); window.removeEventListener('resize', compute); };
+  const computeGridMaxHeight = useCallback(() => {
+    requestAnimationFrame(() => {
+      if (!tableContainerRef.current) return;
+      const top = tableContainerRef.current.getBoundingClientRect().top;
+      const isDesktop = window.innerWidth >= 1024;
+      const bottomPad = isDesktop
+        ? 4
+        : (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--bar-height-tab')) || 0)
+          + (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--safe-area-inset-bottom')) || 0)
+          + 8;
+      const available = window.innerHeight - top - bottomPad;
+      setGridMaxHeight(`${Math.max(200, available)}px`);
+    });
   }, []);
+
+  useEffect(() => {
+    computeGridMaxHeight();
+    const ro = new ResizeObserver(computeGridMaxHeight);
+    if (filterBarRef.current) ro.observe(filterBarRef.current);
+    window.addEventListener('resize', computeGridMaxHeight);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', computeGridMaxHeight);
+    };
+  }, [computeGridMaxHeight]);
 
   // Lock body scroll while drilldown is open
   useEffect(() => {
@@ -884,6 +989,11 @@ export default function CompanionDefense({ onViewPlayer }) {
 
   const loaded = viewMode === 'offense' ? !!offenseAllowedTable : !!defenseScoredTable;
   const showAvg = !(viewMode === 'offense' && statMode === 'vegas_odds');
+
+  useEffect(() => {
+    if (!loaded) return;
+    computeGridMaxHeight();
+  }, [loaded, computeGridMaxHeight]);
 
   return (
     <div className="lg:-mx-8">

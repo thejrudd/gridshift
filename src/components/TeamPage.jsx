@@ -32,7 +32,8 @@ const POSITION_GROUPS = [
   { label: 'Defensive Line',  positions: ['DE', 'DT', 'NT', 'DL', 'ED'] },
   { label: 'Linebackers',     positions: ['LB', 'ILB', 'OLB', 'MLB'] },
   { label: 'Defensive Backs', positions: ['CB', 'S', 'SS', 'FS', 'DB'] },
-  { label: 'Special Teams',   positions: ['K', 'P', 'LS'] },
+  { label: 'Kickers',         positions: ['K'] },
+  { label: 'Specialists',     positions: ['P', 'LS'] },
 ];
 
 // Positions shown in the "key players" strip — one starter each

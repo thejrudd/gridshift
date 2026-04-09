@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useSleeper } from '../../context/SleeperContext';
+import { useSleeperLeague } from '../../context/SleeperContext';
 import {
   DEFAULT_SCORING, SCORING_PRESETS, applyPreset, detectPreset, importLeagueScoring,
 } from '../../utils/scoringEngine';
@@ -81,7 +81,7 @@ const STAT_GROUPS = [
 ];
 
 export default function ScoringSettings({ onClose }) {
-  const { scoringSettings, setScoringSettings, league } = useSleeper();
+  const { scoringSettings, setScoringSettings, league } = useSleeperLeague();
   const [local, setLocal] = useState({ ...DEFAULT_SCORING, ...scoringSettings });
 
   const preset = detectPreset(local);
