@@ -27,13 +27,19 @@ const toEspnTeamId = id => TEAM_ESPN_ID[id] ?? id.toLowerCase();
 export const headshot = id =>
   `https://a.espncdn.com/i/headshots/nfl/players/full/${id}.png`;
 
+function normalizeEspnPosition(position) {
+  const pos = String(position ?? '').toUpperCase();
+  if (pos === 'PK') return 'K';
+  return pos;
+}
+
 // Normalize a raw ESPN athlete entry from a roster response
 function normalizePlayer(athlete, teamId) {
   return {
     id:          athlete.id,
     displayName: athlete.displayName ?? athlete.fullName ?? '',
     jersey:      athlete.jersey ?? '',
-    position:    athlete.position?.abbreviation ?? '',
+    position:    normalizeEspnPosition(athlete.position?.abbreviation),
     positionName: athlete.position?.displayName ?? '',
     experience:  athlete.experience?.years ?? 0,
     status:      athlete.status?.type?.description ?? 'Active',
@@ -46,7 +52,7 @@ function normalizePlayer(athlete, teamId) {
  * Returns normalized player array: { id, displayName, jersey, position, experience, status, teamId }
  */
 export async function fetchRoster(teamId) {
-  return cachedFetch(`roster_v2_${teamId}`, async () => {
+  return cachedFetch(`roster_v3_${teamId}`, async () => {
     const url = `${ESPN_BASE}/teams/${toEspnTeamId(teamId)}/roster`;
     const res = await fetch(url);
     if (!res.ok) throw new Error(`Roster fetch failed: ${res.status}`);

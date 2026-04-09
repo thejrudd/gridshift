@@ -216,27 +216,33 @@ export function getPickQuality(rosterId, rosters) {
  * @param {string}   currentSeason  - e.g. "2025" — for year-based pick discount
  * @returns {{ total: number, items: Array<{ id, label, val, type }> }}
  */
-export function valueSide(playerIds, pickItems, sleeperPlayers, ktcPlayers, leagueType, rosters, pickValueMap, currentSeason, dynastyFallbackPlayers = null, idpValueMap = null) {
+export function valueSide(playerIds, pickItems, sleeperPlayers, ktcPlayers, leagueType, rosters, pickValueMap, currentSeason, dynastyFallbackPlayers = null, idpValueMap = null, playerTradeValueDetailsMap = null) {
   const items = [];
 
   for (const pid of playerIds) {
     const sp = sleeperPlayers?.[pid];
-    const ktc = findKtcPlayerFromSleeper(pid, sleeperPlayers, ktcPlayers);
-    let rawVal = getKtcValue(ktc, leagueType);
-    let dynastyFallback = false;
+    const sharedTradeValue = playerTradeValueDetailsMap?.get(pid) ?? null;
+    let ktc = null;
+    let rawVal = sharedTradeValue?.value ?? null;
+    let dynastyFallback = sharedTradeValue?.dynastyFallback ?? false;
 
-    // If no redraft value found, try dynasty rankings as a fallback and discount.
-    if (rawVal == null && dynastyFallbackPlayers?.length) {
-      const dynastyKtc = findKtcPlayerFromSleeper(pid, sleeperPlayers, dynastyFallbackPlayers);
-      const dynastyVal = getKtcValue(dynastyKtc, leagueType);
-      if (dynastyVal != null) {
-        rawVal = Math.round(dynastyVal * DYNASTY_FALLBACK_MULT);
-        dynastyFallback = true;
+    if (!sharedTradeValue) {
+      ktc = findKtcPlayerFromSleeper(pid, sleeperPlayers, ktcPlayers);
+      rawVal = getKtcValue(ktc, leagueType);
+
+      // If no redraft value found, try dynasty rankings as a fallback and discount.
+      if (rawVal == null && dynastyFallbackPlayers?.length) {
+        const dynastyKtc = findKtcPlayerFromSleeper(pid, sleeperPlayers, dynastyFallbackPlayers);
+        const dynastyVal = getKtcValue(dynastyKtc, leagueType);
+        if (dynastyVal != null) {
+          rawVal = Math.round(dynastyVal * DYNASTY_FALLBACK_MULT);
+          dynastyFallback = true;
+        }
       }
     }
 
     // IDP/DST fallback — production-computed value (already on same scale as KTC)
-    let idpFallback = false;
+    let idpFallback = sharedTradeValue?.isEstimated ?? false;
     if (rawVal == null && idpValueMap?.has(pid)) {
       rawVal = idpValueMap.get(pid);
       idpFallback = true;
@@ -493,7 +499,7 @@ export function suggestPackage({ gap, deficitSide, deficitCandidates, deficitIte
 export function buildCandidatePool(
   rosterId, rosters, excludeIds, excludePickKeys,
   sleeperPlayers, ktcPlayers, leagueType, rosterPicks, slots, pickValueMap, currentSeason,
-  { dynastyKtcPlayers, seasonStats, scoringSettings, positionalValuePerPPG, positionalAvgPPG, rankMap, idpValueMap } = {},
+  { dynastyKtcPlayers, seasonStats, scoringSettings, positionalValuePerPPG, positionalAvgPPG, rankMap, idpValueMap, playerTradeValueDetailsMap } = {},
 ) {
   const candidates = [];
   const roster = rosters.find(r => r.roster_id === rosterId);
@@ -505,46 +511,51 @@ export function buildCandidatePool(
   for (const pid of playerIds) {
     if (excludeSet.has(pid)) continue;
     const sp = sleeperPlayers?.[pid];
-    const ktc = findKtcPlayerFromSleeper(pid, sleeperPlayers, ktcPlayers);
-    let rawVal = getKtcValue(ktc, leagueType);
-    let dynastyFallback = false;
-    // Dynasty fallback for players absent from redraft rankings
-    if (rawVal == null && dynastyKtcPlayers?.length) {
-      const dKtc = findKtcPlayerFromSleeper(pid, sleeperPlayers, dynastyKtcPlayers);
-      const dVal = getKtcValue(dKtc, leagueType);
-      if (dVal != null) { rawVal = Math.round(dVal * DYNASTY_FALLBACK_MULT); dynastyFallback = true; }
-    }
-    // IDP/DST fallback — production-computed value (already calibrated to skill position scale)
-    const isIDPDSTFallback = rawVal == null && idpValueMap?.has(pid);
-    if (isIDPDSTFallback) rawVal = idpValueMap.get(pid);
-    rawVal = rawVal ?? (ktcPlayers?.length > 0 ? 0 : null);
-
-    // Production adjustment for skill positions only.
-    // IDP/DST values from idpValueMap are already production-derived — skip further adjustment.
-    let val = rawVal;
+    const sharedTradeValue = playerTradeValueDetailsMap?.get(pid) ?? null;
+    let val = sharedTradeValue?.value ?? null;
     const pos = sp?.position ?? '';
-    if (seasonStats && scoringSettings && !isIDPDSTFallback) {
-      const stats = seasonStats[pid];
-      const gp = stats?.gp ?? 0;
-      const pts = stats ? calcPointsFromTotals(stats, scoringSettings, pos) : null;
-      const avgPPG = pts != null && gp ? pts / gp : null;
-      if (dynastyFallback && positionalValuePerPPG) {
-        if (gp >= 3 && avgPPG != null && positionalValuePerPPG[pos] != null) {
-          val = Math.round(avgPPG * positionalValuePerPPG[pos]);
+
+    if (val == null) {
+      const ktc = findKtcPlayerFromSleeper(pid, sleeperPlayers, ktcPlayers);
+      let rawVal = getKtcValue(ktc, leagueType);
+      let dynastyFallback = false;
+      // Dynasty fallback for players absent from redraft rankings
+      if (rawVal == null && dynastyKtcPlayers?.length) {
+        const dKtc = findKtcPlayerFromSleeper(pid, sleeperPlayers, dynastyKtcPlayers);
+        const dVal = getKtcValue(dKtc, leagueType);
+        if (dVal != null) { rawVal = Math.round(dVal * DYNASTY_FALLBACK_MULT); dynastyFallback = true; }
+      }
+      // IDP/DST fallback — production-computed value (already calibrated to skill position scale)
+      const isIDPDSTFallback = rawVal == null && idpValueMap?.has(pid);
+      if (isIDPDSTFallback) rawVal = idpValueMap.get(pid);
+      rawVal = rawVal ?? (ktcPlayers?.length > 0 ? 0 : null);
+
+      // Production adjustment for skill positions only.
+      // IDP/DST values from idpValueMap are already production-derived — skip further adjustment.
+      val = rawVal;
+      if (seasonStats && scoringSettings && !isIDPDSTFallback) {
+        const stats = seasonStats[pid];
+        const gp = stats?.gp ?? 0;
+        const pts = stats ? calcPointsFromTotals(stats, scoringSettings, pos) : null;
+        const avgPPG = pts != null && gp ? pts / gp : null;
+        if (dynastyFallback && positionalValuePerPPG) {
+          if (gp >= 3 && avgPPG != null && positionalValuePerPPG[pos] != null) {
+            val = Math.round(avgPPG * positionalValuePerPPG[pos]);
+          } else if (positionalAvgPPG) {
+            val = productionAdjustedValue(rawVal, avgPPG, positionalAvgPPG[pos], 0.50);
+          }
         } else if (positionalAvgPPG) {
+          // Direct-KTC players: 50% PPG blend weight for trade agent
           val = productionAdjustedValue(rawVal, avgPPG, positionalAvgPPG[pos], 0.50);
         }
-      } else if (positionalAvgPPG) {
-        // Direct-KTC players: 50% PPG blend weight for trade agent
-        val = productionAdjustedValue(rawVal, avgPPG, positionalAvgPPG[pos], 0.50);
       }
-    }
 
-    // Layer 2 — rank-percentile nudge (±12%, skill positions only)
-    const rankInfo = (!isIDPDSTFallback && rankMap?.[pid]) ?? null;
-    if (rankInfo?.rank != null && rankInfo?.posCount > 1) {
-      const percentile = 1 - (rankInfo.rank - 1) / (rankInfo.posCount - 1);
-      val = Math.round((val ?? 0) * (0.88 + 0.24 * percentile));
+      // Layer 2 — rank-percentile nudge (±12%, skill positions only)
+      const rankInfo = (!isIDPDSTFallback && rankMap?.[pid]) ?? null;
+      if (rankInfo?.rank != null && rankInfo?.posCount > 1) {
+        const percentile = 1 - (rankInfo.rank - 1) / (rankInfo.posCount - 1);
+        val = Math.round((val ?? 0) * (0.88 + 0.24 * percentile));
+      }
     }
 
     candidates.push({

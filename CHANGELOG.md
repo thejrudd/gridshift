@@ -826,3 +826,18 @@ All notable changes, oldest first. Add new entries at the bottom.
 *2026-04-02*
 
 - **Desktop sidebar fixed back in place** - The shell sidebar now uses a true fixed desktop rail instead of scrolling with the document. The main content panel is offset to the same `240px` width so navigation remains stationary while page content scrolls independently.
+
+---
+
+## v6.2.0 - Routing Foundation + Companion/Trade Optimization
+*2026-04-08*
+
+- **Canonical routing foundation shipped** - Predictions, Statistics, Companion, and Trade now use real URL-backed navigation with refresh-safe routes, browser back/forward support, and app-level path normalization instead of the earlier history-state-only flow.
+- **Statistics deep links expanded** - Statistics team and player pages are now first-class destinations, and Predictions team detail also routes through a canonical path instead of transient modal state.
+- **Companion URLs now preserve major state** - Rankings position chips, Matchup week/player, Waiver position, League subview/roster selection, and Heatmap filter combinations now round-trip through the URL so refreshes and direct links retain context.
+- **PWA/server route validation added** - Added a dedicated routing validation script and documented the nginx/Workbox SPA fallback contract so direct loads and installed-PWA navigations are verified after production builds.
+- **Trade and Companion responsiveness improved** - Shipped the first large optimization pass across code splitting, shared analytics caches, narrowed Sleeper subscriptions, deferred heavy calculations, list/picker optimizations, and lighter Trade/Matchup result rendering.
+- **Sleeper connect flow modernized** - Companion now looks up Sleeper username first, discovers the account's actual available seasons, and then lets the user pick from only the valid years and leagues returned by the API.
+- **Statistics and scoring polish delivered** - Fixed kicker normalization and team-view kicker grouping, updated yardage scoring displays to Sleeper-style reciprocal formatting, and aligned additional scoring displays with the new format.
+- **Shell and modal behavior tightened** - Desktop sidebar behavior was corrected, modal body scroll lock was standardized, and the project memory/docs were updated to preserve the shared modal pattern and routing validation flow.
+

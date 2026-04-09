@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { fetchKtcPlayers, findKtcPlayer, getKtcValue, fmtKtcValue, productionAdjustedValue } from '../../utils/ktcApi';
-import { useSleeper } from '../../context/SleeperContext';
+import { useSleeperBase } from '../../context/SleeperContext';
 import { calcPointsFromTotals } from '../../utils/scoringEngine';
 import { computePositionalRanks, buildDefenseTable, computePositionalAvgPPG } from '../../utils/projectionEngine';
 
@@ -304,7 +304,7 @@ function findPickEquiv(gap, ktcPlayers, leagueType) {
 // ── CompareTradePanel ─────────────────────────────────────────────────────────
 
 export default function CompareTradePanel({ playerA, playerB, sleeperPlayerA, sleeperPlayerB, onBuildTrade, onValuesChange }) {
-  const { league, hasLeague, seasonStats, weeklyStats, scoringSettings, players, scheduleMap, statsLoading, loadSeasonStats, loadPlayers } = useSleeper();
+  const { league, hasLeague, seasonStats, weeklyStats, scoringSettings, players, scheduleMap, statsLoading, loadSeasonStats, loadPlayers } = useSleeperBase();
   const [ktcPlayers, setKtcPlayers] = useState(null);
   const [loading, setLoading]       = useState(false);
   const [error, setError]           = useState(null);

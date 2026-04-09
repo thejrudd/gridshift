@@ -7,31 +7,9 @@ New features requested or planned should be added here.
 
 ## Planned Versions
 
-### v6.2 - URL Routing, Navigation, and Shareable Links Foundation
-
-Replace the current history-state-only navigation with real, section-specific URLs so deep links, back/forward behavior, reload persistence, and future shared links have a stable foundation.
-
-- **Canonical route structure** - Introduce URL-backed routes for the app shell and major sub-views: Predictions, Statistics, Companion sub-tabs, and Trade sub-tabs
-- **Path-based routing contract** - Use clean path routes rather than hash routes, and treat top-level section routes as stable/public from the first release
-- **Browser back/forward correctness** - Make browser navigation a first-class path through the app instead of a partial `pushState` mirror of internal tab state
-- **Reload-safe section state** - Ensure refreshing on a routed page returns the user to the same section/sub-view instead of falling back to default app state
-- **Statistics deep-link routes** - Add direct URLs for Statistics player pages using a canonical player route, likely ESPN id plus readable slug, so player detail destinations are addressable without relying on transient in-memory state
-- **Companion drilldown URLs** - Support direct URL states for destination-like Companion drilldowns, not just sub-tab routes, starting with the major drilldowns that already behave like navigable destinations
-- **Companion/Trade handoff routing** - Convert cross-section navigation into route-based handoffs instead of manual tab flips plus temporary callback state, while keeping origin context internal rather than encoding it in the canonical URL
-- **PWA-safe SPA fallback** - Update the deployment/server routing expectations so direct loads to client routes resolve correctly inside the PWA and normal browser sessions
-- **Shareable-link first phase** - Ship page + selected-player shareable links first; add broader week/filter/mode state after the route foundation is stable
-- **League-agnostic Statistics links** - Ensure shared Statistics player links still load without a connected Sleeper league, with league-specific fantasy overlays degrading gracefully
-
-**Implementation plan**
-- **Phase 1 - Route map and migration boundary** - Define the canonical route table and URL schema for tabs, sub-tabs, player pages, and major drilldowns before moving components
-- **Phase 2 - App shell routing** - Replace `activeTab`, `seasonView`, `companionView`, and `tradeView` as navigation source-of-truth with route state while preserving current UI layout and navigation controls
-- **Phase 3 - Statistics deep links** - Move Statistics player selection to URL-backed routes first and make Companion/Trade/Heatmap/Compare player opens navigate through that route layer
-- **Phase 4 - Destination drilldowns** - Promote major drilldowns that behave like pages into URL states so browser back/forward works consistently across Statistics and Companion
-- **Phase 5 - Query-param state** - Add only the high-value shareable state first: selected player immediately, then selected week, season, and major mode/filter choices that materially change what another user sees
-- **Phase 6 - PWA/server validation** - Validate nginx/Vite SPA fallback, refresh behavior, installable PWA behavior, and direct-link opening from outside the app shell; this is mandatory in the same release as routing
-- **Phase 7 - Cleanup** - Remove legacy manual history handlers and transient navigation glue once the router fully owns app navigation, reserving only one early cleanup pass for drilldown/query-param shape if needed
-
 ### v6.3 - Trade + Companion Performance Patch
+
+- **Shareable-link first phase** - Ship page + selected-player shareable links after the routing foundation stabilizes; broader week/filter/mode state can follow in a later 6.x pass
 
 Focused stabilization pass on Trade and Companion so navigation, tab switches, drilldowns, and heavy analysis views feel responsive and trustworthy after the routing foundation is in place.
 
@@ -41,6 +19,7 @@ Focused stabilization pass on Trade and Companion so navigation, tab switches, d
 - **First-open and first-search polish** - Improve the perceived performance of initial Trade entry and the first proposal search, especially on lower-powered devices and larger leagues
 - **Cross-view handoff responsiveness** - Speed up Companion and Trade drilldown transitions, especially roster or detail flows that jump into Matchup or other heavy views and currently pause before the destination UI is ready
 - **Companion performance improvement patch** - Reduce lag across Companion tab switches, player drilldowns, matchup detail opens, and other data-heavy views by trimming duplicate derivations, deferring non-critical work, and making loading states more explicit
+- **IDP Waivers** - Add defensive players, team defense, special teams player, and special teams to the waiver list.
 
 ### v6.4 - Statistics / Fantasy Drilldown Unification
 
@@ -51,6 +30,18 @@ Unifies player detail analysis so fantasy scoring and regular game production li
 - **Shared drilldown destination** - Route Companion player drill-ins to the Statistics page instead of opening a separate roster modal, so all player detail analysis has one canonical home
 - **Consistent detail hierarchy** - Redesign the Statistics player page so matchup context, weekly tables, and summary blocks make sense in both modes rather than splitting fantasy details into a separate modal flow
 - **Mode-state clarity** - Add explicit visual indication of the active mode and ensure navigation/back behavior preserves the selected player context when arriving from Companion
+- **Fix & Improve toggles in Player view in Statistics** - Introduce consistent desigh philosophy throughout the app for any available toggles. Allow "Fantasy Scoring" toggle to to flip all statistics to their respective fantasy value. Improve layout so all relevant stats are shown relative to position on desktop, and are removed in reverse order of importance to accommodate limited screen space on smaller devices.
+
+### v6.5 - League-Scoped Shareable Links
+
+Extends the new routing foundation so shared links can open the correct Sleeper league context instead of silently falling back to the recipient's currently connected league.
+
+- **League-aware Companion/Trade URLs** - Include a league identifier in shared URLs so links resolve against the intended Sleeper league context rather than whichever league the viewer already has connected
+- **Shortened league reference support** - Evaluate whether the shared URL should use the raw Sleeper league id or a shortened/derived identifier that still resolves unambiguously inside the app
+- **Ownership validation on open** - If the current Sleeper username is not associated with the linked league id, show a clear error state instead of loading misleading data from another connected league
+- **Safe connect handoff** - If no Sleeper account is connected, route the viewer into the Companion connect flow with the linked league id preserved so the app can validate it after username entry
+- **League-context mismatch UX** - Provide a concise message that explains why the link could not be opened in the requested league and what the user needs to do next
+- **Shareability boundaries** - Keep non-shareable local state out of the link and only encode the league context plus the page/filter/player state that materially changes what another user sees
 
 ### v7.0 - Draft Coach
 

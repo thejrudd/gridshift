@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useSleeper } from '../../context/SleeperContext';
+import { useSleeperLeague, useSleeperStats, useSleeperStatsProgress } from '../../context/SleeperContext';
 import {
   analyzeAreasOfOpportunity,
   getOpportunityPositionLabel,
@@ -10,18 +10,20 @@ export default function CompanionOpportunity({ onOpenTrade, onOpenWaiver }) {
     league,
     leagueUsers,
     rosters,
+    scoringSettings,
+    statsLoading,
+    myRoster,
+    getUserDisplayName,
+  } = useSleeperLeague();
+  const {
     players,
     loadPlayers,
     weeklyStats,
     seasonStats,
     loadSeasonStats,
     scheduleMap,
-    scoringSettings,
-    statsLoading,
-    statsProgress,
-    myRoster,
-    getUserDisplayName,
-  } = useSleeper();
+  } = useSleeperStats();
+  const statsProgress = useSleeperStatsProgress();
 
   const [viewMode, setViewMode] = useState('mine');
   const [selectedOpponentId, setSelectedOpponentId] = useState(null);

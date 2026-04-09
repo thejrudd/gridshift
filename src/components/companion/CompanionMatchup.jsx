@@ -1,8 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useSleeper } from '../../context/SleeperContext';
+import { useSleeperBase, useSleeperStatsProgress } from '../../context/SleeperContext';
 import { useTheme } from '../../context/ThemeContext';
 import { calcPoints, DEFAULT_SCORING, STAT_TO_SCORING_KEY } from '../../utils/scoringEngine';
-import { computePositionalRanks, getAvgPPG, getDefenseStrength, buildDefenseTable, projectPlayer, getDefensePercentile } from '../../utils/projectionEngine';
+import {
+  buildDefenseTable,
+  computeLeagueAvgPPGByPosition,
+  computePositionalRanks,
+  computeWeeklyPositionalRanks,
+  getAvgPPG,
+  getDefensePercentile,
+  getDefenseStrength,
+  projectPlayer,
+} from '../../utils/projectionEngine';
 import { STADIUMS, WEEK_DATES_2025 } from '../../data/stadiums';
 import { getTeamColorKey, getTeamPalette } from '../../data/teamColors.js';
 import { fetchGameWeather, formatWeather } from '../../api/weatherApi';
@@ -218,16 +227,23 @@ function teamRowTheme(team, darkMode) {
   };
 }
 
-export default function CompanionMatchup({ onViewPlayer, onComparePlayers = null, initialWeekRequest = null, onConsumeInitialWeekRequest = null }) {
+export default function CompanionMatchup({
+  onViewPlayer,
+  onComparePlayers = null,
+  initialWeekRequest = null,
+  selectedWeek = null,
+  onWeekChange = null,
+  onConsumeInitialWeekRequest = null,
+}) {
   const { darkMode } = useTheme();
   const isCompactPhone = useMediaQuery(COMPACT_PHONE_QUERY);
   const {
     sleeperUser, selectedLeagueId, league,
     rosters, players, loadPlayers,
     weeklyStats, seasonStats, scheduleMap, loadSeasonStats,
-    statsLoading, statsProgress, scoringSettings,
+    statsLoading, scoringSettings,
     myRoster, getUserDisplayName, espnIdOverrides,
-  } = useSleeper();
+  } = useSleeperBase();
 
   const lastScoredLeg = Number(league?.settings?.last_scored_leg);
   const totalWeeks = useMemo(() => {
@@ -253,7 +269,7 @@ export default function CompanionMatchup({ onViewPlayer, onComparePlayers = null
 
   const [matchups, setMatchups] = useState(null);
   // Default to last regular-season week inside the league's actual fantasy season.
-  const [week, setWeek] = useState(() => defaultWeek);
+  const [week, setWeek] = useState(() => selectedWeek ?? defaultWeek);
   const [matchupLoading, setMatchupLoading] = useState(false);
   const [showBench, setShowBench] = useState(false);
   const [showWeekPicker, setShowWeekPicker] = useState(false);
@@ -263,11 +279,36 @@ export default function CompanionMatchup({ onViewPlayer, onComparePlayers = null
   const [weatherMap, setWeatherMap] = useState({}); // { 'TEAM-DATE': weather }
   const [isMineHeaderHovered, setIsMineHeaderHovered] = useState(false);
   const [isOppHeaderHovered, setIsOppHeaderHovered] = useState(false);
+  const [insightsRequested, setInsightsRequested] = useState(false);
 
   useEffect(() => { loadPlayers(); }, [loadPlayers]);
   useEffect(() => {
-    if (!seasonStats && !statsLoading) loadSeasonStats();
-  }, [seasonStats, statsLoading, loadSeasonStats]);
+    if (insightsRequested || !selectedLeagueId) return undefined;
+
+    let timeoutId = null;
+    let idleId = null;
+    const requestInsights = () => setInsightsRequested(true);
+
+    if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+      idleId = window.requestIdleCallback(requestInsights, { timeout: 600 });
+    } else {
+      timeoutId = window.setTimeout(requestInsights, 180);
+    }
+
+    return () => {
+      if (idleId != null && typeof window !== 'undefined' && typeof window.cancelIdleCallback === 'function') {
+        window.cancelIdleCallback(idleId);
+      }
+      if (timeoutId != null) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [insightsRequested, selectedLeagueId]);
+
+  useEffect(() => {
+    if (!insightsRequested || seasonStats || statsLoading) return;
+    loadSeasonStats();
+  }, [insightsRequested, seasonStats, statsLoading, loadSeasonStats]);
 
   useEffect(() => {
     if (!selectedLeagueId) return;
@@ -282,6 +323,11 @@ export default function CompanionMatchup({ onViewPlayer, onComparePlayers = null
     if (!initialWeekRequest?.week) return;
     setWeek(Math.max(1, Math.min(totalWeeks, Number(initialWeekRequest.week) || 1)));
   }, [initialWeekRequest, totalWeeks]);
+
+  useEffect(() => {
+    if (selectedWeek == null) return;
+    setWeek(Math.max(1, Math.min(totalWeeks, Number(selectedWeek) || defaultWeek)));
+  }, [selectedWeek, totalWeeks, defaultWeek]);
 
   useEffect(() => {
     setWeek((prev) => {
@@ -317,6 +363,10 @@ export default function CompanionMatchup({ onViewPlayer, onComparePlayers = null
     if (!sleeperUser) return 'You';
     return getUserDisplayName(sleeperUser.user_id);
   }, [sleeperUser, getUserDisplayName]);
+  const hasAdvancedStats = Boolean(insightsRequested && weeklyStats && seasonStats && scheduleMap && players);
+  const isInsightsLoading = insightsRequested && (!hasAdvancedStats && (statsLoading || !seasonStats));
+  const myPointsMap = myMatchup?.players_points ?? {};
+  const oppPointsMap = opponentMatchup?.players_points ?? {};
 
   const matchupOutcome = useMemo(() => {
     const myPoints = myMatchup?.points ?? null;
@@ -360,50 +410,28 @@ export default function CompanionMatchup({ onViewPlayer, onComparePlayers = null
   );
 
   const positionalRanks = useMemo(
-    () => computePositionalRanks(seasonStats, players, scoringSettings),
-    [seasonStats, players, scoringSettings],
+    () => hasAdvancedStats ? computePositionalRanks(seasonStats, players, scoringSettings) : {},
+    [hasAdvancedStats, seasonStats, players, scoringSettings],
   );
 
-  // Per-week positional ranks for the selected week
   const weeklyRanks = useMemo(() => {
-    if (!weeklyStats || !players) return {};
-    const SKILL = ['QB', 'RB', 'WR', 'TE', 'K'];
-    const IDP_MAP = { DL: ['DL', 'DE', 'DT'], LB: ['LB', 'ILB', 'OLB'], DB: ['DB', 'CB', 'S', 'SS', 'FS'] };
-    function normalizePos(pos) {
-      if (SKILL.includes(pos)) return pos;
-      for (const [norm, variants] of Object.entries(IDP_MAP)) {
-        if (variants.includes(pos)) return norm;
-      }
-      return null;
-    }
-    const byPos = {};
-    for (const [playerId, weeks] of Object.entries(weeklyStats)) {
-      const weekEntry = weeks.find(w => w.week === week);
-      if (!weekEntry) continue;
-      const p = players[playerId];
-      if (!p) continue;
-      const pos = normalizePos(p.position);
-      if (!pos) continue;
-      const pts = calcPoints(weekEntry, scoringSettings, p.position);
-      if (pts <= 0) continue;
-      if (!byPos[pos]) byPos[pos] = [];
-      byPos[pos].push({ id: playerId, pts });
-    }
-    const ranks = {};
-    for (const [pos, list] of Object.entries(byPos)) {
-      list.sort((a, b) => b.pts - a.pts);
-      list.forEach(({ id }, i) => { ranks[id] = { rank: i + 1, posLabel: pos }; });
-    }
-    return ranks;
-  }, [weeklyStats, players, scoringSettings, week]);
+    if (!hasAdvancedStats) return {};
+    return computeWeeklyPositionalRanks(weeklyStats, players, scoringSettings, week);
+  }, [hasAdvancedStats, weeklyStats, players, scoringSettings, week]);
 
   // Pre-computed defense table: { [teamAbbr]: { [normPos]: { [week]: totalPts } } }
   // Built once when all data is available; used for O(1) opponent strength lookups.
   const defenseTable = useMemo(
-    () => weeklyStats && players && scheduleMap
+    () => hasAdvancedStats
       ? buildDefenseTable(weeklyStats, players, scheduleMap, scoringSettings)
       : null,
-    [weeklyStats, players, scheduleMap, scoringSettings],
+    [hasAdvancedStats, weeklyStats, players, scheduleMap, scoringSettings],
+  );
+  const leagueAvgByPos = useMemo(
+    () => hasAdvancedStats
+      ? computeLeagueAvgPPGByPosition(weeklyStats, players, scoringSettings, week)
+      : {},
+    [hasAdvancedStats, weeklyStats, players, scoringSettings, week],
   );
 
   const toCompareSeed = useCallback((player) => {
@@ -421,13 +449,13 @@ export default function CompanionMatchup({ onViewPlayer, onComparePlayers = null
     };
   }, [players, espnIdOverrides]);
 
-  const enrichPlayer = useCallback((id) => {
+  const enrichPlayer = useCallback((id, pointsMap = null) => {
     if (!id || !players) return null;
     const p = players[id];
     if (!p) return { id, name: 'Empty', position: '?', team: '', pts: null, avgPPG: 0, rank: null, oppTeam: null, isHome: null, isIndoor: null, homeTeam: null, injuryStatus: null, weekly: [] };
 
-    const weekly = weeklyStats?.[id] ?? [];
-    const weekEntry = weekly.find(w => w.week === week) ?? null;
+    const weekly = hasAdvancedStats ? (weeklyStats?.[id] ?? []) : [];
+    const weekEntry = hasAdvancedStats ? (weekly.find(w => w.week === week) ?? null) : null;
     const myTeam = p.team || 'FA';
     // Derive opponent + home/away: prefer stat entry fields, fall back to ESPN schedule
     const schedEntry = scheduleMap?.[week]?.[myTeam] ?? null;
@@ -439,24 +467,25 @@ export default function CompanionMatchup({ onViewPlayer, onComparePlayers = null
     // Home team hosts → determines whose stadium we use
     const homeTeam = isHome === true ? myTeam : isHome === false ? oppTeam : null;
     const stadium = homeTeam ? (STADIUMS[homeTeam] ?? null) : null;
-    const defStrength = oppTeam && defenseTable
+    const defStrength = hasAdvancedStats && oppTeam && defenseTable
       ? getDefenseStrength(defenseTable, oppTeam, p.position, week)
       : null;
     const isDefensivePos = ['DL', 'DE', 'DT', 'LB', 'ILB', 'OLB', 'DB', 'CB', 'S', 'SS', 'FS'].includes(p.position);
-    const defPercentile = oppTeam && defenseTable && !isDefensivePos
+    const defPercentile = hasAdvancedStats && oppTeam && defenseTable && !isDefensivePos
       ? getDefensePercentile(defenseTable, oppTeam, p.position, week)
       : null;
     // Bye detection: week has games for other teams but not this team
     const weekHasGames = !!scheduleMap && Object.keys(scheduleMap[week] ?? {}).length > 0;
     const isBye = weekHasGames && !schedEntry && myTeam !== 'FA';
+    const fallbackWeekPts = pointsMap && Number.isFinite(Number(pointsMap[id])) ? Number(pointsMap[id]) : null;
 
     return {
       id,
       name: p.full_name || `${p.first_name} ${p.last_name}`,
       position: p.position,
       team: myTeam,
-      weekPts: weekEntry ? calcPoints(weekEntry, scoringSettings, p.position) : null,
-      avgPPG: getAvgPPG(weekly, scoringSettings, p.position),
+      weekPts: weekEntry ? calcPoints(weekEntry, scoringSettings, p.position) : fallbackWeekPts,
+      avgPPG: hasAdvancedStats ? getAvgPPG(weekly, scoringSettings, p.position) : null,
       rank: positionalRanks[id] ?? null,
       weekRank: weeklyRanks[id] ?? null,
       oppTeam,
@@ -471,7 +500,7 @@ export default function CompanionMatchup({ onViewPlayer, onComparePlayers = null
       isBye,
       teamTheme: teamRowTheme(myTeam, darkMode),
     };
-  }, [players, seasonStats, weeklyStats, scoringSettings, positionalRanks, weeklyRanks, week, scheduleMap, defenseTable, darkMode]);
+  }, [players, hasAdvancedStats, weeklyStats, scoringSettings, positionalRanks, weeklyRanks, week, scheduleMap, defenseTable, darkMode]);
 
   // Ordered slot positions for each starter slot (filters out BN/IR)
   const starterPositions = useMemo(
@@ -485,27 +514,28 @@ export default function CompanionMatchup({ onViewPlayer, onComparePlayers = null
     const oppIds = opponentMatchup?.starters ?? [];
     const len = Math.max(myIds.length, oppIds.length);
     return Array.from({ length: len }, (_, i) => ({
-      mine: enrichPlayer(myIds[i]),
-      opp: enrichPlayer(oppIds[i]),
+      mine: enrichPlayer(myIds[i], myPointsMap),
+      opp: enrichPlayer(oppIds[i], oppPointsMap),
       slotPos: starterPositions[i] ?? null,
     }));
-  }, [myMatchup, opponentMatchup, enrichPlayer, starterPositions]);
+  }, [myMatchup, opponentMatchup, enrichPlayer, starterPositions, myPointsMap, oppPointsMap]);
 
   // Bench players
   const myBench = useMemo(() => {
     if (!myRosterData || !myMatchup) return [];
     const starterSet = new Set(myMatchup.starters ?? []);
-    return (myRosterData.players ?? []).filter(id => !starterSet.has(id)).map(enrichPlayer).filter(Boolean);
-  }, [myRosterData, myMatchup, enrichPlayer]);
+    return (myRosterData.players ?? []).filter(id => !starterSet.has(id)).map(id => enrichPlayer(id, myPointsMap)).filter(Boolean);
+  }, [myRosterData, myMatchup, enrichPlayer, myPointsMap]);
 
   const oppBench = useMemo(() => {
     if (!opponentRoster || !opponentMatchup) return [];
     const starterSet = new Set(opponentMatchup.starters ?? []);
-    return (opponentRoster.players ?? []).filter(id => !starterSet.has(id)).map(enrichPlayer).filter(Boolean);
-  }, [opponentRoster, opponentMatchup, enrichPlayer]);
+    return (opponentRoster.players ?? []).filter(id => !starterSet.has(id)).map(id => enrichPlayer(id, oppPointsMap)).filter(Boolean);
+  }, [opponentRoster, opponentMatchup, enrichPlayer, oppPointsMap]);
 
   // Fetch weather for all outdoor home stadiums referenced by starters
   useEffect(() => {
+    if (!hasAdvancedStats) return;
     const date = WEEK_DATES_2025[week];
     if (!date) return;
 
@@ -523,15 +553,37 @@ export default function CompanionMatchup({ onViewPlayer, onComparePlayers = null
       }
     }
 
-    for (const [, { lat, lng, key }] of toFetch) {
-      fetchGameWeather(lat, lng, date).then(w => {
-        if (w) setWeatherMap(prev => ({ ...prev, [key]: w }));
+    const pending = Array.from(toFetch.values());
+    if (!pending.length) return;
+
+    let cancelled = false;
+    Promise.all(
+      pending.map(({ lat, lng, key }) =>
+        fetchGameWeather(lat, lng, date)
+          .then((weather) => ({ key, weather }))
+          .catch(() => ({ key, weather: null })),
+      ),
+    ).then((results) => {
+      if (cancelled) return;
+      const nextEntries = results.filter(({ weather }) => weather);
+      if (!nextEntries.length) return;
+      setWeatherMap((prev) => {
+        const next = { ...prev };
+        for (const { key, weather } of nextEntries) {
+          next[key] = weather;
+        }
+        return next;
       });
-    }
-  }, [starterSlots, week]); // eslint-disable-line react-hooks/exhaustive-deps
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [hasAdvancedStats, starterSlots, week, weatherMap]);
 
   // Add projections once weather is available
   const enrichedSlots = useMemo(() => {
+    if (!hasAdvancedStats) return starterSlots;
     const date = WEEK_DATES_2025[week];
 
     function addProjection(player) {
@@ -551,6 +603,8 @@ export default function CompanionMatchup({ onViewPlayer, onComparePlayers = null
         scheduleMap,
         week,
         defStrength: player.defStrength ?? null,
+        leagueAvg: leagueAvgByPos[player.position] ?? 0,
+        skipOpponentLookup: true,
       });
       return { ...player, projection: proj, weather };
     }
@@ -560,7 +614,7 @@ export default function CompanionMatchup({ onViewPlayer, onComparePlayers = null
       opp: addProjection(slot.opp),
       slotPos: slot.slotPos,
     }));
-  }, [starterSlots, weatherMap, week, weeklyStats, players, scoringSettings, scheduleMap]);
+  }, [hasAdvancedStats, starterSlots, weatherMap, week, weeklyStats, players, scoringSettings, scheduleMap, leagueAvgByPos]);
 
   const sharedPlayerNameFontSize = useMemo(() => {
     const labels = [
@@ -600,11 +654,14 @@ export default function CompanionMatchup({ onViewPlayer, onComparePlayers = null
   return (
     <div className="pb-6">
       {statsLoading && (
+        <MatchupStatsLoadingBanner />
+      )}
+
+      {isInsightsLoading && !statsLoading && (
         <div className="mx-4 mb-4 px-4 py-3 rounded-xl flex items-center gap-3" style={{ background: 'var(--color-fill)', border: '1px solid var(--color-separator)' }}>
-          <div className="h-1 flex-1 rounded-full overflow-hidden" style={{ background: 'var(--color-fill-secondary)' }}>
-            <div className="h-full rounded-full transition-all duration-300" style={{ width: `${statsProgress}%`, background: 'var(--color-signature)' }} />
-          </div>
-          <span className="text-xs tabular-nums shrink-0" style={{ color: 'var(--color-label-tertiary)' }}>Loading stats {statsProgress}%</span>
+          <span className="text-xs shrink-0" style={{ color: 'var(--color-label-tertiary)' }}>
+            Preparing matchup insights…
+          </span>
         </div>
       )}
 
@@ -896,6 +953,7 @@ export default function CompanionMatchup({ onViewPlayer, onComparePlayers = null
             setSelectedRosterPlayerId(null);
             setSelectedPlayer(null);
             setWeek(requestedWeek);
+            onWeekChange?.(requestedWeek);
             const matchupPlayers = [
               ...enrichedSlots.flatMap((slot) => [slot.mine, slot.opp]),
               ...myBench,
@@ -970,6 +1028,7 @@ export default function CompanionMatchup({ onViewPlayer, onComparePlayers = null
                     key={w}
                     onClick={() => {
                       setWeek(w);
+                      onWeekChange?.(w);
                       setShowWeekPicker(false);
                     }}
                     className="px-2 py-1.5 text-xs font-bold uppercase tracking-[0.18em] active:opacity-60 grid place-items-center"
@@ -1316,7 +1375,7 @@ function formatScoringKeyLabel(key) {
 }
 
 function TeamScoreBreakdown({ teamName, playerIds, week, onClose }) {
-  const { weeklyStats, scoringSettings, players } = useSleeper();
+  const { weeklyStats, scoringSettings, players } = useSleeperBase();
 
   const { rows, total } = useMemo(() => {
     if (!weeklyStats) return { rows: [], total: 0 };
@@ -1526,6 +1585,19 @@ function TeamScoreBreakdown({ teamName, playerIds, week, onClose }) {
         </div>
       </div>
     </>
+  );
+}
+
+function MatchupStatsLoadingBanner() {
+  const statsProgress = useSleeperStatsProgress();
+
+  return (
+    <div className="mx-4 mb-4 px-4 py-3 rounded-xl flex items-center gap-3" style={{ background: 'var(--color-fill)', border: '1px solid var(--color-separator)' }}>
+      <div className="h-1 flex-1 rounded-full overflow-hidden" style={{ background: 'var(--color-fill-secondary)' }}>
+        <div className="h-full rounded-full transition-all duration-300" style={{ width: `${statsProgress}%`, background: 'var(--color-signature)' }} />
+      </div>
+      <span className="text-xs tabular-nums shrink-0" style={{ color: 'var(--color-label-tertiary)' }}>Loading stats {statsProgress}%</span>
+    </div>
   );
 }
 

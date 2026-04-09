@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { fetchPlayerStats, fetchPlayerCareerStats, fetchGameLog, fetchPlayerBio, headshot, CURRENT_SEASON } from '../utils/playerApi';
 import { buildStatMap, getCareerHighlights } from '../utils/playerMetrics';
 import { usePredictions } from '../context/PredictionContext';
-import { useSleeper } from '../context/SleeperContext';
+import { useSleeperLeague, useSleeperStats } from '../context/SleeperContext';
 import { useTheme } from '../context/ThemeContext';
 import PlayerStatTable from './PlayerStatTable';
 import honorsData from '../data/honors.json';
@@ -28,7 +28,8 @@ const YEARS_TO_SHOW = 10;
 
 const PlayerProfile = ({ playerId, playerMeta, teamId, teams, onBack, backLabel, onCompare, onBuildTrade }) => {
   const { getTeamRecord } = usePredictions();
-  const { players: sleeperPlayers, loadPlayers, hasLeague, myRoster } = useSleeper();
+  const { hasLeague, myRoster } = useSleeperLeague();
+  const { players: sleeperPlayers, loadPlayers } = useSleeperStats();
   const [sleeperId, setSleeperId] = useState(null);
 
   // statsJson for each year, fetched lazily

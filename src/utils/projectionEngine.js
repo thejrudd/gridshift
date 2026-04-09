@@ -5,6 +5,48 @@ const IDP_POSITIONS = new Set(['DL', 'LB', 'DB', 'DE', 'DT', 'CB', 'S', 'ILB', '
 const PASSING_POSITIONS = new Set(['QB', 'WR', 'TE']);
 // Positions for which offensive snap % is a meaningful usage signal
 const SNAP_POSITIONS = new Set(['QB', 'RB', 'WR', 'TE']);
+const POSITION_ALIAS_MAP = {
+  DL: ['DE', 'DT'],
+  LB: ['ILB', 'OLB'],
+  DB: ['CB', 'S', 'SS', 'FS'],
+};
+
+const POSITION_RANK_CACHE = new WeakMap();
+const WEEKLY_POSITION_RANK_CACHE = new WeakMap();
+const DEFENSE_TABLE_CACHE = new WeakMap();
+const LEAGUE_AVG_BY_POS_CACHE = new WeakMap();
+
+function isCacheKeyable(value) {
+  return value != null && (typeof value === 'object' || typeof value === 'function');
+}
+
+function getWeakCacheNode(cache, key) {
+  let next = cache.get(key);
+  if (!next) {
+    next = new WeakMap();
+    cache.set(key, next);
+  }
+  return next;
+}
+
+function getMapCacheNode(cache, key) {
+  let next = cache.get(key);
+  if (!next) {
+    next = new Map();
+    cache.set(key, next);
+  }
+  return next;
+}
+
+function addPositionAliases(valuesByPos) {
+  const next = { ...valuesByPos };
+  for (const [basePos, aliases] of Object.entries(POSITION_ALIAS_MAP)) {
+    for (const alias of aliases) {
+      next[alias] = valuesByPos[basePos] ?? 0;
+    }
+  }
+  return next;
+}
 
 /**
  * Compute season avg PPG for a player (only counts active weeks, pts > 0).
@@ -23,6 +65,14 @@ export function getAvgPPG(weeklyArr, scoring, position = null) {
  */
 export function computePositionalRanks(seasonStats, players, scoringSettings) {
   if (!seasonStats || !players) return {};
+
+  const canCache = isCacheKeyable(seasonStats) && isCacheKeyable(players) && isCacheKeyable(scoringSettings);
+  if (canCache) {
+    const byPlayers = getWeakCacheNode(POSITION_RANK_CACHE, seasonStats);
+    const byScoring = getWeakCacheNode(byPlayers, players);
+    const cached = byScoring.get(scoringSettings);
+    if (cached) return cached;
+  }
 
   // Group players by position with their pts
   const byPos = {}; // { pos: [{id, pts}] }
@@ -45,6 +95,57 @@ export function computePositionalRanks(seasonStats, players, scoringSettings) {
       ranks[id] = { rank: i + 1, posCount: list.length, posLabel: pos };
     });
   }
+
+  if (canCache) {
+    const byPlayers = getWeakCacheNode(POSITION_RANK_CACHE, seasonStats);
+    const byScoring = getWeakCacheNode(byPlayers, players);
+    byScoring.set(scoringSettings, ranks);
+  }
+
+  return ranks;
+}
+
+export function computeWeeklyPositionalRanks(weeklyStats, players, scoringSettings, week) {
+  if (!weeklyStats || !players) return {};
+
+  const canCache = isCacheKeyable(weeklyStats) && isCacheKeyable(players) && isCacheKeyable(scoringSettings);
+  const weekKey = Number(week);
+  if (canCache) {
+    const byPlayers = getWeakCacheNode(WEEKLY_POSITION_RANK_CACHE, weeklyStats);
+    const byScoring = getWeakCacheNode(byPlayers, players);
+    const byWeek = getMapCacheNode(byScoring, scoringSettings);
+    if (byWeek.has(weekKey)) return byWeek.get(weekKey);
+  }
+
+  const byPos = {};
+  for (const [playerId, weeks] of Object.entries(weeklyStats)) {
+    const weekEntry = weeks.find((entry) => entry.week === weekKey);
+    if (!weekEntry) continue;
+    const player = players[playerId];
+    if (!player) continue;
+    const pos = normalizePos(player.position);
+    if (!pos) continue;
+    const pts = calcPoints(weekEntry, scoringSettings, player.position);
+    if (pts <= 0) continue;
+    if (!byPos[pos]) byPos[pos] = [];
+    byPos[pos].push({ id: playerId, pts });
+  }
+
+  const ranks = {};
+  for (const [pos, list] of Object.entries(byPos)) {
+    list.sort((a, b) => b.pts - a.pts);
+    list.forEach(({ id }, index) => {
+      ranks[id] = { rank: index + 1, posLabel: pos };
+    });
+  }
+
+  if (canCache) {
+    const byPlayers = getWeakCacheNode(WEEKLY_POSITION_RANK_CACHE, weeklyStats);
+    const byScoring = getWeakCacheNode(byPlayers, players);
+    const byWeek = getMapCacheNode(byScoring, scoringSettings);
+    byWeek.set(weekKey, ranks);
+  }
+
   return ranks;
 }
 
@@ -237,6 +338,19 @@ export function computeLeagueAvgMult(rosters, seasonStats, sleeperPlayers, scori
 export function buildDefenseTable(weeklyStats, players, scheduleMap, scoringSettings, valueFn, keyBySelf = false) {
   if (!weeklyStats || !players) return {};
 
+  const canCache = !valueFn && !keyBySelf
+    && isCacheKeyable(weeklyStats)
+    && isCacheKeyable(players)
+    && isCacheKeyable(scheduleMap)
+    && isCacheKeyable(scoringSettings);
+  if (canCache) {
+    const byPlayers = getWeakCacheNode(DEFENSE_TABLE_CACHE, weeklyStats);
+    const bySchedule = getWeakCacheNode(byPlayers, players);
+    const byScoring = getWeakCacheNode(bySchedule, scheduleMap);
+    const cached = byScoring.get(scoringSettings);
+    if (cached) return cached;
+  }
+
   const getValue = valueFn ?? ((wEntry, position) => calcPoints(wEntry, scoringSettings, position));
 
   // Pre-compute the inferred season team for each player.
@@ -293,6 +407,13 @@ export function buildDefenseTable(weeklyStats, players, scheduleMap, scoringSett
         }
       }
     }
+  }
+
+  if (canCache) {
+    const byPlayers = getWeakCacheNode(DEFENSE_TABLE_CACHE, weeklyStats);
+    const bySchedule = getWeakCacheNode(byPlayers, players);
+    const byScoring = getWeakCacheNode(bySchedule, scheduleMap);
+    byScoring.set(scoringSettings, table);
   }
 
   return table;
@@ -459,23 +580,56 @@ export function getDefensePercentile(defenseTable, oppTeam, pos, beforeWeek = nu
  * so that oppFactor = ptsAllowedPerGame / leagueAvg is a true relative comparison.
  */
 export function getLeagueAvgPPG(pos, allWeeklyStats, players, scoringSettings, beforeWeek = null) {
+  const averagesByPos = computeLeagueAvgPPGByPosition(allWeeklyStats, players, scoringSettings, beforeWeek);
   const normPos = normalizePos(pos);
-  const teamWeekTotals = {}; // `${opp}_${week}` → total pts scored against that defense
+  return averagesByPos[normPos] ?? averagesByPos[pos] ?? 0;
+}
+
+export function computeLeagueAvgPPGByPosition(allWeeklyStats, players, scoringSettings, beforeWeek = null) {
+  if (!allWeeklyStats || !players) return {};
+
+  const weekKey = beforeWeek == null ? 'all' : Number(beforeWeek);
+  const canCache = isCacheKeyable(allWeeklyStats) && isCacheKeyable(players) && isCacheKeyable(scoringSettings);
+  if (canCache) {
+    const byPlayers = getWeakCacheNode(LEAGUE_AVG_BY_POS_CACHE, allWeeklyStats);
+    const byScoring = getWeakCacheNode(byPlayers, players);
+    const byWeek = getMapCacheNode(byScoring, scoringSettings);
+    if (byWeek.has(weekKey)) return byWeek.get(weekKey);
+  }
+
+  const teamWeekTotalsByPos = {};
   for (const [playerId, weeks] of Object.entries(allWeeklyStats ?? {})) {
     const player = players?.[playerId];
-    if (!player || normalizePos(player.position) !== normPos) continue;
+    if (!player) continue;
+    const normPos = normalizePos(player.position);
+    if (!normPos) continue;
     for (const w of weeks) {
       if (beforeWeek != null && w.week >= beforeWeek) continue;
       const pts = calcPoints(w, scoringSettings, player.position);
       if (pts <= 0) continue;
       const opp = w.opp?.toUpperCase();
       if (!opp) continue;
+      if (!teamWeekTotalsByPos[normPos]) teamWeekTotalsByPos[normPos] = {};
       const key = `${opp}_${w.week}`;
-      teamWeekTotals[key] = (teamWeekTotals[key] ?? 0) + pts;
+      teamWeekTotalsByPos[normPos][key] = (teamWeekTotalsByPos[normPos][key] ?? 0) + pts;
     }
   }
-  const vals = Object.values(teamWeekTotals);
-  return vals.length ? vals.reduce((s, p) => s + p, 0) / vals.length : 0;
+
+  const averagesByPos = {};
+  for (const [position, totals] of Object.entries(teamWeekTotalsByPos)) {
+    const values = Object.values(totals);
+    averagesByPos[position] = values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
+  }
+
+  const result = addPositionAliases(averagesByPos);
+  if (canCache) {
+    const byPlayers = getWeakCacheNode(LEAGUE_AVG_BY_POS_CACHE, allWeeklyStats);
+    const byScoring = getWeakCacheNode(byPlayers, players);
+    const byWeek = getMapCacheNode(byScoring, scoringSettings);
+    byWeek.set(weekKey, result);
+  }
+
+  return result;
 }
 
 /**

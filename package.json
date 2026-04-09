@@ -1,13 +1,14 @@
 {
   "name": "nfl-predictor",
   "private": true,
-  "version": "6.1.6",
+  "version": "6.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
+    "validate:routing": "node scripts/validate-routing.mjs",
     "generate-pwa-assets": "pwa-assets-generator --preset minimal public/icons/icon.svg"
   },
   "dependencies": {

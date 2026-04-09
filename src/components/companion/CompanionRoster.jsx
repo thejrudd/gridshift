@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useSleeper } from '../../context/SleeperContext';
+import { useSleeperBase, useSleeperStatsProgress } from '../../context/SleeperContext';
 import { useTheme } from '../../context/ThemeContext';
 import { calcPointsFromTotals } from '../../utils/scoringEngine';
 import { computePositionalRanks, getAvgPPG } from '../../utils/projectionEngine';
@@ -205,10 +205,10 @@ export default function CompanionRoster({ onTradePlayer, onOpenMatchupWeek }) {
   const {
     players, loadPlayers,
     weeklyStats, seasonStats, loadSeasonStats,
-    statsLoading, statsProgress,
+    statsLoading,
     scoringSettings,
     myRoster,
-  } = useSleeper();
+  } = useSleeperBase();
   const { darkMode } = useTheme();
   const isCompactPhone = useMediaQuery(COMPACT_PHONE_QUERY);
 
@@ -284,25 +284,7 @@ export default function CompanionRoster({ onTradePlayer, onOpenMatchupWeek }) {
 
   return (
     <div className="pb-6">
-      {statsLoading && (
-        <div
-          className="mx-4 mb-4 px-4 py-3 rounded-xl flex items-center gap-3"
-          style={{ background: 'var(--color-fill)', border: '1px solid var(--color-separator)' }}
-        >
-          <div
-            className="h-1 flex-1 rounded-full overflow-hidden"
-            style={{ background: 'var(--color-fill-secondary)' }}
-          >
-            <div
-              className="h-full rounded-full transition-all duration-300"
-              style={{ width: `${statsProgress}%`, background: 'var(--color-signature)' }}
-            />
-          </div>
-          <span className="text-xs tabular-nums shrink-0" style={{ color: 'var(--color-label-tertiary)' }}>
-            Loading stats {statsProgress}%
-          </span>
-        </div>
-      )}
+      {statsLoading && <RosterStatsLoadingBanner />}
 
       <div className="px-4 pb-2 mb-1" style={{ borderBottom: '1px solid var(--color-separator)' }}>
         <div className="flex items-center w-full">
@@ -368,6 +350,30 @@ export default function CompanionRoster({ onTradePlayer, onOpenMatchupWeek }) {
           onOpenWeek={onOpenMatchupWeek}
         />
       )}
+    </div>
+  );
+}
+
+function RosterStatsLoadingBanner() {
+  const statsProgress = useSleeperStatsProgress();
+
+  return (
+    <div
+      className="mx-4 mb-4 px-4 py-3 rounded-xl flex items-center gap-3"
+      style={{ background: 'var(--color-fill)', border: '1px solid var(--color-separator)' }}
+    >
+      <div
+        className="h-1 flex-1 rounded-full overflow-hidden"
+        style={{ background: 'var(--color-fill-secondary)' }}
+      >
+        <div
+          className="h-full rounded-full transition-all duration-300"
+          style={{ width: `${statsProgress}%`, background: 'var(--color-signature)' }}
+        />
+      </div>
+      <span className="text-xs tabular-nums shrink-0" style={{ color: 'var(--color-label-tertiary)' }}>
+        Loading stats {statsProgress}%
+      </span>
     </div>
   );
 }

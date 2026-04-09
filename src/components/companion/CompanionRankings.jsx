@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useSleeper } from '../../context/SleeperContext';
+import { useSleeperBase, useSleeperStatsProgress } from '../../context/SleeperContext';
 import { useTheme } from '../../context/ThemeContext';
 import { calcPointsFromTotals } from '../../utils/scoringEngine';
 import PlayerWeeklySheet from './PlayerWeeklySheet';
@@ -174,22 +174,26 @@ function teamRowTheme(team, darkMode) {
   };
 }
 
-export default function CompanionRankings() {
+export default function CompanionRankings({ positionFilter = 'ALL', onPositionFilterChange }) {
   const {
     players, loadPlayers,
     seasonStats, loadSeasonStats,
-    statsLoading, statsProgress,
+    statsLoading,
     scoringSettings,
     rosters,
-  } = useSleeper();
+  } = useSleeperBase();
   const { darkMode } = useTheme();
   const isCompactPhone = useMediaQuery(COMPACT_PHONE_QUERY);
   const hideAvgColumn = useMediaQuery(HIDE_AVG_QUERY);
 
-  const [posFilter, setPosFilter] = useState('ALL');
+  const [posFilter, setPosFilter] = useState(positionFilter);
   const [search, setSearch] = useState('');
   const [selectedPlayerId, setSelectedPlayerId] = useState(null);
   const [sortBy, setSortBy] = useState('season');
+
+  useEffect(() => {
+    setPosFilter(POSITIONS.includes(positionFilter) ? positionFilter : 'ALL');
+  }, [positionFilter]);
 
   useEffect(() => { loadPlayers(); }, [loadPlayers]);
   useEffect(() => {
@@ -267,7 +271,10 @@ export default function CompanionRankings() {
           {POSITIONS.map(pos => (
             <button
               key={pos}
-              onClick={() => setPosFilter(pos)}
+              onClick={() => {
+                setPosFilter(pos);
+                onPositionFilterChange?.(pos);
+              }}
               className="px-3 py-1 rounded-lg text-xs font-semibold transition-colors"
               style={{
                 background: posFilter === pos ? 'var(--color-signature)' : 'var(--color-fill)',
@@ -304,16 +311,7 @@ export default function CompanionRankings() {
       </div>
 
       {/* Stats loading */}
-      {statsLoading && (
-        <div className="mx-4 mb-3 px-4 py-2.5 rounded-xl flex items-center gap-3" style={{ background: 'var(--color-fill)' }}>
-          <div className="h-1 flex-1 rounded-full overflow-hidden" style={{ background: 'var(--color-fill-secondary)' }}>
-            <div className="h-full rounded-full transition-all duration-300" style={{ width: `${statsProgress}%`, background: 'var(--color-signature)' }} />
-          </div>
-          <span className="text-xs tabular-nums shrink-0" style={{ color: 'var(--color-label-tertiary)' }}>
-            {statsProgress}%
-          </span>
-        </div>
-      )}
+      {statsLoading && <RankingsStatsLoadingBanner />}
 
       {/* Column headers */}
       <div
@@ -370,6 +368,21 @@ export default function CompanionRankings() {
       {selectedPlayerId && (
         <PlayerWeeklySheet playerId={selectedPlayerId} onClose={() => setSelectedPlayerId(null)} />
       )}
+    </div>
+  );
+}
+
+function RankingsStatsLoadingBanner() {
+  const statsProgress = useSleeperStatsProgress();
+
+  return (
+    <div className="mx-4 mb-3 px-4 py-2.5 rounded-xl flex items-center gap-3" style={{ background: 'var(--color-fill)' }}>
+      <div className="h-1 flex-1 rounded-full overflow-hidden" style={{ background: 'var(--color-fill-secondary)' }}>
+        <div className="h-full rounded-full transition-all duration-300" style={{ width: `${statsProgress}%`, background: 'var(--color-signature)' }} />
+      </div>
+      <span className="text-xs tabular-nums shrink-0" style={{ color: 'var(--color-label-tertiary)' }}>
+        {statsProgress}%
+      </span>
     </div>
   );
 }
