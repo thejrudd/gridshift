@@ -174,7 +174,7 @@ function teamRowTheme(team, darkMode) {
   };
 }
 
-export default function CompanionRankings({ positionFilter = 'ALL', onPositionFilterChange }) {
+export default function CompanionRankings({ positionFilter = 'ALL', onPositionFilterChange, onViewPlayer = null }) {
   const {
     players, loadPlayers,
     seasonStats, loadSeasonStats,
@@ -366,7 +366,11 @@ export default function CompanionRankings({ positionFilter = 'ALL', onPositionFi
       )}
 
       {selectedPlayerId && (
-        <PlayerWeeklySheet playerId={selectedPlayerId} onClose={() => setSelectedPlayerId(null)} />
+        <PlayerWeeklySheet
+          playerId={selectedPlayerId}
+          onClose={() => setSelectedPlayerId(null)}
+          onViewStats={onViewPlayer}
+        />
       )}
     </div>
   );

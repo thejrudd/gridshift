@@ -201,7 +201,7 @@ function teamRowTheme(team, darkMode) {
   };
 }
 
-export default function CompanionRoster({ onTradePlayer, onOpenMatchupWeek }) {
+export default function CompanionRoster({ onTradePlayer, onOpenMatchupWeek, onViewPlayer }) {
   const {
     players, loadPlayers,
     weeklyStats, seasonStats, loadSeasonStats,
@@ -348,6 +348,7 @@ export default function CompanionRoster({ onTradePlayer, onOpenMatchupWeek }) {
           playerId={selectedPlayerId}
           onClose={() => setSelectedPlayerId(null)}
           onOpenWeek={onOpenMatchupWeek}
+          onViewStats={onViewPlayer}
         />
       )}
     </div>

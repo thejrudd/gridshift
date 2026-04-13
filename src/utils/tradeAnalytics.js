@@ -1,4 +1,3 @@
-import { calcPointsFromTotals } from './scoringEngine';
 import {
   computePositionalRanks,
   computePositionalAvgPPG,
@@ -8,7 +7,7 @@ import {
 import { detectLeagueDefensiveType, computeIDPValues, computeDSTValues } from './idpEngine';
 import { buildRosterOpportunityLayer } from './opportunityEngine';
 import { findKtcPlayerFromSleeper, getKtcValue, productionAdjustedValue } from './ktcApi';
-import { DYNASTY_FALLBACK_MULT } from './tradeEngine';
+import { computeTradePlayerValueDetail } from './tradeValue';
 
 function buildPlayerTradeValueDetailsMap({
   rosters,
@@ -35,51 +34,21 @@ function buildPlayerTradeValueDetailsMap({
   for (const id of ids) {
     const player = players[id];
     if (!player) continue;
-
-    const ktc = findKtcPlayerFromSleeper(id, players, adjustedKtcPlayers ?? []);
-    let rawVal = getKtcValue(ktc, leagueType);
-    let dynastyFallback = false;
-    if (rawVal == null && adjustedDynastyKtcPlayers?.length) {
-      const dynastyKtc = findKtcPlayerFromSleeper(id, players, adjustedDynastyKtcPlayers);
-      const dynastyVal = getKtcValue(dynastyKtc, leagueType);
-      if (dynastyVal != null) {
-        rawVal = Math.round(dynastyVal * DYNASTY_FALLBACK_MULT);
-        dynastyFallback = true;
-      }
-    }
-
-    const isEstimated = rawVal == null && mergedIDPMap?.has(id);
-    if (isEstimated) rawVal = mergedIDPMap.get(id);
-    rawVal = rawVal ?? (adjustedKtcPlayers?.length > 0 ? 0 : null);
-
-    const stats = seasonStats?.[id];
-    const pts = stats ? calcPointsFromTotals(stats, scoringSettings, player.position) : null;
-    const gp = stats?.gp ?? 0;
-    const avgPPG = pts != null && gp ? pts / gp : null;
-    const isIDPDST = isEstimated || player.position === 'DEF' || ['DL', 'LB', 'DB', 'DE', 'DT', 'CB', 'S', 'ILB', 'OLB', 'SS', 'FS'].includes(player.position);
-
-    let value;
-    if (isEstimated) {
-      value = rawVal;
-    } else if (dynastyFallback && gp >= 3 && avgPPG != null && positionalValuePerPPG?.[player.position] != null) {
-      value = Math.round(avgPPG * positionalValuePerPPG[player.position]);
-    } else {
-      value = productionAdjustedValue(rawVal, avgPPG, positionalAvgPPG?.[player.position], 0.50);
-    }
-
-    const rankInfo = rankMap?.[id] ?? null;
-    if (!isIDPDST && rankInfo?.rank != null && rankInfo?.posCount > 1) {
-      const percentile = 1 - (rankInfo.rank - 1) / (rankInfo.posCount - 1);
-      value = Math.round(value * (0.88 + 0.24 * percentile));
-    }
-
-    if (value != null) {
-      detailsMap.set(id, {
-        value,
-        dynastyFallback,
-        isEstimated,
-      });
-    }
+    const detail = computeTradePlayerValueDetail({
+      id,
+      players,
+      adjustedKtcPlayers,
+      adjustedDynastyKtcPlayers,
+      leagueType,
+      seasonStats,
+      scoringSettings,
+      positionalAvgPPG,
+      positionalValuePerPPG,
+      rankMap,
+      mergedIDPMap,
+      blendWeight: 0.50,
+    });
+    if (detail) detailsMap.set(id, detail);
   }
 
   return detailsMap;

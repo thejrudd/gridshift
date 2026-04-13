@@ -7,18 +7,13 @@ New features requested or planned should be added here.
 
 ## Planned Versions
 
-### v6.3 - Trade + Companion Performance Patch
+### v6.3 - Remaining Performance + Shareability Work
+
+Continue the post-routing stabilization pass with the items still left after the v6.2.5 release.
 
 - **Shareable-link first phase** - Ship page + selected-player shareable links after the routing foundation stabilizes; broader week/filter/mode state can follow in a later 6.x pass
-
-Focused stabilization pass on Trade and Companion so navigation, tab switches, drilldowns, and heavy analysis views feel responsive and trustworthy after the routing foundation is in place.
-
-- **Trade navigation speed-up** - Reduce lag when entering Trade, switching sub-views, changing partners, and applying proposal filters by deferring non-critical work and trimming unnecessary rerenders
-- **Heavier calculations moved off the hot path** - Consolidate duplicated valuation / proposal derivation work so Agent, Intelligence, Upgrades, roster browse, and side-card totals stop recomputing more than they need to
-- **Visible loading and working states** - Add clear UI feedback whenever Trade is recalculating proposals, filtering large result sets, or preparing expensive data so the app never feels frozen
-- **First-open and first-search polish** - Improve the perceived performance of initial Trade entry and the first proposal search, especially on lower-powered devices and larger leagues
-- **Cross-view handoff responsiveness** - Speed up Companion and Trade drilldown transitions, especially roster or detail flows that jump into Matchup or other heavy views and currently pause before the destination UI is ready
-- **Companion performance improvement patch** - Reduce lag across Companion tab switches, player drilldowns, matchup detail opens, and other data-heavy views by trimming duplicate derivations, deferring non-critical work, and making loading states more explicit
+- **Cross-view handoff responsiveness** - Finish speeding up the remaining Companion and Trade drilldown transitions that still pause before the destination UI is ready
+- **Companion performance improvement patch** - Continue trimming lag across the heaviest Companion views and drilldowns where duplicate work or route-owned state still costs responsiveness
 - **IDP Waivers** - Add defensive players, team defense, special teams player, and special teams to the waiver list.
 
 ### v6.4 - Statistics / Fantasy Drilldown Unification
@@ -57,6 +52,14 @@ Surfaces publicly available scouting and evaluation data to help users make info
 - Prospect comparison against historical rookie comps (e.g. "similar combine profile to Justin Jefferson")
 - Live dynasty ADP via KeepTradeCut public API (if available)
 - Depth chart position within the drafting team (Day 1 starter vs. depth)
+
+### v7.1 - Trade Module Decomposition
+
+Split the monolithic `CompanionTrade.jsx` (4,800+ lines) and `opportunityEngine.js` (3,000+ lines) into focused, single-responsibility modules to reduce per-edit token cost and improve maintainability.
+
+- **CompanionTrade split** — Extract into logical sub-files: TradeProposalBuilder (main component state & handlers), ProposalPlayerCard, TradeProposalPanel (list + filters), UpgradeFinderPage, ValuationInfoSheet, RosterBrowseModal
+- **opportunityEngine split** — Separate into: rosterAnalysis (lineup solver, benchmarks), proposalBuilder (need-driven & surplus pipelines), upgradePackaging (package scoring, candidate selection), opportunityCards (top-level assembly & exports)
+- **Shared types/constants extraction** — Move position colors, slot eligibility maps, and formatting helpers into a shared trade constants file
 
 ---
 

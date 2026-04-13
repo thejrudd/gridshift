@@ -363,10 +363,10 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, onBack, backLabel,
                 )}
               </div>
 
-              {/* Action row: career toggle + buttons OR career stats — fixed height prevents resize on hover */}
+              {/* Action row: career toggle + buttons OR career stats */}
               <div
                 className="mt-3 flex flex-wrap justify-center sm:justify-start items-center gap-2"
-                style={{ height: '40px' }}
+                style={{ minHeight: '40px' }}
                 onMouseLeave={() => { if (careerHighlights.length > 0) setShowCareerPopover(false); }}
               >
                 {/* Career trigger — always visible */}

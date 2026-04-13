@@ -841,3 +841,15 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Statistics and scoring polish delivered** - Fixed kicker normalization and team-view kicker grouping, updated yardage scoring displays to Sleeper-style reciprocal formatting, and aligned additional scoring displays with the new format.
 - **Shell and modal behavior tightened** - Desktop sidebar behavior was corrected, modal body scroll lock was standardized, and the project memory/docs were updated to preserve the shared modal pattern and routing validation flow.
 
+
+---
+
+## v6.2.5 - Trade Flow Polish + Statistics Handoffs
+*2026-04-13*
+
+- **Trade responsiveness continued** - Kept Compare and the main Trade workbench warm across sub-view switches, deferred more first-open work, prewarmed Upgrade searches, and reduced repeated valuation / enrichment churn so Compare, Agent, Intelligence, and Upgrade move more cleanly.
+- **Upgrade search behavior stabilized** - Upgrade Finder now preserves the last submitted result set until a new search is run, surfaces clearer stale-results feedback when controls change, and reuses normalized search requests and cached result keys more consistently.
+- **Companion drilldowns tightened** - Rankings, League, Roster, and Matchup now hand off more consistently into Statistics, Matchup week state behaves more canonically, and route-owned Companion state is less likely to drift from the URL.
+- **Compare UX improved across devices** - Compare player cards were rebalanced for desktop and mobile, Statistics-to-Compare entry now feels faster, selected compare players persist when round-tripping through Statistics, and the hook-order crash in Compare was fixed.
+- **Player detail and modal polish** - Statistics player actions were repaired for mobile Trade entry, Matchup player-sheet headers now expand more safely, and modal search fields no longer auto-focus on open.
+- **Project docs updated** - Added a dedicated QA checklist, pointed AGENTS/optimization guidance at that file only when validation is needed, and carried the release metadata forward to v6.2.5.

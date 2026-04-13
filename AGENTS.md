@@ -8,6 +8,9 @@
 - **Active branch**: `main` — all work ships directly here
 - **Current version**: v6.0.3
 
+## Ignore List
+- `CLAUDE.md` is for Claude-specific project guidance — do not read or reference it when `AGENTS.md` is present.
+
 ## API Secret Handling
 - Any BALLDONTLIE or similar paid API key must be treated as a secret and must never be committed into the repo or exposed in the client bundle.
 - If the project upgrades to a paid BALLDONTLIE subscription, rotate the existing key and move all access behind a server-side or proxy boundary before production use.
@@ -18,45 +21,28 @@
 
 ---
 
+## Docs First
+
+Prefer the docs folder for current architecture and implementation references instead of duplicating long guidance in this file.
+
+- `docs/Home.md` — doc map / entry point
+- `docs/Architecture Map.md` — current architectural layout and file ownership
+- `docs/Where To Edit.md` — feature-to-file edit guide
+- `docs/Design Tokens.md` — full token table and design-system details
+- `docs/Scoring Call Sites.md` — full scoring audit checklist
+- `QA_CHECKLIST.md` — manual QA flows; only open when explicitly doing QA or test validation
+
+---
+
 ## Design System — "Broadcast Editorial"
 
-This system is fully implemented in main. All colors via CSS custom properties — never hardcoded Tailwind palette or hex values in components.
+All colors via CSS custom properties in `src/index.css` — never hardcoded Tailwind palette or hex values in components. The `.dark` class on `<html>` swaps all values. Full token table: **`docs/Design Tokens.md`**
 
-### Color Tokens
-All defined as CSS custom properties in `src/index.css`. The `.dark` class on `<html>` swaps all values.
-
-| Token | Light | Dark |
-|---|---|---|
-| `--color-bg` | `#F2F1EC` (warm off-white) | `#0C0F14` (deep slate-charcoal) |
-| `--color-bg-secondary` | `#FFFFFF` | `#141A22` |
-| `--color-bg-tertiary` | `#E9E8E2` | `#1C2332` |
-| `--color-label` | `rgba(12,15,20,1)` | `rgba(228,235,244,1)` |
-| `--color-label-secondary` | `rgba(12,15,20,0.58)` | `rgba(228,235,244,0.58)` |
-| `--color-label-tertiary` | `rgba(12,15,20,0.35)` | `rgba(228,235,244,0.35)` |
-| `--color-label-quaternary` | `rgba(12,15,20,0.20)` | `rgba(228,235,244,0.20)` |
-| `--color-fill` | `rgba(12,15,20,0.07)` | `rgba(228,235,244,0.09)` |
-| `--color-fill-secondary` | `rgba(12,15,20,0.05)` | `rgba(228,235,244,0.06)` |
-| `--color-fill-tertiary` | `rgba(12,15,20,0.03)` | `rgba(228,235,244,0.04)` |
-| `--color-separator` | `rgba(12,15,20,0.12)` | `rgba(228,235,244,0.10)` |
-| `--color-separator-opaque` | `#D0CFC8` | `#252E3C` |
-| `--color-accent` | `#1A6EFF` | `#5AADFF` |
-| `--color-accent-green` | `#00A844` | `#2ED578` |
-| `--color-accent-red` | `#E0270F` | `#FF4433` |
-| `--color-accent-orange` | `#E07800` | `#FF8C1A` |
-| `--color-signature` | `#F5B700` | `#F5B700` (same both modes) |
-| `--color-signature-fg` | `#0C0F14` | `#0C0F14` (same both modes) |
-| `--bar-bg` | `rgba(242,241,236,0.88)` | `rgba(12,15,20,0.90)` |
-| `--bar-border` | `rgba(12,15,20,0.12)` | `rgba(228,235,244,0.10)` |
-| `--bar-height-nav` | `44px` | — |
-| `--bar-height-tab` | `49px` | — |
-
-### Signature Accent Usage (`#F5B700` / `--color-signature`)
-Decorative only: sidebar active border, season tab underline, progress bar fill, filter chip bg, bottom tab bar active icon/label. Never use as body text color. Text/icons placed ON a signature background use `--color-signature-fg` (`#0C0F14`).
-
-### Key Conventions
+Key rules:
+- `--color-signature` (`#F5B700`) is decorative only — never body text. Use `--color-signature-fg` for text ON signature backgrounds.
 - `font-size: 16px` on all inputs (prevents iOS auto-zoom)
 - Safe area insets: `env(safe-area-inset-bottom)` on fixed bottom bars
-- Motion: CSS animations, spring-curve easing `cubic-bezier(0.32, 0.72, 0, 1)`
+- Motion: spring-curve easing `cubic-bezier(0.32, 0.72, 0, 1)`
 
 ---
 
@@ -89,16 +75,9 @@ Decorative only: sidebar active border, season tab underline, progress bar fill,
 ## Commit & Version Workflow
 
 ### Never auto-commit
-Do NOT create commits, bump versions, or update any of the 6 tracked files unless the user explicitly asks. Mentioning a version number (e.g. "let's work on v6.0") means that's the version context — not a commit instruction. Only commit when the user says something like "commit this", "make a commit", or "bump the version".
+Do NOT create commits, bump versions, or update any of the 6 tracked files unless the user explicitly asks. Mentioning a version number (e.g. "let's work on v5.9") means that's the version context — not a commit instruction. Only commit when the user says something like "commit this", "make a commit", or "bump the version".
 
 **Why:** Auto-committing causes version creep and races ahead of planned roadmap milestones.
-
-### Commit Message Format
-- Release and merge commits must use a descriptive subject, not a bare `release: vX.Y.Z` summary.
-- Preferred format for release commits:
-  `vX.Y.Z — Short Release Title`
-- The commit body should start with a one-sentence summary, followed by a `Highlights:` section with flat bullets covering the major shipped changes and the release-metadata/documentation updates.
-- Match the style used by `v6.1.6 — Sidebar shell fix`: concise title line, one short summary paragraph, then a `Highlights:` list.
 
 ### 6-File Commit Checklist
 On every commit that bumps the version, update ALL of these before committing:
@@ -164,56 +143,27 @@ Keep Guide content succinct, instructional, and not verbose.
 - Skip background explanation; don't restate what the UI already shows
 - 2–4 steps per tab is the right range
 
+## Communication Preference
+
+- Prefer plain-language labels over niche or non-standardized acronyms in UI copy.
+- Avoid acronyms when they speed up communication at the expense of understanding.
+- Do not load or reference `QA_CHECKLIST.md` during normal implementation work unless the task is explicitly about QA, testing, validation, or regression review.
+
 ---
 
 ## Scoring Call Sites
 
-When making any change to scoring logic (new fields in `DEFAULT_SCORING`/`STAT_TO_SCORING_KEY`, position bonuses, new Sleeper stat keys), audit every location in this checklist:
+When making any change to scoring logic (new fields, position bonuses, new Sleeper stat keys), audit the full checklist in **`docs/Scoring Call Sites.md`**.
 
-### Core Engine (update first)
-| File | What to check |
-|---|---|
-| `src/utils/scoringEngine.js` — `DEFAULT_SCORING` | Add new scoring field with `0.0` default |
-| `src/utils/scoringEngine.js` — `STAT_TO_SCORING_KEY` | Map Sleeper weekly stat key → scoring key; add alias keys for variants |
-| `src/utils/scoringEngine.js` — `SCORING_SETTINGS_ALIASES` | Map Sleeper `scoring_settings` key → internal key when they differ |
-| `src/utils/scoringEngine.js` — `calcPoints` position block | Add position-specific bonus handling |
-| `src/context/SleeperContext.jsx` | Verify startup re-derives from `league.scoring_settings` via `importLeagueScoring` |
+Quick summary: every `calcPoints()` and `calcPointsFromTotals()` call must pass `position`. Grep for these across the repo before closing any scoring PR.
 
-### Projection / Analytics Engine (pass `position` everywhere)
-| File | Function | What to check |
-|---|---|---|
-| `src/utils/projectionEngine.js` | `getDefenseStrength` | Both `calcPoints` calls must pass `player.position` |
-| `src/utils/projectionEngine.js` | `getLeagueAvgPPG` | `calcPoints` call must pass `player.position` |
-| `src/utils/projectionEngine.js` | `projectPlayer` | All three `calcPoints` calls must pass `pos` |
-| `src/utils/projectionEngine.js` | `buildDefenseTable` | Default `valueFn` uses `(wEntry, position)` — verify new calls also pass position |
-| `src/utils/projectionEngine.js` | `computePositionalRanks` | `calcPoints` must pass `p.position` |
-| `src/utils/projectionEngine.js` | `getAvgPPG` | Verify signature passes position through to `calcPoints` |
+---
 
-### Companion Tab Components
-| File | What to check |
-|---|---|
-| `src/components/companion/CompanionRoster.jsx` | `calcPointsFromTotals` and `getAvgPPG` — both pass `p.position` |
-| `src/components/companion/CompanionLeague.jsx` | `calcPointsFromTotals` and `getAvgPPG` — both pass `p.position` |
-| `src/components/companion/CompanionRankings.jsx` | `calcPointsFromTotals` — passes `p.position` |
-| `src/components/companion/CompanionWaiver.jsx` | `calcPointsFromTotals`, `getRecentAvg`, inline `calcPoints` — all pass `pos` |
-| `src/components/companion/CompanionMatchup.jsx` | `calcPoints` in weekly ranks loop and `enrichPlayer` — both pass `p.position`; `getAvgPPG` passes `p.position` |
-| `src/components/companion/CompanionDefense.jsx` | `defenseScoredTable` getValue callback `(wEntry, pos)` — called as `getValue(wEntry, player.position)` |
-| `src/components/companion/PlayerWeeklySheet.jsx` | `calcPoints` — passes `player?.position` |
-| `src/components/companion/CompanionScoring.jsx` | `STAT_GROUPS` — add any new scoring field so it's visible in UI |
-| `src/components/companion/CompanionTrade.jsx` — `ValuationInfoSheet` | Read new scoring settings fields; add `AdjustmentRow` entries; update KTC baseline list |
+## State Risk Areas
 
-### Compare Tab Components
-| File | What to check |
-|---|---|
-| `src/components/compare/CompareFantasyPanel.jsx` | `calcPointsFromTotals`, `getAvgPPG`, `getRecentAvg`, weekly `calcPoints` — all pass `pos` |
-| `src/components/compare/CompareTradePanel.jsx` | `calcPointsFromTotals` — passes `position` in all 3 call sites |
-
-### KTC Value Adjustments
-| File | What to check |
-|---|---|
-| `src/utils/ktcApi.js` — `computeKtcMultipliers` | Add multiplier logic for any new scoring field that materially affects positional value |
-
-**Before closing any scoring-related change:** grep for `calcPoints(` and `calcPointsFromTotals(` across the repo and verify every call site either (a) passes position or (b) is in a context where position is genuinely unavailable.
+- `SleeperContext.jsx` has the widest blast radius — changes cascade into all Companion and Compare views.
+- `PredictionContext.jsx` can create subtle sync regressions (opposing game results).
+- `scoringEngine.js` changes cascade into Companion, Compare, and KTC adjustments.
 
 ---
 

@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useState, useRef } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useState, useRef, useTransition } from 'react';
 import { loadScheduleData } from './utils/scheduleParser';
 import { usePredictions } from './context/PredictionContext';
 import { useTheme } from './context/ThemeContext';
@@ -40,7 +40,8 @@ const CompanionMatchup = lazy(() => import('./components/companion/CompanionMatc
 const CompanionWaiver = lazy(() => import('./components/companion/CompanionWaiver'));
 const CompanionDefense = lazy(() => import('./components/companion/CompanionDefense'));
 const CompanionTrade = lazy(() => import('./components/companion/CompanionTrade'));
-const CompareTab = lazy(() => import('./components/compare/CompareTab'));
+const loadCompareTab = () => import('./components/compare/CompareTab');
+const CompareTab = lazy(loadCompareTab);
 
 function SectionLoading({ label = 'Loading section' }) {
   return (
@@ -80,9 +81,12 @@ function AppInner() {
   const [compareInitPlayerA, setCompareInitPlayerA] = useState(null);
   const [compareInitPlayerB, setCompareInitPlayerB] = useState(null);
   const [tradeAnalyticsPrewarmRequested, setTradeAnalyticsPrewarmRequested] = useState(false);
+  const [keepTradeCompareMounted, setKeepTradeCompareMounted] = useState(() => appRoute.activeTab === 'trade' && appRoute.tradeView === 'compare');
+  const [keepTradeWorkbenchMounted, setKeepTradeWorkbenchMounted] = useState(() => appRoute.activeTab === 'trade' && appRoute.tradeView !== 'compare');
+  const [, startRouteTransition] = useTransition();
 
   const { hasLeague, season, changeSeason, league, disconnect, sleeperUser } = useSleeperLeague();
-  const { statsLoading, loadSeasonStats, seasonStats } = useSleeperStats();
+  const { statsLoading, loadSeasonStats, seasonStats, players: sleeperPlayers } = useSleeperStats();
 
   const { getPredictionCount, resetAllPredictions, predictions, importPredictions, generateRandomPredictions } = usePredictions();
   const { darkMode, toggleDarkMode, favoriteTeam, setFavoriteTeam } = useTheme();
@@ -166,8 +170,10 @@ function AppInner() {
       window.history.pushState(nextState, '', nextPath);
     }
 
-    setAppRoute((prev) => (isSameAppRoute(prev, normalized) ? prev : normalized));
-  }, [readHistoryState]);
+    startRouteTransition(() => {
+      setAppRoute((prev) => (isSameAppRoute(prev, normalized) ? prev : normalized));
+    });
+  }, [readHistoryState, startRouteTransition]);
 
   const navigateToTab = useCallback((tab) => {
     applyRoute(getDefaultRouteForTab(tab));
@@ -287,6 +293,14 @@ function AppInner() {
     setTeamSearch('');
     setDivisionFilter('');
   }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab === 'trade' && tradeView === 'compare') {
+      setKeepTradeCompareMounted(true);
+    } else if (activeTab === 'trade') {
+      setKeepTradeWorkbenchMounted(true);
+    }
+  }, [activeTab, tradeView]);
 
   useEffect(() => {
     if (activeTab !== 'statistics' || statisticsView !== 'player') {
@@ -521,6 +535,7 @@ function AppInner() {
               onNavigateTeam={navigateToStatisticsTeam}
               onNavigatePlayer={navigateToStatisticsPlayer}
               onComparePlayer={(player) => {
+                loadCompareTab();
                 setCompareInitPlayerA(player);
                 setCompareInitPlayerB(null);
                 applyRoute({ activeTab: 'trade', tradeView: 'compare' });
@@ -603,57 +618,68 @@ function AppInner() {
                   ✕
                 </button>
               </div>
-              {tradeView === 'compare' ? (
-                <Suspense fallback={<SectionLoading label="Loading Compare" />}>
-                  <CompareTab
-                    teams={scheduleData.teams}
-                    initialPlayerA={compareInitPlayerA}
-                    initialPlayerB={compareInitPlayerB}
-                    onConsumeInitialPlayerA={() => setCompareInitPlayerA(null)}
-                    onConsumeInitialPlayerB={() => setCompareInitPlayerB(null)}
-                    onBuildTrade={(sleeperIdA, sleeperIdB) => {
-                      applyRoute({
-                        activeTab: 'trade',
-                        tradeView: 'agent',
-                        tradePlayerId: sleeperIdA,
-                        tradeSide: 'give',
-                        tradeOtherPlayerId: sleeperIdB,
-                      });
-                    }}
-                    onViewPlayer={(player) => {
-                      navigateToStatisticsPlayer(player, {
-                        backLabel: 'Compare',
-                        backRoute: { activeTab: 'trade', tradeView: 'compare' },
-                      });
-                    }}
-                  />
-                </Suspense>
-              ) : (
-                <Suspense fallback={<SectionLoading label="Loading Trade" />}>
-                  <CompanionTrade
-                    initialPlayer={tradeInitPlayer}
-                    onConsumeInitialPlayer={() => applyRoute({
-                      activeTab: 'trade',
-                      tradeView,
-                    }, { replace: true })}
-                    onViewPlayer={(id, meta) => {
-                      navigateToStatisticsPlayer({ id, ...meta }, {
-                        backLabel: 'Trade',
-                        backRoute: {
+              {(keepTradeCompareMounted || tradeView === 'compare') && (
+                <div
+                  style={{ display: tradeView === 'compare' ? 'block' : 'none' }}
+                  aria-hidden={tradeView === 'compare' ? undefined : true}
+                >
+                  <Suspense fallback={<SectionLoading label="Loading Compare" />}>
+                    <CompareTab
+                      teams={scheduleData.teams}
+                      initialPlayerA={compareInitPlayerA}
+                      initialPlayerB={compareInitPlayerB}
+                      onPlayerAChange={setCompareInitPlayerA}
+                      onPlayerBChange={setCompareInitPlayerB}
+                      onBuildTrade={(sleeperIdA, sleeperIdB) => {
+                        applyRoute({
                           activeTab: 'trade',
-                          tradeView,
-                        },
-                      });
-                    }}
-                    onOpenWaiver={(position) => {
-                      if (!position) return;
-                      applyRoute({ activeTab: 'companion', companionView: 'waiver', waiverPosition: position });
-                    }}
-                    prewarmAnalytics={tradeAnalyticsPrewarmRequested}
-                    view={tradeView}
-                    onViewChange={navigateTradeView}
-                  />
-                </Suspense>
+                          tradeView: 'agent',
+                          tradePlayerId: sleeperIdA,
+                          tradeSide: 'give',
+                          tradeOtherPlayerId: sleeperIdB,
+                        });
+                      }}
+                      onViewPlayer={(player) => {
+                        navigateToStatisticsPlayer(player, {
+                          backLabel: 'Compare',
+                          backRoute: { activeTab: 'trade', tradeView: 'compare' },
+                        });
+                      }}
+                    />
+                  </Suspense>
+                </div>
+              )}
+              {(keepTradeWorkbenchMounted || tradeView !== 'compare') && (
+                <div
+                  style={{ display: tradeView !== 'compare' ? 'block' : 'none' }}
+                  aria-hidden={tradeView !== 'compare' ? undefined : true}
+                >
+                  <Suspense fallback={<SectionLoading label="Loading Trade" />}>
+                    <CompanionTrade
+                      initialPlayer={tradeInitPlayer}
+                      onConsumeInitialPlayer={() => applyRoute({
+                        activeTab: 'trade',
+                        tradeView,
+                      }, { replace: true })}
+                      onViewPlayer={(id, meta) => {
+                        navigateToStatisticsPlayer({ id, ...meta }, {
+                          backLabel: 'Trade',
+                          backRoute: {
+                            activeTab: 'trade',
+                            tradeView,
+                          },
+                        });
+                      }}
+                      onOpenWaiver={(position) => {
+                        if (!position) return;
+                        applyRoute({ activeTab: 'companion', companionView: 'waiver', waiverPosition: position });
+                      }}
+                      prewarmAnalytics={tradeAnalyticsPrewarmRequested}
+                      view={tradeView}
+                      onViewChange={navigateTradeView}
+                    />
+                  </Suspense>
+                </div>
               )}
             </>
           )}
@@ -723,6 +749,15 @@ function AppInner() {
                   onOpenMatchupWeek={(playerId, week) => {
                     applyRoute({ activeTab: 'companion', companionView: 'matchup', matchupPlayerId: playerId, matchupWeek: week });
                   }}
+                  onViewPlayer={(sleeperId) => {
+                    const p = sleeperPlayers?.[sleeperId];
+                    const espnId = p?.espn_id;
+                    if (!espnId) return;
+                    navigateToStatisticsPlayer({ id: String(espnId), displayName: p.full_name, teamId: p.team?.toUpperCase(), position: p.position, experience: p.years_exp != null ? p.years_exp + 1 : undefined }, {
+                      backLabel: 'Roster',
+                      backRoute: appRoute,
+                    });
+                  }}
                 />
                 </Suspense>
               )}
@@ -733,7 +768,22 @@ function AppInner() {
                     onPositionFilterChange={(position) => updateCompanionRoute({
                       companionView: 'rankings',
                       rankingsPosition: position === 'ALL' ? null : position,
-                    })}
+                    }, { replace: true })}
+                    onViewPlayer={(sleeperId) => {
+                      const p = sleeperPlayers?.[sleeperId];
+                      const espnId = p?.espn_id;
+                      if (!espnId) return;
+                      navigateToStatisticsPlayer({
+                        id: String(espnId),
+                        displayName: p.full_name,
+                        teamId: p.team?.toUpperCase(),
+                        position: p.position,
+                        experience: p.years_exp != null ? p.years_exp + 1 : undefined,
+                      }, {
+                        backLabel: 'Rankings',
+                        backRoute: appRoute,
+                      });
+                    }}
                   />
                 </Suspense>
               )}
@@ -751,7 +801,12 @@ function AppInner() {
                       matchupWeek: appRoute.matchupWeek ?? null,
                       matchupPlayerId: null,
                     }, { replace: true })}
-                    onComparePlayers={(playerA, playerB) => { setCompareInitPlayerA(playerA); setCompareInitPlayerB(playerB); applyRoute({ activeTab: 'trade', tradeView: 'compare' }); }}
+                    onComparePlayers={(playerA, playerB) => {
+                      loadCompareTab();
+                      setCompareInitPlayerA(playerA);
+                      setCompareInitPlayerB(playerB);
+                      applyRoute({ activeTab: 'trade', tradeView: 'compare' });
+                    }}
                     onViewPlayer={(id, meta) => {
                       navigateToStatisticsPlayer({ id, ...meta }, {
                         backLabel: 'Matchup',
@@ -789,6 +844,21 @@ function AppInner() {
                     leagueSubview: nextState.subView ?? 'roster',
                     leagueRosterId: nextState.rosterId ?? null,
                   }, { replace: true })}
+                  onViewPlayer={(sleeperId) => {
+                    const p = sleeperPlayers?.[sleeperId];
+                    const espnId = p?.espn_id;
+                    if (!espnId) return;
+                    navigateToStatisticsPlayer({
+                      id: String(espnId),
+                      displayName: p.full_name,
+                      teamId: p.team?.toUpperCase(),
+                      position: p.position,
+                      experience: p.years_exp != null ? p.years_exp + 1 : undefined,
+                    }, {
+                      backLabel: 'League',
+                      backRoute: appRoute,
+                    });
+                  }}
                   onTradePlayer={(sleeperId, partnerRosterId, side = 'get') => {
                     applyRoute({
                       activeTab: 'trade',

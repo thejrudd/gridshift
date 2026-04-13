@@ -8,7 +8,7 @@
 
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { findKtcPlayerFromSleeper, getKtcValue, fmtKtcValue, productionAdjustedValue } from '../../utils/ktcApi';
-import { DYNASTY_FALLBACK_MULT } from '../../utils/tradeEngine';
+import { DYNASTY_FALLBACK_MULT } from '../../utils/tradeValue';
 import { calcPointsFromTotals } from '../../utils/scoringEngine';
 import { computePositionalRanks, computePositionalAvgPPG, computePositionalValuePerPPG } from '../../utils/projectionEngine';
 import { parseSearchQuery, matchesFilter } from '../../utils/parseSearchQuery';
@@ -627,7 +627,6 @@ export default function TradeRosterPicker({
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="Name, team, city, or position…"
-              autoFocus
               autoComplete="off"
               autoCorrect="off"
               autoCapitalize="none"

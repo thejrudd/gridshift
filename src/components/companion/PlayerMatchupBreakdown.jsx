@@ -411,7 +411,7 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, enr
         >
           {/* Player header */}
           <div
-            className="flex items-center gap-3 px-5 pt-4 pb-3 shrink-0 relative overflow-hidden"
+            className="px-5 pt-4 pb-3 shrink-0 relative"
             style={{
               background: heroBg
                 ? `linear-gradient(135deg, ${heroBg} 0%, ${darkenHex(heroBg, 0.32)} 100%)`
@@ -420,25 +420,47 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, enr
               borderLeft: heroAccent ? `4px solid ${heroAccent}` : undefined,
             }}
           >
-            <img
-              src={`https://sleepercdn.com/content/nfl/players/thumb/${playerId}.jpg`}
-              alt={player?.full_name}
-              className="w-12 h-12 rounded-full object-cover shrink-0"
-              style={{
-                background: heroBg ? 'rgba(255,255,255,0.15)' : 'var(--color-fill)',
-                border: heroBg ? `2px solid ${heroAccent ?? 'rgba(255,255,255,0.25)'}` : 'none',
-              }}
-              onError={e => { e.target.src = 'https://sleepercdn.com/images/v2/icons/player_default.webp'; }}
-            />
-            <div className="flex-1 min-w-0">
-              <div className="font-bold text-base truncate" style={{ color: heroBg ? heroOnBg : 'var(--color-label)' }}>
-                {player?.full_name ?? 'Unknown Player'}
+            {/* Top row: avatar + name + close */}
+            <div className="flex items-center gap-3">
+              <img
+                src={`https://sleepercdn.com/content/nfl/players/thumb/${playerId}.jpg`}
+                alt={player?.full_name}
+                className="w-12 h-12 rounded-full object-cover shrink-0"
+                style={{
+                  background: heroBg ? 'rgba(255,255,255,0.15)' : 'var(--color-fill)',
+                  border: heroBg ? `2px solid ${heroAccent ?? 'rgba(255,255,255,0.25)'}` : 'none',
+                }}
+                onError={e => { e.target.src = 'https://sleepercdn.com/images/v2/icons/player_default.webp'; }}
+              />
+              <div className="flex-1 min-w-0">
+                <div className="font-bold text-base" style={{ color: heroBg ? heroOnBg : 'var(--color-label)' }}>
+                  {player?.full_name ?? 'Unknown Player'}
+                </div>
+                <div className="text-xs mt-0.5" style={{ color: heroBg ? heroOnBgMuted : 'var(--color-label-tertiary)' }}>
+                  {player?.position} · {player?.team ?? 'FA'} · Week {week}
+                </div>
               </div>
-              <div className="text-xs mt-0.5" style={{ color: heroBg ? heroOnBgMuted : 'var(--color-label-tertiary)' }}>
-                {player?.position} · {player?.team ?? 'FA'} · Week {week}
-              </div>
+              <button
+                onClick={onClose}
+                onMouseEnter={() => setCloseHover(true)}
+                onMouseLeave={() => setCloseHover(false)}
+                onFocus={() => setCloseHover(true)}
+                onBlur={() => setCloseHover(false)}
+                className="shrink-0 p-2 rounded-lg transition-colors duration-150 cursor-pointer"
+                style={{
+                  color: heroBg ? heroOnBgMuted : 'var(--color-label-secondary)',
+                  background: closeHover
+                    ? (heroBg ? 'rgba(255,255,255,0.14)' : 'var(--color-fill)')
+                    : 'transparent',
+                }}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
             </div>
-            <div className="shrink-0 flex items-center gap-2">
+            {/* Action buttons row */}
+            <div className="flex items-center gap-2 mt-2" style={{ paddingLeft: '60px' }}>
               {onOpenRosterPlayer && (
                 <HeaderActionButton
                   label="Fantasy"
@@ -481,24 +503,6 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, enr
                 ) : null;
               })()}
             </div>
-            <button
-              onClick={onClose}
-              onMouseEnter={() => setCloseHover(true)}
-              onMouseLeave={() => setCloseHover(false)}
-              onFocus={() => setCloseHover(true)}
-              onBlur={() => setCloseHover(false)}
-              className="shrink-0 p-2 rounded-lg transition-colors duration-150 cursor-pointer"
-              style={{
-                color: heroBg ? heroOnBgMuted : 'var(--color-label-secondary)',
-                background: closeHover
-                  ? (heroBg ? 'rgba(255,255,255,0.14)' : 'var(--color-fill)')
-                  : 'transparent',
-              }}
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-              </svg>
-            </button>
           </div>
 
           {/* Scrollable body */}

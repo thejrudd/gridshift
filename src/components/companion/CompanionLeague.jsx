@@ -201,7 +201,7 @@ function teamRowTheme(team, darkMode) {
   };
 }
 
-export default function CompanionLeague({ onTradePlayer, routeState = null, onRouteStateChange = null }) {
+export default function CompanionLeague({ onTradePlayer, onViewPlayer = null, routeState = null, onRouteStateChange = null }) {
   const subView = routeState?.subView ?? 'roster';
 
   return (
@@ -226,6 +226,7 @@ export default function CompanionLeague({ onTradePlayer, routeState = null, onRo
       {subView === 'roster' && (
         <LeagueRosterView
           onTradePlayer={onTradePlayer}
+          onViewPlayer={onViewPlayer}
           selectedRosterIdProp={routeState?.rosterId ?? null}
           onSelectedRosterChange={(rosterId) => onRouteStateChange?.({ ...(routeState ?? {}), subView: 'roster', rosterId })}
         />
@@ -237,7 +238,7 @@ export default function CompanionLeague({ onTradePlayer, routeState = null, onRo
 
 // ── Roster sub-view ───────────────────────────────────────────────────────────
 
-function LeagueRosterView({ onTradePlayer, selectedRosterIdProp = null, onSelectedRosterChange = null }) {
+function LeagueRosterView({ onTradePlayer, onViewPlayer = null, selectedRosterIdProp = null, onSelectedRosterChange = null }) {
   const {
     leagueUsers, rosters, myRoster, getUserDisplayName,
     players, loadPlayers,
@@ -260,14 +261,18 @@ function LeagueRosterView({ onTradePlayer, selectedRosterIdProp = null, onSelect
   }, [myRosterData, selectedRosterId]);
 
   useEffect(() => {
-    if (selectedRosterIdProp == null) return;
+    if (selectedRosterIdProp == null) {
+      setSelectedRosterId(myRosterData?.roster_id ?? null);
+      return;
+    }
     setSelectedRosterId(Number(selectedRosterIdProp));
-  }, [selectedRosterIdProp]);
+  }, [selectedRosterIdProp, myRosterData?.roster_id]);
 
   useEffect(() => {
     if (selectedRosterId == null) return;
+    if (selectedRosterIdProp != null && Number(selectedRosterIdProp) === selectedRosterId) return;
     onSelectedRosterChange?.(String(selectedRosterId));
-  }, [selectedRosterId, onSelectedRosterChange]);
+  }, [selectedRosterId, selectedRosterIdProp, onSelectedRosterChange]);
 
   useEffect(() => { loadPlayers(); }, [loadPlayers]);
   useEffect(() => {
@@ -442,7 +447,11 @@ function LeagueRosterView({ onTradePlayer, selectedRosterIdProp = null, onSelect
       )}
 
       {selectedPlayerId && (
-        <PlayerWeeklySheet playerId={selectedPlayerId} onClose={() => setSelectedPlayerId(null)} />
+        <PlayerWeeklySheet
+          playerId={selectedPlayerId}
+          onClose={() => setSelectedPlayerId(null)}
+          onViewStats={onViewPlayer}
+        />
       )}
     </>
   );

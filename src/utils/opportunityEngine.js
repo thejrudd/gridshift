@@ -1,3 +1,26 @@
+// === FILE SECTIONS ===
+// Line ~1:     Imports & constants (slots, positions, ordinals)
+// Line ~78:    Internal helpers (slot eligibility, math, formatting)
+// Line ~272:   buildRosterPlayers — enrich roster with stats & scoring
+// Line ~304:   assignStarters — optimal lineup solver
+// Line ~354:   buildLeagueBenchmarks — league-wide positional baselines
+// Line ~436:   Schedule pressure (upcoming opponents, bye weeks)
+// Line ~507:   findOfferCandidates — identify tradeable surplus players
+// Line ~574:   buildProposalContext — narrative/reason generation for proposals
+// Line ~632:   Asset builders (player assets, pick assets)
+// Line ~786:   Package scoring & selection helpers
+// Line ~1404:  findMySurplusTradeCandidates — surplus-based trade finder
+// Line ~1649:  buildSurplusTradeProposals — full surplus proposal pipeline
+// Line ~1851:  buildTradeProposals — need-driven proposal pipeline
+// Line ~2044:  buildOpportunityCards — top-level card assembly
+// Line ~2130:  Trade posture & upgrade package evaluation
+// Line ~2399:  selectNeedDrivenTradeProposals / selectSurplusTradeProposals
+// Line ~2500:  buildUpgradeFinderPackageCandidates & compensation choices
+// Line ~2592:  EXPORTS: buildRosterOpportunityLayer
+// Line ~2698:  EXPORTS: buildPartnerTradeIntelligence
+// Line ~2769:  EXPORTS: findLeagueWideUpgradeGroups
+// Line ~2979:  EXPORTS: analyzeAreasOfOpportunity
+
 import { calcPointsFromTotals, getRecentAvg } from './scoringEngine';
 import {
   buildDefenseTable,

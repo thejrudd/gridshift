@@ -276,7 +276,6 @@ export default function ComparePickerSheet({ teams, excludeId, onSelect, onClose
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              autoFocus
               placeholder="Name, team, position, or natural language…"
               className="w-full pl-9 pr-9 py-2.5 rounded-xl text-sm outline-none"
               style={{

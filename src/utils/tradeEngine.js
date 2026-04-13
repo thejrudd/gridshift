@@ -2,13 +2,8 @@
 // Value balancing, package suggestions, and draft pick ownership for the
 // Companion Trade Agent.
 
-import { findKtcPlayerFromSleeper, findKtcDraftPick, getKtcValue, productionAdjustedValue } from './ktcApi';
-import { calcPointsFromTotals } from './scoringEngine';
-
-// When a player has no redraft (fantasy) KTC value, we fall back to their
-// dynasty value and apply this discount.  Dynasty values are inflated by
-// age/upside; a ~0.35 factor brings them roughly in line with redraft scale.
-export const DYNASTY_FALLBACK_MULT = 0.60;
+import { findKtcPlayerFromSleeper, findKtcDraftPick, getKtcValue } from './ktcApi';
+import { DYNASTY_FALLBACK_MULT, computeTradePlayerValueDetail } from './tradeValue';
 
 // ── Redraft pick valuation ────────────────────────────────────────────────────
 
@@ -516,45 +511,22 @@ export function buildCandidatePool(
     const pos = sp?.position ?? '';
 
     if (val == null) {
-      const ktc = findKtcPlayerFromSleeper(pid, sleeperPlayers, ktcPlayers);
-      let rawVal = getKtcValue(ktc, leagueType);
-      let dynastyFallback = false;
-      // Dynasty fallback for players absent from redraft rankings
-      if (rawVal == null && dynastyKtcPlayers?.length) {
-        const dKtc = findKtcPlayerFromSleeper(pid, sleeperPlayers, dynastyKtcPlayers);
-        const dVal = getKtcValue(dKtc, leagueType);
-        if (dVal != null) { rawVal = Math.round(dVal * DYNASTY_FALLBACK_MULT); dynastyFallback = true; }
-      }
-      // IDP/DST fallback — production-computed value (already calibrated to skill position scale)
-      const isIDPDSTFallback = rawVal == null && idpValueMap?.has(pid);
-      if (isIDPDSTFallback) rawVal = idpValueMap.get(pid);
-      rawVal = rawVal ?? (ktcPlayers?.length > 0 ? 0 : null);
-
-      // Production adjustment for skill positions only.
-      // IDP/DST values from idpValueMap are already production-derived — skip further adjustment.
-      val = rawVal;
-      if (seasonStats && scoringSettings && !isIDPDSTFallback) {
-        const stats = seasonStats[pid];
-        const gp = stats?.gp ?? 0;
-        const pts = stats ? calcPointsFromTotals(stats, scoringSettings, pos) : null;
-        const avgPPG = pts != null && gp ? pts / gp : null;
-        if (dynastyFallback && positionalValuePerPPG) {
-          if (gp >= 3 && avgPPG != null && positionalValuePerPPG[pos] != null) {
-            val = Math.round(avgPPG * positionalValuePerPPG[pos]);
-          } else if (positionalAvgPPG) {
-            val = productionAdjustedValue(rawVal, avgPPG, positionalAvgPPG[pos], 0.50);
-          }
-        } else if (positionalAvgPPG) {
-          // Direct-KTC players: 50% PPG blend weight for trade agent
-          val = productionAdjustedValue(rawVal, avgPPG, positionalAvgPPG[pos], 0.50);
-        }
-      }
-
-      // Layer 2 — rank-percentile nudge (±12%, skill positions only)
-      const rankInfo = (!isIDPDSTFallback && rankMap?.[pid]) ?? null;
-      if (rankInfo?.rank != null && rankInfo?.posCount > 1) {
-        const percentile = 1 - (rankInfo.rank - 1) / (rankInfo.posCount - 1);
-        val = Math.round((val ?? 0) * (0.88 + 0.24 * percentile));
+      const detail = computeTradePlayerValueDetail({
+        id: pid,
+        players: sleeperPlayers,
+        adjustedKtcPlayers: ktcPlayers,
+        adjustedDynastyKtcPlayers: dynastyKtcPlayers,
+        leagueType,
+        seasonStats,
+        scoringSettings,
+        positionalAvgPPG,
+        positionalValuePerPPG,
+        rankMap,
+        mergedIDPMap: idpValueMap,
+        blendWeight: 0.50,
+      });
+      if (detail) {
+        val = detail.value;
       }
     }
 

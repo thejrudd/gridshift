@@ -85,17 +85,17 @@ npm run validate:routing
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) |
 
-## What's New in v6.2.0
+## What's New in v6.2.5
 
-- **Real app routing shipped** - Predictions, Statistics, Companion, and Trade now use canonical URL-backed navigation with refresh-safe deep links across major views.
-- **Companion filter URLs expanded** - Rankings, Matchup, Waiver, League, and Heatmap now preserve their major filter and drilldown state in the URL so links and refreshes stay context-aware.
-- **Trade and Companion performance pass** - Heavy Trade and Companion views were split, cached, narrowed, and deferred so tab switches and analysis flows feel materially faster.
+- **Trade performance pass continued** - Compare/Trade tab switches, first-open behavior, Upgrade search warm paths, and repeated search flows were tightened so heavy Trade views feel materially faster and more stable.
+- **Companion and player-routing polish** - Rankings, League, Roster, and Matchup now hand off more cleanly into Statistics, Matchup route state is more resilient, and Companion drilldowns stay better aligned with their canonical URL state.
+- **Compare UX and modal polish** - Compare cards were refined across desktop and mobile, selected players now persist when round-tripping through Statistics, and modal search inputs no longer auto-focus and summon the mobile keyboard on open.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Roadmap
 
-- **v6.3 - Trade + Companion Performance Patch** - Continued responsiveness, result-surface polish, and heavy-work deferral after the routing foundation shipped.
+- **v6.3 - Remaining Performance + Shareability Work** - Finish the remaining Companion/Trade responsiveness items, add IDP Waivers, and start the first shareable-link phase on top of the routing foundation.
 - **v6.4 - Statistics / Fantasy Drilldown Unification** - One canonical player-analysis destination with mode-aware drilldowns across Statistics and Companion.
 - **v6.5 - League-Scoped Shareable Links** - Share URLs that resolve against the intended Sleeper league and validate league ownership before opening.
 - **v7.0 — Draft Coach** — Rookie scouting hub with draft slot, college production, combine metrics, consensus ranking, and dynasty rookie ADP.

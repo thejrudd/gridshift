@@ -20,7 +20,6 @@ Open bugs are listed first, fixed bugs below. Add new entries at the bottom of e
 | Trade proposal cards can keep matching height while still drifting into a too-tall, too-narrow silhouette on desktop because width does not yet expand enough to preserve a more realistic trading-card proportion as card content grows |
 | Companion → Roster player weekly fantasy modal can omit the player's bye week and instead show fantasy output for every week, even though each player should always have one bye week represented |
 | Companion → Roster player weekly fantasy modal can render weeks outside the league's fantasy season, including Week 18 even when the league season should stop earlier |
-| Companion -> Roster week-row handoff into Companion -> Matchup can feel laggy and unresponsive, with a noticeable 1-2 second delay before the destination week and player drilldown are ready |
 
 ---
 
@@ -29,6 +28,9 @@ Open bugs are listed first, fixed bugs below. Add new entries at the bottom of e
 | Bug | Fixed In |
 |-----|----------|
 | Desktop sidebar can still scroll on shorter laptop viewports in Predictions because the shell allows sidebar overflow instead of keeping the desktop rail fixed in place | v6.2.0 |
+| Companion -> Roster week-row handoff into Companion -> Matchup could feel laggy and unresponsive, with a noticeable delay before the destination week and player drilldown were ready | v6.2.5 |
+| Companion -> Matchup player weekly modal header could truncate the player name behind the Fantasy/Statistics actions instead of growing cleanly with the content | v6.2.5 |
+| Statistics player view Trade button could be cut off on mobile and could crash with a `fromGlobalSearch` reference error when tapped | v6.2.5 |
 | Sleeper league connect flow only exposes a limited season window and asks for season before username, instead of discovering the account's actual available league years from the API after username lookup | v6.2.0 |
 | Statistics excludes kickers from team rosters, search results, and player views because ESPN roster position abbreviations are not normalized to the app's expected `K` format | v6.2.0 |
 | Defense drilldown allowed background page scrolling while open | v4.3.1 |

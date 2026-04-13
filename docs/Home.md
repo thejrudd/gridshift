@@ -7,9 +7,9 @@ Use this note as the entry point.
 ## Jump Links
 
 - [[Architecture Map]]
-- [[Feature Map]]
 - [[Where To Edit]]
-- [[Conventions And Gotchas]]
+- [[Design Tokens]]
+- [[Scoring Call Sites]]
 - [[Open Pencil Integration]]
 - [[Pretext Integration]]
 - [[BALLDONTLIE NFL Integration]]
@@ -34,9 +34,9 @@ Use this note as the entry point.
 ```mermaid
 flowchart TD
   A[Home] --> B[Architecture Map]
-  A --> C[Feature Map]
+  A --> C[Design Tokens]
   A --> D[Where To Edit]
-  A --> E[Conventions And Gotchas]
+  A --> E[Scoring Call Sites]
   A --> F[Open Pencil Integration]
   A --> G[Pretext Integration]
   A --> H[BALLDONTLIE NFL Integration]
@@ -48,11 +48,9 @@ flowchart TD
   B --> B4[src/utils]
   B --> B5[src/components]
 
-  C --> C1[Predictions]
-  C --> C2[Statistics]
-  C --> C3[Companion]
-  C --> C4[Compare]
-  C --> C5[Export]
+  C --> C1[Color Tokens Table]
+  C --> C2[Signature Accent Rules]
+  C --> C3[Key Conventions]
 
   D --> D1[Navigation and layout]
   D --> D2[Scoring]

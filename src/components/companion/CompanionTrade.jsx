@@ -1,16 +1,32 @@
 // ── CompanionTrade ────────────────────────────────────────────────────────────
 // Trade workflow: build and evaluate trade proposals using KTC values.
 // Lives under the Trade section; uses Sleeper rosters and draft pick data.
+//
+// === FILE SECTIONS ===
+// Line ~47:    Constants & team color helpers
+// Line ~141:   CompanionTrade (main component — state, handlers, render)
+// Line ~1488:  TradeSide (give/get column UI)
+// Line ~1718:  ProposalPlayerCard (individual player/pick card)
+// Line ~2248:  Proposal card layout utilities (sizing, equalized height)
+// Line ~2499:  TradeProposalItem (single proposal row in lists)
+// Line ~2802:  UpgradeProposalContextCards & UpgradeResultGroup
+// Line ~3027:  TradeProposalPanel (proposal list with filters)
+// Line ~3243:  UpgradeFinderPage (upgrade search flow)
+// Line ~3879:  ValueBar (trade fairness gauge)
+// Line ~3944:  TrendRow (player trend indicators)
+// Line ~3980:  ValuationInfoSheet (scoring multiplier breakdown)
+// Line ~4538:  RosterBrowseModal (full roster picker overlay)
+// Line ~4852:  Spinner
 
 import { memo, useState, useEffect, useMemo, useCallback, useDeferredValue, useRef, useTransition } from 'react';
 import { useSleeperLeague, useSleeperStats } from '../../context/SleeperContext';
 import { useTheme } from '../../context/ThemeContext';
-import { fetchKtcPlayers, getKtcValue, fmtKtcValue, findKtcPlayerFromSleeper, computeKtcMultipliers, applyKtcMultipliers, productionAdjustedValue } from '../../utils/ktcApi';
+import { fetchKtcPlayers, fmtKtcValue, computeKtcMultipliers, applyKtcMultipliers, productionAdjustedValue } from '../../utils/ktcApi';
 import { getTradedPicks, getLeagueDrafts } from '../../api/sleeperApi';
 import {
   buildRosterPicks, getPicksForRoster, getPickQuality,
   valueSide, evaluateTrade, suggestPackage, buildCandidatePool,
-  computeRedraftPickValues, DYNASTY_FALLBACK_MULT,
+  computeRedraftPickValues,
 } from '../../utils/tradeEngine';
 import { TEAM_COLORS } from '../../data/teamColors';
 import { calcPointsFromTotals } from '../../utils/scoringEngine';
@@ -18,6 +34,7 @@ import { formatScoringSettingValue } from '../../utils/scoringDisplay';
 import { detectLeagueDefensiveType, normalizeIDPPos } from '../../utils/idpEngine';
 import { buildPartnerTradeIntelligence, findLeagueWideUpgradeGroups } from '../../utils/opportunityEngine';
 import { buildTradeAnalyticsSnapshot } from '../../utils/tradeAnalytics';
+import { computeTradePlayerValueDetail } from '../../utils/tradeValue';
 import TradeRosterPicker from './TradeRosterPicker';
 import TradePickPicker from './TradePickPicker';
 import PlayerStatsModal from '../PlayerStatsModal';
@@ -134,6 +151,49 @@ function scheduleDeferredTradeTask(callback, timeout = 240) {
   }
   const timerId = window.setTimeout(callback, 0);
   return () => window.clearTimeout(timerId);
+}
+
+function buildUpgradeSearchRequest({
+  targetPlayerId,
+  allowedOutgoingPlayerIds,
+  tradePostureLevel,
+  allowPackages,
+  allowOutgoingPicks,
+  allowIncomingPicks,
+}) {
+  const normalizedOutgoingPlayerIds = [...(allowedOutgoingPlayerIds ?? [])].sort();
+  if (!targetPlayerId || (normalizedOutgoingPlayerIds.length === 0 && !allowOutgoingPicks)) return null;
+  return {
+    targetPlayerId,
+    allowedOutgoingPlayerIds: normalizedOutgoingPlayerIds,
+    tradePostureLevel,
+    allowPackages: Boolean(allowPackages),
+    allowOutgoingPicks: Boolean(allowOutgoingPicks),
+    allowIncomingPicks: Boolean(allowIncomingPicks),
+  };
+}
+
+function areUpgradeSearchRequestsEqual(left, right) {
+  if (left === right) return true;
+  if (!left || !right) return false;
+  if (left.targetPlayerId !== right.targetPlayerId) return false;
+  if (left.tradePostureLevel !== right.tradePostureLevel) return false;
+  if (left.allowPackages !== right.allowPackages) return false;
+  if (left.allowOutgoingPicks !== right.allowOutgoingPicks) return false;
+  if (left.allowIncomingPicks !== right.allowIncomingPicks) return false;
+  const leftIds = left.allowedOutgoingPlayerIds ?? [];
+  const rightIds = right.allowedOutgoingPlayerIds ?? [];
+  if (leftIds.length !== rightIds.length) return false;
+  return leftIds.every((id, index) => id === rightIds[index]);
+}
+
+function buildUpgradeSearchCacheKey(request, leagueId, season) {
+  if (!request?.targetPlayerId) return null;
+  return JSON.stringify({
+    ...request,
+    leagueId,
+    season,
+  });
 }
 
 // ── Main component ───────────────────────────────────────────────────────────
@@ -316,6 +376,30 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
   }, [tradeAnalyticsRequested, wantsTradeAnalytics]);
 
   useEffect(() => {
+    if (tradeAnalyticsRequested || !selectedLeagueId) return undefined;
+    if (!showTradeBuilder && !prewarmAnalytics) return undefined;
+
+    let timeoutId = null;
+    let idleId = null;
+    const requestTradeAnalytics = () => setTradeAnalyticsRequested(true);
+
+    if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+      idleId = window.requestIdleCallback(requestTradeAnalytics, { timeout: 900 });
+    } else {
+      timeoutId = window.setTimeout(requestTradeAnalytics, 320);
+    }
+
+    return () => {
+      if (idleId != null && typeof window !== 'undefined' && typeof window.cancelIdleCallback === 'function') {
+        window.cancelIdleCallback(idleId);
+      }
+      if (timeoutId != null) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [tradeAnalyticsRequested, selectedLeagueId, showTradeBuilder, prewarmAnalytics]);
+
+  useEffect(() => {
     if (!prewarmAnalytics) return;
     if (!statsRequested) setStatsRequested(true);
     if (!tradeAnalyticsRequested) setTradeAnalyticsRequested(true);
@@ -332,7 +416,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
     // Reset trade state
     setYourPicks([]);
     setTheirPicks([]);
-    if (!fromGlobalSearch) setSuggestions(null);
+    setSuggestions(null);
 
     if (side === 'give') {
       // Trading away one of your own players
@@ -471,20 +555,25 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
   }, [selectedLeagueId, season, opportunityLayer, playerTradeValueMap, pickValueMap, rosterPicks, slots]);
 
   useEffect(() => {
-    if (!showIntelligence || !opportunityLayer || !deferredPartnerRosterId || !playerTradeValueMap) {
-      setTradeIntelligence(null);
+    if (!deferredPartnerRosterId || !opportunityLayer || !playerTradeValueMap) {
+      if (showIntelligence) setTradeIntelligence(null);
       return undefined;
     }
 
     const cacheKey = String(deferredPartnerRosterId);
     const cached = tradeIntelligenceCacheRef.current.get(cacheKey) ?? null;
     if (cached) {
-      setTradeIntelligence((prev) => (prev === cached ? prev : cached));
+      if (showIntelligence) {
+        setTradeIntelligence((prev) => (prev === cached ? prev : cached));
+      }
       return undefined;
     }
 
+    if (showIntelligence) {
+      setTradeIntelligence(null);
+    }
+
     let cancelled = false;
-    setTradeIntelligence(null);
     const cancelTask = scheduleDeferredTradeTask(() => {
       const next = buildPartnerTradeIntelligence({
         opportunityLayer,
@@ -497,10 +586,11 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
       });
       if (cancelled) return;
       tradeIntelligenceCacheRef.current.set(cacheKey, next);
+      if (!showIntelligence) return;
       startTradeIntelligenceTransition(() => {
         setTradeIntelligence(next);
       });
-    });
+    }, showIntelligence ? 180 : 520);
 
     return () => {
       cancelled = true;
@@ -545,19 +635,29 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
     [opportunityLayer, myRosterData?.roster_id],
   );
 
+  const currentUpgradeSearchRequest = useMemo(() => buildUpgradeSearchRequest({
+    targetPlayerId: upgradeTargetId,
+    allowedOutgoingPlayerIds: upgradeOfferPlayerIds,
+    tradePostureLevel: upgradeTradePostureLevel,
+    allowPackages: upgradeAllowPackages,
+    allowOutgoingPicks: upgradeAllowOutgoingPicks,
+    allowIncomingPicks: upgradeAllowIncomingPicks,
+  }), [
+    upgradeTargetId,
+    upgradeOfferPlayerIds,
+    upgradeTradePostureLevel,
+    upgradeAllowPackages,
+    upgradeAllowOutgoingPicks,
+    upgradeAllowIncomingPicks,
+  ]);
+
   const upgradeSearchCacheKey = useMemo(() => {
-    if (!submittedUpgradeSearch?.targetPlayerId) return null;
-    return JSON.stringify({
-      targetPlayerId: submittedUpgradeSearch.targetPlayerId,
-      allowedOutgoingPlayerIds: [...(submittedUpgradeSearch.allowedOutgoingPlayerIds ?? [])].sort(),
-      tradePostureLevel: submittedUpgradeSearch.tradePostureLevel,
-      allowPackages: submittedUpgradeSearch.allowPackages,
-      allowOutgoingPicks: submittedUpgradeSearch.allowOutgoingPicks,
-      allowIncomingPicks: submittedUpgradeSearch.allowIncomingPicks,
-      leagueId: selectedLeagueId,
-      season,
-    });
+    return buildUpgradeSearchCacheKey(submittedUpgradeSearch, selectedLeagueId, season);
   }, [submittedUpgradeSearch, selectedLeagueId, season]);
+  const currentUpgradeSearchCacheKey = useMemo(
+    () => buildUpgradeSearchCacheKey(currentUpgradeSearchRequest, selectedLeagueId, season),
+    [currentUpgradeSearchRequest, selectedLeagueId, season],
+  );
 
   useEffect(() => {
     upgradeSearchCacheRef.current.clear();
@@ -577,7 +677,6 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
     }
 
     let cancelled = false;
-    setUpgradeSearchResults(null);
     const cancelTask = scheduleDeferredTradeTask(() => {
       const next = findLeagueWideUpgradeGroups({
         opportunityLayer,
@@ -606,20 +705,47 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
     };
   }, [submittedUpgradeSearch, upgradeSearchCacheKey, opportunityLayer, rosterPicks, slots, season, pickValueMap, playerTradeValueMap, startUpgradeResultsTransition]);
 
-  const sidePlayerMetaMap = useMemo(() => {
-    const map = new Map();
-    if (!showTradeBuilder || !sleeperPlayers) return map;
-    for (const [id, player] of Object.entries(sleeperPlayers)) {
-      const stats = seasonStats?.[id];
-      const pts = stats ? calcPointsFromTotals(stats, scoringSettings, player.position) : null;
-      const gp = stats?.gp ?? 0;
-      map.set(id, {
-        avgPPG: pts != null && gp ? Math.round((pts / gp) * 10) / 10 : null,
-        rankInfo: rankMap[id] ?? null,
+  useEffect(() => {
+    if (!showUpgrade || !currentUpgradeSearchRequest || !currentUpgradeSearchCacheKey) return undefined;
+    if (!opportunityLayer || !playerTradeValueMap) return undefined;
+    if (!(currentUpgradeSearchRequest.allowedOutgoingPlayerIds.length > 0 || currentUpgradeSearchRequest.allowOutgoingPicks)) return undefined;
+    if (upgradeSearchCacheRef.current.has(currentUpgradeSearchCacheKey)) return undefined;
+
+    let cancelled = false;
+    const cancelTask = scheduleDeferredTradeTask(() => {
+      const next = findLeagueWideUpgradeGroups({
+        opportunityLayer,
+        targetPlayerId: currentUpgradeSearchRequest.targetPlayerId,
+        allowedOutgoingPlayerIds: currentUpgradeSearchRequest.allowedOutgoingPlayerIds,
+        tradePostureLevel: currentUpgradeSearchRequest.tradePostureLevel,
+        allowPackages: currentUpgradeSearchRequest.allowPackages,
+        allowOutgoingPicks: currentUpgradeSearchRequest.allowOutgoingPicks,
+        allowIncomingPicks: currentUpgradeSearchRequest.allowIncomingPicks,
+        rosterPicks,
+        slots,
+        currentSeason: season,
+        pickValueMap,
+        playerValueMap: playerTradeValueMap,
       });
-    }
-    return map;
-  }, [showTradeBuilder, sleeperPlayers, seasonStats, scoringSettings, rankMap]);
+      if (cancelled) return;
+      upgradeSearchCacheRef.current.set(currentUpgradeSearchCacheKey, next);
+    }, 480);
+
+    return () => {
+      cancelled = true;
+      cancelTask?.();
+    };
+  }, [
+    showUpgrade,
+    currentUpgradeSearchRequest,
+    currentUpgradeSearchCacheKey,
+    opportunityLayer,
+    playerTradeValueMap,
+    rosterPicks,
+    slots,
+    season,
+    pickValueMap,
+  ]);
 
   // Enrich a valueSide result: apply production adjustment to player vals, scale picks by leagueAvgMult
   function enrichItems(side) {
@@ -630,43 +756,33 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
         return { ...it, adjVal };
       }
       const sharedTradeValueDetail = playerTradeValueDetailsMap?.get(it.id) ?? null;
-      const sharedTradeValue = sharedTradeValueDetail?.value ?? playerTradeValueMap?.get(it.id) ?? null;
-      const sideMeta = sidePlayerMetaMap.get(it.id) ?? null;
-      const avgPPG = sideMeta?.avgPPG ?? null;
-      const rankInfo = sideMeta?.rankInfo ?? null;
-
-      let adjVal;
-      if (sharedTradeValue != null) {
-        adjVal = sharedTradeValue;
-      } else if (sharedTradeValueDetail?.isEstimated || it.idpFallback) {
-        // IDP/DST: value is already production-derived from idpEngine — use as-is.
-        // Skip production adjustment (would be a no-op anyway) and rank nudge
-        // (would double-count production since ranking also uses season stats).
-        adjVal = it.val;
-      } else if ((sharedTradeValueDetail?.dynastyFallback || it.dynastyFallback) && avgPPG != null && positionalValuePerPPG[it.position] != null) {
-        // PPG-calibrated estimation: derive value from the same value-per-PPG ratio
-        // as direct-KTC-ranked players, so dynasty-fallback players sit on the same scale.
-        adjVal = Math.round(avgPPG * positionalValuePerPPG[it.position]);
-      } else {
-        // Direct KTC players: 50% PPG blend weight (higher than default 35%) so
-        // season performance has more influence on trade-agent values.
-        adjVal = productionAdjustedValue(it.val, avgPPG, positionalAvgPPG[it.position], 0.50);
-      }
-
-      // Layer 2 — rank-percentile nudge (±12%) for KTC-based players only.
-      // IDP/DST players skip this since their value is already production-proportional.
-      if (!it.idpFallback && rankInfo?.rank != null && rankInfo?.posCount > 1) {
-        const percentile = 1 - (rankInfo.rank - 1) / (rankInfo.posCount - 1);
-        const rankMult = 0.88 + 0.24 * percentile;
-        adjVal = Math.round(adjVal * rankMult);
-      }
+      const fallbackTradeValueDetail = sharedTradeValueDetail ?? computeTradePlayerValueDetail({
+        id: it.id,
+        players: sleeperPlayers,
+        adjustedKtcPlayers,
+        adjustedDynastyKtcPlayers,
+        leagueType,
+        seasonStats,
+        scoringSettings,
+        positionalAvgPPG,
+        positionalValuePerPPG,
+        rankMap,
+        mergedIDPMap,
+        blendWeight: 0.50,
+      });
+      const adjVal = fallbackTradeValueDetail?.value ?? playerTradeValueMap?.get(it.id) ?? it.val;
+      const avgPPG = fallbackTradeValueDetail?.avgPPG != null
+        ? Math.round(fallbackTradeValueDetail.avgPPG * 10) / 10
+        : null;
+      const rankInfo = fallbackTradeValueDetail?.rankInfo ?? null;
 
       return {
         ...it,
         adjVal,
         avgPPG,
         rankInfo,
-        dynastyFallback: sharedTradeValueDetail?.dynastyFallback ?? it.dynastyFallback ?? false,
+        dynastyFallback: fallbackTradeValueDetail?.dynastyFallback ?? it.dynastyFallback ?? false,
+        idpFallback: fallbackTradeValueDetail?.isEstimated ?? it.idpFallback ?? false,
       };
     });
     const adjTotal = enriched.reduce((sum, it) => sum + (it.adjVal ?? it.val ?? 0), 0);
@@ -680,14 +796,14 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
     const side = valueSide(yourPlayers, yourPicks, sleeperPlayers, adjustedKtcPlayers ?? [], leagueType, rosters, pickValueMap, season, adjustedDynastyKtcPlayers, mergedIDPMap, playerTradeValueDetailsMap);
     return enrichItems(side);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showTradeBuilder, yourPlayers, yourPicks, sleeperPlayers, adjustedKtcPlayers, adjustedDynastyKtcPlayers, mergedIDPMap, leagueType, rosters, pickValueMap, season, playerTradeValueDetailsMap, playerTradeValueMap, positionalAvgPPG, positionalValuePerPPG, leagueAvgMult, sidePlayerMetaMap]);
+  }, [showTradeBuilder, yourPlayers, yourPicks, sleeperPlayers, adjustedKtcPlayers, adjustedDynastyKtcPlayers, mergedIDPMap, leagueType, rosters, pickValueMap, season, playerTradeValueDetailsMap, playerTradeValueMap, positionalAvgPPG, positionalValuePerPPG, leagueAvgMult, rankMap]);
 
   const theirSide = useMemo(() => {
     if (!showTradeBuilder || !sleeperPlayers) return { total: 0, items: [] };
     const side = valueSide(theirPlayers, theirPicks, sleeperPlayers, adjustedKtcPlayers ?? [], leagueType, rosters, pickValueMap, season, adjustedDynastyKtcPlayers, mergedIDPMap, playerTradeValueDetailsMap);
     return enrichItems(side);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showTradeBuilder, theirPlayers, theirPicks, sleeperPlayers, adjustedKtcPlayers, adjustedDynastyKtcPlayers, mergedIDPMap, leagueType, rosters, pickValueMap, season, playerTradeValueDetailsMap, playerTradeValueMap, positionalAvgPPG, positionalValuePerPPG, leagueAvgMult, sidePlayerMetaMap]);
+  }, [showTradeBuilder, theirPlayers, theirPicks, sleeperPlayers, adjustedKtcPlayers, adjustedDynastyKtcPlayers, mergedIDPMap, leagueType, rosters, pickValueMap, season, playerTradeValueDetailsMap, playerTradeValueMap, positionalAvgPPG, positionalValuePerPPG, leagueAvgMult, rankMap]);
 
   const verdict = useMemo(
     () => evaluateTrade(yourSide.total, theirSide.total),
@@ -903,54 +1019,28 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
   }, []);
 
   const runUpgradeFinderSearch = useCallback(() => {
-    if (!upgradeTargetId || (!upgradeOfferPlayerIds.length && !upgradeAllowOutgoingPicks)) return;
+    if (!currentUpgradeSearchRequest) return;
+    const cached = currentUpgradeSearchCacheKey
+      ? (upgradeSearchCacheRef.current.get(currentUpgradeSearchCacheKey) ?? null)
+      : null;
     startUpgradeSearchTransition(() => {
-      setSubmittedUpgradeSearch({
-        targetPlayerId: upgradeTargetId,
-        allowedOutgoingPlayerIds: upgradeOfferPlayerIds,
-        tradePostureLevel: upgradeTradePostureLevel,
-        allowPackages: upgradeAllowPackages,
-        allowOutgoingPicks: upgradeAllowOutgoingPicks,
-        allowIncomingPicks: upgradeAllowIncomingPicks,
-      });
+      if (cached) {
+        setUpgradeSearchResults((prev) => (prev === cached ? prev : cached));
+      }
+      setSubmittedUpgradeSearch(currentUpgradeSearchRequest);
     });
   }, [
-    upgradeTargetId,
-    upgradeOfferPlayerIds,
-    upgradeTradePostureLevel,
-    upgradeAllowPackages,
-    upgradeAllowOutgoingPicks,
-    upgradeAllowIncomingPicks,
+    currentUpgradeSearchRequest,
+    currentUpgradeSearchCacheKey,
     startUpgradeSearchTransition,
-  ]);
-
-  useEffect(() => {
-    if (!submittedUpgradeSearch) return;
-    const sortedCurrentIds = [...upgradeOfferPlayerIds].sort();
-    const sortedSubmittedIds = [...(submittedUpgradeSearch.allowedOutgoingPlayerIds ?? [])].sort();
-    const sameOutgoingIds = sortedCurrentIds.length === sortedSubmittedIds.length
-      && sortedCurrentIds.every((id, index) => id === sortedSubmittedIds[index]);
-    const stillMatches =
-      submittedUpgradeSearch.targetPlayerId === upgradeTargetId
-      && submittedUpgradeSearch.tradePostureLevel === upgradeTradePostureLevel
-      && submittedUpgradeSearch.allowOutgoingPicks === upgradeAllowOutgoingPicks
-      && submittedUpgradeSearch.allowIncomingPicks === upgradeAllowIncomingPicks
-      && submittedUpgradeSearch.allowPackages === upgradeAllowPackages
-      && sameOutgoingIds;
-    if (!stillMatches) setSubmittedUpgradeSearch(null);
-  }, [
-    submittedUpgradeSearch,
-    upgradeTargetId,
-    upgradeOfferPlayerIds,
-    upgradeTradePostureLevel,
-    upgradeAllowOutgoingPicks,
-    upgradeAllowIncomingPicks,
-    upgradeAllowPackages,
   ]);
 
   const isTradeIntelligenceLoading = isTradeAnalyticsLoading || Boolean(
     showIntelligence && partnerRosterId && opportunityLayer && playerTradeValueMap && !tradeIntelligence,
   ) || isTradeIntelligencePending;
+  const isUpgradeSearchDirty = Boolean(
+    submittedUpgradeSearch && !areUpgradeSearchRequestsEqual(submittedUpgradeSearch, currentUpgradeSearchRequest),
+  );
   const isUpgradeResultsLoading = Boolean(
     submittedUpgradeSearch?.targetPlayerId && opportunityLayer && playerTradeValueMap && !upgradeSearchResults,
   ) || isUpgradeResultsPending;
@@ -996,6 +1086,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
         <UpgradeFinderPage
           players={myRosterOpportunityPlayers}
           searchSubmitted={Boolean(submittedUpgradeSearch)}
+          searchDirty={isUpgradeSearchDirty}
           selectedPlayerId={upgradeTargetId}
           selectedOutgoingPlayerIds={upgradeOfferPlayerIds}
           searchPending={isUpgradeSearchPending || isUpgradeResultsLoading}
@@ -1511,93 +1602,14 @@ function TradeSide({ label, items, total, onRemovePlayer, onRemovePick, onAddPla
           ? teamPalette(it.team, darkMode)
           : { color: null, tint: null, logoKey: '' };
         return (
-          <div key={it.id}
-            className="rounded-lg px-2.5 py-2 flex items-center gap-2 relative overflow-hidden"
-            style={{
-              background: tp.tint ?? 'var(--color-fill)',
-              borderLeft: tp.borderColor ? `3px solid ${tp.borderColor}` : '3px solid transparent',
-            }}>
-
-            {it.type === 'player' && (
-              <img src={`https://sleepercdn.com/content/nfl/players/thumb/${it.id}.jpg`}
-                alt="" className="hidden lg:block w-7 h-7 rounded-full shrink-0 object-cover"
-                style={{ background: 'var(--color-fill-secondary)' }}
-                loading="lazy"
-                decoding="async"
-                onError={e => { e.target.style.display = 'none'; }} />
-            )}
-            {it.type === 'pick' && (
-              <div className="hidden lg:flex w-7 h-7 rounded-full shrink-0 items-center justify-center"
-                style={{ background: 'var(--color-fill-secondary)', fontSize: '8px', fontWeight: 700, color: 'var(--color-label-tertiary)' }}>
-                PICK
-              </div>
-            )}
-            <div className="flex-1 min-w-0 relative">
-              {/* Team logo watermark — scoped to text area so it never overlaps values */}
-              {it.type === 'player' && tp.logoKey && (
-                <img
-                  src={`https://a.espncdn.com/i/teamlogos/nfl/500/${tp.logoKey}.png`}
-                  aria-hidden="true"
-                  className="hidden lg:block absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none select-none"
-                  style={{ width: 32, height: 32, objectFit: 'contain', opacity: 0.12 }}
-                  loading="lazy"
-                  decoding="async"
-                  onError={e => { e.target.style.display = 'none'; }}
-                />
-              )}
-              {/* Name + value on same row */}
-              <div className="flex items-baseline gap-1.5">
-                <div className="flex-1 min-w-0 text-xs font-semibold leading-snug"
-                  style={{ color: 'var(--color-label)' }}>
-                  {it.type === 'player' && onOpenPlayer ? (
-                    <button
-                      onClick={() => onOpenPlayer(it)}
-                      className="text-left underline-offset-2 hover:underline"
-                      style={{ color: 'var(--color-label)' }}
-                    >
-                      {it.label}
-                    </button>
-                  ) : (
-                    it.label
-                  )}
-                </div>
-                <span className="text-sm font-bold tabular-nums shrink-0"
-                  title={it.idpFallback ? 'Estimated from season production (no KTC data)' : undefined}
-                  style={{ color: (it.adjVal ?? it.val) != null ? 'var(--color-label)' : 'var(--color-label-quaternary)' }}>
-                  {(it.dynastyFallback || it.idpFallback) ? '~' : ''}{fmtKtcValue(it.adjVal ?? it.val)}
-                </span>
-              </div>
-              {/* Sub-info: single nowrap line */}
-              {it.position && (
-                <div className="flex items-center gap-1 overflow-hidden mt-0.5">
-                  <span className="text-xs shrink-0" style={{ color: 'var(--color-label-tertiary)' }}>
-                    {it.position}{it.team ? ` · ${it.team}` : ''}
-                  </span>
-                  {it.rankInfo && (
-                    <span className="text-xs font-bold tabular-nums shrink-0"
-                      style={{ color: tp.color ?? 'var(--color-label-quaternary)' }}>
-                      · #{it.rankInfo.rank} {it.rankInfo.posLabel}
-                    </span>
-                  )}
-                  {it.avgPPG != null && (
-                    <span className="hidden lg:inline text-xs tabular-nums shrink-0" style={{ color: 'var(--color-label-quaternary)' }}>
-                      · {it.avgPPG.toFixed(1)} avg
-                    </span>
-                  )}
-                  {(it.dynastyFallback || it.idpFallback) && (
-                    <span className="shrink-0" style={{ color: 'var(--color-label-quaternary)', fontSize: '9px' }}>
-                      · {it.dynastyFallback ? 'DYN est.' : 'est.'}
-                    </span>
-                  )}
-                </div>
-              )}
-            </div>
-            <button onClick={() => it.type === 'player' ? onRemovePlayer(it.id) : onRemovePick(it.id)}
-              className="shrink-0 w-5 h-5 rounded-full flex items-center justify-center"
-              style={{ background: 'var(--color-fill-secondary)', color: 'var(--color-label-tertiary)', fontSize: '10px' }}>
-              ×
-            </button>
-          </div>
+          <TradeSideAssetRow
+            key={it.id}
+            item={it}
+            palette={tp}
+            darkMode={darkMode}
+            onOpenPlayer={onOpenPlayer}
+            onRemove={() => it.type === 'player' ? onRemovePlayer(it.id) : onRemovePick(it.id)}
+          />
         );
       })}
 
@@ -1619,6 +1631,136 @@ function TradeSide({ label, items, total, onRemovePlayer, onRemovePick, onAddPla
           + Pick
         </button>
       </div>
+    </div>
+  );
+}
+
+function TradeSideAssetRow({ item, palette, darkMode, onOpenPlayer, onRemove }) {
+  const [isHovered, setIsHovered] = useState(false);
+  const isInteractive = item.type === 'player' && !!onOpenPlayer;
+  const accentColor = palette?.borderColor ?? (item.type === 'pick' ? 'var(--color-signature)' : (darkMode ? '#5AADFF' : '#1A6EFF'));
+  const rowBg = palette?.tint ?? 'var(--color-fill)';
+  const hoverBg = palette?.color ? `${palette.color}${palette.isLight ? '2e' : '34'}` : 'var(--color-fill-secondary)';
+  const { glowHandlers, borderOverlay, glowShadow } = useCardGlow({
+    enabled: isHovered,
+    color: accentColor,
+    cardColor: palette?.color ?? null,
+    darkMode,
+    coreColor: darkMode ? '#FFFFFF' : null,
+    outerColor: accentColor,
+  });
+  const baseShadow = isHovered
+    ? '0 8px 18px rgba(12,15,20,0.10), 0 2px 6px rgba(12,15,20,0.08)'
+    : '0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06)';
+  const rowShadow = glowShadow ? `${glowShadow}, ${baseShadow}` : baseShadow;
+
+  return (
+    <div
+      className="rounded-lg px-2.5 py-2 flex items-center gap-2 relative overflow-hidden"
+      style={{
+        background: isHovered ? hoverBg : rowBg,
+        border: '1px solid var(--color-separator)',
+        borderLeft: `4px solid ${accentColor}`,
+        boxShadow: rowShadow,
+        transform: isHovered ? 'translateY(-1px)' : 'translateY(0)',
+        transition: 'background 150ms cubic-bezier(0.32, 0.72, 0, 1), box-shadow 200ms cubic-bezier(0.32, 0.72, 0, 1), transform 200ms cubic-bezier(0.32, 0.72, 0, 1)',
+        cursor: isInteractive ? 'pointer' : undefined,
+      }}
+      onClick={isInteractive ? () => onOpenPlayer(item) : undefined}
+      onMouseMove={isInteractive ? glowHandlers.onMouseMove : undefined}
+      onMouseEnter={(event) => {
+        setIsHovered(true);
+        glowHandlers.onMouseEnter?.(event);
+      }}
+      onMouseLeave={(event) => {
+        setIsHovered(false);
+        glowHandlers.onMouseLeave?.(event);
+      }}
+      onFocus={(event) => {
+        setIsHovered(true);
+        glowHandlers.onMouseEnter?.(event);
+      }}
+      onBlur={(event) => {
+        setIsHovered(false);
+        glowHandlers.onMouseLeave?.(event);
+      }}
+      onKeyDown={isInteractive ? (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onOpenPlayer(item);
+        }
+      } : undefined}
+      role={isInteractive ? 'button' : undefined}
+      tabIndex={isInteractive ? 0 : undefined}
+      aria-label={isInteractive ? `Open player stats for ${item.label}` : undefined}
+    >
+      {borderOverlay}
+      {item.type === 'player' && (
+        <img src={`https://sleepercdn.com/content/nfl/players/thumb/${item.id}.jpg`}
+          alt="" className="hidden lg:block w-7 h-7 rounded-full shrink-0 object-cover"
+          style={{ background: 'var(--color-fill-secondary)' }}
+          loading="lazy"
+          decoding="async"
+          onError={e => { e.target.style.display = 'none'; }} />
+      )}
+      {item.type === 'pick' && (
+        <div className="hidden lg:flex w-7 h-7 rounded-full shrink-0 items-center justify-center"
+          style={{ background: 'var(--color-fill-secondary)', fontSize: '8px', fontWeight: 700, color: 'var(--color-label-tertiary)' }}>
+          PICK
+        </div>
+      )}
+      <div className="flex-1 min-w-0 relative">
+        {item.type === 'player' && palette?.logoKey && (
+          <img
+            src={`https://a.espncdn.com/i/teamlogos/nfl/500/${palette.logoKey}.png`}
+            aria-hidden="true"
+            className="hidden lg:block absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none select-none"
+            style={{ width: 32, height: 32, objectFit: 'contain', opacity: 0.12 }}
+            loading="lazy"
+            decoding="async"
+            onError={e => { e.target.style.display = 'none'; }}
+          />
+        )}
+        <div className="flex items-baseline gap-1.5">
+          <div className="flex-1 min-w-0 text-xs font-semibold leading-snug"
+            style={{ color: isInteractive ? accentColor : 'var(--color-label)' }}>
+            {item.label}
+          </div>
+          <span className="text-sm font-bold tabular-nums shrink-0"
+            title={item.idpFallback ? 'Estimated from season production (no KTC data)' : undefined}
+            style={{ color: (item.adjVal ?? item.val) != null ? 'var(--color-label)' : 'var(--color-label-quaternary)' }}>
+            {(item.dynastyFallback || item.idpFallback) ? '~' : ''}{fmtKtcValue(item.adjVal ?? item.val)}
+          </span>
+        </div>
+        {item.position && (
+          <div className="flex items-center gap-1 overflow-hidden mt-0.5">
+            <span className="text-xs shrink-0" style={{ color: 'var(--color-label-tertiary)' }}>
+              {item.position}{item.team ? ` · ${item.team}` : ''}
+            </span>
+            {item.rankInfo && (
+              <span className="text-xs font-bold tabular-nums shrink-0"
+                style={{ color: palette?.color ?? 'var(--color-label-quaternary)' }}>
+                · #{item.rankInfo.rank} {item.rankInfo.posLabel}
+              </span>
+            )}
+            {item.avgPPG != null && (
+              <span className="hidden lg:inline text-xs tabular-nums shrink-0" style={{ color: 'var(--color-label-quaternary)' }}>
+                · {item.avgPPG.toFixed(1)} avg
+              </span>
+            )}
+            {(item.dynastyFallback || item.idpFallback) && (
+              <span className="shrink-0" style={{ color: 'var(--color-label-quaternary)', fontSize: '9px' }}>
+                · {item.dynastyFallback ? 'DYN est.' : 'est.'}
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+      <button onClick={(event) => { event.stopPropagation(); onRemove(); }}
+        className="shrink-0 w-5 h-5 rounded-full flex items-center justify-center"
+        style={{ background: 'var(--color-fill-secondary)', color: 'var(--color-label-tertiary)', fontSize: '10px' }}>
+        ×
+      </button>
     </div>
   );
 }
@@ -2555,9 +2697,25 @@ const TradeProposalItem = memo(function TradeProposalItem({
   } = useEqualizedCardHeight(cardCount > 1, proposalCardMeasureKey);
   const sharedCardSlotStyle = getProposalCardSlotStyle(sharedCardCount, equalizedCardHeight);
   const insightsReady = useDeferredContentReady(deferInsights);
+  const [isHovered, setIsHovered] = useState(false);
+  const proposalShadow = isHovered
+    ? '0 10px 24px rgba(12,15,20,0.12), 0 3px 8px rgba(12,15,20,0.08)'
+    : '0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06)';
 
   return (
-    <div className={`rounded-xl overflow-hidden ${containerClassName}`} style={{ border: '1px solid var(--color-separator)' }}>
+    <div
+      className={`rounded-xl overflow-hidden ${containerClassName}`}
+      style={{
+        border: `1px solid ${isHovered ? 'var(--color-signature)' : 'var(--color-separator)'}`,
+        boxShadow: proposalShadow,
+        transform: isHovered ? 'translateY(-1px)' : 'translateY(0)',
+        transition: 'border-color 160ms cubic-bezier(0.32, 0.72, 0, 1), box-shadow 200ms cubic-bezier(0.32, 0.72, 0, 1), transform 200ms cubic-bezier(0.32, 0.72, 0, 1)',
+      }}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      onFocus={() => setIsHovered(true)}
+      onBlur={() => setIsHovered(false)}
+    >
       <div className="flex items-center justify-end gap-3 px-4 py-2.5"
         style={{ background: 'var(--color-fill-secondary)' }}>
         <button onClick={() => onApplyProposal?.(proposal)}
@@ -3042,6 +3200,11 @@ const TradeProposalPanel = memo(function TradeProposalPanel({
     outgoingPicks: 'any',
     incomingPicks: 'any',
   });
+  const deferredProposalFilters = useDeferredValue(proposalFilters);
+  const isProposalFilterPending = proposalFilters.outgoingPlayers !== deferredProposalFilters.outgoingPlayers
+    || proposalFilters.incomingPlayers !== deferredProposalFilters.incomingPlayers
+    || proposalFilters.outgoingPicks !== deferredProposalFilters.outgoingPicks
+    || proposalFilters.incomingPicks !== deferredProposalFilters.incomingPicks;
   useEffect(() => {
     if (activeMode !== 'needs') return;
     setProposalFilters((prev) => (prev.incomingPlayers === '0'
@@ -3054,8 +3217,8 @@ const TradeProposalPanel = memo(function TradeProposalPanel({
     [activeProposals],
   );
   const { filteredProposals, desktopRows } = useMemo(
-    () => buildFilteredProposalLayout(proposalFilterEntries, proposalFilters),
-    [proposalFilterEntries, proposalFilters],
+    () => buildFilteredProposalLayout(proposalFilterEntries, deferredProposalFilters),
+    [proposalFilterEntries, deferredProposalFilters],
   );
   const proposalRenderKey = [activeMode, proposalFilters.outgoingPlayers, proposalFilters.incomingPlayers, proposalFilters.outgoingPicks, proposalFilters.incomingPicks].join(':');
   const hasActiveFilters = Object.values(proposalFilters).some((value) => value !== 'any');
@@ -3143,6 +3306,19 @@ const TradeProposalPanel = memo(function TradeProposalPanel({
           )}
         </div>
         <div className="flex items-center gap-2 shrink-0 self-start">
+          {isProposalFilterPending && (
+            <div
+              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold"
+              style={{
+                background: 'var(--color-fill)',
+                color: 'var(--color-label-secondary)',
+                border: '1px solid var(--color-separator)',
+              }}
+            >
+              <Spinner size="w-3.5 h-3.5" />
+              Updating ideas…
+            </div>
+          )}
           {hasActiveFilters && (
             <button
               onClick={() => setProposalFilters({
@@ -3174,7 +3350,11 @@ const TradeProposalPanel = memo(function TradeProposalPanel({
         </div>
       ) : (
         <>
-          <div key={'mobile:' + proposalRenderKey} className="pt-4 space-y-3 xl:hidden">
+          <div
+            key={'mobile:' + proposalRenderKey}
+            className="pt-4 space-y-3 xl:hidden"
+            style={{ opacity: isProposalFilterPending ? 0.68 : 1, transition: 'opacity 160ms ease' }}
+          >
             {filteredProposals.map((proposal) => (
               <div key={proposal.id + ':' + proposalRenderKey} style={TRADE_RESULT_BLOCK_STYLE}>
                 <TradeProposalItem
@@ -3189,7 +3369,11 @@ const TradeProposalPanel = memo(function TradeProposalPanel({
             ))}
           </div>
 
-          <div key={'desktop:' + proposalRenderKey} className="hidden xl:flex xl:flex-col xl:gap-3 xl:pt-4">
+          <div
+            key={'desktop:' + proposalRenderKey}
+            className="hidden xl:flex xl:flex-col xl:gap-3 xl:pt-4"
+            style={{ opacity: isProposalFilterPending ? 0.68 : 1, transition: 'opacity 160ms ease' }}
+          >
             {desktopRows.map((row, rowIndex) => {
               if (row.length === 1) {
                 const [item] = row;
@@ -3243,6 +3427,7 @@ TradeProposalPanel.displayName = 'TradeProposalPanel';
 const UpgradeFinderPage = memo(function UpgradeFinderPage({
   players,
   searchSubmitted,
+  searchDirty = false,
   searchPending,
   selectedPlayerId,
   selectedOutgoingPlayerIds,
@@ -3761,6 +3946,31 @@ const UpgradeFinderPage = memo(function UpgradeFinderPage({
 
         {searchSubmitted && (
           <section ref={resultsRef}>
+            {searchPending && (
+              <div
+                className="mb-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold"
+                style={{
+                  background: 'var(--color-fill)',
+                  color: 'var(--color-label-secondary)',
+                  border: '1px solid var(--color-separator)',
+                }}
+              >
+                <Spinner size="w-3.5 h-3.5" />
+                Refreshing matches…
+              </div>
+            )}
+            {searchDirty && !searchPending && (
+              <div
+                className="mb-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold"
+                style={{
+                  background: 'var(--color-fill)',
+                  color: 'var(--color-label-secondary)',
+                  border: '1px solid var(--color-separator)',
+                }}
+              >
+                Current filters changed. Run search again to refresh these results.
+              </div>
+            )}
             <div className="text-[11px] font-semibold uppercase tracking-widest mb-2" style={{ color: 'var(--color-label-tertiary)' }}>
               Results
             </div>
@@ -3780,7 +3990,7 @@ const UpgradeFinderPage = memo(function UpgradeFinderPage({
               </div>
             ) : (
               <>
-                <div className="flex flex-col gap-5">
+                <div className="flex flex-col gap-5" style={{ opacity: searchPending ? 0.72 : 1, transition: 'opacity 160ms ease' }}>
                   {stagedResultGroups.visibleItems.map(({ group, rosterId, managerName, initial }) => {
                     return (
                       <UpgradeResultGroup
@@ -4590,12 +4800,7 @@ function RosterBrowseModal({
     const sharedTradeValue = playerTradeValueDetailsMap?.get(id) ?? null;
     let dynastyFallback = sharedTradeValue?.dynastyFallback ?? false;
     let idpFallback = sharedTradeValue?.isEstimated ?? false;
-    let rawVal = null;
     const isIDPDST = isIDPDSTPos(sp.position);
-    const stats = seasonStats?.[id];
-    const pts = stats ? calcPointsFromTotals(stats, scoringSettings, sp.position) : null;
-    const gp = stats?.gp ?? 0;
-    const avgPPG = pts != null && gp ? pts / gp : null;
     let val;
     if (enriched?.adjVal != null) {
       val = enriched.adjVal;
@@ -4603,34 +4808,27 @@ function RosterBrowseModal({
     } else if (sharedTradeValue) {
       val = sharedTradeValue.value;
       dynastyFallback = sharedTradeValue.dynastyFallback;
+      idpFallback = sharedTradeValue.isEstimated ?? false;
     } else {
-      const ktc = findKtcPlayerFromSleeper(id, sleeperPlayers, adjustedKtcPlayers ?? []);
-      rawVal = getKtcValue(ktc, leagueType);
-      if (rawVal == null && adjustedDynastyKtcPlayers?.length) {
-        const dKtc = findKtcPlayerFromSleeper(id, sleeperPlayers, adjustedDynastyKtcPlayers);
-        const dVal = getKtcValue(dKtc, leagueType);
-        if (dVal != null) {
-          rawVal = Math.round(dVal * DYNASTY_FALLBACK_MULT);
-          dynastyFallback = true;
-        }
+      const detail = computeTradePlayerValueDetail({
+        id,
+        players: sleeperPlayers,
+        adjustedKtcPlayers,
+        adjustedDynastyKtcPlayers,
+        leagueType,
+        seasonStats,
+        scoringSettings,
+        positionalAvgPPG,
+        positionalValuePerPPG,
+        rankMap,
+        mergedIDPMap,
+        blendWeight: 0.50,
+      });
+      if (detail) {
+        val = detail.value;
+        dynastyFallback = detail.dynastyFallback;
+        idpFallback = detail.isEstimated;
       }
-      idpFallback = rawVal == null && mergedIDPMap?.has(id);
-      if (idpFallback) rawVal = mergedIDPMap.get(id);
-      rawVal = rawVal ?? (adjustedKtcPlayers?.length > 0 ? 0 : null);
-    }
-
-    if (val == null && isIDPDST && mergedIDPMap?.has(id)) {
-      val = rawVal;
-    } else if (val == null && dynastyFallback && gp >= 3 && avgPPG != null && positionalValuePerPPG?.[sp.position] != null) {
-      val = Math.round(avgPPG * positionalValuePerPPG[sp.position]);
-    } else if (val == null) {
-      val = productionAdjustedValue(rawVal, avgPPG, positionalAvgPPG?.[sp.position], 0.50);
-    }
-
-    const rankInfo = rankMap?.[id] ?? null;
-    if (!isIDPDST && !sharedTradeValue && enriched?.adjVal == null && rankInfo?.rank != null && rankInfo?.posCount > 1) {
-      const percentile = 1 - (rankInfo.rank - 1) / (rankInfo.posCount - 1);
-      val = Math.round(val * (0.88 + 0.24 * percentile));
     }
 
     const next = {

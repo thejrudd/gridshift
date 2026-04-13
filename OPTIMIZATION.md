@@ -7,6 +7,10 @@ what should change, why it should change, how the work should be sequenced, and
 how success should be validated, but it does not authorize starting the work
 immediately.
 
+Manual QA flows live in `QA_CHECKLIST.md`. Reference that file only when
+actively validating behavior; do not pull it into normal implementation context
+by default.
+
 Current product direction:
 
 - v6.2 work remains the active implementation focus
@@ -343,7 +347,7 @@ Tasks:
   - redraft 1QB
   - dynasty superflex
   - IDP-enabled league
-- Add a lightweight profiling checklist for manual testing
+- Add a lightweight profiling checklist for manual testing in `QA_CHECKLIST.md`
 - Identify which derived datasets are purely shared and which are view-specific
 
 Deliverables:

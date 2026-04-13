@@ -627,7 +627,7 @@ export default function CompanionMatchup({
 
   useEffect(() => {
     const requestedPlayerId = initialWeekRequest?.playerId;
-    const requestedWeek = Number(initialWeekRequest?.week);
+    const requestedWeek = Number(initialWeekRequest?.week ?? week);
     if (!requestedPlayerId || requestedWeek !== week) return;
 
     const matchupPlayers = [
@@ -637,13 +637,13 @@ export default function CompanionMatchup({
     ].filter(Boolean);
 
     const match = matchupPlayers.find((player) => player?.id === requestedPlayerId);
-    if (!match) return;
-
-    setSelectedPlayer({
-      id: match.id,
-      projection: match.projection ?? null,
-      enriched: match,
-    });
+    if (match) {
+      setSelectedPlayer({
+        id: match.id,
+        projection: match.projection ?? null,
+        enriched: match,
+      });
+    }
     onConsumeInitialWeekRequest?.();
   }, [enrichedSlots, initialWeekRequest, myBench, oppBench, onConsumeInitialWeekRequest, week]);
 
@@ -1027,6 +1027,9 @@ export default function CompanionMatchup({
                   <button
                     key={w}
                     onClick={() => {
+                      setSelectedPlayer(null);
+                      setSelectedRosterPlayerId(null);
+                      setSelectedTeam(null);
                       setWeek(w);
                       onWeekChange?.(w);
                       setShowWeekPicker(false);
