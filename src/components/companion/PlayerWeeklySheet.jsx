@@ -3,6 +3,7 @@ import { useSleeperLeague, useSleeperStats } from '../../context/SleeperContext'
 import { useTheme } from '../../context/ThemeContext';
 import { calcPoints } from '../../utils/scoringEngine';
 import { getTeamPalette } from '../../data/teamColors.js';
+import useBodyScrollLock from '../../hooks/useBodyScrollLock';
 
 function hexLuminance(hex) {
   const r = parseInt(hex.slice(1, 3), 16) / 255;
@@ -150,10 +151,7 @@ export default function PlayerWeeklySheet({ playerId, onClose, onOpenWeek = null
   const avg = weeksPlayed > 0 ? seasonTotal / weeksPlayed : 0;
   const best = weekRows.reduce((max, row) => (row.pts > max ? row.pts : max), 0);
 
-  useEffect(() => {
-    document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = ''; };
-  }, []);
+  useBodyScrollLock();
 
   return (
     <>

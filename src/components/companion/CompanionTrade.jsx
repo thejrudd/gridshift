@@ -76,6 +76,12 @@ function toTeamKey(sleeperTeam) {
   return SLEEPER_TEAM_MAP[lower] ?? lower;
 }
 
+function normalizeRosterId(value) {
+  if (value == null || value === '') return null;
+  const parsed = Number.parseInt(String(value), 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function hexLuminance(hex) {
   const r = parseInt(hex.slice(1, 3), 16) / 255;
   const g = parseInt(hex.slice(3, 5), 16) / 255;
@@ -195,7 +201,6 @@ function buildUpgradeSearchCacheKey(request, leagueId, season) {
     season,
   });
 }
-
 // ── Main component ───────────────────────────────────────────────────────────
 
 export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, view = 'agent', onViewChange, onViewPlayer, prewarmAnalytics = false }) {
@@ -280,8 +285,9 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
   const deferredPartnerRosterId = useDeferredValue(partnerRosterId);
 
   const switchPartnerTradeContext = useCallback((nextPartnerRosterId, { nextTheirPlayers = [], nextTheirPicks = [] } = {}) => {
+    const normalizedPartnerRosterId = normalizeRosterId(nextPartnerRosterId);
     startPartnerSwitchTransition(() => {
-      setPartnerRosterId(nextPartnerRosterId ?? null);
+      setPartnerRosterId(normalizedPartnerRosterId);
       setTheirPlayers(nextTheirPlayers);
       setTheirPicks(nextTheirPicks);
       setSuggestions(null);
@@ -411,7 +417,13 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
     if (!initialPlayer) return;
     onConsumeInitialPlayer?.();
 
-    const { sleeperId, side, partnerRosterId: initPartner, otherSleeperId } = initialPlayer;
+    const {
+      sleeperId,
+      side,
+      partnerRosterId: initPartner,
+      otherSleeperId,
+    } = initialPlayer;
+    const normalizedInitPartner = normalizeRosterId(initPartner);
 
     // Reset trade state
     setYourPicks([]);
@@ -438,7 +450,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
       }
     } else if (side === 'get') {
       // Targeting a player on another roster
-      if (initPartner) setPartnerRosterId(initPartner);
+      if (normalizedInitPartner) setPartnerRosterId(normalizedInitPartner);
       setTheirPlayers([sleeperId]);
       setYourPlayers([]);
     }
@@ -888,13 +900,14 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
     } else if (typeof playerIdOrObj === 'object') {
       // All-rosters search: { id, rosterId }
       const { id, rosterId: playerRosterId } = playerIdOrObj;
-      if (playerRosterId === myRosterData?.roster_id) {
+      const normalizedPlayerRosterId = normalizeRosterId(playerRosterId);
+      if (normalizedPlayerRosterId === myRosterData?.roster_id) {
         // Own player selected from global search → always goes to Your Side
         setYourPlayers(prev => [...prev, id]);
-      } else if (playerRosterId && playerRosterId !== partnerRosterId) {
+      } else if (normalizedPlayerRosterId && normalizedPlayerRosterId !== partnerRosterId) {
         // Different partner selected → set partner and reset their side only.
         // Your Side players can be offered to any trade partner, so preserve them.
-        switchPartnerTradeContext(playerRosterId, { nextTheirPlayers: [id], nextTheirPicks: [] });
+        switchPartnerTradeContext(normalizedPlayerRosterId, { nextTheirPlayers: [id], nextTheirPicks: [] });
       } else {
         setTheirPlayers(prev => [...prev, id]);
       }
@@ -926,7 +939,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
   const applyTradeProposal = useCallback((proposal) => {
     if (!proposal) return;
     startPartnerSwitchTransition(() => {
-      setPartnerRosterId(proposal.targetRosterId ?? null);
+      setPartnerRosterId(normalizeRosterId(proposal.targetRosterId));
       setYourPlayers((proposal.outgoingAssets ?? []).filter((asset) => asset.type === 'player').map((asset) => asset.id));
     setYourPicks((proposal.outgoingAssets ?? []).filter((asset) => asset.type === 'pick' && asset.pickData).map((asset) => asset.pickData));
     setTheirPlayers((proposal.incomingAssets ?? []).filter((asset) => asset.type === 'player').map((asset) => asset.id));
@@ -1795,6 +1808,12 @@ function AssetBadge({ asset }) {
 
 function fmtPpg(value) {
   return Number.isFinite(value) ? Number(value).toFixed(1) : '0.0';
+}
+
+function fmtSignedPpg(value) {
+  if (!Number.isFinite(value)) return '0.0';
+  const numeric = Number(value);
+  return `${numeric >= 0 ? '+' : ''}${numeric.toFixed(1)}`;
 }
 
 function paymentTypeLabel(paymentType) {
@@ -2922,12 +2941,13 @@ function getUpgradeProposalSummary(proposal) {
       yourUpgradeTitle: 'Current starter → Target',
       yourUpgradeMeta: '0.0 PPG → 0.0 PPG · +0.0',
       yourFallbackMeta: 'Closest fallback: None clear · Depth 0',
+      theirSectionLabel: 'Their Benefit',
       theirNeedTitle: 'Need context unavailable',
       theirNeedStarterMeta: 'Starter context unavailable',
-      theirNeedUpgradeMeta: 'Gain +0.0 PPG · Current playable depth —',
-      fallbackLabel: 'Fallback',
+      theirNeedUpgradeMeta: 'Starter gain +0.0 PPG',
+      fallbackLabel: 'Best Remaining Option After Trade',
       fallbackName: null,
-      fallbackMeta: 'They would not have a clear fallback after moving this player.',
+      fallbackMeta: 'They would not have a clear same-position option after moving this player.',
     };
   }
 
@@ -2935,22 +2955,49 @@ function getUpgradeProposalSummary(proposal) {
   if (cached) return cached;
 
   const context = proposal.context ?? {};
+  const theirUpgradeDelta = Number(context.theirUpgradeDelta ?? 0);
+  const theirNeedRoomSizeBefore = context.theirNeedRoomSizeBefore ?? '—';
+  const theirNeedRoomSizeAfter = context.theirNeedRoomSizeAfter ?? '—';
+  const meaningfulStarterGain = theirUpgradeDelta >= 0.3;
+  const shallowRoomBefore = Number.isFinite(context.theirNeedRoomSizeBefore) && Number(context.theirNeedRoomSizeBefore) <= 1;
+  const outgoingPlayerAssets = (proposal?.outgoingAssets ?? []).filter((asset) => asset?.type === 'player');
+  const outgoingPrimaryAsset = context.theirUpgradeWith ?? outgoingPlayerAssets[0] ?? null;
+  const outgoingSamePosCount = Number(context.theirNeedIncomingPlayerCount ?? outgoingPlayerAssets.length);
+  const outgoingExtraCount = Number(context.theirNeedAdditionalPlayers ?? Math.max(0, outgoingPlayerAssets.length - 1));
+  const theirStarterReferenceName = context.theirNeedStarter?.name ?? 'their weakest starter';
+  const theirNeedPositionLabel = context.theirNeedPosition ?? proposal.theirNeedPosition ?? 'Position';
+  const theirNeedUpgradeMetaParts = [];
+  if (meaningfulStarterGain) {
+    theirNeedUpgradeMetaParts.push(`Primary gain ${fmtSignedPpg(theirUpgradeDelta)} PPG vs ${theirStarterReferenceName}`);
+  } else {
+    theirNeedUpgradeMetaParts.push(`Starter gain ${fmtSignedPpg(theirUpgradeDelta)} PPG vs ${theirStarterReferenceName}`);
+  }
+  if (outgoingSamePosCount > 0) {
+    theirNeedUpgradeMetaParts.push(`Adds ${outgoingSamePosCount} ${theirNeedPositionLabel}${outgoingSamePosCount === 1 ? '' : 's'} to the roster`);
+  }
+  theirNeedUpgradeMetaParts.push(`${theirNeedPositionLabel} roster ${theirNeedRoomSizeBefore} → ${theirNeedRoomSizeAfter}`);
+  const fallbackDeltaReference = context.theirTradeAwayPlayer?.name ?? outgoingPrimaryAsset?.name ?? 'outgoing asset';
   const summary = {
     yourUpgradeTitle: `${context.myUpgradeFrom?.name ?? 'Current starter'} → ${context.myUpgradeTo?.name ?? 'Target'}`,
-    yourUpgradeMeta: `${fmtPpg(context.myUpgradeFrom?.ppg ?? 0)} PPG → ${fmtPpg(context.myUpgradeTo?.ppg ?? 0)} PPG · +${fmtPpg(context.myUpgradeDelta ?? proposal.upgradeDelta ?? 0)}`,
+    yourUpgradeMeta: `${fmtPpg(context.myUpgradeFrom?.ppg ?? 0)} PPG → ${fmtPpg(context.myUpgradeTo?.ppg ?? 0)} PPG · +${fmtPpg(context.myUpgradeDelta ?? proposal.upgradeDelta ?? 0)} vs ${context.myUpgradeFrom?.name ?? 'current starter'}`,
     yourFallbackMeta: context.myNeedFallback
       ? `Closest fallback: ${context.myNeedFallback.name} · ${fmtPpg(context.myNeedFallback.ppg ?? 0)} PPG · Depth ${context.myNeedDepthCurrent ?? '—'}`
       : `Closest fallback: None clear · Depth ${context.myNeedDepthCurrent ?? 0}`,
+    theirSectionLabel: meaningfulStarterGain
+      ? 'Their Need'
+      : shallowRoomBefore
+        ? 'Their Depth Need'
+        : 'Their Benefit',
     theirNeedTitle: context.theirNeedPosition ?? proposal.theirNeedPosition ?? 'Need context unavailable',
     theirNeedStarterMeta: context.theirNeedStarter
-      ? `${context.theirNeedStarter.name} · ${fmtPpg(context.theirNeedStarter.ppg ?? 0)} PPG`
+      ? `Weakest current starter: ${context.theirNeedStarter.name} · ${fmtPpg(context.theirNeedStarter.ppg ?? 0)} PPG`
       : 'Starter context unavailable',
-    theirNeedUpgradeMeta: `Gain +${fmtPpg(context.theirUpgradeDelta ?? 0)} PPG · Current playable depth ${context.theirNeedDepthCurrent ?? '—'}`,
-    fallbackLabel: context.theirTradeAwayPosition ? `Their Fallback At ${context.theirTradeAwayPosition}` : 'Fallback',
+    theirNeedUpgradeMeta: theirNeedUpgradeMetaParts.join(' · '),
+    fallbackLabel: context.theirTradeAwayPosition ? `Best Remaining ${context.theirTradeAwayPosition} After Trade` : 'Best Remaining Option After Trade',
     fallbackName: context.theirTradeAwayFallback?.name ?? null,
     fallbackMeta: context.theirTradeAwayFallback
-      ? `${fmtPpg(context.theirTradeAwayFallback.ppg ?? 0)} PPG · Drop-off ${fmtPpg(context.theirTradeAwayDropoff ?? 0)} · Depth ${context.theirTradeAwayDepthAfter ?? '—'}`
-      : 'They would not have a clear fallback after moving this player.',
+      ? `${fmtPpg(context.theirTradeAwayFallback.ppg ?? 0)} PPG · Change vs ${fallbackDeltaReference} ${fmtSignedPpg(context.theirTradeAwayDeltaVsOutgoing ?? 0)} PPG · Depth after ${context.theirTradeAwayDepthAfter ?? '—'}`
+      : 'They would not have a clear same-position option after moving this player.',
   };
 
   upgradeProposalSummaryCache.set(proposal, summary);
@@ -2996,7 +3043,7 @@ const UpgradeProposalContextCards = memo(function UpgradeProposalContextCards({ 
 
       <div className="rounded-xl px-3 py-3 border-l-[3px]" style={{ background: 'var(--color-bg-secondary)', borderColor: 'var(--color-accent)' }}>
         <div className="text-[11px] font-semibold uppercase tracking-widest mb-1" style={{ color: 'var(--color-label-tertiary)' }}>
-          Their Need
+          {summary.theirSectionLabel}
         </div>
         <div className="text-sm font-semibold" style={{ color: 'var(--color-label)' }}>
           {summary.theirNeedTitle}
@@ -3088,7 +3135,7 @@ const UpgradeResultGroup = memo(function UpgradeResultGroup({
               onApplyProposal={onApplyProposal}
               onOpenPlayer={onOpenPlayer}
               renderAllAssetsAsCards
-              deferInsights
+
             />
             <UpgradeProposalContextCards proposal={proposal} deferRender />
           </div>
@@ -3206,10 +3253,21 @@ const TradeProposalPanel = memo(function TradeProposalPanel({
     || proposalFilters.outgoingPicks !== deferredProposalFilters.outgoingPicks
     || proposalFilters.incomingPicks !== deferredProposalFilters.incomingPicks;
   useEffect(() => {
-    if (activeMode !== 'needs') return;
-    setProposalFilters((prev) => (prev.incomingPlayers === '0'
-      ? { ...prev, incomingPlayers: 'any' }
-      : prev));
+    setProposalFilters((prev) => {
+      let next = prev;
+
+      if (activeMode === 'needs' && prev.incomingPlayers === '0') {
+        next = next === prev ? { ...next } : next;
+        next.incomingPlayers = 'any';
+      }
+
+      if (activeMode === 'surplus' && prev.outgoingPlayers === '0') {
+        next = next === prev ? { ...next } : next;
+        next.outgoingPlayers = 'any';
+      }
+
+      return next;
+    });
   }, [activeMode]);
   const activeProposals = activeMode === 'surplus' ? surplusTradeProposals : tradeProposals;
   const proposalFilterEntries = useMemo(
@@ -3225,6 +3283,7 @@ const TradeProposalPanel = memo(function TradeProposalPanel({
   const activeEmptyText = activeMode === 'surplus'
     ? 'No surplus-driven trade ideas are available right now.'
     : 'No need-driven trade ideas are available right now.';
+  const outgoingPlayerFilterDisabledValue = activeMode === 'surplus' ? '0' : null;
 
   return (
     <section className="rounded-2xl p-4" style={{ background: 'var(--color-bg-secondary)', border: '1px solid var(--color-separator)' }}>
@@ -3280,20 +3339,32 @@ const TradeProposalPanel = memo(function TradeProposalPanel({
                   <div className="flex flex-wrap gap-1.5">
                     {group.options.map((option) => {
                       const active = proposalFilters[group.key] === option.value;
+                      const disabled = group.key === 'outgoingPlayers' && option.value === outgoingPlayerFilterDisabledValue;
                       return (
                         <button
                           key={option.value}
+                          type="button"
+                          disabled={disabled}
                           onClick={() => {
+                            if (disabled) return;
                             setProposalFilters((prev) => nextProposalFilters(prev, group.key, option.value));
                           }}
-                          className="px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-colors"
+                          className="px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-colors disabled:cursor-not-allowed"
                           style={{
-                            background: active ? 'var(--color-signature)' : 'var(--color-fill)',
+                            background: active
+                              ? 'var(--color-signature)'
+                              : disabled
+                                ? 'var(--color-bg-tertiary)'
+                                : 'var(--color-fill)',
                             color: active
                               ? 'var(--color-signature-fg)'
-                              : 'var(--color-label-secondary)',
+                              : disabled
+                                ? 'var(--color-label-tertiary)'
+                                : 'var(--color-label-secondary)',
                             border: '1px solid var(--color-separator)',
+                            opacity: disabled ? 0.58 : 1,
                           }}
+                          title={disabled ? 'Pick-only outgoing packages are only available in Fix Needs.' : undefined}
                         >
                           {option.label}
                         </button>
@@ -3363,7 +3434,7 @@ const TradeProposalPanel = memo(function TradeProposalPanel({
                   seasonStats={seasonStats}
                   onApplyProposal={onApplyProposal}
                   onOpenPlayer={onOpenPlayer}
-                  deferInsights
+
                 />
               </div>
             ))}
@@ -3392,7 +3463,7 @@ const TradeProposalPanel = memo(function TradeProposalPanel({
                       onApplyProposal={onApplyProposal}
                       onOpenPlayer={onOpenPlayer}
                       containerClassName={centeredSingle ? 'w-full max-w-[720px]' : 'w-full'}
-                      deferInsights
+
                     />
                   </div>
                 );
@@ -3409,7 +3480,7 @@ const TradeProposalPanel = memo(function TradeProposalPanel({
                       onApplyProposal={onApplyProposal}
                       onOpenPlayer={onOpenPlayer}
                       containerClassName="w-full"
-                      deferInsights
+
                     />
                   ))}
                 </div>

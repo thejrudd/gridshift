@@ -605,7 +605,8 @@ function buildProposalContext({
   benchmarkByPos,
   playerValueMap,
 }) {
-  const outgoingPlayer = outgoingAssets.find((asset) => asset.type === 'player') ?? null;
+  const outgoingPlayerAssets = (outgoingAssets ?? []).filter((asset) => asset.type === 'player');
+  const outgoingPlayer = outgoingPlayerAssets[0] ?? null;
   const resolvedIncomingAssets = incomingAssets?.length ? incomingAssets : (incomingAsset ? [incomingAsset] : []);
   const primaryIncomingPlayer = resolvedIncomingAssets.find((asset) => asset.type === 'player') ?? incomingAsset ?? null;
   const tradeAwayPos = primaryIncomingPlayer?.normPos ?? primaryIncomingPlayer?.position ?? null;
@@ -617,17 +618,31 @@ function buildProposalContext({
     : [];
   const myNeedFallback = myFallbackPlayers[0] ?? null;
   const myNeedDepthCurrent = myFallbackPlayers.length;
-  const needBenchmark = outgoingPlayer?.normPos ? benchmarkByPos?.[outgoingPlayer.normPos] ?? null : null;
-  const needDepthCurrent = outgoingPlayer?.normPos
-    ? getPositionDepthCount(partnerAnalysis, outgoingPlayer.normPos, needBenchmark)
+  const theirNeedPosition = partnerNeedCard?.position ?? outgoingPlayer?.normPos ?? null;
+  const needBenchmark = theirNeedPosition ? benchmarkByPos?.[theirNeedPosition] ?? null : null;
+  const samePosOutgoingPlayers = theirNeedPosition
+    ? outgoingPlayerAssets.filter((asset) => (asset.normPos ?? asset.position) === theirNeedPosition)
+    : outgoingPlayerAssets;
+  const primaryOutgoingForNeed = [...samePosOutgoingPlayers]
+    .sort((a, b) => (b.ppg ?? 0) - (a.ppg ?? 0) || (b.value ?? 0) - (a.value ?? 0))[0] ?? outgoingPlayer ?? null;
+  const needDepthCurrent = theirNeedPosition
+    ? getPositionDepthCount(partnerAnalysis, theirNeedPosition, needBenchmark)
     : 0;
+  const needRoomSizeBefore = theirNeedPosition
+    ? getPositionPlayers(partnerAnalysis, theirNeedPosition).length
+    : 0;
+  const addedPlayableNeedPlayers = samePosOutgoingPlayers.filter((asset) => (asset.ppg ?? 0) >= (needBenchmark?.playableThreshold ?? 0)).length;
+  const needDepthAfter = needDepthCurrent + addedPlayableNeedPlayers;
+  const needRoomSizeAfter = needRoomSizeBefore + samePosOutgoingPlayers.length;
   const theirTradeAwaySummaryByPos = buildTradeAwaySummaryByPos(partnerAnalysis, resolvedIncomingAssets, benchmarkByPos, playerValueMap);
   const theirPrimarySummary = tradeAwayPos ? theirTradeAwaySummaryByPos[tradeAwayPos] ?? null : null;
   const theirTradeAwayFallback = theirPrimarySummary?.fallbackAssets?.[0] ?? null;
   const theirTradeAwayDepthAfter = theirPrimarySummary?.depthAfter ?? 0;
-  const theirTradeAwayDropoff = Math.max(0, (primaryIncomingPlayer?.ppg ?? 0) - (theirTradeAwayFallback?.ppg ?? 0));
-  const theirUpgradeDelta = outgoingPlayer && partnerNeedCard?.weakStarter
-    ? Math.max(0, (outgoingPlayer.ppg ?? 0) - (partnerNeedCard.weakStarter.ppg ?? 0))
+  const theirTradeAwayDeltaVsOutgoing = theirTradeAwayFallback
+    ? (Number(theirTradeAwayFallback.ppg ?? 0) - Number(primaryIncomingPlayer?.ppg ?? 0))
+    : null;
+  const theirUpgradeDelta = primaryOutgoingForNeed && partnerNeedCard?.weakStarter
+    ? Math.max(0, (primaryOutgoingForNeed.ppg ?? 0) - (partnerNeedCard.weakStarter.ppg ?? 0))
     : 0;
   const myUpgradeDelta = Math.max(0, (incomingAsset?.ppg ?? 0) - (myNeedCard?.weakStarter?.ppg ?? 0));
 
@@ -640,14 +655,19 @@ function buildProposalContext({
     myNeedDepthCurrent,
     theirNeedPosition: partnerNeedCard?.position ?? null,
     theirNeedStarter: partnerNeedCard?.weakStarter ?? null,
-    theirUpgradeWith: outgoingPlayer,
+    theirUpgradeWith: primaryOutgoingForNeed,
     theirUpgradeDelta: toFixedNumber(theirUpgradeDelta, 1),
     theirNeedDepthCurrent: needDepthCurrent,
+    theirNeedDepthAfter: needDepthAfter,
+    theirNeedRoomSizeBefore: needRoomSizeBefore,
+    theirNeedRoomSizeAfter: needRoomSizeAfter,
+    theirNeedIncomingPlayerCount: samePosOutgoingPlayers.length,
+    theirNeedAdditionalPlayers: Math.max(0, samePosOutgoingPlayers.length - 1),
     theirTradeAwayPosition: tradeAwayPos,
     theirTradeAwayPlayer: primaryIncomingPlayer ?? null,
     theirTradeAwayFallback: theirTradeAwayFallback ? buildPlayerAsset(theirTradeAwayFallback, partnerAnalysis.roster_id, playerValueMap) : null,
     theirTradeAwayDepthAfter,
-    theirTradeAwayDropoff: toFixedNumber(theirTradeAwayDropoff, 1),
+    theirTradeAwayDeltaVsOutgoing: theirTradeAwayDeltaVsOutgoing == null ? null : toFixedNumber(theirTradeAwayDeltaVsOutgoing, 1),
     theirTradeAwaySummaryByPos,
   };
 }
@@ -910,7 +930,7 @@ function buildPositionPackageClauses(playerAssets = [], summaryByPos = {}, owner
     if (fallbackAssets.length) {
       const fallbackText = formatReasonAssetList(fallbackAssets);
       const coverVerb = fallbackAssets.length === 1 ? 'gives' : 'give';
-      clauses.push(`${subject} ${moveVerb} from ${possessive} ${label} depth. ${fallbackText} still ${coverVerb} ${objectPronoun} ${label} cover.`);
+      clauses.push(`${subject} ${moveVerb} from ${possessive} ${label} depth. After the deal, ${fallbackText} still ${coverVerb} ${objectPronoun} ${label} cover.`);
     } else {
       clauses.push(`${subject} ${moveVerb} from ${possessive} ${label} depth. ${ownerWord === 'they' ? 'This would leave them thin' : 'This would leave you thin'} at ${label}.`);
     }
@@ -1921,7 +1941,8 @@ function buildTradeProposals({
         const incomingAsset = buildPlayerAsset(player, partnerAnalysis.roster_id, playerValueMap);
         const upgradeDelta = Math.max(0, (player.ppg ?? 0) - (myNeedCard.weakStarter?.ppg ?? 0));
         const isBenchTarget = isBenchPlayer(partnerAnalysis, myNeedCard.position, player.id);
-        const tradableSurplus = isBenchTarget || partnerSurplus.hasBenchSurplus;
+        const partnerDepthAfter = getPositionDepthCount(partnerAnalysis, myNeedCard.position, benchmark, player.id);
+        const tradableSurplus = isBenchTarget || partnerSurplus.hasBenchSurplus || partnerDepthAfter > 0;
         const outgoingPlayerChoices = pickOutgoingPlayerChoices(
           myRosterAnalysis,
           myCards,
@@ -2055,6 +2076,7 @@ function buildTradeProposals({
   return selectNeedDrivenTradeProposals(
     proposals.filter((proposal) => proposal.whyItHelpsMe && proposal.whyItHelpsThem),
     12,
+    2,
     2,
     2,
     2,
@@ -2392,6 +2414,10 @@ function proposalHasIncomingPicks(proposal) {
   return proposal?.incomingAssets?.some((asset) => asset.type === 'pick');
 }
 
+function proposalOutgoingPlayerCount(proposal) {
+  return proposal?.outgoingAssets?.filter((asset) => asset.type === 'player').length ?? 0;
+}
+
 function proposalIncomingPlayerCount(proposal) {
   return proposal?.incomingAssets?.filter((asset) => asset.type === 'player').length ?? 0;
 }
@@ -2399,10 +2425,15 @@ function proposalIncomingPlayerCount(proposal) {
 function needDrivenProposalSortScore(proposal) {
   const incomingPlayers = proposalIncomingPlayerCount(proposal);
   const incomingPicks = proposalHasIncomingPicks(proposal);
+  const outgoingPlayers = proposalOutgoingPlayerCount(proposal);
+  const outgoingPicks = proposalHasOutgoingPicks(proposal);
   let score = (proposal?.plausibilityScore ?? 0) + ((proposal?.upgradeDelta ?? 0) * 0.35);
 
   if (incomingPicks && incomingPlayers === 1) score += 10;
   else if (incomingPicks) score += 5;
+
+  if (outgoingPicks && outgoingPlayers === 0) score += 12;
+  else if (outgoingPicks) score += 4;
 
   if (!incomingPicks && incomingPlayers >= 3) score -= 8;
   else if (!incomingPicks && incomingPlayers === 2) score -= 4;
@@ -2424,6 +2455,7 @@ function selectNeedDrivenTradeProposals(
   limit = 12,
   maxPerShape = 2,
   minSinglePlayerWithIncomingPicks = 2,
+  minOutgoingPickOnly = 2,
   minOutgoingPickInclusive = 2,
   minIncomingPickInclusive = 2,
   minSinglePlayerNoPicks = 2,
@@ -2452,6 +2484,10 @@ function selectNeedDrivenTradeProposals(
   reserveFromSubset(
     pickInclusive.filter((proposal) => proposalHasIncomingPicks(proposal) && proposalIncomingPlayerCount(proposal) === 1),
     minSinglePlayerWithIncomingPicks,
+  );
+  reserveFromSubset(
+    pickInclusive.filter((proposal) => proposalHasOutgoingPicks(proposal) && proposalOutgoingPlayerCount(proposal) === 0),
+    minOutgoingPickOnly,
   );
   reserveFromSubset(pickInclusive.filter((proposal) => proposalHasIncomingPicks(proposal)), minIncomingPickInclusive);
   reserveFromSubset(pickInclusive.filter((proposal) => proposalHasOutgoingPicks(proposal)), minOutgoingPickInclusive);
@@ -2726,6 +2762,8 @@ export function buildPartnerTradeIntelligence({
   currentSeason = null,
   pickValueMap = null,
   playerValueMap = null,
+  includeTradeProposals = true,
+  includeSurplusTradeProposals = true,
 }) {
   if (!opportunityLayer) {
     return { analysesByRosterId: {}, tradeProposals: [], surplusTradeProposals: [] };
@@ -2753,7 +2791,7 @@ export function buildPartnerTradeIntelligence({
     currentSeason ?? opportunityLayer.currentSeason,
   );
 
-  const tradeProposals = selectedPartnerAnalysis && myRosterAnalysis
+  const tradeProposals = includeTradeProposals && selectedPartnerAnalysis && myRosterAnalysis
     ? buildTradeProposals({
       myCards,
       partnerCards,
@@ -2769,7 +2807,7 @@ export function buildPartnerTradeIntelligence({
       pickAssetsByRosterId,
     })
     : [];
-  const surplusTradeProposals = selectedPartnerAnalysis && myRosterAnalysis
+  const surplusTradeProposals = includeSurplusTradeProposals && selectedPartnerAnalysis && myRosterAnalysis
     ? buildSurplusTradeProposals({
       myCards,
       partnerCards,
@@ -2786,7 +2824,7 @@ export function buildPartnerTradeIntelligence({
     })
     : [];
 
-  return { analysesByRosterId, tradeProposals, surplusTradeProposals };
+  return { analysesByRosterId, tradeProposals, surplusTradeProposals, resolvedNeeds: includeTradeProposals, resolvedSurplus: includeSurplusTradeProposals };
 }
 
 export function findLeagueWideUpgradeGroups({
@@ -2927,6 +2965,26 @@ export function findLeagueWideUpgradeGroups({
         if (!evaluation.isViable) continue;
 
         const packageValueBonus = Math.min(24, sumAssetValues(packageCandidate.outgoingAssets) / 140);
+        const proposalContext = buildProposalContext({
+          myNeedCard: targetCard,
+          partnerNeedCard: packageCandidate.partnerNeedCard,
+          incomingAsset,
+          incomingAssets: allIncomingAssets,
+          outgoingAssets: packageCandidate.outgoingAssets,
+          myRosterAnalysis,
+          partnerAnalysis,
+          benchmarkByPos: opportunityLayer.benchmarkByPos,
+          playerValueMap,
+        });
+        const outgoingPickCount = packageCandidate.outgoingAssets.filter((asset) => asset.type === 'pick').length;
+        const weakPartnerStarterGain = (proposalContext?.theirUpgradeDelta ?? 0) < 0.3;
+        const comfortablePartnerDepth = Number(proposalContext?.theirNeedDepthCurrent ?? 0) >= 3;
+        let partnerBenefitPenalty = 0;
+        if (weakPartnerStarterGain) {
+          partnerBenefitPenalty += 14;
+          if (comfortablePartnerDepth) partnerBenefitPenalty += 10;
+          if (outgoingPickCount === 0) partnerBenefitPenalty += 8;
+        }
         const proposal = buildTradeProposal({
           myNeedCard: targetCard,
           partnerNeedCard: packageCandidate.partnerNeedCard,
@@ -2940,20 +2998,11 @@ export function findLeagueWideUpgradeGroups({
             + (partnerHasSurplus ? 14 : -16)
             + Math.min(18, evaluation.partnerNeedValue / 140)
             + packageValueBonus
-            - (evaluation.postureDistance * 74),
+            - (evaluation.postureDistance * 74)
+            - partnerBenefitPenalty,
           paymentType: packageCandidate.paymentType,
           partnerHasSurplus,
-          context: buildProposalContext({
-            myNeedCard: targetCard,
-            partnerNeedCard: packageCandidate.partnerNeedCard,
-            incomingAsset,
-            incomingAssets: allIncomingAssets,
-            outgoingAssets: packageCandidate.outgoingAssets,
-            myRosterAnalysis,
-            partnerAnalysis,
-            benchmarkByPos: opportunityLayer.benchmarkByPos,
-            playerValueMap,
-          }),
+          context: proposalContext,
         });
         proposals.push(proposal);
         }

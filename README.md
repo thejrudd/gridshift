@@ -85,19 +85,18 @@ npm run validate:routing
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) |
 
-## What's New in v6.2.5
+## What's New in v6.2.6
 
-- **Trade performance pass continued** - Compare/Trade tab switches, first-open behavior, Upgrade search warm paths, and repeated search flows were tightened so heavy Trade views feel materially faster and more stable.
-- **Companion and player-routing polish** - Rankings, League, Roster, and Matchup now hand off more cleanly into Statistics, Matchup route state is more resilient, and Companion drilldowns stay better aligned with their canonical URL state.
-- **Compare UX and modal polish** - Compare cards were refined across desktop and mobile, selected players now persist when round-tripping through Statistics, and modal search inputs no longer auto-focus and summon the mobile keyboard on open.
+- **Trade Upgrade explanations clarified** - Upgrade proposal cards now use plain fantasy-football language, name the reference player for every PPG comparison, show roster-size before/after counts, and avoid exposing internal engine terms in user-facing summaries.
+- **Trade Intelligence filters and docs tightened** - The `0 players` outgoing filter now behaves correctly for Fix Needs, is unavailable where unsupported in Use Surplus, and the Trade engine architecture is documented in `docs/Trade Engine.md` for future maintenance.
+- **Modal behavior normalized** - Remaining modal and sheet overlays now use the shared body scroll-lock pattern so the background stays fixed while overlays are open.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Roadmap
 
-- **v6.3 - Remaining Performance + Shareability Work** - Finish the remaining Companion/Trade responsiveness items, add IDP Waivers, and start the first shareable-link phase on top of the routing foundation.
+- **v6.3 - Remaining Performance Work** - Finish the remaining Companion/Trade responsiveness items and add IDP Waivers.
 - **v6.4 - Statistics / Fantasy Drilldown Unification** - One canonical player-analysis destination with mode-aware drilldowns across Statistics and Companion.
-- **v6.5 - League-Scoped Shareable Links** - Share URLs that resolve against the intended Sleeper league and validate league ownership before opening.
 - **v7.0 — Draft Coach** — Rookie scouting hub with draft slot, college production, combine metrics, consensus ranking, and dynasty rookie ADP.
 - **Week-by-Week View** *(blocked on 2026 schedule data)* — Browse the full schedule by week with predictions reflected
 

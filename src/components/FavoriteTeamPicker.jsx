@@ -1,8 +1,10 @@
 import { useTheme, getSignatureFg } from '../context/ThemeContext';
 import { TEAM_COLORS, TEAM_NAMES, TEAM_DIVISIONS } from '../data/teamColors';
+import useBodyScrollLock from '../hooks/useBodyScrollLock';
 
 export default function FavoriteTeamPicker({ onClose }) {
   const { favoriteTeam, setFavoriteTeam, darkMode } = useTheme();
+  useBodyScrollLock();
 
   const handleSelect = (teamKey) => {
     setFavoriteTeam(teamKey === favoriteTeam ? null : teamKey);

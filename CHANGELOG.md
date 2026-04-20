@@ -853,3 +853,14 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Compare UX improved across devices** - Compare player cards were rebalanced for desktop and mobile, Statistics-to-Compare entry now feels faster, selected compare players persist when round-tripping through Statistics, and the hook-order crash in Compare was fixed.
 - **Player detail and modal polish** - Statistics player actions were repaired for mobile Trade entry, Matchup player-sheet headers now expand more safely, and modal search fields no longer auto-focus on open.
 - **Project docs updated** - Added a dedicated QA checklist, pointed AGENTS/optimization guidance at that file only when validation is needed, and carried the release metadata forward to v6.2.5.
+
+---
+
+## v6.2.6 - Trade Explanation Polish + Modal Lock Cleanup
+*2026-04-20*
+
+- **Trade Upgrade explanations made user-friendly** - Upgrade proposal context cards now name the player used for every PPG comparison, use roster-size before/after wording instead of internal depth terms, and describe multi-player packages in plain fantasy-football language.
+- **Trade Upgrade partner-benefit logic tightened** - Upgrade proposals now track same-position package impact more accurately, including the primary benefit player, total same-position players added, and the target roster size after the trade.
+- **Trade Intelligence pick-led filtering refined** - `Fix Needs` now better preserves pick-only outgoing proposals, while the unsupported `0 players` outgoing option is disabled in `Use Surplus` to avoid dead-end filters.
+- **Modal body scroll lock normalized** - Remaining modal and sheet components now use the shared body scroll-lock hook so background content stays fixed while overlays are open.
+- **Trade engine docs added** - Added `docs/Trade Engine.md` and AGENTS guidance requiring future Trade valuation, proposal, ranking, Upgrade, and explanation changes to update that reference.

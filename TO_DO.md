@@ -7,12 +7,10 @@ New features requested or planned should be added here.
 
 ## Planned Versions
 
-### v6.3 - Remaining Performance + Shareability Work
+### v6.3 - Remaining Performance Work
 
-Continue the post-routing stabilization pass with the items still left after the v6.2.5 release.
+Continue the post-routing stabilization pass with the items still left after the v6.2.6 release.
 
-- **Shareable-link first phase** - Ship page + selected-player shareable links after the routing foundation stabilizes; broader week/filter/mode state can follow in a later 6.x pass
-- **Cross-view handoff responsiveness** - Finish speeding up the remaining Companion and Trade drilldown transitions that still pause before the destination UI is ready
 - **Companion performance improvement patch** - Continue trimming lag across the heaviest Companion views and drilldowns where duplicate work or route-owned state still costs responsiveness
 - **IDP Waivers** - Add defensive players, team defense, special teams player, and special teams to the waiver list.
 
@@ -22,21 +20,11 @@ Unifies player detail analysis so fantasy scoring and regular game production li
 
 - **Mode toggle on Statistics player pages** - Add a persistent, clearly active toggle that switches the player view between `Fantasy` and `Game Stats` without leaving the page
 - **Real-time stat model swap** - Recompute displayed values, labels, summaries, and weekly breakdown rows live when the mode changes so fantasy scoring and raw production stay in the same layout
-- **Shared drilldown destination** - Route Companion player drill-ins to the Statistics page instead of opening a separate roster modal, so all player detail analysis has one canonical home
-- **Consistent detail hierarchy** - Redesign the Statistics player page so matchup context, weekly tables, and summary blocks make sense in both modes rather than splitting fantasy details into a separate modal flow
+- **Shared drilldown destination** - Route all Companion player drill-ins to the Statistics page instead of opening tab-specific player modals, so every Companion path uses one canonical player-analysis destination
+- **Modal retirement for Companion player drilldowns** - Remove the mixed drilldown model where some Companion tabs open player modals and others deep-link into Statistics; the unified behavior should always be a Statistics-page handoff with preserved back context
+- **Consistent detail hierarchy** - Redesign the Statistics player page so matchup context, weekly tables, summary blocks, and fantasy/game-stat views can absorb the detail currently split across Companion-specific modal flows
 - **Mode-state clarity** - Add explicit visual indication of the active mode and ensure navigation/back behavior preserves the selected player context when arriving from Companion
 - **Fix & Improve toggles in Player view in Statistics** - Introduce consistent desigh philosophy throughout the app for any available toggles. Allow "Fantasy Scoring" toggle to to flip all statistics to their respective fantasy value. Improve layout so all relevant stats are shown relative to position on desktop, and are removed in reverse order of importance to accommodate limited screen space on smaller devices.
-
-### v6.5 - League-Scoped Shareable Links
-
-Extends the new routing foundation so shared links can open the correct Sleeper league context instead of silently falling back to the recipient's currently connected league.
-
-- **League-aware Companion/Trade URLs** - Include a league identifier in shared URLs so links resolve against the intended Sleeper league context rather than whichever league the viewer already has connected
-- **Shortened league reference support** - Evaluate whether the shared URL should use the raw Sleeper league id or a shortened/derived identifier that still resolves unambiguously inside the app
-- **Ownership validation on open** - If the current Sleeper username is not associated with the linked league id, show a clear error state instead of loading misleading data from another connected league
-- **Safe connect handoff** - If no Sleeper account is connected, route the viewer into the Companion connect flow with the linked league id preserved so the app can validate it after username entry
-- **League-context mismatch UX** - Provide a concise message that explains why the link could not be opened in the requested league and what the user needs to do next
-- **Shareability boundaries** - Keep non-shareable local state out of the link and only encode the league context plus the page/filter/player state that materially changes what another user sees
 
 ### v7.0 - Draft Coach
 
@@ -74,6 +62,11 @@ Split the monolithic `CompanionTrade.jsx` (4,800+ lines) and `opportunityEngine.
 - **Reduce Heatmap `loadSeasonStats` fetch time** - Companion -> Heatmap now avoids blocking on pass-2 enhancement and uses a faster local offense table builder, but the next likely optimization is reducing the raw `loadSeasonStats` fetch cost. This is a different class of optimization and riskier because it touches the shared season-stats loading path.
 
 ## Backlog (Unversioned)
+
+### Deferred / Tabled
+
+- **League-scoped shareable links (tabled from v6.5)** - Revisit after current performance and drilldown unification priorities. Scope remains: league-aware Companion/Trade URLs, league id format decision, ownership validation, connect-flow handoff, mismatch UX, and strict shareability boundaries.
+- **Shareable-link first phase (tabled from v6.3)** - Revisit page + selected-player URL sharing after the current Companion/Trade stabilization passes are complete.
 
 ### New Technologies
 

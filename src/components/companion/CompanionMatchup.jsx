@@ -20,6 +20,7 @@ import PlayerMatchupBreakdown, { STAT_LABELS } from './PlayerMatchupBreakdown';
 import PlayerWeeklySheet from './PlayerWeeklySheet';
 import useCardGlow from '../../hooks/useCardGlow.jsx';
 import useMediaQuery from '../../hooks/useMediaQuery.js';
+import useBodyScrollLock from '../../hooks/useBodyScrollLock';
 
 const TOTAL_WEEKS = 18;
 const POSITION_COLORS = {
@@ -273,6 +274,7 @@ export default function CompanionMatchup({
   const [matchupLoading, setMatchupLoading] = useState(false);
   const [showBench, setShowBench] = useState(false);
   const [showWeekPicker, setShowWeekPicker] = useState(false);
+  useBodyScrollLock(showWeekPicker);
   const [selectedPlayer, setSelectedPlayer] = useState(null); // { id, projection }
   const [selectedTeam, setSelectedTeam] = useState(null); // 'mine' | 'opp'
   const [selectedRosterPlayerId, setSelectedRosterPlayerId] = useState(null);
@@ -1485,12 +1487,7 @@ function TeamScoreBreakdown({ teamName, playerIds, week, onClose }) {
     };
   }, [weeklyStats, scoringSettings, playerIds, week, players]);
 
-  // Lock background scroll while open
-  useEffect(() => {
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = prev; };
-  }, []);
+  useBodyScrollLock();
 
   return (
     <>

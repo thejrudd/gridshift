@@ -149,3 +149,17 @@ export function buildTradeAnalyticsSnapshot({
     opportunityLayer,
   };
 }
+
+
+export const EMPTY_TRADE_ANALYTICS_SNAPSHOT = Object.freeze({
+  rankMap: null,
+  positionalAvgPPG: null,
+  positionalValuePerPPG: null,
+  leagueAvgMult: 1,
+  hasIDP: false,
+  hasDST: false,
+  mergedIDPMap: null,
+  playerTradeValueDetailsMap: null,
+  playerTradeValueMap: null,
+  opportunityLayer: null,
+});

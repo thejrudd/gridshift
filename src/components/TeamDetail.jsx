@@ -3,10 +3,12 @@ import { getOpponentDetails, findCorrespondingGameIndex } from '../utils/schedul
 import { usePredictions } from '../context/PredictionContext';
 import RecordSetter from './RecordSetter';
 import GameResultToggle from './GameResultToggle';
+import useBodyScrollLock from '../hooks/useBodyScrollLock';
 
 const TeamDetail = ({ team, allTeams, onClose }) => {
   const { getTeamRecord, setTeamRecord, predictions } = usePredictions();
   const existingRecord = getTeamRecord(team.id);
+  useBodyScrollLock();
 
   const [wins, setWins] = useState(existingRecord?.wins || 8);
   const [losses, setLosses] = useState(existingRecord?.losses || 9);

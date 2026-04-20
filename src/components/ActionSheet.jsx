@@ -1,3 +1,5 @@
+import useBodyScrollLock from '../hooks/useBodyScrollLock';
+
 export default function ActionSheet({
   onClose,
   predictionCount,
@@ -14,6 +16,7 @@ export default function ActionSheet({
 }) {
   const hasPicks = predictionCount > 0;
   const isPredictions = activeTab === 'predictions';
+  useBodyScrollLock();
 
   return (
     <>

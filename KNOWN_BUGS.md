@@ -9,17 +9,15 @@ Open bugs are listed first, fixed bugs below. Add new entries at the bottom of e
 | Bug |
 |-----|
 | Trade Intelligence proposal apply actions can mismatch the displayed package by pairing the incoming target with the wrong outgoing asset, or by adding only one side of the proposal instead of the full deal |
-| Trade → Upgrades can appear unresponsive after clicking "Find Matches" because the results state is not surfaced clearly enough and the returned matches may render below the fold with little immediate feedback |
 | Trade → Upgrades can still suggest unrealistic one-sided upgrades because it underweights the other roster's actual needs and does not always treat the selected outgoing pool as true payment pressure |
-| Trade → Upgrades and Trade Intelligence proposals can diverge from Agent's displayed asset values because the opportunity engine still uses a separate player-value proxy instead of the shared Trade valuation model |
-| Trade Intelligence lacks a `0 players` package filter and still under-surfaces pick-only or pick-heavy alternatives even when equivalent draft-capital offers should be possible |
 | Trade Intelligence → Fix Needs can return no visible ideas after filtering to `With Picks` because viable pick-inclusive proposals are often crowded out by player-only packages before the final proposal set is chosen |
 | Trade Intelligence → Use Surplus can combine multiple individually-movable players into one package without rechecking the full package depth, causing explanations to claim playable depth remains after a deal that actually clears out the position |
 | Trade Intelligence → Fix Needs can skew too heavily toward 2-player and 3-player incoming packages, crowding out more balanced player-plus-pick returns on the other team’s side |
 | Trade section pages still repeat too much instructional copy, making Agent, Intelligence, and Upgrades feel more verbose than necessary |
 | Trade proposal cards can keep matching height while still drifting into a too-tall, too-narrow silhouette on desktop because width does not yet expand enough to preserve a more realistic trading-card proportion as card content grows |
-| Companion → Roster player weekly fantasy modal can omit the player's bye week and instead show fantasy output for every week, even though each player should always have one bye week represented |
-| Companion → Roster player weekly fantasy modal can render weeks outside the league's fantasy season, including Week 18 even when the league season should stop earlier |
+| Trade → Intelligence can still hard-freeze on initial open, visibly repopulate proposal text/assets after partner switches, or get stuck on the "Preparing partner-specific trade ideas..." loading card for specific teams |
+| Companion → Rankings player drilldown `Statistics` action can fail for players whose base Sleeper `espn_id` is null even though the app has a resolved `espnIdOverrides` entry, so some players navigate correctly while others do nothing |
+| Trade Intelligence resets the selection area and clears active filters the first time a new partner is selected, while previously visited partners preserve state, creating inconsistent partner-switch behavior and forcing users to reapply filters |
 
 ---
 
@@ -27,12 +25,17 @@ Open bugs are listed first, fixed bugs below. Add new entries at the bottom of e
 
 | Bug | Fixed In |
 |-----|----------|
+| Trade Intelligence `0 players` outgoing filtering was too broad: Fix Needs under-surfaced pick-only packages, while Use Surplus exposed an unsupported dead-end 0-player option | v6.2.6 |
+| Trade Intelligence explanation text could name a non-traded fallback player from the partner roster without clearly signaling that the player was only remaining post-trade depth, making the write-up read as if extra assets were included in the deal | v6.2.6 |
 | Desktop sidebar can still scroll on shorter laptop viewports in Predictions because the shell allows sidebar overflow instead of keeping the desktop rail fixed in place | v6.2.0 |
 | Companion -> Roster week-row handoff into Companion -> Matchup could feel laggy and unresponsive, with a noticeable delay before the destination week and player drilldown were ready | v6.2.5 |
 | Companion -> Matchup player weekly modal header could truncate the player name behind the Fantasy/Statistics actions instead of growing cleanly with the content | v6.2.5 |
 | Statistics player view Trade button could be cut off on mobile and could crash with a `fromGlobalSearch` reference error when tapped | v6.2.5 |
 | Sleeper league connect flow only exposes a limited season window and asks for season before username, instead of discovering the account's actual available league years from the API after username lookup | v6.2.0 |
 | Statistics excludes kickers from team rosters, search results, and player views because ESPN roster position abbreviations are not normalized to the app's expected `K` format | v6.2.0 |
+| Companion → Roster player weekly fantasy modal can omit the player's bye week and instead show fantasy output for every week, even though each player should always have one bye week represented | v6.2.5 |
+| Companion → Roster player weekly fantasy modal can render weeks outside the league's fantasy season, including Week 18 even when the league season should stop earlier | v6.2.5 |
+| Several modal and sheet overlays still allow background scrolling because they do not use the shared `useBodyScrollLock` hook; confirmed offenders include Companion → Roster `PlayerWeeklySheet`, Companion Matchup overlays, ActionSheet, FavoriteTeamPicker, ScoringSettings, and TeamDetail | v6.2.6 |
 | Defense drilldown allowed background page scrolling while open | v4.3.1 |
 | Season X/32 progress bar visible on non-Predictions tabs | v4.3.1 |
 | Defense drilldown player links used Sleeper player IDs instead of ESPN IDs | v4.3 |
@@ -169,6 +172,4 @@ Open bugs are listed first, fixed bugs below. Add new entries at the bottom of e
 | Matchup slot compare controls could lose their compact-phone affordance on real devices, leaving the position color, compare glyph, and tap target too cramped to read or use reliably | v6.1.5 |
 | Companion -> Matchup week picker could expose weeks outside the connected fantasy league's actual season length and did not clearly distinguish playoff weeks from regular-season weeks | v6.1.5 |
 | Desktop sidebar could scroll with the full page instead of remaining fixed in place, causing the shell navigation to drift vertically with content | v6.1.6 |
-
-
 

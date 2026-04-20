@@ -30,6 +30,7 @@ Prefer the docs folder for current architecture and implementation references in
 - `docs/Where To Edit.md` — feature-to-file edit guide
 - `docs/Design Tokens.md` — full token table and design-system details
 - `docs/Scoring Call Sites.md` — full scoring audit checklist
+- `docs/Trade Engine.md` — Trade engine architecture, explanation rules, and maintenance reference
 - `QA_CHECKLIST.md` — manual QA flows; only open when explicitly doing QA or test validation
 
 ---
@@ -156,6 +157,13 @@ Keep Guide content succinct, instructional, and not verbose.
 When making any change to scoring logic (new fields, position bonuses, new Sleeper stat keys), audit the full checklist in **`docs/Scoring Call Sites.md`**.
 
 Quick summary: every `calcPoints()` and `calcPointsFromTotals()` call must pass `position`. Grep for these across the repo before closing any scoring PR.
+
+---
+
+## Trade Engine Maintenance
+
+- Any change to Trade valuation, proposal generation, proposal selection/ranking, Upgrade logic, or Trade explanation wording must be reflected in `docs/Trade Engine.md` in the same pass.
+- Prefer user-facing fantasy-football language in Trade UI; keep internal engine terms in the docs, not in explanation cards, unless clearly labeled.
 
 ---
 

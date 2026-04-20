@@ -86,7 +86,13 @@ function AppInner() {
   const [, startRouteTransition] = useTransition();
 
   const { hasLeague, season, changeSeason, league, disconnect, sleeperUser } = useSleeperLeague();
-  const { statsLoading, loadSeasonStats, seasonStats, players: sleeperPlayers } = useSleeperStats();
+  const {
+    statsLoading,
+    loadSeasonStats,
+    seasonStats,
+    players: sleeperPlayers,
+    espnIdOverrides,
+  } = useSleeperStats();
 
   const { getPredictionCount, resetAllPredictions, predictions, importPredictions, generateRandomPredictions } = usePredictions();
   const { darkMode, toggleDarkMode, favoriteTeam, setFavoriteTeam } = useTheme();

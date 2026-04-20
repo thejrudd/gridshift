@@ -3,6 +3,7 @@ import { useSleeperLeague } from '../../context/SleeperContext';
 import {
   DEFAULT_SCORING, SCORING_PRESETS, applyPreset, detectPreset, importLeagueScoring,
 } from '../../utils/scoringEngine';
+import useBodyScrollLock from '../../hooks/useBodyScrollLock';
 
 const STAT_GROUPS = [
   {
@@ -83,6 +84,7 @@ const STAT_GROUPS = [
 export default function ScoringSettings({ onClose }) {
   const { scoringSettings, setScoringSettings, league } = useSleeperLeague();
   const [local, setLocal] = useState({ ...DEFAULT_SCORING, ...scoringSettings });
+  useBodyScrollLock();
 
   const preset = detectPreset(local);
 

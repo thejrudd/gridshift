@@ -186,7 +186,7 @@ export function getPickQuality(rosterId, rosters) {
     return lossB - lossA; // more losses = earlier pick
   });
 
-  const idx = sorted.findIndex(r => r.roster_id === rosterId);
+  const idx = sorted.findIndex(r => String(r.roster_id) === String(rosterId));
   if (idx === -1) return 'Mid';
 
   const total = sorted.length;
@@ -497,7 +497,7 @@ export function buildCandidatePool(
   { dynastyKtcPlayers, seasonStats, scoringSettings, positionalValuePerPPG, positionalAvgPPG, rankMap, idpValueMap, playerTradeValueDetailsMap } = {},
 ) {
   const candidates = [];
-  const roster = rosters.find(r => r.roster_id === rosterId);
+  const roster = rosters.find(r => String(r.roster_id) === String(rosterId));
   if (!roster) return candidates;
 
   // Player candidates

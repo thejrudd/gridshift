@@ -4,6 +4,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { DEFAULT_SCORING } from '../../utils/scoringEngine';
 import { formatWeather } from '../../api/weatherApi';
 import { getTeamPalette } from '../../data/teamColors.js';
+import useBodyScrollLock from '../../hooks/useBodyScrollLock';
 
 function hexLuminance(hex) {
   const r = parseInt(hex.slice(1, 3), 16) / 255;
@@ -376,12 +377,7 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, enr
     return denom > 0 ? Math.round((projectedScore / denom) * 10) / 10 : null;
   }, [projectedScore, factors]);
 
-  // Lock background scroll while open
-  useEffect(() => {
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = prev; };
-  }, []);
+  useBodyScrollLock();
 
   return (
     <>
