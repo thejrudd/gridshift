@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useSleeper } from '../../context/SleeperContext';
 
-export default function CompanionConnect() {
+export default function CompanionConnect({ forceLeaguePicker = false, onLeagueSelected = null }) {
   const {
     connect, selectLeague, disconnect,
     sleeperUser, leagues,
@@ -23,6 +23,7 @@ export default function CompanionConnect() {
   const handleSelectLeague = async (leagueId) => {
     try {
       await selectLeague(leagueId);
+      onLeagueSelected?.();
     } catch { /* error shown via connectError */ }
   };
 
@@ -87,7 +88,7 @@ export default function CompanionConnect() {
   }
 
   // ── Step 2: connected, pick a season and league ──────────────────────────
-  if (!hasLeague) {
+  if (!hasLeague || forceLeaguePicker) {
     return (
       <div className="flex flex-col py-8 px-4 max-w-lg mx-auto">
         <div className="flex items-center gap-3 mb-6">

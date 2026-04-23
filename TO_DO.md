@@ -7,25 +7,6 @@ New features requested or planned should be added here.
 
 ## Planned Versions
 
-### v6.3 - Remaining Performance Work
-
-Continue the post-routing stabilization pass with the items still left after the v6.2.6 release.
-
-- **Companion performance improvement patch** - Continue trimming lag across the heaviest Companion views and drilldowns where duplicate work or route-owned state still costs responsiveness
-- **IDP Waivers** - Add defensive players, team defense, special teams player, and special teams to the waiver list.
-
-### v6.4 - Statistics / Fantasy Drilldown Unification
-
-Unifies player detail analysis so fantasy scoring and regular game production live in one place, with a consistent drilldown model across Statistics and Companion.
-
-- **Mode toggle on Statistics player pages** - Add a persistent, clearly active toggle that switches the player view between `Fantasy` and `Game Stats` without leaving the page
-- **Real-time stat model swap** - Recompute displayed values, labels, summaries, and weekly breakdown rows live when the mode changes so fantasy scoring and raw production stay in the same layout
-- **Shared drilldown destination** - Route all Companion player drill-ins to the Statistics page instead of opening tab-specific player modals, so every Companion path uses one canonical player-analysis destination
-- **Modal retirement for Companion player drilldowns** - Remove the mixed drilldown model where some Companion tabs open player modals and others deep-link into Statistics; the unified behavior should always be a Statistics-page handoff with preserved back context
-- **Consistent detail hierarchy** - Redesign the Statistics player page so matchup context, weekly tables, summary blocks, and fantasy/game-stat views can absorb the detail currently split across Companion-specific modal flows
-- **Mode-state clarity** - Add explicit visual indication of the active mode and ensure navigation/back behavior preserves the selected player context when arriving from Companion
-- **Fix & Improve toggles in Player view in Statistics** - Introduce consistent desigh philosophy throughout the app for any available toggles. Allow "Fantasy Scoring" toggle to to flip all statistics to their respective fantasy value. Improve layout so all relevant stats are shown relative to position on desktop, and are removed in reverse order of importance to accommodate limited screen space on smaller devices.
-
 ### v7.0 - Draft Coach
 
 Surfaces publicly available scouting and evaluation data to help users make informed draft decisions.
@@ -48,6 +29,18 @@ Split the monolithic `CompanionTrade.jsx` (4,800+ lines) and `opportunityEngine.
 - **CompanionTrade split** — Extract into logical sub-files: TradeProposalBuilder (main component state & handlers), ProposalPlayerCard, TradeProposalPanel (list + filters), UpgradeFinderPage, ValuationInfoSheet, RosterBrowseModal
 - **opportunityEngine split** — Separate into: rosterAnalysis (lineup solver, benchmarks), proposalBuilder (need-driven & surplus pipelines), upgradePackaging (package scoring, candidate selection), opportunityCards (top-level assembly & exports)
 - **Shared types/constants extraction** — Move position colors, slot eligibility maps, and formatting helpers into a shared trade constants file
+
+### v7.2 - Statistics / Fantasy Drilldown Unification
+
+Unifies player detail analysis so fantasy scoring and regular game production live in one place, with a consistent drilldown model across Statistics and Companion.
+
+- **Mode toggle on Statistics player pages** - Add a persistent, clearly active toggle that switches the player view between `Fantasy` and `Game Stats` without leaving the page
+- **Real-time stat model swap** - Recompute displayed values, labels, summaries, and weekly breakdown rows live when the mode changes so fantasy scoring and raw production stay in the same layout
+- **Shared drilldown destination** - Route all Companion player drill-ins to the Statistics page instead of opening tab-specific player modals, so every Companion path uses one canonical player-analysis destination
+- **Modal retirement for Companion player drilldowns** - Remove the mixed drilldown model where some Companion tabs open player modals and others deep-link into Statistics; the unified behavior should always be a Statistics-page handoff with preserved back context
+- **Consistent detail hierarchy** - Redesign the Statistics player page so matchup context, weekly tables, summary blocks, and fantasy/game-stat views can absorb the detail currently split across Companion-specific modal flows
+- **Mode-state clarity** - Add explicit visual indication of the active mode and ensure navigation/back behavior preserves the selected player context when arriving from Companion
+- **Fix & Improve toggles in Player view in Statistics** - Introduce consistent desigh philosophy throughout the app for any available toggles. Allow "Fantasy Scoring" toggle to to flip all statistics to their respective fantasy value. Improve layout so all relevant stats are shown relative to position on desktop, and are removed in reverse order of importance to accommodate limited screen space on smaller devices.
 
 ---
 

@@ -85,19 +85,19 @@ npm run validate:routing
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) |
 
-## What's New in v6.2.6
+## What's New in v6.3
 
-- **Trade Upgrade explanations clarified** - Upgrade proposal cards now use plain fantasy-football language, name the reference player for every PPG comparison, show roster-size before/after counts, and avoid exposing internal engine terms in user-facing summaries.
-- **Trade Intelligence filters and docs tightened** - The `0 players` outgoing filter now behaves correctly for Fix Needs, is unavailable where unsupported in Use Surplus, and the Trade engine architecture is documented in `docs/Trade Engine.md` for future maintenance.
-- **Modal behavior normalized** - Remaining modal and sheet overlays now use the shared body scroll-lock pattern so the background stays fixed while overlays are open.
+- **Companion performance tightened** - Waiver and Matchup now avoid repeated heavy recomputation, use shared loading states, and cache expensive matchup/waiver derivations for smoother first-open and week-switch behavior.
+- **IDP-aware Waivers and Rankings** - Waiver and Rankings now share league-position availability logic, including IDP, team defense, team special teams, and special teams player positions only when those slots exist in the league.
+- **Trade and league-context polish** - Trade proposal pick cards now sort chronologically with clearer year-specific draft-pick display, and Companion/Trade league headers now support in-place year switching for linked Sleeper league seasons.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Roadmap
 
-- **v6.3 - Remaining Performance Work** - Finish the remaining Companion/Trade responsiveness items and add IDP Waivers.
-- **v6.4 - Statistics / Fantasy Drilldown Unification** - One canonical player-analysis destination with mode-aware drilldowns across Statistics and Companion.
 - **v7.0 — Draft Coach** — Rookie scouting hub with draft slot, college production, combine metrics, consensus ranking, and dynasty rookie ADP.
+- **v7.1 - Trade Module Decomposition** - Split the largest Trade components and engines into focused modules for lower maintenance cost.
+- **v7.2 - Statistics / Fantasy Drilldown Unification** - One canonical player-analysis destination with mode-aware drilldowns across Statistics and Companion.
 - **Week-by-Week View** *(blocked on 2026 schedule data)* — Browse the full schedule by week with predictions reflected
 
 ## Project Structure

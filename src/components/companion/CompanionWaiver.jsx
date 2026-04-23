@@ -1,27 +1,40 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSleeperBase, useSleeperStatsProgress } from '../../context/SleeperContext';
 import { useTheme } from '../../context/ThemeContext';
-import { calcPoints, calcPointsFromTotals, getRecentAvg } from '../../utils/scoringEngine';
+import { createPointsCalculator } from '../../utils/scoringEngine';
 import { projectPlayer, buildDefenseTable, getDefenseStrength, getLeagueAvgPPG } from '../../utils/projectionEngine';
 import { STADIUMS } from '../../data/stadiums';
-import { getTeamColorKey, getTeamPalette } from '../../data/teamColors.js';
 import useCardGlow from '../../hooks/useCardGlow.jsx';
 import useMediaQuery from '../../hooks/useMediaQuery.js';
+import {
+  getLeaguePositionFilters,
+  getPositionFilterLabel,
+  isValidLeaguePositionFilter,
+  normalizeLeaguePlayerPosition,
+  positionMatchesLeagueFilter,
+} from '../../utils/leaguePositions';
+import { getPlayerRowTeamTheme } from '../../utils/playerRowTheme';
+import { isWaiverEligiblePlayerRecord } from '../../utils/playerEligibility';
+import { debugCompanionLog, debugCompanionMeasure } from '../../utils/companionPerfDebug';
+import CompanionLoadingState from './CompanionLoadingState';
 
-const POSITIONS = ['ALL', 'QB', 'RB', 'WR', 'TE', 'K'];
-const SKILL_POSITIONS = new Set(['QB', 'RB', 'WR', 'TE', 'K']);
+const PROJECTION_POSITIONS = new Set(['QB', 'RB', 'WR', 'TE', 'K', 'DL', 'LB', 'DB']);
 const POSITION_COLORS = {
   QB: '#ef4444',
   RB: '#22c55e',
   WR: '#3b82f6',
   TE: '#f59e0b',
   K: '#8b5cf6',
+  DEF: '#64748b',
+  DL: '#dc2626',
+  LB: '#2563eb',
+  DB: '#0891b2',
+  TST: '#14b8a6',
+  STP: '#a855f7',
 };
 const COMPACT_PHONE_QUERY = '(max-width: 480px)';
-const WAIVER_ROW_GAP = 5;
 const WAIVER_ROW_SIDE_PADDING = 10;
 const WAIVER_ROW_LEFT_BORDER = 4;
-const WAIVER_TABLE_TEMPLATE = '44px minmax(0, 1fr) repeat(3, 58px)';
 
 function getWaiverLayout(isCompactPhone) {
   if (isCompactPhone) {
@@ -76,133 +89,77 @@ function getTrendState(recentAvg, seasonAvg) {
   return 'neutral';
 }
 
-function hexLuminance(hex) {
-  const r = parseInt(hex.slice(1, 3), 16) / 255;
-  const g = parseInt(hex.slice(3, 5), 16) / 255;
-  const b = parseInt(hex.slice(5, 7), 16) / 255;
-  const lin = c => c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+function getRecentAverageFast(weekly, calcFantasyPoints, position, count = 4) {
+  if (!weekly?.length) return 0;
+
+  const recent = [];
+  for (const weekStats of weekly) {
+    const week = Number(weekStats?.week);
+    if (!Number.isFinite(week)) continue;
+
+    const entry = { week, stats: weekStats };
+    let insertAt = recent.length;
+    while (insertAt > 0 && recent[insertAt - 1].week < week) insertAt -= 1;
+    recent.splice(insertAt, 0, entry);
+    if (recent.length > count) recent.pop();
+  }
+
+  if (!recent.length) return 0;
+  let total = 0;
+  for (const entry of recent) {
+    total += calcFantasyPoints(entry.stats, position);
+  }
+  return Math.round((total / recent.length) * 10) / 10;
 }
 
-function darkenHex(hex, factor) {
-  const r = Math.round(parseInt(hex.slice(1, 3), 16) * factor);
-  const g = Math.round(parseInt(hex.slice(3, 5), 16) * factor);
-  const b = Math.round(parseInt(hex.slice(5, 7), 16) * factor);
-  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+function getSeasonAverage(weekly, calcFantasyPoints, position) {
+  if (!weekly?.length) return 0;
+  let total = 0;
+  let count = 0;
+  for (const weekStats of weekly) {
+    const points = calcFantasyPoints(weekStats, position);
+    if (points <= 0) continue;
+    total += points;
+    count += 1;
+  }
+  return count > 0 ? total / count : 0;
 }
 
-function hexToRgb(hex) {
+function getWaiverScheduleContext(player, week, scheduleMap) {
+  const team = player.team?.toUpperCase();
+  const matchup = scheduleMap?.[week]?.[team];
+  const oppTeam = matchup?.opp ?? null;
+  const isHome = matchup?.home ?? null;
+  const venueTeam = isHome === true ? team : isHome === false ? oppTeam : null;
+  const isIndoor = venueTeam ? (STADIUMS[venueTeam]?.indoor ?? false) : false;
+
   return {
-    r: parseInt(hex.slice(1, 3), 16),
-    g: parseInt(hex.slice(3, 5), 16),
-    b: parseInt(hex.slice(5, 7), 16),
+    oppTeam,
+    isHome,
+    isIndoor,
   };
 }
 
-function getColorChroma(hex) {
-  const { r, g, b } = hexToRgb(hex);
-  return Math.max(r, g, b) - Math.min(r, g, b);
+function getWaiverScheduleWeekKey(scheduleMap, week) {
+  const weekMap = scheduleMap?.[week];
+  if (!weekMap) return '';
+  return JSON.stringify(weekMap);
 }
 
-function mixHex(baseHex, mixHexColor, mixAmount) {
-  const base = hexToRgb(baseHex);
-  const mix = hexToRgb(mixHexColor);
-  const blend = (a, b) => Math.round(a + (b - a) * mixAmount);
-  return `#${blend(base.r, mix.r).toString(16).padStart(2, '0')}${blend(base.g, mix.g).toString(16).padStart(2, '0')}${blend(base.b, mix.b).toString(16).padStart(2, '0')}`;
-}
-
-function getContrastRatio(foreground, background) {
-  const fg = hexLuminance(foreground);
-  const bg = hexLuminance(background);
-  const lighter = Math.max(fg, bg);
-  const darker = Math.min(fg, bg);
-  return (lighter + 0.05) / (darker + 0.05);
-}
-
-function liftColorForDarkCanvas(hex, minContrast = 2.25) {
-  const darkCanvas = '#0C0F14';
-  if (getContrastRatio(hex, darkCanvas) >= minContrast) return hex;
-
-  for (let step = 0.18; step <= 0.72; step += 0.06) {
-    const lifted = mixHex(hex, '#FFFFFF', step);
-    if (getContrastRatio(lifted, darkCanvas) >= minContrast) return lifted;
-  }
-
-  return mixHex(hex, '#FFFFFF', 0.72);
-}
-
-function isWarmRedAccent(hex) {
-  const { r, g, b } = hexToRgb(hex);
-  return r >= 140 && r > g + 35 && r > b + 20;
-}
-
-function getDarkModeAccent(palette) {
-  const darkCanvas = '#0C0F14';
-  const primaryContrast = getContrastRatio(palette.darkPrimary, darkCanvas);
-  if (primaryContrast >= 3.2) return palette.darkPrimary;
-
-  const fallbackCandidates = [
-    palette.darkSecondary,
-    palette.secondary,
-    palette.primary,
-  ].filter(Boolean);
-
-  const rankedFallbacks = fallbackCandidates
-    .map(color => ({ color, contrast: getContrastRatio(color, darkCanvas) }))
-    .sort((a, b) => b.contrast - a.contrast);
-
-  return rankedFallbacks[0]?.color ?? palette.darkPrimary ?? '#F2F1EC';
-}
-
-function getDarkModeGlowCore(palette, accent) {
-  if (!accent || !palette?.primary) return '#FFFFFF';
-  if (!isWarmRedAccent(accent)) return '#FFFFFF';
-  if (palette.primary.toLowerCase() === accent.toLowerCase()) return '#FFFFFF';
-  return liftColorForDarkCanvas(palette.primary);
-}
-
-function getLightModeTintBase(palette) {
-  const primary = palette.primary;
-  const secondary = palette.secondary ?? primary;
-  const primaryChroma = getColorChroma(primary);
-  const secondaryChroma = getColorChroma(secondary);
-  const primaryLuminance = hexLuminance(primary);
-
-  if ((primaryLuminance < 0.1 || primaryChroma < 42) && secondaryChroma >= primaryChroma + 24) {
-    return secondary;
-  }
-
-  return primary;
-}
-
-function teamRowTheme(team, darkMode) {
-  const palette = getTeamPalette(team);
-  const logoKey = getTeamColorKey(team) ?? '';
-  if (!palette) {
-    return {
-      logoKey,
-      rowBg: 'transparent',
-      hoverBg: 'var(--color-fill)',
-      accent: null,
-      glowCore: darkMode ? '#FFFFFF' : null,
-      avatarBorder: null,
-    };
-  }
-
-  const color = darkMode ? palette.darkPrimary : getLightModeTintBase(palette);
-  const isLight = hexLuminance(color) > 0.35;
-  const accent = darkMode
-    ? getDarkModeAccent(palette)
-    : (isLight ? darkenHex(color, 0.55) : color);
-
-  return {
-    logoKey,
-    rowBg: `${color}${isLight ? '54' : '48'}`,
-    hoverBg: `${color}${isLight ? '70' : '62'}`,
-    accent,
-    glowCore: darkMode ? getDarkModeGlowCore(palette, accent) : null,
-    avatarBorder: accent,
-  };
+function getVisibleRowsCacheKey({
+  filteredCandidates,
+  week,
+  scheduleWeekKey,
+  scoringSettings,
+  darkMode,
+}) {
+  return [
+    filteredCandidates.slice(0, 100).map(player => player.id).join(','),
+    week,
+    scheduleWeekKey,
+    JSON.stringify(scoringSettings ?? {}),
+    darkMode ? 'dark' : 'light',
+  ].join('|');
 }
 
 function getSharedNameColumnWidth(players) {
@@ -227,6 +184,8 @@ export default function CompanionWaiver({
 }) {
   const {
     players, loadPlayers,
+    selectedLeagueId,
+    season,
     rosters,
     league,
     seasonStats, loadSeasonStats,
@@ -240,25 +199,63 @@ export default function CompanionWaiver({
   const { darkMode } = useTheme();
   const isCompactPhone = useMediaQuery(COMPACT_PHONE_QUERY);
   const layout = useMemo(() => getWaiverLayout(isCompactPhone), [isCompactPhone]);
+  const calcFantasyPoints = useMemo(() => createPointsCalculator(scoringSettings), [scoringSettings]);
 
   const [posFilter, setPosFilter] = useState(positionFilter);
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState('recent');
   const debounceRef = useRef(null);
+  const rankedCandidatesCacheRef = useRef({ key: '', value: [] });
+  const visibleRowsCacheRef = useRef({ key: '', value: [] });
   const requestedPosition = initialPositionRequest?.position;
-  const activePosFilter = requestedPosition && POSITIONS.includes(requestedPosition)
+  const availablePositions = useMemo(
+    () => getLeaguePositionFilters(league?.roster_positions),
+    [league?.roster_positions],
+  );
+  const activePosFilter = requestedPosition && isValidLeaguePositionFilter(requestedPosition, availablePositions)
     ? requestedPosition
     : posFilter;
+  const playerCount = players ? Object.keys(players).length : 0;
+  const seasonStatCount = seasonStats ? Object.keys(seasonStats).length : 0;
+  const weeklyStatCount = weeklyStats ? Object.keys(weeklyStats).length : 0;
 
   useEffect(() => {
-    if (requestedPosition && POSITIONS.includes(requestedPosition)) return;
-    setPosFilter(POSITIONS.includes(positionFilter) ? positionFilter : 'ALL');
-  }, [positionFilter, requestedPosition]);
+    debugCompanionLog('Waiver mounted', {
+      selectedLeagueId,
+      season,
+      positionFilter,
+      availablePositions,
+    });
+    return () => debugCompanionLog('Waiver unmounted');
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    debugCompanionLog('Waiver readiness', {
+      selectedLeagueId,
+      season,
+      sortBy,
+      activePosFilter,
+      statsLoading,
+      hasPlayers: playerCount > 0,
+      hasSeasonStats: Boolean(seasonStats),
+      hasWeeklyStats: Boolean(weeklyStats),
+      rosterCount: rosters.length,
+      availablePositions,
+    });
+  }, [selectedLeagueId, season, sortBy, activePosFilter, statsLoading, playerCount, seasonStatCount, weeklyStatCount, rosters.length, availablePositions]);
+
+  useEffect(() => {
+    if (requestedPosition && isValidLeaguePositionFilter(requestedPosition, availablePositions)) return;
+    setPosFilter(isValidLeaguePositionFilter(positionFilter, availablePositions) ? positionFilter : 'ALL');
+  }, [positionFilter, requestedPosition, availablePositions]);
 
   useEffect(() => { loadPlayers(); }, [loadPlayers]);
   useEffect(() => {
-    if (!seasonStats && !statsLoading) loadSeasonStats();
+    if (!seasonStats && !statsLoading) {
+      debugCompanionLog('Waiver season stats requested');
+      loadSeasonStats();
+    }
   }, [seasonStats, statsLoading, loadSeasonStats]);
 
   useEffect(() => {
@@ -289,71 +286,49 @@ export default function CompanionWaiver({
     if (lastScored) return Math.min(lastScored + 1, playoffStart - 1);
     return Math.max(1, playoffStart - 1);
   }, [league]);
+  const scheduleWeekKey = useMemo(
+    () => getWaiverScheduleWeekKey(scheduleMap, week),
+    [scheduleMap, week],
+  );
 
-  const defenseTable = useMemo(() => {
-    if (!weeklyStats || !players) return null;
-    return buildDefenseTable(weeklyStats, players, scheduleMap, scoringSettings);
-  }, [weeklyStats, players, scheduleMap, scoringSettings]);
+  const shouldProjectWaivers = sortBy === 'projected';
+  const rankedCandidatesCacheKey = useMemo(() => {
+    return [
+      selectedLeagueId,
+      season,
+      seasonStatCount,
+      playerCount,
+      weeklyStatCount,
+      rosteredIds.size,
+      availablePositions.join(','),
+      JSON.stringify(scoringSettings ?? {}),
+    ].join('|');
+  }, [selectedLeagueId, season, seasonStatCount, playerCount, weeklyStatCount, rosteredIds.size, availablePositions, scoringSettings]);
 
-  const leagueAvgByPos = useMemo(() => {
-    if (!weeklyStats || !players) return {};
-    const result = {};
-    for (const pos of SKILL_POSITIONS) {
-      result[pos] = getLeagueAvgPPG(pos, weeklyStats, players, scoringSettings, week);
-    }
-    return result;
-  }, [weeklyStats, players, scoringSettings, week]);
-
-  const enrichedPlayers = useMemo(() => {
+  const rankedCandidates = useMemo(() => {
     if (!players || !seasonStats) return [];
+    if (rankedCandidatesCacheRef.current.key === rankedCandidatesCacheKey) {
+      debugCompanionLog('Waiver rankable free agents cache hit', {
+        rankedCount: rankedCandidatesCacheRef.current.value.length,
+      });
+      return rankedCandidatesCacheRef.current.value;
+    }
 
-    return Object.entries(seasonStats)
+    const nextCandidates = debugCompanionMeasure('Waiver rankable free agents', () => Object.entries(seasonStats)
       .map(([id, stats]) => {
         if (rosteredIds.has(id)) return null;
         const p = players[id];
         if (!p) return null;
+        if (!isWaiverEligiblePlayerRecord(p)) return null;
         const pos = p.position;
-        if (!SKILL_POSITIONS.has(pos)) return null;
+        if (!positionMatchesLeagueFilter(pos, 'ALL', { stats, availableFilters: availablePositions })) return null;
 
-        const pts = calcPointsFromTotals(stats, scoringSettings, pos);
+        const pts = calcFantasyPoints(stats, pos);
         if (pts <= 0) return null;
 
         const weekly = weeklyStats?.[id] ?? [];
-        const recentAvg = getRecentAvg(weekly, scoringSettings, 4, pos);
-        const gamePts = weekly.map(w => calcPoints(w, scoringSettings, pos)).filter(value => value > 0);
-        const seasonAvg = gamePts.length > 0 ? gamePts.reduce((sum, value) => sum + value, 0) / gamePts.length : 0;
-        const trendState = getTrendState(recentAvg, seasonAvg);
-
-        const team = p.team?.toUpperCase();
-        const matchup = scheduleMap?.[week]?.[team];
-        const oppTeam = matchup?.opp ?? null;
-        const isHome = matchup?.home ?? null;
-        const venueTeam = isHome === true ? team : isHome === false ? oppTeam : null;
-        const isIndoor = venueTeam ? (STADIUMS[venueTeam]?.indoor ?? false) : false;
-
-        let proj = null;
-        if (weekly.length >= 2 && defenseTable) {
-          const defStrength = oppTeam
-            ? getDefenseStrength(defenseTable, oppTeam, pos, week)
-            : null;
-          proj = projectPlayer({
-            weeklyArr: weekly,
-            pos,
-            oppTeam,
-            isHome,
-            isIndoor,
-            weather: null,
-            allWeeklyStats: null,
-            players: null,
-            scoringSettings,
-            scheduleMap,
-            week,
-            defStrength,
-            leagueAvg: leagueAvgByPos[pos] ?? 0,
-            skipOpponentLookup: true,
-          });
-        }
-
+        const recentAvg = getRecentAverageFast(weekly, calcFantasyPoints, pos);
+        const projectionPosition = normalizeLeaguePlayerPosition(pos);
         const espnId = p.espn_id ?? espnIdOverrides?.[id] ?? null;
 
         return {
@@ -362,49 +337,184 @@ export default function CompanionWaiver({
           position: pos,
           team: p.team || 'FA',
           pts,
-          seasonAvg,
           recentAvg,
-          projected: proj?.projected ?? null,
-          oppTeam,
-          trendState,
+          projected: null,
+          projectionPosition,
+          weekly,
           injuryStatus: p.injury_status,
           espnId,
           yearsExp: p.years_exp,
-          teamTheme: teamRowTheme(p.team || '', darkMode),
         };
       })
-      .filter(Boolean);
-  }, [players, seasonStats, weeklyStats, scheduleMap, scoringSettings, rosteredIds, week, espnIdOverrides, defenseTable, leagueAvgByPos, darkMode]);
+      .filter(Boolean), {
+        seasonStatCount: Object.keys(seasonStats).length,
+        playerDirectoryCount: playerCount,
+        rosteredCount: rosteredIds.size,
+        availablePositions,
+      });
+    rankedCandidatesCacheRef.current = {
+      key: rankedCandidatesCacheKey,
+      value: nextCandidates,
+    };
+    return nextCandidates;
+  }, [players, seasonStats, weeklyStats, calcFantasyPoints, rosteredIds, espnIdOverrides, availablePositions, rankedCandidatesCacheKey]);
 
-  const available = useMemo(() => {
+  const filteredCandidates = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return enrichedPlayers
-      .filter(player => activePosFilter === 'ALL' || player.position === activePosFilter)
+    return debugCompanionMeasure('Waiver filter/sort candidates', () => rankedCandidates
+      .filter(player => positionMatchesLeagueFilter(player.position, activePosFilter, {
+        stats: seasonStats?.[player.id],
+        availableFilters: availablePositions,
+      }))
       .filter(player => !q || player.name.toLowerCase().includes(q) || player.team.toLowerCase().includes(q))
       .sort((a, b) => {
-        if (sortBy === 'projected') {
-          const ap = a.projected ?? -1;
-          const bp = b.projected ?? -1;
-          return bp - ap || b.recentAvg - a.recentAvg;
-        }
         if (sortBy === 'season') return b.pts - a.pts || b.recentAvg - a.recentAvg;
         return b.recentAvg - a.recentAvg || b.pts - a.pts;
       })
-      .slice(0, 100);
-  }, [enrichedPlayers, activePosFilter, search, sortBy]);
+      .slice(0, shouldProjectWaivers ? 250 : 100), {
+        rankedCount: rankedCandidates.length,
+        activePosFilter,
+        searchLength: q.length,
+        sortBy,
+        shouldProjectWaivers,
+      });
+  }, [rankedCandidates, activePosFilter, search, sortBy, seasonStats, availablePositions, shouldProjectWaivers]);
+
+  const defenseTable = useMemo(() => {
+    if (!shouldProjectWaivers || !weeklyStats || !players) return null;
+    return debugCompanionMeasure('Waiver projection defense table', () => (
+      buildDefenseTable(weeklyStats, players, scheduleMap, scoringSettings)
+    ), {
+      playerCount: Object.keys(players).length,
+      weeklyStatCount: Object.keys(weeklyStats).length,
+    });
+  }, [shouldProjectWaivers, weeklyStats, players, scheduleMap, scoringSettings]);
+
+  const leagueAvgByPos = useMemo(() => {
+    if (!shouldProjectWaivers || !weeklyStats || !players) return {};
+    return debugCompanionMeasure('Waiver projection league averages', () => {
+      const result = {};
+      for (const pos of availablePositions) {
+        if (pos === 'ALL' || !PROJECTION_POSITIONS.has(pos)) continue;
+        result[pos] = getLeagueAvgPPG(pos, weeklyStats, players, scoringSettings, week);
+      }
+      return result;
+    }, { availablePositions, week });
+  }, [shouldProjectWaivers, weeklyStats, players, scoringSettings, week, availablePositions]);
+
+  const available = useMemo(() => {
+    if (!shouldProjectWaivers || !defenseTable) {
+      const visibleRowsCacheKey = getVisibleRowsCacheKey({
+        filteredCandidates,
+        week,
+        scheduleWeekKey,
+        scoringSettings,
+        darkMode,
+      });
+      if (visibleRowsCacheRef.current.key === visibleRowsCacheKey) {
+        debugCompanionLog('Waiver visible row decoration cache hit', {
+          visibleCount: visibleRowsCacheRef.current.value.length,
+          week,
+        });
+        return visibleRowsCacheRef.current.value;
+      }
+
+      const nextRows = debugCompanionMeasure('Waiver visible row decoration', () => filteredCandidates
+        .slice(0, 100)
+        .map(player => {
+          const scheduleContext = getWaiverScheduleContext(player, week, scheduleMap);
+          const seasonAvg = getSeasonAverage(player.weekly, calcFantasyPoints, player.position);
+          return {
+            ...player,
+            ...scheduleContext,
+            seasonAvg,
+            trendState: getTrendState(player.recentAvg, seasonAvg),
+            teamTheme: getPlayerRowTeamTheme(player.team || '', darkMode),
+          };
+        }), {
+          visibleCount: Math.min(filteredCandidates.length, 100),
+          week,
+        });
+      visibleRowsCacheRef.current = {
+        key: visibleRowsCacheKey,
+        value: nextRows,
+      };
+      return nextRows;
+    }
+
+    return debugCompanionMeasure('Waiver projected candidates', () => filteredCandidates
+      .map(player => {
+        const { projectionPosition } = player;
+        const scheduleContext = getWaiverScheduleContext(player, week, scheduleMap);
+        if (!projectionPosition || !PROJECTION_POSITIONS.has(projectionPosition) || player.weekly.length < 2) {
+          return {
+            ...player,
+            ...scheduleContext,
+          };
+        }
+
+        const defStrength = scheduleContext.oppTeam
+          ? getDefenseStrength(defenseTable, scheduleContext.oppTeam, projectionPosition, week)
+          : null;
+        const projection = projectPlayer({
+          weeklyArr: player.weekly,
+          pos: projectionPosition,
+          oppTeam: scheduleContext.oppTeam,
+          isHome: scheduleContext.isHome,
+          isIndoor: scheduleContext.isIndoor,
+          weather: null,
+          allWeeklyStats: null,
+          players: null,
+          scoringSettings,
+          scheduleMap,
+          week,
+          defStrength,
+          leagueAvg: leagueAvgByPos[projectionPosition] ?? 0,
+          skipOpponentLookup: true,
+        });
+
+        return {
+          ...player,
+          ...scheduleContext,
+          projected: projection?.projected ?? null,
+        };
+      })
+      .sort((a, b) => {
+        const ap = a.projected ?? -1;
+        const bp = b.projected ?? -1;
+        return bp - ap || b.recentAvg - a.recentAvg;
+      })
+      .slice(0, 100)
+      .map(player => {
+        const seasonAvg = getSeasonAverage(player.weekly, calcFantasyPoints, player.position);
+        return {
+          ...player,
+          seasonAvg,
+          trendState: getTrendState(player.recentAvg, seasonAvg),
+          teamTheme: getPlayerRowTeamTheme(player.team || '', darkMode),
+        };
+      }), {
+        candidateCount: filteredCandidates.length,
+        week,
+      });
+  }, [shouldProjectWaivers, filteredCandidates, defenseTable, week, scheduleWeekKey, scoringSettings, scheduleMap, leagueAvgByPos, darkMode, calcFantasyPoints]);
 
   const sharedNameColumnWidth = useMemo(
     () => getSharedNameColumnWidth(available),
     [available],
   );
-
-  const sortLabel = sortBy === 'projected' ? 'projected pts' : sortBy === 'season' ? 'season total' : 'recent avg (last 4 weeks)';
+  const showWaiverPreparing = available.length === 0 && (
+    statsLoading
+    || playerCount === 0
+    || !seasonStats
+  );
+  const showWaiverEmpty = available.length === 0 && !showWaiverPreparing && Boolean(seasonStats);
 
   return (
     <div className="pb-6">
       <div className="px-4 pb-3 flex flex-col gap-2">
         <div className="flex gap-1.5 flex-wrap">
-          {POSITIONS.map(pos => (
+          {availablePositions.map(pos => (
             <button
               key={pos}
               onClick={() => {
@@ -418,7 +528,7 @@ export default function CompanionWaiver({
                 color: activePosFilter === pos ? 'var(--color-signature-fg)' : 'var(--color-label-secondary)',
               }}
             >
-              {pos}
+              {getPositionFilterLabel(pos)}
             </button>
           ))}
         </div>
@@ -462,10 +572,11 @@ export default function CompanionWaiver({
         </div>
       </div>
 
-      {!seasonStats && !statsLoading && (
-        <div className="flex items-center justify-center py-16">
-          <span className="text-sm" style={{ color: 'var(--color-label-secondary)' }}>Loading stats...</span>
-        </div>
+      {showWaiverPreparing && (
+        <CompanionLoadingState
+          title="Preparing waiver options..."
+          description="Loading league stats and active player records."
+        />
       )}
 
       {available.map(player => (
@@ -480,7 +591,7 @@ export default function CompanionWaiver({
         />
       ))}
 
-      {available.length === 0 && seasonStats && (
+      {showWaiverEmpty && (
         <div className="flex items-center justify-center py-16 px-6 text-center">
           <span className="text-sm" style={{ color: 'var(--color-label-secondary)' }}>
             {rosteredIds.size === 0
@@ -492,7 +603,6 @@ export default function CompanionWaiver({
     </div>
   );
 }
-
 function ColHeader({ label, active, onClick }) {
   return (
     <button
@@ -729,186 +839,6 @@ function ResponsiveWaiverRow({ player, onViewPlayer, sortBy, nameColumnWidth, la
           color={sortBy === 'recent' ? 'var(--color-label)' : 'var(--color-label-secondary)'}
         >
           {player.recentAvg > 0 ? player.recentAvg.toFixed(1) : '-'}
-        </MetricCell>
-      </button>
-    </div>
-  );
-}
-
-function WaiverRow({ player, onViewPlayer, sortBy, nameColumnWidth }) {
-  const { darkMode } = useTheme();
-  const [isHovered, setIsHovered] = useState(false);
-  const isInjured = player.injuryStatus && !['Questionable', 'Probable'].includes(player.injuryStatus);
-  const posColor = POSITION_COLORS[player.position] ?? 'var(--color-label-tertiary)';
-  const canNav = !!(onViewPlayer && player.espnId);
-  const trendBg = player.trendState === 'hot'
-    ? 'rgba(30,155,55,0.12)'
-    : player.trendState === 'cold'
-      ? 'rgba(224,39,15,0.12)'
-      : 'transparent';
-  const trendColor = player.trendState === 'hot'
-    ? 'var(--color-accent-green)'
-    : player.trendState === 'cold'
-      ? 'var(--color-accent-red)'
-      : 'transparent';
-  const glowColor = player.teamTheme.accent ?? (darkMode ? '#5AADFF' : '#1A6EFF');
-  const { glowHandlers, borderOverlay, glowShadow } = useCardGlow({
-    enabled: isHovered,
-    color: glowColor,
-    cardColor: player.teamTheme.accent ?? null,
-    darkMode,
-    coreColor: darkMode ? (player.teamTheme.glowCore ?? '#FFFFFF') : null,
-    outerColor: player.teamTheme.accent ?? glowColor,
-  });
-  const baseShadow = isHovered
-    ? '0 8px 18px rgba(12,15,20,0.10), 0 2px 6px rgba(12,15,20,0.08)'
-    : '0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06)';
-  const rowShadow = glowShadow ? `${glowShadow}, ${baseShadow}` : baseShadow;
-
-  return (
-    <div className="px-4">
-      <button
-        onClick={canNav ? () => onViewPlayer(String(player.espnId), {
-          displayName: player.name,
-          teamId: player.team,
-          position: player.position,
-          experience: player.yearsExp != null ? player.yearsExp + 1 : undefined,
-        }) : undefined}
-        onMouseMove={glowHandlers.onMouseMove}
-        onMouseEnter={(event) => {
-          setIsHovered(true);
-          glowHandlers.onMouseEnter?.(event);
-        }}
-        onMouseLeave={(event) => {
-          setIsHovered(false);
-          glowHandlers.onMouseLeave?.(event);
-        }}
-        onFocus={(event) => {
-          setIsHovered(true);
-          glowHandlers.onMouseEnter?.(event);
-        }}
-        onBlur={(event) => {
-          setIsHovered(false);
-          glowHandlers.onMouseLeave?.(event);
-        }}
-        className="relative grid items-center w-full px-3 py-3 text-left active:opacity-60"
-        style={{
-          gridTemplateColumns: WAIVER_TABLE_TEMPLATE,
-          columnGap: WAIVER_ROW_GAP,
-          border: '1px solid var(--color-separator)',
-          borderLeft: player.teamTheme.accent ? `4px solid ${player.teamTheme.accent}` : '4px solid var(--color-separator)',
-          borderRadius: 0,
-          background: isHovered ? player.teamTheme.hoverBg : player.teamTheme.rowBg,
-          boxShadow: rowShadow,
-          transform: isHovered ? 'translateY(-1px)' : 'translateY(0)',
-          transition: 'background 150ms cubic-bezier(0.32, 0.72, 0, 1), box-shadow 200ms cubic-bezier(0.32, 0.72, 0, 1), transform 200ms cubic-bezier(0.32, 0.72, 0, 1)',
-          cursor: canNav ? 'pointer' : 'default',
-        }}
-      >
-        {borderOverlay}
-        <img
-          src={`https://sleepercdn.com/content/nfl/players/thumb/${player.id}.jpg`}
-          alt={player.name}
-          className="w-11 h-11 rounded-full shrink-0 object-cover"
-          style={{
-            background: 'var(--color-fill)',
-            border: player.teamTheme.avatarBorder ? `2px solid ${player.teamTheme.avatarBorder}` : '2px solid transparent',
-          }}
-          onError={e => { e.target.src = 'https://sleepercdn.com/images/v2/icons/player_default.webp'; }}
-        />
-
-        <div
-          className="min-w-0 grid items-center gap-2"
-          style={{
-            gridTemplateColumns: 'minmax(0, 1fr) auto',
-            justifySelf: 'start',
-            width: '100%',
-            maxWidth: `${Math.max(nameColumnWidth, 0) + 90}px`,
-          }}
-        >
-          <div className="min-w-0">
-            <div className="flex items-center gap-1.5 min-w-0">
-              <span
-                className="font-semibold text-sm truncate"
-                style={{ color: canNav ? 'var(--color-accent)' : 'var(--color-label)' }}
-              >
-                {player.name}
-              </span>
-              {player.injuryStatus && (
-                <span
-                  className="text-[10px] font-bold px-2 py-1 rounded-lg shrink-0"
-                  style={{
-                    background: isInjured ? 'rgba(239,68,68,0.12)' : 'rgba(245,183,0,0.12)',
-                    color: isInjured ? 'var(--color-accent-red)' : 'var(--color-signature)',
-                  }}
-                >
-                  {player.injuryStatus}
-                </span>
-              )}
-            </div>
-            <div className="text-xs mt-0.5 flex items-center gap-1.5 min-w-0" style={{ minHeight: 16 }}>
-              <span style={{ color: posColor, fontWeight: 600 }}>{player.position}</span>
-              <span style={{ color: 'var(--color-label-tertiary)' }}>{player.team}</span>
-              {player.oppTeam && (
-                <span className="hidden sm:inline" style={{ color: 'var(--color-label-quaternary)', fontSize: '10px' }}>
-                  vs {player.oppTeam}
-                </span>
-              )}
-            </div>
-          </div>
-
-          <div className="shrink-0 flex items-center justify-start gap-1.5 self-center">
-            <span
-              className="w-[28px] sm:w-[54px] shrink-0 text-[8px] sm:text-[9px] font-bold px-1 sm:px-2 py-1 rounded-lg text-center"
-              style={{
-                background: trendBg,
-                color: trendColor,
-              }}
-            >
-              <span className="sm:hidden">
-                {player.trendState === 'hot' ? '↑' : player.trendState === 'cold' ? '↓' : ''}
-              </span>
-              <span className="hidden sm:inline">
-                {player.trendState === 'hot' ? '↑ HOT' : player.trendState === 'cold' ? '↓ COLD' : ''}
-              </span>
-            </span>
-
-            {player.teamTheme.logoKey ? (
-              <img
-                src={`https://a.espncdn.com/i/teamlogos/nfl/500/${player.teamTheme.logoKey}.png`}
-                alt=""
-                aria-hidden="true"
-                className="hidden sm:block shrink-0 self-center"
-                style={{ width: 'auto', height: 44, maxWidth: 44, objectFit: 'contain', opacity: 0.72 }}
-                onError={e => { e.target.style.display = 'none'; }}
-              />
-            ) : (
-              <div className="hidden sm:block w-11 shrink-0" />
-            )}
-          </div>
-        </div>
-
-        <MetricCell
-          emphasis
-          color={player.projected != null
-            ? (sortBy === 'projected' ? 'var(--color-label)' : 'var(--color-label-secondary)')
-            : 'var(--color-label-quaternary)'}
-        >
-          {player.projected != null ? player.projected.toFixed(1) : '—'}
-        </MetricCell>
-
-        <MetricCell
-          emphasis
-          color={sortBy === 'season' ? 'var(--color-label)' : 'var(--color-label-secondary)'}
-        >
-          {player.pts.toFixed(1)}
-        </MetricCell>
-
-        <MetricCell
-          emphasis
-          color={sortBy === 'recent' ? 'var(--color-label)' : 'var(--color-label-secondary)'}
-        >
-          {player.recentAvg > 0 ? player.recentAvg.toFixed(1) : '—'}
         </MetricCell>
       </button>
     </div>

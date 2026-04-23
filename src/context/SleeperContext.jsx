@@ -61,6 +61,53 @@ function savePersistedState(state) {
   } catch { /* quota */ }
 }
 
+function normalizeLeagueId(id) {
+  return id == null ? null : String(id);
+}
+
+function getAllSeasonLeagues(leaguesBySeason) {
+  return Object.values(leaguesBySeason ?? {}).flatMap((seasonLeagues) => seasonLeagues ?? []);
+}
+
+function buildLeagueLineageIds(startLeague, leaguesBySeason) {
+  const ids = new Set();
+  const queue = [];
+  const addId = (id) => {
+    const normalized = normalizeLeagueId(id);
+    if (!normalized || ids.has(normalized)) return;
+    ids.add(normalized);
+    queue.push(normalized);
+  };
+
+  addId(startLeague?.league_id);
+  addId(startLeague?.previous_league_id);
+
+  const allLeagues = getAllSeasonLeagues(leaguesBySeason);
+  while (queue.length > 0) {
+    const id = queue.shift();
+    for (const item of allLeagues) {
+      const leagueId = normalizeLeagueId(item?.league_id);
+      const previousLeagueId = normalizeLeagueId(item?.previous_league_id);
+      if (leagueId && ids.has(leagueId)) addId(previousLeagueId);
+      if (previousLeagueId && ids.has(previousLeagueId)) addId(leagueId);
+    }
+  }
+
+  return ids;
+}
+
+function isLeagueInLineage(candidateLeague, lineageIds) {
+  const leagueId = normalizeLeagueId(candidateLeague?.league_id);
+  const previousLeagueId = normalizeLeagueId(candidateLeague?.previous_league_id);
+  return (leagueId && lineageIds.has(leagueId)) || (previousLeagueId && lineageIds.has(previousLeagueId));
+}
+
+function findLinkedLeagueForSeason(currentLeague, targetLeagues, leaguesBySeason) {
+  if (!currentLeague || !targetLeagues?.length) return null;
+  const lineageIds = buildLeagueLineageIds(currentLeague, leaguesBySeason);
+  return targetLeagues.find((item) => isLeagueInLineage(item, lineageIds)) ?? null;
+}
+
 export function SleeperProvider({ children }) {
   const persisted = loadPersistedState();
 
@@ -183,33 +230,37 @@ export function SleeperProvider({ children }) {
     }
   }, [discoverUserLeagueSeasons, season]);
 
+  const loadLeagueSelection = useCallback(async (leagueId) => {
+    const [leagueData, rostersData, usersData] = await Promise.all([
+      getLeague(leagueId),
+      getLeagueRosters(leagueId),
+      getLeagueUsers(leagueId),
+    ]);
+
+    setLeague(leagueData);
+    setRosters(rostersData ?? []);
+    setLeagueUsers(usersData ?? []);
+    setSelectedLeagueId(leagueId);
+
+    // Auto-import league scoring settings
+    if (leagueData?.scoring_settings) {
+      const imported = importLeagueScoring(leagueData.scoring_settings);
+      setScoringSettings(prev => ({ ...DEFAULT_SCORING, ...imported }));
+    }
+  }, []);
+
   const selectLeague = useCallback(async (leagueId) => {
     setConnectError(null);
     setConnectLoading(true);
     try {
-      const [leagueData, rostersData, usersData] = await Promise.all([
-        getLeague(leagueId),
-        getLeagueRosters(leagueId),
-        getLeagueUsers(leagueId),
-      ]);
-
-      setLeague(leagueData);
-      setRosters(rostersData ?? []);
-      setLeagueUsers(usersData ?? []);
-      setSelectedLeagueId(leagueId);
-
-      // Auto-import league scoring settings
-      if (leagueData?.scoring_settings) {
-        const imported = importLeagueScoring(leagueData.scoring_settings);
-        setScoringSettings(prev => ({ ...DEFAULT_SCORING, ...imported }));
-      }
+      await loadLeagueSelection(leagueId);
     } catch (err) {
       setConnectError(err.message);
       throw err;
     } finally {
       setConnectLoading(false);
     }
-  }, []);
+  }, [loadLeagueSelection]);
 
   const disconnect = useCallback(() => {
     setSleeperUser(null);
@@ -248,16 +299,23 @@ export function SleeperProvider({ children }) {
         const cachedLeagues = leaguesBySeason[newSeason];
         if (cachedLeagues == null) setConnectLoading(true);
         const userLeagues = cachedLeagues ?? await getLeaguesForUser(sleeperUser.user_id, newSeason);
+        const nextLeaguesBySeason = cachedLeagues == null
+          ? { ...leaguesBySeason, [newSeason]: userLeagues ?? [] }
+          : leaguesBySeason;
         if (cachedLeagues == null) {
-          setLeaguesBySeason((prev) => ({ ...prev, [newSeason]: userLeagues ?? [] }));
+          setLeaguesBySeason(nextLeaguesBySeason);
           if ((userLeagues?.length ?? 0) > 0) {
             setAvailableSeasons((prev) => (prev.includes(newSeason) ? prev : [...prev, newSeason].sort((a, b) => Number(b) - Number(a))));
           }
         }
         setLeagues(userLeagues ?? []);
-        // Reset league selection if current league isn't in the new season
-        const stillExists = userLeagues?.find(l => l.league_id === selectedLeagueId);
-        if (!stillExists) {
+        const linkedLeague = findLinkedLeagueForSeason(league, userLeagues ?? [], nextLeaguesBySeason);
+        const stillExists = userLeagues?.find(l => normalizeLeagueId(l.league_id) === normalizeLeagueId(selectedLeagueId));
+        const targetLeague = linkedLeague ?? stillExists;
+        if (targetLeague) {
+          await loadLeagueSelection(targetLeague.league_id);
+        }
+        if (!targetLeague) {
           setSelectedLeagueId(null);
           setLeague(null);
           setRosters([]);
@@ -268,7 +326,7 @@ export function SleeperProvider({ children }) {
         setConnectLoading(false);
       }
     }
-  }, [sleeperUser, selectedLeagueId, leaguesBySeason, season]);
+  }, [sleeperUser, selectedLeagueId, leaguesBySeason, season, league, loadLeagueSelection]);
 
   useEffect(() => {
     if (!sleeperUser?.user_id || connectLoading) return;
@@ -603,6 +661,22 @@ export function SleeperProvider({ children }) {
 
   const isConnected = !!sleeperUser;
   const hasLeague = !!selectedLeagueId && !!league;
+  const linkedLeagueSeasonOptions = useMemo(() => {
+    if (!league) return [];
+    const combinedLeaguesBySeason = {
+      ...leaguesBySeason,
+      [season]: leaguesBySeason[season] ?? leagues,
+    };
+    const lineageIds = buildLeagueLineageIds(league, combinedLeaguesBySeason);
+    const linkedSeasons = Object.entries(combinedLeaguesBySeason)
+      .filter(([, seasonLeagues]) => (seasonLeagues ?? []).some((item) => isLeagueInLineage(item, lineageIds)))
+      .map(([seasonKey]) => String(seasonKey));
+
+    const currentSeason = String(league.season ?? season);
+    if (!linkedSeasons.includes(currentSeason)) linkedSeasons.push(currentSeason);
+    return linkedSeasons.sort((a, b) => Number(b) - Number(a));
+  }, [league, leaguesBySeason, leagues, season]);
+
   const leagueValue = useMemo(() => ({
     sleeperUser,
     leagues,
@@ -613,6 +687,7 @@ export function SleeperProvider({ children }) {
     season,
     availableSeasons,
     leaguesBySeason,
+    linkedLeagueSeasonOptions,
     scoringSettings,
     connectError,
     connectLoading,
@@ -636,6 +711,7 @@ export function SleeperProvider({ children }) {
     season,
     availableSeasons,
     leaguesBySeason,
+    linkedLeagueSeasonOptions,
     scoringSettings,
     connectError,
     connectLoading,

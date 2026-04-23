@@ -172,4 +172,6 @@ Open bugs are listed first, fixed bugs below. Add new entries at the bottom of e
 | Matchup slot compare controls could lose their compact-phone affordance on real devices, leaving the position color, compare glyph, and tap target too cramped to read or use reliably | v6.1.5 |
 | Companion -> Matchup week picker could expose weeks outside the connected fantasy league's actual season length and did not clearly distinguish playoff weeks from regular-season weeks | v6.1.5 |
 | Desktop sidebar could scroll with the full page instead of remaining fixed in place, causing the shell navigation to drift vertically with content | v6.1.6 |
-
+| Companion → Waiver could flash `No Players Found` during initial load before free-agent ranking finished, making the page look idle instead of actively preparing data | v6.3 |
+| Companion → Matchup could render side panels before advanced matchup data was ready, causing a piecemeal load and disruptive loading flashes when switching weeks | v6.3 |
+| Matchup weather lookups could repeatedly request invalid Open-Meteo endpoints for the selected date, producing console 400s and unnecessary weather fetch batches | v6.3 |

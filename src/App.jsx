@@ -6,6 +6,7 @@ import { validateTotalWinsLosses } from './utils/validation';
 import { exportAsJSON, importFromJSON } from './utils/exportImport';
 import TeamList from './components/TeamList';
 import { usePWAInstall } from './hooks/usePWAInstall';
+import useBodyScrollLock from './hooks/useBodyScrollLock';
 import NavBar from './components/NavBar';
 import BottomTabBar from './components/BottomTabBar';
 import SeasonSubNav from './components/SeasonSubNav';
@@ -22,6 +23,7 @@ import {
   parseAppRoute,
   slugifyRouteSegment,
 } from './utils/appRoutes';
+import { debugCompanionLog, debugCompanionTimeAsync } from './utils/companionPerfDebug';
 
 const ExportPreview = lazy(() => import('./components/ExportPreview'));
 const TeamDetail = lazy(() => import('./components/TeamDetail'));
@@ -36,8 +38,14 @@ const CompanionRankings = lazy(() => import('./components/companion/CompanionRan
 const CompanionScoring = lazy(() => import('./components/companion/CompanionScoring'));
 const CompanionLeague = lazy(() => import('./components/companion/CompanionLeague'));
 const ScoringSettings = lazy(() => import('./components/companion/ScoringSettings'));
-const CompanionMatchup = lazy(() => import('./components/companion/CompanionMatchup'));
-const CompanionWaiver = lazy(() => import('./components/companion/CompanionWaiver'));
+const CompanionMatchup = lazy(() => debugCompanionTimeAsync(
+  'CompanionMatchup chunk import',
+  () => import('./components/companion/CompanionMatchup'),
+));
+const CompanionWaiver = lazy(() => debugCompanionTimeAsync(
+  'CompanionWaiver chunk import',
+  () => import('./components/companion/CompanionWaiver'),
+));
 const CompanionDefense = lazy(() => import('./components/companion/CompanionDefense'));
 const CompanionTrade = lazy(() => import('./components/companion/CompanionTrade'));
 const loadCompareTab = () => import('./components/compare/CompareTab');
@@ -71,6 +79,63 @@ function ModalLoading({ label = 'Loading' }) {
   );
 }
 
+function LeagueContextHeader({
+  league,
+  season,
+  changeSeason,
+  seasonOptions,
+  onSwitchLeague,
+}) {
+  const years = seasonOptions?.length ? seasonOptions : [String(league?.season ?? season)];
+
+  return (
+    <div className="flex items-center gap-2 mb-3 px-4">
+      <div className="flex-1 min-w-0">
+        <span className="text-xs font-semibold truncate" style={{ color: 'var(--color-label-secondary)' }}>
+          {league?.name ?? 'League'}
+        </span>
+      </div>
+      {years.length > 1 && (
+        <div className="flex gap-1 shrink-0">
+          {years.map(s => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => changeSeason(s)}
+              className="px-2 py-0.5 rounded text-xs font-semibold transition-colors"
+              style={{
+                background: season === s ? 'var(--color-signature)' : 'var(--color-fill)',
+                color: season === s ? 'var(--color-signature-fg)' : 'var(--color-label-tertiary)',
+              }}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      )}
+      <button
+        type="button"
+        onClick={onSwitchLeague}
+        className="inline-flex items-center gap-1.5 text-xs font-semibold shrink-0 px-2.5 py-1 rounded-lg active:opacity-70"
+        style={{
+          background: 'var(--color-fill)',
+          color: 'var(--color-label-secondary)',
+          border: '1px solid var(--color-separator)',
+        }}
+        aria-label="Switch league"
+      >
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M7 7h11l-3-3" />
+          <path d="M17 17H6l3 3" />
+          <path d="M18 7l-3 3" />
+          <path d="M6 17l3-3" />
+        </svg>
+        Switch
+      </button>
+    </div>
+  );
+}
+
 function AppInner() {
   const [scheduleData, setScheduleData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -85,10 +150,9 @@ function AppInner() {
   const [keepTradeWorkbenchMounted, setKeepTradeWorkbenchMounted] = useState(() => appRoute.activeTab === 'trade' && appRoute.tradeView !== 'compare');
   const [, startRouteTransition] = useTransition();
 
-  const { hasLeague, season, changeSeason, league, disconnect, sleeperUser } = useSleeperLeague();
+  const { hasLeague, selectedLeagueId, season, changeSeason, league, linkedLeagueSeasonOptions } = useSleeperLeague();
   const {
     statsLoading,
-    loadSeasonStats,
     seasonStats,
     players: sleeperPlayers,
     espnIdOverrides,
@@ -102,6 +166,8 @@ function AppInner() {
   const [actionSheetOpen, setActionSheetOpen] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
   const [teamPickerOpen, setTeamPickerOpen] = useState(false);
+  const [leagueSwitcherOpen, setLeagueSwitcherOpen] = useState(false);
+  useBodyScrollLock(leagueSwitcherOpen);
 
   const [teamSearch, setTeamSearch] = useState('');
   const [divisionFilter, setDivisionFilter] = useState('');
@@ -125,6 +191,20 @@ function AppInner() {
         otherSleeperId: appRoute.tradeOtherPlayerId ?? undefined,
       }
     : null;
+  const sleeperPlayerCount = sleeperPlayers ? Object.keys(sleeperPlayers).length : 0;
+
+  useEffect(() => {
+    if (activeTab !== 'companion') return;
+    debugCompanionLog('Route entered Companion', {
+      companionView,
+      selectedLeagueId,
+      season,
+      hasLeague,
+      statsLoading,
+      hasSeasonStats: Boolean(seasonStats),
+      hasSleeperPlayers: sleeperPlayerCount > 0,
+    });
+  }, [activeTab, companionView, selectedLeagueId, season, hasLeague, statsLoading, seasonStats, sleeperPlayerCount]);
   const waiverInitRequest = appRoute.companionView === 'waiver' && appRoute.waiverPosition
     ? { position: appRoute.waiverPosition }
     : null;
@@ -574,56 +654,13 @@ function AppInner() {
 
           {activeTab === 'trade' && hasLeague && (
             <>
-              <div className="flex items-center gap-2 mb-3 px-4">
-                <div className="flex-1 min-w-0">
-                  <span className="text-xs font-semibold truncate" style={{ color: 'var(--color-label-secondary)' }}>
-                    {league?.name ?? 'League'}
-                  </span>
-                </div>
-                {(() => {
-                  const currentYear = parseInt(league?.season ?? new Date().getFullYear());
-                  const years = [String(currentYear)];
-                  if (league?.previous_league_id) years.push(String(currentYear - 1));
-                  if (years.length < 2) return null;
-                  return (
-                    <div className="flex gap-1 shrink-0">
-                      {years.map(s => (
-                        <button
-                          key={s}
-                          onClick={() => changeSeason(s)}
-                          className="px-2 py-0.5 rounded text-xs font-semibold transition-colors"
-                          style={{
-                            background: season === s ? 'var(--color-signature)' : 'var(--color-fill)',
-                            color: season === s ? 'var(--color-signature-fg)' : 'var(--color-label-tertiary)',
-                          }}
-                        >
-                          {s}
-                        </button>
-                      ))}
-                    </div>
-                  );
-                })()}
-                {statsLoading ? (
-                  <span className="text-xs shrink-0" style={{ color: 'var(--color-label-tertiary)' }}>
-                    Loading…
-                  </span>
-                ) : (!seasonStats || Object.keys(seasonStats).length === 0) ? (
-                  <button
-                    onClick={loadSeasonStats}
-                    className="text-xs font-semibold shrink-0 px-2 py-0.5 rounded"
-                    style={{ background: 'var(--color-signature)', color: 'var(--color-signature-fg)' }}
-                  >
-                    Load Stats
-                  </button>
-                ) : null}
-                <button
-                  onClick={disconnect}
-                  className="text-xs shrink-0"
-                  style={{ color: 'var(--color-label-quaternary)' }}
-                >
-                  ✕
-                </button>
-              </div>
+              <LeagueContextHeader
+                league={league}
+                season={season}
+                changeSeason={changeSeason}
+                seasonOptions={linkedLeagueSeasonOptions}
+                onSwitchLeague={() => setLeagueSwitcherOpen(true)}
+              />
               {(keepTradeCompareMounted || tradeView === 'compare') && (
                 <div
                   style={{ display: tradeView === 'compare' ? 'block' : 'none' }}
@@ -693,59 +730,13 @@ function AppInner() {
           {activeTab === 'companion' && hasLeague && (
             <>
               {/* League + season header */}
-              <div className="flex items-center gap-2 mb-3 px-4">
-                <div className="flex-1 min-w-0">
-                  <span className="text-xs font-semibold truncate" style={{ color: 'var(--color-label-secondary)' }}>
-                    {league?.name ?? 'League'}
-                  </span>
-                </div>
-                {/* Season picker — only show seasons this league has existed for */}
-                {(() => {
-                  const currentYear = parseInt(league?.season ?? new Date().getFullYear());
-                  const years = [String(currentYear)];
-                  if (league?.previous_league_id) years.push(String(currentYear - 1));
-                  if (years.length < 2) return null;
-                  return (
-                    <div className="flex gap-1 shrink-0">
-                      {years.map(s => (
-                        <button
-                          key={s}
-                          onClick={() => changeSeason(s)}
-                          className="px-2 py-0.5 rounded text-xs font-semibold transition-colors"
-                          style={{
-                            background: season === s ? 'var(--color-signature)' : 'var(--color-fill)',
-                            color: season === s ? 'var(--color-signature-fg)' : 'var(--color-label-tertiary)',
-                          }}
-                        >
-                          {s}
-                        </button>
-                      ))}
-                    </div>
-                  );
-                })()}
-                {/* Stats reload / status */}
-                {statsLoading ? (
-                  <span className="text-xs shrink-0" style={{ color: 'var(--color-label-tertiary)' }}>
-                    Loading…
-                  </span>
-                ) : (!seasonStats || Object.keys(seasonStats).length === 0) ? (
-                  <button
-                    onClick={loadSeasonStats}
-                    className="text-xs font-semibold shrink-0 px-2 py-0.5 rounded"
-                    style={{ background: 'var(--color-signature)', color: 'var(--color-signature-fg)' }}
-                  >
-                    Load Stats
-                  </button>
-                ) : null}
-                {/* Disconnect */}
-                <button
-                  onClick={disconnect}
-                  className="text-xs shrink-0"
-                  style={{ color: 'var(--color-label-quaternary)' }}
-                >
-                  ✕
-                </button>
-              </div>
+              <LeagueContextHeader
+                league={league}
+                season={season}
+                changeSeason={changeSeason}
+                seasonOptions={linkedLeagueSeasonOptions}
+                onSwitchLeague={() => setLeagueSwitcherOpen(true)}
+              />
               {companionView === 'roster'    && (
                 <Suspense fallback={<SectionLoading label="Loading Roster" />}>
                 <CompanionRoster
@@ -953,6 +944,57 @@ function AppInner() {
         <Suspense fallback={<ModalLoading label="Loading team picker" />}>
           <FavoriteTeamPicker onClose={() => setTeamPickerOpen(false)} />
         </Suspense>
+      )}
+
+      {leagueSwitcherOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center px-4"
+          style={{ background: 'rgba(0,0,0,0.5)' }}
+          onClick={() => setLeagueSwitcherOpen(false)}
+        >
+          <div
+            className="w-full max-w-xl rounded-2xl overflow-hidden max-h-[86vh] flex flex-col"
+            style={{
+              background: 'var(--color-bg-secondary)',
+              border: '1px solid var(--color-separator)',
+              boxShadow: '0 12px 40px rgba(0,0,0,0.12), 0 4px 12px rgba(0,0,0,0.06)',
+            }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: '1px solid var(--color-separator)' }}>
+              <div>
+                <div className="text-xs font-bold uppercase tracking-[0.18em]" style={{ color: 'var(--color-label-tertiary)', fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif" }}>
+                  Switch League
+                </div>
+                <div className="mt-1 text-sm" style={{ color: 'var(--color-label-secondary)' }}>
+                  Choose a Sleeper season and league.
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setLeagueSwitcherOpen(false)}
+                className="px-3 py-1.5 text-xs font-bold uppercase tracking-[0.18em] active:opacity-60"
+                style={{
+                  fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif",
+                  background: 'var(--color-fill)',
+                  color: 'var(--color-label-secondary)',
+                  border: '1px solid var(--color-separator)',
+                  borderRadius: 0,
+                }}
+              >
+                Close
+              </button>
+            </div>
+            <div className="overflow-y-auto">
+              <Suspense fallback={<SectionLoading label="Loading leagues" />}>
+                <CompanionConnect
+                  forceLeaguePicker
+                  onLeagueSelected={() => setLeagueSwitcherOpen(false)}
+                />
+              </Suspense>
+            </div>
+          </div>
+        </div>
       )}
 
       {exportPreviewOpen && (

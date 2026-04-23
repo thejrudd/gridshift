@@ -3,6 +3,7 @@
 // Companion Trade Agent.
 
 import { findKtcPlayerFromSleeper, findKtcDraftPick, getKtcValue } from './ktcApi';
+import { getDraftPickDisplayInfo, getProjectedPickQuality } from './draftPickDisplay';
 import { DYNASTY_FALLBACK_MULT, computeTradePlayerValueDetail } from './tradeValue';
 
 // ── Redraft pick valuation ────────────────────────────────────────────────────
@@ -174,27 +175,7 @@ export function getPicksForRoster(rosterId, rosterPicks, slots) {
  * @returns 'Early' | 'Mid' | 'Late'
  */
 export function getPickQuality(rosterId, rosters) {
-  if (!rosters?.length) return 'Mid';
-
-  // Sort rosters by record: worst first (most losses, fewest wins → early pick)
-  const sorted = [...rosters].sort((a, b) => {
-    const winsA = a.settings?.wins ?? 0;
-    const winsB = b.settings?.wins ?? 0;
-    const lossA = a.settings?.losses ?? 0;
-    const lossB = b.settings?.losses ?? 0;
-    if (winsA !== winsB) return winsA - winsB; // fewer wins = earlier pick
-    return lossB - lossA; // more losses = earlier pick
-  });
-
-  const idx = sorted.findIndex(r => String(r.roster_id) === String(rosterId));
-  if (idx === -1) return 'Mid';
-
-  const total = sorted.length;
-  const third = Math.ceil(total / 3);
-
-  if (idx < third) return 'Early';
-  if (idx < third * 2) return 'Mid';
-  return 'Late';
+  return getProjectedPickQuality(rosterId, rosters);
 }
 
 // ── Trade valuation ───────────────────────────────────────────────────────────
@@ -211,7 +192,7 @@ export function getPickQuality(rosterId, rosters) {
  * @param {string}   currentSeason  - e.g. "2025" — for year-based pick discount
  * @returns {{ total: number, items: Array<{ id, label, val, type }> }}
  */
-export function valueSide(playerIds, pickItems, sleeperPlayers, ktcPlayers, leagueType, rosters, pickValueMap, currentSeason, dynastyFallbackPlayers = null, idpValueMap = null, playerTradeValueDetailsMap = null) {
+export function valueSide(playerIds, pickItems, sleeperPlayers, ktcPlayers, leagueType, rosters, pickValueMap, currentSeason, dynastyFallbackPlayers = null, idpValueMap = null, playerTradeValueDetailsMap = null, league = null, drafts = []) {
   const items = [];
 
   for (const pid of playerIds) {
@@ -259,8 +240,8 @@ export function valueSide(playerIds, pickItems, sleeperPlayers, ktcPlayers, leag
   }
 
   for (const pick of pickItems) {
-    const quality = getPickQuality(pick.fromRosterId, rosters);
-    const ord = { 1: '1st', 2: '2nd', 3: '3rd' }[pick.round] ?? `${pick.round}th`;
+    const displayInfo = getDraftPickDisplayInfo(pick, { league, rosters, drafts, currentSeason });
+    const quality = displayInfo.valueQuality ?? getPickQuality(pick.fromRosterId, rosters);
 
     // Redraft: use tier-based value derived from actual player rankings
     // Dynasty / fallback: use KTC RDP entry (already priced by year)
@@ -276,10 +257,22 @@ export function valueSide(playerIds, pickItems, sleeperPlayers, ktcPlayers, leag
 
     items.push({
       id: pick.key,
-      label: `${pick.year} ${quality} ${ord}`,
+      label: displayInfo.label,
       val,
       type: 'pick',
       ktcEntry: ktc,
+      pickData: pick,
+      year: pick.year,
+      round: pick.round,
+      quality: displayInfo.quality ?? quality,
+      valueQuality: quality,
+      displayMode: displayInfo.displayMode,
+      lockedSlot: displayInfo.lockedSlot ?? null,
+      pickNumberLabel: displayInfo.pickNumberLabel ?? null,
+      pickRangeLabel: displayInfo.pickRangeLabel ?? null,
+      cardHeadline: displayInfo.cardHeadline ?? null,
+      cardMetaLabel: displayInfo.cardMetaLabel ?? null,
+      sortSlot: displayInfo.sortSlot ?? null,
     });
   }
 
@@ -494,7 +487,7 @@ export function suggestPackage({ gap, deficitSide, deficitCandidates, deficitIte
 export function buildCandidatePool(
   rosterId, rosters, excludeIds, excludePickKeys,
   sleeperPlayers, ktcPlayers, leagueType, rosterPicks, slots, pickValueMap, currentSeason,
-  { dynastyKtcPlayers, seasonStats, scoringSettings, positionalValuePerPPG, positionalAvgPPG, rankMap, idpValueMap, playerTradeValueDetailsMap } = {},
+  { dynastyKtcPlayers, seasonStats, scoringSettings, positionalValuePerPPG, positionalAvgPPG, rankMap, idpValueMap, playerTradeValueDetailsMap, league = null, drafts = [] } = {},
 ) {
   const candidates = [];
   const roster = rosters.find(r => String(r.roster_id) === String(rosterId));
@@ -545,8 +538,8 @@ export function buildCandidatePool(
   const excludePickSet = new Set(excludePickKeys);
   for (const pick of ownedPicks) {
     if (excludePickSet.has(pick.key)) continue;
-    const quality = getPickQuality(pick.fromRosterId, rosters);
-    const ord = { 1: '1st', 2: '2nd', 3: '3rd' }[pick.round] ?? `${pick.round}th`;
+    const displayInfo = getDraftPickDisplayInfo(pick, { league, rosters, drafts, currentSeason });
+    const quality = displayInfo.valueQuality ?? getPickQuality(pick.fromRosterId, rosters);
     const tierVal = pickValueMap?.[pick.round] != null
       ? (pickValueMap[pick.round][quality] ?? pickValueMap[pick.round].Mid ?? null)
       : null;
@@ -555,10 +548,21 @@ export function buildCandidatePool(
       : getKtcValue(findKtcDraftPick(pick.year, pick.round, quality, ktcPlayers), leagueType);
     candidates.push({
       id: pick.key,
-      label: `${pick.year} ${quality} ${ord}`,
+      label: displayInfo.label,
       val,
       type: 'pick',
       pickData: pick,
+      year: pick.year,
+      round: pick.round,
+      quality: displayInfo.quality ?? quality,
+      valueQuality: quality,
+      displayMode: displayInfo.displayMode,
+      lockedSlot: displayInfo.lockedSlot ?? null,
+      pickNumberLabel: displayInfo.pickNumberLabel ?? null,
+      pickRangeLabel: displayInfo.pickRangeLabel ?? null,
+      cardHeadline: displayInfo.cardHeadline ?? null,
+      cardMetaLabel: displayInfo.cardMetaLabel ?? null,
+      sortSlot: displayInfo.sortSlot ?? null,
     });
   }
 

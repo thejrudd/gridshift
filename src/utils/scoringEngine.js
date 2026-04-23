@@ -354,9 +354,8 @@ export const STAT_TO_SCORING_KEY = {
  * @param {string|null} position - Player position for position-specific bonuses
  * @returns {number} Fantasy points (rounded to 2 decimal places)
  */
-export function calcPoints(stats, scoring, position = null) {
+function calcPointsWithSettings(stats, settings, position = null) {
   if (!stats) return 0;
-  const settings = { ...DEFAULT_SCORING, ...scoring };
   let pts = 0;
 
   for (const [statKey, scoringKey] of Object.entries(STAT_TO_SCORING_KEY)) {
@@ -404,6 +403,15 @@ export function calcPoints(stats, scoring, position = null) {
   }
 
   return Math.round(pts * 100) / 100;
+}
+
+export function calcPoints(stats, scoring, position = null) {
+  return calcPointsWithSettings(stats, { ...DEFAULT_SCORING, ...scoring }, position);
+}
+
+export function createPointsCalculator(scoring) {
+  const settings = { ...DEFAULT_SCORING, ...scoring };
+  return (stats, position = null) => calcPointsWithSettings(stats, settings, position);
 }
 
 /**

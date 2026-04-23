@@ -6,6 +6,7 @@ const ARCHIVE_BASE = 'https://archive-api.open-meteo.com/v1/archive';
 
 // In-memory cache: `${lat},${lng},${date}` → weather object
 const weatherCache = {};
+const weatherRequestCache = {};
 
 /**
  * Fetch historical weather for a specific date and location.
@@ -18,37 +19,45 @@ const weatherCache = {};
  */
 export async function fetchGameWeather(lat, lng, date) {
   const key = `${lat},${lng},${date}`;
-  if (weatherCache[key]) return weatherCache[key];
+  if (Object.prototype.hasOwnProperty.call(weatherCache, key)) return weatherCache[key];
+  if (weatherRequestCache[key]) return weatherRequestCache[key];
 
-  try {
-    const url = new URL(ARCHIVE_BASE);
-    url.searchParams.set('latitude', lat);
-    url.searchParams.set('longitude', lng);
-    url.searchParams.set('start_date', date);
-    url.searchParams.set('end_date', date);
-    url.searchParams.set('hourly', 'temperature_2m,precipitation,wind_speed_10m');
-    url.searchParams.set('timezone', 'auto');
-    url.searchParams.set('wind_speed_unit', 'kph');
+  weatherRequestCache[key] = (async () => {
+    try {
+      const url = new URL(ARCHIVE_BASE);
+      url.searchParams.set('latitude', lat);
+      url.searchParams.set('longitude', lng);
+      url.searchParams.set('start_date', date);
+      url.searchParams.set('end_date', date);
+      url.searchParams.set('hourly', 'temperature_2m,precipitation,wind_speed_10m');
+      url.searchParams.set('timezone', 'auto');
+      url.searchParams.set('wind_speed_unit', 'kmh');
 
-    const res = await fetch(url.toString());
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
+      const res = await fetch(url.toString());
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
 
-    // Pick hour 13 (1pm local) as a representative kickoff time
-    const hourIndex = data.hourly?.time?.findIndex(t => t.endsWith('T13:00')) ?? 13;
-    const idx = hourIndex >= 0 ? hourIndex : 13;
+      // Pick hour 13 (1pm local) as a representative kickoff time
+      const hourIndex = data.hourly?.time?.findIndex(t => t.endsWith('T13:00')) ?? 13;
+      const idx = hourIndex >= 0 ? hourIndex : 13;
 
-    const weather = {
-      temp_c:          data.hourly.temperature_2m?.[idx]   ?? null,
-      wind_kph:        data.hourly.wind_speed_10m?.[idx]   ?? null,
-      precipitation_mm: data.hourly.precipitation?.[idx]   ?? null,
-    };
+      const weather = {
+        temp_c:          data.hourly.temperature_2m?.[idx]   ?? null,
+        wind_kph:        data.hourly.wind_speed_10m?.[idx]   ?? null,
+        precipitation_mm: data.hourly.precipitation?.[idx]   ?? null,
+      };
 
-    weatherCache[key] = weather;
-    return weather;
-  } catch {
-    return null;
-  }
+      weatherCache[key] = weather;
+      return weather;
+    } catch {
+      weatherCache[key] = null;
+      return null;
+    } finally {
+      delete weatherRequestCache[key];
+    }
+  })();
+
+  return weatherRequestCache[key];
 }
 
 /**

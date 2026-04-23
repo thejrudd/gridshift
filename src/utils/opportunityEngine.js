@@ -30,6 +30,7 @@ import {
   getLeagueAvgPPG,
 } from './projectionEngine';
 import { getPicksForRoster, getPickQuality } from './tradeEngine';
+import { getDraftPickDisplayInfo } from './draftPickDisplay';
 
 const IGNORED_SLOTS = new Set(['BN', 'IR', 'TAXI']);
 const WAIVER_SUPPORTED_POSITIONS = new Set(['QB', 'RB', 'WR', 'TE', 'K']);
@@ -44,19 +45,6 @@ const POSITION_LABELS = {
   DL: 'DL',
   LB: 'LB',
   DB: 'DB',
-};
-
-const ORDINALS = {
-  1: '1st',
-  2: '2nd',
-  3: '3rd',
-  4: '4th',
-  5: '5th',
-  6: '6th',
-  7: '7th',
-  8: '8th',
-  9: '9th',
-  10: '10th',
 };
 
 const SLOT_ELIGIBILITY = {
@@ -429,11 +417,14 @@ function buildAvailablePlayersByPos(rosters, players, seasonStats, weeklyStats, 
 
     const normPos = normalizeOpportunityPos(player.position);
     if (!normPos) continue;
+    if (!supportsWaiverOpportunity(normPos)) continue;
 
     const seasonPts = calcPointsFromTotals(stats, scoringSettings, player.position);
     if (seasonPts <= 0) continue;
 
-    const weekly = weeklyStats?.[id] ?? [];
+    const gamesPlayed = Number(stats.gp ?? stats.games_played ?? stats.games ?? 0)
+      || (weeklyStats?.[id]?.length ?? 0)
+      || 1;
     const candidate = {
       id,
       name: player.full_name || `${player.first_name ?? ''} ${player.last_name ?? ''}`.trim(),
@@ -441,16 +432,14 @@ function buildAvailablePlayersByPos(rosters, players, seasonStats, weeklyStats, 
       normPos,
       team: player.team ?? 'FA',
       seasonPts,
-      ppg: getAvgPPG(weekly, scoringSettings, player.position),
-      recentAvg: getRecentAvg(weekly, scoringSettings, 4, player.position),
+      ppg: toFixedNumber(seasonPts / gamesPlayed, 1),
+      recentAvg: 0,
     };
 
-    if (!availableByPos[normPos]) availableByPos[normPos] = [];
-    availableByPos[normPos].push(candidate);
-  }
-
-  for (const pos of Object.keys(availableByPos)) {
-    availableByPos[pos].sort(comparePlayers);
+    const currentBest = availableByPos[normPos]?.[0] ?? null;
+    if (!currentBest || comparePlayers(candidate, currentBest) < 0) {
+      availableByPos[normPos] = [candidate];
+    }
   }
 
   return availableByPos;
@@ -691,10 +680,10 @@ function buildPlayerAsset(player, rosterId, playerValueMap = null) {
   };
 }
 
-function buildPickAsset(pick, rosters, pickValueMap, currentSeason) {
+function buildPickAsset(pick, rosters, pickValueMap, currentSeason, league = null, drafts = []) {
   if (!pick) return null;
-  const quality = getPickQuality(pick.fromRosterId, rosters);
-  const ord = ORDINALS[pick.round] ?? `${pick.round}th`;
+  const displayInfo = getDraftPickDisplayInfo(pick, { league, rosters, drafts, currentSeason });
+  const quality = displayInfo.valueQuality ?? getPickQuality(pick.fromRosterId, rosters);
   const yearOffset = Math.max(0, Number(pick.year ?? currentSeason) - Number(currentSeason));
   const discount = yearOffset <= 0 ? 1 : Math.pow(0.92, yearOffset);
   const tierVal = pickValueMap?.[pick.round]?.[quality] ?? pickValueMap?.[pick.round]?.Mid ?? 0;
@@ -702,21 +691,29 @@ function buildPickAsset(pick, rosters, pickValueMap, currentSeason) {
   return {
     type: 'pick',
     id: pick.key,
-    label: `${pick.year} ${quality} ${ord}`,
+    label: displayInfo.label,
     rosterId: pick.fromRosterId,
     pickData: pick,
     round: pick.round,
     year: pick.year,
-    quality,
+    quality: displayInfo.quality ?? quality,
+    valueQuality: quality,
+    displayMode: displayInfo.displayMode,
+    lockedSlot: displayInfo.lockedSlot ?? null,
+    pickNumberLabel: displayInfo.pickNumberLabel ?? null,
+    pickRangeLabel: displayInfo.pickRangeLabel ?? null,
+    cardHeadline: displayInfo.cardHeadline ?? null,
+    cardMetaLabel: displayInfo.cardMetaLabel ?? null,
+    sortSlot: displayInfo.sortSlot ?? null,
     value,
     isOwn: !!pick.isOwn,
   };
 }
 
-function getRosterPickAssets(rosterId, rosterPicks, slots, rosters, pickValueMap, currentSeason) {
+function getRosterPickAssets(rosterId, rosterPicks, slots, rosters, pickValueMap, currentSeason, league = null, drafts = []) {
   if (!rosterId || !rosterPicks || !slots) return [];
   return getPicksForRoster(rosterId, rosterPicks, slots)
-    .map((pick) => buildPickAsset(pick, rosters, pickValueMap, currentSeason))
+    .map((pick) => buildPickAsset(pick, rosters, pickValueMap, currentSeason, league, drafts))
     .filter(Boolean)
     .sort((a, b) => {
       const aPriority = (a.isOwn ? 0 : 25) + ((a.round ?? 99) * -3) + ((a.year ?? currentSeason) - Number(currentSeason)) * 2;
@@ -725,13 +722,13 @@ function getRosterPickAssets(rosterId, rosterPicks, slots, rosters, pickValueMap
     });
 }
 
-function buildRosterPickAssetsById(rosterIds, rosterPicks, slots, rosters, pickValueMap, currentSeason) {
+function buildRosterPickAssetsById(rosterIds, rosterPicks, slots, rosters, pickValueMap, currentSeason, league = null, drafts = []) {
   const pickAssetsByRosterId = new Map();
   const ids = [...new Set((rosterIds ?? []).filter(Boolean))];
   for (const rosterId of ids) {
     pickAssetsByRosterId.set(
       rosterId,
-      getRosterPickAssets(rosterId, rosterPicks, slots, rosters, pickValueMap, currentSeason),
+      getRosterPickAssets(rosterId, rosterPicks, slots, rosters, pickValueMap, currentSeason, league, drafts),
     );
   }
   return pickAssetsByRosterId;
@@ -2681,7 +2678,9 @@ export function buildRosterOpportunityLayer({
 
   const positionOrder = [...new Set(starterSlots.flatMap((slot) => getSlotEligiblePositions(slot)))];
   const rankMap = precomputedRankMap ?? computePositionalRanks(seasonStats, players, scoringSettings);
-  const defenseTable = buildDefenseTable(weeklyStats, players, scheduleMap, scoringSettings);
+  const defenseTable = scheduleMap
+    ? buildDefenseTable(weeklyStats, players, scheduleMap, scoringSettings)
+    : null;
   const analysisWeek = getAnalysisWeek(league);
   const availableByPos = buildAvailablePlayersByPos(rosters, players, seasonStats, weeklyStats, scoringSettings);
 
@@ -2699,12 +2698,11 @@ export function buildRosterOpportunityLayer({
 
   const benchmarkByPos = buildLeagueBenchmarks(rosterAnalyses, positionOrder);
   const myRosterAnalysis = rosterAnalyses.find((roster) => roster.roster_id === myRosterId) ?? null;
-  const rosterAnalysesById = Object.fromEntries(
-    rosterAnalyses.map((roster) => [roster.roster_id, roster]),
-  );
+  const rosterAnalysesById = Object.fromEntries(rosterAnalyses.map((roster) => [roster.roster_id, roster]));
+  const requestedIds = targetRosterIds?.length ? new Set(targetRosterIds.filter(Boolean)) : null;
+
   const analysesByRosterId = {};
   const allAnalysesByRosterId = {};
-  const requestedIds = targetRosterIds?.length ? new Set(targetRosterIds.filter(Boolean)) : null;
 
   for (const roster of rosterAnalyses) {
     const isMyRoster = roster.roster_id === myRosterId;
@@ -2759,6 +2757,8 @@ export function buildPartnerTradeIntelligence({
   selectedPartnerRosterId = null,
   rosterPicks = null,
   slots = null,
+  league = null,
+  drafts = [],
   currentSeason = null,
   pickValueMap = null,
   playerValueMap = null,
@@ -2789,6 +2789,8 @@ export function buildPartnerTradeIntelligence({
     opportunityLayer.rosters,
     pickValueMap,
     currentSeason ?? opportunityLayer.currentSeason,
+    league,
+    drafts,
   );
 
   const tradeProposals = includeTradeProposals && selectedPartnerAnalysis && myRosterAnalysis
@@ -2837,6 +2839,8 @@ export function findLeagueWideUpgradeGroups({
   allowIncomingPicks = false,
   rosterPicks = null,
   slots = null,
+  league = null,
+  drafts = [],
   currentSeason = null,
   pickValueMap = null,
   playerValueMap = null,
@@ -2884,6 +2888,8 @@ export function findLeagueWideUpgradeGroups({
     opportunityLayer.rosters,
     pickValueMap,
     currentSeason ?? opportunityLayer.currentSeason,
+    league,
+    drafts,
   );
   const allowedPlayerAssets = hasSelectedOutgoingPlayers
     ? resolveOutgoingPlayerAssets(
