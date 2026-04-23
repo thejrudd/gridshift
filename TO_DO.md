@@ -10,6 +10,7 @@ New features requested or planned should be added here.
 ### v7.0 - Draft Coach
 
 Surfaces publicly available scouting and evaluation data to help users make informed draft decisions.
+This remains the next major release line after the `v7.0.1` Statistics browser patch.
 
 - **Draft Profile Card** - Per-player card showing: NFL Draft slot (round, pick, overall, drafting team), college stats by position (completions/attempts/TDs/INTs for QBs, carries/yards/TDs for RBs, targets/catches/yards/TDs for WRs/TEs), NFL Combine results (40-yard dash, vertical, broad jump, 3-cone, shuttle, bench press, height/weight) with percentile grades relative to positional peers, consensus big-board rank, and dynasty rookie ADP
 - **Position Filters** - Filter the full rookie list by QB, RB, WR, TE (IDP stretch: DL, LB, DB)

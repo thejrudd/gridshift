@@ -27,6 +27,7 @@ Open bugs are listed first, fixed bugs below. Add new entries at the bottom of e
 |-----|----------|
 | Trade Intelligence `0 players` outgoing filtering was too broad: Fix Needs under-surfaced pick-only packages, while Use Surplus exposed an unsupported dead-end 0-player option | v6.2.6 |
 | Trade Intelligence explanation text could name a non-traded fallback player from the partner roster without clearly signaling that the player was only remaining post-trade depth, making the write-up read as if extra assets were included in the deal | v6.2.6 |
+| Statistics browser on the `v7.0.1` line lost its restored team-card treatment and `darkMode` handoff during the `v7.0` branch split, causing the page to fall back to a flatter team list presentation | v7.0.1 |
 | Desktop sidebar can still scroll on shorter laptop viewports in Predictions because the shell allows sidebar overflow instead of keeping the desktop rail fixed in place | v6.2.0 |
 | Companion -> Roster week-row handoff into Companion -> Matchup could feel laggy and unresponsive, with a noticeable delay before the destination week and player drilldown were ready | v6.2.5 |
 | Companion -> Matchup player weekly modal header could truncate the player name behind the Fantasy/Statistics actions instead of growing cleanly with the content | v6.2.5 |

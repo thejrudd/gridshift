@@ -24,7 +24,9 @@
         "LV",
         "LAR",
         "MIN"
-      ]
+      ],
+      "city": "Buffalo",
+      "nickname": "Bills"
     },
     {
       "id": "MIA",
@@ -49,7 +51,9 @@
         "LV",
         "MIN",
         "SF"
-      ]
+      ],
+      "city": "Miami",
+      "nickname": "Dolphins"
     },
     {
       "id": "NE",
@@ -74,7 +78,9 @@
         "KC",
         "LAC",
         "SEA"
-      ]
+      ],
+      "city": "New England",
+      "nickname": "Patriots"
     },
     {
       "id": "NYJ",
@@ -99,7 +105,9 @@
         "KC",
         "LAC",
         "TEN"
-      ]
+      ],
+      "city": "New York",
+      "nickname": "Jets"
     },
     {
       "id": "BAL",
@@ -124,7 +132,9 @@
         "DAL",
         "HOU",
         "IND"
-      ]
+      ],
+      "city": "Baltimore",
+      "nickname": "Ravens"
     },
     {
       "id": "CIN",
@@ -149,7 +159,9 @@
         "IND",
         "MIA",
         "WSH"
-      ]
+      ],
+      "city": "Cincinnati",
+      "nickname": "Bengals"
     },
     {
       "id": "CLE",
@@ -174,7 +186,9 @@
         "NYG",
         "NYJ",
         "TEN"
-      ]
+      ],
+      "city": "Cleveland",
+      "nickname": "Browns"
     },
     {
       "id": "PIT",
@@ -199,7 +213,9 @@
         "PHI",
         "TB",
         "TEN"
-      ]
+      ],
+      "city": "Pittsburgh",
+      "nickname": "Steelers"
     },
     {
       "id": "HOU",
@@ -224,7 +240,9 @@
         "PHI",
         "PIT",
         "WSH"
-      ]
+      ],
+      "city": "Houston",
+      "nickname": "Texans"
     },
     {
       "id": "IND",
@@ -249,7 +267,9 @@
         "PHI",
         "PIT",
         "WSH"
-      ]
+      ],
+      "city": "Indianapolis",
+      "nickname": "Colts"
     },
     {
       "id": "JAX",
@@ -274,7 +294,9 @@
         "DAL",
         "DEN",
         "NYG"
-      ]
+      ],
+      "city": "Jacksonville",
+      "nickname": "Jaguars"
     },
     {
       "id": "TEN",
@@ -299,7 +321,9 @@
         "DET",
         "LV",
         "NYG"
-      ]
+      ],
+      "city": "Tennessee",
+      "nickname": "Titans"
     },
     {
       "id": "DEN",
@@ -324,7 +348,9 @@
         "NYJ",
         "PIT",
         "SF"
-      ]
+      ],
+      "city": "Denver",
+      "nickname": "Broncos"
     },
     {
       "id": "KC",
@@ -349,7 +375,9 @@
         "LAR",
         "MIA",
         "SEA"
-      ]
+      ],
+      "city": "Kansas City",
+      "nickname": "Chiefs"
     },
     {
       "id": "LV",
@@ -374,7 +402,9 @@
         "NO",
         "NYJ",
         "SF"
-      ]
+      ],
+      "city": "Las Vegas",
+      "nickname": "Raiders"
     },
     {
       "id": "LAC",
@@ -399,7 +429,9 @@
         "MIA",
         "SEA",
         "TB"
-      ]
+      ],
+      "city": "Los Angeles",
+      "nickname": "Chargers"
     },
     {
       "id": "DAL",
@@ -424,7 +456,9 @@
         "IND",
         "LAR",
         "SEA"
-      ]
+      ],
+      "city": "Dallas",
+      "nickname": "Cowboys"
     },
     {
       "id": "NYG",
@@ -449,7 +483,9 @@
         "IND",
         "LAR",
         "SEA"
-      ]
+      ],
+      "city": "New York",
+      "nickname": "Giants"
     },
     {
       "id": "PHI",
@@ -474,7 +510,9 @@
         "JAX",
         "SF",
         "TEN"
-      ]
+      ],
+      "city": "Philadelphia",
+      "nickname": "Eagles"
     },
     {
       "id": "WSH",
@@ -499,7 +537,9 @@
         "MIN",
         "SF",
         "TEN"
-      ]
+      ],
+      "city": "Washington",
+      "nickname": "Commanders"
     },
     {
       "id": "CHI",
@@ -524,7 +564,9 @@
         "CAR",
         "MIA",
         "SEA"
-      ]
+      ],
+      "city": "Chicago",
+      "nickname": "Bears"
     },
     {
       "id": "DET",
@@ -549,7 +591,9 @@
         "BUF",
         "CAR",
         "MIA"
-      ]
+      ],
+      "city": "Detroit",
+      "nickname": "Lions"
     },
     {
       "id": "GB",
@@ -574,7 +618,9 @@
         "NO",
         "NYJ",
         "TB"
-      ]
+      ],
+      "city": "Green Bay",
+      "nickname": "Packers"
     },
     {
       "id": "MIN",
@@ -599,7 +645,9 @@
         "NYJ",
         "SF",
         "TB"
-      ]
+      ],
+      "city": "Minnesota",
+      "nickname": "Vikings"
     },
     {
       "id": "ATL",
@@ -624,7 +672,9 @@
         "MIN",
         "PIT",
         "WSH"
-      ]
+      ],
+      "city": "Atlanta",
+      "nickname": "Falcons"
     },
     {
       "id": "CAR",
@@ -649,7 +699,9 @@
         "MIN",
         "PHI",
         "PIT"
-      ]
+      ],
+      "city": "Carolina",
+      "nickname": "Panthers"
     },
     {
       "id": "NO",
@@ -674,7 +726,9 @@
         "CIN",
         "DET",
         "NYG"
-      ]
+      ],
+      "city": "New Orleans",
+      "nickname": "Saints"
     },
     {
       "id": "TB",
@@ -699,7 +753,9 @@
         "CIN",
         "DAL",
         "DET"
-      ]
+      ],
+      "city": "Tampa Bay",
+      "nickname": "Buccaneers"
     },
     {
       "id": "ARI",
@@ -724,7 +780,9 @@
         "LAC",
         "NO",
         "NYG"
-      ]
+      ],
+      "city": "Arizona",
+      "nickname": "Cardinals"
     },
     {
       "id": "LAR",
@@ -749,7 +807,9 @@
         "PHI",
         "TB",
         "WSH"
-      ]
+      ],
+      "city": "Los Angeles",
+      "nickname": "Rams"
     },
     {
       "id": "SF",
@@ -774,7 +834,9 @@
         "KC",
         "LAC",
         "NYG"
-      ]
+      ],
+      "city": "San Francisco",
+      "nickname": "49ers"
     },
     {
       "id": "SEA",
@@ -799,7 +861,9 @@
         "LV",
         "PHI",
         "WSH"
-      ]
+      ],
+      "city": "Seattle",
+      "nickname": "Seahawks"
     }
   ]
 }

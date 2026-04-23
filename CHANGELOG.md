@@ -879,3 +879,13 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Trade interaction polish continued** - Proposal card fade transitions were removed for near-instant partner/result swaps, pick-card sizing rules were documented, and Trade opportunity/proposal logic gained additional caching and pick-display cleanup.
 - **League switching upgraded** - The old remove-league `X` was replaced with a persistent `Switch` control, while linked Sleeper league seasons can now be hot-swapped directly from the Companion/Trade header without returning to the league-selection flow.
 - **Roadmap realigned for Draft Coach** - v6.3 cleanup is now shipped, Draft Coach is the next planned release, and the Statistics/Fantasy drilldown unification work is tracked under v7.2.
+
+---
+
+## v7.0.1 - Statistics Browser Recovery
+*2026-04-23*
+
+- **Statistics browser visuals restored** - The team browser on the `v7.0.1` line now again uses the richer conference framing, team-color cards, split city/nickname presentation, and responsive card typography that had been stripped during the `v7.0` branch separation.
+- **Team metadata restored for all 32 clubs** - `public/nfl-data-2026.json` again includes `city` and `nickname`, so Statistics team cards can render the intended editorial treatment instead of falling back to a flat full-team-name label.
+- **Statistics dark-mode handoff repaired** - `App.jsx` now passes `darkMode` back into `PlayerBrowser`, restoring the intended contrast behavior for the Statistics browser cards.
+- **Jets/Giants contrast adjusted without extra chrome** - The outlier team cards now rely on gradient direction and text-color tuning rather than adding separate logo badges, keeping the card system visually consistent.

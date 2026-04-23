@@ -612,6 +612,7 @@ function AppInner() {
             <Suspense fallback={<SectionLoading label="Loading statistics" />}>
             <PlayerBrowser
               teams={scheduleData.teams}
+              darkMode={darkMode}
               statsView={statisticsView}
               selectedTeamId={statisticsTeamId}
               selectedPlayerId={statisticsPlayerId}

@@ -3,6 +3,7 @@ import { fetchRoster, headshot } from '../utils/playerApi';
 import { parseSearchQuery, matchesFilter } from '../utils/parseSearchQuery';
 import PlayerProfile from './PlayerProfile';
 import TeamPage from './TeamPage';
+import { getTeamPalette } from '../data/teamColors.js';
 
 const POSITION_FILTERS = ['ALL', 'QB', 'RB', 'WR', 'TE', 'OL', 'DL', 'LB', 'DB', 'K', 'P'];
 
@@ -19,6 +20,25 @@ const CONFERENCES = [
   },
 ];
 
+const TEAM_CARD_SHADOW = '0 10px 24px rgba(12,15,20,0.10), 0 3px 8px rgba(12,15,20,0.08)';
+const TEAM_LABEL_STYLE = { letterSpacing: '0.16em' };
+const REVERSED_GRADIENT_TEAMS = new Set(['dal', 'gb', 'jax', 'lv', 'no', 'nyg', 'nyj', 'pit', 'wsh']);
+const TEAM_CARD_TEXT_OVERRIDES = {
+  nyj: {
+    titleColor: '#0C0F14',
+    subtitleColor: 'rgba(12,15,20,0.68)',
+  },
+};
+
+function hexLuminance(hex) {
+  if (!hex || hex[0] !== '#' || hex.length !== 7) return 0;
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  const lin = (c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+}
+
 function buildPlayerMeta(player = {}, fallback = {}) {
   return {
     id: String(player.id ?? fallback.id ?? ''),
@@ -34,6 +54,7 @@ function buildPlayerMeta(player = {}, fallback = {}) {
 
 const PlayerBrowser = ({
   teams,
+  darkMode = false,
   statsView = 'browser',
   selectedTeamId = null,
   selectedPlayerId = null,
@@ -59,6 +80,7 @@ const PlayerBrowser = ({
 
   const searchRef = useRef(null);
   const debounceRef = useRef(null);
+  const gridWrapRef = useRef(null);
 
   const normalizedSelectedTeamId = typeof selectedTeamId === 'string'
     ? selectedTeamId.trim().toUpperCase()
@@ -66,6 +88,38 @@ const PlayerBrowser = ({
   const normalizedSelectedPlayerId = selectedPlayerId != null
     ? String(selectedPlayerId)
     : null;
+  const [cardFontSize, setCardFontSize] = useState(14);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const node = gridWrapRef.current;
+    if (!node) return undefined;
+
+    let frame = 0;
+    const measure = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const width = node.getBoundingClientRect().width || 0;
+        const columns = window.innerWidth >= 640 ? 4 : 2;
+        const gap = 12 * (columns - 1);
+        const cardWidth = columns > 0 ? (width - gap) / columns : width;
+        const next = Math.max(11, Math.min(15, Math.round(cardWidth * 0.1)));
+        setCardFontSize(Number.isFinite(next) ? next : 14);
+      });
+    };
+
+    measure();
+    const resizeObserver = new ResizeObserver(measure);
+    resizeObserver.observe(node);
+    if (document.fonts?.ready) document.fonts.ready.then(measure).catch(() => {});
+    window.addEventListener('resize', measure);
+
+    return () => {
+      cancelAnimationFrame(frame);
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, [teams.length]);
 
   const teamLookup = useRef({});
   useEffect(() => {
@@ -325,7 +379,7 @@ const PlayerBrowser = ({
   }
 
   return (
-    <div className="space-y-6">
+    <div ref={gridWrapRef} className="space-y-6">
       <div
         className="rounded-xl p-4 space-y-3"
         style={{
@@ -412,24 +466,50 @@ const PlayerBrowser = ({
       </div>
 
       {CONFERENCES.map((conf) => (
-        <div key={conf.name}>
-          <h2 className="text-2xl font-display tracking-wider mb-3" style={{ color: conf.color }}>{conf.name}</h2>
-          <div className="space-y-4">
+        <section
+          key={conf.name}
+          className="relative overflow-hidden rounded-2xl"
+          style={{
+            background: 'var(--color-bg-secondary)',
+            border: '1px solid var(--color-separator)',
+            boxShadow: TEAM_CARD_SHADOW,
+          }}
+        >
+          <div
+            className="pointer-events-none absolute right-4 top-2 text-5xl font-display tracking-[0.2em]"
+            style={{ color: conf.color, opacity: 0.08 }}
+            aria-hidden="true"
+          >
+            {conf.name}
+          </div>
+          <div className="px-4 py-4 sm:px-5" style={{ borderBottom: '1px solid var(--color-separator)' }}>
+            <div className="text-[11px] font-semibold uppercase" style={{ ...TEAM_LABEL_STYLE, color: conf.color }}>
+              {conf.name}
+            </div>
+            <div className="mt-2 h-px w-20" style={{ background: conf.color, opacity: 0.55 }} />
+          </div>
+
+          <div className="space-y-5 px-4 py-4 sm:px-5">
             {conf.divisions.map((division) => {
               const divTeams = teams.filter((team) => team.division === division);
               return (
                 <div key={division}>
-                  <h3
-                    className="text-xs uppercase tracking-widest font-semibold mb-2 px-1"
-                    style={{ color: 'var(--color-label-tertiary)' }}
-                  >
-                    {division}
-                  </h3>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="mb-3 flex items-center gap-3 px-1">
+                    <h3
+                      className="text-[11px] font-semibold uppercase"
+                      style={{ ...TEAM_LABEL_STYLE, color: 'var(--color-label-tertiary)' }}
+                    >
+                      {division}
+                    </h3>
+                    <div className="h-px flex-1" style={{ background: 'var(--color-separator)' }} />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                     {divTeams.map((team) => (
                       <TeamCard
                         key={team.id}
                         team={team}
+                        darkMode={darkMode}
+                        fontSize={cardFontSize}
                         onClick={() => onNavigateTeam?.(team)}
                       />
                     ))}
@@ -438,39 +518,81 @@ const PlayerBrowser = ({
               );
             })}
           </div>
-        </div>
+        </section>
       ))}
     </div>
   );
 };
 
-const TeamCard = ({ team, onClick }) => (
-  <button
-    onClick={onClick}
-    className="rounded-xl p-3 flex items-center gap-3 w-full transition-all duration-150 text-left active:scale-[0.98]"
-    style={{
-      height: '64px',
-      background: 'var(--color-bg-secondary)',
-      border: '1px solid var(--color-separator)',
-      boxShadow: '0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06)',
-    }}
-    onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--color-fill)'; }}
-    onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--color-bg-secondary)'; }}
-  >
-    <img
-      src={`https://a.espncdn.com/i/teamlogos/nfl/500/${team.id.toLowerCase()}.png`}
-      alt={team.name}
-      className="w-10 h-10 object-contain shrink-0"
-      onError={(e) => { e.target.style.display = 'none'; }}
-    />
-    <div className="flex-1 min-w-0">
-      <div className="font-bold text-sm leading-tight" style={{ color: 'var(--color-label)' }}>{team.name}</div>
-    </div>
-    <svg className="w-4 h-4 shrink-0" style={{ color: 'var(--color-label-quaternary)' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-    </svg>
-  </button>
-);
+const TeamCard = ({ team, onClick, darkMode = false, fontSize = 14 }) => {
+  const teamKey = String(team.id).toLowerCase();
+  const palette = getTeamPalette(team.id);
+  const primary = palette ? (darkMode ? palette.darkPrimary : palette.primary) : '#1F2937';
+  const secondary = palette ? (darkMode ? palette.darkSecondary : palette.secondary) : '#4B5563';
+  const reverseGradient = REVERSED_GRADIENT_TEAMS.has(teamKey);
+  const textOverride = TEAM_CARD_TEXT_OVERRIDES[teamKey] ?? null;
+  const base = reverseGradient ? secondary : primary;
+  const gradient = reverseGradient
+    ? `linear-gradient(135deg, ${secondary} 0%, ${primary} 100%)`
+    : `linear-gradient(135deg, ${primary} 0%, ${secondary} 100%)`;
+  const onBase = hexLuminance(base) > 0.42 ? '#0C0F14' : '#FFFFFF';
+  const titleColor = textOverride?.titleColor ?? onBase;
+  const muted = textOverride?.subtitleColor ?? (onBase === '#FFFFFF' ? 'rgba(255,255,255,0.72)' : 'rgba(12,15,20,0.64)');
+  const city = team.city || String(team.name || '').split(' ').slice(0, -1).join(' ');
+  const nickname = team.nickname || String(team.name || '').split(' ').slice(-1)[0] || team.name;
+
+  return (
+    <button
+      onClick={onClick}
+      className="group relative w-full overflow-hidden rounded-2xl text-left transition-transform duration-150 active:scale-[0.98]"
+      style={{
+        minHeight: '112px',
+        border: '1px solid var(--color-separator)',
+        boxShadow: TEAM_CARD_SHADOW,
+        background: 'var(--color-bg-secondary)',
+      }}
+    >
+      <div className="absolute inset-0" style={{ background: gradient }} />
+      <div
+        className="absolute inset-0"
+        style={{
+          background: darkMode
+            ? 'linear-gradient(180deg, rgba(12,15,20,0.04) 0%, rgba(12,15,20,0.22) 100%)'
+            : 'linear-gradient(180deg, rgba(255,255,255,0.10) 0%, rgba(12,15,20,0.12) 100%)',
+        }}
+      />
+      <div className="relative flex h-full items-center gap-3 p-3 sm:p-3.5">
+        <img
+          src={`https://a.espncdn.com/i/teamlogos/nfl/500/${team.id.toLowerCase()}.png`}
+          alt={team.name}
+          className="h-14 w-14 shrink-0 object-contain sm:h-16 sm:w-16"
+          style={{ filter: 'drop-shadow(0 6px 12px rgba(0,0,0,0.22))' }}
+          onError={(e) => { e.target.style.display = 'none'; }}
+        />
+        <div className="min-w-0 flex-1">
+          <div className="truncate font-semibold uppercase" style={{ ...TEAM_LABEL_STYLE, color: muted, fontSize: `${Math.max(9, fontSize - 3)}px` }}>
+            {city}
+          </div>
+          <div
+            className="truncate font-display leading-none"
+            style={{
+              color: titleColor,
+              fontSize: `${Math.max(18, fontSize + 6)}px`,
+            }}
+          >
+            {nickname}
+          </div>
+          <div className="mt-2 truncate text-[10px] font-semibold uppercase" style={{ ...TEAM_LABEL_STYLE, color: muted }}>
+            {team.division}
+          </div>
+        </div>
+        <svg className="h-4 w-4 shrink-0" style={{ color: titleColor, opacity: 0.82 }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+        </svg>
+      </div>
+    </button>
+  );
+};
 
 const PlayerThumbnail = ({ id, name, size = 'sm' }) => {
   const [err, setErr] = useState(false);

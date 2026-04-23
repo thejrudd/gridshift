@@ -85,11 +85,11 @@ npm run validate:routing
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) |
 
-## What's New in v6.3
+## What's New in v7.0.1
 
-- **Companion performance tightened** - Waiver and Matchup now avoid repeated heavy recomputation, use shared loading states, and cache expensive matchup/waiver derivations for smoother first-open and week-switch behavior.
-- **IDP-aware Waivers and Rankings** - Waiver and Rankings now share league-position availability logic, including IDP, team defense, team special teams, and special teams player positions only when those slots exist in the league.
-- **Trade and league-context polish** - Trade proposal pick cards now sort chronologically with clearer year-specific draft-pick display, and Companion/Trade league headers now support in-place year switching for linked Sleeper league seasons.
+- **Statistics browser visuals restored** - The team browser again uses the richer team-color card treatment with split city/nickname display, conference framing, and responsive typography.
+- **Team metadata restored** - The 2026 team data bundle again includes `city` and `nickname`, which the Statistics cards use for the editorial card layout.
+- **Contrast tuning for edge-case team cards** - Jets and Giants cards were adjusted through gradient/text tuning rather than introducing a different card pattern.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 
