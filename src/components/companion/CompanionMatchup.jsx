@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSleeperBase, useSleeperStatsProgress } from '../../context/SleeperContext';
 import { useTheme } from '../../context/ThemeContext';
 import { calcPoints, DEFAULT_SCORING, STAT_TO_SCORING_KEY } from '../../utils/scoringEngine';
 import {
   buildDefenseTable,
-  computeLeagueAvgPPGByPosition,
   computePositionalRanks,
   computeWeeklyPositionalRanks,
   getAvgPPG,
@@ -13,14 +12,16 @@ import {
   projectPlayer,
 } from '../../utils/projectionEngine';
 import { STADIUMS, WEEK_DATES_2025 } from '../../data/stadiums';
-import { getTeamColorKey, getTeamPalette } from '../../data/teamColors.js';
 import { fetchGameWeather, formatWeather } from '../../api/weatherApi';
 import { getMatchups } from '../../api/sleeperApi';
 import PlayerMatchupBreakdown, { STAT_LABELS } from './PlayerMatchupBreakdown';
 import PlayerWeeklySheet from './PlayerWeeklySheet';
+import CompanionLoadingState from './CompanionLoadingState';
 import useCardGlow from '../../hooks/useCardGlow.jsx';
 import useMediaQuery from '../../hooks/useMediaQuery.js';
 import useBodyScrollLock from '../../hooks/useBodyScrollLock';
+import { getPlayerRowTeamTheme } from '../../utils/playerRowTheme';
+import { debugCompanionLog, debugCompanionMeasure, debugCompanionTimeAsync } from '../../utils/companionPerfDebug';
 
 const TOTAL_WEEKS = 18;
 const POSITION_COLORS = {
@@ -28,6 +29,13 @@ const POSITION_COLORS = {
 };
 const MATCHUP_CARD_SHADOW = '0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06)';
 const COMPACT_PHONE_QUERY = '(max-width: 480px)';
+const POSITION_ALIAS_MAP = {
+  DL: ['DE', 'DT'],
+  LB: ['ILB', 'OLB'],
+  DB: ['CB', 'S', 'SS', 'FS'],
+};
+const MATCHUP_RESPONSE_CACHE = new Map();
+const MATCHUP_RESPONSE_IN_FLIGHT = new Map();
 
 function getLongestTokenLength(label) {
   return String(label ?? '')
@@ -36,8 +44,11 @@ function getLongestTokenLength(label) {
     .reduce((max, token) => Math.max(max, token.length), 0);
 }
 
-function getSharedHeaderTeamNameFontSize(leftLabel, rightLabel, compact = false) {
-  const maxTokenLength = Math.max(getLongestTokenLength(leftLabel), getLongestTokenLength(rightLabel));
+function getSharedHeaderTeamNameFontSize(labels, compact = false) {
+  const maxTokenLength = labels.reduce(
+    (max, label) => Math.max(max, getLongestTokenLength(label)),
+    0,
+  );
   if (compact) {
     if (maxTokenLength >= 14) return 'clamp(14px, 4vw, 18px)';
     if (maxTokenLength >= 11) return 'clamp(16px, 4.3vw, 20px)';
@@ -99,133 +110,62 @@ function getCompactInjuryLabel(status) {
   return LABELS[status] ?? status.slice(0, 3).toUpperCase();
 }
 
-function hexLuminance(hex) {
-  const r = parseInt(hex.slice(1, 3), 16) / 255;
-  const g = parseInt(hex.slice(3, 5), 16) / 255;
-  const b = parseInt(hex.slice(5, 7), 16) / 255;
-  const lin = c => c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+function clampMatchupWeek(value, totalWeeks, fallbackWeek) {
+  const numeric = Number(value);
+  const fallback = Number(fallbackWeek);
+  const base = Number.isFinite(numeric) ? numeric : Number.isFinite(fallback) ? fallback : 1;
+  return Math.max(1, Math.min(totalWeeks, base));
 }
 
-function darkenHex(hex, factor) {
-  const r = Math.round(parseInt(hex.slice(1, 3), 16) * factor);
-  const g = Math.round(parseInt(hex.slice(3, 5), 16) * factor);
-  const b = Math.round(parseInt(hex.slice(5, 7), 16) * factor);
-  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+function getMatchupDataCacheKey({
+  selectedLeagueId,
+  season,
+  week,
+  playerCount,
+  seasonStatCount,
+  weeklyStatCount,
+  scheduleMap,
+  scoringSettings,
+}) {
+  return [
+    selectedLeagueId,
+    season,
+    week,
+    playerCount,
+    seasonStatCount,
+    weeklyStatCount,
+    scheduleMap ? Object.keys(scheduleMap).length : 0,
+    JSON.stringify(scoringSettings ?? {}),
+  ].join('|');
 }
 
-function hexToRgb(hex) {
-  return {
-    r: parseInt(hex.slice(1, 3), 16),
-    g: parseInt(hex.slice(3, 5), 16),
-    b: parseInt(hex.slice(5, 7), 16),
-  };
+function addPositionAliases(valuesByPos) {
+  const next = { ...valuesByPos };
+  for (const [basePos, aliases] of Object.entries(POSITION_ALIAS_MAP)) {
+    for (const alias of aliases) {
+      next[alias] = valuesByPos[basePos] ?? 0;
+    }
+  }
+  return next;
 }
 
-function getColorChroma(hex) {
-  const { r, g, b } = hexToRgb(hex);
-  return Math.max(r, g, b) - Math.min(r, g, b);
-}
-
-function mixHex(baseHex, mixHexColor, mixAmount) {
-  const base = hexToRgb(baseHex);
-  const mix = hexToRgb(mixHexColor);
-  const blend = (a, b) => Math.round(a + (b - a) * mixAmount);
-  return `#${blend(base.r, mix.r).toString(16).padStart(2, '0')}${blend(base.g, mix.g).toString(16).padStart(2, '0')}${blend(base.b, mix.b).toString(16).padStart(2, '0')}`;
-}
-
-function getContrastRatio(foreground, background) {
-  const fg = hexLuminance(foreground);
-  const bg = hexLuminance(background);
-  const lighter = Math.max(fg, bg);
-  const darker = Math.min(fg, bg);
-  return (lighter + 0.05) / (darker + 0.05);
-}
-
-function liftColorForDarkCanvas(hex, minContrast = 2.25) {
-  const darkCanvas = '#0C0F14';
-  if (getContrastRatio(hex, darkCanvas) >= minContrast) return hex;
-
-  for (let step = 0.18; step <= 0.72; step += 0.06) {
-    const lifted = mixHex(hex, '#FFFFFF', step);
-    if (getContrastRatio(lifted, darkCanvas) >= minContrast) return lifted;
+function computeLeagueAvgPPGByPositionFromDefenseTable(defenseTable, beforeWeek) {
+  const totalsByPos = {};
+  for (const posData of Object.values(defenseTable ?? {})) {
+    for (const [position, weekData] of Object.entries(posData ?? {})) {
+      for (const [week, points] of Object.entries(weekData ?? {})) {
+        if (beforeWeek != null && Number(week) >= beforeWeek) continue;
+        if (!totalsByPos[position]) totalsByPos[position] = [];
+        totalsByPos[position].push(points);
+      }
+    }
   }
 
-  return mixHex(hex, '#FFFFFF', 0.72);
-}
-
-function isWarmRedAccent(hex) {
-  const { r, g, b } = hexToRgb(hex);
-  return r >= 140 && r > g + 35 && r > b + 20;
-}
-
-function getDarkModeAccent(palette) {
-  const darkCanvas = '#0C0F14';
-  const primaryContrast = getContrastRatio(palette.darkPrimary, darkCanvas);
-  if (primaryContrast >= 3.2) return palette.darkPrimary;
-
-  const fallbackCandidates = [
-    palette.darkSecondary,
-    palette.secondary,
-    palette.primary,
-  ].filter(Boolean);
-
-  const rankedFallbacks = fallbackCandidates
-    .map(color => ({ color, contrast: getContrastRatio(color, darkCanvas) }))
-    .sort((a, b) => b.contrast - a.contrast);
-
-  return rankedFallbacks[0]?.color ?? palette.darkPrimary ?? '#F2F1EC';
-}
-
-function getDarkModeGlowCore(palette, accent) {
-  if (!accent || !palette?.primary) return '#FFFFFF';
-  if (!isWarmRedAccent(accent)) return '#FFFFFF';
-  if (palette.primary.toLowerCase() === accent.toLowerCase()) return '#FFFFFF';
-  return liftColorForDarkCanvas(palette.primary);
-}
-
-function getLightModeTintBase(palette) {
-  const primary = palette.primary;
-  const secondary = palette.secondary ?? primary;
-  const primaryChroma = getColorChroma(primary);
-  const secondaryChroma = getColorChroma(secondary);
-  const primaryLuminance = hexLuminance(primary);
-
-  if ((primaryLuminance < 0.1 || primaryChroma < 42) && secondaryChroma >= primaryChroma + 24) {
-    return secondary;
+  const averagesByPos = {};
+  for (const [position, values] of Object.entries(totalsByPos)) {
+    averagesByPos[position] = values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
   }
-
-  return primary;
-}
-
-function teamRowTheme(team, darkMode) {
-  const palette = getTeamPalette(team);
-  const logoKey = getTeamColorKey(team) ?? '';
-  if (!palette) {
-    return {
-      logoKey,
-      rowBg: 'var(--color-bg-secondary)',
-      hoverBg: 'var(--color-fill)',
-      accent: null,
-      glowCore: darkMode ? '#FFFFFF' : null,
-      avatarBorder: null,
-    };
-  }
-
-  const color = darkMode ? palette.darkPrimary : getLightModeTintBase(palette);
-  const isLight = hexLuminance(color) > 0.35;
-  const accent = darkMode
-    ? getDarkModeAccent(palette)
-    : (isLight ? darkenHex(color, 0.55) : color);
-
-  return {
-    logoKey,
-    rowBg: `${color}${isLight ? '54' : '48'}`,
-    hoverBg: `${color}${isLight ? '70' : '62'}`,
-    accent,
-    glowCore: darkMode ? getDarkModeGlowCore(palette, accent) : null,
-    avatarBorder: accent,
-  };
+  return addPositionAliases(averagesByPos);
 }
 
 export default function CompanionMatchup({
@@ -239,7 +179,7 @@ export default function CompanionMatchup({
   const { darkMode } = useTheme();
   const isCompactPhone = useMediaQuery(COMPACT_PHONE_QUERY);
   const {
-    sleeperUser, selectedLeagueId, league,
+    sleeperUser, selectedLeagueId, league, season,
     rosters, players, loadPlayers,
     weeklyStats, seasonStats, scheduleMap, loadSeasonStats,
     statsLoading, scoringSettings,
@@ -270,7 +210,8 @@ export default function CompanionMatchup({
 
   const [matchups, setMatchups] = useState(null);
   // Default to last regular-season week inside the league's actual fantasy season.
-  const [week, setWeek] = useState(() => selectedWeek ?? defaultWeek);
+  const [week, setWeek] = useState(() => clampMatchupWeek(selectedWeek, totalWeeks, defaultWeek));
+  const [requestedWeek, setRequestedWeek] = useState(() => clampMatchupWeek(selectedWeek, totalWeeks, defaultWeek));
   const [matchupLoading, setMatchupLoading] = useState(false);
   const [showBench, setShowBench] = useState(false);
   const [showWeekPicker, setShowWeekPicker] = useState(false);
@@ -282,61 +223,117 @@ export default function CompanionMatchup({
   const [isMineHeaderHovered, setIsMineHeaderHovered] = useState(false);
   const [isOppHeaderHovered, setIsOppHeaderHovered] = useState(false);
   const [insightsRequested, setInsightsRequested] = useState(false);
+  const weatherPendingKeysRef = useRef(new Set());
+  const advancedCacheRef = useRef({
+    positionalRanks: { key: '', value: {} },
+    weeklyRanks: { key: '', value: {} },
+    defenseTable: { key: '', value: null },
+    leagueAvgByPos: { key: '', value: {} },
+  });
+
+  useEffect(() => {
+    debugCompanionLog('Matchup mounted', {
+      selectedLeagueId,
+      season,
+      selectedWeek,
+      defaultWeek,
+      totalWeeks,
+    });
+    return () => debugCompanionLog('Matchup unmounted');
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadPlayers(); }, [loadPlayers]);
   useEffect(() => {
     if (insightsRequested || !selectedLeagueId) return undefined;
-
-    let timeoutId = null;
-    let idleId = null;
-    const requestInsights = () => setInsightsRequested(true);
-
-    if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
-      idleId = window.requestIdleCallback(requestInsights, { timeout: 600 });
-    } else {
-      timeoutId = window.setTimeout(requestInsights, 180);
-    }
-
-    return () => {
-      if (idleId != null && typeof window !== 'undefined' && typeof window.cancelIdleCallback === 'function') {
-        window.cancelIdleCallback(idleId);
-      }
-      if (timeoutId != null) {
-        window.clearTimeout(timeoutId);
-      }
-    };
+    debugCompanionLog('Matchup insights requested');
+    setInsightsRequested(true);
+    return undefined;
   }, [insightsRequested, selectedLeagueId]);
 
   useEffect(() => {
     if (!insightsRequested || seasonStats || statsLoading) return;
+    debugCompanionLog('Matchup season stats requested');
     loadSeasonStats();
   }, [insightsRequested, seasonStats, statsLoading, loadSeasonStats]);
 
   useEffect(() => {
     if (!selectedLeagueId) return;
+    const cacheKey = `${selectedLeagueId}|${requestedWeek}`;
+    if (MATCHUP_RESPONSE_CACHE.has(cacheKey)) {
+      debugCompanionLog('Matchup Sleeper matchups cache hit', { selectedLeagueId, week: requestedWeek });
+      setMatchups(MATCHUP_RESPONSE_CACHE.get(cacheKey));
+      setWeek(requestedWeek);
+      setMatchupLoading(false);
+      return;
+    }
+    if (MATCHUP_RESPONSE_IN_FLIGHT.has(cacheKey)) {
+      let cancelled = false;
+      debugCompanionLog('Matchup Sleeper matchups in-flight cache hit', { selectedLeagueId, week: requestedWeek });
+      setMatchupLoading(true);
+      MATCHUP_RESPONSE_IN_FLIGHT.get(cacheKey)
+        .then((data) => {
+          if (!cancelled) {
+            setMatchups(data);
+            setWeek(requestedWeek);
+            setMatchupLoading(false);
+          }
+        })
+        .finally(() => {
+          if (!cancelled) setMatchupLoading(false);
+        });
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    let cancelled = false;
     setMatchupLoading(true);
-    getMatchups(selectedLeagueId, week)
-      .then(data => setMatchups(data ?? []))
-      .catch(() => setMatchups([]))
-      .finally(() => setMatchupLoading(false));
-  }, [selectedLeagueId, week]);
+    const request = debugCompanionTimeAsync('Matchup Sleeper matchups fetch', () => (
+      getMatchups(selectedLeagueId, requestedWeek)
+    ), { selectedLeagueId, week: requestedWeek })
+      .then((data) => {
+        const nextMatchups = data ?? [];
+        MATCHUP_RESPONSE_CACHE.set(cacheKey, nextMatchups);
+        return nextMatchups;
+      })
+      .catch(() => {
+        MATCHUP_RESPONSE_CACHE.set(cacheKey, []);
+        return [];
+      })
+      .finally(() => {
+        MATCHUP_RESPONSE_IN_FLIGHT.delete(cacheKey);
+      });
+
+    MATCHUP_RESPONSE_IN_FLIGHT.set(cacheKey, request);
+    request
+      .then((data) => {
+        if (!cancelled) {
+          setMatchups(data);
+          setWeek(requestedWeek);
+          setMatchupLoading(false);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setMatchupLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedLeagueId, requestedWeek]);
 
   useEffect(() => {
     if (!initialWeekRequest?.week) return;
-    setWeek(Math.max(1, Math.min(totalWeeks, Number(initialWeekRequest.week) || 1)));
+    setRequestedWeek(clampMatchupWeek(initialWeekRequest.week, totalWeeks, 1));
   }, [initialWeekRequest, totalWeeks]);
 
   useEffect(() => {
     if (selectedWeek == null) return;
-    setWeek(Math.max(1, Math.min(totalWeeks, Number(selectedWeek) || defaultWeek)));
+    setRequestedWeek(clampMatchupWeek(selectedWeek, totalWeeks, defaultWeek));
   }, [selectedWeek, totalWeeks, defaultWeek]);
 
   useEffect(() => {
-    setWeek((prev) => {
-      const next = Number(prev);
-      if (!Number.isFinite(next)) return defaultWeek;
-      return Math.max(1, Math.min(totalWeeks, next));
-    });
+    setRequestedWeek(prev => clampMatchupWeek(prev, totalWeeks, defaultWeek));
   }, [defaultWeek, totalWeeks]);
 
   const myRosterData = myRoster();
@@ -365,10 +362,56 @@ export default function CompanionMatchup({
     if (!sleeperUser) return 'You';
     return getUserDisplayName(sleeperUser.user_id);
   }, [sleeperUser, getUserDisplayName]);
-  const hasAdvancedStats = Boolean(insightsRequested && weeklyStats && seasonStats && scheduleMap && players);
-  const isInsightsLoading = insightsRequested && (!hasAdvancedStats && (statsLoading || !seasonStats));
+  const hasAdvancedStats = Boolean(insightsRequested && weeklyStats && seasonStats && players);
+  const playerCount = players ? Object.keys(players).length : 0;
+  const seasonStatCount = seasonStats ? Object.keys(seasonStats).length : 0;
+  const weeklyStatCount = weeklyStats ? Object.keys(weeklyStats).length : 0;
+  const matchupDataCacheKey = useMemo(() => getMatchupDataCacheKey({
+    selectedLeagueId,
+    season,
+    week,
+    playerCount,
+    seasonStatCount,
+    weeklyStatCount,
+    scheduleMap,
+    scoringSettings,
+  }), [selectedLeagueId, season, week, playerCount, seasonStatCount, weeklyStatCount, scheduleMap, scoringSettings]);
   const myPointsMap = myMatchup?.players_points ?? {};
   const oppPointsMap = opponentMatchup?.players_points ?? {};
+
+  useEffect(() => {
+    debugCompanionLog('Matchup readiness', {
+      selectedLeagueId,
+      season,
+      week,
+      requestedWeek,
+      insightsRequested,
+      hasAdvancedStats,
+      statsLoading,
+      matchupLoading,
+      hasPlayers: playerCount > 0,
+      hasSeasonStats: Boolean(seasonStats),
+      hasWeeklyStats: Boolean(weeklyStats),
+      hasScheduleMap: Boolean(scheduleMap),
+      matchupCount: matchups?.length ?? 0,
+      rosterCount: rosters.length,
+    });
+  }, [
+    selectedLeagueId,
+    season,
+    week,
+    requestedWeek,
+    insightsRequested,
+    hasAdvancedStats,
+    statsLoading,
+    matchupLoading,
+    playerCount,
+    seasonStatCount,
+    weeklyStatCount,
+    scheduleMap,
+    matchups,
+    rosters.length,
+  ]);
 
   const matchupOutcome = useMemo(() => {
     const myPoints = myMatchup?.points ?? null;
@@ -406,35 +449,85 @@ export default function CompanionMatchup({
     coreColor: darkMode ? '#FFFFFF' : null,
     outerColor: oppHeaderGlowColor,
   });
+  const matchupHeaderNameLabels = useMemo(() => {
+    const labels = new Set([myName, opponentName]);
+    for (const roster of rosters) {
+      if (roster?.owner_id) labels.add(getUserDisplayName(roster.owner_id));
+    }
+    return Array.from(labels).filter(Boolean);
+  }, [myName, opponentName, rosters, getUserDisplayName]);
   const sharedTeamNameFontSize = useMemo(
-    () => getSharedHeaderTeamNameFontSize(myName, opponentName, isCompactPhone),
-    [myName, opponentName, isCompactPhone],
+    () => getSharedHeaderTeamNameFontSize(matchupHeaderNameLabels, isCompactPhone),
+    [matchupHeaderNameLabels, isCompactPhone],
   );
 
-  const positionalRanks = useMemo(
-    () => hasAdvancedStats ? computePositionalRanks(seasonStats, players, scoringSettings) : {},
-    [hasAdvancedStats, seasonStats, players, scoringSettings],
-  );
+  const positionalRanks = useMemo(() => {
+    if (!hasAdvancedStats) return {};
+    const cacheKey = `season|${matchupDataCacheKey}`;
+    if (advancedCacheRef.current.positionalRanks.key === cacheKey) {
+      debugCompanionLog('Matchup positional ranks cache hit', { seasonStatCount });
+      return advancedCacheRef.current.positionalRanks.value;
+    }
+    const nextRanks = debugCompanionMeasure('Matchup positional ranks', () => (
+      computePositionalRanks(seasonStats, players, scoringSettings)
+    ), {
+      playerDirectoryCount: playerCount,
+      seasonStatCount,
+    });
+    advancedCacheRef.current.positionalRanks = { key: cacheKey, value: nextRanks };
+    return nextRanks;
+  }, [hasAdvancedStats, seasonStats, players, scoringSettings, matchupDataCacheKey, playerCount, seasonStatCount]);
 
   const weeklyRanks = useMemo(() => {
     if (!hasAdvancedStats) return {};
-    return computeWeeklyPositionalRanks(weeklyStats, players, scoringSettings, week);
-  }, [hasAdvancedStats, weeklyStats, players, scoringSettings, week]);
+    const cacheKey = `week|${matchupDataCacheKey}`;
+    if (advancedCacheRef.current.weeklyRanks.key === cacheKey) {
+      debugCompanionLog('Matchup weekly ranks cache hit', { week, weeklyStatCount });
+      return advancedCacheRef.current.weeklyRanks.value;
+    }
+    const nextRanks = debugCompanionMeasure('Matchup weekly ranks', () => (
+      computeWeeklyPositionalRanks(weeklyStats, players, scoringSettings, week)
+    ), {
+      week,
+      weeklyStatCount,
+    });
+    advancedCacheRef.current.weeklyRanks = { key: cacheKey, value: nextRanks };
+    return nextRanks;
+  }, [hasAdvancedStats, weeklyStats, players, scoringSettings, week, matchupDataCacheKey, weeklyStatCount]);
 
   // Pre-computed defense table: { [teamAbbr]: { [normPos]: { [week]: totalPts } } }
   // Built once when all data is available; used for O(1) opponent strength lookups.
-  const defenseTable = useMemo(
-    () => hasAdvancedStats
-      ? buildDefenseTable(weeklyStats, players, scheduleMap, scoringSettings)
-      : null,
-    [hasAdvancedStats, weeklyStats, players, scheduleMap, scoringSettings],
-  );
-  const leagueAvgByPos = useMemo(
-    () => hasAdvancedStats
-      ? computeLeagueAvgPPGByPosition(weeklyStats, players, scoringSettings, week)
-      : {},
-    [hasAdvancedStats, weeklyStats, players, scoringSettings, week],
-  );
+  const defenseTable = useMemo(() => {
+    if (!hasAdvancedStats) return null;
+    const cacheKey = `defense|${matchupDataCacheKey}`;
+    if (advancedCacheRef.current.defenseTable.key === cacheKey) {
+      debugCompanionLog('Matchup defense table cache hit', { weeklyStatCount });
+      return advancedCacheRef.current.defenseTable.value;
+    }
+    const nextDefenseTable = debugCompanionMeasure('Matchup defense table', () => (
+      buildDefenseTable(weeklyStats, players, scheduleMap, scoringSettings, undefined, false, week)
+    ), {
+      playerDirectoryCount: playerCount,
+      weeklyStatCount,
+      beforeWeek: week,
+    });
+    advancedCacheRef.current.defenseTable = { key: cacheKey, value: nextDefenseTable };
+    return nextDefenseTable;
+  }, [hasAdvancedStats, weeklyStats, players, scheduleMap, scoringSettings, matchupDataCacheKey, playerCount, weeklyStatCount]);
+
+  const leagueAvgByPos = useMemo(() => {
+    if (!hasAdvancedStats || !defenseTable) return {};
+    const cacheKey = `leagueAvg|${matchupDataCacheKey}`;
+    if (advancedCacheRef.current.leagueAvgByPos.key === cacheKey) {
+      debugCompanionLog('Matchup league average PPG by position cache hit', { week });
+      return advancedCacheRef.current.leagueAvgByPos.value;
+    }
+    const nextLeagueAvgByPos = debugCompanionMeasure('Matchup league average PPG by position', () => (
+      computeLeagueAvgPPGByPositionFromDefenseTable(defenseTable, week)
+    ), { week });
+    advancedCacheRef.current.leagueAvgByPos = { key: cacheKey, value: nextLeagueAvgByPos };
+    return nextLeagueAvgByPos;
+  }, [hasAdvancedStats, defenseTable, week, matchupDataCacheKey]);
 
   const toCompareSeed = useCallback((player) => {
     if (!player?.id || !players) return null;
@@ -500,7 +593,7 @@ export default function CompanionMatchup({
       defStrength,
       defPercentile,
       isBye,
-      teamTheme: teamRowTheme(myTeam, darkMode),
+      teamTheme: getPlayerRowTeamTheme(myTeam, darkMode),
     };
   }, [players, hasAdvancedStats, weeklyStats, scoringSettings, positionalRanks, weeklyRanks, week, scheduleMap, defenseTable, darkMode]);
 
@@ -512,27 +605,44 @@ export default function CompanionMatchup({
 
   // Zip starters by slot index for side-by-side display
   const starterSlots = useMemo(() => {
-    const myIds = myMatchup?.starters ?? [];
-    const oppIds = opponentMatchup?.starters ?? [];
-    const len = Math.max(myIds.length, oppIds.length);
-    return Array.from({ length: len }, (_, i) => ({
-      mine: enrichPlayer(myIds[i], myPointsMap),
-      opp: enrichPlayer(oppIds[i], oppPointsMap),
-      slotPos: starterPositions[i] ?? null,
-    }));
+    return debugCompanionMeasure('Matchup starter slots enrich', () => {
+      const myIds = myMatchup?.starters ?? [];
+      const oppIds = opponentMatchup?.starters ?? [];
+      const len = Math.max(myIds.length, oppIds.length);
+      return Array.from({ length: len }, (_, i) => ({
+        mine: enrichPlayer(myIds[i], myPointsMap),
+        opp: enrichPlayer(oppIds[i], oppPointsMap),
+        slotPos: starterPositions[i] ?? null,
+      }));
+    }, {
+      week,
+      hasAdvancedStats,
+      myStarterCount: myMatchup?.starters?.length ?? 0,
+      oppStarterCount: opponentMatchup?.starters?.length ?? 0,
+    });
   }, [myMatchup, opponentMatchup, enrichPlayer, starterPositions, myPointsMap, oppPointsMap]);
 
   // Bench players
   const myBench = useMemo(() => {
     if (!myRosterData || !myMatchup) return [];
-    const starterSet = new Set(myMatchup.starters ?? []);
-    return (myRosterData.players ?? []).filter(id => !starterSet.has(id)).map(id => enrichPlayer(id, myPointsMap)).filter(Boolean);
+    return debugCompanionMeasure('Matchup my bench enrich', () => {
+      const starterSet = new Set(myMatchup.starters ?? []);
+      return (myRosterData.players ?? []).filter(id => !starterSet.has(id)).map(id => enrichPlayer(id, myPointsMap)).filter(Boolean);
+    }, {
+      rosterPlayerCount: myRosterData.players?.length ?? 0,
+      hasAdvancedStats,
+    });
   }, [myRosterData, myMatchup, enrichPlayer, myPointsMap]);
 
   const oppBench = useMemo(() => {
     if (!opponentRoster || !opponentMatchup) return [];
-    const starterSet = new Set(opponentMatchup.starters ?? []);
-    return (opponentRoster.players ?? []).filter(id => !starterSet.has(id)).map(id => enrichPlayer(id, oppPointsMap)).filter(Boolean);
+    return debugCompanionMeasure('Matchup opponent bench enrich', () => {
+      const starterSet = new Set(opponentMatchup.starters ?? []);
+      return (opponentRoster.players ?? []).filter(id => !starterSet.has(id)).map(id => enrichPlayer(id, oppPointsMap)).filter(Boolean);
+    }, {
+      rosterPlayerCount: opponentRoster.players?.length ?? 0,
+      hasAdvancedStats,
+    });
   }, [opponentRoster, opponentMatchup, enrichPlayer, oppPointsMap]);
 
   // Fetch weather for all outdoor home stadiums referenced by starters
@@ -551,7 +661,12 @@ export default function CompanionMatchup({
       const s = STADIUMS[player.homeTeam];
       if (s && !s.indoor) {
         const key = `${player.homeTeam}-${date}`;
-        if (!weatherMap[key]) toFetch.set(player.homeTeam, { lat: s.lat, lng: s.lng, key });
+        if (
+          !Object.prototype.hasOwnProperty.call(weatherMap, key)
+          && !weatherPendingKeysRef.current.has(key)
+        ) {
+          toFetch.set(player.homeTeam, { lat: s.lat, lng: s.lng, key });
+        }
       }
     }
 
@@ -559,19 +674,30 @@ export default function CompanionMatchup({
     if (!pending.length) return;
 
     let cancelled = false;
-    Promise.all(
+    for (const { key } of pending) {
+      weatherPendingKeysRef.current.add(key);
+    }
+    debugCompanionLog('Matchup weather fetch requested', {
+      week,
+      date,
+      requestCount: pending.length,
+      teams: pending.map(item => item.key),
+    });
+
+    debugCompanionTimeAsync('Matchup weather fetch batch', () => Promise.all(
       pending.map(({ lat, lng, key }) =>
         fetchGameWeather(lat, lng, date)
           .then((weather) => ({ key, weather }))
           .catch(() => ({ key, weather: null })),
       ),
-    ).then((results) => {
+    ), { week, requestCount: pending.length }).then((results) => {
+      for (const { key } of results) {
+        weatherPendingKeysRef.current.delete(key);
+      }
       if (cancelled) return;
-      const nextEntries = results.filter(({ weather }) => weather);
-      if (!nextEntries.length) return;
       setWeatherMap((prev) => {
         const next = { ...prev };
-        for (const { key, weather } of nextEntries) {
+        for (const { key, weather } of results) {
           next[key] = weather;
         }
         return next;
@@ -588,34 +714,40 @@ export default function CompanionMatchup({
     if (!hasAdvancedStats) return starterSlots;
     const date = WEEK_DATES_2025[week];
 
-    function addProjection(player) {
-      if (!player || !player.weekly?.length || player.name === 'Empty') return player;
-      const key = player.homeTeam && date ? `${player.homeTeam}-${date}` : null;
-      const weather = player.isIndoor ? null : (key ? (weatherMap[key] ?? null) : null);
-      const proj = projectPlayer({
-        weeklyArr: player.weekly,
-        pos: player.position,
-        oppTeam: player.oppTeam,
-        isHome: player.isHome,
-        isIndoor: player.isIndoor ?? false,
-        weather,
-        allWeeklyStats: weeklyStats,
-        players,
-        scoringSettings,
-        scheduleMap,
-        week,
-        defStrength: player.defStrength ?? null,
-        leagueAvg: leagueAvgByPos[player.position] ?? 0,
-        skipOpponentLookup: true,
-      });
-      return { ...player, projection: proj, weather };
-    }
+    return debugCompanionMeasure('Matchup starter projections', () => {
+      function addProjection(player) {
+        if (!player || !player.weekly?.length || player.name === 'Empty') return player;
+        const key = player.homeTeam && date ? `${player.homeTeam}-${date}` : null;
+        const weather = player.isIndoor ? null : (key ? (weatherMap[key] ?? null) : null);
+        const proj = projectPlayer({
+          weeklyArr: player.weekly,
+          pos: player.position,
+          oppTeam: player.oppTeam,
+          isHome: player.isHome,
+          isIndoor: player.isIndoor ?? false,
+          weather,
+          allWeeklyStats: weeklyStats,
+          players,
+          scoringSettings,
+          scheduleMap,
+          week,
+          defStrength: player.defStrength ?? null,
+          leagueAvg: leagueAvgByPos[player.position] ?? 0,
+          skipOpponentLookup: true,
+        });
+        return { ...player, projection: proj, weather };
+      }
 
-    return starterSlots.map(slot => ({
-      mine: addProjection(slot.mine),
-      opp: addProjection(slot.opp),
-      slotPos: slot.slotPos,
-    }));
+      return starterSlots.map(slot => ({
+        mine: addProjection(slot.mine),
+        opp: addProjection(slot.opp),
+        slotPos: slot.slotPos,
+      }));
+    }, {
+      week,
+      starterSlotCount: starterSlots.length,
+      weatherEntries: Object.keys(weatherMap).length,
+    });
   }, [hasAdvancedStats, starterSlots, weatherMap, week, weeklyStats, players, scoringSettings, scheduleMap, leagueAvgByPos]);
 
   const sharedPlayerNameFontSize = useMemo(() => {
@@ -649,33 +781,54 @@ export default function CompanionMatchup({
     onConsumeInitialWeekRequest?.();
   }, [enrichedSlots, initialWeekRequest, myBench, oppBench, onConsumeInitialWeekRequest, week]);
 
-  if (!matchups && !matchupLoading) {
-    return <EmptyState message="No matchup data available." />;
+  const hasLoadedMatchups = Array.isArray(matchups);
+  const hasNoMatchup = hasLoadedMatchups && !matchupLoading && !myMatchup;
+  const hasNoOpponentMatchup = hasLoadedMatchups && !matchupLoading && Boolean(myMatchup) && !opponentMatchup;
+  const hasStarterIds = (myMatchup?.starters?.length ?? 0) > 0 || (opponentMatchup?.starters?.length ?? 0) > 0;
+  const hasRenderableStarterRows = starterSlots.some((slot) => slot.mine || slot.opp);
+  const canKeepRenderedWeekDuringSwitch = requestedWeek !== week && hasLoadedMatchups && Boolean(myMatchup);
+  const isPreparingMatchupView = Boolean(selectedLeagueId)
+    && !hasNoMatchup
+    && !hasNoOpponentMatchup
+    && !canKeepRenderedWeekDuringSwitch
+    && (
+      matchupLoading
+      || !hasLoadedMatchups
+      || playerCount === 0
+      || !insightsRequested
+      || !hasAdvancedStats
+      || (hasStarterIds && !hasRenderableStarterRows)
+    );
+
+  if (!selectedLeagueId) {
+    return <EmptyState message="Connect a league to see matchup data." />;
+  }
+
+  if (hasNoMatchup) {
+    return <EmptyState message="No matchup found for this week." />;
+  }
+
+  if (hasNoOpponentMatchup) {
+    return <EmptyState message="No opponent matchup found for this week." />;
+  }
+
+  if (isPreparingMatchupView) {
+    return (
+      <div className="pb-6">
+        {statsLoading && (
+          <MatchupStatsLoadingBanner />
+        )}
+        <CompanionLoadingState
+          title="Preparing matchup..."
+          description="Fetching matchup data, player records, rankings, and projections before showing the page."
+        />
+      </div>
+    );
   }
 
   return (
     <div className="pb-6">
-      {statsLoading && (
-        <MatchupStatsLoadingBanner />
-      )}
-
-      {isInsightsLoading && !statsLoading && (
-        <div className="mx-4 mb-4 px-4 py-3 rounded-xl flex items-center gap-3" style={{ background: 'var(--color-fill)', border: '1px solid var(--color-separator)' }}>
-          <span className="text-xs shrink-0" style={{ color: 'var(--color-label-tertiary)' }}>
-            Preparing matchup insights…
-          </span>
-        </div>
-      )}
-
-      {matchupLoading ? (
-        <div className="flex items-center justify-center py-16">
-          <span className="text-sm" style={{ color: 'var(--color-label-secondary)' }}>Loading matchup…</span>
-        </div>
-      ) : !myMatchup ? (
-        <EmptyState message="No matchup found for this week." />
-        ) : (
-        <>
-          {/* Scoreboard header */}
+      {/* Scoreboard header */}
           <div className="mb-4">
             <div className={`mx-4 mb-3 flex items-center gap-3 ${isCompactPhone ? 'justify-between' : 'justify-start'}`}>
               <button
@@ -932,9 +1085,6 @@ export default function CompanionMatchup({
               })()}
             </>
           )}
-        </>
-      )}
-
       {selectedPlayer && (
         <PlayerMatchupBreakdown
           playerId={selectedPlayer.id}
@@ -954,8 +1104,10 @@ export default function CompanionMatchup({
           onOpenWeek={(playerId, requestedWeek) => {
             setSelectedRosterPlayerId(null);
             setSelectedPlayer(null);
-            setWeek(requestedWeek);
-            onWeekChange?.(requestedWeek);
+            const nextWeek = clampMatchupWeek(requestedWeek, totalWeeks, defaultWeek);
+            setRequestedWeek(nextWeek);
+            onWeekChange?.(nextWeek);
+            if (nextWeek !== week) return;
             const matchupPlayers = [
               ...enrichedSlots.flatMap((slot) => [slot.mine, slot.opp]),
               ...myBench,
@@ -1029,12 +1181,12 @@ export default function CompanionMatchup({
                   <button
                     key={w}
                     onClick={() => {
-                      setSelectedPlayer(null);
-                      setSelectedRosterPlayerId(null);
-                      setSelectedTeam(null);
-                      setWeek(w);
-                      onWeekChange?.(w);
-                      setShowWeekPicker(false);
+	                      setSelectedPlayer(null);
+	                      setSelectedRosterPlayerId(null);
+	                      setSelectedTeam(null);
+	                      setRequestedWeek(w);
+	                      onWeekChange?.(w);
+	                      setShowWeekPicker(false);
                     }}
                     className="px-2 py-1.5 text-xs font-bold uppercase tracking-[0.18em] active:opacity-60 grid place-items-center"
                     style={{
@@ -1085,8 +1237,8 @@ function HeadToHeadRow({ mine, opp, bench, slotPos, onSelectMine, onSelectOpp, o
   const [isOppHovered, setIsOppHovered] = useState(false);
   const slotLabel = slotPos ? (SLOT_LABELS[slotPos] ?? slotPos) : (mine?.position ?? opp?.position ?? '?');
   const posColor = POSITION_COLORS[slotPos] ?? POSITION_COLORS[mine?.position ?? opp?.position] ?? 'var(--color-label-tertiary)';
-  const mineTheme = mine?.teamTheme ?? teamRowTheme('', darkMode);
-  const oppTheme = opp?.teamTheme ?? teamRowTheme('', darkMode);
+  const mineTheme = mine?.teamTheme ?? getPlayerRowTeamTheme('', darkMode);
+  const oppTheme = opp?.teamTheme ?? getPlayerRowTeamTheme('', darkMode);
   const mineGlowColor = mineTheme.accent ?? (darkMode ? '#5AADFF' : '#1A6EFF');
   const oppGlowColor = oppTheme.accent ?? (darkMode ? '#5AADFF' : '#1A6EFF');
   const mineGlow = useCardGlow({

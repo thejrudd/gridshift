@@ -4,13 +4,12 @@
 import { useMemo } from 'react';
 import { getPicksForRoster, getPickQuality, pickYearDiscount } from '../../utils/tradeEngine';
 import { findKtcDraftPick, getKtcValue, fmtKtcValue } from '../../utils/ktcApi';
+import { compareDraftPickAssets, getDraftPickDisplayInfo } from '../../utils/draftPickDisplay';
 import useBodyScrollLock from '../../hooks/useBodyScrollLock';
-
-const ORDINALS = { 1: '1st', 2: '2nd', 3: '3rd', 4: '4th', 5: '5th' };
 
 export default function TradePickPicker({
   rosterId, rosterPicks, slots, rosters, ktcPlayers, leagueType, pickValueMap, currentSeason,
-  excludeKeys, getUserDisplayName, currentTotal, onSelect, onClose,
+  league = null, drafts = [], excludeKeys, getUserDisplayName, currentTotal, onSelect, onClose,
 }) {
   useBodyScrollLock();
 
@@ -21,27 +20,35 @@ export default function TradePickPicker({
     return owned
       .filter(p => !excludeSet.has(p.key))
       .map(p => {
-        const quality = getPickQuality(p.fromRosterId, rosters);
+        const displayInfo = getDraftPickDisplayInfo(p, { league, rosters, drafts, currentSeason });
+        const quality = displayInfo.valueQuality ?? getPickQuality(p.fromRosterId, rosters);
         const tierVal = pickValueMap?.[p.round] != null
           ? (pickValueMap[p.round][quality] ?? pickValueMap[p.round].Mid ?? null)
           : null;
         const val = tierVal != null
           ? Math.round(tierVal * pickYearDiscount(p.year, currentSeason))
           : getKtcValue(findKtcDraftPick(p.year, p.round, quality, ktcPlayers), leagueType);
-        const ord = ORDINALS[p.round] ?? `${p.round}th`;
         const originLabel = p.isOwn ? '(Own)' : `(from ${getUserDisplayName(
           rosters.find(r => r.roster_id === p.fromRosterId)?.owner_id ?? ''
         )})`;
         return {
           ...p,
-          quality,
-          ord,
+          quality: displayInfo.quality ?? quality,
+          valueQuality: quality,
           originLabel,
           val,
-          label: `${p.year} ${quality} ${ord}`,
+          label: displayInfo.label,
+          displayMode: displayInfo.displayMode,
+          lockedSlot: displayInfo.lockedSlot ?? null,
+          pickNumberLabel: displayInfo.pickNumberLabel ?? null,
+          pickRangeLabel: displayInfo.pickRangeLabel ?? null,
+          cardHeadline: displayInfo.cardHeadline ?? null,
+          cardMetaLabel: displayInfo.cardMetaLabel ?? null,
+          sortSlot: displayInfo.sortSlot ?? null,
         };
-      });
-  }, [rosterId, rosterPicks, slots, excludeSet, rosters, ktcPlayers, leagueType, getUserDisplayName]);
+      })
+      .sort(compareDraftPickAssets);
+  }, [rosterId, rosterPicks, slots, excludeSet, rosters, ktcPlayers, leagueType, pickValueMap, currentSeason, league, drafts, getUserDisplayName]);
 
   // Group by year
   const grouped = useMemo(() => {

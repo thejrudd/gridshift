@@ -32,14 +32,16 @@ import { TEAM_COLORS } from '../../data/teamColors';
 import { calcPointsFromTotals } from '../../utils/scoringEngine';
 import { formatScoringSettingValue } from '../../utils/scoringDisplay';
 import { detectLeagueDefensiveType, normalizeIDPPos } from '../../utils/idpEngine';
-import { buildPartnerTradeIntelligence, findLeagueWideUpgradeGroups } from '../../utils/opportunityEngine';
+import { buildPartnerTradeIntelligence, buildRosterOpportunityLayer, findLeagueWideUpgradeGroups } from '../../utils/opportunityEngine';
 import { buildTradeAnalyticsSnapshot } from '../../utils/tradeAnalytics';
 import { computeTradePlayerValueDetail } from '../../utils/tradeValue';
+import { compareDraftPickAssets, getDraftPickDisplayInfo } from '../../utils/draftPickDisplay';
 import TradeRosterPicker from './TradeRosterPicker';
 import TradePickPicker from './TradePickPicker';
 import PlayerStatsModal from '../PlayerStatsModal';
 import useCardGlow from '../../hooks/useCardGlow.jsx';
 import useBodyScrollLock from '../../hooks/useBodyScrollLock';
+import useMediaQuery from '../../hooks/useMediaQuery.js';
 
 const UPGRADE_TRADE_POSTURES = [
   { level: 0, label: 'Underpay', description: 'Try to buy low' },
@@ -159,6 +161,72 @@ function scheduleDeferredTradeTask(callback, timeout = 240) {
   return () => window.clearTimeout(timerId);
 }
 
+const TRADE_OPPORTUNITY_LAYER_CACHE_LIMIT = 8;
+const tradeOpportunityLayerCache = new Map();
+
+function stableShallowObjectSignature(value) {
+  if (!value || typeof value !== 'object') return '';
+  return Object.keys(value)
+    .sort()
+    .map((key) => `${key}:${value[key]}`)
+    .join(',');
+}
+
+function buildRosterSignature(rosters) {
+  return (rosters ?? [])
+    .map((roster) => [
+      roster.roster_id,
+      roster.owner_id ?? '',
+      ...(roster.players ?? []),
+      '|',
+      ...(roster.reserve ?? []),
+    ].join(':'))
+    .join(';');
+}
+
+function buildTradeOpportunityLayerCacheKey({
+  selectedLeagueId,
+  season,
+  league,
+  rosters,
+  players,
+  seasonStats,
+  weeklyStats,
+  scoringSettings,
+  myRosterId,
+}) {
+  return [
+    selectedLeagueId ?? league?.league_id ?? '',
+    season ?? league?.season ?? '',
+    myRosterId ?? '',
+    (league?.roster_positions ?? []).join(','),
+    buildRosterSignature(rosters),
+    players ? Object.keys(players).length : 0,
+    seasonStats ? Object.keys(seasonStats).length : 0,
+    weeklyStats ? Object.keys(weeklyStats).length : 0,
+    stableShallowObjectSignature(scoringSettings),
+  ].join('||');
+}
+
+function getCachedTradeOpportunityLayer(cacheKey, buildLayer) {
+  if (tradeOpportunityLayerCache.has(cacheKey)) {
+    const cached = tradeOpportunityLayerCache.get(cacheKey);
+    tradeOpportunityLayerCache.delete(cacheKey);
+    tradeOpportunityLayerCache.set(cacheKey, cached);
+    return cached;
+  }
+
+  const layer = buildLayer();
+  tradeOpportunityLayerCache.set(cacheKey, layer);
+
+  while (tradeOpportunityLayerCache.size > TRADE_OPPORTUNITY_LAYER_CACHE_LIMIT) {
+    const oldestKey = tradeOpportunityLayerCache.keys().next().value;
+    tradeOpportunityLayerCache.delete(oldestKey);
+  }
+
+  return layer;
+}
+
 function buildUpgradeSearchRequest({
   targetPlayerId,
   allowedOutgoingPlayerIds,
@@ -253,6 +321,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
 
   // Draft picks data
   const [tradedPicks, setTradedPicks] = useState(null);
+  const [leagueDrafts, setLeagueDrafts] = useState([]);
   const [draftRounds, setDraftRounds] = useState(null);
 
   // Picker state
@@ -271,10 +340,12 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
   const [upgradeAllowIncomingPicks, setUpgradeAllowIncomingPicks] = useState(false);
   const [submittedUpgradeSearch, setSubmittedUpgradeSearch] = useState(null);
   const [tradeProposalMode, setTradeProposalMode] = useState('needs');
+  const [proposalFilters, setProposalFilters] = useState(DEFAULT_PROPOSAL_FILTERS);
   const [statsModalPlayer, setStatsModalPlayer] = useState(null);
   const [statsRequested, setStatsRequested] = useState(() => view === 'intelligence' || view === 'upgrade');
   const [tradeAnalyticsRequested, setTradeAnalyticsRequested] = useState(() => view === 'intelligence' || view === 'upgrade');
   const [tradeIntelligence, setTradeIntelligence] = useState(null);
+  const [tradeIntelligencePartnerId, setTradeIntelligencePartnerId] = useState(null);
   const [upgradeSearchResults, setUpgradeSearchResults] = useState(null);
   const tradeIntelligenceCacheRef = useRef(new Map());
   const upgradeSearchCacheRef = useRef(new Map());
@@ -338,6 +409,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
       getLeagueDrafts(selectedLeagueId).catch(() => []),
     ]).then(([picks, drafts]) => {
       setTradedPicks(picks ?? []);
+      setLeagueDrafts(drafts ?? []);
       const maxFromDrafts = (drafts ?? []).reduce((max, d) => Math.max(max, d.settings?.rounds ?? 0), 0);
       setDraftRounds(maxFromDrafts || null);
     });
@@ -513,20 +585,20 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
 
   const tradeAnalyticsReady = Boolean(tradeAnalyticsRequested && sleeperPlayers && seasonStats && weeklyStats);
   const tradeAnalyticsSnapshot = useMemo(() => buildTradeAnalyticsSnapshot({
-    league,
-    rosters,
-    players: sleeperPlayers,
-    seasonStats,
-    weeklyStats: analyticsWeeklyStats,
-    scoringSettings,
-    scheduleMap: null,
-    myRosterId: myRosterData?.roster_id ?? null,
-    adjustedKtcPlayers,
-    adjustedDynastyKtcPlayers,
-    leagueType,
-    includePlayerTradeValues: tradeAnalyticsReady,
-    includeOpportunityLayer: tradeAnalyticsReady,
-  }), [
+      league,
+      rosters,
+      players: sleeperPlayers,
+      seasonStats,
+      weeklyStats: analyticsWeeklyStats,
+      scoringSettings,
+      scheduleMap: null,
+      myRosterId: myRosterData?.roster_id ?? null,
+      adjustedKtcPlayers,
+      adjustedDynastyKtcPlayers,
+      leagueType,
+      includePlayerTradeValues: tradeAnalyticsReady,
+      includeOpportunityLayer: false,
+    }), [
     league,
     rosters,
     sleeperPlayers,
@@ -549,8 +621,60 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
     mergedIDPMap,
     playerTradeValueDetailsMap,
     playerTradeValueMap,
-    opportunityLayer,
   } = tradeAnalyticsSnapshot;
+  const tradeOpportunityLayerCacheKey = useMemo(() => {
+    if (!tradeAnalyticsReady) return null;
+    return buildTradeOpportunityLayerCacheKey({
+      selectedLeagueId,
+      season,
+      league,
+      rosters,
+      players: sleeperPlayers,
+      seasonStats,
+      weeklyStats: analyticsWeeklyStats,
+      scoringSettings,
+      myRosterId: myRosterData?.roster_id ?? null,
+    });
+  }, [
+    tradeAnalyticsReady,
+    selectedLeagueId,
+    season,
+    league,
+    rosters,
+    sleeperPlayers,
+    seasonStats,
+    analyticsWeeklyStats,
+    scoringSettings,
+    myRosterData?.roster_id,
+  ]);
+  const opportunityLayer = useMemo(() => {
+    if (!tradeOpportunityLayerCacheKey) return null;
+    return getCachedTradeOpportunityLayer(
+      tradeOpportunityLayerCacheKey,
+      () => buildRosterOpportunityLayer({
+        league,
+        rosters,
+        players: sleeperPlayers,
+        seasonStats,
+        weeklyStats: analyticsWeeklyStats,
+        scoringSettings,
+        scheduleMap: null,
+        myRosterId: myRosterData?.roster_id ?? null,
+        targetRosterIds: null,
+        rankMap,
+      }),
+    );
+  }, [
+    tradeOpportunityLayerCacheKey,
+    league,
+    rosters,
+    sleeperPlayers,
+    seasonStats,
+    analyticsWeeklyStats,
+    scoringSettings,
+    myRosterData?.roster_id,
+    rankMap,
+  ]);
   const isTradeAnalyticsLoading = Boolean(
     wantsTradeAnalytics && (
       !statsRequested
@@ -564,11 +688,15 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
   useEffect(() => {
     tradeIntelligenceCacheRef.current.clear();
     setTradeIntelligence(null);
-  }, [selectedLeagueId, season, opportunityLayer, playerTradeValueMap, pickValueMap, rosterPicks, slots]);
+    setTradeIntelligencePartnerId(null);
+  }, [selectedLeagueId, season, opportunityLayer, playerTradeValueMap, pickValueMap, rosterPicks, slots, league, leagueDrafts]);
 
   useEffect(() => {
     if (!deferredPartnerRosterId || !opportunityLayer || !playerTradeValueMap) {
-      if (showIntelligence) setTradeIntelligence(null);
+      if (showIntelligence) {
+        setTradeIntelligence(null);
+        setTradeIntelligencePartnerId(null);
+      }
       return undefined;
     }
 
@@ -577,30 +705,30 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
     if (cached) {
       if (showIntelligence) {
         setTradeIntelligence((prev) => (prev === cached ? prev : cached));
+        setTradeIntelligencePartnerId(cacheKey);
       }
       return undefined;
-    }
-
-    if (showIntelligence) {
-      setTradeIntelligence(null);
     }
 
     let cancelled = false;
     const cancelTask = scheduleDeferredTradeTask(() => {
       const next = buildPartnerTradeIntelligence({
-        opportunityLayer,
-        selectedPartnerRosterId: deferredPartnerRosterId ?? null,
-        rosterPicks,
-        slots,
-        currentSeason: season,
-        pickValueMap,
-        playerValueMap: playerTradeValueMap,
-      });
+          opportunityLayer,
+          selectedPartnerRosterId: deferredPartnerRosterId ?? null,
+          rosterPicks,
+          slots,
+          league,
+          drafts: leagueDrafts,
+          currentSeason: season,
+          pickValueMap,
+          playerValueMap: playerTradeValueMap,
+        });
       if (cancelled) return;
       tradeIntelligenceCacheRef.current.set(cacheKey, next);
       if (!showIntelligence) return;
       startTradeIntelligenceTransition(() => {
         setTradeIntelligence(next);
+        setTradeIntelligencePartnerId(cacheKey);
       });
     }, showIntelligence ? 180 : 520);
 
@@ -608,10 +736,18 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
       cancelled = true;
       cancelTask?.();
     };
-  }, [showIntelligence, opportunityLayer, deferredPartnerRosterId, rosterPicks, slots, season, pickValueMap, playerTradeValueMap, startTradeIntelligenceTransition, selectedLeagueId]);
+  }, [showIntelligence, opportunityLayer, deferredPartnerRosterId, rosterPicks, slots, league, leagueDrafts, season, pickValueMap, playerTradeValueMap, startTradeIntelligenceTransition, selectedLeagueId]);
 
+  const selectedTradePartnerKey = partnerRosterId == null ? null : String(partnerRosterId);
+  const loadedTradePartnerKey = tradeIntelligencePartnerId == null ? null : String(tradeIntelligencePartnerId);
+  const hasCurrentPartnerTradeIntelligence = Boolean(
+    tradeIntelligence && selectedTradePartnerKey && selectedTradePartnerKey === loadedTradePartnerKey,
+  );
   const tradeProposals = tradeIntelligence?.tradeProposals ?? [];
   const surplusTradeProposals = tradeIntelligence?.surplusTradeProposals ?? [];
+  const isTradeIntelligenceShowingStaleResults = Boolean(
+    tradeIntelligence && selectedTradePartnerKey && loadedTradePartnerKey && selectedTradePartnerKey !== loadedTradePartnerKey,
+  );
 
   const resolvePlayerModalMeta = useCallback((player) => {
     if (!player?.id || !sleeperPlayers) return null;
@@ -674,7 +810,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
   useEffect(() => {
     upgradeSearchCacheRef.current.clear();
     setUpgradeSearchResults(null);
-  }, [selectedLeagueId, season, opportunityLayer, playerTradeValueMap, pickValueMap, rosterPicks, slots]);
+  }, [selectedLeagueId, season, opportunityLayer, playerTradeValueMap, pickValueMap, rosterPicks, slots, league, leagueDrafts]);
 
   useEffect(() => {
     if (!submittedUpgradeSearch?.targetPlayerId || !opportunityLayer || !playerTradeValueMap || !upgradeSearchCacheKey) {
@@ -691,19 +827,21 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
     let cancelled = false;
     const cancelTask = scheduleDeferredTradeTask(() => {
       const next = findLeagueWideUpgradeGroups({
-        opportunityLayer,
-        targetPlayerId: submittedUpgradeSearch.targetPlayerId,
-        allowedOutgoingPlayerIds: submittedUpgradeSearch.allowedOutgoingPlayerIds,
-        tradePostureLevel: submittedUpgradeSearch.tradePostureLevel,
-        allowPackages: submittedUpgradeSearch.allowPackages,
-        allowOutgoingPicks: submittedUpgradeSearch.allowOutgoingPicks,
-        allowIncomingPicks: submittedUpgradeSearch.allowIncomingPicks,
-        rosterPicks,
-        slots,
-        currentSeason: season,
-        pickValueMap,
-        playerValueMap: playerTradeValueMap,
-      });
+          opportunityLayer,
+          targetPlayerId: submittedUpgradeSearch.targetPlayerId,
+          allowedOutgoingPlayerIds: submittedUpgradeSearch.allowedOutgoingPlayerIds,
+          tradePostureLevel: submittedUpgradeSearch.tradePostureLevel,
+          allowPackages: submittedUpgradeSearch.allowPackages,
+          allowOutgoingPicks: submittedUpgradeSearch.allowOutgoingPicks,
+          allowIncomingPicks: submittedUpgradeSearch.allowIncomingPicks,
+          rosterPicks,
+          slots,
+          league,
+          drafts: leagueDrafts,
+          currentSeason: season,
+          pickValueMap,
+          playerValueMap: playerTradeValueMap,
+        });
       if (cancelled) return;
       upgradeSearchCacheRef.current.set(upgradeSearchCacheKey, next);
       startUpgradeResultsTransition(() => {
@@ -715,7 +853,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
       cancelled = true;
       cancelTask?.();
     };
-  }, [submittedUpgradeSearch, upgradeSearchCacheKey, opportunityLayer, rosterPicks, slots, season, pickValueMap, playerTradeValueMap, startUpgradeResultsTransition]);
+  }, [submittedUpgradeSearch, upgradeSearchCacheKey, opportunityLayer, rosterPicks, slots, league, leagueDrafts, season, pickValueMap, playerTradeValueMap, startUpgradeResultsTransition]);
 
   useEffect(() => {
     if (!showUpgrade || !currentUpgradeSearchRequest || !currentUpgradeSearchCacheKey) return undefined;
@@ -726,19 +864,21 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
     let cancelled = false;
     const cancelTask = scheduleDeferredTradeTask(() => {
       const next = findLeagueWideUpgradeGroups({
-        opportunityLayer,
-        targetPlayerId: currentUpgradeSearchRequest.targetPlayerId,
-        allowedOutgoingPlayerIds: currentUpgradeSearchRequest.allowedOutgoingPlayerIds,
-        tradePostureLevel: currentUpgradeSearchRequest.tradePostureLevel,
-        allowPackages: currentUpgradeSearchRequest.allowPackages,
-        allowOutgoingPicks: currentUpgradeSearchRequest.allowOutgoingPicks,
-        allowIncomingPicks: currentUpgradeSearchRequest.allowIncomingPicks,
-        rosterPicks,
-        slots,
-        currentSeason: season,
-        pickValueMap,
-        playerValueMap: playerTradeValueMap,
-      });
+          opportunityLayer,
+          targetPlayerId: currentUpgradeSearchRequest.targetPlayerId,
+          allowedOutgoingPlayerIds: currentUpgradeSearchRequest.allowedOutgoingPlayerIds,
+          tradePostureLevel: currentUpgradeSearchRequest.tradePostureLevel,
+          allowPackages: currentUpgradeSearchRequest.allowPackages,
+          allowOutgoingPicks: currentUpgradeSearchRequest.allowOutgoingPicks,
+          allowIncomingPicks: currentUpgradeSearchRequest.allowIncomingPicks,
+          rosterPicks,
+          slots,
+          league,
+          drafts: leagueDrafts,
+          currentSeason: season,
+          pickValueMap,
+          playerValueMap: playerTradeValueMap,
+        });
       if (cancelled) return;
       upgradeSearchCacheRef.current.set(currentUpgradeSearchCacheKey, next);
     }, 480);
@@ -755,6 +895,8 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
     playerTradeValueMap,
     rosterPicks,
     slots,
+    league,
+    leagueDrafts,
     season,
     pickValueMap,
   ]);
@@ -805,17 +947,17 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
   // even if KTC hasn't resolved yet (values show "—" until KTC finishes).
   const yourSide = useMemo(() => {
     if (!showTradeBuilder || !sleeperPlayers) return { total: 0, items: [] };
-    const side = valueSide(yourPlayers, yourPicks, sleeperPlayers, adjustedKtcPlayers ?? [], leagueType, rosters, pickValueMap, season, adjustedDynastyKtcPlayers, mergedIDPMap, playerTradeValueDetailsMap);
+    const side = valueSide(yourPlayers, yourPicks, sleeperPlayers, adjustedKtcPlayers ?? [], leagueType, rosters, pickValueMap, season, adjustedDynastyKtcPlayers, mergedIDPMap, playerTradeValueDetailsMap, league, leagueDrafts);
     return enrichItems(side);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showTradeBuilder, yourPlayers, yourPicks, sleeperPlayers, adjustedKtcPlayers, adjustedDynastyKtcPlayers, mergedIDPMap, leagueType, rosters, pickValueMap, season, playerTradeValueDetailsMap, playerTradeValueMap, positionalAvgPPG, positionalValuePerPPG, leagueAvgMult, rankMap]);
+  }, [showTradeBuilder, yourPlayers, yourPicks, sleeperPlayers, adjustedKtcPlayers, adjustedDynastyKtcPlayers, mergedIDPMap, leagueType, rosters, pickValueMap, season, league, leagueDrafts, playerTradeValueDetailsMap, playerTradeValueMap, positionalAvgPPG, positionalValuePerPPG, leagueAvgMult, rankMap]);
 
   const theirSide = useMemo(() => {
     if (!showTradeBuilder || !sleeperPlayers) return { total: 0, items: [] };
-    const side = valueSide(theirPlayers, theirPicks, sleeperPlayers, adjustedKtcPlayers ?? [], leagueType, rosters, pickValueMap, season, adjustedDynastyKtcPlayers, mergedIDPMap, playerTradeValueDetailsMap);
+    const side = valueSide(theirPlayers, theirPicks, sleeperPlayers, adjustedKtcPlayers ?? [], leagueType, rosters, pickValueMap, season, adjustedDynastyKtcPlayers, mergedIDPMap, playerTradeValueDetailsMap, league, leagueDrafts);
     return enrichItems(side);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showTradeBuilder, theirPlayers, theirPicks, sleeperPlayers, adjustedKtcPlayers, adjustedDynastyKtcPlayers, mergedIDPMap, leagueType, rosters, pickValueMap, season, playerTradeValueDetailsMap, playerTradeValueMap, positionalAvgPPG, positionalValuePerPPG, leagueAvgMult, rankMap]);
+  }, [showTradeBuilder, theirPlayers, theirPicks, sleeperPlayers, adjustedKtcPlayers, adjustedDynastyKtcPlayers, mergedIDPMap, leagueType, rosters, pickValueMap, season, league, leagueDrafts, playerTradeValueDetailsMap, playerTradeValueMap, positionalAvgPPG, positionalValuePerPPG, leagueAvgMult, rankMap]);
 
   const verdict = useMemo(
     () => evaluateTrade(yourSide.total, theirSide.total),
@@ -836,6 +978,8 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
       rankMap,
       idpValueMap: mergedIDPMap,
       playerTradeValueDetailsMap,
+      league,
+      drafts: leagueDrafts,
     };
 
     return {
@@ -888,6 +1032,8 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
     slots,
     pickValueMap,
     season,
+    league,
+    leagueDrafts,
   ]);
 
   // ── Actions ─────────────────────────────────────────────────────────────────
@@ -1048,9 +1194,14 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
     startUpgradeSearchTransition,
   ]);
 
-  const isTradeIntelligenceLoading = isTradeAnalyticsLoading || Boolean(
-    showIntelligence && partnerRosterId && opportunityLayer && playerTradeValueMap && !tradeIntelligence,
-  ) || isTradeIntelligencePending;
+  const isTradeIntelligenceLoading = false;
+  const isTradeIntelligencePreparingPartner = isTradeAnalyticsLoading || Boolean(
+    showIntelligence
+      && partnerRosterId
+      && opportunityLayer
+      && playerTradeValueMap
+      && !hasCurrentPartnerTradeIntelligence,
+  ) || isTradeIntelligencePending || isPartnerSwitchPending;
   const isUpgradeSearchDirty = Boolean(
     submittedUpgradeSearch && !areUpgradeSearchRequestsEqual(submittedUpgradeSearch, currentUpgradeSearchRequest),
   );
@@ -1169,6 +1320,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
               return (
                 <button
                   key={roster.roster_id}
+                  type="button"
                   onClick={() => {
                     if (roster.roster_id !== partnerRosterId) {
                       switchPartnerTradeContext(roster.roster_id);
@@ -1177,9 +1329,8 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl transition-colors shrink-0"
                   style={{
                     background: isSelected ? 'var(--color-signature)' : 'var(--color-fill)',
-                    opacity: isPartnerSwitchPending && isSelected ? 0.72 : 1,
                     color: isSelected ? 'var(--color-signature-fg)' : 'var(--color-label-secondary)',
-                    fontWeight: isSelected ? 700 : 500,
+                    fontWeight: 700,
                   }}
                 >
                   {avatarHash ? (
@@ -1481,9 +1632,13 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
               tradeProposals={tradeProposals}
               surplusTradeProposals={surplusTradeProposals}
               activeMode={tradeProposalMode}
+              proposalFilters={proposalFilters}
+              onProposalFiltersChange={setProposalFilters}
               onModeChange={setTradeProposalMode}
               onApplyProposal={applyTradeProposal}
               onOpenPlayer={openStatsModalForPlayer}
+              isPreparingPartner={isTradeIntelligencePreparingPartner}
+              isShowingStaleResults={isTradeIntelligenceShowingStaleResults}
             />
           )}
         </div>
@@ -1543,6 +1698,8 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
           leagueType={leagueType}
           pickValueMap={pickValueMap}
           currentSeason={season}
+          league={league}
+          drafts={leagueDrafts}
           excludeKeys={(pickerOpen.side === 'yours' ? yourPicks : theirPicks).map(p => p.key)}
           getUserDisplayName={getUserDisplayName}
           currentTotal={pickerOpen.side === 'yours' ? yourSide.total : theirSide.total}
@@ -1563,18 +1720,20 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
           rosterPicks={rosterPicks}
           slots={slots}
           season={season}
-      pickValueMap={pickValueMap}
-      rosters={rosters}
-      ownerNameByRosterId={ownerNameByRosterId}
-      seasonStats={seasonStats}
-      scoringSettings={scoringSettings}
-      positionalAvgPPG={positionalAvgPPG}
-      positionalValuePerPPG={positionalValuePerPPG}
-      rankMap={rankMap}
-      playerTradeValueDetailsMap={playerTradeValueDetailsMap}
-      theirPlayers={theirPlayers}
-      theirPicks={theirPicks}
-      theirSideItems={theirSide.items}
+          league={league}
+          drafts={leagueDrafts}
+          pickValueMap={pickValueMap}
+          rosters={rosters}
+          ownerNameByRosterId={ownerNameByRosterId}
+          seasonStats={seasonStats}
+          scoringSettings={scoringSettings}
+          positionalAvgPPG={positionalAvgPPG}
+          positionalValuePerPPG={positionalValuePerPPG}
+          rankMap={rankMap}
+          playerTradeValueDetailsMap={playerTradeValueDetailsMap}
+          theirPlayers={theirPlayers}
+          theirPicks={theirPicks}
+          theirSideItems={theirSide.items}
           mergedIDPMap={mergedIDPMap}
           hasIDP={hasIDP}
           hasDST={hasDST}
@@ -1712,7 +1871,7 @@ function TradeSideAssetRow({ item, palette, darkMode, onOpenPlayer, onRemove }) 
         <img src={`https://sleepercdn.com/content/nfl/players/thumb/${item.id}.jpg`}
           alt="" className="hidden lg:block w-7 h-7 rounded-full shrink-0 object-cover"
           style={{ background: 'var(--color-fill-secondary)' }}
-          loading="lazy"
+          loading="eager"
           decoding="async"
           onError={e => { e.target.style.display = 'none'; }} />
       )}
@@ -1729,7 +1888,7 @@ function TradeSideAssetRow({ item, palette, darkMode, onOpenPlayer, onRemove }) 
             aria-hidden="true"
             className="hidden lg:block absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none select-none"
             style={{ width: 32, height: 32, objectFit: 'contain', opacity: 0.12 }}
-            loading="lazy"
+            loading="eager"
             decoding="async"
             onError={e => { e.target.style.display = 'none'; }}
           />
@@ -1876,7 +2035,7 @@ const CARD_STAT_DEFS = {
 };
 
 // Portrait trading card for one asset in a proposal side.
-function ProposalPlayerCard({ player = null, palette = null, pick = null, side, seasonStats, showSideBadge = true, forcedHeight = null, cardRef = null, topRightSlot = null, onClick = null }) {
+function ProposalPlayerCard({ player = null, palette = null, pick = null, side, seasonStats, showSideBadge = true, forcedHeight = null, cardRef = null, topRightSlot = null, onClick = null, compactTradeCard = false }) {
   const primary = player ?? null;
   const primaryPalette = palette ?? null;
   const primaryPick = pick ?? null;
@@ -1901,14 +2060,18 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
   const playerStats = primary ? seasonStats?.[primary.id] : null;
   const statPosition = primary ? (normalizeIDPPos(primary.position) ?? primary.position) : null;
   const statDefs = statPosition ? (CARD_STAT_DEFS[statPosition] ?? []) : [];
+  const visibleStatDefs = compactTradeCard ? statDefs.slice(0, 2) : statDefs;
 
   const fmtStat = (v) => v == null ? '—' : (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(Math.round(v)));
+  const playerImageSrc = primary
+    ? `https://sleepercdn.com/content/nfl/players/thumb/${primary.id}.jpg`
+    : null;
 
   // ── Pick-only card ──────────────────────────────────────────────────────
   if (!primary && primaryPick) {
     const pickOrdinals = { 1: '1st', 2: '2nd', 3: '3rd', 4: '4th', 5: '5th' };
     const roundOrd = pickOrdinals[primaryPick.round] ?? `${primaryPick.round}th`;
-    const quality = primaryPick.quality ?? '';
+    const quality = primaryPick.displayQuality ?? primaryPick.quality ?? '';
     const qualityLabel = quality === 'Early' ? 'Early' : quality === 'Mid' ? 'Middle' : quality === 'Late' ? 'Late' : '';
     const r = primaryPick.round ?? 1;
     // Dynamic pick range based on league size
@@ -1924,6 +2087,11 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
     const pickRange = slots
       ? `${r}.${String(slots[0]).padStart(2, '0')} – ${r}.${String(slots[1]).padStart(2, '0')}`
       : null;
+    const cardHeadline = primaryPick.cardHeadline
+      ?? (qualityLabel ? `${roundOrd} Round · ${qualityLabel}` : `Round ${primaryPick.round}`);
+    const pickMetaLabel = primaryPick.cardMetaLabel ?? (primaryPick.displayMode === 'future' ? null : 'Projected Range');
+    const pickMetaValue = primaryPick.pickRangeLabel ?? pickRange;
+    const showPickMeta = Boolean(pickMetaLabel && pickMetaValue);
 
     // Derive color theme: My Team > dark gold > light gold
     const favPalette = favoriteTeam ? teamPalette(favoriteTeam, darkMode) : null;
@@ -1993,7 +2161,7 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
     return (
         <div
           ref={cardRef}
-          className="w-full rounded-xl flex flex-col overflow-hidden relative"
+          className="w-full aspect-[5/7] rounded-xl flex flex-col overflow-hidden relative"
           style={{
             background: pt.bg,
             border: `2px solid ${pt.border}`,
@@ -2001,7 +2169,7 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
             minHeight: forcedHeight ? `${forcedHeight}px` : undefined,
           }}
         >
-        <div className="relative w-full overflow-hidden aspect-[5/4] lg:aspect-[4/3]" style={{ flexShrink: 0 }}>
+        <div className="relative w-full overflow-hidden" style={{ flexShrink: 0, height: compactTradeCard ? '48%' : '56%' }}>
           <div className="absolute inset-0" style={{ background: pt.bg }} />
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none select-none overflow-hidden">
             <span
@@ -2071,14 +2239,14 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
           }}
         >
           <div
-            className="text-[11px] lg:text-sm font-bold leading-tight tracking-wide uppercase"
+            className="text-[11px] lg:text-sm font-bold leading-tight tracking-wide uppercase whitespace-nowrap"
             style={{
               color: pt.yearText,
               textShadow: darkMode ? '0 1px 3px rgba(0,0,0,0.6)' : 'none',
               fontFamily: "'Barlow Condensed', sans-serif",
             }}
           >
-            {qualityLabel ? `${roundOrd} Round · ${qualityLabel}` : `Round ${primaryPick.round}`}
+            {cardHeadline}
           </div>
         </div>
 
@@ -2086,29 +2254,33 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
           <div className="flex items-center justify-center py-1 lg:py-1.5">
             <span
               className="text-sm lg:text-[18px] font-bold tabular-nums leading-tight"
-              style={{ color: pt.accent, fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.02em' }}
+              style={{ color: 'var(--color-label)', fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.02em' }}
             >
               {primaryPick.value != null ? fmtKtcValue(primaryPick.value) : '—'}
             </span>
           </div>
 
-          <div className="flex gap-1 w-full lg:hidden">
+          {showPickMeta && (
+          <div className={compactTradeCard ? 'hidden' : 'hidden min-[420px]:flex gap-1 w-full lg:hidden'}>
             <div className="flex-1 rounded-lg p-1.5 flex flex-col gap-px" style={{ background: 'rgba(0,0,0,0.22)' }}>
-              <span className="text-[7px] font-bold uppercase tracking-wide mb-0.5" style={{ color: pt.accentMuted }}>Proj. Pick</span>
+              <span className="text-[7px] font-bold uppercase tracking-wide mb-0.5" style={{ color: pt.accentMuted }}>{pickMetaLabel}</span>
               <span className="text-[9px] font-semibold tabular-nums" style={{ color: pt.labelText }}>
-                {pickRange ?? '—'}
+                {pickMetaValue}
               </span>
             </div>
           </div>
+          )}
 
+          {showPickMeta && (
           <div className="hidden lg:flex gap-1.5 w-full">
             <div className="flex-1 rounded-lg p-1.5 flex flex-col gap-px" style={{ background: 'rgba(0,0,0,0.22)' }}>
-              <span className="text-[9px] font-bold uppercase tracking-wide mb-0.5" style={{ color: pt.accentMuted }}>Proj. Pick</span>
+              <span className="text-[9px] font-bold uppercase tracking-wide mb-0.5" style={{ color: pt.accentMuted }}>{pickMetaLabel}</span>
               <span className="text-[11px] font-semibold tabular-nums" style={{ color: pt.labelText }}>
-                {pickRange ?? '—'}
+                {pickMetaValue}
               </span>
             </div>
           </div>
+          )}
         </div>
       </div>
     );
@@ -2132,7 +2304,7 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
   return (
     <div
       ref={cardRef}
-      className="w-full rounded-xl flex flex-col overflow-hidden relative"
+      className="w-full aspect-[5/7] rounded-xl flex flex-col overflow-hidden relative"
       style={{
         background: cardBg,
         border: `2px solid ${cardBorder}`,
@@ -2159,7 +2331,7 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
       {/* Mouse-tracking border glow */}
       {borderOverlay}
       {/* ── Photo area (~45% of card height) ──────────────────── */}
-      <div className="relative w-full overflow-hidden aspect-[5/4] lg:aspect-[4/3]" style={{ flexShrink: 0 }}>
+      <div className="relative w-full overflow-hidden" style={{ flexShrink: 0, height: compactTradeCard ? '48%' : '56%' }}>
         {/* Background fill + gradient fade (behind the player image) */}
         <div className="absolute inset-0"
           style={{ background: teamColor ? `${teamColor}44` : 'var(--color-fill)' }} />
@@ -2167,13 +2339,15 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
 
         {primary ? (
           <img
-            src={`https://sleepercdn.com/content/nfl/players/thumb/${primary.id}.jpg`}
+            src={playerImageSrc}
             alt=""
             className="absolute inset-0 w-full h-full"
             style={{ objectFit: 'cover', objectPosition: 'top center' }}
-            loading="lazy"
+            loading="eager"
             decoding="async"
-            onError={e => { e.target.style.display = 'none'; }}
+            onError={e => {
+              e.target.style.display = 'none';
+            }}
           />
         ) : (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-1">
@@ -2219,7 +2393,7 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
                 aria-hidden="true"
                 className="pointer-events-none select-none w-4 h-4 lg:w-6 lg:h-6"
                 style={{ objectFit: 'contain', opacity: 0.96, filter: darkMode ? 'drop-shadow(0 1px 2px rgba(0,0,0,0.22))' : 'drop-shadow(0 1px 3px rgba(0,0,0,0.35))' }}
-                loading="lazy"
+                loading="eager"
                 decoding="async"
                 onError={e => { e.target.style.display = 'none'; }}
               />
@@ -2235,12 +2409,12 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
           borderTop: '1px solid rgba(255,255,255,0.12)',
           borderBottom: '1px solid rgba(255,255,255,0.08)',
         }}>
-        <div className="text-[11px] lg:text-sm font-bold leading-tight tracking-wide uppercase"
+        <div className="text-[11px] lg:text-sm font-bold leading-tight tracking-wide uppercase whitespace-nowrap"
           style={{ color: 'white', textShadow: '0 1px 3px rgba(0,0,0,0.6)', fontFamily: "'Barlow Condensed', sans-serif" }}>
           {primary?.name ?? primaryPick?.label ?? '—'}
         </div>
         {primary && (
-          <div className="text-[8px] lg:text-[10px] font-medium tracking-wider uppercase mt-0.5"
+          <div className="text-[8px] lg:text-[10px] font-medium tracking-wider uppercase mt-0.5 whitespace-nowrap"
             style={{ color: 'rgba(255,255,255,0.55)' }}>
             {[primary.team, primary.position].filter(Boolean).join(' · ')}
           </div>
@@ -2255,7 +2429,7 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
         {primary?.value != null && (
           <div className="flex items-center justify-center py-1 lg:py-1.5">
             <span className="text-sm lg:text-[18px] font-bold tabular-nums leading-tight"
-              style={{ color: accentColor }}>
+              style={{ color: 'var(--color-label)' }}>
               {fmtKtcValue(primary.value)}
             </span>
           </div>
@@ -2264,25 +2438,25 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
         {primary ? (
           <>
             {/* ── MOBILE stat boxes (lg:hidden) ─── */}
-            <div className="flex gap-1 w-full lg:hidden">
-              <div className="flex-1 rounded-lg p-1.5 flex flex-col items-center" style={{ background: 'rgba(0,0,0,0.35)' }}>
+            <div className="flex flex-1 min-h-0 gap-1 w-full lg:hidden">
+              <div className="flex-1 min-h-0 rounded-lg px-1.5 py-1 flex flex-col items-center justify-center" style={{ background: 'rgba(0,0,0,0.35)' }}>
                 {primary?.ppg > 0 ? (
                   <>
-                    <span className="text-sm font-bold tabular-nums leading-tight" style={{ color: 'white' }}>
+                    <span className="text-[13px] font-bold tabular-nums leading-tight" style={{ color: 'white' }}>
                       {primary.ppg.toFixed(1)}
                     </span>
-                    <span className="text-[8px] font-medium" style={{ color: 'rgba(255,255,255,0.5)' }}>PPG</span>
+                    <span className="text-[7px] font-medium leading-tight" style={{ color: 'rgba(255,255,255,0.5)' }}>PPG</span>
                   </>
                 ) : (
                   <span className="text-[9px]" style={{ color: 'rgba(255,255,255,0.35)' }}>—</span>
                 )}
               </div>
               {primary?.rank?.posLabel && (
-                <div className="flex-1 rounded-lg p-1.5 flex flex-col items-center" style={{ background: 'rgba(0,0,0,0.35)' }}>
-                  <span className="text-sm font-bold tabular-nums leading-tight" style={{ color: 'rgba(255,255,255,0.85)' }}>
-                    {primary.rank.posLabel}
+                <div className="flex-1 min-h-0 rounded-lg px-1.5 py-1 flex flex-col items-center justify-center" style={{ background: 'rgba(0,0,0,0.35)' }}>
+                  <span className="text-[13px] font-bold tabular-nums leading-tight" style={{ color: 'rgba(255,255,255,0.9)' }}>
+                    {primary.rank.posLabel}{primary.rank.rank}
                   </span>
-                  <span className="text-[8px] font-medium" style={{ color: 'rgba(255,255,255,0.5)' }}>Rank</span>
+                  <span className="text-[7px] font-medium leading-tight" style={{ color: 'rgba(255,255,255,0.5)' }}>Rank</span>
                 </div>
               )}
             </div>
@@ -2297,8 +2471,8 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
                 >
                   Stats
                 </span>
-                {statDefs.length > 0 && playerStats ? (
-                  statDefs.map(sd => (
+                {visibleStatDefs.length > 0 && playerStats ? (
+                  visibleStatDefs.map(sd => (
                     <div key={sd.key} className="flex justify-between items-baseline">
                       <span
                         className="text-[10px] font-medium"
@@ -2343,38 +2517,6 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
                         {primary.ppg > 0 ? primary.ppg.toFixed(1) : '—'}
                       </span>
                     </div>
-                    {primary.recentAvg > 0 && (
-                      <div className="flex justify-between items-baseline">
-                        <span
-                          className="text-[10px] font-medium"
-                          style={{ color: 'rgba(255,255,255,0.68)', fontFamily: "'Figtree', sans-serif" }}
-                        >
-                          L3 Avg
-                        </span>
-                        <span
-                          className="text-[11px] font-semibold tabular-nums"
-                          style={{ color: 'white', fontFamily: "'Figtree', sans-serif" }}
-                        >
-                          {primary.recentAvg.toFixed(1)}
-                        </span>
-                      </div>
-                    )}
-                    {primary.seasonPts > 0 && (
-                      <div className="flex justify-between items-baseline">
-                        <span
-                          className="text-[10px] font-medium"
-                          style={{ color: 'rgba(255,255,255,0.68)', fontFamily: "'Figtree', sans-serif" }}
-                        >
-                          Season
-                        </span>
-                        <span
-                          className="text-[11px] font-semibold tabular-nums"
-                          style={{ color: 'white', fontFamily: "'Figtree', sans-serif" }}
-                        >
-                          {primary.seasonPts.toFixed(1)}
-                        </span>
-                      </div>
-                    )}
                     {primary.rank?.posLabel && (
                       <div className="flex justify-between items-baseline">
                         <span
@@ -2387,7 +2529,23 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
                           className="text-[11px] font-semibold tabular-nums"
                           style={{ color: 'rgba(255,255,255,0.9)', fontFamily: "'Figtree', sans-serif" }}
                         >
-                          {primary.rank.posLabel}
+                          {primary.rank.posLabel}{primary.rank.rank}
+                        </span>
+                      </div>
+                    )}
+                    {!compactTradeCard && primary.seasonPts > 0 && (
+                      <div className="flex justify-between items-baseline">
+                        <span
+                          className="text-[10px] font-medium"
+                          style={{ color: 'rgba(255,255,255,0.68)', fontFamily: "'Figtree', sans-serif" }}
+                        >
+                          Season
+                        </span>
+                        <span
+                          className="text-[11px] font-semibold tabular-nums"
+                          style={{ color: 'white', fontFamily: "'Figtree', sans-serif" }}
+                        >
+                          {primary.seasonPts.toFixed(1)}
                         </span>
                       </div>
                     )}
@@ -2406,25 +2564,19 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
   );
 }
 
-function getProposalCardSlotStyle(assetCount, equalizedCardHeight = null) {
-  const count = Math.max(assetCount || 1, 1);
-  const availableWidth = `calc((100% - (${count - 1} * var(--proposal-card-gap, 0.625rem))) / ${count})`;
-  const baseWidthRem = count >= 3
-    ? 12.5
-    : count === 2
-      ? 13.75
-      : 14.75;
-  const widthBonusPx = equalizedCardHeight && equalizedCardHeight > 385
-    ? Math.min(Math.round((equalizedCardHeight - 385) * 0.18), 28)
-    : 0;
-  const cardMaxWidth = widthBonusPx > 0
-    ? `calc(${baseWidthRem}rem + ${widthBonusPx}px)`
-    : `${baseWidthRem}rem`;
+const TRADE_PROPOSAL_CARD_SLOT_STYLE = {};
+
+function getProposalCardSlotStyle() {
+  return TRADE_PROPOSAL_CARD_SLOT_STYLE;
+}
+
+function getTradeProposalListTransitionStyle({ isDimmed, isStale }) {
   return {
-    flex: `1 1 ${cardMaxWidth}`,
-    maxWidth: `min(${availableWidth}, ${cardMaxWidth})`,
-    minWidth: count >= 3 ? 'min(100%, 10.5rem)' : 'min(100%, 11rem)',
-    width: '100%',
+    opacity: 1,
+    filter: 'none',
+    transform: 'none',
+    transition: 'none',
+    pointerEvents: isStale ? 'none' : undefined,
   };
 }
 
@@ -2542,6 +2694,16 @@ function getProposalAssetSummary(proposal) {
   return summary;
 }
 
+function sortProposalPickAssets(picks = []) {
+  return [...picks].sort(compareDraftPickAssets);
+}
+
+function buildProposalCardAssets(bucket, renderAllAssetsAsCards) {
+  const sortedPicks = sortProposalPickAssets(bucket.picks);
+  if (renderAllAssetsAsCards) return [...bucket.players, ...sortedPicks];
+  return bucket.playerCount ? bucket.players : sortedPicks;
+}
+
 function cloneProposalAsset(asset) {
   if (!asset || typeof asset !== 'object') return asset;
   return {
@@ -2575,7 +2737,10 @@ function buildProposalFilterEntry(proposal) {
 }
 
 function getProposalDesktopSpan(proposal) {
-  return getProposalAssetSummary(proposal).totalPlayerCount >= 3 ? 2 : 1;
+  const summary = getProposalAssetSummary(proposal);
+  const incomingAssetCount = summary.incoming.playerCount + summary.incoming.pickCount;
+  const outgoingAssetCount = summary.outgoing.playerCount + summary.outgoing.pickCount;
+  return Math.max(incomingAssetCount, outgoingAssetCount) > 1 || summary.totalPlayerCount >= 3 ? 2 : 1;
 }
 
 function buildDesktopProposalRows(proposals = []) {
@@ -2681,18 +2846,14 @@ const TradeProposalItem = memo(function TradeProposalItem({
     const outgoingMixedPackage = summary.outgoing.playerCount > 0 && summary.outgoing.pickCount > 0;
     const renderIncomingAssetsAsCards = renderAllAssetsAsCards || incomingMixedPackage;
     const renderOutgoingAssetsAsCards = renderAllAssetsAsCards || outgoingMixedPackage;
-    const incomingCardAssets = renderIncomingAssetsAsCards
-      ? (proposal.incomingAssets ?? [])
-      : (summary.incoming.playerCount ? summary.incoming.players : summary.incoming.picks);
-    const outgoingCardAssets = renderOutgoingAssetsAsCards
-      ? (proposal.outgoingAssets ?? [])
-      : (summary.outgoing.playerCount ? summary.outgoing.players : summary.outgoing.picks);
+    const incomingCardAssets = buildProposalCardAssets(summary.incoming, renderIncomingAssetsAsCards);
+    const outgoingCardAssets = buildProposalCardAssets(summary.outgoing, renderOutgoingAssetsAsCards);
     const incomingCalloutAssets = renderIncomingAssetsAsCards
       ? []
-      : (summary.incoming.playerCount ? summary.incoming.picks : []);
+      : (summary.incoming.playerCount ? sortProposalPickAssets(summary.incoming.picks) : []);
     const outgoingCalloutAssets = renderOutgoingAssetsAsCards
       ? []
-      : (summary.outgoing.playerCount ? summary.outgoing.picks : []);
+      : (summary.outgoing.playerCount ? sortProposalPickAssets(summary.outgoing.picks) : []);
 
     return {
       incomingCardAssets,
@@ -2704,17 +2865,14 @@ const TradeProposalItem = memo(function TradeProposalItem({
       cardCount: incomingCardAssets.length + outgoingCardAssets.length,
     };
   }, [proposal, renderAllAssetsAsCards]);
-  const wideDesktopLayout = cardCount >= 3;
-  const outgoingCardCount = outgoingCardAssets.length || 1;
-  const incomingCardCount = incomingCardAssets.length || 1;
-  const sharedCardCount = Math.max(outgoingCardCount, incomingCardCount);
-  const proposalCardMeasureKey = `${proposal.id}:${sharedCardCount}:${incomingCardAssets.length}:${outgoingCardAssets.length}:${incomingMobilePickCards.length}:${outgoingMobilePickCards.length}:${seasonStats ? 'ready' : 'idle'}`;
+  const isWideTradeProposalLayout = useMediaQuery('(min-width: 1536px)');
+  const proposalCardMeasureKey = `${proposal.id}:${incomingCardAssets.length}:${outgoingCardAssets.length}:${incomingMobilePickCards.length}:${outgoingMobilePickCards.length}:${seasonStats ? 'ready' : 'idle'}:${isWideTradeProposalLayout ? 'wide' : 'compact'}`;
   const {
     containerRef: proposalCardsContainerRef,
     registerCardRef,
     equalizedCardHeight,
-  } = useEqualizedCardHeight(cardCount > 1, proposalCardMeasureKey);
-  const sharedCardSlotStyle = getProposalCardSlotStyle(sharedCardCount, equalizedCardHeight);
+  } = useEqualizedCardHeight(isWideTradeProposalLayout && cardCount > 1, proposalCardMeasureKey);
+  const sharedCardSlotStyle = getProposalCardSlotStyle();
   const insightsReady = useDeferredContentReady(deferInsights);
   const [isHovered, setIsHovered] = useState(false);
   const proposalShadow = isHovered
@@ -2746,18 +2904,18 @@ const TradeProposalItem = memo(function TradeProposalItem({
 
       <div
         ref={proposalCardsContainerRef}
-        className={`flex justify-center gap-2.5 px-3 py-3 min-w-0 items-start ${wideDesktopLayout ? 'xl:gap-4' : ''}`}
-        style={{ background: 'var(--color-fill)', '--proposal-card-gap': wideDesktopLayout ? '1rem' : '0.625rem' }}>
-        <div className={`flex-1 min-w-0 flex flex-col gap-1.5 ${wideDesktopLayout ? 'max-w-[640px]' : 'max-w-[520px]'}`}>
+        className="flex flex-col 2xl:flex-row justify-center gap-2.5 px-3 py-3 min-w-0 items-stretch 2xl:items-start"
+        style={{ background: 'var(--color-fill)' }}>
+        <div className="w-full min-w-0 flex flex-col gap-1.5 2xl:flex-1">
           <div className="text-center pb-0.5">
             <span className="inline-block px-3 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-[0.12em]"
               style={{ background: 'var(--color-accent-red)', color: '#fff' }}>Give</span>
           </div>
-          <div className="flex flex-col xl:flex-row xl:flex-wrap items-stretch xl:justify-center gap-2.5">
+          <div className="flex flex-row flex-nowrap items-stretch justify-start 2xl:justify-center gap-2.5 overflow-x-auto scrollbar-hide px-1 pb-1 -mx-1">
             {outgoingCardAssets.map((asset, index) => (
               <div
                 key={asset.id}
-                className="w-full xl:w-auto flex"
+                className="w-[min(76vw,30vh,14rem)] max-w-full self-center 2xl:self-stretch 2xl:w-[clamp(13rem,14vw,15rem)] flex-none flex"
                 style={{ ...sharedCardSlotStyle, minHeight: equalizedCardHeight ? `${equalizedCardHeight}px` : undefined }}
               >
                 <ProposalPlayerCard
@@ -2769,17 +2927,18 @@ const TradeProposalItem = memo(function TradeProposalItem({
                   showSideBadge={false}
                   seasonStats={seasonStats}
                   forcedHeight={equalizedCardHeight}
+                  compactTradeCard
                   onClick={asset.type === 'player' ? onOpenPlayer : null}
                 />
               </div>
             ))}
           </div>
           {outgoingMobilePickCards.length > 0 && (
-            <div className="flex flex-col gap-2 xl:hidden">
+            <div className="flex flex-row flex-nowrap justify-start 2xl:justify-center gap-2 overflow-x-auto scrollbar-hide px-1 pb-1 -mx-1 2xl:hidden">
               {outgoingMobilePickCards.map((asset, index) => (
                 <div
                   key={`give-mobile-pick:${asset.id}:${index}`}
-                  className="w-full flex"
+                  className="w-[min(76vw,30vh,14rem)] max-w-full self-center flex-none flex"
                   style={{ ...sharedCardSlotStyle, minHeight: equalizedCardHeight ? `${equalizedCardHeight}px` : undefined }}
                 >
                   <ProposalPlayerCard
@@ -2791,26 +2950,27 @@ const TradeProposalItem = memo(function TradeProposalItem({
                     showSideBadge={false}
                     seasonStats={seasonStats}
                     forcedHeight={equalizedCardHeight}
+                    compactTradeCard
                   />
                 </div>
               ))}
             </div>
           )}
         </div>
-        <div className="shrink-0 text-base font-bold self-center"
+        <div className="shrink-0 text-base font-bold self-center rotate-90 2xl:rotate-0"
           style={{ color: 'var(--color-label-quaternary)' }}>
           ⇄
         </div>
-        <div className={`flex-1 min-w-0 flex flex-col gap-1.5 ${wideDesktopLayout ? 'max-w-[640px]' : 'max-w-[520px]'}`}>
+        <div className="w-full min-w-0 flex flex-col gap-1.5 2xl:flex-1">
           <div className="text-center pb-0.5">
             <span className="inline-block px-3 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-[0.12em]"
               style={{ background: 'var(--color-accent-green)', color: '#fff' }}>Get</span>
           </div>
-          <div className="flex flex-col xl:flex-row xl:flex-wrap items-stretch xl:justify-center gap-2.5">
+          <div className="flex flex-row flex-nowrap items-stretch justify-start 2xl:justify-center gap-2.5 overflow-x-auto scrollbar-hide px-1 pb-1 -mx-1">
             {incomingCardAssets.map((asset, index) => (
               <div
                 key={asset.id}
-                className="w-full xl:w-auto flex"
+                className="w-[min(76vw,30vh,14rem)] max-w-full self-center 2xl:self-stretch 2xl:w-[clamp(13rem,14vw,15rem)] flex-none flex"
                 style={{ ...sharedCardSlotStyle, minHeight: equalizedCardHeight ? `${equalizedCardHeight}px` : undefined }}
               >
                 <ProposalPlayerCard
@@ -2822,17 +2982,18 @@ const TradeProposalItem = memo(function TradeProposalItem({
                   showSideBadge={false}
                   seasonStats={seasonStats}
                   forcedHeight={equalizedCardHeight}
+                  compactTradeCard
                   onClick={asset.type === 'player' ? onOpenPlayer : null}
                 />
               </div>
             ))}
           </div>
           {incomingMobilePickCards.length > 0 && (
-            <div className="flex flex-col gap-2 xl:hidden">
+            <div className="flex flex-row flex-nowrap justify-start 2xl:justify-center gap-2 overflow-x-auto scrollbar-hide px-1 pb-1 -mx-1 2xl:hidden">
               {incomingMobilePickCards.map((asset, index) => (
                 <div
                   key={`get-mobile-pick:${asset.id}:${index}`}
-                  className="w-full flex"
+                  className="w-[min(76vw,30vh,14rem)] max-w-full self-center flex-none flex"
                   style={{ ...sharedCardSlotStyle, minHeight: equalizedCardHeight ? `${equalizedCardHeight}px` : undefined }}
                 >
                   <ProposalPlayerCard
@@ -2844,6 +3005,7 @@ const TradeProposalItem = memo(function TradeProposalItem({
                     showSideBadge={false}
                     seasonStats={seasonStats}
                     forcedHeight={equalizedCardHeight}
+                    compactTradeCard
                   />
                 </div>
               ))}
@@ -2853,9 +3015,9 @@ const TradeProposalItem = memo(function TradeProposalItem({
       </div>
 
       {(outgoingAssetsForCallout.length > 0 || incomingAssetsForCallout.length > 0) && (
-        <div className="hidden xl:flex items-start justify-center gap-2.5 px-3 pb-2"
+        <div className="hidden 2xl:flex items-start justify-center gap-2.5 px-3 pb-2"
           style={{ background: 'var(--color-fill)' }}>
-          <div className={`flex-1 flex flex-wrap justify-center gap-1.5 ${wideDesktopLayout ? 'max-w-[640px]' : 'max-w-[520px]'}`}>
+          <div className="flex-1 flex flex-wrap justify-center gap-1.5 max-w-[680px]">
             {outgoingAssetsForCallout.map(asset => (
               <span key={asset.id} className="max-w-full">
                 <AssetBadge asset={asset} />
@@ -2863,7 +3025,7 @@ const TradeProposalItem = memo(function TradeProposalItem({
             ))}
           </div>
           <div className="shrink-0 text-base" style={{ visibility: 'hidden' }}>⇄</div>
-          <div className={`flex-1 flex flex-wrap justify-center gap-1.5 ${wideDesktopLayout ? 'max-w-[640px]' : 'max-w-[520px]'}`}>
+          <div className="flex-1 flex flex-wrap justify-center gap-1.5 max-w-[680px]">
             {incomingAssetsForCallout.map(asset => (
               <span key={asset.id} className="max-w-full">
                 <AssetBadge asset={asset} />
@@ -2914,6 +3076,13 @@ const PICK_FILTER_OPTIONS = [
   { value: 'without', label: 'No Picks' },
   { value: 'with', label: 'With Picks' },
 ];
+
+const DEFAULT_PROPOSAL_FILTERS = Object.freeze({
+  outgoingPlayers: 'any',
+  incomingPlayers: 'any',
+  outgoingPicks: 'any',
+  incomingPicks: 'any',
+});
 
 function matchesProposalFilters(entry, filters) {
   if (filters.outgoingPlayers !== 'any' && entry.outgoingPlayers !== Number(filters.outgoingPlayers)) return false;
@@ -3086,11 +3255,6 @@ const TRADE_RESULT_BLOCK_STYLE = {
   containIntrinsicSize: '760px',
 };
 
-const TRADE_RESULT_ROW_STYLE = {
-  contentVisibility: 'auto',
-  containIntrinsicSize: '1200px',
-};
-
 const UpgradeResultGroup = memo(function UpgradeResultGroup({
   group,
   rosterId,
@@ -3235,25 +3399,23 @@ const TradeProposalPanel = memo(function TradeProposalPanel({
   tradeProposals,
   surplusTradeProposals,
   activeMode,
+  proposalFilters,
+  onProposalFiltersChange,
   onModeChange,
   onApplyProposal,
   onOpenPlayer,
+  isPreparingPartner = false,
+  isShowingStaleResults = false,
 }) {
   const { darkMode } = useTheme();
   const { seasonStats } = useSleeperStats();
-  const [proposalFilters, setProposalFilters] = useState({
-    outgoingPlayers: 'any',
-    incomingPlayers: 'any',
-    outgoingPicks: 'any',
-    incomingPicks: 'any',
-  });
   const deferredProposalFilters = useDeferredValue(proposalFilters);
   const isProposalFilterPending = proposalFilters.outgoingPlayers !== deferredProposalFilters.outgoingPlayers
     || proposalFilters.incomingPlayers !== deferredProposalFilters.incomingPlayers
     || proposalFilters.outgoingPicks !== deferredProposalFilters.outgoingPicks
     || proposalFilters.incomingPicks !== deferredProposalFilters.incomingPicks;
   useEffect(() => {
-    setProposalFilters((prev) => {
+    onProposalFiltersChange((prev) => {
       let next = prev;
 
       if (activeMode === 'needs' && prev.incomingPlayers === '0') {
@@ -3268,7 +3430,7 @@ const TradeProposalPanel = memo(function TradeProposalPanel({
 
       return next;
     });
-  }, [activeMode]);
+  }, [activeMode, onProposalFiltersChange]);
   const activeProposals = activeMode === 'surplus' ? surplusTradeProposals : tradeProposals;
   const proposalFilterEntries = useMemo(
     () => activeProposals.map(buildProposalFilterEntry),
@@ -3278,12 +3440,15 @@ const TradeProposalPanel = memo(function TradeProposalPanel({
     () => buildFilteredProposalLayout(proposalFilterEntries, deferredProposalFilters),
     [proposalFilterEntries, deferredProposalFilters],
   );
-  const proposalRenderKey = [activeMode, proposalFilters.outgoingPlayers, proposalFilters.incomingPlayers, proposalFilters.outgoingPicks, proposalFilters.incomingPicks].join(':');
   const hasActiveFilters = Object.values(proposalFilters).some((value) => value !== 'any');
   const activeEmptyText = activeMode === 'surplus'
     ? 'No surplus-driven trade ideas are available right now.'
     : 'No need-driven trade ideas are available right now.';
   const outgoingPlayerFilterDisabledValue = activeMode === 'surplus' ? '0' : null;
+  const proposalListTransitionStyle = getTradeProposalListTransitionStyle({
+    isDimmed: false,
+    isStale: isShowingStaleResults,
+  });
 
   return (
     <section className="rounded-2xl p-4" style={{ background: 'var(--color-bg-secondary)', border: '1px solid var(--color-separator)' }}>
@@ -3347,7 +3512,7 @@ const TradeProposalPanel = memo(function TradeProposalPanel({
                           disabled={disabled}
                           onClick={() => {
                             if (disabled) return;
-                            setProposalFilters((prev) => nextProposalFilters(prev, group.key, option.value));
+                            onProposalFiltersChange((prev) => nextProposalFilters(prev, group.key, option.value));
                           }}
                           className="px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-colors disabled:cursor-not-allowed"
                           style={{
@@ -3376,28 +3541,10 @@ const TradeProposalPanel = memo(function TradeProposalPanel({
             </div>
           )}
         </div>
-        <div className="flex items-center gap-2 shrink-0 self-start">
-          {isProposalFilterPending && (
-            <div
-              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold"
-              style={{
-                background: 'var(--color-fill)',
-                color: 'var(--color-label-secondary)',
-                border: '1px solid var(--color-separator)',
-              }}
-            >
-              <Spinner size="w-3.5 h-3.5" />
-              Updating ideas…
-            </div>
-          )}
+        <div className="flex items-center gap-2 shrink-0 self-start min-h-[30px]">
           {hasActiveFilters && (
             <button
-              onClick={() => setProposalFilters({
-                outgoingPlayers: 'any',
-                incomingPlayers: 'any',
-                outgoingPicks: 'any',
-                incomingPicks: 'any',
-              })}
+              onClick={() => onProposalFiltersChange(DEFAULT_PROPOSAL_FILTERS)}
               className="px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors"
               style={{ background: 'var(--color-fill)', color: 'var(--color-label-secondary)', border: '1px solid var(--color-separator)' }}
             >
@@ -3411,6 +3558,10 @@ const TradeProposalPanel = memo(function TradeProposalPanel({
         <div className="pt-4 text-sm" style={{ color: 'var(--color-label-secondary)' }}>
           Choose a partner above to generate partner-specific trade ideas.
         </div>
+      ) : isPreparingPartner && !activeProposals.length ? (
+        <div className="pt-4 text-sm" style={{ color: 'var(--color-label-secondary)' }}>
+          Preparing trade ideas for this manager...
+        </div>
       ) : !activeProposals.length ? (
         <div className="pt-4 text-sm" style={{ color: 'var(--color-label-secondary)' }}>
           {activeEmptyText}
@@ -3422,12 +3573,11 @@ const TradeProposalPanel = memo(function TradeProposalPanel({
       ) : (
         <>
           <div
-            key={'mobile:' + proposalRenderKey}
             className="pt-4 space-y-3 xl:hidden"
-            style={{ opacity: isProposalFilterPending ? 0.68 : 1, transition: 'opacity 160ms ease' }}
+            style={proposalListTransitionStyle}
           >
             {filteredProposals.map((proposal) => (
-              <div key={proposal.id + ':' + proposalRenderKey} style={TRADE_RESULT_BLOCK_STYLE}>
+              <div key={proposal.id}>
                 <TradeProposalItem
                   proposal={proposal}
                   darkMode={darkMode}
@@ -3441,9 +3591,8 @@ const TradeProposalPanel = memo(function TradeProposalPanel({
           </div>
 
           <div
-            key={'desktop:' + proposalRenderKey}
             className="hidden xl:flex xl:flex-col xl:gap-3 xl:pt-4"
-            style={{ opacity: isProposalFilterPending ? 0.68 : 1, transition: 'opacity 160ms ease' }}
+            style={proposalListTransitionStyle}
           >
             {desktopRows.map((row, rowIndex) => {
               if (row.length === 1) {
@@ -3453,16 +3602,15 @@ const TradeProposalPanel = memo(function TradeProposalPanel({
                   <div
                     key={`row-${rowIndex}`}
                     className={centeredSingle ? 'flex justify-center' : 'block'}
-                    style={TRADE_RESULT_ROW_STYLE}
                   >
                     <TradeProposalItem
-                      key={item.proposal.id + ':' + proposalRenderKey}
+                      key={item.proposal.id}
                       proposal={item.proposal}
                       darkMode={darkMode}
                       seasonStats={seasonStats}
                       onApplyProposal={onApplyProposal}
                       onOpenPlayer={onOpenPlayer}
-                      containerClassName={centeredSingle ? 'w-full max-w-[720px]' : 'w-full'}
+                      containerClassName="w-full"
 
                     />
                   </div>
@@ -3470,10 +3618,10 @@ const TradeProposalPanel = memo(function TradeProposalPanel({
               }
 
               return (
-                <div key={`row-${rowIndex}`} className="grid grid-cols-2 gap-3" style={TRADE_RESULT_ROW_STYLE}>
+                <div key={`row-${rowIndex}`} className="grid grid-cols-2 gap-3">
                   {row.map((item) => (
                     <TradeProposalItem
-                      key={item.proposal.id + ':' + proposalRenderKey}
+                      key={item.proposal.id}
                       proposal={item.proposal}
                       darkMode={darkMode}
                       seasonStats={seasonStats}
@@ -3842,7 +3990,7 @@ const UpgradeFinderPage = memo(function UpgradeFinderPage({
             Step 1 · Select A Player To Upgrade
           </div>
 
-          
+
 {selectedPlayer ? (
             <div className="flex flex-col items-center gap-3">
               <div className="flex justify-center w-full">
@@ -3880,7 +4028,7 @@ const UpgradeFinderPage = memo(function UpgradeFinderPage({
             Step 2 · Choose Players You Can Move
           </div>
 
-          
+
 {hasSelectedOutgoingPlayers ? (
             <div className="flex flex-col items-center gap-3">
               <div ref={selectionCardsContainerRef} className="flex flex-wrap justify-center items-start gap-3 w-full">
@@ -4823,7 +4971,7 @@ function AdjustmentRow({ label, leagueValue, baseline, note }) {
 function RosterBrowseModal({
   roster, partnerName,
   sleeperPlayers, adjustedKtcPlayers, adjustedDynastyKtcPlayers, leagueType,
-  rosterPicks, slots, season, pickValueMap, rosters, ownerNameByRosterId,
+  rosterPicks, slots, season, league, drafts, pickValueMap, rosters, ownerNameByRosterId,
   seasonStats, scoringSettings, positionalAvgPPG, positionalValuePerPPG, rankMap, playerTradeValueDetailsMap,
   theirPlayers, theirPicks, theirSideItems,
   mergedIDPMap, hasIDP, hasDST,
@@ -4840,8 +4988,6 @@ function RosterBrowseModal({
     () => new Map((theirSideItems ?? []).map((item) => [item.id, item])),
     [theirSideItems],
   );
-
-  const ORDINALS = { 1: '1st', 2: '2nd', 3: '3rd', 4: '4th', 5: '5th' };
 
   useEffect(() => {
     rosterBrowsePlayerCacheRef.current.clear();
@@ -4944,8 +5090,8 @@ function RosterBrowseModal({
   const picks = useMemo(() => {
     if (!roster || !rosterPicks || !slots) return [];
     return getPicksForRoster(roster.roster_id, rosterPicks, slots).map(pick => {
-      const quality = getPickQuality(pick.fromRosterId, rosters);
-      const ord = ORDINALS[pick.round] ?? `${pick.round}th`;
+      const displayInfo = getDraftPickDisplayInfo(pick, { league, rosters, drafts, currentSeason: season });
+      const quality = displayInfo.valueQuality ?? getPickQuality(pick.fromRosterId, rosters);
       let val = null;
       if (pickValueMap?.[pick.round] != null) {
         const tierVal = pickValueMap[pick.round][quality] ?? pickValueMap[pick.round].Mid ?? null;
@@ -4954,9 +5100,23 @@ function RosterBrowseModal({
         val = tierVal != null ? Math.round(tierVal * discount) : null;
       }
       const fromOwner = pick.isOwn ? null : (ownerNameByRosterId?.get(pick.fromRosterId) ?? null);
-      return { ...pick, quality, label: `${pick.year} ${quality} ${ord}`, val, fromOwner };
-    });
-  }, [roster, rosterPicks, slots, rosters, pickValueMap, season, ownerNameByRosterId]);
+      return {
+        ...pick,
+        quality: displayInfo.quality ?? quality,
+        valueQuality: quality,
+        label: displayInfo.label,
+        val,
+        fromOwner,
+        displayMode: displayInfo.displayMode,
+        lockedSlot: displayInfo.lockedSlot ?? null,
+        pickNumberLabel: displayInfo.pickNumberLabel ?? null,
+        pickRangeLabel: displayInfo.pickRangeLabel ?? null,
+        cardHeadline: displayInfo.cardHeadline ?? null,
+        cardMetaLabel: displayInfo.cardMetaLabel ?? null,
+        sortSlot: displayInfo.sortSlot ?? null,
+      };
+    }).sort(compareDraftPickAssets);
+  }, [roster, rosterPicks, slots, rosters, league, drafts, pickValueMap, season, ownerNameByRosterId]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4"

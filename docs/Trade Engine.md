@@ -180,6 +180,8 @@ Main logic in `tradeEngine.js`:
   Flattens owned picks for a roster.
 - `getPickQuality(...)`
   Estimates Early / Mid / Late from current standings.
+- `draftPickDisplay.js`
+  Centralizes user-facing draft pick labels, locked/projected pick display, and chronological pick-card sorting.
 - `valueSide(...)`
   Values a list of players and picks.
 - `evaluateTrade(...)`
@@ -211,6 +213,14 @@ Main logic in `opportunityEngine.js`:
   Final reservation and dedupe for surplus-driven proposals.
 
 Known design behavior:
+- Partner switching must keep `TradeProposalPanel` mounted through analytics loading and partner-specific generation so active filters do not reset when a manager is selected for the first time
+- Partner-specific proposal caches are keyed by roster id; never render cached proposals unless they match the currently selected partner
+- First-time partner generation should show an inline preparing state inside the panel, not replace the whole Intelligence area
+- Proposal card dimensions should come from the responsive card sizing contract, not from how many assets are on either side of the package; side-by-side one-row proposal cards are reserved for wide `2xl` layouts
+- Trade proposal card layout rules live in `docs/Trade Proposal Cards.md`; keep card sizing, identity text, stat fit, and no-clipping behavior aligned with that contract.
+- Proposal pick cards sort chronologically within each side of a trade: year, then round, then locked/projected slot. Player cards keep their generated order; pick cards are sorted among the pick group.
+- Draft pick labels must use `draftPickDisplay.js`, not duplicated string formatting. Sleeper league `status` values are expected to be `pre_draft`, `drafting`, `in_season`, or `complete`; `complete` means the upcoming pick can be shown as locked when the draft has not happened yet.
+- Upcoming-year picks show as projected while the league is not complete. Once the league is complete, they show a locked pick number from the completed draft order when available, or from final standings. Picks more than one year out display only year + round and value as a middle pick because future team performance is not knowable.
 - `Use Surplus` is structurally player-first; do not expose UI options that imply unsupported pick-only outgoing behavior there
 - `Fix Needs` can use picks, but proposal selection must explicitly protect pick-inclusive and pick-only shapes if the product wants them visible
 - proposal explanations depend heavily on `buildProposalContext(...)`; if the text looks wrong, inspect context first before changing the renderer

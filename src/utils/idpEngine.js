@@ -27,6 +27,8 @@ const MIN_GAMES = 3;
 
 /** Hard cap matching KTC's maximum value scale. */
 const IDP_MAX_VAL = 10_000;
+const IDP_VALUE_CACHE = new WeakMap();
+const DST_VALUE_CACHE = new WeakMap();
 
 /**
  * Fallback value-per-PPG when `positionalValuePerPPG` is not yet available
@@ -84,6 +86,32 @@ function getBaseValPerPPG(positionalValuePerPPG) {
     : DEFAULT_VAL_PER_PPG;
 }
 
+function isCacheKeyable(value) {
+  return value != null && (typeof value === 'object' || typeof value === 'function');
+}
+
+function getWeakCacheNode(cache, key) {
+  let next = cache.get(key);
+  if (!next) {
+    next = new WeakMap();
+    cache.set(key, next);
+  }
+  return next;
+}
+
+function getMapCacheNode(cache, key) {
+  let next = cache.get(key);
+  if (!next) {
+    next = new Map();
+    cache.set(key, next);
+  }
+  return next;
+}
+
+function getRosterPositionsCacheKey(rosterPositions) {
+  return (rosterPositions ?? []).join('|');
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /**
@@ -117,7 +145,19 @@ export function computeIDPValues(
   );
   if (!usedGroups.size) return result;
 
+  const canCache = isCacheKeyable(sleeperPlayers)
+    && isCacheKeyable(seasonStats)
+    && isCacheKeyable(scoringSettings);
+  const rosterPositionsKey = getRosterPositionsCacheKey(rosterPositions);
   const valPerPPG = getBaseValPerPPG(positionalValuePerPPG);
+  const cacheKey = `${rosterPositionsKey}|${valPerPPG.toFixed(4)}`;
+  if (canCache) {
+    const byStats = getWeakCacheNode(IDP_VALUE_CACHE, sleeperPlayers);
+    const byScoring = getWeakCacheNode(byStats, seasonStats);
+    const byKey = getMapCacheNode(byScoring, scoringSettings);
+    const cached = byKey.get(cacheKey);
+    if (cached) return cached;
+  }
 
   for (const group of usedGroups) {
     for (const [id, p] of Object.entries(sleeperPlayers)) {
@@ -129,6 +169,13 @@ export function computeIDPValues(
       const ppg = pts / stats.gp;
       result.set(id, Math.min(IDP_MAX_VAL, Math.round(ppg * valPerPPG)));
     }
+  }
+
+  if (canCache) {
+    const byStats = getWeakCacheNode(IDP_VALUE_CACHE, sleeperPlayers);
+    const byScoring = getWeakCacheNode(byStats, seasonStats);
+    const byKey = getMapCacheNode(byScoring, scoringSettings);
+    byKey.set(cacheKey, result);
   }
 
   return result;
@@ -153,7 +200,18 @@ export function computeDSTValues(
   const result = new Map();
   if (!sleeperPlayers || !seasonStats || !scoringSettings) return result;
 
+  const canCache = isCacheKeyable(sleeperPlayers)
+    && isCacheKeyable(seasonStats)
+    && isCacheKeyable(scoringSettings);
   const valPerPPG = getBaseValPerPPG(positionalValuePerPPG);
+  const cacheKey = valPerPPG.toFixed(4);
+  if (canCache) {
+    const byStats = getWeakCacheNode(DST_VALUE_CACHE, sleeperPlayers);
+    const byScoring = getWeakCacheNode(byStats, seasonStats);
+    const byKey = getMapCacheNode(byScoring, scoringSettings);
+    const cached = byKey.get(cacheKey);
+    if (cached) return cached;
+  }
 
   for (const [id, p] of Object.entries(sleeperPlayers)) {
     if (p.position !== 'DEF') continue;
@@ -163,6 +221,13 @@ export function computeDSTValues(
     if (!pts || pts <= 0) continue;
     const ppg = pts / stats.gp;
     result.set(id, Math.min(IDP_MAX_VAL, Math.round(ppg * valPerPPG)));
+  }
+
+  if (canCache) {
+    const byStats = getWeakCacheNode(DST_VALUE_CACHE, sleeperPlayers);
+    const byScoring = getWeakCacheNode(byStats, seasonStats);
+    const byKey = getMapCacheNode(byScoring, scoringSettings);
+    byKey.set(cacheKey, result);
   }
 
   return result;

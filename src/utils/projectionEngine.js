@@ -1,5 +1,5 @@
 // ── Fantasy Projection Engine ─────────────────────────────────────────────────
-import { calcPoints, calcPointsFromTotals } from './scoringEngine';
+import { calcPoints, calcPointsFromTotals, createPointsCalculator } from './scoringEngine';
 
 const IDP_POSITIONS = new Set(['DL', 'LB', 'DB', 'DE', 'DT', 'CB', 'S', 'ILB', 'OLB', 'SS', 'FS']);
 const PASSING_POSITIONS = new Set(['QB', 'WR', 'TE']);
@@ -53,7 +53,8 @@ function addPositionAliases(valuesByPos) {
  */
 export function getAvgPPG(weeklyArr, scoring, position = null) {
   if (!weeklyArr?.length) return 0;
-  const scored = weeklyArr.map(w => calcPoints(w, scoring, position)).filter(p => p > 0);
+  const calcFantasyPoints = createPointsCalculator(scoring);
+  const scored = weeklyArr.map(w => calcFantasyPoints(w, position)).filter(p => p > 0);
   if (!scored.length) return 0;
   return Math.round((scored.reduce((s, p) => s + p, 0) / scored.length) * 10) / 10;
 }
@@ -74,6 +75,8 @@ export function computePositionalRanks(seasonStats, players, scoringSettings) {
     if (cached) return cached;
   }
 
+  const calcFantasyPoints = createPointsCalculator(scoringSettings);
+
   // Group players by position with their pts
   const byPos = {}; // { pos: [{id, pts}] }
   for (const [id, stats] of Object.entries(seasonStats)) {
@@ -81,7 +84,7 @@ export function computePositionalRanks(seasonStats, players, scoringSettings) {
     if (!p) continue;
     const pos = normalizePos(p.position);
     if (!pos) continue;
-    const pts = calcPoints(stats, scoringSettings, p.position);
+    const pts = calcFantasyPoints(stats, p.position);
     if (pts <= 0) continue;
     if (!byPos[pos]) byPos[pos] = [];
     byPos[pos].push({ id, pts });
@@ -117,6 +120,7 @@ export function computeWeeklyPositionalRanks(weeklyStats, players, scoringSettin
     if (byWeek.has(weekKey)) return byWeek.get(weekKey);
   }
 
+  const calcFantasyPoints = createPointsCalculator(scoringSettings);
   const byPos = {};
   for (const [playerId, weeks] of Object.entries(weeklyStats)) {
     const weekEntry = weeks.find((entry) => entry.week === weekKey);
@@ -125,7 +129,7 @@ export function computeWeeklyPositionalRanks(weeklyStats, players, scoringSettin
     if (!player) continue;
     const pos = normalizePos(player.position);
     if (!pos) continue;
-    const pts = calcPoints(weekEntry, scoringSettings, player.position);
+    const pts = calcFantasyPoints(weekEntry, player.position);
     if (pts <= 0) continue;
     if (!byPos[pos]) byPos[pos] = [];
     byPos[pos].push({ id: playerId, pts });
@@ -335,9 +339,11 @@ export function computeLeagueAvgMult(rosters, seasonStats, sleeperPlayers, scori
  */
 // keyBySelf=false (default): key by the opposing team — "points allowed by each defense"
 // keyBySelf=true: key by the player's own team — "points scored by each offense"
-export function buildDefenseTable(weeklyStats, players, scheduleMap, scoringSettings, valueFn, keyBySelf = false) {
+export function buildDefenseTable(weeklyStats, players, scheduleMap, scoringSettings, valueFn, keyBySelf = false, beforeWeek = null) {
   if (!weeklyStats || !players) return {};
 
+  const weekLimit = beforeWeek == null ? null : Number(beforeWeek);
+  const weekKey = weekLimit == null || !Number.isFinite(weekLimit) ? 'all' : weekLimit;
   const canCache = !valueFn && !keyBySelf
     && isCacheKeyable(weeklyStats)
     && isCacheKeyable(players)
@@ -347,11 +353,12 @@ export function buildDefenseTable(weeklyStats, players, scheduleMap, scoringSett
     const byPlayers = getWeakCacheNode(DEFENSE_TABLE_CACHE, weeklyStats);
     const bySchedule = getWeakCacheNode(byPlayers, players);
     const byScoring = getWeakCacheNode(bySchedule, scheduleMap);
-    const cached = byScoring.get(scoringSettings);
-    if (cached) return cached;
+    const byWeek = getMapCacheNode(byScoring, scoringSettings);
+    if (byWeek.has(weekKey)) return byWeek.get(weekKey);
   }
 
-  const getValue = valueFn ?? ((wEntry, position) => calcPoints(wEntry, scoringSettings, position));
+  const calcFantasyPoints = valueFn ? null : createPointsCalculator(scoringSettings);
+  const getValue = valueFn ?? ((wEntry, position) => calcFantasyPoints(wEntry, position));
 
   // Pre-compute the inferred season team for each player.
   // For players with ESPN-enhanced weeks, use the team from those weeks — this is
@@ -377,6 +384,7 @@ export function buildDefenseTable(weeklyStats, players, scheduleMap, scoringSett
     if (!normPos) continue;
 
     for (const wEntry of playerWeeks) {
+      if (weekLimit != null && wEntry.week >= weekLimit) continue;
       const val = getValue(wEntry, player.position);
       if (val <= 0) continue;
 
@@ -413,7 +421,8 @@ export function buildDefenseTable(weeklyStats, players, scheduleMap, scoringSett
     const byPlayers = getWeakCacheNode(DEFENSE_TABLE_CACHE, weeklyStats);
     const bySchedule = getWeakCacheNode(byPlayers, players);
     const byScoring = getWeakCacheNode(bySchedule, scheduleMap);
-    byScoring.set(scoringSettings, table);
+    const byWeek = getMapCacheNode(byScoring, scoringSettings);
+    byWeek.set(weekKey, table);
   }
 
   return table;
@@ -597,6 +606,7 @@ export function computeLeagueAvgPPGByPosition(allWeeklyStats, players, scoringSe
     if (byWeek.has(weekKey)) return byWeek.get(weekKey);
   }
 
+  const calcFantasyPoints = createPointsCalculator(scoringSettings);
   const teamWeekTotalsByPos = {};
   for (const [playerId, weeks] of Object.entries(allWeeklyStats ?? {})) {
     const player = players?.[playerId];
@@ -605,7 +615,7 @@ export function computeLeagueAvgPPGByPosition(allWeeklyStats, players, scoringSe
     if (!normPos) continue;
     for (const w of weeks) {
       if (beforeWeek != null && w.week >= beforeWeek) continue;
-      const pts = calcPoints(w, scoringSettings, player.position);
+      const pts = calcFantasyPoints(w, player.position);
       if (pts <= 0) continue;
       const opp = w.opp?.toUpperCase();
       if (!opp) continue;

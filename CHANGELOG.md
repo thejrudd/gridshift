@@ -864,3 +864,18 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Trade Intelligence pick-led filtering refined** - `Fix Needs` now better preserves pick-only outgoing proposals, while the unsupported `0 players` outgoing option is disabled in `Use Surplus` to avoid dead-end filters.
 - **Modal body scroll lock normalized** - Remaining modal and sheet components now use the shared body scroll-lock hook so background content stays fixed while overlays are open.
 - **Trade engine docs added** - Added `docs/Trade Engine.md` and AGENTS guidance requiring future Trade valuation, proposal, ranking, Upgrade, and explanation changes to update that reference.
+
+---
+
+## v6.3 - Companion Performance + IDP Waivers
+*2026-04-23*
+
+- **Waiver first-load performance improved** - Waiver now filters to eligible active/free-agent players, caches rankable free-agent lists and visible-row decoration, avoids repeated full-player scans, and shows a loading state instead of flashing an empty `No Players Found` message while data is still preparing.
+- **Waiver and Rankings position filters unified** - Added shared league-position helpers so Waiver and Rankings only show positions that exist in the connected league's roster settings, including IDP, team defense, team special teams, and special teams player filters when present.
+- **Companion player row theming shared** - Rankings, Waiver, and Matchup now use a shared team-row theme helper so player background colors and hover treatment stay consistent across Companion views.
+- **Matchup first-load and week-switch performance improved** - Matchup now caches Sleeper matchup responses and expensive advanced-stat tables, avoids duplicate weather requests, gates the page behind one smoother loading state, and preserves stable team header sizing during week changes.
+- **Weather requests hardened** - Open-Meteo requests now choose the appropriate forecast/archive endpoint for the requested date and cache failed/duplicate game-weather batches more safely.
+- **Trade proposal draft picks refined** - Trade Intelligence and Upgrades draft-pick cards now sort chronologically, use clearer year-aware pick labels, and avoid projecting or over-labeling future picks beyond the actionable upcoming draft window.
+- **Trade interaction polish continued** - Proposal card fade transitions were removed for near-instant partner/result swaps, pick-card sizing rules were documented, and Trade opportunity/proposal logic gained additional caching and pick-display cleanup.
+- **League switching upgraded** - The old remove-league `X` was replaced with a persistent `Switch` control, while linked Sleeper league seasons can now be hot-swapped directly from the Companion/Trade header without returning to the league-selection flow.
+- **Roadmap realigned for Draft Coach** - v6.3 cleanup is now shipped, Draft Coach is the next planned release, and the Statistics/Fantasy drilldown unification work is tracked under v7.2.

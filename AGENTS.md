@@ -6,7 +6,7 @@
 - **Dark mode**: `.dark` class on `<html>`
 - **PWA**: vite-plugin-pwa + nginx in Docker
 - **Active branch**: `main` — all work ships directly here
-- **Current version**: v6.0.3
+- **Current version**: v6.3
 
 ## Ignore List
 - `CLAUDE.md` is for Claude-specific project guidance — do not read or reference it when `AGENTS.md` is present.
@@ -31,6 +31,7 @@ Prefer the docs folder for current architecture and implementation references in
 - `docs/Design Tokens.md` — full token table and design-system details
 - `docs/Scoring Call Sites.md` — full scoring audit checklist
 - `docs/Trade Engine.md` — Trade engine architecture, explanation rules, and maintenance reference
+- `docs/Trade Proposal Cards.md` — Trade proposal card sizing, content priority, and no-clipping rules
 - `QA_CHECKLIST.md` — manual QA flows; only open when explicitly doing QA or test validation
 
 ---
@@ -97,6 +98,12 @@ After committing: do NOT run `git push` — the user pushes manually.
 ### CHANGELOG.md Rules
 - Never use "Unreleased" as a section header — always assign changes to a specific version number, even if not yet released.
 - If the version number is unclear, ask the user before writing the entry.
+
+### Commit Message Rules
+- Version/release commits must use a glance-able subject in this format: `vX.Y[.Z] - Short Release Theme`.
+- Do not use generic subjects like `Release v6.3`; GitHub shows the subject in file history, so it must summarize what shipped.
+- Include a commit body with a short summary sentence and a `Highlights:` list covering the major shipped changes.
+- Keep the commit body aligned with `CHANGELOG.md`, `README.md` What's New, and the actual files changed.
 
 ### README.md Rules
 - **Features section**: Major features only, one line each. Update when a new major feature ships. No bug fixes or minor polish.
@@ -178,7 +185,7 @@ Quick summary: every `calcPoints()` and `calcPointsFromTotals()` call must pass 
 ## Common Gotchas
 
 ### Trade proposal card sizing
-Any time proposal player or draft cards are resized, also verify vertical content fit on desktop. Larger or narrower cards must still allow the stat sections to expand the card height instead of clipping or overflowing, and equal-height syncing across a trade package must continue to hold after the size change.
+Detailed rules live in `docs/Trade Proposal Cards.md`. Any time proposal player or draft cards are resized, verify the fixed 5:7 ratio, single-line identity labels, desktop stat fit, mobile width caps, and equal-height syncing across a trade package.
 
 ### Ranked lists with search filters
 Always compute rank (`i + 1`) on the full sorted list, then filter for display. Never derive rank after filtering — the rank number will reflect position in the filtered subset, not the true overall rank. Carry `rank` as a property on each item; render uses `item.rank`, not the map index.
