@@ -32,6 +32,7 @@ Prefer the docs folder for current architecture and implementation references in
 - `docs/Scoring Call Sites.md` — full scoring audit checklist
 - `docs/Trade Engine.md` — Trade engine architecture, explanation rules, and maintenance reference
 - `docs/Trade Proposal Cards.md` — Trade proposal card sizing, content priority, and no-clipping rules
+- `docs/Scout.md` — Scout tab architecture: file map, data shape, design tokens, route integration, and real-data wiring checklist
 - `QA_CHECKLIST.md` — manual QA flows; only open when explicitly doing QA or test validation
 
 ---
