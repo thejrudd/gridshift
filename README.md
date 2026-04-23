@@ -19,6 +19,7 @@ An interactive web app for predicting the 2026 NFL season — with full Sleeper 
 - **Fantasy Matchup View** — Head-to-head starter comparison with week-by-week points, projections, positional rankings, weather context, and game location
 - **Player Projections** — Min/max/projected ranges using a recent-weighted blend of form and season average, factoring opponent strength, home/away, weather, and snap % trend
 - **Heatmap** — 32-team grid of fantasy points allowed or scored per position per week; three scope modes, Vegas spread/O/U overlay, location filter, and per-cell player drilldowns
+- **Scout (Alpha)** — Rookie scouting hub with 2026 prospects, all-position filters, draft-status handling, combine metrics, and side-by-side prospect comparison
 - **Scoring Breakdowns** — Drill into any player or full team score to see a stat-by-stat fantasy point breakdown
 - **Favorite Team Theming** — Pick your favorite NFL team to theme the app; accent color applies across nav, progress bar, and filter toggles
 - **Export/Import** — Save predictions as JSON; import JSON to restore picks
@@ -85,17 +86,16 @@ npm run validate:routing
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) |
 
-## What's New in v6.3
+## What's New in v7.0
 
-- **Companion performance tightened** - Waiver and Matchup now avoid repeated heavy recomputation, use shared loading states, and cache expensive matchup/waiver derivations for smoother first-open and week-switch behavior.
-- **IDP-aware Waivers and Rankings** - Waiver and Rankings now share league-position availability logic, including IDP, team defense, team special teams, and special teams player positions only when those slots exist in the league.
-- **Trade and league-context polish** - Trade proposal pick cards now sort chronologically with clearer year-specific draft-pick display, and Companion/Trade league headers now support in-place year switching for linked Sleeper league seasons.
+- **Scout launched as a top-level Alpha section** - Rookie scouting now lives in its own main tab on desktop and mobile, with Companion and Trade moving out of Beta.
+- **2026 rookie board and combine data shipped** - Scout includes a broad 2026 prospect board, all 319 official combine invitees, real measurements/testing where available, and automatically derived percentile bars for the combine cards.
+- **Pre-draft draft coach workflow is live** - Prospect detail, compare, and filtering all support the pre-draft state cleanly, with nullable draft results now ready to be filled in as the 2026 NFL Draft happens.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Roadmap
 
-- **v7.0 — Draft Coach** — Rookie scouting hub with draft slot, college production, combine metrics, consensus ranking, and dynasty rookie ADP.
 - **v7.1 - Trade Module Decomposition** - Split the largest Trade components and engines into focused modules for lower maintenance cost.
 - **v7.2 - Statistics / Fantasy Drilldown Unification** - One canonical player-analysis destination with mode-aware drilldowns across Statistics and Companion.
 - **Week-by-Week View** *(blocked on 2026 schedule data)* — Browse the full schedule by week with predictions reflected

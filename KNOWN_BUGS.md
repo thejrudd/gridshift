@@ -25,6 +25,7 @@ Open bugs are listed first, fixed bugs below. Add new entries at the bottom of e
 
 | Bug | Fixed In |
 |-----|----------|
+| Trade Agent roster browse modal could crash with `ReferenceError: ROSTER_BROWSE_OFFENSE_POSITIONS is not defined` when opening `View Roster & Picks` for a selected partner | v7.0 |
 | Trade Intelligence `0 players` outgoing filtering was too broad: Fix Needs under-surfaced pick-only packages, while Use Surplus exposed an unsupported dead-end 0-player option | v6.2.6 |
 | Trade Intelligence explanation text could name a non-traded fallback player from the partner roster without clearly signaling that the player was only remaining post-trade depth, making the write-up read as if extra assets were included in the deal | v6.2.6 |
 | Desktop sidebar can still scroll on shorter laptop viewports in Predictions because the shell allows sidebar overflow instead of keeping the desktop rail fixed in place | v6.2.0 |

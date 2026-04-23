@@ -7,21 +7,6 @@ New features requested or planned should be added here.
 
 ## Planned Versions
 
-### v7.0 - Draft Coach
-
-Surfaces publicly available scouting and evaluation data to help users make informed draft decisions.
-
-- **Draft Profile Card** - Per-player card showing: NFL Draft slot (round, pick, overall, drafting team), college stats by position (completions/attempts/TDs/INTs for QBs, carries/yards/TDs for RBs, targets/catches/yards/TDs for WRs/TEs), NFL Combine results (40-yard dash, vertical, broad jump, 3-cone, shuttle, bench press, height/weight) with percentile grades relative to positional peers, consensus big-board rank, and dynasty rookie ADP
-- **Position Filters** - Filter the full rookie list by QB, RB, WR, TE (IDP stretch: DL, LB, DB)
-- **Sort Controls** - Sort by: Overall Draft Pick, Dynasty ADP, Big Board Rank, 40-yard dash, College Production (yards, TDs)
-- **Rookie Comparison** - Select two rookies to view side-by-side: draft slot, combine results, college stats, rankings
-- **Data Sources** - All data is static/bundled (no live API dependency at launch): draft results hand-entered into `/src/data/rookies.js`, combine stats from NFL.com / Pro Football Reference, dynasty ADP from KeepTradeCut or Sleeper consensus, big-board ranks averaged from 2-3 major sources
-
-**Stretch Goals (post-launch)**
-- Prospect comparison against historical rookie comps (e.g. "similar combine profile to Justin Jefferson")
-- Live dynasty ADP via KeepTradeCut public API (if available)
-- Depth chart position within the drafting team (Day 1 starter vs. depth)
-
 ### v7.1 - Trade Module Decomposition
 
 Split the monolithic `CompanionTrade.jsx` (4,800+ lines) and `opportunityEngine.js` (3,000+ lines) into focused, single-responsibility modules to reduce per-edit token cost and improve maintainability.
@@ -41,6 +26,9 @@ Unifies player detail analysis so fantasy scoring and regular game production li
 - **Consistent detail hierarchy** - Redesign the Statistics player page so matchup context, weekly tables, summary blocks, and fantasy/game-stat views can absorb the detail currently split across Companion-specific modal flows
 - **Mode-state clarity** - Add explicit visual indication of the active mode and ensure navigation/back behavior preserves the selected player context when arriving from Companion
 - **Fix & Improve toggles in Player view in Statistics** - Introduce consistent desigh philosophy throughout the app for any available toggles. Allow "Fantasy Scoring" toggle to to flip all statistics to their respective fantasy value. Improve layout so all relevant stats are shown relative to position on desktop, and are removed in reverse order of importance to accommodate limited screen space on smaller devices.
+
+### v8.0 - ESPN League Integration
+### v9.0 - Live Fantasy Scoring
 
 ---
 

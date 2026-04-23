@@ -50,6 +50,7 @@ const CompanionDefense = lazy(() => import('./components/companion/CompanionDefe
 const CompanionTrade = lazy(() => import('./components/companion/CompanionTrade'));
 const loadCompareTab = () => import('./components/compare/CompareTab');
 const CompareTab = lazy(loadCompareTab);
+const ScoutTab = lazy(() => import('./components/scout/ScoutTab'));
 
 function SectionLoading({ label = 'Loading section' }) {
   return (
@@ -637,6 +638,12 @@ function AppInner() {
                 });
               }}
             />
+            </Suspense>
+          )}
+
+          {activeTab === 'scout' && (
+            <Suspense fallback={<SectionLoading label="Loading scout" />}>
+              <ScoutTab />
             </Suspense>
           )}
 

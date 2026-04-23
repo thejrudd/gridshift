@@ -1,15 +1,16 @@
 export default function BottomTabBar({ activeTab, onTabChange }) {
   const tabs = [
-    { id: 'predictions', label: 'Predictions', Icon: SeasonIcon },
-    { id: 'statistics',  label: 'Statistics',  Icon: PlayersIcon },
-    { id: 'companion',   label: 'Companion',   Icon: CompanionIcon, beta: true },
-    { id: 'trade',       label: 'Trade',       Icon: TradeIcon, beta: true },
+    { id: 'predictions', label: 'Predictions', renderIcon: (active) => <SeasonIcon active={active} /> },
+    { id: 'statistics',  label: 'Statistics',  renderIcon: (active) => <PlayersIcon active={active} /> },
+    { id: 'companion',   label: 'Companion',   renderIcon: (active) => <CompanionIcon active={active} /> },
+    { id: 'trade',       label: 'Trade',       renderIcon: (active) => <TradeIcon active={active} /> },
+    { id: 'scout',       label: 'Scout',       renderIcon: (active) => <ScoutIcon active={active} />, alpha: true },
   ];
 
   return (
     <nav className="tab-bar" aria-label="Main navigation">
       <div className="tab-bar-inner">
-        {tabs.map(({ id, label, Icon, beta, alpha }) => {
+        {tabs.map(({ id, label, renderIcon, beta, alpha }) => {
           const active = activeTab === id;
           return (
             <button
@@ -20,7 +21,7 @@ export default function BottomTabBar({ activeTab, onTabChange }) {
               aria-current={active ? 'page' : undefined}
             >
               <span style={{ position: 'relative', display: 'inline-flex', justifyContent: 'center' }}>
-                <Icon active={active} />
+                {renderIcon(active)}
                 {beta && (
                   <span style={{
                     position: 'absolute',
@@ -50,8 +51,8 @@ export default function BottomTabBar({ activeTab, onTabChange }) {
                     textTransform: 'uppercase',
                     padding: '1px 3px',
                     borderRadius: '3px',
-                    background: '#8b5cf6',
-                    color: '#fff',
+                    background: 'var(--color-alpha)',
+                    color: 'var(--color-alpha-fg)',
                     lineHeight: '11px',
                   }}>
                     α
@@ -140,6 +141,33 @@ function TradeIcon({ active }) {
         <g>
           <path d="M5 9h11l-2-2 1.4-1.4L20.8 9l-5.4 3.4L14 11l2-2H5z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
           <path d="M21 17H10l2 2-1.4 1.4L5.2 17l5.4-3.4L12 15l-2 2h11z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+        </g>
+      )}
+    </svg>
+  );
+}
+
+function ScoutIcon({ active }) {
+  return (
+    <svg width="26" height="26" viewBox="0 0 26 26" fill="none" className="tab-icon" aria-hidden="true">
+      {active ? (
+        <g fill="currentColor">
+          {/* Clipboard body */}
+          <rect x="6" y="5" width="14" height="17" rx="2" />
+          {/* Clip at top */}
+          <rect x="10" y="3" width="6" height="4" rx="1" fill="var(--color-bg)" />
+          {/* Lines (report rows) */}
+          <rect x="9" y="11" width="8" height="1.5" rx="0.75" fill="var(--color-bg)" />
+          <rect x="9" y="14" width="6" height="1.5" rx="0.75" fill="var(--color-bg)" />
+          <rect x="9" y="17" width="4" height="1.5" rx="0.75" fill="var(--color-bg)" />
+        </g>
+      ) : (
+        <g>
+          <rect x="6" y="5" width="14" height="17" rx="2" stroke="currentColor" strokeWidth="1.5" />
+          <rect x="10" y="3" width="6" height="4" rx="1" stroke="currentColor" strokeWidth="1.3" fill="var(--color-bg)" />
+          <line x1="9" y1="11.75" x2="17" y2="11.75" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+          <line x1="9" y1="14.75" x2="15" y2="14.75" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+          <line x1="9" y1="17.75" x2="13" y2="17.75" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
         </g>
       )}
     </svg>

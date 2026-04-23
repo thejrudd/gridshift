@@ -29,8 +29,8 @@ export default function CompanionSubNav({ activeView, onViewChange }) {
                 textTransform: 'uppercase',
                 padding: '1px 3px',
                 borderRadius: '3px',
-                background: '#8b5cf6',
-                color: '#fff',
+                background: 'var(--color-alpha)',
+                color: 'var(--color-alpha-fg)',
                 lineHeight: '11px',
                 verticalAlign: 'middle',
               }}>

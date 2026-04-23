@@ -43,6 +43,8 @@ import useCardGlow from '../../hooks/useCardGlow.jsx';
 import useBodyScrollLock from '../../hooks/useBodyScrollLock';
 import useMediaQuery from '../../hooks/useMediaQuery.js';
 
+const ROSTER_BROWSE_OFFENSE_POSITIONS = new Set(['QB', 'RB', 'WR', 'TE', 'K']);
+
 const UPGRADE_TRADE_POSTURES = [
   { level: 0, label: 'Underpay', description: 'Try to buy low' },
   { level: 1, label: 'Lean Under', description: 'Slight edge to me' },

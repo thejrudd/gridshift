@@ -1,7 +1,7 @@
 const VIEWS = [
-  { id: 'agent', label: 'Agent', beta: true },
-  { id: 'intelligence', label: 'Intelligence', beta: true },
-  { id: 'upgrade', label: 'Upgrades', beta: true },
+  { id: 'agent', label: 'Agent' },
+  { id: 'intelligence', label: 'Intelligence' },
+  { id: 'upgrade', label: 'Upgrades' },
   { id: 'compare', label: 'Compare' },
 ];
 
@@ -45,8 +45,8 @@ export default function TradeSubNav({ activeView, onViewChange, onViewIntent }) 
                 textTransform: 'uppercase',
                 padding: '1px 3px',
                 borderRadius: '3px',
-                background: '#8b5cf6',
-                color: '#fff',
+                background: 'var(--color-alpha)',
+                color: 'var(--color-alpha-fg)',
                 lineHeight: '11px',
                 verticalAlign: 'middle',
               }}>

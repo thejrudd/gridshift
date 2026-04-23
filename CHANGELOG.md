@@ -879,3 +879,14 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Trade interaction polish continued** - Proposal card fade transitions were removed for near-instant partner/result swaps, pick-card sizing rules were documented, and Trade opportunity/proposal logic gained additional caching and pick-display cleanup.
 - **League switching upgraded** - The old remove-league `X` was replaced with a persistent `Switch` control, while linked Sleeper league seasons can now be hot-swapped directly from the Companion/Trade header without returning to the league-selection flow.
 - **Roadmap realigned for Draft Coach** - v6.3 cleanup is now shipped, Draft Coach is the next planned release, and the Statistics/Fantasy drilldown unification work is tracked under v7.2.
+
+---
+
+## v7.0 - Draft Coach Alpha
+*2026-04-23*
+
+- **Scout shipped as a top-level Alpha section** - Added a dedicated Scout tab on desktop and mobile navigation, removed Beta badges from Companion and Trade, and introduced shared Alpha badge tokens for the nav system.
+- **2026 rookie board bundled in-app** - Replaced the old Scout mock data with a static 2026 rookie dataset that covers the full class, including all 319 official combine invitees and a broad 2026 prospect board for pre-draft browsing.
+- **Pre-draft / post-draft Scout model added** - Scout players now support nullable draft results, real draft-status handling, all-position filters, clean null-safe sorting, and prospect detail/compare views that work for fantasy and non-fantasy positions.
+- **Combine visuals restored with real data** - Added static combine measurements and testing, automatic percentile bars/grades by position group, explicit combine-status states (`Tested`, `Measured Only`, `Invitee`, `Pro Day Only`, `No Combine`), and coverage/audit scripts for maintaining the class.
+- **Scout docs and data tooling added** - Documented the Scout architecture and post-draft update flow, added ESPN photo ID and combine audit helpers, and updated the roadmap to move shipped Draft Coach work out of `TO_DO.md`.

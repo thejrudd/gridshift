@@ -21,7 +21,7 @@ export default function Sidebar({
   onScoringSettings,
 }) {
   const progress = totalTeams > 0 ? (predictionCount / totalTeams) * 100 : 0;
-  const { isConnected, hasLeague, disconnect } = useSleeperLeague();
+  const { isConnected, disconnect } = useSleeperLeague();
 
   return (
     <aside className="app-sidebar">
@@ -113,14 +113,19 @@ export default function Sidebar({
           onClick={() => onTabChange('companion')}
           icon={<CompanionIcon />}
           label="Companion"
-          beta
         />
         <SidebarNavItem
           active={activeTab === 'trade'}
           onClick={() => onTabChange('trade')}
           icon={<TradeIcon />}
           label="Trade"
-          beta
+        />
+        <SidebarNavItem
+          active={activeTab === 'scout'}
+          onClick={() => onTabChange('scout')}
+          icon={<ScoutIcon />}
+          label="Scout"
+          alpha
         />
       </nav>
 
@@ -215,7 +220,7 @@ export default function Sidebar({
           className="px-5 py-3 text-xs"
           style={{ color: 'var(--color-label-tertiary)' }}
         >
-          v6.3
+          v7.0
         </div>
       </div>
     </aside>
@@ -266,8 +271,8 @@ function AlphaBadge() {
       textTransform: 'uppercase',
       padding: '1px 5px',
       borderRadius: '4px',
-      background: '#8b5cf6',
-      color: '#fff',
+      background: 'var(--color-alpha)',
+      color: 'var(--color-alpha-fg)',
       lineHeight: '14px',
     }}>
       Alpha
@@ -305,6 +310,18 @@ function TradeIcon() {
   );
 }
 
+function ScoutIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 26 26" fill="none" aria-hidden="true">
+      <rect x="6" y="5" width="14" height="17" rx="2" stroke="currentColor" strokeWidth="1.5" />
+      <rect x="10" y="3" width="6" height="4" rx="1" stroke="currentColor" strokeWidth="1.3" fill="var(--color-bg)" />
+      <line x1="9" y1="11.75" x2="17" y2="11.75" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+      <line x1="9" y1="14.75" x2="15" y2="14.75" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+      <line x1="9" y1="17.75" x2="13" y2="17.75" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function SeasonIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 26 26" fill="none" aria-hidden="true">
@@ -325,4 +342,3 @@ function PlayersIcon() {
     </svg>
   );
 }
-
