@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import {
   positionColor, tierColor, tierFg,
   formatHeight, formatForty, gradeFromPercentile, gradeColor,
-  draftRoundLabel, formatDraftSelection, formatDraftSlot, formatProjectedPick, formatRank, playerPhotoUrl, photoFallback,
+  draftRoundLabel, formatProjectedPick, formatRank, playerPhotoUrl, photoFallback,
   getCombineStatus, combineStatusColor, getCombineStatusDescription, getTierDescription,
   getCollegeProductionRows,
 } from './scoutUtils';
@@ -143,7 +143,6 @@ function DraftSection({ player }) {
       <DataRow label="Status" value={player.draftStatus === 'drafted' ? 'Drafted' : 'Not drafted yet'} />
       <DataRow label="Projected Pick" value={player.draftStatus === 'drafted' ? null : formatProjectedPick(player)} />
       <DataRow label="Team" value={player.draftTeamName} logoUrl={nflLogoUrl(player.draftTeam || player.draftTeamName)} />
-      <DataRow label="Selection" value={formatDraftSelection(player)} />
       <DataRow label="Round / Pick" value={draftRoundLabel(player.draftRound, player.draftPick)} />
       <DataRow label="Prospect Rank" value={formatRank(player.bigBoardRank)} />
       <DataRow label="NFL Grade" value={player.nflGrade?.toFixed(2)} />
@@ -202,7 +201,6 @@ export default function ScoutPlayerCard({ player, onCompare, compareAId, onViewS
   const tc = tierColor(resolvedPlayer.tier);
   const tfg = tierFg(resolvedPlayer.tier);
   const isPendingCompare = compareAId === resolvedPlayer.id;
-  const draftSlot = formatDraftSlot(resolvedPlayer);
   const combineStatus = getCombineStatus(resolvedPlayer);
   const combineStatusStyle = { borderColor: combineStatusColor(combineStatus), color: combineStatusColor(combineStatus) };
 
@@ -277,7 +275,6 @@ export default function ScoutPlayerCard({ player, onCompare, compareAId, onViewS
             >
               {combineStatus}
             </span>
-            <span className="scout-card-pick">{draftSlot}</span>
           </div>
         </div>
       </div>

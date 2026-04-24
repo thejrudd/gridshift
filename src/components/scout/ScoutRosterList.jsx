@@ -6,10 +6,12 @@ import {
   playerPhotoUrl,
   photoFallback,
   getCombineStatus,
+  combineStatusColor,
   getCombineStatusDescription,
   getTierDescription,
   getCollegeProductionSummary,
 } from './scoutUtils';
+import { nflLogoUrl } from './scoutTeamLogos';
 
 function CollegeStatSummary({ player }) {
   const summary = getCollegeProductionSummary(player);
@@ -38,6 +40,47 @@ function CompareButton({ player, compareAId, onCompare }) {
         <rect x="13" y="3" width="8" height="18" rx="1" />
       </svg>
     </button>
+  );
+}
+
+function CombineStatusChip({ status }) {
+  return (
+    <span
+      className="scout-card-status-chip scout-row-combine-chip"
+      style={{ color: combineStatusColor(status) }}
+      title={getCombineStatusDescription(status)}
+    >
+      {status}
+    </span>
+  );
+}
+
+function DraftSelectionMeta({ player }) {
+  if (player.draftStatus !== 'drafted' || player.draftRound == null || player.draftPick == null) {
+    return <span className="scout-row-pick">Not drafted yet</span>;
+  }
+
+  const teamLogo = nflLogoUrl(player.draftTeam || player.draftTeamName);
+  const roundPickLabel = `Round ${player.draftRound}, Pick ${player.draftPick}`;
+
+  return (
+    <span className="scout-row-selection" title={`${roundPickLabel} · ${player.draftTeamName ?? 'Drafted team'}`}>
+      <span className="scout-row-selection-copy">
+        <span className="scout-row-selection-prefix">Selected</span>
+        <span className="scout-row-selection-round">{roundPickLabel}</span>
+      </span>
+      {teamLogo && (
+        <img
+          src={teamLogo}
+          alt=""
+          className="scout-inline-logo scout-row-selection-logo"
+          onError={event => { event.currentTarget.style.display = 'none'; }}
+        />
+      )}
+      {player.draftTeamName && (
+        <span className="scout-row-selection-team">{player.draftTeamName}</span>
+      )}
+    </span>
   );
 }
 
@@ -80,13 +123,8 @@ function RosterRow({ player, isSelected, compareAId, onSelectPlayer, onCompare }
             <span className="scout-row-college">{player.college}</span>
           </div>
           <div className="scout-row-meta-line">
-            <span
-              className="scout-row-combine-state"
-              title={getCombineStatusDescription(combineStatus)}
-            >
-              {combineStatus}
-            </span>
-            <span className="scout-row-pick">{draftSlot}</span>
+            <CombineStatusChip status={combineStatus} />
+            <DraftSelectionMeta player={player} />
           </div>
         </div>
       </div>

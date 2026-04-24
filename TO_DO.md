@@ -39,6 +39,12 @@ Unifies player detail analysis so fantasy scoring and regular game production li
 - **Mode-state clarity** - Add explicit visual indication of the active mode and ensure navigation/back behavior preserves the selected player context when arriving from Companion
 - **Fix & Improve toggles in Player view in Statistics** - Introduce consistent desigh philosophy throughout the app for any available toggles. Allow "Fantasy Scoring" toggle to to flip all statistics to their respective fantasy value. Improve layout so all relevant stats are shown relative to position on desktop, and are removed in reverse order of importance to accommodate limited screen space on smaller devices.
 
+### v7.3 - Scout Rookie Projection Layer
+
+Tabled Scout enhancements that build on the post-draft rookie data foundation without expanding v7.0 scope.
+
+- **Next-season fantasy projection layer for rookies** - Add a fantasy-facing projection surface for the upcoming NFL season so Scout can serve both standard rookie boards and IDP-aware formats without overloading the current prospect filters. Scope should cover offensive and IDP leagues, projection source-of-truth, display hierarchy, and how projections interact with draft status and college production.
+
 ### v8.0 - ESPN League Integration
 ### v9.0 - Live Fantasy Scoring
 

@@ -4,7 +4,7 @@ import { DRAFT_ORDER_SOURCE_2026, DRAFT_PICKS_2026 } from '../../data/draftPicks
 import { DRAFT_RESULTS_2026, DRAFT_RESULTS_SOURCE_2026 } from '../../data/draftResults';
 import { TEAM_NAMES, getTeamPalette } from '../../data/teamColors';
 import useBodyScrollLock from '../../hooks/useBodyScrollLock';
-import { FANTASY_POSITION_GROUPS, hasCombineData, playerPhotoUrl, photoFallback } from './scoutUtils';
+import { hasCombineData, playerPhotoUrl, photoFallback } from './scoutUtils';
 import { collegeLogoUrl, nflLogoUrl } from './scoutTeamLogos';
 import ScoutPositionalSpotlight from './ScoutPositionalSpotlight';
 import ScoutRosterList from './ScoutRosterList';
@@ -23,7 +23,9 @@ const SORT_OPTIONS = [
   { value: 'recYards',     label: 'Rec Yards' },
 ];
 
-const POS_FILTERS = ['All', 'Fantasy', 'QB', 'RB', 'WR', 'TE', 'DL', 'LB', 'DB', 'OL', 'ST'];
+const OFFENSE_POSITION_GROUPS = new Set(['QB', 'RB', 'WR', 'TE', 'OL']);
+const DEFENSE_POSITION_GROUPS = new Set(['DL', 'LB', 'DB', 'ST']);
+const POS_FILTERS = ['All', 'Offense', 'Defense', 'QB', 'RB', 'WR', 'TE', 'DL', 'LB', 'DB', 'OL', 'ST'];
 const SCOUT_VIEWS = [
   { value: 'prospects', label: 'Prospects' },
   { value: 'picks', label: 'Picks' },
@@ -67,6 +69,23 @@ const LIVE_DRAFT_RESULTS_URL = import.meta.env?.VITE_SCOUT_DRAFT_RESULTS_URL?.tr
   || (USE_ESPN_DRAFT_RESULTS ? ESPN_LIVE_DRAFT_URL : '');
 const LIVE_DRAFT_RESULTS_INTERVAL_MS = Number(import.meta.env?.VITE_SCOUT_DRAFT_RESULTS_INTERVAL_MS ?? 30_000);
 const LIVE_DRAFT_BANNER_INTERVAL_MS = 60_000;
+const DRAFT_SESSION_WINDOWS_2026 = [
+  {
+    label: 'Round 1',
+    startAt: Date.parse('2026-04-23T20:00:00-04:00'),
+    endAt: Date.parse('2026-04-23T23:00:00-04:00'),
+  },
+  {
+    label: 'Rounds 2-3',
+    startAt: Date.parse('2026-04-24T19:00:00-04:00'),
+    endAt: Date.parse('2026-04-24T23:00:00-04:00'),
+  },
+  {
+    label: 'Rounds 4-7',
+    startAt: Date.parse('2026-04-25T12:00:00-04:00'),
+    endAt: Date.parse('2026-04-25T19:00:00-04:00'),
+  },
+];
 
 function darkenHex(hex, amount = 0.32) {
   const clean = String(hex ?? '').replace('#', '');
@@ -704,6 +723,43 @@ function compareDescNullLast(a, b) {
   return b - a;
 }
 
+function getDraftScheduleState(now = Date.now()) {
+  const activeSession = DRAFT_SESSION_WINDOWS_2026.find(
+    session => now >= session.startAt && now <= session.endAt,
+  ) ?? null;
+  const nextSession = DRAFT_SESSION_WINDOWS_2026.find(session => session.startAt > now) ?? null;
+  const firstStartAt = DRAFT_SESSION_WINDOWS_2026[0]?.startAt ?? null;
+  const finalEndAt = DRAFT_SESSION_WINDOWS_2026[DRAFT_SESSION_WINDOWS_2026.length - 1]?.endAt ?? null;
+
+  return {
+    activeSession,
+    nextSession,
+    showBanner: firstStartAt != null && finalEndAt != null && now >= firstStartAt && now <= finalEndAt,
+  };
+}
+
+function syncDesktopPanelPosition(detailNode, listShellNode) {
+  if (!detailNode) return;
+
+  if (window.innerWidth < 1024) {
+    detailNode.style.removeProperty('--scout-panel-top');
+    detailNode.style.removeProperty('--scout-panel-left');
+    detailNode.style.removeProperty('--scout-panel-width');
+    return;
+  }
+
+  const listShellRect = listShellNode?.getBoundingClientRect();
+  const detailRect = detailNode.getBoundingClientRect();
+  const panelWidth = Math.round(detailRect.width || 340);
+  const shellTop = listShellRect?.top ?? 80;
+  const shellRight = listShellRect?.right ?? detailRect.right;
+  const panelLeft = Math.round(shellRight - panelWidth);
+
+  detailNode.style.setProperty('--scout-panel-top', `${Math.max(80, Math.round(shellTop))}px`);
+  detailNode.style.setProperty('--scout-panel-left', `${panelLeft}px`);
+  detailNode.style.setProperty('--scout-panel-width', `${panelWidth}px`);
+}
+
 function sortRookies(rookies, sortKey) {
   return [...rookies].sort((a, b) => {
     switch (sortKey) {
@@ -762,6 +818,7 @@ export default function ScoutTab({ view = 'prospects', onViewChange }) {
   const [compareOpen, setCompareOpen] = useState(false);
   const [statisticsPlayer, setStatisticsPlayer] = useState(null);
   const [desktopPanelHeight, setDesktopPanelHeight] = useState(null);
+  const [draftScheduleNow, setDraftScheduleNow] = useState(() => Date.now());
   const listShellRef = useRef(null);
   const detailPanelRef = useRef(null);
   const [liveDraftInfo, setLiveDraftInfo] = useState(null);
@@ -822,8 +879,9 @@ export default function ScoutTab({ view = 'prospects', onViewChange }) {
   const sorted = sortRookies(scoutPlayers, sortKey).map((r, i) => ({ ...r, rank: i + 1 }));
 
   const filtered = sorted.filter(r => {
-    if (posFilter === 'Fantasy' && !FANTASY_POSITION_GROUPS.has(r.positionGroup)) return false;
-    if (posFilter !== 'All' && posFilter !== 'Fantasy' && r.positionGroup !== posFilter) return false;
+    if (posFilter === 'Offense' && !OFFENSE_POSITION_GROUPS.has(r.positionGroup)) return false;
+    if (posFilter === 'Defense' && !DEFENSE_POSITION_GROUPS.has(r.positionGroup)) return false;
+    if (posFilter !== 'All' && posFilter !== 'Offense' && posFilter !== 'Defense' && r.positionGroup !== posFilter) return false;
     if (combineOnly && !hasCombineData(r)) return false;
     if (search) {
       const q = search.toLowerCase();
@@ -888,20 +946,7 @@ export default function ScoutTab({ view = 'prospects', onViewChange }) {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
         const detailNode = detailPanelRef.current;
-        if (!detailNode) return;
-
-        if (window.innerWidth < 1024) {
-          detailNode.style.removeProperty('--scout-panel-top');
-          detailNode.style.removeProperty('--scout-panel-left');
-          detailNode.style.removeProperty('--scout-panel-width');
-          return;
-        }
-
-        const listShellTop = listShellRef.current?.getBoundingClientRect().top ?? 80;
-        const detailRect = detailNode.getBoundingClientRect();
-        detailNode.style.setProperty('--scout-panel-top', `${Math.max(80, Math.round(listShellTop))}px`);
-        detailNode.style.setProperty('--scout-panel-left', `${Math.round(detailRect.left)}px`);
-        detailNode.style.setProperty('--scout-panel-width', `${Math.round(detailRect.width)}px`);
+        syncDesktopPanelPosition(detailNode, listShellRef.current);
       });
     };
 
@@ -917,19 +962,19 @@ export default function ScoutTab({ view = 'prospects', onViewChange }) {
   }, [selectedPlayerId]);
 
   useEffect(() => {
+    const tick = () => setDraftScheduleNow(Date.now());
+    tick();
+    const id = window.setInterval(tick, 30_000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  useEffect(() => {
     if (typeof window === 'undefined') return undefined;
     const detailNode = detailPanelRef.current;
     if (!detailNode) return undefined;
 
     const observer = new ResizeObserver(() => {
-      if (window.innerWidth < 1024) {
-        return;
-      }
-      const listShellTop = listShellRef.current?.getBoundingClientRect().top ?? 80;
-      const detailRect = detailNode.getBoundingClientRect();
-      detailNode.style.setProperty('--scout-panel-top', `${Math.max(80, Math.round(listShellTop))}px`);
-      detailNode.style.setProperty('--scout-panel-left', `${Math.round(detailRect.left)}px`);
-      detailNode.style.setProperty('--scout-panel-width', `${Math.round(detailRect.width)}px`);
+      syncDesktopPanelPosition(detailNode, listShellRef.current);
     });
 
     observer.observe(detailNode);
@@ -984,9 +1029,17 @@ export default function ScoutTab({ view = 'prospects', onViewChange }) {
     };
   }, []);
 
+  const draftScheduleState = getDraftScheduleState(draftScheduleNow);
+  const liveBannerInfo = liveDraftInfo ?? { isDraftLive: false, hasActiveClock: false, bestAvailable: [], bestFit: [] };
+
   return (
     <div className="scout-tab">
-      {liveDraftInfo?.isDraftLive && <ScoutLiveDraftBanner info={liveDraftInfo} />}
+      {draftScheduleState.showBanner && (
+        <ScoutLiveDraftBanner
+          info={liveBannerInfo}
+          scheduleState={draftScheduleState}
+        />
+      )}
       <div className="scout-view-tabs" role="tablist" aria-label="Scout views">
         {SCOUT_VIEWS.map(item => (
           <button
@@ -1005,7 +1058,7 @@ export default function ScoutTab({ view = 'prospects', onViewChange }) {
       {scoutView === 'prospects' && (
         <>
       {/* ── Editorial header ───────────────────────────────── */}
-      <ScoutPositionalSpotlight players={sorted} onSelectPlayer={handleSelectPlayer} />
+      <ScoutPositionalSpotlight players={filtered} onSelectPlayer={handleSelectPlayer} />
 
       {/* ── Filter / sort toolbar ──────────────────────────── */}
       <div className="scout-toolbar">
@@ -1192,20 +1245,37 @@ export default function ScoutTab({ view = 'prospects', onViewChange }) {
   );
 }
 
-function ScoutLiveDraftBanner({ info }) {
+function formatSessionStartLabel(timestamp) {
+  if (timestamp == null) return null;
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    weekday: 'short',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  }).format(new Date(timestamp));
+}
+
+function ScoutLiveDraftBanner({ info, scheduleState }) {
+  const isSessionLive = Boolean(scheduleState?.activeSession);
   const team = info.teamName ? getDraftTeamMeta(info.teamName) : null;
-  const secondsLeft = useCountdown(info.expiresAt);
+  const secondsLeft = useCountdown(isSessionLive ? info.expiresAt : scheduleState?.nextSession?.startAt ?? null);
 
   const mins = secondsLeft != null ? Math.floor(secondsLeft / 60) : null;
   const secs = secondsLeft != null ? secondsLeft % 60 : null;
   const countdownStr = secondsLeft != null
     ? `${mins}:${String(secs).padStart(2, '0')}`
     : null;
-  const countdownUrgent = secondsLeft != null && secondsLeft < 60;
+  const countdownUrgent = isSessionLive && secondsLeft != null && secondsLeft < 60;
 
   const bg = team?.gradient ?? 'linear-gradient(135deg, var(--color-fill) 0%, var(--color-bg-secondary) 100%)';
   const fg = team?.textColor ?? 'var(--color-label)';
   const muted = team?.mutedColor ?? 'var(--color-label-tertiary)';
+  const livePillLabel = isSessionLive && info.hasActiveClock ? 'Live' : 'Paused';
+  const countdownLabel = isSessionLive ? 'Time Remaining' : 'Next Session';
+  const nextSessionLabel = scheduleState?.nextSession
+    ? `${scheduleState.nextSession.label} · ${formatSessionStartLabel(scheduleState.nextSession.startAt)} ET`
+    : null;
 
   return (
     <div className="scout-live-banner" style={{ background: bg, color: fg }}>
@@ -1221,8 +1291,8 @@ function ScoutLiveDraftBanner({ info }) {
         {/* Left: live pill + team logo + pick info */}
         <div className="scout-live-banner-left">
           <span className="scout-live-pill">
-            {info.hasActiveClock && <span className="scout-live-dot" />}
-            {info.hasActiveClock ? 'Live' : 'Draft Paused'}
+            {isSessionLive && info.hasActiveClock && <span className="scout-live-dot" />}
+            {livePillLabel}
           </span>
           {team?.logoUrl && (
             <img
@@ -1233,9 +1303,13 @@ function ScoutLiveDraftBanner({ info }) {
             />
           )}
           <div className="scout-live-banner-pick-info">
-            <span className="scout-live-banner-otc" style={{ color: muted }}>On the Clock</span>
-            <span className="scout-live-banner-team">{info.teamName ?? '—'}</span>
-            {(info.round != null || info.overall != null) && (
+            <span className="scout-live-banner-otc" style={{ color: muted }}>
+              {isSessionLive ? 'On the Clock' : 'Draft Status'}
+            </span>
+            <span className="scout-live-banner-team">
+              {isSessionLive ? (info.teamName ?? 'Awaiting pick') : (scheduleState?.activeSession?.label ?? 'Draft paused')}
+            </span>
+            {isSessionLive && (info.round != null || info.overall != null) && (
               <span className="scout-live-banner-slot" style={{ color: muted }}>
                 {[
                   info.round != null ? `Round ${info.round}` : null,
@@ -1250,7 +1324,7 @@ function ScoutLiveDraftBanner({ info }) {
         <div className="scout-live-banner-right">
           {countdownStr != null && (
             <div className="scout-live-countdown">
-              <span className="scout-live-countdown-label" style={{ color: muted }}>Time Remaining</span>
+              <span className="scout-live-countdown-label" style={{ color: muted }}>{countdownLabel}</span>
               <span
                 className="scout-live-countdown-time"
                 style={{ color: countdownUrgent ? '#ef4444' : fg }}
@@ -1259,7 +1333,15 @@ function ScoutLiveDraftBanner({ info }) {
               </span>
             </div>
           )}
-          {info.bestAvailable.length > 0 && (
+          {!isSessionLive && nextSessionLabel && (
+            <div className="scout-live-best">
+              <span className="scout-live-best-label" style={{ color: muted }}>Upcoming</span>
+              <div className="scout-live-best-list">
+                <span className="scout-live-best-item">{nextSessionLabel}</span>
+              </div>
+            </div>
+          )}
+          {isSessionLive && info.bestAvailable.length > 0 && (
             <div className="scout-live-best">
               <span className="scout-live-best-label" style={{ color: muted }}>Best Available</span>
               <div className="scout-live-best-list">

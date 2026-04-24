@@ -61,8 +61,7 @@ export function formatDraftSelection(player) {
 
 export function draftRoundLabel(round, pick) {
   if (round == null || pick == null) return null;
-  const suffix = round === 1 ? 'st' : round === 2 ? 'nd' : round === 3 ? 'rd' : 'th';
-  return `Round ${round}${suffix}, Pick ${pick}`;
+  return `Round ${round}, Pick ${pick}`;
 }
 
 export function gradeFromPercentile(pct) {

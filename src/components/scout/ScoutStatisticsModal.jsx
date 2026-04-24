@@ -91,6 +91,24 @@ function buildFallbackSeasons(player) {
   }));
 }
 
+function isPriorityWeeklyLogTier(player) {
+  return player?.tier === 'Elite' || player?.tier === 'Starter';
+}
+
+function seasonFallbackMessage(player) {
+  if (isPriorityWeeklyLogTier(player)) {
+    return 'Showing bundled season production. Weekly logs for Elite and Starter prospects are imported selectively through the CFBD workflow.';
+  }
+  return 'Showing bundled season production. Weekly logs are prioritized for Elite and Starter prospects, so this profile may only carry season totals by default.';
+}
+
+function emptyWeeklyLogMessage(player) {
+  if (isPriorityWeeklyLogTier(player)) {
+    return 'Weekly college logs are not bundled for this profile yet. Run the selective CFBD game-log importer to add game-by-game rows with opponent and score.';
+  }
+  return 'Weekly college logs are bundled selectively for Elite and Starter prospects. This profile is currently using season totals only.';
+}
+
 export default function ScoutStatisticsModal({ player, onClose }) {
   useBodyScrollLock();
 
@@ -145,7 +163,7 @@ export default function ScoutStatisticsModal({ player, onClose }) {
               <div className="scout-stats-section-title">Season by Season</div>
               {hasSeasonFallback && (
                 <p className="scout-stats-section-note">
-                  Showing bundled season production. Week-by-week logs require the CFBD game-log import.
+                  {seasonFallbackMessage(player)}
                 </p>
               )}
               <div className="scout-stats-season-list">
@@ -164,7 +182,7 @@ export default function ScoutStatisticsModal({ player, onClose }) {
             </section>
           ) : (
             <div className="scout-empty">
-              Weekly college logs are not bundled yet. Run the CFBD game-log importer to populate this profile.
+              {emptyWeeklyLogMessage(player)}
             </div>
           )}
 
@@ -188,7 +206,7 @@ export default function ScoutStatisticsModal({ player, onClose }) {
             <section className="scout-stats-section">
               <div className="scout-stats-section-title">Week by Week</div>
               <div className="scout-empty">
-                Weekly college logs are not bundled yet. Run the CFBD game-log importer to populate game-by-game rows.
+                {emptyWeeklyLogMessage(player)}
               </div>
             </section>
           )}

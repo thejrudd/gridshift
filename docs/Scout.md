@@ -13,7 +13,7 @@ Introduced in v7.0 Alpha. Scout is a top-level rookie evaluation hub backed by s
 | Release badge | Alpha |
 | Layout | Single scroll page on mobile; split panel (list left, detail right) on desktop (lg+) |
 | Mobile detail | Bottom sheet (flat top edge, no rounded corners) |
-| Spotlight layout | Fantasy-first QB/RB/WR/TE cards derived from the current sorted rookie data |
+| Spotlight layout | Current-board editorial cards derived from the current sorted rookie data |
 | Aesthetic | Digital war room + Broadcast Editorial hybrid — position identity colors, tier badges, letter grades |
 | Rounded corners | None on player info elements; chip filters intentionally keep rounded corners |
 | Player photos | ESPN college headshots when `espnCollegeId` is available; Sleeper CDN is a later fallback via `sleeperPlayerId`; otherwise default player silhouette |
@@ -27,7 +27,7 @@ Introduced in v7.0 Alpha. Scout is a top-level rookie evaluation hub backed by s
 ```
 src/components/scout/
   ScoutTab.jsx                  Shell — state, filter/sort toolbar, layout orchestration
-  ScoutPositionalSpotlight.jsx  Fantasy-first editorial header
+  ScoutPositionalSpotlight.jsx  Current-board editorial header
   ScoutRosterList.jsx           Sortable, filterable ranked list
   ScoutPlayerCard.jsx           Detail card content — Draft → College → Combine
   ScoutPlayerSheet.jsx          Wrapper: bottom sheet or desktop right panel
@@ -87,14 +87,15 @@ For pre-draft player photos, prefer verified ESPN college athlete IDs because mo
   - `Prospects` is the pre-draft board, filters, player profile panel, and compare flow.
   - `Picks` is the full 2026 draft order by round, sourced from `src/data/draftPicks.js` unless a live feed URL is configured.
   - `Results` is the post-draft outcome view, populated from `drafted` records in `ROOKIES_2026`.
-- Filters: `All`, `Fantasy`, `QB`, `RB`, `WR`, `TE`, `DL`, `LB`, `DB`, `OL`, `ST`.
-- `Fantasy` filters the board to QB/RB/WR/TE only.
+- Filters: `All`, `Offense`, `Defense`, `QB`, `RB`, `WR`, `TE`, `DL`, `LB`, `DB`, `OL`, `ST`.
+- `Offense` filters the board to QB/RB/WR/TE/OL.
+- `Defense` filters the board to DL/LB/DB/ST.
 - `Combine Data` filters to prospects with verified combine drill results, not measured-only players.
 - Sorts: Projected Pick, Prospect Rank, NFL Grade, Dynasty ADP, 40-Yard Dash, Rush Yards, Rec Yards.
 - Null sort values always sort last so blank draft/ADP/combine data never floats above verified data.
 - Rank (`i + 1`) is assigned on the full sorted list before position/search filtering, per the ranked-list gotcha in `AGENTS.md`.
 - Search covers player name, college, position, position group, team abbreviation, and team name.
-- Top Prospects is derived dynamically from the current sorted dataset, taking the first available QB/RB/WR/TE.
+- Top Prospects is derived dynamically from the current filtered and sorted dataset, taking the first six players on the active board regardless of position group.
 - `projectedOverall` is the current pre-draft default sort. In alpha it is a bundled, position-adjusted board heuristic, not a live consensus mock feed.
 - Prospect tiers are editorial labels: `Elite` for blue-chip prospects, `Starter` for players with a realistic starting path, and `Rotational` for role-player or depth contributors.
 - The in-app Scout guide should be updated when Scout's user workflow or mental model changes in a meaningful way (new tabs, new core filters, new comparison behavior, new data surfaces). Do not update it for minor copy, spacing, or visual-only polish.
