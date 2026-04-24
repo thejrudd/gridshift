@@ -11,6 +11,7 @@ Use this note as the entry point.
 - [[Design Tokens]]
 - [[Scoring Call Sites]]
 - [[Trade Engine]]
+- [[Scout]]
 - [[Open Pencil Integration]]
 - [[Pretext Integration]]
 - [[BALLDONTLIE NFL Integration]]
@@ -39,6 +40,7 @@ flowchart TD
   A --> D[Where To Edit]
   A --> E[Scoring Call Sites]
   A --> J[Trade Engine]
+  A --> K[Scout]
   A --> F[Open Pencil Integration]
   A --> G[Pretext Integration]
   A --> H[BALLDONTLIE NFL Integration]
@@ -62,4 +64,7 @@ flowchart TD
   J --> J1[Agent flow]
   J --> J2[Intelligence flow]
   J --> J3[Upgrade flow]
+  K --> K1[Prospects]
+  K --> K2[Picks and Results]
+  K --> K3[CFBD Importers]
 ```

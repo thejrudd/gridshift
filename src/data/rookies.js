@@ -126,6 +126,12 @@ const RICH_ROOKIES_2026 = [
   rookie(1, 'Arvell Reese', 'EDGE', 'Ohio State', 7.04, {
     positionGroup: 'DL',
     espnCollegeId: '4950400',
+    draftStatus: 'drafted',
+    draftRound: 1,
+    draftPick: 5,
+    draftOverall: 5,
+    draftTeam: 'nyg',
+    draftTeamName: 'New York Giants',
     sources: { ...BASE_SOURCES, alternateBoard: PFF_BOARD },
   }),
   rookie(2, 'David Bailey', 'EDGE', 'Texas Tech', 6.78, {

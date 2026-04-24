@@ -114,7 +114,7 @@ VITE_SCOUT_USE_ESPN_DRAFT_RESULTS=true
 
 The client polls these URLs with `cache: 'no-store'`, falls back to bundled data if a feed fails, and never requires a secret in the browser. The picks feed can be either an array or `{ "picks": [...] }`; the results feed can be an array, `{ "results": [...] }`, or `{ "picks": [...] }`.
 
-If `VITE_SCOUT_DRAFT_RESULTS_URL` is not set, Scout Results defaults to ESPN's undocumented public draft rounds endpoint. Set `VITE_SCOUT_USE_ESPN_DRAFT_RESULTS=false` to disable that best-effort integration. ESPN is not a guaranteed contract; keep the manual `src/data/draftResults.js` fallback current for critical draft-night data.
+If `VITE_SCOUT_DRAFT_PICKS_URL` or `VITE_SCOUT_DRAFT_RESULTS_URL` is not set, Scout defaults to ESPN's undocumented public draft endpoint at `https://site.api.espn.com/apis/site/v2/sports/football/nfl/draft`. This endpoint drives the On the Clock banner, live pick ownership, and live result rows. Set `VITE_SCOUT_USE_ESPN_DRAFT_RESULTS=false` to disable the best-effort Results integration. ESPN is not a guaranteed contract; keep `src/data/draftPicks.js` and `src/data/draftResults.js` current for critical draft-night fallback data.
 
 Required pick fields:
 
@@ -185,6 +185,7 @@ Scout college production is imported from CollegeFootballData.com with a local N
 ```bash
 CFBD_API_KEY=... node scripts/import-scout-production.mjs --year 2025
 CFBD_API_KEY=... node scripts/import-scout-production.mjs --year 2024,2025 --dry-run
+CFBD_API_KEY=... node scripts/import-scout-game-logs.mjs --year 2023,2024,2025
 ```
 
 The script fetches `/stats/player/season` for offensive, defensive, turnover, kicking, punting, and return categories by default using `Authorization: Bearer <key>`, normalizes player names and college/team names, matches rows to records in `ROOKIES_2026`, and writes `src/data/rookieProduction.generated.js`. The generated file is a static data artifact consumed by `src/data/rookies.js`; it contains no secrets and does not mutate curated rookie records.
@@ -192,6 +193,33 @@ The script fetches `/stats/player/season` for offensive, defensive, turnover, ki
 `rookies.js` merges generated `collegeStats` conservatively: curated non-null stat fields win and generated values fill missing fields. Scout renders fantasy production for QB/RB/WR/TE, defensive production for DL/LB/DB, and kicking/punting/return production for ST. Offensive linemen usually do not receive meaningful individual CFBD player-season production; keep OL cards tolerant of missing stats unless a separate verified source is added for starts, snaps, pressures, or sacks allowed.
 
 After each import, review the script summary: matched count, unmatched production rows, prospects missing production, and output path. Investigate unmatched rows before treating the generated file as complete, especially transfers and same-name players.
+
+### Prospect Statistics Modal Data
+
+The Prospect Statistics modal reads `src/data/rookieGameLogs.generated.js`. Generate it locally with `scripts/import-scout-game-logs.mjs`; React must not call CFBD directly because `CFBD_API_KEY` is a secret.
+
+Primary CFBD endpoints:
+
+- `GET https://api.collegefootballdata.com/stats/player/season` — season-level player production used by `scripts/import-scout-production.mjs`.
+- `GET https://api.collegefootballdata.com/games/players` — game/week player production used by `scripts/import-scout-game-logs.mjs`.
+- `GET https://api.collegefootballdata.com/games` — game metadata used by the game-log importer for opponent, week, and result context.
+
+Generated modal shape:
+
+```js
+{
+  "2026-fernando-mendoza": {
+    seasons: [
+      { year: 2025, team: "Indiana", record: { wins: 0, losses: 0 }, stats: { passYards: 1200 } }
+    ],
+    games: [
+      { year: 2025, week: 1, team: "Indiana", opponent: "Ohio State", result: "W 31-24", stats: { passYards: 250 } }
+    ]
+  }
+}
+```
+
+If generated logs are missing for a player, the modal renders an empty state instead of making a browser request.
 
 ---
 

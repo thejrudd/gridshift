@@ -12,8 +12,8 @@
 - `CLAUDE.md` is for Claude-specific project guidance — do not read or reference it when `AGENTS.md` is present.
 
 ## API Secret Handling
-- Any BALLDONTLIE or similar paid API key must be treated as a secret and must never be committed into the repo or exposed in the client bundle.
-- If the project upgrades to a paid BALLDONTLIE subscription, rotate the existing key and move all access behind a server-side or proxy boundary before production use.
+- Any BALLDONTLIE, CFBD/CollegeFootballData, or similar paid API key must be treated as a secret and must never be committed into the repo or exposed in the client bundle.
+- If the project upgrades to a paid BALLDONTLIE or CFBD subscription, rotate the existing key and move all access behind a server-side or proxy boundary before production use.
 
 ## Versioning Roadmap
 - **v6.0** — Trade Suite (shipped)
@@ -32,7 +32,7 @@ Prefer the docs folder for current architecture and implementation references in
 - `docs/Scoring Call Sites.md` — full scoring audit checklist
 - `docs/Trade Engine.md` — Trade engine architecture, explanation rules, and maintenance reference
 - `docs/Trade Proposal Cards.md` — Trade proposal card sizing, content priority, and no-clipping rules
-- `docs/Scout.md` — Scout tab architecture: file map, data shape, design tokens, route integration, and real-data wiring checklist
+- `docs/Scout.md` — Scout tab architecture, APIs, CFBD importers, generated production data, Prospect Statistics modal data contracts, route integration, and real-data wiring checklist
 - `QA_CHECKLIST.md` — manual QA flows; only open when explicitly doing QA or test validation
 
 ---

@@ -74,6 +74,22 @@ This page is the quick "open these files first" guide.
 - `src/utils/ktcApi.js`
 - `src/utils/idpEngine.js`
 
+## Scout
+
+- `src/components/scout/ScoutTab.jsx`
+- `src/components/scout/ScoutPlayerCard.jsx`
+- `src/components/scout/ScoutPlayerSheet.jsx`
+- `src/components/scout/ScoutStatisticsModal.jsx`
+- `src/components/scout/scoutUtils.js`
+- `src/data/rookies.js`
+- `src/data/draftPicks.js`
+- `src/data/draftResults.js`
+- `src/data/rookieProduction.generated.js`
+- `src/data/rookieGameLogs.generated.js`
+- `scripts/import-scout-production.mjs`
+- `scripts/import-scout-game-logs.mjs`
+- `docs/Scout.md`
+
 ## Export / Import / Shareable Image
 
 - `src/components/ExportPreview.jsx`

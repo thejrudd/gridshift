@@ -13,6 +13,18 @@ export const DRAFT_RESULTS_2026 = [
     college: 'Indiana',
     source: USER_REPORTED_DRAFT_RESULTS,
   },
+  {
+    round: 1,
+    pick: 5,
+    overall: 5,
+    team: 'nyg',
+    teamName: 'New York Giants',
+    playerId: '2026-arvell-reese',
+    playerName: 'Arvell Reese',
+    position: 'EDGE',
+    college: 'Ohio State',
+    source: USER_REPORTED_DRAFT_RESULTS,
+  },
 ];
 
 export const DRAFT_RESULTS_SOURCE_2026 = USER_REPORTED_DRAFT_RESULTS;

@@ -64,6 +64,12 @@ Back: [[Home]]
 
 - Side-by-side player comparison across ESPN stats, fantasy output, and trade value.
 
+### `src/components/scout`
+
+- Rookie scouting UI for Prospects, Picks, and Results.
+- Reads static/generated Scout datasets from `src/data`.
+- Uses local-only import scripts for CFBD production and game-log data.
+
 ### `src/utils`
 
 - Most domain logic lives here: scoring, projections, trade math, export shaping, search parsing.
@@ -75,6 +81,11 @@ Back: [[Home]]
 ### `src/data`
 
 - Static datasets such as team colors, honors, stadiums, and team history.
+- Scout datasets include `rookies.js`, `draftPicks.js`, `draftResults.js`, `rookieProduction.generated.js`, and `rookieGameLogs.generated.js`.
+
+### `scripts`
+
+- Scout importers such as `import-scout-production.mjs` and `import-scout-game-logs.mjs` call CFBD locally with `CFBD_API_KEY` and write generated data files. API keys must not enter the client bundle.
 
 ## Build And Runtime Config
 
