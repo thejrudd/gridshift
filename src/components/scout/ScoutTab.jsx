@@ -166,7 +166,59 @@ function normalizeDraftPick(raw) {
   };
 }
 
+function normalizeEspnDraftPick(pick, roundNumber) {
+  if (!pick || typeof pick !== 'object') return null;
+
+  const overall = Number(
+    pick.number ?? pick.overall ?? pick.overallPickNumber ?? pick.pickNumber ?? pick.selection ?? pick.id,
+  );
+  const pickInRound = Number(pick.pick ?? pick.roundPickNumber ?? pick.pickInRound ?? pick.selection);
+  const round = Number(pick.round ?? pick.roundNumber ?? roundNumber);
+  const teamName = espnPickTeamName(pick, overall);
+
+  if (!Number.isFinite(round) || !Number.isFinite(overall) || !teamName) return null;
+
+  const statusName = firstString(
+    typeof pick?.status === 'string' ? pick.status : null,
+    pick?.status?.name,
+    pick?.status?.type?.name,
+  );
+
+  return {
+    round,
+    overall,
+    teamName,
+    note: statusName === 'ON_THE_CLOCK' ? 'On the clock' : '',
+    source: ESPN_LIVE_DRAFT_URL,
+    playerName: espnPlayerName(pick) || null,
+    position: espnPlayerPosition(pick) || null,
+    college: espnPlayerCollege(pick) || null,
+    team: (pick?.teamId != null ? ESPN_NFL_ABBR_BY_ID[String(pick.teamId)] : null)
+      || firstString(pick?.team?.abbreviation, pick?.franchise?.abbreviation)
+      || null,
+    pick: Number.isFinite(pickInRound) ? pickInRound : overall,
+  };
+}
+
+function normalizeEspnDraftPicksPayload(payload) {
+  const rounds = Array.isArray(payload?.items) ? payload.items : [];
+  const directPicks = Array.isArray(payload?.picks) ? payload.picks : [];
+  const picks = [
+    ...directPicks.map(pick => normalizeEspnDraftPick(pick, payload?.number)),
+    ...rounds.flatMap(round => (
+      Array.isArray(round?.picks)
+        ? round.picks.map(pick => normalizeEspnDraftPick(pick, round.number))
+        : []
+    )),
+  ].filter(Boolean);
+
+  return picks.sort((a, b) => a.overall - b.overall);
+}
+
 function normalizeDraftPicksPayload(payload) {
+  const espnRows = normalizeEspnDraftPicksPayload(payload);
+  if (espnRows.length) return espnRows;
+
   const rows = Array.isArray(payload) ? payload : payload?.picks;
   if (!Array.isArray(rows)) return [];
   return rows
