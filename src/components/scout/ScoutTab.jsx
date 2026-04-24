@@ -68,7 +68,11 @@ const USE_ESPN_DRAFT_RESULTS = import.meta.env?.VITE_SCOUT_USE_ESPN_DRAFT_RESULT
 const LIVE_DRAFT_RESULTS_URL = import.meta.env?.VITE_SCOUT_DRAFT_RESULTS_URL?.trim()
   || (USE_ESPN_DRAFT_RESULTS ? ESPN_LIVE_DRAFT_URL : '');
 const LIVE_DRAFT_RESULTS_INTERVAL_MS = Number(import.meta.env?.VITE_SCOUT_DRAFT_RESULTS_INTERVAL_MS ?? 30_000);
-const LIVE_DRAFT_BANNER_INTERVAL_MS = 60_000;
+// Adaptive banner polling: snappy when a pick is about to land, calmer otherwise.
+const LIVE_DRAFT_BANNER_INTERVAL_FAST_MS = 5_000;     // OTC clock under 30 s
+const LIVE_DRAFT_BANNER_INTERVAL_NORMAL_MS = 15_000;  // OTC clock active (> 30 s)
+const LIVE_DRAFT_BANNER_INTERVAL_IDLE_MS = 60_000;    // Draft not live
+const LIVE_DRAFT_BANNER_FAST_THRESHOLD_MS = 30_000;
 const DRAFT_SESSION_WINDOWS_2026 = [
   {
     label: 'Round 1',
@@ -166,7 +170,11 @@ function normalizeDraftPick(raw) {
   };
 }
 
-function normalizeEspnDraftPick(pick, roundNumber) {
+// onTheClockOverall: the overall slot number that is *actually* on the clock right now,
+// derived from payload.current.pickId. ESPN marks ALL undrafted slots with status
+// "ON_THE_CLOCK", so we must gate the note to the single authoritative slot number.
+// When onTheClockOverall is null we fall back to the pick's own status string.
+function normalizeEspnDraftPick(pick, roundNumber, onTheClockOverall = null) {
   if (!pick || typeof pick !== 'object') return null;
 
   const overall = Number(
@@ -184,11 +192,16 @@ function normalizeEspnDraftPick(pick, roundNumber) {
     pick?.status?.type?.name,
   );
 
+  // If we know which slot is authoritative, use exact match; otherwise fall back to status.
+  const isOnTheClock = onTheClockOverall != null
+    ? overall === onTheClockOverall
+    : statusName === 'ON_THE_CLOCK';
+
   return {
     round,
     overall,
     teamName,
-    note: statusName === 'ON_THE_CLOCK' ? 'On the clock' : '',
+    note: isOnTheClock ? 'On the clock' : '',
     source: ESPN_LIVE_DRAFT_URL,
     playerName: espnPlayerName(pick) || null,
     position: espnPlayerPosition(pick) || null,
@@ -203,11 +216,17 @@ function normalizeEspnDraftPick(pick, roundNumber) {
 function normalizeEspnDraftPicksPayload(payload) {
   const rounds = Array.isArray(payload?.items) ? payload.items : [];
   const directPicks = Array.isArray(payload?.picks) ? payload.picks : [];
+
+  // Resolve the one authoritative on-the-clock slot from payload.current so we don't
+  // accidentally flag every undrafted pick as OTC (ESPN marks them all that way).
+  const current = payload?.current ?? null;
+  const onTheClockOverall = current?.pickId != null ? Number(current.pickId) : null;
+
   const picks = [
-    ...directPicks.map(pick => normalizeEspnDraftPick(pick, payload?.number)),
+    ...directPicks.map(pick => normalizeEspnDraftPick(pick, payload?.number, onTheClockOverall)),
     ...rounds.flatMap(round => (
       Array.isArray(round?.picks)
-        ? round.picks.map(pick => normalizeEspnDraftPick(pick, round.number))
+        ? round.picks.map(pick => normalizeEspnDraftPick(pick, round.number, onTheClockOverall))
         : []
     )),
   ].filter(Boolean);
@@ -1035,7 +1054,9 @@ export default function ScoutTab({ view = 'prospects', onViewChange }) {
     return () => observer.disconnect();
   }, [selectedPlayerId]);
 
-  // Live draft banner — polls the flat ESPN draft endpoint every 60 s
+  // Live draft banner — adaptive polling against the flat ESPN draft endpoint.
+  // Intervals: 5 s when the OTC clock is under 30 s (catch the pick landing),
+  // 15 s while the clock is comfortably running, 60 s when the draft is not live.
   useEffect(() => {
     let stopped = false;
     let timeoutId = 0;
@@ -1043,25 +1064,40 @@ export default function ScoutTab({ view = 'prospects', onViewChange }) {
 
     const clearScheduled = () => { window.clearTimeout(timeoutId); timeoutId = 0; };
 
-    const scheduleNext = () => {
+    const computeNextInterval = (info) => {
+      if (!info?.isDraftLive) return LIVE_DRAFT_BANNER_INTERVAL_IDLE_MS;
+      if (info.hasActiveClock && info.expiresAt != null) {
+        const msLeft = info.expiresAt - Date.now();
+        if (msLeft <= LIVE_DRAFT_BANNER_FAST_THRESHOLD_MS) {
+          return LIVE_DRAFT_BANNER_INTERVAL_FAST_MS;
+        }
+      }
+      // Live session, between picks, or clock comfortably running — keep it snappy.
+      return LIVE_DRAFT_BANNER_INTERVAL_NORMAL_MS;
+    };
+
+    const scheduleNext = (intervalMs) => {
       if (stopped || document.visibilityState !== 'visible') return;
       clearScheduled();
-      timeoutId = window.setTimeout(fetchLiveDraft, LIVE_DRAFT_BANNER_INTERVAL_MS);
+      timeoutId = window.setTimeout(fetchLiveDraft, intervalMs);
     };
 
     const fetchLiveDraft = async () => {
       if (document.visibilityState !== 'visible') return;
       controller?.abort();
       controller = new AbortController();
+      let nextInterval = LIVE_DRAFT_BANNER_INTERVAL_NORMAL_MS;
       try {
         const payload = await fetchJsonWithAbort(ESPN_LIVE_DRAFT_URL, controller.signal);
         if (stopped) return;
-        setLiveDraftInfo(normalizeEspnLiveDraftPayload(payload));
+        const info = normalizeEspnLiveDraftPayload(payload);
+        setLiveDraftInfo(info);
+        nextInterval = computeNextInterval(info);
       } catch (err) {
         if (stopped || err.name === 'AbortError') return;
-        // Silently fail — keep previous banner state
+        // Silently fail — keep previous banner state and retry on the normal cadence.
       } finally {
-        scheduleNext();
+        scheduleNext(nextInterval);
       }
     };
 
@@ -1323,7 +1359,13 @@ function ScoutLiveDraftBanner({ info, scheduleState }) {
   const bg = team?.gradient ?? 'linear-gradient(135deg, var(--color-fill) 0%, var(--color-bg-secondary) 100%)';
   const fg = team?.textColor ?? 'var(--color-label)';
   const muted = team?.mutedColor ?? 'var(--color-label-tertiary)';
-  const livePillLabel = isSessionLive && info.hasActiveClock ? 'Live' : 'Paused';
+  // Three states for the pill:
+  // - Session live + active clock: "Live" with pulsing dot
+  // - Session live but no active clock (between picks, selection just submitted): "Pick In"
+  // - Session not live (between sessions or before draft): "Paused"
+  const livePillLabel = isSessionLive
+    ? (info.hasActiveClock ? 'Live' : 'Pick In')
+    : 'Paused';
   const countdownLabel = isSessionLive ? 'Time Remaining' : 'Next Session';
   const nextSessionLabel = scheduleState?.nextSession
     ? `${scheduleState.nextSession.label} · ${formatSessionStartLabel(scheduleState.nextSession.startAt)} ET`
@@ -1781,8 +1823,19 @@ function ScoutTeamPicksDialog({ teamName, picks, onClose }) {
   );
 }
 
+const RESULTS_SORT_OPTIONS = [
+  { value: 'topPicks', label: 'Top Picks' },
+  { value: 'mostRecent', label: 'Most Recent' },
+];
+
 function ScoutResultsView({ players, draftResults, liveFeedState, selectedPlayerId, onSelectPlayer }) {
+  const [sortOrder, setSortOrder] = useState('topPicks');
   const mergedResults = mergeDraftResultsWithPlayers(draftResults, players);
+  // Source data arrives sorted ascending by overall (Pick #1 first). For "Most Recent"
+  // we reverse so the latest pick is at the top — better for live viewing during the draft.
+  const orderedResults = sortOrder === 'mostRecent'
+    ? [...mergedResults].reverse()
+    : mergedResults;
 
   return (
     <div className="scout-results-view">
@@ -1790,9 +1843,28 @@ function ScoutResultsView({ players, draftResults, liveFeedState, selectedPlayer
         <h2 className="scout-view-title">Draft Results</h2>
         <ScoutDraftResultsFeedStatus state={liveFeedState} count={mergedResults.length} />
       </div>
+      {mergedResults.length > 0 && (
+        <div className="scout-pick-filter-bar">
+          <div className="scout-pick-round-filters" role="tablist" aria-label="Sort draft results">
+            {RESULTS_SORT_OPTIONS.map(option => (
+              <button
+                key={option.value}
+                type="button"
+                role="tab"
+                aria-selected={sortOrder === option.value}
+                className="scout-round-chip"
+                aria-pressed={sortOrder === option.value}
+                onClick={() => setSortOrder(option.value)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       {mergedResults.length > 0 ? (
         <div className="scout-results-list">
-          {mergedResults.map(result => (
+          {orderedResults.map(result => (
             <ScoutResultRow
               key={result.overall}
               result={result}

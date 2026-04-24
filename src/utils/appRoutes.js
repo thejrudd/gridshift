@@ -10,7 +10,9 @@ function normalizeCompanionView(view) {
 }
 
 const DEFAULT_ROUTE = {
-  activeTab: 'predictions',
+  // Scout is the primary section on first load — see /scout for the Draft Coach surface.
+  // Predictions, Companion, Statistics, and Trade still resolve normally via their own paths.
+  activeTab: 'scout',
   seasonView: 'predictions',
   predictionsTeamId: null,
   statisticsView: 'browser',

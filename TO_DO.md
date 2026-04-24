@@ -7,7 +7,7 @@ New features requested or planned should be added here.
 
 ## Planned Versions
 
-### v7.0.3 - Post-Draft nflverse Enrichment
+### v7.0.4 - Post-Draft nflverse Enrichment
 
 After the draft concludes, build `scripts/scout-nflverse-update.mjs` to fetch  
 `https://raw.githubusercontent.com/leesharpe/nfldata/master/data/draft_picks.csv`,  

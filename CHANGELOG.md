@@ -910,3 +910,14 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Scout and Statistics lines merged** - Merged the `v7.0` Scout branch and the `v7.0.1` Statistics browser recovery work onto `main`, carrying forward both the Draft Coach Alpha surfaces and the restored Statistics browser presentation.
 - **Scout polish continued post-merge** - Tightened Scout filter behavior, spotlight stability, desktop profile positioning, selective CFBD game-log imports, and draft-night banner/status handling.
 - **Statistics light-mode team cards corrected** - Fixed the remaining light-mode card edge cases so the Rams gradient direction and Jets text contrast now render correctly in the Statistics browser.
+
+---
+
+## v7.0.3 - Live Draft Night Polish
+*2026-04-24*
+
+- **Scout → Picks no longer marks every upcoming team "On the Clock"** - ESPN's flat draft endpoint marks every undrafted slot with status `ON_THE_CLOCK`, so the Picks view was showing the badge on every future pick. Pick normalization now resolves the one authoritative slot from `payload.current.pickId` and only that pick gets the on-the-clock note.
+- **Live banner shows "Pick In" between selections** - When a draft session is live but the OTC clock isn't actively counting (between picks, just after a selection submits), the pill now reads `Pick In` instead of `Paused` so the banner reflects the actual live state. `Paused` remains the label between scheduled draft sessions.
+- **Adaptive live banner polling** - The live draft banner now polls the ESPN endpoint at 5 s when the OTC clock has 30 s or less remaining, 15 s while the clock is comfortably running or between picks during a live session, and 60 s when the draft is not live. This catches the moment a pick lands without hammering the API the rest of the time.
+- **Draft Results sort toggle** - Added a Top Picks / Most Recent toggle to Scout → Results so users can see the most recent pick at the top during a live draft, then flip back to ascending order to scan the board top-down.
+- **Scout becomes the primary landing section** - The default landing tab is now Scout, and the desktop sidebar and mobile bottom tab bar are reordered to Scout, Companion, Statistics, Trade, Predictions. Existing deep links (`/predictions`, `/companion/...`, etc.) continue to resolve directly to their target sections.

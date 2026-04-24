@@ -97,16 +97,11 @@ export default function Sidebar({
       {/* Main navigation */}
       <nav className="sidebar-nav" aria-label="Main navigation">
         <SidebarNavItem
-          active={activeTab === 'predictions'}
-          onClick={() => onTabChange('predictions')}
-          icon={<SeasonIcon />}
-          label="Predictions"
-        />
-        <SidebarNavItem
-          active={activeTab === 'statistics'}
-          onClick={() => onTabChange('statistics')}
-          icon={<PlayersIcon />}
-          label="Statistics"
+          active={activeTab === 'scout'}
+          onClick={() => onTabChange('scout')}
+          icon={<ScoutIcon />}
+          label="Scout"
+          alpha
         />
         <SidebarNavItem
           active={activeTab === 'companion'}
@@ -115,17 +110,22 @@ export default function Sidebar({
           label="Companion"
         />
         <SidebarNavItem
+          active={activeTab === 'statistics'}
+          onClick={() => onTabChange('statistics')}
+          icon={<PlayersIcon />}
+          label="Statistics"
+        />
+        <SidebarNavItem
           active={activeTab === 'trade'}
           onClick={() => onTabChange('trade')}
           icon={<TradeIcon />}
           label="Trade"
         />
         <SidebarNavItem
-          active={activeTab === 'scout'}
-          onClick={() => onTabChange('scout')}
-          icon={<ScoutIcon />}
-          label="Scout"
-          alpha
+          active={activeTab === 'predictions'}
+          onClick={() => onTabChange('predictions')}
+          icon={<SeasonIcon />}
+          label="Predictions"
         />
       </nav>
 
@@ -220,7 +220,7 @@ export default function Sidebar({
           className="px-5 py-3 text-xs"
           style={{ color: 'var(--color-label-tertiary)' }}
         >
-          v7.0.2
+          v7.0.3
         </div>
       </div>
     </aside>

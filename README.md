@@ -86,20 +86,20 @@ npm run validate:routing
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) |
 
-## What's New in v7.0.2
+## What's New in v7.0.3
 
-- **Scout and Statistics workstreams merged** - `main` now carries both the Scout Draft Coach Alpha release and the restored Statistics browser presentation from `v7.0.1`.
-- **Scout polish continued** - Top Prospects, filters, desktop profile behavior, selective college game-log imports, and draft-night live-state handling were tightened after the merge.
-- **Statistics card finish** - The remaining light-mode Rams and Jets card contrast/direction issues were corrected in the Statistics browser.
+- **Scout is now the primary landing section** - Default tab on first load is Scout, with the desktop sidebar and mobile bottom tab bar reordered to Scout, Companion, Statistics, Trade, Predictions.
+- **Live draft banner — adaptive polling and accurate state** - The banner now polls every 5 s when the OTC clock is under 30 s, 15 s during the rest of an active session, and 60 s when the draft is idle. The pill reads `Pick In` between selections during a live session and `Paused` only when the draft is between scheduled sessions.
+- **Picks view OTC fix and Results sort toggle** - Scout → Picks now marks only the single authoritative pick as on the clock instead of every upcoming slot, and Scout → Results gained a Top Picks / Most Recent toggle for live viewing.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Roadmap
 
+- **v7.0.4 - Post-Draft nflverse Enrichment** - Patch Scout with verified draft-slot enrichment from nflverse after the draft concludes.
 - **v7.1 - Trade Module Decomposition** - Split the largest Trade components and engines into focused modules for lower maintenance cost.
 - **v7.2 - Statistics / Fantasy Drilldown Unification** - One canonical player-analysis destination with mode-aware drilldowns across Statistics and Companion.
 - **v7.3 - Scout Rookie Projection Layer** - Add next-season rookie projections that work for standard and IDP-focused draft prep without overloading the current Scout board.
-- **v7.0.3 - Post-Draft nflverse Enrichment** - Patch Scout with verified draft-slot enrichment from nflverse after the draft concludes.
 - **Week-by-Week View** *(blocked on 2026 schedule data)* — Browse the full schedule by week with predictions reflected
 
 ## Project Structure
