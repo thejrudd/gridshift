@@ -1,9 +1,9 @@
 import {
-  FANTASY_POSITION_GROUPS,
   positionColor, tierColor, tierFg,
   formatHeight, formatForty, gradeFromPercentile, gradeColor,
-  draftRoundLabel, formatDraftSelection, formatDraftSlot, formatRank, playerPhotoUrl, photoFallback,
-  getCombineStatus, combineStatusColor,
+  draftRoundLabel, formatDraftSelection, formatDraftSlot, formatProjectedPick, formatRank, playerPhotoUrl, photoFallback,
+  getCombineStatus, combineStatusColor, getCombineStatusDescription, getTierDescription,
+  getCollegeProductionRows,
 } from './scoutUtils';
 
 // ── Shared primitives ─────────────────────────────────────────
@@ -57,10 +57,11 @@ function DraftSection({ player }) {
     <div className="scout-card-section">
       <SectionLabel>Draft</SectionLabel>
       <DataRow label="Status" value={player.draftStatus === 'drafted' ? 'Drafted' : 'Not drafted yet'} />
+      <DataRow label="Projected Pick" value={player.draftStatus === 'drafted' ? null : formatProjectedPick(player)} />
       <DataRow label="Team" value={player.draftTeamName} />
       <DataRow label="Selection" value={formatDraftSelection(player)} />
       <DataRow label="Round / Pick" value={draftRoundLabel(player.draftRound, player.draftPick)} />
-      <DataRow label="Big Board" value={formatRank(player.bigBoardRank)} />
+      <DataRow label="Prospect Rank" value={formatRank(player.bigBoardRank)} />
       <DataRow label="NFL Grade" value={player.nflGrade?.toFixed(2)} />
       <DataRow label="Dynasty ADP" value={player.dynastyAdp?.toFixed(1)} />
     </div>
@@ -68,45 +69,15 @@ function DraftSection({ player }) {
 }
 
 function CollegeSection({ player }) {
-  const { position, collegeStats: s, college } = player;
-  if (!s || !FANTASY_POSITION_GROUPS.has(player.positionGroup)) return null;
-
-  let rows = [];
-  if (position === 'QB') {
-    const pct = s.completions && s.attempts
-      ? `${((s.completions / s.attempts) * 100).toFixed(1)}%`
-      : null;
-    rows = [
-      { label: 'Completion %', value: pct },
-      { label: 'Pass Yards', value: s.passYards?.toLocaleString() },
-      { label: 'Pass TDs', value: s.passTDs },
-      { label: 'Interceptions', value: s.interceptions },
-      { label: 'Rush Yards', value: s.rushYards?.toLocaleString() },
-      { label: 'Rush TDs', value: s.rushTDs },
-    ];
-  } else if (position === 'RB') {
-    rows = [
-      { label: 'Rush Yards', value: s.rushYards?.toLocaleString() },
-      { label: 'Carries', value: s.carries },
-      { label: 'Rush TDs', value: s.rushTDs },
-      { label: 'Receptions', value: s.receptions },
-      { label: 'Rec Yards', value: s.recYards?.toLocaleString() },
-      { label: 'Rec TDs', value: s.recTDs },
-    ];
-  } else {
-    rows = [
-      { label: 'Targets', value: s.recTargets },
-      { label: 'Receptions', value: s.receptions },
-      { label: 'Rec Yards', value: s.recYards?.toLocaleString() },
-      { label: 'Rec TDs', value: s.recTDs },
-    ];
-  }
+  const { college } = player;
+  if (!player.collegeStats) return null;
+  const rows = getCollegeProductionRows(player);
 
   return (
     <div className="scout-card-section">
       <SectionLabel>College — {college}</SectionLabel>
-      {rows.some(r => r.value != null) ? (
-        rows.filter(r => r.value != null).map(r => (
+      {rows.length ? (
+        rows.map(r => (
           <DataRow key={r.label} label={r.label} value={r.value} />
         ))
       ) : (
@@ -175,10 +146,15 @@ export default function ScoutPlayerCard({ player, onCompare, compareAId }) {
             <span
               className="scout-card-tier"
               style={{ background: tc, color: tfg }}
+              title={getTierDescription(player.tier)}
             >
               {player.tier}
             </span>
-            <span className="scout-card-status-chip" style={combineStatusStyle}>
+            <span
+              className="scout-card-status-chip"
+              style={combineStatusStyle}
+              title={getCombineStatusDescription(combineStatus)}
+            >
               {combineStatus}
             </span>
             <span className="scout-card-pick">{draftSlot}</span>

@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import {
-  FANTASY_POSITION_GROUPS,
   formatDraftSlot,
+  formatProjectedPick,
   formatForty,
   formatRank,
   gradeFromPercentile,
@@ -11,6 +11,9 @@ import {
   tierFg,
   getCombineStatus,
   combineStatusColor,
+  getCombineStatusDescription,
+  getTierDescription,
+  getCollegeProductionRows,
 } from './scoutUtils';
 
 function useScrollLock() {
@@ -36,8 +39,18 @@ function CompareHeader({ player }) {
         <span className="scout-cmp-college">{player.college}</span>
       </div>
       <div className="scout-cmp-badges">
-        <span className="scout-cmp-tier" style={{ background: tc, color: tfg }}>{player.tier}</span>
-        <span className="scout-cmp-status" style={{ borderColor: combineStatusColor(combineStatus), color: combineStatusColor(combineStatus) }}>
+        <span
+          className="scout-cmp-tier"
+          style={{ background: tc, color: tfg }}
+          title={getTierDescription(player.tier)}
+        >
+          {player.tier}
+        </span>
+        <span
+          className="scout-cmp-status"
+          style={{ borderColor: combineStatusColor(combineStatus), color: combineStatusColor(combineStatus) }}
+          title={getCombineStatusDescription(combineStatus)}
+        >
           {combineStatus}
         </span>
         <span className="scout-cmp-pick">{formatDraftSlot(player)}</span>
@@ -85,51 +98,28 @@ function DraftRows({ a, b }) {
   return (
     <>
       <CmpRow label="Draft Slot" valA={formatDraftSlot(a)} valB={formatDraftSlot(b)} />
+      <CmpRow label="Projected Pick" valA={formatProjectedPick(a)} valB={formatProjectedPick(b)} />
       <CmpRow label="Dynasty ADP"  valA={a.dynastyAdp?.toFixed(1)} valB={b.dynastyAdp?.toFixed(1)} />
-      <CmpRow label="Big Board"    valA={formatRank(a.bigBoardRank)} valB={formatRank(b.bigBoardRank)} />
+      <CmpRow label="Prospect Rank" valA={formatRank(a.bigBoardRank)} valB={formatRank(b.bigBoardRank)} />
       <CmpRow label="NFL Grade"    valA={a.nflGrade?.toFixed(2)} valB={b.nflGrade?.toFixed(2)} />
     </>
   );
 }
 
 function CollegeRows({ a, b }) {
-  if (!FANTASY_POSITION_GROUPS.has(a.positionGroup) && !FANTASY_POSITION_GROUPS.has(b.positionGroup)) {
-    return <div className="scout-cmp-empty-note">College production is shown for fantasy positions as verified data is added.</div>;
+  const rowsA = getCollegeProductionRows(a);
+  const rowsB = getCollegeProductionRows(b);
+  const valuesA = new Map(rowsA.map((row) => [row.label, row.value]));
+  const valuesB = new Map(rowsB.map((row) => [row.label, row.value]));
+  const labels = [...new Set([...rowsA, ...rowsB].map((row) => row.label))];
+
+  if (!labels.length) {
+    return <div className="scout-cmp-empty-note">College production will appear as verified data is added.</div>;
   }
 
-  const pos = a.position;
-  if (pos === 'QB') {
-    const pctA = a.collegeStats?.completions && a.collegeStats?.attempts
-      ? `${((a.collegeStats.completions / a.collegeStats.attempts) * 100).toFixed(0)}%` : null;
-    const pctB = b.collegeStats?.completions && b.collegeStats?.attempts
-      ? `${((b.collegeStats.completions / b.collegeStats.attempts) * 100).toFixed(0)}%` : null;
-    return (
-      <>
-        <CmpRow label="Comp %" valA={pctA} valB={pctB} />
-        <CmpRow label="Pass Yds" valA={a.collegeStats?.passYards?.toLocaleString()} valB={b.collegeStats?.passYards?.toLocaleString()} />
-        <CmpRow label="Pass TDs" valA={a.collegeStats?.passTDs} valB={b.collegeStats?.passTDs} />
-        <CmpRow label="INTs" valA={a.collegeStats?.interceptions} valB={b.collegeStats?.interceptions} />
-      </>
-    );
-  }
-  if (pos === 'RB') {
-    return (
-      <>
-        <CmpRow label="Rush Yds" valA={a.collegeStats?.rushYards?.toLocaleString()} valB={b.collegeStats?.rushYards?.toLocaleString()} />
-        <CmpRow label="Carries" valA={a.collegeStats?.carries} valB={b.collegeStats?.carries} />
-        <CmpRow label="Rush TDs" valA={a.collegeStats?.rushTDs} valB={b.collegeStats?.rushTDs} />
-        <CmpRow label="Rec Yds" valA={a.collegeStats?.recYards?.toLocaleString()} valB={b.collegeStats?.recYards?.toLocaleString()} />
-      </>
-    );
-  }
-  return (
-    <>
-      <CmpRow label="Targets" valA={a.collegeStats?.recTargets} valB={b.collegeStats?.recTargets} />
-      <CmpRow label="Rec Yds" valA={a.collegeStats?.recYards?.toLocaleString()} valB={b.collegeStats?.recYards?.toLocaleString()} />
-      <CmpRow label="Receptions" valA={a.collegeStats?.receptions} valB={b.collegeStats?.receptions} />
-      <CmpRow label="Rec TDs" valA={a.collegeStats?.recTDs} valB={b.collegeStats?.recTDs} />
-    </>
-  );
+  return labels.map((label) => (
+    <CmpRow key={label} label={label} valA={valuesA.get(label)} valB={valuesB.get(label)} />
+  ));
 }
 
 function CombineRows({ a, b }) {

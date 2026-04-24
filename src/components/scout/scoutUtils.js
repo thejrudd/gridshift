@@ -37,6 +37,21 @@ export function formatDraftSlot(player) {
   return `#${player.draftOverall}${team}`;
 }
 
+export function formatProjectedPick(player) {
+  if (!player || player.projectedOverall == null) return '—';
+  return `#${player.projectedOverall}`;
+}
+
+export function formatScoutSlot(player) {
+  if (player?.draftStatus === 'drafted' && player?.draftOverall != null) {
+    return formatDraftSlot(player);
+  }
+  if (player?.projectedOverall != null) {
+    return `Proj. ${formatProjectedPick(player)}`;
+  }
+  return 'No projection';
+}
+
 export function formatDraftSelection(player) {
   if (!player || player.draftStatus !== 'drafted' || player.draftOverall == null) {
     return 'Not drafted yet';
@@ -113,6 +128,33 @@ export function getCombineStatus(player) {
   return 'No Combine';
 }
 
+export function hasCombineData(player) {
+  if (!player?.combine) return false;
+  return [
+    'fortyYard',
+    'vertical',
+    'broadJump',
+    'threeCone',
+    'shuttle',
+    'benchPress',
+  ].some((metric) => player.combine?.[metric] != null);
+}
+
+export function getCombineStatusDescription(status) {
+  switch (status) {
+    case 'Tested':
+      return 'Combine invitee with at least one official drill result.';
+    case 'Measured Only':
+      return 'Combine invitee with official measurements but no published drill testing.';
+    case 'Invitee':
+      return 'Combine invitee with no verified measurements or drills loaded yet.';
+    case 'Pro Day Only':
+      return 'No combine result on file; measurements or drills came from a pro day.';
+    default:
+      return 'No verified combine or pro day data loaded yet.';
+  }
+}
+
 export function combineStatusColor(status) {
   switch (status) {
     case 'Tested': return 'var(--color-accent-green)';
@@ -121,4 +163,144 @@ export function combineStatusColor(status) {
     case 'Pro Day Only': return 'var(--scout-wr)';
     default: return 'var(--color-label-quaternary)';
   }
+}
+
+export function getTierDescription(tier) {
+  switch (tier) {
+    case 'Elite':
+      return 'Blue-chip prospect expected to go near the top of the class.';
+    case 'Starter':
+      return 'Strong prospect with a realistic path to becoming an NFL starter.';
+    case 'Rotational':
+      return 'Projected contributor or role player rather than a locked-in starter.';
+    case 'Developmental':
+      return 'Traits-based prospect who likely needs more time before a major NFL role.';
+    default:
+      return '';
+  }
+}
+
+function formatNumber(value) {
+  return value == null ? null : Number(value).toLocaleString();
+}
+
+function ratio(made, attempted, suffix = '') {
+  if (made == null && attempted == null) return null;
+  if (made != null && attempted != null) return `${made}/${attempted}${suffix}`;
+  return made != null ? `${made}${suffix}` : null;
+}
+
+export function getCollegeProductionRows(player) {
+  const s = player?.collegeStats;
+  if (!s) return [];
+
+  if (player.position === 'QB') {
+    const pct = s.completions && s.attempts
+      ? `${((s.completions / s.attempts) * 100).toFixed(1)}%`
+      : null;
+    return [
+      { label: 'Completion %', value: pct },
+      { label: 'Pass Yards', value: formatNumber(s.passYards) },
+      { label: 'Pass TDs', value: s.passTDs },
+      { label: 'Interceptions', value: s.interceptions },
+      { label: 'Rush Yards', value: formatNumber(s.rushYards) },
+      { label: 'Rush TDs', value: s.rushTDs },
+    ].filter((row) => row.value != null);
+  }
+
+  if (player.position === 'RB') {
+    return [
+      { label: 'Rush Yards', value: formatNumber(s.rushYards) },
+      { label: 'Carries', value: s.carries },
+      { label: 'Rush TDs', value: s.rushTDs },
+      { label: 'Receptions', value: s.receptions },
+      { label: 'Rec Yards', value: formatNumber(s.recYards) },
+      { label: 'Rec TDs', value: s.recTDs },
+    ].filter((row) => row.value != null);
+  }
+
+  if (player.positionGroup === 'WR' || player.positionGroup === 'TE') {
+    return [
+      { label: 'Targets', value: s.recTargets },
+      { label: 'Receptions', value: s.receptions },
+      { label: 'Rec Yards', value: formatNumber(s.recYards) },
+      { label: 'Rec TDs', value: s.recTDs },
+    ].filter((row) => row.value != null);
+  }
+
+  if (['DL', 'LB', 'DB'].includes(player.positionGroup)) {
+    return [
+      { label: 'Total Tackles', value: s.totalTackles },
+      { label: 'Solo Tackles', value: s.soloTackles },
+      { label: 'Tackles for Loss', value: s.tacklesForLoss },
+      { label: 'Sacks', value: s.sacks },
+      { label: 'Interceptions', value: s.defInterceptions },
+      { label: 'Passes Defended', value: s.passesDefended },
+      { label: 'Forced Fumbles', value: s.forcedFumbles },
+      { label: 'Defensive TDs', value: s.defTDs },
+    ].filter((row) => row.value != null);
+  }
+
+  if (player.positionGroup === 'ST') {
+    return [
+      { label: 'Field Goals', value: ratio(s.fieldGoalsMade, s.fieldGoalsAttempted) },
+      { label: 'Extra Points', value: ratio(s.extraPointsMade, s.extraPointsAttempted) },
+      { label: 'Kicking Points', value: s.kickingPoints },
+      { label: 'Long FG', value: s.longFieldGoal != null ? `${s.longFieldGoal} yds` : null },
+      { label: 'Punts', value: s.punts },
+      { label: 'Punt Yards', value: formatNumber(s.puntYards) },
+      { label: 'Punt Average', value: s.puntAverage != null ? `${Number(s.puntAverage).toFixed(1)}` : null },
+      { label: 'Inside 20', value: s.puntsInside20 },
+      { label: 'Kick Return Yards', value: formatNumber(s.kickReturnYards) },
+      { label: 'Punt Return Yards', value: formatNumber(s.puntReturnYards) },
+      { label: 'Return TDs', value: (s.kickReturnTDs ?? 0) + (s.puntReturnTDs ?? 0) || null },
+    ].filter((row) => row.value != null);
+  }
+
+  return [];
+}
+
+export function getCollegeProductionSummary(player) {
+  const s = player?.collegeStats;
+  if (!s) return null;
+
+  if (player.position === 'QB') {
+    const pct = s.completions && s.attempts
+      ? `${((s.completions / s.attempts) * 100).toFixed(0)}% · `
+      : '';
+    if (s.passYards == null && s.passTDs == null) return null;
+    return `${pct}${formatNumber(s.passYards) ?? '—'} YDS · ${s.passTDs ?? '—'} TD`;
+  }
+
+  if (player.position === 'RB') {
+    if (s.rushYards == null && s.rushTDs == null) return null;
+    return `${formatNumber(s.rushYards) ?? '—'} YDS · ${s.rushTDs ?? '—'} TD`;
+  }
+
+  if (player.positionGroup === 'WR' || player.positionGroup === 'TE') {
+    if (s.recYards == null && s.recTDs == null) return null;
+    return `${formatNumber(s.recYards) ?? '—'} YDS · ${s.recTDs ?? '—'} TD`;
+  }
+
+  if (['DL', 'LB', 'DB'].includes(player.positionGroup)) {
+    const parts = [
+      s.totalTackles != null ? `${s.totalTackles} TKL` : null,
+      s.sacks != null ? `${s.sacks} SACK` : null,
+      s.defInterceptions != null ? `${s.defInterceptions} INT` : null,
+    ].filter(Boolean);
+    return parts.length ? parts.join(' · ') : null;
+  }
+
+  if (player.positionGroup === 'ST') {
+    if (s.fieldGoalsMade != null || s.fieldGoalsAttempted != null) {
+      return `${ratio(s.fieldGoalsMade, s.fieldGoalsAttempted)} FG`;
+    }
+    if (s.punts != null || s.puntAverage != null) {
+      return `${s.punts ?? '—'} P · ${s.puntAverage != null ? Number(s.puntAverage).toFixed(1) : '—'} AVG`;
+    }
+    const returnYards = (s.kickReturnYards ?? 0) + (s.puntReturnYards ?? 0);
+    return returnYards ? `${returnYards.toLocaleString()} RET YDS` : null;
+  }
+
+  return null;
 }

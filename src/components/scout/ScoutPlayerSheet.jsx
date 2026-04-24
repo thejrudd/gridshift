@@ -18,8 +18,16 @@ function CloseButton({ onClick }) {
   );
 }
 
-export default function ScoutPlayerSheet({ player, variant, onClose, onCompare, compareAId }) {
+export default function ScoutPlayerSheet({
+  player,
+  variant,
+  onClose,
+  onCompare,
+  compareAId,
+  onPanelHeightChange,
+}) {
   const scrollRef = useRef(null);
+  const panelRef = useRef(null);
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
@@ -32,9 +40,28 @@ export default function ScoutPlayerSheet({ player, variant, onClose, onCompare, 
     return () => { document.body.style.overflow = prev; };
   }, [variant, player?.id]);
 
+  useEffect(() => {
+    if (variant !== 'panel' || typeof onPanelHeightChange !== 'function') return undefined;
+    const node = panelRef.current;
+    if (!node) return undefined;
+
+    const report = () => {
+      onPanelHeightChange(Math.round(node.getBoundingClientRect().height));
+    };
+
+    report();
+    const observer = new ResizeObserver(report);
+    observer.observe(node);
+
+    return () => observer.disconnect();
+  }, [variant, player?.id, onPanelHeightChange]);
+
   if (variant === 'panel') {
     return (
-      <div className="scout-panel">
+      <div
+        ref={panelRef}
+        className="scout-panel"
+      >
         <div className="scout-panel-header">
           <span className="scout-panel-title">Prospect Profile</span>
           <CloseButton onClick={onClose} />

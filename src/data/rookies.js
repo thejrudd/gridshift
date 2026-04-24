@@ -1,4 +1,5 @@
 import { applyCombineData } from './rookieCombine.js';
+import { ROOKIE_PRODUCTION_2026 } from './rookieProduction.generated.js';
 
 const NFL_TRACKER = 'https://www.nfl.com/draft/tracker/2026/prospects/all_all';
 const NFL_TOP_150 = 'https://www.nfl.com/news/daniel-jeremiah-s-top-150-prospects-in-the-2026-nfl-draft-class';
@@ -36,6 +37,45 @@ function tierFromGrade(grade, rank) {
   return 'Developmental';
 }
 
+function projectedPickBias(player) {
+  const position = String(player.position || '').toUpperCase();
+  const group = String(player.positionGroup || '').toUpperCase();
+
+  if (position === 'QB') return -28;
+  if (position === 'OT') return -10;
+  if (['EDGE', 'DE'].includes(position)) return -8;
+  if (position === 'DT') return -2;
+  if (position === 'CB') return -4;
+  if (group === 'WR') return -2;
+  if (group === 'OL') return 4;
+  if (group === 'DL') return 2;
+  if (group === 'LB') return 8;
+  if (['S', 'SAF'].includes(position) || group === 'DB') return 10;
+  if (group === 'TE') return 8;
+  if (group === 'RB') return 16;
+  if (group === 'ST') return 28;
+  return 0;
+}
+
+function projectProspects(players) {
+  const ordered = [...players].sort((a, b) => {
+    const aRank = Number.isFinite(a.bigBoardRank) ? a.bigBoardRank : 9999;
+    const bRank = Number.isFinite(b.bigBoardRank) ? b.bigBoardRank : 9999;
+    const aGradeBoost = Number.isFinite(a.nflGrade) ? (a.nflGrade - 6.3) * 12 : 0;
+    const bGradeBoost = Number.isFinite(b.nflGrade) ? (b.nflGrade - 6.3) * 12 : 0;
+    const aScore = aRank + projectedPickBias(a) - aGradeBoost;
+    const bScore = bRank + projectedPickBias(b) - bGradeBoost;
+    if (aScore !== bScore) return aScore - bScore;
+    return aRank - bRank;
+  });
+
+  const projectedById = new Map(ordered.map((player, index) => [player.id, index + 1]));
+  return players.map((player) => ({
+    ...player,
+    projectedOverall: projectedById.get(player.id) ?? null,
+  }));
+}
+
 function rookie(rank, name, position, college, nflGrade, extra = {}) {
   const normalizedPosition = position.toUpperCase();
 
@@ -53,6 +93,7 @@ function rookie(rank, name, position, college, nflGrade, extra = {}) {
     draftOverall: null,
     draftTeam: null,
     draftTeamName: null,
+    projectedOverall: rank,
     bigBoardRank: rank,
     nflGrade,
     dynastyAdp: null,
@@ -99,6 +140,12 @@ const RICH_ROOKIES_2026 = [
   }),
   rookie(4, 'Fernando Mendoza', 'QB', 'Indiana', 6.73, {
     espnCollegeId: '4837248',
+    draftStatus: 'drafted',
+    draftRound: 1,
+    draftPick: 1,
+    draftOverall: 1,
+    draftTeam: 'lv',
+    draftTeamName: 'Las Vegas Raiders',
     collegeStats: {
       completions: null,
       attempts: null,
@@ -817,6 +864,40 @@ function mergeProspects(primary, fallback) {
   ].sort((a, b) => a.bigBoardRank - b.bigBoardRank);
 }
 
+function mergeCollegeStats(curatedStats, generatedStats) {
+  if (!generatedStats) return curatedStats;
+  const stats = { ...(curatedStats ?? {}) };
+
+  for (const [key, value] of Object.entries(generatedStats)) {
+    if (value != null && stats[key] == null) {
+      stats[key] = value;
+    }
+  }
+
+  return Object.keys(stats).length ? stats : null;
+}
+
+function applyProductionData(players, productionById) {
+  return players.map((player) => {
+    const production = productionById[player.id];
+    if (!production?.collegeStats) return player;
+
+    return {
+      ...player,
+      collegeStats: mergeCollegeStats(player.collegeStats, production.collegeStats),
+      sources: {
+        ...player.sources,
+        ...(production.source ? { collegeProduction: production.source } : null),
+      },
+    };
+  });
+}
+
 export const ROOKIES_2026 = applyCombineData(
-  mergeProspects(RICH_ROOKIES_2026, [...ESPN_ROOKIES_2026, ...EXTRA_COMBINE_INVITEES_2026]),
+  applyProductionData(
+    projectProspects(
+      mergeProspects(RICH_ROOKIES_2026, [...ESPN_ROOKIES_2026, ...EXTRA_COMBINE_INVITEES_2026]),
+    ),
+    ROOKIE_PRODUCTION_2026,
+  ),
 );

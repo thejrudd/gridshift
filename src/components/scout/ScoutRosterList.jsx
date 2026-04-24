@@ -1,44 +1,22 @@
 import {
-  FANTASY_POSITION_GROUPS,
-  formatDraftSlot,
+  formatScoutSlot,
   positionColor,
   tierColor,
   tierFg,
   playerPhotoUrl,
   photoFallback,
   getCombineStatus,
+  getCombineStatusDescription,
+  getTierDescription,
+  getCollegeProductionSummary,
 } from './scoutUtils';
 
 function CollegeStatSummary({ player }) {
-  const { position, collegeStats: s } = player;
-  if (!s || !FANTASY_POSITION_GROUPS.has(player.positionGroup)) {
-    return player.nflGrade != null
-      ? <span className="scout-row-stat-text">NFL {player.nflGrade.toFixed(2)}</span>
-      : <span className="scout-row-no-stats">—</span>;
-  }
-
-  if (position === 'QB') {
-    const pct = s.completions && s.attempts
-      ? ((s.completions / s.attempts) * 100).toFixed(0)
-      : null;
-    return (
-      <span className="scout-row-stat-text">
-        {pct ? `${pct}% · ` : ''}{s.passYards?.toLocaleString()} YDS · {s.passTDs} TD
-      </span>
-    );
-  }
-  if (position === 'RB') {
-    return (
-      <span className="scout-row-stat-text">
-        {s.rushYards?.toLocaleString()} YDS · {s.rushTDs} TD
-      </span>
-    );
-  }
-  return (
-    <span className="scout-row-stat-text">
-      {s.recYards?.toLocaleString()} YDS · {s.recTDs} TD
-    </span>
-  );
+  const summary = getCollegeProductionSummary(player);
+  if (summary) return <span className="scout-row-stat-text">{summary}</span>;
+  return player.nflGrade != null
+    ? <span className="scout-row-stat-text">NFL {player.nflGrade.toFixed(2)}</span>
+    : <span className="scout-row-no-stats">—</span>;
 }
 
 function CompareButton({ player, compareAId, onCompare }) {
@@ -65,7 +43,7 @@ function CompareButton({ player, compareAId, onCompare }) {
 
 function RosterRow({ player, isSelected, compareAId, onSelectPlayer, onCompare }) {
   const posColor = positionColor(player.position, player.positionGroup);
-  const draftSlot = formatDraftSlot(player);
+  const draftSlot = formatScoutSlot(player);
   const combineStatus = getCombineStatus(player);
 
   return (
@@ -97,10 +75,19 @@ function RosterRow({ player, isSelected, compareAId, onSelectPlayer, onCompare }
       <div className="scout-row-identity">
         <div className="scout-row-name">{player.name}</div>
         <div className="scout-row-meta">
-          <span className="scout-row-pos-label" style={{ color: posColor }}>{player.position}</span>
-          <span className="scout-row-college">{player.college}</span>
-          <span className="scout-row-combine-state">{combineStatus}</span>
-          <span className="scout-row-pick">{draftSlot}</span>
+          <div className="scout-row-meta-line">
+            <span className="scout-row-pos-label" style={{ color: posColor }}>{player.position}</span>
+            <span className="scout-row-college">{player.college}</span>
+          </div>
+          <div className="scout-row-meta-line">
+            <span
+              className="scout-row-combine-state"
+              title={getCombineStatusDescription(combineStatus)}
+            >
+              {combineStatus}
+            </span>
+            <span className="scout-row-pick">{draftSlot}</span>
+          </div>
         </div>
       </div>
 
@@ -116,6 +103,7 @@ function RosterRow({ player, isSelected, compareAId, onSelectPlayer, onCompare }
       <span
         className="scout-tier-badge"
         style={{ background: tierColor(player.tier), color: tierFg(player.tier) }}
+        title={getTierDescription(player.tier)}
       >
         {player.tier}
       </span>

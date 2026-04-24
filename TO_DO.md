@@ -7,6 +7,39 @@ New features requested or planned should be added here.
 
 ## Planned Versions
 
+### v7.0 - Scout Tab (Alpha)
+
+#### Post-Draft nflverse Enrichment Script
+After the draft concludes, `scripts/scout-nflverse-update.mjs` should fetch  
+`https://raw.githubusercontent.com/leesharpe/nfldata/master/data/draft_picks.csv`,  
+normalize player names, match against `src/data/rookies.js`, and output a JSON patch  
+with verified `draftRound`, `draftPick`, `draftOverall`, `draftTeam`, and `draftTeamName`  
+ready to paste into `rookies.js`. Mirrors the existing `scout-espn-ids.mjs` pattern.
+
+Fields available from nflverse: `season`, `team`, `round`, `pick` (overall), `pfr_name`,  
+`category` (QB/RB/WR/TE/OL/DL/LB/DB), `position` (specific). CORS-safe browser fetch  
+from `raw.githubusercontent.com`.
+
+#### Live Draft Pick Sync (ESPN API)
+ESPN exposes a live draft endpoint during the draft window:  
+`https://site.api.espn.com/apis/site/v2/sports/football/nfl/draft`  
+**Confirmed browser-accessible with no CORS restrictions** — direct `fetch()` works.  
+Returns 257 picks (full board) plus a `current` object with the live pick on the clock.
+
+Per-pick fields: `number`, `round`, `displayName`, `position`, `college`, `team`,  
+`state` (`SELECTION_MADE` / `ON_THE_CLOCK`). The `current` object adds `bestAvailable`  
+and `bestFit` prospect recommendations with height/weight/position. Polling every  
+60 seconds is sufficient to stay current during the draft.
+
+Implementation ideas:
+- Scout shows a "Live Draft" banner when `status.state === 'in'` is detected
+- Picks auto-populate `draftStatus`, `draftRound`, `draftPick`, `draftTeam` in real time  
+  by matching `displayName` against `rookies.js` records (same normalization as the  
+  nflverse post-draft script)
+- "ON_THE_CLOCK" highlight card for the team currently picking
+- Countdown timer driven by the `expires` timestamp on the current pick
+- Draft concludes when `status.state` changes away from `'in'`
+
 ### v7.1 - Trade Module Decomposition
 
 Split the monolithic `CompanionTrade.jsx` (4,800+ lines) and `opportunityEngine.js` (3,000+ lines) into focused, single-responsibility modules to reduce per-edit token cost and improve maintainability.

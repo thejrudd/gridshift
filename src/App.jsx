@@ -183,6 +183,7 @@ function AppInner() {
   const predictionsTeamId = appRoute.predictionsTeamId;
   const companionView = appRoute.companionView;
   const tradeView = appRoute.tradeView;
+  const scoutView = appRoute.scoutView;
 
   const tradeInitPlayer = appRoute.tradePlayerId
     ? {
@@ -285,6 +286,10 @@ function AppInner() {
 
   const navigateTradeView = useCallback((view) => {
     applyRoute({ activeTab: 'trade', tradeView: view });
+  }, [applyRoute]);
+
+  const navigateScoutView = useCallback((view) => {
+    applyRoute({ activeTab: 'scout', scoutView: view });
   }, [applyRoute]);
 
   const prewarmTradeView = useCallback((view) => {
@@ -643,7 +648,7 @@ function AppInner() {
 
           {activeTab === 'scout' && (
             <Suspense fallback={<SectionLoading label="Loading scout" />}>
-              <ScoutTab />
+              <ScoutTab view={scoutView} onViewChange={navigateScoutView} />
             </Suspense>
           )}
 

@@ -50,6 +50,9 @@ const validatedPaths = [
   expectRoundTrip({ activeTab: 'trade', tradeView: 'agent' }, '/trade/agent'),
   expectRoundTrip({ activeTab: 'trade', tradeView: 'intelligence', tradePartnerRosterId: '5' }, '/trade/intelligence?partner=5'),
   expectRoundTrip({ activeTab: 'trade', tradeView: 'agent', tradePlayerId: '4034', tradeSide: 'give', tradePartnerRosterId: '7', tradeOtherPlayerId: '111' }, '/trade/agent?player=4034&side=give&partner=7&other=111'),
+  expectRoundTrip({ activeTab: 'scout', scoutView: 'prospects' }, '/scout'),
+  expectRoundTrip({ activeTab: 'scout', scoutView: 'picks' }, '/scout/picks'),
+  expectRoundTrip({ activeTab: 'scout', scoutView: 'results' }, '/scout/results'),
 ];
 
 console.log('Routing validation passed.');

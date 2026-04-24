@@ -2,6 +2,7 @@ const PREDICTIONS_VIEWS = new Set(['predictions', 'standings', 'playoffs']);
 const COMPANION_VIEWS = new Set(['roster', 'rankings', 'matchup', 'waiver', 'league', 'defense', 'scoring']);
 const TRADE_VIEWS = new Set(['agent', 'intelligence', 'upgrade', 'compare']);
 const STATISTICS_VIEWS = new Set(['browser', 'team', 'player']);
+const SCOUT_VIEWS = new Set(['prospects', 'picks', 'results']);
 
 function normalizeCompanionView(view) {
   if (view === 'heatmap') return 'defense';
@@ -40,6 +41,7 @@ const DEFAULT_ROUTE = {
   tradeSide: null,
   tradePartnerRosterId: null,
   tradeOtherPlayerId: null,
+  scoutView: 'prospects',
 };
 
 function normalizeTeamId(teamId) {
@@ -216,7 +218,11 @@ export function normalizeAppRoute(route = {}) {
   }
 
   if (activeTab === 'scout') {
-    return { ...DEFAULT_ROUTE, activeTab: 'scout' };
+    return {
+      ...DEFAULT_ROUTE,
+      activeTab: 'scout',
+      scoutView: normalizeLowerToken(route.scoutView, SCOUT_VIEWS, DEFAULT_ROUTE.scoutView),
+    };
   }
 
   if (activeTab === 'trade') {
@@ -299,7 +305,7 @@ export function parseAppRoute(pathname = '/', search = '') {
         tradeOtherPlayerId: parseQueryValue(searchParams, 'other'),
       });
     case 'scout':
-      return normalizeAppRoute({ activeTab: 'scout' });
+      return normalizeAppRoute({ activeTab: 'scout', scoutView: subview });
     case 'predictions': {
       const [, predictionsSubview, predictionsParam] = segments;
       if (predictionsSubview === 'team') {
@@ -372,7 +378,9 @@ export function buildAppPath(route) {
       return basePath;
     }
     case 'scout':
-      return '/scout';
+      return normalized.scoutView === 'prospects'
+        ? '/scout'
+        : `/scout/${normalized.scoutView}`;
     case 'trade':
       return `/trade/${normalized.tradeView}${buildQueryString([
         ['player', normalized.tradePlayerId],
@@ -425,5 +433,6 @@ export function isSameAppRoute(a, b) {
     && left.tradeSide === right.tradeSide
     && left.tradePartnerRosterId === right.tradePartnerRosterId
     && left.tradeOtherPlayerId === right.tradeOtherPlayerId
+    && left.scoutView === right.scoutView
     && left.predictionsTeamId === right.predictionsTeamId;
 }

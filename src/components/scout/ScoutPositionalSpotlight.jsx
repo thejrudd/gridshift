@@ -1,11 +1,13 @@
 import {
-  formatDraftSlot,
+  formatScoutSlot,
   positionColor,
   tierColor,
   tierFg,
   playerPhotoUrl,
   photoFallback,
   getCombineStatus,
+  getCombineStatusDescription,
+  getTierDescription,
 } from './scoutUtils';
 
 const POSITIONS = ['QB', 'RB', 'WR', 'TE'];
@@ -67,7 +69,11 @@ function SpotlightCard({ player, onSelectPlayer }) {
         <span className="scout-spotlight-pos" style={{ color: posColor, borderColor: posColor }}>
           {player.position}
         </span>
-        <span className="scout-spotlight-tier" style={{ background: tc, color: tfg }}>
+        <span
+          className="scout-spotlight-tier"
+          style={{ background: tc, color: tfg }}
+          title={getTierDescription(player.tier)}
+        >
           {player.tier}
         </span>
       </div>
@@ -86,8 +92,8 @@ function SpotlightCard({ player, onSelectPlayer }) {
       <div className="scout-spotlight-name">{player.name}</div>
       <div className="scout-spotlight-meta">
         <span>{player.college}</span>
-        <span>{combineStatus}</span>
-        <span className="scout-spotlight-pick">{formatDraftSlot(player)}</span>
+        <span title={getCombineStatusDescription(combineStatus)}>{combineStatus}</span>
+        <span className="scout-spotlight-pick">{formatScoutSlot(player)}</span>
       </div>
 
       {/* Key college stats */}
@@ -119,7 +125,7 @@ export default function ScoutPositionalSpotlight({ players, onSelectPlayer }) {
       <div className="scout-section-header">
         <h2 className="scout-section-title">Top Prospects</h2>
         <div className="scout-section-rule" />
-        <span className="scout-section-subtitle">By Position</span>
+        <span className="scout-section-subtitle">By Position • Current Sort</span>
       </div>
 
       <div className="scout-spotlight-grid">

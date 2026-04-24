@@ -59,6 +59,39 @@ const GUIDE_CONTENT = {
       },
     ],
   },
+  scout: {
+    title: 'HOW TO USE SCOUT',
+    steps: [
+      {
+        title: 'Start with Projected Pick',
+        description: 'Scout defaults to Projected Pick so the list opens in a draft-order view rather than a pure talent-board view.',
+      },
+      {
+        title: 'Filter the Class',
+        description: 'Fantasy shows only QB, RB, WR, and TE. Combine Data keeps only prospects with verified drill results, not measured-only players.',
+      },
+      {
+        title: 'Understand the Labels',
+        description: 'Projected Pick is the current pre-draft order, Prospect Rank is the overall board placement, and combine labels like Tested or Measured Only show how much verified event data is loaded.',
+      },
+      {
+        title: 'Read the Tiers',
+        description: 'Elite marks blue-chip prospects, Starter marks players with a realistic NFL starting path, and Rotational marks role-player or depth contributors.',
+      },
+      {
+        title: 'Open a Prospect Card',
+        description: 'Tap any player to see projected pick, prospect rank, scouting tier, college production, and combine results in one place.',
+      },
+      {
+        title: 'Compare Players',
+        description: 'Use the compare control on any row to stack two prospects side by side across draft, production, and combine data.',
+      },
+      {
+        title: 'Use Top Prospects as a Snapshot',
+        description: 'The top cards are generated from the current sort and show the first available QB, RB, WR, and TE in that view.',
+      },
+    ],
+  },
 
   // ── Companion — per sub-tab ───────────────────────────────────────────────
 

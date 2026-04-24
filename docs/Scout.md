@@ -59,6 +59,7 @@ src/data/
   draftOverall: number | null,
   draftTeam: string | null,
   draftTeamName: string | null,
+  projectedOverall: number | null,
   bigBoardRank: number | null,
   nflGrade: number | null,
   dynastyAdp: number | null,
@@ -82,13 +83,65 @@ For pre-draft player photos, prefer verified ESPN college athlete IDs because mo
 
 ## UI Behavior
 
+- Scout is organized into three top-level views:
+  - `Prospects` is the pre-draft board, filters, player profile panel, and compare flow.
+  - `Picks` is the full 2026 draft order by round, sourced from `src/data/draftPicks.js` unless a live feed URL is configured.
+  - `Results` is the post-draft outcome view, populated from `drafted` records in `ROOKIES_2026`.
 - Filters: `All`, `Fantasy`, `QB`, `RB`, `WR`, `TE`, `DL`, `LB`, `DB`, `OL`, `ST`.
-- Sorts: Big Board, NFL Grade, Dynasty ADP, Draft Pick, 40-Yard Dash, Rush Yards, Rec Yards.
+- `Fantasy` filters the board to QB/RB/WR/TE only.
+- `Combine Data` filters to prospects with verified combine drill results, not measured-only players.
+- Sorts: Projected Pick, Prospect Rank, NFL Grade, Dynasty ADP, 40-Yard Dash, Rush Yards, Rec Yards.
 - Null sort values always sort last so blank draft/ADP/combine data never floats above verified data.
 - Rank (`i + 1`) is assigned on the full sorted list before position/search filtering, per the ranked-list gotcha in `AGENTS.md`.
 - Search covers player name, college, position, position group, team abbreviation, and team name.
 - Top Prospects is derived dynamically from the current sorted dataset, taking the first available QB/RB/WR/TE.
+- `projectedOverall` is the current pre-draft default sort. In alpha it is a bundled, position-adjusted board heuristic, not a live consensus mock feed.
+- Prospect tiers are editorial labels: `Elite` for blue-chip prospects, `Starter` for players with a realistic starting path, and `Rotational` for role-player or depth contributors.
+- The in-app Scout guide should be updated when Scout's user workflow or mental model changes in a meaningful way (new tabs, new core filters, new comparison behavior, new data surfaces). Do not update it for minor copy, spacing, or visual-only polish.
 - Combine status is surfaced in Scout UI as `Tested`, `Measured Only`, `Invitee`, `Pro Day Only`, or `No Combine`.
+
+### Live Picks Feed
+
+The Picks tab uses static bundled draft order by default. To reflect draft-day pick trades without rebuilding the app, configure a public or proxied JSON feed:
+
+```bash
+VITE_SCOUT_DRAFT_PICKS_URL=https://example.com/scout-draft-picks.json
+VITE_SCOUT_DRAFT_PICKS_INTERVAL_MS=60000
+VITE_SCOUT_DRAFT_RESULTS_URL=https://example.com/scout-draft-results.json
+VITE_SCOUT_DRAFT_RESULTS_INTERVAL_MS=30000
+VITE_SCOUT_USE_ESPN_DRAFT_RESULTS=true
+```
+
+The client polls these URLs with `cache: 'no-store'`, falls back to bundled data if a feed fails, and never requires a secret in the browser. The picks feed can be either an array or `{ "picks": [...] }`; the results feed can be an array, `{ "results": [...] }`, or `{ "picks": [...] }`.
+
+If `VITE_SCOUT_DRAFT_RESULTS_URL` is not set, Scout Results defaults to ESPN's undocumented public draft rounds endpoint. Set `VITE_SCOUT_USE_ESPN_DRAFT_RESULTS=false` to disable that best-effort integration. ESPN is not a guaranteed contract; keep the manual `src/data/draftResults.js` fallback current for critical draft-night data.
+
+Required pick fields:
+
+```js
+{
+  round: 1,
+  overall: 1,
+  teamName: 'Las Vegas Raiders',
+  note: 'from Panthers' // optional
+}
+```
+
+Optional result fields such as `playerName`, `position`, `college`, and `source` are accepted but not required by the Picks view today.
+
+Required result fields:
+
+```js
+{
+  round: 1,
+  pick: 1,
+  overall: 1,
+  teamName: 'Las Vegas Raiders',
+  playerName: 'Fernando Mendoza',
+  position: 'QB',
+  college: 'Indiana'
+}
+```
 
 ---
 
@@ -125,10 +178,31 @@ The audit reports total invitees, matched invitees in `ROOKIES_2026`, any unmatc
 
 ---
 
+## College Production Import
+
+Scout college production is imported from CollegeFootballData.com with a local Node script. React never calls CFBD directly, and CFBD keys must stay in shell environment variables only. Do not put `CFBD_API_KEY` or any paid API key in `.env`, `VITE_*`, source files, generated data, screenshots, or docs examples.
+
+```bash
+CFBD_API_KEY=... node scripts/import-scout-production.mjs --year 2025
+CFBD_API_KEY=... node scripts/import-scout-production.mjs --year 2024,2025 --dry-run
+```
+
+The script fetches `/stats/player/season` for offensive, defensive, turnover, kicking, punting, and return categories by default using `Authorization: Bearer <key>`, normalizes player names and college/team names, matches rows to records in `ROOKIES_2026`, and writes `src/data/rookieProduction.generated.js`. The generated file is a static data artifact consumed by `src/data/rookies.js`; it contains no secrets and does not mutate curated rookie records.
+
+`rookies.js` merges generated `collegeStats` conservatively: curated non-null stat fields win and generated values fill missing fields. Scout renders fantasy production for QB/RB/WR/TE, defensive production for DL/LB/DB, and kicking/punting/return production for ST. Offensive linemen usually do not receive meaningful individual CFBD player-season production; keep OL cards tolerant of missing stats unless a separate verified source is added for starts, snaps, pressures, or sacks allowed.
+
+After each import, review the script summary: matched count, unmatched production rows, prospects missing production, and output path. Investigate unmatched rows before treating the generated file as complete, especially transfers and same-name players.
+
+---
+
 ## Route And Navigation
 
-Scout uses `/scout` with no sub-views.
+Scout uses canonical route segments for its top-level views:
+
+- `/scout` — Prospects
+- `/scout/picks` — Picks
+- `/scout/results` — Results
 
 - `src/App.jsx` lazy-loads `ScoutTab`.
-- `src/utils/appRoutes.js` parses, normalizes, and builds `/scout`.
+- `src/utils/appRoutes.js` parses, normalizes, and builds Scout view routes.
 - `src/components/Sidebar.jsx` and `src/components/BottomTabBar.jsx` show Scout as Alpha.
