@@ -22,11 +22,11 @@ const CONFERENCES = [
 
 const TEAM_CARD_SHADOW = '0 10px 24px rgba(12,15,20,0.10), 0 3px 8px rgba(12,15,20,0.08)';
 const TEAM_LABEL_STYLE = { letterSpacing: '0.16em' };
-const REVERSED_GRADIENT_TEAMS = new Set(['dal', 'gb', 'jax', 'lv', 'no', 'nyg', 'nyj', 'pit', 'wsh']);
+const REVERSED_GRADIENT_TEAMS = new Set(['dal', 'gb', 'jax', 'la', 'lar', 'lv', 'no', 'nyg', 'nyj', 'pit', 'wsh']);
 const TEAM_CARD_TEXT_OVERRIDES = {
   nyj: {
-    titleColor: '#0C0F14',
-    subtitleColor: 'rgba(12,15,20,0.68)',
+    titleColor: '#FFFFFF',
+    subtitleColor: 'rgba(255,255,255,0.82)',
   },
 };
 

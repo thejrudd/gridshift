@@ -86,11 +86,11 @@ npm run validate:routing
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) |
 
-## What's New in v7.0.1
+## What's New in v7.0.2
 
-- **Statistics browser visuals restored** - The team browser again uses the richer team-color card treatment with split city/nickname display, conference framing, and responsive typography.
-- **Team metadata restored** - The 2026 team data bundle again includes `city` and `nickname`, which the Statistics cards use for the editorial card layout.
-- **Contrast tuning for edge-case team cards** - Jets and Giants cards were adjusted through gradient/text tuning rather than introducing a different card pattern.
+- **Scout and Statistics workstreams merged** - `main` now carries both the Scout Draft Coach Alpha release and the restored Statistics browser presentation from `v7.0.1`.
+- **Scout polish continued** - Top Prospects, filters, desktop profile behavior, selective college game-log imports, and draft-night live-state handling were tightened after the merge.
+- **Statistics card finish** - The remaining light-mode Rams and Jets card contrast/direction issues were corrected in the Statistics browser.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 
@@ -99,6 +99,7 @@ For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 - **v7.1 - Trade Module Decomposition** - Split the largest Trade components and engines into focused modules for lower maintenance cost.
 - **v7.2 - Statistics / Fantasy Drilldown Unification** - One canonical player-analysis destination with mode-aware drilldowns across Statistics and Companion.
 - **v7.3 - Scout Rookie Projection Layer** - Add next-season rookie projections that work for standard and IDP-focused draft prep without overloading the current Scout board.
+- **v7.0.3 - Post-Draft nflverse Enrichment** - Patch Scout with verified draft-slot enrichment from nflverse after the draft concludes.
 - **Week-by-Week View** *(blocked on 2026 schedule data)* — Browse the full schedule by week with predictions reflected
 
 ## Project Structure

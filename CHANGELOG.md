@@ -901,3 +901,12 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Team metadata restored for all 32 clubs** - `public/nfl-data-2026.json` again includes `city` and `nickname`, so Statistics team cards can render the intended editorial treatment instead of falling back to a flat full-team-name label.
 - **Statistics dark-mode handoff repaired** - `App.jsx` now passes `darkMode` back into `PlayerBrowser`, restoring the intended contrast behavior for the Statistics browser cards.
 - **Jets/Giants contrast adjusted without extra chrome** - The outlier team cards now rely on gradient direction and text-color tuning rather than adding separate logo badges, keeping the card system visually consistent.
+
+---
+
+## v7.0.2 - Scout Merge + Statistics Card Finish
+*2026-04-24*
+
+- **Scout and Statistics lines merged** - Merged the `v7.0` Scout branch and the `v7.0.1` Statistics browser recovery work onto `main`, carrying forward both the Draft Coach Alpha surfaces and the restored Statistics browser presentation.
+- **Scout polish continued post-merge** - Tightened Scout filter behavior, spotlight stability, desktop profile positioning, selective CFBD game-log imports, and draft-night banner/status handling.
+- **Statistics light-mode team cards corrected** - Fixed the remaining light-mode card edge cases so the Rams gradient direction and Jets text contrast now render correctly in the Statistics browser.
