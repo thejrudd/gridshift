@@ -4,11 +4,14 @@ import { DRAFT_ORDER_SOURCE_2026, DRAFT_PICKS_2026 } from '../../data/draftPicks
 import { DRAFT_RESULTS_2026, DRAFT_RESULTS_SOURCE_2026 } from '../../data/draftResults';
 import { TEAM_NAMES, getTeamPalette } from '../../data/teamColors';
 import useBodyScrollLock from '../../hooks/useBodyScrollLock';
-import { FANTASY_POSITION_GROUPS, hasCombineData } from './scoutUtils';
+import { FANTASY_POSITION_GROUPS, hasCombineData, playerPhotoUrl, photoFallback } from './scoutUtils';
+import { collegeLogoUrl, nflLogoUrl } from './scoutTeamLogos';
 import ScoutPositionalSpotlight from './ScoutPositionalSpotlight';
 import ScoutRosterList from './ScoutRosterList';
 import ScoutPlayerSheet from './ScoutPlayerSheet';
 import ScoutCompareSheet from './ScoutCompareSheet';
+import ScoutStatisticsModal from './ScoutStatisticsModal';
+import { scoutDebug, scoutDebugTable } from './scoutDebug';
 
 const SORT_OPTIONS = [
   { value: 'projectedOverall', label: 'Projected Pick' },
@@ -45,6 +48,15 @@ const ESPN_NFL_TEAM_BY_ID = {
   '24': 'Los Angeles Chargers', '25': 'San Francisco 49ers', '26': 'Seattle Seahawks',
   '27': 'Tampa Bay Buccaneers', '28': 'Washington Commanders', '29': 'Carolina Panthers',
   '30': 'Jacksonville Jaguars', '33': 'Baltimore Ravens', '34': 'Houston Texans',
+};
+// Internal team-id slugs (match keys in NFL_LOGO_IDS / teamColors TEAM_NAMES) keyed by
+// ESPN's numeric team id. Used to populate pick.team (abbr) so logo helpers resolve.
+const ESPN_NFL_ABBR_BY_ID = {
+  '1': 'atl', '2': 'buf', '3': 'chi', '4': 'cin', '5': 'cle', '6': 'dal', '7': 'den',
+  '8': 'det', '9': 'gb', '10': 'ten', '11': 'ind', '12': 'kc', '13': 'lv', '14': 'lar',
+  '15': 'mia', '16': 'min', '17': 'ne', '18': 'no', '19': 'nyg', '20': 'nyj',
+  '21': 'phi', '22': 'ari', '23': 'pit', '24': 'lac', '25': 'sf', '26': 'sea',
+  '27': 'tb', '28': 'wsh', '29': 'car', '30': 'jax', '33': 'bal', '34': 'hou',
 };
 // Single flat endpoint for picks, results, and the banner — CORS-open, real-time
 const ESPN_LIVE_DRAFT_URL = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl/draft';
@@ -272,7 +284,9 @@ function normalizeEspnPick(pick, roundNumber) {
     round,
     pick: Number.isFinite(pickInRound) ? pickInRound : overall,
     overall,
-    team: firstString(pick?.team?.abbreviation, pick?.franchise?.abbreviation) || null,
+    team: (pick?.teamId != null ? ESPN_NFL_ABBR_BY_ID[String(pick.teamId)] : null)
+      || firstString(pick?.team?.abbreviation, pick?.franchise?.abbreviation)
+      || null,
     teamName,
     playerId: firstString(pick?.athlete?.id, pick?.player?.id, pick?.prospect?.id) || null,
     playerName,
@@ -335,6 +349,20 @@ function normalizeEspnLiveDraftPayload(payload) {
 
   const expiresRaw = current?.expires ?? onTheClock?.expires ?? null;
   const expiresAt = expiresRaw ? new Date(expiresRaw).getTime() : null;
+  const onTheClockStatus = firstString(
+    typeof onTheClock?.status === 'string' ? onTheClock.status : null,
+    onTheClock?.state,
+    onTheClock?.status?.name,
+    onTheClock?.status?.type?.name,
+  )?.toUpperCase().replace(/[\s-]+/g, '_');
+  const hasActiveClock = Boolean(
+    Number.isFinite(overall)
+    && teamName
+    && (
+      onTheClockStatus === 'ON_THE_CLOCK'
+      || (expiresAt != null && expiresAt > Date.now())
+    ),
+  );
 
   const mapProspect = (p) => ({
     name: firstString(p?.displayName, p?.fullName, p?.name),
@@ -358,6 +386,7 @@ function normalizeEspnLiveDraftPayload(payload) {
     round: Number.isFinite(round) ? round : null,
     teamName: teamName || null,
     expiresAt,
+    hasActiveClock,
     bestAvailable,
     bestFit,
   };
@@ -387,13 +416,70 @@ function normalizeNameKey(name) {
     .replace(/\s+/g, ' ');
 }
 
+function normalizeCollegeKey(college) {
+  return normalizeNameKey(college)
+    .replace(/\bst\b/g, 'state')
+    .replace(/\bmiami fl\b/g, 'miami')
+    .replace(/\bmiami florida\b/g, 'miami')
+    .replace(/\btexas a m\b/g, 'texas am')
+    .replace(/\but san antonio\b/g, 'utsa');
+}
+
+function normalizePositionKey(position) {
+  const normalized = String(position ?? '').toUpperCase();
+  if (normalized === 'S') return 'SAF';
+  if (normalized === 'OG' || normalized === 'IOL') return 'G';
+  if (normalized === 'DE' || normalized === 'OLB') return 'EDGE';
+  return normalized;
+}
+
+function buildPlayerDraftMatchIndex(players) {
+  const byId = new Map(players.map(player => [player.id, player]));
+  const byName = new Map();
+  const byNameCollege = new Map();
+  const byNamePosition = new Map();
+  const byNamePositionCollege = new Map();
+  const byProjectedOverall = new Map();
+  const byBigBoardRank = new Map();
+
+  for (const player of players) {
+    const name = normalizeNameKey(player.name);
+    const college = normalizeCollegeKey(player.college);
+    const position = normalizePositionKey(player.position);
+
+    byName.set(name, [...(byName.get(name) ?? []), player]);
+    byNameCollege.set(`${name}|${college}`, player);
+    byNamePosition.set(`${name}|${position}`, player);
+    byNamePositionCollege.set(`${name}|${position}|${college}`, player);
+    if (player.projectedOverall != null) byProjectedOverall.set(player.projectedOverall, player);
+    if (player.bigBoardRank != null) byBigBoardRank.set(player.bigBoardRank, player);
+  }
+
+  return { byId, byName, byNameCollege, byNamePosition, byNamePositionCollege, byProjectedOverall, byBigBoardRank };
+}
+
+function findPlayerForDraftResult(result, index, { allowPickFallback = false } = {}) {
+  if (result.playerId && index.byId.has(result.playerId)) {
+    return index.byId.get(result.playerId);
+  }
+
+  const name = normalizeNameKey(result.playerName);
+  const college = normalizeCollegeKey(result.college);
+  const position = normalizePositionKey(result.position);
+
+  return index.byNamePositionCollege.get(`${name}|${position}|${college}`)
+    ?? index.byNameCollege.get(`${name}|${college}`)
+    ?? index.byNamePosition.get(`${name}|${position}`)
+    ?? ((index.byName.get(name)?.length === 1) ? index.byName.get(name)[0] : null)
+    ?? (allowPickFallback ? index.byProjectedOverall.get(result.overall) : null)
+    ?? (allowPickFallback ? index.byBigBoardRank.get(result.overall) : null);
+}
+
 function mergeDraftResultsWithPlayers(results, players) {
-  const playerById = new Map(players.map(player => [player.id, player]));
-  const playerByName = new Map(players.map(player => [normalizeNameKey(player.name), player]));
+  const index = buildPlayerDraftMatchIndex(players);
 
   return results.map(result => {
-    const player = (result.playerId && playerById.get(result.playerId))
-      || playerByName.get(normalizeNameKey(result.playerName));
+    const player = findPlayerForDraftResult(result, index);
 
     return {
       ...result,
@@ -404,6 +490,186 @@ function mergeDraftResultsWithPlayers(results, players) {
       player,
     };
   });
+}
+
+function draftDebugSummary(player) {
+  if (!player) return null;
+  return {
+    id: player.id,
+    name: player.name,
+    draftStatus: player.draftStatus,
+    draftRound: player.draftRound,
+    draftPick: player.draftPick,
+    draftOverall: player.draftOverall,
+    draftTeam: player.draftTeam,
+    draftTeamName: player.draftTeamName,
+    projectedOverall: player.projectedOverall,
+    bigBoardRank: player.bigBoardRank,
+  };
+}
+
+function resultDebugSummary(result) {
+  if (!result) return null;
+  return {
+    overall: result.overall,
+    round: result.round,
+    pick: result.pick,
+    team: result.team,
+    teamName: result.teamName,
+    playerId: result.playerId,
+    playerName: result.playerName,
+    position: result.position,
+    college: result.college,
+    source: result.source,
+  };
+}
+
+function draftResultsFromPlayers(players) {
+  return players
+    .filter(player => player.draftStatus === 'drafted' && player.draftOverall != null)
+    .map(player => ({
+      round: player.draftRound,
+      pick: player.draftPick,
+      overall: player.draftOverall,
+      team: player.draftTeam,
+      teamName: player.draftTeamName ?? player.draftTeam,
+      playerId: player.id,
+      playerName: player.name,
+      position: player.position,
+      college: player.college,
+      source: DRAFT_RESULTS_SOURCE_2026,
+    }));
+}
+
+function applyDraftResultsToPlayers(players, results) {
+  const playerMatchIndex = buildPlayerDraftMatchIndex(players);
+  const resultByPlayerId = new Map();
+
+  const identityMatched = results
+    .map(result => ({ result, player: findPlayerForDraftResult(result, playerMatchIndex) }))
+    .filter(item => item.player);
+
+  for (const { result, player } of identityMatched) {
+    resultByPlayerId.set(player.id, result);
+  }
+
+  const identityMatchedOverall = new Set(identityMatched.map(({ result }) => result.overall));
+  const identityMatchedPlayerIds = new Set(identityMatched.map(({ player }) => player.id));
+
+  for (const result of results) {
+    if (identityMatchedOverall.has(result.overall)) continue;
+    const player = findPlayerForDraftResult(result, playerMatchIndex, { allowPickFallback: true });
+    if (player && !identityMatchedPlayerIds.has(player.id)) {
+      resultByPlayerId.set(player.id, result);
+    }
+  }
+
+  return players.map(player => {
+    const result = resultByPlayerId.get(player.id);
+    if (!result) return player;
+
+    return {
+      ...player,
+      draftStatus: 'drafted',
+      draftRound: result.round ?? player.draftRound,
+      draftPick: result.pick ?? player.draftPick,
+      draftOverall: result.overall ?? player.draftOverall,
+      draftTeam: result.team ?? player.draftTeam,
+      draftTeamName: result.teamName ?? player.draftTeamName,
+    };
+  });
+}
+
+function useScoutDraftResults(shouldPoll) {
+  const staticResults = DRAFT_RESULTS_2026.length > 0
+    ? DRAFT_RESULTS_2026
+    : draftResultsFromPlayers(ROOKIES_2026);
+  const [draftResults, setDraftResults] = useState(staticResults);
+  const [liveFeedState, setLiveFeedState] = useState({
+    enabled: Boolean(LIVE_DRAFT_RESULTS_URL),
+    status: LIVE_DRAFT_RESULTS_URL ? 'loading' : 'static',
+    updatedAt: null,
+    error: null,
+  });
+
+  useEffect(() => {
+    if (!shouldPoll || !LIVE_DRAFT_RESULTS_URL) return undefined;
+
+    let stopped = false;
+    let timeoutId = 0;
+    let controller = null;
+    const intervalMs = Math.max(10_000, LIVE_DRAFT_RESULTS_INTERVAL_MS);
+
+    const clearScheduledLoad = () => {
+      window.clearTimeout(timeoutId);
+      timeoutId = 0;
+    };
+
+    const scheduleNextLoad = () => {
+      if (stopped || document.visibilityState !== 'visible') return;
+      clearScheduledLoad();
+      timeoutId = window.setTimeout(loadLiveResults, intervalMs);
+    };
+
+    const loadLiveResults = async () => {
+      if (document.visibilityState !== 'visible') return;
+      controller?.abort();
+      controller = new AbortController();
+
+      try {
+        setLiveFeedState(prev => ({ ...prev, status: prev.updatedAt ? 'refreshing' : 'loading', error: null }));
+        const payload = await fetchDraftResultsPayload(LIVE_DRAFT_RESULTS_URL, controller.signal);
+        const liveResults = normalizeDraftResultsPayload(payload);
+        const manualByPlayerId = new Map(DRAFT_RESULTS_2026.map(result => [result.playerId, result]).filter(([id]) => id));
+        const manualByOverall = new Map(DRAFT_RESULTS_2026.map(result => [result.overall, result]));
+        const nextResults = [
+          ...liveResults.filter(result => !manualByPlayerId.has(result.playerId) && !manualByOverall.has(result.overall)),
+          ...DRAFT_RESULTS_2026,
+        ].sort((a, b) => a.overall - b.overall);
+        if (nextResults.length === 0) throw new Error('No results in live feed');
+        if (stopped) return;
+
+        setDraftResults(nextResults);
+        setLiveFeedState({
+          enabled: true,
+          status: 'live',
+          updatedAt: new Date().toISOString(),
+          error: null,
+        });
+      } catch (error) {
+        if (stopped || error.name === 'AbortError') return;
+        setLiveFeedState(prev => ({
+          ...prev,
+          status: prev.updatedAt ? 'stale' : 'fallback',
+          error: error.message,
+        }));
+      } finally {
+        scheduleNextLoad();
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        loadLiveResults();
+        return;
+      }
+
+      clearScheduledLoad();
+      controller?.abort();
+    };
+
+    loadLiveResults();
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      stopped = true;
+      controller?.abort();
+      clearScheduledLoad();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [shouldPoll]);
+
+  return { draftResults, liveFeedState };
 }
 
 function groupDraftPicks(picks) {
@@ -490,17 +756,70 @@ export default function ScoutTab({ view = 'prospects', onViewChange }) {
   const [sortKey, setSortKey]     = useState('projectedOverall');
   const [combineOnly, setCombineOnly] = useState(false);
   const [search, setSearch]       = useState('');
-  const [selectedPlayer, setSelectedPlayer] = useState(null);
+  const [selectedPlayerId, setSelectedPlayerId] = useState(null);
   const [compareA, setCompareA]   = useState(null);
   const [compareB, setCompareB]   = useState(null);
   const [compareOpen, setCompareOpen] = useState(false);
+  const [statisticsPlayer, setStatisticsPlayer] = useState(null);
   const [desktopPanelHeight, setDesktopPanelHeight] = useState(null);
   const listShellRef = useRef(null);
   const detailPanelRef = useRef(null);
   const [liveDraftInfo, setLiveDraftInfo] = useState(null);
+  const { draftResults, liveFeedState: resultsFeedState } = useScoutDraftResults(scoutView !== 'picks');
+  const scoutPlayers = applyDraftResultsToPlayers(ROOKIES_2026, draftResults);
+  const selectedScoutPlayer = selectedPlayerId
+    ? (scoutPlayers.find(player => player.id === selectedPlayerId) ?? null)
+    : null;
+  const draftResultsSignature = draftResults
+    .map(result => `${result.overall}:${result.playerId ?? result.playerName}:${result.team}`)
+    .join('|');
+  const draftedPlayersSignature = scoutPlayers
+    .filter(player => player.draftStatus === 'drafted')
+    .map(player => `${player.id}:${player.draftOverall}:${player.draftTeam}`)
+    .join('|');
+
+  useEffect(() => {
+    const index = buildPlayerDraftMatchIndex(ROOKIES_2026);
+    scoutDebugTable('Draft result identity matches', draftResults.map((result) => {
+      const matchedPlayer = findPlayerForDraftResult(result, index);
+      return {
+        resultOverall: result.overall,
+        resultPlayerId: result.playerId,
+        resultPlayerName: result.playerName,
+        matchedPlayerId: matchedPlayer?.id ?? null,
+        matchedPlayerName: matchedPlayer?.name ?? null,
+        matchedDraftStatus: matchedPlayer?.draftStatus ?? null,
+      };
+    }));
+
+    scoutDebug('Scout draft state', {
+      scoutView,
+      liveFeedState: resultsFeedState,
+      draftResults: draftResults.map(resultDebugSummary),
+      draftedPlayers: scoutPlayers
+        .filter(player => player.draftStatus === 'drafted')
+        .map(draftDebugSummary),
+    });
+  }, [
+    scoutView,
+    resultsFeedState.status,
+    resultsFeedState.updatedAt,
+    draftResultsSignature,
+    draftedPlayersSignature,
+  ]);
+
+  useEffect(() => {
+    if (!selectedPlayerId) return;
+    scoutDebug('Selected profile resolved in ScoutTab', {
+      selectedPlayerId,
+      selectedScoutPlayer: draftDebugSummary(selectedScoutPlayer),
+      rawRookie: draftDebugSummary(ROOKIES_2026.find(player => player.id === selectedPlayerId)),
+      matchingResult: resultDebugSummary(draftResults.find(result => result.playerId === selectedPlayerId)),
+    });
+  }, [selectedPlayerId, selectedScoutPlayer, draftResults]);
 
   // Ranked on full sorted list before filter (per AGENTS.md gotcha)
-  const sorted = sortRookies(ROOKIES_2026, sortKey).map((r, i) => ({ ...r, rank: i + 1 }));
+  const sorted = sortRookies(scoutPlayers, sortKey).map((r, i) => ({ ...r, rank: i + 1 }));
 
   const filtered = sorted.filter(r => {
     if (posFilter === 'Fantasy' && !FANTASY_POSITION_GROUPS.has(r.positionGroup)) return false;
@@ -519,7 +838,11 @@ export default function ScoutTab({ view = 'prospects', onViewChange }) {
   });
 
   const handleSelectPlayer = useCallback((player) => {
-    setSelectedPlayer(player);
+    setSelectedPlayerId(player?.id ?? null);
+  }, []);
+
+  const handleViewStatistics = useCallback((player) => {
+    setStatisticsPlayer(player);
   }, []);
 
   const handleCompare = useCallback((player) => {
@@ -545,14 +868,17 @@ export default function ScoutTab({ view = 'prospects', onViewChange }) {
   const handleScoutViewChange = useCallback((view) => {
     onViewChange?.(view);
 
+    if (view !== scoutView) {
+      setSelectedPlayerId(null);
+      setDesktopPanelHeight(null);
+    }
+
     if (view !== 'prospects') {
-      setSelectedPlayer(null);
       setCompareOpen(false);
       setCompareA(null);
       setCompareB(null);
-      setDesktopPanelHeight(null);
     }
-  }, [onViewChange]);
+  }, [onViewChange, scoutView]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -588,7 +914,7 @@ export default function ScoutTab({ view = 'prospects', onViewChange }) {
       window.removeEventListener('scroll', updateDesktopPanelState);
       window.removeEventListener('resize', updateDesktopPanelState);
     };
-  }, [selectedPlayer]);
+  }, [selectedPlayerId]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -610,7 +936,7 @@ export default function ScoutTab({ view = 'prospects', onViewChange }) {
     if (listShellRef.current) observer.observe(listShellRef.current);
 
     return () => observer.disconnect();
-  }, [selectedPlayer]);
+  }, [selectedPlayerId]);
 
   // Live draft banner — polls the flat ESPN draft endpoint every 60 s
   useEffect(() => {
@@ -760,50 +1086,44 @@ export default function ScoutTab({ view = 'prospects', onViewChange }) {
       <div ref={listShellRef} className="scout-list-shell">
         <ScoutRosterList
           players={filtered}
-          selectedPlayerId={selectedPlayer?.id}
+          selectedPlayerId={selectedScoutPlayer?.id}
           compareAId={compareA?.id}
           onSelectPlayer={handleSelectPlayer}
           onCompare={handleCompare}
         />
 
         {/* Desktop detail panel */}
-        {selectedPlayer && (
+        {selectedScoutPlayer && (
           <div
             ref={detailPanelRef}
             className="scout-detail-panel"
             style={desktopPanelHeight ? { minHeight: `${desktopPanelHeight}px` } : undefined}
           >
             <ScoutPlayerSheet
-              player={selectedPlayer}
+              player={selectedScoutPlayer}
               variant="panel"
               onPanelHeightChange={setDesktopPanelHeight}
-              onClose={() => setSelectedPlayer(null)}
+              onClose={() => setSelectedPlayerId(null)}
               onCompare={handleCompare}
               compareAId={compareA?.id}
+              onViewStatistics={handleViewStatistics}
             />
           </div>
         )}
       </div>
 
       {/* Mobile bottom sheet */}
-      {selectedPlayer && (
+      {selectedScoutPlayer && (
         <ScoutPlayerSheet
-          player={selectedPlayer}
+          player={selectedScoutPlayer}
           variant="sheet"
-          onClose={() => setSelectedPlayer(null)}
+          onClose={() => setSelectedPlayerId(null)}
           onCompare={handleCompare}
           compareAId={compareA?.id}
+          onViewStatistics={handleViewStatistics}
         />
       )}
 
-      {/* Compare overlay */}
-      {compareOpen && compareA && compareB && (
-        <ScoutCompareSheet
-          playerA={compareA}
-          playerB={compareB}
-          onClose={handleCloseCompare}
-        />
-      )}
         </>
       )}
 
@@ -812,7 +1132,61 @@ export default function ScoutTab({ view = 'prospects', onViewChange }) {
       )}
 
       {scoutView === 'results' && (
-        <ScoutResultsView players={ROOKIES_2026} />
+        <>
+          <div ref={listShellRef} className="scout-list-shell">
+            <ScoutResultsView
+              players={scoutPlayers}
+              draftResults={draftResults}
+              liveFeedState={resultsFeedState}
+              selectedPlayerId={selectedScoutPlayer?.id}
+              onSelectPlayer={handleSelectPlayer}
+            />
+
+            {selectedScoutPlayer && (
+              <div
+                ref={detailPanelRef}
+                className="scout-detail-panel"
+                style={desktopPanelHeight ? { minHeight: `${desktopPanelHeight}px` } : undefined}
+              >
+                <ScoutPlayerSheet
+                  player={selectedScoutPlayer}
+                  variant="panel"
+                  onPanelHeightChange={setDesktopPanelHeight}
+                  onClose={() => setSelectedPlayerId(null)}
+                  onCompare={handleCompare}
+                  compareAId={compareA?.id}
+                  onViewStatistics={handleViewStatistics}
+                />
+              </div>
+            )}
+          </div>
+
+          {selectedScoutPlayer && (
+            <ScoutPlayerSheet
+              player={selectedScoutPlayer}
+              variant="sheet"
+              onClose={() => setSelectedPlayerId(null)}
+              onCompare={handleCompare}
+              compareAId={compareA?.id}
+              onViewStatistics={handleViewStatistics}
+            />
+          )}
+        </>
+      )}
+
+      {statisticsPlayer && (
+        <ScoutStatisticsModal
+          player={statisticsPlayer}
+          onClose={() => setStatisticsPlayer(null)}
+        />
+      )}
+
+      {compareOpen && compareA && compareB && (
+        <ScoutCompareSheet
+          playerA={compareA}
+          playerB={compareB}
+          onClose={handleCloseCompare}
+        />
       )}
     </div>
   );
@@ -846,7 +1220,10 @@ function ScoutLiveDraftBanner({ info }) {
       <div className="scout-live-banner-inner">
         {/* Left: live pill + team logo + pick info */}
         <div className="scout-live-banner-left">
-          <span className="scout-live-pill">● Live</span>
+          <span className="scout-live-pill">
+            {info.hasActiveClock && <span className="scout-live-dot" />}
+            {info.hasActiveClock ? 'Live' : 'Draft Paused'}
+          </span>
           {team?.logoUrl && (
             <img
               src={team.logoUrl}
@@ -1270,102 +1647,8 @@ function ScoutTeamPicksDialog({ teamName, picks, onClose }) {
   );
 }
 
-function ScoutResultsView({ players }) {
-  const staticResults = DRAFT_RESULTS_2026.length > 0
-    ? DRAFT_RESULTS_2026
-    : players
-      .filter(player => player.draftStatus === 'drafted' && player.draftOverall != null)
-      .map(player => ({
-        round: player.draftRound,
-        pick: player.draftPick,
-        overall: player.draftOverall,
-        team: player.draftTeam,
-        teamName: player.draftTeamName ?? player.draftTeam,
-        playerId: player.id,
-        playerName: player.name,
-        position: player.position,
-        college: player.college,
-        source: DRAFT_RESULTS_SOURCE_2026,
-      }));
-  const [draftResults, setDraftResults] = useState(staticResults);
-  const [liveFeedState, setLiveFeedState] = useState({
-    enabled: Boolean(LIVE_DRAFT_RESULTS_URL),
-    status: LIVE_DRAFT_RESULTS_URL ? 'loading' : 'static',
-    updatedAt: null,
-    error: null,
-  });
+function ScoutResultsView({ players, draftResults, liveFeedState, selectedPlayerId, onSelectPlayer }) {
   const mergedResults = mergeDraftResultsWithPlayers(draftResults, players);
-
-  useEffect(() => {
-    if (!LIVE_DRAFT_RESULTS_URL) return undefined;
-
-    let stopped = false;
-    let timeoutId = 0;
-    let controller = null;
-    const intervalMs = Math.max(10_000, LIVE_DRAFT_RESULTS_INTERVAL_MS);
-
-    const clearScheduledLoad = () => {
-      window.clearTimeout(timeoutId);
-      timeoutId = 0;
-    };
-
-    const scheduleNextLoad = () => {
-      if (stopped || document.visibilityState !== 'visible') return;
-      clearScheduledLoad();
-      timeoutId = window.setTimeout(loadLiveResults, intervalMs);
-    };
-
-    const loadLiveResults = async () => {
-      if (document.visibilityState !== 'visible') return;
-      controller?.abort();
-      controller = new AbortController();
-
-      try {
-        setLiveFeedState(prev => ({ ...prev, status: prev.updatedAt ? 'refreshing' : 'loading', error: null }));
-        const payload = await fetchDraftResultsPayload(LIVE_DRAFT_RESULTS_URL, controller.signal);
-        const nextResults = normalizeDraftResultsPayload(payload);
-        if (nextResults.length === 0) throw new Error('No results in live feed');
-        if (stopped) return;
-
-        setDraftResults(nextResults);
-        setLiveFeedState({
-          enabled: true,
-          status: 'live',
-          updatedAt: new Date().toISOString(),
-          error: null,
-        });
-      } catch (error) {
-        if (stopped || error.name === 'AbortError') return;
-        setLiveFeedState(prev => ({
-          ...prev,
-          status: prev.updatedAt ? 'stale' : 'fallback',
-          error: error.message,
-        }));
-      } finally {
-        scheduleNextLoad();
-      }
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        loadLiveResults();
-        return;
-      }
-
-      clearScheduledLoad();
-      controller?.abort();
-    };
-
-    loadLiveResults();
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      stopped = true;
-      controller?.abort();
-      clearScheduledLoad();
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, []);
 
   return (
     <div className="scout-results-view">
@@ -1376,7 +1659,12 @@ function ScoutResultsView({ players }) {
       {mergedResults.length > 0 ? (
         <div className="scout-results-list">
           {mergedResults.map(result => (
-            <ScoutResultRow key={result.overall} result={result} />
+            <ScoutResultRow
+              key={result.overall}
+              result={result}
+              isSelected={result.player?.id === selectedPlayerId}
+              onSelectPlayer={onSelectPlayer}
+            />
           ))}
         </div>
       ) : (
@@ -1413,24 +1701,35 @@ function ScoutDraftResultsFeedStatus({ state, count }) {
   );
 }
 
-function ScoutResultRow({ result }) {
+function ScoutResultRow({ result, isSelected, onSelectPlayer }) {
   const team = getDraftTeamMeta(result.teamName);
+  const player = result.player;
 
   return (
-    <div
-      className="scout-result-row"
+    <button
+      type="button"
+      className={`scout-result-row${isSelected ? ' is-selected' : ''}`}
+      onClick={() => player && onSelectPlayer?.(player)}
+      disabled={!player}
       style={{
         '--scout-pick-bg': team.gradient,
         '--scout-pick-fg': team.textColor,
         '--scout-pick-muted': team.mutedColor,
       }}
     >
-      <span className="scout-pick-logo-wrap">
-        {team.logoUrl && (
+      <span className="scout-result-photo-wrap">
+        {player ? (
+          <img
+            src={playerPhotoUrl(player)}
+            alt=""
+            className="scout-result-photo"
+            onError={photoFallback}
+          />
+        ) : team.logoUrl && (
           <img
             src={team.logoUrl}
             alt=""
-            className="scout-pick-logo"
+            className="scout-result-photo"
             onError={event => { event.currentTarget.style.display = 'none'; }}
           />
         )}
@@ -1438,13 +1737,31 @@ function ScoutResultRow({ result }) {
       <span className="scout-pick-main">
         <span className="scout-pick-team-line">
           <span className="scout-result-player">{result.playerName}</span>
-          <span className="scout-pick-count">Pick #{result.overall}</span>
+          <span className="scout-pick-count">{result.position ?? 'POS'}</span>
         </span>
         <span className="scout-pick-meta">
-          {result.teamName} · {result.position ?? 'POS'} · {result.college ?? 'College'}
+          {nflLogoUrl(result.team || result.teamName) && (
+            <img
+              src={nflLogoUrl(result.team || result.teamName)}
+              alt=""
+              className="scout-inline-logo"
+              onError={event => { event.currentTarget.style.display = 'none'; }}
+            />
+          )}
+          <span className="scout-pick-meta-text">{result.teamName}</span>
+          <span className="scout-pick-meta-sep">·</span>
+          {collegeLogoUrl(result.college) && (
+            <img
+              src={collegeLogoUrl(result.college)}
+              alt=""
+              className="scout-inline-logo"
+              onError={event => { event.currentTarget.style.display = 'none'; }}
+            />
+          )}
+          <span className="scout-pick-meta-text">{result.college ?? 'College'}</span>
         </span>
       </span>
-      <span className="scout-pick-overall">#{result.overall}</span>
-    </div>
+      <span className="scout-pick-overall">Pick #{result.overall}</span>
+    </button>
   );
 }

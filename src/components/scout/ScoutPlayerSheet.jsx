@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import ScoutPlayerCard from './ScoutPlayerCard';
+import useBodyScrollLock from '../../hooks/useBodyScrollLock';
 
 // variant="sheet"  — mobile bottom sheet (hidden on lg+)
 // variant="panel"  — desktop right panel (hidden below lg)
@@ -24,6 +25,7 @@ export default function ScoutPlayerSheet({
   onClose,
   onCompare,
   compareAId,
+  onViewStatistics,
   onPanelHeightChange,
 }) {
   const scrollRef = useRef(null);
@@ -67,9 +69,26 @@ export default function ScoutPlayerSheet({
           <CloseButton onClick={onClose} />
         </div>
         <div ref={scrollRef} className="scout-panel-body">
-          <ScoutPlayerCard player={player} onCompare={onCompare} compareAId={compareAId} />
+          <ScoutPlayerCard
+            player={player}
+            onCompare={onCompare}
+            compareAId={compareAId}
+            onViewStatistics={onViewStatistics}
+          />
         </div>
       </div>
+    );
+  }
+
+  if (variant === 'modal') {
+    return (
+      <ScoutProfileModal
+        player={player}
+        onClose={onClose}
+        onCompare={onCompare}
+        compareAId={compareAId}
+        onViewStatistics={onViewStatistics}
+      />
     );
   }
 
@@ -92,7 +111,49 @@ export default function ScoutPlayerSheet({
           <CloseButton onClick={onClose} />
         </div>
         <div ref={scrollRef} className="scout-sheet-body">
-          <ScoutPlayerCard player={player} onCompare={onCompare} compareAId={compareAId} />
+          <ScoutPlayerCard
+            player={player}
+            onCompare={onCompare}
+            compareAId={compareAId}
+            onViewStatistics={onViewStatistics}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ScoutProfileModal({ player, onClose, onCompare, compareAId, onViewStatistics }) {
+  useBodyScrollLock();
+
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
+  return (
+    <div className="scout-profile-modal-overlay" role="presentation" onClick={onClose}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${player.name} prospect profile`}
+        className="scout-profile-modal"
+        onClick={event => event.stopPropagation()}
+      >
+        <div className="scout-profile-modal-header">
+          <span className="scout-panel-title">Prospect Profile</span>
+          <CloseButton onClick={onClose} />
+        </div>
+        <div className="scout-profile-modal-body">
+          <ScoutPlayerCard
+            player={player}
+            onCompare={onCompare}
+            compareAId={compareAId}
+            onViewStatistics={onViewStatistics}
+          />
         </div>
       </div>
     </div>

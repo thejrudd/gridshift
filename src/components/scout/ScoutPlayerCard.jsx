@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import {
   positionColor, tierColor, tierFg,
   formatHeight, formatForty, gradeFromPercentile, gradeColor,
@@ -5,8 +6,64 @@ import {
   getCombineStatus, combineStatusColor, getCombineStatusDescription, getTierDescription,
   getCollegeProductionRows,
 } from './scoutUtils';
+import { ROOKIES_2026 } from '../../data/rookies';
+import { DRAFT_RESULTS_2026 } from '../../data/draftResults';
+import { scoutDebug } from './scoutDebug';
+import { collegeLogoUrl, nflLogoUrl } from './scoutTeamLogos';
 
 // ── Shared primitives ─────────────────────────────────────────
+
+function applyDraftResult(player, result) {
+  if (!player || !result) return player;
+  return {
+    ...player,
+    draftStatus: 'drafted',
+    draftRound: result.round ?? player.draftRound ?? null,
+    draftPick: result.pick ?? player.draftPick ?? null,
+    draftOverall: result.overall ?? player.draftOverall ?? null,
+    draftTeam: result.team ?? player.draftTeam ?? null,
+    draftTeamName: result.teamName ?? player.draftTeamName ?? null,
+  };
+}
+
+function draftDebugSummary(player) {
+  if (!player) return null;
+  return {
+    id: player.id,
+    name: player.name,
+    draftStatus: player.draftStatus,
+    draftRound: player.draftRound,
+    draftPick: player.draftPick,
+    draftOverall: player.draftOverall,
+    draftTeam: player.draftTeam,
+    draftTeamName: player.draftTeamName,
+    projectedOverall: player.projectedOverall,
+    bigBoardRank: player.bigBoardRank,
+  };
+}
+
+function resolveCanonicalPlayerDetails(player) {
+  if (!player?.id) return { resolvedPlayer: player, canonical: null, explicitResult: null };
+
+  const canonical = ROOKIES_2026.find(p => p.id === player.id);
+  const base = { ...(canonical ?? {}), ...player };
+  const withCanonicalDraft = canonical?.draftStatus === 'drafted'
+    ? applyDraftResult(base, {
+      round: canonical.draftRound,
+      pick: canonical.draftPick,
+      overall: canonical.draftOverall,
+      team: canonical.draftTeam,
+      teamName: canonical.draftTeamName,
+    })
+    : base;
+
+  const explicitResult = DRAFT_RESULTS_2026.find(result => result.playerId === player.id);
+  return {
+    resolvedPlayer: applyDraftResult(withCanonicalDraft, explicitResult),
+    canonical,
+    explicitResult,
+  };
+}
 
 function SectionLabel({ children }) {
   return (
@@ -14,13 +71,40 @@ function SectionLabel({ children }) {
   );
 }
 
-function DataRow({ label, value }) {
+function DataRow({ label, value, logoUrl }) {
   if (value == null) return null;
+  const debugKey = String(label).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
   return (
-    <div className="scout-card-data-row">
+    <div
+      className="scout-card-data-row"
+      data-scout-debug-row={debugKey}
+      data-scout-debug-value={String(value)}
+    >
       <span className="scout-card-data-label">{label}</span>
-      <span className="scout-card-data-value">{value}</span>
+      <span className="scout-card-data-value">
+        {logoUrl && (
+          <img
+            src={logoUrl}
+            alt=""
+            className="scout-inline-logo"
+            onError={event => { event.currentTarget.style.display = 'none'; }}
+          />
+        )}
+        {value}
+      </span>
     </div>
+  );
+}
+
+function InlineLogo({ url, alt = '' }) {
+  if (!url) return null;
+  return (
+    <img
+      src={url}
+      alt={alt}
+      className="scout-inline-logo"
+      onError={event => { event.currentTarget.style.display = 'none'; }}
+    />
   );
 }
 
@@ -58,7 +142,7 @@ function DraftSection({ player }) {
       <SectionLabel>Draft</SectionLabel>
       <DataRow label="Status" value={player.draftStatus === 'drafted' ? 'Drafted' : 'Not drafted yet'} />
       <DataRow label="Projected Pick" value={player.draftStatus === 'drafted' ? null : formatProjectedPick(player)} />
-      <DataRow label="Team" value={player.draftTeamName} />
+      <DataRow label="Team" value={player.draftTeamName} logoUrl={nflLogoUrl(player.draftTeam || player.draftTeamName)} />
       <DataRow label="Selection" value={formatDraftSelection(player)} />
       <DataRow label="Round / Pick" value={draftRoundLabel(player.draftRound, player.draftPick)} />
       <DataRow label="Prospect Rank" value={formatRank(player.bigBoardRank)} />
@@ -112,43 +196,79 @@ function CombineSection({ player }) {
 
 // ── Main export ───────────────────────────────────────────────
 
-export default function ScoutPlayerCard({ player, onCompare, compareAId }) {
-  const posColor = positionColor(player.position, player.positionGroup);
-  const tc = tierColor(player.tier);
-  const tfg = tierFg(player.tier);
-  const isPendingCompare = compareAId === player.id;
-  const draftSlot = formatDraftSlot(player);
-  const combineStatus = getCombineStatus(player);
+export default function ScoutPlayerCard({ player, onCompare, compareAId, onViewStatistics }) {
+  const { resolvedPlayer, canonical, explicitResult } = resolveCanonicalPlayerDetails(player);
+  const posColor = positionColor(resolvedPlayer.position, resolvedPlayer.positionGroup);
+  const tc = tierColor(resolvedPlayer.tier);
+  const tfg = tierFg(resolvedPlayer.tier);
+  const isPendingCompare = compareAId === resolvedPlayer.id;
+  const draftSlot = formatDraftSlot(resolvedPlayer);
+  const combineStatus = getCombineStatus(resolvedPlayer);
   const combineStatusStyle = { borderColor: combineStatusColor(combineStatus), color: combineStatusColor(combineStatus) };
 
+  useEffect(() => {
+    scoutDebug('Profile card resolved player', {
+      input: draftDebugSummary(player),
+      canonical: draftDebugSummary(canonical),
+      explicitResult,
+      resolved: draftDebugSummary(resolvedPlayer),
+    });
+  }, [
+    player?.id,
+    player?.draftStatus,
+    player?.draftOverall,
+    resolvedPlayer?.draftStatus,
+    resolvedPlayer?.draftOverall,
+    canonical?.draftStatus,
+    canonical?.draftOverall,
+    explicitResult?.overall,
+  ]);
+
   return (
-    <div className="scout-player-card">
+    <div
+      className="scout-player-card"
+      data-scout-debug-version="draft-profile-debug-2026-04-23"
+      data-scout-debug-player-id={resolvedPlayer.id}
+      data-scout-debug-player-name={resolvedPlayer.name}
+      data-scout-debug-draft-status={resolvedPlayer.draftStatus}
+      data-scout-debug-draft-round={resolvedPlayer.draftRound ?? ''}
+      data-scout-debug-draft-pick={resolvedPlayer.draftPick ?? ''}
+      data-scout-debug-draft-overall={resolvedPlayer.draftOverall ?? ''}
+      data-scout-debug-draft-team={resolvedPlayer.draftTeam ?? ''}
+      data-scout-debug-draft-team-name={resolvedPlayer.draftTeamName ?? ''}
+      data-scout-debug-input-status={player?.draftStatus ?? ''}
+      data-scout-debug-canonical-status={canonical?.draftStatus ?? ''}
+      data-scout-debug-explicit-overall={explicitResult?.overall ?? ''}
+    >
       {/* Identity block */}
       <div className="scout-card-identity" style={{ borderLeftColor: posColor }}>
         {/* Photo */}
         <div className="scout-card-photo-wrap">
           <img
-            src={playerPhotoUrl(player)}
+            src={playerPhotoUrl(resolvedPlayer)}
             onError={photoFallback}
-            alt={player.name}
+            alt={resolvedPlayer.name}
             className="scout-card-photo"
           />
         </div>
 
         {/* Text identity */}
         <div className="scout-card-identity-text">
-          <div className="scout-card-player-name">{player.name}</div>
+          <div className="scout-card-player-name">{resolvedPlayer.name}</div>
           <div className="scout-card-player-meta">
-            <span className="scout-card-pos" style={{ color: posColor }}>{player.position}</span>
-            <span className="scout-card-college">{player.college}</span>
+            <span className="scout-card-pos" style={{ color: posColor }}>{resolvedPlayer.position}</span>
+            <span className="scout-card-college">
+              {resolvedPlayer.college}
+              <InlineLogo url={collegeLogoUrl(resolvedPlayer.college)} alt="" />
+            </span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
             <span
               className="scout-card-tier"
               style={{ background: tc, color: tfg }}
-              title={getTierDescription(player.tier)}
+              title={getTierDescription(resolvedPlayer.tier)}
             >
-              {player.tier}
+              {resolvedPlayer.tier}
             </span>
             <span
               className="scout-card-status-chip"
@@ -163,29 +283,45 @@ export default function ScoutPlayerCard({ player, onCompare, compareAId }) {
       </div>
 
       {/* Compare trigger */}
-      {onCompare && (
-        <button
-          onClick={() => onCompare(player)}
-          className="scout-card-compare-btn"
-          style={{
-            borderColor: isPendingCompare ? 'var(--color-accent)' : 'var(--color-separator)',
-            background: isPendingCompare ? 'rgba(90,173,255,0.10)' : 'var(--color-fill)',
-            color: isPendingCompare ? 'var(--color-accent)' : 'var(--color-label-secondary)',
-          }}
-          aria-label={isPendingCompare ? 'Waiting — select a second player' : `Compare ${player.name}`}
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <rect x="3" y="3" width="8" height="18" rx="1" />
-            <rect x="13" y="3" width="8" height="18" rx="1" />
-          </svg>
-          {isPendingCompare ? 'Select a second player to compare' : 'Compare'}
-        </button>
-      )}
+      <div className="scout-card-actions">
+        {onCompare && (
+          <button
+            onClick={() => onCompare(resolvedPlayer)}
+            className="scout-card-compare-btn"
+            style={{
+              borderColor: isPendingCompare ? 'var(--color-accent)' : 'var(--color-separator)',
+              background: isPendingCompare ? 'rgba(90,173,255,0.10)' : 'var(--color-fill)',
+              color: isPendingCompare ? 'var(--color-accent)' : 'var(--color-label-secondary)',
+            }}
+            aria-label={isPendingCompare ? 'Waiting — select a second player' : `Compare ${resolvedPlayer.name}`}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <rect x="3" y="3" width="8" height="18" rx="1" />
+              <rect x="13" y="3" width="8" height="18" rx="1" />
+            </svg>
+            {isPendingCompare ? 'Select a second player to compare' : 'Compare'}
+          </button>
+        )}
+        {onViewStatistics && (
+          <button
+            type="button"
+            onClick={() => onViewStatistics(resolvedPlayer)}
+            className="scout-card-compare-btn scout-card-stats-btn"
+            aria-label={`Open college statistics for ${resolvedPlayer.name}`}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M3 3v18h18" />
+              <path d="M7 15l3-3 3 2 5-7" />
+            </svg>
+            Statistics
+          </button>
+        )}
+      </div>
 
       {/* Data sections */}
-      <DraftSection player={player} />
-      <CollegeSection player={player} />
-      <CombineSection player={player} />
+      <DraftSection player={resolvedPlayer} />
+      <CollegeSection player={resolvedPlayer} />
+      <CombineSection player={resolvedPlayer} />
     </div>
   );
 }

@@ -90,7 +90,9 @@ npm run validate:routing
 
 - **Scout launched as a top-level Alpha section** - Rookie scouting now lives in its own main tab on desktop and mobile, with Companion and Trade moving out of Beta.
 - **2026 rookie board and combine data shipped** - Scout includes a broad 2026 prospect board, all 319 official combine invitees, real measurements/testing where available, and automatically derived percentile bars for the combine cards.
-- **Pre-draft draft coach workflow is live** - Prospect detail, compare, and filtering all support the pre-draft state cleanly, with nullable draft results now ready to be filled in as the 2026 NFL Draft happens.
+- **Pre-draft draft coach workflow is live** - Prospect detail, compare, and filtering all support the pre-draft state cleanly, with nullable draft results ready to be filled in as the draft happens.
+- **Live draft sync (ESPN API)** - During the draft window, Scout Picks and Results auto-update in real time by polling the official ESPN draft endpoint. The on-the-clock banner shows the current team with countdown timer, best available prospects, and team gradient styling.
+- **Team logo refactoring** - College and NFL team logos now render inline next to names in the Prospect Profile and Scout Results for cleaner, more contextual layouts.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 
