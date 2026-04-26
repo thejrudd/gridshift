@@ -11,7 +11,13 @@ import {
   getTierDescription,
   getCollegeProductionSummary,
 } from './scoutUtils';
-import { nflLogoUrl } from './scoutTeamLogos';
+import { nflLogoUrl, collegeLogoUrl } from './scoutTeamLogos';
+import { buildCollegeRowGradient, getCollegePalette, getCollegeForegrounds } from '../../data/collegeColors';
+
+function isDarkMode() {
+  if (typeof document === 'undefined') return false;
+  return document.documentElement.classList.contains('dark');
+}
 
 function CollegeStatSummary({ player }) {
   const summary = getCollegeProductionSummary(player);
@@ -84,20 +90,48 @@ function DraftSelectionMeta({ player }) {
   );
 }
 
-function RosterRow({ player, isSelected, compareAId, onSelectPlayer, onCompare }) {
+function RosterRow({ player, isSelected, compareAId, onSelectPlayer, onCompare, useTeamColors, dark }) {
   const posColor = positionColor(player.position, player.positionGroup);
   const draftSlot = formatScoutSlot(player);
   const combineStatus = getCombineStatus(player);
 
+  // Optional opaque college team-color gradient on the row, matching the
+  // NFL pick-row treatment in Scout Results / Statistics
+  // (primary → darken(primary) → secondary at 135deg). When on, we also
+  // set --scout-row-fg so the row's text inverts for legibility on the tint.
+  const teamGradient = useTeamColors ? buildCollegeRowGradient(player.college, dark) : null;
+  const teamPalette = useTeamColors ? getCollegePalette(player.college) : null;
+  const teamPrimary = teamPalette
+    ? (dark ? teamPalette.darkPrimary : teamPalette.primary)
+    : null;
+  // Per-side foregrounds: --scout-row-fg-left covers elements over the
+  // secondary half of the gradient (rank, name, college, combine chip);
+  // --scout-row-fg-right covers elements over the primary half (stats,
+  // selection metadata). --scout-row-fg keeps the left value as a default
+  // for any inherited text we haven't tagged explicitly.
+  const teamFgs = useTeamColors ? getCollegeForegrounds(player.college, dark) : null;
+
+  const rowStyle = teamGradient
+    ? {
+      background: teamGradient,
+      '--scout-row-fg': teamFgs.left,
+      '--scout-row-fg-left': teamFgs.left,
+      '--scout-row-fg-right': teamFgs.right,
+      color: teamFgs.left,
+    }
+    : undefined;
+  const posBarStyle = { background: teamPrimary || posColor };
+
   return (
     <div
-      className={`scout-roster-row${isSelected ? ' is-selected' : ''}`}
+      className={`scout-roster-row${isSelected ? ' is-selected' : ''}${teamGradient ? ' has-team-tint' : ''}`}
       role="button"
       tabIndex={0}
       onClick={() => onSelectPlayer(player)}
       onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && onSelectPlayer(player)}
       aria-selected={isSelected}
       aria-label={`${player.name}, ${player.position}, ${player.college}, ${draftSlot}`}
+      style={rowStyle}
     >
       {/* Rank */}
       <span className="scout-row-rank">{player.rank}</span>
@@ -110,18 +144,34 @@ function RosterRow({ player, isSelected, compareAId, onSelectPlayer, onCompare }
           alt={player.name}
           className="scout-row-avatar"
         />
-        {/* Position color bar on left edge of avatar */}
-        <div className="scout-row-pos-bar" style={{ background: posColor }} />
+        {/* Left-edge color bar — position color by default, college primary when team colors are on */}
+        <div className="scout-row-pos-bar" style={posBarStyle} />
       </div>
 
       {/* Name + meta */}
       <div className="scout-row-identity">
-        <div className="scout-row-name">{player.name}</div>
-        <div className="scout-row-meta">
-          <div className="scout-row-meta-line">
-            <span className="scout-row-pos-label" style={{ color: posColor }}>{player.position}</span>
+        <div className="scout-row-name-line">
+          <span className="scout-row-name">{player.name}</span>
+          <span
+            className="scout-result-position"
+            style={{ background: posColor }}
+            aria-label={`Position ${player.position ?? 'unknown'}`}
+          >
+            {player.position ?? '—'}
+          </span>
+          {player.college && (
             <span className="scout-row-college">{player.college}</span>
-          </div>
+          )}
+          {collegeLogoUrl(player.college) && (
+            <img
+              src={collegeLogoUrl(player.college)}
+              alt=""
+              className="scout-inline-logo scout-row-college-logo"
+              onError={event => { event.currentTarget.style.display = 'none'; }}
+            />
+          )}
+        </div>
+        <div className="scout-row-meta">
           <div className="scout-row-meta-line">
             <CombineStatusChip status={combineStatus} />
             <DraftSelectionMeta player={player} />
@@ -152,7 +202,8 @@ function RosterRow({ player, isSelected, compareAId, onSelectPlayer, onCompare }
   );
 }
 
-export default function ScoutRosterList({ players, selectedPlayerId, compareAId, onSelectPlayer, onCompare }) {
+export default function ScoutRosterList({ players, selectedPlayerId, compareAId, onSelectPlayer, onCompare, useTeamColors = false }) {
+  const dark = isDarkMode();
   if (!players.length) {
     return (
       <div className="scout-empty">No prospects match your filters.</div>
@@ -178,6 +229,8 @@ export default function ScoutRosterList({ players, selectedPlayerId, compareAId,
           compareAId={compareAId}
           onSelectPlayer={onSelectPlayer}
           onCompare={onCompare}
+          useTeamColors={useTeamColors}
+          dark={dark}
         />
       ))}
     </div>

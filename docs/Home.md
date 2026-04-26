@@ -1,4 +1,4 @@
-# NFL Predictor Docs
+# GridShift Docs
 
 This folder is the start of an Obsidian-friendly wiki for the repository.
 

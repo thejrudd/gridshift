@@ -4,7 +4,7 @@ import { DRAFT_ORDER_SOURCE_2026, DRAFT_PICKS_2026 } from '../../data/draftPicks
 import { DRAFT_RESULTS_2026, DRAFT_RESULTS_SOURCE_2026 } from '../../data/draftResults';
 import { TEAM_NAMES, getTeamPalette } from '../../data/teamColors';
 import useBodyScrollLock from '../../hooks/useBodyScrollLock';
-import { hasCombineData, playerPhotoUrl, photoFallback } from './scoutUtils';
+import { hasCombineData, playerPhotoUrl, photoFallback, positionColor } from './scoutUtils';
 import { collegeLogoUrl, nflLogoUrl } from './scoutTeamLogos';
 import ScoutPositionalSpotlight from './ScoutPositionalSpotlight';
 import ScoutRosterList from './ScoutRosterList';
@@ -19,6 +19,11 @@ const SORT_OPTIONS = [
   { value: 'nflGrade',     label: 'NFL Grade' },
   { value: 'dynastyAdp',   label: 'Dynasty ADP' },
   { value: 'fortyYard',    label: '40-Yard Dash' },
+  { value: 'vertical',     label: 'Vertical Jump' },
+  { value: 'broadJump',    label: 'Broad Jump' },
+  { value: 'threeCone',    label: '3-Cone Drill' },
+  { value: 'shuttle',      label: '20-Yard Shuttle' },
+  { value: 'benchPress',   label: 'Bench Press' },
   { value: 'rushYards',    label: 'Rush Yards' },
   { value: 'recYards',     label: 'Rec Yards' },
 ];
@@ -31,7 +36,7 @@ const SCOUT_VIEWS = [
   { value: 'picks', label: 'Picks' },
   { value: 'results', label: 'Results' },
 ];
-const PICK_ROUND_FILTERS = ['All', 1, 2, 3, 4, 5, 6, 7];
+const PICK_ROUND_FILTERS = ['Remaining', 'All', 1, 2, 3, 4, 5, 6, 7];
 const TEAM_ID_BY_NAME = Object.fromEntries(
   Object.entries(TEAM_NAMES).map(([teamId, teamName]) => [teamName, teamId]),
 );
@@ -810,6 +815,18 @@ function getTeamPicks(picks, teamName) {
   return picks.filter(pick => pick.teamName === teamName);
 }
 
+// How many of this team's picks are still on the board from this slot onward.
+// Counts the current pick if it hasn't been selected yet, plus every later
+// unselected pick the same team owns. Result descends with each subsequent
+// row for the same team during a live draft.
+function getTeamRemainingFromHere(picks, pick) {
+  return picks.filter(p => (
+    p.teamName === pick.teamName
+    && !p.playerName
+    && p.overall >= pick.overall
+  )).length;
+}
+
 function compareAscNullLast(a, b) {
   if (a == null && b == null) return 0;
   if (a == null) return 1;
@@ -864,8 +881,20 @@ function syncDesktopPanelPosition(detailNode, listShellNode) {
 function sortRookies(rookies, sortKey) {
   return [...rookies].sort((a, b) => {
     switch (sortKey) {
+      // Combine drills — lower time is faster (40, 3-cone, shuttle); higher
+      // measurement is better for the jumps and bench reps.
       case 'fortyYard':
         return compareAscNullLast(a.combine?.fortyYard, b.combine?.fortyYard);
+      case 'vertical':
+        return compareDescNullLast(a.combine?.vertical, b.combine?.vertical);
+      case 'broadJump':
+        return compareDescNullLast(a.combine?.broadJump, b.combine?.broadJump);
+      case 'threeCone':
+        return compareAscNullLast(a.combine?.threeCone, b.combine?.threeCone);
+      case 'shuttle':
+        return compareAscNullLast(a.combine?.shuttle, b.combine?.shuttle);
+      case 'benchPress':
+        return compareDescNullLast(a.combine?.benchPress, b.combine?.benchPress);
       case 'rushYards':
         return compareDescNullLast(a.collegeStats?.rushYards, b.collegeStats?.rushYards);
       case 'recYards':
@@ -881,6 +910,25 @@ function sortRookies(rookies, sortKey) {
         return compareAscNullLast(a.bigBoardRank, b.bigBoardRank);
     }
   });
+}
+
+// Format a duration in seconds as "Xd Xh Xm Xs", omitting any leading units
+// that are zero. e.g. 41,520s → "11h 32m 0s" (drops days), 45s → "45s",
+// 0 → "0s". The smallest non-zero unit and everything below it is kept so the
+// seconds digit always animates during the final minute of the OTC clock.
+function formatCountdownDuration(totalSeconds) {
+  if (totalSeconds == null) return null;
+  const safe = Math.max(0, Math.floor(totalSeconds));
+  const d = Math.floor(safe / 86_400);
+  const h = Math.floor((safe % 86_400) / 3_600);
+  const m = Math.floor((safe % 3_600) / 60);
+  const s = safe % 60;
+  const parts = [];
+  if (d > 0) parts.push(`${d}d`);
+  if (d > 0 || h > 0) parts.push(`${h}h`);
+  if (d > 0 || h > 0 || m > 0) parts.push(`${m}m`);
+  parts.push(`${s}s`);
+  return parts.join(' ');
 }
 
 function useCountdown(expiresAt) {
@@ -912,6 +960,16 @@ export default function ScoutTab({ view = 'prospects', onViewChange }) {
   const [posFilter, setPosFilter] = useState('All');
   const [sortKey, setSortKey]     = useState('projectedOverall');
   const [combineOnly, setCombineOnly] = useState(false);
+  // College team colors as row gradients in the prospects list.
+  // Persisted to localStorage so the user's choice survives reloads.
+  const [useTeamColors, setUseTeamColors] = useState(() => {
+    try { return localStorage.getItem('scout:useTeamColors') === '1'; }
+    catch { return false; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('scout:useTeamColors', useTeamColors ? '1' : '0'); }
+    catch { /* storage unavailable — fine, fall back to in-memory state */ }
+  }, [useTeamColors]);
   const [search, setSearch]       = useState('');
   const [selectedPlayerId, setSelectedPlayerId] = useState(null);
   const [compareA, setCompareA]   = useState(null);
@@ -1220,6 +1278,21 @@ export default function ScoutTab({ view = 'prospects', onViewChange }) {
           >
             Combine Data
           </button>
+          <button
+            onClick={() => setUseTeamColors(prev => !prev)}
+            className="scout-chip"
+            aria-pressed={useTeamColors}
+            style={useTeamColors ? {
+              background: 'var(--color-accent)',
+              color: '#fff',
+            } : {
+              background: 'var(--color-fill)',
+              color: 'var(--color-label-secondary)',
+            }}
+            title="Tint each prospect row with the player's college team colors"
+          >
+            Team Colors
+          </button>
         </div>
 
         {/* Search */}
@@ -1267,6 +1340,7 @@ export default function ScoutTab({ view = 'prospects', onViewChange }) {
           compareAId={compareA?.id}
           onSelectPlayer={handleSelectPlayer}
           onCompare={handleCompare}
+          useTeamColors={useTeamColors}
         />
 
         {/* Desktop detail panel */}
@@ -1385,11 +1459,7 @@ function ScoutLiveDraftBanner({ info, scheduleState }) {
   const team = info.teamName ? getDraftTeamMeta(info.teamName) : null;
   const secondsLeft = useCountdown(isSessionLive ? info.expiresAt : scheduleState?.nextSession?.startAt ?? null);
 
-  const mins = secondsLeft != null ? Math.floor(secondsLeft / 60) : null;
-  const secs = secondsLeft != null ? secondsLeft % 60 : null;
-  const countdownStr = secondsLeft != null
-    ? `${mins}:${String(secs).padStart(2, '0')}`
-    : null;
+  const countdownStr = formatCountdownDuration(secondsLeft);
   const countdownUrgent = isSessionLive && secondsLeft != null && secondsLeft < 60;
 
   const bg = team?.gradient ?? 'linear-gradient(135deg, var(--color-fill) 0%, var(--color-bg-secondary) 100%)';
@@ -1494,7 +1564,7 @@ function ScoutLiveDraftBanner({ info, scheduleState }) {
 
 function ScoutPicksView() {
   const [selectedTeam, setSelectedTeam] = useState(null);
-  const [roundFilter, setRoundFilter] = useState('All');
+  const [roundFilter, setRoundFilter] = useState('Remaining');
   const [selectedTeams, setSelectedTeams] = useState([]);
   const [teamFilterOpen, setTeamFilterOpen] = useState(false);
   const [draftPicks, setDraftPicks] = useState(DRAFT_PICKS_2026);
@@ -1507,14 +1577,18 @@ function ScoutPicksView() {
   const teamFilterRef = useRef(null);
   const selectedTeamSet = new Set(selectedTeams);
   const draftRounds = groupDraftPicks(draftPicks);
-  const filteredRounds = (roundFilter === 'All'
+  const filteredRounds = (roundFilter === 'All' || roundFilter === 'Remaining'
     ? draftRounds
     : draftRounds.filter(({ round }) => round === roundFilter))
     .map(({ round, picks }) => ({
       round,
-      picks: selectedTeams.length === 0
-        ? picks
-        : picks.filter(pick => selectedTeamSet.has(pick.teamName)),
+      // Apply Remaining filter (no playerName means the slot hasn't been
+      // selected yet) and team filter. Both are AND'd together.
+      picks: picks.filter(pick => {
+        if (roundFilter === 'Remaining' && pick.playerName) return false;
+        if (selectedTeams.length > 0 && !selectedTeamSet.has(pick.teamName)) return false;
+        return true;
+      }),
     }))
     .filter(({ picks }) => picks.length > 0);
 
@@ -1636,7 +1710,7 @@ function ScoutPicksView() {
               aria-pressed={roundFilter === round}
               onClick={() => setRoundFilter(round)}
             >
-              {round === 'All' ? 'All' : `Round ${round}`}
+              {typeof round === 'number' ? `Round ${round}` : round}
             </button>
           ))}
         </div>
@@ -1691,7 +1765,7 @@ function ScoutPicksView() {
                   <ScoutPickRow
                     key={pick.overall}
                     pick={pick}
-                    teamPickCount={getTeamPicks(draftPicks, pick.teamName).length}
+                    teamRemainingCount={getTeamRemainingFromHere(draftPicks, pick)}
                     onClick={() => setSelectedTeam(pick.teamName)}
                   />
               ))}
@@ -1742,7 +1816,7 @@ function ScoutPicksFeedStatus({ state }) {
   );
 }
 
-function ScoutPickRow({ pick, teamPickCount, onClick }) {
+function ScoutPickRow({ pick, teamRemainingCount, onClick }) {
   const team = getDraftTeamMeta(pick.teamName);
 
   return (
@@ -1769,7 +1843,9 @@ function ScoutPickRow({ pick, teamPickCount, onClick }) {
       <span className="scout-pick-main">
         <span className="scout-pick-team-line">
           <span className="scout-pick-team">{pick.teamName}</span>
-          <span className="scout-pick-count">{teamPickCount} picks</span>
+          <span className="scout-pick-count">
+            {teamRemainingCount} {teamRemainingCount === 1 ? 'pick remaining' : 'picks remaining'}
+          </span>
         </span>
         {pick.note && <span className="scout-pick-meta">{pick.note}</span>}
       </span>
@@ -1866,12 +1942,53 @@ const RESULTS_SORT_OPTIONS = [
 
 function ScoutResultsView({ players, draftResults, liveFeedState, selectedPlayerId, onSelectPlayer }) {
   const [sortOrder, setSortOrder] = useState('topPicks');
+  const [posFilter, setPosFilter] = useState('All');
+  const [selectedTeams, setSelectedTeams] = useState([]);
+  const [teamFilterOpen, setTeamFilterOpen] = useState(false);
+  const teamFilterRef = useRef(null);
+
   const mergedResults = mergeDraftResultsWithPlayers(draftResults, players);
+  const selectedTeamSet = new Set(selectedTeams);
+  // Apply position + team filters first so the displayed list reflects the
+  // active selection before the sort/reverse step.
+  const filteredResults = mergedResults.filter(result => {
+    if (selectedTeams.length > 0 && !selectedTeamSet.has(result.teamName)) return false;
+    if (posFilter === 'All') return true;
+    const group = result.player?.positionGroup ?? result.position;
+    if (posFilter === 'Offense') return OFFENSE_POSITION_GROUPS.has(group);
+    if (posFilter === 'Defense') return DEFENSE_POSITION_GROUPS.has(group);
+    return group === posFilter;
+  });
   // Source data arrives sorted ascending by overall (Pick #1 first). For "Most Recent"
   // we reverse so the latest pick is at the top — better for live viewing during the draft.
   const orderedResults = sortOrder === 'mostRecent'
-    ? [...mergedResults].reverse()
-    : mergedResults;
+    ? [...filteredResults].reverse()
+    : filteredResults;
+
+  useEffect(() => {
+    if (!teamFilterOpen) return undefined;
+    const handlePointerDown = (event) => {
+      if (!teamFilterRef.current?.contains(event.target)) {
+        setTeamFilterOpen(false);
+      }
+    };
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, [teamFilterOpen]);
+
+  const toggleTeamFilter = useCallback((teamName) => {
+    setSelectedTeams(prev => (
+      prev.includes(teamName)
+        ? prev.filter(name => name !== teamName)
+        : [...prev, teamName]
+    ));
+  }, []);
+
+  const teamFilterLabel = selectedTeams.length === 0
+    ? 'All Teams'
+    : selectedTeams.length === 1
+      ? selectedTeams[0]
+      : `${selectedTeams.length} Teams`;
 
   return (
     <div className="scout-results-view">
@@ -1880,7 +1997,40 @@ function ScoutResultsView({ players, draftResults, liveFeedState, selectedPlayer
         <ScoutDraftResultsFeedStatus state={liveFeedState} count={mergedResults.length} />
       </div>
       {mergedResults.length > 0 && (
-        <div className="scout-pick-filter-bar">
+        <div className="scout-results-filter-row">
+          <span className="scout-results-filter-row-label">Filter</span>
+          <div className="scout-pick-round-filters" role="group" aria-label="Filter draft results by position">
+            {POS_FILTERS.map(pos => {
+              const active = posFilter === pos;
+              const isPositionGroup = pos !== 'All' && pos !== 'Offense' && pos !== 'Defense';
+              const activeBg = isPositionGroup
+                ? positionColor(pos, pos)
+                : 'var(--color-signature)';
+              const activeFg = isPositionGroup
+                ? '#fff'
+                : 'var(--color-signature-fg)';
+              return (
+                <button
+                  key={pos}
+                  type="button"
+                  onClick={() => setPosFilter(pos)}
+                  className="scout-round-chip"
+                  aria-pressed={active}
+                  style={active ? {
+                    background: activeBg,
+                    color: activeFg,
+                  } : undefined}
+                >
+                  {pos}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      {mergedResults.length > 0 && (
+        <div className="scout-results-filter-row">
+          <span className="scout-results-filter-row-label">Sort</span>
           <div className="scout-pick-round-filters" role="tablist" aria-label="Sort draft results">
             {RESULTS_SORT_OPTIONS.map(option => (
               <button
@@ -1896,9 +2046,46 @@ function ScoutResultsView({ players, draftResults, liveFeedState, selectedPlayer
               </button>
             ))}
           </div>
+          <div className="scout-team-filter" ref={teamFilterRef}>
+            <button
+              type="button"
+              className="scout-team-filter-button"
+              aria-expanded={teamFilterOpen}
+              onClick={() => setTeamFilterOpen(prev => !prev)}
+            >
+              <span>{teamFilterLabel}</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="m6 9 6 6 6-6" />
+              </svg>
+            </button>
+            {teamFilterOpen && (
+              <div className="scout-team-filter-menu">
+                <div className="scout-team-filter-menu-head">
+                  <span>Teams</span>
+                  {selectedTeams.length > 0 && (
+                    <button type="button" onClick={() => setSelectedTeams([])}>
+                      Clear
+                    </button>
+                  )}
+                </div>
+                <div className="scout-team-filter-options">
+                  {DRAFT_TEAM_OPTIONS.map(teamName => (
+                    <label key={teamName} className="scout-team-filter-option">
+                      <input
+                        type="checkbox"
+                        checked={selectedTeamSet.has(teamName)}
+                        onChange={() => toggleTeamFilter(teamName)}
+                      />
+                      <span>{teamName}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
-      {mergedResults.length > 0 ? (
+      {orderedResults.length > 0 ? (
         <div className="scout-results-list">
           {orderedResults.map(result => (
             <ScoutResultRow
@@ -1911,7 +2098,9 @@ function ScoutResultsView({ players, draftResults, liveFeedState, selectedPlayer
         </div>
       ) : (
         <div className="scout-empty">
-          Draft results will populate here as picks are entered into the live feed or rookie dataset.
+          {mergedResults.length === 0
+            ? 'Draft results will populate here as picks are entered into the live feed or rookie dataset.'
+            : 'No picks match the active filters.'}
         </div>
       )}
     </div>
@@ -1979,7 +2168,13 @@ function ScoutResultRow({ result, isSelected, onSelectPlayer }) {
       <span className="scout-pick-main">
         <span className="scout-pick-team-line">
           <span className="scout-result-player">{result.playerName}</span>
-          <span className="scout-pick-count">{result.position ?? 'POS'}</span>
+          <span
+            className="scout-result-position"
+            style={{ background: positionColor(result.position, player?.positionGroup) }}
+            aria-label={`Position ${result.position ?? 'unknown'}`}
+          >
+            {result.position ?? '—'}
+          </span>
         </span>
         <span className="scout-pick-meta">
           {nflLogoUrl(result.team || result.teamName) && (

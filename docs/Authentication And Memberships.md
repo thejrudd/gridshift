@@ -2,7 +2,7 @@
 
 Back: [[Home]]
 
-This note captures how NFL Predictor could add authentication, host-controlled memberships, and a future commercial / royalty model without abandoning self-hosting.
+This note captures how GridShift could add authentication, host-controlled memberships, and a future commercial / royalty model without abandoning self-hosting.
 
 ## Goals
 
@@ -24,7 +24,7 @@ They should be designed together, but not confused with each other.
 
 ### Option 1 — Self-Hosted Auth Adapter
 
-Hosts run NFL Predictor with one of a few supported auth providers:
+Hosts run GridShift with one of a few supported auth providers:
 
 - email magic link
 - Google / GitHub OAuth
@@ -35,7 +35,7 @@ Best fit if the goal is flexibility for self-hosters.
 
 ### Option 2 — Hosted “Official” Auth Service
 
-NFL Predictor ships an official hosted auth + billing backend, while self-hosters can still disable it and run local auth.
+GridShift ships an official hosted auth + billing backend, while self-hosters can still disable it and run local auth.
 
 Best fit if there is eventually an official hosted product.
 
@@ -143,7 +143,7 @@ Best licensing direction if royalties are important:
 
 ## Plain-English Recommendation
 
-NFL Predictor can absolutely support host-controlled memberships, but the clean order is:
+GridShift can absolutely support host-controlled memberships, but the clean order is:
 
 1. add a backend
 2. add auth

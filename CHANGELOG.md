@@ -1,4 +1,4 @@
-# NFL Predictor — Changelog
+# GridShift — Changelog
 
 All notable changes, oldest first. Add new entries at the bottom.
 
@@ -930,3 +930,20 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Draft Results refresh in lockstep with the live banner** - The Scout → Results list now updates whenever the live draft banner fetches a new payload, instead of running on its own slower 30 s loop. The banner already polls adaptively at 5 s / 15 s / 60 s, so Results inherits the same cadence and the two surfaces stop drifting out of sync during a live draft.
 - **Single fetch shared between banner and Results** - When both surfaces target the same ESPN endpoint (the default), the banner reuses the fetched payload to drive the Results merge through a new `applyLivePayload` callback on the Scout draft results hook, eliminating the duplicate request the Results poller used to make.
 - **Picks view stays current during live drafts** - Because the banner-driven refresh now updates `draftResults` even when the standalone Results poller is paused, the Scout → Picks view also reflects newly landed picks in real time without waiting for a tab switch.
+
+---
+
+## v7.0.5 - Post-Draft Polish
+*2026-04-25*
+
+- **Scout - College team colors on prospect rows** - New "Team Colors" toggle in the Scout filter bar tints each prospect row with the player's college primary-to-secondary gradient, matching the NFL pick-row treatment used in Results and Statistics. Foreground text inverts per side for legibility and the toggle state persists to localStorage. Added `src/data/collegeColors.js` with full palette coverage for all schools in the 2026 class.
+- **Scout - Additional combine sort options** - Sort board by Vertical Jump, Broad Jump, 3-Cone Drill, 20-Yard Shuttle, and Bench Press in addition to 40-Yard Dash. Jump/rep sorts descend (higher is better); time sorts ascend (faster is better).
+- **Scout - Picks view defaults to Remaining** - The Picks filter bar now defaults to "Remaining" (undrafted slots only) instead of "All", so the board opens focused on what's still on the clock. The "All" and round-specific filters remain available.
+- **Scout - Improved OTC countdown format** - The live draft banner countdown now displays as `Xd Xh Xm Xs`, omitting any leading units that are zero, instead of the fixed `MM:SS` format.
+- **Scout - Inline college logo and position badge on roster rows** - Prospect rows now show the college logo inline next to the school name and render the position as a colored pill badge, keeping identity information on one line.
+- **Scout - Navigation reordered** - Scout moved to 4th position (after Trade) in the desktop sidebar and mobile bottom tab bar. Companion is now the default first-load tab outside the 2026 NFL Draft window; Scout remains the landing tab while the draft is live.
+- **Scout - ESPN College IDs expanded** - Added `espnCollegeId` entries to dozens more prospects in `rookies.js` to improve photo and stat resolution.
+- **Statistics - Championship badges on team cards** - Team browser cards now show Super Bowl, conference championship, and division title badges for the 2025-season champions.
+- **Statistics - Rookie season placeholder** - Players with `experience === 0` now show a "Rookie Season" badge, a green indicator, and a placeholder stats section instead of empty or failed stat tables.
+- **Statistics - Team card nickname descender fix** - Team card nickname text no longer clips descenders (e.g. Vikings lowercase "k") because `leading-none` was replaced with an explicit `lineHeight: 1.1` that gives Barlow Condensed room for its descenders.
+- **Guide updated** - Scout guide copy revised to reflect the current position filter behavior; stale "Top Prospects as a Snapshot" step removed.

@@ -207,8 +207,10 @@ function patchSource(source, mappings) {
   const calls = findRookieCalls(source);
   const updates = [];
   let patched = source;
+  let offset = 0;
 
   for (const call of calls) {
+    // Always read content from the original source using original positions.
     const content = source.slice(call.openParen + 1, call.closeParen);
     const args = topLevelArgs(content);
     const name = unquote(args[1]?.value);
@@ -232,15 +234,11 @@ function patchSource(source, mappings) {
 
     if (nextCallText !== callText) {
       updates.push({ name, espnCollegeId });
-      patched = `${patched.slice(0, call.callStart)}${nextCallText}${patched.slice(call.closeParen + 1)}`;
-      const delta = nextCallText.length - callText.length;
-      for (const other of calls) {
-        if (other.callStart > call.callStart) {
-          other.callStart += delta;
-          other.openParen += delta;
-          other.closeParen += delta;
-        }
-      }
+      // Apply patch at the shifted position in `patched`.
+      const shiftedStart = call.callStart + offset;
+      const shiftedEnd = call.closeParen + 1 + offset;
+      patched = `${patched.slice(0, shiftedStart)}${nextCallText}${patched.slice(shiftedEnd)}`;
+      offset += nextCallText.length - callText.length;
     }
   }
 

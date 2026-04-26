@@ -1,3 +1,18 @@
+// Draft window — Scout becomes the landing tab while the 2026 NFL Draft is live.
+// Mirrors DRAFT_SESSION_WINDOWS_2026 in src/components/scout/ScoutTab.jsx; kept in
+// sync deliberately so the routing module stays free of component-side imports.
+const DRAFT_LANDING_START = Date.parse('2026-04-23T20:00:00-04:00');
+const DRAFT_LANDING_END = Date.parse('2026-04-25T19:00:00-04:00');
+
+function isDraftLandingWindow(now = Date.now()) {
+  if (!Number.isFinite(DRAFT_LANDING_START) || !Number.isFinite(DRAFT_LANDING_END)) return false;
+  return now >= DRAFT_LANDING_START && now <= DRAFT_LANDING_END;
+}
+
+function getDefaultActiveTab() {
+  return isDraftLandingWindow() ? 'scout' : 'companion';
+}
+
 const PREDICTIONS_VIEWS = new Set(['predictions', 'standings', 'playoffs']);
 const COMPANION_VIEWS = new Set(['roster', 'rankings', 'matchup', 'waiver', 'league', 'defense', 'scoring']);
 const TRADE_VIEWS = new Set(['agent', 'intelligence', 'upgrade', 'compare']);
@@ -10,9 +25,9 @@ function normalizeCompanionView(view) {
 }
 
 const DEFAULT_ROUTE = {
-  // Scout is the primary section on first load — see /scout for the Draft Coach surface.
-  // Predictions, Companion, Statistics, and Trade still resolve normally via their own paths.
-  activeTab: 'scout',
+  // First-load tab is dynamic: Scout while the 2026 NFL Draft is live, Companion otherwise.
+  // All other sections still resolve normally via their own paths.
+  get activeTab() { return getDefaultActiveTab(); },
   seasonView: 'predictions',
   predictionsTeamId: null,
   statisticsView: 'browser',

@@ -1,4 +1,4 @@
-# NFL Predictor — Project Memory
+# GridShift — Project Memory
 
 ## Project Overview
 - **Tech stack**: React 19 + Vite 7 + Tailwind CSS 3
@@ -6,10 +6,7 @@
 - **Dark mode**: `.dark` class on `<html>`
 - **PWA**: vite-plugin-pwa + nginx in Docker
 - **Active branch**: `main` — all work ships directly here
-- **Current version**: v6.3
-
-## Ignore List
-- `CLAUDE.md` is for Claude-specific project guidance — do not read or reference it when `AGENTS.md` is present.
+- **Current version**: v7.0.4
 
 ## API Secret Handling
 - Any BALLDONTLIE, CFBD/CollegeFootballData, or similar paid API key must be treated as a secret and must never be committed into the repo or exposed in the client bundle.
@@ -46,6 +43,11 @@ Key rules:
 - `font-size: 16px` on all inputs (prevents iOS auto-zoom)
 - Safe area insets: `env(safe-area-inset-bottom)` on fixed bottom bars
 - Motion: spring-curve easing `cubic-bezier(0.32, 0.72, 0, 1)`
+
+### Team Color Palettes
+- NFL teams — `src/data/teamColors.js` (`TEAM_COLORS`, `getTeamPalette`). Used for Statistics, Companion, Scout Results pick rows, and the Compare/Heatmap surfaces.
+- College teams — `src/data/collegeColors.js` (`COLLEGE_COLORS`, `getCollegePalette`, `buildCollegeRowGradient`, `getCollegeForeground`). Used for the optional Scout Prospects "Team Colors" toggle. Mirrors the NFL palette structure (primary / secondary / darkPrimary / darkSecondary) and the same `linear-gradient(135deg, primary 0%, darken(primary,0.28) 58%, secondary 100%)` row treatment used by Scout Results.
+- When adding a new school to `ROOKIES_2026`, add a matching entry to `COLLEGE_COLORS` keyed by the normalized college name (`normalizeCollegeKey`). If the official primary is near-black or very dark navy, set `darkPrimary` to the brighter accent so the gradient still reads in dark mode.
 
 ---
 

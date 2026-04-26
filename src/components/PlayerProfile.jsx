@@ -4,7 +4,7 @@ import { buildStatMap, getCareerHighlights } from '../utils/playerMetrics';
 import { usePredictions } from '../context/PredictionContext';
 import { useSleeperLeague, useSleeperStats } from '../context/SleeperContext';
 import { useTheme } from '../context/ThemeContext';
-import PlayerStatTable from './PlayerStatTable';
+import PlayerStatTable, { HonorBadge } from './PlayerStatTable';
 import honorsData from '../data/honors.json';
 import { getTeamPalette } from '../data/teamColors.js';
 import { matchEspnToSleeper } from '../utils/espnSleeperMatch';
@@ -210,7 +210,8 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, onBack, backLabel,
     ? getCareerHighlights(buildStatMap(careerStats), playerMeta.position)
     : [];
 
-  const rookieLabel = `Active Since ${firstSeason}`;
+  const isRookie = playerMeta.experience === 0;
+  const rookieLabel = isRookie ? 'Rookie Season' : `Active Since ${firstSeason}`;
 
   return (
     <div className="space-y-6">
@@ -329,6 +330,14 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, onBack, backLabel,
 
               {/* Inline indicators: status badge + roster indicator */}
               <div className="mt-2 flex flex-wrap justify-center sm:justify-start items-center gap-2">
+                {isRookie && (
+                  <span
+                    className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold uppercase"
+                    style={{ background: '#10b981', color: '#fff' }}
+                  >
+                    Rookie Season
+                  </span>
+                )}
                 {playerMeta.status && playerMeta.status !== 'Active' && (
                   <span
                     className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold uppercase"
@@ -476,36 +485,74 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, onBack, backLabel,
 
       {/* Stats accordion */}
       <div className="space-y-2">
-        {years.filter(y => !unavailableYears.has(y)).map(year => (
-          <PlayerStatTable
-            key={year}
-            year={year}
-            statsJson={statsByYear[year] ?? null}
-            position={playerMeta.position}
-            sleeperId={sleeperId}
-            expanded={!!expandedYears[year]}
-            onToggle={() => toggleYear(year)}
-            loading={!!loadingYears[year]}
-            error={errorYears[year] ?? null}
-            gameLog={gameLogByYear[year] ?? null}
-            gameLogLoading={!!loadingGameLog[year]}
-            honors={honorsByYear[String(year)] ?? []}
+        {isRookie ? (
+          <RookieSeasonPlaceholder
+            honorsByYear={honorsByYear}
             accentColor={heroAccent ?? heroBg}
           />
-        ))}
-        {/* Career row */}
-        <PlayerStatTable
-          key="career"
-          year="career"
-          statsJson={careerStats}
-          position={playerMeta.position}
-          sleeperId={sleeperId}
-          expanded={!!expandedYears['career']}
-          onToggle={toggleCareer}
-          loading={careerLoading}
-          error={careerError}
-          accentColor={heroAccent ?? heroBg}
-        />
+        ) : (
+          <>
+            {years.filter(y => !unavailableYears.has(y)).map(year => (
+              <PlayerStatTable
+                key={year}
+                year={year}
+                statsJson={statsByYear[year] ?? null}
+                position={playerMeta.position}
+                sleeperId={sleeperId}
+                expanded={!!expandedYears[year]}
+                onToggle={() => toggleYear(year)}
+                loading={!!loadingYears[year]}
+                error={errorYears[year] ?? null}
+                gameLog={gameLogByYear[year] ?? null}
+                gameLogLoading={!!loadingGameLog[year]}
+                honors={honorsByYear[String(year)] ?? []}
+                accentColor={heroAccent ?? heroBg}
+              />
+            ))}
+            <PlayerStatTable
+              key="career"
+              year="career"
+              statsJson={careerStats}
+              position={playerMeta.position}
+              sleeperId={sleeperId}
+              expanded={!!expandedYears['career']}
+              onToggle={toggleCareer}
+              loading={careerLoading}
+              error={careerError}
+              accentColor={heroAccent ?? heroBg}
+            />
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const RookieSeasonPlaceholder = ({ honorsByYear, accentColor }) => {
+  const allHonors = Object.values(honorsByYear).flat();
+  return (
+    <div
+      className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden"
+      style={accentColor ? { borderLeftColor: accentColor, borderLeftWidth: '3px' } : undefined}
+    >
+      <div className="px-4 py-3 bg-gray-50 dark:bg-gray-800 flex items-center gap-2 flex-wrap">
+        <span className="font-semibold">Rookie Season</span>
+        <span className="inline-flex items-center px-1.5 py-0.5 rounded border text-[10px] font-bold uppercase tracking-wide bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-600">
+          First Year
+        </span>
+        {allHonors.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {allHonors.map(honor => <HonorBadge key={honor} honor={honor} />)}
+          </div>
+        )}
+      </div>
+      <div className="bg-white dark:bg-gray-900 px-4 py-8 text-center">
+        <p className="text-sm font-medium" style={{ color: 'var(--color-label-secondary)' }}>
+          No NFL stats yet
+        </p>
+        <p className="text-xs mt-1" style={{ color: 'var(--color-label-tertiary)' }}>
+          Stats will appear here once the season begins.
+        </p>
       </div>
     </div>
   );

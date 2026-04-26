@@ -196,7 +196,7 @@ const HONOR_CONFIG = {
   '2nd Team All-Pro':                 { label: '2nd AP',   cls: 'bg-gray-100 dark:bg-gray-700/60 text-gray-600 dark:text-gray-400 border-gray-300 dark:border-gray-600' },
 };
 
-const HonorBadge = ({ honor }) => {
+export const HonorBadge = ({ honor }) => {
   const c = HONOR_CONFIG[honor] ?? { label: honor, cls: 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 border-gray-300 dark:border-gray-600' };
   return (
     <span className={`inline-flex items-center px-1.5 py-0.5 rounded border text-[10px] font-bold uppercase tracking-wide ${c.cls}`}>

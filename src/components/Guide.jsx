@@ -68,7 +68,7 @@ const GUIDE_CONTENT = {
       },
       {
         title: 'Filter the Class',
-        description: 'Fantasy shows only QB, RB, WR, and TE. Combine Data keeps only prospects with verified drill results, not measured-only players.',
+        description: 'Use the position chips to focus on a single position group or to limit to Offense or Defense. Combine Data keeps only prospects with verified drill results, not measured-only players.',
       },
       {
         title: 'Understand the Labels',
@@ -85,10 +85,6 @@ const GUIDE_CONTENT = {
       {
         title: 'Compare Players',
         description: 'Use the compare control on any row to stack two prospects side by side across draft, production, and combine data.',
-      },
-      {
-        title: 'Use Top Prospects as a Snapshot',
-        description: 'The top cards are generated from the current sort and show the first available QB, RB, WR, and TE in that view.',
       },
     ],
   },

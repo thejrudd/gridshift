@@ -2,7 +2,7 @@
 
 Back: [[Home]]
 
-This note captures where Open Pencil could fit into NFL Predictor later, without assigning it to a specific planned version yet.
+This note captures where Open Pencil could fit into GridShift later, without assigning it to a specific planned version yet.
 
 ## What It Is
 
@@ -21,7 +21,7 @@ Source: [`open-pencil/open-pencil`](https://github.com/open-pencil/open-pencil)
 - Auto layout and CSS Grid support, including gap, padding, alignment, and track sizing
 - Runs as desktop app, browser app, and PWA
 
-## Potential NFL Predictor Uses
+## Potential GridShift Uses
 
 - Design system prototyping for future Trade and Companion UI changes before implementation
 - Layout exploration for cards, modals, stepper flows, and dense data-heavy screens where proportion matters
@@ -29,21 +29,21 @@ Source: [`open-pencil/open-pencil`](https://github.com/open-pencil/open-pencil)
 - Generating shareable design artifacts for review before code is written
 - Exporting layout ideas into JSX or Tailwind-shaped markup as a starting point for React implementation
 - Using the CLI to inspect and lint design files if the app ever starts keeping official design specs alongside code
-- Building a custom editor surface for a single NFL Predictor workflow, such as card-based trade proposals or draft prospect comparison
+- Building a custom editor surface for a single GridShift workflow, such as card-based trade proposals or draft prospect comparison
 - Supporting collaborative design reviews with a shared visual file instead of static screenshots
 
 ## Technical / UX Fit Considerations
 
 - Best fit is for feature planning, visual prototyping, and layout validation, not for app runtime logic
 - The Tailwind export path is interesting for this repo because most of the app already uses Tailwind and CSS custom properties
-- The headless/Vue SDK angle is potentially useful if NFL Predictor ever wants a purpose-built design sandbox for complex Trade or Draft Coach screens
+- The headless/Vue SDK angle is potentially useful if GridShift ever wants a purpose-built design sandbox for complex Trade or Draft Coach screens
 - Real-time collaboration could help if future design work is split between multiple contributors or if product ideas need to be reviewed live
 - The `.fig` compatibility matters if the team ever wants to import, inspect, or adapt external design assets
 
 ## Risks / Unknowns
 
 - It is still active development and explicitly not production-ready
-- The repo is design-tool focused, so the value for NFL Predictor depends on whether we want a stronger prototype workflow versus just coding directly
+- The repo is design-tool focused, so the value for GridShift depends on whether we want a stronger prototype workflow versus just coding directly
 - Collaboration is P2P and local-first, which is good for simplicity but may limit team workflow expectations if we ever need centralized review history
 - Tailwind/JSX export can help bootstrap layouts, but it will still need manual refinement to match this app’s current design tokens and behavior
 - We would need to evaluate how stable the file formats and SDK APIs are before depending on them in a real pipeline
@@ -52,7 +52,7 @@ Source: [`open-pencil/open-pencil`](https://github.com/open-pencil/open-pencil)
 
 Treat Open Pencil as a future design-prototyping and layout-validation tool, not as a core runtime dependency.
 
-Best near-term uses for NFL Predictor would be:
+Best near-term uses for GridShift would be:
 
 - testing Trade and Draft Coach card layouts before implementation
 - creating higher-fidelity mockups for complex modal flows

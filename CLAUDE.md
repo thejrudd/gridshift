@@ -1,4 +1,4 @@
-# NFL Predictor — Project Memory
+# GridShift — Project Memory
 
 ## Project Overview
 - **Tech stack**: React 19 + Vite 7 + Tailwind CSS 3
@@ -6,18 +6,31 @@
 - **Dark mode**: `.dark` class on `<html>`
 - **PWA**: vite-plugin-pwa + nginx in Docker
 - **Active branch**: `main` — all work ships directly here
-- **Current version**: v6.0.3
-
-## Ignore List
-- `AGENTS.md` is for OpenAI Codex — do not read or reference it.
+- **Current version**: v7.0.4
 
 ## API Secret Handling
-- Any BALLDONTLIE or similar paid API key must be treated as a secret and must never be committed into the repo or exposed in the client bundle.
-- If the project upgrades to a paid BALLDONTLIE subscription, rotate the existing key and move all access behind a server-side or proxy boundary before production use.
+- Any BALLDONTLIE, CFBD/CollegeFootballData, or similar paid API key must be treated as a secret and must never be committed into the repo or exposed in the client bundle.
+- If the project upgrades to a paid BALLDONTLIE or CFBD subscription, rotate the existing key and move all access behind a server-side or proxy boundary before production use.
 
 ## Versioning Roadmap
 - **v6.0** — Trade Suite (shipped)
 - **v7.0** — Draft Coach (rookie scouting data, combine results, dynasty ADP)
+
+---
+
+## Docs First
+
+Prefer the docs folder for current architecture and implementation references instead of duplicating long guidance in this file.
+
+- `docs/Home.md` — doc map / entry point
+- `docs/Architecture Map.md` — current architectural layout and file ownership
+- `docs/Where To Edit.md` — feature-to-file edit guide
+- `docs/Design Tokens.md` — full token table and design-system details
+- `docs/Scoring Call Sites.md` — full scoring audit checklist
+- `docs/Trade Engine.md` — Trade engine architecture, explanation rules, and maintenance reference
+- `docs/Trade Proposal Cards.md` — Trade proposal card sizing, content priority, and no-clipping rules
+- `docs/Scout.md` — Scout tab architecture, APIs, CFBD importers, generated production data, Prospect Statistics modal data contracts, route integration, and real-data wiring checklist
+- `QA_CHECKLIST.md` — manual QA flows; only open when explicitly doing QA or test validation
 
 ---
 
@@ -30,6 +43,11 @@ Key rules:
 - `font-size: 16px` on all inputs (prevents iOS auto-zoom)
 - Safe area insets: `env(safe-area-inset-bottom)` on fixed bottom bars
 - Motion: spring-curve easing `cubic-bezier(0.32, 0.72, 0, 1)`
+
+### Team Color Palettes
+- NFL teams — `src/data/teamColors.js` (`TEAM_COLORS`, `getTeamPalette`). Used for Statistics, Companion, Scout Results pick rows, and the Compare/Heatmap surfaces.
+- College teams — `src/data/collegeColors.js` (`COLLEGE_COLORS`, `getCollegePalette`, `buildCollegeRowGradient`, `getCollegeForeground`). Used for the optional Scout Prospects "Team Colors" toggle. Mirrors the NFL palette structure (primary / secondary / darkPrimary / darkSecondary) and the same `linear-gradient(135deg, primary 0%, darken(primary,0.28) 58%, secondary 100%)` row treatment used by Scout Results.
+- When adding a new school to `ROOKIES_2026`, add a matching entry to `COLLEGE_COLORS` keyed by the normalized college name (`normalizeCollegeKey`). If the official primary is near-black or very dark navy, set `darkPrimary` to the brighter accent so the gradient still reads in dark mode.
 
 ---
 
@@ -84,6 +102,12 @@ After committing: do NOT run `git push` — the user pushes manually.
 - Never use "Unreleased" as a section header — always assign changes to a specific version number, even if not yet released.
 - If the version number is unclear, ask the user before writing the entry.
 
+### Commit Message Rules
+- Version/release commits must use a glance-able subject in this format: `vX.Y[.Z] - Short Release Theme`.
+- Do not use generic subjects like `Release v6.3`; GitHub shows the subject in file history, so it must summarize what shipped.
+- Include a commit body with a short summary sentence and a `Highlights:` list covering the major shipped changes.
+- Keep the commit body aligned with `CHANGELOG.md`, `README.md` What's New, and the actual files changed.
+
 ### README.md Rules
 - **Features section**: Major features only, one line each. Update when a new major feature ships. No bug fixes or minor polish.
 - **What's New section**: Contains ONLY the most recently committed version. Replace the previous entry entirely — do not accumulate multiple "What's New" sections. Link to CHANGELOG.md for history.
@@ -116,7 +140,7 @@ All modals must be center-aligned. Never bottom-sheet style unless it's a delibe
 
 - **Backdrop**: `fixed inset-0 z-50 flex items-center justify-center` with `background: rgba(0,0,0,0.5)`
 - **Container**: `rounded-2xl` (not `rounded-t-2xl`), `w-full mx-4`, `maxWidth` as needed
-- **Body scroll lock**: `document.body.style.overflow = 'hidden'` on mount; cleanup with `return () => { document.body.style.overflow = ''; }`
+- **Body scroll lock**: freeze the page in place on mount, not just overflow-hide it. Use the shared `useBodyScrollLock` hook so the current scroll offset is preserved, the background cannot move while the modal is open, and scroll position is restored on cleanup.
 - Scrollable content goes in the **inner** content div (`overflow-y-auto`), not the outer container
 - Close on backdrop click (`onClick={onClose}`); stop propagation on inner div
 
@@ -134,6 +158,7 @@ Keep Guide content succinct, instructional, and not verbose.
 
 - Prefer plain-language labels over niche or non-standardized acronyms in UI copy.
 - Avoid acronyms when they speed up communication at the expense of understanding.
+- Do not load or reference `QA_CHECKLIST.md` during normal implementation work unless the task is explicitly about QA, testing, validation, or regression review.
 
 ---
 
@@ -142,6 +167,13 @@ Keep Guide content succinct, instructional, and not verbose.
 When making any change to scoring logic (new fields, position bonuses, new Sleeper stat keys), audit the full checklist in **`docs/Scoring Call Sites.md`**.
 
 Quick summary: every `calcPoints()` and `calcPointsFromTotals()` call must pass `position`. Grep for these across the repo before closing any scoring PR.
+
+---
+
+## Trade Engine Maintenance
+
+- Any change to Trade valuation, proposal generation, proposal selection/ranking, Upgrade logic, or Trade explanation wording must be reflected in `docs/Trade Engine.md` in the same pass.
+- Prefer user-facing fantasy-football language in Trade UI; keep internal engine terms in the docs, not in explanation cards, unless clearly labeled.
 
 ---
 
@@ -156,7 +188,7 @@ Quick summary: every `calcPoints()` and `calcPointsFromTotals()` call must pass 
 ## Common Gotchas
 
 ### Trade proposal card sizing
-Any time proposal player or draft cards are resized, also verify vertical content fit on desktop. Larger or narrower cards must still allow the stat sections to expand the card height instead of clipping or overflowing, and equal-height syncing across a trade package must continue to hold after the size change.
+Detailed rules live in `docs/Trade Proposal Cards.md`. Any time proposal player or draft cards are resized, verify the fixed 5:7 ratio, single-line identity labels, desktop stat fit, mobile width caps, and equal-height syncing across a trade package.
 
 ### Ranked lists with search filters
 Always compute rank (`i + 1`) on the full sorted list, then filter for display. Never derive rank after filtering — the rank number will reflect position in the filtered subset, not the true overall rank. Carry `rank` as a property on each item; render uses `item.rank`, not the map index.

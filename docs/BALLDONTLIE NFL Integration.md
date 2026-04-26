@@ -2,7 +2,7 @@
 
 Back: [[Home]]
 
-This note captures how the BALLDONTLIE NFL API could be used in NFL Predictor for live scoring, game context, and future premium-hosted experiences.
+This note captures how the BALLDONTLIE NFL API could be used in GridShift for live scoring, game context, and future premium-hosted experiences.
 
 ## What It Is
 
@@ -13,7 +13,7 @@ Primary docs:
 - [BALLDONTLIE NFL API docs](https://nfl.balldontlie.io/)
 - [OpenAPI spec (`nfl.yml`)](https://www.balldontlie.io/openapi/nfl.yml)
 
-The docs also explicitly position the OpenAPI spec as an AI-friendly integration surface, which is useful if NFL Predictor ever wants codegen, internal tooling, or assistant-driven endpoint exploration.
+The docs also explicitly position the OpenAPI spec as an AI-friendly integration surface, which is useful if GridShift ever wants codegen, internal tooling, or assistant-driven endpoint exploration.
 
 ## Relevant Capabilities
 
@@ -37,9 +37,9 @@ For this project specifically, the current working assumption should be:
 
 - **current key available to the project: `5 requests/min`**
 
-That matters because NFL Predictor is currently a client-heavy app. Any live integration has to be designed around request budgeting from the beginning.
+That matters because GridShift is currently a client-heavy app. Any live integration has to be designed around request budgeting from the beginning.
 
-## Best-Fit NFL Predictor Uses
+## Best-Fit GridShift Uses
 
 ### 1. Live Scoring Layer for Statistics / Matchup / Companion
 
@@ -154,4 +154,4 @@ Best near-term plan:
 
 Plain English:
 
-This API is a strong fit for a future “Live” layer, but only if NFL Predictor introduces a secure backend boundary first. With the current `5 requests/min` constraint, it is only practical for tightly scoped, cached live features rather than broad real-time polling across the app.
+This API is a strong fit for a future “Live” layer, but only if GridShift introduces a secure backend boundary first. With the current `5 requests/min` constraint, it is only practical for tightly scoped, cached live features rather than broad real-time polling across the app.

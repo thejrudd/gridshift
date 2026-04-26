@@ -2,7 +2,7 @@
 
 Back: [[Home]]
 
-This note captures where Pretext could fit into NFL Predictor later, without assigning it to a specific planned version yet.
+This note captures where Pretext could fit into GridShift later, without assigning it to a specific planned version yet.
 
 ## What It Is
 
@@ -20,7 +20,7 @@ Source: [`chenglou/pretext`](https://github.com/chenglou/pretext)
 - Designed to avoid browser layout reflow during text measurement
 - Useful for canvas/SVG rendering paths as well as DOM-based layout decisions
 
-## Potential NFL Predictor Uses
+## Potential GridShift Uses
 
 - Dynamic sizing for Trade proposal cards so text-heavy cards can grow without overflow
 - Measuring Trade/Upgrades/Intelligence explanation copy before rendering, to keep cards proportionate
@@ -50,7 +50,7 @@ Source: [`chenglou/pretext`](https://github.com/chenglou/pretext)
 
 Treat Pretext as a likely utility layer for future card sizing and overflow control.
 
-Best near-term uses for NFL Predictor would be:
+Best near-term uses for GridShift would be:
 
 - measuring Trade proposal card text before rendering
 - keeping draft/player cards proportionate when copy length varies

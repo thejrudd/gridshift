@@ -1,5 +1,6 @@
 import { applyCombineData } from './rookieCombine.js';
 import { ROOKIE_PRODUCTION_2026 } from './rookieProduction.generated.js';
+import { ESPN_BOARD_IDS } from './espnBoardIds.js';
 
 const NFL_TRACKER = 'https://www.nfl.com/draft/tracker/2026/prospects/all_all';
 const NFL_TOP_150 = 'https://www.nfl.com/news/daniel-jeremiah-s-top-150-prospects-in-the-2026-nfl-draft-class';
@@ -187,7 +188,8 @@ const RICH_ROOKIES_2026 = [
     },
     sources: { ...BASE_SOURCES, alternateBoard: PFF_BOARD },
   }),
-  rookie(7, 'Rueben Bain Jr.', 'EDGE', 'Miami', 6.70, { positionGroup: 'DL' }),
+  rookie(7, 'Rueben Bain Jr.', 'EDGE', 'Miami', 6.70, {
+    espnCollegeId: '4870617', positionGroup: 'DL' }),
   rookie(8, 'Francis Mauigoa', 'OT', 'Miami', 6.48, {
     positionGroup: 'OL',
     espnCollegeId: '4870914',
@@ -195,7 +197,8 @@ const RICH_ROOKIES_2026 = [
   rookie(9, 'Sonny Styles', 'LB', 'Ohio State', 6.48, {
     espnCollegeId: '5081807',
   }),
-  rookie(10, 'Caleb Downs', 'SAF', 'Ohio State', 6.47, { positionGroup: 'DB' }),
+  rookie(10, 'Caleb Downs', 'SAF', 'Ohio State', 6.47, {
+    espnCollegeId: '4870706', positionGroup: 'DB' }),
   rookie(11, 'Makai Lemon', 'WR', 'USC', 6.47, {
     espnCollegeId: '4870795',
     collegeStats: {
@@ -215,9 +218,12 @@ const RICH_ROOKIES_2026 = [
     },
     sources: { ...BASE_SOURCES, alternateBoard: PFF_BOARD },
   }),
-  rookie(13, 'Kadyn Proctor', 'OT', 'Alabama', 6.45, { positionGroup: 'OL' }),
-  rookie(14, 'Spencer Fano', 'OT', 'Utah', 6.44, { positionGroup: 'OL' }),
+  rookie(13, 'Kadyn Proctor', 'OT', 'Alabama', 6.45, {
+    espnCollegeId: '4870976', positionGroup: 'OL' }),
+  rookie(14, 'Spencer Fano', 'OT', 'Utah', 6.44, {
+    espnCollegeId: '4870723', positionGroup: 'OL' }),
   rookie(15, 'Jordyn Tyson', 'WR', 'Arizona State', 6.43, {
+    espnCollegeId: '4880281',
     collegeStats: {
       recTargets: null,
       receptions: null,
@@ -225,9 +231,12 @@ const RICH_ROOKIES_2026 = [
       recTDs: null,
     },
   }),
-  rookie(16, 'Keldric Faulk', 'EDGE', 'Auburn', 6.43, { positionGroup: 'DL' }),
-  rookie(17, 'Akheem Mesidor', 'EDGE', 'Miami', 6.42, { positionGroup: 'DL' }),
+  rookie(16, 'Keldric Faulk', 'EDGE', 'Auburn', 6.43, {
+    espnCollegeId: '4870707', positionGroup: 'DL' }),
+  rookie(17, 'Akheem Mesidor', 'EDGE', 'Miami', 6.42, {
+    espnCollegeId: '4429190', positionGroup: 'DL' }),
   rookie(18, 'KC Concepcion', 'WR', 'Texas A&M', 6.42, {
+    espnCollegeId: '4870653',
     collegeStats: {
       recTargets: null,
       receptions: null,
@@ -235,7 +244,8 @@ const RICH_ROOKIES_2026 = [
       recTDs: null,
     },
   }),
-  rookie(19, 'Olaivavega Ioane', 'G', 'Penn State', 6.41, { positionGroup: 'OL' }),
+  rookie(19, 'Olaivavega Ioane', 'G', 'Penn State', 6.41, {
+    espnCollegeId: '4832793', positionGroup: 'OL' }),
   rookie(20, 'Denzel Boston', 'WR', 'Washington', 6.40, {
     espnCollegeId: '4832800',
     collegeStats: {
@@ -245,13 +255,21 @@ const RICH_ROOKIES_2026 = [
       recTDs: null,
     },
   }),
-  rookie(21, 'Jermod McCoy', 'CB', 'Tennessee', 6.40, { positionGroup: 'DB' }),
-  rookie(22, 'Zion Young', 'EDGE', 'Missouri', 6.40, { positionGroup: 'DL' }),
-  rookie(23, 'Anthony Hill Jr.', 'LB', 'Texas', 6.39),
-  rookie(24, 'Avieon Terrell', 'CB', 'Clemson', 6.39, { positionGroup: 'DB' }),
-  rookie(25, 'Emmanuel McNeil-Warren', 'SAF', 'Toledo', 6.39, { positionGroup: 'DB' }),
-  rookie(26, 'Kayden McDonald', 'DT', 'Ohio State', 6.39, { positionGroup: 'DL' }),
+  rookie(21, 'Jermod McCoy', 'CB', 'Tennessee', 6.40, {
+    espnCollegeId: '5157289', positionGroup: 'DB' }),
+  rookie(22, 'Zion Young', 'EDGE', 'Missouri', 6.40, {
+    espnCollegeId: '4839501', positionGroup: 'DL' }),
+  rookie(23, 'Anthony Hill Jr.', 'LB', 'Texas', 6.39, {
+    espnCollegeId: '4870805',
+  }),
+  rookie(24, 'Avieon Terrell', 'CB', 'Clemson', 6.39, {
+    espnCollegeId: '4870988', positionGroup: 'DB' }),
+  rookie(25, 'Emmanuel McNeil-Warren', 'SAF', 'Toledo', 6.39, {
+    espnCollegeId: '4837186', positionGroup: 'DB' }),
+  rookie(26, 'Kayden McDonald', 'DT', 'Ohio State', 6.39, {
+    espnCollegeId: '4870893', positionGroup: 'DL' }),
   rookie(27, 'Omar Cooper Jr.', 'WR', 'Indiana', 6.39, {
+    espnCollegeId: '4723820',
     collegeStats: {
       recTargets: null,
       receptions: null,
@@ -259,10 +277,14 @@ const RICH_ROOKIES_2026 = [
       recTDs: null,
     },
   }),
-  rookie(28, 'Caleb Lomu', 'OT', 'Utah', 6.38, { positionGroup: 'OL' }),
-  rookie(29, 'Cashius Howell', 'EDGE', 'Texas A&M', 6.38, { positionGroup: 'DL' }),
-  rookie(30, 'Colton Hood', 'CB', 'Tennessee', 6.38, { positionGroup: 'DB' }),
+  rookie(28, 'Caleb Lomu', 'OT', 'Utah', 6.38, {
+    espnCollegeId: '4921438', positionGroup: 'OL' }),
+  rookie(29, 'Cashius Howell', 'EDGE', 'Texas A&M', 6.38, {
+    espnCollegeId: '4710752', positionGroup: 'DL' }),
+  rookie(30, 'Colton Hood', 'CB', 'Tennessee', 6.38, {
+    espnCollegeId: '4921249', positionGroup: 'DB' }),
   rookie(31, 'Jadarian Price', 'RB', 'Notre Dame', 6.38, {
+    espnCollegeId: '4685512',
     collegeStats: {
       carries: null,
       rushYards: null,
@@ -273,10 +295,14 @@ const RICH_ROOKIES_2026 = [
       recTDs: null,
     },
   }),
-  rookie(32, 'Monroe Freeling', 'OT', 'Georgia', 6.38, { positionGroup: 'OL' }),
-  rookie(33, 'Caleb Banks', 'DT', 'Florida', 6.37, { positionGroup: 'DL' }),
-  rookie(34, 'Dillon Thieneman', 'SAF', 'Oregon', 6.37, { positionGroup: 'DB' }),
+  rookie(32, 'Monroe Freeling', 'OT', 'Georgia', 6.38, {
+    espnCollegeId: '4870694', positionGroup: 'OL' }),
+  rookie(33, 'Caleb Banks', 'DT', 'Florida', 6.37, {
+    espnCollegeId: '4602019', positionGroup: 'DL' }),
+  rookie(34, 'Dillon Thieneman', 'SAF', 'Oregon', 6.37, {
+    espnCollegeId: '4954445', positionGroup: 'DB' }),
   rookie(35, 'Chris Brazzell II', 'WR', 'Tennessee', 6.36, {
+    espnCollegeId: '5091739',
     collegeStats: {
       recTargets: null,
       receptions: null,
@@ -284,19 +310,34 @@ const RICH_ROOKIES_2026 = [
       recTDs: null,
     },
   }),
-  rookie(36, 'Emmanuel Pregnon', 'G', 'Oregon', 6.36, { positionGroup: 'OL' }),
-  rookie(37, 'Peter Woods', 'DT', 'Clemson', 6.36, { positionGroup: 'DL' }),
-  rookie(38, 'Chris Johnson', 'CB', 'San Diego State', 6.35, { positionGroup: 'DB' }),
-  rookie(39, 'Max Iheanachor', 'OT', 'Arizona State', 6.35, { positionGroup: 'OL' }),
-  rookie(40, 'Chase Bisontis', 'G', 'Texas A&M', 6.34, { positionGroup: 'OL' }),
-  rookie(41, 'Christen Miller', 'DT', 'Georgia', 6.34, { positionGroup: 'DL' }),
-  rookie(42, 'Jacob Rodriguez', 'LB', 'Texas Tech', 6.34),
-  rookie(43, 'Malachi Lawrence', 'EDGE', 'UCF', 6.34, { positionGroup: 'DL' }),
-  rookie(44, 'Blake Miller', 'OT', 'Clemson', 6.33, { positionGroup: 'OL' }),
-  rookie(45, 'Gabe Jacas', 'EDGE', 'Illinois', 6.33, { positionGroup: 'DL' }),
-  rookie(46, 'Jake Golday', 'LB', 'Cincinnati', 6.33),
-  rookie(47, 'Jalon Kilgore', 'SAF', 'South Carolina', 6.32, { positionGroup: 'DB' }),
+  rookie(36, 'Emmanuel Pregnon', 'G', 'Oregon', 6.36, {
+    espnCollegeId: '4608929', positionGroup: 'OL' }),
+  rookie(37, 'Peter Woods', 'DT', 'Clemson', 6.36, {
+    espnCollegeId: '4871063', positionGroup: 'DL' }),
+  rookie(38, 'Chris Johnson', 'CB', 'San Diego State', 6.35, {
+    espnCollegeId: '4869579', positionGroup: 'DB' }),
+  rookie(39, 'Max Iheanachor', 'OT', 'Arizona State', 6.35, {
+    espnCollegeId: '5150136', positionGroup: 'OL' }),
+  rookie(40, 'Chase Bisontis', 'G', 'Texas A&M', 6.34, {
+    espnCollegeId: '4870596', positionGroup: 'OL' }),
+  rookie(41, 'Christen Miller', 'DT', 'Georgia', 6.34, {
+    espnCollegeId: '4685479', positionGroup: 'DL' }),
+  rookie(42, 'Jacob Rodriguez', 'LB', 'Texas Tech', 6.34, {
+    espnCollegeId: '4566094',
+  }),
+  rookie(43, 'Malachi Lawrence', 'EDGE', 'UCF', 6.34, {
+    espnCollegeId: '4710067', positionGroup: 'DL' }),
+  rookie(44, 'Blake Miller', 'OT', 'Clemson', 6.33, {
+    espnCollegeId: '5081450', positionGroup: 'OL' }),
+  rookie(45, 'Gabe Jacas', 'EDGE', 'Illinois', 6.33, {
+    espnCollegeId: '4837244', positionGroup: 'DL' }),
+  rookie(46, 'Jake Golday', 'LB', 'Cincinnati', 6.33, {
+    espnCollegeId: '4877652',
+  }),
+  rookie(47, 'Jalon Kilgore', 'SAF', 'South Carolina', 6.32, {
+    espnCollegeId: '5076951', positionGroup: 'DB' }),
   rookie(48, 'Zachariah Branch', 'WR', 'Georgia', 6.32, {
+    espnCollegeId: '4870612',
     collegeStats: {
       recTargets: null,
       receptions: null,
@@ -305,6 +346,7 @@ const RICH_ROOKIES_2026 = [
     },
   }),
   rookie(49, 'Skyler Bell', 'WR', 'Connecticut', 6.31, {
+    espnCollegeId: '4683153',
     collegeStats: {
       recTargets: null,
       receptions: null,
@@ -312,7 +354,8 @@ const RICH_ROOKIES_2026 = [
       recTDs: null,
     },
   }),
-  rookie(50, 'Derrick Moore', 'EDGE', 'Michigan', 6.30, { positionGroup: 'DL' }),
+  rookie(50, 'Derrick Moore', 'EDGE', 'Michigan', 6.30, {
+    espnCollegeId: '4685461', positionGroup: 'DL' }),
 ];
 
 const ESPN_TOP_499_BOARD = `
@@ -819,8 +862,10 @@ const ESPN_TOP_499_BOARD = `
 
 const ESPN_ROOKIES_2026 = ESPN_TOP_499_BOARD.trim().split('\n').map((line) => {
   const [rank, name, position, college] = line.split('|');
+  const espnCollegeId = ESPN_BOARD_IDS[name] ?? null;
   return rookie(Number(rank), name, position, college, null, {
     sources: { ...BASE_SOURCES, fullBoard: ESPN_REID_BOARD },
+    ...(espnCollegeId ? { espnCollegeId } : {}),
   });
 });
 

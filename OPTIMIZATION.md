@@ -1,4 +1,4 @@
-# NFL Predictor - Optimization Plan
+# GridShift — Optimization Plan
 
 Detailed implementation plan for the Companion and Trade performance audit.
 

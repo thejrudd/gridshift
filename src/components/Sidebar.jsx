@@ -29,15 +29,10 @@ export default function Sidebar({
       <div className="sidebar-brand">
         <div
           className="font-display font-bold leading-none"
-          style={{ fontSize: '28px', color: 'var(--color-label)', letterSpacing: '0.08em' }}
+          style={{ fontSize: '28px', letterSpacing: '0.08em' }}
         >
-          NFL
-        </div>
-        <div
-          className="font-display leading-none mt-0.5"
-          style={{ fontSize: '12px', color: 'var(--color-label-secondary)', letterSpacing: '0.18em' }}
-        >
-          PREDICTOR
+          <span style={{ color: 'var(--color-label)' }}>GRID</span>
+          <span style={{ color: 'var(--color-label-secondary)' }}>SHIFT</span>
         </div>
         <div className="flex items-center justify-between mt-2">
           <div
@@ -97,13 +92,6 @@ export default function Sidebar({
       {/* Main navigation */}
       <nav className="sidebar-nav" aria-label="Main navigation">
         <SidebarNavItem
-          active={activeTab === 'scout'}
-          onClick={() => onTabChange('scout')}
-          icon={<ScoutIcon />}
-          label="Scout"
-          alpha
-        />
-        <SidebarNavItem
           active={activeTab === 'companion'}
           onClick={() => onTabChange('companion')}
           icon={<CompanionIcon />}
@@ -120,6 +108,13 @@ export default function Sidebar({
           onClick={() => onTabChange('trade')}
           icon={<TradeIcon />}
           label="Trade"
+        />
+        <SidebarNavItem
+          active={activeTab === 'scout'}
+          onClick={() => onTabChange('scout')}
+          icon={<ScoutIcon />}
+          label="Scout"
+          alpha
         />
         <SidebarNavItem
           active={activeTab === 'predictions'}
@@ -220,7 +215,7 @@ export default function Sidebar({
           className="px-5 py-3 text-xs"
           style={{ color: 'var(--color-label-tertiary)' }}
         >
-          v7.0.4
+          v7.0.5
         </div>
       </div>
     </aside>

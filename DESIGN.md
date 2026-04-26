@@ -1,8 +1,8 @@
 ---
 version: alpha
-name: NFL Predictor — Broadcast Editorial
+name: GridShift — Broadcast Editorial
 description: >
-  A sports-broadcast-meets-editorial design system for the NFL Predictor app.
+  A sports-broadcast-meets-editorial design system for the GridShift app.
   Dark stadium slate meets warm newsprint. Signature amber signals action.
 
 colors:
@@ -170,7 +170,7 @@ components:
 
 ## Overview
 
-NFL Predictor uses a **Broadcast Editorial** design language — the visual confidence of live sports coverage applied to a fantasy football tool. The system pairs deep slate charcoal (dark mode) or warm newsprint white (light mode) with a persistent stadium amber accent that signals activity, selection, and progress at a glance.
+GridShift uses a **Broadcast Editorial** design language — the visual confidence of live sports coverage applied to a fantasy football tool. The system pairs deep slate charcoal (dark mode) or warm newsprint white (light mode) with a persistent stadium amber accent that signals activity, selection, and progress at a glance.
 
 The aesthetic is dense but ordered: information-first, with typography doing the heavy lifting on hierarchy. Motion is subtle and spring-based. The design never decorates for its own sake — every visual decision either aids comprehension or reinforces the broadcast identity.
 

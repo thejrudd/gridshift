@@ -4,7 +4,7 @@
 
 /* ─────────────────────────────────────────────────────────────
    Broadcast Editorial — Design Token System
-   v3.0 — NFL Season Predictor
+   v3.0 — GridShift
 
    Aesthetic: Stadium amber/gold against deep slate-charcoal.
    The signature amber (#F5B700) anchors every active state —
@@ -1174,6 +1174,122 @@ body {
   background: var(--color-fill-secondary);
 }
 
+/* Team-colors toggle on: row carries a primary→secondary gradient as an inline
+   style. Text colors tied to design tokens flip to --scout-row-fg so the row
+   stays legible on top of the tint, matching the NFL pick-row treatment used
+   in Scout Results / Statistics. */
+.scout-roster-row.has-team-tint {
+  --scout-row-fg-muted: color-mix(in srgb, var(--scout-row-fg) 80%, transparent);
+}
+
+/* Two viewport-aware text foregrounds:
+   - --scout-row-fg-id   covers the identity cluster (rank, name, college,
+                          combine chip, "Selected Round X · Team")
+   - --scout-row-fg-stat covers the dedicated right column (production
+                          stats, 40-time, no-stats placeholder)
+
+   Desktop (≥1024px): the row is wide enough that the gradient visibly splits
+   into a secondary half and a primary half, so each side picks the
+   foreground that contrasts with the half it sits over.
+
+   Mobile / tablet (<1024px): rows aren't truly split into left/right
+   columns — content stacks, the gradient compresses, and the primary stop
+   dominates what the eye actually reads against. Both vars collapse to the
+   primary-side foreground so all text uses one consistent contrast pass. */
+.scout-roster-row.has-team-tint {
+  --scout-row-fg-id:   var(--scout-row-fg-left);
+  --scout-row-fg-stat: var(--scout-row-fg-right);
+}
+
+@media (max-width: 1023px) {
+  .scout-roster-row.has-team-tint {
+    --scout-row-fg-id:   var(--scout-row-fg-right);
+    --scout-row-fg-stat: var(--scout-row-fg-right);
+  }
+}
+
+.scout-roster-row.has-team-tint .scout-row-rank,
+.scout-roster-row.has-team-tint .scout-row-name,
+.scout-roster-row.has-team-tint .scout-row-college,
+.scout-roster-row.has-team-tint .scout-row-pick,
+.scout-roster-row.has-team-tint .scout-row-selection,
+.scout-roster-row.has-team-tint .scout-row-selection-prefix,
+.scout-roster-row.has-team-tint .scout-row-selection-round,
+.scout-roster-row.has-team-tint .scout-row-selection-team {
+  color: var(--scout-row-fg-id);
+}
+
+.scout-roster-row.has-team-tint .scout-row-stat-text,
+.scout-roster-row.has-team-tint .scout-row-no-stats,
+.scout-roster-row.has-team-tint .scout-row-forty {
+  color: var(--scout-row-fg-stat);
+}
+
+/* The combine-status chip ("Tested" / "Measured Only" / "No Combine") sets
+   its text/border color inline based on status hue. Those hues (orange,
+   green, etc.) collide with team-color backgrounds, so when team colors
+   are on, force the chip to use the left-side foreground (it sits over the
+   secondary half). !important is required because the JSX uses an inline
+   style. */
+.scout-roster-row.has-team-tint .scout-row-combine-chip {
+  color: var(--scout-row-fg-id) !important;
+  border-color: var(--scout-row-fg-id) !important;
+}
+
+/* Subtle text shadow per side: dark scrim under white text, light scrim
+   under black text. Keeps copy crisp on the lighter secondary edges
+   (Tennessee orange, Penn State white) without looking heavy elsewhere.
+   The attribute selectors read the inline CSS vars to pick the right scrim. */
+/* Text-shadow scrims track the same viewport split as the foregrounds.
+   Desktop ≥1024px: identity cluster keys off --scout-row-fg-left, stats
+   key off --scout-row-fg-right. Mobile/tablet <1024px: everything keys
+   off --scout-row-fg-right because the whole row uses the primary fg.
+   Dark scrim sits under white text, light scrim under black text. */
+@media (min-width: 1024px) {
+  .scout-roster-row.has-team-tint[style*="--scout-row-fg-left: #FFFFFF"] .scout-row-name,
+  .scout-roster-row.has-team-tint[style*="--scout-row-fg-left: #FFFFFF"] .scout-row-college,
+  .scout-roster-row.has-team-tint[style*="--scout-row-fg-left: #FFFFFF"] .scout-row-selection-round,
+  .scout-roster-row.has-team-tint[style*="--scout-row-fg-left: #FFFFFF"] .scout-row-selection-team {
+    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.18);
+  }
+  .scout-roster-row.has-team-tint[style*="--scout-row-fg-left: #0C0F14"] .scout-row-name,
+  .scout-roster-row.has-team-tint[style*="--scout-row-fg-left: #0C0F14"] .scout-row-college,
+  .scout-roster-row.has-team-tint[style*="--scout-row-fg-left: #0C0F14"] .scout-row-selection-round,
+  .scout-roster-row.has-team-tint[style*="--scout-row-fg-left: #0C0F14"] .scout-row-selection-team {
+    text-shadow: 0 1px 1px rgba(255, 255, 255, 0.35);
+  }
+  .scout-roster-row.has-team-tint[style*="--scout-row-fg-right: #FFFFFF"] .scout-row-stat-text {
+    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.18);
+  }
+  .scout-roster-row.has-team-tint[style*="--scout-row-fg-right: #0C0F14"] .scout-row-stat-text {
+    text-shadow: 0 1px 1px rgba(255, 255, 255, 0.35);
+  }
+}
+
+@media (max-width: 1023px) {
+  .scout-roster-row.has-team-tint[style*="--scout-row-fg-right: #FFFFFF"] .scout-row-name,
+  .scout-roster-row.has-team-tint[style*="--scout-row-fg-right: #FFFFFF"] .scout-row-college,
+  .scout-roster-row.has-team-tint[style*="--scout-row-fg-right: #FFFFFF"] .scout-row-selection-round,
+  .scout-roster-row.has-team-tint[style*="--scout-row-fg-right: #FFFFFF"] .scout-row-selection-team,
+  .scout-roster-row.has-team-tint[style*="--scout-row-fg-right: #FFFFFF"] .scout-row-stat-text {
+    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.18);
+  }
+  .scout-roster-row.has-team-tint[style*="--scout-row-fg-right: #0C0F14"] .scout-row-name,
+  .scout-roster-row.has-team-tint[style*="--scout-row-fg-right: #0C0F14"] .scout-row-college,
+  .scout-roster-row.has-team-tint[style*="--scout-row-fg-right: #0C0F14"] .scout-row-selection-round,
+  .scout-roster-row.has-team-tint[style*="--scout-row-fg-right: #0C0F14"] .scout-row-selection-team,
+  .scout-roster-row.has-team-tint[style*="--scout-row-fg-right: #0C0F14"] .scout-row-stat-text {
+    text-shadow: 0 1px 1px rgba(255, 255, 255, 0.35);
+  }
+}
+
+/* Selected-row affordance for tinted rows: darken via inset shadow rather than
+   replacing the gradient background, so the team colors remain visible. */
+.scout-roster-row.has-team-tint.is-selected {
+  background: inherit; /* keep the inline gradient; selection shows via shadow */
+  box-shadow: inset 0 0 0 9999px rgba(0, 0, 0, 0.18);
+}
+
 .scout-row-rank {
   width: 28px;
   flex-shrink: 0;
@@ -1225,6 +1341,37 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* First line of the prospect row identity:
+   [Name] [Position chip] [College] [College logo]
+   Name shrinks first; position chip + logo never shrink so they always read clean. */
+/* Identity line: align by text baseline so the name and college sit on the
+   same line. The position chip and college logo aren't text — they center
+   visually around that baseline rather than forcing a shared bottom edge. */
+.scout-row-name-line {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.scout-row-name-line .scout-row-name {
+  flex: 0 1 auto;
+}
+
+.scout-row-name-line .scout-row-college {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.scout-row-college-logo {
+  width: 14px;
+  height: 14px;
 }
 
 .scout-row-meta {
@@ -1236,14 +1383,20 @@ body {
   min-height: 28px;
 }
 
+/* Meta line: align by text baseline so "Tested" / "Measured Only" copy and
+   "Selected Round X, Pick Y" sit on the same line. Chip borders and logos
+   center around that baseline rather than forcing a shared bottom edge. */
 .scout-row-meta-line {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 5px;
   min-height: 13px;
   white-space: nowrap;
-  overflow: hidden;
   width: 100%;
+}
+
+.scout-row-meta-line .scout-row-selection {
+  align-items: baseline;
 }
 
 .scout-row-pos-label {
@@ -1441,6 +1594,36 @@ body {
   justify-content: space-between;
   gap: 8px;
   margin: 0 0 14px;
+}
+
+/* Labeled filter/sort row used in the Results view. Each row has a fixed-width
+   label on the left (so the chip rails stay aligned across rows) and a chip
+   rail on the right. Both rows share the same vertical rhythm and don't
+   overlap thanks to a consistent bottom margin. */
+.scout-results-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+  margin: 0 0 8px;
+}
+
+.scout-results-filter-row + .scout-results-filter-row {
+  margin-top: 0;
+}
+
+.scout-results-filter-row:last-of-type {
+  margin-bottom: 14px;
+}
+
+.scout-results-filter-row-label {
+  flex: 0 0 auto;
+  width: 48px;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-label-tertiary);
 }
 
 .scout-pick-round-filters {
@@ -1871,6 +2054,52 @@ body {
   text-overflow: ellipsis;
 }
 
+/* Position chip on result rows — always visible (mobile + desktop), filled
+   with the Scout position color so it reads at a glance and stays consistent
+   with the QB/RB/WR/TE color language used throughout Scout Prospects. */
+.scout-result-position {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  padding: 3px 6px;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  line-height: 1;
+  color: #fff;
+  background: var(--color-label-tertiary);
+  border-radius: 2px;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.25);
+}
+
+/* Bump the result-row text one notch on desktop without growing the row.
+   Player name → 16px, meta line → 12px, pick badge → 13px, position chip → 11px.
+   The 64px min-height plus existing 8px vertical padding still absorbs these. */
+@media (min-width: 1024px) {
+  .scout-result-row .scout-result-player {
+    font-size: 16px;
+  }
+
+  .scout-result-row .scout-pick-meta {
+    font-size: 12px;
+  }
+
+  .scout-result-row .scout-pick-overall {
+    font-size: 13px;
+    padding: 6px 10px;
+  }
+
+  .scout-result-position {
+    min-width: 34px;
+    font-size: 11px;
+    padding: 4px 7px;
+  }
+}
+
 .scout-pick-note {
   grid-column: 2;
   min-width: 0;
@@ -1882,6 +2111,13 @@ body {
 .scout-result-row .scout-pick-main {
   position: relative;
   z-index: 1;
+}
+
+/* Result-row team line: center-align so the position chip sits visually
+   centered against the player name instead of riding the text baseline. */
+.scout-result-row .scout-pick-team-line {
+  align-items: center;
+  gap: 8px;
 }
 
 .scout-team-picks-overlay {
@@ -2212,14 +2448,16 @@ body {
 }
 
 .scout-live-banner-team {
-  font-size: 18px;
+  /* Fluid sizing so long team names ("Jacksonville Jaguars") and the
+     "Draft Paused" / session labels fit on narrow phones without truncation.
+     Allow wrapping to a second line as a final fallback below ~360px. */
+  font-size: clamp(13px, 4.2vw, 18px);
   font-weight: 900;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  line-height: 1;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  line-height: 1.05;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .scout-live-banner-slot {
@@ -2251,13 +2489,16 @@ body {
 }
 
 .scout-live-countdown-time {
-  font-size: 26px;
+  /* Fluid sizing to leave room for the team-name column on phones while still
+     reading as the primary numeric on desktop. */
+  font-size: clamp(18px, 5.5vw, 26px);
   font-weight: 900;
   letter-spacing: -0.01em;
   font-variant-numeric: tabular-nums;
   line-height: 1;
   font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif;
   transition: color 0.4s;
+  white-space: nowrap;
 }
 
 .scout-live-best {
@@ -2321,6 +2562,9 @@ body {
 
   .scout-live-banner-team {
     font-size: 22px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .scout-live-countdown-time {

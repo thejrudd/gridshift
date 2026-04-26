@@ -31,9 +31,9 @@ export default defineConfig({
         'nfl-data-2026.json',
       ],
       manifest: {
-        name: 'NFL Season Predictor',
-        short_name: 'NFL Predictor',
-        description: 'Predict NFL team win/loss records and playoff seedings for the 2026 season.',
+        name: 'GridShift',
+        short_name: 'GridShift',
+        description: 'GridShift — predict the 2026 NFL season, manage fantasy leagues, and follow the draft live.',
         theme_color: '#1d4ed8',
         background_color: '#111827',
         display: 'standalone',

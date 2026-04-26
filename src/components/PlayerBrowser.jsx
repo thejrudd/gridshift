@@ -23,6 +23,22 @@ const CONFERENCES = [
 const TEAM_CARD_SHADOW = '0 10px 24px rgba(12,15,20,0.10), 0 3px 8px rgba(12,15,20,0.08)';
 const TEAM_LABEL_STYLE = { letterSpacing: '0.16em' };
 const REVERSED_GRADIENT_TEAMS = new Set(['dal', 'gb', 'jax', 'la', 'lar', 'lv', 'no', 'nyg', 'nyj', 'pit', 'wsh']);
+
+// 2025 season champions (Super Bowl LX played February 2026)
+const SEASON_2025_CHAMPIONS = {
+  superBowl: 'sea',
+  conference: { afc: 'ne', nfc: 'sea' },
+  division: {
+    'AFC East': 'ne',
+    'AFC North': 'pit',
+    'AFC South': 'jax',
+    'AFC West': 'den',
+    'NFC East': 'phi',
+    'NFC North': 'chi',
+    'NFC South': 'car',
+    'NFC West': 'sea',
+  },
+};
 const TEAM_CARD_TEXT_OVERRIDES = {
   nyj: {
     titleColor: '#FFFFFF',
@@ -524,6 +540,14 @@ const PlayerBrowser = ({
   );
 };
 
+const TrophyIcon = ({ size = 10 }) => (
+  <svg width={size} height={size} viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+    <path d="M8 11c-2.21 0-4-1.79-4-4V2h8v5c0 2.21-1.79 4-4 4zm0 0v2m-2 2h4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" />
+    <path d="M4 2H2a2 2 0 000 4h2M12 2h2a2 2 0 010 4h-2" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" />
+    <line x1="6" y1="15" x2="10" y2="15" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+  </svg>
+);
+
 const TeamCard = ({ team, onClick, darkMode = false, fontSize = 14 }) => {
   const teamKey = String(team.id).toLowerCase();
   const palette = getTeamPalette(team.id);
@@ -540,6 +564,12 @@ const TeamCard = ({ team, onClick, darkMode = false, fontSize = 14 }) => {
   const muted = textOverride?.subtitleColor ?? (onBase === '#FFFFFF' ? 'rgba(255,255,255,0.72)' : 'rgba(12,15,20,0.64)');
   const city = team.city || String(team.name || '').split(' ').slice(0, -1).join(' ');
   const nickname = team.nickname || String(team.name || '').split(' ').slice(-1)[0] || team.name;
+
+  const isSuperBowl = SEASON_2025_CHAMPIONS.superBowl === teamKey;
+  const isConf = !isSuperBowl && Object.values(SEASON_2025_CHAMPIONS.conference).includes(teamKey);
+  const isDiv = !isSuperBowl && !isConf && SEASON_2025_CHAMPIONS.division[team.division] === teamKey;
+  const goldColor = onBase === '#FFFFFF' ? '#F5B700' : '#B8860B';
+  const silverColor = onBase === '#FFFFFF' ? 'rgba(255,255,255,0.90)' : 'rgba(12,15,20,0.75)';
 
   return (
     <button
@@ -574,17 +604,34 @@ const TeamCard = ({ team, onClick, darkMode = false, fontSize = 14 }) => {
             {city}
           </div>
           <div
-            className="truncate font-display leading-none"
+            className="truncate font-display"
             style={{
               color: titleColor,
               fontSize: `${Math.max(18, fontSize + 6)}px`,
+              lineHeight: 1.1,
             }}
           >
             {nickname}
           </div>
-          <div className="mt-2 truncate text-[10px] font-semibold uppercase" style={{ ...TEAM_LABEL_STYLE, color: muted }}>
-            {team.division}
-          </div>
+          {(isSuperBowl || isConf || isDiv) && (
+            <div className="mt-1.5 flex flex-wrap gap-x-2 gap-y-0.5">
+              {isSuperBowl && (
+                <span className="flex items-center gap-0.5 text-[9px] font-bold uppercase" style={{ color: goldColor, letterSpacing: '0.08em' }}>
+                  <TrophyIcon size={9} />SB LX
+                </span>
+              )}
+              {(isSuperBowl || isConf) && (
+                <span className="flex items-center gap-0.5 text-[9px] font-semibold uppercase" style={{ color: isSuperBowl ? goldColor : silverColor, letterSpacing: '0.08em' }}>
+                  {team.division?.startsWith('AFC') ? 'AFC' : 'NFC'} Champ
+                </span>
+              )}
+              {(isSuperBowl || isConf || isDiv) && (
+                <span className="flex items-center gap-0.5 text-[9px] font-semibold uppercase" style={{ color: muted, letterSpacing: '0.08em' }}>
+                  Div Champ
+                </span>
+              )}
+            </div>
+          )}
         </div>
         <svg className="h-4 w-4 shrink-0" style={{ color: titleColor, opacity: 0.82 }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />

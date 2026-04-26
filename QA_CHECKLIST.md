@@ -1,4 +1,4 @@
-# NFL Predictor - QA Checklist
+# GridShift — QA Checklist
 
 Use this file only when explicitly doing QA, manual validation, regression testing,
 or test-plan review. Do not pull it into normal implementation context by default.

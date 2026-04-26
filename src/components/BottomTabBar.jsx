@@ -1,9 +1,9 @@
 export default function BottomTabBar({ activeTab, onTabChange }) {
   const tabs = [
-    { id: 'scout',       label: 'Scout',       renderIcon: (active) => <ScoutIcon active={active} />, alpha: true },
     { id: 'companion',   label: 'Companion',   renderIcon: (active) => <CompanionIcon active={active} /> },
     { id: 'statistics',  label: 'Statistics',  renderIcon: (active) => <PlayersIcon active={active} /> },
     { id: 'trade',       label: 'Trade',       renderIcon: (active) => <TradeIcon active={active} /> },
+    { id: 'scout',       label: 'Scout',       renderIcon: (active) => <ScoutIcon active={active} />, alpha: true },
     { id: 'predictions', label: 'Predictions', renderIcon: (active) => <SeasonIcon active={active} /> },
   ];
 

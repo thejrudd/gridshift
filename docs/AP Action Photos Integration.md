@@ -4,7 +4,7 @@ Research date: March 31, 2026
 
 ## Bottom line
 
-If NFL Predictor wants real in-game action photography with a legitimate programmatic integration, the Associated Press Media API is a viable source.
+If GridShift wants real in-game action photography with a legitimate programmatic integration, the Associated Press Media API is a viable source.
 
 It is **not** a free image source.
 
@@ -33,7 +33,7 @@ For pictures specifically, AP documents:
 - thumbnail, preview, and main renditions
 - item metadata and rendition download workflows
 
-For NFL Predictor, that means AP could theoretically power:
+For GridShift, that means AP could theoretically power:
 
 - action-shot hero images on player pages
 - featured player story cards
@@ -42,7 +42,7 @@ For NFL Predictor, that means AP could theoretically power:
 
 ## Hard requirements
 
-Based on AP's official docs, an NFL Predictor integration would require all of the following:
+Based on AP's official docs, an GridShift integration would require all of the following:
 
 ### 1. An AP contract / entitlement
 
@@ -84,7 +84,7 @@ It must never ship in the Vite client bundle.
 
 AP documents per-minute and/or per-day quotas.
 
-For NFL Predictor, that means the backend would need:
+For GridShift, that means the backend would need:
 
 - caching
 - request deduplication
@@ -104,7 +104,7 @@ Before using any returned item in-product, the integration should validate:
 
 This is especially important if the app ever stores images locally or republishes them in share/export surfaces.
 
-## Likely architecture for NFL Predictor
+## Likely architecture for GridShift
 
 The cleanest implementation would be:
 
@@ -148,7 +148,7 @@ Why this is the best MVP:
 
 AP recommends feed for content ingestion and search for finding specific existing content.
 
-For NFL Predictor:
+For GridShift:
 
 - **Search** is the right starting mode
 - **Feed** only makes sense if the app later wants ongoing rolling coverage, such as live week-by-week image refreshes
@@ -186,7 +186,7 @@ It is not a no-cost substitute for public headshots.
 
 ## Recommendation
 
-Current recommendation for NFL Predictor:
+Current recommendation for GridShift:
 
 - Do **not** implement AP action photos yet unless you are willing to enter a licensing relationship.
 - Keep using ESPN/Sleeper headshots for the live app.
@@ -202,7 +202,7 @@ The next discovery questions should be:
 
 1. What AP plan would be required for sports-photo previews vs main downloads?
 2. Are preview/thumbnail renditions alone sufficient for in-app player headers?
-3. Would editorial-use restrictions conflict with any NFL Predictor sharing/export features?
+3. Would editorial-use restrictions conflict with any GridShift sharing/export features?
 4. Do we want a server at all for media, or should this stay a client-heavy app with headshots only?
 
 ## Sources

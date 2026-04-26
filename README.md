@@ -1,6 +1,6 @@
-# NFL Season Predictor
+# GridShift
 
-An interactive web app for predicting the 2026 NFL season — with full Sleeper fantasy league integration. Pick game-by-game outcomes for all 32 teams, view projected standings, generate playoff seeding, create a shareable infographic, and analyze your fantasy roster with week-by-week scoring breakdowns and projections — all in the browser.
+An interactive web app for the 2026 NFL season — with full Sleeper fantasy league integration. Pick game-by-game outcomes for all 32 teams, view projected standings, generate playoff seeding, create a shareable infographic, and analyze your fantasy roster with week-by-week scoring breakdowns and projections — all in the browser.
 
 ![React](https://img.shields.io/badge/React-19-blue) ![Vite](https://img.shields.io/badge/Vite-7-purple) ![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-3-38bdf8) ![PWA](https://img.shields.io/badge/PWA-installable-green)
 
@@ -86,17 +86,19 @@ npm run validate:routing
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) |
 
-## What's New in v7.0.4
+## What's New in v7.0.5
 
-- **Live Results sync with the draft banner** - The Scout → Results list now refreshes whenever the live banner fetches a new payload, inheriting the banner's adaptive 5 s / 15 s / 60 s cadence instead of running on its own slower loop.
-- **Shared fetch between banner and Results** - When both surfaces point at the same ESPN endpoint, the banner reuses its payload to drive the Results merge, removing the duplicate request the Results poller used to make.
-- **Picks view stays current during live drafts** - Banner-driven refreshes now keep `draftResults` updated even when the standalone Results poller is paused, so Scout → Picks reflects newly landed selections in real time.
+- **College team colors on Scout prospect rows** - Toggle tints each row with the player's college gradient; foreground text inverts for legibility and persists to localStorage.
+- **Additional combine sorts** - Sort the Scout board by Vertical Jump, Broad Jump, 3-Cone, Shuttle, and Bench Press in addition to 40-Yard Dash.
+- **Picks view defaults to Remaining** - Scout → Picks opens on undrafted slots only; round and All filters still available.
+- **Championship badges on Statistics team cards** - Super Bowl, conference, and division title indicators for 2025-season champions.
+- **Rookie season placeholder in Statistics** - Players with no NFL stats yet show a clean "Rookie Season" section instead of empty or failed stat tables.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Roadmap
 
-- **v7.0.5 - Post-Draft nflverse Enrichment** - Patch Scout with verified draft-slot enrichment from nflverse after the draft concludes.
+- **v7.0.6 - Post-Draft nflverse Enrichment** - Patch Scout with verified draft-slot enrichment from nflverse after the draft concludes.
 - **v7.1 - Trade Module Decomposition** - Split the largest Trade components and engines into focused modules for lower maintenance cost.
 - **v7.2 - Statistics / Fantasy Drilldown Unification** - One canonical player-analysis destination with mode-aware drilldowns across Statistics and Companion.
 - **v7.3 - Scout Rookie Projection Layer** - Add next-season rookie projections that work for standard and IDP-focused draft prep without overloading the current Scout board.

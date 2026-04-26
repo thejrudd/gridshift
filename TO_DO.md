@@ -1,4 +1,4 @@
-# NFL Predictor - Roadmap
+# GridShift — Roadmap
 
 Future planned work only. Completed items live in CHANGELOG.md. Bugs live in KNOWN_BUGS.md.
 New features requested or planned should be added here.
@@ -7,7 +7,7 @@ New features requested or planned should be added here.
 
 ## Planned Versions
 
-### v7.0.5 - Post-Draft nflverse Enrichment
+### v7.0.6 - Post-Draft nflverse Enrichment
 
 After the draft concludes, build `scripts/scout-nflverse-update.mjs` to fetch  
 `https://raw.githubusercontent.com/leesharpe/nfldata/master/data/draft_picks.csv`,  
@@ -69,7 +69,7 @@ Tabled Scout enhancements that build on the post-draft rookie data foundation wi
 
 ### New Technologies
 
-- **Open Pencil evaluation** - Investigate how Open Pencil's drafting, editing, and text-workflow concepts could inform future NFL Predictor writing surfaces such as player narratives, matchup writeups, trade explanations, export copy, or guided content-generation tools.
+- **Open Pencil evaluation** - Investigate how Open Pencil's drafting, editing, and text-workflow concepts could inform future GridShift writing surfaces such as player narratives, matchup writeups, trade explanations, export copy, or guided content-generation tools.
 - **Pretext evaluation** - Investigate how Pretext's rich-text / structured-editor concepts could support future in-app note-taking, report building, annotation, or editorial workflows tied to Trade, Draft Coach, or Statistics drilldowns.
 - **balldontlie NFL API evaluation** - Evaluate whether BALLDONTLIE NFL can power a live scoring layer for games, drives, injuries, standings, play-by-play, and betting-adjacent context, with strict rate-limit protection and a server-side key boundary before any production use.
 - **Authentication / memberships architecture** - Design a self-host-friendly auth system that lets hosts control access, optionally charge memberships to cover hosting/API costs, and leaves room for a future licensing model that could support commercial hosting with royalties back to the project owner.

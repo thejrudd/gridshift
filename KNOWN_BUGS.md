@@ -1,4 +1,4 @@
-# NFL Predictor — Known Bugs
+# GridShift — Known Bugs
 
 Open bugs are listed first, fixed bugs below. Add new entries at the bottom of each section.
 
@@ -178,3 +178,4 @@ Open bugs are listed first, fixed bugs below. Add new entries at the bottom of e
 | Companion → Waiver could flash `No Players Found` during initial load before free-agent ranking finished, making the page look idle instead of actively preparing data | v6.3 |
 | Companion → Matchup could render side panels before advanced matchup data was ready, causing a piecemeal load and disruptive loading flashes when switching weeks | v6.3 |
 | Matchup weather lookups could repeatedly request invalid Open-Meteo endpoints for the selected date, producing console 400s and unnecessary weather fetch batches | v6.3 |
+| Statistics team card nickname text cut off vertically (e.g. Vikings 'k' clipped) due to `leading-none` collapsing line-height below Barlow Condensed descenders | v7.0.5 |
