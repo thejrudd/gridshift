@@ -13,6 +13,8 @@ Primary implementation:
 - Cards are sized from available proposal-section width and viewport height, not from the number of assets in the package.
 - Cards must not stretch to fill full mobile width.
 - Cards should not wrap line-by-line while horizontal space is available.
+- Fixed-ratio cards resize as one unit. Do not force card height independently from card width.
+- Player and draft-pick cards must never vertically clip required text.
 - The card identity must preserve the established sports-card typography and visual hierarchy.
 - Do not solve fit problems by shrinking identity typography into unreadable text.
 
@@ -33,6 +35,7 @@ Current wide card override:
 Meaning:
 - On compact layouts, card width is capped by viewport width, viewport height, and an absolute rem cap.
 - On wide `2xl` layouts, cards can sit in a row and use a larger desktop-oriented width. Container width should remain fluid.
+- Layouts that promise three visible cards must calculate width from available container width, gap size, and card count.
 - Give/Get sides stack below `2xl` and become side-by-side at `2xl`. Each side should use the available proposal width; do not apply fixed side-container caps that clip card rows while page space is still available.
 - Each Give/Get side owns its own horizontal card row. Do not require all cards for the full trade to fit before allowing side-level horizontal layout.
 - Side card rows use `flex-row flex-nowrap` at all breakpoints. If one side cannot fit all of its cards, allow horizontal overflow for that side instead of stacking every card vertically. Use `scrollbar-hide`; player-card rows must never show a visible scrollbar.
@@ -62,6 +65,7 @@ var(--color-label)
 - Use abbreviated team/position labels, such as `TB · QB`.
 - Preserve the established `Barlow Condensed` uppercase card typography.
 - If text pressure appears, address layout/card width or optional detail visibility first.
+- Optional stat/detail rows drop before required identity or value text clips.
 
 ## Player Card Layout
 
@@ -152,6 +156,9 @@ Do not enable equal-height syncing on compact/mobile layouts unless it is tested
 ## Maintenance Checklist
 
 When editing Trade proposal cards:
+- Verify player and draft-pick cards preserve `5:7` by resizing width and height together.
+- Verify promised three-card rows derive card width from container width, gaps, and visible count.
+- Verify optional stat/detail rows drop before identity or value text clips.
 - Verify a QB card with passing stats does not clip the stat panel.
 - Verify a long-name player does not wrap or ellipsize.
 - Verify rank displays as `QB13`, `RB8`, etc., not only `QB` or `RB`.

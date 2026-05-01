@@ -19,6 +19,21 @@ Open bugs are listed first, fixed bugs below. Add new entries at the bottom of e
 | Companion → Rankings player drilldown `Statistics` action can fail for players whose base Sleeper `espn_id` is null even though the app has a resolved `espnIdOverrides` entry, so some players navigate correctly while others do nothing |
 | Trade Intelligence resets the selection area and clears active filters the first time a new partner is selected, while previously visited partners preserve state, creating inconsistent partner-switch behavior and forcing users to reapply filters |
 
+| Trade Agent roster shelf picks view not implemented — shelf only shows players; draft picks owned by each roster are not accessible from the shelf |
+| Trade Agent partner selection uses a horizontal scrolling carousel instead of a dropdown menu, making it hard to find specific partners in larger leagues |
+| Trade Agent "View Roster & Picks" button remains visible even when the roster shelf is present and covers the same functionality |
+| Trade Agent BroadcastScoreboard header appears washed out in dark mode — uses `var(--color-label)` as background which resolves to a light color in dark mode instead of staying dark |
+| Trade Agent roster shelf missing K and IDP position filter chips — only QB/RB/WR/TE are filterable; kickers and all defensive players cannot be isolated |
+| Trade Agent drag-and-drop from roster shelf to trade plates not implemented — shelf items are tap-only with no drag affordance |
+| Trade Agent mobile roster shelf renders as a horizontal scrolling strip instead of a vertical list, making it difficult to read and navigate |
+| Trade Agent mobile YOU/PARTNER shelf toggle unresponsive — tap targets are too small to register reliably on mobile devices |
+| Trade Agent mobile shelf position filter chips too small — chip height and font size not calibrated for mobile touch targets |
+| Desktop sidebar cannot be collapsed — always occupies 240px regardless of available screen width or user preference |
+| Trade Agent color commentary bar spans only the right TradePlate instead of extending the full width of both plates |
+| Trade Agent player card score value is baseline-aligned with the name text, causing it to overlap the team logo watermark on desktop |
+| Trade Agent BroadcastScoreboard shows "YOU" as the user-side team name instead of the connected user's actual display name |
+| Trade Agent BroadcastScoreboard displays "HOME · YOU GIVE" / "AWAY · YOU GET" secondary labels above team names, redundant with the plate headers below |
+
 ---
 
 ## Fixed

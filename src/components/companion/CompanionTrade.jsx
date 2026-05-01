@@ -351,6 +351,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
   const [upgradeSearchResults, setUpgradeSearchResults] = useState(null);
   const tradeIntelligenceCacheRef = useRef(new Map());
   const upgradeSearchCacheRef = useRef(new Map());
+  const shelfDragRef = useRef(null);
   const [isTradeIntelligencePending, startTradeIntelligenceTransition] = useTransition();
   const [isUpgradeSearchPending, startUpgradeSearchTransition] = useTransition();
   const [isUpgradeResultsPending, startUpgradeResultsTransition] = useTransition();
@@ -1307,241 +1308,297 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
   return (
     <div className="pb-8">
 
-      {/* ── Owner carousel + search ──────────────────────────────────────── */}
-      <div className="px-4 pt-3 pb-2">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs font-semibold uppercase tracking-widest"
-            style={{ color: 'var(--color-label-tertiary)', letterSpacing: '0.08em' }}>
-            {showIntelligence ? 'Trade Intelligence' : 'Agent'}
-          </span>
-        </div>
-        <div className="overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-          <div className="flex gap-2" style={{ width: 'max-content' }}>
-            {partnerRosters.map(({ roster, displayName, avatarHash }) => {
-              const isSelected = roster.roster_id === partnerRosterId;
-              return (
-                <button
-                  key={roster.roster_id}
-                  type="button"
-                  onClick={() => {
-                    if (roster.roster_id !== partnerRosterId) {
-                      switchPartnerTradeContext(roster.roster_id);
-                    }
-                  }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl transition-colors shrink-0"
-                  style={{
-                    background: isSelected ? 'var(--color-signature)' : 'var(--color-fill)',
-                    color: isSelected ? 'var(--color-signature-fg)' : 'var(--color-label-secondary)',
-                    fontWeight: 700,
-                  }}
-                >
-                  {avatarHash ? (
-                    <img src={`https://sleepercdn.com/avatars/thumbs/${avatarHash}`}
-                      alt={displayName} className="w-5 h-5 rounded-full shrink-0 object-cover"
-                      loading="lazy"
-                      decoding="async"
-                      onError={e => { e.target.style.display = 'none'; }} />
-                  ) : (
-                    <div className="w-5 h-5 rounded-full shrink-0 flex items-center justify-center"
-                      style={{ background: 'var(--color-fill-secondary)', fontSize: '9px', fontWeight: 700, color: 'var(--color-label-secondary)' }}>
-                      {displayName[0]?.toUpperCase()}
-                    </div>
-                  )}
-                  <span className="text-xs whitespace-nowrap">{displayName}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* "View Roster & Picks" — Agent only */}
-        {showAgent && partnerRosterId && !ktcLoading && !ktcError && (
-          <button
-            onClick={() => setRosterModalRosterId(partnerRosterId)}
-            className="w-full flex items-center justify-center gap-2 mt-2 py-2 rounded-xl text-sm font-semibold transition-colors"
-            style={{ background: 'var(--color-fill)', color: 'var(--color-label-secondary)', border: '1px solid var(--color-separator)' }}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
-            </svg>
-            View Roster &amp; Picks
-          </button>
-        )}
-
-      </div>
-
       {showAgent ? (
         <>
-        <div className="flex gap-3 px-4 pt-2">
-          {/* YOUR SIDE */}
-          <TradeSide
-            label="Your Side"
-            items={yourSide.items}
-            total={yourSide.total}
-            onRemovePlayer={id => removePlayer('yours', id)}
-            onRemovePick={key => removePick('yours', key)}
-            onAddPlayer={() => setPickerOpen({ side: 'yours', type: 'player' })}
-            onAddPick={() => setPickerOpen({ side: 'yours', type: 'pick' })}
-            onOpenPlayer={openStatsModalForPlayer}
-            isLeader={hasItems && verdict.verdict === 'favors_them'}
-            showTeamColors
-          />
-
-
-          {/* THEIR SIDE */}
-          <TradeSide
-            label="Their Side"
-            items={theirSide.items}
-            total={theirSide.total}
-            onRemovePlayer={id => removePlayer('theirs', id)}
-            onRemovePick={key => removePick('theirs', key)}
-            onAddPlayer={() => setPickerOpen({ side: 'theirs', type: 'player', allRosters: !partnerRosterId })}
-            onAddPick={partnerRosterId ? () => setPickerOpen({ side: 'theirs', type: 'pick' }) : null}
-            onOpenPlayer={openStatsModalForPlayer}
-            isLeader={hasItems && verdict.verdict === 'favors_you'}
-            showTeamColors
-          />
-        </div>
-
-        {/* ── Search button — above Trade Intelligence ─────────────────── */}
-        {!ktcLoading && !ktcError && (
-          <div className="px-4 mt-2">
-            <button
-              onClick={() => setPickerOpen({ side: 'theirs', type: 'player', allRosters: true })}
-              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold transition-colors"
-              style={{ background: 'var(--color-signature)', color: 'var(--color-signature-fg)' }}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
-              </svg>
-              Search All Rostered Players
-            </button>
-          </div>
-        )}
-
-        {/* ── Instructions / status (shown when no items yet) ─────────── */}
-        {!hasItems && (
-          <div className="mx-4 mt-4 rounded-xl px-4 py-4 flex flex-col gap-1.5"
-            style={{ background: 'var(--color-fill)' }}>
-            {ktcLoading ? (
-              <div className="flex items-center gap-2.5">
-                <Spinner />
-                <span className="text-sm font-medium" style={{ color: 'var(--color-label-secondary)' }}>
-                  Loading trade values…
-                </span>
-              </div>
-            ) : ktcError ? (
+          {/* ── Desktop: shelf rail + main column ──────────────────────── */}
+          {/* Shared shelf drop handler: routing follows the shelf tab context */}
+          {(() => {
+            const handleShelfDrop = drag => {
+              if (!drag) return;
+              if (drag.type === 'player') {
+                if (drag.shelfTab === 'yours') addPlayer('yours', drag.id);
+                else if (partnerRosterId) addPlayer('theirs', { id: drag.id, rosterId: partnerRosterId });
+              } else if (drag.type === 'pick' && drag.pickData) {
+                if (drag.shelfTab === 'yours') addPick('yours', drag.pickData);
+                else addPick('theirs', drag.pickData);
+              }
+            };
+            const sharedShelfProps = {
+              myPlayers: myRosterData?.players ?? [],
+              partnerPlayers: partnerRosterId ? (rosterById.get(partnerRosterId)?.players ?? []) : [],
+              yourTradePlayers: yourPlayers,
+              theirTradePlayers: theirPlayers,
+              sleeperPlayers,
+              playerTradeValueMap,
+              myName: getUserDisplayName(myRosterData?.owner_id ?? ''),
+              partnerName: partnerRosterId ? (ownerNameByRosterId.get(partnerRosterId) ?? 'PARTNER') : 'PARTNER',
+              hasPartner: !!partnerRosterId,
+              onAddToYours: id => addPlayer('yours', id),
+              onAddToTheirs: id => partnerRosterId ? addPlayer('theirs', { id, rosterId: partnerRosterId }) : null,
+              rosterPicks,
+              slots,
+              myRosterId: myRosterData?.roster_id,
+              partnerRosterId,
+              yourTradePicks: yourPicks,
+              theirTradePicks: theirPicks,
+              onAddPickToYours: pick => addPick('yours', pick),
+              onAddPickToTheirs: pick => addPick('theirs', pick),
+              league,
+              myAvatar: leagueUserById.get(myRosterData?.owner_id ?? '')?.avatar ?? null,
+              partnerAvatar: partnerRosterId
+                ? (leagueUserById.get(rosterById.get(partnerRosterId)?.owner_id ?? '')?.avatar ?? null)
+                : null,
+              partnerRosters,
+              onPartnerChange: id => {
+                if (!id) { switchPartnerTradeContext(null); return; }
+                if (id !== partnerRosterId) switchPartnerTradeContext(id);
+              },
+            };
+            const sharedPlateProps = { shelfDragRef, onDropFromShelf: handleShelfDrop };
+            const colorCommentary = hasItems
+              ? getColorCommentary(verdict.verdict, verdict.gap, ownerNameByRosterId.get(partnerRosterId) ?? null)
+              : null;
+            const SUGGEST_ACTION_META = {
+              add:    { label: 'ADD',    bg: '#22c55e22', color: '#22c55e' },
+              remove: { label: 'REMOVE', bg: '#f59e0b22', color: '#f59e0b' },
+              swap:   { label: 'SWAP',   bg: 'rgba(90,173,255,0.13)', color: '#5AADFF' },
+            };
+            const suggestBlock = (
               <>
-                <span className="text-sm font-semibold" style={{ color: 'var(--color-label)' }}>
-                  Trade values unavailable
-                </span>
-                <span className="text-xs leading-relaxed" style={{ color: 'var(--color-label-tertiary)' }}>
-                  The KeepTradeCut proxy could not be reached. Trade values require the nginx proxy in production.
-                </span>
-                <span className="text-xs font-mono mt-1" style={{ color: 'var(--color-label-quaternary)' }}>
-                  {ktcError}
-                </span>
-              </>
-            ) : (
-              <>
-                <span className="text-sm font-semibold" style={{ color: 'var(--color-label)' }}>
-                  Build your trade
-                </span>
-                <span className="text-xs leading-relaxed" style={{ color: 'var(--color-label-tertiary)' }}>
-                  Select a trade partner above, or begin adding players or picks to either side. Or tap Search All Rostered Players to view all available players available for trade, including your own.
-                </span>
-              </>
-            )}
-          </div>
-        )}
-
-        {/* ── Value comparison bar ────────────────────────────────────── */}
-        {hasItems && (
-          <div className="px-4 pt-4">
-            <ValueBar yourTotal={yourSide.total} theirTotal={theirSide.total} verdict={verdict} />
-          </div>
-        )}
-
-          {/* ── Refine Trade ─────────────────────────────────────────────── */}
-          {hasItems && verdict.verdict !== 'fair' && verdict.gap > 0 && (
-            <div className="px-4 pt-3">
-              <button onClick={handleSuggest}
-                className="w-full py-2.5 rounded-xl text-xs font-semibold transition-colors"
-                style={{ background: 'var(--color-signature)', color: 'var(--color-signature-fg)' }}>
-                Refine Trade
-              </button>
-            </div>
-          )}
-
-          {/* ── Suggestion results ──────────────────────────────────────── */}
-          {suggestions && suggestions.options.length > 0 && (
-            <div className="px-4 pt-3 flex flex-col gap-2">
-              <span className="text-xs font-semibold uppercase tracking-widest"
-                style={{ color: 'var(--color-label-tertiary)', letterSpacing: '0.08em' }}>
-                Refinement Options
-              </span>
-              {suggestions.options.map((opt, i) => {
-                const absRemaining = Math.abs(opt.newGap);
-                const isNearEven = absRemaining < verdict.gap * 0.05;
-                // Which side holds the value advantage after this adjustment?
-                // "Your Side" / "Their Side" = what each party gives away.
-                // If the giving side with more value is "theirs" → trade favors YOU.
-                // If it's "yours" → trade favors THEM.
-                const currentSurplusSide = opt.newGap > 0
-                  ? (suggestions.deficitSide === 'yours' ? 'theirs' : 'yours')
-                  : suggestions.deficitSide;
-                const favoredLabel = currentSurplusSide === 'theirs' ? 'You' : 'Them';
-                const remainingLabel = isNearEven
-                  ? 'Near-even trade'
-                  : `Favors ${favoredLabel} · ${fmtKtcValue(absRemaining)}`;
-
-                const ACTION_META = {
-                  add:    { label: 'ADD',    bg: '#22c55e22', color: '#22c55e' },
-                  remove: { label: 'REMOVE', bg: '#f59e0b22', color: '#f59e0b' },
-                  swap:   { label: 'SWAP',   bg: 'var(--color-accent)22', color: 'var(--color-accent)' },
-                };
-                const meta = ACTION_META[opt.action] ?? ACTION_META.add;
-
-                let descLine;
-                if (opt.action === 'add') {
-                  descLine = `Add to ${opt.side === 'yours' ? 'Your' : 'Their'} Side: ${opt.items.map(it => it.label).join(' + ')}`;
-                } else if (opt.action === 'remove') {
-                  descLine = `Remove from ${opt.side === 'yours' ? 'Your' : 'Their'} Side: ${opt.items[0]?.label}`;
-                } else {
-                  descLine = `${opt.side === 'yours' ? 'Your' : 'Their'} Side: ${opt.remove?.label} → ${opt.add?.label}`;
-                }
-
-                return (
-                  <div key={i} className="rounded-xl px-3 py-2.5 flex items-center justify-between gap-2"
-                    style={{ background: 'var(--color-fill)' }}>
-                    <div className="flex-1 min-w-0 flex flex-col gap-1">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded tracking-widest shrink-0"
-                          style={{ background: meta.bg, color: meta.color }}>
-                          {meta.label}
-                        </span>
-                        <span className="text-xs font-medium truncate" style={{ color: 'var(--color-label)' }}>
-                          {descLine}
-                        </span>
-                      </div>
-                      <span className="text-xs tabular-nums" style={{ color: 'var(--color-label-quaternary)' }}>
-                        {remainingLabel}
-                      </span>
-                    </div>
-                    <button onClick={() => applySuggestion(opt)}
-                      className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold"
-                      style={{ background: 'var(--color-signature)', color: 'var(--color-signature-fg)' }}>
-                      Apply
+                {hasItems && verdict.verdict !== 'fair' && verdict.gap > 0 && (
+                  <div style={{ borderTop: '1px solid var(--color-separator)', padding: '10px 14px' }}>
+                    <button
+                      onClick={handleSuggest}
+                      className="w-full py-2.5 font-semibold"
+                      style={{ fontSize: 14, borderRadius: 8, background: 'var(--color-signature)', color: 'var(--color-signature-fg)', border: 0, cursor: 'pointer' }}
+                    >
+                      Suggest Adjustment
                     </button>
                   </div>
-                );
-              })}
+                )}
+                {suggestions && suggestions.options.length > 0 && (
+                  <div style={{ borderTop: '1px solid var(--color-separator)', padding: '10px 14px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <span style={{ fontFamily: "var(--font-display,'Barlow Condensed',sans-serif)", fontWeight: 700, fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'var(--color-label-quaternary)' }}>SUGGESTIONS</span>
+                    {suggestions.options.map((opt, i) => {
+                      const absRemaining = Math.abs(opt.newGap);
+                      const isNearEven = absRemaining < verdict.gap * 0.05;
+                      const currentSurplusSide = opt.newGap > 0
+                        ? (suggestions.deficitSide === 'yours' ? 'theirs' : 'yours')
+                        : suggestions.deficitSide;
+                      const favoredLabel = currentSurplusSide === 'theirs' ? 'You' : 'Them';
+                      const remainingLabel = isNearEven ? 'Near-even trade' : `Favors ${favoredLabel} · ${fmtKtcValue(absRemaining)}`;
+                      const smeta = SUGGEST_ACTION_META[opt.action] ?? SUGGEST_ACTION_META.add;
+                      let descLine;
+                      if (opt.action === 'add') descLine = `Add to ${opt.side === 'yours' ? 'Your' : 'Their'} Side: ${opt.items.map(it => it.label).join(' + ')}`;
+                      else if (opt.action === 'remove') descLine = `Remove from ${opt.side === 'yours' ? 'Your' : 'Their'} Side: ${opt.items[0]?.label}`;
+                      else descLine = `${opt.side === 'yours' ? 'Your' : 'Their'} Side: ${opt.remove?.label} → ${opt.add?.label}`;
+                      return (
+                        <div key={i} className="rounded-lg px-3 py-2.5 flex items-center justify-between gap-2" style={{ background: 'var(--color-fill)' }}>
+                          <div className="flex-1 min-w-0 flex flex-col gap-1">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-bold px-1.5 py-0.5 rounded tracking-widest shrink-0" style={{ fontSize: 10, background: smeta.bg, color: smeta.color }}>{smeta.label}</span>
+                              <span className="font-medium truncate" style={{ fontSize: 13, color: 'var(--color-label)' }}>{descLine}</span>
+                            </div>
+                            <span className="tabular-nums" style={{ fontSize: 12, color: 'var(--color-label-quaternary)' }}>{remainingLabel}</span>
+                          </div>
+                          <button onClick={() => applySuggestion(opt)} className="shrink-0 px-3 py-1.5 rounded-lg font-semibold"
+                            style={{ fontSize: 13, background: 'var(--color-signature)', color: 'var(--color-signature-fg)' }}>
+                            Apply
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                {suggestions && suggestions.options.length === 0 && (
+                  <div style={{ borderTop: '1px solid var(--color-separator)', padding: '10px 14px', fontSize: 12, textAlign: 'center', color: 'var(--color-label-tertiary)' }}>
+                    No combinations found to close the gap.
+                  </div>
+                )}
+              </>
+            );
+            return (
+              <>
+                {/* ── Desktop: shelf rail + main column ───────────────── */}
+                <div className="hidden lg:flex" style={{ alignItems: 'flex-start' }}>
+                  <RosterShelf {...sharedShelfProps} shelfDragRef={shelfDragRef} />
+                  <div className="flex-1 min-w-0 flex flex-col">
+                    {/* ── Desktop search header ── */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: 8, padding: '12px 16px 10px', borderBottom: '1px solid var(--color-separator)' }}>
+                      {!ktcLoading && !ktcError && (
+                        <button
+                          onClick={() => setPickerOpen({ side: 'theirs', type: 'player', allRosters: true })}
+                          style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 7, padding: '0 14px', height: 36, borderRadius: 8, border: '1px solid var(--color-separator)', background: 'var(--color-fill)', color: 'var(--color-label-tertiary)', fontSize: 13, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                        >
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+                          </svg>
+                          Search players…
+                        </button>
+                      )}
+                    </div>
+                    <BroadcastScoreboard
+                      yourTotal={yourSide.total}
+                      theirTotal={theirSide.total}
+                      yourName={getUserDisplayName(myRosterData?.owner_id ?? '')}
+                      partnerName={partnerRosterId ? (ownerNameByRosterId.get(partnerRosterId) ?? null) : null}
+                      verdict={verdict}
+                      hasItems={hasItems}
+                      onClear={clearTrade}
+                    />
+                    {!ktcLoading && !ktcError ? (
+                      <>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
+                          <TradePlate
+                            side="yours"
+                            label="HOME · YOU GIVE"
+                            accentColor="var(--color-signature)"
+                            items={yourSide.items}
+                            total={yourSide.total}
+                            onRemovePlayer={id => removePlayer('yours', id)}
+                            onRemovePick={key => removePick('yours', key)}
+                            onAddPlayer={() => setPickerOpen({ side: 'yours', type: 'player' })}
+                            onAddPick={() => setPickerOpen({ side: 'yours', type: 'pick' })}
+                            onOpenPlayer={openStatsModalForPlayer}
+                            {...sharedPlateProps}
+                          />
+                          <TradePlate
+                            side="theirs"
+                            label="AWAY · YOU GET"
+                            accentColor="var(--color-label)"
+                            items={theirSide.items}
+                            total={theirSide.total}
+                            onRemovePlayer={id => removePlayer('theirs', id)}
+                            onRemovePick={key => removePick('theirs', key)}
+                            onAddPlayer={() => setPickerOpen({ side: 'theirs', type: 'player', allRosters: !partnerRosterId })}
+                            onAddPick={partnerRosterId ? () => setPickerOpen({ side: 'theirs', type: 'pick' }) : null}
+                            onOpenPlayer={openStatsModalForPlayer}
+                            showBg
+                            {...sharedPlateProps}
+                          />
+                        </div>
+                        {colorCommentary && (
+                          <div style={{ borderTop: '1px solid var(--color-separator)', padding: '10px 14px', background: 'var(--color-bg-secondary)', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                            <span style={{ fontFamily: "var(--font-display, 'Barlow Condensed', sans-serif)", fontWeight: 700, fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'var(--color-label-quaternary)', paddingTop: 2, flexShrink: 0 }}>COLOR COMMENTARY</span>
+                            <span style={{ fontSize: 14, lineHeight: 1.4, color: 'var(--color-label)', fontStyle: 'italic' }}>"{colorCommentary}"</span>
+                          </div>
+                        )}
+                        {suggestBlock}
+                      </>
+                    ) : (
+                      <div className="mx-4 mt-4 rounded-xl px-4 py-4 flex flex-col gap-1.5" style={{ background: 'var(--color-fill)' }}>
+                        {ktcLoading ? (
+                          <div className="flex items-center gap-2.5">
+                            <Spinner />
+                            <span className="text-sm font-medium" style={{ color: 'var(--color-label-secondary)' }}>Loading trade values…</span>
+                          </div>
+                        ) : (
+                          <>
+                            <span className="text-sm font-semibold" style={{ color: 'var(--color-label)' }}>Trade values unavailable</span>
+                            <span className="text-xs leading-relaxed" style={{ color: 'var(--color-label-tertiary)' }}>
+                              The KeepTradeCut proxy could not be reached. Trade values require the nginx proxy in production.
+                            </span>
+                            <span className="text-xs font-mono mt-1" style={{ color: 'var(--color-label-quaternary)' }}>{ktcError}</span>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* ── Mobile: vertical stack ───────────────────────── */}
+                <div className="lg:hidden flex flex-col">
+                  <BroadcastScoreboard
+                    yourTotal={yourSide.total}
+                    theirTotal={theirSide.total}
+                    yourName={getUserDisplayName(myRosterData?.owner_id ?? '')}
+                    partnerName={partnerRosterId ? (ownerNameByRosterId.get(partnerRosterId) ?? null) : null}
+                    verdict={verdict}
+                    hasItems={hasItems}
+                    onClear={clearTrade}
+                  />
+                  {!ktcLoading && !ktcError ? (
+                    <>
+                      <TradePlate
+                        side="yours"
+                        label="HOME · YOU GIVE"
+                        accentColor="var(--color-signature)"
+                        items={yourSide.items}
+                        total={yourSide.total}
+                        onRemovePlayer={id => removePlayer('yours', id)}
+                        onRemovePick={key => removePick('yours', key)}
+                        onAddPlayer={() => setPickerOpen({ side: 'yours', type: 'player' })}
+                        onAddPick={() => setPickerOpen({ side: 'yours', type: 'pick' })}
+                        onOpenPlayer={openStatsModalForPlayer}
+                        {...sharedPlateProps}
+                      />
+                      <TradePlate
+                        side="theirs"
+                        label="AWAY · YOU GET"
+                        accentColor="var(--color-label)"
+                        items={theirSide.items}
+                        total={theirSide.total}
+                        onRemovePlayer={id => removePlayer('theirs', id)}
+                        onRemovePick={key => removePick('theirs', key)}
+                        onAddPlayer={() => setPickerOpen({ side: 'theirs', type: 'player', allRosters: !partnerRosterId })}
+                        onAddPick={partnerRosterId ? () => setPickerOpen({ side: 'theirs', type: 'pick' }) : null}
+                        onOpenPlayer={openStatsModalForPlayer}
+                        {...sharedPlateProps}
+                      />
+                      {colorCommentary && (
+                        <div style={{ borderTop: '1px solid var(--color-separator)', padding: '10px 14px', background: 'var(--color-bg-secondary)', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                          <span style={{ fontFamily: "var(--font-display, 'Barlow Condensed', sans-serif)", fontWeight: 700, fontSize: 9, letterSpacing: '0.2em', textTransform: 'uppercase', color: 'var(--color-label-quaternary)', paddingTop: 2, flexShrink: 0 }}>COLOR COMMENTARY</span>
+                          <span style={{ fontSize: 13, lineHeight: 1.4, color: 'var(--color-label)', fontStyle: 'italic' }}>"{colorCommentary}"</span>
+                        </div>
+                      )}
+                      {suggestBlock}
+                      <MobileRosterShelf {...sharedShelfProps} />
+                    </>
+                  ) : (
+                    <div className="mx-4 mt-4 rounded-xl px-4 py-4 flex flex-col gap-1.5" style={{ background: 'var(--color-fill)' }}>
+                      {ktcLoading ? (
+                        <div className="flex items-center gap-2.5">
+                          <Spinner />
+                          <span className="text-sm font-medium" style={{ color: 'var(--color-label-secondary)' }}>Loading trade values…</span>
+                        </div>
+                      ) : (
+                        <>
+                          <span className="text-sm font-semibold" style={{ color: 'var(--color-label)' }}>Trade values unavailable</span>
+                          <span className="text-xs font-mono mt-1" style={{ color: 'var(--color-label-quaternary)' }}>{ktcError}</span>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </>
+            );
+          })()}
+
+          {/* ── Empty state ─────────────────────────────────────────────── */}
+          {!hasItems && !ktcLoading && !ktcError && (
+            <div className="mx-4 mt-3 rounded-xl px-4 py-3 flex flex-col gap-1" style={{ background: 'var(--color-fill)' }}>
+              <span className="text-sm font-semibold" style={{ color: 'var(--color-label)' }}>Build your trade</span>
+              <span className="text-xs leading-relaxed" style={{ color: 'var(--color-label-tertiary)' }}>
+                {partnerRosterId
+                  ? 'Tap a player in the shelf to add them, or use the + buttons in each column.'
+                  : 'Select a trade partner in the shelf, then tap players to build your trade.'}
+              </span>
             </div>
           )}
 
-          {suggestions && suggestions.options.length === 0 && (
-            <div className="px-4 pt-3 text-xs text-center" style={{ color: 'var(--color-label-tertiary)' }}>
-              No combinations found to close the gap.
+          {/* ── Search all rostered players (mobile only) ───────────────── */}
+          {!ktcLoading && !ktcError && (
+            <div className="lg:hidden px-4 mt-3">
+              <button
+                onClick={() => setPickerOpen({ side: 'theirs', type: 'player', allRosters: true })}
+                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold transition-colors"
+                style={{ background: 'var(--color-fill)', color: 'var(--color-label-secondary)', border: '1px solid var(--color-separator)' }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+                </svg>
+                Search All Rostered Players
+              </button>
             </div>
           )}
 
@@ -1561,17 +1618,6 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
                     .map(it => <TrendRow key={it.id} item={it} leagueType={leagueType} />)}
                 </div>
               )}
-            </div>
-          )}
-
-          {/* ── Clear trade ─────────────────────────────────────────────── */}
-          {hasItems && (
-            <div className="px-4 pt-4">
-              <button onClick={clearTrade}
-                className="w-full py-2 rounded-xl text-xs font-semibold transition-colors"
-                style={{ background: 'var(--color-fill)', color: 'var(--color-destructive, #ef4444)' }}>
-                Clear Trade
-              </button>
             </div>
           )}
 
@@ -1750,65 +1796,6 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
   );
 }
 
-// ── TradeSide ─────────────────────────────────────────────────────────────────
-
-function TradeSide({ label, items, total, onRemovePlayer, onRemovePick, onAddPlayer, onAddPick, onOpenPlayer, isLeader, showTeamColors }) {
-  const { darkMode } = useTheme();
-
-  return (
-    <div className="flex-1 min-w-0 flex flex-col gap-1.5">
-
-      {/* Header: label + running total */}
-      <div className="rounded-lg px-2.5 py-2 flex items-center justify-between mb-0.5"
-        style={{
-          background: isLeader ? 'var(--color-signature)' : 'var(--color-fill)',
-          color: isLeader ? 'var(--color-signature-fg)' : 'var(--color-label)',
-        }}>
-        <span className="text-xs font-semibold uppercase tracking-widest"
-          style={{ color: isLeader ? 'var(--color-signature-fg)' : 'var(--color-label-tertiary)', letterSpacing: '0.08em' }}>
-          {label}
-        </span>
-        <span className="text-sm font-bold tabular-nums">{fmtKtcValue(total)}</span>
-      </div>
-
-      {items.map(it => {
-        const tp = (showTeamColors && it.type === 'player')
-          ? teamPalette(it.team, darkMode)
-          : { color: null, tint: null, logoKey: '' };
-        return (
-          <TradeSideAssetRow
-            key={it.id}
-            item={it}
-            palette={tp}
-            darkMode={darkMode}
-            onOpenPlayer={onOpenPlayer}
-            onRemove={() => it.type === 'player' ? onRemovePlayer(it.id) : onRemovePick(it.id)}
-          />
-        );
-      })}
-
-      {/* Add buttons */}
-      <div className="flex gap-1.5">
-        <button onClick={onAddPlayer}
-          className="flex-1 py-2 rounded-lg text-xs font-medium transition-colors"
-          style={{ border: '1px dashed var(--color-separator)', color: 'var(--color-label-tertiary)' }}>
-          + Player
-        </button>
-        <button onClick={onAddPick ?? undefined} disabled={!onAddPick}
-          className="flex-1 py-2 rounded-lg text-xs font-medium transition-colors"
-          style={{
-            border: '1px dashed var(--color-separator)',
-            color: 'var(--color-label-tertiary)',
-            opacity: onAddPick ? 1 : 0.35,
-            cursor: onAddPick ? 'pointer' : 'default',
-          }}>
-          + Pick
-        </button>
-      </div>
-    </div>
-  );
-}
-
 function TradeSideAssetRow({ item, palette, darkMode, onOpenPlayer, onRemove }) {
   const [isHovered, setIsHovered] = useState(false);
   const isInteractive = item.type === 'player' && !!onOpenPlayer;
@@ -1895,46 +1882,611 @@ function TradeSideAssetRow({ item, palette, darkMode, onOpenPlayer, onRemove }) 
             onError={e => { e.target.style.display = 'none'; }}
           />
         )}
-        <div className="flex items-baseline gap-1.5">
-          <div className="flex-1 min-w-0 text-xs font-semibold leading-snug"
-            style={{ color: isInteractive ? accentColor : 'var(--color-label)' }}>
-            {item.label}
-          </div>
-          <span className="text-sm font-bold tabular-nums shrink-0"
-            title={item.idpFallback ? 'Estimated from season production (no KTC data)' : undefined}
-            style={{ color: (item.adjVal ?? item.val) != null ? 'var(--color-label)' : 'var(--color-label-quaternary)' }}>
-            {(item.dynastyFallback || item.idpFallback) ? '~' : ''}{fmtKtcValue(item.adjVal ?? item.val)}
-          </span>
+        <div className="font-semibold leading-snug" style={{ fontSize: 13, paddingRight: palette?.logoKey ? 34 : 0, color: isInteractive ? accentColor : 'var(--color-label)' }}>
+          {item.label}
         </div>
         {item.position && (
           <div className="flex items-center gap-1 overflow-hidden mt-0.5">
-            <span className="text-xs shrink-0" style={{ color: 'var(--color-label-tertiary)' }}>
+            <span className="shrink-0" style={{ fontSize: 12, color: 'var(--color-label-tertiary)' }}>
               {item.position}{item.team ? ` · ${item.team}` : ''}
             </span>
             {item.rankInfo && (
-              <span className="text-xs font-bold tabular-nums shrink-0"
-                style={{ color: palette?.color ?? 'var(--color-label-quaternary)' }}>
+              <span className="font-bold tabular-nums shrink-0" style={{ fontSize: 12, color: palette?.color ?? 'var(--color-label-quaternary)' }}>
                 · #{item.rankInfo.rank} {item.rankInfo.posLabel}
               </span>
             )}
             {item.avgPPG != null && (
-              <span className="hidden lg:inline text-xs tabular-nums shrink-0" style={{ color: 'var(--color-label-quaternary)' }}>
+              <span className="hidden lg:inline tabular-nums shrink-0" style={{ fontSize: 12, color: 'var(--color-label-quaternary)' }}>
                 · {item.avgPPG.toFixed(1)} avg
               </span>
             )}
             {(item.dynastyFallback || item.idpFallback) && (
-              <span className="shrink-0" style={{ color: 'var(--color-label-quaternary)', fontSize: '9px' }}>
+              <span className="shrink-0" style={{ color: 'var(--color-label-quaternary)', fontSize: 10 }}>
                 · {item.dynastyFallback ? 'DYN est.' : 'est.'}
               </span>
             )}
           </div>
         )}
       </div>
+      <span className="font-bold tabular-nums shrink-0" style={{ fontSize: 15, color: (item.adjVal ?? item.val) != null ? 'var(--color-label)' : 'var(--color-label-quaternary)' }}
+        title={item.idpFallback ? 'Estimated from season production (no KTC data)' : undefined}>
+        {(item.dynastyFallback || item.idpFallback) ? '~' : ''}{fmtKtcValue(item.adjVal ?? item.val)}
+      </span>
       <button onClick={(event) => { event.stopPropagation(); onRemove(); }}
         className="shrink-0 w-5 h-5 rounded-full flex items-center justify-center"
         style={{ background: 'var(--color-fill-secondary)', color: 'var(--color-label-tertiary)', fontSize: '10px' }}>
         ×
       </button>
+    </div>
+  );
+}
+
+// ── getColorCommentary ─────────────────────────────────────────────────────────
+// ── ShelfPartnerTab ────────────────────────────────────────────────────────────
+function ShelfPartnerTab({ partnerRosters, value, onChange, label, active, disabled, onActivate, buttonStyle }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const df = "var(--font-display, 'Barlow Condensed', sans-serif)";
+
+  // Close on click outside
+  useEffect(() => {
+    if (!open) return;
+    const handler = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const selected = partnerRosters.find(r => r.roster.roster_id === value) ?? null;
+
+  const Avatar = ({ hash, name, size = 22 }) => hash ? (
+    <img src={`https://sleepercdn.com/avatars/thumbs/${hash}`} alt={name}
+      style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }}
+      onError={e => { e.target.style.display = 'none'; }} />
+  ) : (
+    <div style={{ width: size, height: size, borderRadius: '50%', background: 'var(--color-fill-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: size * 0.45, fontWeight: 700, color: 'var(--color-label-secondary)', flexShrink: 0 }}>
+      {name?.[0]?.toUpperCase()}
+    </div>
+  );
+
+  return (
+      <div ref={ref} style={{ position: 'relative', flex: 1, minWidth: 0 }}>
+        <button
+          type="button"
+          onClick={() => {
+            onActivate?.();
+            if (!disabled) setOpen(v => !v);
+          }}
+          style={{
+            ...buttonStyle,
+            width: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 5,
+            cursor: disabled ? 'default' : 'pointer',
+            opacity: disabled ? 0.55 : 1,
+          }}
+        >
+          {selected ? (
+              <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {selected.displayName}
+              </span>
+          ) : (
+              <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label || 'PARTNER'}</span>
+          )}
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={active ? 'currentColor' : 'var(--color-label-tertiary)'} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+            style={{ flexShrink: 0, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 150ms' }}>
+            <polyline points="6 9 12 15 18 9"/>
+          </svg>
+        </button>
+
+        {open && (
+          <div style={{
+            position: 'absolute', top: 'calc(100% + 5px)', right: 0, zIndex: 50,
+            width: 240, maxWidth: 'calc(100vw - 28px)',
+            background: 'var(--color-bg-secondary)', border: '1px solid var(--color-separator)',
+            borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.1)',
+            overflow: 'hidden', maxHeight: 280, overflowY: 'auto',
+          }}>
+            {/* Clear option */}
+            {value && (
+              <button
+                onClick={() => { onChange(null); setOpen(false); }}
+                style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 9, padding: '8px 12px', background: 'transparent', border: 0, borderBottom: '1px solid var(--color-separator)', cursor: 'pointer', textAlign: 'left' }}
+              >
+                <div style={{ width: 22, height: 22, borderRadius: '50%', border: '1.5px dashed var(--color-separator)', flexShrink: 0 }} />
+                <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-label-tertiary)', fontFamily: df, letterSpacing: '0.06em' }}>CLEAR PARTNER</span>
+              </button>
+            )}
+            {partnerRosters.map(({ roster, displayName, avatarHash }) => {
+              const isSelected = roster.roster_id === value;
+              return (
+                <button
+                  key={roster.roster_id}
+                  onClick={() => { onChange(roster.roster_id); onActivate?.(); setOpen(false); }}
+                  style={{
+                    width: '100%', display: 'flex', alignItems: 'center', gap: 9, padding: '8px 12px',
+                    background: isSelected ? 'var(--color-fill)' : 'transparent',
+                    border: 0, borderBottom: '1px solid var(--color-separator)', cursor: 'pointer', textAlign: 'left',
+                    transition: 'background 100ms',
+                  }}
+                  onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = 'var(--color-fill-secondary)'; }}
+                  onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = 'transparent'; }}
+                >
+                  <Avatar hash={avatarHash} name={displayName} />
+                  <span style={{ flex: 1, fontSize: 13, fontWeight: isSelected ? 700 : 500, color: isSelected ? 'var(--color-label)' : 'var(--color-label-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {displayName}
+                  </span>
+                  {isSelected && (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-signature)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                      <polyline points="20 6 9 17 4 12"/>
+                    </svg>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+  );
+}
+
+function getColorCommentary(verdict, gap, partnerName) {
+  if (!gap) return null;
+  const pn = partnerName || 'your partner';
+  const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+  if (verdict === 'fair') return pick([
+    `Straight swap — values are close. Pull the trigger.`,
+    `Both sides are roughly even. Hard to argue either way.`,
+    `Balanced deal. If both managers like it, there's no wrong answer.`,
+    `Numbers say this is fair. Now it comes down to fit.`,
+    `Close enough to call it even. League won't bat an eye.`,
+    `This one's a wash on paper. Go with your gut.`,
+    `Fairly valued on both sides. The tiebreaker is roster need.`,
+    `Value neutral. If you want the players, do it.`,
+  ]);
+
+  if (verdict === 'favors_you') return pick([
+    `You're getting the better end here. ${pn} might push back.`,
+    `The value tilts your way. Don't be surprised if ${pn} counters.`,
+    `You're winning this trade on paper. ${pn} may want something added.`,
+    `Looks good for you. ${pn} is leaving some value on the table.`,
+    `Smart get — you're coming out ahead. See if ${pn} bites.`,
+    `The numbers favor you. Send it before they change their mind.`,
+    `You're extracting more than you're giving up here.`,
+    `${pn} is undervaluing their side. Take advantage if they're willing.`,
+    `Nice return for you. ${pn} may be overrating what they're getting.`,
+    `Favorable gap. If ${pn} accepts as-is, that's a win for your roster.`,
+  ]);
+
+  if (verdict === 'favors_them') return pick([
+    `You're giving up more than you're getting. Try sweetening your side.`,
+    `The value gap goes ${pn}'s way. Adjust the package before sending.`,
+    `You're overpaying here. Consider trimming their side or adding from yours.`,
+    `${pn} is getting the better end. Think about what you could pull back.`,
+    `This deal currently favors ${pn}. Rebalance before you lock it in.`,
+    `You're leaving value on the table. Don't finalize without tweaking.`,
+    `The numbers say you're giving up too much. Revisit the terms.`,
+    `${pn} comes out ahead on this one. Worth renegotiating.`,
+    `Losing trade as constructed. Either add to your return or trim the cost.`,
+    `Gap isn't in your favor. See if ${pn} will accept less from you.`,
+  ]);
+
+  return null;
+}
+
+// ── BroadcastScoreboard ────────────────────────────────────────────────────────
+function BroadcastScoreboard({ yourTotal, theirTotal, yourName, partnerName, verdict, hasItems, onClear }) {
+  const { verdict: v, pct = 0, gap = 0 } = verdict;
+  const sign = v === 'favors_you' ? 1 : v === 'favors_them' ? -1 : 0;
+  const angleDeg = hasItems ? sign * Math.min((pct / 100) * 68, 68) : 0;
+  const angleRad = (angleDeg * Math.PI) / 180;
+  const cx = 90; const cy = 96;
+  const needleX = cx + 58 * Math.sin(angleRad);
+  const needleY = cy - 58 * Math.cos(angleRad);
+  const arcLen = 232;
+  const amberLen = Math.max(0, Math.min(((90 + angleDeg) / 180) * arcLen, arcLen));
+  const verdictText = !hasItems ? '' : v === 'fair' ? 'FAIR' : v === 'favors_you' ? 'GOOD' : 'LEAN';
+  const verdictFill = !hasItems ? 'transparent' : v === 'fair' ? '#F5B700' : v === 'favors_you' ? '#22c55e' : '#ef4444';
+  const df = "var(--font-display, 'Barlow Condensed', sans-serif)";
+  return (
+    <div style={{ background: '#0D1117', color: 'white', padding: '14px 20px 14px', flexShrink: 0, position: 'relative' }}>
+      {hasItems && (
+        <button onClick={onClear} style={{ position: 'absolute', top: 10, right: 16, fontFamily: df, fontSize: 10, letterSpacing: '0.12em', color: '#F5B700', background: 'none', border: 0, cursor: 'pointer', fontWeight: 700 }}>
+          CLEAR
+        </button>
+      )}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: 12, alignItems: 'center' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+          <span style={{ fontFamily: df, fontWeight: 800, fontSize: 15, lineHeight: 1, color: 'rgba(255,255,255,0.65)' }}>{yourName || 'YOU'}</span>
+          <span style={{ fontFamily: df, fontWeight: 800, fontSize: 38, lineHeight: 0.95, fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.01em' }}>
+            {hasItems ? fmtKtcValue(yourTotal) : '—'}
+          </span>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+          <svg width="160" height="104" viewBox="0 0 180 110" style={{ overflow: 'visible' }}>
+            <path d="M 16 96 A 74 74 0 0 1 164 96" fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth="5" strokeLinecap="round"/>
+            <path d="M 16 96 A 74 74 0 0 1 164 96" fill="none" stroke="#F5B700" strokeWidth="5" strokeLinecap="round"
+              strokeDasharray={`${amberLen} ${arcLen}`}/>
+            <line x1={cx} y1={cy} x2={needleX.toFixed(2)} y2={needleY.toFixed(2)} stroke="white" strokeWidth="2.5" strokeLinecap="round"/>
+            <circle cx={cx} cy={cy} r="5" fill="#F5B700" stroke="rgba(0,0,0,0.5)" strokeWidth="2"/>
+            {verdictText && (
+              <text x={cx} y={cy - 18} textAnchor="middle" fontFamily="'Barlow Condensed', sans-serif" fontWeight="800" fontSize="18" fill={verdictFill} letterSpacing="1">
+                {verdictText}
+              </text>
+            )}
+          </svg>
+          {hasItems && gap > 0 && v !== 'fair' && (
+            <span style={{ fontFamily: df, fontSize: 9, letterSpacing: '0.1em', color: 'rgba(255,255,255,0.4)', marginTop: -4 }}>
+              {fmtKtcValue(gap)} gap · {pct}%
+            </span>
+          )}
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1, textAlign: 'right' }}>
+          <span style={{ fontFamily: df, fontWeight: 800, fontSize: 15, lineHeight: 1, color: 'rgba(255,255,255,0.65)' }}>{partnerName || 'PARTNER'}</span>
+          <span style={{ fontFamily: df, fontWeight: 800, fontSize: 38, lineHeight: 0.95, fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.01em' }}>
+            {hasItems ? fmtKtcValue(theirTotal) : '—'}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── TradePlate ─────────────────────────────────────────────────────────────────
+function TradePlate({ side, label, accentColor, items, total, onRemovePlayer, onRemovePick, onAddPlayer, onAddPick, onOpenPlayer, showBg, shelfDragRef, onDropFromShelf }) {
+  const { darkMode } = useTheme();
+  // null | 'valid' | 'invalid'
+  const [dragState, setDragState] = useState(null);
+  const isYours = side === 'yours';
+  const df = "var(--font-display, 'Barlow Condensed', sans-serif)";
+
+  const dragBg = dragState === 'valid'
+    ? 'rgba(34,197,94,0.08)'
+    : dragState === 'invalid'
+      ? 'rgba(239,68,68,0.08)'
+      : (showBg ? 'var(--color-bg-secondary)' : undefined);
+  const dragOutline = dragState === 'valid'
+    ? '2px solid #22c55e'
+    : dragState === 'invalid'
+      ? '2px solid #ef4444'
+      : undefined;
+
+  return (
+    <div
+      className="flex flex-col gap-2"
+      onDragOver={e => {
+        e.preventDefault();
+        const drag = shelfDragRef?.current;
+        if (!drag) return;
+        setDragState(drag.shelfTab === side ? 'valid' : 'invalid');
+      }}
+      onDragLeave={() => setDragState(null)}
+      onDrop={e => {
+        e.preventDefault();
+        setDragState(null);
+        const drag = shelfDragRef?.current;
+        if (!drag) return;
+        if (drag.shelfTab !== side) {
+          // Wrong side — reject silently
+          shelfDragRef.current = null;
+          return;
+        }
+        onDropFromShelf?.(drag);
+        shelfDragRef.current = null;
+      }}
+      style={{
+        padding: '12px 14px 14px',
+        borderTop: '1px solid var(--color-separator)',
+        borderRight: isYours ? '1px solid var(--color-separator)' : undefined,
+        background: dragBg,
+        minHeight: 120,
+        transition: 'background 100ms, outline 100ms',
+        outline: dragOutline,
+        outlineOffset: -2,
+      }}
+    >
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-1.5">
+          <div style={{ width: 4, height: 14, background: accentColor, flexShrink: 0, borderRadius: 2 }} />
+          <span style={{ fontFamily: df, fontWeight: 700, fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--color-label)' }}>{label}</span>
+        </div>
+      </div>
+      {items.map((item) => {
+        const palette = item.type === 'player' ? teamPalette(item.team, darkMode) : { color: null, tint: null, logoKey: '' };
+        return (
+          <TradeSideAssetRow key={item.id} item={item} palette={palette} darkMode={darkMode} onOpenPlayer={onOpenPlayer} onRemove={() => item.type === 'player' ? onRemovePlayer(item.id) : onRemovePick(item.id)} />
+        );
+      })}
+      <div className="flex gap-1.5" style={{ marginTop: items.length ? 4 : 0 }}>
+        <button onClick={onAddPlayer} className="flex-1 py-2.5 rounded-lg font-medium"
+          style={{ fontSize: 13, border: '1px dashed var(--color-separator)', color: 'var(--color-label-tertiary)', background: 'transparent', cursor: 'pointer' }}>
+          + Player
+        </button>
+        <button onClick={onAddPick ?? undefined} disabled={!onAddPick} className="flex-1 py-2.5 rounded-lg font-medium"
+          style={{ fontSize: 13, border: '1px dashed var(--color-separator)', color: 'var(--color-label-tertiary)', background: 'transparent', opacity: onAddPick ? 1 : 0.35, cursor: onAddPick ? 'pointer' : 'default' }}>
+          + Pick
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Shelf helpers ──────────────────────────────────────────────────────────────
+const SHELF_POSITIONS = ['ALL', 'QB', 'RB', 'WR', 'TE', 'K', 'IDP'];
+const IDP_POSITIONS = new Set(['DE', 'DT', 'DL', 'LB', 'ILB', 'OLB', 'CB', 'S', 'SS', 'FS', 'DB', 'EDG', 'EDGE']);
+function matchesShelfFilter(pos, posFilter) {
+  if (posFilter === 'ALL') return true;
+  if (posFilter === 'IDP') return IDP_POSITIONS.has(pos);
+  return pos === posFilter;
+}
+
+// ── RosterShelf ────────────────────────────────────────────────────────────────
+function RosterShelf({
+  myPlayers, partnerPlayers, yourTradePlayers, theirTradePlayers,
+  sleeperPlayers, playerTradeValueMap, myName, partnerName, hasPartner,
+  onAddToYours, onAddToTheirs,
+  rosterPicks, slots, myRosterId, partnerRosterId: shelfPartnerRosterId,
+  yourTradePicks, theirTradePicks, onAddPickToYours, onAddPickToTheirs,
+  shelfDragRef, partnerRosters, onPartnerChange,
+}) {
+  const [activeTab, setActiveTab] = useState('yours');
+  const [posFilter, setPosFilter] = useState('ALL');
+  const [showPicks, setShowPicks] = useState(false);
+  const df = "var(--font-display, 'Barlow Condensed', sans-serif)";
+
+  const roster = activeTab === 'yours' ? myPlayers : partnerPlayers;
+  const inTradePlayers = activeTab === 'yours' ? yourTradePlayers : theirTradePlayers;
+  const inTradePickKeys = new Set(
+    (activeTab === 'yours' ? yourTradePicks : theirTradePicks).map(p => p.key)
+  );
+
+  const filteredPlayers = (roster ?? [])
+    .filter(id => {
+      const p = sleeperPlayers?.[id];
+      return p && matchesShelfFilter(p.position, posFilter);
+    })
+    .sort((a, b) => (playerTradeValueMap?.get(b) ?? 0) - (playerTradeValueMap?.get(a) ?? 0));
+
+  const rosterId = activeTab === 'yours' ? myRosterId : shelfPartnerRosterId;
+  const shelfPicks = (rosterPicks && slots && rosterId)
+    ? (getPicksForRoster(rosterId, rosterPicks, slots) ?? [])
+    : [];
+
+  const handleDragStart = (type, id, pickData) => {
+    if (shelfDragRef) shelfDragRef.current = { type, id, shelfTab: activeTab, pickData };
+  };
+
+  const tabButtonStyle = isActive => ({
+    flex: 1,
+    padding: '9px 4px',
+    background: 'transparent',
+    border: 0,
+    borderBottom: `2.5px solid ${isActive ? 'var(--color-signature)' : 'transparent'}`,
+    fontFamily: df,
+    fontWeight: 700,
+    fontSize: 12,
+    letterSpacing: '0.04em',
+    color: isActive ? 'var(--color-label)' : 'var(--color-label-secondary)',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  });
+
+  return (
+    <div style={{ width: 290, flexShrink: 0, borderRight: '1px solid var(--color-separator)', background: 'var(--color-bg-secondary)', display: 'flex', flexDirection: 'column', position: 'sticky', top: 60, maxHeight: 'calc(100vh - 80px)', alignSelf: 'flex-start', overflowY: 'auto' }}>
+      {/* YOU / PARTNER tabs */}
+      <div style={{ display: 'flex', borderBottom: '1px solid var(--color-separator)', position: 'sticky', top: 0, background: 'var(--color-bg-secondary)', zIndex: 2 }}>
+        <button onClick={() => setActiveTab('yours')}
+          style={{ ...tabButtonStyle(activeTab === 'yours'), cursor: 'pointer' }}>
+          {myName || 'YOU'}
+        </button>
+        <ShelfPartnerTab
+          partnerRosters={partnerRosters}
+          value={shelfPartnerRosterId}
+          onChange={onPartnerChange}
+          label={partnerName || 'PARTNER'}
+          active={activeTab === 'theirs'}
+          disabled={false}
+          onActivate={() => setActiveTab('theirs')}
+          buttonStyle={tabButtonStyle(activeTab === 'theirs')}
+        />
+      </div>
+      {/* Filter chips */}
+      <div style={{ display: 'flex', gap: 4, padding: '7px 10px', flexWrap: 'wrap', position: 'sticky', top: 38, background: 'var(--color-bg-secondary)', zIndex: 1, borderBottom: '1px solid var(--color-separator)' }}>
+        {SHELF_POSITIONS.map(pos => (
+          <button key={pos} onClick={() => { setShowPicks(false); setPosFilter(pos); }}
+            style={{ padding: '3px 8px', borderRadius: 100, border: '1px solid var(--color-separator)', background: !showPicks && posFilter === pos ? 'var(--color-signature)' : 'transparent', color: !showPicks && posFilter === pos ? 'var(--color-signature-fg)' : 'var(--color-label-secondary)', fontWeight: 600, fontSize: 10, cursor: 'pointer', letterSpacing: '0.04em' }}>
+            {pos}
+          </button>
+        ))}
+        <button onClick={() => setShowPicks(true)}
+          style={{ padding: '3px 8px', borderRadius: 100, border: '1px solid var(--color-separator)', background: showPicks ? 'var(--color-signature)' : 'transparent', color: showPicks ? 'var(--color-signature-fg)' : 'var(--color-label-secondary)', fontWeight: 600, fontSize: 10, cursor: 'pointer', letterSpacing: '0.04em' }}>
+          PICKS
+        </button>
+      </div>
+      {/* List */}
+      <div style={{ flex: 1, padding: '4px 8px 8px', display: 'flex', flexDirection: 'column', gap: 3 }}>
+        {showPicks ? (
+          shelfPicks.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '14px 0', fontSize: 12, color: 'var(--color-label-quaternary)' }}>
+              {!hasPartner && activeTab === 'theirs' ? 'Select a partner first' : 'No picks'}
+            </div>
+          ) : shelfPicks.map(pick => {
+            const inTrade = inTradePickKeys.has(pick.key);
+            const label = `${pick.year ?? ''} · Rd ${pick.round}`;
+            return (
+              <button key={pick.key}
+                draggable={!inTrade}
+                onDragStart={() => handleDragStart('pick', pick.key, pick)}
+                onClick={() => !inTrade && (activeTab === 'yours' ? onAddPickToYours(pick) : onAddPickToTheirs(pick))}
+                disabled={inTrade}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 7px', borderRadius: 7, border: inTrade ? '1px dashed var(--color-separator)' : '1px solid var(--color-separator)', background: 'var(--color-bg)', opacity: inTrade ? 0.35 : 1, cursor: inTrade ? 'default' : 'grab', textAlign: 'left', width: '100%' }}>
+                <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 3, background: 'rgba(245,183,0,0.12)', color: '#F5B700', flexShrink: 0, letterSpacing: '0.04em' }}>PICK</span>
+                <span style={{ flex: 1, minWidth: 0, fontSize: 12, fontWeight: 600, color: 'var(--color-label)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+              </button>
+            );
+          })
+        ) : filteredPlayers.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '14px 0', fontSize: 12, color: 'var(--color-label-quaternary)' }}>
+            {!hasPartner && activeTab === 'theirs' ? 'Select a partner first' : 'No players'}
+          </div>
+        ) : filteredPlayers.map(id => {
+          const p = sleeperPlayers?.[id];
+          if (!p) return null;
+          const val = playerTradeValueMap?.get(id);
+          const isInTrade = inTradePlayers.includes(id);
+          const pos = p.position;
+          const posColor = POSITION_COLORS[pos];
+          return (
+            <button key={id}
+              draggable={!isInTrade}
+              onDragStart={() => handleDragStart('player', id, null)}
+              onClick={() => !isInTrade && (activeTab === 'yours' ? onAddToYours(id) : onAddToTheirs(id))}
+              disabled={isInTrade}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 7px', borderRadius: 7, border: isInTrade ? '1px dashed var(--color-separator)' : '1px solid var(--color-separator)', background: 'var(--color-bg)', opacity: isInTrade ? 0.35 : 1, cursor: isInTrade ? 'default' : 'grab', textAlign: 'left', width: '100%' }}>
+              <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 3, background: posColor ? `${posColor}22` : 'var(--color-fill)', color: posColor ?? 'var(--color-label-tertiary)', flexShrink: 0, letterSpacing: '0.04em' }}>{pos}</span>
+              <span style={{ flex: 1, minWidth: 0, fontSize: 12, fontWeight: 600, color: 'var(--color-label)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {p.first_name ? `${p.first_name[0]}. ${p.last_name}` : p.full_name}
+              </span>
+              {val != null && (
+                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-label-secondary)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{fmtKtcValue(val)}</span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── MobileRosterShelf ──────────────────────────────────────────────────────────
+function MobileRosterShelf({
+  myPlayers, partnerPlayers, yourTradePlayers, theirTradePlayers,
+  sleeperPlayers, playerTradeValueMap, myName, partnerName, hasPartner,
+  onAddToYours, onAddToTheirs,
+  rosterPicks, slots, myRosterId, partnerRosterId: shelfPartnerRosterId,
+  yourTradePicks, theirTradePicks, onAddPickToYours, onAddPickToTheirs,
+  partnerRosters, onPartnerChange,
+}) {
+  const [activeTab, setActiveTab] = useState('yours');
+  const [posFilter, setPosFilter] = useState('ALL');
+  const [showPicks, setShowPicks] = useState(false);
+  const df = "var(--font-display, 'Barlow Condensed', sans-serif)";
+
+  const roster = activeTab === 'yours' ? myPlayers : partnerPlayers;
+  const inTradePlayers = activeTab === 'yours' ? yourTradePlayers : theirTradePlayers;
+  const inTradePickKeys = new Set(
+    (activeTab === 'yours' ? yourTradePicks : theirTradePicks).map(p => p.key)
+  );
+
+  const filteredPlayers = (roster ?? [])
+    .filter(id => {
+      const p = sleeperPlayers?.[id];
+      return p && matchesShelfFilter(p.position, posFilter);
+    })
+    .sort((a, b) => (playerTradeValueMap?.get(b) ?? 0) - (playerTradeValueMap?.get(a) ?? 0));
+
+  const rosterId = activeTab === 'yours' ? myRosterId : shelfPartnerRosterId;
+  const shelfPicks = (rosterPicks && slots && rosterId)
+    ? (getPicksForRoster(rosterId, rosterPicks, slots) ?? [])
+    : [];
+
+  const tabButtonStyle = isActive => ({
+    flex: 1,
+    padding: '7px 10px',
+    borderRadius: 10,
+    background: isActive ? 'var(--color-signature)' : 'var(--color-fill)',
+    color: isActive ? 'var(--color-signature-fg)' : 'var(--color-label-tertiary)',
+    border: '1px solid var(--color-separator)',
+    fontFamily: df,
+    fontWeight: 700,
+    fontSize: 11,
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase',
+    minHeight: 36,
+  });
+
+  return (
+    <div style={{ borderTop: '1.5px solid var(--color-separator)', background: 'var(--color-bg-secondary)', marginTop: 8 }}>
+      {/* Team tabs */}
+      <div style={{ padding: '10px 14px 8px', display: 'flex', alignItems: 'center', gap: 8, borderBottom: '1px solid var(--color-separator)' }}>
+        <button onClick={() => setActiveTab('yours')}
+          style={{ ...tabButtonStyle(activeTab === 'yours'), cursor: 'pointer' }}>
+          {myName || 'YOU'}
+        </button>
+        <ShelfPartnerTab
+          partnerRosters={partnerRosters}
+          value={shelfPartnerRosterId}
+          onChange={onPartnerChange}
+          label={partnerName || 'PARTNER'}
+          active={activeTab === 'theirs'}
+          disabled={false}
+          onActivate={() => setActiveTab('theirs')}
+          buttonStyle={tabButtonStyle(activeTab === 'theirs')}
+        />
+      </div>
+      {/* Filter chips */}
+      <div style={{ display: 'flex', gap: 6, padding: '8px 14px', overflowX: 'auto', scrollbarWidth: 'none', borderBottom: '1px solid var(--color-separator)' }}>
+        {SHELF_POSITIONS.map(pos => (
+          <button key={pos} onClick={() => { setShowPicks(false); setPosFilter(pos); }}
+            style={{ padding: '5px 12px', borderRadius: 100, flexShrink: 0, border: '1px solid var(--color-separator)', background: !showPicks && posFilter === pos ? 'var(--color-signature)' : 'var(--color-fill)', color: !showPicks && posFilter === pos ? 'var(--color-signature-fg)' : 'var(--color-label-secondary)', fontWeight: 600, fontSize: 12, cursor: 'pointer', letterSpacing: '0.04em', minHeight: 32 }}>
+            {pos}
+          </button>
+        ))}
+        <button onClick={() => setShowPicks(true)}
+          style={{ padding: '5px 12px', borderRadius: 100, flexShrink: 0, border: '1px solid var(--color-separator)', background: showPicks ? 'var(--color-signature)' : 'var(--color-fill)', color: showPicks ? 'var(--color-signature-fg)' : 'var(--color-label-secondary)', fontWeight: 600, fontSize: 12, cursor: 'pointer', letterSpacing: '0.04em', minHeight: 32 }}>
+          PICKS
+        </button>
+      </div>
+      {/* Vertical player/pick list */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 3, padding: '6px 14px 12px', maxHeight: 280, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+        {showPicks ? (
+          shelfPicks.length === 0 ? (
+            <div style={{ padding: '14px 0', fontSize: 13, color: 'var(--color-label-quaternary)', textAlign: 'center' }}>
+              {!hasPartner && activeTab === 'theirs' ? 'Select a partner first' : 'No picks'}
+            </div>
+          ) : shelfPicks.map(pick => {
+            const inTrade = inTradePickKeys.has(pick.key);
+            const label = `${pick.year ?? ''} · Rd ${pick.round}`;
+            return (
+              <button key={pick.key}
+                onClick={() => !inTrade && (activeTab === 'yours' ? onAddPickToYours(pick) : onAddPickToTheirs(pick))}
+                disabled={inTrade}
+                style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 10px', borderRadius: 10, border: inTrade ? '1px dashed var(--color-separator)' : '1px solid var(--color-separator)', background: 'var(--color-bg)', opacity: inTrade ? 0.4 : 1, cursor: inTrade ? 'default' : 'pointer', textAlign: 'left', width: '100%', minHeight: 44 }}>
+                <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: 'rgba(245,183,0,0.12)', color: '#F5B700', flexShrink: 0, fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.06em' }}>PICK</span>
+                <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: 'var(--color-label)' }}>{label}</span>
+              </button>
+            );
+          })
+        ) : filteredPlayers.length === 0 ? (
+          <div style={{ padding: '14px 0', fontSize: 13, color: 'var(--color-label-quaternary)', textAlign: 'center' }}>
+            {!hasPartner && activeTab === 'theirs' ? 'Select a partner first' : 'No players'}
+          </div>
+        ) : filteredPlayers.map(id => {
+          const p = sleeperPlayers?.[id];
+          if (!p) return null;
+          const val = playerTradeValueMap?.get(id);
+          const isInTrade = inTradePlayers.includes(id);
+          const pos = p.position;
+          const posColor = POSITION_COLORS[pos];
+          return (
+            <button key={id}
+              onClick={() => !isInTrade && (activeTab === 'yours' ? onAddToYours(id) : onAddToTheirs(id))}
+              disabled={isInTrade}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 10px', borderRadius: 10, border: isInTrade ? '1px dashed var(--color-separator)' : '1px solid var(--color-separator)', background: 'var(--color-bg)', opacity: isInTrade ? 0.4 : 1, cursor: isInTrade ? 'default' : 'pointer', textAlign: 'left', width: '100%', minHeight: 44 }}>
+              <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: posColor ? `${posColor}22` : 'var(--color-fill)', color: posColor ?? 'var(--color-label-tertiary)', flexShrink: 0, fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.06em' }}>{pos}</span>
+              <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 600, color: 'var(--color-label)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {p.first_name ? `${p.first_name[0]}. ${p.last_name}` : p.full_name}
+              </span>
+              {val != null && (
+                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-label-secondary)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{fmtKtcValue(val)}</span>
+              )}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -2045,7 +2597,6 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
   const { rosters } = useSleeperLeague();
 
   const teamColor = primaryPalette?.color ?? null;
-  const accentColor = primaryPalette?.accentColor ?? teamColor ?? 'white';
   const cardBg = teamColor
     ? `linear-gradient(160deg, ${teamColor}dd 0%, ${teamColor}88 30%, ${teamColor}22 60%, rgba(0,0,0,0.82) 100%)`
     : 'var(--color-fill)';
@@ -2068,6 +2619,19 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
   const playerImageSrc = primary
     ? `https://sleepercdn.com/content/nfl/players/thumb/${primary.id}.jpg`
     : null;
+  const isInteractive = !!(primary && onClick);
+  // Use the team's vivid primary color for the glow, not the contrast-adjusted accent.
+  const interactiveGlowColor = teamColor ?? (darkMode ? '#5AADFF' : '#1A6EFF');
+  const { glowHandlers, borderOverlay, glowShadow } = useCardGlow({
+    enabled: isInteractive,
+    color: interactiveGlowColor,
+    cardColor: teamColor,
+    darkMode,
+  });
+  const baseShadow = darkMode ? '0 8px 20px rgba(0,0,0,0.12)' : '0 8px 18px rgba(12,15,20,0.10)';
+  const cardBoxShadow = glowShadow
+    ? `${glowShadow}, ${baseShadow}`
+    : baseShadow;
 
   // ── Pick-only card ──────────────────────────────────────────────────────
   if (!primary && primaryPick) {
@@ -2168,7 +2732,7 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
             background: pt.bg,
             border: `2px solid ${pt.border}`,
             borderLeft: `4px solid ${pt.accent}`,
-            minHeight: forcedHeight ? `${forcedHeight}px` : undefined,
+            minHeight: !compactTradeCard && forcedHeight ? `${forcedHeight}px` : undefined,
           }}
         >
         <div className="relative w-full overflow-hidden" style={{ flexShrink: 0, height: compactTradeCard ? '48%' : '56%' }}>
@@ -2233,7 +2797,7 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
         </div>
 
         <div
-          className="relative px-2 lg:px-3 py-1 lg:py-1.5 text-center"
+          className="relative px-2 lg:px-3 py-1 lg:py-1.5 text-center shrink-0"
           style={{
             background: pt.bannerBg,
             borderTop: `1px solid ${pt.bannerBorder}`,
@@ -2252,8 +2816,8 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
           </div>
         </div>
 
-        <div className="flex flex-col flex-1 px-2 pb-2 min-h-0 items-center" style={{ background: pt.glassBg }}>
-          <div className="flex items-center justify-center py-1 lg:py-1.5">
+        <div className="flex flex-col flex-1 px-2 pb-2 min-h-0 items-center overflow-hidden" style={{ background: pt.glassBg }}>
+          <div className="flex items-center justify-center py-1 lg:py-1.5 shrink-0">
             <span
               className="text-sm lg:text-[18px] font-bold tabular-nums leading-tight"
               style={{ color: 'var(--color-label)', fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.02em' }}
@@ -2263,7 +2827,7 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
           </div>
 
           {showPickMeta && (
-          <div className={compactTradeCard ? 'hidden' : 'hidden min-[420px]:flex gap-1 w-full lg:hidden'}>
+          <div className={compactTradeCard ? 'hidden' : 'hidden min-[420px]:flex gap-1 w-full lg:hidden min-h-0 overflow-hidden'}>
             <div className="flex-1 rounded-lg p-1.5 flex flex-col gap-px" style={{ background: 'rgba(0,0,0,0.22)' }}>
               <span className="text-[7px] font-bold uppercase tracking-wide mb-0.5" style={{ color: pt.accentMuted }}>{pickMetaLabel}</span>
               <span className="text-[9px] font-semibold tabular-nums" style={{ color: pt.labelText }}>
@@ -2274,7 +2838,7 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
           )}
 
           {showPickMeta && (
-          <div className="hidden lg:flex gap-1.5 w-full">
+          <div className="hidden lg:flex gap-1.5 w-full min-h-0 overflow-hidden">
             <div className="flex-1 rounded-lg p-1.5 flex flex-col gap-px" style={{ background: 'rgba(0,0,0,0.22)' }}>
               <span className="text-[9px] font-bold uppercase tracking-wide mb-0.5" style={{ color: pt.accentMuted }}>{pickMetaLabel}</span>
               <span className="text-[11px] font-semibold tabular-nums" style={{ color: pt.labelText }}>
@@ -2288,21 +2852,6 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
     );
   }
 
-  const isInteractive = !!(primary && onClick);
-  // Use the team's vivid primary color for the glow, not accentColor
-  // (accentColor is contrast-adjusted for text and is often near-white in light mode)
-  const interactiveGlowColor = teamColor ?? (darkMode ? '#5AADFF' : '#1A6EFF');
-  const { isGlowing, glowHandlers, borderOverlay, glowShadow } = useCardGlow({
-    enabled: isInteractive,
-    color: interactiveGlowColor,
-    cardColor: teamColor,
-    darkMode,
-  });
-  const baseShadow = darkMode ? '0 8px 20px rgba(0,0,0,0.12)' : '0 8px 18px rgba(12,15,20,0.10)';
-  const cardBoxShadow = glowShadow
-    ? `${glowShadow}, ${baseShadow}`
-    : baseShadow;
-
   return (
     <div
       ref={cardRef}
@@ -2311,7 +2860,7 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
         background: cardBg,
         border: `2px solid ${cardBorder}`,
         borderLeft: cardHighlight,
-        minHeight: forcedHeight ? `${forcedHeight}px` : undefined,
+        minHeight: !compactTradeCard && forcedHeight ? `${forcedHeight}px` : undefined,
         cursor: isInteractive ? 'pointer' : undefined,
         boxShadow: cardBoxShadow,
         transition: 'box-shadow 200ms cubic-bezier(0.32, 0.72, 0, 1)',
@@ -2405,7 +2954,7 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
       </div>
 
       {/* ── Name banner ──────────────────────────────────────── */}
-      <div className="relative px-2 lg:px-3 py-1 lg:py-1.5 text-center"
+      <div className="relative px-2 lg:px-3 py-1 lg:py-1.5 text-center shrink-0"
         style={{
           background: `linear-gradient(90deg, transparent 0%, rgba(0,0,0,0.55) 15%, rgba(0,0,0,0.6) 50%, rgba(0,0,0,0.55) 85%, transparent 100%)`,
           borderTop: '1px solid rgba(255,255,255,0.12)',
@@ -2424,12 +2973,12 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
       </div>
 
       {/* ── Card details ─────────────────────────────────────── */}
-      <div className="flex flex-col flex-1 px-2 pb-2 min-h-0 items-center"
+      <div className="flex flex-col flex-1 px-2 pb-2 min-h-0 items-center overflow-hidden"
         style={{ background: 'rgba(0,0,0,0.25)' }}>
 
         {/* ── Featured trade value ─── */}
         {primary?.value != null && (
-          <div className="flex items-center justify-center py-1 lg:py-1.5">
+          <div className="flex items-center justify-center py-1 lg:py-1.5 shrink-0">
             <span className="text-sm lg:text-[18px] font-bold tabular-nums leading-tight"
               style={{ color: 'var(--color-label)' }}>
               {fmtKtcValue(primary.value)}
@@ -2440,7 +2989,7 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
         {primary ? (
           <>
             {/* ── MOBILE stat boxes (lg:hidden) ─── */}
-            <div className="flex flex-1 min-h-0 gap-1 w-full lg:hidden">
+            <div className="flex flex-1 min-h-0 gap-1 w-full lg:hidden overflow-hidden">
               <div className="flex-1 min-h-0 rounded-lg px-1.5 py-1 flex flex-col items-center justify-center" style={{ background: 'rgba(0,0,0,0.35)' }}>
                 {primary?.ppg > 0 ? (
                   <>
@@ -2464,7 +3013,7 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
             </div>
 
             {/* ── DESKTOP stat boxes (hidden lg:flex) ─── */}
-            <div className="hidden lg:flex gap-1.5 w-full">
+            <div className="hidden lg:flex flex-1 min-h-0 gap-1.5 w-full overflow-hidden">
               {/* Left: Game Stats */}
               <div className="flex-1 rounded-lg p-2 flex flex-col gap-0.5" style={{ background: 'rgba(0,0,0,0.35)' }}>
                 <span
@@ -2566,10 +3115,24 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
   );
 }
 
-const TRADE_PROPOSAL_CARD_SLOT_STYLE = {};
+const TRADE_PROPOSAL_CARD_GAP_PX = 10;
+const TRADE_PROPOSAL_VISIBLE_CARD_LIMIT = 3;
 
-function getProposalCardSlotStyle() {
-  return TRADE_PROPOSAL_CARD_SLOT_STYLE;
+function getProposalCardSlotStyle(cardCount, isWideTradeProposalLayout) {
+  if (!isWideTradeProposalLayout) {
+    return {
+      width: 'min(76vw, 30vh, 14rem)',
+      maxWidth: '100%',
+      flex: '0 0 auto',
+    };
+  }
+
+  const visibleCards = Math.min(Math.max(cardCount || 1, 1), TRADE_PROPOSAL_VISIBLE_CARD_LIMIT);
+  return {
+    flex: `1 1 calc((100% - ${(visibleCards - 1) * TRADE_PROPOSAL_CARD_GAP_PX}px) / ${visibleCards})`,
+    minWidth: 0,
+    maxWidth: '15rem',
+  };
 }
 
 function getTradeProposalListTransitionStyle({ isDimmed, isStale }) {
@@ -2841,7 +3404,6 @@ const TradeProposalItem = memo(function TradeProposalItem({
     outgoingAssetsForCallout,
     incomingMobilePickCards,
     outgoingMobilePickCards,
-    cardCount,
   } = useMemo(() => {
     const summary = getProposalAssetSummary(proposal);
     const incomingMixedPackage = summary.incoming.playerCount > 0 && summary.incoming.pickCount > 0;
@@ -2864,7 +3426,6 @@ const TradeProposalItem = memo(function TradeProposalItem({
       outgoingAssetsForCallout: outgoingCalloutAssets,
       incomingMobilePickCards: incomingCalloutAssets,
       outgoingMobilePickCards: outgoingCalloutAssets,
-      cardCount: incomingCardAssets.length + outgoingCardAssets.length,
     };
   }, [proposal, renderAllAssetsAsCards]);
   const isWideTradeProposalLayout = useMediaQuery('(min-width: 1536px)');
@@ -2872,9 +3433,11 @@ const TradeProposalItem = memo(function TradeProposalItem({
   const {
     containerRef: proposalCardsContainerRef,
     registerCardRef,
-    equalizedCardHeight,
-  } = useEqualizedCardHeight(isWideTradeProposalLayout && cardCount > 1, proposalCardMeasureKey);
-  const sharedCardSlotStyle = getProposalCardSlotStyle();
+  } = useEqualizedCardHeight(false, proposalCardMeasureKey);
+  const outgoingCardSlotStyle = getProposalCardSlotStyle(outgoingCardAssets.length, isWideTradeProposalLayout);
+  const incomingCardSlotStyle = getProposalCardSlotStyle(incomingCardAssets.length, isWideTradeProposalLayout);
+  const outgoingMobilePickCardSlotStyle = getProposalCardSlotStyle(outgoingMobilePickCards.length, false);
+  const incomingMobilePickCardSlotStyle = getProposalCardSlotStyle(incomingMobilePickCards.length, false);
   const insightsReady = useDeferredContentReady(deferInsights);
   const [isHovered, setIsHovered] = useState(false);
   const proposalShadow = isHovered
@@ -2917,8 +3480,8 @@ const TradeProposalItem = memo(function TradeProposalItem({
             {outgoingCardAssets.map((asset, index) => (
               <div
                 key={asset.id}
-                className="w-[min(76vw,30vh,14rem)] max-w-full self-center 2xl:self-stretch 2xl:w-[clamp(13rem,14vw,15rem)] flex-none flex"
-                style={{ ...sharedCardSlotStyle, minHeight: equalizedCardHeight ? `${equalizedCardHeight}px` : undefined }}
+                className="max-w-full self-center 2xl:self-stretch flex"
+                style={outgoingCardSlotStyle}
               >
                 <ProposalPlayerCard
                   cardRef={(node) => registerCardRef(`give:${asset.id}:${index}`, node)}
@@ -2928,7 +3491,6 @@ const TradeProposalItem = memo(function TradeProposalItem({
                   side="give"
                   showSideBadge={false}
                   seasonStats={seasonStats}
-                  forcedHeight={equalizedCardHeight}
                   compactTradeCard
                   onClick={asset.type === 'player' ? onOpenPlayer : null}
                 />
@@ -2940,8 +3502,8 @@ const TradeProposalItem = memo(function TradeProposalItem({
               {outgoingMobilePickCards.map((asset, index) => (
                 <div
                   key={`give-mobile-pick:${asset.id}:${index}`}
-                  className="w-[min(76vw,30vh,14rem)] max-w-full self-center flex-none flex"
-                  style={{ ...sharedCardSlotStyle, minHeight: equalizedCardHeight ? `${equalizedCardHeight}px` : undefined }}
+                  className="max-w-full self-center flex"
+                  style={outgoingMobilePickCardSlotStyle}
                 >
                   <ProposalPlayerCard
                     cardRef={(node) => registerCardRef(`give-mobile-pick:${asset.id}:${index}`, node)}
@@ -2951,7 +3513,6 @@ const TradeProposalItem = memo(function TradeProposalItem({
                     side="give"
                     showSideBadge={false}
                     seasonStats={seasonStats}
-                    forcedHeight={equalizedCardHeight}
                     compactTradeCard
                   />
                 </div>
@@ -2972,8 +3533,8 @@ const TradeProposalItem = memo(function TradeProposalItem({
             {incomingCardAssets.map((asset, index) => (
               <div
                 key={asset.id}
-                className="w-[min(76vw,30vh,14rem)] max-w-full self-center 2xl:self-stretch 2xl:w-[clamp(13rem,14vw,15rem)] flex-none flex"
-                style={{ ...sharedCardSlotStyle, minHeight: equalizedCardHeight ? `${equalizedCardHeight}px` : undefined }}
+                className="max-w-full self-center 2xl:self-stretch flex"
+                style={incomingCardSlotStyle}
               >
                 <ProposalPlayerCard
                   cardRef={(node) => registerCardRef(`get:${asset.id}:${index}`, node)}
@@ -2983,7 +3544,6 @@ const TradeProposalItem = memo(function TradeProposalItem({
                   side="get"
                   showSideBadge={false}
                   seasonStats={seasonStats}
-                  forcedHeight={equalizedCardHeight}
                   compactTradeCard
                   onClick={asset.type === 'player' ? onOpenPlayer : null}
                 />
@@ -2995,8 +3555,8 @@ const TradeProposalItem = memo(function TradeProposalItem({
               {incomingMobilePickCards.map((asset, index) => (
                 <div
                   key={`get-mobile-pick:${asset.id}:${index}`}
-                  className="w-[min(76vw,30vh,14rem)] max-w-full self-center flex-none flex"
-                  style={{ ...sharedCardSlotStyle, minHeight: equalizedCardHeight ? `${equalizedCardHeight}px` : undefined }}
+                  className="max-w-full self-center flex"
+                  style={incomingMobilePickCardSlotStyle}
                 >
                   <ProposalPlayerCard
                     cardRef={(node) => registerCardRef(`get-mobile-pick:${asset.id}:${index}`, node)}
@@ -3006,7 +3566,6 @@ const TradeProposalItem = memo(function TradeProposalItem({
                     side="get"
                     showSideBadge={false}
                     seasonStats={seasonStats}
-                    forcedHeight={equalizedCardHeight}
                     compactTradeCard
                   />
                 </div>
@@ -4306,71 +4865,6 @@ const UpgradeFinderPage = memo(function UpgradeFinderPage({
 });
 
 UpgradeFinderPage.displayName = 'UpgradeFinderPage';
-
-// ── ValueBar ──────────────────────────────────────────────────────────────────
-
-function ValueBar({ yourTotal, theirTotal, verdict: { verdict, gap, pct } }) {
-  const max = Math.max(yourTotal, theirTotal, 1);
-  const yourFrac = yourTotal / max;
-  const theirFrac = theirTotal / max;
-
-  const verdictMeta = {
-    fair:        { text: 'Fair Trade',   color: '#22c55e' },
-    favors_you:  { text: 'Favors You',   color: 'var(--color-signature)' },
-    favors_them: { text: 'Favors Them',  color: '#ef4444' },
-  };
-  const { text, color } = verdictMeta[verdict] ?? verdictMeta.fair;
-
-  return (
-    <div className="flex flex-col gap-2 rounded-xl px-3 py-3" style={{ background: 'var(--color-fill)' }}>
-      {/* Side totals */}
-      <div className="flex items-end justify-between">
-        <div className="flex flex-col gap-0.5">
-          <span className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: 'var(--color-label-quaternary)' }}>
-            Your Side
-          </span>
-          <span className="text-lg font-bold tabular-nums leading-none"
-            style={{ color: verdict === 'favors_them' ? 'var(--color-label)' : 'var(--color-accent)' }}>
-            {fmtKtcValue(yourTotal)}
-          </span>
-        </div>
-        <div className="text-center flex flex-col items-center gap-0.5">
-          {verdict !== 'fair' && gap > 0 && (
-            <>
-              <span className="text-sm font-bold tabular-nums" style={{ color }}>{fmtKtcValue(gap)}</span>
-              <span className="text-xs font-semibold" style={{ color }}>{pct}% gap</span>
-            </>
-          )}
-        </div>
-        <div className="flex flex-col items-end gap-0.5">
-          <span className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: 'var(--color-label-quaternary)' }}>
-            Their Side
-          </span>
-          <span className="text-lg font-bold tabular-nums leading-none"
-            style={{ color: verdict === 'favors_you' ? 'var(--color-label)' : 'var(--color-accent)' }}>
-            {fmtKtcValue(theirTotal)}
-          </span>
-        </div>
-      </div>
-
-      {/* Bar */}
-      <div className="flex gap-0.5 h-2.5 rounded-full overflow-hidden" style={{ background: 'var(--color-fill-secondary)' }}>
-        <div className="h-full rounded-l-full transition-all duration-500"
-          style={{ width: `${yourFrac * 100}%`, background: verdict === 'favors_them' ? 'var(--color-label-tertiary)' : 'var(--color-accent)' }} />
-        <div className="h-full rounded-r-full transition-all duration-500"
-          style={{ width: `${theirFrac * 100}%`, background: verdict === 'favors_you' ? 'var(--color-label-tertiary)' : 'var(--color-accent)' }} />
-      </div>
-
-      {/* Verdict label */}
-      <div className="text-center">
-        <span className="text-sm font-bold" style={{ color }}>{text}</span>
-        {verdict === 'fair' && (
-          <span className="text-xs ml-2" style={{ color: 'var(--color-label-quaternary)' }}>straight swap is reasonable</span>
-        )}
-      </div>
-    </div>
-  );
-}
 
 // ── TrendRow ──────────────────────────────────────────────────────────────────
 

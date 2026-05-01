@@ -18,14 +18,16 @@ export default function Sidebar({
   onInstall,
   favoriteTeam,
   onMyTeam,
+  collapsed,
+  onToggleCollapse,
 }) {
   const progress = totalTeams > 0 ? (predictionCount / totalTeams) * 100 : 0;
   const { isConnected, disconnect } = useSleeperLeague();
 
   return (
     <aside className="app-sidebar">
-      {/* Brand */}
-      <div className="sidebar-brand">
+      {/* Brand — hidden when collapsed */}
+      <div className="sidebar-brand" style={{ paddingRight: 44, position: 'relative' }}>
         <div
           className="font-display font-bold leading-none"
           style={{ fontSize: '28px', letterSpacing: '0.08em' }}
@@ -53,6 +55,25 @@ export default function Sidebar({
             </button>
           )}
         </div>
+        {/* Collapse button — inside brand area when expanded */}
+        <button
+          onClick={onToggleCollapse}
+          title="Collapse sidebar"
+          style={{
+            position: 'absolute', top: 14, right: 12,
+            width: 28, height: 28, borderRadius: 8,
+            border: '1px solid var(--color-separator)',
+            background: 'var(--color-fill)',
+            color: 'var(--color-label-secondary)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: 'pointer',
+          }}
+          aria-label="Collapse sidebar"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="15 18 9 12 15 6"/>
+          </svg>
+        </button>
       </div>
 
       {/* Progress bar — only visible on Predictions tab */}
@@ -90,23 +111,46 @@ export default function Sidebar({
 
       {/* Main navigation */}
       <nav className="sidebar-nav" aria-label="Main navigation">
+        {/* Expand button — only visible when collapsed, sits at top of icon rail */}
+        {collapsed && (
+          <button
+            onClick={onToggleCollapse}
+            title="Expand sidebar"
+            style={{
+              width: 44, height: 44, borderRadius: 12,
+              border: '1px solid var(--color-separator)',
+              background: 'var(--color-fill)',
+              color: 'var(--color-label-secondary)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer', marginBottom: 4,
+            }}
+            aria-label="Expand sidebar"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="9 18 15 12 9 6"/>
+            </svg>
+          </button>
+        )}
         <SidebarNavItem
           active={activeTab === 'companion'}
           onClick={() => onTabChange('companion')}
           icon={<CompanionIcon />}
           label="Companion"
+          collapsed={collapsed}
         />
         <SidebarNavItem
           active={activeTab === 'statistics'}
           onClick={() => onTabChange('statistics')}
           icon={<PlayersIcon />}
           label="Statistics"
+          collapsed={collapsed}
         />
         <SidebarNavItem
           active={activeTab === 'trade'}
           onClick={() => onTabChange('trade')}
           icon={<TradeIcon />}
           label="Trade"
+          collapsed={collapsed}
         />
         <SidebarNavItem
           active={activeTab === 'scout'}
@@ -114,13 +158,44 @@ export default function Sidebar({
           icon={<ScoutIcon />}
           label="Scout"
           alpha
+          collapsed={collapsed}
         />
         <SidebarNavItem
           active={activeTab === 'predictions'}
           onClick={() => onTabChange('predictions')}
           icon={<SeasonIcon />}
           label="Predictions"
+          collapsed={collapsed}
         />
+        {collapsed && (
+          <button
+            onClick={onToggleDarkMode}
+            title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+            aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+            style={{
+              width: 44, height: 44, borderRadius: 12,
+              border: '1px solid var(--color-separator)',
+              background: 'var(--color-fill)',
+              color: 'var(--color-label-secondary)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer', marginTop: 4,
+            }}
+          >
+            {darkMode ? (
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="5" />
+                <line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" />
+                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+                <line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" />
+                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+              </svg>
+            ) : (
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+              </svg>
+            )}
+          </button>
+        )}
       </nav>
 
       <div className="sidebar-divider" />
@@ -216,19 +291,22 @@ export default function Sidebar({
   );
 }
 
-function SidebarNavItem({ active, onClick, icon, label, beta, alpha }) {
+function SidebarNavItem({ active, onClick, icon, label, beta, alpha, collapsed }) {
   return (
     <button
       onClick={onClick}
       className={`sidebar-nav-item${active ? ' active' : ''}`}
       aria-current={active ? 'page' : undefined}
+      title={collapsed ? label : undefined}
     >
       <span className="sidebar-nav-icon">{icon}</span>
-      <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-        {label}
-        {beta && <BetaBadge />}
-        {alpha && <AlphaBadge />}
-      </span>
+      {!collapsed && (
+        <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          {label}
+          {beta && <BetaBadge />}
+          {alpha && <AlphaBadge />}
+        </span>
+      )}
     </button>
   );
 }

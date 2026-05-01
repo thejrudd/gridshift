@@ -45,6 +45,14 @@ Tabled Scout enhancements that build on the post-draft rookie data foundation wi
 
 - **Next-season fantasy projection layer for rookies** - Add a fantasy-facing projection surface for the upcoming NFL season so Scout can serve both standard rookie boards and IDP-aware formats without overloading the current prospect filters. Scope should cover offensive and IDP leagues, projection source-of-truth, display hierarchy, and how projections interact with draft status and college production.
 
+### v7.4 - Trade Agent & Upgrades UX Redesign
+
+Redesign the Trade Agent and Trade Upgrades modules with improved UX to reduce friction, improve clarity, and better surface the most useful trade actions.
+
+- **Trade Agent** - Rethink the core trade-building flow: clearer side-by-side layout, more intuitive player/pick add flows, better visual hierarchy between your side and their side, and less reliance on modals for common actions
+- **Trade Upgrades** - Improve the step-by-step upgrade flow so selecting a target, building an outgoing package, and reading results feels cohesive and intentional rather than multi-step with unclear state
+- **Shared improvements** - Reduce instructional copy in both modules; surface key actions and value context more prominently; ensure proposal cards feel readable and appropriately sized across mobile and desktop
+
 ### v8.0 - ESPN League Integration
 ### v9.0 - Live Fantasy Scoring
 

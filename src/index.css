@@ -196,6 +196,10 @@ body {
   .app-main {
     margin-left: 240px;
     height: 100dvh;
+    transition: margin-left 220ms cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  .sidebar-collapsed .app-main {
+    margin-left: 68px;
   }
 }
 
@@ -218,11 +222,15 @@ body {
   background: var(--color-bg-secondary);
   border-right: 1px solid var(--color-separator);
   z-index: 40;
+  transition: width 220ms cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 @media (min-width: 1024px) {
   .app-sidebar {
     display: flex;
+  }
+  .sidebar-collapsed .app-sidebar {
+    width: 68px;
   }
 }
 
@@ -322,6 +330,39 @@ body {
 .sidebar-footer {
   border-top: 1px solid var(--color-separator);
   padding-top: 2px;
+}
+
+/* ── Collapsed sidebar: 68px icon-only rail ────────────────── */
+.sidebar-collapsed .sidebar-brand,
+.sidebar-collapsed .sidebar-progress,
+.sidebar-collapsed .sidebar-divider,
+.sidebar-collapsed .sidebar-actions,
+.sidebar-collapsed .sidebar-footer {
+  display: none;
+}
+
+.sidebar-collapsed .sidebar-nav {
+  flex: 1;
+  padding: 8px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.sidebar-collapsed .sidebar-nav-item {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-left: none;
+  border-radius: 12px;
+  justify-content: center;
+}
+
+.sidebar-collapsed .sidebar-nav-item.active {
+  background: var(--color-fill);
+  border-left: none;
+  box-shadow: 0 0 0 2px var(--color-signature);
 }
 
 /* ─────────────────────────────────────────────────────────────

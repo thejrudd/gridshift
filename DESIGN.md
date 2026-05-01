@@ -332,6 +332,10 @@ Center-aligned, never bottom-sheet by default.
 - Interactive trade proposal cards add a mouse-tracking border glow (desktop only)
 - Card glow uses team color with a neutral fallback when the color is too close to the glow target
 - Cards in a trade package sync their heights equally across the package
+- Player/trade cards must never vertically clip identity or value text
+- Fixed-ratio cards resize as a unit; do not force height independently from width
+- When a layout promises a fixed visible card count, derive card width from container width, gaps, and count
+- Optional stat/detail rows drop before required identity/value text clips
 
 ### Navigation Item (Sidebar)
 

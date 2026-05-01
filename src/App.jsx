@@ -165,6 +165,14 @@ function AppInner() {
   const fileInputRef = useRef(null);
 
   const [contentScrolled, setContentScrolled] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try { return localStorage.getItem('sidebarCollapsed') === 'true'; } catch { return false; }
+  });
+  const toggleSidebarCollapsed = () => setSidebarCollapsed(prev => {
+    const next = !prev;
+    try { localStorage.setItem('sidebarCollapsed', String(next)); } catch { /* ignore */ }
+    return next;
+  });
   const [exportPreviewOpen, setExportPreviewOpen] = useState(false);
   const [actionSheetOpen, setActionSheetOpen] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
@@ -472,7 +480,7 @@ function AppInner() {
     : null;
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
 
       {/* ── Desktop Sidebar (lg+) ─────────────────────────────── */}
       <Sidebar
@@ -493,6 +501,8 @@ function AppInner() {
         onInstall={handleInstall}
         favoriteTeam={favoriteTeam}
         onMyTeam={handleMyTeam}
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={toggleSidebarCollapsed}
       />
 
       {/* ── Main panel ───────────────────────────────────────── */}
