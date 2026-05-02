@@ -179,6 +179,8 @@ export default function PlayerStatsModal({
       onClose={onClose}
       containerClassName="max-w-3xl"
       containerStyle={{ border: '1px solid var(--color-separator)' }}
+      mobileSheet
+      ariaLabel={`${playerMeta.displayName} statistics snapshot`}
     >
         <div
           className="relative px-5 py-5 sm:px-6"

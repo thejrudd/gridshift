@@ -961,3 +961,13 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Scout prospect profile smooth sticky** — Desktop prospect profile panel converted from JS-driven `position: fixed` + scroll-event tracking (which caused a visible one-frame bounce) to native CSS `position: sticky`, eliminating the lag entirely.
 - **IDP yardage stat labels fixed** — Companion → Matchup player drilldown now shows human-readable labels for IDP yardage stats (`idp_int_ret_yd`, `idp_sack_yd`, `idp_fr_yd`) instead of raw Sleeper stat keys.
 - **Trade modal consistency** — TradePickPicker and TradeRosterPicker modals converted to the shared Modal component for consistent backdrop, scroll lock, and centering.
+
+---
+
+## v7.1.0 - Trade Agent & Upgrades UX Redesign
+*2026-05-02*
+
+- **Trade Agent redesigned** - Reworked the core trade-building surface with clearer side-by-side plates, roster shelves, pick access, partner selection, drag-and-drop actions, and stronger value context.
+- **Trade Upgrades rebuilt** - Added a more cohesive upgrade workflow with target selection, outgoing-package suggestions, bargaining-table results, and smoother apply-to-Agent handoff.
+- **Trade cards and modals polished** - Improved shared modal centering, proposal-card sizing, player/team contrast, compact guide copy, and responsive treatment across Trade surfaces.
+- **Trade engine tuned** - Adjusted pick-inclusive proposal selection, package-depth checks, upgrade valuation, and explanation wording so suggestions better reflect roster context.

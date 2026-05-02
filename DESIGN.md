@@ -223,6 +223,39 @@ Labels use a single base color scaled by opacity to express hierarchy. This avoi
 | Destructive / error | `#E0270F` | `#FF4433` |
 | Caution / warning | `#E07800` | `#FF8C1A` |
 
+### Team-Color Gradients
+
+Use team gradients when a surface is primarily about team or player identity: player hero cards, team cards, roster rows, selection rows, and other scannable football assets. Do not use them for generic controls, page backgrounds, or dense text-only panels.
+
+Source colors from `getTeamPalette(team)` in `src/data/teamColors.js`; never hard-code one-off team hex values in component code.
+
+**Gradient recipe:**
+
+- Light mode: `palette.primary -> palette.secondary`
+- Dark mode: `palette.darkPrimary -> palette.darkSecondary`
+- Direction: `linear-gradient(135deg, start 0%, end 100%)`
+- Reversed teams: some palettes read better with `secondary -> primary`; keep these in a local named set for the surface and document any exceptions. In the Trade Upgrades surface, NYG and NYJ intentionally use the normal direction for readability.
+- Overlay: add a subtle full-surface overlay above the gradient:
+  - Dark: `linear-gradient(180deg, rgba(12,15,20,0.04) 0%, rgba(12,15,20,0.22) 100%)`
+  - Light: `linear-gradient(180deg, rgba(255,255,255,0.10) 0%, rgba(12,15,20,0.12) 100%)`
+
+**Readable text on gradients:**
+
+Pick foreground text by testing both `#FFFFFF` and `#0C0F14` against the gradient start, midpoint, and end, then use the color with the better worst-case contrast. Do not choose text color from only the first gradient stop; teams with black, silver, white, or gold endpoints can otherwise create low-contrast zones.
+
+If neither white nor near-black reads well across the whole surface, adjust the gradient before adding shadows or outlines:
+
+1. Flip gradient direction if the text sits mostly over the opposite side.
+2. Use the alternate team endpoint (`secondary` or `darkSecondary`) if it improves contrast without losing team identity.
+3. Add or strengthen the mode overlay slightly.
+4. As a last resort, place the text in a non-card overlay band using design tokens.
+
+**Logos and photos:**
+
+- Use team logos as explicit layout elements when they need to be inspected. Do not place important text over a logo watermark.
+- Watermark logos are allowed only at low opacity and behind non-critical empty space.
+- Player photos should prefer Sleeper thumbnails for fantasy roster surfaces and fall back to ESPN headshots when an ESPN ID exists.
+
 ---
 
 ## Typography
@@ -262,6 +295,26 @@ A single breakpoint at `1024px` splits the two navigation shells.
 - **Bottom bar:** Fixed `BottomTabBar`, 49px tall + `env(safe-area-inset-bottom)` for device safe areas.
 - **Sidebar:** Hidden.
 - **Content:** Scrollable region between the two bars. Bottom padding accounts for tab bar height and safe area inset.
+
+### Dense Mobile Rows
+
+Player names and primary identity text are the highest-priority content in dense mobile/tablet rows. When a row runs out of horizontal space, reclaim space by removing or shrinking lower-priority chrome before increasing row height.
+
+**Compression order:**
+
+1. Hide decorative team logos or secondary artwork.
+2. Hide helper labels for obvious numbers, such as `PPG` or `Value`, while keeping the number.
+3. Hide or compact position/team badges on the narrowest widths, then restore them at slightly wider mobile breakpoints.
+4. Shrink fixed assets like check circles, headshots, and badges by a few pixels.
+5. Only after those steps, consider smaller name text or a taller row.
+
+Do not solve mobile name truncation by making every selection row taller unless the row is meant to become an expanded card. Compact picker rows should preserve their scanning rhythm; optional metadata should drop before player names become unreadable.
+
+### Mobile Filter And Sort Rails
+
+When filter chips and sort options appear near the same list or table, keep each control group localized to its own single horizontal row on mobile/tablet: one row for filters, one row for sort. Do not merge filters and sort into a shared rail.
+
+Rows with overflow must use the scroll-cue pattern: a right-side fade/chevron appears only when more options exist to the right, and a matching left-side fade/chevron appears only after the row has been scrolled away from the start. Each rail tracks its own scroll state, so cues disappear at their respective edges. The cue overlays the row edge; it must not be part of the scrollable chip content or move with the chips.
 
 ### Desktop (≥ 1024px)
 

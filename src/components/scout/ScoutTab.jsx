@@ -1931,6 +1931,8 @@ function ScoutResultsView({ players, draftResults, liveFeedState, selectedPlayer
   const [selectedTeams, setSelectedTeams] = useState([]);
   const [teamFilterOpen, setTeamFilterOpen] = useState(false);
   const teamFilterRef = useRef(null);
+  const filterRailRef = useRef(null);
+  const [filterScrollCue, setFilterScrollCue] = useState({ left: false, right: false });
 
   const mergedResults = mergeDraftResultsWithPlayers(draftResults, players);
   const selectedTeamSet = new Set(selectedTeams);
@@ -1961,6 +1963,42 @@ function ScoutResultsView({ players, draftResults, liveFeedState, selectedPlayer
     return () => document.removeEventListener('pointerdown', handlePointerDown);
   }, [teamFilterOpen]);
 
+  const updateFilterScrollCue = useCallback(() => {
+    const el = filterRailRef.current;
+    if (!el) return;
+    const maxScrollLeft = Math.max(0, el.scrollWidth - el.clientWidth);
+    const next = {
+      left: maxScrollLeft > 1 && el.scrollLeft > 1,
+      right: maxScrollLeft > 1 && el.scrollLeft < maxScrollLeft - 1,
+    };
+    setFilterScrollCue(prev => (
+      prev.left === next.left && prev.right === next.right ? prev : next
+    ));
+  }, []);
+
+  useEffect(() => {
+    const el = filterRailRef.current;
+    if (!el || mergedResults.length === 0) return undefined;
+
+    const frame = window.requestAnimationFrame(updateFilterScrollCue);
+    const handleScroll = () => updateFilterScrollCue();
+    el.addEventListener('scroll', handleScroll, { passive: true });
+    window.addEventListener('resize', updateFilterScrollCue);
+
+    let resizeObserver;
+    if (typeof ResizeObserver !== 'undefined') {
+      resizeObserver = new ResizeObserver(updateFilterScrollCue);
+      resizeObserver.observe(el);
+    }
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      el.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('resize', updateFilterScrollCue);
+      resizeObserver?.disconnect();
+    };
+  }, [mergedResults.length, updateFilterScrollCue]);
+
   const toggleTeamFilter = useCallback((teamName) => {
     setSelectedTeams(prev => (
       prev.includes(teamName)
@@ -1982,9 +2020,9 @@ function ScoutResultsView({ players, draftResults, liveFeedState, selectedPlayer
         <ScoutDraftResultsFeedStatus state={liveFeedState} count={mergedResults.length} />
       </div>
       {mergedResults.length > 0 && (
-        <div className="scout-results-filter-row">
+        <div className="scout-results-filter-row scout-results-filter-row--chips">
           <span className="scout-results-filter-row-label">Filter</span>
-          <div className="scout-pick-round-filters" role="group" aria-label="Filter draft results by position">
+          <div ref={filterRailRef} className="scout-pick-round-filters scout-results-chip-rail" role="group" aria-label="Filter draft results by position">
             {POS_FILTERS.map(pos => {
               const active = posFilter === pos;
               const isPositionGroup = pos !== 'All' && pos !== 'Offense' && pos !== 'Defense';
@@ -2011,12 +2049,14 @@ function ScoutResultsView({ players, draftResults, liveFeedState, selectedPlayer
               );
             })}
           </div>
+          {filterScrollCue.left && <span className="scout-results-scroll-cue scout-results-scroll-cue--left" aria-hidden="true" />}
+          {filterScrollCue.right && <span className="scout-results-scroll-cue scout-results-scroll-cue--right" aria-hidden="true" />}
         </div>
       )}
       {mergedResults.length > 0 && (
-        <div className="scout-results-filter-row">
+        <div className="scout-results-filter-row scout-results-filter-row--sort">
           <span className="scout-results-filter-row-label">Sort</span>
-          <div className="scout-pick-round-filters" role="tablist" aria-label="Sort draft results">
+          <div className="scout-pick-round-filters scout-results-sort-options" role="tablist" aria-label="Sort draft results">
             {RESULTS_SORT_OPTIONS.map(option => (
               <button
                 key={option.value}

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import ScoutPlayerCard from './ScoutPlayerCard';
+import Modal from '../Modal';
 import useBodyScrollLock from '../../hooks/useBodyScrollLock';
 
 // variant="sheet"  — mobile bottom sheet (hidden on lg+)
@@ -34,13 +35,6 @@ export default function ScoutPlayerSheet({
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
   }, [player?.id]);
-
-  useEffect(() => {
-    if (variant !== 'sheet') return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = prev; };
-  }, [variant, player?.id]);
 
   useEffect(() => {
     if (variant !== 'panel' || typeof onPanelHeightChange !== 'function') return undefined;
@@ -94,20 +88,14 @@ export default function ScoutPlayerSheet({
 
   // Bottom sheet — mobile only
   return (
-    <div className="scout-sheet-overlay lg:hidden">
-      <div
-        className="scout-sheet-backdrop"
-        onClick={onClose}
-        aria-hidden="true"
-      />
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label="Prospect profile"
-        className="scout-sheet"
+    <div className="lg:hidden">
+      <Modal
+        onClose={onClose}
+        mobileSheet
+        ariaLabel="Prospect profile"
+        containerClassName="scout-sheet-mobile flex flex-col"
       >
         <div className="scout-sheet-handle-row">
-          <div className="scout-sheet-handle" />
           <CloseButton onClick={onClose} />
         </div>
         <div ref={scrollRef} className="scout-sheet-body">
@@ -118,7 +106,7 @@ export default function ScoutPlayerSheet({
             onViewStatistics={onViewStatistics}
           />
         </div>
-      </div>
+      </Modal>
     </div>
   );
 }

@@ -211,20 +211,20 @@ const GUIDE_CONTENT = {
     title: 'AGENT',
     steps: [
       {
-        title: 'Build a Trade',
-        description: 'Select a trade partner from the carousel above, then tap + Player or + Pick to add assets to each side. Or tap Search All Players to find any rostered player — including your own — from across the whole league.',
+        title: 'Build The Deal',
+        description: 'Choose a trade partner, then add players or picks to either side. On desktop you can use the roster shelf; on mobile use the add buttons or Search All Rostered Players.',
       },
       {
-        title: 'Trade Values',
-        description: 'Values come from KeepTradeCut (KTC), automatically calibrated for your league format (dynasty/redraft, 1QB/Superflex) and adjusted for your scoring settings.',
+        title: 'Read The Scoreboard',
+        description: 'The scoreboard totals each side, shows who the deal favors, and marks a trade as near even when the gap is small.',
       },
       {
-        title: 'Fairness Verdict',
-        description: 'The value bar shows the gap between sides. A trade is considered fair when the gap is less than 5% of the higher side\'s total.',
+        title: 'Use League Values',
+        description: 'Player values start with KeepTradeCut and are adjusted for your league format and scoring. Draft pick values use the picks each manager actually owns.',
       },
       {
-        title: 'Refine Trade',
-        description: 'Once items are added, tap Refine Trade to get suggested additions, removals, or swaps that move the deal closer to even.',
+        title: 'Adjust And Review',
+        description: 'Use Suggest Adjustment to find adds, removes, or swaps that can balance the offer. Open Value Trends to see recent market movement for players in the deal.',
       },
     ],
   },
@@ -234,15 +234,19 @@ const GUIDE_CONTENT = {
     steps: [
       {
         title: 'Choose a Partner',
-        description: 'Select a manager above to load trade ideas tailored to that roster matchup.',
+        description: 'Select a manager to generate trade ideas built around your roster, their roster, and the picks each side can move.',
       },
       {
         title: 'Switch Modes',
-        description: 'Fix Needs focuses on starter upgrades. Use Surplus looks for deals where you can move depth or strength for picks and roster help.',
+        description: 'Fix Needs looks for deals that improve your lineup. Use Surplus looks for ways to move depth or strength for players and picks.',
       },
       {
-        title: 'Apply a Proposal',
-        description: 'Tap Apply on any idea to send the full package into Agent, where you can review or edit the trade.',
+        title: 'Filter The Ideas',
+        description: 'Use the player and pick filters to control how many assets appear on each side. Reset Filters returns to the full idea list.',
+      },
+      {
+        title: 'Apply And Edit',
+        description: 'Tap Apply to send any idea into Agent. From there you can review the totals, open player details, or change the package.',
       },
     ],
   },
@@ -251,16 +255,20 @@ const GUIDE_CONTENT = {
     title: 'UPGRADE FINDER',
     steps: [
       {
-        title: 'Pick Your Target',
-        description: 'Choose one of your players to upgrade, then select which outgoing players or picks you are willing to use.',
+        title: 'Pick The Target',
+        description: 'Choose the player you want to upgrade into. The target card shows their value, rank, and scoring context before you search.',
       },
       {
-        title: 'Set Your Price',
-        description: 'Use the posture controls to decide whether to underpay, stay fair, or overpay for the upgrade.',
+        title: 'Choose Your Movers',
+        description: 'Select players you are willing to give up, then use position chips and sort controls to reshape the suggested list. Package Size controls whether the search can combine up to three assets.',
       },
       {
-        title: 'Search the League',
-        description: 'Results show upgrade packages across every roster, including optional picks coming back when the value needs to balance.',
+        title: 'Set Picks And Posture',
+        description: 'Use My Picks and Picks Back to decide whether draft picks can balance the deal. Trade Posture shifts the search from buy-low ideas to stronger offers.',
+      },
+      {
+        title: 'Review Upgrade Paths',
+        description: 'Find Upgrades scans the league and groups results by manager. Sort the paths, read why each side benefits, then Apply a package to Agent for final review.',
       },
     ],
   },
@@ -304,7 +312,7 @@ const GUIDE_CONTENT = {
       },
       {
         title: 'Trade Panel',
-        description: 'Shows KTC trade values for both players with league-adjusted multipliers. Tap Build Full Trade to open Agent with both players pre-loaded.',
+        description: 'Shows league-adjusted trade values, recent value trends, and quick context for both players. Build Full Trade opens Agent with the players loaded when one is on your roster.',
       },
     ],
   },

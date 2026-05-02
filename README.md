@@ -19,6 +19,7 @@ An interactive web app for the 2026 NFL season — with full Sleeper fantasy lea
 - **Fantasy Matchup View** — Head-to-head starter comparison with week-by-week points, projections, positional rankings, weather context, and game location
 - **Player Projections** — Min/max/projected ranges using a recent-weighted blend of form and season average, factoring opponent strength, home/away, weather, and snap % trend
 - **Heatmap** — 32-team grid of fantasy points allowed or scored per position per week; three scope modes, Vegas spread/O/U overlay, location filter, and per-cell player drilldowns
+- **Trade Agent & Upgrades** — Build trades with roster shelves, draft picks, value context, drag-and-drop actions, and guided upgrade suggestions
 - **Scout (Alpha)** — Rookie scouting hub with 2026 prospects, all-position filters, draft-status handling, combine metrics, and side-by-side prospect comparison
 - **Scoring Breakdowns** — Drill into any player or full team score to see a stat-by-stat fantasy point breakdown
 - **Favorite Team Theming** — Pick your favorite NFL team to theme the app; accent color applies across nav, progress bar, and filter toggles
@@ -86,23 +87,21 @@ npm run validate:routing
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) |
 
-## What's New in v7.0.6
+## What's New in v7.1.0
 
-- **Scoring override** - Companion → Scoring lets you browse all linked season leagues and apply any season's scoring rules as a temporary overlay. A sticky amber banner appears across all Companion views when active; hold to compare against your own scoring, tap X to clear.
-- **Live override recalculation** - Rankings, Waiver, Matchup, and Heatmap all recalculate in real time using the override scoring. Matchup totals are re-derived from raw weekly stats when an override is active.
-- **Frozen navigation headers** - NavBar, all sub-navigation tab bars, and the Scoring Override Banner are now pinned at the top of the page. Content scrolls underneath so headers never leave the viewport.
-- **Scout tab bar frozen** - "Prospects / Picks / Results" now freezes at the top like every other sub-nav.
-- **Scout prospect profile smooth sticky** - Desktop profile panel converted from JS-driven scroll tracking (bouncy) to native CSS sticky — no lag.
+- **Trade Agent redesign** - Side-by-side trade plates now pair with roster shelves, pick access, clearer partner selection, drag-and-drop actions, and stronger value context.
+- **Upgrades flow rebuilt** - Upgrade targets, outgoing-package suggestions, bargaining-table results, and apply-to-Agent handoff now feel like one cohesive workflow.
+- **Trade cards and modals polished** - Shared modal centering, card sizing, team/player contrast, and compact guide copy reduce clipping and repeated instructional text.
+- **Trade engine tuned** - Pick-inclusive ideas, package depth checks, upgrade values, and explanations were adjusted so generated proposals better match roster context.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Roadmap
 
 - **v7.0.7 - Post-Draft nflverse Enrichment** - Patch Scout with verified draft-slot enrichment from nflverse after the draft concludes.
-- **v7.1 - Trade Module Decomposition** - Split the largest Trade components and engines into focused modules for lower maintenance cost.
 - **v7.2 - Statistics / Fantasy Drilldown Unification** - One canonical player-analysis destination with mode-aware drilldowns across Statistics and Companion.
 - **v7.3 - Scout Rookie Projection Layer** - Add next-season rookie projections that work for standard and IDP-focused draft prep without overloading the current Scout board.
-- **v7.4 - Trade Agent & Upgrades UX Redesign** - Redesign the Trade Agent and Trade Upgrades modules with improved UX.
+- **v7.4 - Trade Module Decomposition** - Split the largest Trade components and engines into focused modules for lower maintenance cost.
 - **Week-by-Week View** *(blocked on 2026 schedule data)* — Browse the full schedule by week with predictions reflected
 
 ## Project Structure

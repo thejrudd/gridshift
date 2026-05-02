@@ -594,6 +594,70 @@ body {
   animation: sheet-slide-up 240ms cubic-bezier(0.32, 0.72, 0, 1) both;
 }
 
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.modal-panel {
+  background: var(--color-bg-secondary);
+}
+
+.modal-panel--mobile-sheet {
+  border-radius: 16px;
+}
+
+.mobile-sheet-drag-handle {
+  display: none;
+}
+
+@media (max-width: 1023px) {
+  .modal-overlay--mobile-sheet {
+    align-items: flex-end;
+    padding: 0;
+    background: rgba(0, 0, 0, 0.45);
+  }
+
+  .modal-panel--mobile-sheet {
+    max-width: none !important;
+    max-height: 88vh !important;
+    border-radius: 0;
+    border-top: 2px solid var(--color-separator-opaque);
+    box-shadow: 0 -4px 32px rgba(0, 0, 0, 0.20);
+    padding-bottom: env(safe-area-inset-bottom);
+    animation: sheet-slide-up 240ms cubic-bezier(0.32, 0.72, 0, 1) both;
+    transition: transform 180ms cubic-bezier(0.32, 0.72, 0, 1);
+  }
+
+  .mobile-sheet-drag-handle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 22px;
+    padding-top: 10px;
+    flex-shrink: 0;
+    touch-action: none;
+    cursor: grab;
+  }
+
+  .mobile-sheet-drag-handle:active {
+    cursor: grabbing;
+  }
+
+  .mobile-sheet-drag-handle__bar {
+    width: 32px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--color-fill);
+  }
+}
+
 @keyframes fade-in {
   from { opacity: 0; }
   to   { opacity: 1; }
@@ -1650,6 +1714,7 @@ body {
   gap: 10px;
   min-height: 36px;
   margin: 0 0 8px;
+  min-width: 0;
 }
 
 .scout-results-filter-row + .scout-results-filter-row {
@@ -1680,8 +1745,129 @@ body {
   scrollbar-width: none;
 }
 
+.scout-results-filter-row--chips {
+  position: relative;
+}
+
+.scout-results-scroll-cue {
+  position: absolute;
+  top: 0;
+  width: 38px;
+  height: 100%;
+  pointer-events: none;
+  display: none;
+  z-index: 2;
+}
+
+.scout-results-scroll-cue::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  border-top: 2px solid var(--color-label-tertiary);
+  border-right: 2px solid var(--color-label-tertiary);
+  opacity: 0.72;
+}
+
+.scout-results-scroll-cue--left {
+  left: 48px;
+  background: linear-gradient(90deg, var(--color-bg-secondary) 22%, transparent);
+}
+
+.scout-results-scroll-cue--left::after {
+  left: 8px;
+  transform: translateY(-50%) rotate(-135deg);
+}
+
+.scout-results-scroll-cue--right {
+  right: 0;
+  background: linear-gradient(90deg, transparent, var(--color-bg-secondary) 78%);
+}
+
+.scout-results-scroll-cue--right::after {
+  right: 7px;
+  transform: translateY(-50%) rotate(45deg);
+}
+
 .scout-pick-round-filters::-webkit-scrollbar {
   display: none;
+}
+
+.upgrade-mover-control-wrap {
+  position: relative;
+  min-width: 0;
+}
+
+.upgrade-mover-control-rail {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-right: 38px;
+  padding-bottom: 2px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.upgrade-mover-control-rail::-webkit-scrollbar {
+  display: none;
+}
+
+.upgrade-mover-scroll-cue {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 38px;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.upgrade-mover-scroll-cue::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  border-top: 2px solid var(--color-label-tertiary);
+  border-right: 2px solid var(--color-label-tertiary);
+  opacity: 0.72;
+}
+
+.upgrade-mover-scroll-cue--left {
+  left: 0;
+  background: linear-gradient(90deg, var(--color-bg-secondary) 22%, transparent);
+}
+
+.upgrade-mover-scroll-cue--left::after {
+  left: 8px;
+  transform: translateY(-50%) rotate(-135deg);
+}
+
+.upgrade-mover-scroll-cue--right {
+  right: 0;
+  background: linear-gradient(90deg, transparent, var(--color-bg-secondary) 78%);
+}
+
+.upgrade-mover-scroll-cue--right::after {
+  right: 7px;
+  transform: translateY(-50%) rotate(45deg);
+}
+
+@media (min-width: 640px) {
+  .upgrade-mover-control-rail {
+    flex-wrap: wrap;
+    overflow: visible;
+    padding-right: 0;
+    padding-bottom: 0;
+  }
+
+  .upgrade-mover-scroll-cue {
+    display: none;
+  }
 }
 
 .scout-round-chip {
@@ -1795,9 +1981,12 @@ body {
     flex-direction: column;
   }
 
-  .scout-pick-round-filters,
   .scout-team-filter,
   .scout-team-filter-button {
+    width: 100%;
+  }
+
+  .scout-pick-filter-bar .scout-pick-round-filters {
     width: 100%;
   }
 
@@ -1806,6 +1995,50 @@ body {
     right: auto;
     width: 100%;
     max-height: min(52vh, 420px);
+  }
+
+  .scout-results-filter-row {
+    display: grid;
+    grid-template-columns: 48px minmax(0, 1fr);
+    align-items: center;
+    column-gap: 10px;
+    width: 100%;
+  }
+
+  .scout-results-filter-row--sort {
+    align-items: start;
+  }
+
+  .scout-results-filter-row--sort .scout-results-filter-row-label {
+    padding-top: 10px;
+  }
+
+  .scout-results-chip-rail,
+  .scout-results-sort-options {
+    width: auto;
+  }
+
+  .scout-results-sort-options {
+    grid-column: 2;
+    flex-wrap: wrap;
+    overflow: visible;
+    padding-bottom: 0;
+  }
+
+  .scout-results-filter-row--sort .scout-team-filter {
+    grid-column: 2;
+    width: 100%;
+    min-width: 0;
+    margin-top: 6px;
+  }
+
+  .scout-results-filter-row--sort .scout-team-filter-button {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .scout-results-scroll-cue {
+    display: block;
   }
 }
 
@@ -3501,3 +3734,381 @@ body {
   background: var(--color-separator);
 }
 
+/* Trade Agent scoreboard */
+.trade-plates-grid,
+.trade-plate {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.trade-plate > * {
+  min-width: 0;
+}
+
+.trade-selection-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 68px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  padding: 10px 10px 10px 12px;
+  overflow: hidden;
+  border: 1px solid var(--color-separator);
+  border-left: 3px solid var(--trade-selection-accent, var(--color-accent));
+  border-radius: 12px;
+  color: var(--trade-selection-fg, var(--color-label));
+  text-align: left;
+}
+
+.trade-selection-row__gradient-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.trade-selection-row__avatar,
+.trade-selection-row__pick-mark {
+  position: relative;
+  z-index: 1;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: var(--color-fill-secondary);
+}
+
+.trade-selection-row__avatar {
+  object-fit: cover;
+  box-shadow: 0 5px 14px rgba(0, 0, 0, 0.22);
+}
+
+.trade-selection-row__pick-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-label-tertiary);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.trade-selection-row__select-mark {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border: 1px solid;
+  border-radius: 999px;
+}
+
+.trade-selection-row__position {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  min-height: 24px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.trade-selection-row__body {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  min-width: 0;
+}
+
+.trade-selection-row__team-logo,
+.trade-selection-row__team-logo-spacer {
+  position: relative;
+  z-index: 1;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+}
+
+.trade-selection-row__team-logo {
+  object-fit: contain;
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.20));
+}
+
+.trade-selection-row__identity {
+  min-width: 0;
+  overflow: visible;
+  white-space: normal;
+  font-size: 15px;
+  font-weight: 850;
+  line-height: 1.08;
+}
+
+.trade-selection-row__meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  margin-top: 5px;
+  overflow: hidden;
+  color: var(--trade-selection-muted, var(--color-label-secondary));
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.trade-selection-row__meta-prefix {
+  flex-shrink: 0;
+  color: var(--trade-selection-muted, var(--color-label-tertiary));
+  font-weight: 600;
+}
+
+.trade-selection-row__meta-item {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trade-selection-row__meta-item::before {
+  content: "·";
+  margin-right: 5px;
+  color: var(--trade-selection-muted, var(--color-label-quaternary));
+  font-weight: 700;
+}
+
+.trade-selection-row__value {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  min-width: 52px;
+  flex-shrink: 0;
+  gap: 3px;
+}
+
+.trade-selection-row__value-number {
+  color: var(--trade-selection-fg, var(--color-label));
+  font-size: 17px;
+  font-weight: 900;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.trade-selection-row__value-kicker {
+  color: var(--trade-selection-muted, var(--color-label-tertiary));
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.trade-selection-row__remove {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--trade-selection-subtle, var(--color-fill-secondary));
+  color: var(--trade-selection-muted, var(--color-label-tertiary));
+  font-size: 14px;
+  line-height: 1;
+}
+
+.trade-selection-row__remove:hover {
+  color: var(--trade-selection-fg, var(--color-label));
+}
+
+@media (max-width: 1279px) {
+  .trade-plate {
+    padding-left: 10px !important;
+    padding-right: 10px !important;
+  }
+
+  .trade-selection-row {
+    gap: 8px;
+    min-height: 62px;
+    padding: 8px;
+  }
+
+  .trade-selection-row__select-mark,
+  .trade-selection-row__team-logo,
+  .trade-selection-row__team-logo-spacer,
+  .trade-selection-row__value-kicker {
+    display: none;
+  }
+
+  .trade-selection-row__avatar,
+  .trade-selection-row__pick-mark {
+    width: 36px;
+    height: 36px;
+  }
+
+  .trade-selection-row__position {
+    min-width: 26px;
+    min-height: 22px;
+    padding: 4px 5px;
+    font-size: 11px;
+  }
+
+  .trade-selection-row__value {
+    min-width: 42px;
+  }
+
+  .trade-selection-row__value-number {
+    font-size: 15px;
+  }
+}
+
+@media (min-width: 1024px) and (max-width: 1279px) {
+  .trade-selection-row {
+    gap: 7px;
+  }
+
+  .trade-selection-row__meta {
+    display: none;
+  }
+}
+
+@media (max-width: 639px) {
+  .trade-selection-row {
+    min-height: 58px;
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .trade-selection-row__avatar,
+  .trade-selection-row__pick-mark {
+    width: 36px;
+    height: 36px;
+  }
+
+  .trade-selection-row__select-mark,
+  .trade-selection-row__team-logo,
+  .trade-selection-row__team-logo-spacer {
+    display: none;
+  }
+
+  .trade-selection-row__position {
+    display: none;
+  }
+
+  .trade-selection-row__identity {
+    font-size: 14px;
+  }
+
+  .trade-selection-row__meta {
+    gap: 4px;
+  }
+
+  .trade-selection-row__meta-prefix {
+    display: none;
+  }
+
+  .trade-selection-row__remove {
+    width: 21px;
+    height: 21px;
+  }
+
+  .trade-scoreboard {
+    padding: 6px 14px 10px !important;
+  }
+
+  .trade-scoreboard__grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+    grid-template-areas:
+      "yours theirs"
+      "meter meter";
+    gap: 4px 12px !important;
+    align-items: start !important;
+  }
+
+  .trade-scoreboard__team--left {
+    grid-area: yours;
+  }
+
+  .trade-scoreboard__team--right {
+    grid-area: theirs;
+  }
+
+  .trade-scoreboard__meter {
+    grid-area: meter;
+    width: 100%;
+    min-width: 0;
+    margin-top: -2px;
+  }
+
+  .trade-scoreboard__team {
+    gap: 7px !important;
+    align-self: end;
+  }
+
+  .trade-scoreboard__team-copy {
+    max-width: 100%;
+  }
+
+  .trade-scoreboard__team-name {
+    max-width: min(34vw, 140px) !important;
+    font-size: 12px !important;
+    line-height: 1 !important;
+  }
+
+  .trade-scoreboard__team-total {
+    font-size: clamp(28px, 8.4vw, 34px) !important;
+    line-height: 0.95 !important;
+  }
+
+  .trade-scoreboard__verdict {
+    min-height: 28px !important;
+    margin-bottom: -10px !important;
+  }
+
+  .trade-scoreboard__verdict-title {
+    font-size: 14px !important;
+  }
+
+  .trade-scoreboard__verdict-detail {
+    font-size: 10px !important;
+    max-width: 72vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .trade-scoreboard__svg {
+    width: min(188px, 58vw);
+    height: auto;
+  }
+}
+
+@media (max-width: 379px) {
+  .trade-scoreboard__team > img,
+  .trade-scoreboard__team > div[style*="border-radius: 50%"] {
+    display: none !important;
+  }
+
+  .trade-scoreboard__team-name {
+    max-width: 42vw !important;
+  }
+}

@@ -18,6 +18,11 @@ Primary implementation:
 - The card identity must preserve the established sports-card typography and visual hierarchy.
 - Do not solve fit problems by shrinking identity typography into unreadable text.
 
+Future trade-card reference:
+- The refreshed card language should still read as classic `5:7` sports cards with clear hero art, compact identity, and value-first lower content.
+- Visual refreshes may change tone, surface treatment, or ornament, but they must preserve the current no-clipping contract and fixed-ratio sizing behavior.
+- Treat richer team styling, stronger card backs, or more editorial pick art as optional presentation layers; they must not add required text that competes with name, team/position, value, and essential stats.
+
 ## Responsive Card Sizing
 
 Current compact card wrapper:
@@ -36,6 +41,8 @@ Meaning:
 - On compact layouts, card width is capped by viewport width, viewport height, and an absolute rem cap.
 - On wide `2xl` layouts, cards can sit in a row and use a larger desktop-oriented width. Container width should remain fluid.
 - Layouts that promise three visible cards must calculate width from available container width, gap size, and card count.
+- Upgrade result cards switch to side-fitted card math at the same `1200px` breakpoint where their Give/Get sides become side-by-side.
+- When either side has to shrink cards to fit, both Give/Get sides use the same shared card scale based on the larger visible side.
 - Give/Get sides stack below `2xl` and become side-by-side at `2xl`. Each side should use the available proposal width; do not apply fixed side-container caps that clip card rows while page space is still available.
 - Each Give/Get side owns its own horizontal card row. Do not require all cards for the full trade to fit before allowing side-level horizontal layout.
 - Side card rows use `flex-row flex-nowrap` at all breakpoints. If one side cannot fit all of its cards, allow horizontal overflow for that side instead of stacking every card vertically. Use `scrollbar-hide`; player-card rows must never show a visible scrollbar.
@@ -57,6 +64,17 @@ Current value color:
 ```jsx
 var(--color-label)
 ```
+
+## Mobile Proposal Rows
+
+Below the `md` breakpoint, Trade proposal assets render as compact rows instead of fixed-ratio cards.
+
+Mobile proposal rows:
+- Keep each side's total and Give/Get header visible above the rows.
+- Show one row per asset, including picks.
+- Preserve the required proposal content: photo or pick marker, name/label, team/position or pick detail, trade value, and optional PPG/rank context.
+- Use team color only as row decoration; trade value stays `var(--color-label)`.
+- Open player details from player rows when the proposal surface supports it.
 
 ## Text Rules
 
@@ -99,6 +117,7 @@ Team logo:
 - Player cards keep the team logo badge in the top-right.
 - `topRightSlot` may replace the logo only for explicit controls such as remove buttons.
 - Team colors may be used for background, border, glow, and logo badge treatment.
+- Trade Upgrade result cards use the documented `DESIGN.md` team-gradient recipe for the player hero surface: mode-specific primary/secondary palette colors, a darkened primary stop at 58%, subtle mode overlay, and foreground chosen by contrast across the gradient stops.
 - Team colors must not be used for trade value text.
 
 ## Stat Rules
@@ -117,8 +136,8 @@ Meaning:
 - If the compact stat area clips again, reduce visible rows or adjust photo/detail allocation before changing required identity content.
 
 Desktop compact cards:
-- Show two panels: `Stats` and `Fantasy`.
-- `Stats` uses `visibleStatDefs`, capped to two rows for compact proposal cards.
+- In Trade Upgrade result rows, show two value-first summary panels: `PPG` and positional rank.
+- In other compact proposal contexts, show `Stats` and `Fantasy`; `Stats` uses `visibleStatDefs`, capped to two rows for compact proposal cards.
 - `Fantasy` shows `PPG` and positional rank.
 - Positional rank must format as `posLabel + rank`, for example `QB13`, not just `QB`.
 - `Season` is hidden for compact proposal cards and only appears on larger/non-compact cards.
@@ -137,6 +156,7 @@ Draft pick cards use the same `5:7` frame and compact photo/hero allocation.
 Pick cards:
 - Use a themed pick background based on favorite team when available.
 - Show draft-pick hero content in the top area.
+- Compact pick hero text should share one padded stack so the round marker and year label cannot overlap when cards shrink.
 - Show round/quality label in the banner.
 - Show pick trade value with the same uniform value color as player cards.
 - May show projected pick range as optional detail on larger cards.
@@ -156,6 +176,7 @@ Do not enable equal-height syncing on compact/mobile layouts unless it is tested
 ## Maintenance Checklist
 
 When editing Trade proposal cards:
+- Verify mobile proposal rows show all assets once, including mixed player-and-pick packages.
 - Verify player and draft-pick cards preserve `5:7` by resizing width and height together.
 - Verify promised three-card rows derive card width from container width, gaps, and visible count.
 - Verify optional stat/detail rows drop before identity or value text clips.

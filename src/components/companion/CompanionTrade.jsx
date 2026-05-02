@@ -9,7 +9,7 @@
 // Line ~1718:  ProposalPlayerCard (individual player/pick card)
 // Line ~2248:  Proposal card layout utilities (sizing, equalized height)
 // Line ~2499:  TradeProposalItem (single proposal row in lists)
-// Line ~2802:  UpgradeProposalContextCards & UpgradeResultGroup
+// Line ~2802:  UpgradeResultGroup
 // Line ~3027:  TradeProposalPanel (proposal list with filters)
 // Line ~3243:  UpgradeFinderPage (upgrade search flow)
 // Line ~3879:  ValueBar (trade fairness gauge)
@@ -21,12 +21,12 @@
 import { memo, useState, useEffect, useMemo, useCallback, useDeferredValue, useRef, useTransition } from 'react';
 import { useSleeperLeague, useSleeperStats } from '../../context/SleeperContext';
 import { useTheme } from '../../context/ThemeContext';
-import { fetchKtcPlayers, fmtKtcValue, computeKtcMultipliers, applyKtcMultipliers, productionAdjustedValue } from '../../utils/ktcApi';
+import { fetchKtcPlayers, fmtKtcValue, computeKtcMultipliers, applyKtcMultipliers, productionAdjustedValue, findKtcPlayerFromSleeper } from '../../utils/ktcApi';
 import { getTradedPicks, getLeagueDrafts } from '../../api/sleeperApi';
 import {
-  buildRosterPicks, getPicksForRoster, getPickQuality,
+  buildRosterPicks, getPicksForRoster,
   valueSide, evaluateTrade, suggestPackage, buildCandidatePool,
-  computeRedraftPickValues,
+  computeRedraftPickValues, valueDraftPick,
 } from '../../utils/tradeEngine';
 import { TEAM_COLORS } from '../../data/teamColors';
 import { calcPointsFromTotals } from '../../utils/scoringEngine';
@@ -35,12 +35,14 @@ import { detectLeagueDefensiveType, normalizeIDPPos } from '../../utils/idpEngin
 import { buildPartnerTradeIntelligence, buildRosterOpportunityLayer, findLeagueWideUpgradeGroups } from '../../utils/opportunityEngine';
 import { buildTradeAnalyticsSnapshot } from '../../utils/tradeAnalytics';
 import { computeTradePlayerValueDetail } from '../../utils/tradeValue';
-import { compareDraftPickAssets, getDraftPickDisplayInfo } from '../../utils/draftPickDisplay';
+import { compareDraftPickAssets } from '../../utils/draftPickDisplay';
 import TradeRosterPicker from './TradeRosterPicker';
 import TradePickPicker from './TradePickPicker';
+import UpgradeBargainingTable from './UpgradeBargainingTable';
+import { buildUpgradeMoverSuggestions } from './upgradeMoverSuggestions';
 import PlayerStatsModal from '../PlayerStatsModal';
+import Modal from '../Modal';
 import useCardGlow from '../../hooks/useCardGlow.jsx';
-import useBodyScrollLock from '../../hooks/useBodyScrollLock';
 import useMediaQuery from '../../hooks/useMediaQuery.js';
 
 const ROSTER_BROWSE_OFFENSE_POSITIONS = new Set(['QB', 'RB', 'WR', 'TE', 'K']);
@@ -94,11 +96,49 @@ function hexLuminance(hex) {
   return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
 }
 
+function hexToRgb(hex) {
+  if (!hex || typeof hex !== 'string' || !hex.startsWith('#') || hex.length < 7) return null;
+  return {
+    r: parseInt(hex.slice(1, 3), 16),
+    g: parseInt(hex.slice(3, 5), 16),
+    b: parseInt(hex.slice(5, 7), 16),
+  };
+}
+
+function contrastRatio(hexA, hexB) {
+  const luminanceA = hexLuminance(hexA);
+  const luminanceB = hexLuminance(hexB);
+  const lighter = Math.max(luminanceA, luminanceB);
+  const darker = Math.min(luminanceA, luminanceB);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
 function darkenHex(hex, factor) {
   const r = Math.round(parseInt(hex.slice(1, 3), 16) * factor);
   const g = Math.round(parseInt(hex.slice(3, 5), 16) * factor);
   const b = Math.round(parseInt(hex.slice(5, 7), 16) * factor);
   return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+}
+
+function mixHex(hexA, hexB, weight = 0.5) {
+  const a = hexToRgb(hexA);
+  const b = hexToRgb(hexB);
+  if (!a || !b) return hexA;
+  const clampedWeight = Math.min(1, Math.max(0, weight));
+  const r = Math.round((a.r * (1 - clampedWeight)) + (b.r * clampedWeight));
+  const g = Math.round((a.g * (1 - clampedWeight)) + (b.g * clampedWeight));
+  const blue = Math.round((a.b * (1 - clampedWeight)) + (b.b * clampedWeight));
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${blue.toString(16).padStart(2, '0')}`;
+}
+
+function pickReadableForeground(stops = []) {
+  const candidates = ['#FFFFFF', '#0C0F14'];
+  return candidates
+    .map((color) => ({
+      color,
+      worstContrast: Math.min(...stops.map((stop) => contrastRatio(color, stop))),
+    }))
+    .sort((a, b) => b.worstContrast - a.worstContrast)[0]?.color ?? '#FFFFFF';
 }
 
 function teamPalette(sleeperTeam, darkMode) {
@@ -117,12 +157,21 @@ function teamPalette(sleeperTeam, darkMode) {
     };
   }
   const color = darkMode ? palette.darkPrimary : palette.primary;
+  const secondary = darkMode
+    ? (palette.darkSecondary ?? palette.secondary ?? color)
+    : (palette.secondary ?? color);
+  const middle = mixHex(darkenHex(color, 0.72), secondary, 0.32);
+  const gradientForeground = pickReadableForeground([
+    color,
+    middle,
+    secondary,
+    mixHex(color, middle, 0.5),
+    mixHex(middle, secondary, 0.5),
+  ]);
   const isLight = hexLuminance(color) > 0.35;
   const alpha = isLight ? '18' : '22';
   const borderColor = (!darkMode && isLight) ? darkenHex(color, 0.55) : color;
-  const fallbackAccent = darkMode
-    ? (palette.darkSecondary ?? palette.secondary ?? color)
-    : (palette.secondary ?? color);
+  const fallbackAccent = secondary;
   const accentSource = darkMode && hexLuminance(color) < 0.14 ? fallbackAccent : color;
   const accentColor = accentSource && hexLuminance(accentSource) < 0.18
     ? '#F2F1EC'
@@ -133,7 +182,22 @@ function teamPalette(sleeperTeam, darkMode) {
   const logoBadgeBorder = darkMode
     ? `${accentColor ?? '#ffffff'}55`
     : 'rgba(12,15,20,0.12)';
-  return { color, tint: `${color}${alpha}`, borderColor, accentColor, logoBadgeBg, logoBadgeBorder, isLight, logoKey: key };
+  return {
+    color,
+    secondary,
+    gradient: `linear-gradient(135deg, ${color} 0%, ${middle} 48%, ${secondary} 100%)`,
+    gradientOverlay: darkMode
+      ? 'linear-gradient(180deg, rgba(12,15,20,0.04) 0%, rgba(12,15,20,0.22) 100%)'
+      : 'linear-gradient(180deg, rgba(255,255,255,0.10) 0%, rgba(12,15,20,0.12) 100%)',
+    gradientForeground,
+    tint: `${color}${alpha}`,
+    borderColor,
+    accentColor,
+    logoBadgeBg,
+    logoBadgeBorder,
+    isLight,
+    logoKey: key,
+  };
 }
 
 // Derive league format and type from Sleeper league settings
@@ -337,7 +401,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
   const [upgradeTargetId, setUpgradeTargetId] = useState(null);
   const [upgradeOfferPlayerIds, setUpgradeOfferPlayerIds] = useState([]);
   const [upgradeTradePostureLevel, setUpgradeTradePostureLevel] = useState(2);
-  const [upgradeAllowPackages, setUpgradeAllowPackages] = useState(false);
+  const [upgradeAllowPackages, setUpgradeAllowPackages] = useState(true);
   const [upgradeAllowOutgoingPicks, setUpgradeAllowOutgoingPicks] = useState(false);
   const [upgradeAllowIncomingPicks, setUpgradeAllowIncomingPicks] = useState(false);
   const [submittedUpgradeSearch, setSubmittedUpgradeSearch] = useState(null);
@@ -692,7 +756,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
     tradeIntelligenceCacheRef.current.clear();
     setTradeIntelligence(null);
     setTradeIntelligencePartnerId(null);
-  }, [selectedLeagueId, season, opportunityLayer, playerTradeValueMap, pickValueMap, rosterPicks, slots, league, leagueDrafts]);
+  }, [selectedLeagueId, season, opportunityLayer, playerTradeValueMap, pickValueMap, adjustedKtcPlayers, leagueType, rosterPicks, slots, league, leagueDrafts]);
 
   useEffect(() => {
     if (!deferredPartnerRosterId || !opportunityLayer || !playerTradeValueMap) {
@@ -724,6 +788,8 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
           drafts: leagueDrafts,
           currentSeason: season,
           pickValueMap,
+          ktcPlayers: adjustedKtcPlayers,
+          leagueType,
           playerValueMap: playerTradeValueMap,
         });
       if (cancelled) return;
@@ -739,7 +805,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
       cancelled = true;
       cancelTask?.();
     };
-  }, [showIntelligence, opportunityLayer, deferredPartnerRosterId, rosterPicks, slots, league, leagueDrafts, season, pickValueMap, playerTradeValueMap, startTradeIntelligenceTransition, selectedLeagueId]);
+  }, [showIntelligence, opportunityLayer, deferredPartnerRosterId, rosterPicks, slots, league, leagueDrafts, season, pickValueMap, adjustedKtcPlayers, leagueType, playerTradeValueMap, startTradeIntelligenceTransition, selectedLeagueId]);
 
   const selectedTradePartnerKey = partnerRosterId == null ? null : String(partnerRosterId);
   const loadedTradePartnerKey = tradeIntelligencePartnerId == null ? null : String(tradeIntelligencePartnerId);
@@ -813,7 +879,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
   useEffect(() => {
     upgradeSearchCacheRef.current.clear();
     setUpgradeSearchResults(null);
-  }, [selectedLeagueId, season, opportunityLayer, playerTradeValueMap, pickValueMap, rosterPicks, slots, league, leagueDrafts]);
+  }, [selectedLeagueId, season, opportunityLayer, playerTradeValueMap, pickValueMap, adjustedKtcPlayers, leagueType, rosterPicks, slots, league, leagueDrafts]);
 
   useEffect(() => {
     if (!submittedUpgradeSearch?.targetPlayerId || !opportunityLayer || !playerTradeValueMap || !upgradeSearchCacheKey) {
@@ -843,6 +909,8 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
           drafts: leagueDrafts,
           currentSeason: season,
           pickValueMap,
+          ktcPlayers: adjustedKtcPlayers,
+          leagueType,
           playerValueMap: playerTradeValueMap,
         });
       if (cancelled) return;
@@ -856,7 +924,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
       cancelled = true;
       cancelTask?.();
     };
-  }, [submittedUpgradeSearch, upgradeSearchCacheKey, opportunityLayer, rosterPicks, slots, league, leagueDrafts, season, pickValueMap, playerTradeValueMap, startUpgradeResultsTransition]);
+  }, [submittedUpgradeSearch, upgradeSearchCacheKey, opportunityLayer, rosterPicks, slots, league, leagueDrafts, season, pickValueMap, adjustedKtcPlayers, leagueType, playerTradeValueMap, startUpgradeResultsTransition]);
 
   useEffect(() => {
     if (!showUpgrade || !currentUpgradeSearchRequest || !currentUpgradeSearchCacheKey) return undefined;
@@ -880,6 +948,8 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
           drafts: leagueDrafts,
           currentSeason: season,
           pickValueMap,
+          ktcPlayers: adjustedKtcPlayers,
+          leagueType,
           playerValueMap: playerTradeValueMap,
         });
       if (cancelled) return;
@@ -902,6 +972,8 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
     leagueDrafts,
     season,
     pickValueMap,
+    adjustedKtcPlayers,
+    leagueType,
   ]);
 
   // Enrich a valueSide result: apply production adjustment to player vals, scale picks by leagueAvgMult
@@ -913,6 +985,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
         return { ...it, adjVal };
       }
       const sharedTradeValueDetail = playerTradeValueDetailsMap?.get(it.id) ?? null;
+      const ktcEntry = it.ktcEntry ?? findKtcPlayerFromSleeper(it.id, sleeperPlayers, adjustedKtcPlayers ?? []);
       const fallbackTradeValueDetail = sharedTradeValueDetail ?? computeTradePlayerValueDetail({
         id: it.id,
         players: sleeperPlayers,
@@ -938,6 +1011,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
         adjVal,
         avgPPG,
         rankInfo,
+        ktcEntry,
         dynastyFallback: fallbackTradeValueDetail?.dynastyFallback ?? it.dynastyFallback ?? false,
         idpFallback: fallbackTradeValueDetail?.isEstimated ?? it.idpFallback ?? false,
       };
@@ -1331,7 +1405,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
               sleeperPlayers,
               playerTradeValueMap,
               myName: getUserDisplayName(myRosterData?.owner_id ?? ''),
-              partnerName: partnerRosterId ? (ownerNameByRosterId.get(partnerRosterId) ?? 'PARTNER') : 'PARTNER',
+              partnerName: partnerRosterId ? (ownerNameByRosterId.get(partnerRosterId) ?? 'Select Partner') : 'Select Partner',
               hasPartner: !!partnerRosterId,
               onAddToYours: id => addPlayer('yours', id),
               onAddToTheirs: id => partnerRosterId ? addPlayer('theirs', { id, rosterId: partnerRosterId }) : null,
@@ -1366,11 +1440,11 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
             const suggestBlock = (
               <>
                 {hasItems && verdict.verdict !== 'fair' && verdict.gap > 0 && (
-                  <div style={{ borderTop: '1px solid var(--color-separator)', padding: '10px 14px' }}>
+                  <div style={{ borderTop: '1px solid var(--color-separator)', padding: '10px 14px', display: 'flex', justifyContent: 'center' }}>
                     <button
                       onClick={handleSuggest}
-                      className="w-full py-2.5 font-semibold"
-                      style={{ fontSize: 14, borderRadius: 8, background: 'var(--color-signature)', color: 'var(--color-signature-fg)', border: 0, cursor: 'pointer' }}
+                      className="py-2 px-4 font-semibold"
+                      style={{ fontSize: 13, borderRadius: 8, background: 'var(--color-signature)', color: 'var(--color-signature-fg)', border: 0, cursor: 'pointer', whiteSpace: 'nowrap' }}
                     >
                       Suggest Adjustment
                     </button>
@@ -1423,36 +1497,24 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
                 <div className="hidden lg:flex" style={{ alignItems: 'flex-start' }}>
                   <RosterShelf {...sharedShelfProps} shelfDragRef={shelfDragRef} />
                   <div className="flex-1 min-w-0 flex flex-col">
-                    {/* ── Desktop search header ── */}
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: 8, padding: '12px 16px 10px', borderBottom: '1px solid var(--color-separator)' }}>
-                      {!ktcLoading && !ktcError && (
-                        <button
-                          onClick={() => setPickerOpen({ side: 'theirs', type: 'player', allRosters: true })}
-                          style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 7, padding: '0 14px', height: 36, borderRadius: 8, border: '1px solid var(--color-separator)', background: 'var(--color-fill)', color: 'var(--color-label-tertiary)', fontSize: 13, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap' }}
-                        >
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
-                          </svg>
-                          Search players…
-                        </button>
-                      )}
-                    </div>
                     <BroadcastScoreboard
                       yourTotal={yourSide.total}
                       theirTotal={theirSide.total}
                       yourName={getUserDisplayName(myRosterData?.owner_id ?? '')}
+                      yourAvatar={leagueUserById.get(myRosterData?.owner_id ?? '')?.avatar ?? null}
                       partnerName={partnerRosterId ? (ownerNameByRosterId.get(partnerRosterId) ?? null) : null}
+                      partnerAvatar={partnerRosterId
+                        ? (leagueUserById.get(rosterById.get(partnerRosterId)?.owner_id ?? '')?.avatar ?? null)
+                        : null}
                       verdict={verdict}
                       hasItems={hasItems}
                       onClear={clearTrade}
                     />
                     {!ktcLoading && !ktcError ? (
                       <>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
+                        <div className="trade-plates-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)' }}>
                           <TradePlate
                             side="yours"
-                            label="HOME · YOU GIVE"
-                            accentColor="var(--color-signature)"
                             items={yourSide.items}
                             total={yourSide.total}
                             onRemovePlayer={id => removePlayer('yours', id)}
@@ -1464,8 +1526,6 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
                           />
                           <TradePlate
                             side="theirs"
-                            label="AWAY · YOU GET"
-                            accentColor="var(--color-label)"
                             items={theirSide.items}
                             total={theirSide.total}
                             onRemovePlayer={id => removePlayer('theirs', id)}
@@ -1473,7 +1533,6 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
                             onAddPlayer={() => setPickerOpen({ side: 'theirs', type: 'player', allRosters: !partnerRosterId })}
                             onAddPick={partnerRosterId ? () => setPickerOpen({ side: 'theirs', type: 'pick' }) : null}
                             onOpenPlayer={openStatsModalForPlayer}
-                            showBg
                             {...sharedPlateProps}
                           />
                         </div>
@@ -1512,7 +1571,11 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
                     yourTotal={yourSide.total}
                     theirTotal={theirSide.total}
                     yourName={getUserDisplayName(myRosterData?.owner_id ?? '')}
+                    yourAvatar={leagueUserById.get(myRosterData?.owner_id ?? '')?.avatar ?? null}
                     partnerName={partnerRosterId ? (ownerNameByRosterId.get(partnerRosterId) ?? null) : null}
+                    partnerAvatar={partnerRosterId
+                      ? (leagueUserById.get(rosterById.get(partnerRosterId)?.owner_id ?? '')?.avatar ?? null)
+                      : null}
                     verdict={verdict}
                     hasItems={hasItems}
                     onClear={clearTrade}
@@ -1521,8 +1584,6 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
                     <>
                       <TradePlate
                         side="yours"
-                        label="HOME · YOU GIVE"
-                        accentColor="var(--color-signature)"
                         items={yourSide.items}
                         total={yourSide.total}
                         onRemovePlayer={id => removePlayer('yours', id)}
@@ -1534,8 +1595,6 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
                       />
                       <TradePlate
                         side="theirs"
-                        label="AWAY · YOU GET"
-                        accentColor="var(--color-label)"
                         items={theirSide.items}
                         total={theirSide.total}
                         onRemovePlayer={id => removePlayer('theirs', id)}
@@ -1574,18 +1633,6 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
             );
           })()}
 
-          {/* ── Empty state ─────────────────────────────────────────────── */}
-          {!hasItems && !ktcLoading && !ktcError && (
-            <div className="mx-4 mt-3 rounded-xl px-4 py-3 flex flex-col gap-1" style={{ background: 'var(--color-fill)' }}>
-              <span className="text-sm font-semibold" style={{ color: 'var(--color-label)' }}>Build your trade</span>
-              <span className="text-xs leading-relaxed" style={{ color: 'var(--color-label-tertiary)' }}>
-                {partnerRosterId
-                  ? 'Tap a player in the shelf to add them, or use the + buttons in each column.'
-                  : 'Select a trade partner in the shelf, then tap players to build your trade.'}
-              </span>
-            </div>
-          )}
-
           {/* ── Search all rostered players (mobile only) ───────────────── */}
           {!ktcLoading && !ktcError && (
             <div className="lg:hidden px-4 mt-3">
@@ -1613,9 +1660,16 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
               </button>
               {showTrends && (
                 <div className="mt-2 flex flex-col gap-1.5">
-                  {[...yourSide.items, ...theirSide.items]
-                    .filter(it => it.ktcEntry)
-                    .map(it => <TrendRow key={it.id} item={it} leagueType={leagueType} />)}
+                  {(() => {
+                    const trendItems = [...yourSide.items, ...theirSide.items].filter(it => it.type === 'player' && it.ktcEntry);
+                    return trendItems.length > 0 ? (
+                      trendItems.map(it => <TrendRow key={it.id} item={it} leagueType={leagueType} />)
+                    ) : (
+                      <div className="rounded-lg px-3 py-2 text-xs" style={{ background: 'var(--color-fill)', color: 'var(--color-label-tertiary)' }}>
+                        No KTC trend data available for these players.
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
             </div>
@@ -1631,28 +1685,6 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
             </div>
           )}
 
-          {/* ── Attribution ─────────────────────────────────────────────── */}
-          <div className="px-4 pt-4 flex items-center justify-center gap-1.5">
-            <span className="text-xs" style={{ color: 'var(--color-label-quaternary)' }}>
-              Values from{' '}
-              <span className="font-medium" style={{ color: 'var(--color-label-tertiary)' }}>KeepTradeCut</span>
-              {' · '}{format === 'dynasty' ? 'Dynasty' : 'Redraft'}
-              {' · '}{leagueType === 'sf' ? 'Superflex' : '1QB'}
-              {isAdjusted && (
-                <span style={{ color: 'var(--color-accent)' }}>{' · '}League-adjusted</span>
-              )}
-            </span>
-            <button
-              onClick={() => setShowValInfo(true)}
-              className="shrink-0 w-4 h-4 rounded-full flex items-center justify-center"
-              style={{ background: 'var(--color-fill)', color: 'var(--color-label-tertiary)' }}
-              aria-label="How values are calculated"
-            >
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>
-              </svg>
-            </button>
-          </div>
         </>
       ) : null}
 
@@ -1691,6 +1723,30 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
           )}
         </div>
       ) : null}
+
+      {showAgent && (
+        <>
+          <div className="lg:hidden px-4 pt-6 pb-2 flex items-center justify-center gap-1.5">
+            <TradeValueAttribution
+              format={format}
+              leagueType={leagueType}
+              isAdjusted={isAdjusted}
+              onInfoClick={() => setShowValInfo(true)}
+            />
+          </div>
+          <div
+            className="hidden lg:flex items-center justify-end gap-1.5"
+            style={{ position: 'fixed', right: 24, bottom: 14, zIndex: 20, pointerEvents: 'none' }}
+          >
+            <TradeValueAttribution
+              format={format}
+              leagueType={leagueType}
+              isAdjusted={isAdjusted}
+              onInfoClick={() => setShowValInfo(true)}
+            />
+          </div>
+        </>
+      )}
 
       {/* ── Picker modals ───────────────────────────────────────────────── */}
 
@@ -1796,12 +1852,81 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
   );
 }
 
+function TradeValueAttribution({ format, leagueType, isAdjusted, onInfoClick }) {
+  return (
+    <>
+      <span className="text-xs" style={{ color: 'var(--color-label-quaternary)', pointerEvents: 'auto' }}>
+        Values from{' '}
+        <span className="font-medium" style={{ color: 'var(--color-label-tertiary)' }}>KeepTradeCut</span>
+        {' · '}{format === 'dynasty' ? 'Dynasty' : 'Redraft'}
+        {' · '}{leagueType === 'sf' ? 'Superflex' : '1QB'}
+        {isAdjusted && (
+          <span style={{ color: 'var(--color-accent)' }}>{' · '}League-adjusted</span>
+        )}
+      </span>
+      <button
+        onClick={onInfoClick}
+        className="shrink-0 w-4 h-4 rounded-full flex items-center justify-center"
+        style={{ background: 'var(--color-fill)', color: 'var(--color-label-tertiary)', pointerEvents: 'auto' }}
+        aria-label="How values are calculated"
+      >
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>
+        </svg>
+      </button>
+    </>
+  );
+}
+
+function getTradeAssetMetaSegments(item) {
+  if (item.type === 'pick') {
+    const segments = [
+      item.year,
+      item.round != null ? `Round ${item.round}` : null,
+      item.pickNumberLabel ?? item.pickRangeLabel,
+      item.quality,
+    ];
+    if (item.cardMetaLabel && item.pickRangeLabel && item.cardMetaLabel !== item.pickRangeLabel) {
+      segments.push(`${item.cardMetaLabel}: ${item.pickRangeLabel}`);
+    }
+    return segments.filter(Boolean);
+  }
+
+  const segments = [
+    [item.position, item.team].filter(Boolean).join(' · '),
+    item.rankInfo ? `#${item.rankInfo.rank} ${item.rankInfo.posLabel}` : null,
+    item.avgPPG != null ? `${item.avgPPG.toFixed(1)} avg` : null,
+    item.dynastyFallback ? 'DYN est.' : item.idpFallback ? 'est.' : null,
+  ];
+  return segments.filter(Boolean);
+}
+
+function getTradePositionColor(position) {
+  const normalized = normalizeIDPPos(position) ?? String(position ?? '').toUpperCase();
+  return POSITION_COLORS[normalized] ?? null;
+}
+
 function TradeSideAssetRow({ item, palette, darkMode, onOpenPlayer, onRemove }) {
   const [isHovered, setIsHovered] = useState(false);
   const isInteractive = item.type === 'player' && !!onOpenPlayer;
-  const accentColor = palette?.borderColor ?? (item.type === 'pick' ? 'var(--color-signature)' : (darkMode ? '#5AADFF' : '#1A6EFF'));
-  const rowBg = palette?.tint ?? 'var(--color-fill)';
+  const hasTeamGradient = item.type === 'player' && palette?.gradient;
+  const accentColor = palette?.borderColor ?? (item.type === 'pick' ? 'var(--color-signature)' : 'var(--color-accent)');
+  const rowBg = hasTeamGradient ? palette.gradient : (palette?.tint ?? 'var(--color-fill)');
   const hoverBg = palette?.color ? `${palette.color}${palette.isLight ? '2e' : '34'}` : 'var(--color-fill-secondary)';
+  const rowForeground = hasTeamGradient ? palette.gradientForeground : 'var(--color-label)';
+  const rowMuted = hasTeamGradient
+    ? (rowForeground === '#FFFFFF' ? 'rgba(255,255,255,0.70)' : 'rgba(12,15,20,0.64)')
+    : 'var(--color-label-secondary)';
+  const rowSubtle = hasTeamGradient
+    ? (rowForeground === '#FFFFFF' ? 'rgba(255,255,255,0.16)' : 'rgba(12,15,20,0.12)')
+    : 'var(--color-fill-secondary)';
+  const metaSegments = getTradeAssetMetaSegments(item);
+  const value = item.adjVal ?? item.val;
+  const valueIsEstimated = item.dynastyFallback || item.idpFallback;
+  const rowTitle = [item.label, ...metaSegments, `Value ${fmtKtcValue(value)}`].join(' · ');
+  const posColor = item.type === 'player' ? getTradePositionColor(item.position) : null;
+  const posTextColor = posColor && hexLuminance(posColor) > 0.42 ? '#0C0F14' : '#FFFFFF';
+  const valueKicker = item.type === 'player' && item.avgPPG != null ? `${item.avgPPG.toFixed(1)} avg` : 'Value';
   const { glowHandlers, borderOverlay, glowShadow } = useCardGlow({
     enabled: isHovered,
     color: accentColor,
@@ -1811,20 +1936,21 @@ function TradeSideAssetRow({ item, palette, darkMode, onOpenPlayer, onRemove }) 
     outerColor: accentColor,
   });
   const baseShadow = isHovered
-    ? '0 8px 18px rgba(12,15,20,0.10), 0 2px 6px rgba(12,15,20,0.08)'
-    : '0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06)';
+    ? '0 5px 12px rgba(12,15,20,0.09)'
+    : 'none';
   const rowShadow = glowShadow ? `${glowShadow}, ${baseShadow}` : baseShadow;
 
   return (
     <div
-      className="rounded-lg px-2.5 py-2 flex items-center gap-2 relative overflow-hidden"
+      className={`trade-selection-row${isInteractive ? ' is-interactive' : ''}`}
       style={{
-        background: isHovered ? hoverBg : rowBg,
-        border: '1px solid var(--color-separator)',
-        borderLeft: `4px solid ${accentColor}`,
+        background: isHovered && !hasTeamGradient ? hoverBg : rowBg,
+        '--trade-selection-accent': accentColor,
+        '--trade-selection-fg': rowForeground,
+        '--trade-selection-muted': rowMuted,
+        '--trade-selection-subtle': rowSubtle,
         boxShadow: rowShadow,
-        transform: isHovered ? 'translateY(-1px)' : 'translateY(0)',
-        transition: 'background 150ms cubic-bezier(0.32, 0.72, 0, 1), box-shadow 200ms cubic-bezier(0.32, 0.72, 0, 1), transform 200ms cubic-bezier(0.32, 0.72, 0, 1)',
+        transition: 'background 150ms cubic-bezier(0.32, 0.72, 0, 1), box-shadow 200ms cubic-bezier(0.32, 0.72, 0, 1)',
         cursor: isInteractive ? 'pointer' : undefined,
       }}
       onClick={isInteractive ? () => onOpenPlayer(item) : undefined}
@@ -1853,68 +1979,94 @@ function TradeSideAssetRow({ item, palette, darkMode, onOpenPlayer, onRemove }) 
       } : undefined}
       role={isInteractive ? 'button' : undefined}
       tabIndex={isInteractive ? 0 : undefined}
+      title={rowTitle}
       aria-label={isInteractive ? `Open player stats for ${item.label}` : undefined}
     >
       {borderOverlay}
+      {hasTeamGradient && (
+        <div
+          className="trade-selection-row__gradient-overlay"
+          style={{ background: palette.gradientOverlay }}
+          aria-hidden="true"
+        />
+      )}
+      <span
+        className="trade-selection-row__select-mark"
+        style={{
+          background: 'var(--color-signature)',
+          borderColor: 'var(--color-signature)',
+          color: 'var(--color-signature-fg)',
+        }}
+        aria-hidden="true"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M20 6 9 17l-5-5" />
+        </svg>
+      </span>
       {item.type === 'player' && (
         <img src={`https://sleepercdn.com/content/nfl/players/thumb/${item.id}.jpg`}
-          alt="" className="hidden lg:block w-7 h-7 rounded-full shrink-0 object-cover"
-          style={{ background: 'var(--color-fill-secondary)' }}
+          alt="" className="trade-selection-row__avatar"
           loading="eager"
           decoding="async"
           onError={e => { e.target.style.display = 'none'; }} />
       )}
       {item.type === 'pick' && (
-        <div className="hidden lg:flex w-7 h-7 rounded-full shrink-0 items-center justify-center"
-          style={{ background: 'var(--color-fill-secondary)', fontSize: '8px', fontWeight: 700, color: 'var(--color-label-tertiary)' }}>
+        <div className="trade-selection-row__pick-mark">
           PICK
         </div>
       )}
-      <div className="flex-1 min-w-0 relative">
-        {item.type === 'player' && palette?.logoKey && (
-          <img
-            src={`https://a.espncdn.com/i/teamlogos/nfl/500/${palette.logoKey}.png`}
-            aria-hidden="true"
-            className="hidden lg:block absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none select-none"
-            style={{ width: 32, height: 32, objectFit: 'contain', opacity: 0.12 }}
-            loading="eager"
-            decoding="async"
-            onError={e => { e.target.style.display = 'none'; }}
-          />
-        )}
-        <div className="font-semibold leading-snug" style={{ fontSize: 13, paddingRight: palette?.logoKey ? 34 : 0, color: isInteractive ? accentColor : 'var(--color-label)' }}>
+      {item.type === 'player' && (
+        <span
+          className="trade-selection-row__position"
+          style={{
+            background: posColor ?? rowSubtle,
+            color: posColor ? posTextColor : rowForeground,
+            boxShadow: posColor ? '0 4px 10px rgba(0,0,0,0.16)' : 'none',
+          }}
+        >
+          {item.position || '—'}
+        </span>
+      )}
+      <div className="trade-selection-row__body">
+        <div
+          className="trade-selection-row__identity"
+          style={{ color: rowForeground }}
+        >
           {item.label}
         </div>
-        {item.position && (
-          <div className="flex items-center gap-1 overflow-hidden mt-0.5">
-            <span className="shrink-0" style={{ fontSize: 12, color: 'var(--color-label-tertiary)' }}>
-              {item.position}{item.team ? ` · ${item.team}` : ''}
-            </span>
-            {item.rankInfo && (
-              <span className="font-bold tabular-nums shrink-0" style={{ fontSize: 12, color: palette?.color ?? 'var(--color-label-quaternary)' }}>
-                · #{item.rankInfo.rank} {item.rankInfo.posLabel}
-              </span>
-            )}
-            {item.avgPPG != null && (
-              <span className="hidden lg:inline tabular-nums shrink-0" style={{ fontSize: 12, color: 'var(--color-label-quaternary)' }}>
-                · {item.avgPPG.toFixed(1)} avg
-              </span>
-            )}
-            {(item.dynastyFallback || item.idpFallback) && (
-              <span className="shrink-0" style={{ color: 'var(--color-label-quaternary)', fontSize: 10 }}>
-                · {item.dynastyFallback ? 'DYN est.' : 'est.'}
-              </span>
-            )}
+        {metaSegments.length > 0 && (
+          <div className="trade-selection-row__meta">
+            <span className="trade-selection-row__meta-prefix">{item.type === 'pick' ? 'Draft Asset' : 'Player'}</span>
+            {metaSegments.map((segment) => (
+              <span key={segment} className="trade-selection-row__meta-item">{segment}</span>
+            ))}
           </div>
         )}
       </div>
-      <span className="font-bold tabular-nums shrink-0" style={{ fontSize: 15, color: (item.adjVal ?? item.val) != null ? 'var(--color-label)' : 'var(--color-label-quaternary)' }}
-        title={item.idpFallback ? 'Estimated from season production (no KTC data)' : undefined}>
-        {(item.dynastyFallback || item.idpFallback) ? '~' : ''}{fmtKtcValue(item.adjVal ?? item.val)}
-      </span>
+      {item.type === 'player' && palette?.logoKey ? (
+        <img
+          src={`https://a.espncdn.com/i/teamlogos/nfl/500/${palette.logoKey}.png`}
+          aria-hidden="true"
+          className="trade-selection-row__team-logo"
+          loading="eager"
+          decoding="async"
+          onError={e => { e.target.style.display = 'none'; }}
+        />
+      ) : item.type === 'player' ? (
+        <span className="trade-selection-row__team-logo-spacer" aria-hidden="true" />
+      ) : null}
+      <div className="trade-selection-row__value">
+        <span className="trade-selection-row__value-kicker">{valueKicker}</span>
+        <span
+          className="trade-selection-row__value-number"
+          title={item.idpFallback ? 'Estimated from season production (no KTC data)' : undefined}
+        >
+          {valueIsEstimated ? '~' : ''}{fmtKtcValue(value)}
+        </span>
+      </div>
       <button onClick={(event) => { event.stopPropagation(); onRemove(); }}
-        className="shrink-0 w-5 h-5 rounded-full flex items-center justify-center"
-        style={{ background: 'var(--color-fill-secondary)', color: 'var(--color-label-tertiary)', fontSize: '10px' }}>
+        className="trade-selection-row__remove"
+        aria-label={`Remove ${item.label}`}>
         ×
       </button>
     </div>
@@ -1953,7 +2105,6 @@ function ShelfPartnerTab({ partnerRosters, value, onChange, label, active, disab
         <button
           type="button"
           onClick={() => {
-            onActivate?.();
             if (!disabled) setOpen(v => !v);
           }}
           style={{
@@ -1972,7 +2123,7 @@ function ShelfPartnerTab({ partnerRosters, value, onChange, label, active, disab
                 {selected.displayName}
               </span>
           ) : (
-              <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label || 'PARTNER'}</span>
+              <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label || 'Select Partner'}</span>
           )}
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={active ? 'currentColor' : 'var(--color-label-tertiary)'} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
             style={{ flexShrink: 0, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 150ms' }}>
@@ -1983,15 +2134,15 @@ function ShelfPartnerTab({ partnerRosters, value, onChange, label, active, disab
         {open && (
           <div style={{
             position: 'absolute', top: 'calc(100% + 5px)', right: 0, zIndex: 50,
-            width: 240, maxWidth: 'calc(100vw - 28px)',
+            width: 280, maxWidth: 'calc(100vw - 28px)',
             background: 'var(--color-bg-secondary)', border: '1px solid var(--color-separator)',
             borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.1)',
-            overflow: 'hidden', maxHeight: 280, overflowY: 'auto',
+            overflow: 'hidden', maxHeight: 360, overflowY: 'auto',
           }}>
             {/* Clear option */}
             {value && (
               <button
-                onClick={() => { onChange(null); setOpen(false); }}
+                onClick={() => { onChange(null); onActivate?.(); setOpen(false); }}
                 style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 9, padding: '8px 12px', background: 'transparent', border: 0, borderBottom: '1px solid var(--color-separator)', cursor: 'pointer', textAlign: 'left' }}
               >
                 <div style={{ width: 22, height: 22, borderRadius: '50%', border: '1.5px dashed var(--color-separator)', flexShrink: 0 }} />
@@ -2034,9 +2185,16 @@ function ShelfPartnerTab({ partnerRosters, value, onChange, label, active, disab
 function getColorCommentary(verdict, gap, partnerName) {
   if (!gap) return null;
   const pn = partnerName || 'your partner';
-  const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+  const stablePick = (arr) => {
+    const key = `${verdict}:${Math.round(gap / 25)}:${pn}`;
+    let hash = 0;
+    for (let i = 0; i < key.length; i += 1) {
+      hash = ((hash << 5) - hash + key.charCodeAt(i)) | 0;
+    }
+    return arr[Math.abs(hash) % arr.length];
+  };
 
-  if (verdict === 'fair') return pick([
+  if (verdict === 'fair') return stablePick([
     `Straight swap — values are close. Pull the trigger.`,
     `Both sides are roughly even. Hard to argue either way.`,
     `Balanced deal. If both managers like it, there's no wrong answer.`,
@@ -2047,7 +2205,7 @@ function getColorCommentary(verdict, gap, partnerName) {
     `Value neutral. If you want the players, do it.`,
   ]);
 
-  if (verdict === 'favors_you') return pick([
+  if (verdict === 'favors_you') return stablePick([
     `You're getting the better end here. ${pn} might push back.`,
     `The value tilts your way. Don't be surprised if ${pn} counters.`,
     `You're winning this trade on paper. ${pn} may want something added.`,
@@ -2060,7 +2218,7 @@ function getColorCommentary(verdict, gap, partnerName) {
     `Favorable gap. If ${pn} accepts as-is, that's a win for your roster.`,
   ]);
 
-  if (verdict === 'favors_them') return pick([
+  if (verdict === 'favors_them') return stablePick([
     `You're giving up more than you're getting. Try sweetening your side.`,
     `The value gap goes ${pn}'s way. Adjust the package before sending.`,
     `You're overpaying here. Consider trimming their side or adding from yours.`,
@@ -2077,65 +2235,113 @@ function getColorCommentary(verdict, gap, partnerName) {
 }
 
 // ── BroadcastScoreboard ────────────────────────────────────────────────────────
-function BroadcastScoreboard({ yourTotal, theirTotal, yourName, partnerName, verdict, hasItems, onClear }) {
+function BroadcastScoreboard({ yourTotal, theirTotal, yourName, yourAvatar, partnerName, partnerAvatar, verdict, hasItems, onClear }) {
   const { verdict: v, pct = 0, gap = 0 } = verdict;
   const sign = v === 'favors_you' ? 1 : v === 'favors_them' ? -1 : 0;
-  const angleDeg = hasItems ? sign * Math.min((pct / 100) * 68, 68) : 0;
+  const angleDeg = hasItems ? sign * Math.min((pct / 100) * 72, 72) : 0;
   const angleRad = (angleDeg * Math.PI) / 180;
-  const cx = 90; const cy = 96;
-  const needleX = cx + 58 * Math.sin(angleRad);
-  const needleY = cy - 58 * Math.cos(angleRad);
-  const arcLen = 232;
+  const cx = 110; const cy = 112;
+  const needleX = cx + 66 * Math.sin(angleRad);
+  const needleY = cy - 66 * Math.cos(angleRad);
+  const arcLen = 260;
   const amberLen = Math.max(0, Math.min(((90 + angleDeg) / 180) * arcLen, arcLen));
-  const verdictText = !hasItems ? '' : v === 'fair' ? 'FAIR' : v === 'favors_you' ? 'GOOD' : 'LEAN';
-  const verdictFill = !hasItems ? 'transparent' : v === 'fair' ? '#F5B700' : v === 'favors_you' ? '#22c55e' : '#ef4444';
+  const verdictText = !hasItems
+    ? 'Build Trade'
+    : v === 'fair'
+      ? 'Fair Deal'
+      : v === 'favors_you'
+        ? 'Favors You'
+        : 'Favors Them';
+  const verdictFill = !hasItems ? 'rgba(255,255,255,0.52)' : v === 'fair' ? '#F5B700' : v === 'favors_you' ? '#22c55e' : '#ef4444';
+  const detailText = !hasItems
+    ? 'Add players or picks to compare values'
+    : v === 'fair'
+      ? 'Trade values are balanced'
+      : `${fmtKtcValue(gap)} gap · ${pct}% ${v === 'favors_you' ? 'your way' : 'their way'}`;
   const df = "var(--font-display, 'Barlow Condensed', sans-serif)";
+  const ticks = [-64, 0, 64].map((deg) => {
+    const rad = (deg * Math.PI) / 180;
+    return {
+      x1: cx + 76 * Math.sin(rad),
+      y1: cy - 76 * Math.cos(rad),
+      x2: cx + 83 * Math.sin(rad),
+      y2: cy - 83 * Math.cos(rad),
+      emphasis: deg === 0,
+    };
+  });
+  const Avatar = ({ hash, name, align = 'left' }) => hash ? (
+    <img
+      src={`https://sleepercdn.com/avatars/thumbs/${hash}`}
+      alt=""
+      style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', flexShrink: 0, border: '1px solid rgba(255,255,255,0.18)' }}
+      onError={e => { e.target.style.display = 'none'; }}
+    />
+  ) : (
+    <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.14)', color: 'rgba(255,255,255,0.62)', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+      {(name || (align === 'right' ? 'P' : 'Y'))[0]?.toUpperCase()}
+    </div>
+  );
+  const TeamBlock = ({ name, total, avatar, align = 'left' }) => (
+    <div className={`trade-scoreboard__team trade-scoreboard__team--${align}`} style={{ display: 'flex', alignItems: 'center', justifyContent: align === 'right' ? 'flex-end' : 'flex-start', gap: 10, minWidth: 0 }}>
+      {align === 'left' && <Avatar hash={avatar} name={name} align={align} />}
+      <div className="trade-scoreboard__team-copy" style={{ display: 'flex', flexDirection: 'column', alignItems: align === 'right' ? 'flex-end' : 'flex-start', gap: 2, minWidth: 0, textAlign: align === 'right' ? 'right' : 'left' }}>
+        <span className="trade-scoreboard__team-name" style={{ fontFamily: "'Figtree', sans-serif", fontWeight: 700, fontSize: 14, lineHeight: 1.1, color: 'rgba(255,255,255,0.78)', maxWidth: 210, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+        <span className="trade-scoreboard__team-total" style={{ fontFamily: df, fontWeight: 800, fontSize: 40, lineHeight: 0.92, fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.01em', color: '#fff' }}>
+          {hasItems ? fmtKtcValue(total) : '0'}
+        </span>
+      </div>
+      {align === 'right' && <Avatar hash={avatar} name={name} align={align} />}
+    </div>
+  );
+
   return (
-    <div style={{ background: '#0D1117', color: 'white', padding: '14px 20px 14px', flexShrink: 0, position: 'relative' }}>
-      {hasItems && (
-        <button onClick={onClear} style={{ position: 'absolute', top: 10, right: 16, fontFamily: df, fontSize: 10, letterSpacing: '0.12em', color: '#F5B700', background: 'none', border: 0, cursor: 'pointer', fontWeight: 700 }}>
-          CLEAR
-        </button>
-      )}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: 12, alignItems: 'center' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-          <span style={{ fontFamily: df, fontWeight: 800, fontSize: 15, lineHeight: 1, color: 'rgba(255,255,255,0.65)' }}>{yourName || 'YOU'}</span>
-          <span style={{ fontFamily: df, fontWeight: 800, fontSize: 38, lineHeight: 0.95, fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.01em' }}>
-            {hasItems ? fmtKtcValue(yourTotal) : '—'}
-          </span>
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-          <svg width="160" height="104" viewBox="0 0 180 110" style={{ overflow: 'visible' }}>
-            <path d="M 16 96 A 74 74 0 0 1 164 96" fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth="5" strokeLinecap="round"/>
-            <path d="M 16 96 A 74 74 0 0 1 164 96" fill="none" stroke="#F5B700" strokeWidth="5" strokeLinecap="round"
+    <div className="trade-scoreboard" style={{ background: '#0D1117', color: 'white', padding: '8px 20px 12px', flexShrink: 0, position: 'relative' }}>
+      <div style={{ minHeight: 24, marginBottom: 2, display: 'flex', alignItems: 'center', justifyContent: 'flex-start' }}>
+        {hasItems ? (
+          <button onClick={onClear} style={{ fontFamily: df, fontSize: 11, letterSpacing: '0.12em', color: '#F5B700', background: 'none', border: 0, cursor: 'pointer', fontWeight: 700, padding: '4px 0', textTransform: 'uppercase' }}>
+            CLEAR
+          </button>
+        ) : <span aria-hidden="true" />}
+      </div>
+      <div className="trade-scoreboard__grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto minmax(0,1fr)', gap: 24, alignItems: 'center' }}>
+        <TeamBlock name={yourName || 'You'} total={yourTotal} avatar={yourAvatar} />
+        <div className="trade-scoreboard__meter" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0 }}>
+          <div className="trade-scoreboard__verdict" style={{ textAlign: 'center', marginBottom: -8, minHeight: 34 }}>
+            <div className="trade-scoreboard__verdict-title" style={{ fontFamily: "'Figtree', sans-serif", fontWeight: 800, fontSize: 15, lineHeight: 1.1, color: verdictFill }}>
+              {verdictText}
+            </div>
+            <div className="trade-scoreboard__verdict-detail" style={{ marginTop: 3, fontFamily: "'Figtree', sans-serif", fontWeight: 600, fontSize: 11, lineHeight: 1.1, color: 'rgba(255,255,255,0.68)' }}>
+              {detailText}
+            </div>
+          </div>
+          <svg className="trade-scoreboard__svg" width="220" height="112" viewBox="0 0 220 112" style={{ overflow: 'visible', display: 'block' }}>
+            <path d="M 26 112 A 84 84 0 0 1 194 112" fill="none" stroke="rgba(255,255,255,0.16)" strokeWidth="8" strokeLinecap="round"/>
+            <path d="M 26 112 A 84 84 0 0 1 194 112" fill="none" stroke="#F5B700" strokeWidth="8" strokeLinecap="round"
               strokeDasharray={`${amberLen} ${arcLen}`}/>
-            <line x1={cx} y1={cy} x2={needleX.toFixed(2)} y2={needleY.toFixed(2)} stroke="white" strokeWidth="2.5" strokeLinecap="round"/>
-            <circle cx={cx} cy={cy} r="5" fill="#F5B700" stroke="rgba(0,0,0,0.5)" strokeWidth="2"/>
-            {verdictText && (
-              <text x={cx} y={cy - 18} textAnchor="middle" fontFamily="'Barlow Condensed', sans-serif" fontWeight="800" fontSize="18" fill={verdictFill} letterSpacing="1">
-                {verdictText}
-              </text>
-            )}
+            {ticks.map((tick, index) => (
+              <line
+                key={index}
+                x1={tick.x1.toFixed(2)}
+                y1={tick.y1.toFixed(2)}
+                x2={tick.x2.toFixed(2)}
+                y2={tick.y2.toFixed(2)}
+                stroke={tick.emphasis ? 'rgba(255,255,255,0.82)' : 'rgba(255,255,255,0.46)'}
+                strokeWidth={tick.emphasis ? 2.4 : 1.6}
+                strokeLinecap="round"
+              />
+            ))}
+            <line x1={cx} y1={cy} x2={needleX.toFixed(2)} y2={needleY.toFixed(2)} stroke="white" strokeWidth="3.8" strokeLinecap="round"/>
+            <circle cx={cx} cy={cy} r="7" fill="#F5B700" stroke="rgba(0,0,0,0.65)" strokeWidth="2.5"/>
           </svg>
-          {hasItems && gap > 0 && v !== 'fair' && (
-            <span style={{ fontFamily: df, fontSize: 9, letterSpacing: '0.1em', color: 'rgba(255,255,255,0.4)', marginTop: -4 }}>
-              {fmtKtcValue(gap)} gap · {pct}%
-            </span>
-          )}
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1, textAlign: 'right' }}>
-          <span style={{ fontFamily: df, fontWeight: 800, fontSize: 15, lineHeight: 1, color: 'rgba(255,255,255,0.65)' }}>{partnerName || 'PARTNER'}</span>
-          <span style={{ fontFamily: df, fontWeight: 800, fontSize: 38, lineHeight: 0.95, fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.01em' }}>
-            {hasItems ? fmtKtcValue(theirTotal) : '—'}
-          </span>
-        </div>
+        <TeamBlock name={partnerName || 'Select Partner'} total={theirTotal} avatar={partnerAvatar} align="right" />
       </div>
     </div>
   );
 }
 
 // ── TradePlate ─────────────────────────────────────────────────────────────────
-function TradePlate({ side, label, accentColor, items, total, onRemovePlayer, onRemovePick, onAddPlayer, onAddPick, onOpenPlayer, showBg, shelfDragRef, onDropFromShelf }) {
+function TradePlate({ side, items, total, onRemovePlayer, onRemovePick, onAddPlayer, onAddPick, onOpenPlayer, shelfDragRef, onDropFromShelf }) {
   const { darkMode } = useTheme();
   // null | 'valid' | 'invalid'
   const [dragState, setDragState] = useState(null);
@@ -2146,7 +2352,7 @@ function TradePlate({ side, label, accentColor, items, total, onRemovePlayer, on
     ? 'rgba(34,197,94,0.08)'
     : dragState === 'invalid'
       ? 'rgba(239,68,68,0.08)'
-      : (showBg ? 'var(--color-bg-secondary)' : undefined);
+      : undefined;
   const dragOutline = dragState === 'valid'
     ? '2px solid #22c55e'
     : dragState === 'invalid'
@@ -2155,7 +2361,7 @@ function TradePlate({ side, label, accentColor, items, total, onRemovePlayer, on
 
   return (
     <div
-      className="flex flex-col gap-2"
+      className="trade-plate flex flex-col gap-2"
       onDragOver={e => {
         e.preventDefault();
         const drag = shelfDragRef?.current;
@@ -2182,23 +2388,47 @@ function TradePlate({ side, label, accentColor, items, total, onRemovePlayer, on
         borderRight: isYours ? '1px solid var(--color-separator)' : undefined,
         background: dragBg,
         minHeight: 120,
+        minWidth: 0,
+        overflow: 'hidden',
         transition: 'background 100ms, outline 100ms',
         outline: dragOutline,
         outlineOffset: -2,
       }}
     >
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1.5">
-          <div style={{ width: 4, height: 14, background: accentColor, flexShrink: 0, borderRadius: 2 }} />
-          <span style={{ fontFamily: df, fontWeight: 700, fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--color-label)' }}>{label}</span>
-        </div>
-      </div>
       {items.map((item) => {
         const palette = item.type === 'player' ? teamPalette(item.team, darkMode) : { color: null, tint: null, logoKey: '' };
         return (
           <TradeSideAssetRow key={item.id} item={item} palette={palette} darkMode={darkMode} onOpenPlayer={onOpenPlayer} onRemove={() => item.type === 'player' ? onRemovePlayer(item.id) : onRemovePick(item.id)} />
         );
       })}
+      {items.length === 0 && (
+        <div
+          className="hidden lg:flex flex-1 min-h-[92px] items-center justify-center text-center rounded-lg"
+          style={{
+            border: '1px dashed var(--color-separator)',
+            color: dragState === 'valid' ? '#22c55e' : 'var(--color-label-quaternary)',
+            background: dragState === 'valid' ? 'rgba(34,197,94,0.06)' : 'transparent',
+            fontFamily: df,
+            letterSpacing: '0.08em',
+            textTransform: 'uppercase',
+            fontSize: 11,
+            fontWeight: 700,
+          }}
+        >
+          <span>
+            {dragState === 'valid'
+              ? 'Drop here to add'
+              : dragState === 'invalid'
+                ? 'Wrong side'
+                : 'Drop here from shelf'}
+            {!dragState && (
+              <span style={{ display: 'block', marginTop: 4, fontFamily: "'Figtree', sans-serif", fontSize: 11, fontWeight: 500, letterSpacing: 0, textTransform: 'none', color: 'var(--color-label-quaternary)' }}>
+                or use + Player / + Pick
+              </span>
+            )}
+          </span>
+        </div>
+      )}
       <div className="flex gap-1.5" style={{ marginTop: items.length ? 4 : 0 }}>
         <button onClick={onAddPlayer} className="flex-1 py-2.5 rounded-lg font-medium"
           style={{ fontSize: 13, border: '1px dashed var(--color-separator)', color: 'var(--color-label-tertiary)', background: 'transparent', cursor: 'pointer' }}>
@@ -2220,6 +2450,12 @@ function matchesShelfFilter(pos, posFilter) {
   if (posFilter === 'ALL') return true;
   if (posFilter === 'IDP') return IDP_POSITIONS.has(pos);
   return pos === posFilter;
+}
+
+function shelfPlayerName(player) {
+  return player?.full_name
+    || [player?.first_name, player?.last_name].filter(Boolean).join(' ')
+    || 'Player';
 }
 
 // ── RosterShelf ────────────────────────────────────────────────────────────────
@@ -2264,10 +2500,10 @@ function RosterShelf({
     background: 'transparent',
     border: 0,
     borderBottom: `2.5px solid ${isActive ? 'var(--color-signature)' : 'transparent'}`,
-    fontFamily: df,
-    fontWeight: 700,
+    fontFamily: "'Figtree', sans-serif",
+    fontWeight: 600,
     fontSize: 12,
-    letterSpacing: '0.04em',
+    letterSpacing: 0,
     color: isActive ? 'var(--color-label)' : 'var(--color-label-secondary)',
     overflow: 'hidden',
     textOverflow: 'ellipsis',
@@ -2275,7 +2511,7 @@ function RosterShelf({
   });
 
   return (
-    <div style={{ width: 290, flexShrink: 0, borderRight: '1px solid var(--color-separator)', background: 'var(--color-bg-secondary)', display: 'flex', flexDirection: 'column', position: 'sticky', top: 60, maxHeight: 'calc(100vh - 80px)', alignSelf: 'flex-start', overflowY: 'auto' }}>
+    <div style={{ width: 'clamp(300px, 24vw, 340px)', flexShrink: 0, borderRight: '1px solid var(--color-separator)', background: 'var(--color-bg-secondary)', display: 'flex', flexDirection: 'column', position: 'sticky', top: 0, maxHeight: '100vh', alignSelf: 'flex-start', overflow: 'visible' }}>
       {/* YOU / PARTNER tabs */}
       <div style={{ display: 'flex', borderBottom: '1px solid var(--color-separator)', position: 'sticky', top: 0, background: 'var(--color-bg-secondary)', zIndex: 2 }}>
         <button onClick={() => setActiveTab('yours')}
@@ -2286,7 +2522,7 @@ function RosterShelf({
           partnerRosters={partnerRosters}
           value={shelfPartnerRosterId}
           onChange={onPartnerChange}
-          label={partnerName || 'PARTNER'}
+          label={partnerName || 'Select Partner'}
           active={activeTab === 'theirs'}
           disabled={false}
           onActivate={() => setActiveTab('theirs')}
@@ -2307,7 +2543,7 @@ function RosterShelf({
         </button>
       </div>
       {/* List */}
-      <div style={{ flex: 1, padding: '4px 8px 8px', display: 'flex', flexDirection: 'column', gap: 3 }}>
+      <div style={{ flex: 1, minHeight: 0, padding: '4px 8px 8px', display: 'flex', flexDirection: 'column', gap: 3, overflowY: 'auto' }}>
         {showPicks ? (
           shelfPicks.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '14px 0', fontSize: 12, color: 'var(--color-label-quaternary)' }}>
@@ -2322,9 +2558,16 @@ function RosterShelf({
                 onDragStart={() => handleDragStart('pick', pick.key, pick)}
                 onClick={() => !inTrade && (activeTab === 'yours' ? onAddPickToYours(pick) : onAddPickToTheirs(pick))}
                 disabled={inTrade}
+                className="group"
                 style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 7px', borderRadius: 7, border: inTrade ? '1px dashed var(--color-separator)' : '1px solid var(--color-separator)', background: 'var(--color-bg)', opacity: inTrade ? 0.35 : 1, cursor: inTrade ? 'default' : 'grab', textAlign: 'left', width: '100%' }}>
                 <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 3, background: 'rgba(245,183,0,0.12)', color: '#F5B700', flexShrink: 0, letterSpacing: '0.04em' }}>PICK</span>
                 <span style={{ flex: 1, minWidth: 0, fontSize: 12, fontWeight: 600, color: 'var(--color-label)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+                {!inTrade && (
+                  <span className="hidden lg:inline-flex opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity" style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.08em', color: 'var(--color-signature)', flexShrink: 0 }}>ADD</span>
+                )}
+                {inTrade && (
+                  <span className="hidden lg:inline-flex" style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.08em', color: 'var(--color-label-quaternary)', flexShrink: 0 }}>ADDED</span>
+                )}
               </button>
             );
           })
@@ -2345,13 +2588,20 @@ function RosterShelf({
               onDragStart={() => handleDragStart('player', id, null)}
               onClick={() => !isInTrade && (activeTab === 'yours' ? onAddToYours(id) : onAddToTheirs(id))}
               disabled={isInTrade}
+              className="group"
               style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 7px', borderRadius: 7, border: isInTrade ? '1px dashed var(--color-separator)' : '1px solid var(--color-separator)', background: 'var(--color-bg)', opacity: isInTrade ? 0.35 : 1, cursor: isInTrade ? 'default' : 'grab', textAlign: 'left', width: '100%' }}>
               <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 3, background: posColor ? `${posColor}22` : 'var(--color-fill)', color: posColor ?? 'var(--color-label-tertiary)', flexShrink: 0, letterSpacing: '0.04em' }}>{pos}</span>
               <span style={{ flex: 1, minWidth: 0, fontSize: 12, fontWeight: 600, color: 'var(--color-label)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {p.first_name ? `${p.first_name[0]}. ${p.last_name}` : p.full_name}
+                {shelfPlayerName(p)}
               </span>
               {val != null && (
                 <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-label-secondary)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{fmtKtcValue(val)}</span>
+              )}
+              {!isInTrade && (
+                <span className="hidden lg:inline-flex opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity" style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.08em', color: 'var(--color-signature)', flexShrink: 0 }}>ADD</span>
+              )}
+              {isInTrade && (
+                <span className="hidden lg:inline-flex" style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.08em', color: 'var(--color-label-quaternary)', flexShrink: 0 }}>ADDED</span>
               )}
             </button>
           );
@@ -2400,11 +2650,11 @@ function MobileRosterShelf({
     background: isActive ? 'var(--color-signature)' : 'var(--color-fill)',
     color: isActive ? 'var(--color-signature-fg)' : 'var(--color-label-tertiary)',
     border: '1px solid var(--color-separator)',
-    fontFamily: df,
-    fontWeight: 700,
-    fontSize: 11,
-    letterSpacing: '0.08em',
-    textTransform: 'uppercase',
+    fontFamily: "'Figtree', sans-serif",
+    fontWeight: 600,
+    fontSize: 12,
+    letterSpacing: 0,
+    textTransform: 'none',
     minHeight: 36,
   });
 
@@ -2420,7 +2670,7 @@ function MobileRosterShelf({
           partnerRosters={partnerRosters}
           value={shelfPartnerRosterId}
           onChange={onPartnerChange}
-          label={partnerName || 'PARTNER'}
+          label={partnerName || 'Select Partner'}
           active={activeTab === 'theirs'}
           disabled={false}
           onActivate={() => setActiveTab('theirs')}
@@ -2478,7 +2728,7 @@ function MobileRosterShelf({
               style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 10px', borderRadius: 10, border: isInTrade ? '1px dashed var(--color-separator)' : '1px solid var(--color-separator)', background: 'var(--color-bg)', opacity: isInTrade ? 0.4 : 1, cursor: isInTrade ? 'default' : 'pointer', textAlign: 'left', width: '100%', minHeight: 44 }}>
               <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: posColor ? `${posColor}22` : 'var(--color-fill)', color: posColor ?? 'var(--color-label-tertiary)', flexShrink: 0, fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.06em' }}>{pos}</span>
               <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 600, color: 'var(--color-label)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {p.first_name ? `${p.first_name[0]}. ${p.last_name}` : p.full_name}
+                {shelfPlayerName(p)}
               </span>
               {val != null && (
                 <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-label-secondary)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{fmtKtcValue(val)}</span>
@@ -2516,6 +2766,170 @@ function AssetBadge({ asset }) {
         </span>
       )}
     </span>
+  );
+}
+
+function getProposalPickIdentity(pick) {
+  if (!pick) return 'Draft Pick';
+  const roundNumber = Number(pick.round);
+  const hasRound = Number.isFinite(roundNumber) && roundNumber > 0;
+  const compactPickNumberLabel = pick.pickNumberLabel ?? pick.pickRangeLabel ?? null;
+  const parsedPickSlot = typeof compactPickNumberLabel === 'string'
+    ? Number(compactPickNumberLabel.match(/^\d+\.(\d+)$/)?.[1])
+    : null;
+  const lockedPickSlot = Number(pick.lockedSlot ?? parsedPickSlot);
+  const hasLockedPickSlot = Number.isFinite(lockedPickSlot) && lockedPickSlot > 0;
+  const compactRoundLabel = hasRound ? `Round ${roundNumber}` : null;
+  const compactPickSlotLabel = hasLockedPickSlot ? `Pick ${lockedPickSlot}` : compactPickNumberLabel;
+
+  return [
+    pick.year,
+    compactRoundLabel,
+    compactPickSlotLabel,
+  ].filter(Boolean).join(' · ') || pick.label || 'Draft Pick';
+}
+
+function ProposalAssetRow({ asset, darkMode, onOpenPlayer }) {
+  if (!asset) return null;
+
+  const isPlayer = asset.type === 'player';
+  const isInteractive = isPlayer && !!onOpenPlayer;
+  const palette = isPlayer && asset.team ? teamPalette(asset.team, darkMode) : null;
+  const value = asset.value ?? asset.val;
+  const hasTeamGradient = isPlayer && palette?.gradient;
+  const accentColor = palette?.borderColor ?? (isPlayer ? 'var(--color-accent)' : 'var(--color-signature)');
+  const rowBg = hasTeamGradient ? palette.gradient : (palette?.tint ?? 'var(--color-fill)');
+  const rowForeground = hasTeamGradient ? palette.gradientForeground : 'var(--color-label)';
+  const rowMuted = hasTeamGradient
+    ? (rowForeground === '#FFFFFF' ? 'rgba(255,255,255,0.70)' : 'rgba(12,15,20,0.64)')
+    : 'var(--color-label-secondary)';
+  const rowSubtle = hasTeamGradient
+    ? (rowForeground === '#FFFFFF' ? 'rgba(255,255,255,0.16)' : 'rgba(12,15,20,0.12)')
+    : 'var(--color-fill-secondary)';
+  const Component = isInteractive ? 'button' : 'div';
+
+  if (!isPlayer) {
+    const quality = asset.displayQuality ?? asset.quality ?? null;
+    const metaSegments = [quality, asset.pickRangeLabel].filter(Boolean);
+    return (
+      <Component
+        type={isInteractive ? 'button' : undefined}
+        className="trade-selection-row trade-selection-row--proposal"
+        style={{
+          background: rowBg,
+          '--trade-selection-accent': 'var(--color-signature)',
+          '--trade-selection-fg': 'var(--color-label)',
+          '--trade-selection-muted': 'var(--color-label-secondary)',
+          '--trade-selection-subtle': 'var(--color-fill-secondary)',
+        }}
+      >
+        <div className="trade-selection-row__pick-mark">
+          PICK
+        </div>
+        <div className="trade-selection-row__body">
+          <div className="trade-selection-row__identity" style={{ color: 'var(--color-label)' }}>
+            {getProposalPickIdentity(asset)}
+          </div>
+          <div className="trade-selection-row__meta">
+            <span className="trade-selection-row__meta-prefix">Draft Asset</span>
+            {(metaSegments.length ? metaSegments : [asset.cardHeadline || 'Draft pick']).map((segment) => (
+              <span key={segment} className="trade-selection-row__meta-item">{segment}</span>
+            ))}
+          </div>
+        </div>
+        <div className="trade-selection-row__value">
+          <span className="trade-selection-row__value-kicker">
+            Value
+          </span>
+          <span className="trade-selection-row__value-number">
+            {value != null ? fmtKtcValue(value) : '—'}
+          </span>
+        </div>
+      </Component>
+    );
+  }
+
+  const rankLabel = asset.rank?.posLabel ? `${asset.rank.posLabel}${asset.rank.rank}` : null;
+  const metaSegments = [
+    [asset.position, asset.team].filter(Boolean).join(' · '),
+    rankLabel,
+    asset.ppg > 0 ? `${asset.ppg.toFixed(1)} PPG` : null,
+  ].filter(Boolean);
+  const posColor = getTradePositionColor(asset.position);
+  const posTextColor = posColor && hexLuminance(posColor) > 0.42 ? '#0C0F14' : '#FFFFFF';
+
+  return (
+    <Component
+      type={isInteractive ? 'button' : undefined}
+      onClick={isInteractive ? () => onOpenPlayer(asset) : undefined}
+      className={`trade-selection-row trade-selection-row--proposal${isInteractive ? ' is-interactive' : ''}`}
+      style={{
+        background: rowBg,
+        '--trade-selection-accent': accentColor,
+        '--trade-selection-fg': rowForeground,
+        '--trade-selection-muted': rowMuted,
+        '--trade-selection-subtle': rowSubtle,
+        cursor: isInteractive ? 'pointer' : undefined,
+      }}
+      title={[asset.name, ...metaSegments, `Value ${fmtKtcValue(value)}`].join(' · ')}
+      aria-label={isInteractive ? `Open player stats for ${asset.name}` : undefined}
+    >
+      {hasTeamGradient && (
+        <div
+          className="trade-selection-row__gradient-overlay"
+          style={{ background: palette.gradientOverlay }}
+          aria-hidden="true"
+        />
+      )}
+      <img
+        src={`https://sleepercdn.com/content/nfl/players/thumb/${asset.id}.jpg`}
+        alt=""
+        className="trade-selection-row__avatar"
+        loading="lazy"
+        decoding="async"
+        onError={e => { e.target.style.display = 'none'; }}
+      />
+      <span
+        className="trade-selection-row__position"
+        style={{
+          background: posColor ?? rowSubtle,
+          color: posColor ? posTextColor : rowForeground,
+        }}
+      >
+        {asset.position || '—'}
+      </span>
+      <div className="trade-selection-row__body">
+        <div className="trade-selection-row__identity" style={{ color: rowForeground }}>
+          {asset.name}
+        </div>
+        <div className="trade-selection-row__meta">
+          <span className="trade-selection-row__meta-prefix">Player</span>
+          {(metaSegments.length ? metaSegments : ['Player']).map((segment) => (
+            <span key={segment} className="trade-selection-row__meta-item">{segment}</span>
+          ))}
+        </div>
+      </div>
+      {palette?.logoKey ? (
+        <img
+          src={`https://a.espncdn.com/i/teamlogos/nfl/500/${palette.logoKey}.png`}
+          aria-hidden="true"
+          className="trade-selection-row__team-logo"
+          loading="lazy"
+          decoding="async"
+          onError={e => { e.target.style.display = 'none'; }}
+        />
+      ) : (
+        <span className="trade-selection-row__team-logo-spacer" aria-hidden="true" />
+      )}
+      <div className="trade-selection-row__value">
+        <span className="trade-selection-row__value-kicker">
+          Value
+        </span>
+        <span className="trade-selection-row__value-number">
+          {value != null ? fmtKtcValue(value) : '—'}
+        </span>
+      </div>
+    </Component>
   );
 }
 
@@ -2597,8 +3011,11 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
   const { rosters } = useSleeperLeague();
 
   const teamColor = primaryPalette?.color ?? null;
-  const cardBg = teamColor
-    ? `linear-gradient(160deg, ${teamColor}dd 0%, ${teamColor}88 30%, ${teamColor}22 60%, rgba(0,0,0,0.82) 100%)`
+  const teamGradient = primaryPalette?.gradient ?? null;
+  const teamGradientOverlay = primaryPalette?.gradientOverlay ?? null;
+  const teamGradientForeground = primaryPalette?.gradientForeground ?? 'white';
+  const cardBg = teamGradient
+    ? teamGradient
     : 'var(--color-fill)';
   const cardBorder = teamColor ? `${teamColor}88` : 'var(--color-separator)';
   const cardHighlight = teamColor
@@ -2606,7 +3023,7 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
     : `4px solid ${darkMode ? 'rgba(255,255,255,0.16)' : 'rgba(12,15,20,0.14)'}`;
   // Gradient fade applied behind the player image (visible when photo doesn't fully cover)
   const photoFade = teamColor
-    ? `linear-gradient(to bottom, transparent 25%, ${teamColor}cc 75%, ${teamColor}ee 100%)`
+    ? 'linear-gradient(to bottom, transparent 18%, rgba(12,15,20,0.08) 68%, rgba(12,15,20,0.24) 100%)'
     : 'linear-gradient(to bottom, transparent 25%, rgba(0,0,0,0.5) 75%, rgba(0,0,0,0.7) 100%)';
 
   // Desktop: position-specific season stats
@@ -2636,10 +3053,13 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
   // ── Pick-only card ──────────────────────────────────────────────────────
   if (!primary && primaryPick) {
     const pickOrdinals = { 1: '1st', 2: '2nd', 3: '3rd', 4: '4th', 5: '5th' };
-    const roundOrd = pickOrdinals[primaryPick.round] ?? `${primaryPick.round}th`;
+    const roundNumber = Number(primaryPick.round);
+    const hasRound = Number.isFinite(roundNumber) && roundNumber > 0;
+    const roundOrd = hasRound ? (pickOrdinals[roundNumber] ?? `${roundNumber}th`) : null;
+    const roundHeroParts = roundOrd?.match(/^(\d+)(\D+)$/);
     const quality = primaryPick.displayQuality ?? primaryPick.quality ?? '';
     const qualityLabel = quality === 'Early' ? 'Early' : quality === 'Mid' ? 'Middle' : quality === 'Late' ? 'Late' : '';
-    const r = primaryPick.round ?? 1;
+    const r = hasRound ? roundNumber : 1;
     // Dynamic pick range based on league size
     const teamCount = rosters?.length || 12;
     const earlyEnd = Math.floor(teamCount / 3);
@@ -2654,10 +3074,23 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
       ? `${r}.${String(slots[0]).padStart(2, '0')} – ${r}.${String(slots[1]).padStart(2, '0')}`
       : null;
     const cardHeadline = primaryPick.cardHeadline
-      ?? (qualityLabel ? `${roundOrd} Round · ${qualityLabel}` : `Round ${primaryPick.round}`);
+      ?? (qualityLabel && roundOrd ? `${roundOrd} Round · ${qualityLabel}` : `Round ${primaryPick.round ?? '—'}`);
     const pickMetaLabel = primaryPick.cardMetaLabel ?? (primaryPick.displayMode === 'future' ? null : 'Projected Range');
     const pickMetaValue = primaryPick.pickRangeLabel ?? pickRange;
     const showPickMeta = Boolean(pickMetaLabel && pickMetaValue);
+    const compactPickNumberLabel = primaryPick.pickNumberLabel ?? primaryPick.pickRangeLabel ?? null;
+    const parsedPickSlot = typeof compactPickNumberLabel === 'string'
+      ? Number(compactPickNumberLabel.match(/^\d+\.(\d+)$/)?.[1])
+      : null;
+    const lockedPickSlot = Number(primaryPick.lockedSlot ?? parsedPickSlot);
+    const hasLockedPickSlot = Number.isFinite(lockedPickSlot) && lockedPickSlot > 0;
+    const compactRoundLabel = hasRound ? `Round ${roundNumber}` : null;
+    const compactPickSlotLabel = hasLockedPickSlot ? `Pick ${lockedPickSlot}` : compactPickNumberLabel;
+    const compactPickIdentity = [
+      primaryPick.year,
+      compactRoundLabel,
+      compactPickSlotLabel,
+    ].filter(Boolean).join(' · ') || primaryPick.label || 'Draft Pick';
 
     // Derive color theme: My Team > dark gold > light gold
     const favPalette = favoriteTeam ? teamPalette(favoriteTeam, darkMode) : null;
@@ -2729,28 +3162,68 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
           ref={cardRef}
           className="w-full aspect-[5/7] rounded-xl flex flex-col overflow-hidden relative"
           style={{
-            background: pt.bg,
-            border: `2px solid ${pt.border}`,
-            borderLeft: `4px solid ${pt.accent}`,
+            background: compactTradeCard ? 'var(--color-bg-secondary)' : pt.bg,
+            border: compactTradeCard ? '0' : `2px solid ${pt.border}`,
+            borderLeft: compactTradeCard ? undefined : `4px solid ${pt.accent}`,
             minHeight: !compactTradeCard && forcedHeight ? `${forcedHeight}px` : undefined,
           }}
         >
-        <div className="relative w-full overflow-hidden" style={{ flexShrink: 0, height: compactTradeCard ? '48%' : '56%' }}>
-          <div className="absolute inset-0" style={{ background: pt.bg }} />
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none select-none overflow-hidden">
-            <span
-              style={{
-                fontFamily: "'Barlow Condensed', sans-serif",
-                fontSize: 'clamp(150px, 80%, 220px)',
-                fontWeight: 900,
-                color: pt.watermark,
-                lineHeight: 1,
-                letterSpacing: '-0.04em',
-              }}
-            >
-              {primaryPick.round ?? '?'}
-            </span>
-          </div>
+        <div className="relative w-full overflow-hidden" style={{ flexShrink: 0, height: compactTradeCard ? '50%' : '56%' }}>
+          <div className="absolute inset-0" style={{ background: compactTradeCard ? 'var(--color-fill)' : pt.bg }} />
+          {compactTradeCard ? (
+            <div className="absolute inset-0 flex flex-col items-center justify-center px-3 py-4 pointer-events-none select-none overflow-hidden">
+              <span
+                style={{
+                  fontFamily: "'Barlow Condensed', sans-serif",
+                  fontSize: 'clamp(48px, 30%, 78px)',
+                  fontWeight: 900,
+                  color: 'var(--color-signature)',
+                  lineHeight: 0.92,
+                  letterSpacing: 0,
+                }}
+              >
+                {roundHeroParts ? (
+                  <span className="inline-flex items-start justify-center">
+                    <span>{roundHeroParts[1]}</span>
+                    <span
+                      style={{
+                        fontSize: '0.56em',
+                        lineHeight: 1,
+                        marginLeft: '0.04em',
+                        marginTop: '0.08em',
+                        letterSpacing: '0.01em',
+                      }}
+                    >
+                      {roundHeroParts[2]}
+                    </span>
+                  </span>
+                ) : (
+                  roundOrd ?? '?'
+                )}
+              </span>
+              <span
+                className="mt-1 text-center text-[11px] font-bold uppercase leading-none"
+                style={{ color: 'var(--color-label-secondary)', fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.16em' }}
+              >
+                {primaryPick.year ?? '—'} Pick
+              </span>
+            </div>
+          ) : (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none select-none overflow-hidden">
+              <span
+                style={{
+                  fontFamily: "'Barlow Condensed', sans-serif",
+                  fontSize: 'clamp(150px, 80%, 220px)',
+                  fontWeight: 900,
+                  color: pt.watermark,
+                  lineHeight: 1,
+                  letterSpacing: '-0.04em',
+                }}
+              >
+                {primaryPick.round ?? '?'}
+              </span>
+            </div>
+          )}
           {showSideBadge && (
             <div className="absolute top-1.5 left-1.5 lg:top-2 lg:left-2 z-10">
               <span
@@ -2768,34 +3241,75 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
             </div>
           )}
           <div className="absolute inset-0 flex flex-col items-center justify-center px-3">
-            <span
-              style={{
-                fontFamily: "'Barlow Condensed', sans-serif",
-                fontSize: '10px',
-                fontWeight: 700,
-                color: pt.accentMuted,
-                letterSpacing: '0.35em',
-                textTransform: 'uppercase',
-              }}
-            >
-              Draft Pick
-            </span>
-            <span
-              className="mt-2"
-              style={{
-                fontFamily: "'Barlow Condensed', sans-serif",
-                fontSize: 'clamp(34px, 4vw, 48px)',
-                fontWeight: 300,
-                color: pt.yearText,
-                lineHeight: 1,
-                letterSpacing: '0.04em',
-              }}
-            >
-              {primaryPick.year ?? '—'}
-            </span>
+            {!compactTradeCard && (
+              <>
+                <span
+                  style={{
+                    fontFamily: "'Barlow Condensed', sans-serif",
+                    fontSize: '10px',
+                    fontWeight: 700,
+                    color: pt.accentMuted,
+                    letterSpacing: '0.35em',
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  Draft Pick
+                </span>
+                <span
+                  className="mt-2"
+                  style={{
+                    fontFamily: "'Barlow Condensed', sans-serif",
+                    fontSize: 'clamp(34px, 4vw, 48px)',
+                    fontWeight: 300,
+                    color: pt.yearText,
+                    lineHeight: 1,
+                    letterSpacing: '0.04em',
+                  }}
+                >
+                  {primaryPick.year ?? '—'}
+                </span>
+              </>
+            )}
           </div>
         </div>
 
+        {compactTradeCard ? (
+          <div
+            className="flex flex-1 flex-col justify-between px-3 pb-3 pt-3 min-h-0"
+            style={{ background: 'var(--color-bg-secondary)' }}
+          >
+            <div className="min-w-0">
+              <div
+                className="truncate whitespace-nowrap text-left text-base font-bold uppercase leading-none lg:text-[17px] xl:text-lg"
+                style={{ color: 'var(--color-label)', fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.01em' }}
+              >
+                {compactPickIdentity}
+              </div>
+              <div
+                className="mt-7 truncate whitespace-nowrap text-left text-[11px] font-bold uppercase leading-none lg:text-[13px] xl:text-sm"
+                style={{ color: 'var(--color-label-secondary)', fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.16em' }}
+              >
+                Draft Pick
+              </div>
+            </div>
+
+            <div className="mt-4">
+              <div
+                className="tabular-nums text-2xl font-bold leading-none"
+                style={{ color: 'var(--color-label)', fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.02em' }}
+              >
+                {primaryPick.value != null ? fmtKtcValue(primaryPick.value) : '—'}
+              </div>
+              <div
+                className="mt-0.5 text-[10px] font-bold uppercase leading-none lg:text-[12px]"
+                style={{ color: 'var(--color-label-tertiary)', letterSpacing: '0.14em' }}
+              >
+                Value
+              </div>
+            </div>
+          </div>
+        ) : (
+        <>
         <div
           className="relative px-2 lg:px-3 py-1 lg:py-1.5 text-center shrink-0"
           style={{
@@ -2848,6 +3362,8 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
           </div>
           )}
         </div>
+        </>
+        )}
       </div>
     );
   }
@@ -2858,8 +3374,8 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
       className="w-full aspect-[5/7] rounded-xl flex flex-col overflow-hidden relative"
       style={{
         background: cardBg,
-        border: `2px solid ${cardBorder}`,
-        borderLeft: cardHighlight,
+        border: compactTradeCard ? '0' : `2px solid ${cardBorder}`,
+        borderLeft: compactTradeCard ? undefined : cardHighlight,
         minHeight: !compactTradeCard && forcedHeight ? `${forcedHeight}px` : undefined,
         cursor: isInteractive ? 'pointer' : undefined,
         boxShadow: cardBoxShadow,
@@ -2882,10 +3398,11 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
       {/* Mouse-tracking border glow */}
       {borderOverlay}
       {/* ── Photo area (~45% of card height) ──────────────────── */}
-      <div className="relative w-full overflow-hidden" style={{ flexShrink: 0, height: compactTradeCard ? '48%' : '56%' }}>
+      <div className="relative w-full overflow-hidden" style={{ flexShrink: 0, height: compactTradeCard ? '50%' : '56%' }}>
         {/* Background fill + gradient fade (behind the player image) */}
         <div className="absolute inset-0"
-          style={{ background: teamColor ? `${teamColor}44` : 'var(--color-fill)' }} />
+          style={{ background: teamGradient ?? (teamColor ? `${teamColor}44` : 'var(--color-fill)') }} />
+        {teamGradientOverlay && <div className="absolute inset-0" style={{ background: teamGradientOverlay }} />}
         <div className="absolute inset-0" style={{ background: photoFade }} />
 
         {primary ? (
@@ -2914,7 +3431,7 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
             <span className="text-[8px] lg:text-[10px] font-bold uppercase tracking-widest px-1.5 lg:px-2 py-0.5 lg:py-1 rounded"
               style={{
                 background: 'rgba(0,0,0,0.7)',
-                color: 'white',
+                color: teamGradientForeground,
                 letterSpacing: '0.08em',
                 border: `1px solid ${teamColor ? `${teamColor}88` : 'rgba(255,255,255,0.2)'}`,
                 textShadow: '0 1px 2px rgba(0,0,0,0.5)',
@@ -2953,19 +3470,74 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
         ) : null}
       </div>
 
+      {compactTradeCard && primary ? (
+        <div
+          className="flex flex-1 flex-col justify-between px-3 pb-3 pt-3 min-h-0"
+          style={{ background: 'var(--color-bg-secondary)' }}
+        >
+            <div className="min-w-0">
+              <div
+                className="truncate whitespace-nowrap text-left text-base font-bold uppercase leading-none lg:text-[17px] xl:text-lg"
+                style={{ color: 'var(--color-label)', fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.01em' }}
+              >
+                {primary.name}
+              </div>
+              <div
+                className="mt-1 truncate whitespace-nowrap text-left text-[11px] font-bold uppercase leading-none lg:text-[13px] xl:text-sm"
+                style={{ color: 'var(--color-label-secondary)', fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.1em' }}
+              >
+                {primary.rank?.posLabel ? `${primary.rank.posLabel}${primary.rank.rank}` : [primary.team, primary.position].filter(Boolean).join(' · ')}
+              </div>
+          </div>
+
+          <div className="mt-4 flex items-end justify-between gap-3">
+            <div className="min-w-0">
+              <div
+                className="tabular-nums text-2xl font-bold leading-none"
+                style={{ color: 'var(--color-label)', fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.02em' }}
+              >
+                {primary.value != null ? fmtKtcValue(primary.value) : '—'}
+              </div>
+              <div
+                className="mt-0.5 text-[10px] font-bold uppercase leading-none lg:text-[12px]"
+                style={{ color: 'var(--color-label-tertiary)', letterSpacing: '0.14em' }}
+              >
+                Value
+              </div>
+            </div>
+            <div className="shrink-0 text-right">
+              <div
+                className="tabular-nums text-2xl font-bold leading-none"
+                style={{ color: 'var(--color-label)', fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.02em' }}
+              >
+                {primary.ppg > 0 ? primary.ppg.toFixed(1) : '—'}
+              </div>
+              <div
+                className="mt-0.5 text-[10px] font-bold uppercase leading-none lg:text-[12px]"
+                style={{ color: 'var(--color-label-tertiary)', letterSpacing: '0.14em' }}
+              >
+                PPG
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+      <>
       {/* ── Name banner ──────────────────────────────────────── */}
       <div className="relative px-2 lg:px-3 py-1 lg:py-1.5 text-center shrink-0"
         style={{
-          background: `linear-gradient(90deg, transparent 0%, rgba(0,0,0,0.55) 15%, rgba(0,0,0,0.6) 50%, rgba(0,0,0,0.55) 85%, transparent 100%)`,
+          background: darkMode
+            ? 'linear-gradient(90deg, transparent 0%, rgba(0,0,0,0.58) 15%, rgba(0,0,0,0.66) 50%, rgba(0,0,0,0.58) 85%, transparent 100%)'
+            : 'linear-gradient(90deg, transparent 0%, rgba(12,15,20,0.58) 15%, rgba(12,15,20,0.66) 50%, rgba(12,15,20,0.58) 85%, transparent 100%)',
           borderTop: '1px solid rgba(255,255,255,0.12)',
           borderBottom: '1px solid rgba(255,255,255,0.08)',
         }}>
-        <div className="text-[11px] lg:text-sm font-bold leading-tight tracking-wide uppercase whitespace-nowrap"
+        <div className="text-[11px] lg:text-[15px] xl:text-base font-bold leading-tight tracking-wide uppercase whitespace-nowrap"
           style={{ color: 'white', textShadow: '0 1px 3px rgba(0,0,0,0.6)', fontFamily: "'Barlow Condensed', sans-serif" }}>
           {primary?.name ?? primaryPick?.label ?? '—'}
         </div>
         {primary && (
-          <div className="text-[8px] lg:text-[10px] font-medium tracking-wider uppercase mt-0.5 whitespace-nowrap"
+          <div className="text-[8px] lg:text-[12px] xl:text-[13px] font-medium tracking-wider uppercase mt-0.5 whitespace-nowrap"
             style={{ color: 'rgba(255,255,255,0.55)' }}>
             {[primary.team, primary.position].filter(Boolean).join(' · ')}
           </div>
@@ -3014,6 +3586,23 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
 
             {/* ── DESKTOP stat boxes (hidden lg:flex) ─── */}
             <div className="hidden lg:flex flex-1 min-h-0 gap-1.5 w-full overflow-hidden">
+              {compactTradeCard ? (
+                <>
+                  <div className="flex-1 min-h-0 rounded-lg px-1.5 py-1 flex flex-col items-center justify-center" style={{ background: 'rgba(0,0,0,0.35)' }}>
+                    <span className="text-[15px] font-bold tabular-nums leading-tight" style={{ color: 'white' }}>
+                      {primary.ppg > 0 ? primary.ppg.toFixed(1) : '—'}
+                    </span>
+                    <span className="text-[8px] lg:text-[10px] font-medium leading-tight uppercase tracking-wide" style={{ color: 'rgba(255,255,255,0.52)' }}>PPG</span>
+                  </div>
+                  <div className="flex-1 min-h-0 rounded-lg px-1.5 py-1 flex flex-col items-center justify-center" style={{ background: 'rgba(0,0,0,0.35)' }}>
+                    <span className="text-[15px] font-bold tabular-nums leading-tight" style={{ color: 'rgba(255,255,255,0.92)' }}>
+                      {primary.rank?.posLabel ? `${primary.rank.posLabel}${primary.rank.rank}` : '—'}
+                    </span>
+                    <span className="text-[8px] lg:text-[10px] font-medium leading-tight uppercase tracking-wide" style={{ color: 'rgba(255,255,255,0.52)' }}>Rank</span>
+                  </div>
+                </>
+              ) : (
+              <>
               {/* Left: Game Stats */}
               <div className="flex-1 rounded-lg p-2 flex flex-col gap-0.5" style={{ background: 'rgba(0,0,0,0.35)' }}>
                 <span
@@ -3105,12 +3694,16 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
                   <span className="text-[10px]" style={{ color: 'rgba(255,255,255,0.4)', fontFamily: "'Figtree', sans-serif" }}>—</span>
                 )}
               </div>
+              </>
+              )}
             </div>
           </>
         ) : (
           <div className="flex-1 w-full" aria-hidden="true" />
         )}
       </div>
+      </>
+      )}
     </div>
   );
 }
@@ -3118,7 +3711,7 @@ function ProposalPlayerCard({ player = null, palette = null, pick = null, side, 
 const TRADE_PROPOSAL_CARD_GAP_PX = 10;
 const TRADE_PROPOSAL_VISIBLE_CARD_LIMIT = 3;
 
-function getProposalCardSlotStyle(cardCount, isWideTradeProposalLayout) {
+function getProposalCardSlotStyle(cardCount, isWideTradeProposalLayout, sharedSizingCardCount = cardCount) {
   if (!isWideTradeProposalLayout) {
     return {
       width: 'min(76vw, 30vh, 14rem)',
@@ -3127,11 +3720,15 @@ function getProposalCardSlotStyle(cardCount, isWideTradeProposalLayout) {
     };
   }
 
-  const visibleCards = Math.min(Math.max(cardCount || 1, 1), TRADE_PROPOSAL_VISIBLE_CARD_LIMIT);
+  const visibleCards = Math.min(Math.max(sharedSizingCardCount || cardCount || 1, 1), TRADE_PROPOSAL_VISIBLE_CARD_LIMIT);
+  const availableCardWidth = `calc((100% - ${(visibleCards - 1) * TRADE_PROPOSAL_CARD_GAP_PX}px) / ${visibleCards})`;
+  const cardWidth = `min(15rem, ${availableCardWidth})`;
+
   return {
-    flex: `1 1 calc((100% - ${(visibleCards - 1) * TRADE_PROPOSAL_CARD_GAP_PX}px) / ${visibleCards})`,
+    width: cardWidth,
+    flex: `1 1 ${cardWidth}`,
     minWidth: 0,
-    maxWidth: '15rem',
+    maxWidth: cardWidth,
   };
 }
 
@@ -3269,6 +3866,137 @@ function buildProposalCardAssets(bucket, renderAllAssetsAsCards) {
   return bucket.playerCount ? bucket.players : sortedPicks;
 }
 
+function sumProposalAssetValues(assets = []) {
+  return Math.round((assets ?? []).reduce((sum, asset) => sum + Number(asset?.value ?? asset?.val ?? 0), 0));
+}
+
+function countProposalAssets(proposal) {
+  return (proposal?.incomingAssets?.length ?? 0) + (proposal?.outgoingAssets?.length ?? 0);
+}
+
+function getProposalUpgradeDelta(proposal) {
+  const contextDelta = Number(proposal?.context?.myUpgradeDelta);
+  if (Number.isFinite(contextDelta)) return contextDelta;
+  const proposalDelta = Number(proposal?.upgradeDelta);
+  return Number.isFinite(proposalDelta) ? proposalDelta : 0;
+}
+
+function getProposalOutgoingValue(proposal) {
+  return sumProposalAssetValues(proposal?.outgoingAssets ?? []);
+}
+
+function getManagerInitials(managerName) {
+  const parts = String(managerName ?? '').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return '?';
+  return parts.map((part) => part[0]).join('').slice(0, 2).toUpperCase();
+}
+
+function getRosterRecordText(roster) {
+  const settings = roster?.settings ?? {};
+  const wins = settings.wins ?? settings.win;
+  const losses = settings.losses ?? settings.loss;
+  const ties = settings.ties ?? settings.tie;
+  if (!Number.isFinite(Number(wins)) || !Number.isFinite(Number(losses))) return null;
+  return `${Number(wins)}-${Number(losses)}${Number(ties) > 0 ? `-${Number(ties)}` : ''}`;
+}
+
+function getRosterFantasyPoints(roster) {
+  const settings = roster?.settings ?? {};
+  const points = Number(settings.fpts ?? 0);
+  const decimal = Number(settings.fpts_decimal ?? 0);
+  return points + (decimal / 100);
+}
+
+function getOrdinal(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return null;
+  const mod100 = numeric % 100;
+  if (mod100 >= 11 && mod100 <= 13) return `${numeric}th`;
+  switch (numeric % 10) {
+    case 1:
+      return `${numeric}st`;
+    case 2:
+      return `${numeric}nd`;
+    case 3:
+      return `${numeric}rd`;
+    default:
+      return `${numeric}th`;
+  }
+}
+
+function buildRosterStandingMap(rosters = []) {
+  return new Map(
+    [...(rosters ?? [])]
+      .sort((a, b) => {
+        const aSettings = a?.settings ?? {};
+        const bSettings = b?.settings ?? {};
+        return Number(bSettings.wins ?? 0) - Number(aSettings.wins ?? 0)
+          || Number(aSettings.losses ?? 0) - Number(bSettings.losses ?? 0)
+          || getRosterFantasyPoints(b) - getRosterFantasyPoints(a);
+      })
+      .map((roster, index) => [normalizeRosterId(roster?.roster_id), getOrdinal(index + 1)]),
+  );
+}
+
+function getUpgradeNeedMeta(proposals = []) {
+  const proposal = proposals.find((item) => item?.context?.theirNeedPosition || item?.theirNeedPosition) ?? proposals[0] ?? null;
+  const position = proposal?.context?.theirNeedPosition ?? proposal?.theirNeedPosition ?? null;
+  if (!position) return 'Upgrade fit';
+  const starterGain = Number(proposal?.context?.theirUpgradeDelta ?? 0);
+  return starterGain >= 0.3 ? `Needs ${position} help` : `Needs ${position} depth`;
+}
+
+function buildManagerMetaLine({ roster, standingMap, rosterId, proposals }) {
+  const pieces = [
+    getRosterRecordText(roster),
+    standingMap?.get(normalizeRosterId(rosterId)),
+    getUpgradeNeedMeta(proposals),
+  ].filter(Boolean);
+  return pieces.length ? pieces.join(' · ') : 'Upgrade fit';
+}
+
+function sortUpgradeResultGroups(groups = [], sortMode = 'manager') {
+  const prepared = groups.map((entry) => ({
+    ...entry,
+    group: {
+      ...entry.group,
+      proposals: [...(entry.group?.proposals ?? [])],
+    },
+  }));
+
+  if (sortMode === 'best_delta') {
+    return prepared
+      .map((entry) => ({
+        ...entry,
+        group: {
+          ...entry.group,
+          proposals: entry.group.proposals.sort((a, b) => getProposalUpgradeDelta(b) - getProposalUpgradeDelta(a)
+            || (b.plausibilityScore ?? 0) - (a.plausibilityScore ?? 0)),
+        },
+      }))
+      .sort((a, b) => getProposalUpgradeDelta(b.group.proposals[0]) - getProposalUpgradeDelta(a.group.proposals[0])
+        || (b.group.proposals[0]?.plausibilityScore ?? 0) - (a.group.proposals[0]?.plausibilityScore ?? 0));
+  }
+
+  if (sortMode === 'lightest_package') {
+    return prepared
+      .map((entry) => ({
+        ...entry,
+        group: {
+          ...entry.group,
+          proposals: entry.group.proposals.sort((a, b) => getProposalOutgoingValue(a) - getProposalOutgoingValue(b)
+            || countProposalAssets(a) - countProposalAssets(b)
+            || getProposalUpgradeDelta(b) - getProposalUpgradeDelta(a)),
+        },
+      }))
+      .sort((a, b) => getProposalOutgoingValue(a.group.proposals[0]) - getProposalOutgoingValue(b.group.proposals[0])
+        || countProposalAssets(a.group.proposals[0]) - countProposalAssets(b.group.proposals[0])
+        || getProposalUpgradeDelta(b.group.proposals[0]) - getProposalUpgradeDelta(a.group.proposals[0]));
+  }
+
+  return prepared;
+}
+
 function cloneProposalAsset(asset) {
   if (!asset || typeof asset !== 'object') return asset;
   return {
@@ -3396,7 +4124,9 @@ const TradeProposalItem = memo(function TradeProposalItem({
   containerClassName = '',
   renderAllAssetsAsCards = false,
   deferInsights = false,
+  resultVariant = '',
 }) {
+  const isUpgradeResult = resultVariant === 'upgrade';
   const {
     incomingCardAssets,
     outgoingCardAssets,
@@ -3429,13 +4159,18 @@ const TradeProposalItem = memo(function TradeProposalItem({
     };
   }, [proposal, renderAllAssetsAsCards]);
   const isWideTradeProposalLayout = useMediaQuery('(min-width: 1536px)');
+  const isUpgradeSideBySideLayout = useMediaQuery('(min-width: 1200px)');
+  const useSideFittedCardSlots = isWideTradeProposalLayout || (isUpgradeResult && isUpgradeSideBySideLayout);
+  const sharedProposalSizingCardCount = useSideFittedCardSlots
+    ? Math.max(outgoingCardAssets.length, incomingCardAssets.length)
+    : null;
   const proposalCardMeasureKey = `${proposal.id}:${incomingCardAssets.length}:${outgoingCardAssets.length}:${incomingMobilePickCards.length}:${outgoingMobilePickCards.length}:${seasonStats ? 'ready' : 'idle'}:${isWideTradeProposalLayout ? 'wide' : 'compact'}`;
   const {
     containerRef: proposalCardsContainerRef,
     registerCardRef,
   } = useEqualizedCardHeight(false, proposalCardMeasureKey);
-  const outgoingCardSlotStyle = getProposalCardSlotStyle(outgoingCardAssets.length, isWideTradeProposalLayout);
-  const incomingCardSlotStyle = getProposalCardSlotStyle(incomingCardAssets.length, isWideTradeProposalLayout);
+  const outgoingCardSlotStyle = getProposalCardSlotStyle(outgoingCardAssets.length, useSideFittedCardSlots, sharedProposalSizingCardCount);
+  const incomingCardSlotStyle = getProposalCardSlotStyle(incomingCardAssets.length, useSideFittedCardSlots, sharedProposalSizingCardCount);
   const outgoingMobilePickCardSlotStyle = getProposalCardSlotStyle(outgoingMobilePickCards.length, false);
   const incomingMobilePickCardSlotStyle = getProposalCardSlotStyle(incomingMobilePickCards.length, false);
   const insightsReady = useDeferredContentReady(deferInsights);
@@ -3443,6 +4178,169 @@ const TradeProposalItem = memo(function TradeProposalItem({
   const proposalShadow = isHovered
     ? '0 10px 24px rgba(12,15,20,0.12), 0 3px 8px rgba(12,15,20,0.08)'
     : '0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06)';
+  const outgoingTotal = sumProposalAssetValues(proposal?.outgoingAssets ?? []);
+  const incomingTotal = sumProposalAssetValues(proposal?.incomingAssets ?? []);
+
+  if (isUpgradeResult) {
+    const summary = getUpgradeProposalSummary(proposal);
+    const upgradeDelta = getProposalUpgradeDelta(proposal);
+    const renderUpgradeSide = ({ label, tone, assets, slotStyle, side }) => (
+      <div className="min-w-0 flex flex-col gap-2">
+        <div className="flex items-center justify-between gap-3">
+          <span
+            className="inline-flex w-max items-center rounded-md px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em]"
+            style={{
+              background: tone === 'give' ? 'var(--color-accent-red)' : 'var(--color-accent-green)',
+              color: '#fff',
+              fontFamily: "'Barlow Condensed', sans-serif",
+            }}
+          >
+            {label}
+          </span>
+          <span
+            className="shrink-0 text-lg font-bold tabular-nums leading-none"
+            style={{ color: 'var(--color-label)', fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.04em' }}
+          >
+            {fmtKtcValue(tone === 'give' ? outgoingTotal : incomingTotal)}
+          </span>
+        </div>
+        <div className="flex flex-col gap-1.5 md:hidden">
+          {assets.map((asset) => (
+            <ProposalAssetRow
+              key={`mobile:${side}:${asset.id}`}
+              asset={asset}
+              darkMode={darkMode}
+              onOpenPlayer={asset.type === 'player' ? onOpenPlayer : null}
+            />
+          ))}
+        </div>
+        <div className="hidden flex-row flex-nowrap items-stretch justify-start gap-2.5 overflow-x-auto scrollbar-hide pb-1 md:flex min-[1200px]:justify-center">
+          {assets.map((asset, index) => (
+            <div
+              key={asset.id}
+              className="max-w-full self-center flex"
+              style={slotStyle}
+            >
+              <ProposalPlayerCard
+                cardRef={(node) => registerCardRef(`${side}:${asset.id}:${index}`, node)}
+                player={asset.type === 'player' ? asset : null}
+                palette={asset.type === 'player' ? (asset.team ? teamPalette(asset.team, darkMode) : null) : null}
+                pick={asset.type === 'pick' ? asset : null}
+                side={side}
+                showSideBadge={false}
+                seasonStats={seasonStats}
+                compactTradeCard
+                onClick={asset.type === 'player' ? onOpenPlayer : null}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+
+    return (
+      <div
+        className={`rounded-2xl overflow-hidden ${containerClassName}`}
+        style={{
+          background: 'var(--color-bg)',
+          border: `1px solid ${isHovered ? 'var(--color-signature)' : 'var(--color-separator)'}`,
+          boxShadow: proposalShadow,
+          transform: isHovered ? 'translateY(-1px)' : 'translateY(0)',
+          transition: 'border-color 160ms cubic-bezier(0.32, 0.72, 0, 1), box-shadow 200ms cubic-bezier(0.32, 0.72, 0, 1), transform 200ms cubic-bezier(0.32, 0.72, 0, 1)',
+        }}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+        onFocus={() => setIsHovered(true)}
+        onBlur={() => setIsHovered(false)}
+      >
+        <div
+          ref={proposalCardsContainerRef}
+          className="grid grid-cols-1 gap-3 p-4 min-[1200px]:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] min-[1200px]:gap-4"
+        >
+          <div className="min-[1200px]:col-span-3 flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-[10px] font-bold uppercase tracking-[0.18em]" style={{ color: 'var(--color-label-tertiary)' }}>
+                Upgrade Path
+              </div>
+              <div className="mt-0.5 truncate text-[12px] font-semibold" style={{ color: 'var(--color-label-secondary)' }}>
+                {summary.yourUpgradeTitle}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => onApplyProposal?.(proposal)}
+              className="shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors"
+              style={{ background: 'var(--color-signature)', color: 'var(--color-signature-fg)' }}
+            >
+              Apply
+            </button>
+          </div>
+
+          {renderUpgradeSide({
+            label: 'You Give',
+            tone: 'give',
+            assets: outgoingCardAssets,
+            slotStyle: outgoingCardSlotStyle,
+            side: 'give',
+          })}
+
+          <div
+            className="shrink-0 self-center justify-self-center text-2xl font-bold rotate-90 min-[1200px]:rotate-0"
+            style={{ color: 'var(--color-label-quaternary)', fontFamily: "'Barlow Condensed', sans-serif" }}
+          >
+            ⇄
+          </div>
+
+          {renderUpgradeSide({
+            label: 'You Get',
+            tone: 'get',
+            assets: incomingCardAssets,
+            slotStyle: incomingCardSlotStyle,
+            side: 'get',
+          })}
+        </div>
+
+        <div
+          className="grid grid-cols-1 gap-4 px-4 pb-4 pt-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"
+          style={{ borderTop: '1px dashed var(--color-separator)' }}
+        >
+          {insightsReady ? (
+            <>
+              <div className="min-w-0">
+                <div className="mb-1 text-[10px] font-bold uppercase tracking-[0.18em]" style={{ color: 'var(--color-label-tertiary)', fontFamily: "'Barlow Condensed', sans-serif" }}>
+                  Why It Helps You
+                </div>
+                <p className="text-sm leading-relaxed" style={{ color: 'var(--color-label)' }}>
+                  {proposal.whyItHelpsMe}
+                </p>
+              </div>
+              <div className="min-w-0">
+                <div className="mb-1 text-[10px] font-bold uppercase tracking-[0.18em]" style={{ color: 'var(--color-label-tertiary)', fontFamily: "'Barlow Condensed', sans-serif" }}>
+                  Why It Helps Them
+                </div>
+                <p className="text-sm leading-relaxed" style={{ color: 'var(--color-label)' }}>
+                  {proposal.whyItHelpsThem}
+                </p>
+              </div>
+              <div className="md:min-w-[5rem] md:text-right">
+                <div className="text-3xl font-bold tabular-nums leading-none" style={{ color: 'var(--color-accent-green)', fontFamily: "'Barlow Condensed', sans-serif" }}>
+                  {fmtSignedPpg(upgradeDelta)}
+                </div>
+                <div className="mt-1 text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: 'var(--color-label-tertiary)' }}>
+                  Starter PPG
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="md:col-span-3 space-y-2">
+              <div className="h-3 rounded-full" style={{ width: '52%', background: 'var(--color-fill)' }} />
+              <div className="h-3 rounded-full" style={{ width: '82%', background: 'var(--color-fill)' }} />
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -3458,8 +4356,18 @@ const TradeProposalItem = memo(function TradeProposalItem({
       onFocus={() => setIsHovered(true)}
       onBlur={() => setIsHovered(false)}
     >
-      <div className="flex items-center justify-end gap-3 px-4 py-2.5"
+      <div className="flex items-center justify-between gap-3 px-4 py-2.5"
         style={{ background: 'var(--color-fill-secondary)' }}>
+        <div className="min-w-0">
+          <div className="text-[10px] font-bold uppercase tracking-[0.16em]" style={{ color: 'var(--color-label-tertiary)' }}>
+            {isUpgradeResult ? 'Upgrade Path' : 'Suggested Deal'}
+          </div>
+          {isUpgradeResult && (
+            <div className="mt-0.5 truncate text-[12px] font-semibold" style={{ color: 'var(--color-label-secondary)' }}>
+              Review package fit, then apply it to the Trade Agent.
+            </div>
+          )}
+        </div>
         <button onClick={() => onApplyProposal?.(proposal)}
           className="px-3 py-1 rounded-lg text-xs font-semibold transition-colors shrink-0"
           style={{ background: 'var(--color-signature)', color: 'var(--color-signature-fg)' }}>
@@ -3472,11 +4380,31 @@ const TradeProposalItem = memo(function TradeProposalItem({
         className="flex flex-col 2xl:flex-row justify-center gap-2.5 px-3 py-3 min-w-0 items-stretch 2xl:items-start"
         style={{ background: 'var(--color-fill)' }}>
         <div className="w-full min-w-0 flex flex-col gap-1.5 2xl:flex-1">
-          <div className="text-center pb-0.5">
-            <span className="inline-block px-3 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-[0.12em]"
-              style={{ background: 'var(--color-accent-red)', color: '#fff' }}>Give</span>
+          {isUpgradeResult ? (
+            <div className="flex items-center gap-2 px-1 pb-0.5">
+              <span className="h-2 w-2 rounded-full" style={{ background: 'var(--color-accent-red)' }} />
+              <span className="text-[10px] font-bold uppercase tracking-[0.16em]" style={{ color: 'var(--color-label-secondary)' }}>You give</span>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between gap-3 px-1 pb-0.5 md:justify-center">
+              <span className="inline-block px-3 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-[0.12em]"
+                style={{ background: 'var(--color-accent-red)', color: '#fff' }}>Give</span>
+              <span className="text-sm font-bold tabular-nums md:hidden" style={{ color: 'var(--color-label)', fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.04em' }}>
+                {fmtKtcValue(outgoingTotal)}
+              </span>
+            </div>
+          )}
+          <div className="flex flex-col gap-1.5 md:hidden">
+            {outgoingCardAssets.map((asset) => (
+              <ProposalAssetRow
+                key={`mobile:give:${asset.id}`}
+                asset={asset}
+                darkMode={darkMode}
+                onOpenPlayer={asset.type === 'player' ? onOpenPlayer : null}
+              />
+            ))}
           </div>
-          <div className="flex flex-row flex-nowrap items-stretch justify-start 2xl:justify-center gap-2.5 overflow-x-auto scrollbar-hide px-1 pb-1 -mx-1">
+          <div className="hidden flex-row flex-nowrap items-stretch justify-start 2xl:justify-center gap-2.5 overflow-x-auto scrollbar-hide px-1 pb-1 -mx-1 md:flex">
             {outgoingCardAssets.map((asset, index) => (
               <div
                 key={asset.id}
@@ -3498,7 +4426,7 @@ const TradeProposalItem = memo(function TradeProposalItem({
             ))}
           </div>
           {outgoingMobilePickCards.length > 0 && (
-            <div className="flex flex-row flex-nowrap justify-start 2xl:justify-center gap-2 overflow-x-auto scrollbar-hide px-1 pb-1 -mx-1 2xl:hidden">
+            <div className="hidden flex-row flex-nowrap justify-start 2xl:justify-center gap-2 overflow-x-auto scrollbar-hide px-1 pb-1 -mx-1 md:flex 2xl:hidden">
               {outgoingMobilePickCards.map((asset, index) => (
                 <div
                   key={`give-mobile-pick:${asset.id}:${index}`}
@@ -3525,11 +4453,31 @@ const TradeProposalItem = memo(function TradeProposalItem({
           ⇄
         </div>
         <div className="w-full min-w-0 flex flex-col gap-1.5 2xl:flex-1">
-          <div className="text-center pb-0.5">
-            <span className="inline-block px-3 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-[0.12em]"
-              style={{ background: 'var(--color-accent-green)', color: '#fff' }}>Get</span>
+          {isUpgradeResult ? (
+            <div className="flex items-center gap-2 px-1 pb-0.5">
+              <span className="h-2 w-2 rounded-full" style={{ background: 'var(--color-accent-green)' }} />
+              <span className="text-[10px] font-bold uppercase tracking-[0.16em]" style={{ color: 'var(--color-label-secondary)' }}>You get</span>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between gap-3 px-1 pb-0.5 md:justify-center">
+              <span className="inline-block px-3 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-[0.12em]"
+                style={{ background: 'var(--color-accent-green)', color: '#fff' }}>Get</span>
+              <span className="text-sm font-bold tabular-nums md:hidden" style={{ color: 'var(--color-label)', fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.04em' }}>
+                {fmtKtcValue(incomingTotal)}
+              </span>
+            </div>
+          )}
+          <div className="flex flex-col gap-1.5 md:hidden">
+            {incomingCardAssets.map((asset) => (
+              <ProposalAssetRow
+                key={`mobile:get:${asset.id}`}
+                asset={asset}
+                darkMode={darkMode}
+                onOpenPlayer={asset.type === 'player' ? onOpenPlayer : null}
+              />
+            ))}
           </div>
-          <div className="flex flex-row flex-nowrap items-stretch justify-start 2xl:justify-center gap-2.5 overflow-x-auto scrollbar-hide px-1 pb-1 -mx-1">
+          <div className="hidden flex-row flex-nowrap items-stretch justify-start 2xl:justify-center gap-2.5 overflow-x-auto scrollbar-hide px-1 pb-1 -mx-1 md:flex">
             {incomingCardAssets.map((asset, index) => (
               <div
                 key={asset.id}
@@ -3551,7 +4499,7 @@ const TradeProposalItem = memo(function TradeProposalItem({
             ))}
           </div>
           {incomingMobilePickCards.length > 0 && (
-            <div className="flex flex-row flex-nowrap justify-start 2xl:justify-center gap-2 overflow-x-auto scrollbar-hide px-1 pb-1 -mx-1 2xl:hidden">
+            <div className="hidden flex-row flex-nowrap justify-start 2xl:justify-center gap-2 overflow-x-auto scrollbar-hide px-1 pb-1 -mx-1 md:flex 2xl:hidden">
               {incomingMobilePickCards.map((asset, index) => (
                 <div
                   key={`get-mobile-pick:${asset.id}:${index}`}
@@ -3599,16 +4547,37 @@ const TradeProposalItem = memo(function TradeProposalItem({
       <div className="px-4 py-3"
         style={{ background: 'var(--color-bg-secondary)', borderTop: '1px solid var(--color-separator-opaque)' }}>
         {insightsReady ? (
-          <>
-            <p className="text-[12.5px] leading-relaxed" style={{ color: 'var(--color-label)' }}>
-              <span className="font-semibold" style={{ color: 'var(--color-label)' }}>You: </span>
-              {proposal.whyItHelpsMe}
-            </p>
-            <p className="text-[12.5px] leading-relaxed mt-1" style={{ color: 'var(--color-label)' }}>
-              <span className="font-semibold" style={{ color: 'var(--color-label)' }}>Them: </span>
-              {proposal.whyItHelpsThem}
-            </p>
-          </>
+          isUpgradeResult ? (
+            <div className="grid gap-2 md:grid-cols-2">
+              <div className="rounded-xl px-3 py-2.5" style={{ background: 'var(--color-fill-secondary)', border: '1px solid var(--color-separator)' }}>
+                <div className="text-[10px] font-bold uppercase tracking-[0.16em] mb-1" style={{ color: 'var(--color-label-tertiary)' }}>
+                  Why it helps you
+                </div>
+                <p className="text-[12.5px] leading-relaxed" style={{ color: 'var(--color-label)' }}>
+                  {proposal.whyItHelpsMe}
+                </p>
+              </div>
+              <div className="rounded-xl px-3 py-2.5" style={{ background: 'var(--color-fill-secondary)', border: '1px solid var(--color-separator)' }}>
+                <div className="text-[10px] font-bold uppercase tracking-[0.16em] mb-1" style={{ color: 'var(--color-label-tertiary)' }}>
+                  Why it helps them
+                </div>
+                <p className="text-[12.5px] leading-relaxed" style={{ color: 'var(--color-label)' }}>
+                  {proposal.whyItHelpsThem}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <>
+              <p className="text-[12.5px] leading-relaxed" style={{ color: 'var(--color-label)' }}>
+                <span className="font-semibold" style={{ color: 'var(--color-label)' }}>You: </span>
+                {proposal.whyItHelpsMe}
+              </p>
+              <p className="text-[12.5px] leading-relaxed mt-1" style={{ color: 'var(--color-label)' }}>
+                <span className="font-semibold" style={{ color: 'var(--color-label)' }}>Them: </span>
+                {proposal.whyItHelpsThem}
+              </p>
+            </>
+          )
         ) : (
           <div className="space-y-2">
             <div className="h-3.5 rounded-full" style={{ width: '68%', background: 'var(--color-fill)' }} />
@@ -3644,6 +4613,12 @@ const DEFAULT_PROPOSAL_FILTERS = Object.freeze({
   outgoingPicks: 'any',
   incomingPicks: 'any',
 });
+
+const UPGRADE_RESULT_SORT_OPTIONS = [
+  { id: 'manager', label: 'By Manager' },
+  { id: 'best_delta', label: 'Best Delta' },
+  { id: 'lightest_package', label: 'Lightest Package' },
+];
 
 function matchesProposalFilters(entry, filters) {
   if (filters.outgoingPlayers !== 'any' && entry.outgoingPlayers !== Number(filters.outgoingPlayers)) return false;
@@ -3734,83 +4709,6 @@ function getUpgradeProposalSummary(proposal) {
   return summary;
 }
 
-const UpgradeProposalContextCards = memo(function UpgradeProposalContextCards({ proposal, deferRender = false }) {
-  const summary = useMemo(() => getUpgradeProposalSummary(proposal), [proposal]);
-  const detailsReady = useDeferredContentReady(deferRender);
-
-  if (!detailsReady) {
-    return (
-      <div className="grid gap-2 lg:grid-cols-3">
-        {[0, 1, 2].map((index) => (
-          <div key={index} className="rounded-xl px-3 py-3" style={{ background: 'var(--color-bg-secondary)', border: '1px solid var(--color-separator)' }}>
-            <div className="space-y-2">
-              <div className="h-3 rounded-full" style={{ width: '42%', background: 'var(--color-fill)' }} />
-              <div className="h-3 rounded-full" style={{ width: '78%', background: 'var(--color-fill)' }} />
-              <div className="h-3 rounded-full" style={{ width: '64%', background: 'var(--color-fill)' }} />
-            </div>
-          </div>
-        ))}
-      </div>
-    );
-  }
-
-  return (
-    <div className="grid gap-2 lg:grid-cols-3">
-      <div className="rounded-xl px-3 py-3 border-l-[3px]" style={{ background: 'var(--color-bg-secondary)', borderColor: 'var(--color-accent-green)' }}>
-        <div className="text-[11px] font-semibold uppercase tracking-widest mb-1" style={{ color: 'var(--color-label-tertiary)' }}>
-          Your Upgrade
-        </div>
-        <div className="text-sm font-semibold" style={{ color: 'var(--color-label)' }}>
-          {summary.yourUpgradeTitle}
-        </div>
-        <div className="text-[11px] mt-1" style={{ color: 'var(--color-label-secondary)' }}>
-          {summary.yourUpgradeMeta}
-        </div>
-        <div className="text-[11px] mt-2" style={{ color: 'var(--color-label-secondary)' }}>
-          {summary.yourFallbackMeta}
-        </div>
-      </div>
-
-      <div className="rounded-xl px-3 py-3 border-l-[3px]" style={{ background: 'var(--color-bg-secondary)', borderColor: 'var(--color-accent)' }}>
-        <div className="text-[11px] font-semibold uppercase tracking-widest mb-1" style={{ color: 'var(--color-label-tertiary)' }}>
-          {summary.theirSectionLabel}
-        </div>
-        <div className="text-sm font-semibold" style={{ color: 'var(--color-label)' }}>
-          {summary.theirNeedTitle}
-        </div>
-        <div className="text-[11px] mt-1" style={{ color: 'var(--color-label-secondary)' }}>
-          {summary.theirNeedStarterMeta}
-        </div>
-        <div className="text-[11px] mt-2" style={{ color: 'var(--color-label-secondary)' }}>
-          {summary.theirNeedUpgradeMeta}
-        </div>
-      </div>
-
-      <div className="rounded-xl px-3 py-3 border-l-[3px]" style={{ background: 'var(--color-bg-secondary)', borderColor: 'var(--color-separator-opaque)' }}>
-        <div className="text-[11px] font-semibold uppercase tracking-widest mb-1" style={{ color: 'var(--color-label-tertiary)' }}>
-          {summary.fallbackLabel}
-        </div>
-        {summary.fallbackName ? (
-          <>
-            <div className="text-sm font-semibold" style={{ color: 'var(--color-label)' }}>
-              {summary.fallbackName}
-            </div>
-            <div className="text-[11px] mt-1" style={{ color: 'var(--color-label-secondary)' }}>
-              {summary.fallbackMeta}
-            </div>
-          </>
-        ) : (
-          <div className="text-[11px]" style={{ color: 'var(--color-label-secondary)' }}>
-            {summary.fallbackMeta}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-});
-
-UpgradeProposalContextCards.displayName = 'UpgradeProposalContextCards';
-
 const TRADE_RESULT_BLOCK_STYLE = {
   contentVisibility: 'auto',
   containIntrinsicSize: '760px',
@@ -3821,6 +4719,7 @@ const UpgradeResultGroup = memo(function UpgradeResultGroup({
   rosterId,
   managerName,
   initial,
+  metaLine,
   darkMode,
   seasonStats,
   onApplyProposal,
@@ -3828,31 +4727,31 @@ const UpgradeResultGroup = memo(function UpgradeResultGroup({
 }) {
   return (
     <div
-      className="rounded-2xl p-4 lg:p-5"
-      style={{ background: 'var(--color-fill)', border: '1px solid var(--color-separator)', ...TRADE_RESULT_BLOCK_STYLE }}
+      className="pt-5 first:pt-0"
+      style={{ borderTop: '1px solid var(--color-separator)', ...TRADE_RESULT_BLOCK_STYLE }}
     >
       <div className="flex items-center justify-between gap-3 mb-4">
         <div className="flex items-center gap-3 min-w-0">
-          <span className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold shrink-0" style={{ background: 'var(--color-bg-secondary)', color: 'var(--color-label)', border: '1px solid var(--color-separator)' }}>
+          <span className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold shrink-0" style={{ background: 'var(--color-fill)', color: 'var(--color-label)', fontFamily: "'Barlow Condensed', sans-serif" }}>
             {initial}
           </span>
           <div className="min-w-0">
-            <div className="text-sm font-semibold truncate" style={{ color: 'var(--color-label)' }}>
+            <div className="text-xl font-bold uppercase truncate" style={{ color: 'var(--color-label)', fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.02em' }}>
               {managerName}
             </div>
             <div className="text-[11px]" style={{ color: 'var(--color-label-secondary)' }}>
-              {group.proposals.length} {group.proposals.length === 1 ? 'deal' : 'deals'}
+              {metaLine}
             </div>
           </div>
         </div>
-        <span className="px-2 py-1 rounded-lg text-[11px] font-semibold shrink-0" style={{ background: 'var(--color-bg-secondary)', color: 'var(--color-label-secondary)', border: '1px solid var(--color-separator)' }}>
-          {group.proposals.length}
+        <span className="px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.14em] shrink-0" style={{ background: 'var(--color-fill)', color: 'var(--color-label)', fontFamily: "'Barlow Condensed', sans-serif" }}>
+          {group.proposals.length} {group.proposals.length === 1 ? 'Path' : 'Paths'}
         </span>
       </div>
 
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-3">
         {group.proposals.map((proposal) => (
-          <div key={proposal.id} className="flex flex-col gap-3" style={TRADE_RESULT_BLOCK_STYLE}>
+          <div key={proposal.id} style={TRADE_RESULT_BLOCK_STYLE}>
             <TradeProposalItem
               proposal={proposal}
               darkMode={darkMode}
@@ -3860,9 +4759,9 @@ const UpgradeResultGroup = memo(function UpgradeResultGroup({
               onApplyProposal={onApplyProposal}
               onOpenPlayer={onOpenPlayer}
               renderAllAssetsAsCards
+              resultVariant="upgrade"
 
             />
-            <UpgradeProposalContextCards proposal={proposal} deferRender />
           </div>
         ))}
       </div>
@@ -4212,6 +5111,7 @@ const UpgradeFinderPage = memo(function UpgradeFinderPage({
   selectedPlayerId,
   selectedOutgoingPlayerIds,
   tradePostureLevel,
+  allowPackages,
   allowOutgoingPicks,
   allowIncomingPicks,
   results,
@@ -4247,12 +5147,7 @@ const UpgradeFinderPage = memo(function UpgradeFinderPage({
   const resultsRef = useRef(null);
   const [targetPickerOpen, setTargetPickerOpen] = useState(false);
   const [offerPickerOpen, setOfferPickerOpen] = useState(false);
-  const selectionCardMeasureKey = `${selectedOutgoingPlayerIds.join(':')}:${seasonStats ? 'ready' : 'idle'}`;
-  const {
-    containerRef: selectionCardsContainerRef,
-    registerCardRef: registerSelectionCardRef,
-    equalizedCardHeight: equalizedSelectionCardHeight,
-  } = useEqualizedCardHeight(selectedOutgoingPlayerIds.length > 1, selectionCardMeasureKey);
+  const [upgradeResultSort, setUpgradeResultSort] = useState('manager');
 
   const playersById = useMemo(
     () => new Map(players.map((player) => [player.id, player])),
@@ -4278,249 +5173,70 @@ const UpgradeFinderPage = memo(function UpgradeFinderPage({
       experience: sleeperPlayer.years_exp != null ? sleeperPlayer.years_exp + 1 : undefined,
       ppg: player.ppg ?? null,
       value: playerValueMap?.get(player.id) ?? null,
+      rank: rankMap?.get?.(player.id) ?? rankMap?.[player.id] ?? null,
       palette: team ? teamPalette(team, darkMode) : null,
     };
-  }, [darkMode, playerValueMap, playersById, sleeperPlayers]);
+  }, [darkMode, playerValueMap, playersById, rankMap, sleeperPlayers]);
 
   const selectedPlayer = useMemo(
     () => buildSelectableCard(selectedPlayerId),
     [buildSelectableCard, selectedPlayerId],
   );
-  const selectedOutgoingPlayers = useMemo(
-    () => selectedOutgoingPlayerIds.map((id) => buildSelectableCard(id)).filter(Boolean),
-    [buildSelectableCard, selectedOutgoingPlayerIds],
-  );
 
-  const hasSelectedOutgoingPlayers = selectedOutgoingPlayers.length > 0;
+  const hasSelectedOutgoingPlayers = selectedOutgoingPlayerIds.length > 0;
   const outgoingReady = hasSelectedOutgoingPlayers || allowOutgoingPicks;
   const canSearch = Boolean(selectedPlayerId) && outgoingReady;
-
-  const steps = [
-    { label: 'Target', active: true, complete: Boolean(selectedPlayerId) },
-    { label: 'Offer', active: Boolean(selectedPlayerId), complete: hasSelectedOutgoingPlayers },
-    { label: 'Picks', active: Boolean(selectedPlayerId), complete: allowOutgoingPicks || allowIncomingPicks || canSearch },
-    { label: 'Posture', active: canSearch, complete: false },
-  ];
-
-  useEffect(() => {
-    onAllowPackagesChange?.(selectedOutgoingPlayerIds.length > 1);
-  }, [onAllowPackagesChange, selectedOutgoingPlayerIds.length]);
+  const moverRows = useMemo(() => buildUpgradeMoverSuggestions({
+    players,
+    selectedTargetId: selectedPlayerId,
+    selectedOutgoingIds: selectedOutgoingPlayerIds,
+    sleeperPlayers,
+    playerValueMap,
+    rankMap,
+    limit: players.length,
+  }), [
+    players,
+    playerValueMap,
+    rankMap,
+    selectedOutgoingPlayerIds,
+    selectedPlayerId,
+    sleeperPlayers,
+  ]);
 
   useEffect(() => {
     if (!searchSubmitted || !resultsRef.current) return;
     resultsRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, [searchSubmitted, results]);
 
-  const selectionButton = ({ title, description, onClick, cta }) => (
-    <button
-      onClick={onClick}
-      className="w-full rounded-xl px-4 py-3 text-left border transition-colors"
-      style={{
-        background: 'var(--color-bg-secondary)',
-        borderColor: 'var(--color-separator)',
-        color: 'var(--color-label)',
-      }}
-    >
-      <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <div className="text-sm font-semibold">{title}</div>
-          <div className="text-[11px] mt-1 leading-relaxed" style={{ color: 'var(--color-label-secondary)' }}>
-            {description}
-          </div>
-        </div>
-        <span
-          className="shrink-0 inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-semibold"
-          style={{ background: 'var(--color-fill)', color: 'var(--color-label)' }}
-        >
-          <span>{cta}</span>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M5 12h14" />
-            <path d="m12 5 7 7-7 7" />
-          </svg>
-        </span>
-      </div>
-    </button>
-  );
-
-  const getSelectionCardSlotStyle = (count) => {
-    const safeCount = Math.max(count || 1, 1);
-    const desktopBasis = safeCount >= 3
-      ? 'clamp(13rem, 15vw, 15rem)'
-      : safeCount === 2
-        ? 'clamp(13.5rem, 16vw, 15.5rem)'
-        : 'clamp(14rem, 17vw, 16rem)';
-    return {
-      width: '100%',
-      minWidth: 'min(100%, 13.5rem)',
-      maxWidth: '16rem',
-      flex: `0 1 ${desktopBasis}`,
-    };
-  };
-
-  const renderSelectedCard = ({ player, side, onRemove, cardCount = 1, forcedHeight = null }) => (
-    <div
-      key={player.id}
-      className="group relative max-w-full flex-none self-start lg:w-auto"
-      style={getSelectionCardSlotStyle(cardCount)}
-      onClick={onOpenPlayer ? () => onOpenPlayer(player) : undefined}
-      onKeyDown={onOpenPlayer ? (event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault();
-          onOpenPlayer(player);
-        }
-      } : undefined}
-      role={onOpenPlayer ? 'button' : undefined}
-      tabIndex={onOpenPlayer ? 0 : undefined}
-      aria-label={onOpenPlayer ? `Open player stats for ${player.name}` : undefined}
-    >
-      <ProposalPlayerCard
-        cardRef={(node) => {
-          if (onRemove) registerSelectionCardRef(`upgrade:${side}:${player.id}`, node);
-        }}
-        player={player}
-        palette={player.palette}
-        side={side}
-        seasonStats={seasonStats}
-        showSideBadge={false}
-        forcedHeight={forcedHeight}
-        onClick={null}
-        topRightSlot={onRemove ? (
-          <button
-            onClick={(event) => {
-              event.stopPropagation();
-              onRemove(player.id);
-            }}
-            className="relative w-6 h-6 lg:w-8 lg:h-8 rounded-full flex items-center justify-center"
-            style={{
-              background: player.palette?.logoBadgeBg ?? 'var(--color-bg-secondary)',
-              border: `1px solid ${player.palette?.logoBadgeBorder ?? 'rgba(255,255,255,0.2)'}`,
-              boxShadow: '0 1px 4px rgba(0,0,0,0.28)',
-            }}
-            aria-label={`Remove ${player.name}`}
-          >
-            {player.palette?.logoKey && (
-              <img
-                src={`https://a.espncdn.com/i/teamlogos/nfl/500/${player.palette.logoKey}.png`}
-                aria-hidden="true"
-                className="pointer-events-none select-none w-4 h-4 lg:w-6 lg:h-6 opacity-100 transition-opacity duration-150 ease-out group-hover:opacity-0"
-                style={{ objectFit: 'contain', filter: darkMode ? 'drop-shadow(0 1px 2px rgba(0,0,0,0.22))' : 'drop-shadow(0 1px 3px rgba(0,0,0,0.35))' }}
-                onError={e => { e.target.style.display = 'none'; }}
-              />
-            )}
-            <span
-              className="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity duration-150 ease-out group-hover:opacity-100"
-              style={{ color: darkMode ? 'var(--color-signature-fg)' : '#fff' }}
-            >
-              <svg width="12" height="12" className="lg:w-[14px] lg:h-[14px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round">
-                <path d="M18 6 6 18" />
-                <path d="M6 6l12 12" />
-              </svg>
-            </span>
-          </button>
-        ) : null}
-      />
-    </div>
-  );
-
-  const renderToggleCard = ({ active, title, description, onClick }) => (
-    <button
-      onClick={onClick}
-      className="rounded-xl px-3 py-3 text-left border transition-colors"
-      style={{
-        background: active ? 'rgba(245,183,0,0.08)' : 'var(--color-bg-secondary)',
-        borderColor: active ? 'var(--color-signature)' : 'var(--color-separator)',
-        color: 'var(--color-label)',
-      }}
-    >
-      <div className="flex items-start gap-3">
-        <span
-          className="w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5"
-          style={{
-            borderColor: active ? 'var(--color-signature)' : 'var(--color-label-quaternary)',
-            background: active ? 'var(--color-signature)' : 'transparent',
-            color: active ? 'var(--color-signature-fg)' : 'transparent',
-          }}
-        >
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M20 6 9 17l-5-5" />
-          </svg>
-        </span>
-        <div>
-          <div className="text-sm font-semibold">{title}</div>
-          <div className="text-[11px] mt-1 leading-relaxed" style={{ color: 'var(--color-label-secondary)' }}>
-            {description}
-          </div>
-        </div>
-      </div>
-    </button>
-  );
-
-  const postureColor = (level) => {
-    if (level <= 1) return 'var(--color-accent-green)';
-    if (level === 2) return 'var(--color-signature)';
-    if (level === 3) return 'var(--color-accent-orange)';
-    return 'var(--color-accent-red)';
-  };
-
-  const renderPostureIcon = (level, selected) => {
-    const iconColor = selected
-      ? (level <= 2 ? 'var(--color-signature-fg)' : '#fff')
-      : postureColor(level);
-    if (level === 0) {
-      return (
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ color: iconColor }}>
-          <path d="M19 5 5 19" />
-          <path d="M9 19H5v-4" />
-        </svg>
-      );
-    }
-    if (level === 1) {
-      return (
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ color: iconColor }}>
-          <path d="M19 7 7 19" />
-          <path d="M19 13V7h-6" />
-        </svg>
-      );
-    }
-    if (level === 2) {
-      return (
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ color: iconColor }}>
-          <path d="M12 3v18" />
-          <path d="M5 8h14" />
-          <path d="M7 8c0 2-1.5 4-3 5 1.5 1 3 3 3 5" />
-          <path d="M17 8c0 2 1.5 4 3 5-1.5 1-3 3-3 5" />
-        </svg>
-      );
-    }
-    if (level === 3) {
-      return (
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ color: iconColor }}>
-          <path d="M5 17 17 5" />
-          <path d="M11 5h6v6" />
-        </svg>
-      );
-    }
-    return (
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ color: iconColor }}>
-        <path d="M5 19 19 5" />
-        <path d="M15 5h4v4" />
-      </svg>
-    );
-  };
-
-  const resultGroups = useMemo(() => (
-    (results?.groups ?? []).map((group) => {
+  const rosterById = useMemo(() => new Map(
+    (rosters ?? []).map((roster) => [normalizeRosterId(roster?.roster_id), roster]),
+  ), [rosters]);
+  const standingMap = useMemo(() => buildRosterStandingMap(rosters), [rosters]);
+  const resultGroups = useMemo(() => {
+    const mappedGroups = (results?.groups ?? []).map((group) => {
       const rosterId = group.rosterId ?? group.managerRosterId;
+      const normalizedRosterId = normalizeRosterId(rosterId);
       const managerName = ownerNameByRosterId?.get(rosterId) ?? 'Unknown Manager';
       return {
         group,
         rosterId,
         managerName,
-        initial: (managerName.trim()?.[0] ?? '?').toUpperCase(),
+        initial: getManagerInitials(managerName),
+        metaLine: buildManagerMetaLine({
+          roster: rosterById.get(normalizedRosterId),
+          standingMap,
+          rosterId,
+          proposals: group.proposals ?? [],
+        }),
       };
-    })
-  ), [ownerNameByRosterId, results?.groups]);
+    });
+    return sortUpgradeResultGroups(mappedGroups, upgradeResultSort);
+  }, [ownerNameByRosterId, results?.groups, rosterById, standingMap, upgradeResultSort]);
   const stagedResultGroups = useStagedRender(resultGroups, 4, 3);
+  const totalUpgradePaths = useMemo(
+    () => (results?.groups ?? []).reduce((sum, group) => sum + (group.proposals?.length ?? 0), 0),
+    [results?.groups],
+  );
   const targetPickerAllowedIds = useMemo(
     () => (targetPickerOpen ? players.map((player) => player.id) : []),
     [players, targetPickerOpen],
@@ -4531,274 +5247,146 @@ const UpgradeFinderPage = memo(function UpgradeFinderPage({
   );
 
   return (
-    <section className="rounded-2xl p-5 lg:p-6" style={{ background: 'var(--color-bg-secondary)', border: '1px solid var(--color-separator)' }}>
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <div className="text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>
-            Upgrades
-          </div>
-          <h2
-            className="mt-2 text-lg font-bold leading-tight"
-            style={{ color: 'var(--color-label)', fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.02em' }}
-          >
-            Search The League For Upgrade Paths
-          </h2>
-        </div>
-      </div>
-      <div className="mt-6 flex flex-col gap-6">
-        <section>
-          <div className="text-[11px] font-semibold uppercase tracking-widest mb-3" style={{ color: 'var(--color-label-tertiary)' }}>
-            Step 1 · Select A Player To Upgrade
-          </div>
+    <section className="flex flex-col gap-6">
+      <UpgradeBargainingTable
+        selectedPlayer={selectedPlayer}
+        moverRows={moverRows}
+        selectedOutgoingPlayerIds={selectedOutgoingPlayerIds}
+        allowOutgoingPicks={allowOutgoingPicks}
+        allowIncomingPicks={allowIncomingPicks}
+        allowPackages={allowPackages}
+        darkMode={darkMode}
+        postureOptions={postureOptions}
+        tradePostureLevel={tradePostureLevel}
+        canSearch={canSearch}
+        searchPending={searchPending}
+        onChooseTarget={() => setTargetPickerOpen(true)}
+        onChangeTarget={() => setTargetPickerOpen(true)}
+        onToggleMover={(id) => onToggleOutgoingPlayer(id)}
+        onAddPlayers={() => setOfferPickerOpen(true)}
+        onClearPlayers={() => selectedOutgoingPlayerIds.forEach((id) => onToggleOutgoingPlayer(id))}
+        onAllowOutgoingPicksChange={onAllowOutgoingPicksChange}
+        onAllowIncomingPicksChange={onAllowIncomingPicksChange}
+        onAllowPackagesChange={onAllowPackagesChange}
+        onPostureChange={onTradePostureChange}
+        onRunSearch={onRunSearch}
+        onOpenPlayer={onOpenPlayer}
+      />
 
-
-{selectedPlayer ? (
-            <div className="flex flex-col items-center gap-3">
-              <div className="flex justify-center w-full">
-                {renderSelectedCard({ player: selectedPlayer, side: 'get', cardCount: 1 })}
-              </div>
-              <div className="flex justify-center w-full">
-                <button
-                  onClick={() => setTargetPickerOpen(true)}
-                  className="px-3 py-2 rounded-lg text-sm font-semibold border transition-colors"
-                  style={{
-                    background: 'var(--color-bg-secondary)',
-                    borderColor: 'var(--color-separator)',
-                    color: 'var(--color-label)',
-                  }}
-                >
-                  Change target player
-                </button>
+      {searchSubmitted && (
+        <section ref={resultsRef}>
+          {searchPending && (
+            <div
+              className="mb-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold"
+              style={{
+                background: 'var(--color-fill)',
+                color: 'var(--color-label-secondary)',
+                border: '1px solid var(--color-separator)',
+              }}
+            >
+              <Spinner size="w-3.5 h-3.5" />
+              Refreshing matches...
+            </div>
+          )}
+          {searchDirty && !searchPending && (
+            <div
+              className="mb-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold"
+              style={{
+                background: 'var(--color-fill)',
+                color: 'var(--color-label-secondary)',
+                border: '1px solid var(--color-separator)',
+              }}
+            >
+              Current filters changed. Run search again to refresh these results.
+            </div>
+          )}
+          {!resultGroups.length ? (
+            <div className="rounded-2xl px-5 py-8 text-center" style={{ background: 'var(--color-fill)', color: 'var(--color-label-secondary)', border: '1px solid var(--color-separator)' }}>
+              <div className="text-sm font-semibold" style={{ color: 'var(--color-label)' }}>No feasible upgrade paths found.</div>
+              <div className="text-xs mt-2">
+                Try widening your outgoing player pool, opening up pick intent, or moving the posture closer to fair.
               </div>
             </div>
           ) : (
-
-            selectionButton({
-              title: 'Choose your target player',
-              description: 'Open the player picker and choose the player you want this search to improve.',
-              onClick: () => setTargetPickerOpen(true),
-              cta: 'Open picker',
-            })
-          )}
-        </section>
-
-        <div style={{ borderTop: '1px solid var(--color-separator)' }} />
-
-        <section>
-          <div className="text-[11px] font-semibold uppercase tracking-widest mb-3" style={{ color: 'var(--color-label-tertiary)' }}>
-            Step 2 · Choose Players You Can Move
-          </div>
-
-
-{hasSelectedOutgoingPlayers ? (
-            <div className="flex flex-col items-center gap-3">
-              <div ref={selectionCardsContainerRef} className="flex flex-wrap justify-center items-start gap-3 w-full">
-                {selectedOutgoingPlayers.map((player) => renderSelectedCard({
-                  player,
-                  side: 'give',
-                  onRemove: onToggleOutgoingPlayer,
-                  cardCount: selectedOutgoingPlayers.length,
-                  forcedHeight: equalizedSelectionCardHeight,
-                }))}
-              </div>
-              <div className="flex flex-wrap justify-center gap-2 w-full">
-                <button
-                  onClick={() => setOfferPickerOpen(true)}
-                  className="px-3 py-2 rounded-lg text-sm font-semibold border transition-colors"
-                  style={{
-                    background: 'var(--color-bg-secondary)',
-                    borderColor: 'var(--color-separator)',
-                    color: 'var(--color-label)',
-                  }}
-                >
-                  Add or change players
-                </button>
-                <button
-                  onClick={() => selectedOutgoingPlayerIds.forEach((id) => onToggleOutgoingPlayer(id))}
-                  className="px-3 py-2 rounded-lg text-sm font-semibold border transition-colors"
-                  style={{
-                    background: 'var(--color-fill)',
-                    borderColor: 'var(--color-separator)',
-                    color: 'var(--color-label-secondary)',
-                  }}
-                >
-                  Clear players
-                </button>
-              </div>
-            </div>
-          ) : (
-
-
-            <div className="flex flex-col gap-3">
-              {selectionButton({
-                title: 'Add one or more outgoing players',
-                description: 'Use the same player picker to build the pool you are comfortable moving in this search.',
-                onClick: () => setOfferPickerOpen(true),
-                cta: 'Add players',
-              })}
-              <div className="text-xs" style={{ color: 'var(--color-label-secondary)' }}>
-                Leave this empty only if you want the search restricted to pick-led offers you send.
-              </div>
-            </div>
-          )}
-        </section>
-
-        <div style={{ borderTop: '1px solid var(--color-separator)' }} />
-
-        <section>
-          <div className="text-[11px] font-semibold uppercase tracking-widest mb-3" style={{ color: 'var(--color-label-tertiary)' }}>
-            Step 3 · Pick Intent
-          </div>
-          <div className="grid gap-2 lg:grid-cols-2">
-            {renderToggleCard({
-              active: allowOutgoingPicks,
-              title: 'Willing to trade picks',
-              description: 'Let the search add your picks when a player-only package needs help closing the gap.',
-              onClick: () => onAllowOutgoingPicksChange(!allowOutgoingPicks),
-            })}
-            {renderToggleCard({
-              active: allowIncomingPicks,
-              title: 'Willing to accept picks back',
-              description: 'Let the search ask for their picks when the return package should tilt back toward you.',
-              onClick: () => onAllowIncomingPicksChange(!allowIncomingPicks),
-            })}
-          </div>
-        </section>
-
-        <div style={{ borderTop: '1px solid var(--color-separator)' }} />
-
-        <section>
-          <div className="text-[11px] font-semibold uppercase tracking-widest mb-3" style={{ color: 'var(--color-label-tertiary)' }}>
-            Step 4 · Trade Posture
-          </div>
-          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
-            {postureOptions.map((option) => {
-              const selected = option.level === tradePostureLevel;
-              const selectedColor = postureColor(option.level);
-              const selectedText = option.level <= 2 ? 'var(--color-signature-fg)' : '#fff';
-              return (
-                <button
-                  key={option.level}
-                  onClick={() => onTradePostureChange(option.level)}
-                  className="rounded-xl px-3 py-3 text-left border transition-colors"
-                  style={{
-                    background: selected ? selectedColor : 'var(--color-bg-secondary)',
-                    borderColor: selected ? selectedColor : 'var(--color-separator)',
-                    color: selected ? selectedText : 'var(--color-label)',
-                  }}
-                >
-                  <div className="flex items-center gap-2">
+            <div
+              className="rounded-2xl p-4 lg:p-5"
+              style={{
+                background: 'var(--color-bg-secondary)',
+                border: '1px solid var(--color-separator)',
+                opacity: searchPending ? 0.72 : 1,
+                transition: 'opacity 160ms cubic-bezier(0.32, 0.72, 0, 1)',
+              }}
+            >
+              <div className="mb-5 flex flex-col gap-3 border-b pb-4 lg:flex-row lg:items-center lg:justify-between" style={{ borderColor: 'var(--color-separator)' }}>
+                <div className="min-w-0">
+                  <h3 className="flex flex-wrap items-center gap-3 text-3xl font-bold uppercase leading-none" style={{ color: 'var(--color-label)', fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.02em' }}>
+                    Upgrade Paths Found
                     <span
-                      className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
-                      style={{
-                        background: selected ? 'rgba(12,15,20,0.14)' : 'var(--color-fill)',
-                        color: selected ? selectedText : selectedColor,
-                      }}
+                      className="inline-flex min-w-9 items-center justify-center rounded-md px-2 py-1 text-base font-semibold tabular-nums"
+                      style={{ background: 'var(--color-signature)', color: 'var(--color-signature-fg)', fontFamily: "'Figtree', sans-serif", letterSpacing: 0 }}
                     >
-                      {renderPostureIcon(option.level, selected)}
+                      {totalUpgradePaths}
                     </span>
-                    <div className="min-w-0">
-                      <div className="text-sm font-semibold leading-tight">{option.label}</div>
-                      <div className="text-[11px] mt-1 hidden sm:block leading-relaxed" style={{ color: selected ? selectedText : 'var(--color-label-secondary)' }}>
-                        {option.description}
-                      </div>
-                    </div>
+                  </h3>
+                  <div className="mt-2 text-sm" style={{ color: 'var(--color-label-secondary)' }}>
+                    {results?.targetPlayer
+                      ? `Showing matches for ${results.targetPlayer.label ?? results.targetPlayer.name}.`
+                      : selectedPlayer
+                        ? `Showing the latest search around ${selectedPlayer.name}.`
+                        : 'Showing the latest upgrade search results.'}
                   </div>
-                </button>
-              );
-            })}
-          </div>
-        </section>
-
-        <button
-          onClick={onRunSearch}
-          disabled={!canSearch || searchPending}
-          className="w-full py-3 rounded-xl text-sm font-bold uppercase transition-colors"
-          style={{
-            background: canSearch && !searchPending ? 'var(--color-signature)' : 'var(--color-fill)',
-            color: canSearch && !searchPending ? 'var(--color-signature-fg)' : 'var(--color-label-tertiary)',
-            fontFamily: "'Barlow Condensed', sans-serif",
-            letterSpacing: '0.08em',
-          }}
-        >
-          {searchPending ? 'Searching…' : 'Find Matches'}
-        </button>
-
-        {searchSubmitted && (
-          <section ref={resultsRef}>
-            {searchPending && (
-              <div
-                className="mb-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold"
-                style={{
-                  background: 'var(--color-fill)',
-                  color: 'var(--color-label-secondary)',
-                  border: '1px solid var(--color-separator)',
-                }}
-              >
-                <Spinner size="w-3.5 h-3.5" />
-                Refreshing matches…
-              </div>
-            )}
-            {searchDirty && !searchPending && (
-              <div
-                className="mb-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold"
-                style={{
-                  background: 'var(--color-fill)',
-                  color: 'var(--color-label-secondary)',
-                  border: '1px solid var(--color-separator)',
-                }}
-              >
-                Current filters changed. Run search again to refresh these results.
-              </div>
-            )}
-            <div className="text-[11px] font-semibold uppercase tracking-widest mb-2" style={{ color: 'var(--color-label-tertiary)' }}>
-              Results
-            </div>
-            <div className="text-sm mb-4" style={{ color: 'var(--color-label-secondary)' }}>
-              {results?.targetPlayer
-                ? `Showing matches for ${results.targetPlayer.label ?? results.targetPlayer.name}.`
-                : selectedPlayer
-                  ? `Showing the latest search around ${selectedPlayer.name}.`
-                  : 'Showing the latest upgrade search results.'}
-            </div>
-            {!resultGroups.length ? (
-              <div className="rounded-2xl px-5 py-8 text-center" style={{ background: 'var(--color-fill)', color: 'var(--color-label-secondary)', border: '1px solid var(--color-separator)' }}>
-                <div className="text-sm font-semibold" style={{ color: 'var(--color-label)' }}>No feasible upgrade paths found.</div>
-                <div className="text-xs mt-2">
-                  Try widening your outgoing player pool, opening up pick intent, or moving the posture closer to fair.
                 </div>
-              </div>
-            ) : (
-              <>
-                <div className="flex flex-col gap-5" style={{ opacity: searchPending ? 0.72 : 1, transition: 'opacity 160ms ease' }}>
-                  {stagedResultGroups.visibleItems.map(({ group, rosterId, managerName, initial }) => {
+                <div className="flex flex-wrap items-center gap-2">
+                  {UPGRADE_RESULT_SORT_OPTIONS.map((option) => {
+                    const active = upgradeResultSort === option.id;
                     return (
-                      <UpgradeResultGroup
-                        key={rosterId}
-                        group={group}
-                        rosterId={rosterId}
-                        managerName={managerName}
-                        initial={initial}
-                        darkMode={darkMode}
-                        seasonStats={seasonStats}
-                        onApplyProposal={onApplyProposal}
-                        onOpenPlayer={onOpenPlayer}
-                      />
+                      <button
+                        key={option.id}
+                        type="button"
+                        onClick={() => setUpgradeResultSort(option.id)}
+                        className="rounded-full px-3.5 py-1.5 text-sm font-semibold transition-colors"
+                        style={{
+                          background: active ? 'var(--color-signature)' : 'var(--color-bg-secondary)',
+                          color: active ? 'var(--color-signature-fg)' : 'var(--color-label-secondary)',
+                          border: '1px solid var(--color-separator)',
+                        }}
+                      >
+                        {option.label}
+                      </button>
                     );
                   })}
                 </div>
-                <StagedRenderStatus
-                  visibleCount={stagedResultGroups.visibleCount}
-                  totalCount={stagedResultGroups.totalCount}
-                  hasMore={stagedResultGroups.hasMore}
-                  onShowAll={stagedResultGroups.showAll}
-                  label="manager groups"
-                />
-              </>
-            )}
-          </section>
-        )}
-      </div>
+              </div>
+
+              <div className="flex flex-col gap-5">
+                {stagedResultGroups.visibleItems.map(({ group, rosterId, managerName, initial, metaLine }) => {
+                  return (
+                    <UpgradeResultGroup
+                      key={rosterId}
+                      group={group}
+                      rosterId={rosterId}
+                      managerName={managerName}
+                      initial={initial}
+                      metaLine={metaLine}
+                      darkMode={darkMode}
+                      seasonStats={seasonStats}
+                      onApplyProposal={onApplyProposal}
+                      onOpenPlayer={onOpenPlayer}
+                    />
+                  );
+                })}
+              </div>
+              <StagedRenderStatus
+                visibleCount={stagedResultGroups.visibleCount}
+                totalCount={stagedResultGroups.totalCount}
+                hasMore={stagedResultGroups.hasMore}
+                onShowAll={stagedResultGroups.showAll}
+                label="manager groups"
+              />
+            </div>
+          )}
+        </section>
+      )}
 
       {targetPickerOpen && (
         <TradeRosterPicker
@@ -4872,6 +5460,7 @@ function TrendRow({ item, leagueType }) {
   const vals = leagueType === 'sf' ? item.ktcEntry?.superflexValues : item.ktcEntry?.oneQBValues;
   if (!vals) return null;
 
+  const currentValue = vals.value ?? null;
   const trend7 = vals.overall7DayTrend ?? 0;
   const trendAll = vals.overallTrend ?? 0;
 
@@ -4882,20 +5471,26 @@ function TrendRow({ item, leagueType }) {
         {item.label}
       </span>
       <div className="flex gap-3 shrink-0">
-        <TrendValue label="7d" value={trend7} />
-        <TrendValue label="30d" value={trendAll} />
+        <TrendValue label="7d" value={trend7} currentValue={currentValue} />
+        <TrendValue label="30d" value={trendAll} currentValue={currentValue} />
       </div>
     </div>
   );
 }
 
-function TrendValue({ label, value }) {
+function TrendValue({ label, value, currentValue }) {
   const color = value > 0 ? 'var(--color-accent-green, #22c55e)'
     : value < 0 ? 'var(--color-destructive, #ef4444)'
     : 'var(--color-label-quaternary)';
+  const previousValue = currentValue != null ? currentValue - value : null;
+  const pctChange = previousValue > 0 ? (value / previousValue) * 100 : null;
+  const formattedValue = pctChange != null
+    ? `${pctChange > 0 ? '+' : ''}${Math.abs(pctChange) < 10 ? pctChange.toFixed(1) : Math.round(pctChange)}%`
+    : `${value > 0 ? '+' : ''}${value}`;
+
   return (
     <span className="text-xs tabular-nums" style={{ color }}>
-      {label}: {value > 0 ? '+' : ''}{value}
+      {label}: {formattedValue}
     </span>
   );
 }
@@ -4903,8 +5498,6 @@ function TrendValue({ label, value }) {
 // ── ValuationInfoSheet ────────────────────────────────────────────────────────
 
 function ValuationInfoSheet({ format, leagueType, scoringSettings, rosterPositions, multipliers, isAdjusted, onClose }) {
-  useBodyScrollLock();
-
   const rec           = scoringSettings?.rec ?? 0.5;
   const passTd        = scoringSettings?.pass_td ?? 4;
   const teBonus       = scoringSettings?.bonus_rec_te ?? 0;
@@ -4998,11 +5591,13 @@ function ValuationInfoSheet({ format, leagueType, scoringSettings, rosterPositio
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ background: 'rgba(0,0,0,0.5)' }} onClick={onClose}>
-      <div className="flex flex-col rounded-2xl overflow-hidden w-full mx-4"
-        style={{ background: 'var(--color-bg)', maxHeight: '80vh', maxWidth: 560 }}
-        onClick={e => e.stopPropagation()}>
+    <Modal
+      onClose={onClose}
+      containerClassName="flex flex-col"
+      containerStyle={{ background: 'var(--color-bg)', maxHeight: '80vh', maxWidth: 560 }}
+      mobileSheet
+      ariaLabel="How values are calculated"
+    >
 
         {/* Handle + header */}
         <div className="flex items-center justify-between px-5 pt-4 pb-3"
@@ -5428,8 +6023,7 @@ function ValuationInfoSheet({ format, leagueType, scoringSettings, rosterPositio
           </div>
 
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -5475,8 +6069,6 @@ function RosterBrowseModal({
 }) {
   const { darkMode } = useTheme();
   const rosterBrowsePlayerCacheRef = useRef(new Map());
-
-  useBodyScrollLock();
 
   const addedPlayerIds = useMemo(() => new Set(theirPlayers), [theirPlayers]);
   const addedPickKeys  = useMemo(() => new Set(theirPicks.map(p => p.key)), [theirPicks]);
@@ -5586,20 +6178,20 @@ function RosterBrowseModal({
   const picks = useMemo(() => {
     if (!roster || !rosterPicks || !slots) return [];
     return getPicksForRoster(roster.roster_id, rosterPicks, slots).map(pick => {
-      const displayInfo = getDraftPickDisplayInfo(pick, { league, rosters, drafts, currentSeason: season });
-      const quality = displayInfo.valueQuality ?? getPickQuality(pick.fromRosterId, rosters);
-      let val = null;
-      if (pickValueMap?.[pick.round] != null) {
-        const tierVal = pickValueMap[pick.round][quality] ?? pickValueMap[pick.round].Mid ?? null;
-        const yearOffset = (pick.year ?? season) - season;
-        const discount = yearOffset <= 0 ? 1 : Math.pow(0.92, yearOffset);
-        val = tierVal != null ? Math.round(tierVal * discount) : null;
-      }
+      const { val, displayInfo, quality, valueQuality } = valueDraftPick(pick, {
+        rosters,
+        ktcPlayers: adjustedKtcPlayers,
+        leagueType,
+        pickValueMap,
+        currentSeason: season,
+        league,
+        drafts,
+      });
       const fromOwner = pick.isOwn ? null : (ownerNameByRosterId?.get(pick.fromRosterId) ?? null);
       return {
         ...pick,
-        quality: displayInfo.quality ?? quality,
-        valueQuality: quality,
+        quality,
+        valueQuality,
         label: displayInfo.label,
         val,
         fromOwner,
@@ -5612,15 +6204,16 @@ function RosterBrowseModal({
         sortSlot: displayInfo.sortSlot ?? null,
       };
     }).sort(compareDraftPickAssets);
-  }, [roster, rosterPicks, slots, rosters, league, drafts, pickValueMap, season, ownerNameByRosterId]);
+  }, [roster, rosterPicks, slots, rosters, adjustedKtcPlayers, leagueType, league, drafts, pickValueMap, season, ownerNameByRosterId]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: 'rgba(0,0,0,0.5)' }}
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="flex flex-col rounded-2xl overflow-hidden w-full"
-        style={{ background: 'var(--color-bg)', maxWidth: 520, height: '72vh', maxHeight: 640 }}
-        onClick={e => e.stopPropagation()}>
+    <Modal
+      onClose={onClose}
+      containerClassName="flex flex-col"
+      containerStyle={{ background: 'var(--color-bg)', maxWidth: 520, height: '72vh', maxHeight: 640 }}
+      mobileSheet
+      ariaLabel={`${partnerName}'s roster`}
+    >
 
         {/* Header */}
         <div className="px-4 pt-4 pb-3 shrink-0 flex items-center justify-between"
@@ -5767,8 +6360,7 @@ function RosterBrowseModal({
             </div>
           )}
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 

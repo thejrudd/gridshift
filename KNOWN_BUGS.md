@@ -10,29 +10,23 @@ Open bugs are listed first, fixed bugs below. Add new entries at the bottom of e
 |-----|
 | Trade Intelligence proposal apply actions can mismatch the displayed package by pairing the incoming target with the wrong outgoing asset, or by adding only one side of the proposal instead of the full deal |
 | Trade → Upgrades can still suggest unrealistic one-sided upgrades because it underweights the other roster's actual needs and does not always treat the selected outgoing pool as true payment pressure |
-| Trade Intelligence → Fix Needs can return no visible ideas after filtering to `With Picks` because viable pick-inclusive proposals are often crowded out by player-only packages before the final proposal set is chosen |
 | Trade Intelligence → Use Surplus can combine multiple individually-movable players into one package without rechecking the full package depth, causing explanations to claim playable depth remains after a deal that actually clears out the position |
 | Trade Intelligence → Fix Needs can skew too heavily toward 2-player and 3-player incoming packages, crowding out more balanced player-plus-pick returns on the other team’s side |
 | Trade section pages still repeat too much instructional copy, making Agent, Intelligence, and Upgrades feel more verbose than necessary |
-| Trade proposal cards can keep matching height while still drifting into a too-tall, too-narrow silhouette on desktop because width does not yet expand enough to preserve a more realistic trading-card proportion as card content grows |
 | Trade → Intelligence can still hard-freeze on initial open, visibly repopulate proposal text/assets after partner switches, or get stuck on the "Preparing partner-specific trade ideas..." loading card for specific teams |
 | Companion → Rankings player drilldown `Statistics` action can fail for players whose base Sleeper `espn_id` is null even though the app has a resolved `espnIdOverrides` entry, so some players navigate correctly while others do nothing |
 | Trade Intelligence resets the selection area and clears active filters the first time a new partner is selected, while previously visited partners preserve state, creating inconsistent partner-switch behavior and forcing users to reapply filters |
-
-| Trade Agent roster shelf picks view not implemented — shelf only shows players; draft picks owned by each roster are not accessible from the shelf |
-| Trade Agent partner selection uses a horizontal scrolling carousel instead of a dropdown menu, making it hard to find specific partners in larger leagues |
 | Trade Agent "View Roster & Picks" button remains visible even when the roster shelf is present and covers the same functionality |
-| Trade Agent BroadcastScoreboard header appears washed out in dark mode — uses `var(--color-label)` as background which resolves to a light color in dark mode instead of staying dark |
-| Trade Agent roster shelf missing K and IDP position filter chips — only QB/RB/WR/TE are filterable; kickers and all defensive players cannot be isolated |
-| Trade Agent drag-and-drop from roster shelf to trade plates not implemented — shelf items are tap-only with no drag affordance |
 | Trade Agent mobile roster shelf renders as a horizontal scrolling strip instead of a vertical list, making it difficult to read and navigate |
 | Trade Agent mobile YOU/PARTNER shelf toggle unresponsive — tap targets are too small to register reliably on mobile devices |
 | Trade Agent mobile shelf position filter chips too small — chip height and font size not calibrated for mobile touch targets |
 | Desktop sidebar cannot be collapsed — always occupies 240px regardless of available screen width or user preference |
 | Trade Agent color commentary bar spans only the right TradePlate instead of extending the full width of both plates |
 | Trade Agent player card score value is baseline-aligned with the name text, causing it to overlap the team logo watermark on desktop |
-| Trade Agent BroadcastScoreboard shows "YOU" as the user-side team name instead of the connected user's actual display name |
-| Trade Agent BroadcastScoreboard displays "HOME · YOU GIVE" / "AWAY · YOU GET" secondary labels above team names, redundant with the plate headers below |
+| Trade player/team card treatments have weak visual contrast: player names are too low-contrast in dark mode, while light-mode team color backgrounds are too muted to feel intentional |
+| Trade Agent Value Trends dropdown can render empty because cached trade-value details drop the original KTC trend metadata, and toggling it refreshes Color Commentary text due to render-time randomization |
+| Trade → Upgrades result cards can be cut off inside the Give/Get side when the side-by-side result viewport is narrower than the card row's desktop width assumptions |
+| Draft picks can change value when applying a Trade → Upgrades proposal into Trade Agent because upgrade pick assets use a separate discount/fallback path from Trade Agent valuation |
 
 ---
 
@@ -195,3 +189,12 @@ Open bugs are listed first, fixed bugs below. Add new entries at the bottom of e
 | Matchup weather lookups could repeatedly request invalid Open-Meteo endpoints for the selected date, producing console 400s and unnecessary weather fetch batches | v6.3 |
 | Statistics team card nickname text cut off vertically (e.g. Vikings 'k' clipped) due to `leading-none` collapsing line-height below Barlow Condensed descenders | v7.0.5 |
 | Companion → Matchup drilldown displayed raw Sleeper stat keys (`idp_int_ret_yd`, `idp_sack_yd`, `idp_fr_yd`) instead of human-readable labels for IDP yardage stats — missing from `STAT_LABELS` in `PlayerMatchupBreakdown.jsx` | v7.0.6 |
+| Trade Intelligence → Fix Needs could return no visible ideas after filtering to `With Picks` because viable pick-inclusive proposals were crowded out by player-only packages before final proposal selection | v7.1.0 |
+| Trade proposal cards could keep matching height while still drifting into a too-tall, too-narrow silhouette on desktop because width did not expand enough to preserve a trading-card proportion | v7.1.0 |
+| Trade Agent roster shelf picks view not implemented — shelf only showed players, so draft picks owned by each roster were not accessible from the shelf | v7.1.0 |
+| Trade Agent partner selection used a horizontal scrolling carousel instead of a dropdown menu, making it hard to find specific partners in larger leagues | v7.1.0 |
+| Trade Agent BroadcastScoreboard header appeared washed out in dark mode because it used a light-resolving label color as its background | v7.1.0 |
+| Trade Agent roster shelf missed K and IDP position filter chips, so kickers and defensive players could not be isolated | v7.1.0 |
+| Trade Agent drag-and-drop from roster shelf to trade plates was not implemented; shelf items were tap-only with no drag affordance | v7.1.0 |
+| Trade Agent BroadcastScoreboard showed `YOU` as the user-side team name instead of the connected user's actual display name | v7.1.0 |
+| Trade Agent BroadcastScoreboard displayed redundant `HOME · YOU GIVE` / `AWAY · YOU GET` secondary labels above team names | v7.1.0 |

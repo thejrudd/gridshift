@@ -178,6 +178,41 @@ export function getPickQuality(rosterId, rosters) {
   return getProjectedPickQuality(rosterId, rosters);
 }
 
+export function valueDraftPick(
+  pick,
+  {
+    rosters = [],
+    ktcPlayers = [],
+    leagueType = '1qb',
+    pickValueMap = null,
+    currentSeason = null,
+    league = null,
+    drafts = [],
+  } = {},
+) {
+  const displayInfo = getDraftPickDisplayInfo(pick, { league, rosters, drafts, currentSeason });
+  const quality = displayInfo.valueQuality ?? getPickQuality(pick?.fromRosterId, rosters);
+
+  let val = null;
+  let ktcEntry = null;
+  if (pickValueMap?.[pick?.round] != null) {
+    const tierVal = pickValueMap[pick.round][quality] ?? pickValueMap[pick.round].Mid ?? null;
+    val = tierVal != null ? Math.round(tierVal * pickYearDiscount(pick.year, currentSeason)) : null;
+  } else {
+    ktcEntry = findKtcDraftPick(pick?.year, pick?.round, quality, ktcPlayers);
+    val = getKtcValue(ktcEntry, leagueType);
+  }
+
+  return {
+    val,
+    value: val,
+    ktcEntry,
+    displayInfo,
+    quality: displayInfo.quality ?? quality,
+    valueQuality: quality,
+  };
+}
+
 // ── Trade valuation ───────────────────────────────────────────────────────────
 
 /**
@@ -240,32 +275,27 @@ export function valueSide(playerIds, pickItems, sleeperPlayers, ktcPlayers, leag
   }
 
   for (const pick of pickItems) {
-    const displayInfo = getDraftPickDisplayInfo(pick, { league, rosters, drafts, currentSeason });
-    const quality = displayInfo.valueQuality ?? getPickQuality(pick.fromRosterId, rosters);
-
-    // Redraft: use tier-based value derived from actual player rankings
-    // Dynasty / fallback: use KTC RDP entry (already priced by year)
-    let val, ktc;
-    if (pickValueMap?.[pick.round] != null) {
-      const tierVal = pickValueMap[pick.round][quality] ?? pickValueMap[pick.round].Mid ?? null;
-      val = tierVal != null ? Math.round(tierVal * pickYearDiscount(pick.year, currentSeason)) : null;
-      ktc = null;
-    } else {
-      ktc = findKtcDraftPick(pick.year, pick.round, quality, ktcPlayers);
-      val = getKtcValue(ktc, leagueType);
-    }
+    const { val, ktcEntry, displayInfo, quality, valueQuality } = valueDraftPick(pick, {
+      rosters,
+      ktcPlayers,
+      leagueType,
+      pickValueMap,
+      currentSeason,
+      league,
+      drafts,
+    });
 
     items.push({
       id: pick.key,
       label: displayInfo.label,
       val,
       type: 'pick',
-      ktcEntry: ktc,
+      ktcEntry,
       pickData: pick,
       year: pick.year,
       round: pick.round,
-      quality: displayInfo.quality ?? quality,
-      valueQuality: quality,
+      quality,
+      valueQuality,
       displayMode: displayInfo.displayMode,
       lockedSlot: displayInfo.lockedSlot ?? null,
       pickNumberLabel: displayInfo.pickNumberLabel ?? null,
@@ -538,14 +568,15 @@ export function buildCandidatePool(
   const excludePickSet = new Set(excludePickKeys);
   for (const pick of ownedPicks) {
     if (excludePickSet.has(pick.key)) continue;
-    const displayInfo = getDraftPickDisplayInfo(pick, { league, rosters, drafts, currentSeason });
-    const quality = displayInfo.valueQuality ?? getPickQuality(pick.fromRosterId, rosters);
-    const tierVal = pickValueMap?.[pick.round] != null
-      ? (pickValueMap[pick.round][quality] ?? pickValueMap[pick.round].Mid ?? null)
-      : null;
-    const val = tierVal != null
-      ? Math.round(tierVal * pickYearDiscount(pick.year, currentSeason))
-      : getKtcValue(findKtcDraftPick(pick.year, pick.round, quality, ktcPlayers), leagueType);
+    const { val, displayInfo, quality, valueQuality } = valueDraftPick(pick, {
+      rosters,
+      ktcPlayers,
+      leagueType,
+      pickValueMap,
+      currentSeason,
+      league,
+      drafts,
+    });
     candidates.push({
       id: pick.key,
       label: displayInfo.label,
@@ -554,8 +585,8 @@ export function buildCandidatePool(
       pickData: pick,
       year: pick.year,
       round: pick.round,
-      quality: displayInfo.quality ?? quality,
-      valueQuality: quality,
+      quality,
+      valueQuality,
       displayMode: displayInfo.displayMode,
       lockedSlot: displayInfo.lockedSlot ?? null,
       pickNumberLabel: displayInfo.pickNumberLabel ?? null,

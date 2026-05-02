@@ -29,8 +29,7 @@ import {
   getDefenseStrength,
   getLeagueAvgPPG,
 } from './projectionEngine';
-import { getPicksForRoster, getPickQuality } from './tradeEngine';
-import { getDraftPickDisplayInfo } from './draftPickDisplay';
+import { getPicksForRoster, valueDraftPick } from './tradeEngine';
 
 const IGNORED_SLOTS = new Set(['BN', 'IR', 'TAXI']);
 const WAIVER_SUPPORTED_POSITIONS = new Set(['QB', 'RB', 'WR', 'TE', 'K']);
@@ -680,14 +679,17 @@ function buildPlayerAsset(player, rosterId, playerValueMap = null) {
   };
 }
 
-function buildPickAsset(pick, rosters, pickValueMap, currentSeason, league = null, drafts = []) {
+function buildPickAsset(pick, rosters, pickValueMap, currentSeason, league = null, drafts = [], ktcPlayers = [], leagueType = '1qb') {
   if (!pick) return null;
-  const displayInfo = getDraftPickDisplayInfo(pick, { league, rosters, drafts, currentSeason });
-  const quality = displayInfo.valueQuality ?? getPickQuality(pick.fromRosterId, rosters);
-  const yearOffset = Math.max(0, Number(pick.year ?? currentSeason) - Number(currentSeason));
-  const discount = yearOffset <= 0 ? 1 : Math.pow(0.92, yearOffset);
-  const tierVal = pickValueMap?.[pick.round]?.[quality] ?? pickValueMap?.[pick.round]?.Mid ?? 0;
-  const value = Math.round((tierVal ?? 0) * discount);
+  const { value, displayInfo, quality, valueQuality } = valueDraftPick(pick, {
+    rosters,
+    ktcPlayers,
+    leagueType,
+    pickValueMap,
+    currentSeason,
+    league,
+    drafts,
+  });
   return {
     type: 'pick',
     id: pick.key,
@@ -696,8 +698,8 @@ function buildPickAsset(pick, rosters, pickValueMap, currentSeason, league = nul
     pickData: pick,
     round: pick.round,
     year: pick.year,
-    quality: displayInfo.quality ?? quality,
-    valueQuality: quality,
+    quality,
+    valueQuality,
     displayMode: displayInfo.displayMode,
     lockedSlot: displayInfo.lockedSlot ?? null,
     pickNumberLabel: displayInfo.pickNumberLabel ?? null,
@@ -710,10 +712,10 @@ function buildPickAsset(pick, rosters, pickValueMap, currentSeason, league = nul
   };
 }
 
-function getRosterPickAssets(rosterId, rosterPicks, slots, rosters, pickValueMap, currentSeason, league = null, drafts = []) {
+function getRosterPickAssets(rosterId, rosterPicks, slots, rosters, pickValueMap, currentSeason, league = null, drafts = [], ktcPlayers = [], leagueType = '1qb') {
   if (!rosterId || !rosterPicks || !slots) return [];
   return getPicksForRoster(rosterId, rosterPicks, slots)
-    .map((pick) => buildPickAsset(pick, rosters, pickValueMap, currentSeason, league, drafts))
+    .map((pick) => buildPickAsset(pick, rosters, pickValueMap, currentSeason, league, drafts, ktcPlayers, leagueType))
     .filter(Boolean)
     .sort((a, b) => {
       const aPriority = (a.isOwn ? 0 : 25) + ((a.round ?? 99) * -3) + ((a.year ?? currentSeason) - Number(currentSeason)) * 2;
@@ -722,13 +724,13 @@ function getRosterPickAssets(rosterId, rosterPicks, slots, rosters, pickValueMap
     });
 }
 
-function buildRosterPickAssetsById(rosterIds, rosterPicks, slots, rosters, pickValueMap, currentSeason, league = null, drafts = []) {
+function buildRosterPickAssetsById(rosterIds, rosterPicks, slots, rosters, pickValueMap, currentSeason, league = null, drafts = [], ktcPlayers = [], leagueType = '1qb') {
   const pickAssetsByRosterId = new Map();
   const ids = [...new Set((rosterIds ?? []).filter(Boolean))];
   for (const rosterId of ids) {
     pickAssetsByRosterId.set(
       rosterId,
-      getRosterPickAssets(rosterId, rosterPicks, slots, rosters, pickValueMap, currentSeason, league, drafts),
+      getRosterPickAssets(rosterId, rosterPicks, slots, rosters, pickValueMap, currentSeason, league, drafts, ktcPlayers, leagueType),
     );
   }
   return pickAssetsByRosterId;
@@ -2174,23 +2176,42 @@ function clamp(value, min, max) {
 }
 
 function normalizeTradePostureLevel(level) {
-  return clamp(Math.round(Number(level) || 2), 0, 4);
+  return clamp(Number.isFinite(Number(level)) ? Number(level) : 2, 0, 4);
+}
+
+const TRADE_POSTURE_SETTING_POINTS = [
+  { level: 0, key: 'underpay', targetRatio: 0.72, minRatio: 0.55, maxRatio: 0.88, minCoverageRatio: 0.82, samePosPenalty: 18, allowPickOnly: false },
+  { level: 1, key: 'lean_under', targetRatio: 0.9, minRatio: 0.8, maxRatio: 0.98, minCoverageRatio: 0.88, samePosPenalty: 16, allowPickOnly: false },
+  { level: 2, key: 'fair', targetRatio: 1.0, minRatio: 0.92, maxRatio: 1.08, minCoverageRatio: 0.94, samePosPenalty: 14, allowPickOnly: false },
+  { level: 3, key: 'lean_over', targetRatio: 1.1, minRatio: 1.02, maxRatio: 1.18, minCoverageRatio: 0.97, samePosPenalty: 12, allowPickOnly: true },
+  { level: 4, key: 'overpay', targetRatio: 1.26, minRatio: 1.14, maxRatio: 1.42, minCoverageRatio: 1.0, samePosPenalty: 10, allowPickOnly: true },
+];
+
+function interpolateNumber(left, right, amount) {
+  return left + ((right - left) * amount);
 }
 
 function getTradePostureSettings(level) {
-  switch (normalizeTradePostureLevel(level)) {
-    case 0:
-      return { level: 0, key: 'underpay', targetRatio: 0.72, minRatio: 0.55, maxRatio: 0.88, minCoverageRatio: 0.82, samePosPenalty: 18, allowPickOnly: false };
-    case 1:
-      return { level: 1, key: 'lean_under', targetRatio: 0.9, minRatio: 0.8, maxRatio: 0.98, minCoverageRatio: 0.88, samePosPenalty: 16, allowPickOnly: false };
-    case 2:
-      return { level: 2, key: 'fair', targetRatio: 1.0, minRatio: 0.92, maxRatio: 1.08, minCoverageRatio: 0.94, samePosPenalty: 14, allowPickOnly: false };
-    case 3:
-      return { level: 3, key: 'lean_over', targetRatio: 1.1, minRatio: 1.02, maxRatio: 1.18, minCoverageRatio: 0.97, samePosPenalty: 12, allowPickOnly: true };
-    case 4:
-    default:
-      return { level: 4, key: 'overpay', targetRatio: 1.26, minRatio: 1.14, maxRatio: 1.42, minCoverageRatio: 1.0, samePosPenalty: 10, allowPickOnly: true };
-  }
+  const normalizedLevel = normalizeTradePostureLevel(level);
+  const lowerIndex = Math.floor(normalizedLevel);
+  const upperIndex = Math.ceil(normalizedLevel);
+  const lower = TRADE_POSTURE_SETTING_POINTS[lowerIndex] ?? TRADE_POSTURE_SETTING_POINTS[2];
+  const upper = TRADE_POSTURE_SETTING_POINTS[upperIndex] ?? lower;
+  const amount = normalizedLevel - lower.level;
+  const nearest = amount >= 0.5 ? upper : lower;
+
+  if (lower === upper) return { ...lower };
+
+  return {
+    level: normalizedLevel,
+    key: nearest.key,
+    targetRatio: interpolateNumber(lower.targetRatio, upper.targetRatio, amount),
+    minRatio: interpolateNumber(lower.minRatio, upper.minRatio, amount),
+    maxRatio: interpolateNumber(lower.maxRatio, upper.maxRatio, amount),
+    minCoverageRatio: interpolateNumber(lower.minCoverageRatio, upper.minCoverageRatio, amount),
+    samePosPenalty: interpolateNumber(lower.samePosPenalty, upper.samePosPenalty, amount),
+    allowPickOnly: normalizedLevel >= 2.5,
+  };
 }
 
 function buildFallbackTargetCard(targetPlayer, existingCard) {
@@ -2761,6 +2782,8 @@ export function buildPartnerTradeIntelligence({
   drafts = [],
   currentSeason = null,
   pickValueMap = null,
+  ktcPlayers = [],
+  leagueType = '1qb',
   playerValueMap = null,
   includeTradeProposals = true,
   includeSurplusTradeProposals = true,
@@ -2791,6 +2814,8 @@ export function buildPartnerTradeIntelligence({
     currentSeason ?? opportunityLayer.currentSeason,
     league,
     drafts,
+    ktcPlayers,
+    leagueType,
   );
 
   const tradeProposals = includeTradeProposals && selectedPartnerAnalysis && myRosterAnalysis
@@ -2843,6 +2868,8 @@ export function findLeagueWideUpgradeGroups({
   drafts = [],
   currentSeason = null,
   pickValueMap = null,
+  ktcPlayers = [],
+  leagueType = '1qb',
   playerValueMap = null,
 }) {
   const normalizedTradePostureLevel = normalizeTradePostureLevel(tradePostureLevel);
@@ -2890,6 +2917,8 @@ export function findLeagueWideUpgradeGroups({
     currentSeason ?? opportunityLayer.currentSeason,
     league,
     drafts,
+    ktcPlayers,
+    leagueType,
   );
   const allowedPlayerAssets = hasSelectedOutgoingPlayers
     ? resolveOutgoingPlayerAssets(
@@ -3069,6 +3098,8 @@ export function analyzeAreasOfOpportunity({
   slots = null,
   currentSeason = null,
   pickValueMap = null,
+  ktcPlayers = [],
+  leagueType = '1qb',
 }) {
   const opportunityLayer = buildRosterOpportunityLayer({
     league,
@@ -3089,6 +3120,8 @@ export function analyzeAreasOfOpportunity({
     slots,
     currentSeason,
     pickValueMap,
+    ktcPlayers,
+    leagueType,
   });
 
   return {

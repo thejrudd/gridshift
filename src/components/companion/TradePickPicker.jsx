@@ -2,9 +2,9 @@
 // Modal showing draft picks owned by a specific roster for the Trade Agent.
 
 import { useMemo } from 'react';
-import { getPicksForRoster, getPickQuality, pickYearDiscount } from '../../utils/tradeEngine';
-import { findKtcDraftPick, getKtcValue, fmtKtcValue } from '../../utils/ktcApi';
-import { compareDraftPickAssets, getDraftPickDisplayInfo } from '../../utils/draftPickDisplay';
+import { getPicksForRoster, valueDraftPick } from '../../utils/tradeEngine';
+import { fmtKtcValue } from '../../utils/ktcApi';
+import { compareDraftPickAssets } from '../../utils/draftPickDisplay';
 import Modal from '../Modal';
 
 export default function TradePickPicker({
@@ -18,21 +18,22 @@ export default function TradePickPicker({
     return owned
       .filter(p => !excludeSet.has(p.key))
       .map(p => {
-        const displayInfo = getDraftPickDisplayInfo(p, { league, rosters, drafts, currentSeason });
-        const quality = displayInfo.valueQuality ?? getPickQuality(p.fromRosterId, rosters);
-        const tierVal = pickValueMap?.[p.round] != null
-          ? (pickValueMap[p.round][quality] ?? pickValueMap[p.round].Mid ?? null)
-          : null;
-        const val = tierVal != null
-          ? Math.round(tierVal * pickYearDiscount(p.year, currentSeason))
-          : getKtcValue(findKtcDraftPick(p.year, p.round, quality, ktcPlayers), leagueType);
+        const { val, displayInfo, quality, valueQuality } = valueDraftPick(p, {
+          rosters,
+          ktcPlayers,
+          leagueType,
+          pickValueMap,
+          currentSeason,
+          league,
+          drafts,
+        });
         const originLabel = p.isOwn ? '(Own)' : `(from ${getUserDisplayName(
           rosters.find(r => r.roster_id === p.fromRosterId)?.owner_id ?? ''
         )})`;
         return {
           ...p,
-          quality: displayInfo.quality ?? quality,
-          valueQuality: quality,
+          quality,
+          valueQuality,
           originLabel,
           val,
           label: displayInfo.label,
@@ -69,6 +70,8 @@ export default function TradePickPicker({
       onClose={onClose}
       containerClassName="flex flex-col"
       containerStyle={{ background: 'var(--color-bg)', maxWidth: 420, maxHeight: 480 }}
+      mobileSheet
+      ariaLabel="Add draft pick"
     >
 
         {/* Header */}

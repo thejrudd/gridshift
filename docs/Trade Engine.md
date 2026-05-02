@@ -180,6 +180,8 @@ Main logic in `tradeEngine.js`:
   Flattens owned picks for a roster.
 - `getPickQuality(...)`
   Estimates Early / Mid / Late from current standings.
+- `valueDraftPick(...)`
+  Single source of truth for draft pick valuation. Redraft picks use `pickValueMap` plus `pickYearDiscount(...)`; dynasty/fallback picks use KTC RDP entries. Trade Agent, pick pickers, roster browse, Trade Intelligence, and Trade Upgrades must call this helper instead of duplicating pick value math.
 - `draftPickDisplay.js`
   Centralizes user-facing draft pick labels, locked/projected pick display, and chronological pick-card sorting.
 - `valueSide(...)`
@@ -193,7 +195,7 @@ Main logic in `tradeEngine.js`:
 
 When modifying Agent, verify:
 - roster-id comparisons remain tolerant of string vs number inputs
-- draft pick valuation still matches dynasty vs redraft rules
+- draft pick valuation still flows through `valueDraftPick(...)` so applied proposals keep the same values in Trade Upgrades and Trade Agent
 - side valuation still falls back correctly for dynasty-only players and IDP/DST
 
 ## Intelligence reference
@@ -220,6 +222,7 @@ Known design behavior:
 - Trade proposal card layout rules live in `docs/Trade Proposal Cards.md`; keep card sizing, identity text, stat fit, and no-clipping behavior aligned with that contract.
 - Proposal pick cards sort chronologically within each side of a trade: year, then round, then locked/projected slot. Player cards keep their generated order; pick cards are sorted among the pick group.
 - Draft pick labels must use `draftPickDisplay.js`, not duplicated string formatting. Sleeper league `status` values are expected to be `pre_draft`, `drafting`, `in_season`, or `complete`; `complete` means the upcoming pick can be shown as locked when the draft has not happened yet.
+- Draft pick values must use `valueDraftPick(...)`, not duplicated redraft discounts or KTC RDP lookup. Pass KTC players and league type into proposal engines so dynasty/fallback pick values match Trade Agent.
 - Upcoming-year picks show as projected while the league is not complete. Once the league is complete, they show a locked pick number from the completed draft order when available, or from final standings. Picks more than one year out display only year + round and value as a middle pick because future team performance is not knowable.
 - `Use Surplus` is structurally player-first; do not expose UI options that imply unsupported pick-only outgoing behavior there
 - `Fix Needs` can use picks, but proposal selection must explicitly protect pick-inclusive and pick-only shapes if the product wants them visible
@@ -244,9 +247,22 @@ Current ranking behavior:
 - weak partner benefit should be penalized so obviously one-sided upgrades do not dominate the results
 
 Current UI behavior in `CompanionTrade.jsx`:
-- the Upgrade context cards summarize your upgrade, their benefit, and their best remaining option after the trade
+- the Bargaining Table starts with the target player or target slot as the hero context, then keeps bargaining controls close to the target instead of burying them in the results
+- the visible mover pool is selected-first: explicitly selected players appear before the broader value-based suggestions, so user intent can shape packages without turning the table into a manual trade builder
+- pick intent toggles describe how picks may be used in packages; avoid labels that imply unsupported pick-only behavior unless the engine supports that shape
+- package size is a real control: `Auto up to 3` enables multi-asset package construction, while the single-asset setting limits generated packages to one outgoing asset
+- the posture strip is a compact continuous control/status surface for package stance; the anchor labels use user-facing bargaining language, while drag positions between labels interpolate the engine's posture ratios
+- results render below the table so the target, selected movers, pick intent, and posture remain stable while proposals refresh
+- Upgrade results render as manager-grouped `Upgrade Paths Found` rows with side totals, visible Apply actions, functional sort chips, integrated `Why It Helps` copy, and starter PPG delta
 - roster-size before/after is the user-facing depth metric
 - playable-option counts remain internal and should not appear in normal explanation text
+
+Upgrade Bargaining Table terminology:
+- use `target` for the incoming upgrade focus
+- use `movers` for assets the user is willing to send
+- use `pick intent` for pick-inclusion controls
+- use `posture` for conservative / balanced / aggressive package stance
+- keep internal terms like candidate pool, selected-first pool, and posture distance out of normal cards unless clearly diagnostic
 
 ## Where wording bugs usually come from
 

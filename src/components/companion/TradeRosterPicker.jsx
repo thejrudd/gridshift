@@ -600,6 +600,8 @@ export default function TradeRosterPicker({
       onClose={onClose}
       containerClassName="flex flex-col"
       containerStyle={{ background: 'var(--color-bg)', maxWidth: 520, height: '72vh', maxHeight: 640 }}
+      mobileSheet
+      ariaLabel={isAllMode ? 'Search all rostered players' : 'Add player'}
     >
 
         {/* Header + search + position chips */}
