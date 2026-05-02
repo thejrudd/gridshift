@@ -985,3 +985,15 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Trade Upgrades rebuilt** - Added a more cohesive upgrade workflow with target selection, outgoing-package suggestions, bargaining-table results, and smoother apply-to-Agent handoff.
 - **Trade cards and modals polished** - Improved shared modal centering, proposal-card sizing, player/team contrast, compact guide copy, and responsive treatment across Trade surfaces.
 - **Trade engine tuned** - Adjusted pick-inclusive proposal selection, package-depth checks, upgrade valuation, and explanation wording so suggestions better reflect roster context.
+
+---
+
+## v7.2.0 - Statistics / Fantasy Drilldown Unification
+*2026-05-02*
+
+- **Statistics becomes the canonical player destination** - Companion player drilldowns now hand off to the Statistics player page with preserved back context and fantasy mode enabled where league scoring is the relevant lens.
+- **Mode-aware player profiles** - Statistics player pages now include a Game Stats / Fantasy Values toggle that updates season summaries and weekly breakdowns live from the connected league scoring settings.
+- **Weekly stat tables redesigned** - Player game logs now support sortable stat columns, responsive column fitting, expanded stat layouts, fantasy contribution rows, and high/low column highlighting with tie support.
+- **Mobile Companion preview sheet** - Companion roster, rankings, league, waiver, and defense views now use a compact mobile preview sheet before opening the full Statistics player page.
+- **Shared drilldown metadata** - Sleeper-to-ESPN player metadata mapping and Statistics mode constants now live in a shared helper so Companion routes use one consistent player handoff path.
+- **Design guidance retained** - Added design-system rules for horizontal overflow indicators so dense stat surfaces expose hidden columns without blocking touch or drag interaction.

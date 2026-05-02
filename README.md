@@ -87,18 +87,17 @@ npm run validate:routing
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) |
 
-## What's New in v7.1.0
+## What's New in v7.2.0
 
-- **Trade Agent redesign** - Side-by-side trade plates now pair with roster shelves, pick access, clearer partner selection, drag-and-drop actions, and stronger value context.
-- **Upgrades flow rebuilt** - Upgrade targets, outgoing-package suggestions, bargaining-table results, and apply-to-Agent handoff now feel like one cohesive workflow.
-- **Trade cards and modals polished** - Shared modal centering, card sizing, team/player contrast, and compact guide copy reduce clipping and repeated instructional text.
-- **Trade engine tuned** - Pick-inclusive ideas, package depth checks, upgrade values, and explanations were adjusted so generated proposals better match roster context.
+- **Unified player drilldowns** - Companion player selections now route toward the Statistics player page with preserved back context and fantasy mode where appropriate.
+- **Statistics stat mode toggle** - Player profiles can switch between raw game stats and league-scored fantasy values without leaving the page.
+- **Weekly stat table redesign** - Game logs support sortable columns, responsive stat fitting, fantasy contribution rows, and high/low column highlighting.
+- **Mobile player preview sheet** - Companion mobile views show a compact player-stat preview before opening the full Statistics page.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Roadmap
 
-- **v7.2 - Statistics / Fantasy Drilldown Unification** - One canonical player-analysis destination with mode-aware drilldowns across Statistics and Companion.
 - **v7.3 - Scout Rookie Projection Layer** - Add next-season rookie projections that work for standard and IDP-focused draft prep without overloading the current Scout board.
 - **v7.4 - Trade Module Decomposition** - Split the largest Trade components and engines into focused modules for lower maintenance cost.
 - **v8.0 - ESPN League Integration** - Planned major integration track.

@@ -17,6 +17,7 @@ const PREDICTIONS_VIEWS = new Set(['predictions', 'standings', 'playoffs']);
 const COMPANION_VIEWS = new Set(['roster', 'rankings', 'matchup', 'waiver', 'league', 'defense', 'scoring']);
 const TRADE_VIEWS = new Set(['agent', 'intelligence', 'upgrade', 'compare']);
 const STATISTICS_VIEWS = new Set(['browser', 'team', 'player']);
+const STATISTICS_MODES = new Set(['game', 'fantasy']);
 const SCOUT_VIEWS = new Set(['prospects', 'picks', 'results']);
 
 function normalizeCompanionView(view) {
@@ -34,6 +35,7 @@ const DEFAULT_ROUTE = {
   statisticsTeamId: null,
   statisticsPlayerId: null,
   statisticsPlayerSlug: null,
+  statisticsMode: 'game',
   companionView: 'roster',
   rankingsPosition: null,
   waiverPosition: null,
@@ -77,6 +79,12 @@ function normalizePosition(position) {
   if (typeof position !== 'string') return null;
   const value = position.trim().toUpperCase();
   return value || null;
+}
+
+function normalizeStatisticsMode(mode) {
+  if (typeof mode === 'string' && mode.trim().toLowerCase() === 'hybrid') return 'fantasy';
+  const value = normalizeLowerToken(mode, STATISTICS_MODES, 'game');
+  return value ?? 'game';
 }
 
 function normalizeLowerToken(value, allowedValues, fallback = null) {
@@ -136,7 +144,7 @@ function buildQueryString(entries) {
 export function slugifyRouteSegment(value) {
   return String(value ?? '')
     .toLowerCase()
-    .replace(/[’'\.]/g, '')
+    .replace(/[’'.]/g, '')
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
 }
@@ -167,6 +175,7 @@ export function normalizeAppRoute(route = {}) {
     const statisticsTeamId = normalizeTeamId(route.statisticsTeamId);
     const statisticsPlayerId = normalizePlayerId(route.statisticsPlayerId);
     const statisticsPlayerSlug = sanitizeSlug(route.statisticsPlayerSlug);
+    const statisticsMode = normalizeStatisticsMode(route.statisticsMode);
 
     if (statisticsView === 'player' && statisticsPlayerId) {
       return {
@@ -175,6 +184,7 @@ export function normalizeAppRoute(route = {}) {
         statisticsView: 'player',
         statisticsPlayerId,
         statisticsPlayerSlug,
+        statisticsMode,
       };
     }
 
@@ -285,6 +295,7 @@ export function parseAppRoute(pathname = '/', search = '') {
           statisticsView: 'player',
           statisticsPlayerId: statisticsParam,
           statisticsPlayerSlug: statisticsSlug,
+          statisticsMode: parseQueryValue(searchParams, 'mode'),
         });
       }
       return normalizeAppRoute({ activeTab: 'statistics', statisticsView: 'browser' });
@@ -349,7 +360,9 @@ export function buildAppPath(route) {
       }
       if (normalized.statisticsView === 'player' && normalized.statisticsPlayerId) {
         const slug = normalized.statisticsPlayerSlug || 'player';
-        return `/statistics/player/${encodeURIComponent(normalized.statisticsPlayerId)}/${encodeURIComponent(slug)}`;
+        return `/statistics/player/${encodeURIComponent(normalized.statisticsPlayerId)}/${encodeURIComponent(slug)}${buildQueryString([
+          ['mode', normalized.statisticsMode !== 'game' ? normalized.statisticsMode : null],
+        ])}`;
       }
       return '/statistics';
     case 'companion': {
@@ -426,6 +439,7 @@ export function isSameAppRoute(a, b) {
     && left.statisticsTeamId === right.statisticsTeamId
     && left.statisticsPlayerId === right.statisticsPlayerId
     && left.statisticsPlayerSlug === right.statisticsPlayerSlug
+    && left.statisticsMode === right.statisticsMode
     && left.companionView === right.companionView
     && left.rankingsPosition === right.rankingsPosition
     && left.waiverPosition === right.waiverPosition

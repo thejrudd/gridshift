@@ -332,6 +332,12 @@ All fixed bottom bars must include `env(safe-area-inset-bottom)` in their height
 
 **Rank computation in filtered lists:** Always compute rank (i + 1) on the full sorted array, then filter for display. Carry `rank` as a property on each item. Never derive rank from the filtered map index.
 
+### Horizontal Overflow Indicators
+
+Horizontally scrollable tables, stat strips, and dense card rows should show directional edge indicators when hidden content exists off-screen. The indicator is a temporary affordance, not permanent decoration: show the right arrow only when the user can scroll farther right, show the left arrow only after content exists back to the left, and hide each arrow as soon as that edge is reached.
+
+Use a subtle surface-matched gradient fade at the edge with a small circular arrow control layered above the scroll area. The indicator should be `pointer-events-none` so swipes, drags, and taps still belong to the content underneath. Keep it mode-aware by matching light and dark surface tokens, and avoid signature amber unless the arrow is also an active command.
+
 ---
 
 ## Elevation & Depth
@@ -432,6 +438,10 @@ Center-aligned, never bottom-sheet by default.
 **Do** compute rank on the full sorted list before applying any search or position filter.
 
 **Don't** derive rank from the filtered array index — the number will reflect the filtered position, not the true rank.
+
+**Do** show horizontal scroll arrows only while additional content exists in that direction.
+
+**Don't** leave scroll arrows visible at the far left or far right edge, or let the indicator block touch/drag interaction with the scrollable content.
 
 **Do** lock body scroll (`document.body.style.overflow = 'hidden'`) when a modal is open, and clean up on unmount.
 

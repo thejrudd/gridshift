@@ -8,6 +8,7 @@ import PlayerStatTable, { HonorBadge } from './PlayerStatTable';
 import honorsData from '../data/honors.json';
 import { getTeamPalette } from '../data/teamColors.js';
 import { matchEspnToSleeper } from '../utils/espnSleeperMatch';
+import { STATISTICS_MODES } from '../utils/playerDrilldown';
 
 function hexLuminance(hex) {
   const r = parseInt(hex.slice(1, 3), 16) / 255;
@@ -26,9 +27,14 @@ function darkenHex(hex, amount = 0.28) {
 
 const YEARS_TO_SHOW = 10;
 
-const PlayerProfile = ({ playerId, playerMeta, teamId, teams, onBack, backLabel, onCompare, onBuildTrade }) => {
+const MODE_OPTIONS = [
+  { id: STATISTICS_MODES.GAME, label: 'Game Stats' },
+  { id: STATISTICS_MODES.FANTASY, label: 'Fantasy Values' },
+];
+
+const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_MODES.GAME, onModeChange, onBack, backLabel, onCompare, onBuildTrade }) => {
   const { getTeamRecord } = usePredictions();
-  const { hasLeague, myRoster } = useSleeperLeague();
+  const { hasLeague, myRoster, activeScoringSettings } = useSleeperLeague();
   const { players: sleeperPlayers, loadPlayers } = useSleeperStats();
   const [sleeperId, setSleeperId] = useState(null);
 
@@ -107,7 +113,7 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, onBack, backLabel,
     try {
       const data = await fetchPlayerStats(playerId, year);
       setStatsByYear(prev => ({ ...prev, [year]: data }));
-    } catch (e) {
+    } catch {
       if (year < CURRENT_SEASON) {
         // Historical year with no data — hide it silently
         setUnavailableYears(prev => new Set([...prev, year]));
@@ -212,6 +218,8 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, onBack, backLabel,
 
   const isRookie = playerMeta.experience === 0;
   const rookieLabel = isRookie ? 'Rookie Season' : `Active Since ${firstSeason}`;
+  const canShowFantasyModes = hasLeague && !!activeScoringSettings;
+  const activeMode = canShowFantasyModes ? mode : STATISTICS_MODES.GAME;
 
   return (
     <div className="space-y-6">
@@ -483,6 +491,46 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, onBack, backLabel,
         </div>
       </div>
 
+      {canShowFantasyModes && (
+        <div
+          className="flex flex-wrap items-center justify-between gap-3 rounded-xl px-3 py-3"
+          style={{
+            background: 'var(--color-bg-secondary)',
+            border: '1px solid var(--color-separator)',
+          }}
+        >
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-[0.18em]" style={{ color: 'var(--color-label-tertiary)' }}>
+              Stat Mode
+            </div>
+            <div className="text-xs mt-0.5" style={{ color: 'var(--color-label-secondary)' }}>
+              League scoring updates this view live.
+            </div>
+          </div>
+          <div className="grid grid-cols-2 rounded-lg p-1 min-w-0 flex-1 sm:flex-initial sm:min-w-[280px]" style={{ background: 'var(--color-fill)' }}>
+            {MODE_OPTIONS.map((option) => {
+              const selected = activeMode === option.id;
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => onModeChange?.(option.id)}
+                  className="px-2 py-1.5 text-xs font-bold transition-colors"
+                  style={{
+                    color: selected ? 'var(--color-signature-fg)' : 'var(--color-label-secondary)',
+                    background: selected ? 'var(--color-signature)' : 'transparent',
+                    borderRadius: '6px',
+                  }}
+                  aria-pressed={selected}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Stats accordion */}
       <div className="space-y-2">
         {isRookie ? (
@@ -507,6 +555,7 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, onBack, backLabel,
                 gameLogLoading={!!loadingGameLog[year]}
                 honors={honorsByYear[String(year)] ?? []}
                 accentColor={heroAccent ?? heroBg}
+                displayMode={activeMode}
               />
             ))}
             <PlayerStatTable
@@ -520,6 +569,7 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, onBack, backLabel,
               loading={careerLoading}
               error={careerError}
               accentColor={heroAccent ?? heroBg}
+              displayMode={activeMode}
             />
           </>
         )}

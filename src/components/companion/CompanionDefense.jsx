@@ -5,6 +5,8 @@ import { calcPoints, DEFAULT_SCORING } from '../../utils/scoringEngine';
 import { STADIUMS } from '../../data/stadiums';
 import { TEAM_COLORS } from '../../data/teamColors';
 import { NFL_ODDS } from '../../data/odds';
+import useMediaQuery from '../../hooks/useMediaQuery';
+import CompanionPlayerPreviewSheet from './CompanionPlayerPreviewSheet';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -23,6 +25,7 @@ const HEATMAP_CELL_HEIGHT = 40; // fixed row height: accommodates 2-line content
 const HEATMAP_METRIC_PRIMARY_SAMPLES = ['99-99', '999.9', '+10.5', '-10.5', 'PU'];
 const HEATMAP_METRIC_SECONDARY_SAMPLES = ['O/U 70.5', 'WAS', 'JAX'];
 const HEATMAP_METRIC_HEADER_SAMPLES = ['Wk 18', 'AVG'];
+const MOBILE_SHEET_QUERY = '(max-width: 1023px)';
 
 function getHeatmapMetricColWidth() {
   if (typeof document === 'undefined') return 44;
@@ -396,6 +399,7 @@ export default function CompanionDefense({ onViewPlayer, routeState = null, onRo
     loadSeasonStats();
   }, [weeklyStats, scheduleMap, statsLoading, loadSeasonStats]);
   const { favoriteTeam, darkMode } = useTheme();
+  const useMobilePreviewSheet = useMediaQuery(MOBILE_SHEET_QUERY);
 
   const [viewMode, setViewMode] = useState('offense');  // 'offense' | 'defense'
   const [pos, setPos]       = useState('ALL');           // offense position
@@ -408,6 +412,7 @@ export default function CompanionDefense({ onViewPlayer, routeState = null, onRo
   const [sortDir, setSortDir] = useState('desc');
   const [teamSort, setTeamSort] = useState('alpha');
   const [drilldown, setDrilldown] = useState(null); // { team, week }
+  const [previewPlayerId, setPreviewPlayerId] = useState(null);
   const [useTeamColors, setUseTeamColors] = useState(false);
   const [vegasOddsView, setVegasOddsView] = useState('spread'); // 'spread' | 'ou'
   const [vegasInfoOpen, setVegasInfoOpen] = useState(false);
@@ -1530,7 +1535,15 @@ export default function CompanionDefense({ onViewPlayer, routeState = null, onRo
                           }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                               <button
-                                onClick={canNav ? () => { setDrilldown(null); const yearsExp = players?.[playerId]?.years_exp; onViewPlayer(String(espnId), { displayName: name, teamId, position, experience: yearsExp != null ? yearsExp + 1 : undefined }); } : undefined}
+                                onClick={canNav ? () => {
+                                  setDrilldown(null);
+                                  if (useMobilePreviewSheet) {
+                                    setPreviewPlayerId(playerId);
+                                    return;
+                                  }
+                                  const yearsExp = players?.[playerId]?.years_exp;
+                                  onViewPlayer(String(espnId), { displayName: name, teamId, position, experience: yearsExp != null ? yearsExp + 1 : undefined });
+                                } : undefined}
                                 style={{ fontSize: 12, fontWeight: 700, color: canNav ? 'var(--color-accent)' : 'var(--color-label)', background: 'none', border: 'none', padding: 0, cursor: canNav ? 'pointer' : 'default', textAlign: 'left' }}
                               >
                                 {name}
@@ -1576,7 +1589,15 @@ export default function CompanionDefense({ onViewPlayer, routeState = null, onRo
                           const teamId = players?.[playerId]?.team?.toUpperCase();
                           return (
                             <button
-                              onClick={canNav ? () => { setDrilldown(null); const yearsExp = players?.[playerId]?.years_exp; onViewPlayer(String(espnId), { displayName: name, teamId, position, experience: yearsExp != null ? yearsExp + 1 : undefined }); } : undefined}
+                              onClick={canNav ? () => {
+                                setDrilldown(null);
+                                if (useMobilePreviewSheet) {
+                                  setPreviewPlayerId(playerId);
+                                  return;
+                                }
+                                const yearsExp = players?.[playerId]?.years_exp;
+                                onViewPlayer(String(espnId), { displayName: name, teamId, position, experience: yearsExp != null ? yearsExp + 1 : undefined });
+                              } : undefined}
                               style={{
                                 fontSize: 13, fontWeight: 700, color: canNav ? 'var(--color-accent)' : 'var(--color-label)',
                                 background: 'none', border: 'none', padding: 0, cursor: canNav ? 'pointer' : 'default',
@@ -1640,6 +1661,23 @@ export default function CompanionDefense({ onViewPlayer, routeState = null, onRo
             </button>
           </div>
         </div>
+      )}
+      {previewPlayerId && (
+        <CompanionPlayerPreviewSheet
+          playerId={previewPlayerId}
+          onClose={() => setPreviewPlayerId(null)}
+          onViewStats={(playerId) => {
+            const player = players?.[playerId];
+            const espnId = player?.espn_id ?? espnIdOverrides?.[playerId];
+            if (!espnId) return;
+            onViewPlayer?.(String(espnId), {
+              displayName: player?.full_name,
+              teamId: player?.team?.toUpperCase(),
+              position: player?.position,
+              experience: player?.years_exp != null ? player.years_exp + 1 : undefined,
+            });
+          }}
+        />
       )}
     </div>
   );
