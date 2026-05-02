@@ -4,7 +4,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { calcPointsFromTotals } from '../../utils/scoringEngine';
 import { computePositionalRanks, getAvgPPG } from '../../utils/projectionEngine';
 import { getTradedPicks, getLeagueDrafts } from '../../api/sleeperApi';
-import PlayerWeeklySheet from './PlayerWeeklySheet';
+import CompanionPlayerPreviewSheet from './CompanionPlayerPreviewSheet';
 import { getTeamColorKey, getTeamPalette } from '../../data/teamColors.js';
 import useCardGlow from '../../hooks/useCardGlow.jsx';
 import useMediaQuery from '../../hooks/useMediaQuery.js';
@@ -16,6 +16,7 @@ const POSITION_COLORS = {
 const MAX_ROUNDS = 36; // generous cap — Sleeper dynasty startups can run 25+ rounds
 
 const COMPACT_PHONE_QUERY = '(max-width: 480px)';
+const MOBILE_SHEET_QUERY = '(max-width: 1023px)';
 const LEAGUE_ROW_GAP = 12;
 const LEAGUE_ROW_LEFT_BORDER = 4;
 const LEAGUE_ROW_TEMPLATE = '44px minmax(0, 1fr) 64px 56px 12px';
@@ -248,6 +249,7 @@ function LeagueRosterView({ onTradePlayer, onViewPlayer = null, selectedRosterId
   } = useSleeperBase();
   const { darkMode } = useTheme();
   const isCompactPhone = useMediaQuery(COMPACT_PHONE_QUERY);
+  const useMobilePreviewSheet = useMediaQuery(MOBILE_SHEET_QUERY);
 
   const myRosterData = useMemo(() => myRoster(), [myRoster]);
   const [selectedRosterId, setSelectedRosterId] = useState(null);
@@ -430,7 +432,10 @@ function LeagueRosterView({ onTradePlayer, onViewPlayer = null, selectedRosterId
               const isOpponent = selectedRosterId !== myRosterData?.roster_id;
               const isOwnRoster = selectedRosterId === myRosterData?.roster_id;
               return (
-                <LeagueResponsivePlayerRow key={player.id} player={player} layout={layout} isCompactPhone={isCompactPhone} onSelect={() => setSelectedPlayerId(player.id)}
+                <LeagueResponsivePlayerRow key={player.id} player={player} layout={layout} isCompactPhone={isCompactPhone} onSelect={() => {
+                  if (useMobilePreviewSheet) setSelectedPlayerId(player.id);
+                  else onViewPlayer?.(player.id);
+                }}
                   onTrade={
                     onTradePlayer && isOpponent ? () => onTradePlayer(player.id, selectedRosterId, 'get')
                     : onTradePlayer && isOwnRoster ? () => onTradePlayer(player.id, null, 'give')
@@ -447,7 +452,7 @@ function LeagueRosterView({ onTradePlayer, onViewPlayer = null, selectedRosterId
       )}
 
       {selectedPlayerId && (
-        <PlayerWeeklySheet
+        <CompanionPlayerPreviewSheet
           playerId={selectedPlayerId}
           onClose={() => setSelectedPlayerId(null)}
           onViewStats={onViewPlayer}

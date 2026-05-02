@@ -17,6 +17,7 @@ import { getPlayerRowTeamTheme } from '../../utils/playerRowTheme';
 import { isWaiverEligiblePlayerRecord } from '../../utils/playerEligibility';
 import { debugCompanionLog, debugCompanionMeasure } from '../../utils/companionPerfDebug';
 import CompanionLoadingState from './CompanionLoadingState';
+import CompanionPlayerPreviewSheet from './CompanionPlayerPreviewSheet';
 
 const PROJECTION_POSITIONS = new Set(['QB', 'RB', 'WR', 'TE', 'K', 'DL', 'LB', 'DB']);
 const POSITION_COLORS = {
@@ -33,6 +34,7 @@ const POSITION_COLORS = {
   STP: '#a855f7',
 };
 const COMPACT_PHONE_QUERY = '(max-width: 480px)';
+const MOBILE_SHEET_QUERY = '(max-width: 1023px)';
 const WAIVER_ROW_SIDE_PADDING = 10;
 const WAIVER_ROW_LEFT_BORDER = 4;
 
@@ -198,6 +200,7 @@ export default function CompanionWaiver({
   } = useSleeperBase();
   const { darkMode } = useTheme();
   const isCompactPhone = useMediaQuery(COMPACT_PHONE_QUERY);
+  const useMobilePreviewSheet = useMediaQuery(MOBILE_SHEET_QUERY);
   const layout = useMemo(() => getWaiverLayout(isCompactPhone), [isCompactPhone]);
   const calcFantasyPoints = useMemo(() => createPointsCalculator(activeScoringSettings), [activeScoringSettings]);
 
@@ -205,6 +208,7 @@ export default function CompanionWaiver({
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState('recent');
+  const [selectedPlayerId, setSelectedPlayerId] = useState(null);
   const debounceRef = useRef(null);
   const rankedCandidatesCacheRef = useRef({ key: '', value: [] });
   const visibleRowsCacheRef = useRef({ key: '', value: [] });
@@ -583,7 +587,19 @@ export default function CompanionWaiver({
         <ResponsiveWaiverRow
           key={player.id}
           player={player}
-          onViewPlayer={onViewPlayer}
+          onSelect={() => {
+            if (useMobilePreviewSheet) {
+              setSelectedPlayerId(player.id);
+              return;
+            }
+            if (!player.espnId) return;
+            onViewPlayer?.(String(player.espnId), {
+              displayName: player.name,
+              teamId: player.team,
+              position: player.position,
+              experience: player.yearsExp != null ? player.yearsExp + 1 : undefined,
+            });
+          }}
           sortBy={sortBy}
           layout={layout}
           isCompactPhone={isCompactPhone}
@@ -599,6 +615,23 @@ export default function CompanionWaiver({
               : 'No available players found.'}
           </span>
         </div>
+      )}
+
+      {selectedPlayerId && (
+        <CompanionPlayerPreviewSheet
+          playerId={selectedPlayerId}
+          onClose={() => setSelectedPlayerId(null)}
+          onViewStats={onViewPlayer ? (playerId) => {
+            const player = available.find((candidate) => candidate.id === playerId);
+            if (!player?.espnId) return;
+            onViewPlayer(String(player.espnId), {
+              displayName: player.name,
+              teamId: player.team,
+              position: player.position,
+              experience: player.yearsExp != null ? player.yearsExp + 1 : undefined,
+            });
+          } : null}
+        />
       )}
     </div>
   );
@@ -656,12 +689,12 @@ function MetricCell({ children, emphasis = false, color }) {
   );
 }
 
-function ResponsiveWaiverRow({ player, onViewPlayer, sortBy, nameColumnWidth, layout, isCompactPhone }) {
+function ResponsiveWaiverRow({ player, onSelect, sortBy, nameColumnWidth, layout, isCompactPhone }) {
   const { darkMode } = useTheme();
   const [isHovered, setIsHovered] = useState(false);
   const isInjured = player.injuryStatus && !['Questionable', 'Probable'].includes(player.injuryStatus);
   const posColor = POSITION_COLORS[player.position] ?? 'var(--color-label-tertiary)';
-  const canNav = !!(onViewPlayer && player.espnId);
+  const canNav = !!onSelect;
   const injuryLabel = getWaiverInjuryLabel(player.injuryStatus, isCompactPhone);
   const trendBg = player.trendState === 'hot'
     ? 'rgba(30,155,55,0.12)'
@@ -695,12 +728,7 @@ function ResponsiveWaiverRow({ player, onViewPlayer, sortBy, nameColumnWidth, la
   return (
     <div className="px-4">
       <button
-        onClick={canNav ? () => onViewPlayer(String(player.espnId), {
-          displayName: player.name,
-          teamId: player.team,
-          position: player.position,
-          experience: player.yearsExp != null ? player.yearsExp + 1 : undefined,
-        }) : undefined}
+        onClick={canNav ? onSelect : undefined}
         onMouseMove={glowHandlers.onMouseMove}
         onMouseEnter={(event) => {
           setIsHovered(true);

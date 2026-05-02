@@ -31,6 +31,15 @@ const cardTextSize = (base, text, { min, offset = 0, longAt, compactAt }) => {
   return Math.max(min, size);
 };
 
+function LoadingSpinner({ className = 'w-4 h-4' }) {
+  return (
+    <svg className={`animate-spin shrink-0 ${className}`} style={{ color: 'var(--color-accent)' }} fill="none" viewBox="0 0 24 24" aria-hidden="true">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+    </svg>
+  );
+}
+
 // 2025 season champions (Super Bowl LX played February 2026)
 const SEASON_2025_CHAMPIONS = {
   superBowl: 'sea',
@@ -82,10 +91,12 @@ const PlayerBrowser = ({
   selectedTeamId = null,
   selectedPlayerId = null,
   selectedPlayerMeta = null,
+  selectedPlayerMode = 'game',
   navBack,
   onNavigateHome,
   onNavigateTeam,
   onNavigatePlayer,
+  onPlayerModeChange,
   onComparePlayer,
   onBuildTrade,
 }) => {
@@ -296,7 +307,6 @@ const PlayerBrowser = ({
           .slice(0, 30);
         setSearchResults(results);
       } catch (err) {
-        // eslint-disable-next-line no-console
         console.error('[PlayerBrowser search] error:', err);
         setSearchResults([]);
       } finally {
@@ -332,6 +342,8 @@ const PlayerBrowser = ({
           playerMeta={selectedPlayer}
           teamId={selectedPlayer.teamId}
           teams={teams}
+          mode={selectedPlayerMode}
+          onModeChange={onPlayerModeChange}
           onBack={navBack?.onBack ?? (() => window.history.back())}
           backLabel={navBack?.label}
           onCompare={onComparePlayer}
@@ -339,6 +351,8 @@ const PlayerBrowser = ({
         />
       );
     }
+
+    const isResolvingPlayer = playerLoading || (!!normalizedSelectedPlayerId && !playerLoadError);
 
     return (
       <div className="space-y-4">
@@ -360,7 +374,14 @@ const PlayerBrowser = ({
             color: playerLoadError ? 'var(--color-accent-red)' : 'var(--color-label-secondary)',
           }}
         >
-          {playerLoading ? 'Loading player…' : (playerLoadError || 'Player details are unavailable.')}
+          {isResolvingPlayer ? (
+            <div className="flex items-center gap-2" role="status" aria-live="polite">
+              <LoadingSpinner />
+              <span>Loading player details...</span>
+            </div>
+          ) : (
+            playerLoadError || 'Player details are unavailable.'
+          )}
         </div>
       </div>
     );
@@ -433,10 +454,7 @@ const PlayerBrowser = ({
               }}
             />
             {searchLoading && (
-              <svg className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin w-4 h-4" style={{ color: 'var(--color-accent)' }} fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
+              <LoadingSpinner className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4" />
             )}
           </div>
 

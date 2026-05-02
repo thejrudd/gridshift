@@ -26,6 +26,7 @@ Unifies player detail analysis so fantasy scoring and regular game production li
 - **Consistent detail hierarchy** - Redesign the Statistics player page so matchup context, weekly tables, summary blocks, and fantasy/game-stat views can absorb the detail currently split across Companion-specific modal flows
 - **Mode-state clarity** - Add explicit visual indication of the active mode and ensure navigation/back behavior preserves the selected player context when arriving from Companion
 - **Fix & Improve toggles in Player view in Statistics** - Introduce consistent desigh philosophy throughout the app for any available toggles. Allow "Fantasy Scoring" toggle to to flip all statistics to their respective fantasy value. Improve layout so all relevant stats are shown relative to position on desktop, and are removed in reverse order of importance to accommodate limited screen space on smaller devices.
+- **Column high/low stat highlighting** - Add Statistics player-page toggles that highlight the highest and lowest values in each visible weekly game-log stat column, including ties.
 
 ### v7.3 - Scout Rookie Projection Layer
 

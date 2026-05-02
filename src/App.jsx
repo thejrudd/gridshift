@@ -24,6 +24,7 @@ import {
   parseAppRoute,
   slugifyRouteSegment,
 } from './utils/appRoutes';
+import { buildStatisticsPlayerMeta, buildStatisticsPlayerMetaFromSleeperId, STATISTICS_MODES } from './utils/playerDrilldown';
 import { debugCompanionLog, debugCompanionTimeAsync } from './utils/companionPerfDebug';
 import ScoringOverrideBanner from './components/companion/ScoringOverrideBanner';
 
@@ -182,6 +183,7 @@ function AppInner() {
   const statisticsView = appRoute.statisticsView;
   const statisticsTeamId = appRoute.statisticsTeamId;
   const statisticsPlayerId = appRoute.statisticsPlayerId;
+  const statisticsMode = appRoute.statisticsMode ?? STATISTICS_MODES.GAME;
   const predictionsTeamId = appRoute.predictionsTeamId;
   const companionView = appRoute.companionView;
   const tradeView = appRoute.tradeView;
@@ -325,19 +327,11 @@ function AppInner() {
     });
   }, [applyRoute]);
 
-  const navigateToStatisticsPlayer = useCallback((player, { backLabel = null, backRoute = null } = {}) => {
+  const navigateToStatisticsPlayer = useCallback((player, { backLabel = null, backRoute = null, mode = STATISTICS_MODES.GAME } = {}) => {
     if (!player?.id) return;
 
-    const playerMeta = {
-      id: String(player.id),
-      displayName: player.displayName ?? '',
-      teamId: player.teamId ?? null,
-      position: player.position ?? '',
-      positionName: player.positionName ?? '',
-      experience: player.experience,
-      jersey: player.jersey ?? '',
-      status: player.status ?? '',
-    };
+    const playerMeta = buildStatisticsPlayerMeta(player);
+    if (!playerMeta?.id) return;
     const nextBackContext = buildStatsBackContext(backLabel, backRoute);
 
     setStatsNavBack(nextBackContext);
@@ -346,6 +340,7 @@ function AppInner() {
       statisticsView: 'player',
       statisticsPlayerId: playerMeta.id,
       statisticsPlayerSlug: slugifyRouteSegment(playerMeta.displayName || playerMeta.id) || 'player',
+      statisticsMode: mode,
     }, {
       state: {
         statsPlayerMeta: playerMeta,
@@ -354,6 +349,17 @@ function AppInner() {
       },
     });
   }, [applyRoute, buildStatsBackContext]);
+
+  const updateStatisticsMode = useCallback((mode) => {
+    if (activeTab !== 'statistics' || statisticsView !== 'player' || !statisticsPlayerId) return;
+    applyRoute({
+      ...appRoute,
+      activeTab: 'statistics',
+      statisticsView: 'player',
+      statisticsPlayerId,
+      statisticsMode: mode,
+    });
+  }, [activeTab, appRoute, applyRoute, statisticsPlayerId, statisticsView]);
 
   useEffect(() => {
     const parsedRoute = parseAppRoute(window.location.pathname, window.location.search);
@@ -681,10 +687,12 @@ function AppInner() {
               selectedTeamId={statisticsTeamId}
               selectedPlayerId={statisticsPlayerId}
               selectedPlayerMeta={statsRoutePlayerMeta}
+              selectedPlayerMode={statisticsMode}
               navBack={statsNavBack}
               onNavigateHome={navigateToStatisticsHome}
               onNavigateTeam={navigateToStatisticsTeam}
               onNavigatePlayer={navigateToStatisticsPlayer}
+              onPlayerModeChange={updateStatisticsMode}
               onComparePlayer={(player) => {
                 loadCompareTab();
                 setCompareInitPlayerA(player);
@@ -750,6 +758,7 @@ function AppInner() {
                         navigateToStatisticsPlayer(player, {
                           backLabel: 'Compare',
                           backRoute: { activeTab: 'trade', tradeView: 'compare' },
+                          mode: STATISTICS_MODES.FANTASY,
                         });
                       }}
                     />
@@ -803,12 +812,12 @@ function AppInner() {
                     applyRoute({ activeTab: 'companion', companionView: 'matchup', matchupPlayerId: playerId, matchupWeek: week });
                   }}
                   onViewPlayer={(sleeperId) => {
-                    const p = sleeperPlayers?.[sleeperId];
-                    const espnId = p?.espn_id;
-                    if (!espnId) return;
-                    navigateToStatisticsPlayer({ id: String(espnId), displayName: p.full_name, teamId: p.team?.toUpperCase(), position: p.position, experience: p.years_exp != null ? p.years_exp + 1 : undefined }, {
+                    const playerMeta = buildStatisticsPlayerMetaFromSleeperId(sleeperId, sleeperPlayers, espnIdOverrides);
+                    if (!playerMeta) return;
+                    navigateToStatisticsPlayer(playerMeta, {
                       backLabel: 'Roster',
                       backRoute: appRoute,
+                      mode: STATISTICS_MODES.FANTASY,
                     });
                   }}
                 />
@@ -823,18 +832,12 @@ function AppInner() {
                       rankingsPosition: position === 'ALL' ? null : position,
                     }, { replace: true })}
                     onViewPlayer={(sleeperId) => {
-                      const p = sleeperPlayers?.[sleeperId];
-                      const espnId = p?.espn_id;
-                      if (!espnId) return;
-                      navigateToStatisticsPlayer({
-                        id: String(espnId),
-                        displayName: p.full_name,
-                        teamId: p.team?.toUpperCase(),
-                        position: p.position,
-                        experience: p.years_exp != null ? p.years_exp + 1 : undefined,
-                      }, {
+                      const playerMeta = buildStatisticsPlayerMetaFromSleeperId(sleeperId, sleeperPlayers, espnIdOverrides);
+                      if (!playerMeta) return;
+                      navigateToStatisticsPlayer(playerMeta, {
                         backLabel: 'Rankings',
                         backRoute: appRoute,
+                        mode: STATISTICS_MODES.FANTASY,
                       });
                     }}
                   />
@@ -864,6 +867,7 @@ function AppInner() {
                       navigateToStatisticsPlayer({ id, ...meta }, {
                         backLabel: 'Matchup',
                         backRoute: appRoute,
+                        mode: STATISTICS_MODES.FANTASY,
                       });
                     }}
                   />
@@ -883,6 +887,7 @@ function AppInner() {
                       navigateToStatisticsPlayer({ id, ...meta }, {
                         backLabel: 'Waiver',
                         backRoute: appRoute,
+                        mode: STATISTICS_MODES.FANTASY,
                       });
                     }}
                   />
@@ -898,18 +903,12 @@ function AppInner() {
                     leagueRosterId: nextState.rosterId ?? null,
                   }, { replace: true })}
                   onViewPlayer={(sleeperId) => {
-                    const p = sleeperPlayers?.[sleeperId];
-                    const espnId = p?.espn_id;
-                    if (!espnId) return;
-                    navigateToStatisticsPlayer({
-                      id: String(espnId),
-                      displayName: p.full_name,
-                      teamId: p.team?.toUpperCase(),
-                      position: p.position,
-                      experience: p.years_exp != null ? p.years_exp + 1 : undefined,
-                    }, {
+                    const playerMeta = buildStatisticsPlayerMetaFromSleeperId(sleeperId, sleeperPlayers, espnIdOverrides);
+                    if (!playerMeta) return;
+                    navigateToStatisticsPlayer(playerMeta, {
                       backLabel: 'League',
                       backRoute: appRoute,
+                      mode: STATISTICS_MODES.FANTASY,
                     });
                   }}
                   onTradePlayer={(sleeperId, partnerRosterId, side = 'get') => {
@@ -947,6 +946,7 @@ function AppInner() {
                       navigateToStatisticsPlayer({ id, ...meta }, {
                         backLabel: 'Heatmap',
                         backRoute: appRoute,
+                        mode: STATISTICS_MODES.FANTASY,
                       });
                     }}
                   />

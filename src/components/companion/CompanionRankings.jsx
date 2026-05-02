@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSleeperBase, useSleeperStatsProgress } from '../../context/SleeperContext';
 import { useTheme } from '../../context/ThemeContext';
 import { calcPointsFromTotals } from '../../utils/scoringEngine';
-import PlayerWeeklySheet from './PlayerWeeklySheet';
+import CompanionPlayerPreviewSheet from './CompanionPlayerPreviewSheet';
 import useCardGlow from '../../hooks/useCardGlow.jsx';
 import useMediaQuery from '../../hooks/useMediaQuery.js';
 import {
@@ -28,6 +28,7 @@ const POSITION_COLORS = {
 };
 const COMPACT_PHONE_QUERY = '(max-width: 480px)';
 const HIDE_AVG_QUERY = '(max-width: 900px)';
+const MOBILE_SHEET_QUERY = '(max-width: 1023px)';
 const RANKINGS_ROW_GAP = 10;
 
 function measureMaxNameWidth(players) {
@@ -59,6 +60,7 @@ export default function CompanionRankings({ positionFilter = 'ALL', onPositionFi
   } = useSleeperBase();
   const { darkMode } = useTheme();
   const isCompactPhone = useMediaQuery(COMPACT_PHONE_QUERY);
+  const useMobilePreviewSheet = useMediaQuery(MOBILE_SHEET_QUERY);
   const hideAvgColumn = useMediaQuery(HIDE_AVG_QUERY);
 
   const [posFilter, setPosFilter] = useState(positionFilter);
@@ -231,7 +233,10 @@ export default function CompanionRankings({ positionFilter = 'ALL', onPositionFi
           hideAvgColumn={hideAvgColumn}
           isCompactPhone={isCompactPhone}
           nameColPx={nameColPx}
-          onSelect={() => setSelectedPlayerId(player.id)}
+          onSelect={() => {
+            if (useMobilePreviewSheet) setSelectedPlayerId(player.id);
+            else onViewPlayer?.(player.id);
+          }}
         />
       ))}
 
@@ -242,7 +247,7 @@ export default function CompanionRankings({ positionFilter = 'ALL', onPositionFi
       )}
 
       {selectedPlayerId && (
-        <PlayerWeeklySheet
+        <CompanionPlayerPreviewSheet
           playerId={selectedPlayerId}
           onClose={() => setSelectedPlayerId(null)}
           onViewStats={onViewPlayer}

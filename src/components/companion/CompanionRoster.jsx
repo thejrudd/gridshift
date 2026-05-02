@@ -3,7 +3,7 @@ import { useSleeperBase, useSleeperStatsProgress } from '../../context/SleeperCo
 import { useTheme } from '../../context/ThemeContext';
 import { calcPointsFromTotals } from '../../utils/scoringEngine';
 import { computePositionalRanks, getAvgPPG } from '../../utils/projectionEngine';
-import PlayerWeeklySheet from './PlayerWeeklySheet';
+import CompanionPlayerPreviewSheet from './CompanionPlayerPreviewSheet';
 import { getTeamColorKey, getTeamPalette } from '../../data/teamColors.js';
 import useCardGlow from '../../hooks/useCardGlow.jsx';
 import useMediaQuery from '../../hooks/useMediaQuery.js';
@@ -18,6 +18,7 @@ const POSITION_COLORS = {
   DEF: '#6b7280',
 };
 const COMPACT_PHONE_QUERY = '(max-width: 480px)';
+const MOBILE_SHEET_QUERY = '(max-width: 1023px)';
 const ROSTER_ROW_LEFT_BORDER = 4;
 
 function measureMaxNameWidth(players) {
@@ -201,7 +202,7 @@ function teamRowTheme(team, darkMode) {
   };
 }
 
-export default function CompanionRoster({ onTradePlayer, onOpenMatchupWeek, onViewPlayer }) {
+export default function CompanionRoster({ onTradePlayer, onViewPlayer }) {
   const {
     players, loadPlayers,
     weeklyStats, seasonStats, loadSeasonStats,
@@ -211,6 +212,7 @@ export default function CompanionRoster({ onTradePlayer, onOpenMatchupWeek, onVi
   } = useSleeperBase();
   const { darkMode } = useTheme();
   const isCompactPhone = useMediaQuery(COMPACT_PHONE_QUERY);
+  const useMobilePreviewSheet = useMediaQuery(MOBILE_SHEET_QUERY);
 
   const [selectedPlayerId, setSelectedPlayerId] = useState(null);
 
@@ -332,7 +334,10 @@ export default function CompanionRoster({ onTradePlayer, onOpenMatchupWeek, onVi
               player={player}
               layout={layout}
               isCompactPhone={isCompactPhone}
-              onSelect={() => setSelectedPlayerId(player.id)}
+              onSelect={() => {
+                if (useMobilePreviewSheet) setSelectedPlayerId(player.id);
+                else onViewPlayer?.(player.id);
+              }}
               onTrade={onTradePlayer ? () => onTradePlayer(player.id) : null}
             />
           ))}
@@ -344,10 +349,9 @@ export default function CompanionRoster({ onTradePlayer, onOpenMatchupWeek, onVi
       )}
 
       {selectedPlayerId && (
-        <PlayerWeeklySheet
+        <CompanionPlayerPreviewSheet
           playerId={selectedPlayerId}
           onClose={() => setSelectedPlayerId(null)}
-          onOpenWeek={onOpenMatchupWeek}
           onViewStats={onViewPlayer}
         />
       )}
