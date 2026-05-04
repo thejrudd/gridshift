@@ -43,11 +43,11 @@ const GUIDE_CONTENT = {
       },
       {
         title: 'Open a Team Page',
-        description: 'Tap any team card to view their full roster, key players, and franchise history.',
+        description: 'Tap any team card to view their projected starters, full roster, and franchise history.',
       },
       {
-        title: 'Key Players Strip',
-        description: 'The top of each team page highlights the depth-chart starter at each key position — QB, RB, WR, and more.',
+        title: 'Projected Starters',
+        description: 'Use the Offense, Defense, and Special Teams tabs to scan likely starters by unit.',
       },
       {
         title: 'Full Roster',
@@ -234,19 +234,19 @@ const GUIDE_CONTENT = {
     steps: [
       {
         title: 'Choose a Partner',
-        description: 'Select a manager to generate trade ideas built around your roster, their roster, and the picks each side can move.',
+        description: 'Use the manager rail to pick a trade partner. Intelligence builds ideas around your roster, their roster, and movable picks.',
       },
       {
-        title: 'Switch Modes',
-        description: 'Fix Needs looks for deals that improve your lineup. Use Surplus looks for ways to move depth or strength for players and picks.',
+        title: 'Set The Lens',
+        description: 'Fix Needs looks for lineup help. Use Surplus looks for ways to move depth or strength for players and picks.',
       },
       {
-        title: 'Filter The Ideas',
-        description: 'Use the player and pick filters to control how many assets appear on each side. Reset Filters returns to the full idea list.',
+        title: 'Sort And Filter',
+        description: 'Sort by fit, upgrade, or cost, then use player and pick filters to shape the packages. Reset Filters restores the full list.',
       },
       {
         title: 'Apply And Edit',
-        description: 'Tap Apply to send any idea into Agent. From there you can review the totals, open player details, or change the package.',
+        description: 'Review the Give/Get totals and Why It Helps notes, then tap Apply to send any idea into Agent for final tuning.',
       },
     ],
   },
@@ -351,7 +351,7 @@ const Guide = ({ onClose, activeTab = 'predictions', companionView = 'roster', t
       className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
       onClick={handleBackdropClick}
     >
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+      <div className="modal-panel bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white p-6 flex items-center justify-between">
           <h2 className="text-2xl font-display tracking-wide">{content.title}</h2>

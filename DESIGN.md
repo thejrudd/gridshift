@@ -227,23 +227,25 @@ Labels use a single base color scaled by opacity to express hierarchy. This avoi
 
 Use team gradients when a surface is primarily about team or player identity: player hero cards, team cards, roster rows, selection rows, and other scannable football assets. Do not use them for generic controls, page backgrounds, or dense text-only panels.
 
-Source colors from `getTeamPalette(team)` in `src/data/teamColors.js`; never hard-code one-off team hex values in component code.
+Source raw colors from `getTeamPalette(team)` in `src/data/teamColors.js`, and source computed UI treatment from `getTeamVisualTheme(team, darkMode)` in `src/utils/teamVisualTheme.js`. Never hard-code one-off team hex values or duplicate gradient/contrast math in component code.
 
 **Gradient recipe:**
 
-- Light mode: `palette.primary -> palette.secondary`
-- Dark mode: `palette.darkPrimary -> palette.darkSecondary`
-- Direction: `linear-gradient(135deg, start 0%, end 100%)`
-- Reversed teams: some palettes read better with `secondary -> primary`; keep these in a local named set for the surface and document any exceptions. In the Trade Upgrades surface, NYG and NYJ intentionally use the normal direction for readability.
-- Overlay: add a subtle full-surface overlay above the gradient:
+- Light mode starts from `palette.primary` and `palette.secondary`.
+- Dark mode starts from `palette.darkPrimary` and `palette.darkSecondary`.
+- Direction and readable exceptions come from `TEAM_IDENTITY_REVERSED_GRADIENT_TEAMS` in `src/utils/teamVisualTheme.js`; pass explicit options only for a deliberate surface-specific exception. `nyg` and `nyj` are side-sensitive: use `logoSide: 'start'` when their logo sits on the left, and `logoSide: 'end'` when their logo sits on the right.
+- Gradient: use the shared Trade-style three-stop treatment returned as `theme.gradient`.
+- Overlay: add the shared full-surface overlay returned as `theme.gradientOverlay`:
   - Dark: `linear-gradient(180deg, rgba(12,15,20,0.04) 0%, rgba(12,15,20,0.22) 100%)`
   - Light: `linear-gradient(180deg, rgba(255,255,255,0.10) 0%, rgba(12,15,20,0.12) 100%)`
 
 **Readable text on gradients:**
 
-Pick foreground text by testing both `#FFFFFF` and `#0C0F14` against the gradient start, midpoint, and end, then use the color with the better worst-case contrast. Do not choose text color from only the first gradient stop; teams with black, silver, white, or gold endpoints can otherwise create low-contrast zones.
+Use the foreground values returned by `getTeamVisualTheme()`. Default player/team names use `theme.gradientForeground`, which is intentionally tied to the gradient start because names sit on the left side of the shared 135-degree treatment. Right-side stats and values use `theme.gradientEndForeground`; centered or full-width text can use `theme.gradientFullForeground` only when it truly spans the full gradient.
 
-If neither white nor near-black reads well across the whole surface, adjust the gradient before adding shadows or outlines:
+The helper chooses between `#FFFFFF` and `#0C0F14` by testing contrast against the relevant gradient region. Do not choose text color from team identity, raw luminance, or only the first/last stop. This keeps similar treatments, such as Ravens and Vikings purple gradients, consistent: left-side identity text stays white over purple, while right-side value text can switch to near-black over gold when needed.
+
+If neither white nor near-black reads well in the text's region, adjust the gradient before adding shadows or outlines:
 
 1. Flip gradient direction if the text sits mostly over the opposite side.
 2. Use the alternate team endpoint (`secondary` or `darkSecondary`) if it improves contrast without losing team identity.
@@ -309,6 +311,10 @@ Player names and primary identity text are the highest-priority content in dense
 5. Only after those steps, consider smaller name text or a taller row.
 
 Do not solve mobile name truncation by making every selection row taller unless the row is meant to become an expanded card. Compact picker rows should preserve their scanning rhythm; optional metadata should drop before player names become unreadable.
+
+### Roster Identity Rows
+
+Roster player names are required identity content and must not be truncated or ellipsized. Use measured name columns on wider layouts, allow names to wrap when space is tight, and remove lower-priority chrome such as decorative logos, helper labels, or secondary badges before hiding any part of the player's name.
 
 ### Mobile Filter And Sort Rails
 

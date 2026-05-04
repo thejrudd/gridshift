@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import useBodyScrollLock from '../../hooks/useBodyScrollLock';
 import { useSleeperLeague, useSleeperStats } from '../../context/SleeperContext';
 import { useTheme } from '../../context/ThemeContext';
 import { CURRENT_SEASON, fetchPlayerStats, headshot } from '../../utils/playerApi';
@@ -7,6 +6,8 @@ import { buildRankMap, buildStatMap, getStatRows } from '../../utils/playerMetri
 import { getFantasyContribution } from '../../utils/fantasyStatContributions';
 import { buildStatisticsPlayerMetaFromSleeperId, STATISTICS_MODES } from '../../utils/playerDrilldown';
 import { getTeamPalette } from '../../data/teamColors';
+import Modal from '../Modal';
+import { CompanionSelectorButton, CompanionSelectorRail } from './CompanionSelectorControls.jsx';
 
 const MODE_OPTIONS = [
   { id: STATISTICS_MODES.GAME, label: 'Game Stats' },
@@ -29,7 +30,6 @@ function darkenHex(hex, amount = 0.28) {
 }
 
 export default function CompanionPlayerPreviewSheet({ playerId, onClose, onViewStats }) {
-  useBodyScrollLock();
   const { hasLeague, activeScoringSettings } = useSleeperLeague();
   const {
     players,
@@ -71,22 +71,29 @@ export default function CompanionPlayerPreviewSheet({ playerId, onClose, onViewS
   const loading = !!playerMeta?.id && statsRequest.playerId !== playerMeta.id;
   const error = statsRequest.playerId === playerMeta?.id ? statsRequest.error : null;
 
-  const previewSections = useMemo(() => {
-    if (!statsJson || !playerMeta) return [];
+  const previewSectionsByMode = useMemo(() => {
+    if (!statsJson || !playerMeta) {
+      return {
+        [STATISTICS_MODES.GAME]: [],
+        [STATISTICS_MODES.FANTASY]: [],
+      };
+    }
+
     const statsMap = buildStatMap(statsJson);
     const rankMap = buildRankMap(statsJson);
     const { standard = [] } = getStatRows(statsMap, playerMeta.position, rankMap);
 
-    return standard
+    const buildPreviewSections = (targetMode) => standard
       .map((section) => ({
         ...section,
         rows: section.rows
           .map((row) => {
-            const fantasyPoints = canShowFantasy && activeMode === STATISTICS_MODES.FANTASY
+            const showingFantasy = canShowFantasy && targetMode === STATISTICS_MODES.FANTASY;
+            const fantasyPoints = showingFantasy
               ? getFantasyContribution(row.key, statsMap, playerMeta.position, activeScoringSettings)
               : null;
 
-            if (activeMode === STATISTICS_MODES.FANTASY) {
+            if (targetMode === STATISTICS_MODES.FANTASY) {
               if (fantasyPoints == null || fantasyPoints === 0) return null;
               return {
                 ...row,
@@ -103,7 +110,13 @@ export default function CompanionPlayerPreviewSheet({ playerId, onClose, onViewS
       }))
       .filter((section) => section.rows.length > 0)
       .slice(0, 3);
-  }, [activeMode, activeScoringSettings, canShowFantasy, playerMeta, statsJson]);
+
+    return {
+      [STATISTICS_MODES.GAME]: buildPreviewSections(STATISTICS_MODES.GAME),
+      [STATISTICS_MODES.FANTASY]: canShowFantasy ? buildPreviewSections(STATISTICS_MODES.FANTASY) : [],
+    };
+  }, [activeScoringSettings, canShowFantasy, playerMeta, statsJson]);
+  const renderedModes = canShowFantasy ? MODE_OPTIONS : [MODE_OPTIONS[0]];
 
   const palette = getTeamPalette(playerMeta?.teamId);
   const heroBg = palette ? (darkMode ? palette.darkPrimary : palette.primary) : null;
@@ -112,11 +125,14 @@ export default function CompanionPlayerPreviewSheet({ playerId, onClose, onViewS
   const heroOnBgMuted = heroOnBg === '#FFFFFF' ? 'rgba(255,255,255,0.68)' : 'rgba(12,15,20,0.60)';
 
   return (
-    <div className="companion-player-preview-overlay lg:hidden">
-      <button className="companion-player-preview-backdrop" type="button" onClick={onClose} aria-label="Close player preview" />
-      <div className="companion-player-preview-sheet" role="dialog" aria-modal="true" aria-label="Player statistics preview">
+    <div className="lg:hidden">
+      <Modal
+        onClose={onClose}
+        mobileSheet
+        ariaLabel="Player statistics preview"
+        containerClassName="companion-player-preview-sheet flex flex-col"
+      >
         <div className="companion-player-preview-handle-row">
-          <div className="companion-player-preview-handle" />
           <button className="companion-player-preview-close" type="button" onClick={onClose} aria-label="Close player preview">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
               <path d="M18 6L6 18M6 6l12 12" />
@@ -160,26 +176,21 @@ export default function CompanionPlayerPreviewSheet({ playerId, onClose, onViewS
         </div>
 
         {canShowFantasy && (
-          <div className="companion-player-preview-mode">
+          <CompanionSelectorRail ariaLabel="Player preview mode" className="companion-player-preview-mode">
             {MODE_OPTIONS.map((option) => {
               const selected = activeMode === option.id;
               return (
-                <button
+                <CompanionSelectorButton
                   key={option.id}
-                  type="button"
                   onClick={() => setMode(option.id)}
-                  className="companion-player-preview-mode-button"
-                  style={{
-                    background: selected ? 'var(--color-signature)' : 'transparent',
-                    color: selected ? 'var(--color-signature-fg)' : 'var(--color-label-secondary)',
-                  }}
-                  aria-pressed={selected}
+                  active={selected}
+                  size="sm"
                 >
                   {option.label}
-                </button>
+                </CompanionSelectorButton>
               );
             })}
-          </div>
+          </CompanionSelectorRail>
         )}
 
         <div className="companion-player-preview-body">
@@ -189,13 +200,30 @@ export default function CompanionPlayerPreviewSheet({ playerId, onClose, onViewS
             <PreviewMessage>Loading statistics...</PreviewMessage>
           ) : error ? (
             <PreviewMessage tone="error">{error}</PreviewMessage>
-          ) : previewSections.length === 0 ? (
-            <PreviewMessage>No current-season statistics are available.</PreviewMessage>
           ) : (
-            <div className="space-y-4">
-              {previewSections.map((section) => (
-                <PreviewSection key={section.heading} section={section} />
-              ))}
+            <div className="companion-player-preview-panels">
+              {renderedModes.map((option) => {
+                const panelSections = previewSectionsByMode[option.id] ?? [];
+                const selected = activeMode === option.id;
+
+                return (
+                  <div
+                    key={option.id}
+                    className={`companion-player-preview-panel ${selected ? 'is-active' : 'is-inactive'}`}
+                    aria-hidden={!selected}
+                  >
+                    {panelSections.length === 0 ? (
+                      <PreviewMessage>No current-season statistics are available.</PreviewMessage>
+                    ) : (
+                      <div className="space-y-4">
+                        {panelSections.map((section) => (
+                          <PreviewSection key={section.heading} section={section} />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
@@ -213,7 +241,7 @@ export default function CompanionPlayerPreviewSheet({ playerId, onClose, onViewS
             Open Full Statistics
           </button>
         </div>
-      </div>
+      </Modal>
     </div>
   );
 }

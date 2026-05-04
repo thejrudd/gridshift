@@ -4,6 +4,7 @@ import {
   analyzeAreasOfOpportunity,
   getOpportunityPositionLabel,
 } from '../../utils/opportunityEngine';
+import { CompanionSelectorButton, CompanionSelectorRail } from './CompanionSelectorControls.jsx';
 
 export default function CompanionOpportunity({ onOpenTrade, onOpenWaiver }) {
   const {
@@ -99,14 +100,14 @@ export default function CompanionOpportunity({ onOpenTrade, onOpenWaiver }) {
       )}
 
       <div className="px-4 pb-4 flex flex-col gap-3">
-        <div className="flex gap-2">
+        <CompanionSelectorRail ariaLabel="Opportunity view">
           <ModeButton active={viewMode === 'mine'} onClick={() => setViewMode('mine')}>
             My Roster
           </ModeButton>
           <ModeButton active={viewMode === 'opponent'} onClick={() => setViewMode('opponent')}>
             Opponent
           </ModeButton>
-        </div>
+        </CompanionSelectorRail>
 
         {viewMode === 'opponent' && (
           <div className="overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
@@ -118,15 +119,11 @@ export default function CompanionOpportunity({ onOpenTrade, onOpenWaiver }) {
                 const isSelected = roster.roster_id === activeRosterId;
 
                 return (
-                  <button
+                  <CompanionSelectorButton
                     key={roster.roster_id}
                     onClick={() => setSelectedOpponentId(roster.roster_id)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl transition-colors shrink-0"
-                    style={{
-                      background: isSelected ? 'var(--color-signature)' : 'var(--color-fill)',
-                      color: isSelected ? 'var(--color-signature-fg)' : 'var(--color-label-secondary)',
-                      fontWeight: isSelected ? 700 : 500,
-                    }}
+                    active={isSelected}
+                    className="gap-1.5"
                   >
                     {avatarHash ? (
                       <img
@@ -144,7 +141,7 @@ export default function CompanionOpportunity({ onOpenTrade, onOpenWaiver }) {
                       </div>
                     )}
                     <span className="text-xs whitespace-nowrap">{name}</span>
-                  </button>
+                  </CompanionSelectorButton>
                 );
               })}
             </div>
@@ -354,16 +351,13 @@ function OpportunityCard({ card, isMyRoster, activeRosterId, onOpenTrade, onOpen
 
 function ModeButton({ active, onClick, children }) {
   return (
-    <button
+    <CompanionSelectorButton
       onClick={onClick}
-      className="px-4 py-1.5 rounded-lg text-sm font-semibold transition-colors"
-      style={{
-        background: active ? 'var(--color-signature)' : 'var(--color-fill)',
-        color: active ? 'var(--color-signature-fg)' : 'var(--color-label-secondary)',
-      }}
+      active={active}
+      size="md"
     >
       {children}
-    </button>
+    </CompanionSelectorButton>
   );
 }
 

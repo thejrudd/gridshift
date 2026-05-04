@@ -156,16 +156,8 @@ export function buildUpgradeMoverSuggestions({
     if (row) rowsById.set(id, row);
   }
 
-  const pinnedRows = selectedOutgoingIds
-    .map(toId)
-    .filter((id, index, ids) => id && id !== targetId && ids.indexOf(id) === index)
-    .map((id) => rowsById.get(id))
-    .filter(Boolean);
-
-  const pinnedIds = new Set(pinnedRows.map((row) => row.id));
   const valueRows = Array.from(rowsById.values())
-    .filter((row) => !pinnedIds.has(row.id))
     .sort(compareMoverRowsByValue);
 
-  return [...pinnedRows, ...valueRows].slice(0, Math.max(0, limit));
+  return valueRows.slice(0, Math.max(0, limit));
 }

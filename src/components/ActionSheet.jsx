@@ -1,4 +1,4 @@
-import useBodyScrollLock from '../hooks/useBodyScrollLock';
+import Modal from './Modal';
 
 export default function ActionSheet({
   onClose,
@@ -16,39 +16,14 @@ export default function ActionSheet({
 }) {
   const hasPicks = predictionCount > 0;
   const isPredictions = activeTab === 'predictions';
-  useBodyScrollLock();
 
   return (
-    <>
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 z-50"
-        style={{ background: 'rgba(0,0,0,0.45)' }}
-        onClick={onClose}
-        aria-hidden="true"
-      />
-
-      {/* Sheet */}
-      <div
-        className="action-sheet fixed bottom-0 left-0 right-0 z-50 rounded-t-2xl"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Options"
-        style={{
-          background: 'var(--color-bg-secondary)',
-          paddingBottom: 'env(safe-area-inset-bottom)',
-          maxWidth: '640px',
-          marginLeft: 'auto',
-          marginRight: 'auto',
-        }}
-      >
-        {/* Pull handle */}
-        <div className="flex justify-center pt-3 pb-1">
-          <div
-            className="w-9 h-1 rounded-full"
-            style={{ background: 'var(--color-fill)' }}
-          />
-        </div>
+    <Modal
+      onClose={onClose}
+      mobileSheet
+      ariaLabel="Options"
+      containerStyle={{ background: 'var(--color-bg-secondary)', maxWidth: '640px' }}
+    >
 
         {/* Primary actions group */}
         <div className="px-4 py-2">
@@ -103,8 +78,7 @@ export default function ActionSheet({
             Cancel
           </button>
         </div>
-      </div>
-    </>
+    </Modal>
   );
 }
 

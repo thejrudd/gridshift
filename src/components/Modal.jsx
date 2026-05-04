@@ -148,7 +148,7 @@ export default function Modal({
       onClick={onClose}
     >
       <div
-        className={`w-full rounded-2xl overflow-hidden ${containerClassName}`}
+        className={`modal-panel w-full rounded-2xl overflow-hidden ${containerClassName}`}
         role="dialog"
         aria-modal="true"
         aria-label={ariaLabel}

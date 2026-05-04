@@ -1,6 +1,9 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { getTeamColorKey, getTeamPalette } from '../../data/teamColors';
 import { headshot } from '../../utils/playerApi';
+import { darkenHex, getTeamVisualTheme } from '../../utils/teamVisualTheme';
+import { CompanionSelectorButton } from './CompanionSelectorControls.jsx';
+import { getCompanionPositionColor } from '../../utils/companionAssetVisuals.js';
+import CompanionPlayerRow, { CompanionPlayerMetric } from './CompanionPlayerRow.jsx';
 
 const DEFAULT_POSTURE_OPTIONS = [
   { level: 0, label: 'Underpay', description: 'Try to buy low' },
@@ -10,21 +13,9 @@ const DEFAULT_POSTURE_OPTIONS = [
   { level: 4, label: 'Overpay', description: 'Pay up for the upgrade' },
 ];
 
-const REVERSED_GRADIENT_TEAMS = new Set(['dal', 'gb', 'jax', 'la', 'lar', 'lv', 'no', 'pit', 'wsh']);
-
-const POSITION_COLORS = {
-  QB: '#5AADFF',
-  RB: '#2ED578',
-  WR: '#FF8C1A',
-  TE: '#F5B700',
-  K: '#9CA3AF',
-  DL: '#FF4433',
-  LB: '#00C2A8',
-  DB: '#C084FC',
-  DEF: '#64748B',
-};
-
 const MOVER_DISPLAY_LIMIT = 8;
+
+const TRADE_LOGO_SIDE_THEME_OPTIONS = { logoSide: 'end' };
 
 const MOVER_POSITION_ORDER = ['ALL', 'QB', 'RB', 'WR', 'TE', 'K', 'DL', 'LB', 'DB', 'DEF'];
 
@@ -53,63 +44,13 @@ function normalizePlayer(input) {
   };
 }
 
-function hexLuminance(hex) {
-  if (!hex || !hex.startsWith('#') || hex.length < 7) return 0;
-  const r = parseInt(hex.slice(1, 3), 16) / 255;
-  const g = parseInt(hex.slice(3, 5), 16) / 255;
-  const b = parseInt(hex.slice(5, 7), 16) / 255;
-  const lin = c => c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
-}
-
-function contrastRatio(foreground, background) {
-  const fg = hexLuminance(foreground);
-  const bg = hexLuminance(background);
-  const lighter = Math.max(fg, bg);
-  const darker = Math.min(fg, bg);
-  return (lighter + 0.05) / (darker + 0.05);
-}
-
-function mixHex(left, right, amount = 0.5) {
-  if (!left || !right || !left.startsWith('#') || !right.startsWith('#')) return left ?? right ?? null;
-  const blend = (start, end) => Math.round(start + (end - start) * amount);
-  const lr = parseInt(left.slice(1, 3), 16);
-  const lg = parseInt(left.slice(3, 5), 16);
-  const lb = parseInt(left.slice(5, 7), 16);
-  const rr = parseInt(right.slice(1, 3), 16);
-  const rg = parseInt(right.slice(3, 5), 16);
-  const rb = parseInt(right.slice(5, 7), 16);
-  return `#${blend(lr, rr).toString(16).padStart(2, '0')}${blend(lg, rg).toString(16).padStart(2, '0')}${blend(lb, rb).toString(16).padStart(2, '0')}`;
-}
-
-function readableTextForGradient(startColor, endColor) {
-  const samples = [startColor, mixHex(startColor, endColor, 0.5), endColor].filter(Boolean);
-  if (!samples.length) return 'var(--color-label)';
-  const lightScore = Math.min(...samples.map(color => contrastRatio('#FFFFFF', color)));
-  const darkScore = Math.min(...samples.map(color => contrastRatio('#0C0F14', color)));
-  return darkScore > lightScore ? '#0C0F14' : '#FFFFFF';
-}
-
-function darkenHex(hex, amount = 0.28) {
-  if (!hex || !hex.startsWith('#') || hex.length < 7) return hex;
-  const r = Math.max(0, Math.round(parseInt(hex.slice(1, 3), 16) * (1 - amount)));
-  const g = Math.max(0, Math.round(parseInt(hex.slice(3, 5), 16) * (1 - amount)));
-  const b = Math.max(0, Math.round(parseInt(hex.slice(5, 7), 16) * (1 - amount)));
-  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
-}
-
 function sleeperHeadshot(playerId) {
   if (!playerId) return null;
   return `https://sleepercdn.com/content/nfl/players/thumb/${playerId}.jpg`;
 }
 
 function getPositionColor(position) {
-  const normalized = String(position ?? '').toUpperCase();
-  if (normalized === 'DE' || normalized === 'DT') return POSITION_COLORS.DL;
-  if (normalized === 'CB' || normalized === 'S') return POSITION_COLORS.DB;
-  if (normalized === 'PK') return POSITION_COLORS.K;
-  if (normalized === 'DST') return POSITION_COLORS.DEF;
-  return POSITION_COLORS[normalized] ?? null;
+  return getCompanionPositionColor(position);
 }
 
 function normalizePosition(position) {
@@ -162,6 +103,16 @@ function compareMoverRows(a, b, sortMode) {
   return fallback;
 }
 
+function compareMoverRowsByTradeValueDesc(a, b) {
+  const left = normalizePlayer(a);
+  const right = normalizePlayer(b);
+  return (
+    compareNumbers(left.value, right.value, 'desc')
+    || compareNumbers(left.ppg, right.ppg, 'desc')
+    || String(left.name ?? '').localeCompare(String(right.name ?? ''), undefined, { sensitivity: 'base' })
+  );
+}
+
 function formatDecimal(value, digits = 1) {
   const number = Number(value);
   if (!Number.isFinite(number)) return null;
@@ -181,13 +132,6 @@ function formatRank(rank) {
   const number = rank.rank ?? rank.overallRank ?? rank.value ?? null;
   if (number == null) return null;
   return pos ? `${pos}${number}` : `#${number}`;
-}
-
-function stopThen(handler, value) {
-  return (event) => {
-    event.stopPropagation();
-    handler?.(value);
-  };
 }
 
 function Metric({ label, value, labelColor = 'var(--color-label-tertiary)', valueColor = 'var(--color-label)' }) {
@@ -220,18 +164,23 @@ function TargetHero({ selectedPlayer, darkMode, onChooseTarget, onOpenPlayer }) 
   const rankLabel = formatRank(player?.rank);
   const valueLabel = player?.valueLabel ?? formatValue(player?.value);
   const ppgLabel = formatDecimal(player?.ppg);
-  const teamKey = getTeamColorKey(player?.team);
-  const palette = getTeamPalette(player?.team);
-  const primary = palette ? (darkMode ? palette.darkPrimary : palette.primary) : null;
-  const secondary = palette ? (darkMode ? palette.darkSecondary : palette.secondary) : null;
-  const reverseGradient = teamKey ? REVERSED_GRADIENT_TEAMS.has(teamKey) : false;
-  const gradientStart = reverseGradient ? secondary : primary;
-  const gradientEnd = reverseGradient ? primary : secondary;
-  const heroGradient = primary && secondary
-    ? `linear-gradient(135deg, ${gradientStart} 0%, ${gradientEnd} 100%)`
-    : null;
-  const heroOnBg = heroGradient ? readableTextForGradient(gradientStart, gradientEnd) : 'var(--color-label)';
-  const heroMuted = heroOnBg === '#FFFFFF' ? 'rgba(255,255,255,0.68)' : 'rgba(12,15,20,0.62)';
+  const teamTheme = player ? getTeamVisualTheme(player.team, darkMode, TRADE_LOGO_SIDE_THEME_OPTIONS) : null;
+  const teamKey = teamTheme?.logoKey ?? '';
+  const primary = teamTheme?.color ?? null;
+  const heroGradient = teamTheme?.gradient ?? null;
+  const heroOnBg = heroGradient ? teamTheme.gradientForeground : 'var(--color-label)';
+  const heroMuted = heroGradient ? teamTheme.gradientMuted : 'var(--color-label-secondary)';
+  const heroMetricTheme = heroGradient
+    ? [
+        { foreground: teamTheme.gradientStartForeground, muted: teamTheme.gradientStartMuted },
+        { foreground: teamTheme.gradientMidForeground, muted: teamTheme.gradientMidMuted },
+        { foreground: teamTheme.gradientEndForeground, muted: teamTheme.gradientEndMuted },
+      ]
+    : [
+        { foreground: heroOnBg, muted: heroMuted },
+        { foreground: heroOnBg, muted: heroMuted },
+        { foreground: heroOnBg, muted: heroMuted },
+      ];
   const primaryPhotoSrc = sleeperHeadshot(player?.id);
   const fallbackPhotoSrc = player?.espnId ? headshot(player.espnId) : null;
   const playerPhotoSrc = primaryPhotoSrc ?? fallbackPhotoSrc;
@@ -241,6 +190,7 @@ function TargetHero({ selectedPlayer, darkMode, onChooseTarget, onOpenPlayer }) 
       <button
         type="button"
         onClick={onChooseTarget}
+        data-testid="trade-upgrade-choose-target"
         className="flex min-h-[12rem] w-full flex-col items-center justify-center border border-dashed px-6 py-8 text-center transition-opacity active:opacity-70"
         style={{
           background: 'transparent',
@@ -270,16 +220,14 @@ function TargetHero({ selectedPlayer, darkMode, onChooseTarget, onOpenPlayer }) 
       className="relative flex min-h-[13.5rem] flex-col justify-center overflow-hidden p-5 sm:p-6 lg:min-h-[16.5rem] lg:p-7 xl:min-h-[18rem] xl:p-8"
       style={{
         background: heroGradient ?? 'var(--color-fill-tertiary)',
-        borderLeft: secondary ? `4px solid ${secondary}` : undefined,
+        borderLeft: teamTheme?.borderColor ? `4px solid ${teamTheme.borderColor}` : undefined,
         color: heroOnBg,
       }}
     >
       <div
         className="pointer-events-none absolute inset-0"
         style={{
-          background: darkMode
-            ? 'linear-gradient(180deg, rgba(12,15,20,0.04) 0%, rgba(12,15,20,0.22) 100%)'
-            : 'linear-gradient(180deg, rgba(255,255,255,0.10) 0%, rgba(12,15,20,0.12) 100%)',
+          background: teamTheme?.gradientOverlay ?? 'transparent',
         }}
         aria-hidden="true"
       />
@@ -350,130 +298,56 @@ function TargetHero({ selectedPlayer, darkMode, onChooseTarget, onOpenPlayer }) 
       </div>
 
       <div className="relative z-10 mt-5 grid grid-cols-3 gap-4 sm:pl-[9.25rem] lg:mt-7 lg:gap-6 lg:pl-[10.25rem] xl:pl-[11.25rem]">
-        <Metric label="PPG" value={ppgLabel ?? '—'} labelColor={heroMuted} valueColor={heroOnBg} />
-        <Metric label="Rank" value={rankLabel ?? '—'} labelColor={heroMuted} valueColor={heroOnBg} />
-        <Metric label="Value" value={valueLabel ?? '—'} labelColor={heroMuted} valueColor={heroOnBg} />
+        <Metric label="PPG" value={ppgLabel ?? '—'} labelColor={heroMetricTheme[0].muted} valueColor={heroMetricTheme[0].foreground} />
+        <Metric label="Rank" value={rankLabel ?? '—'} labelColor={heroMetricTheme[1].muted} valueColor={heroMetricTheme[1].foreground} />
+        <Metric label="Value" value={valueLabel ?? '—'} labelColor={heroMetricTheme[2].muted} valueColor={heroMetricTheme[2].foreground} />
       </div>
     </div>
   );
 }
 
-function MoverRow({ row, selected, darkMode, onToggleMover, onOpenPlayer }) {
+function MoverRow({ row, selected, darkMode, onToggleMover }) {
   const player = normalizePlayer(row);
   const ppgLabel = formatDecimal(player.ppg);
   const valueLabel = player.valueLabel ?? formatValue(player.value);
   const rankLabel = formatRank(player.rank);
-  const teamKey = getTeamColorKey(player.team);
-  const palette = getTeamPalette(player.team);
-  const primary = palette ? (darkMode ? palette.darkPrimary : palette.primary) : null;
-  const secondary = palette ? (darkMode ? palette.darkSecondary : palette.secondary) : null;
-  const reverseGradient = teamKey ? REVERSED_GRADIENT_TEAMS.has(teamKey) : false;
-  const gradientStart = reverseGradient ? secondary : primary;
-  const gradientEnd = reverseGradient ? primary : secondary;
-  const rowGradient = primary && secondary
-    ? `linear-gradient(135deg, ${gradientStart} 0%, ${gradientEnd} 100%)`
-    : null;
-  const rowText = rowGradient ? readableTextForGradient(gradientStart, gradientEnd) : 'var(--color-label)';
-  const rowMuted = rowText === '#FFFFFF' ? 'rgba(255,255,255,0.70)' : 'rgba(12,15,20,0.64)';
-  const rowSubtle = rowText === '#FFFFFF' ? 'rgba(255,255,255,0.16)' : 'rgba(12,15,20,0.12)';
-  const rowPhotoSrc = sleeperHeadshot(player.id);
-  const posColor = getPositionColor(player.position);
-  const posTextColor = posColor && hexLuminance(posColor) > 0.42 ? '#0C0F14' : '#FFFFFF';
 
   return (
-    <button
-      type="button"
-      onClick={() => onToggleMover?.(player.id, row)}
-      className="relative grid min-h-[4.25rem] w-full grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-2 overflow-hidden rounded-xl border px-3 py-2.5 text-left transition-colors min-[390px]:grid-cols-[auto_auto_auto_minmax(0,1fr)_auto] sm:gap-3 sm:px-4 lg:min-h-[5rem] lg:grid-cols-[auto_auto_auto_minmax(0,1fr)_auto_auto] lg:gap-4 lg:px-4 lg:py-3 xl:min-h-[5.25rem] xl:px-5"
-      style={{
-        background: rowGradient ?? (selected ? 'var(--color-fill-secondary)' : 'transparent'),
-        borderColor: selected ? 'var(--color-signature)' : 'var(--color-separator)',
-        boxShadow: selected ? 'inset 3px 0 0 var(--color-signature)' : 'none',
-        color: rowGradient ? rowText : 'var(--color-label)',
+    <CompanionPlayerRow
+      player={{
+        ...player.raw,
+        id: player.id,
+        name: player.name,
+        team: player.team,
+        position: player.position,
+        espnId: player.espnId,
       }}
-    >
-      {rowGradient && (
-        <div
-          className="pointer-events-none absolute inset-0"
-          style={{
-            background: darkMode
-              ? 'linear-gradient(180deg, rgba(12,15,20,0.02) 0%, rgba(12,15,20,0.24) 100%)'
-              : 'linear-gradient(180deg, rgba(255,255,255,0.10) 0%, rgba(12,15,20,0.16) 100%)',
-          }}
-          aria-hidden="true"
-        />
-      )}
-      <span
-        className="relative z-10 flex h-7 w-7 items-center justify-center rounded-full border sm:h-8 sm:w-8 lg:h-9 lg:w-9 xl:h-10 xl:w-10"
-        style={{
-          background: selected ? 'var(--color-signature)' : 'transparent',
-          borderColor: selected ? 'var(--color-signature)' : (rowGradient ? rowMuted : 'var(--color-label-quaternary)'),
-          color: selected ? 'var(--color-signature-fg)' : 'transparent',
-        }}
-        aria-hidden="true"
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M20 6 9 17l-5-5" />
-        </svg>
-      </span>
-      <img
-        src={rowPhotoSrc}
-        alt=""
-        className="relative z-10 h-9 w-9 rounded-full object-cover sm:h-10 sm:w-10 lg:h-12 lg:w-12 xl:h-14 xl:w-14"
-        style={{
-          background: primary ? darkenHex(primary, 0.45) : 'var(--color-fill-secondary)',
-          boxShadow: rowGradient ? '0 5px 14px rgba(0,0,0,0.22)' : 'none',
-        }}
-        loading="lazy"
-        decoding="async"
-        onError={event => { event.currentTarget.style.display = 'none'; }}
-      />
-      <span
-        className="relative z-10 hidden rounded-md px-1.5 py-1 text-[10px] font-black uppercase leading-none tracking-[0.06em] min-[390px]:block sm:px-2 sm:text-[11px] sm:tracking-[0.08em] lg:px-2.5 lg:py-1.5 lg:text-[13px] xl:text-sm"
-        style={{
-          background: posColor ?? (rowGradient ? rowSubtle : (player.position ? 'var(--color-fill)' : 'var(--color-fill-secondary)')),
-          color: posColor ? posTextColor : (rowGradient ? rowText : 'var(--color-label-secondary)'),
-          boxShadow: posColor ? '0 4px 10px rgba(0,0,0,0.16)' : 'none',
-          fontFamily: "'Barlow Condensed', sans-serif",
-        }}
-      >
-        {player.position || '—'}
-      </span>
-
-      <span
-        className="relative z-10 min-w-0"
-        onClick={onOpenPlayer ? stopThen(onOpenPlayer, player.raw) : undefined}
-      >
-        <span className="block truncate text-[15px] font-extrabold leading-tight sm:text-base lg:leading-normal">{player.name}</span>
-        <span className="mt-1 block truncate text-[10px] font-semibold uppercase tracking-wide lg:text-[12px] xl:text-[13px]" style={{ color: rowGradient ? rowMuted : 'var(--color-label-tertiary)' }}>
-          {[player.team].filter(Boolean).join(' · ') || 'Mover'}
-          {rankLabel ? ` · ${rankLabel}` : ''}
-          {player.note ? ` · ${player.note}` : ''}
-        </span>
-      </span>
-
-      {teamKey ? (
-        <img
-          src={`https://a.espncdn.com/i/teamlogos/nfl/500/${teamKey}.png`}
-          alt=""
-          className="relative z-10 hidden h-9 w-9 shrink-0 object-contain lg:block lg:h-10 lg:w-10 xl:h-11 xl:w-11"
-          aria-hidden="true"
-          loading="lazy"
-          decoding="async"
-          style={{ filter: 'drop-shadow(0 4px 10px rgba(0,0,0,0.20))' }}
-          onError={event => { event.currentTarget.style.display = 'none'; }}
-        />
-      ) : (
-        <span className="relative z-10 hidden h-9 w-9 lg:block" aria-hidden="true" />
-      )}
-
-      <span className="relative z-10 text-right text-[15px] font-black tabular-nums sm:text-base">
-        <span>
-          <span className="hidden text-[9px] uppercase tracking-widest min-[390px]:block lg:text-[11px] xl:text-[12px]" style={{ color: rowGradient ? rowMuted : 'var(--color-label-tertiary)' }}>{ppgLabel ? `${ppgLabel} PPG` : 'Value'}</span>
-          <span>{valueLabel ?? '—'}</span>
-        </span>
-      </span>
-    </button>
+      name={player.name}
+      darkMode={darkMode}
+      selected={selected}
+      teamThemeOptions={TRADE_LOGO_SIDE_THEME_OPTIONS}
+      showSelectionMark
+      metaSegments={[
+        player.team || 'Mover',
+        rankLabel,
+        ppgLabel ? `${ppgLabel} PPG` : null,
+        player.note,
+      ].filter(Boolean)}
+      columns={[
+        <CompanionPlayerMetric
+          key="value"
+          value={valueLabel ?? '—'}
+          kicker="Value"
+        />,
+      ]}
+      onClick={() => onToggleMover?.(player.id, row)}
+      dataTestId={`trade-upgrade-mover-${player.id}`}
+      gridTemplate="auto auto auto minmax(0,1fr) auto auto"
+      style={{
+        borderColor: selected ? 'var(--color-signature)' : 'var(--color-separator)',
+        minHeight: '5rem',
+      }}
+    />
   );
 }
 
@@ -490,7 +364,12 @@ function SegmentedChoice({ title, value, options, onChange }) {
       <div className="mb-2 text-[11px] font-black uppercase tracking-[0.2em]" style={{ color: 'var(--color-label-tertiary)', fontFamily: "'Barlow Condensed', sans-serif" }}>
         {title}
       </div>
-      <div className="grid grid-cols-2 gap-1 rounded-xl p-1" style={{ background: 'var(--color-fill)' }}>
+      <div
+        className="grid gap-1 rounded-xl p-1"
+        role="group"
+        aria-label={title}
+        style={{ background: 'var(--color-fill)', gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}
+      >
         {options.map((option) => {
           const selected = option.value === value;
           return (
@@ -518,38 +397,29 @@ function SegmentedChoice({ title, value, options, onChange }) {
 function FilterChip({ active, children, onClick, accentColor = null }) {
   const activeBorder = accentColor ?? 'var(--color-signature)';
   return (
-    <button
-      type="button"
+    <CompanionSelectorButton
       onClick={onClick}
-      className="min-h-9 shrink-0 rounded-full border px-3.5 text-sm font-extrabold transition-opacity active:opacity-70"
+      active={active}
+      size="sm"
       style={{
-        background: active ? 'var(--color-label)' : 'var(--color-bg-secondary)',
-        borderColor: active ? activeBorder : 'var(--color-separator)',
-        color: active ? 'var(--color-bg)' : 'var(--color-label-secondary)',
+        borderColor: active ? activeBorder : undefined,
         boxShadow: active && accentColor ? `inset 0 -3px 0 ${accentColor}` : 'none',
       }}
-      aria-pressed={active}
     >
       {children}
-    </button>
+    </CompanionSelectorButton>
   );
 }
 
 function SortChip({ active, children, onClick }) {
   return (
-    <button
-      type="button"
+    <CompanionSelectorButton
       onClick={onClick}
-      className="min-h-9 shrink-0 rounded-lg border px-3 text-sm font-bold transition-opacity active:opacity-70"
-      style={{
-        background: active ? 'var(--color-signature)' : 'var(--color-bg-secondary)',
-        borderColor: active ? 'var(--color-signature)' : 'var(--color-separator)',
-        color: active ? 'var(--color-signature-fg)' : 'var(--color-label-secondary)',
-      }}
-      aria-pressed={active}
+      active={active}
+      size="sm"
     >
       {children}
-    </button>
+    </CompanionSelectorButton>
   );
 }
 
@@ -700,6 +570,7 @@ const UpgradeBargainingTable = memo(function UpgradeBargainingTable({
 }) {
   const [moverPositionFilter, setMoverPositionFilter] = useState('ALL');
   const [moverSortMode, setMoverSortMode] = useState('highestValue');
+  const [pinnedMoverOrder, setPinnedMoverOrder] = useState(null);
 
   const selectedIds = useMemo(
     () => new Set((selectedOutgoingPlayerIds ?? []).map(String)),
@@ -715,27 +586,61 @@ const UpgradeBargainingTable = memo(function UpgradeBargainingTable({
     return MOVER_POSITION_ORDER.filter((position) => position === 'ALL' || positions.has(position));
   }, [moverRows]);
 
-  const visibleMoverRows = useMemo(() => {
-    const filteredRows = (moverRows ?? [])
-      .filter(Boolean)
+  const buildOrderedMoverRows = useCallback((positionFilter, sortMode, pinSelected = false) => {
+    const allRows = (moverRows ?? []).filter(Boolean);
+    const filteredRows = allRows
       .filter((row) => {
-        if (moverPositionFilter === 'ALL') return true;
-        return normalizePosition(normalizePlayer(row).position) === moverPositionFilter;
+        if (positionFilter === 'ALL') return true;
+        return normalizePosition(normalizePlayer(row).position) === positionFilter;
       });
 
-    return [...filteredRows].sort((a, b) => {
-      const aSelected = selectedIds.has(String(normalizePlayer(a).id));
-      const bSelected = selectedIds.has(String(normalizePlayer(b).id));
-      if (aSelected === bSelected) return compareMoverRows(a, b, moverSortMode);
-      return aSelected ? -1 : 1;
-    }).slice(0, MOVER_DISPLAY_LIMIT);
-  }, [moverPositionFilter, moverSortMode, moverRows, selectedIds]);
+    if (pinSelected) {
+      const selectedRows = allRows
+        .filter((row) => selectedIds.has(String(normalizePlayer(row).id)))
+        .sort(compareMoverRowsByTradeValueDesc);
+      const pinnedIds = new Set(selectedRows.map((row) => String(normalizePlayer(row).id)));
+      const suggestionRows = filteredRows
+        .filter((row) => !pinnedIds.has(String(normalizePlayer(row).id)))
+        .sort((a, b) => compareMoverRows(a, b, sortMode));
 
-  const filteredMoverCount = useMemo(() => (
-    (moverRows ?? []).filter((row) => (
-      moverPositionFilter === 'ALL' || normalizePosition(normalizePlayer(row).position) === moverPositionFilter
-    )).length
-  ), [moverPositionFilter, moverRows]);
+      return [...selectedRows, ...suggestionRows];
+    }
+
+    return [...filteredRows].sort((a, b) => compareMoverRows(a, b, sortMode));
+  }, [moverRows, selectedIds]);
+
+  const visibleMoverRows = useMemo(() => {
+    const rowsById = new Map(
+      (moverRows ?? [])
+        .filter(Boolean)
+        .map((row) => [String(normalizePlayer(row).id), row]),
+    );
+
+    if (pinnedMoverOrder) {
+      return pinnedMoverOrder
+        .map((id) => rowsById.get(id))
+        .filter(Boolean)
+        .slice(0, MOVER_DISPLAY_LIMIT);
+    }
+
+    return buildOrderedMoverRows(moverPositionFilter, moverSortMode, false)
+      .slice(0, MOVER_DISPLAY_LIMIT);
+  }, [buildOrderedMoverRows, moverPositionFilter, moverRows, moverSortMode, pinnedMoverOrder]);
+
+  const visibleMoverPoolCount = useMemo(() => {
+    if (pinnedMoverOrder) return pinnedMoverOrder.length;
+    let count = 0;
+    for (const row of buildOrderedMoverRows(moverPositionFilter, moverSortMode, false)) {
+      if (row) count += 1;
+    }
+    return count;
+  }, [buildOrderedMoverRows, moverPositionFilter, moverSortMode, pinnedMoverOrder]);
+
+  const pinMoversForControls = useCallback((positionFilter, sortMode) => {
+    const nextOrder = buildOrderedMoverRows(positionFilter, sortMode, true)
+      .map((row) => String(normalizePlayer(row).id));
+    setPinnedMoverOrder(nextOrder);
+  }, [buildOrderedMoverRows]);
 
   const selectedCount = selectedIds.size;
 
@@ -757,6 +662,7 @@ const UpgradeBargainingTable = memo(function UpgradeBargainingTable({
               <button
                 type="button"
                 onClick={onChangeTarget}
+                data-testid="trade-upgrade-change-target"
                 className="shrink-0 text-[12px] font-black uppercase tracking-[0.18em] transition-opacity active:opacity-70"
                 style={{ color: 'var(--color-accent)', fontFamily: "'Figtree', sans-serif" }}
               >
@@ -795,6 +701,7 @@ const UpgradeBargainingTable = memo(function UpgradeBargainingTable({
               <button
                 type="button"
                 onClick={onAddPlayers}
+                data-testid="trade-upgrade-add-movers"
                 className="rounded-lg px-3 py-2 text-xs font-bold transition-opacity active:opacity-70"
                 style={{ background: 'var(--color-signature)', color: 'var(--color-signature-fg)' }}
               >
@@ -823,7 +730,10 @@ const UpgradeBargainingTable = memo(function UpgradeBargainingTable({
                   key={position}
                   active={moverPositionFilter === position}
                   accentColor={position === 'ALL' ? null : getPositionColor(position)}
-                  onClick={() => setMoverPositionFilter(position)}
+                  onClick={() => {
+                    if (position !== moverPositionFilter) pinMoversForControls(position, moverSortMode);
+                    setMoverPositionFilter(position);
+                  }}
                 >
                   {position === 'ALL' ? 'All' : position}
                 </FilterChip>
@@ -834,14 +744,17 @@ const UpgradeBargainingTable = memo(function UpgradeBargainingTable({
                 <SortChip
                   key={option.id}
                   active={moverSortMode === option.id}
-                  onClick={() => setMoverSortMode(option.id)}
+                  onClick={() => {
+                    if (option.id !== moverSortMode) pinMoversForControls(moverPositionFilter, option.id);
+                    setMoverSortMode(option.id);
+                  }}
                 >
                   {option.label}
                 </SortChip>
               ))}
             </ScrollCueRail>
             <div className="text-xs font-semibold" style={{ color: 'var(--color-label-tertiary)' }}>
-              Showing {visibleMoverRows.length} of {filteredMoverCount} matching players.
+              Showing {visibleMoverRows.length} of {visibleMoverPoolCount} available players.
             </div>
           </div>
 
@@ -856,7 +769,6 @@ const UpgradeBargainingTable = memo(function UpgradeBargainingTable({
                     selected={selectedIds.has(String(player.id))}
                     darkMode={darkMode}
                     onToggleMover={onToggleMover}
-                    onOpenPlayer={onOpenPlayer}
                   />
                 );
               })
@@ -864,6 +776,7 @@ const UpgradeBargainingTable = memo(function UpgradeBargainingTable({
               <button
                 type="button"
                 onClick={onAddPlayers}
+                data-testid="trade-upgrade-empty-add-movers"
                 className="min-h-[8rem] rounded-xl border px-4 py-6 text-center transition-opacity active:opacity-70"
                 style={{
                   background: 'var(--color-bg-secondary)',

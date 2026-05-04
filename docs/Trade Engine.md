@@ -20,7 +20,9 @@ These surfaces share some underlying valuation inputs, but they do not all use t
 ## Core file map
 
 - `src/components/companion/CompanionTrade.jsx`
-  UI shell for all Trade modes. Owns filters, modal/sheet behavior, proposal rendering, and explanation cards.
+  Public Trade entry point and orchestration shell for all Trade modes. It keeps state, routing/query sync, caches, modal orchestration, and default export compatibility.
+- `src/components/companion/trade/`
+  Extracted Trade UI modules. `TradeProposalBuilder.jsx` owns the Agent builder surface, `TradeProposalPanel.jsx` owns Intelligence and proposal result rendering, `UpgradeFinderPage.jsx` owns the Upgrade flow, `ProposalPlayerCard.jsx` owns proposal player/pick cards, `ValuationInfoSheet.jsx` owns value explanation content, and `RosterBrowseModal.jsx` owns partner roster browsing.
 - `src/utils/tradeValue.js`
   Shared player trade-value detail builder. This is the common source for blended trade values used across Trade surfaces.
 - `src/utils/tradeAnalytics.js`
@@ -28,7 +30,9 @@ These surfaces share some underlying valuation inputs, but they do not all use t
 - `src/utils/tradeEngine.js`
   Manual Trade Agent logic: side valuation, pick ownership, candidate pool building, trade evaluation, and refinement suggestions.
 - `src/utils/opportunityEngine.js`
-  Trade Intelligence and Upgrade engine. Builds roster opportunity cards, partner-specific proposals, and league-wide upgrade groups.
+  Compatibility facade for the Trade Intelligence and Upgrade engine. Keep public imports pointed here unless there is a deliberate internal-module edit.
+- `src/utils/opportunity/`
+  Focused opportunity-engine modules: `rosterAnalysis.js`, `proposalBuilder.js`, `upgradePackaging.js`, `opportunityCards.js`, `leagueWideUpgrades.js`, `opportunityPositions.js`, and `opportunityShared.js`.
 
 ## High-level data flow
 
@@ -55,7 +59,7 @@ This shared value is what reduced earlier drift between Agent, Intelligence, and
 
 ### Agent flow
 
-`CompanionTrade.jsx` -> `tradeEngine.js`
+`CompanionTrade.jsx` -> `TradeProposalBuilder.jsx` -> `tradeEngine.js`
 
 Main responsibilities:
 - build draft pick ownership maps
@@ -65,7 +69,7 @@ Main responsibilities:
 
 ### Intelligence flow
 
-`CompanionTrade.jsx` -> `tradeAnalytics.js` -> `opportunityEngine.js`
+`CompanionTrade.jsx` -> `TradeProposalPanel.jsx` -> `tradeAnalytics.js` -> `opportunityEngine.js` facade -> `src/utils/opportunity/*`
 
 Main responsibilities:
 - analyze each roster by position
@@ -75,7 +79,7 @@ Main responsibilities:
 
 ### Upgrade flow
 
-`CompanionTrade.jsx` -> `opportunityEngine.js` (`findLeagueWideUpgradeGroups`)
+`CompanionTrade.jsx` -> `UpgradeFinderPage.jsx` -> `opportunityEngine.js` facade -> `leagueWideUpgrades.js`
 
 Main responsibilities:
 - choose a target player or target slot to upgrade
@@ -200,25 +204,29 @@ When modifying Agent, verify:
 
 ## Intelligence reference
 
-Main logic in `opportunityEngine.js`:
+Public imports still come from `opportunityEngine.js`; implementation lives in `src/utils/opportunity/`.
+
+Main logic:
 - `buildRosterOpportunityLayer(...)`
-  Builds analyzed roster state for the whole league.
+  Builds analyzed roster state for the whole league in `rosterAnalysis.js`.
 - `buildPartnerTradeIntelligence(...)`
-  Builds need-driven and surplus-driven proposals for a selected partner.
+  Builds need-driven and surplus-driven proposals for a selected partner in `proposalBuilder.js`.
 - `buildTradeProposals(...)`
   `Fix Needs` proposal generator.
 - `buildSurplusTradeProposals(...)`
   `Use Surplus` proposal generator.
 - `selectNeedDrivenTradeProposals(...)`
-  Final reservation and dedupe for need-driven proposals.
+  Final reservation and dedupe for need-driven proposals in `upgradePackaging.js`.
 - `selectSurplusTradeProposals(...)`
-  Final reservation and dedupe for surplus-driven proposals.
+  Final reservation and dedupe for surplus-driven proposals in `upgradePackaging.js`.
 
 Known design behavior:
+- Intelligence owns an in-view manager selector. Selecting a manager updates the same `partnerRosterId` context used by Agent and keeps the proposal panel mounted while partner-specific ideas prepare.
 - Partner switching must keep `TradeProposalPanel` mounted through analytics loading and partner-specific generation so active filters do not reset when a manager is selected for the first time
 - Partner-specific proposal caches are keyed by roster id; never render cached proposals unless they match the currently selected partner
 - First-time partner generation should show an inline preparing state inside the panel, not replace the whole Intelligence area
-- Proposal card dimensions should come from the responsive card sizing contract, not from how many assets are on either side of the package; side-by-side one-row proposal cards are reserved for wide `2xl` layouts
+- Intelligence results render as Upgrade-style Give/Get deal rows with side totals, Apply actions, two-column explanation copy, UI-only sort chips, and compact player/pick filters.
+- Proposal card dimensions should come from the responsive card sizing contract, not from how many assets are on either side of the package; Intelligence and Upgrade result rows can use side-fitted card math at the `1200px` result-row breakpoint
 - Trade proposal card layout rules live in `docs/Trade Proposal Cards.md`; keep card sizing, identity text, stat fit, and no-clipping behavior aligned with that contract.
 - Proposal pick cards sort chronologically within each side of a trade: year, then round, then locked/projected slot. Player cards keep their generated order; pick cards are sorted among the pick group.
 - Draft pick labels must use `draftPickDisplay.js`, not duplicated string formatting. Sleeper league `status` values are expected to be `pre_draft`, `drafting`, `in_season`, or `complete`; `complete` means the upcoming pick can be shown as locked when the draft has not happened yet.
@@ -230,7 +238,9 @@ Known design behavior:
 
 ## Upgrade reference
 
-Main logic in `opportunityEngine.js`:
+Public imports still come from `opportunityEngine.js`; implementation lives in `src/utils/opportunity/leagueWideUpgrades.js` and `upgradePackaging.js`.
+
+Main logic:
 - `findLeagueWideUpgradeGroups(...)`
   Searches all partner rosters for valid upgrades.
 - `buildUpgradeFinderPackageCandidates(...)`
@@ -246,9 +256,9 @@ Current ranking behavior:
 - package posture distance matters
 - weak partner benefit should be penalized so obviously one-sided upgrades do not dominate the results
 
-Current UI behavior in `CompanionTrade.jsx`:
+Current UI behavior in `UpgradeFinderPage.jsx` and `UpgradeBargainingTable.jsx`:
 - the Bargaining Table starts with the target player or target slot as the hero context, then keeps bargaining controls close to the target instead of burying them in the results
-- the visible mover pool is selected-first: explicitly selected players appear before the broader value-based suggestions, so user intent can shape packages without turning the table into a manual trade builder
+- the visible mover pool keeps row positions stable while users select movers; changing a mover filter or sort chip captures the current selected players and pins that snapshot above the filtered suggestions by descending trade value until another chip change, page revisit, or refresh
 - pick intent toggles describe how picks may be used in packages; avoid labels that imply unsupported pick-only behavior unless the engine supports that shape
 - package size is a real control: `Auto up to 3` enables multi-asset package construction, while the single-asset setting limits generated packages to one outgoing asset
 - the posture strip is a compact continuous control/status surface for package stance; the anchor labels use user-facing bargaining language, while drag positions between labels interpolate the engine's posture ratios
@@ -286,6 +296,7 @@ When changing the Trade engine:
 Update this file whenever you change any of the following:
 - `src/utils/tradeEngine.js`
 - `src/utils/opportunityEngine.js`
+- `src/utils/opportunity/*`
 - `src/utils/tradeAnalytics.js`
 - `src/utils/tradeValue.js`
 - Trade explanation wording in `src/components/companion/CompanionTrade.jsx`

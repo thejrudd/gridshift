@@ -68,9 +68,19 @@ export function computeTradePlayerValueDetail({
   return {
     value,
     rawVal,
+    pts,
     avgPPG,
     rankInfo,
     dynastyFallback,
     isEstimated,
+    ktcEntry: ktc ?? null,
   };
+}
+
+export function resolveTradePlayerValueDetail({
+  id,
+  playerTradeValueDetailsMap,
+  ...detailOptions
+}) {
+  return playerTradeValueDetailsMap?.get(id) ?? computeTradePlayerValueDetail({ id, ...detailOptions });
 }

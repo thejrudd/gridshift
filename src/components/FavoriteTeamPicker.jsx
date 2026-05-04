@@ -28,7 +28,7 @@ export default function FavoriteTeamPicker({ onClose }) {
 
       {/* Panel */}
       <div
-        className="fixed inset-0 z-50 flex flex-col"
+        className="modal-panel fixed inset-0 z-50 flex flex-col"
         style={{
           background: 'var(--color-bg)',
           maxWidth: '560px',

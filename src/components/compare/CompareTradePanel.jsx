@@ -312,6 +312,7 @@ export default function CompareTradePanel({ playerA, playerB, sleeperPlayerA, sl
   const format     = detectLeagueFormat(league);
   const leagueType = detectLeagueType(league);
   const hasAny     = playerA || playerB;
+  const showLoading = loading || (hasAny && !ktcPlayers && !error);
 
   useEffect(() => {
     if (!hasAny) return;
@@ -414,10 +415,94 @@ export default function CompareTradePanel({ playerA, playerB, sleeperPlayerA, sl
     : leader === 'B' ? playerA?.displayName
     : null;
 
+  const analysis = bothKnown ? (() => {
+    const tier         = fairnessTier(pct);
+    const pickEquiv    = leader !== 'equal' ? findPickEquiv(gap, ktcPlayers, leagueType) : null;
+    const playerEquivs = leader !== 'equal' ? findPlayerEquivs(gap, ktcPlayers, leagueType) : [];
+
+    const ageA  = ktcA?.age ? Math.floor(ktcA.age) : null;
+    const ageB  = ktcB?.age ? Math.floor(ktcB.age) : null;
+    // KTC position is used for dynasty window / prime years / context blurbs.
+    const ktcPosA = ktcA?.position ?? null;
+    const ktcPosB = ktcB?.position ?? null;
+    // Sleeper position is used for stat lookups because it matches the ranking tables.
+    const sleeperPosA = sleeperPlayerA?.position?.toUpperCase() ?? null;
+    const sleeperPosB = sleeperPlayerB?.position?.toUpperCase() ?? null;
+    const posA = sleeperPosA ?? ktcPosA;
+    const posB = sleeperPosB ?? ktcPosB;
+    const t7A   = ktcTrend7d(ktcA, leagueType);
+    const t7B   = ktcTrend7d(ktcB, leagueType);
+
+    const winA    = ageA != null ? dynastyWindow(ageA, ktcPosA) : null;
+    const winB    = ageB != null ? dynastyWindow(ageB, ktcPosB) : null;
+    const pylA    = ageA != null ? primeYearsLeft(ageA, ktcPosA) : null;
+    const pylB    = ageB != null ? primeYearsLeft(ageB, ktcPosB) : null;
+    const ctxA    = playerContext(playerA?.displayName, ageA, ktcPosA, t7A, format);
+    const ctxB    = playerContext(playerB?.displayName, ageB, ktcPosB, t7B, format);
+
+    const perfA   = computeFantasyPerf(sleeperPlayerA?.player_id, weeklyStats, seasonStats, scoringSettings, posA);
+    const perfB   = computeFantasyPerf(sleeperPlayerB?.player_id, weeklyStats, seasonStats, scoringSettings, posB);
+
+    const pidA    = sleeperPlayerA?.player_id ?? null;
+    const pidB    = sleeperPlayerB?.player_id ?? null;
+
+    const rankA   = pidA ? rankMap?.[pidA] : null;
+    const rankB   = pidB ? rankMap?.[pidB] : null;
+
+    const srA = statRanksByPos[(posA ?? '').toUpperCase()] ?? {};
+    const srB = statRanksByPos[(posB ?? '').toUpperCase()] ?? {};
+    const samePos = posA && posB && posA.toUpperCase() === posB.toUpperCase();
+    const allStatKeys = [...new Set([
+      ...(POS_STAT_KEYS[(posA ?? '').toUpperCase()] ?? []),
+      ...(POS_STAT_KEYS[(posB ?? '').toUpperCase()] ?? []),
+    ])];
+
+    const notableStats = allStatKeys
+      .map(key => ({ key, rankA: srA[key]?.[pidA] ?? null, rankB: srB[key]?.[pidB] ?? null }))
+      .filter(({ rankA: rA, rankB: rB }) => samePos
+        ? ((rA ?? Infinity) <= 15 || (rB ?? Infinity) <= 15)
+        : (rA != null || rB != null)
+      )
+      .sort((a, b) =>
+        Math.min(a.rankA ?? Infinity, a.rankB ?? Infinity) -
+        Math.min(b.rankA ?? Infinity, b.rankB ?? Infinity)
+      );
+
+    const frA = fantasyRanksByPos[(posA ?? '').toUpperCase()] ?? {};
+    const frB = fantasyRanksByPos[(posB ?? '').toUpperCase()] ?? {};
+    const fantasyNotableStats = allStatKeys
+      .map(key => ({ key, rankA: frA[key]?.[pidA] ?? null, rankB: frB[key]?.[pidB] ?? null }))
+      .filter(({ rankA: rA, rankB: rB }) => samePos
+        ? ((rA ?? Infinity) <= 10 || (rB ?? Infinity) <= 10)
+        : (rA != null || rB != null)
+      )
+      .sort((a, b) =>
+        Math.min(a.rankA ?? Infinity, a.rankB ?? Infinity) -
+        Math.min(b.rankA ?? Infinity, b.rankB ?? Infinity)
+      );
+
+    const vsDefA  = computeVsDefense(pidA, posA, posA, weeklyStats, defenseTable, scoringSettings);
+    const vsDefB  = computeVsDefense(pidB, posB, posB, weeklyStats, defenseTable, scoringSettings);
+    const vsDefA2 = posA === 'TE' ? computeVsDefense(pidA, 'TE', 'WR', weeklyStats, defenseTable, scoringSettings) : null;
+    const vsDefB2 = posB === 'TE' ? computeVsDefense(pidB, 'TE', 'WR', weeklyStats, defenseTable, scoringSettings) : null;
+
+    const showPyl     = format === 'dynasty' && (pylA != null || pylB != null);
+
+    return {
+      tier, pickEquiv, playerEquivs,
+      ageA, ageB, winA, winB, pylA, pylB, showPyl,
+      posA, posB, samePos,
+      t7A, t7B, ctxA, ctxB,
+      perfA, perfB, rankA, rankB,
+      notableStats, fantasyNotableStats,
+      vsDefA, vsDefB, vsDefA2, vsDefB2,
+    };
+  })() : null;
+
   // Empty state — no players selected
   if (!hasAny) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 px-8 gap-3">
+      <div className="trade-compare trade-compare--empty flex flex-col items-center justify-center py-20 px-8 gap-3">
         <TradeIcon />
         <span className="text-sm font-semibold" style={{ color: 'var(--color-label-secondary)' }}>
           Select players to see trade values
@@ -427,541 +512,604 @@ export default function CompareTradePanel({ playerA, playerB, sleeperPlayerA, sl
   }
 
   return (
-    <div className="px-4 py-4 flex flex-col gap-5">
-
-      {/* ── Loading / error ────────────────────────────────────────────── */}
-      {loading && (
-        <div className="flex items-center justify-center py-8 gap-3"
-          style={{ color: 'var(--color-label-tertiary)' }}>
-          <Spinner />
-          <span className="text-sm">Loading KTC data…</span>
-        </div>
-      )}
-
-      {!loading && error && (
-        <div
-          className="rounded-xl px-4 py-4 flex flex-col gap-1.5"
-          style={{ background: 'var(--color-fill)' }}
-        >
-          <span className="text-sm font-semibold" style={{ color: 'var(--color-label)' }}>
-            KTC data unavailable
-          </span>
-          <span className="text-xs leading-relaxed" style={{ color: 'var(--color-label-tertiary)' }}>
-            The KeepTradeCut proxy could not be reached. This feature requires the Docker
-            deployment — it is not available in local dev mode without the nginx proxy.
-          </span>
-          <span className="text-xs font-mono mt-1" style={{ color: 'var(--color-label-quaternary)' }}>
-            {error}
-          </span>
-        </div>
-      )}
-
-      {!loading && !error && (
+    <div className="trade-compare px-4 py-4 flex flex-col gap-5">
+      {showLoading ? (
+        <TradeCompareState kind="loading" />
+      ) : error ? (
+        <TradeCompareState kind="error" error={error} />
+      ) : (
         <>
-          {/* ── Trade analysis ──────────────────────────────────────────── */}
-          {bothKnown && (() => {
-            const tier         = fairnessTier(pct);
-            const pickEquiv    = leader !== 'equal' ? findPickEquiv(gap, ktcPlayers, leagueType) : null;
-            const playerEquivs = leader !== 'equal' ? findPlayerEquivs(gap, ktcPlayers, leagueType) : [];
-
-            const ageA  = ktcA?.age ? Math.floor(ktcA.age) : null;
-            const ageB  = ktcB?.age ? Math.floor(ktcB.age) : null;
-            // KTC position — used for dynasty window / prime years / context blurbs
-            const ktcPosA = ktcA?.position ?? null;
-            const ktcPosB = ktcB?.position ?? null;
-            // Sleeper position — used for stat lookups (more reliable: matches the
-            // position key used to build statRanksByPos, fantasyRanksByPos, defenseTable)
-            const sleeperPosA = sleeperPlayerA?.position?.toUpperCase() ?? null;
-            const sleeperPosB = sleeperPlayerB?.position?.toUpperCase() ?? null;
-            // posA/posB: Sleeper-authoritative, falls back to KTC
-            const posA = sleeperPosA ?? ktcPosA;
-            const posB = sleeperPosB ?? ktcPosB;
-            const t7A   = ktcTrend7d(ktcA, leagueType);
-            const t7B   = ktcTrend7d(ktcB, leagueType);
-
-            const winA    = ageA != null ? dynastyWindow(ageA, ktcPosA) : null;
-            const winB    = ageB != null ? dynastyWindow(ageB, ktcPosB) : null;
-            const pylA    = ageA != null ? primeYearsLeft(ageA, ktcPosA) : null;
-            const pylB    = ageB != null ? primeYearsLeft(ageB, ktcPosB) : null;
-            const ctxA    = playerContext(playerA?.displayName, ageA, ktcPosA, t7A, format);
-            const ctxB    = playerContext(playerB?.displayName, ageB, ktcPosB, t7B, format);
-
-            const perfA   = computeFantasyPerf(sleeperPlayerA?.player_id, weeklyStats, seasonStats, scoringSettings, posA);
-            const perfB   = computeFantasyPerf(sleeperPlayerB?.player_id, weeklyStats, seasonStats, scoringSettings, posB);
-
-            const pidA    = sleeperPlayerA?.player_id ?? null;
-            const pidB    = sleeperPlayerB?.player_id ?? null;
-
-            const rankA   = pidA ? rankMap?.[pidA] : null;
-            const rankB   = pidB ? rankMap?.[pidB] : null;
-
-            // Per-stat position rankings
-            const srA = statRanksByPos[(posA ?? '').toUpperCase()] ?? {};
-            const srB = statRanksByPos[(posB ?? '').toUpperCase()] ?? {};
-            const samePos = posA && posB && posA.toUpperCase() === posB.toUpperCase();
-            const allStatKeys = [...new Set([
-              ...(POS_STAT_KEYS[(posA ?? '').toUpperCase()] ?? []),
-              ...(POS_STAT_KEYS[(posB ?? '').toUpperCase()] ?? []),
-            ])];
-            // Same position: top-15 only. Cross-position: show all stats either player has a rank for
-            // (otherwise player B's position-specific stats never appear because their domain doesn't overlap)
-            const notableStats = allStatKeys
-              .map(key => ({ key, rankA: srA[key]?.[pidA] ?? null, rankB: srB[key]?.[pidB] ?? null }))
-              .filter(({ rankA: rA, rankB: rB }) => samePos
-                ? ((rA ?? Infinity) <= 15 || (rB ?? Infinity) <= 15)
-                : (rA != null || rB != null)
-              )
-              .sort((a, b) =>
-                Math.min(a.rankA ?? Infinity, a.rankB ?? Infinity) -
-                Math.min(b.rankA ?? Infinity, b.rankB ?? Infinity)
-              );
-
-            // Fantasy pts-weighted rankings — same threshold logic
-            const frA = fantasyRanksByPos[(posA ?? '').toUpperCase()] ?? {};
-            const frB = fantasyRanksByPos[(posB ?? '').toUpperCase()] ?? {};
-            const fantasyNotableStats = allStatKeys
-              .map(key => ({ key, rankA: frA[key]?.[pidA] ?? null, rankB: frB[key]?.[pidB] ?? null }))
-              .filter(({ rankA: rA, rankB: rB }) => samePos
-                ? ((rA ?? Infinity) <= 10 || (rB ?? Infinity) <= 10)
-                : (rA != null || rB != null)
-              )
-              .sort((a, b) =>
-                Math.min(a.rankA ?? Infinity, a.rankB ?? Infinity) -
-                Math.min(b.rankA ?? Infinity, b.rankB ?? Infinity)
-              );
-
-            // Primary defense split: player scored against defenses ranked by their own position
-            const vsDefA  = computeVsDefense(pidA, posA, posA, weeklyStats, defenseTable, scoringSettings);
-            const vsDefB  = computeVsDefense(pidB, posB, posB, weeklyStats, defenseTable, scoringSettings);
-            // TE secondary: rank defenses by WR pts allowed (passing game proxy) — TE scores the fpts
-            const vsDefA2 = posA === 'TE' ? computeVsDefense(pidA, 'TE', 'WR', weeklyStats, defenseTable, scoringSettings) : null;
-            const vsDefB2 = posB === 'TE' ? computeVsDefense(pidB, 'TE', 'WR', weeklyStats, defenseTable, scoringSettings) : null;
-
-            const showOutlook = winA || winB || perfA || perfB || fantasyNotableStats.length > 0 || notableStats.length > 0;
-            const showPyl     = format === 'dynasty' && (pylA != null || pylB != null);
-
-            const fmtTrend = (v) => {
-              if (v == null || Math.abs(v) < 5) return { label: 'Flat', color: 'var(--color-label-quaternary)' };
-              return { label: v > 0 ? `▲ +${v}` : `▼ ${v}`, color: v > 0 ? '#22c55e' : '#ef4444' };
-            };
-
-            // Two-column row helper
-            const OutlookRow = ({ label, left, right }) => (
-              <div className="flex items-center gap-2">
-                <div className="flex-1 flex justify-end">{left}</div>
-                <div
-                  className="shrink-0 text-center text-[10px] uppercase tracking-wider"
-                  style={{ width: 96, color: 'var(--color-label-quaternary)' }}
-                >
-                  {label}
-                </div>
-                <div className="flex-1">{right}</div>
-              </div>
-            );
-
-            return (
-              <div
-                className="rounded-xl px-4 py-4 flex flex-col gap-3"
-                style={{ background: 'var(--color-fill)' }}
-              >
-                <span
-                  className="text-xs font-semibold uppercase tracking-widest"
-                  style={{ color: 'var(--color-label-tertiary)', letterSpacing: '0.08em' }}
-                >
-                  Trade Analysis
-                </span>
-
-                {/* Fairness verdict */}
-                {tier && (
-                  <div className="flex items-center gap-2">
-                    <span
-                      className="px-2 py-0.5 rounded-md text-xs font-bold"
-                      style={{ background: `${tier.color}22`, color: tier.color }}
-                    >
-                      {tier.label}
-                    </span>
-                    {pct != null && pct > 0 && (
-                      <span className="text-xs" style={{ color: 'var(--color-label-tertiary)' }}>
-                        {pct}% gap
-                      </span>
-                    )}
-                  </div>
-                )}
-
-                {leader === 'equal' ? (
-                  <p className="text-sm" style={{ color: 'var(--color-label)' }}>
-                    These players have roughly equal trade value — a straight swap is fair.
-                  </p>
-                ) : (
-                  <>
-                    <p className="text-sm leading-relaxed" style={{ color: 'var(--color-label)' }}>
-                      <span className="font-semibold">{leaderName}</span> has{' '}
-                      <span className="font-semibold">{fmtKtcValue(gap)}</span> more value.
-                      To balance this trade, the <span className="font-medium">{trailerName?.split(' ').slice(-1)[0]}</span> side
-                      needs to add roughly <span className="font-semibold">{fmtKtcValue(gap)}</span> in additional asset value.
-                    </p>
-
-                    {/* Value equivalents */}
-                    {(playerEquivs.length > 0 || pickEquiv) && (
-                      <div className="flex flex-col gap-1.5">
-                        <span
-                          className="text-[10px] uppercase tracking-widest"
-                          style={{ color: 'var(--color-label-quaternary)', letterSpacing: '0.08em' }}
-                        >
-                          Value equivalents
-                        </span>
-                        {playerEquivs.map(eq => (
-                          <div
-                            key={eq.name}
-                            className="flex items-center gap-2 rounded-lg px-3 py-2"
-                            style={{ background: 'var(--color-fill-secondary)' }}
-                          >
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--color-label-tertiary)', flexShrink: 0 }}>
-                              <circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
-                            </svg>
-                            <span className="text-xs" style={{ color: 'var(--color-label-secondary)' }}>
-                              A{' '}
-                              <span className="font-semibold" style={{ color: 'var(--color-label)' }}>
-                                {eq.tier} {eq.posLabel}
-                              </span>
-                              {' '}— e.g.{' '}
-                              <span className="font-semibold" style={{ color: 'var(--color-label)' }}>
-                                {eq.name}
-                              </span>
-                              {' '}({fmtKtcValue(eq.val)})
-                            </span>
-                          </div>
-                        ))}
-                        {pickEquiv && (
-                          <div
-                            className="flex items-center gap-2 rounded-lg px-3 py-2"
-                            style={{ background: 'var(--color-fill-secondary)' }}
-                          >
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--color-label-tertiary)', flexShrink: 0 }}>
-                              <polyline points="9 18 15 12 9 6" />
-                            </svg>
-                            <span className="text-xs" style={{ color: 'var(--color-label-secondary)' }}>
-                              A draft pick — e.g.{' '}
-                              <span className="font-semibold" style={{ color: 'var(--color-label)' }}>
-                                {pickEquiv.name}
-                              </span>
-                              {' '}({fmtKtcValue(pickEquiv.val)})
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </>
-                )}
-
-                {/* ── Player Outlook ─────────────────────────────────── */}
-                {showOutlook && (
-                  <div
-                    className="flex flex-col gap-2 pt-2"
-                    style={{ borderTop: '1px solid var(--color-separator)' }}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-semibold uppercase tracking-widest"
-                        style={{ color: 'var(--color-label-quaternary)', letterSpacing: '0.1em' }}>
-                        Player Outlook
-                      </span>
-                      {statsLoading && !seasonStats && (
-                        <span className="text-[10px]" style={{ color: 'var(--color-label-quaternary)' }}>
-                          · loading stats…
-                        </span>
-                      )}
-                    </div>
-
-                    {/* ── Age + career ───────────────────────────────── */}
-                    <OutlookRow
-                      label="Age"
-                      left={ageA != null
-                        ? <span className="text-xs font-semibold" style={{ color: 'var(--color-label)' }}>
-                            {ageA}
-                            {winA && <span className="text-[10px] ml-1" style={{ color: 'var(--color-label-quaternary)' }}>· {winA}</span>}
-                          </span>
-                        : <span className="text-xs" style={{ color: 'var(--color-label-quaternary)' }}>—</span>}
-                      right={ageB != null
-                        ? <span className="text-xs font-semibold" style={{ color: 'var(--color-label)' }}>
-                            {ageB}
-                            {winB && <span className="text-[10px] ml-1" style={{ color: 'var(--color-label-quaternary)' }}>· {winB}</span>}
-                          </span>
-                        : <span className="text-xs" style={{ color: 'var(--color-label-quaternary)' }}>—</span>}
-                    />
-                    {showPyl && (
-                      <OutlookRow
-                        label="Prime Left"
-                        left={pylA != null
-                          ? <span className="text-xs font-semibold" style={{ color: pylA <= 1 ? '#ef4444' : pylA <= 3 ? '#f59e0b' : '#22c55e' }}>
-                              {pylA === 0 ? 'Past peak' : `~${pylA} yr${pylA !== 1 ? 's' : ''}`}
-                            </span>
-                          : <span className="text-xs" style={{ color: 'var(--color-label-quaternary)' }}>—</span>}
-                        right={pylB != null
-                          ? <span className="text-xs font-semibold" style={{ color: pylB <= 1 ? '#ef4444' : pylB <= 3 ? '#f59e0b' : '#22c55e' }}>
-                              {pylB === 0 ? 'Past peak' : `~${pylB} yr${pylB !== 1 ? 's' : ''}`}
-                            </span>
-                          : <span className="text-xs" style={{ color: 'var(--color-label-quaternary)' }}>—</span>}
-                      />
-                    )}
-
-                    {/* ── Fantasy Performance ────────────────────────── */}
-                    {(rankA || rankB || perfA || perfB) && (
-                      <div className="flex flex-col gap-2 pt-1.5"
-                        style={{ borderTop: '1px solid var(--color-separator)' }}>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[10px] font-semibold uppercase tracking-widest"
-                            style={{ color: 'var(--color-label-quaternary)', letterSpacing: '0.1em' }}>
-                            Fantasy Performance
-                          </span>
-                          <InfoTooltip position="below" text="Fantasy points using your league's scoring settings. Szn Rank = positional finish among all active players. Szn PPG = points per game played. Recent = average over the last 4 scored weeks." />
-                        </div>
-                        {(rankA || rankB) && (
-                          <OutlookRow
-                            label="Szn Rank"
-                            left={rankA
-                              ? <span className="text-xs font-semibold" style={{ color: 'var(--color-label)' }}>{rankA.posLabel}{rankA.rank}</span>
-                              : <span className="text-xs" style={{ color: 'var(--color-label-quaternary)' }}>—</span>}
-                            right={rankB
-                              ? <span className="text-xs font-semibold" style={{ color: 'var(--color-label)' }}>{rankB.posLabel}{rankB.rank}</span>
-                              : <span className="text-xs" style={{ color: 'var(--color-label-quaternary)' }}>—</span>}
-                          />
-                        )}
-                        {(perfA?.ppg != null || perfB?.ppg != null) && (
-                          <OutlookRow
-                            label="Szn PPG"
-                            left={perfA?.ppg != null
-                              ? <span className="text-xs font-semibold" style={{ color: 'var(--color-label)' }}>{perfA.ppg}</span>
-                              : <span className="text-xs" style={{ color: 'var(--color-label-quaternary)' }}>—</span>}
-                            right={perfB?.ppg != null
-                              ? <span className="text-xs font-semibold" style={{ color: 'var(--color-label)' }}>{perfB.ppg}</span>
-                              : <span className="text-xs" style={{ color: 'var(--color-label-quaternary)' }}>—</span>}
-                          />
-                        )}
-                        {(perfA?.recentAvg != null || perfB?.recentAvg != null) && (
-                          <OutlookRow
-                            label="Recent"
-                            left={perfA?.recentAvg != null
-                              ? <span className="text-xs font-semibold" style={{ color: perfA.recentAvg > (perfA.ppg ?? 0) ? '#22c55e' : perfA.recentAvg < (perfA.ppg ?? 0) * 0.75 ? '#ef4444' : 'var(--color-label)' }}>
-                                  {perfA.recentAvg}
-                                  <span className="text-[10px] ml-1" style={{ color: 'var(--color-label-quaternary)' }}>L{perfA.recentWeeks}</span>
-                                </span>
-                              : <span className="text-xs" style={{ color: 'var(--color-label-quaternary)' }}>—</span>}
-                            right={perfB?.recentAvg != null
-                              ? <span className="text-xs font-semibold" style={{ color: perfB.recentAvg > (perfB.ppg ?? 0) ? '#22c55e' : perfB.recentAvg < (perfB.ppg ?? 0) * 0.75 ? '#ef4444' : 'var(--color-label)' }}>
-                                  {perfB.recentAvg}
-                                  <span className="text-[10px] ml-1" style={{ color: 'var(--color-label-quaternary)' }}>L{perfB.recentWeeks}</span>
-                                </span>
-                              : <span className="text-xs" style={{ color: 'var(--color-label-quaternary)' }}>—</span>}
-                          />
-                        )}
-                      </div>
-                    )}
-
-                    {/* ── Fantasy Stat Leaders ───────────────────────── */}
-                    {fantasyNotableStats.length > 0 && (
-                      <div className="flex flex-col gap-2 pt-1.5"
-                        style={{ borderTop: '1px solid var(--color-separator)' }}>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[10px] font-semibold uppercase tracking-widest"
-                            style={{ color: 'var(--color-label-quaternary)', letterSpacing: '0.1em' }}>
-                            Fantasy Stat Leaders
-                          </span>
-                          <InfoTooltip position="below" text={samePos
-                            ? "Positional rank by fantasy points earned from each stat category, using your league's scoring settings. Stats worth 0 pts in your league are excluded. Top 10 only."
-                            : "Each player is ranked within their own position group. Dash (—) means that stat is not tracked for that position. Ranks are not directly comparable across positions."} />
-                        </div>
-                        {fantasyNotableStats.map(({ key, rankA: rA, rankB: rB }) => {
-                          const rankColor = r => r == null ? 'var(--color-label-quaternary)' : r <= 3 ? '#22c55e' : r <= 7 ? '#f59e0b' : 'var(--color-label-secondary)';
-                          return (
-                            <OutlookRow
-                              key={key}
-                              label={STAT_LABEL[key] ?? key}
-                              left={rA != null
-                                ? <span className="text-xs font-semibold" style={{ color: rankColor(rA) }}>#{rA}</span>
-                                : <span className="text-xs" style={{ color: 'var(--color-label-quaternary)' }}>—</span>}
-                              right={rB != null
-                                ? <span className="text-xs font-semibold" style={{ color: rankColor(rB) }}>#{rB}</span>
-                                : <span className="text-xs" style={{ color: 'var(--color-label-quaternary)' }}>—</span>}
-                            />
-                          );
-                        })}
-                      </div>
-                    )}
-
-                    {/* ── Raw Stat Leaders ───────────────────────────── */}
-                    {notableStats.length > 0 && (
-                      <div className="flex flex-col gap-2 pt-1.5"
-                        style={{ borderTop: '1px solid var(--color-separator)' }}>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[10px] font-semibold uppercase tracking-widest"
-                            style={{ color: 'var(--color-label-quaternary)', letterSpacing: '0.1em' }}>
-                            Raw Stat Leaders
-                          </span>
-                          <InfoTooltip position="below" text={samePos
-                            ? "In-game production only — not fantasy-scored. Each rank is the player's positional finish among all players at that position this season. Shows any stat where either player ranks top 15."
-                            : "Each player is ranked within their own position group. Dash (—) means that stat is not tracked for that position. Ranks are not directly comparable across positions."} />
-                        </div>
-                        {notableStats.map(({ key, rankA: rA, rankB: rB }) => {
-                          const rankColor = r => r == null ? 'var(--color-label-quaternary)' : r <= 5 ? '#22c55e' : r <= 10 ? '#f59e0b' : 'var(--color-label-secondary)';
-                          return (
-                            <OutlookRow
-                              key={key}
-                              label={STAT_LABEL[key] ?? key}
-                              left={rA != null
-                                ? <span className="text-xs font-semibold" style={{ color: rankColor(rA) }}>#{rA}</span>
-                                : <span className="text-xs" style={{ color: 'var(--color-label-quaternary)' }}>—</span>}
-                              right={rB != null
-                                ? <span className="text-xs font-semibold" style={{ color: rankColor(rB) }}>#{rB}</span>
-                                : <span className="text-xs" style={{ color: 'var(--color-label-quaternary)' }}>—</span>}
-                            />
-                          );
-                        })}
-                      </div>
-                    )}
-
-                    {/* ── Defense Analysis ───────────────────────────── */}
-                    {(vsDefA || vsDefB) && (() => {
-                      const labelA = vsDefA?.label ?? null;
-                      const labelB = vsDefB?.label ?? null;
-                      // Same position → single label; cross-position → show both
-                      const defLabel = samePos || labelA === labelB
-                        ? (labelA ?? labelB ?? 'D')
-                        : [labelA, labelB].filter(Boolean).join(' / ');
-                      const crossDefPos = !samePos && labelA !== labelB;
-                      const DVal = ({ d, tier }) => {
-                        const v = d?.[`${tier}Avg`];
-                        const c = tier === 'tough' ? '#ef4444' : tier === 'soft' ? '#22c55e' : 'var(--color-label)';
-                        return v != null
-                          ? <span className="text-xs font-semibold" style={{ color: c }}>{v}</span>
-                          : <span className="text-xs" style={{ color: 'var(--color-label-quaternary)' }}>—</span>;
-                      };
-                      return (
-                        <div className="flex flex-col gap-2 pt-1.5"
-                          style={{ borderTop: '1px solid var(--color-separator)' }}>
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[10px] font-semibold uppercase tracking-widest"
-                              style={{ color: 'var(--color-label-quaternary)', letterSpacing: '0.1em' }}>
-                              vs {defLabel} · fpts by tier
-                            </span>
-                            <InfoTooltip position="above" text={crossDefPos
-                              ? `Fantasy points each player scores against their own position's defense tiers. Each player's defenses are ranked independently by pts allowed to their position — tiers are not directly comparable across positions.`
-                              : `Fantasy points scored against each defense tier. Defenses are split into thirds by avg ${defLabel} pts allowed per game — Tough = stingiest third, Soft = most generous. Values shown are each player's avg fpts against that tier.`} />
-                          </div>
-                          <OutlookRow label="Tough Defense"
-                            left={<DVal d={vsDefA} tier="tough" />}
-                            right={<DVal d={vsDefB} tier="tough" />} />
-                          <OutlookRow label="Mid Defense"
-                            left={<DVal d={vsDefA} tier="mid" />}
-                            right={<DVal d={vsDefB} tier="mid" />} />
-                          <OutlookRow label="Soft Defense"
-                            left={<DVal d={vsDefA} tier="soft" />}
-                            right={<DVal d={vsDefB} tier="soft" />} />
-
-                          {/* TE secondary: WR defense as passing-game proxy */}
-                          {(vsDefA2 || vsDefB2) && (
-                            <>
-                              <div className="flex items-center gap-1.5 mt-1">
-                                <span className="text-[10px] font-semibold uppercase tracking-widest"
-                                  style={{ color: 'var(--color-label-quaternary)', letterSpacing: '0.1em' }}>
-                                  vs WR D · passing game context
-                                </span>
-                                <InfoTooltip position="above" text="For tight ends, defenses are also ranked by how many fantasy points they allow to wide receivers — a proxy for overall passing game permissiveness. Values shown are the TE's fpts scored against each tier." />
-                              </div>
-                              <OutlookRow label="Tough Defense"
-                                left={<DVal d={vsDefA2} tier="tough" />}
-                                right={<DVal d={vsDefB2} tier="tough" />} />
-                              <OutlookRow label="Mid Defense"
-                                left={<DVal d={vsDefA2} tier="mid" />}
-                                right={<DVal d={vsDefB2} tier="mid" />} />
-                              <OutlookRow label="Soft Defense"
-                                left={<DVal d={vsDefA2} tier="soft" />}
-                                right={<DVal d={vsDefB2} tier="soft" />} />
-                            </>
-                          )}
-                        </div>
-                      );
-                    })()}
-
-                    {/* ── KTC market trend ───────────────────────────── */}
-                    {((t7A != null && Math.abs(t7A) >= 5) || (t7B != null && Math.abs(t7B) >= 5)) && (
-                      <div className="pt-1.5" style={{ borderTop: '1px solid var(--color-separator)' }}>
-                        <OutlookRow
-                          label="7d Trend"
-                          left={<span className="text-xs font-bold" style={{ color: fmtTrend(t7A).color }}>{fmtTrend(t7A).label}</span>}
-                          right={<span className="text-xs font-bold" style={{ color: fmtTrend(t7B).color }}>{fmtTrend(t7B).label}</span>}
-                        />
-                      </div>
-                    )}
-
-                    {/* Per-player context blurbs */}
-                    {(ctxA || ctxB) && (
-                      <div className="flex flex-col gap-1.5 pt-1.5"
-                        style={{ borderTop: '1px solid var(--color-separator)' }}>
-                        {ctxA && (
-                          <p className="text-xs leading-relaxed" style={{ color: 'var(--color-label-secondary)' }}>
-                            {ctxA}
-                          </p>
-                        )}
-                        {ctxB && (
-                          <p className="text-xs leading-relaxed" style={{ color: 'var(--color-label-secondary)' }}>
-                            {ctxB}
-                          </p>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })()}
-
-          {/* One player selected but not the other */}
-          {!playerA && playerB && (
-            <div className="text-sm text-center" style={{ color: 'var(--color-label-tertiary)' }}>
-              Select Player 1 to compare trade values.
-            </div>
-          )}
-          {playerA && !playerB && (
-            <div className="text-sm text-center" style={{ color: 'var(--color-label-tertiary)' }}>
-              Select Player 2 to compare trade values.
+          {playerA && playerB && bothKnown && analysis && (
+            <div className="trade-compare__analysis flex flex-col gap-4" data-testid="trade-compare-analysis">
+              <TradeCompareScoreboard
+                playerA={playerA}
+                playerB={playerB}
+                valA={valA}
+                valB={valB}
+                leader={leader}
+                gap={gap}
+                pct={pct}
+                tier={analysis.tier}
+              />
+              <BalanceInsightPanel
+                leader={leader}
+                leaderName={leaderName}
+                trailerName={trailerName}
+                gap={gap}
+                pct={pct}
+                tier={analysis.tier}
+                playerEquivs={analysis.playerEquivs}
+                pickEquiv={analysis.pickEquiv}
+              />
+              <TradeContextGrid
+                analysis={analysis}
+                valA={valA}
+                valB={valB}
+                rawValA={rawValA}
+                rawValB={rawValB}
+                format={format}
+                leagueType={leagueType}
+                statsLoading={statsLoading}
+                seasonStats={seasonStats}
+              />
             </div>
           )}
 
-          {/* Build Full Trade button — only enabled when exactly one player is on own roster */}
-          {hasLeague && (playerA || playerB) && (
-            <div className="flex flex-col gap-1.5">
-              <button
-                onClick={onBuildTrade ?? undefined}
-                disabled={!onBuildTrade}
-                className="w-full py-2.5 rounded-xl text-sm font-semibold transition-colors"
-                style={{
-                  background: onBuildTrade ? 'var(--color-signature)' : 'var(--color-fill)',
-                  color: onBuildTrade ? 'var(--color-signature-fg)' : 'var(--color-label-quaternary)',
-                  cursor: onBuildTrade ? 'pointer' : 'default',
-                }}
-              >
-                Build Full Trade
-              </button>
-              {!onBuildTrade && (
-                <p className="text-xs text-center" style={{ color: 'var(--color-label-quaternary)' }}>
-                  One player must be on your roster to build a trade.
-                </p>
-              )}
-            </div>
+          {!playerA && playerB && <TradeCompareState kind="missingA" />}
+          {playerA && !playerB && <TradeCompareState kind="missingB" />}
+          {playerA && playerB && !bothKnown && (
+            <TradeCompareState
+              kind="unavailable"
+              playerA={playerA}
+              playerB={playerB}
+              notFoundA={notFoundA}
+              notFoundB={notFoundB}
+            />
           )}
 
-          {/* KTC attribution */}
-          <div className="text-xs text-center" style={{ color: 'var(--color-label-quaternary)' }}>
-            Values from{' '}
-            <span className="font-medium" style={{ color: 'var(--color-label-tertiary)' }}>
-              KeepTradeCut
-            </span>{' '}
-            · {format === 'dynasty' ? 'Dynasty' : 'Redraft'} · {leagueType === 'sf' ? 'Superflex' : '1QB'}
-          </div>
+          <TradeCompareCTA hasLeague={hasLeague} hasAny={hasAny} onBuildTrade={onBuildTrade} />
+          <TradeCompareAttribution format={format} leagueType={leagueType} />
         </>
       )}
     </div>
   );
+}
+
+// ── Render Sections ──────────────────────────────────────────────────────────
+
+function TradeCompareState({ kind, error, playerA, playerB, notFoundA, notFoundB }) {
+  if (kind === 'loading') {
+    return (
+      <div className="trade-compare__state trade-compare__state--loading flex items-center justify-center py-8 gap-3"
+        style={{ color: 'var(--color-label-tertiary)' }}>
+        <Spinner />
+        <span className="text-sm">Loading KTC data…</span>
+      </div>
+    );
+  }
+
+  if (kind === 'error') {
+    return (
+      <div
+        className="trade-compare__state trade-compare__state--error rounded-xl px-4 py-4 flex flex-col gap-1.5"
+        style={{ background: 'var(--color-fill)' }}
+      >
+        <span className="text-sm font-semibold" style={{ color: 'var(--color-label)' }}>
+          KTC data unavailable
+        </span>
+        <span className="text-xs leading-relaxed" style={{ color: 'var(--color-label-tertiary)' }}>
+          The KeepTradeCut proxy could not be reached. This feature requires the Docker
+          deployment — it is not available in local dev mode without the nginx proxy.
+        </span>
+        <span className="text-xs font-mono mt-1" style={{ color: 'var(--color-label-quaternary)' }}>
+          {error}
+        </span>
+      </div>
+    );
+  }
+
+  if (kind === 'missingA' || kind === 'missingB') {
+    return (
+      <div className={`trade-compare__state trade-compare__state--partial trade-compare__state--${kind} text-sm text-center`} style={{ color: 'var(--color-label-tertiary)' }}>
+        {kind === 'missingA' ? 'Select Player 1 to compare trade values.' : 'Select Player 2 to compare trade values.'}
+      </div>
+    );
+  }
+
+  const missingNames = [
+    notFoundA ? playerA?.displayName : null,
+    notFoundB ? playerB?.displayName : null,
+  ].filter(Boolean);
+
+  return (
+    <div
+      className="trade-compare__state trade-compare__state--unavailable rounded-xl px-4 py-4 flex flex-col gap-1.5"
+      style={{ background: 'var(--color-fill)' }}
+    >
+      <span className="text-sm font-semibold" style={{ color: 'var(--color-label)' }}>
+        Trade value unavailable
+      </span>
+      <span className="text-xs leading-relaxed" style={{ color: 'var(--color-label-tertiary)' }}>
+        {missingNames.length
+          ? `No KeepTradeCut match was found for ${missingNames.join(' or ')}.`
+          : 'KeepTradeCut values are still unavailable for this comparison.'}
+      </span>
+    </div>
+  );
+}
+
+function TradeCompareScoreboard({ playerA, playerB, valA, valB, leader, gap, pct, tier }) {
+  const verdict = leader === 'equal'
+    ? 'Even Value'
+    : `${leader === 'A' ? playerA?.displayName : playerB?.displayName} leads`;
+
+  return (
+    <section
+      className="trade-compare__scoreboard trade-compare-scoreboard rounded-xl px-4 py-4"
+      style={{ background: 'var(--color-fill)', color: 'var(--color-label)' }}
+    >
+      <div className="trade-compare-scoreboard__grid grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] gap-4 items-center">
+        <ScoreboardSide align="left" name={playerA?.displayName} value={valA} isLeader={leader === 'A'} />
+        <div className="trade-compare-scoreboard__center flex flex-col items-center text-center gap-0.5">
+          <span
+            className="trade-compare-scoreboard__verdict text-sm font-extrabold"
+            data-testid="trade-compare-verdict"
+            style={{ color: tier?.color ?? 'var(--color-label)' }}
+          >
+            {verdict}
+          </span>
+          <span className="trade-compare-scoreboard__gap text-xs" style={{ color: 'var(--color-label-tertiary)' }}>
+            {gap === 0 ? 'No value gap' : `${fmtKtcValue(gap)} gap`}
+          </span>
+          <span className="trade-compare-scoreboard__pct text-[10px] uppercase tracking-widest" style={{ color: 'var(--color-label-quaternary)' }}>
+            {pct != null ? `${pct}% of top side` : 'Gap pending'}
+          </span>
+        </div>
+        <ScoreboardSide align="right" name={playerB?.displayName} value={valB} isLeader={leader === 'B'} />
+      </div>
+    </section>
+  );
+}
+
+function ScoreboardSide({ align, name, value, isLeader }) {
+  const alignment = align === 'right' ? 'items-end text-right' : 'items-start text-left';
+  return (
+    <div className={`trade-compare-scoreboard__side trade-compare-scoreboard__side--${align} ${isLeader ? 'trade-compare-scoreboard__side--leader' : ''} ${alignment} flex flex-col min-w-0`}>
+      <span className="trade-compare-scoreboard__name text-xs font-bold truncate max-w-full" style={{ color: 'var(--color-label-secondary)' }}>
+        {name ?? 'Player'}
+      </span>
+      <span className="trade-compare-scoreboard__value text-3xl font-extrabold tabular-nums" style={{ color: 'var(--color-label)' }}>
+        {fmtKtcValue(value)}
+      </span>
+    </div>
+  );
+}
+
+function BalanceInsightPanel({ leader, leaderName, trailerName, gap, pct, tier, playerEquivs, pickEquiv }) {
+  return (
+    <section
+      className="trade-compare__balance trade-compare-balance rounded-xl px-4 py-4 flex flex-col gap-3"
+      style={{ background: 'var(--color-fill)' }}
+    >
+      <SectionHeader label="Trade Analysis" />
+      {tier && (
+        <div className="trade-compare-balance__tier flex items-center gap-2">
+          <span
+            className="px-2 py-0.5 rounded-md text-xs font-bold"
+            style={{ background: `${tier.color}22`, color: tier.color }}
+          >
+            {tier.label}
+          </span>
+          {pct != null && pct > 0 && (
+            <span className="text-xs" style={{ color: 'var(--color-label-tertiary)' }}>
+              {pct}% gap
+            </span>
+          )}
+        </div>
+      )}
+
+      {leader === 'equal' ? (
+        <p className="trade-compare-balance__sentence text-sm" style={{ color: 'var(--color-label)' }}>
+          These players have roughly equal trade value — a straight swap is fair.
+        </p>
+      ) : (
+        <>
+          <p className="trade-compare-balance__sentence text-sm leading-relaxed" style={{ color: 'var(--color-label)' }}>
+            <span className="font-semibold">{leaderName}</span> has{' '}
+            <span className="font-semibold">{fmtKtcValue(gap)}</span> more value.
+            To balance this trade, the <span className="font-medium">{trailerName?.split(' ').slice(-1)[0]}</span> side
+            needs to add roughly <span className="font-semibold">{fmtKtcValue(gap)}</span> in additional asset value.
+          </p>
+
+          {(playerEquivs.length > 0 || pickEquiv) && (
+            <ValueEquivalents playerEquivs={playerEquivs} pickEquiv={pickEquiv} />
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
+function ValueEquivalents({ playerEquivs, pickEquiv }) {
+  return (
+    <div className="trade-compare-balance__equivalents flex flex-col gap-1.5">
+      <span
+        className="text-[10px] uppercase tracking-widest"
+        style={{ color: 'var(--color-label-quaternary)', letterSpacing: '0.08em' }}
+      >
+        Value equivalents
+      </span>
+      {playerEquivs.map(eq => (
+        <EquivalentRow key={eq.name} icon="player">
+          A{' '}
+          <span className="font-semibold" style={{ color: 'var(--color-label)' }}>
+            {eq.tier} {eq.posLabel}
+          </span>
+          {' '}— e.g.{' '}
+          <span className="font-semibold" style={{ color: 'var(--color-label)' }}>
+            {eq.name}
+          </span>
+          {' '}({fmtKtcValue(eq.val)})
+        </EquivalentRow>
+      ))}
+      {pickEquiv && (
+        <EquivalentRow icon="pick">
+          A draft pick — e.g.{' '}
+          <span className="font-semibold" style={{ color: 'var(--color-label)' }}>
+            {pickEquiv.name}
+          </span>
+          {' '}({fmtKtcValue(pickEquiv.val)})
+        </EquivalentRow>
+      )}
+    </div>
+  );
+}
+
+function EquivalentRow({ icon, children }) {
+  return (
+    <div
+      className={`trade-compare-balance__equivalent trade-compare-balance__equivalent--${icon} flex items-center gap-2 rounded-lg px-3 py-2`}
+      style={{ background: 'var(--color-fill-secondary)' }}
+    >
+      {icon === 'player' ? (
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--color-label-tertiary)', flexShrink: 0 }}>
+          <circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
+        </svg>
+      ) : (
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--color-label-tertiary)', flexShrink: 0 }}>
+          <polyline points="9 18 15 12 9 6" />
+        </svg>
+      )}
+      <span className="text-xs" style={{ color: 'var(--color-label-secondary)' }}>
+        {children}
+      </span>
+    </div>
+  );
+}
+
+function TradeContextGrid({ analysis, valA, valB, rawValA, rawValB, format, leagueType, statsLoading, seasonStats }) {
+  const hasTrend = (analysis.t7A != null && Math.abs(analysis.t7A) >= 5) || (analysis.t7B != null && Math.abs(analysis.t7B) >= 5);
+  const hasFantasy = analysis.rankA || analysis.rankB || analysis.perfA || analysis.perfB;
+  const hasDefense = analysis.vsDefA || analysis.vsDefB;
+
+  return (
+    <section className="trade-compare__outlook trade-compare-context" data-testid="trade-compare-outlook">
+      <div className="trade-compare-context__heading flex items-center gap-2 mb-2">
+        <SectionHeader label="Player Outlook" />
+        {statsLoading && !seasonStats && (
+          <span className="text-[10px]" style={{ color: 'var(--color-label-quaternary)' }}>
+            · loading stats…
+          </span>
+        )}
+      </div>
+
+      <div className="trade-compare-context__grid flex flex-col gap-3">
+        <ContextCard title="Market">
+          <OutlookRow
+            label="Adj Value"
+            left={<MetricValue>{fmtKtcValue(valA)}</MetricValue>}
+            right={<MetricValue>{fmtKtcValue(valB)}</MetricValue>}
+          />
+          <OutlookRow
+            label="KTC Base"
+            left={<MetricValue>{fmtKtcValue(rawValA)}</MetricValue>}
+            right={<MetricValue>{fmtKtcValue(rawValB)}</MetricValue>}
+          />
+          <OutlookRow
+            label="League"
+            left={<MutedValue>{format === 'dynasty' ? 'Dynasty' : 'Redraft'}</MutedValue>}
+            right={<MutedValue>{leagueType === 'sf' ? 'Superflex' : '1QB'}</MutedValue>}
+          />
+        </ContextCard>
+
+        {(analysis.winA || analysis.winB || analysis.showPyl || analysis.ctxA || analysis.ctxB) && (
+          <ContextCard title="Dynasty / Age">
+            <OutlookRow
+              label="Age"
+              left={<AgeValue age={analysis.ageA} window={analysis.winA} />}
+              right={<AgeValue age={analysis.ageB} window={analysis.winB} />}
+            />
+            {analysis.showPyl && (
+              <OutlookRow
+                label="Prime Left"
+                left={<PrimeValue years={analysis.pylA} />}
+                right={<PrimeValue years={analysis.pylB} />}
+              />
+            )}
+            {(analysis.ctxA || analysis.ctxB) && (
+              <div className="trade-compare-context__blurbs flex flex-col gap-1.5 pt-1.5" style={{ borderTop: '1px solid var(--color-separator)' }}>
+                {analysis.ctxA && <p className="text-xs leading-relaxed" style={{ color: 'var(--color-label-secondary)' }}>{analysis.ctxA}</p>}
+                {analysis.ctxB && <p className="text-xs leading-relaxed" style={{ color: 'var(--color-label-secondary)' }}>{analysis.ctxB}</p>}
+              </div>
+            )}
+          </ContextCard>
+        )}
+
+        {hasFantasy && (
+          <ContextCard
+            title="Fantasy Performance"
+            tooltip="Fantasy points using your league's scoring settings. Szn Rank = positional finish among all active players. Szn PPG = points per game played. Recent = average over the last 4 scored weeks."
+            tooltipPosition="below"
+          >
+            {(analysis.rankA || analysis.rankB) && (
+              <OutlookRow
+                label="Szn Rank"
+                left={analysis.rankA ? <MetricValue>{analysis.rankA.posLabel}{analysis.rankA.rank}</MetricValue> : <DashValue />}
+                right={analysis.rankB ? <MetricValue>{analysis.rankB.posLabel}{analysis.rankB.rank}</MetricValue> : <DashValue />}
+              />
+            )}
+            {(analysis.perfA?.ppg != null || analysis.perfB?.ppg != null) && (
+              <OutlookRow
+                label="Szn PPG"
+                left={analysis.perfA?.ppg != null ? <MetricValue>{analysis.perfA.ppg}</MetricValue> : <DashValue />}
+                right={analysis.perfB?.ppg != null ? <MetricValue>{analysis.perfB.ppg}</MetricValue> : <DashValue />}
+              />
+            )}
+            {(analysis.perfA?.recentAvg != null || analysis.perfB?.recentAvg != null) && (
+              <OutlookRow
+                label="Recent"
+                left={<RecentValue perf={analysis.perfA} />}
+                right={<RecentValue perf={analysis.perfB} />}
+              />
+            )}
+          </ContextCard>
+        )}
+
+        {analysis.fantasyNotableStats.length > 0 && (
+          <StatRanksCard
+            title="Production Ranks"
+            stats={analysis.fantasyNotableStats}
+            samePos={analysis.samePos}
+            kind="fantasy"
+          />
+        )}
+
+        {analysis.notableStats.length > 0 && (
+          <StatRanksCard
+            title="Raw Stat Ranks"
+            stats={analysis.notableStats}
+            samePos={analysis.samePos}
+            kind="raw"
+          />
+        )}
+
+        {hasDefense && (
+          <DefenseSplitsCard analysis={analysis} />
+        )}
+
+        {hasTrend && (
+          <ContextCard title="Trend">
+            <OutlookRow
+              label="7d Trend"
+              left={<TrendValue value={analysis.t7A} />}
+              right={<TrendValue value={analysis.t7B} />}
+            />
+          </ContextCard>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function ContextCard({ title, tooltip, tooltipPosition = 'above', children }) {
+  return (
+    <div className="trade-compare-context__card rounded-xl px-4 py-4 flex flex-col gap-2" style={{ background: 'var(--color-fill)' }}>
+      <div className="trade-compare-context__card-heading flex items-center gap-1.5">
+        <SectionHeader label={title} />
+        {tooltip && <InfoTooltip position={tooltipPosition} text={tooltip} />}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function StatRanksCard({ title, stats, samePos, kind }) {
+  const tooltip = kind === 'fantasy'
+    ? (samePos
+      ? "Positional rank by fantasy points earned from each stat category, using your league's scoring settings. Stats worth 0 pts in your league are excluded. Top 10 only."
+      : "Each player is ranked within their own position group. Dash (—) means that stat is not tracked for that position. Ranks are not directly comparable across positions.")
+    : (samePos
+      ? "In-game production only — not fantasy-scored. Each rank is the player's positional finish among all players at that position this season. Shows any stat where either player ranks top 15."
+      : "Each player is ranked within their own position group. Dash (—) means that stat is not tracked for that position. Ranks are not directly comparable across positions.");
+  const rankColor = r => {
+    if (r == null) return 'var(--color-label-quaternary)';
+    if (kind === 'fantasy') return r <= 3 ? '#22c55e' : r <= 7 ? '#f59e0b' : 'var(--color-label-secondary)';
+    return r <= 5 ? '#22c55e' : r <= 10 ? '#f59e0b' : 'var(--color-label-secondary)';
+  };
+
+  return (
+    <ContextCard title={title} tooltip={tooltip} tooltipPosition="below">
+      {stats.map(({ key, rankA: rA, rankB: rB }) => (
+        <OutlookRow
+          key={key}
+          label={STAT_LABEL[key] ?? key}
+          left={rA != null ? <MetricValue color={rankColor(rA)}>#{rA}</MetricValue> : <DashValue />}
+          right={rB != null ? <MetricValue color={rankColor(rB)}>#{rB}</MetricValue> : <DashValue />}
+        />
+      ))}
+    </ContextCard>
+  );
+}
+
+function DefenseSplitsCard({ analysis }) {
+  const labelA = analysis.vsDefA?.label ?? null;
+  const labelB = analysis.vsDefB?.label ?? null;
+  const defLabel = analysis.samePos || labelA === labelB
+    ? (labelA ?? labelB ?? 'D')
+    : [labelA, labelB].filter(Boolean).join(' / ');
+  const crossDefPos = !analysis.samePos && labelA !== labelB;
+
+  return (
+    <ContextCard
+      title={`vs ${defLabel} · fpts by tier`}
+      tooltip={crossDefPos
+        ? `Fantasy points each player scores against their own position's defense tiers. Each player's defenses are ranked independently by pts allowed to their position — tiers are not directly comparable across positions.`
+        : `Fantasy points scored against each defense tier. Defenses are split into thirds by avg ${defLabel} pts allowed per game — Tough = stingiest third, Soft = most generous. Values shown are each player's avg fpts against that tier.`}
+    >
+      <OutlookRow label="Tough Defense" left={<DefenseValue d={analysis.vsDefA} tier="tough" />} right={<DefenseValue d={analysis.vsDefB} tier="tough" />} />
+      <OutlookRow label="Mid Defense" left={<DefenseValue d={analysis.vsDefA} tier="mid" />} right={<DefenseValue d={analysis.vsDefB} tier="mid" />} />
+      <OutlookRow label="Soft Defense" left={<DefenseValue d={analysis.vsDefA} tier="soft" />} right={<DefenseValue d={analysis.vsDefB} tier="soft" />} />
+
+      {(analysis.vsDefA2 || analysis.vsDefB2) && (
+        <div className="trade-compare-context__defense-proxy flex flex-col gap-2 pt-1.5" style={{ borderTop: '1px solid var(--color-separator)' }}>
+          <div className="flex items-center gap-1.5">
+            <SectionHeader label="vs WR D · passing game context" />
+            <InfoTooltip position="above" text="For tight ends, defenses are also ranked by how many fantasy points they allow to wide receivers — a proxy for overall passing game permissiveness. Values shown are the TE's fpts scored against each tier." />
+          </div>
+          <OutlookRow label="Tough Defense" left={<DefenseValue d={analysis.vsDefA2} tier="tough" />} right={<DefenseValue d={analysis.vsDefB2} tier="tough" />} />
+          <OutlookRow label="Mid Defense" left={<DefenseValue d={analysis.vsDefA2} tier="mid" />} right={<DefenseValue d={analysis.vsDefB2} tier="mid" />} />
+          <OutlookRow label="Soft Defense" left={<DefenseValue d={analysis.vsDefA2} tier="soft" />} right={<DefenseValue d={analysis.vsDefB2} tier="soft" />} />
+        </div>
+      )}
+    </ContextCard>
+  );
+}
+
+function TradeCompareCTA({ hasLeague, hasAny, onBuildTrade }) {
+  if (!hasLeague || !hasAny) return null;
+  return (
+    <div className="trade-compare__cta flex flex-col gap-1.5">
+      <button
+        onClick={onBuildTrade ?? undefined}
+        disabled={!onBuildTrade}
+        className="trade-compare__build-trade w-full py-2.5 rounded-xl text-sm font-semibold transition-colors"
+        data-testid="trade-compare-build-trade"
+        style={{
+          background: onBuildTrade ? 'var(--color-signature)' : 'var(--color-fill)',
+          color: onBuildTrade ? 'var(--color-signature-fg)' : 'var(--color-label-quaternary)',
+          cursor: onBuildTrade ? 'pointer' : 'default',
+        }}
+      >
+        Build Full Trade
+      </button>
+      {!onBuildTrade && (
+        <p className="text-xs text-center" style={{ color: 'var(--color-label-quaternary)' }}>
+          One player must be on your roster to build a trade.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function TradeCompareAttribution({ format, leagueType }) {
+  return (
+    <div className="trade-compare__attribution text-xs text-center" data-testid="trade-compare-attribution" style={{ color: 'var(--color-label-quaternary)' }}>
+      Values from{' '}
+      <span className="font-medium" style={{ color: 'var(--color-label-tertiary)' }}>
+        KeepTradeCut
+      </span>{' '}
+      · {format === 'dynasty' ? 'Dynasty' : 'Redraft'} · {leagueType === 'sf' ? 'Superflex' : '1QB'}
+    </div>
+  );
+}
+
+function SectionHeader({ label }) {
+  return (
+    <span
+      className="text-[10px] font-semibold uppercase tracking-widest"
+      style={{ color: 'var(--color-label-quaternary)', letterSpacing: '0.1em' }}
+    >
+      {label}
+    </span>
+  );
+}
+
+function OutlookRow({ label, left, right }) {
+  return (
+    <div className="trade-compare-context__row flex items-center gap-2">
+      <div className="trade-compare-context__value trade-compare-context__value--left flex-1 flex justify-end">{left}</div>
+      <div
+        className="trade-compare-context__label shrink-0 text-center text-[10px] uppercase tracking-wider"
+        style={{ width: 96, color: 'var(--color-label-quaternary)' }}
+      >
+        {label}
+      </div>
+      <div className="trade-compare-context__value trade-compare-context__value--right flex-1">{right}</div>
+    </div>
+  );
+}
+
+function MetricValue({ children, color = 'var(--color-label)' }) {
+  return <span className="text-xs font-semibold" style={{ color }}>{children}</span>;
+}
+
+function MutedValue({ children }) {
+  return <span className="text-xs" style={{ color: 'var(--color-label-tertiary)' }}>{children}</span>;
+}
+
+function DashValue() {
+  return <span className="text-xs" style={{ color: 'var(--color-label-quaternary)' }}>—</span>;
+}
+
+function AgeValue({ age, window }) {
+  if (age == null) return <DashValue />;
+  return (
+    <MetricValue>
+      {age}
+      {window && <span className="text-[10px] ml-1" style={{ color: 'var(--color-label-quaternary)' }}>· {window}</span>}
+    </MetricValue>
+  );
+}
+
+function PrimeValue({ years }) {
+  if (years == null) return <DashValue />;
+  const color = years <= 1 ? '#ef4444' : years <= 3 ? '#f59e0b' : '#22c55e';
+  return (
+    <MetricValue color={color}>
+      {years === 0 ? 'Past peak' : `~${years} yr${years !== 1 ? 's' : ''}`}
+    </MetricValue>
+  );
+}
+
+function RecentValue({ perf }) {
+  if (perf?.recentAvg == null) return <DashValue />;
+  const color = perf.recentAvg > (perf.ppg ?? 0)
+    ? '#22c55e'
+    : perf.recentAvg < (perf.ppg ?? 0) * 0.75
+      ? '#ef4444'
+      : 'var(--color-label)';
+  return (
+    <MetricValue color={color}>
+      {perf.recentAvg}
+      <span className="text-[10px] ml-1" style={{ color: 'var(--color-label-quaternary)' }}>L{perf.recentWeeks}</span>
+    </MetricValue>
+  );
+}
+
+function DefenseValue({ d, tier }) {
+  const v = d?.[`${tier}Avg`];
+  const color = tier === 'tough' ? '#ef4444' : tier === 'soft' ? '#22c55e' : 'var(--color-label)';
+  return v != null ? <MetricValue color={color}>{v}</MetricValue> : <DashValue />;
+}
+
+function TrendValue({ value }) {
+  const trend = fmtTrend(value);
+  return <span className="text-xs font-bold" style={{ color: trend.color }}>{trend.label}</span>;
+}
+
+function fmtTrend(v) {
+  if (v == null || Math.abs(v) < 5) return { label: 'Flat', color: 'var(--color-label-quaternary)' };
+  return { label: v > 0 ? `▲ +${v}` : `▼ ${v}`, color: v > 0 ? '#22c55e' : '#ef4444' };
 }
 
 // ── InfoTooltip ───────────────────────────────────────────────────────────────

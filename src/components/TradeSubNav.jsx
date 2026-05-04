@@ -2,7 +2,6 @@ const VIEWS = [
   { id: 'agent', label: 'Agent' },
   { id: 'intelligence', label: 'Intelligence' },
   { id: 'upgrade', label: 'Upgrades' },
-  { id: 'compare', label: 'Compare' },
 ];
 
 export default function TradeSubNav({ activeView, onViewChange, onViewIntent }) {

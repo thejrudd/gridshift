@@ -50,8 +50,6 @@ const CompanionWaiver = lazy(() => debugCompanionTimeAsync(
 ));
 const CompanionDefense = lazy(() => import('./components/companion/CompanionDefense'));
 const CompanionTrade = lazy(() => import('./components/companion/CompanionTrade'));
-const loadCompareTab = () => import('./components/compare/CompareTab');
-const CompareTab = lazy(loadCompareTab);
 const ScoutTab = lazy(() => import('./components/scout/ScoutTab'));
 
 function SectionLoading({ label = 'Loading section' }) {
@@ -77,6 +75,63 @@ function ModalLoading({ label = 'Loading' }) {
         }}
       >
         <span className="text-sm" style={{ color: 'var(--color-label-secondary)' }}>{label}...</span>
+      </div>
+    </div>
+  );
+}
+
+function RouteLoadingOverlay({ label = 'Opening player' }) {
+  const [progress, setProgress] = useState(12);
+
+  useEffect(() => {
+    const start = window.performance?.now?.() ?? Date.now();
+    const interval = window.setInterval(() => {
+      const now = window.performance?.now?.() ?? Date.now();
+      const elapsed = now - start;
+      const target = elapsed < 220
+        ? 48
+        : elapsed < 650
+          ? 72
+          : 88;
+
+      setProgress((current) => Math.min(target, current + Math.max(4, (target - current) * 0.34)));
+    }, 80);
+
+    return () => window.clearInterval(interval);
+  }, []);
+
+  return (
+    <div
+      className="fixed inset-0 z-[70] flex items-center justify-center px-4"
+      style={{
+        background: 'var(--color-bg)',
+        backgroundColor: 'color-mix(in srgb, var(--color-bg) 84%, transparent)',
+        backdropFilter: 'blur(6px)',
+      }}
+      role="status"
+      aria-live="polite"
+    >
+      <div
+        className="w-full max-w-md overflow-hidden rounded-lg"
+        style={{
+          background: 'var(--color-bg-secondary)',
+          border: '1px solid var(--color-separator)',
+          boxShadow: '0 18px 52px rgba(0,0,0,0.22)',
+        }}
+      >
+        <div className="h-1 w-full overflow-hidden" style={{ background: 'var(--color-fill-secondary)' }}>
+          <div
+            className="h-full rounded-r-full transition-[width] duration-150"
+            style={{ width: `${progress}%`, background: 'var(--color-signature)' }}
+          />
+        </div>
+        <div className="flex items-center gap-3 px-4 py-3" style={{ color: 'var(--color-label-secondary)' }}>
+          <svg className="h-4 w-4 shrink-0 animate-spin" style={{ color: 'var(--color-accent)' }} fill="none" viewBox="0 0 24 24" aria-hidden="true">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+          <span className="min-w-0 truncate text-sm font-semibold">{label}...</span>
+        </div>
       </div>
     </div>
   );
@@ -146,11 +201,8 @@ function AppInner() {
   const [error, setError] = useState(null);
   const [appRoute, setAppRoute] = useState(() => parseAppRoute(window.location.pathname, window.location.search));
   const [statsNavBack, setStatsNavBack] = useState(null); // { label, onBack } | null — contextual back from external nav
-  const [compareInitPlayerA, setCompareInitPlayerA] = useState(null);
-  const [compareInitPlayerB, setCompareInitPlayerB] = useState(null);
+  const [statsDrilldownPending, setStatsDrilldownPending] = useState(null);
   const [tradeAnalyticsPrewarmRequested, setTradeAnalyticsPrewarmRequested] = useState(false);
-  const [keepTradeCompareMounted, setKeepTradeCompareMounted] = useState(() => appRoute.activeTab === 'trade' && appRoute.tradeView === 'compare');
-  const [keepTradeWorkbenchMounted, setKeepTradeWorkbenchMounted] = useState(() => appRoute.activeTab === 'trade' && appRoute.tradeView !== 'compare');
   const [, startRouteTransition] = useTransition();
 
   const { hasLeague, selectedLeagueId, season, changeSeason, league, linkedLeagueSeasonOptions } = useSleeperLeague();
@@ -164,6 +216,9 @@ function AppInner() {
   const { getPredictionCount, resetAllPredictions, predictions, importPredictions, generateRandomPredictions } = usePredictions();
   const { darkMode, toggleDarkMode, favoriteTeam, setFavoriteTeam } = useTheme();
   const fileInputRef = useRef(null);
+  const latestAppRouteRef = useRef(appRoute);
+  const heatmapRouteUpdateTimerRef = useRef(null);
+  const pendingHeatmapRoutePatchRef = useRef(null);
 
   const [contentScrolled, setContentScrolled] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
@@ -196,6 +251,10 @@ function AppInner() {
   const companionView = appRoute.companionView;
   const tradeView = appRoute.tradeView;
   const scoutView = appRoute.scoutView;
+
+  useEffect(() => {
+    latestAppRouteRef.current = appRoute;
+  }, [appRoute]);
 
   const tradeInitPlayer = appRoute.tradePlayerId
     ? {
@@ -296,6 +355,57 @@ function AppInner() {
     applyRoute({ ...appRoute, activeTab: 'companion', ...patch }, options);
   }, [appRoute, applyRoute]);
 
+  const scheduleHeatmapRouteUpdate = useCallback((nextState) => {
+    pendingHeatmapRoutePatchRef.current = {
+      companionView: 'defense',
+      heatmapViewMode: nextState.viewMode,
+      heatmapPosition: nextState.position === 'ALL' ? null : nextState.position,
+      heatmapDefensePosition: nextState.defensePosition === 'ALL' ? null : nextState.defensePosition,
+      heatmapStatMode: nextState.statMode,
+      heatmapDefenseStatMode: nextState.defenseStatMode,
+      heatmapScope: nextState.scope,
+      heatmapLocation: nextState.location,
+      heatmapSortKey: nextState.sortKey,
+      heatmapSortDir: nextState.sortDir,
+      heatmapTeamSort: nextState.teamSort,
+      heatmapUseTeamColors: nextState.useTeamColors ? '1' : '0',
+      heatmapVegasView: nextState.vegasView,
+    };
+
+    if (heatmapRouteUpdateTimerRef.current) {
+      window.clearTimeout(heatmapRouteUpdateTimerRef.current);
+    }
+
+    heatmapRouteUpdateTimerRef.current = window.setTimeout(() => {
+      heatmapRouteUpdateTimerRef.current = null;
+      const patch = pendingHeatmapRoutePatchRef.current;
+      pendingHeatmapRoutePatchRef.current = null;
+      if (!patch) return;
+
+      const currentRoute = latestAppRouteRef.current;
+      if (currentRoute.activeTab !== 'companion' || currentRoute.companionView !== 'defense') return;
+
+      applyRoute({ ...currentRoute, activeTab: 'companion', ...patch }, { replace: true });
+    }, 120);
+  }, [applyRoute]);
+
+  useEffect(() => () => {
+    if (heatmapRouteUpdateTimerRef.current) {
+      window.clearTimeout(heatmapRouteUpdateTimerRef.current);
+      heatmapRouteUpdateTimerRef.current = null;
+    }
+    pendingHeatmapRoutePatchRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'companion' && companionView === 'defense') return;
+    if (heatmapRouteUpdateTimerRef.current) {
+      window.clearTimeout(heatmapRouteUpdateTimerRef.current);
+      heatmapRouteUpdateTimerRef.current = null;
+    }
+    pendingHeatmapRoutePatchRef.current = null;
+  }, [activeTab, companionView]);
+
   const navigateTradeView = useCallback((view) => {
     applyRoute({ activeTab: 'trade', tradeView: view });
   }, [applyRoute]);
@@ -342,6 +452,10 @@ function AppInner() {
     if (!playerMeta?.id) return;
     const nextBackContext = buildStatsBackContext(backLabel, backRoute);
 
+    setStatsDrilldownPending({
+      playerId: playerMeta.id,
+      label: `Opening ${playerMeta.displayName || 'player'}`,
+    });
     setStatsNavBack(nextBackContext);
     applyRoute({
       activeTab: 'statistics',
@@ -357,6 +471,28 @@ function AppInner() {
       },
     });
   }, [applyRoute, buildStatsBackContext]);
+
+  useEffect(() => {
+    if (!statsDrilldownPending) return undefined;
+    const routeHasOpenedPendingPlayer = activeTab === 'statistics'
+      && statisticsView === 'player'
+      && statisticsPlayerId === statsDrilldownPending.playerId;
+
+    if (!routeHasOpenedPendingPlayer) return undefined;
+
+    const frame = requestAnimationFrame(() => {
+      setStatsDrilldownPending(null);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [activeTab, statisticsPlayerId, statisticsView, statsDrilldownPending]);
+
+  useEffect(() => {
+    if (!statsDrilldownPending) return undefined;
+    const timeout = window.setTimeout(() => {
+      setStatsDrilldownPending(null);
+    }, 8000);
+    return () => window.clearTimeout(timeout);
+  }, [statsDrilldownPending]);
 
   const updateStatisticsMode = useCallback((mode) => {
     if (activeTab !== 'statistics' || statisticsView !== 'player' || !statisticsPlayerId) return;
@@ -401,14 +537,6 @@ function AppInner() {
     setTeamSearch('');
     setDivisionFilter('');
   }, [activeTab]);
-
-  useEffect(() => {
-    if (activeTab === 'trade' && tradeView === 'compare') {
-      setKeepTradeCompareMounted(true);
-    } else if (activeTab === 'trade') {
-      setKeepTradeWorkbenchMounted(true);
-    }
-  }, [activeTab, tradeView]);
 
   useEffect(() => {
     if (activeTab !== 'statistics' || statisticsView !== 'player') {
@@ -549,7 +677,7 @@ function AppInner() {
 
         {/* Companion sub-navigation */}
         {activeTab === 'companion' && hasLeague && (
-          <div className="season-subnav league-subnav" style={{ position: 'relative' }}>
+          <div className="season-subnav league-subnav">
             <CompanionSubNav activeView={companionView} onViewChange={navigateCompanionView} />
             {/* Mobile: league header frozen below tabs */}
             <div className="lg:hidden">
@@ -576,7 +704,7 @@ function AppInner() {
         )}
 
         {activeTab === 'trade' && hasLeague && (
-          <div className="season-subnav league-subnav" style={{ position: 'relative' }}>
+          <div className="season-subnav league-subnav">
             <TradeSubNav activeView={tradeView} onViewChange={navigateTradeView} onViewIntent={prewarmTradeView} />
             {/* Mobile: league header frozen below tabs */}
             <div className="lg:hidden">
@@ -703,16 +831,10 @@ function AppInner() {
               onNavigateTeam={navigateToStatisticsTeam}
               onNavigatePlayer={navigateToStatisticsPlayer}
               onPlayerModeChange={updateStatisticsMode}
-              onComparePlayer={(player) => {
-                loadCompareTab();
-                setCompareInitPlayerA(player);
-                setCompareInitPlayerB(null);
-                applyRoute({ activeTab: 'trade', tradeView: 'compare' });
-              }}
               onBuildTrade={(initialTrade) => {
                 applyRoute({
                   activeTab: 'trade',
-                  tradeView: 'agent',
+                  tradeView: initialTrade?.view ?? 'agent',
                   tradePlayerId: initialTrade?.sleeperId,
                   tradeSide: initialTrade?.side,
                   tradePartnerRosterId: initialTrade?.partnerRosterId,
@@ -742,72 +864,31 @@ function AppInner() {
           )}
 
           {activeTab === 'trade' && hasLeague && (
-            <>
-              {(keepTradeCompareMounted || tradeView === 'compare') && (
-                <div
-                  style={{ display: tradeView === 'compare' ? 'block' : 'none' }}
-                  aria-hidden={tradeView === 'compare' ? undefined : true}
-                >
-                  <Suspense fallback={<SectionLoading label="Loading Compare" />}>
-                    <CompareTab
-                      teams={scheduleData.teams}
-                      initialPlayerA={compareInitPlayerA}
-                      initialPlayerB={compareInitPlayerB}
-                      onPlayerAChange={setCompareInitPlayerA}
-                      onPlayerBChange={setCompareInitPlayerB}
-                      onBuildTrade={(sleeperIdA, sleeperIdB) => {
-                        applyRoute({
-                          activeTab: 'trade',
-                          tradeView: 'agent',
-                          tradePlayerId: sleeperIdA,
-                          tradeSide: 'give',
-                          tradeOtherPlayerId: sleeperIdB,
-                        });
-                      }}
-                      onViewPlayer={(player) => {
-                        navigateToStatisticsPlayer(player, {
-                          backLabel: 'Compare',
-                          backRoute: { activeTab: 'trade', tradeView: 'compare' },
-                          mode: STATISTICS_MODES.FANTASY,
-                        });
-                      }}
-                    />
-                  </Suspense>
-                </div>
-              )}
-              {(keepTradeWorkbenchMounted || tradeView !== 'compare') && (
-                <div
-                  style={{ display: tradeView !== 'compare' ? 'block' : 'none' }}
-                  aria-hidden={tradeView !== 'compare' ? undefined : true}
-                >
-                  <Suspense fallback={<SectionLoading label="Loading Trade" />}>
-                    <CompanionTrade
-                      initialPlayer={tradeInitPlayer}
-                      onConsumeInitialPlayer={() => applyRoute({
-                        activeTab: 'trade',
-                        tradeView,
-                      }, { replace: true })}
-                      onViewPlayer={(id, meta) => {
-                        navigateToStatisticsPlayer({ id, ...meta }, {
-                          backLabel: 'Trade',
-                          backRoute: {
-                            activeTab: 'trade',
-                            tradeView,
-                          },
-                        });
-                      }}
-                      onOpenWaiver={(position) => {
-                        if (!position) return;
-                        applyRoute({ activeTab: 'companion', companionView: 'waiver', waiverPosition: position });
-                      }}
-                      prewarmAnalytics={tradeAnalyticsPrewarmRequested}
-                      view={tradeView}
-                      onViewChange={navigateTradeView}
-                    />
-                  </Suspense>
-                </div>
-              )}
-            </>
+            <Suspense fallback={<SectionLoading label="Loading Trade" />}>
+              <CompanionTrade
+                initialPlayer={tradeInitPlayer}
+                onConsumeInitialPlayer={() => applyRoute({
+                  activeTab: 'trade',
+                  tradeView,
+                }, { replace: true })}
+                onViewPlayer={(id, meta) => {
+                  navigateToStatisticsPlayer({ id, ...meta }, {
+                    backLabel: 'Trade',
+                    backRoute: {
+                      activeTab: 'trade',
+                      tradeView,
+                    },
+                  });
+                }}
+                onOpenWaiver={(position) => {
+                  if (!position) return;
+                  applyRoute({ activeTab: 'companion', companionView: 'waiver', waiverPosition: position });
+                }}
+                prewarmAnalytics={tradeAnalyticsPrewarmRequested}
+                view={tradeView}
+                onViewChange={navigateTradeView}
+              />
+            </Suspense>
           )}
 
           {activeTab === 'companion' && hasLeague && (
@@ -867,12 +948,6 @@ function AppInner() {
                       matchupWeek: appRoute.matchupWeek ?? null,
                       matchupPlayerId: null,
                     }, { replace: true })}
-                    onComparePlayers={(playerA, playerB) => {
-                      loadCompareTab();
-                      setCompareInitPlayerA(playerA);
-                      setCompareInitPlayerB(playerB);
-                      applyRoute({ activeTab: 'trade', tradeView: 'compare' });
-                    }}
                     onViewPlayer={(id, meta) => {
                       navigateToStatisticsPlayer({ id, ...meta }, {
                         backLabel: 'Matchup',
@@ -937,21 +1012,7 @@ function AppInner() {
                 <Suspense fallback={<SectionLoading label="Loading Heatmap" />}>
                   <CompanionDefense
                     routeState={heatmapRouteState}
-                    onRouteStateChange={(nextState) => updateCompanionRoute({
-                      companionView: 'defense',
-                      heatmapViewMode: nextState.viewMode,
-                      heatmapPosition: nextState.position === 'ALL' ? null : nextState.position,
-                      heatmapDefensePosition: nextState.defensePosition === 'ALL' ? null : nextState.defensePosition,
-                      heatmapStatMode: nextState.statMode,
-                      heatmapDefenseStatMode: nextState.defenseStatMode,
-                      heatmapScope: nextState.scope,
-                      heatmapLocation: nextState.location,
-                      heatmapSortKey: nextState.sortKey,
-                      heatmapSortDir: nextState.sortDir,
-                      heatmapTeamSort: nextState.teamSort,
-                      heatmapUseTeamColors: nextState.useTeamColors ? '1' : '0',
-                      heatmapVegasView: nextState.vegasView,
-                    }, { replace: true })}
+                    onRouteStateChange={scheduleHeatmapRouteUpdate}
                     onViewPlayer={(id, meta) => {
                       navigateToStatisticsPlayer({ id, ...meta }, {
                         backLabel: 'Heatmap',
@@ -974,6 +1035,10 @@ function AppInner() {
         {/* Bottom tab bar — mobile/tablet only, hidden lg+ via CSS */}
         <BottomTabBar activeTab={activeTab} onTabChange={navigateToTab} />
       </div>
+
+      {statsDrilldownPending && (
+        <RouteLoadingOverlay label={statsDrilldownPending.label} />
+      )}
 
       {/* ── Action Sheet (mobile menu) ───────────────────────── */}
       {actionSheetOpen && (
@@ -1012,7 +1077,7 @@ function AppInner() {
           onClick={() => setLeagueSwitcherOpen(false)}
         >
           <div
-            className="w-full max-w-xl rounded-2xl overflow-hidden max-h-[86vh] flex flex-col"
+            className="modal-panel w-full max-w-xl rounded-2xl overflow-hidden max-h-[86vh] flex flex-col"
             style={{
               background: 'var(--color-bg-secondary)',
               border: '1px solid var(--color-separator)',

@@ -2,9 +2,9 @@
 // Value balancing, package suggestions, and draft pick ownership for the
 // Companion Trade Agent.
 
-import { findKtcPlayerFromSleeper, findKtcDraftPick, getKtcValue } from './ktcApi';
+import { findKtcDraftPick, getKtcValue } from './ktcApi';
 import { getDraftPickDisplayInfo, getProjectedPickQuality } from './draftPickDisplay';
-import { DYNASTY_FALLBACK_MULT, computeTradePlayerValueDetail } from './tradeValue';
+import { resolveTradePlayerValueDetail } from './tradeValue';
 
 // ── Redraft pick valuation ────────────────────────────────────────────────────
 
@@ -213,6 +213,51 @@ export function valueDraftPick(
   };
 }
 
+function getPlayerLabel(player, fallbackId) {
+  return player?.full_name ?? (`${player?.first_name ?? ''} ${player?.last_name ?? ''}`.trim() || fallbackId);
+}
+
+function buildPlayerTradeItem(playerId, player, detail, { ktcPlayers = [] } = {}) {
+  const missingPlayerFallbackVal = !player && ktcPlayers?.length > 0 ? 0 : null;
+
+  return {
+    id: playerId,
+    label: getPlayerLabel(player, playerId),
+    position: player?.position ?? '',
+    team: player?.team ?? '',
+    val: detail?.value ?? missingPlayerFallbackVal,
+    dynastyFallback: detail?.dynastyFallback ?? false,
+    idpFallback: detail?.isEstimated ?? false,
+    type: 'player',
+    ktcEntry: detail?.ktcEntry ?? null,
+  };
+}
+
+function buildDraftPickTradeItem(pick, valuation, { includeKtcEntry = false } = {}) {
+  const { val, ktcEntry, displayInfo, quality, valueQuality } = valuation;
+  const item = {
+    id: pick.key,
+    label: displayInfo.label,
+    val,
+    type: 'pick',
+    pickData: pick,
+    year: pick.year,
+    round: pick.round,
+    quality,
+    valueQuality,
+    displayMode: displayInfo.displayMode,
+    lockedSlot: displayInfo.lockedSlot ?? null,
+    pickNumberLabel: displayInfo.pickNumberLabel ?? null,
+    pickRangeLabel: displayInfo.pickRangeLabel ?? null,
+    cardHeadline: displayInfo.cardHeadline ?? null,
+    cardMetaLabel: displayInfo.cardMetaLabel ?? null,
+    sortSlot: displayInfo.sortSlot ?? null,
+  };
+
+  if (includeKtcEntry) item.ktcEntry = ktcEntry;
+  return item;
+}
+
 // ── Trade valuation ───────────────────────────────────────────────────────────
 
 /**
@@ -232,50 +277,20 @@ export function valueSide(playerIds, pickItems, sleeperPlayers, ktcPlayers, leag
 
   for (const pid of playerIds) {
     const sp = sleeperPlayers?.[pid];
-    const sharedTradeValue = playerTradeValueDetailsMap?.get(pid) ?? null;
-    let ktc = null;
-    let rawVal = sharedTradeValue?.value ?? null;
-    let dynastyFallback = sharedTradeValue?.dynastyFallback ?? false;
-
-    if (!sharedTradeValue) {
-      ktc = findKtcPlayerFromSleeper(pid, sleeperPlayers, ktcPlayers);
-      rawVal = getKtcValue(ktc, leagueType);
-
-      // If no redraft value found, try dynasty rankings as a fallback and discount.
-      if (rawVal == null && dynastyFallbackPlayers?.length) {
-        const dynastyKtc = findKtcPlayerFromSleeper(pid, sleeperPlayers, dynastyFallbackPlayers);
-        const dynastyVal = getKtcValue(dynastyKtc, leagueType);
-        if (dynastyVal != null) {
-          rawVal = Math.round(dynastyVal * DYNASTY_FALLBACK_MULT);
-          dynastyFallback = true;
-        }
-      }
-    }
-
-    // IDP/DST fallback — production-computed value (already on same scale as KTC)
-    let idpFallback = sharedTradeValue?.isEstimated ?? false;
-    if (rawVal == null && idpValueMap?.has(pid)) {
-      rawVal = idpValueMap.get(pid);
-      idpFallback = true;
-    }
-
-    // Null = KTC not loaded yet (shows "—"). 0 = loaded but no value found.
-    const val = rawVal ?? (ktcPlayers.length > 0 ? 0 : null);
-    items.push({
+    const detail = resolveTradePlayerValueDetail({
       id: pid,
-      label: sp?.full_name ?? (`${sp?.first_name ?? ''} ${sp?.last_name ?? ''}`.trim() || pid),
-      position: sp?.position ?? '',
-      team: sp?.team ?? '',
-      val,
-      dynastyFallback,
-      idpFallback,
-      type: 'player',
-      ktcEntry: ktc,
+      playerTradeValueDetailsMap,
+      players: sleeperPlayers,
+      adjustedKtcPlayers: ktcPlayers,
+      adjustedDynastyKtcPlayers: dynastyFallbackPlayers,
+      leagueType,
+      mergedIDPMap: idpValueMap,
     });
+    items.push(buildPlayerTradeItem(pid, sp, detail, { ktcPlayers }));
   }
 
   for (const pick of pickItems) {
-    const { val, ktcEntry, displayInfo, quality, valueQuality } = valueDraftPick(pick, {
+    const valuation = valueDraftPick(pick, {
       rosters,
       ktcPlayers,
       leagueType,
@@ -285,25 +300,7 @@ export function valueSide(playerIds, pickItems, sleeperPlayers, ktcPlayers, leag
       drafts,
     });
 
-    items.push({
-      id: pick.key,
-      label: displayInfo.label,
-      val,
-      type: 'pick',
-      ktcEntry,
-      pickData: pick,
-      year: pick.year,
-      round: pick.round,
-      quality,
-      valueQuality,
-      displayMode: displayInfo.displayMode,
-      lockedSlot: displayInfo.lockedSlot ?? null,
-      pickNumberLabel: displayInfo.pickNumberLabel ?? null,
-      pickRangeLabel: displayInfo.pickRangeLabel ?? null,
-      cardHeadline: displayInfo.cardHeadline ?? null,
-      cardMetaLabel: displayInfo.cardMetaLabel ?? null,
-      sortSlot: displayInfo.sortSlot ?? null,
-    });
+    items.push(buildDraftPickTradeItem(pick, valuation, { includeKtcEntry: true }));
   }
 
   const total = items.reduce((sum, it) => sum + (it.val ?? 0), 0);
@@ -529,29 +526,23 @@ export function buildCandidatePool(
   for (const pid of playerIds) {
     if (excludeSet.has(pid)) continue;
     const sp = sleeperPlayers?.[pid];
-    const sharedTradeValue = playerTradeValueDetailsMap?.get(pid) ?? null;
-    let val = sharedTradeValue?.value ?? null;
+    const detail = resolveTradePlayerValueDetail({
+      id: pid,
+      playerTradeValueDetailsMap,
+      players: sleeperPlayers,
+      adjustedKtcPlayers: ktcPlayers,
+      adjustedDynastyKtcPlayers: dynastyKtcPlayers,
+      leagueType,
+      seasonStats,
+      scoringSettings,
+      positionalAvgPPG,
+      positionalValuePerPPG,
+      rankMap,
+      mergedIDPMap: idpValueMap,
+      blendWeight: 0.50,
+    });
+    const val = detail?.value ?? null;
     const pos = sp?.position ?? '';
-
-    if (val == null) {
-      const detail = computeTradePlayerValueDetail({
-        id: pid,
-        players: sleeperPlayers,
-        adjustedKtcPlayers: ktcPlayers,
-        adjustedDynastyKtcPlayers: dynastyKtcPlayers,
-        leagueType,
-        seasonStats,
-        scoringSettings,
-        positionalAvgPPG,
-        positionalValuePerPPG,
-        rankMap,
-        mergedIDPMap: idpValueMap,
-        blendWeight: 0.50,
-      });
-      if (detail) {
-        val = detail.value;
-      }
-    }
 
     candidates.push({
       id: pid,
@@ -568,7 +559,7 @@ export function buildCandidatePool(
   const excludePickSet = new Set(excludePickKeys);
   for (const pick of ownedPicks) {
     if (excludePickSet.has(pick.key)) continue;
-    const { val, displayInfo, quality, valueQuality } = valueDraftPick(pick, {
+    const valuation = valueDraftPick(pick, {
       rosters,
       ktcPlayers,
       leagueType,
@@ -577,24 +568,7 @@ export function buildCandidatePool(
       league,
       drafts,
     });
-    candidates.push({
-      id: pick.key,
-      label: displayInfo.label,
-      val,
-      type: 'pick',
-      pickData: pick,
-      year: pick.year,
-      round: pick.round,
-      quality,
-      valueQuality,
-      displayMode: displayInfo.displayMode,
-      lockedSlot: displayInfo.lockedSlot ?? null,
-      pickNumberLabel: displayInfo.pickNumberLabel ?? null,
-      pickRangeLabel: displayInfo.pickRangeLabel ?? null,
-      cardHeadline: displayInfo.cardHeadline ?? null,
-      cardMetaLabel: displayInfo.cardMetaLabel ?? null,
-      sortSlot: displayInfo.sortSlot ?? null,
-    });
+    candidates.push(buildDraftPickTradeItem(pick, valuation));
   }
 
   return candidates;

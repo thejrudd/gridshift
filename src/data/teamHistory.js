@@ -1,6 +1,7 @@
 // NFL team history — championship records and standout facts.
-// Super Bowl years reflect the season year (e.g. 2024 = SB LIX played Feb 2025).
-// Data current through Super Bowl LIX (February 2025).
+// Super Bowl and conference game totals are Super Bowl-era, franchise-wide records.
+// Super Bowl years reflect the game year for wins (e.g. 2026 = SB LX played Feb 2026).
+// Data current through Super Bowl LX (February 2026).
 
 export const TEAM_HISTORY = {
   // ── AFC EAST ──────────────────────────────────────────────────────────────
@@ -11,11 +12,11 @@ export const TEAM_HISTORY = {
     stadium: 'Highmark Stadium',
     superBowls: 0, superBowlYears: [],
     superBowlAppearances: 4,
-    conferenceChamps: 4,
+    conferenceGameAppearances: 7,
     divisionTitles: 13,
     facts: [
       'The only team in NFL history to reach four consecutive Super Bowls (1991–94) — losing all four, a feat never replicated.',
-      'Jim Kelly is the only starting quarterback to play in four Super Bowls.',
+      'Jim Kelly is the only starting quarterback to lead one franchise to four consecutive Super Bowl appearances.',
       'Marv Levy coached the Bills to all four Super Bowl appearances and still holds the franchise record with 123 wins.',
     ],
   },
@@ -26,7 +27,7 @@ export const TEAM_HISTORY = {
     stadium: 'Hard Rock Stadium',
     superBowls: 2, superBowlYears: [1973, 1974],
     superBowlAppearances: 5,
-    conferenceChamps: 5,
+    conferenceGameAppearances: 7,
     divisionTitles: 13,
     facts: [
       'The 1972 Dolphins are the only team in NFL history to finish a season undefeated at 17-0, including a Super Bowl win.',
@@ -40,8 +41,8 @@ export const TEAM_HISTORY = {
     founded: 1960,
     stadium: 'Gillette Stadium',
     superBowls: 6, superBowlYears: [2002, 2004, 2005, 2015, 2017, 2019],
-    superBowlAppearances: 11,
-    conferenceChamps: 11,
+    superBowlAppearances: 12,
+    conferenceGameAppearances: 16,
     divisionTitles: 21,
     facts: [
       'The Bill Belichick–Tom Brady era produced 6 Super Bowl titles in 9 appearances — the most successful coach-QB duo in NFL history.',
@@ -56,7 +57,7 @@ export const TEAM_HISTORY = {
     stadium: 'MetLife Stadium',
     superBowls: 1, superBowlYears: [1969],
     superBowlAppearances: 1,
-    conferenceChamps: 1,
+    conferenceGameAppearances: 4,
     divisionTitles: 5,
     facts: [
       'Joe Namath\'s guarantee of victory before Super Bowl III — despite the Jets being 18-point underdogs — is one of the most famous moments in sports history.',
@@ -73,7 +74,7 @@ export const TEAM_HISTORY = {
     stadium: 'M&T Bank Stadium',
     superBowls: 2, superBowlYears: [2001, 2013],
     superBowlAppearances: 2,
-    conferenceChamps: 3,
+    conferenceGameAppearances: 5,
     divisionTitles: 8,
     facts: [
       'The 2000 Ravens defense allowed just 165 points in the regular season — one of the greatest defensive units ever assembled.',
@@ -88,7 +89,7 @@ export const TEAM_HISTORY = {
     stadium: 'Paycor Stadium',
     superBowls: 0, superBowlYears: [],
     superBowlAppearances: 3,
-    conferenceChamps: 3,
+    conferenceGameAppearances: 4,
     divisionTitles: 10,
     facts: [
       'Paul Brown, who founded the Bengals, is one of only two people to have an NFL team named after him (the Cleveland Browns being the other).',
@@ -103,7 +104,7 @@ export const TEAM_HISTORY = {
     stadium: 'Huntington Bank Field',
     superBowls: 0, superBowlYears: [],
     superBowlAppearances: 0,
-    conferenceChamps: 0,
+    conferenceGameAppearances: 3,
     divisionTitles: 9,
     facts: [
       'The Browns won four AAFC championships (1946–49) and three NFL titles (1950, 1954, 1955) before the Super Bowl era.',
@@ -118,7 +119,7 @@ export const TEAM_HISTORY = {
     stadium: 'Acrisure Stadium',
     superBowls: 6, superBowlYears: [1975, 1976, 1979, 1980, 2006, 2009],
     superBowlAppearances: 8,
-    conferenceChamps: 8,
+    conferenceGameAppearances: 16,
     divisionTitles: 24,
     facts: [
       '"The Immaculate Reception" (1972) — Franco Harris\'s miraculous catch against the Raiders — is widely considered the greatest play in NFL history.',
@@ -135,7 +136,7 @@ export const TEAM_HISTORY = {
     stadium: 'NRG Stadium',
     superBowls: 0, superBowlYears: [],
     superBowlAppearances: 0,
-    conferenceChamps: 0,
+    conferenceGameAppearances: 0,
     divisionTitles: 7,
     facts: [
       'An expansion team that began play in 2002, the Texans are one of the NFL\'s newest franchises.',
@@ -150,7 +151,7 @@ export const TEAM_HISTORY = {
     stadium: 'Lucas Oil Stadium',
     superBowls: 2, superBowlYears: [1971, 2007],
     superBowlAppearances: 4,
-    conferenceChamps: 4,
+    conferenceGameAppearances: 7,
     divisionTitles: 16,
     facts: [
       'Johnny Unitas, who played for the Baltimore Colts, is credited with inventing the two-minute drill and is widely considered one of the greatest QBs ever.',
@@ -165,7 +166,7 @@ export const TEAM_HISTORY = {
     stadium: 'EverBank Stadium',
     superBowls: 0, superBowlYears: [],
     superBowlAppearances: 0,
-    conferenceChamps: 2,
+    conferenceGameAppearances: 3,
     divisionTitles: 4,
     facts: [
       'In only their second season (1996), the Jaguars reached the AFC Championship Game — the fastest an expansion team had reached that stage.',
@@ -180,7 +181,7 @@ export const TEAM_HISTORY = {
     stadium: 'Nissan Stadium',
     superBowls: 0, superBowlYears: [],
     superBowlAppearances: 1,
-    conferenceChamps: 1,
+    conferenceGameAppearances: 5,
     divisionTitles: 8,
     facts: [
       'The "Music City Miracle" (2000) — a lateral pass returned 75 yards by Kevin Dyson — is one of the most replayed special teams plays in NFL history.',
@@ -197,7 +198,7 @@ export const TEAM_HISTORY = {
     stadium: 'Empower Field at Mile High',
     superBowls: 3, superBowlYears: [1998, 1999, 2016],
     superBowlAppearances: 8,
-    conferenceChamps: 8,
+    conferenceGameAppearances: 11,
     divisionTitles: 16,
     facts: [
       'John Elway\'s "The Drive" — a 98-yard game-tying march in the 1986 AFC Championship — is one of the greatest clutch performances in NFL history.',
@@ -211,8 +212,8 @@ export const TEAM_HISTORY = {
     founded: 1960,
     stadium: 'GEHA Field at Arrowhead Stadium',
     superBowls: 4, superBowlYears: [1970, 2020, 2023, 2024],
-    superBowlAppearances: 6,
-    conferenceChamps: 7,
+    superBowlAppearances: 7,
+    conferenceGameAppearances: 8,
     divisionTitles: 14,
     facts: [
       'Arrowhead Stadium has set multiple Guinness World Records for loudest outdoor stadium crowd noise.',
@@ -227,7 +228,7 @@ export const TEAM_HISTORY = {
     stadium: 'Allegiant Stadium',
     superBowls: 3, superBowlYears: [1977, 1981, 1984],
     superBowlAppearances: 5,
-    conferenceChamps: 5,
+    conferenceGameAppearances: 11,
     divisionTitles: 16,
     facts: [
       'Al Davis\'s motto "Just Win Baby" became one of sport\'s most enduring slogans.',
@@ -242,7 +243,7 @@ export const TEAM_HISTORY = {
     stadium: 'SoFi Stadium',
     superBowls: 0, superBowlYears: [],
     superBowlAppearances: 1,
-    conferenceChamps: 1,
+    conferenceGameAppearances: 4,
     divisionTitles: 12,
     facts: [
       'One of the AFL\'s original eight teams, the Chargers won the first AFL Western Division title in 1960.',
@@ -259,7 +260,7 @@ export const TEAM_HISTORY = {
     stadium: 'AT&T Stadium',
     superBowls: 5, superBowlYears: [1972, 1978, 1993, 1994, 1996],
     superBowlAppearances: 8,
-    conferenceChamps: 8,
+    conferenceGameAppearances: 14,
     divisionTitles: 24,
     facts: [
       '"America\'s Team" — a nickname coined by NFL Films in 1979 — remains one of the most recognized brands in all of professional sports.',
@@ -273,8 +274,8 @@ export const TEAM_HISTORY = {
     founded: 1925,
     stadium: 'MetLife Stadium',
     superBowls: 4, superBowlYears: [1987, 1991, 2008, 2012],
-    superBowlAppearances: 4,
-    conferenceChamps: 6,
+    superBowlAppearances: 5,
+    conferenceGameAppearances: 5,
     divisionTitles: 9,
     facts: [
       'Lawrence Taylor is widely regarded as the greatest defensive player in NFL history, revolutionizing the pass-rushing linebacker position.',
@@ -288,8 +289,8 @@ export const TEAM_HISTORY = {
     founded: 1933,
     stadium: 'Lincoln Financial Field',
     superBowls: 2, superBowlYears: [2018, 2025],
-    superBowlAppearances: 4,
-    conferenceChamps: 4,
+    superBowlAppearances: 5,
+    conferenceGameAppearances: 9,
     divisionTitles: 14,
     facts: [
       'The "Philly Special" — a trick play where QB Nick Foles caught a touchdown pass in Super Bowl LII — is one of the most iconic plays in Super Bowl history.',
@@ -304,7 +305,7 @@ export const TEAM_HISTORY = {
     stadium: 'Northwest Stadium',
     superBowls: 3, superBowlYears: [1983, 1988, 1992],
     superBowlAppearances: 5,
-    conferenceChamps: 5,
+    conferenceGameAppearances: 7,
     divisionTitles: 14,
     facts: [
       'The franchise has operated under four names: Braves (1932), Redskins (1933–2019), Football Team (2020–21), and Commanders (2022–present).',
@@ -321,7 +322,7 @@ export const TEAM_HISTORY = {
     stadium: 'Soldier Field',
     superBowls: 1, superBowlYears: [1986],
     superBowlAppearances: 2,
-    conferenceChamps: 2,
+    conferenceGameAppearances: 5,
     divisionTitles: 18,
     facts: [
       'The 1985 Bears (15-1) are widely considered one of the greatest teams ever assembled — they released the "Super Bowl Shuffle" rap video before winning the championship.',
@@ -336,7 +337,7 @@ export const TEAM_HISTORY = {
     stadium: 'Ford Field',
     superBowls: 0, superBowlYears: [],
     superBowlAppearances: 0,
-    conferenceChamps: 0,
+    conferenceGameAppearances: 2,
     divisionTitles: 4,
     facts: [
       'One of only four NFL teams to never appear in a Super Bowl.',
@@ -351,7 +352,7 @@ export const TEAM_HISTORY = {
     stadium: 'Lambeau Field',
     superBowls: 4, superBowlYears: [1967, 1968, 1997, 2011],
     superBowlAppearances: 5,
-    conferenceChamps: 9,
+    conferenceGameAppearances: 9,
     divisionTitles: 23,
     facts: [
       'The only community-owned, non-profit major professional sports team in the United States, with over 537,000 shareholders.',
@@ -366,7 +367,7 @@ export const TEAM_HISTORY = {
     stadium: 'U.S. Bank Stadium',
     superBowls: 0, superBowlYears: [],
     superBowlAppearances: 4,
-    conferenceChamps: 4,
+    conferenceGameAppearances: 9,
     divisionTitles: 21,
     facts: [
       'The Vikings have lost four Super Bowls (1970, 1974, 1975, 1977) — tied with the Bills for the most Super Bowl losses without a win.',
@@ -383,7 +384,7 @@ export const TEAM_HISTORY = {
     stadium: 'Mercedes-Benz Stadium',
     superBowls: 0, superBowlYears: [],
     superBowlAppearances: 2,
-    conferenceChamps: 2,
+    conferenceGameAppearances: 4,
     divisionTitles: 8,
     facts: [
       'The Falcons led Super Bowl LI 28-3 before the Patriots mounted the largest comeback in Super Bowl history, winning 34-28 in overtime.',
@@ -398,7 +399,7 @@ export const TEAM_HISTORY = {
     stadium: 'Bank of America Stadium',
     superBowls: 0, superBowlYears: [],
     superBowlAppearances: 2,
-    conferenceChamps: 2,
+    conferenceGameAppearances: 4,
     divisionTitles: 6,
     facts: [
       'In their second season (1996), the Panthers reached the NFC Championship Game — matching the Jaguars as the fastest expansion teams to do so.',
@@ -412,8 +413,8 @@ export const TEAM_HISTORY = {
     founded: 1967,
     stadium: 'Caesars Superdome',
     superBowls: 1, superBowlYears: [2010],
-    superBowlAppearances: 2,
-    conferenceChamps: 2,
+    superBowlAppearances: 1,
+    conferenceGameAppearances: 3,
     divisionTitles: 9,
     facts: [
       'The Saints\' 2009 Super Bowl victory — just four years after Hurricane Katrina devastated New Orleans — became a powerful symbol of the city\'s resilience and rebirth.',
@@ -428,7 +429,7 @@ export const TEAM_HISTORY = {
     stadium: 'Raymond James Stadium',
     superBowls: 2, superBowlYears: [2003, 2021],
     superBowlAppearances: 2,
-    conferenceChamps: 2,
+    conferenceGameAppearances: 4,
     divisionTitles: 10,
     facts: [
       'Tom Brady became the first player in NFL history to win a Super Bowl with two different franchises (Super Bowl LV, 2021).',
@@ -445,7 +446,7 @@ export const TEAM_HISTORY = {
     stadium: 'State Farm Stadium',
     superBowls: 0, superBowlYears: [],
     superBowlAppearances: 1,
-    conferenceChamps: 1,
+    conferenceGameAppearances: 2,
     divisionTitles: 6,
     facts: [
       'The Cardinals are the oldest continuously operating professional football club in the NFL, founded in 1898 as the Morgan Athletic Club in Chicago.',
@@ -460,7 +461,7 @@ export const TEAM_HISTORY = {
     stadium: 'SoFi Stadium',
     superBowls: 2, superBowlYears: [2000, 2022],
     superBowlAppearances: 5,
-    conferenceChamps: 5,
+    conferenceGameAppearances: 12,
     divisionTitles: 19,
     facts: [
       'The "Greatest Show on Turf" — the 1999–2001 St. Louis Rams offense led by Kurt Warner — is the highest-scoring three-year run in NFL history.',
@@ -475,7 +476,7 @@ export const TEAM_HISTORY = {
     stadium: 'Levi\'s Stadium',
     superBowls: 5, superBowlYears: [1982, 1985, 1989, 1990, 1995],
     superBowlAppearances: 8,
-    conferenceChamps: 7,
+    conferenceGameAppearances: 19,
     divisionTitles: 22,
     facts: [
       'The 49ers won five Super Bowls in fourteen years (1982–95), all under either Bill Walsh or George Seifert — a dynasty unmatched in NFC history.',
@@ -489,8 +490,8 @@ export const TEAM_HISTORY = {
     founded: 1976,
     stadium: 'Lumen Field',
     superBowls: 2, superBowlYears: [2014, 2026],
-    superBowlAppearances: 3,
-    conferenceChamps: 4,
+    superBowlAppearances: 4,
+    conferenceGameAppearances: 5,
     divisionTitles: 13,
     facts: [
       'The "12th Man" crowd at Lumen Field set a Guinness World Record for loudest crowd noise at an outdoor stadium (137.6 dB in 2013).',

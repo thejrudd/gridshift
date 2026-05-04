@@ -1,9 +1,9 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { fetchRoster, headshot } from '../utils/playerApi';
 import { parseSearchQuery, matchesFilter } from '../utils/parseSearchQuery';
 import PlayerProfile from './PlayerProfile';
 import TeamPage from './TeamPage';
-import { getTeamPalette } from '../data/teamColors.js';
+import { getTeamVisualTheme } from '../utils/teamVisualTheme';
 
 const POSITION_FILTERS = ['ALL', 'QB', 'RB', 'WR', 'TE', 'OL', 'DL', 'LB', 'DB', 'K', 'P'];
 
@@ -22,7 +22,7 @@ const CONFERENCES = [
 
 const TEAM_CARD_SHADOW = '0 10px 24px rgba(12,15,20,0.10), 0 3px 8px rgba(12,15,20,0.08)';
 const TEAM_LABEL_STYLE = { letterSpacing: '0.16em' };
-const REVERSED_GRADIENT_TEAMS = new Set(['dal', 'gb', 'jax', 'la', 'lar', 'lv', 'no', 'nyg', 'nyj', 'pit', 'wsh']);
+const TEAM_CARD_THEME_OPTIONS = { logoSide: 'start' };
 const cardTextSize = (base, text, { min, offset = 0, longAt, compactAt }) => {
   const length = String(text || '').replace(/\s+/g, '').length;
   let size = base + offset;
@@ -55,22 +55,6 @@ const SEASON_2025_CHAMPIONS = {
     'NFC West': 'sea',
   },
 };
-const TEAM_CARD_TEXT_OVERRIDES = {
-  nyj: {
-    titleColor: '#FFFFFF',
-    subtitleColor: 'rgba(255,255,255,0.82)',
-  },
-};
-
-function hexLuminance(hex) {
-  if (!hex || hex[0] !== '#' || hex.length !== 7) return 0;
-  const r = parseInt(hex.slice(1, 3), 16) / 255;
-  const g = parseInt(hex.slice(3, 5), 16) / 255;
-  const b = parseInt(hex.slice(5, 7), 16) / 255;
-  const lin = (c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
-  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
-}
-
 function buildPlayerMeta(player = {}, fallback = {}) {
   return {
     id: String(player.id ?? fallback.id ?? ''),
@@ -124,27 +108,29 @@ const PlayerBrowser = ({
     : null;
   const [cardFontSize, setCardFontSize] = useState(14);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (typeof window === 'undefined') return undefined;
+    if (statsView !== 'browser') return undefined;
     const node = gridWrapRef.current;
     if (!node) return undefined;
 
+    const measureNow = () => {
+      const width = node.getBoundingClientRect().width || 0;
+      const isDesktopGrid = window.innerWidth >= 640;
+      const columns = isDesktopGrid ? 4 : 2;
+      const gap = 12 * (columns - 1);
+      const sectionPadding = isDesktopGrid ? 40 : 32;
+      const cardWidth = columns > 0 ? (width - sectionPadding - gap) / columns : width;
+      const next = Math.max(9, Math.min(15, Math.floor(cardWidth * 0.07)));
+      setCardFontSize(Number.isFinite(next) ? next : 14);
+    };
     let frame = 0;
     const measure = () => {
       cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => {
-        const width = node.getBoundingClientRect().width || 0;
-        const isDesktopGrid = window.innerWidth >= 640;
-        const columns = isDesktopGrid ? 4 : 2;
-        const gap = 12 * (columns - 1);
-        const sectionPadding = isDesktopGrid ? 40 : 32;
-        const cardWidth = columns > 0 ? (width - sectionPadding - gap) / columns : width;
-        const next = Math.max(9, Math.min(15, Math.floor(cardWidth * 0.07)));
-        setCardFontSize(Number.isFinite(next) ? next : 14);
-      });
+      frame = requestAnimationFrame(measureNow);
     };
 
-    measure();
+    measureNow();
     const resizeObserver = new ResizeObserver(measure);
     resizeObserver.observe(node);
     if (document.fonts?.ready) document.fonts.ready.then(measure).catch(() => {});
@@ -155,7 +141,7 @@ const PlayerBrowser = ({
       resizeObserver.disconnect();
       window.removeEventListener('resize', measure);
     };
-  }, [teams.length]);
+  }, [statsView, teams.length]);
 
   const teamLookup = useRef({});
   useEffect(() => {
@@ -338,6 +324,7 @@ const PlayerBrowser = ({
     if (selectedPlayer) {
       return (
         <PlayerProfile
+          key={selectedPlayer.id}
           playerId={selectedPlayer.id}
           playerMeta={selectedPlayer}
           teamId={selectedPlayer.teamId}
@@ -577,18 +564,10 @@ const TrophyIcon = ({ size = 10 }) => (
 
 const TeamCard = ({ team, onClick, darkMode = false, fontSize = 14 }) => {
   const teamKey = String(team.id).toLowerCase();
-  const palette = getTeamPalette(team.id);
-  const primary = palette ? (darkMode ? palette.darkPrimary : palette.primary) : '#1F2937';
-  const secondary = palette ? (darkMode ? palette.darkSecondary : palette.secondary) : '#4B5563';
-  const reverseGradient = REVERSED_GRADIENT_TEAMS.has(teamKey);
-  const textOverride = TEAM_CARD_TEXT_OVERRIDES[teamKey] ?? null;
-  const base = reverseGradient ? secondary : primary;
-  const gradient = reverseGradient
-    ? `linear-gradient(135deg, ${secondary} 0%, ${primary} 100%)`
-    : `linear-gradient(135deg, ${primary} 0%, ${secondary} 100%)`;
-  const onBase = hexLuminance(base) > 0.42 ? '#0C0F14' : '#FFFFFF';
-  const titleColor = textOverride?.titleColor ?? onBase;
-  const muted = textOverride?.subtitleColor ?? (onBase === '#FFFFFF' ? 'rgba(255,255,255,0.72)' : 'rgba(12,15,20,0.64)');
+  const teamTheme = getTeamVisualTheme(team.id, darkMode, TEAM_CARD_THEME_OPTIONS);
+  const gradient = teamTheme.gradient ?? 'linear-gradient(135deg, #1F2937 0%, #4B5563 100%)';
+  const titleColor = teamTheme.gradientForeground ?? '#FFFFFF';
+  const muted = teamTheme.gradientMuted ?? 'rgba(255,255,255,0.72)';
   const city = team.city || String(team.name || '').split(' ').slice(0, -1).join(' ');
   const nickname = team.nickname || String(team.name || '').split(' ').slice(-1)[0] || team.name;
   const cityFontSize = cardTextSize(fontSize, city, { min: 7, offset: -2, longAt: 8, compactAt: 6 });
@@ -597,8 +576,8 @@ const TeamCard = ({ team, onClick, darkMode = false, fontSize = 14 }) => {
   const isSuperBowl = SEASON_2025_CHAMPIONS.superBowl === teamKey;
   const isConf = !isSuperBowl && Object.values(SEASON_2025_CHAMPIONS.conference).includes(teamKey);
   const isDiv = !isSuperBowl && !isConf && SEASON_2025_CHAMPIONS.division[team.division] === teamKey;
-  const goldColor = onBase === '#FFFFFF' ? '#F5B700' : '#B8860B';
-  const silverColor = onBase === '#FFFFFF' ? 'rgba(255,255,255,0.90)' : 'rgba(12,15,20,0.75)';
+  const goldColor = titleColor === '#FFFFFF' ? '#F5B700' : '#B8860B';
+  const silverColor = titleColor === '#FFFFFF' ? 'rgba(255,255,255,0.90)' : 'rgba(12,15,20,0.75)';
 
   return (
     <button
@@ -615,9 +594,7 @@ const TeamCard = ({ team, onClick, darkMode = false, fontSize = 14 }) => {
       <div
         className="absolute inset-0"
         style={{
-          background: darkMode
-            ? 'linear-gradient(180deg, rgba(12,15,20,0.04) 0%, rgba(12,15,20,0.22) 100%)'
-            : 'linear-gradient(180deg, rgba(255,255,255,0.10) 0%, rgba(12,15,20,0.12) 100%)',
+          background: teamTheme.gradientOverlay ?? 'transparent',
         }}
       />
       <div className="relative flex h-full items-center gap-1.5 p-2 sm:gap-3 sm:p-3.5">

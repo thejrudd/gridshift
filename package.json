@@ -1,7 +1,7 @@
 {
   "name": "nfl-predictor",
   "private": true,
-  "version": "7.2.0",
+  "version": "7.3.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,6 +9,10 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "validate:routing": "node scripts/validate-routing.mjs",
+    "test:unit": "node --test tests/unit/*.test.mjs",
+    "test:e2e": "TMPDIR=/tmp playwright test",
+    "test:e2e:headed": "TMPDIR=/tmp playwright test --headed",
+    "test:e2e:ui": "TMPDIR=/tmp playwright test --ui",
     "generate-pwa-assets": "pwa-assets-generator --preset minimal public/icons/icon.svg"
   },
   "dependencies": {
@@ -23,6 +27,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
+    "@playwright/test": "^1.59.1",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
     "@vite-pwa/assets-generator": "^1.0.2",

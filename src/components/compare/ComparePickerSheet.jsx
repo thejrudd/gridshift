@@ -3,7 +3,7 @@ import { fetchRoster } from '../../utils/playerApi';
 import { parseSearchQuery, matchesFilter } from '../../utils/parseSearchQuery';
 import { TEAM_COLORS } from '../../data/teamColors';
 import { useTheme } from '../../context/ThemeContext';
-import useBodyScrollLock from '../../hooks/useBodyScrollLock';
+import Modal from '../Modal';
 
 const ESPN_TEAM_MAP = { lar: 'la', was: 'wsh' };
 function toTeamKey(espnTeamId) {
@@ -162,7 +162,6 @@ function SearchGuide({ onExample }) {
  */
 export default function ComparePickerSheet({ teams, excludeId, onSelect, onClose }) {
   const { darkMode } = useTheme();
-  useBodyScrollLock();
   const [query, setQuery] = useState('');
   const [searchCorpus, setSearchCorpus] = useState(() => {
     const cacheKey = buildSearchCorpusKey(teams);
@@ -238,24 +237,18 @@ export default function ComparePickerSheet({ teams, excludeId, onSelect, onClose
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: 'rgba(0,0,0,0.5)' }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-      aria-modal="true"
-      role="dialog"
+    <Modal
+      onClose={onClose}
+      mobileSheet
+      ariaLabel="Select player"
+      containerClassName="flex flex-col"
+      containerStyle={{
+        background: 'var(--color-bg-secondary)',
+        maxWidth: '520px',
+        height: '72vh',
+        maxHeight: '640px',
+      }}
     >
-      {/* Modal panel — fixed dimensions so search box never shifts */}
-      <div
-        className="flex flex-col rounded-2xl overflow-hidden w-full"
-        style={{
-          background: 'var(--color-bg-secondary)',
-          maxWidth: '520px',
-          height: '72vh',
-          maxHeight: '640px',
-        }}
-        onClick={e => e.stopPropagation()}
-      >
         {/* Header + search — always fixed at top */}
         <div className="px-4 pt-4 pb-3 shrink-0" style={{ borderBottom: '1px solid var(--color-separator)' }}>
           <div className="flex items-center justify-between mb-3">
@@ -277,6 +270,7 @@ export default function ComparePickerSheet({ teams, excludeId, onSelect, onClose
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Name, team, position, or natural language…"
+              data-testid="trade-compare-picker-search"
               className="w-full pl-9 pr-9 py-2.5 rounded-xl text-sm outline-none"
               style={{
                 background: 'var(--color-fill)',
@@ -312,6 +306,7 @@ export default function ComparePickerSheet({ teams, excludeId, onSelect, onClose
               <button
                 key={player.id}
                 onClick={() => onSelect(player)}
+                data-testid={`trade-compare-picker-result-${player.id}`}
                 className="flex items-center w-full px-4 py-3 gap-3 relative overflow-hidden transition-colors"
                 style={{
                   borderBottom: '1px solid var(--color-separator)',
@@ -343,8 +338,7 @@ export default function ComparePickerSheet({ teams, excludeId, onSelect, onClose
             );
           })}
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 

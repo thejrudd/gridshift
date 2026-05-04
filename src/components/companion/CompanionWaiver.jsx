@@ -4,7 +4,6 @@ import { useTheme } from '../../context/ThemeContext';
 import { createPointsCalculator } from '../../utils/scoringEngine';
 import { projectPlayer, buildDefenseTable, getDefenseStrength, getLeagueAvgPPG } from '../../utils/projectionEngine';
 import { STADIUMS } from '../../data/stadiums';
-import useCardGlow from '../../hooks/useCardGlow.jsx';
 import useMediaQuery from '../../hooks/useMediaQuery.js';
 import {
   getLeaguePositionFilters,
@@ -18,21 +17,12 @@ import { isWaiverEligiblePlayerRecord } from '../../utils/playerEligibility';
 import { debugCompanionLog, debugCompanionMeasure } from '../../utils/companionPerfDebug';
 import CompanionLoadingState from './CompanionLoadingState';
 import CompanionPlayerPreviewSheet from './CompanionPlayerPreviewSheet';
+import PlayerStatusBadge from './PlayerStatusBadge.jsx';
+import { getPlayerAvailabilityStatus } from '../../utils/playerAvailabilityStatus.js';
+import { CompanionSearchField, CompanionSelectorButton, CompanionSelectorRail } from './CompanionSelectorControls.jsx';
+import CompanionPlayerRow, { CompanionPlayerMetric, CompanionPlayerStatus } from './CompanionPlayerRow.jsx';
 
 const PROJECTION_POSITIONS = new Set(['QB', 'RB', 'WR', 'TE', 'K', 'DL', 'LB', 'DB']);
-const POSITION_COLORS = {
-  QB: '#ef4444',
-  RB: '#22c55e',
-  WR: '#3b82f6',
-  TE: '#f59e0b',
-  K: '#8b5cf6',
-  DEF: '#64748b',
-  DL: '#dc2626',
-  LB: '#2563eb',
-  DB: '#0891b2',
-  TST: '#14b8a6',
-  STP: '#a855f7',
-};
 const COMPACT_PHONE_QUERY = '(max-width: 480px)';
 const MOBILE_SHEET_QUERY = '(max-width: 1023px)';
 const WAIVER_ROW_SIDE_PADDING = 10;
@@ -67,21 +57,6 @@ function getWaiverLayout(isCompactPhone) {
     tableTemplate: `44px minmax(0, 1fr) repeat(3, ${metricWidth}px)`,
     verticalPadding: 10,
   };
-}
-
-function getWaiverInjuryLabel(status, compact) {
-  if (!compact || !status) return status;
-
-  const LABELS = {
-    'Questionable': 'Q',
-    'Probable': 'P',
-    'Doubtful': 'D',
-    'Out': 'OUT',
-    'Injured Reserve': 'IR',
-    'Physically Unable to Perform': 'PUP',
-  };
-
-  return LABELS[status] ?? status.slice(0, 3).toUpperCase();
 }
 
 function getTrendState(recentAvg, seasonAvg) {
@@ -162,19 +137,6 @@ function getVisibleRowsCacheKey({
     JSON.stringify(activeScoringSettings ?? {}),
     darkMode ? 'dark' : 'light',
   ].join('|');
-}
-
-function getSharedNameColumnWidth(players) {
-  if (typeof document === 'undefined' || !players.length) return 0;
-  const canvas = document.createElement('canvas');
-  const context = canvas.getContext('2d');
-  if (!context) return 0;
-
-  context.font = '600 14px Figtree, sans-serif';
-  const measured = Math.ceil(players.reduce((max, player) => (
-    Math.max(max, context.measureText(player.name ?? '').width)
-  ), 0)) + 6;
-  return Math.min(measured, 168);
 }
 
 export default function CompanionWaiver({
@@ -345,7 +307,7 @@ export default function CompanionWaiver({
           projected: null,
           projectionPosition,
           weekly,
-          injuryStatus: p.injury_status,
+          availabilityStatus: getPlayerAvailabilityStatus(p),
           espnId,
           yearsExp: p.years_exp,
         };
@@ -503,10 +465,6 @@ export default function CompanionWaiver({
       });
   }, [shouldProjectWaivers, filteredCandidates, defenseTable, week, scheduleWeekKey, activeScoringSettings, scheduleMap, leagueAvgByPos, darkMode, calcFantasyPoints]);
 
-  const sharedNameColumnWidth = useMemo(
-    () => getSharedNameColumnWidth(available),
-    [available],
-  );
   const showWaiverPreparing = available.length === 0 && (
     statsLoading
     || playerCount === 0
@@ -517,42 +475,30 @@ export default function CompanionWaiver({
   return (
     <div className="pb-6">
       <div className="px-4 pb-3 flex flex-col gap-2">
-        <div className="flex gap-1.5 flex-wrap">
+        <CompanionSelectorRail ariaLabel="Waiver position filter">
           {availablePositions.map(pos => (
-            <button
+            <CompanionSelectorButton
               key={pos}
+              active={activePosFilter === pos}
               onClick={() => {
                 onConsumeInitialPositionRequest?.();
                 setPosFilter(pos);
                 onPositionFilterChange?.(pos);
               }}
-              className="px-3 py-1 rounded-lg text-xs font-semibold transition-colors"
-              style={{
-                background: activePosFilter === pos ? 'var(--color-signature)' : 'var(--color-fill)',
-                color: activePosFilter === pos ? 'var(--color-signature-fg)' : 'var(--color-label-secondary)',
-              }}
             >
               {getPositionFilterLabel(pos)}
-            </button>
+            </CompanionSelectorButton>
           ))}
-        </div>
-        <div className="relative">
-          <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: 'var(--color-label-tertiary)' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 1 1-14 0 7 7 0 0 1 14 0z" />
-          </svg>
-          <input
-            type="text"
-            value={searchInput}
-            onChange={e => {
+        </CompanionSelectorRail>
+        <CompanionSearchField
+          value={searchInput}
+          onChange={e => {
               setSearchInput(e.target.value);
               clearTimeout(debounceRef.current);
               debounceRef.current = setTimeout(() => setSearch(e.target.value), 200);
             }}
-            placeholder="Search players..."
-            className="w-full pl-9 pr-3 py-2 rounded-xl font-medium focus:outline-none"
-            style={{ fontSize: '16px', background: 'var(--color-fill-secondary)', color: 'var(--color-label)' }}
-          />
-        </div>
+          placeholder="Search players..."
+        />
       </div>
 
       {statsLoading && <WaiverStatsLoadingBanner />}
@@ -603,7 +549,6 @@ export default function CompanionWaiver({
           sortBy={sortBy}
           layout={layout}
           isCompactPhone={isCompactPhone}
-          nameColumnWidth={sharedNameColumnWidth}
         />
       ))}
 
@@ -676,199 +621,98 @@ function WaiverStatsLoadingBanner() {
   );
 }
 
-function MetricCell({ children, emphasis = false, color }) {
-  return (
-    <div className="min-w-0 w-full grid place-items-center">
-      <span
-        className={`${emphasis ? 'font-semibold' : ''} tabular-nums text-[13px] sm:text-sm text-center`}
-        style={{ color }}
-      >
-        {children}
-      </span>
-    </div>
-  );
-}
-
-function ResponsiveWaiverRow({ player, onSelect, sortBy, nameColumnWidth, layout, isCompactPhone }) {
+function ResponsiveWaiverRow({ player, onSelect, sortBy, layout, isCompactPhone }) {
   const { darkMode } = useTheme();
-  const [isHovered, setIsHovered] = useState(false);
-  const isInjured = player.injuryStatus && !['Questionable', 'Probable'].includes(player.injuryStatus);
-  const posColor = POSITION_COLORS[player.position] ?? 'var(--color-label-tertiary)';
   const canNav = !!onSelect;
-  const injuryLabel = getWaiverInjuryLabel(player.injuryStatus, isCompactPhone);
-  const trendBg = player.trendState === 'hot'
-    ? 'rgba(30,155,55,0.12)'
-    : player.trendState === 'cold'
-      ? 'rgba(224,39,15,0.12)'
-      : 'transparent';
-  const trendColor = player.trendState === 'hot'
-    ? 'var(--color-accent-green)'
-    : player.trendState === 'cold'
-      ? 'var(--color-accent-red)'
-      : 'transparent';
   const trendLabel = player.trendState === 'hot'
     ? (isCompactPhone ? '↑' : '↑ HOT')
     : player.trendState === 'cold'
       ? (isCompactPhone ? '↓' : '↓ COLD')
       : '';
-  const glowColor = player.teamTheme.accent ?? (darkMode ? '#5AADFF' : '#1A6EFF');
-  const { glowHandlers, borderOverlay, glowShadow } = useCardGlow({
-    enabled: isHovered,
-    color: glowColor,
-    cardColor: player.teamTheme.accent ?? null,
-    darkMode,
-    coreColor: darkMode ? (player.teamTheme.glowCore ?? '#FFFFFF') : null,
-    outerColor: player.teamTheme.accent ?? glowColor,
-  });
-  const baseShadow = isHovered
-    ? '0 8px 18px rgba(12,15,20,0.10), 0 2px 6px rgba(12,15,20,0.08)'
-    : '0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06)';
-  const rowShadow = glowShadow ? `${glowShadow}, ${baseShadow}` : baseShadow;
+  const projectedColor = player.projected != null
+    ? (sortBy === 'projected' ? 'var(--color-label)' : 'var(--color-label-secondary)')
+    : 'var(--color-label-quaternary)';
+  const seasonColor = sortBy === 'season' ? 'var(--color-label)' : 'var(--color-label-secondary)';
+  const recentColor = sortBy === 'recent' ? 'var(--color-label)' : 'var(--color-label-secondary)';
+  const statusColumnTemplate = isCompactPhone
+    ? (trendLabel || player.availabilityStatus ? '22px ' : '')
+    : '150px ';
+  const columnGridTemplate = layout.showSeason
+    ? `${statusColumnTemplate}repeat(3, minmax(0, 58px))`
+    : `${statusColumnTemplate}50px 54px`;
+  const rowGridTemplate = isCompactPhone
+    ? `${layout.avatarSize}px minmax(0, 1fr) auto`
+    : `${layout.avatarSize}px minmax(12rem, 1fr) 44px auto`;
+  const metaSegments = [
+    player.position,
+    player.team,
+    player.oppTeam ? `vs ${player.oppTeam}` : null,
+  ].filter(Boolean);
+  const metricValue = (value, color) => (
+    <span style={{ color }}>
+      {value}
+    </span>
+  );
 
   return (
     <div className="px-4">
-      <button
+      <CompanionPlayerRow
+        player={player}
+        darkMode={darkMode}
+        compact={isCompactPhone}
+        showPosition={false}
+        showTeamLogo={!isCompactPhone}
+        interactive={canNav}
         onClick={canNav ? onSelect : undefined}
-        onMouseMove={glowHandlers.onMouseMove}
-        onMouseEnter={(event) => {
-          setIsHovered(true);
-          glowHandlers.onMouseEnter?.(event);
-        }}
-        onMouseLeave={(event) => {
-          setIsHovered(false);
-          glowHandlers.onMouseLeave?.(event);
-        }}
-        onFocus={(event) => {
-          setIsHovered(true);
-          glowHandlers.onMouseEnter?.(event);
-        }}
-        onBlur={(event) => {
-          setIsHovered(false);
-          glowHandlers.onMouseLeave?.(event);
-        }}
-        className="relative grid items-center w-full text-left active:opacity-60"
-        style={{
-          gridTemplateColumns: layout.tableTemplate,
-          columnGap: layout.gap,
-          border: '1px solid var(--color-separator)',
-          borderLeft: player.teamTheme.accent ? `4px solid ${player.teamTheme.accent}` : '4px solid var(--color-separator)',
-          borderRadius: 0,
-          background: isHovered ? player.teamTheme.hoverBg : player.teamTheme.rowBg,
-          boxShadow: rowShadow,
-          padding: `${layout.verticalPadding}px ${layout.sidePadding}px`,
-          transform: isHovered ? 'translateY(-1px)' : 'translateY(0)',
-          transition: 'background 150ms cubic-bezier(0.32, 0.72, 0, 1), box-shadow 200ms cubic-bezier(0.32, 0.72, 0, 1), transform 200ms cubic-bezier(0.32, 0.72, 0, 1)',
-          cursor: canNav ? 'pointer' : 'default',
-        }}
-      >
-        {borderOverlay}
-        <img
-          src={`https://sleepercdn.com/content/nfl/players/thumb/${player.id}.jpg`}
-          alt={player.name}
-          className="rounded-full shrink-0 object-cover"
-          style={{
-            width: layout.avatarSize,
-            height: layout.avatarSize,
-            background: 'var(--color-fill)',
-            border: player.teamTheme.avatarBorder ? `2px solid ${player.teamTheme.avatarBorder}` : '2px solid transparent',
-          }}
-          onError={e => { e.target.src = 'https://sleepercdn.com/images/v2/icons/player_default.webp'; }}
-        />
-
-        <div
-          className="min-w-0 grid items-center gap-2"
-          style={{
-            gridTemplateColumns: 'minmax(0, 1fr) auto',
-            justifySelf: 'start',
-            width: '100%',
-            maxWidth: layout.showSeason ? `${Math.max(nameColumnWidth, 0) + 90}px` : 'none',
-          }}
-        >
-          <div className="min-w-0">
-            <div className="flex items-center gap-1.5 min-w-0">
-              <span
-                className="min-w-0 font-semibold truncate"
-                style={{ color: canNav ? 'var(--color-accent)' : 'var(--color-label)', fontSize: layout.nameFontSize, lineHeight: 1.15 }}
-              >
-                {player.name}
-              </span>
-              {player.injuryStatus && (
-                <span
-                  className="font-bold px-1.5 py-0.5 rounded-lg shrink-0"
-                  style={{
-                    background: isInjured ? 'rgba(239,68,68,0.12)' : 'rgba(245,183,0,0.12)',
-                    color: isInjured ? 'var(--color-accent-red)' : 'var(--color-signature)',
-                    fontSize: isCompactPhone ? 9 : 10,
-                  }}
+        metaSegments={metaSegments}
+        gridTemplate={rowGridTemplate}
+        columnGridTemplate={columnGridTemplate}
+        columns={[
+          (!isCompactPhone || trendLabel || player.availabilityStatus) ? (
+            <div key="status" className="min-w-0 flex items-center justify-start gap-2 self-center">
+              {trendLabel ? (
+                <CompanionPlayerStatus
+                  tone={player.trendState === 'hot' ? 'positive' : player.trendState === 'cold' ? 'negative' : 'neutral'}
+                  className="text-center"
+                  localContrast
+                  title={trendLabel}
                 >
-                  {injuryLabel}
-                </span>
-              )}
+                  {trendLabel}
+                </CompanionPlayerStatus>
+              ) : null}
+              {player.availabilityStatus ? (
+                <PlayerStatusBadge status={player.availabilityStatus} compact={isCompactPhone} />
+              ) : null}
             </div>
-            <div className="mt-0.5 flex items-center gap-1 min-w-0 whitespace-nowrap overflow-hidden" style={{ minHeight: 16 }}>
-              <span style={{ color: posColor, fontWeight: 600, fontSize: layout.metaFontSize }}>{player.position}</span>
-              <span style={{ color: 'var(--color-label-tertiary)', fontSize: layout.metaFontSize }}>{player.team}</span>
-              {player.oppTeam && (
-                <span style={{ color: 'var(--color-label-quaternary)', fontSize: layout.metaFontSize - 1 }}>
-                  vs {player.oppTeam}
-                </span>
-              )}
-            </div>
-          </div>
-
-          <div className="shrink-0 flex items-center justify-start gap-1.5 self-center">
-            <span
-              className="shrink-0 font-bold px-1 py-1 rounded-lg text-center"
-              style={{
-                width: layout.hotWidth,
-                background: trendBg,
-                color: trendColor,
-                fontSize: isCompactPhone ? 8 : 9,
-              }}
-            >
-              {trendLabel}
-            </span>
-
-            {!isCompactPhone && (player.teamTheme.logoKey ? (
-              <img
-                src={`https://a.espncdn.com/i/teamlogos/nfl/500/${player.teamTheme.logoKey}.png`}
-                alt=""
-                aria-hidden="true"
-                className="shrink-0 self-center"
-                style={{ width: 'auto', height: 44, maxWidth: 44, objectFit: 'contain', opacity: 0.72 }}
-                onError={e => { e.target.style.display = 'none'; }}
-              />
-            ) : (
-              <div className="w-11 shrink-0" />
-            ))}
-          </div>
-        </div>
-
-        <MetricCell
-          emphasis
-          color={player.projected != null
-            ? (sortBy === 'projected' ? 'var(--color-label)' : 'var(--color-label-secondary)')
-            : 'var(--color-label-quaternary)'}
-        >
-          {player.projected != null ? player.projected.toFixed(1) : '-'}
-        </MetricCell>
-
-        {layout.showSeason && (
-          <MetricCell
-            emphasis
-            color={sortBy === 'season' ? 'var(--color-label)' : 'var(--color-label-secondary)'}
-          >
-            {player.pts.toFixed(1)}
-          </MetricCell>
-        )}
-
-        <MetricCell
-          emphasis
-          color={sortBy === 'recent' ? 'var(--color-label)' : 'var(--color-label-secondary)'}
-        >
-          {player.recentAvg > 0 ? player.recentAvg.toFixed(1) : '-'}
-        </MetricCell>
-      </button>
+          ) : null,
+          <CompanionPlayerMetric
+            key="projected"
+            compact
+            align="center"
+            value={metricValue(player.projected != null ? player.projected.toFixed(1) : '-', projectedColor)}
+          />,
+          layout.showSeason ? (
+            <CompanionPlayerMetric
+              key="season"
+              compact
+              align="center"
+              value={metricValue(player.pts.toFixed(1), seasonColor)}
+            />
+          ) : null,
+          <CompanionPlayerMetric
+            key="recent"
+            compact
+            align="center"
+            value={metricValue(player.recentAvg > 0 ? player.recentAvg.toFixed(1) : '-', recentColor)}
+          />,
+        ].filter(Boolean)}
+        style={{
+          columnGap: layout.gap,
+          borderRadius: 0,
+          padding: `${layout.verticalPadding}px ${layout.sidePadding}px`,
+          borderLeftWidth: WAIVER_ROW_LEFT_BORDER,
+        }}
+      />
     </div>
   );
 }

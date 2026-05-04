@@ -6,24 +6,15 @@ import { useSleeperLeague, useSleeperStats } from '../context/SleeperContext';
 import { useTheme } from '../context/ThemeContext';
 import PlayerStatTable, { HonorBadge } from './PlayerStatTable';
 import honorsData from '../data/honors.json';
-import { getTeamPalette } from '../data/teamColors.js';
 import { matchEspnToSleeper } from '../utils/espnSleeperMatch';
 import { STATISTICS_MODES } from '../utils/playerDrilldown';
-
-function hexLuminance(hex) {
-  const r = parseInt(hex.slice(1, 3), 16) / 255;
-  const g = parseInt(hex.slice(3, 5), 16) / 255;
-  const b = parseInt(hex.slice(5, 7), 16) / 255;
-  const lin = c => c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
-}
-
-function darkenHex(hex, amount = 0.28) {
-  const r = Math.max(0, Math.round(parseInt(hex.slice(1, 3), 16) * (1 - amount)));
-  const g = Math.max(0, Math.round(parseInt(hex.slice(3, 5), 16) * (1 - amount)));
-  const b = Math.max(0, Math.round(parseInt(hex.slice(5, 7), 16) * (1 - amount)));
-  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
-}
+import { getTeamVisualTheme } from '../utils/teamVisualTheme.js';
+import {
+  getCompanionInitials,
+  getCompanionPositionColor,
+  getNflTeamLogoUrl,
+  getPositionTextColor,
+} from '../utils/companionAssetVisuals.js';
 
 const YEARS_TO_SHOW = 10;
 
@@ -31,6 +22,14 @@ const MODE_OPTIONS = [
   { id: STATISTICS_MODES.GAME, label: 'Game Stats' },
   { id: STATISTICS_MODES.FANTASY, label: 'Fantasy Values' },
 ];
+
+function getStatusTone(status) {
+  if (!status) return 'neutral';
+  if (status.includes('Reserve') || status === 'Injured Reserve') return 'negative';
+  if (status.includes('Physic') || status.includes('PUP')) return 'info';
+  if (status.includes('Suspend')) return 'neutral';
+  return 'warning';
+}
 
 const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_MODES.GAME, onModeChange, onBack, backLabel, onCompare, onBuildTrade }) => {
   const { getTeamRecord } = usePredictions();
@@ -70,11 +69,28 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_
   const team = teams?.find(t => t.id === teamId);
   const teamRecord = getTeamRecord(teamId);
 
-  const palette = getTeamPalette(teamId);
-  const heroBg = palette ? (darkMode ? palette.darkPrimary : palette.primary) : null;
-  const heroAccent = palette ? (darkMode ? palette.darkSecondary : palette.secondary) : null;
-  const heroOnBg = heroBg && hexLuminance(heroBg) > 0.3 ? '#0C0F14' : '#FFFFFF';
-  const heroOnBgMuted = heroOnBg === '#FFFFFF' ? 'rgba(255,255,255,0.65)' : 'rgba(12,15,20,0.60)';
+  const teamTheme = teamId ? getTeamVisualTheme(teamId, darkMode) : null;
+  const hasTeamGradient = Boolean(teamTheme?.gradient);
+  const heroBg = hasTeamGradient ? teamTheme.gradient : 'var(--color-bg-secondary)';
+  const heroAccent = teamTheme?.borderColor ?? getCompanionPositionColor(playerMeta.position) ?? 'var(--color-accent)';
+  const heroOnBg = hasTeamGradient ? teamTheme.gradientForeground : 'var(--color-label)';
+  const heroOnBgMuted = hasTeamGradient ? teamTheme.gradientMuted : 'var(--color-label-secondary)';
+  const heroSubtle = hasTeamGradient ? teamTheme.gradientSubtle : 'var(--color-fill-secondary)';
+  const positionColor = getCompanionPositionColor(playerMeta.position);
+  const positionTextColor = positionColor ? getPositionTextColor(positionColor) : heroOnBg;
+  const teamLogoUrl = getNflTeamLogoUrl(teamTheme?.logoKey ?? teamId?.toLowerCase());
+  const playerInitials = getCompanionInitials(playerMeta.displayName);
+  const heroStyle = {
+    background: heroBg,
+    '--statistics-hero-accent': heroAccent,
+    '--statistics-hero-fg': heroOnBg,
+    '--statistics-hero-muted': heroOnBgMuted,
+    '--statistics-hero-subtle': heroSubtle,
+    '--statistics-hero-logo-bg': teamTheme?.logoBadgeBg ?? 'var(--color-fill-secondary)',
+    '--statistics-hero-logo-border': teamTheme?.logoBadgeBorder ?? 'var(--color-separator)',
+    '--statistics-position-bg': positionColor ?? heroSubtle,
+    '--statistics-position-fg': positionTextColor,
+  };
 
   // Build year list: current down to the player's rookie season (capped at YEARS_TO_SHOW), plus 'career'.
   // ESPN increments experience.years at end-of-season to count total seasons played (including the
@@ -124,12 +140,6 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_
       setLoadingYears(prev => ({ ...prev, [year]: false }));
     }
   };
-
-  // Eagerly probe all historical years in the background so unavailable ones
-  // are silently removed from the list before the user tries to expand them.
-  useEffect(() => {
-    years.filter(y => y < CURRENT_SEASON).forEach(y => loadYear(y));
-  }, [playerId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load current season stats + game log + career stats + honors on mount
   useEffect(() => {
@@ -220,6 +230,14 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_
   const rookieLabel = isRookie ? 'Rookie Season' : `Active Since ${firstSeason}`;
   const canShowFantasyModes = hasLeague && !!activeScoringSettings;
   const activeMode = canShowFantasyModes ? mode : STATISTICS_MODES.GAME;
+  const heroMetaSegments = [
+    playerMeta.positionName || playerMeta.position,
+    team?.name,
+    rookieLabel,
+    teamRecord
+      ? `${teamRecord.wins}–${teamRecord.losses}${teamRecord.ties > 0 ? `–${teamRecord.ties}` : ''}`
+      : null,
+  ].filter(Boolean);
 
   return (
     <div className="space-y-6">
@@ -236,256 +254,186 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_
       </button>
 
       {/* Profile hero card */}
-      <div
-        className="rounded-xl overflow-hidden shadow-lg relative"
-        style={{
-          background: heroBg
-            ? `linear-gradient(135deg, ${heroBg} 0%, ${darkenHex(heroBg, 0.32)} 100%)`
-            : 'var(--color-bg-secondary)',
-          borderLeft: heroAccent ? `4px solid ${heroAccent}` : undefined,
-        }}
-      >
-        {/* Team logo watermark */}
-        {heroBg && (
+      <div className="statistics-player-hero" style={heroStyle}>
+        {hasTeamGradient && (
           <div
-            className="absolute inset-y-0 right-0 hidden sm:flex items-center pointer-events-none"
+            className="statistics-player-hero__gradient-overlay"
+            style={{ background: teamTheme.gradientOverlay }}
             aria-hidden="true"
-            style={{ paddingRight: '12px' }}
-          >
-            <img
-              src={`https://a.espncdn.com/i/teamlogos/nfl/500/${teamId.toLowerCase()}.png`}
-              alt=""
-              style={{ width: '152px', height: '152px', objectFit: 'contain', opacity: 0.13 }}
-              onError={e => { e.target.style.display = 'none'; }}
-            />
-          </div>
+          />
+        )}
+        {teamLogoUrl && (
+          <img
+            src={teamLogoUrl}
+            alt=""
+            className="statistics-player-hero__watermark"
+            aria-hidden="true"
+            loading="lazy"
+            decoding="async"
+            onError={e => { e.currentTarget.style.display = 'none'; }}
+          />
         )}
 
-        <div className="p-5 sm:p-6 relative">
-          <div className="flex flex-col sm:flex-row items-center sm:items-stretch gap-4 sm:gap-5">
-            {/* Headshot — scales with card height */}
-            <div className="shrink-0 sm:self-stretch">
-              {!headshotError ? (
+        <div className="statistics-player-hero__inner">
+          <div className="statistics-player-hero__avatar-stack">
+            {!headshotError ? (
+              <img
+                src={headshot(playerId)}
+                alt={playerMeta.displayName}
+                className="statistics-player-hero__avatar"
+                onError={() => setHeadshotError(true)}
+              />
+            ) : (
+              <div className="statistics-player-hero__avatar statistics-player-hero__avatar-fallback">
+                {playerInitials}
+              </div>
+            )}
+            <span className="statistics-player-hero__position">
+              {playerMeta.position || '-'}
+            </span>
+          </div>
+
+          <div className="statistics-player-hero__body">
+            <div className="statistics-player-hero__identity-row">
+              <h1 className="statistics-player-hero__name">
+                {playerMeta.displayName}
+              </h1>
+              {playerMeta.jersey && (
+                <span className="statistics-player-hero__jersey">
+                  #{playerMeta.jersey}
+                </span>
+              )}
+              {teamLogoUrl && (
                 <img
-                  src={headshot(playerId)}
-                  alt={playerMeta.displayName}
-                  className="w-24 h-24 sm:w-32 sm:h-full object-cover rounded-lg"
-                  style={{
-                    background: heroBg ? darkenHex(heroBg, 0.45) : 'var(--color-fill)',
-                    minHeight: '96px',
-                  }}
-                  onError={() => setHeadshotError(true)}
+                  src={teamLogoUrl}
+                  alt=""
+                  className="statistics-player-hero__team-logo"
+                  aria-hidden="true"
+                  loading="lazy"
+                  decoding="async"
+                  onError={e => { e.currentTarget.style.display = 'none'; }}
                 />
-              ) : (
-                <div
-                  className="w-24 h-24 sm:w-32 sm:h-full rounded-lg flex items-center justify-center"
-                  style={{
-                    background: heroBg ? darkenHex(heroBg, 0.45) : 'var(--color-fill)',
-                    minHeight: '96px',
-                  }}
-                >
-                  <span className="text-3xl font-bold" style={{ color: heroOnBgMuted }}>
-                    {(playerMeta.displayName ?? '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
-                  </span>
-                </div>
               )}
             </div>
 
-            {/* Info */}
-            <div className="flex-1 text-center sm:text-left min-w-0">
-              <div className="flex flex-col sm:flex-row sm:items-baseline gap-1 sm:gap-3">
-                <h1
-                  className="text-3xl font-display tracking-wide"
-                  style={{ color: heroBg ? heroOnBg : 'var(--color-label)' }}
-                >
-                  {playerMeta.displayName}
-                </h1>
-                {playerMeta.jersey && (
-                  <span
-                    className="text-xl font-semibold"
-                    style={{ color: heroBg ? heroOnBgMuted : 'var(--color-label-tertiary)' }}
-                  >
-                    #{playerMeta.jersey}
-                  </span>
-                )}
-              </div>
-
-              <div
-                className="mt-1 flex flex-wrap justify-center sm:justify-start items-center gap-x-2 gap-y-0.5 text-sm"
-                style={{ color: heroBg ? heroOnBgMuted : 'var(--color-label-secondary)' }}
-              >
-                <span className="font-semibold" style={{ color: heroBg ? heroOnBg : 'var(--color-label)' }}>
-                  {playerMeta.positionName || playerMeta.position}
+            <div className="statistics-player-hero__meta">
+              {heroMetaSegments.map(segment => (
+                <span key={segment} className="statistics-player-hero__meta-item">
+                  {segment}
                 </span>
-                {team && (
-                  <>
-                    <span>·</span>
-                    <span>{team.name}</span>
-                  </>
-                )}
-                <span>·</span>
-                <span>{rookieLabel}</span>
-                {teamRecord && (
-                  <>
-                    <span>·</span>
-                    <span>
-                      {teamRecord.wins}–{teamRecord.losses}
-                      {teamRecord.ties > 0 ? `–${teamRecord.ties}` : ''}
+              ))}
+            </div>
+
+            <div className="statistics-player-hero__pills">
+              {isRookie && (
+                <span className="statistics-player-hero__pill is-positive">
+                  Rookie Season
+                </span>
+              )}
+              {playerMeta.status && playerMeta.status !== 'Active' && (
+                <span className={`statistics-player-hero__pill is-${getStatusTone(playerMeta.status)}`}>
+                  {playerMeta.status}
+                </span>
+              )}
+
+              {hasLeague && sleeperId && (
+                <span className={`statistics-player-hero__roster-pill ${isOnMyRoster ? 'is-rostered' : 'is-target'}`}>
+                  <span className="statistics-player-hero__roster-dot" aria-hidden="true" />
+                  {isOnMyRoster ? 'On Your Roster' : 'Trade Target'}
+                </span>
+              )}
+            </div>
+
+            <div
+              className="statistics-player-hero__actions"
+              onMouseLeave={() => { if (careerHighlights.length > 0) setShowCareerPopover(false); }}
+            >
+              {careerHighlights.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowCareerPopover(prev => !prev)}
+                  onMouseEnter={() => setShowCareerPopover(true)}
+                  className="statistics-player-hero__action statistics-player-hero__action--ghost"
+                  aria-pressed={showCareerPopover}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M3 12h4l3-9 4 18 3-9h4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  Career
+                  <svg
+                    width="10" height="10" viewBox="0 0 16 16" fill="none" aria-hidden="true"
+                    className="statistics-player-hero__chevron"
+                    style={{ transform: showCareerPopover ? 'rotate(-90deg)' : undefined }}
+                  >
+                    <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </button>
+              )}
+
+              {showCareerPopover ? (
+                careerHighlights.map(({ label, value }) => (
+                  <div
+                    key={label}
+                    className="statistics-player-hero__career-stat career-stat-enter"
+                  >
+                    <span className="statistics-player-hero__career-value">
+                      {value}
                     </span>
-                  </>
-                )}
-              </div>
-
-              {/* Inline indicators: status badge + roster indicator */}
-              <div className="mt-2 flex flex-wrap justify-center sm:justify-start items-center gap-2">
-                {isRookie && (
-                  <span
-                    className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold uppercase"
-                    style={{ background: '#10b981', color: '#fff' }}
-                  >
-                    Rookie Season
-                  </span>
-                )}
-                {playerMeta.status && playerMeta.status !== 'Active' && (
-                  <span
-                    className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold uppercase"
-                    style={{
-                      background: playerMeta.status.includes('Reserve') || playerMeta.status === 'Injured Reserve'
-                        ? '#ef4444'
-                        : playerMeta.status.includes('Physic') || playerMeta.status.includes('PUP')
-                          ? '#8b5cf6'
-                          : playerMeta.status.includes('Suspend')
-                            ? '#6b7280'
-                            : '#f59e0b',
-                      color: '#fff',
-                    }}
-                  >
-                    {playerMeta.status}
-                  </span>
-                )}
-
-                {hasLeague && sleeperId && (
-                  <span
-                    className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.12em]"
-                    style={{
-                      color: isOnMyRoster ? 'var(--color-signature)' : (heroBg ? heroOnBgMuted : 'var(--color-label-tertiary)'),
-                    }}
-                  >
-                    <span
-                      className="h-1.5 w-1.5 rounded-full"
-                      style={{ background: isOnMyRoster ? 'var(--color-signature)' : 'currentColor' }}
-                    />
-                    {isOnMyRoster ? 'On Your Roster' : 'Trade Target'}
-                  </span>
-                )}
-              </div>
-
-              {/* Action row: career toggle + buttons OR career stats */}
-              <div
-                className="mt-3 flex flex-wrap justify-center sm:justify-start items-center gap-2"
-                style={{ minHeight: '40px' }}
-                onMouseLeave={() => { if (careerHighlights.length > 0) setShowCareerPopover(false); }}
-              >
-                {/* Career trigger — always visible */}
-                {careerHighlights.length > 0 && (
-                  <button
-                    onClick={() => setShowCareerPopover(prev => !prev)}
-                    onMouseEnter={() => setShowCareerPopover(true)}
-                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold cursor-pointer transition-all duration-150 active:scale-[0.97]"
-                    style={{
-                      background: heroBg
-                        ? (heroOnBg === '#FFFFFF' ? 'rgba(255,255,255,0.10)' : 'rgba(12,15,20,0.08)')
-                        : 'var(--color-fill)',
-                      color: heroBg ? heroOnBg : 'var(--color-label)',
-                    }}
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                      <path d="M3 12h4l3-9 4 18 3-9h4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                    Career
-                    <svg
-                      width="10" height="10" viewBox="0 0 16 16" fill="none" aria-hidden="true"
-                      className="transition-transform duration-200"
-                      style={{
-                        transform: showCareerPopover ? 'rotate(-90deg)' : undefined,
-                        transitionTimingFunction: 'cubic-bezier(0.32, 0.72, 0, 1)',
-                      }}
+                    <span className="statistics-player-hero__career-label">
+                      {label}
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <>
+                  {onBuildTrade && hasLeague && sleeperId && isOnMyRoster && (
+                    <button
+                      type="button"
+                      onClick={() => onBuildTrade({ sleeperId, view: 'upgrade' })}
+                      className="statistics-player-hero__action statistics-player-hero__action--outline group"
                     >
-                      <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  </button>
-                )}
-
-                {/* Career stats (inline, replaces buttons) OR action buttons */}
-                {showCareerPopover ? (
-                  careerHighlights.map(({ label, value, color }) => (
-                    <div
-                      key={label}
-                      className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm career-stat-enter"
-                      style={{
-                        background: heroBg
-                          ? (heroOnBg === '#FFFFFF' ? 'rgba(255,255,255,0.08)' : 'rgba(12,15,20,0.07)')
-                          : 'var(--color-fill-secondary)',
-                      }}
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path d="M12 19V5M6 11l6-6 6 6" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                      Upgrade
+                      <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true" className="statistics-player-hero__arrow">
+                        <path d="M6 3l5 5-5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </button>
+                  )}
+                  {onCompare && (
+                    <button
+                      type="button"
+                      onClick={() => onCompare(playerMeta)}
+                      className="statistics-player-hero__action statistics-player-hero__action--outline group"
                     >
-                      <span
-                        className={`font-bold ${heroBg ? '' : color}`}
-                        style={heroBg ? { color: heroOnBg } : undefined}
-                      >
-                        {value}
-                      </span>
-                      <span
-                        className="text-[10px] uppercase tracking-wider font-semibold"
-                        style={{ color: heroBg ? heroOnBgMuted : 'var(--color-label-tertiary)' }}
-                      >
-                        {label}
-                      </span>
-                    </div>
-                  ))
-                ) : (
-                  <>
-                    {onCompare && (
-                      <button
-                        onClick={() => onCompare(playerMeta)}
-                        className="group inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold cursor-pointer transition-opacity duration-200 active:scale-[0.97] hover:brightness-110"
-                        style={{
-                          background: 'transparent',
-                          color: heroBg ? heroOnBg : 'var(--color-label)',
-                          border: `1.5px solid ${heroBg ? (heroOnBg === '#FFFFFF' ? 'rgba(255,255,255,0.35)' : 'rgba(12,15,20,0.25)') : 'var(--color-separator)'}`,
-                        }}
-                      >
-                        <svg width="15" height="15" viewBox="0 0 26 26" fill="none" aria-hidden="true">
-                          <rect x="3" y="5" width="8" height="16" rx="2" stroke="currentColor" strokeWidth="1.8" />
-                          <rect x="15" y="5" width="8" height="16" rx="2" stroke="currentColor" strokeWidth="1.8" />
-                        </svg>
-                        Compare
-                        <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true" className="opacity-40 group-hover:opacity-70 transition-opacity">
-                          <path d="M6 3l5 5-5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                      </button>
-                    )}
-                    {onBuildTrade && hasLeague && sleeperId && (
-                      <button
-                        onClick={() => onBuildTrade({ sleeperId, side: isOnMyRoster ? 'give' : 'get' })}
-                        className="group inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold cursor-pointer transition-opacity duration-200 active:scale-[0.97] hover:brightness-110"
-                        style={{
-                          background: 'var(--color-signature)',
-                          color: 'var(--color-signature-fg)',
-                          boxShadow: '0 2px 8px rgba(245,183,0,0.25)',
-                        }}
-                      >
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                          <path d="M8 7h11M8 17h11M13 4l3 3-3 3M13 14l3 3-3 3M3 7h1M3 17h1" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                        {isOnMyRoster ? 'Trade Away' : 'Build Trade'}
-                        <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true" className="opacity-50 group-hover:opacity-80 transition-opacity">
-                          <path d="M6 3l5 5-5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                      </button>
-                    )}
-                  </>
-                )}
-              </div>
+                      <svg width="15" height="15" viewBox="0 0 26 26" fill="none" aria-hidden="true">
+                        <rect x="3" y="5" width="8" height="16" rx="2" stroke="currentColor" strokeWidth="1.8" />
+                        <rect x="15" y="5" width="8" height="16" rx="2" stroke="currentColor" strokeWidth="1.8" />
+                      </svg>
+                      Compare
+                      <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true" className="statistics-player-hero__arrow">
+                        <path d="M6 3l5 5-5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </button>
+                  )}
+                  {onBuildTrade && hasLeague && sleeperId && (
+                    <button
+                      type="button"
+                      onClick={() => onBuildTrade({ sleeperId, side: isOnMyRoster ? 'give' : 'get' })}
+                      className="statistics-player-hero__action statistics-player-hero__action--signature group"
+                    >
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path d="M8 7h11M8 17h11M13 4l3 3-3 3M13 14l3 3-3 3M3 7h1M3 17h1" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                      {isOnMyRoster ? 'Trade Away' : 'Build Trade'}
+                      <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true" className="statistics-player-hero__arrow">
+                        <path d="M6 3l5 5-5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </button>
+                  )}
+                </>
+              )}
             </div>
           </div>
         </div>

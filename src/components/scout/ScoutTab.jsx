@@ -3,7 +3,6 @@ import { ROOKIES_2026 } from '../../data/rookies';
 import { DRAFT_ORDER_SOURCE_2026, DRAFT_PICKS_2026 } from '../../data/draftPicks';
 import { DRAFT_RESULTS_2026, DRAFT_RESULTS_SOURCE_2026 } from '../../data/draftResults';
 import { TEAM_NAMES, getTeamPalette } from '../../data/teamColors';
-import useBodyScrollLock from '../../hooks/useBodyScrollLock';
 import { hasCombineData, playerPhotoUrl, photoFallback, positionColor } from './scoutUtils';
 import { collegeLogoUrl, nflLogoUrl } from './scoutTeamLogos';
 import ScoutPositionalSpotlight from './ScoutPositionalSpotlight';
@@ -12,6 +11,7 @@ import ScoutPlayerSheet from './ScoutPlayerSheet';
 import ScoutCompareSheet from './ScoutCompareSheet';
 import ScoutStatisticsModal from './ScoutStatisticsModal';
 import { scoutDebug, scoutDebugTable } from './scoutDebug';
+import Modal from '../Modal';
 
 const SORT_OPTIONS = [
   { value: 'projectedOverall', label: 'Projected Pick' },
@@ -1840,30 +1840,15 @@ function ScoutPickRow({ pick, teamRemainingCount, onClick }) {
 }
 
 function ScoutTeamPicksDialog({ teamName, picks, onClose }) {
-  useBodyScrollLock();
-
   const team = getDraftTeamMeta(teamName);
 
-  useEffect(() => {
-    const handleKeyDown = (event) => {
-      if (event.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
-
   return (
-    <div className="scout-team-picks-overlay" role="presentation" onClick={onClose}>
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={`${teamName} draft picks`}
-        className="scout-team-picks-dialog"
-        onClick={event => event.stopPropagation()}
-      >
-        <div className="scout-sheet-handle-row scout-team-picks-handle">
-          <div className="scout-sheet-handle" />
-        </div>
+    <Modal
+      onClose={onClose}
+      mobileSheet
+      ariaLabel={`${teamName} draft picks`}
+      containerClassName="scout-team-picks-dialog flex flex-col"
+    >
         <div
           className="scout-team-picks-hero"
           style={{
@@ -1915,8 +1900,7 @@ function ScoutTeamPicksDialog({ teamName, picks, onClose }) {
             ))}
           </div>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 

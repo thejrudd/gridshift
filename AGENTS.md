@@ -6,7 +6,7 @@
 - **Dark mode**: `.dark` class on `<html>`
 - **PWA**: vite-plugin-pwa + nginx in Docker
 - **Active branch**: `main` — all work ships directly here
-- **Current version**: v7.0.4
+- **Current version**: v7.3
 
 ## API Secret Handling
 - Any BALLDONTLIE, CFBD/CollegeFootballData, or similar paid API key must be treated as a secret and must never be committed into the repo or exposed in the client bundle.
@@ -27,6 +27,7 @@ Prefer the docs folder for current architecture and implementation references in
 - `docs/Where To Edit.md` — feature-to-file edit guide
 - `docs/Design System Quick Ref.md` — key rules checklist and team color palette details
 - `docs/Design Tokens.md` — full token table and design-system details
+- `docs/Companion Shared Rows.md` — canonical Companion/Trade selector row rendering, team-gradient contrast, player row slots, badges, logos, and responsive row rules
 - `docs/Scoring Call Sites.md` — full scoring audit checklist
 - `docs/Trade Engine.md` — Trade engine architecture, explanation rules, and maintenance reference
 - `docs/Trade Proposal Cards.md` — Trade proposal card sizing, content priority, and no-clipping rules
@@ -42,6 +43,7 @@ All colors via CSS custom properties in `src/index.css` — never hardcoded Tail
 Critical rules (apply to every UI change):
 - `--color-signature` (`#F5B700`) decorative only — never body text. Use `--color-signature-fg` for text ON signature backgrounds.
 - `font-size: 16px` on all inputs (prevents iOS auto-zoom). Safe areas: `env(safe-area-inset-bottom)` on fixed bottom bars. Motion: `cubic-bezier(0.32, 0.72, 0, 1)`.
+- Companion and Trade-adjacent player/asset selector rows must use the shared row system documented in `docs/Companion Shared Rows.md`. Do not recreate local team-gradient, logo/avatar fallback, status badge, selector button, or gradient contrast logic in feature files.
 
 ---
 
@@ -88,6 +90,12 @@ After committing: do NOT run `git push` — the user pushes manually.
 ### CHANGELOG.md Rules
 - Never use "Unreleased" as a section header — always assign changes to a specific version number, even if not yet released.
 - If the version number is unclear, ask the user before writing the entry.
+
+### GitHub Release Notes Format
+- When generating GitHub release notes, use Markdown with the release title as `# vX.Y[.Z] - Short Release Theme`.
+- Organize notes in this order: `## New Features`, then `## Improvements`, then `## Bug Fixes`.
+- Focus the notes on the changes included between the previous released version and the requested release tag/version.
+- Keep bullets user-facing and grouped by feature area; avoid internal implementation detail unless it helps explain the release impact.
 
 ### Commit Message Rules
 - Version/release commits must use a glance-able subject in this format: `vX.Y[.Z] - Short Release Theme`.
@@ -191,6 +199,8 @@ Always compute rank (`i + 1`) on the full sorted list, then filter for display. 
 The early-return guard must be `return ktcVal` (not `return ktcVal ?? 0`). Returning `0` for players with no KTC match causes `fmtKtcValue(0)` to render "0" instead of "—", since `adjVal ?? it.val` only falls back on null/undefined, not `0`.
 
 ### Team logo alignment in grid rows
+Before adding or changing Companion/Trade-adjacent player rows, read `docs/Companion Shared Rows.md`. Use `CompanionPlayerRow`, `CompanionAssetRow`, `CompanionSelectorControls`, `teamVisualTheme.js`, and `companionAssetVisuals.js` as the single source of truth for row visuals.
+
 When team logos (or any element like "ROSTERED" badges) must sit immediately after a player name **and** be horizontally aligned across all rows, use this three-part pattern:
 
 1. **Measure the longest name** with a canvas — `measureMaxNameWidth(players)` renders each name at the exact CSS font and returns the widest pixel width.

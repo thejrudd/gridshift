@@ -117,6 +117,11 @@ function fmtPts(rawVal, scoringVal) {
   return pts.toFixed(1);
 }
 
+function hasNonZeroStat(value) {
+  const num = parseFloat(value);
+  return !isNaN(num) && num !== 0;
+}
+
 // Format a scoring rate as a compact label, e.g. "+4 pts", "0.04/unit", "−2 pts"
 function fmtScoringRate(scoringVal) {
   if (!scoringVal) return null;
@@ -154,7 +159,7 @@ function buildPlayerData(id, players, seasonStats, weeklyStats, scoringSettings,
   const seasonPts = stats ? calcPointsFromTotals(stats, scoringSettings, pos) : null;
   const avgPPG    = getAvgPPG(weekly, scoringSettings, pos);
   const last4     = getRecentAvg(weekly, scoringSettings, 4, pos);
-  const rank      = positionalRanks[id] ?? null;
+  const rank      = seasonPts > 0 ? (positionalRanks[id] ?? null) : null;
 
   // Season high/low single-game scores (actual floor & ceiling)
   const weekPts = weekly.map(w => calcPoints(w, scoringSettings, pos)).filter(s => s > 0);
@@ -214,8 +219,11 @@ function buildStatRankMaps(statKeys, sleeperIdA, sleeperIdB, seasonStats, player
     for (const pos of activePosSet) {
       const pList = byPos[pos] ?? [];
       const withVal = pList
-        .map(p => ({ id: p.id, pts: (parseFloat(p.stats?.[statKey] ?? 0) || 0) * scoringVal }))
-        .filter(p => p.pts !== 0);
+        .map(p => {
+          const raw = parseFloat(p.stats?.[statKey] ?? 0) || 0;
+          return { id: p.id, raw, pts: raw * scoringVal };
+        })
+        .filter(p => p.raw !== 0 && p.pts !== 0);
       // Higher pts = better rank — works for both positive and negative scoring
       withVal.sort((a, b) => b.pts - a.pts);
       withVal.forEach((p, i) => { rankForKey[p.id] = i + 1; });
@@ -231,7 +239,7 @@ function buildStatRankMaps(statKeys, sleeperIdA, sleeperIdB, seasonStats, player
  * Props:
  *   sleeperIdA / sleeperIdB - matched Sleeper player IDs (string | null)
  */
-export default function CompareFantasyPanel({ sleeperIdA, sleeperIdB }) {
+export default function CompareFantasyPanel({ sleeperIdA, sleeperIdB, onEdgeSummaryChange }) {
   const {
     hasLeague, players, league,
     rosters, seasonStats, weeklyStats,
@@ -295,7 +303,7 @@ export default function CompareFantasyPanel({ sleeperIdA, sleeperIdB }) {
       const activeKeys = keys.filter(k => {
         if (!mergedScoring[k]) return false; // stat not scored in this league
         const vA = statsA[k]; const vB = statsB[k];
-        return (vA && vA !== 0) || (vB && vB !== 0);
+        return hasNonZeroStat(vA) || hasNonZeroStat(vB);
       });
       return activeKeys.length ? { heading, keys: activeKeys } : null;
     }).filter(Boolean);
@@ -307,6 +315,58 @@ export default function CompareFantasyPanel({ sleeperIdA, sleeperIdB }) {
     const allKeys = activeSections.flatMap(s => s.keys);
     return buildStatRankMaps(allKeys, sleeperIdA, sleeperIdB, seasonStats, players, mergedScoring);
   }, [activeSections, sleeperIdA, sleeperIdB, seasonStats, players, mergedScoring]);
+
+  const edgeSummary = useMemo(() => {
+    if (!dataA || !dataB) return null;
+    const rows = [];
+    const addHigher = (numA, numB) => {
+      if (numA == null || numB == null || numA === numB) {
+        if (numA != null && numB != null) rows.push(0);
+        return;
+      }
+      rows.push(numA > numB ? 1 : -1);
+    };
+    const addLower = (numA, numB) => {
+      if (numA == null || numB == null || numA === numB) {
+        if (numA != null && numB != null) rows.push(0);
+        return;
+      }
+      rows.push(numA < numB ? 1 : -1);
+    };
+
+    addHigher(dataA.seasonPts, dataB.seasonPts);
+    addHigher(dataA.avgPPG, dataB.avgPPG);
+    addHigher(dataA.last4, dataB.last4);
+    addHigher(dataA.seasonHigh, dataB.seasonHigh);
+    addHigher(dataA.seasonLow, dataB.seasonLow);
+    addHigher(dataA.gamesPlayed, dataB.gamesPlayed);
+    addHigher(dataA.snapPct, dataB.snapPct);
+    addLower(dataA.rank?.rank ?? null, dataB.rank?.rank ?? null);
+    addHigher(dataA.projection?.projected, dataB.projection?.projected);
+
+    for (const { keys } of activeSections) {
+      for (const statKey of keys) {
+        const scoringVal = mergedScoring[statKey] ?? 0;
+        const rawA = dataA?.seasonStats?.[statKey] ?? null;
+        const rawB = dataB?.seasonStats?.[statKey] ?? null;
+        const ptsA = rawA != null && rawA !== 0 ? rawA * scoringVal : null;
+        const ptsB = rawB != null && rawB !== 0 ? rawB * scoringVal : null;
+        addHigher(ptsA, ptsB);
+      }
+    }
+
+    if (!rows.length) return null;
+    return {
+      leadA: rows.filter(value => value === 1).length,
+      leadB: rows.filter(value => value === -1).length,
+      pushRows: rows.filter(value => value === 0).length,
+      measuredRows: rows.length,
+    };
+  }, [activeSections, dataA, dataB, mergedScoring]);
+
+  useEffect(() => {
+    onEdgeSummaryChange?.(edgeSummary);
+  }, [edgeSummary, onEdgeSummaryChange]);
 
   // ── Render guards ─────────────────────────────────────────────────────────
 
@@ -496,8 +556,10 @@ export default function CompareFantasyPanel({ sleeperIdA, sleeperIdB }) {
             const scoringVal = mergedScoring[statKey] ?? 0;
             const rawA = dataA?.seasonStats?.[statKey] ?? null;
             const rawB = dataB?.seasonStats?.[statKey] ?? null;
-            const ptsA = rawA != null && rawA !== 0 ? rawA * scoringVal : null;
-            const ptsB = rawB != null && rawB !== 0 ? rawB * scoringVal : null;
+            const hasStatA = hasNonZeroStat(rawA);
+            const hasStatB = hasNonZeroStat(rawB);
+            const ptsA = hasStatA ? rawA * scoringVal : null;
+            const ptsB = hasStatB ? rawB * scoringVal : null;
             const rankMap = statRankMaps[statKey] ?? {};
             return (
               <CompareRow
@@ -508,8 +570,8 @@ export default function CompareFantasyPanel({ sleeperIdA, sleeperIdB }) {
                 valB={fmtPts(rawB, scoringVal)}
                 numA={ptsA} numB={ptsB}
                 higher="better"
-                rankA={sleeperIdA ? ordinal(rankMap[sleeperIdA]) : null}
-                rankB={sleeperIdB ? ordinal(rankMap[sleeperIdB]) : null}
+                rankA={sleeperIdA && hasStatA ? ordinal(rankMap[sleeperIdA]) : null}
+                rankB={sleeperIdB && hasStatB ? ordinal(rankMap[sleeperIdB]) : null}
               />
             );
           })}
@@ -590,4 +652,3 @@ function CompareRow({ label, scoringLabel, valA, valB, numA, numB, higher, highl
     </div>
   );
 }
-

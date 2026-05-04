@@ -997,3 +997,17 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Mobile Companion preview sheet** - Companion roster, rankings, league, waiver, and defense views now use a compact mobile preview sheet before opening the full Statistics player page.
 - **Shared drilldown metadata** - Sleeper-to-ESPN player metadata mapping and Statistics mode constants now live in a shared helper so Companion routes use one consistent player handoff path.
 - **Design guidance retained** - Added design-system rules for horizontal overflow indicators so dense stat surfaces expose hidden columns without blocking touch or drag interaction.
+
+---
+
+## v7.3 - Trade Module Decomposition
+*2026-05-04*
+
+- **Trade module decomposition** - Split the monolithic Trade workspace into focused Agent, Intelligence, Upgrade, valuation, roster browse, proposal card, and shared UI modules so future Trade work is easier to reason about and edit safely.
+- **Opportunity engine decomposition** - Broke the large opportunity engine into roster analysis, proposal building, upgrade packaging, opportunity card, position, and shared helper modules while preserving Trade Intelligence and Upgrade Finder behavior.
+- **Shared Companion/Trade rows** - Added canonical player/asset selector rows, status badges, selector controls, team-gradient contrast helpers, and asset visuals used across Companion rows, Trade pickers, roster browse, proposal cards, and upgrade surfaces.
+- **Trade Agent usability polish** - Refined desktop and mobile roster shelves, removed redundant partner roster browse access when the shelf covers that workflow, made mobile shelf toggles/chips easier to tap, and kept Color Commentary hidden until both sides of a trade have assets.
+- **Trade proposal and upgrade polish** - Improved proposal application so full packages carry into Agent, stabilized value trend rows and commentary selection, kept draft pick valuation on the shared Trade Agent path, and fitted Upgrade result cards inside narrower side-by-side layouts.
+- **Companion row fixes** - Improved local contrast for team-gradient row labels and status badges, preserved avatar fallback layout when images fail, aligned rostered labels/logos, and kept Roster player identity text from truncating too aggressively.
+- **Statistics mobile fixes** - Added left/right overflow indicators for expanded game logs, tightened mobile Result column spacing, froze BYE rows with the identity columns, and made the mobile stats snapshot sheet adapt to shorter viewports.
+- **Mobile header scroll polish** - Removed the NavBar scroll-state separator that appeared above the top tab bar and adjusted mobile safe-area offsets so PWA content no longer hides underneath frozen navigation rows.

@@ -4,8 +4,8 @@ This note defines the layout contract for Trade proposal player and draft pick c
 
 Primary implementation:
 - `src/components/companion/CompanionTrade.jsx`
-- `ProposalPlayerCard(...)`
-- `TradeProposalItem(...)`
+- `src/components/companion/trade/ProposalPlayerCard.jsx`
+- `src/components/companion/trade/TradeProposalPanel.jsx` — `TradeProposalItem(...)`
 
 ## Core Contract
 
@@ -41,7 +41,7 @@ Meaning:
 - On compact layouts, card width is capped by viewport width, viewport height, and an absolute rem cap.
 - On wide `2xl` layouts, cards can sit in a row and use a larger desktop-oriented width. Container width should remain fluid.
 - Layouts that promise three visible cards must calculate width from available container width, gap size, and card count.
-- Upgrade result cards switch to side-fitted card math at the same `1200px` breakpoint where their Give/Get sides become side-by-side.
+- Upgrade and Intelligence result rows switch to side-fitted card math at the same `1200px` breakpoint where their Give/Get sides become side-by-side.
 - When either side has to shrink cards to fit, both Give/Get sides use the same shared card scale based on the larger visible side.
 - Give/Get sides stack below `2xl` and become side-by-side at `2xl`. Each side should use the available proposal width; do not apply fixed side-container caps that clip card rows while page space is still available.
 - Each Give/Get side owns its own horizontal card row. Do not require all cards for the full trade to fit before allowing side-level horizontal layout.
@@ -117,7 +117,7 @@ Team logo:
 - Player cards keep the team logo badge in the top-right.
 - `topRightSlot` may replace the logo only for explicit controls such as remove buttons.
 - Team colors may be used for background, border, glow, and logo badge treatment.
-- Trade Upgrade result cards use the documented `DESIGN.md` team-gradient recipe for the player hero surface: mode-specific primary/secondary palette colors, a darkened primary stop at 58%, subtle mode overlay, and foreground chosen by contrast across the gradient stops.
+- Trade Upgrade result cards use the documented `DESIGN.md` team-gradient recipe from `getTeamVisualTheme()`: mode-specific palette colors, right-logo gradient direction for side-sensitive teams, shared overlays, and region-aware foreground contrast for left-side identity text and right-side values.
 - Team colors must not be used for trade value text.
 
 ## Stat Rules

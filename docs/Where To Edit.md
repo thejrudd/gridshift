@@ -70,9 +70,34 @@ This page is the quick "open these files first" guide.
 ## Trade Value, Picks, And KTC
 
 - `src/components/companion/CompanionTrade.jsx`
+- `src/components/companion/trade/TradeProposalBuilder.jsx`
+- `src/components/companion/trade/TradeProposalPanel.jsx`
+- `src/components/companion/trade/UpgradeFinderPage.jsx`
+- `src/components/companion/trade/ProposalPlayerCard.jsx`
+- `src/components/companion/trade/ValuationInfoSheet.jsx`
+- `src/components/companion/trade/RosterBrowseModal.jsx`
+- `src/components/companion/TradeRosterPicker.jsx`
 - `src/utils/tradeEngine.js`
+- `src/utils/tradeValue.js`
+- `src/utils/opportunityEngine.js`
+- `src/utils/opportunity/`
 - `src/utils/ktcApi.js`
 - `src/utils/idpEngine.js`
+
+## Companion And Trade Selector Rows
+
+Start with [[Companion Shared Rows]] for the design contract.
+
+- `src/components/companion/CompanionPlayerRow.jsx` — shared player row renderer and row slot API.
+- `src/components/companion/CompanionAssetRow.jsx` — shared player/pick/manager asset selector row.
+- `src/components/companion/CompanionSelectorControls.jsx` — shared rails, buttons, segmented controls, and search fields.
+- `src/components/companion/PlayerStatusBadge.jsx` — shared availability/status badge.
+- `src/hooks/useCompanionPlayerLocalContrast.js` — local gradient contrast measurement for badges and row overlay labels.
+- `src/utils/teamVisualTheme.js` — canonical team theme/gradient/contrast source.
+- `src/utils/companionAssetVisuals.js` — player image, team logo, position badge, and fallback visual helpers.
+- `src/index.css` — `.companion-player-row`, selector, and asset-row CSS.
+
+Feature screens such as Roster, League, Rankings, Waiver, Matchup, Heatmap drilldowns, Trade pickers, roster browse, and Upgrade Finder should pass contextual data into these shared primitives instead of rebuilding row styling locally.
 
 ## Scout
 

@@ -560,9 +560,11 @@ const GAME_STAT_EXTRA_ORDER = [
 
 const GAME_STAT_EXTRA_ORDER_INDEX = new Map(GAME_STAT_EXTRA_ORDER.map((key, index) => [key, index]));
 const COMPACT_GAME_IDENTITY_WIDTHS = [88, 48, 70, 132];
-const MOBILE_COMPACT_GAME_IDENTITY_WIDTHS = [30, 38, 64, 98];
+const MOBILE_COMPACT_GAME_IDENTITY_WIDTHS = [30, 38, 64, 64];
 const COMPACT_GAME_STAT_WIDTH = 54;
 const MOBILE_COMPACT_GAME_STAT_WIDTH = 48;
+const EXPANDED_GAME_IDENTITY_WIDTHS = [96, 52, 76, 132];
+const EXPANDED_GAME_STAT_WIDTH = 88;
 
 function getCompactGameLogSizing(width) {
   const isMobile = width < 640;
@@ -1282,14 +1284,17 @@ const PlayerStatTable = ({ year, statsJson, position, sleeperId = null, expanded
     () => new Map(sleeperWeeklyRows.map((weekEntry) => [Number(weekEntry.week), weekEntry])),
     [sleeperWeeklyRows],
   );
-  const fantasyRankByOption = useMemo(
-    () => buildFantasyOptionRankMap(sleeperSeasonStats, sleeperPlayers, scoringSettings),
-    [scoringSettings, sleeperPlayers, sleeperSeasonStats],
-  );
-  const fantasyPositionRankByOption = useMemo(
-    () => buildFantasyOptionPositionRankMap(sleeperSeasonStats, sleeperPlayers, scoringSettings),
-    [scoringSettings, sleeperPlayers, sleeperSeasonStats],
-  );
+  const shouldBuildFantasyRanks = canShowFantasyValue && showFantasyOnly && fantasyTotalsByKey.size > 0;
+  const fantasyRankByOption = useMemo(() => (
+    shouldBuildFantasyRanks
+      ? buildFantasyOptionRankMap(sleeperSeasonStats, sleeperPlayers, scoringSettings)
+      : new Map()
+  ), [scoringSettings, shouldBuildFantasyRanks, sleeperPlayers, sleeperSeasonStats]);
+  const fantasyPositionRankByOption = useMemo(() => (
+    shouldBuildFantasyRanks
+      ? buildFantasyOptionPositionRankMap(sleeperSeasonStats, sleeperPlayers, scoringSettings)
+      : new Map()
+  ), [scoringSettings, shouldBuildFantasyRanks, sleeperPlayers, sleeperSeasonStats]);
 
   const fantasyValueSections = useMemo(() => {
     if (!showFantasyOnly || fantasyTotalsByKey.size === 0) return [];
@@ -1629,8 +1634,12 @@ const GameLog = ({
   const expandedGameStats = showMoreStats && !fantasyOnly;
   const useExpandedStatLayout = fantasyOnly || expandedGameStats;
   const [scrollIndicators, setScrollIndicators] = useState({ left: false, right: false });
-  const expandedGameIdentityWidths = [96, 52, 76, 132];
-  const expandedGameStatWidth = 88;
+  const expandedGameIdentityWidths = isMobileGameLogLayout
+    ? MOBILE_COMPACT_GAME_IDENTITY_WIDTHS
+    : EXPANDED_GAME_IDENTITY_WIDTHS;
+  const expandedGameStatWidth = isMobileGameLogLayout
+    ? MOBILE_COMPACT_GAME_STAT_WIDTH
+    : EXPANDED_GAME_STAT_WIDTH;
   const compactGameIdentityWidths = isMobileGameLogLayout
     ? MOBILE_COMPACT_GAME_IDENTITY_WIDTHS
     : COMPACT_GAME_IDENTITY_WIDTHS;
@@ -1888,15 +1897,21 @@ const GameLog = ({
             const prevIsPost = i > 0 && !!sortedGameLog[i - 1].meta.isPostseason;
             const showPlayoffDivider = !sortConfig && isPost && !prevIsPost;
 
-            // BYE row — simple full-width label
+            // BYE belongs in the frozen Opponent identity column, not the scrollable stat band.
             if (isBye) {
               return (
                 <tr key={game.eventId} className="bg-gray-50/40 dark:bg-gray-800/20 italic">
                   <td className={getStickyIdentityClass(0, `${identityCellPaddingClass} py-1 text-gray-400 dark:text-gray-600 tabular-nums text-[11px]`, 'bg-gray-50 dark:bg-gray-800')} style={getStickyIdentityStyle(0)}>{meta.week}</td>
                   <td className={getStickyIdentityClass(1, `${identityCellPaddingClass} py-1 text-gray-400 dark:text-gray-600 text-[11px]`, 'bg-gray-50 dark:bg-gray-800')} style={getStickyIdentityStyle(1)}>{meta.myTeam ?? '—'}</td>
-                  <td colSpan={2 + cols.length} className={`${identityCellPaddingClass} py-1 text-gray-400 dark:text-gray-600 font-medium tracking-wide`}>
+                  <td className={getStickyIdentityClass(2, `${identityCellPaddingClass} py-1 text-gray-400 dark:text-gray-600 font-medium tracking-wide`, 'bg-gray-50 dark:bg-gray-800')} style={getStickyIdentityStyle(2)}>
                     BYE
                   </td>
+                  <td className={getStickyIdentityClass(3, `${identityCellPaddingClass} py-1 text-gray-400 dark:text-gray-600 font-medium`, 'bg-gray-50 dark:bg-gray-800')} style={getStickyIdentityStyle(3)}>
+                    -
+                  </td>
+                  {cols.length > 0 && (
+                    <td colSpan={cols.length} className={`${statCellClass} bg-gray-50/40 dark:bg-gray-800/20`} aria-hidden="true" />
+                  )}
                 </tr>
               );
             }

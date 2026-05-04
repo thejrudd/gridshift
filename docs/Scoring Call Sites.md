@@ -35,7 +35,7 @@ When making any change to scoring logic (new fields in `DEFAULT_SCORING`/`STAT_T
 | `src/components/companion/CompanionDefense.jsx` | `defenseScoredTable` getValue callback `(wEntry, pos)` — called as `getValue(wEntry, player.position)` |
 | `src/components/companion/PlayerWeeklySheet.jsx` | `calcPoints` — passes `player?.position` |
 | `src/components/companion/CompanionScoring.jsx` | `STAT_GROUPS` — add any new scoring field so it's visible in UI |
-| `src/components/companion/CompanionTrade.jsx` — `ValuationInfoSheet` | Read new scoring settings fields; add `AdjustmentRow` entries; update KTC baseline list |
+| `src/components/companion/trade/ValuationInfoSheet.jsx` | Read new scoring settings fields; add `AdjustmentRow` entries; update KTC baseline list |
 
 ## Compare Tab Components
 

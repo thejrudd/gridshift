@@ -3,7 +3,7 @@ import { useSleeperLeague } from '../../context/SleeperContext';
 import {
   DEFAULT_SCORING, SCORING_PRESETS, applyPreset, detectPreset, importLeagueScoring,
 } from '../../utils/scoringEngine';
-import useBodyScrollLock from '../../hooks/useBodyScrollLock';
+import Modal from '../Modal';
 
 const STAT_GROUPS = [
   {
@@ -84,7 +84,6 @@ const STAT_GROUPS = [
 export default function ScoringSettings({ onClose }) {
   const { scoringSettings, setScoringSettings, league } = useSleeperLeague();
   const [local, setLocal] = useState({ ...DEFAULT_SCORING, ...scoringSettings });
-  useBodyScrollLock();
 
   const preset = detectPreset(local);
 
@@ -114,36 +113,17 @@ export default function ScoringSettings({ onClose }) {
   };
 
   return (
-    <>
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 z-50"
-        style={{ background: 'rgba(0,0,0,0.5)' }}
-        onClick={onClose}
-        aria-hidden="true"
-      />
-
-      {/* Sheet */}
-      <div
-        className="fixed bottom-0 left-0 right-0 z-50 rounded-t-2xl overflow-hidden"
-        style={{
-          background: 'var(--color-bg-secondary)',
-          maxWidth: '640px',
-          marginLeft: 'auto',
-          marginRight: 'auto',
-          maxHeight: '85vh',
-          display: 'flex',
-          flexDirection: 'column',
-          paddingBottom: 'env(safe-area-inset-bottom)',
-        }}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Scoring Settings"
-      >
-        {/* Handle */}
-        <div className="flex justify-center pt-3 pb-1 shrink-0">
-          <div className="w-9 h-1 rounded-full" style={{ background: 'var(--color-fill)' }} />
-        </div>
+    <Modal
+      onClose={onClose}
+      mobileSheet
+      ariaLabel="Scoring Settings"
+      containerClassName="flex flex-col"
+      containerStyle={{
+        background: 'var(--color-bg-secondary)',
+        maxWidth: '640px',
+        maxHeight: '85vh',
+      }}
+    >
 
         {/* Header */}
         <div className="flex items-center px-5 py-3 shrink-0" style={{ borderBottom: '1px solid var(--color-separator)' }}>
@@ -259,7 +239,6 @@ export default function ScoringSettings({ onClose }) {
             Save Scoring Settings
           </button>
         </div>
-      </div>
-    </>
+    </Modal>
   );
 }

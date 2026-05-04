@@ -5,6 +5,7 @@ import {
 } from '../../utils/scoringEngine';
 import { getLeague } from '../../api/sleeperApi';
 import { formatScoringSettingValue } from '../../utils/scoringDisplay';
+import { CompanionSelectorButton, CompanionSegmentedControl } from './CompanionSelectorControls.jsx';
 
 const STAT_GROUPS = [
   {
@@ -289,39 +290,29 @@ export default function CompanionScoring() {
       {/* Import from league + toggle row */}
       <div className="px-4 pt-2 pb-4 flex items-center gap-3">
         {league?.scoring_settings ? (
-          <button
+          <CompanionSelectorButton
             onClick={handleImportLeague}
-            className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-opacity active:opacity-70"
-            style={{ background: 'var(--color-fill)', color: 'var(--color-accent)' }}
+            className="flex-1"
+            size="md"
+            variant="action"
           >
             Sync from {league.name}
-          </button>
+          </CompanionSelectorButton>
         ) : (
           <p className="flex-1 text-sm text-center" style={{ color: 'var(--color-label-tertiary)' }}>
             Connect a league to view its scoring settings.
           </p>
         )}
-        <div
-          className="shrink-0 flex rounded-lg overflow-hidden"
-          style={{ background: 'var(--color-fill)', padding: '2px', gap: '2px' }}
-        >
-          {[
+        <CompanionSegmentedControl
+          value={showActiveOnly}
+          options={[
             { label: 'Active', value: true },
             { label: 'All', value: false },
-          ].map(opt => (
-            <button
-              key={opt.label}
-              onClick={() => setShowActiveOnly(opt.value)}
-              className="px-3 py-1.5 rounded-md text-xs font-semibold transition-all"
-              style={{
-                background: showActiveOnly === opt.value ? 'var(--color-signature)' : 'transparent',
-                color: showActiveOnly === opt.value ? 'var(--color-signature-fg)' : 'var(--color-label-tertiary)',
-              }}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
+          ]}
+          onChange={setShowActiveOnly}
+          ariaLabel="Scoring visibility"
+          className="shrink-0"
+        />
       </div>
 
       {/* Preview another league's scoring */}
@@ -347,10 +338,10 @@ export default function CompanionScoring() {
             </div>
           )}
 
-          <button
+          <CompanionSelectorButton
             onClick={() => setPickerOpen(v => !v)}
-            className="w-full flex items-center justify-between py-2.5 px-4 rounded-xl text-sm font-semibold transition-opacity active:opacity-70"
-            style={{ background: 'var(--color-fill)', color: 'var(--color-label)' }}
+            className="w-full justify-between"
+            size="md"
           >
             <span>Browse leagues…</span>
             <svg
@@ -359,7 +350,7 @@ export default function CompanionScoring() {
             >
               <polyline points="6 9 12 15 18 9"/>
             </svg>
-          </button>
+          </CompanionSelectorButton>
 
           {pickerOpen && (
             <div

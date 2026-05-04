@@ -262,6 +262,7 @@ const TEAM_COLOR_ALIASES = {
   lar: 'la',
   was: 'wsh',
   jac: 'jax',
+  lvr: 'lv',
 };
 
 export function getTeamColorKey(team) {

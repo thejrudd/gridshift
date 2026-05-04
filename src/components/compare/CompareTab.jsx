@@ -1,5 +1,5 @@
 // ── CompareTab ────────────────────────────────────────────────────────────────
-// Unified 4th top-level tab: side-by-side ESPN stats + Sleeper fantasy + Trade.
+// Unified 4th top-level tab: side-by-side ESPN stats + Sleeper fantasy.
 // Player selection uses ESPN rosters (rich smart search).
 // Sleeper match is attempted automatically via espn_id / name+pos lookup.
 
@@ -9,42 +9,20 @@ import { buildStatMap, buildRankMap } from '../../utils/playerMetrics';
 import { matchEspnToSleeper } from '../../utils/espnSleeperMatch';
 import { useSleeperLeague, useSleeperStats } from '../../context/SleeperContext';
 import { useTheme } from '../../context/ThemeContext';
-import useMediaQuery from '../../hooks/useMediaQuery';
 import useCardGlow from '../../hooks/useCardGlow.jsx';
-import { TEAM_COLORS } from '../../data/teamColors';
+import { getTeamVisualTheme } from '../../utils/teamVisualTheme.js';
+import {
+  getCompanionPositionColor,
+  getNflTeamLogoUrl,
+  getPositionTextColor,
+} from '../../utils/companionAssetVisuals.js';
 import ComparePickerSheet from './ComparePickerSheet';
-import CompareStatsPanel from './CompareStatsPanel';
+import CompareStatsPanel, { COMPARE_YEARS } from './CompareStatsPanel';
 import CompareFantasyPanel from './CompareFantasyPanel';
-import CompareTradePanel from './CompareTradePanel';
-
-function hexLuminance(hex) {
-  const r = parseInt(hex.slice(1, 3), 16) / 255;
-  const g = parseInt(hex.slice(3, 5), 16) / 255;
-  const b = parseInt(hex.slice(5, 7), 16) / 255;
-  const lin = c => c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
-}
-
-// Darken a hex color by multiplying each channel by `factor` (0–1)
-function darkenHex(hex, factor) {
-  const r = Math.round(parseInt(hex.slice(1, 3), 16) * factor);
-  const g = Math.round(parseInt(hex.slice(3, 5), 16) * factor);
-  const b = Math.round(parseInt(hex.slice(5, 7), 16) * factor);
-  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
-}
-
-// ESPN teamId → TEAM_COLORS key (same mismatches as Sleeper)
-const ESPN_TEAM_MAP = { lar: 'la', was: 'wsh' };
-function toTeamKey(espnTeamId) {
-  if (!espnTeamId) return '';
-  const lower = espnTeamId.toLowerCase();
-  return ESPN_TEAM_MAP[lower] ?? lower;
-}
 
 const PANELS = [
   { id: 'stats',   label: 'Stats' },
   { id: 'fantasy', label: 'Fantasy' },
-  { id: 'trade',   label: 'Trade' },
 ];
 
 function scheduleDeferredCompareTask(callback, timeout = 220) {
@@ -56,10 +34,34 @@ function scheduleDeferredCompareTask(callback, timeout = 220) {
   return () => window.clearTimeout(timerId);
 }
 
+function getPlayerExperienceYears(player) {
+  const raw = player?.experience;
+  if (typeof raw === 'number') return raw;
+  if (typeof raw?.years === 'number') return raw.years;
+  return 0;
+}
+
+function getPlayerFirstSeason(player) {
+  if (!player) return null;
+  const seasonsCompleted = getPlayerExperienceYears(player);
+  return Math.max(2018, CURRENT_SEASON - seasonsCompleted);
+}
+
+function isPlayerInSeason(player, year) {
+  if (!player || year === 'career') return Boolean(player);
+  const firstSeason = getPlayerFirstSeason(player);
+  return firstSeason != null && year >= firstSeason && year <= CURRENT_SEASON;
+}
+
 // ── CompareTab ────────────────────────────────────────────────────────────────
 
-export default function CompareTab({ teams, initialPlayerA, initialPlayerB, onPlayerAChange, onPlayerBChange, onBuildTrade, onViewPlayer }) {
-  const { hasLeague, myRoster } = useSleeperLeague();
+export default function CompareTab({ teams, initialPlayerA, initialPlayerB, onPlayerAChange, onPlayerBChange, onViewPlayer }) {
+  const {
+    hasLeague,
+    season: sleeperSeason,
+    changeSeason: changeSleeperSeason,
+    availableSeasons: sleeperAvailableSeasons,
+  } = useSleeperLeague();
   const { players: sleeperPlayers, loadPlayers } = useSleeperStats();
 
   // ESPN player selections
@@ -85,23 +87,10 @@ export default function CompareTab({ teams, initialPlayerA, initialPlayerB, onPl
   const [pickingSlot, setPickingSlot] = useState(null); // 'A' | 'B' | null
   const [selectedYear, setSelectedYear] = useState(CURRENT_SEASON);
   const [panel, setPanel] = useState('stats');
-  const [tradeVals, setTradeVals] = useState({ valA: null, valB: null, leader: null, maxVal: null, notFoundA: false, notFoundB: false });
-
-  const handleTradeValuesChange = useCallback((next) => {
-    setTradeVals((prev) => {
-      if (
-        prev.valA === next.valA &&
-        prev.valB === next.valB &&
-        prev.leader === next.leader &&
-        prev.maxVal === next.maxVal &&
-        prev.notFoundA === next.notFoundA &&
-        prev.notFoundB === next.notFoundB
-      ) {
-        return prev;
-      }
-      return next;
-    });
-  }, []);
+  const [showAdvancedStats, setShowAdvancedStats] = useState(false);
+  const [showStatRanks, setShowStatRanks] = useState(true);
+  const [statsEdgeSummary, setStatsEdgeSummary] = useState(null);
+  const [fantasyEdgeSummary, setFantasyEdgeSummary] = useState(null);
 
   // ── Pre-populate player A from Statistics view ──────────────────────────────
 
@@ -113,7 +102,7 @@ export default function CompareTab({ teams, initialPlayerA, initialPlayerB, onPl
     setLoadingYearsA(new Set());
     setPanel('stats');
     const cancelTask = scheduleDeferredCompareTask(() => {
-      loadYear('A', initialPlayerA, selectedYear);
+      if (isPlayerInSeason(initialPlayerA, selectedYear)) loadYear('A', initialPlayerA, selectedYear);
       if (hasLeague) {
         (async () => {
           const playersData = sleeperPlayers ?? await loadPlayers();
@@ -133,7 +122,7 @@ export default function CompareTab({ teams, initialPlayerA, initialPlayerB, onPl
     setLoadingYearsB(new Set());
     setPanel('stats');
     const cancelTask = scheduleDeferredCompareTask(() => {
-      loadYear('B', initialPlayerB, selectedYear);
+      if (isPlayerInSeason(initialPlayerB, selectedYear)) loadYear('B', initialPlayerB, selectedYear);
       if (hasLeague) {
         (async () => {
           const playersData = sleeperPlayers ?? await loadPlayers();
@@ -178,13 +167,13 @@ export default function CompareTab({ teams, initialPlayerA, initialPlayerB, onPl
       onPlayerAChange?.(player);
       setCacheA({});
       setLoadingYearsA(new Set());
-      loadYear('A', player, selectedYear);
+      if (isPlayerInSeason(player, selectedYear)) loadYear('A', player, selectedYear);
     } else {
       setPlayerB(player);
       onPlayerBChange?.(player);
       setCacheB({});
       setLoadingYearsB(new Set());
-      loadYear('B', player, selectedYear);
+      if (isPlayerInSeason(player, selectedYear)) loadYear('B', player, selectedYear);
     }
 
     // Match to Sleeper — load player DB if not yet available
@@ -218,19 +207,9 @@ export default function CompareTab({ teams, initialPlayerA, initialPlayerB, onPl
     startTransition(() => {
       setSelectedYear(year);
     });
-    if (playerA && cacheA[year] === undefined && !loadingYearsA.has(year)) loadYear('A', playerA, year);
-    if (playerB && cacheB[year] === undefined && !loadingYearsB.has(year)) loadYear('B', playerB, year);
+    if (playerA && isPlayerInSeason(playerA, year) && cacheA[year] === undefined && !loadingYearsA.has(year)) loadYear('A', playerA, year);
+    if (playerB && isPlayerInSeason(playerB, year) && cacheB[year] === undefined && !loadingYearsB.has(year)) loadYear('B', playerB, year);
   }
-
-  const buildTradeHandler = useMemo(() => {
-    if (!onBuildTrade || !hasLeague) return null;
-    const rosterPlayers = myRoster()?.players ?? [];
-    const aOnRoster = sleeperIdA ? rosterPlayers.includes(sleeperIdA) : false;
-    const bOnRoster = sleeperIdB ? rosterPlayers.includes(sleeperIdB) : false;
-    if (aOnRoster && !bOnRoster) return () => onBuildTrade(sleeperIdA, sleeperIdB);
-    if (bOnRoster && !aOnRoster) return () => onBuildTrade(sleeperIdB, sleeperIdA);
-    return null;
-  }, [hasLeague, myRoster, onBuildTrade, sleeperIdA, sleeperIdB]);
 
   const mapA = cacheA[selectedYear] ?? null;
   const mapB = cacheB[selectedYear] ?? null;
@@ -239,22 +218,31 @@ export default function CompareTab({ teams, initialPlayerA, initialPlayerB, onPl
   const isLoadingA = loadingYearsA.has(selectedYear);
   const isLoadingB = loadingYearsB.has(selectedYear);
 
-  // Compute which years to show: only years from each player's rookie season onwards.
-  // experience.years = seasons completed before this season (0 = rookie this year).
-  const firstYearA = playerA ? Math.max(2018, CURRENT_SEASON - (playerA.experience ?? 0)) : null;
-  const firstYearB = playerB ? Math.max(2018, CURRENT_SEASON - (playerB.experience ?? 0)) : null;
+  // Compute which years to show: union of seasons where either selected player was in the league.
+  // Experience is seasons completed before the current season (0 = rookie this year).
+  const firstYearA = getPlayerFirstSeason(playerA);
+  const firstYearB = getPlayerFirstSeason(playerB);
   const minYear = firstYearA !== null && firstYearB !== null
     ? Math.min(firstYearA, firstYearB)
     : (firstYearA ?? firstYearB ?? 2018);
   const visibleYears = (playerA || playerB)
     ? Array.from({ length: CURRENT_SEASON - minYear + 1 }, (_, i) => CURRENT_SEASON - i)
     : [];
+  const selectedYearAvailable = selectedYear === 'career' || visibleYears.includes(selectedYear);
+
+  useEffect(() => {
+    if (!visibleYears.length || selectedYearAvailable) return;
+    const nextYear = visibleYears[0];
+    setSelectedYear(nextYear);
+    if (playerA && isPlayerInSeason(playerA, nextYear) && cacheA[nextYear] === undefined && !loadingYearsA.has(nextYear)) loadYear('A', playerA, nextYear);
+    if (playerB && isPlayerInSeason(playerB, nextYear) && cacheB[nextYear] === undefined && !loadingYearsB.has(nextYear)) loadYear('B', playerB, nextYear);
+  }, [cacheA, cacheB, loadYear, loadingYearsA, loadingYearsB, playerA, playerB, selectedYearAvailable, visibleYears]);
 
   return (
-    <div className="pb-8">
+    <div className="trade-compare pb-8" data-testid="trade-compare-root">
       {/* ── Panel tab selector — always at top ───────────────────────────── */}
       <div className="px-4">
-      <div className="season-tabs" role="tablist">
+      <div className="trade-compare__tabs season-tabs" role="tablist">
         {PANELS.map(({ id, label }) => {
           if (id === 'fantasy' && !hasLeague) return null;
           return (
@@ -263,7 +251,8 @@ export default function CompareTab({ teams, initialPlayerA, initialPlayerB, onPl
               role="tab"
               aria-selected={panel === id}
               onClick={() => setPanel(id)}
-              className={`season-tab${panel === id ? ' active' : ''}`}
+              className={`trade-compare__tab season-tab${panel === id ? ' active' : ''}`}
+              data-testid={`trade-compare-tab-${id}`}
             >
               {label}
             </button>
@@ -272,36 +261,70 @@ export default function CompareTab({ teams, initialPlayerA, initialPlayerB, onPl
       </div>
       </div>
 
+      {panel === 'stats' && (playerA || playerB) && (
+        <CompareSeasonControls
+          playerA={playerA}
+          playerB={playerB}
+          selectedYear={selectedYear}
+          visibleYears={visibleYears}
+          loadingYearsA={loadingYearsA}
+          loadingYearsB={loadingYearsB}
+          showAdvanced={showAdvancedStats}
+          onAdvancedChange={setShowAdvancedStats}
+          showRanks={showStatRanks}
+          onRanksChange={setShowStatRanks}
+          onYearChange={handleYearChange}
+        />
+      )}
+
+      {panel === 'fantasy' && hasLeague && (playerA || playerB) && (
+        <CompareSeasonControls
+          playerA={playerA}
+          playerB={playerB}
+          selectedYear={sleeperSeason}
+          visibleYears={sleeperAvailableSeasons}
+          loadingYearsA={new Set()}
+          loadingYearsB={new Set()}
+          onYearChange={changeSleeperSeason}
+        />
+      )}
+
       {/* ── Player slot row — always visible below tabs ──────────────────── */}
       <div
-        className="flex gap-3 px-4 py-4"
+        className="trade-compare__slots flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-stretch"
+        data-testid="trade-compare-slots"
         style={{ borderBottom: '1px solid var(--color-separator)' }}
       >
         <PlayerSlot
+          slotId="a"
           label="Player 1"
           player={playerA}
           onPick={() => setPickingSlot('A')}
           onClear={() => handleClear('A')}
           onViewPlayer={onViewPlayer}
-          ktcValue={panel === 'trade' ? tradeVals.valA : null}
-          isKtcLeader={panel === 'trade' && tradeVals.leader === 'A'}
-          ktcNotFound={panel === 'trade' && tradeVals.notFoundA}
         />
         <div
-          className="flex items-center justify-center shrink-0 text-xs font-bold"
-          style={{ color: 'var(--color-label-quaternary)', width: 24 }}
+          className="trade-compare__versus flex items-center justify-center shrink-0 text-xs font-bold"
+          style={{
+            color: 'var(--color-label-quaternary)',
+            width: (panel === 'stats' || panel === 'fantasy') && playerA && playerB ? 'auto' : 24,
+          }}
         >
-          vs
+          {panel === 'stats' && playerA && playerB ? (
+            <CategoryEdgeSummary summary={statsEdgeSummary} label="Stats Edge" note="stat wins" />
+          ) : panel === 'fantasy' && playerA && playerB ? (
+            <CategoryEdgeSummary summary={fantasyEdgeSummary} label="Fantasy Edge" note="metric wins" />
+          ) : (
+            'vs'
+          )}
         </div>
         <PlayerSlot
+          slotId="b"
           label="Player 2"
           player={playerB}
           onPick={() => setPickingSlot('B')}
           onClear={() => handleClear('B')}
           onViewPlayer={onViewPlayer}
-          ktcValue={panel === 'trade' ? tradeVals.valB : null}
-          isKtcLeader={panel === 'trade' && tradeVals.leader === 'B'}
-          ktcNotFound={panel === 'trade' && tradeVals.notFoundB}
         />
       </div>
 
@@ -316,11 +339,12 @@ export default function CompareTab({ teams, initialPlayerA, initialPlayerB, onPl
           rankMapB={rankMapB}
           loadingA={isLoadingA}
           loadingB={isLoadingB}
-          loadingYearsA={loadingYearsA}
-          loadingYearsB={loadingYearsB}
           selectedYear={selectedYear}
-          onYearChange={handleYearChange}
-          visibleYears={visibleYears}
+          firstYearA={firstYearA}
+          firstYearB={firstYearB}
+          showAdvanced={showAdvancedStats}
+          showRanks={showStatRanks}
+          onEdgeSummaryChange={setStatsEdgeSummary}
         />
       )}
 
@@ -328,17 +352,7 @@ export default function CompareTab({ teams, initialPlayerA, initialPlayerB, onPl
         <CompareFantasyPanel
           sleeperIdA={sleeperIdA}
           sleeperIdB={sleeperIdB}
-        />
-      )}
-
-      {panel === 'trade' && (
-        <CompareTradePanel
-          playerA={playerA}
-          playerB={playerB}
-          sleeperPlayerA={sleeperIdA && sleeperPlayers ? sleeperPlayers[sleeperIdA] : null}
-          sleeperPlayerB={sleeperIdB && sleeperPlayers ? sleeperPlayers[sleeperIdB] : null}
-          onValuesChange={handleTradeValuesChange}
-          onBuildTrade={buildTradeHandler}
+          onEdgeSummaryChange={setFantasyEdgeSummary}
         />
       )}
 
@@ -349,7 +363,7 @@ export default function CompareTab({ teams, initialPlayerA, initialPlayerB, onPl
             Select two players to compare side-by-side.
           </span>
           <span className="text-xs text-center" style={{ color: 'var(--color-label-quaternary)' }}>
-            Searches all 32 NFL rosters — stats, fantasy, and trade value.
+            Searches all 32 NFL rosters for stats and fantasy comparisons.
           </span>
         </div>
       )}
@@ -367,47 +381,168 @@ export default function CompareTab({ teams, initialPlayerA, initialPlayerB, onPl
   );
 }
 
+function CompareSeasonControls({
+  playerA,
+  playerB,
+  selectedYear,
+  visibleYears,
+  loadingYearsA,
+  loadingYearsB,
+  showAdvanced,
+  onAdvancedChange,
+  showRanks,
+  onRanksChange,
+  onYearChange,
+}) {
+  const showAdvancedControl = typeof onAdvancedChange === 'function';
+  const showRankControl = typeof onRanksChange === 'function';
+
+  return (
+    <div className="trade-compare__stat-controls px-4 pt-3">
+      <div
+        className="trade-compare__year-rail"
+        aria-label="Compare season"
+      >
+        {(visibleYears.length ? visibleYears : COMPARE_YEARS).map(year => {
+          const active = selectedYear === year;
+          const inFlight = (playerA && loadingYearsA.has(year)) || (playerB && loadingYearsB.has(year));
+          return (
+            <button
+              key={year}
+              onClick={() => onYearChange(year)}
+              className="trade-compare__year-chip"
+              data-active={active}
+              style={{
+                background: active ? 'var(--color-signature)' : 'var(--color-fill)',
+                color: active ? 'var(--color-signature-fg)' : 'var(--color-label-secondary)',
+                opacity: inFlight ? 0.55 : 1,
+              }}
+            >
+              {year}
+            </button>
+          );
+        })}
+        <button
+          onClick={() => onYearChange('career')}
+          className="trade-compare__year-chip"
+          data-active={selectedYear === 'career'}
+          style={{
+            background: selectedYear === 'career' ? 'var(--color-accent)' : 'var(--color-fill)',
+            color: selectedYear === 'career' ? '#fff' : 'var(--color-label-secondary)',
+          }}
+        >
+          Career
+        </button>
+      </div>
+
+      {(showRankControl || showAdvancedControl) && (
+        <div className="trade-compare__control-toggles">
+          {showRankControl && (
+            <ControlToggle
+              label="Ranks"
+              active={showRanks}
+              onClick={() => onRanksChange(v => !v)}
+            />
+          )}
+          {showAdvancedControl && (
+            <ControlToggle
+              label="Advanced"
+              active={showAdvanced}
+              onClick={() => onAdvancedChange(v => !v)}
+            />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ControlToggle({ label, active, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="trade-compare__advanced-toggle"
+      aria-pressed={active}
+    >
+      <span
+        className="trade-compare__advanced-switch"
+        data-active={active}
+        aria-hidden="true"
+      >
+        <span />
+      </span>
+      {label}
+    </button>
+  );
+}
+
+function CategoryEdgeSummary({ summary, label, note }) {
+  const leadA = summary?.leadA ?? 0;
+  const leadB = summary?.leadB ?? 0;
+  const pushRows = summary?.pushRows ?? 0;
+
+  return (
+    <div className="trade-compare__category-edge" aria-label="Category edge">
+      <span className="trade-compare__category-edge-label">{label}</span>
+      <span className="trade-compare__category-edge-score">{leadA}-{leadB}</span>
+      <span className="trade-compare__category-edge-note">
+        {pushRows ? `${pushRows} even · ${note}` : note}
+      </span>
+    </div>
+  );
+}
+
 // ── PlayerSlot ────────────────────────────────────────────────────────────────
 
-function PlayerSlot({ label, player, onPick, onClear, onViewPlayer, ktcValue, isKtcLeader, ktcNotFound }) {
+function PlayerSlot({ slotId, label, player, onPick, onClear, onViewPlayer, ktcValue, isKtcLeader, ktcNotFound }) {
   const { darkMode } = useTheme();
-  const isCompact = useMediaQuery('(max-width: 640px)');
   const [isHovered, setIsHovered] = useState(false);
-  const teamKey = toTeamKey(player?.teamId);
-  const palette = player ? (TEAM_COLORS[teamKey] ?? null) : null;
-  const teamColor = palette ? (darkMode ? palette.darkPrimary : palette.primary) : null;
-  const isLight = teamColor ? hexLuminance(teamColor) > 0.35 : false;
-  const tintBg = teamColor ? `${teamColor}${isLight ? '18' : '22'}` : 'var(--color-fill)';
-  const borderColor = teamColor
-    ? (!darkMode && isLight ? darkenHex(teamColor, 0.55) : teamColor)
-    : null;
-  const glowColor = borderColor ?? (darkMode ? '#5AADFF' : '#1A6EFF');
-  const hoverBg = teamColor ? `${teamColor}${isLight ? '2e' : '30'}` : 'var(--color-fill-secondary)';
+  const teamTheme = player ? getTeamVisualTheme(player.teamId, darkMode) : null;
+  const hasTeamGradient = Boolean(teamTheme?.gradient);
+  const positionColor = getCompanionPositionColor(player?.position);
+  const positionTextColor = positionColor ? getPositionTextColor(positionColor) : 'var(--color-label)';
+  const accentColor = teamTheme?.borderColor ?? positionColor ?? 'var(--color-accent)';
+  const slotBg = hasTeamGradient ? teamTheme.gradient : (teamTheme?.tint ?? 'var(--color-fill)');
+  const hoverBg = teamTheme?.hoverTint ?? 'var(--color-fill-secondary)';
+  const slotForeground = hasTeamGradient ? teamTheme.gradientForeground : 'var(--color-label)';
+  const slotMuted = hasTeamGradient ? teamTheme.gradientMuted : 'var(--color-label-secondary)';
+  const slotSubtle = hasTeamGradient ? teamTheme.gradientSubtle : 'var(--color-fill-secondary)';
+  const valueForeground = hasTeamGradient ? teamTheme.gradientEndForeground : slotForeground;
+  const valueMuted = hasTeamGradient ? teamTheme.gradientEndMuted : 'var(--color-label-quaternary)';
+  const teamLogoUrl = getNflTeamLogoUrl(teamTheme?.logoKey);
   const { glowHandlers, borderOverlay, glowShadow } = useCardGlow({
     enabled: Boolean(player && isHovered),
-    color: glowColor,
-    cardColor: borderColor ?? null,
+    color: accentColor,
+    cardColor: teamTheme?.color ?? null,
     darkMode,
     coreColor: darkMode ? '#FFFFFF' : null,
-    outerColor: glowColor,
+    outerColor: accentColor,
   });
-  const baseShadow = isHovered
-    ? '0 8px 18px rgba(12,15,20,0.10), 0 2px 6px rgba(12,15,20,0.08)'
-    : '0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06)';
+  const baseShadow = isHovered ? '0 5px 12px rgba(12,15,20,0.09)' : 'none';
   const slotShadow = glowShadow ? `${glowShadow}, ${baseShadow}` : baseShadow;
+  const testId = `trade-compare-slot-${slotId}`;
+  const slotClassName = [
+    'trade-compare__slot-card',
+    player ? 'is-filled' : 'is-empty',
+    hasTeamGradient ? 'has-team-gradient' : '',
+    isKtcLeader ? 'is-value-leader' : '',
+  ].filter(Boolean).join(' ');
 
   if (!player) {
     return (
       <button
+        type="button"
         onClick={onPick}
-        className="flex-1 flex flex-col items-center justify-center gap-2 rounded-2xl py-5 transition-opacity active:opacity-60"
+        className={`${slotClassName} flex min-h-[104px] flex-1 flex-col items-center justify-center gap-2 rounded-xl py-5 transition-opacity active:opacity-60`}
+        data-testid={testId}
         style={{ background: 'var(--color-fill)', border: '1.5px dashed var(--color-separator)' }}
       >
         <div
-          className="rounded-full flex items-center justify-center"
+          className="trade-compare__slot-add rounded-full flex items-center justify-center"
           style={{
-            width: isCompact ? 44 : 36,
-            height: isCompact ? 44 : 36,
+            width: 40,
+            height: 40,
             background: 'var(--color-fill-secondary)',
           }}
         >
@@ -416,11 +551,11 @@ function PlayerSlot({ label, player, onPick, onClear, onViewPlayer, ktcValue, is
           </svg>
         </div>
         <span
-          className="font-semibold text-center"
+          className="trade-compare__slot-placeholder font-semibold text-center"
           style={{
             color: 'var(--color-label-tertiary)',
-            fontSize: isCompact ? '13px' : undefined,
-            lineHeight: isCompact ? 1.15 : undefined,
+            fontSize: '13px',
+            lineHeight: 1.15,
           }}
         >
           {label}
@@ -431,13 +566,19 @@ function PlayerSlot({ label, player, onPick, onClear, onViewPlayer, ktcValue, is
 
   const showKtcExtension = ktcValue != null || ktcNotFound;
   const teamMeta = player.teamName ?? player.teamId ?? '';
+  const cardTitle = [player.displayName, player.position, teamMeta].filter(Boolean).join(' · ');
 
   return (
     <div
       onClick={onPick}
       role="button"
       tabIndex={0}
-      onKeyDown={e => e.key === 'Enter' && onPick()}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onPick();
+        }
+      }}
       onMouseMove={glowHandlers.onMouseMove}
       onMouseEnter={(event) => {
         setIsHovered(true);
@@ -455,223 +596,160 @@ function PlayerSlot({ label, player, onPick, onClear, onViewPlayer, ktcValue, is
         setIsHovered(false);
         glowHandlers.onMouseLeave?.(event);
       }}
-      className="flex-1 rounded-xl relative overflow-hidden cursor-pointer"
+      className={`${slotClassName} flex-1 rounded-xl relative overflow-hidden cursor-pointer`}
+      data-testid={testId}
+      title={cardTitle}
       style={{
-        background: isHovered ? hoverBg : tintBg,
+        background: isHovered && !hasTeamGradient ? hoverBg : slotBg,
         border: '1px solid var(--color-separator)',
-        borderLeft: borderColor ? `4px solid ${borderColor}` : '4px solid var(--color-separator)',
+        '--trade-compare-slot-accent': accentColor,
+        '--trade-compare-slot-fg': slotForeground,
+        '--trade-compare-slot-muted': slotMuted,
+        '--trade-compare-slot-subtle': slotSubtle,
+        '--trade-compare-slot-value-fg': valueForeground,
+        '--trade-compare-slot-value-muted': valueMuted,
         boxShadow: slotShadow,
-        transform: isHovered ? 'translateY(-1px)' : 'translateY(0)',
-        transition: 'background 150ms cubic-bezier(0.32, 0.72, 0, 1), box-shadow 200ms cubic-bezier(0.32, 0.72, 0, 1), transform 200ms cubic-bezier(0.32, 0.72, 0, 1)',
+        transition: 'background 150ms cubic-bezier(0.32, 0.72, 0, 1), box-shadow 200ms cubic-bezier(0.32, 0.72, 0, 1)',
       }}
     >
       {borderOverlay}
-      {isCompact ? (
+      {hasTeamGradient && (
         <div
-          className="relative flex"
-          style={{
-            alignItems: 'center',
-            gap: '12px',
-            padding: '12px 12px 12px 10px',
-            minHeight: 112,
-          }}
-        >
-          <div className="relative shrink-0">
-            <PlayerThumb id={player.id} name={player.displayName} size={52} />
-            {teamKey && (
-              <div
-                className="absolute -right-1 -bottom-1 rounded-full p-1"
-                style={{
-                  background: darkMode ? 'rgba(12,15,20,0.82)' : 'rgba(255,255,255,0.92)',
-                  border: `1px solid ${borderColor ?? 'var(--color-separator)'}`,
-                }}
-              >
-                <img
-                  src={`https://a.espncdn.com/i/teamlogos/nfl/500/${teamKey}.png`}
-                  alt=""
-                  className="block"
-                  style={{ width: 14, height: 14, objectFit: 'contain' }}
-                  loading="lazy"
-                  decoding="async"
-                  onError={e => { e.target.style.display = 'none'; }}
-                />
-              </div>
-            )}
-          </div>
+          className="trade-compare__slot-gradient-overlay"
+          style={{ background: teamTheme.gradientOverlay }}
+          aria-hidden="true"
+        />
+      )}
+      <div className="trade-compare__slot-content relative flex min-h-[112px] items-center gap-3 p-3 sm:min-h-[116px] sm:gap-4 sm:p-4">
+        <div className="trade-compare__slot-media relative shrink-0">
+          <PlayerThumb id={player.id} name={player.displayName} size={56} className="trade-compare__slot-avatar" />
+        </div>
 
-          <div className="flex-1 min-w-0 pr-6" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-            <div
-              className="font-semibold"
+        <div className="trade-compare__slot-body min-w-0 flex-1 pr-7">
+          {onViewPlayer ? (
+            <button
+              type="button"
+              className="trade-compare__slot-name block w-full min-w-0 text-left font-semibold"
               style={{
-                color: onViewPlayer ? (borderColor ?? 'var(--color-accent)') : 'var(--color-label)',
-                cursor: onViewPlayer ? 'pointer' : 'default',
-                textDecoration: onViewPlayer && isHovered ? 'underline' : 'none',
+                color: slotForeground,
+                textDecoration: isHovered ? 'underline' : 'none',
                 textUnderlineOffset: '2px',
-                fontSize: '14px',
-                lineHeight: 1.15,
-                whiteSpace: 'normal',
-                wordBreak: 'break-word',
               }}
-              onClick={onViewPlayer ? e => { e.stopPropagation(); onViewPlayer(player); } : undefined}
+              onClick={(event) => {
+                event.stopPropagation();
+                onViewPlayer(player);
+              }}
+            >
+              {player.displayName}
+            </button>
+          ) : (
+            <div
+              className="trade-compare__slot-name min-w-0 font-semibold"
+              style={{ color: slotForeground }}
             >
               {player.displayName}
             </div>
-            <div
-              style={{
-                color: 'var(--color-label-secondary)',
-                fontSize: '11px',
-                lineHeight: 1.2,
-                marginTop: '3px',
-                whiteSpace: 'normal',
-                wordBreak: 'break-word',
-              }}
-            >
-              {player.position}{teamMeta ? ` · ${teamMeta}` : ''}
-            </div>
-            {player.status && player.status !== 'Active' && (
-              <span
-                className="inline-block mt-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase"
-                style={{
-                  background: player.status.includes('Reserve') ? '#ef4444'
-                    : player.status.includes('Physic') ? '#8b5cf6'
-                    : player.status.includes('Suspend') ? '#6b7280'
-                    : '#f59e0b',
-                  color: '#fff',
-                }}
-              >
-                {player.status}
-              </span>
-            )}
-            {showKtcExtension && (
-              <div className="mt-1.5">
-                <span className="text-[10px] uppercase tracking-widest" style={{ color: 'var(--color-label-quaternary)' }}>
-                  Trade Value{' '}
-                </span>
-                <span
-                  className="text-xs font-bold tabular-nums"
-                  style={{ color: isKtcLeader ? 'var(--color-signature)' : 'var(--color-label)' }}
-                >
-                  {ktcValue != null ? ktcValue.toLocaleString() : 'Not in KTC'}
-                </span>
-              </div>
-            )}
-          </div>
-
-          <button
-            onClick={e => { e.stopPropagation(); onClear(); }}
-            className="shrink-0 rounded-full flex items-center justify-center"
-            style={{
-              background: 'var(--color-fill-secondary)',
-              color: 'var(--color-label-tertiary)',
-              fontSize: '11px',
-              width: 22,
-              height: 22,
-              position: 'absolute',
-              top: 8,
-              right: 8,
-            }}
-            aria-label="Remove player"
-          >
-            ×
-          </button>
-        </div>
-      ) : (
-        <div
-          className="relative flex items-center"
-          style={{
-            gap: '16px',
-            padding: '14px 16px 14px 14px',
-            minHeight: 106,
-          }}
-        >
-          {teamKey && (
-            <img
-              src={`https://a.espncdn.com/i/teamlogos/nfl/500/${teamKey}.png`}
-              aria-hidden="true"
-              className="pointer-events-none select-none absolute right-12 top-1/2 -translate-y-1/2"
-              style={{ width: 58, height: 58, objectFit: 'contain', opacity: 0.12 }}
-              loading="lazy"
-              decoding="async"
-              onError={e => { e.target.style.display = 'none'; }}
-            />
           )}
 
-          <PlayerThumb id={player.id} name={player.displayName} size={74} />
-
-          <div className="flex-1 min-w-0 pr-8" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '4px' }}>
-            <div
-              className="font-semibold"
-              style={{
-                color: onViewPlayer ? (borderColor ?? 'var(--color-accent)') : 'var(--color-label)',
-                cursor: onViewPlayer ? 'pointer' : 'default',
-                textDecoration: onViewPlayer && isHovered ? 'underline' : 'none',
-                textUnderlineOffset: '2px',
-                fontSize: '28px',
-                lineHeight: 0.95,
-                fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif",
-                letterSpacing: '0.01em',
-                whiteSpace: 'normal',
-                wordBreak: 'break-word',
-              }}
-              onClick={onViewPlayer ? e => { e.stopPropagation(); onViewPlayer(player); } : undefined}
-            >
-              {player.displayName}
-            </div>
-            <div
-              style={{
-                color: 'var(--color-label-secondary)',
-                fontSize: '13px',
-                lineHeight: 1.2,
-                whiteSpace: 'normal',
-              }}
-            >
-              {player.position}{teamMeta ? ` · ${teamMeta}` : ''}
-            </div>
-            {showKtcExtension && (
-              <div className="mt-1">
-                <span className="text-[10px] uppercase tracking-widest" style={{ color: 'var(--color-label-quaternary)' }}>
-                  Trade Value{' '}
-                </span>
-                <span
-                  className="text-sm font-bold tabular-nums"
-                  style={{ color: isKtcLeader ? 'var(--color-signature)' : 'var(--color-label)' }}
-                >
-                  {ktcValue != null ? ktcValue.toLocaleString() : 'Not in KTC'}
-                </span>
-              </div>
+          <div
+            className="trade-compare__slot-meta mt-1 text-xs"
+            style={{ color: slotMuted }}
+          >
+            {positionColor && (
+              <span
+                className="trade-compare__slot-position shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase"
+                style={{
+                  background: positionColor,
+                  color: positionTextColor,
+                  boxShadow: '0 4px 10px rgba(0,0,0,0.16)',
+                }}
+              >
+                {player.position}
+              </span>
+            )}
+            {teamMeta && (
+              <span className="trade-compare__slot-team-name min-w-0">
+                {teamMeta}
+              </span>
             )}
           </div>
 
-          <button
-            onClick={e => { e.stopPropagation(); onClear(); }}
-            className="shrink-0 rounded-full flex items-center justify-center"
-            style={{
-              background: 'var(--color-fill-secondary)',
-              color: 'var(--color-label-tertiary)',
-              fontSize: '11px',
-              width: 20,
-              height: 20,
-              position: 'absolute',
-              top: 8,
-              right: 8,
-            }}
-            aria-label="Remove player"
-          >
-            ×
-          </button>
+          {player.status && player.status !== 'Active' && (
+            <span
+              className={[
+                'trade-compare__slot-status inline-block mt-1 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase',
+                player.status.includes('Reserve') ? 'is-reserve' : '',
+                player.status.includes('Physic') ? 'is-physically-unable' : '',
+                player.status.includes('Suspend') ? 'is-suspended' : '',
+              ].filter(Boolean).join(' ')}
+              style={{
+                background: slotSubtle,
+                color: slotForeground,
+                borderColor: slotMuted,
+              }}
+            >
+              {player.status}
+            </span>
+          )}
+
+          {showKtcExtension && (
+            <div className="trade-compare__slot-value mt-2">
+              <span
+                className="trade-compare__slot-value-label text-[10px] uppercase tracking-widest"
+                style={{ color: valueMuted }}
+              >
+                Trade Value{' '}
+              </span>
+              <span
+                className="trade-compare__slot-value-number text-sm font-bold tabular-nums"
+                style={{ color: valueForeground }}
+              >
+                {ktcValue != null ? ktcValue.toLocaleString() : 'Not in KTC'}
+              </span>
+            </div>
+          )}
         </div>
-      )}
+
+        {teamLogoUrl && (
+          <img
+            src={teamLogoUrl}
+            aria-hidden="true"
+            alt=""
+            className="trade-compare__slot-watermark pointer-events-none select-none absolute right-10 top-1/2 h-16 w-16 -translate-y-1/2 object-contain opacity-15"
+            loading="lazy"
+            decoding="async"
+            onError={e => { e.currentTarget.style.display = 'none'; }}
+          />
+        )}
+
+        <button
+          type="button"
+          onClick={e => { e.stopPropagation(); onClear(); }}
+          className="trade-compare__slot-clear absolute right-2 top-2 shrink-0 rounded-full flex h-6 w-6 items-center justify-center text-xs"
+          data-testid={`trade-compare-slot-${slotId}-clear`}
+          style={{
+            background: slotSubtle,
+            color: slotForeground,
+          }}
+          aria-label="Remove player"
+        >
+          ×
+        </button>
+      </div>
     </div>
   );
 }
 
-function PlayerThumb({ id, name, size = 36 }) {
+function PlayerThumb({ id, name, size = 36, className = '' }) {
   const [err, setErr] = useState(false);
   const initials = (name ?? '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
 
   return err ? (
     <div
-      className="rounded-full flex items-center justify-center shrink-0 text-xs font-bold"
+      className={[
+        'rounded-full flex items-center justify-center shrink-0 text-xs font-bold',
+        className,
+      ].filter(Boolean).join(' ')}
       style={{ background: 'var(--color-fill-secondary)', color: 'var(--color-label-quaternary)', width: size, height: size }}
     >
       {initials}
@@ -680,10 +758,12 @@ function PlayerThumb({ id, name, size = 36 }) {
     <img
       src={`https://a.espncdn.com/i/headshots/nfl/players/full/${id}.png`}
       alt=""
-      className="rounded-full object-cover shrink-0"
+      className={[
+        'rounded-full object-cover shrink-0',
+        className,
+      ].filter(Boolean).join(' ')}
       style={{ background: 'var(--color-fill-secondary)', width: size, height: size }}
       onError={() => setErr(true)}
     />
   );
 }
-

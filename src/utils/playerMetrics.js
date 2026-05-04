@@ -283,6 +283,9 @@ export function getStatRows(statsMap, position, rankMap = {}) {
 
   switch (group) {
     case 'QB': {
+      const usage = makeSection('Usage');
+      usage.push('Games', 'gamesPlayed', 0, '', false);
+
       const passing = makeSection('Passing');
       passing.push('Comp',     'completions');
       passing.push('Att',      'passingAttempts');
@@ -303,7 +306,7 @@ export function getStatRows(statsMap, position, rankMap = {}) {
       negPlays.push('Sacks Taken',  'sacks');
       negPlays.push('Fum Lost',     'fumblesLost');
 
-      standard.push(...[passing.done(), rushing.done(), negPlays.done()].filter(Boolean));
+      standard.push(...[usage.done(), passing.done(), rushing.done(), negPlays.done()].filter(Boolean));
 
       const advPassing = makeSection('Advanced Passing');
       advPassing.push('QBR',            'totalQBR',              1);
@@ -336,6 +339,9 @@ export function getStatRows(statsMap, position, rankMap = {}) {
     }
 
     case 'RB': {
+      const usage = makeSection('Usage');
+      usage.push('Games', 'gamesPlayed', 0, '', false);
+
       const rushing = makeSection('Rushing');
       rushing.push('Carries',  'rushingAttempts');
       rushing.push('Rush Yds', 'rushingYards');
@@ -348,7 +354,7 @@ export function getStatRows(statsMap, position, rankMap = {}) {
       receiving.push('Rec TDs',  'receivingTouchdowns');
       receiving.push('Fum',      'fumbles');
 
-      standard.push(...[rushing.done(), receiving.done()].filter(Boolean));
+      standard.push(...[usage.done(), rushing.done(), receiving.done()].filter(Boolean));
 
       const advRush = makeSection('Advanced Rushing');
       advRush.push('Rush 1D',  'rushingFirstDowns');
@@ -367,6 +373,9 @@ export function getStatRows(statsMap, position, rankMap = {}) {
 
     case 'WR':
     case 'TE': {
+      const usage = makeSection('Usage');
+      usage.push('Games', 'gamesPlayed', 0, '', false);
+
       const receiving = makeSection('Receiving');
       receiving.push('Targets', 'receivingTargets');
       receiving.push('Rec',     'receptions');
@@ -377,7 +386,7 @@ export function getStatRows(statsMap, position, rankMap = {}) {
       receiving.push('YAC',     'receivingYardsAfterCatch', 1); // confirmed API name
       receiving.push('Fum',     'fumbles');
 
-      standard.push(...[receiving.done()].filter(Boolean));
+      standard.push(...[usage.done(), receiving.done()].filter(Boolean));
 
       const adv = makeSection('Advanced');
       adv.push('20+ Rec',  'receiving20PlusYds');
@@ -390,6 +399,9 @@ export function getStatRows(statsMap, position, rankMap = {}) {
     }
 
     case 'DL': {
+      const usage = makeSection('Usage');
+      usage.push('Games', 'gamesPlayed', 0, '', false);
+
       const tackling = makeSection('Tackling');
       tackling.push('Tackles', 'totalTackles');
       tackling.push('Solo',    'soloTackles');
@@ -401,7 +413,7 @@ export function getStatRows(statsMap, position, rankMap = {}) {
       passRush.push('FF',      'fumblesForced');             // confirmed: in General category
       passRush.push('PD',      'passesDefended');
 
-      standard.push(...[tackling.done(), passRush.done()].filter(Boolean));
+      standard.push(...[usage.done(), tackling.done(), passRush.done()].filter(Boolean));
 
       const adv = makeSection('Advanced');
       adv.push('Hurries',  'hurries');
@@ -414,6 +426,9 @@ export function getStatRows(statsMap, position, rankMap = {}) {
     }
 
     case 'LB': {
+      const usage = makeSection('Usage');
+      usage.push('Games', 'gamesPlayed', 0, '', false);
+
       const tackling = makeSection('Tackling');
       tackling.push('Tackles', 'totalTackles');
       tackling.push('Solo',    'soloTackles');
@@ -427,7 +442,7 @@ export function getStatRows(statsMap, position, rankMap = {}) {
       coverage.push('INTs',    'interceptions');
       coverage.push('PD',      'passesDefended');
 
-      standard.push(...[tackling.done(), passRush.done(), coverage.done()].filter(Boolean));
+      standard.push(...[usage.done(), tackling.done(), passRush.done(), coverage.done()].filter(Boolean));
 
       const adv = makeSection('Advanced');
       adv.push('QB Hits',  'QBHits');
@@ -441,6 +456,9 @@ export function getStatRows(statsMap, position, rankMap = {}) {
     }
 
     case 'DB': {
+      const usage = makeSection('Usage');
+      usage.push('Games', 'gamesPlayed', 0, '', false);
+
       const tackling = makeSection('Tackling');
       tackling.push('Tackles', 'totalTackles');
       tackling.push('Solo',    'soloTackles');
@@ -452,7 +470,7 @@ export function getStatRows(statsMap, position, rankMap = {}) {
       coverage.push('FF',      'fumblesForced');
       coverage.push('Sacks',   'sacks',                    1);
 
-      standard.push(...[tackling.done(), coverage.done()].filter(Boolean));
+      standard.push(...[usage.done(), tackling.done(), coverage.done()].filter(Boolean));
 
       const adv = makeSection('Advanced');
       adv.push('INT TDs',  'interceptionTouchdowns');
@@ -464,6 +482,9 @@ export function getStatRows(statsMap, position, rankMap = {}) {
     }
 
     case 'K': {
+      const usage = makeSection('Usage');
+      usage.push('Games', 'gamesPlayed', 0, '', false);
+
       const fg = makeSection('Field Goals');
       fg.push('FGM',   'fieldGoalsMade');
       fg.push('FGA',   'fieldGoalAttempts');
@@ -475,7 +496,7 @@ export function getStatRows(statsMap, position, rankMap = {}) {
       xp.push('XPA',   'extraPointAttempts');
       xp.push('XP%',   'extraPointPct',                   1, '%');
 
-      standard.push(...[fg.done(), xp.done()].filter(Boolean));
+      standard.push(...[usage.done(), fg.done(), xp.done()].filter(Boolean));
 
       const adv = makeSection('Advanced');
       adv.push('Total Pts', 'totalKickingPoints');
@@ -489,6 +510,9 @@ export function getStatRows(statsMap, position, rankMap = {}) {
     }
 
     case 'P': {
+      const usage = makeSection('Usage');
+      usage.push('Games', 'gamesPlayed', 0, '', false);
+
       const punting = makeSection('Punting');
       punting.push('Punts',    'punts');
       punting.push('Punt Yds', 'puntYards');
@@ -498,7 +522,7 @@ export function getStatRows(statsMap, position, rankMap = {}) {
       punting.push('TB',       'touchbacks');
       punting.push('Long',     'longPunt',                0, ' yd');
 
-      standard.push(...[punting.done()].filter(Boolean));
+      standard.push(...[usage.done(), punting.done()].filter(Boolean));
 
       const adv = makeSection('Advanced');
       adv.push('In 10',    'puntsInside10');

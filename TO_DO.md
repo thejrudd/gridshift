@@ -7,23 +7,13 @@ New features requested or planned should be added here.
 
 ## Planned Versions
 
-### v7.3 - Scout Rookie Projection Layer
+### v7.4 - Scout Rookie Projection Layer
 
 Tabled Scout enhancements that build on the post-draft rookie data foundation without expanding v7.0 scope.
 
 - **Next-season fantasy projection layer for rookies** - Add a fantasy-facing projection surface for the upcoming NFL season so Scout can serve both standard rookie boards and IDP-aware formats without overloading the current prospect filters. Scope should cover offensive and IDP leagues, projection source-of-truth, display hierarchy, and how projections interact with draft status and college production.
 - **Align Trade Drill Down with Statistics 7.2 Redesign** - Make the Trade player drill down modal serve stats that are visually consistent with the Statistics 7.2 redesign, including a toggle for flipping between raw stats and fantasy value.
 - **Trade Agent & Upgrades follow-through** - Carry forward any remaining UX polish from the v7.1 redesign that did not ship cleanly, especially places where common actions still rely too heavily on modals or proposal-card readability needs another focused pass.
-
-### v7.4 - Trade Module Decomposition
-
-Split the monolithic `CompanionTrade.jsx` (4,800+ lines) and `opportunityEngine.js` (3,000+ lines) into focused, single-responsibility modules to reduce per-edit token cost and improve maintainability.
-
-- **CompanionTrade split** — Extract into logical sub-files: TradeProposalBuilder (main component state & handlers), ProposalPlayerCard, TradeProposalPanel (list + filters), UpgradeFinderPage, ValuationInfoSheet, RosterBrowseModal
-- **opportunityEngine split** — Separate into: rosterAnalysis (lineup solver, benchmarks), proposalBuilder (need-driven & surplus pipelines), upgradePackaging (package scoring, candidate selection), opportunityCards (top-level assembly & exports)
-- **Shared types/constants extraction** — Move position colors, slot eligibility maps, and formatting helpers into a shared trade constants file
-- **Trade team-color visual system** — Extract the Statistics/Scout-style gradient team treatments into a reusable helper and apply it across Trade Agent rows, trade plates, proposal cards, and upgrade surfaces. Improve dark-mode player-name contrast and make light-mode team color backgrounds more pronounced without sacrificing readability.
-- **Trade card redesign reference** — Revisit the handoff bundle's refreshed 5:7 Upgrades card language as part of the broader Trade card work. Preserve the existing proposal-card no-clipping contract until this pass is deliberately scoped.
 
 ### v8.0 - ESPN League Integration
 ### v9.0 - Live Fantasy Scoring

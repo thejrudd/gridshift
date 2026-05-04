@@ -3,7 +3,6 @@ import { useSleeperBase, useSleeperStatsProgress } from '../../context/SleeperCo
 import { useTheme } from '../../context/ThemeContext';
 import { calcPointsFromTotals } from '../../utils/scoringEngine';
 import CompanionPlayerPreviewSheet from './CompanionPlayerPreviewSheet';
-import useCardGlow from '../../hooks/useCardGlow.jsx';
 import useMediaQuery from '../../hooks/useMediaQuery.js';
 import {
   getLeaguePositionFilters,
@@ -12,20 +11,14 @@ import {
   positionMatchesLeagueFilter,
 } from '../../utils/leaguePositions';
 import { getPlayerRowTeamTheme } from '../../utils/playerRowTheme';
-
-const POSITION_COLORS = {
-  QB: '#ef4444',
-  RB: '#22c55e',
-  WR: '#3b82f6',
-  TE: '#f59e0b',
-  K: '#8b5cf6',
-  DEF: '#64748b',
-  DL: '#dc2626',
-  LB: '#2563eb',
-  DB: '#0891b2',
-  TST: '#14b8a6',
-  STP: '#a855f7',
-};
+import { getPlayerAvailabilityStatus } from '../../utils/playerAvailabilityStatus.js';
+import { PlayerStatusLogoCluster } from './PlayerStatusBadge.jsx';
+import { CompanionSearchField, CompanionSelectorButton, CompanionSelectorRail } from './CompanionSelectorControls.jsx';
+import CompanionPlayerRow, {
+  CompanionPlayerLocalContrastText,
+  CompanionPlayerMetric,
+  CompanionPlayerStatus,
+} from './CompanionPlayerRow.jsx';
 const COMPACT_PHONE_QUERY = '(max-width: 480px)';
 const HIDE_AVG_QUERY = '(max-width: 900px)';
 const MOBILE_SHEET_QUERY = '(max-width: 1023px)';
@@ -114,6 +107,7 @@ export default function CompanionRankings({ positionFilter = 'ALL', onPositionFi
           pts,
           avgPPG: stats?.gp ? pts / stats.gp : null,
           isRostered: rosteredIds.has(id),
+          availabilityStatus: getPlayerAvailabilityStatus(p),
           teamTheme: getPlayerRowTeamTheme(p.team || '', darkMode),
         };
       })
@@ -145,47 +139,27 @@ export default function CompanionRankings({ positionFilter = 'ALL', onPositionFi
       {/* Filters */}
       <div className="px-4 pb-3 flex flex-col gap-2">
         {/* Position chips */}
-        <div className="flex gap-1.5 flex-wrap">
+        <CompanionSelectorRail ariaLabel="Rankings position filter">
           {availablePositions.map(pos => (
-            <button
+            <CompanionSelectorButton
               key={pos}
+              active={posFilter === pos}
               onClick={() => {
                 setPosFilter(pos);
                 onPositionFilterChange?.(pos);
               }}
-              className="px-3 py-1 rounded-lg text-xs font-semibold transition-colors"
-              style={{
-                background: posFilter === pos ? 'var(--color-signature)' : 'var(--color-fill)',
-                color: posFilter === pos ? 'var(--color-signature-fg)' : 'var(--color-label-secondary)',
-              }}
             >
               {getPositionFilterLabel(pos)}
-            </button>
+            </CompanionSelectorButton>
           ))}
-        </div>
+        </CompanionSelectorRail>
 
         {/* Search */}
-        <div className="relative">
-          <svg
-            className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none"
-            style={{ color: 'var(--color-label-tertiary)' }}
-            fill="none" viewBox="0 0 24 24" stroke="currentColor"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
-          <input
-            type="text"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Search players..."
-            className="w-full pl-9 pr-3 py-2 rounded-xl font-medium focus:outline-none"
-            style={{
-              fontSize: '16px',
-              background: 'var(--color-fill-secondary)',
-              color: 'var(--color-label)',
-            }}
-          />
-        </div>
+        <CompanionSearchField
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search players..."
+        />
       </div>
 
       {/* Stats loading */}
@@ -291,122 +265,90 @@ function SortHeader({ label, active, onClick }) {
 }
 
 function RankRow({ rank, player, onSelect, hideAvgColumn, isCompactPhone, nameColPx }) {
-  const [isHovered, setIsHovered] = useState(false);
-  const posColor = POSITION_COLORS[player.position] ?? 'var(--color-label-tertiary)';
-  const rosteredColor = player.teamTheme.accent ?? 'var(--color-signature)';
   const { darkMode } = useTheme();
-  const glowColor = player.teamTheme.accent ?? (darkMode ? '#5AADFF' : '#1A6EFF');
-  const cardColor = player.teamTheme.accent ?? null;
-  const { glowHandlers, borderOverlay, glowShadow } = useCardGlow({
-    enabled: isHovered,
-    color: glowColor,
-    cardColor,
-    darkMode,
-    coreColor: darkMode ? (player.teamTheme.glowCore ?? '#FFFFFF') : null,
-    outerColor: player.teamTheme.accent ?? glowColor,
-  });
-  const baseShadow = isHovered
-    ? '0 8px 18px rgba(12,15,20,0.10), 0 2px 6px rgba(12,15,20,0.08)'
-    : '0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06)';
-  const rowShadow = glowShadow ? `${glowShadow}, ${baseShadow}` : baseShadow;
+  const columnGridTemplate = hideAvgColumn ? 'auto 80px' : 'auto 64px 80px';
+  const nameCol = nameColPx ? `minmax(0,${nameColPx}px)` : 'minmax(0,1fr)';
+  const rowTemplate = isCompactPhone
+    ? '32px 44px minmax(0,1fr) minmax(0,1fr) 12px'
+    : `32px 44px ${nameCol} minmax(0,1fr) 12px`;
+  const metaSegments = [player.position, player.team];
 
   return (
-    <button
+    <CompanionPlayerRow
+      player={player}
+      darkMode={darkMode}
       onClick={onSelect}
-      onMouseMove={glowHandlers.onMouseMove}
-      onMouseEnter={(event) => {
-        setIsHovered(true);
-        glowHandlers.onMouseEnter?.(event);
-      }}
-      onMouseLeave={(event) => {
-        setIsHovered(false);
-        glowHandlers.onMouseLeave?.(event);
-      }}
-      onFocus={(event) => {
-        setIsHovered(true);
-        glowHandlers.onMouseEnter?.(event);
-      }}
-      onBlur={(event) => {
-        setIsHovered(false);
-        glowHandlers.onMouseLeave?.(event);
-      }}
-      className="relative grid items-center w-full px-3 py-2.5 text-left active:opacity-60"
+      showPosition={false}
+      showTeamLogo={false}
+      metaSegments={metaSegments}
+      leading={(
+        <span className="text-xs tabular-nums" style={{ color: 'var(--color-label-quaternary)' }}>
+          {rank}
+        </span>
+      )}
+      gridTemplate={rowTemplate}
+      columnGridTemplate={columnGridTemplate}
+      columns={[
+        <div
+          key="status"
+          className={isCompactPhone ? 'flex items-center gap-1.5 self-center' : 'grid items-center self-center'}
+          style={{
+            minHeight: 18,
+            gridTemplateColumns: isCompactPhone ? undefined : '74px auto',
+            columnGap: isCompactPhone ? undefined : 6,
+          }}
+        >
+          <div className={isCompactPhone ? 'shrink-0' : 'min-w-0 text-right'}>
+            {player.isRostered ? (
+              <CompanionPlayerLocalContrastText
+                className="shrink-0 text-[9px] sm:text-[10px] font-bold uppercase tracking-[0.12em] leading-none"
+              >
+                {isCompactPhone ? 'R' : 'ROSTERED'}
+              </CompanionPlayerLocalContrastText>
+            ) : !isCompactPhone ? (
+              <span
+                aria-hidden="true"
+                className="invisible text-[10px] font-bold uppercase tracking-[0.12em] leading-none"
+              >
+                ROSTERED
+              </span>
+            ) : null}
+          </div>
+          {!isCompactPhone && (
+            <PlayerStatusLogoCluster
+              logoKey={player.teamTheme.logoKey}
+              status={player.availabilityStatus}
+              className="justify-start"
+            />
+          )}
+          {isCompactPhone && player.availabilityStatus && (
+            <CompanionPlayerStatus label={player.availabilityStatus} tone="neutral" />
+          )}
+        </div>,
+        !hideAvgColumn && (
+          <CompanionPlayerMetric
+            key="avg"
+            value={player.avgPPG != null ? player.avgPPG.toFixed(1) : '—'}
+            align="center"
+          />
+        ),
+        <CompanionPlayerMetric
+          key="season"
+          value={player.pts.toFixed(1)}
+          align="center"
+        />,
+      ].filter(Boolean)}
+      trailing={(
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--color-label-quaternary)', flexShrink: 0 }}>
+          <polyline points="9 18 15 12 9 6"/>
+        </svg>
+      )}
       style={{
-        gridTemplateColumns: getRankingsGridTemplate({ hideAvgColumn, isCompactPhone, nameColPx }),
         columnGap: RANKINGS_ROW_GAP,
         borderBottom: '1px solid var(--color-separator)',
-        borderLeft: player.teamTheme.accent ? `4px solid ${player.teamTheme.accent}` : '4px solid transparent',
-        background: isHovered ? player.teamTheme.hoverBg : player.teamTheme.rowBg,
-        boxShadow: rowShadow,
-        transform: isHovered ? 'translateY(-1px)' : 'translateY(0)',
-        transition: 'background 150ms cubic-bezier(0.32, 0.72, 0, 1), box-shadow 200ms cubic-bezier(0.32, 0.72, 0, 1), transform 200ms cubic-bezier(0.32, 0.72, 0, 1)',
+        borderLeftWidth: 4,
+        borderRadius: 0,
       }}
-    >
-      {borderOverlay}
-      <span className="text-xs tabular-nums" style={{ color: 'var(--color-label-quaternary)' }}>
-        {rank}
-      </span>
-
-      <img
-        src={`https://sleepercdn.com/content/nfl/players/thumb/${player.id}.jpg`}
-        alt={player.name}
-        className="w-11 h-11 rounded-full shrink-0 object-cover"
-        style={{
-          background: 'var(--color-fill)',
-          border: player.teamTheme.avatarBorder ? `2px solid ${player.teamTheme.avatarBorder}` : '2px solid transparent',
-        }}
-        onError={e => { e.target.src = 'https://sleepercdn.com/images/v2/icons/player_default.webp'; }}
-      />
-
-      <div className="min-w-0">
-        <div className="flex items-center gap-1.5 min-w-0">
-          <span className="font-semibold text-sm truncate" style={{ color: 'var(--color-label)' }}>
-            {player.name}
-          </span>
-        </div>
-        <div className="text-xs mt-0.5 flex items-center gap-1.5 min-w-0 whitespace-nowrap overflow-hidden">
-          <span style={{ color: posColor, fontWeight: 600 }}>{player.position}</span>
-          <span style={{ color: 'var(--color-label-tertiary)' }}>{player.team}</span>
-        </div>
-      </div>
-
-      <div className="flex items-center gap-1.5 self-center" style={{ minHeight: 18 }}>
-        {player.isRostered && (
-          <span
-            className="shrink-0 text-[9px] sm:text-[10px] font-bold uppercase tracking-[0.12em] leading-none"
-            style={{ color: rosteredColor }}
-          >
-            {isCompactPhone ? 'R' : 'ROSTERED'}
-          </span>
-        )}
-        {!isCompactPhone && player.teamTheme.logoKey && (
-          <img
-            src={`https://a.espncdn.com/i/teamlogos/nfl/500/${player.teamTheme.logoKey}.png`}
-            alt=""
-            aria-hidden="true"
-            className="shrink-0"
-            style={{ width: 'auto', height: 44, maxWidth: 44, objectFit: 'contain', opacity: 0.72 }}
-            onError={e => { e.target.style.display = 'none'; }}
-          />
-        )}
-      </div>
-
-      {!hideAvgColumn && (
-        <div className="w-full grid place-items-center">
-          <span className="font-semibold tabular-nums text-sm text-center" style={{ color: 'var(--color-label-secondary)' }}>
-            {player.avgPPG != null ? player.avgPPG.toFixed(1) : '—'}
-          </span>
-        </div>
-      )}
-
-      <div className="w-full grid place-items-center">
-        <span className="font-bold tabular-nums text-sm text-center" style={{ color: 'var(--color-label)' }}>
-          {player.pts.toFixed(1)}
-        </span>
-      </div>
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--color-label-quaternary)', flexShrink: 0 }}>
-        <polyline points="9 18 15 12 9 6"/>
-      </svg>
-    </button>
+    />
   );
 }

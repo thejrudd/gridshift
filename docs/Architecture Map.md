@@ -73,6 +73,8 @@ Entries resolved via Pass 1 or 2 are marked `_teamSource = 'espn'`. Pass 3 entri
 ### `src/components/companion`
 
 - Fantasy league tools built on top of Sleeper state and scoring logic.
+- Trade keeps `CompanionTrade.jsx` as the public route component, with extracted Agent/Intelligence/Upgrade leaf modules in `src/components/companion/trade/`.
+- Shared player/asset selector rendering lives here too: `CompanionPlayerRow.jsx`, `CompanionAssetRow.jsx`, and `CompanionSelectorControls.jsx` are the canonical row/control primitives for Companion and Trade-adjacent picker surfaces. See [[Companion Shared Rows]] before changing player-row styling, team logos, status badges, or selector controls.
 
 ### `src/components/compare`
 
@@ -87,6 +89,7 @@ Entries resolved via Pass 1 or 2 are marked `_teamSource = 'espn'`. Pass 3 entri
 ### `src/utils`
 
 - Most domain logic lives here: scoring, projections, trade math, export shaping, search parsing.
+- Trade opportunity logic keeps `src/utils/opportunityEngine.js` as the public facade, with implementation modules under `src/utils/opportunity/`.
 
 ### `src/api`
 

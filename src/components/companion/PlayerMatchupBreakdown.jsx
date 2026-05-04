@@ -4,7 +4,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { calcPoints, DEFAULT_SCORING, STAT_TO_SCORING_KEY } from '../../utils/scoringEngine';
 import { formatWeather } from '../../api/weatherApi';
 import { getTeamPalette } from '../../data/teamColors.js';
-import useBodyScrollLock from '../../hooks/useBodyScrollLock';
+import Modal from '../Modal';
 
 function hexLuminance(hex) {
   const r = parseInt(hex.slice(1, 3), 16) / 255;
@@ -544,34 +544,20 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, enr
     return denom > 0 ? Math.round((projectedScore / denom) * 10) / 10 : null;
   }, [projectedScore, factors]);
 
-  useBodyScrollLock();
-
   return (
-    <>
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 z-50"
-        style={{ background: 'rgba(0,0,0,0.6)' }}
-        onClick={onClose}
-        aria-hidden="true"
-      />
-
-      {/* Modal */}
-      <div className="matchup-breakdown-shell fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
-        <div
-          className="matchup-breakdown-dialog w-full rounded-2xl overflow-hidden pointer-events-auto"
-          style={{
-            background: 'var(--color-bg-secondary)',
-            border: '1px solid var(--color-separator)',
-            boxShadow: '0 12px 40px rgba(0,0,0,0.12), 0 4px 12px rgba(0,0,0,0.06)',
-            maxWidth: '480px',
-            maxHeight: '80vh',
-            display: 'flex',
-            flexDirection: 'column',
-          }}
-          role="dialog"
-          aria-modal="true"
-        >
+    <Modal
+      onClose={onClose}
+      mobileSheet
+      ariaLabel="Player matchup breakdown"
+      containerClassName="matchup-breakdown-dialog w-full flex flex-col"
+      containerStyle={{
+        background: 'var(--color-bg-secondary)',
+        border: '1px solid var(--color-separator)',
+        boxShadow: '0 12px 40px rgba(0,0,0,0.12), 0 4px 12px rgba(0,0,0,0.06)',
+        maxWidth: '480px',
+        maxHeight: '80vh',
+      }}
+    >
           {/* Player header */}
           <div
             className="px-5 pt-4 pb-3 shrink-0 relative"
@@ -866,8 +852,6 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, enr
               </>
             )}
           </div>
-        </div>
-      </div>
-    </>
+    </Modal>
   );
 }

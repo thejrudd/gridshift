@@ -87,19 +87,19 @@ npm run validate:routing
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) |
 
-## What's New in v7.2.0
+## What's New in v7.3
 
-- **Unified player drilldowns** - Companion player selections now route toward the Statistics player page with preserved back context and fantasy mode where appropriate.
-- **Statistics stat mode toggle** - Player profiles can switch between raw game stats and league-scored fantasy values without leaving the page.
-- **Weekly stat table redesign** - Game logs support sortable columns, responsive stat fitting, fantasy contribution rows, and high/low column highlighting.
-- **Mobile player preview sheet** - Companion mobile views show a compact player-stat preview before opening the full Statistics page.
+- **Trade modules split** - Trade Agent, Intelligence, Upgrades, proposal cards, valuation sheets, roster browse, and opportunity logic now live in focused modules instead of giant all-in-one files.
+- **Shared Companion/Trade rows** - Player and asset rows now share one visual system for team gradients, badges, logos, fallbacks, and selector controls across Companion and Trade surfaces.
+- **Trade Agent polish** - Mobile roster shelves are easier to use, proposal packages carry into Agent more reliably, draft pick values stay consistent, and Color Commentary waits until both trade sides are populated.
+- **Mobile table fixes** - Statistics game logs now show left/right overflow cues, keep BYE rows anchored with the identity columns, and fit dense mobile stat surfaces more cleanly.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Roadmap
 
-- **v7.3 - Scout Rookie Projection Layer** - Add next-season rookie projections that work for standard and IDP-focused draft prep without overloading the current Scout board.
-- **v7.4 - Trade Module Decomposition** - Split the largest Trade components and engines into focused modules for lower maintenance cost.
+- **v7.4 - Scout Rookie Projection Layer** - Add next-season rookie projections that work for standard and IDP-focused draft prep without overloading the current Scout board.
+- **Trade follow-through** - Continue polishing Trade drilldowns, remaining explanation copy, and proposal-card readability after the v7.3 module split.
 - **v8.0 - ESPN League Integration** - Planned major integration track.
 - **v9.0 - Live Fantasy Scoring** - Planned live scoring track.
 - **Week-by-Week View** *(blocked on 2026 schedule data)* — Browse the full schedule by week with predictions reflected

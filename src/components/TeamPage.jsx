@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { fetchRoster, fetchDepthChart, headshot } from '../utils/playerApi';
 import { TEAM_COLORS } from '../data/teamColors.js';
 import { TEAM_HISTORY } from '../data/teamHistory.js';
@@ -36,17 +36,52 @@ const POSITION_GROUPS = [
   { label: 'Specialists',     positions: ['P', 'LS'] },
 ];
 
-// Positions shown in the "key players" strip — one starter each
-const FEATURED_POSITIONS = [
-  { key: 'QB',  match: p => p.position === 'QB' },
-  { key: 'RB',  match: p => ['RB', 'FB', 'HB'].includes(p.position) },
-  { key: 'WR',  match: p => p.position === 'WR' },
-  { key: 'TE',  match: p => p.position === 'TE' },
-  { key: 'DL',  match: p => ['DE', 'DT', 'NT', 'DL', 'ED'].includes(p.position) },
-  { key: 'LB',  match: p => ['LB', 'ILB', 'OLB', 'MLB'].includes(p.position) },
-  { key: 'CB',  match: p => p.position === 'CB' },
-  { key: 'S',   match: p => ['S', 'SS', 'FS'].includes(p.position) },
-  { key: 'K',   match: p => p.position === 'K' },
+const hasPosition = (...positions) => p => positions.includes(p.position);
+
+const STARTER_SECTIONS = [
+  {
+    id: 'offense',
+    label: 'Offense',
+    slots: [
+      { label: 'QB', match: hasPosition('QB') },
+      { label: 'RB', match: hasPosition('RB', 'FB', 'HB') },
+      { label: 'WR', match: hasPosition('WR') },
+      { label: 'WR', match: hasPosition('WR') },
+      { label: 'WR', match: hasPosition('WR') },
+      { label: 'TE', match: hasPosition('TE') },
+      { label: 'LT', match: hasPosition('OT', 'T') },
+      { label: 'LG', match: hasPosition('OG', 'G') },
+      { label: 'C', match: hasPosition('C') },
+      { label: 'RG', match: hasPosition('OG', 'G') },
+      { label: 'RT', match: hasPosition('OT', 'T') },
+    ],
+  },
+  {
+    id: 'defense',
+    label: 'Defense',
+    slots: [
+      { label: 'EDGE', match: hasPosition('ED', 'EDGE', 'DE', 'OLB') },
+      { label: 'DL', match: hasPosition('DT', 'NT', 'DL', 'DE') },
+      { label: 'DL', match: hasPosition('DT', 'NT', 'DL', 'DE') },
+      { label: 'EDGE', match: hasPosition('ED', 'EDGE', 'DE', 'OLB') },
+      { label: 'LB', match: hasPosition('LB', 'ILB', 'OLB', 'MLB') },
+      { label: 'LB', match: hasPosition('LB', 'ILB', 'OLB', 'MLB') },
+      { label: 'LB', match: hasPosition('LB', 'ILB', 'OLB', 'MLB') },
+      { label: 'CB', match: hasPosition('CB') },
+      { label: 'CB', match: hasPosition('CB') },
+      { label: 'S', match: hasPosition('S', 'SS', 'FS') },
+      { label: 'S', match: hasPosition('S', 'SS', 'FS') },
+    ],
+  },
+  {
+    id: 'special',
+    label: 'Special Teams',
+    slots: [
+      { label: 'K', match: hasPosition('K') },
+      { label: 'P', match: hasPosition('P') },
+      { label: 'LS', match: hasPosition('LS') },
+    ],
+  },
 ];
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -58,7 +93,8 @@ export default function TeamPage({ team, onBack, onSelectPlayer }) {
   const [depthChart, setDepthChart] = useState({});
   const [loading, setLoading]     = useState(true);
   const [loadError, setLoadError] = useState(null);
-  const [expandedGroups, setExpandedGroups] = useState(new Set(['Quarterbacks']));
+  const [expandedGroups, setExpandedGroups] = useState(new Set());
+  const [starterTab, setStarterTab] = useState(STARTER_SECTIONS[0].id);
 
   const teamKey = team.id.toLowerCase();
   const palette = TEAM_COLORS[teamKey];
@@ -69,6 +105,12 @@ export default function TeamPage({ team, onBack, onSelectPlayer }) {
   const heroOnBg   = hexLuminance(heroBg) > 0.3 ? '#0C0F14' : '#FFFFFF';
   const heroMuted  = heroOnBg === '#FFFFFF' ? 'rgba(255,255,255,0.65)' : 'rgba(12,15,20,0.60)';
   const podBg      = heroOnBg === '#FFFFFF' ? 'rgba(255,255,255,0.12)' : 'rgba(12,15,20,0.10)';
+  const tabOnAccent = hexLuminance(heroAccent) > 0.55 ? '#0C0F14' : '#FFFFFF';
+  const franchiseNote = useMemo(() => {
+    const facts = history?.facts ?? [];
+    if (facts.length === 0) return null;
+    return facts[Math.floor(Math.random() * facts.length)];
+  }, [history, teamKey]);
 
   useEffect(() => {
     setLoading(true);
@@ -88,30 +130,31 @@ export default function TeamPage({ team, onBack, onSelectPlayer }) {
       return next;
     });
 
-  // One starter per featured position, sorted by depth chart rank
-  const featuredPlayers = (() => {
-    if (!roster) return [];
+  const starterSections = useMemo(() => {
+    if (!roster) return STARTER_SECTIONS.map(section => ({ ...section, players: [] }));
+
     const byDepth = [...roster].sort((a, b) => {
-      // 1. Explicit depth chart rank (most reliable when the API has data)
       const da = depthChart[a.id] ?? Infinity;
       const db = depthChart[b.id] ?? Infinity;
       if (da !== db) return da - db;
-      // 2. ESPN roster order within the position group (implicit depth — reflects
-      //    prior-season snap-count/usage ordering in ESPN's system)
       const ra = a.rosterOrder ?? Infinity;
       const rb = b.rosterOrder ?? Infinity;
       if (ra !== rb) return ra - rb;
-      // 3. Experience as a last resort
       return (b.experience ?? 0) - (a.experience ?? 0);
     });
-    const seen = new Set();
-    const result = [];
-    for (const { key, match } of FEATURED_POSITIONS) {
-      const player = byDepth.find(p => match(p) && !seen.has(p.id));
-      if (player) { seen.add(player.id); result.push({ ...player, posLabel: key }); }
-    }
-    return result;
-  })();
+
+    return STARTER_SECTIONS.map(section => {
+      const used = new Set();
+      const players = section.slots.map((slot, index) => {
+        const player = byDepth.find(p => slot.match(p) && !used.has(p.id));
+        if (player) used.add(player.id);
+        return { slotId: `${slot.label}-${index}`, label: slot.label, player };
+      });
+      return { ...section, players };
+    });
+  }, [depthChart, roster]);
+
+  const activeStarterSection = starterSections.find(section => section.id === starterTab) ?? starterSections[0];
 
   // Full roster grouped by position, sorted by depth chart rank within each group
   const rosterGroups = POSITION_GROUPS.map(group => ({
@@ -204,8 +247,8 @@ export default function TeamPage({ team, onBack, onSelectPlayer }) {
                 podBg={podBg}
               />
               <ChampPod
-                count={history.conferenceChamps}
-                label={history.conferenceChamps === 1 ? 'Conf. Title' : 'Conf. Titles'}
+                count={history.conferenceGameAppearances}
+                label={history.conferenceGameAppearances === 1 ? 'Conf. Game App' : 'Conf. Game Apps'}
                 icon="🏅"
                 onBg={heroOnBg}
                 muted={heroMuted}
@@ -234,8 +277,8 @@ export default function TeamPage({ team, onBack, onSelectPlayer }) {
         </div>
       </div>
 
-      {/* ── Team highlights ───────────────────────────────────────────────── */}
-      {history?.facts?.length > 0 && (
+      {/* ── Franchise note ───────────────────────────────────────────────── */}
+      {franchiseNote && (
         <div
           className="rounded-xl p-5"
           style={{ background: 'var(--color-bg-secondary)', borderLeft: `3px solid ${heroAccent}` }}
@@ -244,20 +287,15 @@ export default function TeamPage({ team, onBack, onSelectPlayer }) {
             className="text-[10px] font-bold uppercase tracking-widest mb-3"
             style={{ color: heroAccent }}
           >
-            Team Highlights
+            Franchise Note
           </h2>
-          <ul className="space-y-2.5">
-            {history.facts.map((fact, i) => (
-              <li
-                key={i}
-                className="flex gap-2.5 text-sm leading-relaxed"
-                style={{ color: 'var(--color-label-secondary)' }}
-              >
-                <span style={{ color: heroAccent, flexShrink: 0, fontWeight: 700 }}>—</span>
-                {fact}
-              </li>
-            ))}
-          </ul>
+          <p
+            className="flex gap-2.5 text-sm leading-relaxed"
+            style={{ color: 'var(--color-label-secondary)' }}
+          >
+            <span style={{ color: heroAccent, flexShrink: 0, fontWeight: 700 }}>—</span>
+            <span>{franchiseNote}</span>
+          </p>
         </div>
       )}
 
@@ -275,27 +313,49 @@ export default function TeamPage({ team, onBack, onSelectPlayer }) {
 
       {roster && (
         <>
-          {/* ── Key players strip ─────────────────────────────────────────── */}
-          {featuredPlayers.length > 0 && (
-            <section>
+          {/* ── Projected starters ───────────────────────────────────────── */}
+          <section>
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
               <h2
-                className="text-[10px] font-bold uppercase tracking-widest mb-3"
+                className="text-[10px] font-bold uppercase tracking-widest"
                 style={{ color: heroAccent }}
               >
-                Key Players
+                Projected Starters
               </h2>
-              <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-2">
-                {featuredPlayers.map(player => (
-                  <FeaturedCard
-                    key={player.id}
-                    player={player}
-                    accentColor={heroAccent}
-                    onClick={() => onSelectPlayer(player)}
-                  />
-                ))}
+              <div
+                className="inline-flex rounded-lg p-1"
+                style={{ background: 'var(--color-bg-secondary)' }}
+              >
+                {starterSections.map(section => {
+                  const active = section.id === activeStarterSection.id;
+                  return (
+                    <button
+                      key={section.id}
+                      type="button"
+                      onClick={() => setStarterTab(section.id)}
+                      className="rounded-md px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider transition-colors"
+                      style={{
+                        background: active ? heroAccent : 'transparent',
+                        color: active ? tabOnAccent : 'var(--color-label-secondary)',
+                      }}
+                    >
+                      {section.label}
+                    </button>
+                  );
+                })}
               </div>
-            </section>
-          )}
+            </div>
+            <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-11 gap-2">
+              {activeStarterSection.players.map(slot => (
+                <StarterCard
+                  key={`${activeStarterSection.id}-${slot.slotId}`}
+                  slot={slot}
+                  accentColor={heroAccent}
+                  onClick={() => slot.player && onSelectPlayer(slot.player)}
+                />
+              ))}
+            </div>
+          </section>
 
           {/* ── Full roster by position ───────────────────────────────────── */}
           <section>
@@ -348,18 +408,36 @@ function ChampPod({ count, label, note, icon, onBg, muted, podBg }) {
   );
 }
 
-function FeaturedCard({ player, accentColor, onClick }) {
+function StarterCard({ slot, accentColor, onClick }) {
   const [imgErr, setImgErr] = useState(false);
-  const initials = (player.displayName ?? '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
-  const lastName = player.displayName?.split(' ').slice(1).join(' ') || player.displayName;
+  const player = slot.player;
+  const initials = player
+    ? (player.displayName ?? '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
+    : '';
+  const lastName = player
+    ? player.displayName?.split(' ').slice(1).join(' ') || player.displayName
+    : 'Open';
 
   return (
     <button
       onClick={onClick}
+      disabled={!player}
       className="flex flex-col items-center rounded-xl p-2.5 text-center transition-opacity active:opacity-60 w-full"
-      style={{ background: 'var(--color-bg-secondary)' }}
+      style={{
+        background: 'var(--color-bg-secondary)',
+        opacity: player ? 1 : 0.62,
+      }}
     >
-      {imgErr ? (
+      {!player ? (
+        <div
+          className="w-12 h-12 rounded-full flex items-center justify-center mb-1.5"
+          style={{ background: 'var(--color-fill)' }}
+        >
+          <span className="text-xs font-bold" style={{ color: 'var(--color-label-quaternary)' }}>
+            —
+          </span>
+        </div>
+      ) : imgErr ? (
         <div
           className="w-12 h-12 rounded-full flex items-center justify-center mb-1.5"
           style={{ background: accentColor ? `${accentColor}22` : 'var(--color-fill)' }}
@@ -381,11 +459,11 @@ function FeaturedCard({ player, accentColor, onClick }) {
         className="text-[9px] font-bold uppercase tracking-wider mb-0.5"
         style={{ color: accentColor ?? 'var(--color-label-tertiary)' }}
       >
-        {player.posLabel}
+        {slot.label}
       </div>
       <div
         className="text-[11px] font-semibold leading-tight w-full truncate"
-        style={{ color: 'var(--color-label)' }}
+        style={{ color: player ? 'var(--color-label)' : 'var(--color-label-tertiary)' }}
       >
         {lastName}
       </div>

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import Modal from '../Modal';
 import {
   formatDraftSlot,
   formatProjectedPick,
@@ -15,14 +15,6 @@ import {
   getTierDescription,
   getCollegeProductionRows,
 } from './scoutUtils';
-
-function useScrollLock() {
-  useEffect(() => {
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = prev; };
-  }, []);
-}
 
 function CompareHeader({ player }) {
   const posColor = positionColor(player.position, player.positionGroup);
@@ -165,20 +157,15 @@ function CombineRows({ a, b }) {
 }
 
 export default function ScoutCompareSheet({ playerA, playerB, onClose }) {
-  useScrollLock();
-
   return (
-    <>
-      <div className="scout-cmp-backdrop" onClick={onClose} aria-hidden="true" />
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label="Compare prospects"
-        className="scout-cmp-sheet"
-      >
+    <Modal
+      onClose={onClose}
+      mobileSheet
+      ariaLabel="Compare prospects"
+      containerClassName="scout-cmp-sheet flex flex-col"
+    >
         {/* Header */}
         <div className="scout-cmp-sheet-header">
-          <div className="scout-sheet-handle" />
           <span className="scout-cmp-sheet-title">Compare</span>
           <button
             onClick={onClose}
@@ -208,7 +195,6 @@ export default function ScoutCompareSheet({ playerA, playerB, onClose }) {
           <CmpSection label="NFL Combine" />
           <CombineRows a={playerA} b={playerB} />
         </div>
-      </div>
-    </>
+    </Modal>
   );
 }

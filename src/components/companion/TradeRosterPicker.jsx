@@ -8,13 +8,21 @@
 
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { findKtcPlayerFromSleeper, getKtcValue, fmtKtcValue, productionAdjustedValue } from '../../utils/ktcApi';
-import { DYNASTY_FALLBACK_MULT } from '../../utils/tradeValue';
-import { calcPointsFromTotals } from '../../utils/scoringEngine';
+import { resolveTradePlayerValueDetail } from '../../utils/tradeValue';
 import { computePositionalRanks, computePositionalAvgPPG, computePositionalValuePerPPG } from '../../utils/projectionEngine';
 import { parseSearchQuery, matchesFilter } from '../../utils/parseSearchQuery';
-import { TEAM_COLORS } from '../../data/teamColors';
+import { getTeamColorKey } from '../../data/teamColors';
+import { getTeamVisualTheme } from '../../utils/teamVisualTheme';
+import { getPlayerAvailabilityStatus } from '../../utils/playerAvailabilityStatus.js';
 import { useTheme } from '../../context/ThemeContext';
 import Modal from '../Modal';
+import PlayerStatusBadge from './PlayerStatusBadge.jsx';
+import { CompanionSearchField, CompanionSelectorButton, CompanionSelectorRail } from './CompanionSelectorControls.jsx';
+import CompanionPlayerRow, {
+  CompanionPlayerAction,
+  CompanionPlayerMetric,
+  CompanionPlayerStatus,
+} from './CompanionPlayerRow.jsx';
 
 const POSITION_ORDER = ['QB', 'RB', 'WR', 'TE', 'K', 'DL', 'LB', 'DB', 'DEF', 'Other'];
 const POSITION_FILTER_CHIPS = ['ALL', 'QB', 'RB', 'WR', 'TE', 'K', 'DL', 'LB', 'DB', 'DEF'];
@@ -45,32 +53,6 @@ const TEAM_CITY_NAMES = {
   atl: 'atlanta falcons', car: 'carolina panthers', no: 'new orleans saints', tb: 'tampa bay buccaneers',
   ari: 'arizona cardinals', la: 'los angeles rams', sf: 'san francisco 49ers', sea: 'seattle seahawks',
 };
-
-// ── Sleeper → TEAM_COLORS key normalization ───────────────────────────────────
-// Sleeper uses a few abbreviations that differ from TEAM_COLORS keys.
-
-const SLEEPER_TEAM_MAP = {
-  lar: 'la',   // Los Angeles Rams
-  was: 'wsh',  // Washington Commanders
-  jac: 'jax',  // Jacksonville Jaguars (Sleeper uses both)
-  lvr: 'lv',   // Las Vegas Raiders (Sleeper sometimes uses LVR)
-};
-
-function toTeamKey(sleeperTeam) {
-  if (!sleeperTeam) return '';
-  const lower = sleeperTeam.toLowerCase();
-  return SLEEPER_TEAM_MAP[lower] ?? lower;
-}
-
-// ── Color helpers ────────────────────────────────────────────────────────────
-
-function hexLuminance(hex) {
-  const r = parseInt(hex.slice(1, 3), 16) / 255;
-  const g = parseInt(hex.slice(3, 5), 16) / 255;
-  const b = parseInt(hex.slice(5, 7), 16) / 255;
-  const lin = c => c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
-}
 
 // ── NFL division / conference lookup ─────────────────────────────────────────
 
@@ -107,6 +89,79 @@ const GUIDE_SECTIONS = [
 const PICKER_HEADER_ROW_HEIGHT = 35;
 const PICKER_PLAYER_ROW_HEIGHT = 76;
 const PICKER_OVERSCAN_PX = 320;
+const PICKER_REFERENCE_VIEWPORT = { width: 430, height: 760 };
+const TRADE_LOGO_SIDE_THEME_OPTIONS = { logoSide: 'end' };
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function getVisualViewportSize() {
+  if (typeof window === 'undefined') return PICKER_REFERENCE_VIEWPORT;
+  return {
+    width: window.visualViewport?.width ?? window.innerWidth ?? PICKER_REFERENCE_VIEWPORT.width,
+    height: window.visualViewport?.height ?? window.innerHeight ?? PICKER_REFERENCE_VIEWPORT.height,
+  };
+}
+
+function buildPickerFitMetrics() {
+  const viewport = getVisualViewportSize();
+  const widthFit = clamp(viewport.width / PICKER_REFERENCE_VIEWPORT.width, 0.72, 1);
+  const heightFit = clamp(viewport.height / PICKER_REFERENCE_VIEWPORT.height, 0.72, 1);
+  const fit = Math.min(widthFit, heightFit);
+  const detailScore = (widthFit + heightFit) / 2;
+
+  return {
+    viewportHeight: viewport.height,
+    sheetRatio: clamp(0.94 - ((1 - heightFit) * 0.12), 0.86, 0.94),
+    rowHeight: Math.round(PICKER_PLAYER_ROW_HEIGHT * fit),
+    headerRowHeight: Math.round(PICKER_HEADER_ROW_HEIGHT * clamp(fit, 0.82, 1)),
+    rowPaddingX: Math.round(16 * clamp(widthFit, 0.78, 1)),
+    rowPaddingY: Math.round(12 * clamp(heightFit, 0.72, 1)),
+    rowGap: Math.round(12 * clamp(widthFit, 0.72, 1)),
+    avatarSize: Math.round(36 * clamp(fit, 0.76, 1)),
+    buttonSize: Math.round(28 * clamp(fit, 0.82, 1)),
+    nameSize: clamp(14 * fit, 12.25, 14),
+    metaSize: clamp(12 * fit, 10.25, 12),
+    valueSize: clamp(14 * fit, 12, 14),
+    optionalMetaCount: clamp(Math.floor((detailScore - 0.72) / 0.08), 0, 3),
+  };
+}
+
+function useTradePickerFitMetrics() {
+  const [metrics, setMetrics] = useState(buildPickerFitMetrics);
+
+  useEffect(() => {
+    const updateMetrics = () => setMetrics(buildPickerFitMetrics());
+    const viewport = window.visualViewport;
+
+    updateMetrics();
+    window.addEventListener('resize', updateMetrics);
+    window.addEventListener('orientationchange', updateMetrics);
+    viewport?.addEventListener('resize', updateMetrics);
+    viewport?.addEventListener('scroll', updateMetrics);
+
+    return () => {
+      window.removeEventListener('resize', updateMetrics);
+      window.removeEventListener('orientationchange', updateMetrics);
+      viewport?.removeEventListener('resize', updateMetrics);
+      viewport?.removeEventListener('scroll', updateMetrics);
+    };
+  }, []);
+
+  return metrics;
+}
+
+function toPickerTradeValueMeta(detail, fallbackRankInfo = null) {
+  return {
+    val: detail?.value ?? null,
+    dynastyFallback: detail?.dynastyFallback ?? false,
+    idpFallback: detail?.isEstimated ?? false,
+    pts: detail?.pts ?? null,
+    avgPPG: detail?.avgPPG != null ? Math.round(detail.avgPPG * 10) / 10 : null,
+    rankInfo: detail?.rankInfo ?? fallbackRankInfo,
+  };
+}
 
 function SearchGuide({ onExample }) {
   return (
@@ -169,6 +224,7 @@ export default function TradeRosterPicker({
   const trimmedSearch = deferredSearch.trim();
   const showSearchGuide = isAllMode && !trimmedSearch && posFilter === 'ALL';
   const enrichedPlayerCacheRef = useRef(new Map());
+  const pickerFit = useTradePickerFitMetrics();
 
   // Positional ranks across all rostered players
   const rankMap = useMemo(
@@ -239,7 +295,8 @@ export default function TradeRosterPicker({
         const sp = sleeperPlayers?.[id];
         if (!sp) return null;
         const ownerRosterId = playerRosterMap[id];
-        const teamKey = toTeamKey(sp.team);
+        const teamTheme = getTeamVisualTheme(sp.team, darkMode, TRADE_LOGO_SIDE_THEME_OPTIONS);
+        const teamKey = teamTheme.logoKey || getTeamColorKey(sp.team) || '';
         const cityName = TEAM_CITY_NAMES[teamKey] ?? '';
         const ownerName = isAllMode && ownerRosterId ? rosterOwnerNameMap[ownerRosterId] ?? null : null;
         return {
@@ -248,8 +305,8 @@ export default function TradeRosterPicker({
           position: sp.position ?? '',
           team: sp.team ?? '',
           teamKey,
-          palette: TEAM_COLORS[teamKey] ?? null,
-          injuryStatus: sp.injury_status,
+          teamTheme,
+          availabilityStatus: getPlayerAvailabilityStatus(sp),
           ownerRosterId,
           ownerName,
           isOwnPlayer: ownerRosterId === myRosterId,
@@ -264,7 +321,7 @@ export default function TradeRosterPicker({
         };
       })
       .filter(Boolean);
-  }, [showSearchGuide, sourceIds, allowedSet, isAllMode, excludeSet, sleeperPlayers, playerRosterMap, myRosterId, rosterOwnerNameMap]);
+  }, [showSearchGuide, sourceIds, allowedSet, isAllMode, excludeSet, sleeperPlayers, playerRosterMap, myRosterId, rosterOwnerNameMap, darkMode]);
 
   // Position chip filter applied first (independent of text search)
   const posFiltered = useMemo(() => {
@@ -315,70 +372,22 @@ export default function TradeRosterPicker({
     const cached = enrichedPlayerCacheRef.current.get(player.id);
     if (cached) return cached;
 
-    const sharedTradeValue = sharedPlayerTradeValueDetailsMap?.get(player.id) ?? null;
-    if (sharedTradeValue) {
-      const stats = seasonStats?.[player.id];
-      const pts = stats ? calcPointsFromTotals(stats, scoringSettings, player.position) : null;
-      const gp = stats?.gp ?? 0;
-      const avgPPG = pts != null && gp ? Math.round((pts / gp) * 10) / 10 : null;
-      const next = {
-        val: sharedTradeValue.value,
-        dynastyFallback: sharedTradeValue.dynastyFallback,
-        idpFallback: sharedTradeValue.isEstimated,
-        pts,
-        avgPPG,
-        rankInfo: rankMap[player.id] ?? null,
-      };
-      enrichedPlayerCacheRef.current.set(player.id, next);
-      return next;
-    }
-
-    const ktc = findKtcPlayerFromSleeper(player.id, sleeperPlayers, ktcPlayers);
-    let rawVal = getKtcValue(ktc, leagueType);
-    let dynastyFallback = false;
-    let idpFallback = false;
-    if (rawVal == null && dynastyKtcPlayers?.length) {
-      const dKtc = findKtcPlayerFromSleeper(player.id, sleeperPlayers, dynastyKtcPlayers);
-      const dVal = getKtcValue(dKtc, leagueType);
-      if (dVal != null) {
-        rawVal = Math.round(dVal * DYNASTY_FALLBACK_MULT);
-        dynastyFallback = true;
-      }
-    }
-    if (rawVal == null && mergedIDPMap?.has(player.id)) {
-      rawVal = mergedIDPMap.get(player.id);
-      idpFallback = true;
-    }
-    rawVal = rawVal ?? (ktcPlayers?.length > 0 ? 0 : null);
-
-    const stats = seasonStats?.[player.id];
-    const pts = stats ? calcPointsFromTotals(stats, scoringSettings, player.position) : null;
-    const gp = stats?.gp ?? 0;
-    const avgPPG = pts != null && gp ? Math.round((pts / gp) * 10) / 10 : null;
-    const rankInfo = rankMap[player.id] ?? null;
-
-    let val;
-    if (idpFallback) {
-      val = rawVal;
-    } else if (dynastyFallback && gp >= 3 && avgPPG != null && positionalValuePerPPG[player.position] != null) {
-      val = Math.round(avgPPG * positionalValuePerPPG[player.position]);
-    } else {
-      val = productionAdjustedValue(rawVal, avgPPG, positionalAvgPPG[player.position], 0.50);
-    }
-
-    if (!idpFallback && rankInfo?.rank != null && rankInfo?.posCount > 1) {
-      const percentile = 1 - (rankInfo.rank - 1) / (rankInfo.posCount - 1);
-      val = Math.round(val * (0.88 + 0.24 * percentile));
-    }
-
-    const next = {
-      val,
-      dynastyFallback,
-      idpFallback,
-      pts,
-      avgPPG,
-      rankInfo,
-    };
+    const detail = resolveTradePlayerValueDetail({
+      id: player.id,
+      playerTradeValueDetailsMap: sharedPlayerTradeValueDetailsMap,
+      players: sleeperPlayers,
+      adjustedKtcPlayers: ktcPlayers,
+      adjustedDynastyKtcPlayers: dynastyKtcPlayers,
+      leagueType,
+      seasonStats,
+      scoringSettings,
+      positionalAvgPPG,
+      positionalValuePerPPG,
+      rankMap,
+      mergedIDPMap,
+      blendWeight: 0.50,
+    });
+    const next = toPickerTradeValueMeta(detail, rankMap[player.id] ?? null);
     enrichedPlayerCacheRef.current.set(player.id, next);
     return next;
   }, [
@@ -424,19 +433,19 @@ export default function TradeRosterPicker({
         type: 'header',
         id: `header:${pos}`,
         label: pos === 'Other' ? 'OTHER' : pos,
-        height: PICKER_HEADER_ROW_HEIGHT,
+        height: pickerFit.headerRowHeight,
       });
       for (const player of list) {
         rows.push({
           type: 'player',
           id: player.id,
           player,
-          height: PICKER_PLAYER_ROW_HEIGHT,
+          height: pickerFit.rowHeight,
         });
       }
     }
     return rows;
-  }, [grouped]);
+  }, [grouped, pickerFit.headerRowHeight, pickerFit.rowHeight]);
   const shouldVirtualize = isAllMode && virtualRows.length > 80;
   const {
     containerRef: resultsContainerRef,
@@ -444,23 +453,23 @@ export default function TradeRosterPicker({
     visibleRows,
     stickyHeader,
     handleScroll,
-  } = useVirtualRows(virtualRows, shouldVirtualize);
+  } = useVirtualRows(virtualRows, shouldVirtualize, pickerFit.headerRowHeight);
 
-  function handleSelect(player) {
+  const handleSelect = useCallback((player) => {
     if (player.isAdded) return;
     if (isAllMode) {
       onSelect({ id: player.id, rosterId: player.ownerRosterId });
     } else {
       onSelect(player.id);
     }
-  }
+  }, [isAllMode, onSelect]);
 
-  function showsAdditiveTotal(player) {
+  const showsAdditiveTotal = useCallback((player) => {
     if (player.val == null || currentTotal == null) return false;
     if (!isAllMode) return true;
     if (activeRosterId == null) return false;
     return player.ownerRosterId === activeRosterId;
-  }
+  }, [activeRosterId, currentTotal, isAllMode]);
 
   const renderHeaderRow = useCallback((label, key, style = null) => (
     <div
@@ -480,179 +489,157 @@ export default function TradeRosterPicker({
   ), []);
 
   const renderPlayerRow = useCallback((player, key = player.id, style = null) => {
-    const teamColor = player.palette
-      ? (darkMode ? player.palette.darkPrimary : player.palette.primary)
-      : null;
-    const isLightColor = teamColor ? hexLuminance(teamColor) > 0.35 : false;
+    const teamTheme = player.teamTheme ?? getTeamVisualTheme(player.team, darkMode, TRADE_LOGO_SIDE_THEME_OPTIONS);
+    const optionalMeta = [
+      player.rankInfo ? `#${player.rankInfo.rank} ${player.rankInfo.posLabel}` : null,
+      player.avgPPG != null ? `${player.avgPPG.toFixed(1)} avg` : null,
+    ].filter(Boolean).slice(0, pickerFit.optionalMetaCount);
+    const valuePrefix = (player.dynastyFallback || player.idpFallback) ? '~' : '';
+    const estimateLabel = player.dynastyFallback ? 'DYN est.' : player.idpFallback ? 'est.' : null;
+    const additiveTotal = showsAdditiveTotal(player) && currentTotal > 0 ? `→ ${fmtKtcValue(currentTotal + player.val)}` : null;
 
     return (
-      <div
+      <CompanionPlayerRow
         key={key}
-        className="flex items-center w-full px-4 py-3 gap-3 relative overflow-hidden transition-colors"
-        style={{
-          borderBottom: '1px solid var(--color-separator)',
-          borderLeft: teamColor ? `3px solid ${teamColor}` : '3px solid transparent',
-          background: teamColor
-            ? `${teamColor}${isLightColor ? '18' : '22'}`
-            : 'transparent',
-          opacity: player.isAdded ? 0.5 : 1,
-          contentVisibility: shouldVirtualize ? undefined : 'auto',
-          containIntrinsicSize: shouldVirtualize ? undefined : '76px',
-          ...(style ?? {}),
-        }}
-      >
-        <img src={`https://sleepercdn.com/content/nfl/players/thumb/${player.id}.jpg`}
-          alt="" className="w-9 h-9 rounded-full shrink-0 object-cover"
-          style={{ background: 'var(--color-fill-secondary)' }}
-          loading="lazy"
-          decoding="async"
-          onError={e => { e.target.style.display = 'none'; }} />
-
-        <div className="flex-1 min-w-0 text-left relative">
-          {player.teamKey && (
-            <img
-              src={`https://a.espncdn.com/i/teamlogos/nfl/500/${player.teamKey}.png`}
-              aria-hidden="true"
-              className="absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none select-none"
-              style={{ width: 44, height: 44, objectFit: 'contain', opacity: 0.10 }}
-              loading="lazy"
-              decoding="async"
-              onError={e => { e.target.style.display = 'none'; }}
-            />
-          )}
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="text-sm font-semibold truncate" style={{ color: 'var(--color-label)' }}>
-              {player.name}
-            </span>
-            {player.injuryStatus && player.injuryStatus !== 'Active' && (
-              <span className="shrink-0 px-1.5 py-0.5 rounded"
-                style={{ background: 'var(--color-fill-secondary)', color: 'var(--color-label-tertiary)', fontSize: '9px', fontWeight: 700 }}>
-                {player.injuryStatus}
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-            <span className="text-xs" style={{ color: 'var(--color-label-secondary)' }}>
-              {player.position}{player.team ? ` · ${player.team}` : ''}
-            </span>
-            {player.rankInfo && (
-              <span className="text-xs font-bold tabular-nums"
-                style={{ color: teamColor ?? 'var(--color-label-tertiary)' }}>
-                #{player.rankInfo.rank} {player.rankInfo.posLabel}
-              </span>
-            )}
-            {player.avgPPG != null && (
-              <span className="text-xs tabular-nums" style={{ color: 'var(--color-label-tertiary)' }}>
-                {player.avgPPG.toFixed(1)} avg
-              </span>
-            )}
-            {player.ownerName && (
-              <span className="text-xs font-semibold"
-                style={{ color: player.isOwnPlayer ? 'var(--color-signature)' : 'var(--color-label-quaternary)' }}>
-                · {player.ownerName}
-              </span>
-            )}
-          </div>
-        </div>
-
-        <div className="flex flex-col items-end shrink-0 gap-0.5">
-          <span className="text-sm font-bold tabular-nums"
-            title={player.idpFallback ? 'Estimated from season production (no KTC data)' : undefined}
-            style={{ color: player.val != null ? 'var(--color-label)' : 'var(--color-label-quaternary)' }}>
-            {(player.dynastyFallback || player.idpFallback) ? '~' : ''}{fmtKtcValue(player.val)}
+        player={player}
+        name={player.name}
+        darkMode={darkMode}
+        disabled={player.isAdded}
+        selected={player.isAdded}
+        compact
+        className="trade-roster-picker-row"
+        showTeamLogo
+        teamThemeOptions={TRADE_LOGO_SIDE_THEME_OPTIONS}
+        identityAccessory={isAllMode && player.ownerName ? (
+          <span
+            className={[
+              'trade-roster-picker-row__owner',
+              player.isOwnPlayer ? 'is-own' : '',
+            ].filter(Boolean).join(' ')}
+          >
+            {player.ownerName}
           </span>
-          {player.dynastyFallback && (
-            <span style={{ color: 'var(--color-label-quaternary)', fontSize: '9px', fontWeight: 600 }}>
-              DYN est.
-            </span>
-          )}
-          {player.idpFallback && (
-            <span style={{ color: 'var(--color-label-quaternary)', fontSize: '9px', fontWeight: 600 }}>
-              est.
-            </span>
-          )}
-          {showsAdditiveTotal(player) && (
-            <span className="text-xs tabular-nums" style={{ color: 'var(--color-accent)' }}>
-              → {fmtKtcValue(currentTotal + player.val)}
-            </span>
-          )}
-        </div>
-        {player.isAdded ? (
-          <div className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center"
-            style={{ background: 'rgba(0,168,68,0.15)', color: 'var(--color-accent-green)' }}>
+        ) : null}
+        metaSegments={[player.team, ...optionalMeta].filter(Boolean)}
+        columnGridTemplate="minmax(58px, auto)"
+        columns={[
+          <CompanionPlayerMetric
+            key="value"
+            value={`${valuePrefix}${fmtKtcValue(player.val)}`}
+            label={additiveTotal}
+            kicker={estimateLabel}
+            title={player.idpFallback ? 'Estimated from season production (no KTC data)' : undefined}
+          />,
+        ]}
+        status={player.availabilityStatus ? (
+          <PlayerStatusBadge
+            status={player.availabilityStatus}
+            compact
+            className="trade-roster-picker-row__status-badge"
+          />
+        ) : (
+          <span className="trade-roster-picker-row__status-spacer" aria-hidden="true" />
+        )}
+        actions={player.isAdded ? (
+          <CompanionPlayerStatus tone="positive" title="Already selected">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="20 6 9 17 4 12"/>
             </svg>
-          </div>
+          </CompanionPlayerStatus>
         ) : (
-          <button onClick={() => handleSelect(player)}
-            className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center transition-colors active:opacity-60"
-            style={{ background: 'var(--color-fill)', color: 'var(--color-label-secondary)', fontSize: '20px', lineHeight: 1 }}>
-            +
-          </button>
+          <CompanionPlayerAction
+            label={`Add ${player.name}`}
+            onClick={() => handleSelect(player)}
+            title={`Add ${player.name}`}
+            className="trade-roster-picker-row__button"
+          >
+            <span data-testid={`trade-roster-picker-add-${player.id}`}>+</span>
+          </CompanionPlayerAction>
         )}
-      </div>
+        gridTemplate="auto auto minmax(0,1fr) auto minmax(58px,auto) 22px auto"
+        dataTestId={`trade-roster-picker-row-${player.id}`}
+        style={{
+          borderBottom: '1px solid var(--color-separator)',
+          borderLeft: teamTheme.borderColor ? `3px solid ${teamTheme.borderColor}` : '3px solid transparent',
+          borderRight: 0,
+          borderTop: 0,
+          borderRadius: 0,
+          minHeight: 'var(--trade-picker-row-height)',
+          contentVisibility: shouldVirtualize ? undefined : 'auto',
+          containIntrinsicSize: shouldVirtualize ? undefined : 'var(--trade-picker-row-height)',
+          ...(style ?? {}),
+        }}
+      />
     );
-  }, [activeRosterId, currentTotal, darkMode, handleSelect, shouldVirtualize]);
+  }, [currentTotal, darkMode, handleSelect, pickerFit.optionalMetaCount, shouldVirtualize, showsAdditiveTotal]);
 
   return (
     <Modal
       onClose={onClose}
       containerClassName="flex flex-col"
-      containerStyle={{ background: 'var(--color-bg)', maxWidth: 520, height: '72vh', maxHeight: 640 }}
+      containerStyle={{
+        background: 'var(--color-bg)',
+        maxWidth: 520,
+        height: 'calc(var(--trade-picker-vvh) * var(--trade-picker-sheet-ratio))',
+        maxHeight: 'calc(var(--trade-picker-vvh) - env(safe-area-inset-top) - env(safe-area-inset-bottom))',
+        '--trade-picker-vvh': `${pickerFit.viewportHeight}px`,
+        '--trade-picker-sheet-ratio': pickerFit.sheetRatio,
+        '--modal-mobile-sheet-max-height': 'calc(var(--trade-picker-vvh) - env(safe-area-inset-top) - env(safe-area-inset-bottom))',
+        '--trade-picker-row-height': `${pickerFit.rowHeight}px`,
+        '--trade-picker-row-padding-x': `${pickerFit.rowPaddingX}px`,
+        '--trade-picker-row-padding-y': `${pickerFit.rowPaddingY}px`,
+        '--trade-picker-row-gap': `${pickerFit.rowGap}px`,
+        '--trade-picker-avatar-size': `${pickerFit.avatarSize}px`,
+        '--trade-picker-button-size': `${pickerFit.buttonSize}px`,
+        '--trade-picker-name-size': `${pickerFit.nameSize}px`,
+        '--trade-picker-meta-size': `${pickerFit.metaSize}px`,
+        '--trade-picker-value-size': `${pickerFit.valueSize}px`,
+      }}
       mobileSheet
       ariaLabel={isAllMode ? 'Search all rostered players' : 'Add player'}
     >
 
         {/* Header + search + position chips */}
-        <div className="px-4 pt-4 pb-3 shrink-0" style={{ borderBottom: '1px solid var(--color-separator)' }}>
+        <div className="trade-roster-picker-header shrink-0" data-testid="trade-roster-picker" style={{ borderBottom: '1px solid var(--color-separator)' }}>
           <div className="flex items-center justify-between mb-3">
             <span className="font-bold text-base" style={{ color: 'var(--color-label)' }}>
               {isAllMode ? 'Search All Rostered Players' : 'Add Player'}
             </span>
-            <button onClick={onClose} className="p-1" style={{ color: 'var(--color-label-secondary)' }}>
+            <button onClick={onClose} data-testid="trade-roster-picker-close" className="p-1" style={{ color: 'var(--color-label-secondary)' }}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                 <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
               </svg>
             </button>
           </div>
-          <div className="relative">
-            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none"
-              style={{ color: 'var(--color-label-quaternary)' }} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-              <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
-            </svg>
-            <input
-              type="text"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Name, team, city, or position…"
-              autoComplete="off"
-              autoCorrect="off"
-              autoCapitalize="none"
-              spellCheck={false}
-              name="player_search"
-              inputMode="search"
-              data-form-type="other"
-              className="w-full pl-9 pr-4 py-2.5 rounded-xl text-sm outline-none"
-              style={{ background: 'var(--color-fill)', color: 'var(--color-label)', fontSize: '16px' }}
-            />
-          </div>
+          <CompanionSearchField
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Name, team, city, or position…"
+            inputProps={{
+              autoComplete: 'off',
+              autoCorrect: 'off',
+              autoCapitalize: 'none',
+              spellCheck: false,
+              name: 'player_search',
+              inputMode: 'search',
+              'data-form-type': 'other',
+              'data-testid': 'trade-roster-picker-search',
+            }}
+          />
           {/* Position chips — only in all-rosters mode */}
           {isAllMode && (
-            <div className="flex gap-1.5 mt-2.5 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+            <div className="mt-2.5">
+            <CompanionSelectorRail ariaLabel="Trade player position filter">
               {POSITION_FILTER_CHIPS.map(pos => (
-                <button
+                <CompanionSelectorButton
                   key={pos}
                   onClick={() => setPosFilter(pos)}
-                  className="px-3 py-1 rounded-lg text-xs font-semibold shrink-0 transition-colors"
-                  style={{
-                    background: posFilter === pos ? 'var(--color-signature)' : 'var(--color-fill)',
-                    color: posFilter === pos ? 'var(--color-signature-fg)' : 'var(--color-label-secondary)',
-                  }}
+                  active={posFilter === pos}
                 >
                   {pos}
-                </button>
+                </CompanionSelectorButton>
               ))}
+            </CompanionSelectorRail>
             </div>
           )}
         </div>
@@ -660,7 +647,7 @@ export default function TradeRosterPicker({
         {/* Results — scrollable */}
         <div
           ref={resultsContainerRef}
-          className="flex-1 overflow-y-auto"
+          className="trade-roster-picker-results flex-1 overflow-y-auto"
           onScroll={shouldVirtualize ? handleScroll : undefined}
         >
           {showSearchGuide ? (
@@ -741,15 +728,15 @@ function findRowIndexForOffset(offsets, target) {
   return best;
 }
 
-function useVirtualRows(rows, enabled) {
+function useVirtualRows(rows, enabled, headerRowHeight = PICKER_HEADER_ROW_HEIGHT) {
   const containerRef = useRef(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
 
   useEffect(() => {
     if (!enabled) {
-      setScrollTop(0);
-      return undefined;
+      const timer = window.setTimeout(() => setScrollTop(0), 0);
+      return () => window.clearTimeout(timer);
     }
 
     const node = containerRef.current;
@@ -829,7 +816,7 @@ function useVirtualRows(rows, enabled) {
     if (!currentHeader) return null;
 
     const translateY = nextHeaderTop != null
-      ? Math.min(0, nextHeaderTop - scrollTop - PICKER_HEADER_ROW_HEIGHT)
+      ? Math.min(0, nextHeaderTop - scrollTop - headerRowHeight)
       : 0;
 
     return {
@@ -837,7 +824,7 @@ function useVirtualRows(rows, enabled) {
       label: currentHeader.label,
       translateY,
     };
-  }, [enabled, offsets, rows, scrollTop]);
+  }, [enabled, headerRowHeight, offsets, rows, scrollTop]);
 
   const handleScroll = useCallback((event) => {
     setScrollTop(event.currentTarget.scrollTop);

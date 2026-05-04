@@ -21,12 +21,13 @@ import useCardGlow from '../../hooks/useCardGlow.jsx';
 import useMediaQuery from '../../hooks/useMediaQuery.js';
 import useBodyScrollLock from '../../hooks/useBodyScrollLock';
 import { getPlayerRowTeamTheme } from '../../utils/playerRowTheme';
+import { getPlayerAvailabilityStatus } from '../../utils/playerAvailabilityStatus.js';
 import { debugCompanionLog, debugCompanionMeasure, debugCompanionTimeAsync } from '../../utils/companionPerfDebug';
+import { CompanionSelectorButton, CompanionSelectorRail } from './CompanionSelectorControls.jsx';
+import { POSITION_COLORS } from '../../utils/companionAssetVisuals.js';
+import CompanionPlayerRow, { CompanionPlayerMetric, CompanionPlayerStatus } from './CompanionPlayerRow.jsx';
 
 const TOTAL_WEEKS = 18;
-const POSITION_COLORS = {
-  QB: '#ef4444', RB: '#22c55e', WR: '#3b82f6', TE: '#f59e0b', K: '#8b5cf6',
-};
 const MATCHUP_CARD_SHADOW = '0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06)';
 const COMPACT_PHONE_QUERY = '(max-width: 480px)';
 const POSITION_ALIAS_MAP = {
@@ -61,22 +62,6 @@ function getSharedHeaderTeamNameFontSize(labels, compact = false) {
   return 'clamp(22px, 5.6vw, 32px)';
 }
 
-function getSharedPlayerNameFontSize(leftLabel, rightLabel, compact = false) {
-  const longestToken = Math.max(getLongestTokenLength(leftLabel), getLongestTokenLength(rightLabel));
-  const longestLabel = Math.max(String(leftLabel ?? '').length, String(rightLabel ?? '').length);
-
-  if (compact) {
-    if (longestToken >= 12 || longestLabel >= 20) return 10;
-    if (longestToken >= 10 || longestLabel >= 17) return 11;
-    if (longestToken >= 8 || longestLabel >= 15) return 12;
-    return 13;
-  }
-
-  if (longestToken >= 12 || longestLabel >= 20) return 12;
-  if (longestToken >= 10 || longestLabel >= 17) return 13;
-  return 14;
-}
-
 function getUnifiedPlayerNameFontSize(labels, compact = false) {
   const names = (labels ?? []).filter(Boolean);
   if (!names.length) return compact ? 13 : 14;
@@ -95,19 +80,6 @@ function getUnifiedPlayerNameFontSize(labels, compact = false) {
   if (longestToken >= 12 || longestLabel >= 20) return 12;
   if (longestToken >= 10 || longestLabel >= 17) return 13;
   return 14;
-}
-
-function getCompactInjuryLabel(status) {
-  if (!status) return status;
-  const LABELS = {
-    'Questionable': 'Q',
-    'Probable': 'P',
-    'Doubtful': 'D',
-    'Out': 'OUT',
-    'Injured Reserve': 'IR',
-    'Physically Unable to Perform': 'PUP',
-  };
-  return LABELS[status] ?? status.slice(0, 3).toUpperCase();
 }
 
 function clampMatchupWeek(value, totalWeeks, fallbackWeek) {
@@ -572,7 +544,7 @@ export default function CompanionMatchup({
   const enrichPlayer = useCallback((id, pointsMap = null) => {
     if (!id || !players) return null;
     const p = players[id];
-    if (!p) return { id, name: 'Empty', position: '?', team: '', pts: null, avgPPG: 0, rank: null, oppTeam: null, isHome: null, isIndoor: null, homeTeam: null, injuryStatus: null, weekly: [] };
+    if (!p) return { id, name: 'Empty', position: '?', team: '', pts: null, avgPPG: 0, rank: null, oppTeam: null, isHome: null, isIndoor: null, homeTeam: null, availabilityStatus: null, weekly: [] };
 
     const weekly = hasAdvancedStats ? (weeklyStats?.[id] ?? []) : [];
     const weekEntry = hasAdvancedStats ? (weekly.find(w => w.week === week) ?? null) : null;
@@ -614,7 +586,7 @@ export default function CompanionMatchup({
       stadium,
       isIndoor: stadium?.indoor ?? null,
       weekly,
-      injuryStatus: p.injury_status,
+      availabilityStatus: getPlayerAvailabilityStatus(p),
       defStrength,
       defPercentile,
       isBye,
@@ -855,20 +827,17 @@ export default function CompanionMatchup({
     <div className="pb-6">
       {/* Scoreboard header */}
           <div className="mb-4">
-            <div className={`mx-4 mb-3 flex items-center gap-3 ${isCompactPhone ? 'justify-between' : 'justify-start'}`}>
-              <button
+            <div className={`mx-4 mb-3 ${isCompactPhone ? '' : ''}`}>
+              <CompanionSelectorRail ariaLabel="Matchup controls" wrapOnDesktop={false}>
+              <CompanionSelectorButton
                 onClick={() => setShowWeekPicker(true)}
-                className="inline-flex items-center justify-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-[0.18em] active:opacity-60"
+                size="md"
+                className="uppercase tracking-[0.18em]"
                 style={{
                   fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif",
-                  background: 'var(--color-fill)',
                   color: 'var(--color-signature)',
-                  border: '1px solid var(--color-signature)',
                   borderRadius: 0,
-                  boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
                   width: isCompactPhone ? 126 : 148,
-                  height: 40,
-                  lineHeight: 1,
                 }}
               >
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -878,20 +847,16 @@ export default function CompanionMatchup({
                   <path d="M3 10h18" />
                 </svg>
                 Week {week}
-              </button>
-              <button
+              </CompanionSelectorButton>
+              <CompanionSelectorButton
                 onClick={() => setShowBench(v => !v)}
-                className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold uppercase tracking-[0.18em] active:opacity-60 whitespace-nowrap"
+                active={showBench}
+                size="md"
+                className="uppercase tracking-[0.18em] whitespace-nowrap"
                 style={{
                   fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif",
-                  background: showBench ? 'var(--color-signature)' : 'var(--color-fill)',
-                  color: showBench ? 'var(--color-signature-fg)' : 'var(--color-signature)',
-                  border: `1px solid ${showBench ? 'var(--color-signature)' : 'var(--color-signature)'}`,
                   borderRadius: 0,
-                  boxShadow: showBench ? '0 1px 3px rgba(0,0,0,0.08)' : '0 1px 2px rgba(0,0,0,0.05)',
                   width: isCompactPhone ? 126 : 148,
-                  height: 40,
-                  lineHeight: 1,
                 }}
                 >
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -900,7 +865,8 @@ export default function CompanionMatchup({
                   <path d="M9 17h6" />
                 </svg>
                 {showBench ? 'Bench On' : 'Show Bench'}
-              </button>
+              </CompanionSelectorButton>
+              </CompanionSelectorRail>
             </div>
             <div className="px-4">
               <div className="grid grid-cols-[minmax(0,1fr)_28px_minmax(0,1fr)] sm:grid-cols-[minmax(0,1fr)_44px_minmax(0,1fr)] items-stretch gap-1.5 sm:gap-2">
@@ -1162,7 +1128,7 @@ export default function CompanionMatchup({
       {showWeekPicker && (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ background: 'rgba(0,0,0,0.5)' }} onClick={() => setShowWeekPicker(false)}>
           <div
-            className="w-full max-w-md rounded-2xl overflow-hidden"
+            className="modal-panel w-full max-w-md rounded-2xl overflow-hidden"
             style={{
               background: 'var(--color-bg-secondary)',
               border: '1px solid var(--color-separator)',
@@ -1258,32 +1224,8 @@ const SLOT_LABELS = {
 function HeadToHeadRow({ mine, opp, bench, slotPos, onSelectMine, onSelectOpp, onComparePlayers, sharedPlayerNameFontSize }) {
   const { darkMode } = useTheme();
   const isCompactPhone = useMediaQuery(COMPACT_PHONE_QUERY);
-  const [isMineHovered, setIsMineHovered] = useState(false);
-  const [isOppHovered, setIsOppHovered] = useState(false);
   const slotLabel = slotPos ? (SLOT_LABELS[slotPos] ?? slotPos) : (mine?.position ?? opp?.position ?? '?');
   const posColor = POSITION_COLORS[slotPos] ?? POSITION_COLORS[mine?.position ?? opp?.position] ?? 'var(--color-label-tertiary)';
-  const mineTheme = mine?.teamTheme ?? getPlayerRowTeamTheme('', darkMode);
-  const oppTheme = opp?.teamTheme ?? getPlayerRowTeamTheme('', darkMode);
-  const mineGlowColor = mineTheme.accent ?? (darkMode ? '#5AADFF' : '#1A6EFF');
-  const oppGlowColor = oppTheme.accent ?? (darkMode ? '#5AADFF' : '#1A6EFF');
-  const mineGlow = useCardGlow({
-    enabled: isMineHovered && !!mine,
-    color: mineGlowColor,
-    cardColor: mineTheme.accent ?? null,
-    darkMode,
-    coreColor: darkMode ? (mineTheme.glowCore ?? '#FFFFFF') : null,
-    outerColor: mineTheme.accent ?? mineGlowColor,
-  });
-  const oppGlow = useCardGlow({
-    enabled: isOppHovered && !!opp,
-    color: oppGlowColor,
-    cardColor: oppTheme.accent ?? null,
-    darkMode,
-    coreColor: darkMode ? (oppTheme.glowCore ?? '#FFFFFF') : null,
-    outerColor: oppTheme.accent ?? oppGlowColor,
-  });
-  const mineRowShadow = mineGlow.glowShadow ? `${mineGlow.glowShadow}, ${MATCHUP_CARD_SHADOW}` : MATCHUP_CARD_SHADOW;
-  const oppRowShadow = oppGlow.glowShadow ? `${oppGlow.glowShadow}, ${MATCHUP_CARD_SHADOW}` : MATCHUP_CARD_SHADOW;
   const slotBadgeLabel = slotLabel === 'SUPER FLEX' ? 'SF' : slotLabel === 'WRRB_FLEX' ? 'FLEX' : slotLabel;
   const canCompare = !!onComparePlayers;
 
@@ -1291,30 +1233,13 @@ function HeadToHeadRow({ mine, opp, bench, slotPos, onSelectMine, onSelectOpp, o
     <div className="px-4" style={{ opacity: bench ? 0.72 : 1 }}>
       <div className="grid grid-cols-[minmax(0,1fr)_36px_minmax(0,1fr)] sm:grid-cols-[minmax(0,1fr)_44px_minmax(0,1fr)] items-stretch gap-1.5 sm:gap-2">
       {/* My player — left */}
-        <button
-          onClick={onSelectMine}
-          disabled={!mine}
-        onMouseEnter={() => setIsMineHovered(true)}
-        onMouseLeave={() => setIsMineHovered(false)}
-        onFocus={() => setIsMineHovered(true)}
-        onBlur={() => setIsMineHovered(false)}
-        onMouseMove={mineGlow.glowHandlers.onMouseMove}
-          className="min-w-0 flex items-center gap-1.5 sm:gap-2.5 px-2 sm:px-3 py-2 sm:py-2.5 text-left active:opacity-60 transition-opacity"
-        style={{
-          border: '1px solid var(--color-separator)',
-          borderLeft: mineTheme.accent ? `4px solid ${mineTheme.accent}` : '4px solid var(--color-separator)',
-          background: isMineHovered ? mineTheme.hoverBg : mineTheme.rowBg,
-          boxShadow: mineRowShadow,
-          transform: isMineHovered ? 'translateY(-1px)' : 'translateY(0)',
-          transition: 'background 150ms cubic-bezier(0.32, 0.72, 0, 1), box-shadow 200ms cubic-bezier(0.32, 0.72, 0, 1), transform 200ms cubic-bezier(0.32, 0.72, 0, 1)',
-          cursor: mine ? 'pointer' : 'default',
-        }}
-        >
-          {mineGlow.borderOverlay}
-          <PlayerThumb player={mine} compact={isCompactPhone} />
-          <PlayerInfo player={mine} compact={isCompactPhone} nameFontSize={sharedPlayerNameFontSize} />
-          <TeamLogoMark player={mine} compact={isCompactPhone} />
-        </button>
+        <MatchupPlayerRow
+          player={mine}
+          darkMode={darkMode}
+          compact={isCompactPhone}
+          onSelect={onSelectMine}
+          nameFontSize={sharedPlayerNameFontSize}
+        />
 
       {/* Position badge — center */}
         <div className="relative z-[1] flex items-center justify-center">
@@ -1346,166 +1271,110 @@ function HeadToHeadRow({ mine, opp, bench, slotPos, onSelectMine, onSelectOpp, o
         </div>
 
       {/* Opponent — right (mirrored) */}
-      <button
-        onClick={onSelectOpp}
-        disabled={!opp}
-        onMouseEnter={() => setIsOppHovered(true)}
-        onMouseLeave={() => setIsOppHovered(false)}
-        onFocus={() => setIsOppHovered(true)}
-        onBlur={() => setIsOppHovered(false)}
-        onMouseMove={oppGlow.glowHandlers.onMouseMove}
-          className="min-w-0 flex items-center gap-1.5 sm:gap-2.5 px-2 sm:px-3 py-2 sm:py-2.5 text-right active:opacity-60 transition-opacity flex-row-reverse"
-          style={{
-            border: '1px solid var(--color-separator)',
-            borderRight: oppTheme.accent ? `4px solid ${oppTheme.accent}` : '4px solid var(--color-separator)',
-            background: isOppHovered ? oppTheme.hoverBg : oppTheme.rowBg,
-            boxShadow: oppRowShadow,
-            transform: isOppHovered ? 'translateY(-1px)' : 'translateY(0)',
-          transition: 'background 150ms cubic-bezier(0.32, 0.72, 0, 1), box-shadow 200ms cubic-bezier(0.32, 0.72, 0, 1), transform 200ms cubic-bezier(0.32, 0.72, 0, 1)',
-          cursor: opp ? 'pointer' : 'default',
-        }}
-        >
-          {oppGlow.borderOverlay}
-          <PlayerThumb player={opp} compact={isCompactPhone} />
-          <PlayerInfo player={opp} align="right" compact={isCompactPhone} nameFontSize={sharedPlayerNameFontSize} />
-          <TeamLogoMark player={opp} compact={isCompactPhone} />
-        </button>
+      <MatchupPlayerRow
+        player={opp}
+        darkMode={darkMode}
+        compact={isCompactPhone}
+        onSelect={onSelectOpp}
+        nameFontSize={sharedPlayerNameFontSize}
+        align="right"
+      />
       </div>
     </div>
   );
 }
 
-function PlayerInfo({ player, align = 'left', compact = false, nameFontSize = 13 }) {
-  const isRight = align === 'right';
-  if (!player || player.name === 'Empty') return <div className="flex-1 min-w-0" />;
+function getGameLabel(player) {
+  if (!player?.team) return null;
+  if (!player.oppTeam) return player.team;
+  if (player.isHome === true) return `${player.oppTeam} @ ${player.team}`;
+  if (player.isHome === false) return `${player.team} @ ${player.oppTeam}`;
+  return `${player.team} vs ${player.oppTeam}`;
+}
 
+function MatchupPlayerRow({ player, darkMode, compact = false, align = 'left', onSelect, nameFontSize = 13 }) {
+  const isRight = align === 'right';
+  if (!player || player.name === 'Empty') {
+    return (
+      <div
+        className="min-w-0"
+        style={{
+          minHeight: compact ? 52 : 70,
+          border: '1px solid var(--color-separator)',
+          background: 'var(--color-fill)',
+        }}
+      />
+    );
+  }
+
+  const isBye = Boolean(player.isBye);
   const weekPts = player.weekPts ?? null;
   const projectedPts = player.projection?.projected ?? null;
   const projMin = player.projection?.min ?? null;
   const projMax = player.projection?.max ?? null;
 
-  const scoreColor = (() => {
-    if (weekPts == null || projMin == null || projMax == null) return 'var(--color-label)';
-    if (weekPts < projMin) return '#ef4444';
-    if (weekPts > projMax) return '#22c55e';
-    const range = projMax - projMin;
-    if (range <= 0) return 'var(--color-label)';
-    const pos = (weekPts - projMin) / range;
-    if (pos <= 0.30) return '#f97316';
-    if (pos <= 0.70) return 'var(--color-label)';
-    return '#84cc16';
-  })();
-
-  const defPercentile = player.defPercentile ?? null;
-  const projectionColor = (() => {
-    if (defPercentile == null) return 'var(--color-label)';
-    if (defPercentile <= 0.20) return '#ef4444';
-    if (defPercentile <= 0.40) return '#f97316';
-    if (defPercentile <= 0.60) return 'var(--color-label-secondary)';
-    if (defPercentile <= 0.80) return '#84cc16';
-    return '#22c55e';
-  })();
-  const metaColor = 'var(--color-label-secondary)';
-  const matchupMeta = [player.position, player.team, player.oppTeam ? `vs ${player.oppTeam}` : null]
+  const matchupMeta = [player.position, getGameLabel(player)]
     .filter(Boolean)
     .join(' ');
-  const injuryLabel = compact ? getCompactInjuryLabel(player.injuryStatus) : player.injuryStatus;
   const rankText = player.weekRank ? `${player.weekRank.posLabel}${player.weekRank.rank}` : player.rank ? `${player.rank.posLabel}${player.rank.rank} season` : null;
-  const locationText = player.isBye
-    ? null
-    : player.isHome == null
-      ? null
-      : `${player.isHome ? 'Home' : 'Away'}${player.stadium?.city ? ` • ${player.stadium.city}` : ''}`;
   const weatherText = player.weather ? formatWeather(player.weather) : null;
-  const projectionRangeText = weekPts == null && projMin != null && projMax != null
+  const projectionRangeText = !isBye && weekPts == null && projMin != null && projMax != null
     ? `${projMin.toFixed(1)}-${projMax.toFixed(1)} range`
     : null;
+  const metricText = isBye ? null : weekPts == null
+    ? projectedPts != null ? `proj ${projectedPts.toFixed(1)}` : null
+    : weekPts.toFixed(2);
+  const metricLabel = !isBye && (weekPts != null || projectedPts != null) ? 'pts' : null;
+  const hasMetric = metricText != null;
+  const hasMetricSlot = hasMetric || isBye;
+  const detailSegments = compact
+    ? []
+    : [rankText, weatherText, projectionRangeText].filter(Boolean);
+  const rowAccent = player.teamTheme?.accent ?? 'var(--color-separator)';
+  const gridTemplate = compact
+    ? '34px minmax(0, 1fr) auto'
+    : hasMetricSlot
+      ? '44px minmax(0, 1fr) auto 36px auto'
+      : '44px minmax(0, 1fr) auto auto';
 
   return (
-    <div className={`flex-1 min-w-0 ${isRight ? 'text-right' : ''}`}>
-      <div className={`flex items-center gap-1 ${isRight ? 'justify-end' : ''}`}>
-        <span className="font-semibold whitespace-nowrap" style={{ color: 'var(--color-label)', fontSize: nameFontSize, lineHeight: 1.1 }}>
-          {player.name}
-        </span>
-        {player.injuryStatus && (
-          <span
-            className="font-bold px-1.5 py-0.5 rounded-lg shrink-0"
-            style={{ background: 'rgba(239,68,68,0.15)', color: 'var(--color-accent-red)', fontSize: compact ? 9 : 10 }}
-          >
-            {injuryLabel}
-          </span>
-        )}
-      </div>
-      <div className={`mt-0.5 whitespace-nowrap ${isRight ? 'text-right' : ''}`} style={{ color: metaColor, fontSize: compact ? 10 : 12 }}>
-        {matchupMeta}
-      </div>
-      <div className={`flex items-center gap-1.5 mt-0.5 ${isRight ? 'justify-end' : ''}`}>
-        {weekPts == null ? (
-          projectedPts != null ? (
-            <span className="tabular-nums font-semibold whitespace-nowrap" style={{ color: projectionColor, fontSize: compact ? 10 : 12 }}>
-              proj {projectedPts.toFixed(1)} pts
-            </span>
-          ) : null
-        ) : (
-          <>
-            <span className="tabular-nums font-bold whitespace-nowrap" style={{ color: scoreColor, fontSize: compact ? 10 : 12 }}>
-              {weekPts.toFixed(2)} pts
-            </span>
-          </>
-        )}
-      </div>
-      {!compact && (rankText || locationText || weatherText || projectionRangeText) ? (
-        <div className={`mt-1 flex items-center gap-x-2 gap-y-1 flex-wrap ${isRight ? 'justify-end' : ''}`} style={{ color: 'var(--color-label-tertiary)', fontSize: 11 }}>
-          {rankText && <span>{rankText}</span>}
-          {locationText && <span>{locationText}</span>}
-          {weatherText && <span>{weatherText}</span>}
-          {projectionRangeText && <span>{projectionRangeText}</span>}
-        </div>
-      ) : null}
-      {player.isBye ? (
-        <div className={`mt-0.5 ${isRight ? 'text-right' : ''}`}>
-          <span
-            className="text-[10px] font-bold px-1.5 py-px rounded-full"
-            style={{ background: 'var(--color-fill)', color: 'var(--color-label-secondary)' }}
-          >
-            BYE WEEK
-          </span>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function PlayerThumb({ player, compact = false }) {
-  const sizeClass = compact ? 'w-9 h-9' : 'w-12 h-12 sm:w-14 sm:h-14';
-  if (!player || player.name === 'Empty') {
-    return <div className={`${sizeClass} rounded-full shrink-0`} style={{ background: 'var(--color-fill)' }} />;
-  }
-  return (
-    <img
-      src={`https://sleepercdn.com/content/nfl/players/thumb/${player.id}.jpg`}
-      alt={player.name}
-      className={`${sizeClass} rounded-full shrink-0 object-cover`}
+    <CompanionPlayerRow
+      player={player}
+      darkMode={darkMode}
+      compact={compact}
+      interactive={Boolean(onSelect)}
+      onClick={onSelect}
+      showPosition={false}
+      showTeamLogo={!compact}
+      metaSegments={[matchupMeta, ...detailSegments]}
+      columns={isBye ? [
+        <CompanionPlayerStatus
+          key="bye-week"
+          label="Bye Week"
+          className="companion-matchup-bye-metric"
+        />,
+      ] : hasMetric ? [
+        <CompanionPlayerMetric
+          key="score"
+          compact
+          align={isRight ? 'start' : 'end'}
+          value={metricText}
+          label={metricLabel}
+        />,
+      ] : null}
+      gridTemplate={gridTemplate}
+      name={player.name}
       style={{
-        background: 'var(--color-fill)',
-        border: player.teamTheme?.avatarBorder ? `2px solid ${player.teamTheme.avatarBorder}` : '2px solid transparent',
+        borderRadius: 0,
+        borderLeftWidth: isRight ? 1 : 4,
+        borderLeftColor: isRight ? 'var(--color-separator)' : rowAccent,
+        borderRight: isRight ? `4px solid ${rowAccent}` : undefined,
+        minHeight: compact ? 52 : 70,
+        padding: compact
+          ? isRight ? '8px' : '8px 12px 8px 8px'
+          : isRight ? '10px 12px' : '10px 18px 10px 12px',
+        '--matchup-player-name-size': `${nameFontSize}px`,
       }}
-      onError={e => { e.target.src = 'https://sleepercdn.com/images/v2/icons/player_default.webp'; }}
-    />
-  );
-}
-
-function TeamLogoMark({ player, compact = false }) {
-  if (compact || !player?.teamTheme?.logoKey || player?.name === 'Empty') return null;
-
-  return (
-    <img
-      src={`https://a.espncdn.com/i/teamlogos/nfl/500/${player.teamTheme.logoKey}.png`}
-      alt=""
-      aria-hidden="true"
-      className="hidden sm:block shrink-0 self-center"
-      style={{ width: 'auto', height: 52, maxWidth: 52, objectFit: 'contain', opacity: 0.72 }}
-      onError={e => { e.target.style.display = 'none'; }}
     />
   );
 }
@@ -1679,7 +1548,7 @@ function TeamScoreBreakdown({ teamName, playerIds, week, onClose }) {
       {/* Modal */}
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
         <div
-          className="w-full rounded-2xl overflow-hidden pointer-events-auto"
+          className="modal-panel w-full rounded-2xl overflow-hidden pointer-events-auto"
           style={{
             background: 'var(--color-bg-secondary)',
             maxWidth: '480px',

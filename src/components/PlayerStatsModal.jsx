@@ -75,6 +75,33 @@ function SummarySection({ heading, rows, showFantasyMeta = true }) {
   );
 }
 
+function getViewportHeight() {
+  if (typeof window === 'undefined') return 720;
+  return window.visualViewport?.height ?? window.innerHeight ?? 720;
+}
+
+function useSnapshotDensity() {
+  const [viewportHeight, setViewportHeight] = useState(getViewportHeight);
+
+  useEffect(() => {
+    const updateViewportHeight = () => setViewportHeight(getViewportHeight());
+    const visualViewport = window.visualViewport;
+
+    updateViewportHeight();
+    window.addEventListener('resize', updateViewportHeight);
+    visualViewport?.addEventListener('resize', updateViewportHeight);
+
+    return () => {
+      window.removeEventListener('resize', updateViewportHeight);
+      visualViewport?.removeEventListener('resize', updateViewportHeight);
+    };
+  }, []);
+
+  if (viewportHeight < 560) return 'tight';
+  if (viewportHeight < 660) return 'compact';
+  return 'full';
+}
+
 export default function PlayerStatsModal({
   playerId,
   playerMeta,
@@ -89,6 +116,7 @@ export default function PlayerStatsModal({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [headshotError, setHeadshotError] = useState(false);
+  const snapshotDensity = useSnapshotDensity();
 
   useEffect(() => {
     let cancelled = false;
@@ -128,13 +156,15 @@ export default function PlayerStatsModal({
 
   const seasonSections = useMemo(() => {
     if (!seasonStats) return [];
+    const sectionLimit = snapshotDensity === 'tight' ? 1 : 2;
+    const rowLimit = snapshotDensity === 'tight' ? 3 : snapshotDensity === 'compact' ? 4 : 6;
     const statsMap = buildStatMap(seasonStats);
     const rankMap = buildRankMap(seasonStats);
     const { standard = [] } = getStatRows(statsMap, playerMeta?.position, rankMap);
     return standard
       .map((section) => {
         const rows = section.rows
-          .slice(0, 6)
+          .slice(0, rowLimit)
           .map((row) => ({
             ...row,
             label: row.label === 'Tackles' ? 'Total' : row.label,
@@ -150,13 +180,14 @@ export default function PlayerStatsModal({
         };
       })
       .filter((section) => section.rows.length > 0)
-      .slice(0, 2);
-  }, [seasonStats, playerMeta?.position, playerMeta?.sleeperId, scoringSettings, fantasyRankByKey]);
+      .slice(0, sectionLimit);
+  }, [seasonStats, playerMeta?.position, playerMeta?.sleeperId, scoringSettings, fantasyRankByKey, snapshotDensity]);
 
   const careerHighlights = useMemo(() => {
     if (!careerStats) return [];
-    return getCareerHighlights(buildStatMap(careerStats), playerMeta?.position).slice(0, 4);
-  }, [careerStats, playerMeta?.position]);
+    const highlightLimit = snapshotDensity === 'tight' ? 2 : snapshotDensity === 'compact' ? 3 : 4;
+    return getCareerHighlights(buildStatMap(careerStats), playerMeta?.position).slice(0, highlightLimit);
+  }, [careerStats, playerMeta?.position, snapshotDensity]);
 
   const fantasyRows = useMemo(() => {
     if (!playerMeta?.sleeperId || !sleeperSeasonStats || !scoringSettings) return [];
@@ -177,7 +208,7 @@ export default function PlayerStatsModal({
   return (
     <Modal
       onClose={onClose}
-      containerClassName="max-w-3xl"
+      containerClassName="max-w-3xl flex flex-col"
       containerStyle={{ border: '1px solid var(--color-separator)' }}
       mobileSheet
       ariaLabel={`${playerMeta.displayName} statistics snapshot`}
@@ -275,7 +306,7 @@ export default function PlayerStatsModal({
           </div>
         </div>
 
-        <div className="max-h-[70vh] overflow-y-auto px-5 py-5 sm:px-6">
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4 sm:px-6 sm:py-5">
           {loading ? (
             <div className="py-10 text-sm" style={{ color: 'var(--color-label-secondary)' }}>
               Loading player stats...

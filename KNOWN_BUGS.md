@@ -8,25 +8,8 @@ Open bugs are listed first, fixed bugs below. Add new entries at the bottom of e
 
 | Bug |
 |-----|
-| Trade Intelligence proposal apply actions can mismatch the displayed package by pairing the incoming target with the wrong outgoing asset, or by adding only one side of the proposal instead of the full deal |
-| Trade → Upgrades can still suggest unrealistic one-sided upgrades because it underweights the other roster's actual needs and does not always treat the selected outgoing pool as true payment pressure |
-| Trade Intelligence → Use Surplus can combine multiple individually-movable players into one package without rechecking the full package depth, causing explanations to claim playable depth remains after a deal that actually clears out the position |
-| Trade Intelligence → Fix Needs can skew too heavily toward 2-player and 3-player incoming packages, crowding out more balanced player-plus-pick returns on the other team’s side |
 | Trade section pages still repeat too much instructional copy, making Agent, Intelligence, and Upgrades feel more verbose than necessary |
-| Trade → Intelligence can still hard-freeze on initial open, visibly repopulate proposal text/assets after partner switches, or get stuck on the "Preparing partner-specific trade ideas..." loading card for specific teams |
-| Companion → Rankings player drilldown `Statistics` action can fail for players whose base Sleeper `espn_id` is null even though the app has a resolved `espnIdOverrides` entry, so some players navigate correctly while others do nothing |
-| Trade Intelligence resets the selection area and clears active filters the first time a new partner is selected, while previously visited partners preserve state, creating inconsistent partner-switch behavior and forcing users to reapply filters |
-| Trade Agent "View Roster & Picks" button remains visible even when the roster shelf is present and covers the same functionality |
-| Trade Agent mobile roster shelf renders as a horizontal scrolling strip instead of a vertical list, making it difficult to read and navigate |
-| Trade Agent mobile YOU/PARTNER shelf toggle unresponsive — tap targets are too small to register reliably on mobile devices |
-| Trade Agent mobile shelf position filter chips too small — chip height and font size not calibrated for mobile touch targets |
 | Desktop sidebar cannot be collapsed — always occupies 240px regardless of available screen width or user preference |
-| Trade Agent color commentary bar spans only the right TradePlate instead of extending the full width of both plates |
-| Trade Agent player card score value is baseline-aligned with the name text, causing it to overlap the team logo watermark on desktop |
-| Trade player/team card treatments have weak visual contrast: player names are too low-contrast in dark mode, while light-mode team color backgrounds are too muted to feel intentional |
-| Trade Agent Value Trends dropdown can render empty because cached trade-value details drop the original KTC trend metadata, and toggling it refreshes Color Commentary text due to render-time randomization |
-| Trade → Upgrades result cards can be cut off inside the Give/Get side when the side-by-side result viewport is narrower than the card row's desktop width assumptions |
-| Draft picks can change value when applying a Trade → Upgrades proposal into Trade Agent because upgrade pick assets use a separate discount/fallback path from Trade Agent valuation |
 
 ---
 
@@ -34,6 +17,30 @@ Open bugs are listed first, fixed bugs below. Add new entries at the bottom of e
 
 | Bug | Fixed In |
 |-----|----------|
+| Mobile NavBar adds a scroll-state separator above the top tab bar, making the frozen header area look visually compressed while scrolling | v7.3 |
+| Companion drillable player rows could feel unresponsive because opening a player waited on slower drilldown data without showing a loading indicator | v7.3 |
+| Trade Intelligence proposal apply actions could mismatch the displayed package by pairing the incoming target with the wrong outgoing asset, or by adding only one side of the proposal instead of the full deal | v7.3 |
+| Trade → Upgrades could suggest unrealistic one-sided upgrades because it underweighted the other roster's actual needs and did not always treat the selected outgoing pool as true payment pressure | v7.3 |
+| Trade Intelligence → Use Surplus could combine multiple individually-movable players into one package without rechecking the full package depth, causing explanations to claim playable depth remained after a deal that actually cleared out the position | v7.3 |
+| Trade Intelligence → Fix Needs could skew too heavily toward 2-player and 3-player incoming packages, crowding out more balanced player-plus-pick returns on the other team’s side | v7.3 |
+| Trade → Intelligence could hard-freeze on initial open, visibly repopulate proposal text/assets after partner switches, or get stuck on the "Preparing partner-specific trade ideas..." loading card for specific teams | v7.3 |
+| Companion → Rankings player drilldown `Statistics` action could fail for players whose base Sleeper `espn_id` is null even though the app has a resolved `espnIdOverrides` entry, so some players navigated correctly while others did nothing | v7.3 |
+| Trade Intelligence reset the selection area and cleared active filters the first time a new partner was selected, while previously visited partners preserved state, creating inconsistent partner-switch behavior and forcing users to reapply filters | v7.3 |
+| Trade Agent "View Roster & Picks" button remained visible even when the roster shelf was present and covered the same functionality | v7.3 |
+| Trade Agent mobile roster shelf rendered as a horizontal scrolling strip instead of a vertical list, making it difficult to read and navigate | v7.3 |
+| Trade Agent mobile YOU/PARTNER shelf toggle was unresponsive because tap targets were too small to register reliably on mobile devices | v7.3 |
+| Trade Agent mobile shelf position filter chips were too small, with chip height and font size not calibrated for mobile touch targets | v7.3 |
+| Trade Agent color commentary bar spanned only the right TradePlate instead of extending the full width of both plates | v7.3 |
+| Trade Agent Color Commentary appeared when only one side of a trade had assets, producing a verdict before a complete trade package existed | v7.3 |
+| Trade Agent player card score value was baseline-aligned with the name text, causing it to overlap the team logo watermark on desktop | v7.3 |
+| Trade player/team card treatments had weak visual contrast: player names were too low-contrast in dark mode, while light-mode team color backgrounds were too muted to feel intentional | v7.3 |
+| Trade Agent Value Trends dropdown could render empty because cached trade-value details dropped the original KTC trend metadata, and toggling it refreshed Color Commentary text due to render-time randomization | v7.3 |
+| Trade → Upgrades result cards could be cut off inside the Give/Get side when the side-by-side result viewport was narrower than the card row's desktop width assumptions | v7.3 |
+| Draft picks could change value when applying a Trade → Upgrades proposal into Trade Agent because upgrade pick assets used a separate discount/fallback path from Trade Agent valuation | v7.3 |
+| Statistics "more stats" horizontal overflow indicator only pointed right, instead of aligning with the design guidance for scroll direction affordances | v7.3 |
+| Trade Agent player selection "Add Player" modal did not follow the Trade section's standard selection-row design, making it visually inconsistent with the rest of Trade | v7.3 |
+| Mobile player statistics snapshot sheet could be cut off by the bottom navigation or cramped viewport height, hiding lower stat rows instead of resizing or trimming lower-priority information | v7.3 |
+| Player statistics tables let `BYE` cells in the Opponent column scroll horizontally with the stat columns instead of staying frozen with the rest of the Opponent column | v7.3 |
 | Trade Agent roster browse modal could crash with `ReferenceError: ROSTER_BROWSE_OFFENSE_POSITIONS is not defined` when opening `View Roster & Picks` for a selected partner | v7.0 |
 | Trade Intelligence `0 players` outgoing filtering was too broad: Fix Needs under-surfaced pick-only packages, while Use Surplus exposed an unsupported dead-end 0-player option | v6.2.6 |
 | Trade Intelligence explanation text could name a non-traded fallback player from the partner roster without clearly signaling that the player was only remaining post-trade depth, making the write-up read as if extra assets were included in the deal | v6.2.6 |
@@ -199,3 +206,10 @@ Open bugs are listed first, fixed bugs below. Add new entries at the bottom of e
 | Trade Agent drag-and-drop from roster shelf to trade plates was not implemented; shelf items were tap-only with no drag affordance | v7.1.0 |
 | Trade Agent BroadcastScoreboard showed `YOU` as the user-side team name instead of the connected user's actual display name | v7.1.0 |
 | Trade Agent BroadcastScoreboard displayed redundant `HOME · YOU GIVE` / `AWAY · YOU GET` secondary labels above team names | v7.1.0 |
+| Companion shared player rows could render low-contrast overlay labels on team gradients: Matchup score values, player status badges, and Rankings `ROSTERED` labels used fixed start/end row contrast instead of measuring the label's actual rendered position across desktop and mobile gradients | v7.3 |
+| Companion → Rankings team logos were horizontally misaligned between rostered and unrostered rows because the `ROSTERED` label conditionally occupied space in the same status/logo cluster | v7.3 |
+| Companion → Waiver player rows could collapse identity text into the avatar column when a player headshot failed to load, because the shared row removed the broken avatar image from the grid instead of preserving the avatar cell with a fallback | v7.3 |
+| Companion → Matchup bye-week rows displayed both `Bye Week` and `0.00` points, duplicating the inactive-week state instead of showing only the bye badge | v7.3 |
+| Companion → Roster player names could truncate in team-colored rows instead of preserving the full player identity as the highest-priority row content | v7.3 |
+| Mobile Statistics game logs reserved too much fixed width for the Result column, leaving excessive blank space before the first stat column in both normal stats and More Stats | v7.3 |
+| Mobile PWA top content could render underneath the frozen NavBar/sub-navigation rows on real iPhones, hiding the first items in the scrollable area even though desktop mobile emulation looked correct | v7.3 |

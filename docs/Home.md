@@ -10,6 +10,7 @@ Use this note as the entry point.
 - [[Where To Edit]]
 - [[Design System Quick Ref]]
 - [[Design Tokens]]
+- [[Companion Shared Rows]]
 - [[Scoring Call Sites]]
 - [[Trade Engine]]
 - [[Scout]]
@@ -47,6 +48,7 @@ Completed proposals and speculative integrations that are no longer active:
 flowchart TD
   A[Home] --> B[Architecture Map]
   A --> C[Design Tokens]
+  A --> L[Companion Shared Rows]
   A --> D[Where To Edit]
   A --> E[Scoring Call Sites]
   A --> J[Trade Engine]
@@ -62,6 +64,9 @@ flowchart TD
   C --> C1[Color Tokens Table]
   C --> C2[Signature Accent Rules]
   C --> C3[Key Conventions]
+  L --> L1[Shared player rows]
+  L --> L2[Selector controls]
+  L --> L3[Gradient contrast]
 
   D --> D1[Navigation and layout]
   D --> D2[Scoring]
