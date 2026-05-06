@@ -679,16 +679,6 @@ function AppInner() {
         {activeTab === 'companion' && hasLeague && (
           <div className="season-subnav league-subnav">
             <CompanionSubNav activeView={companionView} onViewChange={navigateCompanionView} />
-            {/* Mobile: league header frozen below tabs */}
-            <div className="lg:hidden">
-              <LeagueContextHeader
-                league={league}
-                season={season}
-                changeSeason={changeSeason}
-                seasonOptions={linkedLeagueSeasonOptions}
-                onSwitchLeague={() => setLeagueSwitcherOpen(true)}
-              />
-            </div>
             {/* Desktop: bottom-right of subnav bar, aligned with tab text */}
             <div className="hidden lg:flex items-center absolute bottom-0 right-8 pb-[9px]">
               <LeagueContextHeader
@@ -706,16 +696,6 @@ function AppInner() {
         {activeTab === 'trade' && hasLeague && (
           <div className="season-subnav league-subnav">
             <TradeSubNav activeView={tradeView} onViewChange={navigateTradeView} onViewIntent={prewarmTradeView} />
-            {/* Mobile: league header frozen below tabs */}
-            <div className="lg:hidden">
-              <LeagueContextHeader
-                league={league}
-                season={season}
-                changeSeason={changeSeason}
-                seasonOptions={linkedLeagueSeasonOptions}
-                onSwitchLeague={() => setLeagueSwitcherOpen(true)}
-              />
-            </div>
             {/* Desktop: bottom-right of subnav bar, aligned with tab text */}
             <div className="hidden lg:flex items-center absolute bottom-0 right-8 pb-[9px]">
               <LeagueContextHeader
@@ -1055,6 +1035,14 @@ function AppInner() {
           onInstall={isInstallable && !isInstalled ? handleInstall : null}
           onMyTeam={handleMyTeam}
           favoriteTeam={favoriteTeam}
+          league={hasLeague && (activeTab === 'companion' || activeTab === 'trade') ? league : null}
+          leagueSeason={season}
+          leagueSeasonOptions={linkedLeagueSeasonOptions}
+          onLeagueSeasonChange={changeSeason}
+          onSwitchLeague={() => {
+            setActionSheetOpen(false);
+            setLeagueSwitcherOpen(true);
+          }}
         />
       )}
 

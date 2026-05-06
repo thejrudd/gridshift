@@ -10,6 +10,12 @@ Open bugs are listed first, fixed bugs below. Add new entries at the bottom of e
 |-----|
 | Trade section pages still repeat too much instructional copy, making Agent, Intelligence, and Upgrades feel more verbose than necessary |
 | Desktop sidebar cannot be collapsed — always occupies 240px regardless of available screen width or user preference |
+| Companion → Matchup player projection formula hover can fail to stay open from the `i` control, hiding the projection math before it can be read |
+| Statistics player profile career highlights can show 0 TFL for defensive players when ESPN's career aggregate omits tackles for loss even though season-level defensive stats include them |
+| Heatmap Defense phase can render blank in leagues that roster and score D/ST because the phase aggregates only individual defensive players; Heatmap stat filters can also show categories with no scoring value in the selected league |
+| Heatmap Defense phase in D/ST-only leagues still shows an `All` position chip even though D/ST is the only meaningful defensive bucket |
+| Heatmap D/ST Fantasy Points drilldown shows only the total points and omits the line-by-line scoring breakdown |
+| Trade player cards can show a leading separator before metadata on mobile, making the row read like it starts with a stray dash or bullet |
 
 ---
 
@@ -213,3 +219,6 @@ Open bugs are listed first, fixed bugs below. Add new entries at the bottom of e
 | Companion → Roster player names could truncate in team-colored rows instead of preserving the full player identity as the highest-priority row content | v7.3 |
 | Mobile Statistics game logs reserved too much fixed width for the Result column, leaving excessive blank space before the first stat column in both normal stats and More Stats | v7.3 |
 | Mobile PWA top content could render underneath the frozen NavBar/sub-navigation rows on real iPhones, hiding the first items in the scrollable area even though desktop mobile emulation looked correct | v7.3 |
+| Companion mobile horizontal scroll cue arrows could let tab text show underneath the cue because the cue did not cover the full-bleed scroll rail edge | v7.3.1 |
+| Companion Heatmap mobile filter chips started at uneven horizontal positions because only Phase/Position reserved a fixed label column and Result was pushed to the right | v7.3.1 |
+| Companion Heatmap mobile filters consumed too much vertical space, leaving the heatmap itself crowded below the controls | v7.3.1 |

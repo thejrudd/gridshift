@@ -295,17 +295,23 @@ function buildFantasyBreakdownRows(weekEntry, settings, position, authoritativeT
 }
 
 function ProjectionMath({ baseAvg, factors, projected, projMin, projMax, oppTeam, locationStr, weatherStr, defLabel }) {
+  const displayFont = "'Barlow Condensed', 'Arial Narrow', sans-serif";
   function fc(f) {
     if (f > 1.02) return '#22c55e';
     if (f < 0.98) return '#ef4444';
-    return 'var(--color-label-quaternary)';
+    return 'var(--color-label-secondary)';
   }
   function fmt(f) { return `${f.toFixed(2)}×`; }
+  function impactText(f) {
+    const pct = Math.round((f - 1) * 100);
+    if (pct > 0) return `+${pct}%`;
+    if (pct < 0) return `${pct}%`;
+    return 'Even';
+  }
 
   const opp    = factors.oppFactor ?? 1;
   const loc    = factors.locationFactor ?? 1;
   const wth    = factors.weatherFactor ?? 1;
-  const cWth   = factors.ceilingWeatherFactor ?? wth;
   const snap   = factors.snapFactor ?? 1;
   const floor  = factors.floorBase ?? null;
   const ceil   = factors.ceilingBase ?? null;
@@ -324,128 +330,123 @@ function ProjectionMath({ baseAvg, factors, projected, projMin, projMax, oppTeam
   })();
 
   const showLocation = Math.abs(loc - 1) >= 0.01;
-
-  // Each row: label | detail | [floor val, proj val, ceil val]
-  const rows = [
+  const factorsList = [
     {
-      label: 'Base',
+      label: 'Base average',
       detail: baseDetail,
-      values: [
-        floor != null ? `${floor.toFixed(1)}` : '—',
-        baseAvg != null ? `${baseAvg.toFixed(1)}` : '—',
-        ceil  != null ? `${ceil.toFixed(1)}`  : '—',
-      ],
-      valueColors: ['var(--color-label-secondary)', 'var(--color-label-secondary)', 'var(--color-label-secondary)'],
-      note: ['floor', 'blend', 'ceiling'],
+      value: baseAvg != null ? baseAvg.toFixed(1) : '—',
+      meta: 'Starting point',
+      color: 'var(--color-label)',
     },
     ...(showLocation ? [{
-      label: '× Home/Away',
+      label: 'Home/Away',
       detail: locationStr ?? 'Neutral',
-      // Floor/ceiling use raw historical percentiles — no location split, so neutral 1.00×
-      values: ['1.00×', fmt(loc), '1.00×'],
-      valueColors: ['var(--color-label-quaternary)', fc(loc), 'var(--color-label-quaternary)'],
+      value: fmt(loc),
+      meta: impactText(loc),
+      color: fc(loc),
     }] : []),
     {
-      label: '× Matchup',
+      label: 'Matchup',
       detail: oppTeam ? `vs ${oppTeam}${defLabel ? ` · ${defLabel}` : ''}` : 'No data',
-      values: [fmt(opp), fmt(opp), fmt(opp)],
-      valueColors: [fc(opp), fc(opp), fc(opp)],
+      value: fmt(opp),
+      meta: impactText(opp),
+      color: fc(opp),
     },
     {
-      label: '× Weather',
+      label: 'Weather',
       detail: weatherStr || 'Indoor / N/A',
-      values: [fmt(wth), fmt(wth), fmt(cWth)],
-      valueColors: [fc(wth), fc(wth), fc(cWth)],
+      value: fmt(wth),
+      meta: impactText(wth),
+      color: fc(wth),
     },
     {
-      label: '× Snap use',
+      label: 'Snap use',
       detail: snapDetail,
-      values: [fmt(snap), fmt(snap), fmt(snap)],
-      valueColors: [fc(snap), fc(snap), fc(snap)],
+      value: fmt(snap),
+      meta: impactText(snap),
+      color: fc(snap),
     },
   ];
-
-  const COL = 'w-[52px] text-right shrink-0';
+  const range = [
+    { label: 'Floor', value: projMin, source: floor },
+    { label: 'Projection', value: projected, source: baseAvg },
+    { label: 'Ceiling', value: projMax, source: ceil },
+  ];
 
   return (
-    <div style={{ background: 'var(--color-fill)', borderBottom: '1px solid var(--color-separator)' }}>
+    <div className="p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div
+            className="text-xs font-bold uppercase tracking-widest"
+            style={{ color: 'var(--color-label-secondary)', fontFamily: displayFont }}
+          >
+            Projection Math
+          </div>
+          <div className="mt-1 text-[13px] leading-snug" style={{ color: 'var(--color-label)' }}>
+            Base scoring adjusted by matchup, venue, weather, and recent usage.
+          </div>
+        </div>
+        <div className="text-right shrink-0">
+          <div
+            className="text-xs font-bold uppercase tracking-widest"
+            style={{ color: 'var(--color-label-secondary)', fontFamily: displayFont }}
+          >
+            Proj
+          </div>
+          <div className="text-2xl font-black tabular-nums leading-none" style={{ color: 'var(--color-signature)', fontFamily: displayFont }}>
+            {projected != null ? projected.toFixed(1) : '—'}
+          </div>
+        </div>
+      </div>
 
-      {/* Column headers */}
-      <div className="flex items-center px-4 pt-2.5 pb-1 gap-1">
-        <span className="flex-1" />
-        {['Floor', 'Proj', 'Ceiling'].map(h => (
-          <span key={h} className={`${COL} text-[10px] font-bold uppercase tracking-wide`} style={{ color: 'var(--color-label-tertiary)' }}>
-            {h}
-          </span>
+      <div className="mt-4 rounded-md overflow-hidden" style={{ border: '1px solid var(--color-separator)', background: 'var(--color-bg-tertiary)' }}>
+        {factorsList.map((row, i) => (
+          <div
+            key={row.label}
+            className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 px-3 py-2.5"
+            style={{
+              background: i % 2 === 0 ? 'var(--color-fill-secondary)' : 'transparent',
+              borderTop: i === 0 ? 'none' : '1px solid var(--color-separator)',
+            }}
+          >
+            <div className="min-w-0">
+              <div className="text-sm font-bold leading-tight" style={{ color: 'var(--color-label)', fontFamily: displayFont }}>{row.label}</div>
+              {row.detail && (
+                <div className="mt-0.5 text-[11px] truncate" style={{ color: 'var(--color-label-secondary)' }}>{row.detail}</div>
+              )}
+            </div>
+            <div className="text-right">
+              <div className="text-base font-black tabular-nums leading-tight" style={{ color: row.color, fontFamily: displayFont }}>{row.value}</div>
+              <div className="text-[11px] tabular-nums" style={{ color: 'var(--color-label-secondary)' }}>{row.meta}</div>
+            </div>
+          </div>
         ))}
       </div>
 
-      {/* Factor rows */}
-      {rows.map((row, i) => (
-        <div
-          key={i}
-          className="flex items-start px-4 py-1.5 gap-1"
-          style={{ borderTop: '1px solid var(--color-separator)' }}
-        >
-          <div className="flex-1 min-w-0">
-            <div className="text-[11px] font-semibold" style={{ color: 'var(--color-label-secondary)' }}>
-              {row.label}
+      <div className="mt-3 grid grid-cols-3 gap-2">
+        {range.map(item => (
+          <div key={item.label} className="rounded-md px-2.5 py-2.5" style={{ background: 'var(--color-bg-tertiary)', border: '1px solid var(--color-separator)' }}>
+            <div
+              className="text-[10px] font-bold uppercase tracking-widest"
+              style={{ color: 'var(--color-label-secondary)', fontFamily: displayFont }}
+            >
+              {item.label}
             </div>
-            {row.detail && (
-              <div className="text-[10px] truncate" style={{ color: 'var(--color-label-quaternary)' }}>
-                {row.detail}
-              </div>
-            )}
-            {row.note && (
-              <div className="flex gap-1 mt-0.5">
-                {row.note.map((n, ni) => (
-                  <span key={ni} className={`${COL} text-[9px]`} style={{ color: 'var(--color-label-quaternary)' }}>
-                    {n}
-                  </span>
-                ))}
+            <div className="mt-1 text-xl font-black tabular-nums leading-none" style={{ color: item.label === 'Projection' ? 'var(--color-signature)' : 'var(--color-label)', fontFamily: displayFont }}>
+              {item.value != null ? item.value.toFixed(1) : '—'}
+            </div>
+            {item.source != null && (
+              <div className="mt-1 text-[10px] tabular-nums" style={{ color: 'var(--color-label-secondary)' }}>
+                from {item.source.toFixed(1)}
               </div>
             )}
           </div>
-          {row.values.map((v, vi) => (
-            <span
-              key={vi}
-              className={`${COL} text-[11px] font-semibold tabular-nums pt-0.5`}
-              style={{ color: row.valueColors[vi] }}
-            >
-              {v}
-            </span>
-          ))}
-        </div>
-      ))}
-
-      {/* Result row */}
-      <div
-        className="flex items-center px-4 py-2.5 gap-1"
-        style={{ borderTop: '2px solid var(--color-separator)' }}
-      >
-        <span className="flex-1 text-[11px] font-bold" style={{ color: 'var(--color-label)' }}>=</span>
-        {[projMin, projected, projMax].map((v, i) => (
-          <span
-            key={i}
-            className={`${COL} text-sm font-bold tabular-nums`}
-            style={{ color: i === 1 ? 'var(--color-signature)' : 'var(--color-label-secondary)' }}
-          >
-            {v != null ? v.toFixed(1) : '—'}
-          </span>
         ))}
       </div>
 
-      {/* Plain-English footnote */}
-      <div className="px-4 py-3 space-y-2" style={{ borderTop: '1px solid var(--color-separator)' }}>
-        <p className="text-[10px] leading-relaxed" style={{ color: 'var(--color-label-quaternary)' }}>
-          <strong style={{ color: 'var(--color-label-tertiary)' }}>Floor</strong> is the 25th percentile of this player's scored games this season. <strong style={{ color: 'var(--color-label-tertiary)' }}>Ceiling</strong> is the 75th percentile. Both are then shifted by matchup difficulty at half weight, giving a tighter, more realistic expected range.
-        </p>
-        <p className="text-[10px] leading-relaxed" style={{ color: 'var(--color-label-quaternary)' }}>
-          <strong style={{ color: 'var(--color-label-tertiary)' }}>Matchup</strong> compares how many fantasy points the opposing defense allows to this position on average (prior weeks only) against all 32 teams. The result is a multiplier clamped between 0.65× and 1.45×. Requires at least 3 games of data against that defense.
-        </p>
-        <p className="text-[10px] leading-relaxed" style={{ color: 'var(--color-label-quaternary)' }}>
-          <strong style={{ color: 'var(--color-label-tertiary)' }}>Snap use</strong> compares this player's snap share over the last 4 games against their season average. A recently expanding role gets a modest upward nudge (max 1.25×); a shrinking role gets a downward one (min 0.75×). Applies to QB, RB, WR, and TE only — and only when at least 3 games of snap data are available.
-        </p>
+      <div className="mt-4 text-[11px] leading-relaxed" style={{ color: 'var(--color-label-secondary)' }}>
+        Matchup uses fantasy points per game allowed to the position group in prior weeks. Floor and ceiling start from this player's 25th and 75th percentile games, then receive a lighter matchup adjustment.
       </div>
     </div>
   );
@@ -473,6 +474,16 @@ function InfoRow({ label, children }) {
       </div>
     </div>
   );
+}
+
+function getPositionGroupShortLabel(pos) {
+  const key = String(pos ?? '').toUpperCase();
+  return {
+    QB: 'QBs',
+    RB: 'RBs',
+    WR: 'WRs',
+    TE: 'TEs',
+  }[key] ?? (key ? `${key}s` : 'position group');
 }
 
 export default function PlayerMatchupBreakdown({ playerId, week, projection, enrichedPlayer, onClose, onViewStats, onOpenRosterPlayer = null }) {
@@ -530,11 +541,10 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, enr
   const projMax = projection?.max ?? null;
   const factors = projection?.factors ?? null;
 
-  // Projection math reveal — hover/focus for mouse+keyboard, click-pin for touch
+  // Projection math reveal: persistent side rail on desktop, explicit toggle on smaller screens.
   const [mathPinned, setMathPinned] = useState(false);
-  const [mathHover, setMathHover] = useState(false);
   const [closeHover, setCloseHover] = useState(false);
-  const mathVisible = mathPinned || mathHover;
+  const mathVisible = mathPinned;
 
   // Season avg base back-calculated from projected (excludes floor/ceiling bases)
   const baseAvg = useMemo(() => {
@@ -549,15 +559,16 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, enr
       onClose={onClose}
       mobileSheet
       ariaLabel="Player matchup breakdown"
-      containerClassName="matchup-breakdown-dialog w-full flex flex-col"
+      containerClassName="matchup-breakdown-dialog w-full flex flex-col xl:flex-row"
       containerStyle={{
         background: 'var(--color-bg-secondary)',
         border: '1px solid var(--color-separator)',
         boxShadow: '0 12px 40px rgba(0,0,0,0.12), 0 4px 12px rgba(0,0,0,0.06)',
-        maxWidth: '480px',
+        maxWidth: factors ? '860px' : '480px',
         maxHeight: '80vh',
       }}
     >
+      <div className="flex min-h-0 flex-1 flex-col xl:max-w-[480px]">
           {/* Player header */}
           <div
             className="px-5 pt-4 pb-3 shrink-0 relative"
@@ -708,7 +719,7 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, enr
                 )}
                 {def && (() => {
                   const pos = player?.position ?? enrichedPlayer?.position ?? '';
-                  const posPlural = pos ? `${pos}s` : 'this position';
+                  const posGroupLabel = getPositionGroupShortLabel(pos);
                   return (
                     <InfoRow label="Defense">
                       {defLabel && (
@@ -720,13 +731,13 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, enr
                         </span>
                       )}
                       <span className="text-xs tabular-nums" style={{ color: 'var(--color-label)' }}>
-                        {def.ptsAllowedPerGame.toFixed(1)} average points allowed to {posPlural}
+                        Opposing {posGroupLabel} combine for {def.ptsAllowedPerGame.toFixed(1)} points per game
                       </span>
                     </InfoRow>
                   );
                 })()}
                 {projectedScore !== null && (
-                  <>
+                  <div>
                     <InfoRow label="Projection">
                       <span className="text-xs font-semibold tabular-nums" style={{ color: 'var(--color-signature)' }}>
                         {projectedScore.toFixed(1)} pts
@@ -738,15 +749,12 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, enr
                       )}
                       {factors && (
                         <button
-                          className="ml-auto shrink-0 text-[11px] font-bold w-5 h-5 rounded-full flex items-center justify-center transition-colors"
+                          type="button"
+                          className="ml-auto shrink-0 text-[11px] font-bold w-5 h-5 rounded-full flex xl:hidden items-center justify-center transition-colors"
                           style={{
-                            background: mathPinned ? 'var(--color-accent)' : 'var(--color-fill-secondary)',
-                            color: mathPinned ? '#fff' : 'var(--color-label-tertiary)',
+                            background: mathVisible ? 'var(--color-accent)' : 'var(--color-fill-secondary)',
+                            color: mathVisible ? '#fff' : 'var(--color-label-tertiary)',
                           }}
-                          onMouseEnter={() => setMathHover(true)}
-                          onMouseLeave={() => setMathHover(false)}
-                          onFocus={() => setMathHover(true)}
-                          onBlur={() => setMathHover(false)}
                           onClick={() => setMathPinned(v => !v)}
                           aria-expanded={mathVisible}
                           aria-label="Show projection formula"
@@ -755,20 +763,22 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, enr
                         </button>
                       )}
                     </InfoRow>
-                    {mathVisible && factors && (
-                      <ProjectionMath
-                        baseAvg={baseAvg}
-                        factors={factors}
-                        projected={projectedScore}
-                        projMin={projMin}
-                        projMax={projMax}
-                        oppTeam={oppTeam}
-                        locationStr={locationStr}
-                        weatherStr={weatherStr}
-                        defLabel={defLabel}
-                      />
+                    {mathPinned && factors && (
+                      <div className="xl:hidden" style={{ borderBottom: '1px solid var(--color-separator)' }}>
+                        <ProjectionMath
+                          baseAvg={baseAvg}
+                          factors={factors}
+                          projected={projectedScore}
+                          projMin={projMin}
+                          projMax={projMax}
+                          oppTeam={oppTeam}
+                          locationStr={locationStr}
+                          weatherStr={weatherStr}
+                          defLabel={defLabel}
+                        />
+                      </div>
                     )}
-                  </>
+                  </div>
                 )}
               </>
             )}
@@ -852,6 +862,30 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, enr
               </>
             )}
           </div>
+      </div>
+
+      {factors && projectedScore !== null && (
+        <aside
+          className="hidden xl:block w-[380px] shrink-0 overflow-y-auto"
+          style={{
+            borderLeft: '1px solid var(--color-separator)',
+            background: 'var(--color-bg-secondary)',
+          }}
+          aria-label="Projection formula"
+        >
+          <ProjectionMath
+            baseAvg={baseAvg}
+            factors={factors}
+            projected={projectedScore}
+            projMin={projMin}
+            projMax={projMax}
+            oppTeam={oppTeam}
+            locationStr={locationStr}
+            weatherStr={weatherStr}
+            defLabel={defLabel}
+          />
+        </aside>
+      )}
     </Modal>
   );
 }

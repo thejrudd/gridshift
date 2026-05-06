@@ -6,14 +6,16 @@ import { STADIUMS } from '../../data/stadiums';
 import { TEAM_COLORS } from '../../data/teamColors';
 import { NFL_ODDS } from '../../data/odds';
 import useMediaQuery from '../../hooks/useMediaQuery';
+import { getLeaguePositionFilters, getPositionFilterLabel } from '../../utils/leaguePositions';
 import CompanionPlayerPreviewSheet from './CompanionPlayerPreviewSheet';
 import { CompanionSelectorButton } from './CompanionSelectorControls.jsx';
 import CompanionPlayerRow, { CompanionPlayerMetric, CompanionPlayerStatus } from './CompanionPlayerRow.jsx';
+import Modal from '../Modal.jsx';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const OFF_POSITIONS = ['ALL', 'QB', 'RB', 'WR', 'TE', 'K'];
-const DEF_POSITIONS = ['ALL', 'DL', 'LB', 'DB'];
+const DEF_POSITIONS = ['ALL', 'DEF', 'DL', 'LB', 'DB'];
 const ALL_TEAMS = Object.keys(STADIUMS).sort();
 const OFFENSE_POS_SET = new Set(['QB', 'RB', 'WR', 'TE', 'K']);
 const TEAM_CELL_PAD_X = 10;
@@ -56,7 +58,18 @@ function getHeatmapMetricColWidth() {
 }
 
 const DEF_POS_GROUPS = { DL: ['DL','DE','DT'], LB: ['LB','ILB','OLB'], DB: ['DB','CB','S','SS','FS'] };
-const normDefPos = (pos) => { for (const [n, s] of Object.entries(DEF_POS_GROUPS)) if (s.includes(pos)) return n; return null; };
+const normDefPos = (pos) => {
+  if (pos === 'DEF') return 'DEF';
+  for (const [n, s] of Object.entries(DEF_POS_GROUPS)) if (s.includes(pos)) return n;
+  return null;
+};
+
+function filterHeatmapPositions(positionOrder, leaguePositions) {
+  const availableSet = new Set(leaguePositions);
+  const concretePositions = positionOrder.filter(position => position !== 'ALL' && availableSet.has(position));
+  if (concretePositions.length <= 1) return concretePositions;
+  return ['ALL', ...concretePositions];
+}
 
 const HEATMAP_OFFENSE_TABLE_CACHE = new WeakMap();
 const HEATMAP_DEFENSE_TABLE_CACHE = new WeakMap();
@@ -71,6 +84,7 @@ const FILTER_GROUP_WIDTHS = {
   result: 158,
 };
 const PHASE_POSITION_LABEL_WIDTH = 62;
+const MOBILE_FILTER_LABEL_WIDTH = PHASE_POSITION_LABEL_WIDTH;
 
 function getCachedOffenseAllowedTable(weeklyStats, players, scheduleMap, activeScoringSettings, statMode) {
   let byPlayers = HEATMAP_OFFENSE_TABLE_CACHE.get(weeklyStats);
@@ -140,8 +154,8 @@ function getCachedOffenseAllowedTable(weeklyStats, players, scheduleMap, activeS
 
 const STAT_MODES = [
   { id: 'pts',        label: 'Fantasy Pts' },
-  { id: 'rec_yd',     label: 'Rec Yds' },
-  { id: 'rush_yd',    label: 'Rush Yds' },
+  { id: 'rec_yd',     label: 'Rec Yds', scoringKeys: ['rec_yd'] },
+  { id: 'rush_yd',    label: 'Rush Yds', scoringKeys: ['rush_yd'] },
   { id: 'game_score', label: 'Score' },
   { id: 'vegas_odds', label: 'Spread' },
 ];
@@ -154,13 +168,19 @@ const ODDS_SEASON = Object.keys(NFL_ODDS).length
 
 const DEF_STAT_MODES = [
   { id: 'pts',          label: 'Fantasy Pts', statKey: null },
-  { id: 'idp_sack',     label: 'Sacks',       statKey: 'idp_sack' },
-  { id: 'idp_int',      label: 'INT',         statKey: 'idp_int' },
-  { id: 'idp_ff',       label: 'FF',          statKey: 'idp_ff' },
-  { id: 'idp_tkl_loss', label: 'TFL',         statKey: 'idp_tkl_loss' },
-  { id: 'idp_pd',       label: 'Pass Def',    statKey: 'idp_pd', aliases: ['idp_pass_def'] },
-  { id: 'idp_qbhit',    label: 'QB Hit',      statKey: 'idp_qbhit', aliases: ['idp_qb_hit'] },
-  { id: 'idp_def_td',   label: 'TD',          statKey: 'idp_def_td' },
+  { id: 'sack',         label: 'DST Sacks',   statKey: 'sack', positions: ['DEF'], scoringKeys: ['sack'] },
+  { id: 'int',          label: 'DST INT',     statKey: 'int', positions: ['DEF'], scoringKeys: ['int'] },
+  { id: 'def_td',       label: 'DST TD',      statKey: 'def_td', positions: ['DEF'], scoringKeys: ['def_td'] },
+  { id: 'safe',         label: 'DST Safety',  statKey: 'safe', positions: ['DEF'], scoringKeys: ['safe'] },
+  { id: 'tkl_loss',     label: 'DST TFL',     statKey: 'tkl_loss', positions: ['DEF'], scoringKeys: ['tkl_loss'] },
+  { id: 'qb_hit',       label: 'DST QB Hit',  statKey: 'qb_hit', positions: ['DEF'], scoringKeys: ['qb_hit'] },
+  { id: 'idp_sack',     label: 'Sacks',       statKey: 'idp_sack', positions: ['DL', 'LB', 'DB'], scoringKeys: ['idp_sack'] },
+  { id: 'idp_int',      label: 'INT',         statKey: 'idp_int', positions: ['DL', 'LB', 'DB'], scoringKeys: ['idp_int'] },
+  { id: 'idp_ff',       label: 'FF',          statKey: 'idp_ff', positions: ['DL', 'LB', 'DB'], scoringKeys: ['idp_ff'] },
+  { id: 'idp_tkl_loss', label: 'TFL',         statKey: 'idp_tkl_loss', positions: ['DL', 'LB', 'DB'], scoringKeys: ['idp_tkl_loss'] },
+  { id: 'idp_pd',       label: 'Pass Def',    statKey: 'idp_pd', aliases: ['idp_pass_def'], positions: ['DL', 'LB', 'DB'], scoringKeys: ['idp_pd'] },
+  { id: 'idp_qbhit',    label: 'QB Hit',      statKey: 'idp_qbhit', aliases: ['idp_qb_hit'], positions: ['DL', 'LB', 'DB'], scoringKeys: ['idp_qbhit'] },
+  { id: 'idp_def_td',   label: 'TD',          statKey: 'idp_def_td', positions: ['DL', 'LB', 'DB'], scoringKeys: ['idp_def_td'] },
 ];
 
 const DEF_STAT_FILTERS = [
@@ -169,6 +189,29 @@ const DEF_STAT_FILTERS = [
   STAT_MODES.find(mode => mode.id === 'vegas_odds'),
   ...DEF_STAT_MODES.slice(1),
 ].filter(Boolean);
+
+function modeHasScoringValue(mode, scoringSettings) {
+  if (!mode?.scoringKeys) return true;
+  const settings = { ...DEFAULT_SCORING, ...scoringSettings };
+  return mode.scoringKeys.some(key => Number(settings[key] ?? 0) !== 0);
+}
+
+function modeMatchesPositions(mode, positions) {
+  if (!mode?.positions) return true;
+  const positionSet = new Set(positions);
+  return mode.positions.some(position => positionSet.has(position));
+}
+
+function getAvailableOffenseStatModes(scoringSettings) {
+  return STAT_MODES.filter(mode => modeHasScoringValue(mode, scoringSettings));
+}
+
+function getAvailableDefenseStatModes(scoringSettings, defensePositions) {
+  return DEF_STAT_FILTERS.filter(mode => (
+    modeHasScoringValue(mode, scoringSettings)
+    && modeMatchesPositions(mode, defensePositions)
+  ));
+}
 
 function getModeStatValue(wEntry, mode) {
   if (!mode?.statKey) return null;
@@ -218,6 +261,7 @@ function getCachedDefenseScoredTable(weeklyStats, players, scheduleMap, activeSc
     if (!player) continue;
     const normalizedPosition = normDefPos(player.position);
     if (!normalizedPosition) continue;
+    if (defMode?.positions && !defMode.positions.includes(normalizedPosition)) continue;
     for (const wEntry of playerWeeks) {
       const val = getValue(wEntry, player.position);
       if (val <= 0) continue;
@@ -324,6 +368,44 @@ const BREAKDOWN_DEFS = [
   { statKey: 'idp_safety',        scoringKey: 'idp_safety',        label: 'Safety',           showStat: true  },
   { statKey: 'idp_def_td',        scoringKey: 'idp_def_td',        label: 'Def TD',           showStat: true  },
   { statKey: 'idp_blk_kick',      scoringKey: 'idp_blk_kick',      label: 'Blk Kick',         showStat: true  },
+  // D/ST
+  { statKey: 'def_td',            scoringKey: 'def_td',            label: 'D/ST TD',          showStat: true  },
+  { statKey: 'def_2pt',           scoringKey: 'def_2pt',           label: 'D/ST 2PT',         showStat: true  },
+  { statKey: 'def_3_and_out',     scoringKey: 'def_3_and_out',     label: '3-and-Out',        showStat: true  },
+  { statKey: 'def_4_and_stop',    scoringKey: 'def_4_and_stop',    label: '4th Down Stop',    showStat: true  },
+  { statKey: 'def_forced_punts',  scoringKey: 'def_forced_punts',  label: 'Forced Punt',      showStat: true  },
+  { statKey: 'def_pass_def',      scoringKey: 'def_pass_def',      label: 'D/ST Pass Def',    showStat: true  },
+  { statKey: 'def_st_tkl_solo',   scoringKey: 'def_st_tkl_solo',   label: 'D/ST ST Tackle',   showStat: true  },
+  { statKey: 'def_kr_yd',         scoringKey: 'def_kr_yd',         label: 'D/ST KR Yds',      showStat: true  },
+  { statKey: 'def_pr_yd',         scoringKey: 'def_pr_yd',         label: 'D/ST PR Yds',      showStat: true  },
+  { statKey: 'sack',              scoringKey: 'sack',              label: 'D/ST Sack',        showStat: true  },
+  { statKey: 'sack_yd',           scoringKey: 'sack_yd',           label: 'D/ST Sack Yds',    showStat: true  },
+  { statKey: 'int',               scoringKey: 'int',               label: 'D/ST INT',         showStat: true  },
+  { statKey: 'int_ret_yd',        scoringKey: 'int_ret_yd',        label: 'INT Return Yds',   showStat: true  },
+  { statKey: 'safe',              scoringKey: 'safe',              label: 'D/ST Safety',      showStat: true  },
+  { statKey: 'tkl',               scoringKey: 'tkl',               label: 'D/ST Tackles',     showStat: true  },
+  { statKey: 'tkl_solo',          scoringKey: 'tkl_solo',          label: 'D/ST Solo Tkl',    showStat: true  },
+  { statKey: 'tkl_ast',           scoringKey: 'tkl_ast',           label: 'D/ST Ast Tkl',     showStat: true  },
+  { statKey: 'tkl_loss',          scoringKey: 'tkl_loss',          label: 'D/ST TFL',         showStat: true  },
+  { statKey: 'qb_hit',            scoringKey: 'qb_hit',            label: 'D/ST QB Hit',      showStat: true  },
+  { statKey: 'pts_allow',         scoringKey: 'pts_allow',         label: 'Points Allowed',   showStat: true  },
+  { statKey: 'pts_allow_0',       scoringKey: 'pts_allow_0',       label: 'Shutout',          showStat: false },
+  { statKey: 'pts_allow_1_6',     scoringKey: 'pts_allow_1_6',     label: '1-6 Pts Allowed',  showStat: false },
+  { statKey: 'pts_allow_7_13',    scoringKey: 'pts_allow_7_13',    label: '7-13 Pts Allowed', showStat: false },
+  { statKey: 'pts_allow_14_20',   scoringKey: 'pts_allow_14_20',   label: '14-20 Pts Allowed', showStat: false },
+  { statKey: 'pts_allow_21_27',   scoringKey: 'pts_allow_21_27',   label: '21-27 Pts Allowed', showStat: false },
+  { statKey: 'pts_allow_28_34',   scoringKey: 'pts_allow_28_34',   label: '28-34 Pts Allowed', showStat: false },
+  { statKey: 'pts_allow_35p',     scoringKey: 'pts_allow_35p',     label: '35+ Pts Allowed',  showStat: false },
+  { statKey: 'yds_allow',         scoringKey: 'yds_allow',         label: 'Yards Allowed',    showStat: true  },
+  { statKey: 'yds_allow_0_100',   scoringKey: 'yds_allow_0_100',   label: '0-100 Yds Allowed', showStat: false },
+  { statKey: 'yds_allow_100_199', scoringKey: 'yds_allow_100_199', label: '100-199 Yds Allowed', showStat: false },
+  { statKey: 'yds_allow_200_299', scoringKey: 'yds_allow_200_299', label: '200-299 Yds Allowed', showStat: false },
+  { statKey: 'yds_allow_300_349', scoringKey: 'yds_allow_300_349', label: '300-349 Yds Allowed', showStat: false },
+  { statKey: 'yds_allow_350_399', scoringKey: 'yds_allow_350_399', label: '350-399 Yds Allowed', showStat: false },
+  { statKey: 'yds_allow_400_449', scoringKey: 'yds_allow_400_449', label: '400-449 Yds Allowed', showStat: false },
+  { statKey: 'yds_allow_450_499', scoringKey: 'yds_allow_450_499', label: '450-499 Yds Allowed', showStat: false },
+  { statKey: 'yds_allow_500_549', scoringKey: 'yds_allow_500_549', label: '500-549 Yds Allowed', showStat: false },
+  { statKey: 'yds_allow_550p',    scoringKey: 'yds_allow_550p',    label: '550+ Yds Allowed', showStat: false },
 ];
 
 function getScoreBreakdown(wEntry, activeScoringSettings, position = null) {
@@ -710,6 +792,7 @@ export default function CompanionDefense({ onViewPlayer, routeState = null, onRo
   const [useTeamColors, setUseTeamColors] = useState(false);
   const [vegasOddsView, setVegasOddsView] = useState('spread'); // 'spread' | 'ou'
   const [vegasInfoOpen, setVegasInfoOpen] = useState(false);
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [gridMaxHeight, setGridMaxHeight] = useState('60vh');
   const filterBarRef = useRef(null);
   const tableContainerRef = useRef(null);
@@ -717,6 +800,26 @@ export default function CompanionDefense({ onViewPlayer, routeState = null, onRo
   const previousIncomingRouteRef = useRef(null);
   const skipNextRouteEmitRef = useRef(false);
   const lastScoredLeg = Number(league?.settings?.last_scored_leg);
+  const leaguePositionFilters = useMemo(
+    () => getLeaguePositionFilters(league?.roster_positions),
+    [league?.roster_positions],
+  );
+  const offensePositions = useMemo(
+    () => filterHeatmapPositions(OFF_POSITIONS, leaguePositionFilters),
+    [leaguePositionFilters],
+  );
+  const defensePositions = useMemo(
+    () => filterHeatmapPositions(DEF_POSITIONS, leaguePositionFilters),
+    [leaguePositionFilters],
+  );
+  const offenseStatModes = useMemo(
+    () => getAvailableOffenseStatModes(activeScoringSettings),
+    [activeScoringSettings],
+  );
+  const defenseStatModes = useMemo(
+    () => getAvailableDefenseStatModes(activeScoringSettings, defensePositions),
+    [activeScoringSettings, defensePositions],
+  );
   const fantasySeasonWeeks = useMemo(() => {
     const maxWeek = Number.isFinite(lastScoredLeg) && lastScoredLeg > 0
       ? Math.min(lastScoredLeg, 18)
@@ -808,6 +911,24 @@ export default function CompanionDefense({ onViewPlayer, routeState = null, onRo
     onRouteStateChange?.(localRouteState);
   }, [onRouteStateChange, normalizedIncomingRouteState, localRouteState]);
 
+  useEffect(() => {
+    if (!offensePositions.includes(pos)) setPos(offensePositions[0] ?? 'ALL');
+  }, [offensePositions, pos]);
+
+  useEffect(() => {
+    if (!defensePositions.includes(defPos)) setDefPos(defensePositions[0] ?? 'ALL');
+  }, [defensePositions, defPos]);
+
+  useEffect(() => {
+    if (offenseStatModes.some(mode => mode.id === statMode)) return;
+    setStatMode('pts');
+  }, [offenseStatModes, statMode]);
+
+  useEffect(() => {
+    if (defenseStatModes.some(mode => mode.id === defStatMode)) return;
+    setDefStatMode('pts');
+  }, [defenseStatModes, defStatMode]);
+
   // Dynamically compute the table container's max-height based on its actual
   // top position in the viewport. This correctly handles variable filter bar
   // heights (wrapping on narrow screens) and device safe-area insets (PWA).
@@ -837,13 +958,9 @@ export default function CompanionDefense({ onViewPlayer, routeState = null, onRo
     };
   }, [computeGridMaxHeight]);
 
-  // Lock body scroll while drilldown is open
   useEffect(() => {
-    if (!drilldown) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = prev; };
-  }, [drilldown]);
+    computeGridMaxHeight();
+  }, [computeGridMaxHeight, mobileFiltersOpen]);
 
   // Lock page scroll so only the grid scrolls (applies on all viewport sizes)
   useEffect(() => {
@@ -870,9 +987,13 @@ export default function CompanionDefense({ onViewPlayer, routeState = null, onRo
   }, [statsEnhancing, weeklyStats, players, scheduleMap, activeScoringSettings, defStatMode]);
 
   const activeTable = viewMode === 'offense' ? offenseAllowedTable : defenseScoredTable;
-  const activePositions = viewMode === 'offense' ? OFF_POSITIONS : DEF_POSITIONS;
+  const activePositions = viewMode === 'offense' ? offensePositions : defensePositions;
   const activePos = viewMode === 'offense' ? pos : defPos;
   const setActivePos = viewMode === 'offense' ? setPos : setDefPos;
+  const activePositionSet = useMemo(
+    () => new Set(activePositions.filter(position => position !== 'ALL')),
+    [activePositions],
+  );
   const isGameStatMode = SHARED_GAME_STAT_MODES.has(statMode);
 
   // ── Rows ───────────────────────────────────────────────────────────────────
@@ -933,7 +1054,7 @@ export default function CompanionDefense({ onViewPlayer, routeState = null, onRo
       });
     }
 
-    const posList = viewMode === 'offense' ? ['QB','RB','WR','TE','K'] : Object.keys(DEF_POS_GROUPS);
+    const posList = activePositions.filter(position => position !== 'ALL');
     return ALL_TEAMS.map(team => {
       let weekData = {};
       if (activeTable) {
@@ -955,7 +1076,7 @@ export default function CompanionDefense({ onViewPlayer, routeState = null, onRo
       const avg = weeksPlayed > 0 && Object.keys(weekData).length > 0 ? total / weeksPlayed : null;
       return { team, weekPts: weekData, avg };
     });
-  }, [activeTable, activePos, viewMode, statMode, scheduleMap, weekMatchesLocation, vegasOddsView, fantasySeasonWeeks]);
+  }, [activeTable, activePos, activePositions, viewMode, statMode, scheduleMap, weekMatchesLocation, vegasOddsView, fantasySeasonWeeks]);
 
   const rows = useMemo(() => {
     if (sortKey === 'team') {
@@ -1134,7 +1255,7 @@ export default function CompanionDefense({ onViewPlayer, routeState = null, onRo
         const player = players[playerId];
         if (!player) continue;
         if (matchPos && player.position !== matchPos) continue;
-        if (!matchPos && !['QB','RB','WR','TE','K'].includes(player.position)) continue;
+        if (!matchPos && !activePositionSet.has(player.position)) continue;
         const wEntry = playerWeeks.find(w => w.week === week);
         if (!wEntry) continue;
 
@@ -1175,6 +1296,7 @@ export default function CompanionDefense({ onViewPlayer, routeState = null, onRo
         if (!player) continue;
         const normPos = normDefPos(player.position);
         if (!normPos) continue;
+        if (!activePositionSet.has(normPos)) continue;
         if (matchNorm && normPos !== matchNorm) continue;
         const wEntry = playerWeeks.find(w => w.week === week);
         if (!wEntry) continue;
@@ -1199,7 +1321,7 @@ export default function CompanionDefense({ onViewPlayer, routeState = null, onRo
     }
 
     return results.sort((a, b) => b.val - a.val);
-  }, [drilldown, weeklyStats, players, viewMode, activePos, statMode, defStatMode, activeScoringSettings, scheduleMap, isGameStatMode]);
+  }, [drilldown, weeklyStats, players, viewMode, activePos, activePositionSet, statMode, defStatMode, activeScoringSettings, scheduleMap, isGameStatMode]);
 
   // ── Game box score (Game Score stat mode) ─────────────────────────────────
 
@@ -1275,6 +1397,7 @@ export default function CompanionDefense({ onViewPlayer, routeState = null, onRo
 
   const loaded = isGameStatMode ? !!scheduleMap : (viewMode === 'offense' ? !!offenseAllowedTable : !!defenseScoredTable);
   const showAvg = statMode !== 'vegas_odds';
+  const mobileFilterLabelWidth = useMobilePreviewSheet ? MOBILE_FILTER_LABEL_WIDTH : null;
 
   const heatmapStyles = useMemo(() => {
     const head = headStyle();
@@ -1323,6 +1446,7 @@ export default function CompanionDefense({ onViewPlayer, routeState = null, onRo
     () => Boolean(DEF_STAT_MODES.find(mode => mode.id === defStatMode)?.statKey),
     [defStatMode],
   );
+  const activeStatModes = viewMode === 'offense' ? offenseStatModes : defenseStatModes;
 
   const heatmapRows = useMemo(() => rows.map(({ team, weekPts, avg }, idx) => {
     const rowBg = idx % 2 === 0 ? 'var(--color-bg)' : 'var(--color-fill)';
@@ -1459,6 +1583,34 @@ export default function CompanionDefense({ onViewPlayer, routeState = null, onRo
     weekMatchesLocation,
   ]);
 
+  const activeStatLabel = useMemo(() => {
+    if (viewMode === 'offense' || SHARED_GAME_STAT_MODES.has(statMode)) {
+      return offenseStatModes.find(mode => mode.id === statMode)?.label ?? 'Fantasy Pts';
+    }
+    return defenseStatModes.find(mode => mode.id === defStatMode)?.label ?? 'Fantasy Pts';
+  }, [defStatMode, defenseStatModes, offenseStatModes, statMode, viewMode]);
+
+  const activeLocationLabel = useMemo(() => (
+    [{ id: 'all', label: 'All' }, { id: 'home', label: 'Home' }, { id: 'away', label: 'Away' }]
+      .find(option => option.id === locationFilter)?.label ?? 'All'
+  ), [locationFilter]);
+
+  const activeScopeLabel = useMemo(() => (
+    HEATMAP_SCOPES.find(scope => scope.id === heatmapScope)?.label ?? 'Overall'
+  ), [heatmapScope]);
+
+  const mobileFilterSummary = useMemo(() => {
+    const phaseLabel = viewMode === 'defense' ? 'Defense' : 'Offense';
+    const positionLabel = activePos === 'ALL' ? 'All' : activePos;
+    const summary = [phaseLabel, positionLabel, activeStatLabel, activeLocationLabel, activeScopeLabel];
+    if (statMode === 'vegas_odds') {
+      summary.push(vegasOddsView === 'ou' ? 'O/U' : 'Spread');
+    }
+    return summary;
+  }, [activeLocationLabel, activePos, activeScopeLabel, activeStatLabel, statMode, vegasOddsView, viewMode]);
+
+  const showFilterPanel = !useMobilePreviewSheet || mobileFiltersOpen;
+
   useEffect(() => {
     if (!loaded) return;
     computeGridMaxHeight();
@@ -1466,10 +1618,61 @@ export default function CompanionDefense({ onViewPlayer, routeState = null, onRo
 
   return (
     <div className="lg:-mx-8">
-      {/* Filter bar — scrollable strip + pinned info icon in the same row */}
-      <div ref={filterBarRef} className="px-4 sm:px-6 lg:px-8 pb-3 flex items-center gap-2">
-        {/* Filter groups wrap as needed instead of becoming horizontally scrollable. */}
-        <div className="flex-1 min-w-0 flex flex-wrap items-start gap-x-5 gap-y-2 overflow-visible">
+      <div ref={filterBarRef} className="px-4 sm:px-6 lg:px-8 pb-3">
+        <div className="companion-heatmap-mobile-filter-summary">
+          <CompanionSelectorButton
+            active={mobileFiltersOpen}
+            className="companion-heatmap-mobile-filter-toggle"
+            size="xs"
+            onClick={() => setMobileFiltersOpen(open => !open)}
+            aria-expanded={mobileFiltersOpen}
+            aria-controls="companion-heatmap-filter-panel"
+          >
+            {mobileFiltersOpen ? 'Hide Filters' : 'Show Filters'}
+          </CompanionSelectorButton>
+          <div className="companion-heatmap-mobile-filter-summary__rail" aria-label="Active heatmap filters">
+            {mobileFilterSummary.map(item => (
+              <span key={item} className="companion-heatmap-mobile-filter-summary__chip">
+                {item}
+              </span>
+            ))}
+          </div>
+          {statMode === 'vegas_odds' && (
+            <div className="relative shrink-0">
+              <button
+                className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold"
+                style={{ background: 'var(--color-fill)', color: 'var(--color-label-tertiary)' }}
+                onMouseEnter={() => setVegasInfoOpen(true)}
+                onMouseLeave={() => setVegasInfoOpen(false)}
+                onClick={() => setVegasInfoOpen(v => !v)}
+                aria-label="Odds data info"
+              >
+                i
+              </button>
+              {vegasInfoOpen && (
+                <div
+                  className="absolute bottom-full right-0 mb-2 z-20 rounded-lg p-2.5 text-xs leading-relaxed"
+                  style={{
+                    background: 'var(--color-bg-secondary)',
+                    border: '1px solid var(--color-separator)',
+                    color: 'var(--color-label-secondary)',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.18)',
+                    width: '280px',
+                  }}
+                >
+                  {vegasOddsView === 'ou'
+                    ? `Odds via nflverse · ${ODDS_SEASON} season · margin shown is actual total − O/U line (+ = over, − = under)`
+                    : `Odds via nflverse · ${ODDS_SEASON} season · spread shown is from each team's perspective (− = favored)`}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {showFilterPanel && (
+          <div id="companion-heatmap-filter-panel" className="flex items-center gap-2 max-lg:pt-2">
+            {/* Filter groups wrap as needed instead of becoming horizontally scrollable. */}
+            <div className="flex-1 min-w-0 flex flex-wrap items-start gap-x-5 gap-y-2 overflow-visible">
           <div
             style={{
               display: 'flex',
@@ -1504,15 +1707,15 @@ export default function CompanionDefense({ onViewPlayer, routeState = null, onRo
                     title={disabled ? 'Position filters are not used for score or odds views.' : undefined}
                     onClick={() => { setActivePos(p); resetSort(); }}
                   >
-                    {p}
+                    {getPositionFilterLabel(p)}
                   </Btn>
                 );
               })}
             </FilterGroup>
           </div>
 
-          <FilterGroup label="Stat" width={FILTER_GROUP_WIDTHS.stat}>
-            {(viewMode === 'offense' ? STAT_MODES : DEF_STAT_FILTERS).map(m => {
+          <FilterGroup label="Stat" width={FILTER_GROUP_WIDTHS.stat} labelWidth={mobileFilterLabelWidth}>
+            {activeStatModes.map(m => {
               const sharedGameStat = SHARED_GAME_STAT_MODES.has(m.id);
               const active = sharedGameStat || viewMode === 'offense'
                 ? statMode === m.id
@@ -1537,7 +1740,7 @@ export default function CompanionDefense({ onViewPlayer, routeState = null, onRo
             })}
           </FilterGroup>
 
-          <FilterGroup label="Location" width={FILTER_GROUP_WIDTHS.location}>
+          <FilterGroup label="Location" width={FILTER_GROUP_WIDTHS.location} labelWidth={mobileFilterLabelWidth}>
             {[{ id: 'all', label: 'All' }, { id: 'home', label: 'Home' }, { id: 'away', label: 'Away' }].map(opt => (
               <Btn key={opt.id} active={locationFilter === opt.id} onClick={() => setLocationFilter(opt.id)}>
                 {opt.label}
@@ -1545,7 +1748,7 @@ export default function CompanionDefense({ onViewPlayer, routeState = null, onRo
             ))}
           </FilterGroup>
 
-          <FilterGroup label="Color" width={FILTER_GROUP_WIDTHS.color}>
+          <FilterGroup label="Color" width={FILTER_GROUP_WIDTHS.color} labelWidth={mobileFilterLabelWidth}>
             {HEATMAP_SCOPES.map(s => {
               const disabled = statMode === 'vegas_odds';
               return (
@@ -1568,7 +1771,12 @@ export default function CompanionDefense({ onViewPlayer, routeState = null, onRo
             </Btn>
           )}
 
-          <FilterGroup label="Result" width={FILTER_GROUP_WIDTHS.result} style={{ marginLeft: 'auto' }}>
+          <FilterGroup
+            label="Result"
+            width={FILTER_GROUP_WIDTHS.result}
+            labelWidth={mobileFilterLabelWidth}
+            style={useMobilePreviewSheet ? null : { marginLeft: 'auto' }}
+          >
             {[
               { id: 'spread', label: 'Spread' },
               { id: 'ou', label: 'O/U' },
@@ -1590,7 +1798,7 @@ export default function CompanionDefense({ onViewPlayer, routeState = null, onRo
         </div>
 
         {/* Info icon — outside the overflow container so tooltip is never clipped */}
-        {statMode === 'vegas_odds' && (
+        {statMode === 'vegas_odds' && !useMobilePreviewSheet && (
           <div className="relative shrink-0">
             <button
               className="w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold"
@@ -1620,6 +1828,8 @@ export default function CompanionDefense({ onViewPlayer, routeState = null, onRo
             )}
           </div>
         )}
+          </div>
+        )}
       </div>
 
       {!loaded ? (
@@ -1629,55 +1839,58 @@ export default function CompanionDefense({ onViewPlayer, routeState = null, onRo
           </span>
         </div>
       ) : (
-        <div
-          ref={tableContainerRef}
-          style={{
-            overflowX: 'auto',
-            overflowY: 'auto',
-            maxHeight: gridMaxHeight,
-            WebkitOverflowScrolling: 'touch',
-            overscrollBehaviorX: 'contain',
-            width: '100%',
-          }}
-        >
-          <HeatmapTable
-            rows={heatmapRows}
-            weekHeaders={weekHeaders}
-            showAvg={showAvg}
-            styles={heatmapStyles}
-            teamSort={teamSort}
-            sortKey={sortKey}
-            sortDir={sortDir}
-            onSort={handleSort}
-            onTeamSortChange={handleTeamSortChange}
-            onCellDrilldown={handleCellDrilldown}
-          />
+        <div className="companion-heatmap-scroll-frame">
+          <div
+            ref={tableContainerRef}
+            className="companion-heatmap-table-scroller"
+            style={{
+              overflowX: 'auto',
+              overflowY: 'auto',
+              maxHeight: gridMaxHeight,
+              WebkitOverflowScrolling: 'touch',
+              overscrollBehaviorX: 'contain',
+              width: '100%',
+            }}
+          >
+            <HeatmapTable
+              rows={heatmapRows}
+              weekHeaders={weekHeaders}
+              showAvg={showAvg}
+              styles={heatmapStyles}
+              teamSort={teamSort}
+              sortKey={sortKey}
+              sortDir={sortDir}
+              onSort={handleSort}
+              onTeamSortChange={handleTeamSortChange}
+              onCellDrilldown={handleCellDrilldown}
+            />
+          </div>
         </div>
       )}
 
       {/* Drilldown modal */}
       {drilldown && (
-        <div
-          onClick={() => setDrilldown(null)}
-          style={{
-            position: 'fixed', inset: 0, zIndex: 50,
-            background: 'rgba(0,0,0,0.5)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            padding: '16px',
+        <Modal
+          onClose={() => setDrilldown(null)}
+          mobileSheet
+          ariaLabel="Heatmap drilldown"
+          containerClassName="companion-heatmap-drilldown-panel"
+          containerStyle={{
+            background: 'var(--color-bg)',
+            width: '100%',
+            maxWidth: '400px',
+            maxHeight: '80vh',
+            display: 'flex',
+            flexDirection: 'column',
+            boxShadow: '0 8px 40px rgba(0,0,0,0.35)',
           }}
         >
           <div
-            onClick={e => e.stopPropagation()}
-            className="modal-panel"
+            className="companion-heatmap-drilldown-content"
             style={{
-              background: 'var(--color-bg)',
-              borderRadius: '16px',
               padding: '24px 20px',
-              width: '100%',
-              maxWidth: '400px',
-              maxHeight: '80vh',
+              flex: '1 1 auto',
               overflowY: 'auto',
-              boxShadow: '0 8px 40px rgba(0,0,0,0.35)',
               textAlign: 'center',
             }}
           >
@@ -1768,11 +1981,11 @@ export default function CompanionDefense({ onViewPlayer, routeState = null, onRo
                     {isGameStatMode
                       ? 'Score'
                       : <>
-                          {viewMode === 'offense' ? (activePos === 'ALL' ? 'All positions' : activePos) : (activePos === 'ALL' ? 'All defense' : activePos)}
+                          {viewMode === 'offense' ? (activePos === 'ALL' ? 'All positions' : getPositionFilterLabel(activePos)) : (activePos === 'ALL' ? 'All defense' : getPositionFilterLabel(activePos))}
                           {' · '}
                           {viewMode === 'offense'
-                            ? STAT_MODES.find(m => m.id === statMode)?.label
-                            : DEF_STAT_MODES.find(m => m.id === defStatMode)?.label}
+                            ? offenseStatModes.find(m => m.id === statMode)?.label
+                            : defenseStatModes.find(m => m.id === defStatMode)?.label}
                           {' · '}{drilldownPlayers.length} player{drilldownPlayers.length !== 1 ? 's' : ''}
                         </>
                     }
@@ -1990,7 +2203,7 @@ export default function CompanionDefense({ onViewPlayer, routeState = null, onRo
               Close
             </button>
           </div>
-        </div>
+        </Modal>
       )}
       {previewPlayerId && (
         <CompanionPlayerPreviewSheet

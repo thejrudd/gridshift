@@ -1011,3 +1011,13 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Companion row fixes** - Improved local contrast for team-gradient row labels and status badges, preserved avatar fallback layout when images fail, aligned rostered labels/logos, and kept Roster player identity text from truncating too aggressively.
 - **Statistics mobile fixes** - Added left/right overflow indicators for expanded game logs, tightened mobile Result column spacing, froze BYE rows with the identity columns, and made the mobile stats snapshot sheet adapt to shorter viewports.
 - **Mobile header scroll polish** - Removed the NavBar scroll-state separator that appeared above the top tab bar and adjusted mobile safe-area offsets so PWA content no longer hides underneath frozen navigation rows.
+
+---
+
+## v7.3.1 - Companion Mobile & Projection Polish
+*2026-05-05*
+
+- **Companion mobile scroll cues** - Added shared horizontal scroll cue behavior so Companion tab rails and dense row areas signal hidden content without letting labels show underneath the edge affordance.
+- **Heatmap mobile filters tightened** - Reworked the Heatmap mobile filter stack so Phase, Position, and Result chips align consistently while consuming less vertical space above the grid.
+- **Projection formula reliability** - Improved matchup projection data handling and formula UI plumbing so projection breakdowns remain more responsive and readable during player drilldowns.
+- **Responsive overlay polish** - Strengthened ActionSheet sizing, Companion row spacing, and Trade proposal panel overflow handling for smaller mobile viewports.

@@ -87,12 +87,12 @@ npm run validate:routing
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) |
 
-## What's New in v7.3
+## What's New in v7.3.1
 
-- **Trade modules split** - Trade Agent, Intelligence, Upgrades, proposal cards, valuation sheets, roster browse, and opportunity logic now live in focused modules instead of giant all-in-one files.
-- **Shared Companion/Trade rows** - Player and asset rows now share one visual system for team gradients, badges, logos, fallbacks, and selector controls across Companion and Trade surfaces.
-- **Trade Agent polish** - Mobile roster shelves are easier to use, proposal packages carry into Agent more reliably, draft pick values stay consistent, and Color Commentary waits until both trade sides are populated.
-- **Mobile table fixes** - Statistics game logs now show left/right overflow cues, keep BYE rows anchored with the identity columns, and fit dense mobile stat surfaces more cleanly.
+- **Companion mobile polish** - Horizontal tab and content rails now show cleaner edge cues without letting labels peek through the affordance.
+- **Heatmap filter cleanup** - Mobile Heatmap filters align consistently across Phase, Position, and Result while leaving more room for the grid itself.
+- **Projection drilldown polish** - Matchup projection breakdowns and formula surfaces are more resilient during player drilldowns.
+- **Responsive overlays** - Action sheets, Companion rows, and Trade proposal panels fit tighter mobile viewports more reliably.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 

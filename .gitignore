@@ -21,6 +21,17 @@ blob-report/
 .playwright/
 playwright/.cache/
 
+!playwright.config.js
+!tests/
+tests/*
+!tests/e2e/
+tests/e2e/*
+!tests/e2e/companion-responsive.spec.js
+!tests/e2e/tradeTestHarness.js
+!tests/fixtures/
+tests/fixtures/*
+!tests/fixtures/tradeFixtures.js
+
 # Local docs drafts
 docs/archive/Historical Release Notes Drafts.md
 

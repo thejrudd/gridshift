@@ -1327,7 +1327,36 @@ function TradeIntelligenceManagerSelector({
   standingMap,
   onPartnerChange,
 }) {
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const mobileMenuRef = useRef(null);
   const selectedRosterId = normalizeRosterId(partnerRosterId);
+  const selectedEntry = selectedRosterId
+    ? partnerRosters.find((entry) => normalizeRosterId(entry?.roster?.roster_id) === selectedRosterId) ?? null
+    : null;
+  const selectedEntryRosterId = normalizeRosterId(selectedEntry?.roster?.roster_id);
+  const selectedRoster = selectedEntryRosterId ? (rosterById.get(selectedEntryRosterId) ?? selectedEntry?.roster ?? null) : null;
+  const selectedMetaText = selectedEntry
+    ? [getRosterRecordText(selectedRoster), standingMap.get(selectedEntryRosterId)].filter(Boolean).join(' · ') || 'League manager'
+    : 'No trade partner selected';
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return undefined;
+
+    const handlePointerDown = (event) => {
+      if (mobileMenuRef.current?.contains(event.target)) return;
+      setMobileMenuOpen(false);
+    };
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') setMobileMenuOpen(false);
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [mobileMenuOpen]);
 
   return (
     <aside
@@ -1344,7 +1373,103 @@ function TradeIntelligenceManagerSelector({
         </div>
       </div>
 
-      <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide xl:flex-col xl:overflow-visible xl:pb-0">
+      {partnerRosters.length ? (
+        <div className="relative xl:hidden" ref={mobileMenuRef}>
+          <button
+            type="button"
+            onClick={() => setMobileMenuOpen((open) => !open)}
+            className="flex w-full items-center gap-3 rounded-xl border px-3 py-3 text-left transition-colors"
+            style={{
+              background: 'var(--color-fill)',
+              borderColor: 'var(--color-signature)',
+              color: 'var(--color-label)',
+              boxShadow: '0 8px 20px color-mix(in srgb, var(--color-label) 8%, transparent)',
+            }}
+            aria-haspopup="listbox"
+            aria-expanded={mobileMenuOpen}
+            aria-label="Trade partner"
+          >
+            <ManagerAvatar avatarHash={selectedEntry?.avatarHash} name={selectedEntry?.displayName} selected />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-extrabold" style={{ color: 'var(--color-label)' }}>
+                {selectedEntry?.displayName ?? 'Select Manager'}
+              </span>
+              <span className="mt-0.5 block truncate text-[11px] font-semibold" style={{ color: 'var(--color-label-secondary)' }}>
+                {selectedMetaText}
+              </span>
+            </span>
+            {selectedEntry && (
+              <span
+                className="shrink-0 rounded-md px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em]"
+                style={{ background: 'var(--color-signature)', color: 'var(--color-signature-fg)' }}
+              >
+                Active
+              </span>
+            )}
+          </button>
+
+          {mobileMenuOpen && (
+            <div
+              className="absolute left-0 right-0 top-[calc(100%+8px)] z-30 max-h-[min(360px,52vh)] overflow-y-auto rounded-xl border p-2 shadow-xl"
+              style={{
+                background: 'var(--color-bg)',
+                borderColor: 'var(--color-separator)',
+                boxShadow: '0 18px 40px color-mix(in srgb, var(--color-label) 16%, transparent)',
+              }}
+              role="listbox"
+              aria-label="Trade partner"
+            >
+              {partnerRosters.map((entry) => {
+                const rosterId = normalizeRosterId(entry?.roster?.roster_id);
+                const roster = rosterById.get(rosterId) ?? entry?.roster ?? null;
+                const selected = rosterId === selectedRosterId;
+                const recordText = getRosterRecordText(roster);
+                const standingText = standingMap.get(rosterId);
+                const metaText = [recordText, standingText].filter(Boolean).join(' · ') || 'League manager';
+                return (
+                  <button
+                    key={rosterId}
+                    type="button"
+                    onClick={() => {
+                      onPartnerChange?.(rosterId);
+                      setMobileMenuOpen(false);
+                    }}
+                    data-testid={`trade-intelligence-partner-mobile-${rosterId}`}
+                    className="flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors"
+                    style={{
+                      background: selected ? 'var(--color-fill-secondary)' : 'var(--color-bg)',
+                      borderColor: selected ? 'var(--color-signature)' : 'transparent',
+                      color: 'var(--color-label)',
+                    }}
+                    role="option"
+                    aria-selected={selected}
+                  >
+                    <ManagerAvatar avatarHash={entry.avatarHash} name={entry.displayName} selected={selected} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-extrabold" style={{ color: 'var(--color-label)' }}>
+                        {entry.displayName}
+                      </span>
+                      <span className="mt-0.5 block truncate text-[11px] font-semibold" style={{ color: 'var(--color-label-secondary)' }}>
+                        {metaText}
+                      </span>
+                    </span>
+                    {selected && (
+                      <span
+                        className="shrink-0 rounded-md px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em]"
+                        style={{ background: 'var(--color-signature)', color: 'var(--color-signature-fg)' }}
+                      >
+                        Active
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ) : null}
+
+      <div className="hidden gap-2 overflow-x-auto pb-1 scrollbar-hide xl:flex xl:flex-col xl:overflow-visible xl:pb-0">
         {partnerRosters.length ? partnerRosters.map((entry) => {
           const rosterId = normalizeRosterId(entry?.roster?.roster_id);
           const roster = rosterById.get(rosterId) ?? entry?.roster ?? null;

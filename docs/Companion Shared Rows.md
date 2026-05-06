@@ -9,6 +9,7 @@ This is the source-of-truth note for Companion and Trade-adjacent selector/playe
 - `src/components/companion/CompanionPlayerRow.jsx` — canonical player row renderer for Companion player lists and Trade-adjacent player pickers.
 - `src/components/companion/CompanionAssetRow.jsx` — canonical selectable asset row for player/pick/manager assets in Trade and Companion selector contexts.
 - `src/components/companion/CompanionSelectorControls.jsx` — canonical selector rails, buttons, segmented controls, and search fields.
+- `src/components/HorizontalScrollCue.jsx` and `src/hooks/useHorizontalScrollCue.js` — canonical left/right scroll affordance for overflowing selector and tab rails.
 - `src/components/companion/PlayerStatusBadge.jsx` — player availability/status badge rendering; uses local row contrast when rendered inside `CompanionPlayerRow`.
 - `src/hooks/useCompanionPlayerLocalContrast.js` — measures the badge/text position inside a rendered row and chooses the readable start/mid/end gradient foreground.
 - `src/utils/teamVisualTheme.js` — canonical NFL team theme, gradient, overlay, tint, and contrast source.
@@ -34,6 +35,14 @@ Feature screens own:
 - Section-specific column templates passed into the shared row.
 
 Do not re-create local luminance helpers, team-gradient helpers, headshot fallback logic, status badge contrast, or selector button styles in feature components. Extend the shared files instead.
+
+## Scrollable Rails And Cues
+
+Use `useHorizontalScrollCue` with `HorizontalScrollCue` for overflowing tab rails, selector rails, and dense mobile control rows. The cue should be positioned in the same shell that defines the rail's visual width.
+
+For full-bleed mobile rails, the shell must share the rail's negative margin or full-bleed width. Do not mount the cue inside a narrower parent while the scroll rail bleeds to the viewport edge; the cue will stop early and text can remain visible beside the arrow.
+
+When changing cue layout, keep a Playwright geometry assertion that compares the cue's rendered edge with the scroll rail's rendered edge. The cue should cover the actual right/left edge, not merely be visible.
 
 ## Player Row Pattern
 
@@ -75,7 +84,7 @@ Use explicit `gridTemplate` and `columnGridTemplate` values when a screen has fi
 Team gradients are not uniform. Text can be readable on the left side of a row and unreadable on the right side, or vice versa.
 
 - Use `CompanionPlayerMetric` for metric values; it reads the row's value-side contrast variables.
-- Use `CompanionPlayerStatus` or `PlayerStatusBadge` for status badges inside shared rows.
+- Use `PlayerStatusBadge` for player availability/injury statuses inside shared rows. Pass `compact` in mobile/limited-width slots so labels come from `src/utils/playerAvailabilityStatus.js` (`Questionable` → `Q`, `Injured Reserve` → `IR`, etc.). Use `CompanionPlayerStatus` only for generic contextual chips such as `ROSTERED`, `HOT`, or selected-state labels.
 - Use `CompanionPlayerLocalContrastText` for custom overlay text such as `ROSTERED`.
 - Do not hardcode `var(--color-label)`, semantic red/green/orange, or team accent colors for text that sits on a team gradient unless the component intentionally opts out of local contrast.
 

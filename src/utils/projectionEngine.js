@@ -5,6 +5,20 @@ const IDP_POSITIONS = new Set(['DL', 'LB', 'DB', 'DE', 'DT', 'CB', 'S', 'ILB', '
 const PASSING_POSITIONS = new Set(['QB', 'WR', 'TE']);
 // Positions for which offensive snap % is a meaningful usage signal
 const SNAP_POSITIONS = new Set(['QB', 'RB', 'WR', 'TE']);
+const MATCHUP_RULES = {
+  QB: { minGames: 6, power: 0.35, min: 0.94, max: 1.06 },
+  DL: { minGames: 6, power: 0.40, min: 0.93, max: 1.08 },
+};
+const RECENT_WEIGHT_BY_POSITION = {
+  QB: 0.50,
+  RB: 0.60,
+  WR: 0.50,
+  TE: 0.50,
+  K: 0.35,
+  DL: 0.30,
+  LB: 0.35,
+  DB: 0.30,
+};
 const POSITION_ALIAS_MAP = {
   DL: ['DE', 'DT'],
   LB: ['ILB', 'OLB'],
@@ -594,6 +608,25 @@ export function getLeagueAvgPPG(pos, allWeeklyStats, players, scoringSettings, b
   return averagesByPos[normPos] ?? averagesByPos[pos] ?? 0;
 }
 
+export function computeLeagueAvgPPGByPositionFromDefenseTable(defenseTable, beforeWeek = null) {
+  const totalsByPos = {};
+  for (const posData of Object.values(defenseTable ?? {})) {
+    for (const [position, weekData] of Object.entries(posData ?? {})) {
+      for (const [week, points] of Object.entries(weekData ?? {})) {
+        if (beforeWeek != null && Number(week) >= beforeWeek) continue;
+        if (!totalsByPos[position]) totalsByPos[position] = [];
+        totalsByPos[position].push(points);
+      }
+    }
+  }
+
+  const averagesByPos = {};
+  for (const [position, values] of Object.entries(totalsByPos)) {
+    averagesByPos[position] = values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
+  }
+  return addPositionAliases(averagesByPos);
+}
+
 export function computeLeagueAvgPPGByPosition(allWeeklyStats, players, scoringSettings, beforeWeek = null) {
   if (!allWeeklyStats || !players) return {};
 
@@ -721,8 +754,8 @@ export function projectPlayer({
   const seasonAvg = gamePts.reduce((s, p) => s + p, 0) / gamePts.length;
 
   // ── Recent form (last 4 scored games in chronological order) ─────────────
-  // Weighted 60% recent / 40% season so hot/cold streaks propagate quickly
-  // into the next projection without completely discarding the season baseline.
+  // Backtested by position so hot/cold streaks propagate quickly only where
+  // they improved accuracy versus the season baseline.
   const recentPts = priorWeekly
     .map(w => calcPoints(w, scoringSettings, pos))
     .filter(p => p > 0)
@@ -730,11 +763,15 @@ export function projectPlayer({
   const recentAvg = recentPts.length >= 2
     ? recentPts.reduce((s, p) => s + p, 0) / recentPts.length
     : seasonAvg;
+  const recentWeight = RECENT_WEIGHT_BY_POSITION[normalizePos(pos)] ?? 0.60;
   const blendedBase = recentPts.length >= 2
-    ? recentAvg * 0.6 + seasonAvg * 0.4
+    ? recentAvg * recentWeight + seasonAvg * (1 - recentWeight)
     : seasonAvg;
 
   // ── Home/away factor ──────────────────────────────────────────────────────
+  // Backtesting showed raw home/away splits add noise at this sample size.
+  // Keep the historical calculation available for diagnostics, but leave the
+  // multiplier neutral until there is a stronger position-specific signal.
   const homeGames = [], awayGames = [];
   for (const w of priorWeekly) {
     const pts = calcPoints(w, scoringSettings, pos);
@@ -743,7 +780,8 @@ export function projectPlayer({
   const homeAvg = homeGames.length >= 1 ? homeGames.reduce((s,p)=>s+p,0)/homeGames.length : seasonAvg;
   const awayAvg = awayGames.length >= 1 ? awayGames.reduce((s,p)=>s+p,0)/awayGames.length : seasonAvg;
   const locationAvg = isHome !== null ? (isHome ? homeAvg : awayAvg) : seasonAvg;
-  const locationFactor = seasonAvg > 0 ? locationAvg / seasonAvg : 1;
+  const rawLocationFactor = seasonAvg > 0 ? locationAvg / seasonAvg : 1;
+  const locationFactor = 1;
 
   // ── Opponent defensive strength factor ───────────────────────────────────
   let oppFactor = 1.0;
@@ -757,12 +795,17 @@ export function projectPlayer({
             ? getOpponentStrength(oppTeam, pos, allWeeklyStats, players, scoringSettings, scheduleMap, week)
             : null));
   if (strengthData) {
+    oppData = strengthData;
     const avgPPG = leagueAvg ?? (allWeeklyStats && players
       ? getLeagueAvgPPG(pos, allWeeklyStats, players, scoringSettings, week)
       : 0);
-    if (avgPPG > 0) {
-      oppData = strengthData;
-      oppFactor = Math.max(0.65, Math.min(1.45, strengthData.ptsAllowedPerGame / avgPPG));
+    const matchupRule = MATCHUP_RULES[normalizePos(pos)];
+    if (matchupRule && avgPPG > 0 && (strengthData.gamesAnalyzed ?? 0) >= matchupRule.minGames) {
+      const rawFactor = strengthData.ptsAllowedPerGame / avgPPG;
+      if (Number.isFinite(rawFactor) && rawFactor > 0) {
+        const transformed = rawFactor ** matchupRule.power;
+        oppFactor = Math.max(matchupRule.min, Math.min(matchupRule.max, transformed));
+      }
     }
   }
 
@@ -791,7 +834,8 @@ export function projectPlayer({
   // Compares recent snap % (last 4 games) vs season average.
   // Captures RBBC shifts, emerging roles, and depth-chart changes without
   // double-counting the baseline (which already reflects historical snap rate).
-  const snapFactor = getSnapFactor(priorWeekly, pos);
+  const rawSnapFactor = getSnapFactor(priorWeekly, pos);
+  const snapFactor = 1;
 
   // ── Projected score ───────────────────────────────────────────────────────
   const projected = blendedBase * locationFactor * oppFactor * weatherFactor * snapFactor;
@@ -835,15 +879,18 @@ export function projectPlayer({
     max,
     factors: {
       locationFactor:        Math.round(locationFactor * 100) / 100,
+      rawLocationFactor:     Math.round(rawLocationFactor * 100) / 100,
       oppFactor:             Math.round(oppFactor * 100) / 100,
       weatherFactor:         Math.round(weatherFactor * 100) / 100,
       ceilingWeatherFactor:  Math.round(ceilingWeatherFactor * 100) / 100,
       snapFactor:            Math.round(snapFactor * 100) / 100,
+      rawSnapFactor:         Math.round(rawSnapFactor * 100) / 100,
       oppGames:              oppData?.gamesAnalyzed ?? 0,
       floorBase:             Math.round(floor * 10) / 10,
       ceilingBase:           Math.round(ceiling * 10) / 10,
       seasonBase:            Math.round(seasonAvg * 10) / 10,
       recentBase:            Math.round(recentAvg * 10) / 10,
+      recentWeight,
     },
   };
 }

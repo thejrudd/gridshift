@@ -7,10 +7,12 @@ New features requested or planned should be added here.
 
 ## Planned Versions
 
-### v7.4 - Scout Rookie Projection Layer
+### v7.4 - Statistics Expansion & Scout Rookie Projection Layer
 
-Tabled Scout enhancements that build on the post-draft rookie data foundation without expanding v7.0 scope.
+Statistics expansion and tabled Scout enhancements that build on the post-draft rookie data foundation without expanding v7.0 scope.
 
+- **Statistics stat leaders tab** - Add a dedicated Statistics tab for sorting players by individual stat categories, with position filters so leaders can be viewed by position and then by stat.
+- **Player Stats Visualization** - Add a per-player weekly performance chart showing season-long stat trends. The user selects a stat via position-specific toggles, and the chart renders the raw stat value against the fantasy points that stat contributed each week using separate Y axes. Add opponent-defense context bars for each week so production can be compared against the matchup allowed for the selected stat category.
 - **Next-season fantasy projection layer for rookies** - Add a fantasy-facing projection surface for the upcoming NFL season so Scout can serve both standard rookie boards and IDP-aware formats without overloading the current prospect filters. Scope should cover offensive and IDP leagues, projection source-of-truth, display hierarchy, and how projections interact with draft status and college production.
 - **Align Trade Drill Down with Statistics 7.2 Redesign** - Make the Trade player drill down modal serve stats that are visually consistent with the Statistics 7.2 redesign, including a toggle for flipping between raw stats and fantasy value.
 - **Trade Agent & Upgrades follow-through** - Carry forward any remaining UX polish from the v7.1 redesign that did not ship cleanly, especially places where common actions still rely too heavily on modals or proposal-card readability needs another focused pass.
@@ -59,10 +61,6 @@ Tabled Scout enhancements that build on the post-draft rookie data foundation wi
 - **Historical Comparison** - Show how your predicted record compares to each team's actual results from recent seasons. Highlight where you're more bullish or bearish than history.
 - **Compare Mode** - Import a friend's exported JSON predictions and diff against yours: side-by-side records, agree/disagree highlights, biggest divergences.
 - **Image Export Redesign** - Redesign as a compact ~1080x1080 shareable summary instead of a raw page screenshot.
-
-### Player Stats Visualization
-
-- **Weekly Performance Chart** - Per-player chart showing season-long performance week by week. X axis is each game week. The user selects a stat to visualize via position-specific toggles (QB: passing yards, completion %, rushing yards, passing TDs, interceptions, etc.; RB: rushing yards, carries, receiving yards, rush TDs, etc.; WR/TE: targets, receptions, receiving yards, receiving TDs, etc.). When a stat is selected, the chart renders two lines: one for the raw stat value (left Y axis) and one for the fantasy points that stat contributed that week (right Y axis), since their scales are incompatible. In addition, a bar is rendered for each week showing the opposing defense's performance allowed against the selected stat category, giving context for whether a production week was impressive or expected given the matchup. All stat toggles and both Y axes update together when the selection changes.
 
 ### Player Info
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSleeperLeague, useSleeperBase, useSleeperStatsProgress } from '../../context/SleeperContext';
 import { useTheme } from '../../context/ThemeContext';
 import { calcPointsFromTotals } from '../../utils/scoringEngine';
@@ -7,6 +7,8 @@ import { getTradedPicks, getLeagueDrafts } from '../../api/sleeperApi';
 import CompanionPlayerPreviewSheet from './CompanionPlayerPreviewSheet';
 import { getTeamColorKey, getTeamPalette } from '../../data/teamColors.js';
 import useMediaQuery from '../../hooks/useMediaQuery.js';
+import HorizontalScrollCue from '../HorizontalScrollCue.jsx';
+import useHorizontalScrollCue from '../../hooks/useHorizontalScrollCue.js';
 import PlayerStatusBadge, { PlayerStatusLogoCluster } from './PlayerStatusBadge.jsx';
 import { getPlayerAvailabilityStatus } from '../../utils/playerAvailabilityStatus.js';
 import { CompanionSelectorButton } from './CompanionSelectorControls.jsx';
@@ -27,9 +29,9 @@ function getLeagueLayout(isCompactPhone, nameColPx) {
       gap: 8,
       nameFontSize: 13,
       metaFontSize: 11,
-      rowTemplate: '38px minmax(0,1fr) 54px 48px 10px',
-      sidePadding: 10,
-      tradeWidth: 32,
+      rowTemplate: '38px minmax(0,1fr) 50px 44px 10px',
+      sidePadding: 8,
+      tradeWidth: 30,
       verticalPadding: 11,
     };
   }
@@ -328,50 +330,55 @@ function LeagueRosterView({ onTradePlayer, onViewPlayer = null, selectedRosterId
       return getUserDisplayName(a.owner_id).localeCompare(getUserDisplayName(b.owner_id));
     });
   }, [rosters, myRosterData, getUserDisplayName]);
+  const ownerRailRef = useRef(null);
+  const ownerRailCue = useHorizontalScrollCue(ownerRailRef, [sortedRosters.length, selectedRosterId]);
 
   return (
     <>
       {/* Owner selector */}
-      <div className="px-4 pb-3 overflow-x-auto scrollbar-hide" style={{ WebkitOverflowScrolling: 'touch' }}>
-        <div className="flex gap-2" style={{ width: 'max-content' }}>
-          {sortedRosters.map(roster => {
-            const isSelected = roster.roster_id === selectedRosterId;
-            const isMe = roster.roster_id === myRosterData?.roster_id;
-            const name = getUserDisplayName(roster.owner_id);
-            const user = leagueUsers.find(u => u.user_id === roster.owner_id);
-            const avatarHash = user?.avatar;
-            return (
-              <CompanionSelectorButton
-                key={roster.roster_id}
-                onClick={() => setSelectedRosterId(roster.roster_id)}
-                active={isSelected}
-                className="gap-1.5"
-              >
-                {avatarHash ? (
-                  <img
-                    src={`https://sleepercdn.com/avatars/thumbs/${avatarHash}`}
-                    alt={name}
-                    className="w-5 h-5 rounded-full shrink-0 object-cover"
-                    onError={e => { e.target.style.display = 'none'; }}
-                  />
-                ) : (
-                  <div className="w-5 h-5 rounded-full shrink-0 flex items-center justify-center"
-                    style={{ background: 'var(--color-fill-secondary)', fontSize: '9px', fontWeight: 700, color: 'var(--color-label-secondary)' }}>
-                    {name[0]?.toUpperCase()}
-                  </div>
-                )}
-                <span className="text-xs whitespace-nowrap">{name}{isMe ? ' (Me)' : ''}</span>
-              </CompanionSelectorButton>
-            );
-          })}
+      <div className="companion-owner-selector-shell relative">
+        <div ref={ownerRailRef} className="px-3 sm:px-4 pb-3 overflow-x-auto scrollbar-hide" style={{ WebkitOverflowScrolling: 'touch' }}>
+          <div className="flex gap-2" style={{ width: 'max-content' }}>
+            {sortedRosters.map(roster => {
+              const isSelected = roster.roster_id === selectedRosterId;
+              const isMe = roster.roster_id === myRosterData?.roster_id;
+              const name = getUserDisplayName(roster.owner_id);
+              const user = leagueUsers.find(u => u.user_id === roster.owner_id);
+              const avatarHash = user?.avatar;
+              return (
+                <CompanionSelectorButton
+                  key={roster.roster_id}
+                  onClick={() => setSelectedRosterId(roster.roster_id)}
+                  active={isSelected}
+                  className="gap-1.5"
+                >
+                  {avatarHash ? (
+                    <img
+                      src={`https://sleepercdn.com/avatars/thumbs/${avatarHash}`}
+                      alt={name}
+                      className="w-5 h-5 rounded-full shrink-0 object-cover"
+                      onError={e => { e.target.style.display = 'none'; }}
+                    />
+                  ) : (
+                    <div className="w-5 h-5 rounded-full shrink-0 flex items-center justify-center"
+                      style={{ background: 'var(--color-fill-secondary)', fontSize: '9px', fontWeight: 700, color: 'var(--color-label-secondary)' }}>
+                      {name[0]?.toUpperCase()}
+                    </div>
+                  )}
+                  <span className="text-xs whitespace-nowrap">{name}{isMe ? ' (Me)' : ''}</span>
+                </CompanionSelectorButton>
+              );
+            })}
+          </div>
         </div>
+        <HorizontalScrollCue left={ownerRailCue.left} right={ownerRailCue.right} />
       </div>
 
       {/* Stats loading banner */}
       {statsLoading && <LeagueStatsLoadingBanner />}
 
       {/* Column headers */}
-      <div className="px-4 pb-2 mb-1" style={{ borderBottom: '1px solid var(--color-separator)' }}>
+      <div className="px-2 sm:px-4 pb-2 mb-1" style={{ borderBottom: '1px solid var(--color-separator)' }}>
         <div className="flex items-center w-full">
           <div
             className="grid items-center flex-1 min-w-0"
@@ -400,7 +407,7 @@ function LeagueRosterView({ onTradePlayer, onViewPlayer = null, selectedRosterId
         POSITION_ORDER.filter(pos => grouped[pos]?.length).map(pos => (
           <div key={pos} className="mb-4">
             <div
-              className="mx-4 mb-0 px-4 py-2 text-xs font-bold uppercase tracking-widest"
+              className="mx-2 sm:mx-4 mb-0 px-4 py-2 text-xs font-bold uppercase tracking-widest"
               style={{
                 color: 'white',
                 background: POSITION_COLORS[pos] ?? 'var(--color-label-tertiary)',
@@ -472,11 +479,11 @@ function LeagueResponsivePlayerRow({ player, onSelect, onTrade, layout, isCompac
   ].filter(Boolean);
   const nameCol = layout.rowTemplate.match(/44px (.+?) auto 1fr/)?.[1] ?? 'minmax(0,1fr)';
   const rowTemplate = isCompactPhone
-    ? '38px minmax(0,1fr) minmax(112px,auto) auto 10px'
+    ? '38px minmax(0,1fr) minmax(96px,auto) auto 10px'
     : `44px ${nameCol} minmax(0,1fr) 12px`;
 
   return (
-    <div className="px-4">
+    <div className="px-2 sm:px-4">
       <div className="flex items-center w-full">
         <CompanionPlayerRow
           player={player}
@@ -488,7 +495,7 @@ function LeagueResponsivePlayerRow({ player, onSelect, onTrade, layout, isCompac
           compact={isCompactPhone}
           metaSegments={metaSegments}
           gridTemplate={rowTemplate}
-          columnGridTemplate={isCompactPhone ? '54px 48px' : 'auto 1fr 64px 56px'}
+          columnGridTemplate={isCompactPhone ? '50px 44px' : 'auto 1fr 64px 56px'}
           status={isCompactPhone ? <PlayerStatusBadge status={player.availabilityStatus} compact /> : null}
           columns={[
             !isCompactPhone && (
@@ -675,6 +682,8 @@ function LeaguePicksView() {
     // avatar 24 + gap 8 + text + px-3 padding both sides (12+12) + breathing room 8
     return Math.max(120, 24 + 8 + maxTextW + 24 + 8);
   }, [sortedRosters, getUserDisplayName]);
+  const picksScrollRef = useRef(null);
+  const picksScrollCue = useHorizontalScrollCue(picksScrollRef, [slots.length, sortedRosters.length, LEFT_COL]);
 
   if (picksLoading) {
     return <EmptyState message="Loading draft picks…" />;
@@ -693,8 +702,9 @@ function LeaguePicksView() {
   const totalWidth = LEFT_COL + slots.length * CELL_W;
 
   return (
-    <div className="overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
-      <div style={{ minWidth: `${totalWidth}px` }}>
+    <div className="relative">
+      <div ref={picksScrollRef} className="overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+        <div style={{ minWidth: `${totalWidth}px` }}>
 
         {/* Legend */}
         <div className="flex items-center gap-4 px-4 pb-3 pt-1">
@@ -828,7 +838,9 @@ function LeaguePicksView() {
             </div>
           );
         })}
+        </div>
       </div>
+      <HorizontalScrollCue left={picksScrollCue.left} right={picksScrollCue.right} />
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { cachedFetch, TTL } from './playerCache';
 const ESPN_BASE = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl';
 const ESPN_CORE = 'https://sports.core.api.espn.com/v2/sports/football/leagues/nfl';
 const CURRENT_SEASON = 2025;
+const CAREER_STAT_REPAIR_START_SEASON = 2006;
 
 // Some app IDs differ from ESPN's roster endpoint slug
 const TEAM_ESPN_ID = {
@@ -91,6 +92,60 @@ export async function fetchPlayerStats(playerId, season = null) {
     if (!res.ok) throw new Error(`Stats fetch failed: ${res.status}`);
     return res.json();
   }, ttl);
+}
+
+function getCareerStatEntry(statsJson, statName) {
+  const categories = statsJson?.splits?.categories ?? [];
+  for (const category of categories) {
+    const entry = (category.stats ?? []).find(stat => stat.name === statName);
+    if (entry) return entry;
+  }
+  return null;
+}
+
+function getStatValue(statsJson, statName) {
+  const value = getCareerStatEntry(statsJson, statName)?.value;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function setCareerStatValue(statsJson, statName, value) {
+  const entry = getCareerStatEntry(statsJson, statName);
+  if (!entry) return;
+  entry.value = value;
+  entry.displayValue = Number(value).toLocaleString('en-US', {
+    maximumFractionDigits: 1,
+  });
+}
+
+async function fetchSeasonStatValue(playerId, season, statName) {
+  try {
+    const stats = await fetchPlayerStats(playerId, season);
+    return getStatValue(stats, statName) ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
+async function repairCareerDefensiveStats(playerId, careerStats) {
+  const tfl = getStatValue(careerStats, 'tacklesForLoss');
+  const sacks = getStatValue(careerStats, 'sacks');
+  const tackles = getStatValue(careerStats, 'totalTackles');
+  const shouldRepairTfl = tfl === 0 && ((sacks ?? 0) > 0 || (tackles ?? 0) > 0);
+
+  if (!shouldRepairTfl) return careerStats;
+
+  const seasons = Array.from(
+    { length: CURRENT_SEASON - CAREER_STAT_REPAIR_START_SEASON + 1 },
+    (_, i) => CAREER_STAT_REPAIR_START_SEASON + i
+  );
+  const values = await Promise.all(
+    seasons.map(season => fetchSeasonStatValue(playerId, season, 'tacklesForLoss'))
+  );
+  const total = values.reduce((sum, value) => sum + value, 0);
+
+  if (total > 0) setCareerStatValue(careerStats, 'tacklesForLoss', total);
+  return careerStats;
 }
 
 // Playoff week number → round label
@@ -251,11 +306,12 @@ export async function fetchGameLog(playerId, teamId, season) {
  * Uses the /statistics/0 endpoint on the core API.
  */
 export async function fetchPlayerCareerStats(playerId) {
-  return cachedFetch(`stats_${playerId}_career`, async () => {
+  return cachedFetch(`stats_v2_${playerId}_career`, async () => {
     const url = `${ESPN_CORE}/athletes/${playerId}/statistics/0?lang=en&region=us`;
     const res = await fetch(url);
     if (!res.ok) throw new Error(`Career stats fetch failed: ${res.status}`);
-    return res.json();
+    const careerStats = await res.json();
+    return repairCareerDefensiveStats(playerId, careerStats);
   }, TTL.historical);
 }
 
@@ -355,8 +411,9 @@ async function fetchWeekSchedule(season, week) {
         // competitor.team.id is the ESPN franchise ID (e.g. "12" for KC) — the
         // same ID embedded in the core API eventlog stats $ref competitor path.
         // competitor.id is a competition-specific ID and does NOT match.
-        map[homeAbbr] = { opp: awayAbbr, home: true,  ptsFor: homePts, ptsAgainst: awayPts, espnEventId: event.id, espnCompetitorId: homeC.team?.id };
-        map[awayAbbr] = { opp: homeAbbr, home: false, ptsFor: awayPts, ptsAgainst: homePts, espnEventId: event.id, espnCompetitorId: awayC.team?.id };
+        const eventDate = event.date?.slice(0, 10) ?? null;
+        map[homeAbbr] = { opp: awayAbbr, home: true,  ptsFor: homePts, ptsAgainst: awayPts, espnEventId: event.id, espnCompetitorId: homeC.team?.id, date: eventDate };
+        map[awayAbbr] = { opp: homeAbbr, home: false, ptsFor: awayPts, ptsAgainst: homePts, espnEventId: event.id, espnCompetitorId: awayC.team?.id, date: eventDate };
       }
       return map;
     },

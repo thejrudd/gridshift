@@ -33,9 +33,9 @@ function getRosterLayout(isCompactPhone, nameColPx) {
       gap: 8,
       nameFontSize: 13,
       metaFontSize: 11,
-      rowTemplate: '38px minmax(0,1fr) 54px 48px 10px',
-      sidePadding: 10,
-      tradeWidth: 32,
+      rowTemplate: '38px minmax(0,1fr) 28px 50px 44px',
+      sidePadding: 8,
+      tradeWidth: 30,
       verticalPadding: 11,
     };
   }
@@ -268,7 +268,7 @@ export default function CompanionRoster({ onTradePlayer, onViewPlayer }) {
     <div className="pb-6">
       {statsLoading && <RosterStatsLoadingBanner />}
 
-      <div className="px-4 pb-2 mb-1" style={{ borderBottom: '1px solid var(--color-separator)' }}>
+      <div className="px-2 sm:px-4 pb-2 mb-1" style={{ borderBottom: '1px solid var(--color-separator)' }}>
         <div className="flex items-center w-full">
           <div
             className="grid items-center flex-1 min-w-0"
@@ -285,13 +285,14 @@ export default function CompanionRoster({ onTradePlayer, onViewPlayer }) {
             </span>
             {!isCompactPhone && <div />}
             {!isCompactPhone && <div />}
+            {isCompactPhone && <div />}
             <span className="text-center text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--color-label-tertiary)' }}>
               Season
             </span>
             <span className="text-center text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--color-label-tertiary)' }}>
               Avg/G
             </span>
-            <div />
+            {!isCompactPhone && <div />}
           </div>
           <div className="shrink-0 ml-2 sm:ml-3" style={{ width: layout.tradeWidth }} />
         </div>
@@ -300,7 +301,7 @@ export default function CompanionRoster({ onTradePlayer, onViewPlayer }) {
       {POSITION_ORDER.filter(pos => grouped[pos]?.length).map(pos => (
         <div key={pos} className="mb-4">
           <div
-            className="mx-4 mb-0 px-4 py-2 text-xs font-bold uppercase tracking-widest"
+            className="mx-2 sm:mx-4 mb-0 px-4 py-2 text-xs font-bold uppercase tracking-widest"
             style={{
               color: 'white',
               background: POSITION_COLORS[pos] ?? 'var(--color-label-tertiary)',
@@ -375,11 +376,11 @@ function PlayerRow({ player, onSelect, onTrade, layout, isCompactPhone }) {
   ].filter(Boolean);
   const nameCol = layout.rowTemplate.match(/44px (.+?) auto 1fr/)?.[1] ?? 'minmax(0,1fr)';
   const rowTemplate = isCompactPhone
-    ? '38px minmax(0,1fr) minmax(112px,auto) auto 10px'
+    ? '38px minmax(0,1fr) minmax(122px,auto)'
     : `44px ${nameCol} minmax(0,1fr) 12px`;
 
   return (
-    <div className="px-4">
+    <div className="px-2 sm:px-4">
       <div className="flex items-center w-full">
         <CompanionPlayerRow
           player={player}
@@ -391,9 +392,13 @@ function PlayerRow({ player, onSelect, onTrade, layout, isCompactPhone }) {
           compact={isCompactPhone}
           metaSegments={metaSegments}
           gridTemplate={rowTemplate}
-          columnGridTemplate={isCompactPhone ? '54px 48px' : 'auto 1fr 64px 56px'}
-          status={isCompactPhone ? <PlayerStatusBadge status={player.availabilityStatus} compact /> : null}
+          columnGridTemplate={isCompactPhone ? '28px 50px 44px' : 'auto 1fr 64px 56px'}
           columns={[
+            isCompactPhone && (
+              <div key="mobile-status" className="flex items-center justify-center">
+                <PlayerStatusBadge status={player.availabilityStatus} compact />
+              </div>
+            ),
             !isCompactPhone && (
               <PlayerStatusLogoCluster
                 key="status"
@@ -416,11 +421,11 @@ function PlayerRow({ player, onSelect, onTrade, layout, isCompactPhone }) {
               compact={isCompactPhone}
             />,
           ].filter(Boolean)}
-          trailing={(
+          trailing={!isCompactPhone ? (
             <svg width={isCompactPhone ? 10 : 12} height={isCompactPhone ? 10 : 12} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--color-label-quaternary)', flexShrink: 0 }}>
               <polyline points="9 18 15 12 9 6" />
             </svg>
-          )}
+          ) : null}
           style={{
             gap: layout.gap,
             columnGap: layout.gap,

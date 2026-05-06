@@ -1,3 +1,7 @@
+import { useRef } from 'react';
+import HorizontalScrollCue from '../HorizontalScrollCue';
+import useHorizontalScrollCue from '../../hooks/useHorizontalScrollCue';
+
 export function CompanionSelectorRail({
   label = null,
   ariaLabel,
@@ -6,6 +10,9 @@ export function CompanionSelectorRail({
   wrapOnDesktop = true,
   style = null,
 }) {
+  const railRef = useRef(null);
+  const scrollCue = useHorizontalScrollCue(railRef, [children]);
+
   return (
     <div className={`companion-selector-rail-row ${className}`} style={style}>
       {label && (
@@ -13,12 +20,16 @@ export function CompanionSelectorRail({
           {label}
         </span>
       )}
-      <div
-        className={`companion-selector-rail${wrapOnDesktop ? ' companion-selector-rail--wrap-desktop' : ''}`}
-        role="group"
-        aria-label={ariaLabel ?? (typeof label === 'string' ? label : undefined)}
-      >
-        {children}
+      <div className="relative min-w-0 flex-1">
+        <div
+          ref={railRef}
+          className={`companion-selector-rail${wrapOnDesktop ? ' companion-selector-rail--wrap-desktop' : ''}`}
+          role="group"
+          aria-label={ariaLabel ?? (typeof label === 'string' ? label : undefined)}
+        >
+          {children}
+        </div>
+        <HorizontalScrollCue left={scrollCue.left} right={scrollCue.right} />
       </div>
     </div>
   );

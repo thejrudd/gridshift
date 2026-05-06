@@ -13,9 +13,20 @@ export default function ActionSheet({
   onInstall,
   onMyTeam,
   favoriteTeam,
+  league,
+  leagueSeason,
+  leagueSeasonOptions = [],
+  onLeagueSeasonChange,
+  onSwitchLeague,
 }) {
   const hasPicks = predictionCount > 0;
   const isPredictions = activeTab === 'predictions';
+  const showLeagueControls = Boolean(league);
+  const years = leagueSeasonOptions?.length
+    ? leagueSeasonOptions
+    : league
+      ? [String(league.season ?? leagueSeason)]
+      : [];
 
   return (
     <Modal
@@ -27,6 +38,54 @@ export default function ActionSheet({
 
         {/* Primary actions group */}
         <div className="px-4 py-2">
+          {showLeagueControls && (
+            <>
+              <div className="px-1 pb-2 pt-1">
+                <div
+                  className="text-[11px] font-bold uppercase"
+                  style={{
+                    color: 'var(--color-label-tertiary)',
+                    fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif",
+                    letterSpacing: '0.14em',
+                  }}
+                >
+                  League
+                </div>
+                <div className="mt-1 truncate text-sm font-semibold" style={{ color: 'var(--color-label)' }}>
+                  {league.name ?? 'League'}
+                </div>
+              </div>
+              {years.length > 1 && (
+                <div className="flex flex-wrap gap-2 pb-3 pt-1">
+                  {years.map((year) => {
+                    const active = String(leagueSeason) === String(year);
+
+                    return (
+                      <button
+                        key={year}
+                        type="button"
+                        onClick={() => {
+                          onLeagueSeasonChange?.(year);
+                          onClose();
+                        }}
+                        className="rounded px-3 py-1.5 text-xs font-bold transition-opacity active:opacity-60"
+                        style={{
+                          background: active ? 'var(--color-signature)' : 'var(--color-fill)',
+                          color: active ? 'var(--color-signature-fg)' : 'var(--color-label-secondary)',
+                          border: '1px solid var(--color-separator)',
+                        }}
+                        aria-pressed={active}
+                      >
+                        {year}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              <ActionRow label="Switch League" onClick={onSwitchLeague} />
+              <Divider />
+            </>
+          )}
           <ActionRow
             label={favoriteTeam ? `My Team — ${favoriteTeam.toUpperCase()}` : 'My Team'}
             onClick={onMyTeam}
