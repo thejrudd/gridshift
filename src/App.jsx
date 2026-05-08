@@ -465,7 +465,6 @@ function AppInner() {
       statisticsMode: mode,
     }, {
       state: {
-        statsPlayerMeta: playerMeta,
         statsBackLabel: backLabel ?? null,
         statsBackRoute: backRoute ? normalizeAppRoute(backRoute) : null,
       },
@@ -609,10 +608,6 @@ function AppInner() {
   const totalTeams = scheduleData.teams.length;
   const validation = validateTotalWinsLosses(predictions);
   const isSeasonComplete = predictionCount === totalTeams && validation.isValid;
-  const statsRoutePlayerMeta = activeTab === 'statistics' && statisticsView === 'player'
-    ? (readHistoryState().statsPlayerMeta ?? null)
-    : null;
-
   return (
     <div className={`app-shell${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
 
@@ -804,8 +799,8 @@ function AppInner() {
               statsView={statisticsView}
               selectedTeamId={statisticsTeamId}
               selectedPlayerId={statisticsPlayerId}
-              selectedPlayerMeta={statsRoutePlayerMeta}
               selectedPlayerMode={statisticsMode}
+              leagueSeason={season}
               navBack={statsNavBack}
               onNavigateHome={navigateToStatisticsHome}
               onNavigateTeam={navigateToStatisticsTeam}

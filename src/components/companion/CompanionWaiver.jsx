@@ -470,40 +470,45 @@ export default function CompanionWaiver({
     || playerCount === 0
     || !seasonStats
   );
+  const hasAnyWaiverData = rankedCandidates.length > 0;
   const showWaiverEmpty = available.length === 0 && !showWaiverPreparing && Boolean(seasonStats);
+  const showWaiverControls = showWaiverPreparing || hasAnyWaiverData;
 
   return (
     <div className="pb-6">
-      <div className="px-4 pb-3 flex flex-col gap-2">
-        <CompanionSelectorRail ariaLabel="Waiver position filter">
-          {availablePositions.map(pos => (
-            <CompanionSelectorButton
-              key={pos}
-              active={activePosFilter === pos}
-              onClick={() => {
-                onConsumeInitialPositionRequest?.();
-                setPosFilter(pos);
-                onPositionFilterChange?.(pos);
+      {showWaiverControls && (
+        <div className="px-4 pb-3 flex flex-col gap-2">
+          <CompanionSelectorRail ariaLabel="Waiver position filter">
+            {availablePositions.map(pos => (
+              <CompanionSelectorButton
+                key={pos}
+                active={activePosFilter === pos}
+                onClick={() => {
+                  onConsumeInitialPositionRequest?.();
+                  setPosFilter(pos);
+                  onPositionFilterChange?.(pos);
+                }}
+              >
+                {getPositionFilterLabel(pos)}
+              </CompanionSelectorButton>
+            ))}
+          </CompanionSelectorRail>
+          <CompanionSearchField
+            value={searchInput}
+            onChange={e => {
+                setSearchInput(e.target.value);
+                clearTimeout(debounceRef.current);
+                debounceRef.current = setTimeout(() => setSearch(e.target.value), 200);
               }}
-            >
-              {getPositionFilterLabel(pos)}
-            </CompanionSelectorButton>
-          ))}
-        </CompanionSelectorRail>
-        <CompanionSearchField
-          value={searchInput}
-          onChange={e => {
-              setSearchInput(e.target.value);
-              clearTimeout(debounceRef.current);
-              debounceRef.current = setTimeout(() => setSearch(e.target.value), 200);
-            }}
-          placeholder="Search players..."
-        />
-      </div>
+            placeholder="Search players..."
+          />
+        </div>
+      )}
 
       {statsLoading && <WaiverStatsLoadingBanner />}
 
-      <div className="px-4">
+      {hasAnyWaiverData && (
+        <div className="px-4">
         <div
           className="grid items-center pb-2 mb-1"
           style={{
@@ -520,7 +525,8 @@ export default function CompanionWaiver({
           {layout.showSeason && <ColHeader label="Season" active={sortBy === 'season'} onClick={() => setSortBy(value => value === 'season' ? 'recent' : 'season')} />}
           <ColHeader label="4-Wk Avg" active={sortBy === 'recent'} onClick={() => setSortBy('recent')} />
         </div>
-      </div>
+        </div>
+      )}
 
       {showWaiverPreparing && (
         <CompanionLoadingState
@@ -553,12 +559,19 @@ export default function CompanionWaiver({
       ))}
 
       {showWaiverEmpty && (
-        <div className="flex items-center justify-center py-16 px-6 text-center">
-          <span className="text-sm" style={{ color: 'var(--color-label-secondary)' }}>
+        <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
+          <span className="text-sm font-semibold" style={{ color: 'var(--color-label)' }}>
             {rosteredIds.size === 0
               ? 'Connect a league to see available players.'
-              : 'No available players found.'}
+              : !hasAnyWaiverData
+                ? 'Waiver options will appear once season stats are available.'
+                : 'No matching available players.'}
           </span>
+          {rosteredIds.size > 0 && !hasAnyWaiverData && (
+            <span className="mt-1 max-w-md text-xs leading-5" style={{ color: 'var(--color-label-secondary)' }}>
+              Pre-season leagues may not have player results yet, so there is nothing to rank on waivers right now.
+            </span>
+          )}
         </div>
       )}
 

@@ -1,9 +1,10 @@
 import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
-import { fetchRoster, headshot } from '../utils/playerApi';
+import { fetchPlayerProfile, fetchRoster, headshot } from '../utils/playerApi';
 import { parseSearchQuery, matchesFilter } from '../utils/parseSearchQuery';
 import PlayerProfile from './PlayerProfile';
 import TeamPage from './TeamPage';
 import { getTeamVisualTheme } from '../utils/teamVisualTheme';
+import { useSleeperStats } from '../context/SleeperContext';
 
 const POSITION_FILTERS = ['ALL', 'QB', 'RB', 'WR', 'TE', 'OL', 'DL', 'LB', 'DB', 'K', 'P'];
 
@@ -68,14 +69,44 @@ function buildPlayerMeta(player = {}, fallback = {}) {
   };
 }
 
+function getSleeperDisplayName(player = {}) {
+  return player.full_name || `${player.first_name ?? ''} ${player.last_name ?? ''}`.trim();
+}
+
+function normalizeSleeperSearchResult(sleeperId, player = {}, espnIdOverrides = {}, teams = []) {
+  const espnId = player.espn_id ?? espnIdOverrides?.[sleeperId] ?? null;
+  const displayName = getSleeperDisplayName(player);
+  if (!espnId || !displayName) return null;
+
+  const teamId = player.team?.toLowerCase?.() ?? null;
+  const team = teamId ? teams.find((item) => item.id.toLowerCase() === teamId) : null;
+  const isRetired = player.active === false && !teamId;
+
+  return {
+    id: String(espnId),
+    sleeperId: String(sleeperId),
+    displayName,
+    jersey: player.number ?? '',
+    position: player.position ?? '',
+    positionName: '',
+    experience: player.years_exp != null ? player.years_exp + 1 : undefined,
+    status: player.status ?? player.injury_status ?? (isRetired ? 'Retired' : ''),
+    teamId,
+    teamName: team?.name ?? (teamId ? teamId.toUpperCase() : (isRetired ? 'Retired' : 'Free Agent')),
+    source: 'sleeper',
+    active: player.active,
+    searchRank: Number(player.search_rank),
+  };
+}
+
 const PlayerBrowser = ({
   teams,
   darkMode = false,
   statsView = 'browser',
   selectedTeamId = null,
   selectedPlayerId = null,
-  selectedPlayerMeta = null,
   selectedPlayerMode = 'game',
+  leagueSeason = null,
   navBack,
   onNavigateHome,
   onNavigateTeam,
@@ -84,9 +115,8 @@ const PlayerBrowser = ({
   onComparePlayer,
   onBuildTrade,
 }) => {
-  const [resolvedPlayer, setResolvedPlayer] = useState(() => (
-    selectedPlayerMeta && selectedPlayerId ? buildPlayerMeta(selectedPlayerMeta, { id: selectedPlayerId }) : null
-  ));
+  const { loadPlayers, espnIdOverrides } = useSleeperStats();
+  const [resolvedPlayer, setResolvedPlayer] = useState(null);
   const [playerLoading, setPlayerLoading] = useState(false);
   const [playerLoadError, setPlayerLoadError] = useState(null);
 
@@ -166,44 +196,32 @@ const PlayerBrowser = ({
       return;
     }
 
-    const nextMeta = selectedPlayerMeta
-      ? buildPlayerMeta(selectedPlayerMeta, { id: normalizedSelectedPlayerId })
-      : null;
-
-    if (nextMeta?.id === normalizedSelectedPlayerId) {
-      setResolvedPlayer((prev) => {
-        if (prev?.id !== normalizedSelectedPlayerId) return nextMeta;
-        return buildPlayerMeta(nextMeta, prev);
-      });
-      setPlayerLoadError(null);
-    } else {
-      setResolvedPlayer((prev) => (prev?.id === normalizedSelectedPlayerId ? prev : null));
-    }
-  }, [statsView, normalizedSelectedPlayerId, selectedPlayerMeta]);
+    setResolvedPlayer((prev) => (prev?.id === normalizedSelectedPlayerId ? prev : null));
+  }, [statsView, normalizedSelectedPlayerId]);
 
   useEffect(() => {
     if (statsView !== 'player' || !normalizedSelectedPlayerId) return;
 
     let cancelled = false;
-    const initialMeta = selectedPlayerMeta
-      ? buildPlayerMeta(selectedPlayerMeta, { id: normalizedSelectedPlayerId })
-      : null;
-    const hasEnoughData = !!(initialMeta?.displayName && initialMeta?.teamId && initialMeta?.position);
-
-    if (hasEnoughData) {
-      setPlayerLoading(false);
-      setPlayerLoadError(null);
-      return () => { cancelled = true; };
-    }
-
     setPlayerLoading(true);
     setPlayerLoadError(null);
 
-    const prioritizedTeamIds = initialMeta?.teamId
-      ? [initialMeta.teamId, ...teams.map((team) => team.id).filter((teamId) => teamId !== initialMeta.teamId)]
-      : teams.map((team) => team.id);
+    const prioritizedTeamIds = teams.map((team) => team.id);
 
     (async () => {
+      try {
+        const profile = await fetchPlayerProfile(normalizedSelectedPlayerId);
+        if (cancelled) return;
+        if (profile?.id) {
+          setResolvedPlayer(buildPlayerMeta(profile, { id: normalizedSelectedPlayerId }));
+          setPlayerLoading(false);
+          setPlayerLoadError(null);
+          return;
+        }
+      } catch {
+        // Fall back to active roster lookup; older ESPN profiles can be sparse.
+      }
+
       for (const teamId of prioritizedTeamIds) {
         try {
           const roster = await fetchRoster(teamId);
@@ -211,7 +229,7 @@ const PlayerBrowser = ({
           const match = roster.find((player) => String(player.id) === normalizedSelectedPlayerId);
           if (!match) continue;
 
-          setResolvedPlayer(buildPlayerMeta(match, initialMeta ?? { id: normalizedSelectedPlayerId }));
+          setResolvedPlayer(buildPlayerMeta(match, { id: normalizedSelectedPlayerId }));
           setPlayerLoading(false);
           setPlayerLoadError(null);
           return;
@@ -222,17 +240,12 @@ const PlayerBrowser = ({
 
       if (cancelled) return;
       setPlayerLoading(false);
-      if (initialMeta) {
-        setResolvedPlayer(initialMeta);
-        setPlayerLoadError(null);
-      } else {
-        setResolvedPlayer(null);
-        setPlayerLoadError('Player details are unavailable.');
-      }
+      setResolvedPlayer(null);
+      setPlayerLoadError('Player details are unavailable.');
     })();
 
     return () => { cancelled = true; };
-  }, [statsView, normalizedSelectedPlayerId, selectedPlayerMeta, teams]);
+  }, [statsView, normalizedSelectedPlayerId, teams]);
 
   const handleSearchInput = useCallback((e) => {
     const q = e.target.value;
@@ -257,38 +270,74 @@ const PlayerBrowser = ({
           return;
         }
 
-        const allRosters = await Promise.all(
-          teams.map((team) => (
-            fetchRoster(team.id)
-              .then((players) => players.map((player) => ({
-                ...player,
-                teamId: team.id.toLowerCase(),
-                teamName: team.name,
-              })))
-              .catch(() => [])
-          )),
-        );
+        const [allRosters, sleeperPlayers] = await Promise.all([
+          Promise.all(
+            teams.map((team) => (
+              fetchRoster(team.id)
+                .then((players) => players.map((player) => ({
+                  ...player,
+                  teamId: team.id.toLowerCase(),
+                  teamName: team.name,
+                  source: 'roster',
+                })))
+                .catch(() => [])
+            )),
+          ),
+          loadPlayers().catch(() => null),
+        ]);
 
         const lookup = teamLookup.current;
         const effectivePos = filters.pos.size > 0
           ? filters.pos
           : (positionFilter !== 'ALL' ? new Set([positionFilter]) : new Set());
 
-        const results = allRosters
+        const matchesSearchFilters = (player) => {
+          if (filters.name.length > 0) {
+            const name = player.displayName.toLowerCase();
+            if (!filters.name.every((term) => name.includes(term))) return false;
+          }
+          if (effectivePos.size > 0) {
+            if (![...effectivePos].some((pos) => matchesFilter(player.position, pos))) return false;
+          }
+          const teamInfo = player.teamId ? lookup[player.teamId] : null;
+          if (filters.team.size > 0 && (!player.teamId || !filters.team.has(player.teamId))) return false;
+          if (filters.div.size > 0 && (!teamInfo || !filters.div.has(teamInfo.division))) return false;
+          if (filters.conf.size > 0 && (!teamInfo || !filters.conf.has(teamInfo.conference))) return false;
+          return true;
+        };
+
+        const rosterResults = allRosters
           .flat()
-          .filter((player) => {
-            if (filters.name.length > 0) {
-              const name = player.displayName.toLowerCase();
-              if (!filters.name.every((term) => name.includes(term))) return false;
-            }
-            if (effectivePos.size > 0) {
-              if (![...effectivePos].some((pos) => matchesFilter(player.position, pos))) return false;
-            }
-            const teamInfo = lookup[player.teamId];
-            if (filters.team.size > 0 && !filters.team.has(player.teamId)) return false;
-            if (filters.div.size > 0 && (!teamInfo || !filters.div.has(teamInfo.division))) return false;
-            if (filters.conf.size > 0 && (!teamInfo || !filters.conf.has(teamInfo.conference))) return false;
-            return true;
+          .filter(matchesSearchFilters);
+
+        const sleeperResults = sleeperPlayers
+          ? Object.entries(sleeperPlayers)
+            .map(([sleeperId, player]) => normalizeSleeperSearchResult(sleeperId, player, espnIdOverrides, teams))
+            .filter(Boolean)
+            .filter(matchesSearchFilters)
+          : [];
+
+        const deduped = new Map();
+        for (const player of [...rosterResults, ...sleeperResults]) {
+          const existing = deduped.get(player.id);
+          if (!existing || existing.source !== 'roster') deduped.set(player.id, player);
+        }
+
+        const results = [...deduped.values()]
+          .sort((left, right) => {
+            const leftName = left.displayName.toLowerCase();
+            const rightName = right.displayName.toLowerCase();
+            const queryName = filters.name.join(' ');
+            const leftStarts = queryName && leftName.startsWith(queryName) ? 0 : 1;
+            const rightStarts = queryName && rightName.startsWith(queryName) ? 0 : 1;
+            if (leftStarts !== rightStarts) return leftStarts - rightStarts;
+            const leftRoster = left.source === 'roster' ? 0 : 1;
+            const rightRoster = right.source === 'roster' ? 0 : 1;
+            if (leftRoster !== rightRoster) return leftRoster - rightRoster;
+            const leftRank = Number.isFinite(left.searchRank) ? left.searchRank : 999999;
+            const rightRank = Number.isFinite(right.searchRank) ? right.searchRank : 999999;
+            if (leftRank !== rightRank) return leftRank - rightRank;
+            return left.displayName.localeCompare(right.displayName);
           })
           .slice(0, 30);
         setSearchResults(results);
@@ -299,7 +348,7 @@ const PlayerBrowser = ({
         setSearchLoading(false);
       }
     }, 400);
-  }, [teams, positionFilter]);
+  }, [espnIdOverrides, loadPlayers, teams, positionFilter]);
 
   useEffect(() => {
     const handler = (e) => {
@@ -330,6 +379,7 @@ const PlayerBrowser = ({
           teamId={selectedPlayer.teamId}
           teams={teams}
           mode={selectedPlayerMode}
+          leagueSeason={leagueSeason}
           onModeChange={onPlayerModeChange}
           onBack={navBack?.onBack ?? (() => window.history.back())}
           backLabel={navBack?.label}

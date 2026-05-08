@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { fetchPlayerStats, fetchPlayerCareerStats, fetchGameLog, fetchPlayerBio, headshot, CURRENT_SEASON } from '../utils/playerApi';
+import { getAllWeeklyStats, getLeague as getSleeperLeague, getPlayerSeasonStats } from '../api/sleeperApi';
 import { buildStatMap, getCareerHighlights } from '../utils/playerMetrics';
 import { usePredictions } from '../context/PredictionContext';
 import { useSleeperLeague, useSleeperStats } from '../context/SleeperContext';
@@ -8,6 +9,7 @@ import PlayerStatTable, { HonorBadge } from './PlayerStatTable';
 import honorsData from '../data/honors.json';
 import { matchEspnToSleeper } from '../utils/espnSleeperMatch';
 import { STATISTICS_MODES } from '../utils/playerDrilldown';
+import { DEFAULT_SCORING, importLeagueScoring } from '../utils/scoringEngine';
 import { getTeamVisualTheme } from '../utils/teamVisualTheme.js';
 import {
   getCompanionInitials,
@@ -23,6 +25,75 @@ const MODE_OPTIONS = [
   { id: STATISTICS_MODES.FANTASY, label: 'Fantasy Values' },
 ];
 
+function normalizeLeagueId(id) {
+  return id == null ? null : String(id);
+}
+
+function getAllSeasonLeagues(leaguesBySeason) {
+  return Object.values(leaguesBySeason ?? {}).flatMap((seasonLeagues) => seasonLeagues ?? []);
+}
+
+function buildLeagueLineageIds(startLeague, leaguesBySeason) {
+  const ids = new Set();
+  const queue = [];
+  const addId = (id) => {
+    const normalized = normalizeLeagueId(id);
+    if (!normalized || ids.has(normalized)) return;
+    ids.add(normalized);
+    queue.push(normalized);
+  };
+
+  addId(startLeague?.league_id);
+  addId(startLeague?.previous_league_id);
+
+  const allLeagues = getAllSeasonLeagues(leaguesBySeason);
+  while (queue.length > 0) {
+    queue.shift();
+    for (const item of allLeagues) {
+      const leagueId = normalizeLeagueId(item?.league_id);
+      const previousLeagueId = normalizeLeagueId(item?.previous_league_id);
+      if (leagueId && ids.has(leagueId)) addId(previousLeagueId);
+      if (previousLeagueId && ids.has(previousLeagueId)) addId(leagueId);
+    }
+  }
+
+  return ids;
+}
+
+function isLeagueInLineage(candidateLeague, lineageIds) {
+  const leagueId = normalizeLeagueId(candidateLeague?.league_id);
+  const previousLeagueId = normalizeLeagueId(candidateLeague?.previous_league_id);
+  return (leagueId && lineageIds.has(leagueId)) || (previousLeagueId && lineageIds.has(previousLeagueId));
+}
+
+function findLinkedSeasonLeague(seasonLeagues = [], lineageIds) {
+  if (!seasonLeagues?.length || !lineageIds?.size) return null;
+  return seasonLeagues.find((item) => isLeagueInLineage(item, lineageIds)) ?? null;
+}
+
+function findFallbackSeasonLeague(currentLeague, seasonLeagues = []) {
+  if (!seasonLeagues?.length) return null;
+  if (seasonLeagues.length === 1) return seasonLeagues[0];
+
+  const currentName = String(currentLeague?.name ?? '').trim().toLowerCase();
+  if (currentName) {
+    const sameName = seasonLeagues.find((item) => String(item?.name ?? '').trim().toLowerCase() === currentName);
+    if (sameName) return sameName;
+  }
+
+  return null;
+}
+
+function normalizeSleeperWeeklyRows(raw) {
+  if (!raw) return [];
+  const rows = Array.isArray(raw) ? raw : Object.values(raw);
+  return rows
+    .filter(Boolean)
+    .map((entry) => ({ ...entry, week: Number(entry.week) }))
+    .filter((entry) => Number.isFinite(entry.week))
+    .sort((left, right) => left.week - right.week);
+}
+
 function getStatusTone(status) {
   if (!status) return 'neutral';
   if (status.includes('Reserve') || status === 'Injured Reserve') return 'negative';
@@ -31,16 +102,28 @@ function getStatusTone(status) {
   return 'warning';
 }
 
-const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_MODES.GAME, onModeChange, onBack, backLabel, onCompare, onBuildTrade }) => {
+const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_MODES.GAME, leagueSeason = CURRENT_SEASON, onModeChange, onBack, backLabel, onCompare, onBuildTrade }) => {
   const { getTeamRecord } = usePredictions();
-  const { hasLeague, myRoster, activeScoringSettings } = useSleeperLeague();
-  const { players: sleeperPlayers, loadPlayers } = useSleeperStats();
+  const {
+    hasLeague,
+    myRoster,
+    activeScoringSettings,
+    league,
+    leagues,
+    leaguesBySeason,
+    linkedLeagueSeasonOptions,
+  } = useSleeperLeague();
+  const {
+    players: sleeperPlayers,
+    loadPlayers,
+    weeklyStats: activeSleeperWeeklyStats,
+  } = useSleeperStats();
   const [sleeperId, setSleeperId] = useState(null);
 
   // statsJson for each year, fetched lazily
   const [statsByYear, setStatsByYear] = useState({});
   const [loadingYears, setLoadingYears] = useState({});
-  const [errorYears, setErrorYears] = useState({});
+  const [errorYears] = useState({});
   // Years confirmed to have no stats (silently hidden from the list)
   const [unavailableYears, setUnavailableYears] = useState(new Set());
 
@@ -52,9 +135,13 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_
   // Game-by-game logs per year
   const [gameLogByYear, setGameLogByYear] = useState({});
   const [loadingGameLog, setLoadingGameLog] = useState({});
+  const [fantasyRowsByYear, setFantasyRowsByYear] = useState({});
+  const [loadingFantasyYears, setLoadingFantasyYears] = useState({});
+  const [resolvedFantasyLeaguesByYear, setResolvedFantasyLeaguesByYear] = useState({});
 
   // Current season auto-expanded, others collapsed
-  const [expandedYears, setExpandedYears] = useState({ [CURRENT_SEASON]: true });
+  const activeStatsSeason = Number(leagueSeason) || CURRENT_SEASON;
+  const [expandedYears, setExpandedYears] = useState(() => ({ [activeStatsSeason]: true }));
 
   // Headshot visibility
   const [headshotError, setHeadshotError] = useState(false);
@@ -96,11 +183,51 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_
   // ESPN increments experience.years at end-of-season to count total seasons played (including the
   // one just completed), so firstSeason = CURRENT_SEASON - (experience - 1), not - experience.
   // Math.max(0, ...) guards against experience=0 mid-season rookies yielding a future year.
+  const latestSeason = Math.max(CURRENT_SEASON, activeStatsSeason);
   const firstSeason = playerMeta.experience != null
-    ? CURRENT_SEASON - Math.max(0, playerMeta.experience - 1)
-    : CURRENT_SEASON - (YEARS_TO_SHOW - 1);
-  const years = Array.from({ length: YEARS_TO_SHOW }, (_, i) => CURRENT_SEASON - i)
+    ? latestSeason - Math.max(0, playerMeta.experience - 1)
+    : latestSeason - (YEARS_TO_SHOW - 1);
+  const years = Array.from({ length: YEARS_TO_SHOW }, (_, i) => latestSeason - i)
     .filter(year => year >= firstSeason);
+  const fantasyLeagueByYear = {};
+  if (hasLeague && league) {
+    const activeSeasonKey = String(league.season ?? leagueSeason);
+    const combinedLeaguesBySeason = {
+      ...leaguesBySeason,
+      [activeSeasonKey]: [league, ...(leaguesBySeason?.[activeSeasonKey] ?? leagues ?? [])],
+    };
+    const lineageIds = buildLeagueLineageIds(league, combinedLeaguesBySeason);
+    const candidateSeasonKeys = new Set([
+      ...years.map((year) => String(year)),
+      ...(linkedLeagueSeasonOptions ?? []).map((seasonKey) => String(seasonKey)),
+      ...Object.keys(resolvedFantasyLeaguesByYear),
+      activeSeasonKey,
+    ]);
+    for (const seasonKey of candidateSeasonKeys) {
+      const seasonLeagues = combinedLeaguesBySeason?.[seasonKey] ?? [];
+      const linkedLeague = seasonKey === activeSeasonKey
+        ? league
+        : (
+          resolvedFantasyLeaguesByYear[seasonKey]
+          ?? findLinkedSeasonLeague(seasonLeagues, lineageIds)
+          ?? findFallbackSeasonLeague(league, seasonLeagues)
+        );
+      if (linkedLeague?.scoring_settings) fantasyLeagueByYear[seasonKey] = linkedLeague;
+    }
+  }
+  const fantasyScoringByYear = {};
+  for (const [seasonKey, seasonLeague] of Object.entries(fantasyLeagueByYear)) {
+    fantasyScoringByYear[seasonKey] = { ...DEFAULT_SCORING, ...importLeagueScoring(seasonLeague.scoring_settings) };
+  }
+  if (hasLeague && activeScoringSettings && fantasyLeagueByYear[String(activeStatsSeason)]) {
+    fantasyScoringByYear[String(activeStatsSeason)] = { ...DEFAULT_SCORING, ...activeScoringSettings };
+  }
+  const activeExpandedYear = Object.entries(expandedYears).find(([, isExpanded]) => isExpanded)?.[0] ?? String(activeStatsSeason);
+  const canUseFantasyForActiveYear = Boolean(
+    hasLeague
+      && activeExpandedYear !== 'career'
+      && fantasyScoringByYear[String(activeExpandedYear)]
+  );
   const rosterPlayerIds = myRoster()?.players ?? [];
   const rosterReserveIds = myRoster()?.reserve ?? [];
   const isOnMyRoster = sleeperId ? [...rosterPlayerIds, ...rosterReserveIds].includes(sleeperId) : false;
@@ -121,6 +248,38 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_
     return () => { cancelled = true; };
   }, [hasLeague, loadPlayers, playerMeta, sleeperPlayers]);
 
+  useEffect(() => {
+    if (!hasLeague || !league?.previous_league_id) return undefined;
+
+    let cancelled = false;
+    void (async () => {
+      const nextByYear = {};
+      const seen = new Set();
+      let previousLeagueId = normalizeLeagueId(league.previous_league_id);
+
+      while (previousLeagueId && !seen.has(previousLeagueId)) {
+        seen.add(previousLeagueId);
+        try {
+          const previousLeague = await getSleeperLeague(previousLeagueId);
+          if (cancelled || !previousLeague) return;
+          const seasonKey = String(previousLeague.season ?? '');
+          if (seasonKey && previousLeague.scoring_settings) {
+            nextByYear[seasonKey] = previousLeague;
+          }
+          previousLeagueId = normalizeLeagueId(previousLeague.previous_league_id);
+        } catch {
+          break;
+        }
+      }
+
+      if (!cancelled && Object.keys(nextByYear).length > 0) {
+        setResolvedFantasyLeaguesByYear(prev => ({ ...nextByYear, ...prev }));
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [hasLeague, league?.league_id, league?.previous_league_id]);
+
   // Fetch stats for a year when its accordion is expanded
   const loadYear = async (year) => {
     if (statsByYear[year] !== undefined || loadingYears[year]) return;
@@ -134,17 +293,18 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_
         // Historical year with no data — hide it silently
         setUnavailableYears(prev => new Set([...prev, year]));
       } else {
-        setErrorYears(prev => ({ ...prev, [year]: 'Failed to load stats.' }));
+        setStatsByYear(prev => ({ ...prev, [year]: null }));
       }
     } finally {
       setLoadingYears(prev => ({ ...prev, [year]: false }));
     }
   };
 
-  // Load current season stats + game log + career stats + honors on mount
+  // Load selected season stats + game log + career stats + honors on mount
   useEffect(() => {
-    loadYear(CURRENT_SEASON);
-    loadGameLogForYear(CURRENT_SEASON);
+    setExpandedYears({ [activeStatsSeason]: true });
+    loadYear(activeStatsSeason);
+    loadGameLogForYear(activeStatsSeason);
 
     // Eagerly load career stats for hero card display
     (async () => {
@@ -181,10 +341,15 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_
         setHonorsByYear(merged);
       } catch { /* honors are non-critical — fail silently */ }
     })();
-  }, [playerId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [playerId, activeStatsSeason]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!sleeperId || activeExpandedYear === 'career' || !canUseFantasyForActiveYear) return;
+    loadFantasyRowsForYear(activeExpandedYear);
+  }, [sleeperId, activeExpandedYear, canUseFantasyForActiveYear]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadGameLogForYear = async (year) => {
-    if (gameLogByYear[year] !== undefined || loadingGameLog[year] || !teamId) return;
+    if (gameLogByYear[year] !== undefined || loadingGameLog[year]) return;
     setLoadingGameLog(prev => ({ ...prev, [year]: true }));
     try {
       const log = await fetchGameLog(playerId, teamId, year);
@@ -196,18 +361,45 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_
     }
   };
 
+  const loadFantasyRowsForYear = async (year) => {
+    const seasonKey = String(year);
+    if (!sleeperId || !fantasyScoringByYear[seasonKey] || fantasyRowsByYear[seasonKey] !== undefined || loadingFantasyYears[seasonKey]) return;
+    if (seasonKey === String(activeStatsSeason) && activeSleeperWeeklyStats?.[sleeperId]) {
+      setFantasyRowsByYear(prev => ({ ...prev, [seasonKey]: activeSleeperWeeklyStats[sleeperId] }));
+      return;
+    }
+
+    setLoadingFantasyYears(prev => ({ ...prev, [seasonKey]: true }));
+    try {
+      const data = await getPlayerSeasonStats(sleeperId, seasonKey);
+      let rows = normalizeSleeperWeeklyRows(data);
+
+      if (rows.length === 0) {
+        const weeklyByPlayer = await getAllWeeklyStats(seasonKey, 18);
+        rows = normalizeSleeperWeeklyRows(weeklyByPlayer?.[sleeperId]);
+      }
+
+      setFantasyRowsByYear(prev => ({ ...prev, [seasonKey]: rows }));
+    } catch {
+      setFantasyRowsByYear(prev => ({ ...prev, [seasonKey]: [] }));
+    } finally {
+      setLoadingFantasyYears(prev => ({ ...prev, [seasonKey]: false }));
+    }
+  };
+
   const toggleYear = (year) => {
     const willExpand = !expandedYears[year];
-    setExpandedYears(prev => ({ ...prev, [year]: willExpand }));
+    setExpandedYears(willExpand ? { [year]: true } : {});
     if (willExpand) {
       loadYear(year);
       loadGameLogForYear(year);
+      loadFantasyRowsForYear(year);
     }
   };
 
   const toggleCareer = async () => {
     const willExpand = !expandedYears['career'];
-    setExpandedYears(prev => ({ ...prev, career: willExpand }));
+    setExpandedYears(willExpand ? { career: true } : {});
     if (willExpand && careerStats === null && !careerLoading) {
       setCareerLoading(true);
       try {
@@ -228,8 +420,7 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_
 
   const isRookie = playerMeta.experience === 0;
   const rookieLabel = isRookie ? 'Rookie Season' : `Active Since ${firstSeason}`;
-  const canShowFantasyModes = hasLeague && !!activeScoringSettings;
-  const activeMode = canShowFantasyModes ? mode : STATISTICS_MODES.GAME;
+  const activeMode = canUseFantasyForActiveYear ? mode : STATISTICS_MODES.GAME;
   const heroMetaSegments = [
     playerMeta.positionName || playerMeta.position,
     team?.name,
@@ -439,45 +630,50 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_
         </div>
       </div>
 
-      {canShowFantasyModes && (
-        <div
-          className="flex flex-wrap items-center justify-between gap-3 rounded-xl px-3 py-3"
-          style={{
-            background: 'var(--color-bg-secondary)',
-            border: '1px solid var(--color-separator)',
-          }}
-        >
-          <div>
-            <div className="text-[10px] font-bold uppercase tracking-[0.18em]" style={{ color: 'var(--color-label-tertiary)' }}>
-              Stat Mode
-            </div>
-            <div className="text-xs mt-0.5" style={{ color: 'var(--color-label-secondary)' }}>
-              League scoring updates this view live.
-            </div>
+      <div
+        className="flex flex-wrap items-center justify-between gap-3 rounded-xl px-3 py-3"
+        style={{
+          background: 'var(--color-bg-secondary)',
+          border: '1px solid var(--color-separator)',
+          opacity: hasLeague ? 1 : 0.72,
+        }}
+      >
+        <div>
+          <div className="text-[10px] font-bold uppercase tracking-[0.18em]" style={{ color: 'var(--color-label-tertiary)' }}>
+            Stat Mode
           </div>
-          <div className="grid grid-cols-2 rounded-lg p-1 min-w-0 flex-1 sm:flex-initial sm:min-w-[280px]" style={{ background: 'var(--color-fill)' }}>
-            {MODE_OPTIONS.map((option) => {
-              const selected = activeMode === option.id;
-              return (
-                <button
-                  key={option.id}
-                  type="button"
-                  onClick={() => onModeChange?.(option.id)}
-                  className="px-2 py-1.5 text-xs font-bold transition-colors"
-                  style={{
-                    color: selected ? 'var(--color-signature-fg)' : 'var(--color-label-secondary)',
-                    background: selected ? 'var(--color-signature)' : 'transparent',
-                    borderRadius: '6px',
-                  }}
-                  aria-pressed={selected}
-                >
-                  {option.label}
-                </button>
-              );
-            })}
+          <div className="text-xs mt-0.5" style={{ color: 'var(--color-label-secondary)' }}>
+            {hasLeague
+              ? (canUseFantasyForActiveYear ? "Using the expanded season's linked league scoring." : 'Fantasy Values are available for seasons with linked league scoring.')
+              : 'Connect a Sleeper league to unlock Fantasy Values.'}
           </div>
         </div>
-      )}
+        <div className="grid grid-cols-2 rounded-lg p-1 min-w-0 flex-1 sm:flex-initial sm:min-w-[280px]" style={{ background: 'var(--color-fill)' }}>
+          {MODE_OPTIONS.map((option) => {
+            const selected = activeMode === option.id;
+            const disabled = option.id === STATISTICS_MODES.FANTASY && !canUseFantasyForActiveYear;
+            return (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => { if (!disabled) onModeChange?.(option.id); }}
+                disabled={disabled}
+                className="px-2 py-1.5 text-xs font-bold transition-colors disabled:cursor-not-allowed"
+                style={{
+                  color: selected ? 'var(--color-signature-fg)' : 'var(--color-label-secondary)',
+                  background: selected ? 'var(--color-signature)' : 'transparent',
+                  borderRadius: '6px',
+                  opacity: disabled ? 0.45 : 1,
+                }}
+                aria-pressed={selected}
+                title={disabled ? 'Fantasy Values are only available for linked league seasons.' : undefined}
+              >
+                {option.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
       {/* Stats accordion */}
       <div className="space-y-2">
@@ -488,24 +684,44 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_
           />
         ) : (
           <>
-            {years.filter(y => !unavailableYears.has(y)).map(year => (
-              <PlayerStatTable
-                key={year}
-                year={year}
-                statsJson={statsByYear[year] ?? null}
-                position={playerMeta.position}
-                sleeperId={sleeperId}
-                expanded={!!expandedYears[year]}
-                onToggle={() => toggleYear(year)}
-                loading={!!loadingYears[year]}
-                error={errorYears[year] ?? null}
-                gameLog={gameLogByYear[year] ?? null}
-                gameLogLoading={!!loadingGameLog[year]}
-                honors={honorsByYear[String(year)] ?? []}
-                accentColor={heroAccent ?? heroBg}
-                displayMode={activeMode}
-              />
-            ))}
+            {years.filter(y => !unavailableYears.has(y)).map(year => {
+              const yearKey = String(year);
+              const activeSeasonRows = yearKey === String(activeStatsSeason) && activeSleeperWeeklyStats?.[sleeperId]
+                ? activeSleeperWeeklyStats[sleeperId]
+                : undefined;
+              const hasFantasyScoring = Boolean(fantasyScoringByYear[yearKey]);
+              const fantasyRows = activeSeasonRows ?? fantasyRowsByYear[yearKey];
+              const shouldLoadFantasyRows = Boolean(
+                expandedYears[year]
+                && sleeperId
+                && hasFantasyScoring
+                && fantasyRows === undefined
+              );
+
+              return (
+                <PlayerStatTable
+                  key={year}
+                  year={year}
+                  statsJson={statsByYear[year] ?? null}
+                  position={playerMeta.position}
+                  sleeperId={sleeperId}
+                  expanded={!!expandedYears[year]}
+                  onToggle={() => toggleYear(year)}
+                  loading={!!loadingYears[year]}
+                  error={errorYears[year] ?? null}
+                  gameLog={gameLogByYear[year] ?? null}
+                  gameLogLoading={!!loadingGameLog[year]}
+                  honors={honorsByYear[yearKey] ?? []}
+                  accentColor={heroAccent ?? heroBg}
+                  displayMode={activeMode}
+                  fantasySeason={year}
+                  fantasyAvailable={hasFantasyScoring}
+                  fantasyScoringSettings={fantasyScoringByYear[yearKey] ?? null}
+                  fantasyWeeklyRows={hasFantasyScoring ? (fantasyRows ?? []) : undefined}
+                  fantasyRowsLoading={!!loadingFantasyYears[yearKey] || shouldLoadFantasyRows}
+                />
+              );
+            })}
             <PlayerStatTable
               key="career"
               year="career"
@@ -518,6 +734,8 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_
               error={careerError}
               accentColor={heroAccent ?? heroBg}
               displayMode={activeMode}
+              fantasySeason={activeStatsSeason}
+              fantasyAvailable={false}
             />
           </>
         )}
