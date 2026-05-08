@@ -87,12 +87,13 @@ npm run validate:routing
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) |
 
-## What's New in v7.3.1
+## What's New in v7.3.2
 
-- **Companion mobile polish** - Horizontal tab and content rails now show cleaner edge cues without letting labels peek through the affordance.
-- **Heatmap filter cleanup** - Mobile Heatmap filters align consistently across Phase, Position, and Result while leaving more room for the grid itself.
-- **Projection drilldown polish** - Matchup projection breakdowns and formula surfaces are more resilient during player drilldowns.
-- **Responsive overlays** - Action sheets, Companion rows, and Trade proposal panels fit tighter mobile viewports more reliably.
+- **Companion Statistics drilldowns** - Player pages opened from Companion now start on the selected Sleeper league year instead of the app's default stats season.
+- **Fantasy Values alignment** - Fantasy Values use the matching league season and scoring settings, so 2025 values remain available while 2026 correctly shows no stats until the season has data.
+- **Historical game logs restored** - Weekly rows continue to use ESPN game logs, preserving Team, Opponent, Result, Game Stats, and Fantasy Values after switching Companion league years.
+- **Canonical player routes** - Companion and direct Statistics links now resolve player pages through the same ESPN profile path, and search includes free agents and recent retirees with ESPN ids.
+- **Preseason Companion states** - Matchup, Rankings, and Waiver now explain unavailable schedule or stat data instead of showing misleading empty controls.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 

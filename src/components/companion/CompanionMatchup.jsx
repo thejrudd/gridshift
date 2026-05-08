@@ -767,15 +767,25 @@ export default function CompanionMatchup({
     );
 
   if (!selectedLeagueId) {
-    return <EmptyState message="Connect a league to see matchup data." />;
+    return <EmptyState title="Connect a league to see matchup data." />;
   }
 
   if (hasNoMatchup) {
-    return <EmptyState message="No matchup found for this week." />;
+    return (
+      <EmptyState
+        title="Matchups will appear once your league schedule is available."
+        description="Pre-season leagues may not have weekly matchups published yet, so there is nothing to preview for this week."
+      />
+    );
   }
 
   if (hasNoOpponentMatchup) {
-    return <EmptyState message="No opponent matchup found for this week." />;
+    return (
+      <EmptyState
+        title="Opponent details are not available for this week yet."
+        description="Once Sleeper publishes both sides of the matchup, this view will show projections and lineup context."
+      />
+    );
   }
 
   if (isPreparingMatchupView) {
@@ -1596,10 +1606,15 @@ function MatchupStatsLoadingBanner() {
   );
 }
 
-function EmptyState({ message }) {
+function EmptyState({ title, description = null }) {
   return (
-    <div className="flex items-center justify-center py-20 px-6">
-      <span className="text-sm text-center" style={{ color: 'var(--color-label-secondary)' }}>{message}</span>
+    <div className="flex flex-col items-center justify-center px-6 py-20 text-center">
+      <span className="text-sm font-semibold" style={{ color: 'var(--color-label)' }}>{title}</span>
+      {description && (
+        <span className="mt-1 max-w-md text-xs leading-5" style={{ color: 'var(--color-label-secondary)' }}>
+          {description}
+        </span>
+      )}
     </div>
   );
 }

@@ -317,102 +317,120 @@ export default function CompanionRankings({ positionFilter = 'ALL', onPositionFi
   }, [allRanked, search]);
 
   const nameColPx = useMemo(() => measureMaxNameWidth(ranked), [ranked]);
+  const hasLoadedStats = Boolean(seasonStats);
+  const hasAnyRankingsData = useMemo(() => {
+    if (!players || !seasonStats) return false;
+
+    return Object.entries(seasonStats).some(([id, stats]) => {
+      const p = players[id];
+      if (!p) return false;
+      if (!positionMatchesLeagueFilter(p.position, 'ALL', { stats, availableFilters: availablePositions })) return false;
+      return calcPointsFromTotals(stats, activeScoringSettings, p.position) > 0;
+    });
+  }, [activeScoringSettings, availablePositions, players, seasonStats]);
+  const hasRankingsData = allRanked.length > 0;
+  const showRankingsControls = !hasLoadedStats || hasAnyRankingsData || statsLoading;
+  const showRankingsTable = hasAnyRankingsData;
 
   return (
     <div className="pb-6">
       {/* Filters */}
-      <div className="px-4 pb-3 flex flex-col gap-2">
-        {/* Position chips */}
-        <CompanionSelectorRail ariaLabel="Rankings position filter">
-          {filterChips.map(pos => (
-            <CompanionSelectorButton
-              key={pos}
-              active={isFilterChipActive(pos, selectedFilters)}
-              onClick={(event) => {
-                const nextFilters = getNextSelectedFilters(selectedFilters, pos, event);
-                setSelectedFilters(nextFilters);
-                const shouldSyncRoute = !(event.ctrlKey || event.metaKey)
-                  && (pos === 'ALL' || isValidLeaguePositionFilter(pos, availablePositions));
-                if (shouldSyncRoute) {
-                  onPositionFilterChange?.(getPrimaryRouteFilter(nextFilters, availablePositions));
-                }
+      {showRankingsControls && (
+        <div className="px-4 pb-3 flex flex-col gap-2">
+          {/* Position chips */}
+          <CompanionSelectorRail ariaLabel="Rankings position filter">
+            {filterChips.map(pos => (
+              <CompanionSelectorButton
+                key={pos}
+                active={isFilterChipActive(pos, selectedFilters)}
+                onClick={(event) => {
+                  const nextFilters = getNextSelectedFilters(selectedFilters, pos, event);
+                  setSelectedFilters(nextFilters);
+                  const shouldSyncRoute = !(event.ctrlKey || event.metaKey)
+                    && (pos === 'ALL' || isValidLeaguePositionFilter(pos, availablePositions));
+                  if (shouldSyncRoute) {
+                    onPositionFilterChange?.(getPrimaryRouteFilter(nextFilters, availablePositions));
+                  }
+                }}
+              >
+                {getFilterChipLabel(pos)}
+              </CompanionSelectorButton>
+            ))}
+          </CompanionSelectorRail>
+
+          {/* Search */}
+          <CompanionSearchField
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search players..."
+          />
+
+          <div className="flex flex-col items-stretch gap-2 min-[481px]:flex-row">
+            <RankingsSortSelect
+              value={sortBy}
+              options={[...BASE_SORT_OPTIONS, ...actionSortOptions]}
+              onChange={(nextSort) => {
+                setSortBy(nextSort);
+                setSortDir('desc');
               }}
-            >
-              {getFilterChipLabel(pos)}
-            </CompanionSelectorButton>
-          ))}
-        </CompanionSelectorRail>
-
-        {/* Search */}
-        <CompanionSearchField
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="Search players..."
-        />
-
-        <div className="flex flex-col items-stretch gap-2 min-[481px]:flex-row">
-          <RankingsSortSelect
-            value={sortBy}
-            options={[...BASE_SORT_OPTIONS, ...actionSortOptions]}
-            onChange={(nextSort) => {
-              setSortBy(nextSort);
-              setSortDir('desc');
-            }}
-          />
-          <RankingsSortValueToggle
-            value={sortValueMode}
-            disabled={!isActionSort}
-            onChange={setSortValueMode}
-          />
+            />
+            <RankingsSortValueToggle
+              value={sortValueMode}
+              disabled={!isActionSort}
+              onChange={setSortValueMode}
+            />
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Stats loading */}
       {statsLoading && <RankingsStatsLoadingBanner />}
 
       {/* Column headers */}
-      <div
-        className="grid items-center px-4 pb-2 mb-1"
-        style={{
-          borderBottom: '1px solid var(--color-separator)',
-          gridTemplateColumns: getRankingsGridTemplate({ hideAvgColumn, isCompactPhone, nameColPx }),
-          columnGap: RANKINGS_ROW_GAP,
-        }}
-      >
-        <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>#</span>
-        <div />
-        <span className="min-w-0 text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>Player</span>
-        <div />
-        {!hideAvgColumn && (
+      {showRankingsTable && (
+        <div
+          className="grid items-center px-4 pb-2 mb-1"
+          style={{
+            borderBottom: '1px solid var(--color-separator)',
+            gridTemplateColumns: getRankingsGridTemplate({ hideAvgColumn, isCompactPhone, nameColPx }),
+            columnGap: RANKINGS_ROW_GAP,
+          }}
+        >
+          <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>#</span>
+          <div />
+          <span className="min-w-0 text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>Player</span>
+          <div />
+          {!hideAvgColumn && (
+            <SortHeader
+              label="Avg PPG"
+              active={sortBy === 'avg'}
+              direction={sortDir}
+              onClick={() => {
+                if (sortBy === 'avg') {
+                  setSortDir(current => current === 'desc' ? 'asc' : 'desc');
+                } else {
+                  setSortBy('avg');
+                  setSortDir('desc');
+                }
+              }}
+            />
+          )}
           <SortHeader
-            label="Avg PPG"
-            active={sortBy === 'avg'}
+            label="Season"
+            active={sortBy !== 'avg'}
             direction={sortDir}
             onClick={() => {
               if (sortBy === 'avg') {
-                setSortDir(current => current === 'desc' ? 'asc' : 'desc');
-              } else {
-                setSortBy('avg');
+                setSortBy('season');
                 setSortDir('desc');
+              } else {
+                setSortDir(current => current === 'desc' ? 'asc' : 'desc');
               }
             }}
           />
-        )}
-        <SortHeader
-          label="Season"
-          active={sortBy !== 'avg'}
-          direction={sortDir}
-          onClick={() => {
-            if (sortBy === 'avg') {
-              setSortBy('season');
-              setSortDir('desc');
-            } else {
-              setSortDir(current => current === 'desc' ? 'asc' : 'desc');
-            }
-          }}
-        />
-        <div />
-      </div>
+          <div />
+        </div>
+      )}
 
       {!seasonStats && !statsLoading && (
         <div className="flex items-center justify-center py-16">
@@ -437,9 +455,20 @@ export default function CompanionRankings({ positionFilter = 'ALL', onPositionFi
         />
       ))}
 
-      {ranked.length === 0 && seasonStats && (
-        <div className="flex items-center justify-center py-16">
-          <span className="text-sm" style={{ color: 'var(--color-label-secondary)' }}>No players found.</span>
+      {ranked.length === 0 && hasLoadedStats && (
+        <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
+          <span className="text-sm font-semibold" style={{ color: 'var(--color-label)' }}>
+            {!hasAnyRankingsData
+              ? 'Rankings will appear once season stats are available.'
+              : hasRankingsData
+                ? 'No matching players.'
+                : 'No rankings for this position yet.'}
+          </span>
+          {!hasAnyRankingsData && (
+            <span className="mt-1 max-w-md text-xs leading-5" style={{ color: 'var(--color-label-secondary)' }}>
+              Pre-season leagues may not have any player results yet, so there is nothing to rank right now.
+            </span>
+          )}
         </div>
       )}
 

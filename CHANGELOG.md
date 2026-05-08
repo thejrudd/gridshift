@@ -1021,3 +1021,15 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Heatmap mobile filters tightened** - Reworked the Heatmap mobile filter stack so Phase, Position, and Result chips align consistently while consuming less vertical space above the grid.
 - **Projection formula reliability** - Improved matchup projection data handling and formula UI plumbing so projection breakdowns remain more responsive and readable during player drilldowns.
 - **Responsive overlay polish** - Strengthened ActionSheet sizing, Companion row spacing, and Trade proposal panel overflow handling for smaller mobile viewports.
+
+---
+
+## v7.3.2 - Companion Statistics Season Fix
+*2026-05-08*
+
+- **Companion player drilldowns fixed** - Statistics player pages opened from Companion now expand the selected Sleeper league year instead of always opening the app's default NFL stats season.
+- **Fantasy Values season alignment** - Fantasy Values now only render against the matching league season and scoring settings, so 2025 league views keep their 2025 scoring values while 2026 league views correctly show an empty 2026 season until stats exist.
+- **Historical game logs restored** - Statistics keeps using ESPN game logs for weekly rows and refreshes stale empty game-log cache entries so Team, Opponent, Result, Game Stats, and Fantasy Values stay intact after changing Companion league years.
+- **Statistics routes made canonical** - Companion player drilldowns now use the same route-resolved ESPN player profile path as direct Statistics links, preventing Sleeper free-agent metadata from blocking weekly game logs.
+- **Statistics search broadened** - Player search now merges current ESPN rosters with the Sleeper player database so free agents and recent retirees with ESPN player ids can be found and opened.
+- **Preseason Companion states clarified** - Matchup, Rankings, and Waiver now hide empty controls when league schedules or player stats have not published yet and explain that those views will populate once season data exists.

@@ -9,13 +9,10 @@ New features requested or planned should be added here.
 
 ### v7.4 - Statistics Expansion & Scout Rookie Projection Layer
 
-Statistics expansion and tabled Scout enhancements that build on the post-draft rookie data foundation without expanding v7.0 scope.
+Tabled Scout enhancements and remaining Statistics expansion that build on the post-draft rookie data foundation without expanding v7.0 scope.
 
-- **Statistics stat leaders tab** - Add a dedicated Statistics tab for sorting players by individual stat categories, with position filters so leaders can be viewed by position and then by stat.
 - **Player Stats Visualization** - Add a per-player weekly performance chart showing season-long stat trends. The user selects a stat via position-specific toggles, and the chart renders the raw stat value against the fantasy points that stat contributed each week using separate Y axes. Add opponent-defense context bars for each week so production can be compared against the matchup allowed for the selected stat category.
 - **Next-season fantasy projection layer for rookies** - Add a fantasy-facing projection surface for the upcoming NFL season so Scout can serve both standard rookie boards and IDP-aware formats without overloading the current prospect filters. Scope should cover offensive and IDP leagues, projection source-of-truth, display hierarchy, and how projections interact with draft status and college production.
-- **Align Trade Drill Down with Statistics 7.2 Redesign** - Make the Trade player drill down modal serve stats that are visually consistent with the Statistics 7.2 redesign, including a toggle for flipping between raw stats and fantasy value.
-- **Trade Agent & Upgrades follow-through** - Carry forward any remaining UX polish from the v7.1 redesign that did not ship cleanly, especially places where common actions still rely too heavily on modals or proposal-card readability needs another focused pass.
 
 ### v8.0 - ESPN League Integration
 ### v9.0 - Live Fantasy Scoring
@@ -36,6 +33,7 @@ Statistics expansion and tabled Scout enhancements that build on the post-draft 
 
 ### Deferred / Tabled
 
+- **Companion Roster draft-market lens (tabled)** - Revisit ADP or draft-market roster values after identifying a reliable, legally usable data source with broad offensive coverage, configurable league format support, and a clear plan for IDP or missing-player estimates. The Fantasy Football Calculator attempt was removed because API coverage left many rostered players blank.
 - **League-scoped shareable links (tabled from v6.5)** - Revisit after current performance and drilldown unification priorities. Scope remains: league-aware Companion/Trade URLs, league id format decision, ownership validation, connect-flow handoff, mismatch UX, and strict shareability boundaries.
 - **Shareable-link first phase (tabled from v6.3)** - Revisit page + selected-player URL sharing after the current Companion/Trade stabilization passes are complete.
 

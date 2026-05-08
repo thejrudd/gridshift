@@ -24,6 +24,23 @@ const TEAM_ESPN_ID = {
 };
 const toEspnTeamId = id => TEAM_ESPN_ID[id] ?? id.toLowerCase();
 
+async function fetchEspnTeamAbbrev(teamId) {
+  if (!teamId) return null;
+  try {
+    const res = await fetch(`${ESPN_CORE}/teams/${teamId}?lang=en&region=us`);
+    if (!res.ok) return null;
+    const teamData = await res.json();
+    return teamData.abbreviation ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function extractTeamIdFromRef(ref) {
+  if (typeof ref !== 'string') return null;
+  return ref.match(/teams\/(\d+)/)?.[1] ?? null;
+}
+
 // Headshot URL — will 404 for some players; handle with onError
 export const headshot = id =>
   `https://a.espncdn.com/i/headshots/nfl/players/full/${id}.png`;
@@ -72,6 +89,31 @@ export async function fetchRoster(teamId) {
     }
     return athletes;
   }, TTL.roster);
+}
+
+/**
+ * Fetch canonical ESPN profile metadata for a player route.
+ * Works for current rostered players, free agents, and many recent retirees.
+ */
+export async function fetchPlayerProfile(playerId) {
+  return cachedFetch(`player_profile_v1_${playerId}`, async () => {
+    const url = `${ESPN_CORE}/athletes/${playerId}?lang=en&region=us`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Player profile fetch failed: ${res.status}`);
+    const athlete = await res.json();
+    const teamAbbrev = await fetchEspnTeamAbbrev(extractTeamIdFromRef(athlete.team?.$ref));
+
+    return {
+      id: String(athlete.id ?? playerId),
+      displayName: athlete.displayName ?? athlete.fullName ?? '',
+      jersey: athlete.jersey ?? '',
+      position: normalizeEspnPosition(athlete.position?.abbreviation),
+      positionName: athlete.position?.displayName ?? '',
+      experience: athlete.experience?.years,
+      status: athlete.status?.name ?? athlete.status?.type ?? '',
+      teamId: teamAbbrev,
+    };
+  }, TTL.bio);
 }
 
 /**
@@ -191,8 +233,8 @@ export async function fetchGameLog(playerId, teamId, season) {
   const isHistorical = season < CURRENT_SEASON;
   const ttl = isHistorical ? TTL.historical : TTL.stats;
 
-  return cachedFetch(`gamelog_v8_${playerId}_${season}`, async () => {
-    const abbrev = teamId.toUpperCase();
+  return cachedFetch(`gamelog_v10_${playerId}_${season}`, async () => {
+    const abbrev = teamId?.toUpperCase?.() ?? null;
 
     // Step 1: Fetch the eventlog first — needed to resolve the actual team for this season.
     // The passed-in teamId is the player's *current* team, which may differ for historical seasons.
@@ -217,14 +259,9 @@ export async function fetchGameLog(playerId, teamId, season) {
     // which wraps team data in a $ref pointer and would silently return undefined).
     let actualAbbrev = abbrev;
     if (espnCompetitorId) {
-      try {
-        const teamRes = await fetch(`${ESPN_CORE}/teams/${espnCompetitorId}?lang=en&region=us`);
-        if (teamRes.ok) {
-          const teamData = await teamRes.json();
-          actualAbbrev = teamData.abbreviation ?? abbrev;
-        }
-      } catch { /* use fallback */ }
+      actualAbbrev = await fetchEspnTeamAbbrev(espnCompetitorId) ?? abbrev;
     }
+    if (!actualAbbrev) return [];
 
     // Step 3: Fetch the correct team's schedule (reg + post) in parallel
     const [schedRes, postSchedRes] = await Promise.all([
@@ -298,7 +335,7 @@ export async function fetchGameLog(playerId, teamId, season) {
       : [];
 
     return [...regGames, ...postGames.filter(Boolean)];
-  }, ttl);
+  }, ttl, (games) => Array.isArray(games) && games.length > 0);
 }
 
 /**

@@ -1,8 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { buildStatMap, buildRankMap, getStatRows, getGameLogColumns, positionGroup } from '../utils/playerMetrics';
-import { CURRENT_SEASON } from '../utils/playerApi';
 import { useSleeperLeague, useSleeperStats } from '../context/SleeperContext';
-import { DEFAULT_SCORING, STAT_TO_SCORING_KEY } from '../utils/scoringEngine';
+import { calcPoints, DEFAULT_SCORING, STAT_TO_SCORING_KEY } from '../utils/scoringEngine';
 import useMediaQuery from '../hooks/useMediaQuery.js';
 
 // Extract a formatted stat value from a per-game statsJson
@@ -54,6 +53,7 @@ function gameStatDisplayVal(statsJson, col) {
 }
 
 const POINT_EPSILON = 0.005;
+const FANTASY_TOTAL_POINTS_KEY = 'fantasy_total_points';
 
 function isSameNumericValue(left, right) {
   if (!Number.isFinite(left) || !Number.isFinite(right)) return false;
@@ -655,6 +655,10 @@ function compareNullableValues(left, right, direction) {
 
 function getGameLogStatSortValue(game, col, fantasyOnly, scoringSettings, position, sleeperWeekByWeek) {
   if (fantasyOnly) {
+    if (col.key === FANTASY_TOTAL_POINTS_KEY) {
+      return getGameLogFantasyTotalPoints(game, sleeperWeekByWeek, scoringSettings, position);
+    }
+
     const rows = buildGameLogFantasyOptionRows(game, sleeperWeekByWeek, scoringSettings, position);
     return rows.find((row) => row.key === col.key)?.points ?? null;
   }
@@ -1126,11 +1130,21 @@ function buildSleeperStatsFromGameLogStats(statsJson, position) {
 }
 
 function buildGameLogFantasyOptionRows(game, sleeperWeekByWeek, scoringSettings, position) {
-  const weekEntry = game?.meta?.isPostseason
-    ? buildSleeperStatsFromGameLogStats(game?.statsJson, position)
-    : sleeperWeekByWeek.get(Number(game?.meta?.week));
+  const weekEntry = getGameLogFantasyWeekEntry(game, sleeperWeekByWeek, position);
 
   return buildFantasyOptionRows(weekEntry, scoringSettings, position);
+}
+
+function getGameLogFantasyWeekEntry(game, sleeperWeekByWeek, position) {
+  return game?.meta?.isPostseason
+    ? buildSleeperStatsFromGameLogStats(game?.statsJson, position)
+    : sleeperWeekByWeek.get(Number(game?.meta?.week));
+}
+
+function getGameLogFantasyTotalPoints(game, sleeperWeekByWeek, scoringSettings, position) {
+  const weekEntry = getGameLogFantasyWeekEntry(game, sleeperWeekByWeek, position);
+  if (!weekEntry || !scoringSettings) return null;
+  return calcPoints(weekEntry, scoringSettings, position);
 }
 
 function buildFantasyOptionRankMap(seasonStats, sleeperPlayers, scoringSettings) {
@@ -1208,7 +1222,26 @@ function buildFantasyOptionPositionRankMap(seasonStats, sleeperPlayers, scoringS
   return ranksByKey;
 }
 
-const PlayerStatTable = ({ year, statsJson, position, sleeperId = null, expanded, onToggle, loading, error, gameLog, gameLogLoading, honors = [], accentColor, displayMode = 'game' }) => {
+const PlayerStatTable = ({
+  year,
+  statsJson,
+  position,
+  sleeperId = null,
+  expanded,
+  onToggle,
+  loading,
+  error,
+  gameLog,
+  gameLogLoading,
+  honors = [],
+  accentColor,
+  displayMode = 'game',
+  fantasySeason = null,
+  fantasyAvailable = null,
+  fantasyScoringSettings = null,
+  fantasyWeeklyRows = null,
+  fantasyRowsLoading = false,
+}) => {
   const [showMoreStats, setShowMoreStats] = useState(false);
   const [highlightColumnHighs, setHighlightColumnHighs] = useState(false);
   const [highlightColumnLows, setHighlightColumnLows] = useState(false);
@@ -1231,22 +1264,25 @@ const PlayerStatTable = ({ year, statsJson, position, sleeperId = null, expanded
   }, [position, statsJson]);
 
   const label = year === 'career' ? 'Career' : `${year} Season`;
-  const canShowFantasyValue = year === CURRENT_SEASON && hasLeague && !!activeScoringSettings;
+  const canShowFantasyValue = (fantasyAvailable ?? (String(year) === String(fantasySeason))) && hasLeague && !!(fantasyScoringSettings ?? activeScoringSettings);
   const scoringSettings = useMemo(
-    () => activeScoringSettings ? { ...DEFAULT_SCORING, ...activeScoringSettings } : null,
-    [activeScoringSettings],
+    () => {
+      const settings = fantasyScoringSettings ?? activeScoringSettings;
+      return settings ? { ...DEFAULT_SCORING, ...settings } : null;
+    },
+    [activeScoringSettings, fantasyScoringSettings],
   );
   const activeDisplayMode = canShowFantasyValue ? displayMode : 'game';
   const showFantasyOnly = activeDisplayMode === 'fantasy';
   const sleeperWeeklyRows = useMemo(
-    () => sleeperId ? (sleeperWeeklyStats?.[sleeperId] ?? []) : [],
-    [sleeperId, sleeperWeeklyStats],
+    () => fantasyWeeklyRows ?? (sleeperId ? (sleeperWeeklyStats?.[sleeperId] ?? []) : []),
+    [fantasyWeeklyRows, sleeperId, sleeperWeeklyStats],
   );
 
   useEffect(() => {
-    if (!canShowFantasyValue || sleeperSeasonStats || sleeperStatsLoading) return;
+    if (!canShowFantasyValue || fantasyWeeklyRows || sleeperSeasonStats || sleeperStatsLoading) return;
     loadSeasonStats?.();
-  }, [canShowFantasyValue, loadSeasonStats, sleeperSeasonStats, sleeperStatsLoading]);
+  }, [canShowFantasyValue, fantasyWeeklyRows, loadSeasonStats, sleeperSeasonStats, sleeperStatsLoading]);
 
   const fantasyTotalsByKey = useMemo(() => {
     if (!showFantasyOnly || !scoringSettings || sleeperWeeklyRows.length === 0) return new Map();
@@ -1273,18 +1309,29 @@ const PlayerStatTable = ({ year, statsJson, position, sleeperId = null, expanded
       });
     }
 
-    return activeOptions.map(({ key, label }) => ({
+    return [
+      {
+        key: FANTASY_TOTAL_POINTS_KEY,
+        label: 'Fantasy Points',
+        title: 'Fantasy Points',
+        headerLabel: ['Fantasy', 'Pts'],
+      },
+      ...activeOptions.map(({ key, label }) => ({
         key,
         label,
         headerLabel: getFantasyHeaderLabel(key, label),
-      }));
+      })),
+    ];
   }, [fantasyTotalsByKey, isMobileFantasyLayout, showFantasyOnly]);
 
   const sleeperWeekByWeek = useMemo(
     () => new Map(sleeperWeeklyRows.map((weekEntry) => [Number(weekEntry.week), weekEntry])),
     [sleeperWeeklyRows],
   );
-  const shouldBuildFantasyRanks = canShowFantasyValue && showFantasyOnly && fantasyTotalsByKey.size > 0;
+  const shouldBuildFantasyRanks = canShowFantasyValue
+    && showFantasyOnly
+    && fantasyTotalsByKey.size > 0
+    && String(year) === String(fantasySeason);
   const fantasyRankByOption = useMemo(() => (
     shouldBuildFantasyRanks
       ? buildFantasyOptionRankMap(sleeperSeasonStats, sleeperPlayers, scoringSettings)
@@ -1333,6 +1380,12 @@ const PlayerStatTable = ({ year, statsJson, position, sleeperId = null, expanded
     && Array.isArray(gameLog)
     && gameLog.some((game) => !game?.meta?.isBye && !game?.meta?.isInactive);
   const hasTableControls = hasMoreStats || hasHighlightableGameLog;
+  const isSelectedLeagueSeason = String(year) === String(fantasySeason);
+  const emptyStateMessage = isSelectedLeagueSeason
+    ? (showFantasyOnly
+      ? `No fantasy values have been recorded for the ${year} season yet. They will appear once the season begins and your league has scoring data.`
+      : `No stats have been recorded for the ${year} season yet. They will appear once the season begins.`)
+    : (showFantasyOnly ? 'No fantasy values are available for this season.' : 'No stats available for this season.');
 
   return (
     <div
@@ -1381,11 +1434,11 @@ const PlayerStatTable = ({ year, statsJson, position, sleeperId = null, expanded
             <p className="px-4 py-3 text-sm text-red-500 dark:text-red-400 italic">{error}</p>
           ) : loading ? (
             <p className="px-4 py-3 text-sm text-gray-400 italic">Loading stats…</p>
-          ) : showFantasyOnly && sleeperStatsLoading && displaySections.length === 0 ? (
+          ) : showFantasyOnly && (sleeperStatsLoading || fantasyRowsLoading) && displaySections.length === 0 ? (
             <p className="px-4 py-3 text-sm text-gray-400 italic">Loading fantasy values...</p>
           ) : displaySections.length === 0 ? (
             <p className="px-4 py-3 text-sm text-gray-400 italic">
-              {showFantasyOnly ? 'No fantasy values are available for this season.' : 'No stats available for this season.'}
+              {emptyStateMessage}
             </p>
           ) : (
             <>
@@ -1935,7 +1988,13 @@ const GameLog = ({
 
             const dimText = isInactive ? 'opacity-60' : '';
             const fantasyPointsByKey = fantasyOnly
-              ? new Map(buildGameLogFantasyOptionRows(game, sleeperWeekByWeek, scoringSettings, position).map((row) => [row.key, row.points]))
+              ? new Map([
+                  [
+                    FANTASY_TOTAL_POINTS_KEY,
+                    getGameLogFantasyTotalPoints(game, sleeperWeekByWeek, scoringSettings, position),
+                  ],
+                  ...buildGameLogFantasyOptionRows(game, sleeperWeekByWeek, scoringSettings, position).map((row) => [row.key, row.points]),
+                ])
               : null;
 
             return (

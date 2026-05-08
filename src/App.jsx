@@ -465,7 +465,6 @@ function AppInner() {
       statisticsMode: mode,
     }, {
       state: {
-        statsPlayerMeta: playerMeta,
         statsBackLabel: backLabel ?? null,
         statsBackRoute: backRoute ? normalizeAppRoute(backRoute) : null,
       },
@@ -806,6 +805,7 @@ function AppInner() {
               selectedPlayerId={statisticsPlayerId}
               selectedPlayerMeta={statsRoutePlayerMeta}
               selectedPlayerMode={statisticsMode}
+              leagueSeason={season}
               navBack={statsNavBack}
               onNavigateHome={navigateToStatisticsHome}
               onNavigateTeam={navigateToStatisticsTeam}
