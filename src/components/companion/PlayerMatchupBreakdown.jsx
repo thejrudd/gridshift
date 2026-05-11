@@ -4,6 +4,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { calcPoints, DEFAULT_SCORING, STAT_TO_SCORING_KEY } from '../../utils/scoringEngine';
 import { formatWeather } from '../../api/weatherApi';
 import { getTeamPalette } from '../../data/teamColors.js';
+import { STATISTICS_MODES } from '../../utils/playerDrilldown';
 import Modal from '../Modal';
 
 function hexLuminance(hex) {
@@ -486,7 +487,7 @@ function getPositionGroupShortLabel(pos) {
   }[key] ?? (key ? `${key}s` : 'position group');
 }
 
-export default function PlayerMatchupBreakdown({ playerId, week, projection, enrichedPlayer, onClose, onViewStats, onOpenRosterPlayer = null }) {
+export default function PlayerMatchupBreakdown({ playerId, week, projection, enrichedPlayer, onClose, onViewStats }) {
   const { players, weeklyStats, activeScoringSettings, espnIdOverrides } = useSleeperBase();
   const { darkMode } = useTheme();
 
@@ -540,6 +541,19 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, enr
   const projMin = projection?.min ?? null;
   const projMax = projection?.max ?? null;
   const factors = projection?.factors ?? null;
+  const espnId = player?.espn_id ?? espnIdOverrides?.[playerId];
+  const canOpenStatistics = Boolean(onViewStats && espnId);
+  const openStatisticsMode = (mode) => {
+    if (!canOpenStatistics) return;
+    onClose();
+    const yearsExp = player?.years_exp;
+    onViewStats(String(espnId), {
+      displayName: player?.full_name,
+      teamId: player?.team?.toUpperCase(),
+      position: player?.position,
+      experience: yearsExp != null ? yearsExp + 1 : undefined,
+    }, { mode });
+  };
 
   // Projection math reveal: persistent side rail on desktop, explicit toggle on smaller screens.
   const [mathPinned, setMathPinned] = useState(false);
@@ -620,14 +634,11 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, enr
               </button>
             </div>
             {/* Action buttons row */}
-            <div className="flex items-center gap-2 mt-2" style={{ paddingLeft: '60px' }}>
-              {onOpenRosterPlayer && (
+            {canOpenStatistics && (
+              <div className="flex items-center gap-2 mt-2" style={{ paddingLeft: '60px' }}>
                 <HeaderActionButton
-                  label="Fantasy"
-                  onClick={() => {
-                    onClose();
-                    onOpenRosterPlayer(playerId);
-                  }}
+                  label="Fantasy Value"
+                  onClick={() => openStatisticsMode(STATISTICS_MODES.FANTASY)}
                   heroBg={heroBg}
                   heroOnBg={heroOnBg}
                   icon={(
@@ -636,33 +647,19 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, enr
                     </svg>
                   )}
                 />
-              )}
-              {(() => {
-                const espnId = player?.espn_id ?? espnIdOverrides?.[playerId];
-                return onViewStats && espnId ? (
-                  <HeaderActionButton
-                    label="Statistics"
-                    onClick={() => {
-                      onClose();
-                      const yearsExp = player?.years_exp;
-                      onViewStats(String(espnId), {
-                        displayName: player?.full_name,
-                        teamId: player?.team?.toUpperCase(),
-                        position: player?.position,
-                        experience: yearsExp != null ? yearsExp + 1 : undefined,
-                      });
-                    }}
-                    heroBg={heroBg}
-                    heroOnBg={heroOnBg}
-                    icon={(
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M9 6l6 6-6 6" />
-                      </svg>
-                    )}
-                  />
-                ) : null;
-              })()}
-            </div>
+                <HeaderActionButton
+                  label="Game Stats"
+                  onClick={() => openStatisticsMode(STATISTICS_MODES.GAME)}
+                  heroBg={heroBg}
+                  heroOnBg={heroOnBg}
+                  icon={(
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M9 6l6 6-6 6" />
+                    </svg>
+                  )}
+                />
+              </div>
+            )}
           </div>
 
           {/* Scrollable body */}

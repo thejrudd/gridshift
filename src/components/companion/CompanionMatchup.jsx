@@ -16,7 +16,6 @@ import { STADIUMS, WEEK_DATES_2025 } from '../../data/stadiums';
 import { fetchGameWeather, formatWeather } from '../../api/weatherApi';
 import { getMatchups } from '../../api/sleeperApi';
 import PlayerMatchupBreakdown, { STAT_LABELS } from './PlayerMatchupBreakdown';
-import PlayerWeeklySheet from './PlayerWeeklySheet';
 import CompanionLoadingState from './CompanionLoadingState';
 import Modal from '../Modal';
 import useCardGlow from '../../hooks/useCardGlow.jsx';
@@ -157,7 +156,6 @@ export default function CompanionMatchup({
   const [showWeekPicker, setShowWeekPicker] = useState(false);
   const [selectedPlayer, setSelectedPlayer] = useState(null); // { id, projection }
   const [selectedTeam, setSelectedTeam] = useState(null); // 'mine' | 'opp'
-  const [selectedRosterPlayerId, setSelectedRosterPlayerId] = useState(null);
   const [weatherMap, setWeatherMap] = useState({}); // { 'TEAM-DATE': weather }
   const [isMineHeaderHovered, setIsMineHeaderHovered] = useState(false);
   const [isOppHeaderHovered, setIsOppHeaderHovered] = useState(false);
@@ -1060,35 +1058,6 @@ export default function CompanionMatchup({
           enrichedPlayer={selectedPlayer.enriched ?? null}
           onClose={() => setSelectedPlayer(null)}
           onViewStats={onViewPlayer}
-          onOpenRosterPlayer={(playerId) => setSelectedRosterPlayerId(playerId)}
-        />
-      )}
-
-      {selectedRosterPlayerId && (
-        <PlayerWeeklySheet
-          playerId={selectedRosterPlayerId}
-          onClose={() => setSelectedRosterPlayerId(null)}
-          onOpenWeek={(playerId, requestedWeek) => {
-            setSelectedRosterPlayerId(null);
-            setSelectedPlayer(null);
-            const nextWeek = clampMatchupWeek(requestedWeek, totalWeeks, defaultWeek);
-            setRequestedWeek(nextWeek);
-            onWeekChange?.(nextWeek);
-            if (nextWeek !== week) return;
-            const matchupPlayers = [
-              ...enrichedSlots.flatMap((slot) => [slot.mine, slot.opp]),
-              ...myBench,
-              ...oppBench,
-            ].filter(Boolean);
-            const match = matchupPlayers.find((player) => player?.id === playerId);
-            if (match) {
-              setSelectedPlayer({
-                id: match.id,
-                projection: match.projection ?? null,
-                enriched: match,
-              });
-            }
-          }}
         />
       )}
 
@@ -1151,7 +1120,6 @@ export default function CompanionMatchup({
                   className={`matchup-week-picker-option${isPlayoff ? ' is-playoff-week' : ''}`}
                   onClick={() => {
                     setSelectedPlayer(null);
-                    setSelectedRosterPlayerId(null);
                     setSelectedTeam(null);
                     setRequestedWeek(w);
                     onWeekChange?.(w);

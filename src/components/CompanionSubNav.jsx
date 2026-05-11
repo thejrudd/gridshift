@@ -8,7 +8,8 @@ const VIEWS = [
   { id: 'matchup',   label: 'Matchup' },
   { id: 'waiver',    label: 'Waiver' },
   { id: 'league',    label: 'League' },
-  { id: 'defense',   label: 'Heatmap' },
+  { id: 'heatmap',   label: 'Heatmap' },
+  { id: 'defense',   label: 'Defense', beta: true },
   { id: 'scoring',   label: 'Scoring' },
 ];
 
@@ -19,7 +20,7 @@ export default function CompanionSubNav({ activeView, onViewChange }) {
   return (
     <div className="companion-subnav-tabs-shell">
       <div ref={tabsRef} className="season-tabs" role="tablist" aria-label="Companion views">
-        {VIEWS.map(({ id, label, alpha }) => (
+        {VIEWS.map(({ id, label, beta, alpha }) => (
           <button
             key={id}
             role="tab"
@@ -29,6 +30,22 @@ export default function CompanionSubNav({ activeView, onViewChange }) {
           >
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
               {label}
+              {beta && (
+                <span style={{
+                  fontSize: '7px',
+                  fontWeight: 700,
+                  letterSpacing: '0.05em',
+                  textTransform: 'uppercase',
+                  padding: '1px 3px',
+                  borderRadius: '3px',
+                  background: 'var(--color-signature)',
+                  color: 'var(--color-signature-fg)',
+                  lineHeight: '11px',
+                  verticalAlign: 'middle',
+                }}>
+                  β
+                </span>
+              )}
               {alpha && (
                 <span style={{
                   fontSize: '7px',

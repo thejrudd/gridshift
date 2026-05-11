@@ -1033,3 +1033,15 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Statistics routes made canonical** - Companion player drilldowns now use the same route-resolved ESPN player profile path as direct Statistics links, preventing Sleeper free-agent metadata from blocking weekly game logs.
 - **Statistics search broadened** - Player search now merges current ESPN rosters with the Sleeper player database so free agents and recent retirees with ESPN player ids can be found and opened.
 - **Preseason Companion states clarified** - Matchup, Rankings, and Waiver now hide empty controls when league schedules or player stats have not published yet and explain that those views will populate once season data exists.
+
+---
+
+## v7.4 - Statistics Visual & Defense Rankings
+*2026-05-11*
+
+- **Statistics Visual mode** - Added a Visual tab to player profiles with weekly trend charts, stat-specific fantasy contribution views, opponent-defense context bars, season switching, mobile detail sheets, and hover cards that render above the chart.
+- **Historical visual data hardened** - Statistics Visual now loads historical weekly stats and schedules without self-cancelling requests, keeps controls visible for empty seasons, preserves opponent logos/defense averages across seasons, supports negative fantasy events, and recalculates line positions when chart axes change.
+- **Companion Defense tab** - Split the old Heatmap into its own route and added a new Defense tab that ranks defenses by stats or fantasy points allowed to QB/RB/WR/TE, with team search, sortable Total/Per Game columns, and per-team weekly contribution details.
+- **Heatmap D/ST cleanup** - Heatmap defense mode now supports D/ST-only leagues, hides irrelevant all-position chips and no-value stat filters, and expands D/ST fantasy point drilldowns into line-by-line scoring.
+- **Companion Rankings filters** - Rankings now supports fantasy-team filtering, overall vs positional rank scopes, mobile sort controls, and stable ranks that are computed before search or roster filtering.
+- **Trade and Statistics handoff polish** - Statistics Build Trade now carries the target player's roster into Trade Agent when available, selected Trade Agent assets use cleaner player/pick metadata, and player stat section labels use readable accents in dark team themes.

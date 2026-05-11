@@ -1,6 +1,7 @@
 export const STATISTICS_MODES = {
   GAME: 'game',
   FANTASY: 'fantasy',
+  VISUAL: 'visual',
 };
 
 export function buildStatisticsPlayerMetaFromSleeperId(sleeperId, sleeperPlayers, espnIdOverrides = {}) {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSleeperBase, useSleeperStatsProgress } from '../../context/SleeperContext';
 import { useTheme } from '../../context/ThemeContext';
 import { DEFAULT_SCORING, calcPointsFromTotals } from '../../utils/scoringEngine';
@@ -14,7 +14,12 @@ import {
 import { getPlayerRowTeamTheme } from '../../utils/playerRowTheme';
 import { getPlayerAvailabilityStatus } from '../../utils/playerAvailabilityStatus.js';
 import PlayerStatusBadge, { PlayerStatusLogoCluster } from './PlayerStatusBadge.jsx';
-import { CompanionSearchField, CompanionSelectorButton, CompanionSelectorRail } from './CompanionSelectorControls.jsx';
+import {
+  CompanionFantasyTeamMenu,
+  CompanionSearchField,
+  CompanionSelectorButton,
+  CompanionSelectorRail,
+} from './CompanionSelectorControls.jsx';
 import CompanionPlayerRow, {
   CompanionPlayerLocalContrastText,
   CompanionPlayerMetric,
@@ -31,6 +36,11 @@ const GROUP_FILTERS = {
 const BASE_SORT_OPTIONS = [
   { id: 'season', label: 'Season Points' },
 ];
+const RANK_SCOPE_OPTIONS = [
+  { id: 'overall', label: 'Overall Ranking' },
+  { id: 'position', label: 'Positional Ranking' },
+];
+const ROSTER_PLAYER_FIELDS = ['players', 'reserve', 'taxi'];
 const ACTION_SORT_OPTIONS = [
   { id: 'pass_yd', label: 'Passing Yards', shortLabel: 'Pass Yds', positions: ['QB'] },
   { id: 'pass_td', label: 'Passing TDs', shortLabel: 'Pass TD', positions: ['QB'] },
@@ -116,6 +126,45 @@ function getPrimaryRouteFilter(selectedFilters, availablePositions) {
   return 'ALL';
 }
 
+function normalizeRosterId(rosterId) {
+  if (rosterId == null) return null;
+  const value = String(rosterId).trim();
+  return value || null;
+}
+
+function parseRosterFilter(rosterFilter) {
+  if (Array.isArray(rosterFilter)) {
+    return rosterFilter.map(normalizeRosterId).filter(Boolean);
+  }
+  if (typeof rosterFilter !== 'string') {
+    const normalized = normalizeRosterId(rosterFilter);
+    return normalized ? [normalized] : [];
+  }
+  return rosterFilter.split(',').map(normalizeRosterId).filter(Boolean);
+}
+
+function serializeRosterFilter(rosterIds) {
+  return rosterIds.length ? rosterIds.join(',') : null;
+}
+
+function getRosterPlayerIds(roster) {
+  const ids = new Set();
+  for (const field of ROSTER_PLAYER_FIELDS) {
+    for (const id of (roster?.[field] ?? [])) ids.add(String(id));
+  }
+  return ids;
+}
+
+function rankPlayersByPosition(players) {
+  const rankByPosition = new Map();
+  return players.map((player) => {
+    const rankPosition = normalizeLeaguePlayerPosition(player.position) ?? player.position ?? 'FLEX';
+    const nextRank = (rankByPosition.get(rankPosition) ?? 0) + 1;
+    rankByPosition.set(rankPosition, nextRank);
+    return { ...player, positionRank: nextRank };
+  });
+}
+
 function getActionSortOptionsForFilters(selectedFilters, availablePositions) {
   const expandedFilters = getExpandedPositionFilters(selectedFilters, availablePositions);
   if (!expandedFilters.length || expandedFilters.length === availablePositions.filter(pos => pos !== 'ALL').length) return ACTION_SORT_OPTIONS;
@@ -131,9 +180,16 @@ function isActionSortAvailableForPlayer(option, position) {
   return !option?.positions || option.positions.includes(position);
 }
 
+function getRecordedStatValue(stats, statKey) {
+  if (!stats || !Object.prototype.hasOwnProperty.call(stats, statKey)) return null;
+  const value = Number(stats[statKey]);
+  return Number.isFinite(value) ? value : null;
+}
+
 function getActionSortContribution(stats, scoringSettings, position, option) {
   if (!option || !isActionSortAvailableForPlayer(option, position)) return { points: null, raw: null };
-  const raw = Number(stats?.[option.id]) || 0;
+  const raw = getRecordedStatValue(stats, option.id);
+  if (raw == null) return { points: null, raw: null };
   const multiplier = Number(scoringSettings?.[option.scoringKey ?? option.id]) || 0;
   return { points: raw * multiplier, raw };
 }
@@ -200,14 +256,23 @@ function getRankingsGridTemplate({ hideAvgColumn, isCompactPhone, nameColPx }) {
   return `32px 44px ${nameCol} auto 64px 80px 12px`;
 }
 
-export default function CompanionRankings({ positionFilter = 'ALL', onPositionFilterChange, onViewPlayer = null }) {
+export default function CompanionRankings({
+  positionFilter = 'ALL',
+  rosterFilter = null,
+  onPositionFilterChange,
+  onRosterFilterChange,
+  onViewPlayer = null,
+}) {
   const {
     players, loadPlayers,
     seasonStats, loadSeasonStats,
     statsLoading,
     activeScoringSettings,
     rosters,
+    leagueUsers,
     league,
+    myRoster,
+    getUserDisplayName,
   } = useSleeperBase();
   const { darkMode } = useTheme();
   const isCompactPhone = useMediaQuery(COMPACT_PHONE_QUERY);
@@ -220,10 +285,56 @@ export default function CompanionRankings({ positionFilter = 'ALL', onPositionFi
   const [sortBy, setSortBy] = useState('season');
   const [sortDir, setSortDir] = useState('desc');
   const [sortValueMode, setSortValueMode] = useState('fantasy');
+  const [rankScope, setRankScope] = useState('overall');
+  const [selectedRosterIds, setSelectedRosterIds] = useState(() => parseRosterFilter(rosterFilter));
+  const [teamMenuOpen, setTeamMenuOpen] = useState(false);
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  const searchInputRef = useRef(null);
   const availablePositions = useMemo(
     () => getLeaguePositionFilters(league?.roster_positions),
     [league?.roster_positions],
   );
+  const myRosterData = myRoster();
+  const sortedRosters = useMemo(() => {
+    const myId = myRosterData?.roster_id;
+    return [...(rosters ?? [])].sort((a, b) => {
+      if (a.roster_id === myId) return -1;
+      if (b.roster_id === myId) return 1;
+      return getUserDisplayName(a.owner_id).localeCompare(getUserDisplayName(b.owner_id));
+    });
+  }, [rosters, myRosterData, getUserDisplayName]);
+  const rosterFilterOptions = useMemo(() => {
+    const userById = new Map((leagueUsers ?? []).map((user) => [user.user_id, user]));
+    return sortedRosters.map((roster) => {
+      const name = getUserDisplayName(roster.owner_id);
+      return {
+        id: normalizeRosterId(roster.roster_id),
+        name,
+        avatarHash: userById.get(roster.owner_id)?.avatar ?? null,
+        isMe: roster.roster_id === myRosterData?.roster_id,
+      };
+    });
+  }, [getUserDisplayName, leagueUsers, myRosterData?.roster_id, sortedRosters]);
+  const selectedRosterIdSet = useMemo(() => new Set(selectedRosterIds), [selectedRosterIds]);
+  const selectedRosterOptions = useMemo(
+    () => rosterFilterOptions.filter((roster) => selectedRosterIdSet.has(roster.id)),
+    [rosterFilterOptions, selectedRosterIdSet],
+  );
+  const rosterPlayerIdByRosterId = useMemo(() => {
+    const map = new Map();
+    for (const roster of (rosters ?? [])) {
+      map.set(normalizeRosterId(roster.roster_id), getRosterPlayerIds(roster));
+    }
+    return map;
+  }, [rosters]);
+  const selectedRosterPlayerIds = useMemo(() => {
+    if (!selectedRosterIds.length) return null;
+    const ids = new Set();
+    for (const rosterId of selectedRosterIds) {
+      for (const playerId of (rosterPlayerIdByRosterId.get(rosterId) ?? [])) ids.add(playerId);
+    }
+    return ids;
+  }, [rosterPlayerIdByRosterId, selectedRosterIds]);
   const filterChips = useMemo(() => buildRankingsFilterChips(availablePositions), [availablePositions]);
   const actionSortOptions = useMemo(
     () => getActionSortOptionsForFilters(selectedFilters, availablePositions)
@@ -237,10 +348,18 @@ export default function CompanionRankings({ positionFilter = 'ALL', onPositionFi
     setSelectedFilters([isValidLeaguePositionFilter(positionFilter, availablePositions) ? positionFilter : 'ALL']);
   }, [positionFilter, availablePositions]);
   useEffect(() => {
+    const nextRosterIds = parseRosterFilter(rosterFilter)
+      .filter((rosterId) => rosterPlayerIdByRosterId.has(rosterId));
+    setSelectedRosterIds(nextRosterIds);
+  }, [rosterFilter, rosterPlayerIdByRosterId]);
+  useEffect(() => {
     if (sortBy === 'season' || sortBy === 'avg') return;
     if (actionSortOptions.some(option => option.id === sortBy)) return;
     setSortBy('season');
   }, [actionSortOptions, sortBy]);
+  useEffect(() => {
+    if (mobileSearchOpen) searchInputRef.current?.focus?.();
+  }, [mobileSearchOpen]);
 
   useEffect(() => { loadPlayers(); }, [loadPlayers]);
   useEffect(() => {
@@ -257,8 +376,8 @@ export default function CompanionRankings({ positionFilter = 'ALL', onPositionFi
     return ids;
   }, [rosters]);
 
-  // Full sorted list with true ranks - search is NOT applied here so ranks are stable.
-  const allRanked = useMemo(() => {
+  // Full sorted list with true ranks - search and fantasy team filters are NOT applied here so ranks are stable.
+  const sortedPlayers = useMemo(() => {
     if (!players || !seasonStats) return [];
 
     return Object.entries(seasonStats)
@@ -268,12 +387,12 @@ export default function CompanionRankings({ positionFilter = 'ALL', onPositionFi
         const pos = p.position;
         const sortPosition = normalizeLeaguePlayerPosition(pos) ?? pos;
         if (!positionMatchesLeagueFilter(pos, 'ALL', { stats, availableFilters: availablePositions })) return null;
-        if (!selectedFiltersMatchPlayer(pos, stats, selectedFilters, availablePositions)) return null;
 
         const pts = calcPointsFromTotals(stats, activeScoringSettings, p.position);
         if (pts <= 0) return null;
 
         const sortContribution = getActionSortContribution(stats, activeScoringSettings, sortPosition, selectedSortOption);
+        if (sortBy !== 'season' && sortBy !== 'avg' && sortContribution.raw == null) return null;
 
         return {
           id,
@@ -282,6 +401,7 @@ export default function CompanionRankings({ positionFilter = 'ALL', onPositionFi
           team: p.team || 'FA',
           pts,
           avgPPG: stats?.gp ? pts / stats.gp : null,
+          stats,
           sortContribution,
           sortGames: Number(stats?.gp) || null,
           isRostered: rosteredIds.has(id),
@@ -303,18 +423,25 @@ export default function CompanionRankings({ positionFilter = 'ALL', onPositionFi
         comparison = b.pts - a.pts;
         return applySortDirection(comparison, sortDir);
       })
-      .slice(0, 100)
-      .map((player, i) => ({ ...player, rank: i + 1 }));
-  }, [players, seasonStats, activeScoringSettings, selectedFilters, availablePositions, rosteredIds, darkMode, sortBy, selectedSortOption, sortValueMode, sortDir]);
+      .map((player, i) => ({ ...player, overallRank: i + 1 }));
+  }, [players, seasonStats, activeScoringSettings, availablePositions, rosteredIds, darkMode, sortBy, selectedSortOption, sortValueMode, sortDir]);
 
-  // Apply search on top of the ranked list - rank numbers are preserved from above.
+  const allRanked = useMemo(() => rankPlayersByPosition(sortedPlayers), [sortedPlayers]);
+
+  // Apply position, fantasy team, and search filters on top of the ranked list - rank numbers are preserved from above.
   const ranked = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return allRanked;
-    return allRanked.filter(p =>
-      p.name.toLowerCase().includes(q) || p.team.toLowerCase().includes(q),
-    );
-  }, [allRanked, search]);
+    const filtered = allRanked.filter(p => {
+      if (!selectedFiltersMatchPlayer(p.position, p.stats, selectedFilters, availablePositions)) return false;
+      if (selectedRosterPlayerIds && !selectedRosterPlayerIds.has(String(p.id))) return false;
+      if (!q) return true;
+      return p.name.toLowerCase().includes(q) || p.team.toLowerCase().includes(q);
+    }).map(player => ({
+      ...player,
+      rank: rankScope === 'position' ? player.positionRank : player.overallRank,
+    }));
+    return selectedRosterIds.length || q ? filtered : filtered.slice(0, 100);
+  }, [allRanked, availablePositions, rankScope, search, selectedFilters, selectedRosterIds.length, selectedRosterPlayerIds]);
 
   const nameColPx = useMemo(() => measureMaxNameWidth(ranked), [ranked]);
   const hasLoadedStats = Boolean(seasonStats);
@@ -328,9 +455,10 @@ export default function CompanionRankings({ positionFilter = 'ALL', onPositionFi
       return calcPointsFromTotals(stats, activeScoringSettings, p.position) > 0;
     });
   }, [activeScoringSettings, availablePositions, players, seasonStats]);
-  const hasRankingsData = allRanked.length > 0;
+  const hasRankingsData = sortedPlayers.some((player) => selectedFiltersMatchPlayer(player.position, player.stats, selectedFilters, availablePositions));
   const showRankingsControls = !hasLoadedStats || hasAnyRankingsData || statsLoading;
   const showRankingsTable = hasAnyRankingsData;
+  const sortOptions = useMemo(() => [...BASE_SORT_OPTIONS, ...actionSortOptions], [actionSortOptions]);
 
   return (
     <div className="pb-6">
@@ -358,28 +486,89 @@ export default function CompanionRankings({ positionFilter = 'ALL', onPositionFi
             ))}
           </CompanionSelectorRail>
 
-          {/* Search */}
-          <CompanionSearchField
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Search players..."
-          />
+          {useMobilePreviewSheet ? (
+            <>
+              <RankingsMobileSortControls
+                value={sortBy}
+                options={sortOptions}
+                sortValueMode={sortValueMode}
+                valueModeDisabled={!isActionSort}
+                onSortChange={(nextSort) => {
+                  setSortBy(nextSort);
+                  setSortDir('desc');
+                }}
+                onSortValueModeChange={setSortValueMode}
+              />
+              <RankingsRankScopeToggle value={rankScope} onChange={setRankScope} />
+              <div className="flex min-w-0 items-center gap-2">
+                {rosterFilterOptions.length > 0 && (
+                  <CompanionFantasyTeamMenu
+                    open={teamMenuOpen}
+                    options={rosterFilterOptions}
+                    selectedIds={selectedRosterIds}
+                    selectedOptions={selectedRosterOptions}
+                    onOpenChange={setTeamMenuOpen}
+                    menuLabel="Fantasy team filter"
+                    className="flex-1"
+                    onChange={(nextRosterIds) => {
+                      setSelectedRosterIds(nextRosterIds);
+                      onRosterFilterChange?.(serializeRosterFilter(nextRosterIds));
+                    }}
+                  />
+                )}
+                <RankingsSearchIconButton
+                  active={mobileSearchOpen || Boolean(search.trim())}
+                  onClick={() => setMobileSearchOpen(current => !current)}
+                />
+              </div>
+            </>
+          ) : (
+            <div className="flex flex-wrap items-center gap-2">
+              <RankingsRankScopeToggle value={rankScope} onChange={setRankScope} />
+              {rosterFilterOptions.length > 0 && (
+                <CompanionFantasyTeamMenu
+                  open={teamMenuOpen}
+                  options={rosterFilterOptions}
+                  selectedIds={selectedRosterIds}
+                  selectedOptions={selectedRosterOptions}
+                  onOpenChange={setTeamMenuOpen}
+                  menuLabel="Fantasy team filter"
+                  onChange={(nextRosterIds) => {
+                    setSelectedRosterIds(nextRosterIds);
+                    onRosterFilterChange?.(serializeRosterFilter(nextRosterIds));
+                  }}
+                />
+              )}
+            </div>
+          )}
 
-          <div className="flex flex-col items-stretch gap-2 min-[481px]:flex-row">
-            <RankingsSortSelect
-              value={sortBy}
-              options={[...BASE_SORT_OPTIONS, ...actionSortOptions]}
-              onChange={(nextSort) => {
-                setSortBy(nextSort);
-                setSortDir('desc');
-              }}
+          {/* Search */}
+          {(!useMobilePreviewSheet || mobileSearchOpen || search.trim()) && (
+            <CompanionSearchField
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search players..."
+              inputProps={{ ref: searchInputRef }}
             />
-            <RankingsSortValueToggle
-              value={sortValueMode}
-              disabled={!isActionSort}
-              onChange={setSortValueMode}
-            />
-          </div>
+          )}
+
+          {!useMobilePreviewSheet && (
+            <div className="flex flex-col items-stretch gap-2 min-[481px]:flex-row">
+              <RankingsSortSelect
+                value={sortBy}
+                options={sortOptions}
+                onChange={(nextSort) => {
+                  setSortBy(nextSort);
+                  setSortDir('desc');
+                }}
+              />
+              <RankingsSortValueToggle
+                value={sortValueMode}
+                disabled={!isActionSort}
+                onChange={setSortValueMode}
+              />
+            </div>
+          )}
         </div>
       )}
 
@@ -498,6 +687,82 @@ function RankingsStatsLoadingBanner() {
   );
 }
 
+function RankingsSearchIconButton({ active, onClick }) {
+  return (
+    <button
+      type="button"
+      aria-label="Search players"
+      aria-pressed={active}
+      onClick={onClick}
+      className="grid h-[42px] w-[42px] shrink-0 place-items-center rounded-xl transition-colors active:opacity-70 lg:hidden"
+      style={{
+        background: active ? 'var(--color-signature)' : 'var(--color-fill)',
+        border: '1px solid var(--color-separator)',
+        color: active ? 'var(--color-signature-fg)' : 'var(--color-label-secondary)',
+      }}
+    >
+      <svg
+        aria-hidden="true"
+        className="h-5 w-5"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <circle cx="11" cy="11" r="7" />
+        <path d="m20 20-3.5-3.5" />
+      </svg>
+    </button>
+  );
+}
+
+function RankingsMobileSortControls({
+  value,
+  options,
+  sortValueMode,
+  valueModeDisabled,
+  onSortChange,
+  onSortValueModeChange,
+}) {
+  const valueModeOptions = [
+    { id: 'fantasy', label: 'Fantasy Value' },
+    { id: 'raw', label: 'Game Stats' },
+  ];
+
+  return (
+    <>
+      <CompanionSelectorRail ariaLabel="Rankings sort options" wrapOnDesktop={false}>
+        {options.map(option => (
+          <CompanionSelectorButton
+            key={option.id}
+            active={option.id === value}
+            onClick={() => onSortChange(option.id)}
+          >
+            {option.shortLabel ?? (option.id === 'season' ? 'Season' : option.label)}
+          </CompanionSelectorButton>
+        ))}
+      </CompanionSelectorRail>
+
+      <CompanionSelectorRail ariaLabel="Rankings sort value mode" wrapOnDesktop={false}>
+        {valueModeOptions.map(option => (
+          <CompanionSelectorButton
+            key={option.id}
+            active={!valueModeDisabled && option.id === sortValueMode}
+            disabled={valueModeDisabled}
+            onClick={() => {
+              if (!valueModeDisabled) onSortValueModeChange(option.id);
+            }}
+          >
+            {option.label}
+          </CompanionSelectorButton>
+        ))}
+      </CompanionSelectorRail>
+    </>
+  );
+}
+
 function RankingsSortSelect({ value, options, onChange }) {
   const activeLabel = options.find(option => option.id === value)?.label ?? 'Season Points';
   const [open, setOpen] = useState(false);
@@ -591,6 +856,35 @@ function RankingsSortSelect({ value, options, onChange }) {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+function RankingsRankScopeToggle({ value, onChange }) {
+  return (
+    <div
+      className="flex shrink-0 items-center gap-1"
+      role="group"
+      aria-label="Choose ranking scope"
+    >
+      {RANK_SCOPE_OPTIONS.map(option => {
+        const active = option.id === value;
+        return (
+          <button
+            key={option.id}
+            type="button"
+            onClick={() => onChange(option.id)}
+            aria-pressed={active}
+            className="companion-selector-button companion-selector-button--sm companion-selector-button--option min-w-[76px] justify-center"
+            style={{
+              background: active ? 'var(--color-signature)' : undefined,
+              color: active ? 'var(--color-signature-fg)' : undefined,
+            }}
+          >
+            {option.label}
+          </button>
+        );
+      })}
     </div>
   );
 }

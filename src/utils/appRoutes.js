@@ -14,14 +14,13 @@ function getDefaultActiveTab() {
 }
 
 const PREDICTIONS_VIEWS = new Set(['predictions', 'standings', 'playoffs']);
-const COMPANION_VIEWS = new Set(['roster', 'rankings', 'matchup', 'waiver', 'league', 'defense', 'scoring']);
+const COMPANION_VIEWS = new Set(['roster', 'rankings', 'matchup', 'waiver', 'league', 'heatmap', 'defense', 'scoring']);
 const TRADE_VIEWS = new Set(['agent', 'intelligence', 'upgrade']);
 const STATISTICS_VIEWS = new Set(['browser', 'team', 'player']);
-const STATISTICS_MODES = new Set(['game', 'fantasy']);
+const STATISTICS_MODES = new Set(['game', 'fantasy', 'visual']);
 const SCOUT_VIEWS = new Set(['prospects', 'picks', 'results']);
 
 function normalizeCompanionView(view) {
-  if (view === 'heatmap') return 'defense';
   return COMPANION_VIEWS.has(view) ? view : DEFAULT_ROUTE.companionView;
 }
 
@@ -38,6 +37,7 @@ const DEFAULT_ROUTE = {
   statisticsMode: 'game',
   companionView: 'roster',
   rankingsPosition: null,
+  rankingsRosterId: null,
   waiverPosition: null,
   matchupWeek: null,
   matchupPlayerId: null,
@@ -55,6 +55,12 @@ const DEFAULT_ROUTE = {
   heatmapTeamSort: null,
   heatmapUseTeamColors: null,
   heatmapVegasView: null,
+  defenseMode: null,
+  defensePosition: null,
+  defenseStat: null,
+  defenseSort: null,
+  defenseDir: null,
+  defenseQuery: null,
   tradeView: 'agent',
   tradePlayerId: null,
   tradeSide: null,
@@ -210,6 +216,7 @@ export function normalizeAppRoute(route = {}) {
 
     if (companionView === 'rankings') {
       normalized.rankingsPosition = normalizePosition(route.rankingsPosition);
+      normalized.rankingsRosterId = normalizePlayerId(route.rankingsRosterId);
     }
 
     if (companionView === 'waiver') {
@@ -226,7 +233,7 @@ export function normalizeAppRoute(route = {}) {
       normalized.leagueRosterId = normalizePlayerId(route.leagueRosterId);
     }
 
-    if (companionView === 'defense') {
+    if (companionView === 'heatmap') {
       normalized.heatmapViewMode = normalizeLowerToken(route.heatmapViewMode, new Set(['offense', 'defense']), 'offense');
       normalized.heatmapPosition = normalizePosition(route.heatmapPosition);
       normalized.heatmapDefensePosition = normalizePosition(route.heatmapDefensePosition);
@@ -239,6 +246,30 @@ export function normalizeAppRoute(route = {}) {
       normalized.heatmapTeamSort = normalizeLowerToken(route.heatmapTeamSort, new Set(['alpha', 'conf', 'division']), 'alpha');
       normalized.heatmapUseTeamColors = normalizeBooleanFlag(route.heatmapUseTeamColors) ?? '0';
       normalized.heatmapVegasView = normalizeLowerToken(route.heatmapVegasView, new Set(['spread', 'ou']), 'spread');
+    }
+
+    if (companionView === 'defense') {
+      const defensePosition = normalizePosition(route.defensePosition) ?? 'QB';
+      const defenseStatsByPosition = {
+        QB: new Set(['pass_yd', 'pass_td', 'rush_yd', 'rush_td']),
+        RB: new Set(['rush_att', 'rush_yd', 'rush_td', 'rec', 'rec_yd', 'rec_td']),
+        WR: new Set(['rec', 'rec_yd', 'rec_td', 'rush_yd', 'rush_td']),
+        TE: new Set(['rec', 'rec_yd', 'rec_td', 'rush_yd', 'rush_td']),
+      };
+      const normalizedDefensePosition = ['QB', 'RB', 'WR', 'TE'].includes(defensePosition) ? defensePosition : 'QB';
+      const defaultDefenseStatByPosition = {
+        QB: 'pass_yd',
+        RB: 'rush_att',
+        WR: 'rec',
+        TE: 'rec',
+      };
+      const defaultDefenseStat = defaultDefenseStatByPosition[normalizedDefensePosition] ?? 'pass_yd';
+      normalized.defenseMode = normalizeLowerToken(route.defenseMode, new Set(['stats', 'fantasy']), 'stats');
+      normalized.defensePosition = normalizedDefensePosition;
+      normalized.defenseStat = normalizeLowerToken(route.defenseStat, defenseStatsByPosition[normalizedDefensePosition], defaultDefenseStat);
+      normalized.defenseSort = normalizeLowerToken(route.defenseSort, new Set(['total', 'avg', 'team']), 'total');
+      normalized.defenseDir = normalizeLowerToken(route.defenseDir, new Set(['asc', 'desc']), 'desc');
+      normalized.defenseQuery = typeof route.defenseQuery === 'string' ? route.defenseQuery.trim() || null : null;
     }
 
     return normalized;
@@ -305,6 +336,7 @@ export function parseAppRoute(pathname = '/', search = '') {
         activeTab: 'companion',
         companionView: subview,
         rankingsPosition: parseQueryValue(searchParams, 'pos'),
+        rankingsRosterId: parseQueryValue(searchParams, 'team'),
         waiverPosition: parseQueryValue(searchParams, 'position'),
         matchupWeek: parseQueryValue(searchParams, 'week'),
         matchupPlayerId: parseQueryValue(searchParams, 'player'),
@@ -322,6 +354,12 @@ export function parseAppRoute(pathname = '/', search = '') {
         heatmapTeamSort: parseQueryValue(searchParams, 'teams'),
         heatmapUseTeamColors: parseQueryValue(searchParams, 'colors'),
         heatmapVegasView: parseQueryValue(searchParams, 'odds'),
+        defenseMode: parseQueryValue(searchParams, 'mode'),
+        defensePosition: parseQueryValue(searchParams, 'pos'),
+        defenseStat: parseQueryValue(searchParams, 'stat'),
+        defenseSort: parseQueryValue(searchParams, 'sort'),
+        defenseDir: parseQueryValue(searchParams, 'dir'),
+        defenseQuery: parseQueryValue(searchParams, 'q'),
       });
     case 'trade':
       return normalizeAppRoute({
@@ -366,10 +404,11 @@ export function buildAppPath(route) {
       }
       return '/statistics';
     case 'companion': {
-      const basePath = `/companion/${normalized.companionView === 'defense' ? 'heatmap' : normalized.companionView}`;
+      const basePath = `/companion/${normalized.companionView}`;
       if (normalized.companionView === 'rankings') {
         return `${basePath}${buildQueryString([
           ['pos', normalized.rankingsPosition],
+          ['team', normalized.rankingsRosterId],
         ])}`;
       }
       if (normalized.companionView === 'waiver') {
@@ -389,7 +428,7 @@ export function buildAppPath(route) {
           ['team', normalized.leagueRosterId],
         ])}`;
       }
-      if (normalized.companionView === 'defense') {
+      if (normalized.companionView === 'heatmap') {
         return `${basePath}${buildQueryString([
           ['mode', normalized.heatmapViewMode !== 'offense' ? normalized.heatmapViewMode : null],
           ['pos', normalized.heatmapPosition],
@@ -403,6 +442,23 @@ export function buildAppPath(route) {
           ['teams', normalized.heatmapTeamSort !== 'alpha' ? normalized.heatmapTeamSort : null],
           ['colors', normalized.heatmapUseTeamColors !== '0' ? normalized.heatmapUseTeamColors : null],
           ['odds', normalized.heatmapVegasView !== 'spread' ? normalized.heatmapVegasView : null],
+        ])}`;
+      }
+      if (normalized.companionView === 'defense') {
+        const defaultDefenseStatByPosition = {
+          QB: 'pass_yd',
+          RB: 'rush_att',
+          WR: 'rec',
+          TE: 'rec',
+        };
+        const defaultDefenseStat = defaultDefenseStatByPosition[normalized.defensePosition] ?? 'pass_yd';
+        return `${basePath}${buildQueryString([
+          ['mode', normalized.defenseMode !== 'stats' ? normalized.defenseMode : null],
+          ['pos', normalized.defensePosition !== 'QB' ? normalized.defensePosition : null],
+          ['stat', normalized.defenseStat !== defaultDefenseStat ? normalized.defenseStat : null],
+          ['sort', normalized.defenseSort !== 'total' ? normalized.defenseSort : null],
+          ['dir', normalized.defenseDir !== 'desc' ? normalized.defenseDir : null],
+          ['q', normalized.defenseQuery],
         ])}`;
       }
       return basePath;
@@ -442,6 +498,7 @@ export function isSameAppRoute(a, b) {
     && left.statisticsMode === right.statisticsMode
     && left.companionView === right.companionView
     && left.rankingsPosition === right.rankingsPosition
+    && left.rankingsRosterId === right.rankingsRosterId
     && left.waiverPosition === right.waiverPosition
     && left.matchupWeek === right.matchupWeek
     && left.matchupPlayerId === right.matchupPlayerId
@@ -459,6 +516,12 @@ export function isSameAppRoute(a, b) {
     && left.heatmapTeamSort === right.heatmapTeamSort
     && left.heatmapUseTeamColors === right.heatmapUseTeamColors
     && left.heatmapVegasView === right.heatmapVegasView
+    && left.defenseMode === right.defenseMode
+    && left.defensePosition === right.defensePosition
+    && left.defenseStat === right.defenseStat
+    && left.defenseSort === right.defenseSort
+    && left.defenseDir === right.defenseDir
+    && left.defenseQuery === right.defenseQuery
     && left.tradeView === right.tradeView
     && left.tradePlayerId === right.tradePlayerId
     && left.tradeSide === right.tradeSide

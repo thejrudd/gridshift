@@ -11,7 +11,7 @@ import HorizontalScrollCue from '../HorizontalScrollCue.jsx';
 import useHorizontalScrollCue from '../../hooks/useHorizontalScrollCue.js';
 import PlayerStatusBadge, { PlayerStatusLogoCluster } from './PlayerStatusBadge.jsx';
 import { getPlayerAvailabilityStatus } from '../../utils/playerAvailabilityStatus.js';
-import { CompanionSelectorButton } from './CompanionSelectorControls.jsx';
+import { CompanionFantasyTeamMenu, CompanionSelectorButton } from './CompanionSelectorControls.jsx';
 import { POSITION_COLORS } from '../../utils/companionAssetVisuals.js';
 import CompanionPlayerRow, { CompanionPlayerAction, CompanionPlayerMetric } from './CompanionPlayerRow.jsx';
 
@@ -236,10 +236,12 @@ function LeagueRosterView({ onTradePlayer, onViewPlayer = null, selectedRosterId
   const { darkMode } = useTheme();
   const isCompactPhone = useMediaQuery(COMPACT_PHONE_QUERY);
   const useMobilePreviewSheet = useMediaQuery(MOBILE_SHEET_QUERY);
+  const useMobileTeamMenu = useMobilePreviewSheet;
 
   const myRosterData = useMemo(() => myRoster(), [myRoster]);
   const [selectedRosterId, setSelectedRosterId] = useState(null);
   const [selectedPlayerId, setSelectedPlayerId] = useState(null);
+  const [teamMenuOpen, setTeamMenuOpen] = useState(false);
 
   // Default to my own roster once it's available
   useEffect(() => {
@@ -330,49 +332,84 @@ function LeagueRosterView({ onTradePlayer, onViewPlayer = null, selectedRosterId
       return getUserDisplayName(a.owner_id).localeCompare(getUserDisplayName(b.owner_id));
     });
   }, [rosters, myRosterData, getUserDisplayName]);
+  const rosterFilterOptions = useMemo(() => {
+    const userById = new Map((leagueUsers ?? []).map((user) => [user.user_id, user]));
+    return sortedRosters.map((roster) => {
+      const name = getUserDisplayName(roster.owner_id);
+      return {
+        id: String(roster.roster_id),
+        name,
+        avatarHash: userById.get(roster.owner_id)?.avatar ?? null,
+        isMe: roster.roster_id === myRosterData?.roster_id,
+      };
+    });
+  }, [getUserDisplayName, leagueUsers, myRosterData?.roster_id, sortedRosters]);
+  const selectedRosterOption = useMemo(
+    () => rosterFilterOptions.find((roster) => Number(roster.id) === selectedRosterId) ?? null,
+    [rosterFilterOptions, selectedRosterId],
+  );
   const ownerRailRef = useRef(null);
   const ownerRailCue = useHorizontalScrollCue(ownerRailRef, [sortedRosters.length, selectedRosterId]);
 
   return (
     <>
       {/* Owner selector */}
-      <div className="companion-owner-selector-shell relative">
-        <div ref={ownerRailRef} className="px-3 sm:px-4 pb-3 overflow-x-auto scrollbar-hide" style={{ WebkitOverflowScrolling: 'touch' }}>
-          <div className="flex gap-2" style={{ width: 'max-content' }}>
-            {sortedRosters.map(roster => {
-              const isSelected = roster.roster_id === selectedRosterId;
-              const isMe = roster.roster_id === myRosterData?.roster_id;
-              const name = getUserDisplayName(roster.owner_id);
-              const user = leagueUsers.find(u => u.user_id === roster.owner_id);
-              const avatarHash = user?.avatar;
-              return (
-                <CompanionSelectorButton
-                  key={roster.roster_id}
-                  onClick={() => setSelectedRosterId(roster.roster_id)}
-                  active={isSelected}
-                  className="gap-1.5"
-                >
-                  {avatarHash ? (
-                    <img
-                      src={`https://sleepercdn.com/avatars/thumbs/${avatarHash}`}
-                      alt={name}
-                      className="w-5 h-5 rounded-full shrink-0 object-cover"
-                      onError={e => { e.target.style.display = 'none'; }}
-                    />
-                  ) : (
-                    <div className="w-5 h-5 rounded-full shrink-0 flex items-center justify-center"
-                      style={{ background: 'var(--color-fill-secondary)', fontSize: '9px', fontWeight: 700, color: 'var(--color-label-secondary)' }}>
-                      {name[0]?.toUpperCase()}
-                    </div>
-                  )}
-                  <span className="text-xs whitespace-nowrap">{name}{isMe ? ' (Me)' : ''}</span>
-                </CompanionSelectorButton>
-              );
-            })}
-          </div>
+      {useMobileTeamMenu ? (
+        <div className="px-4 pb-3">
+          <CompanionFantasyTeamMenu
+            open={teamMenuOpen}
+            options={rosterFilterOptions}
+            selectedIds={selectedRosterId == null ? [] : [String(selectedRosterId)]}
+            selectedOptions={selectedRosterOption ? [selectedRosterOption] : []}
+            onOpenChange={setTeamMenuOpen}
+            onChange={(nextRosterIds) => {
+              const nextRosterId = Number(nextRosterIds[0]);
+              if (Number.isFinite(nextRosterId)) setSelectedRosterId(nextRosterId);
+            }}
+            mode="single"
+            includeAll={false}
+            menuLabel="League roster selector"
+          />
         </div>
-        <HorizontalScrollCue left={ownerRailCue.left} right={ownerRailCue.right} />
-      </div>
+      ) : (
+        <div className="companion-owner-selector-shell relative">
+          <div ref={ownerRailRef} className="px-3 sm:px-4 pb-3 overflow-x-auto scrollbar-hide" style={{ WebkitOverflowScrolling: 'touch' }}>
+            <div className="flex gap-2" style={{ width: 'max-content' }}>
+              {sortedRosters.map(roster => {
+                const isSelected = roster.roster_id === selectedRosterId;
+                const isMe = roster.roster_id === myRosterData?.roster_id;
+                const name = getUserDisplayName(roster.owner_id);
+                const user = leagueUsers.find(u => u.user_id === roster.owner_id);
+                const avatarHash = user?.avatar;
+                return (
+                  <CompanionSelectorButton
+                    key={roster.roster_id}
+                    onClick={() => setSelectedRosterId(roster.roster_id)}
+                    active={isSelected}
+                    className="gap-1.5"
+                  >
+                    {avatarHash ? (
+                      <img
+                        src={`https://sleepercdn.com/avatars/thumbs/${avatarHash}`}
+                        alt={name}
+                        className="w-5 h-5 rounded-full shrink-0 object-cover"
+                        onError={e => { e.target.style.display = 'none'; }}
+                      />
+                    ) : (
+                      <div className="w-5 h-5 rounded-full shrink-0 flex items-center justify-center"
+                        style={{ background: 'var(--color-fill-secondary)', fontSize: '9px', fontWeight: 700, color: 'var(--color-label-secondary)' }}>
+                        {name[0]?.toUpperCase()}
+                      </div>
+                    )}
+                    <span className="text-xs whitespace-nowrap">{name}{isMe ? ' (Me)' : ''}</span>
+                  </CompanionSelectorButton>
+                );
+              })}
+            </div>
+          </div>
+          <HorizontalScrollCue left={ownerRailCue.left} right={ownerRailCue.right} />
+        </div>
+      )}
 
       {/* Stats loading banner */}
       {statsLoading && <LeagueStatsLoadingBanner />}

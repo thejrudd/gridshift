@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { Suspense, lazy, useState, useEffect } from 'react';
 import { fetchPlayerStats, fetchPlayerCareerStats, fetchGameLog, fetchPlayerBio, headshot, CURRENT_SEASON } from '../utils/playerApi';
 import { getAllWeeklyStats, getLeague as getSleeperLeague, getPlayerSeasonStats } from '../api/sleeperApi';
 import { buildStatMap, getCareerHighlights } from '../utils/playerMetrics';
@@ -19,10 +19,12 @@ import {
 } from '../utils/companionAssetVisuals.js';
 
 const YEARS_TO_SHOW = 10;
+const PlayerStatsVisual = lazy(() => import('./PlayerStatsVisual'));
 
 const MODE_OPTIONS = [
   { id: STATISTICS_MODES.GAME, label: 'Game Stats' },
   { id: STATISTICS_MODES.FANTASY, label: 'Fantasy Values' },
+  { id: STATISTICS_MODES.VISUAL, label: 'Visual' },
 ];
 
 function normalizeLeagueId(id) {
@@ -102,11 +104,20 @@ function getStatusTone(status) {
   return 'warning';
 }
 
+function rosterHasSleeperPlayer(roster, sleeperId) {
+  if (!roster || !sleeperId) return false;
+  const normalizedId = String(sleeperId);
+  return ['players', 'reserve', 'taxi'].some((field) => (
+    (roster[field] ?? []).some((playerId) => String(playerId) === normalizedId)
+  ));
+}
+
 const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_MODES.GAME, leagueSeason = CURRENT_SEASON, onModeChange, onBack, backLabel, onCompare, onBuildTrade }) => {
   const { getTeamRecord } = usePredictions();
   const {
     hasLeague,
     myRoster,
+    rosters,
     activeScoringSettings,
     league,
     leagues,
@@ -160,6 +171,7 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_
   const hasTeamGradient = Boolean(teamTheme?.gradient);
   const heroBg = hasTeamGradient ? teamTheme.gradient : 'var(--color-bg-secondary)';
   const heroAccent = teamTheme?.borderColor ?? getCompanionPositionColor(playerMeta.position) ?? 'var(--color-accent)';
+  const statsTextAccent = teamTheme?.accentColor ?? heroAccent;
   const heroOnBg = hasTeamGradient ? teamTheme.gradientForeground : 'var(--color-label)';
   const heroOnBgMuted = hasTeamGradient ? teamTheme.gradientMuted : 'var(--color-label-secondary)';
   const heroSubtle = hasTeamGradient ? teamTheme.gradientSubtle : 'var(--color-fill-secondary)';
@@ -228,9 +240,15 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_
       && activeExpandedYear !== 'career'
       && fantasyScoringByYear[String(activeExpandedYear)]
   );
-  const rosterPlayerIds = myRoster()?.players ?? [];
-  const rosterReserveIds = myRoster()?.reserve ?? [];
-  const isOnMyRoster = sleeperId ? [...rosterPlayerIds, ...rosterReserveIds].includes(sleeperId) : false;
+  const myRosterData = myRoster();
+  const isOnMyRoster = rosterHasSleeperPlayer(myRosterData, sleeperId);
+  const playerOwnerRosterId = sleeperId && !isOnMyRoster
+    ? (rosters ?? []).find((roster) => rosterHasSleeperPlayer(roster, sleeperId))?.roster_id ?? null
+    : null;
+  const tradePartnerRosterId = playerOwnerRosterId != null
+    && String(playerOwnerRosterId) !== String(myRosterData?.roster_id ?? '')
+    ? playerOwnerRosterId
+    : null;
 
   useEffect(() => {
     let cancelled = false;
@@ -420,7 +438,10 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_
 
   const isRookie = playerMeta.experience === 0;
   const rookieLabel = isRookie ? 'Rookie Season' : `Active Since ${firstSeason}`;
-  const activeMode = canUseFantasyForActiveYear ? mode : STATISTICS_MODES.GAME;
+  const canUseVisualForActiveYear = Boolean(hasLeague && sleeperId && activeExpandedYear !== 'career');
+  const activeMode = mode === STATISTICS_MODES.VISUAL
+    ? (canUseVisualForActiveYear ? STATISTICS_MODES.VISUAL : STATISTICS_MODES.GAME)
+    : (canUseFantasyForActiveYear ? mode : STATISTICS_MODES.GAME);
   const heroMetaSegments = [
     playerMeta.positionName || playerMeta.position,
     team?.name,
@@ -611,7 +632,11 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_
                   {onBuildTrade && hasLeague && sleeperId && (
                     <button
                       type="button"
-                      onClick={() => onBuildTrade({ sleeperId, side: isOnMyRoster ? 'give' : 'get' })}
+                      onClick={() => onBuildTrade({
+                        sleeperId,
+                        side: isOnMyRoster ? 'give' : 'get',
+                        partnerRosterId: isOnMyRoster ? undefined : tradePartnerRosterId ?? undefined,
+                      })}
                       className="statistics-player-hero__action statistics-player-hero__action--signature group"
                     >
                       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -631,34 +656,38 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_
       </div>
 
       <div
-        className="flex flex-wrap items-center justify-between gap-3 rounded-xl px-3 py-3"
+        className="flex flex-col items-stretch justify-between gap-3 rounded-xl px-3 py-3 sm:flex-row sm:items-center"
         style={{
           background: 'var(--color-bg-secondary)',
           border: '1px solid var(--color-separator)',
           opacity: hasLeague ? 1 : 0.72,
         }}
       >
-        <div>
-          <div className="text-[10px] font-bold uppercase tracking-[0.18em]" style={{ color: 'var(--color-label-tertiary)' }}>
-            Stat Mode
+          <div className="min-w-0 sm:flex-1">
+            <div className="text-[10px] font-bold uppercase tracking-[0.18em]" style={{ color: 'var(--color-label-tertiary)' }}>
+              {activeMode === STATISTICS_MODES.VISUAL ? 'Weekly Visual' : 'Stat Mode'}
+            </div>
+            <div className="text-xs mt-0.5" style={{ color: 'var(--color-label-secondary)' }}>
+              {activeMode === STATISTICS_MODES.VISUAL
+                ? 'Compare weekly output with opponent averages allowed to the same position.'
+                : hasLeague
+                  ? (canUseFantasyForActiveYear ? "Using the expanded season's linked league scoring." : 'Fantasy Values are available for seasons with linked league scoring.')
+                  : 'Connect a Sleeper league to unlock Fantasy Values.'}
+            </div>
           </div>
-          <div className="text-xs mt-0.5" style={{ color: 'var(--color-label-secondary)' }}>
-            {hasLeague
-              ? (canUseFantasyForActiveYear ? "Using the expanded season's linked league scoring." : 'Fantasy Values are available for seasons with linked league scoring.')
-              : 'Connect a Sleeper league to unlock Fantasy Values.'}
-          </div>
-        </div>
-        <div className="grid grid-cols-2 rounded-lg p-1 min-w-0 flex-1 sm:flex-initial sm:min-w-[280px]" style={{ background: 'var(--color-fill)' }}>
+        <div className="grid w-full min-w-0 grid-cols-3 rounded-lg p-1 sm:w-auto sm:flex-initial sm:min-w-[360px]" style={{ background: 'var(--color-fill)' }}>
           {MODE_OPTIONS.map((option) => {
             const selected = activeMode === option.id;
-            const disabled = option.id === STATISTICS_MODES.FANTASY && !canUseFantasyForActiveYear;
+            const disabled =
+              (option.id === STATISTICS_MODES.FANTASY && !canUseFantasyForActiveYear)
+              || (option.id === STATISTICS_MODES.VISUAL && !canUseVisualForActiveYear);
             return (
               <button
                 key={option.id}
                 type="button"
                 onClick={() => { if (!disabled) onModeChange?.(option.id); }}
                 disabled={disabled}
-                className="px-2 py-1.5 text-xs font-bold transition-colors disabled:cursor-not-allowed"
+                className="min-h-11 px-2 py-1.5 text-xs font-bold leading-tight transition-colors disabled:cursor-not-allowed sm:min-h-0"
                 style={{
                   color: selected ? 'var(--color-signature-fg)' : 'var(--color-label-secondary)',
                   background: selected ? 'var(--color-signature)' : 'transparent',
@@ -666,7 +695,7 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_
                   opacity: disabled ? 0.45 : 1,
                 }}
                 aria-pressed={selected}
-                title={disabled ? 'Fantasy Values are only available for linked league seasons.' : undefined}
+                title={disabled ? 'This mode is available for linked league seasons.' : undefined}
               >
                 {option.label}
               </button>
@@ -677,7 +706,18 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_
 
       {/* Stats accordion */}
       <div className="space-y-2">
-        {isRookie ? (
+        {activeMode === STATISTICS_MODES.VISUAL ? (
+          <Suspense fallback={<div className="rounded-xl p-5 text-sm" style={{ background: 'var(--color-bg-secondary)', border: '1px solid var(--color-separator)', color: 'var(--color-label-secondary)' }}>Loading visual chart...</div>}>
+            <PlayerStatsVisual
+              sleeperId={sleeperId}
+              position={playerMeta.position}
+              playerTeam={playerMeta.teamId ?? teamId}
+              initialSeason={String(activeStatsSeason)}
+              seasonOptions={years.map((year) => String(year))}
+              fantasyScoringByYear={fantasyScoringByYear}
+            />
+          </Suspense>
+        ) : isRookie ? (
           <RookieSeasonPlaceholder
             honorsByYear={honorsByYear}
             accentColor={heroAccent ?? heroBg}
@@ -713,6 +753,7 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_
                   gameLogLoading={!!loadingGameLog[year]}
                   honors={honorsByYear[yearKey] ?? []}
                   accentColor={heroAccent ?? heroBg}
+                  textAccentColor={statsTextAccent}
                   displayMode={activeMode}
                   fantasySeason={year}
                   fantasyAvailable={hasFantasyScoring}
@@ -733,6 +774,7 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_
               loading={careerLoading}
               error={careerError}
               accentColor={heroAccent ?? heroBg}
+              textAccentColor={statsTextAccent}
               displayMode={activeMode}
               fantasySeason={activeStatsSeason}
               fantasyAvailable={false}

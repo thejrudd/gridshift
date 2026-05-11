@@ -87,19 +87,19 @@ npm run validate:routing
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) |
 
-## What's New in v7.3.2
+## What's New in v7.4
 
-- **Companion Statistics drilldowns** - Player pages opened from Companion now start on the selected Sleeper league year instead of the app's default stats season.
-- **Fantasy Values alignment** - Fantasy Values use the matching league season and scoring settings, so 2025 values remain available while 2026 correctly shows no stats until the season has data.
-- **Historical game logs restored** - Weekly rows continue to use ESPN game logs, preserving Team, Opponent, Result, Game Stats, and Fantasy Values after switching Companion league years.
-- **Canonical player routes** - Companion and direct Statistics links now resolve player pages through the same ESPN profile path, and search includes free agents and recent retirees with ESPN ids.
-- **Preseason Companion states** - Matchup, Rankings, and Waiver now explain unavailable schedule or stat data instead of showing misleading empty controls.
+- **Statistics Visual** - Player pages now include a Visual mode that charts weekly stat production against matchup context, with raw and fantasy-value views.
+- **Companion Defense** - A new Defense tab ranks NFL defenses by season-to-date stats or fantasy points allowed to QB/RB/WR/TE, with team search, sortable totals, per-game views, and weekly contribution details.
+- **Heatmap D/ST support** - The Heatmap defense phase now handles D/ST-only leagues, hides irrelevant stat filters, and shows detailed D/ST fantasy scoring breakdowns.
+- **Rankings filters** - Companion Rankings can filter by fantasy team and switch between overall and positional rank scopes.
+- **Trade handoff polish** - Statistics Build Trade now selects the target player's fantasy roster when available, and Trade Agent selected assets use cleaner metadata labels.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Roadmap
 
-- **v7.4 - Scout Rookie Projection Layer** - Add next-season rookie projections that work for standard and IDP-focused draft prep without overloading the current Scout board.
+- **v7.5 - Scout Rookie Projection Layer** - Add next-season rookie projections that work for standard and IDP-focused draft prep without overloading the current Scout board.
 - **Trade follow-through** - Continue polishing Trade drilldowns, remaining explanation copy, and proposal-card readability after the v7.3 module split.
 - **v8.0 - ESPN League Integration** - Planned major integration track.
 - **v9.0 - Live Fantasy Scoring** - Planned live scoring track.
@@ -122,7 +122,8 @@ src/
 │   │   ├── CompanionConnect.jsx   # Sleeper connect + league selection flow
 │   │   ├── CompanionRoster.jsx    # Roster view with season ranks and avg PPG
 │   │   ├── CompanionMatchup.jsx   # Weekly matchup: head-to-head, projections, breakdowns
-│   │   ├── CompanionDefense.jsx   # Heatmap: pts allowed/scored per team/week with drilldowns
+│   │   ├── CompanionHeatmap.jsx   # Heatmap: pts allowed/scored per team/week with drilldowns
+│   │   ├── CompanionDefense.jsx   # Defense rankings by stats/fantasy points allowed
 │   │   ├── CompanionWaiver.jsx    # Waiver wire view
 │   │   ├── CompanionScoring.jsx   # Scoring settings viewer (synced from league)
 │   │   └── PlayerMatchupBreakdown.jsx  # Per-player stat → fantasy point breakdown modal
