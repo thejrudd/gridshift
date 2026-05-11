@@ -105,6 +105,7 @@ const PlayerBrowser = ({
   statsView = 'browser',
   selectedTeamId = null,
   selectedPlayerId = null,
+  selectedPlayerMeta = null,
   selectedPlayerMode = 'game',
   leagueSeason = null,
   navBack,
@@ -116,7 +117,9 @@ const PlayerBrowser = ({
   onBuildTrade,
 }) => {
   const { loadPlayers, espnIdOverrides } = useSleeperStats();
-  const [resolvedPlayer, setResolvedPlayer] = useState(null);
+  const [resolvedPlayer, setResolvedPlayer] = useState(() => (
+    selectedPlayerMeta && selectedPlayerId ? buildPlayerMeta(selectedPlayerMeta, { id: selectedPlayerId }) : null
+  ));
   const [playerLoading, setPlayerLoading] = useState(false);
   const [playerLoadError, setPlayerLoadError] = useState(null);
 
@@ -196,24 +199,41 @@ const PlayerBrowser = ({
       return;
     }
 
-    setResolvedPlayer((prev) => (prev?.id === normalizedSelectedPlayerId ? prev : null));
-  }, [statsView, normalizedSelectedPlayerId]);
+    const nextMeta = selectedPlayerMeta
+      ? buildPlayerMeta(selectedPlayerMeta, { id: normalizedSelectedPlayerId })
+      : null;
+
+    if (nextMeta?.id === normalizedSelectedPlayerId) {
+      setResolvedPlayer((prev) => {
+        if (prev?.id !== normalizedSelectedPlayerId) return nextMeta;
+        return buildPlayerMeta(nextMeta, prev);
+      });
+      setPlayerLoadError(null);
+    } else {
+      setResolvedPlayer((prev) => (prev?.id === normalizedSelectedPlayerId ? prev : null));
+    }
+  }, [statsView, normalizedSelectedPlayerId, selectedPlayerMeta]);
 
   useEffect(() => {
     if (statsView !== 'player' || !normalizedSelectedPlayerId) return;
 
     let cancelled = false;
+    const initialMeta = selectedPlayerMeta
+      ? buildPlayerMeta(selectedPlayerMeta, { id: normalizedSelectedPlayerId })
+      : null;
     setPlayerLoading(true);
     setPlayerLoadError(null);
 
-    const prioritizedTeamIds = teams.map((team) => team.id);
+    const prioritizedTeamIds = initialMeta?.teamId
+      ? [initialMeta.teamId, ...teams.map((team) => team.id).filter((teamId) => teamId !== initialMeta.teamId)]
+      : teams.map((team) => team.id);
 
     (async () => {
       try {
         const profile = await fetchPlayerProfile(normalizedSelectedPlayerId);
         if (cancelled) return;
         if (profile?.id) {
-          setResolvedPlayer(buildPlayerMeta(profile, { id: normalizedSelectedPlayerId }));
+          setResolvedPlayer(buildPlayerMeta(profile, initialMeta ?? { id: normalizedSelectedPlayerId }));
           setPlayerLoading(false);
           setPlayerLoadError(null);
           return;
@@ -229,7 +249,7 @@ const PlayerBrowser = ({
           const match = roster.find((player) => String(player.id) === normalizedSelectedPlayerId);
           if (!match) continue;
 
-          setResolvedPlayer(buildPlayerMeta(match, { id: normalizedSelectedPlayerId }));
+          setResolvedPlayer(buildPlayerMeta(match, initialMeta ?? { id: normalizedSelectedPlayerId }));
           setPlayerLoading(false);
           setPlayerLoadError(null);
           return;
@@ -240,12 +260,17 @@ const PlayerBrowser = ({
 
       if (cancelled) return;
       setPlayerLoading(false);
-      setResolvedPlayer(null);
-      setPlayerLoadError('Player details are unavailable.');
+      if (initialMeta) {
+        setResolvedPlayer(initialMeta);
+        setPlayerLoadError(null);
+      } else {
+        setResolvedPlayer(null);
+        setPlayerLoadError('Player details are unavailable.');
+      }
     })();
 
     return () => { cancelled = true; };
-  }, [statsView, normalizedSelectedPlayerId, teams]);
+  }, [statsView, normalizedSelectedPlayerId, selectedPlayerMeta, teams]);
 
   const handleSearchInput = useCallback((e) => {
     const q = e.target.value;
