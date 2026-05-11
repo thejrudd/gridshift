@@ -52,6 +52,7 @@ function TradeSideAssetRow({ item, darkMode, onOpenPlayer, onRemove }) {
       teamThemeOptions={TRADE_LOGO_SIDE_THEME_OPTIONS}
       interactive={isInteractive}
       dataTestId={`trade-side-asset-${item.type}-${item.id}`}
+      metaPrefix={item.type === 'pick' ? 'Draft Pick' : ''}
       metaSegments={metaSegments}
       valueKicker={valueKicker}
       valueLabel={`${valueIsEstimated ? '~' : ''}${fmtKtcValue(value)}`}

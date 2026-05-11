@@ -92,6 +92,7 @@ After committing: do NOT run `git push` — the user pushes manually.
 - If the version number is unclear, ask the user before writing the entry.
 
 ### GitHub Release Notes Format
+- Whenever the user asks for release notes, provide them in Markdown format.
 - When generating GitHub release notes, use Markdown with the release title as `# vX.Y[.Z] - Short Release Theme`.
 - Organize notes in this order: `## New Features`, then `## Improvements`, then `## Bug Fixes`.
 - Focus the notes on the changes included between the previous released version and the requested release tag/version.

@@ -41,8 +41,12 @@ const validatedPaths = [
   expectRoundTrip({ activeTab: 'statistics', statisticsView: 'player', statisticsPlayerId: '3139477', statisticsPlayerSlug: 'josh-allen' }, '/statistics/player/3139477/josh-allen'),
   expectRoundTrip({ activeTab: 'companion', companionView: 'roster' }, '/companion/roster'),
   expectRoundTrip({ activeTab: 'companion', companionView: 'rankings', rankingsPosition: 'QB' }, '/companion/rankings?pos=QB'),
-  expectRoundTrip({ activeTab: 'companion', companionView: 'defense' }, '/companion/heatmap'),
-  expectRoundTrip({ activeTab: 'companion', companionView: 'defense', heatmapViewMode: 'defense', heatmapDefensePosition: 'LB', heatmapDefenseStatMode: 'idp_sack', heatmapScope: 'week', heatmapLocation: 'home', heatmapSortKey: 7, heatmapSortDir: 'asc', heatmapTeamSort: 'division', heatmapUseTeamColors: '1', heatmapVegasView: 'ou' }, '/companion/heatmap?mode=defense&defPos=LB&defStat=idp_sack&scope=week&loc=home&sort=7&dir=asc&teams=division&colors=1&odds=ou'),
+  expectRoundTrip({ activeTab: 'companion', companionView: 'heatmap' }, '/companion/heatmap'),
+  expectRoundTrip({ activeTab: 'companion', companionView: 'heatmap', heatmapViewMode: 'defense', heatmapDefensePosition: 'LB', heatmapDefenseStatMode: 'idp_sack', heatmapScope: 'week', heatmapLocation: 'home', heatmapSortKey: 7, heatmapSortDir: 'asc', heatmapTeamSort: 'division', heatmapUseTeamColors: '1', heatmapVegasView: 'ou' }, '/companion/heatmap?mode=defense&defPos=LB&defStat=idp_sack&scope=week&loc=home&sort=7&dir=asc&teams=division&colors=1&odds=ou'),
+  expectRoundTrip({ activeTab: 'companion', companionView: 'defense' }, '/companion/defense'),
+  expectRoundTrip({ activeTab: 'companion', companionView: 'defense', defensePosition: 'RB', defenseStat: 'rush_att' }, '/companion/defense?pos=RB'),
+  expectRoundTrip({ activeTab: 'companion', companionView: 'defense', defenseMode: 'fantasy', defensePosition: 'QB', defenseStat: 'pass_yd', defenseSort: 'team', defenseDir: 'asc', defenseQuery: 'KC' }, '/companion/defense?mode=fantasy&sort=team&dir=asc&q=KC'),
+  expectRoundTrip({ activeTab: 'companion', companionView: 'defense', defenseSort: 'avg', defenseDir: 'asc' }, '/companion/defense?sort=avg&dir=asc'),
   expectRoundTrip({ activeTab: 'companion', companionView: 'waiver', waiverPosition: 'RB' }, '/companion/waiver?position=RB'),
   expectRoundTrip({ activeTab: 'companion', companionView: 'matchup', matchupWeek: 7, matchupPlayerId: '4034' }, '/companion/matchup?week=7&player=4034'),
   expectRoundTrip({ activeTab: 'companion', companionView: 'league', leagueSubview: 'roster', leagueRosterId: '5' }, '/companion/league?team=5'),
@@ -54,6 +58,9 @@ const validatedPaths = [
   expectRoundTrip({ activeTab: 'scout', scoutView: 'picks' }, '/scout/picks'),
   expectRoundTrip({ activeTab: 'scout', scoutView: 'results' }, '/scout/results'),
 ];
+
+const legacyDefenseSackPath = buildAppPath(parseAppRoute('/companion/defense', '?stat=pass_sack'));
+assert(legacyDefenseSackPath === '/companion/defense', `Expected legacy QB sack defense stat to normalize away, got ${legacyDefenseSackPath}`);
 
 console.log('Routing validation passed.');
 for (const path of validatedPaths) console.log(`- ${path}`);

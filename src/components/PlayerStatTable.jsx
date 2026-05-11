@@ -560,7 +560,7 @@ const GAME_STAT_EXTRA_ORDER = [
 
 const GAME_STAT_EXTRA_ORDER_INDEX = new Map(GAME_STAT_EXTRA_ORDER.map((key, index) => [key, index]));
 const COMPACT_GAME_IDENTITY_WIDTHS = [88, 48, 70, 132];
-const MOBILE_COMPACT_GAME_IDENTITY_WIDTHS = [30, 38, 64, 64];
+const MOBILE_COMPACT_GAME_IDENTITY_WIDTHS = [28, 34, 52, 64];
 const COMPACT_GAME_STAT_WIDTH = 54;
 const MOBILE_COMPACT_GAME_STAT_WIDTH = 48;
 const EXPANDED_GAME_IDENTITY_WIDTHS = [96, 52, 76, 132];
@@ -1235,6 +1235,7 @@ const PlayerStatTable = ({
   gameLogLoading,
   honors = [],
   accentColor,
+  textAccentColor,
   displayMode = 'game',
   fantasySeason = null,
   fantasyAvailable = null,
@@ -1381,6 +1382,7 @@ const PlayerStatTable = ({
     && gameLog.some((game) => !game?.meta?.isBye && !game?.meta?.isInactive);
   const hasTableControls = hasMoreStats || hasHighlightableGameLog;
   const isSelectedLeagueSeason = String(year) === String(fantasySeason);
+  const readableAccentColor = textAccentColor ?? accentColor;
   const emptyStateMessage = isSelectedLeagueSeason
     ? (showFantasyOnly
       ? `No fantasy values have been recorded for the ${year} season yet. They will appear once the season begins and your league has scoring data.`
@@ -1411,7 +1413,7 @@ const PlayerStatTable = ({
           {loading && (
             <svg
               className="animate-spin w-4 h-4"
-              style={{ color: accentColor ?? '#3b82f6' }}
+              style={{ color: readableAccentColor ?? '#3b82f6' }}
               fill="none" viewBox="0 0 24 24"
             >
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -1450,7 +1452,7 @@ const PlayerStatTable = ({
                       <StatTableSwitch
                         checked={showMoreStats}
                         label="More Stats"
-                        accentColor={accentColor}
+                        accentColor={readableAccentColor}
                         onChange={() => setShowMoreStats(v => !v)}
                       />
                     )}
@@ -1458,7 +1460,7 @@ const PlayerStatTable = ({
                       <StatTableSwitch
                         checked={highlightColumnHighs}
                         label="Column Highs"
-                        accentColor={accentColor}
+                        accentColor={readableAccentColor}
                         onChange={() => setHighlightColumnHighs(v => !v)}
                       />
                     )}
@@ -1473,7 +1475,7 @@ const PlayerStatTable = ({
                   </div>
                 )}
 
-                <StatSections sections={displaySections} accentColor={accentColor} />
+                <StatSections sections={displaySections} accentColor={readableAccentColor} />
               </div>
 
               {/* Game-by-game log (not shown for career row) */}
@@ -1746,16 +1748,17 @@ const GameLog = ({
     : !useExpandedStatLayout
       ? { width: `${compactGameTableWidth}px`, minWidth: '100%' }
       : undefined;
-  const getStickyIdentityStyle = (index) => expandedGameStats
+  const freezeIdentityColumns = expandedGameStats && !isMobileGameLogLayout;
+  const getStickyIdentityStyle = (index) => freezeIdentityColumns
     ? { left: `${stickyIdentityLefts[index]}px`, zIndex: 20 }
     : undefined;
   const getStickyIdentityClass = (index, baseClass, rowBackgroundClass = 'bg-white dark:bg-gray-900') => {
-    if (!expandedGameStats) return baseClass;
+    if (!freezeIdentityColumns) return baseClass;
     const separator = index === 3 ? ' shadow-[8px_0_12px_-12px_rgba(15,23,42,0.45)]' : '';
     return `${baseClass} sticky ${rowBackgroundClass}${separator}`;
   };
   const expandedIdentityWidth = expandedGameIdentityWidths.reduce((sum, width) => sum + width, 0);
-  const shouldShowScrollIndicators = expandedGameStats || (isMobileGameLogLayout && useExpandedStatLayout);
+  const shouldShowScrollIndicators = freezeIdentityColumns || (isMobileGameLogLayout && useExpandedStatLayout);
   const getSortHeaderState = (key) => ({
     active: sortConfig?.key === key,
     direction: sortConfig?.key === key ? sortConfig.direction : 'desc',
@@ -2001,7 +2004,7 @@ const GameLog = ({
               <Fragment key={game.eventId ?? i}>
                 {showPlayoffDivider && (
                   <tr key={`divider-${game.eventId}`}>
-                    {expandedGameStats ? (
+                    {freezeIdentityColumns ? (
                       <>
                         <td
                           colSpan={4}

@@ -48,6 +48,7 @@ const CompanionWaiver = lazy(() => debugCompanionTimeAsync(
   'CompanionWaiver chunk import',
   () => import('./components/companion/CompanionWaiver'),
 ));
+const CompanionHeatmap = lazy(() => import('./components/companion/CompanionHeatmap'));
 const CompanionDefense = lazy(() => import('./components/companion/CompanionDefense'));
 const CompanionTrade = lazy(() => import('./components/companion/CompanionTrade'));
 const ScoutTab = lazy(() => import('./components/scout/ScoutTab'));
@@ -285,13 +286,14 @@ function AppInner() {
     ? { week: appRoute.matchupWeek, playerId: appRoute.matchupPlayerId }
     : null;
   const rankingsPosition = appRoute.companionView === 'rankings' ? (appRoute.rankingsPosition ?? 'ALL') : 'ALL';
+  const rankingsRosterId = appRoute.companionView === 'rankings' ? appRoute.rankingsRosterId : null;
   const leagueRouteState = appRoute.companionView === 'league'
     ? {
         subView: appRoute.leagueSubview ?? 'roster',
         rosterId: appRoute.leagueRosterId ?? null,
       }
     : { subView: 'roster', rosterId: null };
-  const heatmapRouteState = appRoute.companionView === 'defense'
+  const heatmapRouteState = appRoute.companionView === 'heatmap'
     ? {
         viewMode: appRoute.heatmapViewMode ?? 'offense',
         position: appRoute.heatmapPosition ?? 'ALL',
@@ -305,6 +307,16 @@ function AppInner() {
         teamSort: appRoute.heatmapTeamSort ?? 'alpha',
         useTeamColors: appRoute.heatmapUseTeamColors === '1',
         vegasView: appRoute.heatmapVegasView ?? 'spread',
+    }
+    : null;
+  const defenseRouteState = appRoute.companionView === 'defense'
+    ? {
+        mode: appRoute.defenseMode ?? 'stats',
+        position: appRoute.defensePosition ?? 'QB',
+        stat: appRoute.defenseStat ?? 'pass_yd',
+        sort: appRoute.defenseSort ?? 'total',
+        dir: appRoute.defenseDir ?? 'desc',
+        query: appRoute.defenseQuery ?? '',
       }
     : null;
   const selectedPredictionTeam = activeTab === 'predictions' && predictionsTeamId
@@ -357,7 +369,7 @@ function AppInner() {
 
   const scheduleHeatmapRouteUpdate = useCallback((nextState) => {
     pendingHeatmapRoutePatchRef.current = {
-      companionView: 'defense',
+      companionView: 'heatmap',
       heatmapViewMode: nextState.viewMode,
       heatmapPosition: nextState.position === 'ALL' ? null : nextState.position,
       heatmapDefensePosition: nextState.defensePosition === 'ALL' ? null : nextState.defensePosition,
@@ -383,7 +395,7 @@ function AppInner() {
       if (!patch) return;
 
       const currentRoute = latestAppRouteRef.current;
-      if (currentRoute.activeTab !== 'companion' || currentRoute.companionView !== 'defense') return;
+      if (currentRoute.activeTab !== 'companion' || currentRoute.companionView !== 'heatmap') return;
 
       applyRoute({ ...currentRoute, activeTab: 'companion', ...patch }, { replace: true });
     }, 120);
@@ -398,7 +410,7 @@ function AppInner() {
   }, []);
 
   useEffect(() => {
-    if (activeTab === 'companion' && companionView === 'defense') return;
+    if (activeTab === 'companion' && companionView === 'heatmap') return;
     if (heatmapRouteUpdateTimerRef.current) {
       window.clearTimeout(heatmapRouteUpdateTimerRef.current);
       heatmapRouteUpdateTimerRef.current = null;
@@ -893,9 +905,14 @@ function AppInner() {
                 <Suspense fallback={<SectionLoading label="Loading Rankings" />}>
                   <CompanionRankings
                     positionFilter={rankingsPosition}
+                    rosterFilter={rankingsRosterId}
                     onPositionFilterChange={(position) => updateCompanionRoute({
                       companionView: 'rankings',
                       rankingsPosition: position === 'ALL' ? null : position,
+                    }, { replace: true })}
+                    onRosterFilterChange={(rosterId) => updateCompanionRoute({
+                      companionView: 'rankings',
+                      rankingsRosterId: rosterId,
                     }, { replace: true })}
                     onViewPlayer={(sleeperId) => {
                       const playerMeta = buildStatisticsPlayerMetaFromSleeperId(sleeperId, sleeperPlayers, espnIdOverrides);
@@ -923,11 +940,11 @@ function AppInner() {
                       matchupWeek: appRoute.matchupWeek ?? null,
                       matchupPlayerId: null,
                     }, { replace: true })}
-                    onViewPlayer={(id, meta) => {
+                    onViewPlayer={(id, meta, options = {}) => {
                       navigateToStatisticsPlayer({ id, ...meta }, {
                         backLabel: 'Matchup',
                         backRoute: appRoute,
-                        mode: STATISTICS_MODES.FANTASY,
+                        mode: options.mode ?? STATISTICS_MODES.FANTASY,
                       });
                     }}
                   />
@@ -983,9 +1000,9 @@ function AppInner() {
                 />
                 </Suspense>
               )}
-              {companionView === 'defense'   && (
+              {companionView === 'heatmap'   && (
                 <Suspense fallback={<SectionLoading label="Loading Heatmap" />}>
-                  <CompanionDefense
+                  <CompanionHeatmap
                     routeState={heatmapRouteState}
                     onRouteStateChange={scheduleHeatmapRouteUpdate}
                     onViewPlayer={(id, meta) => {
@@ -995,6 +1012,22 @@ function AppInner() {
                         mode: STATISTICS_MODES.FANTASY,
                       });
                     }}
+                  />
+                </Suspense>
+              )}
+              {companionView === 'defense'   && (
+                <Suspense fallback={<SectionLoading label="Loading Defense" />}>
+                  <CompanionDefense
+                    routeState={defenseRouteState}
+                    onRouteStateChange={(nextState) => updateCompanionRoute({
+                      companionView: 'defense',
+                      defenseMode: nextState.mode,
+                      defensePosition: nextState.position,
+                      defenseStat: nextState.stat,
+                      defenseSort: nextState.sort,
+                      defenseDir: nextState.dir,
+                      defenseQuery: nextState.query || null,
+                    }, { replace: true })}
                   />
                 </Suspense>
               )}

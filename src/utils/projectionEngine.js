@@ -399,8 +399,9 @@ export function buildDefenseTable(weeklyStats, players, scheduleMap, scoringSett
 
     for (const wEntry of playerWeeks) {
       if (weekLimit != null && wEntry.week >= weekLimit) continue;
-      const val = getValue(wEntry, player.position);
-      if (val <= 0) continue;
+      const val = Number(getValue(wEntry, player.position));
+      if (!Number.isFinite(val)) continue;
+      if (valueFn ? val === 0 : val <= 0) continue;
 
       // Priority 1: per-player game-time team + scheduleMap → most reliable.
       const gameTeam = wEntry.team?.toUpperCase();

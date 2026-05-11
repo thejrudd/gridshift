@@ -50,6 +50,7 @@ This page is the quick "open these files first" guide.
   - `src/components/companion/CompanionRankings.jsx`
   - `src/components/companion/CompanionWaiver.jsx`
   - `src/components/companion/CompanionMatchup.jsx`
+  - `src/components/companion/CompanionHeatmap.jsx`
   - `src/components/companion/CompanionDefense.jsx`
   - `src/components/companion/PlayerWeeklySheet.jsx`
   - `src/components/companion/CompanionScoring.jsx`

@@ -12,10 +12,6 @@ Open bugs are listed first, fixed bugs below. Add new entries at the bottom of e
 | Desktop sidebar cannot be collapsed — always occupies 240px regardless of available screen width or user preference |
 | Companion → Matchup player projection formula hover can fail to stay open from the `i` control, hiding the projection math before it can be read |
 | Statistics player profile career highlights can show 0 TFL for defensive players when ESPN's career aggregate omits tackles for loss even though season-level defensive stats include them |
-| Heatmap Defense phase can render blank in leagues that roster and score D/ST because the phase aggregates only individual defensive players; Heatmap stat filters can also show categories with no scoring value in the selected league |
-| Heatmap Defense phase in D/ST-only leagues still shows an `All` position chip even though D/ST is the only meaningful defensive bucket |
-| Heatmap D/ST Fantasy Points drilldown shows only the total points and omits the line-by-line scoring breakdown |
-| Trade player cards can show a leading separator before metadata on mobile, making the row read like it starts with a stray dash or bullet |
 
 ---
 
@@ -23,6 +19,25 @@ Open bugs are listed first, fixed bugs below. Add new entries at the bottom of e
 
 | Bug | Fixed In |
 |-----|----------|
+| Statistics player profile stat mode toggle was squished on mobile when Game Stats, Fantasy Values, and Visual shared the same row as the explanatory copy | v7.4 |
+| Statistics Visual could hang when switching to another season because the historical weekly stats request was cancelled by its own loading-state update | v7.4 |
+| Statistics Visual historical seasons could omit opponent team logos and show 0 defense averages because the chart only used the active season schedule map | v7.4 |
+| Statistics Visual could replace the filter controls with a no-data/loading card when a selected season had no player stats, trapping users on the empty year | v7.4 |
+| Statistics Visual could leave the offense line on stale y-positions after switching one axis to negative fantasy scoring and the other axis to positive game stats | v7.4 |
+| Trade Agent selected asset cards used noisy type copy, showing "Player" on player cards and "Draft Asset" instead of the clearer "Draft Pick" on pick cards | v7.4 |
+| Heatmap Defense phase can render blank in leagues that roster and score D/ST because the phase aggregates only individual defensive players; Heatmap stat filters can also show categories with no scoring value in the selected league | v7.4 |
+| Heatmap Defense phase in D/ST-only leagues still shows an `All` position chip even though D/ST is the only meaningful defensive bucket | v7.4 |
+| Heatmap D/ST Fantasy Points drilldown shows only the total points and omits the line-by-line scoring breakdown | v7.4 |
+| Trade player cards can show a leading separator before metadata on mobile, making the row read like it starts with a stray dash or bullet | v7.4 |
+| Statistics player stat section labels can be unreadable in dark mode when the team border color has low contrast against the dark card background, such as Bills blue on navy | v7.4 |
+| Statistics player view Build Trade opens Trade Agent with the target player but does not select that player's fantasy roster, leaving Suggest Adjustment and other partner-aware features without context | v7.4 |
+| Statistics Visual Defense Fantasy Points can flatten negative offensive events like QB interceptions to 0, and the visual is missing QB sacks and offensive fumbles as selectable stats | v7.4 |
+| Statistics Visual centers zero on both axes even when both plotted series are entirely negative, leaving unused positive y-axis space above the chart | v7.4 |
+| Statistics Visual hover card can be clipped by the chart container instead of floating above page content | v7.4 |
+| Companion → Defense column headers can show Defense Desc while still sorting teams ascending, and Per Game is not selectable as its own sort header | v7.4 |
+| Companion → Defense position changes default the Stat filter to a representative stat instead of the first visible stat chip, so RB opens on Rush Yds instead of Carries | v7.4 |
+| Companion → Defense uses section padding, row height, identity font weight, and logo sizing that do not visually align with Rankings, Roster, and Waiver | v7.4 |
+| Companion → Defense detail modal uses a missing background token and lets the table behind bleed through the weekly breakdown | v7.4 |
 | Mobile NavBar adds a scroll-state separator above the top tab bar, making the frozen header area look visually compressed while scrolling | v7.3 |
 | Companion drillable player rows could feel unresponsive because opening a player waited on slower drilldown data without showing a loading indicator | v7.3 |
 | Trade Intelligence proposal apply actions could mismatch the displayed package by pairing the incoming target with the wrong outgoing asset, or by adding only one side of the proposal instead of the full deal | v7.3 |
@@ -226,3 +241,4 @@ Open bugs are listed first, fixed bugs below. Add new entries at the bottom of e
 | Companion mobile horizontal scroll cue arrows could let tab text show underneath the cue because the cue did not cover the full-bleed scroll rail edge | v7.3.1 |
 | Companion Heatmap mobile filter chips started at uneven horizontal positions because only Phase/Position reserved a fixed label column and Result was pushed to the right | v7.3.1 |
 | Companion Heatmap mobile filters consumed too much vertical space, leaving the heatmap itself crowded below the controls | v7.3.1 |
+| Statistics Visual filter chips could crowd together on mobile because the season/stat/mode controls and scale selector stayed split into left and right header groups instead of stacking | v7.4 |
