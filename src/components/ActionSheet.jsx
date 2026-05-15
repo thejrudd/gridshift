@@ -91,6 +91,11 @@ export default function ActionSheet({
             onClick={onMyTeam}
           />
           <Divider />
+          <ActionLink
+            label="Support GridShift"
+            href="https://ko-fi.com/gridshift"
+          />
+          <Divider />
           <ActionRow label="Guide" onClick={onGuide} />
           {isPredictions && (
             <>
@@ -158,6 +163,23 @@ function ActionRow({ label, onClick, disabled, destructive }) {
     >
       <span className="text-sm font-medium">{label}</span>
     </button>
+  );
+}
+
+function ActionLink({ label, href }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="w-full flex items-center py-4 text-left transition-opacity active:opacity-50"
+      style={{
+        color: 'var(--color-accent)',
+        cursor: 'pointer',
+      }}
+    >
+      <span className="text-sm font-medium">{label}</span>
+    </a>
   );
 }
 

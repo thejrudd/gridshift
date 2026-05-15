@@ -38,11 +38,6 @@ tests/fixtures/*
 # Local docs drafts
 docs/archive/Historical Release Notes Drafts.md
 
-# Local Ko-fi brand assets
-kofi_brandasset.zip
-kofi_brandasset/
-public/kofi/
-
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

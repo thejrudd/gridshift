@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useTheme } from '../context/ThemeContext';
+import HorizontalScrollCue from './HorizontalScrollCue';
+import useHorizontalScrollCue from '../hooks/useHorizontalScrollCue';
 import {
   TEAM_LOGO_SIDE_SENSITIVE_GRADIENT_TEAMS,
   getTeamVisualTheme,
@@ -423,7 +425,9 @@ function WeekScheduleView({
   darkMode,
   onViewGameStats,
 }) {
+  const weekScrubberRef = useRef(null);
   const weekOptions = getPopulatedScheduleWeeks(scheduleData);
+  const weekScrollCue = useHorizontalScrollCue(weekScrubberRef, [weekOptions.length, activeWeek]);
   const allGames = getWeekScheduleGames(scheduleData, activeWeek);
   const games = allGames.filter((game) => scheduleGameMatchesFilter(game, activeFilter));
   const groups = buildKickoffGroups(games);
@@ -438,22 +442,29 @@ function WeekScheduleView({
         onFilterChange={onFilterChange}
       />
 
-      <div className="statistics-schedule-week-scrubber" aria-label="Schedule weeks">
-        {weekOptions.map((week) => {
-          const active = week.week === activeWeek;
-          return (
-            <button
-              key={week.week}
-              type="button"
-              className={`statistics-schedule-week-chip${active ? ' is-active' : ''}`}
-              aria-pressed={active}
-              onClick={() => onWeekChange(week.week)}
-            >
-              <span>Week {week.week}</span>
-              <span>{week.games.length} games</span>
-            </button>
-          );
-        })}
+      <div className="statistics-schedule-week-shell">
+        <div ref={weekScrubberRef} className="statistics-schedule-week-scrubber" aria-label="Schedule weeks">
+          {weekOptions.map((week) => {
+            const active = week.week === activeWeek;
+            return (
+              <button
+                key={week.week}
+                type="button"
+                className={`statistics-schedule-week-chip${active ? ' is-active' : ''}`}
+                aria-pressed={active}
+                onClick={() => onWeekChange(week.week)}
+              >
+                <span>Week {week.week}</span>
+                <span>{week.games.length} games</span>
+              </button>
+            );
+          })}
+        </div>
+        <HorizontalScrollCue
+          left={weekScrollCue.left}
+          right={weekScrollCue.right}
+          className="horizontal-scroll-cue--schedule"
+        />
       </div>
 
       <section className="statistics-schedule-panel">
@@ -707,9 +718,8 @@ export default function StatisticsSchedule({
   onViewGameStats,
 }) {
   const { darkMode } = useTheme();
-  const [rememberedMode, setRememberedMode] = useState(readStoredMode);
   const routeMode = normalizeStatisticsScheduleMode(mode, null);
-  const activeMode = routeMode ?? rememberedMode;
+  const activeMode = routeMode ?? readStoredMode();
   const activeFilter = normalizeStatisticsScheduleFilter(filter, STATISTICS_SCHEDULE_FILTERS.ALL);
   const selectedTeamId = normalizeScheduleTeamId(teamId);
   const defaultWeek = useMemo(() => getDefaultScheduleWeek(scheduleData), [scheduleData]);
@@ -722,13 +732,11 @@ export default function StatisticsSchedule({
 
   useEffect(() => {
     if (!routeMode) return;
-    setRememberedMode(routeMode);
     writeStoredMode(routeMode);
   }, [routeMode]);
 
   const setMode = (nextMode) => {
     if (PRIMARY_SCHEDULE_MODES.has(nextMode)) {
-      setRememberedMode(nextMode);
       writeStoredMode(nextMode);
     }
 
@@ -743,7 +751,6 @@ export default function StatisticsSchedule({
   const selectWeek = (nextWeek) => {
     const nextWeekGames = getWeekScheduleGames(scheduleData, nextWeek);
     const nextFilter = getAvailableFilterForGames(nextWeekGames, activeFilter);
-    setRememberedMode(STATISTICS_SCHEDULE_MODES.WEEK);
     writeStoredMode(STATISTICS_SCHEDULE_MODES.WEEK);
     onRouteChange?.({
       statisticsScheduleMode: STATISTICS_SCHEDULE_MODES.WEEK,
@@ -754,7 +761,6 @@ export default function StatisticsSchedule({
   };
 
   const selectTeam = (nextTeamId) => {
-    setRememberedMode(STATISTICS_SCHEDULE_MODES.TEAM);
     writeStoredMode(STATISTICS_SCHEDULE_MODES.TEAM);
     onRouteChange?.({
       statisticsScheduleMode: STATISTICS_SCHEDULE_MODES.TEAM,

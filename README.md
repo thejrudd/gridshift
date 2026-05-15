@@ -88,18 +88,16 @@ npm run validate:routing
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) |
 
-## What's New in v7.5
+## What's New in v7.5.1
 
-- **Predictor redesign** - Predictions now center on record-first picks, an Advanced Mode team drilldown, editorial standings, and a manual playoff bracket.
-- **2026 schedule data** - The app now bundles the regular-season schedule with ESPN event ids, kickoff metadata, broadcasters, venues, and ordered opponents.
-- **Statistics Schedule** - Statistics includes week and team schedule views with international, PrimeTime, and holiday filters.
-- **Prediction fixes** - Choose Record now blocks impossible overall/division combinations, balances division records, and propagates forced undefeated/winless picks to opponents.
-- **Statistics Visual fixes** - Future empty seasons stay hidden, Visual works without a connected fantasy league, and the visual opens against the latest stat-bearing season.
+- **Statistics Schedule mobile fix** - The mobile week selector now keeps horizontal scrolling inside the week rail and shows the shared scroll cue arrow.
+- **Support links restored** - The Ko-fi support action is available from the mobile options sheet, and Ko-fi/donate asset paths are no longer excluded from version control.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Roadmap
 
+- **v7.6 - Statistics Standings** - Add a dedicated Standings tab inside Statistics.
 - **v8.0 - ESPN League Integration** - Planned major integration track.
 - **v9.0 - Live Fantasy Scoring** - Planned live scoring track.
 - **Scout Rookie Projection Layer** - Add next-season rookie projections that work for standard and IDP-focused draft prep without overloading the current Scout board.

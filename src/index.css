@@ -2021,7 +2021,9 @@ body {
 .statistics-schedule {
   display: grid;
   gap: 14px;
+  max-width: 100%;
   min-width: 0;
+  overflow-x: clip;
 }
 
 .statistics-schedule-toolbar,
@@ -2173,18 +2175,34 @@ body {
   opacity: 0.42;
 }
 
+.statistics-schedule-week-shell {
+  position: relative;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
 .statistics-schedule-week-scrubber {
   display: flex;
   gap: 6px;
   min-width: 0;
-  margin: 0 -16px;
-  padding: 0 16px 2px;
+  padding: 0 0 2px;
   overflow-x: auto;
+  overscroll-behavior-x: contain;
   scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
 }
 
 .statistics-schedule-week-scrubber::-webkit-scrollbar {
   display: none;
+}
+
+.horizontal-scroll-cue--schedule.horizontal-scroll-cue--left {
+  background: linear-gradient(90deg, var(--color-bg) 0%, var(--color-bg) 68%, transparent 100%);
+}
+
+.horizontal-scroll-cue--schedule.horizontal-scroll-cue--right {
+  background: linear-gradient(90deg, transparent 0%, var(--color-bg) 32%, var(--color-bg) 100%);
 }
 
 .statistics-schedule-week-chip {
@@ -2737,7 +2755,6 @@ body {
 
 @media (min-width: 1024px) {
   .statistics-schedule-week-scrubber {
-    margin: 0;
     padding-inline: 0;
   }
 }

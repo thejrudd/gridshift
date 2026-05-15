@@ -1058,3 +1058,9 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Prediction display fixes** - Prevented Live Seeds and Playoffs from filling before records are entered, kept Advanced Mode headers live while staged game picks change, aligned bye rows, preserved team gradients at rest, and improved responsive row/stepper sizing.
 - **Statistics Visual fixes** - Hid future seasons until stats exist, enabled Visual without requiring a connected fantasy league, and opened Visual against the latest stat-bearing expanded season instead of the newest displayed placeholder year.
 - **Companion polish** - Kept Rankings scroll position fixed while holding the scoring-preview comparison control, and updated Companion Defense rankings so the visible rank reflects toughest-to-easiest strength while summary copy follows the active sort/filter state.
+
+## v7.5.1 - Mobile Schedule & Support Links
+*2026-05-15*
+
+- **Statistics schedule mobile fix** - Contained the mobile week rail's horizontal scrolling so the full Statistics Schedule screen no longer drifts left/right, and added the shared scroll cue arrow to the week selector.
+- **Support links restored** - Exposed the Ko-fi support action from the mobile options sheet and stopped excluding Ko-fi/donate asset paths from version control.

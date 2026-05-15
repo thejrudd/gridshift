@@ -7,6 +7,10 @@ New features requested or planned should be added here.
 
 ## Planned Versions
 
+### v7.6 - Statistics Standings
+
+- **Statistics standings tab** - Add a dedicated Standings tab inside Statistics so users can browse league standings without leaving the Statistics section.
+
 ### v8.0 - ESPN League Integration
 ### v9.0 - Live Fantasy Scoring
 

@@ -65,6 +65,21 @@ test('Companion horizontal affordances appear when rails overflow', async ({ pag
   await expect(page.locator('[data-scroll-cue="right"]').first()).toBeVisible();
 });
 
+test('Statistics schedule week rail keeps mobile overflow contained', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 568 });
+  await page.goto('/statistics/schedule?mode=week&week=1');
+
+  await expect.poll(async () => page.locator('.statistics-schedule-week-chip').count()).toBeGreaterThan(8);
+  await expectNoDocumentOverflow(page, '/statistics/schedule');
+  await expectNoContentAreaHorizontalOverflow(page, '/statistics/schedule');
+  await expect(page.locator('.statistics-schedule-week-shell [data-scroll-cue="right"]')).toBeVisible();
+  await expectRightCueCoversScrollableEdge(
+    page,
+    '.statistics-schedule-week-shell .statistics-schedule-week-scrubber',
+    '.statistics-schedule-week-shell [data-scroll-cue="right"]',
+  );
+});
+
 test('Companion scoring preview Hold keeps Rankings scroll position fixed', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/companion/scoring');
@@ -163,6 +178,14 @@ async function expectNoDocumentOverflow(page, route) {
     document.body.scrollWidth - document.body.clientWidth,
   ));
   expect(overflow, `${route} has document-level horizontal overflow`).toBeLessThanOrEqual(1);
+}
+
+async function expectNoContentAreaHorizontalOverflow(page, route) {
+  const overflow = await page.evaluate(() => {
+    const contentArea = document.querySelector('.content-area');
+    return contentArea ? contentArea.scrollWidth - contentArea.clientWidth : 0;
+  });
+  expect(overflow, `${route} has main content horizontal overflow`).toBeLessThanOrEqual(1);
 }
 
 async function expectNoCompanionIdentityEllipsis(page, route) {

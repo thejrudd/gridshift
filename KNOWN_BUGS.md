@@ -20,6 +20,7 @@ Open bugs are listed first, fixed bugs below. Add new entries at the bottom of e
 
 | Bug | Fixed In |
 |-----|----------|
+| Statistics schedule can horizontally scroll the full page on mobile, and the mobile week rail is missing the documented horizontal scroll arrow cue | v7.5.1 |
 | Statistics player profile stat mode toggle was squished on mobile when Game Stats, Fantasy Values, and Visual shared the same row as the explanatory copy | v7.4 |
 | Statistics Visual could hang when switching to another season because the historical weekly stats request was cancelled by its own loading-state update | v7.4 |
 | Statistics Visual historical seasons could omit opponent team logos and show 0 defense averages because the chart only used the active season schedule map | v7.4 |
