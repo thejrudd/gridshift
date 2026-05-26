@@ -32,6 +32,7 @@ const STAT_LABELS = {
   rush_td:          'Rush TDs',
   rush_2pt:         'Rush 2-Pt',
   rush_fd:          'Rush 1st Downs',
+  rush_att:         'Rush Attempts',
   // Receiving
   rec:              'Receptions',
   rec_yd:           'Rec Yards',
@@ -45,7 +46,10 @@ const STAT_LABELS = {
   fum_ret_td:       'Fum Ret TD',
   st_td:            'Special Teams TD',
   ret_td:           'Return TD',
+  kr_td:            'Kick Return TD',
+  pr_td:            'Punt Return TD',
   blk_kick:         'Blocked Kick',
+  blk_kick_ret_td:  'Blocked Kick TD',
   // Bonuses
   bonus_pass_yd_300: '300+ Pass Yd Bonus',
   bonus_pass_yd_400: '400+ Pass Yd Bonus',
@@ -77,6 +81,7 @@ const STAT_LABELS = {
   fgm_0_19:         'FG 0–19 yds',
   fgm_20_29:        'FG 20–29 yds',
   fgm_30_39:        'FG 30–39 yds',
+  fgm_0_39:         'FG 0–39 yds',
   fgm_40_49:        'FG 40–49 yds',
   fgm_50_59:        'FG 50–59 yds',
   fgm_60p:          'FG 60+ yds',
@@ -84,6 +89,7 @@ const STAT_LABELS = {
   fgmiss_0_19:      'FGM 0–19 yds',
   fgmiss_20_29:     'FGM 20–29 yds',
   fgmiss_30_39:     'FGM 30–39 yds',
+  fgmiss_0_39:      'FGM 0–39 yds',
   fgmiss_40_49:     'FGM 40–49 yds',
   fgmiss_50_59:     'FGM 50–59 yds',
   fgmiss_60p:       'FGM 60+ yds',
@@ -94,12 +100,12 @@ const STAT_LABELS = {
 // Ordered display categories — controls section grouping and row order
 const STAT_CATEGORIES = [
   { heading: 'Passing',          keys: ['pass_yd','pass_td','pass_int','pass_2pt','pass_cmp','pass_att','pass_inc','pass_fd','pass_sack'] },
-  { heading: 'Rushing',          keys: ['rush_yd','rush_td','rush_2pt','rush_fd'] },
+  { heading: 'Rushing',          keys: ['rush_yd','rush_td','rush_2pt','rush_fd','rush_att'] },
   { heading: 'Receiving',        keys: ['rec','rec_yd','rec_td','rec_2pt','rec_fd'] },
-  { heading: 'Miscellaneous',    keys: ['fum','fum_lost','fum_rec','fum_ret_td','st_td','ret_td','blk_kick'] },
+  { heading: 'Miscellaneous',    keys: ['fum','fum_lost','fum_rec','fum_ret_td','st_td','ret_td','kr_td','pr_td','blk_kick','blk_kick_ret_td'] },
   { heading: 'Bonuses',          keys: ['bonus_pass_yd_300','bonus_pass_yd_400','bonus_rush_yd_100','bonus_rush_yd_200','bonus_rec_yd_100','bonus_rec_yd_200'] },
   { heading: 'Defense (IDP)',    keys: ['idp_tkl','idp_tkl_solo','idp_tkl_ast','idp_tkl_loss','idp_sack','idp_sack_yd','idp_int','idp_int_ret_yd','idp_int_td','idp_ff','idp_fr','idp_fr_yd','idp_fr_td','idp_def_td','idp_pd','idp_qbhit','idp_safety','idp_blk_kick'] },
-  { heading: 'Kicking',          keys: ['fgm','fgm_0_19','fgm_20_29','fgm_30_39','fgm_40_49','fgm_50_59','fgm_60p','fgmiss','fgmiss_0_19','fgmiss_20_29','fgmiss_30_39','fgmiss_40_49','fgmiss_50_59','fgmiss_60p','xpm','xpmiss'] },
+  { heading: 'Kicking',          keys: ['fgm','fgm_0_19','fgm_20_29','fgm_30_39','fgm_0_39','fgm_40_49','fgm_50_59','fgm_60p','fgmiss','fgmiss_0_19','fgmiss_20_29','fgmiss_30_39','fgmiss_0_39','fgmiss_40_49','fgmiss_50_59','fgmiss_60p','xpm','xpmiss'] },
 ];
 
 
@@ -241,11 +247,12 @@ function buildStatRankMaps(statKeys, sleeperIdA, sleeperIdB, seasonStats, player
  */
 export default function CompareFantasyPanel({ sleeperIdA, sleeperIdB, onEdgeSummaryChange }) {
   const {
-    hasLeague, players, league,
-    rosters, seasonStats, weeklyStats,
+    platform, hasLeague, players, league,
+    seasonStats, weeklyStats,
     scoringSettings, scheduleMap,
     statsLoading, loadSeasonStats,
   } = useSleeperBase();
+  const fantasyPlatformLabel = platform === 'espn' ? 'ESPN' : 'Sleeper';
 
   // Trigger stats load if not yet loaded (same pattern as all Companion views)
   useEffect(() => {
@@ -374,7 +381,7 @@ export default function CompareFantasyPanel({ sleeperIdA, sleeperIdB, onEdgeSumm
     return (
       <div className="flex flex-col items-center justify-center py-20 px-6 gap-3">
         <span className="text-sm text-center" style={{ color: 'var(--color-label-secondary)' }}>
-          Connect a Sleeper league in the Companion tab to see fantasy stats.
+          Connect a {fantasyPlatformLabel} league in the Companion tab to see fantasy stats.
         </span>
       </div>
     );
@@ -387,7 +394,7 @@ export default function CompareFantasyPanel({ sleeperIdA, sleeperIdB, onEdgeSumm
           Select players above to see fantasy comparison.
         </span>
         <span className="text-xs text-center" style={{ color: 'var(--color-label-quaternary)' }}>
-          Players not found in your Sleeper league will show &ldquo;—&rdquo;.
+          Players not found in your {fantasyPlatformLabel} league will show &ldquo;—&rdquo;.
         </span>
       </div>
     );

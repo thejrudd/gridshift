@@ -87,6 +87,8 @@ After committing: do NOT run `git push` — the user pushes manually.
 
 **Why package.json matters:** The version bump forces vite-plugin-pwa to regenerate the service worker precache manifest with a new revision hash, so browsers/PWA installs fetch the updated build instead of serving stale cache.
 
+Before any commit: ask the user whether the open bugs for the target version have in fact been resolved. Do not move version-specific bugs from Open to Fixed based only on implementation assumptions.
+
 ### CHANGELOG.md Rules
 - Never use "Unreleased" as a section header — always assign changes to a specific version number, even if not yet released.
 - If the version number is unclear, ask the user before writing the entry.
@@ -161,6 +163,7 @@ Keep Guide content succinct, instructional, and not verbose.
 
 - Prefer plain-language labels over niche or non-standardized acronyms in UI copy.
 - Avoid acronyms when they speed up communication at the expense of understanding.
+- Any new user-facing fantasy-platform error message must conditionally reference the current connected platform (for example ESPN vs Sleeper) instead of hardcoding a provider name.
 - Do not load or reference `QA_CHECKLIST.md` during normal implementation work unless the task is explicitly about QA, testing, validation, or regression review.
 
 ---

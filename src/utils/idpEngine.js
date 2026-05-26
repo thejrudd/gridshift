@@ -10,7 +10,7 @@
 // Integration: values flow into `valueSide()` / `buildCandidatePool()` in
 // tradeEngine.js as the last fallback before 0 (after KTC + dynasty fallback).
 
-import { calcPointsFromTotals } from './scoringEngine';
+import { calcPointsFromTotals } from './scoringEngine.js';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 

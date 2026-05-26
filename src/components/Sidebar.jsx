@@ -24,7 +24,8 @@ export default function Sidebar({
   collapsed,
   onToggleCollapse,
 }) {
-  const { isConnected, disconnect } = useSleeperLeague();
+  const { platform, isConnected, disconnect } = useSleeperLeague();
+  const tradeDisabled = platform === 'espn';
 
   return (
     <aside className="app-sidebar">
@@ -135,6 +136,7 @@ export default function Sidebar({
           onClick={() => onTabChange('trade')}
           icon={<TradeIcon />}
           label="Trade"
+          disabled={tradeDisabled}
           collapsed={collapsed}
         />
         <SidebarNavItem
@@ -197,7 +199,7 @@ export default function Sidebar({
           </>
         )}
         {(activeTab === 'companion' || activeTab === 'trade') && isConnected && (
-          <SidebarAction label="Disconnect Sleeper" onClick={disconnect} />
+          <SidebarAction label={`Disconnect ${platform === 'espn' ? 'ESPN' : 'Sleeper'}`} onClick={disconnect} />
         )}
         {isInstallable && !isInstalled && (
           <SidebarAction label="Install App" onClick={onInstall} />
@@ -332,13 +334,15 @@ function SidebarProgressBar({ label, value, total, complete }) {
   );
 }
 
-function SidebarNavItem({ active, onClick, icon, label, beta, alpha, collapsed }) {
+function SidebarNavItem({ active, onClick, icon, label, beta, alpha, collapsed, disabled = false }) {
   return (
     <button
-      onClick={onClick}
-      className={`sidebar-nav-item${active ? ' active' : ''}`}
+      onClick={disabled ? undefined : onClick}
+      className={`sidebar-nav-item${active ? ' active' : ''}${disabled ? ' is-disabled' : ''}`}
       aria-current={active ? 'page' : undefined}
-      title={collapsed ? label : undefined}
+      aria-disabled={disabled ? 'true' : undefined}
+      disabled={disabled}
+      title={disabled ? 'Trade is not available for ESPN leagues yet.' : (collapsed ? label : undefined)}
     >
       <span className="sidebar-nav-icon">{icon}</span>
       {!collapsed && (

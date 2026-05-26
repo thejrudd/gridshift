@@ -1,19 +1,20 @@
 import { useSleeperLeague } from '../../context/SleeperContext';
-import { detectPreset, SCORING_PRESETS } from '../../utils/scoringEngine';
+import { detectPreset, getFlatScoringSettings, SCORING_PRESETS } from '../../utils/scoringEngine';
 import { formatScoringSettingValue } from '../../utils/scoringDisplay';
 
 export default function LeagueScoringBadge() {
   const { league, scoringSettings } = useSleeperLeague();
   if (!league) return null;
 
-  const preset = detectPreset(scoringSettings);
+  const settings = getFlatScoringSettings(scoringSettings);
+  const preset = detectPreset(settings);
   const presetLabel = SCORING_PRESETS[preset]?.label ?? 'Custom';
 
-  const passTd = scoringSettings.pass_td ?? 4;
-  const rushTd = scoringSettings.rush_td ?? 6;
-  const passYd = formatScoringSettingValue('pass_yd', scoringSettings.pass_yd ?? 0, { compact: true, zero: 'Off' });
+  const passTd = settings.pass_td ?? 4;
+  const rushTd = settings.rush_td ?? 6;
+  const passYd = formatScoringSettingValue('pass_yd', settings.pass_yd ?? 0, { compact: true, zero: 'Off' });
 
-  const hasIDP = Object.entries(scoringSettings).some(
+  const hasIDP = Object.entries(settings).some(
     ([k, v]) => k.startsWith('idp_') && v > 0
   );
 
@@ -38,15 +39,15 @@ export default function LeagueScoringBadge() {
       </div>
 
       <div className="flex flex-wrap gap-x-4 gap-y-1">
-        <ScoringPill label="REC" value={`${scoringSettings.rec ?? 1} pt`} />
+        <ScoringPill label="REC" value={`${settings.rec ?? 1} pt`} />
         <ScoringPill label="PASS TD" value={`${passTd} pts`} />
         <ScoringPill label="RUSH/REC TD" value={`${rushTd} pts`} />
         <ScoringPill label="PASS YD" value={passYd} />
-        {scoringSettings.pass_int !== 0 && (
-          <ScoringPill label="INT" value={`${scoringSettings.pass_int} pts`} negative />
+        {settings.pass_int !== 0 && (
+          <ScoringPill label="INT" value={`${settings.pass_int} pts`} negative />
         )}
-        {scoringSettings.fum_lost !== 0 && (
-          <ScoringPill label="FUM LOST" value={`${scoringSettings.fum_lost} pts`} negative />
+        {settings.fum_lost !== 0 && (
+          <ScoringPill label="FUM LOST" value={`${settings.fum_lost} pts`} negative />
         )}
         {hasIDP && <ScoringPill label="IDP" value="enabled" />}
       </div>

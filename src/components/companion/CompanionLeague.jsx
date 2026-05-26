@@ -3,7 +3,6 @@ import { useSleeperLeague, useSleeperBase, useSleeperStatsProgress } from '../..
 import { useTheme } from '../../context/ThemeContext';
 import { calcPointsFromTotals } from '../../utils/scoringEngine';
 import { computePositionalRanks, getAvgPPG } from '../../utils/projectionEngine';
-import { getTradedPicks, getLeagueDrafts } from '../../api/sleeperApi';
 import CompanionPlayerPreviewSheet from './CompanionPlayerPreviewSheet';
 import { getTeamColorKey, getTeamPalette } from '../../data/teamColors.js';
 import useMediaQuery from '../../hooks/useMediaQuery.js';
@@ -188,7 +187,7 @@ function teamRowTheme(team, darkMode) {
   };
 }
 
-export default function CompanionLeague({ onTradePlayer, onViewPlayer = null, routeState = null, onRouteStateChange = null }) {
+export default function CompanionLeague({ onTradePlayer, onViewPlayer = null, tradeDisabled = false, routeState = null, onRouteStateChange = null }) {
   const subView = routeState?.subView ?? 'roster';
 
   return (
@@ -214,6 +213,7 @@ export default function CompanionLeague({ onTradePlayer, onViewPlayer = null, ro
         <LeagueRosterView
           onTradePlayer={onTradePlayer}
           onViewPlayer={onViewPlayer}
+          tradeDisabled={tradeDisabled}
           selectedRosterIdProp={routeState?.rosterId ?? null}
           onSelectedRosterChange={(rosterId) => onRouteStateChange?.({ ...(routeState ?? {}), subView: 'roster', rosterId })}
         />
@@ -225,8 +225,9 @@ export default function CompanionLeague({ onTradePlayer, onViewPlayer = null, ro
 
 // ── Roster sub-view ───────────────────────────────────────────────────────────
 
-function LeagueRosterView({ onTradePlayer, onViewPlayer = null, selectedRosterIdProp = null, onSelectedRosterChange = null }) {
+function LeagueRosterView({ onTradePlayer, onViewPlayer = null, tradeDisabled = false, selectedRosterIdProp = null, onSelectedRosterChange = null }) {
   const {
+    platform, season,
     leagueUsers, rosters, myRoster, getUserDisplayName,
     players, loadPlayers,
     weeklyStats, seasonStats, loadSeasonStats,
@@ -350,6 +351,9 @@ function LeagueRosterView({ onTradePlayer, onViewPlayer = null, selectedRosterId
   );
   const ownerRailRef = useRef(null);
   const ownerRailCue = useHorizontalScrollCue(ownerRailRef, [sortedRosters.length, selectedRosterId]);
+  const emptyRosterMessage = platform === 'espn'
+    ? `No players on this ESPN roster for ${season}. ESPN often returns empty offseason rosters; choose a completed season to view roster history.`
+    : 'No players on this roster.';
 
   return (
     <>
@@ -464,7 +468,9 @@ function LeagueRosterView({ onTradePlayer, onViewPlayer = null, selectedRosterId
                     onTradePlayer && isOpponent ? () => onTradePlayer(player.id, selectedRosterId, 'get')
                     : onTradePlayer && isOwnRoster ? () => onTradePlayer(player.id, null, 'give')
                     : null
-                  } />
+                  }
+                  tradeDisabled={tradeDisabled}
+                />
               );
             })}
           </div>
@@ -472,7 +478,7 @@ function LeagueRosterView({ onTradePlayer, onViewPlayer = null, selectedRosterId
       )}
 
       {players && rosterPlayers.length === 0 && !statsLoading && (
-        <EmptyState message="No players on this roster." />
+        <EmptyState message={emptyRosterMessage} />
       )}
 
       {selectedPlayerId && (
@@ -504,7 +510,7 @@ function LeagueStatsLoadingBanner() {
   );
 }
 
-function LeagueResponsivePlayerRow({ player, onSelect, onTrade, layout, isCompactPhone }) {
+function LeagueResponsivePlayerRow({ player, onSelect, onTrade, tradeDisabled = false, layout, isCompactPhone }) {
   const { darkMode } = useTheme();
   const rankLabel = player.rank ? `${player.rank.posLabel}${player.rank.rank}` : null;
   const showReserveMeta = player.isReserve && player.availabilityStatus !== 'Injured Reserve';
@@ -571,7 +577,7 @@ function LeagueResponsivePlayerRow({ player, onSelect, onTrade, layout, isCompac
           }}
         />
 
-        {onTrade && (
+        {(onTrade || tradeDisabled) && (
           <div
             className="shrink-0"
             style={{
@@ -583,6 +589,8 @@ function LeagueResponsivePlayerRow({ player, onSelect, onTrade, layout, isCompac
             <CompanionPlayerAction
               label={`Trade ${player.name}`}
               onClick={onTrade}
+              disabled={tradeDisabled}
+              title={tradeDisabled ? 'Trade is not available for ESPN leagues yet.' : undefined}
               className="w-full rounded-lg font-semibold transition-colors active:opacity-60 inline-flex items-center justify-center gap-1.5"
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -603,7 +611,17 @@ function LeagueResponsivePlayerRow({ player, onSelect, onTrade, layout, isCompac
 // ── Draft Picks sub-view ──────────────────────────────────────────────────────
 
 function LeaguePicksView() {
-  const { selectedLeagueId, rosters, leagueUsers, league, season, getUserDisplayName } = useSleeperLeague();
+  const {
+    platform,
+    selectedLeagueId,
+    rosters,
+    leagueUsers,
+    league,
+    season,
+    getUserDisplayName,
+    getTradedPicksForLeague,
+    getLeagueDraftsForLeague,
+  } = useSleeperLeague();
   const [tradedPicks, setTradedPicks] = useState(null);
   const [draftRounds, setDraftRounds] = useState(null); // max rounds across all league drafts
   const [picksLoading, setPicksLoading] = useState(false);
@@ -612,15 +630,15 @@ function LeaguePicksView() {
     if (!selectedLeagueId) return;
     setPicksLoading(true);
     Promise.all([
-      getTradedPicks(selectedLeagueId).catch(() => []),
-      getLeagueDrafts(selectedLeagueId).catch(() => []),
+      getTradedPicksForLeague(selectedLeagueId).catch(() => []),
+      getLeagueDraftsForLeague(selectedLeagueId).catch(() => []),
     ]).then(([picks, drafts]) => {
       setTradedPicks(picks ?? []);
       // Take the highest rounds value across all drafts (startup > rookie in dynasty)
       const maxFromDrafts = (drafts ?? []).reduce((max, d) => Math.max(max, d.settings?.rounds ?? 0), 0);
       setDraftRounds(maxFromDrafts || null);
     }).finally(() => setPicksLoading(false));
-  }, [selectedLeagueId]);
+  }, [getLeagueDraftsForLeague, getTradedPicksForLeague, selectedLeagueId]);
 
   // Build the picks matrix from traded_picks data
   const { slots, years, rosterPicks } = useMemo(() => {
@@ -721,6 +739,14 @@ function LeaguePicksView() {
   }, [sortedRosters, getUserDisplayName]);
   const picksScrollRef = useRef(null);
   const picksScrollCue = useHorizontalScrollCue(picksScrollRef, [slots.length, sortedRosters.length, LEFT_COL]);
+
+  if (platform === 'espn') {
+    return (
+      <div className="px-4 py-8 text-sm" style={{ color: 'var(--color-label-secondary)' }}>
+        ESPN draft-pick assets are hidden in v8.0. Player rosters and matchup data remain available.
+      </div>
+    );
+  }
 
   if (picksLoading) {
     return <EmptyState message="Loading draft picks…" />;

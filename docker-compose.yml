@@ -3,5 +3,17 @@ services:
     build: .
     ports:
       - "${PORT:-9090}:80"
+    depends_on:
+      - espn-api
     restart: unless-stopped
     container_name: nfl-predictor
+
+  espn-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    environment:
+      - GRIDSHIFT_SESSION_SECRET=${GRIDSHIFT_SESSION_SECRET}
+      - PORT=3001
+    restart: unless-stopped
+    container_name: gridshift-espn-api

@@ -8,6 +8,16 @@ New features requested or planned should be added here.
 ## Planned Versions
 
 ### v8.0 - ESPN League Integration
+
+- ESPN Fantasy sidecar auth, league normalization, scoring profiles, read-only Companion/Statistics/Compare parity, and player-only Trade support.
+- ESPN connect UX should use pasted ESPN team/league links or league IDs as the primary import path, with secure manual session import and a desktop Chrome helper link revealed only for private leagues or explicit fallback.
+- Account for ESPN playoff configurations with varying matchup lengths, including two-week playoff rounds, without dropping active fantasy scoring periods.
+- Add a Companion Standings feature for connected fantasy leagues.
+
+### v8.1 - ESPN Trade Suite
+
+- Build ESPN league support for Trade after Companion and Statistics ESPN parity is complete, including ESPN-aware valuation, partner context, roster movement, and trade entry points.
+
 ### v9.0 - Live Fantasy Scoring
 
 ---
@@ -39,6 +49,7 @@ New features requested or planned should be added here.
 - **Open Pencil evaluation** - Investigate how Open Pencil's drafting, editing, and text-workflow concepts could inform future GridShift writing surfaces such as player narratives, matchup writeups, trade explanations, export copy, or guided content-generation tools.
 - **Pretext evaluation** - Investigate how Pretext's rich-text / structured-editor concepts could support future in-app note-taking, report building, annotation, or editorial workflows tied to Trade, Draft Coach, or Statistics drilldowns.
 - **balldontlie NFL API evaluation** - Evaluate whether BALLDONTLIE NFL can power a live scoring layer for games, drives, injuries, standings, play-by-play, and betting-adjacent context, with strict rate-limit protection and a server-side key boundary before any production use.
+- **LeagueLogs fantasy API evaluation** - Evaluate whether the free LeagueLogs API can supplement Trade, Companion, or Scout with redraft/dynasty player values, rookie pick values, Sleeper-keyed player data, player status/news blurbs, and NFL state. Verify data provenance, refresh cadence, attribution requirements, durability, and licensing before use. Reddit note: [Built a free fantasy football API](https://www.reddit.com/r/fantasyfootballcoding/comments/1t1xzg4/built_a_free_fantasy_football_api_redraft_dynasty/); docs: [developer.leaguelogs.com](https://developer.leaguelogs.com).
 - **Authentication / memberships architecture** - Design a self-host-friendly auth system that lets hosts control access, optionally charge memberships to cover hosting/API costs, and leaves room for a future licensing model that could support commercial hosting with royalties back to the project owner.
 
 ### Season Predictions (Unblocked When Data Available)
@@ -46,7 +57,6 @@ New features requested or planned should be added here.
 - **Interactive week-by-week picks** - Extend the schedule surface with a week-first prediction flow so users can pick games directly from the full weekly slate instead of entering game picks only through a team drilldown.
 
 ### Fantasy Companion
-
 - **Roster player drilldown - stat category filter** - Allow filtering weekly stats by category (Pass, Rush, Rec, Defense, All) with a position-appropriate default.
 - **Start/sit recommendations** - Companion view that runs `projectPlayer()` across all rostered players and ranks them by projected output within each position group. Surfaces a clear start recommendation for each roster slot.
 

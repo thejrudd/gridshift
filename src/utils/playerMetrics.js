@@ -120,6 +120,7 @@ export function positionGroup(position) {
   if (['DE', 'DT', 'NT', 'DL', 'ED'].includes(p)) return 'DL';
   if (['LB', 'ILB', 'OLB', 'MLB'].includes(p))   return 'LB';
   if (['CB', 'S', 'SS', 'FS', 'DB'].includes(p)) return 'DB';
+  if (['DEF', 'DST', 'D/ST'].includes(p))          return 'DEF';
   if (['K'].includes(p))                          return 'K';
   if (['P'].includes(p))                          return 'P';
   if (['LS'].includes(p))                         return 'LS';
@@ -213,6 +214,18 @@ export function getMetrics(statsMap, position) {
 
       const tkl = n(statsMap.totalTackles ?? statsMap.tackles);
       if (tkl !== null) add('TCKLS', tkl.toFixed(0), 'text-green-400');
+      break;
+    }
+
+    case 'DEF': {
+      const sacks = n(statsMap.sack ?? statsMap.sacks);
+      if (sacks !== null) add('SACKS', fmt(sacks, 1), 'text-red-400');
+
+      const takeaways = (n(statsMap.int) ?? 0) + (n(statsMap.fum_rec) ?? 0);
+      if (takeaways > 0) add('TAKEAWAYS', takeaways.toFixed(0), 'text-blue-400');
+
+      const ptsAllowed = n(statsMap.pts_allow);
+      if (ptsAllowed !== null) add('PTS ALLOWED', ptsAllowed.toFixed(0), 'text-amber-400');
       break;
     }
 
@@ -481,6 +494,38 @@ export function getStatRows(statsMap, position, rankMap = {}) {
       break;
     }
 
+    case 'DEF': {
+      const usage = makeSection('Usage');
+      usage.push('Games', 'gamesPlayed', 0, '', false);
+      usage.push('Pts Allowed', 'pts_allow', 0, '', false);
+      usage.push('Yds Allowed', 'yds_allow', 0, '', false);
+
+      const impact = makeSection('Impact Plays');
+      impact.push('Sacks', 'sack', 1);
+      impact.push('INTs', 'int');
+      impact.push('Fum Rec', 'fum_rec');
+      impact.push('D/ST TDs', 'def_td');
+      impact.push('Safeties', 'safe');
+
+      const tackling = makeSection('Tackling');
+      tackling.push('Tackles', 'tkl');
+      tackling.push('Solo', 'tkl_solo');
+      tackling.push('TFL', 'tkl_loss', 1);
+      tackling.push('QB Hits', 'qb_hit');
+
+      standard.push(...[usage.done(), impact.done(), tackling.done()].filter(Boolean));
+
+      const adv = makeSection('Advanced');
+      adv.push('Sack Yds', 'sack_yd', 1);
+      adv.push('Pass Def', 'def_pass_def');
+      adv.push('Forced Fum', 'def_ff');
+      adv.push('INT TDs', 'def_int_td');
+      adv.push('Fum TDs', 'def_fum_td');
+
+      advanced.push(...[adv.done()].filter(Boolean));
+      break;
+    }
+
     case 'K': {
       const usage = makeSection('Usage');
       usage.push('Games', 'gamesPlayed', 0, '', false);
@@ -628,6 +673,26 @@ export function getGameLogColumns(position) {
           { label: 'FF',   key: 'fumblesForced' },
         ],
       };
+    case 'DEF':
+      return {
+        standard: [
+          { label: 'PA', key: 'pts_allow' },
+          { label: 'YA', key: 'yds_allow' },
+          { label: 'Sack', key: 'sack', decimals: 1 },
+          { label: 'INT', key: 'int' },
+          { label: 'FR', key: 'fum_rec' },
+          { label: 'TD', key: 'def_td' },
+        ],
+        advanced: [
+          { label: 'Tkl', key: 'tkl' },
+          { label: 'Solo', key: 'tkl_solo' },
+          { label: 'TFL', key: 'tkl_loss', decimals: 1 },
+          { label: 'QB Hits', key: 'qb_hit' },
+          { label: 'PD', key: 'def_pass_def' },
+          { label: 'SckYds', key: 'sack_yd', decimals: 1 },
+          { label: 'Saf', key: 'safe' },
+        ],
+      };
     case 'K':
       return {
         standard: [
@@ -715,6 +780,12 @@ export function getCareerHighlights(statsMap, position) {
       add('INTs',      'interceptions',         0, '',      'text-blue-400');
       add('PD',        'passesDefended',        0, '',      'text-cyan-400');
       add('Tackles',   'totalTackles',          0, '',      'text-green-400');
+      break;
+    case 'DEF':
+      add('Sacks',     'sack',                  1, '',      'text-red-400');
+      add('INTs',      'int',                   0, '',      'text-blue-400');
+      add('D/ST TDs',  'def_td',                0, '',      'text-amber-400');
+      add('Pts Allowed', 'pts_allow',           0, '',      'text-cyan-400');
       break;
     case 'K':
       add('FGM',       'fieldGoalsMade',        0, '',      'text-green-400');

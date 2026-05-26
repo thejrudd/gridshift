@@ -1,10 +1,14 @@
-import { useMemo, useState } from 'react';
+/* eslint-disable react-refresh/only-export-components */
+import { useEffect, useMemo, useState } from 'react';
 import { useSleeperBase } from '../../context/SleeperContext';
 import { useTheme } from '../../context/ThemeContext';
-import { calcPoints, DEFAULT_SCORING, STAT_TO_SCORING_KEY } from '../../utils/scoringEngine';
+import { DEFAULT_SCORING } from '../../utils/scoringEngine';
 import { formatWeather } from '../../api/weatherApi';
 import { getTeamPalette } from '../../data/teamColors.js';
+import { getCompanionInitials, getCompanionPlayerImageUrl } from '../../utils/companionAssetVisuals.js';
 import { STATISTICS_MODES } from '../../utils/playerDrilldown';
+import { buildFantasyScoringBreakdown, mergeOfficialFantasyTotal } from '../../utils/fantasyBreakdownRows.js';
+import { isEspnFantasyGameLogPosition, loadEspnFantasyGameLogWeekRow } from '../../utils/espnFantasyGameLogRows.js';
 import Modal from '../Modal';
 
 function hexLuminance(hex) {
@@ -65,6 +69,7 @@ export const STAT_LABELS = {
   rush_td:   'Rush TD',
   rush_2pt:  '2-Pt Rush Conv',
   rush_fd:   'First Down (rush)',
+  rush_att:  'Rush Attempt',
   // Receiving
   rec:       'Reception',
   rec_yd:    'Rec Yards',
@@ -78,7 +83,13 @@ export const STAT_LABELS = {
   fum_ret_td:'Fumble Rec TD',
   st_td:     'Special Teams TD',
   ret_td:    'Return TD',
+  team_win:  'Team Win',
+  team_loss: 'Team Loss',
+  team_tie:  'Team Tie',
+  kr_td:     'Kickoff Return TD',
+  pr_td:     'Punt Return TD',
   blk_kick:  'Blocked Kick',
+  blk_kick_ret_td: 'Blocked Kick Return TD',
   // Pick 6
   pass_int_td:          'Pick 6 (thrown)',
   // Big-play bonuses
@@ -149,6 +160,7 @@ export const STAT_LABELS = {
   fgm_0_19:     'FG Made (0–19 yd)',
   fgm_20_29:    'FG Made (20–29 yd)',
   fgm_30_39:    'FG Made (30–39 yd)',
+  fgm_0_39:     'FG Made (0–39 yd)',
   fgm_40_49:    'FG Made (40–49 yd)',
   fgm_50_59:    'FG Made (50–59 yd)',
   fgm_60p:      'FG Made (60+ yd)',
@@ -156,6 +168,7 @@ export const STAT_LABELS = {
   fgmiss_0_19:  'FG Missed (0–19 yd)',
   fgmiss_20_29: 'FG Missed (20–29 yd)',
   fgmiss_30_39: 'FG Missed (30–39 yd)',
+  fgmiss_0_39:  'FG Missed (0–39 yd)',
   fgmiss_40_49: 'FG Missed (40–49 yd)',
   fgmiss_50_59: 'FG Missed (50–59 yd)',
   fgmiss_60p:   'FG Missed (60+ yd)',
@@ -166,6 +179,10 @@ export const STAT_LABELS = {
   // Team DST
   def_td:            'Defensive TD (DST)',
   def_2pt:           '2-Pt Return Conv (DST)',
+  def_1pt_safe:      '1-Pt Safety (DST)',
+  def_int_td:        'INT Return TD (DST)',
+  def_fum_td:        'Fumble Return TD (DST)',
+  def_ff:            'Forced Fumble (DST)',
   def_3_and_out:     '3-and-Out Forced',
   def_4_and_stop:    '4th Down Stop',
   def_forced_punts:  'Forced Punt',
@@ -174,6 +191,7 @@ export const STAT_LABELS = {
   def_kr_yd:         'Kick Return Yards (DST)',
   def_pr_yd:         'Punt Return Yards (DST)',
   sack:              'Sack (DST)',
+  sack_half:         'Half Sack (DST)',
   sack_yd:           'Sack Yards (DST)',
   int:               'Interception (DST)',
   int_ret_yd:        'INT Return Yards (DST)',
@@ -181,15 +199,26 @@ export const STAT_LABELS = {
   tkl:               'Tackle (DST)',
   tkl_solo:          'Solo Tackle (DST)',
   tkl_ast:           'Assisted Tackle (DST)',
+  tkl_3:             'Every 3 Tackles (DST)',
+  tkl_5:             'Every 5 Tackles (DST)',
   tkl_loss:          'Tackle for Loss (DST)',
   qb_hit:            'QB Hit (DST)',
+  def_kr_yd_10:      'Every 10 Kick Return Yards (DST)',
+  def_kr_yd_25:      'Every 25 Kick Return Yards (DST)',
+  def_pr_yd_10:      'Every 10 Punt Return Yards (DST)',
+  def_pr_yd_25:      'Every 25 Punt Return Yards (DST)',
   pts_allow:         'Points Allowed (per pt)',
   pts_allow_0:       'Shutout',
   pts_allow_1_6:     '1–6 Points Allowed',
   pts_allow_7_13:    '7–13 Points Allowed',
+  pts_allow_14_17:   '14–17 Points Allowed',
+  pts_allow_18_21:   '18–21 Points Allowed',
+  pts_allow_22_27:   '22–27 Points Allowed',
   pts_allow_14_20:   '14–20 Points Allowed',
   pts_allow_21_27:   '21–27 Points Allowed',
   pts_allow_28_34:   '28–34 Points Allowed',
+  pts_allow_35_45:   '35–45 Points Allowed',
+  pts_allow_46p:     '46+ Points Allowed',
   pts_allow_35p:     '35+ Points Allowed',
   yds_allow:         'Yards Allowed (per yd)',
   yds_allow_0_100:   '0–100 Yards Allowed',
@@ -202,98 +231,6 @@ export const STAT_LABELS = {
   yds_allow_500_549: '500–549 Yards Allowed',
   yds_allow_550p:    '550+ Yards Allowed',
 };
-
-const POINT_EPSILON = 0.005;
-
-function roundPoints(value) {
-  return Math.round(Number(value) * 100) / 100;
-}
-
-function addBreakdownRow(rows, { statKey, label, statVal, pts }) {
-  if (!Number.isFinite(pts) || Math.abs(pts) < POINT_EPSILON) return;
-  rows.push({
-    statKey,
-    label,
-    statVal,
-    pts: roundPoints(pts),
-  });
-}
-
-function buildFantasyBreakdownRows(weekEntry, settings, position, authoritativeTotal) {
-  const rows = [];
-  const seen = new Set();
-
-  for (const [statKey, scoringKey] of Object.entries(STAT_TO_SCORING_KEY)) {
-    if (seen.has(scoringKey)) continue;
-    const statVal = weekEntry[statKey];
-    if (!statVal) continue;
-    const multiplier = settings[scoringKey] ?? 0;
-    if (multiplier === 0) continue;
-    seen.add(scoringKey);
-    addBreakdownRow(rows, {
-      statKey,
-      label: STAT_LABELS[statKey] ?? STAT_LABELS[scoringKey] ?? statKey,
-      statVal,
-      pts: Number(statVal) * multiplier,
-    });
-  }
-
-  if (position && weekEntry.rec) {
-    const rec = Number(weekEntry.rec);
-    if (position === 'TE' && settings.bonus_rec_te) {
-      addBreakdownRow(rows, { statKey: 'bonus_rec_te', label: 'TE Reception Bonus', statVal: rec, pts: rec * settings.bonus_rec_te });
-    }
-    if (position === 'RB' && settings.bonus_rec_rb) {
-      addBreakdownRow(rows, { statKey: 'bonus_rec_rb', label: 'RB Reception Bonus', statVal: rec, pts: rec * settings.bonus_rec_rb });
-    }
-    if (position === 'WR' && settings.bonus_rec_wr) {
-      addBreakdownRow(rows, { statKey: 'bonus_rec_wr', label: 'WR Reception Bonus', statVal: rec, pts: rec * settings.bonus_rec_wr });
-    }
-  }
-
-  if (position === 'RB' && weekEntry.rush_att && settings.bonus_rush_att) {
-    const rushAtt = Number(weekEntry.rush_att);
-    addBreakdownRow(rows, { statKey: 'bonus_rush_att', label: 'Carry Bonus', statVal: rushAtt, pts: rushAtt * settings.bonus_rush_att });
-  }
-
-  if (position === 'QB' && settings.bonus_fd_qb) {
-    const firstDowns = Number(weekEntry.pass_fd ?? 0) + Number(weekEntry.rush_fd ?? 0);
-    addBreakdownRow(rows, { statKey: 'bonus_fd_qb', label: 'QB First Down Bonus', statVal: firstDowns, pts: firstDowns * settings.bonus_fd_qb });
-  }
-  if (position === 'RB' && settings.bonus_fd_rb) {
-    const firstDowns = Number(weekEntry.rush_fd ?? 0) + Number(weekEntry.rec_fd ?? 0);
-    addBreakdownRow(rows, { statKey: 'bonus_fd_rb', label: 'RB First Down Bonus', statVal: firstDowns, pts: firstDowns * settings.bonus_fd_rb });
-  }
-  if (position === 'WR' && weekEntry.rec_fd && settings.bonus_fd_wr) {
-    const firstDowns = Number(weekEntry.rec_fd);
-    addBreakdownRow(rows, { statKey: 'bonus_fd_wr', label: 'WR First Down Bonus', statVal: firstDowns, pts: firstDowns * settings.bonus_fd_wr });
-  }
-  if (position === 'TE' && weekEntry.rec_fd && settings.bonus_fd_te) {
-    const firstDowns = Number(weekEntry.rec_fd);
-    addBreakdownRow(rows, { statKey: 'bonus_fd_te', label: 'TE First Down Bonus', statVal: firstDowns, pts: firstDowns * settings.bonus_fd_te });
-  }
-
-  const rowTotal = roundPoints(rows.reduce((sum, row) => sum + row.pts, 0));
-  const adjustment = roundPoints(authoritativeTotal - rowTotal);
-
-  if (rows.length === 0 && Math.abs(authoritativeTotal) >= POINT_EPSILON) {
-    addBreakdownRow(rows, {
-      statKey: 'sleeper_points_total',
-      label: 'Sleeper Scoring Total',
-      statVal: null,
-      pts: authoritativeTotal,
-    });
-  } else if (Math.abs(adjustment) >= 0.01) {
-    addBreakdownRow(rows, {
-      statKey: 'scoring_adjustment',
-      label: 'Scoring Adjustment',
-      statVal: null,
-      pts: adjustment,
-    });
-  }
-
-  return rows.sort((a, b) => b.pts - a.pts);
-}
 
 function ProjectionMath({ baseAvg, factors, projected, projMin, projMax, oppTeam, locationStr, weatherStr, defLabel }) {
   const displayFont = "'Barlow Condensed', 'Arial Narrow', sans-serif";
@@ -488,10 +425,14 @@ function getPositionGroupShortLabel(pos) {
 }
 
 export default function PlayerMatchupBreakdown({ playerId, week, projection, enrichedPlayer, onClose, onViewStats }) {
-  const { players, weeklyStats, activeScoringSettings, espnIdOverrides } = useSleeperBase();
+  const { platform, players, weeklyStats, activeScoringSettings, espnIdOverrides, season } = useSleeperBase();
   const { darkMode } = useTheme();
+  const [failedImageUrl, setFailedImageUrl] = useState(null);
+  const [espnDerivedWeekEntryState, setEspnDerivedWeekEntryState] = useState({ key: '', row: null });
 
   const player = players?.[playerId];
+  const position = player?.position ?? enrichedPlayer?.position ?? null;
+  const espnId = player?.espn_id ?? espnIdOverrides?.[playerId];
 
   // Team color palette
   const palette = getTeamPalette(player?.team);
@@ -499,18 +440,93 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, enr
   const heroAccent = palette ? (darkMode ? palette.darkSecondary : palette.secondary) : null;
   const heroOnBg = heroBg && hexLuminance(heroBg) > 0.3 ? '#0C0F14' : '#FFFFFF';
   const heroOnBgMuted = heroOnBg === '#FFFFFF' ? 'rgba(255,255,255,0.65)' : 'rgba(12,15,20,0.60)';
-  const weekEntry = weeklyStats?.[playerId]?.find(w => w.week === week) ?? null;
+  const playerImageUrl = getCompanionPlayerImageUrl({ ...player, ...enrichedPlayer, id: playerId });
+  const showPlayerImage = Boolean(playerImageUrl && failedImageUrl !== playerImageUrl);
+  const baseWeekEntry = useMemo(() => {
+    const entry = weeklyStats?.[playerId]?.find(w => w.week === week) ?? null;
+    const fallbackPoints = Number(enrichedPlayer?.weekPts);
+    if (entry) {
+      if (!Number.isFinite(fallbackPoints)) return entry;
+      if (entry._fantasyPoints != null || entry.fantasy_points != null || entry.appliedTotal != null) return entry;
+      return {
+        ...entry,
+        _fantasyPoints: fallbackPoints,
+        fantasy_points: fallbackPoints,
+      };
+    }
+    if (!Number.isFinite(fallbackPoints)) return null;
+    return {
+      week,
+      _fantasyPoints: fallbackPoints,
+      fantasy_points: fallbackPoints,
+    };
+  }, [enrichedPlayer?.weekPts, playerId, week, weeklyStats]);
+  const shouldLoadEspnDerivedBreakdown = platform === 'espn'
+    && isEspnFantasyGameLogPosition(position)
+    && Boolean(espnId)
+    && Number.isFinite(Number(week));
+  const espnDerivedWeekEntryKey = shouldLoadEspnDerivedBreakdown
+    ? [season, espnId, week, position].join('|')
+    : '';
+  const espnDerivedWeekEntry = espnDerivedWeekEntryState.key === espnDerivedWeekEntryKey
+    ? espnDerivedWeekEntryState.row
+    : null;
+
+  useEffect(() => {
+    if (!espnDerivedWeekEntryKey) return undefined;
+
+    let cancelled = false;
+    void loadEspnFantasyGameLogWeekRow({
+      playerId: espnId,
+      player: {
+        ...(player ?? {}),
+        espn_id: espnId,
+        position,
+        team: player?.team ?? enrichedPlayer?.team ?? null,
+      },
+      season,
+      scoringSettings: activeScoringSettings,
+      week,
+    })
+      .then((row) => {
+        if (!cancelled) setEspnDerivedWeekEntryState({ key: espnDerivedWeekEntryKey, row: row ?? null });
+      })
+      .catch(() => {
+        if (!cancelled) setEspnDerivedWeekEntryState({ key: espnDerivedWeekEntryKey, row: null });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeScoringSettings,
+    enrichedPlayer?.team,
+    espnId,
+    espnDerivedWeekEntryKey,
+    player,
+    position,
+    season,
+    week,
+  ]);
+
+  const weekEntry = useMemo(() => (
+    espnDerivedWeekEntry
+      ? mergeOfficialFantasyTotal(baseWeekEntry, espnDerivedWeekEntry)
+      : baseWeekEntry
+  ), [baseWeekEntry, espnDerivedWeekEntry]);
 
   const { breakdown, total } = useMemo(() => {
     if (!weekEntry) return { breakdown: [], total: 0 };
-    const settings = { ...DEFAULT_SCORING, ...activeScoringSettings };
-    const position = player?.position ?? enrichedPlayer?.position ?? null;
-    const nextTotal = calcPoints(weekEntry, settings, position);
+    const scoringSettings = activeScoringSettings ?? DEFAULT_SCORING;
+    const result = buildFantasyScoringBreakdown(weekEntry, scoringSettings, position, {
+      preferRawStats: Boolean(espnDerivedWeekEntry),
+      adjustmentLabel: platform === 'espn' ? 'Official Scoring Adjustment' : 'Scoring Adjustment',
+    });
     return {
-      breakdown: buildFantasyBreakdownRows(weekEntry, settings, position, nextTotal),
-      total: nextTotal,
+      breakdown: result.rows,
+      total: result.total,
     };
-  }, [weekEntry, activeScoringSettings, player?.position, enrichedPlayer?.position]);
+  }, [weekEntry, activeScoringSettings, position, espnDerivedWeekEntry, platform]);
   const projectedScore = projection?.projected ?? null;
   const diff = projectedScore !== null ? Math.round((total - projectedScore) * 10) / 10 : null;
   const metProjection = diff !== null ? diff >= 0 : null;
@@ -541,7 +557,6 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, enr
   const projMin = projection?.min ?? null;
   const projMax = projection?.max ?? null;
   const factors = projection?.factors ?? null;
-  const espnId = player?.espn_id ?? espnIdOverrides?.[playerId];
   const canOpenStatistics = Boolean(onViewStats && espnId);
   const openStatisticsMode = (mode) => {
     if (!canOpenStatistics) return;
@@ -596,16 +611,30 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, enr
           >
             {/* Top row: avatar + name + close */}
             <div className="flex items-center gap-3">
-              <img
-                src={`https://sleepercdn.com/content/nfl/players/thumb/${playerId}.jpg`}
-                alt={player?.full_name}
-                className="w-12 h-12 rounded-full object-cover shrink-0"
-                style={{
-                  background: heroBg ? 'rgba(255,255,255,0.15)' : 'var(--color-fill)',
-                  border: heroBg ? `2px solid ${heroAccent ?? 'rgba(255,255,255,0.25)'}` : 'none',
-                }}
-                onError={e => { e.target.src = 'https://sleepercdn.com/images/v2/icons/player_default.webp'; }}
-              />
+              {showPlayerImage ? (
+                <img
+                  src={playerImageUrl}
+                  alt={player?.full_name ?? enrichedPlayer?.name ?? 'Player'}
+                  className="w-12 h-12 rounded-full object-cover shrink-0"
+                  style={{
+                    background: heroBg ? 'rgba(255,255,255,0.15)' : 'var(--color-fill)',
+                    border: heroBg ? `2px solid ${heroAccent ?? 'rgba(255,255,255,0.25)'}` : 'none',
+                  }}
+                  onError={() => setFailedImageUrl(playerImageUrl)}
+                />
+              ) : (
+                <div
+                  className="w-12 h-12 rounded-full shrink-0 flex items-center justify-center text-sm font-black"
+                  style={{
+                    background: heroBg ? 'rgba(255,255,255,0.15)' : 'var(--color-fill)',
+                    border: heroBg ? `2px solid ${heroAccent ?? 'rgba(255,255,255,0.25)'}` : '1px solid var(--color-separator)',
+                    color: heroBg ? heroOnBg : 'var(--color-label)',
+                  }}
+                  aria-hidden="true"
+                >
+                  {getCompanionInitials(player?.full_name ?? enrichedPlayer?.name, '?')}
+                </div>
+              )}
               <div className="flex-1 min-w-0">
                 <div className="font-bold text-base" style={{ color: heroBg ? heroOnBg : 'var(--color-label)' }}>
                   {player?.full_name ?? 'Unknown Player'}
@@ -809,7 +838,7 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, enr
 
                 {breakdown.map(row => (
                   <div
-                    key={row.statKey}
+                    key={row.key ?? row.statKey}
                     className="flex items-center px-5 py-2.5"
                     style={{ borderBottom: '1px solid var(--color-separator)' }}
                   >

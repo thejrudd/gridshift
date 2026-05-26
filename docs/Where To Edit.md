@@ -25,11 +25,18 @@ This page is the quick "open these files first" guide.
 - `src/components/StandingsTable.jsx`
 - `src/components/PlayoffSeeding.jsx`
 
-## Sleeper Connection And League Data
+## Fantasy Connection And League Data
 
 - `src/context/SleeperContext.jsx`
 - `src/api/sleeperApi.js`
+- `src/api/espnFantasyApi.js`
+- `src/utils/espnFantasyAdapter.js`
 - `src/components/companion/CompanionConnect.jsx`
+- `server/sessionCrypto.js`
+- `server/espnHandlers.js`
+- `server/index.js`
+
+ESPN web/PWA auth should stay mobile-friendly: make pasted ESPN team/league links or league IDs the primary handoff, then import public leagues directly. Parse pasted ESPN URLs to prefill league/team/season hints, and keep secure manual session import as the private-league path when ESPN rejects public access. The private-league panel links to the desktop Chrome helper that extracts `SWID` and `espn_s2`; mobile private-league setup is not supported yet. Do not imply the PWA can automatically read ESPN cookies, post-sign-in URLs, or browser-profile state from ESPN's domain.
 
 ## ESPN Player Data And Profiles
 
@@ -43,6 +50,7 @@ This page is the quick "open these files first" guide.
 ## Scoring And Projections
 
 - Start in `src/utils/scoringEngine.js`.
+- ESPN scoring imports use `importEspnScoringProfile()` and `positionOverrides`; Sleeper imports still use flat `importLeagueScoring()`.
 - Then audit:
   - `src/utils/projectionEngine.js`
   - `src/components/companion/CompanionRoster.jsx`
@@ -84,6 +92,8 @@ This page is the quick "open these files first" guide.
 - `src/utils/opportunity/`
 - `src/utils/ktcApi.js`
 - `src/utils/idpEngine.js`
+
+ESPN leagues are player-only in Trade for v8.0. Keep draft-pick loading behind provider methods from `SleeperContext.jsx`, and hide pick UI when `platform === 'espn'`.
 
 ## Companion And Trade Selector Rows
 
@@ -128,8 +138,10 @@ Feature screens such as Roster, League, Rankings, Waiver, Matchup, Heatmap drill
 
 - `package.json`
 - `vite.config.js`
+- `nginx.conf`
 - `src/main.jsx`
 - `src/hooks/usePWAInstall.js`
 - `docker-compose.yml`
 - `Dockerfile`
 - `Dockerfile.prebuilt`
+- `Dockerfile.server`

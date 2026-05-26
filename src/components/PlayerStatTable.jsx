@@ -1,7 +1,21 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { buildStatMap, buildRankMap, getStatRows, getGameLogColumns, positionGroup } from '../utils/playerMetrics';
 import { useSleeperLeague, useSleeperStats } from '../context/SleeperContext';
-import { calcPoints, DEFAULT_SCORING, STAT_TO_SCORING_KEY } from '../utils/scoringEngine';
+import {
+  calcPoints,
+  DEFAULT_SCORING,
+  getEspnAppliedStatFallbackId,
+  getPositionScoringSettings,
+  isEspnAppliedStatFallbackKey,
+  STAT_TO_SCORING_KEY,
+} from '../utils/scoringEngine';
+import { fetchEventScoringPlays } from '../utils/playerApi';
+import {
+  applyEspnBigPlayBonusesToWeeklyStats,
+  getEspnScoringPlayBigPlayBonuses,
+  hasEspnBigPlayTouchdownScoring,
+} from '../utils/espnBigPlayBonuses';
+import { reconcileDstAppliedFantasyStats } from '../utils/fantasyScoreDiagnostics';
 import useMediaQuery from '../hooks/useMediaQuery.js';
 
 // Extract a formatted stat value from a per-game statsJson
@@ -54,6 +68,13 @@ function gameStatDisplayVal(statsJson, col) {
 
 const POINT_EPSILON = 0.005;
 const FANTASY_TOTAL_POINTS_KEY = 'fantasy_total_points';
+const ESPN_UNMAPPED_FANTASY_KEY = 'espn_unmapped_scoring';
+const PLAYER_TABLE_FANTASY_DEBUG_VERSION = 'player-table-fantasy-debug-2026-05-20-v13';
+const PROFILE_FANTASY_PLAYER_ID = '__profile_player__';
+
+function isTeamDefensePosition(position) {
+  return ['DEF', 'DST', 'D/ST'].includes(String(position ?? '').toUpperCase());
+}
 
 function isSameNumericValue(left, right) {
   if (!Number.isFinite(left) || !Number.isFinite(right)) return false;
@@ -76,6 +97,7 @@ const STAT_LABELS = {
   rush_td: 'Rush TD',
   rush_2pt: 'Rush 2-Pt',
   rush_fd: 'Rush 1st Down',
+  rush_att: 'Rush Attempt',
   rec: 'Reception',
   rec_yd: 'Rec Yards',
   rec_td: 'Rec TD',
@@ -93,13 +115,20 @@ const STAT_LABELS = {
   fum_rec_td: 'Fumble Return TD',
   st_td: 'Special Teams TD',
   ret_td: 'Return TD',
+  team_win: 'Team Win',
+  team_loss: 'Team Loss',
+  team_tie: 'Team Tie',
+  kr_td: 'Kickoff Return TD',
+  pr_td: 'Punt Return TD',
   blk_kick: 'Blocked Kick',
+  blk_kick_ret_td: 'Blocked Kick Return TD',
   kr_yd: 'Kick Return Yards',
   pr_yd: 'Punt Return Yards',
   st_tkl_solo: 'Special Teams Tackle',
   blk_kick_ret_yd: 'Blocked Kick Return Yards',
   fg_ret_yd: 'Missed FG Return Yards',
   fum_ret_yd: 'Fumble Return Yards',
+  espn_unmapped_scoring: 'Unmapped ESPN Scoring',
   bonus_rec_te: 'TE Reception Bonus',
   bonus_rec_rb: 'RB Reception Bonus',
   bonus_rec_wr: 'WR Reception Bonus',
@@ -154,6 +183,7 @@ const STAT_LABELS = {
   fgm_0_19: 'FG 0-19',
   fgm_20_29: 'FG 20-29',
   fgm_30_39: 'FG 30-39',
+  fgm_0_39: 'FG 0-39',
   fgm_40_49: 'FG 40-49',
   fgm_50_59: 'FG 50-59',
   fgm_60p: 'FG 60+',
@@ -161,6 +191,7 @@ const STAT_LABELS = {
   fgmiss_0_19: 'FG Miss 0-19',
   fgmiss_20_29: 'FG Miss 20-29',
   fgmiss_30_39: 'FG Miss 30-39',
+  fgmiss_0_39: 'FG Miss 0-39',
   fgmiss_40_49: 'FG Miss 40-49',
   fgmiss_50_59: 'FG Miss 50-59',
   fgmiss_60p: 'FG Miss 60+',
@@ -170,6 +201,10 @@ const STAT_LABELS = {
   fgm_yds_over_30: 'FG Yards Over 30',
   def_td: 'DST TD',
   def_2pt: 'DST 2-Pt',
+  def_1pt_safe: 'DST 1-Pt Safety',
+  def_int_td: 'DST INT Return TD',
+  def_fum_td: 'DST Fumble Return TD',
+  def_ff: 'DST Forced Fumble',
   def_3_and_out: '3-and-Out',
   def_4_and_stop: '4th Down Stop',
   def_forced_punts: 'Forced Punt',
@@ -178,6 +213,7 @@ const STAT_LABELS = {
   def_kr_yd: 'DST Kick Return Yards',
   def_pr_yd: 'DST Punt Return Yards',
   sack: 'DST Sack',
+  sack_half: 'DST Half Sack',
   sack_yd: 'DST Sack Yards',
   int: 'DST INT',
   int_ret_yd: 'DST INT Return Yards',
@@ -185,15 +221,26 @@ const STAT_LABELS = {
   tkl: 'DST Tackle',
   tkl_solo: 'DST Solo Tackle',
   tkl_ast: 'DST Assisted Tackle',
+  tkl_3: 'DST Every 3 Tackles',
+  tkl_5: 'DST Every 5 Tackles',
   tkl_loss: 'DST Tackle for Loss',
   qb_hit: 'DST QB Hit',
+  def_kr_yd_10: 'DST Every 10 Kick Return Yards',
+  def_kr_yd_25: 'DST Every 25 Kick Return Yards',
+  def_pr_yd_10: 'DST Every 10 Punt Return Yards',
+  def_pr_yd_25: 'DST Every 25 Punt Return Yards',
   pts_allow: 'Points Allowed',
   pts_allow_0: 'Shutout',
   pts_allow_1_6: '1-6 Points Allowed',
   pts_allow_7_13: '7-13 Points Allowed',
+  pts_allow_14_17: '14-17 Points Allowed',
+  pts_allow_18_21: '18-21 Points Allowed',
+  pts_allow_22_27: '22-27 Points Allowed',
   pts_allow_14_20: '14-20 Points Allowed',
   pts_allow_21_27: '21-27 Points Allowed',
   pts_allow_28_34: '28-34 Points Allowed',
+  pts_allow_35_45: '35-45 Points Allowed',
+  pts_allow_46p: '46+ Points Allowed',
   pts_allow_35p: '35+ Points Allowed',
   yds_allow: 'Yards Allowed',
   yds_allow_0_100: '0-100 Yards Allowed',
@@ -222,6 +269,7 @@ const FANTASY_SHORT_LABELS = {
   rush_td: 'RuTD',
   rush_2pt: 'Ru2',
   rush_fd: 'RuFD',
+  rush_att: 'RuAtt',
   rec: 'Rec',
   rec_yd: 'ReYd',
   rec_td: 'ReTD',
@@ -238,13 +286,20 @@ const FANTASY_SHORT_LABELS = {
   fum_ret_td: 'FRTD',
   st_td: 'STTD',
   ret_td: 'RetTD',
+  team_win: 'TW',
+  team_loss: 'TL',
+  team_tie: 'Tie',
+  kr_td: 'KRTD',
+  pr_td: 'PRTD',
   blk_kick: 'Blk',
+  blk_kick_ret_td: 'BKTd',
   kr_yd: 'KRYd',
   pr_yd: 'PRYd',
   st_tkl_solo: 'STTk',
   blk_kick_ret_yd: 'BKRYd',
   fg_ret_yd: 'FGRYd',
   fum_ret_yd: 'FRYd',
+  espn_unmapped_scoring: 'ESPN+',
   bonus_rec_te: 'TE+',
   bonus_rec_rb: 'RB+',
   bonus_rec_wr: 'WR+',
@@ -299,6 +354,7 @@ const FANTASY_SHORT_LABELS = {
   fgm_0_19: 'FG19',
   fgm_20_29: 'FG20',
   fgm_30_39: 'FG30',
+  fgm_0_39: 'FG39',
   fgm_40_49: 'FG40',
   fgm_50_59: 'FG50',
   fgm_60p: 'FG60',
@@ -306,6 +362,7 @@ const FANTASY_SHORT_LABELS = {
   fgmiss_0_19: 'Miss19',
   fgmiss_20_29: 'Miss20',
   fgmiss_30_39: 'Miss30',
+  fgmiss_0_39: 'Miss39',
   fgmiss_40_49: 'Miss40',
   fgmiss_50_59: 'Miss50',
   fgmiss_60p: 'Miss60',
@@ -315,6 +372,10 @@ const FANTASY_SHORT_LABELS = {
   fgm_yds_over_30: 'FG30+',
   def_td: 'DSTTD',
   def_2pt: 'DST2',
+  def_1pt_safe: 'D1Saf',
+  def_int_td: 'DINTTD',
+  def_fum_td: 'DFRTD',
+  def_ff: 'DFF',
   def_3_and_out: '3Out',
   def_4_and_stop: '4Stop',
   def_forced_punts: 'Punt',
@@ -323,6 +384,7 @@ const FANTASY_SHORT_LABELS = {
   def_kr_yd: 'DKRYd',
   def_pr_yd: 'DPRYd',
   sack: 'DSack',
+  sack_half: 'DHalfSk',
   sack_yd: 'DSkYd',
   int: 'DINT',
   int_ret_yd: 'DIRYd',
@@ -330,15 +392,26 @@ const FANTASY_SHORT_LABELS = {
   tkl: 'DTkl',
   tkl_solo: 'DSolo',
   tkl_ast: 'DAst',
+  tkl_3: 'DTkl3',
+  tkl_5: 'DTkl5',
   tkl_loss: 'DTFL',
   qb_hit: 'DQBH',
+  def_kr_yd_10: 'DKR10',
+  def_kr_yd_25: 'DKR25',
+  def_pr_yd_10: 'DPR10',
+  def_pr_yd_25: 'DPR25',
   pts_allow: 'PA',
   pts_allow_0: 'PA0',
   pts_allow_1_6: 'PA1',
   pts_allow_7_13: 'PA7',
+  pts_allow_14_17: 'PA14',
+  pts_allow_18_21: 'PA18',
+  pts_allow_22_27: 'PA22',
   pts_allow_14_20: 'PA14',
   pts_allow_21_27: 'PA21',
   pts_allow_28_34: 'PA28',
+  pts_allow_35_45: 'PA35',
+  pts_allow_46p: 'PA46',
   pts_allow_35p: 'PA35',
   yds_allow: 'YA',
   yds_allow_0_100: 'YA100',
@@ -367,12 +440,20 @@ const FANTASY_HEADER_LABELS = {
   rush_td: ['Rush', 'TD'],
   rush_2pt: ['Rush', '2-Pt'],
   rush_fd: ['Rush', '1st Down'],
+  rush_att: ['Rush', 'Att'],
   rec: ['Rec', null],
   rec_yd: ['Rec', 'Yards'],
   rec_td: ['Rec', 'TD'],
   rec_2pt: ['Rec', '2-Pt'],
   rec_fd: ['Rec', '1st Down'],
   fum_lost: ['Fumble', 'Lost'],
+  team_win: ['Team', 'Win'],
+  team_loss: ['Team', 'Loss'],
+  team_tie: ['Team', 'Tie'],
+  kr_td: ['Kick Ret', 'TD'],
+  pr_td: ['Punt Ret', 'TD'],
+  blk_kick_ret_td: ['Blocked Kick', 'TD'],
+  espn_unmapped_scoring: ['Unmapped', 'ESPN'],
   bonus_rec_te: ['TE Rec', 'Bonus'],
   bonus_rec_rb: ['RB Rec', 'Bonus'],
   bonus_rec_wr: ['WR Rec', 'Bonus'],
@@ -418,22 +499,43 @@ const FANTASY_HEADER_LABELS = {
   bonus_tkl_10p: ['10+ Tackle', 'Bonus'],
   idp_pass_def_3p: ['3+ PD', 'Bonus'],
   fgm: ['FG', 'Made'],
+  fgm_0_39: ['FG', '0-39'],
   fgmiss: ['FG', 'Missed'],
+  fgmiss_0_39: ['FG Miss', '0-39'],
   xpm: ['XP', 'Made'],
   xpmiss: ['XP', 'Missed'],
   fgm_yds: ['FG', 'Yards'],
   fgm_yds_over_30: ['FG Yards', 'Over 30'],
   def_td: ['DST', 'TD'],
   def_2pt: ['DST', '2-Pt'],
+  def_int_td: ['DST INT', 'TD'],
+  def_fum_td: ['DST Fumble', 'TD'],
+  def_ff: ['DST Forced', 'Fumble'],
+  def_1pt_safe: ['DST 1-Pt', 'Safety'],
   def_3_and_out: ['3-and-Out', null],
   def_4_and_stop: ['4th Down', 'Stop'],
   def_forced_punts: ['Forced', 'Punt'],
   def_pass_def: ['DST Pass', 'Deflection'],
   sack: ['DST', 'Sack'],
+  sack_half: ['DST Half', 'Sack'],
   sack_yd: ['DST Sack', 'Yards'],
   int: ['DST', 'INT'],
   int_ret_yd: ['DST INT', 'Ret Yards'],
   safe: ['DST', 'Safety'],
+  tkl: ['DST', 'Tackle'],
+  tkl_solo: ['DST Solo', 'Tackle'],
+  tkl_ast: ['DST Assist', 'Tackle'],
+  tkl_3: ['Every 3', 'Tackles'],
+  tkl_5: ['Every 5', 'Tackles'],
+  tkl_loss: ['DST Tackle', 'Loss'],
+  qb_hit: ['DST QB', 'Hit'],
+  def_st_tkl_solo: ['DST ST', 'Tackle'],
+  def_kr_yd: ['DST Kick Ret', 'Yards'],
+  def_kr_yd_10: ['Kick Ret', '10 Yards'],
+  def_kr_yd_25: ['Kick Ret', '25 Yards'],
+  def_pr_yd: ['DST Punt Ret', 'Yards'],
+  def_pr_yd_10: ['Punt Ret', '10 Yards'],
+  def_pr_yd_25: ['Punt Ret', '25 Yards'],
   pts_allow: ['Points', 'Allowed'],
   yds_allow: ['Yards', 'Allowed'],
 };
@@ -475,6 +577,26 @@ const GAME_STAT_HEADER_LABELS = {
   puntsInside20: ['Inside', '20'],
   puntYards: ['Punt', 'Yds'],
   longPunt: ['Long', 'Punt'],
+  pts_allow: ['Points', 'Allowed'],
+  yds_allow: ['Yards', 'Allowed'],
+  sack: ['D/ST', 'Sack'],
+  sack_half: ['Half', 'Sacks'],
+  sack_yd: ['Sack', 'Yards'],
+  int: ['D/ST', 'INT'],
+  fum_rec: ['Fumble', 'Rec'],
+  def_td: ['D/ST', 'TD'],
+  tkl: ['D/ST', 'Tackle'],
+  tkl_solo: ['Solo', 'Tackle'],
+  tkl_3: ['Every 3', 'Tackles'],
+  tkl_5: ['Every 5', 'Tackles'],
+  tkl_loss: ['Tackle', 'Loss'],
+  qb_hit: ['QB', 'Hit'],
+  def_pass_def: ['Pass', 'Def'],
+  def_kr_yd_10: ['Kick Ret', '10 Yards'],
+  def_kr_yd_25: ['Kick Ret', '25 Yards'],
+  def_pr_yd_10: ['Punt Ret', '10 Yards'],
+  def_pr_yd_25: ['Punt Ret', '25 Yards'],
+  safe: ['D/ST', 'Safety'],
 };
 
 const GAME_STAT_EXTRA_ORDER = [
@@ -556,6 +678,27 @@ const GAME_STAT_EXTRA_ORDER = [
   'touchbackPct',
   'puntsInside10Pct',
   'puntsInside20Pct',
+  'pts_allow',
+  'yds_allow',
+  'sack',
+  'sack_half',
+  'sack_yd',
+  'int',
+  'fum_rec',
+  'def_td',
+  'def_1pt_safe',
+  'safe',
+  'tkl',
+  'tkl_solo',
+  'tkl_3',
+  'tkl_5',
+  'tkl_loss',
+  'qb_hit',
+  'def_pass_def',
+  'def_kr_yd_10',
+  'def_kr_yd_25',
+  'def_pr_yd_10',
+  'def_pr_yd_25',
 ];
 
 const GAME_STAT_EXTRA_ORDER_INDEX = new Map(GAME_STAT_EXTRA_ORDER.map((key, index) => [key, index]));
@@ -582,6 +725,10 @@ function getCompactGameLogSizing(width) {
 
 function getFantasyHeaderLabel(key, label) {
   if (FANTASY_HEADER_LABELS[key]) return FANTASY_HEADER_LABELS[key];
+  if (isEspnAppliedStatFallbackKey(key)) {
+    const statId = getEspnAppliedStatFallbackId(key);
+    return ['ESPN', statId ? `#${statId}` : 'Stat'];
+  }
   const fallback = label || FANTASY_SHORT_LABELS[key] || humanizeScoringKey(key);
   const normalized = fallback.replace(/\s+Bonus$/, '');
 
@@ -653,13 +800,13 @@ function compareNullableValues(left, right, direction) {
   return direction === 'desc' ? comparison * -1 : comparison;
 }
 
-function getGameLogStatSortValue(game, col, fantasyOnly, scoringSettings, position, sleeperWeekByWeek) {
+function getGameLogStatSortValue(game, col, fantasyOnly, scoringSettings, position, sleeperWeekByWeek, preferGameLogFantasyRows = false, maxWeek = null) {
   if (fantasyOnly) {
     if (col.key === FANTASY_TOTAL_POINTS_KEY) {
-      return getGameLogFantasyTotalPoints(game, sleeperWeekByWeek, scoringSettings, position);
+      return getGameLogFantasyTotalPoints(game, sleeperWeekByWeek, scoringSettings, position, preferGameLogFantasyRows, maxWeek);
     }
 
-    const rows = buildGameLogFantasyOptionRows(game, sleeperWeekByWeek, scoringSettings, position);
+    const rows = buildGameLogFantasyOptionRows(game, sleeperWeekByWeek, scoringSettings, position, preferGameLogFantasyRows, maxWeek);
     return rows.find((row) => row.key === col.key)?.points ?? null;
   }
 
@@ -783,7 +930,55 @@ const POSITION_FANTASY_OPTIONS = [
   { key: 'bonus_fd_te', label: STAT_LABELS.bonus_fd_te, positions: ['TE'], statKeys: ['rec_fd'] },
 ];
 
-const FANTASY_OPTIONS = [...BASE_FANTASY_OPTIONS, ...POSITION_FANTASY_OPTIONS];
+const FANTASY_OPTIONS = [
+  ...BASE_FANTASY_OPTIONS,
+  ...POSITION_FANTASY_OPTIONS,
+  {
+    key: ESPN_UNMAPPED_FANTASY_KEY,
+    label: STAT_LABELS[ESPN_UNMAPPED_FANTASY_KEY],
+    statKeys: [],
+  },
+];
+
+const FANTASY_OPTION_BY_KEY = new Map(FANTASY_OPTIONS.map((option) => [option.key, option]));
+const FANTASY_OPTION_ORDER_INDEX = new Map(FANTASY_OPTIONS.map((option, index) => [option.key, index]));
+
+function getFantasyOptionLabel(key) {
+  if (STAT_LABELS[key]) return STAT_LABELS[key];
+  if (isEspnAppliedStatFallbackKey(key)) {
+    const statId = getEspnAppliedStatFallbackId(key);
+    return statId ? `ESPN Stat #${statId}` : 'ESPN Applied Stat';
+  }
+  return humanizeScoringKey(key);
+}
+
+function getFantasyOptionForKey(key) {
+  return FANTASY_OPTION_BY_KEY.get(key) ?? {
+    key,
+    label: getFantasyOptionLabel(key),
+    statKeys: [],
+  };
+}
+
+function getFantasyOptionOrderValue(key) {
+  if (key === ESPN_UNMAPPED_FANTASY_KEY) return Number.MAX_SAFE_INTEGER;
+  const staticIndex = FANTASY_OPTION_ORDER_INDEX.get(key);
+  if (staticIndex != null) return staticIndex;
+  if (isEspnAppliedStatFallbackKey(key)) {
+    const statId = Number(getEspnAppliedStatFallbackId(key));
+    return FANTASY_OPTIONS.length + (Number.isFinite(statId) ? statId / 10000 : 0);
+  }
+  return FANTASY_OPTIONS.length + 1;
+}
+
+function getFantasyOptionsForKeys(keys) {
+  return [...keys]
+    .map((key) => getFantasyOptionForKey(key))
+    .sort((left, right) => (
+      getFantasyOptionOrderValue(left.key) - getFantasyOptionOrderValue(right.key)
+      || String(left.label).localeCompare(String(right.label))
+    ));
+}
 
 const PASSING_FANTASY_KEYS = [
   'pass_cmp',
@@ -809,6 +1004,7 @@ const RUSHING_FANTASY_KEYS = [
   'rush_td',
   'rush_2pt',
   'rush_fd',
+  'rush_att',
   'bonus_rush_att',
   'bonus_fd_rb',
   'bonus_rush_att_20',
@@ -850,7 +1046,13 @@ const MISC_FANTASY_KEYS = [
   'fum_ret_td',
   'st_td',
   'ret_td',
+  'team_win',
+  'team_loss',
+  'team_tie',
+  'kr_td',
+  'pr_td',
   'blk_kick',
+  'blk_kick_ret_td',
   'kr_yd',
   'pr_yd',
   'st_tkl_solo',
@@ -879,6 +1081,7 @@ const FIELD_GOAL_FANTASY_KEYS = [
   'fgm_0_19',
   'fgm_20_29',
   'fgm_30_39',
+  'fgm_0_39',
   'fgm_40_49',
   'fgm_50_59',
   'fgm_60p',
@@ -888,19 +1091,69 @@ const FIELD_GOAL_FANTASY_KEYS = [
   'fgmiss_0_19',
   'fgmiss_20_29',
   'fgmiss_30_39',
+  'fgmiss_0_39',
   'fgmiss_40_49',
   'fgmiss_50_59',
   'fgmiss_60p',
 ];
 const EXTRA_POINT_FANTASY_KEYS = ['xpm', 'xpmiss'];
 
-const DST_SCORING_FANTASY_KEYS = ['def_td', 'def_2pt', 'safe'];
-const DST_PASS_RUSH_FANTASY_KEYS = ['sack', 'sack_yd', 'qb_hit', 'tkl_loss'];
-const DST_TURNOVER_FANTASY_KEYS = ['int', 'int_ret_yd', 'def_pass_def', 'def_3_and_out', 'def_4_and_stop', 'def_forced_punts'];
-const DST_TACKLING_FANTASY_KEYS = ['tkl', 'tkl_solo', 'tkl_ast'];
-const DST_RETURN_FANTASY_KEYS = ['def_st_tkl_solo', 'def_kr_yd', 'def_pr_yd'];
-const DST_POINTS_ALLOWED_FANTASY_KEYS = ['pts_allow', 'pts_allow_0', 'pts_allow_1_6', 'pts_allow_7_13', 'pts_allow_14_20', 'pts_allow_21_27', 'pts_allow_28_34', 'pts_allow_35p'];
+const DST_SCORING_FANTASY_KEYS = ['def_td', 'def_2pt', 'def_1pt_safe', 'def_int_td', 'def_fum_td', 'blk_kick_ret_td', 'kr_td', 'pr_td', 'safe'];
+const DST_PASS_RUSH_FANTASY_KEYS = ['sack', 'sack_half', 'sack_yd', 'qb_hit', 'tkl_loss'];
+const DST_TURNOVER_FANTASY_KEYS = ['int', 'int_ret_yd', 'def_ff', 'def_pass_def', 'def_3_and_out', 'def_4_and_stop', 'def_forced_punts'];
+const DST_TACKLING_FANTASY_KEYS = ['tkl', 'tkl_solo', 'tkl_ast', 'tkl_3', 'tkl_5'];
+const DST_RETURN_FANTASY_KEYS = ['def_st_tkl_solo', 'def_kr_yd', 'def_kr_yd_10', 'def_kr_yd_25', 'def_pr_yd', 'def_pr_yd_10', 'def_pr_yd_25'];
+const DST_POINTS_ALLOWED_FANTASY_KEYS = ['pts_allow', 'pts_allow_0', 'pts_allow_1_6', 'pts_allow_7_13', 'pts_allow_14_17', 'pts_allow_18_21', 'pts_allow_22_27', 'pts_allow_14_20', 'pts_allow_21_27', 'pts_allow_28_34', 'pts_allow_35_45', 'pts_allow_46p', 'pts_allow_35p'];
 const DST_YARDS_ALLOWED_FANTASY_KEYS = ['yds_allow', 'yds_allow_0_100', 'yds_allow_100_199', 'yds_allow_200_299', 'yds_allow_300_349', 'yds_allow_350_399', 'yds_allow_400_449', 'yds_allow_450_499', 'yds_allow_500_549', 'yds_allow_550p'];
+const TEAM_RESULT_FANTASY_KEYS = ['team_win', 'team_loss', 'team_tie'];
+const DST_RAW_BREAKDOWN_FANTASY_KEYS = new Set([
+  'fum_rec',
+  'blk_kick',
+  ...TEAM_RESULT_FANTASY_KEYS,
+  ...DST_SCORING_FANTASY_KEYS,
+  ...DST_PASS_RUSH_FANTASY_KEYS,
+  ...DST_TURNOVER_FANTASY_KEYS,
+  ...DST_TACKLING_FANTASY_KEYS,
+  ...DST_RETURN_FANTASY_KEYS,
+  ...DST_POINTS_ALLOWED_FANTASY_KEYS,
+  ...DST_YARDS_ALLOWED_FANTASY_KEYS,
+]);
+const DST_GAME_STAT_KEYS = [
+  'pts_allow',
+  'yds_allow',
+  'sack',
+  'sack_half',
+  'sack_yd',
+  'int',
+  'int_ret_yd',
+  'fum_rec',
+  'blk_kick',
+  'blk_kick_ret_td',
+  'def_ff',
+  'def_td',
+  'def_2pt',
+  'def_1pt_safe',
+  'def_int_td',
+  'def_fum_td',
+  'kr_td',
+  'pr_td',
+  'safe',
+  'tkl',
+  'tkl_solo',
+  'tkl_ast',
+  'tkl_3',
+  'tkl_5',
+  'tkl_loss',
+  'qb_hit',
+  'def_pass_def',
+  'def_st_tkl_solo',
+  'def_kr_yd',
+  'def_kr_yd_10',
+  'def_kr_yd_25',
+  'def_pr_yd',
+  'def_pr_yd_10',
+  'def_pr_yd_25',
+];
 
 const GENERIC_FANTASY_SECTIONS = [
   { heading: 'Passing', keys: [...PASSING_FANTASY_KEYS, ...QB_NEGATIVE_FANTASY_KEYS] },
@@ -917,8 +1170,7 @@ const GENERIC_FANTASY_SECTIONS = [
 ];
 
 function getFantasySectionDefinitions(position) {
-  const rawPosition = (position ?? '').toUpperCase();
-  if (['DEF', 'DST', 'D/ST'].includes(rawPosition)) {
+  if (isTeamDefensePosition(position)) {
     return [
       { heading: 'Scoring', keys: DST_SCORING_FANTASY_KEYS },
       { heading: 'Pass Rush', keys: DST_PASS_RUSH_FANTASY_KEYS },
@@ -993,9 +1245,12 @@ function buildFantasyValueSectionsFromRows(rowByKey, position) {
     })
     .filter(Boolean);
 
-  const fallbackRows = FANTASY_OPTIONS
-    .map(({ key }) => rowByKey.get(key))
-    .filter((row) => row && !usedKeys.has(row.key));
+  const fallbackRows = [...rowByKey.values()]
+    .filter((row) => row && !usedKeys.has(row.key))
+    .sort((left, right) => (
+      getFantasyOptionOrderValue(left.key) - getFantasyOptionOrderValue(right.key)
+      || String(left.label).localeCompare(String(right.label))
+    ));
 
   if (fallbackRows.length > 0) {
     sections.push({ heading: 'Other', rows: fallbackRows });
@@ -1008,18 +1263,153 @@ function getStatTotal(entry, statKeys) {
   return statKeys.reduce((sum, key) => sum + (Number(entry?.[key]) || 0), 0);
 }
 
+function isYardageFantasyKey(key) {
+  return /\byd\b|_yd$|yards?|pts_allow|yds_allow/.test(String(key ?? ''));
+}
+
+function formatSignedDebugNumber(value) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return '';
+  return `${numericValue > 0 ? '+' : ''}${roundPoints(numericValue)}`;
+}
+
+function buildDstResidualCandidates(entry, scoringSettings, position, residual, breakdown = []) {
+  if (!isTeamDefensePosition(position) || !entry || !scoringSettings || Math.abs(Number(residual) || 0) < POINT_EPSILON) {
+    return [];
+  }
+
+  const positionSettings = getPositionScoringSettings(scoringSettings, position);
+  const breakdownByKey = new Map(breakdown.map((row) => [row.key, row]));
+
+  return [...DST_RAW_BREAKDOWN_FANTASY_KEYS]
+    .map((key) => {
+      const option = getFantasyOptionForKey(key);
+      const multiplier = Number(positionSettings[key]);
+      if (!Number.isFinite(multiplier) || Math.abs(multiplier) < POINT_EPSILON) return null;
+
+      const rawStat = getStatTotal(entry, option.statKeys);
+      const currentPoints = Number(breakdownByKey.get(key)?.points ?? 0);
+      const residualUnits = residual / multiplier;
+      const absUnits = Math.abs(residualUnits);
+      const roundedUnits = Math.round(absUnits);
+      const isNearWholeUnit = Math.abs(absUnits - roundedUnits) < 0.01;
+      const isSingleUnitMatch = Math.abs(Math.abs(residual) - Math.abs(multiplier)) < 0.01;
+      const isPlausibleCountMatch = isNearWholeUnit && roundedUnits > 0 && roundedUnits <= 6;
+      const isPlausibleYardageMatch = isYardageFantasyKey(key) && absUnits > 0 && absUnits <= 600;
+      const signLabel = residualUnits > 0 ? 'missing' : 'overcount';
+      const score = (
+        (isSingleUnitMatch ? 4 : 0)
+        + (isPlausibleCountMatch ? 3 : 0)
+        + (isPlausibleYardageMatch ? 2 : 0)
+        + (Math.abs(currentPoints) >= POINT_EPSILON ? 1 : 0)
+      );
+
+      return {
+        key,
+        label: option.label,
+        multiplier: roundPoints(multiplier),
+        rawStat: roundPoints(rawStat),
+        currentPoints: roundPoints(currentPoints),
+        residualUnits: roundPoints(residualUnits),
+        candidate: score > 0,
+        summary: `${signLabel} ${roundPoints(absUnits)} x ${key} (${formatSignedDebugNumber(multiplier)} each)`,
+        score,
+      };
+    })
+    .filter(Boolean)
+    .filter((candidate) => candidate.candidate)
+    .sort((left, right) => (
+      right.score - left.score
+      || Math.abs(left.residualUnits) - Math.abs(right.residualUnits)
+      || String(left.key).localeCompare(right.key)
+    ));
+}
+
+function shouldUseRawFantasyBreakdown(option, position) {
+  return isTeamDefensePosition(position) && DST_RAW_BREAKDOWN_FANTASY_KEYS.has(option.key);
+}
+
+function hasRawTeamResultStat(weekEntry) {
+  return TEAM_RESULT_FANTASY_KEYS.some((key) => Number(weekEntry?.[key]) > 0);
+}
+
 function buildFantasyOptionRows(weekEntry, scoringSettings, position) {
   if (!weekEntry || !scoringSettings) return [];
   const rows = [];
+  const rowKeys = new Set();
+  const positionSettings = getPositionScoringSettings(scoringSettings, position);
+  const appliedContributions = weekEntry._fantasyContributions;
+  const hasAppliedContributions = appliedContributions && typeof appliedContributions === 'object';
+  const preferRawTeamResult = isTeamDefensePosition(position) && hasRawTeamResultStat(weekEntry);
 
   for (const option of FANTASY_OPTIONS) {
+    if (option.key === ESPN_UNMAPPED_FANTASY_KEY) continue;
     if (option.positions && !option.positions.includes(position)) continue;
+
+    const rawStatTotal = getStatTotal(weekEntry, option.statKeys);
+    const shouldUseRaw = shouldUseRawFantasyBreakdown(option, position);
+    if (preferRawTeamResult && TEAM_RESULT_FANTASY_KEYS.includes(option.key)) {
+      rowKeys.add(option.key);
+      addFantasyRow(rows, {
+        key: option.key,
+        label: option.label,
+        statVal: rawStatTotal,
+        multiplier: positionSettings[option.key] ?? 0,
+      });
+      continue;
+    }
+
+    const appliedPoints = Number(appliedContributions?.[option.key]);
+    if (Number.isFinite(appliedPoints)) {
+      rowKeys.add(option.key);
+      if (Math.abs(appliedPoints) >= POINT_EPSILON) rows.push({ key: option.key, label: option.label, points: appliedPoints });
+      continue;
+    }
+    if (hasAppliedContributions && !shouldUseRaw) continue;
+
+    rowKeys.add(option.key);
     addFantasyRow(rows, {
       key: option.key,
       label: option.label,
-      statVal: getStatTotal(weekEntry, option.statKeys),
-      multiplier: scoringSettings[option.key] ?? 0,
+      statVal: rawStatTotal,
+      multiplier: positionSettings[option.key] ?? 0,
     });
+  }
+
+  if (hasAppliedContributions) {
+    const dynamicRows = Object.entries(appliedContributions)
+      .filter(([key, points]) => {
+        const numericPoints = Number(points);
+        return !rowKeys.has(key)
+          && Number.isFinite(numericPoints)
+          && Math.abs(numericPoints) >= POINT_EPSILON;
+      })
+      .map(([key, points]) => ({
+        key,
+        label: getFantasyOptionLabel(key),
+        points: Number(points),
+      }))
+      .sort((left, right) => (
+        getFantasyOptionOrderValue(left.key) - getFantasyOptionOrderValue(right.key)
+        || String(left.label).localeCompare(String(right.label))
+      ));
+    for (const row of dynamicRows) {
+      rowKeys.add(row.key);
+      rows.push(row);
+    }
+  }
+
+  const appliedTotal = Number(weekEntry._fantasyPoints ?? weekEntry.fantasy_points ?? weekEntry.appliedTotal);
+  if (Number.isFinite(appliedTotal)) {
+    const visibleTotal = rows.reduce((sum, row) => sum + (Number(row.points) || 0), 0);
+    const residual = appliedTotal - visibleTotal;
+    if (Math.abs(residual) >= POINT_EPSILON) {
+      rows.push({
+        key: ESPN_UNMAPPED_FANTASY_KEY,
+        label: STAT_LABELS[ESPN_UNMAPPED_FANTASY_KEY],
+        points: residual,
+      });
+    }
   }
 
   return rows;
@@ -1044,12 +1434,208 @@ function setThresholdStat(target, key, value, threshold) {
   target[key] = value >= threshold ? 1 : 0;
 }
 
-function buildSleeperStatsFromGameLogStats(statsJson, position) {
+function setEveryStat(target, key, value, interval) {
+  if (!Number.isFinite(value) || !Number.isFinite(interval) || interval <= 0) return;
+  target[key] = Math.floor(value / interval);
+}
+
+function parseMetaScore(score) {
+  const match = String(score ?? '').match(/(-?\d+(?:\.\d+)?)\s*-\s*(-?\d+(?:\.\d+)?)/);
+  if (!match) return [null, null];
+  const left = Number(match[1]);
+  const right = Number(match[2]);
+  return [
+    Number.isFinite(left) ? left : null,
+    Number.isFinite(right) ? right : null,
+  ];
+}
+
+function getEffectiveMetaResult(meta = {}) {
+  const [teamScore, opponentScore] = parseMetaScore(meta.score);
+  if (Number.isFinite(teamScore) && Number.isFinite(opponentScore)) {
+    if (teamScore > opponentScore) return 'W';
+    if (teamScore < opponentScore) return 'L';
+    return 'T';
+  }
+
+  const result = String(meta.result ?? '-').toUpperCase();
+  return ['W', 'L', 'T'].includes(result) ? result : '-';
+}
+
+function setRangeStat(target, key, value, min, max = Infinity) {
+  if (!Number.isFinite(value)) return;
+  target[key] = value >= min && value <= max ? 1 : 0;
+}
+
+function setTeamDefenseAllowanceBuckets(target, pointsAllowed, yardsAllowed) {
+  setRangeStat(target, 'pts_allow_0', pointsAllowed, 0, 0);
+  setRangeStat(target, 'pts_allow_1_6', pointsAllowed, 1, 6);
+  setRangeStat(target, 'pts_allow_7_13', pointsAllowed, 7, 13);
+  setRangeStat(target, 'pts_allow_14_17', pointsAllowed, 14, 17);
+  setRangeStat(target, 'pts_allow_18_21', pointsAllowed, 18, 21);
+  setRangeStat(target, 'pts_allow_22_27', pointsAllowed, 22, 27);
+  setRangeStat(target, 'pts_allow_14_20', pointsAllowed, 14, 20);
+  setRangeStat(target, 'pts_allow_21_27', pointsAllowed, 21, 27);
+  setRangeStat(target, 'pts_allow_28_34', pointsAllowed, 28, 34);
+  setRangeStat(target, 'pts_allow_35_45', pointsAllowed, 35, 45);
+  setRangeStat(target, 'pts_allow_46p', pointsAllowed, 46);
+  setRangeStat(target, 'pts_allow_35p', pointsAllowed, 35);
+
+  setRangeStat(target, 'yds_allow_0_100', yardsAllowed, 0, 100);
+  setRangeStat(target, 'yds_allow_100_199', yardsAllowed, 100, 199);
+  setRangeStat(target, 'yds_allow_200_299', yardsAllowed, 200, 299);
+  setRangeStat(target, 'yds_allow_300_349', yardsAllowed, 300, 349);
+  setRangeStat(target, 'yds_allow_350_399', yardsAllowed, 350, 399);
+  setRangeStat(target, 'yds_allow_400_449', yardsAllowed, 400, 449);
+  setRangeStat(target, 'yds_allow_450_499', yardsAllowed, 450, 499);
+  setRangeStat(target, 'yds_allow_500_549', yardsAllowed, 500, 549);
+  setRangeStat(target, 'yds_allow_550p', yardsAllowed, 550);
+}
+
+function buildStatsJsonFromFlatStats(flatStats, heading = 'Team Defense') {
+  const stats = Object.entries(flatStats ?? {})
+    .filter(([, value]) => Number.isFinite(Number(value)))
+    .map(([name, value]) => ({
+      name,
+      value: Number(value),
+      displayValue: Number(value).toLocaleString('en-US', { maximumFractionDigits: 1 }),
+      displayName: STAT_LABELS[name] ?? humanizeScoringKey(name),
+      shortDisplayName: FANTASY_SHORT_LABELS[name] ?? STAT_LABELS[name] ?? humanizeScoringKey(name),
+    }));
+
+  return stats.length > 0 ? { splits: { categories: [{ name: heading, stats }] } } : null;
+}
+
+function buildTeamDefenseStatsJsonFromFantasyRows(rows = [], position) {
+  if (!isTeamDefensePosition(position) || !Array.isArray(rows) || rows.length === 0) return null;
+  const totals = {};
+  let gamesPlayed = 0;
+
+  for (const row of rows) {
+    if (!row) continue;
+    const hasWeek = Number.isFinite(Number(row.week));
+    const gp = Number(row.gp);
+    gamesPlayed += hasWeek ? 1 : (Number.isFinite(gp) ? gp : 0);
+
+    for (const key of DST_GAME_STAT_KEYS) {
+      const value = Number(row[key]);
+      if (!Number.isFinite(value)) continue;
+      totals[key] = (totals[key] ?? 0) + value;
+    }
+  }
+
+  if (gamesPlayed > 0) totals.gamesPlayed = gamesPlayed;
+  return buildStatsJsonFromFlatStats(totals, 'Team Defense');
+}
+
+function buildGameLogFromFantasyRows(rows = [], position) {
+  if (!isTeamDefensePosition(position) || !Array.isArray(rows) || rows.length === 0) return [];
+
+  return rows
+    .filter((row) => Number.isFinite(Number(row?.week)))
+    .map((row) => {
+      const flat = {};
+      for (const key of DST_GAME_STAT_KEYS) {
+        const value = Number(row[key]);
+        if (Number.isFinite(value)) flat[key] = value;
+      }
+      flat.gamesPlayed = 1;
+
+      const opponent = row.opp
+        ? `${row.home === false ? '@' : 'vs '}${row.opp}`
+        : '—';
+      const result = row.team_win ? 'W' : row.team_loss ? 'L' : row.team_tie ? 'T' : '-';
+
+      return {
+        eventId: `fantasy_${row.week}`,
+        meta: {
+          week: Number(row.week),
+          opponent,
+          result,
+          score: '',
+          myTeam: row.team ?? null,
+        },
+        statsJson: buildStatsJsonFromFlatStats(flat, 'Team Defense'),
+      };
+    })
+    .filter((game) => game.statsJson);
+}
+
+function hasRecordedStatsJson(statsJson) {
+  return (statsJson?.splits?.categories ?? []).some((category) => (
+    (category.stats ?? []).some((stat) => {
+      const value = numericStatValue(stat.value ?? stat.displayValue);
+      return value !== null && Math.abs(value) > POINT_EPSILON;
+    })
+  ));
+}
+
+function buildSleeperStatsFromGameLogStats(statsJson, position, meta = {}) {
   if (!statsJson) return null;
   const statsMap = buildStatMap(statsJson);
   const group = positionGroup(position);
   const isIdp = ['DL', 'LB', 'DB'].includes(group);
+  const result = getEffectiveMetaResult(meta);
   const entry = {};
+
+  if (isTeamDefensePosition(position)) {
+    const pointsAllowed = getNumericStat(statsMap, 'pts_allow');
+    const yardsAllowed = getNumericStat(statsMap, 'yds_allow');
+    const sacks = getNumericStat(statsMap, 'sack', 'sacks') ?? 0;
+    const totalTackles = getNumericStat(statsMap, 'tkl', 'totalTackles', 'tackles') ?? 0;
+    const kickReturnYards = getNumericStat(statsMap, 'def_kr_yd', 'kr_yd', 'kickReturnYards') ?? 0;
+    const puntReturnYards = getNumericStat(statsMap, 'def_pr_yd', 'pr_yd', 'puntReturnYards') ?? 0;
+
+    setNumericStat(entry, 'pts_allow', pointsAllowed ?? 0);
+    setNumericStat(entry, '_pts_allow_raw', getNumericStat(statsMap, 'pts_allow_raw'));
+    setNumericStat(entry, '_pts_allow_adjusted', getNumericStat(statsMap, 'pts_allow_adjusted'));
+    setNumericStat(entry, 'yds_allow', yardsAllowed ?? 0);
+    setNumericStat(entry, '_yds_allow_raw', getNumericStat(statsMap, 'yds_allow_raw'));
+    setNumericStat(entry, '_yds_allow_with_return_tds', getNumericStat(statsMap, 'yds_allow_with_return_tds'));
+    setNumericStat(entry, 'sack', sacks);
+    setNumericStat(entry, 'sack_half', getNumericStat(statsMap, 'sack_half') ?? sacks * 2);
+    setNumericStat(entry, 'sack_yd', getNumericStat(statsMap, 'sack_yd', 'sackYards') ?? 0);
+    setNumericStat(entry, 'int', getNumericStat(statsMap, 'int', 'interceptions') ?? 0);
+    setNumericStat(entry, 'int_ret_yd', getNumericStat(statsMap, 'int_ret_yd', 'interceptionYards') ?? 0);
+    setNumericStat(entry, 'fum_rec', getNumericStat(statsMap, 'fum_rec', 'fumblesRecovered', 'fumbleRecoveries') ?? 0);
+    setNumericStat(entry, '_fum_rec_own_recovery_candidate', getNumericStat(statsMap, 'fum_rec_own_recovery_candidate'));
+    setNumericStat(entry, '_fum_rec_blocked_kick_candidate', getNumericStat(statsMap, 'fum_rec_blocked_kick_candidate'));
+    setNumericStat(entry, '_fum_rec_touchback_candidate', getNumericStat(statsMap, 'fum_rec_touchback_candidate'));
+    setNumericStat(entry, '_fum_rec_out_of_bounds_candidate', getNumericStat(statsMap, 'fum_rec_out_of_bounds_candidate'));
+    setNumericStat(entry, 'blk_kick', getNumericStat(statsMap, 'blk_kick', 'blockedKicks') ?? 0);
+    setNumericStat(entry, 'blk_kick_ret_td', getNumericStat(statsMap, 'blk_kick_ret_td') ?? 0);
+    setNumericStat(entry, 'def_ff', getNumericStat(statsMap, 'def_ff', 'fumblesForced') ?? 0);
+    setNumericStat(entry, '_def_ff_turnover_return_candidate', getNumericStat(statsMap, 'def_ff_turnover_return_candidate'));
+    setNumericStat(entry, 'def_td', getNumericStat(statsMap, 'def_td', 'defensiveTouchdowns') ?? 0);
+    setNumericStat(entry, 'def_2pt', getNumericStat(statsMap, 'def_2pt') ?? 0);
+    setNumericStat(entry, '_def_2pt_failed_stop', getNumericStat(statsMap, 'def_2pt_failed_stop'));
+    setNumericStat(entry, 'def_1pt_safe', getNumericStat(statsMap, 'def_1pt_safe') ?? 0);
+    setNumericStat(entry, 'def_int_td', getNumericStat(statsMap, 'def_int_td', 'interceptionTouchdowns') ?? 0);
+    setNumericStat(entry, 'def_fum_td', getNumericStat(statsMap, 'def_fum_td') ?? 0);
+    setNumericStat(entry, 'kr_td', getNumericStat(statsMap, 'kr_td', 'kickReturnTouchdowns') ?? 0);
+    setNumericStat(entry, 'pr_td', getNumericStat(statsMap, 'pr_td', 'puntReturnTouchdowns') ?? 0);
+    setNumericStat(entry, 'safe', getNumericStat(statsMap, 'safe', 'safeties') ?? 0);
+    setNumericStat(entry, 'tkl', totalTackles);
+    setNumericStat(entry, 'tkl_solo', getNumericStat(statsMap, 'tkl_solo', 'soloTackles') ?? 0);
+    setNumericStat(entry, 'tkl_ast', getNumericStat(statsMap, 'tkl_ast', 'assistedTackles') ?? Math.max(0, (entry.tkl ?? 0) - (entry.tkl_solo ?? 0)));
+    setEveryStat(entry, 'tkl_3', totalTackles, 3);
+    setEveryStat(entry, 'tkl_5', totalTackles, 5);
+    setNumericStat(entry, 'tkl_loss', getNumericStat(statsMap, 'tkl_loss', 'tacklesForLoss') ?? 0);
+    setNumericStat(entry, 'qb_hit', getNumericStat(statsMap, 'qb_hit', 'QBHits') ?? 0);
+    setNumericStat(entry, 'def_pass_def', getNumericStat(statsMap, 'def_pass_def', 'passesDefended') ?? 0);
+    setNumericStat(entry, 'def_st_tkl_solo', getNumericStat(statsMap, 'def_st_tkl_solo') ?? 0);
+    setNumericStat(entry, 'def_kr_yd', kickReturnYards);
+    setEveryStat(entry, 'def_kr_yd_10', kickReturnYards, 10);
+    setEveryStat(entry, 'def_kr_yd_25', kickReturnYards, 25);
+    setNumericStat(entry, 'def_pr_yd', puntReturnYards);
+    setEveryStat(entry, 'def_pr_yd_10', puntReturnYards, 10);
+    setEveryStat(entry, 'def_pr_yd_25', puntReturnYards, 25);
+    setTeamDefenseAllowanceBuckets(entry, pointsAllowed, yardsAllowed);
+    if (result === 'W') setNumericStat(entry, 'team_win', 1);
+    if (result === 'L') setNumericStat(entry, 'team_loss', 1);
+    if (result === 'T') setNumericStat(entry, 'team_tie', 1);
+    return entry;
+  }
 
   const passCmp = getNumericStat(statsMap, 'completions', 'passingCompletions');
   const passAtt = getNumericStat(statsMap, 'passingAttempts');
@@ -1096,6 +1682,9 @@ function buildSleeperStatsFromGameLogStats(statsJson, position) {
 
   setNumericStat(entry, 'fum', getNumericStat(statsMap, 'fumbles') ?? 0);
   setNumericStat(entry, 'fum_lost', getNumericStat(statsMap, 'fumblesLost') ?? 0);
+  if (result === 'W') setNumericStat(entry, 'team_win', 1);
+  if (result === 'L') setNumericStat(entry, 'team_loss', 1);
+  if (result === 'T') setNumericStat(entry, 'team_tie', 1);
 
   if (isIdp) {
     setNumericStat(entry, 'idp_tkl', getNumericStat(statsMap, 'totalTackles', 'tackles') ?? 0);
@@ -1129,20 +1718,139 @@ function buildSleeperStatsFromGameLogStats(statsJson, position) {
   return entry;
 }
 
-function buildGameLogFantasyOptionRows(game, sleeperWeekByWeek, scoringSettings, position) {
-  const weekEntry = getGameLogFantasyWeekEntry(game, sleeperWeekByWeek, position);
+function hasFantasyStatValues(entry) {
+  return Object.entries(entry ?? {}).some(([key, value]) => (
+    key !== 'week'
+    && Number.isFinite(Number(value))
+    && Math.abs(Number(value)) > 0
+  ));
+}
+
+function buildFantasyRowsFromGameLog(gameLog, position) {
+  if (!Array.isArray(gameLog)) return [];
+  return gameLog
+    .map((game) => {
+      const entry = buildSleeperStatsFromGameLogStats(game?.statsJson, position, game?.meta);
+      if (!hasFantasyStatValues(entry)) return null;
+      const week = Number(game?.meta?.week);
+      return Number.isFinite(week) ? { ...entry, week, _isPostseason: !!game?.meta?.isPostseason } : entry;
+    })
+    .filter(Boolean);
+}
+
+function isActiveFantasyWeekRow(row, maxWeek = null) {
+  const week = Number(row?.week);
+  if (!Number.isFinite(week) || row?._isPostseason) return false;
+  const maxFantasyWeek = Number(maxWeek);
+  return !Number.isFinite(maxFantasyWeek) || maxFantasyWeek <= 0 || week <= maxFantasyWeek;
+}
+
+function buildFantasyRowsFromSeasonStats(statsJson, position) {
+  const entry = buildSleeperStatsFromGameLogStats(statsJson, position);
+  return hasFantasyStatValues(entry) ? [entry] : [];
+}
+
+function applyScoringPlayBonusesToProfileRows(rows = [], bonusesByWeek = {}) {
+  if (!rows.length || !Object.keys(bonusesByWeek ?? {}).length) return rows;
+
+  let weeklyStats = { [PROFILE_FANTASY_PLAYER_ID]: rows };
+  for (const [week, bonuses] of Object.entries(bonusesByWeek ?? {})) {
+    weeklyStats = applyEspnBigPlayBonusesToWeeklyStats(weeklyStats, Number(week), {
+      [PROFILE_FANTASY_PLAYER_ID]: bonuses,
+    });
+  }
+
+  return weeklyStats[PROFILE_FANTASY_PLAYER_ID] ?? rows;
+}
+
+function clearAppliedFantasyFieldsFromRow(row) {
+  const next = { ...row };
+  delete next._fantasyPoints;
+  delete next.fantasy_points;
+  delete next.appliedTotal;
+  delete next._fantasyContributions;
+  delete next._espnAppliedStats;
+  return next;
+}
+
+function syncTeamResultStatsFromDerived(row, derived, position) {
+  if (!isTeamDefensePosition(position) || !row || !derived) return row;
+  const previousResult = row.team_win ? 'W' : row.team_loss ? 'L' : row.team_tie ? 'T' : null;
+  const next = { ...row };
+  delete next.team_win;
+  delete next.team_loss;
+  delete next.team_tie;
+  for (const key of TEAM_RESULT_FANTASY_KEYS) {
+    if (Number.isFinite(Number(derived[key])) && Number(derived[key]) !== 0) next[key] = derived[key];
+  }
+  const derivedResult = next.team_win ? 'W' : next.team_loss ? 'L' : next.team_tie ? 'T' : null;
+  const hasAppliedTotal = Number.isFinite(Number(next._fantasyPoints ?? next.fantasy_points ?? next.appliedTotal));
+  if (next._fantasyContributions) {
+    next._fantasyContributions = { ...next._fantasyContributions };
+    for (const key of TEAM_RESULT_FANTASY_KEYS) delete next._fantasyContributions[key];
+    if (Object.keys(next._fantasyContributions).length === 0) delete next._fantasyContributions;
+  }
+  if (!hasAppliedTotal && previousResult && derivedResult && previousResult !== derivedResult) {
+    return clearAppliedFantasyFieldsFromRow(next);
+  }
+  return next;
+}
+
+function mergeFantasyRowsWithDerivedStats(providedRows = [], derivedRows = [], {
+  preferDerived = false,
+  position = null,
+  scoringSettings = null,
+  maxWeek = null,
+} = {}) {
+  if (preferDerived) {
+    return derivedRows
+      .filter((row) => isActiveFantasyWeekRow(row, maxWeek))
+      .map((row) => clearAppliedFantasyFieldsFromRow(row));
+  }
+
+  if (!providedRows.length) return derivedRows;
+  if (!derivedRows.length) return providedRows;
+
+  const derivedByWeek = new Map(
+    derivedRows
+      .filter((row) => isActiveFantasyWeekRow(row, maxWeek))
+      .map((row) => [Number(row.week), row]),
+  );
+
+  return providedRows.map((row) => {
+    const derived = derivedByWeek.get(Number(row?.week));
+    if (!derived) return row;
+    if (derived._espnScoringPlayEnriched) {
+      return clearAppliedFantasyFieldsFromRow({ ...row, ...derived });
+    }
+    const hasAppliedTotal = Number.isFinite(Number(row?._fantasyPoints ?? row?.fantasy_points ?? row?.appliedTotal));
+    const hasAppliedContributions = row?._fantasyContributions && Object.keys(row._fantasyContributions).length > 0;
+    if (isTeamDefensePosition(position) && hasAppliedTotal && !hasAppliedContributions) {
+      return reconcileDstAppliedFantasyStats(
+        syncTeamResultStatsFromDerived({ ...row, ...derived }, derived, position),
+        scoringSettings,
+        position,
+      );
+    }
+    return syncTeamResultStatsFromDerived({ ...derived, ...row }, derived, position);
+  });
+}
+
+function buildGameLogFantasyOptionRows(game, sleeperWeekByWeek, scoringSettings, position, preferGameLogFantasyRows = false, maxWeek = null) {
+  const weekEntry = getGameLogFantasyWeekEntry(game, sleeperWeekByWeek, position, preferGameLogFantasyRows, maxWeek);
 
   return buildFantasyOptionRows(weekEntry, scoringSettings, position);
 }
 
-function getGameLogFantasyWeekEntry(game, sleeperWeekByWeek, position) {
-  return game?.meta?.isPostseason
-    ? buildSleeperStatsFromGameLogStats(game?.statsJson, position)
-    : sleeperWeekByWeek.get(Number(game?.meta?.week));
+function getGameLogFantasyWeekEntry(game, sleeperWeekByWeek, position, preferGameLogFantasyRows = false, maxWeek = null) {
+  if (!isActiveFantasyWeekRow({ week: game?.meta?.week, _isPostseason: game?.meta?.isPostseason }, maxWeek)) return null;
+  const gameLogEntry = buildSleeperStatsFromGameLogStats(game?.statsJson, position, game?.meta);
+  if (preferGameLogFantasyRows && hasFantasyStatValues(gameLogEntry)) return gameLogEntry;
+  return sleeperWeekByWeek.get(Number(game?.meta?.week)) ?? null;
 }
 
-function getGameLogFantasyTotalPoints(game, sleeperWeekByWeek, scoringSettings, position) {
-  const weekEntry = getGameLogFantasyWeekEntry(game, sleeperWeekByWeek, position);
+function getGameLogFantasyTotalPoints(game, sleeperWeekByWeek, scoringSettings, position, preferGameLogFantasyRows = false, maxWeek = null) {
+  const weekEntry = getGameLogFantasyWeekEntry(game, sleeperWeekByWeek, position, preferGameLogFantasyRows, maxWeek);
   if (!weekEntry || !scoringSettings) return null;
   return calcPoints(weekEntry, scoringSettings, position);
 }
@@ -1234,18 +1942,22 @@ const PlayerStatTable = ({
   gameLog,
   gameLogLoading,
   honors = [],
+  playerName = null,
   accentColor,
   textAccentColor,
   displayMode = 'game',
   fantasySeason = null,
   fantasyAvailable = null,
   fantasyScoringSettings = null,
-  fantasyWeeklyRows = null,
+  fantasyWeeklyRows = undefined,
   fantasyRowsLoading = false,
+  fantasyMaxWeek = null,
 }) => {
   const [showMoreStats, setShowMoreStats] = useState(false);
   const [highlightColumnHighs, setHighlightColumnHighs] = useState(false);
   const [highlightColumnLows, setHighlightColumnLows] = useState(false);
+  const [scoringPlayBonusesState, setScoringPlayBonusesState] = useState({ key: null, bonusesByWeek: {} });
+  const fantasyDebugToken = useId();
   const isMobileFantasyLayout = useMediaQuery('(max-width: 1023px)');
   const { hasLeague, activeScoringSettings } = useSleeperLeague();
   const {
@@ -1256,14 +1968,6 @@ const PlayerStatTable = ({
     loadSeasonStats,
   } = useSleeperStats();
 
-  const { standard, advanced } = useMemo(() => {
-    if (!statsJson) return { standard: [], advanced: [] };
-    const map = buildStatMap(statsJson);
-    const rankMap = buildRankMap(statsJson);
-    const sections = getStatRows(map, position, rankMap);
-    return sections;
-  }, [position, statsJson]);
-
   const label = year === 'career' ? 'Career' : `${year} Season`;
   const canShowFantasyValue = (fantasyAvailable ?? (String(year) === String(fantasySeason))) && hasLeague && !!(fantasyScoringSettings ?? activeScoringSettings);
   const scoringSettings = useMemo(
@@ -1273,12 +1977,136 @@ const PlayerStatTable = ({
     },
     [activeScoringSettings, fantasyScoringSettings],
   );
+  const isEspnFantasyScoring = (fantasyScoringSettings?.provider ?? activeScoringSettings?.provider) === 'espn';
+  const isTeamDefenseFantasyPosition = isTeamDefensePosition(position);
+  const shouldPreferEspnGameLogFantasyRows = false;
   const activeDisplayMode = canShowFantasyValue ? displayMode : 'game';
   const showFantasyOnly = activeDisplayMode === 'fantasy';
-  const sleeperWeeklyRows = useMemo(
-    () => fantasyWeeklyRows ?? (sleeperId ? (sleeperWeeklyStats?.[sleeperId] ?? []) : []),
-    [fantasyWeeklyRows, sleeperId, sleeperWeeklyStats],
+  const isWaitingForEspnFantasyRows = isEspnFantasyScoring
+    && isTeamDefenseFantasyPosition
+    && showFantasyOnly
+    && fantasyRowsLoading
+    && fantasyWeeklyRows == null;
+  const providedFantasyRows = useMemo(
+    () => {
+      if (isWaitingForEspnFantasyRows) return [];
+      return fantasyWeeklyRows ?? (sleeperId ? (sleeperWeeklyStats?.[sleeperId] ?? []) : []);
+    },
+    [fantasyWeeklyRows, isWaitingForEspnFantasyRows, sleeperId, sleeperWeeklyStats],
   );
+  const scoringPlayGames = useMemo(() => {
+    if (
+      !showFantasyOnly
+      || !scoringSettings
+      || !isEspnFantasyScoring
+      || isTeamDefenseFantasyPosition
+      || !playerName
+      || !Array.isArray(gameLog)
+      || !hasEspnBigPlayTouchdownScoring(scoringSettings)
+    ) {
+      return [];
+    }
+
+    return gameLog
+      .filter((game) => (
+        game?.eventId
+        && !String(game.eventId).startsWith('bye_')
+        && Number.isFinite(Number(game?.meta?.week))
+      ))
+      .map((game) => ({
+        eventId: String(game.eventId),
+        week: Number(game.meta.week),
+      }));
+  }, [gameLog, isEspnFantasyScoring, isTeamDefenseFantasyPosition, playerName, scoringSettings, showFantasyOnly]);
+  const scoringPlayRequestKey = useMemo(() => (
+    scoringPlayGames.length
+      ? `${year}:${playerName}:${position}:${scoringPlayGames.map((game) => `${game.week}:${game.eventId}`).join('|')}`
+      : null
+  ), [playerName, position, scoringPlayGames, year]);
+  const isWaitingForEspnFantasyGameLog = isEspnFantasyScoring
+    && showFantasyOnly
+    && gameLogLoading
+    && (!Array.isArray(gameLog) || gameLog.length === 0);
+
+  useEffect(() => {
+    if (!scoringPlayRequestKey) return undefined;
+
+    let cancelled = false;
+    const players = {
+      [PROFILE_FANTASY_PLAYER_ID]: {
+        full_name: playerName,
+        position,
+      },
+    };
+
+    Promise.all(scoringPlayGames.map(async ({ eventId, week }) => ({
+      week,
+      scoringPlays: await fetchEventScoringPlays(eventId).catch(() => []),
+    }))).then((results) => {
+      if (cancelled) return;
+      const next = {};
+      for (const { week, scoringPlays } of results) {
+        const bonuses = getEspnScoringPlayBigPlayBonuses(scoringPlays, players)[PROFILE_FANTASY_PLAYER_ID];
+        if (bonuses && Object.keys(bonuses).length > 0) next[week] = bonuses;
+      }
+      setScoringPlayBonusesState({ key: scoringPlayRequestKey, bonusesByWeek: next });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [playerName, position, scoringPlayGames, scoringPlayRequestKey]);
+
+  const derivedFantasyRows = useMemo(() => {
+    if (isWaitingForEspnFantasyRows) return [];
+    if (isWaitingForEspnFantasyGameLog) return [];
+    const gameLogRows = buildFantasyRowsFromGameLog(gameLog, position);
+    const activeScoringPlayBonusesByWeek = scoringPlayBonusesState.key === scoringPlayRequestKey
+      ? scoringPlayBonusesState.bonusesByWeek
+      : {};
+    const enrichedGameLogRows = applyScoringPlayBonusesToProfileRows(gameLogRows, activeScoringPlayBonusesByWeek);
+    return enrichedGameLogRows.length > 0
+      ? enrichedGameLogRows
+      : buildFantasyRowsFromSeasonStats(statsJson, position);
+  }, [gameLog, isWaitingForEspnFantasyGameLog, isWaitingForEspnFantasyRows, position, scoringPlayBonusesState, scoringPlayRequestKey, statsJson]);
+  const sleeperWeeklyRows = useMemo(() => {
+    if (isWaitingForEspnFantasyGameLog) return [];
+    return mergeFantasyRowsWithDerivedStats(providedFantasyRows, derivedFantasyRows, {
+      preferDerived: shouldPreferEspnGameLogFantasyRows,
+      position,
+      scoringSettings,
+      maxWeek: fantasyMaxWeek,
+    });
+  }, [
+    derivedFantasyRows,
+    fantasyMaxWeek,
+    isWaitingForEspnFantasyGameLog,
+    position,
+    providedFantasyRows,
+    scoringSettings,
+    shouldPreferEspnGameLogFantasyRows,
+  ]);
+  const fallbackTeamDefenseStatsJson = useMemo(
+    () => buildTeamDefenseStatsJsonFromFantasyRows(sleeperWeeklyRows, position),
+    [position, sleeperWeeklyRows],
+  );
+  const displayStatsJson = isTeamDefenseFantasyPosition && !hasRecordedStatsJson(statsJson)
+    ? (fallbackTeamDefenseStatsJson ?? statsJson)
+    : statsJson;
+  const fallbackTeamDefenseGameLog = useMemo(
+    () => buildGameLogFromFantasyRows(sleeperWeeklyRows, position),
+    [position, sleeperWeeklyRows],
+  );
+  const displayGameLog = isTeamDefenseFantasyPosition && (!Array.isArray(gameLog) || gameLog.length === 0)
+    ? fallbackTeamDefenseGameLog
+    : gameLog;
+  const { standard, advanced } = useMemo(() => {
+    if (!displayStatsJson) return { standard: [], advanced: [] };
+    const map = buildStatMap(displayStatsJson);
+    const rankMap = buildRankMap(displayStatsJson);
+    const sections = getStatRows(map, position, rankMap);
+    return sections;
+  }, [displayStatsJson, position]);
 
   useEffect(() => {
     if (!canShowFantasyValue || fantasyWeeklyRows || sleeperSeasonStats || sleeperStatsLoading) return;
@@ -1298,15 +2126,23 @@ const PlayerStatTable = ({
     return totalsByKey;
   }, [position, scoringSettings, showFantasyOnly, sleeperWeeklyRows]);
 
+  const fantasyTotalPoints = useMemo(() => {
+    if (!showFantasyOnly || !scoringSettings || sleeperWeeklyRows.length === 0) return null;
+    const total = sleeperWeeklyRows.reduce((sum, weekEntry) => (
+      sum + calcPoints(weekEntry, scoringSettings, position)
+    ), 0);
+    return Math.abs(total) >= POINT_EPSILON ? total : null;
+  }, [position, scoringSettings, showFantasyOnly, sleeperWeeklyRows]);
+
   const fantasyColumns = useMemo(() => {
-    if (!showFantasyOnly || fantasyTotalsByKey.size === 0) return [];
-    const activeOptions = FANTASY_OPTIONS.filter((option) => fantasyTotalsByKey.has(option.key));
+    if (!showFantasyOnly || (fantasyTotalsByKey.size === 0 && fantasyTotalPoints == null)) return [];
+    const activeOptions = getFantasyOptionsForKeys(fantasyTotalsByKey.keys());
 
     if (isMobileFantasyLayout) {
       activeOptions.sort((left, right) => {
         const rightTotal = Number(fantasyTotalsByKey.get(right.key)) || 0;
         const leftTotal = Number(fantasyTotalsByKey.get(left.key)) || 0;
-        return rightTotal - leftTotal || FANTASY_OPTIONS.indexOf(left) - FANTASY_OPTIONS.indexOf(right);
+        return rightTotal - leftTotal || getFantasyOptionOrderValue(left.key) - getFantasyOptionOrderValue(right.key);
       });
     }
 
@@ -1323,7 +2159,151 @@ const PlayerStatTable = ({
         headerLabel: getFantasyHeaderLabel(key, label),
       })),
     ];
-  }, [fantasyTotalsByKey, isMobileFantasyLayout, showFantasyOnly]);
+  }, [fantasyTotalPoints, fantasyTotalsByKey, isMobileFantasyLayout, showFantasyOnly]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !showFantasyOnly || !scoringSettings) return undefined;
+
+    const token = fantasyDebugToken;
+    const tableKey = String(year ?? 'unknown');
+    const availableWeeks = sleeperWeeklyRows
+      .map((row) => Number(row?.week))
+      .filter((week) => Number.isFinite(week));
+    const getRawStats = (entry) => Object.fromEntries(Object.entries(entry ?? {}).filter(([, value]) => (
+      typeof value === 'number' && Math.abs(value) >= POINT_EPSILON
+    )));
+    const summarizeEntry = (entry) => {
+      const breakdown = buildFantasyOptionRows(entry, scoringSettings, position);
+      const appliedContributions = entry?._fantasyContributions ?? null;
+      const residual = breakdown.find((row) => row.key === ESPN_UNMAPPED_FANTASY_KEY)?.points ?? 0;
+      const candidates = buildDstResidualCandidates(entry, scoringSettings, position, residual, breakdown);
+      return {
+        week: entry?.week ?? null,
+        fantasyPoints: entry?._fantasyPoints ?? entry?.fantasy_points ?? entry?.appliedTotal ?? null,
+        appliedContributionTotal: appliedContributions
+          ? Object.values(appliedContributions).reduce((sum, value) => sum + (Number(value) || 0), 0)
+          : null,
+        appliedContributionKeys: appliedContributions ? Object.keys(appliedContributions) : [],
+        rawStats: getRawStats(entry),
+        breakdown,
+        visibleTotal: roundPoints(breakdown.reduce((sum, row) => (
+          row.key === ESPN_UNMAPPED_FANTASY_KEY ? sum : sum + (Number(row.points) || 0)
+        ), 0)),
+        residual,
+        residualCandidates: candidates,
+        residualCandidateSummary: candidates.slice(0, 5).map((candidate) => candidate.summary).join(' | '),
+      };
+    };
+    const reconcile = (query = {}) => {
+      const expectedByWeek = query.expectedByWeek ?? query.expected ?? {};
+      const rows = Object.entries(expectedByWeek).map(([weekValue, expectedValue]) => {
+        const week = Number(weekValue);
+        const expected = Number(expectedValue);
+        const entry = sleeperWeeklyRows.find((row) => Number(row?.week) === week);
+        if (!entry) {
+          return {
+            week,
+            expected: Number.isFinite(expected) ? roundPoints(expected) : null,
+            gridshift: null,
+            delta: null,
+            status: 'missing-row',
+            error: 'Fantasy row not found in current PlayerStatTable rows.',
+            availableWeeks,
+          };
+        }
+
+        const gridshift = calcPoints(entry, scoringSettings, position);
+        const delta = Number.isFinite(expected) ? roundPoints(expected - gridshift) : null;
+        return {
+          week,
+          expected: Number.isFinite(expected) ? roundPoints(expected) : null,
+          gridshift,
+          delta,
+          status: Number.isFinite(delta) ? (Math.abs(delta) < 0.01 ? 'match' : 'mismatch') : 'no-expected-total',
+          rawStats: getRawStats(entry),
+          breakdown: buildFantasyOptionRows(entry, scoringSettings, position),
+        };
+      });
+
+      return {
+        ok: rows.every((row) => row.status === 'match'),
+        version: PLAYER_TABLE_FANTASY_DEBUG_VERSION,
+        year,
+        position,
+        sleeperId,
+        rows,
+      };
+    };
+    const api = {
+      version: PLAYER_TABLE_FANTASY_DEBUG_VERSION,
+      year,
+      position,
+      sleeperId,
+      expanded,
+      getState: () => ({
+        version: PLAYER_TABLE_FANTASY_DEBUG_VERSION,
+        year,
+        position,
+        sleeperId,
+        expanded,
+        rowCount: sleeperWeeklyRows.length,
+        availableWeeks,
+        total: fantasyTotalPoints,
+        columns: fantasyColumns.map((column) => column.key),
+      }),
+      getRows: () => sleeperWeeklyRows.map(summarizeEntry),
+      getResiduals: () => sleeperWeeklyRows
+        .map(summarizeEntry)
+        .filter((row) => Math.abs(Number(row.residual) || 0) >= POINT_EPSILON)
+        .map((row) => ({
+          week: row.week,
+          fantasyPoints: row.fantasyPoints,
+          visibleTotal: row.visibleTotal,
+          residual: roundPoints(row.residual),
+          topCandidates: row.residualCandidateSummary,
+          rawStats: Object.keys(row.rawStats).join(', '),
+          breakdown: row.breakdown
+            .filter((item) => item.key !== ESPN_UNMAPPED_FANTASY_KEY)
+            .map((item) => `${item.key}:${formatSignedDebugNumber(item.points)}`)
+            .join(', '),
+        })),
+      reconcile,
+    };
+    Object.defineProperty(api, '_debugToken', { value: token });
+
+    window.__GRIDSHIFT_PLAYER_TABLE_DEBUG_VERSION__ = PLAYER_TABLE_FANTASY_DEBUG_VERSION;
+    window.__GRIDSHIFT_FANTASY_TABLES__ = {
+      ...(window.__GRIDSHIFT_FANTASY_TABLES__ ?? {}),
+      [tableKey]: api,
+    };
+    if (expanded) window.__GRIDSHIFT_CURRENT_FANTASY_TABLE__ = api;
+    window.__GRIDSHIFT_RECONCILE_CURRENT_FANTASY_TABLE__ = (query = {}) => {
+      const targetYear = String(query.year ?? window.__GRIDSHIFT_CURRENT_FANTASY_TABLE__?.year ?? tableKey);
+      const table = window.__GRIDSHIFT_FANTASY_TABLES__?.[targetYear] ?? window.__GRIDSHIFT_CURRENT_FANTASY_TABLE__;
+      return table?.reconcile(query) ?? {
+        ok: false,
+        error: 'No active Fantasy Value table debug helper is registered.',
+      };
+    };
+    window.__GRIDSHIFT_DST_RESIDUAL_DEBUG__ = (query = {}) => {
+      const targetYear = String(query.year ?? window.__GRIDSHIFT_CURRENT_FANTASY_TABLE__?.year ?? tableKey);
+      const table = window.__GRIDSHIFT_FANTASY_TABLES__?.[targetYear] ?? window.__GRIDSHIFT_CURRENT_FANTASY_TABLE__;
+      return table?.getResiduals?.() ?? [];
+    };
+    Object.defineProperty(window.__GRIDSHIFT_DST_RESIDUAL_DEBUG__, '_debugToken', { value: token });
+
+    return () => {
+      if (window.__GRIDSHIFT_FANTASY_TABLES__?.[tableKey]?._debugToken === token) {
+        delete window.__GRIDSHIFT_FANTASY_TABLES__[tableKey];
+      }
+      if (window.__GRIDSHIFT_CURRENT_FANTASY_TABLE__?._debugToken === token) {
+        delete window.__GRIDSHIFT_CURRENT_FANTASY_TABLE__;
+      }
+      if (window.__GRIDSHIFT_DST_RESIDUAL_DEBUG__?._debugToken === token) {
+        delete window.__GRIDSHIFT_DST_RESIDUAL_DEBUG__;
+      }
+    };
+  }, [expanded, fantasyColumns, fantasyDebugToken, fantasyTotalPoints, position, scoringSettings, showFantasyOnly, sleeperId, sleeperWeeklyRows, year]);
 
   const sleeperWeekByWeek = useMemo(
     () => new Map(sleeperWeeklyRows.map((weekEntry) => [Number(weekEntry.week), weekEntry])),
@@ -1345,10 +2325,27 @@ const PlayerStatTable = ({
   ), [scoringSettings, shouldBuildFantasyRanks, sleeperPlayers, sleeperSeasonStats]);
 
   const fantasyValueSections = useMemo(() => {
-    if (!showFantasyOnly || fantasyTotalsByKey.size === 0) return [];
+    if (!showFantasyOnly) return [];
+    const formattedTotal = formatFantasyValue(fantasyTotalPoints);
+    const totalSection = formattedTotal !== '--'
+      ? {
+          heading: 'Fantasy Points',
+          rows: [{
+            key: FANTASY_TOTAL_POINTS_KEY,
+            label: 'Fantasy Points',
+            value: formattedTotal,
+            valueSuffix: null,
+            rank: null,
+            positionRank: null,
+          }],
+        }
+      : null;
 
-    const rowsByKey = new Map(FANTASY_OPTIONS
-      .filter((option) => fantasyTotalsByKey.has(option.key))
+    if (fantasyTotalsByKey.size === 0) {
+      return totalSection ? [totalSection] : [];
+    }
+
+    const rowsByKey = new Map(getFantasyOptionsForKeys(fantasyTotalsByKey.keys())
       .map((option) => {
         const row = {
           key: option.key,
@@ -1362,24 +2359,25 @@ const PlayerStatTable = ({
       })
       .filter(Boolean));
 
-    return rowsByKey.size > 0 ? buildFantasyValueSectionsFromRows(rowsByKey, position) : [];
-  }, [fantasyPositionRankByOption, fantasyRankByOption, fantasyTotalsByKey, position, showFantasyOnly, sleeperId]);
+    const sections = rowsByKey.size > 0 ? buildFantasyValueSectionsFromRows(rowsByKey, position) : [];
+    return totalSection ? [totalSection, ...sections] : sections;
+  }, [fantasyPositionRankByOption, fantasyRankByOption, fantasyTotalPoints, fantasyTotalsByKey, position, showFantasyOnly, sleeperId]);
 
   // Merge advanced sections into display when More Stats is on.
   const displayBaseSections = showMoreStats ? [...standard, ...advanced] : standard;
   const displaySections = showFantasyOnly ? fantasyValueSections : displayBaseSections;
   const hasAdvanced = !showFantasyOnly && advanced.length > 0;
   const hasGameLogMoreStats = useMemo(() => {
-    if (showFantasyOnly || year === 'career' || !gameLog || gameLog.length === 0) return false;
+    if (showFantasyOnly || year === 'career' || !displayGameLog || displayGameLog.length === 0) return false;
     const { standard: standardGameCols, advanced: advancedGameCols } = getGameLogColumns(position);
-    const coreCols = buildAttainedGameLogColumns(gameLog, standardGameCols);
-    const allCols = buildAttainedGameLogColumns(gameLog, [...standardGameCols, ...advancedGameCols]);
+    const coreCols = buildAttainedGameLogColumns(displayGameLog, standardGameCols);
+    const allCols = buildAttainedGameLogColumns(displayGameLog, [...standardGameCols, ...advancedGameCols]);
     return allCols.length > coreCols.length;
-  }, [gameLog, position, showFantasyOnly, year]);
+  }, [displayGameLog, position, showFantasyOnly, year]);
   const hasMoreStats = hasAdvanced || hasGameLogMoreStats;
   const hasHighlightableGameLog = year !== 'career'
-    && Array.isArray(gameLog)
-    && gameLog.some((game) => !game?.meta?.isBye && !game?.meta?.isInactive);
+    && Array.isArray(displayGameLog)
+    && displayGameLog.some((game) => !game?.meta?.isBye && !game?.meta?.isInactive);
   const hasTableControls = hasMoreStats || hasHighlightableGameLog;
   const isSelectedLeagueSeason = String(year) === String(fantasySeason);
   const readableAccentColor = textAccentColor ?? accentColor;
@@ -1436,7 +2434,7 @@ const PlayerStatTable = ({
             <p className="px-4 py-3 text-sm text-red-500 dark:text-red-400 italic">{error}</p>
           ) : loading ? (
             <p className="px-4 py-3 text-sm text-gray-400 italic">Loading stats…</p>
-          ) : showFantasyOnly && (sleeperStatsLoading || fantasyRowsLoading) && displaySections.length === 0 ? (
+          ) : showFantasyOnly && (sleeperStatsLoading || fantasyRowsLoading || isWaitingForEspnFantasyGameLog) && displaySections.length === 0 ? (
             <p className="px-4 py-3 text-sm text-gray-400 italic">Loading fantasy values...</p>
           ) : displaySections.length === 0 ? (
             <p className="px-4 py-3 text-sm text-gray-400 italic">
@@ -1481,7 +2479,7 @@ const PlayerStatTable = ({
               {/* Game-by-game log (not shown for career row) */}
               {year !== 'career' && (
                 <GameLog
-                  gameLog={gameLog}
+                  gameLog={displayGameLog}
                   gameLogLoading={gameLogLoading}
                   position={position}
                   showMoreStats={showMoreStats}
@@ -1489,6 +2487,8 @@ const PlayerStatTable = ({
                   scoringSettings={scoringSettings}
                   fantasyColumns={fantasyColumns}
                   sleeperWeekByWeek={sleeperWeekByWeek}
+                  preferGameLogFantasyRows={shouldPreferEspnGameLogFantasyRows}
+                  fantasyMaxWeek={fantasyMaxWeek}
                   fantasyLoading={sleeperStatsLoading}
                   highlightColumnHighs={highlightColumnHighs}
                   highlightColumnLows={highlightColumnLows}
@@ -1660,6 +2660,8 @@ const GameLog = ({
   scoringSettings = null,
   fantasyColumns = [],
   sleeperWeekByWeek = new Map(),
+  preferGameLogFantasyRows = false,
+  fantasyMaxWeek = null,
   fantasyLoading = false,
   highlightColumnHighs = false,
   highlightColumnLows = false,
@@ -1782,13 +2784,13 @@ const GameLog = ({
     return [...(gameLog ?? [])]
       .map((game, originalIndex) => ({ game, originalIndex }))
       .sort((left, right) => {
-        const leftValue = getGameLogStatSortValue(left.game, sortConfig.col, fantasyOnly, scoringSettings, position, sleeperWeekByWeek);
-        const rightValue = getGameLogStatSortValue(right.game, sortConfig.col, fantasyOnly, scoringSettings, position, sleeperWeekByWeek);
+        const leftValue = getGameLogStatSortValue(left.game, sortConfig.col, fantasyOnly, scoringSettings, position, sleeperWeekByWeek, preferGameLogFantasyRows, fantasyMaxWeek);
+        const rightValue = getGameLogStatSortValue(right.game, sortConfig.col, fantasyOnly, scoringSettings, position, sleeperWeekByWeek, preferGameLogFantasyRows, fantasyMaxWeek);
         const comparison = compareNullableValues(leftValue, rightValue, sortConfig.direction);
         return comparison || left.originalIndex - right.originalIndex;
       })
       .map(({ game }) => game);
-  }, [fantasyOnly, gameLog, position, scoringSettings, sleeperWeekByWeek, sortConfig]);
+  }, [fantasyMaxWeek, fantasyOnly, gameLog, position, preferGameLogFantasyRows, scoringSettings, sleeperWeekByWeek, sortConfig]);
   const columnHighs = useMemo(() => {
     if (!highlightColumnHighs || cols.length === 0) return new Map();
 
@@ -1797,7 +2799,7 @@ const GameLog = ({
       if (game?.meta?.isBye || game?.meta?.isInactive) continue;
 
       for (const col of cols) {
-        const value = getGameLogStatSortValue(game, col, fantasyOnly, scoringSettings, position, sleeperWeekByWeek);
+        const value = getGameLogStatSortValue(game, col, fantasyOnly, scoringSettings, position, sleeperWeekByWeek, preferGameLogFantasyRows, fantasyMaxWeek);
         if (!Number.isFinite(value) || Math.abs(value) < POINT_EPSILON) continue;
         const current = highs.get(col.key);
         if (current === undefined || value > current) highs.set(col.key, value);
@@ -1805,7 +2807,7 @@ const GameLog = ({
     }
 
     return highs;
-  }, [cols, fantasyOnly, gameLog, highlightColumnHighs, position, scoringSettings, sleeperWeekByWeek]);
+  }, [cols, fantasyMaxWeek, fantasyOnly, gameLog, highlightColumnHighs, position, preferGameLogFantasyRows, scoringSettings, sleeperWeekByWeek]);
   const columnLows = useMemo(() => {
     if (!highlightColumnLows || cols.length === 0) return new Map();
 
@@ -1814,7 +2816,7 @@ const GameLog = ({
       if (game?.meta?.isBye || game?.meta?.isInactive) continue;
 
       for (const col of cols) {
-        const value = getGameLogStatSortValue(game, col, fantasyOnly, scoringSettings, position, sleeperWeekByWeek);
+        const value = getGameLogStatSortValue(game, col, fantasyOnly, scoringSettings, position, sleeperWeekByWeek, preferGameLogFantasyRows, fantasyMaxWeek);
         if (!Number.isFinite(value) || Math.abs(value) < POINT_EPSILON) continue;
         const current = lows.get(col.key);
         if (current === undefined || value < current) lows.set(col.key, value);
@@ -1822,7 +2824,7 @@ const GameLog = ({
     }
 
     return lows;
-  }, [cols, fantasyOnly, gameLog, highlightColumnLows, position, scoringSettings, sleeperWeekByWeek]);
+  }, [cols, fantasyMaxWeek, fantasyOnly, gameLog, highlightColumnLows, position, preferGameLogFantasyRows, scoringSettings, sleeperWeekByWeek]);
 
   useEffect(() => {
     if (!sortConfig) return;
@@ -1948,7 +2950,7 @@ const GameLog = ({
             const { meta } = game;
             const isBye      = !!meta.isBye;
             const isInactive = !!meta.isInactive;
-            const result     = meta.result ?? '-';
+            const result     = getEffectiveMetaResult(meta);
             const isPost     = !!meta.isPostseason;
             const prevIsPost = i > 0 && !!sortedGameLog[i - 1].meta.isPostseason;
             const showPlayoffDivider = !sortConfig && isPost && !prevIsPost;
@@ -1994,9 +2996,9 @@ const GameLog = ({
               ? new Map([
                   [
                     FANTASY_TOTAL_POINTS_KEY,
-                    getGameLogFantasyTotalPoints(game, sleeperWeekByWeek, scoringSettings, position),
+                    getGameLogFantasyTotalPoints(game, sleeperWeekByWeek, scoringSettings, position, preferGameLogFantasyRows, fantasyMaxWeek),
                   ],
-                  ...buildGameLogFantasyOptionRows(game, sleeperWeekByWeek, scoringSettings, position).map((row) => [row.key, row.points]),
+                  ...buildGameLogFantasyOptionRows(game, sleeperWeekByWeek, scoringSettings, position, preferGameLogFantasyRows, fantasyMaxWeek).map((row) => [row.key, row.points]),
                 ])
               : null;
 
@@ -2065,7 +3067,7 @@ const GameLog = ({
                     )}
                   </td>
                   {cols.map(col => {
-                    const numericValue = getGameLogStatSortValue(game, col, fantasyOnly, scoringSettings, position, sleeperWeekByWeek);
+                    const numericValue = getGameLogStatSortValue(game, col, fantasyOnly, scoringSettings, position, sleeperWeekByWeek, preferGameLogFantasyRows, fantasyMaxWeek);
                     const isColumnHigh = highlightColumnHighs && isSameNumericValue(numericValue, columnHighs.get(col.key));
                     const isColumnLow = highlightColumnLows && isSameNumericValue(numericValue, columnLows.get(col.key));
                     const highlightStyle = isColumnHigh

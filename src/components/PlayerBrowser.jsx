@@ -57,8 +57,26 @@ const SEASON_2025_CHAMPIONS = {
   },
 };
 function buildPlayerMeta(player = {}, fallback = {}) {
+  const id = player.id ?? fallback.id ?? '';
+  const espnId = player.espnId
+    ?? player.espn_id
+    ?? player.sourceIds?.espn
+    ?? fallback.espnId
+    ?? fallback.espn_id
+    ?? fallback.sourceIds?.espn
+    ?? (/^\d+$/.test(String(id)) ? id : null);
+  const sourceIds = {
+    ...(fallback.sourceIds ?? {}),
+    ...(player.sourceIds ?? {}),
+  };
+  if (espnId != null) sourceIds.espn = String(espnId);
+
   return {
-    id: String(player.id ?? fallback.id ?? ''),
+    id: String(id),
+    sleeperId: player.sleeperId ?? fallback.sleeperId,
+    espnId: espnId != null ? String(espnId) : undefined,
+    espn_id: espnId != null ? String(espnId) : undefined,
+    sourceIds,
     displayName: player.displayName || fallback.displayName || '',
     jersey: player.jersey || fallback.jersey || '',
     position: player.position || fallback.position || '',
@@ -116,6 +134,7 @@ const PlayerBrowser = ({
   onPlayerModeChange,
   onComparePlayer,
   onBuildTrade,
+  tradeDisabled = false,
 }) => {
   const { loadPlayers, espnIdOverrides } = useSleeperStats();
   const [resolvedPlayer, setResolvedPlayer] = useState(() => (
@@ -411,6 +430,7 @@ const PlayerBrowser = ({
           backLabel={navBack?.label}
           onCompare={onComparePlayer}
           onBuildTrade={onBuildTrade}
+          tradeDisabled={tradeDisabled}
           onViewSchedule={selectedPlayer.teamId ? () => onViewSchedule?.(selectedPlayer.teamId) : undefined}
         />
       );

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSleeperBase, useSleeperStatsProgress } from '../../context/SleeperContext';
 import { useTheme } from '../../context/ThemeContext';
-import { calcPoints, DEFAULT_SCORING, STAT_TO_SCORING_KEY } from '../../utils/scoringEngine';
+import { calcPoints } from '../../utils/scoringEngine';
 import {
   buildDefenseTable,
   computeLeagueAvgPPGByPositionFromDefenseTable,
@@ -14,8 +14,9 @@ import {
 } from '../../utils/projectionEngine';
 import { STADIUMS, WEEK_DATES_2025 } from '../../data/stadiums';
 import { fetchGameWeather, formatWeather } from '../../api/weatherApi';
-import { getMatchups } from '../../api/sleeperApi';
-import PlayerMatchupBreakdown, { STAT_LABELS } from './PlayerMatchupBreakdown';
+import PlayerMatchupBreakdown from './PlayerMatchupBreakdown';
+import { buildFantasyScoringBreakdown, mergeOfficialFantasyTotal } from '../../utils/fantasyBreakdownRows.js';
+import { isEspnFantasyGameLogPosition, loadEspnFantasyGameLogWeekRow } from '../../utils/espnFantasyGameLogRows.js';
 import CompanionLoadingState from './CompanionLoadingState';
 import Modal from '../Modal';
 import useCardGlow from '../../hooks/useCardGlow.jsx';
@@ -33,6 +34,28 @@ const COMPACT_PHONE_QUERY = '(max-width: 480px)';
 const MOBILE_LAYOUT_QUERY = '(max-width: 1023px)';
 const MATCHUP_RESPONSE_CACHE = new Map();
 const MATCHUP_RESPONSE_IN_FLIGHT = new Map();
+
+function isTeamDefensePosition(position) {
+  const normalized = String(position ?? '').toUpperCase();
+  return normalized === 'DEF' || normalized === 'DST' || normalized === 'D/ST';
+}
+
+function isRosterFantasyByeWeek(matchupRows, rosterId, platform) {
+  if (platform !== 'espn' || !Array.isArray(matchupRows) || rosterId == null) return false;
+  const rosterMatchup = matchupRows.find(row => Number(row?.roster_id) === Number(rosterId));
+  if (!rosterMatchup) return false;
+  if (rosterMatchup.metadata?.isBye === true) return true;
+  const sides = matchupRows.filter(row => row?.matchup_id === rosterMatchup.matchup_id);
+  return sides.length === 1;
+}
+
+function areNumberSetsEqual(left, right) {
+  if (left.size !== right.size) return false;
+  for (const value of left) {
+    if (!right.has(value)) return false;
+  }
+  return true;
+}
 
 function getLongestTokenLength(label) {
   return String(label ?? '')
@@ -118,11 +141,11 @@ export default function CompanionMatchup({
   const isCompactPhone = useMediaQuery(COMPACT_PHONE_QUERY);
   const isMobileLayout = useMediaQuery(MOBILE_LAYOUT_QUERY);
   const {
-    sleeperUser, selectedLeagueId, league, season,
+    platform, sleeperUser, selectedLeagueId, league, season,
     rosters, players, loadPlayers,
     weeklyStats, seasonStats, scheduleMap, loadSeasonStats,
     statsLoading, activeScoringSettings, scoringOverride,
-    myRoster, getUserDisplayName, espnIdOverrides,
+    myRoster, getUserDisplayName, espnIdOverrides, loadMatchups,
   } = useSleeperBase();
 
   const lastScoredLeg = Number(league?.settings?.last_scored_leg);
@@ -154,6 +177,7 @@ export default function CompanionMatchup({
   const [matchupLoading, setMatchupLoading] = useState(false);
   const [showBench, setShowBench] = useState(false);
   const [showWeekPicker, setShowWeekPicker] = useState(false);
+  const [byeWeeks, setByeWeeks] = useState(() => new Set());
   const [selectedPlayer, setSelectedPlayer] = useState(null); // { id, projection }
   const [selectedTeam, setSelectedTeam] = useState(null); // 'mine' | 'opp'
   const [weatherMap, setWeatherMap] = useState({}); // { 'TEAM-DATE': weather }
@@ -195,9 +219,9 @@ export default function CompanionMatchup({
 
   useEffect(() => {
     if (!selectedLeagueId) return;
-    const cacheKey = `${selectedLeagueId}|${requestedWeek}`;
+    const cacheKey = `${selectedLeagueId}|${season}|${requestedWeek}`;
     if (MATCHUP_RESPONSE_CACHE.has(cacheKey)) {
-      debugCompanionLog('Matchup Sleeper matchups cache hit', { selectedLeagueId, week: requestedWeek });
+      debugCompanionLog('Matchup fantasy matchups cache hit', { selectedLeagueId, week: requestedWeek });
       setMatchups(MATCHUP_RESPONSE_CACHE.get(cacheKey));
       setWeek(requestedWeek);
       setMatchupLoading(false);
@@ -205,7 +229,7 @@ export default function CompanionMatchup({
     }
     if (MATCHUP_RESPONSE_IN_FLIGHT.has(cacheKey)) {
       let cancelled = false;
-      debugCompanionLog('Matchup Sleeper matchups in-flight cache hit', { selectedLeagueId, week: requestedWeek });
+      debugCompanionLog('Matchup fantasy matchups in-flight cache hit', { selectedLeagueId, week: requestedWeek });
       setMatchupLoading(true);
       MATCHUP_RESPONSE_IN_FLIGHT.get(cacheKey)
         .then((data) => {
@@ -225,8 +249,8 @@ export default function CompanionMatchup({
 
     let cancelled = false;
     setMatchupLoading(true);
-    const request = debugCompanionTimeAsync('Matchup Sleeper matchups fetch', () => (
-      getMatchups(selectedLeagueId, requestedWeek)
+    const request = debugCompanionTimeAsync('Matchup fantasy matchups fetch', () => (
+      loadMatchups(selectedLeagueId, requestedWeek)
     ), { selectedLeagueId, week: requestedWeek })
       .then((data) => {
         const nextMatchups = data ?? [];
@@ -257,7 +281,7 @@ export default function CompanionMatchup({
     return () => {
       cancelled = true;
     };
-  }, [selectedLeagueId, requestedWeek]);
+  }, [loadMatchups, selectedLeagueId, requestedWeek]);
 
   useEffect(() => {
     if (!initialWeekRequest?.week) return;
@@ -274,6 +298,7 @@ export default function CompanionMatchup({
   }, [defaultWeek, totalWeeks]);
 
   const myRosterData = myRoster();
+  const myRosterId = myRosterData?.roster_id ?? null;
 
   const myMatchup = useMemo(() => {
     if (!matchups || !myRosterData) return null;
@@ -315,6 +340,39 @@ export default function CompanionMatchup({
   }), [selectedLeagueId, season, week, playerCount, seasonStatCount, weeklyStatCount, scheduleMap, activeScoringSettings]);
   const myPointsMap = myMatchup?.players_points ?? {};
   const oppPointsMap = opponentMatchup?.players_points ?? {};
+  const fantasyPlatformLabel = platform === 'espn' ? 'ESPN' : 'Sleeper';
+  const matchupSideCount = useMemo(() => {
+    if (!matchups || !myMatchup) return 0;
+    return matchups.filter(m => m.matchup_id === myMatchup.matchup_id).length;
+  }, [matchups, myMatchup]);
+  const isByeMatchup = isRosterFantasyByeWeek(matchups, myRosterId, platform)
+    || (platform === 'espn' && Boolean(myMatchup) && !opponentMatchup && matchupSideCount === 1);
+  const myBreakdownPlayerIds = useMemo(() => {
+    const starters = (myMatchup?.starters ?? []).filter(Boolean);
+    if (starters.length) return starters;
+    return (myMatchup?.players ?? []).filter(Boolean);
+  }, [myMatchup]);
+
+  useEffect(() => {
+    if (platform !== 'espn' || !selectedLeagueId || !myRosterId) {
+      setByeWeeks((prev) => (prev.size ? new Set() : prev));
+      return undefined;
+    }
+
+    let cancelled = false;
+    void Promise.all(weekOptions.map(async (optionWeek) => {
+      const rows = await loadMatchups(selectedLeagueId, optionWeek);
+      return isRosterFantasyByeWeek(rows, myRosterId, platform) ? optionWeek : null;
+    })).then((weekResults) => {
+      if (cancelled) return;
+      const next = new Set(weekResults.filter(Number.isFinite));
+      setByeWeeks((prev) => (areNumberSetsEqual(prev, next) ? prev : next));
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loadMatchups, myRosterId, platform, selectedLeagueId, weekOptions]);
 
   useEffect(() => {
     debugCompanionLog('Matchup readiness', {
@@ -535,13 +593,15 @@ export default function CompanionMatchup({
     const weekHasGames = !!scheduleMap && Object.keys(scheduleMap[week] ?? {}).length > 0;
     const isBye = weekHasGames && !schedEntry && myTeam !== 'FA';
     const fallbackWeekPts = pointsMap && Number.isFinite(Number(pointsMap[id])) ? Number(pointsMap[id]) : null;
+    const statWeekPts = weekEntry ? calcPoints(weekEntry, activeScoringSettings, p.position) : null;
+    const preferStatWeekPts = platform === 'espn' && weekEntry && !isTeamDefensePosition(p.position);
 
     return {
       id,
       name: p.full_name || `${p.first_name} ${p.last_name}`,
       position: p.position,
       team: myTeam,
-      weekPts: weekEntry ? calcPoints(weekEntry, activeScoringSettings, p.position) : fallbackWeekPts,
+      weekPts: preferStatWeekPts ? statWeekPts : (fallbackWeekPts ?? statWeekPts),
       avgPPG: hasAdvancedStats ? getAvgPPG(weekly, activeScoringSettings, p.position) : null,
       rank: positionalRanks[id] ?? null,
       weekRank: weeklyRanks[id] ?? null,
@@ -558,7 +618,7 @@ export default function CompanionMatchup({
       isBye,
       teamTheme: getPlayerRowTeamTheme(myTeam, darkMode),
     };
-  }, [players, hasAdvancedStats, weeklyStats, activeScoringSettings, positionalRanks, weeklyRanks, week, scheduleMap, defenseTable, darkMode]);
+  }, [players, hasAdvancedStats, weeklyStats, activeScoringSettings, positionalRanks, weeklyRanks, week, scheduleMap, defenseTable, darkMode, platform]);
 
   // Ordered slot positions for each starter slot (filters out BN/IR)
   const starterPositions = useMemo(
@@ -747,7 +807,7 @@ export default function CompanionMatchup({
 
   const hasLoadedMatchups = Array.isArray(matchups);
   const hasNoMatchup = hasLoadedMatchups && !matchupLoading && !myMatchup;
-  const hasNoOpponentMatchup = hasLoadedMatchups && !matchupLoading && Boolean(myMatchup) && !opponentMatchup;
+  const hasNoOpponentMatchup = hasLoadedMatchups && !matchupLoading && Boolean(myMatchup) && !opponentMatchup && !isByeMatchup;
   const hasStarterIds = (myMatchup?.starters?.length ?? 0) > 0 || (opponentMatchup?.starters?.length ?? 0) > 0;
   const hasRenderableStarterRows = starterSlots.some((slot) => slot.mine || slot.opp);
   const canKeepRenderedWeekDuringSwitch = requestedWeek !== week && hasLoadedMatchups && Boolean(myMatchup);
@@ -763,6 +823,60 @@ export default function CompanionMatchup({
       || !hasAdvancedStats
       || (hasStarterIds && !hasRenderableStarterRows)
     );
+  const matchupControls = selectedLeagueId ? (
+    <div className={`mx-2 sm:mx-4 mb-3 ${isCompactPhone ? '' : ''}`}>
+      <CompanionSelectorRail ariaLabel="Matchup controls" wrapOnDesktop={false}>
+        <CompanionSelectorButton
+          onClick={() => setShowWeekPicker(true)}
+          active
+          size="sm"
+          aria-label={`Choose matchup week. Week ${week} selected.`}
+          className="companion-matchup-week-trigger"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <rect x="3" y="4" width="18" height="18" rx="2" />
+            <path d="M16 2v4" />
+            <path d="M8 2v4" />
+            <path d="M3 10h18" />
+          </svg>
+          Week {week}
+        </CompanionSelectorButton>
+        {!isByeMatchup && (
+          <CompanionSelectorButton
+            onClick={() => setShowBench(v => !v)}
+            active={showBench}
+            size="sm"
+            aria-label={showBench ? 'Hide bench players' : 'Show bench players'}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M3 7h18" />
+              <path d="M6 12h12" />
+              <path d="M9 17h6" />
+            </svg>
+            {showBench ? 'Bench On' : 'Show Bench'}
+          </CompanionSelectorButton>
+        )}
+      </CompanionSelectorRail>
+    </div>
+  ) : null;
+  const weekPickerModal = (
+    <MatchupWeekPickerModal
+      open={showWeekPicker}
+      onClose={() => setShowWeekPicker(false)}
+      weekOptions={weekOptions}
+      week={week}
+      byeWeeks={byeWeeks}
+      playoffStart={playoffStart}
+      totalWeeks={totalWeeks}
+      onSelect={(nextWeek) => {
+        setSelectedPlayer(null);
+        setSelectedTeam(null);
+        setRequestedWeek(nextWeek);
+        onWeekChange?.(nextWeek);
+        setShowWeekPicker(false);
+      }}
+    />
+  );
 
   if (!selectedLeagueId) {
     return <EmptyState title="Connect a league to see matchup data." />;
@@ -770,19 +884,50 @@ export default function CompanionMatchup({
 
   if (hasNoMatchup) {
     return (
-      <EmptyState
-        title="Matchups will appear once your league schedule is available."
-        description="Pre-season leagues may not have weekly matchups published yet, so there is nothing to preview for this week."
-      />
+      <div className="pb-6">
+        {matchupControls}
+        <EmptyState
+          title="Matchups will appear once your league schedule is available."
+          description={`Pre-season ${fantasyPlatformLabel} leagues may not have weekly matchups published yet, so there is nothing to preview for this week.`}
+        />
+        {weekPickerModal}
+      </div>
     );
   }
 
   if (hasNoOpponentMatchup) {
     return (
-      <EmptyState
-        title="Opponent details are not available for this week yet."
-        description="Once Sleeper publishes both sides of the matchup, this view will show projections and lineup context."
-      />
+      <div className="pb-6">
+        {matchupControls}
+        <EmptyState
+          title="Opponent details are not available for this week yet."
+          description={`Once ${fantasyPlatformLabel} publishes both sides of the matchup, this view will show projections and lineup context.`}
+        />
+        {weekPickerModal}
+      </div>
+    );
+  }
+
+  if (isByeMatchup) {
+    return (
+      <div className="pb-6">
+        {matchupControls}
+        <ByeWeekMatchup
+          teamName={myName}
+          week={week}
+          points={myDisplayPoints}
+          onOpenBreakdown={() => setSelectedTeam('mine')}
+        />
+        {selectedTeam === 'mine' && (
+          <TeamScoreBreakdown
+            teamName={myName}
+            playerIds={myBreakdownPlayerIds}
+            week={week}
+            onClose={() => setSelectedTeam(null)}
+          />
+        )}
+        {weekPickerModal}
+      </div>
     );
   }
 
@@ -804,38 +949,7 @@ export default function CompanionMatchup({
     <div className="pb-6">
       {/* Scoreboard header */}
           <div className="mb-4">
-            <div className={`mx-2 sm:mx-4 mb-3 ${isCompactPhone ? '' : ''}`}>
-              <CompanionSelectorRail ariaLabel="Matchup controls" wrapOnDesktop={false}>
-              <CompanionSelectorButton
-                onClick={() => setShowWeekPicker(true)}
-                active
-                size="sm"
-                aria-label={`Choose matchup week. Week ${week} selected.`}
-                className="companion-matchup-week-trigger"
-              >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <rect x="3" y="4" width="18" height="18" rx="2" />
-                  <path d="M16 2v4" />
-                  <path d="M8 2v4" />
-                  <path d="M3 10h18" />
-                </svg>
-                Week {week}
-              </CompanionSelectorButton>
-              <CompanionSelectorButton
-                onClick={() => setShowBench(v => !v)}
-                active={showBench}
-                size="sm"
-                aria-label={showBench ? 'Hide bench players' : 'Show bench players'}
-                >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <path d="M3 7h18" />
-                  <path d="M6 12h12" />
-                  <path d="M9 17h6" />
-                </svg>
-                {showBench ? 'Bench On' : 'Show Bench'}
-              </CompanionSelectorButton>
-              </CompanionSelectorRail>
-            </div>
+            {matchupControls}
             <div className="px-2 sm:px-4">
               <div className="grid grid-cols-[minmax(0,1fr)_24px_minmax(0,1fr)] sm:grid-cols-[minmax(0,1fr)_44px_minmax(0,1fr)] items-stretch gap-1 sm:gap-2">
               <button
@@ -1070,75 +1184,144 @@ export default function CompanionMatchup({
         />
       )}
 
-      {showWeekPicker && (
-        <Modal
-          onClose={() => setShowWeekPicker(false)}
-          mobileSheet
-          ariaLabel="Select matchup week"
-          containerClassName="matchup-week-picker-sheet"
-          containerStyle={{
-            background: 'var(--color-bg-secondary)',
-            maxWidth: '480px',
-            '--modal-mobile-sheet-max-height': 'min(86dvh, calc(100dvh - env(safe-area-inset-top) - 8px))',
+      {weekPickerModal}
+    </div>
+  );
+}
+
+function ByeWeekMatchup({ teamName, week, points, onOpenBreakdown }) {
+  const numericPoints = Number(points);
+  const hasPoints = Number.isFinite(numericPoints);
+
+  return (
+    <div className="px-2 sm:px-4">
+      <div
+        className="min-h-[260px] flex flex-col items-center justify-center px-4 py-12 text-center"
+        style={{
+          background: 'var(--color-fill)',
+          borderTop: '1px solid var(--color-separator)',
+          borderBottom: '1px solid var(--color-separator)',
+        }}
+      >
+        <div
+          className="text-[11px] font-bold uppercase tracking-[0.22em]"
+          style={{ color: 'var(--color-label-tertiary)', fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif" }}
+        >
+          Week {week} Bye
+        </div>
+        <div
+          className="mt-2 max-w-full uppercase"
+          style={{
+            color: 'var(--color-label)',
+            fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif",
+            fontSize: 'clamp(30px, 8vw, 46px)',
+            fontWeight: 800,
+            lineHeight: 0.95,
           }}
         >
-          <div className="matchup-week-picker-header">
-            <div className="min-w-0">
-              <div className="companion-segmented__title matchup-week-picker-title">
-                Select Week
-              </div>
-              {playoffStart <= totalWeeks && (
-                <div className="matchup-week-picker-note">
-                  Playoffs start Week {playoffStart}
-                </div>
-              )}
-            </div>
-            <CompanionSelectorButton
-              size="xs"
-              variant="ghost"
-              aria-label="Close select week"
-              onClick={() => setShowWeekPicker(false)}
-              className="matchup-week-picker-close"
+          {teamName}
+        </div>
+        {hasPoints && (
+          <button
+            type="button"
+            className="mt-6 min-w-[168px] px-5 py-3 active:opacity-70 transition-opacity"
+            aria-label={`Open scoring breakdown for ${teamName}`}
+            onClick={onOpenBreakdown}
+            style={{
+              background: 'var(--color-fill-secondary)',
+              border: '1px solid var(--color-separator)',
+              borderRadius: 0,
+              color: 'var(--color-label)',
+            }}
+          >
+            <span
+              className="block text-[10px] font-bold uppercase tracking-[0.18em]"
+              style={{ color: 'var(--color-label-tertiary)', fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif" }}
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
-                <line x1="18" y1="6" x2="6" y2="18" />
-                <line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-            </CompanionSelectorButton>
-          </div>
-          <div className="matchup-week-picker-grid">
-            {weekOptions.map((w) => {
-              const isPlayoff = w >= playoffStart;
-              const isSelected = week === w;
-              return (
-                <CompanionSelectorButton
-                  key={w}
-                  active={isSelected}
-                  size="md"
-                  variant="segment"
-                  aria-label={`Week ${w}${isPlayoff ? ' playoff' : ''}`}
-                  className={`matchup-week-picker-option${isPlayoff ? ' is-playoff-week' : ''}`}
-                  onClick={() => {
-                    setSelectedPlayer(null);
-                    setSelectedTeam(null);
-                    setRequestedWeek(w);
-                    onWeekChange?.(w);
-                    setShowWeekPicker(false);
-                  }}
-                >
-                  <span>Wk {w}</span>
-                  {isPlayoff ? (
-                    <span className="matchup-week-picker-option__tag">
-                      Playoff
-                    </span>
-                  ) : null}
-                </CompanionSelectorButton>
-              );
-            })}
-          </div>
-        </Modal>
-      )}
+              Fantasy Score
+            </span>
+            <span
+              className="mt-1 block tabular-nums"
+              style={{ color: 'var(--color-signature)', fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif", fontSize: 34, fontWeight: 800, lineHeight: 0.95 }}
+            >
+              {numericPoints.toFixed(2)}
+            </span>
+          </button>
+        )}
+        <div className="mt-5 max-w-md text-sm leading-6" style={{ color: 'var(--color-label-secondary)' }}>
+          No opponent was scheduled for this fantasy week.
+        </div>
+      </div>
     </div>
+  );
+}
+
+function MatchupWeekPickerModal({ open, onClose, weekOptions, week, byeWeeks, playoffStart, totalWeeks, onSelect }) {
+  if (!open) return null;
+
+  return (
+    <Modal
+      onClose={onClose}
+      mobileSheet
+      ariaLabel="Select matchup week"
+      containerClassName="matchup-week-picker-sheet"
+      containerStyle={{
+        background: 'var(--color-bg-secondary)',
+        maxWidth: '480px',
+        '--modal-mobile-sheet-max-height': 'min(86dvh, calc(100dvh - env(safe-area-inset-top) - 8px))',
+      }}
+    >
+      <div className="matchup-week-picker-header">
+        <div className="min-w-0">
+          <div className="companion-segmented__title matchup-week-picker-title">
+            Select Week
+          </div>
+          {playoffStart <= totalWeeks && (
+            <div className="matchup-week-picker-note">
+              Playoffs start Week {playoffStart}
+            </div>
+          )}
+        </div>
+        <CompanionSelectorButton
+          size="xs"
+          variant="ghost"
+          aria-label="Close select week"
+          onClick={onClose}
+          className="matchup-week-picker-close"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </CompanionSelectorButton>
+      </div>
+      <div className="matchup-week-picker-grid">
+        {weekOptions.map((w) => {
+          const isPlayoff = w >= playoffStart;
+          const isBye = byeWeeks?.has(w) ?? false;
+          const isSelected = week === w;
+          const tag = isBye ? 'Bye' : isPlayoff ? 'Playoff' : null;
+          return (
+            <CompanionSelectorButton
+              key={w}
+              active={isSelected}
+              size="md"
+              variant="segment"
+              aria-label={`Week ${w}${isBye ? ' bye' : ''}${isPlayoff ? ' playoff' : ''}`}
+              className={`matchup-week-picker-option${isPlayoff ? ' is-playoff-week' : ''}${isBye ? ' is-bye-week' : ''}`}
+              onClick={() => onSelect(w)}
+            >
+              <span>Wk {w}</span>
+              {tag ? (
+                <span className="matchup-week-picker-option__tag">
+                  {tag}
+                </span>
+              ) : null}
+            </CompanionSelectorButton>
+          );
+        })}
+      </div>
+    </Modal>
   );
 }
 
@@ -1319,58 +1502,57 @@ function MatchupPlayerRow({ player, darkMode, compact = false, align = 'left', o
   );
 }
 
-const TEAM_SCORE_LABELS = {
-  ...STAT_LABELS,
-  bonus_rush_rec_yd_100: '100+ Rush/Rec Yd Bonus',
-  bonus_rush_rec_yd_200: '200+ Rush/Rec Yd Bonus',
-  bonus_pass_cmp_25: '25+ Completion Bonus',
-  bonus_rush_att_20: '20+ Carry Bonus',
-  pass_td_40p: '40+ Pass TD Bonus',
-  pass_td_50p: '50+ Pass TD Bonus',
-  pass_cmp_40p: '40+ Completion Bonus',
-  rush_td_40p: '40+ Rush TD Bonus',
-  rush_td_50p: '50+ Rush TD Bonus',
-  rec_td_40p: '40+ Rec TD Bonus',
-  rec_td_50p: '50+ Rec TD Bonus',
-  rec_40p: '40+ Reception Bonus',
-  rush_40p: '40+ Rush Bonus',
-  bonus_def_fum_td_50p: '50+ Fumble TD Bonus',
-  bonus_def_int_td_50p: '50+ INT TD Bonus',
-  idp_qb_hit: 'QB Hit',
-  idp_pass_def: 'Pass Deflection',
-  idp_fum_rec: 'Fumble Recovery',
-  idp_fum_ret_yd: 'Fumble Return Yds',
-  idp_safe: 'Safety',
-  idp_sack_yd: 'Sack Yards',
-  idp_int_ret_yd: 'INT Return Yds',
-  idp_int_td: 'INT Return TD',
-  idp_fr_yd: 'Fumble Return Yds',
-  idp_fr_td: 'Fumble Return TD',
-  def_td: 'DST TD',
-  def_2pt: 'DST 2PT Return',
-  def_3_and_out: '3 and Out',
-  def_4_and_stop: '4th Down Stop',
-  def_forced_punts: 'Forced Punt',
-  def_pass_def: 'Pass Deflection',
-  def_st_tkl_solo: 'ST Solo Tackle',
-  def_kr_yd: 'Kick Return Yds',
-  def_pr_yd: 'Punt Return Yds',
-  sack: 'DST Sack',
-};
-
-function formatScoringKeyLabel(key) {
-  return key
-    .replace(/^bonus_/, '')
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, letter => letter.toUpperCase());
-}
-
 function TeamScoreBreakdown({ teamName, playerIds, week, onClose }) {
-  const { weeklyStats, activeScoringSettings, players } = useSleeperBase();
+  const { platform, weeklyStats, activeScoringSettings, players, season } = useSleeperBase();
+  const [espnDerivedRowsState, setEspnDerivedRowsState] = useState({ key: '', rowsByPlayerId: {} });
+  const playerIdsKey = useMemo(() => playerIds.join('|'), [playerIds]);
+  const espnDerivedRowsKey = platform === 'espn' && players && week && playerIds.length
+    ? [season, week, playerIdsKey].join('|')
+    : '';
+  const espnDerivedRowsByPlayerId = useMemo(() => (
+    espnDerivedRowsState.key === espnDerivedRowsKey
+      ? espnDerivedRowsState.rowsByPlayerId
+      : {}
+  ), [espnDerivedRowsKey, espnDerivedRowsState]);
+
+  useEffect(() => {
+    if (!espnDerivedRowsKey) return undefined;
+
+    const candidates = playerIds.filter((id) => {
+      const player = players?.[id];
+      return player && isEspnFantasyGameLogPosition(player.position) && (player.espn_id || player.sourceIds?.espn);
+    });
+    if (!candidates.length) return undefined;
+
+    let cancelled = false;
+    void Promise.all(candidates.map(async (id) => {
+      try {
+        const row = await loadEspnFantasyGameLogWeekRow({
+          playerId: id,
+          player: players[id],
+          season,
+          scoringSettings: activeScoringSettings,
+          week,
+        });
+        return [id, row ?? null];
+      } catch {
+        return [id, null];
+      }
+    })).then((entries) => {
+      if (cancelled) return;
+      setEspnDerivedRowsState({
+        key: espnDerivedRowsKey,
+        rowsByPlayerId: Object.fromEntries(entries.filter(([, row]) => row)),
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeScoringSettings, espnDerivedRowsKey, playerIds, players, season, week]);
 
   const { rows, total } = useMemo(() => {
     if (!weeklyStats) return { rows: [], total: 0 };
-    const settings = { ...DEFAULT_SCORING, ...activeScoringSettings };
     const totals = new Map();
     let exactTotal = 0;
 
@@ -1394,57 +1576,21 @@ function TeamScoreBreakdown({ teamName, playerIds, week, onClose }) {
 
     for (const id of playerIds) {
       const weekly = weeklyStats[id] ?? [];
-      const entry = weekly.find(w => w.week === week);
+      const officialEntry = weekly.find(w => w.week === week);
+      const derivedEntry = espnDerivedRowsByPlayerId[id] ?? null;
+      const entry = derivedEntry
+        ? mergeOfficialFantasyTotal(officialEntry, derivedEntry)
+        : officialEntry;
       if (!entry) continue;
       const position = players?.[id]?.position ?? null;
-      exactTotal += calcPoints(entry, settings, position);
-
-      for (const [statKey, statVal] of Object.entries(entry)) {
-        if (!statVal) continue;
-        const scoringKey = STAT_TO_SCORING_KEY[statKey];
-        if (!scoringKey || !settings[scoringKey]) continue;
-        addRow(
-          scoringKey,
-          TEAM_SCORE_LABELS[statKey] ?? TEAM_SCORE_LABELS[scoringKey] ?? formatScoringKeyLabel(scoringKey),
-          Number(statVal),
-          Number(statVal) * settings[scoringKey],
-          true,
-        );
-      }
-
-      if (position && entry.rec) {
-        const bonusKey = position === 'TE'
-          ? 'bonus_rec_te'
-          : position === 'RB'
-            ? 'bonus_rec_rb'
-            : position === 'WR'
-              ? 'bonus_rec_wr'
-              : null;
-        if (bonusKey && settings[bonusKey]) {
-          addRow(bonusKey, `${position} Rec Bonus`, Number(entry.rec), Number(entry.rec) * settings[bonusKey], true);
-        }
-      }
-
-      if (position === 'RB' && entry.rush_att && settings.bonus_rush_att) {
-        addRow('bonus_rush_att', 'Carry Bonus', Number(entry.rush_att), Number(entry.rush_att) * settings.bonus_rush_att, true);
-      }
-
-      if (position === 'QB' && settings.bonus_fd_qb) {
-        const fdTotal = Number(entry.pass_fd ?? 0) + Number(entry.rush_fd ?? 0);
-        if (fdTotal) addRow('bonus_fd_qb', 'QB First Down Bonus', fdTotal, fdTotal * settings.bonus_fd_qb, true);
-      }
-
-      if (position === 'RB' && settings.bonus_fd_rb) {
-        const fdTotal = Number(entry.rush_fd ?? 0) + Number(entry.rec_fd ?? 0);
-        if (fdTotal) addRow('bonus_fd_rb', 'RB First Down Bonus', fdTotal, fdTotal * settings.bonus_fd_rb, true);
-      }
-
-      if (position === 'WR' && settings.bonus_fd_wr && entry.rec_fd) {
-        addRow('bonus_fd_wr', 'WR First Down Bonus', Number(entry.rec_fd), Number(entry.rec_fd) * settings.bonus_fd_wr, true);
-      }
-
-      if (position === 'TE' && settings.bonus_fd_te && entry.rec_fd) {
-        addRow('bonus_fd_te', 'TE First Down Bonus', Number(entry.rec_fd), Number(entry.rec_fd) * settings.bonus_fd_te, true);
+      const breakdown = buildFantasyScoringBreakdown(entry, activeScoringSettings, position, {
+        preferRawStats: Boolean(derivedEntry),
+        adjustmentKey: 'other_adjustments',
+        adjustmentLabel: 'Other Scoring Adjustments',
+      });
+      exactTotal += breakdown.total;
+      for (const row of breakdown.rows) {
+        addRow(row.key, row.label, row.statVal, row.pts, row.statVal != null);
       }
     }
 
@@ -1471,7 +1617,7 @@ function TeamScoreBreakdown({ teamName, playerIds, week, onClose }) {
       rows,
       total: Math.round(exactTotal * 100) / 100,
     };
-  }, [weeklyStats, activeScoringSettings, playerIds, week, players]);
+  }, [weeklyStats, activeScoringSettings, playerIds, week, players, espnDerivedRowsByPlayerId]);
 
   return (
     <Modal
@@ -1533,7 +1679,7 @@ function TeamScoreBreakdown({ teamName, playerIds, week, onClose }) {
                   {row.label}
                 </span>
                 <span className="w-14 text-right text-sm tabular-nums" style={{ color: 'var(--color-label-secondary)' }}>
-                  {Number.isInteger(row.statVal) ? row.statVal : row.statVal.toFixed(1)}
+                  {row.statVal == null ? '—' : Number.isInteger(row.statVal) ? row.statVal : row.statVal.toFixed(1)}
                 </span>
                 <span
                   className="w-16 text-right text-sm font-semibold tabular-nums"

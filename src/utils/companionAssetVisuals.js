@@ -30,6 +30,19 @@ export function getSleeperPlayerImageUrl(playerId) {
   return playerId ? `https://sleepercdn.com/content/nfl/players/thumb/${playerId}.jpg` : null;
 }
 
+export function getEspnPlayerImageUrl(playerId) {
+  if (playerId == null) return null;
+  const normalized = String(playerId).trim();
+  if (!normalized) return null;
+
+  const espnId = normalized.startsWith('espn:')
+    ? normalized.slice('espn:'.length)
+    : normalized;
+  return /^\d+$/.test(espnId)
+    ? `https://a.espncdn.com/i/headshots/nfl/players/full/${espnId}.png`
+    : null;
+}
+
 export function getSleeperAvatarUrl(avatarHash) {
   return avatarHash ? `https://sleepercdn.com/avatars/thumbs/${avatarHash}` : null;
 }
@@ -52,8 +65,13 @@ export function getCompanionInitials(label, fallback = '?') {
 
 export function getCompanionPlayerImageUrl(player = {}) {
   return player.imageUrl
+    ?? player.image_url
     ?? player.playerImageUrl
     ?? player.avatarUrl
+    ?? getEspnPlayerImageUrl(player.espnId ?? player.espn_id ?? player.sourceIds?.espn)
+    ?? (String(player.id ?? player.playerId ?? player.sleeperId ?? '').startsWith('espn:')
+      ? getEspnPlayerImageUrl(player.id ?? player.playerId ?? player.sleeperId)
+      : null)
     ?? getSleeperPlayerImageUrl(player.id ?? player.playerId ?? player.sleeperId)
     ?? null;
 }

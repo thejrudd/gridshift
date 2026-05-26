@@ -414,7 +414,7 @@ function TradePlate({ side, items, onRemovePlayer, onRemovePick, onAddPlayer, on
                 : 'Drop here from shelf'}
             {!dragState && (
               <span style={{ display: 'block', marginTop: 4, fontFamily: "'Figtree', sans-serif", fontSize: 11, fontWeight: 500, letterSpacing: 0, textTransform: 'none', color: 'var(--color-label-quaternary)' }}>
-                or use + Player / + Pick
+                {onAddPick ? 'or use + Player / + Pick' : 'or use + Player'}
               </span>
             )}
           </span>
@@ -426,11 +426,13 @@ function TradePlate({ side, items, onRemovePlayer, onRemovePick, onAddPlayer, on
           style={{ fontSize: 13, border: '1px dashed var(--color-separator)', color: 'var(--color-label-tertiary)', background: 'transparent', cursor: 'pointer' }}>
           + Player
         </button>
-        <button onClick={onAddPick ?? undefined} disabled={!onAddPick} className="flex-1 py-2.5 rounded-lg font-medium"
-          data-testid={`trade-plate-${side}-add-pick`}
-          style={{ fontSize: 13, border: '1px dashed var(--color-separator)', color: 'var(--color-label-tertiary)', background: 'transparent', opacity: onAddPick ? 1 : 0.35, cursor: onAddPick ? 'pointer' : 'default' }}>
-          + Pick
-        </button>
+        {onAddPick && (
+          <button onClick={onAddPick} className="flex-1 py-2.5 rounded-lg font-medium"
+            data-testid={`trade-plate-${side}-add-pick`}
+            style={{ fontSize: 13, border: '1px dashed var(--color-separator)', color: 'var(--color-label-tertiary)', background: 'transparent', cursor: 'pointer' }}>
+            + Pick
+          </button>
+        )}
       </div>
     </div>
   );
@@ -458,11 +460,14 @@ function RosterShelf({
   onAddToYours, onAddToTheirs,
   rosterPicks, slots, myRosterId, partnerRosterId: shelfPartnerRosterId,
   yourTradePicks, theirTradePicks, onAddPickToYours, onAddPickToTheirs,
-  shelfDragRef, partnerRosters, onPartnerChange,
+  shelfDragRef, partnerRosters, onPartnerChange, picksEnabled = true,
 }) {
   const [activeTab, setActiveTab] = useState('yours');
   const [posFilter, setPosFilter] = useState('ALL');
   const [showPicks, setShowPicks] = useState(false);
+  useEffect(() => {
+    if (!picksEnabled) setShowPicks(false);
+  }, [picksEnabled]);
   const roster = activeTab === 'yours' ? myPlayers : partnerPlayers;
   const inTradePlayers = activeTab === 'yours' ? yourTradePlayers : theirTradePlayers;
   const inTradePickKeys = new Set(
@@ -477,7 +482,7 @@ function RosterShelf({
     .sort((a, b) => (playerTradeValueMap?.get(b) ?? 0) - (playerTradeValueMap?.get(a) ?? 0));
 
   const rosterId = activeTab === 'yours' ? myRosterId : shelfPartnerRosterId;
-  const shelfPicks = (rosterPicks && slots && rosterId)
+  const shelfPicks = (picksEnabled && rosterPicks && slots && rosterId)
     ? (getPicksForRoster(rosterId, rosterPicks, slots) ?? [])
     : [];
 
@@ -529,9 +534,11 @@ function RosterShelf({
               {pos}
             </CompanionSelectorButton>
           ))}
-          <CompanionSelectorButton size="xs" active={showPicks} onClick={() => setShowPicks(true)} data-testid="trade-shelf-filter-picks">
-            PICKS
-          </CompanionSelectorButton>
+          {picksEnabled && (
+            <CompanionSelectorButton size="xs" active={showPicks} onClick={() => setShowPicks(true)} data-testid="trade-shelf-filter-picks">
+              PICKS
+            </CompanionSelectorButton>
+          )}
         </CompanionSelectorRail>
       </div>
       {/* List */}
@@ -612,11 +619,14 @@ function MobileRosterShelf({
   onAddToYours, onAddToTheirs,
   rosterPicks, slots, myRosterId, partnerRosterId: shelfPartnerRosterId,
   yourTradePicks, theirTradePicks, onAddPickToYours, onAddPickToTheirs,
-  partnerRosters, onPartnerChange,
+  partnerRosters, onPartnerChange, picksEnabled = true,
 }) {
   const [activeTab, setActiveTab] = useState('yours');
   const [posFilter, setPosFilter] = useState('ALL');
   const [showPicks, setShowPicks] = useState(false);
+  useEffect(() => {
+    if (!picksEnabled) setShowPicks(false);
+  }, [picksEnabled]);
   const roster = activeTab === 'yours' ? myPlayers : partnerPlayers;
   const inTradePlayers = activeTab === 'yours' ? yourTradePlayers : theirTradePlayers;
   const inTradePickKeys = new Set(
@@ -631,7 +641,7 @@ function MobileRosterShelf({
     .sort((a, b) => (playerTradeValueMap?.get(b) ?? 0) - (playerTradeValueMap?.get(a) ?? 0));
 
   const rosterId = activeTab === 'yours' ? myRosterId : shelfPartnerRosterId;
-  const shelfPicks = (rosterPicks && slots && rosterId)
+  const shelfPicks = (picksEnabled && rosterPicks && slots && rosterId)
     ? (getPicksForRoster(rosterId, rosterPicks, slots) ?? [])
     : [];
 
@@ -678,9 +688,11 @@ function MobileRosterShelf({
               {pos}
             </CompanionSelectorButton>
           ))}
-          <CompanionSelectorButton size="sm" active={showPicks} onClick={() => setShowPicks(true)} data-testid="trade-shelf-filter-picks">
-            PICKS
-          </CompanionSelectorButton>
+          {picksEnabled && (
+            <CompanionSelectorButton size="sm" active={showPicks} onClick={() => setShowPicks(true)} data-testid="trade-shelf-filter-picks">
+              PICKS
+            </CompanionSelectorButton>
+          )}
         </CompanionSelectorRail>
       </div>
       {/* Vertical player/pick list */}
@@ -751,6 +763,7 @@ export default function TradeProposalBuilder({
   ownerNameByRosterId,
   rosterPicks,
   slots,
+  picksEnabled = true,
   yourPicks,
   theirPicks,
   league,
@@ -778,7 +791,7 @@ export default function TradeProposalBuilder({
               if (drag.type === 'player') {
                 if (drag.shelfTab === 'yours') addPlayer('yours', drag.id);
                 else if (partnerRosterId) addPlayer('theirs', { id: drag.id, rosterId: partnerRosterId });
-              } else if (drag.type === 'pick' && drag.pickData) {
+              } else if (picksEnabled && drag.type === 'pick' && drag.pickData) {
                 if (drag.shelfTab === 'yours') addPick('yours', drag.pickData);
                 else addPick('theirs', drag.pickData);
               }
@@ -797,12 +810,13 @@ export default function TradeProposalBuilder({
               onAddToTheirs: id => partnerRosterId ? addPlayer('theirs', { id, rosterId: partnerRosterId }) : null,
               rosterPicks,
               slots,
+              picksEnabled,
               myRosterId: myRosterData?.roster_id,
               partnerRosterId,
               yourTradePicks: yourPicks,
               theirTradePicks: theirPicks,
-              onAddPickToYours: pick => addPick('yours', pick),
-              onAddPickToTheirs: pick => addPick('theirs', pick),
+              onAddPickToYours: picksEnabled ? (pick => addPick('yours', pick)) : null,
+              onAddPickToTheirs: picksEnabled ? (pick => addPick('theirs', pick)) : null,
               league,
               myAvatar: leagueUserById.get(myRosterData?.owner_id ?? '')?.avatar ?? null,
               partnerAvatar: partnerRosterId
@@ -907,7 +921,7 @@ export default function TradeProposalBuilder({
                             onRemovePlayer={id => removePlayer('yours', id)}
                             onRemovePick={key => removePick('yours', key)}
                             onAddPlayer={() => setPickerOpen({ side: 'yours', type: 'player' })}
-                            onAddPick={() => setPickerOpen({ side: 'yours', type: 'pick' })}
+                            onAddPick={picksEnabled ? () => setPickerOpen({ side: 'yours', type: 'pick' }) : null}
                             onOpenPlayer={openStatsModalForPlayer}
                             {...sharedPlateProps}
                           />
@@ -918,7 +932,7 @@ export default function TradeProposalBuilder({
                             onRemovePlayer={id => removePlayer('theirs', id)}
                             onRemovePick={key => removePick('theirs', key)}
                             onAddPlayer={() => setPickerOpen({ side: 'theirs', type: 'player', allRosters: !partnerRosterId })}
-                            onAddPick={partnerRosterId ? () => setPickerOpen({ side: 'theirs', type: 'pick' }) : null}
+                            onAddPick={picksEnabled && partnerRosterId ? () => setPickerOpen({ side: 'theirs', type: 'pick' }) : null}
                             onOpenPlayer={openStatsModalForPlayer}
                             {...sharedPlateProps}
                           />
@@ -976,7 +990,7 @@ export default function TradeProposalBuilder({
                         onRemovePlayer={id => removePlayer('yours', id)}
                         onRemovePick={key => removePick('yours', key)}
                         onAddPlayer={() => setPickerOpen({ side: 'yours', type: 'player' })}
-                        onAddPick={() => setPickerOpen({ side: 'yours', type: 'pick' })}
+                        onAddPick={picksEnabled ? () => setPickerOpen({ side: 'yours', type: 'pick' }) : null}
                         onOpenPlayer={openStatsModalForPlayer}
                         {...sharedPlateProps}
                       />
@@ -987,7 +1001,7 @@ export default function TradeProposalBuilder({
                         onRemovePlayer={id => removePlayer('theirs', id)}
                         onRemovePick={key => removePick('theirs', key)}
                         onAddPlayer={() => setPickerOpen({ side: 'theirs', type: 'player', allRosters: !partnerRosterId })}
-                        onAddPick={partnerRosterId ? () => setPickerOpen({ side: 'theirs', type: 'pick' }) : null}
+                        onAddPick={picksEnabled && partnerRosterId ? () => setPickerOpen({ side: 'theirs', type: 'pick' }) : null}
                         onOpenPlayer={openStatsModalForPlayer}
                         {...sharedPlateProps}
                       />

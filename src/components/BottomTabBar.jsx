@@ -1,8 +1,8 @@
-export default function BottomTabBar({ activeTab, onTabChange }) {
+export default function BottomTabBar({ activeTab, onTabChange, tradeDisabled = false }) {
   const tabs = [
     { id: 'companion',   label: 'Companion',   renderIcon: (active) => <CompanionIcon active={active} /> },
     { id: 'statistics',  label: 'Statistics',  renderIcon: (active) => <PlayersIcon active={active} /> },
-    { id: 'trade',       label: 'Trade',       renderIcon: (active) => <TradeIcon active={active} /> },
+    { id: 'trade',       label: 'Trade',       renderIcon: (active) => <TradeIcon active={active} />, disabled: tradeDisabled },
     { id: 'scout',       label: 'Scout',       renderIcon: (active) => <ScoutIcon active={active} />, beta: true },
     { id: 'predictions', label: 'Predictions', renderIcon: (active) => <SeasonIcon active={active} /> },
   ];
@@ -10,15 +10,18 @@ export default function BottomTabBar({ activeTab, onTabChange }) {
   return (
     <nav className="tab-bar" aria-label="Main navigation">
       <div className="tab-bar-inner">
-        {tabs.map(({ id, label, renderIcon, beta, alpha }) => {
+        {tabs.map(({ id, label, renderIcon, beta, alpha, disabled }) => {
           const active = activeTab === id;
           return (
             <button
               key={id}
-              onClick={() => onTabChange(id)}
-              className={`tab-item${active ? ' active' : ''}`}
+              onClick={disabled ? undefined : () => onTabChange(id)}
+              className={`tab-item${active ? ' active' : ''}${disabled ? ' is-disabled' : ''}`}
               aria-label={label}
               aria-current={active ? 'page' : undefined}
+              aria-disabled={disabled ? 'true' : undefined}
+              disabled={disabled}
+              title={disabled ? 'Trade is not available for ESPN leagues yet.' : undefined}
             >
               <span style={{ position: 'relative', display: 'inline-flex', justifyContent: 'center' }}>
                 {renderIcon(active)}

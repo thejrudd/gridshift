@@ -15,7 +15,7 @@ import TradeSubNav from './components/TradeSubNav';
 import ScoutSubNav from './components/ScoutSubNav';
 import ActionSheet from './components/ActionSheet';
 import Sidebar from './components/Sidebar';
-import { SleeperProvider, useSleeperLeague, useSleeperStats } from './context/SleeperContext';
+import { FantasyProvider, useFantasyLeague, useFantasyStats } from './context/SleeperContext';
 import {
   buildAppPath,
   getDefaultRouteForTab,
@@ -430,13 +430,13 @@ function AppInner() {
   const [tradeAnalyticsPrewarmRequested, setTradeAnalyticsPrewarmRequested] = useState(false);
   const [, startRouteTransition] = useTransition();
 
-  const { hasLeague, selectedLeagueId, season, changeSeason, league, linkedLeagueSeasonOptions, scoringOverridePaused } = useSleeperLeague();
+  const { platform, hasLeague, selectedLeagueId, season, changeSeason, league, linkedLeagueSeasonOptions, scoringOverridePaused } = useFantasyLeague();
   const {
     statsLoading,
     seasonStats,
     players: sleeperPlayers,
     espnIdOverrides,
-  } = useSleeperStats();
+  } = useFantasyStats();
 
   const {
     getPredictionCount,
@@ -508,6 +508,7 @@ function AppInner() {
   const companionView = appRoute.companionView;
   const tradeView = appRoute.tradeView;
   const scoutView = appRoute.scoutView;
+  const tradeDisabledForPlatform = platform === 'espn';
 
   useEffect(() => {
     latestAppRouteRef.current = appRoute;
@@ -599,8 +600,14 @@ function AppInner() {
   }, [readHistoryState, startRouteTransition]);
 
   const navigateToTab = useCallback((tab) => {
+    if (tab === 'trade' && tradeDisabledForPlatform) return;
     applyRoute(getDefaultRouteForTab(tab));
-  }, [applyRoute]);
+  }, [applyRoute, tradeDisabledForPlatform]);
+
+  useEffect(() => {
+    if (!tradeDisabledForPlatform || activeTab !== 'trade') return;
+    applyRoute({ activeTab: 'companion', companionView: 'roster' }, { replace: true });
+  }, [activeTab, applyRoute, tradeDisabledForPlatform]);
 
   const navigateSeasonView = useCallback((view) => {
     applyRoute({ activeTab: 'predictions', seasonView: view });
@@ -671,8 +678,9 @@ function AppInner() {
   }, [activeTab, companionView]);
 
   const navigateTradeView = useCallback((view) => {
+    if (tradeDisabledForPlatform) return;
     applyRoute({ activeTab: 'trade', tradeView: view });
-  }, [applyRoute]);
+  }, [applyRoute, tradeDisabledForPlatform]);
 
   const navigateScoutView = useCallback((view) => {
     applyRoute({ activeTab: 'scout', scoutView: view });
@@ -772,6 +780,7 @@ function AppInner() {
       state: {
         statsBackLabel: backLabel ?? null,
         statsBackRoute: backRoute ? normalizeAppRoute(backRoute) : null,
+        statsPlayerMeta: playerMeta,
       },
     });
   }, [applyRoute, buildStatsBackContext]);
@@ -1042,7 +1051,7 @@ function AppInner() {
           </div>
         )}
 
-        {activeTab === 'trade' && hasLeague && (
+        {activeTab === 'trade' && hasLeague && !tradeDisabledForPlatform && (
           <div className="season-subnav league-subnav">
             <TradeSubNav activeView={tradeView} onViewChange={navigateTradeView} onViewIntent={prewarmTradeView} />
             {/* Desktop: bottom-right of subnav bar, aligned with tab text */}
@@ -1159,7 +1168,9 @@ function AppInner() {
               onNavigatePlayer={navigateToStatisticsPlayer}
               onViewSchedule={navigateToStatisticsScheduleTeam}
               onPlayerModeChange={updateStatisticsMode}
+              tradeDisabled={tradeDisabledForPlatform}
               onBuildTrade={(initialTrade) => {
+                if (tradeDisabledForPlatform) return;
                 applyRoute({
                   activeTab: 'trade',
                   tradeView: initialTrade?.view ?? 'agent',
@@ -1191,7 +1202,7 @@ function AppInner() {
             </Suspense>
           )}
 
-          {activeTab === 'trade' && hasLeague && (
+          {activeTab === 'trade' && hasLeague && !tradeDisabledForPlatform && (
             <Suspense fallback={<SectionLoading label="Loading Trade" />}>
               <CompanionTrade
                 initialPlayer={tradeInitPlayer}
@@ -1225,8 +1236,10 @@ function AppInner() {
                 <Suspense fallback={<SectionLoading label="Loading Roster" />}>
                 <CompanionRoster
                   onTradePlayer={(sleeperId) => {
+                    if (tradeDisabledForPlatform) return;
                     applyRoute({ activeTab: 'trade', tradeView: 'agent', tradePlayerId: sleeperId, tradeSide: 'give' });
                   }}
+                  tradeDisabled={tradeDisabledForPlatform}
                   onOpenMatchupWeek={(playerId, week) => {
                     applyRoute({ activeTab: 'companion', companionView: 'matchup', matchupPlayerId: playerId, matchupWeek: week });
                   }}
@@ -1330,6 +1343,7 @@ function AppInner() {
                     });
                   }}
                   onTradePlayer={(sleeperId, partnerRosterId, side = 'get') => {
+                    if (tradeDisabledForPlatform) return;
                     applyRoute({
                       activeTab: 'trade',
                       tradeView: 'agent',
@@ -1338,6 +1352,7 @@ function AppInner() {
                       tradePartnerRosterId: partnerRosterId,
                     });
                   }}
+                  tradeDisabled={tradeDisabledForPlatform}
                 />
                 </Suspense>
               )}
@@ -1382,7 +1397,7 @@ function AppInner() {
         </div>
 
         {/* Bottom tab bar — mobile/tablet only, hidden lg+ via CSS */}
-        <BottomTabBar activeTab={activeTab} onTabChange={navigateToTab} />
+        <BottomTabBar activeTab={activeTab} onTabChange={navigateToTab} tradeDisabled={tradeDisabledForPlatform} />
       </div>
 
       {statsDrilldownPending && (
@@ -1456,7 +1471,7 @@ function AppInner() {
                   Switch League
                 </div>
                 <div className="mt-1 text-sm" style={{ color: 'var(--color-label-secondary)' }}>
-                  Choose a Sleeper season and league.
+                  Choose a {platform === 'espn' ? 'ESPN' : 'Sleeper'} season and league.
                 </div>
               </div>
               <button
@@ -1499,9 +1514,9 @@ function AppInner() {
 
 function App() {
   return (
-    <SleeperProvider>
+    <FantasyProvider>
       <AppInner />
-    </SleeperProvider>
+    </FantasyProvider>
   );
 }
 

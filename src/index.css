@@ -353,6 +353,16 @@ body {
   border-left-color: var(--color-signature);
 }
 
+.sidebar-nav-item.is-disabled {
+  color: var(--color-label-quaternary);
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.sidebar-nav-item.is-disabled:active {
+  opacity: 0.48;
+}
+
 .sidebar-nav-icon {
   color: currentColor;
   flex-shrink: 0;
@@ -1227,6 +1237,11 @@ body {
   color: var(--color-signature);
 }
 
+.matchup-week-picker-option.is-bye-week:not(.is-active) {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
 .matchup-week-picker-option__tag {
   font-size: 8px;
   font-weight: 900;
@@ -1329,6 +1344,15 @@ body {
 
 .tab-item:active {
   opacity: 0.55;
+}
+
+.tab-item.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.tab-item.is-disabled:active {
+  opacity: 0.42;
 }
 
 .tab-label {
@@ -1852,6 +1876,16 @@ body {
   transform: scale(0.97);
 }
 
+.statistics-player-hero__action:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+  box-shadow: none;
+}
+
+.statistics-player-hero__action:disabled:active {
+  transform: none;
+}
+
 .statistics-player-hero__action--ghost {
   background: var(--statistics-hero-subtle, var(--color-fill-secondary));
 }
@@ -1860,9 +1894,9 @@ body {
   background: transparent;
 }
 
-.statistics-player-hero__action--ghost:hover,
+.statistics-player-hero__action--ghost:hover:not(:disabled),
 .statistics-player-hero__action--ghost[aria-pressed="true"],
-.statistics-player-hero__action--outline:hover {
+.statistics-player-hero__action--outline:hover:not(:disabled) {
   border-color: var(--statistics-hero-accent, var(--color-accent));
   background: var(--statistics-hero-accent, var(--color-accent));
   color: var(--color-signature-fg);

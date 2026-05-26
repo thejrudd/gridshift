@@ -12,6 +12,7 @@ Use this note as the entry point.
 - [[Design Tokens]]
 - [[Companion Shared Rows]]
 - [[Scoring Call Sites]]
+- [[ESPN Fantasy Scoring]]
 - [[Trade Engine]]
 - [[Scout]]
 - [[BALLDONTLIE NFL Integration]]

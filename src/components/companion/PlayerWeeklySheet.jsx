@@ -33,6 +33,9 @@ const OFFENSE_STAT_DISPLAY = [
   { key: 'fum_lost', label: 'Fum Lost' },
   { key: 'st_td', label: 'ST TD' },
   { key: 'ret_td', label: 'Ret TD' },
+  { key: 'team_win', label: 'Team W' },
+  { key: 'team_loss', label: 'Team L' },
+  { key: 'team_tie', label: 'Team T' },
 ];
 
 const IDP_STAT_DISPLAY = [

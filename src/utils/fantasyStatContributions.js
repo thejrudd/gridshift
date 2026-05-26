@@ -27,7 +27,10 @@ export function getFantasyContribution(key, statsMap, position, scoringSettings)
       if (['DL', 'LB', 'DB'].includes(normalizedPosition)) return (getStatValue(statsMap, 'interceptions') ?? 0) * (scoringSettings.idp_int ?? 0);
       return null;
     case 'rushingAttempts':
-      return normalizedPosition === 'RB' ? (getStatValue(statsMap, 'rushingAttempts') ?? 0) * (scoringSettings.bonus_rush_att ?? 0) : null;
+      return (getStatValue(statsMap, 'rushingAttempts') ?? 0) * (
+        (scoringSettings.rush_att ?? 0)
+        + (normalizedPosition === 'RB' ? (scoringSettings.bonus_rush_att ?? 0) : 0)
+      );
     case 'rushingYards':
       return (getStatValue(statsMap, 'rushingYards') ?? 0) * (scoringSettings.rush_yd ?? 0);
     case 'rushingTouchdowns':
@@ -93,7 +96,10 @@ export function getSleeperFantasyContribution(key, totals, position, scoringSett
       if (['DL', 'LB', 'DB'].includes(normalizedPosition)) return (getStatValue(totals, 'idp_int') ?? 0) * (scoringSettings.idp_int ?? 0);
       return null;
     case 'rushingAttempts':
-      return normalizedPosition === 'RB' ? (getStatValue(totals, 'rush_att') ?? 0) * (scoringSettings.bonus_rush_att ?? 0) : null;
+      return (getStatValue(totals, 'rush_att') ?? 0) * (
+        (scoringSettings.rush_att ?? 0)
+        + (normalizedPosition === 'RB' ? (scoringSettings.bonus_rush_att ?? 0) : 0)
+      );
     case 'rushingYards':
       return (getStatValue(totals, 'rush_yd') ?? 0) * (scoringSettings.rush_yd ?? 0);
     case 'rushingTouchdowns':

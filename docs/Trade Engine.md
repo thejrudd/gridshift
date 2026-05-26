@@ -39,12 +39,14 @@ These surfaces share some underlying valuation inputs, but they do not all use t
 ### Shared inputs
 
 Most Trade flows start from the same source data:
-- Sleeper league and rosters
-- Sleeper player map
+- the active fantasy provider's normalized league and rosters
+- normalized player map
 - season stats / weekly stats
 - scoring settings
 - adjusted KTC datasets
 - current draft pick ownership
+
+Sleeper remains the full-featured provider for players and draft picks. ESPN leagues are normalized into the same player/roster/stat contract, but v8.0 intentionally hides draft-pick assets and keeps Trade player-only.
 
 ### Shared valuation layer
 
@@ -62,10 +64,12 @@ This shared value is what reduced earlier drift between Agent, Intelligence, and
 `CompanionTrade.jsx` -> `TradeProposalBuilder.jsx` -> `tradeEngine.js`
 
 Main responsibilities:
-- build draft pick ownership maps
+- build draft pick ownership maps for providers that support picks
 - value each side of a user-built trade
 - evaluate fairness / imbalance
 - generate refinement ideas and candidate additions/removals
+
+For ESPN leagues, `CompanionTrade.jsx` sets `picksEnabled = false`, provider draft-pick methods return empty arrays, pick pickers are suppressed, and applied proposal picks are ignored.
 
 ### Intelligence flow
 
@@ -88,6 +92,8 @@ Main responsibilities:
 - build candidate packages and compensation picks
 - evaluate whether the package is viable for both sides
 - rank and group the best upgrade paths by manager
+
+For ESPN leagues, outgoing/incoming pick toggles are disabled before the search request is built, so upgrade results stay player-only.
 
 ## What each engine optimizes for
 

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSleeperBase, useSleeperStatsProgress } from '../../context/SleeperContext';
 import { useTheme } from '../../context/ThemeContext';
-import { calcPointsFromTotals } from '../../utils/scoringEngine';
+import { calcPoints, calcPointsFromTotals } from '../../utils/scoringEngine';
 import { computePositionalRanks, getAvgPPG } from '../../utils/projectionEngine';
 import CompanionPlayerPreviewSheet from './CompanionPlayerPreviewSheet';
 import { getTeamColorKey, getTeamPalette } from '../../data/teamColors.js';
@@ -15,6 +15,50 @@ const POSITION_ORDER = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF', 'DL', 'LB', 'DB', 'D
 const COMPACT_PHONE_QUERY = '(max-width: 480px)';
 const MOBILE_SHEET_QUERY = '(max-width: 1023px)';
 const ROSTER_ROW_LEFT_BORDER = 4;
+
+function getRosterPlayerIds(roster) {
+  return [...new Set([...(roster?.players || []), ...(roster?.reserve || [])])];
+}
+
+function hasScoreSource(stats) {
+  if (!stats) return false;
+  if (Number.isFinite(Number(stats._fantasyPoints ?? stats.fantasy_points ?? stats.appliedTotal))) return true;
+  return Object.entries(stats).some(([key, value]) => (
+    typeof value === 'number'
+    && !key.startsWith('_')
+    && !['week', 'gp', 'games_played', 'fantasy_points', 'appliedTotal'].includes(key)
+  ));
+}
+
+function getWeeklySeasonPoints(weekly, scoring, position) {
+  if (!weekly?.length) return null;
+  let total = 0;
+  let hasAnyScore = false;
+  for (const row of weekly) {
+    if (!hasScoreSource(row)) continue;
+    total += calcPoints(row, scoring, position);
+    hasAnyScore = true;
+  }
+  return hasAnyScore ? total : null;
+}
+
+function getRosterSeasonPoints(stats, weekly, scoring, position) {
+  if (hasScoreSource(stats)) return calcPointsFromTotals(stats, scoring, position);
+  return getWeeklySeasonPoints(weekly, scoring, position);
+}
+
+function getRosterAvgPPG(weekly, stats, seasonPoints, scoring, position) {
+  const weeklyAvg = getAvgPPG(weekly, scoring, position);
+  if (weeklyAvg > 0) return weeklyAvg;
+
+  const games = Number(stats?.gp ?? stats?.games_played);
+  if (seasonPoints != null && Number.isFinite(games) && games > 0) {
+    return Math.round((seasonPoints / games) * 10) / 10;
+  }
+
+  return null;
+}
+
 
 function measureMaxNameWidth(players) {
   if (typeof document === 'undefined' || !players.length) return 0;
@@ -182,8 +226,9 @@ function teamRowTheme(team, darkMode) {
   };
 }
 
-export default function CompanionRoster({ onTradePlayer, onViewPlayer }) {
+export default function CompanionRoster({ onTradePlayer, onViewPlayer, tradeDisabled = false }) {
   const {
+    platform, season,
     players, loadPlayers,
     weeklyStats, seasonStats, loadSeasonStats,
     statsLoading,
@@ -198,11 +243,19 @@ export default function CompanionRoster({ onTradePlayer, onViewPlayer }) {
 
   useEffect(() => { loadPlayers(); }, [loadPlayers]);
 
-  useEffect(() => {
-    if (!seasonStats && !statsLoading) loadSeasonStats();
-  }, [seasonStats, statsLoading, loadSeasonStats]);
-
   const roster = myRoster();
+  const rosterPlayerIds = useMemo(() => getRosterPlayerIds(roster), [roster]);
+  const hasRosterWeeklyRows = useMemo(() => (
+    rosterPlayerIds.some((id) => (weeklyStats?.[id] ?? []).length > 0)
+  ), [rosterPlayerIds, weeklyStats]);
+  useEffect(() => {
+    if (statsLoading) return;
+    if (platform === 'espn') {
+      if (!seasonStats || (rosterPlayerIds.length > 0 && !hasRosterWeeklyRows)) loadSeasonStats();
+      return;
+    }
+    if (!seasonStats) loadSeasonStats();
+  }, [platform, rosterPlayerIds, hasRosterWeeklyRows, seasonStats, statsLoading, loadSeasonStats]);
 
   const positionalRanks = useMemo(
     () => computePositionalRanks(seasonStats, players, activeScoringSettings),
@@ -212,16 +265,14 @@ export default function CompanionRoster({ onTradePlayer, onViewPlayer }) {
   const rosterPlayers = useMemo(() => {
     if (!roster || !players) return [];
 
-    const playerIds = [...new Set([...(roster.players || []), ...(roster.reserve || [])])];
-
-    return playerIds.map(id => {
+    return rosterPlayerIds.map(id => {
       const p = players[id];
       if (!p) return null;
 
       const stats = seasonStats?.[id] ?? null;
       const weekly = weeklyStats?.[id] ?? [];
-      const pts = stats ? calcPointsFromTotals(stats, activeScoringSettings, p.position) : null;
-      const avgPPG = getAvgPPG(weekly, activeScoringSettings, p.position);
+      const pts = getRosterSeasonPoints(stats, weekly, activeScoringSettings, p.position);
+      const avgPPG = getRosterAvgPPG(weekly, stats, pts, activeScoringSettings, p.position);
       const rank = positionalRanks[id] ?? null;
       const isReserve = roster.reserve?.includes(id);
 
@@ -238,7 +289,7 @@ export default function CompanionRoster({ onTradePlayer, onViewPlayer }) {
         teamTheme: teamRowTheme(p.team || '', darkMode),
       };
     }).filter(Boolean);
-  }, [roster, players, seasonStats, weeklyStats, activeScoringSettings, positionalRanks, darkMode]);
+  }, [roster, rosterPlayerIds, players, seasonStats, weeklyStats, activeScoringSettings, positionalRanks, darkMode]);
 
   const nameColPx = useMemo(() => measureMaxNameWidth(rosterPlayers), [rosterPlayers]);
   const layout = useMemo(() => getRosterLayout(isCompactPhone, nameColPx), [isCompactPhone, nameColPx]);
@@ -255,6 +306,9 @@ export default function CompanionRoster({ onTradePlayer, onViewPlayer }) {
     }
     return groups;
   }, [rosterPlayers]);
+  const emptyRosterMessage = platform === 'espn'
+    ? `No players on your ESPN roster for ${season}. ESPN often returns empty offseason rosters; choose a completed season to view roster history.`
+    : 'No players on your roster.';
 
   if (!roster) {
     return <EmptyState message="Could not find your roster in this league." />;
@@ -320,13 +374,14 @@ export default function CompanionRoster({ onTradePlayer, onViewPlayer }) {
                 else onViewPlayer?.(player.id);
               }}
               onTrade={onTradePlayer ? () => onTradePlayer(player.id) : null}
+              tradeDisabled={tradeDisabled}
             />
           ))}
         </div>
       ))}
 
       {rosterPlayers.length === 0 && !statsLoading && (
-        <EmptyState message="No players on your roster." />
+        <EmptyState message={emptyRosterMessage} />
       )}
 
       {selectedPlayerId && (
@@ -364,7 +419,7 @@ function RosterStatsLoadingBanner() {
   );
 }
 
-function PlayerRow({ player, onSelect, onTrade, layout, isCompactPhone }) {
+function PlayerRow({ player, onSelect, onTrade, tradeDisabled = false, layout, isCompactPhone }) {
   const { darkMode } = useTheme();
   const rankLabel = player.rank ? `${player.rank.posLabel}${player.rank.rank}` : null;
   const showReserveMeta = player.isReserve && player.availabilityStatus !== 'Injured Reserve';
@@ -435,7 +490,7 @@ function PlayerRow({ player, onSelect, onTrade, layout, isCompactPhone }) {
           }}
         />
 
-        {onTrade && (
+        {(onTrade || tradeDisabled) && (
           <div
             className="shrink-0"
             style={{
@@ -447,6 +502,8 @@ function PlayerRow({ player, onSelect, onTrade, layout, isCompactPhone }) {
             <CompanionPlayerAction
               label={`Trade ${player.name}`}
               onClick={onTrade}
+              disabled={tradeDisabled}
+              title={tradeDisabled ? 'Trade is not available for ESPN leagues yet.' : undefined}
               className="w-full rounded-lg font-semibold transition-colors active:opacity-60 inline-flex items-center justify-center gap-1.5"
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

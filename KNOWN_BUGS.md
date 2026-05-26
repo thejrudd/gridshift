@@ -13,6 +13,32 @@ Open bugs are listed first, fixed bugs below. Add new entries at the bottom of e
 | Companion → Matchup player projection formula hover can fail to stay open from the `i` control, hiding the projection math before it can be read |
 | Statistics player profile career highlights can show 0 TFL for defensive players when ESPN's career aggregate omits tackles for loss even though season-level defensive stats include them |
 | Companion → Defense averages round values to the nearest whole number instead of showing the nearest tenth decimal |
+| Companion → Roster player drilldowns from ESPN leagues can open Fantasy Values with a "No fantasy values" empty state even when ESPN supplied applied 2025 fantasy totals |
+| Companion player pictures do not load for ESPN leagues because shared player rows fall back to Sleeper CDN image URLs for ESPN-normalized player IDs |
+| Companion → Matchup can render no lineup rows for ESPN leagues when roster slot counts or weekly matchup roster snapshots are missing from the imported payload |
+| ESPN league year switching can miss historical matchup data because the ESPN league request only uses the season path and does not also pass ESPN's `seasonId` query parameter |
+| Companion → Matchup can display ESPN starters under the wrong slot labels when ESPN roster entries are not ordered the same way as the league lineup slots |
+| ESPN league import can spam Vite proxy ECONNREFUSED errors when the local API sidecar on port 3001 is not running during development |
+| Companion → Matchup player preview can show "No stats available" for ESPN players even when ESPN provides weekly fantasy scoring for that player |
+| ESPN player fantasy scoring can remain empty in Companion drilldowns and Statistics even when normalized raw stats are available to calculate fantasy points from league scoring settings |
+| ESPN player fantasy points can diverge from ESPN's displayed totals when GridShift recalculates from raw stat rows instead of using ESPN's applied fantasy totals |
+| ESPN league scoring import and Companion Scoring can flatten or omit ESPN-only scoring rules, including position-specific scoring overrides and ESPN stat IDs without Sleeper equivalents |
+| ESPN Team Win / Team Loss scoring is not represented in GridShift's scoring schema, so ESPN leagues that award points for game result can show player fantasy totals off by the win/loss value while Sleeper leagues should remain unchanged |
+| ESPN player fantasy totals can still miss ESPN-only long touchdown bonuses, such as stacked 40+ and 50+ yard passing TD bonuses, causing large weekly discrepancies even when base stats and team result scoring are correct |
+| Statistics Fantasy Value can display every imported ESPN scoring category instead of only the categories that actually contribute to the selected player rows |
+| ESPN player fantasy totals can miss successful two-point conversions when ESPN exposes the conversion only inside the scoring-play text instead of the normalized stat row |
+| Statistics Fantasy Value can let imported ESPN league fantasy rows override the player game-log row, causing stale receiving stats or wrong Team Win/Loss values for players such as A.J. Brown and Tucker Kraft |
+| Statistics D/ST player profiles can show empty Game Stats and Fantasy Values tables because team defense entries are not treated as a supported Statistics position or hydrated from imported weekly fantasy rows |
+| ESPN D/ST Fantasy Value rows can dramatically undercount weekly totals because GridShift recalculates from incomplete visible team-defense game-log stats instead of preserving ESPN's applied fantasy totals, including special-teams scoring |
+| v8.0 ESPN Companion -> Roster and Companion -> League rows can show missing or incorrect Season and Avg/G fantasy scoring even when ESPN-applied totals exist |
+| v8.0 ESPN Companion -> Rankings can display Avg PPG and Season total as the same value, making per-game scoring indistinguishable from season scoring |
+| v8.0 ESPN Companion -> Matchup rows can omit each player's fantasy points, and the player drilldown can miss the ESPN photo, game context, and fantasy scoring breakdown |
+| v8.0 ESPN Companion -> Matchup can enter weeks where matchup details fail to display and the week-selection controls disappear, forcing a hard refresh to recover |
+| v8.0 Companion user-facing errors can reference Sleeper while the current fantasy platform is ESPN, including the Matchup unavailable-week message |
+| v8.0 ESPN Companion -> Waiver can fail to populate the expected waiver pool for the connected league |
+| v8.0 ESPN Companion -> Heatmap can leave weekly cells unpopulated even while aggregate team columns contain data |
+| v8.0 ESPN Companion -> Matchup can show an inaccurate opponent-details-unavailable message when the current team is on a fantasy bye week |
+| v8.0 ESPN Companion -> Matchup fantasy scoring breakdowns for D/ST and kickers can collapse to a single Fantasy Points row instead of showing scoring categories |
 
 ---
 

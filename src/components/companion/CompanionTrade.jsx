@@ -10,7 +10,6 @@ import { useState, useEffect, useMemo, useCallback, useDeferredValue, useRef, us
 import { useSleeperLeague, useSleeperStats } from '../../context/SleeperContext';
 import { useTheme } from '../../context/ThemeContext';
 import { fetchKtcPlayers, computeKtcMultipliers, applyKtcMultipliers, findKtcPlayerFromSleeper } from '../../utils/ktcApi';
-import { getTradedPicks, getLeagueDrafts } from '../../api/sleeperApi';
 import {
   buildRosterPicks,
   valueSide,
@@ -158,9 +157,12 @@ function buildUpgradeSearchCacheKey(request, leagueId, season) {
 
 export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, view = 'agent', onViewChange, onViewPlayer, prewarmAnalytics = false }) {
   const {
+    platform,
     rosters, leagueUsers, myRoster,
     selectedLeagueId, league, season, getUserDisplayName,
     scoringSettings,
+    getTradedPicksForLeague,
+    getLeagueDraftsForLeague,
   } = useSleeperLeague();
   const {
     players: sleeperPlayers, seasonStats, weeklyStats,
@@ -188,6 +190,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
   // Derive format and league type from league settings
   const format = detectLeagueFormat(league);
   const leagueType = detectLeagueType(league);
+  const picksEnabled = platform !== 'espn';
 
   // Trade partner
   const [partnerRosterId, setPartnerRosterId] = useState(null);
@@ -241,6 +244,20 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
   const [isPartnerSwitchPending, startPartnerSwitchTransition] = useTransition();
   const deferredPartnerRosterId = useDeferredValue(partnerRosterId);
 
+  const setTradePickerOpen = useCallback((request) => {
+    if (request?.type === 'pick' && !picksEnabled) return;
+    setPickerOpen(request);
+  }, [picksEnabled]);
+
+  useEffect(() => {
+    if (picksEnabled) return;
+    setYourPicks([]);
+    setTheirPicks([]);
+    setUpgradeAllowOutgoingPicks(false);
+    setUpgradeAllowIncomingPicks(false);
+    setPickerOpen((current) => (current?.type === 'pick' ? null : current));
+  }, [picksEnabled]);
+
   const switchPartnerTradeContext = useCallback((nextPartnerRosterId, { nextTheirPlayers = [], nextTheirPicks = [] } = {}) => {
     const normalizedPartnerRosterId = normalizeRosterId(nextPartnerRosterId);
     startPartnerSwitchTransition(() => {
@@ -291,15 +308,15 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
   useEffect(() => {
     if (!selectedLeagueId) return;
     Promise.all([
-      getTradedPicks(selectedLeagueId).catch(() => []),
-      getLeagueDrafts(selectedLeagueId).catch(() => []),
+      getTradedPicksForLeague(selectedLeagueId).catch(() => []),
+      getLeagueDraftsForLeague(selectedLeagueId).catch(() => []),
     ]).then(([picks, drafts]) => {
       setTradedPicks(picks ?? []);
       setLeagueDrafts(drafts ?? []);
       const maxFromDrafts = (drafts ?? []).reduce((max, d) => Math.max(max, d.settings?.rounds ?? 0), 0);
       setDraftRounds(maxFromDrafts || null);
     });
-  }, [selectedLeagueId]);
+  }, [getLeagueDraftsForLeague, getTradedPicksForLeague, selectedLeagueId]);
 
   useEffect(() => { loadPlayers(); }, [loadPlayers]);
   useEffect(() => {
@@ -684,9 +701,10 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
     allowedOutgoingPlayerIds: upgradeOfferPlayerIds,
     tradePostureLevel: upgradeTradePostureLevel,
     allowPackages: upgradeAllowPackages,
-    allowOutgoingPicks: upgradeAllowOutgoingPicks,
-    allowIncomingPicks: upgradeAllowIncomingPicks,
+    allowOutgoingPicks: picksEnabled && upgradeAllowOutgoingPicks,
+    allowIncomingPicks: picksEnabled && upgradeAllowIncomingPicks,
   }), [
+    picksEnabled,
     upgradeTargetId,
     upgradeOfferPlayerIds,
     upgradeTradePostureLevel,
@@ -975,10 +993,11 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
   }, []);
 
   const addPick = useCallback((side, pick) => {
+    if (!picksEnabled) return;
     if (side === 'yours') setYourPicks(prev => [...prev, pick]);
     else setTheirPicks(prev => [...prev, pick]);
     setSuggestions(null);
-  }, []);
+  }, [picksEnabled]);
 
   const removePick = useCallback((side, pickKey) => {
     if (side === 'yours') setYourPicks(prev => prev.filter(p => p.key !== pickKey));
@@ -991,13 +1010,13 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
     startPartnerSwitchTransition(() => {
       setPartnerRosterId(normalizeRosterId(proposal.targetRosterId));
       setYourPlayers((proposal.outgoingAssets ?? []).filter((asset) => asset.type === 'player').map((asset) => asset.id));
-    setYourPicks((proposal.outgoingAssets ?? []).filter((asset) => asset.type === 'pick' && asset.pickData).map((asset) => asset.pickData));
-    setTheirPlayers((proposal.incomingAssets ?? []).filter((asset) => asset.type === 'player').map((asset) => asset.id));
-      setTheirPicks((proposal.incomingAssets ?? []).filter((asset) => asset.type === 'pick' && asset.pickData).map((asset) => asset.pickData));
+      setYourPicks(picksEnabled ? (proposal.outgoingAssets ?? []).filter((asset) => asset.type === 'pick' && asset.pickData).map((asset) => asset.pickData) : []);
+      setTheirPlayers((proposal.incomingAssets ?? []).filter((asset) => asset.type === 'player').map((asset) => asset.id));
+      setTheirPicks(picksEnabled ? (proposal.incomingAssets ?? []).filter((asset) => asset.type === 'pick' && asset.pickData).map((asset) => asset.pickData) : []);
       setSuggestions(null);
     });
     onViewChange?.('agent');
-  }, [onViewChange, startPartnerSwitchTransition]);
+  }, [onViewChange, picksEnabled, startPartnerSwitchTransition]);
 
   const handleSuggest = useCallback(() => {
     if (!adjustedKtcPlayers || !partnerRosterId || !suggestionBasePools) return;
@@ -1044,7 +1063,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
         if (item.type === 'player') {
           if (side === 'yours') setYourPlayers(prev => [...prev, item.id]);
           else setTheirPlayers(prev => [...prev, item.id]);
-        } else if (item.pickData) {
+        } else if (picksEnabled && item.pickData) {
           if (side === 'yours') setYourPicks(prev => [...prev, item.pickData]);
           else setTheirPicks(prev => [...prev, item.pickData]);
         }
@@ -1055,7 +1074,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
         if (item.type === 'player') {
           if (side === 'yours') setYourPlayers(prev => prev.filter(id => id !== item.id));
           else setTheirPlayers(prev => prev.filter(id => id !== item.id));
-        } else {
+        } else if (picksEnabled) {
           if (side === 'yours') setYourPicks(prev => prev.filter(p => p.key !== item.id));
           else setTheirPicks(prev => prev.filter(p => p.key !== item.id));
         }
@@ -1071,7 +1090,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
       applyAdd(option.side, [option.add]);
     }
     setSuggestions(null);
-  }, []);
+  }, [picksEnabled]);
 
   const clearTrade = useCallback(() => {
     setYourPlayers([]);
@@ -1161,8 +1180,8 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
           tradePostureLevel={upgradeTradePostureLevel}
           playerValueMap={playerTradeValueMap}
           allowPackages={upgradeAllowPackages}
-          allowOutgoingPicks={upgradeAllowOutgoingPicks}
-          allowIncomingPicks={upgradeAllowIncomingPicks}
+          allowOutgoingPicks={picksEnabled && upgradeAllowOutgoingPicks}
+          allowIncomingPicks={picksEnabled && upgradeAllowIncomingPicks}
           results={upgradeSearchResults}
           postureOptions={UPGRADE_TRADE_POSTURES}
           darkMode={darkMode}
@@ -1190,8 +1209,8 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
               ? prev.filter((id) => id !== playerId)
               : [...prev, playerId]);
           }}
-          onAllowOutgoingPicksChange={setUpgradeAllowOutgoingPicks}
-          onAllowIncomingPicksChange={setUpgradeAllowIncomingPicks}
+          onAllowOutgoingPicksChange={picksEnabled ? setUpgradeAllowOutgoingPicks : () => {}}
+          onAllowIncomingPicksChange={picksEnabled ? setUpgradeAllowIncomingPicks : () => {}}
           onAllowPackagesChange={setUpgradeAllowPackages}
           onTradePostureChange={setUpgradeTradePostureLevel}
           onRunSearch={runUpgradeFinderSearch}
@@ -1227,6 +1246,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
             ownerNameByRosterId={ownerNameByRosterId}
             rosterPicks={rosterPicks}
             slots={slots}
+            picksEnabled={picksEnabled}
             yourPicks={yourPicks}
             theirPicks={theirPicks}
             league={league}
@@ -1245,7 +1265,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
             ktcError={ktcError}
             removePlayer={removePlayer}
             removePick={removePick}
-            setPickerOpen={setPickerOpen}
+            setPickerOpen={setTradePickerOpen}
             openStatsModalForPlayer={openStatsModalForPlayer}
             clearTrade={clearTrade}
           />
@@ -1254,7 +1274,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
           {!ktcLoading && !ktcError && (
             <div className="lg:hidden px-4 mt-3">
               <button
-                onClick={() => setPickerOpen({ side: 'theirs', type: 'player', allRosters: true })}
+                onClick={() => setTradePickerOpen({ side: 'theirs', type: 'player', allRosters: true })}
                 className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold transition-colors"
                 style={{ background: 'var(--color-fill)', color: 'var(--color-label-secondary)', border: '1px solid var(--color-separator)' }}
               >
@@ -1413,11 +1433,12 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
         />
       )}
 
-      {pickerOpen?.type === 'pick' && (
+      {picksEnabled && pickerOpen?.type === 'pick' && (
         <TradePickPicker
           rosterId={pickerOpen.side === 'yours' ? myRosterData?.roster_id : partnerRosterId}
           rosterPicks={rosterPicks}
           slots={slots}
+          picksEnabled={picksEnabled}
           rosters={rosters}
           ktcPlayers={adjustedKtcPlayers}
           leagueType={leagueType}
@@ -1463,7 +1484,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
           hasIDP={hasIDP}
           hasDST={hasDST}
           onAddPlayer={id => addPlayer('theirs', { id, rosterId: rosterModalRosterId })}
-          onAddPick={pick => addPick('theirs', pick)}
+          onAddPick={picksEnabled ? (pick => addPick('theirs', pick)) : () => {}}
           onClose={() => setRosterModalRosterId(null)}
         />
       )}

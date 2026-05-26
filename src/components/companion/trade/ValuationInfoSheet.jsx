@@ -8,6 +8,7 @@ export default function ValuationInfoSheet({ format, leagueType, scoringSettings
   const teBonus       = scoringSettings?.bonus_rec_te ?? 0;
   const rbBonus       = scoringSettings?.bonus_rec_rb ?? 0;
   const wrBonus       = scoringSettings?.bonus_rec_wr ?? 0;
+  const rushAtt       = scoringSettings?.rush_att ?? 0;
   const rushAttBonus  = scoringSettings?.bonus_rush_att ?? 0;
   const passInt       = scoringSettings?.pass_int ?? -2;
   const passIntTd     = scoringSettings?.pass_int_td ?? 0;
@@ -155,7 +156,7 @@ export default function ValuationInfoSheet({ format, leagueType, scoringSettings
                 ['Reception scoring', '½ PPR (0.5 pts/catch)'],
                 ['Passing touchdowns', '4 pts per TD'],
                 ['Position reception bonuses', 'None'],
-                ['Per-carry bonus', 'None'],
+                ['Rushing-attempt scoring', 'None'],
                 ['Big-play TD/completion bonuses', 'None'],
                 ['Roster construction', '1 TE, standard flex'],
               ].map(([label, val]) => (
@@ -216,9 +217,17 @@ export default function ValuationInfoSheet({ format, leagueType, scoringSettings
                   note={`WR values ${pct(multipliers.WR) ?? 'unchanged'} vs baseline (includes all WR adjustments)`}
                 />
               )}
+              {rushAtt > 0 && (
+                <AdjustmentRow
+                  label="Rushing-attempt scoring"
+                  leagueValue={`+${rushAtt} pts/attempt`}
+                  baseline="None"
+                  note={`RB values ${pct(multipliers.RB) ?? 'unchanged'}, QB values ${pct(multipliers.QB) ?? 'unchanged'} vs baseline`}
+                />
+              )}
               {rushAttBonus > 0 && (
                 <AdjustmentRow
-                  label="Carry bonus"
+                  label="RB carry bonus"
                   leagueValue={`+${rushAttBonus} pts/carry`}
                   baseline="None"
                   note={`RB values ${pct(multipliers.RB) ?? 'unchanged'} vs baseline (includes all RB adjustments)`}

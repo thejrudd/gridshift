@@ -464,7 +464,7 @@ const GUIDE_CONTENT = {
       },
       {
         title: 'Compare fantasy',
-        description: 'A connected Sleeper league unlocks fantasy scoring under that league season and scoring format.',
+        description: 'A connected fantasy league unlocks fantasy scoring under that league season and scoring format.',
       },
       {
         title: 'Open profiles',

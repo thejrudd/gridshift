@@ -8,13 +8,26 @@ import {
   getAllPlayers,
   getAllWeeklyStats,
   aggregateSeasonStats,
+  getMatchups,
+  getTradedPicks,
+  getLeagueDrafts,
 } from '../api/sleeperApi';
-import { fetchSeasonSchedule, fetchPlayerGameTeamMap, fetchRoster } from '../utils/playerApi';
-import { DEFAULT_SCORING, importLeagueScoring } from '../utils/scoringEngine';
+import { clearEspnSession, getEspnLeague, getEspnLeagues, setEspnSession } from '../api/espnFantasyApi';
+import { fetchSeasonSchedule, fetchPlayerGameTeamMap, fetchRoster, fetchEventScoringPlays, fetchTeamDefenseGameLog } from '../utils/playerApi';
+import { DEFAULT_SCORING, getEspnDstScoringIndexAudit, getEspnScoringImportAudit, importLeagueScoring, normalizeScoringProfile } from '../utils/scoringEngine';
+import { normalizeEspnLeaguePayload } from '../utils/espnFantasyAdapter';
+import {
+  applyEspnBigPlayBonusesToWeeklyStats,
+  getEspnScoringPlayBigPlayBonuses,
+  hasEspnBigPlayTouchdownScoring,
+} from '../utils/espnBigPlayBonuses';
+import { buildEspnDstResidualDebugRows, reconcileFantasyScore } from '../utils/fantasyScoreDiagnostics';
 import { clearPlayerCache, checkAndBustCacheIfNeeded } from '../utils/playerCache';
 
 // Run once when this module first loads — wipes stale player cache if app version changed.
 checkAndBustCacheIfNeeded();
+
+const ESPN_SCORE_HELPER_VERSION = 'espn-score-debug-2026-05-20-v9';
 
 const SleeperLeagueContext = createContext(null);
 const SleeperStatsContext = createContext(null);
@@ -24,6 +37,9 @@ const SleeperStatsEnhancingContext = createContext(false);
 const STORAGE_KEY = 'sleeper_state_v1';
 const LEAGUE_YEAR_START_MONTH = 2; // March, zero-based
 const MIN_SLEEPER_SEASON = 2017;
+const MIN_ESPN_SEASON = 2018;
+const ESPN_HISTORY_SEASON_LIMIT = 6;
+const ESPN_WEEKLY_STATS_MAX_WEEK = 18;
 
 function getCurrentLeagueYear(date = new Date()) {
   return date.getMonth() >= LEAGUE_YEAR_START_MONTH ? date.getFullYear() : date.getFullYear() - 1;
@@ -39,6 +55,24 @@ function getSeasonRange() {
 
 export const AVAILABLE_SLEEPER_SEASONS = getSeasonRange();
 const DEFAULT_SEASON = AVAILABLE_SLEEPER_SEASONS[0];
+
+function getEspnSeasonOptions(anchorSeason = DEFAULT_SEASON) {
+  const anchorYear = Number(anchorSeason);
+  const latestYear = Math.max(
+    getCurrentLeagueYear(),
+    Number.isFinite(anchorYear) ? anchorYear : 0,
+  );
+  const earliestYear = Math.max(MIN_ESPN_SEASON, latestYear - ESPN_HISTORY_SEASON_LIMIT + 1);
+  return Array.from(
+    { length: latestYear - earliestYear + 1 },
+    (_, index) => String(latestYear - index),
+  );
+}
+
+function mergeSeasonOptions(...seasonGroups) {
+  return [...new Set(seasonGroups.flat().map(String).filter(Boolean))]
+    .sort((a, b) => Number(b) - Number(a));
+}
 
 function loadPersistedState() {
   try {
@@ -84,7 +118,7 @@ function buildLeagueLineageIds(startLeague, leaguesBySeason) {
 
   const allLeagues = getAllSeasonLeagues(leaguesBySeason);
   while (queue.length > 0) {
-    const id = queue.shift();
+    queue.shift();
     for (const item of allLeagues) {
       const leagueId = normalizeLeagueId(item?.league_id);
       const previousLeagueId = normalizeLeagueId(item?.previous_league_id);
@@ -108,10 +142,47 @@ function findLinkedLeagueForSeason(currentLeague, targetLeagues, leaguesBySeason
   return targetLeagues.find((item) => isLeagueInLineage(item, lineageIds)) ?? null;
 }
 
-export function SleeperProvider({ children }) {
+function mergeWeeklyStatsMaps(target = {}, source = {}) {
+  const next = { ...(target ?? {}) };
+  for (const [playerId, rows] of Object.entries(source ?? {})) {
+    const byWeek = new Map(
+      (next[playerId] ?? [])
+        .filter((row) => Number.isFinite(Number(row?.week)))
+        .map((row) => [Number(row.week), row]),
+    );
+
+    for (const row of rows ?? []) {
+      const week = Number(row?.week);
+      if (!Number.isFinite(week)) continue;
+      byWeek.set(week, { ...(byWeek.get(week) ?? {}), ...row });
+    }
+
+    next[playerId] = [...byWeek.values()].sort((left, right) => Number(left.week) - Number(right.week));
+  }
+  return next;
+}
+
+function buildEspnPlayerPoolFilter(offset = 0) {
+  return {
+    players: {
+      filterStatus: {
+        value: ['FREEAGENT', 'WAIVERS'],
+      },
+      limit: 1000,
+      offset,
+      sortPercOwned: {
+        sortAsc: false,
+        sortPriority: 1,
+      },
+    },
+  };
+}
+	
+export function FantasyProvider({ children }) {
   const persisted = loadPersistedState();
 
   // Connection state
+  const [platform, setPlatform] = useState(persisted?.platform ?? persisted?.league?.platform ?? 'sleeper');
   const [sleeperUser, setSleeperUser] = useState(persisted?.sleeperUser ?? null);
   const [leagues, setLeagues] = useState(persisted?.leagues ?? []);
   const [selectedLeagueId, setSelectedLeagueId] = useState(persisted?.selectedLeagueId ?? null);
@@ -126,6 +197,12 @@ export function SleeperProvider({ children }) {
   // supported scoring fields (bonus_rec_te, bonus_rec_rb, etc.) are picked
   // up without requiring the user to manually re-select their league.
   const [scoringSettings, setScoringSettings] = useState(() => {
+    if (persisted?.league?.scoring_settings?.provider === 'espn') {
+      return normalizeScoringProfile(persisted.league.scoring_settings, 'espn');
+    }
+    if (persisted?.scoringSettings?.provider === 'espn') {
+      return normalizeScoringProfile(persisted.scoringSettings, 'espn');
+    }
     if (persisted?.league?.scoring_settings) {
       const imported = importLeagueScoring(persisted.league.scoring_settings);
       return { ...DEFAULT_SCORING, ...imported };
@@ -146,6 +223,7 @@ export function SleeperProvider({ children }) {
   const [weeklyStats, setWeeklyStats] = useState(null); // { [playerId]: weekArray[] }
   const [seasonStats, setSeasonStats] = useState(null);  // { [playerId]: aggregated }
   const [scheduleMap, setScheduleMap] = useState(null);  // { [week]: { [teamAbbr]: { opp, home } } }
+  const [espnMatchupsByWeek, setEspnMatchupsByWeek] = useState(persisted?.espnMatchupsByWeek ?? {});
   const [statsLoading, setStatsLoading] = useState(false);
   const [statsEnhancing, setStatsEnhancing] = useState(false);
   const [statsProgress, setStatsProgress] = useState(0);
@@ -157,6 +235,7 @@ export function SleeperProvider({ children }) {
 
   const statsAbortRef = useRef(null);
   const qbOppSeasonRef = useRef(null); // tracks which season QB opp data has been merged
+  const espnStatsRefreshKeyRef = useRef(null);
   const enhancementRunRef = useRef({
     token: 0,
     season: null,
@@ -164,14 +243,41 @@ export function SleeperProvider({ children }) {
     players: null,
     scheduleMap: null,
   });
+  const espnBigPlayRunRef = useRef({ token: 0, key: null, runningKey: null });
   const leagueUserById = useMemo(
     () => new Map((leagueUsers ?? []).map((user) => [user.user_id, user])),
     [leagueUsers],
   );
 
+  const resetFantasyState = useCallback((nextPlatform = 'sleeper') => {
+    setPlatform(nextPlatform);
+    setSleeperUser(null);
+    setLeagues([]);
+    setSelectedLeagueId(null);
+    setLeague(null);
+    setRosters([]);
+    setLeagueUsers([]);
+    setAvailableSeasons([]);
+    setLeaguesBySeason({});
+    setScoringSettings(DEFAULT_SCORING);
+    setScoringOverride(null);
+    setScoringOverridePaused(false);
+    setPlayers(null);
+    setWeeklyStats(null);
+    setSeasonStats(null);
+    setScheduleMap(null);
+    setEspnMatchupsByWeek({});
+    setStatsEnhancing(false);
+    statsAbortRef.current = false;
+    qbOppSeasonRef.current = null;
+    localStorage.removeItem(STORAGE_KEY);
+    clearPlayerCache();
+  }, []);
+
   // Persist key state to localStorage
   useEffect(() => {
     savePersistedState({
+      platform,
       sleeperUser,
       leagues,
       selectedLeagueId,
@@ -182,8 +288,9 @@ export function SleeperProvider({ children }) {
       availableSeasons,
       leaguesBySeason,
       scoringSettings,
+      espnMatchupsByWeek,
     });
-  }, [sleeperUser, leagues, selectedLeagueId, league, rosters, leagueUsers, season, availableSeasons, leaguesBySeason, scoringSettings]);
+  }, [platform, sleeperUser, leagues, selectedLeagueId, league, rosters, leagueUsers, season, availableSeasons, leaguesBySeason, scoringSettings, espnMatchupsByWeek]);
 
   // ── Connection flow ─────────────────────────────────────────────────────────
 
@@ -222,8 +329,13 @@ export function SleeperProvider({ children }) {
     setConnectError(null);
     setConnectLoading(true);
     try {
+      if (platform !== 'sleeper') {
+        await clearEspnSession().catch(() => {});
+        resetFantasyState('sleeper');
+      }
       const user = await getUserByUsername(username.trim().toLowerCase());
       if (!user?.user_id) throw new Error('User not found. Check your Sleeper username.');
+      setPlatform('sleeper');
       setSleeperUser(user);
       await discoverUserLeagueSeasons(user.user_id, season);
 
@@ -234,7 +346,7 @@ export function SleeperProvider({ children }) {
     } finally {
       setConnectLoading(false);
     }
-  }, [discoverUserLeagueSeasons, season]);
+  }, [discoverUserLeagueSeasons, platform, resetFantasyState, season]);
 
   const loadLeagueSelection = useCallback(async (leagueId) => {
     const [leagueData, rostersData, usersData] = await Promise.all([
@@ -251,49 +363,143 @@ export function SleeperProvider({ children }) {
     // Auto-import league scoring settings
     if (leagueData?.scoring_settings) {
       const imported = importLeagueScoring(leagueData.scoring_settings);
-      setScoringSettings(prev => ({ ...DEFAULT_SCORING, ...imported }));
+      setScoringSettings({ ...DEFAULT_SCORING, ...imported });
     }
   }, []);
 
-  const selectLeague = useCallback(async (leagueId) => {
+  const applyEspnLeague = useCallback((normalized) => {
+    espnBigPlayRunRef.current = { token: espnBigPlayRunRef.current.token + 1, key: null, runningKey: null };
+    const nextAvailableSeasons = mergeSeasonOptions(
+      getEspnSeasonOptions(normalized.season),
+      normalized.availableSeasons ?? [],
+    );
+    setPlatform('espn');
+    setSleeperUser(normalized.fantasyUser);
+    setLeagues(normalized.leagues);
+    setSelectedLeagueId(normalized.selectedLeagueId);
+    setLeague(normalized.league);
+    setRosters(normalized.rosters);
+    setLeagueUsers(normalized.leagueUsers);
+    setSeason(normalized.season);
+    setAvailableSeasons(nextAvailableSeasons);
+    setLeaguesBySeason(normalized.leaguesBySeason);
+    setScoringSettings(normalized.scoringSettings);
+    setPlayers(normalized.players);
+    setWeeklyStats(normalized.weeklyStats);
+    setSeasonStats(normalized.seasonStats);
+    setScheduleMap(normalized.scheduleMap);
+    setEspnMatchupsByWeek(normalized.matchupsByWeek);
+    setStatsEnhancing(false);
+    statsAbortRef.current = false;
+    qbOppSeasonRef.current = null;
+  }, []);
+
+  const loadEspnLeagueSelection = useCallback(async (leagueId, leagueSeason = season, teamId = null) => {
+    const payload = await getEspnLeague(leagueSeason, leagueId);
+    const normalized = normalizeEspnLeaguePayload(payload, { season: leagueSeason, leagueId, teamId });
+    applyEspnLeague(normalized);
+    return normalized;
+  }, [applyEspnLeague, season]);
+
+  const connectEspn = useCallback(async ({ swid, espnS2, season: targetSeason = season, leagueId = null, teamId = null }) => {
     setConnectError(null);
     setConnectLoading(true);
     try {
-      await loadLeagueSelection(leagueId);
+      if (platform !== 'espn') resetFantasyState('espn');
+      await setEspnSession({ swid, espnS2 });
+      setPlatform('espn');
+      setSleeperUser({
+        user_id: 'espn:me',
+        display_name: 'ESPN Session',
+        username: 'espn',
+        avatar: null,
+        platform: 'espn',
+      });
+      setSeason(String(targetSeason));
+      const discovery = await getEspnLeagues(targetSeason).catch((err) => ({
+        leagues: [],
+        source: 'manual-fallback',
+        message: err.message,
+      }));
+      const discoveredLeagues = discovery.leagues ?? [];
+      setLeagues(discoveredLeagues);
+      setAvailableSeasons(getEspnSeasonOptions(targetSeason));
+      setLeaguesBySeason({ [String(targetSeason)]: discoveredLeagues });
+
+      if (leagueId) {
+        return await loadEspnLeagueSelection(leagueId, String(targetSeason), teamId);
+      }
+      return discovery;
     } catch (err) {
       setConnectError(err.message);
       throw err;
     } finally {
       setConnectLoading(false);
     }
-  }, [loadLeagueSelection]);
+  }, [loadEspnLeagueSelection, platform, resetFantasyState, season]);
+
+  const selectLeague = useCallback(async (leagueId) => {
+    setConnectError(null);
+    setConnectLoading(true);
+    try {
+      if (platform === 'espn') {
+        const targetLeague = leagues.find((item) => normalizeLeagueId(item.league_id) === normalizeLeagueId(leagueId));
+        await loadEspnLeagueSelection(leagueId, String(targetLeague?.season ?? season));
+      } else {
+        await loadLeagueSelection(leagueId);
+      }
+    } catch (err) {
+      setConnectError(err.message);
+      throw err;
+    } finally {
+      setConnectLoading(false);
+    }
+  }, [leagues, loadEspnLeagueSelection, loadLeagueSelection, platform, season]);
 
   const disconnect = useCallback(() => {
-    setSleeperUser(null);
-    setLeagues([]);
-    setSelectedLeagueId(null);
-    setLeague(null);
-    setRosters([]);
-    setLeagueUsers([]);
-    setAvailableSeasons([]);
-    setLeaguesBySeason({});
-    setScoringSettings(DEFAULT_SCORING);
-    setPlayers(null);
-    setWeeklyStats(null);
-    setSeasonStats(null);
-    setScheduleMap(null);
-    setStatsEnhancing(false);
-    statsAbortRef.current = false; // allow fresh load after reconnect
-    qbOppSeasonRef.current = null;
-    localStorage.removeItem(STORAGE_KEY);
-    clearPlayerCache(); // clear per-player team/opp cache so next load fetches fresh
-  }, []);
+    if (platform === 'espn') void clearEspnSession().catch(() => {});
+    resetFantasyState('sleeper');
+  }, [platform, resetFantasyState]);
 
   const changeSeason = useCallback(async (newSeason) => {
-    if (newSeason === season) return;
+    const targetSeason = String(newSeason);
+    if (targetSeason === String(season)) return;
 
     setConnectError(null);
-    setSeason(newSeason);
+
+    if (platform === 'espn' && sleeperUser) {
+      const leagueId = selectedLeagueId ?? league?.league_id ?? null;
+      try {
+        setConnectLoading(true);
+        if (leagueId) {
+          await loadEspnLeagueSelection(leagueId, targetSeason);
+          return;
+        }
+        const discovery = await getEspnLeagues(targetSeason).catch(() => ({ leagues: [], source: 'manual-fallback' }));
+        const discoveredLeagues = discovery.leagues ?? [];
+        setSeason(targetSeason);
+        setLeagues(discoveredLeagues);
+        setAvailableSeasons((prev) => mergeSeasonOptions(prev, getEspnSeasonOptions(targetSeason), [targetSeason]));
+        setLeaguesBySeason((prev) => ({ ...prev, [targetSeason]: discoveredLeagues }));
+        setSelectedLeagueId(null);
+        setLeague(null);
+        setRosters([]);
+        setLeagueUsers([]);
+        setPlayers(null);
+        setWeeklyStats(null);
+        setSeasonStats(null);
+        setScheduleMap(null);
+        setEspnMatchupsByWeek({});
+      } catch (err) {
+        setConnectError(err.message ?? `Could not load ESPN ${targetSeason}.`);
+      }
+      finally {
+        setConnectLoading(false);
+      }
+      return;
+    }
+
+    setSeason(targetSeason);
     setWeeklyStats(null);
     setSeasonStats(null);
     setStatsEnhancing(false);
@@ -302,16 +508,16 @@ export function SleeperProvider({ children }) {
 
     if (sleeperUser) {
       try {
-        const cachedLeagues = leaguesBySeason[newSeason];
+        const cachedLeagues = leaguesBySeason[targetSeason];
         if (cachedLeagues == null) setConnectLoading(true);
-        const userLeagues = cachedLeagues ?? await getLeaguesForUser(sleeperUser.user_id, newSeason);
+        const userLeagues = cachedLeagues ?? await getLeaguesForUser(sleeperUser.user_id, targetSeason);
         const nextLeaguesBySeason = cachedLeagues == null
-          ? { ...leaguesBySeason, [newSeason]: userLeagues ?? [] }
+          ? { ...leaguesBySeason, [targetSeason]: userLeagues ?? [] }
           : leaguesBySeason;
         if (cachedLeagues == null) {
           setLeaguesBySeason(nextLeaguesBySeason);
           if ((userLeagues?.length ?? 0) > 0) {
-            setAvailableSeasons((prev) => (prev.includes(newSeason) ? prev : [...prev, newSeason].sort((a, b) => Number(b) - Number(a))));
+            setAvailableSeasons((prev) => (prev.includes(targetSeason) ? prev : [...prev, targetSeason].sort((a, b) => Number(b) - Number(a))));
           }
         }
         setLeagues(userLeagues ?? []);
@@ -332,9 +538,10 @@ export function SleeperProvider({ children }) {
         setConnectLoading(false);
       }
     }
-  }, [sleeperUser, selectedLeagueId, leaguesBySeason, season, league, loadLeagueSelection]);
+  }, [platform, sleeperUser, selectedLeagueId, leaguesBySeason, season, league, loadEspnLeagueSelection, loadLeagueSelection]);
 
   useEffect(() => {
+    if (platform !== 'sleeper') return;
     if (!sleeperUser?.user_id || connectLoading) return;
     if (Object.keys(leaguesBySeason).length === AVAILABLE_SLEEPER_SEASONS.length) return;
 
@@ -361,20 +568,123 @@ export function SleeperProvider({ children }) {
     return () => {
       cancelled = true;
     };
-  }, [sleeperUser, connectLoading, leaguesBySeason, season, selectedLeagueId, discoverUserLeagueSeasons]);
+  }, [platform, sleeperUser, connectLoading, leaguesBySeason, season, selectedLeagueId, discoverUserLeagueSeasons]);
 
   // ── Player DB ───────────────────────────────────────────────────────────────
 
   const loadPlayers = useCallback(async () => {
     if (players) return players;
+    if (platform === 'espn') return {};
     const data = await getAllPlayers();
     setPlayers(data);
     return data;
-  }, [players]);
+  }, [platform, players]);
 
   // ── Stats loading ───────────────────────────────────────────────────────────
 
   const loadSeasonStats = useCallback(async () => {
+    if (platform === 'espn') {
+      if (!selectedLeagueId || statsAbortRef.current) return;
+
+      const refreshKey = `${selectedLeagueId}:${season}:full-weekly:${ESPN_SCORE_HELPER_VERSION}`;
+      if (espnStatsRefreshKeyRef.current === refreshKey && weeklyStats && seasonStats) return;
+
+      statsAbortRef.current = true;
+      espnStatsRefreshKeyRef.current = refreshKey;
+      setStatsLoading(true);
+      setStatsProgress(0);
+      try {
+        const baseNormalized = await loadEspnLeagueSelection(selectedLeagueId, season);
+
+        const weeks = Array.from(
+          { length: ESPN_WEEKLY_STATS_MAX_WEEK },
+          (_, index) => index + 1,
+        );
+        let completedWeeks = 0;
+        const markWeekComplete = () => {
+          completedWeeks += 1;
+          setStatsProgress(Math.round((completedWeeks / weeks.length) * 100));
+        };
+        const [weeklyPayloads, playerPoolPayloads, nflSchedule] = await Promise.all([
+          Promise.all(weeks.map(async (week) => {
+            try {
+              const payload = await getEspnLeague(season, selectedLeagueId, undefined, {
+                scoringPeriodId: week,
+                matchupPeriodId: week,
+              });
+              return normalizeEspnLeaguePayload(payload, { season, leagueId: selectedLeagueId, scoringPeriodId: week });
+            } catch {
+              return null;
+            } finally {
+              markWeekComplete();
+            }
+          })),
+          Promise.all([0, 1000].map(async (offset) => {
+            try {
+              const payload = await getEspnLeague(season, selectedLeagueId, ['kona_player_info'], {
+                fantasyFilter: buildEspnPlayerPoolFilter(offset),
+              });
+              return normalizeEspnLeaguePayload(payload, { season, leagueId: selectedLeagueId });
+            } catch {
+              return null;
+            }
+          })),
+          fetchSeasonSchedule(season).catch(() => null),
+        ]);
+
+        let mergedWeeklyStats = baseNormalized.weeklyStats ?? {};
+        let mergedPlayers = baseNormalized.players ?? {};
+        for (const normalized of weeklyPayloads) {
+          if (!normalized) continue;
+          mergedPlayers = { ...mergedPlayers, ...(normalized.players ?? {}) };
+          mergedWeeklyStats = mergeWeeklyStatsMaps(mergedWeeklyStats, normalized.weeklyStats ?? {});
+        }
+        const playerPoolSeasonStats = {};
+
+        for (const normalized of playerPoolPayloads) {
+          if (!normalized) continue;
+          mergedPlayers = { ...mergedPlayers, ...(normalized.players ?? {}) };
+          mergedWeeklyStats = mergeWeeklyStatsMaps(mergedWeeklyStats, normalized.weeklyStats ?? {});
+          for (const [playerId, stats] of Object.entries(normalized.seasonStats ?? {})) {
+            if (playerPoolSeasonStats[playerId]) continue;
+            playerPoolSeasonStats[playerId] = stats;
+          }
+        }
+        const aggregatedWeeklyStats = aggregateSeasonStats(mergedWeeklyStats);
+        const mergedSeasonStats = {
+          ...(baseNormalized.seasonStats ?? {}),
+          ...playerPoolSeasonStats,
+          ...aggregatedWeeklyStats,
+        };
+        const detectedMaxWeek = Math.max(
+          0,
+          ...Object.values(mergedWeeklyStats)
+            .flatMap((rows) => rows ?? [])
+            .map((row) => Number(row?.week))
+            .filter((week) => Number.isFinite(week) && week > 0),
+        );
+        const mergedLeague = detectedMaxWeek > 0
+          ? {
+              ...baseNormalized.league,
+              settings: {
+                ...(baseNormalized.league?.settings ?? {}),
+                matchup_periods: detectedMaxWeek,
+                max_fantasy_scoring_period: detectedMaxWeek,
+              },
+            }
+          : baseNormalized.league;
+
+        setPlayers(mergedPlayers);
+        setWeeklyStats(mergedWeeklyStats);
+        setSeasonStats(mergedSeasonStats);
+        if (mergedLeague) setLeague(mergedLeague);
+        if (nflSchedule) setScheduleMap(nflSchedule);
+      } finally {
+        statsAbortRef.current = false;
+        setStatsLoading(false);
+      }
+      return;
+    }
     if (statsAbortRef.current) return; // guard against concurrent calls
     statsAbortRef.current = true;
     qbOppSeasonRef.current = null; // allow player team enhancement to re-run
@@ -399,10 +709,19 @@ export function SleeperProvider({ children }) {
       statsAbortRef.current = false;
       setStatsLoading(false);
     }
-  }, [season]); // removed statsLoading — guarded by ref instead
+  }, [league, loadEspnLeagueSelection, platform, season, seasonStats, selectedLeagueId, weeklyStats]); // removed statsLoading — guarded by ref instead
+
+  useEffect(() => {
+    if (platform !== 'espn') return;
+    if (!selectedLeagueId || statsLoading) return;
+    const refreshKey = `${selectedLeagueId}:${season}:full-weekly:${ESPN_SCORE_HELPER_VERSION}`;
+    if (espnStatsRefreshKeyRef.current === refreshKey && weeklyStats && seasonStats) return;
+    void loadSeasonStats();
+  }, [platform, selectedLeagueId, season, statsLoading, weeklyStats, seasonStats, loadSeasonStats]);
 
   // Three-pass stats enhancement — see docs/Architecture Map.md › SleeperContext
   useEffect(() => {
+    if (platform !== 'sleeper') return;
     if (statsLoading || !weeklyStats || !players || !scheduleMap || qbOppSeasonRef.current === season) return;
 
     const capturedSeason = season;
@@ -438,7 +757,7 @@ export function SleeperProvider({ children }) {
         }
       }
       // Build espnCompToTeam: iterate entries and match competitorId to team abbr.
-      for (const [week, weekData] of Object.entries(scheduleMap)) {
+      for (const weekData of Object.values(scheduleMap)) {
         for (const [teamAbbr, gameData] of Object.entries(weekData)) {
           if (gameData.espnCompetitorId) {
             espnCompToTeam[gameData.espnCompetitorId] = teamAbbr;
@@ -630,7 +949,73 @@ export function SleeperProvider({ children }) {
     };
 
     run();
-  }, [statsLoading, weeklyStats, players, scheduleMap, season]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [platform, statsLoading, weeklyStats, players, scheduleMap, season]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (platform !== 'espn') return;
+    if (!selectedLeagueId || !weeklyStats || !players || !hasEspnBigPlayTouchdownScoring(scoringSettings)) return;
+
+    const runKey = `${selectedLeagueId}:${season}:espn-scoring-play-v3`;
+    if (espnBigPlayRunRef.current.key === runKey) return;
+    if (espnBigPlayRunRef.current.runningKey === runKey) return;
+
+    const token = espnBigPlayRunRef.current.token + 1;
+    espnBigPlayRunRef.current = { ...espnBigPlayRunRef.current, token, runningKey: runKey };
+
+    const run = async () => {
+      setStatsEnhancing(true);
+      try {
+        const nflSchedule = scheduleMap ?? await fetchSeasonSchedule(season).catch(() => null);
+        if (espnBigPlayRunRef.current.token !== token) return;
+        if (!nflSchedule) return;
+        if (!scheduleMap) setScheduleMap(nflSchedule);
+
+        const events = new Map();
+        for (const [playerId, rows] of Object.entries(weeklyStats ?? {})) {
+          const player = players?.[playerId];
+          const defaultTeam = player?.team?.toUpperCase?.();
+          for (const row of rows ?? []) {
+            const week = Number(row?.week);
+            if (!Number.isFinite(week)) continue;
+            const team = row?.team?.toUpperCase?.() ?? defaultTeam;
+            const eventId = team ? nflSchedule?.[week]?.[team]?.espnEventId : null;
+            if (!eventId || events.has(String(eventId))) continue;
+            events.set(String(eventId), week);
+          }
+        }
+
+        if (!events.size) return;
+
+        let enrichedWeeklyStats = weeklyStats;
+        const eventResults = await Promise.all([...events.entries()].map(async ([eventId, week]) => ({
+          eventId,
+          week,
+          scoringPlays: await fetchEventScoringPlays(eventId),
+        })));
+        if (espnBigPlayRunRef.current.token !== token) return;
+
+        for (const { week, scoringPlays } of eventResults) {
+          const bonuses = getEspnScoringPlayBigPlayBonuses(scoringPlays, players);
+          enrichedWeeklyStats = applyEspnBigPlayBonusesToWeeklyStats(enrichedWeeklyStats, week, bonuses);
+        }
+
+        espnBigPlayRunRef.current = { ...espnBigPlayRunRef.current, key: runKey };
+        if (enrichedWeeklyStats !== weeklyStats) {
+          startTransition(() => {
+            setWeeklyStats(enrichedWeeklyStats);
+            setSeasonStats(prev => ({ ...(prev ?? {}), ...aggregateSeasonStats(enrichedWeeklyStats) }));
+          });
+        }
+      } finally {
+        if (espnBigPlayRunRef.current.token === token) {
+          espnBigPlayRunRef.current = { ...espnBigPlayRunRef.current, runningKey: null };
+          setStatsEnhancing(false);
+        }
+      }
+    };
+
+    void run();
+  }, [platform, selectedLeagueId, season, weeklyStats, players, scoringSettings, scheduleMap]);
 
   // ── Derived helpers ─────────────────────────────────────────────────────────
 
@@ -650,6 +1035,12 @@ export function SleeperProvider({ children }) {
   const isConnected = !!sleeperUser;
   const hasLeague = !!selectedLeagueId && !!league;
   const linkedLeagueSeasonOptions = useMemo(() => {
+    if (platform === 'espn') {
+      return mergeSeasonOptions(
+        getEspnSeasonOptions(season),
+        availableSeasons.length ? availableSeasons : [String(season)],
+      );
+    }
     if (!league) return [];
     const combinedLeaguesBySeason = {
       ...leaguesBySeason,
@@ -663,9 +1054,26 @@ export function SleeperProvider({ children }) {
     const currentSeason = String(league.season ?? season);
     if (!linkedSeasons.includes(currentSeason)) linkedSeasons.push(currentSeason);
     return linkedSeasons.sort((a, b) => Number(b) - Number(a));
-  }, [league, leaguesBySeason, leagues, season]);
+  }, [availableSeasons, league, leaguesBySeason, leagues, platform, season]);
+
+  const loadMatchups = useCallback(async (leagueId, week) => {
+    if (platform === 'espn') return espnMatchupsByWeek?.[week] ?? [];
+    return getMatchups(leagueId, week);
+  }, [espnMatchupsByWeek, platform]);
+
+  const getTradedPicksForLeague = useCallback(async (leagueId) => {
+    if (platform === 'espn') return [];
+    return getTradedPicks(leagueId);
+  }, [platform]);
+
+  const getLeagueDraftsForLeague = useCallback(async (leagueId) => {
+    if (platform === 'espn') return [];
+    return getLeagueDrafts(leagueId);
+  }, [platform]);
 
   const leagueValue = useMemo(() => ({
+    platform,
+    fantasyUser: sleeperUser,
     sleeperUser,
     leagues,
     selectedLeagueId,
@@ -685,9 +1093,15 @@ export function SleeperProvider({ children }) {
     isConnected,
     hasLeague,
     connect,
+    connectSleeper: connect,
+    connectEspn,
     selectLeague,
     disconnect,
     changeSeason,
+    loadEspnLeagueSelection,
+    loadMatchups,
+    getTradedPicksForLeague,
+    getLeagueDraftsForLeague,
     setScoringSettings,
     setScoringOverride,
     clearScoringOverride,
@@ -696,6 +1110,7 @@ export function SleeperProvider({ children }) {
     myRoster,
     getUserDisplayName,
   }), [
+    platform,
     sleeperUser,
     leagues,
     selectedLeagueId,
@@ -715,9 +1130,14 @@ export function SleeperProvider({ children }) {
     isConnected,
     hasLeague,
     connect,
+    connectEspn,
     selectLeague,
     disconnect,
     changeSeason,
+    loadEspnLeagueSelection,
+    loadMatchups,
+    getTradedPicksForLeague,
+    getLeagueDraftsForLeague,
     clearScoringOverride,
     myRoster,
     getUserDisplayName,
@@ -742,6 +1162,191 @@ export function SleeperProvider({ children }) {
     loadSeasonStats,
   ]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    window.__GRIDSHIFT_ESPN_HELPER_VERSION__ = ESPN_SCORE_HELPER_VERSION;
+
+    window.__GRIDSHIFT_ESPN_SCORING_AUDIT__ = () => {
+      if (platform !== 'espn') {
+        return { provider: platform, rows: [], unmappedRows: [], error: 'No ESPN league is currently loaded.' };
+      }
+      return getEspnScoringImportAudit(activeScoringSettings ?? scoringSettings);
+    };
+
+    window.__GRIDSHIFT_ESPN_DST_SCORING_INDEX__ = () => {
+      if (platform !== 'espn') {
+        return { provider: platform, rows: [], problemRows: [], error: 'No ESPN league is currently loaded.' };
+      }
+      return getEspnDstScoringIndexAudit(activeScoringSettings ?? scoringSettings);
+    };
+
+    const reconcileSeason = (query = {}) => {
+      if (platform !== 'espn') {
+        return {
+          ok: false,
+          error: 'No ESPN league is currently loaded. Import or reconnect the ESPN league first.',
+          platform,
+        };
+      }
+
+      const expectedByWeek = query.expectedByWeek ?? query.expected ?? {};
+      const rows = Object.entries(expectedByWeek)
+        .map(([week, expected]) => reconcileFantasyScore({
+          players: players ?? {},
+          weeklyStats: weeklyStats ?? {},
+          scoringSettings: activeScoringSettings ?? scoringSettings,
+          ...query,
+          expectedByWeek: undefined,
+          week: Number(week),
+          expected,
+        }))
+        .map((result) => ({
+          ok: result.ok,
+          week: result.week,
+          expected: result.expected,
+          gridshift: result.gridshiftTotal,
+          delta: result.delta,
+          status: result.status,
+          error: result.error,
+          missingCandidates: result.missingCandidates,
+          rawStats: result.rawStats,
+        }));
+
+      return {
+        ok: rows.every((row) => row.status === 'match'),
+        rows,
+      };
+    };
+
+    window.__GRIDSHIFT_ESPN_SCORE_RECONCILE__ = (query = {}) => {
+      if (query?.expectedByWeek) return reconcileSeason(query);
+      if (platform !== 'espn') {
+        return {
+          ok: false,
+          error: 'No ESPN league is currently loaded. Import or reconnect the ESPN league first.',
+          platform,
+        };
+      }
+      return reconcileFantasyScore({
+        players: players ?? {},
+        weeklyStats: weeklyStats ?? {},
+        scoringSettings: activeScoringSettings ?? scoringSettings,
+        ...query,
+      });
+    };
+
+    window.__GRIDSHIFT_ESPN_SCORE_RECONCILE_SEASON__ = reconcileSeason;
+
+    window.__GRIDSHIFT_ESPN_DST_RESIDUALS__ = async (query = {}) => {
+      if (platform !== 'espn') {
+        return {
+          ok: false,
+          error: 'No ESPN league is currently loaded. Import or reconnect the ESPN league first.',
+          platform,
+          rows: [],
+          residualRows: [],
+        };
+      }
+
+      const targetSeason = String(query.season ?? season ?? DEFAULT_SEASON);
+      const targetLeagueId = query.leagueId ?? selectedLeagueId ?? league?.league_id ?? null;
+      let auditPlayers = { ...(players ?? {}) };
+      let auditWeeklyStats = { ...(weeklyStats ?? {}) };
+      const sourceErrors = [];
+      const maxWeek = Number(query.maxWeek ?? league?.settings?.matchup_periods ?? 18);
+      const weeks = Array.isArray(query.weeks)
+        ? query.weeks.map(Number).filter(Number.isFinite)
+        : Array.from({ length: Math.max(1, Number.isFinite(maxWeek) ? maxWeek : 18) }, (_, index) => index + 1);
+
+      if (query.refreshLeagueRows !== false && targetLeagueId) {
+        const weeklyPayloads = await Promise.all(weeks.map(async (week) => {
+          try {
+            const payload = await getEspnLeague(targetSeason, targetLeagueId, undefined, {
+              scoringPeriodId: week,
+              matchupPeriodId: week,
+            });
+            return { week, normalized: normalizeEspnLeaguePayload(payload, { season: targetSeason, leagueId: targetLeagueId, scoringPeriodId: week }) };
+          } catch (err) {
+            return { week, error: err?.message ?? String(err) };
+          }
+        }));
+
+        for (const item of weeklyPayloads) {
+          if (item.error) {
+            sourceErrors.push({ week: item.week, error: item.error });
+            continue;
+          }
+          auditPlayers = { ...auditPlayers, ...(item.normalized?.players ?? {}) };
+          auditWeeklyStats = mergeWeeklyStatsMaps(auditWeeklyStats, item.normalized?.weeklyStats ?? {});
+        }
+      }
+
+      const result = await buildEspnDstResidualDebugRows({
+        players: auditPlayers,
+        weeklyStats: auditWeeklyStats,
+        scoringSettings: activeScoringSettings ?? scoringSettings,
+        season: targetSeason,
+        includeClean: query.includeClean === true,
+        team: query.team,
+        fetchTeamDefenseGameLog,
+      });
+
+      return {
+        ...result,
+        provider: 'espn',
+        leagueId: targetLeagueId,
+        helperVersion: ESPN_SCORE_HELPER_VERSION,
+        refreshedWeeks: query.refreshLeagueRows === false ? [] : weeks,
+        sourceErrors,
+      };
+    };
+
+    window.__GRIDSHIFT_ESPN_DEBUG_STATE__ = (playerId = 'espn:3052587') => {
+      const normalizedPlayerId = String(playerId ?? '').trim();
+      const matchingPlayers = Object.entries(players ?? {})
+        .filter(([, player]) => {
+          const name = [
+            player?.full_name,
+            player?.displayName,
+            player?.name,
+            `${player?.first_name ?? ''} ${player?.last_name ?? ''}`.trim(),
+          ].filter(Boolean).join(' ').toLowerCase();
+          return name.includes('baker') || name.includes('mayfield');
+        })
+        .slice(0, 10)
+        .map(([id, player]) => ({
+          id,
+          name: player?.full_name ?? player?.displayName ?? player?.name,
+          position: player?.position,
+        }));
+
+      return {
+        helperVersion: ESPN_SCORE_HELPER_VERSION,
+        platform,
+        selectedLeagueId,
+        season,
+        playerCount: Object.keys(players ?? {}).length,
+        weeklyStatsPlayerCount: Object.keys(weeklyStats ?? {}).length,
+        requestedPlayerId: normalizedPlayerId,
+        hasRequestedPlayer: !!players?.[normalizedPlayerId],
+        hasRequestedWeeklyStats: !!weeklyStats?.[normalizedPlayerId],
+        requestedWeeks: (weeklyStats?.[normalizedPlayerId] ?? []).map((row) => row.week),
+        matchingPlayers,
+      };
+    };
+
+    return () => {
+      if (window.__GRIDSHIFT_ESPN_HELPER_VERSION__) delete window.__GRIDSHIFT_ESPN_HELPER_VERSION__;
+      if (window.__GRIDSHIFT_ESPN_SCORING_AUDIT__) delete window.__GRIDSHIFT_ESPN_SCORING_AUDIT__;
+      if (window.__GRIDSHIFT_ESPN_DST_SCORING_INDEX__) delete window.__GRIDSHIFT_ESPN_DST_SCORING_INDEX__;
+      if (window.__GRIDSHIFT_ESPN_SCORE_RECONCILE__) delete window.__GRIDSHIFT_ESPN_SCORE_RECONCILE__;
+      if (window.__GRIDSHIFT_ESPN_SCORE_RECONCILE_SEASON__) delete window.__GRIDSHIFT_ESPN_SCORE_RECONCILE_SEASON__;
+      if (window.__GRIDSHIFT_ESPN_DST_RESIDUALS__) delete window.__GRIDSHIFT_ESPN_DST_RESIDUALS__;
+      if (window.__GRIDSHIFT_ESPN_DEBUG_STATE__) delete window.__GRIDSHIFT_ESPN_DEBUG_STATE__;
+    };
+  }, [activeScoringSettings, league, platform, players, scoringSettings, season, selectedLeagueId, weeklyStats]);
+
   return (
     <SleeperLeagueContext.Provider value={leagueValue}>
       <SleeperStatsContext.Provider value={statsValue}>
@@ -755,33 +1360,59 @@ export function SleeperProvider({ children }) {
   );
 }
 
-export function useSleeperLeague() {
+export const SleeperProvider = FantasyProvider;
+
+export function useFantasyLeague() {
   const ctx = useContext(SleeperLeagueContext);
-  if (!ctx) throw new Error('useSleeperLeague must be used inside <SleeperProvider>');
+  if (!ctx) throw new Error('useFantasyLeague must be used inside <FantasyProvider>');
   return ctx;
 }
 
-export function useSleeperStats() {
+export function useFantasyStats() {
   const ctx = useContext(SleeperStatsContext);
-  if (!ctx) throw new Error('useSleeperStats must be used inside <SleeperProvider>');
+  if (!ctx) throw new Error('useFantasyStats must be used inside <FantasyProvider>');
   return ctx;
 }
 
-export function useSleeperBase() {
-  return { ...useSleeperLeague(), ...useSleeperStats() };
+export function useFantasyBase() {
+  return { ...useFantasyLeague(), ...useFantasyStats() };
 }
 
-export function useSleeperStatsProgress() {
+export function useFantasyStatsProgress() {
   return useContext(SleeperStatsProgressContext);
 }
 
-export function useSleeperStatsEnhancing() {
+export function useFantasyStatsEnhancing() {
   return useContext(SleeperStatsEnhancingContext);
 }
 
-export function useSleeper() {
-  const ctx = useSleeperBase();
-  const statsProgress = useSleeperStatsProgress();
-  const statsEnhancing = useSleeperStatsEnhancing();
+export function useFantasy() {
+  const ctx = useFantasyBase();
+  const statsProgress = useFantasyStatsProgress();
+  const statsEnhancing = useFantasyStatsEnhancing();
   return { ...ctx, statsProgress, statsEnhancing };
+}
+
+export function useSleeperLeague() {
+  return useFantasyLeague();
+}
+
+export function useSleeperStats() {
+  return useFantasyStats();
+}
+
+export function useSleeperBase() {
+  return useFantasyBase();
+}
+
+export function useSleeperStatsProgress() {
+  return useFantasyStatsProgress();
+}
+
+export function useSleeperStatsEnhancing() {
+  return useFantasyStatsEnhancing();
+}
+
+export function useSleeper() {
+  return useFantasy();
 }

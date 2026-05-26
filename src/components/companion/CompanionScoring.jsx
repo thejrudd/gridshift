@@ -1,7 +1,7 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useSleeperLeague } from '../../context/SleeperContext';
 import {
-  DEFAULT_SCORING, importLeagueScoring,
+  DEFAULT_SCORING, getEspnScoringImportAudit, getFlatScoringSettings, importLeagueScoring, normalizeScoringProfile,
 } from '../../utils/scoringEngine';
 import { getLeague } from '../../api/sleeperApi';
 import { formatScoringSettingValue } from '../../utils/scoringDisplay';
@@ -30,6 +30,7 @@ const STAT_GROUPS = [
       { key: 'rush_td',        label: 'Rushing TD' },
       { key: 'rush_2pt',       label: '2-Pt Conversion Rush' },
       { key: 'rush_fd',        label: 'First Down (rush)' },
+      { key: 'rush_att',       label: 'Rushing Attempt' },
       { key: 'bonus_rush_att', label: 'Carry Bonus', note: 'extra pts/carry (RBs only)' },
     ],
   },
@@ -74,7 +75,13 @@ const STAT_GROUPS = [
       { key: 'fum_ret_td',  label: 'Fumble Recovery TD' },
       { key: 'st_td',       label: 'Special Teams TD' },
       { key: 'ret_td',      label: 'Return TD (kick / punt)' },
+      { key: 'team_win',    label: 'Team Win', note: 'ESPN only', espnOnly: true },
+      { key: 'team_loss',   label: 'Team Loss', note: 'ESPN only', espnOnly: true },
+      { key: 'team_tie',    label: 'Team Tie', note: 'ESPN only', espnOnly: true },
+      { key: 'kr_td',       label: 'Kickoff Return TD' },
+      { key: 'pr_td',       label: 'Punt Return TD' },
       { key: 'blk_kick',    label: 'Blocked Kick' },
+      { key: 'blk_kick_ret_td', label: 'Blocked Kick Return TD' },
     ],
   },
   {
@@ -162,6 +169,7 @@ const STAT_GROUPS = [
       { key: 'fgm_0_19',         label: 'FG Made 0–19 yds' },
       { key: 'fgm_20_29',        label: 'FG Made 20–29 yds' },
       { key: 'fgm_30_39',        label: 'FG Made 30–39 yds' },
+      { key: 'fgm_0_39',         label: 'FG Made 0–39 yds' },
       { key: 'fgm_40_49',        label: 'FG Made 40–49 yds' },
       { key: 'fgm_50_59',        label: 'FG Made 50–59 yds' },
       { key: 'fgm_60p',          label: 'FG Made 60+ yds' },
@@ -177,6 +185,7 @@ const STAT_GROUPS = [
       { key: 'fgmiss_0_19',  label: 'FG Miss 0–19 yds' },
       { key: 'fgmiss_20_29', label: 'FG Miss 20–29 yds' },
       { key: 'fgmiss_30_39', label: 'FG Miss 30–39 yds' },
+      { key: 'fgmiss_0_39',  label: 'FG Miss 0–39 yds' },
       { key: 'fgmiss_40_49', label: 'FG Miss 40–49 yds' },
       { key: 'fgmiss_50_59', label: 'FG Miss 50–59 yds' },
       { key: 'fgmiss_60p',   label: 'FG Miss 60+ yds' },
@@ -187,12 +196,20 @@ const STAT_GROUPS = [
     label: 'Team DST — Turnovers & Scoring',
     stats: [
       { key: 'sack',     label: 'Sack (team)' },
+      { key: 'sack_half', label: 'Half Sack (team)' },
       { key: 'sack_yd',  label: 'Sack Yards (team)', note: 'pts / yd' },
       { key: 'int',      label: 'Interception (team)' },
       { key: 'int_ret_yd', label: 'INT Return Yards (team)', note: 'pts / yd' },
       { key: 'safe',     label: 'Safety (team)' },
       { key: 'def_td',   label: 'Defensive TD (team)' },
       { key: 'def_2pt',  label: 'Defensive 2-Pt Return' },
+      { key: 'def_1pt_safe', label: 'Defensive 1-Pt Safety' },
+      { key: 'def_int_td', label: 'INT Return TD (team)' },
+      { key: 'def_fum_td', label: 'Fumble Return TD (team)' },
+      { key: 'def_ff',   label: 'Forced Fumble (team)' },
+      { key: 'blk_kick_ret_td', label: 'Blocked Kick Return TD' },
+      { key: 'kr_td',    label: 'Kickoff Return TD' },
+      { key: 'pr_td',    label: 'Punt Return TD' },
     ],
   },
   {
@@ -202,9 +219,14 @@ const STAT_GROUPS = [
       { key: 'pts_allow_0',     label: 'Pts Allowed: 0 (shutout)' },
       { key: 'pts_allow_1_6',   label: 'Pts Allowed: 1–6' },
       { key: 'pts_allow_7_13',  label: 'Pts Allowed: 7–13' },
+      { key: 'pts_allow_14_17', label: 'Pts Allowed: 14–17' },
+      { key: 'pts_allow_18_21', label: 'Pts Allowed: 18–21' },
+      { key: 'pts_allow_22_27', label: 'Pts Allowed: 22–27' },
       { key: 'pts_allow_14_20', label: 'Pts Allowed: 14–20' },
       { key: 'pts_allow_21_27', label: 'Pts Allowed: 21–27' },
       { key: 'pts_allow_28_34', label: 'Pts Allowed: 28–34' },
+      { key: 'pts_allow_35_45', label: 'Pts Allowed: 35–45' },
+      { key: 'pts_allow_46p',   label: 'Pts Allowed: 46+' },
       { key: 'pts_allow_35p',   label: 'Pts Allowed: 35+' },
     ],
   },
@@ -229,6 +251,8 @@ const STAT_GROUPS = [
       { key: 'tkl',              label: 'Tackle (team)' },
       { key: 'tkl_solo',         label: 'Solo Tackle (team)' },
       { key: 'tkl_ast',          label: 'Assisted Tackle (team)' },
+      { key: 'tkl_3',            label: 'Every 3 Tackles (team)' },
+      { key: 'tkl_5',            label: 'Every 5 Tackles (team)' },
       { key: 'tkl_loss',         label: 'Tackle for Loss (team)' },
       { key: 'qb_hit',           label: 'QB Hit (team)' },
       { key: 'def_pass_def',     label: 'Pass Deflection (team)' },
@@ -237,14 +261,18 @@ const STAT_GROUPS = [
       { key: 'def_forced_punts', label: 'Forced Punt' },
       { key: 'def_st_tkl_solo',  label: 'ST Solo Tackle (team)' },
       { key: 'def_kr_yd',        label: 'Kick Return Yards (team)', note: 'pts / yd' },
+      { key: 'def_kr_yd_10',     label: 'Every 10 Kick Return Yards (team)' },
+      { key: 'def_kr_yd_25',     label: 'Every 25 Kick Return Yards (team)' },
       { key: 'def_pr_yd',        label: 'Punt Return Yards (team)', note: 'pts / yd' },
+      { key: 'def_pr_yd_10',     label: 'Every 10 Punt Return Yards (team)' },
+      { key: 'def_pr_yd_25',     label: 'Every 25 Punt Return Yards (team)' },
     ],
   },
 ];
 
 export default function CompanionScoring() {
   const {
-    scoringSettings, setScoringSettings, league,
+    platform, scoringSettings, setScoringSettings, league,
     leaguesBySeason, setScoringOverride, scoringOverride, clearScoringOverride,
   } = useSleeperLeague();
   const [showActiveOnly, setShowActiveOnly] = useState(true);
@@ -252,10 +280,18 @@ export default function CompanionScoring() {
   const [pickerLoading, setPickerLoading] = useState(false);
   const [pickerError, setPickerError] = useState(null);
   const [expandedSeason, setExpandedSeason] = useState(null);
-  const settings = { ...DEFAULT_SCORING, ...scoringSettings };
+  const settings = getFlatScoringSettings(scoringSettings);
+  const espnAudit = useMemo(
+    () => (platform === 'espn' ? getEspnScoringImportAudit(scoringSettings) : null),
+    [platform, scoringSettings],
+  );
 
   const handleImportLeague = () => {
     if (!league?.scoring_settings) return;
+    if (league.scoring_settings.provider === 'espn') {
+      setScoringSettings(normalizeScoringProfile(league.scoring_settings, 'espn'));
+      return;
+    }
     const imported = importLeagueScoring(league.scoring_settings);
     setScoringSettings({ ...DEFAULT_SCORING, ...imported });
   };
@@ -275,14 +311,18 @@ export default function CompanionScoring() {
     }
   }, [setScoringOverride]);
 
-  const pickerSeasons = Object.keys(leaguesBySeason ?? {})
+  const pickerSeasons = platform === 'espn' ? [] : Object.keys(leaguesBySeason ?? {})
     .filter(s => (leaguesBySeason[s]?.length ?? 0) > 0)
     .sort((a, b) => Number(b) - Number(a));
 
   // Filter groups/stats based on toggle
   const visibleGroups = STAT_GROUPS.map(group => ({
     ...group,
-    stats: showActiveOnly ? group.stats.filter(s => (settings[s.key] ?? 0) !== 0) : group.stats,
+    stats: group.stats.filter((s) => {
+      if (s.espnOnly && platform !== 'espn') return false;
+      if (showActiveOnly && (settings[s.key] ?? 0) === 0) return false;
+      return true;
+    }),
   })).filter(group => group.stats.length > 0);
 
   return (
@@ -412,6 +452,60 @@ export default function CompanionScoring() {
               })}
             </div>
           )}
+        </div>
+      )}
+
+      {platform === 'espn' && espnAudit?.rows?.length > 0 && (
+        <div className="px-4 pb-4">
+          <div className="mb-2 flex items-end justify-between gap-3">
+            <div className="text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>
+              ESPN Import Audit
+            </div>
+            <div className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-quaternary)' }}>
+              ID → imported setting
+            </div>
+          </div>
+          <div className="rounded-xl overflow-hidden" style={{ background: 'var(--color-fill-secondary)' }}>
+            <div
+              className="hidden gap-3 px-4 py-2 text-[10px] font-bold uppercase tracking-widest sm:grid sm:grid-cols-[80px_minmax(0,1fr)_minmax(0,1fr)_90px]"
+              style={{ color: 'var(--color-label-tertiary)', borderBottom: '1px solid var(--color-separator)' }}
+            >
+              <span>Stat ID</span>
+              <span>ESPN Value</span>
+              <span>GridShift Key</span>
+              <span>Imported</span>
+            </div>
+            {espnAudit.rows.map((row, index) => {
+              const overrideText = Object.entries(row.espnPositionOverrides ?? {})
+                .map(([position, value]) => `${position} ${value}`)
+                .join(', ');
+              const isUnmapped = row.status === 'unmapped';
+              return (
+                <div
+                  key={`${row.statId}-${index}`}
+                  className="grid gap-3 px-4 py-3 text-xs sm:grid-cols-[80px_minmax(0,1fr)_minmax(0,1fr)_90px]"
+                  style={{ borderTop: index > 0 ? '1px solid var(--color-separator)' : 'none' }}
+                >
+                  <span className="font-mono" style={{ color: isUnmapped ? 'var(--color-accent-red)' : 'var(--color-label)' }}>
+                    <span className="sm:hidden" style={{ color: 'var(--color-label-tertiary)' }}>Stat ID </span>
+                    #{row.statId ?? '--'}
+                  </span>
+                  <span className="min-w-0 truncate" style={{ color: 'var(--color-label-secondary)' }}>
+                    <span className="sm:hidden" style={{ color: 'var(--color-label-tertiary)' }}>ESPN Value </span>
+                    {row.espnPoints ?? '--'}{overrideText ? ` (${overrideText})` : ''}
+                  </span>
+                  <span className="min-w-0 truncate" style={{ color: isUnmapped ? 'var(--color-accent-red)' : 'var(--color-label)' }}>
+                    <span className="sm:hidden" style={{ color: 'var(--color-label-tertiary)' }}>GridShift Key </span>
+                    {row.gridshiftKey ?? 'Unmapped'}
+                  </span>
+                  <span className="font-mono tabular-nums text-right sm:text-left" style={{ color: 'var(--color-label)' }}>
+                    <span className="sm:hidden" style={{ color: 'var(--color-label-tertiary)' }}>Imported </span>
+                    {row.gridshiftKey ? formatScoringSettingValue(row.gridshiftKey, row.gridshiftValue ?? 0, { compact: true }) : '--'}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 

@@ -48,7 +48,7 @@ const ACTION_SORT_OPTIONS = [
   { id: 'pass_sack', label: 'Sacks Taken', shortLabel: 'Sacked', positions: ['QB'], negative: true },
   { id: 'rush_yd', label: 'Rushing Yards', shortLabel: 'Rush Yds', positions: ['QB', 'RB', 'WR', 'TE'] },
   { id: 'rush_td', label: 'Rushing TDs', shortLabel: 'Rush TD', positions: ['QB', 'RB', 'WR', 'TE'] },
-  { id: 'rush_att', scoringKey: 'bonus_rush_att', label: 'Rush Attempts', shortLabel: 'Carries', positions: ['RB'] },
+  { id: 'rush_att', scoringKeys: ['rush_att', 'bonus_rush_att'], label: 'Rush Attempts', shortLabel: 'Carries', positions: ['QB', 'RB', 'WR', 'TE'] },
   { id: 'rec', label: 'Receptions', shortLabel: 'Rec', positions: ['RB', 'WR', 'TE'] },
   { id: 'rec_yd', label: 'Receiving Yards', shortLabel: 'Rec Yds', positions: ['RB', 'WR', 'TE'] },
   { id: 'rec_td', label: 'Receiving TDs', shortLabel: 'Rec TD', positions: ['RB', 'WR', 'TE'] },
@@ -173,6 +173,7 @@ function getActionSortOptionsForFilters(selectedFilters, availablePositions) {
 
 function optionHasFantasyValue(option, scoringSettings) {
   const settings = { ...DEFAULT_SCORING, ...scoringSettings };
+  if (option.scoringKeys) return option.scoringKeys.some(key => Number(settings?.[key]) !== 0);
   return Number(settings?.[option.scoringKey ?? option.id]) !== 0;
 }
 
@@ -190,7 +191,12 @@ function getActionSortContribution(stats, scoringSettings, position, option) {
   if (!option || !isActionSortAvailableForPlayer(option, position)) return { points: null, raw: null };
   const raw = getRecordedStatValue(stats, option.id);
   if (raw == null) return { points: null, raw: null };
-  const multiplier = Number(scoringSettings?.[option.scoringKey ?? option.id]) || 0;
+  const multiplier = option.scoringKeys
+    ? option.scoringKeys.reduce((sum, key) => {
+        if (key === 'bonus_rush_att' && position !== 'RB') return sum;
+        return sum + (Number(scoringSettings?.[key]) || 0);
+      }, 0)
+    : Number(scoringSettings?.[option.scoringKey ?? option.id]) || 0;
   return { points: raw * multiplier, raw };
 }
 

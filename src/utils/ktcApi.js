@@ -268,9 +268,14 @@ export function computeKtcMultipliers(scoringSettings, rosterPositions) {
   if (rbBonus > 0) mults.RB += rbBonus * 0.10; // 0.5 → +5%, 1.0 → +10%
   if (wrBonus > 0) mults.WR += wrBonus * 0.12; // 0.25 → +3%, 0.5 → +6%
 
-  // ── Per-carry bonus (bonus_rush_att) ──────────────────────────────────────
-  // Rewards high-volume RBs; a 0.1 pt/carry bonus adds ~2 pts/game for a
-  // 20-carry back, raising workhorse RB values relative to pass-catchers.
+  // ── Per-carry / rushing-attempt scoring ───────────────────────────────────
+  // Rewards high-volume rushing. ESPN can score all rushing attempts, while
+  // Sleeper-style carry bonuses remain RB-only in GridShift.
+  const genericRushAtt = scoringSettings.rush_att ?? 0;
+  if (genericRushAtt > 0) {
+    mults.RB += genericRushAtt * 0.15; // 0.1 → +1.5%
+    mults.QB += genericRushAtt * 0.04; // rushing QBs get a small lift
+  }
   const rushAttBonus = scoringSettings.bonus_rush_att ?? 0;
   if (rushAttBonus > 0) mults.RB += rushAttBonus * 0.15; // 0.1 → +1.5%, 0.5 → +7.5%
 
