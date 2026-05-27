@@ -3,5 +3,26 @@ services:
     build: .
     ports:
       - "${PORT:-9090}:80"
+    depends_on:
+      - gridshift-api
     restart: unless-stopped
     container_name: nfl-predictor
+
+  gridshift-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - GRIDSHIFT_SESSION_SECRET=${GRIDSHIFT_SESSION_SECRET:-}
+      - GRIDSHIFT_BDL_API_KEY=${GRIDSHIFT_BDL_API_KEY:-}
+      - GRIDSHIFT_BDL_TIER=${GRIDSHIFT_BDL_TIER:-goat}
+      - GRIDSHIFT_LIVE_ALLOWED_LEAGUE_IDS=${GRIDSHIFT_LIVE_ALLOWED_LEAGUE_IDS:-}
+      - GRIDSHIFT_LIVE_ACCESS_CODE=${GRIDSHIFT_LIVE_ACCESS_CODE:-}
+      - GRIDSHIFT_LIVE_COOKIE_SECRET=${GRIDSHIFT_LIVE_COOKIE_SECRET:-}
+      - GRIDSHIFT_LIVE_CACHE_TTL_MS=${GRIDSHIFT_LIVE_CACHE_TTL_MS:-1000}
+      - GRIDSHIFT_LIVE_MAX_REQ_PER_MIN=${GRIDSHIFT_LIVE_MAX_REQ_PER_MIN:-300}
+      - GRIDSHIFT_COOKIE_SECURE=${GRIDSHIFT_COOKIE_SECURE:-true}
+    restart: unless-stopped
+    container_name: gridshift-api

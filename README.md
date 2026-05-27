@@ -75,6 +75,26 @@ To validate that setup after a production build:
 npm run validate:routing
 ```
 
+## Live Scoring Configuration
+
+GridShift's public client can stay open source while paid live-data access remains server-only. Real secrets belong in the deployment environment or a local `.env` file copied from `.env.example`; never commit `.env` or paste paid API keys into client code.
+
+Server-only variables:
+
+| Variable | Purpose |
+|---|---|
+| `GRIDSHIFT_SESSION_SECRET` | Signs/encrypts server-managed session values in production. |
+| `GRIDSHIFT_BDL_API_KEY` | BALLDONTLIE API key for server-side NFL live data. Never prefix this with `VITE_`. |
+| `GRIDSHIFT_BDL_TIER` | BALLDONTLIE plan tier, such as `goat` or `all-star`, used for capability checks. |
+| `GRIDSHIFT_LIVE_ALLOWED_LEAGUE_IDS` | Comma-separated Sleeper league IDs allowed to use paid live scoring on this instance. |
+| `GRIDSHIFT_LIVE_ACCESS_CODE` | Optional shared league code required before an allowlisted league member can use paid live mode. |
+| `GRIDSHIFT_LIVE_COOKIE_SECRET` | Optional live-scoring cookie secret; falls back to `GRIDSHIFT_SESSION_SECRET` when blank. |
+| `GRIDSHIFT_LIVE_CACHE_TTL_MS` | Server cache duration for upstream live-data responses. |
+| `GRIDSHIFT_LIVE_MAX_REQ_PER_MIN` | Local guardrail for provider request volume. |
+| `GRIDSHIFT_COOKIE_SECURE` | Set `true` for HTTPS production cookies; use `false` only for local HTTP testing. |
+
+Hosted owners can enable paid live scoring for selected leagues by setting these variables on the server and keeping `GRIDSHIFT_LIVE_ALLOWED_LEAGUE_IDS` narrow. Self-hosters should supply their own BALLDONTLIE key and league allowlist. Variables prefixed with `VITE_` are public because Vite embeds them in the browser bundle, so paid keys and access codes must always use `GRIDSHIFT_` server variables.
+
 ## Tech Stack
 
 | Layer | Technology |
@@ -86,8 +106,9 @@ npm run validate:routing
 | Image export | html2canvas |
 | Fantasy data | Sleeper API (client-side) |
 | Player data | ESPN public APIs (client-side) |
+| Live data | Optional BALLDONTLIE NFL API via server-side GridShift API |
 | PWA | vite-plugin-pwa + Workbox |
-| Production serving | nginx (Docker) |
+| Production serving | nginx (Docker) + optional Node API sidecar |
 
 ## What's New in v7.6
 
@@ -99,8 +120,8 @@ For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Roadmap
 
-- **v8.0 - ESPN League Integration** - Planned major integration track.
-- **v9.0 - Live Fantasy Scoring** - Planned live scoring track.
+- **v8.0 - Live Fantasy Scoring** - Sleeper-first live matchup experience with server-protected BALLDONTLIE support for allowlisted leagues.
+- **Future multi-platform integrations** - Revisit ESPN/Yahoo after the live-scoring data boundary is stable.
 - **Scout Rookie Projection Layer** - Add next-season rookie projections that work for standard and IDP-focused draft prep without overloading the current Scout board.
 - **Trade follow-through** - Continue polishing Trade drilldowns, remaining explanation copy, and proposal-card readability after the v7.3 module split.
 
