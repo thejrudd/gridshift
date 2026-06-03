@@ -46,6 +46,7 @@ Open bugs are listed first, fixed bugs below. Add new entries at the bottom of e
 
 | Bug | Fixed In |
 |-----|----------|
+| Companion roster-adjacent player drilldowns could silently do nothing when the Sleeper player record had no ESPN ID, affecting rookies and other sparse player records | v7.6.1 |
 | Statistics Standings tab initially appeared before Schedule in the Statistics sub-navigation instead of to the right of Schedule | v7.6 |
 | Statistics schedule can horizontally scroll the full page on mobile, and the mobile week rail is missing the documented horizontal scroll arrow cue | v7.5.1 |
 | Statistics player profile stat mode toggle was squished on mobile when Game Stats, Fantasy Values, and Visual shared the same row as the explanatory copy | v7.4 |

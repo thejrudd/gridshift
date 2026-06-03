@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSleeperBase, useSleeperStatsProgress } from '../../context/SleeperContext';
 import { useTheme } from '../../context/ThemeContext';
 import { createPointsCalculator } from '../../utils/scoringEngine';
@@ -14,6 +14,7 @@ import {
 } from '../../utils/leaguePositions';
 import { getPlayerRowTeamTheme } from '../../utils/playerRowTheme';
 import { isWaiverEligiblePlayerRecord } from '../../utils/playerEligibility';
+import { resolveStatisticsPlayerMetaFromSleeperId } from '../../utils/playerDrilldown';
 import { debugCompanionLog, debugCompanionMeasure } from '../../utils/companionPerfDebug';
 import CompanionLoadingState from './CompanionLoadingState';
 import CompanionPlayerPreviewSheet from './CompanionPlayerPreviewSheet';
@@ -473,6 +474,23 @@ export default function CompanionWaiver({
   const hasAnyWaiverData = rankedCandidates.length > 0;
   const showWaiverEmpty = available.length === 0 && !showWaiverPreparing && Boolean(seasonStats);
   const showWaiverControls = showWaiverPreparing || hasAnyWaiverData;
+  const openWaiverPlayer = useCallback(async (player) => {
+    if (!player || !onViewPlayer) return;
+
+    if (player.espnId) {
+      onViewPlayer(String(player.espnId), {
+        displayName: player.name,
+        teamId: player.team,
+        position: player.position,
+        experience: player.yearsExp != null ? player.yearsExp + 1 : undefined,
+      });
+      return;
+    }
+
+    const playerMeta = await resolveStatisticsPlayerMetaFromSleeperId(player.id, players, espnIdOverrides);
+    if (!playerMeta) return;
+    onViewPlayer(playerMeta.id, playerMeta);
+  }, [espnIdOverrides, onViewPlayer, players]);
 
   return (
     <div className="pb-6">
@@ -544,13 +562,7 @@ export default function CompanionWaiver({
               setSelectedPlayerId(player.id);
               return;
             }
-            if (!player.espnId) return;
-            onViewPlayer?.(String(player.espnId), {
-              displayName: player.name,
-              teamId: player.team,
-              position: player.position,
-              experience: player.yearsExp != null ? player.yearsExp + 1 : undefined,
-            });
+            openWaiverPlayer(player);
           }}
           sortBy={sortBy}
           layout={layout}
@@ -579,15 +591,9 @@ export default function CompanionWaiver({
         <CompanionPlayerPreviewSheet
           playerId={selectedPlayerId}
           onClose={() => setSelectedPlayerId(null)}
-          onViewStats={onViewPlayer ? (playerId) => {
+          onViewStats={onViewPlayer ? async (playerId) => {
             const player = available.find((candidate) => candidate.id === playerId);
-            if (!player?.espnId) return;
-            onViewPlayer(String(player.espnId), {
-              displayName: player.name,
-              teamId: player.team,
-              position: player.position,
-              experience: player.yearsExp != null ? player.yearsExp + 1 : undefined,
-            });
+            await openWaiverPlayer(player);
           } : null}
         />
       )}

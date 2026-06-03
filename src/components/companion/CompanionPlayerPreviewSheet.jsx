@@ -4,7 +4,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { CURRENT_SEASON, fetchPlayerStats, headshot } from '../../utils/playerApi';
 import { buildRankMap, buildStatMap, getStatRows } from '../../utils/playerMetrics';
 import { getFantasyContribution } from '../../utils/fantasyStatContributions';
-import { buildStatisticsPlayerMetaFromSleeperId, STATISTICS_MODES } from '../../utils/playerDrilldown';
+import { resolveStatisticsPlayerMetaFromSleeperId, STATISTICS_MODES } from '../../utils/playerDrilldown';
 import { getTeamPalette } from '../../data/teamColors';
 import Modal from '../Modal';
 import { CompanionSelectorButton, CompanionSelectorRail } from './CompanionSelectorControls.jsx';
@@ -38,15 +38,33 @@ export default function CompanionPlayerPreviewSheet({ playerId, onClose, onViewS
   } = useSleeperStats();
   const { darkMode } = useTheme();
   const [mode, setMode] = useState(STATISTICS_MODES.FANTASY);
+  const [playerMetaRequest, setPlayerMetaRequest] = useState({ key: null, meta: null });
   const [statsRequest, setStatsRequest] = useState({ playerId: null, data: null, error: null });
-  const [headshotError, setHeadshotError] = useState(false);
+  const [headshotErrorFor, setHeadshotErrorFor] = useState(null);
 
   useEffect(() => { if (!players) loadPlayers(); }, [loadPlayers, players]);
 
-  const playerMeta = useMemo(
-    () => buildStatisticsPlayerMetaFromSleeperId(playerId, players, espnIdOverrides),
-    [espnIdOverrides, playerId, players],
-  );
+  const playerMetaKey = playerId && players ? `${playerId}:${espnIdOverrides?.[playerId] ?? ''}` : null;
+  useEffect(() => {
+    let cancelled = false;
+    if (!playerMetaKey) return () => { cancelled = true; };
+
+    resolveStatisticsPlayerMetaFromSleeperId(playerId, players, espnIdOverrides)
+      .then((meta) => {
+        if (cancelled) return;
+        setPlayerMetaRequest({ key: playerMetaKey, meta });
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setPlayerMetaRequest({ key: playerMetaKey, meta: null });
+      });
+
+    return () => { cancelled = true; };
+  }, [espnIdOverrides, playerId, playerMetaKey, players]);
+
+  const playerMeta = playerMetaRequest.key === playerMetaKey ? playerMetaRequest.meta : null;
+  const playerMetaLoading = Boolean(playerId) && (!players || playerMetaRequest.key !== playerMetaKey);
+  const headshotError = headshotErrorFor === playerMeta?.id;
   const canShowFantasy = hasLeague && !!activeScoringSettings;
   const activeMode = canShowFantasy ? mode : STATISTICS_MODES.GAME;
 
@@ -155,7 +173,7 @@ export default function CompanionPlayerPreviewSheet({ playerId, onClose, onViewS
               alt={playerMeta.displayName}
               className="companion-player-preview-avatar"
               style={{ background: heroBg ? darkenHex(heroBg, 0.45) : 'var(--color-fill)' }}
-              onError={() => setHeadshotError(true)}
+              onError={() => setHeadshotErrorFor(playerMeta.id)}
             />
           ) : (
             <div
@@ -194,7 +212,9 @@ export default function CompanionPlayerPreviewSheet({ playerId, onClose, onViewS
         )}
 
         <div className="companion-player-preview-body">
-          {!playerMeta ? (
+          {playerMetaLoading ? (
+            <PreviewMessage>Resolving player...</PreviewMessage>
+          ) : !playerMeta ? (
             <PreviewMessage tone="error">Statistics are unavailable for this player.</PreviewMessage>
           ) : loading ? (
             <PreviewMessage>Loading statistics...</PreviewMessage>
@@ -236,7 +256,7 @@ export default function CompanionPlayerPreviewSheet({ playerId, onClose, onViewS
               onClose();
               onViewStats?.(playerId);
             }}
-            disabled={!playerMeta}
+            disabled={!playerMeta || playerMetaLoading}
           >
             Open Full Statistics
           </button>

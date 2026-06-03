@@ -24,7 +24,7 @@ import {
   parseAppRoute,
   slugifyRouteSegment,
 } from './utils/appRoutes';
-import { buildStatisticsPlayerMeta, buildStatisticsPlayerMetaFromSleeperId, STATISTICS_MODES } from './utils/playerDrilldown';
+import { buildStatisticsPlayerMeta, resolveStatisticsPlayerMetaFromSleeperId, STATISTICS_MODES } from './utils/playerDrilldown';
 import { debugCompanionLog, debugCompanionTimeAsync } from './utils/companionPerfDebug';
 import ScoringOverrideBanner from './components/companion/ScoringOverrideBanner';
 
@@ -785,6 +785,17 @@ function AppInner() {
     });
   }, [applyRoute, buildStatsBackContext]);
 
+  const navigateToCompanionSleeperPlayer = useCallback(async (sleeperId, backLabel) => {
+    const playerMeta = await resolveStatisticsPlayerMetaFromSleeperId(sleeperId, sleeperPlayers, espnIdOverrides);
+    if (!playerMeta) return;
+
+    navigateToStatisticsPlayer(playerMeta, {
+      backLabel,
+      backRoute: appRoute,
+      mode: STATISTICS_MODES.FANTASY,
+    });
+  }, [appRoute, espnIdOverrides, navigateToStatisticsPlayer, sleeperPlayers]);
+
   useEffect(() => {
     if (!statsDrilldownPending) return undefined;
     const routeHasOpenedPendingPlayer = activeTab === 'statistics'
@@ -1243,15 +1254,7 @@ function AppInner() {
                   onOpenMatchupWeek={(playerId, week) => {
                     applyRoute({ activeTab: 'companion', companionView: 'matchup', matchupPlayerId: playerId, matchupWeek: week });
                   }}
-                  onViewPlayer={(sleeperId) => {
-                    const playerMeta = buildStatisticsPlayerMetaFromSleeperId(sleeperId, sleeperPlayers, espnIdOverrides);
-                    if (!playerMeta) return;
-                    navigateToStatisticsPlayer(playerMeta, {
-                      backLabel: 'Roster',
-                      backRoute: appRoute,
-                      mode: STATISTICS_MODES.FANTASY,
-                    });
-                  }}
+                  onViewPlayer={(sleeperId) => navigateToCompanionSleeperPlayer(sleeperId, 'Roster')}
                 />
                 </Suspense>
               )}
@@ -1268,15 +1271,7 @@ function AppInner() {
                       companionView: 'rankings',
                       rankingsRosterId: rosterId,
                     }, { replace: true })}
-                    onViewPlayer={(sleeperId) => {
-                      const playerMeta = buildStatisticsPlayerMetaFromSleeperId(sleeperId, sleeperPlayers, espnIdOverrides);
-                      if (!playerMeta) return;
-                      navigateToStatisticsPlayer(playerMeta, {
-                        backLabel: 'Rankings',
-                        backRoute: appRoute,
-                        mode: STATISTICS_MODES.FANTASY,
-                      });
-                    }}
+                    onViewPlayer={(sleeperId) => navigateToCompanionSleeperPlayer(sleeperId, 'Rankings')}
                   />
                 </Suspense>
               )}
@@ -1333,15 +1328,7 @@ function AppInner() {
                     leagueSubview: nextState.subView ?? 'roster',
                     leagueRosterId: nextState.rosterId ?? null,
                   }, { replace: true })}
-                  onViewPlayer={(sleeperId) => {
-                    const playerMeta = buildStatisticsPlayerMetaFromSleeperId(sleeperId, sleeperPlayers, espnIdOverrides);
-                    if (!playerMeta) return;
-                    navigateToStatisticsPlayer(playerMeta, {
-                      backLabel: 'League',
-                      backRoute: appRoute,
-                      mode: STATISTICS_MODES.FANTASY,
-                    });
-                  }}
+                  onViewPlayer={(sleeperId) => navigateToCompanionSleeperPlayer(sleeperId, 'League')}
                   onTradePlayer={(sleeperId, partnerRosterId, side = 'get') => {
                     if (tradeDisabledForPlatform) return;
                     applyRoute({

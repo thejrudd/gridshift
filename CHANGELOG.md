@@ -1074,3 +1074,10 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Schedule-result standings model** - Added a tested standings utility that derives records from final schedule scores while keeping all teams visible at 0-0 before results are available.
 - **Statistics navigation polish** - Ordered the Statistics sub-navigation as Stats, Schedule, then Standings on mobile and desktop.
 - **Scout Beta promotion** - Updated Scout's desktop and mobile navigation badge, README feature list, and Scout docs from Alpha to Beta.
+
+## v7.6.1 - Companion Drilldown Fix
+*2026-06-03*
+
+- **Companion player drilldowns fixed** - Roster, League, Rankings, Waiver, and mobile player previews now resolve Sleeper players without a direct ESPN ID by matching the current ESPN team roster before opening Statistics.
+- **Rookie and sparse-player support** - Players such as new rookies or incomplete Sleeper records can still open their Statistics profile when ESPN roster metadata is available.
+- **Shared resolver coverage** - Companion-to-Statistics handoffs now use one fallback resolver so roster-adjacent surfaces no longer silently do nothing for missing-ID players.

@@ -89,11 +89,11 @@ npm run validate:routing
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) |
 
-## What's New in v7.6
+## What's New in v7.6.1
 
-- **Statistics Standings** - Added a dedicated Statistics tab for division and conference standings, powered by final schedule scores when results are available.
-- **Statistics navigation polish** - Ordered the Statistics sub-navigation as Stats, Schedule, then Standings.
-- **Scout Beta badge** - Promoted Scout from Alpha to Beta in desktop and mobile navigation.
+- **Companion drilldowns restored** - Roster, League, Rankings, Waiver, and mobile player previews now resolve players without a direct Sleeper ESPN ID by matching the current ESPN team roster.
+- **Rookie player support** - New and sparse Sleeper records such as rookies can open their Statistics profile when ESPN roster metadata is available.
+- **Shared drilldown resolver** - Companion player handoffs now use one fallback path instead of duplicating silent no-op behavior across sections.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 
