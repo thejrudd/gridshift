@@ -21,7 +21,7 @@ const STATISTICS_MODES = new Set(['game', 'fantasy', 'visual']);
 const STATISTICS_SCHEDULE_MODES = new Set(['week', 'team']);
 const STATISTICS_SCHEDULE_FILTERS = new Set(['international', 'primetime', 'holiday']);
 const SCOUT_VIEWS = new Set(['prospects', 'picks', 'results']);
-const DRAFT_VIEWS = new Set(['war-room', 'draft-order', 'gauntlet', 'tiers-runs']);
+const DRAFT_VIEWS = new Set(['war-room', 'draft-order', 'results', 'gauntlet', 'tiers-runs']);
 
 function normalizeCompanionView(view) {
   return COMPANION_VIEWS.has(view) ? view : DEFAULT_ROUTE.companionView;

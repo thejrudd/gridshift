@@ -75,10 +75,6 @@ function isLiveDraftStatus(status) {
   return normalized === 'drafting' || normalized === 'in_progress';
 }
 
-function isPreDraftStatus(status) {
-  return String(status ?? '').toLowerCase() === 'pre_draft';
-}
-
 function getDraftPollingStatus(draft) {
   return String(draft?.status ?? '').toLowerCase();
 }
@@ -521,30 +517,62 @@ function FutureDraftView({ view }) {
   );
 }
 
+// Derive the live "time left" for the current pick from Sleeper's draft object:
+// settings.pick_timer (seconds per pick) counted down from last_picked (epoch ms). Ticks once a
+// second while the draft is live; returns null for untimed drafts or when not live.
+function useDraftPickCountdown(draft, live) {
+  const pickTimer = Number(draft?.settings?.pick_timer ?? 0);
+  const lastPicked = Number(draft?.last_picked ?? 0);
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!live || !(pickTimer > 0)) return undefined;
+    const intervalId = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(intervalId);
+  }, [live, pickTimer, lastPicked]);
+
+  if (!live || !(pickTimer > 0)) return null;
+  // A fresh pick (new last_picked) is a prop change that re-renders this banner, so the countdown
+  // recomputes against the new anchor immediately; the interval only drives the per-second ticks.
+  const anchor = lastPicked > 0 ? lastPicked : now;
+  const remaining = Math.max(0, Math.ceil((pickTimer * 1000 - (now - anchor)) / 1000));
+  const minutes = Math.floor(remaining / 60);
+  const seconds = remaining % 60;
+  return { label: `${minutes}:${String(seconds).padStart(2, '0')}`, expired: remaining === 0 };
+}
+
+// Renders only while the draft is live. Pre-draft and completed states show no banner — the view
+// leads straight into its board / pick list.
 function DraftStatusBanner({ draft, viewModel, getUserDisplayName }) {
   const status = String(draft?.status ?? 'unknown').toLowerCase();
   const live = isLiveDraftStatus(status);
-  const preDraft = isPreDraftStatus(status);
-  if (!live && !preDraft) return null;
+  const countdown = useDraftPickCountdown(draft, live);
+  if (!live) return null;
 
   const currentPick = viewModel?.currentPick ?? null;
   const owner = currentPick?.roster?.owner_id ? getUserDisplayName(currentPick.roster.owner_id) : 'Draft room';
   const nextMyPick = viewModel?.nextMyPick ? `Your next pick: ${formatPickLabel(viewModel.nextMyPick)}` : 'Your next pick is not available yet';
-  const upcomingPicks = live ? (viewModel?.upcomingPicks ?? []).slice(0, 4) : [];
+  const upcomingPicks = (viewModel?.upcomingPicks ?? []).slice(0, 4);
 
   return (
-    <section
-      className={`draft-status-banner${live ? ' is-live' : ' is-pre-draft'}`}
-      aria-live={live ? 'polite' : undefined}
-    >
-      <div>
-        <span>{live ? 'On the Clock' : 'Draft Setup'}</span>
-        <strong>{live ? owner : (draft?.metadata?.name ?? draft?.name ?? 'War Room board')}</strong>
+    <section className="draft-status-banner is-live" aria-live="polite">
+      <div className="draft-status-banner__heading">
+        <span className="draft-live-pill">
+          <span className="draft-live-dot" aria-hidden="true" />
+          Live
+        </span>
+        <span className="draft-status-banner__label">On the Clock</span>
+        <strong>{owner}</strong>
       </div>
       <div className="draft-status-banner__meta">
-        <span>{live && currentPick ? `Pick ${formatPickLabel(currentPick)} · ${currentPick.overall} overall` : 'Build your board before the draft starts'}</span>
+        {currentPick ? <span>{`Pick ${formatPickLabel(currentPick)} · ${currentPick.overall} overall`}</span> : null}
+        {countdown ? (
+          <span className={`draft-status-banner__clock${countdown.expired ? ' is-expired' : ''}`} aria-label="Time remaining on the clock">
+            ⏱ {countdown.label}
+          </span>
+        ) : null}
         <span>{nextMyPick}</span>
-        {live && viewModel?.picksBeforeUser ? <span>{viewModel.picksBeforeUser.length} before you</span> : null}
+        {viewModel?.picksBeforeUser ? <span>{viewModel.picksBeforeUser.length} before you</span> : null}
       </div>
       {upcomingPicks.length > 0 ? (
         <div className="draft-status-banner__queue" aria-label="Upcoming picks">
@@ -871,7 +899,6 @@ function BigBoard({
   darkMode,
   boardScope,
   onBoardScopeChange,
-  dataSourceLabel,
   statsLoading,
   modelWeights,
   onModelWeightChange,
@@ -929,7 +956,7 @@ function BigBoard({
       <div className="draft-panel__header">
         <div>
           <h2>Big Board</h2>
-          <span>{sorted.length} visible players{dataSourceLabel ? ` · ${dataSourceLabel}` : ''}{statsLoading ? ' · loading stats' : ''}</span>
+          <span>{sorted.length} players{statsLoading ? ' · refreshing' : ''}</span>
         </div>
         <div className="draft-panel__header-controls">
           <DraftSegmentedControl
@@ -946,11 +973,6 @@ function BigBoard({
           />
         </div>
       </div>
-      <DraftModelWeights
-        weights={modelWeights}
-        onChange={onModelWeightChange}
-        onReset={onResetModelWeights}
-      />
       <PositionFilter positions={positions} activePosition={activePosition} onChange={onPositionChange} />
       <div className="draft-big-board-header" role="row">
         <span className="draft-big-board-header__avatar-spacer" aria-hidden="true" />
@@ -994,6 +1016,11 @@ function BigBoard({
           );
         })}
       </div>
+      <DraftModelWeights
+        weights={modelWeights}
+        onChange={onModelWeightChange}
+        onReset={onResetModelWeights}
+      />
     </section>
   );
 }
@@ -1416,7 +1443,6 @@ function WarRoom({ onViewPlayer }) {
   const [modelWeightsReady, setModelWeightsReady] = useState(false);
   const [draftStats, setDraftStats] = useState(null);
   const [draftStatsLoading, setDraftStatsLoading] = useState(false);
-  const [draftStatsError, setDraftStatsError] = useState('');
   const [marketState, setMarketState] = useState({
     loading: false,
     error: '',
@@ -1556,23 +1582,19 @@ function WarRoom({ onViewPlayer }) {
   useEffect(() => {
     if (!draftStatsSeason || !loadStatsForSeason) {
       setDraftStats(null);
-      setDraftStatsError('');
       setDraftStatsLoading(false);
       return undefined;
     }
 
     let cancelled = false;
     setDraftStatsLoading(true);
-    setDraftStatsError('');
 
     loadStatsForSeason(draftStatsSeason).then((statsPackage) => {
       if (cancelled) return;
       setDraftStats(statsPackage);
-      setDraftStatsError('');
-    }).catch((error) => {
+    }).catch(() => {
       if (cancelled) return;
       setDraftStats(null);
-      setDraftStatsError(error?.message ?? 'Past-season stats unavailable.');
     }).finally(() => {
       if (!cancelled) setDraftStatsLoading(false);
     });
@@ -1708,13 +1730,6 @@ function WarRoom({ onViewPlayer }) {
     setModelWeights(normalizeDraftModelWeights(DEFAULT_DRAFT_MODEL_WEIGHTS));
   };
 
-  const dataSourceLabel = draftStatsError
-    ? 'Past stats unavailable'
-    : draftStats?.season
-      ? `Data: ${draftStats.season} season + market rank`
-      : draftStatsSeason
-        ? `Data: ${draftStatsSeason} season + market rank`
-        : 'Data: market rank';
 
   if (!league) {
     return (
@@ -1792,7 +1807,6 @@ function WarRoom({ onViewPlayer }) {
           darkMode={darkMode}
           boardScope={boardScope}
           onBoardScopeChange={setBoardScope}
-          dataSourceLabel={dataSourceLabel}
           statsLoading={draftStatsLoading}
           modelWeights={modelWeights}
           onModelWeightChange={changeModelWeight}
@@ -1813,8 +1827,341 @@ function WarRoom({ onViewPlayer }) {
   );
 }
 
+function DraftResultRow({ row, darkMode, onViewPlayer }) {
+  const metrics = [
+    { key: 'rating', value: formatDecimalMetric(row.rating), label: 'Rating', title: 'GridShift Draft Rating from market rank, past PPG, scoring fit, and roster need', align: 'center' },
+    { key: 'sleeper', value: formatRankMetric(row.sleeperRank), label: 'Sleeper', title: 'Sleeper search / market overall rank', align: 'center' },
+    { key: 'tier', value: row.tier != null ? `T${row.tier}` : '—', label: 'Tier', title: 'Rank-derived tier', align: 'center' },
+  ];
+  return (
+    <DraftPlayerRow
+      player={row.player}
+      darkMode={darkMode}
+      onViewPlayer={onViewPlayer}
+      metrics={metrics}
+      leading={<span className="draft-results-pick" title={`${row.overall} overall`}>{row.pickLabel}</span>}
+      status={<CompanionPlayerStatus label={row.ownerLabel} />}
+      className={row.isMine ? 'is-mine' : ''}
+    />
+  );
+}
+
+function DraftResultsView({ onViewPlayer }) {
+  const {
+    players,
+    loadPlayers,
+    league,
+    rosters,
+    selectedLeagueId,
+    season,
+    loadStatsForSeason,
+    activeScoringSettings,
+    myRoster,
+    getUserDisplayName,
+  } = useSleeperBase();
+  const { darkMode } = useTheme();
+
+  const [draftMeta, setDraftMeta] = useState(null);
+  const [draftPicks, setDraftPicks] = useState([]);
+  const [draftTradedPicks, setDraftTradedPicks] = useState([]);
+  const [draftLoading, setDraftLoading] = useState(false);
+  const [draftError, setDraftError] = useState('');
+  const [draftStats, setDraftStats] = useState(null);
+  const [modelWeights, setModelWeights] = useState(() => normalizeDraftModelWeights(DEFAULT_DRAFT_MODEL_WEIGHTS));
+  const [marketState, setMarketState] = useState({
+    attribution: null,
+    profileKey: null,
+    lastRefreshed: null,
+    valuesByPlayerId: new Map(),
+  });
+
+  const marketDraftContext = useMemo(() => ({
+    metadata: { scoring_type: draftMeta?.metadata?.scoring_type },
+    settings: { slots_qb: draftMeta?.settings?.slots_qb },
+  }), [draftMeta?.metadata?.scoring_type, draftMeta?.settings?.slots_qb]);
+
+  useEffect(() => {
+    loadPlayers();
+  }, [loadPlayers]);
+
+  // Live draft polling — identical scaffold to War Room / Draft Order: resolve the league's Sleeper
+  // draft, fetch the draft object + picks + traded picks, and keep polling while it is live.
+  useEffect(() => {
+    if (!selectedLeagueId || !league) return undefined;
+    let cancelled = false;
+    let timeoutId = null;
+    let hasLoadedDraft = false;
+
+    const loadDraft = async () => {
+      const initialLoad = !hasLoadedDraft;
+      if (initialLoad) {
+        setDraftLoading(true);
+        setDraftError('');
+      }
+
+      try {
+        const drafts = await getLeagueDrafts(selectedLeagueId).catch(() => []);
+        const draftId = resolveLeagueDraft(league, drafts);
+        if (!draftId) {
+          if (!cancelled) {
+            setDraftMeta(null);
+            setDraftPicks([]);
+            setDraftTradedPicks([]);
+            hasLoadedDraft = true;
+          }
+          return;
+        }
+
+        const [nextDraft, nextPicks, nextTradedPicks] = await Promise.all([
+          getDraft(draftId),
+          getDraftPicks(draftId).catch(() => []),
+          getDraftTradedPicks(draftId).catch(() => []),
+        ]);
+
+        if (cancelled) return;
+        setDraftMeta(nextDraft);
+        setDraftPicks(Array.isArray(nextPicks) ? nextPicks : []);
+        setDraftTradedPicks(Array.isArray(nextTradedPicks) ? nextTradedPicks : []);
+        setDraftError('');
+        hasLoadedDraft = true;
+
+        const status = getDraftPollingStatus(nextDraft);
+        if (status === 'drafting' || status === 'pre_draft' || status === 'in_progress') {
+          timeoutId = window.setTimeout(loadDraft, POLL_MS);
+        }
+      } catch (error) {
+        if (!cancelled && initialLoad) {
+          setDraftError(error?.message ?? 'Could not load Sleeper draft state.');
+          setDraftMeta(null);
+          setDraftPicks([]);
+          setDraftTradedPicks([]);
+          hasLoadedDraft = true;
+        }
+      } finally {
+        if (!cancelled && initialLoad) setDraftLoading(false);
+      }
+    };
+
+    loadDraft();
+
+    return () => {
+      cancelled = true;
+      if (timeoutId) window.clearTimeout(timeoutId);
+    };
+  }, [selectedLeagueId, league]);
+
+  // Reuse the user's saved model weights so the GridShift Rating shown here matches War Room.
+  useEffect(() => {
+    if (!selectedLeagueId || !season || !draftMeta?.draft_id) {
+      setModelWeights(normalizeDraftModelWeights(DEFAULT_DRAFT_MODEL_WEIGHTS));
+      return;
+    }
+    setModelWeights(loadModelWeights({ leagueId: selectedLeagueId, season, draftId: draftMeta.draft_id }));
+  }, [selectedLeagueId, season, draftMeta?.draft_id]);
+
+  const draftStatsSeason = useMemo(
+    () => getDraftStatsSeason(draftMeta?.season ?? season),
+    [draftMeta?.season, season],
+  );
+
+  useEffect(() => {
+    if (!draftStatsSeason || !loadStatsForSeason) {
+      setDraftStats(null);
+      return undefined;
+    }
+    let cancelled = false;
+    loadStatsForSeason(draftStatsSeason)
+      .then((statsPackage) => { if (!cancelled) setDraftStats(statsPackage); })
+      .catch(() => { if (!cancelled) setDraftStats(null); });
+    return () => { cancelled = true; };
+  }, [draftStatsSeason, loadStatsForSeason]);
+
+  useEffect(() => {
+    if (!league) {
+      setMarketState({ attribution: null, profileKey: null, lastRefreshed: null, valuesByPlayerId: new Map() });
+      return undefined;
+    }
+    let cancelled = false;
+    fetchLeagueLogsMarketForLeague({
+      league,
+      draft: marketDraftContext,
+      scoringSettings: activeScoringSettings,
+    }).then((market) => {
+      if (cancelled) return;
+      setMarketState({
+        attribution: market?.attribution ?? null,
+        profileKey: market?.profileKey ?? null,
+        lastRefreshed: market?.lastRefreshed ?? null,
+        valuesByPlayerId: market?.valuesByPlayerId ?? new Map(),
+      });
+    }).catch(() => {
+      if (!cancelled) setMarketState({ attribution: null, profileKey: null, lastRefreshed: null, valuesByPlayerId: new Map() });
+    });
+    return () => { cancelled = true; };
+  }, [league, activeScoringSettings, marketDraftContext]);
+
+  const myRosterData = useMemo(() => myRoster(), [myRoster]);
+
+  const viewModel = useMemo(() => {
+    if (!players || !league || !myRosterData || !draftMeta) return null;
+    return buildDraftAssistantViewModel({
+      players,
+      rosters,
+      league,
+      draft: draftMeta,
+      draftPicks,
+      draftTradedPicks,
+      myRoster: myRosterData,
+      scoringSettings: activeScoringSettings,
+      season,
+      boardIds: [],
+      marketValuesByPlayerId: marketState.valuesByPlayerId,
+      seasonStats: draftStats?.seasonStats ?? null,
+      weeklyStats: draftStats?.weeklyStats ?? null,
+      scheduleMap: draftStats?.scheduleMap ?? null,
+      modelWeights,
+    });
+  }, [players, rosters, league, draftMeta, draftPicks, draftTradedPicks, myRosterData, activeScoringSettings, season, marketState.valuesByPlayerId, draftStats, modelWeights]);
+
+  const draftOrderContext = useMemo(() => buildDraftOrderContext({
+    draft: draftMeta,
+    rosters,
+    draftTradedPicks,
+    draftPicks,
+    myRosterData,
+  }), [draftMeta, rosters, draftTradedPicks, draftPicks, myRosterData]);
+
+  const orderByOverall = useMemo(
+    () => new Map((draftOrderContext.pickOrder ?? []).map((pick) => [pick.overall, pick])),
+    [draftOrderContext.pickOrder],
+  );
+
+  const myRosterId = myRosterData?.roster_id != null ? String(myRosterData.roster_id) : null;
+
+  // Completed picks only, newest first — each joined to its enriched card for metrics.
+  const resultRows = useMemo(() => {
+    const completed = (draftOrderContext.normalizedPicks ?? []).filter((pick) => pick.playerId);
+    return completed
+      .slice()
+      .sort((a, b) => b.overall - a.overall)
+      .map((pick) => {
+        const orderPick = orderByOverall.get(pick.overall) ?? null;
+        const card = viewModel?.draftedCardsById?.get(String(pick.playerId)) ?? null;
+        const rawPlayer = players?.[pick.playerId] ?? null;
+        const ownerId = orderPick?.roster?.owner_id
+          ?? rosters.find((roster) => String(roster.roster_id) === pick.rosterId)?.owner_id
+          ?? null;
+        const isMine = pick.rosterId === myRosterId;
+        const player = card ?? {
+          id: String(pick.playerId),
+          name: getDraftedPlayerLabel(pick, players),
+          position: normalizePosition(rawPlayer?.fantasy_positions?.[0] ?? rawPlayer?.position),
+          team: String(rawPlayer?.team ?? '—').toUpperCase(),
+          raw: rawPlayer,
+        };
+        return {
+          key: pick.id,
+          pickLabel: formatPickLabel(orderPick ?? pick),
+          overall: pick.overall,
+          ownerLabel: isMine ? 'You' : (ownerId ? getUserDisplayName(ownerId) : `Roster ${pick.rosterId}`),
+          isMine,
+          player,
+          rating: card?.draftModel?.score ?? null,
+          sleeperRank: card?.rank?.overallRank ?? card?.projection?.fallbackRank ?? null,
+          tier: card?.rank?.tier ?? null,
+        };
+      });
+  }, [draftOrderContext.normalizedPicks, orderByOverall, viewModel, players, rosters, myRosterId, getUserDisplayName]);
+
+  const draftType = normalizeDraftType(draftMeta);
+  const unsupportedDraft = draftMeta && draftType !== 'snake' && draftType !== 'linear';
+
+  if (!league) {
+    return (
+      <div className="draft-page">
+        <EmptyState title="Connect a league to view draft results." />
+      </div>
+    );
+  }
+
+  if (!myRosterData) {
+    return (
+      <div className="draft-page">
+        <EmptyState title="Could not find your roster in this league." />
+      </div>
+    );
+  }
+
+  if (!players || draftLoading) {
+    return (
+      <div className="draft-page">
+        <EmptyState title="Loading draft results" description="Fetching Sleeper draft metadata and picks." />
+      </div>
+    );
+  }
+
+  if (draftError) {
+    return (
+      <div className="draft-page">
+        <EmptyState title="Draft results unavailable" description={draftError} />
+      </div>
+    );
+  }
+
+  if (!draftMeta) {
+    return (
+      <div className="draft-page">
+        <EmptyState title="No Sleeper draft found for this league." />
+      </div>
+    );
+  }
+
+  if (unsupportedDraft) {
+    return (
+      <div className="draft-page">
+        <EmptyState
+          title="Auction drafts are not supported yet."
+          description="Sleeper's public draft endpoints expose pick data well for snake and linear drafts, but live auction nomination and bid state are not available for the results board."
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="draft-page">
+      <DraftStatusBanner draft={draftMeta} viewModel={draftOrderContext} getUserDisplayName={getUserDisplayName} />
+      <LeagueLogsAttribution
+        attribution={marketState.valuesByPlayerId.size > 0 ? marketState.attribution : null}
+        profileKey={marketState.profileKey}
+        lastRefreshed={marketState.lastRefreshed}
+      />
+      <section className="draft-panel draft-results-panel">
+        <div className="draft-panel__header">
+          <div>
+            <h2>Results</h2>
+            <span>{resultRows.length} of {draftOrderContext.pickOrder.length} picks made</span>
+          </div>
+        </div>
+        {resultRows.length === 0 ? (
+          <EmptyState
+            title="No picks yet."
+            description="Drafted players will appear here, newest pick first, as your Sleeper draft progresses."
+          />
+        ) : (
+          <div className="draft-results-list">
+            {resultRows.map((row) => (
+              <DraftResultRow key={row.key} row={row} darkMode={darkMode} onViewPlayer={onViewPlayer} />
+            ))}
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
 export default function DraftAssistant({ view = 'war-room', onViewPlayer = null }) {
   if (view === 'draft-order') return <DraftOrderView />;
+  if (view === 'results') return <DraftResultsView onViewPlayer={onViewPlayer} />;
   if (view !== 'war-room') return <FutureDraftView view={view} />;
   return <WarRoom onViewPlayer={onViewPlayer} />;
 }

@@ -1,6 +1,7 @@
 const VIEWS = [
   { id: 'war-room', label: 'War Room' },
   { id: 'draft-order', label: 'Draft Order' },
+  { id: 'results', label: 'Results' },
   { id: 'gauntlet', label: 'Gauntlet', disabled: true },
   { id: 'tiers-runs', label: 'Tiers/Runs', disabled: true },
 ];

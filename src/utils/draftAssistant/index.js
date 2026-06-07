@@ -1145,6 +1145,69 @@ export function buildDraftAssistantViewModel({
     return attachDraftModelSignal(row, normalizedModelWeights);
   });
 
+  // Drafted players are excluded from the candidate pool above, so their Rating/Rank/Tier are
+  // never computed there. Enrich them on their own (same signal builders + model score path as
+  // boardRows) so the Results view can surface War-Room-grade metrics for completed picks. Keeps
+  // the candidate pool — and therefore War Room — untouched.
+  const draftedCardsById = new Map();
+  for (const pick of normalizedPicks) {
+    const playerId = pick.playerId;
+    if (!playerId || draftedCardsById.has(String(playerId))) continue;
+    const rawPlayer = players?.[playerId];
+    const position = normalizePosition(rawPlayer?.fantasy_positions?.[0] ?? rawPlayer?.position);
+    const marketValue = getMarketValue(marketValuesByPlayerId, playerId);
+    const projection = enrichProjectionWithMarket(
+      getPlayerProjectionProfile(rawPlayer ?? {}, scoringSettings, season),
+      marketValue,
+    );
+    const baseCandidate = {
+      id: String(playerId),
+      name: rawPlayer?.full_name || `${rawPlayer?.first_name ?? ''} ${rawPlayer?.last_name ?? ''}`.trim() || `Player ${playerId}`,
+      team: String(rawPlayer?.team ?? '—').toUpperCase(),
+      position,
+      projection,
+      rostered: rosteredIds.has(String(playerId)),
+      raw: rawPlayer ?? null,
+    };
+    const workload = buildWorkloadSignal({
+      player: baseCandidate,
+      seasonStats,
+      weeklyStats,
+      scoringSettings,
+      teamUsage,
+    });
+    const rank = buildRankSignal({
+      player: baseCandidate,
+      projection,
+      marketValue,
+      positionRanks,
+      workload,
+    });
+    const row = {
+      ...baseCandidate,
+      rank,
+      scoringFit: buildScoringFitSignal({
+        player: baseCandidate,
+        projection,
+        scoringCategories,
+        positionRanks,
+        seasonStats,
+        scoringSettings,
+        workload,
+      }),
+      workload,
+      teamContext: buildTeamContextSignal({ player: baseCandidate, teamUsage }),
+      schedule: buildScheduleSignal({ player: baseCandidate, defenseTable, scheduleMap }),
+      draftRoom: {
+        teamNeed: getPositionNeedScore(myNeedRow?.profile ?? null, position),
+        picksUntilUser: upcomingWindow.picksBeforeUser.length,
+        teamsBeforeUser: teamsBeforeUser.length,
+        recentPositionRun: recentPositionCounts[position] ?? 0,
+      },
+    };
+    draftedCardsById.set(String(playerId), attachDraftModelSignal(row, normalizedModelWeights));
+  }
+
   return {
     normalizedPicks,
     pickOrder,
@@ -1156,6 +1219,7 @@ export function buildDraftAssistantViewModel({
     teamNeedRows,
     myNeedRow,
     allCandidates,
+    draftedCardsById,
     rankedCandidates,
     bestOverall,
     bestByPosition,

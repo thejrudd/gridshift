@@ -4,9 +4,16 @@ Back: [[Home]]
 
 ## Summary
 
-Draft Assistant is a top-level section for the `v8.0` release line. War Room connects to the active Sleeper league, reads the current draft room, lets users build per-position draft boards, and locally saves those boards by league, season, and draft ID. Draft Order is a separate active Draft view for pick order and made-pick review.
+Draft Assistant is a top-level section for the `v8.0` release line. War Room connects to the active Sleeper league, reads the current draft room, lets users build per-position draft boards, and locally saves those boards by league, season, and draft ID. Draft Order is a separate active Draft view for pick order and made-pick review. Results is a broadcast-style board of completed Sleeper picks, newest first, with War-Room-grade player metrics (GridShift Rating, Sleeper Rank, Tier, position, and NFL team).
 
 Gauntlet and Tiers/Runs are staged as Draft subnav routes. Sleeper live draft updates are handled by polling the public draft metadata and picks endpoints. This first pass supports Sleeper `snake` and `linear` drafts only.
+
+## Results View
+
+- Route: `/draft/results` (`draftView === 'results'`, registered in `appRoutes.js` `DRAFT_VIEWS` and `DraftSubNav.jsx`). `DraftAssistant.jsx` dispatches `DraftResultsView`.
+- `DraftResultsView` reuses the same Sleeper draft scaffold as War Room / Draft Order — `getLeagueDrafts` → `resolveLeagueDraft` → `getDraft` / `getDraftPicks` / `getDraftTradedPicks`, polled at `POLL_MS` while the draft status is `drafting` / `pre_draft` / `in_progress` — plus LeagueLogs market, past-season stats, and the locally saved model weights so its GridShift Rating matches War Room.
+- Rows are completed picks only (`normalizedPicks` with a `playerId`), sorted by overall **descending** (newest first), each joined to its enriched card from `viewModel.draftedCardsById`. Tapping a row opens the player via the shared `onViewPlayer` handler.
+- Live header: the shared `DraftStatusBanner` renders a red pulsing "LIVE" light (`.draft-live-dot` / `@keyframes draftLivePulse`) and a per-pick countdown derived from `draft.settings.pick_timer` and `draft.last_picked` (`useDraftPickCountdown`). Untimed drafts hide the countdown. The banner also serves War Room and Draft Order, so the live light/clock appear across all live Draft views.
 
 ## File Map
 
@@ -40,6 +47,7 @@ src/api/
 7. `rosterNeed.js` estimates open starter and bench pressure from `league.roster_positions`.
 8. `index.js` attaches Draft Intelligence signal groups to every candidate: `rank`, `scoringFit`, `workload`, `teamContext`, `schedule`, `draftRoom`, and `draftModel`.
 9. `recommendations.js` turns market/search rank, past production, scoring fit, roster need, and personal board rank into explainable pre-draft recommendation rows.
+10. Drafted players are excluded from the candidate pool, so `index.js` separately enriches each drafted player into `draftedCardsById` (a `Map` keyed by Sleeper player ID) using the same signal builders. This feeds the Results view without changing the candidate pool or War Room.
 
 ## Draft Intelligence Signals
 
@@ -54,7 +62,9 @@ src/api/
 ## Product Rules
 
 - Draft Assistant is a top-level app section, not a Companion subview.
-- `War Room` and `Draft Order` are active; `Gauntlet` and `Tiers/Runs` are staged routes only.
+- `War Room`, `Draft Order`, and `Results` are active; `Gauntlet` and `Tiers/Runs` are staged routes only.
+- Results shows completed picks only, newest pick first, and must surface the GridShift Rating, Sleeper Rank, and Tier consistent with War Room. It reuses the saved model weights so Rating values do not diverge between views.
+- The live red light and pick countdown live in the shared `DraftStatusBanner`. The countdown is derived from Sleeper's `pick_timer` + `last_picked` only — do not fabricate a timer when `pick_timer` is absent.
 - Player rows must use the shared Companion row system for player photos, team gradients, team logos, position badges, and contrast.
 - If Sleeper does not expose usable season projection totals, rank from LeagueLogs Market Index data when available and clearly label it as Overall or Market, not ADP. Do not invent fallback projected points.
 - Treat oversized Sleeper `search_rank` values as unavailable rather than market signal. If no market or usable search rank exists, derive a local Draft pool rank from the visible candidate pool so Big Board cards never display sentinel values like `9999999`.

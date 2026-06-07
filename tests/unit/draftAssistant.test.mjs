@@ -119,6 +119,13 @@ test('legacy companion draft route redirects to top-level draft', () => {
   assert.equal(buildAppPath(route), '/draft');
 });
 
+test('draft results route round-trips cleanly', () => {
+  const route = parseAppRoute('/draft/results');
+  assert.equal(route.activeTab, 'draft');
+  assert.equal(route.draftView, 'results');
+  assert.equal(buildAppPath(route), '/draft/results');
+});
+
 test('future draft routes normalize for staged views', () => {
   const route = parseAppRoute('/draft/gauntlet');
   assert.equal(route.activeTab, 'draft');
@@ -243,6 +250,49 @@ test('draft assistant recommendations respect board rank and current pick state'
   assert.equal(viewModel.bestByPosition.RB.id, 'rb1');
   assert.equal(viewModel.bestOverall.availability, undefined);
   assert.equal(viewModel.bestOverall.draftRoom.availability, undefined);
+});
+
+test('draft assistant enriches drafted players into draftedCardsById without leaking them into candidates', () => {
+  const draft = {
+    draft_id: 'draft-1',
+    type: 'snake',
+    status: 'drafting',
+    settings: { rounds: 4 },
+    slot_to_roster_id: { 1: 1, 2: 2, 3: 3 },
+  };
+  const draftPicks = [
+    { roster_id: '1', player_id: 'qb1', round: 1, pick_no: 1 },
+    { roster_id: '2', player_id: 'te1', round: 1, pick_no: 2 },
+  ];
+
+  const viewModel = buildDraftAssistantViewModel({
+    players,
+    rosters,
+    league,
+    draft,
+    draftPicks,
+    myRoster: rosters[2],
+    scoringSettings: DEFAULT_SCORING,
+    season: '2026',
+    boardIds: ['wr1', 'rb1'],
+  });
+
+  // Drafted players surface as enriched cards with the metrics the Results view renders.
+  assert.ok(viewModel.draftedCardsById instanceof Map);
+  const qbCard = viewModel.draftedCardsById.get('qb1');
+  const teCard = viewModel.draftedCardsById.get('te1');
+  assert.ok(qbCard, 'qb1 should have a drafted card');
+  assert.ok(teCard, 'te1 should have a drafted card');
+  assert.equal(qbCard.position, 'QB');
+  assert.equal(qbCard.team, 'BUF');
+  assert.equal(typeof qbCard.draftModel?.score, 'number');
+  assert.notEqual(qbCard.rank?.overallRank, undefined);
+  assert.notEqual(qbCard.rank?.tier, undefined);
+
+  // The candidate pool (and therefore War Room) must still exclude drafted players.
+  const candidateIds = new Set(viewModel.allCandidates.map((candidate) => candidate.id));
+  assert.equal(candidateIds.has('qb1'), false);
+  assert.equal(candidateIds.has('te1'), false);
 });
 
 test('draft scoring categorization exposes active scoring levers', () => {
