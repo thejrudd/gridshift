@@ -14,6 +14,7 @@ Use this note as the entry point.
 - [[Scoring Call Sites]]
 - [[Trade Engine]]
 - [[Scout]]
+- [[Draft Assistant]]
 - [[BALLDONTLIE NFL Integration]]
 
 ## Archive
@@ -53,6 +54,7 @@ flowchart TD
   A --> E[Scoring Call Sites]
   A --> J[Trade Engine]
   A --> K[Scout]
+  A --> M[Draft Assistant]
   A --> H[BALLDONTLIE NFL Integration]
 
   B --> B1[src/main.jsx]
@@ -79,4 +81,7 @@ flowchart TD
   K --> K1[Prospects]
   K --> K2[Picks and Results]
   K --> K3[CFBD Importers]
+  M --> M1[Live draft sync]
+  M --> M2[Projection normalization]
+  M --> M3[Recommendation heuristics]
 ```

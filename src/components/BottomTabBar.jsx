@@ -3,6 +3,7 @@ export default function BottomTabBar({ activeTab, onTabChange }) {
     { id: 'companion',   label: 'Companion',   renderIcon: (active) => <CompanionIcon active={active} /> },
     { id: 'statistics',  label: 'Statistics',  renderIcon: (active) => <PlayersIcon active={active} /> },
     { id: 'trade',       label: 'Trade',       renderIcon: (active) => <TradeIcon active={active} /> },
+    { id: 'draft',       label: 'Draft',       renderIcon: (active) => <DraftIcon active={active} /> },
     { id: 'scout',       label: 'Scout',       renderIcon: (active) => <ScoutIcon active={active} />, beta: true },
     { id: 'predictions', label: 'Predictions', renderIcon: (active) => <SeasonIcon active={active} /> },
   ];
@@ -23,20 +24,7 @@ export default function BottomTabBar({ activeTab, onTabChange }) {
               <span style={{ position: 'relative', display: 'inline-flex', justifyContent: 'center' }}>
                 {renderIcon(active)}
                 {beta && (
-                  <span style={{
-                    position: 'absolute',
-                    top: '-4px',
-                    right: '-10px',
-                    fontSize: '7px',
-                    fontWeight: 700,
-                    letterSpacing: '0.05em',
-                    textTransform: 'uppercase',
-                    padding: '1px 3px',
-                    borderRadius: '3px',
-                    background: 'var(--color-signature)',
-                    color: 'var(--color-signature-fg)',
-                    lineHeight: '11px',
-                  }}>
+                  <span className="tab-status-badge tab-status-badge--beta">
                     β
                   </span>
                 )}
@@ -141,6 +129,28 @@ function TradeIcon({ active }) {
         <g>
           <path d="M5 9h11l-2-2 1.4-1.4L20.8 9l-5.4 3.4L14 11l2-2H5z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
           <path d="M21 17H10l2 2-1.4 1.4L5.2 17l5.4-3.4L12 15l-2 2h11z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+        </g>
+      )}
+    </svg>
+  );
+}
+
+function DraftIcon({ active }) {
+  return (
+    <svg width="25" height="25" viewBox="0 0 26 26" fill="none" className="tab-icon" aria-hidden="true">
+      {active ? (
+        <g fill="currentColor">
+          <rect x="6" y="4" width="14" height="18" rx="2" />
+          <rect x="10" y="8" width="6" height="1.5" rx="0.75" fill="var(--color-bg)" />
+          <rect x="10" y="12" width="6" height="1.5" rx="0.75" fill="var(--color-bg)" />
+          <rect x="10" y="16" width="4" height="1.5" rx="0.75" fill="var(--color-bg)" />
+        </g>
+      ) : (
+        <g>
+          <rect x="6" y="4" width="14" height="18" rx="2" stroke="currentColor" strokeWidth="1.5" />
+          <line x1="10" y1="8.75" x2="16" y2="8.75" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          <line x1="10" y1="12.75" x2="16" y2="12.75" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          <line x1="10" y1="16.75" x2="14" y2="16.75" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
         </g>
       )}
     </svg>

@@ -146,6 +146,7 @@ export function SleeperProvider({ children }) {
   const [weeklyStats, setWeeklyStats] = useState(null); // { [playerId]: weekArray[] }
   const [seasonStats, setSeasonStats] = useState(null);  // { [playerId]: aggregated }
   const [scheduleMap, setScheduleMap] = useState(null);  // { [week]: { [teamAbbr]: { opp, home } } }
+  const [statsBySeason, setStatsBySeason] = useState({});
   const [statsLoading, setStatsLoading] = useState(false);
   const [statsEnhancing, setStatsEnhancing] = useState(false);
   const [statsProgress, setStatsProgress] = useState(0);
@@ -156,6 +157,7 @@ export function SleeperProvider({ children }) {
   const [connectLoading, setConnectLoading] = useState(false);
 
   const statsAbortRef = useRef(null);
+  const statsLoadBySeasonRef = useRef(new Map());
   const qbOppSeasonRef = useRef(null); // tracks which season QB opp data has been merged
   const enhancementRunRef = useRef({
     token: 0,
@@ -282,8 +284,10 @@ export function SleeperProvider({ children }) {
     setWeeklyStats(null);
     setSeasonStats(null);
     setScheduleMap(null);
+    setStatsBySeason({});
     setStatsEnhancing(false);
     statsAbortRef.current = false; // allow fresh load after reconnect
+    statsLoadBySeasonRef.current.clear();
     qbOppSeasonRef.current = null;
     localStorage.removeItem(STORAGE_KEY);
     clearPlayerCache(); // clear per-player team/opp cache so next load fetches fresh
@@ -389,9 +393,16 @@ export function SleeperProvider({ children }) {
         }),
         fetchSeasonSchedule(season).catch(() => null),
       ]);
+      const nextPackage = {
+        season: String(season),
+        weeklyStats: weekly,
+        seasonStats: aggregateSeasonStats(weekly),
+        scheduleMap: schedule,
+      };
       setWeeklyStats(weekly);
-      setSeasonStats(aggregateSeasonStats(weekly));
+      setSeasonStats(nextPackage.seasonStats);
       setScheduleMap(schedule);
+      setStatsBySeason((current) => ({ ...current, [nextPackage.season]: nextPackage }));
     } catch (err) {
       console.error('Failed to load stats:', err);
       setStatsEnhancing(false);
@@ -400,6 +411,45 @@ export function SleeperProvider({ children }) {
       setStatsLoading(false);
     }
   }, [season]); // removed statsLoading — guarded by ref instead
+
+  const loadStatsForSeason = useCallback(async (targetSeason) => {
+    const seasonKey = String(targetSeason ?? season ?? '').trim();
+    if (!seasonKey) return null;
+
+    if (seasonKey === String(season) && weeklyStats && seasonStats && scheduleMap) {
+      return {
+        season: seasonKey,
+        weeklyStats,
+        seasonStats,
+        scheduleMap,
+      };
+    }
+
+    const cached = statsBySeason[seasonKey];
+    if (cached) return cached;
+
+    const inFlight = statsLoadBySeasonRef.current.get(seasonKey);
+    if (inFlight) return inFlight;
+
+    const request = Promise.all([
+      getAllWeeklyStats(seasonKey, 18),
+      fetchSeasonSchedule(seasonKey).catch(() => null),
+    ]).then(([weekly, schedule]) => {
+      const nextPackage = {
+        season: seasonKey,
+        weeklyStats: weekly,
+        seasonStats: aggregateSeasonStats(weekly),
+        scheduleMap: schedule,
+      };
+      setStatsBySeason((current) => ({ ...current, [seasonKey]: nextPackage }));
+      return nextPackage;
+    }).finally(() => {
+      statsLoadBySeasonRef.current.delete(seasonKey);
+    });
+
+    statsLoadBySeasonRef.current.set(seasonKey, request);
+    return request;
+  }, [season, weeklyStats, seasonStats, scheduleMap, statsBySeason]);
 
   // Three-pass stats enhancement — see docs/Architecture Map.md › SleeperContext
   useEffect(() => {
@@ -727,19 +777,23 @@ export function SleeperProvider({ children }) {
     weeklyStats,
     seasonStats,
     scheduleMap,
+    statsBySeason,
     statsLoading,
     espnIdOverrides,
     loadPlayers,
     loadSeasonStats,
+    loadStatsForSeason,
   }), [
     players,
     weeklyStats,
     seasonStats,
     scheduleMap,
+    statsBySeason,
     statsLoading,
     espnIdOverrides,
     loadPlayers,
     loadSeasonStats,
+    loadStatsForSeason,
   ]);
 
   return (

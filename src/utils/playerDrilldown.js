@@ -4,25 +4,97 @@ export const STATISTICS_MODES = {
   VISUAL: 'visual',
 };
 
-export function buildStatisticsPlayerMetaFromSleeperId(sleeperId, sleeperPlayers, espnIdOverrides = {}) {
-  if (!sleeperId || !sleeperPlayers) return null;
+function getSleeperDisplayName(player = {}) {
+  return player.full_name || `${player.first_name ?? ''} ${player.last_name ?? ''}`.trim();
+}
 
-  const player = sleeperPlayers[sleeperId];
-  if (!player) return null;
+function normalizeEspnId(id) {
+  if (id == null || id === '') return null;
+  return String(id);
+}
 
-  const espnId = player.espn_id ?? espnIdOverrides?.[sleeperId] ?? null;
-  if (!espnId) return null;
+function normalizePlayerName(name) {
+  return String(name ?? '')
+    .toLowerCase()
+    .replace(/\./g, '')
+    .replace(/\s+(jr|sr|ii|iii|iv|v)$/i, '')
+    .trim();
+}
+
+function buildStatisticsPlayerMetaFromSleeperPlayer(sleeperId, player = {}, espnId) {
+  const resolvedEspnId = normalizeEspnId(espnId);
+  if (!resolvedEspnId) return null;
 
   return {
-    id: String(espnId),
+    id: resolvedEspnId,
     sleeperId: String(sleeperId),
-    displayName: player.full_name || `${player.first_name ?? ''} ${player.last_name ?? ''}`.trim(),
+    displayName: getSleeperDisplayName(player),
     teamId: player.team?.toUpperCase?.() ?? null,
     position: player.position ?? '',
     positionName: '',
     experience: player.years_exp != null ? player.years_exp + 1 : undefined,
     jersey: player.number ?? '',
     status: player.injury_status ?? '',
+  };
+}
+
+export function buildStatisticsPlayerMetaFromSleeperId(sleeperId, sleeperPlayers, espnIdOverrides = {}) {
+  if (!sleeperId || !sleeperPlayers) return null;
+
+  const player = sleeperPlayers[sleeperId];
+  if (!player) return null;
+
+  const espnId = normalizeEspnId(player.espn_id) ?? normalizeEspnId(espnIdOverrides?.[sleeperId]);
+  return buildStatisticsPlayerMetaFromSleeperPlayer(sleeperId, player, espnId);
+}
+
+export function findRosterMatchForSleeperPlayer(player = {}, roster = []) {
+  const displayName = getSleeperDisplayName(player);
+  if (!displayName) return null;
+
+  const normalizedSleeperName = normalizePlayerName(displayName);
+  const sleeperPosition = String(player.position ?? '').toUpperCase();
+  const nameMatches = roster.filter((candidate) => {
+    const candidateName = candidate.displayName ?? candidate.fullName ?? '';
+    return candidateName.toLowerCase() === displayName.toLowerCase()
+      || normalizePlayerName(candidateName) === normalizedSleeperName;
+  });
+
+  if (nameMatches.length <= 1 || !sleeperPosition) return nameMatches[0] ?? null;
+  return nameMatches.find((candidate) => String(candidate.position ?? '').toUpperCase() === sleeperPosition)
+    ?? nameMatches[0]
+    ?? null;
+}
+
+export async function resolveStatisticsPlayerMetaFromSleeperId(
+  sleeperId,
+  sleeperPlayers,
+  espnIdOverrides = {},
+  { rosterFetcher = null } = {},
+) {
+  const playerMeta = buildStatisticsPlayerMetaFromSleeperId(sleeperId, sleeperPlayers, espnIdOverrides);
+  if (playerMeta) return playerMeta;
+
+  if (!sleeperId || !sleeperPlayers) return null;
+  const player = sleeperPlayers[sleeperId];
+  const teamId = player?.team?.toUpperCase?.();
+  if (!player || !teamId) return null;
+
+  const fetchRosterForTeam = rosterFetcher ?? (await import('./playerApi.js')).fetchRoster;
+  if (typeof fetchRosterForTeam !== 'function') return null;
+
+  const roster = await fetchRosterForTeam(teamId);
+  const match = findRosterMatchForSleeperPlayer(player, roster);
+  if (!match?.id) return null;
+
+  return {
+    ...buildStatisticsPlayerMetaFromSleeperPlayer(sleeperId, player, match.id),
+    teamId: match.teamId?.toUpperCase?.() ?? teamId,
+    position: match.position ?? player.position ?? '',
+    positionName: match.positionName ?? '',
+    experience: match.experience ?? (player.years_exp != null ? player.years_exp + 1 : undefined),
+    jersey: match.jersey ?? player.number ?? '',
+    status: match.status ?? player.injury_status ?? '',
   };
 }
 

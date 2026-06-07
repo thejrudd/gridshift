@@ -13,6 +13,14 @@ Open bugs are listed first, fixed bugs below. Add new entries at the bottom of e
 | Companion → Matchup player projection formula hover can fail to stay open from the `i` control, hiding the projection math before it can be read |
 | Statistics player profile career highlights can show 0 TFL for defensive players when ESPN's career aggregate omits tackles for loss even though season-level defensive stats include them |
 | Companion → Defense averages round values to the nearest whole number instead of showing the nearest tenth decimal |
+| Companion → Draft Assistant can stop at a projection-unavailable empty state for normal Sleeper drafts because it only ranks players when season projection totals are embedded in the Sleeper player payload |
+| Companion → Draft Assistant availability modeling can treat original draft-slot owners as upcoming pick owners, ignoring traded draft picks when estimating which managers can select a player before the user's next pick |
+| Companion → Draft Assistant can visibly refresh back to the loading state on every live-pick polling interval because background polls reuse the initial page-loading flag |
+| Draft War Room Big Board and My Board can mix fallback rank, ADP, rostered-player visibility, and board state in ways that cause post-add card overflow and confusing board rankings |
+| Draft War Room can label Sleeper fallback ranking data as ADP even though Sleeper only provides search-rank style ordering, and LeagueLogs attribution is not shown when market data is displayed |
+| Draft War Room Big Board can leave PPG, volume, trend, and schedule fields blank because it does not load a completed-season stats package for Draft intelligence |
+| Draft War Room Big Board rows can drift out of horizontal alignment when metric text changes row width, and Sleeper sentinel-scale search ranks such as 9999999 can render as meaningless rank values |
+| Draft War Room player rows can fail to open Statistics for players whose Sleeper record has no ESPN id, even when the player can be resolved from their ESPN team roster |
 
 ---
 

@@ -472,6 +472,24 @@ const GUIDE_CONTENT = {
       },
     ],
   },
+
+  'draft_war-room': {
+    title: 'DRAFT',
+    steps: [
+      {
+        title: 'Build by position',
+        description: 'Add players from Big Board into each position list, then rank them in your preferred order.',
+      },
+      {
+        title: 'Track availability',
+        description: 'Sleeper picks mark drafted players as gone while keeping them on your saved board for context.',
+      },
+      {
+        title: 'Use the draft banner',
+        description: 'Pre-draft setup appears before the room starts; live drafts show the current pick and your next pick.',
+      },
+    ],
+  },
 };
 
 function getGuideKey({
@@ -481,6 +499,7 @@ function getGuideKey({
   companionView,
   tradeView,
   scoutView,
+  draftView,
 }) {
   if (activeTab === 'predictions') {
     return seasonView === 'predictions' ? 'predictions_picks' : `predictions_${seasonView}`;
@@ -489,6 +508,7 @@ function getGuideKey({
   if (activeTab === 'companion') return `companion_${companionView}`;
   if (activeTab === 'trade') return `trade_${tradeView}`;
   if (activeTab === 'scout') return `scout_${scoutView}`;
+  if (activeTab === 'draft') return `draft_${draftView}`;
   return activeTab;
 }
 
@@ -500,6 +520,7 @@ const Guide = ({
   companionView = 'roster',
   tradeView = 'agent',
   scoutView = 'prospects',
+  draftView = 'war-room',
 }) => {
   const key = getGuideKey({
     activeTab,
@@ -508,6 +529,7 @@ const Guide = ({
     companionView,
     tradeView,
     scoutView,
+    draftView,
   });
   const content = GUIDE_CONTENT[key] ?? GUIDE_CONTENT[activeTab] ?? GUIDE_CONTENT.predictions_picks;
 

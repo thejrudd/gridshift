@@ -13,6 +13,7 @@ import StatisticsSubNav from './components/StatisticsSubNav';
 import CompanionSubNav from './components/CompanionSubNav';
 import TradeSubNav from './components/TradeSubNav';
 import ScoutSubNav from './components/ScoutSubNav';
+import DraftSubNav from './components/DraftSubNav';
 import ActionSheet from './components/ActionSheet';
 import Sidebar from './components/Sidebar';
 import { SleeperProvider, useSleeperLeague, useSleeperStats } from './context/SleeperContext';
@@ -24,7 +25,12 @@ import {
   parseAppRoute,
   slugifyRouteSegment,
 } from './utils/appRoutes';
-import { buildStatisticsPlayerMeta, buildStatisticsPlayerMetaFromSleeperId, STATISTICS_MODES } from './utils/playerDrilldown';
+import {
+  buildStatisticsPlayerMeta,
+  buildStatisticsPlayerMetaFromSleeperId,
+  resolveStatisticsPlayerMetaFromSleeperId,
+  STATISTICS_MODES,
+} from './utils/playerDrilldown';
 import { debugCompanionLog, debugCompanionTimeAsync } from './utils/companionPerfDebug';
 import ScoringOverrideBanner from './components/companion/ScoringOverrideBanner';
 
@@ -53,6 +59,7 @@ const CompanionHeatmap = lazy(() => import('./components/companion/CompanionHeat
 const CompanionDefense = lazy(() => import('./components/companion/CompanionDefense'));
 const CompanionTrade = lazy(() => import('./components/companion/CompanionTrade'));
 const ScoutTab = lazy(() => import('./components/scout/ScoutTab'));
+const DraftAssistant = lazy(() => import('./components/draft/DraftAssistant'));
 
 function SectionLoading({ label = 'Loading section' }) {
   return (
@@ -427,6 +434,7 @@ function AppInner() {
   const [appRoute, setAppRoute] = useState(() => parseAppRoute(window.location.pathname, window.location.search));
   const [statsNavBack, setStatsNavBack] = useState(null); // { label, onBack } | null — contextual back from external nav
   const [statsDrilldownPending, setStatsDrilldownPending] = useState(null);
+  const draftPlayerOpenTokenRef = useRef(0);
   const [tradeAnalyticsPrewarmRequested, setTradeAnalyticsPrewarmRequested] = useState(false);
   const [, startRouteTransition] = useTransition();
 
@@ -508,6 +516,7 @@ function AppInner() {
   const companionView = appRoute.companionView;
   const tradeView = appRoute.tradeView;
   const scoutView = appRoute.scoutView;
+  const draftView = appRoute.draftView;
 
   useEffect(() => {
     latestAppRouteRef.current = appRoute;
@@ -678,6 +687,10 @@ function AppInner() {
     applyRoute({ activeTab: 'scout', scoutView: view });
   }, [applyRoute]);
 
+  const navigateDraftView = useCallback((view) => {
+    applyRoute({ activeTab: 'draft', draftView: view });
+  }, [applyRoute]);
+
   const prewarmTradeView = useCallback((view) => {
     if (view === 'intelligence' || view === 'upgrade') {
       setTradeAnalyticsPrewarmRequested(true);
@@ -775,6 +788,39 @@ function AppInner() {
       },
     });
   }, [applyRoute, buildStatsBackContext]);
+
+  const navigateDraftPlayerToStatistics = useCallback(async (sleeperId) => {
+    if (!sleeperId) return;
+    const token = draftPlayerOpenTokenRef.current + 1;
+    draftPlayerOpenTokenRef.current = token;
+
+    const sleeperPlayer = sleeperPlayers?.[sleeperId];
+    const displayName = sleeperPlayer?.full_name
+      || `${sleeperPlayer?.first_name ?? ''} ${sleeperPlayer?.last_name ?? ''}`.trim()
+      || 'player';
+
+    setStatsDrilldownPending({
+      playerId: `draft:${sleeperId}`,
+      label: `Opening ${displayName}`,
+    });
+
+    try {
+      const playerMeta = await resolveStatisticsPlayerMetaFromSleeperId(sleeperId, sleeperPlayers, espnIdOverrides);
+      if (draftPlayerOpenTokenRef.current !== token) return;
+      if (!playerMeta) {
+        setStatsDrilldownPending(null);
+        return;
+      }
+
+      navigateToStatisticsPlayer(playerMeta, {
+        backLabel: 'Draft',
+        backRoute: appRoute,
+        mode: STATISTICS_MODES.FANTASY,
+      });
+    } catch {
+      if (draftPlayerOpenTokenRef.current === token) setStatsDrilldownPending(null);
+    }
+  }, [appRoute, espnIdOverrides, navigateToStatisticsPlayer, sleeperPlayers]);
 
   useEffect(() => {
     if (!statsDrilldownPending) return undefined;
@@ -1065,6 +1111,22 @@ function AppInner() {
           </div>
         )}
 
+        {activeTab === 'draft' && hasLeague && (
+          <div className="season-subnav league-subnav">
+            <DraftSubNav activeView={draftView} onViewChange={navigateDraftView} />
+            <div className="hidden lg:flex items-center absolute bottom-0 right-8 pb-[9px]">
+              <LeagueContextHeader
+                league={league}
+                season={season}
+                changeSeason={changeSeason}
+                seasonOptions={linkedLeagueSeasonOptions}
+                onSwitchLeague={() => setLeagueSwitcherOpen(true)}
+                className="flex items-center gap-2"
+              />
+            </div>
+          </div>
+        )}
+
         {activeTab === 'statistics' && (
           <div className="season-subnav">
             <StatisticsSubNav
@@ -1186,6 +1248,12 @@ function AppInner() {
           )}
 
           {activeTab === 'trade' && !hasLeague && (
+            <Suspense fallback={<SectionLoading label="Loading connect" />}>
+              <CompanionConnect />
+            </Suspense>
+          )}
+
+          {activeTab === 'draft' && !hasLeague && (
             <Suspense fallback={<SectionLoading label="Loading connect" />}>
               <CompanionConnect />
             </Suspense>
@@ -1379,6 +1447,15 @@ function AppInner() {
               )}
             </>
           )}
+
+          {activeTab === 'draft' && hasLeague && (
+            <Suspense fallback={<SectionLoading label="Loading Draft" />}>
+              <DraftAssistant
+                view={draftView}
+                onViewPlayer={navigateDraftPlayerToStatistics}
+              />
+            </Suspense>
+          )}
         </div>
 
         {/* Bottom tab bar — mobile/tablet only, hidden lg+ via CSS */}
@@ -1404,7 +1481,7 @@ function AppInner() {
           onInstall={isInstallable && !isInstalled ? handleInstall : null}
           onMyTeam={handleMyTeam}
           favoriteTeam={favoriteTeam}
-          league={hasLeague && (activeTab === 'companion' || activeTab === 'trade') ? league : null}
+          league={hasLeague && (activeTab === 'companion' || activeTab === 'trade' || activeTab === 'draft') ? league : null}
           leagueSeason={season}
           leagueSeasonOptions={linkedLeagueSeasonOptions}
           onLeagueSeasonChange={changeSeason}
@@ -1426,6 +1503,7 @@ function AppInner() {
             companionView={companionView}
             tradeView={tradeView}
             scoutView={scoutView}
+            draftView={draftView}
           />
         </Suspense>
       )}

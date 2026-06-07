@@ -44,6 +44,7 @@ This page is the quick "open these files first" guide.
 
 - Start in `src/utils/scoringEngine.js`.
 - Then audit:
+  - `src/utils/draftAssistant/projections.js`
   - `src/utils/projectionEngine.js`
   - `src/components/companion/CompanionRoster.jsx`
   - `src/components/companion/CompanionLeague.jsx`
@@ -115,6 +116,20 @@ Feature screens such as Roster, League, Rankings, Waiver, Matchup, Heatmap drill
 - `scripts/import-scout-production.mjs`
 - `scripts/import-scout-game-logs.mjs`
 - `docs/Scout.md`
+
+## Draft Assistant
+
+- `src/components/draft/DraftAssistant.jsx`
+- `src/components/DraftSubNav.jsx`
+- `src/utils/appRoutes.js`
+- `src/utils/draftAssistant/index.js`
+- `src/utils/draftAssistant/projections.js`
+- `src/utils/draftAssistant/rosterNeed.js`
+- `src/utils/draftAssistant/availability.js`
+- `src/utils/draftAssistant/recommendations.js`
+- `src/api/sleeperApi.js`
+- `src/api/leagueLogsApi.js`
+- `docs/Draft Assistant.md`
 
 ## Export / Import / Shareable Image
 

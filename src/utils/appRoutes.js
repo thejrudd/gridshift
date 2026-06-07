@@ -21,6 +21,7 @@ const STATISTICS_MODES = new Set(['game', 'fantasy', 'visual']);
 const STATISTICS_SCHEDULE_MODES = new Set(['week', 'team']);
 const STATISTICS_SCHEDULE_FILTERS = new Set(['international', 'primetime', 'holiday']);
 const SCOUT_VIEWS = new Set(['prospects', 'picks', 'results']);
+const DRAFT_VIEWS = new Set(['war-room', 'draft-order', 'gauntlet', 'tiers-runs']);
 
 function normalizeCompanionView(view) {
   return COMPANION_VIEWS.has(view) ? view : DEFAULT_ROUTE.companionView;
@@ -74,6 +75,7 @@ const DEFAULT_ROUTE = {
   tradePartnerRosterId: null,
   tradeOtherPlayerId: null,
   scoutView: 'prospects',
+  draftView: 'war-room',
 };
 
 function normalizeTeamId(teamId) {
@@ -172,6 +174,8 @@ export function getDefaultRouteForTab(tab) {
       return { ...DEFAULT_ROUTE, activeTab: 'trade', tradeView: 'agent' };
     case 'scout':
       return { ...DEFAULT_ROUTE, activeTab: 'scout' };
+    case 'draft':
+      return { ...DEFAULT_ROUTE, activeTab: 'draft', draftView: 'war-room' };
     case 'predictions':
     default:
       return { ...DEFAULT_ROUTE, activeTab: 'predictions', seasonView: 'predictions' };
@@ -327,6 +331,14 @@ export function normalizeAppRoute(route = {}) {
     };
   }
 
+  if (activeTab === 'draft') {
+    return {
+      ...DEFAULT_ROUTE,
+      activeTab: 'draft',
+      draftView: normalizeLowerToken(route.draftView, DRAFT_VIEWS, DEFAULT_ROUTE.draftView),
+    };
+  }
+
   if (activeTab === 'trade') {
     const tradeView = TRADE_VIEWS.has(route.tradeView)
       ? route.tradeView
@@ -399,6 +411,9 @@ export function parseAppRoute(pathname = '/', search = '') {
       return normalizeAppRoute({ activeTab: 'statistics', statisticsView: 'browser' });
     }
     case 'companion':
+      if (subview === 'draft') {
+        return normalizeAppRoute({ activeTab: 'draft', draftView: 'war-room' });
+      }
       return normalizeAppRoute({
         activeTab: 'companion',
         companionView: subview,
@@ -439,6 +454,8 @@ export function parseAppRoute(pathname = '/', search = '') {
       });
     case 'scout':
       return normalizeAppRoute({ activeTab: 'scout', scoutView: subview });
+    case 'draft':
+      return normalizeAppRoute({ activeTab: 'draft', draftView: subview });
     case 'predictions': {
       const [, predictionsSubview, predictionsParam] = segments;
       if (predictionsSubview === 'team') {
@@ -548,6 +565,10 @@ export function buildAppPath(route) {
       return normalized.scoutView === 'prospects'
         ? '/scout'
         : `/scout/${normalized.scoutView}`;
+    case 'draft':
+      return normalized.draftView === 'war-room'
+        ? '/draft'
+        : `/draft/${normalized.draftView}`;
     case 'trade':
       return `/trade/${normalized.tradeView}${buildQueryString([
         ['player', normalized.tradePlayerId],
@@ -614,5 +635,6 @@ export function isSameAppRoute(a, b) {
     && left.tradePartnerRosterId === right.tradePartnerRosterId
     && left.tradeOtherPlayerId === right.tradeOtherPlayerId
     && left.scoutView === right.scoutView
+    && left.draftView === right.draftView
     && left.predictionsTeamId === right.predictionsTeamId;
 }
