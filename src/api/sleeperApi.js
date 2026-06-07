@@ -118,18 +118,32 @@ export function aggregateSeasonStats(weeklyStats) {
   const season = {};
   for (const [playerId, weeks] of Object.entries(weeklyStats)) {
     const totals = {};
+    let inferredGamesPlayed = 0;
     for (const { week: _w, ...stats } of weeks) {
+      const explicitGp = stats.gp ?? stats.games_played ?? stats.gamesPlayed;
+      const numericGp = Number(explicitGp);
+      const hasExplicitGp = explicitGp !== undefined && Number.isFinite(numericGp);
+      if (hasExplicitGp) {
+        inferredGamesPlayed += Math.max(0, numericGp);
+      } else if (Object.entries(stats).some(([key, val]) => (
+        key !== 'week'
+        && !key.startsWith('_')
+        && typeof val === 'number'
+        && Math.abs(val) > 0
+      ))) {
+        inferredGamesPlayed += 1;
+      }
       for (const [key, val] of Object.entries(stats)) {
         if (typeof val === 'number') {
           totals[key] = (totals[key] ?? 0) + val;
         }
       }
     }
-    // Sleeper defensive weekly rows do not always include a numeric gp field.
-    // Fall back to the number of weekly entries so downstream PPG/value logic
-    // can still treat active IDP/DST players as having games played.
-    if ((totals.gp ?? totals.games_played ?? 0) <= 0 && weeks.length > 0) {
-      totals.gp = weeks.length;
+    // Sleeper defensive weekly rows do not always include gp. Infer games only
+    // from rows without explicit gp so inactive rows with gp: 0 stay excluded.
+    const existingGamesPlayed = Number(totals.gp ?? totals.games_played ?? totals.gamesPlayed);
+    if (inferredGamesPlayed > 0 || existingGamesPlayed > 0) {
+      totals.gp = inferredGamesPlayed > 0 ? inferredGamesPlayed : existingGamesPlayed;
     }
     season[playerId] = totals;
   }

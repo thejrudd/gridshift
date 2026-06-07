@@ -89,11 +89,11 @@ npm run validate:routing
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) |
 
-## What's New in v7.6.1
+## What's New in v7.6.2
 
-- **Companion drilldowns restored** - Roster, League, Rankings, Waiver, and mobile player previews now resolve players without a direct Sleeper ESPN ID by matching the current ESPN team roster.
-- **Rookie player support** - New and sparse Sleeper records such as rookies can open their Statistics profile when ESPN roster metadata is available.
-- **Shared drilldown resolver** - Companion player handoffs now use one fallback path instead of duplicating silent no-op behavior across sections.
+- **Mobile fantasy PPG visibility** - Statistics Fantasy Values now shows fantasy points per game beside the season total on mobile, and Companion Rankings mobile rows show PPG under the season total.
+- **Inactive-game PPG protection** - Fantasy PPG now respects explicit inactive games with `gp: 0` while still counting active 0.0-point games.
+- **Rankings average consistency** - Season games-played aggregation no longer turns explicit inactive rows into played games when calculating Companion Rankings averages.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 

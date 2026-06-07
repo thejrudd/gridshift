@@ -788,6 +788,11 @@ function formatFantasyValue(value) {
   return roundPoints(value).toFixed(2);
 }
 
+function formatFantasyPpg(value) {
+  if (!Number.isFinite(value)) return null;
+  return `${roundPoints(value).toFixed(2)} PPG`;
+}
+
 function compareNullableValues(left, right, direction) {
   const leftMissing = left === null || left === undefined || left === '';
   const rightMissing = right === null || right === undefined || right === '';
@@ -1733,7 +1738,15 @@ function buildFantasyRowsFromGameLog(gameLog, position) {
       const entry = buildSleeperStatsFromGameLogStats(game?.statsJson, position, game?.meta);
       if (!hasFantasyStatValues(entry)) return null;
       const week = Number(game?.meta?.week);
-      return Number.isFinite(week) ? { ...entry, week, _isPostseason: !!game?.meta?.isPostseason } : entry;
+      return Number.isFinite(week)
+        ? {
+            ...entry,
+            week,
+            _isPostseason: !!game?.meta?.isPostseason,
+            _isBye: !!game?.meta?.isBye,
+            _isInactive: !!game?.meta?.isInactive,
+          }
+        : entry;
     })
     .filter(Boolean);
 }
@@ -1743,6 +1756,14 @@ function isActiveFantasyWeekRow(row, maxWeek = null) {
   if (!Number.isFinite(week) || row?._isPostseason) return false;
   const maxFantasyWeek = Number(maxWeek);
   return !Number.isFinite(maxFantasyWeek) || maxFantasyWeek <= 0 || week <= maxFantasyWeek;
+}
+
+function getFantasyRowGameCount(row, maxWeek = null) {
+  if (!row) return 0;
+  if (row._isBye || row.isBye || row._isInactive || row.isInactive) return 0;
+  const gp = Number(row.gp ?? row.games_played ?? row.gamesPlayed);
+  if (Number.isFinite(gp)) return Math.max(0, gp);
+  return isActiveFantasyWeekRow(row, maxWeek) ? 1 : 0;
 }
 
 function buildFantasyRowsFromSeasonStats(statsJson, position) {
@@ -1844,6 +1865,7 @@ function buildGameLogFantasyOptionRows(game, sleeperWeekByWeek, scoringSettings,
 
 function getGameLogFantasyWeekEntry(game, sleeperWeekByWeek, position, preferGameLogFantasyRows = false, maxWeek = null) {
   if (!isActiveFantasyWeekRow({ week: game?.meta?.week, _isPostseason: game?.meta?.isPostseason }, maxWeek)) return null;
+  if (game?.meta?.isBye || game?.meta?.isInactive) return null;
   const gameLogEntry = buildSleeperStatsFromGameLogStats(game?.statsJson, position, game?.meta);
   if (preferGameLogFantasyRows && hasFantasyStatValues(gameLogEntry)) return gameLogEntry;
   return sleeperWeekByWeek.get(Number(game?.meta?.week)) ?? null;
@@ -2133,6 +2155,13 @@ const PlayerStatTable = ({
     ), 0);
     return Math.abs(total) >= POINT_EPSILON ? total : null;
   }, [position, scoringSettings, showFantasyOnly, sleeperWeeklyRows]);
+  const fantasyGamesPlayed = useMemo(() => {
+    if (!showFantasyOnly || sleeperWeeklyRows.length === 0) return 0;
+    return sleeperWeeklyRows.reduce((sum, row) => sum + getFantasyRowGameCount(row, fantasyMaxWeek), 0);
+  }, [fantasyMaxWeek, showFantasyOnly, sleeperWeeklyRows]);
+  const fantasyPointsPerGame = fantasyTotalPoints != null && fantasyGamesPlayed > 0
+    ? fantasyTotalPoints / fantasyGamesPlayed
+    : null;
 
   const fantasyColumns = useMemo(() => {
     if (!showFantasyOnly || (fantasyTotalsByKey.size === 0 && fantasyTotalPoints == null)) return [];
@@ -2249,6 +2278,8 @@ const PlayerStatTable = ({
         rowCount: sleeperWeeklyRows.length,
         availableWeeks,
         total: fantasyTotalPoints,
+        ppg: fantasyPointsPerGame,
+        gamesPlayed: fantasyGamesPlayed,
         columns: fantasyColumns.map((column) => column.key),
       }),
       getRows: () => sleeperWeeklyRows.map(summarizeEntry),
@@ -2303,7 +2334,7 @@ const PlayerStatTable = ({
         delete window.__GRIDSHIFT_DST_RESIDUAL_DEBUG__;
       }
     };
-  }, [expanded, fantasyColumns, fantasyDebugToken, fantasyTotalPoints, position, scoringSettings, showFantasyOnly, sleeperId, sleeperWeeklyRows, year]);
+  }, [expanded, fantasyColumns, fantasyDebugToken, fantasyGamesPlayed, fantasyPointsPerGame, fantasyTotalPoints, position, scoringSettings, showFantasyOnly, sleeperId, sleeperWeeklyRows, year]);
 
   const sleeperWeekByWeek = useMemo(
     () => new Map(sleeperWeeklyRows.map((weekEntry) => [Number(weekEntry.week), weekEntry])),
@@ -2334,7 +2365,7 @@ const PlayerStatTable = ({
             key: FANTASY_TOTAL_POINTS_KEY,
             label: 'Fantasy Points',
             value: formattedTotal,
-            valueSuffix: null,
+            valueSuffix: formatFantasyPpg(fantasyPointsPerGame),
             rank: null,
             positionRank: null,
           }],
@@ -2361,7 +2392,7 @@ const PlayerStatTable = ({
 
     const sections = rowsByKey.size > 0 ? buildFantasyValueSectionsFromRows(rowsByKey, position) : [];
     return totalSection ? [totalSection, ...sections] : sections;
-  }, [fantasyPositionRankByOption, fantasyRankByOption, fantasyTotalPoints, fantasyTotalsByKey, position, showFantasyOnly, sleeperId]);
+  }, [fantasyPointsPerGame, fantasyPositionRankByOption, fantasyRankByOption, fantasyTotalPoints, fantasyTotalsByKey, position, showFantasyOnly, sleeperId]);
 
   // Merge advanced sections into display when More Stats is on.
   const displayBaseSections = showMoreStats ? [...standard, ...advanced] : standard;

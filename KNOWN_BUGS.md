@@ -46,6 +46,9 @@ Open bugs are listed first, fixed bugs below. Add new entries at the bottom of e
 
 | Bug | Fixed In |
 |-----|----------|
+| Mobile Statistics Fantasy Values showed only season fantasy total and omitted fantasy points per game, making mobile player profiles less useful for per-game comparison | v7.6.2 |
+| Companion Rankings mobile rows hid Avg PPG when the separate average column collapsed, leaving only the season fantasy total visible | v7.6.2 |
+| Fantasy PPG could treat explicit inactive rows with `gp: 0` as played games when season stats backfilled games played from weekly rows | v7.6.2 |
 | Companion roster-adjacent player drilldowns could silently do nothing when the Sleeper player record had no ESPN ID, affecting rookies and other sparse player records | v7.6.1 |
 | Statistics Standings tab initially appeared before Schedule in the Statistics sub-navigation instead of to the right of Schedule | v7.6 |
 | Statistics schedule can horizontally scroll the full page on mobile, and the mobile week rail is missing the documented horizontal scroll arrow cue | v7.5.1 |

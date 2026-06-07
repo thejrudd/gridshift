@@ -1081,3 +1081,10 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Companion player drilldowns fixed** - Roster, League, Rankings, Waiver, and mobile player previews now resolve Sleeper players without a direct ESPN ID by matching the current ESPN team roster before opening Statistics.
 - **Rookie and sparse-player support** - Players such as new rookies or incomplete Sleeper records can still open their Statistics profile when ESPN roster metadata is available.
 - **Shared resolver coverage** - Companion-to-Statistics handoffs now use one fallback resolver so roster-adjacent surfaces no longer silently do nothing for missing-ID players.
+
+## v7.6.2 - Mobile Fantasy PPG
+*2026-06-07*
+
+- **Statistics Fantasy Values PPG** - Mobile Statistics now shows fantasy points per game beside the season fantasy total instead of showing only the total.
+- **Companion Rankings PPG** - Companion Rankings mobile rows now keep the season total visible while adding fantasy PPG underneath it when the separate Avg PPG column is hidden.
+- **Inactive-game average protection** - Fantasy PPG calculations now respect explicit inactive rows with `gp: 0` while still counting active 0.0-point games, and season aggregation avoids turning inactive rows into played games.

@@ -208,6 +208,11 @@ function formatRankingsMetric(value) {
   return value.toFixed(2).replace(/\.?0+$/, '');
 }
 
+function formatRankingsPpgLabel(value) {
+  if (!Number.isFinite(value)) return null;
+  return `${value.toFixed(1)} PPG`;
+}
+
 function getActionDisplayValue(player, sortValueMode, period) {
   const contribution = player.sortContribution ?? {};
   const total = sortValueMode === 'raw' ? contribution.raw : contribution.points;
@@ -1032,6 +1037,7 @@ function RankRow({ rank, player, activeSortOption, sortValueMode, onSelect, hide
         <CompanionPlayerMetric
           key="season"
           value={isActionSort ? formatRankingsMetric(getActionDisplayValue(player, sortValueMode, 'season')) : player.pts.toFixed(1)}
+          label={hideAvgColumn && !isActionSort ? formatRankingsPpgLabel(player.avgPPG) : null}
           align="center"
         />,
       ].filter(Boolean)}
