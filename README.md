@@ -1,6 +1,6 @@
 # GridShift
 
-An interactive web app for the 2026 NFL season — with full Sleeper fantasy league integration. Pick game-by-game outcomes for all 32 teams, view projected standings, generate playoff seeding, create a shareable infographic, and analyze your fantasy roster with week-by-week scoring breakdowns and projections — all in the browser.
+An interactive web app for the 2026 NFL season — with full Sleeper fantasy league integration. Pick game-by-game outcomes for all 32 teams, view projected standings, generate playoff seeding, create a shareable infographic, prep for your fantasy draft, and analyze your roster with week-by-week scoring breakdowns and projections — all in the browser.
 
 ![React](https://img.shields.io/badge/React-19-blue) ![Vite](https://img.shields.io/badge/Vite-7-purple) ![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-3-38bdf8) ![PWA](https://img.shields.io/badge/PWA-installable-green)
 
@@ -17,6 +17,7 @@ An interactive web app for the 2026 NFL season — with full Sleeper fantasy lea
 - **Statistics Schedule** — Browse the NFL schedule by week or team with international, PrimeTime, and holiday filters
 - **Statistics Standings** — View division and conference standings from final schedule results inside the Statistics section
 - **Sleeper League Integration** — Connect your Sleeper account, import a league, and sync custom scoring settings
+- **Draft Assistant** — Use a top-level Sleeper draft room with War Room rankings, a saved Draft Board, live status timing, and consolidated pick Results
 - **League Browser** — Browse any league member's full roster with stats and weekly breakdowns; view a league-wide draft capital grid showing pick ownership by round and year
 - **Fantasy Matchup View** — Head-to-head starter comparison with week-by-week points, projections, positional rankings, weather context, and game location
 - **Player Projections** — Min/max/projected ranges using a recent-weighted blend of form and season average, factoring opponent strength, home/away, weather, and snap % trend
@@ -110,17 +111,19 @@ Hosted owners can enable paid live scoring for selected leagues by setting these
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) + optional Node API sidecar |
 
-## What's New in v7.6
+## What's New in v8.0
 
-- **Statistics Standings** - Added a dedicated Statistics tab for division and conference standings, powered by final schedule scores when results are available.
-- **Statistics navigation polish** - Ordered the Statistics sub-navigation as Stats, Schedule, then Standings.
-- **Scout Beta badge** - Promoted Scout from Alpha to Beta in desktop and mobile navigation.
+- **Draft Assistant** - Added Draft as a top-level section with War Room, Board, and Results views backed by the connected Sleeper league draft.
+- **Draft Board** - Added a locally saved per-position board, Overall ordering, eligible-lane drag/drop, available-player rail, and roster tray for current roster plus live picks.
+- **Live draft timing** - Added scheduled draft headers, browser-local live countdowns, pause/live handling, and a compact active-draft notice outside the Draft section.
+- **Draft Results** - Consolidated draft order and completed picks into one Results view with filters, sort controls, traded-pick ownership, and War Room-style player context.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Roadmap
 
-- **v8.0 - Live Fantasy Scoring** - Sleeper-first live matchup experience with server-protected BALLDONTLIE support for allowlisted leagues.
+- **v8.1 - Draft Rank Calibration** - Add a transparent scoring-adjusted GridShift Rank for Draft.
+- **v9.0 - Live Fantasy Scoring** - Sleeper-first live matchup experience with server-protected BALLDONTLIE support for allowlisted leagues.
 - **Future multi-platform integrations** - Revisit ESPN/Yahoo after the live-scoring data boundary is stable.
 - **Scout Rookie Projection Layer** - Add next-season rookie projections that work for standard and IDP-focused draft prep without overloading the current Scout board.
 - **Trade follow-through** - Continue polishing Trade drilldowns, remaining explanation copy, and proposal-card readability after the v7.3 module split.

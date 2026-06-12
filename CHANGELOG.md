@@ -1074,3 +1074,16 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Schedule-result standings model** - Added a tested standings utility that derives records from final schedule scores while keeping all teams visible at 0-0 before results are available.
 - **Statistics navigation polish** - Ordered the Statistics sub-navigation as Stats, Schedule, then Standings on mobile and desktop.
 - **Scout Beta promotion** - Updated Scout's desktop and mobile navigation badge, README feature list, and Scout docs from Alpha to Beta.
+
+---
+
+## v8.0 - Draft Assistant
+*2026-06-12*
+
+- **Top-level Draft section** - Added Draft as its own app section with War Room, Board, Results, and staged Gauntlet / Tiers/Runs routes, including legacy route normalization for older Draft Order links.
+- **War Room intelligence** - Built a Sleeper-backed Draft model with LeagueLogs market context, completed-season PPG / workload / trend signals, scoring fit, team environment, roster need, personal board rank, and user-tunable model weights.
+- **Personal Draft Board** - Added locally saved per-position and Overall board ordering by league, season, and draft ID, with eligible-lane drag/drop, accessible move controls, saved-board drafted status, and a roster tray populated from current roster players plus live draft picks.
+- **Draft Results** - Consolidated pick order and completed picks into Results, applying traded-pick ownership before the draft and switching to drafted player rows with position, team, tier, Sleeper rank, and GridShift Rating after picks arrive.
+- **Live draft timing** - Added scheduled draft headers, browser-local live pick countdowns, pause/live status handling, on-clock and next-team context, and a compact active-draft notice on non-Draft tabs for relevant connected users.
+- **Sleeper sync hardening** - Split fast draft metadata checks from heavier pick and traded-pick refreshes, bypassed stale browser caching for live draft endpoints, resolved mock draft picks from `slot_to_roster_id`, and kept War Room pre-draft only while Board and Results stay available during live drafts.
+- **Draft docs and tests** - Updated Draft docs and guide copy, added board/status helper modules, and expanded unit coverage for Draft routes, board movement, live refresh policy, scheduled countdowns, LeagueLogs labels, and Sleeper live draft cache-busting.

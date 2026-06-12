@@ -7,14 +7,6 @@ New features requested or planned should be added here.
 
 ## Planned Versions
 
-### v8.0 - Draft Assistant
-
-- **Live Sleeper Draft section** - Add a top-level Draft section with War Room and Draft Order as active views, staged Gauntlet and Tiers/Runs routes, live Sleeper `snake` and `linear` draft sync, the current pick, the user's next pick, and teams selecting before the user.
-- **League-scored projection board** - Ingest Sleeper-exposed season projection totals when available, apply the active league's scoring settings, and rank available players by projected fantasy value without inventing fallback projections when Sleeper data is absent.
-- **Transparent Draft Intelligence board** - Add structured rank, scoring fit, workload, team context, schedule, draft-room signals, completed-season derived PPG/volume/trend, and user-tunable model weights so War Room can present useful draft information before UI styling decisions.
-- **Personal per-position draft board** - Let users maintain locally saved ordered boards by position, keep drafted players visible as gone, and preserve the board by league, season, and draft ID.
-- **Availability / need heuristics** - Estimate whether a player is likely to survive to the user's next pick based on picks ahead, open roster needs for teams selecting first, recent positional runs, and market rank signals like ADP or search rank.
-
 ### v8.1 - Draft Rank Calibration
 
 - **GridShift Rank for War Room** - Add a scoring-adjusted draft rank that starts from the LeagueLogs Market Index baseline, applies transparent GridShift modifiers based on the active league's Sleeper scoring settings, and re-sorts both overall and positional ranks. Include an always-available explanation surface, similar to Trade, that shows the baseline market rank, each scoring modifier, and the final adjusted rank.
@@ -31,6 +23,7 @@ New features requested or planned should be added here.
 - **Trade valuation path deduplication** - Consolidate roster search, roster browse, partner preview, and side-card value calculations onto a shared helper so player availability, estimated values, and additive totals stay consistent across all Trade entry points.
 - **Companion tab load-time optimization** - Improve initial and first-open load times across all Companion tabs by preloading shared data more intentionally, deferring non-critical derivations, reducing duplicate calculations between tabs, and minimizing context-driven rerenders.
 - **Companion Heatmap first-open performance** - Optimize initial load by reducing eager table computation, avoiding unnecessary recomputes after stat enrichment, and limiting context-driven rerenders from unrelated state like progress updates.
+- **Draft tab load-time optimization** - Keep Draft tab switching responsive by reusing cached draft sync state and matching Draft model builds across War Room, Board, and Results instead of rebuilding everything on every tab return.
 - **Reduce Heatmap `loadSeasonStats` fetch time** - Companion -> Heatmap now avoids blocking on pass-2 enhancement and uses a faster local offense table builder, but the next likely optimization is reducing the raw `loadSeasonStats` fetch cost. This is a different class of optimization and riskier because it touches the shared season-stats loading path.
 
 ## Backlog (Unversioned)

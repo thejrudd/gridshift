@@ -2,11 +2,22 @@
 // https://docs.sleeper.com
 
 const BASE = 'https://api.sleeper.app/v1';
+let liveDraftCacheBustCounter = 0;
 
-async function get(path) {
-  const res = await fetch(`${BASE}${path}`);
+async function get(path, options = {}) {
+  const res = await fetch(`${BASE}${path}`, options);
   if (!res.ok) throw new Error(`Sleeper API error: ${res.status} ${path}`);
   return res.json();
+}
+
+function withCacheBust(path) {
+  const separator = path.includes('?') ? '&' : '?';
+  liveDraftCacheBustCounter += 1;
+  return `${path}${separator}_gridshift=${Date.now()}-${liveDraftCacheBustCounter}`;
+}
+
+function getLiveDraft(path) {
+  return get(withCacheBust(path), { cache: 'no-store' });
 }
 
 // ── Users ────────────────────────────────────────────────────────────────────
@@ -42,19 +53,19 @@ export function getTradedPicks(leagueId) {
 }
 
 export function getLeagueDrafts(leagueId) {
-  return get(`/league/${leagueId}/drafts`);
+  return getLiveDraft(`/league/${leagueId}/drafts`);
 }
 
 export function getDraft(draftId) {
-  return get(`/draft/${draftId}`);
+  return getLiveDraft(`/draft/${draftId}`);
 }
 
 export function getDraftPicks(draftId) {
-  return get(`/draft/${draftId}/picks`);
+  return getLiveDraft(`/draft/${draftId}/picks`);
 }
 
 export function getDraftTradedPicks(draftId) {
-  return get(`/draft/${draftId}/traded_picks`);
+  return getLiveDraft(`/draft/${draftId}/traded_picks`);
 }
 
 // ── Players ──────────────────────────────────────────────────────────────────

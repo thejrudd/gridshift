@@ -17,6 +17,15 @@ import DraftSubNav from './components/DraftSubNav';
 import ActionSheet from './components/ActionSheet';
 import Sidebar from './components/Sidebar';
 import { SleeperProvider, useSleeperLeague, useSleeperStats } from './context/SleeperContext';
+import { getDraft, getLeagueDrafts } from './api/sleeperApi';
+import {
+  getSleeperDraftStatus,
+  isSleeperDraftMock,
+  isSleeperDraftPollable,
+  isSleeperDraftPreDraft,
+  resolveLeagueDraftId,
+  shouldShowSleeperDraftGlobalNotice,
+} from './utils/draftAssistant/draftStatus';
 import {
   buildAppPath,
   getDefaultRouteForTab,
@@ -60,6 +69,34 @@ const CompanionDefense = lazy(() => import('./components/companion/CompanionDefe
 const CompanionTrade = lazy(() => import('./components/companion/CompanionTrade'));
 const ScoutTab = lazy(() => import('./components/scout/ScoutTab'));
 const DraftAssistant = lazy(() => import('./components/draft/DraftAssistant'));
+const DRAFT_NAV_POLL_MS = 15_000;
+const DRAFT_WAR_ROOM_DISABLED_REASON = "War Room is only available before this league year's draft.";
+const DRAFT_ACTIVITY_NOTICE_TABS = new Set(['predictions', 'statistics', 'companion', 'trade', 'scout']);
+const DEV_DRAFT_OVERRIDE_PARAM_KEYS = ['sleeperDraftId', 'draftId'];
+
+function extractSleeperDraftId(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  const numericId = raw.match(/\d{10,}/)?.[0];
+  return numericId ?? raw;
+}
+
+function getDevSleeperDraftIdOverride(sleeperDraftId = '') {
+  if (!import.meta.env.DEV) return extractSleeperDraftId(sleeperDraftId);
+
+  const explicitDraftId = extractSleeperDraftId(sleeperDraftId);
+  if (explicitDraftId) return explicitDraftId;
+
+  if (typeof window !== 'undefined') {
+    const params = new URLSearchParams(window.location.search);
+    for (const key of DEV_DRAFT_OVERRIDE_PARAM_KEYS) {
+      const value = extractSleeperDraftId(params.get(key));
+      if (value) return value;
+    }
+  }
+
+  return extractSleeperDraftId(import.meta.env.VITE_SLEEPER_DRAFT_ID_OVERRIDE);
+}
 
 function SectionLoading({ label = 'Loading section' }) {
   return (
@@ -142,6 +179,28 @@ function RouteLoadingOverlay({ label = 'Opening player' }) {
           <span className="min-w-0 truncate text-sm font-semibold">{label}...</span>
         </div>
       </div>
+    </div>
+  );
+}
+
+function DraftActivityMiniBanner({ draft, leagueName, leagueId, onOpenDraft }) {
+  const paused = getSleeperDraftStatus(draft) === 'paused';
+  const draftKind = isSleeperDraftMock(draft, leagueId) ? 'Mock draft' : 'Draft';
+  const title = `${draftKind} ${paused ? 'paused' : 'live'}`;
+  const context = paused
+    ? `${leagueName ?? 'Sleeper'} draft is paused.`
+    : `${leagueName ?? 'Sleeper'} draft is in progress.`;
+
+  return (
+    <div className={`draft-activity-mini-banner${paused ? ' is-paused' : ' is-live'}`} role="status" aria-live="polite">
+      <div className="draft-activity-mini-banner__copy">
+        <span className="draft-activity-mini-banner__dot" aria-hidden="true" />
+        <strong>{title}</strong>
+        <span>{context}</span>
+      </div>
+      <button type="button" className="draft-activity-mini-banner__action" onClick={onOpenDraft}>
+        Open Draft
+      </button>
     </div>
   );
 }
@@ -438,7 +497,16 @@ function AppInner() {
   const [tradeAnalyticsPrewarmRequested, setTradeAnalyticsPrewarmRequested] = useState(false);
   const [, startRouteTransition] = useTransition();
 
-  const { hasLeague, selectedLeagueId, season, changeSeason, league, linkedLeagueSeasonOptions, scoringOverridePaused } = useSleeperLeague();
+  const {
+    hasLeague,
+    selectedLeagueId,
+    season,
+    changeSeason,
+    league,
+    linkedLeagueSeasonOptions,
+    scoringOverridePaused,
+    sleeperUser,
+  } = useSleeperLeague();
   const {
     statsLoading,
     seasonStats,
@@ -478,6 +546,13 @@ function AppInner() {
   const [guideOpen, setGuideOpen] = useState(false);
   const [teamPickerOpen, setTeamPickerOpen] = useState(false);
   const [leagueSwitcherOpen, setLeagueSwitcherOpen] = useState(false);
+  const [draftNavState, setDraftNavState] = useState({
+    loading: false,
+    draft: null,
+    error: '',
+    leagueId: null,
+    season: null,
+  });
   useBodyScrollLock(leagueSwitcherOpen);
 
   const preserveContentScrollDuringUpdate = useCallback((update) => {
@@ -517,6 +592,33 @@ function AppInner() {
   const tradeView = appRoute.tradeView;
   const scoutView = appRoute.scoutView;
   const draftView = appRoute.draftView;
+  const draftSleeperDraftId = appRoute.sleeperDraftId;
+  const draftStatusOverrideId = getDevSleeperDraftIdOverride(draftSleeperDraftId);
+  const draftNavMatchesSelection = draftNavState.leagueId === selectedLeagueId && draftNavState.season === season;
+  const draftWarRoomBlocked = Boolean(
+    draftNavMatchesSelection
+    && draftNavState.draft
+    && !isSleeperDraftPreDraft(draftNavState.draft),
+  );
+  const effectiveDraftView = draftWarRoomBlocked && draftView === 'war-room' ? 'results' : draftView;
+  const draftDisabledViews = useMemo(() => (
+    draftWarRoomBlocked
+      ? { 'war-room': { disabled: true, reason: DRAFT_WAR_ROOM_DISABLED_REASON } }
+      : {}
+  ), [draftWarRoomBlocked]);
+  const activeDraftNoticeDraft = draftNavMatchesSelection ? draftNavState.draft : null;
+  const activeDraftNoticeDraftId = activeDraftNoticeDraft?.draft_id == null
+    ? draftStatusOverrideId
+    : String(activeDraftNoticeDraft.draft_id);
+  const showDraftActivityNotice = Boolean(
+    DRAFT_ACTIVITY_NOTICE_TABS.has(activeTab)
+    && activeTab !== 'draft'
+    && shouldShowSleeperDraftGlobalNotice({
+      draft: activeDraftNoticeDraft,
+      userId: sleeperUser?.user_id,
+      leagueId: selectedLeagueId,
+    }),
+  );
 
   useEffect(() => {
     latestAppRouteRef.current = appRoute;
@@ -688,8 +790,89 @@ function AppInner() {
   }, [applyRoute]);
 
   const navigateDraftView = useCallback((view) => {
-    applyRoute({ activeTab: 'draft', draftView: view });
-  }, [applyRoute]);
+    applyRoute({
+      activeTab: 'draft',
+      draftView: view === 'war-room' && draftWarRoomBlocked ? 'results' : view,
+      sleeperDraftId: draftSleeperDraftId,
+    });
+  }, [applyRoute, draftWarRoomBlocked, draftSleeperDraftId]);
+
+  const navigateToActiveDraft = useCallback(() => {
+    applyRoute({
+      activeTab: 'draft',
+      draftView: 'results',
+      sleeperDraftId: activeDraftNoticeDraftId,
+    });
+  }, [activeDraftNoticeDraftId, applyRoute]);
+
+  useEffect(() => {
+    if (!hasLeague || !selectedLeagueId || !league) {
+      setDraftNavState({ loading: false, draft: null, error: '', leagueId: null, season: null });
+      return undefined;
+    }
+
+    let cancelled = false;
+    let timeoutId = null;
+    let hasLoadedDraft = false;
+
+    const loadDraftStatus = async () => {
+      const initialLoad = !hasLoadedDraft;
+      if (initialLoad) {
+        setDraftNavState({
+          loading: true,
+          draft: null,
+          error: '',
+          leagueId: selectedLeagueId,
+          season,
+        });
+      }
+
+      try {
+        const draftId = draftStatusOverrideId
+          || resolveLeagueDraftId(league, await getLeagueDrafts(selectedLeagueId).catch(() => []));
+        if (!draftId) {
+          if (!cancelled) {
+            setDraftNavState({ loading: false, draft: null, error: '', leagueId: selectedLeagueId, season });
+            hasLoadedDraft = true;
+          }
+          return;
+        }
+
+        const nextDraft = await getDraft(draftId);
+        if (cancelled) return;
+
+        setDraftNavState({ loading: false, draft: nextDraft, error: '', leagueId: selectedLeagueId, season });
+        hasLoadedDraft = true;
+
+        if (isSleeperDraftPollable(nextDraft)) {
+          timeoutId = window.setTimeout(loadDraftStatus, DRAFT_NAV_POLL_MS);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setDraftNavState({
+            loading: false,
+            draft: null,
+            error: error?.message ?? 'Could not load draft status.',
+            leagueId: selectedLeagueId,
+            season,
+          });
+          hasLoadedDraft = true;
+        }
+      }
+    };
+
+    loadDraftStatus();
+
+    return () => {
+      cancelled = true;
+      if (timeoutId) window.clearTimeout(timeoutId);
+    };
+  }, [hasLeague, selectedLeagueId, season, league, draftStatusOverrideId]);
+
+  useEffect(() => {
+    if (activeTab !== 'draft' || draftView !== 'war-room' || !draftWarRoomBlocked) return;
+    applyRoute({ activeTab: 'draft', draftView: 'results', sleeperDraftId: draftSleeperDraftId }, { replace: true });
+  }, [activeTab, draftView, draftWarRoomBlocked, applyRoute, draftSleeperDraftId]);
 
   const prewarmTradeView = useCallback((view) => {
     if (view === 'intelligence' || view === 'upgrade') {
@@ -1045,6 +1228,15 @@ function AppInner() {
           scrolled={contentScrolled}
         />
 
+        {showDraftActivityNotice && (
+          <DraftActivityMiniBanner
+            draft={activeDraftNoticeDraft}
+            leagueName={league?.name}
+            leagueId={selectedLeagueId}
+            onOpenDraft={navigateToActiveDraft}
+          />
+        )}
+
         {/* Season sub-navigation */}
         {activeTab === 'predictions' && (
           <div className="season-subnav">
@@ -1113,7 +1305,11 @@ function AppInner() {
 
         {activeTab === 'draft' && hasLeague && (
           <div className="season-subnav league-subnav">
-            <DraftSubNav activeView={draftView} onViewChange={navigateDraftView} />
+            <DraftSubNav
+              activeView={effectiveDraftView}
+              onViewChange={navigateDraftView}
+              disabledViews={draftDisabledViews}
+            />
             <div className="hidden lg:flex items-center absolute bottom-0 right-8 pb-[9px]">
               <LeagueContextHeader
                 league={league}
@@ -1144,7 +1340,12 @@ function AppInner() {
         {/* ── Content area ─────────────────────────────────── */}
         <div
           ref={contentAreaRef}
-          className="content-area lg:px-8 pt-4 lg:pt-6"
+          className={[
+            'content-area lg:px-8 pt-4 lg:pt-6',
+            activeTab === 'draft' && effectiveDraftView === 'war-room' ? 'content-area--draft-war-room' : '',
+            activeTab === 'draft' && effectiveDraftView === 'results' ? 'content-area--draft-results' : '',
+            activeTab === 'draft' && effectiveDraftView === 'my-board' ? 'content-area--draft-board' : '',
+          ].filter(Boolean).join(' ')}
           onScroll={(e) => setContentScrolled(e.currentTarget.scrollTop > 2)}
         >
 
@@ -1451,7 +1652,8 @@ function AppInner() {
           {activeTab === 'draft' && hasLeague && (
             <Suspense fallback={<SectionLoading label="Loading Draft" />}>
               <DraftAssistant
-                view={draftView}
+                view={effectiveDraftView}
+                sleeperDraftId={draftSleeperDraftId}
                 onViewPlayer={navigateDraftPlayerToStatistics}
               />
             </Suspense>
@@ -1503,7 +1705,7 @@ function AppInner() {
             companionView={companionView}
             tradeView={tradeView}
             scoutView={scoutView}
-            draftView={draftView}
+            draftView={effectiveDraftView}
           />
         </Suspense>
       )}

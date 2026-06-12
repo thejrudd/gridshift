@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { selectLeagueLogsMarketProfile } from '../../src/api/leagueLogsApi.js';
+import { formatLeagueLogsMarketProfile, selectLeagueLogsMarketProfile } from '../../src/api/leagueLogsApi.js';
 import { buildAppPath, parseAppRoute } from '../../src/utils/appRoutes.js';
 import { resolveStatisticsPlayerMetaFromSleeperId } from '../../src/utils/playerDrilldown.js';
 import {
@@ -10,10 +10,33 @@ import {
   buildPickOrder,
   categorizeDraftScoringSettings,
   getDraftStatsSeason,
+  getScheduledDraftCountdownParts,
+  getSleeperDraftStartMs,
+  getSleeperDraftSemanticSignature,
+  getSleeperDraftPicksSignature,
+  isSleeperDraftPollable,
+  isSleeperDraftPreDraft,
+  isSleeperUserDraftParticipant,
+  normalizeDraftPick,
   normalizeDraftModelWeights,
   rebalanceDraftModelWeights,
+  resolveLeagueDraftId,
+  shouldShowSleeperDraftGlobalNotice,
+  shouldRefreshSleeperDraftPicks,
+  shouldRefreshSleeperDraftTradedPicks,
 } from '../../src/utils/draftAssistant/index.js';
 import { rankDraftCandidates } from '../../src/utils/draftAssistant/recommendations.js';
+import {
+  addPlayerToBoard,
+  addPlayerToOrderedBoard,
+  createOrderedBoardState,
+  moveOverallBoardPlayer,
+  movePlayerToBoardPosition,
+  moveOrderedBoardPlayerWithinPosition,
+  moveWithinPosition,
+  playerCanSlotIntoBoardPosition,
+  removePlayerFromBoard,
+} from '../../src/utils/draftAssistant/board.js';
 import { DEFAULT_SCORING } from '../../src/utils/scoringEngine.js';
 
 const players = {
@@ -126,6 +149,27 @@ test('draft results route round-trips cleanly', () => {
   assert.equal(buildAppPath(route), '/draft/results');
 });
 
+test('draft override query round-trips cleanly', () => {
+  const route = parseAppRoute('/draft/results', '?sleeperDraftId=123456789012345678');
+  assert.equal(route.activeTab, 'draft');
+  assert.equal(route.draftView, 'results');
+  assert.equal(route.sleeperDraftId, '123456789012345678');
+  assert.equal(buildAppPath(route), '/draft/results?sleeperDraftId=123456789012345678');
+});
+
+test('legacy draftId query normalizes to sleeperDraftId', () => {
+  const route = parseAppRoute('/draft/results', '?draftId=123456789012345678');
+  assert.equal(route.sleeperDraftId, '123456789012345678');
+  assert.equal(buildAppPath(route), '/draft/results?sleeperDraftId=123456789012345678');
+});
+
+test('draft board route round-trips cleanly', () => {
+  const route = parseAppRoute('/draft/my-board');
+  assert.equal(route.activeTab, 'draft');
+  assert.equal(route.draftView, 'my-board');
+  assert.equal(buildAppPath(route), '/draft/my-board');
+});
+
 test('future draft routes normalize for staged views', () => {
   const route = parseAppRoute('/draft/gauntlet');
   assert.equal(route.activeTab, 'draft');
@@ -133,11 +177,88 @@ test('future draft routes normalize for staged views', () => {
   assert.equal(buildAppPath(route), '/draft/gauntlet');
 });
 
-test('draft order route round-trips cleanly', () => {
+test('legacy draft order route normalizes to results', () => {
   const route = parseAppRoute('/draft/draft-order');
   assert.equal(route.activeTab, 'draft');
-  assert.equal(route.draftView, 'draft-order');
-  assert.equal(buildAppPath(route), '/draft/draft-order');
+  assert.equal(route.draftView, 'results');
+  assert.equal(buildAppPath(route), '/draft/results');
+});
+
+test('draft board helpers add, dedupe, move, and remove players by position', () => {
+  let board = {};
+  board = addPlayerToBoard(board, { id: 'rb1', position: 'RB' });
+  board = addPlayerToBoard(board, { id: 'rb2', position: 'RB' });
+  board = addPlayerToBoard(board, { id: 'rb1', position: 'RB' });
+  assert.deepEqual(board, { RB: ['rb2', 'rb1'] });
+
+  board = moveWithinPosition(board, 'RB', 'rb1', -1);
+  assert.deepEqual(board.RB, ['rb1', 'rb2']);
+
+  board = movePlayerToBoardPosition(board, 'WR', 'wr1', null);
+  board = movePlayerToBoardPosition(board, 'RB', 'wr1', 'rb2');
+  assert.deepEqual(board, { RB: ['rb1', 'wr1', 'rb2'] });
+
+  board = removePlayerFromBoard(board, 'wr1');
+  assert.deepEqual(board, { RB: ['rb1', 'rb2'] });
+});
+
+test('draft board helpers reject moves into ineligible position lanes', () => {
+  const runner = { id: 'rb1', position: 'RB', fantasy_positions: ['RB'] };
+  const receiver = { id: 'wr1', position: 'WR', fantasy_positions: ['WR'] };
+
+  assert.equal(playerCanSlotIntoBoardPosition(runner, 'RB'), true);
+  assert.equal(playerCanSlotIntoBoardPosition(runner, 'WR'), false);
+
+  let board = addPlayerToBoard({}, runner);
+  board = movePlayerToBoardPosition(board, 'WR', runner.id, null, runner);
+  assert.deepEqual(board, { RB: ['rb1'] });
+
+  board = movePlayerToBoardPosition(board, 'WR', receiver.id, null, receiver);
+  assert.deepEqual(board, { RB: ['rb1'], WR: ['wr1'] });
+});
+
+test('draft board overall order drives positional lane order', () => {
+  const state = createOrderedBoardState({
+    RB: ['rb2', 'rb1'],
+    WR: ['wr1'],
+  }, ['rb1', 'wr1', 'rb2']);
+
+  assert.deepEqual(state.overallIds, ['rb1', 'wr1', 'rb2']);
+  assert.deepEqual(state.boardByPosition, { RB: ['rb1', 'rb2'], WR: ['wr1'] });
+});
+
+test('draft board positional moves swap overall slots in the background', () => {
+  const initial = createOrderedBoardState({
+    RB: ['rb1', 'rb2'],
+    WR: ['wr1'],
+  }, ['rb1', 'wr1', 'rb2']);
+
+  const moved = moveOrderedBoardPlayerWithinPosition(initial, 'RB', 'rb2', -1);
+  assert.deepEqual(moved.boardByPosition.RB, ['rb2', 'rb1']);
+  assert.deepEqual(moved.overallIds, ['rb2', 'wr1', 'rb1']);
+});
+
+test('draft board overall moves persist while positional view stays derived', () => {
+  let state = createOrderedBoardState({
+    RB: ['rb1', 'rb2'],
+    WR: ['wr1'],
+  }, ['rb1', 'wr1', 'rb2']);
+
+  state = moveOverallBoardPlayer(state, 'rb2', -1);
+  assert.deepEqual(state.overallIds, ['rb1', 'rb2', 'wr1']);
+  assert.deepEqual(state.boardByPosition.RB, ['rb1', 'rb2']);
+
+  state = moveOverallBoardPlayer(state, 'rb2', -1);
+  assert.deepEqual(state.overallIds, ['rb2', 'rb1', 'wr1']);
+  assert.deepEqual(state.boardByPosition.RB, ['rb2', 'rb1']);
+});
+
+test('draft board ordered helper appends new players to overall memory', () => {
+  let state = createOrderedBoardState({ RB: ['rb1'] }, ['rb1']);
+  state = addPlayerToOrderedBoard(state, { id: 'wr1', position: 'WR', fantasy_positions: ['WR'] });
+
+  assert.deepEqual(state.overallIds, ['rb1', 'wr1']);
+  assert.deepEqual(state.boardByPosition, { RB: ['rb1'], WR: ['wr1'] });
 });
 
 test('draft player drilldown resolves null ESPN ids from team roster matches', async () => {
@@ -216,6 +337,276 @@ test('buildPickOrder assigns traded picks to their current owners', () => {
   assert.deepEqual(order.map((pick) => pick.roundPick), [1, 2, 3, 1, 2, 3]);
   assert.equal(order[0].acquired, true);
   assert.equal(order[1].acquired, false);
+});
+
+test('mock draft picks resolve roster ids from draft slots', () => {
+  const pick = normalizeDraftPick({
+    draft_id: 'mock-draft',
+    draft_slot: 2,
+    pick_no: 2,
+    player_id: 'wr1',
+    roster_id: null,
+    round: 1,
+  }, 1, {
+    slot_to_roster_id: { 1: 1, 2: 2, 3: 3 },
+  });
+
+  assert.equal(pick.rosterId, '2');
+  assert.equal(pick.playerId, 'wr1');
+  assert.equal(pick.overall, 2);
+});
+
+test('draft assistant view model keeps Sleeper mock draft picks', () => {
+  const draft = {
+    draft_id: 'mock-draft',
+    type: 'snake',
+    status: 'paused',
+    settings: { rounds: 2 },
+    slot_to_roster_id: { 1: 1, 2: 2, 3: 3 },
+  };
+  const draftPicks = [
+    { draft_slot: 1, player_id: 'qb1', round: 1, pick_no: 1, roster_id: null },
+    { draft_slot: 2, player_id: 'wr1', round: 1, pick_no: 2, roster_id: null },
+  ];
+
+  const viewModel = buildDraftAssistantViewModel({
+    players,
+    rosters,
+    league,
+    draft,
+    draftPicks,
+    myRoster: rosters[2],
+    scoringSettings: DEFAULT_SCORING,
+    season: '2026',
+    boardIds: ['wr1', 'rb1'],
+  });
+
+  assert.equal(viewModel.currentOverall, 3);
+  assert.deepEqual(viewModel.normalizedPicks.map((pick) => pick.rosterId), ['1', '2']);
+  assert.equal(viewModel.draftedCardsById.has('wr1'), true);
+  assert.equal(viewModel.allCandidates.some((player) => player.id === 'wr1'), false);
+  assert.equal(viewModel.onClockRecommendation?.id, 'rb1');
+});
+
+test('draft status helpers keep War Room pre-draft only', () => {
+  assert.equal(isSleeperDraftPreDraft({ status: 'pre_draft' }), true);
+  assert.equal(isSleeperDraftPreDraft({ status: 'drafting' }), false);
+  assert.equal(isSleeperDraftPreDraft({ status: 'complete' }), false);
+  assert.equal(isSleeperDraftPollable({ status: 'paused' }), true);
+});
+
+test('global draft notice hides non-participant mock drafts', () => {
+  const leagueDraft = { status: 'drafting', league_id: 'league-1' };
+  const participantMockDraft = {
+    status: 'drafting',
+    league_id: null,
+    draft_order: { user_1: 1, user_2: 2 },
+  };
+  const otherMockDraft = {
+    status: 'paused',
+    league_id: null,
+    draft_order: { user_3: 1, user_4: 2 },
+  };
+
+  assert.equal(isSleeperUserDraftParticipant(participantMockDraft, 'user_1'), true);
+  assert.equal(shouldShowSleeperDraftGlobalNotice({
+    draft: leagueDraft,
+    userId: 'user_1',
+    leagueId: 'league-1',
+  }), true);
+  assert.equal(shouldShowSleeperDraftGlobalNotice({
+    draft: participantMockDraft,
+    userId: 'user_1',
+    leagueId: 'league-1',
+  }), true);
+  assert.equal(shouldShowSleeperDraftGlobalNotice({
+    draft: otherMockDraft,
+    userId: 'user_1',
+    leagueId: 'league-1',
+  }), false);
+  assert.equal(shouldShowSleeperDraftGlobalNotice({
+    draft: { ...participantMockDraft, status: 'pre_draft' },
+    userId: 'user_1',
+    leagueId: 'league-1',
+  }), false);
+});
+
+test('draft semantic signature ignores only elapsed clock metadata', () => {
+  const baseDraft = {
+    draft_id: 'draft-1',
+    status: 'drafting',
+    last_picked: 1000,
+    start_time: 1772316000000,
+    settings: { pick_timer: 60, rounds: 2 },
+    metadata: { elapsed_pick_timer: 5, scoring_type: 'ppr' },
+    slot_to_roster_id: { 1: 1, 2: 2 },
+  };
+
+  assert.equal(
+    getSleeperDraftSemanticSignature(baseDraft),
+    getSleeperDraftSemanticSignature({
+      ...baseDraft,
+      metadata: { ...baseDraft.metadata, elapsed_pick_timer: 22 },
+    }),
+  );
+  assert.equal(
+    getSleeperDraftSemanticSignature(baseDraft),
+    getSleeperDraftSemanticSignature({ ...baseDraft, status: 'paused' }),
+  );
+  assert.notEqual(
+    getSleeperDraftSemanticSignature(baseDraft),
+    getSleeperDraftSemanticSignature({ ...baseDraft, last_picked: 2000 }),
+  );
+  assert.notEqual(
+    getSleeperDraftSemanticSignature(baseDraft),
+    getSleeperDraftSemanticSignature({ ...baseDraft, start_time: 1772402400000 }),
+  );
+});
+
+test('scheduled draft helpers parse start time and format countdown units', () => {
+  assert.equal(getSleeperDraftStartMs({ start_time: 1772316000 }), 1772316000000);
+  assert.equal(getSleeperDraftStartMs({ start_time: 1772316000000 }), 1772316000000);
+  assert.equal(
+    getSleeperDraftStartMs({ metadata: { start_time: '2026-03-01T18:00:00.000Z' } }),
+    Date.parse('2026-03-01T18:00:00.000Z'),
+  );
+
+  assert.deepEqual(getScheduledDraftCountdownParts(1_000_000_000, 0), {
+    months: 0,
+    weeks: 1,
+    days: 4,
+    hours: 13,
+    minutes: 46,
+    seconds: 40,
+  });
+  assert.equal(
+    getScheduledDraftCountdownParts(
+      Date.parse('2026-03-01T00:00:00'),
+      Date.parse('2026-01-01T00:00:00'),
+    ).months,
+    2,
+  );
+  assert.equal(getScheduledDraftCountdownParts(1_000, 1_000), null);
+});
+
+test('live draft pick refresh policy follows state changes instead of every clock tick', () => {
+  const previousDraft = {
+    draft_id: 'draft-1',
+    status: 'drafting',
+    last_picked: 1000,
+    settings: { pick_timer: 60 },
+  };
+  const elapsedOnlyDraft = {
+    ...previousDraft,
+    metadata: { elapsed_pick_timer: 12 },
+  };
+
+  assert.equal(shouldRefreshSleeperDraftPicks({
+    initialLoad: false,
+    previousDraft,
+    nextDraft: elapsedOnlyDraft,
+    now: 2_000,
+    lastPicksPollAt: 1_000,
+    liveRefreshMs: 5_000,
+  }), false);
+
+  assert.equal(shouldRefreshSleeperDraftPicks({
+    initialLoad: false,
+    previousDraft,
+    nextDraft: { ...elapsedOnlyDraft, status: 'paused' },
+    now: 2_000,
+    lastPicksPollAt: 1_000,
+    liveRefreshMs: 5_000,
+  }), false);
+
+  assert.equal(shouldRefreshSleeperDraftPicks({
+    initialLoad: false,
+    previousDraft: { ...previousDraft, status: 'pre_draft' },
+    nextDraft: elapsedOnlyDraft,
+    now: 2_000,
+    lastPicksPollAt: 1_000,
+    liveRefreshMs: 5_000,
+  }), true);
+
+  assert.equal(shouldRefreshSleeperDraftPicks({
+    initialLoad: false,
+    previousDraft,
+    nextDraft: { ...elapsedOnlyDraft, last_picked: 2_000 },
+    now: 2_100,
+    lastPicksPollAt: 1_000,
+    liveRefreshMs: 5_000,
+  }), true);
+
+  assert.equal(shouldRefreshSleeperDraftPicks({
+    initialLoad: false,
+    previousDraft,
+    nextDraft: elapsedOnlyDraft,
+    now: 6_500,
+    lastPicksPollAt: 1_000,
+    liveRefreshMs: 5_000,
+  }), true);
+});
+
+test('draft traded picks refresh slower than live pick confirmation', () => {
+  const previousDraft = { draft_id: 'draft-1', status: 'drafting', last_picked: 1000 };
+  const nextDraft = { ...previousDraft, metadata: { elapsed_pick_timer: 20 } };
+
+  assert.equal(shouldRefreshSleeperDraftTradedPicks({
+    initialLoad: false,
+    previousDraft,
+    nextDraft,
+    now: 10_000,
+    lastTradedPicksPollAt: 1_000,
+    refreshMs: 30_000,
+  }), false);
+
+  assert.equal(shouldRefreshSleeperDraftTradedPicks({
+    initialLoad: false,
+    previousDraft,
+    nextDraft,
+    now: 31_500,
+    lastTradedPicksPollAt: 1_000,
+    refreshMs: 30_000,
+  }), true);
+});
+
+test('draft pick signatures change when Sleeper confirms a player selection', () => {
+  const pendingSignature = getSleeperDraftPicksSignature([
+    { pick_no: 1, roster_id: '1', player_id: 'qb1' },
+  ]);
+  const selectedSignature = getSleeperDraftPicksSignature([
+    { pick_no: 1, roster_id: '1', player_id: 'rb1' },
+  ]);
+
+  assert.notEqual(pendingSignature, selectedSignature);
+});
+
+test('league draft resolver prefers active and pre-draft rooms before completed history', () => {
+  assert.equal(
+    resolveLeagueDraftId({ draft_id: 'completed-draft' }, [
+      { draft_id: 'completed-draft', status: 'complete' },
+      { draft_id: 'future-draft', status: 'pre_draft' },
+    ]),
+    'future-draft',
+  );
+  assert.equal(
+    resolveLeagueDraftId({ draft_id: 'completed-draft' }, [
+      { draft_id: 'completed-draft', status: 'complete' },
+      { draft_id: 'paused-mock', status: 'paused' },
+      { draft_id: 'live-draft', status: 'drafting' },
+      { draft_id: 'future-draft', status: 'pre_draft' },
+    ]),
+    'live-draft',
+  );
+  assert.equal(
+    resolveLeagueDraftId({ draft_id: 'completed-draft' }, [
+      { draft_id: 'completed-draft', status: 'complete' },
+      { draft_id: 'future-draft', status: 'pre_draft' },
+      { draft_id: 'paused-mock', status: 'paused' },
+    ]),
+    'paused-mock',
+  );
+  assert.equal(resolveLeagueDraftId({ draft_id: 'completed-draft' }, []), 'completed-draft');
 });
 
 test('draft assistant recommendations respect board rank and current pick state', () => {
@@ -711,6 +1102,28 @@ test('LeagueLogs profile selection follows league scoring and QB setup', () => {
   assert.equal(halfPpr.key, 'redraft-1qb-12t-ppr0_5');
   assert.equal(superflex.key, 'redraft-2qb-12t-ppr1');
   assert.equal(dynasty.key, 'dynasty-1qb-12t-ppr1');
+});
+
+test('LeagueLogs market profile labels use plain English league descriptions', () => {
+  assert.deepEqual(
+    leagueLogsProfiles.profiles.map((entry) => formatLeagueLogsMarketProfile(entry)),
+    [
+      'Redraft League - 1QB - 12+ Teams - PPR',
+      'Redraft League - 1QB - 12+ Teams - Half-PPR',
+      'Redraft League - 2QB - 12+ Teams - PPR',
+      'Dynasty League - 1QB - 12+ Teams - PPR',
+      'Dynasty League - 2QB - 12+ Teams - PPR',
+    ],
+  );
+
+  assert.equal(
+    formatLeagueLogsMarketProfile({ profileKey: 'redraft-1qb-10t-ppr0' }),
+    'Redraft League - 1QB - 10+ Teams - Standard Scoring',
+  );
+  assert.equal(
+    formatLeagueLogsMarketProfile({ profileKey: 'dynasty-sf-14t-ppr1_5' }),
+    'Dynasty League - Superflex - 14+ Teams - 1.5 PPR',
+  );
 });
 
 test('draft assistant enriches rows with LeagueLogs market ranks', () => {

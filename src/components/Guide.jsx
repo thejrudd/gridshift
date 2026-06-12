@@ -490,6 +490,42 @@ const GUIDE_CONTENT = {
       },
     ],
   },
+
+  'draft_my-board': {
+    title: 'BOARD',
+    steps: [
+      {
+        title: 'Build lanes',
+        description: 'Drag or add players from Available into position lanes, then reorder each lane as your draft priority changes.',
+      },
+      {
+        title: 'Sort overall',
+        description: 'Switch to Overall to review the same saved players by Market, Rating, PPG, Tier, or name without changing lane order.',
+      },
+      {
+        title: 'Watch your roster',
+        description: 'The roster tray fills from your Sleeper picks while drafted players stay visible as gone on your board.',
+      },
+    ],
+  },
+
+  draft_results: {
+    title: 'RESULTS',
+    steps: [
+      {
+        title: 'Review the order',
+        description: 'Before picks are made, Results shows the Sleeper pick order with traded-pick ownership applied.',
+      },
+      {
+        title: 'Track completed picks',
+        description: 'As Sleeper picks arrive, Results switches to drafted player rows sorted first pick first by default.',
+      },
+      {
+        title: 'Filter the board',
+        description: 'Use position, sort, and fantasy-team controls to narrow completed picks during or after the draft.',
+      },
+    ],
+  },
 };
 
 function getGuideKey({

@@ -18,6 +18,105 @@ function getLeagueFormat(league) {
   return Number(league?.settings?.type) === 2 ? 'dynasty' : 'redraft';
 }
 
+function toTitleCase(value) {
+  return String(value ?? '')
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(' ');
+}
+
+function parseLeagueLogsProfileKey(profileKey) {
+  const parsed = {};
+  const tokens = String(profileKey ?? '').toLowerCase().split('-').filter(Boolean);
+
+  for (const token of tokens) {
+    if (token === 'redraft' || token === 'dynasty') {
+      parsed.format = token;
+      continue;
+    }
+
+    const qbMatch = token.match(/^(\d+)qb$/);
+    if (qbMatch) {
+      parsed.numQbs = Number(qbMatch[1]);
+      continue;
+    }
+
+    if (token === 'sf' || token === 'superflex') {
+      parsed.qbLabel = 'Superflex';
+      continue;
+    }
+
+    const teamMatch = token.match(/^(\d+)t$/);
+    if (teamMatch) {
+      parsed.numTeams = Number(teamMatch[1]);
+      continue;
+    }
+
+    if (token === 'standard' || token === 'nonppr') {
+      parsed.ppr = 0;
+      continue;
+    }
+
+    if (token === 'half_ppr' || token === 'halfppr') {
+      parsed.ppr = 0.5;
+      continue;
+    }
+
+    const pprMatch = token.match(/^ppr(?:(\d+(?:_\d+)?))?$/);
+    if (pprMatch) {
+      parsed.ppr = pprMatch[1] == null ? 1 : Number(pprMatch[1].replace('_', '.'));
+    }
+  }
+
+  return parsed;
+}
+
+function formatLeagueFormat(value) {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  if (!normalized) return null;
+  if (normalized === 'redraft') return 'Redraft League';
+  if (normalized === 'dynasty') return 'Dynasty League';
+  return `${toTitleCase(normalized)} League`;
+}
+
+function formatQbSetup(profile, parsed) {
+  const explicitLabel = profile?.qbLabel ?? parsed.qbLabel;
+  if (explicitLabel) return explicitLabel;
+
+  const numQbs = toFiniteNumber(profile?.numQbs ?? parsed.numQbs);
+  if (numQbs == null) return null;
+  return `${numQbs}QB`;
+}
+
+function formatTeamCount(profile, parsed) {
+  const numTeams = toFiniteNumber(profile?.numTeams ?? parsed.numTeams);
+  if (numTeams == null) return null;
+  return `${numTeams}+ ${numTeams === 1 ? 'Team' : 'Teams'}`;
+}
+
+function formatPprScoring(profile, parsed) {
+  const ppr = toFiniteNumber(profile?.ppr ?? parsed.ppr);
+  if (ppr == null) return null;
+  if (ppr === 0) return 'Standard Scoring';
+  if (ppr === 0.5) return 'Half-PPR';
+  if (ppr === 1) return 'PPR';
+  return `${Number.isInteger(ppr) ? ppr : String(ppr).replace(/0+$/, '').replace(/\.$/, '')} PPR`;
+}
+
+export function formatLeagueLogsMarketProfile({ profile = null, profileKey = '' } = {}) {
+  const parsed = parseLeagueLogsProfileKey(profileKey);
+  const parts = [
+    formatLeagueFormat(profile?.format ?? parsed.format),
+    formatQbSetup(profile, parsed),
+    formatTeamCount(profile, parsed),
+    formatPprScoring(profile, parsed),
+  ].filter(Boolean);
+
+  if (parts.length > 0) return parts.join(' - ');
+  return profileKey ? `Market profile: ${profileKey}` : '';
+}
+
 function getPprValue({ league, scoringSettings }) {
   const rec = toFiniteNumber(scoringSettings?.rec ?? league?.scoring_settings?.rec);
   if (rec == null) return 1;

@@ -2,6 +2,24 @@ import { buildRosterNeedProfile, getPositionNeedScore } from './rosterNeed.js';
 import { getPlayerProjectionProfile, playerSupportsDraftAssistant, sortDraftPlayersByProjection } from './projections.js';
 import { rankDraftCandidates } from './recommendations.js';
 import { createPointsCalculator, getRecentAvg } from '../scoringEngine.js';
+export {
+  getSleeperDraftStatus,
+  getSleeperDraftStartMs,
+  getSleeperDraftPicksSignature,
+  getSleeperDraftSemanticSignature,
+  getSleeperDraftTradedPicksSignature,
+  getScheduledDraftCountdownParts,
+  isSleeperDraftActiveRoom,
+  isSleeperDraftLive,
+  isSleeperDraftMock,
+  isSleeperDraftPollable,
+  isSleeperDraftPreDraft,
+  isSleeperUserDraftParticipant,
+  resolveLeagueDraftId,
+  shouldShowSleeperDraftGlobalNotice,
+  shouldRefreshSleeperDraftPicks,
+  shouldRefreshSleeperDraftTradedPicks,
+} from './draftStatus.js';
 
 export const DEFAULT_DRAFT_MODEL_WEIGHTS = {
   marketRank: 40,
@@ -277,10 +295,21 @@ function isCurrentDraftCandidate(player, projection) {
   return hasCurrentTeam(player);
 }
 
-export function normalizeDraftPick(rawPick, index = 0) {
+function resolvePickRosterId(rawPick, draft = null) {
+  const explicitRosterId = rawPick?.roster_id != null ? String(rawPick.roster_id) : null;
+  if (explicitRosterId) return explicitRosterId;
+
+  const draftSlot = rawPick?.draft_slot ?? rawPick?.slot;
+  if (draftSlot == null) return null;
+
+  const slotRosterId = draft?.slot_to_roster_id?.[String(draftSlot)] ?? draft?.slot_to_roster_id?.[Number(draftSlot)];
+  return slotRosterId != null ? String(slotRosterId) : null;
+}
+
+export function normalizeDraftPick(rawPick, index = 0, draft = null) {
   if (!rawPick || typeof rawPick !== 'object') return null;
   const playerId = rawPick.player_id != null ? String(rawPick.player_id) : null;
-  const rosterId = rawPick.roster_id != null ? String(rawPick.roster_id) : null;
+  const rosterId = resolvePickRosterId(rawPick, draft);
   const pickedBy = rawPick.picked_by != null ? String(rawPick.picked_by) : null;
   const round = toFiniteNumber(rawPick.round ?? rawPick.draft_round);
   const draftSlot = toFiniteNumber(rawPick.draft_slot ?? rawPick.pick_no ?? rawPick.pick ?? rawPick.round_pick);
@@ -949,6 +978,37 @@ function getMyUpcomingWindow(pickOrder, myRosterId, normalizedPicks) {
   };
 }
 
+function buildOnClockRecommendation({
+  candidates = [],
+  currentPick = null,
+  teamNeedRows = [],
+  recentPositionCounts = {},
+}) {
+  if (!currentPick?.rosterId || !candidates.length) return null;
+  const onClockNeedRow = teamNeedRows.find((row) => row.rosterId === currentPick.rosterId) ?? null;
+  const onClockNeedProfile = onClockNeedRow?.profile ?? null;
+  const standardWeightedCandidates = candidates.map((candidate) => attachDraftModelSignal({
+    ...candidate,
+    draftRoom: {
+      ...(candidate.draftRoom ?? {}),
+      boardRank: null,
+      teamNeed: getPositionNeedScore(onClockNeedProfile, candidate.position),
+      picksUntilUser: 0,
+      teamsBeforeUser: 0,
+      recentPositionRun: recentPositionCounts[candidate.position] ?? 0,
+    },
+  }, DEFAULT_DRAFT_MODEL_WEIGHTS));
+
+  return rankDraftCandidates({
+    candidates: standardWeightedCandidates,
+    boardIndex: new Map(),
+    myNeedProfile: onClockNeedProfile,
+    picksUntilUser: 0,
+    teamsBeforeUser: [],
+    recentPositionCounts,
+  })[0] ?? null;
+}
+
 export function buildDraftAssistantViewModel({
   players = {},
   rosters = [],
@@ -968,7 +1028,7 @@ export function buildDraftAssistantViewModel({
 }) {
   const normalizedModelWeights = normalizeDraftModelWeights(modelWeights);
   const normalizedPicks = draftPicks
-    .map((pick, index) => normalizeDraftPick(pick, index))
+    .map((pick, index) => normalizeDraftPick(pick, index, draft))
     .filter(Boolean)
     .sort((a, b) => a.overall - b.overall);
   const draftedIds = new Set(normalizedPicks.map((pick) => pick.playerId).filter(Boolean));
@@ -1078,6 +1138,12 @@ export function buildDraftAssistantViewModel({
   });
 
   const bestOverall = rankedCandidates[0] ?? null;
+  const onClockRecommendation = buildOnClockRecommendation({
+    candidates: rankedCandidatePool,
+    currentPick: upcomingWindow.currentPick,
+    teamNeedRows,
+    recentPositionCounts,
+  });
   const bestByPosition = {};
   for (const candidate of rankedCandidates) {
     if (!bestByPosition[candidate.position]) bestByPosition[candidate.position] = candidate;
@@ -1221,6 +1287,7 @@ export function buildDraftAssistantViewModel({
     allCandidates,
     draftedCardsById,
     rankedCandidates,
+    onClockRecommendation,
     bestOverall,
     bestByPosition,
     boardRows,
@@ -1229,6 +1296,125 @@ export function buildDraftAssistantViewModel({
     hasProjectionData: projectionBackedCandidates.length > 0,
     hasRecommendationData: rankedCandidatePool.length > 0,
     scoringCategories,
+    modelWeights: normalizedModelWeights,
+  };
+}
+
+export function buildDraftResultsViewModel({
+  players = {},
+  rosters = [],
+  league = null,
+  draft = null,
+  draftPicks = [],
+  draftTradedPicks = [],
+  myRoster = null,
+  scoringSettings = {},
+  season = null,
+  marketValuesByPlayerId = null,
+  seasonStats = null,
+  weeklyStats = null,
+  scheduleMap = null,
+  modelWeights = DEFAULT_DRAFT_MODEL_WEIGHTS,
+}) {
+  const normalizedModelWeights = normalizeDraftModelWeights(modelWeights);
+  const normalizedPicks = draftPicks
+    .map((pick, index) => normalizeDraftPick(pick, index, draft))
+    .filter(Boolean)
+    .sort((a, b) => a.overall - b.overall);
+  const pickOrder = buildPickOrder(draft, rosters, draftTradedPicks);
+  const myRosterId = myRoster?.roster_id != null ? String(myRoster.roster_id) : null;
+  const teamNeedRows = buildTeamNeedRows({ rosters, draft: league ?? draft, normalizedPicks, players });
+  const myNeedRow = teamNeedRows.find((row) => row.rosterId === myRosterId) ?? null;
+  const upcomingWindow = getMyUpcomingWindow(pickOrder, myRosterId, normalizedPicks);
+  const teamsBeforeUser = upcomingWindow.picksBeforeUser.map((pick) => {
+    const team = teamNeedRows.find((row) => row.rosterId === pick.rosterId);
+    return {
+      rosterId: pick.rosterId,
+      pickOverall: pick.overall,
+      needByPosition: team?.needByPosition ?? {},
+    };
+  });
+  const recentPositionCounts = buildRecentPositionCounts(normalizedPicks, players);
+  const rosteredIds = getRosteredPlayerIds(rosters);
+  const scoringCategories = categorizeDraftScoringSettings(scoringSettings);
+  const positionRanks = seasonStats
+    ? computeDraftPositionalRanks(seasonStats, players, scoringSettings)
+    : {};
+  const teamUsage = getTeamUsageContext(players, seasonStats);
+  const defenseTable = weeklyStats && scheduleMap
+    ? buildDraftDefenseTable(weeklyStats, players, scheduleMap, scoringSettings)
+    : {};
+
+  const draftedCardsById = new Map();
+  for (const pick of normalizedPicks) {
+    const playerId = pick.playerId;
+    if (!playerId || draftedCardsById.has(String(playerId))) continue;
+    const rawPlayer = players?.[playerId];
+    const position = normalizePosition(rawPlayer?.fantasy_positions?.[0] ?? rawPlayer?.position);
+    const marketValue = getMarketValue(marketValuesByPlayerId, playerId);
+    const projection = enrichProjectionWithMarket(
+      getPlayerProjectionProfile(rawPlayer ?? {}, scoringSettings, season),
+      marketValue,
+    );
+    const baseCandidate = {
+      id: String(playerId),
+      name: rawPlayer?.full_name || `${rawPlayer?.first_name ?? ''} ${rawPlayer?.last_name ?? ''}`.trim() || `Player ${playerId}`,
+      team: String(rawPlayer?.team ?? '—').toUpperCase(),
+      position,
+      projection,
+      rostered: rosteredIds.has(String(playerId)),
+      raw: rawPlayer ?? null,
+    };
+    const workload = buildWorkloadSignal({
+      player: baseCandidate,
+      seasonStats,
+      weeklyStats,
+      scoringSettings,
+      teamUsage,
+    });
+    const rank = buildRankSignal({
+      player: baseCandidate,
+      projection,
+      marketValue,
+      positionRanks,
+      workload,
+    });
+    const row = {
+      ...baseCandidate,
+      rank,
+      scoringFit: buildScoringFitSignal({
+        player: baseCandidate,
+        projection,
+        scoringCategories,
+        positionRanks,
+        seasonStats,
+        scoringSettings,
+        workload,
+      }),
+      workload,
+      teamContext: buildTeamContextSignal({ player: baseCandidate, teamUsage }),
+      schedule: buildScheduleSignal({ player: baseCandidate, defenseTable, scheduleMap }),
+      draftRoom: {
+        teamNeed: getPositionNeedScore(myNeedRow?.profile ?? null, position),
+        picksUntilUser: upcomingWindow.picksBeforeUser.length,
+        teamsBeforeUser: teamsBeforeUser.length,
+        recentPositionRun: recentPositionCounts[position] ?? 0,
+      },
+    };
+    draftedCardsById.set(String(playerId), attachDraftModelSignal(row, normalizedModelWeights));
+  }
+
+  return {
+    normalizedPicks,
+    pickOrder,
+    currentOverall: upcomingWindow.currentOverall,
+    currentPick: upcomingWindow.currentPick,
+    nextMyPick: upcomingWindow.nextMyPick,
+    upcomingPicks: upcomingWindow.upcomingPicks,
+    picksBeforeUser: upcomingWindow.picksBeforeUser,
+    teamNeedRows,
+    myNeedRow,
+    draftedCardsById,
     modelWeights: normalizedModelWeights,
   };
 }

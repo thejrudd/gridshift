@@ -641,6 +641,35 @@ function formatFantasyValue(value) {
   return roundPoints(value).toFixed(2);
 }
 
+function formatSeasonFantasyValue(value) {
+  if (!Number.isFinite(value)) return '--';
+  return roundPoints(value).toFixed(2);
+}
+
+function buildSeasonFantasySummaryRows(weeklyRows, scoringSettings, position) {
+  if (!weeklyRows?.length || !scoringSettings) return [];
+
+  const weeklyPoints = weeklyRows.map((weekEntry) => calcPoints(weekEntry, scoringSettings, position));
+  const seasonTotal = weeklyPoints.reduce((sum, points) => sum + points, 0);
+  const scoredWeeks = weeklyPoints.filter((points) => points > 0);
+  const averagePpg = scoredWeeks.length > 0
+    ? scoredWeeks.reduce((sum, points) => sum + points, 0) / scoredWeeks.length
+    : null;
+
+  return [
+    {
+      key: 'fantasy_season_total',
+      label: 'Fantasy Points',
+      value: formatSeasonFantasyValue(seasonTotal),
+    },
+    {
+      key: 'fantasy_ppg',
+      label: 'PPG',
+      value: formatSeasonFantasyValue(averagePpg),
+    },
+  ];
+}
+
 function compareNullableValues(left, right, direction) {
   const leftMissing = left === null || left === undefined || left === '';
   const rightMissing = right === null || right === undefined || right === '';
@@ -1345,7 +1374,9 @@ const PlayerStatTable = ({
   ), [scoringSettings, shouldBuildFantasyRanks, sleeperPlayers, sleeperSeasonStats]);
 
   const fantasyValueSections = useMemo(() => {
-    if (!showFantasyOnly || fantasyTotalsByKey.size === 0) return [];
+    if (!showFantasyOnly) return [];
+
+    const summaryRows = buildSeasonFantasySummaryRows(sleeperWeeklyRows, scoringSettings, position);
 
     const rowsByKey = new Map(FANTASY_OPTIONS
       .filter((option) => fantasyTotalsByKey.has(option.key))
@@ -1362,8 +1393,11 @@ const PlayerStatTable = ({
       })
       .filter(Boolean));
 
-    return rowsByKey.size > 0 ? buildFantasyValueSectionsFromRows(rowsByKey, position) : [];
-  }, [fantasyPositionRankByOption, fantasyRankByOption, fantasyTotalsByKey, position, showFantasyOnly, sleeperId]);
+    const sections = rowsByKey.size > 0 ? buildFantasyValueSectionsFromRows(rowsByKey, position) : [];
+    return summaryRows.length > 0
+      ? [{ heading: 'Summary', rows: summaryRows }, ...sections]
+      : sections;
+  }, [fantasyPositionRankByOption, fantasyRankByOption, fantasyTotalsByKey, position, scoringSettings, showFantasyOnly, sleeperId, sleeperWeeklyRows]);
 
   // Merge advanced sections into display when More Stats is on.
   const displayBaseSections = showMoreStats ? [...standard, ...advanced] : standard;

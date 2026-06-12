@@ -44,6 +44,7 @@ Critical rules (apply to every UI change):
 - `--color-signature` (`#F5B700`) decorative only — never body text. Use `--color-signature-fg` for text ON signature backgrounds.
 - `font-size: 16px` on all inputs (prevents iOS auto-zoom). Safe areas: `env(safe-area-inset-bottom)` on fixed bottom bars. Motion: `cubic-bezier(0.32, 0.72, 0, 1)`.
 - Companion and Trade-adjacent player/asset selector rows must use the shared row system documented in `docs/Companion Shared Rows.md`. Do not recreate local team-gradient, logo/avatar fallback, status badge, selector button, or gradient contrast logic in feature files.
+- Page-level unavailable, loading, or empty-route reason messages must be centered in the page as unframed text, matching the Companion Matchup empty-state pattern. Do not render page availability reasons as bordered cards or left-aligned panels; keep compact framed empty states only for inline list/table/filter results.
 
 ---
 
