@@ -142,6 +142,7 @@ export default function Sidebar({
           onClick={() => onTabChange('draft')}
           icon={<DraftIcon />}
           label="Draft"
+          beta
           collapsed={collapsed}
         />
         <SidebarNavItem

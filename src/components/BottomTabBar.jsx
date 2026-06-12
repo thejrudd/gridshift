@@ -3,7 +3,7 @@ export default function BottomTabBar({ activeTab, onTabChange }) {
     { id: 'companion',   label: 'Companion',   renderIcon: (active) => <CompanionIcon active={active} /> },
     { id: 'statistics',  label: 'Statistics',  renderIcon: (active) => <PlayersIcon active={active} /> },
     { id: 'trade',       label: 'Trade',       renderIcon: (active) => <TradeIcon active={active} /> },
-    { id: 'draft',       label: 'Draft',       renderIcon: (active) => <DraftIcon active={active} /> },
+    { id: 'draft',       label: 'Draft',       renderIcon: (active) => <DraftIcon active={active} />, beta: true },
     { id: 'scout',       label: 'Scout',       renderIcon: (active) => <ScoutIcon active={active} />, beta: true },
     { id: 'predictions', label: 'Predictions', renderIcon: (active) => <SeasonIcon active={active} /> },
   ];

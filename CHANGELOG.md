@@ -1081,6 +1081,7 @@ All notable changes, oldest first. Add new entries at the bottom.
 *2026-06-12*
 
 - **Top-level Draft section** - Added Draft as its own app section with War Room, Board, Results, and staged Gauntlet / Tiers/Runs routes, including legacy route normalization for older Draft Order links.
+- **Draft Beta badge** - Marked the top-level Draft section as Beta in desktop and mobile navigation.
 - **War Room intelligence** - Built a Sleeper-backed Draft model with LeagueLogs market context, completed-season PPG / workload / trend signals, scoring fit, team environment, roster need, personal board rank, and user-tunable model weights.
 - **Personal Draft Board** - Added locally saved per-position and Overall board ordering by league, season, and draft ID, with eligible-lane drag/drop, accessible move controls, saved-board drafted status, and a roster tray populated from current roster players plus live draft picks.
 - **Draft Results** - Consolidated pick order and completed picks into Results, applying traded-pick ownership before the draft and switching to drafted player rows with position, team, tier, Sleeper rank, and GridShift Rating after picks arrive.

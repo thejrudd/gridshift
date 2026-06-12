@@ -4,7 +4,7 @@ Back: [[Home]]
 
 ## Summary
 
-Draft Assistant is a top-level section for the `v8.0` release line. War Room connects to the active Sleeper league before the draft starts, reads the current draft room, lets users build per-position draft boards, and locally saves those boards by league, season, and draft ID. Board is a standalone active Draft view for the same saved board, available before and during a live draft. Results shows the Sleeper pick order before picks are made, then becomes a broadcast-style board of completed Sleeper picks, first pick first by default, with War-Room-grade player metrics (GridShift Rating, Sleeper, Tier, position, and NFL team) as enrichment data becomes available.
+Draft Assistant is a top-level Beta section for the `v8.0` release line. War Room connects to the active Sleeper league before the draft starts, reads the current draft room, lets users build per-position draft boards, and locally saves those boards by league, season, and draft ID. Board is a standalone active Draft view for the same saved board, available before and during a live draft. Results shows the Sleeper pick order before picks are made, then becomes a broadcast-style board of completed Sleeper picks, first pick first by default, with War-Room-grade player metrics (GridShift Rating, Sleeper, Tier, position, and NFL team) as enrichment data becomes available.
 
 Gauntlet and Tiers/Runs are staged as Draft subnav routes. Sleeper live draft updates are handled by polling the public draft metadata and picks endpoints. This first pass supports Sleeper `snake` and `linear` drafts only.
 
@@ -93,7 +93,7 @@ src/api/
 
 ## Product Rules
 
-- Draft Assistant is a top-level app section, not a Companion subview.
+- Draft Assistant is a top-level Beta app section, not a Companion subview.
 - `War Room` is active only while Sleeper reports the selected draft as `pre_draft`; completed, live, or in-progress draft years should route to Results instead. `Board` stays active during `pre_draft`, `drafting`, and `in_progress` draft states. `Results` stays active before, during, and after the draft; `Gauntlet` and `Tiers/Runs` are staged routes only.
 - Results shows the pick order before picks are made, then completed picks first pick first by default. Completed pick rows must surface GridShift Rating, Sleeper, and Tier metrics consistent with War Room once enrichment data is ready. It reuses the saved model weights so Rating values do not diverge between views.
 - The scheduled draft date/time, live red light, on-clock team, next team up, likely pick, pick countdown, and compact user-next-pick summary live in the shared `DraftStatusBanner`. Scheduled-start countdowns may only render from a future Sleeper `start_time` while the draft is still `pre_draft`; do not invent a schedule when Sleeper has no draft date/time. The running live pick countdown is browser-local between Sleeper polls and is resynced from `pick_timer`, `last_picked`, and `metadata.elapsed_pick_timer` when the server clock changes or drifts. The fast metadata lane must not force full picks/traded-picks refreshes every second; picks confirm actual selections, while the browser keeps visible time between Sleeper confirmations. Do not fabricate a timer when Sleeper does not provide enough clock data.

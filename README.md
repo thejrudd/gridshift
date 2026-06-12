@@ -17,7 +17,7 @@ An interactive web app for the 2026 NFL season — with full Sleeper fantasy lea
 - **Statistics Schedule** — Browse the NFL schedule by week or team with international, PrimeTime, and holiday filters
 - **Statistics Standings** — View division and conference standings from final schedule results inside the Statistics section
 - **Sleeper League Integration** — Connect your Sleeper account, import a league, and sync custom scoring settings
-- **Draft Assistant** — Use a top-level Sleeper draft room with War Room rankings, a saved Draft Board, live status timing, and consolidated pick Results
+- **Draft Assistant (Beta)** — Use a top-level Sleeper draft room with War Room rankings, a saved Draft Board, live status timing, and consolidated pick Results
 - **League Browser** — Browse any league member's full roster with stats and weekly breakdowns; view a league-wide draft capital grid showing pick ownership by round and year
 - **Fantasy Matchup View** — Head-to-head starter comparison with week-by-week points, projections, positional rankings, weather context, and game location
 - **Player Projections** — Min/max/projected ranges using a recent-weighted blend of form and season average, factoring opponent strength, home/away, weather, and snap % trend
