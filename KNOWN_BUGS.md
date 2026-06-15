@@ -9,21 +9,9 @@ Open bugs are listed first, fixed bugs below. Add new entries at the bottom of e
 | Bug |
 |-----|
 | Trade section pages still repeat too much instructional copy, making Agent, Intelligence, and Upgrades feel more verbose than necessary |
-| Desktop sidebar cannot be collapsed — always occupies 240px regardless of available screen width or user preference |
 | Companion → Matchup player projection formula hover can fail to stay open from the `i` control, hiding the projection math before it can be read |
 | Statistics player profile career highlights can show 0 TFL for defensive players when ESPN's career aggregate omits tackles for loss even though season-level defensive stats include them |
 | Companion → Defense averages round values to the nearest whole number instead of showing the nearest tenth decimal |
-| Draft War Room Big Board and Board can still have post-add overflow or confusing saved-board ranking edge cases |
-| Draft War Room Board loses useful Overall sorting controls when switching from position groups to the Overall view |
-| Draft Board can drag players into position lanes they are not eligible for |
-| Draft Board player cards can compress player identity, photo, and action controls until content overlaps |
-| Draft Board still relies on viewport cutoffs and fixed lane widths, causing cramped desktop boards on narrower available content areas |
-| Draft live status banner can lose timing usefulness because full pick and traded-pick refreshes are coupled too tightly to the 1-second clock metadata poll |
-| Draft live status banner can take 20-30 seconds to catch Sleeper mock draft pause/resume changes because draft-room API responses can be served from stale browser or upstream cache layers |
-| Draft War Room stays capped to the normal draft page max-width when the browser is manually zoomed out, leaving unused horizontal space that Draft Board already fills |
-| Draft Results loads slowly because it builds the full War Room candidate model before rendering completed picks or the pre-draft order |
-| Draft Results stays capped to the normal draft page max-width when the browser is manually zoomed out, leaving unused horizontal space that Draft Board already fills |
-| Draft Board roster tray can show raw Sleeper flex slot keys such as `REC_FLEX` and `IDP_FLEX` instead of readable roster-slot labels |
 
 ---
 
@@ -31,6 +19,18 @@ Open bugs are listed first, fixed bugs below. Add new entries at the bottom of e
 
 | Bug | Fixed In |
 |-----|----------|
+| Desktop sidebar cannot be collapsed — always occupies 240px regardless of available screen width or user preference | v8.0 |
+| Draft War Room Big Board and Board can still have post-add overflow or confusing saved-board ranking edge cases | v8.0 |
+| Draft War Room Board loses useful Overall sorting controls when switching from position groups to the Overall view | v8.0 |
+| Draft Board can drag players into position lanes they are not eligible for | v8.0 |
+| Draft Board player cards can compress player identity, photo, and action controls until content overlaps | v8.0 |
+| Draft Board still relies on viewport cutoffs and fixed lane widths, causing cramped desktop boards on narrower available content areas | v8.0 |
+| Draft live status banner can lose timing usefulness because full pick and traded-pick refreshes are coupled too tightly to the 1-second clock metadata poll | v8.0 |
+| Draft live status banner can take 20-30 seconds to catch Sleeper mock draft pause/resume changes because draft-room API responses can be served from stale browser or upstream cache layers | v8.0 |
+| Draft War Room stays capped to the normal draft page max-width when the browser is manually zoomed out, leaving unused horizontal space that Draft Board already fills | v8.0 |
+| Draft Results loads slowly because it builds the full War Room candidate model before rendering completed picks or the pre-draft order | v8.0 |
+| Draft Results stays capped to the normal draft page max-width when the browser is manually zoomed out, leaving unused horizontal space that Draft Board already fills | v8.0 |
+| Draft Board roster tray can show raw Sleeper flex slot keys such as `REC_FLEX` and `IDP_FLEX` instead of readable roster-slot labels | v8.0 |
 | Draft War Room player rows could fail to open Statistics for players whose Sleeper record had no ESPN id, even when the player could be resolved from their ESPN team roster | v8.0 |
 | Draft War Room Big Board rows could drift out of horizontal alignment when metric text changed row width, and Sleeper sentinel-scale search ranks such as 9999999 could render as meaningless rank values | v8.0 |
 | Draft War Room Big Board could leave PPG, volume, trend, and schedule fields blank because it did not load a completed-season stats package for Draft intelligence | v8.0 |

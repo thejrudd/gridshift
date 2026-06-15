@@ -1,11 +1,15 @@
 # GridShift — Roadmap
 
-Future planned work only. Completed items live in CHANGELOG.md. Bugs live in KNOWN_BUGS.md.
+Roadmap and active release work. Completed items live in CHANGELOG.md. Bugs live in KNOWN_BUGS.md.
 New features requested or planned should be added here.
 
 ---
 
 ## Planned Versions
+
+### v8.0 - Draft Assistant
+
+- **Current release line** - Draft Assistant is the active v8.0 release focus, with War Room analytics, saved Board workflows, live timing, Results, and responsive board polish represented in the current release commit. Remaining defect follow-through stays in `KNOWN_BUGS.md`; scoring-adjusted rank calibration moves to v8.1.
 
 ### v8.1 - Draft Rank Calibration
 

@@ -122,9 +122,9 @@ For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Roadmap
 
+- **v8.0 - Draft Assistant** - Current release line for Draft Assistant: War Room analytics, saved Board workflows, live timing, Results, and responsive board polish.
 - **v8.1 - Draft Rank Calibration** - Add a transparent scoring-adjusted GridShift Rank for Draft.
 - **v9.0 - Live Fantasy Scoring** - Sleeper-first live matchup experience with server-protected BALLDONTLIE support for allowlisted leagues.
-- **Future multi-platform integrations** - Revisit ESPN/Yahoo after the live-scoring data boundary is stable.
 - **Scout Rookie Projection Layer** - Add next-season rookie projections that work for standard and IDP-focused draft prep without overloading the current Scout board.
 - **Trade follow-through** - Continue polishing Trade drilldowns, remaining explanation copy, and proposal-card readability after the v7.3 module split.
 

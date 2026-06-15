@@ -1342,6 +1342,7 @@ function AppInner() {
           ref={contentAreaRef}
           className={[
             'content-area lg:px-8 pt-4 lg:pt-6',
+            activeTab === 'draft' ? 'content-area--draft' : '',
             activeTab === 'draft' && effectiveDraftView === 'war-room' ? 'content-area--draft-war-room' : '',
             activeTab === 'draft' && effectiveDraftView === 'results' ? 'content-area--draft-results' : '',
             activeTab === 'draft' && effectiveDraftView === 'my-board' ? 'content-area--draft-board' : '',

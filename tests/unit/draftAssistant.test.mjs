@@ -25,6 +25,11 @@ import {
   shouldRefreshSleeperDraftPicks,
   shouldRefreshSleeperDraftTradedPicks,
 } from '../../src/utils/draftAssistant/index.js';
+import {
+  buildDraftAnalyticsCompareRows,
+  buildDraftAnalyticsScatter,
+  getDraftAnalyticsCompareLimit,
+} from '../../src/utils/draftAssistant/analytics.js';
 import { rankDraftCandidates } from '../../src/utils/draftAssistant/recommendations.js';
 import {
   addPlayerToBoard,
@@ -259,6 +264,98 @@ test('draft board ordered helper appends new players to overall memory', () => {
 
   assert.deepEqual(state.overallIds, ['rb1', 'wr1']);
   assert.deepEqual(state.boardByPosition, { RB: ['rb1'], WR: ['wr1'] });
+});
+
+const analyticsCandidates = [
+  {
+    id: 'wr1',
+    name: 'Alpha Receiver',
+    position: 'WR',
+    team: 'DAL',
+    projection: { marketRank: 10 },
+    workload: { ppg: 18.4, primaryVolume: 144 },
+    draftRoom: { teamNeed: 0.82 },
+    draftModel: {
+      score: 86,
+      components: { marketRank: 92, pastProduction: 84, workload: 80, rosterNeed: 82, schedule: 65 },
+    },
+    rank: { tier: 1, trend: { direction: 'up', label: 'Rising' }, sourceLabel: 'Market rank' },
+    schedule: { label: 'Plus' },
+  },
+  {
+    id: 'wr2',
+    name: 'Beta Receiver',
+    position: 'WR',
+    team: 'LAC',
+    projection: { marketRank: 40 },
+    workload: { ppg: 12.1, primaryVolume: 108 },
+    draftRoom: { teamNeed: 0.42 },
+    draftModel: {
+      score: 72,
+      components: { marketRank: 68, pastProduction: 58, workload: 60, rosterNeed: 42 },
+    },
+    rank: { tier: 3, trend: { direction: 'down', label: 'Falling' } },
+    schedule: { label: 'Neutral' },
+  },
+  {
+    id: 'rb1',
+    name: 'Pinned Runner',
+    position: 'RB',
+    team: 'KC',
+    projection: { marketRank: 18 },
+    workload: { ppg: 15.7, primaryVolume: 232 },
+    draftRoom: { teamNeed: 0.3 },
+    draftModel: {
+      score: 80,
+      components: { marketRank: 84, pastProduction: 76, workload: 88, rosterNeed: 30 },
+    },
+    rank: { tier: 2, trend: { direction: 'flat', label: 'Flat' } },
+    schedule: { label: 'Tough' },
+  },
+  {
+    id: 'wr3',
+    name: 'Sparse Receiver',
+    position: 'WR',
+    team: 'FA',
+    draftModel: { components: {} },
+    rank: {},
+  },
+];
+
+test('draft analytics scatter scopes peers by focused position and forces pinned comparisons in', () => {
+  const scatter = buildDraftAnalyticsScatter({
+    candidates: analyticsCandidates,
+    focusedPlayerId: 'wr1',
+    pinnedPlayerIds: ['rb1'],
+    xAxis: 'market',
+    yAxis: 'rating',
+  });
+
+  const plottedIds = new Set(scatter.points.map((point) => point.id));
+  const alpha = scatter.points.find((point) => point.id === 'wr1');
+  const beta = scatter.points.find((point) => point.id === 'wr2');
+  const pinned = scatter.points.find((point) => point.id === 'rb1');
+
+  assert.equal(scatter.peerCount, 3);
+  assert.equal(plottedIds.has('rb1'), true);
+  assert.equal(pinned.pinned, true);
+  assert.equal(alpha.focused, true);
+  assert.equal(alpha.x > beta.x, true);
+  assert.equal(scatter.unavailableCount, 1);
+});
+
+test('draft analytics compare rows cap at four players and preserve unavailable values', () => {
+  const rows = buildDraftAnalyticsCompareRows([
+    ...analyticsCandidates,
+    { ...analyticsCandidates[0], id: 'wr4', name: 'Extra Receiver' },
+    { ...analyticsCandidates[1], id: 'wr5', name: 'Overflow Receiver' },
+  ]);
+  const ratingRow = rows.find((row) => row.key === 'rating');
+  const ppgRow = rows.find((row) => row.key === 'ppg');
+
+  assert.equal(ratingRow.cells.length, getDraftAnalyticsCompareLimit());
+  assert.equal(ppgRow.cells.length, getDraftAnalyticsCompareLimit());
+  assert.equal(ppgRow.cells.find((cell) => cell.playerId === 'wr3').value, '—');
 });
 
 test('draft player drilldown resolves null ESPN ids from team roster matches', async () => {

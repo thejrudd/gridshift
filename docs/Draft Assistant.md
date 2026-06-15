@@ -4,7 +4,7 @@ Back: [[Home]]
 
 ## Summary
 
-Draft Assistant is a top-level Beta section for the `v8.0` release line. War Room connects to the active Sleeper league before the draft starts, reads the current draft room, lets users build per-position draft boards, and locally saves those boards by league, season, and draft ID. Board is a standalone active Draft view for the same saved board, available before and during a live draft. Results shows the Sleeper pick order before picks are made, then becomes a broadcast-style board of completed Sleeper picks, first pick first by default, with War-Room-grade player metrics (GridShift Rating, Sleeper, Tier, position, and NFL team) as enrichment data becomes available.
+Draft Assistant is a top-level Beta section for the `v8.0` release line. War Room connects to the active Sleeper league before the draft starts, reads the current draft room, keeps the Big Board primary, and opens a tall analytics sheet from player row taps. Phone layouts show the analytics as a bottom sheet; tablet and desktop layouts render it inline inside War Room where the board panel used to live. The War Room `Add` action still saves players to the user's local board, while the standalone Board view owns full board ranking, lane management, and reordering before or during a live draft. Results shows the Sleeper pick order before picks are made, then becomes a broadcast-style board of completed Sleeper picks, first pick first by default, with War-Room-grade player metrics (GridShift Rating, Sleeper, Tier, position, and NFL team) as enrichment data becomes available.
 
 Gauntlet and Tiers/Runs are staged as Draft subnav routes. Sleeper live draft updates are handled by polling the public draft metadata and picks endpoints. This first pass supports Sleeper `snake` and `linear` drafts only.
 
@@ -32,6 +32,16 @@ Gauntlet and Tiers/Runs are staged as Draft subnav routes. Sleeper live draft up
 - Keeper toggles are stored locally with `draft_assistant_roster_keepers_v1:<leagueId>:<season>:<draftId>` and only affect roster-tray highlighting.
 - Scrollable board regions show arrow controls in addition to native scrolling.
 
+## War Room Analytics Sheet
+
+- War Room renders the Big Board as the primary surface. Tapping a player row opens `DraftPlayerAnalyticsSheet`; tapping the row `Add` action stops row propagation and only adds that player to the saved board. The same analytics component renders as a phone bottom sheet or an inline tablet/desktop panel depending on viewport width.
+- The analytics sheet uses existing Draft Intelligence signals only. It does not fetch new data, change scoring/model logic, persist compare state, or modify the saved board schema.
+- The hero shows player identity, position/team, Draft Rating, a `Pin Compare` control, and a prominent Statistics CTA. The CTA uses the existing Draft-to-Statistics handoff so Statistics opens in Fantasy mode with Draft as the back context.
+- The first analytics block combines compact fantasy signal bars with a Reaviz scatterplot. Default axes are Market on X and Rating on Y, normalized to 0-100 so mixed signals stay readable.
+- Scatter peer scope defaults to same-position players from the current Big Board scope, independent of search text. It renders up to 180 peer points and always includes the focused player plus any pinned comparison players.
+- Axis chips are exactly Rating, Market, PPG, Workload, and Need. Missing values are counted and shown as unavailable rather than guessed.
+- The compare tray is session-only UI state and caps at four pinned players. Mixed-position comparisons show normalized shared bars and raw position-aware rows for PPG, market rank, workload, roster need, schedule, tier, and trend.
+
 ## File Map
 
 ```
@@ -40,8 +50,11 @@ src/components/
 
 src/components/draft/
   DraftAssistant.jsx
+  DraftAnalyticsScatterChart.jsx
+  DraftPlayerAnalyticsSheet.jsx
 
 src/utils/draftAssistant/
+  analytics.js
   index.js
   draftStatus.js
   projections.js
@@ -65,7 +78,8 @@ src/api/
 7. `rosterNeed.js` estimates open starter and bench pressure from `league.roster_positions`.
 8. `index.js` attaches Draft Intelligence signal groups to every candidate: `rank`, `scoringFit`, `workload`, `teamContext`, `schedule`, `draftRoom`, and `draftModel`.
 9. `recommendations.js` turns market/search rank, past production, scoring fit, roster need, and personal board rank into explainable pre-draft recommendation rows.
-10. Drafted players are excluded from the candidate pool, so `index.js` separately enriches each drafted player into `draftedCardsById` (a `Map` keyed by Sleeper player ID) using the same signal builders. This feeds the Results view without changing the candidate pool or War Room.
+10. `analytics.js` derives War Room snapshot rows, normalized scatter points, axis metadata, and compare rows from the existing candidate model.
+11. Drafted players are excluded from the candidate pool, so `index.js` separately enriches each drafted player into `draftedCardsById` (a `Map` keyed by Sleeper player ID) using the same signal builders. This feeds the Results view without changing the candidate pool or War Room.
 
 ## Development Mock Draft Testing
 
@@ -96,6 +110,7 @@ src/api/
 - Draft Assistant is a top-level Beta app section, not a Companion subview.
 - `War Room` is active only while Sleeper reports the selected draft as `pre_draft`; completed, live, or in-progress draft years should route to Results instead. `Board` stays active during `pre_draft`, `drafting`, and `in_progress` draft states. `Results` stays active before, during, and after the draft; `Gauntlet` and `Tiers/Runs` are staged routes only.
 - Results shows the pick order before picks are made, then completed picks first pick first by default. Completed pick rows must surface GridShift Rating, Sleeper, and Tier metrics consistent with War Room once enrichment data is ready. It reuses the saved model weights so Rating values do not diverge between views.
+- War Room is for Big Board review, quick Add, analytics, and comparison. Full saved-board ranking and player movement belong in the standalone Board view.
 - The scheduled draft date/time, live red light, on-clock team, next team up, likely pick, pick countdown, and compact user-next-pick summary live in the shared `DraftStatusBanner`. Scheduled-start countdowns may only render from a future Sleeper `start_time` while the draft is still `pre_draft`; do not invent a schedule when Sleeper has no draft date/time. The running live pick countdown is browser-local between Sleeper polls and is resynced from `pick_timer`, `last_picked`, and `metadata.elapsed_pick_timer` when the server clock changes or drifts. The fast metadata lane must not force full picks/traded-picks refreshes every second; picks confirm actual selections, while the browser keeps visible time between Sleeper confirmations. Do not fabricate a timer when Sleeper does not provide enough clock data.
 - Player rows must use the shared Companion row system for player photos, team gradients, team logos, position badges, and contrast.
 - If Sleeper does not expose usable season projection totals, rank from LeagueLogs Market Index data when available and clearly label it as Overall or Market, not ADP. Do not invent fallback projected points.
@@ -105,6 +120,7 @@ src/api/
 - Availability pressure belongs to the future live Draft Room surface. Do not let it affect pre-draft Draft Rating, recommendation order, or why-line copy.
 - LeagueLogs Market Index is an optional free enrichment source with no API key. It covers offensive skill positions only, so K, DEF, and IDP rows must keep working without market values. Any surface that displays LeagueLogs data must show the returned attribution link.
 - Personal priority is stored locally as per-position membership plus a saved overall ranking per league, season, and draft ID. Positional rank order is projected from that overall ranking.
+- War Room comparison pins are session UI state only and must not be written to localStorage.
 - Board position lanes must use the shared Companion position colors from `companionAssetVisuals.js`.
 - Overall Board ranking is saved local board state. Do not add temporary sort fields that make Overall diverge from the user's manual ranking.
 - Upcoming pick ownership must come from the current pick owner. Use `draft/<draft_id>/traded_picks` to resolve acquired picks before calculating manager need pressure.

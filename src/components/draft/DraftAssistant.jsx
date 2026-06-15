@@ -4,6 +4,7 @@ import { getDraft, getDraftPicks, getDraftTradedPicks, getLeagueDrafts } from '.
 import { useSleeperBase } from '../../context/SleeperContext.jsx';
 import { useTheme } from '../../context/ThemeContext.jsx';
 import { fetchLeagueLogsMarketForLeague, formatLeagueLogsMarketProfile } from '../../api/leagueLogsApi.js';
+import useMediaQuery from '../../hooks/useMediaQuery.js';
 import CompanionPlayerRow, {
   CompanionPlayerAction,
   CompanionPlayerMetric,
@@ -51,11 +52,14 @@ import {
   normalizeBoardPosition as normalizePosition,
   removePlayerFromOrderedBoard,
 } from '../../utils/draftAssistant/board.js';
+import { getDraftAnalyticsCompareLimit } from '../../utils/draftAssistant/analytics.js';
+import DraftPlayerAnalyticsSheet from './DraftPlayerAnalyticsSheet.jsx';
 
 const BOARD_STORAGE_PREFIX = 'draft_assistant_position_board_v2';
 const LEGACY_BOARD_STORAGE_PREFIX = 'draft_assistant_board_v1';
 const MODEL_STORAGE_PREFIX = 'draft_assistant_model_weights_v2';
 const KEEPER_STORAGE_PREFIX = 'draft_assistant_roster_keepers_v1';
+const ROSTER_TRAY_COLLAPSED_SESSION_KEY = 'draft_board_roster_tray_collapsed_v1';
 const POLL_MS = 15_000;
 const LIVE_DRAFT_POLL_MS = 5_000;
 const LIVE_DRAFT_TRADED_PICK_POLL_MS = 30_000;
@@ -83,10 +87,10 @@ const MY_BOARD_SORT_OPTIONS = [
 ];
 const DRAFT_BOARD_CARD_METRIC_OPTIONS = [
   { id: 'none', label: 'None' },
-  { id: 'sleeper', label: 'Sleeper' },
-  { id: 'rating', label: 'Rating' },
+  { id: 'sleeper', label: 'Rank' },
+  { id: 'rating', label: 'Rate' },
   { id: 'ppg', label: 'PPG' },
-  { id: 'volume', label: 'Volume' },
+  { id: 'volume', label: 'Vol' },
   { id: 'tier', label: 'Tier' },
 ];
 const DRAFT_RESULTS_SORT_OPTIONS = [
@@ -1256,13 +1260,10 @@ function formatScheduledDraftCountdown(parts) {
 function formatScheduledDraftDate(startMs) {
   if (!Number.isFinite(startMs)) return '';
   return new Intl.DateTimeFormat(undefined, {
-    weekday: 'short',
     month: 'short',
     day: 'numeric',
-    year: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
-    timeZoneName: 'short',
   }).format(new Date(startMs));
 }
 
@@ -1384,13 +1385,13 @@ function DraftStatusBanner({ draft, viewModel, getUserDisplayName, onClockExpire
     return (
       <div className="draft-status-banner-shell" aria-live="polite">
         <section className="draft-status-banner draft-status-banner--scheduled">
-          <div className="draft-status-banner__scheduled-date">
+          <div className="draft-status-banner__scheduled-line">
             <span className="draft-status-banner__label">Draft Starts</span>
             <strong>{scheduledDraft.dateLabel}</strong>
-          </div>
-          <div className="draft-status-banner__scheduled-countdown" aria-label={`Draft countdown ${scheduledDraft.countdownLabel}`}>
-            <span className="draft-status-banner__label">Countdown</span>
-            <strong>{scheduledDraft.countdownLabel}</strong>
+            <span className="draft-status-banner__scheduled-divider" aria-hidden="true">•</span>
+            <span className="draft-status-banner__scheduled-countdown-value" aria-label={`Draft countdown ${scheduledDraft.countdownLabel}`}>
+              {scheduledDraft.countdownLabel}
+            </span>
           </div>
         </section>
       </div>
@@ -1550,6 +1551,27 @@ function DraftSegmentedControl({ label, options, value, onChange, className = ''
   );
 }
 
+function DraftMobileControlMenu({ label = 'Filters', children, className = '' }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className={['draft-mobile-control-menu', open ? 'is-open' : '', className].filter(Boolean).join(' ')}>
+      <button
+        type="button"
+        className="draft-mobile-control-menu__button"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <span>{label}</span>
+        <ArrowIcon direction={open ? 'up' : 'down'} />
+      </button>
+      <div className="draft-mobile-control-menu__content">
+        {children}
+      </div>
+    </div>
+  );
+}
+
 function clampDraftModelWeightInput(value) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return MODEL_WEIGHT_MIN;
@@ -1620,7 +1642,7 @@ function DraftModelWeightInfo({ label, description }) {
   );
 }
 
-function DraftModelWeights({ weights, onChange, onReset }) {
+function DraftModelWeights({ weights, onChange, onReset, className = '', idPrefix = 'draft-model-weight-label' }) {
   const [draftWeights, setDraftWeights] = useState(() => normalizeDraftModelWeights(weights));
   const draftWeightsRef = useRef(draftWeights);
 
@@ -1661,7 +1683,7 @@ function DraftModelWeights({ weights, onChange, onReset }) {
   }, 0);
 
   return (
-    <details className="draft-model-weights">
+    <details className={['draft-model-weights', className].filter(Boolean).join(' ')}>
       <summary>
         <span className="draft-model-weights__summary-title">
           <span className="draft-model-weights__chevron" aria-hidden="true" />
@@ -1673,7 +1695,7 @@ function DraftModelWeights({ weights, onChange, onReset }) {
         {MODEL_WEIGHT_CONTROLS.map((item) => {
           const value = getDisplayValue(item.key);
           const rangeValue = value === '' ? MODEL_WEIGHT_MIN : value;
-          const labelId = `draft-model-weight-label-${item.key}`;
+          const labelId = `${idPrefix}-${item.key}`;
 
           return (
             <div key={item.key} className="draft-model-weights__control">
@@ -1941,45 +1963,62 @@ const BigBoard = memo(function BigBoard({
       </button>
     );
   };
+  const renderControlFields = (className = '') => (
+    <div className={['draft-panel__header-controls', className].filter(Boolean).join(' ')}>
+      <DraftSegmentedControl
+        label="Big Board player scope"
+        options={BOARD_SCOPE_OPTIONS}
+        value={boardScope}
+        onChange={onBoardScopeChange}
+      />
+      <input
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+        placeholder="Search players"
+        aria-label="Search draft players"
+      />
+    </div>
+  );
+  const renderSortHeader = (className = '') => (
+    <div className={['draft-big-board-header', className].filter(Boolean).join(' ')} role="row">
+      <span className="draft-big-board-header__avatar-spacer" aria-hidden="true" />
+      <span className="draft-big-board-header__position-spacer" aria-hidden="true" />
+      {renderSortButton(BIG_BOARD_SORT_COLUMNS[0], 'draft-big-board-header__player')}
+      <span className="draft-big-board-header__logo-spacer" aria-hidden="true" />
+      <div className="draft-big-board-header__metrics">
+        {BIG_BOARD_SORT_COLUMNS.slice(1).map((column) => renderSortButton(column))}
+      </div>
+      <span className="draft-big-board-header__action-spacer" aria-hidden="true" />
+    </div>
+  );
 
   return (
     <section className="draft-panel draft-big-board">
       <div className="draft-panel__header">
         <div>
           <h2>Big Board</h2>
-          <span>{sorted.length} players{statsLoading ? ' · refreshing' : ''}</span>
+          {statsLoading ? <span>Refreshing rankings</span> : null}
         </div>
-        <div className="draft-panel__header-controls">
-          <DraftSegmentedControl
-            label="Big Board player scope"
-            options={BOARD_SCOPE_OPTIONS}
-            value={boardScope}
-            onChange={onBoardScopeChange}
-          />
-          <input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search players"
-            aria-label="Search draft players"
-          />
-        </div>
+        {renderControlFields('draft-desktop-control-set')}
       </div>
       <PositionFilter positions={positions} activePosition={activePosition} onChange={onPositionChange} />
+      <DraftMobileControlMenu label="Filters" className="draft-big-board__mobile-controls">
+        {renderControlFields()}
+        <DraftModelWeights
+          weights={modelWeights}
+          onChange={onModelWeightChange}
+          onReset={onResetModelWeights}
+          idPrefix="draft-mobile-model-weight-label"
+        />
+        {renderSortHeader()}
+      </DraftMobileControlMenu>
       <DraftModelWeights
         weights={modelWeights}
         onChange={onModelWeightChange}
         onReset={onResetModelWeights}
+        className="draft-desktop-control-set"
       />
-      <div className="draft-big-board-header" role="row">
-        <span className="draft-big-board-header__avatar-spacer" aria-hidden="true" />
-        <span className="draft-big-board-header__position-spacer" aria-hidden="true" />
-        {renderSortButton(BIG_BOARD_SORT_COLUMNS[0], 'draft-big-board-header__player')}
-        <span className="draft-big-board-header__logo-spacer" aria-hidden="true" />
-        <div className="draft-big-board-header__metrics">
-          {BIG_BOARD_SORT_COLUMNS.slice(1).map((column) => renderSortButton(column))}
-        </div>
-        <span className="draft-big-board-header__action-spacer" aria-hidden="true" />
-      </div>
+      {renderSortHeader('draft-desktop-control-set')}
       <div className="draft-player-list">
         {sorted.length === 0 ? (
           <EmptyState title="No players match this filter." />
@@ -2032,187 +2071,6 @@ const BigBoard = memo(function BigBoard({
   && previous.onModelWeightChange === next.onModelWeightChange
   && previous.onResetModelWeights === next.onResetModelWeights
 ));
-
-const PositionBoardGroup = memo(function PositionBoardGroup({
-  position,
-  rows,
-  darkMode,
-  onMove,
-  onRemove,
-  onViewPlayer,
-  allowReorder = true,
-}) {
-  const liveRows = rows.filter((row) => row.available);
-
-  return (
-    <section className={`draft-position-group is-${position.toLowerCase()}`}>
-      <div className="draft-position-group__header">
-        <strong>{position}</strong>
-        <span>{liveRows.length} live · {rows.length} targets</span>
-      </div>
-      {rows.length === 0 ? (
-        <div className="draft-position-group__empty">No {position} targets yet.</div>
-      ) : (
-        <div className="draft-player-list">
-          {rows.map((player, index) => (
-            <DraftPlayerRow
-              key={player.id}
-              player={player}
-              darkMode={darkMode}
-              className={[
-                'draft-player-row--board',
-                player?.draftedBy?.isMine ? 'is-drafted-by-user' : '',
-                player?.available === false && !player?.draftedBy?.isMine ? 'is-drafted-by-other' : '',
-              ].filter(Boolean).join(' ')}
-              disabled={!player.available}
-              onViewPlayer={onViewPlayer}
-              metrics={getBoardRowMetrics(player)}
-              status={getDraftBoardStatus(player)}
-              actions={[
-                allowReorder ? (
-                  <CompanionPlayerAction
-                    key="up"
-                    label={`Move ${getPlayerName(player)} up`}
-                    disabled={index === 0}
-                    onClick={() => onMove(position, player.id, -1)}
-                  >
-                    <ArrowIcon direction="up" />
-                  </CompanionPlayerAction>
-                ) : null,
-                allowReorder ? (
-                  <CompanionPlayerAction
-                    key="down"
-                    label={`Move ${getPlayerName(player)} down`}
-                    disabled={index === rows.length - 1}
-                    onClick={() => onMove(position, player.id, 1)}
-                  >
-                    <ArrowIcon direction="down" />
-                  </CompanionPlayerAction>
-                ) : null,
-                <CompanionPlayerAction
-                  key="remove"
-                  label={`Remove ${getPlayerName(player)} from board`}
-                  onClick={() => onRemove(player.id)}
-                >
-                  <CloseIcon />
-                </CompanionPlayerAction>,
-              ].filter(Boolean)}
-            />
-          ))}
-        </div>
-      )}
-    </section>
-  );
-}, (previous, next) => (
-  previous.position === next.position
-  && previous.darkMode === next.darkMode
-  && previous.allowReorder === next.allowReorder
-  && previous.onMove === next.onMove
-  && previous.onRemove === next.onRemove
-  && previous.onViewPlayer === next.onViewPlayer
-  && haveSamePlayerRows(previous.rows, next.rows)
-));
-
-function MyBoard({
-  boardByPosition,
-  overallBoardIds,
-  boardRows,
-  darkMode,
-  onMove,
-  onRemove,
-  onViewPlayer,
-  sortMode,
-  onSortModeChange,
-}) {
-  const [visibleBoardState, setVisibleBoardState] = useState(() => createOrderedBoardState(boardByPosition, overallBoardIds));
-
-  useEffect(() => {
-    setVisibleBoardState(createOrderedBoardState(boardByPosition, overallBoardIds));
-  }, [boardByPosition, overallBoardIds]);
-
-  const moveVisibleBoardPlayer = useCallback((position, playerId, direction) => {
-    flushSync(() => {
-      setVisibleBoardState((current) => (
-        position === 'Overall'
-          ? moveOverallBoardPlayer(current, playerId, direction)
-          : moveOrderedBoardPlayerWithinPosition(current, position, playerId, direction)
-      ));
-    });
-    onMove(position, playerId, direction);
-  }, [onMove]);
-
-  const removeVisibleBoardPlayer = useCallback((playerId) => {
-    flushSync(() => {
-      setVisibleBoardState((current) => removePlayerFromOrderedBoard(current, playerId));
-    });
-    onRemove(playerId);
-  }, [onRemove]);
-
-  const rowsByPosition = new Map(boardRows.map((row) => [String(row.id), row]));
-  const positions = Object.keys(visibleBoardState.boardByPosition ?? {});
-  const orderedPositions = [
-    ...POSITION_ORDER.filter((position) => positions.includes(position)),
-    ...positions.filter((position) => !POSITION_ORDER.includes(position)).sort(),
-  ];
-  const overallRows = visibleBoardState.overallIds
-    .map((id) => rowsByPosition.get(String(id)))
-    .filter(Boolean);
-
-  return (
-    <section className="draft-panel draft-my-board">
-      <div className="draft-panel__header">
-        <div>
-          <h2>Board</h2>
-          <span>{visibleBoardState.overallIds.length} ranked targets</span>
-        </div>
-        {orderedPositions.length > 0 ? (
-          <div className="draft-my-board__controls">
-            <DraftSegmentedControl
-              label="Board view"
-              options={MY_BOARD_SORT_OPTIONS}
-              value={sortMode}
-              onChange={onSortModeChange}
-            />
-          </div>
-        ) : null}
-      </div>
-      {orderedPositions.length === 0 ? (
-        <EmptyState
-          title="No players on your board yet."
-          description="Add players from the Big Board, then rank them within each position."
-        />
-      ) : (
-        <div className="draft-position-board">
-          {sortMode === 'overall' ? (
-            <PositionBoardGroup
-              position="Overall"
-              rows={overallRows}
-              darkMode={darkMode}
-              onMove={moveVisibleBoardPlayer}
-              onRemove={removeVisibleBoardPlayer}
-              onViewPlayer={onViewPlayer}
-            />
-          ) : orderedPositions.map((position) => {
-            const rows = (visibleBoardState.boardByPosition[position] ?? [])
-              .map((id) => rowsByPosition.get(String(id)))
-              .filter(Boolean);
-            return (
-              <PositionBoardGroup
-                key={position}
-                position={position}
-                rows={rows}
-                darkMode={darkMode}
-                onMove={moveVisibleBoardPlayer}
-                onRemove={removeVisibleBoardPlayer}
-                onViewPlayer={onViewPlayer}
-              />
-            );
-          })}
-        </div>
-      )}
-    </section>
-  );
-}
 
 function getWorkspaceLanePositions(positions, boardByPosition) {
   const found = new Set();
@@ -2467,6 +2325,8 @@ function DraftBoardCardShell({
     );
   }
 
+  const boardStatus = getDraftBoardStatus(player);
+
   return (
     <div
       className={[
@@ -2496,6 +2356,7 @@ function DraftBoardCardShell({
           'draft-player-row--board-card',
           index != null ? 'draft-player-row--ranked-card' : 'draft-player-row--available-card',
           cardMetric ? 'has-board-card-metric' : '',
+          boardStatus ? 'has-board-card-status' : '',
           isDraftedByUser ? 'is-drafted-by-user' : '',
           isGone && !isDraftedByUser ? 'is-drafted-by-other' : '',
         ].filter(Boolean).join(' ')}
@@ -2508,7 +2369,7 @@ function DraftBoardCardShell({
         identityMetaSegments={[[player.position, player.team || 'FA'].filter(Boolean).join(' · ')]}
         compact={false}
         showPosition={false}
-        status={getDraftBoardStatus(player)}
+        status={boardStatus}
         actions={actions}
         showTeamLogo={false}
       />
@@ -2565,15 +2426,37 @@ function DraftScrollControls({ targetRef, axis = 'x', label }) {
 
   if (!scrollState.scrollable) return null;
 
+  if (axis === 'x') {
+    return (
+      <div
+        className={[
+          'draft-scroll-controls',
+          'is-x',
+          !scrollState.atStart ? 'can-scroll-start' : '',
+          !scrollState.atEnd ? 'can-scroll-end' : '',
+        ].filter(Boolean).join(' ')}
+        aria-hidden="true"
+      >
+        {!scrollState.atStart ? (
+          <span className="draft-scroll-cue is-start">
+            <DraftScrollIcon axis={axis} direction="start" />
+          </span>
+        ) : null}
+        {!scrollState.atEnd ? (
+          <span className="draft-scroll-cue is-end">
+            <DraftScrollIcon axis={axis} direction="end" />
+          </span>
+        ) : null}
+      </div>
+    );
+  }
+
   const scroll = (direction) => {
     const element = targetRef.current;
     if (!element) return;
-    const distance = axis === 'x'
-      ? Math.max(160, Math.floor(element.clientWidth * 0.72))
-      : Math.max(96, Math.floor(element.clientHeight * 0.72));
+    const distance = Math.max(96, Math.floor(element.clientHeight * 0.72));
     element.scrollBy({
-      left: axis === 'x' ? (direction === 'start' ? -distance : distance) : 0,
-      top: axis === 'y' ? (direction === 'start' ? -distance : distance) : 0,
+      top: direction === 'start' ? -distance : distance,
       behavior: 'smooth',
     });
   };
@@ -2582,7 +2465,7 @@ function DraftScrollControls({ targetRef, axis = 'x', label }) {
     <div
       className={[
         'draft-scroll-controls',
-        `is-${axis}`,
+        'is-y',
         !scrollState.atStart ? 'can-scroll-start' : '',
         !scrollState.atEnd ? 'can-scroll-end' : '',
       ].filter(Boolean).join(' ')}
@@ -2593,7 +2476,7 @@ function DraftScrollControls({ targetRef, axis = 'x', label }) {
           type="button"
           className="draft-scroll-arrow is-start"
           onClick={() => scroll('start')}
-          aria-label={`Scroll ${label} ${axis === 'x' ? 'left' : 'up'}`}
+          aria-label={`Scroll ${label} up`}
         >
           <DraftScrollIcon axis={axis} direction="start" />
         </button>
@@ -2603,7 +2486,7 @@ function DraftScrollControls({ targetRef, axis = 'x', label }) {
           type="button"
           className="draft-scroll-arrow is-end"
           onClick={() => scroll('end')}
-          aria-label={`Scroll ${label} ${axis === 'x' ? 'right' : 'down'}`}
+          aria-label={`Scroll ${label} down`}
         >
           <DraftScrollIcon axis={axis} direction="end" />
         </button>
@@ -2753,7 +2636,7 @@ const DraftBoardLane = memo(function DraftBoardLane({
           ))}
           {rows.length === 0 ? (
             <div className="draft-board-lane__empty">
-              {allowDrop ? `Drop ${position} targets here.` : 'Add players from Available to sort this view.'}
+              Add players from Available to sort this view.
             </div>
           ) : (
             allowDrop ? <div className="draft-board-lane__drop">Drop to add at bottom</div> : null
@@ -2780,11 +2663,21 @@ const DraftBoardLane = memo(function DraftBoardLane({
   && haveSamePlayerRows(previous.rows, next.rows)
 ));
 
-function DraftRosterTray({ slots, onToggleKeeper }) {
+function DraftRosterTray({ slots, collapsed, onToggleCollapsed }) {
   const slotsRef = useRef(null);
+  const filledCount = slots.filter((slot) => slot.player).length;
   return (
-    <section className="draft-board-roster-tray" aria-label="My roster">
-      <div className="draft-board-roster-tray__label">My Roster</div>
+    <section className={['draft-board-roster-tray', collapsed ? 'is-collapsed' : ''].filter(Boolean).join(' ')} aria-label="My roster">
+      <button
+        type="button"
+        className="draft-board-roster-tray__label"
+        aria-expanded={!collapsed}
+        onClick={onToggleCollapsed}
+      >
+        <span>My Roster</span>
+        <strong>{filledCount}/{slots.length}</strong>
+        <ArrowIcon direction={collapsed ? 'up' : 'down'} />
+      </button>
       <div className="draft-scroll-region draft-board-roster-tray__slots-shell">
         <div ref={slotsRef} className="draft-board-roster-tray__slots">
           {slots.map((slot) => (
@@ -2793,24 +2686,13 @@ function DraftRosterTray({ slots, onToggleKeeper }) {
               className={[
                 'draft-board-roster-slot',
                 slot.player ? 'is-filled' : '',
-                slot.player?.isKeeper ? 'is-keeper' : '',
               ].filter(Boolean).join(' ')}
             >
               <span className="draft-board-roster-slot__slot">{formatRosterSlotLabel(slot.slot)}</span>
               {slot.player ? (
                 <>
-                  <button
-                    type="button"
-                    className="draft-board-roster-slot__keeper"
-                    aria-pressed={slot.player.isKeeper}
-                    aria-label={`${slot.player.isKeeper ? 'Unmark' : 'Mark'} ${slot.player.name} as keeper`}
-                    onClick={() => onToggleKeeper?.(slot.player.id)}
-                  >
-                    <CheckIcon />
-                    <span>{slot.player.isKeeper ? 'Keeper' : 'Keep'}</span>
-                  </button>
                   <strong>{slot.player.name}</strong>
-                  <span>{[slot.player.team, slot.player.position, slot.player.sourceLabel].filter(Boolean).join(' · ')}</span>
+                  <span>{[slot.player.position, slot.player.team].filter(Boolean).join(' · ')}</span>
                 </>
               ) : (
                 <span>Open</span>
@@ -2838,7 +2720,6 @@ function MyBoardWorkspace({
   onRemove,
   onViewPlayer,
   boardViewMode,
-  onBoardViewModeChange,
   activePosition,
   onPositionChange,
   query,
@@ -2846,7 +2727,6 @@ function MyBoardWorkspace({
   boardScope,
   onBoardScopeChange,
   rosterSlots,
-  onToggleKeeper,
   cardMetricKey,
 }) {
   const boardRowsById = useMemo(() => new Map(boardRows.map((row) => [String(row.id), row])), [boardRows]);
@@ -2873,12 +2753,29 @@ function MyBoardWorkspace({
   const [activeLane, setActiveLane] = useState(() => lanePositions[0] ?? 'QB');
   const [draggingPlayerId, setDraggingPlayerId] = useState(null);
   const [availableRailWidth, setAvailableRailWidth] = useState(300);
+  const [rosterCollapsed, setRosterCollapsed] = useState(() => {
+    if (typeof window === 'undefined') return true;
+    try {
+      return window.sessionStorage.getItem(ROSTER_TRAY_COLLAPSED_SESSION_KEY) !== 'expanded';
+    } catch {
+      return true;
+    }
+  });
   const lanesRef = useRef(null);
   const dragRef = useRef(null);
 
   useEffect(() => {
     if (!lanePositions.includes(activeLane)) setActiveLane(lanePositions[0] ?? 'QB');
   }, [lanePositions, activeLane]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.sessionStorage.setItem(ROSTER_TRAY_COLLAPSED_SESSION_KEY, rosterCollapsed ? 'collapsed' : 'expanded');
+    } catch {
+      // Session persistence is optional; the UI still works without it.
+    }
+  }, [rosterCollapsed]);
 
   const visibleAvailablePlayers = useMemo(() => (
     filterCandidates(
@@ -2964,7 +2861,11 @@ function MyBoardWorkspace({
   return (
     <div className="draft-board-workspace-shell">
       <div
-        className={['draft-board-workspace', draggingPlayerId ? 'is-dragging' : ''].filter(Boolean).join(' ')}
+        className={[
+          'draft-board-workspace',
+          draggingPlayerId ? 'is-dragging' : '',
+          rosterCollapsed ? 'is-roster-collapsed' : '',
+        ].filter(Boolean).join(' ')}
         style={{ '--draft-board-rail-width': `${availableRailWidth}px` }}
       >
         <aside className="draft-board-available-rail" aria-label="Available players">
@@ -3033,20 +2934,11 @@ function MyBoardWorkspace({
             />
           </details>
 
-          <div className="draft-board-main__view-control">
-            <DraftSegmentedControl
-              label="Board view"
-              options={MY_BOARD_SORT_OPTIONS}
-              value={boardViewMode}
-              onChange={onBoardViewModeChange}
-            />
-          </div>
-
-          <div className="draft-board-mobile-lane-filter">
-            {boardViewMode === 'position' ? (
+          {boardViewMode === 'position' ? (
+            <div className="draft-board-mobile-lane-filter">
               <PositionFilter positions={lanePositions} activePosition={activeLane} onChange={setActiveLane} />
-            ) : null}
-          </div>
+            </div>
+          ) : null}
 
           <div className="draft-scroll-region draft-board-lanes-shell">
             <div
@@ -3091,7 +2983,11 @@ function MyBoardWorkspace({
           </div>
         </section>
 
-        <DraftRosterTray slots={rosterSlots} onToggleKeeper={onToggleKeeper} />
+        <DraftRosterTray
+          slots={rosterSlots}
+          collapsed={rosterCollapsed}
+          onToggleCollapsed={() => setRosterCollapsed((current) => !current)}
+        />
       </div>
     </div>
   );
@@ -3194,6 +3090,7 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
   const { darkMode } = useTheme();
   const isStandaloneBoard = mode === 'my-board';
   const viewLabel = isStandaloneBoard ? 'Board' : 'Draft War Room';
+  const useAnalyticsModal = useMediaQuery('(max-width: 767px)');
 
   const [boardState, setBoardState] = useState(() => createOrderedBoardState(emptyBoard(), []));
   const [boardReady, setBoardReady] = useState(false);
@@ -3215,6 +3112,9 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
   const [boardScope, setBoardScope] = useState('available');
   const [myBoardSortMode, setMyBoardSortMode] = useState('position');
   const [draftBoardCardMetric, setDraftBoardCardMetric] = useState('none');
+  const [selectedAnalyticsPlayerId, setSelectedAnalyticsPlayerId] = useState(null);
+  const [pinnedCompareIds, setPinnedCompareIds] = useState([]);
+  const [analyticsAxes, setAnalyticsAxes] = useState({ xAxis: 'market', yAxis: 'rating' });
   const [modelWeights, setModelWeights] = useState(() => normalizeDraftModelWeights(DEFAULT_DRAFT_MODEL_WEIGHTS));
   const [modelWeightsReady, setModelWeightsReady] = useState(false);
   const [draftViewModelState, setDraftViewModelState] = useState({
@@ -3551,6 +3451,18 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
     }
     return activePlayersWithRanks.filter((player) => !player.rostered);
   }, [activePlayersWithRanks, boardScope, draftMeta?.season, season]);
+  const analyticsPlayerById = useMemo(
+    () => new Map(activePlayersWithRanks.map((player) => [String(player.id), player])),
+    [activePlayersWithRanks],
+  );
+  const selectedAnalyticsPlayer = selectedAnalyticsPlayerId
+    ? analyticsPlayerById.get(String(selectedAnalyticsPlayerId)) ?? null
+    : null;
+  const analyticsCandidates = useMemo(() => [
+    ...bigBoardPlayers,
+    selectedAnalyticsPlayer,
+    ...pinnedCompareIds.map((id) => analyticsPlayerById.get(String(id))).filter(Boolean),
+  ].filter(Boolean), [analyticsPlayerById, bigBoardPlayers, pinnedCompareIds, selectedAnalyticsPlayer]);
   const dropPlayerLookup = useMemo(() => new Map(
     [...bigBoardPlayers, ...boardRowsWithRanks].map((player) => [String(player.id), player]),
   ), [bigBoardPlayers, boardRowsWithRanks]);
@@ -3564,6 +3476,12 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
   useEffect(() => {
     if (!positions.includes(positionFilter)) setPositionFilter('ALL');
   }, [positions, positionFilter]);
+
+  useEffect(() => {
+    if (selectedAnalyticsPlayerId && !selectedAnalyticsPlayer) {
+      setSelectedAnalyticsPlayerId(null);
+    }
+  }, [selectedAnalyticsPlayer, selectedAnalyticsPlayerId]);
 
   const updateBoardState = useCallback((updater) => {
     if (isStandaloneBoard) {
@@ -3596,16 +3514,20 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
     ));
   }, [updateBoardState]);
 
-  const toggleKeeper = (playerId) => {
+  const toggleComparePin = useCallback((playerId) => {
     const id = String(playerId ?? '');
     if (!id) return;
-    setKeeperIds((current) => {
-      const next = new Set(current);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
+    setPinnedCompareIds((current) => {
+      if (current.includes(id)) return current.filter((item) => item !== id);
+      if (current.length >= getDraftAnalyticsCompareLimit()) return current;
+      return [...current, id];
     });
-  };
+  }, []);
+
+  const openAnalyticsPlayerStatistics = useCallback((playerId) => {
+    setSelectedAnalyticsPlayerId(null);
+    onViewPlayer?.(playerId);
+  }, [onViewPlayer]);
 
   const changeModelWeight = (weights) => {
     setModelWeights(normalizeDraftModelWeights(weights));
@@ -3724,7 +3646,14 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
           profile={marketState.profile}
           lastRefreshed={marketState.lastRefreshed}
         />
-        <div className="draft-board-page-controls">
+        <div className="draft-board-page-controls draft-desktop-control-set">
+          <DraftSegmentedControl
+            label="Board view"
+            options={MY_BOARD_SORT_OPTIONS}
+            value={myBoardSortMode}
+            onChange={setMyBoardSortMode}
+            className="draft-board-view-control"
+          />
           <DraftSegmentedControl
             label="Board card metric"
             options={DRAFT_BOARD_CARD_METRIC_OPTIONS}
@@ -3733,6 +3662,24 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
             className="draft-board-card-metric-control"
           />
         </div>
+        <DraftMobileControlMenu label="Board filters" className="draft-board-page-mobile-controls">
+          <div className="draft-board-page-controls">
+            <DraftSegmentedControl
+              label="Board view"
+              options={MY_BOARD_SORT_OPTIONS}
+              value={myBoardSortMode}
+              onChange={setMyBoardSortMode}
+              className="draft-board-view-control"
+            />
+            <DraftSegmentedControl
+              label="Board card metric"
+              options={DRAFT_BOARD_CARD_METRIC_OPTIONS}
+              value={draftBoardCardMetric}
+              onChange={setDraftBoardCardMetric}
+              className="draft-board-card-metric-control"
+            />
+          </div>
+        </DraftMobileControlMenu>
         <MyBoardWorkspace
           boardByPosition={orderedBoardByPosition}
           overallBoardIds={boardIds}
@@ -3747,7 +3694,6 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
           onRemove={removeFromBoard}
           onViewPlayer={onViewPlayer}
           boardViewMode={myBoardSortMode}
-          onBoardViewModeChange={setMyBoardSortMode}
           activePosition={positionFilter}
           onPositionChange={setPositionFilter}
           query={query}
@@ -3755,7 +3701,6 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
           boardScope={boardScope}
           onBoardScopeChange={setBoardScope}
           rosterSlots={rosterSlots}
-          onToggleKeeper={toggleKeeper}
           cardMetricKey={draftBoardCardMetric}
         />
       </div>
@@ -3771,7 +3716,12 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
         profile={marketState.profile}
         lastRefreshed={marketState.lastRefreshed}
       />
-      <div className="draft-war-room">
+      <div className={[
+        'draft-war-room',
+        'draft-war-room--analytics',
+        selectedAnalyticsPlayer && !useAnalyticsModal ? 'has-inline-analytics' : '',
+      ].filter(Boolean).join(' ')}
+      >
         <BigBoard
           candidates={bigBoardPlayers}
           boardIds={boardIdSet}
@@ -3781,7 +3731,7 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
           positions={positions}
           onPositionChange={setPositionFilter}
           onAdd={addToBoard}
-          onViewPlayer={onViewPlayer}
+          onViewPlayer={(playerId) => setSelectedAnalyticsPlayerId(String(playerId))}
           darkMode={darkMode}
           boardScope={boardScope}
           onBoardScopeChange={setBoardScope}
@@ -3790,18 +3740,36 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
           onModelWeightChange={changeModelWeight}
           onResetModelWeights={resetModelWeights}
         />
-        <MyBoard
-          boardByPosition={orderedBoardByPosition}
-          overallBoardIds={boardIds}
-          boardRows={boardRowsWithRanks}
-          darkMode={darkMode}
-          onMove={moveBoardPlayer}
-          onRemove={removeFromBoard}
-          onViewPlayer={onViewPlayer}
-          sortMode={myBoardSortMode}
-          onSortModeChange={setMyBoardSortMode}
-        />
+        {selectedAnalyticsPlayer && !useAnalyticsModal ? (
+          <DraftPlayerAnalyticsSheet
+            presentation="inline"
+            className="draft-war-room__analytics-pane"
+            player={selectedAnalyticsPlayer}
+            candidates={analyticsCandidates}
+            pinnedPlayerIds={pinnedCompareIds}
+            xAxis={analyticsAxes.xAxis}
+            yAxis={analyticsAxes.yAxis}
+            onAxisChange={setAnalyticsAxes}
+            onTogglePin={toggleComparePin}
+            onOpenStatistics={openAnalyticsPlayerStatistics}
+            onClose={() => setSelectedAnalyticsPlayerId(null)}
+          />
+        ) : null}
       </div>
+      {selectedAnalyticsPlayer && useAnalyticsModal ? (
+        <DraftPlayerAnalyticsSheet
+          presentation="modal"
+          player={selectedAnalyticsPlayer}
+          candidates={analyticsCandidates}
+          pinnedPlayerIds={pinnedCompareIds}
+          xAxis={analyticsAxes.xAxis}
+          yAxis={analyticsAxes.yAxis}
+          onAxisChange={setAnalyticsAxes}
+          onTogglePin={toggleComparePin}
+          onOpenStatistics={openAnalyticsPlayerStatistics}
+          onClose={() => setSelectedAnalyticsPlayerId(null)}
+        />
+      ) : null}
     </div>
   );
 }
