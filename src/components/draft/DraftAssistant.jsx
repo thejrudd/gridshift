@@ -1964,7 +1964,7 @@ const BigBoard = memo(function BigBoard({
     );
   };
   const renderControlFields = (className = '') => (
-    <div className={['draft-panel__header-controls', className].filter(Boolean).join(' ')}>
+    <div className={['draft-panel__header-controls', 'draft-big-board-controls', className].filter(Boolean).join(' ')}>
       <DraftSegmentedControl
         label="Big Board player scope"
         options={BOARD_SCOPE_OPTIONS}
@@ -1972,6 +1972,7 @@ const BigBoard = memo(function BigBoard({
         onChange={onBoardScopeChange}
       />
       <input
+        className="draft-big-board-search"
         value={query}
         onChange={(event) => setQuery(event.target.value)}
         placeholder="Search players"
@@ -2010,7 +2011,6 @@ const BigBoard = memo(function BigBoard({
           onReset={onResetModelWeights}
           idPrefix="draft-mobile-model-weight-label"
         />
-        {renderSortHeader()}
       </DraftMobileControlMenu>
       <DraftModelWeights
         weights={modelWeights}
@@ -2018,6 +2018,7 @@ const BigBoard = memo(function BigBoard({
         onReset={onResetModelWeights}
         className="draft-desktop-control-set"
       />
+      {renderSortHeader('draft-mobile-sort-header')}
       {renderSortHeader('draft-desktop-control-set')}
       <div className="draft-player-list">
         {sorted.length === 0 ? (
@@ -3751,6 +3752,9 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
             yAxis={analyticsAxes.yAxis}
             onAxisChange={setAnalyticsAxes}
             onTogglePin={toggleComparePin}
+            onAddToBoard={addToBoard}
+            boardIds={boardIdSet}
+            onSelectPlayer={(playerId) => setSelectedAnalyticsPlayerId(String(playerId))}
             onOpenStatistics={openAnalyticsPlayerStatistics}
             onClose={() => setSelectedAnalyticsPlayerId(null)}
           />
@@ -3766,6 +3770,9 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
           yAxis={analyticsAxes.yAxis}
           onAxisChange={setAnalyticsAxes}
           onTogglePin={toggleComparePin}
+          onAddToBoard={addToBoard}
+          boardIds={boardIdSet}
+          onSelectPlayer={(playerId) => setSelectedAnalyticsPlayerId(String(playerId))}
           onOpenStatistics={openAnalyticsPlayerStatistics}
           onClose={() => setSelectedAnalyticsPlayerId(null)}
         />

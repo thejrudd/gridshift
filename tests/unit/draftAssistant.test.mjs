@@ -28,6 +28,8 @@ import {
 import {
   buildDraftAnalyticsCompareRows,
   buildDraftAnalyticsScatter,
+  buildDraftAnalyticsSnapshot,
+  getDraftAnalyticsAxisOptions,
   getDraftAnalyticsCompareLimit,
 } from '../../src/utils/draftAssistant/analytics.js';
 import { rankDraftCandidates } from '../../src/utils/draftAssistant/recommendations.js';
@@ -320,6 +322,79 @@ const analyticsCandidates = [
     draftModel: { components: {} },
     rank: {},
   },
+  {
+    id: 'wr4',
+    name: 'Practice Squad Receiver',
+    position: 'WR',
+    team: 'DAL',
+    status: 'Practice Squad',
+    projection: { marketRank: 500 },
+    workload: { ppg: 0.4, primaryVolume: 3 },
+    draftRoom: { teamNeed: 0.1 },
+    draftModel: {
+      score: 2,
+      components: { marketRank: 1, pastProduction: 1, workload: 1, rosterNeed: 10 },
+    },
+    rank: {},
+  },
+  {
+    id: 'wr5',
+    name: 'Inactive Receiver',
+    position: 'WR',
+    team: 'LAC',
+    raw: { active: false },
+    projection: { marketRank: 450 },
+    workload: { ppg: 0.2, primaryVolume: 1 },
+    draftRoom: { teamNeed: 0.1 },
+    draftModel: {
+      score: 4,
+      components: { marketRank: 1, pastProduction: 1, workload: 1, rosterNeed: 10 },
+    },
+    rank: {},
+  },
+  {
+    id: 'wr6',
+    name: 'Sentinel Receiver',
+    position: 'WR',
+    team: 'KC',
+    projection: { marketRank: 999, marketValue: 0.5 },
+    workload: { ppg: 1.8, primaryVolume: 12 },
+    draftRoom: { teamNeed: 0.1 },
+    draftModel: {
+      score: 12,
+      components: { marketRank: 1, pastProduction: 8, workload: 10, rosterNeed: 10 },
+    },
+    rank: {},
+  },
+  {
+    id: 'wr7',
+    name: 'Rotational Receiver',
+    position: 'WR',
+    team: 'SF',
+    projection: { marketRank: 75, marketValue: 8.4 },
+    workload: { ppg: 7.2, primaryVolume: 66 },
+    draftRoom: { teamNeed: 0.32 },
+    draftModel: {
+      score: 54,
+      components: { marketRank: 54, pastProduction: 45, workload: 44, rosterNeed: 32 },
+    },
+    rank: { tier: 5, trend: { direction: 'flat', label: 'Flat' } },
+  },
+  {
+    id: 'wr8',
+    name: 'Rookie Receiver',
+    position: 'WR',
+    team: 'NYG',
+    years_exp: 0,
+    projection: { marketRank: 62, marketValue: 12.2 },
+    workload: { ppg: 9.9, primaryVolume: 88 },
+    draftRoom: { teamNeed: 0.68 },
+    draftModel: {
+      score: 69,
+      components: { marketRank: 61, pastProduction: 50, workload: 52, rosterNeed: 68 },
+    },
+    rank: { tier: 4, trend: { direction: 'flat', label: 'Flat' } },
+  },
 ];
 
 test('draft analytics scatter scopes peers by focused position and forces pinned comparisons in', () => {
@@ -336,12 +411,38 @@ test('draft analytics scatter scopes peers by focused position and forces pinned
   const beta = scatter.points.find((point) => point.id === 'wr2');
   const pinned = scatter.points.find((point) => point.id === 'rb1');
 
-  assert.equal(scatter.peerCount, 3);
+  assert.equal(scatter.peerCount, 4);
   assert.equal(plottedIds.has('rb1'), true);
+  assert.equal(plottedIds.has('wr7'), true);
+  assert.equal(plottedIds.has('wr8'), true);
+  assert.equal(plottedIds.has('wr3'), false);
+  assert.equal(plottedIds.has('wr4'), false);
+  assert.equal(plottedIds.has('wr5'), false);
+  assert.equal(plottedIds.has('wr6'), false);
   assert.equal(pinned.pinned, true);
   assert.equal(alpha.focused, true);
   assert.equal(alpha.x > beta.x, true);
-  assert.equal(scatter.unavailableCount, 1);
+  assert.equal(scatter.xAxis.minLabel, '#75');
+  assert.equal(scatter.xAxis.maxLabel, '#10');
+  assert.equal(scatter.referenceLine.kind, 'fair');
+  assert.equal(scatter.referenceLine.label, 'Fair value');
+  assert.equal(scatter.unavailableCount, 0);
+});
+
+test('draft analytics scatter uses a dynamic trend line for non-market rating axis pairs', () => {
+  const scatter = buildDraftAnalyticsScatter({
+    candidates: analyticsCandidates,
+    focusedPlayerId: 'wr1',
+    xAxis: 'workload',
+    yAxis: 'ppg',
+  });
+
+  assert.equal(scatter.referenceLine.kind, 'trend');
+  assert.equal(scatter.referenceLine.label, 'Trend');
+  assert.notDeepEqual(
+    [scatter.referenceLine.x1, scatter.referenceLine.y1, scatter.referenceLine.x2, scatter.referenceLine.y2],
+    [0, 0, 100, 100],
+  );
 });
 
 test('draft analytics compare rows cap at four players and preserve unavailable values', () => {
@@ -356,6 +457,39 @@ test('draft analytics compare rows cap at four players and preserve unavailable 
   assert.equal(ratingRow.cells.length, getDraftAnalyticsCompareLimit());
   assert.equal(ppgRow.cells.length, getDraftAnalyticsCompareLimit());
   assert.equal(ppgRow.cells.find((cell) => cell.playerId === 'wr3').value, '—');
+});
+
+test('draft analytics treats rookie past production and workload as unavailable', () => {
+  const rookie = analyticsCandidates.find((candidate) => candidate.id === 'wr8');
+  const snapshot = buildDraftAnalyticsSnapshot(rookie, analyticsCandidates);
+  const ppgRow = snapshot.find((row) => row.key === 'ppg');
+  const workloadRow = snapshot.find((row) => row.key === 'workload');
+
+  assert.equal(ppgRow.value, 'N/A');
+  assert.equal(ppgRow.score, null);
+  assert.equal(ppgRow.rank, null);
+  assert.equal(workloadRow.value, 'N/A');
+  assert.equal(workloadRow.score, null);
+  assert.equal(workloadRow.rank, null);
+  assert.deepEqual(
+    getDraftAnalyticsAxisOptions(rookie).map((option) => option.id),
+    ['rating', 'market', 'rosterNeed'],
+  );
+
+  const scatter = buildDraftAnalyticsScatter({
+    candidates: analyticsCandidates,
+    focusedPlayerId: 'wr8',
+    xAxis: 'workload',
+    yAxis: 'ppg',
+  });
+
+  assert.equal(scatter.xAxis.id, 'market');
+  assert.equal(scatter.yAxis.id, 'rating');
+  assert.equal(scatter.points.some((point) => point.id === 'wr8'), true);
+
+  const compareRows = buildDraftAnalyticsCompareRows([rookie]);
+  assert.equal(compareRows.find((row) => row.key === 'ppg').cells[0].value, 'N/A');
+  assert.equal(compareRows.find((row) => row.key === 'workload').cells[0].value, 'N/A');
 });
 
 test('draft player drilldown resolves null ESPN ids from team roster matches', async () => {

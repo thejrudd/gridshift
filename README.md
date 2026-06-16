@@ -114,6 +114,7 @@ Hosted owners can enable paid live scoring for selected leagues by setting these
 ## What's New in v8.0
 
 - **Draft Assistant** - Added Draft as a top-level section with War Room, Board, and Results views backed by the connected Sleeper league draft.
+- **War Room Analytics** - Added a mobile-ready player value panel with a positional map, configurable axes, compare pins, Add/Pin/Statistics actions, and rookie-aware metric handling.
 - **Draft Board** - Added a locally saved per-position board, Overall ordering, eligible-lane drag/drop, available-player rail, and roster tray for current roster plus live picks.
 - **Live draft timing** - Added scheduled draft headers, browser-local live countdowns, pause/live handling, and a compact active-draft notice outside the Draft section.
 - **Draft Results** - Consolidated draft order and completed picks into one Results view with filters, sort controls, traded-pick ownership, and War Room-style player context.
@@ -122,7 +123,6 @@ For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Roadmap
 
-- **v8.0 - Draft Assistant** - Current release line for Draft Assistant: War Room analytics, saved Board workflows, live timing, Results, and responsive board polish.
 - **v8.1 - Draft Rank Calibration** - Add a transparent scoring-adjusted GridShift Rank for Draft.
 - **v9.0 - Live Fantasy Scoring** - Sleeper-first live matchup experience with server-protected BALLDONTLIE support for allowlisted leagues.
 - **Scout Rookie Projection Layer** - Add next-season rookie projections that work for standard and IDP-focused draft prep without overloading the current Scout board.

@@ -19,6 +19,14 @@ Open bugs are listed first, fixed bugs below. Add new entries at the bottom of e
 
 | Bug | Fixed In |
 |-----|----------|
+| Draft War Room positional map included inactive, practice-squad, sentinel-ranked, and very low-signal players that skewed the comparison plot | v8.0 |
+| Draft War Room positional map trend line did not reliably update with every X/Y axis pairing | v8.0 |
+| Draft War Room positional map hover tooltip could disappear before users could click Pin to Compare, and dot-click selection did not update the focused player on desktop | v8.0 |
+| Draft War Room positional map could scroll the page during wheel zoom or crash during drag when transform state was temporarily null | v8.0 |
+| Draft War Room rookie analytics showed PPG and volume as negative-looking values instead of neutral unavailable metrics | v8.0 |
+| Draft War Room mobile Big Board hid player photos on compact cards and nested column headers inside the collapsed Filters menu | v8.0 |
+| Draft War Room mobile filter/search controls could stack awkwardly or inflate the search box instead of keeping filters left and search right | v8.0 |
+| Draft War Room scheduled draft banner could cover the LeagueLogs attribution on tablet/mobile layouts | v8.0 |
 | Desktop sidebar cannot be collapsed — always occupies 240px regardless of available screen width or user preference | v8.0 |
 | Draft War Room Big Board and Board can still have post-add overflow or confusing saved-board ranking edge cases | v8.0 |
 | Draft War Room Board loses useful Overall sorting controls when switching from position groups to the Overall view | v8.0 |

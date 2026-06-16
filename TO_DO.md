@@ -7,10 +7,6 @@ New features requested or planned should be added here.
 
 ## Planned Versions
 
-### v8.0 - Draft Assistant
-
-- **Current release line** - Draft Assistant is the active v8.0 release focus, with War Room analytics, saved Board workflows, live timing, Results, and responsive board polish represented in the current release commit. Remaining defect follow-through stays in `KNOWN_BUGS.md`; scoring-adjusted rank calibration moves to v8.1.
-
 ### v8.1 - Draft Rank Calibration
 
 - **GridShift Rank for War Room** - Add a scoring-adjusted draft rank that starts from the LeagueLogs Market Index baseline, applies transparent GridShift modifiers based on the active league's Sleeper scoring settings, and re-sorts both overall and positional ranks. Include an always-available explanation surface, similar to Trade, that shows the baseline market rank, each scoring modifier, and the final adjusted rank.
