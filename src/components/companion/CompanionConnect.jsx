@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useFantasy } from '../../context/SleeperContext';
 
 const ESPN_FANTASY_HOME_URL = 'https://www.espn.com/fantasy/football/';
@@ -23,7 +23,11 @@ function parseEspnLeagueInput(value) {
   }
 }
 
-export default function CompanionConnect({ forceLeaguePicker = false, onLeagueSelected = null }) {
+export default function CompanionConnect({
+  forceLeaguePicker = false,
+  onLeagueSelected = null,
+  allowEspnConnect = false,
+}) {
   const {
     platform,
     connect,
@@ -43,7 +47,9 @@ export default function CompanionConnect({ forceLeaguePicker = false, onLeagueSe
     hasLeague,
   } = useFantasy();
 
-  const [selectedPlatform, setSelectedPlatform] = useState(platform === 'espn' ? 'espn' : 'sleeper');
+  const [selectedPlatform, setSelectedPlatform] = useState(
+    allowEspnConnect && platform === 'espn' ? 'espn' : 'sleeper',
+  );
   const [username, setUsername] = useState('');
   const [swid, setSwid] = useState('');
   const [espnS2, setEspnS2] = useState('');
@@ -58,6 +64,21 @@ export default function CompanionConnect({ forceLeaguePicker = false, onLeagueSe
   const activeEspnLeagueId = parsedEspnInput?.leagueId ?? manualLeagueId.trim();
   const activeEspnTeamId = parsedEspnInput?.teamId ?? espnTeamId.trim();
   const activeEspnSeason = parsedEspnInput?.seasonId ?? espnSeason;
+  const providerOptions = useMemo(
+    () => (allowEspnConnect ? [
+      ['sleeper', 'Sleeper'],
+      ['espn', 'ESPN'],
+    ] : [
+      ['sleeper', 'Sleeper'],
+    ]),
+    [allowEspnConnect],
+  );
+
+  useEffect(() => {
+    if (!allowEspnConnect && selectedPlatform === 'espn') {
+      setSelectedPlatform('sleeper');
+    }
+  }, [allowEspnConnect, selectedPlatform]);
 
   const handleConnectSleeper = async (e) => {
     e.preventDefault();
@@ -125,31 +146,30 @@ export default function CompanionConnect({ forceLeaguePicker = false, onLeagueSe
           {selectedPlatform === 'espn' ? <EspnIcon /> : <SleeperIcon />}
         </div>
 
-        <div
-          className="inline-flex p-1 rounded-xl mb-5"
-          style={{ background: 'var(--color-fill-secondary)', border: '1px solid var(--color-separator)' }}
-        >
-          {[
-            ['sleeper', 'Sleeper'],
-            ['espn', 'ESPN'],
-          ].map(([value, label]) => (
-            <button
-              key={value}
-              type="button"
-              onClick={() => {
-                setSelectedPlatform(value);
-                setConnectError(null);
-              }}
-              className="px-4 py-2 rounded-lg text-sm font-semibold transition-colors"
-              style={{
-                background: selectedPlatform === value ? 'var(--color-bg)' : 'transparent',
-                color: selectedPlatform === value ? 'var(--color-label)' : 'var(--color-label-secondary)',
-              }}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        {providerOptions.length > 1 && (
+          <div
+            className="inline-flex p-1 rounded-xl mb-5"
+            style={{ background: 'var(--color-fill-secondary)', border: '1px solid var(--color-separator)' }}
+          >
+            {providerOptions.map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => {
+                  setSelectedPlatform(value);
+                  setConnectError(null);
+                }}
+                className="px-4 py-2 rounded-lg text-sm font-semibold transition-colors"
+                style={{
+                  background: selectedPlatform === value ? 'var(--color-bg)' : 'transparent',
+                  color: selectedPlatform === value ? 'var(--color-label)' : 'var(--color-label-secondary)',
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
 
         <h2
           className="font-display font-bold mb-1"

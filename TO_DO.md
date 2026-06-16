@@ -88,7 +88,6 @@ New features requested or planned should be added here.
 
 ### Polish
 
-- **Collapsible desktop sidebar** - Allow the lg+ sidebar shell to collapse into a narrower icon-led state so users can reclaim more horizontal space without losing access to primary navigation.
 - **Confetti / Animations** - Celebrate when all 32 teams are predicted and the season is valid.
 - **Richer PWA Install UI** - Add `screenshots` to the web manifest for the enhanced Chrome install dialog. Requires desktop (1280x800) and mobile (390x844) screenshots in `public/screenshots/` referenced in `vite.config.js`. Non-blocking - basic install prompt works without this.
 - **Shareable Links** - Encode predictions into a URL hash for sharing without import/export.

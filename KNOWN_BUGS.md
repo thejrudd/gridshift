@@ -1,6 +1,6 @@
 # GridShift — Known Bugs
 
-Open bugs are listed first, fixed bugs below. Add new entries at the bottom of each section.
+Open bugs are listed first, deferred work next, fixed bugs below. Add new entries at the bottom of each section.
 
 ---
 
@@ -12,6 +12,15 @@ Open bugs are listed first, fixed bugs below. Add new entries at the bottom of e
 | Companion → Matchup player projection formula hover can fail to stay open from the `i` control, hiding the projection math before it can be read |
 | Statistics player profile career highlights can show 0 TFL for defensive players when ESPN's career aggregate omits tackles for loss even though season-level defensive stats include them |
 | Companion → Defense averages round values to the nearest whole number instead of showing the nearest tenth decimal |
+
+---
+
+## Deferred
+
+These ESPN league integration issues are known but deferred while ESPN features are not being implemented.
+
+| Deferred Bug |
+|--------------|
 | Companion → Roster player drilldowns from ESPN leagues can open Fantasy Values with a "No fantasy values" empty state even when ESPN supplied applied 2025 fantasy totals |
 | Companion player pictures do not load for ESPN leagues because shared player rows fall back to Sleeper CDN image URLs for ESPN-normalized player IDs |
 | Companion → Matchup can render no lineup rows for ESPN leagues when roster slot counts or weekly matchup roster snapshots are missing from the imported payload |
@@ -45,6 +54,7 @@ Open bugs are listed first, fixed bugs below. Add new entries at the bottom of e
 
 | Bug | Fixed In |
 |-----|----------|
+| Initial sign-in and Switch League screens could still expose ESPN as a sign-in provider even though v8.0.1 should direct users to the Sleeper-only connection flow | v8.0.1 |
 | Draft War Room positional map included inactive, practice-squad, sentinel-ranked, and very low-signal players that skewed the comparison plot | v8.0 |
 | Draft War Room positional map trend line did not reliably update with every X/Y axis pairing | v8.0 |
 | Draft War Room positional map hover tooltip could disappear before users could click Pin to Compare, and dot-click selection did not update the focused player on desktop | v8.0 |

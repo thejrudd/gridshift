@@ -1761,6 +1761,7 @@ function AppInner() {
               <Suspense fallback={<SectionLoading label="Loading leagues" />}>
                 <CompanionConnect
                   forceLeaguePicker
+                  allowEspnConnect={false}
                   onLeagueSelected={() => setLeagueSwitcherOpen(false)}
                 />
               </Suspense>

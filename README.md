@@ -111,19 +111,20 @@ Hosted owners can enable paid live scoring for selected leagues by setting these
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) + optional Node API sidecar |
 
-## What's New in v8.0
+## What's New in v8.0.1
 
-- **Draft Assistant** - Added Draft as a top-level section with War Room, Board, and Results views backed by the connected Sleeper league draft.
-- **War Room Analytics** - Added a mobile-ready player value panel with a positional map, configurable axes, compare pins, Add/Pin/Statistics actions, and rookie-aware metric handling.
-- **Draft Board** - Added a locally saved per-position board, Overall ordering, eligible-lane drag/drop, available-player rail, and roster tray for current roster plus live picks.
-- **Live draft timing** - Added scheduled draft headers, browser-local live countdowns, pause/live handling, and a compact active-draft notice outside the Draft section.
-- **Draft Results** - Consolidated draft order and completed picks into one Results view with filters, sort controls, traded-pick ownership, and War Room-style player context.
+- **Sleeper-only sign-in** - Removed the ESPN provider option from the initial sign-in screen and Switch League flow.
+- **Connection flow clarity** - New users now land directly on the supported Sleeper account lookup without an unavailable ESPN sign-in path.
+- **ESPN work deferred** - Known ESPN league integration issues are tracked as deferred while this release line stays focused on Sleeper support.
+- **PWA cache refresh** - Bumped the app version so installed clients receive the updated connection screen.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Roadmap
 
 - **v8.1 - Draft Rank Calibration** - Add a transparent scoring-adjusted GridShift Rank for Draft.
+- **v8.2 - ESPN League Integration** - ESPN league import and read-only Companion/Statistics parity after Draft rank calibration.
+- **v8.3 - ESPN Trade Suite** - ESPN-aware Trade support after ESPN Companion and Statistics parity.
 - **v9.0 - Live Fantasy Scoring** - Sleeper-first live matchup experience with server-protected BALLDONTLIE support for allowlisted leagues.
 - **Scout Rookie Projection Layer** - Add next-season rookie projections that work for standard and IDP-focused draft prep without overloading the current Scout board.
 - **Trade follow-through** - Continue polishing Trade drilldowns, remaining explanation copy, and proposal-card readability after the v7.3 module split.

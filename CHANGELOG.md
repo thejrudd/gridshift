@@ -1108,3 +1108,13 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Sleeper sync hardening** - Split fast draft metadata checks from heavier pick and traded-pick refreshes, bypassed stale browser caching for live draft endpoints, resolved mock draft picks from `slot_to_roster_id`, and kept War Room pre-draft only while Board and Results stay available during live drafts.
 - **Shell polish** - Added the collapsible desktop sidebar rail so users can reclaim horizontal space while keeping icon navigation available.
 - **Draft docs and tests** - Updated Draft docs and guide copy, added board/status/analytics helper modules, and expanded unit coverage for Draft routes, board movement, live refresh policy, scheduled countdowns, LeagueLogs labels, analytics comparisons, and Sleeper live draft cache-busting.
+
+---
+
+## v8.0.1 - Sleeper-Only Sign-In
+*2026-06-16*
+
+- **Sleeper-only sign-in** - Removed the ESPN provider option from the initial sign-in screen so users are directed to the supported Sleeper connection flow.
+- **Switch League cleanup** - Kept the Switch League screen from exposing ESPN sign-in while preserving existing ESPN league-picker behavior for already-connected ESPN sessions.
+- **ESPN work deferred** - Moved known ESPN league integration issues into Deferred bug tracking because ESPN features are not being implemented in this release line.
+- **PWA cache bust** - Bumped the app version so installed clients fetch the updated sign-in flow.
