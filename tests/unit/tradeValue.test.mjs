@@ -19,7 +19,7 @@ let modules;
 let inputs;
 
 before(async () => {
-  server = await createServer({ logLevel: 'error', server: { middlewareMode: true } });
+  server = await createServer({ logLevel: 'error', server: { middlewareMode: true }, optimizeDeps: { noDiscovery: true } });
   const [
     tradeValue,
     tradeEngine,

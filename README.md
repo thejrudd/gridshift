@@ -1,6 +1,6 @@
 # GridShift
 
-An interactive web app for the 2026 NFL season — with full Sleeper fantasy league integration. Pick game-by-game outcomes for all 32 teams, view projected standings, generate playoff seeding, create a shareable infographic, and analyze your fantasy roster with week-by-week scoring breakdowns and projections — all in the browser.
+An interactive web app for the 2026 NFL season — with full Sleeper fantasy league integration. Pick game-by-game outcomes for all 32 teams, view projected standings, generate playoff seeding, create a shareable infographic, prep for your fantasy draft, and analyze your roster with week-by-week scoring breakdowns and projections — all in the browser.
 
 ![React](https://img.shields.io/badge/React-19-blue) ![Vite](https://img.shields.io/badge/Vite-7-purple) ![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-3-38bdf8) ![PWA](https://img.shields.io/badge/PWA-installable-green)
 
@@ -17,6 +17,7 @@ An interactive web app for the 2026 NFL season — with full Sleeper fantasy lea
 - **Statistics Schedule** — Browse the NFL schedule by week or team with international, PrimeTime, and holiday filters
 - **Statistics Standings** — View division and conference standings from final schedule results inside the Statistics section
 - **Sleeper League Integration** — Connect your Sleeper account, import a league, and sync custom scoring settings
+- **Draft Assistant (Beta)** — Use a top-level Sleeper draft room with War Room rankings, a saved Draft Board, live status timing, and consolidated pick Results
 - **League Browser** — Browse any league member's full roster with stats and weekly breakdowns; view a league-wide draft capital grid showing pick ownership by round and year
 - **Fantasy Matchup View** — Head-to-head starter comparison with week-by-week points, projections, positional rankings, weather context, and game location
 - **Player Projections** — Min/max/projected ranges using a recent-weighted blend of form and season average, factoring opponent strength, home/away, weather, and snap % trend
@@ -75,6 +76,26 @@ To validate that setup after a production build:
 npm run validate:routing
 ```
 
+## Live Scoring Configuration
+
+GridShift's public client can stay open source while paid live-data access remains server-only. Real secrets belong in the deployment environment or a local `.env` file copied from `.env.example`; never commit `.env` or paste paid API keys into client code.
+
+Server-only variables:
+
+| Variable | Purpose |
+|---|---|
+| `GRIDSHIFT_SESSION_SECRET` | Signs/encrypts server-managed session values in production. |
+| `GRIDSHIFT_BDL_API_KEY` | BALLDONTLIE API key for server-side NFL live data. Never prefix this with `VITE_`. |
+| `GRIDSHIFT_BDL_TIER` | BALLDONTLIE plan tier, such as `goat` or `all-star`, used for capability checks. |
+| `GRIDSHIFT_LIVE_ALLOWED_LEAGUE_IDS` | Comma-separated Sleeper league IDs allowed to use paid live scoring on this instance. |
+| `GRIDSHIFT_LIVE_ACCESS_CODE` | Optional shared league code required before an allowlisted league member can use paid live mode. |
+| `GRIDSHIFT_LIVE_COOKIE_SECRET` | Optional live-scoring cookie secret; falls back to `GRIDSHIFT_SESSION_SECRET` when blank. |
+| `GRIDSHIFT_LIVE_CACHE_TTL_MS` | Server cache duration for upstream live-data responses. |
+| `GRIDSHIFT_LIVE_MAX_REQ_PER_MIN` | Local guardrail for provider request volume. |
+| `GRIDSHIFT_COOKIE_SECURE` | Set `true` for HTTPS production cookies; use `false` only for local HTTP testing. |
+
+Hosted owners can enable paid live scoring for selected leagues by setting these variables on the server and keeping `GRIDSHIFT_LIVE_ALLOWED_LEAGUE_IDS` narrow. Self-hosters should supply their own BALLDONTLIE key and league allowlist. Variables prefixed with `VITE_` are public because Vite embeds them in the browser bundle, so paid keys and access codes must always use `GRIDSHIFT_` server variables.
+
 ## Tech Stack
 
 | Layer | Technology |
@@ -86,21 +107,24 @@ npm run validate:routing
 | Image export | html2canvas |
 | Fantasy data | Sleeper API (client-side) |
 | Player data | ESPN public APIs (client-side) |
+| Live data | Optional BALLDONTLIE NFL API via server-side GridShift API |
 | PWA | vite-plugin-pwa + Workbox |
-| Production serving | nginx (Docker) |
+| Production serving | nginx (Docker) + optional Node API sidecar |
 
-## What's New in v7.6.2
+## What's New in v8.0
 
-- **Mobile fantasy PPG visibility** - Statistics Fantasy Values now shows fantasy points per game beside the season total on mobile, and Companion Rankings mobile rows show PPG under the season total.
-- **Inactive-game PPG protection** - Fantasy PPG now respects explicit inactive games with `gp: 0` while still counting active 0.0-point games.
-- **Rankings average consistency** - Season games-played aggregation no longer turns explicit inactive rows into played games when calculating Companion Rankings averages.
+- **Draft Assistant** - Added Draft as a top-level section with War Room, Board, and Results views backed by the connected Sleeper league draft.
+- **War Room Analytics** - Added a mobile-ready player value panel with a positional map, configurable axes, compare pins, Add/Pin/Statistics actions, and rookie-aware metric handling.
+- **Draft Board** - Added a locally saved per-position board, Overall ordering, eligible-lane drag/drop, available-player rail, and roster tray for current roster plus live picks.
+- **Live draft timing** - Added scheduled draft headers, browser-local live countdowns, pause/live handling, and a compact active-draft notice outside the Draft section.
+- **Draft Results** - Consolidated draft order and completed picks into one Results view with filters, sort controls, traded-pick ownership, and War Room-style player context.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Roadmap
 
-- **v8.0 - ESPN League Integration** - Planned major integration track.
-- **v9.0 - Live Fantasy Scoring** - Planned live scoring track.
+- **v8.1 - Draft Rank Calibration** - Add a transparent scoring-adjusted GridShift Rank for Draft.
+- **v9.0 - Live Fantasy Scoring** - Sleeper-first live matchup experience with server-protected BALLDONTLIE support for allowlisted leagues.
 - **Scout Rookie Projection Layer** - Add next-season rookie projections that work for standard and IDP-focused draft prep without overloading the current Scout board.
 - **Trade follow-through** - Continue polishing Trade drilldowns, remaining explanation copy, and proposal-card readability after the v7.3 module split.
 

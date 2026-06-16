@@ -1,20 +1,24 @@
 # GridShift — Roadmap
 
-Future planned work only. Completed items live in CHANGELOG.md. Bugs live in KNOWN_BUGS.md.
+Roadmap and active release work. Completed items live in CHANGELOG.md. Bugs live in KNOWN_BUGS.md.
 New features requested or planned should be added here.
 
 ---
 
 ## Planned Versions
 
-### v8.0 - ESPN League Integration
+### v8.1 - Draft Rank Calibration
+
+- **GridShift Rank for War Room** - Add a scoring-adjusted draft rank that starts from the LeagueLogs Market Index baseline, applies transparent GridShift modifiers based on the active league's Sleeper scoring settings, and re-sorts both overall and positional ranks. Include an always-available explanation surface, similar to Trade, that shows the baseline market rank, each scoring modifier, and the final adjusted rank.
+
+### v8.2 - ESPN League Integration
 
 - ESPN Fantasy sidecar auth, league normalization, scoring profiles, read-only Companion/Statistics/Compare parity, and player-only Trade support.
 - ESPN connect UX should use pasted ESPN team/league links or league IDs as the primary import path, with secure manual session import and a desktop Chrome helper link revealed only for private leagues or explicit fallback.
 - Account for ESPN playoff configurations with varying matchup lengths, including two-week playoff rounds, without dropping active fantasy scoring periods.
 - Add a Companion Standings feature for connected fantasy leagues.
 
-### v8.1 - ESPN Trade Suite
+### v8.3 - ESPN Trade Suite
 
 - Build ESPN league support for Trade after Companion and Statistics ESPN parity is complete, including ESPN-aware valuation, partner context, roster movement, and trade entry points.
 
@@ -30,6 +34,7 @@ New features requested or planned should be added here.
 - **Trade valuation path deduplication** - Consolidate roster search, roster browse, partner preview, and side-card value calculations onto a shared helper so player availability, estimated values, and additive totals stay consistent across all Trade entry points.
 - **Companion tab load-time optimization** - Improve initial and first-open load times across all Companion tabs by preloading shared data more intentionally, deferring non-critical derivations, reducing duplicate calculations between tabs, and minimizing context-driven rerenders.
 - **Companion Heatmap first-open performance** - Optimize initial load by reducing eager table computation, avoiding unnecessary recomputes after stat enrichment, and limiting context-driven rerenders from unrelated state like progress updates.
+- **Draft tab load-time optimization** - Keep Draft tab switching responsive by reusing cached draft sync state and matching Draft model builds across War Room, Board, and Results instead of rebuilding everything on every tab return.
 - **Reduce Heatmap `loadSeasonStats` fetch time** - Companion -> Heatmap now avoids blocking on pass-2 enhancement and uses a faster local offense table builder, but the next likely optimization is reducing the raw `loadSeasonStats` fetch cost. This is a different class of optimization and riskier because it touches the shared season-stats loading path.
 
 ## Backlog (Unversioned)

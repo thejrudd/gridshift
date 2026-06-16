@@ -1088,3 +1088,23 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Statistics Fantasy Values PPG** - Mobile Statistics now shows fantasy points per game beside the season fantasy total instead of showing only the total.
 - **Companion Rankings PPG** - Companion Rankings mobile rows now keep the season total visible while adding fantasy PPG underneath it when the separate Avg PPG column is hidden.
 - **Inactive-game average protection** - Fantasy PPG calculations now respect explicit inactive rows with `gp: 0` while still counting active 0.0-point games, and season aggregation avoids turning inactive rows into played games.
+
+---
+
+## v8.0 - Draft Assistant
+*2026-06-12*
+
+- **Top-level Draft section** - Added Draft as its own app section with War Room, Board, Results, and staged Gauntlet / Tiers/Runs routes, including legacy route normalization for older Draft Order links.
+- **Draft Beta badge** - Marked the top-level Draft section as Beta in desktop and mobile navigation.
+- **War Room intelligence** - Built a Sleeper-backed Draft model with LeagueLogs market context, completed-season PPG / workload / trend signals, scoring fit, team environment, roster need, personal board rank, and user-tunable model weights.
+- **War Room analytics** - Player row taps now open a Draft analytics surface with snapshot signal bars, configurable Rating/Market/PPG/Workload/Need scatter axes, session-only compare pins, and a Statistics handoff.
+- **War Room value panel polish** - Reworked the player drilldown into a higher-contrast slide-up analysis surface with team-tinted hero actions, Add/Pin/Statistics controls, rookie-aware N/A metrics, and mobile/tablet-safe value snapshot layouts.
+- **Positional map upgrades** - Filtered the scatter plot toward active fantasy-relevant peers, added dynamic trend lines for every axis pairing, improved axis labels and selected-value markers, locked wheel zoom to the chart, and fixed pin/selection interactions.
+- **Mobile War Room cleanup** - Flattened Big Board spacing, restored player photos on compact cards, fixed mobile filter/search alignment, kept sort headers outside collapsed filters, and prevented scheduled draft attribution text from being covered on tablet layouts.
+- **Personal Draft Board** - Added locally saved per-position and Overall board ordering by league, season, and draft ID, with eligible-lane drag/drop, accessible move controls, saved-board drafted status, and a roster tray populated from current roster players plus live draft picks.
+- **Draft Board polish** - Tightened responsive Draft spacing, added mobile filter drawers, kept Overall ranking controls available, made roster tray collapse on phones, translated flex slot labels into readable position groups, and prevented ineligible lane drops.
+- **Draft Results** - Consolidated pick order and completed picks into Results, applying traded-pick ownership before the draft and switching to drafted player rows with position, team, tier, Sleeper rank, and GridShift Rating after picks arrive.
+- **Live draft timing** - Added scheduled draft headers, browser-local live pick countdowns, pause/live status handling, on-clock and next-team context, and a compact active-draft notice on non-Draft tabs for relevant connected users.
+- **Sleeper sync hardening** - Split fast draft metadata checks from heavier pick and traded-pick refreshes, bypassed stale browser caching for live draft endpoints, resolved mock draft picks from `slot_to_roster_id`, and kept War Room pre-draft only while Board and Results stay available during live drafts.
+- **Shell polish** - Added the collapsible desktop sidebar rail so users can reclaim horizontal space while keeping icon navigation available.
+- **Draft docs and tests** - Updated Draft docs and guide copy, added board/status/analytics helper modules, and expanded unit coverage for Draft routes, board movement, live refresh policy, scheduled countdowns, LeagueLogs labels, analytics comparisons, and Sleeper live draft cache-busting.

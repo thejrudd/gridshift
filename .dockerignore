@@ -1,5 +1,33 @@
 node_modules
 dist
+dist-ssr
 .git
+.gitignore
+.gitattributes
 .claude
+.agents
+.continue
+.interface-design
+
+# Local environment and secrets must never enter Docker build context.
+.env
+.env.*
+!.env.example
+*.local
+*.key
+*.pem
+*.p12
+*.pfx
+secrets
+
+# Local/build artifacts
+*.log
+playwright-report
+test-results
+blob-report
+.playwright
+cache
+tmp
+
+# Markdown docs are not needed in the runtime image.
 *.md

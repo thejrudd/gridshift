@@ -339,6 +339,16 @@ All fixed bottom bars must include `env(safe-area-inset-bottom)` in their height
 
 **Rank computation in filtered lists:** Always compute rank (i + 1) on the full sorted array, then filter for display. Carry `rank` as a property on each item. Never derive rank from the filtered map index.
 
+### Table Layout
+
+Column headers should be vertically centered over the metric data they describe unless a specific surface calls for another alignment. Header cells and data cells must share the same grid contract so sorting controls, labels, values, and actions line up row by row.
+
+Column headers are required comparison labels and should not be truncated. Header text may wrap or use controlled horizontal overflow, as long as it does not overlap other elements and all header cells preserve a consistent vertical rhythm.
+
+Table elements must never overlap. Reserve stable columns for required identity, metric, status, and action slots so missing or longer content does not reshape neighboring rows.
+
+When tables narrow, resize columns or remove lower-priority elements before visual consistency breaks. Keep the highest-priority data visible first, then drop helper labels, decorative logos, secondary metrics, or other chrome in that order.
+
 ### Horizontal Overflow Indicators
 
 Horizontally scrollable tables, stat strips, and dense card rows should show directional edge indicators when hidden content exists off-screen. The indicator is a temporary affordance, not permanent decoration: show the right arrow only when the user can scroll farther right, show the left arrow only after content exists back to the left, and hide each arrow as soon as that edge is reached.

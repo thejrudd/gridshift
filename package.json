@@ -1,7 +1,7 @@
 {
   "name": "nfl-predictor",
   "private": true,
-  "version": "7.6.2",
+  "version": "8.0.0",
   "type": "module",
   "scripts": {
     "dev": "node scripts/dev.mjs",

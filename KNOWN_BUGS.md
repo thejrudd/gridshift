@@ -9,7 +9,6 @@ Open bugs are listed first, fixed bugs below. Add new entries at the bottom of e
 | Bug |
 |-----|
 | Trade section pages still repeat too much instructional copy, making Agent, Intelligence, and Upgrades feel more verbose than necessary |
-| Desktop sidebar cannot be collapsed — always occupies 240px regardless of available screen width or user preference |
 | Companion → Matchup player projection formula hover can fail to stay open from the `i` control, hiding the projection math before it can be read |
 | Statistics player profile career highlights can show 0 TFL for defensive players when ESPN's career aggregate omits tackles for loss even though season-level defensive stats include them |
 | Companion → Defense averages round values to the nearest whole number instead of showing the nearest tenth decimal |
@@ -46,6 +45,33 @@ Open bugs are listed first, fixed bugs below. Add new entries at the bottom of e
 
 | Bug | Fixed In |
 |-----|----------|
+| Draft War Room positional map included inactive, practice-squad, sentinel-ranked, and very low-signal players that skewed the comparison plot | v8.0 |
+| Draft War Room positional map trend line did not reliably update with every X/Y axis pairing | v8.0 |
+| Draft War Room positional map hover tooltip could disappear before users could click Pin to Compare, and dot-click selection did not update the focused player on desktop | v8.0 |
+| Draft War Room positional map could scroll the page during wheel zoom or crash during drag when transform state was temporarily null | v8.0 |
+| Draft War Room rookie analytics showed PPG and volume as negative-looking values instead of neutral unavailable metrics | v8.0 |
+| Draft War Room mobile Big Board hid player photos on compact cards and nested column headers inside the collapsed Filters menu | v8.0 |
+| Draft War Room mobile filter/search controls could stack awkwardly or inflate the search box instead of keeping filters left and search right | v8.0 |
+| Draft War Room scheduled draft banner could cover the LeagueLogs attribution on tablet/mobile layouts | v8.0 |
+| Desktop sidebar cannot be collapsed — always occupies 240px regardless of available screen width or user preference | v8.0 |
+| Draft War Room Big Board and Board can still have post-add overflow or confusing saved-board ranking edge cases | v8.0 |
+| Draft War Room Board loses useful Overall sorting controls when switching from position groups to the Overall view | v8.0 |
+| Draft Board can drag players into position lanes they are not eligible for | v8.0 |
+| Draft Board player cards can compress player identity, photo, and action controls until content overlaps | v8.0 |
+| Draft Board still relies on viewport cutoffs and fixed lane widths, causing cramped desktop boards on narrower available content areas | v8.0 |
+| Draft live status banner can lose timing usefulness because full pick and traded-pick refreshes are coupled too tightly to the 1-second clock metadata poll | v8.0 |
+| Draft live status banner can take 20-30 seconds to catch Sleeper mock draft pause/resume changes because draft-room API responses can be served from stale browser or upstream cache layers | v8.0 |
+| Draft War Room stays capped to the normal draft page max-width when the browser is manually zoomed out, leaving unused horizontal space that Draft Board already fills | v8.0 |
+| Draft Results loads slowly because it builds the full War Room candidate model before rendering completed picks or the pre-draft order | v8.0 |
+| Draft Results stays capped to the normal draft page max-width when the browser is manually zoomed out, leaving unused horizontal space that Draft Board already fills | v8.0 |
+| Draft Board roster tray can show raw Sleeper flex slot keys such as `REC_FLEX` and `IDP_FLEX` instead of readable roster-slot labels | v8.0 |
+| Draft War Room player rows could fail to open Statistics for players whose Sleeper record had no ESPN id, even when the player could be resolved from their ESPN team roster | v8.0 |
+| Draft War Room Big Board rows could drift out of horizontal alignment when metric text changed row width, and Sleeper sentinel-scale search ranks such as 9999999 could render as meaningless rank values | v8.0 |
+| Draft War Room Big Board could leave PPG, volume, trend, and schedule fields blank because it did not load a completed-season stats package for Draft intelligence | v8.0 |
+| Draft War Room could label Sleeper fallback ranking data as ADP even though Sleeper only provides search-rank style ordering, and LeagueLogs attribution was not shown when market data was displayed | v8.0 |
+| Companion → Draft Assistant could visibly refresh back to the loading state on every live-pick polling interval because background polls reused the initial page-loading flag | v8.0 |
+| Companion → Draft Assistant availability modeling could treat original draft-slot owners as upcoming pick owners, ignoring traded draft picks when estimating which managers could select a player before the user's next pick | v8.0 |
+| Companion → Draft Assistant could stop at a projection-unavailable empty state for normal Sleeper drafts because it only ranked players when season projection totals were embedded in the Sleeper player payload | v8.0 |
 | Mobile Statistics Fantasy Values showed only season fantasy total and omitted fantasy points per game, making mobile player profiles less useful for per-game comparison | v7.6.2 |
 | Companion Rankings mobile rows hid Avg PPG when the separate average column collapsed, leaving only the season fantasy total visible | v7.6.2 |
 | Fantasy PPG could treat explicit inactive rows with `gp: 0` as played games when season stats backfilled games played from weekly rows | v7.6.2 |

@@ -140,6 +140,14 @@ export default function Sidebar({
           collapsed={collapsed}
         />
         <SidebarNavItem
+          active={activeTab === 'draft'}
+          onClick={() => onTabChange('draft')}
+          icon={<DraftIcon />}
+          label="Draft"
+          beta
+          collapsed={collapsed}
+        />
+        <SidebarNavItem
           active={activeTab === 'scout'}
           onClick={() => onTabChange('scout')}
           icon={<ScoutIcon />}
@@ -198,7 +206,7 @@ export default function Sidebar({
             <SidebarAction label="Randomize Predictions" onClick={onRandom} />
           </>
         )}
-        {(activeTab === 'companion' || activeTab === 'trade') && isConnected && (
+        {(activeTab === 'companion' || activeTab === 'trade' || activeTab === 'draft') && isConnected && (
           <SidebarAction label={`Disconnect ${platform === 'espn' ? 'ESPN' : 'Sleeper'}`} onClick={disconnect} />
         )}
         {isInstallable && !isInstalled && (
@@ -282,7 +290,7 @@ export default function Sidebar({
           className="px-5 py-3 text-xs"
           style={{ color: 'var(--color-label-tertiary)' }}
         >
-          v7.6.2
+          v8.0
         </div>
       </div>
     </aside>
@@ -429,6 +437,17 @@ function TradeIcon() {
     <svg width="18" height="18" viewBox="0 0 26 26" fill="none" aria-hidden="true">
       <path d="M5 9h11l-2-2 1.4-1.4L20.8 9l-5.4 3.4L14 11l2-2H5z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
       <path d="M21 17H10l2 2-1.4 1.4L5.2 17l5.4-3.4L12 15l-2 2h11z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function DraftIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 26 26" fill="none" aria-hidden="true">
+      <rect x="6" y="4" width="14" height="18" rx="2" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M10 8h6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M10 12h6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M10 16h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
     </svg>
   );
 }
