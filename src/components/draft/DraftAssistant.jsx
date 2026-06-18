@@ -3782,34 +3782,27 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
 }
 
 function DraftResultRow({ row, darkMode, onViewPlayer }) {
-  const metrics = [
-    { key: 'rating', value: formatDecimalMetric(row.rating), label: 'Rating', title: 'GridShift Draft Rating from market rank, past PPG, scoring fit, and roster need', align: 'center' },
-    { key: 'sleeper', value: formatRankMetric(row.sleeperRank), label: 'Sleeper', title: 'Sleeper search / market overall rank', align: 'center' },
-    { key: 'tier', value: row.tier != null ? `T${row.tier}` : '—', label: 'Tier', title: 'Rank-derived tier', align: 'center' },
-  ];
   return (
     <DraftPlayerRow
       player={row.player}
       darkMode={darkMode}
       onViewPlayer={onViewPlayer}
-      metrics={metrics}
-      metricColumnGridTemplate="var(--draft-results-metrics-grid)"
+      metrics={[]}
       rowGridTemplate="var(--draft-results-row-grid)"
       compactRowGridTemplate="var(--draft-results-row-grid)"
       leading={<span className="draft-results-pick" title={`${row.overall} overall`}>{row.pickLabel}</span>}
+      identityMetaSegments={[row.player.team, row.ownerLabel].filter(Boolean)}
       status={(
         <CompanionPlayerStatus
-          label={row.ownerLabel}
+          label={`Drafted by ${row.ownerLabel}`}
           className={['draft-results-owner-status', row.isMine ? 'is-user-team' : ''].filter(Boolean).join(' ')}
           localContrast={!row.isMine}
           title={row.isMine ? `${row.ownerLabel} is your fantasy team` : row.ownerLabel}
         >
+          <span className="draft-results-owner-status__kicker">Drafted by</span>
+          <span className="draft-results-owner-status__name">{row.ownerLabel}</span>
           {row.isMine ? (
-            <>
-              <span className="draft-results-owner-status__name">{row.ownerLabel}</span>
-              {' '}
-              <span className="draft-results-owner-status__marker">Your Team</span>
-            </>
+            <span className="draft-results-owner-status__marker">Your Team</span>
           ) : null}
         </CompanionPlayerStatus>
       )}

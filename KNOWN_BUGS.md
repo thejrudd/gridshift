@@ -10,8 +10,6 @@ Open bugs are listed first, deferred work next, fixed bugs below. Add new entrie
 |-----|
 | Trade section pages still repeat too much instructional copy, making Agent, Intelligence, and Upgrades feel more verbose than necessary |
 | Companion → Matchup player projection formula hover can fail to stay open from the `i` control, hiding the projection math before it can be read |
-| Statistics player profile career highlights can show 0 TFL for defensive players when ESPN's career aggregate omits tackles for loss even though season-level defensive stats include them |
-| Companion → Defense averages round values to the nearest whole number instead of showing the nearest tenth decimal |
 
 ---
 
@@ -54,6 +52,8 @@ These ESPN league integration issues are known but deferred while ESPN features 
 
 | Bug | Fixed In |
 |-----|----------|
+| Companion → Defense averages round values to the nearest whole number instead of showing the nearest tenth decimal | v8.0.1 |
+| v8.0.1 Draft Results prior-year player cards can overflow, misalign, and cut off text on tablet and phone layouts | v8.0.1 |
 | Initial sign-in and Switch League screens could still expose ESPN as a sign-in provider even though v8.0.1 should direct users to the Sleeper-only connection flow | v8.0.1 |
 | Draft War Room positional map included inactive, practice-squad, sentinel-ranked, and very low-signal players that skewed the comparison plot | v8.0 |
 | Draft War Room positional map trend line did not reliably update with every X/Y axis pairing | v8.0 |
@@ -85,6 +85,7 @@ These ESPN league integration issues are known but deferred while ESPN features 
 | Mobile Statistics Fantasy Values showed only season fantasy total and omitted fantasy points per game, making mobile player profiles less useful for per-game comparison | v7.6.2 |
 | Companion Rankings mobile rows hid Avg PPG when the separate average column collapsed, leaving only the season fantasy total visible | v7.6.2 |
 | Fantasy PPG could treat explicit inactive rows with `gp: 0` as played games when season stats backfilled games played from weekly rows | v7.6.2 |
+| Statistics player profile career highlights can show 0 TFL for defensive players when ESPN's career aggregate omits tackles for loss even though season-level defensive stats include them | v7.6.2 |
 | Companion roster-adjacent player drilldowns could silently do nothing when the Sleeper player record had no ESPN ID, affecting rookies and other sparse player records | v7.6.1 |
 | Statistics Standings tab initially appeared before Schedule in the Statistics sub-navigation instead of to the right of Schedule | v7.6 |
 | Statistics schedule can horizontally scroll the full page on mobile, and the mobile week rail is missing the documented horizontal scroll arrow cue | v7.5.1 |

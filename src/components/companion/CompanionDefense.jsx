@@ -8,6 +8,7 @@ import {
   DEFENSE_RANKING_POSITIONS,
   buildDefenseRankingRows,
   filterDefenseRankingRows,
+  formatDefenseRankingValue,
   getDefaultDefenseRankingStat,
   getDefenseRankingStatOption,
   getDefenseRankingStatOptions,
@@ -17,7 +18,7 @@ import {
   normalizeDefenseRankingSort,
   normalizeDefenseRankingStat,
 } from '../../utils/defenseRankings.js';
-import { getNflTeamLogoUrl } from '../../utils/companionAssetVisuals.js';
+import { getCompanionInitials, getCompanionPlayerImageUrl, getNflTeamLogoUrl } from '../../utils/companionAssetVisuals.js';
 import Modal from '../Modal.jsx';
 import { CompanionSearchField, CompanionSelectorButton, CompanionSelectorRail } from './CompanionSelectorControls.jsx';
 import CompanionPlayerRow, { CompanionPlayerMetric } from './CompanionPlayerRow.jsx';
@@ -68,6 +69,32 @@ function getTeamDisplayName(team) {
   return TEAM_DISPLAY_NAMES[team] ?? team;
 }
 
+function DefenseContributionAvatar({ player }) {
+  const imageUrl = getCompanionPlayerImageUrl(player);
+  const [failedImageUrl, setFailedImageUrl] = useState(null);
+  const showImage = imageUrl && failedImageUrl !== imageUrl;
+
+  if (showImage) {
+    return (
+      <img
+        className="companion-defense-contrib-avatar"
+        src={imageUrl}
+        alt=""
+        aria-hidden="true"
+        loading="lazy"
+        decoding="async"
+        onError={() => setFailedImageUrl(imageUrl)}
+      />
+    );
+  }
+
+  return (
+    <span className="companion-defense-contrib-avatar companion-defense-contrib-avatar--fallback" aria-hidden="true">
+      {getCompanionInitials(player?.playerName)}
+    </span>
+  );
+}
+
 function normalizeRouteState(routeState) {
   const position = normalizeDefenseRankingPosition(routeState?.position);
   return {
@@ -78,16 +105,6 @@ function normalizeRouteState(routeState) {
     dir: normalizeDefenseRankingDir(routeState?.dir),
     query: String(routeState?.query ?? ''),
   };
-}
-
-function fmtValue(value, mode, stat) {
-  if (value == null || !Number.isFinite(value)) return '-';
-  const wholeNumberStats = new Set(['pass_td', 'pass_int', 'rush_td', 'rush_att', 'rec', 'rec_td']);
-  if (mode === 'stats' && wholeNumberStats.has(stat)) return Math.round(value).toLocaleString();
-  return value.toLocaleString(undefined, {
-    minimumFractionDigits: mode === 'fantasy' ? 1 : 0,
-    maximumFractionDigits: mode === 'fantasy' ? 1 : 1,
-  });
 }
 
 function getValueLabel(mode, position, stat) {
@@ -327,8 +344,8 @@ export default function CompanionDefense({ routeState, onRouteStateChange }) {
                 compactGridTemplate="38px minmax(0,1fr) minmax(112px, 1fr) 12px"
                 columnGridTemplate={compactRows ? 'repeat(2, minmax(0, 1fr))' : '112px 112px'}
                 columns={[
-                  <CompanionPlayerMetric key="total" value={fmtValue(row.total, state.mode, state.stat)} label="Total" />,
-                  <CompanionPlayerMetric key="avg" value={fmtValue(row.avg, state.mode, state.stat)} label="Per Game" />,
+                  <CompanionPlayerMetric key="total" value={formatDefenseRankingValue(row.total, { mode: state.mode, stat: state.stat })} label="Total" />,
+                  <CompanionPlayerMetric key="avg" value={formatDefenseRankingValue(row.avg, { mode: state.mode, stat: state.stat, scope: 'avg' })} label="Per Game" />,
                 ]}
                 leading={(
                   <span className="companion-defense-rank">#{row.strengthRank}</span>
@@ -380,22 +397,36 @@ export default function CompanionDefense({ routeState, onRouteStateChange }) {
           </div>
           <div className="companion-defense-modal-stats">
             <span><strong>#{selectedRow.strengthRank}</strong>Rank</span>
-            <span><strong>{fmtValue(selectedRow.total, state.mode, state.stat)}</strong>Total Allowed</span>
-            <span><strong>{fmtValue(selectedRow.avg, state.mode, state.stat)}</strong>Per Game</span>
+            <span><strong>{formatDefenseRankingValue(selectedRow.total, { mode: state.mode, stat: state.stat })}</strong>Total Allowed</span>
+            <span><strong>{formatDefenseRankingValue(selectedRow.avg, { mode: state.mode, stat: state.stat, scope: 'avg' })}</strong>Per Game</span>
           </div>
           <div className="companion-defense-modal-body">
             {detailWeeks.length > 0 ? detailWeeks.map(week => (
               <div key={week.week} className="companion-defense-week-card">
                 <div className="companion-defense-week-card__header">
-                  <span>Week {week.week}{week.opponent ? ` vs ${week.opponent}` : ''}</span>
-                  <strong>{fmtValue(week.total, state.mode, state.stat)}</strong>
+                  <div className="companion-defense-week-card__matchup">
+                    {week.opponent && (
+                      <img
+                        src={getTeamLogoUrl(week.opponent)}
+                        alt=""
+                        aria-hidden="true"
+                        loading="lazy"
+                        decoding="async"
+                      />
+                    )}
+                    <div>
+                      <span>Week {week.week}</span>
+                      <strong>{week.opponent ? `vs ${getTeamDisplayName(week.opponent)}` : 'Opponent unavailable'}</strong>
+                    </div>
+                  </div>
+                  <strong>{formatDefenseRankingValue(week.total, { mode: state.mode, stat: state.stat })}</strong>
                 </div>
                 <div className="companion-defense-contrib-list">
                   {week.players.map(player => (
                     <div key={`${week.week}-${player.playerId}-${player.playerName}`} className="companion-defense-contrib-row">
+                      <DefenseContributionAvatar player={player} />
                       <span>{player.playerName}</span>
-                      <span>{player.position}</span>
-                      <strong>{fmtValue(player.value, state.mode, state.stat)}</strong>
+                      <strong>{formatDefenseRankingValue(player.value, { mode: state.mode, stat: state.stat })}</strong>
                     </div>
                   ))}
                 </div>

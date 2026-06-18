@@ -1088,6 +1088,7 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Statistics Fantasy Values PPG** - Mobile Statistics now shows fantasy points per game beside the season fantasy total instead of showing only the total.
 - **Companion Rankings PPG** - Companion Rankings mobile rows now keep the season total visible while adding fantasy PPG underneath it when the separate Avg PPG column is hidden.
 - **Inactive-game average protection** - Fantasy PPG calculations now respect explicit inactive rows with `gp: 0` while still counting active 0.0-point games, and season aggregation avoids turning inactive rows into played games.
+- **Defensive career TFL repair** - Statistics player profiles now repair defensive career tackles-for-loss totals from season-level ESPN stats when ESPN's career aggregate reports zero.
 
 ---
 
@@ -1116,5 +1117,8 @@ All notable changes, oldest first. Add new entries at the bottom.
 
 - **Sleeper-only sign-in** - Removed the ESPN provider option from the initial sign-in screen so users are directed to the supported Sleeper connection flow.
 - **Switch League cleanup** - Kept the Switch League screen from exposing ESPN sign-in while preserving existing ESPN league-picker behavior for already-connected ESPN sessions.
+- **Draft Results mobile polish** - Reworked completed-pick rows around pick number, player identity, NFL team, position, and drafting fantasy team so prior-year cards no longer overflow or clip on tablet and phone layouts.
+- **Companion Defense averages** - Defense rankings now format per-game stat averages with adaptive decimal precision instead of rounding every stat to a whole number.
+- **Companion Defense details** - Refreshed the Defense detail modal with matchup logos, clearer weekly opponent labels, and player avatars for contribution rows.
 - **ESPN work deferred** - Moved known ESPN league integration issues into Deferred bug tracking because ESPN features are not being implemented in this release line.
 - **PWA cache bust** - Bumped the app version so installed clients fetch the updated sign-in flow.

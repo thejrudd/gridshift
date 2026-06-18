@@ -1,6 +1,9 @@
 import { calcPoints } from './scoringEngine.js';
 
 export const DEFENSE_RANKING_POSITIONS = ['QB', 'RB', 'WR', 'TE'];
+const WHOLE_NUMBER_STATS = new Set(['pass_td', 'pass_int', 'rush_td', 'rush_att', 'rec', 'rec_td']);
+const LOW_FREQUENCY_AVERAGE_STATS = new Set(['pass_td', 'pass_int', 'rush_td', 'rec_td']);
+const VOLUME_AVERAGE_STATS = new Set(['rush_att', 'rec']);
 
 export const DEFENSE_RANKING_STAT_OPTIONS = {
   QB: [
@@ -75,6 +78,39 @@ export function normalizeDefenseRankingStat(stat, position) {
 export function getDefenseRankingStatOption(position, stat) {
   const options = getDefenseRankingStatOptions(position);
   return options.find(option => option.id === stat) ?? options[0];
+}
+
+function getDefenseAverageFractionDigits(value, stat) {
+  const absValue = Math.abs(value);
+  if (absValue === 0) return 0;
+  if (LOW_FREQUENCY_AVERAGE_STATS.has(stat)) return absValue < 1 ? 2 : 1;
+  if (VOLUME_AVERAGE_STATS.has(stat)) return absValue < 10 ? 1 : 0;
+  if (String(stat).endsWith('_yd')) return absValue < 100 ? 1 : 0;
+  if (absValue < 1) return 2;
+  if (absValue < 10) return 1;
+  return 0;
+}
+
+export function formatDefenseRankingValue(value, { mode = 'stats', stat = DEFAULT_DEFENSE_RANKING_STATE.stat, scope = 'total' } = {}) {
+  if (value == null || !Number.isFinite(value)) return '-';
+  if (mode === 'fantasy') {
+    return value.toLocaleString(undefined, {
+      minimumFractionDigits: 1,
+      maximumFractionDigits: 1,
+    });
+  }
+  if (scope === 'avg') {
+    const fractionDigits = getDefenseAverageFractionDigits(value, stat);
+    return value.toLocaleString(undefined, {
+      minimumFractionDigits: fractionDigits,
+      maximumFractionDigits: fractionDigits,
+    });
+  }
+  if (WHOLE_NUMBER_STATS.has(stat)) return Math.round(value).toLocaleString();
+  return value.toLocaleString(undefined, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 1,
+  });
 }
 
 function getPlayerName(player, playerId) {
@@ -190,15 +226,20 @@ export function buildDefenseRankingRows({
 
       const row = teamRows.get(defenseTeam);
       const week = Number(wEntry.week);
+      const offenseTeam = wEntry.team?.toUpperCase() ?? getFallbackPlayerTeam(player, playerWeeks);
       row.total += value;
       row.weekTotals[week] = (row.weekTotals[week] ?? 0) + value;
       row.contributions.push({
         playerId,
+        sleeperId: player.player_id ?? playerId,
+        espnId: player.espn_id ?? player.espnId ?? player.sourceIds?.espn ?? null,
+        imageUrl: player.imageUrl ?? player.image_url ?? player.playerImageUrl ?? null,
         playerName: getPlayerName(player, playerId),
         position: player.position,
         week,
         value,
-        team: wEntry.team?.toUpperCase() ?? getFallbackPlayerTeam(player, playerWeeks),
+        team: offenseTeam,
+        opponent: offenseTeam,
       });
     }
   }

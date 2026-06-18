@@ -115,6 +115,8 @@ Hosted owners can enable paid live scoring for selected leagues by setting these
 
 - **Sleeper-only sign-in** - Removed the ESPN provider option from the initial sign-in screen and Switch League flow.
 - **Connection flow clarity** - New users now land directly on the supported Sleeper account lookup without an unavailable ESPN sign-in path.
+- **Draft Results polish** - Prior-year completed-pick cards now stay aligned and readable on tablet and phone layouts.
+- **Companion Defense refresh** - Defense rankings now show cleaner per-game decimal averages, matchup context, and player contribution rows.
 - **ESPN work deferred** - Known ESPN league integration issues are tracked as deferred while this release line stays focused on Sleeper support.
 - **PWA cache refresh** - Bumped the app version so installed clients receive the updated connection screen.
 

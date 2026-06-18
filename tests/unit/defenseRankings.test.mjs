@@ -5,13 +5,14 @@ import { DEFAULT_SCORING } from '../../src/utils/scoringEngine.js';
 import {
   buildDefenseRankingRows,
   filterDefenseRankingRows,
+  formatDefenseRankingValue,
   getDefaultDefenseRankingStat,
   getDefenseRankingStatOptions,
 } from '../../src/utils/defenseRankings.js';
 
 const players = {
   qb1: { player_id: 'qb1', full_name: 'Road QB', position: 'QB', team: 'BUF' },
-  rb1: { player_id: 'rb1', full_name: 'Road RB', position: 'RB', team: 'BUF' },
+  rb1: { player_id: 'rb1', full_name: 'Road RB', position: 'RB', team: 'BUF', espn_id: '1234' },
   rb2: { player_id: 'rb2', full_name: 'Home RB', position: 'RB', team: 'KC' },
 };
 
@@ -57,6 +58,8 @@ describe('defense rankings', () => {
     assert.equal(kc.total, 100);
     assert.equal(kc.games, 1);
     assert.equal(kc.avg, 100);
+    assert.equal(kc.contributions[0].opponent, 'BUF');
+    assert.equal(kc.contributions[0].espnId, '1234');
 
     const mia = rows.find(row => row.team === 'MIA');
     assert.equal(mia.total, 40);
@@ -189,5 +192,15 @@ describe('defense rankings', () => {
       'rush_yd',
       'rush_td',
     ]);
+  });
+
+  it('formats per-game averages with adaptive precision by stat scale', () => {
+    assert.equal(formatDefenseRankingValue(8 / 17, { mode: 'stats', stat: 'rush_td', scope: 'avg' }), '0.47');
+    assert.equal(formatDefenseRankingValue(22 / 17, { mode: 'stats', stat: 'rush_td', scope: 'avg' }), '1.3');
+    assert.equal(formatDefenseRankingValue(87.44, { mode: 'stats', stat: 'rush_yd', scope: 'avg' }), '87.4');
+    assert.equal(formatDefenseRankingValue(125.44, { mode: 'stats', stat: 'rush_yd', scope: 'avg' }), '125');
+    assert.equal(formatDefenseRankingValue(13.56, { mode: 'stats', stat: 'rush_att', scope: 'avg' }), '14');
+    assert.equal(formatDefenseRankingValue(8, { mode: 'stats', stat: 'rush_td' }), '8');
+    assert.equal(formatDefenseRankingValue(8 / 17, { mode: 'fantasy', stat: 'rush_td', scope: 'avg' }), '0.5');
   });
 });
