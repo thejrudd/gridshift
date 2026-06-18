@@ -305,13 +305,15 @@ export function normalizeAppRoute(route = {}) {
     if (companionView === 'defense') {
       const defensePosition = normalizePosition(route.defensePosition) ?? 'QB';
       const defenseStatsByPosition = {
+        ALL: new Set(['total_yd', 'total_td']),
         QB: new Set(['pass_yd', 'pass_td', 'rush_yd', 'rush_td']),
         RB: new Set(['rush_att', 'rush_yd', 'rush_td', 'rec', 'rec_yd', 'rec_td']),
         WR: new Set(['rec', 'rec_yd', 'rec_td', 'rush_yd', 'rush_td']),
         TE: new Set(['rec', 'rec_yd', 'rec_td', 'rush_yd', 'rush_td']),
       };
-      const normalizedDefensePosition = ['QB', 'RB', 'WR', 'TE'].includes(defensePosition) ? defensePosition : 'QB';
+      const normalizedDefensePosition = ['ALL', 'QB', 'RB', 'WR', 'TE'].includes(defensePosition) ? defensePosition : 'QB';
       const defaultDefenseStatByPosition = {
+        ALL: 'total_yd',
         QB: 'pass_yd',
         RB: 'rush_att',
         WR: 'rec',
@@ -555,6 +557,7 @@ export function buildAppPath(route) {
       }
       if (normalized.companionView === 'defense') {
         const defaultDefenseStatByPosition = {
+          ALL: 'total_yd',
           QB: 'pass_yd',
           RB: 'rush_att',
           WR: 'rec',

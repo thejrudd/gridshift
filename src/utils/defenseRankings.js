@@ -1,11 +1,16 @@
 import { calcPoints } from './scoringEngine.js';
 
-export const DEFENSE_RANKING_POSITIONS = ['QB', 'RB', 'WR', 'TE'];
-const WHOLE_NUMBER_STATS = new Set(['pass_td', 'pass_int', 'rush_td', 'rush_att', 'rec', 'rec_td']);
+export const DEFENSE_RANKING_POSITIONS = ['ALL', 'QB', 'RB', 'WR', 'TE'];
+const DEFENSE_RANKING_PLAYER_POSITIONS = ['QB', 'RB', 'WR', 'TE'];
+const WHOLE_NUMBER_STATS = new Set(['pass_td', 'pass_int', 'rush_td', 'rush_att', 'rec', 'rec_td', 'total_td']);
 const LOW_FREQUENCY_AVERAGE_STATS = new Set(['pass_td', 'pass_int', 'rush_td', 'rec_td']);
 const VOLUME_AVERAGE_STATS = new Set(['rush_att', 'rec']);
 
 export const DEFENSE_RANKING_STAT_OPTIONS = {
+  ALL: [
+    { id: 'total_yd', label: 'Total Yards', shortLabel: 'Total Yds' },
+    { id: 'total_td', label: 'Total TDs', shortLabel: 'Total TD' },
+  ],
   QB: [
     { id: 'pass_yd', label: 'Passing Yards', shortLabel: 'Pass Yds' },
     { id: 'pass_td', label: 'Passing TDs', shortLabel: 'Pass TD' },
@@ -117,6 +122,17 @@ function getPlayerName(player, playerId) {
   return player?.full_name || `${player?.first_name ?? ''} ${player?.last_name ?? ''}`.trim() || playerId;
 }
 
+function getDefenseStatValue(wEntry, stat) {
+  switch (stat) {
+    case 'total_yd':
+      return Number(wEntry.pass_yd ?? 0) + Number(wEntry.rush_yd ?? 0) + Number(wEntry.rec_yd ?? 0);
+    case 'total_td':
+      return Number(wEntry.pass_td ?? 0) + Number(wEntry.rush_td ?? 0) + Number(wEntry.rec_td ?? 0);
+    default:
+      return Number(wEntry[stat] ?? 0);
+  }
+}
+
 function getFallbackPlayerTeam(player, playerWeeks) {
   const enhanced = playerWeeks.find(week => week._teamSource === 'espn' && week.team);
   return enhanced?.team?.toUpperCase() ?? player?.team?.toUpperCase() ?? null;
@@ -200,10 +216,13 @@ export function buildDefenseRankingRows({
     contributions: [],
   }]));
   const gamesByTeam = buildGamesByTeam(scheduleMap, allTeams, buildStatWeeks(weeklyStats));
+  const allowedPositions = normalizedPosition === 'ALL'
+    ? DEFENSE_RANKING_PLAYER_POSITIONS
+    : [normalizedPosition];
 
   for (const [playerId, playerWeeks] of Object.entries(weeklyStats ?? {})) {
     const player = players?.[playerId];
-    if (!player || player.position !== normalizedPosition) continue;
+    if (!player || !allowedPositions.includes(player.position)) continue;
 
     for (const wEntry of playerWeeks ?? []) {
       const defenseTeam = getDefenseTeamForWeek(wEntry, player, playerWeeks, scheduleMap);
@@ -220,8 +239,8 @@ export function buildDefenseRankingRows({
       }
 
       const value = normalizedMode === 'fantasy'
-        ? calcPoints(wEntry, scoringSettings, normalizedPosition)
-        : Number(wEntry[normalizedStat] ?? 0);
+        ? calcPoints(wEntry, scoringSettings, player.position)
+        : getDefenseStatValue(wEntry, normalizedStat);
       if (!Number.isFinite(value) || value <= 0) continue;
 
       const row = teamRows.get(defenseTeam);

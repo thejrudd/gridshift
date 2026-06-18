@@ -26,6 +26,7 @@ import CompanionPlayerRow, { CompanionPlayerMetric } from './CompanionPlayerRow.
 const ALL_TEAMS = Object.keys(STADIUMS).sort();
 const ESPN_LOGO_KEY = { WAS: 'wsh' };
 const COMPACT_ROW_QUERY = '(max-width: 720px)';
+const MOBILE_DRILLDOWN_QUERY = '(max-width: 1023px)';
 const TEAM_DISPLAY_NAMES = {
   ARI: 'Arizona Cardinals',
   ATL: 'Atlanta Falcons',
@@ -108,9 +109,10 @@ function normalizeRouteState(routeState) {
 }
 
 function getValueLabel(mode, position, stat) {
+  const positionLabel = position === 'ALL' ? 'All Positions' : position;
   return mode === 'fantasy'
-    ? `Fantasy Points Allowed to ${position}`
-    : `${getDefenseRankingStatOption(position, stat).label} Allowed to ${position}`;
+    ? `Fantasy Points Allowed to ${positionLabel}`
+    : `${getDefenseRankingStatOption(position, stat).label} Allowed to ${positionLabel}`;
 }
 
 function getDefenseSummaryText({ valueLabel, sort, dir, query }) {
@@ -147,15 +149,22 @@ function groupContributionsByWeek(row) {
 }
 
 function SortHeader({ active, dir, children, onClick, align = 'right' }) {
+  const directionLabel = dir === 'asc' ? 'ascending' : 'descending';
   return (
     <button
       type="button"
       className={`companion-defense-sort-header${active ? ' is-active' : ''}`}
       onClick={onClick}
       style={{ justifyContent: align === 'left' ? 'flex-start' : 'flex-end' }}
-      aria-label={`Sort by ${children}${active ? ` ${dir}` : ''}`}
+      aria-label={`Sort by ${children}${active ? `, currently ${directionLabel}` : ''}`}
     >
-      {children}{active ? (dir === 'asc' ? ' Asc' : ' Desc') : ''}
+      <span>{children}</span>
+      {active && (
+        <span
+          className={`companion-defense-sort-header__arrow is-${dir}`}
+          aria-hidden="true"
+        />
+      )}
     </button>
   );
 }
@@ -174,6 +183,7 @@ export default function CompanionDefense({ routeState, onRouteStateChange }) {
   const statsEnhancing = useSleeperStatsEnhancing();
   const { darkMode } = useTheme();
   const compactRows = useMediaQuery(COMPACT_ROW_QUERY);
+  const mobileDrilldown = useMediaQuery(MOBILE_DRILLDOWN_QUERY);
   const [selectedTeam, setSelectedTeam] = useState(null);
   const state = useMemo(() => normalizeRouteState(routeState ?? DEFAULT_DEFENSE_RANKING_STATE), [routeState]);
   const statOptions = useMemo(() => getDefenseRankingStatOptions(state.position), [state.position]);
@@ -259,7 +269,7 @@ export default function CompanionDefense({ routeState, onRouteStateChange }) {
                   stat: getDefaultDefenseRankingStat(position),
                 })}
               >
-                {position}
+                {position === 'ALL' ? 'All' : position}
               </CompanionSelectorButton>
             ))}
           </CompanionSelectorRail>
@@ -372,6 +382,7 @@ export default function CompanionDefense({ routeState, onRouteStateChange }) {
         <Modal
           onClose={() => setSelectedTeam(null)}
           ariaLabel={`${getTeamDisplayName(selectedRow.team)} defense details`}
+          mobileSheet={mobileDrilldown}
           containerClassName="companion-defense-modal-panel"
           containerStyle={{
             background: 'var(--color-bg-secondary)',

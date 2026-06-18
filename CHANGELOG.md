@@ -1119,6 +1119,6 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Switch League cleanup** - Kept the Switch League screen from exposing ESPN sign-in while preserving existing ESPN league-picker behavior for already-connected ESPN sessions.
 - **Draft Results mobile polish** - Reworked completed-pick rows around pick number, player identity, NFL team, position, and drafting fantasy team so prior-year cards no longer overflow or clip on tablet and phone layouts.
 - **Companion Defense averages** - Defense rankings now format per-game stat averages with adaptive decimal precision instead of rounding every stat to a whole number.
-- **Companion Defense details** - Refreshed the Defense detail modal with matchup logos, clearer weekly opponent labels, and player avatars for contribution rows.
+- **Companion Defense details** - Refreshed Defense drilldowns with mobile slide-up sheets, matchup logos, clearer weekly opponent labels, player avatars, one-line summary stats, an aggregate All position filter, and aligned mobile/tablet sort headers.
 - **ESPN work deferred** - Moved known ESPN league integration issues into Deferred bug tracking because ESPN features are not being implemented in this release line.
 - **PWA cache bust** - Bumped the app version so installed clients fetch the updated sign-in flow.

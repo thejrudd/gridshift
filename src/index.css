@@ -901,6 +901,7 @@ body {
   width: 100%;
   min-height: 26px;
   align-items: center;
+  gap: 4px;
   border: 0;
   background: transparent;
   color: inherit;
@@ -917,6 +918,23 @@ body {
 
 .companion-defense-sort-header:hover {
   color: var(--color-signature);
+}
+
+.companion-defense-sort-header__arrow {
+  display: inline-block;
+  width: 0;
+  height: 0;
+  flex: 0 0 auto;
+  border-right: 4px solid transparent;
+  border-left: 4px solid transparent;
+}
+
+.companion-defense-sort-header__arrow.is-asc {
+  border-bottom: 5px solid currentColor;
+}
+
+.companion-defense-sort-header__arrow.is-desc {
+  border-top: 5px solid currentColor;
 }
 
 .companion-defense-table-frame {
@@ -1246,12 +1264,20 @@ body {
   }
 
   .companion-defense-row-header {
-    grid-template-columns: 38px minmax(0,1fr) minmax(112px, 1fr) 12px;
-    padding-inline: 10px;
+    grid-template-columns: 44px minmax(0,1fr) minmax(164px, 224px) 12px;
+    gap: 10px;
+    padding: 0 10px 0 12px;
   }
 
   .companion-defense-row-header__metrics {
+    justify-self: stretch;
+    width: auto;
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .companion-defense-row-header > span:first-child {
+    text-align: center;
   }
 
   .companion-defense-row .companion-player-row__identity-label {
@@ -1268,13 +1294,38 @@ body {
   }
 }
 
+@media (max-width: 720px) {
+  .companion-defense-row-header {
+    grid-template-columns: 38px minmax(0,1fr) 112px 12px;
+    gap: 8px;
+    padding-inline: 8px;
+  }
+
+  .companion-defense-row-header__metrics {
+    justify-self: end;
+    width: 112px;
+    grid-template-columns: repeat(2, minmax(0, 52px));
+  }
+}
+
 @media (max-width: 560px) {
   .companion-defense-row .companion-player-row__identity-label {
     width: 150px;
   }
 
   .companion-defense-modal-stats {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .companion-defense-modal-stats span {
+    padding: 10px 8px;
+    font-size: 10px;
+    line-height: 1.1;
+  }
+
+  .companion-defense-modal-stats strong {
+    font-size: 16px;
+    line-height: 1;
   }
 }
 

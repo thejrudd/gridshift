@@ -53,6 +53,11 @@ These ESPN league integration issues are known but deferred while ESPN features 
 | Bug | Fixed In |
 |-----|----------|
 | Companion → Defense averages round values to the nearest whole number instead of showing the nearest tenth decimal | v8.0.1 |
+| Companion → Defense drilldown still opens as a centered modal on mobile instead of using the slide-up sheet pattern | v8.0.1 |
+| Companion → Defense mobile drilldown stacks Rank, Total Allowed, and Per Game even when phone layouts have room for a single stat row | v8.0.1 |
+| Companion → Defense mobile/tablet column headers can drift out of alignment with the row metric columns | v8.0.1 |
+| Companion → Defense sort headers show abbreviated Asc/Desc text instead of a compact direction indicator | v8.0.1 |
+| Companion → Defense lacks an All position filter for aggregate points and yardage allowed | v8.0.1 |
 | v8.0.1 Draft Results prior-year player cards can overflow, misalign, and cut off text on tablet and phone layouts | v8.0.1 |
 | Initial sign-in and Switch League screens could still expose ESPN as a sign-in provider even though v8.0.1 should direct users to the Sleeper-only connection flow | v8.0.1 |
 | Draft War Room positional map included inactive, practice-squad, sentinel-ranked, and very low-signal players that skewed the comparison plot | v8.0 |
