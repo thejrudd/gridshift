@@ -127,7 +127,8 @@ For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 - **v8.1 - Draft Rank Calibration** - Add a transparent scoring-adjusted GridShift Rank for Draft.
 - **v8.2 - ESPN League Integration** - ESPN league import and read-only Companion/Statistics parity after Draft rank calibration.
 - **v8.3 - ESPN Trade Suite** - ESPN-aware Trade support after ESPN Companion and Statistics parity.
-- **v9.0 - Live Fantasy Scoring** - Sleeper-first live matchup experience with server-protected BALLDONTLIE support for allowlisted leagues.
+- **v8.4 - Live Fantasy Scoring** - Sleeper-first live matchup experience with server-protected BALLDONTLIE support for allowlisted leagues.
+- **v8.5 - Team Tendencies & League Tables** - League, conference, and division tables for team offense/defense rankings with fantasy matchup context.
 - **Scout Rookie Projection Layer** - Add next-season rookie projections that work for standard and IDP-focused draft prep without overloading the current Scout board.
 - **Trade follow-through** - Continue polishing Trade drilldowns, remaining explanation copy, and proposal-card readability after the v7.3 module split.
 

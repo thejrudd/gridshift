@@ -16,13 +16,24 @@ New features requested or planned should be added here.
 - ESPN Fantasy sidecar auth, league normalization, scoring profiles, read-only Companion/Statistics/Compare parity, and player-only Trade support.
 - ESPN connect UX should use pasted ESPN team/league links or league IDs as the primary import path, with secure manual session import and a desktop Chrome helper link revealed only for private leagues or explicit fallback.
 - Account for ESPN playoff configurations with varying matchup lengths, including two-week playoff rounds, without dropping active fantasy scoring periods.
-- Add a Companion Standings feature for connected fantasy leagues.
+- Add a Companion Standings feature for connected fantasy leagues, including overall league standings, division standings, playoff-seed context, points for/against, and clear handling for leagues without divisions.
 
 ### v8.3 - ESPN Trade Suite
 
 - Build ESPN league support for Trade after Companion and Statistics ESPN parity is complete, including ESPN-aware valuation, partner context, roster movement, and trade entry points.
 
-### v9.0 - Live Fantasy Scoring
+### v8.4 - Live Fantasy Scoring
+
+- Add a live fantasy scoring Companion view that mirrors the Matchup tab clarity while updating active player scores in real time during NFL games.
+- Include a live scoring feed that explains meaningful point swings, scoring plays, turnovers, big stat gains, defensive events, lead changes, and players moving above/below projected pace.
+- Show matchup-level context alongside the feed: current score, projected final, remaining active players, game clock/status, player game state, and win/deficit pressure.
+- Design the data layer around provider fallbacks and rate limits, with any paid or secret API access kept behind a server-side or proxy boundary before production use.
+
+### v8.5 - Team Tendencies & League Tables
+
+- Add team-based offensive and defensive rankings across major stat groups, such as passing offense, rushing offense, scoring offense, passing defense, rushing defense, scoring defense, sacks, turnovers, and fantasy points allowed.
+- Support sortable league, conference, and division tables so users can compare where every NFL team ranks overall and within its competitive group.
+- Connect team rankings back into fantasy context by surfacing opponent strengths/weaknesses in Companion Matchup, live scoring, Defense, and Statistics team pages.
 
 ---
 
