@@ -1,3 +1,7 @@
+// TOKEN EXCEPTION: this component renders the exported share image, which is
+// deliberately dark-branded regardless of the viewer's theme. It keeps fixed
+// Tailwind palette values instead of theme tokens so the exported PNG looks
+// identical for every user — do not "retokenize" it to var(--color-*).
 import { forwardRef } from 'react';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
@@ -685,7 +689,7 @@ const ParityIndexSection = ({ stats, w, h }) => {
         <div style={{ position: 'relative', width: ringDim, height: ringDim }}>
           <svg width={ringDim} height={ringDim} style={{ transform: 'rotate(-90deg)' }}>
             <circle cx={ringDim / 2} cy={ringDim / 2} r={radius} fill="none" stroke="rgba(107,114,128,0.3)" strokeWidth={strokeW} />
-            <circle cx={ringDim / 2} cy={ringDim / 2} r={radius} fill="none" stroke="#a855f7" strokeWidth={strokeW}
+            <circle cx={ringDim / 2} cy={ringDim / 2} r={radius} fill="none" stroke="#7C3AED" /* matches --color-alpha so wild-card purple is consistent with the app */ strokeWidth={strokeW}
               strokeDasharray={circumference} strokeDashoffset={dashOffset} strokeLinecap="round" />
           </svg>
           <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>

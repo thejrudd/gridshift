@@ -51,6 +51,16 @@ export function getNflTeamLogoUrl(logoKey) {
   return logoKey ? `https://a.espncdn.com/i/teamlogos/nfl/500/${logoKey}.png` : null;
 }
 
+function pushUniqueUrl(urls, url) {
+  if (url && !urls.includes(url)) urls.push(url);
+}
+
+function getSleeperImagePlayerId(player = {}) {
+  const raw = player.sleeperId ?? player.sleeper_id ?? player.player_id ?? player.id ?? player.playerId;
+  const normalized = String(raw ?? '').trim();
+  return normalized && !normalized.startsWith('espn:') ? normalized : null;
+}
+
 export function getCompanionInitials(label, fallback = '?') {
   const initials = String(label ?? fallback)
     .split(/\s+/)
@@ -64,16 +74,21 @@ export function getCompanionInitials(label, fallback = '?') {
 }
 
 export function getCompanionPlayerImageUrl(player = {}) {
-  return player.imageUrl
-    ?? player.image_url
-    ?? player.playerImageUrl
-    ?? player.avatarUrl
-    ?? getEspnPlayerImageUrl(player.espnId ?? player.espn_id ?? player.sourceIds?.espn)
-    ?? (String(player.id ?? player.playerId ?? player.sleeperId ?? '').startsWith('espn:')
-      ? getEspnPlayerImageUrl(player.id ?? player.playerId ?? player.sleeperId)
-      : null)
-    ?? getSleeperPlayerImageUrl(player.id ?? player.playerId ?? player.sleeperId)
-    ?? null;
+  return getCompanionPlayerImageUrls(player)[0] ?? null;
+}
+
+export function getCompanionPlayerImageUrls(player = {}) {
+  const urls = [];
+  pushUniqueUrl(urls, player.imageUrl);
+  pushUniqueUrl(urls, player.image_url);
+  pushUniqueUrl(urls, player.playerImageUrl);
+  pushUniqueUrl(urls, player.avatarUrl);
+  pushUniqueUrl(urls, getEspnPlayerImageUrl(player.espnId ?? player.espn_id ?? player.sourceIds?.espn));
+  if (String(player.id ?? player.playerId ?? player.sleeperId ?? '').startsWith('espn:')) {
+    pushUniqueUrl(urls, getEspnPlayerImageUrl(player.id ?? player.playerId ?? player.sleeperId));
+  }
+  pushUniqueUrl(urls, getSleeperPlayerImageUrl(getSleeperImagePlayerId(player)));
+  return urls;
 }
 
 export function getCompanionTeamLogoUrl(player = {}, theme = null) {

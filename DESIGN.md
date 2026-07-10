@@ -88,14 +88,47 @@ typography:
     fontWeight: 500
     lineHeight: "12px"
     letterSpacing: "0.01em"
+  label-micro:
+    fontFamily: "Barlow Condensed"
+    fontSize: "10px"
+    fontWeight: 700
+    lineHeight: "12px"
+    letterSpacing: "0.14em"
+  chip-action:
+    fontFamily: "Barlow Condensed"
+    fontSize: "10.5px"
+    fontWeight: 800
+    lineHeight: "12px"
+    letterSpacing: "0.10em"
+  chip-filter:
+    fontFamily: "Figtree"
+    fontSize: "12px"
+    fontWeight: 800
+    lineHeight: "12px"
+    letterSpacing: "0"
+  stat-value:
+    fontFamily: "Barlow Condensed"
+    fontSize: "22px"
+    fontWeight: 800
+    lineHeight: "24px"
+    letterSpacing: "-0.02em"
+  stat-hero:
+    fontFamily: "Barlow Condensed"
+    fontSize: "34px"
+    fontWeight: 800
+    lineHeight: "32px"
+    letterSpacing: "-0.01em"
 
 rounded:
-  sm: "0.25rem"
-  DEFAULT: "0.5rem"
-  md: "0.75rem"
-  lg: "1rem"
-  xl: "1.5rem"
+  sm: "0.125rem"
+  DEFAULT: "0.25rem"
+  md: "0.375rem"
+  lg: "0.5rem"
+  xl: "0.75rem"
+  2xl: "1rem"
   full: "9999px"
+  control: "7px"
+  panel: "8px"
 
 spacing:
   base: "8px"
@@ -151,14 +184,14 @@ components:
   filter-chip:
     backgroundColor: "{colors.signature}"
     textColor: "{colors.signature-fg}"
-    typography: "{typography.label-section}"
-    rounded: "{rounded.full}"
+    typography: "{typography.chip-filter}"
+    rounded: "{rounded.panel}"
     padding: "{spacing.sm}"
   button-primary:
-    backgroundColor: "{colors.accent}"
-    textColor: "#FFFFFF"
-    typography: "{typography.label-nav}"
-    rounded: "{rounded.lg}"
+    backgroundColor: "{colors.signature}"
+    textColor: "{colors.signature-fg}"
+    typography: "{typography.chip-action}"
+    rounded: "{rounded.control}"
     padding: "{spacing.md}"
   button-destructive:
     backgroundColor: "{colors.accent-red}"
@@ -176,11 +209,14 @@ The aesthetic is dense but ordered: information-first, with typography doing the
 
 **Guiding principles:**
 
-1. **Amber signals action.** The signature color marks only interactive or active states — never body copy.
-2. **Condensed for headlines, geometric for body.** Barlow Condensed carries the broadcast voice; Figtree handles readable UI.
-3. **One breakpoint.** Everything below 1024px is mobile-first; everything at or above 1024px is the desktop shell. No intermediate complexity.
+1. **Amber signals action and "you."** The signature color marks interactive/active states, primary actions, and the user's own team in data visualizations — never body copy.
+2. **Condensed for the broadcast voice, geometric for reading.** Barlow Condensed carries display type, editorial micro-labels, and stat numerals; Figtree handles readable body copy, descriptions, and form inputs.
+3. **One structural breakpoint, layered adaptation.** The 1024px breakpoint is the only place the navigation shell restructures (bottom tabs vs sidebar). Within a shell, sizing is fluid via `clamp()`. A compact tier (`max-width: 560px`) may only *reduce density* — hide chrome, tighten padding — never restructure layout. Input adaptations (touch target sizes, hover vs tap) use pointer capability queries (`pointer: coarse`), never width.
 4. **Dark mode is native.** The `.dark` class on `<html>` swaps all design tokens. No third-party library.
 5. **Important content must fit.** User-facing names, dates, venues, stats, scores, labels, and controls should wrap or reflow before they truncate. Ellipsis is reserved for low-priority decorative metadata only, never for information a user needs to act on or compare.
+6. **Each fact appears once per surface.** No screen should show the same team name, score, status, or metric in more than one place at the same time (a detail tooltip or drill-in repeating a summary value is fine — simultaneous duplication in the base layout is not). Status indicators (live dots, "updated at" stamps) appear exactly once. Prefer merging adjacent header/status strips over stacking them.
+
+> **Token source of truth:** the CSS custom properties in `src/index.css` and `tailwind.config.js` are authoritative. The YAML frontmatter above is a machine-readable mirror — any token change must update both in the same pass.
 
 ---
 
@@ -188,13 +224,18 @@ The aesthetic is dense but ordered: information-first, with typography doing the
 
 ### Signature Amber
 
-`#F5B700` is the single brand accent. It is **decorative only** — used for active states, progress fills, and selection indicators. It never appears as body text.
+`#F5B700` is the single brand accent. It never appears as body copy, headings, or descriptive labels.
 
 Any text or icon placed *on* a signature-colored background must use `--color-signature-fg` (`#0C0F14`) for sufficient contrast.
 
-**Valid uses:** active sidebar nav border, season tab underline, progress bar fill, bottom tab active icon and label, filter chip background.
+**Valid uses:**
 
-**Invalid uses:** body copy, headings, descriptive labels, icon fills in non-active states.
+- Active states: sidebar nav border, season tab underline, bottom tab active icon and label, filter chip background, progress bar fill.
+- Primary actions: primary buttons and CTAs use a signature background with `--color-signature-fg` text.
+- **"You/yours" identity in data visualizations:** the user's own team/side takes amber (chart series, dial rings, feed edge bars); the opponent takes blue `accent`.
+- A **singular focal numeral** — one large tabular figure that is the sole subject of its element (e.g. a win-chance dial percentage) — may render in amber.
+
+**Invalid uses:** body copy, headings, descriptive labels, paragraph or multi-word text of any kind, icon fills in non-active states.
 
 ### Backgrounds
 
@@ -265,11 +306,15 @@ If neither white nor near-black reads well in the text's region, adjust the grad
 
 Two typefaces. No exceptions.
 
-**Barlow Condensed** — display and brand. Used for the wordmark, section tabs, and editorial labels where broadcast impact is needed. Weights 400, 600, 700, 800.
+**Barlow Condensed** (`--font-display`) — the broadcast voice. Used for display type and brand, editorial micro-labels (uppercase, tracked, 9–11px, weight 700–800), chip/segment button labels, kickers, and all stat numerals (with `font-variant-numeric: tabular-nums`). Weights 400, 600, 700, 800.
 
-**Figtree** — body and UI. Used for all interactive labels, navigation, body copy, and data. Weights 400, 500, 600, 700.
+**Figtree** (`--font-body` / `sans`) — the reading voice. Used for body copy, descriptions, play/event text, form inputs, and shell navigation labels. Weights 400, 500, 600, 700.
+
+The dividing line: **if the text is scanned** (a label, a stat, a status), it is Barlow Condensed; **if it is read** (a sentence, a description, an input), it is Figtree.
 
 ### Scale
+
+Use these styles instead of inventing per-surface sizes. If a new surface needs a size that isn't here, add it to this table (and the frontmatter) in the same pass.
 
 | Style | Family | Weight | Size | Tracking | Transform | Use |
 |---|---|---|---|---|---|---|
@@ -277,8 +322,13 @@ Two typefaces. No exceptions.
 | `display-sub` | Barlow Condensed | 400 | 12px | 0.18em | uppercase | Wordmark "PREDICTOR" |
 | `headline-tab` | Barlow Condensed | 700 | 15px | 0.07em | uppercase | Season subnav tabs |
 | `headline-season` | Barlow Condensed | 700 | 11px | 0.06em | — | Season year label |
+| `label-micro` | Barlow Condensed | 700–800 | 9.5–10px | 0.10–0.18em | uppercase | Kickers, section strips, dt labels, glance text |
+| `chip-action` | Barlow Condensed | 800 | 10.5px | 0.10em | uppercase | Dense broadcast chips (Companion Live chip buttons) |
+| `chip-filter` | Figtree | 800 | 10–13px | 0 | — | Standard filter/sort chips (`.companion-selector-button`, sized by xs/sm/md tier) |
+| `stat-value` | Barlow Condensed | 800 | 17–22px | -0.02em | tabular-nums | Row/point values, box-score figures |
+| `stat-hero` | Barlow Condensed | 800 | 34–44px | -0.01em | tabular-nums | Hero scores and focal totals |
 | `body-md` | Figtree | 400 | 16px | 0 | — | Default body copy, inputs |
-| `body-sm` | Figtree | 400 | 14px | 0 | — | Card and list content |
+| `body-sm` | Figtree | 400–600 | 12.5–14px | 0 | — | Card/list content, event descriptions |
 | `label-nav` | Figtree | 600 | 12.5px | 0 | — | Sidebar nav items |
 | `label-action` | Figtree | 500 | 12.5px | 0 | — | Sidebar action items |
 | `label-section` | Figtree | 700 | 10px | 0.10em | uppercase | Section divider labels |
@@ -290,7 +340,31 @@ Two typefaces. No exceptions.
 
 ## Layout
 
-A single breakpoint at `1024px` splits the two navigation shells.
+A single structural breakpoint at `1024px` splits the two navigation shells. Within a shell, adaptation is layered, in this order:
+
+1. **Fluid sizing** — `clamp()` for type and spacing that should scale with the viewport.
+2. **Compact tier (`max-width: 560px`)** — density reduction only: tighter padding, hidden decorative chrome, stacked control rows. Never a different layout structure.
+3. **Pointer capability (`pointer: coarse`)** — touch-target and interaction adjustments, independent of width.
+
+### Container Queries for Dense Data Panels
+
+Dense data panels whose width depends on variable siblings — an inline detail pane that appears beside them, a resizable rail, a collapsible column — adapt via CSS container queries (`container-type: inline-size` on the panel), not viewport queries. Viewport width is the wrong signal when a sibling can consume hundreds of pixels at the same viewport.
+
+The Draft Big Board is the canonical example (`container-name: draft-big-board` with tiers at 900/620/460/380px). When a panel narrows, shed content in density-reduction order: helper labels for obvious numbers first, then decorative team logos, then lower-priority metric columns (e.g. PPG/Volume/Tier drop before Rank/Rating/Trend), and only then shrink identity text. Never let column-shedding restructure the panel's layout.
+
+### Available Width, Not Viewport Width
+
+Full-width multi-column strips (status banners, header strips) must choose their collapse point from the width actually available to them, not the raw viewport width — the 240px desktop sidebar makes viewport ≠ content width. A strip whose columns need N px of content must collapse below a viewport of N + 240px when it lives inside the desktop shell, or use a container query so the math is automatic.
+
+### Input Modalities
+
+The desktop shell is mouse-first; the mobile/tablet shell is touch-first — but pointer type is detected by capability, not by viewport width (an iPad in landscape is 1024px+ *and* touch).
+
+- **Touch targets:** interactive elements must reach **44×44px minimum** under `@media (pointer: coarse)`. Compact 30–34px controls are acceptable for mouse only.
+- **Hover is an enhancement, never a requirement.** Any information revealed on hover (tooltips, glows, inspection crosshairs) must have a tap-driven equivalent on coarse pointers — tap to show, tap outside to dismiss. Never leave a hover-only affordance as the sole path to information.
+- **Scroll-adjacent interactions:** elements inside a scrollable page that capture pointer events (charts, sliders) must set `touch-action` so vertical panning still scrolls the page, and must clear transient UI on `pointercancel`.
+- **Hover styles** (`:hover` fills, mouse-tracking glows) are desktop polish; do not port them to touch, and never let a stuck hover state carry meaning.
+- **Modifier-key shortcuts are enhancements.** Ctrl/⌘-click multi-select and similar modifier interactions may extend a control for desktop power users, but must never be the only path to a necessary capability — provide a first-class option that works on touch (e.g. the Offense/Defense group chips beside single-position filters).
 
 ### Mobile / Tablet (< 1024px)
 
@@ -375,18 +449,18 @@ Bar elements (NavBar, BottomTabBar) use backdrop blur — `blur(16px) saturate(1
 
 ## Shapes
 
-Corner radii follow Tailwind's default scale, extended with `rounded-xl` (`1.5rem`) as the standard for cards and modals.
+Corner radii follow Tailwind's **default** scale (`tailwind.config.js` does not extend it), plus two hand-written CSS values for dense data surfaces. Four tiers:
 
-| Token | Value | Use |
+| Tier | Value | Use |
 |---|---|---|
-| `rounded-sm` | 0.25rem | Tight UI elements, badges |
-| `rounded` | 0.5rem | Default buttons, chips |
-| `rounded-md` | 0.75rem | Navigation items |
-| `rounded-lg` | 1rem | Buttons, inputs, list items |
-| `rounded-xl` | 1.5rem | Cards, modals, panels |
-| `rounded-full` | 9999px | Avatars, filter chips, pills |
+| Control | `7–10px` | Chip buttons and segmented controls (selector chips scale radius with size tier: xs 7px / sm 8px / md 10px), small square buttons (pagers, back) |
+| Panel | `8px` | Dense data panels, boards, rails, alerts, disclosure panels |
+| Card | `rounded-xl` (0.75rem / 12px) | Cards and list containers built with Tailwind classes |
+| Modal | `rounded-2xl` (1rem / 16px) | Modals and large overlays |
 
-Modals always use `rounded-2xl` (equivalent to `rounded-xl`) — never `rounded-t-2xl` (the bottom-sheet pattern). If the intent is a bottom sheet, that must be an explicit `ActionSheet` component decision.
+Badges and tiny tags use `2–4px`; avatars and pills use `rounded-full` (9999px). Filter chips use the control tier, not `rounded-full`.
+
+Desktop modals always use `rounded-2xl` — never `rounded-t-2xl` ad hoc. A bottom sheet is only ever an explicit decision: either the `Modal mobileSheet` variant (mobile drill-ins, see Modal → Mobile Sheet) or the `ActionSheet` component.
 
 ---
 
@@ -394,13 +468,23 @@ Modals always use `rounded-2xl` (equivalent to `rounded-xl`) — never `rounded-
 
 ### Modal
 
-Center-aligned, never bottom-sheet by default.
+Center-aligned by default; bottom sheets only via the explicit `mobileSheet` variant below.
 
 - Backdrop: `fixed inset-0 z-50 flex items-center justify-center`, `background: rgba(0,0,0,0.5)`
 - Container: `rounded-2xl w-full mx-4` with a defined `maxWidth`
 - Scroll lock: `document.body.style.overflow = 'hidden'` on mount; restore on unmount
 - Scrollable content lives in the inner div (`overflow-y-auto`), not the container
 - Close on backdrop click; stop propagation on inner div
+
+#### Mobile Sheet (`<Modal mobileSheet>`)
+
+The sanctioned slide-up drill-in for mobile/tablet (`< 1024px`). Used for player previews, pickers, and detail sheets across Companion, Draft, Scout, and Compare.
+
+- Overlay `.modal-overlay--mobile-sheet` sits at `z-index: 90` and **covers the bottom tab bar** (`z-index: 50`) — sheet content must not add tab-bar clearance padding.
+- The Modal panel owns the **drag handle** and the **`env(safe-area-inset-bottom)` padding**. Sheet children must not render a second handle strip or re-add safe-area padding.
+- Dismissal: drag-down on the handle, backdrop tap, and Escape. All three are provided by `Modal` — don't reimplement.
+- Close affordance: a circular (`rounded-full`) button inside the sheet's header/hero, meeting the 44px target under `pointer: coarse` (visual 30px + `::after { inset: -7px }` hit-area expansion).
+- Entry animation: slide-up 240ms `cubic-bezier(0.32, 0.72, 0, 1)`; bottom action rows sit flush at the sheet bottom with symmetric padding — no dead band below the last control.
 
 ### Card
 
@@ -430,12 +514,54 @@ Center-aligned, never bottom-sheet by default.
 - `--color-label-tertiary` color
 - No background; used as a visual divider within panels
 
-### Filter Chip (Active)
+### Filter Chip
 
-- Background: `--color-signature`
-- Text: `--color-signature-fg`
-- Border radius: `rounded-full`
-- Typography: `label-section`
+The standard filter/sort chip is the shared `.companion-selector-button` (`CompanionSelectorButton` in `src/components/companion/CompanionSelectorControls.jsx`).
+
+- Typography: `chip-filter` (Figtree 800; 10/12/13px by xs/sm/md size tier)
+- Border radius: control tier, scaled with size (7/8/10px)
+- Rest: `--color-fill` background, `--color-separator` border, `--color-label-secondary` text
+- Active: `--color-signature` background and border, `--color-signature-fg` text, subtle dark inset shadow — always via the `.is-active` class / `active` prop, never re-created inline
+- Touch: 44px min-height under `pointer: coarse` (32px sm tier is mouse-only density)
+
+`chip-action` (condensed, uppercase) is reserved for the dense broadcast-style chips on Companion Live.
+
+### Menu (Dropdown)
+
+Dropdown menus (sort selectors, fantasy-team filters) share one pattern — do not invent per-surface variants:
+
+- **Trigger:** `CompanionMenuTrigger` — an uppercase micro kicker naming the control (SORT, TEAM), the current value (14px/700 Figtree, truncating), and a chevron that flips while open (`CompanionMenuChevron`). Never a text affordance like "SELECT". Sized to the md control tier: min-height 38px (44px coarse), radius 10px, `--color-fill` background, separator border. An `engaged` state (amber inset ring) marks a menu actively filtering away from its default.
+- **Popover:** `--color-bg` surface, `--color-separator` border, `rounded-xl`, soft drop shadow, anchored below the trigger.
+- **Options:** `.companion-menu-item` — 14px Figtree semibold (buttons are exempt from the 16px input rule), 40px min row height (44px under `pointer: coarse`), leading selection mark (`CompanionMenuSelectionMark` — checkbox for multi-select, radio dot for single-select), `.is-checked` = `--color-fill-secondary` tint, hover = `--color-fill`, focus-visible = inset accent ring.
+- **Dismissal:** backdrop tap/click and the Escape key both close the menu (`useMenuEscapeClose`).
+
+### Canonical Controls & Interaction States
+
+Every Companion filter pill, segmented toggle, menu trigger, sort selector, and search field routes through the shared control system in `src/components/companion/CompanionSelectorControls.jsx` (`CompanionSelectorButton`, `CompanionSegmentedControl`, `CompanionSelectorRail`, `CompanionMenuTrigger`, `CompanionFantasyTeamMenu`, `CompanionSearchField`). If a control needs a size or variant that doesn't exist, **extend the canonical component and its CSS** — never style a one-off `<button>` with inline values that approximate the system.
+
+`CompanionSegmentedControl` renders a grid of standard selector pills (md tier, equal column widths) with **no extra panel chrome** — no wrapping border, background box, or extra padding — so a segmented toggle height-matches any md control beside it. The active segment uses the standard signature fill via `.is-active`, never a bespoke treatment.
+
+Because all canonical control CSS in `src/index.css` loads after `@tailwind utilities`, equal-specificity Tailwind utility classes **cannot override canonical control styles** — they silently lose the cascade. To change a canonical control's layout or look, extend the canonical class (a new variant/modifier), don't stack utilities on the instance.
+
+Every interactive control must ship a complete state set:
+
+| State | Treatment |
+|---|---|
+| Resting | On-token; quiet is fine, but must not read as plain text |
+| Hover (fine pointers) | Real change — chips: `--color-fill-secondary` fill + border nudge; menu items: `--color-fill` |
+| Focus-visible | `2px solid --color-accent` ring, offset 2px (inset -2px inside popovers/rows) |
+| Active/selected | Signature fill + `--color-signature-fg` via `.is-active`/`.is-checked`, with the matching ARIA attribute (`aria-pressed`/`aria-checked`) |
+| Pressed | Momentary feedback (`:active` opacity 0.72) |
+| Disabled | `disabled` attribute + opacity 0.48, `not-allowed`, no hover response |
+
+Sortable column headers use the shared `.companion-sort-header` pattern (`is-active` label color, hover signature, focus-visible accent ring, triangle arrow). Transitions keep the house easing `cubic-bezier(0.32, 0.72, 0, 1)`.
+
+### Primary Button
+
+- Background: `--color-signature`; text: `--color-signature-fg`
+- Typography: `chip-action` (condensed, uppercase, tracked)
+- Border radius: control tier (7px); min-height 44px
+- Blue `--color-accent` is **not** a button fill — it marks links, focus rings, selection, and the opponent side in data visualizations
 
 ### Input
 
@@ -444,13 +570,108 @@ Center-aligned, never bottom-sheet by default.
 - Background: `--color-bg-secondary`
 - Border radius: `rounded-lg`
 
+### Shared UI Primitives (`src/components/ui/`)
+
+The app-wide building blocks. Use them — never rebuild a local variant.
+
+| Component | Purpose |
+|---|---|
+| `Spinner` | The only sanctioned spinner; strokes `currentColor`, sizes `sm`/`md` |
+| `Skeleton` / `SkeletonStatChip` / `SkeletonText` / `SkeletonCard` | Loading placeholders (see Loading States) |
+| `SectionSkeleton` | Suspense fallback for lazy-loaded views |
+| `StatsProgressBanner` | The only real-progress bar (season-stats load) |
+| `SeasonChip` | Compact league-year selector; lives in the mobile NavBar |
+| `SeasonHintBanner` | One-line wrong-league-year hint with a one-tap switch (see `src/utils/seasonAvailability.js` for the capability convention) |
+| `StatusBadge` | The single Beta/Alpha marker — one label, shape, and color everywhere |
+| `EmptyState` | The single empty-state treatment (see Empty States) |
+
+### Status Tints
+
+Soft semantic surfaces derive from accent tokens via the `.bg-tint-*` / `.border-tint-*` utilities in `src/index.css` (`accent`, `green`, `red`, `orange`, `alpha`, `signature`, plus `-strong` background variants). Never hand-roll `bg-green-50 dark:bg-green-900/30`-style palette tints.
+
+### Tooltips
+
+The chart tooltip treatment (elevated `--color-bg-secondary` panel, `pointer-events: none`, clamped to its container, tap-equivalent on touch) is the app-wide tooltip style — non-chart tooltips follow the same recipe.
+
+---
+
+## Information Density & Redundancy
+
+The aesthetic is dense but ordered — density comes from showing *more distinct facts*, never the same fact twice.
+
+- **One fact, one place.** Team names, scores, statuses, and metrics render once per surface. If a headline would repeat what a hero/summary block already shows, delete the headline.
+- **One status indicator.** A surface gets at most one live dot / pulse and one "updated at" stamp. Merge status into an existing header strip instead of adding a new one.
+- **Persistent chrome must earn its place.** Controls that are rarely used (diagnostics, manual refresh while auto-refresh runs, session toggles) live behind a single disclosure ("⋯"), not as always-visible buttons.
+- **Inapplicable controls hide, they don't disable.** A control that can do nothing in the current state (e.g. a stat-value toggle while a non-stat sort is active) is removed from the layout and appears when it becomes meaningful. Disabled styling is reserved for actions the user can unblock in place.
+- **Explanatory captions are noise.** Don't label what the UI already demonstrates ("updates live", "tap to select"). Guide content belongs in the Guide tab.
+- **Redundant encodings are allowed only across channels,** e.g. color + position + label for accessibility — not two labels.
+
+---
+
+## Charts & Data Visualization
+
+- **Never stretch text.** Do not use `preserveAspectRatio="none"` on an SVG that contains text or fixed-shape markers. Measure the container (ResizeObserver) and build the viewBox from real pixel dimensions so a 1:1 coordinate mapping holds at every viewport and pixel density.
+- **Series colors:** amber `--color-signature` = the user's side; blue `--color-accent` = the opponent. Positive/negative deltas use green/red semantic accents.
+- **Inspection:** mouse gets hover crosshair + tooltip that clears on `pointerleave`; touch gets tap/drag-to-scrub with tap-outside dismiss (see Input Modalities). Tooltips are `pointer-events: none` and clamp within the plot.
+- **Identify series inside the plot** (small swatch + short label in the SVG) *or* in a legend — never both.
+- **Axis/grid chrome is minimal:** dashed separators, tertiary-label tick text, tabular numerals.
+
+---
+
+## Status & Diagnostics
+
+Live/async surfaces follow one pattern:
+
+- **One status line** in the surface's header: optional pulsing dot + condensed micro-label ("LIVE · 3 GAMES · UPDATED 1:23 PM"). Short states, not sentences.
+- **One disclosure** ("⋯" control button) opens a diagnostics panel: definition list of key/value facts plus the rarely-used actions (pause/resume, manual refresh, session off).
+- **Errors** use the alert treatment (red-tinted panel) and appear only while true.
+- Setup instructions, key names, and environment details never appear in UI copy — link the docs instead, in plain language.
+
+---
+
+## Loading States
+
+One loading language, app-wide. Shared primitives live in `src/components/ui/` — never build a one-off spinner or pulse bar.
+
+**Three sanctioned patterns:**
+
+1. **Instant shell + skeleton chips** (default for data views): render real structure — names, logos, layout — the moment it's available, and put a `SkeletonStatChip` only where a value hasn't hydrated. Never render placeholder values (`0.0`, `—`, fabricated names) as if they were data; after hydration, `—` remains the legitimate "no data" marker.
+2. **Section skeleton** (`SectionSkeleton`, Suspense fallbacks / no shell data): a header bar plus card shapes shaped like the incoming content. Never a bare "Loading..." text line.
+3. **Scoped spinner** (`Spinner`, sub-second waits): inline in a button, input, or modal, taking the surrounding text color. Not for whole content areas.
+
+**Progress:**
+
+- A progress percentage appears only where it is real — the season-stats load (`StatsProgressBanner`, driven by `statsProgress`). Fake or simulated progress is prohibited; when duration is unknown, use an indeterminate spinner.
+- Skeleton visual spec: `--color-fill-secondary` base with a `--color-fill` shimmer sweep (`.gs-skeleton`), corner radius matching the element it replaces, static under `prefers-reduced-motion`.
+- Season-switch controls show a pending state while `seasonSwitching` is set: target control gets a small spinner, siblings dim and disable.
+
+---
+
+## Empty States
+
+- One empty state per surface — never stack a board empty state and a rail empty state at the same time. If a panel has nothing to show and no action to offer, don't render the panel.
+- Format: one condensed micro-label line, or short heading + one supporting line. No illustrations, no paragraphs.
+- The message states what will fill the space and, if applicable, the single action that gets there ("Turn on Live to see plays and their fantasy impact.").
+
 ---
 
 ## Do's and Don'ts
 
-**Do** use `--color-signature` only on active states and decorative fills. Never on readable text.
+**Do** use `--color-signature` on active states, primary actions, "you/yours" data-viz series, and singular focal numerals. Never on body copy, headings, or descriptive labels.
 
 **Don't** place readable text directly on `#F5B700` without using `--color-signature-fg` (`#0C0F14`) as the text color.
+
+**Do** render each team name, score, and status exactly once per surface, and merge status into an existing header strip.
+
+**Don't** add a headline, legend, or caption that repeats what a hero, summary block, or adjacent control already shows.
+
+**Do** measure a chart's container and build the SVG viewBox from real pixel dimensions.
+
+**Don't** use `preserveAspectRatio="none"` on SVGs containing text — the type distorts differently at every viewport width.
+
+**Do** give every hover interaction a tap equivalent, and 44px targets under `pointer: coarse`.
+
+**Don't** gate information behind hover-only affordances or ship sub-44px touch targets on coarse pointers.
 
 **Do** compute rank on the full sorted list before applying any search or position filter.
 
@@ -479,3 +700,11 @@ Center-aligned, never bottom-sheet by default.
 **Do** use spring-curve easing `cubic-bezier(0.32, 0.72, 0, 1)` for entrance animations.
 
 **Don't** use linear or ease-in for UI element entrances — the motion will feel mechanical rather than physical.
+
+**Do** show an honest loading state — skeleton chips for unhydrated values, a spinner for unknown durations, real progress only where measured.
+
+**Don't** simulate progress, or render placeholder values (`0.0`, `—`, fabricated names) as if they were loaded data.
+
+**Do** keep text at or above the 9px floor (`label-micro` is 9.5–10px); reserve `--color-signature` for active states, rules, chips, and a surface's singular focal numeral.
+
+**Don't** set body copy, labels, or per-row values in signature amber, or ship text below 9px anywhere.

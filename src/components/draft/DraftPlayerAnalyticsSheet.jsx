@@ -224,7 +224,6 @@ function ScatterPlot({
   onTogglePin,
   onSelectPlayer,
   pinLimitReached = false,
-  axisOptions,
 }) {
   return (
     <div className="draft-analytics-scatter">
@@ -244,12 +243,6 @@ function ScatterPlot({
           </Suspense>
         </div>
       </div>
-      {!fullscreen ? (
-        <div className="draft-analytics-scatter__meta">
-          <span>{scatter.points.length}/{scatter.renderedCount} plotted</span>
-          {scatter.unavailableCount > 0 ? <span>{scatter.unavailableCount} unavailable</span> : null}
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -302,6 +295,7 @@ function FullscreenScatter({
   onTogglePin,
   onSelectPlayer,
   pinLimitReached = false,
+  axisOptions,
 }) {
   return (
     <div className="draft-analytics-fullscreen">
@@ -342,7 +336,6 @@ function FullscreenScatter({
           pinLimitReached={pinLimitReached}
         />
       </div>
-      <div className="draft-analytics-fullscreen__hint">Drag to pan / pinch or scroll to zoom / tap a dot to inspect</div>
     </div>
   );
 }
@@ -503,7 +496,8 @@ export default function DraftPlayerAnalyticsSheet({
             <h2>Value Snapshot</h2>
             <span>vs {scatter.peerCount} {selectedPlayer.position || 'peer'} peers</span>
           </div>
-          <SnapshotPills rows={snapshotRows} />
+          {/* Rating is omitted here — the hero already shows the value and positional rank. */}
+          <SnapshotPills rows={snapshotRows.filter((row) => row.key !== 'rating')} />
         </section>
 
         <section className="draft-analytics-section draft-analytics-section--chart">

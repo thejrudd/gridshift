@@ -14,6 +14,7 @@ export default function ScoutSubNav({ activeView, onViewChange }) {
           aria-selected={activeView === id}
           onClick={() => onViewChange(id)}
           className={`season-tab${activeView === id ? ' active' : ''}`}
+          data-tour={id === 'results' ? 'scout-view-results' : undefined}
         >
           {label}
         </button>

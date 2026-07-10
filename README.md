@@ -91,10 +91,12 @@ Server-only variables:
 | `GRIDSHIFT_LIVE_ACCESS_CODE` | Optional shared league code required before an allowlisted league member can use paid live mode. |
 | `GRIDSHIFT_LIVE_COOKIE_SECRET` | Optional live-scoring cookie secret; falls back to `GRIDSHIFT_SESSION_SECRET` when blank. |
 | `GRIDSHIFT_LIVE_CACHE_TTL_MS` | Server cache duration for upstream live-data responses. |
+| `GRIDSHIFT_LIVE_FINAL_TTL_MS` | Server retention tail for finalized live games before hot cache cleanup. |
+| `GRIDSHIFT_LIVE_ARCHIVE_ENABLED` | Enables normalized finalized-game play archives when live data supports them. |
 | `GRIDSHIFT_LIVE_MAX_REQ_PER_MIN` | Local guardrail for provider request volume. |
 | `GRIDSHIFT_COOKIE_SECURE` | Set `true` for HTTPS production cookies; use `false` only for local HTTP testing. |
 
-Hosted owners can enable paid live scoring for selected leagues by setting these variables on the server and keeping `GRIDSHIFT_LIVE_ALLOWED_LEAGUE_IDS` narrow. Self-hosters should supply their own BALLDONTLIE key and league allowlist. Variables prefixed with `VITE_` are public because Vite embeds them in the browser bundle, so paid keys and access codes must always use `GRIDSHIFT_` server variables.
+Hosted owners can enable paid live scoring for selected Sleeper leagues by setting these variables on the server and keeping `GRIDSHIFT_LIVE_ALLOWED_LEAGUE_IDS` narrow. Self-hosters should supply their own BALLDONTLIE key and league allowlist. Variables prefixed with `VITE_` are public because Vite embeds them in the browser bundle, so paid keys and access codes must always use `GRIDSHIFT_` server variables.
 
 ## Tech Stack
 
@@ -111,24 +113,18 @@ Hosted owners can enable paid live scoring for selected leagues by setting these
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) + optional Node API sidecar |
 
-## What's New in v8.0.1
+## What's New in v8.1.0
 
-- **Sleeper-only sign-in** - Removed the ESPN provider option from the initial sign-in screen and Switch League flow.
-- **Connection flow clarity** - New users now land directly on the supported Sleeper account lookup without an unavailable ESPN sign-in path.
-- **Draft Results polish** - Prior-year completed-pick cards now stay aligned and readable on tablet and phone layouts.
-- **Companion Defense refresh** - Defense rankings now show cleaner per-game decimal averages, mobile slide-up drilldowns, an All position filter, matchup context, and aligned mobile/tablet sort headers.
-- **ESPN work deferred** - Known ESPN league integration issues are tracked as deferred while this release line stays focused on Sleeper support.
-- **PWA cache refresh** - Bumped the app version so installed clients receive the updated connection screen.
+- **Draft outcome insights** - Draft Results now compares historical draft rank with the matching season finish and explains the outcome grade.
+- **Companion Defense** - Defense rankings now provide clearer filters, sortable stats, mobile drilldowns, and team-level scoring details.
+- **Coming Soon clarity** - Companion Live remains visible as Coming Soon until its release gate is met.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Roadmap
 
-- **v8.1 - Draft Rank Calibration** - Add a transparent scoring-adjusted GridShift Rank for Draft.
-- **v8.2 - ESPN League Integration** - ESPN league import and read-only Companion/Statistics parity after Draft rank calibration.
-- **v8.3 - ESPN Trade Suite** - ESPN-aware Trade support after ESPN Companion and Statistics parity.
-- **v8.4 - Live Fantasy Scoring** - Sleeper-first live matchup experience with server-protected BALLDONTLIE support for allowlisted leagues.
-- **v8.5 - Team Tendencies & League Tables** - League, conference, and division tables for team offense/defense rankings with fantasy matchup context.
+- **v8.1 - Live Fantasy Scoring (Coming Soon)** - Sleeper-first live matchup experience with server-protected BALLDONTLIE support for allowlisted Sleeper leagues.
+- **v8.2 - Team Tendencies & League Tables** - League, conference, and division tables for team offense/defense rankings, fantasy matchup context, and a true Companion Live win-probability model.
 - **Scout Rookie Projection Layer** - Add next-season rookie projections that work for standard and IDP-focused draft prep without overloading the current Scout board.
 - **Trade follow-through** - Continue polishing Trade drilldowns, remaining explanation copy, and proposal-card readability after the v7.3 module split.
 

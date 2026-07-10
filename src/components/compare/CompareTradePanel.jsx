@@ -18,10 +18,10 @@ function detectLeagueType(league) {
 // Fairness tier based on gap as % of the higher side's value
 function fairnessTier(pct) {
   if (pct == null) return null;
-  if (pct < 5)  return { label: 'Fair Trade',         color: '#22c55e' };
-  if (pct < 15) return { label: 'Minor Edge',          color: '#f59e0b' };
-  if (pct < 30) return { label: 'Moderate Overpay',   color: '#f97316' };
-  return          { label: 'Significant Overpay', color: '#ef4444' };
+  if (pct < 5)  return { label: 'Fair Trade',         color: 'var(--color-accent-green)' };
+  if (pct < 15) return { label: 'Minor Edge',          color: 'var(--color-accent-orange)' };
+  if (pct < 30) return { label: 'Moderate Overpay',   color: 'var(--color-accent-orange)' };
+  return          { label: 'Significant Overpay', color: 'var(--color-accent-red)' };
 }
 
 // Position-specific career window thresholds
@@ -933,8 +933,8 @@ function StatRanksCard({ title, stats, samePos, kind }) {
       : "Each player is ranked within their own position group. Dash (—) means that stat is not tracked for that position. Ranks are not directly comparable across positions.");
   const rankColor = r => {
     if (r == null) return 'var(--color-label-quaternary)';
-    if (kind === 'fantasy') return r <= 3 ? '#22c55e' : r <= 7 ? '#f59e0b' : 'var(--color-label-secondary)';
-    return r <= 5 ? '#22c55e' : r <= 10 ? '#f59e0b' : 'var(--color-label-secondary)';
+    if (kind === 'fantasy') return r <= 3 ? 'var(--color-accent-green)' : r <= 7 ? 'var(--color-accent-orange)' : 'var(--color-label-secondary)';
+    return r <= 5 ? 'var(--color-accent-green)' : r <= 10 ? 'var(--color-accent-orange)' : 'var(--color-label-secondary)';
   };
 
   return (
@@ -1073,7 +1073,7 @@ function AgeValue({ age, window }) {
 
 function PrimeValue({ years }) {
   if (years == null) return <DashValue />;
-  const color = years <= 1 ? '#ef4444' : years <= 3 ? '#f59e0b' : '#22c55e';
+  const color = years <= 1 ? 'var(--color-accent-red)' : years <= 3 ? 'var(--color-accent-orange)' : 'var(--color-accent-green)';
   return (
     <MetricValue color={color}>
       {years === 0 ? 'Past peak' : `~${years} yr${years !== 1 ? 's' : ''}`}
@@ -1084,9 +1084,9 @@ function PrimeValue({ years }) {
 function RecentValue({ perf }) {
   if (perf?.recentAvg == null) return <DashValue />;
   const color = perf.recentAvg > (perf.ppg ?? 0)
-    ? '#22c55e'
+    ? 'var(--color-accent-green)'
     : perf.recentAvg < (perf.ppg ?? 0) * 0.75
-      ? '#ef4444'
+      ? 'var(--color-accent-red)'
       : 'var(--color-label)';
   return (
     <MetricValue color={color}>
@@ -1098,7 +1098,7 @@ function RecentValue({ perf }) {
 
 function DefenseValue({ d, tier }) {
   const v = d?.[`${tier}Avg`];
-  const color = tier === 'tough' ? '#ef4444' : tier === 'soft' ? '#22c55e' : 'var(--color-label)';
+  const color = tier === 'tough' ? 'var(--color-accent-red)' : tier === 'soft' ? 'var(--color-accent-green)' : 'var(--color-label)';
   return v != null ? <MetricValue color={color}>{v}</MetricValue> : <DashValue />;
 }
 
@@ -1109,7 +1109,7 @@ function TrendValue({ value }) {
 
 function fmtTrend(v) {
   if (v == null || Math.abs(v) < 5) return { label: 'Flat', color: 'var(--color-label-quaternary)' };
-  return { label: v > 0 ? `▲ +${v}` : `▼ ${v}`, color: v > 0 ? '#22c55e' : '#ef4444' };
+  return { label: v > 0 ? `▲ +${v}` : `▼ ${v}`, color: v > 0 ? 'var(--color-accent-green)' : 'var(--color-accent-red)' };
 }
 
 // ── InfoTooltip ───────────────────────────────────────────────────────────────
@@ -1128,7 +1128,7 @@ function InfoTooltip({ text, position = 'above' }) {
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           background: 'var(--color-fill)',
           color: 'var(--color-label-tertiary)',
-          fontSize: '8px', fontWeight: 700, flexShrink: 0, border: 'none', cursor: 'pointer',
+          fontSize: '9px', fontWeight: 700, flexShrink: 0, border: 'none', cursor: 'pointer',
         }}
       >
         i

@@ -1120,6 +1120,20 @@ function ChartScaleToggle({ value, onChange }) {
   );
 }
 
+function resolveTooltipPosition({ anchorX, anchorY, width, height, viewportWidth, viewportHeight }) {
+  const gutter = 8;
+  const offset = 14;
+  const fitsRight = anchorX + offset + width <= viewportWidth - gutter;
+  const fitsBelow = anchorY + offset + height <= viewportHeight - gutter;
+  const preferredLeft = fitsRight ? anchorX + offset : anchorX - width - offset;
+  const preferredTop = fitsBelow ? anchorY + offset : anchorY - height - offset;
+
+  return {
+    left: Math.max(gutter, Math.min(viewportWidth - width - gutter, preferredLeft)),
+    top: Math.max(gutter, Math.min(viewportHeight - height - gutter, preferredTop)),
+  };
+}
+
 function WeekInsightTooltip({
   row,
   x,
@@ -1137,24 +1151,51 @@ function WeekInsightTooltip({
   selectedStatKey,
   playerName,
 }) {
-  const tooltipWidth = 340;
-  const tooltipHeight = 236;
+  const tooltipRef = useRef(null);
+  const [tooltipSize, setTooltipSize] = useState(null);
   const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : chartWidth;
   const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : chartHeight;
-  const preferredLeft = clientX != null ? clientX + 14 : x + 12;
-  const preferredTop = clientY != null ? clientY + 14 : y;
-  const left = Math.max(8, Math.min(viewportWidth - tooltipWidth - 8, preferredLeft));
-  const top = Math.max(8, Math.min(viewportHeight - tooltipHeight - 8, preferredTop));
+  const anchorX = clientX ?? x;
+  const anchorY = clientY ?? y;
+  const position = tooltipSize
+    ? resolveTooltipPosition({
+      anchorX,
+      anchorY,
+      width: tooltipSize.width,
+      height: tooltipSize.height,
+      viewportWidth,
+      viewportHeight,
+    })
+    : { left: -10000, top: -10000 };
+
+  useEffect(() => {
+    const tooltip = tooltipRef.current;
+    if (!tooltip) return undefined;
+
+    const syncSize = () => {
+      const { width, height } = tooltip.getBoundingClientRect();
+      const nextSize = { width: Math.ceil(width), height: Math.ceil(height) };
+      setTooltipSize((current) => (
+        current?.width === nextSize.width && current?.height === nextSize.height ? current : nextSize
+      ));
+    };
+    const observer = new ResizeObserver(syncSize);
+    observer.observe(tooltip);
+    return () => observer.disconnect();
+  }, []);
 
   const tooltip = (
     <div
+      ref={tooltipRef}
+      data-testid="player-stats-week-tooltip"
       className="pointer-events-none hidden rounded-lg px-3 py-2 text-xs md:block"
       style={{
         position: 'fixed',
-        left,
-        top,
+        left: position.left,
+        top: position.top,
         zIndex: 1200,
-        width: tooltipWidth,
+        width: 340,
+        visibility: tooltipSize ? 'visible' : 'hidden',
         background: 'var(--color-bg-secondary)',
         border: '1px solid var(--color-separator)',
         boxShadow: '0 14px 34px rgba(0,0,0,0.26)',

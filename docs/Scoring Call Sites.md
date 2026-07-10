@@ -27,6 +27,8 @@ When making any change to scoring logic (new fields in `DEFAULT_SCORING`/`STAT_T
 | `src/utils/projectionEngine.js` | `buildDefenseTable` | Default `valueFn` uses `(wEntry, position)` — verify new calls also pass position |
 | `src/utils/projectionEngine.js` | `computePositionalRanks` | `calcPoints` must pass `p.position` |
 | `src/utils/projectionEngine.js` | `getAvgPPG` | Verify signature passes position through to `calcPoints` |
+| `src/utils/draftAssistant/index.js` | `computeDraftPositionalRanks` | `calcPoints` must pass `player?.position` |
+| `src/utils/draftAssistant/index.js` | `computeDraftPositionalRanks` / `computeDraftOutcomes` | `calcPoints` must pass `player?.position` when calculating the matching season's positional finish |
 
 ## Companion Tab Components
 

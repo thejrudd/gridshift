@@ -1,3 +1,7 @@
+import StatusBadge from './ui/StatusBadge';
+
+const TAB_BADGE_OVERLAY = { position: 'absolute', top: '-5px', right: '-15px' };
+
 export default function BottomTabBar({ activeTab, onTabChange, tradeDisabled = false }) {
   const tabs = [
     { id: 'companion',   label: 'Companion',   renderIcon: (active) => <CompanionIcon active={active} /> },
@@ -18,6 +22,7 @@ export default function BottomTabBar({ activeTab, onTabChange, tradeDisabled = f
               key={id}
               onClick={disabled ? undefined : () => onTabChange(id)}
               className={`tab-item${active ? ' active' : ''}${disabled ? ' is-disabled' : ''}`}
+              data-tour={`tab-${id}`}
               aria-label={label}
               aria-current={active ? 'page' : undefined}
               aria-disabled={disabled ? 'true' : undefined}
@@ -26,29 +31,8 @@ export default function BottomTabBar({ activeTab, onTabChange, tradeDisabled = f
             >
               <span style={{ position: 'relative', display: 'inline-flex', justifyContent: 'center' }}>
                 {renderIcon(active)}
-                {beta && (
-                  <span className="tab-status-badge tab-status-badge--beta">
-                    β
-                  </span>
-                )}
-                {alpha && (
-                  <span style={{
-                    position: 'absolute',
-                    top: '-4px',
-                    right: '-10px',
-                    fontSize: '7px',
-                    fontWeight: 700,
-                    letterSpacing: '0.05em',
-                    textTransform: 'uppercase',
-                    padding: '1px 3px',
-                    borderRadius: '3px',
-                    background: 'var(--color-alpha)',
-                    color: 'var(--color-alpha-fg)',
-                    lineHeight: '11px',
-                  }}>
-                    α
-                  </span>
-                )}
+                {beta && <StatusBadge kind="beta" size="sm" style={TAB_BADGE_OVERLAY} />}
+                {alpha && <StatusBadge kind="alpha" size="sm" style={TAB_BADGE_OVERLAY} />}
               </span>
               <span className="tab-label">{label}</span>
             </button>

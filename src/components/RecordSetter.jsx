@@ -51,10 +51,10 @@ const RecordSetter = ({
   return (
     <div className="space-y-4">
       <div className="text-center">
-        <div className="text-6xl font-display text-gray-800 dark:text-gray-100 mb-2 tracking-wider">
+        <div className="text-6xl font-display text-[color:var(--color-label)] mb-2 tracking-wider">
           {wins}-{losses}{ties > 0 && `-${ties}`}
         </div>
-        <p className="text-sm font-semibold text-gray-500 dark:text-gray-400 tracking-wide">
+        <p className="text-sm font-semibold text-[color:var(--color-label-secondary)] tracking-wide">
           {ties > 0 ? 'W - L - T' : 'PREDICTED RECORD'}
         </p>
       </div>
@@ -63,8 +63,8 @@ const RecordSetter = ({
       <div className="space-y-2">
         <label className="block">
           <div className="flex justify-between items-center mb-2">
-            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Wins: {wins}</span>
-            <span className="text-sm text-gray-500 dark:text-gray-400">Losses: {losses}</span>
+            <span className="text-sm font-medium text-[color:var(--color-label-secondary)]">Wins: {wins}</span>
+            <span className="text-sm text-[color:var(--color-label-secondary)]">Losses: {losses}</span>
           </div>
           <input
             type="range"
@@ -72,14 +72,14 @@ const RecordSetter = ({
             max={effectiveMaxWins}
             value={wins}
             onChange={(e) => setRawWins(parseInt(e.target.value))}
-            className="w-full h-2 bg-gray-200 dark:bg-gray-600 rounded-lg appearance-none cursor-pointer slider"
+            className="w-full h-2 bg-[color:var(--color-fill)] rounded-lg appearance-none cursor-pointer slider"
             style={{
-              background: `linear-gradient(to right, #10b981 0%, #10b981 ${effectiveMaxWins > minWins ? ((wins - minWins) / (effectiveMaxWins - minWins)) * 100 : 100}%, #e5e7eb ${effectiveMaxWins > minWins ? ((wins - minWins) / (effectiveMaxWins - minWins)) * 100 : 100}%, #e5e7eb 100%)`
+              background: `linear-gradient(to right, var(--color-accent-green) 0%, var(--color-accent-green) ${effectiveMaxWins > minWins ? ((wins - minWins) / (effectiveMaxWins - minWins)) * 100 : 100}%, var(--color-fill) ${effectiveMaxWins > minWins ? ((wins - minWins) / (effectiveMaxWins - minWins)) * 100 : 100}%, var(--color-fill) 100%)`
             }}
           />
         </label>
 
-        <div className="flex justify-between text-xs text-gray-400 dark:text-gray-500">
+        <div className="flex justify-between text-xs text-[color:var(--color-label-tertiary)]">
           <span>{minWins}-{17 - ties - minWins}{ties > 0 && `-${ties}`}</span>
           <span>{Math.floor((minWins + effectiveMaxWins) / 2)}-{17 - ties - Math.floor((minWins + effectiveMaxWins) / 2)}{ties > 0 && `-${ties}`}</span>
           <span>{effectiveMaxWins}-{17 - ties - effectiveMaxWins}{ties > 0 && `-${ties}`}</span>
@@ -87,15 +87,15 @@ const RecordSetter = ({
       </div>
 
       {/* Quick preset buttons for wins */}
-      <div className="grid grid-cols-6 gap-2 mt-4">
+      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mt-4">
         {[0, 3, 6, 9, 12, 17].filter(v => v >= minWins && v <= effectiveMaxWins).map(value => (
           <button
             key={value}
             onClick={() => setRawWins(value)}
             className={`py-2 px-3 rounded text-sm font-medium transition-colors ${
               wins === value
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                ? 'bg-[color:var(--color-accent)] text-white'
+                : 'bg-[color:var(--color-fill)] text-[color:var(--color-label-secondary)] hover:bg-[color:var(--color-fill)]'
             }`}
           >
             {value}-{17 - ties - value}{ties > 0 && `-${ties}`}
@@ -104,11 +104,11 @@ const RecordSetter = ({
       </div>
 
       {/* Ties slider */}
-      <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-600">
+      <div className="mt-4 pt-4 border-t border-[color:var(--color-separator)]">
         <label className="block">
           <div className="flex justify-between items-center mb-2">
-            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Ties: {ties}</span>
-            <span className="text-xs text-gray-400 dark:text-gray-500">Rare, but it happens!</span>
+            <span className="text-sm font-medium text-[color:var(--color-label-secondary)]">Ties: {ties}</span>
+            <span className="text-xs text-[color:var(--color-label-tertiary)]">Rare, but it happens!</span>
           </div>
           <input
             type="range"
@@ -116,12 +116,12 @@ const RecordSetter = ({
             max="4"
             value={ties}
             onChange={(e) => setRawTies(parseInt(e.target.value))}
-            className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+            className="w-full h-2 bg-[color:var(--color-fill)] rounded-lg appearance-none cursor-pointer"
             style={{
-              background: `linear-gradient(to right, #f59e0b 0%, #f59e0b ${4 - minTies > 0 ? ((ties - minTies) / (4 - minTies)) * 100 : 100}%, #e5e7eb ${4 - minTies > 0 ? ((ties - minTies) / (4 - minTies)) * 100 : 100}%, #e5e7eb 100%)`
+              background: `linear-gradient(to right, var(--color-accent-orange) 0%, var(--color-accent-orange) ${4 - minTies > 0 ? ((ties - minTies) / (4 - minTies)) * 100 : 100}%, var(--color-fill) ${4 - minTies > 0 ? ((ties - minTies) / (4 - minTies)) * 100 : 100}%, var(--color-fill) 100%)`
             }}
           />
-          <div className="flex justify-between text-xs text-gray-400 dark:text-gray-500 mt-1">
+          <div className="flex justify-between text-xs text-[color:var(--color-label-tertiary)] mt-1">
             {[0, 1, 2, 3, 4].filter(v => v >= minTies).map(v => (
               <span key={v}>{v}</span>
             ))}
@@ -130,21 +130,21 @@ const RecordSetter = ({
       </div>
 
       {/* Division Record */}
-      <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-600">
+      <div className="mt-6 pt-6 border-t border-[color:var(--color-separator)]">
         <div className="flex justify-between items-center mb-2">
-          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Division Record (Tiebreaker)</span>
-          <span className="text-lg font-bold text-blue-600 dark:text-blue-400">
+          <span className="text-sm font-medium text-[color:var(--color-label-secondary)]">Division Record (Tiebreaker)</span>
+          <span className="text-lg font-bold text-[color:var(--color-accent)]">
             {divisionWins}-{6 - divisionWins}
           </span>
         </div>
 
         {effectiveMinDivisionWins === effectiveMaxDivWinsClamped ? (
           /* Locked - only one valid option */
-          <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded-lg p-3 text-center">
-            <span className="text-sm font-semibold text-blue-700 dark:text-blue-300">
+          <div className="bg-tint-accent border border-tint-accent rounded-lg p-3 text-center">
+            <span className="text-sm font-semibold text-[color:var(--color-accent)]">
               Locked at {effectiveMinDivisionWins}-{6 - effectiveMinDivisionWins}
             </span>
-            <p className="text-xs text-blue-500 dark:text-blue-400 mt-1">
+            <p className="text-xs text-[color:var(--color-accent)] mt-1">
               Determined by the overall record and division constraints.
             </p>
           </div>
@@ -158,12 +158,12 @@ const RecordSetter = ({
                 max={effectiveMaxDivWinsClamped}
                 value={divisionWins}
                 onChange={(e) => setRawDivisionWins(parseInt(e.target.value))}
-                className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                className="w-full h-2 bg-[color:var(--color-fill)] rounded-lg appearance-none cursor-pointer"
                 style={{
-                  background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${((divisionWins - effectiveMinDivisionWins) / (effectiveMaxDivWinsClamped - effectiveMinDivisionWins)) * 100}%, #e5e7eb ${((divisionWins - effectiveMinDivisionWins) / (effectiveMaxDivWinsClamped - effectiveMinDivisionWins)) * 100}%, #e5e7eb 100%)`
+                  background: `linear-gradient(to right, var(--color-accent) 0%, var(--color-accent) ${((divisionWins - effectiveMinDivisionWins) / (effectiveMaxDivWinsClamped - effectiveMinDivisionWins)) * 100}%, var(--color-fill) ${((divisionWins - effectiveMinDivisionWins) / (effectiveMaxDivWinsClamped - effectiveMinDivisionWins)) * 100}%, var(--color-fill) 100%)`
                 }}
               />
-              <div className="flex justify-between text-xs text-gray-400 dark:text-gray-500 mt-1">
+              <div className="flex justify-between text-xs text-[color:var(--color-label-tertiary)] mt-1">
                 <span>{effectiveMinDivisionWins}-{6 - effectiveMinDivisionWins}</span>
                 <span>{Math.floor((effectiveMinDivisionWins + effectiveMaxDivWinsClamped) / 2)}-{6 - Math.floor((effectiveMinDivisionWins + effectiveMaxDivWinsClamped) / 2)}</span>
                 <span>{effectiveMaxDivWinsClamped}-{6 - effectiveMaxDivWinsClamped}</span>
@@ -171,7 +171,7 @@ const RecordSetter = ({
             </label>
 
             {/* Quick preset buttons */}
-            <div className="grid grid-cols-7 gap-1 mt-3">
+            <div className="grid grid-cols-4 sm:grid-cols-7 gap-1 mt-3">
               {[0, 1, 2, 3, 4, 5, 6]
                 .filter(value => value >= effectiveMinDivisionWins && value <= effectiveMaxDivWinsClamped)
                 .map(value => (
@@ -180,8 +180,8 @@ const RecordSetter = ({
                     onClick={() => setRawDivisionWins(value)}
                     className={`py-1.5 px-2 rounded text-xs font-medium transition-colors ${
                       divisionWins === value
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                        ? 'bg-[color:var(--color-accent)] text-white'
+                        : 'bg-[color:var(--color-fill)] text-[color:var(--color-label-secondary)] hover:bg-[color:var(--color-fill)]'
                     }`}
                   >
                     {value}-{6 - value}
@@ -191,7 +191,7 @@ const RecordSetter = ({
           </>
         )}
 
-        <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+        <p className="text-xs text-[color:var(--color-label-secondary)] mt-2">
           Each team plays 6 division games (3 opponents x 2 games). Used to break ties when teams have the same overall record.
         </p>
       </div>

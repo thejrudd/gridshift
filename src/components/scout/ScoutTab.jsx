@@ -1512,7 +1512,7 @@ function ScoutLiveDraftBanner({ info, scheduleState }) {
               <span className="scout-live-countdown-label" style={{ color: muted }}>{countdownLabel}</span>
               <span
                 className="scout-live-countdown-time"
-                style={{ color: countdownUrgent ? '#ef4444' : fg }}
+                style={{ color: countdownUrgent ? 'var(--color-accent-red)' : fg }}
               >
                 {countdownStr}
               </span>

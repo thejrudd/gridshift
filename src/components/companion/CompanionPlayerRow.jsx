@@ -9,6 +9,7 @@ import {
   getCompanionTeamLogoUrl,
   getPositionTextColor,
 } from '../../utils/companionAssetVisuals.js';
+import { SkeletonStatChip } from '../ui/Skeleton';
 
 function normalizeSlotItems(items) {
   if (!items) return [];
@@ -65,8 +66,10 @@ export function CompanionPlayerMetric({
   tone = 'default',
   align = 'end',
   compact = false,
+  pending = false,
   className = '',
 }) {
+  if (pending) value = <SkeletonStatChip width={compact ? '1.75rem' : '2.25rem'} />;
   if (value == null && label == null && kicker == null) return null;
 
   return (

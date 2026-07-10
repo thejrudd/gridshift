@@ -17,6 +17,7 @@ import {
 } from '../utils/espnBigPlayBonuses';
 import { reconcileDstAppliedFantasyStats } from '../utils/fantasyScoreDiagnostics';
 import useMediaQuery from '../hooks/useMediaQuery.js';
+import Spinner from './ui/Spinner';
 
 // Extract a formatted stat value from a per-game statsJson
 function statVal(statsJson, key, decimals = 0, suffix = '') {
@@ -2420,13 +2421,13 @@ const PlayerStatTable = ({
 
   return (
     <div
-      className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden transition-all"
+      className="border border-[color:var(--color-separator)] rounded-lg overflow-hidden transition-all"
       style={expanded && accentColor ? { borderLeftColor: accentColor, borderLeftWidth: '3px' } : undefined}
     >
       {/* Accordion header */}
       <button
         onClick={onToggle}
-        className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-left"
+        className="w-full flex items-center justify-between px-4 py-3 bg-[color:var(--color-fill-secondary)] hover:bg-[color:var(--color-fill)] transition-colors text-left"
       >
         <div className="flex items-center gap-2 min-w-0">
           <span className="font-semibold shrink-0">
@@ -2440,14 +2441,7 @@ const PlayerStatTable = ({
         </div>
         <div className="flex items-center gap-2">
           {loading && (
-            <svg
-              className="animate-spin w-4 h-4"
-              style={{ color: readableAccentColor ?? '#3b82f6' }}
-              fill="none" viewBox="0 0 24 24"
-            >
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-            </svg>
+            <Spinner size="sm" style={{ color: readableAccentColor ?? 'var(--color-accent)' }} />
           )}
           <svg
             className={`w-4 h-4 transition-transform ${expanded ? 'rotate-180' : ''}`}
@@ -2460,23 +2454,23 @@ const PlayerStatTable = ({
 
       {/* Stat content */}
       {expanded && (
-        <div className="bg-white dark:bg-gray-900">
+        <div className="bg-[color:var(--color-bg-secondary)]">
           {error ? (
-            <p className="px-4 py-3 text-sm text-red-500 dark:text-red-400 italic">{error}</p>
+            <p className="px-4 py-3 text-sm text-[color:var(--color-accent-red)] italic">{error}</p>
           ) : loading ? (
-            <p className="px-4 py-3 text-sm text-gray-400 italic">Loading stats…</p>
+            <p className="px-4 py-3 text-sm text-[color:var(--color-label-tertiary)] italic">Loading stats…</p>
           ) : showFantasyOnly && (sleeperStatsLoading || fantasyRowsLoading || isWaitingForEspnFantasyGameLog) && displaySections.length === 0 ? (
-            <p className="px-4 py-3 text-sm text-gray-400 italic">Loading fantasy values...</p>
+            <p className="px-4 py-3 text-sm text-[color:var(--color-label-tertiary)] italic">Loading fantasy values...</p>
           ) : displaySections.length === 0 ? (
-            <p className="px-4 py-3 text-sm text-gray-400 italic">
+            <p className="px-4 py-3 text-sm text-[color:var(--color-label-tertiary)] italic">
               {emptyStateMessage}
             </p>
           ) : (
             <>
               {/* Season totals — grouped by category */}
-              <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-800">
+              <div className="px-4 py-3 border-b border-[color:var(--color-separator)]">
                 {hasTableControls && (
-                  <div className="mb-3 pb-3 border-b border-gray-100 dark:border-gray-700 flex flex-wrap gap-x-5 gap-y-2">
+                  <div className="mb-3 pb-3 border-b border-[color:var(--color-separator)] flex flex-wrap gap-x-5 gap-y-2">
                     {hasMoreStats && (
                       <StatTableSwitch
                         checked={showMoreStats}
@@ -2542,13 +2536,13 @@ const StatTableSwitch = ({ checked, label, accentColor, onChange }) => (
     className="flex items-center gap-2 group"
   >
     <span
-      className={`relative inline-flex h-4 w-7 shrink-0 rounded-full border transition-colors duration-200 ${!checked ? 'bg-gray-200 dark:bg-gray-700 border-gray-300 dark:border-gray-600' : ''}`}
+      className={`relative inline-flex h-4 w-7 shrink-0 rounded-full border transition-colors duration-200 ${!checked ? 'bg-[color:var(--color-fill)] border-[color:var(--color-separator-opaque)]' : ''}`}
       style={checked && accentColor ? { background: accentColor, borderColor: accentColor } : undefined}
     >
       <span className={`absolute left-0.5 top-1/2 h-3 w-3 -translate-y-1/2 rounded-full bg-white shadow transition-transform duration-200 ${checked ? 'translate-x-3' : 'translate-x-0'}`} />
     </span>
     <span
-      className={`text-xs font-semibold transition-colors ${!checked ? 'text-gray-400 dark:text-gray-500 group-hover:text-gray-600 dark:group-hover:text-gray-400' : ''}`}
+      className={`text-xs font-semibold transition-colors ${!checked ? 'text-[color:var(--color-label-tertiary)] group-hover:text-[color:var(--color-label-secondary)]' : ''}`}
       style={checked && accentColor ? { color: accentColor } : undefined}
     >
       {label}
@@ -2558,21 +2552,21 @@ const StatTableSwitch = ({ checked, label, accentColor, onChange }) => (
 
 // Color config for each award/honor type
 const HONOR_CONFIG = {
-  'NFL MVP':                          { label: 'MVP',      cls: 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-600' },
-  'Super Bowl MVP':                   { label: 'SB MVP',   cls: 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-600' },
-  'NFL Offensive Player of the Year': { label: 'OPOY',     cls: 'bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300 border-orange-300 dark:border-orange-600' },
-  'NFL Defensive Player of the Year': { label: 'DPOY',     cls: 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 border-red-300 dark:border-red-600' },
-  'NFL Offensive Rookie of the Year': { label: 'OROTY',    cls: 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-600' },
-  'NFL Defensive Rookie of the Year': { label: 'DROTY',    cls: 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-600' },
-  'NFL Comeback Player of the Year':  { label: 'CPOY',     cls: 'bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300 border-violet-300 dark:border-violet-600' },
-  'Walter Payton NFL Man of the Year':{ label: 'WPMOY',    cls: 'bg-teal-100 dark:bg-teal-900/40 text-teal-700 dark:text-teal-300 border-teal-300 dark:border-teal-600' },
-  'Pro Bowl':                         { label: 'Pro Bowl', cls: 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-600' },
-  '1st Team All-Pro':                 { label: '1st AP',   cls: 'bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 border-purple-300 dark:border-purple-600' },
-  '2nd Team All-Pro':                 { label: '2nd AP',   cls: 'bg-gray-100 dark:bg-gray-700/60 text-gray-600 dark:text-gray-400 border-gray-300 dark:border-gray-600' },
+  'NFL MVP':                          { label: 'MVP',      cls: 'bg-tint-signature-strong text-[color:var(--color-accent-orange)] border-tint-signature' },
+  'Super Bowl MVP':                   { label: 'SB MVP',   cls: 'bg-tint-signature-strong text-[color:var(--color-accent-orange)] border-tint-signature' },
+  'NFL Offensive Player of the Year': { label: 'OPOY',     cls: 'bg-tint-orange-strong text-[color:var(--color-accent-orange)] border-tint-orange' },
+  'NFL Defensive Player of the Year': { label: 'DPOY',     cls: 'bg-tint-red-strong text-[color:var(--color-accent-red)] border-tint-red' },
+  'NFL Offensive Rookie of the Year': { label: 'OROTY',    cls: 'bg-tint-green-strong text-[color:var(--color-accent-green)] border-tint-green' },
+  'NFL Defensive Rookie of the Year': { label: 'DROTY',    cls: 'bg-tint-green-strong text-[color:var(--color-accent-green)] border-tint-green' },
+  'NFL Comeback Player of the Year':  { label: 'CPOY',     cls: 'bg-tint-alpha-strong text-[color:var(--color-alpha)] border-tint-alpha' },
+  'Walter Payton NFL Man of the Year':{ label: 'WPMOY',    cls: 'bg-tint-accent-strong text-[color:var(--color-accent)] border-tint-accent' },
+  'Pro Bowl':                         { label: 'Pro Bowl', cls: 'bg-tint-accent-strong text-[color:var(--color-accent)] border-tint-accent' },
+  '1st Team All-Pro':                 { label: '1st AP',   cls: 'bg-tint-alpha-strong text-[color:var(--color-alpha)] border-tint-alpha' },
+  '2nd Team All-Pro':                 { label: '2nd AP',   cls: 'bg-[color:var(--color-fill)] text-[color:var(--color-label-secondary)] border-[color:var(--color-separator-opaque)]' },
 };
 
 export const HonorBadge = ({ honor }) => {
-  const c = HONOR_CONFIG[honor] ?? { label: honor, cls: 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 border-gray-300 dark:border-gray-600' };
+  const c = HONOR_CONFIG[honor] ?? { label: honor, cls: 'bg-[color:var(--color-fill)] text-[color:var(--color-label-secondary)] border-[color:var(--color-separator-opaque)]' };
   return (
     <span className={`inline-flex items-center px-1.5 py-0.5 rounded border text-[10px] font-bold uppercase tracking-wide ${c.cls}`}>
       {c.label}
@@ -2612,21 +2606,21 @@ const StatSections = ({ sections, accentColor }) => (
             : { color: undefined, borderBottomColor: undefined }
           }
         >
-          <span className={accentColor ? '' : 'text-gray-400 dark:text-gray-500'}>{heading}</span>
+          <span className={accentColor ? '' : 'text-[color:var(--color-label-tertiary)]'}>{heading}</span>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-x-6 gap-y-2">
           {rows.map(({ key, label, value, valueSuffix, rank, positionRank }) => {
             const rankMeta = formatRankMeta(rank, positionRank);
             return (
               <div key={key ?? label} className="flex flex-col">
-                <span className="text-[10px] uppercase tracking-wider text-gray-400 dark:text-gray-500 font-semibold">{label}</span>
+                <span className="text-[10px] uppercase tracking-wider text-[color:var(--color-label-tertiary)] font-semibold">{label}</span>
                 <div className="flex items-baseline gap-1">
-                  <span className="text-base font-bold text-gray-800 dark:text-gray-100">{value}</span>
+                  <span className="text-base font-bold text-[color:var(--color-label)]">{value}</span>
                   {valueSuffix && (
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">{valueSuffix}</span>
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-[color:var(--color-label-tertiary)]">{valueSuffix}</span>
                   )}
                   {rankMeta && (
-                    <span className="text-[10px] text-gray-400 dark:text-gray-500 tabular-nums">{rankMeta}</span>
+                    <span className="text-[10px] text-[color:var(--color-label-tertiary)] tabular-nums">{rankMeta}</span>
                   )}
                 </div>
               </div>
@@ -2669,7 +2663,7 @@ function SortableGameLogHeader({
     >
       <button
         type="button"
-        className={`group flex min-w-0 max-w-full items-center gap-0.5 rounded-sm uppercase transition-colors hover:text-gray-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)] dark:hover:text-gray-300 ${
+        className={`group flex min-w-0 max-w-full items-center gap-0.5 rounded-sm uppercase transition-colors hover:text-[color:var(--color-label-secondary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)] ${
           align === 'center' ? 'mx-auto justify-center text-center' : 'justify-start text-left'
         }`}
         aria-label={ariaLabel}
@@ -2738,22 +2732,22 @@ const GameLog = ({
   const compactGameTableWidth = compactGameIdentityWidths.reduce((sum, width) => sum + width, 0) + (cols.length * compactGameStatWidth);
   const useTightIdentitySpacing = fantasyOnly || isMobileGameLogLayout;
   const baseHeaderClass = useTightIdentitySpacing
-    ? 'px-1 py-2 text-left font-semibold text-gray-400 dark:text-gray-500 uppercase whitespace-nowrap text-[9px] lg:text-[10px] tracking-normal lg:tracking-[0.04em]'
-    : 'px-2 py-2 text-left font-semibold text-gray-400 dark:text-gray-500 uppercase whitespace-nowrap text-[9px] lg:text-[10px] tracking-normal lg:tracking-[0.04em]';
-  const statHeaderClass = 'px-1 py-2 text-center align-middle font-semibold text-gray-400 dark:text-gray-500 uppercase text-[9px] lg:text-[10px] tracking-normal lg:tracking-[0.04em] overflow-hidden';
+    ? 'px-1 py-2 text-left font-semibold text-[color:var(--color-label-tertiary)] uppercase whitespace-nowrap text-[9px] lg:text-[10px] tracking-normal lg:tracking-[0.04em]'
+    : 'px-2 py-2 text-left font-semibold text-[color:var(--color-label-tertiary)] uppercase whitespace-nowrap text-[9px] lg:text-[10px] tracking-normal lg:tracking-[0.04em]';
+  const statHeaderClass = 'px-1 py-2 text-center align-middle font-semibold text-[color:var(--color-label-tertiary)] uppercase text-[9px] lg:text-[10px] tracking-normal lg:tracking-[0.04em] overflow-hidden';
   const baseCellClass = useTightIdentitySpacing
     ? 'px-1 py-1.5 align-middle whitespace-nowrap'
     : 'px-1 sm:px-2 py-1.5 align-middle whitespace-nowrap';
   const identityCellPaddingClass = useTightIdentitySpacing ? 'px-1' : 'px-3';
-  const statCellClass = 'px-1 py-1.5 text-center text-gray-800 dark:text-gray-200 tabular-nums whitespace-nowrap text-[10px] lg:text-[11px]';
+  const statCellClass = 'px-1 py-1.5 text-center text-[color:var(--color-label)] tabular-nums whitespace-nowrap text-[10px] lg:text-[11px]';
   const tableClassName = expandedGameStats
     ? 'table-fixed text-xs'
     : fantasyOnly
       ? 'w-full text-xs min-w-max lg:min-w-0 lg:table-fixed'
       : 'table-fixed text-xs';
   const wrapperClassName = useExpandedStatLayout
-    ? `${fantasyOnly ? 'overflow-x-auto lg:overflow-x-visible' : 'overflow-x-auto scrollbar-hide'} border-t border-gray-100 dark:border-gray-800`
-    : 'overflow-x-auto scrollbar-hide border-t border-gray-100 dark:border-gray-800';
+    ? `${fantasyOnly ? 'overflow-x-auto lg:overflow-x-visible' : 'overflow-x-auto scrollbar-hide'} border-t border-[color:var(--color-separator)]`
+    : 'overflow-x-auto scrollbar-hide border-t border-[color:var(--color-separator)]';
   const identityColClasses = useExpandedStatLayout
     ? [
         fantasyOnly ? 'lg:w-[4%]' : '',
@@ -2785,7 +2779,7 @@ const GameLog = ({
   const getStickyIdentityStyle = (index) => freezeIdentityColumns
     ? { left: `${stickyIdentityLefts[index]}px`, zIndex: 20 }
     : undefined;
-  const getStickyIdentityClass = (index, baseClass, rowBackgroundClass = 'bg-white dark:bg-gray-900') => {
+  const getStickyIdentityClass = (index, baseClass, rowBackgroundClass = 'bg-[color:var(--color-bg-secondary)]') => {
     if (!freezeIdentityColumns) return baseClass;
     const separator = index === 3 ? ' shadow-[8px_0_12px_-12px_rgba(15,23,42,0.45)]' : '';
     return `${baseClass} sticky ${rowBackgroundClass}${separator}`;
@@ -2899,11 +2893,8 @@ const GameLog = ({
 
   if (gameLogLoading || (fantasyOnly && fantasyLoading && cols.length === 0)) {
     return (
-      <div className="px-4 py-3 flex items-center gap-2 text-sm text-gray-400 italic border-t border-gray-100 dark:border-gray-800">
-        <svg className="animate-spin w-4 h-4 text-blue-500 shrink-0" fill="none" viewBox="0 0 24 24">
-          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-        </svg>
+      <div className="px-4 py-3 flex items-center gap-2 text-sm text-[color:var(--color-label-tertiary)] italic border-t border-[color:var(--color-separator)]">
+        <Spinner size="sm" style={{ color: 'var(--color-accent)' }} />
         Loading game log…
       </div>
     );
@@ -2913,7 +2904,7 @@ const GameLog = ({
 
   if (fantasyOnly && cols.length === 0) {
     return (
-      <div className="px-4 py-3 text-sm text-gray-400 italic border-t border-gray-100 dark:border-gray-800">
+      <div className="px-4 py-3 text-sm text-[color:var(--color-label-tertiary)] italic border-t border-[color:var(--color-separator)]">
         No fantasy scoring rows are available for this game log.
       </div>
     );
@@ -2935,7 +2926,7 @@ const GameLog = ({
           </colgroup>
         )}
         <thead>
-          <tr className="bg-gray-50 dark:bg-gray-800/60">
+          <tr className="bg-[color:var(--color-fill-secondary)]">
             {[
               { key: 'week', title: 'Week', text: 'Wk' },
               { key: 'team', title: 'Team', text: 'Team' },
@@ -2944,7 +2935,7 @@ const GameLog = ({
             ].map((header, index) => (
               <th
                 key={header.key}
-                className={getStickyIdentityClass(index, baseHeaderClass, 'bg-gray-50 dark:bg-gray-800')}
+                className={getStickyIdentityClass(index, baseHeaderClass, 'bg-[color:var(--color-fill-secondary)]')}
                 style={getStickyIdentityStyle(index)}
                 title={header.title}
               >
@@ -2976,7 +2967,7 @@ const GameLog = ({
             })}
           </tr>
         </thead>
-        <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+        <tbody className="divide-y divide-[color:var(--color-separator)]">
           {sortedGameLog.map((game, i) => {
             const { meta } = game;
             const isBye      = !!meta.isBye;
@@ -2989,32 +2980,32 @@ const GameLog = ({
             // BYE belongs in the frozen Opponent identity column, not the scrollable stat band.
             if (isBye) {
               return (
-                <tr key={game.eventId} className="bg-gray-50/40 dark:bg-gray-800/20 italic">
-                  <td className={getStickyIdentityClass(0, `${identityCellPaddingClass} py-1 text-gray-400 dark:text-gray-600 tabular-nums text-[11px]`, 'bg-gray-50 dark:bg-gray-800')} style={getStickyIdentityStyle(0)}>{meta.week}</td>
-                  <td className={getStickyIdentityClass(1, `${identityCellPaddingClass} py-1 text-gray-400 dark:text-gray-600 text-[11px]`, 'bg-gray-50 dark:bg-gray-800')} style={getStickyIdentityStyle(1)}>{meta.myTeam ?? '—'}</td>
-                  <td className={getStickyIdentityClass(2, `${identityCellPaddingClass} py-1 text-gray-400 dark:text-gray-600 font-medium tracking-wide`, 'bg-gray-50 dark:bg-gray-800')} style={getStickyIdentityStyle(2)}>
+                <tr key={game.eventId} className="bg-[color:var(--color-fill-tertiary)] italic">
+                  <td className={getStickyIdentityClass(0, `${identityCellPaddingClass} py-1 text-[color:var(--color-label-tertiary)] tabular-nums text-[11px]`, 'bg-[color:var(--color-fill-secondary)]')} style={getStickyIdentityStyle(0)}>{meta.week}</td>
+                  <td className={getStickyIdentityClass(1, `${identityCellPaddingClass} py-1 text-[color:var(--color-label-tertiary)] text-[11px]`, 'bg-[color:var(--color-fill-secondary)]')} style={getStickyIdentityStyle(1)}>{meta.myTeam ?? '—'}</td>
+                  <td className={getStickyIdentityClass(2, `${identityCellPaddingClass} py-1 text-[color:var(--color-label-tertiary)] font-medium tracking-wide`, 'bg-[color:var(--color-fill-secondary)]')} style={getStickyIdentityStyle(2)}>
                     BYE
                   </td>
-                  <td className={getStickyIdentityClass(3, `${identityCellPaddingClass} py-1 text-gray-400 dark:text-gray-600 font-medium`, 'bg-gray-50 dark:bg-gray-800')} style={getStickyIdentityStyle(3)}>
+                  <td className={getStickyIdentityClass(3, `${identityCellPaddingClass} py-1 text-[color:var(--color-label-tertiary)] font-medium`, 'bg-[color:var(--color-fill-secondary)]')} style={getStickyIdentityStyle(3)}>
                     -
                   </td>
                   {cols.length > 0 && (
-                    <td colSpan={cols.length} className={`${statCellClass} bg-gray-50/40 dark:bg-gray-800/20`} aria-hidden="true" />
+                    <td colSpan={cols.length} className={`${statCellClass} bg-[color:var(--color-fill-tertiary)]`} aria-hidden="true" />
                   )}
                 </tr>
               );
             }
 
             const resultColor =
-              result === 'W' ? 'text-green-600 dark:text-green-400' :
-              result === 'L' ? 'text-red-500 dark:text-red-400' :
-              'text-gray-400';
+              result === 'W' ? 'text-[color:var(--color-accent-green)]' :
+              result === 'L' ? 'text-[color:var(--color-accent-red)]' :
+              'text-[color:var(--color-label-tertiary)]';
 
             const rowBg = isPost
-              ? 'bg-amber-50/60 dark:bg-amber-900/10'
+              ? 'bg-tint-signature'
               : isInactive
-                ? 'bg-gray-50/60 dark:bg-gray-800/30'
-                : 'hover:bg-gray-50 dark:hover:bg-gray-800/40';
+                ? 'bg-[color:var(--color-fill-tertiary)]'
+                : 'hover:bg-[color:var(--color-fill-secondary)]';
 
             const weekLabel = isPost
               ? (meta.roundLabel ?? 'Playoffs')
@@ -3041,7 +3032,7 @@ const GameLog = ({
                       <>
                         <td
                           colSpan={4}
-                          className="sticky left-0 z-30 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border-t-2 border-amber-200 dark:border-amber-800 shadow-[8px_0_12px_-12px_rgba(15,23,42,0.45)]"
+                          className="sticky left-0 z-30 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-[color:var(--color-accent-orange)] bg-tint-signature border-t-2 border-tint-signature shadow-[8px_0_12px_-12px_rgba(15,23,42,0.45)]"
                           style={{ width: `${expandedIdentityWidth}px` }}
                         >
                           Playoffs
@@ -3049,14 +3040,14 @@ const GameLog = ({
                         {cols.length > 0 && (
                           <td
                             colSpan={cols.length}
-                            className="px-3 py-1 bg-amber-50 dark:bg-amber-900/20 border-t-2 border-amber-200 dark:border-amber-800"
+                            className="px-3 py-1 bg-tint-signature border-t-2 border-tint-signature"
                           />
                         )}
                       </>
                     ) : (
                       <td
                         colSpan={4 + cols.length}
-                        className="px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border-t-2 border-amber-200 dark:border-amber-800"
+                        className="px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-[color:var(--color-accent-orange)] bg-tint-signature border-t-2 border-tint-signature"
                       >
                         Playoffs
                       </td>
@@ -3065,21 +3056,21 @@ const GameLog = ({
                 )}
                 <tr key={game.eventId ?? i} className={`transition-colors ${rowBg} ${dimText}`}>
                   <td
-                    className={getStickyIdentityClass(0, `${baseCellClass} text-gray-400 dark:text-gray-500 tabular-nums text-[11px]`)}
+                    className={getStickyIdentityClass(0, `${baseCellClass} text-[color:var(--color-label-tertiary)] tabular-nums text-[11px]`)}
                     style={getStickyIdentityStyle(0)}
                     title={String(weekLabel)}
                   >
                     {weekLabel}
                   </td>
                   <td
-                    className={getStickyIdentityClass(1, `${baseCellClass} font-medium text-gray-500 dark:text-gray-400 text-[11px]`)}
+                    className={getStickyIdentityClass(1, `${baseCellClass} font-medium text-[color:var(--color-label-secondary)] text-[11px]`)}
                     style={getStickyIdentityStyle(1)}
                     title={meta.myTeam ?? '—'}
                   >
                     {meta.myTeam ?? '—'}
                   </td>
                   <td
-                    className={getStickyIdentityClass(2, `${baseCellClass} font-medium ${isPost ? 'text-amber-700 dark:text-amber-300' : 'text-gray-700 dark:text-gray-300'}`)}
+                    className={getStickyIdentityClass(2, `${baseCellClass} font-medium ${isPost ? 'text-[color:var(--color-accent-orange)]' : 'text-[color:var(--color-label-secondary)]'}`)}
                     style={getStickyIdentityStyle(2)}
                     title={opponentLabel}
                   >
@@ -3092,7 +3083,7 @@ const GameLog = ({
                   >
                     {resultLabel}
                     {isInactive && (
-                      <span className="ml-1 text-[10px] font-normal text-gray-400 dark:text-gray-500 not-italic normal-case sm:ml-1.5">
+                      <span className="ml-1 text-[10px] font-normal text-[color:var(--color-label-tertiary)] not-italic normal-case sm:ml-1.5">
                         (inactive)
                       </span>
                     )}
@@ -3135,15 +3126,15 @@ const GameLog = ({
         </table>
       </div>
       {shouldShowScrollIndicators && scrollIndicators.left && (
-        <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center bg-gradient-to-r from-white via-white/85 to-transparent pl-2 pr-8 dark:from-gray-900 dark:via-gray-900/85">
-          <div className="flex h-7 w-7 items-center justify-center rounded-full border border-gray-200 bg-white/95 text-gray-500 shadow-sm dark:border-gray-700 dark:bg-gray-900/95 dark:text-gray-300">
+        <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center bg-gradient-to-r from-[color:var(--color-bg-secondary)] via-[color:color-mix(in_srgb,var(--color-bg-secondary)_85%,transparent)] to-transparent pl-2 pr-8">
+          <div className="flex h-7 w-7 items-center justify-center rounded-full border border-[color:var(--color-separator)] bg-[color:color-mix(in_srgb,var(--color-bg-secondary)_95%,transparent)] text-[color:var(--color-label-secondary)] shadow-sm">
             <span className="text-lg leading-none" aria-hidden="true">‹</span>
           </div>
         </div>
       )}
       {shouldShowScrollIndicators && scrollIndicators.right && (
-        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center bg-gradient-to-l from-white via-white/85 to-transparent pl-8 pr-2 dark:from-gray-900 dark:via-gray-900/85">
-          <div className="flex h-7 w-7 items-center justify-center rounded-full border border-gray-200 bg-white/95 text-gray-500 shadow-sm dark:border-gray-700 dark:bg-gray-900/95 dark:text-gray-300">
+        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center bg-gradient-to-l from-[color:var(--color-bg-secondary)] via-[color:color-mix(in_srgb,var(--color-bg-secondary)_85%,transparent)] to-transparent pl-8 pr-2">
+          <div className="flex h-7 w-7 items-center justify-center rounded-full border border-[color:var(--color-separator)] bg-[color:color-mix(in_srgb,var(--color-bg-secondary)_95%,transparent)] text-[color:var(--color-label-secondary)] shadow-sm">
             <span className="text-lg leading-none" aria-hidden="true">›</span>
           </div>
         </div>

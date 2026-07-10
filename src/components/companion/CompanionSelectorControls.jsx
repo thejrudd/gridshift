@@ -1,6 +1,51 @@
 import { useMemo, useRef } from 'react';
 import HorizontalScrollCue from '../HorizontalScrollCue';
 import useHorizontalScrollCue from '../../hooks/useHorizontalScrollCue';
+import useMenuEscapeClose from '../../hooks/useMenuEscapeClose';
+
+export function CompanionMenuChevron({ open = false, className = '' }) {
+  return (
+    <svg
+      aria-hidden="true"
+      className={`h-4 w-4 shrink-0 transition-transform ${open ? 'rotate-180' : ''} ${className}`}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      style={{ color: 'var(--color-label-tertiary)' }}
+    >
+      <polyline points="6 9 12 15 18 9" />
+    </svg>
+  );
+}
+
+export function CompanionMenuTrigger({
+  kicker = null,
+  value,
+  open = false,
+  engaged = false,
+  className = '',
+  ...buttonProps
+}) {
+  return (
+    <button
+      {...buttonProps}
+      type="button"
+      className={[
+        'companion-menu-trigger',
+        engaged ? 'is-engaged' : '',
+        className,
+      ].filter(Boolean).join(' ')}
+      aria-expanded={open}
+    >
+      {kicker && <span className="companion-menu-trigger__kicker">{kicker}</span>}
+      <span className="companion-menu-trigger__value">{value}</span>
+      <CompanionMenuChevron open={open} />
+    </button>
+  );
+}
 
 export function CompanionSelectorRail({
   label = null,
@@ -62,7 +107,11 @@ export function CompanionSelectorButton({
         className,
       ].filter(Boolean).join(' ')}
       style={style}
-      aria-pressed={buttonProps['aria-pressed'] ?? isActive}
+      aria-pressed={
+        buttonProps['aria-haspopup'] || buttonProps['aria-expanded'] !== undefined
+          ? buttonProps['aria-pressed']
+          : (buttonProps['aria-pressed'] ?? isActive)
+      }
     >
       {children}
     </button>
@@ -149,12 +198,14 @@ export function CompanionFantasyTeamMenu({
   mode = 'multi',
   includeAll = true,
   allLabel = 'All Teams',
-  placeholder = 'Fantasy Team',
+  placeholder = 'All Teams',
+  kicker = 'Team',
   menuLabel = 'Fantasy team selector',
   className = '',
 }) {
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const isSingleSelect = mode === 'single';
+  useMenuEscapeClose(open, onOpenChange);
   const resolvedSelectedOptions = selectedOptions ?? options.filter((option) => selectedSet.has(option.id));
   const buttonLabel = resolvedSelectedOptions.length === 0
     ? placeholder
@@ -181,29 +232,14 @@ export function CompanionFantasyTeamMenu({
 
   return (
     <div className={`relative w-full min-w-0 max-w-full min-[481px]:w-[clamp(240px,30vw,340px)] ${className}`}>
-      <button
-        type="button"
+      <CompanionMenuTrigger
+        kicker={kicker}
+        value={buttonLabel}
+        open={open}
+        engaged={selectedIds.length > 0}
         onClick={() => onOpenChange?.(!open)}
         aria-haspopup="menu"
-        aria-expanded={open}
-        className="flex w-full min-w-0 items-center justify-between gap-3 rounded-xl px-3 py-2 text-left font-semibold transition-colors"
-        style={{
-          background: selectedIds.length ? 'var(--color-fill)' : 'var(--color-bg-secondary)',
-          border: '1px solid var(--color-separator)',
-          color: 'var(--color-label)',
-          fontSize: 16,
-          boxShadow: selectedIds.length ? 'inset 0 0 0 1px color-mix(in srgb, var(--color-signature) 36%, transparent)' : 'none',
-        }}
-      >
-        <span className="min-w-0 truncate">{buttonLabel}</span>
-        <span
-          aria-hidden="true"
-          className="shrink-0 text-xs font-bold uppercase tracking-widest"
-          style={{ color: selectedIds.length ? 'var(--color-signature)' : 'var(--color-label-tertiary)' }}
-        >
-          {open ? 'Close' : 'Select'}
-        </span>
-      </button>
+      />
 
       {open && (
         <>
@@ -229,15 +265,10 @@ export function CompanionFantasyTeamMenu({
                 type="button"
                 role={isSingleSelect ? 'menuitemradio' : 'menuitemcheckbox'}
                 aria-checked={selectedIds.length === 0}
-                className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm font-semibold transition-colors"
-                style={{
-                  background: selectedIds.length === 0 ? 'var(--color-fill-secondary)' : 'transparent',
-                  color: selectedIds.length === 0 ? 'var(--color-label)' : 'var(--color-label-secondary)',
-                  fontSize: 16,
-                }}
+                className={`companion-menu-item flex w-full items-center gap-3 px-3 py-2 text-left text-sm font-semibold${selectedIds.length === 0 ? ' is-checked' : ''}`}
                 onClick={() => commitSelection([])}
               >
-                <FantasyTeamSelectionMark checked={selectedIds.length === 0} mode={mode} />
+                <CompanionMenuSelectionMark checked={selectedIds.length === 0} mode={mode} />
                 <span className="min-w-0 flex-1 truncate">{allLabel}</span>
               </button>
             )}
@@ -251,15 +282,10 @@ export function CompanionFantasyTeamMenu({
                     type="button"
                     role={isSingleSelect ? 'menuitemradio' : 'menuitemcheckbox'}
                     aria-checked={checked}
-                    className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm font-semibold transition-colors"
-                    style={{
-                      background: checked ? 'var(--color-fill-secondary)' : 'transparent',
-                      color: checked ? 'var(--color-label)' : 'var(--color-label-secondary)',
-                      fontSize: 16,
-                    }}
+                    className={`companion-menu-item flex w-full items-center gap-3 px-3 py-2 text-left text-sm font-semibold${checked ? ' is-checked' : ''}`}
                     onClick={() => toggleRoster(roster.id)}
                   >
-                    <FantasyTeamSelectionMark checked={checked} mode={mode} />
+                    <CompanionMenuSelectionMark checked={checked} mode={mode} />
                     {roster.avatarHash ? (
                       <img
                         src={`https://sleepercdn.com/avatars/thumbs/${roster.avatarHash}`}
@@ -287,7 +313,7 @@ export function CompanionFantasyTeamMenu({
   );
 }
 
-function FantasyTeamSelectionMark({ checked, mode }) {
+export function CompanionMenuSelectionMark({ checked, mode = 'multi' }) {
   if (mode === 'single') {
     return (
       <span

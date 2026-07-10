@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import useBodyScrollLock from '../hooks/useBodyScrollLock';
+import useSheetHistory from '../hooks/useSheetHistory';
 
 const DISMISS_DISTANCE = 80;
 const DISMISS_VELOCITY = 0.65;
@@ -19,6 +20,7 @@ export default function Modal({
   ariaLabel,
 }) {
   useBodyScrollLock();
+  useSheetHistory(true, onClose);
   const panelRef = useRef(null);
   const dragRef = useRef({ pointerId: null, startY: 0, lastY: 0, startTime: 0 });
   const closeTimerRef = useRef(null);

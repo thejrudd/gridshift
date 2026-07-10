@@ -131,13 +131,13 @@ const ExportPreview = ({ teams, onClose }) => {
       className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
       onClick={handleBackdropClick}
     >
-      <div className="modal-panel bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-5xl w-full max-h-[95vh] overflow-hidden flex flex-col">
+      <div className="modal-panel bg-[color:var(--color-bg-secondary)] rounded-lg shadow-xl max-w-5xl w-full max-h-[95vh] overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white p-4 flex items-center justify-between">
+        <div className="bg-[color:var(--color-accent)] text-white p-4 flex items-center justify-between">
           <h2 className="text-xl font-display tracking-wide">CREATE IMAGE</h2>
           <button
             onClick={onClose}
-            className="text-white hover:text-gray-200 text-3xl leading-none"
+            className="text-white hover:opacity-80 text-3xl leading-none"
             aria-label="Close export preview"
           >
             &times;
@@ -164,7 +164,7 @@ const ExportPreview = ({ teams, onClose }) => {
             <div className="lg:w-64 space-y-4">
               {/* User name input */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                <label className="block text-sm font-semibold text-[color:var(--color-label-secondary)] mb-1">
                   Your Name / Handle
                 </label>
                 <input
@@ -172,13 +172,13 @@ const ExportPreview = ({ teams, onClose }) => {
                   value={userName}
                   onChange={(e) => setUserName(e.target.value)}
                   placeholder="e.g. @thejrudd"
-                  className="w-full px-3 py-2 text-base border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-3 py-2 text-base border border-[color:var(--color-separator-opaque)] rounded-lg bg-[color:var(--color-bg-secondary)] text-[color:var(--color-label)] placeholder-[color:var(--color-label-tertiary)] focus:ring-2 focus:ring-[color:var(--color-accent)] focus:border-[color:var(--color-accent)]"
                 />
               </div>
 
               {/* Section toggles */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                <label className="block text-sm font-semibold text-[color:var(--color-label-secondary)] mb-2">
                   Sections
                 </label>
                 <div className="space-y-2">
@@ -188,9 +188,9 @@ const ExportPreview = ({ teams, onClose }) => {
                         type="checkbox"
                         checked={enabledSections[key]}
                         onChange={() => toggleSection(key)}
-                        className="w-4 h-4 rounded text-blue-600 border-gray-300 dark:border-gray-600 focus:ring-blue-500"
+                        className="w-4 h-4 rounded accent-[var(--color-accent)] border-[color:var(--color-separator-opaque)] focus:ring-[color:var(--color-accent)]"
                       />
-                      <span className="text-sm text-gray-700 dark:text-gray-300">{label}</span>
+                      <span className="text-sm text-[color:var(--color-label-secondary)]">{label}</span>
                     </label>
                   ))}
                 </div>
@@ -199,7 +199,7 @@ const ExportPreview = ({ teams, onClose }) => {
               {/* Reset layout button */}
               <button
                 onClick={handleResetLayout}
-                className="w-full px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors border border-gray-300 dark:border-gray-600"
+                className="w-full px-4 py-2 text-sm font-medium text-[color:var(--color-label-secondary)] bg-[color:var(--color-fill)] hover:bg-[color:var(--color-fill)] rounded-lg transition-colors border border-[color:var(--color-separator-opaque)]"
               >
                 Reset Layout
               </button>

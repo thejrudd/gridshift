@@ -202,6 +202,8 @@ Main logic in `tradeEngine.js`:
   Suggests a path toward fairer balance.
 - `buildCandidatePool(...)`
   Builds likely refinement candidates.
+- `detectLeagueType(league)`
+  Shared 1QB/superflex detection from `roster_positions`, used by Companion Trade to keep trade valuation on one league-format check.
 
 When modifying Agent, verify:
 - roster-id comparisons remain tolerant of string vs number inputs

@@ -11,6 +11,7 @@ import CompanionPlayerPreviewSheet from './CompanionPlayerPreviewSheet';
 import { CompanionSelectorButton } from './CompanionSelectorControls.jsx';
 import CompanionPlayerRow, { CompanionPlayerMetric, CompanionPlayerStatus } from './CompanionPlayerRow.jsx';
 import Modal from '../Modal.jsx';
+import SeasonHintBanner from '../ui/SeasonHintBanner';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -585,20 +586,20 @@ const HEATMAP_TEAM_CODE_STYLE = {
 };
 
 const HEATMAP_CELL_SECONDARY_STYLE = {
-  fontSize: '8px',
+  fontSize: '9px',
   opacity: 0.6,
   marginTop: '1px',
 };
 
 const HEATMAP_BYE_STYLE = {
-  fontSize: '8px',
+  fontSize: '9px',
   fontWeight: 700,
   letterSpacing: '0.04em',
   opacity: 0.55,
 };
 
 const HEATMAP_FILTERED_STYLE = {
-  fontSize: '8px',
+  fontSize: '9px',
   opacity: 0.35,
 };
 
@@ -1410,6 +1411,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
   // ── Render ─────────────────────────────────────────────────────────────────
 
   const loaded = isGameStatMode ? !!scheduleMap : (viewMode === 'offense' ? !!offenseAllowedTable : !!defenseScoredTable);
+  const hasHeatmapData = baseRows.some((row) => Object.keys(row.weekPts).length > 0);
   const showAvg = statMode !== 'vegas_odds';
   const heatmapFilterLabelWidth = useMobilePreviewSheet ? MOBILE_FILTER_LABEL_WIDTH : HEATMAP_FILTER_LABEL_WIDTH;
 
@@ -1632,7 +1634,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
 
   return (
     <div className="lg:-mx-8">
-      <div ref={filterBarRef} className="px-4 sm:px-6 lg:px-8 pb-3">
+      {hasHeatmapData && <div ref={filterBarRef} className="px-4 sm:px-6 lg:px-8 pb-3">
         <div className="companion-heatmap-mobile-filter-summary">
           <CompanionSelectorButton
             active={mobileFiltersOpen}
@@ -1844,7 +1846,9 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
         )}
           </div>
         )}
-      </div>
+      </div>}
+
+      <SeasonHintBanner isEmpty={!statsLoading && !hasHeatmapData} className="mx-4 mb-3" />
 
       {!loaded ? (
         <div className="flex items-center justify-center py-16 px-4">

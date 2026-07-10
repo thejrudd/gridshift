@@ -215,9 +215,9 @@ const TeamDetail = ({ team, allTeams, onClose }) => {
       className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
       onClick={handleBackdropClick}
     >
-      <div className="modal-panel bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+      <div className="modal-panel bg-[color:var(--color-bg-secondary)] rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white p-6">
+        <div className="bg-[color:var(--color-accent)] text-white p-6">
           <div className="flex items-start justify-between">
             <div className="flex items-center space-x-4">
               <img
@@ -230,12 +230,12 @@ const TeamDetail = ({ team, allTeams, onClose }) => {
               />
               <div>
                 <h2 className="text-3xl font-display tracking-wide mb-1">{team.name}</h2>
-                <p className="text-blue-100 font-semibold">{team.division}</p>
+                <p className="text-white/80 font-semibold">{team.division}</p>
               </div>
             </div>
             <button
               onClick={onClose}
-              className="text-white hover:text-gray-200 text-3xl font-bold leading-none"
+              className="text-white hover:opacity-80 text-3xl font-bold leading-none"
               aria-label="Close"
             >
               ×
@@ -247,18 +247,18 @@ const TeamDetail = ({ team, allTeams, onClose }) => {
         <div className="flex-1 overflow-y-auto p-6">
           {/* Record Setter */}
           <div className="mb-8">
-            <h3 className="text-xl font-display tracking-wide text-gray-700 dark:text-gray-200 mb-4">SET PREDICTED RECORD</h3>
+            <h3 className="text-xl font-display tracking-wide text-[color:var(--color-label-secondary)] mb-4">SET PREDICTED RECORD</h3>
 
             {/* Global Balance Info */}
             {Object.keys(predictions).filter(id => id !== team.id).length > 0 && (
-              <div className="mb-4 p-3 rounded-lg border-2 bg-gray-50 dark:bg-gray-700/50 border-gray-300 dark:border-gray-600">
+              <div className="mb-4 p-3 rounded-lg border-2 bg-[color:var(--color-fill-secondary)] border-[color:var(--color-separator-opaque)]">
                 <div className="flex items-start space-x-2">
-                  <svg className="h-5 w-5 flex-shrink-0 mt-0.5 text-gray-600 dark:text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <svg className="h-5 w-5 flex-shrink-0 mt-0.5 text-[color:var(--color-label-secondary)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                   </svg>
                   <div className="flex-1">
-                    <p className="text-sm font-medium text-gray-800 dark:text-gray-200">League Balance</p>
-                    <p className="text-xs mt-1 text-gray-600 dark:text-gray-400">
+                    <p className="text-sm font-medium text-[color:var(--color-label)]">League Balance</p>
+                    <p className="text-xs mt-1 text-[color:var(--color-label-secondary)]">
                       {(() => {
                         const totalAssigned = otherPredictedWins + wins;
                         const effectiveMin = Math.min(finalMinWins, finalMaxWins);
@@ -289,37 +289,37 @@ const TeamDetail = ({ team, allTeams, onClose }) => {
             {divisionTeams.filter(t => t.id !== team.id && predictions[t.id]).length > 0 && !(existingRecord && allDivisionPredicted) && (
               <div className={`mb-4 p-3 rounded-lg border-2 ${
                 maxPossibleDivisionWins === 6
-                  ? 'bg-green-50 dark:bg-green-900/30 border-green-300 dark:border-green-700'
+                  ? 'bg-tint-green border-tint-green'
                   : maxPossibleDivisionWins >= 3
-                  ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-300 dark:border-blue-700'
-                  : 'bg-orange-50 dark:bg-orange-900/30 border-orange-300 dark:border-orange-700'
+                  ? 'bg-tint-accent border-tint-accent'
+                  : 'bg-tint-orange border-tint-orange'
               }`}>
                 <div className="flex items-start space-x-2">
                   <svg className={`h-5 w-5 flex-shrink-0 mt-0.5 ${
                     maxPossibleDivisionWins === 6
-                      ? 'text-green-600 dark:text-green-400'
+                      ? 'text-[color:var(--color-accent-green)]'
                       : maxPossibleDivisionWins >= 3
-                      ? 'text-blue-600 dark:text-blue-400'
-                      : 'text-orange-600 dark:text-orange-400'
+                      ? 'text-[color:var(--color-accent)]'
+                      : 'text-[color:var(--color-accent-orange)]'
                   }`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                   <div className="flex-1">
                     <p className={`text-sm font-medium ${
                       maxPossibleDivisionWins === 6
-                        ? 'text-green-800 dark:text-green-300'
+                        ? 'text-[color:var(--color-accent-green)]'
                         : maxPossibleDivisionWins >= 3
-                        ? 'text-blue-800 dark:text-blue-300'
-                        : 'text-orange-800 dark:text-orange-300'
+                        ? 'text-[color:var(--color-accent)]'
+                        : 'text-[color:var(--color-accent-orange)]'
                     }`}>
                       Division Record Constraints
                     </p>
                     <p className={`text-xs mt-1 ${
                       maxPossibleDivisionWins === 6
-                        ? 'text-green-700 dark:text-green-400'
+                        ? 'text-[color:var(--color-accent-green)]'
                         : maxPossibleDivisionWins >= 3
-                        ? 'text-blue-700 dark:text-blue-400'
-                        : 'text-orange-700 dark:text-orange-400'
+                        ? 'text-[color:var(--color-accent)]'
+                        : 'text-[color:var(--color-accent-orange)]'
                     }`}>
                       {team.division} has used <strong>{otherTeamsDivisionWins + divisionWins} of 12</strong> total division wins.
                       {' '}{minPossibleDivisionWins === maxPossibleDivisionWins
@@ -348,41 +348,41 @@ const TeamDetail = ({ team, allTeams, onClose }) => {
           {/* Opponents List */}
           <div>
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-xl font-display tracking-wide text-gray-700 dark:text-gray-200">
+              <h3 className="text-xl font-display tracking-wide text-[color:var(--color-label-secondary)]">
                 2026 OPPONENTS ({opponents.length} GAMES)
               </h3>
               {pickedWins + pickedLosses + pickedTies > 0 && (
-                <span className="text-xs font-semibold text-gray-500 dark:text-gray-400">
-                  <span className="text-green-600">{pickedWins}W</span>
+                <span className="text-xs font-semibold text-[color:var(--color-label-secondary)]">
+                  <span className="text-[color:var(--color-accent-green)]">{pickedWins}W</span>
                   {' / '}
-                  <span className="text-red-600">{pickedLosses}L</span>
+                  <span className="text-[color:var(--color-accent-red)]">{pickedLosses}L</span>
                   {pickedTies > 0 && <>
                     {' / '}
-                    <span className="text-amber-600">{pickedTies}T</span>
+                    <span className="text-[color:var(--color-accent-orange)]">{pickedTies}T</span>
                   </>}
                   {' / '}
-                  <span className="text-gray-400">{undecidedCount} TBD</span>
+                  <span className="text-[color:var(--color-label-tertiary)]">{undecidedCount} TBD</span>
                 </span>
               )}
             </div>
             {/* Conference & Division record from picks — always visible to prevent layout shift */}
             <div className="flex space-x-4 mb-3 text-xs font-semibold">
-              <span className={pickedConfGames > 0 ? 'text-purple-600 dark:text-purple-400' : 'text-gray-300 dark:text-gray-600'}>
+              <span className={pickedConfGames > 0 ? 'text-[color:var(--color-alpha)]' : 'text-[color:var(--color-label-quaternary)]'}>
                 {team.conference}: {pickedConfGames > 0
                   ? <>{pickedConfWins}-{pickedConfLosses}{pickedConfTies > 0 && `-${pickedConfTies}`}</>
                   : '—'
                 }
-                <span className="text-gray-400 dark:text-gray-500 font-normal"> ({pickedConfGames}/{conferenceGameIndices.length})</span>
+                <span className="text-[color:var(--color-label-tertiary)] font-normal"> ({pickedConfGames}/{conferenceGameIndices.length})</span>
               </span>
-              <span className={pickedDivWins + pickedDivLosses + pickedDivTies > 0 ? 'text-blue-600 dark:text-blue-400' : 'text-gray-300 dark:text-gray-600'}>
+              <span className={pickedDivWins + pickedDivLosses + pickedDivTies > 0 ? 'text-[color:var(--color-accent)]' : 'text-[color:var(--color-label-quaternary)]'}>
                 DIV: {pickedDivWins + pickedDivLosses + pickedDivTies > 0
                   ? <>{pickedDivWins}-{pickedDivLosses}{pickedDivTies > 0 && `-${pickedDivTies}`}</>
                   : '—'
                 }
-                <span className="text-gray-400 dark:text-gray-500 font-normal"> ({pickedDivWins + pickedDivLosses + pickedDivTies}/{divisionGameIndices.length})</span>
+                <span className="text-[color:var(--color-label-tertiary)] font-normal"> ({pickedDivWins + pickedDivLosses + pickedDivTies}/{divisionGameIndices.length})</span>
               </span>
             </div>
-            <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
+            <div className="bg-[color:var(--color-fill-secondary)] rounded-lg p-4">
               {(() => {
                 const midpoint = Math.ceil(opponents.length / 2);
                 const col1 = opponents.slice(0, midpoint);
@@ -403,10 +403,10 @@ const TeamDetail = ({ team, allTeams, onClose }) => {
                   return (
                     <div
                       className={`flex items-center space-x-2 text-sm rounded px-2 py-1 ${
-                        result === 'W' ? 'bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-700' :
-                        result === 'L' ? 'bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-700' :
-                        result === 'T' ? 'bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700' :
-                        isDivision ? 'bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700' : ''
+                        result === 'W' ? 'bg-tint-green border border-tint-green' :
+                        result === 'L' ? 'bg-tint-red border border-tint-red' :
+                        result === 'T' ? 'bg-tint-signature border border-tint-signature' :
+                        isDivision ? 'bg-tint-signature border border-tint-signature' : ''
                       }`}
                     >
                       <GameResultToggle
@@ -416,7 +416,7 @@ const TeamDetail = ({ team, allTeams, onClose }) => {
                         canMarkLoss={canLose}
                         canMarkTie={canTie}
                       />
-                      <span className="text-gray-400 dark:text-gray-500 font-mono w-6 flex-shrink-0">{gameNum}.</span>
+                      <span className="text-[color:var(--color-label-tertiary)] font-mono w-6 flex-shrink-0">{gameNum}.</span>
                       <img
                         src={`https://a.espncdn.com/i/teamlogos/nfl/500/${opponent.id}.png`}
                         alt={opponent.name}
@@ -424,18 +424,18 @@ const TeamDetail = ({ team, allTeams, onClose }) => {
                         onError={(e) => { e.target.style.display = 'none'; }}
                       />
                       <span className={`font-semibold truncate ${
-                        result === 'W' ? 'text-green-700 dark:text-green-400' :
-                        result === 'L' ? 'text-red-700 dark:text-red-400' :
-                        result === 'T' ? 'text-amber-700 dark:text-amber-400' :
-                        isDivision ? 'text-yellow-800 dark:text-yellow-400' : 'text-gray-700 dark:text-gray-200'
+                        result === 'W' ? 'text-[color:var(--color-accent-green)]' :
+                        result === 'L' ? 'text-[color:var(--color-accent-red)]' :
+                        result === 'T' ? 'text-[color:var(--color-accent-orange)]' :
+                        isDivision ? 'text-[color:var(--color-accent-orange)]' : 'text-[color:var(--color-label-secondary)]'
                       }`}>
                         {opponent.id}
                       </span>
-                      <span className={`text-xs hidden sm:inline ${isDivision ? 'text-yellow-600 dark:text-yellow-500' : 'text-gray-400 dark:text-gray-500'}`}>
+                      <span className={`text-xs hidden sm:inline ${isDivision ? 'text-[color:var(--color-accent-orange)]' : 'text-[color:var(--color-label-tertiary)]'}`}>
                         {opponent.division}
                       </span>
                       {isDivision && (
-                        <span className="text-[10px] font-bold text-yellow-700 dark:text-yellow-300 bg-yellow-200 dark:bg-yellow-800 px-1 py-0.5 rounded uppercase tracking-wide ml-auto whitespace-nowrap flex-shrink-0">
+                        <span className="text-[10px] font-bold text-[color:var(--color-accent-orange)] bg-tint-signature-strong px-1 py-0.5 rounded uppercase tracking-wide ml-auto whitespace-nowrap flex-shrink-0">
                           DIV
                         </span>
                       )}
@@ -463,12 +463,12 @@ const TeamDetail = ({ team, allTeams, onClose }) => {
         </div>
 
         {/* Footer */}
-        <div className="border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+        <div className="border-t border-[color:var(--color-separator)] bg-[color:var(--color-fill-secondary)]">
           {/* Validation Error Display */}
           {validationError && (
             <div className="px-4 pt-4">
-              <div className="bg-red-50 dark:bg-red-900/30 border-2 border-red-300 dark:border-red-700 rounded-lg p-3">
-                <p className="text-sm text-red-700 dark:text-red-400 font-medium">
+              <div className="bg-tint-red border-2 border-tint-red rounded-lg p-3">
+                <p className="text-sm text-[color:var(--color-accent-red)] font-medium">
                   {validationError}
                 </p>
               </div>
@@ -479,7 +479,7 @@ const TeamDetail = ({ team, allTeams, onClose }) => {
           <div className="p-4 flex justify-end space-x-3">
             <button
               onClick={onClose}
-              className="px-4 py-2 text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
+              className="px-4 py-2 text-[color:var(--color-label-secondary)] bg-[color:var(--color-bg-secondary)] border border-[color:var(--color-separator-opaque)] rounded-lg hover:bg-[color:var(--color-fill)] transition-colors"
             >
               Cancel
             </button>
@@ -488,8 +488,8 @@ const TeamDetail = ({ team, allTeams, onClose }) => {
               disabled={validationError !== null}
               className={`px-6 py-2 rounded-lg transition-colors font-medium ${
                 validationError
-                  ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
-                  : 'bg-blue-600 text-white hover:bg-blue-700'
+                  ? 'bg-[color:var(--color-fill)] text-[color:var(--color-label-quaternary)] cursor-not-allowed'
+                  : 'bg-[color:var(--color-accent)] text-white hover:opacity-85'
               }`}
             >
               Save Prediction

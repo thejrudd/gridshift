@@ -1,5 +1,5 @@
 // Mobile + tablet top bar (hidden on lg+ via CSS — sidebar handles desktop nav)
-export default function NavBar({ darkMode, onToggleDarkMode, onMenuOpen, scrolled = false }) {
+export default function NavBar({ darkMode, onToggleDarkMode, onMenuOpen, seasonSelector = null, scrolled = false }) {
   return (
     <header
       className={`nav-bar${scrolled ? ' scrolled' : ''}`}
@@ -30,8 +30,9 @@ export default function NavBar({ darkMode, onToggleDarkMode, onMenuOpen, scrolle
         )}
       </button>
 
-      {/* Center: wordmark */}
-      <div className="flex items-center gap-1.5">
+      {/* Center: wordmark — absolutely centered so the right-side controls
+          (season selector, menu) never push it off balance */}
+      <div className="pointer-events-none absolute left-1/2 flex -translate-x-1/2 items-center gap-1.5">
         <span
           className="font-display font-bold text-sm"
           style={{ color: 'var(--color-label)', letterSpacing: '0.12em' }}
@@ -50,18 +51,21 @@ export default function NavBar({ darkMode, onToggleDarkMode, onMenuOpen, scrolle
         </span>
       </div>
 
-      {/* Right: overflow menu (opens ActionSheet) */}
-      <button
-        onClick={onMenuOpen}
-        className="nav-bar-btn"
-        aria-label="Open menu"
-      >
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-          <circle cx="12" cy="5" r="1.75" />
-          <circle cx="12" cy="12" r="1.75" />
-          <circle cx="12" cy="19" r="1.75" />
-        </svg>
-      </button>
+      {/* Right: league-year selector (when connected) + overflow menu */}
+      <div className="flex items-center gap-1">
+        {seasonSelector}
+        <button
+          onClick={onMenuOpen}
+          className="nav-bar-btn"
+          aria-label="Open menu"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+            <circle cx="12" cy="5" r="1.75" />
+            <circle cx="12" cy="12" r="1.75" />
+            <circle cx="12" cy="19" r="1.75" />
+          </svg>
+        </button>
+      </div>
     </header>
   );
 }

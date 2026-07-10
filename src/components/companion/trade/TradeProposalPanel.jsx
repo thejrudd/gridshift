@@ -8,7 +8,7 @@ import useMediaQuery from '../../../hooks/useMediaQuery.js';
 import CompanionAssetRow from '../CompanionAssetRow.jsx';
 import { CompanionSelectorButton, CompanionSelectorRail } from '../CompanionSelectorControls.jsx';
 import ProposalPlayerCard from './ProposalPlayerCard';
-import Spinner from './Spinner';
+import Spinner from '../../ui/Spinner';
 import {
   teamPalette,
   normalizeRosterId,
@@ -1753,7 +1753,7 @@ const TradeProposalPanel = memo(function TradeProposalPanel({
                 style={{ background: 'var(--color-bg)', borderColor: 'var(--color-separator)' }}
               >
                 <div className="flex items-center justify-center gap-2 text-sm font-semibold" style={{ color: 'var(--color-label-secondary)' }}>
-                  <Spinner size="w-4 h-4" />
+                  <Spinner size="sm" />
                   Preparing trade ideas for this manager...
                 </div>
               </div>
@@ -1797,7 +1797,7 @@ const TradeProposalPanel = memo(function TradeProposalPanel({
                       data-testid="trade-intelligence-refreshing"
                       style={{ background: 'var(--color-fill)', color: 'var(--color-label-secondary)', border: '1px solid var(--color-separator)' }}
                     >
-                      <Spinner size="w-3.5 h-3.5" />
+                      <Spinner size="sm" />
                       {isShowingStaleResults ? 'Updating manager...' : 'Refreshing ideas...'}
                     </div>
                   )}

@@ -1,5 +1,5 @@
-import { findKtcPlayerFromSleeper, getKtcValue, productionAdjustedValue } from './ktcApi';
-import { calcPointsFromTotals } from './scoringEngine';
+import { findKtcPlayerFromSleeper, getKtcValue, productionAdjustedValue } from './ktcApi.js';
+import { calcPointsFromTotals } from './scoringEngine.js';
 
 // When a player has no redraft (fantasy) KTC value, we fall back to their
 // dynasty value and apply this discount. Dynasty values are inflated by

@@ -19,7 +19,9 @@ import {
   normalizeDefenseRankingStat,
 } from '../../utils/defenseRankings.js';
 import { getCompanionInitials, getCompanionPlayerImageUrl, getNflTeamLogoUrl } from '../../utils/companionAssetVisuals.js';
+import { isNflRegularSeasonStarted } from '../../utils/seasonAvailability.js';
 import Modal from '../Modal.jsx';
+import SeasonHintBanner from '../ui/SeasonHintBanner';
 import { CompanionSearchField, CompanionSelectorButton, CompanionSelectorRail } from './CompanionSelectorControls.jsx';
 import CompanionPlayerRow, { CompanionPlayerMetric } from './CompanionPlayerRow.jsx';
 
@@ -153,7 +155,7 @@ function SortHeader({ active, dir, children, onClick, align = 'right' }) {
   return (
     <button
       type="button"
-      className={`companion-defense-sort-header${active ? ' is-active' : ''}`}
+      className={`companion-sort-header${active ? ' is-active' : ''}`}
       onClick={onClick}
       style={{ justifyContent: align === 'left' ? 'flex-start' : 'flex-end' }}
       aria-label={`Sort by ${children}${active ? `, currently ${directionLabel}` : ''}`}
@@ -161,7 +163,7 @@ function SortHeader({ active, dir, children, onClick, align = 'right' }) {
       <span>{children}</span>
       {active && (
         <span
-          className={`companion-defense-sort-header__arrow is-${dir}`}
+          className={`companion-sort-header__arrow is-${dir}`}
           aria-hidden="true"
         />
       )}
@@ -172,6 +174,7 @@ function SortHeader({ active, dir, children, onClick, align = 'right' }) {
 export default function CompanionDefense({ routeState, onRouteStateChange }) {
   const {
     hasLeague,
+    season,
     players,
     weeklyStats,
     scheduleMap,
@@ -185,6 +188,7 @@ export default function CompanionDefense({ routeState, onRouteStateChange }) {
   const compactRows = useMediaQuery(COMPACT_ROW_QUERY);
   const mobileDrilldown = useMediaQuery(MOBILE_DRILLDOWN_QUERY);
   const [selectedTeam, setSelectedTeam] = useState(null);
+  const seasonStarted = isNflRegularSeasonStarted(season);
   const state = useMemo(() => normalizeRouteState(routeState ?? DEFAULT_DEFENSE_RANKING_STATE), [routeState]);
   const statOptions = useMemo(() => getDefenseRankingStatOptions(state.position), [state.position]);
   const activeStatLabel = getValueLabel(state.mode, state.position, state.stat);
@@ -200,8 +204,8 @@ export default function CompanionDefense({ routeState, onRouteStateChange }) {
   }, [hasLeague, players, loadPlayers]);
 
   useEffect(() => {
-    if (hasLeague && (!weeklyStats || !scheduleMap) && !statsLoading) loadSeasonStats?.();
-  }, [hasLeague, weeklyStats, scheduleMap, statsLoading, loadSeasonStats]);
+    if (hasLeague && seasonStarted && (!weeklyStats || !scheduleMap) && !statsLoading) loadSeasonStats?.();
+  }, [hasLeague, seasonStarted, weeklyStats, scheduleMap, statsLoading, loadSeasonStats]);
 
   const updateRouteState = (patch) => {
     onRouteStateChange?.({ ...state, ...patch });
@@ -217,7 +221,7 @@ export default function CompanionDefense({ routeState, onRouteStateChange }) {
 
   const rows = useMemo(() => (
     buildDefenseRankingRows({
-      weeklyStats,
+      weeklyStats: seasonStarted ? weeklyStats : null,
       players,
       scheduleMap,
       scoringSettings: activeScoringSettings,
@@ -228,7 +232,7 @@ export default function CompanionDefense({ routeState, onRouteStateChange }) {
       dir: state.dir,
       teams: ALL_TEAMS,
     })
-  ), [activeScoringSettings, players, scheduleMap, state.dir, state.mode, state.position, state.sort, state.stat, weeklyStats]);
+  ), [activeScoringSettings, players, scheduleMap, seasonStarted, state.dir, state.mode, state.position, state.sort, state.stat, weeklyStats]);
 
   const filteredRows = useMemo(() => {
     const query = state.query.trim().toUpperCase();
@@ -236,13 +240,17 @@ export default function CompanionDefense({ routeState, onRouteStateChange }) {
     const abbreviationMatches = new Set(filterDefenseRankingRows(rows, state.query).map(row => row.team));
     return rows.filter(row => abbreviationMatches.has(row.team) || getTeamDisplayName(row.team).toUpperCase().includes(query));
   }, [rows, state.query]);
-  const selectedRow = useMemo(() => rows.find(row => row.team === selectedTeam) ?? null, [rows, selectedTeam]);
+  const hasDefenseData = rows.some((row) => row.contributions.length > 0);
+  const selectedRow = useMemo(
+    () => seasonStarted ? (rows.find(row => row.team === selectedTeam) ?? null) : null,
+    [rows, seasonStarted, selectedTeam],
+  );
   const detailWeeks = useMemo(() => groupContributionsByWeek(selectedRow), [selectedRow]);
-  const loading = !players || !weeklyStats || !scheduleMap || statsLoading || statsEnhancing;
+  const loading = seasonStarted && (!players || !weeklyStats || !scheduleMap || statsLoading || statsEnhancing);
 
   return (
     <div className="companion-defense-shell pb-6">
-      <div className="companion-defense-toolbar px-4 pb-3">
+      {hasDefenseData && <div className="companion-defense-toolbar px-4 pb-3">
         <div className="companion-defense-filter-stack">
           <CompanionSelectorRail ariaLabel="Defense value mode">
             {[
@@ -300,15 +308,21 @@ export default function CompanionDefense({ routeState, onRouteStateChange }) {
             placeholder="Search team"
           />
         </div>
-      </div>
+      </div>}
 
-      <div className="companion-defense-summary-row px-4">
+      {hasDefenseData && <div className="companion-defense-summary-row px-4">
         <div>
           <p className="companion-defense-subtitle">{summaryText}</p>
         </div>
-      </div>
+      </div>}
 
-      {loading ? (
+      <SeasonHintBanner isEmpty={!statsLoading && !hasDefenseData} className="mx-4 mb-3" />
+
+      {!seasonStarted ? (
+        <div className="companion-defense-empty">
+          Defensive rankings will appear when the {season} NFL regular season begins.
+        </div>
+      ) : loading ? (
         <div className="companion-defense-empty">
           {statsEnhancing ? 'Preparing defensive rankings...' : 'Load season stats to see defensive rankings.'}
         </div>

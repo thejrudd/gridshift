@@ -23,9 +23,18 @@ import {
 } from '../utils/espnBigPlayBonuses';
 import { buildEspnDstResidualDebugRows, reconcileFantasyScore } from '../utils/fantasyScoreDiagnostics';
 import { clearPlayerCache, checkAndBustCacheIfNeeded } from '../utils/playerCache';
+import {
+  getSeasonStats as getCachedSeasonStats,
+  setSeasonStats as putCachedSeasonStats,
+  clearStatsCache,
+  checkAndBustStatsCacheIfNeeded,
+  isCacheableWeeklyStats,
+  CURRENT_SEASON_TTL,
+} from '../utils/statsCache';
 
-// Run once when this module first loads — wipes stale player cache if app version changed.
+// Run once when this module first loads — wipes stale caches if app version changed.
 checkAndBustCacheIfNeeded();
+checkAndBustStatsCacheIfNeeded();
 
 const ESPN_SCORE_HELPER_VERSION = 'espn-score-debug-2026-05-20-v9';
 
@@ -233,9 +242,16 @@ export function FantasyProvider({ children }) {
   // UI state
   const [connectError, setConnectError] = useState(null);
   const [connectLoading, setConnectLoading] = useState(false);
+  // Target season string while a changeSeason() is in flight, else null —
+  // drives pending states on every season-switch control.
+  const [seasonSwitching, setSeasonSwitching] = useState(null);
 
   const statsAbortRef = useRef(null);
   const statsLoadBySeasonRef = useRef(new Map());
+  // Mirror of statsBySeason readable inside loadSeasonStats without adding it
+  // to that callback's hand-tuned dependency array.
+  const statsBySeasonRef = useRef({});
+  useEffect(() => { statsBySeasonRef.current = statsBySeason; }, [statsBySeason]);
   const qbOppSeasonRef = useRef(null); // tracks which season QB opp data has been merged
   const espnStatsRefreshKeyRef = useRef(null);
   const enhancementRunRef = useRef({
@@ -276,6 +292,7 @@ export function FantasyProvider({ children }) {
     qbOppSeasonRef.current = null;
     localStorage.removeItem(STORAGE_KEY);
     clearPlayerCache();
+    void clearStatsCache();
   }, []);
 
   // Persist key state to localStorage
@@ -470,6 +487,7 @@ export function FantasyProvider({ children }) {
     if (targetSeason === String(season)) return;
 
     setConnectError(null);
+    setSeasonSwitching(targetSeason);
 
     if (platform === 'espn' && sleeperUser) {
       const leagueId = selectedLeagueId ?? league?.league_id ?? null;
@@ -499,6 +517,7 @@ export function FantasyProvider({ children }) {
       }
       finally {
         setConnectLoading(false);
+        setSeasonSwitching(null);
       }
       return;
     }
@@ -542,6 +561,7 @@ export function FantasyProvider({ children }) {
         setConnectLoading(false);
       }
     }
+    setSeasonSwitching(null);
   }, [platform, sleeperUser, selectedLeagueId, leaguesBySeason, season, league, loadEspnLeagueSelection, loadLeagueSelection]);
 
   useEffect(() => {
@@ -690,29 +710,70 @@ export function FantasyProvider({ children }) {
       return;
     }
     if (statsAbortRef.current) return; // guard against concurrent calls
+    // Already loaded for the selected season — prevents re-entrant loops from
+    // views that call loadSeasonStats whenever its identity changes.
+    if (weeklyStats && seasonStats) return;
     statsAbortRef.current = true;
     qbOppSeasonRef.current = null; // allow player team enhancement to re-run
+
+    const seasonKey = String(season);
+    // Completed seasons are final — their packages never expire.
+    const isCompletedSeason = Number(seasonKey) < Number(AVAILABLE_SLEEPER_SEASONS[0]);
+    const applyPackage = (pkg) => {
+      setWeeklyStats(pkg.weeklyStats);
+      setSeasonStats(pkg.seasonStats);
+      setScheduleMap(pkg.scheduleMap ?? null);
+      setStatsBySeason((current) => ({ ...current, [seasonKey]: pkg }));
+    };
+
+    // In-memory per-season cache — instant on revisits within this session
+    // (same trust model as loadStatsForSeason's statsBySeason check).
+    const memHit = statsBySeasonRef.current[seasonKey];
+    if (memHit?.weeklyStats) {
+      applyPackage(memHit);
+      setStatsEnhancing(true); // enhancement effect re-runs from cached ESPN data
+      setStatsProgress(100);
+      statsAbortRef.current = false;
+      return;
+    }
+
     setStatsLoading(true);
     setStatsEnhancing(true);
     setStatsProgress(0);
 
     try {
+      // Persistent cache (IndexedDB). Completed seasons: serve and skip the
+      // network. Current season: serve stale immediately, then revalidate.
+      const cached = await getCachedSeasonStats(`sleeper:${seasonKey}`);
+      if (cached?.weeklyStats) {
+        const pkg = {
+          season: seasonKey,
+          weeklyStats: cached.weeklyStats,
+          seasonStats: cached.seasonStats,
+          scheduleMap: cached.scheduleMap ?? null,
+        };
+        applyPackage(pkg);
+        setStatsProgress(100);
+        if (isCompletedSeason || Date.now() - cached.ts < CURRENT_SEASON_TTL) return;
+      }
+
+      const failedWeeks = [];
       const [weekly, schedule] = await Promise.all([
         getAllWeeklyStats(season, 18, (week, total) => {
           setStatsProgress(Math.round((week / total) * 100));
-        }),
+        }, failedWeeks),
         fetchSeasonSchedule(season).catch(() => null),
       ]);
       const nextPackage = {
-        season: String(season),
+        season: seasonKey,
         weeklyStats: weekly,
         seasonStats: aggregateSeasonStats(weekly),
         scheduleMap: schedule,
       };
-      setWeeklyStats(weekly);
-      setSeasonStats(nextPackage.seasonStats);
-      setScheduleMap(schedule);
-      setStatsBySeason((current) => ({ ...current, [nextPackage.season]: nextPackage }));
+      applyPackage(nextPackage);
+      if (isCacheableWeeklyStats(weekly, failedWeeks.length)) {
+        void putCachedSeasonStats(`sleeper:${seasonKey}`, { ...nextPackage, enhanced: false });
+      }
     } catch (err) {
       console.error('Failed to load stats:', err);
       setStatsEnhancing(false);
@@ -749,10 +810,26 @@ export function FantasyProvider({ children }) {
     const inFlight = statsLoadBySeasonRef.current.get(seasonKey);
     if (inFlight) return inFlight;
 
-    const request = Promise.all([
-      getAllWeeklyStats(seasonKey, 18),
-      fetchSeasonSchedule(seasonKey).catch(() => null),
-    ]).then(([weekly, schedule]) => {
+    const request = (async () => {
+      // Persistent cache (IndexedDB) — completed seasons never expire.
+      const isCompletedSeason = Number(seasonKey) < Number(AVAILABLE_SLEEPER_SEASONS[0]);
+      const cachedEntry = await getCachedSeasonStats(`sleeper:${seasonKey}`);
+      if (cachedEntry?.weeklyStats && (isCompletedSeason || Date.now() - cachedEntry.ts < CURRENT_SEASON_TTL)) {
+        const cachedPackage = {
+          season: seasonKey,
+          weeklyStats: cachedEntry.weeklyStats,
+          seasonStats: cachedEntry.seasonStats,
+          scheduleMap: cachedEntry.scheduleMap ?? null,
+        };
+        setStatsBySeason((current) => ({ ...current, [seasonKey]: cachedPackage }));
+        return cachedPackage;
+      }
+
+      const failedWeeks = [];
+      const [weekly, schedule] = await Promise.all([
+        getAllWeeklyStats(seasonKey, 18, undefined, failedWeeks),
+        fetchSeasonSchedule(seasonKey).catch(() => null),
+      ]);
       const nextPackage = {
         season: seasonKey,
         weeklyStats: weekly,
@@ -760,8 +837,11 @@ export function FantasyProvider({ children }) {
         scheduleMap: schedule,
       };
       setStatsBySeason((current) => ({ ...current, [seasonKey]: nextPackage }));
+      if (isCacheableWeeklyStats(weekly, failedWeeks.length)) {
+        void putCachedSeasonStats(`sleeper:${seasonKey}`, { ...nextPackage, enhanced: false });
+      }
       return nextPackage;
-    }).finally(() => {
+    })().finally(() => {
       statsLoadBySeasonRef.current.delete(seasonKey);
     });
 
@@ -1140,6 +1220,7 @@ export function FantasyProvider({ children }) {
     activeScoringSettings,
     connectError,
     connectLoading,
+    seasonSwitching,
     isConnected,
     hasLeague,
     connect,
@@ -1177,6 +1258,7 @@ export function FantasyProvider({ children }) {
     activeScoringSettings,
     connectError,
     connectLoading,
+    seasonSwitching,
     isConnected,
     hasLeague,
     connect,

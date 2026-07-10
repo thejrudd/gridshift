@@ -116,6 +116,14 @@ export function getDraftStatsSeason(draftSeason) {
   return String(Math.max(2017, numeric - 1));
 }
 
+// Draft Results grades the season that followed a historical draft, unlike
+// War Room intelligence, which intentionally reads the prior completed season.
+export function getDraftResultsSeason(draftSeason) {
+  const numeric = Number.parseInt(String(draftSeason ?? ''), 10);
+  if (!Number.isFinite(numeric)) return null;
+  return String(Math.max(2017, numeric));
+}
+
 export function normalizeDraftModelWeights(weights = {}) {
   const raw = {};
   for (const [key, defaultValue] of Object.entries(DEFAULT_DRAFT_MODEL_WEIGHTS)) {
@@ -265,6 +273,92 @@ function computeDraftPositionalRanks(seasonStats, players, scoringSettings) {
     });
   }
   return ranks;
+}
+
+/**
+ * Reconstruct the positional order from a league's actual historical draft.
+ * This is intentionally distinct from market/ADP positional rank: it answers
+ * who was selected first, second, and so on at each position in this draft.
+ */
+export function buildDraftPositionRanks(normalizedPicks, players) {
+  const ranksByPickId = new Map();
+  if (!normalizedPicks?.length || !players) return ranksByPickId;
+
+  const draftedPositionCounts = {};
+  for (const pick of [...normalizedPicks].sort((a, b) => a.overall - b.overall)) {
+    const playerId = pick.playerId ? String(pick.playerId) : null;
+    const player = playerId ? players?.[playerId] : null;
+    const position = normalizePosition(player?.fantasy_positions?.[0] ?? player?.position);
+    if (!playerId || !position) continue;
+    draftedPositionCounts[position] = (draftedPositionCounts[position] ?? 0) + 1;
+    const rank = draftedPositionCounts[position];
+    ranksByPickId.set(pick.id ?? playerId, {
+      position,
+      rank,
+      label: `${position}${rank}`,
+    });
+  }
+
+  return ranksByPickId;
+}
+
+function classifyDraftOutcome(draftPositionRank, seasonFinishRank) {
+  const improvement = draftPositionRank - seasonFinishRank;
+  // A small positional swing is normal, especially at the top of a position.
+  // The tolerance grows modestly for deeper picks so the labels remain useful
+  // in later rounds without treating every one-rank shift as a verdict.
+  const tolerance = Math.max(3, Math.ceil(draftPositionRank * 0.15));
+  if (improvement >= tolerance * 3) return { tier: 'Boom', colorTone: 'positive', tolerance };
+  if (improvement >= tolerance) return { tier: 'Strong', colorTone: 'positive', tolerance };
+  if (improvement >= -tolerance) return { tier: 'Even', colorTone: 'neutral', tolerance };
+  if (improvement > -(tolerance * 3)) return { tier: 'Weak', colorTone: 'negative', tolerance };
+  return { tier: 'Bust', colorTone: 'negative', tolerance };
+}
+
+/**
+ * Grade each completed draft pick using a plain-language positional outcome.
+ * A player's draft position rank (for example, the third QB selected) is
+ * compared with the season-end rank at that same position. This keeps the
+ * verdict understandable and avoids presenting a context-free value number.
+ *
+ * @returns {Map<string, { pickId, playerId, position, draftPositionRank,
+ *   seasonFinishRank, rankDelta, tier, colorTone, tolerance }>} keyed by pick.id
+ */
+export function computeDraftOutcomes(
+  normalizedPicks,
+  seasonStats,
+  players,
+  scoringSettings,
+) {
+  const result = new Map();
+  if (!seasonStats || !normalizedPicks?.length || !players) return result;
+
+  const seasonRanksByPlayerId = computeDraftPositionalRanks(seasonStats, players, scoringSettings);
+  const draftRankByPickId = buildDraftPositionRanks(normalizedPicks, players);
+
+  for (const pick of normalizedPicks) {
+    const playerId = pick.playerId ? String(pick.playerId) : null;
+    if (!playerId) continue;
+    const key = pick.id ?? playerId;
+    const draftRank = draftRankByPickId.get(key);
+    const seasonFinish = seasonRanksByPlayerId[playerId];
+    if (!draftRank || !seasonFinish || draftRank.position !== seasonFinish.posLabel) continue;
+
+    const outcome = classifyDraftOutcome(draftRank.rank, seasonFinish.rank);
+    result.set(pick.id ?? playerId, {
+      pickId: pick.id,
+      playerId,
+      position: draftRank.position,
+      draftPositionRank: draftRank.rank,
+      seasonFinishRank: seasonFinish.rank,
+      rankDelta: draftRank.rank - seasonFinish.rank,
+      tier: outcome.tier,
+      colorTone: outcome.colorTone,
+      tolerance: outcome.tolerance,
+    });
+  }
+
+  return result;
 }
 
 function normalizeRosterId(value) {
@@ -869,10 +963,21 @@ function buildRankSignal({ player, projection, marketValue, positionRanks, workl
   const positionRank = projection?.marketPositionRank ?? positionRanks?.[player.id]?.rank ?? null;
   const marketTrend = getMarketTrend(marketValue);
   const trend = marketTrend.direction !== 'flat' ? marketTrend : workload?.trend ?? marketTrend;
+  // Always the real season-end positional finish, never overridden by market/ADP data —
+  // buildRankSignal's `positionRank` above prefers market rank, which masks this for the
+  // "Season Finish" toggle in Draft Results.
+  const seasonFinish = positionRanks?.[player.id] ?? null;
+  const seasonFinishRank = seasonFinish?.rank ?? null;
+  const seasonFinishLabel = seasonFinishRank != null
+    ? `${seasonFinish.posLabel ?? player.position}${seasonFinishRank}`
+    : null;
   return {
     overallRank,
     positionRank,
     positionRankLabel: positionRank != null ? `${player.position}${Math.round(positionRank)}` : null,
+    seasonFinishRank,
+    seasonFinishLabel,
+    seasonFinishPosCount: seasonFinish?.posCount ?? null,
     sourceRank: projection?.fallbackRank ?? projection?.searchRank ?? null,
     sourceLabel: projection?.fallbackLabel ?? (projection?.searchRank != null ? 'Sleeper search rank' : null),
     tier: getRankTier(overallRank ?? positionRank),

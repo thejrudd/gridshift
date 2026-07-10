@@ -10,6 +10,7 @@ import {
   buildDefenseTable, getDefenseStrength, getLeagueAvgPPG,
   projectPlayer,
 } from '../../utils/projectionEngine';
+import Spinner from '../ui/Spinner';
 
 const SKILL_POSITIONS = new Set(['QB', 'RB', 'WR', 'TE', 'K']);
 
@@ -143,14 +144,14 @@ function fmtScoringRate(scoringVal) {
 function injuryBadge(status) {
   if (!status) return null;
   const s = status.toLowerCase();
-  if (s === 'ir' || s === 'injured_reserve') return { label: 'IR', color: '#ef4444' };
-  if (s === 'out')        return { label: 'OUT', color: '#ef4444' };
-  if (s === 'dnp')        return { label: 'DNP', color: '#f59e0b' };
-  if (s === 'doubtful')   return { label: 'DBT', color: '#f97316' };
-  if (s === 'questionable') return { label: 'Q', color: '#eab308' };
-  if (s === 'pup' || s === 'pup_r') return { label: 'PUP', color: '#8b5cf6' };
-  if (s === 'sus')        return { label: 'SUS', color: '#6b7280' };
-  return { label: status.toUpperCase().slice(0, 4), color: '#6b7280' };
+  if (s === 'ir' || s === 'injured_reserve') return { label: 'IR', color: 'var(--color-accent-red)' };
+  if (s === 'out')        return { label: 'OUT', color: 'var(--color-accent-red)' };
+  if (s === 'dnp')        return { label: 'DNP', color: 'var(--color-accent-orange)' };
+  if (s === 'doubtful')   return { label: 'DBT', color: 'var(--color-accent-orange)' };
+  if (s === 'questionable') return { label: 'Q', color: 'var(--color-accent-orange)' };
+  if (s === 'pup' || s === 'pup_r') return { label: 'PUP', color: 'var(--color-alpha)' };
+  if (s === 'sus')        return { label: 'SUS', color: 'var(--color-label-tertiary)' };
+  return { label: status.toUpperCase().slice(0, 4), color: 'var(--color-label-tertiary)' };
 }
 
 // ── Data helpers ──────────────────────────────────────────────────────────────
@@ -403,10 +404,7 @@ export default function CompareFantasyPanel({ sleeperIdA, sleeperIdB, onEdgeSumm
   if (statsLoading && !seasonStats) {
     return (
       <div className="flex flex-col items-center justify-center py-20 gap-3">
-        <svg className="animate-spin w-6 h-6" style={{ color: 'var(--color-accent)' }} fill="none" viewBox="0 0 24 24">
-          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-        </svg>
+        <Spinner size="md" style={{ color: 'var(--color-accent)' }} />
         <span className="text-xs" style={{ color: 'var(--color-label-tertiary)' }}>Loading season stats…</span>
       </div>
     );
@@ -437,7 +435,7 @@ export default function CompareFantasyPanel({ sleeperIdA, sleeperIdB, onEdgeSumm
             </span>
           )}
           {dataA?.rank && (
-            <span className="text-xs font-semibold" style={{ color: 'var(--color-signature)' }}>
+            <span className="text-xs font-semibold" style={{ color: 'var(--color-label-secondary)' }}>
               {dataA.rank.posLabel}{dataA.rank.rank}
             </span>
           )}
@@ -466,7 +464,7 @@ export default function CompareFantasyPanel({ sleeperIdA, sleeperIdB, onEdgeSumm
             </span>
           )}
           {dataB?.rank && (
-            <span className="text-xs font-semibold" style={{ color: 'var(--color-signature)' }}>
+            <span className="text-xs font-semibold" style={{ color: 'var(--color-label-secondary)' }}>
               {dataB.rank.posLabel}{dataB.rank.rank}
             </span>
           )}
@@ -609,7 +607,7 @@ function CompareRow({ label, scoringLabel, valA, valB, numA, numB, higher, highl
     if (higher === 'better') { winA = numA > numB; winB = numB > numA; }
     else { winA = numA < numB; winB = numB < numA; }
   }
-  const winColor    = 'var(--color-signature)';
+  const winColor    = 'var(--color-accent-green)';
   const normalColor = highlight ? 'var(--color-label)' : 'var(--color-label-secondary)';
 
   return (

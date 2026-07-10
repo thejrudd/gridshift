@@ -8,8 +8,7 @@ Open bugs are listed first, deferred work next, fixed bugs below. Add new entrie
 
 | Bug |
 |-----|
-| Trade section pages still repeat too much instructional copy, making Agent, Intelligence, and Upgrades feel more verbose than necessary |
-| Companion → Matchup player projection formula hover can fail to stay open from the `i` control, hiding the projection math before it can be read |
+| No open bugs currently tracked. |
 
 ---
 
@@ -52,6 +51,26 @@ These ESPN league integration issues are known but deferred while ESPN features 
 
 | Bug | Fixed In |
 |-----|----------|
+| Trade section pages repeated too much instructional copy, making Agent, Intelligence, and Upgrades feel more verbose than necessary | v8.1.0 |
+| Companion → Matchup player projection formula hover could fail to stay open from the `i` control, hiding the projection math before it could be read | v8.1.0 |
+| Companion Live could obscure matchup context through abbreviated team names, provider-specific fallbacks, win-share presentation, season-vs-week PF/PA, unclear Starter Swing axes, misplaced chevrons, missing images, and empty Sleeper-backed stat details | v8.1.0 |
+| Companion Live player drilldowns could miss NFL game context, show unclear or redundant labels, overlap hero controls, over-frame photos, lack player/team hero treatment, and show the wrong matchup record season | v8.1.0 |
+| Companion Live could show a starter as "Bye week · No NFL game" despite having weekly stats and fantasy points | v8.1.0 |
+| Companion desktop subnav could overlap league switcher controls at approximately 1280px widths | v8.1.0 |
+| Draft War Room "Expand chart" could crash because `FullscreenScatter` used `axisOptions` without receiving it as a prop | v8.1.0 |
+| Draft War Room Big Board sort header was hidden on mobile, leaving users without sort controls | v8.1.0 |
+| Companion → Roster player preview sheet used a misplaced square close control instead of a circular close inside the hero | v8.1.0 |
+| Companion → Roster player preview sheet left a dead band below "Open Full Statistics" and doubled safe-area padding | v8.1.0 |
+| Companion → Roster column headers "SEASON" and "AVG/G" collided on compact phones | v8.1.0 |
+| Companion → Scoring Active/All toggle did not show its selected amber state | v8.1.0 |
+| Companion → Scoring header row overflowed narrow phones and cut off the Active/All toggle | v8.1.0 |
+| Companion → Scoring stat rows overlapped on narrow phones because value text could not shrink | v8.1.0 |
+| Companion → Scoring league-picker errors used a nonexistent destructive color token | v8.1.0 |
+| Draft Results evaluated Season Finish against the year before the draft | v8.1.0 |
+| Draft Results used present-day market rank instead of historical draft positional rank | v8.1.0 |
+| Draft Results insight columns could shift horizontally between rows | v8.1.0 |
+| Statistics exposed opponent-defense Visual mode for D/ST and IDP profiles | v8.1.0 |
+| Statistics Visual hover details could extend beyond the desktop viewport | v8.1.0 |
 | Companion → Defense averages round values to the nearest whole number instead of showing the nearest tenth decimal | v8.0.1 |
 | Companion → Defense drilldown still opens as a centered modal on mobile instead of using the slide-up sheet pattern | v8.0.1 |
 | Companion → Defense mobile drilldown stacks Rank, Total Allowed, and Per Game even when phone layouts have room for a single stat row | v8.0.1 |

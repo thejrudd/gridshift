@@ -2,9 +2,9 @@
 // Value balancing, package suggestions, and draft pick ownership for the
 // Companion Trade Agent.
 
-import { findKtcDraftPick, getKtcValue } from './ktcApi';
-import { getDraftPickDisplayInfo, getProjectedPickQuality } from './draftPickDisplay';
-import { resolveTradePlayerValueDetail } from './tradeValue';
+import { findKtcDraftPick, getKtcValue } from './ktcApi.js';
+import { getDraftPickDisplayInfo, getProjectedPickQuality } from './draftPickDisplay.js';
+import { resolveTradePlayerValueDetail } from './tradeValue.js';
 
 // ── Redraft pick valuation ────────────────────────────────────────────────────
 
@@ -23,6 +23,15 @@ import { resolveTradePlayerValueDetail } from './tradeValue';
  * @param {string} leagueType - '1qb' | 'sf'
  * @returns {{ [round: number]: { Early: number, Mid: number, Late: number } }}
  */
+/**
+ * Detect 1QB vs superflex league type from roster_positions.
+ * Shared by Trade and Draft Results so both value picks/players the same way.
+ */
+export function detectLeagueType(league) {
+  const hasSF = (league?.roster_positions ?? []).includes('SUPER_FLEX');
+  return hasSF ? 'sf' : '1qb';
+}
+
 export function computeRedraftPickValues(ktcPlayers, leagueSize, leagueType) {
   if (!ktcPlayers?.length || !leagueSize) return {};
 

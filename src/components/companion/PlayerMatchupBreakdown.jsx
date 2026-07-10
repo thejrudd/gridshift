@@ -702,7 +702,7 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, enr
                   {wkRank && (
                     <div>
                       <div className="text-[10px] uppercase tracking-widest mb-0.5" style={{ color: 'var(--color-label-tertiary)' }}>Week {week}</div>
-                      <div className="text-sm font-bold tabular-nums" style={{ color: 'var(--color-signature)' }}>{wkRank}</div>
+                      <div className="text-sm font-bold tabular-nums" style={{ color: 'var(--color-label)' }}>{wkRank}</div>
                     </div>
                   )}
                   {ssnRank && (
@@ -765,7 +765,7 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, enr
                 {projectedScore !== null && (
                   <div>
                     <InfoRow label="Projection">
-                      <span className="text-xs font-semibold tabular-nums" style={{ color: 'var(--color-signature)' }}>
+                      <span className="text-xs font-semibold tabular-nums" style={{ color: 'var(--color-label)' }}>
                         {projectedScore.toFixed(1)} pts
                       </span>
                       {projMin != null && projMax != null && (
@@ -873,14 +873,14 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, enr
                       <span
                         className="text-xs font-bold px-1.5 py-0.5 rounded tabular-nums"
                         style={{
-                          background: metProjection ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)',
-                          color: metProjection ? '#22c55e' : '#ef4444',
+                          background: metProjection ? 'color-mix(in srgb, var(--color-accent-green) 12%, transparent)' : 'color-mix(in srgb, var(--color-accent-red) 12%, transparent)',
+                          color: metProjection ? 'var(--color-accent-green)' : 'var(--color-accent-red)',
                         }}
                       >
                         {diff >= 0 ? `+${diff.toFixed(1)}` : diff.toFixed(1)}
                       </span>
                     )}
-                    <span className="text-xl font-bold tabular-nums" style={{ color: 'var(--color-signature)' }}>
+                    <span className="text-xl font-bold tabular-nums" style={{ color: 'var(--color-label)' }}>
                       {total.toFixed(2)}
                     </span>
                   </div>

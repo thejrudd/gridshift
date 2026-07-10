@@ -3,16 +3,9 @@ import { fetchRoster, fetchDepthChart, headshot } from '../utils/playerApi';
 import { TEAM_COLORS } from '../data/teamColors.js';
 import { TEAM_HISTORY } from '../data/teamHistory.js';
 import { useTheme } from '../context/ThemeContext';
+import { hexLuminance } from '../utils/teamVisualTheme';
 
 // ── Color helpers (duplicated from PlayerProfile to keep components self-contained) ──
-
-function hexLuminance(hex) {
-  const r = parseInt(hex.slice(1, 3), 16) / 255;
-  const g = parseInt(hex.slice(3, 5), 16) / 255;
-  const b = parseInt(hex.slice(5, 7), 16) / 255;
-  const lin = c => c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
-}
 
 function darkenHex(hex, amount = 0.28) {
   const r = Math.max(0, Math.round(parseInt(hex.slice(1, 3), 16) * (1 - amount)));
@@ -499,13 +492,13 @@ function StarterCard({ slot, accentColor, onClick }) {
 function RosterGroup({ group, expanded, onToggle, accentColor, onSelectPlayer }) {
   return (
     <div
-      className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden"
+      className="border border-[color:var(--color-separator)] rounded-lg overflow-hidden"
       style={expanded && accentColor ? { borderLeftColor: accentColor, borderLeftWidth: '3px' } : undefined}
     >
       {/* Group header */}
       <button
         onClick={onToggle}
-        className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-left"
+        className="w-full flex items-center justify-between px-4 py-3 bg-[color:var(--color-fill-secondary)] hover:bg-[color:var(--color-fill)] transition-colors text-left"
       >
         <span
           className="font-semibold text-sm shrink-0"
@@ -529,12 +522,12 @@ function RosterGroup({ group, expanded, onToggle, accentColor, onSelectPlayer })
 
       {/* Player rows */}
       {expanded && (
-        <div className="bg-white dark:bg-gray-900 divide-y divide-gray-100 dark:divide-gray-800">
+        <div className="bg-[color:var(--color-bg-secondary)] divide-y divide-[color:var(--color-separator)]">
           {group.players.map(player => (
             <button
               key={player.id}
               onClick={() => onSelectPlayer(player)}
-              className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-800/50 text-left transition-colors"
+              className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-[color:var(--color-fill-secondary)] text-left transition-colors"
             >
               <PlayerThumb id={player.id} name={player.displayName} />
               <div className="flex-1 min-w-0">
@@ -564,8 +557,8 @@ function PlayerThumb({ id, name }) {
   const [err, setErr] = useState(false);
   const initials = (name ?? '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
   return err ? (
-    <div className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-600 flex items-center justify-center shrink-0">
-      <span className="text-[10px] font-bold text-gray-400">{initials}</span>
+    <div className="w-8 h-8 rounded-full bg-[color:var(--color-fill)] flex items-center justify-center shrink-0">
+      <span className="text-[10px] font-bold text-[color:var(--color-label-tertiary)]">{initials}</span>
     </div>
   ) : (
     <img

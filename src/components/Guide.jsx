@@ -248,11 +248,11 @@ const GUIDE_CONTENT = {
       },
       {
         title: 'Filter and sort',
-        description: 'Use position chips, fantasy team filters, search, rank scope, and stat sorts to reshape the list.',
+        description: 'Reshape the list with position chips, fantasy team filters, search, rank scope, and stat sorts. Toggle stat sorts between Fantasy Value and Game Stats when both apply.',
       },
       {
-        title: 'Read values',
-        description: 'Toggle sortable stat categories between Fantasy Value and Game Stats when both are available.',
+        title: 'Export the view',
+        description: 'Use Export to download the current list as CSV or text, keeping your filters and owner names. Preview another league in the Scoring tab first to project values under its rules.',
       },
       {
         title: 'Open players',

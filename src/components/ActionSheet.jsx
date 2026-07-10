@@ -16,6 +16,7 @@ export default function ActionSheet({
   league,
   leagueSeason,
   leagueSeasonOptions = [],
+  leagueSeasonSwitching = null,
   onLeagueSeasonChange,
   onSwitchLeague,
 }) {
@@ -59,6 +60,7 @@ export default function ActionSheet({
                 <div className="flex flex-wrap gap-2 pb-3 pt-1">
                   {years.map((year) => {
                     const active = String(leagueSeason) === String(year);
+                    const pending = leagueSeasonSwitching === String(year);
 
                     return (
                       <button
@@ -68,11 +70,13 @@ export default function ActionSheet({
                           onLeagueSeasonChange?.(year);
                           onClose();
                         }}
+                        disabled={leagueSeasonSwitching != null}
                         className="rounded px-3 py-1.5 text-xs font-bold transition-opacity active:opacity-60"
                         style={{
-                          background: active ? 'var(--color-signature)' : 'var(--color-fill)',
-                          color: active ? 'var(--color-signature-fg)' : 'var(--color-label-secondary)',
+                          background: active || pending ? 'var(--color-signature)' : 'var(--color-fill)',
+                          color: active || pending ? 'var(--color-signature-fg)' : 'var(--color-label-secondary)',
                           border: '1px solid var(--color-separator)',
+                          opacity: leagueSeasonSwitching != null && !pending ? 0.5 : 1,
                         }}
                         aria-pressed={active}
                       >

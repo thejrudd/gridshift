@@ -45,17 +45,17 @@ const GameTooltip = ({ team, allTeams, predictions, onClose, anchorRef }) => {
 
   return createPortal(
     <div
-      className="fixed z-[100] bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-600 rounded-lg shadow-xl p-3 text-left"
+      className="fixed z-[100] bg-[color:var(--color-bg-secondary)] border border-[color:var(--color-separator)] rounded-lg shadow-xl p-3 text-left"
       style={{ top: position.top, left: position.left, width: position.width, position: 'absolute' }}
       onClick={(e) => e.stopPropagation()}
       onMouseEnter={(e) => e.stopPropagation()}
     >
       <div className="flex items-center justify-between mb-2">
-        <span className="text-sm font-bold text-gray-800 dark:text-gray-100">{team.name} — Game-by-Game</span>
-        <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-lg leading-none tooltip-close-btn">×</button>
+        <span className="text-sm font-bold text-[color:var(--color-label)]">{team.name} — Game-by-Game</span>
+        <button onClick={onClose} className="text-[color:var(--color-label-tertiary)] hover:text-[color:var(--color-label-secondary)] text-lg leading-none tooltip-close-btn">×</button>
       </div>
       {!hasAnyResults ? (
-        <p className="text-xs text-gray-400 dark:text-gray-500 italic">No game picks yet. Click to open and set predictions.</p>
+        <p className="text-xs text-[color:var(--color-label-tertiary)] italic">No game picks yet. Click to open and set predictions.</p>
       ) : (
         <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
           {team.opponents.map((oppId, i) => {
@@ -63,24 +63,24 @@ const GameTooltip = ({ team, allTeams, predictions, onClose, anchorRef }) => {
             const isSynced = !gameResults[i] && result;
             return (
               <div key={`${oppId}-${i}`} className="flex items-center space-x-1.5 text-xs py-0.5">
-                <span className="font-mono text-gray-400 dark:text-gray-500 w-4 text-right">{i + 1}.</span>
+                <span className="font-mono text-[color:var(--color-label-tertiary)] w-4 text-right">{i + 1}.</span>
                 <img
                   src={`https://a.espncdn.com/i/teamlogos/nfl/500/${oppId}.png`}
                   alt={oppId}
                   className="w-4 h-4 object-contain"
                   onError={(e) => { e.target.style.display = 'none'; }}
                 />
-                <span className="font-semibold text-gray-600 dark:text-gray-300 w-7">{oppId}</span>
+                <span className="font-semibold text-[color:var(--color-label-secondary)] w-7">{oppId}</span>
                 {result ? (
                   <span className={`font-bold px-1 rounded text-[10px] ${
-                    result === 'W' ? 'text-green-700 dark:text-green-400 bg-green-100 dark:bg-green-900/40' :
-                    result === 'L' ? 'text-red-700 dark:text-red-400 bg-red-100 dark:bg-red-900/40' :
-                    'text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/40'
+                    result === 'W' ? 'text-[color:var(--color-accent-green)] bg-tint-green-strong' :
+                    result === 'L' ? 'text-[color:var(--color-accent-red)] bg-tint-red-strong' :
+                    'text-[color:var(--color-accent-orange)] bg-tint-signature-strong'
                   }${isSynced ? ' opacity-60' : ''}`}>
                     {result}
                   </span>
                 ) : (
-                  <span className="text-gray-300 dark:text-gray-600">—</span>
+                  <span className="text-[color:var(--color-label-quaternary)]">—</span>
                 )}
               </div>
             );
@@ -136,7 +136,7 @@ const TeamRow = ({ team, record, implied, sos, hasGameData, showTooltip, allTeam
     <div key={team.id} className="relative">
       <div
         ref={rowRef}
-        className="w-full p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-left flex items-center justify-between group cursor-pointer"
+        className="w-full p-4 hover:bg-[color:var(--color-fill)] transition-colors text-left flex items-center justify-between group cursor-pointer"
         onClick={() => onTeamClick(team)}
         onMouseEnter={() => {
           hoverTimeout.current = setTimeout(() => setTooltipTeamId(team.id), 400);
@@ -156,20 +156,20 @@ const TeamRow = ({ team, record, implied, sos, hasGameData, showTooltip, allTeam
             }}
           />
           <div>
-            <h3 className="font-bold text-gray-800 dark:text-gray-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors text-lg">
+            <h3 className="font-bold text-[color:var(--color-label)] group-hover:text-[color:var(--color-accent)] transition-colors text-lg">
               {team.name}
             </h3>
-            <p className="text-xs text-gray-400 dark:text-gray-500 font-mono font-semibold">{team.id}</p>
+            <p className="text-xs text-[color:var(--color-label-tertiary)] font-mono font-semibold">{team.id}</p>
             {sos && (
               <p className={`text-[10px] font-medium ${
-                sos.avgOppWins >= 9.5 ? 'text-red-500' :
-                sos.avgOppWins >= 8.5 ? 'text-orange-500' :
-                sos.avgOppWins <= 7.5 ? 'text-green-500' :
-                'text-gray-400 dark:text-gray-500'
+                sos.avgOppWins >= 9.5 ? 'text-[color:var(--color-accent-red)]' :
+                sos.avgOppWins >= 8.5 ? 'text-[color:var(--color-accent-orange)]' :
+                sos.avgOppWins <= 7.5 ? 'text-[color:var(--color-accent-green)]' :
+                'text-[color:var(--color-label-tertiary)]'
               }`}>
                 SOS: {sos.avgOppWins.toFixed(1)} avg opp wins
                 {sos.predictedOpponents < sos.totalOpponents && (
-                  <span className="text-gray-400 dark:text-gray-500"> ({sos.predictedOpponents}/{sos.totalOpponents})</span>
+                  <span className="text-[color:var(--color-label-tertiary)]"> ({sos.predictedOpponents}/{sos.totalOpponents})</span>
                 )}
               </p>
             )}
@@ -180,7 +180,7 @@ const TeamRow = ({ team, record, implied, sos, hasGameData, showTooltip, allTeam
           {/* Info button for touch devices */}
           {(hasGameData || implied.hasAny) && (
             <button
-              className="hidden p-1.5 rounded-full text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors touch-info-btn"
+              className="hidden p-1.5 rounded-full text-[color:var(--color-label-tertiary)] hover:text-[color:var(--color-accent)] hover:bg-tint-accent transition-colors touch-info-btn"
               onClick={(e) => {
                 e.stopPropagation();
                 setTooltipTeamId(showTooltip ? null : team.id);
@@ -196,32 +196,32 @@ const TeamRow = ({ team, record, implied, sos, hasGameData, showTooltip, allTeam
           <div className="text-right">
             {record ? (
               <div>
-                <div className="text-2xl font-display text-gray-800 dark:text-gray-100">
+                <div className="text-2xl font-display text-[color:var(--color-label)]">
                   {record.wins}-{record.losses}{record.ties > 0 && `-${record.ties}`}
                 </div>
-                <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">
+                <p className="text-xs text-[color:var(--color-label-secondary)] font-medium">
                   {record.divisionWins !== undefined ? `${record.divisionWins}-${6 - record.divisionWins} in division` : 'Click to edit'}
                 </p>
                 {implied.hasAny && (
-                  <p className="text-[10px] text-blue-500 dark:text-blue-400 font-medium">
+                  <p className="text-[10px] text-[color:var(--color-accent)] font-medium">
                     {implied.divWins}W-{implied.divLosses}L{implied.divTies > 0 && `-${implied.divTies}T`} from matchups
                   </p>
                 )}
               </div>
             ) : implied.hasAny ? (
               <div>
-                <div className="text-lg font-display text-blue-500 dark:text-blue-400">
+                <div className="text-lg font-display text-[color:var(--color-accent)]">
                   {implied.wins}-{implied.losses}{implied.ties > 0 && `-${implied.ties}`}
                 </div>
-                <p className="text-[10px] text-blue-500 dark:text-blue-400 font-medium">
+                <p className="text-[10px] text-[color:var(--color-accent)] font-medium">
                   {implied.divWins}W-{implied.divLosses}L{implied.divTies > 0 && `-${implied.divTies}T`} div (from matchups)
                 </p>
-                <p className="text-xs text-gray-400 dark:text-gray-500">Click to predict</p>
+                <p className="text-xs text-[color:var(--color-label-tertiary)]">Click to predict</p>
               </div>
             ) : (
               <div>
-                <span className="text-sm text-gray-400 dark:text-gray-500 italic">Not set</span>
-                <p className="text-xs text-gray-500 dark:text-gray-400">Click to predict</p>
+                <span className="text-sm text-[color:var(--color-label-tertiary)] italic">Not set</span>
+                <p className="text-xs text-[color:var(--color-label-secondary)]">Click to predict</p>
               </div>
             )}
           </div>
@@ -252,7 +252,7 @@ const CollapsedTeamButton = ({ team, record, allTeams, predictions, onTeamClick,
       <button
         ref={btnRef}
         onClick={() => onTeamClick(team)}
-        className="flex flex-col items-center space-y-1 px-2 py-1 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+        className="flex flex-col items-center space-y-1 px-2 py-1 rounded-lg hover:bg-[color:var(--color-fill)] transition-colors"
         onMouseEnter={() => {
           hoverTimeout.current = setTimeout(() => setTooltipTeamId(team.id), 400);
         }}
@@ -267,18 +267,18 @@ const CollapsedTeamButton = ({ team, record, allTeams, predictions, onTeamClick,
           className="w-8 h-8 object-contain"
           onError={(e) => { e.target.style.display = 'none'; }}
         />
-        <span className="text-xs font-mono font-semibold text-gray-500 dark:text-gray-400">{team.id}</span>
+        <span className="text-xs font-mono font-semibold text-[color:var(--color-label-secondary)]">{team.id}</span>
         {record ? (
-          <span className="text-sm font-display font-bold text-gray-800 dark:text-gray-100">
+          <span className="text-sm font-display font-bold text-[color:var(--color-label)]">
             {record.wins}-{record.losses}{record.ties > 0 && `-${record.ties}`}
           </span>
         ) : (
-          <span className="text-xs text-gray-400 dark:text-gray-500 italic">--</span>
+          <span className="text-xs text-[color:var(--color-label-tertiary)] italic">--</span>
         )}
       </button>
       {hasData && (
         <button
-          className="hidden absolute -top-1 -right-1 p-0.5 rounded-full text-gray-400 hover:text-blue-500 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 shadow-sm touch-info-btn"
+          className="hidden absolute -top-1 -right-1 p-0.5 rounded-full text-[color:var(--color-label-tertiary)] hover:text-[color:var(--color-accent)] bg-[color:var(--color-bg-secondary)] border border-[color:var(--color-separator)] shadow-sm touch-info-btn"
           onClick={(e) => {
             e.stopPropagation();
             setTooltipTeamId(showTooltip ? null : team.id);
@@ -320,10 +320,10 @@ const DivisionCard = ({ division, onTeamClick, getTeamRecord, predictions, allTe
   }, [tooltipTeamId]);
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden">
+    <div className="bg-[color:var(--color-bg-secondary)] rounded-lg shadow-md overflow-hidden">
       <button
         onClick={onToggle}
-        className={`w-full p-4 ${conference === 'AFC' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-red-600 hover:bg-red-700'} text-white transition-colors flex items-center justify-between`}
+        className={`w-full p-4 ${conference === 'AFC' ? 'bg-[color:var(--color-accent)] hover:opacity-85' : 'bg-[color:var(--color-accent-red)] hover:opacity-85'} text-white transition-colors flex items-center justify-between`}
       >
         <h2 className="text-2xl font-display tracking-wider uppercase">{division}</h2>
         <div className="flex items-center space-x-3">
@@ -362,7 +362,7 @@ const DivisionCard = ({ division, onTeamClick, getTeamRecord, predictions, allTe
           })}
         </div>
       ) : (
-        <div className="divide-y divide-gray-200 dark:divide-gray-700">
+        <div className="divide-y divide-[color:var(--color-separator)]">
           {divisionTeams.map(team => {
             const record = getTeamRecord(team.id);
             const implied = getImpliedRecord(team.id, allTeams, predictions);
@@ -454,7 +454,7 @@ const TeamList = ({ teams, onTeamClick, teamSearch = '', divisionFilter = '' }) 
     <div className="space-y-6">
       {rows}
       {isFiltering && rows.length === 0 && (
-        <div className="text-center py-12 text-gray-400 dark:text-gray-500">
+        <div className="text-center py-12 text-[color:var(--color-label-tertiary)]">
           <p className="text-sm">No teams match your search.</p>
         </div>
       )}

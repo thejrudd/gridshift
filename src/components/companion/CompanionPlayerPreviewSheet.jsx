@@ -150,14 +150,6 @@ export default function CompanionPlayerPreviewSheet({ playerId, onClose, onViewS
         ariaLabel="Player statistics preview"
         containerClassName="companion-player-preview-sheet flex flex-col"
       >
-        <div className="companion-player-preview-handle-row">
-          <button className="companion-player-preview-close" type="button" onClick={onClose} aria-label="Close player preview">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
-              <path d="M18 6L6 18M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-
         <div
           className="companion-player-preview-hero"
           style={{
@@ -191,6 +183,21 @@ export default function CompanionPlayerPreviewSheet({ playerId, onClose, onViewS
               {playerMeta?.position || '—'} · {playerMeta?.teamId ?? 'FA'} · {CURRENT_SEASON}
             </div>
           </div>
+          <button
+            className="companion-player-preview-close"
+            type="button"
+            onClick={onClose}
+            aria-label="Close player preview"
+            style={heroBg ? {
+              background: 'rgba(0,0,0,0.22)',
+              border: `1px solid ${heroOnBgMuted}`,
+              color: heroOnBg,
+            } : undefined}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
+              <path d="M18 6L6 18M6 6l12 12" />
+            </svg>
+          </button>
         </div>
 
         {canShowFantasy && (

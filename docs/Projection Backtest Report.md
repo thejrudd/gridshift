@@ -325,6 +325,26 @@ Production change selected:
 - Do not ship implied-team-total multipliers yet.
 - Improve live weather alignment by carrying ESPN event dates through `fetchSeasonSchedule()` and using the actual event date for Matchup weather fetches instead of the primary Sunday date for the week.
 
+## Iteration 7 Results — Small-Sample Shrinkage (Shipped)
+
+Change: empirical-Bayes shrinkage of the blended recent/season baseline toward a per-player positional prior, added inside `projectPlayer()`:
+
+- Prior: mean PPG of the **upper half** of players at the position with ≥2 scored games before the projected week (`computePlayerPPGPriorByPosition`). The upper-half cut approximates fantasy-relevant players; using the team-level `leagueAvg` (points allowed per position) as the prior was tested first and was sharply worse (MAE `7.51`, bias `+3.1`) because it is a team-group total, not a per-player average.
+- Formula: `shrunkBase = (n·blendedBase + k·prior) / (n + k)` with `n` = scored games, `k = SHRINKAGE_PRIOR_GAMES`.
+- Prior-strength sweep: `k=2` → 6.33 MAE, `k=3` → 6.31, `k=4` → 6.30, `k=6` → 6.30. Selected `k = 4` (same score as 6 with less distortion of established players).
+
+| Run | N | MAE | RMSE | Bias | P90 Abs Error | Weighted Score |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Previous tuned baseline | 3,052 | 6.53 | 8.82 | -0.03 | 14.10 | 8.73 |
+| Shrinkage `k=4` (shipped) | 3,052 | 6.30 | 8.46 | -0.04 | 12.90 | **8.27** |
+
+This is the new production baseline for future variants.
+
+Also shipped alongside (outside the engine, so not reflected in the backtest numbers):
+
+- **Availability gating** in `src/utils/starterProjections.js`: Out/IR/PUP/Suspended-type statuses zero the projection, Doubtful ×0.25, Questionable ×0.85, recorded in `factors.availabilityFactor/availabilityStatus`. Applied identically to Companion Matchup display and Companion Live win probability.
+- **Shared assembly module** `src/utils/starterProjections.js`: Companion Matchup and Companion Live now build `projectPlayer()` inputs through the same `buildProjectionContext` / `projectFromGameInfo` path, so both tabs always show the same pre-kickoff projection for the same player and week.
+
 ## Implementation Finding
 
 The Matchup UI was passing `activeScoringSettings` into `projectPlayer()`, but the engine expects the prop name `scoringSettings`. That meant displayed matchup projections could silently fall back to default scoring inside projection calculations. This has been corrected in `src/components/companion/CompanionMatchup.jsx`.

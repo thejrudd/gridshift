@@ -6,6 +6,9 @@ import { useTheme } from './context/ThemeContext';
 import { exportAsJSON, importFromJSON } from './utils/exportImport';
 import { usePWAInstall } from './hooks/usePWAInstall';
 import useBodyScrollLock from './hooks/useBodyScrollLock';
+import useServiceWorkerUpdate from './hooks/useServiceWorkerUpdate';
+import useWhatsNew from './hooks/useWhatsNew';
+import UpdateBanner from './components/UpdateBanner';
 import NavBar from './components/NavBar';
 import BottomTabBar from './components/BottomTabBar';
 import SeasonSubNav from './components/SeasonSubNav';
@@ -41,10 +44,15 @@ import {
 } from './utils/playerDrilldown';
 import { debugCompanionLog, debugCompanionTimeAsync } from './utils/companionPerfDebug';
 import ScoringOverrideBanner from './components/companion/ScoringOverrideBanner';
+import Spinner from './components/ui/Spinner';
+import SectionSkeleton from './components/ui/SectionSkeleton';
+import SeasonChip from './components/ui/SeasonChip';
 
 const ExportPreview = lazy(() => import('./components/ExportPreview'));
 const PredictionsRedesign = lazy(() => import('./components/predictions/PredictionsRedesign'));
 const Guide = lazy(() => import('./components/Guide'));
+const WhatsNewModal = lazy(() => import('./components/WhatsNewModal'));
+const TourOverlay = lazy(() => import('./components/tour/TourOverlay'));
 const PlayerBrowser = lazy(() => import('./components/PlayerBrowser'));
 const StatisticsSchedule = lazy(() => import('./components/StatisticsSchedule'));
 const StatisticsStandings = lazy(() => import('./components/StatisticsStandings'));
@@ -53,6 +61,7 @@ const FavoriteTeamPicker = lazy(() => import('./components/FavoriteTeamPicker'))
 const CompanionConnect = lazy(() => import('./components/companion/CompanionConnect'));
 const CompanionRoster = lazy(() => import('./components/companion/CompanionRoster'));
 const CompanionRankings = lazy(() => import('./components/companion/CompanionRankings'));
+const CompanionLive = lazy(() => import('./components/companion/CompanionLive'));
 const CompanionScoring = lazy(() => import('./components/companion/CompanionScoring'));
 const CompanionLeague = lazy(() => import('./components/companion/CompanionLeague'));
 const CompanionMatchup = lazy(() => debugCompanionTimeAsync(
@@ -98,11 +107,7 @@ function getDevSleeperDraftIdOverride(sleeperDraftId = '') {
 }
 
 function SectionLoading({ label = 'Loading section' }) {
-  return (
-    <div className="flex items-center justify-center py-16">
-      <span className="text-sm" style={{ color: 'var(--color-label-secondary)' }}>{label}...</span>
-    </div>
-  );
+  return <SectionSkeleton label={label} />;
 }
 
 function ModalLoading({ label = 'Loading' }) {
@@ -119,32 +124,16 @@ function ModalLoading({ label = 'Loading' }) {
           boxShadow: '0 12px 40px rgba(0,0,0,0.12), 0 4px 12px rgba(0,0,0,0.06)',
         }}
       >
-        <span className="text-sm" style={{ color: 'var(--color-label-secondary)' }}>{label}...</span>
+        <div className="flex items-center gap-3">
+          <Spinner size="sm" />
+          <span className="text-sm" style={{ color: 'var(--color-label-secondary)' }}>{label}...</span>
+        </div>
       </div>
     </div>
   );
 }
 
 function RouteLoadingOverlay({ label = 'Opening player' }) {
-  const [progress, setProgress] = useState(12);
-
-  useEffect(() => {
-    const start = window.performance?.now?.() ?? Date.now();
-    const interval = window.setInterval(() => {
-      const now = window.performance?.now?.() ?? Date.now();
-      const elapsed = now - start;
-      const target = elapsed < 220
-        ? 48
-        : elapsed < 650
-          ? 72
-          : 88;
-
-      setProgress((current) => Math.min(target, current + Math.max(4, (target - current) * 0.34)));
-    }, 80);
-
-    return () => window.clearInterval(interval);
-  }, []);
-
   return (
     <div
       className="fixed inset-0 z-[70] flex items-center justify-center px-4"
@@ -157,26 +146,16 @@ function RouteLoadingOverlay({ label = 'Opening player' }) {
       aria-live="polite"
     >
       <div
-        className="w-full max-w-md overflow-hidden rounded-lg"
+        className="flex w-full max-w-md items-center gap-3 rounded-lg px-4 py-3"
         style={{
           background: 'var(--color-bg-secondary)',
           border: '1px solid var(--color-separator)',
           boxShadow: '0 18px 52px rgba(0,0,0,0.22)',
+          color: 'var(--color-label-secondary)',
         }}
       >
-        <div className="h-1 w-full overflow-hidden" style={{ background: 'var(--color-fill-secondary)' }}>
-          <div
-            className="h-full rounded-r-full transition-[width] duration-150"
-            style={{ width: `${progress}%`, background: 'var(--color-signature)' }}
-          />
-        </div>
-        <div className="flex items-center gap-3 px-4 py-3" style={{ color: 'var(--color-label-secondary)' }}>
-          <svg className="h-4 w-4 shrink-0 animate-spin" style={{ color: 'var(--color-accent)' }} fill="none" viewBox="0 0 24 24" aria-hidden="true">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-          </svg>
-          <span className="min-w-0 truncate text-sm font-semibold">{label}...</span>
-        </div>
+        <Spinner size="md" />
+        <span className="min-w-0 truncate text-sm font-semibold">{label}...</span>
       </div>
     </div>
   );
@@ -209,6 +188,7 @@ function LeagueContextHeader({
   season,
   changeSeason,
   seasonOptions,
+  seasonSwitching,
   onSwitchLeague,
   className,
 }) {
@@ -223,20 +203,27 @@ function LeagueContextHeader({
       </div>
       {years.length > 1 && (
         <div className="flex gap-1 shrink-0">
-          {years.map(s => (
-            <button
-              key={s}
-              type="button"
-              onClick={() => changeSeason(s)}
-              className="px-2 py-0.5 rounded text-xs font-semibold transition-colors"
-              style={{
-                background: season === s ? 'var(--color-signature)' : 'var(--color-fill)',
-                color: season === s ? 'var(--color-signature-fg)' : 'var(--color-label-tertiary)',
-              }}
-            >
-              {s}
-            </button>
-          ))}
+          {years.map(s => {
+            const isActive = season === s;
+            const isPending = seasonSwitching === s;
+            return (
+              <button
+                key={s}
+                type="button"
+                onClick={() => changeSeason(s)}
+                disabled={seasonSwitching != null}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-semibold transition-colors"
+                style={{
+                  background: isActive || isPending ? 'var(--color-signature)' : 'var(--color-fill)',
+                  color: isActive || isPending ? 'var(--color-signature-fg)' : 'var(--color-label-tertiary)',
+                  opacity: seasonSwitching != null && !isPending ? 0.5 : 1,
+                }}
+              >
+                {isPending && <Spinner size="sm" style={{ color: 'var(--color-signature-fg)' }} />}
+                {s}
+              </button>
+            );
+          })}
         </div>
       )}
       <button
@@ -502,6 +489,7 @@ function AppInner() {
     selectedLeagueId,
     season,
     changeSeason,
+    seasonSwitching,
     league,
     linkedLeagueSeasonOptions,
     scoringOverridePaused,
@@ -544,6 +532,9 @@ function AppInner() {
   const [exportPreviewOpen, setExportPreviewOpen] = useState(false);
   const [actionSheetOpen, setActionSheetOpen] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
+  const [tourActive, setTourActive] = useState(false);
+  const { needRefresh, applyUpdate } = useServiceWorkerUpdate();
+  const { pending: whatsNewPending, markSeen: markWhatsNewSeen } = useWhatsNew({ enabled: hasLeague });
   const [teamPickerOpen, setTeamPickerOpen] = useState(false);
   const [leagueSwitcherOpen, setLeagueSwitcherOpen] = useState(false);
   const [draftNavState, setDraftNavState] = useState({
@@ -554,6 +545,12 @@ function AppInner() {
     season: null,
   });
   useBodyScrollLock(leagueSwitcherOpen);
+
+  // An available update takes precedence over What's New. The tour should
+  // describe the version the user has just installed, not the waiting build.
+  useEffect(() => {
+    if (needRefresh && tourActive) setTourActive(false);
+  }, [needRefresh, tourActive]);
 
   const preserveContentScrollDuringUpdate = useCallback((update) => {
     pendingContentScrollTopRef.current = contentAreaRef.current?.scrollTop ?? null;
@@ -1245,6 +1242,15 @@ function AppInner() {
           darkMode={darkMode}
           onToggleDarkMode={toggleDarkMode}
           onMenuOpen={() => setActionSheetOpen(true)}
+          seasonSelector={hasLeague && (activeTab === 'companion' || activeTab === 'trade' || activeTab === 'draft') ? (
+            <SeasonChip
+              season={season}
+              seasons={linkedLeagueSeasonOptions}
+              seasonSwitching={seasonSwitching}
+              onChange={changeSeason}
+              compact
+            />
+          ) : null}
           scrolled={contentScrolled}
         />
 
@@ -1285,17 +1291,22 @@ function AppInner() {
         {/* Companion sub-navigation */}
         {activeTab === 'companion' && hasLeague && (
           <div className="season-subnav league-subnav">
-            <CompanionSubNav activeView={companionView} onViewChange={navigateCompanionView} />
-            {/* Desktop: bottom-right of subnav bar, aligned with tab text */}
-            <div className="hidden lg:flex items-center absolute bottom-0 right-8 pb-[9px]">
-              <LeagueContextHeader
-                league={league}
-                season={season}
-                changeSeason={changeSeason}
-                seasonOptions={linkedLeagueSeasonOptions}
-                onSwitchLeague={() => setLeagueSwitcherOpen(true)}
-                className="flex items-center gap-2"
-              />
+            <div className="companion-subnav-row">
+              <div className="min-w-0 flex-1">
+                <CompanionSubNav activeView={companionView} onViewChange={navigateCompanionView} />
+              </div>
+              {/* Desktop: shares the row with the tabs, aligned with tab text */}
+              <div className="hidden lg:flex items-center shrink-0 pb-[9px]">
+                <LeagueContextHeader
+                  league={league}
+                  season={season}
+                  changeSeason={changeSeason}
+                  seasonSwitching={seasonSwitching}
+                  seasonOptions={linkedLeagueSeasonOptions}
+                  onSwitchLeague={() => setLeagueSwitcherOpen(true)}
+                  className="flex items-center gap-2"
+                />
+              </div>
             </div>
           </div>
         )}
@@ -1309,6 +1320,7 @@ function AppInner() {
                 league={league}
                 season={season}
                 changeSeason={changeSeason}
+                seasonSwitching={seasonSwitching}
                 seasonOptions={linkedLeagueSeasonOptions}
                 onSwitchLeague={() => setLeagueSwitcherOpen(true)}
                 className="flex items-center gap-2"
@@ -1335,6 +1347,7 @@ function AppInner() {
                 league={league}
                 season={season}
                 changeSeason={changeSeason}
+                seasonSwitching={seasonSwitching}
                 seasonOptions={linkedLeagueSeasonOptions}
                 onSwitchLeague={() => setLeagueSwitcherOpen(true)}
                 className="flex items-center gap-2"
@@ -1545,6 +1558,13 @@ function AppInner() {
                   />
                 </Suspense>
               )}
+              {companionView === 'live'   && (
+                <Suspense fallback={<SectionLoading label="Loading Live" />}>
+                  <CompanionLive
+                    onViewPlayer={(sleeperId) => navigateToCompanionSleeperPlayer(sleeperId, 'Live')}
+                  />
+                </Suspense>
+              )}
               {companionView === 'matchup'   && (
                 <Suspense fallback={<SectionLoading label="Loading Matchup" />}>
                   <CompanionMatchup
@@ -1689,12 +1709,38 @@ function AppInner() {
           league={hasLeague && (activeTab === 'companion' || activeTab === 'trade' || activeTab === 'draft') ? league : null}
           leagueSeason={season}
           leagueSeasonOptions={linkedLeagueSeasonOptions}
+          leagueSeasonSwitching={seasonSwitching}
           onLeagueSeasonChange={changeSeason}
           onSwitchLeague={() => {
             setActionSheetOpen(false);
             setLeagueSwitcherOpen(true);
           }}
         />
+      )}
+
+      {/* ── Update banner + What's New tour ───────────────────── */}
+      {needRefresh && <UpdateBanner onInstall={applyUpdate} />}
+      {hasLeague && !needRefresh && whatsNewPending.length > 0 && !tourActive && (
+        <Suspense fallback={null}>
+          <WhatsNewModal
+            entries={whatsNewPending}
+            onStartTour={() => setTourActive(true)}
+            onDismiss={markWhatsNewSeen}
+          />
+        </Suspense>
+      )}
+      {hasLeague && !needRefresh && tourActive && whatsNewPending.length > 0 && (
+        <Suspense fallback={null}>
+          <TourOverlay
+            entries={whatsNewPending}
+            navigate={applyRoute}
+            currentRoute={appRoute}
+            onFinish={() => {
+              setTourActive(false);
+              markWhatsNewSeen();
+            }}
+          />
+        </Suspense>
       )}
 
       {/* ── Modals ────────────────────────────────────────────── */}

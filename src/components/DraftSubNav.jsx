@@ -27,6 +27,7 @@ export default function DraftSubNav({ activeView, onViewChange, disabledViews = 
               if (!isDisabled) onViewChange(id);
             }}
             className={`season-tab${activeView === id ? ' active' : ''}${isDisabled ? ' is-disabled' : ''}`}
+            data-tour={id === 'results' ? 'draft-view-results' : undefined}
             title={title}
           >
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>

@@ -10,8 +10,8 @@ import {
   getAvgPPG,
   getDefensePercentile,
   getDefenseStrength,
-  projectPlayer,
 } from '../../utils/projectionEngine';
+import { buildProjectionContext, projectFromGameInfo } from '../../utils/starterProjections.js';
 import { STADIUMS, WEEK_DATES_2025 } from '../../data/stadiums';
 import { fetchGameWeather, formatWeather } from '../../api/weatherApi';
 import PlayerMatchupBreakdown from './PlayerMatchupBreakdown';
@@ -27,6 +27,9 @@ import { debugCompanionLog, debugCompanionMeasure, debugCompanionTimeAsync } fro
 import { CompanionSelectorButton, CompanionSelectorRail } from './CompanionSelectorControls.jsx';
 import { POSITION_COLORS } from '../../utils/companionAssetVisuals.js';
 import CompanionPlayerRow, { CompanionPlayerMetric, CompanionPlayerStatus } from './CompanionPlayerRow.jsx';
+import StatsProgressBanner from '../ui/StatsProgressBanner';
+import SeasonHintBanner from '../ui/SeasonHintBanner';
+import UiEmptyState from '../ui/EmptyState';
 
 const TOTAL_WEEKS = 18;
 const MATCHUP_CARD_SHADOW = '0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06)';
@@ -733,9 +736,24 @@ export default function CompanionMatchup({
     };
   }, [hasAdvancedStats, starterSlots, week, weatherMap]);
 
+  // Shared projection context — the same assembly Companion Live uses, so both
+  // tabs produce identical pre-kickoff projections for the same player/week.
+  const projectionContext = useMemo(() => {
+    if (!hasAdvancedStats || !defenseTable) return null;
+    return buildProjectionContext({
+      weeklyStats,
+      players,
+      scheduleMap,
+      scoringSettings: activeScoringSettings,
+      week,
+      defenseTable,
+      leagueAvgByPos,
+    });
+  }, [hasAdvancedStats, defenseTable, weeklyStats, players, scheduleMap, activeScoringSettings, week, leagueAvgByPos]);
+
   // Add projections once weather is available
   const enrichedSlots = useMemo(() => {
-    if (!hasAdvancedStats) return starterSlots;
+    if (!hasAdvancedStats || !projectionContext) return starterSlots;
 
     return debugCompanionMeasure('Matchup starter projections', () => {
       function addProjection(player) {
@@ -743,22 +761,7 @@ export default function CompanionMatchup({
         const date = player.gameDate ?? WEEK_DATES_2025[week];
         const key = player.homeTeam && date ? `${player.homeTeam}-${date}` : null;
         const weather = player.isIndoor ? null : (key ? (weatherMap[key] ?? null) : null);
-        const proj = projectPlayer({
-          weeklyArr: player.weekly,
-          pos: player.position,
-          oppTeam: player.oppTeam,
-          isHome: player.isHome,
-          isIndoor: player.isIndoor ?? false,
-          weather,
-          allWeeklyStats: weeklyStats,
-          players,
-          scoringSettings: activeScoringSettings,
-          scheduleMap,
-          week,
-          defStrength: player.defStrength ?? null,
-          leagueAvg: leagueAvgByPos[player.position] ?? 0,
-          skipOpponentLookup: true,
-        });
+        const proj = projectFromGameInfo(player, projectionContext, { weather });
         return { ...player, projection: proj, weather };
       }
 
@@ -772,7 +775,7 @@ export default function CompanionMatchup({
       starterSlotCount: starterSlots.length,
       weatherEntries: Object.keys(weatherMap).length,
     });
-  }, [hasAdvancedStats, starterSlots, weatherMap, week, weeklyStats, players, activeScoringSettings, scheduleMap, leagueAvgByPos]);
+  }, [hasAdvancedStats, projectionContext, starterSlots, weatherMap, week]);
 
   const sharedPlayerNameFontSize = useMemo(() => {
     const labels = [
@@ -823,14 +826,15 @@ export default function CompanionMatchup({
       || !hasAdvancedStats
       || (hasStarterIds && !hasRenderableStarterRows)
     );
-  const matchupControls = selectedLeagueId ? (
+  const matchupControls = selectedLeagueId && !hasNoMatchup && (hasStarterIds || hasRenderableStarterRows) ? (
     <div className={`mx-2 sm:mx-4 mb-3 ${isCompactPhone ? '' : ''}`}>
       <CompanionSelectorRail ariaLabel="Matchup controls" wrapOnDesktop={false}>
         <CompanionSelectorButton
           onClick={() => setShowWeekPicker(true)}
-          active
           size="sm"
           aria-label={`Choose matchup week. Week ${week} selected.`}
+          aria-haspopup="dialog"
+          aria-expanded={showWeekPicker}
           className="companion-matchup-week-trigger"
         >
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -840,6 +844,9 @@ export default function CompanionMatchup({
             <path d="M3 10h18" />
           </svg>
           Week {week}
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ opacity: 0.6, marginLeft: -1 }}>
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
         </CompanionSelectorButton>
         {!isByeMatchup && (
           <CompanionSelectorButton
@@ -947,6 +954,7 @@ export default function CompanionMatchup({
 
   return (
     <div className="pb-6">
+      <SeasonHintBanner capability="current-only" feature="Weekly matchups" className="mx-2 sm:mx-4 mb-3" />
       {/* Scoreboard header */}
           <div className="mb-4">
             {matchupControls}
@@ -954,7 +962,7 @@ export default function CompanionMatchup({
               <div className="grid grid-cols-[minmax(0,1fr)_24px_minmax(0,1fr)] sm:grid-cols-[minmax(0,1fr)_44px_minmax(0,1fr)] items-stretch gap-1 sm:gap-2">
               <button
                 aria-label={`Your Side scoring breakdown for ${myName}`}
-                className="min-w-0 px-2 sm:px-4 py-2.5 sm:py-3 text-center active:opacity-60 transition-opacity flex flex-col justify-center"
+                className="companion-matchup-scorecard min-w-0 px-2 sm:px-4 py-2.5 sm:py-3 text-center active:opacity-60 transition-opacity flex flex-col justify-center"
                 onClick={() => setSelectedTeam('mine')}
                 onMouseMove={mineHeaderGlow.glowHandlers.onMouseMove}
                 onMouseEnter={() => setIsMineHeaderHovered(true)}
@@ -1027,7 +1035,7 @@ export default function CompanionMatchup({
               </div>
               <button
                 aria-label={`Opponent scoring breakdown for ${opponentName}`}
-                className="min-w-0 px-2 sm:px-4 py-2.5 sm:py-3 text-center active:opacity-60 transition-opacity flex flex-col justify-center"
+                className="companion-matchup-scorecard min-w-0 px-2 sm:px-4 py-2.5 sm:py-3 text-center active:opacity-60 transition-opacity flex flex-col justify-center"
                 onClick={() => setSelectedTeam('opp')}
                 onMouseMove={oppHeaderGlow.glowHandlers.onMouseMove}
                 onMouseEnter={() => setIsOppHeaderHovered(true)}
@@ -1095,15 +1103,6 @@ export default function CompanionMatchup({
               </button>
             </div>
           </div>
-          </div>
-
-          {/* Column headers */}
-          <div className="companion-matchup-column-header hidden lg:block px-2 sm:px-4 pb-2 mb-1" style={{ borderBottom: '1px solid var(--color-separator)' }}>
-            <div className="grid grid-cols-[minmax(0,1fr)_30px_minmax(0,1fr)] sm:grid-cols-[minmax(0,1fr)_44px_minmax(0,1fr)] items-center gap-1.5 sm:gap-2">
-              <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>{myName}</span>
-              <span className="text-center text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>Slot</span>
-              <span className="text-right text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>{opponentName}</span>
-            </div>
           </div>
 
           {/* Head-to-head starter rows */}
@@ -1224,7 +1223,7 @@ function ByeWeekMatchup({ teamName, week, points, onOpenBreakdown }) {
         {hasPoints && (
           <button
             type="button"
-            className="mt-6 min-w-[168px] px-5 py-3 active:opacity-70 transition-opacity"
+            className="companion-matchup-scorecard mt-6 min-w-[168px] px-5 py-3 active:opacity-70 transition-opacity"
             aria-label={`Open scoring breakdown for ${teamName}`}
             onClick={onOpenBreakdown}
             style={{
@@ -1356,21 +1355,16 @@ function HeadToHeadRow({ mine, opp, bench, slotPos, onSelectMine, onSelectOpp, o
           <button
             type="button"
             onClick={canCompare ? onComparePlayers : undefined}
-            className="font-bold text-center active:opacity-70 inline-flex w-full flex-col items-center justify-center"
+            className={`companion-matchup-slot-badge font-bold text-center inline-flex w-full flex-col items-center justify-center${canCompare ? ' companion-matchup-compare' : ''}`}
             style={{
-              background: 'transparent',
               color: posColor,
               fontFamily: '"Barlow Condensed", sans-serif',
               fontSize: isCompactPhone ? '9px' : '11px',
               minWidth: isCompactPhone ? 28 : 32,
               minHeight: isCompactPhone ? 32 : 38,
               padding: isCompactPhone ? '2px 1px' : '3px 4px',
-              border: 'none',
-              borderRadius: 0,
               lineHeight: 1,
               cursor: canCompare ? 'pointer' : 'default',
-              boxShadow: 'none',
-              textDecoration: 'none',
               letterSpacing: '0.08em',
             }}
             aria-label={canCompare ? `Compare ${mine?.name} and ${opp?.name} in Trade Compare` : undefined}
@@ -1644,11 +1638,18 @@ function TeamScoreBreakdown({ teamName, playerIds, week, onClose }) {
                 Week {week} · Scoring Breakdown
               </div>
             </div>
-            <button onClick={onClose} className="shrink-0 p-1" style={{ color: 'var(--color-label-secondary)' }}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+            <CompanionSelectorButton
+              size="xs"
+              variant="ghost"
+              aria-label="Close scoring breakdown"
+              onClick={onClose}
+              className="shrink-0"
+              style={{ width: 30, height: 30, padding: 0 }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
                 <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
               </svg>
-            </button>
+            </CompanionSelectorButton>
           </div>
 
       {/* Column headers */}
@@ -1709,26 +1710,9 @@ function TeamScoreBreakdown({ teamName, playerIds, week, onClose }) {
 
 function MatchupStatsLoadingBanner() {
   const statsProgress = useSleeperStatsProgress();
-
-  return (
-    <div className="mx-2 sm:mx-4 mb-4 px-4 py-3 rounded-xl flex items-center gap-3" style={{ background: 'var(--color-fill)', border: '1px solid var(--color-separator)' }}>
-      <div className="h-1 flex-1 rounded-full overflow-hidden" style={{ background: 'var(--color-fill-secondary)' }}>
-        <div className="h-full rounded-full transition-all duration-300" style={{ width: `${statsProgress}%`, background: 'var(--color-signature)' }} />
-      </div>
-      <span className="text-xs tabular-nums shrink-0" style={{ color: 'var(--color-label-tertiary)' }}>Loading stats {statsProgress}%</span>
-    </div>
-  );
+  return <StatsProgressBanner progress={statsProgress} className="mx-2 sm:mx-4 mb-4" />;
 }
 
 function EmptyState({ title, description = null }) {
-  return (
-    <div className="flex flex-col items-center justify-center px-6 py-20 text-center">
-      <span className="text-sm font-semibold" style={{ color: 'var(--color-label)' }}>{title}</span>
-      {description && (
-        <span className="mt-1 max-w-md text-xs leading-5" style={{ color: 'var(--color-label-secondary)' }}>
-          {description}
-        </span>
-      )}
-    </div>
-  );
+  return <UiEmptyState title={title} hint={description} />;
 }

@@ -141,6 +141,11 @@ Feature screens such as Roster, League, Rankings, Waiver, Matchup, Heatmap drill
 - `src/api/leagueLogsApi.js`
 - `docs/Draft Assistant.md`
 
+### Draft Results: rank toggle and outcome grading
+
+- `src/utils/draftAssistant/index.js` — `getDraftResultsSeason(...)` (the season played after the draft; keep distinct from War Room's prior-season `getDraftStatsSeason(...)`), `buildDraftPositionRanks(...)` (actual historical positional selection order, never market rank), `buildRankSignal`'s `seasonFinishRank`/`seasonFinishLabel` (real season-end positional finish, e.g. RB12, unconditional — not overridden by market/ADP data), and `computeDraftOutcomes(...)` (a positional draft-cost vs. matching-season finish comparison that returns Boom, Strong, Even, Weak, or Bust).
+- `src/components/draft/DraftAssistant.jsx` — `DraftResultsView` (rank-mode toggle, historical draft-rank lookup, outcome-strength sort, and the dedicated Draft Strength info control) and `DraftResultRow` (fixed aligned rank/outcome metric columns; color tone via `CompanionPlayerMetric`'s `tone` prop).
+
 ## Export / Import / Shareable Image
 
 - `src/components/ExportPreview.jsx`

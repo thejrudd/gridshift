@@ -104,8 +104,10 @@ export function getPlayerSeasonStats(playerId, season) {
  * Fetch all weekly stats for a season, weeks 1–totalWeeks.
  * Returns { [player_id]: Array<{ week, ...stats }> }
  * Calls onProgress(completedWeek, totalWeeks) after each week resolves.
+ * Failed week numbers are pushed into `failedWeeks` when provided, so callers
+ * can tell a complete package from one with silently-skipped weeks.
  */
-export async function getAllWeeklyStats(season, totalWeeks = 18, onProgress) {
+export async function getAllWeeklyStats(season, totalWeeks = 18, onProgress, failedWeeks) {
   const weeks = Array.from({ length: totalWeeks }, (_, i) => i + 1);
   const byPlayer = {};
   let completed = 0;
@@ -121,7 +123,7 @@ export async function getAllWeeklyStats(season, totalWeeks = 18, onProgress) {
             byPlayer[playerId].push({ week, ...stats });
           }
         })
-        .catch(() => { /* skip failed weeks silently */ })
+        .catch(() => { failedWeeks?.push(week); /* skip failed weeks silently */ })
         .finally(() => {
           completed += 1;
           onProgress?.(completed, totalWeeks);

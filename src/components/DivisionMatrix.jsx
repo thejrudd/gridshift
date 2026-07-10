@@ -28,9 +28,9 @@ const getHeadToHead = (teamA, teamB, allTeams, predictions) => {
 };
 
 const resultColors = {
-  W: 'bg-green-500 text-white',
-  L: 'bg-red-500 text-white',
-  T: 'bg-amber-500 text-white',
+  W: 'bg-[color:var(--color-accent-green)] text-white',
+  L: 'bg-[color:var(--color-accent-red)] text-white',
+  T: 'bg-[color:var(--color-accent-orange)] text-white',
 };
 
 const DivisionMatrix = ({ divisionTeams, allTeams }) => {
@@ -50,7 +50,7 @@ const DivisionMatrix = ({ divisionTeams, allTeams }) => {
 
   return (
     <div className="px-3 pb-3">
-      <div className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1.5">
+      <div className="text-[10px] font-semibold text-[color:var(--color-label-tertiary)] uppercase tracking-wider mb-1.5">
         Head-to-Head
       </div>
       <div className="overflow-x-auto">
@@ -59,7 +59,7 @@ const DivisionMatrix = ({ divisionTeams, allTeams }) => {
             <tr>
               <th className="w-12" />
               {divisionTeams.map(team => (
-                <th key={team.id} className="px-1 py-1 font-bold text-gray-600 dark:text-gray-300 text-[11px]">
+                <th key={team.id} className="px-1 py-1 font-bold text-[color:var(--color-label-secondary)] text-[11px]">
                   {team.id}
                 </th>
               ))}
@@ -68,14 +68,14 @@ const DivisionMatrix = ({ divisionTeams, allTeams }) => {
           <tbody>
             {divisionTeams.map(rowTeam => (
               <tr key={rowTeam.id}>
-                <td className="pr-1 py-0.5 text-right font-bold text-gray-600 dark:text-gray-300 text-[11px]">
+                <td className="pr-1 py-0.5 text-right font-bold text-[color:var(--color-label-secondary)] text-[11px]">
                   {rowTeam.id}
                 </td>
                 {divisionTeams.map(colTeam => {
                   if (rowTeam.id === colTeam.id) {
                     return (
                       <td key={colTeam.id} className="px-1 py-0.5">
-                        <span className="text-gray-300 dark:text-gray-600">—</span>
+                        <span className="text-[color:var(--color-label-quaternary)]">—</span>
                       </td>
                     );
                   }
@@ -89,7 +89,7 @@ const DivisionMatrix = ({ divisionTeams, allTeams }) => {
                           <span
                             key={i}
                             className={`inline-block w-5 h-5 leading-5 rounded text-[10px] font-bold ${
-                              result ? resultColors[result] : 'bg-gray-100 dark:bg-gray-700 text-gray-300 dark:text-gray-500'
+                              result ? resultColors[result] : 'bg-[color:var(--color-fill)] text-[color:var(--color-label-tertiary)]'
                             }`}
                           >
                             {result || '·'}

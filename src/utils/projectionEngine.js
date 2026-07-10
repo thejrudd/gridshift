@@ -24,6 +24,10 @@ const POSITION_ALIAS_MAP = {
   LB: ['ILB', 'OLB'],
   DB: ['CB', 'S', 'SS', 'FS'],
 };
+// Empirical-Bayes prior strength (in games) for shrinking a player's blended
+// baseline toward the upper-half positional PPG prior. Tuned via
+// scripts/projection-backtest.mjs (k=2..6 sweep; 4 and 6 tied, 4 shrinks less).
+const SHRINKAGE_PRIOR_GAMES = 4;
 
 const POSITION_RANK_CACHE = new WeakMap();
 const WEEKLY_POSITION_RANK_CACHE = new WeakMap();
@@ -628,6 +632,60 @@ export function computeLeagueAvgPPGByPositionFromDefenseTable(defenseTable, befo
   return addPositionAliases(averagesByPos);
 }
 
+const PLAYER_AVG_PRIOR_CACHE = new WeakMap();
+
+/**
+ * Per-player positional PPG prior for shrinkage: the mean PPG of the UPPER
+ * HALF of players at each position (≥2 scored games before `beforeWeek`).
+ * The upper-half cut approximates "fantasy-relevant" players without needing
+ * roster context, so deep-bench noise doesn't drag the prior down.
+ */
+export function computePlayerPPGPriorByPosition(allWeeklyStats, players, scoringSettings, beforeWeek = null) {
+  if (!allWeeklyStats || !players) return {};
+
+  const weekKey = beforeWeek == null ? 'all' : Number(beforeWeek);
+  const canCache = isCacheKeyable(allWeeklyStats) && isCacheKeyable(players) && isCacheKeyable(scoringSettings);
+  if (canCache) {
+    const byPlayers = getWeakCacheNode(PLAYER_AVG_PRIOR_CACHE, allWeeklyStats);
+    const byScoring = getWeakCacheNode(byPlayers, players);
+    const byWeek = getMapCacheNode(byScoring, scoringSettings);
+    if (byWeek.has(weekKey)) return byWeek.get(weekKey);
+  }
+
+  const calcFantasyPoints = createPointsCalculator(scoringSettings);
+  const ppgByPos = {};
+  for (const [playerId, weeks] of Object.entries(allWeeklyStats ?? {})) {
+    const player = players?.[playerId];
+    const pos = normalizePos(player?.position);
+    if (!pos || !Array.isArray(weeks)) continue;
+    const gamePts = weeks
+      .filter((w) => beforeWeek == null || Number(w.week) < beforeWeek)
+      .map((w) => calcFantasyPoints(w, player.position))
+      .filter((p) => p > 0);
+    if (gamePts.length < 2) continue;
+    if (!ppgByPos[pos]) ppgByPos[pos] = [];
+    ppgByPos[pos].push(gamePts.reduce((s, p) => s + p, 0) / gamePts.length);
+  }
+
+  const priors = {};
+  for (const [pos, values] of Object.entries(ppgByPos)) {
+    const sorted = values.slice().sort((a, b) => a - b);
+    const upperHalf = sorted.slice(Math.floor(sorted.length / 2));
+    priors[pos] = upperHalf.length
+      ? upperHalf.reduce((s, p) => s + p, 0) / upperHalf.length
+      : 0;
+  }
+  const result = addPositionAliases(priors);
+
+  if (canCache) {
+    const byPlayers = getWeakCacheNode(PLAYER_AVG_PRIOR_CACHE, allWeeklyStats);
+    const byScoring = getWeakCacheNode(byPlayers, players);
+    const byWeek = getMapCacheNode(byScoring, scoringSettings);
+    byWeek.set(weekKey, result);
+  }
+  return result;
+}
+
 export function computeLeagueAvgPPGByPosition(allWeeklyStats, players, scoringSettings, beforeWeek = null) {
   if (!allWeeklyStats || !players) return {};
 
@@ -769,6 +827,19 @@ export function projectPlayer({
     ? recentAvg * recentWeight + seasonAvg * (1 - recentWeight)
     : seasonAvg;
 
+  // ── Small-sample shrinkage (empirical Bayes) ──────────────────────────────
+  // Shrink the blended baseline toward the per-player positional prior (mean
+  // PPG of the upper half of the position, NOT the team-level leagueAvg used
+  // by oppFactor) with a prior worth SHRINKAGE_PRIOR_GAMES games, so a short
+  // early-season streak can't produce an outlier projection. No-op when the
+  // prior inputs are unavailable.
+  const playerPrior = allWeeklyStats && players
+    ? (computePlayerPPGPriorByPosition(allWeeklyStats, players, scoringSettings, week)[normalizePos(pos)] ?? 0)
+    : 0;
+  const shrunkBase = playerPrior > 0
+    ? (gamePts.length * blendedBase + SHRINKAGE_PRIOR_GAMES * playerPrior) / (gamePts.length + SHRINKAGE_PRIOR_GAMES)
+    : blendedBase;
+
   // ── Home/away factor ──────────────────────────────────────────────────────
   // Backtesting showed raw home/away splits add noise at this sample size.
   // Keep the historical calculation available for diagnostics, but leave the
@@ -839,7 +910,7 @@ export function projectPlayer({
   const snapFactor = 1;
 
   // ── Projected score ───────────────────────────────────────────────────────
-  const projected = blendedBase * locationFactor * oppFactor * weatherFactor * snapFactor;
+  const projected = shrunkBase * locationFactor * oppFactor * weatherFactor * snapFactor;
 
   // ── Floor / ceiling from historical distribution ──────────────────────────
   // Compute the player's variance profile (25th/75th percentile) as fractions
@@ -869,8 +940,8 @@ export function projectPlayer({
   // Scale from projected for min/max; from blendedBase for the Base-row display.
   const min     = Math.max(0, Math.round(projected * safeFloor * 10) / 10);
   const max     =             Math.round(projected * safeCeil  * 10) / 10;
-  const floor   = Math.round(blendedBase * safeFloor * 10) / 10;
-  const ceiling = Math.round(blendedBase * safeCeil  * 10) / 10;
+  const floor   = Math.round(shrunkBase * safeFloor * 10) / 10;
+  const ceiling = Math.round(shrunkBase * safeCeil  * 10) / 10;
 
   const ceilingWeatherFactor = isPassingPos ? weatherFactor : Math.max(0.95, weatherFactor);
 
@@ -892,6 +963,8 @@ export function projectPlayer({
       seasonBase:            Math.round(seasonAvg * 10) / 10,
       recentBase:            Math.round(recentAvg * 10) / 10,
       recentWeight,
+      shrunkBase:            Math.round(shrunkBase * 10) / 10,
+      shrinkWeight:          Math.round((gamePts.length / (gamePts.length + SHRINKAGE_PRIOR_GAMES)) * 100) / 100,
     },
   };
 }

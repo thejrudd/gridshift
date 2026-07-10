@@ -5,7 +5,7 @@ import { fmtKtcValue } from '../../../utils/ktcApi';
 import { getPicksForRoster } from '../../../utils/tradeEngine';
 import CompanionAssetRow from '../CompanionAssetRow.jsx';
 import { CompanionSelectorButton, CompanionSelectorRail } from '../CompanionSelectorControls.jsx';
-import Spinner from './Spinner';
+import Spinner from '../../ui/Spinner';
 import {
   POSITION_COLORS,
 } from './tradeUiHelpers';

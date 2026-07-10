@@ -1,4 +1,5 @@
 import { useSleeperLeague } from '../context/SleeperContext';
+import StatusBadge from './ui/StatusBadge';
 
 export default function Sidebar({
   activeTab,
@@ -38,26 +39,24 @@ export default function Sidebar({
           <span style={{ color: 'var(--color-label)' }}>GRID</span>
           <span style={{ color: 'var(--color-label-secondary)' }}>SHIFT</span>
         </div>
-        <div className="flex items-center justify-between mt-2">
-          <div
-            className="font-semibold"
-            style={{ fontSize: '11px', color: 'var(--color-signature)', letterSpacing: '0.06em' }}
-          >
-            2026 SEASON
-          </div>
-          {favoriteTeam && (
-            <button
-              onClick={onMyTeam}
-              title={`My Team: ${favoriteTeam.toUpperCase()}`}
-              className="flex items-center gap-1.5 px-2 py-0.5 rounded-full transition-opacity active:opacity-60"
-              style={{ background: 'var(--color-signature)', color: 'var(--color-signature-fg)' }}
-            >
-              <span style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.05em' }}>
-                {favoriteTeam.toUpperCase()}
-              </span>
-            </button>
-          )}
+        <div
+          className="font-semibold mt-2"
+          style={{ fontSize: '11px', color: 'var(--color-label-tertiary)', letterSpacing: '0.06em' }}
+        >
+          2026 SEASON
         </div>
+        {favoriteTeam && (
+          <button
+            onClick={onMyTeam}
+            title={`My Team: ${favoriteTeam.toUpperCase()}`}
+            className="mt-1.5 flex items-center gap-1.5 px-2 py-0.5 rounded-full transition-opacity active:opacity-60"
+            style={{ background: 'var(--color-signature)', color: 'var(--color-signature-fg)' }}
+          >
+            <span style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.05em' }}>
+              {favoriteTeam.toUpperCase()}
+            </span>
+          </button>
+        )}
         {/* Collapse button — inside brand area when expanded */}
         <button
           onClick={onToggleCollapse}
@@ -79,21 +78,23 @@ export default function Sidebar({
         </button>
       </div>
 
-      {/* Progress bar — only visible on Predictions tab */}
-      <div className="sidebar-progress" style={{ visibility: activeTab === 'predictions' ? 'visible' : 'hidden' }}>
-        <SidebarProgressBar
-          label="Teams"
-          value={completedTeamCount}
-          total={totalTeams}
-          complete={isSeasonComplete}
-        />
-        <SidebarProgressBar
-          label="Games"
-          value={pickedGameCount}
-          total={totalGames}
-          complete={totalGames > 0 && pickedGameCount >= totalGames}
-        />
-      </div>
+      {/* Progress bars — mounted only on the Predictions tab so other tabs reclaim the space */}
+      {activeTab === 'predictions' && (
+        <div className="sidebar-progress">
+          <SidebarProgressBar
+            label="Teams"
+            value={completedTeamCount}
+            total={totalTeams}
+            complete={isSeasonComplete}
+          />
+          <SidebarProgressBar
+            label="Games"
+            value={pickedGameCount}
+            total={totalGames}
+            complete={totalGames > 0 && pickedGameCount >= totalGames}
+          />
+        </div>
+      )}
 
       {/* Main navigation */}
       <nav className="sidebar-nav" aria-label="Main navigation">
@@ -195,15 +196,22 @@ export default function Sidebar({
 
       <div className="sidebar-divider" />
 
-      {/* Actions */}
+      {/* Actions — section label is contextual; utility actions read one step
+          stronger than data I/O actions */}
       <div className="sidebar-actions">
-        <div className="sidebar-section-label">Actions</div>
+        <div className="sidebar-section-label">
+          {activeTab === 'predictions'
+            ? 'Predictions'
+            : (activeTab === 'companion' || activeTab === 'trade' || activeTab === 'draft')
+              ? 'League'
+              : 'Actions'}
+        </div>
         <SidebarAction label="Guide" onClick={onGuide} />
         {activeTab === 'predictions' && (
           <>
-            <SidebarAction label="Export JSON" onClick={onExportJSON} disabled={predictionCount === 0} />
-            <SidebarAction label="Import JSON" onClick={onImportJSON} />
-            <SidebarAction label="Randomize Predictions" onClick={onRandom} />
+            <SidebarAction label="Export JSON" onClick={onExportJSON} disabled={predictionCount === 0} secondary />
+            <SidebarAction label="Import JSON" onClick={onImportJSON} secondary />
+            <SidebarAction label="Randomize Predictions" onClick={onRandom} secondary />
           </>
         )}
         {(activeTab === 'companion' || activeTab === 'trade' || activeTab === 'draft') && isConnected && (
@@ -214,7 +222,7 @@ export default function Sidebar({
         )}
         {activeTab === 'predictions' && (
           <>
-            <div className="sidebar-divider" style={{ marginTop: '4px' }} />
+            <div className="sidebar-divider" style={{ marginTop: '10px' }} />
             <SidebarAction
               label="Reset All"
               onClick={onReset}
@@ -239,7 +247,7 @@ export default function Sidebar({
           {favoriteTeam && (
             <span
               className="ml-auto text-xs font-bold"
-              style={{ color: 'var(--color-signature)' }}
+              style={{ color: 'var(--color-label-secondary)' }}
             >
               {favoriteTeam.toUpperCase()}
             </span>
@@ -290,7 +298,7 @@ export default function Sidebar({
           className="px-5 py-3 text-xs"
           style={{ color: 'var(--color-label-tertiary)' }}
         >
-          v8.0.1
+          v8.1.0
         </div>
       </div>
     </aside>
@@ -347,6 +355,7 @@ function SidebarNavItem({ active, onClick, icon, label, beta, alpha, collapsed, 
     <button
       onClick={disabled ? undefined : onClick}
       className={`sidebar-nav-item${active ? ' active' : ''}${disabled ? ' is-disabled' : ''}`}
+      data-tour={`tab-${label.toLowerCase()}`}
       aria-current={active ? 'page' : undefined}
       aria-disabled={disabled ? 'true' : undefined}
       disabled={disabled}
@@ -365,47 +374,20 @@ function SidebarNavItem({ active, onClick, icon, label, beta, alpha, collapsed, 
 }
 
 function BetaBadge() {
-  return (
-    <span style={{
-      fontSize: '9px',
-      fontWeight: 700,
-      letterSpacing: '0.06em',
-      textTransform: 'uppercase',
-      padding: '1px 5px',
-      borderRadius: '4px',
-      background: 'var(--color-signature)',
-      color: 'var(--color-signature-fg)',
-      lineHeight: '14px',
-    }}>
-      Beta
-    </span>
-  );
+  return <StatusBadge kind="beta" />;
 }
 
 function AlphaBadge() {
-  return (
-    <span style={{
-      fontSize: '9px',
-      fontWeight: 700,
-      letterSpacing: '0.06em',
-      textTransform: 'uppercase',
-      padding: '1px 5px',
-      borderRadius: '4px',
-      background: 'var(--color-alpha)',
-      color: 'var(--color-alpha-fg)',
-      lineHeight: '14px',
-    }}>
-      Alpha
-    </span>
-  );
+  return <StatusBadge kind="alpha" />;
 }
 
-function SidebarAction({ label, onClick, disabled, destructive }) {
+function SidebarAction({ label, onClick, disabled, destructive, secondary }) {
   return (
     <button
       onClick={disabled ? undefined : onClick}
       disabled={disabled}
       className={`sidebar-action-item${destructive ? ' destructive' : ''}`}
+      style={secondary && !destructive ? { color: 'var(--color-label-tertiary)' } : undefined}
     >
       {label}
     </button>

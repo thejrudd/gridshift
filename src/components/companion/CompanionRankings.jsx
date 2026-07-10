@@ -12,18 +12,25 @@ import {
   positionMatchesLeagueFilter,
 } from '../../utils/leaguePositions';
 import { getPlayerRowTeamTheme } from '../../utils/playerRowTheme';
+import { downloadRankingsExport } from '../../utils/rankingsExport';
 import { getPlayerAvailabilityStatus } from '../../utils/playerAvailabilityStatus.js';
 import PlayerStatusBadge, { PlayerStatusLogoCluster } from './PlayerStatusBadge.jsx';
 import {
   CompanionFantasyTeamMenu,
+  CompanionMenuSelectionMark,
+  CompanionMenuTrigger,
   CompanionSearchField,
   CompanionSelectorButton,
   CompanionSelectorRail,
 } from './CompanionSelectorControls.jsx';
+import useMenuEscapeClose from '../../hooks/useMenuEscapeClose';
 import CompanionPlayerRow, {
   CompanionPlayerLocalContrastText,
   CompanionPlayerMetric,
 } from './CompanionPlayerRow.jsx';
+import StatsProgressBanner from '../ui/StatsProgressBanner';
+import { SkeletonCard } from '../ui/Skeleton';
+import SeasonHintBanner from '../ui/SeasonHintBanner';
 const COMPACT_PHONE_QUERY = '(max-width: 480px)';
 const HIDE_AVG_QUERY = '(max-width: 900px)';
 const MOBILE_SHEET_QUERY = '(max-width: 1023px)';
@@ -37,8 +44,12 @@ const BASE_SORT_OPTIONS = [
   { id: 'season', label: 'Season Points' },
 ];
 const RANK_SCOPE_OPTIONS = [
-  { id: 'overall', label: 'Overall Ranking' },
-  { id: 'position', label: 'Positional Ranking' },
+  { id: 'overall', label: 'Overall' },
+  { id: 'position', label: 'By Position' },
+];
+const VALUE_MODE_OPTIONS = [
+  { id: 'fantasy', label: 'Fantasy Value' },
+  { id: 'raw', label: 'Game Stats' },
 ];
 const ROSTER_PLAYER_FIELDS = ['players', 'reserve', 'taxi'];
 const ACTION_SORT_OPTIONS = [
@@ -279,6 +290,8 @@ export default function CompanionRankings({
     seasonStats, loadSeasonStats,
     statsLoading,
     activeScoringSettings,
+    scoringOverride,
+    scoringOverridePaused,
     rosters,
     leagueUsers,
     league,
@@ -338,6 +351,16 @@ export default function CompanionRankings({
     }
     return map;
   }, [rosters]);
+  const ownerNameByPlayerId = useMemo(() => {
+    const map = new Map();
+    for (const roster of (rosters ?? [])) {
+      const name = getUserDisplayName(roster.owner_id);
+      for (const field of ROSTER_PLAYER_FIELDS) {
+        for (const id of (roster?.[field] ?? [])) map.set(String(id), name);
+      }
+    }
+    return map;
+  }, [rosters, getUserDisplayName]);
   const selectedRosterPlayerIds = useMemo(() => {
     if (!selectedRosterIds.length) return null;
     const ids = new Set();
@@ -467,9 +490,65 @@ export default function CompanionRankings({
     });
   }, [activeScoringSettings, availablePositions, players, seasonStats]);
   const hasRankingsData = sortedPlayers.some((player) => selectedFiltersMatchPlayer(player.position, player.stats, selectedFilters, availablePositions));
-  const showRankingsControls = !hasLoadedStats || hasAnyRankingsData || statsLoading;
+  const showRankingsControls = hasAnyRankingsData;
   const showRankingsTable = hasAnyRankingsData;
   const sortOptions = useMemo(() => [...BASE_SORT_OPTIONS, ...actionSortOptions], [actionSortOptions]);
+
+  const activeScoringLabel = (scoringOverride && !scoringOverridePaused)
+    ? `${scoringOverride.leagueName}${scoringOverride.season ? ` (${scoringOverride.season})` : ''}`
+    : (league?.name ?? 'League scoring');
+  const canExport = ranked.length > 0;
+
+  function handleExport(format) {
+    if (!ranked.length) return;
+    const statLabel = isActionSort ? (selectedSortOption.shortLabel ?? selectedSortOption.label) : null;
+    const valueModeSuffix = sortValueMode === 'raw' ? '' : ' Pts';
+    const columns = [
+      { key: 'rank', label: 'Rank' },
+      { key: 'player', label: 'Player' },
+      { key: 'position', label: 'Pos' },
+      { key: 'team', label: 'Team' },
+      { key: 'owner', label: 'Rostered By' },
+      { key: 'seasonPts', label: 'Season Pts' },
+      { key: 'avgPpg', label: 'Avg PPG' },
+    ];
+    if (isActionSort) {
+      columns.push({ key: 'statTotal', label: `${statLabel}${valueModeSuffix}` });
+      columns.push({ key: 'statPerGame', label: `${statLabel}/G` });
+    }
+    const rows = ranked.map((p) => {
+      const row = {
+        rank: p.rank,
+        player: p.name,
+        position: p.position ?? '',
+        team: p.team ?? '',
+        owner: ownerNameByPlayerId.get(String(p.id)) ?? '',
+        seasonPts: p.pts != null ? p.pts.toFixed(1) : '',
+        avgPpg: p.avgPPG != null ? p.avgPPG.toFixed(1) : '',
+      };
+      if (isActionSort) {
+        row.statTotal = formatRankingsMetric(getActionDisplayValue(p, sortValueMode, 'season'));
+        row.statPerGame = formatRankingsMetric(getActionDisplayValue(p, sortValueMode, 'avg'));
+      }
+      return row;
+    });
+    const scopeLabel = rankScope === 'position' ? 'By Position' : 'Overall';
+    const rosterLabel = selectedRosterOptions.length
+      ? selectedRosterOptions.map(r => r.name).join(', ')
+      : 'All rosters';
+    const searchLabel = search.trim() ? ` · Search "${search.trim()}"` : '';
+    downloadRankingsExport({
+      columns,
+      rows,
+      format,
+      meta: {
+        title: 'GridShift Rankings',
+        subtitle: `${rosterLabel} · Ranked ${scopeLabel}${searchLabel}`,
+        scoringLabel: activeScoringLabel,
+        fileBase: `gridshift-rankings-${activeScoringLabel}`,
+      },
+    });
+  }
 
   return (
     <div className="pb-6">
@@ -503,7 +582,7 @@ export default function CompanionRankings({
                 value={sortBy}
                 options={sortOptions}
                 sortValueMode={sortValueMode}
-                valueModeDisabled={!isActionSort}
+                showValueMode={isActionSort}
                 onSortChange={(nextSort) => {
                   setSortBy(nextSort);
                   setSortDir('desc');
@@ -531,6 +610,9 @@ export default function CompanionRankings({
                   active={mobileSearchOpen || Boolean(search.trim())}
                   onClick={() => setMobileSearchOpen(current => !current)}
                 />
+                {canExport && (
+                  <RankingsExportMenu compact align="right" onExport={handleExport} />
+                )}
               </div>
             </>
           ) : (
@@ -550,6 +632,23 @@ export default function CompanionRankings({
                   }}
                 />
               )}
+              <RankingsSortSelect
+                value={sortBy}
+                options={sortOptions}
+                onChange={(nextSort) => {
+                  setSortBy(nextSort);
+                  setSortDir('desc');
+                }}
+              />
+              {isActionSort && (
+                <RankingsValueModeChips
+                  value={sortValueMode}
+                  onChange={setSortValueMode}
+                />
+              )}
+              {canExport && (
+                <RankingsExportMenu className="ml-auto" align="right" onExport={handleExport} />
+              )}
             </div>
           )}
 
@@ -562,47 +661,31 @@ export default function CompanionRankings({
               inputProps={{ ref: searchInputRef }}
             />
           )}
-
-          {!useMobilePreviewSheet && (
-            <div className="flex flex-col items-stretch gap-2 min-[481px]:flex-row">
-              <RankingsSortSelect
-                value={sortBy}
-                options={sortOptions}
-                onChange={(nextSort) => {
-                  setSortBy(nextSort);
-                  setSortDir('desc');
-                }}
-              />
-              <RankingsSortValueToggle
-                value={sortValueMode}
-                disabled={!isActionSort}
-                onChange={setSortValueMode}
-              />
-            </div>
-          )}
         </div>
       )}
 
       {/* Stats loading */}
+      <SeasonHintBanner isEmpty={hasLoadedStats && !statsLoading && ranked.length === 0} className="mx-4 mb-3" />
       {statsLoading && <RankingsStatsLoadingBanner />}
 
       {/* Column headers */}
       {showRankingsTable && (
         <div
-          className="grid items-center px-4 pb-2 mb-1"
+          className="grid items-center px-4 pb-2 mb-1 text-xs font-semibold uppercase tracking-widest"
           style={{
             borderBottom: '1px solid var(--color-separator)',
+            color: 'var(--color-label-tertiary)',
             gridTemplateColumns: getRankingsGridTemplate({ hideAvgColumn, isCompactPhone, nameColPx }),
             columnGap: RANKINGS_ROW_GAP,
           }}
         >
-          <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>#</span>
+          <span>#</span>
           <div />
-          <span className="min-w-0 text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>Player</span>
+          <span className="min-w-0">Player</span>
           <div />
           {!hideAvgColumn && (
             <SortHeader
-              label="Avg PPG"
+              label={isActionSort ? 'Per Game' : 'Avg PPG'}
               active={sortBy === 'avg'}
               direction={sortDir}
               onClick={() => {
@@ -616,7 +699,7 @@ export default function CompanionRankings({
             />
           )}
           <SortHeader
-            label="Season"
+            label={isActionSort ? (selectedSortOption.shortLabel ?? selectedSortOption.label) : 'Season'}
             active={sortBy !== 'avg'}
             direction={sortDir}
             onClick={() => {
@@ -633,8 +716,10 @@ export default function CompanionRankings({
       )}
 
       {!seasonStats && !statsLoading && (
-        <div className="flex items-center justify-center py-16">
-          <span className="text-sm" style={{ color: 'var(--color-label-secondary)' }}>Loading stats...</span>
+        <div className="px-4 py-4 flex flex-col gap-3">
+          <SkeletonCard height="3.5rem" />
+          <SkeletonCard height="3.5rem" />
+          <SkeletonCard height="3.5rem" />
         </div>
       )}
 
@@ -648,6 +733,7 @@ export default function CompanionRankings({
           hideAvgColumn={hideAvgColumn}
           isCompactPhone={isCompactPhone}
           nameColPx={nameColPx}
+          statsPending={statsLoading}
           onSelect={() => {
             if (useMobilePreviewSheet) setSelectedPlayerId(player.id);
             else onViewPlayer?.(player.id);
@@ -685,17 +771,7 @@ export default function CompanionRankings({
 
 function RankingsStatsLoadingBanner() {
   const statsProgress = useSleeperStatsProgress();
-
-  return (
-    <div className="mx-4 mb-3 px-4 py-2.5 rounded-xl flex items-center gap-3" style={{ background: 'var(--color-fill)' }}>
-      <div className="h-1 flex-1 rounded-full overflow-hidden" style={{ background: 'var(--color-fill-secondary)' }}>
-        <div className="h-full rounded-full transition-all duration-300" style={{ width: `${statsProgress}%`, background: 'var(--color-signature)' }} />
-      </div>
-      <span className="text-xs tabular-nums shrink-0" style={{ color: 'var(--color-label-tertiary)' }}>
-        {statsProgress}%
-      </span>
-    </div>
-  );
+  return <StatsProgressBanner progress={statsProgress} className="mx-4 mb-3" />;
 }
 
 function RankingsSearchIconButton({ active, onClick }) {
@@ -705,7 +781,7 @@ function RankingsSearchIconButton({ active, onClick }) {
       aria-label="Search players"
       aria-pressed={active}
       onClick={onClick}
-      className="grid h-[42px] w-[42px] shrink-0 place-items-center rounded-xl transition-colors active:opacity-70 lg:hidden"
+      className="companion-rankings-search-toggle grid shrink-0 place-items-center transition-colors active:opacity-70"
       style={{
         background: active ? 'var(--color-signature)' : 'var(--color-fill)',
         border: '1px solid var(--color-separator)',
@@ -729,19 +805,119 @@ function RankingsSearchIconButton({ active, onClick }) {
   );
 }
 
+function ExportGlyph() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="h-4 w-4"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M12 15V3" />
+      <path d="m7 10 5 5 5-5" />
+      <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+    </svg>
+  );
+}
+
+const EXPORT_FORMAT_OPTIONS = [
+  { id: 'csv', label: 'Download CSV', hint: 'Spreadsheet' },
+  { id: 'txt', label: 'Download Text', hint: 'Plain list' },
+];
+
+function RankingsExportMenu({ compact = false, align = 'right', className = '', onExport }) {
+  const [open, setOpen] = useState(false);
+  useMenuEscapeClose(open, setOpen);
+  const choose = (format) => {
+    onExport?.(format);
+    setOpen(false);
+  };
+
+  return (
+    <div className={`relative shrink-0 ${className}`}>
+      {compact ? (
+        <button
+          type="button"
+          aria-label="Export rankings"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          onClick={() => setOpen(current => !current)}
+          className="companion-rankings-search-toggle grid shrink-0 place-items-center transition-colors active:opacity-70"
+          style={{
+            background: open ? 'var(--color-signature)' : 'var(--color-fill)',
+            border: '1px solid var(--color-separator)',
+            color: open ? 'var(--color-signature-fg)' : 'var(--color-label-secondary)',
+          }}
+        >
+          <ExportGlyph />
+        </button>
+      ) : (
+        <CompanionSelectorButton
+          size="md"
+          active={open}
+          onClick={() => setOpen(current => !current)}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          aria-label="Export rankings"
+        >
+          <span className="flex items-center gap-1.5">
+            <ExportGlyph />
+            Export
+          </span>
+        </CompanionSelectorButton>
+      )}
+      {open && (
+        <>
+          <button
+            type="button"
+            aria-label="Close export menu"
+            className="fixed inset-0 z-20 cursor-default"
+            onClick={() => setOpen(false)}
+            tabIndex={-1}
+          />
+          <div
+            role="menu"
+            aria-label="Export format"
+            className={`absolute top-[calc(100%+6px)] z-30 min-w-[184px] rounded-xl py-1 shadow-xl ${align === 'right' ? 'right-0' : 'left-0'}`}
+            style={{
+              background: 'var(--color-bg)',
+              border: '1px solid var(--color-separator)',
+              boxShadow: '0 18px 40px color-mix(in srgb, var(--color-label) 18%, transparent)',
+            }}
+          >
+            {EXPORT_FORMAT_OPTIONS.map(option => (
+              <button
+                key={option.id}
+                type="button"
+                role="menuitem"
+                className="companion-menu-item flex w-full items-center gap-3 px-3 py-2 text-left text-sm font-semibold"
+                onClick={() => choose(option.id)}
+              >
+                <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                <span className="text-xs font-normal" style={{ color: 'var(--color-label-tertiary)' }}>
+                  {option.hint}
+                </span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function RankingsMobileSortControls({
   value,
   options,
   sortValueMode,
-  valueModeDisabled,
+  showValueMode,
   onSortChange,
   onSortValueModeChange,
 }) {
-  const valueModeOptions = [
-    { id: 'fantasy', label: 'Fantasy Value' },
-    { id: 'raw', label: 'Game Stats' },
-  ];
-
   return (
     <>
       <CompanionSelectorRail ariaLabel="Rankings sort options" wrapOnDesktop={false}>
@@ -756,20 +932,19 @@ function RankingsMobileSortControls({
         ))}
       </CompanionSelectorRail>
 
-      <CompanionSelectorRail ariaLabel="Rankings sort value mode" wrapOnDesktop={false}>
-        {valueModeOptions.map(option => (
-          <CompanionSelectorButton
-            key={option.id}
-            active={!valueModeDisabled && option.id === sortValueMode}
-            disabled={valueModeDisabled}
-            onClick={() => {
-              if (!valueModeDisabled) onSortValueModeChange(option.id);
-            }}
-          >
-            {option.label}
-          </CompanionSelectorButton>
-        ))}
-      </CompanionSelectorRail>
+      {showValueMode && (
+        <CompanionSelectorRail ariaLabel="Rankings sort value mode" wrapOnDesktop={false}>
+          {VALUE_MODE_OPTIONS.map(option => (
+            <CompanionSelectorButton
+              key={option.id}
+              active={option.id === sortValueMode}
+              onClick={() => onSortValueModeChange(option.id)}
+            >
+              {option.label}
+            </CompanionSelectorButton>
+          ))}
+        </CompanionSelectorRail>
+      )}
     </>
   );
 }
@@ -777,51 +952,18 @@ function RankingsMobileSortControls({
 function RankingsSortSelect({ value, options, onChange }) {
   const activeLabel = options.find(option => option.id === value)?.label ?? 'Season Points';
   const [open, setOpen] = useState(false);
+  useMenuEscapeClose(open, setOpen);
 
   return (
-    <div
-      className="relative flex min-w-0 flex-1 items-center gap-2 rounded-xl px-3 py-2"
-      style={{
-        background: 'var(--color-fill)',
-        border: '1px solid var(--color-separator)',
-      }}
-    >
-      <span
-        className="shrink-0 text-xs font-semibold uppercase tracking-widest"
-        style={{ color: 'var(--color-label-tertiary)' }}
-      >
-        Sort
-      </span>
-      <div className="relative min-w-0 flex-1">
-        <button
-          type="button"
-          onClick={() => setOpen(current => !current)}
-          aria-label={`Sort rankings by ${activeLabel}`}
-          aria-haspopup="listbox"
-          aria-expanded={open}
-          className="w-full truncate rounded-lg bg-transparent py-1.5 pl-2 pr-8 text-left font-semibold outline-none"
-          style={{
-            color: 'var(--color-label)',
-            border: '1px solid transparent',
-            fontSize: 16,
-          }}
-        >
-          {activeLabel}
-        </button>
-        <svg
-          aria-hidden="true"
-          className="pointer-events-none absolute right-2 top-1/2 h-4 w-4"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2.4"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          style={{ color: 'var(--color-label-tertiary)', transform: 'translateY(-50%)' }}
-        >
-          <polyline points="6 9 12 15 18 9" />
-        </svg>
-      </div>
+    <div className="relative min-w-0 flex-1 min-[481px]:max-w-[380px]">
+      <CompanionMenuTrigger
+        kicker="Sort"
+        value={activeLabel}
+        open={open}
+        onClick={() => setOpen(current => !current)}
+        aria-label={`Sort rankings by ${activeLabel}`}
+        aria-haspopup="listbox"
+      />
       {open && (
         <>
           <button
@@ -834,7 +976,7 @@ function RankingsSortSelect({ value, options, onChange }) {
           <div
             role="listbox"
             aria-label="Rankings sort options"
-            className="absolute left-3 right-3 top-[calc(100%+6px)] z-30 max-h-72 overflow-y-auto rounded-xl py-1 shadow-xl"
+            className="absolute left-0 right-0 top-[calc(100%+6px)] z-30 max-h-72 overflow-y-auto rounded-xl py-1 shadow-xl"
             style={{
               background: 'var(--color-bg)',
               border: '1px solid var(--color-separator)',
@@ -849,18 +991,14 @@ function RankingsSortSelect({ value, options, onChange }) {
                   type="button"
                   role="option"
                   aria-selected={active}
-                  className="block w-full px-3 py-2 text-left text-sm font-semibold transition-colors"
-                  style={{
-                    background: active ? 'var(--color-fill-secondary)' : 'transparent',
-                    color: active ? 'var(--color-label)' : 'var(--color-label-secondary)',
-                    fontSize: 16,
-                  }}
+                  className={`companion-menu-item flex w-full items-center gap-3 px-3 py-2 text-left text-sm font-semibold${active ? ' is-checked' : ''}`}
                   onClick={() => {
                     onChange(option.id);
                     setOpen(false);
                   }}
                 >
-                  {option.label}
+                  <CompanionMenuSelectionMark checked={active} mode="single" />
+                  <span className="min-w-0 flex-1 truncate">{option.label}</span>
                 </button>
               );
             })}
@@ -871,78 +1009,45 @@ function RankingsSortSelect({ value, options, onChange }) {
   );
 }
 
-function RankingsRankScopeToggle({ value, onChange }) {
+function RankingsRankScopeToggle({ value, size = 'md', onChange }) {
   return (
     <div
       className="flex shrink-0 items-center gap-1"
       role="group"
       aria-label="Choose ranking scope"
     >
-      {RANK_SCOPE_OPTIONS.map(option => {
-        const active = option.id === value;
-        return (
-          <button
-            key={option.id}
-            type="button"
-            onClick={() => onChange(option.id)}
-            aria-pressed={active}
-            className="companion-selector-button companion-selector-button--sm companion-selector-button--option min-w-[76px] justify-center"
-            style={{
-              background: active ? 'var(--color-signature)' : undefined,
-              color: active ? 'var(--color-signature-fg)' : undefined,
-            }}
-          >
-            {option.label}
-          </button>
-        );
-      })}
+      {RANK_SCOPE_OPTIONS.map(option => (
+        <CompanionSelectorButton
+          key={option.id}
+          size={size}
+          active={option.id === value}
+          className="min-w-[76px]"
+          onClick={() => onChange(option.id)}
+        >
+          {option.label}
+        </CompanionSelectorButton>
+      ))}
     </div>
   );
 }
 
-function RankingsSortValueToggle({ value, disabled = false, onChange }) {
-  const options = [
-    { id: 'fantasy', label: 'Fantasy Value' },
-    { id: 'raw', label: 'Game Stats' },
-  ];
-
+function RankingsValueModeChips({ value, size = 'md', onChange }) {
   return (
     <div
-      className="grid min-w-0 flex-1 grid-cols-2 rounded-xl p-1 min-[481px]:w-[clamp(260px,34vw,360px)] min-[481px]:flex-none"
+      className="flex shrink-0 items-center gap-1"
       role="group"
       aria-label="Choose stat sort value"
-      style={{
-        background: 'var(--color-bg-secondary)',
-        border: '1px solid var(--color-separator)',
-      }}
     >
-      {options.map(option => {
-        const active = option.id === value;
-        return (
-          <button
-            key={option.id}
-            type="button"
-            onClick={() => {
-              if (!disabled) onChange(option.id);
-            }}
-            aria-pressed={active}
-            disabled={disabled}
-            className="min-w-0 truncate px-2 py-2 text-xs font-bold transition-colors"
-            style={{
-              background: !disabled && active ? 'var(--color-signature)' : 'transparent',
-              color: disabled
-                ? 'var(--color-label-quaternary)'
-                : active
-                  ? 'var(--color-signature-fg)'
-                  : 'var(--color-label-secondary)',
-              borderRadius: 6,
-              cursor: disabled ? 'not-allowed' : 'pointer',
-            }}
-          >
-            {option.label}
-          </button>
-        );
-      })}
+      {VALUE_MODE_OPTIONS.map(option => (
+        <CompanionSelectorButton
+          key={option.id}
+          size={size}
+          active={option.id === value}
+          onClick={() => onChange(option.id)}
+        >
+          {option.label}
+        </CompanionSelectorButton>
+      ))}
     </div>
   );
 }
@@ -951,21 +1056,15 @@ function SortHeader({ label, active, direction = 'desc', onClick }) {
   return (
     <button
       onClick={onClick}
-      className="relative w-full grid place-items-center text-xs font-semibold uppercase tracking-widest transition-colors"
-      style={{ color: active ? 'var(--color-label)' : 'var(--color-label-tertiary)' }}
+      className={`companion-sort-header justify-center${active ? ' is-active' : ''}`}
     >
-      <span className="text-center">{label}</span>
-      <span
-        className="absolute right-0 top-1/2 inline-block text-[9px]"
-        style={{ transform: 'translateY(-50%)', visibility: active ? 'visible' : 'hidden' }}
-      >
-        {direction === 'asc' ? '↑' : '↓'}
-      </span>
+      <span className="min-w-0 text-center">{label}</span>
+      {active && <span className={`companion-sort-header__arrow is-${direction}`} aria-hidden="true" />}
     </button>
   );
 }
 
-function RankRow({ rank, player, activeSortOption, sortValueMode, onSelect, hideAvgColumn, isCompactPhone, nameColPx }) {
+function RankRow({ rank, player, activeSortOption, sortValueMode, onSelect, hideAvgColumn, isCompactPhone, nameColPx, statsPending = false }) {
   const { darkMode } = useTheme();
   const isActionSort = activeSortOption?.id !== 'season';
   const columnGridTemplate = hideAvgColumn ? 'auto 80px' : 'auto 64px 80px';
@@ -1031,6 +1130,7 @@ function RankRow({ rank, player, activeSortOption, sortValueMode, onSelect, hide
           <CompanionPlayerMetric
             key="avg"
             value={isActionSort ? formatRankingsMetric(getActionDisplayValue(player, sortValueMode, 'avg')) : (player.avgPPG != null ? player.avgPPG.toFixed(1) : '—')}
+            pending={statsPending && !isActionSort && player.avgPPG == null}
             align="center"
           />
         ),
@@ -1038,6 +1138,7 @@ function RankRow({ rank, player, activeSortOption, sortValueMode, onSelect, hide
           key="season"
           value={isActionSort ? formatRankingsMetric(getActionDisplayValue(player, sortValueMode, 'season')) : player.pts.toFixed(1)}
           label={hideAvgColumn && !isActionSort ? formatRankingsPpgLabel(player.avgPPG) : null}
+          pending={statsPending && !isActionSort && !(player.pts > 0)}
           align="center"
         />,
       ].filter(Boolean)}

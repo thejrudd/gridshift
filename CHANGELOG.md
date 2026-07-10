@@ -1122,3 +1122,11 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Companion Defense details** - Refreshed Defense drilldowns with mobile slide-up sheets, matchup logos, clearer weekly opponent labels, player avatars, one-line summary stats, an aggregate All position filter, and aligned mobile/tablet sort headers.
 - **ESPN work deferred** - Moved known ESPN league integration issues into Deferred bug tracking because ESPN features are not being implemented in this release line.
 - **PWA cache bust** - Bumped the app version so installed clients fetch the updated sign-in flow.
+
+---
+
+## v8.1.0 - Draft & Defense Insights
+
+- **Draft outcome insights** - Draft Results now evaluates historical picks against the season that followed the draft, with aligned insight columns, positional outcome grades, outcome-strength sorting, and an explanation control for the grading scale.
+- **Companion Defense** - Defense rankings now provide clearer filters, sortable stat and fantasy-point views, mobile drilldowns, matchup context, and team-level scoring details.
+- **Companion Live remains Coming Soon** - Live scoring infrastructure is present for development but is excluded from the v8.1 What's New tour and remains unavailable until its release gate is met.

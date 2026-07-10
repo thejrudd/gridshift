@@ -5,6 +5,9 @@ import {
   getOpportunityPositionLabel,
 } from '../../utils/opportunityEngine';
 import { CompanionSelectorButton, CompanionSelectorRail } from './CompanionSelectorControls.jsx';
+import StatsProgressBanner from '../ui/StatsProgressBanner';
+import UiEmptyState from '../ui/EmptyState';
+import SeasonHintBanner from '../ui/SeasonHintBanner';
 
 export default function CompanionOpportunity({ onOpenTrade, onOpenWaiver }) {
   const {
@@ -73,6 +76,8 @@ export default function CompanionOpportunity({ onOpenTrade, onOpenWaiver }) {
   const activeAnalysis = activeRosterId != null
     ? (opportunityData.analysesByRosterId?.[activeRosterId] ?? null)
     : null;
+  const hasOpportunityData = Object.keys(seasonStats ?? {}).length > 0
+    && Object.values(weeklyStats ?? {}).some((rows) => Array.isArray(rows) && rows.length > 0);
 
   const rosterLabel = activeRoster
     ? getUserDisplayName(activeRoster.owner_id)
@@ -88,18 +93,11 @@ export default function CompanionOpportunity({ onOpenTrade, onOpenWaiver }) {
 
   return (
     <div className="pb-6">
-      {statsLoading && (
-        <div className="mx-4 mb-4 px-4 py-2.5 rounded-xl flex items-center gap-3" style={{ background: 'var(--color-fill)' }}>
-          <div className="h-1 flex-1 rounded-full overflow-hidden" style={{ background: 'var(--color-fill-secondary)' }}>
-            <div className="h-full rounded-full transition-all duration-300" style={{ width: `${statsProgress}%`, background: 'var(--color-signature)' }} />
-          </div>
-          <span className="text-xs tabular-nums shrink-0" style={{ color: 'var(--color-label-tertiary)' }}>
-            Loading stats {statsProgress}%
-          </span>
-        </div>
-      )}
+      {statsLoading && <StatsProgressBanner progress={statsProgress} className="mx-4 mb-4" />}
 
-      <div className="px-4 pb-4 flex flex-col gap-3">
+      <SeasonHintBanner isEmpty={!statsLoading && !hasOpportunityData} className="mx-4 mb-3" />
+
+      {hasOpportunityData && <div className="px-4 pb-4 flex flex-col gap-3">
         <CompanionSelectorRail ariaLabel="Opportunity view">
           <ModeButton active={viewMode === 'mine'} onClick={() => setViewMode('mine')}>
             My Roster
@@ -147,7 +145,7 @@ export default function CompanionOpportunity({ onOpenTrade, onOpenWaiver }) {
             </div>
           </div>
         )}
-      </div>
+      </div>}
 
       {!seasonStats && !statsLoading && (
         <EmptyState message="Load season stats to generate opportunity analysis." />
@@ -406,9 +404,5 @@ function LoadingState({ label }) {
 }
 
 function EmptyState({ message }) {
-  return (
-    <div className="flex items-center justify-center py-16 px-4">
-      <span className="text-sm text-center" style={{ color: 'var(--color-label-secondary)' }}>{message}</span>
-    </div>
-  );
+  return <UiEmptyState title={message} />;
 }

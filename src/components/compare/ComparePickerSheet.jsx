@@ -4,20 +4,14 @@ import { parseSearchQuery, matchesFilter } from '../../utils/parseSearchQuery';
 import { TEAM_COLORS } from '../../data/teamColors';
 import { useTheme } from '../../context/ThemeContext';
 import Modal from '../Modal';
+import Spinner from '../ui/Spinner';
+import { hexLuminance } from '../../utils/teamVisualTheme';
 
 const ESPN_TEAM_MAP = { lar: 'la', was: 'wsh' };
 function toTeamKey(espnTeamId) {
   if (!espnTeamId) return '';
   const lower = espnTeamId.toLowerCase();
   return ESPN_TEAM_MAP[lower] ?? lower;
-}
-
-function hexLuminance(hex) {
-  const r = parseInt(hex.slice(1, 3), 16) / 255;
-  const g = parseInt(hex.slice(3, 5), 16) / 255;
-  const b = parseInt(hex.slice(5, 7), 16) / 255;
-  const lin = c => c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
 }
 
 function buildTeamLookup(teams = []) {
@@ -279,10 +273,7 @@ export default function ComparePickerSheet({ teams, excludeId, onSelect, onClose
               }}
             />
             {loading && (
-              <svg className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin w-4 h-4" style={{ color: 'var(--color-accent)' }} fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
+              <Spinner size="sm" className="absolute right-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--color-accent)' }} />
             )}
           </div>
         </div>

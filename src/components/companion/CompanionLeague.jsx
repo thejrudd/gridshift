@@ -13,6 +13,8 @@ import { getPlayerAvailabilityStatus } from '../../utils/playerAvailabilityStatu
 import { CompanionFantasyTeamMenu, CompanionSelectorButton } from './CompanionSelectorControls.jsx';
 import { POSITION_COLORS } from '../../utils/companionAssetVisuals.js';
 import CompanionPlayerRow, { CompanionPlayerAction, CompanionPlayerMetric } from './CompanionPlayerRow.jsx';
+import StatsProgressBanner from '../ui/StatsProgressBanner';
+import UiEmptyState from '../ui/EmptyState';
 
 const POSITION_ORDER = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF', 'DL', 'LB', 'DB', 'DE', 'DT', 'CB', 'S'];
 const MAX_ROUNDS = 36; // generous cap — Sleeper dynasty startups can run 25+ rounds
@@ -352,7 +354,7 @@ function LeagueRosterView({ onTradePlayer, onViewPlayer = null, tradeDisabled = 
   const ownerRailRef = useRef(null);
   const ownerRailCue = useHorizontalScrollCue(ownerRailRef, [sortedRosters.length, selectedRosterId]);
   const emptyRosterMessage = platform === 'espn'
-    ? `No players on this ESPN roster for ${season}. ESPN often returns empty offseason rosters; choose a completed season to view roster history.`
+    ? `No players on this ESPN roster for ${season} — switch to a completed season.`
     : 'No players on this roster.';
 
   return (
@@ -494,20 +496,7 @@ function LeagueRosterView({ onTradePlayer, onViewPlayer = null, tradeDisabled = 
 
 function LeagueStatsLoadingBanner() {
   const statsProgress = useSleeperStatsProgress();
-
-  return (
-    <div
-      className="mx-4 mb-4 px-4 py-3 rounded-xl flex items-center gap-3"
-      style={{ background: 'var(--color-fill)', border: '1px solid var(--color-separator)' }}
-    >
-      <div className="h-1 flex-1 rounded-full overflow-hidden" style={{ background: 'var(--color-fill-secondary)' }}>
-        <div className="h-full rounded-full transition-all duration-300" style={{ width: `${statsProgress}%`, background: 'var(--color-signature)' }} />
-      </div>
-      <span className="text-xs tabular-nums shrink-0" style={{ color: 'var(--color-label-tertiary)' }}>
-        Loading stats {statsProgress}%
-      </span>
-    </div>
-  );
+  return <StatsProgressBanner progress={statsProgress} className="mx-4 mb-4" />;
 }
 
 function LeagueResponsivePlayerRow({ player, onSelect, onTrade, tradeDisabled = false, layout, isCompactPhone }) {
@@ -778,7 +767,7 @@ function LeaguePicksView() {
           <div className="flex items-center gap-1.5">
             <div className="flex flex-col items-center" style={{ gap: '1px' }}>
               <AcquiredDot />
-              <span style={{ fontSize: '8px', fontWeight: 700, color: 'var(--color-accent)', lineHeight: 1 }}>OAK</span>
+              <span style={{ fontSize: '9px', fontWeight: 700, color: 'var(--color-accent)', lineHeight: 1 }}>OAK</span>
             </div>
             <span className="text-xs" style={{ color: 'var(--color-label-tertiary)' }}>Acquired</span>
           </div>
@@ -934,7 +923,7 @@ function PickCell({ cell, rosters, getUserDisplayName, width, borderLeft }) {
         return (
           <div key={fromRosterId} className="flex flex-col items-center" style={{ gap: '1px' }}>
             <AcquiredDot />
-            <span style={{ fontSize: '8px', fontWeight: 700, color: 'var(--color-accent)', letterSpacing: '0.02em', lineHeight: 1 }}>
+            <span style={{ fontSize: '9px', fontWeight: 700, color: 'var(--color-accent)', letterSpacing: '0.02em', lineHeight: 1 }}>
               {abbr}
             </span>
           </div>
@@ -978,9 +967,5 @@ function countPicksHeld(picks) {
 }
 
 function EmptyState({ message }) {
-  return (
-    <div className="flex items-center justify-center py-20 px-6">
-      <span className="text-sm text-center" style={{ color: 'var(--color-label-secondary)' }}>{message}</span>
-    </div>
-  );
+  return <UiEmptyState title={message} />;
 }

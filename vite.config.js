@@ -18,6 +18,11 @@ export default defineConfig({
         changeOrigin: true,
         secure: false,
       },
+      '/api/live': {
+        target: 'http://127.0.0.1:3001',
+        changeOrigin: true,
+        secure: false,
+      },
     },
   },
   define: {
@@ -26,7 +31,7 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate',
+      registerType: 'prompt',
       includeAssets: [
         'icons/pwa-64x64.png',
         'icons/pwa-192x192.png',
@@ -55,8 +60,6 @@ export default defineConfig({
       workbox: {
         navigateFallback: '/index.html',
         globIgnores: ['**/*.map', 'icons/icon.svg'],
-        skipWaiting: true,
-        clientsClaim: true,
         cleanupOutdatedCaches: true,
         runtimeCaching: [
           // Google Fonts stylesheet

@@ -22,6 +22,8 @@ import PlayerStatusBadge from './PlayerStatusBadge.jsx';
 import { getPlayerAvailabilityStatus } from '../../utils/playerAvailabilityStatus.js';
 import { CompanionSearchField, CompanionSelectorButton, CompanionSelectorRail } from './CompanionSelectorControls.jsx';
 import CompanionPlayerRow, { CompanionPlayerMetric, CompanionPlayerStatus } from './CompanionPlayerRow.jsx';
+import StatsProgressBanner from '../ui/StatsProgressBanner';
+import SeasonHintBanner from '../ui/SeasonHintBanner';
 
 const PROJECTION_POSITIONS = new Set(['QB', 'RB', 'WR', 'TE', 'K', 'DL', 'LB', 'DB']);
 const COMPACT_PHONE_QUERY = '(max-width: 480px)';
@@ -473,7 +475,7 @@ export default function CompanionWaiver({
   );
   const hasAnyWaiverData = rankedCandidates.length > 0;
   const showWaiverEmpty = available.length === 0 && !showWaiverPreparing && Boolean(seasonStats);
-  const showWaiverControls = showWaiverPreparing || hasAnyWaiverData;
+  const showWaiverControls = hasAnyWaiverData;
   const openWaiverPlayer = useCallback(async (player) => {
     if (!player || !onViewPlayer) return;
 
@@ -523,6 +525,7 @@ export default function CompanionWaiver({
         </div>
       )}
 
+      <SeasonHintBanner capability="current-only" feature="Waiver targets" className="mx-4 mb-3" />
       {statsLoading && <WaiverStatsLoadingBanner />}
 
       {hasAnyWaiverData && (
@@ -629,15 +632,7 @@ function ColHeader({ label, active, onClick }) {
 
 function WaiverStatsLoadingBanner() {
   const statsProgress = useSleeperStatsProgress();
-
-  return (
-    <div className="mx-4 mb-3 px-4 py-2.5 rounded-xl flex items-center gap-3" style={{ background: 'var(--color-fill)' }}>
-      <div className="h-1 flex-1 rounded-full overflow-hidden" style={{ background: 'var(--color-fill-secondary)' }}>
-        <div className="h-full rounded-full transition-all duration-300" style={{ width: `${statsProgress}%`, background: 'var(--color-signature)' }} />
-      </div>
-      <span className="text-xs tabular-nums shrink-0" style={{ color: 'var(--color-label-tertiary)' }}>{statsProgress}%</span>
-    </div>
-  );
+  return <StatsProgressBanner progress={statsProgress} className="mx-4 mb-3" />;
 }
 
 function ResponsiveWaiverRow({ player, onSelect, sortBy, layout, isCompactPhone }) {

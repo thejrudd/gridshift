@@ -10,6 +10,8 @@ import PlayerStatusBadge, { PlayerStatusLogoCluster } from './PlayerStatusBadge.
 import { getPlayerAvailabilityStatus } from '../../utils/playerAvailabilityStatus.js';
 import { POSITION_COLORS } from '../../utils/companionAssetVisuals.js';
 import CompanionPlayerRow, { CompanionPlayerAction, CompanionPlayerMetric } from './CompanionPlayerRow.jsx';
+import StatsProgressBanner from '../ui/StatsProgressBanner';
+import UiEmptyState from '../ui/EmptyState';
 
 const POSITION_ORDER = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF', 'DL', 'LB', 'DB', 'DE', 'DT', 'CB', 'S'];
 const COMPACT_PHONE_QUERY = '(max-width: 480px)';
@@ -307,7 +309,7 @@ export default function CompanionRoster({ onTradePlayer, onViewPlayer, tradeDisa
     return groups;
   }, [rosterPlayers]);
   const emptyRosterMessage = platform === 'espn'
-    ? `No players on your ESPN roster for ${season}. ESPN often returns empty offseason rosters; choose a completed season to view roster history.`
+    ? `No players on your ESPN roster for ${season}.`
     : 'No players on your roster.';
 
   if (!roster) {
@@ -334,16 +336,16 @@ export default function CompanionRoster({ onTradePlayer, onViewPlayer, tradeDisa
             }}
           >
             <div />
-            <span className="min-w-0 text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--color-label-tertiary)' }}>
+            <span className={`min-w-0 font-semibold uppercase ${isCompactPhone ? 'text-[10px] tracking-[0.08em]' : 'text-[11px] tracking-[0.18em]'}`} style={{ color: 'var(--color-label-tertiary)' }}>
               Player
             </span>
             {!isCompactPhone && <div />}
             {!isCompactPhone && <div />}
             {isCompactPhone && <div />}
-            <span className="text-center text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--color-label-tertiary)' }}>
+            <span className={`text-center font-semibold uppercase ${isCompactPhone ? 'text-[10px] tracking-[0.08em]' : 'text-[11px] tracking-[0.18em]'}`} style={{ color: 'var(--color-label-tertiary)' }}>
               Season
             </span>
-            <span className="text-center text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--color-label-tertiary)' }}>
+            <span className={`text-center font-semibold uppercase ${isCompactPhone ? 'text-[10px] tracking-[0.08em]' : 'text-[11px] tracking-[0.18em]'}`} style={{ color: 'var(--color-label-tertiary)' }}>
               Avg/G
             </span>
             {!isCompactPhone && <div />}
@@ -369,6 +371,7 @@ export default function CompanionRoster({ onTradePlayer, onViewPlayer, tradeDisa
               player={player}
               layout={layout}
               isCompactPhone={isCompactPhone}
+              statsPending={statsLoading}
               onSelect={() => {
                 if (useMobilePreviewSheet) setSelectedPlayerId(player.id);
                 else onViewPlayer?.(player.id);
@@ -397,29 +400,10 @@ export default function CompanionRoster({ onTradePlayer, onViewPlayer, tradeDisa
 
 function RosterStatsLoadingBanner() {
   const statsProgress = useSleeperStatsProgress();
-
-  return (
-    <div
-      className="mx-4 mb-4 px-4 py-3 rounded-xl flex items-center gap-3"
-      style={{ background: 'var(--color-fill)', border: '1px solid var(--color-separator)' }}
-    >
-      <div
-        className="h-1 flex-1 rounded-full overflow-hidden"
-        style={{ background: 'var(--color-fill-secondary)' }}
-      >
-        <div
-          className="h-full rounded-full transition-all duration-300"
-          style={{ width: `${statsProgress}%`, background: 'var(--color-signature)' }}
-        />
-      </div>
-      <span className="text-xs tabular-nums shrink-0" style={{ color: 'var(--color-label-tertiary)' }}>
-        Loading stats {statsProgress}%
-      </span>
-    </div>
-  );
+  return <StatsProgressBanner progress={statsProgress} className="mx-4 mb-4" />;
 }
 
-function PlayerRow({ player, onSelect, onTrade, tradeDisabled = false, layout, isCompactPhone }) {
+function PlayerRow({ player, onSelect, onTrade, tradeDisabled = false, layout, isCompactPhone, statsPending = false }) {
   const { darkMode } = useTheme();
   const rankLabel = player.rank ? `${player.rank.posLabel}${player.rank.rank}` : null;
   const showReserveMeta = player.isReserve && player.availabilityStatus !== 'Injured Reserve';
@@ -466,12 +450,14 @@ function PlayerRow({ player, onSelect, onTrade, tradeDisabled = false, layout, i
             <CompanionPlayerMetric
               key="season"
               value={player.pts !== null ? player.pts.toFixed(1) : '-'}
+              pending={statsPending && player.pts === null}
               align="center"
               compact={isCompactPhone}
             />,
             <CompanionPlayerMetric
               key="avg"
               value={player.avgPPG > 0 ? player.avgPPG.toFixed(1) : '-'}
+              pending={statsPending && !(player.avgPPG > 0)}
               align="center"
               compact={isCompactPhone}
             />,
@@ -504,7 +490,7 @@ function PlayerRow({ player, onSelect, onTrade, tradeDisabled = false, layout, i
               onClick={onTrade}
               disabled={tradeDisabled}
               title={tradeDisabled ? 'Trade is not available for ESPN leagues yet.' : undefined}
-              className="w-full rounded-lg font-semibold transition-colors active:opacity-60 inline-flex items-center justify-center gap-1.5"
+              className="companion-roster-trade w-full rounded-lg font-semibold transition-colors active:opacity-60 inline-flex items-center justify-center gap-1.5"
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M16 3h5v5" />
@@ -530,9 +516,5 @@ function LoadingState({ label }) {
 }
 
 function EmptyState({ message }) {
-  return (
-    <div className="flex items-center justify-center py-20 px-6">
-      <span className="text-sm text-center" style={{ color: 'var(--color-label-secondary)' }}>{message}</span>
-    </div>
-  );
+  return <UiEmptyState title={message} />;
 }

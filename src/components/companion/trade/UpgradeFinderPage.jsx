@@ -2,7 +2,7 @@ import { memo, useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import TradeRosterPicker from '../TradeRosterPicker';
 import UpgradeBargainingTable from '../UpgradeBargainingTable';
 import { buildUpgradeMoverSuggestions } from '../upgradeMoverSuggestions';
-import Spinner from './Spinner';
+import Spinner from '../../ui/Spinner';
 import {
   TradeProposalItem,
   UpgradeResultGroup,
@@ -198,7 +198,7 @@ const UpgradeFinderPage = memo(function UpgradeFinderPage({
                 border: '1px solid var(--color-separator)',
               }}
             >
-              <Spinner size="w-3.5 h-3.5" />
+              <Spinner size="sm" />
               Refreshing matches...
             </div>
           )}

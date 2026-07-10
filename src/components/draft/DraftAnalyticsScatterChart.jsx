@@ -349,6 +349,12 @@ export default function DraftAnalyticsScatterChart({
           stopDrag();
           scheduleHoverHide();
         }}
+        onClick={() => {
+          if (moved.current) return;
+          clearHoverHide();
+          setHoverId(null);
+          setInspectId(null);
+        }}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
@@ -459,6 +465,7 @@ export default function DraftAnalyticsScatterChart({
               setHoverId(activePoint.id);
             }}
             onPointerLeave={scheduleHoverHide}
+            onClick={(event) => event.stopPropagation()}
           >
             <div className="draft-analytics-scatter__tooltip-head">
               <PlayerFace point={activePoint} size={28} ring={getPointColor(activePoint)} />
@@ -495,9 +502,6 @@ export default function DraftAnalyticsScatterChart({
           </div>
         ) : null}
       </div>
-
-      <span className="draft-analytics-scatter__axis-title draft-analytics-scatter__axis-title--x">X: {scatter?.xAxis?.label}</span>
-      <span className="draft-analytics-scatter__axis-title draft-analytics-scatter__axis-title--y">Y: {scatter?.yAxis?.label}</span>
 
       {(fullscreen || !compact) ? (
         <div className="draft-analytics-scatter__zoom" aria-label="Chart zoom controls">

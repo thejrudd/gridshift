@@ -6,7 +6,7 @@
 - **Dark mode**: `.dark` class on `<html>`
 - **PWA**: vite-plugin-pwa + nginx in Docker
 - **Active branch**: `main` — all work ships directly here
-- **Current version**: v7.3
+- **Current version**: v8.1
 
 ## API Secret Handling
 - Any BALLDONTLIE, CFBD/CollegeFootballData, or similar paid API key must be treated as a secret and must never be committed into the repo or exposed in the client bundle.
@@ -15,6 +15,16 @@
 ## Versioning Roadmap
 - **v6.0** — Trade Suite (shipped)
 - **v7.0** — Draft Coach (rookie scouting data, combine results, dynasty ADP)
+
+---
+
+## Collaboration Defaults
+
+- Ask, don't assume. If intent, architecture, or requirements are unclear, ask before writing code. When running unattended, pick the most reasonable interpretation, proceed, and record the assumption instead of blocking.
+- Match the solution to the problem. Use the simplest solution for simple problems, and reach for stronger architecture only when the problem actually needs it.
+- Keep changes scoped. Do not touch unrelated code; surface bad code or design smells discovered along the way so they can be addressed as separate issues.
+- Flag uncertainty explicitly. If unsure, ask. When helpful, run a small, localized, low-risk experiment, then bring the hypothesis and result back for discussion.
+- Suggest better paths when they matter. Tactical fixes are welcome, but call out alternatives with longer-lasting impact when they would be meaningfully better.
 
 ---
 
@@ -43,6 +53,7 @@ All colors via CSS custom properties in `src/index.css` — never hardcoded Tail
 Critical rules (apply to every UI change):
 - `--color-signature` (`#F5B700`) decorative only — never body text. Use `--color-signature-fg` for text ON signature backgrounds.
 - `font-size: 16px` on all inputs (prevents iOS auto-zoom). Safe areas: `env(safe-area-inset-bottom)` on fixed bottom bars. Motion: `cubic-bezier(0.32, 0.72, 0, 1)`.
+- Prefer fluid, container-aware responsive layouts over fixed pixel density. Use responsive grids, `clamp()`, `minmax()`, container-aware wrapping, flexible gaps, and viewport-sensitive spacing. Treat `44px` as a minimum comfortable touch-target floor, not a fixed sizing system. Fixed dimensions are acceptable only for documented shell constraints, fixed-format media/aspect ratios, or explicit feature contracts.
 - Companion and Trade-adjacent player/asset selector rows must use the shared row system documented in `docs/Companion Shared Rows.md`. Do not recreate local team-gradient, logo/avatar fallback, status badge, selector button, or gradient contrast logic in feature files.
 - Page-level unavailable, loading, or empty-route reason messages must be centered in the page as unframed text, matching the Companion Matchup empty-state pattern. Do not render page availability reasons as bordered cards or left-aligned panels; keep compact framed empty states only for inline list/table/filter results.
 
@@ -57,7 +68,7 @@ Critical rules (apply to every UI change):
 ### State Variables
 - `activeTab`: `'predictions'` | `'statistics'` | `'companion'` | `'compare'`
 - `seasonView`: `'predictions'` | `'standings'` | `'playoffs'`
-- `companionView`: `'roster'` | `'rankings'` | `'matchup'` | `'waiver'` | `'league'` | `'defense'` | `'trade'` | `'scoring'`
+- `companionView`: `'roster'` | `'rankings'` | `'live'` | `'matchup'` | `'waiver'` | `'league'` | `'defense'` | `'trade'` | `'scoring'`
 
 ### Key Layout Files
 - `src/App.jsx` — Two-panel shell
@@ -70,11 +81,11 @@ Critical rules (apply to every UI change):
 ## Commit & Version Workflow
 
 ### Never auto-commit
-Do NOT create commits, bump versions, or update any of the 6 tracked files unless the user explicitly asks. Mentioning a version number (e.g. "let's work on v5.9") means that's the version context — not a commit instruction. Only commit when the user says something like "commit this", "make a commit", or "bump the version".
+Do NOT create commits, bump versions, or update any of the 7 tracked files unless the user explicitly asks. Mentioning a version number (e.g. "let's work on v5.9") means that's the version context — not a commit instruction. Only commit when the user says something like "commit this", "make a commit", or "bump the version".
 
 **Why:** Auto-committing causes version creep and races ahead of planned roadmap milestones.
 
-### 6-File Commit Checklist
+### 7-File Commit Checklist
 On every commit that bumps the version, update ALL of these before committing:
 
 1. **`CHANGELOG.md`** — Add a new version section with bullet points for all changes. New entries at the **bottom** (oldest first, newest last).
@@ -83,6 +94,7 @@ On every commit that bumps the version, update ALL of these before committing:
 4. **`package.json`** — Bump `"version"` to the new version number.
 5. **`src/components/Sidebar.jsx`** — Update the hardcoded version string in the sidebar footer.
 6. **`README.md`** — See README rules below.
+7. **`src/data/whatsNew.js`** — **Feature versions only** (skip patch/bug-fix releases): ASK THE USER which shipped changes should be highlighted with in-app "What's New" tour tooltips. Append a `{ version, title, features }` entry at the **end** of `WHATS_NEW` (oldest-first, mirroring CHANGELOG). Each feature gets `id`, `name`, `description`, and 1–3 `steps` — a `route` in `applyRoute` shape, an `anchor` selector like `[data-tour="..."]` (add the `data-tour` attribute to the target element if it doesn't exist yet), and tooltip `title`/`body`. Never rewrite past entries except to repair broken anchors/routes. The version comparison is driven by this file: a version with no entry shows nothing after update.
 
 After committing: do NOT run `git push` — the user pushes manually.
 

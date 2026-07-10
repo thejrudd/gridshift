@@ -5,13 +5,16 @@ import {
 } from '../../utils/scoringEngine';
 import { getLeague } from '../../api/sleeperApi';
 import { formatScoringSettingValue } from '../../utils/scoringDisplay';
-import { CompanionSelectorButton, CompanionSegmentedControl } from './CompanionSelectorControls.jsx';
+import {
+  CompanionMenuChevron, CompanionMenuSelectionMark, CompanionSelectorButton, CompanionSegmentedControl,
+} from './CompanionSelectorControls.jsx';
+import Spinner from '../ui/Spinner';
 
 const STAT_GROUPS = [
   {
     label: 'Passing',
     stats: [
-      { key: 'pass_yd',   label: 'Passing Yards', note: 'pts / yd' },
+      { key: 'pass_yd',   label: 'Passing Yards' },
       { key: 'pass_td',   label: 'Passing TD' },
       { key: 'pass_int',    label: 'Interception (thrown)' },
       { key: 'pass_int_td', label: 'Pick 6 Thrown', note: 'additional penalty when INT returned for TD' },
@@ -26,7 +29,7 @@ const STAT_GROUPS = [
   {
     label: 'Rushing',
     stats: [
-      { key: 'rush_yd',        label: 'Rushing Yards', note: 'pts / yd' },
+      { key: 'rush_yd',        label: 'Rushing Yards' },
       { key: 'rush_td',        label: 'Rushing TD' },
       { key: 'rush_2pt',       label: '2-Pt Conversion Rush' },
       { key: 'rush_fd',        label: 'First Down (rush)' },
@@ -38,7 +41,7 @@ const STAT_GROUPS = [
     label: 'Receiving',
     stats: [
       { key: 'rec',          label: 'Reception' },
-      { key: 'rec_yd',       label: 'Receiving Yards', note: 'pts / yd' },
+      { key: 'rec_yd',       label: 'Receiving Yards' },
       { key: 'rec_td',       label: 'Receiving TD' },
       { key: 'rec_2pt',      label: '2-Pt Conversion Rec' },
       { key: 'rec_fd',       label: 'First Down (rec)' },
@@ -87,12 +90,12 @@ const STAT_GROUPS = [
   {
     label: 'Special Teams — Player',
     stats: [
-      { key: 'kr_yd',          label: 'Kick Return Yards', note: 'pts / yd' },
-      { key: 'pr_yd',          label: 'Punt Return Yards', note: 'pts / yd' },
+      { key: 'kr_yd',          label: 'Kick Return Yards' },
+      { key: 'pr_yd',          label: 'Punt Return Yards' },
       { key: 'st_tkl_solo',    label: 'ST Solo Tackle' },
-      { key: 'blk_kick_ret_yd', label: 'Blocked Kick Return Yds', note: 'pts / yd' },
-      { key: 'fg_ret_yd',      label: 'Missed FG Return Yards', note: 'pts / yd' },
-      { key: 'fum_ret_yd',     label: 'Fumble Return Yards (player)', note: 'pts / yd' },
+      { key: 'blk_kick_ret_yd', label: 'Blocked Kick Return Yds' },
+      { key: 'fg_ret_yd',      label: 'Missed FG Return Yards' },
+      { key: 'fum_ret_yd',     label: 'Fumble Return Yards (player)' },
     ],
   },
   {
@@ -146,14 +149,14 @@ const STAT_GROUPS = [
     label: 'IDP — Turnovers, Sacks & Other',
     stats: [
       { key: 'idp_sack',        label: 'Sack' },
-      { key: 'idp_sack_yd',     label: 'Sack Yards', note: 'pts / yd' },
+      { key: 'idp_sack_yd',     label: 'Sack Yards' },
       { key: 'bonus_sack_2p',   label: '2+ Sack Game Bonus' },
       { key: 'idp_int',         label: 'Interception (def)' },
-      { key: 'idp_int_ret_yd',  label: 'INT Return Yards', note: 'pts / yd' },
+      { key: 'idp_int_ret_yd',  label: 'INT Return Yards' },
       { key: 'idp_int_td',      label: 'INT Return TD' },
       { key: 'idp_ff',          label: 'Forced Fumble' },
       { key: 'idp_fr',          label: 'Fumble Recovery' },
-      { key: 'idp_fr_yd',       label: 'Fumble Return Yards', note: 'pts / yd' },
+      { key: 'idp_fr_yd',       label: 'Fumble Return Yards' },
       { key: 'idp_fr_td',       label: 'Fumble Return TD' },
       { key: 'idp_def_td',      label: 'Defensive TD (any)' },
       { key: 'idp_pd',          label: 'Pass Deflection' },
@@ -174,8 +177,8 @@ const STAT_GROUPS = [
       { key: 'fgm_50_59',        label: 'FG Made 50–59 yds' },
       { key: 'fgm_60p',          label: 'FG Made 60+ yds' },
       { key: 'xpm',              label: 'Extra Point Made' },
-      { key: 'fgm_yds',          label: 'FG Yards Scored', note: 'pts / yd (all FG yds)' },
-      { key: 'fgm_yds_over_30',  label: 'FG Yards Over 30', note: 'pts / yd beyond 30' },
+      { key: 'fgm_yds',          label: 'FG Yards Scored', note: 'all FG yds' },
+      { key: 'fgm_yds_over_30',  label: 'FG Yards Over 30', note: 'yds beyond 30 only' },
     ],
   },
   {
@@ -197,9 +200,9 @@ const STAT_GROUPS = [
     stats: [
       { key: 'sack',     label: 'Sack (team)' },
       { key: 'sack_half', label: 'Half Sack (team)' },
-      { key: 'sack_yd',  label: 'Sack Yards (team)', note: 'pts / yd' },
+      { key: 'sack_yd',  label: 'Sack Yards (team)' },
       { key: 'int',      label: 'Interception (team)' },
-      { key: 'int_ret_yd', label: 'INT Return Yards (team)', note: 'pts / yd' },
+      { key: 'int_ret_yd', label: 'INT Return Yards (team)' },
       { key: 'safe',     label: 'Safety (team)' },
       { key: 'def_td',   label: 'Defensive TD (team)' },
       { key: 'def_2pt',  label: 'Defensive 2-Pt Return' },
@@ -207,9 +210,6 @@ const STAT_GROUPS = [
       { key: 'def_int_td', label: 'INT Return TD (team)' },
       { key: 'def_fum_td', label: 'Fumble Return TD (team)' },
       { key: 'def_ff',   label: 'Forced Fumble (team)' },
-      { key: 'blk_kick_ret_td', label: 'Blocked Kick Return TD' },
-      { key: 'kr_td',    label: 'Kickoff Return TD' },
-      { key: 'pr_td',    label: 'Punt Return TD' },
     ],
   },
   {
@@ -260,10 +260,10 @@ const STAT_GROUPS = [
       { key: 'def_4_and_stop',   label: '4th Down Stop' },
       { key: 'def_forced_punts', label: 'Forced Punt' },
       { key: 'def_st_tkl_solo',  label: 'ST Solo Tackle (team)' },
-      { key: 'def_kr_yd',        label: 'Kick Return Yards (team)', note: 'pts / yd' },
+      { key: 'def_kr_yd',        label: 'Kick Return Yards (team)' },
       { key: 'def_kr_yd_10',     label: 'Every 10 Kick Return Yards (team)' },
       { key: 'def_kr_yd_25',     label: 'Every 25 Kick Return Yards (team)' },
-      { key: 'def_pr_yd',        label: 'Punt Return Yards (team)', note: 'pts / yd' },
+      { key: 'def_pr_yd',        label: 'Punt Return Yards (team)' },
       { key: 'def_pr_yd_10',     label: 'Every 10 Punt Return Yards (team)' },
       { key: 'def_pr_yd_25',     label: 'Every 25 Punt Return Yards (team)' },
     ],
@@ -328,7 +328,7 @@ export default function CompanionScoring() {
   return (
     <div className="pb-6">
       {/* Import from league + toggle row */}
-      <div className="px-4 pt-2 pb-4 flex items-center gap-3">
+      <div className="px-4 pt-2 pb-4 flex flex-wrap items-center gap-3">
         {league?.scoring_settings ? (
           <CompanionSelectorButton
             onClick={handleImportLeague}
@@ -369,9 +369,9 @@ export default function CompanionScoring() {
             >
               <span className="flex-1 truncate">{scoringOverride.leagueName} ({scoringOverride.season})</span>
               <button
+                type="button"
                 onClick={clearScoringOverride}
-                className="text-xs font-bold transition-opacity active:opacity-70"
-                style={{ opacity: 0.8 }}
+                className="companion-scoring-reset shrink-0"
               >
                 Reset
               </button>
@@ -380,16 +380,12 @@ export default function CompanionScoring() {
 
           <CompanionSelectorButton
             onClick={() => setPickerOpen(v => !v)}
-            className="w-full justify-between"
+            className="w-full"
             size="md"
+            aria-expanded={pickerOpen}
           >
             <span>Browse leagues…</span>
-            <svg
-              width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"
-              style={{ transform: pickerOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}
-            >
-              <polyline points="6 9 12 15 18 9"/>
-            </svg>
+            <CompanionMenuChevron open={pickerOpen} />
           </CompanionSelectorButton>
 
           {pickerOpen && (
@@ -398,10 +394,13 @@ export default function CompanionScoring() {
               style={{ background: 'var(--color-fill-secondary)', border: '1px solid var(--color-separator)' }}
             >
               {pickerLoading && (
-                <div className="px-4 py-3 text-sm" style={{ color: 'var(--color-label-secondary)' }}>Loading…</div>
+                <div className="px-4 py-3 text-sm flex items-center gap-2" style={{ color: 'var(--color-label-secondary)' }}>
+                  <Spinner size="sm" />
+                  Loading leagues…
+                </div>
               )}
               {pickerError && (
-                <div className="px-4 py-3 text-sm" style={{ color: 'var(--color-destructive, #EF4444)' }}>{pickerError}</div>
+                <div className="px-4 py-3 text-sm" style={{ color: 'var(--color-accent-red)' }}>{pickerError}</div>
               )}
               {pickerSeasons.map((season, si) => {
                 const seasonLeagues = leaguesBySeason[season] ?? [];
@@ -409,21 +408,17 @@ export default function CompanionScoring() {
                 return (
                   <div key={season} style={{ borderTop: si > 0 ? '1px solid var(--color-separator)' : 'none' }}>
                     <button
-                      className="w-full flex items-center justify-between px-4 py-2.5 text-sm font-semibold"
-                      style={{ color: 'var(--color-label)' }}
+                      type="button"
+                      aria-expanded={isExpanded}
+                      className="companion-menu-item w-full flex items-center justify-between px-4 py-2.5 text-sm font-semibold"
                       onClick={() => setExpandedSeason(isExpanded ? null : season)}
                     >
-                      <span>{season} Season</span>
+                      <span style={{ color: 'var(--color-label)' }}>{season} Season</span>
                       <span className="flex items-center gap-2">
                         <span className="text-xs" style={{ color: 'var(--color-label-tertiary)' }}>
                           {seasonLeagues.length} {seasonLeagues.length === 1 ? 'league' : 'leagues'}
                         </span>
-                        <svg
-                          width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"
-                          style={{ transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', color: 'var(--color-label-tertiary)' }}
-                        >
-                          <polyline points="6 9 12 15 18 9"/>
-                        </svg>
+                        <CompanionMenuChevron open={isExpanded} className="!h-3 !w-3" />
                       </span>
                     </button>
                     {isExpanded && seasonLeagues.map((lg) => {
@@ -431,19 +426,15 @@ export default function CompanionScoring() {
                       return (
                         <button
                           key={lg.league_id}
+                          type="button"
                           disabled={pickerLoading}
+                          aria-pressed={isActive}
                           onClick={() => handlePickLeague(lg.league_id, lg.name, season)}
-                          className="w-full flex items-center justify-between px-4 py-2.5 text-sm transition-opacity active:opacity-70 disabled:opacity-50"
-                          style={{
-                            borderTop: '1px solid var(--color-separator)',
-                            background: isActive ? 'rgba(245,183,0,0.12)' : 'transparent',
-                            color: isActive ? 'var(--color-signature)' : 'var(--color-label)',
-                          }}
+                          className={`companion-menu-item w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left disabled:opacity-50${isActive ? ' is-checked' : ''}`}
+                          style={{ borderTop: '1px solid var(--color-separator)' }}
                         >
-                          <span className="truncate text-left flex-1">{lg.name}</span>
-                          {isActive && (
-                            <span className="text-xs font-bold ml-2" style={{ color: 'var(--color-signature)' }}>Active</span>
-                          )}
+                          <CompanionMenuSelectionMark checked={isActive} mode="single" />
+                          <span className="min-w-0 flex-1 truncate">{lg.name}</span>
                         </button>
                       );
                     })}
@@ -510,6 +501,7 @@ export default function CompanionScoring() {
       )}
 
       {/* Stat groups — read-only */}
+      <div className="companion-scoring-groups">
       {visibleGroups.map(group => (
         <div key={group.label} className="px-4 mb-5">
           <div className="text-xs font-semibold uppercase tracking-widest mb-2" style={{ color: 'var(--color-label-tertiary)' }}>
@@ -535,7 +527,7 @@ export default function CompanionScoring() {
                     )}
                   </div>
                   <span
-                    className="font-mono text-sm tabular-nums"
+                    className="font-mono text-sm tabular-nums min-w-0 max-w-[70%] text-right"
                     style={{
                       color: val < 0
                         ? 'var(--color-accent-red)'
@@ -552,6 +544,7 @@ export default function CompanionScoring() {
           </div>
         </div>
       ))}
+      </div>
     </div>
   );
 }

@@ -1,9 +1,33 @@
 import { spawn } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 const nodeBin = process.execPath;
 const clientArgs = process.argv.slice(2);
+const envPath = fileURLToPath(new URL('../.env', import.meta.url));
+
+function parseEnvFile(path) {
+  if (!existsSync(path)) return {};
+
+  return Object.fromEntries(
+    readFileSync(path, 'utf8')
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith('#'))
+      .map((line) => {
+        const separator = line.indexOf('=');
+        if (separator === -1) return null;
+        const key = line.slice(0, separator).trim();
+        const rawValue = line.slice(separator + 1).trim();
+        const value = rawValue.replace(/^(['"])(.*)\1$/, '$2');
+        return key ? [key, value] : null;
+      })
+      .filter(Boolean),
+  );
+}
+
+const localServerEnv = parseEnvFile(envPath);
 
 const processes = [
   {
@@ -11,6 +35,7 @@ const processes = [
     command: nodeBin,
     args: [fileURLToPath(new URL('../server/index.js', import.meta.url))],
     env: {
+      ...localServerEnv,
       ESPN_API_HOST: process.env.ESPN_API_HOST ?? '127.0.0.1',
       ESPN_API_PORT: process.env.ESPN_API_PORT ?? '3001',
     },

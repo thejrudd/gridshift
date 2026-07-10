@@ -21,21 +21,21 @@ const GameResultToggle = ({ value, onToggle, canMarkWin, canMarkLoss, canMarkTie
 
   if (value === 'W') {
     return (
-      <button onClick={handleClick} className={`${base} bg-green-500 text-white hover:bg-green-600`}>
+      <button onClick={handleClick} className={`${base} bg-[color:var(--color-accent-green)] text-white hover:opacity-85`}>
         W
       </button>
     );
   }
   if (value === 'L') {
     return (
-      <button onClick={handleClick} className={`${base} bg-red-500 text-white hover:bg-red-600`}>
+      <button onClick={handleClick} className={`${base} bg-[color:var(--color-accent-red)] text-white hover:opacity-85`}>
         L
       </button>
     );
   }
   if (value === 'T') {
     return (
-      <button onClick={handleClick} className={`${base} bg-amber-500 text-white hover:bg-amber-600`}>
+      <button onClick={handleClick} className={`${base} bg-[color:var(--color-accent-orange)] text-white hover:opacity-85`}>
         T
       </button>
     );
@@ -46,8 +46,8 @@ const GameResultToggle = ({ value, onToggle, canMarkWin, canMarkLoss, canMarkTie
       disabled={!canMarkWin && !canMarkLoss && !canMarkTie}
       className={`${base} ${
         canMarkWin || canMarkLoss || canMarkTie
-          ? 'bg-gray-200 dark:bg-gray-600 text-gray-400 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-500'
-          : 'bg-gray-100 dark:bg-gray-700 text-gray-300 dark:text-gray-500 cursor-not-allowed'
+          ? 'bg-[color:var(--color-fill)] text-[color:var(--color-label-tertiary)] hover:bg-[color:var(--color-fill-secondary)]'
+          : 'bg-[color:var(--color-fill)] text-[color:var(--color-label-tertiary)] cursor-not-allowed'
       }`}
     >
       --

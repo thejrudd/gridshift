@@ -7,8 +7,11 @@ import { resolveStatisticsPlayerMetaFromSleeperId } from '../../src/utils/player
 import {
   DEFAULT_DRAFT_MODEL_WEIGHTS,
   buildDraftAssistantViewModel,
+  buildDraftPositionRanks,
   buildPickOrder,
   categorizeDraftScoringSettings,
+  computeDraftOutcomes,
+  getDraftResultsSeason,
   getDraftStatsSeason,
   getScheduledDraftCountdownParts,
   getSleeperDraftStartMs,
@@ -937,11 +940,92 @@ test('draft scoring categorization exposes active scoring levers', () => {
   assert.equal(categories.find((category) => category.id === 'te-premium').keys[0].key, 'bonus_rec_te');
 });
 
-test('draft stats season uses the completed season before the draft season', () => {
+test('draft intelligence uses the completed season before the draft', () => {
   assert.equal(getDraftStatsSeason('2026'), '2025');
   assert.equal(getDraftStatsSeason(2025), '2024');
   assert.equal(getDraftStatsSeason('2017'), '2017');
   assert.equal(getDraftStatsSeason(null), null);
+});
+
+test('draft results uses the season played after the historical draft', () => {
+  assert.equal(getDraftResultsSeason('2026'), '2026');
+  assert.equal(getDraftResultsSeason(2025), '2025');
+  assert.equal(getDraftResultsSeason('2017'), '2017');
+  assert.equal(getDraftResultsSeason(null), null);
+});
+
+test('draft outcomes compare positional draft cost with the matching season finish', () => {
+  const outcomePlayers = Object.fromEntries(
+    Array.from({ length: 7 }, (_, index) => {
+      const id = `qb${index + 1}`;
+      return [id, { player_id: id, position: 'QB', fantasy_positions: ['QB'] }];
+    }),
+  );
+  const seasonStats = Object.fromEntries(
+    Array.from({ length: 7 }, (_, index) => [`qb${index + 1}`, { pass_yd: (7 - index) * 1000 }]),
+  );
+  const picks = Array.from({ length: 7 }, (_, index) => ({
+    id: `pick-${index + 1}`,
+    playerId: `qb${index + 1}`,
+    overall: index + 1,
+  }));
+
+  const outcomes = computeDraftOutcomes(picks, seasonStats, outcomePlayers, DEFAULT_SCORING);
+
+  assert.deepEqual(outcomes.get('pick-1'), {
+    pickId: 'pick-1',
+    playerId: 'qb1',
+    position: 'QB',
+    draftPositionRank: 1,
+    seasonFinishRank: 1,
+    rankDelta: 0,
+    tier: 'Even',
+    colorTone: 'neutral',
+    tolerance: 3,
+  });
+  assert.equal(outcomes.get('pick-7').tier, 'Even');
+
+  const topPickFinishedFourth = computeDraftOutcomes(picks, {
+    ...seasonStats,
+    qb1: { pass_yd: 3500 },
+  }, outcomePlayers, DEFAULT_SCORING);
+  assert.equal(topPickFinishedFourth.get('pick-1').seasonFinishRank, 4);
+  assert.equal(topPickFinishedFourth.get('pick-1').tier, 'Even');
+
+  const boomPlayers = Object.fromEntries(
+    Array.from({ length: 10 }, (_, index) => {
+      const id = `boom-qb${index + 1}`;
+      return [id, { player_id: id, position: 'QB', fantasy_positions: ['QB'] }];
+    }),
+  );
+  const boomPicks = Array.from({ length: 10 }, (_, index) => ({
+    id: `boom-pick-${index + 1}`,
+    playerId: `boom-qb${index + 1}`,
+    overall: index + 1,
+  }));
+  const boomAndBust = computeDraftOutcomes(boomPicks, {
+    ...Object.fromEntries(Array.from({ length: 10 }, (_, index) => [`boom-qb${index + 1}`, { pass_yd: (10 - index) * 1000 }])),
+    'boom-qb1': { pass_yd: 100 },
+    'boom-qb10': { pass_yd: 12000 },
+  }, boomPlayers, DEFAULT_SCORING);
+  assert.equal(boomAndBust.get('boom-pick-10').tier, 'Boom');
+  assert.equal(boomAndBust.get('boom-pick-1').tier, 'Bust');
+});
+
+test('draft position ranks use the league pick order instead of market rank', () => {
+  const players = {
+    wr1: { player_id: 'wr1', position: 'WR', fantasy_positions: ['WR'] },
+    qb1: { player_id: 'qb1', position: 'QB', fantasy_positions: ['QB'] },
+    qb2: { player_id: 'qb2', position: 'QB', fantasy_positions: ['QB'] },
+  };
+  const ranks = buildDraftPositionRanks([
+    { id: 'pick-1', playerId: 'wr1', overall: 1 },
+    { id: 'pick-4', playerId: 'qb1', overall: 4 },
+    { id: 'pick-11', playerId: 'qb2', overall: 11 },
+  ], players);
+
+  assert.deepEqual(ranks.get('pick-4'), { position: 'QB', rank: 1, label: 'QB1' });
+  assert.deepEqual(ranks.get('pick-11'), { position: 'QB', rank: 2, label: 'QB2' });
 });
 
 test('draft model weights normalize missing and out-of-range values', () => {

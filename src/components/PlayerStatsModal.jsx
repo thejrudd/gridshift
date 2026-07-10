@@ -20,14 +20,7 @@ import {
 import { getTeamPalette } from '../data/teamColors';
 import { useTheme } from '../context/ThemeContext';
 import Modal from './Modal';
-
-function hexLuminance(hex) {
-  const r = parseInt(hex.slice(1, 3), 16) / 255;
-  const g = parseInt(hex.slice(3, 5), 16) / 255;
-  const b = parseInt(hex.slice(5, 7), 16) / 255;
-  const lin = (c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
-  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
-}
+import { hexLuminance } from '../utils/teamVisualTheme';
 
 function darkenHex(hex, amount = 0.28) {
   const r = Math.max(0, Math.round(parseInt(hex.slice(1, 3), 16) * (1 - amount)));

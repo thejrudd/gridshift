@@ -1,3 +1,5 @@
+import StatusBadge from './ui/StatusBadge';
+
 const VIEWS = [
   { id: 'agent', label: 'Agent' },
   { id: 'intelligence', label: 'Intelligence' },
@@ -20,38 +22,8 @@ export default function TradeSubNav({ activeView, onViewChange, onViewIntent }) 
         >
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
             {label}
-            {beta && (
-              <span style={{
-                fontSize: '7px',
-                fontWeight: 700,
-                letterSpacing: '0.05em',
-                textTransform: 'uppercase',
-                padding: '1px 3px',
-                borderRadius: '3px',
-                background: 'var(--color-signature)',
-                color: 'var(--color-signature-fg)',
-                lineHeight: '11px',
-                verticalAlign: 'middle',
-              }}>
-                β
-              </span>
-            )}
-            {alpha && (
-              <span style={{
-                fontSize: '7px',
-                fontWeight: 700,
-                letterSpacing: '0.05em',
-                textTransform: 'uppercase',
-                padding: '1px 3px',
-                borderRadius: '3px',
-                background: 'var(--color-alpha)',
-                color: 'var(--color-alpha-fg)',
-                lineHeight: '11px',
-                verticalAlign: 'middle',
-              }}>
-                α
-              </span>
-            )}
+            {beta && <StatusBadge kind="beta" size="sm" />}
+            {alpha && <StatusBadge kind="alpha" size="sm" />}
           </span>
         </button>
       ))}

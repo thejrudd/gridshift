@@ -16,11 +16,15 @@ import {
   getPositionTextColor,
   getSleeperPlayerImageUrl,
 } from '../../utils/companionAssetVisuals.js';
+import { isLeagueSeasonComplete } from '../../utils/draftPickDisplay.js';
 import {
   DEFAULT_DRAFT_MODEL_WEIGHTS,
   buildDraftAssistantViewModel,
+  buildDraftPositionRanks,
   buildDraftResultsViewModel,
   buildPickOrder,
+  computeDraftOutcomes,
+  getDraftResultsSeason,
   getDraftStatsSeason,
   getScheduledDraftCountdownParts,
   getSleeperDraftStartMs,
@@ -96,6 +100,20 @@ const DRAFT_BOARD_CARD_METRIC_OPTIONS = [
 const DRAFT_RESULTS_SORT_OPTIONS = [
   { id: 'asc', label: 'First to Last' },
   { id: 'desc', label: 'Last to First' },
+  { id: 'strength-desc', label: 'Strongest First' },
+  { id: 'strength-asc', label: 'Weakest First' },
+];
+const DRAFT_OUTCOME_STRENGTH = {
+  Boom: 4,
+  Strong: 3,
+  Even: 2,
+  Weak: 1,
+  Bust: 0,
+};
+const DRAFT_RESULTS_RANK_MODE_OPTIONS = [
+  { id: 'off', label: 'Off' },
+  { id: 'draft', label: 'Draft Rank' },
+  { id: 'finish', label: 'Season Finish' },
 ];
 const DRAFT_MODEL_BUILD_DELAY_MS = 24;
 const DRAFT_SYNC_CACHE_LIMIT = 6;
@@ -1383,7 +1401,7 @@ function DraftStatusBanner({ draft, viewModel, getUserDisplayName, onClockExpire
   if (!activeRoom) {
     if (!scheduledDraft) return null;
     return (
-      <div className="draft-status-banner-shell" aria-live="polite">
+      <div className="draft-status-banner-shell">
         <section className="draft-status-banner draft-status-banner--scheduled">
           <div className="draft-status-banner__scheduled-line">
             <span className="draft-status-banner__label">Draft Starts</span>
@@ -1423,7 +1441,7 @@ function DraftStatusBanner({ draft, viewModel, getUserDisplayName, onClockExpire
   const statusLabel = paused ? 'Paused' : 'Live';
 
   return (
-    <div className="draft-status-banner-shell" aria-live="polite">
+    <div className="draft-status-banner-shell">
       <section className={`draft-status-banner ${paused ? 'is-paused' : 'is-live'}`}>
         <div className="draft-status-banner__live-state">
           <div className="draft-status-banner__heading">
@@ -1580,9 +1598,21 @@ function clampDraftModelWeightInput(value) {
 
 function DraftModelWeightInfo({ label, description }) {
   const buttonRef = useRef(null);
+  const tooltipRef = useRef(null);
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState(null);
   const tooltipId = `draft-model-weight-info-${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const handlePointerDown = (event) => {
+      if (buttonRef.current?.contains(event.target)) return;
+      if (tooltipRef.current?.contains(event.target)) return;
+      setOpen(false);
+    };
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, [open]);
 
   useEffect(() => {
     if (!open || !buttonRef.current) return undefined;
@@ -1624,6 +1654,7 @@ function DraftModelWeightInfo({ label, description }) {
       </button>
       {open && position && createPortal(
         <div
+          ref={tooltipRef}
           id={tooltipId}
           role="tooltip"
           className="draft-model-weight-tooltip"
@@ -1813,6 +1844,7 @@ function DraftPlayerRow({
           label={metric.label}
           title={metric.title}
           align={metric.align}
+          tone={metric.tone}
           compact
         />
       ))}
@@ -3091,7 +3123,9 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
   const { darkMode } = useTheme();
   const isStandaloneBoard = mode === 'my-board';
   const viewLabel = isStandaloneBoard ? 'Board' : 'Draft War Room';
-  const useAnalyticsModal = useMediaQuery('(max-width: 767px)');
+  // Below the 1180px two-column breakpoint the inline pane would render beneath the full
+  // board list, off-screen — the modal sheet is the only presentation that stays in view.
+  const useAnalyticsModal = useMediaQuery('(max-width: 1179px)');
 
   const [boardState, setBoardState] = useState(() => createOrderedBoardState(emptyBoard(), []));
   const [boardReady, setBoardReady] = useState(false);
@@ -3781,15 +3815,117 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
   );
 }
 
-function DraftResultRow({ row, darkMode, onViewPlayer }) {
+function DraftOutcomeStrengthInfo() {
+  const buttonRef = useRef(null);
+  const tooltipRef = useRef(null);
+  const [open, setOpen] = useState(false);
+  const [position, setPosition] = useState(null);
+  const tooltipId = 'draft-outcome-strength-info';
+
+  const updatePosition = useCallback(() => {
+    if (!buttonRef.current) return;
+    const rect = buttonRef.current.getBoundingClientRect();
+    const width = Math.min(336, window.innerWidth - 16);
+    const left = Math.max(8, Math.min(window.innerWidth - width - 8, rect.left + rect.width / 2 - width / 2));
+    const estimatedHeight = 230;
+    const below = rect.bottom + 8;
+    const top = below + estimatedHeight <= window.innerHeight - 8
+      ? below
+      : Math.max(8, rect.top - estimatedHeight - 8);
+    setPosition({ left, top, width });
+  }, []);
+
+  const closeTooltip = useCallback(() => setOpen(false), []);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const handlePointerDown = (event) => {
+      if (buttonRef.current?.contains(event.target) || tooltipRef.current?.contains(event.target)) return;
+      closeTooltip();
+    };
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') closeTooltip();
+    };
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [open, closeTooltip, updatePosition]);
+
+  const toggleTooltip = () => {
+    setOpen((current) => !current);
+    window.requestAnimationFrame(updatePosition);
+  };
+
+  return (
+    <span className="draft-outcome-strength-info">
+      <button
+        ref={buttonRef}
+        type="button"
+        aria-label="How Draft Strength is calculated"
+        aria-expanded={open}
+        aria-controls={tooltipId}
+        onClick={toggleTooltip}
+      >
+        i
+      </button>
+      {open && position && createPortal(
+        <section
+          ref={tooltipRef}
+          id={tooltipId}
+          role="dialog"
+          aria-label="How Draft Strength is calculated"
+          className="draft-outcome-strength-tooltip"
+          style={position}
+        >
+          <div className="draft-outcome-strength-tooltip__header">
+            <strong>How Draft Strength Works</strong>
+            <button type="button" onClick={closeTooltip} aria-label="Close Draft Strength explanation">×</button>
+          </div>
+          <p>Draft Strength compares a player&apos;s positional order in your league&apos;s draft with that player&apos;s positional finish for the same season.</p>
+          <p>The grading band is whichever is larger: three places or 15% of the player&apos;s positional draft rank.</p>
+          <ul>
+            <li><b>Even</b> stays within one band.</li>
+            <li><b>Strong</b> or <b>Weak</b> shows a clear rise or fall beyond that band.</li>
+            <li><b>Boom</b> or <b>Bust</b> means a change of three or more bands.</li>
+          </ul>
+        </section>,
+        document.body,
+      )}
+    </span>
+  );
+}
+
+function DraftResultRow({ row, darkMode, onViewPlayer, showInsights = false, seasonIsComplete = false }) {
+  const rankMetric = { key: 'rank-mode', value: row.rankModeLabel ?? '—', label: 'Rank' };
+  const outcomeMetric = row.draftOutcome ? {
+    key: 'draft-outcome',
+    value: row.draftOutcome.tier,
+    label: 'Outcome',
+    tone: row.draftOutcome.colorTone,
+    title: `Selected ${row.pickLabel} overall as ${row.draftOutcome.position}${row.draftOutcome.draftPositionRank}; finished ${row.draftOutcome.position}${row.draftOutcome.seasonFinishRank}.`,
+  } : {
+    key: 'draft-outcome',
+    value: '—',
+    label: seasonIsComplete ? 'Outcome' : 'In Progress',
+    title: seasonIsComplete ? 'No qualifying season finish for this pick' : 'Draft outcome shows once the season is complete',
+  };
+  const rowGrid = showInsights ? 'var(--draft-results-row-grid-insights)' : 'var(--draft-results-row-grid)';
   return (
     <DraftPlayerRow
       player={row.player}
       darkMode={darkMode}
       onViewPlayer={onViewPlayer}
-      metrics={[]}
-      rowGridTemplate="var(--draft-results-row-grid)"
-      compactRowGridTemplate="var(--draft-results-row-grid)"
+      metrics={showInsights ? [rankMetric, outcomeMetric] : []}
+      metricColumnGridTemplate={showInsights ? '72px minmax(92px, 1fr)' : null}
+      rowGridTemplate={rowGrid}
+      compactRowGridTemplate={rowGrid}
       leading={<span className="draft-results-pick" title={`${row.overall} overall`}>{row.pickLabel}</span>}
       identityMetaSegments={[row.player.team, row.ownerLabel].filter(Boolean)}
       status={(
@@ -3806,7 +3942,7 @@ function DraftResultRow({ row, darkMode, onViewPlayer }) {
           ) : null}
         </CompanionPlayerStatus>
       )}
-      className={['draft-player-row--results', row.isMine ? 'is-mine' : ''].filter(Boolean).join(' ')}
+      className={['draft-player-row--results', showInsights ? 'draft-player-row--insights' : '', row.isMine ? 'is-mine' : ''].filter(Boolean).join(' ')}
     />
   );
 }
@@ -3907,6 +4043,7 @@ function DraftResultsView({ onViewPlayer, sleeperDraftId = '' }) {
   const [sortDirection, setSortDirection] = useState('asc');
   const [positionFilter, setPositionFilter] = useState('All');
   const [selectedFantasyTeamIds, setSelectedFantasyTeamIds] = useState([]);
+  const [rankMode, setRankMode] = useState('off');
   const [modelWeights, setModelWeights] = useState(() => normalizeDraftModelWeights(DEFAULT_DRAFT_MODEL_WEIGHTS));
   const [marketState, setMarketState] = useState({
     attribution: null,
@@ -3939,7 +4076,7 @@ function DraftResultsView({ onViewPlayer, sleeperDraftId = '' }) {
   }, [selectedLeagueId, season, draftMeta?.draft_id]);
 
   const draftStatsSeason = useMemo(
-    () => getDraftStatsSeason(draftMeta?.season ?? season),
+    () => getDraftResultsSeason(draftMeta?.season ?? season),
     [draftMeta?.season, season],
   );
 
@@ -4017,6 +4154,31 @@ function DraftResultsView({ onViewPlayer, sleeperDraftId = '' }) {
     [draftOrderContext.pickOrder],
   );
 
+  const seasonIsComplete = isLeagueSeasonComplete(league);
+  const draftRanksByPickId = useMemo(
+    () => buildDraftPositionRanks(draftOrderContext.normalizedPicks ?? [], players ?? {}),
+    [draftOrderContext.normalizedPicks, players],
+  );
+  const draftOutcomesByPickId = useMemo(() => {
+    if (!seasonIsComplete || !draftStats?.seasonStats) return new Map();
+    return computeDraftOutcomes(
+      draftOrderContext.normalizedPicks ?? [],
+      draftStats.seasonStats,
+      players ?? {},
+      activeScoringSettings,
+    );
+  }, [seasonIsComplete, draftStats, draftOrderContext.normalizedPicks, players, activeScoringSettings]);
+
+  const draftResultsSortOptions = useMemo(
+    () => seasonIsComplete
+      ? DRAFT_RESULTS_SORT_OPTIONS
+      : DRAFT_RESULTS_SORT_OPTIONS.filter((option) => !option.id.startsWith('strength-')),
+    [seasonIsComplete],
+  );
+  const activeSortDirection = !seasonIsComplete && sortDirection.startsWith('strength-')
+    ? 'asc'
+    : sortDirection;
+
   const myRosterId = myRosterData?.roster_id != null ? String(myRosterData.roster_id) : null;
   const getFantasyTeamLabel = useCallback((rosterId, ownerId = null) => {
     const roster = rosters.find((item) => String(item.roster_id) === String(rosterId)) ?? null;
@@ -4090,6 +4252,11 @@ function DraftResultsView({ onViewPlayer, sleeperDraftId = '' }) {
           team: fallbackTeam,
           raw: rawPlayer,
         };
+        const rankModeLabel = rankMode === 'off'
+          ? null
+          : rankMode === 'finish'
+            ? (card?.rank?.seasonFinishLabel ?? '—')
+            : (draftRanksByPickId.get(pick.id)?.label ?? '—');
         return {
           key: pick.id,
           pickLabel: formatPickLabel(orderPick ?? pick),
@@ -4101,9 +4268,11 @@ function DraftResultsView({ onViewPlayer, sleeperDraftId = '' }) {
           rating: card?.draftModel?.score ?? null,
           sleeperRank: card?.rank?.overallRank ?? card?.projection?.fallbackRank ?? null,
           tier: card?.rank?.tier ?? null,
+          rankModeLabel,
+          draftOutcome: draftOutcomesByPickId.get(pick.id) ?? null,
         };
       });
-  }, [draftOrderContext.normalizedPicks, orderByOverall, resultsViewModel, players, rosters, myRosterId, getFantasyTeamLabel]);
+  }, [draftOrderContext.normalizedPicks, orderByOverall, resultsViewModel, players, rosters, myRosterId, getFantasyTeamLabel, rankMode, draftRanksByPickId, draftOutcomesByPickId]);
 
   const positionOptions = useMemo(() => {
     const available = new Set(resultRows.map((row) => row.player?.position).filter(Boolean));
@@ -4123,8 +4292,24 @@ function DraftResultsView({ onViewPlayer, sleeperDraftId = '' }) {
       if (selectedTeamSet.size > 0 && !selectedTeamSet.has(row.fantasyTeamId)) return false;
       return true;
     });
-    return sortDirection === 'desc' ? [...filtered].reverse() : filtered;
-  }, [resultRows, positionFilter, selectedFantasyTeamIds, sortDirection]);
+    if (activeSortDirection === 'desc') return [...filtered].reverse();
+    if (!activeSortDirection.startsWith('strength-')) return filtered;
+
+    const direction = activeSortDirection === 'strength-desc' ? -1 : 1;
+    return [...filtered].sort((left, right) => {
+      const leftStrength = DRAFT_OUTCOME_STRENGTH[left.draftOutcome?.tier];
+      const rightStrength = DRAFT_OUTCOME_STRENGTH[right.draftOutcome?.tier];
+      const leftHasOutcome = Number.isFinite(leftStrength);
+      const rightHasOutcome = Number.isFinite(rightStrength);
+      if (leftHasOutcome !== rightHasOutcome) return leftHasOutcome ? -1 : 1;
+      if (!leftHasOutcome) return left.overall - right.overall;
+      if (leftStrength !== rightStrength) return (leftStrength - rightStrength) * direction;
+      if (left.draftOutcome.rankDelta !== right.draftOutcome.rankDelta) {
+        return (left.draftOutcome.rankDelta - right.draftOutcome.rankDelta) * direction;
+      }
+      return left.overall - right.overall;
+    });
+  }, [resultRows, positionFilter, selectedFantasyTeamIds, activeSortDirection]);
 
   const draftType = normalizeDraftType(draftMeta);
   const unsupportedDraft = draftMeta && draftType !== 'snake' && draftType !== 'linear';
@@ -4201,8 +4386,8 @@ function DraftResultsView({ onViewPlayer, sleeperDraftId = '' }) {
               <span className="draft-results-control-row__label">Sort</span>
               <DraftSegmentedControl
                 label="Sort draft results"
-                options={DRAFT_RESULTS_SORT_OPTIONS}
-                value={sortDirection}
+                options={draftResultsSortOptions}
+                value={activeSortDirection}
                 onChange={setSortDirection}
               />
               <DraftFantasyTeamFilter
@@ -4211,13 +4396,25 @@ function DraftResultsView({ onViewPlayer, sleeperDraftId = '' }) {
                 onChange={setSelectedFantasyTeamIds}
               />
             </div>
+            <div className="draft-results-control-row draft-results-control-row--rank">
+              <span className="draft-results-control-row__label">Insights</span>
+              <div className="draft-results-insights-control">
+                <DraftSegmentedControl
+                  label="Draft rank and outcome insights"
+                  options={DRAFT_RESULTS_RANK_MODE_OPTIONS}
+                  value={rankMode}
+                  onChange={setRankMode}
+                />
+                <DraftOutcomeStrengthInfo />
+              </div>
+            </div>
           </div>
           {visibleRows.length === 0 ? (
             <EmptyState title="No picks match these filters." />
           ) : (
             <div className="draft-results-list">
               {visibleRows.map((row) => (
-                <DraftResultRow key={row.key} row={row} darkMode={darkMode} onViewPlayer={onViewPlayer} />
+                <DraftResultRow key={row.key} row={row} darkMode={darkMode} onViewPlayer={onViewPlayer} showInsights={rankMode !== 'off'} seasonIsComplete={seasonIsComplete} />
               ))}
             </div>
           )}

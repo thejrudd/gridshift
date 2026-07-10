@@ -170,6 +170,11 @@ function isTeamDefensePosition(position) {
   return ['DEF', 'DST', 'D/ST'].includes(String(position ?? '').toUpperCase());
 }
 
+function isDefensiveStatisticsPosition(position) {
+  return ['DEF', 'DST', 'D/ST', 'DL', 'DE', 'DT', 'LB', 'ILB', 'OLB', 'DB', 'CB', 'S', 'SS', 'FS']
+    .includes(String(position ?? '').toUpperCase());
+}
+
 function getEspnTeamDefenseCandidateIds(playerMeta, teamId) {
   const candidates = [];
   const proTeamId = Number(playerMeta?.metadata?.proTeamId ?? playerMeta?.proTeamId);
@@ -383,6 +388,7 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_
     '--statistics-position-fg': positionTextColor,
   };
   const isTeamDefenseProfile = isTeamDefensePosition(playerMeta.position);
+  const isDefensiveStatisticsProfile = isDefensiveStatisticsPosition(playerMeta.position);
   const teamDefenseTeamId = playerMeta.teamId ?? teamId;
   const needsEspnProfileFantasyRows = platform === 'espn' && isTeamDefenseProfile;
 
@@ -864,6 +870,7 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_
   const rookieLabel = isRookie ? 'Rookie Season' : `Active Since ${firstSeason}`;
   const canUseVisualForActiveYear = Boolean(
     sleeperId
+      && !isDefensiveStatisticsProfile
       && activeExpandedYear !== 'career'
       && visibleYearKeys.has(String(activeExpandedYear))
   );
@@ -1112,8 +1119,8 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_
                   : `Connect a ${fantasyPlatformLabel} league to unlock Fantasy Values.`}
             </div>
           </div>
-        <div className="grid w-full min-w-0 grid-cols-3 rounded-lg p-1 sm:w-auto sm:flex-initial sm:min-w-[360px]" style={{ background: 'var(--color-fill)' }}>
-          {MODE_OPTIONS.map((option) => {
+        <div className={`grid w-full min-w-0 rounded-lg p-1 sm:w-auto sm:flex-initial ${isDefensiveStatisticsProfile ? 'grid-cols-2 sm:min-w-[240px]' : 'grid-cols-3 sm:min-w-[360px]'}`} style={{ background: 'var(--color-fill)' }}>
+          {MODE_OPTIONS.filter((option) => !(isDefensiveStatisticsProfile && option.id === STATISTICS_MODES.VISUAL)).map((option) => {
             const selected = activeMode === option.id;
             const disabled =
               (option.id === STATISTICS_MODES.FANTASY && !canUseFantasyForActiveYear)
@@ -1235,12 +1242,12 @@ const RookieSeasonPlaceholder = ({ honorsByYear, accentColor }) => {
   const allHonors = Object.values(honorsByYear).flat();
   return (
     <div
-      className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden"
+      className="border border-[color:var(--color-separator)] rounded-lg overflow-hidden"
       style={accentColor ? { borderLeftColor: accentColor, borderLeftWidth: '3px' } : undefined}
     >
-      <div className="px-4 py-3 bg-gray-50 dark:bg-gray-800 flex items-center gap-2 flex-wrap">
+      <div className="px-4 py-3 bg-[color:var(--color-fill-secondary)] flex items-center gap-2 flex-wrap">
         <span className="font-semibold">Rookie Season</span>
-        <span className="inline-flex items-center px-1.5 py-0.5 rounded border text-[10px] font-bold uppercase tracking-wide bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-600">
+        <span className="inline-flex items-center px-1.5 py-0.5 rounded border text-[10px] font-bold uppercase tracking-wide bg-tint-green-strong text-[color:var(--color-accent-green)] border-tint-green">
           First Year
         </span>
         {allHonors.length > 0 && (
@@ -1249,7 +1256,7 @@ const RookieSeasonPlaceholder = ({ honorsByYear, accentColor }) => {
           </div>
         )}
       </div>
-      <div className="bg-white dark:bg-gray-900 px-4 py-8 text-center">
+      <div className="bg-[color:var(--color-bg-secondary)] px-4 py-8 text-center">
         <p className="text-sm font-medium" style={{ color: 'var(--color-label-secondary)' }}>
           No NFL stats yet
         </p>

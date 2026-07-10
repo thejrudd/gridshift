@@ -272,7 +272,7 @@ export default function ProposalPlayerCard({ player = null, palette = null, pick
           {showSideBadge && (
             <div className="absolute top-1.5 left-1.5 lg:top-2 lg:left-2 z-10">
               <span
-                className="text-[8px] lg:text-[10px] font-bold uppercase tracking-widest px-1.5 lg:px-2 py-0.5 lg:py-1 rounded"
+                className="text-[9px] lg:text-[10px] font-bold uppercase tracking-widest px-1.5 lg:px-2 py-0.5 lg:py-1 rounded"
                 style={{
                   background: darkMode ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.8)',
                   color: darkMode ? 'white' : '#0c0f14',
@@ -388,7 +388,7 @@ export default function ProposalPlayerCard({ player = null, palette = null, pick
           {showPickMeta && (
           <div className={compactTradeCard ? 'hidden' : 'hidden min-[420px]:flex gap-1 w-full lg:hidden min-h-0 overflow-hidden'}>
             <div className="flex-1 rounded-lg p-1.5 flex flex-col gap-px" style={{ background: 'rgba(0,0,0,0.22)' }}>
-              <span className="text-[7px] font-bold uppercase tracking-wide mb-0.5" style={{ color: pt.accentMuted }}>{pickMetaLabel}</span>
+              <span className="text-[9px] font-bold uppercase tracking-wide mb-0.5" style={{ color: pt.accentMuted }}>{pickMetaLabel}</span>
               <span className="text-[9px] font-semibold tabular-nums" style={{ color: pt.labelText }}>
                 {pickMetaValue}
               </span>
@@ -473,7 +473,7 @@ export default function ProposalPlayerCard({ player = null, palette = null, pick
         {/* Give / Get badge — top left */}
         {showSideBadge && (
           <div className="absolute top-1.5 left-1.5 lg:top-2 lg:left-2 z-10">
-            <span className="text-[8px] lg:text-[10px] font-bold uppercase tracking-widest px-1.5 lg:px-2 py-0.5 lg:py-1 rounded"
+            <span className="text-[9px] lg:text-[10px] font-bold uppercase tracking-widest px-1.5 lg:px-2 py-0.5 lg:py-1 rounded"
               style={{
                 background: 'rgba(0,0,0,0.7)',
                 color: sideBadgeForeground,
@@ -582,7 +582,7 @@ export default function ProposalPlayerCard({ player = null, palette = null, pick
           {primary?.name ?? primaryPick?.label ?? '—'}
         </div>
         {primary && (
-          <div className="text-[8px] lg:text-[12px] xl:text-[13px] font-medium tracking-wider uppercase mt-0.5 whitespace-nowrap"
+          <div className="text-[9px] lg:text-[12px] xl:text-[13px] font-medium tracking-wider uppercase mt-0.5 whitespace-nowrap"
             style={{ color: 'rgba(255,255,255,0.55)' }}>
             {[primary.team, primary.position].filter(Boolean).join(' · ')}
           </div>
@@ -613,7 +613,7 @@ export default function ProposalPlayerCard({ player = null, palette = null, pick
                     <span className="text-[13px] font-bold tabular-nums leading-tight" style={{ color: 'white' }}>
                       {primary.ppg.toFixed(1)}
                     </span>
-                    <span className="text-[7px] font-medium leading-tight" style={{ color: 'rgba(255,255,255,0.5)' }}>PPG</span>
+                    <span className="text-[9px] font-medium leading-tight" style={{ color: 'rgba(255,255,255,0.5)' }}>PPG</span>
                   </>
                 ) : (
                   <span className="text-[9px]" style={{ color: 'rgba(255,255,255,0.35)' }}>—</span>
@@ -624,7 +624,7 @@ export default function ProposalPlayerCard({ player = null, palette = null, pick
                   <span className="text-[13px] font-bold tabular-nums leading-tight" style={{ color: 'rgba(255,255,255,0.9)' }}>
                     {primary.rank.posLabel}{primary.rank.rank}
                   </span>
-                  <span className="text-[7px] font-medium leading-tight" style={{ color: 'rgba(255,255,255,0.5)' }}>Rank</span>
+                  <span className="text-[9px] font-medium leading-tight" style={{ color: 'rgba(255,255,255,0.5)' }}>Rank</span>
                 </div>
               )}
             </div>
@@ -637,13 +637,13 @@ export default function ProposalPlayerCard({ player = null, palette = null, pick
                     <span className="text-[15px] font-bold tabular-nums leading-tight" style={{ color: 'white' }}>
                       {primary.ppg > 0 ? primary.ppg.toFixed(1) : '—'}
                     </span>
-                    <span className="text-[8px] lg:text-[10px] font-medium leading-tight uppercase tracking-wide" style={{ color: 'rgba(255,255,255,0.52)' }}>PPG</span>
+                    <span className="text-[9px] lg:text-[10px] font-medium leading-tight uppercase tracking-wide" style={{ color: 'rgba(255,255,255,0.52)' }}>PPG</span>
                   </div>
                   <div className="flex-1 min-h-0 rounded-lg px-1.5 py-1 flex flex-col items-center justify-center" style={{ background: 'rgba(0,0,0,0.35)' }}>
                     <span className="text-[15px] font-bold tabular-nums leading-tight" style={{ color: 'rgba(255,255,255,0.92)' }}>
                       {primary.rank?.posLabel ? `${primary.rank.posLabel}${primary.rank.rank}` : '—'}
                     </span>
-                    <span className="text-[8px] lg:text-[10px] font-medium leading-tight uppercase tracking-wide" style={{ color: 'rgba(255,255,255,0.52)' }}>Rank</span>
+                    <span className="text-[9px] lg:text-[10px] font-medium leading-tight uppercase tracking-wide" style={{ color: 'rgba(255,255,255,0.52)' }}>Rank</span>
                   </div>
                 </>
               ) : (

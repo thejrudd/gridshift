@@ -17,6 +17,7 @@ import {
   suggestPackage,
   buildCandidatePool,
   computeRedraftPickValues,
+  detectLeagueType,
 } from '../../utils/tradeEngine';
 import { buildPartnerTradeIntelligence, buildRosterOpportunityLayer, findLeagueWideUpgradeGroups } from '../../utils/opportunityEngine';
 import { buildTradeAnalyticsSnapshot } from '../../utils/tradeAnalytics';
@@ -29,7 +30,6 @@ import TradeProposalPanel, { DEFAULT_PROPOSAL_FILTERS } from './trade/TradePropo
 import UpgradeFinderPage from './trade/UpgradeFinderPage';
 import ValuationInfoSheet from './trade/ValuationInfoSheet';
 import RosterBrowseModal from './trade/RosterBrowseModal';
-import Spinner from './trade/Spinner';
 import { UPGRADE_TRADE_POSTURES, normalizeRosterId, scheduleDeferredTradeTask } from './trade/tradeUiHelpers';
 
 // Derive league format and type from Sleeper league settings
@@ -37,12 +37,6 @@ function detectLeagueFormat(league) {
   // Sleeper settings.type: 0 = redraft, 2 = dynasty/keeper
   const isDynasty = league?.settings?.type === 2;
   return isDynasty ? 'dynasty' : 'redraft';
-}
-
-function detectLeagueType(league) {
-  // If roster_positions includes SUPER_FLEX, it's a superflex league
-  const hasSF = (league?.roster_positions ?? []).includes('SUPER_FLEX');
-  return hasSF ? 'sf' : '1qb';
 }
 
 const TRADE_OPPORTUNITY_LAYER_CACHE_LIMIT = 8;
