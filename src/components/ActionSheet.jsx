@@ -145,6 +145,12 @@ export default function ActionSheet({
           >
             Cancel
           </button>
+          <div
+            className="pt-4 text-center text-xs font-semibold"
+            style={{ color: 'var(--color-label-tertiary)', letterSpacing: '0.08em' }}
+          >
+            v{__APP_VERSION__}
+          </div>
         </div>
     </Modal>
   );

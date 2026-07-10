@@ -30,7 +30,7 @@ export default function UpdateBanner({ onInstall }) {
           Update available
         </div>
         <div className="text-sm" style={{ color: 'var(--color-label-secondary)' }}>
-          A new version of GridShift is ready.
+          A new version is ready. Reload to use it.
         </div>
       </div>
       <button
@@ -43,7 +43,7 @@ export default function UpdateBanner({ onInstall }) {
           opacity: installing ? 0.6 : 1,
         }}
       >
-        {installing ? 'Installing…' : 'Install'}
+        {installing ? 'Reloading…' : 'Reload'}
       </button>
       <button
         onClick={() => setDismissed(true)}

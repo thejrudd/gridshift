@@ -1,5 +1,7 @@
 import Modal from './Modal';
 
+const RELEASES_URL = 'https://github.com/thejrudd/nfl-predictor/releases';
+
 // Shown once after updating across one or more feature versions.
 // "Show me" starts the interactive tour; Dismiss (button, backdrop, or
 // Escape) permanently skips it for these versions.
@@ -86,6 +88,17 @@ export default function WhatsNewModal({ entries, onStartTour, onDismiss }) {
         >
           Show me
         </button>
+      </div>
+      <div className="px-6 pb-5 text-center">
+        <a
+          href={RELEASES_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-sm font-semibold underline underline-offset-2"
+          style={{ color: 'var(--color-label-secondary)' }}
+        >
+          View all changes on GitHub
+        </a>
       </div>
     </Modal>
   );
