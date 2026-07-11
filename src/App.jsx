@@ -963,22 +963,33 @@ function AppInner() {
       label: `Opening ${playerMeta.displayName || 'player'}`,
     });
     setStatsNavBack(nextBackContext);
-    applyRoute({
+    const playerRoute = {
       activeTab: 'statistics',
       statisticsView: 'player',
       statisticsPlayerId: playerMeta.id,
       statisticsPlayerSlug: slugifyRouteSegment(playerMeta.displayName || playerMeta.id) || 'player',
       statisticsMode: mode,
-    }, {
+    };
+    applyRoute(playerRoute, {
       state: {
         statsBackLabel: backLabel ?? null,
         statsBackRoute: backRoute ? normalizeAppRoute(backRoute) : null,
         statsPlayerMeta: playerMeta,
       },
     });
+    window.location.assign(buildAppPath(playerRoute));
   }, [applyRoute, buildStatsBackContext]);
 
-  const navigateToCompanionSleeperPlayer = useCallback(async (sleeperId, backLabel) => {
+  const navigateToCompanionSleeperPlayer = useCallback(async (sleeperId, backLabel, resolvedPlayerMeta = null) => {
+    if (resolvedPlayerMeta?.id) {
+      navigateToStatisticsPlayer(resolvedPlayerMeta, {
+        backLabel,
+        backRoute: appRoute,
+        mode: STATISTICS_MODES.FANTASY,
+      });
+      return;
+    }
+
     const playerMeta = await resolveStatisticsPlayerMetaFromSleeperId(sleeperId, sleeperPlayers, espnIdOverrides);
     if (!playerMeta) return;
 
@@ -1537,7 +1548,11 @@ function AppInner() {
                   onOpenMatchupWeek={(playerId, week) => {
                     applyRoute({ activeTab: 'companion', companionView: 'matchup', matchupPlayerId: playerId, matchupWeek: week });
                   }}
-                  onViewPlayer={(sleeperId) => navigateToCompanionSleeperPlayer(sleeperId, 'Roster')}
+                  onViewPlayer={(playerOrMeta, playerMeta) => {
+                    const resolvedMeta = playerMeta ?? (typeof playerOrMeta === 'object' ? playerOrMeta : null);
+                    const sleeperId = resolvedMeta?.sleeperId ?? playerOrMeta;
+                    navigateToCompanionSleeperPlayer(sleeperId, 'Roster', resolvedMeta);
+                  }}
                 />
                 </Suspense>
               )}
@@ -1554,14 +1569,22 @@ function AppInner() {
                       companionView: 'rankings',
                       rankingsRosterId: rosterId,
                     }, { replace: true })}
-                    onViewPlayer={(sleeperId) => navigateToCompanionSleeperPlayer(sleeperId, 'Rankings')}
+                    onViewPlayer={(playerOrMeta, playerMeta) => {
+                      const resolvedMeta = playerMeta ?? (typeof playerOrMeta === 'object' ? playerOrMeta : null);
+                      const sleeperId = resolvedMeta?.sleeperId ?? playerOrMeta;
+                      navigateToCompanionSleeperPlayer(sleeperId, 'Rankings', resolvedMeta);
+                    }}
                   />
                 </Suspense>
               )}
               {companionView === 'live'   && (
                 <Suspense fallback={<SectionLoading label="Loading Live" />}>
                   <CompanionLive
-                    onViewPlayer={(sleeperId) => navigateToCompanionSleeperPlayer(sleeperId, 'Live')}
+                    onViewPlayer={(playerOrMeta, playerMeta) => {
+                      const resolvedMeta = playerMeta ?? (typeof playerOrMeta === 'object' ? playerOrMeta : null);
+                      const sleeperId = resolvedMeta?.sleeperId ?? playerOrMeta;
+                      navigateToCompanionSleeperPlayer(sleeperId, 'Live', resolvedMeta);
+                    }}
                   />
                 </Suspense>
               )}
@@ -1618,7 +1641,11 @@ function AppInner() {
                     leagueSubview: nextState.subView ?? 'roster',
                     leagueRosterId: nextState.rosterId ?? null,
                   }, { replace: true })}
-                  onViewPlayer={(sleeperId) => navigateToCompanionSleeperPlayer(sleeperId, 'League')}
+                  onViewPlayer={(playerOrMeta, playerMeta) => {
+                    const resolvedMeta = playerMeta ?? (typeof playerOrMeta === 'object' ? playerOrMeta : null);
+                    const sleeperId = resolvedMeta?.sleeperId ?? playerOrMeta;
+                    navigateToCompanionSleeperPlayer(sleeperId, 'League', resolvedMeta);
+                  }}
                   onTradePlayer={(sleeperId, partnerRosterId, side = 'get') => {
                     if (tradeDisabledForPlatform) return;
                     applyRoute({

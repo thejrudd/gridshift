@@ -260,8 +260,7 @@ export default function CompanionPlayerPreviewSheet({ playerId, onClose, onViewS
             type="button"
             className="companion-player-preview-full"
             onClick={() => {
-              onClose();
-              onViewStats?.(playerId);
+              onViewStats?.(playerMeta);
             }}
             disabled={!playerMeta || playerMetaLoading}
           >

@@ -113,11 +113,9 @@ Hosted owners can enable paid live scoring for selected Sleeper leagues by setti
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) + optional Node API sidecar |
 
-## What's New in v8.1.0
+## What's New in v8.1.1
 
-- **Draft outcome insights** - Draft Results now compares historical draft rank with the matching season finish and explains the outcome grade.
-- **Companion Defense** - Defense rankings now provide clearer filters, sortable stats, mobile drilldowns, and team-level scoring details.
-- **Coming Soon clarity** - Companion Live remains visible as Coming Soon until its release gate is met.
+- **Mobile Statistics drilldown fix** - Companion player previews now open the full Statistics profile without repeating the player metadata lookup that could time out.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 

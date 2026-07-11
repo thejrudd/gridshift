@@ -1130,3 +1130,9 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Draft outcome insights** - Draft Results now evaluates historical picks against the season that followed the draft, with aligned insight columns, positional outcome grades, outcome-strength sorting, and an explanation control for the grading scale.
 - **Companion Defense** - Defense rankings now provide clearer filters, sortable stat and fantasy-point views, mobile drilldowns, matchup context, and team-level scoring details.
 - **Companion Live remains Coming Soon** - Live scoring infrastructure is present for development but is excluded from the v8.1 What's New tour and remains unavailable until its release gate is met.
+
+---
+
+## v8.1.1 - Mobile Statistics Drilldown Fix
+
+- **Mobile Companion player drilldowns** - Reuse the player metadata already resolved by the mobile preview when opening Full Statistics, preventing the route from timing out during a redundant second lookup.

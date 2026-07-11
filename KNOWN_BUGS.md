@@ -51,6 +51,7 @@ These ESPN league integration issues are known but deferred while ESPN features 
 
 | Bug | Fixed In |
 |-----|----------|
+| Mobile Companion player preview could time out on "Open Full Statistics" because the already-resolved player metadata was discarded and the full Statistics route started a second asynchronous player lookup | v8.1.1 |
 | Trade section pages repeated too much instructional copy, making Agent, Intelligence, and Upgrades feel more verbose than necessary | v8.1.0 |
 | Companion → Matchup player projection formula hover could fail to stay open from the `i` control, hiding the projection math before it could be read | v8.1.0 |
 | Companion Live could obscure matchup context through abbreviated team names, provider-specific fallbacks, win-share presentation, season-vs-week PF/PA, unclear Starter Swing axes, misplaced chevrons, missing images, and empty Sleeper-backed stat details | v8.1.0 |
