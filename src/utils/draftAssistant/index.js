@@ -3,6 +3,7 @@ import { getPlayerProjectionProfile, playerSupportsDraftAssistant, sortDraftPlay
 import { rankDraftCandidates } from './recommendations.js';
 import { createPointsCalculator, getRecentAvg } from '../scoringEngine.js';
 export {
+  getDraftResultsPresentation,
   getSleeperDraftStatus,
   getSleeperDraftStartMs,
   getSleeperDraftPicksSignature,

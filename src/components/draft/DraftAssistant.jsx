@@ -115,6 +115,12 @@ const DRAFT_RESULTS_RANK_MODE_OPTIONS = [
   { id: 'draft', label: 'Draft Rank' },
   { id: 'finish', label: 'Season Finish' },
 ];
+const DRAFT_RESULTS_TOUR_ROWS = [
+  { key: 'tour-pick-1', pickLabel: '1.01', overall: 1, fantasyTeamId: 'tour-team-1', ownerLabel: 'Harbor Hawks', isMine: false, isDemo: true, player: { id: 'tour-player-1', name: 'Sample Quarterback', position: 'QB', team: 'TBD', raw: null } },
+  { key: 'tour-pick-2', pickLabel: '1.02', overall: 2, fantasyTeamId: 'tour-team-2', ownerLabel: 'Fourth & Goal', isMine: false, isDemo: true, player: { id: 'tour-player-2', name: 'Demo Running Back', position: 'RB', team: 'TBD', raw: null } },
+  { key: 'tour-pick-3', pickLabel: '1.03', overall: 3, fantasyTeamId: 'tour-team-3', ownerLabel: 'Sunday Captains', isMine: false, isDemo: true, player: { id: 'tour-player-3', name: 'Placeholder Receiver', position: 'WR', team: 'TBD', raw: null } },
+  { key: 'tour-pick-4', pickLabel: '1.04', overall: 4, fantasyTeamId: 'tour-team-4', ownerLabel: 'End Zone Club', isMine: false, isDemo: true, player: { id: 'tour-player-4', name: 'Sample Tight End', position: 'TE', team: 'TBD', raw: null } },
+];
 const DRAFT_MODEL_BUILD_DELAY_MS = 24;
 const DRAFT_SYNC_CACHE_LIMIT = 6;
 const DRAFT_VIEW_MODEL_CACHE_LIMIT = 4;
@@ -3047,7 +3053,7 @@ function DraftOrderTable({
   );
 
   return (
-    <section className="draft-panel draft-order-panel">
+    <section className="draft-panel draft-order-panel" data-tour="draft-results-content">
       <div className="draft-panel__header">
         <div>
           <h2>Draft Order</h2>
@@ -3921,7 +3927,7 @@ function DraftResultRow({ row, darkMode, onViewPlayer, showInsights = false, sea
     <DraftPlayerRow
       player={row.player}
       darkMode={darkMode}
-      onViewPlayer={onViewPlayer}
+      onViewPlayer={row.isDemo ? null : onViewPlayer}
       metrics={showInsights ? [rankMetric, outcomeMetric] : []}
       metricColumnGridTemplate={showInsights ? '72px minmax(92px, 1fr)' : null}
       rowGridTemplate={rowGrid}
@@ -4015,7 +4021,7 @@ function DraftFantasyTeamFilter({ options, selectedIds, onChange }) {
   );
 }
 
-function DraftResultsView({ onViewPlayer, sleeperDraftId = '' }) {
+function DraftResultsView({ onViewPlayer, sleeperDraftId = '', tourDemoMode = null }) {
   const {
     players,
     loadPlayers,
@@ -4055,6 +4061,7 @@ function DraftResultsView({ onViewPlayer, sleeperDraftId = '' }) {
     () => (draftPicks ?? []).some((pick) => pick?.player_id || pick?.playerId || pick?.metadata?.player_id),
     [draftPicks],
   );
+  const showTourResultsDemo = tourDemoMode === 'draft-results';
 
   const marketDraftContext = useMemo(() => ({
     metadata: { scoring_type: draftMeta?.metadata?.scoring_type },
@@ -4322,6 +4329,30 @@ function DraftResultsView({ onViewPlayer, sleeperDraftId = '' }) {
     );
   }
 
+  if (showTourResultsDemo) {
+    return (
+      <div className="draft-page">
+        <section className="draft-panel draft-results-panel" data-tour="draft-results-content">
+          <p className="px-4 pt-4 text-sm font-semibold" style={{ color: 'var(--color-label-secondary)' }}>
+            Tour preview - placeholder picks only
+          </p>
+          <div className="draft-results-list">
+            {DRAFT_RESULTS_TOUR_ROWS.map((row) => (
+              <DraftResultRow
+                key={row.key}
+                row={row}
+                darkMode={darkMode}
+                onViewPlayer={null}
+                showInsights={false}
+                seasonIsComplete={false}
+              />
+            ))}
+          </div>
+        </section>
+      </div>
+    );
+  }
+
   if (!myRosterData) {
     return (
       <div className="draft-page">
@@ -4376,7 +4407,7 @@ function DraftResultsView({ onViewPlayer, sleeperDraftId = '' }) {
           players={players ?? {}}
         />
       ) : (
-        <section className="draft-panel draft-results-panel">
+        <section className="draft-panel draft-results-panel" data-tour="draft-results-content">
           <div className="draft-results-controls">
             <div className="draft-results-control-row draft-results-control-row--positions">
               <span className="draft-results-control-row__label">Position</span>
@@ -4424,9 +4455,9 @@ function DraftResultsView({ onViewPlayer, sleeperDraftId = '' }) {
   );
 }
 
-export default function DraftAssistant({ view = 'war-room', sleeperDraftId = '', onViewPlayer = null }) {
-  if (view === 'draft-order') return <DraftResultsView sleeperDraftId={sleeperDraftId} onViewPlayer={onViewPlayer} />;
-  if (view === 'results') return <DraftResultsView sleeperDraftId={sleeperDraftId} onViewPlayer={onViewPlayer} />;
+export default function DraftAssistant({ view = 'war-room', sleeperDraftId = '', onViewPlayer = null, tourDemoMode = null }) {
+  if (view === 'draft-order') return <DraftResultsView sleeperDraftId={sleeperDraftId} onViewPlayer={onViewPlayer} tourDemoMode={tourDemoMode} />;
+  if (view === 'results') return <DraftResultsView sleeperDraftId={sleeperDraftId} onViewPlayer={onViewPlayer} tourDemoMode={tourDemoMode} />;
   if (view === 'my-board') return <DraftBoardDataView mode="my-board" sleeperDraftId={sleeperDraftId} onViewPlayer={onViewPlayer} />;
   if (view !== 'war-room') return <FutureDraftView view={view} />;
   return <DraftBoardDataView mode="war-room" sleeperDraftId={sleeperDraftId} onViewPlayer={onViewPlayer} />;

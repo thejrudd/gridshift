@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { WHATS_NEW } from '../data/whatsNew';
-import { collectWhatsNew, compareVersions, parseVersion } from '../utils/versionUtils';
+import { collapseSupersededFeatures, collectWhatsNew, compareVersions, parseVersion } from '../utils/versionUtils';
 
 const STORAGE_KEY = 'gridshift:installedVersion';
 const DEV_REPLAY = import.meta.env.DEV && import.meta.env.VITE_WHATS_NEW_REPLAY === 'true';
+const DEV_BASELINE = import.meta.env.DEV ? import.meta.env.VITE_WHATS_NEW_BASELINE_OVERRIDE : null;
 
 function readInstalledVersion() {
   try { return localStorage.getItem(STORAGE_KEY); } catch { return null; }
@@ -20,25 +21,33 @@ export default function useWhatsNew({ enabled = true } = {}) {
   const [pending, setPending] = useState([]);
 
   useEffect(() => {
-    // Do not consume the tour before the user has opened a league. The
-    // league is required by the tour's Companion routes and anchors.
-    if (!enabled) return;
-
     const current = __APP_VERSION__;
+
+    // Local-only upgrade simulator: calculate the exact feature-version
+    // entries crossed by the requested baseline and keep them replayable.
+    if (parseVersion(DEV_BASELINE)) {
+      setPending(collectWhatsNew(WHATS_NEW, DEV_BASELINE, current));
+      return;
+    }
 
     // Local-only test harness: keep the tour available across reloads so it
     // can be replayed on a phone without changing the installed-version key.
     if (DEV_REPLAY) {
-      setPending(WHATS_NEW);
+      setPending(collapseSupersededFeatures(WHATS_NEW));
       return;
     }
 
     const lastSeen = readInstalledVersion();
 
-    // The tour was introduced in 8.1, so an absent key can mean either a
-    // first-time user or an upgrade from a historical install. Treat both as
-    // pre-tour installs so historical users do not miss the current catalog.
-    const baseline = parseVersion(lastSeen) ? lastSeen : '0.0.0';
+    // A missing key is a first run, not evidence that the user upgraded from
+    // every historical version. Establish the current build as the baseline
+    // without showing a tour for a fresh install.
+    if (!parseVersion(lastSeen)) {
+      writeInstalledVersion(current);
+      return;
+    }
+
+    const baseline = lastSeen;
 
     if (compareVersions(baseline, current) >= 0) return;
 
@@ -52,11 +61,13 @@ export default function useWhatsNew({ enabled = true } = {}) {
     // Feature versions crossed: leave the stored version untouched until the
     // user dismisses or finishes the tour, so a mid-tour reload re-offers it.
     setPending(entries);
-  }, [enabled]);
+  }, []);
 
   const markSeen = useCallback(() => {
     if (!enabled) return;
-    writeInstalledVersion(__APP_VERSION__);
+    if (!parseVersion(DEV_BASELINE) && !DEV_REPLAY) {
+      writeInstalledVersion(__APP_VERSION__);
+    }
     setPending([]);
   }, [enabled]);
 

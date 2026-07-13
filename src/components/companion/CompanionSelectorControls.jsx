@@ -52,7 +52,7 @@ export function CompanionSelectorRail({
   ariaLabel,
   children,
   className = '',
-  wrapOnDesktop = true,
+  wrapOnDesktop = false,
   style = null,
 }) {
   const railRef = useRef(null);

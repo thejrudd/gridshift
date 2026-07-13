@@ -11,6 +11,7 @@ import {
   buildPickOrder,
   categorizeDraftScoringSettings,
   computeDraftOutcomes,
+  getDraftResultsPresentation,
   getDraftResultsSeason,
   getDraftStatsSeason,
   getScheduledDraftCountdownParts,
@@ -157,6 +158,21 @@ test('draft results route round-trips cleanly', () => {
   assert.equal(route.activeTab, 'draft');
   assert.equal(route.draftView, 'results');
   assert.equal(buildAppPath(route), '/draft/results');
+});
+
+test('draft results presentation changes from Picks when the draft starts', () => {
+  assert.deepEqual(getDraftResultsPresentation({ status: 'pre_draft' }), {
+    phase: 'pre_draft',
+    label: 'Picks',
+  });
+  assert.deepEqual(getDraftResultsPresentation({ status: 'drafting' }), {
+    phase: 'results',
+    label: 'Results',
+  });
+  assert.deepEqual(getDraftResultsPresentation({ status: 'complete' }), {
+    phase: 'results',
+    label: 'Results',
+  });
 });
 
 test('draft override query round-trips cleanly', () => {

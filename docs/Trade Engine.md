@@ -10,10 +10,11 @@ If you change Trade logic, Trade explanation text, trade valuation, or proposal 
 
 ## What the Trade system does
 
-The app has three different Trade surfaces:
+The app has four different Trade surfaces:
 - `Agent`: manual trade building, valuation, and refinement
 - `Intelligence`: partner-specific trade ideas driven by roster needs and surplus
 - `Upgrades`: league-wide search for better players at a chosen position or target slot
+- `History`: a factual archive of finalized trades from the selected linked-league season and earlier
 
 These surfaces share some underlying valuation inputs, but they do not all use the exact same pipeline.
 
@@ -23,6 +24,10 @@ These surfaces share some underlying valuation inputs, but they do not all use t
   Public Trade entry point and orchestration shell for all Trade modes. It keeps state, routing/query sync, caches, modal orchestration, and default export compatibility.
 - `src/components/companion/trade/`
   Extracted Trade UI modules. `TradeProposalBuilder.jsx` owns the Agent builder surface, `TradeProposalPanel.jsx` owns Intelligence and proposal result rendering, `UpgradeFinderPage.jsx` owns the Upgrade flow, `ProposalPlayerCard.jsx` owns proposal player/pick cards, `ValuationInfoSheet.jsx` owns value explanation content, and `RosterBrowseModal.jsx` owns partner roster browsing.
+- `src/components/companion/TradeHistory.jsx`
+  Read-only Trade History route. It owns season grouping, manager/search filters, expandable transactions, responsive asset cards, and loading/empty/error states without starting the valuation pipeline.
+- `src/utils/tradeHistory.js`
+  Fetches and caches weekly Sleeper transactions by league season, filters to completed trades, and normalizes manager, player, draft-pick, and FAAB movement.
 - `src/utils/tradeValue.js`
   Shared player trade-value detail builder. This is the common source for blended trade values used across Trade surfaces.
 - `src/utils/tradeAnalytics.js`
@@ -94,6 +99,16 @@ Main responsibilities:
 - rank and group the best upgrade paths by manager
 
 For ESPN leagues, outgoing/incoming pick toggles are disabled before the search request is built, so upgrade results stay player-only.
+
+### History flow
+
+`App.jsx` -> `TradeHistory.jsx` -> `tradeHistory.js` -> Sleeper transactions
+
+Main responsibilities:
+- follow the existing linked-league lineage and treat the selected season as a hard upper bound
+- fetch transaction rounds 0 through 18 for each eligible league season and cache completed seasons permanently
+- include only `trade` transactions with `status: complete`
+- display factual asset movement without loading KTC values, grading trades, or declaring a winner
 
 ## What each engine optimizes for
 

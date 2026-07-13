@@ -67,7 +67,7 @@ function computeTooltipPosition(rect, placement) {
 // Full-screen guided tour: spotlights one anchor element per step, navigates
 // the app between steps via the provided `navigate(route)` callback, and lets
 // the user skip everything at any point.
-export default function TourOverlay({ entries, navigate, currentRoute, onFinish }) {
+export default function TourOverlay({ entries, navigate, currentRoute, context = {}, onStepChange, onFinish }) {
   useBodyScrollLock();
 
   // Flatten entries → ordered steps, tagging each with its feature name.
@@ -89,20 +89,38 @@ export default function TourOverlay({ entries, navigate, currentRoute, onFinish 
   const anchorElRef = useRef(null);
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 1024;
 
-  const step = steps[stepIndex];
+  const rawStep = steps[stepIndex];
+  const contextualCopy = rawStep?.contextKey
+    ? rawStep.copyByContext?.[context[rawStep.contextKey]]
+    : null;
+  const demoEnabled = rawStep?.demoMode && Object.entries(rawStep.demoWhen ?? {})
+    .every(([key, value]) => context[key] === value);
+  const step = useMemo(() => (rawStep ? {
+    ...rawStep,
+    ...contextualCopy,
+    demoMode: demoEnabled ? rawStep.demoMode : null,
+  } : null), [rawStep, contextualCopy, demoEnabled]);
   const total = steps.length;
 
-  const finish = useCallback(() => onFinish(), [onFinish]);
+  const finish = useCallback(() => {
+    onStepChange?.(null);
+    onFinish();
+  }, [onFinish, onStepChange]);
 
   const advance = useCallback(() => {
     setStepIndex((i) => {
       if (i + 1 >= steps.length) {
+        onStepChange?.(null);
         onFinish();
         return i;
       }
       return i + 1;
     });
-  }, [steps.length, onFinish]);
+  }, [steps.length, onFinish, onStepChange]);
+
+  useEffect(() => {
+    onStepChange?.(step);
+  }, [stepIndex, step?.demoMode, onStepChange]);
 
   // Navigate for the current step when its route differs from the app's.
   useEffect(() => {

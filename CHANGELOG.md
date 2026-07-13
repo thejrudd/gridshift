@@ -1136,3 +1136,15 @@ All notable changes, oldest first. Add new entries at the bottom.
 ## v8.1.1 - Mobile Statistics Drilldown Fix
 
 - **Mobile Companion player drilldowns** - Reuse the player metadata already resolved by the mobile preview when opening Full Statistics, preventing the route from timing out during a redundant second lookup.
+
+---
+
+## v8.2.0 - Trade History & Draft Clarity
+
+- **Trade History** - Added a read-only Trade History view for finalized Sleeper trades from the selected season and every earlier linked league season, with permanent completed-season caching, manager filters, search, expandable transactions, player drilldowns, and player, pick, and waiver-budget asset details.
+- **Season-safe transaction context** - Kept future league seasons out of historical views, distinguished preseason transactions from regular-season weeks, and aligned Trade History loading, empty, sticky-filter, and responsive states with the shared Companion experience.
+- **Draft Picks and Results** - Renamed the Draft Results tab to Picks while the selected draft is pre-draft, automatically restores Results after the draft begins, and added a tour-only placeholder board that explains the completed-results experience without altering league data.
+- **Upgrade tour reliability** - Added supersession-aware feature collection, context-sensitive tour copy, tour demo state, local upgrade simulation, structural validation, and full desktop/mobile replay coverage so multi-version upgrades show only current feature explanations.
+- **Trade workspace polish** - Improved desktop and mobile trade-partner selection, roster switching, value attribution placement, selector scrolling, proposal-card presentation, and the support link destination.
+- **Documentation and regression coverage** - Updated the Draft Assistant, Trade Engine, upgrade-simulation, roadmap, and release docs; added Trade History and tour unit/end-to-end coverage; and formalized the historical tour regression gate for future commits.
+- **Bug fixes** - Corrected preseason Trade History labels, sticky season-row painting, recurring tour spotlight flashes, and contradictory superseded features in multi-version tours.

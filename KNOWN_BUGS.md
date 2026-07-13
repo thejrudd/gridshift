@@ -51,6 +51,10 @@ These ESPN league integration issues are known but deferred while ESPN features 
 
 | Bug | Fixed In |
 |-----|----------|
+| Trade History can label pre-season trades as Week 1 because Sleeper's transaction leg does not distinguish pre-season timing. | v8.2.0 |
+| Trade History season rows can paint through the transparent sticky offset above the locked search and manager filters while scrolling. | v8.2.0 |
+| The What's New tour spotlight can repeatedly reset to its full-screen resolving scrim, making the Trade History step flash for a single frame every few seconds. | v8.2.0 |
+| Multi-version feature tours can show an obsolete earlier feature beside its later replacement, producing contradictory bullets and invalid tour steps. | v8.2.0 |
 | Mobile Companion player preview could time out on "Open Full Statistics" because the already-resolved player metadata was discarded and the full Statistics route started a second asynchronous player lookup | v8.1.1 |
 | Trade section pages repeated too much instructional copy, making Agent, Intelligence, and Upgrades feel more verbose than necessary | v8.1.0 |
 | Companion → Matchup player projection formula hover could fail to stay open from the `i` control, hiding the projection math before it could be read | v8.1.0 |

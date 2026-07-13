@@ -1262,6 +1262,13 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
             setPickerOpen={setTradePickerOpen}
             openStatsModalForPlayer={openStatsModalForPlayer}
             clearTrade={clearTrade}
+            attribution={<TradeValueAttribution
+              format={format}
+              leagueType={leagueType}
+              isAdjusted={isAdjusted}
+              onInfoClick={() => setShowValInfo(true)}
+              onDark
+            />}
           />
 
           {/* ── Search all rostered players (mobile only) ───────────────── */}
@@ -1359,29 +1366,6 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
         </div>
       ) : null}
 
-      {showAgent && (
-        <>
-          <div className="lg:hidden px-4 pt-6 pb-2 flex items-center justify-center gap-1.5">
-            <TradeValueAttribution
-              format={format}
-              leagueType={leagueType}
-              isAdjusted={isAdjusted}
-              onInfoClick={() => setShowValInfo(true)}
-            />
-          </div>
-          <div
-            className="hidden lg:flex items-center justify-end gap-1.5"
-            style={{ position: 'fixed', right: 24, bottom: 14, zIndex: 20, pointerEvents: 'none' }}
-          >
-            <TradeValueAttribution
-              format={format}
-              leagueType={leagueType}
-              isAdjusted={isAdjusted}
-              onInfoClick={() => setShowValInfo(true)}
-            />
-          </div>
-        </>
-      )}
 
       {/* ── Picker modals ───────────────────────────────────────────────── */}
 
@@ -1488,16 +1472,16 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
   );
 }
 
-function TradeValueAttribution({ format, leagueType, isAdjusted, onInfoClick }) {
+function TradeValueAttribution({ format, leagueType, isAdjusted, onInfoClick, onDark = false }) {
   return (
     <>
       <span
         className="text-xs"
         data-testid="trade-value-attribution"
-        style={{ color: 'var(--color-label-quaternary)', pointerEvents: 'auto' }}
+        style={{ color: onDark ? 'rgba(255,255,255,0.46)' : 'var(--color-label-quaternary)' }}
       >
         Values from{' '}
-        <span className="font-medium" style={{ color: 'var(--color-label-tertiary)' }}>KeepTradeCut</span>
+        <span className="font-medium" style={{ color: onDark ? 'rgba(255,255,255,0.68)' : 'var(--color-label-tertiary)' }}>KeepTradeCut</span>
         {' · '}{format === 'dynasty' ? 'Dynasty' : 'Redraft'}
         {' · '}{leagueType === 'sf' ? 'Superflex' : '1QB'}
         {isAdjusted && (
@@ -1507,7 +1491,7 @@ function TradeValueAttribution({ format, leagueType, isAdjusted, onInfoClick }) 
       <button
         onClick={onInfoClick}
         className="shrink-0 w-4 h-4 rounded-full flex items-center justify-center"
-        style={{ background: 'var(--color-fill)', color: 'var(--color-label-tertiary)', pointerEvents: 'auto' }}
+        style={{ background: onDark ? 'rgba(255,255,255,0.12)' : 'var(--color-fill)', color: onDark ? 'rgba(255,255,255,0.74)' : 'var(--color-label-tertiary)', pointerEvents: 'auto' }}
         aria-label="How values are calculated"
       >
         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">

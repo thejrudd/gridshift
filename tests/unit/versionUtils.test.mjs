@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { parseVersion, compareVersions, collectWhatsNew } from '../../src/utils/versionUtils.js';
+import { WHATS_NEW } from '../../src/data/whatsNew.js';
+import { collapseSupersededFeatures, parseVersion, compareVersions, collectWhatsNew } from '../../src/utils/versionUtils.js';
 
 test('parseVersion handles full, short, and prefixed versions', () => {
   assert.deepEqual(parseVersion('8.1.0'), { major: 8, minor: 1, patch: 0 });
@@ -46,6 +47,22 @@ test('collectWhatsNew returns nothing for a patch-only jump', () => {
   assert.deepEqual(collectWhatsNew(ENTRIES, '8.1.0', '8.1.1'), []);
 });
 
+test('v8.1.1 to v8.2 shows only the v8.2 Trade History and Draft tour', () => {
+  const entries = collectWhatsNew(WHATS_NEW, '8.1.1', '8.2.0');
+
+  assert.deepEqual(entries.map((entry) => entry.version), ['8.2.0']);
+  assert.deepEqual(
+    entries[0].features.map((feature) => feature.id),
+    ['trade-history', 'draft-picks-results'],
+  );
+  assert.equal(
+    entries[0].features
+      .find((feature) => feature.id === 'draft-picks-results')
+      .steps.some((step) => step.demoMode === 'draft-results'),
+    true,
+  );
+});
+
 test('collectWhatsNew excludes the lastSeen version itself', () => {
   assert.deepEqual(
     collectWhatsNew(ENTRIES, '8.1.0', '8.2.0').map((e) => e.version),
@@ -62,4 +79,32 @@ test('collectWhatsNew is safe with invalid input', () => {
   assert.deepEqual(collectWhatsNew(ENTRIES, null, '9.0.0'), []);
   assert.deepEqual(collectWhatsNew(ENTRIES, '8.0.0', undefined), []);
   assert.deepEqual(collectWhatsNew(null, '8.0.0', '9.0.0'), []);
+});
+
+test('later crossed features suppress obsolete earlier tour features', () => {
+  const entries = collectWhatsNew(WHATS_NEW, '8.0.0', '8.2.0');
+
+  assert.deepEqual(entries.map((entry) => ({
+    version: entry.version,
+    features: entry.features.map((feature) => feature.id),
+  })), [
+    { version: '8.1.0', features: ['companion-defense'] },
+    { version: '8.2.0', features: ['trade-history', 'draft-picks-results'] },
+  ]);
+});
+
+test('an older feature remains when its replacement version was not crossed', () => {
+  const entries = collectWhatsNew(WHATS_NEW, '8.0.0', '8.1.0');
+  assert.deepEqual(entries[0].features.map((feature) => feature.id), [
+    'draft-outcome-insights',
+    'companion-defense',
+  ]);
+});
+
+test('full-history replay applies feature supersession', () => {
+  const entries = collapseSupersededFeatures(WHATS_NEW);
+  assert.equal(
+    entries.some((entry) => entry.features.some((feature) => feature.id === 'draft-outcome-insights')),
+    false,
+  );
 });

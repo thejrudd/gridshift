@@ -48,6 +48,10 @@ export function getMatchups(leagueId, week) {
   return get(`/league/${leagueId}/matchups/${week}`);
 }
 
+export function getTransactions(leagueId, round) {
+  return get(`/league/${leagueId}/transactions/${round}`);
+}
+
 export function getTradedPicks(leagueId) {
   return get(`/league/${leagueId}/traded_picks`);
 }

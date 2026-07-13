@@ -94,13 +94,25 @@ On every commit that bumps the version, update ALL of these before committing:
 4. **`package.json`** — Bump `"version"` to the new version number.
 5. **`src/components/Sidebar.jsx`** — Update the hardcoded version string in the sidebar footer.
 6. **`README.md`** — See README rules below.
-7. **`src/data/whatsNew.js`** — **Feature versions only** (skip patch/bug-fix releases): ASK THE USER which shipped changes should be highlighted with in-app "What's New" tour tooltips. Append a `{ version, title, features }` entry at the **end** of `WHATS_NEW` (oldest-first, mirroring CHANGELOG). Each feature gets `id`, `name`, `description`, and 1–3 `steps` — a `route` in `applyRoute` shape, an `anchor` selector like `[data-tour="..."]` (add the `data-tour` attribute to the target element if it doesn't exist yet), and tooltip `title`/`body`. Never rewrite past entries except to repair broken anchors/routes. The version comparison is driven by this file: a version with no entry shows nothing after update.
+7. **`src/data/whatsNew.js`** — **Feature versions only** (skip patch/bug-fix releases): ASK THE USER which shipped changes should be highlighted with in-app "What's New" tour tooltips. Append a `{ version, title, features }` entry at the **end** of `WHATS_NEW` (oldest-first, mirroring CHANGELOG). Each feature gets `id`, `name`, `description`, and 1–3 `steps` — a `route` in `applyRoute` shape, an `anchor` selector like `[data-tour="..."]` (add the `data-tour` attribute to the target element if it doesn't exist yet), and tooltip `title`/`body`. When a newer feature replaces or materially changes an older toured feature, add `supersedes: ['older-feature-id']` to the newer feature so skipped-version upgrades show only the current explanation. Never rewrite past entries except to repair broken anchors/routes/copy; use supersession to preserve history without replaying obsolete behavior. The version comparison is driven by this file: a version with no entry shows nothing after update.
 
 After committing: do NOT run `git push` — the user pushes manually.
 
 **Why package.json matters:** The version bump forces vite-plugin-pwa to regenerate the service worker precache manifest with a new revision hash, so browsers/PWA installs fetch the updated build instead of serving stale cache.
 
 Before any commit: ask the user whether the open bugs for the target version have in fact been resolved. Do not move version-specific bugs from Open to Fixed based only on implementation assumptions.
+
+### What's New Tour Regression Gate
+
+Before every commit, invoke `$validate-gridshift-tour` and validate the complete historical tour in `src/data/whatsNew.js`, not only the entry for the version being committed. The gate must:
+
+1. Run `npm run validate:tour` to check entry ordering, unique feature IDs, route normalization/round trips, required copy, and source-backed desktop/mobile anchors.
+2. Run `npm run test:e2e:tour` to replay the full upgrade tour on desktop and mobile with the supported fixture data. Every step must reach its declared route, resolve a visible anchor, display its tooltip, and advance without timing out or silently skipping.
+3. Build a feature-evolution map across every crossed version. Compare older and newer bullets that share a route, anchor, feature surface, or user outcome against the current UI. If a later feature replaces or materially changes an earlier one, declare `supersedes` and verify the obsolete bullet and steps are removed from the effective upgrade tour.
+4. Review the staged diff for changes to routes, navigation, conditional rendering, feature names/copy, tour context/demo state, or any component owning a `data-tour` anchor. Confirm every remaining tooltip describes the current UI rather than only proving that its selector exists.
+5. Treat any mechanical or semantic historical failure as a commit blocker. Repair the implementation, supersession relationship, or affected tour copy, rerun both checks, and report the effective feature list before committing.
+
+For an upgrade spanning multiple feature versions (for example v8.0 → v8.2), validate the effective crossed entries in order after applying supersession. Never flatten and replay raw `WHATS_NEW` entries because that can revive obsolete features. A successful build or unit-test run does not replace this tour gate.
 
 ### CHANGELOG.md Rules
 - Never use "Unreleased" as a section header — always assign changes to a specific version number, even if not yet released.

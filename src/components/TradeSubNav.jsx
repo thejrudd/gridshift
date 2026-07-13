@@ -4,6 +4,7 @@ const VIEWS = [
   { id: 'agent', label: 'Agent' },
   { id: 'intelligence', label: 'Intelligence' },
   { id: 'upgrade', label: 'Upgrades' },
+  { id: 'history', label: 'History' },
 ];
 
 export default function TradeSubNav({ activeView, onViewChange, onViewIntent }) {
@@ -19,6 +20,7 @@ export default function TradeSubNav({ activeView, onViewChange, onViewIntent }) 
           onFocus={() => (id === 'intelligence' || id === 'upgrade') && onViewIntent?.(id)}
           onTouchStart={() => (id === 'intelligence' || id === 'upgrade') && onViewIntent?.(id)}
           className={`season-tab${activeView === id ? ' active' : ''}`}
+          data-tour={id === 'history' ? 'trade-view-history' : undefined}
         >
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
             {label}

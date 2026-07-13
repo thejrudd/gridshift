@@ -276,11 +276,11 @@ export default function Sidebar({
           </span>
         </button>
         <a
-          href="https://ko-fi.com/gridshift"
+          href="https://buymeacoffee.com/gridshift"
           target="_blank"
           rel="noopener noreferrer"
           className="sidebar-action-item"
-          aria-label="Support GridShift on Ko-fi"
+          aria-label="Support GridShift on Buy Me a Coffee"
           style={{ display: 'flex', alignItems: 'center', gap: '10px' }}
         >
           <SupportIcon />
@@ -298,7 +298,7 @@ export default function Sidebar({
           className="px-5 py-3 text-xs"
           style={{ color: 'var(--color-label-tertiary)' }}
         >
-          v8.1.1
+          v8.2.0
         </div>
       </div>
     </aside>

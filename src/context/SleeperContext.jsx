@@ -1164,6 +1164,26 @@ export function FantasyProvider({ children }) {
 
   const isConnected = !!sleeperUser;
   const hasLeague = !!selectedLeagueId && !!league;
+  const linkedLeagueHistory = useMemo(() => {
+    if (platform === 'espn' || !league) return [];
+    const combinedLeaguesBySeason = {
+      ...leaguesBySeason,
+      [season]: leaguesBySeason[season] ?? leagues,
+    };
+    const lineageIds = buildLeagueLineageIds(league, combinedLeaguesBySeason);
+    const linkedHistory = Object.entries(combinedLeaguesBySeason)
+      .map(([seasonKey, seasonLeagues]) => ({
+        season: String(seasonKey),
+        league: (seasonLeagues ?? []).find((item) => isLeagueInLineage(item, lineageIds)) ?? null,
+      }))
+      .filter((entry) => entry.league);
+    const currentSeason = String(league.season ?? season);
+    if (!linkedHistory.some((entry) => entry.season === currentSeason)) {
+      linkedHistory.push({ season: currentSeason, league });
+    }
+    return linkedHistory.sort((a, b) => Number(b.season) - Number(a.season));
+  }, [league, leaguesBySeason, leagues, platform, season]);
+
   const linkedLeagueSeasonOptions = useMemo(() => {
     if (platform === 'espn') {
       return mergeSeasonOptions(
@@ -1171,20 +1191,8 @@ export function FantasyProvider({ children }) {
         availableSeasons.length ? availableSeasons : [String(season)],
       );
     }
-    if (!league) return [];
-    const combinedLeaguesBySeason = {
-      ...leaguesBySeason,
-      [season]: leaguesBySeason[season] ?? leagues,
-    };
-    const lineageIds = buildLeagueLineageIds(league, combinedLeaguesBySeason);
-    const linkedSeasons = Object.entries(combinedLeaguesBySeason)
-      .filter(([, seasonLeagues]) => (seasonLeagues ?? []).some((item) => isLeagueInLineage(item, lineageIds)))
-      .map(([seasonKey]) => String(seasonKey));
-
-    const currentSeason = String(league.season ?? season);
-    if (!linkedSeasons.includes(currentSeason)) linkedSeasons.push(currentSeason);
-    return linkedSeasons.sort((a, b) => Number(b) - Number(a));
-  }, [availableSeasons, league, leaguesBySeason, leagues, platform, season]);
+    return linkedLeagueHistory.map((entry) => entry.season);
+  }, [availableSeasons, linkedLeagueHistory, platform, season]);
 
   const loadMatchups = useCallback(async (leagueId, week) => {
     if (platform === 'espn') return espnMatchupsByWeek?.[week] ?? [];
@@ -1214,6 +1222,7 @@ export function FantasyProvider({ children }) {
     availableSeasons,
     leaguesBySeason,
     linkedLeagueSeasonOptions,
+    linkedLeagueHistory,
     scoringSettings,
     scoringOverride,
     scoringOverridePaused,
@@ -1252,6 +1261,7 @@ export function FantasyProvider({ children }) {
     availableSeasons,
     leaguesBySeason,
     linkedLeagueSeasonOptions,
+    linkedLeagueHistory,
     scoringSettings,
     scoringOverride,
     scoringOverridePaused,

@@ -4,6 +4,7 @@ import react from '@vitejs/plugin-react-swc'
 import { VitePWA } from 'vite-plugin-pwa'
 
 const { version } = JSON.parse(readFileSync('./package.json', 'utf8'))
+const appVersion = process.env.GRIDSHIFT_APP_VERSION_OVERRIDE ?? version
 
 export default defineConfig({
   server: {
@@ -26,7 +27,7 @@ export default defineConfig({
     },
   },
   define: {
-    __APP_VERSION__: JSON.stringify(version),
+    __APP_VERSION__: JSON.stringify(appVersion),
   },
   plugins: [
     react(),

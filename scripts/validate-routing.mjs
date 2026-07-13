@@ -59,6 +59,7 @@ const validatedPaths = [
   expectRoundTrip({ activeTab: 'companion', companionView: 'league', leagueSubview: 'roster', leagueRosterId: '5' }, '/companion/league?team=5'),
   expectRoundTrip({ activeTab: 'companion', companionView: 'league', leagueSubview: 'picks' }, '/companion/league?sub=picks'),
   expectRoundTrip({ activeTab: 'trade', tradeView: 'agent' }, '/trade/agent'),
+  expectRoundTrip({ activeTab: 'trade', tradeView: 'history' }, '/trade/history'),
   expectRoundTrip({ activeTab: 'trade', tradeView: 'intelligence', tradePartnerRosterId: '5' }, '/trade/intelligence?partner=5'),
   expectRoundTrip({ activeTab: 'trade', tradeView: 'agent', tradePlayerId: '4034', tradeSide: 'give', tradePartnerRosterId: '7', tradeOtherPlayerId: '111' }, '/trade/agent?player=4034&side=give&partner=7&other=111'),
   expectRoundTrip({ activeTab: 'scout', scoutView: 'prospects' }, '/scout'),

@@ -97,7 +97,7 @@ export default function ActionSheet({
           <Divider />
           <ActionLink
             label="Support GridShift"
-            href="https://ko-fi.com/gridshift"
+            href="https://buymeacoffee.com/gridshift"
           />
           <Divider />
           <ActionRow label="Guide" onClick={onGuide} />

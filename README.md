@@ -6,30 +6,27 @@ An interactive web app for the 2026 NFL season — with full Sleeper fantasy lea
 
 ## Features
 
-- **Game-by-Game Predictions** — Predict records or drill into each team's full schedule with automatic opponent syncing; picks stay in sync league-wide
-- **Prediction Constraints** — Keeps win/loss/tie totals, division records, and synced opponent picks within possible NFL bounds
-- **Division Standings** — Auto-generated standings sorted by wins, division record, and strength of schedule
-- **Playoff Seeding** — AFC and NFC brackets with division winners and wild card spots
-- **Shareable Infographic** — Build a custom bento-grid graphic with up to 11 insight sections. Drag and resize sections, add your name/handle, and export as an image
-- **Team Search & Filters** — Search teams, players, and schedule views across the Statistics and Companion surfaces
-- **Player Browser** — Browse all 32 rosters by conference, division, and position; search players by name across the league
-- **Player Profiles** — Full profile pages with headshot, career stats, game log, and Pro Bowl / All-Pro honors
-- **Statistics Schedule** — Browse the NFL schedule by week or team with international, PrimeTime, and holiday filters
-- **Statistics Standings** — View division and conference standings from final schedule results inside the Statistics section
-- **Sleeper League Integration** — Connect your Sleeper account, import a league, and sync custom scoring settings
-- **Draft Assistant (Beta)** — Use a top-level Sleeper draft room with War Room rankings, a saved Draft Board, live status timing, and consolidated pick Results
-- **League Browser** — Browse any league member's full roster with stats and weekly breakdowns; view a league-wide draft capital grid showing pick ownership by round and year
-- **Fantasy Matchup View** — Head-to-head starter comparison with week-by-week points, projections, positional rankings, weather context, and game location
-- **Player Projections** — Min/max/projected ranges using a recent-weighted blend of form and season average, factoring opponent strength, home/away, weather, and snap % trend
-- **Heatmap** — 32-team grid of fantasy points allowed or scored per position per week; three scope modes, Vegas spread/O/U overlay, location filter, and per-cell player drilldowns
-- **Trade Agent & Upgrades** — Build trades with roster shelves, draft picks, value context, drag-and-drop actions, and guided upgrade suggestions
-- **Scout (Beta)** — Rookie scouting hub with 2026 prospects, all-position filters, draft-status handling, combine metrics, and side-by-side prospect comparison
-- **Scoring Breakdowns** — Drill into any player or full team score to see a stat-by-stat fantasy point breakdown
-- **Favorite Team Theming** — Pick your favorite NFL team to theme the app; accent color applies across nav, progress bar, and filter toggles
-- **Export/Import** — Save predictions as JSON; import JSON to restore picks
-- **Dark Mode** — Toggle between light and dark themes; persists across sessions
-- **PWA / Installable** — Install to your home screen on iOS and Android; runs in standalone mode with asset caching
-- **Responsive Design** — Two-panel layout on desktop (sidebar + content), tab bar on mobile
+### Season Planning
+
+- Predictions — Game picks, constraints, standings, playoff seeding, and shareable infographic export.
+- Statistics — Schedules, standings, team/player profiles, game logs, honors, and scoring breakdowns.
+
+### Fantasy Companion
+
+- Sleeper integration — League connection, custom scoring, rosters, and season navigation.
+- Matchups — Weekly starter comparisons with projections, ranks, weather, game context, and scoring details.
+- League analysis — Player stats, fantasy points allowed, team defense, heatmaps, and roster/draft capital.
+- Trade tools — Roster-and-pick proposals, guided upgrades, and searchable multi-season trade history.
+
+### Draft & Scouting
+
+- Draft Assistant (Beta) — War Room rankings, Draft Board, live timing, and consolidated Results.
+- Scout (Beta) — 2026 prospects, filters, draft status, combine metrics, and comparisons.
+
+### Sharing & App Experience
+
+- Export/import — Save and restore predictions as JSON.
+- Themes and display — Favorite-team theming, dark mode, responsive layouts, and installable PWA.
 
 ## Getting Started
 
@@ -113,18 +110,20 @@ Hosted owners can enable paid live scoring for selected Sleeper leagues by setti
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) + optional Node API sidecar |
 
-## What's New in v8.1.1
+## What's New in v8.2.0
 
-- **Mobile Statistics drilldown fix** - Companion player previews now open the full Statistics profile without repeating the player metadata lookup that could time out.
+- **Trade History** — Browse finalized trades from the selected league season and every linked season before it, with manager filters, search, expandable asset details, and player drilldowns.
+- **Draft Picks and Results** — The Draft tab now shows Picks before the draft and automatically becomes Results after it starts, with clearer season-aware guidance.
+- **Reliable upgrade tours** — Multi-version upgrades now omit superseded feature explanations and validate every effective step on desktop and mobile.
+- **Trade workspace polish** — Improved partner selection, roster switching, value attribution, responsive controls, and shared styling across Trade surfaces.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Roadmap
 
-- **v8.1 - Live Fantasy Scoring (Coming Soon)** - Sleeper-first live matchup experience with server-protected BALLDONTLIE support for allowlisted Sleeper leagues.
-- **v8.2 - Team Tendencies & League Tables** - League, conference, and division tables for team offense/defense rankings, fantasy matchup context, and a true Companion Live win-probability model.
-- **Scout Rookie Projection Layer** - Add next-season rookie projections that work for standard and IDP-focused draft prep without overloading the current Scout board.
-- **Trade follow-through** - Continue polishing Trade drilldowns, remaining explanation copy, and proposal-card readability after the v7.3 module split.
+- v8.3 - Live Fantasy Scoring & Team Tendencies — Sleeper-first live scoring, server-protected BALLDONTLIE support, win probability, team rankings/tables, fantasy context, and usage-based projections.
+- Scout Rookie Projection Layer — Add next-season rookie projections for standard and IDP-focused draft prep.
+- Trade follow-through — Continue polishing Trade drilldowns, explanation copy, and proposal-card readability.
 
 ## Project Structure
 

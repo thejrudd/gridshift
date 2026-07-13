@@ -22,6 +22,7 @@ import Sidebar from './components/Sidebar';
 import { FantasyProvider, useFantasyLeague, useFantasyStats } from './context/SleeperContext';
 import { getDraft, getLeagueDrafts } from './api/sleeperApi';
 import {
+  getDraftResultsPresentation,
   getSleeperDraftStatus,
   isSleeperDraftMock,
   isSleeperDraftPollable,
@@ -75,6 +76,7 @@ const CompanionWaiver = lazy(() => debugCompanionTimeAsync(
 const CompanionHeatmap = lazy(() => import('./components/companion/CompanionHeatmap'));
 const CompanionDefense = lazy(() => import('./components/companion/CompanionDefense'));
 const CompanionTrade = lazy(() => import('./components/companion/CompanionTrade'));
+const TradeHistory = lazy(() => import('./components/companion/TradeHistory'));
 const ScoutTab = lazy(() => import('./components/scout/ScoutTab'));
 const DraftAssistant = lazy(() => import('./components/draft/DraftAssistant'));
 const DRAFT_NAV_POLL_MS = 15_000;
@@ -533,6 +535,7 @@ function AppInner() {
   const [actionSheetOpen, setActionSheetOpen] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
   const [tourActive, setTourActive] = useState(false);
+  const [tourDemoMode, setTourDemoMode] = useState(null);
   const { needRefresh, applyUpdate } = useServiceWorkerUpdate();
   const { pending: whatsNewPending, markSeen: markWhatsNewSeen } = useWhatsNew({ enabled: hasLeague });
   const [teamPickerOpen, setTeamPickerOpen] = useState(false);
@@ -549,7 +552,10 @@ function AppInner() {
   // An available update takes precedence over What's New. The tour should
   // describe the version the user has just installed, not the waiting build.
   useEffect(() => {
-    if (needRefresh && tourActive) setTourActive(false);
+    if (needRefresh && tourActive) {
+      setTourActive(false);
+      setTourDemoMode(null);
+    }
   }, [needRefresh, tourActive]);
 
   const preserveContentScrollDuringUpdate = useCallback((update) => {
@@ -593,6 +599,9 @@ function AppInner() {
   const draftSleeperDraftId = appRoute.sleeperDraftId;
   const draftStatusOverrideId = getDevSleeperDraftIdOverride(draftSleeperDraftId);
   const draftNavMatchesSelection = draftNavState.leagueId === selectedLeagueId && draftNavState.season === season;
+  const draftResultsPresentation = getDraftResultsPresentation(
+    draftNavMatchesSelection ? draftNavState.draft : null,
+  );
   const draftWarRoomBlocked = Boolean(
     draftNavMatchesSelection
     && draftNavState.draft
@@ -1352,6 +1361,7 @@ function AppInner() {
               activeView={effectiveDraftView}
               onViewChange={navigateDraftView}
               disabledViews={draftDisabledViews}
+              resultsLabel={draftResultsPresentation.label}
             />
             <div className="hidden lg:flex items-center absolute bottom-0 right-8 pb-[9px]">
               <LeagueContextHeader
@@ -1509,7 +1519,14 @@ function AppInner() {
 
           {activeTab === 'trade' && hasLeague && !tradeDisabledForPlatform && (
             <Suspense fallback={<SectionLoading label="Loading Trade" />}>
-              <CompanionTrade
+              {tradeView === 'history' ? (
+                <TradeHistory
+                  onViewPlayer={(sleeperId) => {
+                    void navigateToCompanionSleeperPlayer(sleeperId, 'Trade History');
+                  }}
+                />
+              ) : (
+                <CompanionTrade
                 initialPlayer={tradeInitPlayer}
                 onConsumeInitialPlayer={() => applyRoute({
                   activeTab: 'trade',
@@ -1532,6 +1549,7 @@ function AppInner() {
                 view={tradeView}
                 onViewChange={navigateTradeView}
               />
+              )}
             </Suspense>
           )}
 
@@ -1705,6 +1723,7 @@ function AppInner() {
                 view={effectiveDraftView}
                 sleeperDraftId={draftSleeperDraftId}
                 onViewPlayer={navigateDraftPlayerToStatistics}
+                tourDemoMode={tourDemoMode}
               />
             </Suspense>
           )}
@@ -1751,7 +1770,10 @@ function AppInner() {
         <Suspense fallback={null}>
           <WhatsNewModal
             entries={whatsNewPending}
-            onStartTour={() => setTourActive(true)}
+            onStartTour={() => {
+              setTourDemoMode(null);
+              setTourActive(true);
+            }}
             onDismiss={markWhatsNewSeen}
           />
         </Suspense>
@@ -1762,7 +1784,10 @@ function AppInner() {
             entries={whatsNewPending}
             navigate={applyRoute}
             currentRoute={appRoute}
+            context={{ draftPhase: draftResultsPresentation.phase }}
+            onStepChange={(step) => setTourDemoMode(step?.demoMode ?? null)}
             onFinish={() => {
+              setTourDemoMode(null);
               setTourActive(false);
               markWhatsNewSeen();
             }}

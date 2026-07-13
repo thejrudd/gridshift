@@ -6,14 +6,15 @@ const VIEWS = [
   { id: 'tiers-runs', label: 'Tiers/Runs', disabled: true },
 ];
 
-export default function DraftSubNav({ activeView, onViewChange, disabledViews = {} }) {
+export default function DraftSubNav({ activeView, onViewChange, disabledViews = {}, resultsLabel = 'Results' }) {
   return (
     <div className="season-tabs" role="tablist" aria-label="Draft views">
       {VIEWS.map(({ id, label, disabled }) => {
+        const visibleLabel = id === 'results' ? resultsLabel : label;
         const dynamicDisabled = disabledViews[id] ?? null;
         const isDisabled = Boolean(disabled || dynamicDisabled?.disabled);
         const title = disabled
-          ? `${label} is staged for future work`
+          ? `${visibleLabel} is staged for future work`
           : dynamicDisabled?.reason;
 
         return (
@@ -31,7 +32,7 @@ export default function DraftSubNav({ activeView, onViewChange, disabledViews = 
             title={title}
           >
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-              {label}
+              {visibleLabel}
               {disabled && (
                 <span
                   className="draft-subnav-badge"

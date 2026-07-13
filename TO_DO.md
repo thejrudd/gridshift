@@ -7,32 +7,10 @@ New features requested or planned should be added here.
 
 ## Planned Versions
 
-### v8.1 - Live Fantasy Scoring (Coming Soon)
+### v8.3 - Live Fantasy Scoring & Team Tendencies
 
-- Add a live fantasy scoring Companion view that mirrors the Matchup tab clarity while updating active player scores in real time during NFL games.
-- Include a live scoring feed that explains meaningful point swings, scoring plays, turnovers, big stat gains, defensive events, lead changes, and players moving above/below projected pace.
-- Show matchup-level context alongside the feed: current score, projected final, remaining active players, game clock/status, player game state, and win/deficit pressure.
-- Ship the matchup win-probability model (pulled forward from v8.2): live fantasy score + remaining starters + shared player projections + NFL game state, charted over time in the Live tab.
-- Design the data layer around Sleeper league allowlisting, provider fallbacks, and rate limits, with BALLDONTLIE access kept behind a server-side boundary before production use.
-- Preserve paid API keys only in server `.env` files and ensure Docker update scripts never overwrite an existing `.env`.
-- Keep v8.1 scoped to allowlisted Sleeper leagues; do not add new ESPN Fantasy accommodations to the Live implementation.
-- Roadmap commissioner BYOK separately: one commissioner-owned BALLDONTLIE key shared by that league through encrypted server-side storage and league entitlements.
-- Keep Companion Live marked Coming Soon until its release gate is met.
-
-### v8.2 - Team Tendencies & League Tables
-
-- Add team-based offensive and defensive rankings across major stat groups, such as passing offense, rushing offense, scoring offense, passing defense, rushing defense, scoring defense, sacks, turnovers, and fantasy points allowed.
-- Support sortable league, conference, and division tables so users can compare where every NFL team ranks overall and within its competitive group.
-- Connect team rankings back into fantasy context by surfacing opponent strengths/weaknesses in Companion Matchup, live scoring, Defense, and Statistics team pages.
-- Upgrade the projection engine to a usage-based model: project volume (attempts, carries, targets) and efficiency separately with touchdown-rate regression, blended with the current points-average path and validated against the backtest harness. Full implementation spec: [`docs/Projection Usage Model Plan.md`](docs/Projection%20Usage%20Model%20Plan.md).
-
-### v8.3 - Interactivity & Consistency Pass
-
-- Phase 1 (Feel): persist per-season Sleeper stats in an IndexedDB cache (completed seasons permanent, current season stale-while-revalidate) so revisiting a league year is near-instant; add pending states to all season-switch controls; unify loading UI on shared Skeleton/Spinner/StatsProgressBanner primitives with an instant-shell + skeleton-stat-chip pattern (no dummy `—`/`0.0` values rendering as real data); document Loading States in DESIGN.md.
-- Phase 2 (Clarity): always-visible mobile season chip in the Companion/Trade/Draft sub-nav rows; shared season-hint banners with one-tap switching when a view is empty because of the selected league year, current-season-only, or past-season-only; browser back closes sheets/modals; unify beta badges and back affordances; apply the shell visual refinement proposal (sidebar background unification, wordmark, single amber active state, actions hierarchy, conditional progress bar).
-- Phase 3 (Polish): full retokenization of legacy Statistics/Predictions/Team surfaces onto the design-token system; replace hardcoded status hex colors with accent tokens; fix amber-as-text violations and sub-9.5px fonts; consolidate empty states onto a shared component; responsive fixes for fixed grids and wide tables; reduce redundant labels and visual noise.
-
----
+- Add live fantasy scoring, a live scoring feed, matchup context, and win probability while keeping paid data server-side and Companion Live allowlisted.
+- Add team offense/defense rankings, sortable league/conference/division tables, fantasy matchup context, and the usage-based projection model. See docs/Projection Usage Model Plan.md.
 
 ## Optimizations
 

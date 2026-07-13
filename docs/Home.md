@@ -16,6 +16,7 @@ Use this note as the entry point.
 - [[Trade Engine]]
 - [[Scout]]
 - [[Draft Assistant]]
+- [[Upgrade Simulation]]
 - [[BALLDONTLIE NFL Integration]]
 
 ## Archive

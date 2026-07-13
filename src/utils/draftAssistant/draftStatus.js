@@ -6,6 +6,14 @@ export function isSleeperDraftPreDraft(draft) {
   return getSleeperDraftStatus(draft) === 'pre_draft';
 }
 
+export function getDraftResultsPresentation(draft) {
+  const isPreDraft = isSleeperDraftPreDraft(draft);
+  return {
+    phase: isPreDraft ? 'pre_draft' : 'results',
+    label: isPreDraft ? 'Picks' : 'Results',
+  };
+}
+
 export function getSleeperDraftStartMs(draft) {
   const rawStart = draft?.start_time
     ?? draft?.settings?.start_time

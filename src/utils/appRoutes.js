@@ -15,7 +15,7 @@ function getDefaultActiveTab() {
 
 const PREDICTIONS_VIEWS = new Set(['predictions', 'standings', 'playoffs']);
 const COMPANION_VIEWS = new Set(['roster', 'rankings', 'live', 'matchup', 'waiver', 'league', 'heatmap', 'defense', 'scoring']);
-const TRADE_VIEWS = new Set(['agent', 'intelligence', 'upgrade']);
+const TRADE_VIEWS = new Set(['agent', 'intelligence', 'upgrade', 'history']);
 const STATISTICS_VIEWS = new Set(['browser', 'team', 'player', 'schedule', 'standings', 'game']);
 const STATISTICS_MODES = new Set(['game', 'fantasy', 'visual']);
 const STATISTICS_SCHEDULE_MODES = new Set(['week', 'team']);

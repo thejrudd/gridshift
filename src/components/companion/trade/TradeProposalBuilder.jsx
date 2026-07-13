@@ -67,8 +67,8 @@ function TradeSideAssetRow({ item, darkMode, onOpenPlayer, onRemove }) {
 }
 
 // ── getColorCommentary ─────────────────────────────────────────────────────────
-// ── ShelfPartnerTab ────────────────────────────────────────────────────────────
-function ShelfPartnerTab({ partnerRosters, value, onChange, label, active, disabled, onActivate, buttonStyle }) {
+// ── PartnerSelector ────────────────────────────────────────────────────────────
+function PartnerSelector({ partnerRosters, value, onChange, label, buttonStyle }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   const df = "var(--font-display, 'Barlow Condensed', sans-serif)";
@@ -97,18 +97,15 @@ function ShelfPartnerTab({ partnerRosters, value, onChange, label, active, disab
       <div ref={ref} style={{ position: 'relative', flex: 1, minWidth: 0 }}>
         <button
           type="button"
-          onClick={() => {
-            if (!disabled) setOpen(v => !v);
-          }}
+          onClick={() => setOpen(v => !v)}
           style={{
             ...buttonStyle,
             width: '100%',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
+            justifyContent: 'space-between',
             gap: 5,
-            cursor: disabled ? 'default' : 'pointer',
-            opacity: disabled ? 0.55 : 1,
+            cursor: 'pointer',
           }}
         >
           {selected ? (
@@ -118,7 +115,7 @@ function ShelfPartnerTab({ partnerRosters, value, onChange, label, active, disab
           ) : (
               <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label || 'Select Partner'}</span>
           )}
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={active ? 'currentColor' : 'var(--color-label-tertiary)'} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--color-label-tertiary)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
             style={{ flexShrink: 0, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 150ms' }}>
             <polyline points="6 9 12 15 18 9"/>
           </svg>
@@ -135,7 +132,7 @@ function ShelfPartnerTab({ partnerRosters, value, onChange, label, active, disab
             {/* Clear option */}
             {value && (
               <button
-                onClick={() => { onChange(null); onActivate?.(); setOpen(false); }}
+                onClick={() => { onChange(null); setOpen(false); }}
                 style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 9, padding: '8px 12px', background: 'transparent', border: 0, borderBottom: '1px solid var(--color-separator)', cursor: 'pointer', textAlign: 'left' }}
               >
                 <div style={{ width: 22, height: 22, borderRadius: '50%', border: '1.5px dashed var(--color-separator)', flexShrink: 0 }} />
@@ -147,7 +144,7 @@ function ShelfPartnerTab({ partnerRosters, value, onChange, label, active, disab
               return (
                 <button
                   key={roster.roster_id}
-                  onClick={() => { onChange(roster.roster_id); onActivate?.(); setOpen(false); }}
+                  onClick={() => { onChange(roster.roster_id); setOpen(false); }}
                   style={{
                     width: '100%', display: 'flex', alignItems: 'center', gap: 9, padding: '8px 12px',
                     background: isSelected ? 'var(--color-fill)' : 'transparent',
@@ -228,7 +225,7 @@ function getColorCommentary(verdict, gap, partnerName) {
 }
 
 // ── BroadcastScoreboard ────────────────────────────────────────────────────────
-function BroadcastScoreboard({ yourTotal, theirTotal, yourName, yourAvatar, partnerName, partnerAvatar, verdict, hasItems, onClear }) {
+function BroadcastScoreboard({ yourTotal, theirTotal, yourName, yourAvatar, partnerName, partnerAvatar, verdict, hasItems, onClear, attribution }) {
   const { verdict: v, pct = 0, gap = 0 } = verdict;
   const sign = v === 'favors_you' ? 1 : v === 'favors_them' ? -1 : 0;
   const angleDeg = hasItems ? sign * Math.min((pct / 100) * 72, 72) : 0;
@@ -289,12 +286,13 @@ function BroadcastScoreboard({ yourTotal, theirTotal, yourName, yourAvatar, part
 
   return (
     <div className="trade-scoreboard" style={{ background: '#0D1117', color: 'white', padding: '8px 20px 12px', flexShrink: 0, position: 'relative' }}>
-      <div style={{ minHeight: 24, marginBottom: 2, display: 'flex', alignItems: 'center', justifyContent: 'flex-start' }}>
+      <div style={{ minHeight: 24, marginBottom: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
         {hasItems ? (
           <button onClick={onClear} style={{ fontFamily: df, fontSize: 11, letterSpacing: '0.12em', color: '#F5B700', background: 'none', border: 0, cursor: 'pointer', fontWeight: 700, padding: '4px 0', textTransform: 'uppercase' }}>
             CLEAR
           </button>
         ) : <span aria-hidden="true" />}
+        {attribution && <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>{attribution}</div>}
       </div>
       <div className="trade-scoreboard__grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto minmax(0,1fr)', gap: 24, alignItems: 'center' }}>
         <TeamBlock name={yourName || 'You'} total={yourTotal} avatar={yourAvatar} />
@@ -507,27 +505,23 @@ function RosterShelf({
   });
 
   return (
-    <div data-testid="trade-roster-shelf-desktop" style={{ width: 'clamp(300px, 24vw, 340px)', flexShrink: 0, borderRight: '1px solid var(--color-separator)', background: 'var(--color-bg-secondary)', display: 'flex', flexDirection: 'column', position: 'sticky', top: 0, maxHeight: '100vh', alignSelf: 'flex-start', overflow: 'visible' }}>
-      {/* YOU / PARTNER tabs */}
-      <div style={{ display: 'flex', borderBottom: '1px solid var(--color-separator)', position: 'sticky', top: 0, background: 'var(--color-bg-secondary)', zIndex: 2 }}>
+    <div data-testid="trade-roster-shelf-desktop" style={{ width: 'clamp(300px, 24vw, 340px)', height: '100vh', flexShrink: 0, borderRight: '1px solid var(--color-separator)', background: 'var(--color-bg-secondary)', display: 'flex', flexDirection: 'column', position: 'sticky', top: 0, alignSelf: 'flex-start', overflow: 'hidden' }}>
+      <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--color-separator)', background: 'var(--color-bg-secondary)', flexShrink: 0 }}>
+        <PartnerSelector partnerRosters={partnerRosters} value={shelfPartnerRosterId} onChange={onPartnerChange} label={partnerName || 'Select manager'} buttonStyle={{ minHeight: 34, padding: '6px 9px', border: '1px solid var(--color-separator)', borderRadius: 7, background: 'var(--color-bg)', color: 'var(--color-label-secondary)', fontSize: 12, fontWeight: 600, textAlign: 'left' }} />
+      </div>
+      {/* Roster toggle */}
+      <div style={{ display: 'flex', borderBottom: '1px solid var(--color-separator)', background: 'var(--color-bg-secondary)', flexShrink: 0 }}>
         <button onClick={() => setActiveTab('yours')}
           data-testid="trade-shelf-tab-yours"
           style={{ ...tabButtonStyle(activeTab === 'yours'), cursor: 'pointer' }}>
           {myName || 'YOU'}
         </button>
-        <ShelfPartnerTab
-          partnerRosters={partnerRosters}
-          value={shelfPartnerRosterId}
-          onChange={onPartnerChange}
-          label={partnerName || 'Select Partner'}
-          active={activeTab === 'theirs'}
-          disabled={false}
-          onActivate={() => setActiveTab('theirs')}
-          buttonStyle={tabButtonStyle(activeTab === 'theirs')}
-        />
+        <button onClick={() => setActiveTab('theirs')} data-testid="trade-shelf-tab-theirs" style={{ ...tabButtonStyle(activeTab === 'theirs'), cursor: 'pointer' }}>
+          {partnerName ? partnerName + "'s Roster" : "Trade Partner's Roster"}
+        </button>
       </div>
       {/* Filter chips */}
-      <div style={{ padding: '7px 10px', position: 'sticky', top: 38, background: 'var(--color-bg-secondary)', zIndex: 1, borderBottom: '1px solid var(--color-separator)' }}>
+      <div style={{ padding: '7px 10px', background: 'var(--color-bg-secondary)', borderBottom: '1px solid var(--color-separator)', flexShrink: 0 }}>
         <CompanionSelectorRail ariaLabel="Trade shelf filters">
           {SHELF_POSITIONS.map(pos => (
             <CompanionSelectorButton key={pos} size="xs" active={!showPicks && posFilter === pos} onClick={() => { setShowPicks(false); setPosFilter(pos); }}>
@@ -662,23 +656,19 @@ function MobileRosterShelf({
 
   return (
     <div data-testid="trade-roster-shelf-mobile" style={{ borderTop: '1.5px solid var(--color-separator)', background: 'var(--color-bg-secondary)', marginTop: 8 }}>
-      {/* Team tabs */}
-      <div style={{ padding: '10px 14px 8px', display: 'flex', alignItems: 'center', gap: 8, borderBottom: '1px solid var(--color-separator)' }}>
+      <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--color-separator)' }}>
+        <PartnerSelector partnerRosters={partnerRosters} value={shelfPartnerRosterId} onChange={onPartnerChange} label={partnerName || 'Select manager'} buttonStyle={{ minHeight: 40, padding: '8px 10px', border: '1px solid var(--color-separator)', borderRadius: 10, background: 'var(--color-bg)', color: 'var(--color-label-secondary)', fontSize: 13, fontWeight: 600, textAlign: 'left' }} />
+      </div>
+      {/* Roster toggle */}
+      <div style={{ padding: '0 14px 8px', display: 'flex', alignItems: 'center', gap: 8, borderBottom: '1px solid var(--color-separator)' }}>
         <button onClick={() => setActiveTab('yours')}
           data-testid="trade-shelf-tab-yours"
           style={{ ...tabButtonStyle(activeTab === 'yours'), cursor: 'pointer' }}>
           {myName || 'YOU'}
         </button>
-        <ShelfPartnerTab
-          partnerRosters={partnerRosters}
-          value={shelfPartnerRosterId}
-          onChange={onPartnerChange}
-          label={partnerName || 'Select Partner'}
-          active={activeTab === 'theirs'}
-          disabled={false}
-          onActivate={() => setActiveTab('theirs')}
-          buttonStyle={tabButtonStyle(activeTab === 'theirs')}
-        />
+        <button onClick={() => setActiveTab('theirs')} data-testid="trade-shelf-tab-theirs" style={{ ...tabButtonStyle(activeTab === 'theirs'), cursor: 'pointer' }}>
+          {partnerName ? partnerName + "'s Roster" : "Trade Partner's Roster"}
+        </button>
       </div>
       {/* Filter chips */}
       <div style={{ padding: '8px 14px', borderBottom: '1px solid var(--color-separator)' }}>
@@ -785,6 +775,7 @@ export default function TradeProposalBuilder({
   setPickerOpen,
   openStatsModalForPlayer,
   clearTrade,
+  attribution,
 }) {
             const handleShelfDrop = drag => {
               if (!drag) return;
@@ -910,6 +901,7 @@ export default function TradeProposalBuilder({
                       verdict={verdict}
                       hasItems={hasItems}
                       onClear={clearTrade}
+                      attribution={attribution}
                     />
                     {!ktcLoading && !ktcError ? (
                       <>
@@ -980,6 +972,7 @@ export default function TradeProposalBuilder({
                     verdict={verdict}
                     hasItems={hasItems}
                     onClear={clearTrade}
+                    attribution={attribution}
                   />
                   {!ktcLoading && !ktcError ? (
                     <>

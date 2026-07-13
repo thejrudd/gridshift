@@ -27,6 +27,31 @@ function parseEnvFile(path) {
   );
 }
 
+function takeOption(args, name) {
+  const index = args.indexOf(name);
+  if (index === -1) return null;
+  const value = args[index + 1];
+  if (!value || value.startsWith('--')) {
+    throw new Error(`${name} requires a version value.`);
+  }
+  args.splice(index, 2);
+  return value.replace(/^v/i, '');
+}
+
+const upgradeFrom = takeOption(clientArgs, '--upgrade-from');
+const upgradeTo = takeOption(clientArgs, '--upgrade-to');
+if (Boolean(upgradeFrom) !== Boolean(upgradeTo)) {
+  throw new Error('--upgrade-from and --upgrade-to must be used together.');
+}
+if ([upgradeFrom, upgradeTo].some((value) => value && !/^\d+\.\d+(?:\.\d+)?$/.test(value))) {
+  throw new Error('Upgrade simulator versions must use semantic version format, such as 8.1.1 or 8.2.0.');
+}
+
+const upgradeEnv = upgradeFrom ? {
+  GRIDSHIFT_APP_VERSION_OVERRIDE: upgradeTo,
+  VITE_WHATS_NEW_BASELINE_OVERRIDE: upgradeFrom,
+} : {};
+
 const localServerEnv = parseEnvFile(envPath);
 
 const processes = [
@@ -44,6 +69,7 @@ const processes = [
     name: 'vite',
     command: nodeBin,
     args: [fileURLToPath(new URL('../node_modules/vite/bin/vite.js', import.meta.url)), ...clientArgs],
+    env: upgradeEnv,
   },
 ];
 
@@ -73,6 +99,9 @@ function exitFromChild(name, code, signal) {
 }
 
 console.log('[dev] Starting GridShift dev server and ESPN API sidecar...');
+if (upgradeFrom) {
+  console.log(`[dev] Simulating GridShift upgrade v${upgradeFrom} -> v${upgradeTo}.`);
+}
 
 for (const proc of processes) {
   const child = spawn(proc.command, proc.args, {
