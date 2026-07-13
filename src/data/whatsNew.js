@@ -102,15 +102,23 @@ export const WHATS_NEW = [
             route: { activeTab: 'draft', draftView: 'results' },
             anchor: '[data-tour="draft-view-results"]',
             anchorMobile: null,
-            contextKey: 'draftPhase',
+            contextKey: 'draftTourState',
             copyByContext: {
-              pre_draft: {
-                title: 'Draft Picks',
-                body: 'Before your draft, this tab is Picks and shows the upcoming order. It automatically becomes Results after the draft starts.',
+              current_pre_draft: {
+                title: '{{selectedLeagueSeason}} Current Draft Picks',
+                body: 'You are viewing the current {{selectedLeagueSeason}} league year. Sleeper reports that this draft has not started, so Picks shows the upcoming order and will become Results when drafting begins.',
               },
-              results: {
-                title: 'Draft Results',
-                body: 'Now that the draft has started, this tab is Results and shows the league\'s real selections. Before the draft, it appears as Picks and shows the upcoming order.',
+              current_results: {
+                title: '{{selectedLeagueSeason}} Current Draft Results',
+                body: 'You are viewing the current {{selectedLeagueSeason}} league year. Sleeper reports that this draft has started, so Results shows the selections recorded for this season.',
+              },
+              historical_pre_draft: {
+                title: '{{selectedLeagueSeason}} Historical Draft Picks',
+                body: 'You are viewing {{selectedLeagueSeason}} league history, not the current {{currentLeagueSeason}} league year. Sleeper still reports this selected season as pre-draft, so Picks shows its upcoming order.',
+              },
+              historical_results: {
+                title: '{{selectedLeagueSeason}} Historical Draft Results',
+                body: 'You are viewing {{selectedLeagueSeason}} league history, not the current {{currentLeagueSeason}} league year. Results shows the selections recorded for this past season.',
               },
             },
             placement: 'auto',
@@ -119,15 +127,23 @@ export const WHATS_NEW = [
             route: { activeTab: 'draft', draftView: 'results' },
             anchor: '[data-tour="draft-results-content"]',
             anchorMobile: null,
-            contextKey: 'draftPhase',
+            contextKey: 'draftTourState',
             copyByContext: {
-              pre_draft: {
-                title: 'Preview Draft Results',
-                body: 'These placeholder picks demonstrate the Results board you will see after the draft starts. Select an earlier league year at the top of the page to review past draft results.',
+              current_pre_draft: {
+                title: 'Preview {{selectedLeagueSeason}} Draft Results',
+                body: 'These placeholder picks preview the Results board for your current {{selectedLeagueSeason}} league year. Select an earlier year at the top of the page to review a completed draft instead.',
               },
-              results: {
-                title: 'Review Draft Results',
-                body: 'These are your league\'s real draft results. Select an earlier league year at the top of the page to review results from a past season.',
+              current_results: {
+                title: 'Review {{selectedLeagueSeason}} Draft Results',
+                body: 'These are the recorded selections for your current {{selectedLeagueSeason}} league year. Select an earlier year at the top of the page to review historical results.',
+              },
+              historical_pre_draft: {
+                title: 'Preview {{selectedLeagueSeason}} Draft Results',
+                body: 'These placeholder picks preview Results for the selected {{selectedLeagueSeason}} historical league year. Switch to {{currentLeagueSeason}} at the top of the page to return to your current league year.',
+              },
+              historical_results: {
+                title: 'Review {{selectedLeagueSeason}} Draft History',
+                body: 'These are the recorded selections for the historical {{selectedLeagueSeason}} league year. Switch to {{currentLeagueSeason}} at the top of the page to return to your current league year.',
               },
             },
             demoMode: 'draft-results',

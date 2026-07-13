@@ -23,10 +23,11 @@ import { FantasyProvider, useFantasyLeague, useFantasyStats } from './context/Sl
 import { getDraft, getLeagueDrafts } from './api/sleeperApi';
 import {
   getDraftResultsPresentation,
+  getDraftTourContext,
   getSleeperDraftStatus,
+  isDraftLeagueSelectionReady,
   isSleeperDraftMock,
   isSleeperDraftPollable,
-  isSleeperDraftPreDraft,
   resolveLeagueDraftId,
   shouldShowSleeperDraftGlobalNotice,
 } from './utils/draftAssistant/draftStatus';
@@ -80,7 +81,6 @@ const TradeHistory = lazy(() => import('./components/companion/TradeHistory'));
 const ScoutTab = lazy(() => import('./components/scout/ScoutTab'));
 const DraftAssistant = lazy(() => import('./components/draft/DraftAssistant'));
 const DRAFT_NAV_POLL_MS = 15_000;
-const DRAFT_WAR_ROOM_DISABLED_REASON = "War Room is only available before this league year's draft.";
 const DRAFT_ACTIVITY_NOTICE_TABS = new Set(['predictions', 'statistics', 'companion', 'trade', 'scout']);
 const DEV_DRAFT_OVERRIDE_PARAM_KEYS = ['sleeperDraftId', 'draftId'];
 
@@ -599,20 +599,21 @@ function AppInner() {
   const draftSleeperDraftId = appRoute.sleeperDraftId;
   const draftStatusOverrideId = getDevSleeperDraftIdOverride(draftSleeperDraftId);
   const draftNavMatchesSelection = draftNavState.leagueId === selectedLeagueId && draftNavState.season === season;
-  const draftResultsPresentation = getDraftResultsPresentation(
-    draftNavMatchesSelection ? draftNavState.draft : null,
-  );
-  const draftWarRoomBlocked = Boolean(
-    draftNavMatchesSelection
-    && draftNavState.draft
-    && !isSleeperDraftPreDraft(draftNavState.draft),
-  );
-  const effectiveDraftView = draftWarRoomBlocked && draftView === 'war-room' ? 'results' : draftView;
-  const draftDisabledViews = useMemo(() => (
-    draftWarRoomBlocked
-      ? { 'war-room': { disabled: true, reason: DRAFT_WAR_ROOM_DISABLED_REASON } }
-      : {}
-  ), [draftWarRoomBlocked]);
+  const selectedDraft = draftNavMatchesSelection ? draftNavState.draft : null;
+  const draftResultsPresentation = getDraftResultsPresentation(selectedDraft);
+  const currentLeagueSeason = [...linkedLeagueSeasonOptions]
+    .map((value) => String(value))
+    .sort((left, right) => Number(right) - Number(left))[0] ?? String(season);
+  const draftTourContext = getDraftTourContext({
+    selectedSeason: season,
+    currentSeason: currentLeagueSeason,
+    draft: selectedDraft,
+  });
+  const draftLeagueSelectionReady = isDraftLeagueSelectionReady({
+    season,
+    league,
+    seasonSwitching,
+  });
   const activeDraftNoticeDraft = draftNavMatchesSelection ? draftNavState.draft : null;
   const activeDraftNoticeDraftId = activeDraftNoticeDraft?.draft_id == null
     ? draftStatusOverrideId
@@ -806,10 +807,10 @@ function AppInner() {
   const navigateDraftView = useCallback((view) => {
     applyRoute({
       activeTab: 'draft',
-      draftView: view === 'war-room' && draftWarRoomBlocked ? 'results' : view,
+      draftView: view,
       sleeperDraftId: draftSleeperDraftId,
     });
-  }, [applyRoute, draftWarRoomBlocked, draftSleeperDraftId]);
+  }, [applyRoute, draftSleeperDraftId]);
 
   const navigateToActiveDraft = useCallback(() => {
     applyRoute({
@@ -882,11 +883,6 @@ function AppInner() {
       if (timeoutId) window.clearTimeout(timeoutId);
     };
   }, [hasLeague, selectedLeagueId, season, league, draftStatusOverrideId]);
-
-  useEffect(() => {
-    if (activeTab !== 'draft' || draftView !== 'war-room' || !draftWarRoomBlocked) return;
-    applyRoute({ activeTab: 'draft', draftView: 'results', sleeperDraftId: draftSleeperDraftId }, { replace: true });
-  }, [activeTab, draftView, draftWarRoomBlocked, applyRoute, draftSleeperDraftId]);
 
   const prewarmTradeView = useCallback((view) => {
     if (view === 'intelligence' || view === 'upgrade') {
@@ -1358,9 +1354,8 @@ function AppInner() {
         {activeTab === 'draft' && hasLeague && (
           <div className="season-subnav league-subnav">
             <DraftSubNav
-              activeView={effectiveDraftView}
+              activeView={draftView}
               onViewChange={navigateDraftView}
-              disabledViews={draftDisabledViews}
               resultsLabel={draftResultsPresentation.label}
             />
             <div className="hidden lg:flex items-center absolute bottom-0 right-8 pb-[9px]">
@@ -1397,9 +1392,9 @@ function AppInner() {
           className={[
             'content-area lg:px-8 pt-4 lg:pt-6',
             activeTab === 'draft' ? 'content-area--draft' : '',
-            activeTab === 'draft' && effectiveDraftView === 'war-room' ? 'content-area--draft-war-room' : '',
-            activeTab === 'draft' && effectiveDraftView === 'results' ? 'content-area--draft-results' : '',
-            activeTab === 'draft' && effectiveDraftView === 'my-board' ? 'content-area--draft-board' : '',
+            activeTab === 'draft' && draftView === 'war-room' ? 'content-area--draft-war-room' : '',
+            activeTab === 'draft' && draftView === 'results' ? 'content-area--draft-results' : '',
+            activeTab === 'draft' && draftView === 'my-board' ? 'content-area--draft-board' : '',
           ].filter(Boolean).join(' ')}
           onScroll={(e) => setContentScrolled(e.currentTarget.scrollTop > 2)}
         >
@@ -1718,14 +1713,19 @@ function AppInner() {
           )}
 
           {activeTab === 'draft' && hasLeague && (
-            <Suspense fallback={<SectionLoading label="Loading Draft" />}>
-              <DraftAssistant
-                view={effectiveDraftView}
-                sleeperDraftId={draftSleeperDraftId}
-                onViewPlayer={navigateDraftPlayerToStatistics}
-                tourDemoMode={tourDemoMode}
-              />
-            </Suspense>
+            draftLeagueSelectionReady ? (
+              <Suspense fallback={<SectionLoading label="Loading Draft" />}>
+                <DraftAssistant
+                  key={`${selectedLeagueId}:${season}`}
+                  view={draftView}
+                  sleeperDraftId={draftSleeperDraftId}
+                  onViewPlayer={navigateDraftPlayerToStatistics}
+                  tourDemoMode={tourDemoMode}
+                />
+              </Suspense>
+            ) : (
+              <SectionLoading label={`Switching to ${seasonSwitching ?? season} league year`} />
+            )
           )}
         </div>
 
@@ -1784,7 +1784,7 @@ function AppInner() {
             entries={whatsNewPending}
             navigate={applyRoute}
             currentRoute={appRoute}
-            context={{ draftPhase: draftResultsPresentation.phase }}
+            context={{ draftPhase: draftResultsPresentation.phase, ...draftTourContext }}
             onStepChange={(step) => setTourDemoMode(step?.demoMode ?? null)}
             onFinish={() => {
               setTourDemoMode(null);
@@ -1806,7 +1806,7 @@ function AppInner() {
             companionView={companionView}
             tradeView={tradeView}
             scoutView={scoutView}
-            draftView={effectiveDraftView}
+            draftView={draftView}
           />
         </Suspense>
       )}

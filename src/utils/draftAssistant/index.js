@@ -4,6 +4,8 @@ import { rankDraftCandidates } from './recommendations.js';
 import { createPointsCalculator, getRecentAvg } from '../scoringEngine.js';
 export {
   getDraftResultsPresentation,
+  getDraftTourContext,
+  isDraftLeagueSelectionReady,
   getSleeperDraftStatus,
   getSleeperDraftStartMs,
   getSleeperDraftPicksSignature,

@@ -110,12 +110,11 @@ Hosted owners can enable paid live scoring for selected Sleeper leagues by setti
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) + optional Node API sidecar |
 
-## What's New in v8.2.0
+## What's New in v8.2.1
 
-- **Trade History** — Browse finalized trades from the selected league season and every linked season before it, with manager filters, search, expandable asset details, and player drilldowns.
-- **Draft Picks and Results** — The Draft tab now shows Picks before the draft and automatically becomes Results after it starts, with clearer season-aware guidance.
-- **Reliable upgrade tours** — Multi-version upgrades now omit superseded feature explanations and validate every effective step on desktop and mobile.
-- **Trade workspace polish** — Improved partner selection, roster switching, value attribution, responsive controls, and shared styling across Trade surfaces.
+- **Clear historical tour context** — Draft tour tooltips now name the selected and current league years and distinguish historical results from the current draft.
+- **Faster Draft year switching** — Draft Results waits for the target league snapshot instead of rebuilding completed historical picks against the newly selected season.
+- **Revisitable historical War Room** — War Room remains selected for past post-draft years and shows a persistent season-aware explanation until the user changes views or league years.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 

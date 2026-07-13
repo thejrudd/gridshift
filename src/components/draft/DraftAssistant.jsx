@@ -3646,8 +3646,8 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
       <div className="draft-page">
         <LiveDraftStatusBanner draftClockStore={draftClockStore} fallbackDraft={draftMeta} viewModel={draftOrderContext} getUserDisplayName={getUserDisplayName} onClockExpired={refreshDraft} />
         <DraftPageState
-          title="War Room is only available before the draft."
-          description="Use Results to review the order and completed picks after it starts."
+          title={`War Room is unavailable for the ${season} league year.`}
+          description={`The ${season} draft has already started or finished. Use Results to review its order and picks, or switch to a pre-draft league year to use War Room.`}
         />
       </div>
     );

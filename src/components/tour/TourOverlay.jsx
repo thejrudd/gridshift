@@ -19,6 +19,17 @@ function findVisibleAnchor(selector) {
   return null;
 }
 
+function materializeTourCopy(copy, context) {
+  if (!copy) return null;
+  const interpolate = (value) => String(value ?? '').replace(/\{\{([a-zA-Z0-9_]+)\}\}/g, (token, key) => (
+    context[key] == null || context[key] === '' ? token : String(context[key])
+  ));
+  return {
+    title: interpolate(copy.title),
+    body: interpolate(copy.body),
+  };
+}
+
 function pickPlacement(rect, preferred) {
   const vw = window.innerWidth;
   const vh = window.innerHeight;
@@ -91,15 +102,19 @@ export default function TourOverlay({ entries, navigate, currentRoute, context =
 
   const rawStep = steps[stepIndex];
   const contextualCopy = rawStep?.contextKey
-    ? rawStep.copyByContext?.[context[rawStep.contextKey]]
+    ? rawStep.copyByContext?.[context[rawStep.contextKey]] ?? rawStep.copyByContext?.default
     : null;
+  const materializedCopy = useMemo(
+    () => materializeTourCopy(contextualCopy, context),
+    [contextualCopy, context.selectedLeagueSeason, context.currentLeagueSeason],
+  );
   const demoEnabled = rawStep?.demoMode && Object.entries(rawStep.demoWhen ?? {})
     .every(([key, value]) => context[key] === value);
   const step = useMemo(() => (rawStep ? {
     ...rawStep,
-    ...contextualCopy,
+    ...materializedCopy,
     demoMode: demoEnabled ? rawStep.demoMode : null,
-  } : null), [rawStep, contextualCopy, demoEnabled]);
+  } : null), [rawStep, materializedCopy, demoEnabled]);
   const total = steps.length;
 
   const finish = useCallback(() => {

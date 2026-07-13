@@ -51,6 +51,9 @@ These ESPN league integration issues are known but deferred while ESPN features 
 
 | Bug | Fixed In |
 |-----|----------|
+| The What's New Draft tour could describe a historical league year as though the user's current draft had already started, without naming the selected year, current league year, or selected draft phase. | v8.2.1 |
+| Draft Results could appear to hang when switching from a historical league year back to the current league year because completed historical picks were rebuilt against the new season before its league snapshot loaded. | v8.2.1 |
+| Switching from the current-year Draft War Room to a historical league year briefly showed the unavailable message, then automatically redirected to Draft Results instead of keeping War Room selected and revisitable. | v8.2.1 |
 | Trade History can label pre-season trades as Week 1 because Sleeper's transaction leg does not distinguish pre-season timing. | v8.2.0 |
 | Trade History season rows can paint through the transparent sticky offset above the locked search and manager filters while scrolling. | v8.2.0 |
 | The What's New tour spotlight can repeatedly reset to its full-screen resolving scrim, making the Trade History step flash for a single frame every few seconds. | v8.2.0 |

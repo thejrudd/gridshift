@@ -1148,3 +1148,12 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Trade workspace polish** - Improved desktop and mobile trade-partner selection, roster switching, value attribution placement, selector scrolling, proposal-card presentation, and the support link destination.
 - **Documentation and regression coverage** - Updated the Draft Assistant, Trade Engine, upgrade-simulation, roadmap, and release docs; added Trade History and tour unit/end-to-end coverage; and formalized the historical tour regression gate for future commits.
 - **Bug fixes** - Corrected preseason Trade History labels, sticky season-row painting, recurring tour spotlight flashes, and contradictory superseded features in multi-version tours.
+
+---
+
+## v8.2.1 - Draft Season Context & Navigation
+*2026-07-13*
+
+- **Historical tour context** - Draft tour tooltips now name the selected league year, identify whether it is current or historical, state the selected draft phase, and point historical users back to the current league year.
+- **Draft year-switch performance** - Prevented completed historical Draft Results from being synchronously rebuilt against a newly selected season while its target league snapshot is still loading.
+- **Historical War Room navigation** - Kept War Room selected and revisitable for prior post-draft league years, with a persistent season-aware unavailable explanation instead of an automatic redirect to Results.

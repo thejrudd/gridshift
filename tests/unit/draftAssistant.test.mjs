@@ -12,6 +12,8 @@ import {
   categorizeDraftScoringSettings,
   computeDraftOutcomes,
   getDraftResultsPresentation,
+  getDraftTourContext,
+  isDraftLeagueSelectionReady,
   getDraftResultsSeason,
   getDraftStatsSeason,
   getScheduledDraftCountdownParts,
@@ -172,6 +174,33 @@ test('draft results presentation changes from Picks when the draft starts', () =
   assert.deepEqual(getDraftResultsPresentation({ status: 'complete' }), {
     phase: 'results',
     label: 'Results',
+  });
+});
+
+test('draft league selection waits for the target season snapshot before rendering', () => {
+  assert.equal(isDraftLeagueSelectionReady({ season: '2026', league: { season: '2025' }, seasonSwitching: '2026' }), false);
+  assert.equal(isDraftLeagueSelectionReady({ season: '2026', league: { season: '2025' }, seasonSwitching: null }), false);
+  assert.equal(isDraftLeagueSelectionReady({ season: '2026', league: { season: '2026' }, seasonSwitching: null }), true);
+});
+
+test('draft tour context distinguishes current and historical league years', () => {
+  assert.deepEqual(getDraftTourContext({
+    selectedSeason: '2026',
+    currentSeason: '2026',
+    draft: { status: 'pre_draft' },
+  }), {
+    draftTourState: 'current_pre_draft',
+    selectedLeagueSeason: '2026',
+    currentLeagueSeason: '2026',
+  });
+  assert.deepEqual(getDraftTourContext({
+    selectedSeason: '2025',
+    currentSeason: '2026',
+    draft: { status: 'complete' },
+  }), {
+    draftTourState: 'historical_results',
+    selectedLeagueSeason: '2025',
+    currentLeagueSeason: '2026',
   });
 });
 

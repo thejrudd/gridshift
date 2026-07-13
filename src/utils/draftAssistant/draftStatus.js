@@ -14,6 +14,30 @@ export function getDraftResultsPresentation(draft) {
   };
 }
 
+export function isDraftLeagueSelectionReady({ season, league, seasonSwitching } = {}) {
+  if (seasonSwitching) return false;
+  const selectedSeason = String(season ?? '').trim();
+  const loadedLeagueSeason = String(league?.season ?? '').trim();
+  return Boolean(selectedSeason && loadedLeagueSeason && selectedSeason === loadedLeagueSeason);
+}
+
+export function getDraftTourContext({ selectedSeason, currentSeason, draft } = {}) {
+  const selectedLeagueSeason = String(selectedSeason ?? '').trim();
+  const currentLeagueSeason = String(currentSeason ?? selectedLeagueSeason).trim();
+  const selectedYear = Number(selectedLeagueSeason);
+  const currentYear = Number(currentLeagueSeason);
+  const isHistorical = Number.isFinite(selectedYear) && Number.isFinite(currentYear)
+    ? selectedYear < currentYear
+    : Boolean(selectedLeagueSeason && currentLeagueSeason && selectedLeagueSeason !== currentLeagueSeason);
+  const { phase } = getDraftResultsPresentation(draft);
+
+  return {
+    draftTourState: `${isHistorical ? 'historical' : 'current'}_${phase}`,
+    selectedLeagueSeason,
+    currentLeagueSeason: currentLeagueSeason || selectedLeagueSeason,
+  };
+}
+
 export function getSleeperDraftStartMs(draft) {
   const rawStart = draft?.start_time
     ?? draft?.settings?.start_time
