@@ -19,6 +19,8 @@ function writeInstalledVersion(version) {
 // have no WHATS_NEW entry, so nothing is shown for them).
 export default function useWhatsNew({ enabled = true } = {}) {
   const [pending, setPending] = useState([]);
+  const [initialInstalledVersion] = useState(readInstalledVersion);
+  const isFirstRun = initialInstalledVersion === null;
 
   useEffect(() => {
     const current = __APP_VERSION__;
@@ -37,7 +39,7 @@ export default function useWhatsNew({ enabled = true } = {}) {
       return;
     }
 
-    const lastSeen = readInstalledVersion();
+    const lastSeen = initialInstalledVersion;
 
     // A missing key is a first run, not evidence that the user upgraded from
     // every historical version. Establish the current build as the baseline
@@ -71,5 +73,5 @@ export default function useWhatsNew({ enabled = true } = {}) {
     setPending([]);
   }, [enabled]);
 
-  return useMemo(() => ({ pending, markSeen }), [pending, markSeen]);
+  return useMemo(() => ({ pending, markSeen, isFirstRun }), [pending, markSeen, isFirstRun]);
 }

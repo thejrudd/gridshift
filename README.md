@@ -110,11 +110,11 @@ Hosted owners can enable paid live scoring for selected Sleeper leagues by setti
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) + optional Node API sidecar |
 
-## What's New in v8.2.1
+## What's New in v8.2.2
 
-- **Clear historical tour context** — Draft tour tooltips now name the selected and current league years and distinguish historical results from the current draft.
-- **Faster Draft year switching** — Draft Results waits for the target league snapshot instead of rebuilding completed historical picks against the newly selected season.
-- **Revisitable historical War Room** — War Room remains selected for past post-draft years and shows a persistent season-aware explanation until the user changes views or league years.
+- **First-run App Tour** — New users receive a Sleeper connection welcome flow followed by an eight-step overview of GridShift's main sections, help, display controls, and replay option.
+- **Fresher Sleeper rosters** — Connected Sleeper leagues now refresh roster changes in the background and when the app regains focus, keeping drops, adds, trades, reserve moves, and taxi updates current.
+- **Mobile Draft Board fixes** — Expanded Available Players now uses the full board workspace with reliable scrolling, while Draft pages use cleaner edge-to-edge spacing and touch-friendly controls on phones.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 

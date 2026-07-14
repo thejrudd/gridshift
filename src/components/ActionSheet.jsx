@@ -5,6 +5,7 @@ export default function ActionSheet({
   predictionCount,
   activeTab,
   onGuide,
+  onAppTour,
   onExportImage,
   onExportJSON,
   onImportJSON,
@@ -101,6 +102,8 @@ export default function ActionSheet({
           />
           <Divider />
           <ActionRow label="Guide" onClick={onGuide} />
+          <Divider />
+          <ActionRow label="App Tour" onClick={onAppTour} />
           {isPredictions && (
             <>
               <Divider />

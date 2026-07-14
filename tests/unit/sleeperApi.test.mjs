@@ -8,6 +8,7 @@ import {
   getDraftTradedPicks,
   getLeague,
   getLeagueDrafts,
+  getLeagueRosters,
 } from '../../src/api/sleeperApi.js';
 
 describe('Sleeper stats aggregation', () => {
@@ -85,6 +86,34 @@ test('non-live Sleeper endpoints keep default fetch caching behavior', async () 
   try {
     await getLeague('league-1');
     assert.equal(calls[0].options.cache, undefined);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Sleeper roster requests bypass stale caches', async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push({ url: String(url), options });
+    return {
+      ok: true,
+      json: async () => ([]),
+    };
+  };
+
+  try {
+    await getLeagueRosters('league-1');
+    await getLeagueRosters('league-1');
+
+    assert.deepEqual(calls.map((call) => call.options.cache), ['no-store', 'no-store']);
+    calls.forEach((call) => {
+      const url = new URL(call.url);
+      assert.equal(url.pathname, '/v1/league/league-1/rosters');
+      assert.match(url.searchParams.get('_gridshift') ?? '', /^\d+-\d+$/);
+    });
+    assert.notEqual(calls[0].url, calls[1].url);
   } finally {
     globalThis.fetch = originalFetch;
   }

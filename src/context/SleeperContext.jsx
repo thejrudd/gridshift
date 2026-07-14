@@ -23,6 +23,7 @@ import {
 } from '../utils/espnBigPlayBonuses';
 import { buildEspnDstResidualDebugRows, reconcileFantasyScore } from '../utils/fantasyScoreDiagnostics';
 import { clearPlayerCache, checkAndBustCacheIfNeeded } from '../utils/playerCache';
+import { createSleeperRosterSync } from '../utils/sleeperRosterSync';
 import {
   getSeasonStats as getCachedSeasonStats,
   setSeasonStats as putCachedSeasonStats,
@@ -593,6 +594,21 @@ export function FantasyProvider({ children }) {
       cancelled = true;
     };
   }, [platform, sleeperUser, connectLoading, leaguesBySeason, season, selectedLeagueId, discoverUserLeagueSeasons]);
+
+  // Keep the authoritative Sleeper roster collection current for every view
+  // that consumes league context. The controller pauses while hidden and
+  // ignores any response that resolves after this league session is replaced.
+  useEffect(() => {
+    if (platform !== 'sleeper' || !selectedLeagueId) return undefined;
+
+    const rosterSync = createSleeperRosterSync({
+      leagueId: selectedLeagueId,
+      fetchRosters: getLeagueRosters,
+      applyRosters: setRosters,
+    });
+    rosterSync.start();
+    return () => rosterSync.stop();
+  }, [platform, selectedLeagueId]);
 
   // ── Player DB ───────────────────────────────────────────────────────────────
 

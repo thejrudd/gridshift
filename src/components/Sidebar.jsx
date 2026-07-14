@@ -12,6 +12,7 @@ export default function Sidebar({
   isSeasonComplete,
   darkMode,
   onToggleDarkMode,
+  onAppTour,
   onGuide,
   onExportJSON,
   onImportJSON,
@@ -168,6 +169,7 @@ export default function Sidebar({
             onClick={onToggleDarkMode}
             title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
             aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+            data-tour="theme-toggle"
             style={{
               width: 44, height: 44, borderRadius: 12,
               border: '1px solid var(--color-separator)',
@@ -192,6 +194,24 @@ export default function Sidebar({
             )}
           </button>
         )}
+        {collapsed && (
+          <button
+            onClick={onAppTour}
+            title="App Tour"
+            aria-label="App Tour"
+            data-tour="app-tour"
+            style={{
+              width: 44, height: 44, borderRadius: 12,
+              border: '1px solid var(--color-separator)',
+              background: 'var(--color-fill)',
+              color: 'var(--color-label-secondary)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer',
+            }}
+          >
+            <TourIcon />
+          </button>
+        )}
       </nav>
 
       <div className="sidebar-divider" />
@@ -206,7 +226,7 @@ export default function Sidebar({
               ? 'League'
               : 'Actions'}
         </div>
-        <SidebarAction label="Guide" onClick={onGuide} />
+        <SidebarAction label="Guide" onClick={onGuide} dataTour="app-guide" />
         {activeTab === 'predictions' && (
           <>
             <SidebarAction label="Export JSON" onClick={onExportJSON} disabled={predictionCount === 0} secondary />
@@ -256,6 +276,7 @@ export default function Sidebar({
         <button
           onClick={onToggleDarkMode}
           className="sidebar-action-item"
+          data-tour="theme-toggle"
           aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
         >
           <span style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -273,6 +294,16 @@ export default function Sidebar({
               </svg>
             )}
             {darkMode ? 'Light Mode' : 'Dark Mode'}
+          </span>
+        </button>
+        <button
+          onClick={onAppTour}
+          className="sidebar-action-item"
+          data-tour="app-tour"
+        >
+          <span style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <TourIcon />
+            App Tour
           </span>
         </button>
         <a
@@ -298,7 +329,7 @@ export default function Sidebar({
           className="px-5 py-3 text-xs"
           style={{ color: 'var(--color-label-tertiary)' }}
         >
-          v8.2.1
+          v8.2.2
         </div>
       </div>
     </aside>
@@ -381,9 +412,10 @@ function AlphaBadge() {
   return <StatusBadge kind="alpha" />;
 }
 
-function SidebarAction({ label, onClick, disabled, destructive, secondary }) {
+function SidebarAction({ label, onClick, disabled, destructive, secondary, dataTour }) {
   return (
     <button
+      data-tour={dataTour}
       onClick={disabled ? undefined : onClick}
       disabled={disabled}
       className={`sidebar-action-item${destructive ? ' destructive' : ''}`}
@@ -401,6 +433,14 @@ function SupportIcon() {
       <path d="M15 10h2.25a2.75 2.75 0 0 1 0 5.5H15" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
       <path d="M7.5 6.25c0-.9.75-1.2.75-2.1" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
       <path d="M11 6.25c0-.9.75-1.2.75-2.1" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+function TourIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" />
+      <path d="M10 8.5l6 3.5-6 3.5v-7z" fill="currentColor" />
     </svg>
   );
 }

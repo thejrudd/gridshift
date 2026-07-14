@@ -8,6 +8,9 @@ import { usePWAInstall } from './hooks/usePWAInstall';
 import useBodyScrollLock from './hooks/useBodyScrollLock';
 import useServiceWorkerUpdate from './hooks/useServiceWorkerUpdate';
 import useWhatsNew from './hooks/useWhatsNew';
+import useOnboardingTour from './hooks/useOnboardingTour';
+import { ONBOARDING_TOUR } from './data/onboardingTour';
+import { ONBOARDING_PHASE } from './utils/onboardingTour';
 import UpdateBanner from './components/UpdateBanner';
 import NavBar from './components/NavBar';
 import BottomTabBar from './components/BottomTabBar';
@@ -54,6 +57,7 @@ const ExportPreview = lazy(() => import('./components/ExportPreview'));
 const PredictionsRedesign = lazy(() => import('./components/predictions/PredictionsRedesign'));
 const Guide = lazy(() => import('./components/Guide'));
 const WhatsNewModal = lazy(() => import('./components/WhatsNewModal'));
+const OnboardingWelcomeModal = lazy(() => import('./components/OnboardingWelcomeModal'));
 const TourOverlay = lazy(() => import('./components/tour/TourOverlay'));
 const PlayerBrowser = lazy(() => import('./components/PlayerBrowser'));
 const StatisticsSchedule = lazy(() => import('./components/StatisticsSchedule'));
@@ -518,6 +522,7 @@ function AppInner() {
   const fileInputRef = useRef(null);
   const contentAreaRef = useRef(null);
   const pendingContentScrollTopRef = useRef(null);
+  const onboardingRestoreSidebarRef = useRef(false);
   const latestAppRouteRef = useRef(appRoute);
   const heatmapRouteUpdateTimerRef = useRef(null);
   const pendingHeatmapRoutePatchRef = useRef(null);
@@ -537,7 +542,14 @@ function AppInner() {
   const [tourActive, setTourActive] = useState(false);
   const [tourDemoMode, setTourDemoMode] = useState(null);
   const { needRefresh, applyUpdate } = useServiceWorkerUpdate();
-  const { pending: whatsNewPending, markSeen: markWhatsNewSeen } = useWhatsNew({ enabled: hasLeague });
+  const {
+    pending: whatsNewPending,
+    markSeen: markWhatsNewSeen,
+    isFirstRun,
+  } = useWhatsNew({ enabled: hasLeague });
+  const {
+    phase: onboardingPhase, begin: beginOnboarding, startManual: startManualOnboarding, complete: completeOnboarding,
+  } = useOnboardingTour({ isFirstRun, hasLeague });
   const [teamPickerOpen, setTeamPickerOpen] = useState(false);
   const [leagueSwitcherOpen, setLeagueSwitcherOpen] = useState(false);
   const [draftNavState, setDraftNavState] = useState({
@@ -1147,6 +1159,42 @@ function AppInner() {
   const handleImportClick = () => { fileInputRef.current?.click(); setActionSheetOpen(false); };
   const handleMyTeam = () => { setTeamPickerOpen(true); setActionSheetOpen(false); };
 
+  const prepareOnboardingLayout = useCallback(() => {
+    setActionSheetOpen(false);
+    setGuideOpen(false);
+    setTourActive(false);
+    setTourDemoMode(null);
+    if (window.innerWidth >= 1024 && sidebarCollapsed) {
+      onboardingRestoreSidebarRef.current = true;
+      setSidebarCollapsed(false);
+    }
+  }, [sidebarCollapsed]);
+
+  const restoreOnboardingLayout = useCallback(() => {
+    if (onboardingRestoreSidebarRef.current) {
+      onboardingRestoreSidebarRef.current = false;
+      setSidebarCollapsed(true);
+    }
+  }, []);
+
+  const handleStartAppTour = useCallback(() => {
+    prepareOnboardingLayout();
+    startManualOnboarding();
+  }, [prepareOnboardingLayout, startManualOnboarding]);
+
+  const handleBeginOnboarding = useCallback(() => {
+    prepareOnboardingLayout();
+    beginOnboarding();
+    if (!hasLeague) {
+      applyRoute({ activeTab: 'companion', companionView: 'roster' });
+    }
+  }, [applyRoute, beginOnboarding, hasLeague, prepareOnboardingLayout]);
+
+  const handleCompleteOnboarding = useCallback(() => {
+    completeOnboarding();
+    restoreOnboardingLayout();
+  }, [completeOnboarding, restoreOnboardingLayout]);
+
   const predictionScheduleModel = useMemo(
     () => buildPredictionScheduleModel(seasonSchedule, scheduleData?.teams ?? []),
     [scheduleData, seasonSchedule],
@@ -1240,6 +1288,7 @@ function AppInner() {
         onExportJSON={handleExportJSON}
         onImportJSON={handleImportClick}
         onRandom={handleRandom}
+        onAppTour={handleStartAppTour}
         onReset={handleReset}
         isInstallable={isInstallable}
         isInstalled={isInstalled}
@@ -1747,6 +1796,7 @@ function AppInner() {
           onExportImage={handleExportImage}
           onExportJSON={handleExportJSON}
           onImportJSON={handleImportClick}
+          onAppTour={handleStartAppTour}
           onRandom={handleRandom}
           onReset={handleReset}
           onInstall={isInstallable && !isInstalled ? handleInstall : null}
@@ -1766,7 +1816,27 @@ function AppInner() {
 
       {/* ── Update banner + What's New tour ───────────────────── */}
       {needRefresh && <UpdateBanner onInstall={applyUpdate} />}
-      {hasLeague && !needRefresh && whatsNewPending.length > 0 && !tourActive && (
+      {!needRefresh && onboardingPhase === ONBOARDING_PHASE.welcome && !tourActive && (
+        <Suspense fallback={null}>
+          <OnboardingWelcomeModal
+            hasLeague={hasLeague}
+            onBegin={handleBeginOnboarding}
+            onDismiss={handleCompleteOnboarding}
+          />
+        </Suspense>
+      )}
+      {!needRefresh && onboardingPhase === ONBOARDING_PHASE.tour && (
+        <Suspense fallback={null}>
+          <TourOverlay
+            entries={ONBOARDING_TOUR}
+            navigate={applyRoute}
+            currentRoute={appRoute}
+            context={{ tourViewport: window.innerWidth < 1024 ? 'mobile' : 'desktop' }}
+            onFinish={handleCompleteOnboarding}
+          />
+        </Suspense>
+      )}
+      {hasLeague && !needRefresh && onboardingPhase === ONBOARDING_PHASE.idle && whatsNewPending.length > 0 && !tourActive && (
         <Suspense fallback={null}>
           <WhatsNewModal
             entries={whatsNewPending}
@@ -1778,7 +1848,7 @@ function AppInner() {
           />
         </Suspense>
       )}
-      {hasLeague && !needRefresh && tourActive && whatsNewPending.length > 0 && (
+      {hasLeague && !needRefresh && onboardingPhase === ONBOARDING_PHASE.idle && tourActive && whatsNewPending.length > 0 && (
         <Suspense fallback={null}>
           <TourOverlay
             entries={whatsNewPending}

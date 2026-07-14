@@ -6986,30 +6986,30 @@ body {
   }
 
   .draft-board-mobile-available .draft-board-workspace__controls .draft-position-filter-shell {
-    width: max(0px, calc(100cqw - 20px));
+    width: 100%;
     margin-right: 0;
     margin-left: 0;
   }
 
-  .draft-board-mobile-available summary {
+  .draft-board-mobile-available__summary {
     display: flex;
-    min-height: 42px;
+    width: 100%;
+    min-height: 44px;
     cursor: pointer;
     align-items: center;
     justify-content: space-between;
     gap: 10px;
     padding: 0 10px 0 12px;
+    border: 0;
+    background: transparent;
     color: var(--color-label);
+    font-family: inherit;
     font-size: 13px;
     font-weight: 900;
-    list-style: none;
+    text-align: left;
   }
 
-  .draft-board-mobile-available summary::-webkit-details-marker {
-    display: none;
-  }
-
-  .draft-board-mobile-available summary::after {
+  .draft-board-mobile-available__summary::after {
     content: "+";
     display: grid;
     width: 30px;
@@ -7025,7 +7025,11 @@ body {
     line-height: 1;
   }
 
-  .draft-board-mobile-available[open] summary::after {
+  .draft-board-mobile-available.is-open .draft-board-mobile-available__summary {
+    border-bottom: 1px solid var(--color-separator);
+  }
+
+  .draft-board-mobile-available.is-open .draft-board-mobile-available__summary::after {
     content: "-";
   }
 
@@ -7082,14 +7086,30 @@ body {
     min-height: 0;
   }
 
-  .draft-board-mobile-available[open] .draft-board-available-list-shell {
-    max-height: min(40dvh, 420px);
+  .draft-board-mobile-available.is-open {
+    display: grid;
+    grid-row: 1 / -1;
+    grid-template-rows: auto auto minmax(0, 1fr);
+    height: 100%;
     overflow: hidden;
   }
 
-  .draft-board-mobile-available[open] .draft-board-available-list {
-    height: auto;
-    max-height: min(40dvh, 420px);
+  .draft-board-mobile-available.is-open ~ .draft-board-mobile-lane-filter,
+  .draft-board-mobile-available.is-open ~ .draft-board-lanes-shell {
+    display: none;
+  }
+
+  .draft-board-mobile-available.is-open .draft-board-available-list-shell {
+    height: 100%;
+    max-height: none;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .draft-board-mobile-available.is-open .draft-board-available-list {
+    height: 100%;
+    max-height: none;
+    min-height: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
   }
@@ -7432,7 +7452,6 @@ body {
     align-items: center;
     min-height: 22px;
     padding: 0 8px;
-    border-top: 1px solid var(--color-separator);
     color: var(--color-label-tertiary);
     font-size: 9px;
     font-weight: 900;
@@ -7443,6 +7462,7 @@ body {
 
   .draft-board-main {
     grid-template-rows: auto auto minmax(0, 1fr);
+    border: 0;
   }
 
   .draft-board-lanes-shell {
@@ -7506,14 +7526,17 @@ body {
     white-space: normal;
   }
 
-  .draft-board-mobile-available[open] .draft-board-available-list-shell {
-    max-height: min(34dvh, 360px);
+  .draft-board-mobile-available.is-open .draft-board-available-list-shell {
+    height: 100%;
+    max-height: none;
+    min-height: 0;
     overflow: hidden;
   }
 
-  .draft-board-mobile-available[open] .draft-board-available-list {
-    height: auto;
-    max-height: min(34dvh, 360px);
+  .draft-board-mobile-available.is-open .draft-board-available-list {
+    height: 100%;
+    max-height: none;
+    min-height: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
   }
@@ -10057,6 +10080,10 @@ body {
 }
 
 @media (max-width: 1023px) {
+  .content-area.content-area--draft-board {
+    padding-bottom: calc(var(--bar-height-tab) + env(safe-area-inset-bottom));
+  }
+
   .content-area--draft {
     padding-top: 6px;
     padding-right: 6px;
@@ -10076,6 +10103,90 @@ body {
 }
 
 @media (max-width: 767px) {
+  .content-area.content-area--draft {
+    padding-right: 0;
+    padding-left: 0;
+  }
+
+  .content-area.content-area--draft .draft-page {
+    gap: 0;
+    padding-right: 0;
+    padding-left: 0;
+  }
+
+  .content-area--draft .draft-status-banner-shell {
+    margin: 0 8px 6px;
+  }
+
+  .content-area--draft .draft-market-attribution {
+    margin: 0 8px 6px;
+  }
+
+  .content-area--draft-war-room .draft-panel.draft-big-board,
+  .content-area--draft-results .draft-panel.draft-results-panel,
+  .content-area--draft-results .draft-panel.draft-order-panel {
+    border-right: 0;
+    border-left: 0;
+    border-radius: 0;
+  }
+
+  .content-area--draft-war-room .draft-big-board .draft-player-list,
+  .content-area--draft-results .draft-results-list {
+    gap: 2px;
+    padding: 2px 0 0;
+  }
+
+  .content-area--draft-war-room .draft-player-row--big-board.companion-player-row,
+  .content-area--draft-results .draft-player-row--results.companion-player-row {
+    border-radius: 0;
+  }
+
+  .content-area--draft-results .draft-results-team-filter__button,
+  .content-area--draft-results .draft-results-team-filter__option {
+    min-height: 44px;
+  }
+
+  .content-area--draft-war-room .draft-mobile-control-menu__button,
+  .content-area--draft-war-room .draft-model-weights summary {
+    min-height: 44px;
+  }
+
+  .content-area--draft-war-room .draft-mobile-control-menu__button {
+    padding-inline: 12px;
+  }
+
+  .content-area--draft-war-room .draft-big-board__mobile-controls.is-open .draft-mobile-control-menu__content {
+    gap: 0;
+    padding: 0;
+  }
+
+  .content-area--draft-war-room .draft-big-board__mobile-controls .draft-big-board-controls {
+    padding: 8px;
+  }
+
+  .content-area--draft-war-room .draft-big-board__mobile-controls .draft-model-weights {
+    border: 0;
+    border-top: 1px solid var(--color-separator);
+    padding: 0 12px;
+  }
+
+  .content-area--draft-war-room .draft-big-board .draft-player-list > .draft-empty-state,
+  .content-area--draft-results .draft-results-panel > .draft-empty-state {
+    border: 0;
+    border-radius: 0;
+    padding: 24px 12px;
+    text-align: center;
+  }
+
+  .content-area--draft-board .draft-board-page-mobile-controls {
+    border-top: 1px solid var(--color-separator);
+  }
+
+  .content-area--draft-board .draft-board-page-mobile-controls .draft-mobile-control-menu__button {
+    min-height: 44px;
+    padding-inline: 12px;
+  }
+
   .content-area--draft {
     padding-top: 4px;
   }
@@ -10086,16 +10197,6 @@ body {
     padding-left: 4px;
   }
 
-  .content-area.content-area--draft-war-room {
-    padding-right: 3px;
-    padding-left: 3px;
-  }
-
-  .content-area--draft-war-room .draft-page {
-    gap: 5px;
-    padding-right: 2px;
-    padding-left: 2px;
-  }
 }
 
 @media (min-width: 1024px) and (max-width: 1279px) {

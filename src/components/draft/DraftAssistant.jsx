@@ -2792,6 +2792,7 @@ function MyBoardWorkspace({
   const [activeLane, setActiveLane] = useState(() => lanePositions[0] ?? 'QB');
   const [draggingPlayerId, setDraggingPlayerId] = useState(null);
   const [availableRailWidth, setAvailableRailWidth] = useState(300);
+  const [mobileAvailableOpen, setMobileAvailableOpen] = useState(false);
   const [rosterCollapsed, setRosterCollapsed] = useState(() => {
     if (typeof window === 'undefined') return true;
     try {
@@ -2944,34 +2945,45 @@ function MyBoardWorkspace({
         />
 
         <section className="draft-board-main" aria-label="My draft board">
-          <details className="draft-board-mobile-available">
-            <summary>Available Players</summary>
-            <div className="draft-board-workspace__controls">
-              <DraftSegmentedControl
-                label="Available player scope"
-                options={BOARD_SCOPE_OPTIONS}
-                value={boardScope}
-                onChange={onBoardScopeChange}
-                className="draft-segmented-control--split"
-              />
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search players"
-                aria-label="Search available draft players"
-              />
-              <PositionFilter positions={positions} activePosition={activePosition} onChange={onPositionChange} />
-            </div>
-            <DraftAvailablePlayerList
-              players={visibleAvailablePlayers}
-              darkMode={darkMode}
-              metricKey={cardMetricKey}
-              onAdd={onAdd}
-              onDragStart={handleDragStart}
-              onDragEnd={handleDragEnd}
-              onViewPlayer={onViewPlayer}
-            />
-          </details>
+          <section className={['draft-board-mobile-available', mobileAvailableOpen ? 'is-open' : ''].filter(Boolean).join(' ')}>
+            <button
+              type="button"
+              className="draft-board-mobile-available__summary"
+              aria-expanded={mobileAvailableOpen}
+              onClick={() => setMobileAvailableOpen((current) => !current)}
+            >
+              <span>Available Players</span>
+            </button>
+            {mobileAvailableOpen ? (
+              <>
+                <div className="draft-board-workspace__controls">
+                  <DraftSegmentedControl
+                    label="Available player scope"
+                    options={BOARD_SCOPE_OPTIONS}
+                    value={boardScope}
+                    onChange={onBoardScopeChange}
+                    className="draft-segmented-control--split"
+                  />
+                  <input
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    placeholder="Search players"
+                    aria-label="Search available draft players"
+                  />
+                  <PositionFilter positions={positions} activePosition={activePosition} onChange={onPositionChange} />
+                </div>
+                <DraftAvailablePlayerList
+                  players={visibleAvailablePlayers}
+                  darkMode={darkMode}
+                  metricKey={cardMetricKey}
+                  onAdd={onAdd}
+                  onDragStart={handleDragStart}
+                  onDragEnd={handleDragEnd}
+                  onViewPlayer={onViewPlayer}
+                />
+              </>
+            ) : null}
+          </section>
 
           {boardViewMode === 'position' ? (
             <div className="draft-board-mobile-lane-filter">

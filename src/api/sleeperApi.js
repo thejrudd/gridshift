@@ -2,7 +2,7 @@
 // https://docs.sleeper.com
 
 const BASE = 'https://api.sleeper.app/v1';
-let liveDraftCacheBustCounter = 0;
+let liveRequestCacheBustCounter = 0;
 
 async function get(path, options = {}) {
   const res = await fetch(`${BASE}${path}`, options);
@@ -12,11 +12,11 @@ async function get(path, options = {}) {
 
 function withCacheBust(path) {
   const separator = path.includes('?') ? '&' : '?';
-  liveDraftCacheBustCounter += 1;
-  return `${path}${separator}_gridshift=${Date.now()}-${liveDraftCacheBustCounter}`;
+  liveRequestCacheBustCounter += 1;
+  return `${path}${separator}_gridshift=${Date.now()}-${liveRequestCacheBustCounter}`;
 }
 
-function getLiveDraft(path) {
+function getLive(path) {
   return get(withCacheBust(path), { cache: 'no-store' });
 }
 
@@ -37,7 +37,7 @@ export function getLeague(leagueId) {
 }
 
 export function getLeagueRosters(leagueId) {
-  return get(`/league/${leagueId}/rosters`);
+  return getLive(`/league/${leagueId}/rosters`);
 }
 
 export function getLeagueUsers(leagueId) {
@@ -57,19 +57,19 @@ export function getTradedPicks(leagueId) {
 }
 
 export function getLeagueDrafts(leagueId) {
-  return getLiveDraft(`/league/${leagueId}/drafts`);
+  return getLive(`/league/${leagueId}/drafts`);
 }
 
 export function getDraft(draftId) {
-  return getLiveDraft(`/draft/${draftId}`);
+  return getLive(`/draft/${draftId}`);
 }
 
 export function getDraftPicks(draftId) {
-  return getLiveDraft(`/draft/${draftId}/picks`);
+  return getLive(`/draft/${draftId}/picks`);
 }
 
 export function getDraftTradedPicks(draftId) {
-  return getLiveDraft(`/draft/${draftId}/traded_picks`);
+  return getLive(`/draft/${draftId}/traded_picks`);
 }
 
 // ── Players ──────────────────────────────────────────────────────────────────

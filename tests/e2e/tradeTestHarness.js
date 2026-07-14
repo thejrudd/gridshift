@@ -26,10 +26,14 @@ export async function installTradeFixtures(page, overrides = {}) {
   const fixtureDrafts = overrides.drafts ?? drafts;
   const fixtureMatchupsForWeek = overrides.matchupsForWeek ?? matchupsForWeek;
 
-  await page.addInitScript((state) => {
+  const installedVersion = Object.prototype.hasOwnProperty.call(overrides, 'installedVersion')
+    ? overrides.installedVersion
+    : '8.2.1';
+  await page.addInitScript(({ state, version }) => {
     window.localStorage.setItem('sleeper_state_v1', JSON.stringify(state));
     window.localStorage.setItem('nfl-predictor-dark-mode', 'false');
-  }, fixtureState);
+    if (version) window.localStorage.setItem('gridshift:installedVersion', version);
+  }, { state: fixtureState, version: installedVersion });
 
   await page.route('**/ktc-proxy/**', async (route) => {
     await route.fulfill({

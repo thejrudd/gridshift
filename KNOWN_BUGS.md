@@ -51,6 +51,8 @@ These ESPN league integration issues are known but deferred while ESPN features 
 
 | Bug | Fixed In |
 |-----|----------|
+| Sleeper roster changes could remain stale in GridShift after commissioner drops, adds, trades, or reserve/taxi updates because persisted rosters were not revalidated while a league remained connected. | v8.2.2 |
+| On mobile Draft Board, expanded Available Players could overlap board position filters, fail to scroll, and leave unused space above My Roster. | v8.2.2 |
 | The What's New Draft tour could describe a historical league year as though the user's current draft had already started, without naming the selected year, current league year, or selected draft phase. | v8.2.1 |
 | Draft Results could appear to hang when switching from a historical league year back to the current league year because completed historical picks were rebuilt against the new season before its league snapshot loaded. | v8.2.1 |
 | Switching from the current-year Draft War Room to a historical league year briefly showed the unavailable message, then automatically redirected to Draft Results instead of keeping War Room selected and revisitable. | v8.2.1 |

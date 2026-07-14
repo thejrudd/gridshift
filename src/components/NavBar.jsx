@@ -9,6 +9,7 @@ export default function NavBar({ darkMode, onToggleDarkMode, onMenuOpen, seasonS
       <button
         onClick={onToggleDarkMode}
         className="nav-bar-btn"
+        data-tour="theme-toggle"
         aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
       >
         {darkMode ? (
@@ -57,6 +58,7 @@ export default function NavBar({ darkMode, onToggleDarkMode, onMenuOpen, seasonS
         <button
           onClick={onMenuOpen}
           className="nav-bar-btn"
+          data-tour="app-menu"
           aria-label="Open menu"
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">

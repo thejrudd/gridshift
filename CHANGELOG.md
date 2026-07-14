@@ -1157,3 +1157,12 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Historical tour context** - Draft tour tooltips now name the selected league year, identify whether it is current or historical, state the selected draft phase, and point historical users back to the current league year.
 - **Draft year-switch performance** - Prevented completed historical Draft Results from being synchronously rebuilt against a newly selected season while its target league snapshot is still loading.
 - **Historical War Room navigation** - Kept War Room selected and revisitable for prior post-draft league years, with a persistent season-aware unavailable explanation instead of an automatic redirect to Results.
+
+## v8.2.2 - Onboarding Tour & Live Roster Sync
+*2026-07-13*
+
+- **First-run onboarding** - Added a Sleeper connection welcome flow that continues into an eight-step overview after league setup, without replaying historical release tours for new installs.
+- **Replayable App Tour** - Added persistent desktop and mobile App Tour controls, viewport-aware help and display guidance, and safe sidebar restoration after the overview ends.
+- **Sleeper roster synchronization** - Revalidated connected Sleeper rosters every 30 seconds while active and immediately on focus, visibility, or network restoration, with stale-cache bypassing and safe request cleanup.
+- **Mobile Draft Board fixes** - Reworked expanded Available Players into a full-height scrollable workspace, prevented overlap with position filters, removed unused roster spacing, and tightened edge-to-edge Draft layouts and touch targets.
+- **Regression coverage** - Added unit coverage for onboarding state, live roster synchronization, and cache-busted Sleeper roster requests, while keeping automated fixtures from unintentionally triggering first-run onboarding.
