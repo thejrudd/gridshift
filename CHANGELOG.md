@@ -1178,3 +1178,4 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Draft Blueprint** - Made Draft Blueprint the default Draft Results view with team pick counts, position construction, first-round selections, and Pick List drilldown.
 - **Responsive Display settings** - Added persistent Compact, Comfortable, and Large display presets, semantic type and density scaling, and intentional readable, data, and workbench frames for wide screens.
 - **Tour coverage** - Added an upgrade tour for the League workspace, with expanded League History, Draft Blueprint, and Display settings guidance.
+- **Draft Board drag-and-drop polish** - Added dedicated player-card drag grips, a stable drag preview, eligible and invalid lane highlighting, exact insertion markers, a visible keyboard-accessible Available rail resize grip, and live-region announcements for pickup, destinations, drops, invalid drops, and cancellation.

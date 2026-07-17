@@ -120,6 +120,7 @@ Hosted owners can enable paid live scoring for selected Sleeper leagues by setti
 - **Draft Blueprint** — Start Draft Results with team-by-team roster construction and drill into the chronological Pick List.
 - **Display settings** — Choose Compact, Comfortable, or Large type, controls, and spacing for the way you read GridShift.
 - **Contextual empty states** — New and renewed leagues receive clear guidance when the selected league year has no finalized standings or activity yet.
+- **Draft Board drag-and-drop** — Player grips, card previews, lane highlights, insertion markers, and accessible status announcements make board organization clearer before release.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 

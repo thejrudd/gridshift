@@ -1,4 +1,4 @@
-import { memo, startTransition, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { Fragment, memo, startTransition, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal, flushSync } from 'react-dom';
 import { getDraft, getDraftPicks, getDraftTradedPicks, getLeagueDrafts, getUserById } from '../../api/sleeperApi.js';
 import { useSleeperBase } from '../../context/SleeperContext.jsx';
@@ -2302,7 +2302,6 @@ function DraftBoardCardShell({
   onViewPlayer,
   onDragStart,
   onDragEnd = null,
-  onDropBefore = null,
   onMove = null,
   onRemove = null,
   onAdd = null,
@@ -2310,6 +2309,7 @@ function DraftBoardCardShell({
   allowReorder = false,
   allowDrag = true,
   disabled = false,
+  isDragging = false,
 }) {
   const isGone = player?.available === false;
   const isDraftedByUser = Boolean(player?.draftedBy?.isMine);
@@ -2369,23 +2369,23 @@ function DraftBoardCardShell({
       className={[
         'draft-board-card-shell',
         canDrag ? 'is-draggable' : '',
+        isDragging ? 'is-dragging-source' : '',
         isGone ? 'is-gone' : '',
         isDraftedByUser ? 'is-drafted-by-user' : '',
         isGone && !isDraftedByUser ? 'is-drafted-by-other' : '',
       ].filter(Boolean).join(' ')}
+      data-player-id={String(player.id)}
       draggable={canDrag}
       onDragStart={canDrag ? (event) => onDragStart?.(event, player, position) : undefined}
       onDragEnd={canDrag ? onDragEnd : undefined}
-      onDragOver={onDropBefore ? (event) => {
-        event.preventDefault();
-        event.dataTransfer.dropEffect = 'move';
-      } : undefined}
-      onDrop={onDropBefore ? (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        onDropBefore(player.id);
-      } : undefined}
     >
+      {canDrag ? (
+        <span className="draft-board-card-drag-handle" aria-hidden="true">
+          <span />
+          <span />
+          <span />
+        </span>
+      ) : null}
       <DraftPlayerRow
         player={player}
         darkMode={darkMode}
@@ -2557,6 +2557,7 @@ const DraftAvailablePlayerList = memo(function DraftAvailablePlayerList({
   onDragStart,
   onDragEnd,
   onViewPlayer,
+  draggingPlayerId = null,
   emptyTitle = 'No available players match this filter.',
 }) {
   const listRef = useRef(null);
@@ -2575,6 +2576,7 @@ const DraftAvailablePlayerList = memo(function DraftAvailablePlayerList({
             onDragEnd={onDragEnd}
             onViewPlayer={onViewPlayer}
             allowDrag
+            isDragging={String(player.id) === draggingPlayerId}
           />
         ))}
       </div>
@@ -2588,6 +2590,7 @@ const DraftAvailablePlayerList = memo(function DraftAvailablePlayerList({
   && previous.onDragStart === next.onDragStart
   && previous.onDragEnd === next.onDragEnd
   && previous.onViewPlayer === next.onViewPlayer
+  && previous.draggingPlayerId === next.draggingPlayerId
   && previous.emptyTitle === next.emptyTitle
   && haveSamePlayerRows(previous.players, next.players)
 ));
@@ -2607,6 +2610,9 @@ const DraftBoardLane = memo(function DraftBoardLane({
   allowReorder = true,
   canAcceptDrop = true,
   activeMobile = false,
+  draggingPlayerId = null,
+  dropTarget = null,
+  onDragTargetChange,
 }) {
   const liveRows = rows.filter((row) => row.available !== false);
   const stackRef = useRef(null);
@@ -2621,11 +2627,32 @@ const DraftBoardLane = memo(function DraftBoardLane({
     : (companionPositionColor ? getPositionTextColor(companionPositionColor) : 'var(--color-label)');
   const isDroppable = allowDrop && canAcceptDrop;
   const drop = (event, beforePlayerId = null) => {
-    if (!isDroppable) return;
     event.preventDefault();
     event.stopPropagation();
     onDropPlayer(position, beforePlayerId);
   };
+  const getBeforePlayerId = (event) => {
+    const cards = [...(stackRef.current?.querySelectorAll('.draft-board-card-shell[data-player-id]') ?? [])]
+      .filter((card) => card.dataset.playerId !== String(draggingPlayerId));
+    const nextCard = cards.find((card) => {
+      const rect = card.getBoundingClientRect();
+      return event.clientY < rect.top + (rect.height / 2);
+    });
+    return nextCard?.dataset.playerId ?? null;
+  };
+  const updateDropTarget = (event) => {
+    if (!allowDrop) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = isDroppable ? 'move' : 'none';
+
+    if (!isDroppable) {
+      onDragTargetChange(position, null, false);
+      return;
+    }
+
+    onDragTargetChange(position, getBeforePlayerId(event), true);
+  };
+  const isActiveDropTarget = dropTarget?.position === position;
 
   return (
     <section
@@ -2635,16 +2662,16 @@ const DraftBoardLane = memo(function DraftBoardLane({
         position === 'Overall' ? 'is-overall' : '',
         isDroppable ? 'can-drop' : '',
         allowDrop && !canAcceptDrop ? 'cannot-drop' : '',
+        isActiveDropTarget ? 'is-drop-target' : '',
+        isActiveDropTarget && !dropTarget.valid ? 'is-invalid-drop-target' : '',
       ].filter(Boolean).join(' ')}
       style={{
         '--draft-board-lane-color': positionColor,
         '--draft-board-lane-fg': positionTextColor,
       }}
-      onDragOver={isDroppable ? (event) => {
-        event.preventDefault();
-        event.dataTransfer.dropEffect = 'move';
-      } : undefined}
-      onDrop={isDroppable ? (event) => drop(event) : undefined}
+      onDragEnter={allowDrop ? updateDropTarget : undefined}
+      onDragOver={allowDrop ? updateDropTarget : undefined}
+      onDrop={allowDrop ? (event) => drop(event, isDroppable ? getBeforePlayerId(event) : null) : undefined}
     >
       <div className="draft-board-lane__header">
         <strong>{position}</strong>
@@ -2653,24 +2680,31 @@ const DraftBoardLane = memo(function DraftBoardLane({
       <div className="draft-scroll-region draft-board-lane__stack-shell">
         <div ref={stackRef} className="draft-board-lane__stack">
           {rows.map((player, index) => (
-            <DraftBoardCardShell
-              key={player.id}
-              player={player}
-              darkMode={darkMode}
-              metricKey={metricKey}
-              index={index}
-              isLast={index === rows.length - 1}
-              position={position}
-              onDragStart={onDragStart}
-              onDragEnd={onDragEnd}
-              onDropBefore={isDroppable ? (beforePlayerId) => onDropPlayer(position, beforePlayerId) : null}
-              onMove={allowReorder ? onMove : null}
-              onRemove={onRemove}
-              onViewPlayer={onViewPlayer}
-              allowReorder={allowReorder}
-              allowDrag={allowDrop}
-            />
+            <Fragment key={player.id}>
+              {isActiveDropTarget && dropTarget.valid && String(dropTarget.beforePlayerId) === String(player.id) ? (
+                <div className="draft-board-insertion-line" aria-hidden="true" />
+              ) : null}
+              <DraftBoardCardShell
+                player={player}
+                darkMode={darkMode}
+                metricKey={metricKey}
+                index={index}
+                isLast={index === rows.length - 1}
+                position={position}
+                onDragStart={onDragStart}
+                onDragEnd={onDragEnd}
+                onMove={allowReorder ? onMove : null}
+                onRemove={onRemove}
+                onViewPlayer={onViewPlayer}
+                allowReorder={allowReorder}
+                allowDrag={allowDrop}
+                isDragging={String(player.id) === draggingPlayerId}
+              />
+            </Fragment>
           ))}
+          {isActiveDropTarget && dropTarget.valid && dropTarget.beforePlayerId == null ? (
+            <div className="draft-board-insertion-line is-end" aria-hidden="true" />
+          ) : null}
           {rows.length === 0 ? (
             <div className="draft-board-lane__empty">
               Add players from Available to sort this view.
@@ -2691,6 +2725,11 @@ const DraftBoardLane = memo(function DraftBoardLane({
   && previous.allowReorder === next.allowReorder
   && previous.canAcceptDrop === next.canAcceptDrop
   && previous.activeMobile === next.activeMobile
+  && previous.draggingPlayerId === next.draggingPlayerId
+  && previous.dropTarget?.position === next.dropTarget?.position
+  && previous.dropTarget?.beforePlayerId === next.dropTarget?.beforePlayerId
+  && previous.dropTarget?.valid === next.dropTarget?.valid
+  && previous.onDragTargetChange === next.onDragTargetChange
   && previous.onDragStart === next.onDragStart
   && previous.onDragEnd === next.onDragEnd
   && previous.onDropPlayer === next.onDropPlayer
@@ -2789,6 +2828,8 @@ function MyBoardWorkspace({
   );
   const [activeLane, setActiveLane] = useState(() => lanePositions[0] ?? 'QB');
   const [draggingPlayerId, setDraggingPlayerId] = useState(null);
+  const [dropTarget, setDropTarget] = useState(null);
+  const [dragAnnouncement, setDragAnnouncement] = useState('');
   const [availableRailWidth, setAvailableRailWidth] = useState(300);
   const [mobileAvailableOpen, setMobileAvailableOpen] = useState(false);
   const [rosterCollapsed, setRosterCollapsed] = useState(() => {
@@ -2801,6 +2842,12 @@ function MyBoardWorkspace({
   });
   const lanesRef = useRef(null);
   const dragRef = useRef(null);
+  const dropTargetRef = useRef(null);
+
+  const announceDrag = useCallback((message) => {
+    setDragAnnouncement('');
+    window.requestAnimationFrame(() => setDragAnnouncement(message));
+  }, []);
 
   useEffect(() => {
     if (!lanePositions.includes(activeLane)) setActiveLane(lanePositions[0] ?? 'QB');
@@ -2834,39 +2881,90 @@ function MyBoardWorkspace({
   }, [lanePositions, boardByPosition, boardRowsById]);
 
   const handleDragStart = useCallback((event, player, sourcePosition = null) => {
+    const playerName = getPlayerName(player);
     dragRef.current = {
       playerId: String(player.id),
       sourcePosition,
+      playerName,
     };
     flushSync(() => {
       setDraggingPlayerId(String(player.id));
     });
     event.dataTransfer.effectAllowed = 'move';
     event.dataTransfer.setData('text/plain', String(player.id));
-  }, []);
+    const sourceCard = event.currentTarget;
+    const preview = sourceCard.cloneNode(true);
+    const sourceRect = sourceCard.getBoundingClientRect();
+    preview.classList.add('draft-board-drag-preview');
+    preview.setAttribute('aria-hidden', 'true');
+    preview.style.width = `${sourceRect.width}px`;
+    document.body.appendChild(preview);
+    event.dataTransfer.setDragImage(preview, Math.min(28, sourceRect.width / 2), Math.min(28, sourceRect.height / 2));
+    window.setTimeout(() => preview.remove(), 0);
+
+    const destinations = lanePositions.filter((position) => playerCanSlotIntoBoardPosition(player, position));
+    announceDrag(`Picked up ${playerName}. Available destinations: ${destinations.join(', ')} ${destinations.length === 1 ? 'lane' : 'lanes'}.`);
+  }, [announceDrag, lanePositions]);
 
   const handleDragEnd = useCallback(() => {
+    const cancelledPlayerName = dragRef.current?.playerName;
     dragRef.current = null;
+    dropTargetRef.current = null;
     setDraggingPlayerId(null);
-  }, []);
+    setDropTarget(null);
+    if (cancelledPlayerName) announceDrag(`Drag cancelled. ${cancelledPlayerName} was not moved.`);
+  }, [announceDrag]);
 
   const canDropPlayerIntoPosition = useCallback((playerId, position) => {
     const player = workspacePlayersByIdRef.current.get(String(playerId));
     return playerCanSlotIntoBoardPosition(player, position);
   }, []);
 
+  const handleDragTargetChange = useCallback((position, beforePlayerId, valid) => {
+    const playerName = dragRef.current?.playerName;
+    const current = dropTargetRef.current;
+    if (
+      current?.position === position
+      && current?.beforePlayerId === beforePlayerId
+      && current?.valid === valid
+    ) return;
+
+    const nextTarget = { position, beforePlayerId, valid };
+    dropTargetRef.current = nextTarget;
+    setDropTarget(nextTarget);
+    if (playerName) {
+      const beforePlayer = beforePlayerId == null
+        ? null
+        : workspacePlayersByIdRef.current.get(String(beforePlayerId));
+      const destination = beforePlayer ? `before ${getPlayerName(beforePlayer)}` : 'at the bottom';
+      announceDrag(valid
+        ? `${position} lane, ${destination}.`
+        : `${position} lane is not available for ${playerName}.`);
+    }
+  }, [announceDrag]);
+
   const handleDropPlayer = useCallback((position, beforePlayerId = null) => {
     const playerId = dragRef.current?.playerId;
+    const playerName = dragRef.current?.playerName;
     if (!playerId) return;
     if (!canDropPlayerIntoPosition(playerId, position)) {
       dragRef.current = null;
+      dropTargetRef.current = null;
       setDraggingPlayerId(null);
+      setDropTarget(null);
+      announceDrag(`${playerName} was not moved. ${position} is not an eligible destination.`);
       return;
     }
+    const beforePlayer = beforePlayerId == null
+      ? null
+      : workspacePlayersByIdRef.current.get(String(beforePlayerId));
     onDropPlayer(position, playerId, beforePlayerId);
     dragRef.current = null;
+    dropTargetRef.current = null;
     setDraggingPlayerId(null);
-  }, [canDropPlayerIntoPosition, onDropPlayer]);
+    setDropTarget(null);
+    announceDrag(`Dropped ${playerName} in the ${position} lane${beforePlayer ? ` before ${getPlayerName(beforePlayer)}` : ' at the bottom'}.`);
+  }, [announceDrag, canDropPlayerIntoPosition, onDropPlayer]);
 
   const startRailResize = useCallback((event) => {
     event.preventDefault();
@@ -2931,16 +3029,23 @@ function MyBoardWorkspace({
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
             onViewPlayer={onViewPlayer}
+            draggingPlayerId={draggingPlayerId}
           />
         </aside>
 
         <button
           type="button"
           className="draft-board-rail-resizer"
-          aria-label="Resize available players panel"
+          aria-label="Resize available players panel. Use Left and Right Arrow keys."
           onPointerDown={startRailResize}
           onKeyDown={resizeRailWithKeyboard}
-        />
+        >
+          <span className="draft-board-rail-resizer__grip" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+          </span>
+        </button>
 
         <section className="draft-board-main" aria-label="My draft board">
           <section className={['draft-board-mobile-available', mobileAvailableOpen ? 'is-open' : ''].filter(Boolean).join(' ')}>
@@ -2978,6 +3083,7 @@ function MyBoardWorkspace({
                   onDragStart={handleDragStart}
                   onDragEnd={handleDragEnd}
                   onViewPlayer={onViewPlayer}
+                  draggingPlayerId={draggingPlayerId}
                 />
               </>
             ) : null}
@@ -3009,6 +3115,7 @@ function MyBoardWorkspace({
                   allowDrop={false}
                   allowReorder
                   activeMobile
+                  draggingPlayerId={draggingPlayerId}
                 />
               ) : lanePositions.map((position) => (
                 <DraftBoardLane
@@ -3025,6 +3132,9 @@ function MyBoardWorkspace({
                   onViewPlayer={onViewPlayer}
                   canAcceptDrop={draggingPlayerId ? canDropPlayerIntoPosition(draggingPlayerId, position) : true}
                   activeMobile={position === activeLane}
+                  draggingPlayerId={draggingPlayerId}
+                  dropTarget={dropTarget}
+                  onDragTargetChange={handleDragTargetChange}
                 />
               ))}
             </div>
@@ -3037,6 +3147,9 @@ function MyBoardWorkspace({
           collapsed={rosterCollapsed}
           onToggleCollapsed={() => setRosterCollapsed((current) => !current)}
         />
+        <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+          {dragAnnouncement}
+        </div>
       </div>
     </div>
   );
