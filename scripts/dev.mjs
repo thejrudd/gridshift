@@ -63,6 +63,7 @@ const processes = [
       ...localServerEnv,
       ESPN_API_HOST: process.env.ESPN_API_HOST ?? '127.0.0.1',
       ESPN_API_PORT: process.env.ESPN_API_PORT ?? '3001',
+      PORT: process.env.PORT ?? localServerEnv.PORT,
     },
   },
   {

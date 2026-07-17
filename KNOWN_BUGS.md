@@ -51,6 +51,8 @@ These ESPN league integration issues are known but deferred while ESPN features 
 
 | Bug | Fixed In |
 |-----|----------|
+| Desktop Edge could revert a Fantasy Matchups picker selection to the previously displayed matchup after closing the picker. | v8.3.1 |
+| The What’s New tour test could ignore its dedicated API port when a local `.env` defined `PORT`, causing its ESPN sidecar to exit during startup. | v8.3.1 |
 | Companion Activity timeline entries can paint through the transparent sticky offset above the filter chips while scrolling. | v8.3.0 |
 | Sleeper League History standings and playoff brackets omit commissioner `custom_points` adjustments, so displayed totals can diverge from Sleeper. | v8.3.0 |
 | Companion Standings drops visual bye slots from uneven Sleeper Toilet Bowls, orders loser-advances branches like a winner bracket, and detaches championship placement games into an unwanted standalone bracket. | v8.3.0 |

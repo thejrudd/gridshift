@@ -14,8 +14,10 @@ let pendingBack = null; // { id, timer }
  * that entry — the popstate listener sees the tag is gone and calls onClose.
  * On programmatic close (X, Escape, selection): the cleanup consumes the
  * still-present tagged entry with history.back() so the stack stays balanced.
- * If the app navigated while the sheet was open (a new entry was pushed on
- * top), the tag check fails and nothing is popped.
+ * If the app navigated while the sheet was open, do not consume the entry on
+ * cleanup. This includes route updates made with replaceState: they preserve
+ * the sheet tag but change the URL, so going back would otherwise undo the
+ * selection that closed the sheet.
  */
 export default function useSheetHistory(isOpen, onClose) {
   const closeRef = useRef(onClose);
@@ -36,6 +38,7 @@ export default function useSheetHistory(isOpen, onClose) {
       const baseState = window.history.state && typeof window.history.state === 'object' ? window.history.state : {};
       window.history.pushState({ ...baseState, _sheet: id }, '', window.location.href);
     }
+    const openedLocation = `${window.location.pathname}${window.location.search}${window.location.hash}`;
 
     const tracker = { poppedByBack: false };
     const onPopState = () => {
@@ -47,7 +50,8 @@ export default function useSheetHistory(isOpen, onClose) {
 
     return () => {
       window.removeEventListener('popstate', onPopState);
-      if (!tracker.poppedByBack && window.history.state?._sheet === id) {
+      const locationChanged = `${window.location.pathname}${window.location.search}${window.location.hash}` !== openedLocation;
+      if (!tracker.poppedByBack && !locationChanged && window.history.state?._sheet === id) {
         const timer = window.setTimeout(() => {
           pendingBack = null;
           window.history.back();

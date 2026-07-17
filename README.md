@@ -113,14 +113,9 @@ Hosted owners can enable paid live scoring for selected Sleeper leagues by setti
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) + optional Node API sidecar |
 
-## What's New in v8.3.0
+## What's New in v8.3.1
 
-- **League workspace** — Fantasy tools now have a dedicated League area for Standings, History, and Activity across linked Sleeper seasons.
-- **League History** — Review champions, lifetime standings, rivalries, scoring records, and completed league events in a unified record book.
-- **Draft Blueprint** — Start Draft Results with team-by-team roster construction and drill into the chronological Pick List.
-- **Display settings** — Choose Compact, Comfortable, or Large type, controls, and spacing for the way you read GridShift.
-- **Contextual empty states** — New and renewed leagues receive clear guidance when the selected league year has no finalized standings or activity yet.
-- **Draft Board drag-and-drop** — Player grips, card previews, lane highlights, insertion markers, and accessible status announcements make board organization clearer before release.
+- **Reliable matchup selection** — Choosing a different Fantasy Matchup now remains selected after the picker closes in Microsoft Edge on desktop.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 

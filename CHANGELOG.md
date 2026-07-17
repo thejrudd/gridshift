@@ -1179,3 +1179,9 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Responsive Display settings** - Added persistent Compact, Comfortable, and Large display presets, semantic type and density scaling, and intentional readable, data, and workbench frames for wide screens.
 - **Tour coverage** - Added an upgrade tour for the League workspace, with expanded League History, Draft Blueprint, and Display settings guidance.
 - **Draft Board drag-and-drop polish** - Added dedicated player-card drag grips, a stable drag preview, eligible and invalid lane highlighting, exact insertion markers, a visible keyboard-accessible Available rail resize grip, and live-region announcements for pickup, destinations, drops, invalid drops, and cancellation.
+
+## v8.3.1 - Matchup Selection Reliability
+*2026-07-17*
+
+- **Fantasy Matchup picker** - Prevented Microsoft Edge on desktop from reverting a selected matchup after the picker closed.
+- **Tour test startup** - Kept the local API sidecar on the test’s dedicated port when a developer `.env` file also defines `PORT`.
