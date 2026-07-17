@@ -72,7 +72,7 @@ const GameTooltip = ({ team, allTeams, predictions, onClose, anchorRef }) => {
                 />
                 <span className="font-semibold text-[color:var(--color-label-secondary)] w-7">{oppId}</span>
                 {result ? (
-                  <span className={`font-bold px-1 rounded text-[10px] ${
+                  <span className={`font-bold px-1 rounded text-[length:var(--type-label)] ${
                     result === 'W' ? 'text-[color:var(--color-accent-green)] bg-tint-green-strong' :
                     result === 'L' ? 'text-[color:var(--color-accent-red)] bg-tint-red-strong' :
                     'text-[color:var(--color-accent-orange)] bg-tint-signature-strong'
@@ -161,7 +161,7 @@ const TeamRow = ({ team, record, implied, sos, hasGameData, showTooltip, allTeam
             </h3>
             <p className="text-xs text-[color:var(--color-label-tertiary)] font-mono font-semibold">{team.id}</p>
             {sos && (
-              <p className={`text-[10px] font-medium ${
+              <p className={`text-[length:var(--type-label)] font-medium ${
                 sos.avgOppWins >= 9.5 ? 'text-[color:var(--color-accent-red)]' :
                 sos.avgOppWins >= 8.5 ? 'text-[color:var(--color-accent-orange)]' :
                 sos.avgOppWins <= 7.5 ? 'text-[color:var(--color-accent-green)]' :
@@ -203,7 +203,7 @@ const TeamRow = ({ team, record, implied, sos, hasGameData, showTooltip, allTeam
                   {record.divisionWins !== undefined ? `${record.divisionWins}-${6 - record.divisionWins} in division` : 'Click to edit'}
                 </p>
                 {implied.hasAny && (
-                  <p className="text-[10px] text-[color:var(--color-accent)] font-medium">
+                  <p className="text-[length:var(--type-label)] text-[color:var(--color-accent)] font-medium">
                     {implied.divWins}W-{implied.divLosses}L{implied.divTies > 0 && `-${implied.divTies}T`} from matchups
                   </p>
                 )}
@@ -213,7 +213,7 @@ const TeamRow = ({ team, record, implied, sos, hasGameData, showTooltip, allTeam
                 <div className="text-lg font-display text-[color:var(--color-accent)]">
                   {implied.wins}-{implied.losses}{implied.ties > 0 && `-${implied.ties}`}
                 </div>
-                <p className="text-[10px] text-[color:var(--color-accent)] font-medium">
+                <p className="text-[length:var(--type-label)] text-[color:var(--color-accent)] font-medium">
                   {implied.divWins}W-{implied.divLosses}L{implied.divTies > 0 && `-${implied.divTies}T`} div (from matchups)
                 </p>
                 <p className="text-xs text-[color:var(--color-label-tertiary)]">Click to predict</p>

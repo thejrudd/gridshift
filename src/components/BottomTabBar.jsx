@@ -2,32 +2,32 @@ import StatusBadge from './ui/StatusBadge';
 
 const TAB_BADGE_OVERLAY = { position: 'absolute', top: '-5px', right: '-15px' };
 
-export default function BottomTabBar({ activeTab, onTabChange, tradeDisabled = false }) {
+export default function BottomTabBar({ activeTab, onTabChange, tradeDisabled = false, leagueDisabled = false }) {
   const tabs = [
-    { id: 'companion',   label: 'Companion',   renderIcon: (active) => <CompanionIcon active={active} /> },
+    { id: 'fantasy',     label: 'Fantasy',      renderIcon: (active) => <CompanionIcon active={active} />, dataTour: 'tab-companion' },
+    { id: 'league',      label: 'League',       renderIcon: (active) => <LeagueIcon active={active} />, disabled: leagueDisabled, disabledTitle: 'League history is available for connected Sleeper leagues.' },
     { id: 'statistics',  label: 'Statistics',  renderIcon: (active) => <PlayersIcon active={active} /> },
     { id: 'trade',       label: 'Trade',       renderIcon: (active) => <TradeIcon active={active} />, disabled: tradeDisabled },
     { id: 'draft',       label: 'Draft',       renderIcon: (active) => <DraftIcon active={active} />, beta: true },
-    { id: 'scout',       label: 'Scout',       renderIcon: (active) => <ScoutIcon active={active} />, beta: true },
     { id: 'predictions', label: 'Predictions', renderIcon: (active) => <SeasonIcon active={active} /> },
   ];
 
   return (
     <nav className="tab-bar" aria-label="Main navigation">
       <div className="tab-bar-inner">
-        {tabs.map(({ id, label, renderIcon, beta, alpha, disabled }) => {
+        {tabs.map(({ id, label, renderIcon, beta, alpha, disabled, disabledTitle, dataTour }) => {
           const active = activeTab === id;
           return (
             <button
               key={id}
               onClick={disabled ? undefined : () => onTabChange(id)}
               className={`tab-item${active ? ' active' : ''}${disabled ? ' is-disabled' : ''}`}
-              data-tour={`tab-${id}`}
+              data-tour={dataTour ?? `tab-${id}`}
               aria-label={label}
               aria-current={active ? 'page' : undefined}
               aria-disabled={disabled ? 'true' : undefined}
               disabled={disabled}
-              title={disabled ? 'Trade is not available for ESPN leagues yet.' : undefined}
+              title={disabled ? (disabledTitle ?? 'Trade is not available for ESPN leagues yet.') : undefined}
             >
               <span style={{ position: 'relative', display: 'inline-flex', justifyContent: 'center' }}>
                 {renderIcon(active)}
@@ -55,6 +55,27 @@ function CompanionIcon({ active }) {
           d="M13 3l2.5 5 5.5.8-4 3.9.95 5.5L13 15.7l-4.95 2.5.95-5.5-4-3.9 5.5-.8z"
           stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"
         />
+      )}
+    </svg>
+  );
+}
+
+function LeagueIcon({ active }) {
+  return (
+    <svg width="26" height="26" viewBox="0 0 26 26" fill="none" className="tab-icon" aria-hidden="true">
+      {active ? (
+        <g fill="currentColor">
+          <path d="M5 21V9l8-5 8 5v12H5z" />
+          <rect x="3.5" y="20" width="19" height="2" rx="1" />
+          <rect x="9" y="11" width="8" height="1.5" rx="0.75" fill="var(--color-bg)" />
+          <rect x="9" y="15" width="8" height="1.5" rx="0.75" fill="var(--color-bg)" />
+        </g>
+      ) : (
+        <g stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M5 21V9l8-5 8 5v12" />
+          <path d="M3.5 21h19" />
+          <path d="M9 12h8M9 16h8" />
+        </g>
       )}
     </svg>
   );
@@ -138,33 +159,6 @@ function DraftIcon({ active }) {
           <line x1="10" y1="8.75" x2="16" y2="8.75" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
           <line x1="10" y1="12.75" x2="16" y2="12.75" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
           <line x1="10" y1="16.75" x2="14" y2="16.75" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-        </g>
-      )}
-    </svg>
-  );
-}
-
-function ScoutIcon({ active }) {
-  return (
-    <svg width="26" height="26" viewBox="0 0 26 26" fill="none" className="tab-icon" aria-hidden="true">
-      {active ? (
-        <g fill="currentColor">
-          {/* Clipboard body */}
-          <rect x="6" y="5" width="14" height="17" rx="2" />
-          {/* Clip at top */}
-          <rect x="10" y="3" width="6" height="4" rx="1" fill="var(--color-bg)" />
-          {/* Lines (report rows) */}
-          <rect x="9" y="11" width="8" height="1.5" rx="0.75" fill="var(--color-bg)" />
-          <rect x="9" y="14" width="6" height="1.5" rx="0.75" fill="var(--color-bg)" />
-          <rect x="9" y="17" width="4" height="1.5" rx="0.75" fill="var(--color-bg)" />
-        </g>
-      ) : (
-        <g>
-          <rect x="6" y="5" width="14" height="17" rx="2" stroke="currentColor" strokeWidth="1.5" />
-          <rect x="10" y="3" width="6" height="4" rx="1" stroke="currentColor" strokeWidth="1.3" fill="var(--color-bg)" />
-          <line x1="9" y1="11.75" x2="17" y2="11.75" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-          <line x1="9" y1="14.75" x2="15" y2="14.75" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-          <line x1="9" y1="17.75" x2="13" y2="17.75" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
         </g>
       )}
     </svg>

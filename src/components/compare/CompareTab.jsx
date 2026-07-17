@@ -239,7 +239,7 @@ export default function CompareTab({ teams, initialPlayerA, initialPlayerB, onPl
   }, [cacheA, cacheB, loadYear, loadingYearsA, loadingYearsB, playerA, playerB, selectedYearAvailable, visibleYears]);
 
   return (
-    <div className="trade-compare pb-8" data-testid="trade-compare-root">
+    <div className="trade-compare page-frame-workbench pb-8" data-testid="trade-compare-root">
       {/* ── Panel tab selector — always at top ───────────────────────────── */}
       <div className="px-4">
       <div className="trade-compare__tabs season-tabs" role="tablist">
@@ -657,7 +657,7 @@ function PlayerSlot({ slotId, label, player, onPick, onClear, onViewPlayer, ktcV
           >
             {positionColor && (
               <span
-                className="trade-compare__slot-position shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase"
+                className="trade-compare__slot-position shrink-0 rounded px-1.5 py-0.5 text-[length:var(--type-label)] font-bold uppercase"
                 style={{
                   background: positionColor,
                   color: positionTextColor,
@@ -677,7 +677,7 @@ function PlayerSlot({ slotId, label, player, onPick, onClear, onViewPlayer, ktcV
           {player.status && player.status !== 'Active' && (
             <span
               className={[
-                'trade-compare__slot-status inline-block mt-1 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase',
+                'trade-compare__slot-status inline-block mt-1 rounded px-1.5 py-0.5 text-[length:var(--type-micro)] font-bold uppercase',
                 player.status.includes('Reserve') ? 'is-reserve' : '',
                 player.status.includes('Physic') ? 'is-physically-unable' : '',
                 player.status.includes('Suspend') ? 'is-suspended' : '',
@@ -695,7 +695,7 @@ function PlayerSlot({ slotId, label, player, onPick, onClear, onViewPlayer, ktcV
           {showKtcExtension && (
             <div className="trade-compare__slot-value mt-2">
               <span
-                className="trade-compare__slot-value-label text-[10px] uppercase tracking-widest"
+                className="trade-compare__slot-value-label text-[length:var(--type-label)] uppercase tracking-widest"
                 style={{ color: valueMuted }}
               >
                 Trade Value{' '}

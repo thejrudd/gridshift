@@ -435,7 +435,7 @@ const TeamDetail = ({ team, allTeams, onClose }) => {
                         {opponent.division}
                       </span>
                       {isDivision && (
-                        <span className="text-[10px] font-bold text-[color:var(--color-accent-orange)] bg-tint-signature-strong px-1 py-0.5 rounded uppercase tracking-wide ml-auto whitespace-nowrap flex-shrink-0">
+                        <span className="text-[length:var(--type-label)] font-bold text-[color:var(--color-accent-orange)] bg-tint-signature-strong px-1 py-0.5 rounded uppercase tracking-wide ml-auto whitespace-nowrap flex-shrink-0">
                           DIV
                         </span>
                       )}

@@ -265,18 +265,18 @@ export default function PlayerWeeklySheet({ playerId, onClose, onOpenWeek = null
                   className="flex items-end px-4 py-2 sticky top-0"
                   style={{ background: 'var(--color-bg-secondary)', borderBottom: '1px solid var(--color-separator)' }}
                 >
-                  <span className="w-7 shrink-0 text-[10px] font-semibold" style={{ color: 'var(--color-label-tertiary)' }}>WK</span>
-                  <span className="w-9 shrink-0 text-[10px] font-semibold" style={{ color: 'var(--color-label-tertiary)' }}>OPP</span>
+                  <span className="w-7 shrink-0 text-[length:var(--type-label)] font-semibold" style={{ color: 'var(--color-label-tertiary)' }}>WK</span>
+                  <span className="w-9 shrink-0 text-[length:var(--type-label)] font-semibold" style={{ color: 'var(--color-label-tertiary)' }}>OPP</span>
                   <div className="flex flex-1 min-w-0">
                     {activeStats.map((stat) => {
                       const ptsPerUnit = activeScoringSettings?.[stat.key];
                       return (
                         <div key={stat.key} className="flex-1 flex flex-col items-center px-0.5">
-                          <span className="text-[10px] font-semibold leading-tight" style={{ color: 'var(--color-label-tertiary)' }}>
+                          <span className="text-[length:var(--type-label)] font-semibold leading-tight" style={{ color: 'var(--color-label-tertiary)' }}>
                             {stat.label}
                           </span>
                           {ptsPerUnit != null && ptsPerUnit !== 0 && (
-                            <span className="text-[9px] leading-tight" style={{ color: 'var(--color-label-quaternary)' }}>
+                            <span className="text-[length:var(--type-micro)] leading-tight" style={{ color: 'var(--color-label-quaternary)' }}>
                               ({ptsPerUnit > 0 ? '+' : ''}{Number.isInteger(ptsPerUnit) ? ptsPerUnit : ptsPerUnit.toFixed(2)})
                             </span>
                           )}
@@ -284,9 +284,9 @@ export default function PlayerWeeklySheet({ playerId, onClose, onOpenWeek = null
                       );
                     })}
                   </div>
-                  <span className="w-12 shrink-0 text-right text-[10px] font-semibold" style={{ color: 'var(--color-label-tertiary)' }}>Pts</span>
+                  <span className="w-12 shrink-0 text-right text-[length:var(--type-label)] font-semibold" style={{ color: 'var(--color-label-tertiary)' }}>Pts</span>
                   {onOpenWeek && (
-                    <span className="w-7 shrink-0 text-right text-[10px] font-semibold" style={{ color: 'var(--color-label-tertiary)' }}>Go</span>
+                    <span className="w-7 shrink-0 text-right text-[length:var(--type-label)] font-semibold" style={{ color: 'var(--color-label-tertiary)' }}>Go</span>
                   )}
                 </div>
 
@@ -346,7 +346,7 @@ function WeekRow({ row, statDisplay, best, onClick }) {
           return (
             <span
               key={stat.key}
-              className="flex-1 text-center text-[11px] tabular-nums px-0.5"
+              className="flex-1 text-center text-[length:var(--type-label)] tabular-nums px-0.5"
               style={{ color: val ? 'var(--color-label)' : 'var(--color-label-quaternary)' }}
             >
               {val ? (Number.isInteger(val) ? val : val.toFixed(1)) : '—'}

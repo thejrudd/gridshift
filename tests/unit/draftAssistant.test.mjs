@@ -26,6 +26,7 @@ import {
   normalizeDraftPick,
   normalizeDraftModelWeights,
   rebalanceDraftModelWeights,
+  resolveDraftPickManagerId,
   resolveLeagueDraftId,
   shouldShowSleeperDraftGlobalNotice,
   shouldRefreshSleeperDraftPicks,
@@ -636,6 +637,32 @@ test('mock draft picks resolve roster ids from draft slots', () => {
   assert.equal(pick.rosterId, '2');
   assert.equal(pick.playerId, 'wr1');
   assert.equal(pick.overall, 2);
+});
+
+test('historical draft attribution prefers the pick manager over a replacement roster owner', () => {
+  const pick = normalizeDraftPick({
+    picked_by: 'drafting-manager',
+    roster_id: '4',
+    player_id: 'qb1',
+    round: 1,
+    pick_no: 1,
+  });
+
+  assert.equal(resolveDraftPickManagerId(pick), 'drafting-manager');
+  assert.equal(resolveDraftPickManagerId({ rosterId: '4' }), null);
+});
+
+test('historical draft attribution rejects a replacement manager missing from the original draft order', () => {
+  const pick = normalizeDraftPick({
+    picked_by: 'replacement-manager',
+    roster_id: '4',
+    player_id: 'qb1',
+    round: 1,
+    pick_no: 1,
+  });
+  const draft = { draft_order: { 'original-manager': 4 } };
+
+  assert.equal(resolveDraftPickManagerId(pick, draft), null);
 });
 
 test('draft assistant view model keeps Sleeper mock draft picks', () => {

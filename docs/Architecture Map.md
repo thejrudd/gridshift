@@ -13,6 +13,7 @@ Back: [[Home]]
 ### `src/main.jsx`
 
 - Registers the PWA service worker.
+- Applies the persisted display-size attribute before React mounts, preventing a post-render typography/layout shift.
 - Wraps the app with `ErrorBoundary`, `ThemeProvider`, and `PredictionProvider`.
 - Renders `App`, which then adds `FantasyProvider`.
 
@@ -22,11 +23,12 @@ Back: [[Home]]
   - `activeTab`
   - `seasonView`
   - `companionView`
+  - `leagueView`
   - modal and sheet state
   - search/filter state
 - Loads schedule data through `loadScheduleData()`.
 - Coordinates desktop vs mobile shell pieces.
-- Handles cross-feature navigation, such as jumping from Companion into Statistics or Trade.
+- Handles cross-feature navigation, such as jumping from Fantasy into Statistics or Trade.
 
 ## State Providers
 
@@ -41,26 +43,31 @@ Back: [[Home]]
 - Applies `.dark` to `<html>`.
 - Persists dark mode and favorite team.
 - Writes signature theme CSS variables to the root element.
+- Owns the `compact` / `comfortable` / `large` display preference and writes `data-display-size` to `<html>`.
+
+### Responsive Display Layer
+
+- `src/utils/displayPreferences.js` normalizes, reads, persists, and applies the display-size contract.
+- `src/components/DisplaySettingsModal.jsx` is the shared centered chooser opened from desktop sidebar and mobile options.
+- `src/index.css` owns semantic typography, density/control tokens, and the readable/data/workbench page-frame tiers. Browser zoom remains native and is never replaced with app-level DPI detection or whole-page transforms.
 
 ### `src/context/SleeperContext.jsx`
 
-- Owns the fantasy platform layer and still exports the temporary `useSleeper*` compatibility hooks.
+- Owns the Sleeper fantasy platform layer and still exports the temporary `useSleeper*` compatibility hooks.
 - `FantasyProvider`, `useFantasyLeague`, `useFantasyStats`, and `useFantasy` are the platform-neutral entry points.
-- Supports mutually exclusive Sleeper and ESPN league sessions. Switching platforms clears the active platform state.
-- Persists normalized, non-secret fantasy state in localStorage. ESPN `SWID` and `espn_s2` never enter localStorage.
+- Sleeper is the only supported user-facing fantasy connection.
+- Persists normalized, non-secret fantasy state in localStorage.
 - Loads league rosters, league users, player database, weekly stats, aggregate season stats, matchups, and scoring settings through the active provider.
 - Re-derives scoring settings from the selected league on startup, so newly supported scoring fields are picked up without requiring the user to re-select their league.
 - Performs Sleeper player/team/opponent enrichment for weekly stat rows via a three-pass algorithm. ESPN data arrives pre-normalized through `src/utils/espnFantasyAdapter.js`.
 
-#### ESPN Fantasy Integration
+#### Legacy ESPN Fantasy Compatibility
 
-- `src/api/espnFantasyApi.js` calls the local `/api/espn/*` sidecar endpoints with browser credentials.
-- `src/components/companion/CompanionConnect.jsx` presents ESPN as a pasted-link import first. Users paste an ESPN team/league URL such as `/football/team?leagueId=...&teamId=...&seasonId=...` or a league ID; GridShift parses league, team, and season hints, then imports public leagues directly. Private leagues reveal secure manual session import only when ESPN rejects public access, with a desktop Chrome helper link for extracting `SWID` and `espn_s2`.
-- `src/utils/espnFantasyAdapter.js` normalizes ESPN Fantasy v3 league payloads into the same UI contract used by Sleeper: users, leagues, rosters, players, stats, matchups, and scoring.
-- ESPN scoring uses `ScoringProfile` support in `src/utils/scoringEngine.js`: flat settings remain readable, while `positionOverrides` preserve ESPN position-specific rules.
-- ESPN actual fantasy results keep `appliedTotal` / `appliedStats` as source-of-truth points; raw stat ID mapping is the fallback calculation layer.
-- ESPN Trade is player-only in v8.0. Draft picks return empty provider data and pick UI is hidden.
-- The PWA cannot read cookies or post-sign-in URLs from ESPN's domain, even when the same browser profile is already signed in. Private ESPN leagues require secure manual session import; mobile private-league setup is a known compromise until ESPN/Disney provides an official redirect-based authorization flow for GridShift.
+ESPN Fantasy connections are deprecated and are not offered in the GridShift interface. The adapter, sidecar, and defensive rendering branches remain only as legacy compatibility code and test infrastructure; do not surface an ESPN connection path or expand its feature coverage.
+
+- `src/api/espnFantasyApi.js`, `src/utils/espnFantasyAdapter.js`, and the `/api/espn/*` sidecar are legacy compatibility modules.
+- `ScoringProfile.positionOverrides`, `appliedTotal`, and `appliedStats` remain readable so old persisted fixtures and sessions fail safely.
+- New Fantasy and League work should target Sleeper contracts only while preserving harmless legacy guards.
 
 #### Stats Enhancement — Three-Pass Algorithm
 
@@ -85,6 +92,7 @@ Entries resolved via Pass 1 or 2 are marked `_teamSource = 'espn'`. Pass 3 entri
 ### `src/components/companion`
 
 - Fantasy league tools built on top of Sleeper state and scoring logic.
+- `CompanionStandings.jsx`, `CompanionHistory.jsx`, and `CompanionActivity.jsx` power the top-level League routes. Their page-level loading, unavailable, error, and empty reasons stay centered and unframed.
 - Trade keeps `CompanionTrade.jsx` as the public route component, with extracted Agent/Intelligence/Upgrade leaf modules in `src/components/companion/trade/`.
 - Shared player/asset selector rendering lives here too: `CompanionPlayerRow.jsx`, `CompanionAssetRow.jsx`, and `CompanionSelectorControls.jsx` are the canonical row/control primitives for Companion and Trade-adjacent picker surfaces. See [[Companion Shared Rows]] before changing player-row styling, team logos, status badges, or selector controls.
 
@@ -101,13 +109,14 @@ Entries resolved via Pass 1 or 2 are marked `_teamSource = 'espn'`. Pass 3 entri
 ### `src/utils`
 
 - Most domain logic lives here: scoring, projections, trade math, export shaping, search parsing.
+- `leagueHistory.js` is the shared Sleeper league-lineage data layer. It loads and caches season rosters, users, matchups, transactions, and real bracket payloads, then exposes normalized participants, finalized standings with named divisions and recent form, score-backed brackets, Toilet Bowl versus consolation progression, activity entries, history aggregates, record leaders, and Draft Blueprint summaries with named early-round picks. Stable participant identity uses Sleeper user ID with a season-roster fallback.
 - Trade opportunity logic keeps `src/utils/opportunityEngine.js` as the public facade, with implementation modules under `src/utils/opportunity/`.
 
 ### `src/api`
 
 - Thin wrappers for external data sources.
 - `sleeperApi.js` calls Sleeper directly from the browser.
-- `espnFantasyApi.js` calls the local sidecar so ESPN Fantasy cookies remain HttpOnly and encrypted.
+- `espnFantasyApi.js` is retained only for deprecated compatibility and is not exposed by the connection UI.
 
 ### `server`
 

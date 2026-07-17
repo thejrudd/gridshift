@@ -20,6 +20,7 @@
 
 ## Collaboration Defaults
 
+- Keep `AGENTS.md` and `CLAUDE.md` synchronized: any instruction or project-memory change made in `AGENTS.md` must be mirrored in `CLAUDE.md` in the same pass.
 - Ask, don't assume. If intent, architecture, or requirements are unclear, ask before writing code. When running unattended, pick the most reasonable interpretation, proceed, and record the assumption instead of blocking.
 - Match the solution to the problem. Use the simplest solution for simple problems, and reach for stronger architecture only when the problem actually needs it.
 - Keep changes scoped. Do not touch unrelated code; surface bad code or design smells discovered along the way so they can be addressed as separate issues.
@@ -53,6 +54,10 @@ All colors via CSS custom properties in `src/index.css` — never hardcoded Tail
 Critical rules (apply to every UI change):
 - `--color-signature` (`#F5B700`) decorative only — never body text. Use `--color-signature-fg` for text ON signature backgrounds.
 - `font-size: 16px` on all inputs (prevents iOS auto-zoom). Safe areas: `env(safe-area-inset-bottom)` on fixed bottom bars. Motion: `cubic-bezier(0.32, 0.72, 0, 1)`.
+- Display density uses the persisted `gridshift-display-size` preference and `data-display-size="compact|comfortable|large"` on `<html>`, with Comfortable as the fallback. Apply it before React renders; never infer DPI or use CSS `zoom`/whole-app transforms.
+- Use the semantic `--type-*`, `--control-height`, and `--density-space-*` tokens instead of new fixed typography or control-density values. Meaningful labels start at `--type-label`; `--type-micro` is reserved for decorative badges and overlines. Inputs remain at least `16px`, and coarse-pointer controls remain at least `44px`.
+- Route roots must use the appropriate centered frame tier: `page-frame-readable` (`1200px`) for settings/detail content, `page-frame-data` (`1600px`) for lists and standings, or `page-frame-workbench` (`1920px`) for multi-panel tools. Keep identity, primary metrics, and actions in predictable columns rather than stretching rows across ultrawide displays.
+- Centered display/settings modals must keep headers and footers fixed within the modal while an inner content region scrolls. On narrow screens and Large display size, primary actions must remain visible and mobile navigation labels must not truncate.
 - Prefer fluid, container-aware responsive layouts over fixed pixel density. Use responsive grids, `clamp()`, `minmax()`, container-aware wrapping, flexible gaps, and viewport-sensitive spacing. Treat `44px` as a minimum comfortable touch-target floor, not a fixed sizing system. Fixed dimensions are acceptable only for documented shell constraints, fixed-format media/aspect ratios, or explicit feature contracts.
 - Companion and Trade-adjacent player/asset selector rows must use the shared row system documented in `docs/Companion Shared Rows.md`. Do not recreate local team-gradient, logo/avatar fallback, status badge, selector button, or gradient contrast logic in feature files.
 - Page-level unavailable, loading, or empty-route reason messages must be centered in the page as unframed text, matching the Companion Matchup empty-state pattern. Do not render page availability reasons as bordered cards or left-aligned panels; keep compact framed empty states only for inline list/table/filter results.

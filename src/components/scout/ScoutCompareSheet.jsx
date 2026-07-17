@@ -60,7 +60,7 @@ function CmpRow({ label, valA, valB, pctA, pctB }) {
   return (
     <div className="scout-cmp-row">
       <div className="scout-cmp-cell scout-cmp-cell-a">
-        <span style={{ color: aWins ? 'var(--color-accent-green)' : 'var(--color-label)', fontWeight: 700, fontSize: 14, fontVariantNumeric: 'tabular-nums' }}>
+        <span style={{ color: aWins ? 'var(--color-accent-green)' : 'var(--color-label)', fontWeight: 700, fontSize: 'var(--type-body)', fontVariantNumeric: 'tabular-nums' }}>
           {valA ?? '—'}
         </span>
         {gradeA && <span className="scout-cmp-grade" style={{ color: gradeColor(gradeA) }}>{gradeA}</span>}
@@ -68,7 +68,7 @@ function CmpRow({ label, valA, valB, pctA, pctB }) {
       <span className="scout-cmp-label">{label}</span>
       <div className="scout-cmp-cell scout-cmp-cell-b">
         {gradeB && <span className="scout-cmp-grade" style={{ color: gradeColor(gradeB) }}>{gradeB}</span>}
-        <span style={{ color: bWins ? 'var(--color-accent-green)' : 'var(--color-label)', fontWeight: 700, fontSize: 14, fontVariantNumeric: 'tabular-nums' }}>
+        <span style={{ color: bWins ? 'var(--color-accent-green)' : 'var(--color-label)', fontWeight: 700, fontSize: 'var(--type-body)', fontVariantNumeric: 'tabular-nums' }}>
           {valB ?? '—'}
         </span>
       </div>

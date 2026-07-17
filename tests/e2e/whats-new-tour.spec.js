@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { WHATS_NEW } from '../../src/data/whatsNew.js';
-import { buildAppPath } from '../../src/utils/appRoutes.js';
+import { buildAppPath, parseAppRoute } from '../../src/utils/appRoutes.js';
 import { collapseSupersededFeatures } from '../../src/utils/versionUtils.js';
 import { installTradeFixtures } from './tradeTestHarness.js';
 import {
@@ -79,7 +79,15 @@ test('full upgrade history replays every tour step', async ({ page, isMobile }) 
   for (const [index, step] of steps.entries()) {
     const selector = isMobile && step.anchorMobile ? step.anchorMobile : step.anchor;
     await expect(tour).toContainText(`${step.featureName} · Step ${index + 1} of ${steps.length}`);
-    if (step.route) await expect(page).toHaveURL(new RegExp(`${buildAppPath(step.route).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`));
+    if (step.route) {
+      const expectedPathname = buildAppPath(step.route).split('?')[0];
+      await expect(page).toHaveURL(new RegExp(`${expectedPathname.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:\\?.*)?$`));
+      await expect.poll(async () => {
+        const url = new URL(page.url());
+        const currentRoute = parseAppRoute(url.pathname, url.search);
+        return Object.entries(step.route).every(([key, value]) => currentRoute[key] === value);
+      }).toBe(true);
+    }
     await expect(page.locator(`${selector}:visible`).first()).toBeVisible();
 
     const copyOptions = (step.contextKey ? Object.values(step.copyByContext) : [step])

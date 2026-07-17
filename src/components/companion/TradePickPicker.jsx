@@ -99,7 +99,7 @@ export default function TradePickPicker({
                   className="flex items-center w-full px-4 py-3 gap-3 transition-colors"
                   style={{ borderBottom: '1px solid var(--color-separator)' }}>
                   <div className="w-8 h-8 rounded-full shrink-0 flex items-center justify-center"
-                    style={{ background: 'var(--color-fill)', fontSize: '9px', fontWeight: 700, color: 'var(--color-label-tertiary)' }}>
+                    style={{ background: 'var(--color-fill)', fontSize: 'var(--type-micro)', fontWeight: 700, color: 'var(--color-label-tertiary)' }}>
                     R{pick.round}
                   </div>
                   <div className="flex-1 min-w-0 text-left">

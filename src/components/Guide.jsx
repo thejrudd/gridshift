@@ -222,19 +222,19 @@ const GUIDE_CONTENT = {
   },
 
   companion_roster: {
-    title: 'ROSTER',
+    title: 'ROSTERS',
     steps: [
       {
-        title: 'Read your roster',
-        description: 'Players are grouped by position with season points, average per game, status, and positional context under your scoring.',
+        title: 'Choose a team',
+        description: 'Start on your roster, then select another manager to inspect their players by position under your league scoring.',
       },
       {
-        title: 'Open players',
-        description: 'Tap a row for the quick preview on mobile or the full Statistics profile on larger screens.',
+        title: 'Open players or picks',
+        description: 'Tap a player for details, or switch to Draft Picks to review future-pick ownership across the league.',
       },
       {
         title: 'Start trades',
-        description: 'Use Trade on a player to open Agent with that player loaded on your side.',
+        description: 'Trade loads your players as give assets and opponent players as get assets with that manager selected.',
       },
     ],
   },
@@ -262,15 +262,15 @@ const GUIDE_CONTENT = {
   },
 
   companion_matchup: {
-    title: 'MATCHUP',
+    title: 'MATCHUPS',
     steps: [
       {
-        title: 'Choose the week',
-        description: 'Use the week control to load a matchup week, then Show Bench when you want full roster context.',
+        title: 'Choose the week and matchup',
+        description: 'Use the week control, matchup chooser, or previous and next buttons to move through the league slate.',
       },
       {
         title: 'Read the score',
-        description: 'The header compares your side and opponent; tap either score panel for a lineup scoring breakdown.',
+        description: 'The header compares both managers; tap either score panel for a lineup scoring breakdown.',
       },
       {
         title: 'Inspect players',
@@ -280,7 +280,7 @@ const GUIDE_CONTENT = {
   },
 
   companion_waiver: {
-    title: 'WAIVER',
+    title: 'WAIVERS',
     steps: [
       {
         title: 'Find free agents',
@@ -346,7 +346,7 @@ const GUIDE_CONTENT = {
   },
 
   companion_defense: {
-    title: 'DEFENSE',
+    title: 'DEFENSES',
     steps: [
       {
         title: 'Pick what is allowed',
@@ -380,7 +380,49 @@ const GUIDE_CONTENT = {
       },
       {
         title: 'Understand impact',
-        description: 'Companion rankings, projections, matchup values, and trade adjustments use the active scoring rules.',
+        description: 'Fantasy rankings, projections, matchup values, and trade adjustments use the active scoring rules.',
+      },
+    ],
+  },
+
+  league_standings: {
+    title: 'LEAGUE STANDINGS',
+    steps: [
+      {
+        title: 'Choose a season',
+        description: 'Use the league-year control to compare the current table with final standings from linked seasons.',
+      },
+      {
+        title: 'Read the race',
+        description: 'Review divisions, recent form, playoff seeds, and evidence-backed postseason brackets when available.',
+      },
+    ],
+  },
+
+  league_history: {
+    title: 'LEAGUE HISTORY',
+    steps: [
+      {
+        title: 'Review the league lifetime',
+        description: 'Compare managers across linked seasons through championships, records, rivalries, and the lifetime leaderboard.',
+      },
+      {
+        title: 'Inspect the evidence',
+        description: 'Open record and rivalry details to see the seasons and matchups behind each result.',
+      },
+    ],
+  },
+
+  league_activity: {
+    title: 'LEAGUE ACTIVITY',
+    steps: [
+      {
+        title: 'Choose a season',
+        description: 'Activity shows completed transactions from the selected linked league season.',
+      },
+      {
+        title: 'Filter the feed',
+        description: 'Narrow the ledger by transaction type, manager, player, pick, or waiver budget.',
       },
     ],
   },
@@ -533,6 +575,7 @@ function getGuideKey({
   seasonView,
   statisticsView,
   companionView,
+  leagueView,
   tradeView,
   scoutView,
   draftView,
@@ -541,7 +584,16 @@ function getGuideKey({
     return seasonView === 'predictions' ? 'predictions_picks' : `predictions_${seasonView}`;
   }
   if (activeTab === 'statistics') return `statistics_${statisticsView}`;
-  if (activeTab === 'companion') return `companion_${companionView}`;
+  if (activeTab === 'fantasy' || activeTab === 'companion') {
+    const legacyView = {
+      rosters: 'roster',
+      matchups: 'matchup',
+      waivers: 'waiver',
+      defenses: 'defense',
+    }[companionView] ?? companionView;
+    return `companion_${legacyView}`;
+  }
+  if (activeTab === 'league') return `league_${leagueView}`;
   if (activeTab === 'trade') return `trade_${tradeView}`;
   if (activeTab === 'scout') return `scout_${scoutView}`;
   if (activeTab === 'draft') return `draft_${draftView}`;
@@ -553,7 +605,8 @@ const Guide = ({
   activeTab = 'predictions',
   seasonView = 'predictions',
   statisticsView = 'browser',
-  companionView = 'roster',
+  companionView = 'rosters',
+  leagueView = 'standings',
   tradeView = 'agent',
   scoutView = 'prospects',
   draftView = 'war-room',
@@ -563,6 +616,7 @@ const Guide = ({
     seasonView,
     statisticsView,
     companionView,
+    leagueView,
     tradeView,
     scoutView,
     draftView,

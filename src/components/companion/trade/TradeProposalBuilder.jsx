@@ -136,7 +136,7 @@ function PartnerSelector({ partnerRosters, value, onChange, label, buttonStyle }
                 style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 9, padding: '8px 12px', background: 'transparent', border: 0, borderBottom: '1px solid var(--color-separator)', cursor: 'pointer', textAlign: 'left' }}
               >
                 <div style={{ width: 22, height: 22, borderRadius: '50%', border: '1.5px dashed var(--color-separator)', flexShrink: 0 }} />
-                <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-label-tertiary)', fontFamily: df, letterSpacing: '0.06em' }}>CLEAR PARTNER</span>
+                <span style={{ fontSize: 'var(--type-label)', fontWeight: 500, color: 'var(--color-label-tertiary)', fontFamily: df, letterSpacing: '0.06em' }}>CLEAR PARTNER</span>
               </button>
             )}
             {partnerRosters.map(({ roster, displayName, avatarHash }) => {
@@ -155,7 +155,7 @@ function PartnerSelector({ partnerRosters, value, onChange, label, buttonStyle }
                   onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = 'transparent'; }}
                 >
                   <Avatar hash={avatarHash} name={displayName} />
-                  <span style={{ flex: 1, fontSize: 13, fontWeight: isSelected ? 700 : 500, color: isSelected ? 'var(--color-label)' : 'var(--color-label-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <span style={{ flex: 1, fontSize: 'var(--type-meta)', fontWeight: isSelected ? 700 : 500, color: isSelected ? 'var(--color-label)' : 'var(--color-label-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {displayName}
                   </span>
                   {isSelected && (
@@ -267,7 +267,7 @@ function BroadcastScoreboard({ yourTotal, theirTotal, yourName, yourAvatar, part
       onError={e => { e.target.style.display = 'none'; }}
     />
   ) : (
-    <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.14)', color: 'rgba(255,255,255,0.62)', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+    <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.14)', color: 'rgba(255,255,255,0.62)', fontSize: 'var(--type-label)', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
       {(name || (align === 'right' ? 'P' : 'Y'))[0]?.toUpperCase()}
     </div>
   );
@@ -275,7 +275,7 @@ function BroadcastScoreboard({ yourTotal, theirTotal, yourName, yourAvatar, part
     <div className={`trade-scoreboard__team trade-scoreboard__team--${align}`} style={{ display: 'flex', alignItems: 'center', justifyContent: align === 'right' ? 'flex-end' : 'flex-start', gap: 10, minWidth: 0 }}>
       {align === 'left' && <Avatar hash={avatar} name={name} align={align} />}
       <div className="trade-scoreboard__team-copy" style={{ display: 'flex', flexDirection: 'column', alignItems: align === 'right' ? 'flex-end' : 'flex-start', gap: 2, minWidth: 0, textAlign: align === 'right' ? 'right' : 'left' }}>
-        <span className="trade-scoreboard__team-name" style={{ fontFamily: "'Figtree', sans-serif", fontWeight: 700, fontSize: 14, lineHeight: 1.1, color: 'rgba(255,255,255,0.78)', maxWidth: 210, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+        <span className="trade-scoreboard__team-name" style={{ fontFamily: "'Figtree', sans-serif", fontWeight: 700, fontSize: 'var(--type-body)', lineHeight: 1.1, color: 'rgba(255,255,255,0.78)', maxWidth: 210, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
         <span className="trade-scoreboard__team-total" style={{ fontFamily: df, fontWeight: 800, fontSize: 40, lineHeight: 0.92, fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.01em', color: '#fff' }}>
           {hasItems ? fmtKtcValue(total) : '0'}
         </span>
@@ -288,7 +288,7 @@ function BroadcastScoreboard({ yourTotal, theirTotal, yourName, yourAvatar, part
     <div className="trade-scoreboard" style={{ background: '#0D1117', color: 'white', padding: '8px 20px 12px', flexShrink: 0, position: 'relative' }}>
       <div style={{ minHeight: 24, marginBottom: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
         {hasItems ? (
-          <button onClick={onClear} style={{ fontFamily: df, fontSize: 11, letterSpacing: '0.12em', color: '#F5B700', background: 'none', border: 0, cursor: 'pointer', fontWeight: 700, padding: '4px 0', textTransform: 'uppercase' }}>
+          <button onClick={onClear} style={{ fontFamily: df, fontSize: 'var(--type-label)', letterSpacing: '0.12em', color: '#F5B700', background: 'none', border: 0, cursor: 'pointer', fontWeight: 700, padding: '4px 0', textTransform: 'uppercase' }}>
             CLEAR
           </button>
         ) : <span aria-hidden="true" />}
@@ -298,10 +298,10 @@ function BroadcastScoreboard({ yourTotal, theirTotal, yourName, yourAvatar, part
         <TeamBlock name={yourName || 'You'} total={yourTotal} avatar={yourAvatar} />
         <div className="trade-scoreboard__meter" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0 }}>
           <div className="trade-scoreboard__verdict" style={{ textAlign: 'center', marginBottom: -8, minHeight: 34 }}>
-            <div className="trade-scoreboard__verdict-title" style={{ fontFamily: "'Figtree', sans-serif", fontWeight: 800, fontSize: 15, lineHeight: 1.1, color: verdictFill }}>
+            <div className="trade-scoreboard__verdict-title" style={{ fontFamily: "'Figtree', sans-serif", fontWeight: 800, fontSize: 'var(--type-emphasis)', lineHeight: 1.1, color: verdictFill }}>
               {verdictText}
             </div>
-            <div className="trade-scoreboard__verdict-detail" style={{ marginTop: 3, fontFamily: "'Figtree', sans-serif", fontWeight: 600, fontSize: 11, lineHeight: 1.1, color: 'rgba(255,255,255,0.68)' }}>
+            <div className="trade-scoreboard__verdict-detail" style={{ marginTop: 3, fontFamily: "'Figtree', sans-serif", fontWeight: 600, fontSize: 'var(--type-label)', lineHeight: 1.1, color: 'rgba(255,255,255,0.68)' }}>
               {detailText}
             </div>
           </div>
@@ -400,7 +400,7 @@ function TradePlate({ side, items, onRemovePlayer, onRemovePick, onAddPlayer, on
             fontFamily: df,
             letterSpacing: '0.08em',
             textTransform: 'uppercase',
-            fontSize: 11,
+            fontSize: 'var(--type-label)',
             fontWeight: 700,
           }}
         >
@@ -411,7 +411,7 @@ function TradePlate({ side, items, onRemovePlayer, onRemovePick, onAddPlayer, on
                 ? 'Wrong side'
                 : 'Drop here from shelf'}
             {!dragState && (
-              <span style={{ display: 'block', marginTop: 4, fontFamily: "'Figtree', sans-serif", fontSize: 11, fontWeight: 500, letterSpacing: 0, textTransform: 'none', color: 'var(--color-label-quaternary)' }}>
+              <span style={{ display: 'block', marginTop: 4, fontFamily: "'Figtree', sans-serif", fontSize: 'var(--type-label)', fontWeight: 500, letterSpacing: 0, textTransform: 'none', color: 'var(--color-label-quaternary)' }}>
                 {onAddPick ? 'or use + Player / + Pick' : 'or use + Player'}
               </span>
             )}
@@ -421,13 +421,13 @@ function TradePlate({ side, items, onRemovePlayer, onRemovePick, onAddPlayer, on
       <div className="flex gap-1.5" style={{ marginTop: items.length ? 4 : 0 }}>
         <button onClick={onAddPlayer} className="flex-1 py-2.5 rounded-lg font-medium"
           data-testid={`trade-plate-${side}-add-player`}
-          style={{ fontSize: 13, border: '1px dashed var(--color-separator)', color: 'var(--color-label-tertiary)', background: 'transparent', cursor: 'pointer' }}>
+          style={{ fontSize: 'var(--type-meta)', border: '1px dashed var(--color-separator)', color: 'var(--color-label-tertiary)', background: 'transparent', cursor: 'pointer' }}>
           + Player
         </button>
         {onAddPick && (
           <button onClick={onAddPick} className="flex-1 py-2.5 rounded-lg font-medium"
             data-testid={`trade-plate-${side}-add-pick`}
-            style={{ fontSize: 13, border: '1px dashed var(--color-separator)', color: 'var(--color-label-tertiary)', background: 'transparent', cursor: 'pointer' }}>
+            style={{ fontSize: 'var(--type-meta)', border: '1px dashed var(--color-separator)', color: 'var(--color-label-tertiary)', background: 'transparent', cursor: 'pointer' }}>
             + Pick
           </button>
         )}
@@ -496,7 +496,7 @@ function RosterShelf({
     borderBottom: `2.5px solid ${isActive ? 'var(--color-signature)' : 'transparent'}`,
     fontFamily: "'Figtree', sans-serif",
     fontWeight: 600,
-    fontSize: 12,
+    fontSize: 'var(--type-label)',
     letterSpacing: 0,
     color: isActive ? 'var(--color-label)' : 'var(--color-label-secondary)',
     overflow: 'hidden',
@@ -507,7 +507,7 @@ function RosterShelf({
   return (
     <div data-testid="trade-roster-shelf-desktop" style={{ width: 'clamp(300px, 24vw, 340px)', height: '100vh', flexShrink: 0, borderRight: '1px solid var(--color-separator)', background: 'var(--color-bg-secondary)', display: 'flex', flexDirection: 'column', position: 'sticky', top: 0, alignSelf: 'flex-start', overflow: 'hidden' }}>
       <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--color-separator)', background: 'var(--color-bg-secondary)', flexShrink: 0 }}>
-        <PartnerSelector partnerRosters={partnerRosters} value={shelfPartnerRosterId} onChange={onPartnerChange} label={partnerName || 'Select manager'} buttonStyle={{ minHeight: 34, padding: '6px 9px', border: '1px solid var(--color-separator)', borderRadius: 7, background: 'var(--color-bg)', color: 'var(--color-label-secondary)', fontSize: 12, fontWeight: 600, textAlign: 'left' }} />
+        <PartnerSelector partnerRosters={partnerRosters} value={shelfPartnerRosterId} onChange={onPartnerChange} label={partnerName || 'Select manager'} buttonStyle={{ minHeight: 34, padding: '6px 9px', border: '1px solid var(--color-separator)', borderRadius: 7, background: 'var(--color-bg)', color: 'var(--color-label-secondary)', fontSize: 'var(--type-label)', fontWeight: 600, textAlign: 'left' }} />
       </div>
       {/* Roster toggle */}
       <div style={{ display: 'flex', borderBottom: '1px solid var(--color-separator)', background: 'var(--color-bg-secondary)', flexShrink: 0 }}>
@@ -539,7 +539,7 @@ function RosterShelf({
       <div style={{ flex: 1, minHeight: 0, padding: '4px 8px 8px', display: 'flex', flexDirection: 'column', gap: 3, overflowY: 'auto' }}>
         {showPicks ? (
           shelfPicks.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '14px 0', fontSize: 12, color: 'var(--color-label-quaternary)' }}>
+            <div style={{ textAlign: 'center', padding: '14px 0', fontSize: 'var(--type-label)', color: 'var(--color-label-quaternary)' }}>
               {!hasPartner && activeTab === 'theirs' ? 'Select a partner first' : 'No picks'}
             </div>
           ) : shelfPicks.map(pick => {
@@ -554,19 +554,19 @@ function RosterShelf({
                 disabled={inTrade}
                 className="group"
                 style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 7px', borderRadius: 7, border: inTrade ? '1px dashed var(--color-separator)' : '1px solid var(--color-separator)', background: 'var(--color-bg)', opacity: inTrade ? 0.35 : 1, cursor: inTrade ? 'default' : 'grab', textAlign: 'left', width: '100%' }}>
-                <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 3, background: 'rgba(245,183,0,0.12)', color: '#F5B700', flexShrink: 0, letterSpacing: '0.04em' }}>PICK</span>
-                <span style={{ flex: 1, minWidth: 0, fontSize: 12, fontWeight: 600, color: 'var(--color-label)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+                <span style={{ fontSize: 'var(--type-label)', fontWeight: 700, padding: '1px 6px', borderRadius: 3, background: 'rgba(245,183,0,0.12)', color: '#F5B700', flexShrink: 0, letterSpacing: '0.04em' }}>PICK</span>
+                <span style={{ flex: 1, minWidth: 0, fontSize: 'var(--type-label)', fontWeight: 600, color: 'var(--color-label)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
                 {!inTrade && (
-                  <span className="hidden lg:inline-flex opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity" style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.08em', color: 'var(--color-signature)', flexShrink: 0 }}>ADD</span>
+                  <span className="hidden lg:inline-flex opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity" style={{ fontSize: 'var(--type-micro)', fontWeight: 800, letterSpacing: '0.08em', color: 'var(--color-signature)', flexShrink: 0 }}>ADD</span>
                 )}
                 {inTrade && (
-                  <span className="hidden lg:inline-flex" style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.08em', color: 'var(--color-label-quaternary)', flexShrink: 0 }}>ADDED</span>
+                  <span className="hidden lg:inline-flex" style={{ fontSize: 'var(--type-micro)', fontWeight: 800, letterSpacing: '0.08em', color: 'var(--color-label-quaternary)', flexShrink: 0 }}>ADDED</span>
                 )}
               </button>
             );
           })
         ) : filteredPlayers.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '14px 0', fontSize: 12, color: 'var(--color-label-quaternary)' }}>
+          <div style={{ textAlign: 'center', padding: '14px 0', fontSize: 'var(--type-label)', color: 'var(--color-label-quaternary)' }}>
             {!hasPartner && activeTab === 'theirs' ? 'Select a partner first' : 'No players'}
           </div>
         ) : filteredPlayers.map(id => {
@@ -585,18 +585,18 @@ function RosterShelf({
               disabled={isInTrade}
               className="group"
               style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 7px', borderRadius: 7, border: isInTrade ? '1px dashed var(--color-separator)' : '1px solid var(--color-separator)', background: 'var(--color-bg)', opacity: isInTrade ? 0.35 : 1, cursor: isInTrade ? 'default' : 'grab', textAlign: 'left', width: '100%' }}>
-              <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 3, background: posColor ? `${posColor}22` : 'var(--color-fill)', color: posColor ?? 'var(--color-label-tertiary)', flexShrink: 0, letterSpacing: '0.04em' }}>{pos}</span>
-              <span style={{ flex: 1, minWidth: 0, fontSize: 12, fontWeight: 600, color: 'var(--color-label)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <span style={{ fontSize: 'var(--type-label)', fontWeight: 700, padding: '1px 6px', borderRadius: 3, background: posColor ? `${posColor}22` : 'var(--color-fill)', color: posColor ?? 'var(--color-label-tertiary)', flexShrink: 0, letterSpacing: '0.04em' }}>{pos}</span>
+              <span style={{ flex: 1, minWidth: 0, fontSize: 'var(--type-label)', fontWeight: 600, color: 'var(--color-label)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {shelfPlayerName(p)}
               </span>
               {val != null && (
-                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-label-secondary)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{fmtKtcValue(val)}</span>
+                <span style={{ fontSize: 'var(--type-label)', fontWeight: 700, color: 'var(--color-label-secondary)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{fmtKtcValue(val)}</span>
               )}
               {!isInTrade && (
-                <span className="hidden lg:inline-flex opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity" style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.08em', color: 'var(--color-signature)', flexShrink: 0 }}>ADD</span>
+                <span className="hidden lg:inline-flex opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity" style={{ fontSize: 'var(--type-micro)', fontWeight: 800, letterSpacing: '0.08em', color: 'var(--color-signature)', flexShrink: 0 }}>ADD</span>
               )}
               {isInTrade && (
-                <span className="hidden lg:inline-flex" style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.08em', color: 'var(--color-label-quaternary)', flexShrink: 0 }}>ADDED</span>
+                <span className="hidden lg:inline-flex" style={{ fontSize: 'var(--type-micro)', fontWeight: 800, letterSpacing: '0.08em', color: 'var(--color-label-quaternary)', flexShrink: 0 }}>ADDED</span>
               )}
             </button>
           );
@@ -648,7 +648,7 @@ function MobileRosterShelf({
     border: '1px solid var(--color-separator)',
     fontFamily: "'Figtree', sans-serif",
     fontWeight: 600,
-    fontSize: 12,
+    fontSize: 'var(--type-label)',
     letterSpacing: 0,
     textTransform: 'none',
     minHeight: 36,
@@ -657,7 +657,7 @@ function MobileRosterShelf({
   return (
     <div data-testid="trade-roster-shelf-mobile" style={{ borderTop: '1.5px solid var(--color-separator)', background: 'var(--color-bg-secondary)', marginTop: 8 }}>
       <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--color-separator)' }}>
-        <PartnerSelector partnerRosters={partnerRosters} value={shelfPartnerRosterId} onChange={onPartnerChange} label={partnerName || 'Select manager'} buttonStyle={{ minHeight: 40, padding: '8px 10px', border: '1px solid var(--color-separator)', borderRadius: 10, background: 'var(--color-bg)', color: 'var(--color-label-secondary)', fontSize: 13, fontWeight: 600, textAlign: 'left' }} />
+        <PartnerSelector partnerRosters={partnerRosters} value={shelfPartnerRosterId} onChange={onPartnerChange} label={partnerName || 'Select manager'} buttonStyle={{ minHeight: 40, padding: '8px 10px', border: '1px solid var(--color-separator)', borderRadius: 10, background: 'var(--color-bg)', color: 'var(--color-label-secondary)', fontSize: 'var(--type-meta)', fontWeight: 600, textAlign: 'left' }} />
       </div>
       {/* Roster toggle */}
       <div style={{ padding: '0 14px 8px', display: 'flex', alignItems: 'center', gap: 8, borderBottom: '1px solid var(--color-separator)' }}>
@@ -689,7 +689,7 @@ function MobileRosterShelf({
       <div style={{ display: 'flex', flexDirection: 'column', gap: 3, padding: '6px 14px 12px', maxHeight: 280, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
         {showPicks ? (
           shelfPicks.length === 0 ? (
-            <div style={{ padding: '14px 0', fontSize: 13, color: 'var(--color-label-quaternary)', textAlign: 'center' }}>
+            <div style={{ padding: '14px 0', fontSize: 'var(--type-meta)', color: 'var(--color-label-quaternary)', textAlign: 'center' }}>
               {!hasPartner && activeTab === 'theirs' ? 'Select a partner first' : 'No picks'}
             </div>
           ) : shelfPicks.map(pick => {
@@ -701,13 +701,13 @@ function MobileRosterShelf({
                 onClick={() => !inTrade && (activeTab === 'yours' ? onAddPickToYours(pick) : onAddPickToTheirs(pick))}
                 disabled={inTrade}
                 style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 10px', borderRadius: 10, border: inTrade ? '1px dashed var(--color-separator)' : '1px solid var(--color-separator)', background: 'var(--color-bg)', opacity: inTrade ? 0.4 : 1, cursor: inTrade ? 'default' : 'pointer', textAlign: 'left', width: '100%', minHeight: 44 }}>
-                <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: 'rgba(245,183,0,0.12)', color: '#F5B700', flexShrink: 0, fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.06em' }}>PICK</span>
-                <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: 'var(--color-label)' }}>{label}</span>
+                <span style={{ fontSize: 'var(--type-label)', fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: 'rgba(245,183,0,0.12)', color: '#F5B700', flexShrink: 0, fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.06em' }}>PICK</span>
+                <span style={{ flex: 1, fontSize: 'var(--type-meta)', fontWeight: 600, color: 'var(--color-label)' }}>{label}</span>
               </button>
             );
           })
         ) : filteredPlayers.length === 0 ? (
-          <div style={{ padding: '14px 0', fontSize: 13, color: 'var(--color-label-quaternary)', textAlign: 'center' }}>
+          <div style={{ padding: '14px 0', fontSize: 'var(--type-meta)', color: 'var(--color-label-quaternary)', textAlign: 'center' }}>
             {!hasPartner && activeTab === 'theirs' ? 'Select a partner first' : 'No players'}
           </div>
         ) : filteredPlayers.map(id => {
@@ -723,12 +723,12 @@ function MobileRosterShelf({
               onClick={() => !isInTrade && (activeTab === 'yours' ? onAddToYours(id) : onAddToTheirs(id))}
               disabled={isInTrade}
               style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 10px', borderRadius: 10, border: isInTrade ? '1px dashed var(--color-separator)' : '1px solid var(--color-separator)', background: 'var(--color-bg)', opacity: isInTrade ? 0.4 : 1, cursor: isInTrade ? 'default' : 'pointer', textAlign: 'left', width: '100%', minHeight: 44 }}>
-              <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: posColor ? `${posColor}22` : 'var(--color-fill)', color: posColor ?? 'var(--color-label-tertiary)', flexShrink: 0, fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.06em' }}>{pos}</span>
-              <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 600, color: 'var(--color-label)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <span style={{ fontSize: 'var(--type-label)', fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: posColor ? `${posColor}22` : 'var(--color-fill)', color: posColor ?? 'var(--color-label-tertiary)', flexShrink: 0, fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.06em' }}>{pos}</span>
+              <span style={{ flex: 1, minWidth: 0, fontSize: 'var(--type-meta)', fontWeight: 600, color: 'var(--color-label)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {shelfPlayerName(p)}
               </span>
               {val != null && (
-                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-label-secondary)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{fmtKtcValue(val)}</span>
+                <span style={{ fontSize: 'var(--type-label)', fontWeight: 700, color: 'var(--color-label-secondary)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{fmtKtcValue(val)}</span>
               )}
             </button>
           );
@@ -836,7 +836,7 @@ export default function TradeProposalBuilder({
                     <button
                       onClick={handleSuggest}
                       className="py-2 px-4 font-semibold"
-                      style={{ fontSize: 13, borderRadius: 8, background: 'var(--color-signature)', color: 'var(--color-signature-fg)', border: 0, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                      style={{ fontSize: 'var(--type-meta)', borderRadius: 8, background: 'var(--color-signature)', color: 'var(--color-signature-fg)', border: 0, cursor: 'pointer', whiteSpace: 'nowrap' }}
                     >
                       Suggest Adjustment
                     </button>
@@ -844,7 +844,7 @@ export default function TradeProposalBuilder({
                 )}
                 {suggestions && suggestions.options.length > 0 && (
                   <div style={{ borderTop: '1px solid var(--color-separator)', padding: '10px 14px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    <span style={{ fontFamily: "var(--font-display,'Barlow Condensed',sans-serif)", fontWeight: 700, fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'var(--color-label-quaternary)' }}>SUGGESTIONS</span>
+                    <span style={{ fontFamily: "var(--font-display,'Barlow Condensed',sans-serif)", fontWeight: 700, fontSize: 'var(--type-label)', letterSpacing: '0.18em', textTransform: 'uppercase', color: 'var(--color-label-quaternary)' }}>SUGGESTIONS</span>
                     {suggestions.options.map((opt, i) => {
                       const absRemaining = Math.abs(opt.newGap);
                       const isNearEven = absRemaining < verdict.gap * 0.05;
@@ -862,13 +862,13 @@ export default function TradeProposalBuilder({
                         <div key={i} className="rounded-lg px-3 py-2.5 flex items-center justify-between gap-2" style={{ background: 'var(--color-fill)' }}>
                           <div className="flex-1 min-w-0 flex flex-col gap-1">
                             <div className="flex items-center gap-1.5">
-                              <span className="font-bold px-1.5 py-0.5 rounded tracking-widest shrink-0" style={{ fontSize: 10, background: smeta.bg, color: smeta.color }}>{smeta.label}</span>
-                              <span className="font-medium truncate" style={{ fontSize: 13, color: 'var(--color-label)' }}>{descLine}</span>
+                              <span className="font-bold px-1.5 py-0.5 rounded tracking-widest shrink-0" style={{ fontSize: 'var(--type-label)', background: smeta.bg, color: smeta.color }}>{smeta.label}</span>
+                              <span className="font-medium truncate" style={{ fontSize: 'var(--type-meta)', color: 'var(--color-label)' }}>{descLine}</span>
                             </div>
-                            <span className="tabular-nums" style={{ fontSize: 12, color: 'var(--color-label-quaternary)' }}>{remainingLabel}</span>
+                            <span className="tabular-nums" style={{ fontSize: 'var(--type-label)', color: 'var(--color-label-quaternary)' }}>{remainingLabel}</span>
                           </div>
                           <button onClick={() => applySuggestion(opt)} className="shrink-0 px-3 py-1.5 rounded-lg font-semibold"
-                            style={{ fontSize: 13, background: 'var(--color-signature)', color: 'var(--color-signature-fg)' }}>
+                            style={{ fontSize: 'var(--type-meta)', background: 'var(--color-signature)', color: 'var(--color-signature-fg)' }}>
                             Apply
                           </button>
                         </div>
@@ -877,7 +877,7 @@ export default function TradeProposalBuilder({
                   </div>
                 )}
                 {suggestions && suggestions.options.length === 0 && (
-                  <div style={{ borderTop: '1px solid var(--color-separator)', padding: '10px 14px', fontSize: 12, textAlign: 'center', color: 'var(--color-label-tertiary)' }}>
+                  <div style={{ borderTop: '1px solid var(--color-separator)', padding: '10px 14px', fontSize: 'var(--type-label)', textAlign: 'center', color: 'var(--color-label-tertiary)' }}>
                     No combinations found to close the gap.
                   </div>
                 )}
@@ -931,8 +931,8 @@ export default function TradeProposalBuilder({
                         </div>
                         {colorCommentary && (
                           <div style={{ borderTop: '1px solid var(--color-separator)', padding: '10px 14px', background: 'var(--color-bg-secondary)', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-                            <span style={{ fontFamily: "var(--font-display, 'Barlow Condensed', sans-serif)", fontWeight: 700, fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'var(--color-label-quaternary)', paddingTop: 2, flexShrink: 0 }}>COLOR COMMENTARY</span>
-                            <span style={{ fontSize: 14, lineHeight: 1.4, color: 'var(--color-label)', fontStyle: 'italic' }}>"{colorCommentary}"</span>
+                            <span style={{ fontFamily: "var(--font-display, 'Barlow Condensed', sans-serif)", fontWeight: 700, fontSize: 'var(--type-label)', letterSpacing: '0.18em', textTransform: 'uppercase', color: 'var(--color-label-quaternary)', paddingTop: 2, flexShrink: 0 }}>COLOR COMMENTARY</span>
+                            <span style={{ fontSize: 'var(--type-body)', lineHeight: 1.4, color: 'var(--color-label)', fontStyle: 'italic' }}>"{colorCommentary}"</span>
                           </div>
                         )}
                         {suggestBlock}
@@ -1000,8 +1000,8 @@ export default function TradeProposalBuilder({
                       />
                       {colorCommentary && (
                         <div style={{ borderTop: '1px solid var(--color-separator)', padding: '10px 14px', background: 'var(--color-bg-secondary)', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-                          <span style={{ fontFamily: "var(--font-display, 'Barlow Condensed', sans-serif)", fontWeight: 700, fontSize: 9, letterSpacing: '0.2em', textTransform: 'uppercase', color: 'var(--color-label-quaternary)', paddingTop: 2, flexShrink: 0 }}>COLOR COMMENTARY</span>
-                          <span style={{ fontSize: 13, lineHeight: 1.4, color: 'var(--color-label)', fontStyle: 'italic' }}>"{colorCommentary}"</span>
+                          <span style={{ fontFamily: "var(--font-display, 'Barlow Condensed', sans-serif)", fontWeight: 700, fontSize: 'var(--type-micro)', letterSpacing: '0.2em', textTransform: 'uppercase', color: 'var(--color-label-quaternary)', paddingTop: 2, flexShrink: 0 }}>COLOR COMMENTARY</span>
+                          <span style={{ fontSize: 'var(--type-meta)', lineHeight: 1.4, color: 'var(--color-label)', fontStyle: 'italic' }}>"{colorCommentary}"</span>
                         </div>
                       )}
                       {suggestBlock}

@@ -1,20 +1,13 @@
-// Draft window — Scout becomes the landing tab while the 2026 NFL Draft is live.
-// Mirrors DRAFT_SESSION_WINDOWS_2026 in src/components/scout/ScoutTab.jsx; kept in
-// sync deliberately so the routing module stays free of component-side imports.
-const DRAFT_LANDING_START = Date.parse('2026-04-23T20:00:00-04:00');
-const DRAFT_LANDING_END = Date.parse('2026-04-25T19:00:00-04:00');
-
-function isDraftLandingWindow(now = Date.now()) {
-  if (!Number.isFinite(DRAFT_LANDING_START) || !Number.isFinite(DRAFT_LANDING_END)) return false;
-  return now >= DRAFT_LANDING_START && now <= DRAFT_LANDING_END;
-}
-
-function getDefaultActiveTab() {
-  return isDraftLandingWindow() ? 'scout' : 'companion';
-}
-
 const PREDICTIONS_VIEWS = new Set(['predictions', 'standings', 'playoffs']);
-const COMPANION_VIEWS = new Set(['roster', 'rankings', 'live', 'matchup', 'waiver', 'league', 'heatmap', 'defense', 'scoring']);
+const FANTASY_VIEWS = new Set(['rosters', 'rankings', 'live', 'matchups', 'waivers', 'heatmap', 'defenses', 'scoring']);
+const FANTASY_VIEW_ALIASES = new Map([
+  ['roster', 'rosters'],
+  ['league', 'rosters'],
+  ['matchup', 'matchups'],
+  ['waiver', 'waivers'],
+  ['defense', 'defenses'],
+]);
+const LEAGUE_VIEWS = new Set(['standings', 'history', 'activity']);
 const TRADE_VIEWS = new Set(['agent', 'intelligence', 'upgrade', 'history']);
 const STATISTICS_VIEWS = new Set(['browser', 'team', 'player', 'schedule', 'standings', 'game']);
 const STATISTICS_MODES = new Set(['game', 'fantasy', 'visual']);
@@ -24,13 +17,12 @@ const SCOUT_VIEWS = new Set(['prospects', 'picks', 'results']);
 const DRAFT_VIEWS = new Set(['war-room', 'my-board', 'results', 'gauntlet', 'tiers-runs']);
 
 function normalizeCompanionView(view) {
-  return COMPANION_VIEWS.has(view) ? view : DEFAULT_ROUTE.companionView;
+  const aliased = FANTASY_VIEW_ALIASES.get(view) ?? view;
+  return FANTASY_VIEWS.has(aliased) ? aliased : DEFAULT_ROUTE.companionView;
 }
 
 const DEFAULT_ROUTE = {
-  // First-load tab is dynamic: Scout while the 2026 NFL Draft is live, Companion otherwise.
-  // All other sections still resolve normally via their own paths.
-  get activeTab() { return getDefaultActiveTab(); },
+  activeTab: 'fantasy',
   seasonView: 'predictions',
   predictionsTeamId: null,
   statisticsView: 'browser',
@@ -43,12 +35,14 @@ const DEFAULT_ROUTE = {
   statisticsScheduleWeek: null,
   statisticsScheduleTeamId: null,
   statisticsScheduleFilter: null,
-  companionView: 'roster',
+  companionView: 'rosters',
+  leagueView: 'standings',
   rankingsPosition: null,
   rankingsRosterId: null,
   waiverPosition: null,
   matchupWeek: null,
   matchupPlayerId: null,
+  matchupRosterId: null,
   leagueSubview: null,
   leagueRosterId: null,
   heatmapViewMode: null,
@@ -174,8 +168,11 @@ export function getDefaultRouteForTab(tab) {
   switch (tab) {
     case 'statistics':
       return { ...DEFAULT_ROUTE, activeTab: 'statistics', statisticsView: 'browser' };
+    case 'fantasy':
     case 'companion':
-      return { ...DEFAULT_ROUTE, activeTab: 'companion', companionView: 'roster' };
+      return { ...DEFAULT_ROUTE, activeTab: 'fantasy', companionView: 'rosters' };
+    case 'league':
+      return { ...DEFAULT_ROUTE, activeTab: 'league', leagueView: 'standings' };
     case 'trade':
       return { ...DEFAULT_ROUTE, activeTab: 'trade', tradeView: 'agent' };
     case 'scout':
@@ -189,7 +186,9 @@ export function getDefaultRouteForTab(tab) {
 }
 
 export function normalizeAppRoute(route = {}) {
-  const activeTab = route.activeTab ?? DEFAULT_ROUTE.activeTab;
+  const activeTab = route.activeTab === 'companion'
+    ? 'fantasy'
+    : (route.activeTab ?? DEFAULT_ROUTE.activeTab);
 
   if (activeTab === 'statistics') {
     const statisticsView = STATISTICS_VIEWS.has(route.statisticsView)
@@ -260,11 +259,11 @@ export function normalizeAppRoute(route = {}) {
     return { ...DEFAULT_ROUTE, activeTab: 'statistics', statisticsView: 'browser' };
   }
 
-  if (activeTab === 'companion') {
+  if (activeTab === 'fantasy') {
     const companionView = normalizeCompanionView(route.companionView);
     const normalized = {
       ...DEFAULT_ROUTE,
-      activeTab: 'companion',
+      activeTab: 'fantasy',
       companionView,
     };
 
@@ -273,16 +272,17 @@ export function normalizeAppRoute(route = {}) {
       normalized.rankingsRosterId = normalizePlayerId(route.rankingsRosterId);
     }
 
-    if (companionView === 'waiver') {
+    if (companionView === 'waivers') {
       normalized.waiverPosition = normalizePosition(route.waiverPosition);
     }
 
-    if (companionView === 'matchup') {
+    if (companionView === 'matchups') {
       normalized.matchupWeek = normalizeWeek(route.matchupWeek);
       normalized.matchupPlayerId = normalizePlayerId(route.matchupPlayerId);
+      normalized.matchupRosterId = normalizePlayerId(route.matchupRosterId);
     }
 
-    if (companionView === 'league') {
+    if (companionView === 'rosters') {
       normalized.leagueSubview = normalizeLowerToken(route.leagueSubview, new Set(['roster', 'picks']), 'roster');
       normalized.leagueRosterId = normalizePlayerId(route.leagueRosterId);
     }
@@ -302,7 +302,7 @@ export function normalizeAppRoute(route = {}) {
       normalized.heatmapVegasView = normalizeLowerToken(route.heatmapVegasView, new Set(['spread', 'ou']), 'spread');
     }
 
-    if (companionView === 'defense') {
+    if (companionView === 'defenses') {
       const defensePosition = normalizePosition(route.defensePosition) ?? 'QB';
       const defenseStatsByPosition = {
         ALL: new Set(['total_yd', 'total_td']),
@@ -329,6 +329,14 @@ export function normalizeAppRoute(route = {}) {
     }
 
     return normalized;
+  }
+
+  if (activeTab === 'league') {
+    return {
+      ...DEFAULT_ROUTE,
+      activeTab: 'league',
+      leagueView: normalizeLowerToken(route.leagueView, LEAGUE_VIEWS, DEFAULT_ROUTE.leagueView),
+    };
   }
 
   if (activeTab === 'scout') {
@@ -419,18 +427,55 @@ export function parseAppRoute(pathname = '/', search = '') {
       }
       return normalizeAppRoute({ activeTab: 'statistics', statisticsView: 'browser' });
     }
-    case 'companion':
-      if (subview === 'draft') {
-        return normalizeAppRoute({ activeTab: 'draft', draftView: 'war-room' });
-      }
+    case 'fantasy':
       return normalizeAppRoute({
-        activeTab: 'companion',
+        activeTab: 'fantasy',
         companionView: subview,
         rankingsPosition: parseQueryValue(searchParams, 'pos'),
         rankingsRosterId: parseQueryValue(searchParams, 'team'),
         waiverPosition: parseQueryValue(searchParams, 'position'),
         matchupWeek: parseQueryValue(searchParams, 'week'),
         matchupPlayerId: parseQueryValue(searchParams, 'player'),
+        matchupRosterId: parseQueryValue(searchParams, 'team'),
+        leagueSubview: parseQueryValue(searchParams, 'sub'),
+        leagueRosterId: parseQueryValue(searchParams, 'team'),
+        heatmapViewMode: parseQueryValue(searchParams, 'mode'),
+        heatmapPosition: parseQueryValue(searchParams, 'pos'),
+        heatmapDefensePosition: parseQueryValue(searchParams, 'defPos'),
+        heatmapStatMode: parseQueryValue(searchParams, 'stat'),
+        heatmapDefenseStatMode: parseQueryValue(searchParams, 'defStat'),
+        heatmapScope: parseQueryValue(searchParams, 'scope'),
+        heatmapLocation: parseQueryValue(searchParams, 'loc'),
+        heatmapSortKey: parseQueryValue(searchParams, 'sort'),
+        heatmapSortDir: parseQueryValue(searchParams, 'dir'),
+        heatmapTeamSort: parseQueryValue(searchParams, 'teams'),
+        heatmapUseTeamColors: parseQueryValue(searchParams, 'colors'),
+        heatmapVegasView: parseQueryValue(searchParams, 'odds'),
+        defenseMode: parseQueryValue(searchParams, 'mode'),
+        defensePosition: parseQueryValue(searchParams, 'pos'),
+        defenseStat: parseQueryValue(searchParams, 'stat'),
+        defenseSort: parseQueryValue(searchParams, 'sort'),
+        defenseDir: parseQueryValue(searchParams, 'dir'),
+        defenseQuery: parseQueryValue(searchParams, 'q'),
+      });
+    case 'league':
+      return normalizeAppRoute({ activeTab: 'league', leagueView: subview });
+    case 'companion':
+      if (subview === 'draft') {
+        return normalizeAppRoute({ activeTab: 'draft', draftView: 'war-room' });
+      }
+      if (LEAGUE_VIEWS.has(subview)) {
+        return normalizeAppRoute({ activeTab: 'league', leagueView: subview });
+      }
+      return normalizeAppRoute({
+        activeTab: 'fantasy',
+        companionView: subview,
+        rankingsPosition: parseQueryValue(searchParams, 'pos'),
+        rankingsRosterId: parseQueryValue(searchParams, 'team'),
+        waiverPosition: parseQueryValue(searchParams, 'position'),
+        matchupWeek: parseQueryValue(searchParams, 'week'),
+        matchupPlayerId: parseQueryValue(searchParams, 'player'),
+        matchupRosterId: parseQueryValue(searchParams, 'team'),
         leagueSubview: parseQueryValue(searchParams, 'sub'),
         leagueRosterId: parseQueryValue(searchParams, 'team'),
         heatmapViewMode: parseQueryValue(searchParams, 'mode'),
@@ -514,26 +559,27 @@ export function buildAppPath(route) {
         ])}`;
       }
       return '/statistics';
-    case 'companion': {
-      const basePath = `/companion/${normalized.companionView}`;
+    case 'fantasy': {
+      const basePath = `/fantasy/${normalized.companionView}`;
       if (normalized.companionView === 'rankings') {
         return `${basePath}${buildQueryString([
           ['pos', normalized.rankingsPosition],
           ['team', normalized.rankingsRosterId],
         ])}`;
       }
-      if (normalized.companionView === 'waiver') {
+      if (normalized.companionView === 'waivers') {
         return `${basePath}${buildQueryString([
           ['position', normalized.waiverPosition],
         ])}`;
       }
-      if (normalized.companionView === 'matchup') {
+      if (normalized.companionView === 'matchups') {
         return `${basePath}${buildQueryString([
           ['week', normalized.matchupWeek],
           ['player', normalized.matchupPlayerId],
+          ['team', normalized.matchupRosterId],
         ])}`;
       }
-      if (normalized.companionView === 'league') {
+      if (normalized.companionView === 'rosters') {
         return `${basePath}${buildQueryString([
           ['sub', normalized.leagueSubview !== 'roster' ? normalized.leagueSubview : null],
           ['team', normalized.leagueRosterId],
@@ -555,7 +601,7 @@ export function buildAppPath(route) {
           ['odds', normalized.heatmapVegasView !== 'spread' ? normalized.heatmapVegasView : null],
         ])}`;
       }
-      if (normalized.companionView === 'defense') {
+      if (normalized.companionView === 'defenses') {
         const defaultDefenseStatByPosition = {
           ALL: 'total_yd',
           QB: 'pass_yd',
@@ -575,6 +621,8 @@ export function buildAppPath(route) {
       }
       return basePath;
     }
+    case 'league':
+      return `/league/${normalized.leagueView}`;
     case 'scout':
       return normalized.scoutView === 'prospects'
         ? '/scout'
@@ -620,11 +668,13 @@ export function isSameAppRoute(a, b) {
     && left.statisticsScheduleTeamId === right.statisticsScheduleTeamId
     && left.statisticsScheduleFilter === right.statisticsScheduleFilter
     && left.companionView === right.companionView
+    && left.leagueView === right.leagueView
     && left.rankingsPosition === right.rankingsPosition
     && left.rankingsRosterId === right.rankingsRosterId
     && left.waiverPosition === right.waiverPosition
     && left.matchupWeek === right.matchupWeek
     && left.matchupPlayerId === right.matchupPlayerId
+    && left.matchupRosterId === right.matchupRosterId
     && left.leagueSubview === right.leagueSubview
     && left.leagueRosterId === right.leagueRosterId
     && left.heatmapViewMode === right.heatmapViewMode

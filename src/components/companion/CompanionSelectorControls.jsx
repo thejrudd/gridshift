@@ -74,7 +74,12 @@ export function CompanionSelectorRail({
         >
           {children}
         </div>
-        <HorizontalScrollCue left={scrollCue.left} right={scrollCue.right} />
+        <HorizontalScrollCue
+          left={scrollCue.left}
+          right={scrollCue.right}
+          targetRef={railRef}
+          label="selector"
+        />
       </div>
     </div>
   );
@@ -295,7 +300,7 @@ export function CompanionFantasyTeamMenu({
                       />
                     ) : (
                       <span
-                        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold"
+                        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[length:var(--type-label)] font-bold"
                         style={{ background: 'var(--color-fill)', color: 'var(--color-label-secondary)' }}
                       >
                         {roster.name[0]?.toUpperCase()}
@@ -335,7 +340,7 @@ export function CompanionMenuSelectionMark({ checked, mode = 'multi' }) {
   return (
     <span
       aria-hidden="true"
-      className="grid h-5 w-5 shrink-0 place-items-center rounded-md text-[11px] font-black"
+      className="grid h-5 w-5 shrink-0 place-items-center rounded-md text-[length:var(--type-label)] font-black"
       style={{
         background: checked ? 'var(--color-signature)' : 'var(--color-fill)',
         border: `1px solid ${checked ? 'var(--color-signature)' : 'var(--color-separator)'}`,

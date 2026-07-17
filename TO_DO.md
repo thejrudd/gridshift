@@ -7,9 +7,9 @@ New features requested or planned should be added here.
 
 ## Planned Versions
 
-### v8.3 - Live Fantasy Scoring & Team Tendencies
+### v8.4 - Live Fantasy Scoring & Team Tendencies
 
-- Add live fantasy scoring, a live scoring feed, matchup context, and win probability while keeping paid data server-side and Companion Live allowlisted.
+- Add live fantasy scoring, a live scoring feed, matchup context, and win probability while keeping paid data server-side and Fantasy Live allowlisted.
 - Add team offense/defense rankings, sortable league/conference/division tables, fantasy matchup context, and the usage-based projection model. See docs/Projection Usage Model Plan.md.
 
 ## Optimizations
@@ -47,8 +47,11 @@ New features requested or planned should be added here.
 - **Interactive week-by-week picks** - Extend the schedule surface with a week-first prediction flow so users can pick games directly from the full weekly slate instead of entering game picks only through a team drilldown.
 
 ### Fantasy Companion
+- **Matchup-linked league records** - Link highest score, biggest blowout, and narrowest win records directly to their referenced Fantasy Matchups week and team, including linked historical seasons.
+- **Visual League Activity feed** - Add player headshots, NFL team-color identity, Sleeper fantasy-team avatars, glanceable transaction glyphs, and default-collapsed summaries for large multi-move entries.
 - **Roster player drilldown - stat category filter** - Allow filtering weekly stats by category (Pass, Rush, Rec, Defense, All) with a position-appropriate default.
 - **Start/sit recommendations** - Companion view that runs `projectPlayer()` across all rostered players and ranks them by projected output within each position group. Surfaces a clear start recommendation for each roster slot.
+- **Expanded league-history records** - Add highest score in a loss, lowest score in a win, lowest team score, highest combined matchup score, highest individual starter and bench scores, most points left on the bench, and the largest share of a weekly team score from one starter.
 
 ### Season Predictions
 

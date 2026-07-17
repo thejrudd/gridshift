@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSleeperLeague, useSleeperBase, useSleeperStatsProgress } from '../../context/SleeperContext';
 import { useTheme } from '../../context/ThemeContext';
-import { calcPointsFromTotals } from '../../utils/scoringEngine';
+import { calcPoints, calcPointsFromTotals } from '../../utils/scoringEngine';
 import { computePositionalRanks, getAvgPPG } from '../../utils/projectionEngine';
 import CompanionPlayerPreviewSheet from './CompanionPlayerPreviewSheet';
 import { getTeamColorKey, getTeamPalette } from '../../data/teamColors.js';
@@ -10,7 +10,11 @@ import HorizontalScrollCue from '../HorizontalScrollCue.jsx';
 import useHorizontalScrollCue from '../../hooks/useHorizontalScrollCue.js';
 import PlayerStatusBadge, { PlayerStatusLogoCluster } from './PlayerStatusBadge.jsx';
 import { getPlayerAvailabilityStatus } from '../../utils/playerAvailabilityStatus.js';
-import { CompanionFantasyTeamMenu, CompanionSelectorButton } from './CompanionSelectorControls.jsx';
+import {
+  CompanionFantasyTeamMenu,
+  CompanionSegmentedControl,
+  CompanionSelectorButton,
+} from './CompanionSelectorControls.jsx';
 import { POSITION_COLORS } from '../../utils/companionAssetVisuals.js';
 import CompanionPlayerRow, { CompanionPlayerAction, CompanionPlayerMetric } from './CompanionPlayerRow.jsx';
 import StatsProgressBanner from '../ui/StatsProgressBanner';
@@ -22,6 +26,49 @@ const MAX_ROUNDS = 36; // generous cap — Sleeper dynasty startups can run 25+ 
 const COMPACT_PHONE_QUERY = '(max-width: 480px)';
 const MOBILE_SHEET_QUERY = '(max-width: 1023px)';
 const LEAGUE_ROW_LEFT_BORDER = 4;
+
+function getRosterPlayerIds(roster) {
+  return [...new Set([...(roster?.players || []), ...(roster?.reserve || [])])];
+}
+
+function hasScoreSource(stats) {
+  if (!stats) return false;
+  if (Number.isFinite(Number(stats._fantasyPoints ?? stats.fantasy_points ?? stats.appliedTotal))) return true;
+  return Object.entries(stats).some(([key, value]) => (
+    typeof value === 'number'
+    && !key.startsWith('_')
+    && !['week', 'gp', 'games_played', 'fantasy_points', 'appliedTotal'].includes(key)
+  ));
+}
+
+function getWeeklySeasonPoints(weekly, scoring, position) {
+  if (!weekly?.length) return null;
+  let total = 0;
+  let hasAnyScore = false;
+  for (const row of weekly) {
+    if (!hasScoreSource(row)) continue;
+    total += calcPoints(row, scoring, position);
+    hasAnyScore = true;
+  }
+  return hasAnyScore ? total : null;
+}
+
+function getRosterSeasonPoints(stats, weekly, scoring, position) {
+  if (hasScoreSource(stats)) return calcPointsFromTotals(stats, scoring, position);
+  return getWeeklySeasonPoints(weekly, scoring, position);
+}
+
+function getRosterAvgPPG(weekly, stats, seasonPoints, scoring, position) {
+  const weeklyAvg = getAvgPPG(weekly, scoring, position);
+  if (weeklyAvg > 0) return weeklyAvg;
+
+  const games = Number(stats?.gp ?? stats?.games_played);
+  if (seasonPoints != null && Number.isFinite(games) && games > 0) {
+    return Math.round((seasonPoints / games) * 10) / 10;
+  }
+
+  return null;
+}
 
 function getLeagueLayout(isCompactPhone, nameColPx) {
   if (isCompactPhone) {
@@ -193,22 +240,18 @@ export default function CompanionLeague({ onTradePlayer, onViewPlayer = null, tr
   const subView = routeState?.subView ?? 'roster';
 
   return (
-    <div className="pb-6">
-      {/* Sub-view toggle */}
-      <div className="px-4 pb-4 flex gap-2">
-        {[['roster', 'Rosters'], ['picks', 'Draft Picks']].map(([id, label]) => (
-          <button
-            key={id}
-            onClick={() => onRouteStateChange?.({ ...(routeState ?? {}), subView: id })}
-            className="px-4 py-1.5 rounded-lg text-sm font-semibold transition-colors"
-            style={{
-              background: subView === id ? 'var(--color-signature)' : 'var(--color-fill)',
-              color: subView === id ? 'var(--color-signature-fg)' : 'var(--color-label-secondary)',
-            }}
-          >
-            {label}
-          </button>
-        ))}
+    <div className="page-frame-data pb-6">
+      <div className="max-w-sm px-4 pb-4">
+        <CompanionSegmentedControl
+          value={subView}
+          options={[
+            { value: 'roster', label: 'Players' },
+            { value: 'picks', label: 'Draft Picks' },
+          ]}
+          columns={2}
+          ariaLabel="Rosters content"
+          onChange={(nextView) => onRouteStateChange?.({ ...(routeState ?? {}), subView: nextView })}
+        />
       </div>
 
       {subView === 'roster' && (
@@ -268,9 +311,6 @@ function LeagueRosterView({ onTradePlayer, onViewPlayer = null, tradeDisabled = 
   }, [selectedRosterId, selectedRosterIdProp, onSelectedRosterChange]);
 
   useEffect(() => { loadPlayers(); }, [loadPlayers]);
-  useEffect(() => {
-    if (!seasonStats && !statsLoading) loadSeasonStats();
-  }, [seasonStats, statsLoading, loadSeasonStats]);
 
   const positionalRanks = useMemo(
     () => computePositionalRanks(seasonStats, players, activeScoringSettings),
@@ -281,18 +321,36 @@ function LeagueRosterView({ onTradePlayer, onViewPlayer = null, tradeDisabled = 
     () => rosters.find(r => r.roster_id === selectedRosterId) ?? null,
     [rosters, selectedRosterId],
   );
+  const selectedRosterPlayerIds = useMemo(() => getRosterPlayerIds(selectedRoster), [selectedRoster]);
+  const hasSelectedRosterWeeklyRows = useMemo(() => (
+    selectedRosterPlayerIds.some((id) => (weeklyStats?.[id] ?? []).length > 0)
+  ), [selectedRosterPlayerIds, weeklyStats]);
+
+  useEffect(() => {
+    if (statsLoading) return;
+    if (platform === 'espn') {
+      if (!seasonStats || (selectedRosterPlayerIds.length > 0 && !hasSelectedRosterWeeklyRows)) loadSeasonStats();
+      return;
+    }
+    if (!seasonStats) loadSeasonStats();
+  }, [
+    platform,
+    selectedRosterPlayerIds,
+    hasSelectedRosterWeeklyRows,
+    seasonStats,
+    statsLoading,
+    loadSeasonStats,
+  ]);
 
   const rosterPlayers = useMemo(() => {
     if (!selectedRoster || !players) return [];
-    // Sleeper includes IR players in both `players` and `reserve` — deduplicate via Set
-    const playerIds = [...new Set([...(selectedRoster.players || []), ...(selectedRoster.reserve || [])])];
-    return playerIds.map(id => {
+    return selectedRosterPlayerIds.map(id => {
       const p = players[id];
       if (!p) return null;
       const stats = seasonStats?.[id] ?? null;
       const weekly = weeklyStats?.[id] ?? [];
-      const pts = stats ? calcPointsFromTotals(stats, activeScoringSettings, p.position) : null;
-      const avgPPG = getAvgPPG(weekly, activeScoringSettings, p.position);
+      const pts = getRosterSeasonPoints(stats, weekly, activeScoringSettings, p.position);
+      const avgPPG = getRosterAvgPPG(weekly, stats, pts, activeScoringSettings, p.position);
       const rank = positionalRanks[id] ?? null;
       const isReserve = selectedRoster.reserve?.includes(id);
       return {
@@ -308,7 +366,7 @@ function LeagueRosterView({ onTradePlayer, onViewPlayer = null, tradeDisabled = 
         teamTheme: teamRowTheme(p.team || '', darkMode),
       };
     }).filter(Boolean);
-  }, [selectedRoster, players, seasonStats, weeklyStats, activeScoringSettings, positionalRanks, darkMode]);
+  }, [selectedRoster, selectedRosterPlayerIds, players, seasonStats, weeklyStats, activeScoringSettings, positionalRanks, darkMode]);
 
   const nameColPx = useMemo(() => measureMaxNameWidth(rosterPlayers), [rosterPlayers]);
   const layout = useMemo(() => getLeagueLayout(isCompactPhone, nameColPx), [isCompactPhone, nameColPx]);
@@ -403,7 +461,7 @@ function LeagueRosterView({ onTradePlayer, onViewPlayer = null, tradeDisabled = 
                       />
                     ) : (
                       <div className="w-5 h-5 rounded-full shrink-0 flex items-center justify-center"
-                        style={{ background: 'var(--color-fill-secondary)', fontSize: '9px', fontWeight: 700, color: 'var(--color-label-secondary)' }}>
+                        style={{ background: 'var(--color-fill-secondary)', fontSize: 'var(--type-micro)', fontWeight: 700, color: 'var(--color-label-secondary)' }}>
                         {name[0]?.toUpperCase()}
                       </div>
                     )}
@@ -413,7 +471,12 @@ function LeagueRosterView({ onTradePlayer, onViewPlayer = null, tradeDisabled = 
               })}
             </div>
           </div>
-          <HorizontalScrollCue left={ownerRailCue.left} right={ownerRailCue.right} />
+          <HorizontalScrollCue
+            left={ownerRailCue.left}
+            right={ownerRailCue.right}
+            targetRef={ownerRailRef}
+            label="fantasy team selector"
+          />
         </div>
       )}
 
@@ -433,11 +496,11 @@ function LeagueRosterView({ onTradePlayer, onViewPlayer = null, tradeDisabled = 
             }}
           >
             <div />
-            <span className="min-w-0 text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--color-label-tertiary)' }}>Player</span>
+            <span className="min-w-0 text-[length:var(--type-label)] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--color-label-tertiary)' }}>Player</span>
             {!isCompactPhone && <div />}
             {!isCompactPhone && <div />}
-            <span className="text-center text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--color-label-tertiary)' }}>Season</span>
-            <span className="text-center text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--color-label-tertiary)' }}>Avg/G</span>
+            <span className="text-center text-[length:var(--type-label)] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--color-label-tertiary)' }}>Season</span>
+            <span className="text-center text-[length:var(--type-label)] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--color-label-tertiary)' }}>Avg/G</span>
             <div />
           </div>
           <div className="shrink-0 ml-2 sm:ml-3" style={{ width: layout.tradeWidth }} />
@@ -462,7 +525,7 @@ function LeagueRosterView({ onTradePlayer, onViewPlayer = null, tradeDisabled = 
               const isOpponent = selectedRosterId !== myRosterData?.roster_id;
               const isOwnRoster = selectedRosterId === myRosterData?.roster_id;
               return (
-                <LeagueResponsivePlayerRow key={player.id} player={player} layout={layout} isCompactPhone={isCompactPhone} onSelect={() => {
+                <LeagueResponsivePlayerRow key={player.id} player={player} layout={layout} isCompactPhone={isCompactPhone} statsPending={statsLoading} onSelect={() => {
                   if (useMobilePreviewSheet) setSelectedPlayerId(player.id);
                   else onViewPlayer?.(player.id);
                 }}
@@ -499,7 +562,7 @@ function LeagueStatsLoadingBanner() {
   return <StatsProgressBanner progress={statsProgress} className="mx-4 mb-4" />;
 }
 
-function LeagueResponsivePlayerRow({ player, onSelect, onTrade, tradeDisabled = false, layout, isCompactPhone }) {
+function LeagueResponsivePlayerRow({ player, onSelect, onTrade, tradeDisabled = false, layout, isCompactPhone, statsPending = false }) {
   const { darkMode } = useTheme();
   const rankLabel = player.rank ? `${player.rank.posLabel}${player.rank.rank}` : null;
   const showReserveMeta = player.isReserve && player.availabilityStatus !== 'Injured Reserve';
@@ -542,12 +605,14 @@ function LeagueResponsivePlayerRow({ player, onSelect, onTrade, tradeDisabled = 
             <CompanionPlayerMetric
               key="season"
               value={player.pts !== null ? player.pts.toFixed(1) : '-'}
+              pending={statsPending && player.pts === null}
               align="center"
               compact={isCompactPhone}
             />,
             <CompanionPlayerMetric
               key="avg"
               value={player.avgPPG > 0 ? player.avgPPG.toFixed(1) : '-'}
+              pending={statsPending && !(player.avgPPG > 0)}
               align="center"
               compact={isCompactPhone}
             />,
@@ -767,7 +832,7 @@ function LeaguePicksView() {
           <div className="flex items-center gap-1.5">
             <div className="flex flex-col items-center" style={{ gap: '1px' }}>
               <AcquiredDot />
-              <span style={{ fontSize: '9px', fontWeight: 700, color: 'var(--color-accent)', lineHeight: 1 }}>OAK</span>
+              <span style={{ fontSize: 'var(--type-micro)', fontWeight: 700, color: 'var(--color-accent)', lineHeight: 1 }}>OAK</span>
             </div>
             <span className="text-xs" style={{ color: 'var(--color-label-tertiary)' }}>Acquired</span>
           </div>
@@ -858,12 +923,12 @@ function LeaguePicksView() {
                   />
                 ) : (
                   <div className="w-6 h-6 rounded-full shrink-0 flex items-center justify-center"
-                    style={{ background: 'var(--color-fill)', fontSize: '10px', fontWeight: 700, color: 'var(--color-label-secondary)' }}>
+                    style={{ background: 'var(--color-fill)', fontSize: 'var(--type-label)', fontWeight: 700, color: 'var(--color-label-secondary)' }}>
                     {name[0]?.toUpperCase()}
                   </div>
                 )}
                 <div className="min-w-0">
-                  <div className="text-xs font-semibold truncate" style={{ color: 'var(--color-label)' }}>
+                  <div className="text-xs font-semibold whitespace-nowrap" style={{ color: 'var(--color-label)' }}>
                     {name}
                   </div>
                   <div className="text-xs" style={{ color: 'var(--color-label-quaternary)' }}>
@@ -892,7 +957,12 @@ function LeaguePicksView() {
         })}
         </div>
       </div>
-      <HorizontalScrollCue left={picksScrollCue.left} right={picksScrollCue.right} />
+      <HorizontalScrollCue
+        left={picksScrollCue.left}
+        right={picksScrollCue.right}
+        targetRef={picksScrollRef}
+        label="draft pick holdings"
+      />
     </div>
   );
 }
@@ -923,7 +993,7 @@ function PickCell({ cell, rosters, getUserDisplayName, width, borderLeft }) {
         return (
           <div key={fromRosterId} className="flex flex-col items-center" style={{ gap: '1px' }}>
             <AcquiredDot />
-            <span style={{ fontSize: '9px', fontWeight: 700, color: 'var(--color-accent)', letterSpacing: '0.02em', lineHeight: 1 }}>
+            <span style={{ fontSize: 'var(--type-micro)', fontWeight: 700, color: 'var(--color-accent)', letterSpacing: '0.02em', lineHeight: 1 }}>
               {abbr}
             </span>
           </div>

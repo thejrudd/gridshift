@@ -249,7 +249,7 @@ export default function CompanionDefense({ routeState, onRouteStateChange }) {
   const loading = seasonStarted && (!players || !weeklyStats || !scheduleMap || statsLoading || statsEnhancing);
 
   return (
-    <div className="companion-defense-shell pb-6">
+    <div className="companion-defense-shell page-frame-data pb-6">
       {hasDefenseData && <div className="companion-defense-toolbar px-4 pb-3">
         <div className="companion-defense-filter-stack">
           <CompanionSelectorRail ariaLabel="Defense value mode">

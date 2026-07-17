@@ -17,6 +17,7 @@ import BottomTabBar from './components/BottomTabBar';
 import SeasonSubNav from './components/SeasonSubNav';
 import StatisticsSubNav from './components/StatisticsSubNav';
 import CompanionSubNav from './components/CompanionSubNav';
+import LeagueSubNav from './components/LeagueSubNav';
 import TradeSubNav from './components/TradeSubNav';
 import ScoutSubNav from './components/ScoutSubNav';
 import DraftSubNav from './components/DraftSubNav';
@@ -64,12 +65,15 @@ const StatisticsSchedule = lazy(() => import('./components/StatisticsSchedule'))
 const StatisticsStandings = lazy(() => import('./components/StatisticsStandings'));
 const StatisticsGame = lazy(() => import('./components/StatisticsGame'));
 const FavoriteTeamPicker = lazy(() => import('./components/FavoriteTeamPicker'));
+const DisplaySettingsModal = lazy(() => import('./components/DisplaySettingsModal'));
 const CompanionConnect = lazy(() => import('./components/companion/CompanionConnect'));
-const CompanionRoster = lazy(() => import('./components/companion/CompanionRoster'));
 const CompanionRankings = lazy(() => import('./components/companion/CompanionRankings'));
 const CompanionLive = lazy(() => import('./components/companion/CompanionLive'));
 const CompanionScoring = lazy(() => import('./components/companion/CompanionScoring'));
 const CompanionLeague = lazy(() => import('./components/companion/CompanionLeague'));
+const CompanionStandings = lazy(() => import('./components/companion/CompanionStandings'));
+const CompanionHistory = lazy(() => import('./components/companion/CompanionHistory'));
+const CompanionActivity = lazy(() => import('./components/companion/CompanionActivity'));
 const CompanionMatchup = lazy(() => debugCompanionTimeAsync(
   'CompanionMatchup chunk import',
   () => import('./components/companion/CompanionMatchup'),
@@ -85,7 +89,7 @@ const TradeHistory = lazy(() => import('./components/companion/TradeHistory'));
 const ScoutTab = lazy(() => import('./components/scout/ScoutTab'));
 const DraftAssistant = lazy(() => import('./components/draft/DraftAssistant'));
 const DRAFT_NAV_POLL_MS = 15_000;
-const DRAFT_ACTIVITY_NOTICE_TABS = new Set(['predictions', 'statistics', 'companion', 'trade', 'scout']);
+const DRAFT_ACTIVITY_NOTICE_TABS = new Set(['predictions', 'statistics', 'fantasy', 'league', 'trade', 'scout']);
 const DEV_DRAFT_OVERRIDE_PARAM_KEYS = ['sleeperDraftId', 'draftId'];
 
 function extractSleeperDraftId(value) {
@@ -518,7 +522,7 @@ function AppInner() {
     setManualTeamRecord,
     setTeamGameResults,
   } = usePredictions();
-  const { darkMode, toggleDarkMode, favoriteTeam, setFavoriteTeam } = useTheme();
+  const { darkMode, toggleDarkMode, favoriteTeam, displaySize, setDisplaySize } = useTheme();
   const fileInputRef = useRef(null);
   const contentAreaRef = useRef(null);
   const pendingContentScrollTopRef = useRef(null);
@@ -539,6 +543,7 @@ function AppInner() {
   const [exportPreviewOpen, setExportPreviewOpen] = useState(false);
   const [actionSheetOpen, setActionSheetOpen] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
+  const [displaySettingsOpen, setDisplaySettingsOpen] = useState(false);
   const [tourActive, setTourActive] = useState(false);
   const [tourDemoMode, setTourDemoMode] = useState(null);
   const { needRefresh, applyUpdate } = useServiceWorkerUpdate();
@@ -604,9 +609,11 @@ function AppInner() {
   const statisticsScheduleFilter = appRoute.statisticsScheduleFilter;
   const predictionsTeamId = appRoute.predictionsTeamId;
   const companionView = appRoute.companionView;
+  const leagueView = appRoute.leagueView;
   const tradeView = appRoute.tradeView;
   const scoutView = appRoute.scoutView;
   const tradeDisabledForPlatform = platform === 'espn';
+  const leagueDisabledForPlatform = platform === 'espn';
   const draftView = appRoute.draftView;
   const draftSleeperDraftId = appRoute.sleeperDraftId;
   const draftStatusOverrideId = getDevSleeperDraftIdOverride(draftSleeperDraftId);
@@ -655,7 +662,7 @@ function AppInner() {
   const sleeperPlayerCount = sleeperPlayers ? Object.keys(sleeperPlayers).length : 0;
 
   useEffect(() => {
-    if (activeTab !== 'companion') return;
+    if (activeTab !== 'fantasy') return;
     debugCompanionLog('Route entered Companion', {
       companionView,
       selectedLeagueId,
@@ -666,15 +673,15 @@ function AppInner() {
       hasSleeperPlayers: sleeperPlayerCount > 0,
     });
   }, [activeTab, companionView, selectedLeagueId, season, hasLeague, statsLoading, seasonStats, sleeperPlayerCount]);
-  const waiverInitRequest = appRoute.companionView === 'waiver' && appRoute.waiverPosition
+  const waiverInitRequest = appRoute.companionView === 'waivers' && appRoute.waiverPosition
     ? { position: appRoute.waiverPosition }
     : null;
-  const matchupInitRequest = appRoute.companionView === 'matchup' && (appRoute.matchupWeek || appRoute.matchupPlayerId)
+  const matchupInitRequest = appRoute.companionView === 'matchups' && (appRoute.matchupWeek || appRoute.matchupPlayerId)
     ? { week: appRoute.matchupWeek, playerId: appRoute.matchupPlayerId }
     : null;
   const rankingsPosition = appRoute.companionView === 'rankings' ? (appRoute.rankingsPosition ?? 'ALL') : 'ALL';
   const rankingsRosterId = appRoute.companionView === 'rankings' ? appRoute.rankingsRosterId : null;
-  const leagueRouteState = appRoute.companionView === 'league'
+  const leagueRouteState = appRoute.companionView === 'rosters'
     ? {
         subView: appRoute.leagueSubview ?? 'roster',
         rosterId: appRoute.leagueRosterId ?? null,
@@ -696,7 +703,7 @@ function AppInner() {
         vegasView: appRoute.heatmapVegasView ?? 'spread',
     }
     : null;
-  const defenseRouteState = appRoute.companionView === 'defense'
+  const defenseRouteState = appRoute.companionView === 'defenses'
     ? {
         mode: appRoute.defenseMode ?? 'stats',
         position: appRoute.defensePosition ?? 'QB',
@@ -736,7 +743,7 @@ function AppInner() {
 
   useEffect(() => {
     if (!tradeDisabledForPlatform || activeTab !== 'trade') return;
-    applyRoute({ activeTab: 'companion', companionView: 'roster' }, { replace: true });
+    applyRoute({ activeTab: 'fantasy', companionView: 'rosters' }, { replace: true });
   }, [activeTab, applyRoute, tradeDisabledForPlatform]);
 
   const navigateSeasonView = useCallback((view) => {
@@ -749,12 +756,16 @@ function AppInner() {
   }, [applyRoute]);
 
   const navigateCompanionView = useCallback((view) => {
-    applyRoute({ activeTab: 'companion', companionView: view });
+    applyRoute({ activeTab: 'fantasy', companionView: view });
   }, [applyRoute]);
 
   const updateCompanionRoute = useCallback((patch, options = {}) => {
-    applyRoute({ ...appRoute, activeTab: 'companion', ...patch }, options);
+    applyRoute({ ...appRoute, activeTab: 'fantasy', ...patch }, options);
   }, [appRoute, applyRoute]);
+
+  const navigateLeagueView = useCallback((view) => {
+    applyRoute({ activeTab: 'league', leagueView: view });
+  }, [applyRoute]);
 
   const scheduleHeatmapRouteUpdate = useCallback((nextState) => {
     pendingHeatmapRoutePatchRef.current = {
@@ -784,9 +795,9 @@ function AppInner() {
       if (!patch) return;
 
       const currentRoute = latestAppRouteRef.current;
-      if (currentRoute.activeTab !== 'companion' || currentRoute.companionView !== 'heatmap') return;
+      if (currentRoute.activeTab !== 'fantasy' || currentRoute.companionView !== 'heatmap') return;
 
-      applyRoute({ ...currentRoute, activeTab: 'companion', ...patch }, { replace: true });
+      applyRoute({ ...currentRoute, activeTab: 'fantasy', ...patch }, { replace: true });
     }, 120);
   }, [applyRoute]);
 
@@ -799,7 +810,7 @@ function AppInner() {
   }, []);
 
   useEffect(() => {
-    if (activeTab === 'companion' && companionView === 'heatmap') return;
+    if (activeTab === 'fantasy' && companionView === 'heatmap') return;
     if (heatmapRouteUpdateTimerRef.current) {
       window.clearTimeout(heatmapRouteUpdateTimerRef.current);
       heatmapRouteUpdateTimerRef.current = null;
@@ -1186,7 +1197,7 @@ function AppInner() {
     prepareOnboardingLayout();
     beginOnboarding();
     if (!hasLeague) {
-      applyRoute({ activeTab: 'companion', companionView: 'roster' });
+      applyRoute({ activeTab: 'fantasy', companionView: 'rosters' });
     }
   }, [applyRoute, beginOnboarding, hasLeague, prepareOnboardingLayout]);
 
@@ -1284,6 +1295,7 @@ function AppInner() {
         isSeasonComplete={isSeasonComplete}
         darkMode={darkMode}
         onToggleDarkMode={toggleDarkMode}
+        onDisplay={() => setDisplaySettingsOpen(true)}
         onGuide={() => setGuideOpen(true)}
         onExportJSON={handleExportJSON}
         onImportJSON={handleImportClick}
@@ -1297,6 +1309,7 @@ function AppInner() {
         onMyTeam={handleMyTeam}
         collapsed={sidebarCollapsed}
         onToggleCollapse={toggleSidebarCollapsed}
+        leagueDisabled={leagueDisabledForPlatform}
       />
 
       {/* ── Main panel ───────────────────────────────────────── */}
@@ -1307,7 +1320,7 @@ function AppInner() {
           darkMode={darkMode}
           onToggleDarkMode={toggleDarkMode}
           onMenuOpen={() => setActionSheetOpen(true)}
-          seasonSelector={hasLeague && (activeTab === 'companion' || activeTab === 'trade' || activeTab === 'draft') ? (
+          seasonSelector={hasLeague && (activeTab === 'fantasy' || activeTab === 'league' || activeTab === 'trade' || activeTab === 'draft') ? (
             <SeasonChip
               season={season}
               seasons={linkedLeagueSeasonOptions}
@@ -1353,8 +1366,8 @@ function AppInner() {
           </div>
         )}
 
-        {/* Companion sub-navigation */}
-        {activeTab === 'companion' && hasLeague && (
+        {/* Fantasy sub-navigation */}
+        {activeTab === 'fantasy' && hasLeague && (
           <div className="season-subnav league-subnav">
             <div className="companion-subnav-row">
               <div className="min-w-0 flex-1">
@@ -1372,6 +1385,23 @@ function AppInner() {
                   className="flex items-center gap-2"
                 />
               </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'league' && hasLeague && (
+          <div className="season-subnav league-subnav">
+            <LeagueSubNav activeView={leagueView} onViewChange={navigateLeagueView} />
+            <div className="hidden lg:flex items-center absolute bottom-0 right-8 pb-[9px]">
+              <LeagueContextHeader
+                league={league}
+                season={season}
+                changeSeason={changeSeason}
+                seasonSwitching={seasonSwitching}
+                seasonOptions={linkedLeagueSeasonOptions}
+                onSwitchLeague={() => setLeagueSwitcherOpen(true)}
+                className="flex items-center gap-2"
+              />
             </div>
           </div>
         )}
@@ -1431,7 +1461,7 @@ function AppInner() {
         )}
 
         {/* Scoring override banner — frozen above scroll area */}
-        {activeTab === 'companion' && hasLeague && companionView !== 'scoring' && (
+        {activeTab === 'fantasy' && hasLeague && companionView !== 'scoring' && (
           <ScoringOverrideBanner preserveContentScrollDuringUpdate={preserveContentScrollDuringUpdate} />
         )}
 
@@ -1543,7 +1573,7 @@ function AppInner() {
             </Suspense>
           )}
 
-          {activeTab === 'companion' && !hasLeague && (
+          {(activeTab === 'fantasy' || activeTab === 'league') && !hasLeague && (
             <Suspense fallback={<SectionLoading label="Loading connect" />}>
               <CompanionConnect />
             </Suspense>
@@ -1587,7 +1617,7 @@ function AppInner() {
                 }}
                 onOpenWaiver={(position) => {
                   if (!position) return;
-                  applyRoute({ activeTab: 'companion', companionView: 'waiver', waiverPosition: position });
+                  applyRoute({ activeTab: 'fantasy', companionView: 'waivers', waiverPosition: position });
                 }}
                 prewarmAnalytics={tradeAnalyticsPrewarmRequested}
                 view={tradeView}
@@ -1597,25 +1627,34 @@ function AppInner() {
             </Suspense>
           )}
 
-          {activeTab === 'companion' && hasLeague && (
+          {activeTab === 'fantasy' && hasLeague && (
             <>
-              {companionView === 'roster'    && (
-                <Suspense fallback={<SectionLoading label="Loading Roster" />}>
-                <CompanionRoster
-                  onTradePlayer={(sleeperId) => {
-                    if (tradeDisabledForPlatform) return;
-                    applyRoute({ activeTab: 'trade', tradeView: 'agent', tradePlayerId: sleeperId, tradeSide: 'give' });
-                  }}
-                  tradeDisabled={tradeDisabledForPlatform}
-                  onOpenMatchupWeek={(playerId, week) => {
-                    applyRoute({ activeTab: 'companion', companionView: 'matchup', matchupPlayerId: playerId, matchupWeek: week });
-                  }}
-                  onViewPlayer={(playerOrMeta, playerMeta) => {
-                    const resolvedMeta = playerMeta ?? (typeof playerOrMeta === 'object' ? playerOrMeta : null);
-                    const sleeperId = resolvedMeta?.sleeperId ?? playerOrMeta;
-                    navigateToCompanionSleeperPlayer(sleeperId, 'Roster', resolvedMeta);
-                  }}
-                />
+              {companionView === 'rosters' && (
+                <Suspense fallback={<SectionLoading label="Loading Rosters" />}>
+                  <CompanionLeague
+                    routeState={leagueRouteState}
+                    onRouteStateChange={(nextState) => updateCompanionRoute({
+                      companionView: 'rosters',
+                      leagueSubview: nextState.subView ?? 'roster',
+                      leagueRosterId: nextState.rosterId ?? null,
+                    }, { replace: true })}
+                    onViewPlayer={(playerOrMeta, playerMeta) => {
+                      const resolvedMeta = playerMeta ?? (typeof playerOrMeta === 'object' ? playerOrMeta : null);
+                      const sleeperId = resolvedMeta?.sleeperId ?? playerOrMeta;
+                      navigateToCompanionSleeperPlayer(sleeperId, 'Rosters', resolvedMeta);
+                    }}
+                    onTradePlayer={(sleeperId, partnerRosterId, side = 'get') => {
+                      if (tradeDisabledForPlatform) return;
+                      applyRoute({
+                        activeTab: 'trade',
+                        tradeView: 'agent',
+                        tradePlayerId: sleeperId,
+                        tradeSide: side,
+                        tradePartnerRosterId: partnerRosterId,
+                      });
+                    }}
+                    tradeDisabled={tradeDisabledForPlatform}
+                  />
                 </Suspense>
               )}
               {companionView === 'rankings'  && (
@@ -1650,23 +1689,28 @@ function AppInner() {
                   />
                 </Suspense>
               )}
-              {companionView === 'matchup'   && (
+              {companionView === 'matchups'   && (
                 <Suspense fallback={<SectionLoading label="Loading Matchup" />}>
                   <CompanionMatchup
                     initialWeekRequest={matchupInitRequest}
                     selectedWeek={appRoute.matchupWeek ?? null}
                     onWeekChange={(week) => updateCompanionRoute({
-                      companionView: 'matchup',
+                      companionView: 'matchups',
                       matchupWeek: week,
                     }, { replace: true })}
+                    selectedRosterId={appRoute.matchupRosterId ?? null}
+                    onSelectedRosterChange={(rosterId) => updateCompanionRoute({
+                      companionView: 'matchups',
+                      matchupRosterId: rosterId ?? null,
+                    }, { replace: true })}
                     onConsumeInitialWeekRequest={() => updateCompanionRoute({
-                      companionView: 'matchup',
+                      companionView: 'matchups',
                       matchupWeek: appRoute.matchupWeek ?? null,
                       matchupPlayerId: null,
                     }, { replace: true })}
                     onViewPlayer={(id, meta, options = {}) => {
                       navigateToStatisticsPlayer({ id, ...meta }, {
-                        backLabel: 'Matchup',
+                        backLabel: 'Matchups',
                         backRoute: appRoute,
                         mode: options.mode ?? STATISTICS_MODES.FANTASY,
                       });
@@ -1674,52 +1718,24 @@ function AppInner() {
                   />
                 </Suspense>
               )}
-              {companionView === 'waiver'    && (
+              {companionView === 'waivers'    && (
                 <Suspense fallback={<SectionLoading label="Loading Waiver" />}>
                   <CompanionWaiver
                     initialPositionRequest={waiverInitRequest}
                     positionFilter={appRoute.waiverPosition ?? 'ALL'}
                     onPositionFilterChange={(position) => updateCompanionRoute({
-                      companionView: 'waiver',
+                      companionView: 'waivers',
                       waiverPosition: position === 'ALL' ? null : position,
                     }, { replace: true })}
                     onConsumeInitialPositionRequest={() => {}}
                     onViewPlayer={(id, meta) => {
                       navigateToStatisticsPlayer({ id, ...meta }, {
-                        backLabel: 'Waiver',
+                        backLabel: 'Waivers',
                         backRoute: appRoute,
                         mode: STATISTICS_MODES.FANTASY,
                       });
                     }}
                   />
-                </Suspense>
-              )}
-              {companionView === 'league'   && (
-                <Suspense fallback={<SectionLoading label="Loading League" />}>
-                <CompanionLeague
-                  routeState={leagueRouteState}
-                  onRouteStateChange={(nextState) => updateCompanionRoute({
-                    companionView: 'league',
-                    leagueSubview: nextState.subView ?? 'roster',
-                    leagueRosterId: nextState.rosterId ?? null,
-                  }, { replace: true })}
-                  onViewPlayer={(playerOrMeta, playerMeta) => {
-                    const resolvedMeta = playerMeta ?? (typeof playerOrMeta === 'object' ? playerOrMeta : null);
-                    const sleeperId = resolvedMeta?.sleeperId ?? playerOrMeta;
-                    navigateToCompanionSleeperPlayer(sleeperId, 'League', resolvedMeta);
-                  }}
-                  onTradePlayer={(sleeperId, partnerRosterId, side = 'get') => {
-                    if (tradeDisabledForPlatform) return;
-                    applyRoute({
-                      activeTab: 'trade',
-                      tradeView: 'agent',
-                      tradePlayerId: sleeperId,
-                      tradeSide: side,
-                      tradePartnerRosterId: partnerRosterId,
-                    });
-                  }}
-                  tradeDisabled={tradeDisabledForPlatform}
-                />
                 </Suspense>
               )}
               {companionView === 'heatmap'   && (
@@ -1737,12 +1753,12 @@ function AppInner() {
                   />
                 </Suspense>
               )}
-              {companionView === 'defense'   && (
+              {companionView === 'defenses'   && (
                 <Suspense fallback={<SectionLoading label="Loading Defense" />}>
                   <CompanionDefense
                     routeState={defenseRouteState}
                     onRouteStateChange={(nextState) => updateCompanionRoute({
-                      companionView: 'defense',
+                      companionView: 'defenses',
                       defenseMode: nextState.mode,
                       defensePosition: nextState.position,
                       defenseStat: nextState.stat,
@@ -1756,6 +1772,40 @@ function AppInner() {
               {companionView === 'scoring'   && (
                 <Suspense fallback={<SectionLoading label="Loading Scoring" />}>
                   <CompanionScoring />
+                </Suspense>
+              )}
+            </>
+          )}
+
+          {activeTab === 'league' && hasLeague && (
+            <>
+              {leagueView === 'standings' && (
+                <Suspense fallback={<SectionLoading label="Loading Standings" />}>
+                  <CompanionStandings />
+                </Suspense>
+              )}
+              {leagueView === 'history' && (
+                <Suspense fallback={<SectionLoading label="Loading League History" />}>
+                  <CompanionHistory
+                    onOpenMatchup={async ({ season: recordSeason, week, rosterId }) => {
+                      if (String(recordSeason) !== String(season)) await changeSeason(recordSeason);
+                      applyRoute({
+                        activeTab: 'fantasy',
+                        companionView: 'matchups',
+                        matchupWeek: week,
+                        matchupRosterId: rosterId,
+                      });
+                    }}
+                  />
+                </Suspense>
+              )}
+              {leagueView === 'activity' && (
+                <Suspense fallback={<SectionLoading label="Loading League Activity" />}>
+                  <CompanionActivity
+                    onViewPlayer={(sleeperId) => {
+                      void navigateToCompanionSleeperPlayer(sleeperId, 'League Activity');
+                    }}
+                  />
                 </Suspense>
               )}
             </>
@@ -1779,7 +1829,12 @@ function AppInner() {
         </div>
 
         {/* Bottom tab bar — mobile/tablet only, hidden lg+ via CSS */}
-        <BottomTabBar activeTab={activeTab} onTabChange={navigateToTab} tradeDisabled={tradeDisabledForPlatform} />
+        <BottomTabBar
+          activeTab={activeTab}
+          onTabChange={navigateToTab}
+          tradeDisabled={tradeDisabledForPlatform}
+          leagueDisabled={leagueDisabledForPlatform}
+        />
       </div>
 
       {statsDrilldownPending && (
@@ -1793,6 +1848,10 @@ function AppInner() {
           predictionCount={predictionCount}
           activeTab={activeTab}
           onGuide={() => { setGuideOpen(true); setActionSheetOpen(false); }}
+          onDisplay={() => {
+            setActionSheetOpen(false);
+            setDisplaySettingsOpen(true);
+          }}
           onExportImage={handleExportImage}
           onExportJSON={handleExportJSON}
           onImportJSON={handleImportClick}
@@ -1802,7 +1861,7 @@ function AppInner() {
           onInstall={isInstallable && !isInstalled ? handleInstall : null}
           onMyTeam={handleMyTeam}
           favoriteTeam={favoriteTeam}
-          league={hasLeague && (activeTab === 'companion' || activeTab === 'trade' || activeTab === 'draft') ? league : null}
+          league={hasLeague && (activeTab === 'fantasy' || activeTab === 'league' || activeTab === 'trade' || activeTab === 'draft') ? league : null}
           leagueSeason={season}
           leagueSeasonOptions={linkedLeagueSeasonOptions}
           leagueSeasonSwitching={seasonSwitching}
@@ -1874,6 +1933,7 @@ function AppInner() {
             seasonView={seasonView}
             statisticsView={statisticsView}
             companionView={companionView}
+            leagueView={leagueView}
             tradeView={tradeView}
             scoutView={scoutView}
             draftView={draftView}
@@ -1883,6 +1943,15 @@ function AppInner() {
       {teamPickerOpen && (
         <Suspense fallback={<ModalLoading label="Loading team picker" />}>
           <FavoriteTeamPicker onClose={() => setTeamPickerOpen(false)} />
+        </Suspense>
+      )}
+      {displaySettingsOpen && (
+        <Suspense fallback={<ModalLoading label="Loading display settings" />}>
+          <DisplaySettingsModal
+            displaySize={displaySize}
+            onChange={setDisplaySize}
+            onClose={() => setDisplaySettingsOpen(false)}
+          />
         </Suspense>
       )}
 

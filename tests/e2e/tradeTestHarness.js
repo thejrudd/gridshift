@@ -24,6 +24,11 @@ export async function installTradeFixtures(page, overrides = {}) {
   const fixtureLeaguesBySeason = overrides.leaguesBySeason ?? leaguesBySeason;
   const fixtureTradedPicks = overrides.tradedPicks ?? tradedPicks;
   const fixtureDrafts = overrides.drafts ?? drafts;
+  const fixtureDraftPicks = overrides.draftPicks ?? [];
+  const fixtureDraftTradedPicks = overrides.draftTradedPicks ?? fixtureTradedPicks;
+  const fixtureTransactionsByRound = overrides.transactionsByRound ?? {};
+  const fixtureWinnersBracket = overrides.winnersBracket ?? [];
+  const fixtureLosersBracket = overrides.losersBracket ?? [];
   const fixtureMatchupsForWeek = overrides.matchupsForWeek ?? matchupsForWeek;
 
   const installedVersion = Object.prototype.hasOwnProperty.call(overrides, 'installedVersion')
@@ -66,9 +71,23 @@ export async function installTradeFixtures(page, overrides = {}) {
     if (path === `/v1/league/${TEST_LEAGUE_ID}/users`) return json(route, fixtureLeagueUsers);
     if (path === `/v1/league/${TEST_LEAGUE_ID}/traded_picks`) return json(route, fixtureTradedPicks);
     if (path === `/v1/league/${TEST_LEAGUE_ID}/drafts`) return json(route, fixtureDrafts);
+    if (path === `/v1/league/${TEST_LEAGUE_ID}/winners_bracket`) return json(route, fixtureWinnersBracket);
+    if (path === `/v1/league/${TEST_LEAGUE_ID}/losers_bracket`) return json(route, fixtureLosersBracket);
+    if (path.startsWith(`/v1/league/${TEST_LEAGUE_ID}/transactions/`)) {
+      const round = Number(path.split('/').at(-1));
+      return json(route, fixtureTransactionsByRound[round] ?? []);
+    }
     if (path.startsWith(`/v1/league/${TEST_LEAGUE_ID}/matchups/`)) {
       const week = Number(path.split('/').at(-1));
       return json(route, fixtureMatchupsForWeek(week));
+    }
+    const draftPathMatch = path.match(/^\/v1\/draft\/([^/]+)(?:\/(picks|traded_picks))?$/);
+    if (draftPathMatch) {
+      const draftId = decodeURIComponent(draftPathMatch[1]);
+      const suffix = draftPathMatch[2];
+      if (suffix === 'picks') return json(route, fixtureDraftPicks);
+      if (suffix === 'traded_picks') return json(route, fixtureDraftTradedPicks);
+      return json(route, fixtureDrafts.find((item) => String(item.draft_id) === draftId) ?? {});
     }
     if (path.startsWith(`/v1/stats/nfl/regular/${TEST_SEASON}/`)) {
       const week = Number(path.split('/').at(-1));

@@ -247,7 +247,7 @@ export default function ProposalPlayerCard({ player = null, palette = null, pick
                 )}
               </span>
               <span
-                className="mt-1 text-center text-[11px] font-bold uppercase leading-none"
+                className="mt-1 text-center text-[length:var(--type-label)] font-bold uppercase leading-none"
                 style={{ color: 'var(--color-label-secondary)', fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.16em' }}
               >
                 {primaryPick.year ?? '—'} Pick
@@ -272,7 +272,7 @@ export default function ProposalPlayerCard({ player = null, palette = null, pick
           {showSideBadge && (
             <div className="absolute top-1.5 left-1.5 lg:top-2 lg:left-2 z-10">
               <span
-                className="text-[9px] lg:text-[10px] font-bold uppercase tracking-widest px-1.5 lg:px-2 py-0.5 lg:py-1 rounded"
+                className="text-[length:var(--type-micro)] lg:text-[length:var(--type-label)] font-bold uppercase tracking-widest px-1.5 lg:px-2 py-0.5 lg:py-1 rounded"
                 style={{
                   background: darkMode ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.8)',
                   color: darkMode ? 'white' : '#0c0f14',
@@ -291,7 +291,7 @@ export default function ProposalPlayerCard({ player = null, palette = null, pick
                 <span
                   style={{
                     fontFamily: "'Barlow Condensed', sans-serif",
-                    fontSize: '10px',
+                    fontSize: 'var(--type-label)',
                     fontWeight: 700,
                     color: pt.accentMuted,
                     letterSpacing: '0.35em',
@@ -331,7 +331,7 @@ export default function ProposalPlayerCard({ player = null, palette = null, pick
                 {compactPickIdentity}
               </div>
               <div
-                className="mt-7 truncate whitespace-nowrap text-left text-[11px] font-bold uppercase leading-none lg:text-[13px] xl:text-sm"
+                className="mt-7 truncate whitespace-nowrap text-left text-[length:var(--type-label)] font-bold uppercase leading-none lg:text-[length:var(--type-meta)] xl:text-sm"
                 style={{ color: 'var(--color-label-secondary)', fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.16em' }}
               >
                 Draft Pick
@@ -346,7 +346,7 @@ export default function ProposalPlayerCard({ player = null, palette = null, pick
                 {primaryPick.value != null ? fmtKtcValue(primaryPick.value) : '—'}
               </div>
               <div
-                className="mt-0.5 text-[10px] font-bold uppercase leading-none lg:text-[12px]"
+                className="mt-0.5 text-[length:var(--type-label)] font-bold uppercase leading-none lg:text-[length:var(--type-label)]"
                 style={{ color: 'var(--color-label-tertiary)', letterSpacing: '0.14em' }}
               >
                 Value
@@ -364,7 +364,7 @@ export default function ProposalPlayerCard({ player = null, palette = null, pick
           }}
         >
           <div
-            className="text-[11px] lg:text-sm font-bold leading-tight tracking-wide uppercase whitespace-nowrap"
+            className="text-[length:var(--type-label)] lg:text-sm font-bold leading-tight tracking-wide uppercase whitespace-nowrap"
             style={{
               color: pt.yearText,
               textShadow: darkMode ? '0 1px 3px rgba(0,0,0,0.6)' : 'none',
@@ -378,7 +378,7 @@ export default function ProposalPlayerCard({ player = null, palette = null, pick
         <div className="flex flex-col flex-1 px-2 pb-2 min-h-0 items-center overflow-hidden" style={{ background: pt.glassBg }}>
           <div className="flex items-center justify-center py-1 lg:py-1.5 shrink-0">
             <span
-              className="text-sm lg:text-[18px] font-bold tabular-nums leading-tight"
+              className="text-sm lg:text-[length:var(--type-heading-sm)] font-bold tabular-nums leading-tight"
               style={{ color: 'var(--color-label)', fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.02em' }}
             >
               {primaryPick.value != null ? fmtKtcValue(primaryPick.value) : '—'}
@@ -388,8 +388,8 @@ export default function ProposalPlayerCard({ player = null, palette = null, pick
           {showPickMeta && (
           <div className={compactTradeCard ? 'hidden' : 'hidden min-[420px]:flex gap-1 w-full lg:hidden min-h-0 overflow-hidden'}>
             <div className="flex-1 rounded-lg p-1.5 flex flex-col gap-px" style={{ background: 'rgba(0,0,0,0.22)' }}>
-              <span className="text-[9px] font-bold uppercase tracking-wide mb-0.5" style={{ color: pt.accentMuted }}>{pickMetaLabel}</span>
-              <span className="text-[9px] font-semibold tabular-nums" style={{ color: pt.labelText }}>
+              <span className="text-[length:var(--type-micro)] font-bold uppercase tracking-wide mb-0.5" style={{ color: pt.accentMuted }}>{pickMetaLabel}</span>
+              <span className="text-[length:var(--type-micro)] font-semibold tabular-nums" style={{ color: pt.labelText }}>
                 {pickMetaValue}
               </span>
             </div>
@@ -399,8 +399,8 @@ export default function ProposalPlayerCard({ player = null, palette = null, pick
           {showPickMeta && (
           <div className="hidden lg:flex gap-1.5 w-full min-h-0 overflow-hidden">
             <div className="flex-1 rounded-lg p-1.5 flex flex-col gap-px" style={{ background: 'rgba(0,0,0,0.22)' }}>
-              <span className="text-[9px] font-bold uppercase tracking-wide mb-0.5" style={{ color: pt.accentMuted }}>{pickMetaLabel}</span>
-              <span className="text-[11px] font-semibold tabular-nums" style={{ color: pt.labelText }}>
+              <span className="text-[length:var(--type-micro)] font-bold uppercase tracking-wide mb-0.5" style={{ color: pt.accentMuted }}>{pickMetaLabel}</span>
+              <span className="text-[length:var(--type-label)] font-semibold tabular-nums" style={{ color: pt.labelText }}>
                 {pickMetaValue}
               </span>
             </div>
@@ -465,7 +465,7 @@ export default function ProposalPlayerCard({ player = null, palette = null, pick
         ) : (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-1">
             <span className="text-lg font-bold" style={{ color: 'rgba(255,255,255,0.4)' }}>📋</span>
-            <span className="text-[9px] font-bold uppercase tracking-widest"
+            <span className="text-[length:var(--type-micro)] font-bold uppercase tracking-widest"
               style={{ color: 'rgba(255,255,255,0.5)' }}>Draft Pick</span>
           </div>
         )}
@@ -473,7 +473,7 @@ export default function ProposalPlayerCard({ player = null, palette = null, pick
         {/* Give / Get badge — top left */}
         {showSideBadge && (
           <div className="absolute top-1.5 left-1.5 lg:top-2 lg:left-2 z-10">
-            <span className="text-[9px] lg:text-[10px] font-bold uppercase tracking-widest px-1.5 lg:px-2 py-0.5 lg:py-1 rounded"
+            <span className="text-[length:var(--type-micro)] lg:text-[length:var(--type-label)] font-bold uppercase tracking-widest px-1.5 lg:px-2 py-0.5 lg:py-1 rounded"
               style={{
                 background: 'rgba(0,0,0,0.7)',
                 color: sideBadgeForeground,
@@ -528,7 +528,7 @@ export default function ProposalPlayerCard({ player = null, palette = null, pick
                 {primary.name}
               </div>
               <div
-                className="mt-1 truncate whitespace-nowrap text-left text-[11px] font-bold uppercase leading-none lg:text-[13px] xl:text-sm"
+                className="mt-1 truncate whitespace-nowrap text-left text-[length:var(--type-label)] font-bold uppercase leading-none lg:text-[length:var(--type-meta)] xl:text-sm"
                 style={{ color: 'var(--color-label-secondary)', fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.1em' }}
               >
                 {primary.rank?.posLabel ? `${primary.rank.posLabel}${primary.rank.rank}` : [primary.team, primary.position].filter(Boolean).join(' · ')}
@@ -544,7 +544,7 @@ export default function ProposalPlayerCard({ player = null, palette = null, pick
                 {primary.value != null ? fmtKtcValue(primary.value) : '—'}
               </div>
               <div
-                className="mt-0.5 text-[10px] font-bold uppercase leading-none lg:text-[12px]"
+                className="mt-0.5 text-[length:var(--type-label)] font-bold uppercase leading-none lg:text-[length:var(--type-label)]"
                 style={{ color: 'var(--color-label-tertiary)', letterSpacing: '0.14em' }}
               >
                 Value
@@ -558,7 +558,7 @@ export default function ProposalPlayerCard({ player = null, palette = null, pick
                 {primary.ppg > 0 ? primary.ppg.toFixed(1) : '—'}
               </div>
               <div
-                className="mt-0.5 text-[10px] font-bold uppercase leading-none lg:text-[12px]"
+                className="mt-0.5 text-[length:var(--type-label)] font-bold uppercase leading-none lg:text-[length:var(--type-label)]"
                 style={{ color: 'var(--color-label-tertiary)', letterSpacing: '0.14em' }}
               >
                 PPG
@@ -577,12 +577,12 @@ export default function ProposalPlayerCard({ player = null, palette = null, pick
           borderTop: '1px solid rgba(255,255,255,0.12)',
           borderBottom: '1px solid rgba(255,255,255,0.08)',
         }}>
-        <div className="text-[11px] lg:text-[15px] xl:text-base font-bold leading-tight tracking-wide uppercase whitespace-nowrap"
+        <div className="text-[length:var(--type-label)] lg:text-[length:var(--type-emphasis)] xl:text-base font-bold leading-tight tracking-wide uppercase whitespace-nowrap"
           style={{ color: 'white', textShadow: '0 1px 3px rgba(0,0,0,0.6)', fontFamily: "'Barlow Condensed', sans-serif" }}>
           {primary?.name ?? primaryPick?.label ?? '—'}
         </div>
         {primary && (
-          <div className="text-[9px] lg:text-[12px] xl:text-[13px] font-medium tracking-wider uppercase mt-0.5 whitespace-nowrap"
+          <div className="text-[length:var(--type-micro)] lg:text-[length:var(--type-label)] xl:text-[length:var(--type-meta)] font-medium tracking-wider uppercase mt-0.5 whitespace-nowrap"
             style={{ color: 'rgba(255,255,255,0.55)' }}>
             {[primary.team, primary.position].filter(Boolean).join(' · ')}
           </div>
@@ -596,7 +596,7 @@ export default function ProposalPlayerCard({ player = null, palette = null, pick
         {/* ── Featured trade value ─── */}
         {primary?.value != null && (
           <div className="flex items-center justify-center py-1 lg:py-1.5 shrink-0">
-            <span className="text-sm lg:text-[18px] font-bold tabular-nums leading-tight"
+            <span className="text-sm lg:text-[length:var(--type-heading-sm)] font-bold tabular-nums leading-tight"
               style={{ color: 'var(--color-label)' }}>
               {fmtKtcValue(primary.value)}
             </span>
@@ -610,21 +610,21 @@ export default function ProposalPlayerCard({ player = null, palette = null, pick
               <div className="flex-1 min-h-0 rounded-lg px-1.5 py-1 flex flex-col items-center justify-center" style={{ background: 'rgba(0,0,0,0.35)' }}>
                 {primary?.ppg > 0 ? (
                   <>
-                    <span className="text-[13px] font-bold tabular-nums leading-tight" style={{ color: 'white' }}>
+                    <span className="text-[length:var(--type-meta)] font-bold tabular-nums leading-tight" style={{ color: 'white' }}>
                       {primary.ppg.toFixed(1)}
                     </span>
-                    <span className="text-[9px] font-medium leading-tight" style={{ color: 'rgba(255,255,255,0.5)' }}>PPG</span>
+                    <span className="text-[length:var(--type-micro)] font-medium leading-tight" style={{ color: 'rgba(255,255,255,0.5)' }}>PPG</span>
                   </>
                 ) : (
-                  <span className="text-[9px]" style={{ color: 'rgba(255,255,255,0.35)' }}>—</span>
+                  <span className="text-[length:var(--type-micro)]" style={{ color: 'rgba(255,255,255,0.35)' }}>—</span>
                 )}
               </div>
               {primary?.rank?.posLabel && (
                 <div className="flex-1 min-h-0 rounded-lg px-1.5 py-1 flex flex-col items-center justify-center" style={{ background: 'rgba(0,0,0,0.35)' }}>
-                  <span className="text-[13px] font-bold tabular-nums leading-tight" style={{ color: 'rgba(255,255,255,0.9)' }}>
+                  <span className="text-[length:var(--type-meta)] font-bold tabular-nums leading-tight" style={{ color: 'rgba(255,255,255,0.9)' }}>
                     {primary.rank.posLabel}{primary.rank.rank}
                   </span>
-                  <span className="text-[9px] font-medium leading-tight" style={{ color: 'rgba(255,255,255,0.5)' }}>Rank</span>
+                  <span className="text-[length:var(--type-micro)] font-medium leading-tight" style={{ color: 'rgba(255,255,255,0.5)' }}>Rank</span>
                 </div>
               )}
             </div>
@@ -634,16 +634,16 @@ export default function ProposalPlayerCard({ player = null, palette = null, pick
               {compactTradeCard ? (
                 <>
                   <div className="flex-1 min-h-0 rounded-lg px-1.5 py-1 flex flex-col items-center justify-center" style={{ background: 'rgba(0,0,0,0.35)' }}>
-                    <span className="text-[15px] font-bold tabular-nums leading-tight" style={{ color: 'white' }}>
+                    <span className="text-[length:var(--type-emphasis)] font-bold tabular-nums leading-tight" style={{ color: 'white' }}>
                       {primary.ppg > 0 ? primary.ppg.toFixed(1) : '—'}
                     </span>
-                    <span className="text-[9px] lg:text-[10px] font-medium leading-tight uppercase tracking-wide" style={{ color: 'rgba(255,255,255,0.52)' }}>PPG</span>
+                    <span className="text-[length:var(--type-micro)] lg:text-[length:var(--type-label)] font-medium leading-tight uppercase tracking-wide" style={{ color: 'rgba(255,255,255,0.52)' }}>PPG</span>
                   </div>
                   <div className="flex-1 min-h-0 rounded-lg px-1.5 py-1 flex flex-col items-center justify-center" style={{ background: 'rgba(0,0,0,0.35)' }}>
-                    <span className="text-[15px] font-bold tabular-nums leading-tight" style={{ color: 'rgba(255,255,255,0.92)' }}>
+                    <span className="text-[length:var(--type-emphasis)] font-bold tabular-nums leading-tight" style={{ color: 'rgba(255,255,255,0.92)' }}>
                       {primary.rank?.posLabel ? `${primary.rank.posLabel}${primary.rank.rank}` : '—'}
                     </span>
-                    <span className="text-[9px] lg:text-[10px] font-medium leading-tight uppercase tracking-wide" style={{ color: 'rgba(255,255,255,0.52)' }}>Rank</span>
+                    <span className="text-[length:var(--type-micro)] lg:text-[length:var(--type-label)] font-medium leading-tight uppercase tracking-wide" style={{ color: 'rgba(255,255,255,0.52)' }}>Rank</span>
                   </div>
                 </>
               ) : (
@@ -651,7 +651,7 @@ export default function ProposalPlayerCard({ player = null, palette = null, pick
               {/* Left: Game Stats */}
               <div className="flex-1 rounded-lg p-2 flex flex-col gap-0.5" style={{ background: 'rgba(0,0,0,0.35)' }}>
                 <span
-                  className="text-[9px] font-semibold uppercase tracking-wide mb-0.5"
+                  className="text-[length:var(--type-micro)] font-semibold uppercase tracking-wide mb-0.5"
                   style={{ color: 'rgba(255,255,255,0.6)', fontFamily: "'Figtree', sans-serif" }}
                 >
                   Stats
@@ -660,13 +660,13 @@ export default function ProposalPlayerCard({ player = null, palette = null, pick
                   visibleStatDefs.map(sd => (
                     <div key={sd.key} className="flex justify-between items-baseline">
                       <span
-                        className="text-[10px] font-medium"
+                        className="text-[length:var(--type-label)] font-medium"
                         style={{ color: 'rgba(255,255,255,0.68)', fontFamily: "'Figtree', sans-serif" }}
                       >
                         {sd.label}
                       </span>
                       <span
-                        className="text-[11px] font-semibold tabular-nums"
+                        className="text-[length:var(--type-label)] font-semibold tabular-nums"
                         style={{ color: 'white', fontFamily: "'Figtree', sans-serif" }}
                       >
                         {fmtStat(playerStats[sd.key])}
@@ -674,14 +674,14 @@ export default function ProposalPlayerCard({ player = null, palette = null, pick
                     </div>
                   ))
                 ) : (
-                  <span className="text-[10px]" style={{ color: 'rgba(255,255,255,0.4)', fontFamily: "'Figtree', sans-serif" }}>—</span>
+                  <span className="text-[length:var(--type-label)]" style={{ color: 'rgba(255,255,255,0.4)', fontFamily: "'Figtree', sans-serif" }}>—</span>
                 )}
               </div>
 
               {/* Right: Fantasy Stats */}
               <div className="flex-1 rounded-lg p-2 flex flex-col gap-0.5" style={{ background: 'rgba(0,0,0,0.35)' }}>
                 <span
-                  className="text-[9px] font-semibold uppercase tracking-wide mb-0.5"
+                  className="text-[length:var(--type-micro)] font-semibold uppercase tracking-wide mb-0.5"
                   style={{ color: 'rgba(255,255,255,0.6)', fontFamily: "'Figtree', sans-serif" }}
                 >
                   Fantasy
@@ -690,13 +690,13 @@ export default function ProposalPlayerCard({ player = null, palette = null, pick
                   <>
                     <div className="flex justify-between items-baseline">
                       <span
-                        className="text-[10px] font-medium"
+                        className="text-[length:var(--type-label)] font-medium"
                         style={{ color: 'rgba(255,255,255,0.68)', fontFamily: "'Figtree', sans-serif" }}
                       >
                         PPG
                       </span>
                       <span
-                        className="text-[11px] font-semibold tabular-nums"
+                        className="text-[length:var(--type-label)] font-semibold tabular-nums"
                         style={{ color: 'white', fontFamily: "'Figtree', sans-serif" }}
                       >
                         {primary.ppg > 0 ? primary.ppg.toFixed(1) : '—'}
@@ -705,13 +705,13 @@ export default function ProposalPlayerCard({ player = null, palette = null, pick
                     {primary.rank?.posLabel && (
                       <div className="flex justify-between items-baseline">
                         <span
-                          className="text-[10px] font-medium"
+                          className="text-[length:var(--type-label)] font-medium"
                           style={{ color: 'rgba(255,255,255,0.68)', fontFamily: "'Figtree', sans-serif" }}
                         >
                           Rank
                         </span>
                         <span
-                          className="text-[11px] font-semibold tabular-nums"
+                          className="text-[length:var(--type-label)] font-semibold tabular-nums"
                           style={{ color: 'rgba(255,255,255,0.9)', fontFamily: "'Figtree', sans-serif" }}
                         >
                           {primary.rank.posLabel}{primary.rank.rank}
@@ -721,13 +721,13 @@ export default function ProposalPlayerCard({ player = null, palette = null, pick
                     {!compactTradeCard && primary.seasonPts > 0 && (
                       <div className="flex justify-between items-baseline">
                         <span
-                          className="text-[10px] font-medium"
+                          className="text-[length:var(--type-label)] font-medium"
                           style={{ color: 'rgba(255,255,255,0.68)', fontFamily: "'Figtree', sans-serif" }}
                         >
                           Season
                         </span>
                         <span
-                          className="text-[11px] font-semibold tabular-nums"
+                          className="text-[length:var(--type-label)] font-semibold tabular-nums"
                           style={{ color: 'white', fontFamily: "'Figtree', sans-serif" }}
                         >
                           {primary.seasonPts.toFixed(1)}
@@ -736,7 +736,7 @@ export default function ProposalPlayerCard({ player = null, palette = null, pick
                     )}
                   </>
                 ) : (
-                  <span className="text-[10px]" style={{ color: 'rgba(255,255,255,0.4)', fontFamily: "'Figtree', sans-serif" }}>—</span>
+                  <span className="text-[length:var(--type-label)]" style={{ color: 'rgba(255,255,255,0.4)', fontFamily: "'Figtree', sans-serif" }}>—</span>
                 )}
               </div>
               </>

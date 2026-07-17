@@ -495,7 +495,7 @@ export default function CompanionWaiver({
   }, [espnIdOverrides, onViewPlayer, players]);
 
   return (
-    <div className="pb-6">
+    <div className="page-frame-data pb-6">
       {showWaiverControls && (
         <div className="px-4 pb-3 flex flex-col gap-2">
           <CompanionSelectorRail ariaLabel="Waiver position filter">
@@ -541,7 +541,7 @@ export default function CompanionWaiver({
           }}
         >
           <div />
-          <span className="min-w-0 text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--color-label-tertiary)' }}>Player</span>
+          <span className="min-w-0 text-[length:var(--type-label)] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--color-label-tertiary)' }}>Player</span>
           <ColHeader label="Proj" active={sortBy === 'projected'} onClick={() => setSortBy(value => value === 'projected' ? 'recent' : 'projected')} />
           {layout.showSeason && <ColHeader label="Season" active={sortBy === 'season'} onClick={() => setSortBy(value => value === 'season' ? 'recent' : 'season')} />}
           <ColHeader label="4-Wk Avg" active={sortBy === 'recent'} onClick={() => setSortBy('recent')} />
@@ -620,7 +620,7 @@ function ColHeader({ label, active, onClick }) {
           right: 0,
           top: '50%',
           transform: 'translateY(-50%)',
-          fontSize: '9px',
+          fontSize: 'var(--type-micro)',
           visibility: active ? 'visible' : 'hidden',
         }}
       >

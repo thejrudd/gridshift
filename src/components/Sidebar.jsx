@@ -12,6 +12,7 @@ export default function Sidebar({
   isSeasonComplete,
   darkMode,
   onToggleDarkMode,
+  onDisplay,
   onAppTour,
   onGuide,
   onExportJSON,
@@ -25,6 +26,7 @@ export default function Sidebar({
   onMyTeam,
   collapsed,
   onToggleCollapse,
+  leagueDisabled = false,
 }) {
   const { platform, isConnected, disconnect } = useSleeperLeague();
   const tradeDisabled = platform === 'espn';
@@ -53,7 +55,7 @@ export default function Sidebar({
             className="mt-1.5 flex items-center gap-1.5 px-2 py-0.5 rounded-full transition-opacity active:opacity-60"
             style={{ background: 'var(--color-signature)', color: 'var(--color-signature-fg)' }}
           >
-            <span style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.05em' }}>
+            <span style={{ fontSize: 'var(--type-label)', fontWeight: 700, letterSpacing: '0.05em' }}>
               {favoriteTeam.toUpperCase()}
             </span>
           </button>
@@ -79,9 +81,10 @@ export default function Sidebar({
         </button>
       </div>
 
-      {/* Progress bars — mounted only on the Predictions tab so other tabs reclaim the space */}
-      {activeTab === 'predictions' && (
-        <div className="sidebar-progress">
+      {/* Keep this slot mounted so the main navigation never shifts between tabs. */}
+      <div className="sidebar-progress">
+        {activeTab === 'predictions' && (
+          <>
           <SidebarProgressBar
             label="Teams"
             value={completedTeamCount}
@@ -94,8 +97,9 @@ export default function Sidebar({
             total={totalGames}
             complete={totalGames > 0 && pickedGameCount >= totalGames}
           />
-        </div>
-      )}
+          </>
+        )}
+      </div>
 
       {/* Main navigation */}
       <nav className="sidebar-nav" aria-label="Main navigation">
@@ -120,10 +124,21 @@ export default function Sidebar({
           </button>
         )}
         <SidebarNavItem
-          active={activeTab === 'companion'}
-          onClick={() => onTabChange('companion')}
+          active={activeTab === 'fantasy'}
+          onClick={() => onTabChange('fantasy')}
           icon={<CompanionIcon />}
-          label="Companion"
+          label="Fantasy"
+          dataTour="tab-companion"
+          collapsed={collapsed}
+        />
+        <SidebarNavItem
+          active={activeTab === 'league'}
+          onClick={() => onTabChange('league')}
+          icon={<LeagueIcon />}
+          label="League"
+          dataTour="tab-league"
+          disabled={leagueDisabled}
+          disabledTitle="League history is available for connected Sleeper leagues."
           collapsed={collapsed}
         />
         <SidebarNavItem
@@ -146,14 +161,6 @@ export default function Sidebar({
           onClick={() => onTabChange('draft')}
           icon={<DraftIcon />}
           label="Draft"
-          beta
-          collapsed={collapsed}
-        />
-        <SidebarNavItem
-          active={activeTab === 'scout'}
-          onClick={() => onTabChange('scout')}
-          icon={<ScoutIcon />}
-          label="Scout"
           beta
           collapsed={collapsed}
         />
@@ -196,6 +203,24 @@ export default function Sidebar({
         )}
         {collapsed && (
           <button
+            onClick={onDisplay}
+            title="Display settings"
+            aria-label="Display settings"
+            data-tour="display-settings"
+            style={{
+              width: 44, height: 44, borderRadius: 12,
+              border: '1px solid var(--color-separator)',
+              background: 'var(--color-fill)',
+              color: 'var(--color-label-secondary)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer',
+            }}
+          >
+            <DisplayIcon />
+          </button>
+        )}
+        {collapsed && (
+          <button
             onClick={onAppTour}
             title="App Tour"
             aria-label="App Tour"
@@ -222,7 +247,7 @@ export default function Sidebar({
         <div className="sidebar-section-label">
           {activeTab === 'predictions'
             ? 'Predictions'
-            : (activeTab === 'companion' || activeTab === 'trade' || activeTab === 'draft')
+            : (activeTab === 'fantasy' || activeTab === 'league' || activeTab === 'trade' || activeTab === 'draft')
               ? 'League'
               : 'Actions'}
         </div>
@@ -234,7 +259,7 @@ export default function Sidebar({
             <SidebarAction label="Randomize Predictions" onClick={onRandom} secondary />
           </>
         )}
-        {(activeTab === 'companion' || activeTab === 'trade' || activeTab === 'draft') && isConnected && (
+        {(activeTab === 'fantasy' || activeTab === 'league' || activeTab === 'trade' || activeTab === 'draft') && isConnected && (
           <SidebarAction label={`Disconnect ${platform === 'espn' ? 'ESPN' : 'Sleeper'}`} onClick={disconnect} />
         )}
         {isInstallable && !isInstalled && (
@@ -297,6 +322,15 @@ export default function Sidebar({
           </span>
         </button>
         <button
+          onClick={onDisplay}
+          className="sidebar-action-item"
+          data-tour="display-settings"
+          style={{ display: 'flex', alignItems: 'center', gap: '10px' }}
+        >
+          <DisplayIcon />
+          Display
+        </button>
+        <button
           onClick={onAppTour}
           className="sidebar-action-item"
           data-tour="app-tour"
@@ -329,7 +363,7 @@ export default function Sidebar({
           className="px-5 py-3 text-xs"
           style={{ color: 'var(--color-label-tertiary)' }}
         >
-          v8.2.2
+          v8.3.0
         </div>
       </div>
     </aside>
@@ -381,16 +415,16 @@ function SidebarProgressBar({ label, value, total, complete }) {
   );
 }
 
-function SidebarNavItem({ active, onClick, icon, label, beta, alpha, collapsed, disabled = false }) {
+function SidebarNavItem({ active, onClick, icon, label, beta, alpha, collapsed, disabled = false, disabledTitle = null, dataTour = null }) {
   return (
     <button
       onClick={disabled ? undefined : onClick}
       className={`sidebar-nav-item${active ? ' active' : ''}${disabled ? ' is-disabled' : ''}`}
-      data-tour={`tab-${label.toLowerCase()}`}
+      data-tour={dataTour ?? `tab-${label.toLowerCase()}`}
       aria-current={active ? 'page' : undefined}
       aria-disabled={disabled ? 'true' : undefined}
       disabled={disabled}
-      title={disabled ? 'Trade is not available for ESPN leagues yet.' : (collapsed ? label : undefined)}
+      title={disabled ? (disabledTitle ?? 'This section is not available for the connected platform.') : (collapsed ? label : undefined)}
     >
       <span className="sidebar-nav-icon">{icon}</span>
       {!collapsed && (
@@ -445,6 +479,17 @@ function TourIcon() {
   );
 }
 
+function DisplayIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M4 6h16M7 12h10M10 18h4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <circle cx="16" cy="6" r="2" fill="var(--color-bg)" stroke="currentColor" strokeWidth="1.5" />
+      <circle cx="9" cy="12" r="2" fill="var(--color-bg)" stroke="currentColor" strokeWidth="1.5" />
+      <circle cx="12" cy="18" r="2" fill="var(--color-bg)" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  );
+}
+
 function CompanionIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 26 26" fill="none" aria-hidden="true">
@@ -474,14 +519,12 @@ function DraftIcon() {
   );
 }
 
-function ScoutIcon() {
+function LeagueIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 26 26" fill="none" aria-hidden="true">
-      <rect x="6" y="5" width="14" height="17" rx="2" stroke="currentColor" strokeWidth="1.5" />
-      <rect x="10" y="3" width="6" height="4" rx="1" stroke="currentColor" strokeWidth="1.3" fill="var(--color-bg)" />
-      <line x1="9" y1="11.75" x2="17" y2="11.75" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-      <line x1="9" y1="14.75" x2="15" y2="14.75" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-      <line x1="9" y1="17.75" x2="13" y2="17.75" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+      <path d="M5 21V9l8-5 8 5v12" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+      <path d="M3.5 21h19" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M9 12h8M9 16h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
     </svg>
   );
 }

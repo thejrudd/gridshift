@@ -607,7 +607,7 @@ const PlayerBrowser = ({
             {conf.name}
           </div>
           <div className="px-4 py-4 sm:px-5" style={{ borderBottom: '1px solid var(--color-separator)' }}>
-            <div className="text-[11px] font-semibold uppercase" style={{ ...TEAM_LABEL_STYLE, color: conf.color }}>
+            <div className="text-[length:var(--type-label)] font-semibold uppercase" style={{ ...TEAM_LABEL_STYLE, color: conf.color }}>
               {conf.name}
             </div>
             <div className="mt-2 h-px w-20" style={{ background: conf.color, opacity: 0.55 }} />
@@ -620,7 +620,7 @@ const PlayerBrowser = ({
                 <div key={division}>
                   <div className="mb-3 flex items-center gap-3 px-1">
                     <h3
-                      className="text-[11px] font-semibold uppercase"
+                      className="text-[length:var(--type-label)] font-semibold uppercase"
                       style={{ ...TEAM_LABEL_STYLE, color: 'var(--color-label-tertiary)' }}
                     >
                       {division}
@@ -716,17 +716,17 @@ const TeamCard = ({ team, onClick, darkMode = false, fontSize = 14 }) => {
           {(isSuperBowl || isConf || isDiv) && (
             <div className="mt-1.5 flex flex-wrap gap-x-2 gap-y-0.5">
               {isSuperBowl && (
-                <span className="flex items-center gap-0.5 text-[9px] font-bold uppercase" style={{ color: goldColor, letterSpacing: '0.08em' }}>
+                <span className="flex items-center gap-0.5 text-[length:var(--type-micro)] font-bold uppercase" style={{ color: goldColor, letterSpacing: '0.08em' }}>
                   <TrophyIcon size={9} />SB LX
                 </span>
               )}
               {(isSuperBowl || isConf) && (
-                <span className="flex items-center gap-0.5 text-[9px] font-semibold uppercase" style={{ color: isSuperBowl ? goldColor : silverColor, letterSpacing: '0.08em' }}>
+                <span className="flex items-center gap-0.5 text-[length:var(--type-micro)] font-semibold uppercase" style={{ color: isSuperBowl ? goldColor : silverColor, letterSpacing: '0.08em' }}>
                   {team.division?.startsWith('AFC') ? 'AFC' : 'NFC'} Champ
                 </span>
               )}
               {(isSuperBowl || isConf || isDiv) && (
-                <span className="flex items-center gap-0.5 text-[9px] font-semibold uppercase" style={{ color: muted, letterSpacing: '0.08em' }}>
+                <span className="flex items-center gap-0.5 text-[length:var(--type-micro)] font-semibold uppercase" style={{ color: muted, letterSpacing: '0.08em' }}>
                   Div Champ
                 </span>
               )}
@@ -747,7 +747,7 @@ const PlayerThumbnail = ({ id, name, size = 'sm' }) => {
   const cls = size === 'lg' ? 'w-12 h-12' : 'w-8 h-8';
   return err ? (
     <div className={`${cls} rounded-full flex items-center justify-center shrink-0`} style={{ background: 'var(--color-fill)' }}>
-      <span className="text-[10px] font-bold" style={{ color: 'var(--color-label-tertiary)' }}>{initials}</span>
+      <span className="text-[length:var(--type-label)] font-bold" style={{ color: 'var(--color-label-tertiary)' }}>{initials}</span>
     </div>
   ) : (
     <img src={headshot(id)} alt="" className={`${cls} rounded-full object-cover shrink-0`} style={{ background: 'var(--color-fill)' }} onError={() => setErr(true)} />

@@ -37,6 +37,8 @@ tests/*
 !tests/e2e/
 tests/e2e/*
 !tests/e2e/companion-responsive.spec.js
+!tests/e2e/display-responsive.spec.js
+!tests/e2e/league-history.spec.js
 !tests/e2e/tradeTestHarness.js
 !tests/e2e/whats-new-tour.spec.js
 !tests/unit/

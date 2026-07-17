@@ -162,7 +162,12 @@ function AssetRail({ assets, sides, darkMode, onViewPlayer }) {
           />
         ))}
       </div>
-      <HorizontalScrollCue left={cue.left} right={cue.right} />
+      <HorizontalScrollCue
+        left={cue.left}
+        right={cue.right}
+        targetRef={railRef}
+        label="trade assets"
+      />
     </div>
   );
 }

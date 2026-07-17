@@ -9,6 +9,9 @@ Full token table and dark-mode values: **`docs/Design Tokens.md`**
 - `font-size: 16px` on all inputs (prevents iOS auto-zoom)
 - Safe area insets: `env(safe-area-inset-bottom)` on fixed bottom bars
 - Motion: spring-curve easing `cubic-bezier(0.32, 0.72, 0, 1)`
+- Display size is controlled by `data-display-size="compact|comfortable|large"` on `<html>` and persisted under `gridshift-display-size`; Comfortable is the default. Never add DPI/device-pixel-ratio auto-scaling, CSS `zoom`, or transform scaling.
+- Use semantic `--type-*` tokens instead of new pixel font sizes. Meaningful labels start at `--type-label`; `--type-micro` is decorative/status chrome only.
+- Route roots use one intentional frame: readable (`1200px`), data (`1600px`), or workbench (`1920px`). Long lists should not stretch identity and metrics across the full monitor width.
 - Important user-facing content must fit without truncation. Names, dates, venues, stats, scores, labels, and controls should wrap, reflow, resize, or drop lower-priority chrome before using ellipsis. Ellipsis is only acceptable for nonessential decorative metadata.
 - Mobile controls, menus, popovers, and other interactive elements must stay fully within the viewport at 100% zoom. Open flyouts inward from their nearest edge, cap widths with viewport-relative constraints, and avoid horizontal page overflow.
 - Table headers should be vertically centered over their metric data and should not truncate. Let labels wrap or use controlled overflow while preserving consistent header height, and resize or remove lower-priority columns before table elements overlap.
@@ -31,3 +34,4 @@ See [[Companion Shared Rows]] before changing Companion/Trade-adjacent selector 
 - `companionAssetVisuals.js` owns shared player images, fallback initials, team logos, position colors, and asset visual decisions.
 - Player status badges, `ROSTERED` labels, trend labels, and metric text on team gradients must use the shared local-contrast path (`PlayerStatusBadge`, `CompanionPlayerStatus`, `CompanionPlayerLocalContrastText`, or `CompanionPlayerMetric`). Do not hardcode text colors based only on light/dark mode or team accent.
 - Preserve row slots. Failed headshots should fall back to initials and failed logos should leave a spacer; never remove a grid cell with `display: none` because it can collapse player identity columns.
+- Wide player rows remain inside a data/workbench frame so the measured name column, adjacent logo/status slot, flexible spacer, metrics, and action stay visually anchored instead of drifting across ultrawide space.

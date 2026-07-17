@@ -269,7 +269,7 @@ export default function ComparePickerSheet({ teams, excludeId, onSelect, onClose
               style={{
                 background: 'var(--color-fill)',
                 color: 'var(--color-label)',
-                fontSize: 16,
+                fontSize: 'var(--type-emphasis)',
               }}
             />
             {loading && (

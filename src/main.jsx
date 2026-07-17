@@ -12,6 +12,9 @@ import App from './App.jsx'
 import { PredictionProvider } from './context/PredictionContext.jsx'
 import { ThemeProvider } from './context/ThemeContext.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
+import { applyDisplaySize, readDisplaySize } from './utils/displayPreferences.js'
+
+applyDisplaySize(readDisplaySize())
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

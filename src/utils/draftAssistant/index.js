@@ -424,6 +424,20 @@ export function normalizeDraftPick(rawPick, index = 0, draft = null) {
   };
 }
 
+export function resolveDraftPickManagerId(pick, draft = null) {
+  const pickedBy = pick?.pickedBy ?? pick?.picked_by;
+  if (pickedBy == null || !String(pickedBy).trim()) return null;
+  const managerId = String(pickedBy).trim();
+  const draftOrder = draft?.draft_order;
+  if (
+    draftOrder
+    && typeof draftOrder === 'object'
+    && Object.keys(draftOrder).length > 0
+    && !Object.prototype.hasOwnProperty.call(draftOrder, managerId)
+  ) return null;
+  return managerId;
+}
+
 function getDraftType(draft) {
   const type = String(draft?.type ?? draft?.settings?.type ?? '').toLowerCase();
   return type === 'linear' ? 'linear' : 'snake';

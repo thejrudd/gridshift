@@ -428,7 +428,7 @@ export default function CompareFantasyPanel({ sleeperIdA, sleeperIdB, onEdgeSumm
           <span className="text-[28px] font-bold tabular-nums leading-none" style={{ color: dataA?.seasonPts != null ? 'var(--color-label)' : 'var(--color-label-quaternary)' }}>
             {dataA?.seasonPts != null ? dataA.seasonPts.toFixed(1) : '—'}
           </span>
-          <span className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: 'var(--color-label-quaternary)' }}>Season pts</span>
+          <span className="text-[length:var(--type-label)] uppercase tracking-widest font-semibold" style={{ color: 'var(--color-label-quaternary)' }}>Season pts</span>
           {dataA?.avgPPG > 0 && (
             <span className="text-xs tabular-nums" style={{ color: 'var(--color-label-secondary)' }}>
               {dataA.avgPPG.toFixed(1)} avg
@@ -441,7 +441,7 @@ export default function CompareFantasyPanel({ sleeperIdA, sleeperIdB, onEdgeSumm
           )}
           {badgeA && (
             <span
-              className="mt-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase"
+              className="mt-0.5 px-1.5 py-0.5 rounded text-[length:var(--type-micro)] font-bold uppercase"
               style={{ background: badgeA.color, color: '#fff' }}
             >
               {badgeA.label}
@@ -450,14 +450,14 @@ export default function CompareFantasyPanel({ sleeperIdA, sleeperIdB, onEdgeSumm
         </div>
 
         {/* Center divider */}
-        <div className="flex items-center justify-center shrink-0 px-2" style={{ color: 'var(--color-label-quaternary)', fontSize: 11, fontWeight: 700 }}>vs</div>
+        <div className="flex items-center justify-center shrink-0 px-2" style={{ color: 'var(--color-label-quaternary)', fontSize: 'var(--type-label)', fontWeight: 700 }}>vs</div>
 
         {/* Player B total */}
         <div className="flex-1 flex flex-col items-center justify-center py-4 gap-0.5">
           <span className="text-[28px] font-bold tabular-nums leading-none" style={{ color: dataB?.seasonPts != null ? 'var(--color-label)' : 'var(--color-label-quaternary)' }}>
             {dataB?.seasonPts != null ? dataB.seasonPts.toFixed(1) : '—'}
           </span>
-          <span className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: 'var(--color-label-quaternary)' }}>Season pts</span>
+          <span className="text-[length:var(--type-label)] uppercase tracking-widest font-semibold" style={{ color: 'var(--color-label-quaternary)' }}>Season pts</span>
           {dataB?.avgPPG > 0 && (
             <span className="text-xs tabular-nums" style={{ color: 'var(--color-label-secondary)' }}>
               {dataB.avgPPG.toFixed(1)} avg
@@ -470,7 +470,7 @@ export default function CompareFantasyPanel({ sleeperIdA, sleeperIdB, onEdgeSumm
           )}
           {badgeB && (
             <span
-              className="mt-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase"
+              className="mt-0.5 px-1.5 py-0.5 rounded text-[length:var(--type-micro)] font-bold uppercase"
               style={{ background: badgeB.color, color: '#fff' }}
             >
               {badgeB.label}
@@ -594,7 +594,7 @@ function SectionHeader({ label }) {
       className="px-4 py-1.5"
       style={{ background: 'var(--color-fill-secondary)', borderBottom: '1px solid var(--color-separator)' }}
     >
-      <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: 'var(--color-label-quaternary)' }}>
+      <span className="text-[length:var(--type-label)] font-bold uppercase tracking-widest" style={{ color: 'var(--color-label-quaternary)' }}>
         {label}
       </span>
     </div>
@@ -618,13 +618,13 @@ function CompareRow({ label, scoringLabel, valA, valB, numA, numB, higher, highl
       {/* Player A */}
       <div className="flex-1 text-right">
         <div className="flex items-baseline justify-end gap-1">
-          {winA && <span className="text-[10px]" style={{ color: winColor }}>▲</span>}
+          {winA && <span className="text-[length:var(--type-label)]" style={{ color: winColor }}>▲</span>}
           <span className="font-bold tabular-nums text-sm" style={{ color: winA ? winColor : normalColor }}>
             {valA}
           </span>
         </div>
         {rankA && (
-          <div className="text-[10px] tabular-nums" style={{ color: 'var(--color-label-quaternary)' }}>
+          <div className="text-[length:var(--type-label)] tabular-nums" style={{ color: 'var(--color-label-quaternary)' }}>
             {rankA}
           </div>
         )}
@@ -634,7 +634,7 @@ function CompareRow({ label, scoringLabel, valA, valB, numA, numB, higher, highl
       <div className="shrink-0 text-center" style={{ width: 88 }}>
         <div className="text-xs" style={{ color: 'var(--color-label-tertiary)' }}>{label}</div>
         {scoringLabel && (
-          <div className="text-[10px] tabular-nums" style={{ color: 'var(--color-label-quaternary)' }}>
+          <div className="text-[length:var(--type-label)] tabular-nums" style={{ color: 'var(--color-label-quaternary)' }}>
             {scoringLabel}
           </div>
         )}
@@ -646,10 +646,10 @@ function CompareRow({ label, scoringLabel, valA, valB, numA, numB, higher, highl
           <span className="font-bold tabular-nums text-sm" style={{ color: winB ? winColor : normalColor }}>
             {valB}
           </span>
-          {winB && <span className="text-[10px]" style={{ color: winColor }}>▲</span>}
+          {winB && <span className="text-[length:var(--type-label)]" style={{ color: winColor }}>▲</span>}
         </div>
         {rankB && (
-          <div className="text-[10px] tabular-nums" style={{ color: 'var(--color-label-quaternary)' }}>
+          <div className="text-[length:var(--type-label)] tabular-nums" style={{ color: 'var(--color-label-quaternary)' }}>
             {rankB}
           </div>
         )}

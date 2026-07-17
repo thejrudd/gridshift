@@ -1,5 +1,10 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import { TEAM_COLORS } from '../data/teamColors';
+import {
+  applyDisplaySize,
+  persistDisplaySize,
+  readDisplaySize,
+} from '../utils/displayPreferences';
 
 const ThemeContext = createContext();
 
@@ -27,6 +32,8 @@ export const ThemeProvider = ({ children }) => {
     return localStorage.getItem('nfl-predictor-favorite-team') || null;
   });
 
+  const [displaySize, setDisplaySizeState] = useState(() => readDisplaySize());
+
   // Apply dark mode class
   useEffect(() => {
     if (darkMode) {
@@ -52,6 +59,11 @@ export const ThemeProvider = ({ children }) => {
     }
   }, [favoriteTeam, darkMode]);
 
+  useEffect(() => {
+    applyDisplaySize(displaySize);
+    persistDisplaySize(displaySize);
+  }, [displaySize]);
+
   const toggleDarkMode = () => setDarkMode(prev => !prev);
 
   const setFavoriteTeam = (teamKey) => {
@@ -63,8 +75,19 @@ export const ThemeProvider = ({ children }) => {
     }
   };
 
+  const setDisplaySize = (size) => {
+    setDisplaySizeState(applyDisplaySize(size));
+  };
+
   return (
-    <ThemeContext.Provider value={{ darkMode, toggleDarkMode, favoriteTeam, setFavoriteTeam }}>
+    <ThemeContext.Provider value={{
+      darkMode,
+      toggleDarkMode,
+      favoriteTeam,
+      setFavoriteTeam,
+      displaySize,
+      setDisplaySize,
+    }}>
       {children}
     </ThemeContext.Provider>
   );

@@ -133,7 +133,7 @@ export default function CompanionOpportunity({ onOpenTrade, onOpenWaiver }) {
                     ) : (
                       <div
                         className="w-5 h-5 rounded-full shrink-0 flex items-center justify-center"
-                        style={{ background: 'var(--color-fill-secondary)', fontSize: '9px', fontWeight: 700, color: 'var(--color-label-secondary)' }}
+                        style={{ background: 'var(--color-fill-secondary)', fontSize: 'var(--type-micro)', fontWeight: 700, color: 'var(--color-label-secondary)' }}
                       >
                         {name[0]?.toUpperCase()}
                       </div>

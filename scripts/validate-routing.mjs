@@ -46,18 +46,21 @@ const validatedPaths = [
   expectRoundTrip({ activeTab: 'statistics', statisticsView: 'schedule', statisticsScheduleMode: 'week', statisticsScheduleFilter: 'primetime' }, '/statistics/schedule?mode=week&filter=primetime'),
   expectRoundTrip({ activeTab: 'statistics', statisticsView: 'schedule', statisticsScheduleMode: 'team', statisticsScheduleTeamId: 'KC', statisticsScheduleFilter: 'holiday' }, '/statistics/schedule?mode=team&team=KC&filter=holiday'),
   expectRoundTrip({ activeTab: 'statistics', statisticsView: 'game', statisticsGameId: '401872656' }, '/statistics/game/401872656'),
-  expectRoundTrip({ activeTab: 'companion', companionView: 'roster' }, '/companion/roster'),
-  expectRoundTrip({ activeTab: 'companion', companionView: 'rankings', rankingsPosition: 'QB' }, '/companion/rankings?pos=QB'),
-  expectRoundTrip({ activeTab: 'companion', companionView: 'heatmap' }, '/companion/heatmap'),
-  expectRoundTrip({ activeTab: 'companion', companionView: 'heatmap', heatmapViewMode: 'defense', heatmapDefensePosition: 'LB', heatmapDefenseStatMode: 'idp_sack', heatmapScope: 'week', heatmapLocation: 'home', heatmapSortKey: 7, heatmapSortDir: 'asc', heatmapTeamSort: 'division', heatmapUseTeamColors: '1', heatmapVegasView: 'ou' }, '/companion/heatmap?mode=defense&defPos=LB&defStat=idp_sack&scope=week&loc=home&sort=7&dir=asc&teams=division&colors=1&odds=ou'),
-  expectRoundTrip({ activeTab: 'companion', companionView: 'defense' }, '/companion/defense'),
-  expectRoundTrip({ activeTab: 'companion', companionView: 'defense', defensePosition: 'RB', defenseStat: 'rush_att' }, '/companion/defense?pos=RB'),
-  expectRoundTrip({ activeTab: 'companion', companionView: 'defense', defenseMode: 'fantasy', defensePosition: 'QB', defenseStat: 'pass_yd', defenseSort: 'team', defenseDir: 'asc', defenseQuery: 'KC' }, '/companion/defense?mode=fantasy&sort=team&dir=asc&q=KC'),
-  expectRoundTrip({ activeTab: 'companion', companionView: 'defense', defenseSort: 'avg', defenseDir: 'asc' }, '/companion/defense?sort=avg&dir=asc'),
-  expectRoundTrip({ activeTab: 'companion', companionView: 'waiver', waiverPosition: 'RB' }, '/companion/waiver?position=RB'),
-  expectRoundTrip({ activeTab: 'companion', companionView: 'matchup', matchupWeek: 7, matchupPlayerId: '4034' }, '/companion/matchup?week=7&player=4034'),
-  expectRoundTrip({ activeTab: 'companion', companionView: 'league', leagueSubview: 'roster', leagueRosterId: '5' }, '/companion/league?team=5'),
-  expectRoundTrip({ activeTab: 'companion', companionView: 'league', leagueSubview: 'picks' }, '/companion/league?sub=picks'),
+  expectRoundTrip({ activeTab: 'fantasy', companionView: 'rosters' }, '/fantasy/rosters'),
+  expectRoundTrip({ activeTab: 'fantasy', companionView: 'rankings', rankingsPosition: 'QB' }, '/fantasy/rankings?pos=QB'),
+  expectRoundTrip({ activeTab: 'fantasy', companionView: 'heatmap' }, '/fantasy/heatmap'),
+  expectRoundTrip({ activeTab: 'fantasy', companionView: 'heatmap', heatmapViewMode: 'defense', heatmapDefensePosition: 'LB', heatmapDefenseStatMode: 'idp_sack', heatmapScope: 'week', heatmapLocation: 'home', heatmapSortKey: 7, heatmapSortDir: 'asc', heatmapTeamSort: 'division', heatmapUseTeamColors: '1', heatmapVegasView: 'ou' }, '/fantasy/heatmap?mode=defense&defPos=LB&defStat=idp_sack&scope=week&loc=home&sort=7&dir=asc&teams=division&colors=1&odds=ou'),
+  expectRoundTrip({ activeTab: 'fantasy', companionView: 'defenses' }, '/fantasy/defenses'),
+  expectRoundTrip({ activeTab: 'fantasy', companionView: 'defenses', defensePosition: 'RB', defenseStat: 'rush_att' }, '/fantasy/defenses?pos=RB'),
+  expectRoundTrip({ activeTab: 'fantasy', companionView: 'defenses', defenseMode: 'fantasy', defensePosition: 'QB', defenseStat: 'pass_yd', defenseSort: 'team', defenseDir: 'asc', defenseQuery: 'KC' }, '/fantasy/defenses?mode=fantasy&sort=team&dir=asc&q=KC'),
+  expectRoundTrip({ activeTab: 'fantasy', companionView: 'defenses', defenseSort: 'avg', defenseDir: 'asc' }, '/fantasy/defenses?sort=avg&dir=asc'),
+  expectRoundTrip({ activeTab: 'fantasy', companionView: 'waivers', waiverPosition: 'RB' }, '/fantasy/waivers?position=RB'),
+  expectRoundTrip({ activeTab: 'fantasy', companionView: 'matchups', matchupWeek: 7, matchupPlayerId: '4034', matchupRosterId: '5' }, '/fantasy/matchups?week=7&player=4034&team=5'),
+  expectRoundTrip({ activeTab: 'fantasy', companionView: 'rosters', leagueSubview: 'roster', leagueRosterId: '5' }, '/fantasy/rosters?team=5'),
+  expectRoundTrip({ activeTab: 'fantasy', companionView: 'rosters', leagueSubview: 'picks' }, '/fantasy/rosters?sub=picks'),
+  expectRoundTrip({ activeTab: 'league', leagueView: 'standings' }, '/league/standings'),
+  expectRoundTrip({ activeTab: 'league', leagueView: 'history' }, '/league/history'),
+  expectRoundTrip({ activeTab: 'league', leagueView: 'activity' }, '/league/activity'),
   expectRoundTrip({ activeTab: 'trade', tradeView: 'agent' }, '/trade/agent'),
   expectRoundTrip({ activeTab: 'trade', tradeView: 'history' }, '/trade/history'),
   expectRoundTrip({ activeTab: 'trade', tradeView: 'intelligence', tradePartnerRosterId: '5' }, '/trade/intelligence?partner=5'),
@@ -68,7 +71,13 @@ const validatedPaths = [
 ];
 
 const legacyDefenseSackPath = buildAppPath(parseAppRoute('/companion/defense', '?stat=pass_sack'));
-assert(legacyDefenseSackPath === '/companion/defense', `Expected legacy QB sack defense stat to normalize away, got ${legacyDefenseSackPath}`);
+assert(legacyDefenseSackPath === '/fantasy/defenses', `Expected legacy QB sack defense stat to normalize away, got ${legacyDefenseSackPath}`);
+
+const legacyRostersPath = buildAppPath(parseAppRoute('/companion/league', '?sub=picks&team=5'));
+assert(legacyRostersPath === '/fantasy/rosters?sub=picks&team=5', `Expected legacy League route to retain roster state, got ${legacyRostersPath}`);
+
+const legacyLeagueHistoryPath = buildAppPath(parseAppRoute('/companion/history'));
+assert(legacyLeagueHistoryPath === '/league/history', `Expected legacy Companion history route to move to League, got ${legacyLeagueHistoryPath}`);
 
 const legacyScheduleSpecialPath = buildAppPath(parseAppRoute('/statistics/schedule', '?mode=holiday'));
 assert(

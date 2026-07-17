@@ -5,8 +5,8 @@ const KINDS = {
 };
 
 const SIZES = {
-  md: { fontSize: '9px', padding: '1px 5px', lineHeight: '14px' },
-  sm: { fontSize: '9px', padding: '1px 4px', lineHeight: '12px' },
+  md: { fontSize: 'var(--type-micro)', padding: '1px 5px', lineHeight: '14px' },
+  sm: { fontSize: 'var(--type-micro)', padding: '1px 4px', lineHeight: '12px' },
 };
 
 /**

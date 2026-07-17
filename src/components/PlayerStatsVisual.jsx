@@ -804,12 +804,12 @@ const PlayerStatsVisual = ({
               />
             </div>
             {!canUseFantasyForSeason && (
-              <div className="text-left text-[11px] font-semibold" style={{ color: 'var(--color-label-tertiary)' }}>
+              <div className="text-left text-[length:var(--type-label)] font-semibold" style={{ color: 'var(--color-label-tertiary)' }}>
                 Fantasy scoring unavailable for {selectedSeasonKey}
               </div>
             )}
             {canUseFantasyForSeason && !canUseFantasyForSelectedStat && (
-              <div className="text-left text-[11px] font-semibold" style={{ color: 'var(--color-label-tertiary)' }}>
+              <div className="text-left text-[length:var(--type-label)] font-semibold" style={{ color: 'var(--color-label-tertiary)' }}>
                 Fantasy scoring unavailable for {statLabel}
               </div>
             )}
@@ -1063,7 +1063,7 @@ const PlayerStatsVisual = ({
 function MetricModeToggle({ label, value, onChange, fantasyDisabled = false }) {
   return (
     <div className="flex items-center gap-1 rounded-lg p-1" style={{ background: 'var(--color-fill)' }}>
-      <span className="px-1.5 text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: 'var(--color-label-tertiary)' }}>
+      <span className="px-1.5 text-[length:var(--type-label)] font-bold uppercase tracking-[0.14em]" style={{ color: 'var(--color-label-tertiary)' }}>
         {label}
       </span>
       {METRIC_MODE_OPTIONS.map((option) => {
@@ -1075,7 +1075,7 @@ function MetricModeToggle({ label, value, onChange, fantasyDisabled = false }) {
             type="button"
             onClick={() => { if (!disabled) onChange(option.id); }}
             disabled={disabled}
-            className="rounded-md px-2 py-1 text-[11px] font-bold transition-colors disabled:cursor-not-allowed"
+            className="rounded-md px-2 py-1 text-[length:var(--type-label)] font-bold transition-colors disabled:cursor-not-allowed"
             style={{
               background: selected ? 'var(--color-signature)' : 'transparent',
               color: selected ? 'var(--color-signature-fg)' : 'var(--color-label-secondary)',
@@ -1095,7 +1095,7 @@ function MetricModeToggle({ label, value, onChange, fantasyDisabled = false }) {
 function ChartScaleToggle({ value, onChange }) {
   return (
     <div className="flex items-center gap-1 rounded-lg p-1" style={{ background: 'var(--color-fill)' }}>
-      <span className="px-1.5 text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: 'var(--color-label-tertiary)' }}>
+      <span className="px-1.5 text-[length:var(--type-label)] font-bold uppercase tracking-[0.14em]" style={{ color: 'var(--color-label-tertiary)' }}>
         Scale
       </span>
       {SCALE_MODE_OPTIONS.map((option) => {
@@ -1105,7 +1105,7 @@ function ChartScaleToggle({ value, onChange }) {
             key={option.id}
             type="button"
             onClick={() => onChange(option.id)}
-            className="rounded-md px-2 py-1 text-[11px] font-bold transition-colors"
+            className="rounded-md px-2 py-1 text-[length:var(--type-label)] font-bold transition-colors"
             style={{
               background: selected ? 'var(--color-signature)' : 'transparent',
               color: selected ? 'var(--color-signature-fg)' : 'var(--color-label-secondary)',
@@ -1252,7 +1252,7 @@ function WeekInsightSheet({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-md px-2.5 py-1 text-[11px] font-bold"
+              className="rounded-md px-2.5 py-1 text-[length:var(--type-label)] font-bold"
               style={{ background: 'var(--color-fill)', color: 'var(--color-label)' }}
             >
               Close
@@ -1311,7 +1311,7 @@ function WeekInsightContent({
                       Week {row.week}
                     </span>
                     {row.opponent && (
-                      <span className="text-[11px] font-bold leading-none tracking-[0.14em]" style={{ color: 'var(--color-label-secondary)' }}>
+                      <span className="text-[length:var(--type-label)] font-bold leading-none tracking-[0.14em]" style={{ color: 'var(--color-label-secondary)' }}>
                         {row.locationPrefix ?? 'vs'} {row.opponent}
                       </span>
                     )}
@@ -1343,7 +1343,7 @@ function WeekInsightContent({
                   value={formatChartValue(row.offenseValue, 1)}
                   emphasis="strong"
                 />
-                <div className="flex items-center self-center rounded-full px-2 py-1 text-[9px] font-bold uppercase tracking-[0.12em]" style={{ background: 'color-mix(in srgb, var(--color-bg-secondary) 72%, transparent)', color: 'var(--color-label-secondary)' }}>
+                <div className="flex items-center self-center rounded-full px-2 py-1 text-[length:var(--type-micro)] font-bold uppercase tracking-[0.12em]" style={{ background: 'color-mix(in srgb, var(--color-bg-secondary) 72%, transparent)', color: 'var(--color-label-secondary)' }}>
                   vs
                 </div>
                 <InsightHeroMetric
@@ -1363,7 +1363,7 @@ function WeekInsightContent({
       ) : (
         <>
           <div className="flex items-center justify-between gap-3">
-            <div className="text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: 'var(--color-label-tertiary)' }}>
+            <div className="text-[length:var(--type-label)] font-bold uppercase tracking-[0.14em]" style={{ color: 'var(--color-label-tertiary)' }}>
               Week {row.week}{row.opponent ? ` ${row.locationPrefix ?? 'vs'} ${row.opponent}` : ''}
             </div>
             {row.opponentLogo && (
@@ -1384,7 +1384,7 @@ function WeekInsightContent({
           </div>
 
           <div className="mt-2 rounded-md px-2 py-1.5" style={{ background: 'var(--color-fill)' }}>
-            <div className="text-[10px] font-bold uppercase tracking-[0.12em]" style={{ color: 'var(--color-label-tertiary)' }}>
+            <div className="text-[length:var(--type-label)] font-bold uppercase tracking-[0.12em]" style={{ color: 'var(--color-label-tertiary)' }}>
               Total Fantasy Points
             </div>
             <div className="mt-0.5 text-base font-bold" style={{ color: 'var(--color-label)' }}>
@@ -1395,7 +1395,7 @@ function WeekInsightContent({
       )}
 
       <div className={compact ? 'mt-2' : 'mt-3'}>
-        <div className="mb-1.5 grid grid-cols-[minmax(0,1.35fr)_0.8fr_0.9fr] gap-2 px-1 text-[9px] font-bold uppercase tracking-[0.12em]" style={{ color: 'var(--color-label-tertiary)' }}>
+        <div className="mb-1.5 grid grid-cols-[minmax(0,1.35fr)_0.8fr_0.9fr] gap-2 px-1 text-[length:var(--type-micro)] font-bold uppercase tracking-[0.12em]" style={{ color: 'var(--color-label-tertiary)' }}>
           <span>Statistics</span>
           <span className="text-right">Game Stats</span>
           <span className="text-right">Fantasy Points</span>
@@ -1405,7 +1405,7 @@ function WeekInsightContent({
           return (
             <div
               key={item.key}
-              className={`grid grid-cols-[minmax(0,1.35fr)_0.8fr_0.9fr] gap-2 rounded-md px-2 ${compact ? 'mt-1 py-1.5 text-[10px]' : 'py-1.5 text-[11px]'}`}
+              className={`grid grid-cols-[minmax(0,1.35fr)_0.8fr_0.9fr] gap-2 rounded-md px-2 ${compact ? 'mt-1 py-1.5 text-[length:var(--type-label)]' : 'py-1.5 text-[length:var(--type-label)]'}`}
               style={{
                 background: selected
                   ? `color-mix(in srgb, ${row.opponentColor ?? 'var(--color-accent)'} 18%, transparent)`
@@ -1431,7 +1431,7 @@ function WeekInsightContent({
       </div>
 
       {!compact && (
-        <div className="mt-2 text-[11px]" style={{ color: 'var(--color-label-tertiary)' }}>
+        <div className="mt-2 text-[length:var(--type-label)]" style={{ color: 'var(--color-label-tertiary)' }}>
           Defense value is the rolling opponent average allowed to {positionGroupLabel}s.
         </div>
       )}
@@ -1471,10 +1471,10 @@ function InsightHeroMetric({ eyebrow, label, value, accentColor = null, emphasis
       style={{ background, border }}
     >
       <div className="min-w-0">
-        <div className="text-[9px] font-bold uppercase leading-tight tracking-[0.12em]" style={{ color: 'var(--color-label-tertiary)' }}>
+        <div className="text-[length:var(--type-micro)] font-bold uppercase leading-tight tracking-[0.12em]" style={{ color: 'var(--color-label-tertiary)' }}>
           {eyebrow}
         </div>
-        <div className="mt-1 text-[10px] font-bold uppercase leading-tight tracking-[0.1em]" style={{ color: 'var(--color-label-secondary)' }}>
+        <div className="mt-1 text-[length:var(--type-label)] font-bold uppercase leading-tight tracking-[0.1em]" style={{ color: 'var(--color-label-secondary)' }}>
           {label}
         </div>
       </div>
@@ -1488,7 +1488,7 @@ function InsightHeroMetric({ eyebrow, label, value, accentColor = null, emphasis
 function CompactMetric({ label, value, tone = 'secondary' }) {
   return (
     <div className="min-w-0 rounded-md px-2 py-1.5" style={{ background: 'var(--color-fill-tertiary)', border: '1px solid var(--color-separator)' }}>
-      <div className="text-[9px] font-bold uppercase leading-tight tracking-[0.1em]" style={{ color: 'var(--color-label-tertiary)' }}>
+      <div className="text-[length:var(--type-micro)] font-bold uppercase leading-tight tracking-[0.1em]" style={{ color: 'var(--color-label-tertiary)' }}>
         {label}
       </div>
       <div className="mt-0.5 text-sm font-bold leading-tight" style={{ color: tone === 'primary' ? 'var(--color-accent)' : 'var(--color-label)' }}>
@@ -1501,7 +1501,7 @@ function CompactMetric({ label, value, tone = 'secondary' }) {
 function TooltipMetric({ label, value, tone = 'secondary' }) {
   return (
     <div className="rounded-md px-2 py-1.5" style={{ background: 'var(--color-fill)' }}>
-      <div className="text-[10px] font-bold uppercase tracking-[0.12em]" style={{ color: 'var(--color-label-tertiary)' }}>
+      <div className="text-[length:var(--type-label)] font-bold uppercase tracking-[0.12em]" style={{ color: 'var(--color-label-tertiary)' }}>
         {label}
       </div>
       <div className="mt-0.5 text-base font-bold" style={{ color: tone === 'primary' ? 'var(--color-accent)' : 'var(--color-label)' }}>

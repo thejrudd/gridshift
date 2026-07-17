@@ -661,7 +661,7 @@ function TradeCompareScoreboard({ playerA, playerB, valA, valB, leader, gap, pct
           <span className="trade-compare-scoreboard__gap text-xs" style={{ color: 'var(--color-label-tertiary)' }}>
             {gap === 0 ? 'No value gap' : `${fmtKtcValue(gap)} gap`}
           </span>
-          <span className="trade-compare-scoreboard__pct text-[10px] uppercase tracking-widest" style={{ color: 'var(--color-label-quaternary)' }}>
+          <span className="trade-compare-scoreboard__pct text-[length:var(--type-label)] uppercase tracking-widest" style={{ color: 'var(--color-label-quaternary)' }}>
             {pct != null ? `${pct}% of top side` : 'Gap pending'}
           </span>
         </div>
@@ -734,7 +734,7 @@ function ValueEquivalents({ playerEquivs, pickEquiv }) {
   return (
     <div className="trade-compare-balance__equivalents flex flex-col gap-1.5">
       <span
-        className="text-[10px] uppercase tracking-widest"
+        className="text-[length:var(--type-label)] uppercase tracking-widest"
         style={{ color: 'var(--color-label-quaternary)', letterSpacing: '0.08em' }}
       >
         Value equivalents
@@ -797,7 +797,7 @@ function TradeContextGrid({ analysis, valA, valB, rawValA, rawValB, format, leag
       <div className="trade-compare-context__heading flex items-center gap-2 mb-2">
         <SectionHeader label="Player Outlook" />
         {statsLoading && !seasonStats && (
-          <span className="text-[10px]" style={{ color: 'var(--color-label-quaternary)' }}>
+          <span className="text-[length:var(--type-label)]" style={{ color: 'var(--color-label-quaternary)' }}>
             · loading stats…
           </span>
         )}
@@ -1026,7 +1026,7 @@ function TradeCompareAttribution({ format, leagueType }) {
 function SectionHeader({ label }) {
   return (
     <span
-      className="text-[10px] font-semibold uppercase tracking-widest"
+      className="text-[length:var(--type-label)] font-semibold uppercase tracking-widest"
       style={{ color: 'var(--color-label-quaternary)', letterSpacing: '0.1em' }}
     >
       {label}
@@ -1039,7 +1039,7 @@ function OutlookRow({ label, left, right }) {
     <div className="trade-compare-context__row flex items-center gap-2">
       <div className="trade-compare-context__value trade-compare-context__value--left flex-1 flex justify-end">{left}</div>
       <div
-        className="trade-compare-context__label shrink-0 text-center text-[10px] uppercase tracking-wider"
+        className="trade-compare-context__label shrink-0 text-center text-[length:var(--type-label)] uppercase tracking-wider"
         style={{ width: 96, color: 'var(--color-label-quaternary)' }}
       >
         {label}
@@ -1066,7 +1066,7 @@ function AgeValue({ age, window }) {
   return (
     <MetricValue>
       {age}
-      {window && <span className="text-[10px] ml-1" style={{ color: 'var(--color-label-quaternary)' }}>· {window}</span>}
+      {window && <span className="text-[length:var(--type-label)] ml-1" style={{ color: 'var(--color-label-quaternary)' }}>· {window}</span>}
     </MetricValue>
   );
 }
@@ -1091,7 +1091,7 @@ function RecentValue({ perf }) {
   return (
     <MetricValue color={color}>
       {perf.recentAvg}
-      <span className="text-[10px] ml-1" style={{ color: 'var(--color-label-quaternary)' }}>L{perf.recentWeeks}</span>
+      <span className="text-[length:var(--type-label)] ml-1" style={{ color: 'var(--color-label-quaternary)' }}>L{perf.recentWeeks}</span>
     </MetricValue>
   );
 }
@@ -1128,7 +1128,7 @@ function InfoTooltip({ text, position = 'above' }) {
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           background: 'var(--color-fill)',
           color: 'var(--color-label-tertiary)',
-          fontSize: '9px', fontWeight: 700, flexShrink: 0, border: 'none', cursor: 'pointer',
+          fontSize: 'var(--type-micro)', fontWeight: 700, flexShrink: 0, border: 'none', cursor: 'pointer',
         }}
       >
         i

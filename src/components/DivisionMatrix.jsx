@@ -50,7 +50,7 @@ const DivisionMatrix = ({ divisionTeams, allTeams }) => {
 
   return (
     <div className="px-3 pb-3">
-      <div className="text-[10px] font-semibold text-[color:var(--color-label-tertiary)] uppercase tracking-wider mb-1.5">
+      <div className="text-[length:var(--type-label)] font-semibold text-[color:var(--color-label-tertiary)] uppercase tracking-wider mb-1.5">
         Head-to-Head
       </div>
       <div className="overflow-x-auto">
@@ -59,7 +59,7 @@ const DivisionMatrix = ({ divisionTeams, allTeams }) => {
             <tr>
               <th className="w-12" />
               {divisionTeams.map(team => (
-                <th key={team.id} className="px-1 py-1 font-bold text-[color:var(--color-label-secondary)] text-[11px]">
+                <th key={team.id} className="px-1 py-1 font-bold text-[color:var(--color-label-secondary)] text-[length:var(--type-label)]">
                   {team.id}
                 </th>
               ))}
@@ -68,7 +68,7 @@ const DivisionMatrix = ({ divisionTeams, allTeams }) => {
           <tbody>
             {divisionTeams.map(rowTeam => (
               <tr key={rowTeam.id}>
-                <td className="pr-1 py-0.5 text-right font-bold text-[color:var(--color-label-secondary)] text-[11px]">
+                <td className="pr-1 py-0.5 text-right font-bold text-[color:var(--color-label-secondary)] text-[length:var(--type-label)]">
                   {rowTeam.id}
                 </td>
                 {divisionTeams.map(colTeam => {
@@ -88,7 +88,7 @@ const DivisionMatrix = ({ divisionTeams, allTeams }) => {
                         {results.map((result, i) => (
                           <span
                             key={i}
-                            className={`inline-block w-5 h-5 leading-5 rounded text-[10px] font-bold ${
+                            className={`inline-block w-5 h-5 leading-5 rounded text-[length:var(--type-label)] font-bold ${
                               result ? resultColors[result] : 'bg-[color:var(--color-fill)] text-[color:var(--color-label-tertiary)]'
                             }`}
                           >

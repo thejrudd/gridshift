@@ -11,19 +11,22 @@ An interactive web app for the 2026 NFL season — with full Sleeper fantasy lea
 - Predictions — Game picks, constraints, standings, playoff seeding, and shareable infographic export.
 - Statistics — Schedules, standings, team/player profiles, game logs, honors, and scoring breakdowns.
 
-### Fantasy Companion
+### Fantasy & League
 
 - Sleeper integration — League connection, custom scoring, rosters, and season navigation.
-- Matchups — Weekly starter comparisons with projections, ranks, weather, game context, and scoring details.
+- Matchups — Cycle through every weekly league matchup with projections, ranks, weather, game context, and scoring details.
 - League analysis — Player stats, fantasy points allowed, team defense, heatmaps, and roster/draft capital.
+- League archive — Finalized standings, linked-season activity, lifetime leaderboards, champions, rivalries, and core records for Sleeper leagues.
 - Trade tools — Roster-and-pick proposals, guided upgrades, and searchable multi-season trade history.
 
 ### Draft & Scouting
 
-- Draft Assistant (Beta) — War Room rankings, Draft Board, live timing, and consolidated Results.
+- Draft Assistant (Beta) — War Room rankings, Draft Board, live timing, team Draft Blueprints, and chronological Pick Lists.
 - Scout (Beta) — 2026 prospects, filters, draft status, combine metrics, and comparisons.
 
 ### Sharing & App Experience
+
+- Responsive display — Choose Compact, Comfortable, or Large sizing while retaining native browser zoom and operating-system scaling.
 
 - Export/import — Save and restore predictions as JSON.
 - Themes and display — Favorite-team theming, dark mode, responsive layouts, and installable PWA.
@@ -110,17 +113,20 @@ Hosted owners can enable paid live scoring for selected Sleeper leagues by setti
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) + optional Node API sidecar |
 
-## What's New in v8.2.2
+## What's New in v8.3.0
 
-- **First-run App Tour** — New users receive a Sleeper connection welcome flow followed by an eight-step overview of GridShift's main sections, help, display controls, and replay option.
-- **Fresher Sleeper rosters** — Connected Sleeper leagues now refresh roster changes in the background and when the app regains focus, keeping drops, adds, trades, reserve moves, and taxi updates current.
-- **Mobile Draft Board fixes** — Expanded Available Players now uses the full board workspace with reliable scrolling, while Draft pages use cleaner edge-to-edge spacing and touch-friendly controls on phones.
+- **League workspace** — Fantasy tools now have a dedicated League area for Standings, History, and Activity across linked Sleeper seasons.
+- **League History** — Review champions, lifetime standings, rivalries, scoring records, and completed league events in a unified record book.
+- **Draft Blueprint** — Start Draft Results with team-by-team roster construction and drill into the chronological Pick List.
+- **Display settings** — Choose Compact, Comfortable, or Large type, controls, and spacing for the way you read GridShift.
+- **Contextual empty states** — New and renewed leagues receive clear guidance when the selected league year has no finalized standings or activity yet.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Roadmap
 
-- v8.3 - Live Fantasy Scoring & Team Tendencies — Sleeper-first live scoring, server-protected BALLDONTLIE support, win probability, team rankings/tables, fantasy context, and usage-based projections.
+- v8.4 - Live Fantasy Scoring & Team Tendencies — Sleeper-first live scoring, server-protected BALLDONTLIE support, win probability, team rankings/tables, fantasy context, and usage-based projections.
+- Sleeper Player Data Caching — Server-side daily `/players/nfl` snapshots and client snapshot reuse.
 - Scout Rookie Projection Layer — Add next-season rookie projections for standard and IDP-focused draft prep.
 - Trade follow-through — Continue polishing Trade drilldowns, explanation copy, and proposal-card readability.
 
@@ -132,16 +138,22 @@ src/
 ├── components/
 │   ├── Sidebar.jsx                # Desktop sidebar: brand, nav, progress, dark mode toggle
 │   ├── NavBar.jsx                 # Mobile sticky top nav bar
-│   ├── BottomTabBar.jsx           # Mobile bottom tab bar (Season / Companion)
+│   ├── BottomTabBar.jsx           # Mobile top-level Fantasy / League / NFL navigation
 │   ├── SeasonSubNav.jsx           # Season sub-view tabs (Predictions / Standings / Playoffs)
 │   ├── StatisticsSubNav.jsx       # Statistics sub-view tabs (Stats / Schedule / Standings)
-│   ├── CompanionSubNav.jsx        # Companion sub-view tabs
+│   ├── CompanionSubNav.jsx        # Fantasy sub-view tabs
+│   ├── LeagueSubNav.jsx           # League Standings / History / Activity tabs
+│   ├── HorizontalScrollCue.jsx    # Shared touch cue + clickable desktop rail controls
 │   ├── ActionSheet.jsx            # iOS-style bottom sheet for overflow menu
 │   ├── FavoriteTeamPicker.jsx     # Full-screen team color theme picker
 │   ├── companion/
 │   │   ├── CompanionConnect.jsx   # Sleeper connect + league selection flow
-│   │   ├── CompanionRoster.jsx    # Roster view with season ranks and avg PPG
-│   │   ├── CompanionMatchup.jsx   # Weekly matchup: head-to-head, projections, breakdowns
+│   │   ├── CompanionLeague.jsx    # Canonical Rosters + nested Draft Picks view
+│   │   ├── CompanionRoster.jsx    # Legacy compatibility wrapper for Rosters
+│   │   ├── CompanionMatchup.jsx   # All weekly matchups: projections, cycling, breakdowns
+│   │   ├── CompanionStandings.jsx # Finalized-week and historical fantasy standings/brackets
+│   │   ├── CompanionHistory.jsx   # Lifetime league record book and rivalries
+│   │   ├── CompanionActivity.jsx  # Selected-season filtered transaction ledger
 │   │   ├── CompanionHeatmap.jsx   # Heatmap: pts allowed/scored per team/week with drilldowns
 │   │   ├── CompanionDefense.jsx   # Defense rankings by stats/fantasy points allowed
 │   │   ├── CompanionWaiver.jsx    # Waiver wire view
@@ -168,7 +180,7 @@ src/
 ├── context/
 │   ├── PredictionContext.jsx      # Prediction state and localStorage sync
 │   ├── ThemeContext.jsx           # Dark mode + favorite team theming state
-│   └── SleeperContext.jsx         # Sleeper API state: user, league, rosters, stats, scoring
+│   └── SleeperContext.jsx         # Fantasy platform state: league lineage, rosters, stats, scoring
 ├── api/
 │   ├── sleeperApi.js              # Sleeper API fetches: users, leagues, rosters, stats
 │   └── weatherApi.js              # Open-Meteo archive weather for game-day conditions
@@ -182,6 +194,7 @@ src/
     ├── playerMetrics.js           # Stat row definitions, headline metrics, career highlights
     ├── projectionEngine.js        # PPG averages, positional ranks, opponent strength, projections
     ├── scoringEngine.js           # Fantasy point calculation and DEFAULT_SCORING config
+    ├── leagueHistory.js           # Sleeper season snapshots, history, standings, activity, blueprints
     ├── scheduleParser.js          # Team/division queries, strength of schedule
     ├── statisticsStandings.js     # Schedule-result standings model
     ├── validation.js              # Constraint checking and balance validation

@@ -1166,3 +1166,15 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Sleeper roster synchronization** - Revalidated connected Sleeper rosters every 30 seconds while active and immediately on focus, visibility, or network restoration, with stale-cache bypassing and safe request cleanup.
 - **Mobile Draft Board fixes** - Reworked expanded Available Players into a full-height scrollable workspace, prevented overlap with position filters, removed unused roster spacing, and tightened edge-to-edge Draft layouts and touch targets.
 - **Regression coverage** - Added unit coverage for onboarding state, live roster synchronization, and cache-busted Sleeper roster requests, while keeping automated fixtures from unintentionally triggering first-run onboarding.
+
+## v8.3.0 - League History & Draft Blueprint
+*2026-07-16*
+
+- **League workspace** - Reorganized Fantasy navigation and added a dedicated League area for Standings, History, and Activity across linked Sleeper seasons.
+- **League Standings** - Added finalized-week tables, divisions, playoff seeding, and evidence-backed winners and consolation brackets.
+- **League History** - Added linked-season record books with lifetime standings, champions, rivalries, scoring records, win streaks, trades, and waiver additions.
+- **League Activity** - Added a completed-event ledger for trades, waivers, free agents, draft capital, and commissioner changes, with filters and contextual empty states.
+- **Fantasy matchup navigation** - Added all-league cycling, direct matchup selection, deep links, and keyboard-friendly controls.
+- **Draft Blueprint** - Made Draft Blueprint the default Draft Results view with team pick counts, position construction, first-round selections, and Pick List drilldown.
+- **Responsive Display settings** - Added persistent Compact, Comfortable, and Large display presets, semantic type and density scaling, and intentional readable, data, and workbench frames for wide screens.
+- **Tour coverage** - Added an upgrade tour for the League workspace, with expanded League History, Draft Blueprint, and Display settings guidance.

@@ -551,7 +551,7 @@ export default function CompanionRankings({
   }
 
   return (
-    <div className="pb-6">
+    <div className="page-frame-data pb-6">
       {/* Filters */}
       {showRankingsControls && (
         <div className="px-4 pb-3 flex flex-col gap-2">
@@ -1102,14 +1102,14 @@ function RankRow({ rank, player, activeSortOption, sortValueMode, onSelect, hide
           <div className={isCompactPhone ? 'shrink-0' : 'min-w-0 text-right'}>
             {player.isRostered ? (
               <CompanionPlayerLocalContrastText
-                className="shrink-0 text-[9px] sm:text-[10px] font-bold uppercase tracking-[0.12em] leading-none"
+                className="shrink-0 text-[length:var(--type-micro)] sm:text-[length:var(--type-label)] font-bold uppercase tracking-[0.12em] leading-none"
               >
                 {isCompactPhone ? 'R' : 'ROSTERED'}
               </CompanionPlayerLocalContrastText>
             ) : !isCompactPhone ? (
               <span
                 aria-hidden="true"
-                className="invisible text-[10px] font-bold uppercase tracking-[0.12em] leading-none"
+                className="invisible text-[length:var(--type-label)] font-bold uppercase tracking-[0.12em] leading-none"
               >
                 ROSTERED
               </span>

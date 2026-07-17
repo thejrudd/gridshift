@@ -1,6 +1,6 @@
 import { memo, startTransition, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal, flushSync } from 'react-dom';
-import { getDraft, getDraftPicks, getDraftTradedPicks, getLeagueDrafts } from '../../api/sleeperApi.js';
+import { getDraft, getDraftPicks, getDraftTradedPicks, getLeagueDrafts, getUserById } from '../../api/sleeperApi.js';
 import { useSleeperBase } from '../../context/SleeperContext.jsx';
 import { useTheme } from '../../context/ThemeContext.jsx';
 import { fetchLeagueLogsMarketForLeague, formatLeagueLogsMarketProfile } from '../../api/leagueLogsApi.js';
@@ -12,10 +12,13 @@ import CompanionPlayerRow, {
 } from '../companion/CompanionPlayerRow.jsx';
 import {
   POSITION_COLORS,
+  getCompanionPositionColor,
   getCompanionInitials,
   getPositionTextColor,
   getSleeperPlayerImageUrl,
 } from '../../utils/companionAssetVisuals.js';
+import { buildDraftBlueprintSummaries } from '../../utils/leagueHistory.js';
+import { getTeamVisualTheme } from '../../utils/teamVisualTheme.js';
 import { isLeagueSeasonComplete } from '../../utils/draftPickDisplay.js';
 import {
   DEFAULT_DRAFT_MODEL_WEIGHTS,
@@ -36,6 +39,7 @@ import {
   normalizeDraftModelWeights,
   normalizeDraftPick,
   rebalanceDraftModelWeights,
+  resolveDraftPickManagerId,
   resolveLeagueDraftId,
   shouldRefreshSleeperDraftPicks,
   shouldRefreshSleeperDraftTradedPicks,
@@ -1113,7 +1117,6 @@ function buildFastBoardRows({
   players,
   rosters,
   normalizedPicks = [],
-  pickOrder = [],
   myRosterId = null,
   getUserDisplayName = null,
 }) {
@@ -1128,16 +1131,11 @@ function buildFastBoardRows({
       if (playerId != null) rosteredIds.add(String(playerId));
     }
   }
-  const pickOrderByOverall = new Map((pickOrder ?? []).map((pick) => [pick.overall, pick]));
   const draftedByPlayerId = new Map();
   for (const pick of normalizedPicks ?? []) {
     if (!pick?.playerId) continue;
-    const orderPick = pickOrderByOverall.get(pick.overall) ?? null;
     const rosterId = pick.rosterId != null ? String(pick.rosterId) : null;
-    const roster = orderPick?.roster
-      ?? rosters.find((item) => String(item.roster_id) === String(rosterId))
-      ?? null;
-    const ownerId = orderPick?.roster?.owner_id ?? roster?.owner_id ?? pick.pickedBy ?? null;
+    const ownerId = resolveDraftPickManagerId(pick);
     const ownerLabel = rosterId && rosterId === String(myRosterId)
       ? 'You'
       : (ownerId && getUserDisplayName ? getUserDisplayName(ownerId) : null);
@@ -3066,6 +3064,7 @@ function DraftOrderTable({
 
   return (
     <section className="draft-panel draft-order-panel" data-tour="draft-results-content">
+      <span data-tour="draft-blueprint-content" className="sr-only" aria-hidden="true" />
       <div className="draft-panel__header">
         <div>
           <h2>Draft Order</h2>
@@ -3487,11 +3486,10 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
       players,
       rosters,
       normalizedPicks: draftOrderContext.normalizedPicks,
-      pickOrder: draftOrderContext.pickOrder,
       myRosterId: myRosterData?.roster_id,
       getUserDisplayName,
     }),
-    [boardIds, candidatesById, players, rosters, draftOrderContext.normalizedPicks, draftOrderContext.pickOrder, myRosterData?.roster_id, getUserDisplayName],
+    [boardIds, candidatesById, players, rosters, draftOrderContext.normalizedPicks, myRosterData?.roster_id, getUserDisplayName],
   );
   const boardRowsWithRanks = useMemo(
     () => decoratePositionRanks(boardRows, positionRankMap),
@@ -4039,6 +4037,8 @@ function DraftResultsView({ onViewPlayer, sleeperDraftId = '', tourDemoMode = nu
     loadPlayers,
     league,
     rosters,
+    leagueUsers,
+    sleeperUser,
     selectedLeagueId,
     season,
     loadStatsForSeason,
@@ -4059,9 +4059,11 @@ function DraftResultsView({ onViewPlayer, sleeperDraftId = '', tourDemoMode = nu
   } = useSleeperDraftSync({ selectedLeagueId, league, sleeperDraftId });
   const [draftStats, setDraftStats] = useState(null);
   const [sortDirection, setSortDirection] = useState('asc');
+  const [resultsMode, setResultsMode] = useState('blueprint');
   const [positionFilter, setPositionFilter] = useState('All');
   const [selectedFantasyTeamIds, setSelectedFantasyTeamIds] = useState([]);
   const [rankMode, setRankMode] = useState('off');
+  const [departedDraftUsersById, setDepartedDraftUsersById] = useState(() => new Map());
   const [modelWeights, setModelWeights] = useState(() => normalizeDraftModelWeights(DEFAULT_DRAFT_MODEL_WEIGHTS));
   const [marketState, setMarketState] = useState({
     attribution: null,
@@ -4168,6 +4170,47 @@ function DraftResultsView({ onViewPlayer, sleeperDraftId = '', tourDemoMode = nu
     })
   ), [resultsViewModel, draftMeta, rosters, draftTradedPicks, draftPicks, myRosterData]);
 
+  const draftManagerIdsKey = useMemo(() => (
+    [...new Set((draftOrderContext.normalizedPicks ?? [])
+      .map((pick) => resolveDraftPickManagerId(pick, draftMeta) ?? '')
+      .filter(Boolean))]
+      .sort()
+      .join('|')
+  ), [draftOrderContext.normalizedPicks, draftMeta]);
+
+  useEffect(() => {
+    const currentUserIds = new Set((leagueUsers ?? []).map((user) => String(user?.user_id ?? '')).filter(Boolean));
+    const missingUserIds = draftManagerIdsKey.split('|').filter((userId) => userId && !currentUserIds.has(userId));
+    if (!missingUserIds.length) return undefined;
+
+    let cancelled = false;
+    Promise.all(missingUserIds.map(async (userId) => {
+      try {
+        const user = await getUserById(userId);
+        return user?.user_id ? [String(user.user_id), user] : null;
+      } catch {
+        return null;
+      }
+    })).then((entries) => {
+      if (!cancelled) setDepartedDraftUsersById(new Map(entries.filter(Boolean)));
+    });
+    return () => { cancelled = true; };
+  }, [draftManagerIdsKey, leagueUsers]);
+
+  const draftUsersById = useMemo(() => new Map([
+    ...departedDraftUsersById,
+    ...(leagueUsers ?? []).map((user) => [String(user?.user_id ?? ''), user]),
+  ].filter(([userId]) => userId)), [leagueUsers, departedDraftUsersById]);
+
+  const getDraftManagerLabel = useCallback((managerId, rosterId = null) => {
+    const user = managerId ? draftUsersById.get(String(managerId)) : null;
+    const label = user?.metadata?.team_name ?? user?.display_name ?? user?.username;
+    if (label && String(label).trim()) return String(label).trim();
+    const connectedLabel = managerId ? getUserDisplayName(managerId) : '';
+    if (connectedLabel && connectedLabel !== 'Unknown') return connectedLabel;
+    return rosterId ? `Roster ${rosterId} · manager unavailable` : 'Manager unavailable';
+  }, [draftUsersById, getUserDisplayName]);
+
   const orderByOverall = useMemo(
     () => new Map((draftOrderContext.pickOrder ?? []).map((pick) => [pick.overall, pick])),
     [draftOrderContext.pickOrder],
@@ -4200,21 +4243,24 @@ function DraftResultsView({ onViewPlayer, sleeperDraftId = '', tourDemoMode = nu
 
   const myRosterId = myRosterData?.roster_id != null ? String(myRosterData.roster_id) : null;
   const getFantasyTeamLabel = useCallback((rosterId, ownerId = null) => {
-    const roster = rosters.find((item) => String(item.roster_id) === String(rosterId)) ?? null;
-    const resolvedOwnerId = ownerId ?? roster?.owner_id ?? null;
-    const label = resolvedOwnerId ? getUserDisplayName(resolvedOwnerId) : '';
-    if (label && label !== 'Unknown') return label;
-    return rosterId ? `Roster ${rosterId}` : 'Unknown';
-  }, [rosters, getUserDisplayName]);
+    return getDraftManagerLabel(ownerId, rosterId);
+  }, [getDraftManagerLabel]);
 
   const fantasyTeamOptions = useMemo(() => {
     const optionsByRosterId = new Map();
-    for (const pick of draftOrderContext.pickOrder ?? []) {
+    for (const pick of draftOrderContext.normalizedPicks ?? []) {
       if (!pick.rosterId || optionsByRosterId.has(pick.rosterId)) continue;
-      const ownerId = pick.roster?.owner_id ?? null;
+      const managerId = resolveDraftPickManagerId(pick, draftMeta);
       optionsByRosterId.set(pick.rosterId, {
         id: pick.rosterId,
-        label: getFantasyTeamLabel(pick.rosterId, ownerId),
+        label: getFantasyTeamLabel(pick.rosterId, managerId),
+      });
+    }
+    for (const pick of draftOrderContext.pickOrder ?? []) {
+      if (!pick.rosterId || optionsByRosterId.has(pick.rosterId)) continue;
+      optionsByRosterId.set(pick.rosterId, {
+        id: pick.rosterId,
+        label: getFantasyTeamLabel(pick.rosterId),
       });
     }
     for (const roster of rosters ?? []) {
@@ -4222,7 +4268,7 @@ function DraftResultsView({ onViewPlayer, sleeperDraftId = '', tourDemoMode = nu
       if (!rosterId || optionsByRosterId.has(rosterId)) continue;
       optionsByRosterId.set(rosterId, {
         id: rosterId,
-        label: getFantasyTeamLabel(rosterId, roster.owner_id),
+        label: getFantasyTeamLabel(rosterId),
       });
     }
     return [...optionsByRosterId.values()].sort((a, b) => {
@@ -4230,7 +4276,7 @@ function DraftResultsView({ onViewPlayer, sleeperDraftId = '', tourDemoMode = nu
       if (b.id === myRosterId) return 1;
       return a.label.localeCompare(b.label);
     });
-  }, [draftOrderContext.pickOrder, rosters, myRosterId, getFantasyTeamLabel]);
+  }, [draftOrderContext.normalizedPicks, draftOrderContext.pickOrder, rosters, myRosterId, draftMeta, getFantasyTeamLabel]);
 
   useEffect(() => {
     const availableIds = new Set(fantasyTeamOptions.map((option) => option.id));
@@ -4250,10 +4296,8 @@ function DraftResultsView({ onViewPlayer, sleeperDraftId = '', tourDemoMode = nu
         const orderPick = orderByOverall.get(pick.overall) ?? null;
         const card = resultsViewModel?.draftedCardsById?.get(String(pick.playerId)) ?? null;
         const rawPlayer = players?.[pick.playerId] ?? null;
-        const ownerId = orderPick?.roster?.owner_id
-          ?? rosters.find((roster) => String(roster.roster_id) === pick.rosterId)?.owner_id
-          ?? null;
-        const isMine = pick.rosterId === myRosterId;
+        const ownerId = resolveDraftPickManagerId(pick, draftMeta);
+        const isMine = Boolean(ownerId && ownerId === String(sleeperUser?.user_id ?? ''));
         const fallbackName = getDraftedPlayerLabel(pick, players ?? {});
         const rawFallbackPosition = rawPlayer?.fantasy_positions?.[0] ?? rawPlayer?.position ?? pick.metadata?.position ?? null;
         const fallbackPosition = rawFallbackPosition ? normalizePosition(rawFallbackPosition) : '';
@@ -4291,7 +4335,18 @@ function DraftResultsView({ onViewPlayer, sleeperDraftId = '', tourDemoMode = nu
           draftOutcome: draftOutcomesByPickId.get(pick.id) ?? null,
         };
       });
-  }, [draftOrderContext.normalizedPicks, orderByOverall, resultsViewModel, players, rosters, myRosterId, getFantasyTeamLabel, rankMode, draftRanksByPickId, draftOutcomesByPickId]);
+  }, [draftOrderContext.normalizedPicks, orderByOverall, resultsViewModel, players, rosters, draftMeta, sleeperUser?.user_id, getFantasyTeamLabel, rankMode, draftRanksByPickId, draftOutcomesByPickId]);
+
+  const blueprint = useMemo(() => buildDraftBlueprintSummaries({
+    picks: draftOrderContext.normalizedPicks ?? [],
+    rosters,
+    users: [...draftUsersById.values()],
+    draft: draftMeta,
+    league,
+    players: players ?? {},
+    myRosterId,
+    myUserId: sleeperUser?.user_id ?? null,
+  }), [draftOrderContext.normalizedPicks, rosters, draftUsersById, draftMeta, league, players, myRosterId, sleeperUser?.user_id]);
 
   const positionOptions = useMemo(() => {
     const available = new Set(resultRows.map((row) => row.player?.position).filter(Boolean));
@@ -4420,46 +4475,109 @@ function DraftResultsView({ onViewPlayer, sleeperDraftId = '', tourDemoMode = nu
         />
       ) : (
         <section className="draft-panel draft-results-panel" data-tour="draft-results-content">
-          <div className="draft-results-controls">
-            <div className="draft-results-control-row draft-results-control-row--positions">
-              <span className="draft-results-control-row__label">Position</span>
-              <PositionFilter positions={positionOptions} activePosition={positionFilter} onChange={setPositionFilter} />
+          <div className="draft-results-view-header" data-tour="draft-blueprint-content">
+            <div>
+              <span>Draft Results</span>
+              <h2>{resultsMode === 'blueprint' ? 'Draft Blueprint' : 'Pick List'}</h2>
+              <p>{resultsMode === 'blueprint' ? 'Team-by-team roster construction from the completed Sleeper draft.' : 'Every completed selection in chronological order.'}</p>
             </div>
-            <div className="draft-results-control-row draft-results-control-row--sort">
-              <span className="draft-results-control-row__label">Sort</span>
-              <DraftSegmentedControl
-                label="Sort draft results"
-                options={draftResultsSortOptions}
-                value={activeSortDirection}
-                onChange={setSortDirection}
-              />
-              <DraftFantasyTeamFilter
-                options={fantasyTeamOptions}
-                selectedIds={selectedFantasyTeamIds}
-                onChange={setSelectedFantasyTeamIds}
-              />
-            </div>
-            <div className="draft-results-control-row draft-results-control-row--rank">
-              <span className="draft-results-control-row__label">Insights</span>
-              <div className="draft-results-insights-control">
-                <DraftSegmentedControl
-                  label="Draft rank and outcome insights"
-                  options={DRAFT_RESULTS_RANK_MODE_OPTIONS}
-                  value={rankMode}
-                  onChange={setRankMode}
-                />
-                <DraftOutcomeStrengthInfo />
-              </div>
-            </div>
+            <DraftSegmentedControl
+              label="Draft results view"
+              options={[{ id: 'blueprint', label: 'Blueprint' }, { id: 'picks', label: 'Pick List' }]}
+              value={resultsMode}
+              onChange={setResultsMode}
+            />
           </div>
-          {visibleRows.length === 0 ? (
-            <EmptyState title="No picks match these filters." />
-          ) : (
-            <div className="draft-results-list">
-              {visibleRows.map((row) => (
-                <DraftResultRow key={row.key} row={row} darkMode={darkMode} onViewPlayer={onViewPlayer} showInsights={rankMode !== 'off'} seasonIsComplete={seasonIsComplete} />
-              ))}
+          {resultsMode === 'blueprint' ? (
+            <div className="draft-blueprint-grid">
+              {blueprint.teams.map((team) => {
+                const firstPickTheme = getTeamVisualTheme(team.firstRoundPick?.nflTeam, darkMode);
+                const nextPicks = team.earlyPicks.filter((pick) => pick !== team.firstRoundPick).slice(0, 3);
+                const firstPickStyle = firstPickTheme.gradient ? {
+                  backgroundImage: `${firstPickTheme.gradientOverlay}, ${firstPickTheme.gradient}`,
+                  color: firstPickTheme.gradientFullForeground,
+                  '--draft-blueprint-featured-muted': firstPickTheme.gradientFullMuted,
+                } : undefined;
+                return (
+                  <button
+                    key={team.rosterId}
+                    type="button"
+                    className={`draft-blueprint-team${team.isMine ? ' is-user-team' : ''}`}
+                    onClick={() => {
+                      setSelectedFantasyTeamIds([team.rosterId]);
+                      setResultsMode('picks');
+                    }}
+                    aria-label={`Open ${team.teamName} picks`}
+                  >
+                    <div className="draft-blueprint-team__heading">
+                      <span><strong>{team.teamName}</strong><small>{team.managerName}{team.isMine ? ' · Your team' : ''}</small></span>
+                      <span className="draft-blueprint-team__count"><strong>{team.pickCount}</strong><small>Picks</small></span>
+                    </div>
+                    <div className="draft-blueprint-first-round" style={firstPickStyle}>
+                      <span>Round 1{team.firstRoundPick?.pickLabel ? ` · Pick ${team.firstRoundPick.pickLabel}` : ''}</span>
+                      <strong>{team.firstRoundPick?.playerName ?? 'No first-round pick'}</strong>
+                      {team.firstRoundPick && <small>{team.firstRoundPick.position}{team.firstRoundPick.nflTeam ? ` · ${team.firstRoundPick.nflTeam}` : ''}</small>}
+                    </div>
+                    <div className="draft-blueprint-team__body">
+                      <div className="draft-blueprint-position-bar" aria-label={`${team.teamName} position distribution`}>
+                        {blueprint.positions.map((position) => {
+                          const count = team.positionCounts[position] ?? 0;
+                          if (!count) return null;
+                          return <span key={position} style={{ flexGrow: count, background: getCompanionPositionColor(position) ?? 'var(--color-fill)' }} title={`${position}: ${count}`} />;
+                        })}
+                      </div>
+                      <div className="draft-blueprint-position-legend">
+                        {blueprint.positions.map((position) => {
+                          const count = team.positionCounts[position] ?? 0;
+                          if (!count) return null;
+                          return <span key={position}><i style={{ background: getCompanionPositionColor(position) ?? 'var(--color-fill)' }} />{position}<b>{count}</b></span>;
+                        })}
+                      </div>
+                      {nextPicks.length > 0 && (
+                        <div className="draft-blueprint-next-picks">
+                          {nextPicks.map((pick) => (
+                            <span key={`${pick.round}-${pick.overall}-${pick.playerId}`}>
+                              <i style={{ background: getCompanionPositionColor(pick.position) ?? 'var(--color-fill)' }} />
+                              <strong>{pick.playerName}</strong>
+                              <small>R{pick.round}{pick.pickLabel ? ` · ${pick.pickLabel}` : ''}</small>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      <span className="draft-blueprint-team__cta">View pick list <span aria-hidden="true">→</span></span>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
+          ) : (
+            <>
+              <div className="draft-results-controls">
+                <div className="draft-results-control-row draft-results-control-row--positions">
+                  <span className="draft-results-control-row__label">Position</span>
+                  <PositionFilter positions={positionOptions} activePosition={positionFilter} onChange={setPositionFilter} />
+                </div>
+                <div className="draft-results-control-row draft-results-control-row--sort">
+                  <span className="draft-results-control-row__label">Sort</span>
+                  <DraftSegmentedControl label="Sort draft results" options={draftResultsSortOptions} value={activeSortDirection} onChange={setSortDirection} />
+                  <DraftFantasyTeamFilter options={fantasyTeamOptions} selectedIds={selectedFantasyTeamIds} onChange={setSelectedFantasyTeamIds} />
+                </div>
+                <div className="draft-results-control-row draft-results-control-row--rank">
+                  <span className="draft-results-control-row__label">Insights</span>
+                  <div className="draft-results-insights-control">
+                    <DraftSegmentedControl label="Draft rank and outcome insights" options={DRAFT_RESULTS_RANK_MODE_OPTIONS} value={rankMode} onChange={setRankMode} />
+                    <DraftOutcomeStrengthInfo />
+                  </div>
+                </div>
+              </div>
+              {visibleRows.length === 0 ? <EmptyState title="No picks match these filters." /> : (
+                <div className="draft-results-list">
+                  {visibleRows.map((row) => (
+                    <DraftResultRow key={row.key} row={row} darkMode={darkMode} onViewPlayer={onViewPlayer} showInsights={rankMode !== 'off'} seasonIsComplete={seasonIsComplete} />
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </section>
       )}

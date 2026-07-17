@@ -30,6 +30,10 @@ import CompanionPlayerRow, { CompanionPlayerMetric, CompanionPlayerStatus } from
 import StatsProgressBanner from '../ui/StatsProgressBanner';
 import SeasonHintBanner from '../ui/SeasonHintBanner';
 import UiEmptyState from '../ui/EmptyState';
+import {
+  buildFantasyMatchupGroups,
+  findMatchupGroupIndexByRosterId,
+} from '../../utils/fantasyMatchups.js';
 
 const TOTAL_WEEKS = 18;
 const MATCHUP_CARD_SHADOW = '0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06)';
@@ -43,12 +47,13 @@ function isTeamDefensePosition(position) {
   return normalized === 'DEF' || normalized === 'DST' || normalized === 'D/ST';
 }
 
-function isRosterFantasyByeWeek(matchupRows, rosterId, platform) {
-  if (platform !== 'espn' || !Array.isArray(matchupRows) || rosterId == null) return false;
-  const rosterMatchup = matchupRows.find(row => Number(row?.roster_id) === Number(rosterId));
+function isRosterFantasyByeWeek(matchupRows, rosterId) {
+  if (!Array.isArray(matchupRows) || rosterId == null) return false;
+  const rosterMatchup = matchupRows.find(row => String(row?.roster_id) === String(rosterId));
   if (!rosterMatchup) return false;
   if (rosterMatchup.metadata?.isBye === true) return true;
-  const sides = matchupRows.filter(row => row?.matchup_id === rosterMatchup.matchup_id);
+  if (rosterMatchup.matchup_id == null) return true;
+  const sides = matchupRows.filter(row => String(row?.matchup_id) === String(rosterMatchup.matchup_id));
   return sides.length === 1;
 }
 
@@ -138,13 +143,15 @@ export default function CompanionMatchup({
   initialWeekRequest = null,
   selectedWeek = null,
   onWeekChange = null,
+  selectedRosterId = null,
+  onSelectedRosterChange = null,
   onConsumeInitialWeekRequest = null,
 }) {
   const { darkMode } = useTheme();
   const isCompactPhone = useMediaQuery(COMPACT_PHONE_QUERY);
   const isMobileLayout = useMediaQuery(MOBILE_LAYOUT_QUERY);
   const {
-    platform, sleeperUser, selectedLeagueId, league, season,
+    platform, selectedLeagueId, league, season,
     rosters, players, loadPlayers,
     weeklyStats, seasonStats, scheduleMap, loadSeasonStats,
     statsLoading, activeScoringSettings, scoringOverride,
@@ -180,6 +187,8 @@ export default function CompanionMatchup({
   const [matchupLoading, setMatchupLoading] = useState(false);
   const [showBench, setShowBench] = useState(false);
   const [showWeekPicker, setShowWeekPicker] = useState(false);
+  const [showMatchupPicker, setShowMatchupPicker] = useState(false);
+  const [selectedRosterIdState, setSelectedRosterIdState] = useState(selectedRosterId);
   const [byeWeeks, setByeWeeks] = useState(() => new Set());
   const [selectedPlayer, setSelectedPlayer] = useState(null); // { id, projection }
   const [selectedTeam, setSelectedTeam] = useState(null); // 'mine' | 'opp'
@@ -300,33 +309,38 @@ export default function CompanionMatchup({
     setRequestedWeek(prev => clampMatchupWeek(prev, totalWeeks, defaultWeek));
   }, [defaultWeek, totalWeeks]);
 
-  const myRosterData = myRoster();
-  const myRosterId = myRosterData?.roster_id ?? null;
+  const userRosterData = myRoster();
+  const userRosterId = userRosterData?.roster_id ?? null;
 
-  const myMatchup = useMemo(() => {
-    if (!matchups || !myRosterData) return null;
-    return matchups.find(m => m.roster_id === myRosterData.roster_id) ?? null;
-  }, [matchups, myRosterData]);
+  useEffect(() => {
+    setSelectedRosterIdState(selectedRosterId);
+  }, [selectedRosterId]);
 
-  const opponentMatchup = useMemo(() => {
-    if (!matchups || !myMatchup) return null;
-    return matchups.find(m => m.matchup_id === myMatchup.matchup_id && m.roster_id !== myMatchup.roster_id) ?? null;
-  }, [matchups, myMatchup]);
+  const matchupGroups = useMemo(() => buildFantasyMatchupGroups(
+    matchups,
+    rosters,
+    getUserDisplayName,
+    userRosterId,
+  ), [getUserDisplayName, matchups, rosters, userRosterId]);
 
-  const opponentRoster = useMemo(() => {
-    if (!opponentMatchup) return null;
-    return rosters.find(r => r.roster_id === opponentMatchup.roster_id) ?? null;
-  }, [opponentMatchup, rosters]);
-
-  const opponentName = useMemo(() => {
-    if (!opponentRoster) return 'Opponent';
-    return getUserDisplayName(opponentRoster.owner_id);
-  }, [opponentRoster, getUserDisplayName]);
-
-  const myName = useMemo(() => {
-    if (!sleeperUser) return 'You';
-    return getUserDisplayName(sleeperUser.user_id);
-  }, [sleeperUser, getUserDisplayName]);
+  const selectedMatchupIndex = useMemo(() => {
+    const requestedIndex = findMatchupGroupIndexByRosterId(matchupGroups, selectedRosterIdState);
+    if (requestedIndex >= 0) return requestedIndex;
+    const userIndex = findMatchupGroupIndexByRosterId(matchupGroups, userRosterId);
+    return userIndex >= 0 ? userIndex : 0;
+  }, [matchupGroups, selectedRosterIdState, userRosterId]);
+  const selectedMatchupGroup = matchupGroups[selectedMatchupIndex] ?? null;
+  const leftSide = selectedMatchupGroup?.sides?.[0] ?? null;
+  const rightSide = selectedMatchupGroup?.sides?.[1] ?? null;
+  const myMatchup = leftSide?.row ?? null;
+  const opponentMatchup = rightSide?.row ?? null;
+  const myRosterData = leftSide?.roster ?? (myMatchup ? { roster_id: myMatchup.roster_id, players: myMatchup.players ?? [] } : null);
+  const opponentRoster = rightSide?.roster ?? (opponentMatchup ? { roster_id: opponentMatchup.roster_id, players: opponentMatchup.players ?? [] } : null);
+  const myRosterId = leftSide?.rosterId ?? null;
+  const myName = leftSide?.name ?? 'Team';
+  const opponentName = rightSide?.name ?? 'Opponent';
+  const leftIsUser = Boolean(leftSide?.isUser);
+  const rightIsUser = Boolean(rightSide?.isUser);
   const hasAdvancedStats = Boolean(insightsRequested && weeklyStats && seasonStats && players);
   const playerCount = players ? Object.keys(players).length : 0;
   const seasonStatCount = seasonStats ? Object.keys(seasonStats).length : 0;
@@ -344,12 +358,11 @@ export default function CompanionMatchup({
   const myPointsMap = myMatchup?.players_points ?? {};
   const oppPointsMap = opponentMatchup?.players_points ?? {};
   const fantasyPlatformLabel = platform === 'espn' ? 'ESPN' : 'Sleeper';
-  const matchupSideCount = useMemo(() => {
-    if (!matchups || !myMatchup) return 0;
-    return matchups.filter(m => m.matchup_id === myMatchup.matchup_id).length;
-  }, [matchups, myMatchup]);
-  const isByeMatchup = isRosterFantasyByeWeek(matchups, myRosterId, platform)
-    || (platform === 'espn' && Boolean(myMatchup) && !opponentMatchup && matchupSideCount === 1);
+  const matchupSideCount = selectedMatchupGroup?.sides?.length ?? 0;
+  const isByeMatchup = Boolean(myMatchup) && (
+    matchupSideCount === 1
+    || isRosterFantasyByeWeek(matchups, myRosterId)
+  );
   const myBreakdownPlayerIds = useMemo(() => {
     const starters = (myMatchup?.starters ?? []).filter(Boolean);
     if (starters.length) return starters;
@@ -365,7 +378,7 @@ export default function CompanionMatchup({
     let cancelled = false;
     void Promise.all(weekOptions.map(async (optionWeek) => {
       const rows = await loadMatchups(selectedLeagueId, optionWeek);
-      return isRosterFantasyByeWeek(rows, myRosterId, platform) ? optionWeek : null;
+      return isRosterFantasyByeWeek(rows, myRosterId) ? optionWeek : null;
     })).then((weekResults) => {
       if (cancelled) return;
       const next = new Set(weekResults.filter(Number.isFinite));
@@ -653,9 +666,10 @@ export default function CompanionMatchup({
     if (!myRosterData || !myMatchup) return [];
     return debugCompanionMeasure('Matchup my bench enrich', () => {
       const starterSet = new Set(myMatchup.starters ?? []);
-      return (myRosterData.players ?? []).filter(id => !starterSet.has(id)).map(id => enrichPlayer(id, myPointsMap)).filter(Boolean);
+      const historicalPlayers = myMatchup.players?.length ? myMatchup.players : myRosterData.players;
+      return (historicalPlayers ?? []).filter(id => !starterSet.has(id)).map(id => enrichPlayer(id, myPointsMap)).filter(Boolean);
     }, {
-      rosterPlayerCount: myRosterData.players?.length ?? 0,
+      rosterPlayerCount: myMatchup.players?.length ?? myRosterData.players?.length ?? 0,
       hasAdvancedStats,
     });
   }, [myRosterData, myMatchup, enrichPlayer, myPointsMap]);
@@ -664,9 +678,10 @@ export default function CompanionMatchup({
     if (!opponentRoster || !opponentMatchup) return [];
     return debugCompanionMeasure('Matchup opponent bench enrich', () => {
       const starterSet = new Set(opponentMatchup.starters ?? []);
-      return (opponentRoster.players ?? []).filter(id => !starterSet.has(id)).map(id => enrichPlayer(id, oppPointsMap)).filter(Boolean);
+      const historicalPlayers = opponentMatchup.players?.length ? opponentMatchup.players : opponentRoster.players;
+      return (historicalPlayers ?? []).filter(id => !starterSet.has(id)).map(id => enrichPlayer(id, oppPointsMap)).filter(Boolean);
     }, {
-      rosterPlayerCount: opponentRoster.players?.length ?? 0,
+      rosterPlayerCount: opponentMatchup.players?.length ?? opponentRoster.players?.length ?? 0,
       hasAdvancedStats,
     });
   }, [opponentRoster, opponentMatchup, enrichPlayer, oppPointsMap]);
@@ -808,6 +823,33 @@ export default function CompanionMatchup({
     onConsumeInitialWeekRequest?.();
   }, [enrichedSlots, initialWeekRequest, myBench, oppBench, onConsumeInitialWeekRequest, week]);
 
+  useEffect(() => {
+    setSelectedPlayer(null);
+    setSelectedTeam(null);
+    setShowMatchupPicker(false);
+  }, [selectedMatchupGroup?.key, week]);
+
+  const selectMatchupAtIndex = useCallback((nextIndex) => {
+    const nextGroup = matchupGroups[nextIndex];
+    const nextRosterId = nextGroup?.sides?.[0]?.rosterId;
+    if (!nextGroup || !nextRosterId) return;
+    setSelectedPlayer(null);
+    setSelectedTeam(null);
+    setSelectedRosterIdState(nextRosterId);
+    onSelectedRosterChange?.(nextRosterId);
+  }, [matchupGroups, onSelectedRosterChange]);
+
+  const handleMatchupPagerKeyDown = useCallback((event) => {
+    if (event.key === 'ArrowLeft' && selectedMatchupIndex > 0) {
+      event.preventDefault();
+      selectMatchupAtIndex(selectedMatchupIndex - 1);
+    }
+    if (event.key === 'ArrowRight' && selectedMatchupIndex < matchupGroups.length - 1) {
+      event.preventDefault();
+      selectMatchupAtIndex(selectedMatchupIndex + 1);
+    }
+  }, [matchupGroups.length, selectMatchupAtIndex, selectedMatchupIndex]);
+
   const hasLoadedMatchups = Array.isArray(matchups);
   const hasNoMatchup = hasLoadedMatchups && !matchupLoading && !myMatchup;
   const hasNoOpponentMatchup = hasLoadedMatchups && !matchupLoading && Boolean(myMatchup) && !opponentMatchup && !isByeMatchup;
@@ -848,6 +890,88 @@ export default function CompanionMatchup({
             <polyline points="6 9 12 15 18 9" />
           </svg>
         </CompanionSelectorButton>
+        {matchupGroups.length > 0 && (
+          <div
+            role="group"
+            aria-label="Browse weekly matchups"
+            tabIndex={0}
+            onKeyDown={handleMatchupPagerKeyDown}
+            className="inline-flex min-w-0 shrink-0 items-stretch focus-visible:outline-none focus-visible:ring-2"
+            style={{
+              width: isCompactPhone ? 252 : 348,
+              minWidth: isCompactPhone ? 252 : 348,
+              border: '1px solid var(--color-separator)',
+              borderRadius: 8,
+              overflow: 'hidden',
+              '--tw-ring-color': 'var(--color-signature)',
+            }}
+          >
+            <button
+              type="button"
+              aria-label="Previous matchup"
+              disabled={selectedMatchupIndex <= 0}
+              onClick={() => selectMatchupAtIndex(selectedMatchupIndex - 1)}
+              className="inline-flex shrink-0 items-center justify-center disabled:cursor-not-allowed disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset"
+              style={{
+                width: 44,
+                minWidth: 44,
+                height: 44,
+                background: 'var(--color-fill)',
+                color: 'var(--color-label)',
+                borderRight: '1px solid var(--color-separator)',
+                '--tw-ring-color': 'var(--color-signature)',
+                fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif",
+                fontSize: 22,
+                fontWeight: 800,
+              }}
+            >
+              <span aria-hidden="true">‹</span>
+            </button>
+            <button
+              type="button"
+              aria-haspopup="dialog"
+              aria-expanded={showMatchupPicker}
+              aria-label={`Choose matchup. ${myName}${opponentMatchup ? ` versus ${opponentName}` : ' bye'}, matchup ${selectedMatchupIndex + 1} of ${matchupGroups.length}.`}
+              title={`${myName}${opponentMatchup ? ` vs ${opponentName}` : ' · Bye'}`}
+              onClick={() => setShowMatchupPicker(true)}
+              className="inline-flex min-w-0 flex-1 flex-col items-center justify-center px-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset"
+              style={{
+                height: 44,
+                background: 'var(--color-fill)',
+                color: 'var(--color-label)',
+                '--tw-ring-color': 'var(--color-signature)',
+              }}
+            >
+              <span className="block max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-center text-[length:var(--type-label)] font-bold" style={{ lineHeight: 1.15 }}>
+                {myName}{opponentMatchup ? ` vs ${opponentName}` : ' · Bye'}
+              </span>
+              <span className="mt-0.5 block text-[length:var(--type-micro)] font-bold uppercase tracking-[0.14em]" style={{ color: 'var(--color-label-tertiary)', lineHeight: 1.1 }}>
+                Matchup {selectedMatchupIndex + 1} of {matchupGroups.length}
+              </span>
+            </button>
+            <button
+              type="button"
+              aria-label="Next matchup"
+              disabled={selectedMatchupIndex >= matchupGroups.length - 1}
+              onClick={() => selectMatchupAtIndex(selectedMatchupIndex + 1)}
+              className="inline-flex shrink-0 items-center justify-center disabled:cursor-not-allowed disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset"
+              style={{
+                width: 44,
+                minWidth: 44,
+                height: 44,
+                background: 'var(--color-fill)',
+                color: 'var(--color-label)',
+                borderLeft: '1px solid var(--color-separator)',
+                '--tw-ring-color': 'var(--color-signature)',
+                fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif",
+                fontSize: 22,
+                fontWeight: 800,
+              }}
+            >
+              <span aria-hidden="true">›</span>
+            </button>
+          </div>
+        )}
         {!isByeMatchup && (
           <CompanionSelectorButton
             onClick={() => setShowBench(v => !v)}
@@ -884,6 +1008,18 @@ export default function CompanionMatchup({
       }}
     />
   );
+  const matchupPickerModal = (
+    <MatchupPickerModal
+      open={showMatchupPicker}
+      onClose={() => setShowMatchupPicker(false)}
+      matchupGroups={matchupGroups}
+      selectedIndex={selectedMatchupIndex}
+      onSelect={(index) => {
+        selectMatchupAtIndex(index);
+        setShowMatchupPicker(false);
+      }}
+    />
+  );
 
   if (!selectedLeagueId) {
     return <EmptyState title="Connect a league to see matchup data." />;
@@ -898,6 +1034,7 @@ export default function CompanionMatchup({
           description={`Pre-season ${fantasyPlatformLabel} leagues may not have weekly matchups published yet, so there is nothing to preview for this week.`}
         />
         {weekPickerModal}
+        {matchupPickerModal}
       </div>
     );
   }
@@ -911,6 +1048,7 @@ export default function CompanionMatchup({
           description={`Once ${fantasyPlatformLabel} publishes both sides of the matchup, this view will show projections and lineup context.`}
         />
         {weekPickerModal}
+        {matchupPickerModal}
       </div>
     );
   }
@@ -934,6 +1072,7 @@ export default function CompanionMatchup({
           />
         )}
         {weekPickerModal}
+        {matchupPickerModal}
       </div>
     );
   }
@@ -953,7 +1092,7 @@ export default function CompanionMatchup({
   }
 
   return (
-    <div className="pb-6">
+    <div className="page-frame-workbench pb-6">
       <SeasonHintBanner capability="current-only" feature="Weekly matchups" className="mx-2 sm:mx-4 mb-3" />
       {/* Scoreboard header */}
           <div className="mb-4">
@@ -961,7 +1100,7 @@ export default function CompanionMatchup({
             <div className="px-2 sm:px-4">
               <div className="grid grid-cols-[minmax(0,1fr)_24px_minmax(0,1fr)] sm:grid-cols-[minmax(0,1fr)_44px_minmax(0,1fr)] items-stretch gap-1 sm:gap-2">
               <button
-                aria-label={`Your Side scoring breakdown for ${myName}`}
+                aria-label={`${myName} scoring breakdown${leftIsUser ? ', your team' : ''}`}
                 className="companion-matchup-scorecard min-w-0 px-2 sm:px-4 py-2.5 sm:py-3 text-center active:opacity-60 transition-opacity flex flex-col justify-center"
                 onClick={() => setSelectedTeam('mine')}
                 onMouseMove={mineHeaderGlow.glowHandlers.onMouseMove}
@@ -1020,9 +1159,10 @@ export default function CompanionMatchup({
                     {matchupOutcome.mine === 'win' ? 'W' : 'L'}
                   </div>
                 )}
-                <div className="hidden lg:block relative z-[1] self-center text-[10px] sm:text-[11px] font-bold uppercase tracking-[0.18em] sm:tracking-[0.2em]" style={{ color: 'var(--color-label-secondary)', fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif" }}>Your Side</div>
+                <div className="hidden lg:block relative z-[1] self-center text-[length:var(--type-label)] sm:text-[length:var(--type-label)] font-bold uppercase tracking-[0.18em] sm:tracking-[0.2em]" style={{ color: 'var(--color-label-secondary)', fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif" }}>{leftIsUser ? 'You' : 'League Team'}</div>
                 <div className="relative z-[1] mt-1 self-center uppercase whitespace-normal" style={{ color: 'var(--color-label)', fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif", fontSize: sharedTeamNameFontSize, fontWeight: 800, lineHeight: 0.96, wordBreak: 'normal', overflowWrap: 'normal' }}>
                   {myName}
+                  {leftIsUser && <span className="ml-1 inline-block align-middle text-[length:var(--type-micro)] tracking-[0.14em] lg:hidden" style={{ color: 'var(--color-label-secondary)' }}>You</span>}
                 </div>
                 <div className="relative z-[1] mt-1 self-center tabular-nums" style={{ color: 'var(--color-label)', fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif", fontSize: isCompactPhone ? 'clamp(24px, 6.2vw, 30px)' : 'clamp(30px, 7vw, 38px)', fontWeight: 800, lineHeight: 0.92 }}>
                   {myDisplayPoints?.toFixed(2) ?? '?'}
@@ -1034,7 +1174,7 @@ export default function CompanionMatchup({
                 </div>
               </div>
               <button
-                aria-label={`Opponent scoring breakdown for ${opponentName}`}
+                aria-label={`${opponentName} scoring breakdown${rightIsUser ? ', your team' : ''}`}
                 className="companion-matchup-scorecard min-w-0 px-2 sm:px-4 py-2.5 sm:py-3 text-center active:opacity-60 transition-opacity flex flex-col justify-center"
                 onClick={() => setSelectedTeam('opp')}
                 onMouseMove={oppHeaderGlow.glowHandlers.onMouseMove}
@@ -1093,9 +1233,10 @@ export default function CompanionMatchup({
                     {matchupOutcome.opp === 'win' ? 'W' : 'L'}
                   </div>
                 )}
-                <div className="hidden lg:block relative z-[1] self-center text-[10px] sm:text-[11px] font-bold uppercase tracking-[0.18em] sm:tracking-[0.2em]" style={{ color: 'var(--color-label-secondary)', fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif" }}>Opponent</div>
+                <div className="hidden lg:block relative z-[1] self-center text-[length:var(--type-label)] sm:text-[length:var(--type-label)] font-bold uppercase tracking-[0.18em] sm:tracking-[0.2em]" style={{ color: 'var(--color-label-secondary)', fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif" }}>{rightIsUser ? 'You' : 'League Team'}</div>
                 <div className="relative z-[1] mt-1 self-center uppercase whitespace-normal" style={{ color: 'var(--color-label)', fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif", fontSize: sharedTeamNameFontSize, fontWeight: 800, lineHeight: 0.96, wordBreak: 'normal', overflowWrap: 'normal' }}>
                   {opponentName}
+                  {rightIsUser && <span className="ml-1 inline-block align-middle text-[length:var(--type-micro)] tracking-[0.14em] lg:hidden" style={{ color: 'var(--color-label-secondary)' }}>You</span>}
                 </div>
                 <div className="relative z-[1] mt-1 self-center tabular-nums" style={{ color: 'var(--color-label)', fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif", fontSize: isCompactPhone ? 'clamp(24px, 6.2vw, 30px)' : 'clamp(30px, 7vw, 38px)', fontWeight: 800, lineHeight: 0.92 }}>
                   {oppDisplayPoints?.toFixed(2) ?? '?'}
@@ -1184,6 +1325,7 @@ export default function CompanionMatchup({
       )}
 
       {weekPickerModal}
+      {matchupPickerModal}
     </div>
   );
 }
@@ -1203,7 +1345,7 @@ function ByeWeekMatchup({ teamName, week, points, onOpenBreakdown }) {
         }}
       >
         <div
-          className="text-[11px] font-bold uppercase tracking-[0.22em]"
+          className="text-[length:var(--type-label)] font-bold uppercase tracking-[0.22em]"
           style={{ color: 'var(--color-label-tertiary)', fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif" }}
         >
           Week {week} Bye
@@ -1234,7 +1376,7 @@ function ByeWeekMatchup({ teamName, week, points, onOpenBreakdown }) {
             }}
           >
             <span
-              className="block text-[10px] font-bold uppercase tracking-[0.18em]"
+              className="block text-[length:var(--type-label)] font-bold uppercase tracking-[0.18em]"
               style={{ color: 'var(--color-label-tertiary)', fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif" }}
             >
               Fantasy Score
@@ -1252,6 +1394,92 @@ function ByeWeekMatchup({ teamName, week, points, onOpenBreakdown }) {
         </div>
       </div>
     </div>
+  );
+}
+
+function MatchupPickerModal({ open, onClose, matchupGroups, selectedIndex, onSelect }) {
+  if (!open) return null;
+
+  return (
+    <Modal
+      onClose={onClose}
+      mobileSheet
+      ariaLabel="Select matchup"
+      containerClassName="matchup-week-picker-sheet"
+      containerStyle={{
+        background: 'var(--color-bg-secondary)',
+        maxWidth: '520px',
+        '--modal-mobile-sheet-max-height': 'min(86dvh, calc(100dvh - env(safe-area-inset-top) - 8px))',
+      }}
+    >
+      <div className="matchup-week-picker-header">
+        <div className="min-w-0">
+          <div className="companion-segmented__title matchup-week-picker-title">
+            Select Matchup
+          </div>
+          <div className="matchup-week-picker-note">
+            Browse every matchup for this week
+          </div>
+        </div>
+        <CompanionSelectorButton
+          size="xs"
+          variant="ghost"
+          aria-label="Close select matchup"
+          onClick={onClose}
+          className="matchup-week-picker-close"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </CompanionSelectorButton>
+      </div>
+      <div className="grid gap-2 overflow-y-auto px-4 pb-5" style={{ maxHeight: 'min(64dvh, 560px)' }}>
+        {matchupGroups.map((group, index) => {
+          const left = group.sides[0];
+          const right = group.sides[1];
+          const isSelected = index === selectedIndex;
+          return (
+            <button
+              type="button"
+              key={group.key}
+              aria-current={isSelected ? 'true' : undefined}
+              aria-label={`${left?.name ?? 'Team'}${right ? ` versus ${right.name}` : ' bye'}${group.includesUser ? ', includes your team' : ''}`}
+              onClick={() => onSelect(index)}
+              className="grid min-h-11 w-full grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 px-3 py-2 text-left focus-visible:outline-none focus-visible:ring-2"
+              style={{
+                minHeight: 52,
+                background: isSelected ? 'var(--color-signature)' : 'var(--color-fill)',
+                border: `1px solid ${isSelected ? 'var(--color-signature)' : 'var(--color-separator)'}`,
+                borderRadius: 8,
+                color: isSelected ? 'var(--color-signature-fg)' : 'var(--color-label)',
+                '--tw-ring-color': 'var(--color-signature)',
+              }}
+            >
+              <span className="min-w-0">
+                <span className="block whitespace-normal text-sm font-bold text-pretty">{left?.name ?? 'Team'}</span>
+                {left?.isUser && (
+                  <span className="mt-0.5 block text-[length:var(--type-micro)] font-bold uppercase tracking-[0.16em]" style={{ opacity: 0.68 }}>You</span>
+                )}
+              </span>
+              <span className="text-[length:var(--type-label)] font-bold uppercase tracking-[0.14em]" style={{ opacity: 0.58 }}>
+                {right ? 'vs' : 'bye'}
+              </span>
+              <span className="min-w-0 text-right">
+                {right && (
+                  <>
+                    <span className="block whitespace-normal text-sm font-bold text-pretty">{right.name}</span>
+                    {right.isUser && (
+                      <span className="mt-0.5 block text-[length:var(--type-micro)] font-bold uppercase tracking-[0.16em]" style={{ opacity: 0.68 }}>You</span>
+                    )}
+                  </>
+                )}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </Modal>
   );
 }
 

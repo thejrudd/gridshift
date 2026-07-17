@@ -4,18 +4,11 @@ import {
   getTransactions,
 } from '../api/sleeperApi.js';
 import { cachedFetch } from './playerCache.js';
+import { getNflRegularSeasonStartTimestamp } from './nflSeason.js';
 
 export const TRADE_HISTORY_ROUNDS = Array.from({ length: 19 }, (_, round) => round);
 export const CURRENT_TRADE_HISTORY_TTL = 5 * 60 * 1000;
-export function getNflRegularSeasonStartTimestamp(season) {
-  const year = Number(season);
-  if (!Number.isFinite(year)) return 0;
-  const septemberFirst = new Date(Date.UTC(year, 8, 1));
-  const firstMondayOffset = (8 - septemberFirst.getUTCDay()) % 7;
-  const firstMonday = septemberFirst.getUTCDate() + firstMondayOffset;
-  const firstRegularSeasonThursday = new Date(Date.UTC(year, 8, firstMonday + 3));
-  return firstRegularSeasonThursday.getTime();
-}
+export { getNflRegularSeasonStartTimestamp } from './nflSeason.js';
 
 function rosterKey(value) {
   if (value == null) return null;

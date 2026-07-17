@@ -321,7 +321,7 @@ function ProjectionMath({ baseAvg, factors, projected, projMin, projMax, oppTeam
           >
             Projection Math
           </div>
-          <div className="mt-1 text-[13px] leading-snug" style={{ color: 'var(--color-label)' }}>
+          <div className="mt-1 text-[length:var(--type-meta)] leading-snug" style={{ color: 'var(--color-label)' }}>
             Base scoring adjusted by matchup, venue, weather, and recent usage.
           </div>
         </div>
@@ -351,12 +351,12 @@ function ProjectionMath({ baseAvg, factors, projected, projMin, projMax, oppTeam
             <div className="min-w-0">
               <div className="text-sm font-bold leading-tight" style={{ color: 'var(--color-label)', fontFamily: displayFont }}>{row.label}</div>
               {row.detail && (
-                <div className="mt-0.5 text-[11px] truncate" style={{ color: 'var(--color-label-secondary)' }}>{row.detail}</div>
+                <div className="mt-0.5 text-[length:var(--type-label)] truncate" style={{ color: 'var(--color-label-secondary)' }}>{row.detail}</div>
               )}
             </div>
             <div className="text-right">
               <div className="text-base font-black tabular-nums leading-tight" style={{ color: row.color, fontFamily: displayFont }}>{row.value}</div>
-              <div className="text-[11px] tabular-nums" style={{ color: 'var(--color-label-secondary)' }}>{row.meta}</div>
+              <div className="text-[length:var(--type-label)] tabular-nums" style={{ color: 'var(--color-label-secondary)' }}>{row.meta}</div>
             </div>
           </div>
         ))}
@@ -366,7 +366,7 @@ function ProjectionMath({ baseAvg, factors, projected, projMin, projMax, oppTeam
         {range.map(item => (
           <div key={item.label} className="rounded-md px-2.5 py-2.5" style={{ background: 'var(--color-bg-tertiary)', border: '1px solid var(--color-separator)' }}>
             <div
-              className="text-[10px] font-bold uppercase tracking-widest"
+              className="text-[length:var(--type-label)] font-bold uppercase tracking-widest"
               style={{ color: 'var(--color-label-secondary)', fontFamily: displayFont }}
             >
               {item.label}
@@ -375,7 +375,7 @@ function ProjectionMath({ baseAvg, factors, projected, projMin, projMax, oppTeam
               {item.value != null ? item.value.toFixed(1) : '—'}
             </div>
             {item.source != null && (
-              <div className="mt-1 text-[10px] tabular-nums" style={{ color: 'var(--color-label-secondary)' }}>
+              <div className="mt-1 text-[length:var(--type-label)] tabular-nums" style={{ color: 'var(--color-label-secondary)' }}>
                 from {item.source.toFixed(1)}
               </div>
             )}
@@ -383,7 +383,7 @@ function ProjectionMath({ baseAvg, factors, projected, projMin, projMax, oppTeam
         ))}
       </div>
 
-      <div className="mt-4 text-[11px] leading-relaxed" style={{ color: 'var(--color-label-secondary)' }}>
+      <div className="mt-4 text-[length:var(--type-label)] leading-relaxed" style={{ color: 'var(--color-label-secondary)' }}>
         Matchup uses fantasy points per game allowed to the position group in prior weeks. Floor and ceiling start from this player's 25th and 75th percentile games, then receive a lighter matchup adjustment.
       </div>
     </div>
@@ -396,7 +396,7 @@ function SectionHeader({ label }) {
       className="px-5 pt-4 pb-1.5"
       style={{ borderBottom: '1px solid var(--color-separator)' }}
     >
-      <span className="text-[11px] font-bold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>
+      <span className="text-[length:var(--type-label)] font-bold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>
         {label}
       </span>
     </div>
@@ -701,19 +701,19 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, enr
                 <div className="flex gap-6 px-5 py-3" style={{ borderBottom: '1px solid var(--color-separator)' }}>
                   {wkRank && (
                     <div>
-                      <div className="text-[10px] uppercase tracking-widest mb-0.5" style={{ color: 'var(--color-label-tertiary)' }}>Week {week}</div>
+                      <div className="text-[length:var(--type-label)] uppercase tracking-widest mb-0.5" style={{ color: 'var(--color-label-tertiary)' }}>Week {week}</div>
                       <div className="text-sm font-bold tabular-nums" style={{ color: 'var(--color-label)' }}>{wkRank}</div>
                     </div>
                   )}
                   {ssnRank && (
                     <div>
-                      <div className="text-[10px] uppercase tracking-widest mb-0.5" style={{ color: 'var(--color-label-tertiary)' }}>Season</div>
+                      <div className="text-[length:var(--type-label)] uppercase tracking-widest mb-0.5" style={{ color: 'var(--color-label-tertiary)' }}>Season</div>
                       <div className="text-sm font-bold tabular-nums" style={{ color: 'var(--color-label)' }}>{ssnRank}</div>
                     </div>
                   )}
                   {avgPPG && (
                     <div>
-                      <div className="text-[10px] uppercase tracking-widest mb-0.5" style={{ color: 'var(--color-label-tertiary)' }}>Avg PPG</div>
+                      <div className="text-[length:var(--type-label)] uppercase tracking-widest mb-0.5" style={{ color: 'var(--color-label-tertiary)' }}>Avg PPG</div>
                       <div className="text-sm tabular-nums" style={{ color: 'var(--color-label)' }}>{avgPPG.toFixed(1)}</div>
                     </div>
                   )}
@@ -750,7 +750,7 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, enr
                     <InfoRow label="Defense">
                       {defLabel && (
                         <span
-                          className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                          className="text-[length:var(--type-label)] font-bold px-1.5 py-0.5 rounded-full"
                           style={{ background: defBg, color: defText }}
                         >
                           {defLabel}
@@ -776,7 +776,7 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, enr
                       {factors && (
                         <button
                           type="button"
-                          className="ml-auto shrink-0 text-[11px] font-bold w-5 h-5 rounded-full flex xl:hidden items-center justify-center transition-colors"
+                          className="ml-auto shrink-0 text-[length:var(--type-label)] font-bold w-5 h-5 rounded-full flex xl:hidden items-center justify-center transition-colors"
                           style={{
                             background: mathVisible ? 'var(--color-accent)' : 'var(--color-fill-secondary)',
                             color: mathVisible ? '#fff' : 'var(--color-label-tertiary)',

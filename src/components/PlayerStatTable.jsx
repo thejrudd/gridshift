@@ -2568,7 +2568,7 @@ const HONOR_CONFIG = {
 export const HonorBadge = ({ honor }) => {
   const c = HONOR_CONFIG[honor] ?? { label: honor, cls: 'bg-[color:var(--color-fill)] text-[color:var(--color-label-secondary)] border-[color:var(--color-separator-opaque)]' };
   return (
-    <span className={`inline-flex items-center px-1.5 py-0.5 rounded border text-[10px] font-bold uppercase tracking-wide ${c.cls}`}>
+    <span className={`inline-flex items-center px-1.5 py-0.5 rounded border text-[length:var(--type-label)] font-bold uppercase tracking-wide ${c.cls}`}>
       {c.label}
     </span>
   );
@@ -2600,7 +2600,7 @@ const StatSections = ({ sections, accentColor }) => (
     {sections.map(({ heading, rows }) => (
       <div key={heading}>
         <div
-          className="text-[10px] font-bold uppercase tracking-widest pb-1 mb-2 border-b"
+          className="text-[length:var(--type-label)] font-bold uppercase tracking-widest pb-1 mb-2 border-b"
           style={accentColor
             ? { color: accentColor, borderBottomColor: `${accentColor}40` }
             : { color: undefined, borderBottomColor: undefined }
@@ -2613,14 +2613,14 @@ const StatSections = ({ sections, accentColor }) => (
             const rankMeta = formatRankMeta(rank, positionRank);
             return (
               <div key={key ?? label} className="flex flex-col">
-                <span className="text-[10px] uppercase tracking-wider text-[color:var(--color-label-tertiary)] font-semibold">{label}</span>
+                <span className="text-[length:var(--type-label)] uppercase tracking-wider text-[color:var(--color-label-tertiary)] font-semibold">{label}</span>
                 <div className="flex items-baseline gap-1">
                   <span className="text-base font-bold text-[color:var(--color-label)]">{value}</span>
                   {valueSuffix && (
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-[color:var(--color-label-tertiary)]">{valueSuffix}</span>
+                    <span className="text-[length:var(--type-label)] font-semibold uppercase tracking-wider text-[color:var(--color-label-tertiary)]">{valueSuffix}</span>
                   )}
                   {rankMeta && (
-                    <span className="text-[10px] text-[color:var(--color-label-tertiary)] tabular-nums">{rankMeta}</span>
+                    <span className="text-[length:var(--type-label)] text-[color:var(--color-label-tertiary)] tabular-nums">{rankMeta}</span>
                   )}
                 </div>
               </div>
@@ -2635,7 +2635,7 @@ const StatSections = ({ sections, accentColor }) => (
 function SortDirectionIndicator({ active, direction }) {
   return (
     <span
-      className={`inline-flex w-2 justify-center text-[9px] leading-none transition-opacity ${active ? 'opacity-80' : 'opacity-0'}`}
+      className={`inline-flex w-2 justify-center text-[length:var(--type-micro)] leading-none transition-opacity ${active ? 'opacity-80' : 'opacity-0'}`}
       aria-hidden="true"
     >
       {direction === 'desc' ? '↓' : '↑'}
@@ -2732,14 +2732,14 @@ const GameLog = ({
   const compactGameTableWidth = compactGameIdentityWidths.reduce((sum, width) => sum + width, 0) + (cols.length * compactGameStatWidth);
   const useTightIdentitySpacing = fantasyOnly || isMobileGameLogLayout;
   const baseHeaderClass = useTightIdentitySpacing
-    ? 'px-1 py-2 text-left font-semibold text-[color:var(--color-label-tertiary)] uppercase whitespace-nowrap text-[9px] lg:text-[10px] tracking-normal lg:tracking-[0.04em]'
-    : 'px-2 py-2 text-left font-semibold text-[color:var(--color-label-tertiary)] uppercase whitespace-nowrap text-[9px] lg:text-[10px] tracking-normal lg:tracking-[0.04em]';
-  const statHeaderClass = 'px-1 py-2 text-center align-middle font-semibold text-[color:var(--color-label-tertiary)] uppercase text-[9px] lg:text-[10px] tracking-normal lg:tracking-[0.04em] overflow-hidden';
+    ? 'px-1 py-2 text-left font-semibold text-[color:var(--color-label-tertiary)] uppercase whitespace-nowrap text-[length:var(--type-micro)] lg:text-[length:var(--type-label)] tracking-normal lg:tracking-[0.04em]'
+    : 'px-2 py-2 text-left font-semibold text-[color:var(--color-label-tertiary)] uppercase whitespace-nowrap text-[length:var(--type-micro)] lg:text-[length:var(--type-label)] tracking-normal lg:tracking-[0.04em]';
+  const statHeaderClass = 'px-1 py-2 text-center align-middle font-semibold text-[color:var(--color-label-tertiary)] uppercase text-[length:var(--type-micro)] lg:text-[length:var(--type-label)] tracking-normal lg:tracking-[0.04em] overflow-hidden';
   const baseCellClass = useTightIdentitySpacing
     ? 'px-1 py-1.5 align-middle whitespace-nowrap'
     : 'px-1 sm:px-2 py-1.5 align-middle whitespace-nowrap';
   const identityCellPaddingClass = useTightIdentitySpacing ? 'px-1' : 'px-3';
-  const statCellClass = 'px-1 py-1.5 text-center text-[color:var(--color-label)] tabular-nums whitespace-nowrap text-[10px] lg:text-[11px]';
+  const statCellClass = 'px-1 py-1.5 text-center text-[color:var(--color-label)] tabular-nums whitespace-nowrap text-[length:var(--type-label)] lg:text-[length:var(--type-label)]';
   const tableClassName = expandedGameStats
     ? 'table-fixed text-xs'
     : fantasyOnly
@@ -2981,8 +2981,8 @@ const GameLog = ({
             if (isBye) {
               return (
                 <tr key={game.eventId} className="bg-[color:var(--color-fill-tertiary)] italic">
-                  <td className={getStickyIdentityClass(0, `${identityCellPaddingClass} py-1 text-[color:var(--color-label-tertiary)] tabular-nums text-[11px]`, 'bg-[color:var(--color-fill-secondary)]')} style={getStickyIdentityStyle(0)}>{meta.week}</td>
-                  <td className={getStickyIdentityClass(1, `${identityCellPaddingClass} py-1 text-[color:var(--color-label-tertiary)] text-[11px]`, 'bg-[color:var(--color-fill-secondary)]')} style={getStickyIdentityStyle(1)}>{meta.myTeam ?? '—'}</td>
+                  <td className={getStickyIdentityClass(0, `${identityCellPaddingClass} py-1 text-[color:var(--color-label-tertiary)] tabular-nums text-[length:var(--type-label)]`, 'bg-[color:var(--color-fill-secondary)]')} style={getStickyIdentityStyle(0)}>{meta.week}</td>
+                  <td className={getStickyIdentityClass(1, `${identityCellPaddingClass} py-1 text-[color:var(--color-label-tertiary)] text-[length:var(--type-label)]`, 'bg-[color:var(--color-fill-secondary)]')} style={getStickyIdentityStyle(1)}>{meta.myTeam ?? '—'}</td>
                   <td className={getStickyIdentityClass(2, `${identityCellPaddingClass} py-1 text-[color:var(--color-label-tertiary)] font-medium tracking-wide`, 'bg-[color:var(--color-fill-secondary)]')} style={getStickyIdentityStyle(2)}>
                     BYE
                   </td>
@@ -3032,7 +3032,7 @@ const GameLog = ({
                       <>
                         <td
                           colSpan={4}
-                          className="sticky left-0 z-30 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-[color:var(--color-accent-orange)] bg-tint-signature border-t-2 border-tint-signature shadow-[8px_0_12px_-12px_rgba(15,23,42,0.45)]"
+                          className="sticky left-0 z-30 px-3 py-1 text-[length:var(--type-label)] font-bold uppercase tracking-widest text-[color:var(--color-accent-orange)] bg-tint-signature border-t-2 border-tint-signature shadow-[8px_0_12px_-12px_rgba(15,23,42,0.45)]"
                           style={{ width: `${expandedIdentityWidth}px` }}
                         >
                           Playoffs
@@ -3047,7 +3047,7 @@ const GameLog = ({
                     ) : (
                       <td
                         colSpan={4 + cols.length}
-                        className="px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-[color:var(--color-accent-orange)] bg-tint-signature border-t-2 border-tint-signature"
+                        className="px-3 py-1 text-[length:var(--type-label)] font-bold uppercase tracking-widest text-[color:var(--color-accent-orange)] bg-tint-signature border-t-2 border-tint-signature"
                       >
                         Playoffs
                       </td>
@@ -3056,14 +3056,14 @@ const GameLog = ({
                 )}
                 <tr key={game.eventId ?? i} className={`transition-colors ${rowBg} ${dimText}`}>
                   <td
-                    className={getStickyIdentityClass(0, `${baseCellClass} text-[color:var(--color-label-tertiary)] tabular-nums text-[11px]`)}
+                    className={getStickyIdentityClass(0, `${baseCellClass} text-[color:var(--color-label-tertiary)] tabular-nums text-[length:var(--type-label)]`)}
                     style={getStickyIdentityStyle(0)}
                     title={String(weekLabel)}
                   >
                     {weekLabel}
                   </td>
                   <td
-                    className={getStickyIdentityClass(1, `${baseCellClass} font-medium text-[color:var(--color-label-secondary)] text-[11px]`)}
+                    className={getStickyIdentityClass(1, `${baseCellClass} font-medium text-[color:var(--color-label-secondary)] text-[length:var(--type-label)]`)}
                     style={getStickyIdentityStyle(1)}
                     title={meta.myTeam ?? '—'}
                   >
@@ -3083,7 +3083,7 @@ const GameLog = ({
                   >
                     {resultLabel}
                     {isInactive && (
-                      <span className="ml-1 text-[10px] font-normal text-[color:var(--color-label-tertiary)] not-italic normal-case sm:ml-1.5">
+                      <span className="ml-1 text-[length:var(--type-label)] font-normal text-[color:var(--color-label-tertiary)] not-italic normal-case sm:ml-1.5">
                         (inactive)
                       </span>
                     )}

@@ -34,7 +34,7 @@ function SummarySection({ heading, rows, showFantasyMeta = true }) {
   return (
     <div className="space-y-2">
       <div
-        className="text-[10px] font-bold uppercase tracking-widest pb-1 border-b"
+        className="text-[length:var(--type-label)] font-bold uppercase tracking-widest pb-1 border-b"
         style={{ color: 'var(--color-label-tertiary)', borderBottomColor: 'var(--color-separator)' }}
       >
         {heading}
@@ -42,7 +42,7 @@ function SummarySection({ heading, rows, showFantasyMeta = true }) {
       <div className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3">
         {rows.map(({ label, value, rank, fantasyPoints, fantasyRank }) => (
           <div key={label} className="flex flex-col">
-            <span className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: 'var(--color-label-tertiary)' }}>
+            <span className="text-[length:var(--type-label)] uppercase tracking-wider font-semibold" style={{ color: 'var(--color-label-tertiary)' }}>
               {label}
             </span>
             <div className="flex items-baseline gap-1">
@@ -50,13 +50,13 @@ function SummarySection({ heading, rows, showFantasyMeta = true }) {
                 {value}
               </span>
               {rank && (
-                <span className="text-[10px] tabular-nums" style={{ color: 'var(--color-label-quaternary)' }}>
+                <span className="text-[length:var(--type-label)] tabular-nums" style={{ color: 'var(--color-label-quaternary)' }}>
                   ({rank})
                 </span>
               )}
             </div>
             {showFantasyMeta && fantasyPoints != null && fantasyPoints !== 0 && (
-              <div className="text-[10px] tabular-nums" style={{ color: 'var(--color-label-quaternary)' }}>
+              <div className="text-[length:var(--type-label)] tabular-nums" style={{ color: 'var(--color-label-quaternary)' }}>
                 {fantasyPoints != null ? `${fantasyPoints.toFixed(2)} pts` : '— pts'}
                 {fantasyRank != null ? ` · #${fantasyRank}` : ''}
               </div>
@@ -280,7 +280,7 @@ export default function PlayerStatsModal({
                         <div className="text-lg font-bold leading-tight" style={{ color: heroBg ? heroOnBg : 'var(--color-label)' }}>
                           {value}
                         </div>
-                        <div className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: heroBg ? heroOnBgMuted : 'var(--color-label-tertiary)' }}>
+                        <div className="text-[length:var(--type-label)] font-semibold uppercase tracking-wider" style={{ color: heroBg ? heroOnBgMuted : 'var(--color-label-tertiary)' }}>
                           {label}
                         </div>
                       </div>

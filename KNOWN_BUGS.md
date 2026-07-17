@@ -51,6 +51,18 @@ These ESPN league integration issues are known but deferred while ESPN features 
 
 | Bug | Fixed In |
 |-----|----------|
+| Companion Activity timeline entries can paint through the transparent sticky offset above the filter chips while scrolling. | v8.3.0 |
+| Sleeper League History standings and playoff brackets omit commissioner `custom_points` adjustments, so displayed totals can diverge from Sleeper. | v8.3.0 |
+| Companion Standings drops visual bye slots from uneven Sleeper Toilet Bowls, orders loser-advances branches like a winner bracket, and detaches championship placement games into an unwanted standalone bracket. | v8.3.0 |
+| Desktop typography and control density do not scale coherently across 1080p, 1440p, high-DPI, and browser-zoomed displays, leaving meaningful metadata too small and wide layouts difficult to scan. | v8.3.0 |
+| The v8.3 What's New tour skips League History and Standings steps when those views are loading, unavailable, or have no completed data because their empty-state wrappers do not provide the required tour anchors. | v8.3.0 |
+| Mobile League Standings playoff brackets can scroll horizontally without showing directional arrow cues. | v8.3.0 |
+| League Activity labels offseason Sleeper transactions as Week 1 because Sleeper uses transaction leg 1 before the NFL regular season begins. | v8.3.0 |
+| League History rivalry bars reserve visible space for a winless team, so undefeated series such as 3–0 do not fully fill toward the winning side. | v8.3.0 |
+| Mobile bottom-navigation labels use the condensed display font instead of the established Figtree UI font. | v8.3.0 |
+| League History record tiles shift upward by two pixels on mouse hover. | v8.3.0 |
+| League History record values do not share a consistent horizontal baseline when tile labels or details wrap to different line counts. | v8.3.0 |
+| Historical Sleeper Draft Results attribute picks to a roster's replacement owner instead of the draft pick's preserved `picked_by` user, conflating managers after mid-season ownership changes. | v8.3.0 |
 | Sleeper roster changes could remain stale in GridShift after commissioner drops, adds, trades, or reserve/taxi updates because persisted rosters were not revalidated while a league remained connected. | v8.2.2 |
 | On mobile Draft Board, expanded Available Players could overlap board position filters, fail to scroll, and leave unused space above My Roster. | v8.2.2 |
 | The What's New Draft tour could describe a historical league year as though the user's current draft had already started, without naming the selected year, current league year, or selected draft phase. | v8.2.1 |

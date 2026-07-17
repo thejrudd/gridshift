@@ -5,6 +5,7 @@ export default function ActionSheet({
   predictionCount,
   activeTab,
   onGuide,
+  onDisplay,
   onAppTour,
   onExportImage,
   onExportJSON,
@@ -44,7 +45,7 @@ export default function ActionSheet({
             <>
               <div className="px-1 pb-2 pt-1">
                 <div
-                  className="text-[11px] font-bold uppercase"
+                  className="text-[length:var(--type-label)] font-bold uppercase"
                   style={{
                     color: 'var(--color-label-tertiary)',
                     fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif",
@@ -95,6 +96,8 @@ export default function ActionSheet({
             label={favoriteTeam ? `My Team — ${favoriteTeam.toUpperCase()}` : 'My Team'}
             onClick={onMyTeam}
           />
+          <Divider />
+          <ActionRow label="Display" onClick={onDisplay} />
           <Divider />
           <ActionLink
             label="Support GridShift"

@@ -302,7 +302,7 @@ export default function TeamPage({ team, onBack, onSelectPlayer, onViewSchedule 
           style={{ background: 'var(--color-bg-secondary)', borderLeft: `3px solid ${heroAccent}` }}
         >
           <h2
-            className="text-[10px] font-bold uppercase tracking-widest mb-3"
+            className="text-[length:var(--type-label)] font-bold uppercase tracking-widest mb-3"
             style={{ color: heroAccent }}
           >
             Franchise Note
@@ -335,7 +335,7 @@ export default function TeamPage({ team, onBack, onSelectPlayer, onViewSchedule 
           <section>
             <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
               <h2
-                className="text-[10px] font-bold uppercase tracking-widest"
+                className="text-[length:var(--type-label)] font-bold uppercase tracking-widest"
                 style={{ color: heroAccent }}
               >
                 Projected Starters
@@ -351,7 +351,7 @@ export default function TeamPage({ team, onBack, onSelectPlayer, onViewSchedule 
                       key={section.id}
                       type="button"
                       onClick={() => setStarterTab(section.id)}
-                      className="rounded-md px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider transition-colors"
+                      className="rounded-md px-3 py-1.5 text-[length:var(--type-label)] font-bold uppercase tracking-wider transition-colors"
                       style={{
                         background: active ? heroAccent : 'transparent',
                         color: active ? tabOnAccent : 'var(--color-label-secondary)',
@@ -378,7 +378,7 @@ export default function TeamPage({ team, onBack, onSelectPlayer, onViewSchedule 
           {/* ── Full roster by position ───────────────────────────────────── */}
           <section>
             <h2
-              className="text-[10px] font-bold uppercase tracking-widest mb-3"
+              className="text-[length:var(--type-label)] font-bold uppercase tracking-widest mb-3"
               style={{ color: heroAccent }}
             >
               Full Roster
@@ -413,11 +413,11 @@ function ChampPod({ count, label, note, icon, onBg, muted, podBg }) {
       <span className="text-xl leading-none" aria-hidden="true">{icon}</span>
       <div>
         <div className="text-lg font-bold leading-none" style={{ color: onBg }}>{count}</div>
-        <div className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: muted }}>
+        <div className="text-[length:var(--type-label)] font-semibold uppercase tracking-wider" style={{ color: muted }}>
           {label}
         </div>
         {note && (
-          <div className="text-[9px] tabular-nums" style={{ color: muted, marginTop: '1px' }}>
+          <div className="text-[length:var(--type-micro)] tabular-nums" style={{ color: muted, marginTop: '1px' }}>
             {note}
           </div>
         )}
@@ -474,13 +474,13 @@ function StarterCard({ slot, accentColor, onClick }) {
         />
       )}
       <div
-        className="text-[9px] font-bold uppercase tracking-wider mb-0.5"
+        className="text-[length:var(--type-micro)] font-bold uppercase tracking-wider mb-0.5"
         style={{ color: accentColor ?? 'var(--color-label-tertiary)' }}
       >
         {slot.label}
       </div>
       <div
-        className="text-[11px] font-semibold leading-tight w-full truncate"
+        className="text-[length:var(--type-label)] font-semibold leading-tight w-full truncate"
         style={{ color: player ? 'var(--color-label)' : 'var(--color-label-tertiary)' }}
       >
         {lastName}
@@ -558,7 +558,7 @@ function PlayerThumb({ id, name }) {
   const initials = (name ?? '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
   return err ? (
     <div className="w-8 h-8 rounded-full bg-[color:var(--color-fill)] flex items-center justify-center shrink-0">
-      <span className="text-[10px] font-bold text-[color:var(--color-label-tertiary)]">{initials}</span>
+      <span className="text-[length:var(--type-label)] font-bold text-[color:var(--color-label-tertiary)]">{initials}</span>
     </div>
   ) : (
     <img

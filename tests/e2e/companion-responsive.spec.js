@@ -20,14 +20,16 @@ const MOBILE_VIEWPORTS = [
 ];
 
 const RESPONSIVE_ROUTES = [
-  '/companion/roster',
-  '/companion/rankings',
-  '/companion/matchup',
-  '/companion/waiver',
-  '/companion/league',
-  '/companion/league?sub=picks',
-  '/companion/heatmap',
-  '/companion/scoring',
+  '/fantasy/rosters',
+  '/fantasy/rankings',
+  '/fantasy/matchups',
+  '/fantasy/waivers',
+  '/fantasy/rosters?sub=picks',
+  '/league/standings',
+  '/league/history',
+  '/league/activity',
+  '/fantasy/heatmap',
+  '/fantasy/scoring',
 ];
 
 test.beforeEach(async ({ page }) => {
@@ -44,25 +46,48 @@ for (const viewport of MOBILE_VIEWPORTS) {
       await page.waitForLoadState('networkidle').catch(() => {});
       await expectNoDocumentOverflow(page, route);
       await expectNoCompanionIdentityEllipsis(page, route);
-      if (route === '/companion/matchup') {
+      if (route === '/fantasy/matchups') {
         await expectNoMatchupRowCrowding(page, route);
       }
     }
   });
 }
 
-test('Companion horizontal affordances appear when rails overflow', async ({ page }) => {
+test('Fantasy horizontal affordances appear when rails overflow', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 568 });
-  await page.goto('/companion/roster');
+  await page.goto('/fantasy/rosters');
 
   await expect(page.locator('.season-subnav [data-scroll-cue="right"]').first()).toBeVisible();
   await expectRightCueCoversScrollableEdge(page, '.season-subnav .season-tabs', '.season-subnav [data-scroll-cue="right"]');
 
-  await page.goto('/companion/league');
+  await page.goto('/fantasy/rosters');
   await expect(page.locator('[data-scroll-cue="right"]').first()).toBeVisible();
 
-  await page.goto('/companion/league?sub=picks');
+  await page.goto('/fantasy/rosters?sub=picks');
   await expect(page.locator('[data-scroll-cue="right"]').first()).toBeVisible();
+});
+
+test('Fantasy desktop overflow arrows and tab keyboard navigation are interactive', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromium-desktop', 'Desktop pointer controls are intentionally hidden for coarse-pointer contexts.');
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await page.goto('/fantasy/rosters');
+
+  const rail = page.locator('.season-subnav .season-tabs');
+  const rightCue = page.getByRole('button', { name: 'Scroll Fantasy views right' });
+  await expect(rightCue).toBeVisible();
+  const before = await rail.evaluate((element) => element.scrollLeft);
+  await rightCue.click();
+  await expect.poll(() => rail.evaluate((element) => element.scrollLeft)).toBeGreaterThan(before);
+
+  const after = await rail.evaluate((element) => element.scrollLeft);
+  const leftCue = page.getByRole('button', { name: 'Scroll Fantasy views left' });
+  await leftCue.press('Enter');
+  await expect.poll(() => rail.evaluate((element) => element.scrollLeft)).toBeLessThan(after);
+
+  const rostersTab = page.getByRole('tab', { name: 'Rosters' });
+  await rostersTab.focus();
+  await rostersTab.press('ArrowRight');
+  await expect(page).toHaveURL(/\/fantasy\/rankings/);
 });
 
 test('Statistics schedule week rail keeps mobile overflow contained', async ({ page }) => {
@@ -80,16 +105,17 @@ test('Statistics schedule week rail keeps mobile overflow contained', async ({ p
   );
 });
 
-test('Companion scoring preview Hold keeps Rankings scroll position fixed', async ({ page }) => {
+test('Fantasy scoring preview Hold keeps Rankings scroll position fixed', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('/companion/scoring');
+  await page.goto('/fantasy/scoring');
 
   await page.getByRole('button', { name: /browse leagues/i }).click();
   await page.getByRole('button', { name: new RegExp(`${TEST_SEASON} Season`, 'i') }).click();
   await page.getByRole('button', { name: /Half PPR Preview League/i }).click();
   await expect(page.getByText('Active')).toBeVisible();
 
-  await page.goto('/companion/rankings');
+  await page.getByRole('tab', { name: 'Rankings', exact: true }).click();
+  await expect(page).toHaveURL(/\/fantasy\/rankings/);
   const rows = page.locator('.companion-player-row');
   await expect.poll(async () => rows.count()).toBeGreaterThan(10);
 
@@ -114,7 +140,7 @@ test('Companion scoring preview Hold keeps Rankings scroll position fixed', asyn
 
 test('Heatmap mobile keeps filters collapsed above the grid', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 568 });
-  await page.goto('/companion/heatmap');
+  await page.goto('/fantasy/heatmap');
 
   await expect(page.getByRole('button', { name: 'Show Filters' })).toBeVisible();
   await expect(page.locator('#companion-heatmap-filter-panel')).toHaveCount(0);
@@ -129,12 +155,12 @@ test('Heatmap mobile keeps filters collapsed above the grid', async ({ page }) =
 test('Matchup team scoring breakdown opens as a mobile bottom sheet', async ({ page }) => {
   const viewport = { width: 390, height: 844 };
   await page.setViewportSize(viewport);
-  await page.goto('/companion/matchup');
+  await page.goto('/fantasy/matchups');
 
   await expect(page.locator('.companion-matchup-column-header')).toBeHidden();
   await expect(page.locator('.companion-matchup-side-headings')).toHaveCount(0);
 
-  await page.getByRole('button', { name: /Your Side/i }).click();
+  await page.getByRole('button', { name: /scoring breakdown, your team/i }).click();
   const sheet = page.locator('.modal-overlay--mobile-sheet .team-score-breakdown-sheet');
   await expect(sheet).toBeVisible();
 
@@ -144,7 +170,7 @@ test('Matchup team scoring breakdown opens as a mobile bottom sheet', async ({ p
 test('Matchup week picker opens as a shared mobile selection sheet', async ({ page }) => {
   const viewport = { width: 390, height: 844 };
   await page.setViewportSize(viewport);
-  await page.goto('/companion/matchup');
+  await page.goto('/fantasy/matchups');
 
   await page.locator('.companion-matchup-week-trigger').click();
   const sheet = page.locator('.modal-overlay--mobile-sheet .matchup-week-picker-sheet');

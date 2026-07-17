@@ -326,7 +326,7 @@ export default function CompanionScoring() {
   })).filter(group => group.stats.length > 0);
 
   return (
-    <div className="pb-6">
+    <div className="page-frame-readable pb-6">
       {/* Import from league + toggle row */}
       <div className="px-4 pt-2 pb-4 flex flex-wrap items-center gap-3">
         {league?.scoring_settings ? (
@@ -452,13 +452,13 @@ export default function CompanionScoring() {
             <div className="text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>
               ESPN Import Audit
             </div>
-            <div className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-quaternary)' }}>
+            <div className="text-[length:var(--type-label)] font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-quaternary)' }}>
               ID → imported setting
             </div>
           </div>
           <div className="rounded-xl overflow-hidden" style={{ background: 'var(--color-fill-secondary)' }}>
             <div
-              className="hidden gap-3 px-4 py-2 text-[10px] font-bold uppercase tracking-widest sm:grid sm:grid-cols-[80px_minmax(0,1fr)_minmax(0,1fr)_90px]"
+              className="hidden gap-3 px-4 py-2 text-[length:var(--type-label)] font-bold uppercase tracking-widest sm:grid sm:grid-cols-[80px_minmax(0,1fr)_minmax(0,1fr)_90px]"
               style={{ color: 'var(--color-label-tertiary)', borderBottom: '1px solid var(--color-separator)' }}
             >
               <span>Stat ID</span>

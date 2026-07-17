@@ -463,6 +463,8 @@ function WeekScheduleView({
         <HorizontalScrollCue
           left={weekScrollCue.left}
           right={weekScrollCue.right}
+          targetRef={weekScrubberRef}
+          label="schedule weeks"
           className="horizontal-scroll-cue--schedule"
         />
       </div>

@@ -1,6 +1,6 @@
-# Scout Tab — Architecture & Implementation Reference
+# Scout — Hidden Route Architecture & Implementation Reference
 
-Introduced in v7.0. Scout is a top-level rookie evaluation hub backed by static 2026 prospect data. It supports a pre-draft state with ranked prospects and nullable draft result fields, then can be updated after each pick with actual round, pick, overall, and team.
+Introduced in v7.0. Scout is a hidden rookie evaluation route backed by static 2026 prospect data. It remains directly accessible at `/scout` for future or seasonal reuse, but is not shown in primary navigation or onboarding.
 
 ---
 
@@ -9,7 +9,7 @@ Introduced in v7.0. Scout is a top-level rookie evaluation hub backed by static 
 | Decision | Choice |
 |---|---|
 | Tab name | Scout |
-| Navigation | Top-level tab alongside Predictions, Statistics, Companion, Trade |
+| Navigation | Hidden from primary navigation; direct `/scout` route retained |
 | Release badge | Beta |
 | Layout | Single scroll page on mobile; split panel (list left, detail right) on desktop (lg+) |
 | Mobile detail | Bottom sheet (flat top edge, no rounded corners) |

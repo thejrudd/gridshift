@@ -38,3 +38,41 @@ Decorative only: sidebar active border, season tab underline, progress bar fill,
 - `font-size: 16px` on all inputs (prevents iOS auto-zoom)
 - Safe area insets: `env(safe-area-inset-bottom)` on fixed bottom bars
 - Motion: CSS animations, spring-curve easing `cubic-bezier(0.32, 0.72, 0, 1)`
+
+## Responsive Display Scale
+
+GridShift applies a persisted `data-display-size` value to `<html>` before React renders. The supported values are `compact`, `comfortable`, and `large`; invalid or missing values normalize to `comfortable`. Browser zoom and operating-system scaling remain additive and must never be inferred from device-pixel ratio.
+
+| Preset | Root size | Desktop control height | Density |
+|---|---:|---:|---|
+| Compact | `15px` | `36px` | Tight |
+| Comfortable | `16px` | `40px` | Standard |
+| Large | `18px` | `44px` | Expanded |
+
+Coarse-pointer controls remain at least `44px`, and inputs/selects/textareas remain at least `16px`, regardless of preset.
+
+### Semantic Type Tokens
+
+| Token | Comfortable role |
+|---|---|
+| `--type-micro` | `11px` decorative badges and overlines only |
+| `--type-label` | `12px` readable labels and compact headers |
+| `--type-meta` | `13px` supporting player/team metadata |
+| `--type-body` | `14px` standard UI copy |
+| `--type-emphasis` | `16px` emphasized body and primary row identity |
+| `--type-heading-sm` | `18px` subsection headings |
+| `--type-heading-md` | `24px` section headings |
+| `--type-heading-lg` | `32px` page headings |
+| `--type-display` | `44px` broadcast display type |
+
+Do not introduce meaningful user-facing text below `--type-label`. `--type-micro` is reserved for terse decorative/status chrome.
+
+## Page Frame Tokens
+
+| Frame | Maximum | Intended surfaces |
+|---|---:|---|
+| `--page-frame-readable` | `1200px` | Settings, scoring, instructional/detail content |
+| `--page-frame-data` | `1600px` | Rosters, rankings, waiver, schedules, standings, history, activity |
+| `--page-frame-workbench` | `1920px` | Trade, Draft, Scout, Compare, Matchup, Heatmap |
+
+Use `.page-frame-readable`, `.page-frame-data`, or `.page-frame-workbench` on the route root. Frames center themselves and preserve the normal mobile/tablet flow.

@@ -138,7 +138,7 @@ function Metric({ label, value, labelColor = 'var(--color-label-tertiary)', valu
   if (value == null || value === '') return null;
   return (
     <div className="min-w-0">
-      <div className="text-[10px] font-semibold uppercase tracking-widest lg:text-[12px] xl:text-[13px]" style={{ color: labelColor }}>
+      <div className="text-[length:var(--type-label)] font-semibold uppercase tracking-widest lg:text-[length:var(--type-label)] xl:text-[length:var(--type-meta)]" style={{ color: labelColor }}>
         {label}
       </div>
       <div className="mt-0.5 truncate text-sm font-bold tabular-nums lg:mt-1 lg:text-xl xl:text-2xl" style={{ color: valueColor }}>
@@ -151,7 +151,7 @@ function Metric({ label, value, labelColor = 'var(--color-label-tertiary)', valu
 function StageLabel({ children }) {
   return (
     <span
-      className="text-[11px] font-black uppercase leading-none tracking-[0.22em]"
+      className="text-[length:var(--type-label)] font-black uppercase leading-none tracking-[0.22em]"
       style={{ color: 'var(--color-accent-red)', fontFamily: "'Figtree', sans-serif" }}
     >
       {children}
@@ -291,7 +291,7 @@ function TargetHero({ selectedPlayer, darkMode, onChooseTarget, onOpenPlayer }) 
           >
             {player.name}
           </h3>
-          <div className="mt-3 flex flex-wrap items-center gap-2 text-[12px] font-black uppercase tracking-[0.16em] lg:text-base xl:text-lg" style={{ color: heroMuted, fontFamily: "'Barlow Condensed', sans-serif" }}>
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-[length:var(--type-label)] font-black uppercase tracking-[0.16em] lg:text-base xl:text-lg" style={{ color: heroMuted, fontFamily: "'Barlow Condensed', sans-serif" }}>
             {[player.team, player.position].filter(Boolean).join(' · ') || 'Player'}
           </div>
         </div>
@@ -361,7 +361,7 @@ function SegmentedChoice({ title, value, options, onChange }) {
         color: 'var(--color-label)',
       }}
     >
-      <div className="mb-2 text-[11px] font-black uppercase tracking-[0.2em]" style={{ color: 'var(--color-label-tertiary)', fontFamily: "'Barlow Condensed', sans-serif" }}>
+      <div className="mb-2 text-[length:var(--type-label)] font-black uppercase tracking-[0.2em]" style={{ color: 'var(--color-label-tertiary)', fontFamily: "'Barlow Condensed', sans-serif" }}>
         {title}
       </div>
       <div
@@ -494,7 +494,7 @@ function PostureStrip({ postureOptions, tradePostureLevel, onPostureChange }) {
   return (
     <div>
       <div className="mb-4 flex items-center justify-between gap-3">
-        <div className="text-[11px] font-black uppercase tracking-[0.26em]" style={{ color: 'var(--color-label-tertiary)', fontFamily: "'Barlow Condensed', sans-serif" }}>
+        <div className="text-[length:var(--type-label)] font-black uppercase tracking-[0.26em]" style={{ color: 'var(--color-label-tertiary)', fontFamily: "'Barlow Condensed', sans-serif" }}>
           Trade Posture
         </div>
         <div className="text-2xl font-black uppercase leading-none" style={{ color: 'var(--color-label)', fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.03em' }}>
@@ -533,7 +533,7 @@ function PostureStrip({ postureOptions, tradePostureLevel, onPostureChange }) {
               }}
               title={option.description}
             >
-              <span className="block truncate text-[11px] font-black uppercase tracking-[0.16em]">
+              <span className="block truncate text-[length:var(--type-label)] font-black uppercase tracking-[0.16em]">
                 {option.label}
               </span>
             </div>
@@ -663,7 +663,7 @@ const UpgradeBargainingTable = memo(function UpgradeBargainingTable({
                 type="button"
                 onClick={onChangeTarget}
                 data-testid="trade-upgrade-change-target"
-                className="shrink-0 text-[12px] font-black uppercase tracking-[0.18em] transition-opacity active:opacity-70"
+                className="shrink-0 text-[length:var(--type-label)] font-black uppercase tracking-[0.18em] transition-opacity active:opacity-70"
                 style={{ color: 'var(--color-accent)', fontFamily: "'Figtree', sans-serif" }}
               >
                 Change

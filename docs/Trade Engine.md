@@ -51,7 +51,7 @@ Most Trade flows start from the same source data:
 - adjusted KTC datasets
 - current draft pick ownership
 
-Sleeper remains the full-featured provider for players and draft picks. ESPN leagues are normalized into the same player/roster/stat contract, but v8.0 intentionally hides draft-pick assets and keeps Trade player-only.
+Sleeper is the only supported fantasy provider for players and draft picks. Legacy ESPN sessions remain defensively normalized into the player/roster/stat contract, but ESPN Fantasy is deprecated and must not be surfaced as a Trade connection.
 
 ### Shared valuation layer
 

@@ -21,13 +21,13 @@ function AssetBadge({ asset }) {
   const isPlayer = asset.type === 'player';
   return (
     <span
-      className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[11px] font-medium"
+      className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[length:var(--type-label)] font-medium"
       style={{ background: 'var(--color-fill-secondary)', color: 'var(--color-label)' }}
     >
       <span>{asset.label ?? asset.name}</span>
       {isPlayer && (
         <span
-          className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold"
+          className="px-1.5 py-0.5 rounded-full text-[length:var(--type-label)] font-semibold"
           style={{ background: 'var(--color-bg-secondary)', color: 'var(--color-label-secondary)', border: '1px solid var(--color-separator)' }}
         >
           {asset.position}
@@ -593,7 +593,7 @@ const TradeProposalItem = memo(function TradeProposalItem({
       <div className="min-w-0 flex flex-col gap-2">
         <div className="flex items-center justify-between gap-3">
           <span
-            className="inline-flex w-max items-center rounded-md px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em]"
+            className="inline-flex w-max items-center rounded-md px-2.5 py-1 text-[length:var(--type-label)] font-bold uppercase tracking-[0.14em]"
             style={{
               background: tone === 'give' ? 'var(--color-accent-red)' : 'var(--color-accent-green)',
               color: '#fff',
@@ -664,13 +664,13 @@ const TradeProposalItem = memo(function TradeProposalItem({
         >
           <div className="min-[1200px]:col-span-3 flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <div className="text-[10px] font-bold uppercase tracking-[0.18em]" style={{ color: 'var(--color-label-tertiary)' }}>
+            <div className="text-[length:var(--type-label)] font-bold uppercase tracking-[0.18em]" style={{ color: 'var(--color-label-tertiary)' }}>
                 {resultKicker}
               </div>
-              <div className="mt-0.5 truncate text-[12px] font-semibold" style={{ color: 'var(--color-label-secondary)' }}>
+              <div className="mt-0.5 truncate text-[length:var(--type-label)] font-semibold" style={{ color: 'var(--color-label-secondary)' }}>
                 {resultTitle}
               </div>
-              <div className="mt-1 hidden text-[11px] font-medium md:block" style={{ color: 'var(--color-label-tertiary)' }}>
+              <div className="mt-1 hidden text-[length:var(--type-label)] font-medium md:block" style={{ color: 'var(--color-label-tertiary)' }}>
                 {resultSubtext}
               </div>
             </div>
@@ -717,7 +717,7 @@ const TradeProposalItem = memo(function TradeProposalItem({
           {insightsReady ? (
             <>
               <div className="min-w-0">
-                <div className="mb-1 text-[10px] font-bold uppercase tracking-[0.18em]" style={{ color: 'var(--color-label-tertiary)', fontFamily: "'Barlow Condensed', sans-serif" }}>
+                <div className="mb-1 text-[length:var(--type-label)] font-bold uppercase tracking-[0.18em]" style={{ color: 'var(--color-label-tertiary)', fontFamily: "'Barlow Condensed', sans-serif" }}>
                   Why It Helps You
                 </div>
                 <p className="text-sm leading-relaxed" style={{ color: 'var(--color-label)' }}>
@@ -725,7 +725,7 @@ const TradeProposalItem = memo(function TradeProposalItem({
                 </p>
               </div>
               <div className="min-w-0">
-                <div className="mb-1 text-[10px] font-bold uppercase tracking-[0.18em]" style={{ color: 'var(--color-label-tertiary)', fontFamily: "'Barlow Condensed', sans-serif" }}>
+                <div className="mb-1 text-[length:var(--type-label)] font-bold uppercase tracking-[0.18em]" style={{ color: 'var(--color-label-tertiary)', fontFamily: "'Barlow Condensed', sans-serif" }}>
                   Why It Helps Them
                 </div>
                 <p className="text-sm leading-relaxed" style={{ color: 'var(--color-label)' }}>
@@ -737,7 +737,7 @@ const TradeProposalItem = memo(function TradeProposalItem({
                   <div className="text-3xl font-bold tabular-nums leading-none" style={{ color: 'var(--color-accent-green)', fontFamily: "'Barlow Condensed', sans-serif" }}>
                     {fmtSignedPpg(upgradeDelta)}
                   </div>
-                  <div className="mt-1 text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: 'var(--color-label-tertiary)' }}>
+                  <div className="mt-1 text-[length:var(--type-label)] font-bold uppercase tracking-[0.14em]" style={{ color: 'var(--color-label-tertiary)' }}>
                     Starter PPG
                   </div>
                 </div>
@@ -771,11 +771,11 @@ const TradeProposalItem = memo(function TradeProposalItem({
       <div className="flex items-center justify-between gap-3 px-4 py-2.5"
         style={{ background: 'var(--color-fill-secondary)' }}>
         <div className="min-w-0">
-          <div className="text-[10px] font-bold uppercase tracking-[0.16em]" style={{ color: 'var(--color-label-tertiary)' }}>
+          <div className="text-[length:var(--type-label)] font-bold uppercase tracking-[0.16em]" style={{ color: 'var(--color-label-tertiary)' }}>
             {isUpgradeResult ? 'Upgrade Path' : 'Suggested Deal'}
           </div>
           {isUpgradeResult && (
-            <div className="mt-0.5 truncate text-[12px] font-semibold" style={{ color: 'var(--color-label-secondary)' }}>
+            <div className="mt-0.5 truncate text-[length:var(--type-label)] font-semibold" style={{ color: 'var(--color-label-secondary)' }}>
               Review package fit, then apply it to the Trade Agent.
             </div>
           )}
@@ -795,11 +795,11 @@ const TradeProposalItem = memo(function TradeProposalItem({
           {isUpgradeResult ? (
             <div className="flex items-center gap-2 px-1 pb-0.5">
               <span className="h-2 w-2 rounded-full" style={{ background: 'var(--color-accent-red)' }} />
-              <span className="text-[10px] font-bold uppercase tracking-[0.16em]" style={{ color: 'var(--color-label-secondary)' }}>You give</span>
+              <span className="text-[length:var(--type-label)] font-bold uppercase tracking-[0.16em]" style={{ color: 'var(--color-label-secondary)' }}>You give</span>
             </div>
           ) : (
             <div className="flex items-center justify-between gap-3 px-1 pb-0.5 md:justify-center">
-              <span className="inline-block px-3 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-[0.12em]"
+              <span className="inline-block px-3 py-0.5 rounded-full text-[length:var(--type-label)] font-bold uppercase tracking-[0.12em]"
                 style={{ background: 'var(--color-accent-red)', color: '#fff' }}>Give</span>
               <span className="text-sm font-bold tabular-nums md:hidden" style={{ color: 'var(--color-label)', fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.04em' }}>
                 {fmtKtcValue(outgoingTotal)}
@@ -868,11 +868,11 @@ const TradeProposalItem = memo(function TradeProposalItem({
           {isUpgradeResult ? (
             <div className="flex items-center gap-2 px-1 pb-0.5">
               <span className="h-2 w-2 rounded-full" style={{ background: 'var(--color-accent-green)' }} />
-              <span className="text-[10px] font-bold uppercase tracking-[0.16em]" style={{ color: 'var(--color-label-secondary)' }}>You get</span>
+              <span className="text-[length:var(--type-label)] font-bold uppercase tracking-[0.16em]" style={{ color: 'var(--color-label-secondary)' }}>You get</span>
             </div>
           ) : (
             <div className="flex items-center justify-between gap-3 px-1 pb-0.5 md:justify-center">
-              <span className="inline-block px-3 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-[0.12em]"
+              <span className="inline-block px-3 py-0.5 rounded-full text-[length:var(--type-label)] font-bold uppercase tracking-[0.12em]"
                 style={{ background: 'var(--color-accent-green)', color: '#fff' }}>Get</span>
               <span className="text-sm font-bold tabular-nums md:hidden" style={{ color: 'var(--color-label)', fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.04em' }}>
                 {fmtKtcValue(incomingTotal)}
@@ -962,29 +962,29 @@ const TradeProposalItem = memo(function TradeProposalItem({
           isUpgradeResult ? (
             <div className="grid gap-2 md:grid-cols-2">
               <div className="rounded-xl px-3 py-2.5" style={{ background: 'var(--color-fill-secondary)', border: '1px solid var(--color-separator)' }}>
-                <div className="text-[10px] font-bold uppercase tracking-[0.16em] mb-1" style={{ color: 'var(--color-label-tertiary)' }}>
+                <div className="text-[length:var(--type-label)] font-bold uppercase tracking-[0.16em] mb-1" style={{ color: 'var(--color-label-tertiary)' }}>
                   Why it helps you
                 </div>
-                <p className="text-[12.5px] leading-relaxed" style={{ color: 'var(--color-label)' }}>
+                <p className="text-[length:var(--type-meta)] leading-relaxed" style={{ color: 'var(--color-label)' }}>
                   {proposal.whyItHelpsMe}
                 </p>
               </div>
               <div className="rounded-xl px-3 py-2.5" style={{ background: 'var(--color-fill-secondary)', border: '1px solid var(--color-separator)' }}>
-                <div className="text-[10px] font-bold uppercase tracking-[0.16em] mb-1" style={{ color: 'var(--color-label-tertiary)' }}>
+                <div className="text-[length:var(--type-label)] font-bold uppercase tracking-[0.16em] mb-1" style={{ color: 'var(--color-label-tertiary)' }}>
                   Why it helps them
                 </div>
-                <p className="text-[12.5px] leading-relaxed" style={{ color: 'var(--color-label)' }}>
+                <p className="text-[length:var(--type-meta)] leading-relaxed" style={{ color: 'var(--color-label)' }}>
                   {proposal.whyItHelpsThem}
                 </p>
               </div>
             </div>
           ) : (
             <>
-              <p className="text-[12.5px] leading-relaxed" style={{ color: 'var(--color-label)' }}>
+              <p className="text-[length:var(--type-meta)] leading-relaxed" style={{ color: 'var(--color-label)' }}>
                 <span className="font-semibold" style={{ color: 'var(--color-label)' }}>You: </span>
                 {proposal.whyItHelpsMe}
               </p>
-              <p className="text-[12.5px] leading-relaxed mt-1" style={{ color: 'var(--color-label)' }}>
+              <p className="text-[length:var(--type-meta)] leading-relaxed mt-1" style={{ color: 'var(--color-label)' }}>
                 <span className="font-semibold" style={{ color: 'var(--color-label)' }}>Them: </span>
                 {proposal.whyItHelpsThem}
               </p>
@@ -1178,12 +1178,12 @@ const UpgradeResultGroup = memo(function UpgradeResultGroup({
             <div className="text-xl font-bold uppercase truncate" style={{ color: 'var(--color-label)', fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.02em' }}>
               {managerName}
             </div>
-            <div className="text-[11px]" style={{ color: 'var(--color-label-secondary)' }}>
+            <div className="text-[length:var(--type-label)]" style={{ color: 'var(--color-label-secondary)' }}>
               {metaLine}
             </div>
           </div>
         </div>
-        <span className="px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.14em] shrink-0" style={{ background: 'var(--color-fill)', color: 'var(--color-label)', fontFamily: "'Barlow Condensed', sans-serif" }}>
+        <span className="px-3 py-1 rounded-full text-[length:var(--type-label)] font-bold uppercase tracking-[0.14em] shrink-0" style={{ background: 'var(--color-fill)', color: 'var(--color-label)', fontFamily: "'Barlow Condensed', sans-serif" }}>
           {group.proposals.length} {group.proposals.length === 1 ? 'Path' : 'Paths'}
         </span>
       </div>
@@ -1272,13 +1272,13 @@ function StagedRenderStatus({ visibleCount, totalCount, hasMore, onShowAll, labe
 
   return (
     <div className="flex items-center justify-between gap-3 pt-3">
-      <span className="text-[11px] font-medium" style={{ color: 'var(--color-label-tertiary)' }}>
+      <span className="text-[length:var(--type-label)] font-medium" style={{ color: 'var(--color-label-tertiary)' }}>
         Showing {visibleCount} of {totalCount} {label}
       </span>
       {hasMore && (
         <button
           onClick={onShowAll}
-          className="px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-colors"
+          className="px-2.5 py-1 rounded-lg text-[length:var(--type-label)] font-semibold transition-colors"
           style={{
             background: 'var(--color-fill)',
             color: 'var(--color-label-secondary)',
@@ -1365,7 +1365,7 @@ function TradeIntelligenceManagerSelector({
       style={{ borderColor: 'var(--color-separator)', background: 'var(--color-bg-secondary)' }}
     >
       <div className="mb-4">
-        <div className="text-[10px] font-black uppercase tracking-[0.18em]" style={{ color: 'var(--color-label-tertiary)' }}>
+        <div className="text-[length:var(--type-label)] font-black uppercase tracking-[0.18em]" style={{ color: 'var(--color-label-tertiary)' }}>
           Trade Partner
         </div>
         <div className="mt-1 text-2xl font-black uppercase leading-none" style={{ color: 'var(--color-label)', fontFamily: "'Barlow Condensed', sans-serif" }}>
@@ -1394,13 +1394,13 @@ function TradeIntelligenceManagerSelector({
               <span className="block truncate text-sm font-extrabold" style={{ color: 'var(--color-label)' }}>
                 {selectedEntry?.displayName ?? 'Select Manager'}
               </span>
-              <span className="mt-0.5 block truncate text-[11px] font-semibold" style={{ color: 'var(--color-label-secondary)' }}>
+              <span className="mt-0.5 block truncate text-[length:var(--type-label)] font-semibold" style={{ color: 'var(--color-label-secondary)' }}>
                 {selectedMetaText}
               </span>
             </span>
             {selectedEntry && (
               <span
-                className="shrink-0 rounded-md px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em]"
+                className="shrink-0 rounded-md px-2 py-1 text-[length:var(--type-micro)] font-black uppercase tracking-[0.12em]"
                 style={{ background: 'var(--color-signature)', color: 'var(--color-signature-fg)' }}
               >
                 Active
@@ -1449,13 +1449,13 @@ function TradeIntelligenceManagerSelector({
                       <span className="block truncate text-sm font-extrabold" style={{ color: 'var(--color-label)' }}>
                         {entry.displayName}
                       </span>
-                      <span className="mt-0.5 block truncate text-[11px] font-semibold" style={{ color: 'var(--color-label-secondary)' }}>
+                      <span className="mt-0.5 block truncate text-[length:var(--type-label)] font-semibold" style={{ color: 'var(--color-label-secondary)' }}>
                         {metaText}
                       </span>
                     </span>
                     {selected && (
                       <span
-                        className="shrink-0 rounded-md px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em]"
+                        className="shrink-0 rounded-md px-2 py-1 text-[length:var(--type-micro)] font-black uppercase tracking-[0.12em]"
                         style={{ background: 'var(--color-signature)', color: 'var(--color-signature-fg)' }}
                       >
                         Active
@@ -1498,13 +1498,13 @@ function TradeIntelligenceManagerSelector({
                 <span className="block truncate text-sm font-extrabold" style={{ color: 'var(--color-label)' }}>
                   {entry.displayName}
                 </span>
-                <span className="mt-0.5 block truncate text-[11px] font-semibold" style={{ color: 'var(--color-label-secondary)' }}>
+                <span className="mt-0.5 block truncate text-[length:var(--type-label)] font-semibold" style={{ color: 'var(--color-label-secondary)' }}>
                   {metaText}
                 </span>
               </span>
               {selected && (
                 <span
-                  className="shrink-0 rounded-md px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em]"
+                  className="shrink-0 rounded-md px-2 py-1 text-[length:var(--type-micro)] font-black uppercase tracking-[0.12em]"
                   style={{ background: 'var(--color-signature)', color: 'var(--color-signature-fg)' }}
                 >
                   Active
@@ -1613,7 +1613,7 @@ const TradeProposalPanel = memo(function TradeProposalPanel({
           <header className="border-b p-4 lg:p-5" style={{ borderColor: 'var(--color-separator)' }}>
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div className="min-w-0">
-                <div className="text-[10px] font-black uppercase tracking-[0.18em]" style={{ color: 'var(--color-label-tertiary)' }}>
+                <div className="text-[length:var(--type-label)] font-black uppercase tracking-[0.18em]" style={{ color: 'var(--color-label-tertiary)' }}>
                   Trade Intelligence
                 </div>
                 <h3 className="mt-1 text-3xl font-black uppercase leading-none" style={{ color: 'var(--color-label)', fontFamily: "'Barlow Condensed', sans-serif" }}>
@@ -1698,7 +1698,7 @@ const TradeProposalPanel = memo(function TradeProposalPanel({
                     { key: 'incomingPicks', label: 'Picks I Get', options: PICK_FILTER_OPTIONS },
                   ].map((group) => (
                     <div key={group.key} className="rounded-xl border px-3 py-2.5" style={{ background: 'var(--color-bg)', borderColor: 'var(--color-separator)' }}>
-                      <span className="text-[11px] font-black uppercase tracking-[0.12em]" style={{ color: 'var(--color-label-tertiary)' }}>
+                      <span className="text-[length:var(--type-label)] font-black uppercase tracking-[0.12em]" style={{ color: 'var(--color-label-tertiary)' }}>
                         {group.label}
                       </span>
                       <div className="mt-2">

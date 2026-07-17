@@ -26,6 +26,10 @@ export function getUserByUsername(username) {
   return get(`/user/${encodeURIComponent(username)}`);
 }
 
+export function getUserById(userId) {
+  return get(`/user/${encodeURIComponent(userId)}`);
+}
+
 // ── Leagues ──────────────────────────────────────────────────────────────────
 
 export function getLeaguesForUser(userId, season) {
@@ -50,6 +54,14 @@ export function getMatchups(leagueId, week) {
 
 export function getTransactions(leagueId, round) {
   return get(`/league/${leagueId}/transactions/${round}`);
+}
+
+export function getWinnersBracket(leagueId) {
+  return get(`/league/${leagueId}/winners_bracket`);
+}
+
+export function getLosersBracket(leagueId) {
+  return get(`/league/${leagueId}/losers_bracket`);
 }
 
 export function getTradedPicks(leagueId) {

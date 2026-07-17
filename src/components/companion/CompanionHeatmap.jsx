@@ -586,20 +586,20 @@ const HEATMAP_TEAM_CODE_STYLE = {
 };
 
 const HEATMAP_CELL_SECONDARY_STYLE = {
-  fontSize: '9px',
+  fontSize: 'var(--type-micro)',
   opacity: 0.6,
   marginTop: '1px',
 };
 
 const HEATMAP_BYE_STYLE = {
-  fontSize: '9px',
+  fontSize: 'var(--type-micro)',
   fontWeight: 700,
   letterSpacing: '0.04em',
   opacity: 0.55,
 };
 
 const HEATMAP_FILTERED_STYLE = {
-  fontSize: '9px',
+  fontSize: 'var(--type-micro)',
   opacity: 0.35,
 };
 
@@ -718,7 +718,7 @@ const HeatmapTable = memo(function HeatmapTable({
                     key={opt.id}
                     onClick={() => onTeamSortChange(opt.id)}
                     style={{
-                      fontSize: '9px', padding: '1px 4px', borderRadius: '3px',
+                      fontSize: 'var(--type-micro)', padding: '1px 4px', borderRadius: '3px',
                       border: 'none', cursor: 'pointer', fontWeight: 600,
                       background: sortKey === 'team' && teamSort === opt.id
                         ? 'var(--color-signature)' : 'var(--color-fill)',
@@ -1436,7 +1436,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
       headerAvg: {
         color: 'var(--color-label-secondary)',
         fontWeight: 400,
-        fontSize: '10px',
+        fontSize: 'var(--type-label)',
       },
       cell,
       avgCell,
@@ -1482,7 +1482,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
       color: teamTextColor,
     };
     const teamMetaStyle = {
-      fontSize: '9px',
+      fontSize: 'var(--type-micro)',
       lineHeight: `${TEAM_META_LINE_HEIGHT}px`,
       height: `${TEAM_META_LINE_HEIGHT}px`,
       fontWeight: 500,
@@ -1633,7 +1633,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
   }, [loaded, computeGridMaxHeight]);
 
   return (
-    <div className="lg:-mx-8">
+    <div className="page-frame-workbench lg:-mx-8">
       {hasHeatmapData && <div ref={filterBarRef} className="px-4 sm:px-6 lg:px-8 pb-3">
         <div className="companion-heatmap-mobile-filter-summary">
           <CompanionSelectorButton
@@ -1656,7 +1656,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
           {statMode === 'vegas_odds' && (
             <div className="relative shrink-0">
               <button
-                className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold"
+                className="w-5 h-5 rounded-full flex items-center justify-center text-[length:var(--type-label)] font-bold"
                 style={{ background: 'var(--color-fill)', color: 'var(--color-label-tertiary)' }}
                 onMouseEnter={() => setVegasInfoOpen(true)}
                 onMouseLeave={() => setVegasInfoOpen(false)}
@@ -1817,7 +1817,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
         {statMode === 'vegas_odds' && !useMobilePreviewSheet && (
           <div className="relative shrink-0">
             <button
-              className="w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold"
+              className="w-4 h-4 rounded-full flex items-center justify-center text-[length:var(--type-micro)] font-bold"
               style={{ background: 'var(--color-fill)', color: 'var(--color-label-tertiary)' }}
               onMouseEnter={() => setVegasInfoOpen(true)}
               onMouseLeave={() => setVegasInfoOpen(false)}
@@ -1921,16 +1921,16 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
               const awayTeam = homeKnown ? (sched.home ? opp : drilldown.team) : null;
               return (
                 <div style={{ marginBottom: 16 }}>
-                  <div style={{ fontSize: 13, color: 'var(--color-label-secondary)', marginBottom: 6 }}>
+                  <div style={{ fontSize: 'var(--type-meta)', color: 'var(--color-label-secondary)', marginBottom: 6 }}>
                     Week {drilldown.week}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
                     {(awayTeam ?? drilldown.team) && <img src={espnLogoUrl(awayTeam ?? drilldown.team)} width={28} height={28} style={{ objectFit: 'contain' }} alt={awayTeam ?? drilldown.team} />}
-                    <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--color-label)' }}>
+                    <span style={{ fontSize: 'var(--type-emphasis)', fontWeight: 800, color: 'var(--color-label)' }}>
                       {awayTeam ?? drilldown.team}
                     </span>
-                    <span style={{ fontSize: 12, color: 'var(--color-label-tertiary)' }}>{homeKnown ? '@' : 'vs'}</span>
-                    <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--color-label)' }}>
+                    <span style={{ fontSize: 'var(--type-label)', color: 'var(--color-label-tertiary)' }}>{homeKnown ? '@' : 'vs'}</span>
+                    <span style={{ fontSize: 'var(--type-emphasis)', fontWeight: 800, color: 'var(--color-label)' }}>
                       {homeTeam ?? opp ?? '—'}
                     </span>
                     {(homeTeam ?? opp) && <img src={espnLogoUrl(homeTeam ?? opp)} width={28} height={28} style={{ objectFit: 'contain' }} alt={homeTeam ?? opp} />}
@@ -1964,7 +1964,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
                       : null;
                     return (
                       <div style={{ marginTop: 8 }}>
-                        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'baseline', gap: 5, fontSize: 12, flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'baseline', gap: 5, fontSize: 'var(--type-label)', flexWrap: 'wrap' }}>
                           <span style={{ fontWeight: 700, color: 'var(--color-label)' }}>
                             {awayTeam} {fmtSpread(awayEntry?.spread) ?? '—'}
                           </span>
@@ -1975,7 +1975,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
                             {fmtSpread(homeEntry?.spread) ?? '—'} {homeTeam}
                           </span>
                         </div>
-                        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 6, fontSize: 11, marginTop: 3, flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 6, fontSize: 'var(--type-label)', marginTop: 3, flexWrap: 'wrap' }}>
                           {awayResult && <span style={{ fontWeight: 600, color: awayResult.color }}>{awayResult.text}</span>}
                           {ouResult && (
                             <>
@@ -1995,7 +1995,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
                       </div>
                     );
                   })()}
-                  <div style={{ fontSize: 11, color: 'var(--color-label-tertiary)', marginTop: 6 }}>
+                  <div style={{ fontSize: 'var(--type-label)', color: 'var(--color-label-tertiary)', marginTop: 6 }}>
                     {isGameStatMode
                       ? 'Score'
                       : <>
@@ -2022,23 +2022,23 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
                       <div style={{ fontSize: 36, fontWeight: 900, color: 'var(--color-label)', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
                         {gameBoxScore.leftScore ?? '—'}
                       </div>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-label-secondary)', marginTop: 4 }}>{gameBoxScore.leftTeam}</div>
+                      <div style={{ fontSize: 'var(--type-label)', fontWeight: 700, color: 'var(--color-label-secondary)', marginTop: 4 }}>{gameBoxScore.leftTeam}</div>
                     </div>
-                    <div style={{ fontSize: 13, color: 'var(--color-label-tertiary)', flexShrink: 0 }}>
+                    <div style={{ fontSize: 'var(--type-meta)', color: 'var(--color-label-tertiary)', flexShrink: 0 }}>
                       {gameBoxScore.separator}
                     </div>
                     <div style={{ textAlign: 'center', flex: 1 }}>
                       <div style={{ fontSize: 36, fontWeight: 900, color: 'var(--color-label)', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
                         {gameBoxScore.rightScore ?? '—'}
                       </div>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-label-secondary)', marginTop: 4 }}>{gameBoxScore.rightTeam}</div>
+                      <div style={{ fontSize: 'var(--type-label)', fontWeight: 700, color: 'var(--color-label-secondary)', marginTop: 4 }}>{gameBoxScore.rightTeam}</div>
                     </div>
                   </div>
 
                   {/* Team stat comparison */}
                   <div style={{
                     display: 'grid', gridTemplateColumns: '1fr auto 1fr',
-                    gap: '3px 8px', marginBottom: 16, fontSize: 12,
+                    gap: '3px 8px', marginBottom: 16, fontSize: 'var(--type-label)',
                     padding: '10px 12px', borderRadius: 10, background: 'var(--color-fill)',
                   }}>
                     {[
@@ -2063,11 +2063,11 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
                     { teamCode: gameBoxScore.rightTeam, data: gameBoxScore.right },
                   ].map(({ teamCode, data }) => (
                     <div key={teamCode} style={{ marginBottom: 12, textAlign: 'left' }}>
-                      <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--color-label-tertiary)', marginBottom: 6 }}>
+                      <div style={{ fontSize: 'var(--type-label)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--color-label-tertiary)', marginBottom: 6 }}>
                         {teamCode} Leaders
                       </div>
                       {data.performers.length === 0 ? (
-                        <div style={{ fontSize: 11, color: 'var(--color-label-tertiary)', padding: '4px 0' }}>No data</div>
+                        <div style={{ fontSize: 'var(--type-label)', color: 'var(--color-label-tertiary)', padding: '4px 0' }}>No data</div>
                       ) : data.performers.map(({ name, position, passYds, rushYds, recYds, tds, passCmp, passAtt, passInt, rec, playerId, espnId }, i) => {
                         const canNav = !!(onViewPlayer && espnId);
                         const teamId = players?.[playerId]?.team?.toUpperCase();
@@ -2124,12 +2124,12 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
                   ))}
                 </>
               ) : (
-                <div style={{ fontSize: 12, color: 'var(--color-label-tertiary)', padding: '16px 0' }}>
+                <div style={{ fontSize: 'var(--type-label)', color: 'var(--color-label-tertiary)', padding: '16px 0' }}>
                   No score data available.
                 </div>
               )
             ) : drilldownPlayers.length === 0 ? (
-              <div style={{ fontSize: 12, color: 'var(--color-label-tertiary)', padding: '16px 0' }}>
+              <div style={{ fontSize: 'var(--type-label)', color: 'var(--color-label-tertiary)', padding: '16px 0' }}>
                 No data found for this matchup.
               </div>
             ) : (
@@ -2192,7 +2192,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
                       {breakdown?.length > 0 && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                           {breakdown.map((item, j) => (
-                            <div key={j} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--color-label-secondary)' }}>
+                            <div key={j} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--type-label)', color: 'var(--color-label-secondary)' }}>
                               <span>
                                 {item.label}{item.statVal != null ? `: ${Number.isInteger(item.statVal) ? item.statVal : item.statVal.toFixed(1)}` : ''}
                               </span>
@@ -2215,7 +2215,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
                 marginTop: 16, width: '100%', padding: '10px',
                 borderRadius: 10, border: 'none', cursor: 'pointer',
                 background: 'var(--color-fill)',
-                fontSize: 13, fontWeight: 600, color: 'var(--color-label-secondary)',
+                fontSize: 'var(--type-meta)', fontWeight: 600, color: 'var(--color-label-secondary)',
               }}
             >
               Close
@@ -2257,7 +2257,7 @@ const stickyHeadStyle = {
   fontWeight: 600,
   textTransform: 'uppercase',
   letterSpacing: '0.06em',
-  fontSize: '10px',
+  fontSize: 'var(--type-label)',
   // box-shadow renders in the element's own stacking context, so it always
   // appears above scrolled content — unlike borders which can bleed through.
   boxShadow: '1px 0 0 0 var(--color-separator-opaque), 0 1px 0 0 var(--color-separator-opaque)',
@@ -2283,7 +2283,7 @@ function headStyle() {
     textAlign: 'center',
     color: 'var(--color-label-secondary)',
     fontWeight: 600,
-    fontSize: '10px',
+    fontSize: 'var(--type-label)',
     textTransform: 'uppercase',
     letterSpacing: '0.06em',
     background: 'var(--color-bg)',

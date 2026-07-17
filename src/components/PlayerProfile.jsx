@@ -1108,7 +1108,7 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_
         }}
       >
           <div className="min-w-0 sm:flex-1">
-            <div className="text-[10px] font-bold uppercase tracking-[0.18em]" style={{ color: 'var(--color-label-tertiary)' }}>
+            <div className="text-[length:var(--type-label)] font-bold uppercase tracking-[0.18em]" style={{ color: 'var(--color-label-tertiary)' }}>
               {activeMode === STATISTICS_MODES.VISUAL ? 'Weekly Visual' : 'Stat Mode'}
             </div>
             <div className="text-xs mt-0.5" style={{ color: 'var(--color-label-secondary)' }}>
@@ -1247,7 +1247,7 @@ const RookieSeasonPlaceholder = ({ honorsByYear, accentColor }) => {
     >
       <div className="px-4 py-3 bg-[color:var(--color-fill-secondary)] flex items-center gap-2 flex-wrap">
         <span className="font-semibold">Rookie Season</span>
-        <span className="inline-flex items-center px-1.5 py-0.5 rounded border text-[10px] font-bold uppercase tracking-wide bg-tint-green-strong text-[color:var(--color-accent-green)] border-tint-green">
+        <span className="inline-flex items-center px-1.5 py-0.5 rounded border text-[length:var(--type-label)] font-bold uppercase tracking-wide bg-tint-green-strong text-[color:var(--color-accent-green)] border-tint-green">
           First Year
         </span>
         {allHonors.length > 0 && (

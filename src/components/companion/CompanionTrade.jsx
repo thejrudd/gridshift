@@ -1220,7 +1220,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <div className="pb-8">
+    <div className="page-frame-workbench pb-8">
 
       {showAgent ? (
         <>

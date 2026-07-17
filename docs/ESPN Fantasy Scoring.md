@@ -1,4 +1,6 @@
-# ESPN Fantasy Scoring
+# ESPN Fantasy Scoring — Legacy Compatibility
+
+ESPN Fantasy connections are deprecated and are not exposed in GridShift. This reference is retained only to maintain old fixtures, persisted sessions, and defensive compatibility code; do not use it to add or surface ESPN Fantasy features.
 
 This note tracks ESPN-specific fantasy scoring behavior that does not map cleanly to Sleeper-style raw stat calculation.
 
