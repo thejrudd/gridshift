@@ -75,6 +75,45 @@ test('display settings are available from the collapsed rail and mobile menu', a
   ))).toBe(true);
 });
 
+test('expanded desktop sidebar keeps every option and the version visible on short screens', async ({ page }) => {
+  const viewports = [
+    { width: 1024, height: 768 },
+    { width: 1280, height: 720 },
+  ];
+
+  for (const viewport of viewports) {
+    await page.setViewportSize(viewport);
+    await page.goto('/predictions');
+
+    for (const preset of ['comfortable', 'large']) {
+      await page.evaluate((value) => {
+        localStorage.setItem('gridshift-display-size', value);
+        document.documentElement.setAttribute('data-display-size', value);
+      }, preset);
+
+      const sidebar = page.locator('.app-sidebar');
+      await expect(sidebar).toBeVisible();
+      await expect(sidebar.getByText('Privacy & Attributions', { exact: true })).toBeVisible();
+      await expect(sidebar.getByText('v8.3.1', { exact: true })).toBeVisible();
+
+      const geometry = await sidebar.evaluate((element) => {
+        const visibleChildren = [...element.children].filter((child) => {
+          const style = getComputedStyle(child);
+          return style.display !== 'none' && style.visibility !== 'hidden';
+        });
+        return {
+          clientHeight: element.clientHeight,
+          scrollHeight: element.scrollHeight,
+          lastBottom: Math.max(...visibleChildren.map((child) => child.getBoundingClientRect().bottom)),
+        };
+      });
+
+      expect(geometry.scrollHeight, `${preset} sidebar should not scroll at ${viewport.width}x${viewport.height}`).toBeLessThanOrEqual(geometry.clientHeight + 1);
+      expect(geometry.lastBottom, `${preset} sidebar content should fit at ${viewport.width}x${viewport.height}`).toBeLessThanOrEqual(viewport.height + 1);
+    }
+  }
+});
+
 test('semantic display tiers increase monotonically and preserve input readability', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/fantasy/rankings');

@@ -1,0 +1,90 @@
+// LiveAtoms.jsx — the small, repeated pieces of Fantasy Live: player imagery,
+// the play-type glyphs, and the position chip. The vocabulary they draw from
+// lives in liveVisuals.js.
+
+import { useState } from 'react';
+import { ArrowUUpLeftIcon } from '@phosphor-icons/react/ArrowUUpLeft';
+import { FootballIcon } from '@phosphor-icons/react/Football';
+import { PersonSimpleRunIcon } from '@phosphor-icons/react/PersonSimpleRun';
+import { ShieldIcon } from '@phosphor-icons/react/Shield';
+import {
+  getCompanionInitials,
+  getCompanionPositionColor,
+  getPositionTextColor,
+} from '../../../utils/companionAssetVisuals.js';
+import { getSleeperPlayerName } from '../../../utils/liveScoringFeed.js';
+import { getLiveImageSources, getLiveKindMeta } from './liveVisuals.js';
+
+const PHOSPHOR_GLYPHS = {
+  def: ShieldIcon,
+  pass: FootballIcon,
+  rush: PersonSimpleRunIcon,
+  return: ArrowUUpLeftIcon,
+};
+
+/** Round player image with headshot → team mark → initials fallback. */
+export function LiveAvatar({ player = {}, size = 46, background, className = '' }) {
+  const [failed, setFailed] = useState({ key: '', count: 0 });
+  const { urls, logoIndex } = getLiveImageSources(player);
+  const key = urls.join('|');
+  const index = failed.key === key ? failed.count : 0;
+  const url = urls[index] ?? null;
+  const isMark = logoIndex >= 0 && index >= logoIndex;
+
+  return (
+    <span className={`fl-av ${className}`} style={{ width: size, height: size, background }} aria-hidden="true">
+      {url ? (
+        <img
+          src={url}
+          alt=""
+          loading="lazy"
+          draggable="false"
+          className={isMark ? 'is-mark' : ''}
+          onError={() => setFailed({ key, count: index + 1 })}
+        />
+      ) : (
+        <span className="fl-av__initials" style={{ fontSize: Math.round(size * 0.32) }}>
+          {getCompanionInitials(getSleeperPlayerName(player))}
+        </span>
+      )}
+    </span>
+  );
+}
+
+export function LiveGlyph({ glyph, mark = '', size = 11, color = '#fff' }) {
+  const stroke = { stroke: color, strokeWidth: 1.9, fill: 'none', strokeLinecap: 'round', strokeLinejoin: 'round' };
+  const PhosphorGlyph = PHOSPHOR_GLYPHS[glyph];
+  if (PhosphorGlyph) {
+    return <PhosphorGlyph size={size} color={color} weight="fill" aria-hidden="true" />;
+  }
+  if (glyph === 'text') {
+    return <span className="fl-glyph__text" style={{ color, fontSize: Math.max(7, size * 0.62) }}>{mark}</span>;
+  }
+  if (glyph === 'fg') {
+    return <svg width={size} height={size} viewBox="0 0 12 12" aria-hidden="true"><path d="M2.4 2.6v6.8M9.6 2.6v6.8M2.4 4.2h7.2" {...stroke} /></svg>;
+  }
+  if (glyph === 'to') {
+    return <svg width={size} height={size} viewBox="0 0 12 12" aria-hidden="true"><path d="M3 3l6 6M9 3l-6 6" {...stroke} /></svg>;
+  }
+  return null;
+}
+
+/** The glyph as a filled badge, for the corner of a feed row's avatar. */
+export function LiveGlyphBadge({ kind, size = 19 }) {
+  const meta = getLiveKindMeta(kind);
+  return (
+    <span className="fl-glyph" style={{ background: meta.color, width: size, height: size }} title={meta.label} aria-label={meta.label}>
+      <LiveGlyph glyph={meta.glyph} mark={meta.mark} size={size * 0.7} color={meta.foreground} />
+    </span>
+  );
+}
+
+export function LivePosChip({ position }) {
+  const normalized = String(position ?? 'FLEX').toUpperCase();
+  const background = getCompanionPositionColor(normalized) ?? '#94A3B8';
+  return (
+    <span className="fl-pos" style={{ background, color: getPositionTextColor(background) }}>
+      {normalized}
+    </span>
+  );
+}

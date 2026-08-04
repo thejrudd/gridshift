@@ -1,7 +1,17 @@
 {
-  "name": "nfl-predictor",
+  "name": "gridshift",
   "private": true,
-  "version": "8.3.1",
+  "version": "8.4.0",
+  "description": "An interactive NFL season planner and fantasy football companion.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/thejrudd/nfl-predictor.git"
+  },
+  "bugs": {
+    "url": "https://github.com/thejrudd/nfl-predictor/issues"
+  },
+  "homepage": "https://github.com/thejrudd/nfl-predictor#readme",
   "type": "module",
   "scripts": {
     "dev": "node scripts/dev.mjs",
@@ -21,6 +31,7 @@
     "generate-pwa-assets": "pwa-assets-generator --preset minimal public/icons/icon.svg"
   },
   "dependencies": {
+    "@phosphor-icons/react": "^2.1.10",
     "@vitejs/plugin-react": "^5.1.4",
     "express": "^5.2.1",
     "html2canvas": "^1.4.1",

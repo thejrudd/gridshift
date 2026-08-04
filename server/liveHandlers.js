@@ -127,7 +127,8 @@ export function getLiveConfigStatus() {
     leagueScopeEnabled: allowedLeagueKeys.length > 0,
     accessCodeRequired: hasAccessCode,
     cookieSigningReady: hasCookieSecret,
-    mockPlaysEnabled: process.env.GRIDSHIFT_LIVE_MOCK_PLAYS === 'true',
+    mockPlaysEnabled: process.env.NODE_ENV !== 'production'
+      && process.env.GRIDSHIFT_LIVE_MOCK_PLAYS === 'true',
     cacheTtlMs: parsePositiveInteger(process.env.GRIDSHIFT_LIVE_CACHE_TTL_MS, 1000),
     finalTtlMs: parsePositiveInteger(process.env.GRIDSHIFT_LIVE_FINAL_TTL_MS, 14_400_000),
     archiveEnabled: process.env.GRIDSHIFT_LIVE_ARCHIVE_ENABLED !== 'false',

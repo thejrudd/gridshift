@@ -10,11 +10,14 @@ An interactive web app for the 2026 NFL season — with full Sleeper fantasy lea
 
 - Predictions — Game picks, constraints, standings, playoff seeding, and shareable infographic export.
 - Statistics — Schedules, standings, team/player profiles, game logs, honors, and scoring breakdowns.
+- Statistics Scores (Beta) — Live ESPN preseason scoreboards, with production regular-season coverage withheld until provider-backed archives are ready.
 
 ### Fantasy & League
 
 - Sleeper integration — League connection, custom scoring, rosters, and season navigation.
+- Fantasy Live (Alpha) — Provider-backed live matchup scoring, win probability, replay, scoring plays, and player context for enabled Sleeper leagues.
 - Matchups — Cycle through every weekly league matchup with projections, ranks, weather, game context, and scoring details.
+- Fantasy Scoring Blueprint — League-rule summaries, position strengths, detailed scoring references, and itemized real-game examples.
 - League analysis — Player stats, fantasy points allowed, team defense, heatmaps, and roster/draft capital.
 - League archive — Finalized standings, linked-season activity, lifetime leaderboards, champions, rivalries, and core records for Sleeper leagues.
 - Trade tools — Roster-and-pick proposals, guided upgrades, and searchable multi-season trade history.
@@ -32,6 +35,10 @@ An interactive web app for the 2026 NFL season — with full Sleeper fantasy lea
 - Themes and display — Favorite-team theming, dark mode, responsive layouts, and installable PWA.
 
 ## Getting Started
+
+## License and privacy
+
+GridShift is open source under the [MIT License](LICENSE). Read the [Privacy Policy](PRIVACY.md) for how browser storage, connected fantasy services, and optional hosted features handle data. The app also includes an in-product Privacy & Attributions screen with its data-source and third-party software notices.
 
 ### Prerequisites
 
@@ -113,15 +120,16 @@ Hosted owners can enable paid live scoring for selected Sleeper leagues by setti
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) + optional Node API sidecar |
 
-## What's New in v8.3.1
+## What's New in v8.4.0
 
-- **Reliable matchup selection** — Choosing a different Fantasy Matchup now remains selected after the picker closes in Microsoft Edge on desktop.
+- **Fantasy Live (Alpha)** — Follow enabled Sleeper matchups through provider-backed scores, win probability, replay, scoring plays, and player drilldowns. Alpha means the core workflow is available early and may continue changing as real-season coverage expands.
+- **Statistics Scores (Beta)** — Explore live ESPN preseason scoreboards now. Beta means the experience is ready for broader testing while production regular-season archives are still being completed; development fixtures never appear in production.
+- **Fantasy Scoring Blueprint** — See reception premiums, position strength, detailed league rules, and itemized real-game scoring examples in one clearer workspace.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Roadmap
 
-- v8.4 - Live Fantasy Scoring & Team Tendencies — Sleeper-first live scoring, server-protected BALLDONTLIE support, win probability, team rankings/tables, fantasy context, and usage-based projections.
 - Sleeper Player Data Caching — Server-side daily `/players/nfl` snapshots and client snapshot reuse.
 - Scout Rookie Projection Layer — Add next-season rookie projections for standard and IDP-focused draft prep.
 - Trade follow-through — Continue polishing Trade drilldowns, explanation copy, and proposal-card readability.

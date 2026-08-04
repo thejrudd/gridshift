@@ -1,7 +1,11 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import HorizontalScrollCue from './HorizontalScrollCue';
 import useHorizontalScrollCue from '../hooks/useHorizontalScrollCue';
+import {
+  NFL_SEASON_PHASES,
+  fetchEspnPreseason,
+} from '../utils/espnNflScoreboard';
 import {
   TEAM_LOGO_SIDE_SENSITIVE_GRADIENT_TEAMS,
   getTeamVisualTheme,
@@ -18,8 +22,6 @@ import {
   getPopulatedScheduleWeeks,
   getScheduleGameTeamId,
   getScheduleGameScore,
-  getScheduleWeeks,
-  getWeekScheduleGames,
   isFinalScheduleGame,
   normalizeScheduleTeamId,
   normalizeScheduleWeek,
@@ -50,6 +52,7 @@ const SCHEDULE_FILTER_OPTIONS = [
   { filter: STATISTICS_SCHEDULE_FILTERS.PRIMETIME, label: 'PrimeTime' },
   { filter: STATISTICS_SCHEDULE_FILTERS.HOLIDAY, label: 'Holiday' },
 ];
+const PRESEASON_HIDDEN_FILTERS = new Set([STATISTICS_SCHEDULE_FILTERS.PRIMETIME]);
 const SCHEDULE_LOGO_CONTRAST_GRADIENT_TEAMS = new Set([
   ...TEAM_LOGO_SIDE_SENSITIVE_GRADIENT_TEAMS,
   'la',
@@ -312,6 +315,25 @@ function getFilterLabel(filter) {
   return SCHEDULE_FILTER_OPTIONS.find((option) => option.filter === filter)?.label ?? 'All Games';
 }
 
+function getPreseasonWeekSelection(value) {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().toLowerCase();
+  return /^pre-[1-4]$/.test(normalized) ? normalized : null;
+}
+
+function buildWeekOptions(scheduleData, phase) {
+  return getPopulatedScheduleWeeks(scheduleData).map((week) => {
+    const preseason = phase === NFL_SEASON_PHASES.PRESEASON;
+    return {
+      ...week,
+      phase,
+      selection: preseason ? `pre-${week.week}` : week.week,
+      chipLabel: preseason ? (week.shortLabel ?? `Pre ${week.week}`) : (week.label ?? `Week ${week.week}`),
+      fullLabel: week.label ?? (preseason ? `Preseason Week ${week.week}` : `Week ${week.week}`),
+    };
+  });
+}
+
 function FilterChip({ filter, activeFilter, label, available, onClick }) {
   const active = activeFilter === filter;
   return (
@@ -344,10 +366,10 @@ function getAvailableFilterForGames(games = [], filter = STATISTICS_SCHEDULE_FIL
     : STATISTICS_SCHEDULE_FILTERS.ALL;
 }
 
-function ScheduleFilterChips({ activeFilter, availability, onFilterChange }) {
+function ScheduleFilterChips({ activeFilter, availability, onFilterChange, hiddenFilters = null }) {
   return (
     <div className="statistics-schedule-filter-rail" role="group" aria-label="Schedule filters">
-      {SCHEDULE_FILTER_OPTIONS.map((option) => (
+      {SCHEDULE_FILTER_OPTIONS.filter((option) => !hiddenFilters?.has(option.filter)).map((option) => (
         <FilterChip
           key={option.filter}
           filter={option.filter}
@@ -358,6 +380,19 @@ function ScheduleFilterChips({ activeFilter, availability, onFilterChange }) {
         />
       ))}
     </div>
+  );
+}
+
+function IncludePreseasonControl({ checked, onChange }) {
+  return (
+    <label className="statistics-schedule-preseason-control">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+      />
+      <strong>Include preseason</strong>
+    </label>
   );
 }
 
@@ -416,7 +451,7 @@ function GameRow({ game, teamsById, darkMode, onViewGameStats }) {
 }
 
 function WeekScheduleView({
-  scheduleData,
+  weekOptions,
   teamsById,
   activeWeek,
   activeFilter,
@@ -426,13 +461,14 @@ function WeekScheduleView({
   onViewGameStats,
 }) {
   const weekScrubberRef = useRef(null);
-  const weekOptions = getPopulatedScheduleWeeks(scheduleData);
   const weekScrollCue = useHorizontalScrollCue(weekScrubberRef, [weekOptions.length, activeWeek]);
-  const allGames = getWeekScheduleGames(scheduleData, activeWeek);
+  const selectedWeekOption = weekOptions.find((week) => week.selection === activeWeek);
+  const allGames = selectedWeekOption?.games ?? [];
   const games = allGames.filter((game) => scheduleGameMatchesFilter(game, activeFilter));
   const groups = buildKickoffGroups(games);
   const filterLabel = getFilterLabel(activeFilter);
   const filterAvailability = getFilterAvailability(allGames);
+  const viewingPreseason = selectedWeekOption?.phase === NFL_SEASON_PHASES.PRESEASON;
 
   return (
     <div className="statistics-schedule-view">
@@ -440,22 +476,23 @@ function WeekScheduleView({
         activeFilter={activeFilter}
         availability={filterAvailability}
         onFilterChange={onFilterChange}
+        hiddenFilters={viewingPreseason ? PRESEASON_HIDDEN_FILTERS : null}
       />
 
       <div className="statistics-schedule-week-shell">
         <div ref={weekScrubberRef} className="statistics-schedule-week-scrubber" aria-label="Schedule weeks">
           {weekOptions.map((week) => {
-            const active = week.week === activeWeek;
+            const active = week.selection === activeWeek;
             return (
               <button
-                key={week.week}
+                key={week.selection}
                 type="button"
-                className={`statistics-schedule-week-chip${active ? ' is-active' : ''}`}
+                className={`statistics-schedule-week-chip${week.phase === NFL_SEASON_PHASES.PRESEASON ? ' is-preseason' : ''}${active ? ' is-active' : ''}`}
                 aria-pressed={active}
-                onClick={() => onWeekChange(week.week)}
+                onClick={() => onWeekChange(week.selection)}
               >
-                <span>Week {week.week}</span>
-                <span>{week.games.length} games</span>
+                <span>{week.chipLabel}</span>
+                <span>{week.games.length} {week.games.length === 1 ? 'game' : 'games'}</span>
               </button>
             );
           })}
@@ -472,7 +509,7 @@ function WeekScheduleView({
       <section className="statistics-schedule-panel">
         <header className="statistics-schedule-section-header">
           <p className="statistics-schedule-eyebrow">League slate</p>
-          <h2>Week {activeWeek ?? '-'}</h2>
+          <h2>{selectedWeekOption?.fullLabel ?? 'Week not selected'}</h2>
           <span>
             {activeFilter === STATISTICS_SCHEDULE_FILTERS.ALL
               ? `${games.length} ${games.length === 1 ? 'game' : 'games'}`
@@ -566,13 +603,13 @@ function TeamScheduleHeaderIdentity({ team, gameCount, byeCount }) {
       <TeamIdentity team={team} />
       <div className="statistics-schedule-team-header-meta">
         {team?.division && <span>{team.division}</span>}
-        <strong>{gameCount} games · {byeCount} bye</strong>
+        <strong>{gameCount} games · {byeCount} {byeCount === 1 ? 'bye' : 'byes'}</strong>
       </div>
     </div>
   );
 }
 
-function TeamScheduleRow({ row, team, opponent, darkMode, onViewGameStats }) {
+function TeamScheduleRow({ row, team, opponent, darkMode, onViewGameStats, preseason = false }) {
   const awayTeamId = getScheduleGameTeamId(row.game, 'away');
   const homeTeamId = getScheduleGameTeamId(row.game, 'home');
   const rowTheme = getTeamVisualTheme(team?.id, darkMode, { logoSide: 'start' });
@@ -589,13 +626,13 @@ function TeamScheduleRow({ row, team, opponent, darkMode, onViewGameStats }) {
       style={rowPresentation.style}
     >
       <div className="statistics-schedule-row-meta">
-        <span>Week {row.week}</span>
-        {row.isBye ? <strong>Bye</strong> : <strong>{formatKickoffTime(row.game?.kickoff)}</strong>}
+        <span>{row.weekLabel ?? `Week ${row.week}`}</span>
+        {row.isBye ? <strong>{preseason ? 'No game' : 'Bye'}</strong> : <strong>{formatKickoffTime(row.game?.kickoff)}</strong>}
       </div>
       <div className="statistics-schedule-matchup">
         {row.isBye ? (
           <div className="statistics-schedule-bye-copy">
-            <span className="statistics-schedule-at">BYE</span>
+            <span className="statistics-schedule-at">{preseason ? 'OFF' : 'BYE'}</span>
             <span>No game scheduled</span>
           </div>
         ) : (
@@ -607,7 +644,7 @@ function TeamScheduleRow({ row, team, opponent, darkMode, onViewGameStats }) {
       </div>
       <div className="statistics-schedule-row-detail">
         {row.isBye ? (
-          <span>Regular season rest week</span>
+          <span>{preseason ? 'No preseason game scheduled' : 'Regular season rest week'}</span>
         ) : (
           <>
             <GameResultBadge game={row.game} selectedTeamId={team?.id} />
@@ -627,6 +664,8 @@ function TeamScheduleView({
   teams,
   teamsById,
   scheduleData,
+  preseasonScheduleData,
+  includePreseason,
   selectedTeamId,
   activeFilter,
   onSelectTeam,
@@ -635,12 +674,19 @@ function TeamScheduleView({
   onViewGameStats,
 }) {
   const selectedTeam = selectedTeamId ? teamsById.get(selectedTeamId) : null;
-  const rows = buildTeamScheduleRows(scheduleData, selectedTeamId);
+  const regularRows = buildTeamScheduleRows(scheduleData, selectedTeamId)
+    .map((row) => ({ ...row, phase: NFL_SEASON_PHASES.REGULAR }));
+  const preseasonRows = includePreseason
+    ? buildTeamScheduleRows(preseasonScheduleData, selectedTeamId)
+      .filter((row) => !row.isBye)
+      .map((row) => ({ ...row, phase: NFL_SEASON_PHASES.PRESEASON }))
+    : [];
+  const rows = [...preseasonRows, ...regularRows];
   const visibleRows = filterTeamScheduleRows(rows, activeFilter);
   const games = rows.filter((row) => !row.isBye && row.game).map((row) => row.game);
   const teamTheme = getTeamVisualTheme(selectedTeam?.id, darkMode, { logoSide: 'start' });
   const gameCount = rows.filter((row) => !row.isBye).length;
-  const byeCount = rows.filter((row) => row.isBye).length;
+  const byeCount = regularRows.filter((row) => row.isBye).length;
   const filterLabel = getFilterLabel(activeFilter);
   const filterAvailability = getFilterAvailability(games);
 
@@ -686,6 +732,7 @@ function TeamScheduleView({
               opponent={teamsById.get(row.opponentTeamId)}
               darkMode={darkMode}
               onViewGameStats={onViewGameStats}
+              preseason={row.phase === NFL_SEASON_PHASES.PRESEASON}
             />
           ))}
         </div>
@@ -720,17 +767,78 @@ export default function StatisticsSchedule({
   onViewGameStats,
 }) {
   const { darkMode } = useTheme();
+  const scheduleSeason = scheduleData?.season ?? new Date().getFullYear();
+  const initialPreseasonWeek = getPreseasonWeekSelection(week);
+  const [includePreseason, setIncludePreseason] = useState(Boolean(initialPreseasonWeek));
+  const [preseasonState, setPreseasonState] = useState({
+    status: initialPreseasonWeek ? 'loading' : 'idle',
+    data: null,
+    error: null,
+    season: initialPreseasonWeek ? scheduleSeason : null,
+  });
   const routeMode = normalizeStatisticsScheduleMode(mode, null);
   const activeMode = routeMode ?? readStoredMode();
-  const activeFilter = normalizeStatisticsScheduleFilter(filter, STATISTICS_SCHEDULE_FILTERS.ALL);
+  const requestedFilter = normalizeStatisticsScheduleFilter(filter, STATISTICS_SCHEDULE_FILTERS.ALL);
   const selectedTeamId = normalizeScheduleTeamId(teamId);
-  const defaultWeek = useMemo(() => getDefaultScheduleWeek(scheduleData), [scheduleData]);
-  const routeWeek = normalizeScheduleWeek(week);
-  const activeWeek = routeWeek ?? defaultWeek;
-  const hasSchedule = scheduleHasGames(scheduleData);
-  const scheduleWeeks = getScheduleWeeks(scheduleData);
+  const routePreseasonWeek = getPreseasonWeekSelection(week);
+  const routeRegularWeek = routePreseasonWeek ? null : normalizeScheduleWeek(week);
+  const preseasonRequested = includePreseason || Boolean(routePreseasonWeek);
+  const preseasonScheduleData = preseasonState.season === scheduleSeason ? preseasonState.data : null;
+  const regularWeekOptions = useMemo(
+    () => buildWeekOptions(scheduleData, NFL_SEASON_PHASES.REGULAR),
+    [scheduleData],
+  );
+  const preseasonWeekOptions = useMemo(
+    () => buildWeekOptions(preseasonScheduleData, NFL_SEASON_PHASES.PRESEASON),
+    [preseasonScheduleData],
+  );
+  const weekOptions = useMemo(
+    () => preseasonRequested ? [...preseasonWeekOptions, ...regularWeekOptions] : regularWeekOptions,
+    [preseasonRequested, preseasonWeekOptions, regularWeekOptions],
+  );
+  const defaultRegularWeek = useMemo(() => getDefaultScheduleWeek(scheduleData), [scheduleData]);
+  const activeWeek = routePreseasonWeek && weekOptions.some((entry) => entry.selection === routePreseasonWeek)
+    ? routePreseasonWeek
+    : routeRegularWeek && weekOptions.some((entry) => entry.selection === routeRegularWeek)
+      ? routeRegularWeek
+      : weekOptions.some((entry) => entry.selection === defaultRegularWeek)
+        ? defaultRegularWeek
+        : weekOptions[0]?.selection ?? null;
+  const activeWeekOption = weekOptions.find((entry) => entry.selection === activeWeek);
+  const viewingPreseason = activeWeekOption?.phase === NFL_SEASON_PHASES.PRESEASON;
+  const activeFilter = viewingPreseason && requestedFilter === STATISTICS_SCHEDULE_FILTERS.PRIMETIME
+    ? STATISTICS_SCHEDULE_FILTERS.ALL
+    : requestedFilter;
+  const hasRegularSchedule = scheduleHasGames(scheduleData);
+  const hasSchedule = hasRegularSchedule || (preseasonRequested && scheduleHasGames(preseasonScheduleData));
   const teamsById = useMemo(() => new Map(teams.map((team) => [team.id, team])), [teams]);
-  const seasonLabel = scheduleData?.season ? `${scheduleData.season} Regular Season` : 'Regular Season';
+  const preseasonStatus = !preseasonRequested
+    ? 'idle'
+    : preseasonScheduleData
+      ? 'ready'
+      : preseasonState.season === scheduleSeason && preseasonState.status === 'error'
+        ? 'error'
+        : 'loading';
+  const loadedWeekCount = weekOptions.length;
+  const scheduleStatusLabel = preseasonStatus === 'loading' && hasRegularSchedule
+    ? `${regularWeekOptions.length} regular weeks · Loading preseason…`
+    : preseasonStatus === 'error' && hasRegularSchedule
+      ? `${regularWeekOptions.length} regular weeks · Preseason unavailable`
+      : hasSchedule
+        ? `${loadedWeekCount} weeks loaded`
+        : 'No schedule loaded';
+
+  useEffect(() => {
+    if (!preseasonRequested || preseasonScheduleData) return undefined;
+    const controller = new AbortController();
+    fetchEspnPreseason({ season: scheduleSeason, signal: controller.signal })
+      .then((data) => setPreseasonState({ status: 'ready', data, error: null, season: scheduleSeason }))
+      .catch((error) => {
+        if (error.name === 'AbortError') return;
+        setPreseasonState({ status: 'error', data: null, error: error.message, season: scheduleSeason });
+      });
+    return () => controller.abort();
+  }, [preseasonRequested, preseasonScheduleData, scheduleSeason]);
 
   useEffect(() => {
     if (!routeMode) return;
@@ -750,9 +858,28 @@ export default function StatisticsSchedule({
     });
   };
 
+  const togglePreseason = (nextIncluded) => {
+    setIncludePreseason(nextIncluded);
+    if (nextIncluded && !preseasonScheduleData) {
+      setPreseasonState({ status: 'loading', data: null, error: null, season: scheduleSeason });
+    }
+
+    if (!nextIncluded && routePreseasonWeek) {
+      onRouteChange?.({
+        statisticsScheduleMode: activeMode,
+        statisticsScheduleWeek: activeMode === STATISTICS_SCHEDULE_MODES.WEEK ? defaultRegularWeek : null,
+        statisticsScheduleTeamId: activeMode === STATISTICS_SCHEDULE_MODES.TEAM ? selectedTeamId : null,
+        statisticsScheduleFilter: null,
+      });
+    }
+  };
+
   const selectWeek = (nextWeek) => {
-    const nextWeekGames = getWeekScheduleGames(scheduleData, nextWeek);
-    const nextFilter = getAvailableFilterForGames(nextWeekGames, activeFilter);
+    const nextWeekOption = weekOptions.find((entry) => entry.selection === nextWeek);
+    const nextFilter = nextWeekOption?.phase === NFL_SEASON_PHASES.PRESEASON
+      && requestedFilter === STATISTICS_SCHEDULE_FILTERS.PRIMETIME
+      ? STATISTICS_SCHEDULE_FILTERS.ALL
+      : getAvailableFilterForGames(nextWeekOption?.games ?? [], requestedFilter);
     writeStoredMode(STATISTICS_SCHEDULE_MODES.WEEK);
     onRouteChange?.({
       statisticsScheduleMode: STATISTICS_SCHEDULE_MODES.WEEK,
@@ -774,6 +901,7 @@ export default function StatisticsSchedule({
 
   const selectFilter = (nextFilter) => {
     const normalizedFilter = normalizeStatisticsScheduleFilter(nextFilter, STATISTICS_SCHEDULE_FILTERS.ALL);
+    if (viewingPreseason && normalizedFilter === STATISTICS_SCHEDULE_FILTERS.PRIMETIME) return;
     onRouteChange?.({
       statisticsScheduleMode: activeMode,
       statisticsScheduleWeek: activeMode === STATISTICS_SCHEDULE_MODES.WEEK ? activeWeek : null,
@@ -787,8 +915,8 @@ export default function StatisticsSchedule({
       <div className="statistics-schedule-toolbar">
         <div className="statistics-schedule-toolbar-copy">
           <p className="statistics-schedule-eyebrow">NFL Schedule</p>
-          <h1>{seasonLabel}</h1>
-          <span>{hasSchedule ? `${scheduleWeeks.length} weeks loaded` : 'No schedule loaded'}</span>
+          <h1>{scheduleSeason} Season</h1>
+          <span>{scheduleStatusLabel}</span>
         </div>
         <div className="statistics-schedule-controls">
           <div className="statistics-schedule-mode-toggle" role="group" aria-label="Primary schedule view">
@@ -805,14 +933,27 @@ export default function StatisticsSchedule({
               onClick={() => setMode(STATISTICS_SCHEDULE_MODES.TEAM)}
             />
           </div>
+          <IncludePreseasonControl
+            checked={preseasonRequested}
+            onChange={togglePreseason}
+          />
         </div>
       </div>
 
-      {!hasSchedule ? (
+      {!hasRegularSchedule && preseasonRequested && preseasonStatus === 'loading' ? (
         <section className="statistics-schedule-panel">
           <InlineEmptyState
-            title="NFL schedule is not available yet"
-            copy="Once the released schedule is loaded, weekly slates and team schedules will appear here."
+            title="Loading the preseason schedule"
+            copy="Fetching the latest NFL preseason slate from ESPN."
+          />
+        </section>
+      ) : !hasSchedule ? (
+        <section className="statistics-schedule-panel">
+          <InlineEmptyState
+            title={preseasonRequested && preseasonStatus === 'error' ? 'Preseason schedule is unavailable' : 'NFL schedule is not available yet'}
+            copy={preseasonRequested && preseasonStatus === 'error'
+              ? 'The live ESPN preseason feed could not be reached. Try again after reconnecting.'
+              : 'Once the released schedule is loaded, weekly slates and team schedules will appear here.'}
           />
         </section>
       ) : activeMode === STATISTICS_SCHEDULE_MODES.TEAM ? (
@@ -820,6 +961,8 @@ export default function StatisticsSchedule({
           teams={teams}
           teamsById={teamsById}
           scheduleData={scheduleData}
+          preseasonScheduleData={preseasonScheduleData}
+          includePreseason={preseasonRequested}
           selectedTeamId={selectedTeamId}
           activeFilter={activeFilter}
           onSelectTeam={selectTeam}
@@ -829,7 +972,7 @@ export default function StatisticsSchedule({
         />
       ) : (
         <WeekScheduleView
-          scheduleData={scheduleData}
+          weekOptions={weekOptions}
           teamsById={teamsById}
           activeWeek={activeWeek}
           activeFilter={activeFilter}

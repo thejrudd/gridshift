@@ -1,28 +1,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSleeperBase } from '../../context/SleeperContext';
-import { useTheme } from '../../context/ThemeContext';
-import { getWeeklyStats } from '../../api/sleeperApi';
+import { getLiveMatchups, getWeeklyStats } from '../../api/sleeperApi';
 import { calcPoints, calcPointsFromTotals } from '../../utils/scoringEngine';
 import { fetchSeasonSchedule } from '../../utils/playerApi.js';
-import { getTeamVisualTheme } from '../../utils/teamVisualTheme.js';
+import { getCompanionInitials } from '../../utils/companionAssetVisuals.js';
 import {
-  getCompanionInitials,
-  getCompanionPlayerImageUrls,
-  getCompanionPositionColor,
-  getPositionTextColor,
-} from '../../utils/companionAssetVisuals.js';
-import {
-  EVENT_KIND_LABELS,
   buildDeltaEvents,
   buildStatIndex,
   findGameForTeam,
+  getFallbackRemainingGameFraction,
   getGameGlance,
+  getMatchupCustomPoints,
+  getOfficialMatchupRowPoints,
   getSleeperPlayerName,
   getStatKeyForSleeperPlayer,
   getTeamAbbr,
+  hasReconciledMatchup,
+  isCompleteScheduleWeek,
   isFinalGame,
   isLiveGame,
   mapBdlStatsToGridShift,
+  resolveStarterGameState,
 } from '../../utils/liveScoringFeed.js';
 import {
   clearLiveSession,
@@ -44,16 +42,47 @@ import {
   buildWinProbHistoryKey,
   computeSideOutlook,
   computeWinProbability,
+  explainWinProbability,
   getRemainingGameFraction,
   getStarterOutlook,
   loadWinProbHistory,
+  projectSideOutlookAtMoment,
   saveWinProbHistory,
 } from '../../utils/liveWinProbability.js';
-import { buildPlayEvents, buildStarterNameIndex, mergePlayEvents } from '../../utils/livePlaysFeed.js';
+import {
+  buildPlayEvents,
+  buildStarterNameIndex,
+  mergePlayEvents,
+  parseGlanceProgress,
+} from '../../utils/livePlaysFeed.js';
+import {
+  buildPaceSeries,
+  buildGameProgressTimelines,
+  buildSidePace,
+  buildTopPerformers,
+  buildVerdict,
+  getStarterReplayRemainingFraction,
+  getStarterPace,
+  pickFeaturedStarter,
+} from '../../utils/livePace.js';
+import {
+  buildDemoTimeline,
+  mapGameProgressToDemoTimeline,
+} from '../../utils/liveDemoTimeline.js';
+import {
+  buildSharedDemoScoringEvents,
+  limitPlayByPlayGames,
+} from '../../utils/liveDemoPlays.js';
+import { buildFantasyPaletteSlots, getFantasyTeamPalette } from '../../utils/fantasyTeamIdentity.js';
 import { CompanionSelectorButton, CompanionSelectorRail } from './CompanionSelectorControls';
-import CompanionLivePlayerSheet from './CompanionLivePlayerSheet';
+import LiveHero from './live/LiveHero.jsx';
+import LivePlayerSheet from './live/LivePlayerSheet.jsx';
+import LiveVerdict from './live/LiveVerdict.jsx';
+import LivePaceChart from './live/LivePaceChart.jsx';
+import LivePerformerRail from './live/LivePerformerRail.jsx';
+import { LiveFeedFilter, LiveFeedList } from './live/LiveFeed.jsx';
+import { firstWordOf, lastNameOf } from './live/liveVisuals.js';
 import SeasonHintBanner from '../ui/SeasonHintBanner';
-import { SkeletonStatChip } from '../ui/Skeleton';
 
 const TOTAL_WEEKS = 18;
 const LIVE_REFRESH_MS = 5000;
@@ -61,29 +90,32 @@ const FREE_TIER_REFRESH_MS = 60000;
 const MAX_FEED_EVENTS = 80;
 const MAX_PLAYS_GAMES = 8;
 const PLAYS_REFRESH_MIN_MS = 45000;
-const CHART_WIDTH = 340;
-const CHART_HEIGHT = 132;
-const CHART_PAD_LEFT = 8;
-const CHART_PAD_RIGHT = 26;
-const CHART_PAD_TOP = 12;
-const CHART_PAD_BOTTOM = 18;
+const RAIL_PERFORMER_LIMIT = 14;
+const FINAL_RECONCILIATION_RETRY_MS = 30000;
+
+function useIsDesktop() {
+  const [desktop, setDesktop] = useState(false);
+  useEffect(() => {
+    const query = window.matchMedia?.('(min-width: 1024px)');
+    if (!query) return undefined;
+    const apply = () => setDesktop(query.matches);
+    apply();
+    query.addEventListener('change', apply);
+    return () => query.removeEventListener('change', apply);
+  }, []);
+  return desktop;
+}
+
+function formatChipPoints(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric.toFixed(1) : '—';
+}
 
 function clampWeek(value, totalWeeks, fallbackWeek) {
   const numeric = Number(value);
   const fallback = Number(fallbackWeek);
   const base = Number.isFinite(numeric) ? numeric : Number.isFinite(fallback) ? fallback : 1;
   return Math.max(1, Math.min(totalWeeks, base));
-}
-
-function formatPoints(value) {
-  const numeric = Number(value);
-  return Number.isFinite(numeric) ? numeric.toFixed(1) : '0.0';
-}
-
-function formatWinChance(value) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return '—';
-  return `${Math.round(numeric)}%`;
 }
 
 function getRosterName(roster, getUserDisplayName) {
@@ -145,17 +177,18 @@ function getRosterIdFromMatchupRow(row) {
 }
 
 function getMatchupRowPoints(row) {
-  const officialPoints = Number(row?.points);
-  if (Number.isFinite(officialPoints)) return officialPoints;
+  const officialPoints = getOfficialMatchupRowPoints(row);
+  if (officialPoints != null) return officialPoints;
 
   const playerPoints = row?.players_points ?? {};
-  return (row?.starters ?? [])
+  const starterPoints = (row?.starters ?? [])
     .map((id) => String(id))
     .filter((id) => id && id !== '0')
     .reduce((sum, id) => {
       const points = Number(playerPoints[id]);
       return sum + (Number.isFinite(points) ? points : 0);
     }, 0);
+  return starterPoints + getMatchupCustomPoints(row);
 }
 
 function addRosterCumulativeResult(totals, rosterId, result) {
@@ -268,14 +301,6 @@ function hasPlayerGameEvidence(row) {
   return Boolean(row?.detailStats || row?.mappedStats || row?.sleeperStats || (Number.isFinite(points) && points !== 0));
 }
 
-function getChartSliceIndex(event, length, width, { padX = 8 } = {}) {
-  const rect = event.currentTarget.getBoundingClientRect();
-  const denominator = Math.max(1, length - 1);
-  const rawX = ((event.clientX - rect.left) / Math.max(1, rect.width)) * width;
-  const ratio = Math.min(1, Math.max(0, (rawX - padX) / Math.max(1, width - (padX * 2))));
-  return Math.min(length - 1, Math.max(0, Math.round(ratio * denominator)));
-}
-
 function sortRelevantGames(games, teams) {
   return (games ?? [])
     .filter((game) => {
@@ -330,7 +355,7 @@ function buildMockLivePlays(game, rows = []) {
     };
   };
 
-  return eligibleRows.flatMap((row) => {
+  const plays = eligibleRows.flatMap((row) => {
     const player = row.player;
     const name = getMockPlayPlayerName(player);
     const team = getTeamAbbr(player.team);
@@ -509,98 +534,23 @@ function buildMockLivePlays(game, rows = []) {
       }),
     ];
   });
-}
 
-function HeroTeam({ summary, leading = false, right = false }) {
-  if (!summary) return <div className="companion-live-team" aria-hidden="true" />;
-  return (
-    <div className={`companion-live-team${right ? ' is-right' : ''}${leading ? ' is-leading' : ''}`}>
-      <div className="companion-live-team__tag">
-        {summary.isMine && <b>You</b>}
-        {summary.record && <span>{summary.record}</span>}
-      </div>
-      <div className="companion-live-team__name">{summary.name}</div>
-      <div className="companion-live-team__points">
-        {Number.isFinite(Number(summary.total)) ? formatPoints(summary.total) : <SkeletonStatChip width="2.5rem" />}
-      </div>
-    </div>
-  );
-}
-
-function FeedRow({ item, glance, theme, onOpen }) {
-  const [imageFallback, setImageFallback] = useState({ key: '', index: 0 });
-  const player = item.player ?? {};
-  const position = String(player.position ?? 'FLEX').toUpperCase();
-  const positionColor = getCompanionPositionColor(position);
-  const hasGradient = Boolean(theme?.gradient);
-  const imageUrls = getCompanionPlayerImageUrls(player);
-  const imageKey = imageUrls.join('|');
-  const imageIndex = imageFallback.key === imageKey ? imageFallback.index : 0;
-  const imageUrl = imageUrls[imageIndex] ?? null;
-  const foreground = hasGradient ? theme.gradientForeground : 'var(--color-label)';
-  const muted = hasGradient ? theme.gradientMuted : 'var(--color-label-secondary)';
-  const valueColor = hasGradient ? theme.gradientEndForeground : 'var(--color-label)';
-  const valueMuted = hasGradient ? theme.gradientEndMuted : 'var(--color-label-tertiary)';
-  const flat = !item.pts;
-
-  return (
-    <button
-      type="button"
-      className={`companion-live-row${item.isMine ? ' is-mine' : ' is-opponent'}`}
-      style={{
-        background: hasGradient ? theme.gradient : undefined,
-        color: foreground,
-      }}
-      onClick={onOpen}
-    >
-      {hasGradient && (
-        <span className="companion-live-row__overlay" aria-hidden="true" style={{ background: theme.gradientOverlay }} />
-      )}
-      <span className="companion-live-row__avatar" aria-hidden="true">
-        {imageUrl ? (
-          <img
-            src={imageUrl}
-            alt=""
-            loading="lazy"
-            onError={() => {
-              setImageFallback((current) => {
-                const currentIndex = current.key === imageKey ? current.index : 0;
-                return { key: imageKey, index: Math.min(currentIndex + 1, imageUrls.length) };
-              });
-            }}
-          />
-        ) : (
-          <span className="companion-live-row__initials">{getCompanionInitials(getSleeperPlayerName(player))}</span>
-        )}
-        {item.kind && (
-          <i className={`companion-live-kind is-${item.kind}`}>{EVENT_KIND_LABELS[item.kind] ?? '•'}</i>
-        )}
-      </span>
-      <span className="companion-live-row__body">
-        <span className="companion-live-row__name">
-          <b style={{ background: positionColor, color: getPositionTextColor(positionColor) }}>{position}</b>
-          <span>{getSleeperPlayerName(player)}</span>
-        </span>
-        <span className="companion-live-row__desc" style={{ color: muted }}>{item.desc}</span>
-        {glance && (
-          <span className="companion-live-row__glance" style={{ color: muted }}>
-            <span>{glance.score}</span>
-            <i aria-hidden="true">·</i>
-            <span className={glance.live ? 'is-live' : ''}>{glance.clock}</span>
-          </span>
-        )}
-      </span>
-      <span className="companion-live-row__delta">
-        <span className="companion-live-row__scoreline">
-          <b style={{ color: flat ? valueMuted : valueColor }}>
-            {flat ? '—' : `${item.pts > 0 && item.isDelta ? '+' : ''}${formatPoints(item.pts)}`}
-          </b>
-          <span aria-hidden="true" style={{ color: valueMuted }}>›</span>
-        </span>
-        <em style={{ color: valueMuted }}>PTS</em>
-      </span>
-    </button>
-  );
+  // The source snapshot represents one moment, but the demo needs a complete,
+  // readable game story. Distribute its generated scoring plays through all
+  // four quarters so each compressed game segment escalates steadily.
+  const kickoffAt = Date.parse(game?.date ?? '');
+  const wallclockStart = Number.isFinite(kickoffAt) ? kickoffAt : startedAt;
+  return plays.map((play, index) => {
+    const progress = (index + 1) / (plays.length + 1);
+    const elapsed = Math.min(3599, Math.floor(progress * 3600));
+    const secondsLeft = 900 - (elapsed % 900);
+    return {
+      ...play,
+      period: Math.floor(elapsed / 900) + 1,
+      clock: `${Math.floor(secondsLeft / 60)}:${String(secondsLeft % 60).padStart(2, '0')}`,
+      wallclock: new Date(wallclockStart + (progress * 3.25 * 60 * 60 * 1000)).toISOString(),
+    };
+  });
 }
 
 export default function CompanionLive({ onViewPlayer = null }) {
@@ -620,8 +570,10 @@ export default function CompanionLive({ onViewPlayer = null }) {
     weeklyStats,
     seasonStats,
     loadSeasonStats,
+    espnIdOverrides,
   } = useSleeperBase();
-  const { darkMode } = useTheme();
+
+  const isDesktop = useIsDesktop();
 
   const lastScoredLeg = Number(league?.settings?.last_scored_leg);
   const totalWeeks = useMemo(() => (
@@ -629,10 +581,11 @@ export default function CompanionLive({ onViewPlayer = null }) {
   ), [lastScoredLeg]);
   const rawPlayoffStart = Number(league?.settings?.playoff_week_start);
   const playoffStart = Number.isFinite(rawPlayoffStart) && rawPlayoffStart > 0 ? rawPlayoffStart : totalWeeks + 1;
-  const defaultWeek = clampWeek(playoffStart <= totalWeeks ? playoffStart - 1 : totalWeeks, totalWeeks, 1);
-  const weekOptions = useMemo(() => Array.from({ length: totalWeeks }, (_, index) => index + 1), [totalWeeks]);
+  // Live scoring only ever covers the week being played right now — there is
+  // nothing live about a finished week. Past weeks and their play history
+  // belong to Fantasy Matchups, which owns the historical week picker.
+  const week = clampWeek(playoffStart <= totalWeeks ? playoffStart - 1 : totalWeeks, totalWeeks, 1);
 
-  const [week, setWeek] = useState(defaultWeek);
   const [matchups, setMatchups] = useState([]);
   const [matchupsLoading, setMatchupsLoading] = useState(false);
   const [matchupIndex, setMatchupIndex] = useState(0);
@@ -654,59 +607,73 @@ export default function CompanionLive({ onViewPlayer = null }) {
   const [showDetails, setShowDetails] = useState(false);
   const [selectedPlayerId, setSelectedPlayerId] = useState(null);
   const [selectedEventId, setSelectedEventId] = useState(null);
-  const [chartHoverIndex, setChartHoverIndex] = useState(null);
+  // Scrubbing the pace chart rewinds the hero (chartHover) and drops the feed
+  // at the play that was on screen at that point of the games
+  // (feedAnchorProgress — game progress, the chart's own axis).
+  const [chartHover, setChartHover] = useState(null);
+  const [selectedMoment, setSelectedMoment] = useState(null);
+  const [feedAnchorProgress, setFeedAnchorProgress] = useState(null);
+  const [feedSelection, setFeedSelection] = useState(null);
+  const [focusPlayerId, setFocusPlayerId] = useState(null);
+  const [heroCollapsed, setHeroCollapsed] = useState(false);
+  const [matchupStickyHeight, setMatchupStickyHeight] = useState(78);
   const [feedEvents, setFeedEvents] = useState([]);
   const [weatherMap, setWeatherMap] = useState({});
   const [playsByGame, setPlaysByGame] = useState({});
   const [winProbHistory, setWinProbHistory] = useState([]);
-  const [chartWidth, setChartWidth] = useState(CHART_WIDTH);
+  const [finalReconciliation, setFinalReconciliation] = useState({
+    key: null,
+    status: 'idle',
+    requestedAt: null,
+    completedAt: null,
+    attempts: 0,
+  });
   const snapshotRef = useRef(new Map());
-  const chartResizeRef = useRef(null);
-  const chartPlotNodeRef = useRef(null);
-  const chartScrubbingRef = useRef(false);
   const playsFetchedRef = useRef(new Map());
   const pendingPlayGamesRef = useRef(new Set());
   const weatherPendingRef = useRef(new Set());
+  const liveSnapshotRequestRef = useRef(0);
+  const liveSnapshotContextRef = useRef(null);
   const gridRef = useRef(null);
+  const matchupRailRef = useRef(null);
+  const heroStageRef = useRef(null);
+  const feedViewportRef = useRef(null);
   const feedScrollRef = useRef(0);
 
-  // Touch gets tap-to-scrub with outside-tap dismiss; mouse keeps hover.
-  const isCoarsePointer = useMemo(
-    () => typeof window !== 'undefined' && Boolean(window.matchMedia?.('(pointer: coarse)').matches),
-    [],
-  );
-
-  // The chart builds its geometry from the plot's real pixel width so text
-  // and hover math never render through a stretched coordinate space.
-  const chartPlotRef = useCallback((node) => {
-    chartResizeRef.current?.disconnect();
-    chartResizeRef.current = null;
-    chartPlotNodeRef.current = node;
-    if (node && typeof ResizeObserver !== 'undefined') {
-      const observer = new ResizeObserver((entries) => {
-        const width = entries[0]?.contentRect?.width;
-        if (width) setChartWidth(Math.max(220, Math.round(width)));
-      });
-      observer.observe(node);
-      chartResizeRef.current = observer;
-    }
+  const resetMatchupSelections = useCallback(() => {
+    // A matchup is its own navigation context. Clear every drill-in and feed
+    // cursor before another matchup can render with stale selection state.
+    feedScrollRef.current = 0;
+    setFeedSide('both');
+    setSelectedPlayerId(null);
+    setSelectedEventId(null);
+    setChartHover(null);
+    setSelectedMoment(null);
+    setFeedAnchorProgress(null);
+    setFeedSelection(null);
+    setFocusPlayerId(null);
   }, []);
 
-  useEffect(() => () => chartResizeRef.current?.disconnect(), []);
+  const navigateToMatchup = useCallback((index) => {
+    if (index === matchupIndex) return;
+    resetMatchupSelections();
+    setMatchupIndex(index);
+  }, [matchupIndex, resetMatchupSelections]);
 
-  // On coarse pointers the tooltip persists after the finger lifts, so a tap
-  // anywhere outside the plot dismisses it.
+  // Hover is only a preview. A chosen chart moment remains selected until the
+  // viewer makes another selection or explicitly returns to live.
   useEffect(() => {
-    if (!isCoarsePointer || chartHoverIndex == null) return undefined;
+    if (chartHover == null) return undefined;
     const onDocumentPointerDown = (event) => {
-      if (!chartPlotNodeRef.current?.contains(event.target)) setChartHoverIndex(null);
+      if (!event.target.closest?.('.fl-chart')) setChartHover(null);
     };
     document.addEventListener('pointerdown', onDocumentPointerDown);
     return () => document.removeEventListener('pointerdown', onDocumentPointerDown);
-  }, [chartHoverIndex, isCoarsePointer]);
+  }, [chartHover]);
 
-  // On small screens the drill-in sheet replaces the board, so keep it in
-  // view when it opens and restore the feed position when it closes.
+  // On small screens the drill-in replaces the graph in the analysis slot.
+  // Keep that slot in view when it opens and restore the prior position when
+  // it closes.
   useEffect(() => {
     if (typeof window === 'undefined' || window.innerWidth >= 1024) return;
     const scroller = gridRef.current?.closest('.content-area') ?? document.scrollingElement;
@@ -719,12 +686,47 @@ export default function CompanionLive({ onViewPlayer = null }) {
     }
   }, [selectedPlayerId]);
 
-  useEffect(() => { loadPlayers(); }, [loadPlayers]);
-  useEffect(() => { loadSeasonStats?.(); }, [loadSeasonStats]);
+  useEffect(() => {
+    if (!isDesktop) {
+      setMatchupStickyHeight(0);
+      return undefined;
+    }
+    const node = matchupRailRef.current;
+    if (!node) return undefined;
+    const update = () => setMatchupStickyHeight(Math.ceil(node.getBoundingClientRect().height));
+    update();
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', update);
+      return () => window.removeEventListener('resize', update);
+    }
+    const observer = new ResizeObserver(update);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [isDesktop]);
 
   useEffect(() => {
-    setWeek((prev) => clampWeek(prev, totalWeeks, defaultWeek));
-  }, [defaultWeek, totalWeeks]);
+    if (!isDesktop) {
+      setHeroCollapsed(false);
+      return undefined;
+    }
+    const scroller = gridRef.current?.closest('.content-area');
+    const update = () => {
+      const hero = heroStageRef.current;
+      const rail = matchupRailRef.current;
+      if (!hero || !rail) return;
+      setHeroCollapsed(hero.getBoundingClientRect().bottom <= rail.getBoundingClientRect().bottom + 1);
+    };
+    update();
+    scroller?.addEventListener('scroll', update, { passive: true });
+    window.addEventListener('resize', update);
+    return () => {
+      scroller?.removeEventListener('scroll', update);
+      window.removeEventListener('resize', update);
+    };
+  }, [isDesktop]);
+
+  useEffect(() => { loadPlayers(); }, [loadPlayers]);
+  useEffect(() => { loadSeasonStats?.(); }, [loadSeasonStats]);
 
   useEffect(() => {
     let cancelled = false;
@@ -822,10 +824,8 @@ export default function CompanionLive({ onViewPlayer = null }) {
     pendingPlayGamesRef.current = new Set();
     setFeedEvents([]);
     setPlaysByGame({});
-    setSelectedPlayerId(null);
-    setSelectedEventId(null);
-    setChartHoverIndex(null);
-  }, [week, matchupIndex]);
+    resetMatchupSelections();
+  }, [week, matchupIndex, resetMatchupSelections]);
 
   const myRosterId = myRoster()?.roster_id ?? null;
   const matchupPairs = useMemo(
@@ -836,12 +836,23 @@ export default function CompanionLive({ onViewPlayer = null }) {
 
   useEffect(() => {
     if (matchupIndex <= matchupPairs.length - 1) return;
-    setMatchupIndex(0);
-  }, [matchupIndex, matchupPairs.length]);
+    navigateToMatchup(0);
+  }, [matchupIndex, matchupPairs.length, navigateToMatchup]);
 
   const matchupStarterIds = useMemo(() => (
     (currentMatchup?.sides ?? []).flatMap((side) => getStarterIds(side))
   ), [currentMatchup]);
+
+  const currentStarterPointsById = useMemo(() => {
+    const points = new Map();
+    (currentMatchup?.sides ?? []).forEach((side) => {
+      Object.entries(side?.row?.players_points ?? {}).forEach(([id, value]) => {
+        const numeric = Number(value);
+        if (Number.isFinite(numeric)) points.set(String(id), numeric);
+      });
+    });
+    return points;
+  }, [currentMatchup]);
 
   const matchupTeams = useMemo(() => {
     const teams = new Set();
@@ -852,12 +863,29 @@ export default function CompanionLive({ onViewPlayer = null }) {
     return teams;
   }, [matchupStarterIds, players]);
 
+  const liveSnapshotContextKey = [
+    selectedLeagueId,
+    season,
+    week,
+    liveStatus?.session?.enabled ? 'enabled' : 'disabled',
+    ...[...matchupTeams].sort(),
+  ].join(':');
+  liveSnapshotContextRef.current = liveSnapshotContextKey;
+
   const fetchLiveSnapshot = useCallback(async ({ quiet = false } = {}) => {
     if (!liveStatus?.session?.enabled || platform !== 'sleeper') return;
+    const requestId = liveSnapshotRequestRef.current + 1;
+    liveSnapshotRequestRef.current = requestId;
+    const requestContext = liveSnapshotContextKey;
+    const isCurrentRequest = () => (
+      requestId === liveSnapshotRequestRef.current
+      && requestContext === liveSnapshotContextRef.current
+    );
     if (!quiet) setLoadingLive(true);
     setLiveError('');
     try {
       const gamesPayload = await getLiveGames({ season, week });
+      if (!isCurrentRequest()) return;
       const games = Array.isArray(gamesPayload?.data) ? gamesPayload.data : [];
       setLiveGames(games);
       setCacheMeta(gamesPayload?.cache ?? null);
@@ -865,6 +893,7 @@ export default function CompanionLive({ onViewPlayer = null }) {
       const gameIds = sortRelevantGames(games, matchupTeams).map((game) => game.id).filter(Boolean);
       if (gameIds.length) {
         const statsPayload = await getLivePlayerStatsForGames(gameIds);
+        if (!isCurrentRequest()) return;
         const groupedStats = statsPayload?.games && typeof statsPayload.games === 'object'
           ? statsPayload.games
           : {};
@@ -874,11 +903,20 @@ export default function CompanionLive({ onViewPlayer = null }) {
       }
       setLastUpdatedAt(new Date());
     } catch (error) {
-      setLiveError(error?.message ?? 'Could not load live scoring data.');
+      if (isCurrentRequest()) {
+        setLiveError(error?.message ?? 'Could not load live scoring data.');
+      }
     } finally {
-      if (!quiet) setLoadingLive(false);
+      if (!quiet && isCurrentRequest()) setLoadingLive(false);
     }
-  }, [liveStatus?.session?.enabled, matchupTeams, platform, season, week]);
+  }, [
+    liveSnapshotContextKey,
+    liveStatus?.session?.enabled,
+    matchupTeams,
+    platform,
+    season,
+    week,
+  ]);
 
   useEffect(() => {
     void fetchLiveSnapshot();
@@ -905,6 +943,11 @@ export default function CompanionLive({ onViewPlayer = null }) {
               id: rawPlayer.id ?? id,
               player_id: rawPlayer.player_id ?? id,
               sleeperId: rawPlayer.sleeperId ?? id,
+              // Sleeper leaves espn_id null for roughly three quarters of
+              // startable skill players, so fold in the ids the context's
+              // roster cross-reference resolved. Everything downstream that
+              // resolves imagery reads espnId first.
+              espnId: rawPlayer.espn_id ?? espnIdOverrides?.[id] ?? null,
             }
           : null;
         if (!player) return null;
@@ -948,7 +991,7 @@ export default function CompanionLive({ onViewPlayer = null }) {
         isMine,
       };
     })
-  ), [activeScoringSettings, currentMatchup, myRosterId, players, sleeperStatsByPlayer, statIndex, week]);
+  ), [activeScoringSettings, currentMatchup, espnIdOverrides, myRosterId, players, sleeperStatsByPlayer, statIndex, week]);
 
   const cumulativeResultsByRoster = useMemo(
     () => buildCumulativeRosterResults(cumulativeMatchupsByWeek, week, rawSideSummaries),
@@ -968,9 +1011,6 @@ export default function CompanionLive({ onViewPlayer = null }) {
 
   const leftSummary = sideSummaries[0] ?? null;
   const rightSummary = sideSummaries[1] ?? null;
-  const matchupLeaderKey = !leftSummary || !rightSummary || leftSummary.total === rightSummary.total
-    ? null
-    : leftSummary.total > rightSummary.total ? 'a' : 'b';
 
   const playerSideKey = useMemo(() => {
     const map = new Map();
@@ -989,7 +1029,21 @@ export default function CompanionLive({ onViewPlayer = null }) {
     }));
     const prev = snapshotRef.current;
     if (prev.size) {
-      const events = buildDeltaEvents(prev, next, meta);
+      const events = buildDeltaEvents(prev, next, meta).map((event) => {
+        const row = sideSummaries
+          .flatMap((summary) => summary.rows)
+          .find((candidate) => candidate.id === event.playerId);
+        const game = row?.bdlRow?.gameId
+          ? liveGames.find((candidate) => String(candidate.id) === String(row.bdlRow.gameId))
+          : findGameForTeam(liveGames, row?.player?.team);
+        const remaining = game ? getRemainingGameFraction(game) : null;
+        return {
+          ...event,
+          gameId: row?.bdlRow?.gameId ?? game?.id ?? null,
+          gameProgress: Number.isFinite(remaining) ? 1 - remaining : null,
+          timelineAt: event.at,
+        };
+      });
       if (events.length) {
         setFeedEvents((current) => [...events, ...current].slice(0, MAX_FEED_EVENTS));
         // Flag these players' games for a plays refresh so the delta can be
@@ -1002,7 +1056,7 @@ export default function CompanionLive({ onViewPlayer = null }) {
       }
     }
     snapshotRef.current = next;
-  }, [currentMatchup, sideSummaries]);
+  }, [currentMatchup, liveGames, sideSummaries]);
 
   const activeScheduleMapForContext = scheduleMap ?? localScheduleMap;
 
@@ -1084,35 +1138,215 @@ export default function CompanionLive({ onViewPlayer = null }) {
     return map;
   }, [activeScoringSettings, matchupStarterIds, players, seasonStats]);
 
-  // Remaining-game fraction per NFL team: live BDL game state when available,
-  // otherwise the season schedule decides played (0), bye (0), or upcoming (1).
-  const getTeamRemainingFraction = useCallback((teamAbbr) => {
-    const team = getTeamAbbr(teamAbbr);
-    if (!team || team === 'FA') return 0;
-    const game = findGameForTeam(liveGames, team);
-    if (game) return getRemainingGameFraction(game);
-    const weekSchedule = activeScheduleMapForContext?.[week] ?? activeScheduleMapForContext?.[String(week)] ?? null;
-    if (!weekSchedule) return 1;
-    const entry = weekSchedule[team];
-    if (!entry) return 0; // bye
-    const played = Number.isFinite(Number(entry.ptsFor)) && Number.isFinite(Number(entry.ptsAgainst));
-    return played ? 0 : 1;
-  }, [activeScheduleMapForContext, liveGames, week]);
+  // Game progress and official settlement are separate facts. A missing live
+  // row can mean scheduled, unavailable, or unresolved; it must never silently
+  // turn into "final" and unlock an exact 0%/100%.
+  const starterGameStateById = useMemo(() => {
+    const map = new Map();
+    const weekSchedule = activeScheduleMapForContext?.[week]
+      ?? activeScheduleMapForContext?.[String(week)]
+      ?? null;
+    const hasScheduleForWeek = isCompleteScheduleWeek(weekSchedule);
+    const weekOfficiallyComplete = hasScheduleForWeek
+      && Object.values(weekSchedule).every((entry) => entry?.completed === true);
+    matchupStarterIds.forEach((id) => {
+      const team = getTeamAbbr(starterInfoById.get(id)?.team ?? players?.[id]?.team);
+      const hasCurrentTeam = Boolean(team && team !== 'FA');
+      const scheduleEntry = hasCurrentTeam ? weekSchedule?.[team] ?? null : null;
+      const game = hasCurrentTeam ? findGameForTeam(liveGames, team) : null;
+      const resolution = resolveStarterGameState({
+        game,
+        scheduleEntry,
+        hasScheduleForWeek,
+        hasGameThisWeek: hasCurrentTeam && hasScheduleForWeek
+          ? Boolean(scheduleEntry)
+          : !hasCurrentTeam && weekOfficiallyComplete
+            ? false
+            : null,
+      });
+      const fallbackRemainingFraction = getFallbackRemainingGameFraction({
+        scheduleEntry,
+        currentPoints: currentStarterPointsById.get(id) ?? null,
+      });
+      map.set(id, {
+        ...resolution,
+        team,
+        game,
+        scheduleEntry,
+        remainingFraction: resolution.state === 'live'
+          ? getRemainingGameFraction(game)
+          : resolution.settled
+            ? resolution.remainingFraction
+            : Math.min(resolution.remainingFraction, fallbackRemainingFraction),
+      });
+    });
+    return map;
+  }, [
+    activeScheduleMapForContext,
+    currentStarterPointsById,
+    liveGames,
+    matchupStarterIds,
+    players,
+    starterInfoById,
+    week,
+  ]);
+
+  const allStartersOfficiallySettled = matchupStarterIds.length > 0
+    && matchupStarterIds.every((id) => starterGameStateById.get(id)?.settled === true);
+  const finalReconciliationKey = currentMatchup && selectedLeagueId
+    ? `${selectedLeagueId}:${season}:${week}:${currentMatchup.matchupId}`
+    : null;
+  const settledConfirmed = Boolean(
+    allStartersOfficiallySettled
+    && finalReconciliationKey
+    && finalReconciliation.key === finalReconciliationKey
+    && finalReconciliation.status === 'success',
+  );
+
+  useEffect(() => {
+    setFinalReconciliation({
+      key: finalReconciliationKey,
+      status: 'idle',
+      requestedAt: null,
+      completedAt: null,
+      attempts: 0,
+    });
+  }, [finalReconciliationKey]);
+
+  useEffect(() => {
+    if (
+      !allStartersOfficiallySettled
+      || !finalReconciliationKey
+      || !selectedLeagueId
+      || !currentMatchup
+      || finalReconciliation.key !== finalReconciliationKey
+      || finalReconciliation.status !== 'idle'
+    ) return undefined;
+
+    let cancelled = false;
+    const requestedAt = Date.now();
+    const attempts = finalReconciliation.attempts + 1;
+    setFinalReconciliation({
+      key: finalReconciliationKey,
+      status: 'pending',
+      requestedAt,
+      completedAt: null,
+      attempts,
+    });
+    getLiveMatchups(selectedLeagueId, week)
+      .then((rows) => {
+        if (cancelled) return;
+        const reconciled = hasReconciledMatchup(rows, currentMatchup.matchupId);
+        if (reconciled) setMatchups(rows ?? []);
+        setFinalReconciliation({
+          key: finalReconciliationKey,
+          status: reconciled ? 'success' : 'incomplete',
+          requestedAt,
+          completedAt: Date.now(),
+          attempts,
+        });
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setFinalReconciliation({
+          key: finalReconciliationKey,
+          status: 'error',
+          requestedAt,
+          completedAt: Date.now(),
+          attempts,
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    allStartersOfficiallySettled,
+    currentMatchup,
+    finalReconciliation.attempts,
+    finalReconciliation.key,
+    finalReconciliation.status,
+    finalReconciliationKey,
+    selectedLeagueId,
+    week,
+  ]);
+
+  // Sleeper can publish its authoritative matchup payload shortly after the
+  // NFL game feed marks the last game final. Retry quietly until one fresh
+  // response contains both team totals and every starter's official points.
+  useEffect(() => {
+    if (
+      !allStartersOfficiallySettled
+      || finalReconciliation.key !== finalReconciliationKey
+      || !['error', 'incomplete'].includes(finalReconciliation.status)
+    ) return undefined;
+    const retryDelay = Math.min(
+      FINAL_RECONCILIATION_RETRY_MS * Math.max(1, finalReconciliation.attempts),
+      120000,
+    );
+    const timer = window.setTimeout(() => {
+      setFinalReconciliation((current) => (
+        current.key === finalReconciliationKey
+        && ['error', 'incomplete'].includes(current.status)
+          ? { ...current, status: 'idle' }
+          : current
+      ));
+    }, retryDelay);
+    return () => window.clearTimeout(timer);
+  }, [
+    allStartersOfficiallySettled,
+    finalReconciliation.attempts,
+    finalReconciliation.key,
+    finalReconciliation.status,
+    finalReconciliationKey,
+  ]);
 
   const winProb = useMemo(() => {
     if (!leftSummary || !rightSummary) return null;
     const buildOutlooks = (summary) => summary.rows.map((row) => getStarterOutlook({
-      current: row.points,
+      current: settledConfirmed ? (row.sleeperPoints ?? row.points) : row.points,
       position: row.player?.position,
       projection: projectionsById.get(row.id) ?? null,
       fallbackAvg: fallbackAvgById.get(row.id) ?? null,
-      fraction: getTeamRemainingFraction(row.player?.team),
+      fraction: starterGameStateById.get(row.id)?.remainingFraction ?? 1,
+      playerId: row.id,
+      playerName: getSleeperPlayerName(row.player),
+      state: starterGameStateById.get(row.id)?.state ?? 'unresolved',
     }));
-    return computeWinProbability(
+    // The side outlooks ride along so the hero can explain the number rather
+    // than just assert it.
+    const withScoreAdjustment = (outlook, summary) => {
+      const adjustment = getMatchupCustomPoints(summary.side?.row);
+      return adjustment ? { ...outlook, current: outlook.current + adjustment } : outlook;
+    };
+    let outlookA = withScoreAdjustment(
       computeSideOutlook(buildOutlooks(leftSummary)),
-      computeSideOutlook(buildOutlooks(rightSummary)),
+      leftSummary,
     );
-  }, [fallbackAvgById, getTeamRemainingFraction, leftSummary, projectionsById, rightSummary]);
+    let outlookB = withScoreAdjustment(
+      computeSideOutlook(buildOutlooks(rightSummary)),
+      rightSummary,
+    );
+    if (settledConfirmed) {
+      const officialA = getOfficialMatchupRowPoints(leftSummary.side?.row);
+      const officialB = getOfficialMatchupRowPoints(rightSummary.side?.row);
+      if (officialA != null) outlookA = { ...outlookA, current: officialA, remainingProj: 0, remainingVar: 0, playersRemaining: 0 };
+      if (officialB != null) outlookB = { ...outlookB, current: officialB, remainingProj: 0, remainingVar: 0, playersRemaining: 0 };
+    }
+    const result = computeWinProbability(outlookA, outlookB, { settledConfirmed });
+    return {
+      ...result,
+      outlookA,
+      outlookB,
+      explain: explainWinProbability(result, outlookA, outlookB),
+    };
+  }, [
+    fallbackAvgById,
+    leftSummary,
+    projectionsById,
+    rightSummary,
+    settledConfirmed,
+    starterGameStateById,
+  ]);
 
   // Win-probability history: load per matchup key, append on refresh ticks.
   const historyKey = currentMatchup && selectedLeagueId
@@ -1133,13 +1367,18 @@ export default function CompanionLive({ onViewPlayer = null }) {
     // starter rows exist so remaining-game fractions are trustworthy.
     if (matchupsLoading || !activeScheduleMapForContext || !leftSummary.rows.length) return;
     setWinProbHistory((current) => {
-      const last = current[current.length - 1];
-      if (winProb.settled && last && last.p === winProb.probA) return current;
       const next = appendWinProbPoint(current, {
         t: Date.now(),
         p: winProb.probA,
-        a: Math.round((leftSummary.total ?? 0) * 10) / 10,
-        b: Math.round((rightSummary.total ?? 0) * 10) / 10,
+        a: winProb.explain?.a?.current ?? Math.round((leftSummary.total ?? 0) * 10) / 10,
+        b: winProb.explain?.b?.current ?? Math.round((rightSummary.total ?? 0) * 10) / 10,
+        settled: winProb.settled,
+        settlementPending: winProb.settlementPending,
+        modelId: winProb.modelId,
+        expectedA: winProb.expectedA,
+        expectedB: winProb.expectedB,
+        sigma: winProb.sigma,
+        explain: winProb.explain,
       });
       if (next !== current) saveWinProbHistory(historyKey, next);
       return next;
@@ -1147,11 +1386,119 @@ export default function CompanionLive({ onViewPlayer = null }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [historyKey, winProb?.probA, winProb?.settled, lastUpdatedAt]);
 
-  const rowById = useMemo(() => {
+  // ── Pace model ───────────────────────────────────────────────────────────
+  // Every starter's live points measured against where their projection says
+  // they should be right now. This drives the hero, the verdict line, the
+  // chart's ghost pace rays and the performer ordering.
+  const paletteSlots = useMemo(() => buildFantasyPaletteSlots(rosters), [rosters]);
+
+  const sides = useMemo(() => sideSummaries.map((summary) => {
+    const entries = summary.rows.map((row) => ({
+      id: row.id,
+      row,
+      sideKey: summary.key,
+      pace: getStarterPace({
+        current: settledConfirmed ? (row.sleeperPoints ?? row.points) : row.points,
+        position: row.player?.position,
+        projection: projectionsById.get(row.id) ?? null,
+        fallbackAvg: fallbackAvgById.get(row.id) ?? null,
+        remainingFraction: starterGameStateById.get(row.id)?.remainingFraction ?? 1,
+      }),
+    }));
+    const rosterId = getRosterIdFromMatchupRow(summary.side?.row);
+    const basePace = buildSidePace(entries.map((entry) => entry.pace));
+    const adjustment = getMatchupCustomPoints(summary.side?.row);
+    const pace = adjustment
+      ? {
+          ...basePace,
+          total: basePace.total + adjustment,
+          liveProjected: basePace.liveProjected + adjustment,
+          vsPace: basePace.vsPace + adjustment,
+        }
+      : basePace;
+    const officialTotal = settledConfirmed ? getOfficialMatchupRowPoints(summary.side?.row) : null;
+    return {
+      key: summary.key,
+      name: summary.name,
+      initials: summary.initials,
+      isMine: summary.isMine,
+      record: summary.record,
+      manager: null,
+      palette: getFantasyTeamPalette(rosterId, paletteSlots),
+      entries,
+      pace: officialTotal == null
+        ? pace
+        : {
+            ...pace,
+            total: officialTotal,
+            liveProjected: officialTotal,
+            projected: officialTotal,
+            vsPace: officialTotal - pace.pace,
+          },
+      featured: pickFeaturedStarter(entries, 'top'),
+    };
+  }), [
+    fallbackAvgById,
+    paletteSlots,
+    projectionsById,
+    settledConfirmed,
+    sideSummaries,
+    starterGameStateById,
+  ]);
+
+  const leftSide = sides[0] ?? null;
+  const rightSide = sides[1] ?? null;
+  const sidesByKey = useMemo(
+    () => Object.fromEntries(sides.map((side) => [side.key, side])),
+    [sides],
+  );
+  const verdict = useMemo(
+    () => buildVerdict(leftSide?.pace, rightSide?.pace),
+    [leftSide, rightSide],
+  );
+  const performers = useMemo(() => buildTopPerformers(sides, RAIL_PERFORMER_LIMIT), [sides]);
+  const entriesById = useMemo(() => {
     const map = new Map();
-    sideSummaries.forEach((summary) => summary.rows.forEach((row) => map.set(row.id, { row, summary })));
+    sides.forEach((side) => side.entries.forEach((entry) => map.set(entry.id, entry)));
     return map;
-  }, [sideSummaries]);
+  }, [sides]);
+
+  // Every matchup in the league as a scoreboard chip. Points come from the
+  // league's official numbers, except the selected matchup, which uses the
+  // live total so the chip and the hero never disagree.
+  const matchupChips = useMemo(() => matchupPairs.map((pair, index) => ({
+    key: pair.matchupId,
+    index,
+    mine: pair.mine,
+    sides: pair.sides.slice(0, 2).map((side, sideIndex) => {
+      const rosterId = getRosterIdFromMatchupRow(side.row);
+      const isMine = Number(rosterId) === Number(myRosterId);
+      const liveSide = index === matchupIndex ? sides[sideIndex] : null;
+      return {
+        key: `${pair.matchupId}-${rosterId ?? sideIndex}`,
+        label: isMine ? 'You' : (firstWordOf(side.name) || side.name),
+        fullName: side.name,
+        points: liveSide ? liveSide.pace.total : getMatchupRowPoints(side.row),
+        color: getFantasyTeamPalette(rosterId, paletteSlots)[0],
+      };
+    }),
+  })), [matchupIndex, matchupPairs, myRosterId, paletteSlots, sides]);
+  const matchupChipNameWidth = useMemo(
+    () => `${Math.min(14, Math.max(
+      7,
+      ...matchupChips.flatMap((chip) => chip.sides.map((side) => side.label.length)),
+    )) * 0.46}em`,
+    [matchupChips],
+  );
+
+  // Focusing a starter must always land on their plays, so a focus on the side
+  // the feed is currently hiding widens the filter back to both.
+  const focusStarter = useCallback((playerId) => {
+    setFocusPlayerId(playerId);
+    if (!playerId) return;
+    const entry = entriesById.get(playerId);
+    if (entry) setFeedSide((current) => (current === entry.sideKey || current === 'both' ? current : 'both'));
+  }, [entriesById]);
 
   // ── Play-by-play backfill + throttled live refresh ───────────────────────
   // Budgeted for the BDL free tier: backfill each relevant game once (live
@@ -1163,9 +1510,11 @@ export default function CompanionLive({ onViewPlayer = null }) {
     if (isFreeLiveTier(liveStatus) && !mockPlays) return undefined;
     let cancelled = false;
     const starterRows = sideSummaries.flatMap((summary) => summary.rows);
-    const relevant = sortRelevantGames(liveGames, matchupTeams)
-      .filter((game) => mockPlays || isLiveGame(game) || isFinalGame(game))
-      .slice(0, MAX_PLAYS_GAMES);
+    const relevant = limitPlayByPlayGames(
+      sortRelevantGames(liveGames, matchupTeams)
+        .filter((game) => mockPlays || isLiveGame(game) || isFinalGame(game)),
+      { mock: mockPlays, maxGames: MAX_PLAYS_GAMES },
+    );
 
     (async () => {
       for (const game of relevant) {
@@ -1208,6 +1557,12 @@ export default function CompanionLive({ onViewPlayer = null }) {
     return map;
   }, [liveGames]);
 
+  const demoTimeline = useMemo(() => (
+    isMockPlayByPlayEnabled(liveStatus)
+      ? buildDemoTimeline(sortRelevantGames(liveGames, matchupTeams))
+      : null
+  ), [liveGames, liveStatus, matchupTeams]);
+
   const positionsById = useMemo(() => {
     const map = new Map();
     sideSummaries.forEach((summary) => summary.rows.forEach((row) => {
@@ -1224,20 +1579,175 @@ export default function CompanionLive({ onViewPlayer = null }) {
     buildPlayEvents(playsByGame, starterNameIndex, activeScoringSettings, positionsById, gamesById)
   ), [activeScoringSettings, gamesById, playsByGame, positionsById, starterNameIndex]);
 
-  const mergedFeed = useMemo(
-    () => mergePlayEvents(playEvents, feedEvents),
-    [feedEvents, playEvents],
-  );
+  // Stat-delta events only know "just now"; give them the game progress of the
+  // starter they belong to so every feed row can sit on the chart's axis.
+  const mergedFeed = useMemo(() => {
+    const events = mergePlayEvents(playEvents, feedEvents).map((event) => {
+      const starterTeam = getTeamAbbr(entriesById.get(event.playerId)?.row?.player?.team);
+      const fallbackGameId = findGameForTeam(liveGames, starterTeam)?.id;
+      const gameId = event.gameId ?? fallbackGameId ?? null;
+      const gameProgress = Number.isFinite(Number(event.progress))
+        ? Number(event.progress)
+        : parseGlanceProgress(event.glance?.clock)
+          ?? entriesById.get(event.playerId)?.pace?.progress
+          ?? null;
+      const timelineAt = event.timelineAt
+        ?? (event.source === 'play' ? null : event.at)
+        ?? null;
+      const normalized = {
+        ...event,
+        gameId,
+        gameProgress,
+        timelineAt,
+        progress: gameProgress,
+      };
+      if (!demoTimeline) return normalized;
+
+      const window = demoTimeline.gameWindows.get(String(gameId ?? ''));
+      return {
+        ...normalized,
+        progress: mapGameProgressToDemoTimeline(gameProgress, window) ?? gameProgress,
+      };
+    });
+    if (!demoTimeline) return events;
+    return events
+      .concat(buildSharedDemoScoringEvents({
+        sides: sideSummaries,
+        scoringSettings: activeScoringSettings,
+      }))
+      .sort((left, right) => (Number(right.progress) || 0) - (Number(left.progress) || 0))
+  }, [activeScoringSettings, demoTimeline, entriesById, feedEvents, liveGames, playEvents, sideSummaries]);
+
+  // Real scoring measures shared game progress. The mock feed instead closes
+  // at its latest active-game event on the compressed schedule.
+  const slateProgress = useMemo(() => {
+    if (demoTimeline) {
+      return mergedFeed.reduce((latest, event) => (
+        Number.isFinite(Number(event.progress)) ? Math.max(latest, Number(event.progress)) : latest
+      ), 0);
+    }
+    const all = sides.flatMap((side) => side.entries);
+    if (!all.length) return 0;
+    return all.reduce((sum, entry) => sum + entry.pace.progress, 0) / all.length;
+  }, [demoTimeline, mergedFeed, sides]);
 
   const visibleFeed = useMemo(() => (
     mergedFeed.filter((event) => {
       const sideKey = playerSideKey.get(event.playerId);
-      return sideKey && (feedSide === 'both' || sideKey === feedSide);
+      if (!sideKey || (feedSide !== 'both' && sideKey !== feedSide)) return false;
+      return !focusPlayerId || event.playerId === focusPlayerId;
     })
-  ), [feedSide, mergedFeed, playerSideKey]);
+  ), [feedSide, focusPlayerId, mergedFeed, playerSideKey]);
 
-  const selectedEntry = selectedPlayerId ? rowById.get(selectedPlayerId) ?? null : null;
-  const selectedEvent = selectedEventId ? mergedFeed.find((event) => event.id === selectedEventId) ?? null : null;
+  const feedCounts = useMemo(() => {
+    const counts = { a: 0, b: 0 };
+    mergedFeed.forEach((event) => {
+      const sideKey = playerSideKey.get(event.playerId);
+      if (sideKey) counts[sideKey] += 1;
+    });
+    return counts;
+  }, [mergedFeed, playerSideKey]);
+
+  // ── Pace-chart series ────────────────────────────────────────────────────
+  // Built from the matchup's own scoring plays, so the line steps with the
+  // afternoon and the big plays become selectable milestones on it.
+  const replayGameTimelines = useMemo(
+    () => buildGameProgressTimelines(mergedFeed),
+    [mergedFeed],
+  );
+  const replayStarterTimelineById = useMemo(() => {
+    const map = new Map();
+    starterGameStateById.forEach((resolution, playerId) => {
+      const kickoffValue = resolution?.game?.date ?? resolution?.scheduleEntry?.kickoff;
+      const kickoffAt = Date.parse(kickoffValue ?? '');
+      map.set(playerId, {
+        state: resolution?.state ?? 'unresolved',
+        gameId: resolution?.game?.id ?? null,
+        kickoffAt: Number.isFinite(kickoffAt) ? kickoffAt : null,
+      });
+    });
+    return map;
+  }, [starterGameStateById]);
+
+  const paceModel = useMemo(() => {
+    const snapshotAt = winProb?.outlookA && winProb?.outlookB
+      ? (point, context) => {
+          const moment = {
+            at: point.at,
+            gameId: context?.event?.gameId ?? null,
+            gameProgress: context?.event?.gameProgress ?? context?.event?.progress ?? null,
+          };
+          const fractionByPlayer = new Map();
+          [...(winProb.outlookA.outlooks ?? []), ...(winProb.outlookB.outlooks ?? [])]
+            .forEach((outlook) => {
+              fractionByPlayer.set(
+                outlook.playerId,
+                getStarterReplayRemainingFraction(
+                  replayStarterTimelineById.get(outlook.playerId),
+                  moment,
+                  replayGameTimelines,
+                ),
+              );
+            });
+          const replayA = projectSideOutlookAtMoment(winProb.outlookA, {
+            currentByPlayer: context?.currentByPlayer,
+            fractionByPlayer,
+          });
+          const replayB = projectSideOutlookAtMoment(winProb.outlookB, {
+            currentByPlayer: context?.currentByPlayer,
+            fractionByPlayer,
+          });
+          const result = computeWinProbability(replayA, replayB);
+          return {
+            a: replayA.current,
+            b: replayB.current,
+            p: result.probA,
+            settled: false,
+            settlementPending: result.settlementPending,
+            modelId: result.modelId,
+            expectedA: result.expectedA,
+            expectedB: result.expectedB,
+            sigma: result.sigma,
+            explain: explainWinProbability(result, replayA, replayB),
+          };
+        }
+      : null;
+    const liveSnapshot = winProb
+      ? {
+          p: winProb.probA,
+          settled: winProb.settled,
+          settlementPending: winProb.settlementPending,
+          modelId: winProb.modelId,
+          expectedA: winProb.expectedA,
+          expectedB: winProb.expectedB,
+          sigma: winProb.sigma,
+          explain: winProb.explain,
+        }
+      : null;
+    return buildPaceSeries({
+      events: mergedFeed,
+      sideKeyOf: (event) => playerSideKey.get(event.playerId) ?? null,
+      totals: { a: leftSide?.pace.total ?? 0, b: rightSide?.pace.total ?? 0 },
+      slateProgress,
+      snapshotAt,
+      historicalSnapshots: demoTimeline ? [] : winProbHistory,
+      liveSnapshot,
+      reconcileToTotals: Boolean(demoTimeline),
+    });
+  }, [
+    demoTimeline,
+    leftSide,
+    mergedFeed,
+    playerSideKey,
+    replayGameTimelines,
+    replayStarterTimelineById,
+    rightSide,
+    slateProgress,
+    winProb,
+    winProbHistory,
+  ]);
+
+  const selectedEntry = selectedPlayerId ? entriesById.get(selectedPlayerId) ?? null : null;
   const activeScheduleMap = scheduleMap ?? localScheduleMap;
   const getPlayerGameGlance = useCallback((teamAbbr, row = null) => (
     getGameGlance(findGameForTeam(liveGames, teamAbbr))
@@ -1281,60 +1791,51 @@ export default function CompanionLive({ onViewPlayer = null }) {
     );
   }
 
+  // User-facing copy names the connected platform rather than hardcoding one.
+  const platformLabel = platform === 'espn' ? 'ESPN' : 'Sleeper';
   const liveEnabled = Boolean(liveStatus?.live?.enabled);
   const sessionEnabled = Boolean(liveStatus?.session?.enabled);
   const mockPlaysEnabled = isMockPlayByPlayEnabled(liveStatus);
   const liveGameCount = liveGames.filter((game) => isLiveGame(game)).length;
 
-  // ── Win-probability chart geometry ────────────────────────────────────────
-  // Points are evenly spaced by index (ESPN-style); the curve appends a point
-  // per refresh and persists per matchup, so it builds through the game day.
-  const probPoints = winProbHistory.length >= 2
-    ? winProbHistory
-    : winProb
-      ? [
-          { t: Date.now() - 1000, p: winProb.probA, a: leftSummary?.total ?? 0, b: rightSummary?.total ?? 0 },
-          { t: Date.now(), p: winProb.probA, a: leftSummary?.total ?? 0, b: rightSummary?.total ?? 0 },
-        ]
-      : [];
-  const chartInnerWidth = chartWidth - CHART_PAD_LEFT - CHART_PAD_RIGHT;
-  const chartInnerHeight = CHART_HEIGHT - CHART_PAD_TOP - CHART_PAD_BOTTOM;
-  const probXAt = (index) => CHART_PAD_LEFT + (index / Math.max(1, probPoints.length - 1)) * chartInnerWidth;
-  const probYAt = (p) => CHART_PAD_TOP + (1 - Math.min(100, Math.max(0, p)) / 100) * chartInnerHeight;
-  const probMidY = probYAt(50);
-  const probLine = probPoints.map((point, index) => `${probXAt(index).toFixed(1)},${probYAt(point.p).toFixed(1)}`).join(' ');
-  const probArea = probPoints.length
-    ? `${probXAt(0).toFixed(1)},${probMidY.toFixed(1)} ${probLine} ${probXAt(probPoints.length - 1).toFixed(1)},${probMidY.toFixed(1)}`
-    : '';
-  const probLast = probPoints[probPoints.length - 1] ?? null;
-  const activeChartIndex = chartHoverIndex == null || !probPoints.length
-    ? null
-    : Math.min(probPoints.length - 1, Math.max(0, chartHoverIndex));
-  const chartHover = activeChartIndex == null ? null : (() => {
-    const point = probPoints[activeChartIndex];
-    const x = probXAt(activeChartIndex);
-    return {
-      index: activeChartIndex,
-      point,
-      x,
-      y: probYAt(point.p),
-      timeLabel: new Date(point.t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
-      tooltipLeft: `${(x / chartWidth) * 100}%`,
-      tooltipTransform: x < 68 ? 'translateX(0)' : x > chartWidth - 68 ? 'translateX(-100%)' : 'translateX(-50%)',
-    };
-  })();
-  const winClipId = `wp-${currentMatchup?.matchupId ?? 'none'}`;
+  // The play-built series is the real curve. Without play-by-play (free tier,
+  // or before any play lands) the persisted odds history still carries both
+  // sides' running totals, so the chart degrades to that rather than to
+  // nothing; its points have no game clock and spread evenly across the slate.
+  const paceSeries = paceModel.points.length >= 2
+    ? paceModel.points
+    : winProbHistory.length >= 2
+      ? winProbHistory
+      : winProb
+        ? [
+            { p: winProb.probA, a: 0, b: 0 },
+            {
+              p: winProb.probA,
+              a: leftSide?.pace.total ?? 0,
+              b: rightSide?.pace.total ?? 0,
+              settled: winProb.settled,
+              settlementPending: winProb.settlementPending,
+              modelId: winProb.modelId,
+              explain: winProb.explain,
+            },
+          ]
+        : [];
+  const paceMarks = paceModel.points.length >= 2
+    ? paceModel.marks.map((mark) => {
+        const player = entriesById.get(mark.playerId)?.row?.player;
+        return {
+          ...mark,
+          playerName: player ? getSleeperPlayerName(player) : null,
+        };
+      })
+    : [];
 
-  const winDial = (() => {
-    if (!winProb || !leftSummary || !rightSummary) return { pct: null, label: 'Team', tied: false };
-    if (winProb.probA === 50) return { pct: 50, label: 'Tied', tied: true };
-    const leader = winProb.probA > 50 ? leftSummary : rightSummary;
-    return {
-      pct: winProb.probA > 50 ? winProb.probA : 100 - winProb.probA,
-      label: leader.name,
-      tied: false,
-    };
-  })();
+  // Hover previews a nearby moment; once the pointer leaves, the last chosen
+  // moment remains the shared source for the hero, chart and feed.
+  const displayedMoment = chartHover ?? selectedMoment;
+  const heroSnapshot = displayedMoment && displayedMoment.x < slateProgress - 0.005
+    ? displayedMoment
+    : null;
 
   const updatedLabel = lastUpdatedAt
     ? lastUpdatedAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
@@ -1345,60 +1846,92 @@ export default function CompanionLive({ onViewPlayer = null }) {
       ? 'Live scoring not set up'
       : !sessionEnabled
         ? 'Live scoring ready'
-        : `Live${liveGameCount > 0 ? ` · ${liveGameCount} ${liveGameCount === 1 ? 'game' : 'games'}` : ''}${updatedLabel ? ` · updated ${updatedLabel}` : ' · waiting for data'}`;
+        // The left of the bar already says "Live", so this side only carries
+        // what changed: how many games are running and when we last heard.
+        : `${liveGameCount > 0 ? `${liveGameCount} ${liveGameCount === 1 ? 'game' : 'games'} live` : 'No games live'}${updatedLabel ? ` · ${updatedLabel}` : ' · waiting for data'}`;
 
   const matchedStarters = sideSummaries.reduce((sum, summary) => sum + summary.matchedCount, 0);
   const totalStarters = sideSummaries.reduce((sum, summary) => sum + summary.rows.length, 0);
 
-  // Feed filter labels stay single-line: "You/Opponent" for my matchup,
-  // team initials elsewhere; full names live in the hero and aria-labels.
-  const anySideMine = Boolean(leftSummary?.isMine || rightSummary?.isMine);
-  const segmentLabel = (summary, fallback) => {
-    if (!summary) return fallback;
-    if (summary.isMine) return 'You';
-    if (anySideMine) return 'Opponent';
-    return summary.initials || summary.name;
+  const openPlayer = (entry, event = null) => {
+    setSelectedPlayerId(entry.id);
+    setSelectedEventId(event?.id ?? null);
   };
 
-  const renderFeedRow = ({ key, item, summary }) => {
-    const teamAbbr = getTeamAbbr(item.player?.team);
-    const row = rowById.get(item.id)?.row ?? null;
-    // Play events carry a glance frozen at play time; fall back to live state.
-    const glance = item.glance ?? getPlayerGameGlance(teamAbbr, row);
-    const theme = getTeamVisualTheme(teamAbbr, darkMode);
-    return (
-      <FeedRow
-        key={key}
-        item={{ ...item, isMine: summary.isMine }}
-        glance={glance}
-        theme={theme}
-        onOpen={() => {
-          setSelectedPlayerId(item.id);
-          setSelectedEventId(item.source === 'play' || item.source === 'play+delta' || item.isDelta ? key : null);
-        }}
-      />
-    );
+  const closePlayer = () => {
+    setSelectedPlayerId(null);
+    setSelectedEventId(null);
+    setFocusPlayerId(null);
   };
+
+  const returnToLive = () => {
+    setChartHover(null);
+    setSelectedMoment(null);
+    setFeedAnchorProgress(null);
+    setFeedSelection(null);
+    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    feedViewportRef.current?.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' });
+  };
+
+  const selectChartMoment = (point) => {
+    if (!point || point.x >= slateProgress - 0.005) {
+      returnToLive();
+      return;
+    }
+    setChartHover(null);
+    setSelectedMoment(point);
+    setFeedSelection(null);
+    setFeedAnchorProgress(point.x);
+  };
+
+  // A chart milestone is a direct link to its evidence in the feed. Widen any
+  // filter that hides it, persist the exact chart moment, then request its row
+  // at the top of the independent feed scrollport.
+  const selectMark = (mark) => {
+    const sideKey = playerSideKey.get(mark.playerId);
+    const point = paceModel.points.find((candidate) => candidate.eventId === mark.event.id)
+      ?? { x: mark.x, a: 0, b: 0, p: winProb?.probA ?? 50 };
+    setFocusPlayerId(null);
+    setFeedSide((current) => (
+      current === 'both' || current === sideKey ? current : 'both'
+    ));
+    setChartHover(null);
+    setSelectedMoment(point);
+    setFeedAnchorProgress(null);
+    setFeedSelection((current) => ({
+      eventId: mark.event.id,
+      requestId: (current?.requestId ?? 0) + 1,
+    }));
+  };
+
+  const selectPerformer = (playerId) => {
+    focusStarter(playerId);
+    if (!playerId) {
+      setSelectedPlayerId(null);
+      setSelectedEventId(null);
+      return;
+    }
+    const entry = entriesById.get(playerId);
+    if (entry) openPlayer(entry);
+  };
+
+  const focusedName = focusPlayerId
+    ? lastNameOf(getSleeperPlayerName(entriesById.get(focusPlayerId)?.row.player ?? {}))
+    : null;
+
+  const feedEmptyMessage = !sessionEnabled
+    ? 'Turn on Live to see plays and their fantasy impact.'
+    : focusPlayerId
+      ? 'No scoring plays from this starter yet.'
+      : mockPlaysEnabled
+        ? 'Mock plays appear after the live snapshot loads.'
+        : liveGames.length
+          ? 'No plays for these starters yet.'
+          : 'Play-by-play is not available for this week.';
 
   return (
-    <div className="companion-live-shell pb-6">
+    <div className="page-frame-workbench companion-live-shell pb-6">
       <SeasonHintBanner capability="current-only" feature="Live scoring" className="mx-4 mb-3" />
-      {liveGames.length > 0 && <div className="companion-live-toolbar">
-        <CompanionSelectorRail label="Week" ariaLabel="Live scoring week" className="companion-live-week-rail" wrapOnDesktop={false}>
-          {weekOptions.map((option) => (
-            <CompanionSelectorButton
-              key={option}
-              size="md"
-              active={week === option}
-              onClick={() => setWeek(option)}
-              className="companion-live-touch"
-            >
-              {option}
-            </CompanionSelectorButton>
-          ))}
-        </CompanionSelectorRail>
-      </div>}
-
       {(statusError || liveError) && (
         <div className="companion-live-alert" role="status">
           {statusError || liveError}
@@ -1437,301 +1970,211 @@ export default function CompanionLive({ onViewPlayer = null }) {
         </div>
       )}
 
-      <div ref={gridRef} className={`companion-live-grid${selectedEntry ? ' has-sheet' : ''}`}>
-        <section className="companion-live-board" aria-label="Fantasy matchup board">
-          <div className="companion-live-board-head">
-            <span className="companion-live-kicker">
-              {sessionEnabled && <span className="companion-live-dot" aria-hidden="true" />}
-              {kickerText}
-            </span>
-            <div className="companion-live-board-head__controls">
-              <div className="companion-live-pager" aria-label="Fantasy matchup pager">
-                <button
-                  type="button"
-                  onClick={() => setMatchupIndex((value) => Math.max(0, value - 1))}
-                  disabled={matchupIndex <= 0}
-                  aria-label="Previous matchup"
-                >
-                  ‹
-                </button>
-                <div className="companion-live-pager__mid">
-                  <span className="sr-only">
-                    {matchupPairs.length ? `Matchup ${matchupIndex + 1} of ${matchupPairs.length}` : 'No matchups'}
-                  </span>
-                  <div className="companion-live-pager__dots" aria-hidden="true">
-                    {matchupPairs.map((pair, index) => (
-                      <i
-                        key={pair.matchupId}
-                        className={`${index === matchupIndex ? 'is-active ' : ''}${pair.mine ? 'is-mine' : ''}`}
-                      />
-                    ))}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setMatchupIndex((value) => Math.min(matchupPairs.length - 1, value + 1))}
-                  disabled={matchupIndex >= matchupPairs.length - 1}
-                  aria-label="Next matchup"
-                >
-                  ›
-                </button>
-              </div>
-              <button
-                type="button"
-                className={`companion-live-more${showDetails ? ' is-active' : ''}`}
-                onClick={() => setShowDetails((value) => !value)}
-                aria-expanded={showDetails}
-                aria-label="Live scoring options"
+      <div
+        ref={gridRef}
+        className="fl"
+        style={{ '--fl-mchip-sticky-height': `${matchupStickyHeight}px` }}
+      >
+        <div className="fl-top">
+          <span className="fl-top__l">
+            {sessionEnabled && <span className="fl-live-dot" aria-hidden="true" />}
+            Live · Week {week}
+          </span>
+          <span className="fl-top__r">{kickerText}</span>
+          <button
+            type="button"
+            className={`fl-top__more${showDetails ? ' is-active' : ''}`}
+            onClick={() => setShowDetails((value) => !value)}
+            aria-expanded={showDetails}
+            aria-label="Live scoring options"
+          >
+            ⋯
+          </button>
+        </div>
+
+        <div ref={matchupRailRef} className="fl-mchip-stick">
+          <CompanionSelectorRail
+            label="Matchup"
+            ariaLabel="Fantasy matchup"
+            className="fl-mchip-rail"
+            wrapOnDesktop={false}
+            style={{ '--fl-mchip-name-width': matchupChipNameWidth }}
+          >
+            {matchupChips.map((chip) => (
+              <CompanionSelectorButton
+                key={chip.key}
+                size="md"
+                active={chip.index === matchupIndex}
+                onClick={() => navigateToMatchup(chip.index)}
+                className="fl-mchip"
+                aria-label={`${chip.sides.map((side) => `${side.fullName} ${formatChipPoints(side.points)}`).join(' versus ')}${chip.mine ? ' — your matchup' : ''}`}
               >
-                ⋯
-              </button>
-            </div>
-          </div>
+                <span className="fl-mchip__rows">
+                  {chip.sides.map((side) => (
+                    <span className="fl-mchip__row" key={side.key}>
+                      <i style={{ background: side.color }} aria-hidden="true" />
+                      <em>{side.label}</em>
+                      <b>{formatChipPoints(side.points)}</b>
+                    </span>
+                  ))}
+                </span>
+              </CompanionSelectorButton>
+            ))}
+          </CompanionSelectorRail>
+        </div>
 
-          {showDetails && (
-            <div className="companion-live-details">
-              <dl>
-                <div><dt>Data server</dt><dd>{liveEnabled ? 'Ready' : 'Not configured'}</dd></div>
-                <div><dt>This league</dt><dd>{sessionEnabled ? 'Live scoring on' : 'Live scoring off'}</dd></div>
-                <div><dt>Snapshot age</dt><dd>{cacheMeta ? `${Math.round((cacheMeta.ageMs ?? 0) / 100) / 10}s` : '—'}</dd></div>
-                <div><dt>Games live</dt><dd>{sessionEnabled ? liveGameCount : '—'}</dd></div>
-                <div><dt>Live starters</dt><dd>{sessionEnabled && totalStarters ? `${matchedStarters}/${totalStarters}` : '—'}</dd></div>
-              </dl>
-              {!liveEnabled && (
-                <p>
-                  Live scoring isn't set up on this server yet. See the server setup
-                  guide in the project docs.
-                </p>
-              )}
-              {sessionEnabled && (
-                <div className="companion-live-details__actions">
-                  <button
-                    type="button"
-                    className={`companion-live-chip-button${autoRefresh ? ' is-active' : ''}`}
-                    onClick={() => setAutoRefresh((value) => !value)}
-                    aria-pressed={autoRefresh}
-                  >
-                    {autoRefresh ? 'Auto-updating' : 'Paused'}
-                  </button>
-                  <button
-                    type="button"
-                    className="companion-live-chip-button"
-                    onClick={() => fetchLiveSnapshot()}
-                    disabled={loadingLive}
-                  >
-                    {loadingLive ? 'Refreshing…' : 'Refresh'}
-                  </button>
-                  <button type="button" className="companion-live-chip-button" onClick={disableLive} disabled={sessionLoading}>
-                    Turn off live scoring for this browser
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-
-          {matchupsLoading ? (
-            <div className="companion-live-empty">Loading fantasy matchups…</div>
-          ) : !currentMatchup ? (
-            <div className="companion-live-empty">No Sleeper matchup is available for this week.</div>
-          ) : (
-            <>
-              <div className="companion-live-hero">
-                <HeroTeam summary={leftSummary} leading={matchupLeaderKey === 'a'} />
-                <div className="companion-live-win">
-                  <span>Win chance</span>
-                  <div className="companion-live-win__dial" style={{ '--live-win-share': `${winDial.pct ?? 50}` }}>
-                    <svg viewBox="0 0 56 56" aria-hidden="true">
-                      <circle cx="28" cy="28" r="23" />
-                      <circle cx="28" cy="28" r="23" pathLength="100" />
-                    </svg>
-                    <strong>{winDial.pct == null ? '—' : formatWinChance(winDial.pct)}</strong>
-                  </div>
-                  <em>{winDial.label}</em>
-                </div>
-                <HeroTeam summary={rightSummary} leading={matchupLeaderKey === 'b'} right />
-              </div>
-
-              <div className="companion-live-chart">
-                <div className="companion-live-chart__head">
-                  <span>Win probability</span>
-                  <em className="companion-live-chart__head-note">
-                    {winProb?.settled
-                      ? 'Final'
-                      : winProb
-                        ? `Projected final ${formatPoints(winProb.expectedA)} · ${formatPoints(winProb.expectedB)}`
-                        : 'Waiting for data'}
-                  </em>
-                </div>
-                <div
-                  ref={chartPlotRef}
-                  className={`companion-live-chart__plot${chartHover ? ' is-hovering' : ''}`}
-                  onPointerDown={(event) => {
-                    if (!isCoarsePointer) return;
-                    chartScrubbingRef.current = true;
-                    setChartHoverIndex(getChartSliceIndex(event, probPoints.length, chartWidth, { padX: CHART_PAD_LEFT }));
-                  }}
-                  onPointerMove={(event) => {
-                    if (isCoarsePointer && !chartScrubbingRef.current) return;
-                    setChartHoverIndex(getChartSliceIndex(event, probPoints.length, chartWidth, { padX: CHART_PAD_LEFT }));
-                  }}
-                  onPointerUp={() => { chartScrubbingRef.current = false; }}
-                  onPointerCancel={() => {
-                    chartScrubbingRef.current = false;
-                    setChartHoverIndex(null);
-                  }}
-                  onPointerLeave={() => {
-                    if (!isCoarsePointer) setChartHoverIndex(null);
-                  }}
+        {showDetails && (
+          <div className="companion-live-details">
+            <dl>
+              <div><dt>Data server</dt><dd>{liveEnabled ? 'Ready' : 'Not configured'}</dd></div>
+              <div><dt>This league</dt><dd>{sessionEnabled ? 'Live scoring on' : 'Live scoring off'}</dd></div>
+              <div><dt>Snapshot age</dt><dd>{cacheMeta ? `${Math.round((cacheMeta.ageMs ?? 0) / 100) / 10}s` : '—'}</dd></div>
+              <div><dt>Games live</dt><dd>{sessionEnabled ? liveGameCount : '—'}</dd></div>
+              <div><dt>Live starters</dt><dd>{sessionEnabled && totalStarters ? `${matchedStarters}/${totalStarters}` : '—'}</dd></div>
+            </dl>
+            {!liveEnabled && (
+              <p>
+                Live scoring isn't set up on this server yet. See the server setup
+                guide in the project docs.
+              </p>
+            )}
+            {sessionEnabled && (
+              <div className="companion-live-details__actions">
+                <button
+                  type="button"
+                  className={`companion-live-chip-button${autoRefresh ? ' is-active' : ''}`}
+                  onClick={() => setAutoRefresh((value) => !value)}
+                  aria-pressed={autoRefresh}
                 >
-                  <svg
-                    className="companion-live-chart__svg"
-                    viewBox={`0 0 ${chartWidth} ${CHART_HEIGHT}`}
-                    role="img"
-                    aria-label={`Win probability over time: ${winDial.tied ? 'tied' : `${winDial.label} ${winDial.pct == null ? '' : formatWinChance(winDial.pct)}`}`}
-                  >
-                    <defs>
-                      <clipPath id={`${winClipId}-above`}>
-                        <rect x="0" y="0" width={chartWidth} height={probMidY} />
-                      </clipPath>
-                      <clipPath id={`${winClipId}-below`}>
-                        <rect x="0" y={probMidY} width={chartWidth} height={CHART_HEIGHT - probMidY} />
-                      </clipPath>
-                    </defs>
-                    <line x1={CHART_PAD_LEFT} x2={chartWidth - CHART_PAD_RIGHT} y1={probMidY} y2={probMidY} className="companion-live-chart__midline" />
-                    <rect x={CHART_PAD_LEFT} y={CHART_PAD_TOP - 4} width="10" height="3" rx="1.5" className="companion-live-chart__swatch" />
-                    <text x={CHART_PAD_LEFT + 14} y={CHART_PAD_TOP + 2} className="companion-live-chart__wp-label">{leftSummary?.initials ?? '—'}</text>
-                    <rect x={CHART_PAD_LEFT} y={CHART_HEIGHT - CHART_PAD_BOTTOM + 6} width="10" height="3" rx="1.5" className="companion-live-chart__swatch is-opponent" />
-                    <text x={CHART_PAD_LEFT + 14} y={CHART_HEIGHT - CHART_PAD_BOTTOM + 12} className="companion-live-chart__wp-label">{rightSummary?.initials ?? '—'}</text>
-                    <text x={chartWidth - 2} y={CHART_PAD_TOP + 2} textAnchor="end" className="companion-live-chart__tick">100</text>
-                    <text x={chartWidth - 2} y={probMidY + 3} textAnchor="end" className="companion-live-chart__tick">50</text>
-                    <text x={chartWidth - 2} y={CHART_HEIGHT - CHART_PAD_BOTTOM + 12} textAnchor="end" className="companion-live-chart__tick">100</text>
-                    {probPoints.length > 0 && (
-                      <>
-                        <polygon points={probArea} className="companion-live-chart__area" clipPath={`url(#${winClipId}-above)`} />
-                        <polygon points={probArea} className="companion-live-chart__area is-opponent" clipPath={`url(#${winClipId}-below)`} />
-                        <polyline points={probLine} className="companion-live-chart__line is-mine" clipPath={`url(#${winClipId}-above)`} />
-                        <polyline points={probLine} className="companion-live-chart__line is-opponent" clipPath={`url(#${winClipId}-below)`} />
-                        {probLast && (
-                          <circle
-                            cx={probXAt(probPoints.length - 1)}
-                            cy={probYAt(probLast.p)}
-                            r="3.2"
-                            className={`companion-live-chart__marker ${probLast.p >= 50 ? 'is-mine' : 'is-opponent'}`}
-                          />
-                        )}
-                      </>
-                    )}
-                    {chartHover && (
-                      <>
-                        <line x1={chartHover.x} x2={chartHover.x} y1={CHART_PAD_TOP} y2={CHART_HEIGHT - CHART_PAD_BOTTOM} className="companion-live-chart__hover-line" />
-                        <circle cx={chartHover.x} cy={chartHover.y} r="3.2" className={`companion-live-chart__marker ${chartHover.point.p >= 50 ? 'is-mine' : 'is-opponent'}`} />
-                      </>
-                    )}
-                  </svg>
-                  {chartHover && (
-                    <div className="companion-live-chart__tooltip" style={{ left: chartHover.tooltipLeft, transform: chartHover.tooltipTransform }}>
-                      <span>{chartHover.timeLabel}</span>
-                      <div>
-                        <i className="is-mine" />
-                        <b>{leftSummary?.name ?? 'Left'}</b>
-                        <strong>{formatWinChance(chartHover.point.p)}</strong>
-                      </div>
-                      <div>
-                        <i className="is-opponent" />
-                        <b>{rightSummary?.name ?? 'Right'}</b>
-                        <strong>{formatWinChance(100 - chartHover.point.p)}</strong>
-                      </div>
-                      <em>{formatPoints(chartHover.point.a)} · {formatPoints(chartHover.point.b)} at the time</em>
-                    </div>
-                  )}
-                </div>
+                  {autoRefresh ? 'Auto-updating' : 'Paused'}
+                </button>
+                <button
+                  type="button"
+                  className="companion-live-chip-button"
+                  onClick={() => fetchLiveSnapshot()}
+                  disabled={loadingLive}
+                >
+                  {loadingLive ? 'Refreshing…' : 'Refresh'}
+                </button>
+                <button type="button" className="companion-live-chip-button" onClick={disableLive} disabled={sessionLoading}>
+                  Turn off live scoring for this browser
+                </button>
               </div>
+            )}
+          </div>
+        )}
 
-              <div className="companion-live-filter">
-                <span>Showing</span>
-                <div className="companion-live-segment companion-live-team-segment" role="group" aria-label="Feed side filter">
-                  <button
-                    type="button"
-                    className={feedSide === 'a' ? 'is-active' : ''}
-                    onClick={() => setFeedSide('a')}
-                    disabled={!leftSummary}
-                    aria-label={leftSummary?.name ?? 'Team A'}
-                  >
-                    {segmentLabel(leftSummary, 'Team A')}
-                  </button>
-                  <button type="button" className={feedSide === 'both' ? 'is-active' : ''} onClick={() => setFeedSide('both')}>
-                    Both
-                  </button>
-                  <button
-                    type="button"
-                    className={feedSide === 'b' ? 'is-active is-opponent' : ''}
-                    onClick={() => setFeedSide('b')}
-                    disabled={!rightSummary}
-                    aria-label={rightSummary?.name ?? 'Team B'}
-                  >
-                    {segmentLabel(rightSummary, 'Team B')}
-                  </button>
-                </div>
-              </div>
-
-              <div className="companion-live-feed">
-                <div className="companion-live-feed__section">
-                  {mockPlaysEnabled ? 'Mock plays · fantasy impact' : 'Plays · fantasy impact'}
-                </div>
-                {visibleFeed.length ? visibleFeed.map((event) => {
-                  const entry = rowById.get(event.playerId);
-                  if (!entry) return null;
-                  return renderFeedRow({
-                    key: event.id,
-                    item: {
-                      id: event.playerId,
-                      player: entry.row.player,
-                      kind: event.kind,
-                      desc: event.desc,
-                      pts: event.pts,
-                      isDelta: true,
-                      glance: event.glance ?? null,
-                    },
-                    summary: entry.summary,
-                  });
-                }) : (
-                  <div className="companion-live-empty">
-                    {!sessionEnabled
-                      ? 'Turn on Live to see plays and their fantasy impact.'
-                      : mockPlaysEnabled
-                        ? 'Mock plays appear after the live snapshot loads.'
-                        : liveGames.length
-                        ? 'No plays for these starters yet.'
-                        : 'Play-by-play is not available for this week.'}
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-        </section>
-
-        {selectedEntry && (
-          <aside className="companion-live-rail" aria-label="Player breakdown">
-            <CompanionLivePlayerSheet
-              row={selectedEntry.row}
-              glance={getPlayerGameGlance(getTeamAbbr(selectedEntry.row.player?.team), selectedEntry.row)}
-              events={mergedFeed}
-              scoringSettings={activeScoringSettings}
-              teamName={selectedEntry.summary.name}
-              isMine={selectedEntry.summary.isMine}
-              liveActive={sessionEnabled}
-              selectedEvent={selectedEvent}
-              onClose={() => {
-                setSelectedPlayerId(null);
-                setSelectedEventId(null);
-              }}
-              onSelectEvent={(event) => {
-                setSelectedPlayerId(event.playerId);
-                setSelectedEventId(event.id);
-              }}
-              onViewPlayer={onViewPlayer}
+        {matchupsLoading ? (
+          <div className="fl-empty">Loading fantasy matchups…</div>
+        ) : !currentMatchup ? (
+          <div className="fl-empty">No {platformLabel} matchup is available for this week.</div>
+        ) : !leftSide || !rightSide ? (
+          // A one-sided matchup is a real state in odd-sized leagues, not a
+          // missing matchup — say which it is.
+          <div className="fl-empty">
+            {(leftSide ?? rightSide)?.name ?? 'This team'} has no opponent in week {week}.
+          </div>
+        ) : (
+          <>
+            <div ref={heroStageRef} className="fl-hero-stage">
+              <LiveHero
+                left={leftSide}
+                right={rightSide}
+                winProbA={winProb?.probA ?? 50}
+                winExplain={winProb?.explain ?? null}
+                snapshot={heroSnapshot}
+                filter={feedSide}
+                onFilter={setFeedSide}
+                onOpenPlayer={openPlayer}
+              />
+            </div>
+            <LiveVerdict
+              left={leftSide}
+              right={rightSide}
+              verdict={verdict}
+              winProbA={heroSnapshot?.p ?? winProb?.probA}
+              settled={Boolean(heroSnapshot?.settled ?? winProb?.settled)}
             />
-          </aside>
+
+            <div className="fl-desk">
+              <div className="fl-desk__main">
+                <div className="fl-scroll">
+                  <div className="fl-live-board">
+                    <div className="fl-controls">
+                      <LivePerformerRail
+                        performers={performers}
+                        focusId={focusPlayerId}
+                        onSelect={selectPerformer}
+                      />
+                      <div className={`fl-analysis-stage${selectedEntry ? ' is-player' : ' is-chart'}`}>
+                        {selectedEntry ? (
+                          <LivePlayerSheet
+                            entry={selectedEntry}
+                            side={sidesByKey[selectedEntry.sideKey]}
+                            glance={getPlayerGameGlance(getTeamAbbr(selectedEntry.row.player?.team), selectedEntry.row)}
+                            events={mergedFeed}
+                            scoringSettings={activeScoringSettings}
+                            liveActive={sessionEnabled}
+                            selectedEventId={selectedEventId}
+                            embedded
+                            onClose={closePlayer}
+                            onViewPlayer={onViewPlayer}
+                          />
+                        ) : paceSeries.length > 0 ? (
+                          <LivePaceChart
+                            key={currentMatchup.matchupId}
+                            left={leftSide}
+                            right={rightSide}
+                            series={paceSeries}
+                            marks={paceMarks}
+                            progress={slateProgress}
+                            hover={chartHover}
+                            selection={selectedMoment}
+                            selectedEventId={feedSelection?.eventId ?? null}
+                            onHover={setChartHover}
+                            onScrub={selectChartMoment}
+                            onSelectMark={selectMark}
+                            onReturnLive={returnToLive}
+                            collapsedSummary={heroCollapsed}
+                            liveWinProbA={winProb?.probA ?? 50}
+                            liveSettled={winProb?.settled ?? false}
+                            timelineMode={mockPlaysEnabled ? 'schedule' : 'game'}
+                            timeline={demoTimeline}
+                          />
+                        ) : null}
+                      </div>
+                    </div>
+                    <div className="fl-feed-column">
+                      <div ref={feedViewportRef} className="fl-feed-scroll">
+                        <LiveFeedFilter
+                          left={leftSide}
+                          right={rightSide}
+                          value={feedSide}
+                          counts={feedCounts}
+                          onChange={setFeedSide}
+                          focusName={focusedName}
+                          onClearFocus={() => selectPerformer(null)}
+                        />
+                        <LiveFeedList
+                          key={`${currentMatchup.matchupId}-${feedSide}-${focusPlayerId ?? 'all'}`}
+                          events={visibleFeed}
+                          entriesById={entriesById}
+                          sidesByKey={sidesByKey}
+                          scoringSettings={activeScoringSettings}
+                          anchorProgress={feedAnchorProgress}
+                          selectedEventId={feedSelection?.eventId ?? null}
+                          selectionRequest={feedSelection?.requestId ?? 0}
+                          onOpenPlayer={openPlayer}
+                          emptyMessage={feedEmptyMessage}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </>
         )}
       </div>
     </div>

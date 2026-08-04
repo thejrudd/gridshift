@@ -52,6 +52,13 @@ export function getMatchups(leagueId, week) {
   return get(`/league/${leagueId}/matchups/${week}`);
 }
 
+/**
+ * Bypasses browser/intermediary caches for post-final score reconciliation.
+ */
+export function getLiveMatchups(leagueId, week) {
+  return getLive(`/league/${leagueId}/matchups/${week}`);
+}
+
 export function getTransactions(leagueId, round) {
   return get(`/league/${leagueId}/transactions/${round}`);
 }

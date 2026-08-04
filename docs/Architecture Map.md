@@ -57,17 +57,9 @@ Back: [[Home]]
 - `FantasyProvider`, `useFantasyLeague`, `useFantasyStats`, and `useFantasy` are the platform-neutral entry points.
 - Sleeper is the only supported user-facing fantasy connection.
 - Persists normalized, non-secret fantasy state in localStorage.
-- Loads league rosters, league users, player database, weekly stats, aggregate season stats, matchups, and scoring settings through the active provider.
+- Loads league rosters, league users, player database, weekly stats, aggregate season stats, matchups, and scoring settings through Sleeper.
 - Re-derives scoring settings from the selected league on startup, so newly supported scoring fields are picked up without requiring the user to re-select their league.
-- Performs Sleeper player/team/opponent enrichment for weekly stat rows via a three-pass algorithm. ESPN data arrives pre-normalized through `src/utils/espnFantasyAdapter.js`.
-
-#### Legacy ESPN Fantasy Compatibility
-
-ESPN Fantasy connections are deprecated and are not offered in the GridShift interface. The adapter, sidecar, and defensive rendering branches remain only as legacy compatibility code and test infrastructure; do not surface an ESPN connection path or expand its feature coverage.
-
-- `src/api/espnFantasyApi.js`, `src/utils/espnFantasyAdapter.js`, and the `/api/espn/*` sidecar are legacy compatibility modules.
-- `ScoringProfile.positionOverrides`, `appliedTotal`, and `appliedStats` remain readable so old persisted fixtures and sessions fail safely.
-- New Fantasy and League work should target Sleeper contracts only while preserving harmless legacy guards.
+- Performs Sleeper player/team/opponent enrichment for weekly stat rows via a three-pass algorithm.
 
 #### Stats Enhancement — Three-Pass Algorithm
 
@@ -94,6 +86,7 @@ Entries resolved via Pass 1 or 2 are marked `_teamSource = 'espn'`. Pass 3 entri
 - Fantasy league tools built on top of Sleeper state and scoring logic.
 - `CompanionStandings.jsx`, `CompanionHistory.jsx`, and `CompanionActivity.jsx` power the top-level League routes. Their page-level loading, unavailable, error, and empty reasons stay centered and unframed.
 - Trade keeps `CompanionTrade.jsx` as the public route component, with extracted Agent/Intelligence/Upgrade leaf modules in `src/components/companion/trade/`.
+- Fantasy Live (`CompanionLive.jsx`) owns the live-scoring route's data plumbing — session, snapshots, projections, win probability, persisted replay selection, and play feed — and composes the presentation from `src/components/companion/live/`: `LiveHero.jsx` (split team-gradient hero with crossfading top-three scorer lists and one-to-three container-responsive portraits per side), `LiveVerdict.jsx`, `LivePerformerRail.jsx` (the player selector above the shared analysis slot), `LivePaceChart.jsx` (the default analysis view; scoring vs projected pace, draggable and selectable to rewind), `LivePlayerSheet.jsx` (the selected-player analysis view that replaces the chart), `LiveFeed.jsx` (independently scrolling desktop feed, side filter, and play rows with inline scoring math), and the `LiveAtoms.jsx` / `liveVisuals.js` pair for imagery and the play-glyph vocabulary. Its styles are the `.fl-*` block in `src/index.css`.
 - Shared player/asset selector rendering lives here too: `CompanionPlayerRow.jsx`, `CompanionAssetRow.jsx`, and `CompanionSelectorControls.jsx` are the canonical row/control primitives for Companion and Trade-adjacent picker surfaces. See [[Companion Shared Rows]] before changing player-row styling, team logos, status badges, or selector controls.
 
 ### `src/components/compare`
@@ -111,19 +104,16 @@ Entries resolved via Pass 1 or 2 are marked `_teamSource = 'espn'`. Pass 3 entri
 - Most domain logic lives here: scoring, projections, trade math, export shaping, search parsing.
 - `leagueHistory.js` is the shared Sleeper league-lineage data layer. It loads and caches season rosters, users, matchups, transactions, and real bracket payloads, then exposes normalized participants, finalized standings with named divisions and recent form, score-backed brackets, Toilet Bowl versus consolation progression, activity entries, history aggregates, record leaders, and Draft Blueprint summaries with named early-round picks. Stable participant identity uses Sleeper user ID with a season-roster fallback.
 - Trade opportunity logic keeps `src/utils/opportunityEngine.js` as the public facade, with implementation modules under `src/utils/opportunity/`.
+- Live scoring splits into `liveScoringFeed.js` (stat lines, explicit starter game states, complete-schedule bye proof, and authoritative Sleeper final-score checks), `livePlaysFeed.js` (play-by-play matching and per-play stat deltas), `liveWinProbability.js` (player-level outlooks, calibrated odds, explanations, and persisted replay snapshots), `livePace.js` (pace curves, verdict copy, featured starters, and performer ordering), and `fantasyTeamIdentity.js` (per-roster identity colours). `resolveStarterProjection()` in `liveWinProbability.js` is the single projection source shared by pace and odds, while `src/data/liveWinProbabilityModel.js` is the frozen production coefficient contract. Exact 0%/100% is allowed only after every starter is officially final or on a confirmed bye and a fresh, cache-bypassed Sleeper matchup response supplies both totals plus every starter's official points.
 
 ### `src/api`
 
 - Thin wrappers for external data sources.
 - `sleeperApi.js` calls Sleeper directly from the browser.
-- `espnFantasyApi.js` is retained only for deprecated compatibility and is not exposed by the connection UI.
 
 ### `server`
 
-- Express sidecar API for ESPN Fantasy.
-- `server/sessionCrypto.js` validates ESPN session values and encrypts them into the `gridshift_espn_session` HttpOnly cookie.
-- `server/espnHandlers.js` exposes `/api/espn/session`, `/api/espn/leagues`, and `/api/espn/league/:season/:leagueId`.
-- The handler shape is intentionally serverless-ready: route logic is separated from `server/index.js`.
+- Express sidecar API for optional live data.
 
 ### `src/data`
 

@@ -27,7 +27,7 @@ export default function BottomTabBar({ activeTab, onTabChange, tradeDisabled = f
               aria-current={active ? 'page' : undefined}
               aria-disabled={disabled ? 'true' : undefined}
               disabled={disabled}
-              title={disabled ? (disabledTitle ?? 'Trade is not available for ESPN leagues yet.') : undefined}
+              title={disabled ? disabledTitle : undefined}
             >
               <span style={{ position: 'relative', display: 'inline-flex', justifyContent: 'center' }}>
                 {renderIcon(active)}

@@ -9,7 +9,7 @@ const FANTASY_VIEW_ALIASES = new Map([
 ]);
 const LEAGUE_VIEWS = new Set(['standings', 'history', 'activity']);
 const TRADE_VIEWS = new Set(['agent', 'intelligence', 'upgrade', 'history']);
-const STATISTICS_VIEWS = new Set(['browser', 'team', 'player', 'schedule', 'standings', 'game']);
+const STATISTICS_VIEWS = new Set(['browser', 'team', 'player', 'schedule', 'scores', 'standings', 'game']);
 const STATISTICS_MODES = new Set(['game', 'fantasy', 'visual']);
 const STATISTICS_SCHEDULE_MODES = new Set(['week', 'team']);
 const STATISTICS_SCHEDULE_FILTERS = new Set(['international', 'primetime', 'holiday']);
@@ -126,6 +126,14 @@ function normalizeWeek(week) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
+function normalizeStatisticsScheduleWeek(week) {
+  if (typeof week === 'string') {
+    const normalized = week.trim().toLowerCase();
+    if (/^pre-[1-4]$/.test(normalized)) return normalized;
+  }
+  return normalizeWeek(week);
+}
+
 function sanitizeSlug(slug) {
   if (typeof slug !== 'string') return null;
   const value = slug.trim().toLowerCase();
@@ -203,7 +211,7 @@ export function normalizeAppRoute(route = {}) {
     const explicitScheduleFilter = normalizeLowerToken(route.statisticsScheduleFilter, STATISTICS_SCHEDULE_FILTERS);
     const statisticsScheduleMode = normalizeLowerToken(route.statisticsScheduleMode, STATISTICS_SCHEDULE_MODES)
       ?? (legacyScheduleFilter || explicitScheduleFilter ? 'week' : null);
-    const statisticsScheduleWeek = normalizeWeek(route.statisticsScheduleWeek);
+    const statisticsScheduleWeek = normalizeStatisticsScheduleWeek(route.statisticsScheduleWeek);
     const statisticsScheduleTeamId = normalizeTeamId(route.statisticsScheduleTeamId);
     const statisticsScheduleFilter = explicitScheduleFilter ?? legacyScheduleFilter;
 
@@ -224,6 +232,14 @@ export function normalizeAppRoute(route = {}) {
         ...DEFAULT_ROUTE,
         activeTab: 'statistics',
         statisticsView: 'standings',
+      };
+    }
+
+    if (statisticsView === 'scores') {
+      return {
+        ...DEFAULT_ROUTE,
+        activeTab: 'statistics',
+        statisticsView: 'scores',
       };
     }
 
@@ -418,6 +434,12 @@ export function parseAppRoute(pathname = '/', search = '') {
           statisticsView: 'standings',
         });
       }
+      if (statisticsSubview === 'scores') {
+        return normalizeAppRoute({
+          activeTab: 'statistics',
+          statisticsView: 'scores',
+        });
+      }
       if (statisticsSubview === 'game') {
         return normalizeAppRoute({
           activeTab: 'statistics',
@@ -545,6 +567,9 @@ export function buildAppPath(route) {
       }
       if (normalized.statisticsView === 'standings') {
         return '/statistics/standings';
+      }
+      if (normalized.statisticsView === 'scores') {
+        return '/statistics/scores';
       }
       if (normalized.statisticsView === 'game' && normalized.statisticsGameId) {
         return `/statistics/game/${encodeURIComponent(normalized.statisticsGameId)}`;

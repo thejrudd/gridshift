@@ -1,10 +1,12 @@
 // livePlaysFeed.js — turns BALLDONTLIE play-by-play rows into Companion Live
 // feed events with estimated fantasy impact. Estimation is per-play and
-// approximate; side totals stay exact because they come from the stats
-// endpoint. Field mapping is defensive: BDL play payload shapes have not been
-// captured in this repo yet, so every read tolerates alternates.
+// approximate; the separate live closing point stays exact because it comes
+// from the stats endpoint. Historical replay keeps event-time estimates rather
+// than rewriting them with that later total. Field mapping is defensive: BDL
+// play payload shapes have not been captured in this repo yet, so every read
+// tolerates alternates.
 
-import { calcPoints } from './scoringEngine';
+import { calcPoints } from './scoringEngine.js';
 import { getTeamAbbr, normalizeName } from './liveScoringFeed.js';
 
 const MAX_DESC_LENGTH = 140;
@@ -298,13 +300,38 @@ function extractReturnYards(description) {
 }
 
 export function getPlayEventKind(play, role, position) {
-  if (play.scoring && /touchdown/i.test(play.description)) return 'td';
-  if (role === 'kicker') return 'fg';
-  if (/intercept|fumble/i.test(play.description) && (role === 'passer' || role === 'rusher' || role === 'receiver')) return 'to';
+  return getPlayEventClassification(play, role, position).kind;
+}
+
+function getPlayMechanism(play, role) {
   if (role === 'defense' || role === 'team_defense') return 'def';
+  if (/kickoff|punt.*return|return(?:ed)? for/i.test(play.description)) return 'return';
   if (role === 'passer' || role === 'receiver') return 'pass';
-  if (position === 'K') return 'fg';
-  return 'rush';
+  if (role === 'rusher') return 'rush';
+  return null;
+}
+
+export function getPlayEventClassification(play, role, position, statDelta = null) {
+  const delta = statDelta ?? buildPlayStatDelta(play, role);
+  const stat = (key) => Number(delta?.[key]) || 0;
+  const mechanism = getPlayMechanism(play, role);
+  const touchdown = stat('pass_td') + stat('rush_td') + stat('rec_td')
+    + stat('def_td') + stat('idp_def_td') + stat('idp_int_td')
+    + stat('idp_fr_td') > 0;
+  let kind = null;
+
+  if (touchdown) kind = 'td';
+  else if (role === 'kicker' && stat('xpm') > 0) kind = 'xp';
+  else if (role === 'kicker') kind = 'fg';
+  else if ((stat('pass_int') + stat('fum_lost')) > 0) kind = 'to';
+  else if (mechanism) kind = mechanism;
+  else if (position === 'K' || position === 'PK') kind = 'fg';
+  else kind = 'rush';
+
+  return {
+    kind,
+    mechanism: mechanism && mechanism !== kind ? mechanism : null,
+  };
 }
 
 function buildPlayGlance(play, game) {
@@ -331,6 +358,37 @@ function getPlayOrder(play) {
   return period * 10000 + (900 - secondsLeft);
 }
 
+const REGULATION_SECONDS = 3600;
+
+/**
+ * How far into its own game a play happened, 0..1.
+ *
+ * This is the pace chart's x-axis. Wallclock is the wrong axis for a fantasy
+ * slate: a 1pm game and a 4pm game are at completely different points of their
+ * own stories at the same moment, and pace is about how far through a game a
+ * team is, not what time it is. Overtime clamps to 1 rather than running past
+ * the right edge.
+ */
+export function getPlayProgress(play) {
+  const period = Number(play?.period);
+  if (!Number.isFinite(period) || period < 1) return null;
+  const clockParts = /(\d{1,2}):(\d{2})/.exec(String(play?.clock ?? ''));
+  // Mid-quarter is the honest guess when a play carries no clock.
+  const secondsLeft = clockParts ? Number(clockParts[1]) * 60 + Number(clockParts[2]) : 450;
+  const elapsed = (period - 1) * 900 + (900 - Math.min(900, Math.max(0, secondsLeft)));
+  return Math.min(1, Math.max(0, elapsed / REGULATION_SECONDS));
+}
+
+/** Same reading, from a rendered glance clock such as `Q3 7:12`. */
+export function parseGlanceProgress(clock) {
+  const match = /Q(\d)(?:\s+(\d{1,2}):(\d{2}))?/i.exec(String(clock ?? ''));
+  if (!match) return null;
+  return getPlayProgress({
+    period: Number(match[1]),
+    clock: match[2] ? `${match[2]}:${match[3]}` : null,
+  });
+}
+
 /**
  * Builds feed events from raw plays for the matchup's starters.
  * `positionsById`: Map playerId -> position. `gamesById`: Map gameId -> BDL game.
@@ -348,14 +406,19 @@ export function buildPlayEvents(playsByGame, nameIndex, scoringSettings, positio
         const statDelta = buildPlayStatDelta(play, role);
         const pts = Math.round(calcPoints(statDelta, scoringSettings, position) * 10) / 10;
         if (!pts && !play.scoring) return; // ignore zero-impact involvements
+        const classification = getPlayEventClassification(play, role, position, statDelta);
         events.push({
           id: `play-${play.id}-${playerId}`,
           playerId,
-          kind: getPlayEventKind(play, role, position),
+          ...classification,
           desc: play.description,
           pts,
           stats: statDelta,
           at: play.wallclock ?? Date.now(),
+          // Unlike `at`, this stays null when a backfilled play has no real
+          // timestamp. Replay must not mistake build time for event time.
+          timelineAt: play.wallclock,
+          progress: getPlayProgress(play),
           order: getPlayOrder(play),
           gameId,
           source: 'play',
@@ -386,7 +449,17 @@ export function mergePlayEvents(playEvents, deltaEvents, { coverageWindowMs = 12
     ));
     if (!match) return event;
     consumedPlayIds.add(match.id);
-    return { ...event, desc: match.desc, glance: match.glance ?? event.glance, source: 'play+delta' };
+    return {
+      ...event,
+      desc: match.desc,
+      glance: match.glance ?? event.glance,
+      mechanism: event.mechanism ?? match.mechanism ?? null,
+      // The play knows its game clock; the stat delta only knows "just now".
+      progress: match.progress ?? event.progress ?? null,
+      gameId: event.gameId ?? match.gameId ?? null,
+      timelineAt: event.timelineAt ?? event.at ?? match.timelineAt ?? null,
+      source: 'play+delta',
+    };
   });
 
   const remainingPlays = (playEvents ?? []).filter((play) => !consumedPlayIds.has(play.id));

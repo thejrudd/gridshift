@@ -9,12 +9,10 @@ When making any change to scoring logic (new fields in `DEFAULT_SCORING`/`STAT_T
 | `src/utils/scoringEngine.js` — `DEFAULT_SCORING` | Add new scoring field with `0.0` default |
 | `src/utils/scoringEngine.js` — `STAT_TO_SCORING_KEY` | Map Sleeper weekly stat key → scoring key; add alias keys for variants |
 | `src/utils/scoringEngine.js` — `SCORING_SETTINGS_ALIASES` | Map Sleeper `scoring_settings` key → internal key when they differ |
-| `src/utils/scoringEngine.js` — `importLeagueScoring` | Keep ESPN-only fields, such as Team Win / Team Loss, out of Sleeper-imported settings |
 | `src/utils/scoringEngine.js` — `importEspnScoringProfile` | Map ESPN stat IDs and slot/position overrides into a `ScoringProfile` |
 | `src/utils/scoringEngine.js` — `getFlatScoringSettings` / `getPositionScoringSettings` | Keep flat Sleeper reads valid while applying ESPN position overrides during calculation |
 | `src/utils/scoringEngine.js` — `calcPoints` position block | Add position-specific bonus handling |
 | `src/context/SleeperContext.jsx` | Verify startup re-derives from `league.scoring_settings` via `importLeagueScoring` or `normalizeScoringProfile` |
-| `src/utils/espnFantasyAdapter.js` | Preserve ESPN `appliedTotal` / `appliedStats`; only use mapped raw stat IDs as fallback calculation data. For D/ST, also preserve schedule `entry.appliedStatTotal` when `playerPoolEntry.stats` is empty; see [[ESPN Fantasy Scoring]] |
 | `src/utils/espnBigPlayBonuses.js` / `src/context/SleeperContext.jsx` | ESPN-only scoring-play enrichment derives long TD counters and successful two-point conversions from NFL scoring plays; keep it behind `platform === 'espn'` so Sleeper calculations stay API-native |
 
 ## Projection / Analytics Engine (pass `position` everywhere)

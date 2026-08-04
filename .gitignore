@@ -38,6 +38,7 @@ tests/*
 tests/e2e/*
 !tests/e2e/companion-responsive.spec.js
 !tests/e2e/display-responsive.spec.js
+!tests/e2e/fantasy-live-workbench.spec.js
 !tests/e2e/league-history.spec.js
 !tests/e2e/tradeTestHarness.js
 !tests/e2e/whats-new-tour.spec.js
@@ -70,6 +71,7 @@ docs/archive/Historical Release Notes Drafts.md
 skills-lock.json
 cache/
 tmp/
+scripts/win-probability-leagues.local.json
 scripts/ollama-broker.js
 docs/Ollama Delegation.md
 docs/examples/ollama-tasks.example.json

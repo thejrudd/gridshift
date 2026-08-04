@@ -12,45 +12,45 @@ Open bugs are listed first, deferred work next, fixed bugs below. Add new entrie
 
 ---
 
-## Deferred
-
-These ESPN league integration issues are known but deferred while ESPN features are not being implemented.
-
-| Deferred Bug |
-|--------------|
-| Companion → Roster player drilldowns from ESPN leagues can open Fantasy Values with a "No fantasy values" empty state even when ESPN supplied applied 2025 fantasy totals |
-| Companion player pictures do not load for ESPN leagues because shared player rows fall back to Sleeper CDN image URLs for ESPN-normalized player IDs |
-| Companion → Matchup can render no lineup rows for ESPN leagues when roster slot counts or weekly matchup roster snapshots are missing from the imported payload |
-| ESPN league year switching can miss historical matchup data because the ESPN league request only uses the season path and does not also pass ESPN's `seasonId` query parameter |
-| Companion → Matchup can display ESPN starters under the wrong slot labels when ESPN roster entries are not ordered the same way as the league lineup slots |
-| ESPN league import can spam Vite proxy ECONNREFUSED errors when the local API sidecar on port 3001 is not running during development |
-| Companion → Matchup player preview can show "No stats available" for ESPN players even when ESPN provides weekly fantasy scoring for that player |
-| ESPN player fantasy scoring can remain empty in Companion drilldowns and Statistics even when normalized raw stats are available to calculate fantasy points from league scoring settings |
-| ESPN player fantasy points can diverge from ESPN's displayed totals when GridShift recalculates from raw stat rows instead of using ESPN's applied fantasy totals |
-| ESPN league scoring import and Companion Scoring can flatten or omit ESPN-only scoring rules, including position-specific scoring overrides and ESPN stat IDs without Sleeper equivalents |
-| ESPN Team Win / Team Loss scoring is not represented in GridShift's scoring schema, so ESPN leagues that award points for game result can show player fantasy totals off by the win/loss value while Sleeper leagues should remain unchanged |
-| ESPN player fantasy totals can still miss ESPN-only long touchdown bonuses, such as stacked 40+ and 50+ yard passing TD bonuses, causing large weekly discrepancies even when base stats and team result scoring are correct |
-| Statistics Fantasy Value can display every imported ESPN scoring category instead of only the categories that actually contribute to the selected player rows |
-| ESPN player fantasy totals can miss successful two-point conversions when ESPN exposes the conversion only inside the scoring-play text instead of the normalized stat row |
-| Statistics Fantasy Value can let imported ESPN league fantasy rows override the player game-log row, causing stale receiving stats or wrong Team Win/Loss values for players such as A.J. Brown and Tucker Kraft |
-| Statistics D/ST player profiles can show empty Game Stats and Fantasy Values tables because team defense entries are not treated as a supported Statistics position or hydrated from imported weekly fantasy rows |
-| ESPN D/ST Fantasy Value rows can dramatically undercount weekly totals because GridShift recalculates from incomplete visible team-defense game-log stats instead of preserving ESPN's applied fantasy totals, including special-teams scoring |
-| v8.0 ESPN Companion -> Roster and Companion -> League rows can show missing or incorrect Season and Avg/G fantasy scoring even when ESPN-applied totals exist |
-| v8.0 ESPN Companion -> Rankings can display Avg PPG and Season total as the same value, making per-game scoring indistinguishable from season scoring |
-| v8.0 ESPN Companion -> Matchup rows can omit each player's fantasy points, and the player drilldown can miss the ESPN photo, game context, and fantasy scoring breakdown |
-| v8.0 ESPN Companion -> Matchup can enter weeks where matchup details fail to display and the week-selection controls disappear, forcing a hard refresh to recover |
-| v8.0 Companion user-facing errors can reference Sleeper while the current fantasy platform is ESPN, including the Matchup unavailable-week message |
-| v8.0 ESPN Companion -> Waiver can fail to populate the expected waiver pool for the connected league |
-| v8.0 ESPN Companion -> Heatmap can leave weekly cells unpopulated even while aggregate team columns contain data |
-| v8.0 ESPN Companion -> Matchup can show an inaccurate opponent-details-unavailable message when the current team is on a fantasy bye week |
-| v8.0 ESPN Companion -> Matchup fantasy scoring breakdowns for D/ST and kickers can collapse to a single Fantasy Points row instead of showing scoring categories |
-
----
-
 ## Fixed
 
 | Bug | Fixed In |
 |-----|----------|
+| The What's New tour E2E gate can exit before Playwright starts because the dev launcher still sets retired `ESPN_API_*` host/port variables while the API server reads `GRIDSHIFT_API_*`, causing the test sidecar to collide with the default port. | v8.4 |
+| Fantasy Scoring's “See it scored” curated player samples can render initials instead of player photos because several samples omit their ESPN player IDs. | v8.4 |
+| Fantasy Scoring crashes while rendering because `CompanionScoring` uses `CompanionSelectorRail` without importing the shared component. | v8.4 |
+| Statistics Scores matchup rails normalize each team independently and mute one side, so the bar lengths do not represent each team's share of the measured metric and the team colors are unclear. | v8.4 |
+| Statistics Scores drilldown content can paint through the transparent offset above the sticky section tabs while scrolling. | v8.4 |
+| Statistics Scores drilldown sticky-tab shield can paint over the scorebug hero before the tabs become sticky, leaving only the team-gradient edge visible. | v8.4 |
+| Statistics Scores' regular-season year selector changes only the displayed season label while continuing to show the same synthetic fixture slate, making historical seasons such as 2025 inaccurate. | v8.4 |
+| Fantasy Scoring's league summary can omit tight-end premium rules, report team defense as active when only D/ST special-teams rules score, and incorrectly group kicker scoring under Special Teams. | v8.4 |
+| Fantasy Scoring's “See it scored” can reuse the same curated player on every page load; each load should vary its eligible, nonzero-value player samples without requiring a manual refresh control. | v8.4 |
+| Fantasy Scoring's “See it scored” special-teams sample can show an individual returner even when the selected league awards those points to the team D/ST. | v8.4 |
+| The expanded desktop sidebar can clip lower utility options and the version on shorter laptop screens because its fixed spacing exceeds the viewport height while overflow is hidden. | v8.4 |
+| Fantasy Scoring can label Special Teams as generally active without clarifying that return touchdowns and blocked kicks apply only to rostered individual players when the league has no D/ST roster slot. | v8.4 |
+| Fantasy Scoring's “See it scored” can show team special-teams examples and a Defense tab even when the league has no D/ST roster slot. | v8.4 |
+| Fantasy Scoring's Detailed Scoring “Active” filter can show Team D/ST rules even when the league has no D/ST roster slot. | v8.4 |
+| Fantasy Live's pace chart draws a straight two-point line with no selectable scoring milestones, because it plots the sparse persisted win-probability history instead of the matchup's own scoring plays. | v8.4 |
+| Fantasy Live can restore an expanded scoring play and scroll back to its feed position after leaving a matchup and later returning, because chart/feed selection state persists across matchup navigation. | v8.4 |
+| Fantasy Live demo scoring can omit Monday-night data points because mock play generation inherits the real play-by-play eight-game request cap and can drop the latest relevant game. | v8.4 |
+| Fantasy Live's pace chart moves vertically while interacting with scoring milestones because the player-name readout changes the chart header's layout height as it appears and disappears. | v8.4 |
+| Fantasy Live matchup selector chips can size unevenly and let long team names or scores overflow their borders. | v8.4 |
+| Fantasy Live's desktop pace chart stays at a shallow fixed height and stretches partial-week scoring across nearly its full width instead of filling the fixed week timeline as games are played. | v8.4 |
+| Fantasy Live stacks the pace chart and play feed into one sticky vertical sequence on desktop, preventing both surfaces from remaining visible together and making document/feed scrolling compete. | v8.4 |
+| Fantasy Live can display an exact 100% win probability while starters still have games remaining, allowing an unfinished matchup to appear decided even when the projected winner can still lose. | v8.4 |
+| Fantasy Live can double-count projected output when a starter already has points but the live provider omits or does not recognize that player's game state. | v8.4 |
+| Fantasy Live commissioner score adjustments can be omitted from in-progress win probability and then appear abruptly in the reconciled final result. | v8.4 |
+| Fantasy Live replay can reconstruct earlier scores and odds using the current endpoint total and one shared progress value, allowing later information to influence a rewound moment. | v8.4 |
+| Fantasy Live can retain stale scheduled-game completion metadata because current-season schedule rows are cached as if they were permanent historical results. | v8.4 |
+| Fantasy Live can remain projected after the entire week ends when a starter has no current NFL team and therefore cannot be matched to a game or bye. | v8.4 |
+| Fantasy Live can briefly apply a late stats response from the previously selected matchup after the user navigates to another matchup. | v8.4 |
+| Fantasy Live can omit the settled replay point for a final tie when the preceding unsettled snapshot was also 50%. | v8.4 |
+| Fantasy Live's pace chart can scale beyond its own panel and paint over the performer rail and matchup hero when the rendered SVG width diverges from its measured intrinsic size. | v8.4 |
+| Fantasy Live's local demo can accumulate fabricated play estimates above 400 points before dropping to the authoritative score near 160 at the live endpoint. | v8.4 |
+| Fantasy Live's pace chart includes the opponent's scoring timestamps in each team's path, creating flat kinks that make direct score-to-score lines look stepped. | v8.4 |
+| Fantasy Live's pace chart hides dots for scoring changes below the milestone threshold, including small negative scores, even though scrubbing still changes the displayed total at those points. | v8.4 |
+| Statistics Schedule classifies every preseason game as International and PrimeTime, so those filters remain selectable even when the preseason slate has no matching games. | v8.4 |
+| Fantasy Live's pace chart can leave trailing score dots off their team's connecting line, while its tracking line jumps between the nearest event X positions instead of following the pointer and snapping only when the pointer is close to a score dot. | v8.4 |
 | Desktop Edge could revert a Fantasy Matchups picker selection to the previously displayed matchup after closing the picker. | v8.3.1 |
 | The What’s New tour test could ignore its dedicated API port when a local `.env` defined `PORT`, causing its ESPN sidecar to exit during startup. | v8.3.1 |
 | Companion Activity timeline entries can paint through the transparent sticky offset above the filter chips while scrolling. | v8.3.0 |
@@ -102,7 +102,6 @@ These ESPN league integration issues are known but deferred while ESPN features 
 | Companion → Defense sort headers show abbreviated Asc/Desc text instead of a compact direction indicator | v8.0.1 |
 | Companion → Defense lacks an All position filter for aggregate points and yardage allowed | v8.0.1 |
 | v8.0.1 Draft Results prior-year player cards can overflow, misalign, and cut off text on tablet and phone layouts | v8.0.1 |
-| Initial sign-in and Switch League screens could still expose ESPN as a sign-in provider even though v8.0.1 should direct users to the Sleeper-only connection flow | v8.0.1 |
 | Draft War Room positional map included inactive, practice-squad, sentinel-ranked, and very low-signal players that skewed the comparison plot | v8.0 |
 | Draft War Room positional map trend line did not reliably update with every X/Y axis pairing | v8.0 |
 | Draft War Room positional map hover tooltip could disappear before users could click Pin to Compare, and dot-click selection did not update the focused player on desktop | v8.0 |

@@ -1,0 +1,14 @@
+{
+  "playByPlay": {
+    "2023": "/absolute/path/to/play_by_play_2023.rds",
+    "2024": "/absolute/path/to/play_by_play_2024.rds",
+    "2025": "/absolute/path/to/play_by_play_2025.rds"
+  },
+  "leagues": [
+    {
+      "season": 2023,
+      "leagueId": "replace-with-sleeper-league-id",
+      "label": "Local calibration league"
+    }
+  ]
+}

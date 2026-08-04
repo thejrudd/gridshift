@@ -51,7 +51,7 @@ Most Trade flows start from the same source data:
 - adjusted KTC datasets
 - current draft pick ownership
 
-Sleeper is the only supported fantasy provider for players and draft picks. Legacy ESPN sessions remain defensively normalized into the player/roster/stat contract, but ESPN Fantasy is deprecated and must not be surfaced as a Trade connection.
+Sleeper is the supported fantasy provider for players and draft picks.
 
 ### Shared valuation layer
 
@@ -69,12 +69,10 @@ This shared value is what reduced earlier drift between Agent, Intelligence, and
 `CompanionTrade.jsx` -> `TradeProposalBuilder.jsx` -> `tradeEngine.js`
 
 Main responsibilities:
-- build draft pick ownership maps for providers that support picks
+- build draft pick ownership maps
 - value each side of a user-built trade
 - evaluate fairness / imbalance
 - generate refinement ideas and candidate additions/removals
-
-For ESPN leagues, `CompanionTrade.jsx` sets `picksEnabled = false`, provider draft-pick methods return empty arrays, pick pickers are suppressed, and applied proposal picks are ignored.
 
 ### Intelligence flow
 
@@ -97,8 +95,6 @@ Main responsibilities:
 - build candidate packages and compensation picks
 - evaluate whether the package is viable for both sides
 - rank and group the best upgrade paths by manager
-
-For ESPN leagues, outgoing/incoming pick toggles are disabled before the search request is built, so upgrade results stay player-only.
 
 ### History flow
 

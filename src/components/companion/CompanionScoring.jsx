@@ -1,18 +1,51 @@
-import { useState, useCallback, useMemo } from 'react';
-import { useSleeperLeague } from '../../context/SleeperContext';
+import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useSleeperLeague, useSleeperStats } from '../../context/SleeperContext';
+import { useTheme } from '../../context/ThemeContext';
 import {
-  DEFAULT_SCORING, getEspnScoringImportAudit, getFlatScoringSettings, importLeagueScoring, normalizeScoringProfile,
+  DEFAULT_SCORING, getEspnScoringImportAudit, getFlatScoringSettings, importLeagueScoring,
 } from '../../utils/scoringEngine';
 import { getLeague } from '../../api/sleeperApi';
 import { formatScoringSettingValue } from '../../utils/scoringDisplay';
 import {
-  CompanionMenuChevron, CompanionMenuSelectionMark, CompanionSelectorButton, CompanionSegmentedControl,
+  SCORING_GAME_EXAMPLE_OPTIONS, SCORING_PLAY_TYPES, filterScoringGroups, getPositionStrengthRanking, getPreviousLeagueScoringOptions, getScoringGameExample, getScoringGameExampleCandidates, getScoringProfile, isNonStandardScoringSetting, isScoringRuleRosterEligible, pickRandomScoringGameExample, pickRandomScoringGameExampleId,
+} from '../../utils/scoringGuide';
+import {
+  CompanionMenuChevron, CompanionMenuSelectionMark, CompanionMenuTrigger, CompanionSelectorButton, CompanionSelectorRail, CompanionSegmentedControl,
 } from './CompanionSelectorControls.jsx';
+import CompanionPlayerRow, { CompanionPlayerMetric } from './CompanionPlayerRow.jsx';
+import { getNflTeamLogoUrl } from '../../utils/companionAssetVisuals.js';
 import Spinner from '../ui/Spinner';
+
+function formatExampleStatValue(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return '—';
+  return Number.isInteger(number) ? String(number) : String(Number(number.toFixed(2)));
+}
+
+function formatExamplePoints(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return '—';
+  const formatted = Number.isInteger(number) ? number.toFixed(1) : String(Number(number.toFixed(2)));
+  return number > 0 ? `+${formatted}` : formatted;
+}
+
+function formatPositionStrengthValue(value) {
+  return Number.isFinite(value) ? value.toFixed(1) : '—';
+}
+
+const POSITION_STRENGTH_COLUMNS = [
+  { key: 'rank', label: 'Rank' },
+  { key: 'position', label: 'Position' },
+  { key: 'top8', label: 'Top 8' },
+  { key: 'nineTo16', label: '9–16' },
+  { key: 'seventeenTo32', label: '17–32' },
+];
 
 const STAT_GROUPS = [
   {
     label: 'Passing',
+    family: 'Offense',
+    tone: 'offense',
     stats: [
       { key: 'pass_yd',   label: 'Passing Yards' },
       { key: 'pass_td',   label: 'Passing TD' },
@@ -28,6 +61,8 @@ const STAT_GROUPS = [
   },
   {
     label: 'Rushing',
+    family: 'Offense',
+    tone: 'offense',
     stats: [
       { key: 'rush_yd',        label: 'Rushing Yards' },
       { key: 'rush_td',        label: 'Rushing TD' },
@@ -39,6 +74,8 @@ const STAT_GROUPS = [
   },
   {
     label: 'Receiving',
+    family: 'Offense',
+    tone: 'offense',
     stats: [
       { key: 'rec',          label: 'Reception' },
       { key: 'rec_yd',       label: 'Receiving Yards' },
@@ -52,6 +89,8 @@ const STAT_GROUPS = [
   },
   {
     label: 'Tiered Reception Bonuses',
+    family: 'Reception premiums',
+    tone: 'premium',
     stats: [
       { key: 'rec_0_4',   label: 'Reception 0–4 yds', note: 'pts/catch' },
       { key: 'rec_5_9',   label: 'Reception 5–9 yds', note: 'pts/catch' },
@@ -62,6 +101,8 @@ const STAT_GROUPS = [
   },
   {
     label: 'Position First Down Bonuses',
+    family: 'Position premiums',
+    tone: 'premium',
     stats: [
       { key: 'bonus_fd_qb', label: 'QB First Down Bonus', note: 'extra pts/FD (pass + rush)' },
       { key: 'bonus_fd_rb', label: 'RB First Down Bonus', note: 'extra pts/FD (rush + rec)' },
@@ -71,6 +112,8 @@ const STAT_GROUPS = [
   },
   {
     label: 'Misc / Fumbles',
+    family: 'Ball security',
+    tone: 'situational',
     stats: [
       { key: 'fum',         label: 'Fumble' },
       { key: 'fum_lost',    label: 'Fumble Lost' },
@@ -89,6 +132,8 @@ const STAT_GROUPS = [
   },
   {
     label: 'Special Teams — Player',
+    family: 'Returns & coverage',
+    tone: 'special',
     stats: [
       { key: 'kr_yd',          label: 'Kick Return Yards' },
       { key: 'pr_yd',          label: 'Punt Return Yards' },
@@ -100,6 +145,8 @@ const STAT_GROUPS = [
   },
   {
     label: 'Yardage Bonuses',
+    family: 'Performance bonuses',
+    tone: 'bonus',
     stats: [
       { key: 'bonus_pass_yd_300',     label: '300+ Pass Yds (game)' },
       { key: 'bonus_pass_yd_400',     label: '400+ Pass Yds (game)' },
@@ -113,6 +160,8 @@ const STAT_GROUPS = [
   },
   {
     label: 'Game Threshold Bonuses',
+    family: 'Performance bonuses',
+    tone: 'bonus',
     stats: [
       { key: 'bonus_pass_cmp_25', label: '25+ Completions (game)' },
       { key: 'bonus_rush_att_20', label: '20+ Carries (game)' },
@@ -120,6 +169,8 @@ const STAT_GROUPS = [
   },
   {
     label: 'Big-Play Bonuses',
+    family: 'Performance bonuses',
+    tone: 'bonus',
     stats: [
       { key: 'bonus_pass_td_40p',     label: '40+ Yd Passing TD Bonus', note: 'extra pts per 40+ yd TD pass' },
       { key: 'bonus_pass_td_50p',     label: '50+ Yd Passing TD Bonus', note: 'extra pts per 50+ yd TD pass' },
@@ -136,6 +187,8 @@ const STAT_GROUPS = [
   },
   {
     label: 'IDP — Tackles',
+    family: 'Individual defense',
+    tone: 'defense',
     stats: [
       { key: 'idp_tkl',      label: 'Tackle (combined)' },
       { key: 'idp_tkl_solo', label: 'Solo Tackle' },
@@ -147,6 +200,8 @@ const STAT_GROUPS = [
   },
   {
     label: 'IDP — Turnovers, Sacks & Other',
+    family: 'Individual defense',
+    tone: 'defense',
     stats: [
       { key: 'idp_sack',        label: 'Sack' },
       { key: 'idp_sack_yd',     label: 'Sack Yards' },
@@ -167,6 +222,8 @@ const STAT_GROUPS = [
   },
   {
     label: 'Kicker — Field Goals Made',
+    family: 'Kicking',
+    tone: 'special',
     stats: [
       { key: 'fgm',              label: 'FG Made (flat)' },
       { key: 'fgm_0_19',         label: 'FG Made 0–19 yds' },
@@ -183,6 +240,8 @@ const STAT_GROUPS = [
   },
   {
     label: 'Kicker — Misses',
+    family: 'Kicking',
+    tone: 'special',
     stats: [
       { key: 'fgmiss',       label: 'FG Miss (flat)' },
       { key: 'fgmiss_0_19',  label: 'FG Miss 0–19 yds' },
@@ -197,6 +256,8 @@ const STAT_GROUPS = [
   },
   {
     label: 'Team DST — Turnovers & Scoring',
+    family: 'Team defense',
+    tone: 'defense',
     stats: [
       { key: 'sack',     label: 'Sack (team)' },
       { key: 'sack_half', label: 'Half Sack (team)' },
@@ -214,6 +275,8 @@ const STAT_GROUPS = [
   },
   {
     label: 'Team DST — Points Allowed',
+    family: 'Team defense',
+    tone: 'defense',
     stats: [
       { key: 'pts_allow',       label: 'Pts Allowed (per pt)', note: 'rate; alternative to tier brackets' },
       { key: 'pts_allow_0',     label: 'Pts Allowed: 0 (shutout)' },
@@ -232,6 +295,8 @@ const STAT_GROUPS = [
   },
   {
     label: 'Team DST — Yards Allowed',
+    family: 'Team defense',
+    tone: 'defense',
     stats: [
       { key: 'yds_allow',         label: 'Yds Allowed (per yd)', note: 'rate; alternative to tier brackets' },
       { key: 'yds_allow_0_100',   label: 'Yds Allowed: 0–100' },
@@ -247,6 +312,8 @@ const STAT_GROUPS = [
   },
   {
     label: 'Team DST — Tackles & Other',
+    family: 'Team defense',
+    tone: 'defense',
     stats: [
       { key: 'tkl',              label: 'Tackle (team)' },
       { key: 'tkl_solo',         label: 'Solo Tackle (team)' },
@@ -271,30 +338,181 @@ const STAT_GROUPS = [
 ];
 
 export default function CompanionScoring() {
+  const { darkMode } = useTheme();
   const {
-    platform, scoringSettings, setScoringSettings, league,
-    leaguesBySeason, setScoringOverride, scoringOverride, clearScoringOverride,
+    platform, scoringSettings, activeScoringSettings, league, season,
+    linkedLeagueHistory, setScoringOverride, scoringOverride, clearScoringOverride,
   } = useSleeperLeague();
+  const { players, statsBySeason, loadPlayers, loadStatsForSeason } = useSleeperStats();
   const [showActiveOnly, setShowActiveOnly] = useState(true);
+  const [highlightNonStandard, setHighlightNonStandard] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [selectedExample, setSelectedExample] = useState(null);
+  const [selectedExampleCandidate, setSelectedExampleCandidate] = useState(null);
+  const [selectedPlayType, setSelectedPlayType] = useState('ALL');
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerLoading, setPickerLoading] = useState(false);
   const [pickerError, setPickerError] = useState(null);
-  const [expandedSeason, setExpandedSeason] = useState(null);
-  const settings = getFlatScoringSettings(scoringSettings);
-  const espnAudit = useMemo(
-    () => (platform === 'espn' ? getEspnScoringImportAudit(scoringSettings) : null),
-    [platform, scoringSettings],
+  const [positionStrengthLoading, setPositionStrengthLoading] = useState(false);
+  const [positionStrengthSort, setPositionStrengthSort] = useState({ key: 'top8', direction: 'desc' });
+  const effectiveScoringSettings = activeScoringSettings ?? scoringSettings;
+  const settings = getFlatScoringSettings(effectiveScoringSettings);
+  const displayRosterPositions = scoringOverride?.rosterPositions ?? league?.roster_positions;
+  const scoringSeason = String(league?.season ?? season ?? '').trim();
+  const productionSeason = Number.isFinite(Number(scoringSeason))
+    ? String(Number(scoringSeason) - 1)
+    : null;
+  const productionStats = platform === 'sleeper' && productionSeason
+    ? statsBySeason?.[productionSeason]?.seasonStats
+    : null;
+  const scoringProfile = useMemo(
+    () => getScoringProfile(effectiveScoringSettings, displayRosterPositions),
+    [effectiveScoringSettings, displayRosterPositions],
   );
+  const scoringExampleOptions = useMemo(() => ({
+    allowTeamExample: scoringProfile.hasTeamSpecialTeamsRoster,
+    rosterPositions: displayRosterPositions,
+  }), [displayRosterPositions, scoringProfile.hasTeamSpecialTeamsRoster]);
+  const exampleOptions = useMemo(() => {
+    const availableIds = new Set(scoringProfile.availableExampleIds);
+    return SCORING_GAME_EXAMPLE_OPTIONS.filter((option) => (
+      availableIds.has(option.id)
+      && getScoringGameExampleCandidates(option.id, effectiveScoringSettings, scoringExampleOptions).length > 0
+    ));
+  }, [effectiveScoringSettings, scoringExampleOptions, scoringProfile.availableExampleIds]);
+  const selectedExampleCandidates = useMemo(
+    () => getScoringGameExampleCandidates(selectedExample, effectiveScoringSettings, scoringExampleOptions),
+    [effectiveScoringSettings, scoringExampleOptions, selectedExample],
+  );
+  const playTypeOptions = useMemo(() => {
+    const availableIds = new Set(scoringProfile.availablePlayTypeIds);
+    return SCORING_PLAY_TYPES.filter((option) => option.id === 'ALL' || availableIds.has(option.id));
+  }, [scoringProfile.availablePlayTypeIds]);
+  const positionStrength = useMemo(
+    () => getPositionStrengthRanking({
+      seasonStats: productionStats,
+      players,
+      scoring: activeScoringSettings,
+      rosterPositions: displayRosterPositions,
+    }),
+    [activeScoringSettings, displayRosterPositions, players, productionStats],
+  );
+  const sortedPositionStrength = useMemo(() => [...positionStrength].sort((left, right) => {
+    const { key, direction } = positionStrengthSort;
+    let comparison;
+    if (key === 'position') {
+      comparison = left.position.localeCompare(right.position);
+    } else {
+      const leftValue = left[key];
+      const rightValue = right[key];
+      if (!Number.isFinite(leftValue)) return 1;
+      if (!Number.isFinite(rightValue)) return -1;
+      comparison = leftValue - rightValue;
+    }
+    return direction === 'asc' ? comparison : -comparison;
+  }), [positionStrength, positionStrengthSort]);
 
-  const handleImportLeague = () => {
-    if (!league?.scoring_settings) return;
-    if (league.scoring_settings.provider === 'espn') {
-      setScoringSettings(normalizeScoringProfile(league.scoring_settings, 'espn'));
+  const handlePositionStrengthSort = useCallback((key) => {
+    setPositionStrengthSort((current) => ({
+      key,
+      direction: current.key === key
+        ? (current.direction === 'asc' ? 'desc' : 'asc')
+        : (key === 'position' || key === 'rank' ? 'asc' : 'desc'),
+    }));
+  }, []);
+
+  useEffect(() => {
+    if (platform !== 'sleeper' || !productionSeason || productionStats) return undefined;
+    let cancelled = false;
+    setPositionStrengthLoading(true);
+    loadStatsForSeason(productionSeason)
+      .catch(() => null)
+      .finally(() => {
+        if (!cancelled) setPositionStrengthLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [loadStatsForSeason, platform, productionSeason, productionStats]);
+  useEffect(() => {
+    if (platform !== 'sleeper' || players) return;
+    void loadPlayers().catch(() => null);
+  }, [loadPlayers, platform, players]);
+  useEffect(() => {
+    if (selectedExample) window.sessionStorage.setItem('gridshift-scoring-example-id', selectedExample);
+  }, [selectedExample]);
+  useEffect(() => {
+    if (selectedExample && selectedExampleCandidate) {
+      window.sessionStorage.setItem(
+        `gridshift-scoring-example-candidate-id-${selectedExample}`,
+        selectedExampleCandidate,
+      );
+    }
+  }, [selectedExample, selectedExampleCandidate]);
+  useEffect(() => {
+    if (exampleOptions.length === 0) {
+      setSelectedExample(null);
+      setSelectedExampleCandidate(null);
       return;
     }
-    const imported = importLeagueScoring(league.scoring_settings);
-    setScoringSettings({ ...DEFAULT_SCORING, ...imported });
-  };
+
+    if (!exampleOptions.some((option) => option.id === selectedExample)) {
+      const previousId = window.sessionStorage.getItem('gridshift-scoring-example-id');
+      setSelectedExample(pickRandomScoringGameExampleId(
+        exampleOptions.map((option) => option.id),
+        { previousId },
+      ));
+      setSelectedExampleCandidate(null);
+      return;
+    }
+
+    if (!selectedExampleCandidates.some((candidate) => candidate.id === selectedExampleCandidate)) {
+      const previousCandidateId = window.sessionStorage.getItem(
+        `gridshift-scoring-example-candidate-id-${selectedExample}`,
+      );
+      const nextCandidate = pickRandomScoringGameExample(selectedExample, effectiveScoringSettings, {
+        ...scoringExampleOptions,
+        previousCandidateId,
+      });
+      setSelectedExampleCandidate(nextCandidate?.id ?? null);
+    }
+  }, [
+    effectiveScoringSettings,
+    exampleOptions,
+    scoringExampleOptions,
+    selectedExample,
+    selectedExampleCandidate,
+    selectedExampleCandidates,
+  ]);
+  useEffect(() => {
+    if (!playTypeOptions.some((option) => option.id === selectedPlayType)) {
+      setSelectedPlayType('ALL');
+    }
+  }, [playTypeOptions, selectedPlayType]);
+
+  const handleSelectExamplePhase = useCallback((phaseId) => {
+    const previousCandidateId = window.sessionStorage.getItem(
+      `gridshift-scoring-example-candidate-id-${phaseId}`,
+    );
+    const nextCandidate = pickRandomScoringGameExample(phaseId, effectiveScoringSettings, {
+      ...scoringExampleOptions,
+      previousCandidateId,
+    });
+    setSelectedExample(phaseId);
+    setSelectedExampleCandidate(nextCandidate?.id ?? null);
+  }, [effectiveScoringSettings, scoringExampleOptions]);
+
+  const featuredGame = useMemo(
+    () => getScoringGameExample(selectedExample, effectiveScoringSettings, {
+      ...scoringExampleOptions,
+      candidateId: selectedExampleCandidate,
+    }),
+    [effectiveScoringSettings, scoringExampleOptions, selectedExample, selectedExampleCandidate],
+  );
+  const featuredPoints = Number(featuredGame?.points);
+  const featuredPointsLabel = Number.isFinite(featuredPoints) ? featuredPoints.toFixed(1) : '—';
+  const espnAudit = useMemo(
+    () => (platform === 'espn' ? getEspnScoringImportAudit(effectiveScoringSettings) : null),
+    [effectiveScoringSettings, platform],
+  );
 
   const handlePickLeague = useCallback(async (leagueId, leagueName, season) => {
     setPickerLoading(true);
@@ -303,7 +521,8 @@ export default function CompanionScoring() {
       const fetched = await getLeague(leagueId);
       if (!fetched?.scoring_settings) throw new Error('No scoring settings found for this league.');
       const overrideSettings = { ...DEFAULT_SCORING, ...importLeagueScoring(fetched.scoring_settings) };
-      setScoringOverride({ settings: overrideSettings, leagueName, leagueId, season });
+      setScoringOverride({ settings: overrideSettings, leagueName, leagueId, season, rosterPositions: fetched.roster_positions ?? [] });
+      setPickerOpen(false);
     } catch (err) {
       setPickerError(err.message ?? 'Failed to load league scoring.');
     } finally {
@@ -311,140 +530,289 @@ export default function CompanionScoring() {
     }
   }, [setScoringOverride]);
 
-  const pickerSeasons = platform === 'espn' ? [] : Object.keys(leaguesBySeason ?? {})
-    .filter(s => (leaguesBySeason[s]?.length ?? 0) > 0)
-    .sort((a, b) => Number(b) - Number(a));
+  const previousScoringOptions = useMemo(() => {
+    if (platform === 'espn') return [];
+    return getPreviousLeagueScoringOptions(linkedLeagueHistory, league?.season);
+  }, [league?.season, linkedLeagueHistory, platform]);
 
-  // Filter groups/stats based on toggle
-  const visibleGroups = STAT_GROUPS.map(group => ({
-    ...group,
-    stats: group.stats.filter((s) => {
-      if (s.espnOnly && platform !== 'espn') return false;
-      if (showActiveOnly && (settings[s.key] ?? 0) === 0) return false;
-      return true;
-    }),
-  })).filter(group => group.stats.length > 0);
+  const handleResetPreview = useCallback(() => {
+    clearScoringOverride();
+    setPickerOpen(false);
+    setPickerError(null);
+  }, [clearScoringOverride]);
+
+  const visibleGroups = useMemo(() => filterScoringGroups(STAT_GROUPS, {
+    position: 'ALL',
+    playType: selectedPlayType,
+    showActiveOnly,
+    includeIDP: scoringProfile.hasIDPScoring,
+    rosterPositions: displayRosterPositions,
+    scoring: effectiveScoringSettings,
+  }), [displayRosterPositions, effectiveScoringSettings, selectedPlayType, showActiveOnly, scoringProfile.hasIDPScoring]);
 
   return (
-    <div className="page-frame-readable pb-6">
-      {/* Import from league + toggle row */}
-      <div className="px-4 pt-2 pb-4 flex flex-wrap items-center gap-3">
-        {league?.scoring_settings ? (
-          <CompanionSelectorButton
-            onClick={handleImportLeague}
-            className="flex-1"
-            size="md"
-            variant="action"
-          >
-            Sync from {league.name}
-          </CompanionSelectorButton>
-        ) : (
-          <p className="flex-1 text-sm text-center" style={{ color: 'var(--color-label-tertiary)' }}>
-            Connect a league to view its scoring settings.
-          </p>
-        )}
-        <CompanionSegmentedControl
-          value={showActiveOnly}
-          options={[
-            { label: 'Active', value: true },
-            { label: 'All', value: false },
-          ]}
-          onChange={setShowActiveOnly}
-          ariaLabel="Scoring visibility"
-          className="shrink-0"
-        />
+    <div className="page-frame-workbench companion-scoring-page pb-6">
+      <section className="companion-scoring-overview px-4 pt-4 pb-5" aria-labelledby="scoring-profile-title">
+        <header className="companion-scoring-profile-header">
+          <div className="companion-scoring-profile-header__eyebrow">League scoring blueprint</div>
+          <h1 id="scoring-profile-title">{scoringProfile.title}</h1>
+          <p>{scoringProfile.summary}</p>
+          <div className="companion-scoring-profile-facts" aria-label="Scoring profile facts">
+            {scoringProfile.facts.map((fact) => <span key={fact}>{fact}</span>)}
+            <span>{scoringProfile.activeBonusCount} bonus categor{scoringProfile.activeBonusCount === 1 ? 'y' : 'ies'} active</span>
+          </div>
+          {scoringOverride && (
+            <button
+              type="button"
+              onClick={handleResetPreview}
+              className="companion-scoring-reset mt-3"
+              title="Restore this league’s current scoring"
+            >
+              Reset preview
+            </button>
+          )}
+        </header>
+
+        <div className="companion-scoring-blueprint">
+          <section className="companion-scoring-core" data-tone="core" aria-labelledby="scoring-core-title">
+            <div className="companion-scoring-section-heading">
+              <div>
+                <span>01</span>
+                <h2 id="scoring-core-title">Core scoring</h2>
+              </div>
+              <p>The values that shape every weekly total.</p>
+            </div>
+            <dl className="companion-scoring-core-grid">
+              {scoringProfile.coreRules.map((rule) => (
+                <div key={rule.id} data-emphasis={rule.emphasis ? 'true' : undefined}>
+                  <dt>{rule.label}</dt>
+                  <dd>{rule.value}</dd>
+                  <span>{rule.detail}</span>
+                </div>
+              ))}
+            </dl>
+          </section>
+
+          <section className="companion-scoring-units" data-tone="units" aria-labelledby="scoring-units-title">
+            <div className="companion-scoring-section-heading">
+              <div>
+                <span>02</span>
+                <h2 id="scoring-units-title">Scoring units</h2>
+              </div>
+              <p>How each part of the lineup earns points.</p>
+            </div>
+            <div className="companion-scoring-unit-ledger">
+              {scoringProfile.units.map((unit) => (
+                <div key={unit.id} data-state={unit.state}>
+                  <span className="companion-scoring-unit-ledger__marker" aria-hidden="true" />
+                  <strong>{unit.label}</strong>
+                  <span className="companion-scoring-unit-ledger__status">{unit.status}</span>
+                  <p>{unit.detail}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="companion-scoring-position-strength" data-tone="position" aria-labelledby="scoring-position-strength-title">
+            <div className="companion-scoring-section-heading">
+              <div>
+                <span>03</span>
+                <h2 id="scoring-position-strength-title">Position strength</h2>
+              </div>
+              <p>{productionSeason ? `${productionSeason} production · current rules` : 'Prior-season production · current rules'}</p>
+            </div>
+            {positionStrength.length > 0 ? (
+              <div className="companion-scoring-position-strength__table" role="table" aria-label="Position strength by average fantasy points per game">
+                <div className="companion-scoring-position-strength__header" role="row">
+                  {POSITION_STRENGTH_COLUMNS.map((column) => {
+                    const isActive = positionStrengthSort.key === column.key;
+                    return (
+                      <span key={column.key} role="columnheader" aria-sort={isActive ? (positionStrengthSort.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                        <button type="button" onClick={() => handlePositionStrengthSort(column.key)}>
+                          {column.label}<span aria-hidden="true">{isActive ? (positionStrengthSort.direction === 'asc' ? '↑' : '↓') : '↕'}</span>
+                        </button>
+                      </span>
+                    );
+                  })}
+                </div>
+                {sortedPositionStrength.map((row) => (
+                  <div key={row.position} className="companion-scoring-position-strength__row" role="row">
+                    <span role="cell" className="companion-scoring-position-strength__rank">{row.rank}</span>
+                    <strong role="cell">{row.position}</strong>
+                    <span role="cell">{formatPositionStrengthValue(row.top8)}</span>
+                    <span role="cell">{formatPositionStrengthValue(row.nineTo16)}</span>
+                    <span role="cell">{formatPositionStrengthValue(row.seventeenTo32)}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="companion-scoring-position-strength__empty">
+                {positionStrengthLoading ? 'Loading prior-season production…' : 'Prior-season production is not available for this league yet.'}
+              </p>
+            )}
+          </section>
+        </div>
+
+        <aside className="companion-scoring-overview__example" aria-labelledby="scoring-example-title">
+          <div className="companion-scoring-example-heading">
+            <div>
+              <span>2025 game sample</span>
+              <h2 id="scoring-example-title">See it scored</h2>
+            </div>
+          </div>
+          <CompanionSelectorRail ariaLabel="Scoring phase examples" className="companion-scoring-position-rail">
+            {exampleOptions.map((option) => (
+              <CompanionSelectorButton key={option.id} active={selectedExample === option.id} onClick={() => handleSelectExamplePhase(option.id)}>
+                {option.label}
+              </CompanionSelectorButton>
+            ))}
+          </CompanionSelectorRail>
+          <CompanionPlayerRow
+            player={featuredGame?.isTeam
+              ? { ...featuredGame, imageUrl: getNflTeamLogoUrl(featuredGame.logoKey) }
+              : featuredGame}
+            darkMode={darkMode}
+            compact
+            showTeamLogo={!featuredGame?.isTeam}
+            showSelectionMark={false}
+            metaSegments={[featuredGame?.opponent]}
+            gridTemplate={featuredGame?.isTeam
+              ? '34px 26px minmax(0, 1fr) minmax(68px, auto)'
+              : '34px 26px minmax(0, 1fr) 30px minmax(68px, auto)'}
+            columnGridTemplate="minmax(68px, auto)"
+            columns={<CompanionPlayerMetric value={featuredPointsLabel} label={featuredGame?.pointsLabel} compact />}
+            className="companion-scoring-example-player"
+          />
+          <div className="companion-scoring-example-game">
+            <strong>{featuredGame?.result}</strong>
+            <span>{featuredGame?.date}</span>
+          </div>
+          <div className="companion-scoring-example-breakdown">
+            <div className="companion-scoring-example-breakdown__heading">
+              <strong>League scoring breakdown</strong>
+              <span>Value</span>
+              <span>Pts</span>
+            </div>
+            <div className="companion-scoring-example-breakdown__rows" role="table" aria-label={`${featuredGame?.name ?? 'Player'} scoring breakdown`}>
+              {featuredGame?.breakdown.map((row) => (
+                <div key={row.key ?? row.statKey} role="row">
+                  <span role="cell">{row.label}</span>
+                  <span role="cell">{formatExampleStatValue(row.statVal)}</span>
+                  <strong role="cell" data-value-state={row.pts < 0 ? 'negative' : 'positive'}>{formatExamplePoints(row.pts)}</strong>
+                </div>
+              ))}
+            </div>
+          </div>
+        </aside>
+      </section>
+
+      <div className="px-4">
+        <button type="button" className="companion-scoring-detail-toggle" onClick={() => setDetailsOpen((open) => !open)} aria-expanded={detailsOpen}>
+          <span className="companion-scoring-detail-toggle__copy">
+            <span>Scoring reference</span>
+            <strong>Detailed scoring</strong>
+            <small>Browse every scoring value by phase.</small>
+          </span>
+          <span className="companion-scoring-detail-toggle__action">
+            {detailsOpen ? 'Hide' : 'View'}
+            <CompanionMenuChevron open={detailsOpen} />
+          </span>
+        </button>
       </div>
 
-      {/* Preview another league's scoring */}
-      {pickerSeasons.length > 0 && (
-        <div className="px-4 pb-4">
-          <div className="text-xs font-semibold uppercase tracking-widest mb-2" style={{ color: 'var(--color-label-tertiary)' }}>
-            Preview Another League&apos;s Scoring
-          </div>
+      {detailsOpen && <>
+      <div className="companion-scoring-control-deck px-4 py-4">
+        <div className="companion-scoring-detail-controls">
+          <CompanionSelectorRail label="Phase" ariaLabel="Scoring phase">
+            {playTypeOptions.map((option) => (
+              <CompanionSelectorButton key={option.id} active={selectedPlayType === option.id} onClick={() => setSelectedPlayType(option.id)}>{option.label}</CompanionSelectorButton>
+            ))}
+          </CompanionSelectorRail>
+        </div>
 
-          {scoringOverride && (
-            <div
-              className="flex items-center gap-2 px-3 py-2 rounded-xl mb-2 text-sm font-semibold"
-              style={{ background: 'var(--color-signature)', color: 'var(--color-signature-fg)' }}
-            >
-              <span className="flex-1 truncate">{scoringOverride.leagueName} ({scoringOverride.season})</span>
-              <button
-                type="button"
-                onClick={clearScoringOverride}
-                className="companion-scoring-reset shrink-0"
-              >
-                Reset
-              </button>
-            </div>
-          )}
+        <aside className="companion-scoring-utility" aria-label="Scoring utilities">
+          <CompanionSegmentedControl
+            title="Values shown"
+            value={showActiveOnly}
+            options={[
+              { label: 'Active', value: true },
+              { label: 'All', value: false },
+            ]}
+            onChange={setShowActiveOnly}
+            ariaLabel="Scoring visibility"
+          />
 
-          <CompanionSelectorButton
-            onClick={() => setPickerOpen(v => !v)}
-            className="w-full"
-            size="md"
-            aria-expanded={pickerOpen}
-          >
-            <span>Browse leagues…</span>
-            <CompanionMenuChevron open={pickerOpen} />
-          </CompanionSelectorButton>
+          <CompanionSegmentedControl
+            title="Highlight custom"
+            value={highlightNonStandard}
+            options={[
+              { label: 'On', value: true },
+              { label: 'Off', value: false },
+            ]}
+            onChange={setHighlightNonStandard}
+            ariaLabel="Highlight non-standard fantasy scoring"
+          />
 
-          {pickerOpen && (
-            <div
-              className="mt-1 rounded-xl overflow-hidden"
-              style={{ background: 'var(--color-fill-secondary)', border: '1px solid var(--color-separator)' }}
-            >
-              {pickerLoading && (
-                <div className="px-4 py-3 text-sm flex items-center gap-2" style={{ color: 'var(--color-label-secondary)' }}>
-                  <Spinner size="sm" />
-                  Loading leagues…
+          {previousScoringOptions.length > 0 && (
+            <div className="companion-scoring-preview-tool">
+              <div className="companion-scoring-preview-tool__header">
+                <span>Scoring preview</span>
+                {scoringOverride && (
+                  <button
+                    type="button"
+                    onClick={handleResetPreview}
+                    className="companion-scoring-reset"
+                    title="Restore this league’s current scoring"
+                  >
+                    Reset preview
+                  </button>
+                )}
+              </div>
+              <CompanionMenuTrigger
+                value={scoringOverride ? `${scoringOverride.season} scoring` : 'Preview previous season'}
+                open={pickerOpen}
+                engaged={Boolean(scoringOverride)}
+                onClick={() => setPickerOpen(v => !v)}
+                aria-label="Preview this league's scoring from a previous season"
+              />
+
+              {pickerOpen && (
+                <div className="companion-scoring-preview-tool__menu">
+                  {pickerLoading && (
+                    <div className="px-4 py-3 text-sm flex items-center gap-2" style={{ color: 'var(--color-label-secondary)' }}>
+                      <Spinner size="sm" />
+                      Loading leagues…
+                    </div>
+                  )}
+                  {pickerError && (
+                    <div className="px-4 py-3 text-sm" style={{ color: 'var(--color-accent-red)' }}>{pickerError}</div>
+                  )}
+                  {previousScoringOptions.map(({ season, league: previousLeague }, index) => {
+                    const isActive = scoringOverride?.leagueId === String(previousLeague.league_id);
+                    return (
+                      <button
+                        key={previousLeague.league_id}
+                        type="button"
+                        disabled={pickerLoading}
+                        aria-pressed={isActive}
+                        onClick={() => handlePickLeague(previousLeague.league_id, previousLeague.name, season)}
+                        className={`companion-menu-item w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left disabled:opacity-50${isActive ? ' is-checked' : ''}`}
+                        style={{ borderTop: index > 0 ? '1px solid var(--color-separator)' : 'none' }}
+                      >
+                        <CompanionMenuSelectionMark checked={isActive} mode="single" />
+                        <span className="min-w-0 flex-1">
+                          <strong className="block">{season} season</strong>
+                          <span className="block truncate text-xs" style={{ color: 'var(--color-label-tertiary)' }}>{previousLeague.name}</span>
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
               )}
-              {pickerError && (
-                <div className="px-4 py-3 text-sm" style={{ color: 'var(--color-accent-red)' }}>{pickerError}</div>
-              )}
-              {pickerSeasons.map((season, si) => {
-                const seasonLeagues = leaguesBySeason[season] ?? [];
-                const isExpanded = expandedSeason === season;
-                return (
-                  <div key={season} style={{ borderTop: si > 0 ? '1px solid var(--color-separator)' : 'none' }}>
-                    <button
-                      type="button"
-                      aria-expanded={isExpanded}
-                      className="companion-menu-item w-full flex items-center justify-between px-4 py-2.5 text-sm font-semibold"
-                      onClick={() => setExpandedSeason(isExpanded ? null : season)}
-                    >
-                      <span style={{ color: 'var(--color-label)' }}>{season} Season</span>
-                      <span className="flex items-center gap-2">
-                        <span className="text-xs" style={{ color: 'var(--color-label-tertiary)' }}>
-                          {seasonLeagues.length} {seasonLeagues.length === 1 ? 'league' : 'leagues'}
-                        </span>
-                        <CompanionMenuChevron open={isExpanded} className="!h-3 !w-3" />
-                      </span>
-                    </button>
-                    {isExpanded && seasonLeagues.map((lg) => {
-                      const isActive = scoringOverride?.leagueId === String(lg.league_id);
-                      return (
-                        <button
-                          key={lg.league_id}
-                          type="button"
-                          disabled={pickerLoading}
-                          aria-pressed={isActive}
-                          onClick={() => handlePickLeague(lg.league_id, lg.name, season)}
-                          className={`companion-menu-item w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left disabled:opacity-50${isActive ? ' is-checked' : ''}`}
-                          style={{ borderTop: '1px solid var(--color-separator)' }}
-                        >
-                          <CompanionMenuSelectionMark checked={isActive} mode="single" />
-                          <span className="min-w-0 flex-1 truncate">{lg.name}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                );
-              })}
             </div>
           )}
-        </div>
-      )}
+        </aside>
+      </div>
 
       {platform === 'espn' && espnAudit?.rows?.length > 0 && (
         <div className="px-4 pb-4">
@@ -500,41 +868,50 @@ export default function CompanionScoring() {
         </div>
       )}
 
-      {/* Stat groups — read-only */}
-      <div className="companion-scoring-groups">
-      {visibleGroups.map(group => (
-        <div key={group.label} className="px-4 mb-5">
-          <div className="text-xs font-semibold uppercase tracking-widest mb-2" style={{ color: 'var(--color-label-tertiary)' }}>
-            {group.label}
-          </div>
-          <div className="rounded-xl overflow-hidden" style={{ background: 'var(--color-fill-secondary)' }}>
-            {group.stats.map((stat, i) => {
+      {/* Scoring values — read-only */}
+      <div className="companion-scoring-workbench px-4">
+        <div className="companion-scoring-groups">
+      {visibleGroups.map((group, groupIndex) => (
+        <section
+          key={group.label}
+          className="companion-scoring-group"
+          data-tone={group.tone}
+        >
+          <header className="companion-scoring-group__header">
+            <span className="companion-scoring-group__index">
+              {String(groupIndex + 1).padStart(2, '0')}
+            </span>
+            <div>
+              <span className="companion-scoring-group__family">{group.family}</span>
+              <h2 className="companion-scoring-group__title">{group.label}</h2>
+            </div>
+          </header>
+          <div className="companion-scoring-value-list">
+            {group.stats.map((stat) => {
               const val = settings[stat.key] ?? 0;
+              const isNonStandard = isNonStandardScoringSetting(stat.key, val);
+              const isRosterEligible = isScoringRuleRosterEligible(stat.key, displayRosterPositions);
               return (
                 <div
                   key={stat.key}
-                  className="flex items-center px-4 py-3 gap-4"
-                  style={{ borderTop: i > 0 ? '1px solid var(--color-separator)' : 'none' }}
+                  className="companion-scoring-value-row"
+                  data-custom={highlightNonStandard && isNonStandard ? 'true' : undefined}
                 >
-                  <div className="flex-1 min-w-0">
-                    <span className="text-sm" style={{ color: val !== 0 ? 'var(--color-label)' : 'var(--color-label-tertiary)' }}>
-                      {stat.label}
-                    </span>
+                  <div className="companion-scoring-value-row__copy">
+                    <span>{stat.label}</span>
                     {stat.note && (
-                      <span className="ml-1.5 text-xs" style={{ color: 'var(--color-label-quaternary)' }}>
-                        {stat.note}
-                      </span>
+                      <small>{stat.note}</small>
+                    )}
+                    {!showActiveOnly && Number(val) !== 0 && !isRosterEligible && (
+                      <small>Configured, but no eligible roster slot</small>
+                    )}
+                    {highlightNonStandard && isNonStandard && (
+                      <span className="companion-scoring-custom-badge">Custom</span>
                     )}
                   </div>
                   <span
-                    className="font-mono text-sm tabular-nums min-w-0 max-w-[70%] text-right"
-                    style={{
-                      color: val < 0
-                        ? 'var(--color-accent-red)'
-                        : val > 0
-                        ? 'var(--color-label)'
-                        : 'var(--color-label-quaternary)',
-                    }}
+                    className="companion-scoring-value-row__value"
+                    data-value-state={val < 0 ? 'negative' : val === 0 ? 'zero' : 'positive'}
                   >
                     {formatScoringSettingValue(stat.key, val)}
                   </span>
@@ -542,9 +919,11 @@ export default function CompanionScoring() {
               );
             })}
           </div>
-        </div>
+        </section>
       ))}
+        </div>
       </div>
+      </>}
     </div>
   );
 }

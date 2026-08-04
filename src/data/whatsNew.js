@@ -257,4 +257,49 @@ export const WHATS_NEW = [
       },
     ],
   },
+  {
+    version: '8.4.0',
+    title: 'Live Scoring & NFL Scores',
+    features: [
+      {
+        id: 'statistics-scores-beta',
+        name: 'Statistics Scores (Beta)',
+        description: 'Follow provider-backed NFL scores while regular-season archive coverage continues to expand.',
+        steps: [{
+          route: { activeTab: 'statistics', statisticsView: 'scores' },
+          anchor: '[data-tour="statistics-view-scores"]',
+          anchorMobile: null,
+          title: 'Statistics Scores · Beta',
+          body: 'Beta means the score experience is ready for broader testing while source coverage expands. Production shows real ESPN preseason data and never substitutes the development-only regular-season slate.',
+          placement: 'auto',
+        }],
+      },
+      {
+        id: 'fantasy-live-alpha',
+        name: 'Fantasy Live (Alpha)',
+        description: 'Replay Sleeper matchups with live scoring, win probability, scoring plays, and player context.',
+        steps: [{
+          route: { activeTab: 'fantasy', companionView: 'live' },
+          anchor: '[data-tour="companion-view-live"]',
+          anchorMobile: null,
+          title: 'Fantasy Live · Alpha',
+          body: 'Alpha means early access: the core live workflow is usable, but availability, model behavior, and layout may change as real-season data expands. Production uses provider-backed data only.',
+          placement: 'auto',
+        }],
+      },
+      {
+        id: 'fantasy-scoring-blueprint',
+        name: 'Fantasy Scoring Blueprint',
+        description: 'Understand your league rules through an accurate summary, position strengths, and real-game scoring examples.',
+        steps: [{
+          route: { activeTab: 'fantasy', companionView: 'scoring' },
+          anchor: '[data-tour="companion-view-scoring"]',
+          anchorMobile: null,
+          title: 'Your Scoring Blueprint',
+          body: 'Scoring now separates offense, kicking, team defense, and special teams, surfaces reception premiums, and itemizes how your league rules score real performances.',
+          placement: 'auto',
+        }],
+      },
+    ],
+  },
 ];

@@ -1228,16 +1228,16 @@ const normalizeEspnAbbr = a => ESPN_ABBR_TO_SLEEPER[a?.toUpperCase()] ?? a?.toUp
  * Fetch one week of the NFL schedule from ESPN's scoreboard.
  * Returns { [sleeperTeamAbbr]: { opp: sleeperTeamAbbr, home: boolean } }
  *
- * Cache strategy: permanently cached (TTL.historical) only when the week has
- * actual game data. Unplayed/future weeks are fetched fresh each session so
- * they pick up real data once games are scheduled and completed.
- * Cache key v2 busts old v1 entries that may have been permanently stored empty
- * (happened when a user first loaded stats before those weeks were played).
+ * Cache strategy: past seasons are permanent; the current/future season uses
+ * the normal one-hour stats TTL so scheduled rows can later acquire official
+ * completion and score metadata. The v7 key drops stale v6 current-season
+ * rows that were stored indefinitely before this distinction existed.
  */
 async function fetchWeekSchedule(season, week) {
   const url = `${ESPN_BASE}/scoreboard?seasontype=2&week=${week}&dates=${season}`;
+  const ttl = Number(season) < CURRENT_SEASON ? TTL.historical : TTL.stats;
   return cachedFetch(
-      `sched_v5_${season}_${week}`,
+    `sched_v7_${season}_${week}`,
     async () => {
       const res = await fetch(url);
       if (!res.ok) return {};
@@ -1269,15 +1269,35 @@ async function fetchWeekSchedule(season, week) {
         // competitor.team.id is the ESPN franchise ID (e.g. "12" for KC) — the
         // same ID embedded in the core API eventlog stats $ref competitor path.
         // competitor.id is a competition-specific ID and does NOT match.
-        const eventDate = event.date?.slice(0, 10) ?? null;
-        map[homeAbbr] = { opp: awayAbbr, home: true,  ptsFor: homePts, ptsAgainst: awayPts, espnEventId: event.id, espnCompetitorId: homeC.team?.id, date: eventDate };
-        map[awayAbbr] = { opp: homeAbbr, home: false, ptsFor: awayPts, ptsAgainst: homePts, espnEventId: event.id, espnCompetitorId: awayC.team?.id, date: eventDate };
+        const kickoff = event.date ?? null;
+        const eventDate = kickoff?.slice(0, 10) ?? null;
+        map[homeAbbr] = {
+          opp: awayAbbr,
+          home: true,
+          ptsFor: homePts,
+          ptsAgainst: awayPts,
+          completed,
+          kickoff,
+          espnEventId: event.id,
+          espnCompetitorId: homeC.team?.id,
+          date: eventDate,
+        };
+        map[awayAbbr] = {
+          opp: homeAbbr,
+          home: false,
+          ptsFor: awayPts,
+          ptsAgainst: homePts,
+          completed,
+          kickoff,
+          espnEventId: event.id,
+          espnCompetitorId: awayC.team?.id,
+          date: eventDate,
+        };
       }
       return map;
     },
-    TTL.historical,
-    // Only permanently cache weeks that have actual game data.
-    // Unplayed weeks return an empty map and will be re-fetched next session.
+    ttl,
+    // Empty future weeks are never cached, so their schedule can appear later.
     (data) => data != null && Object.keys(data).length > 0,
   );
 }
