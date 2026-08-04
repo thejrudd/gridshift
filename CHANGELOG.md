@@ -1200,3 +1200,11 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **App and legal utilities** - Added Feature Request, Privacy & Attributions, MIT license, and privacy-policy access from the app and repository.
 - **Responsive and data fixes** - Corrected Statistics Scores comparison rails and sticky layering, preseason filter classification, Fantasy Scoring examples and rule grouping, Fantasy Live chart geometry and state restoration, and short-viewport sidebar clipping.
 - **Regression coverage** - Expanded unit and Playwright coverage for live timelines, scoring events, scoreboards, scoring guidance, chart geometry, win probability, responsive behavior, and the full historical upgrade tour.
+
+## v8.4.1 - Fantasy Live & Scoring Fixes
+*2026-08-04*
+
+- **Fantasy Scoring reliability** - Restored prior-season production loading for connected Sleeper leagues so Position Strength can build from linked historical data, with clearer load and failure states.
+- **Fantasy Live availability** - Use the active NFL state for the current fantasy week, explain inactive-season and historical-season states, and avoid rendering stale matchup controls when no fantasy matchup is active.
+- **Fantasy Live status** - Tie the live indicator to starter-relevant games in the selected matchup and expose separate server configuration prerequisites for actionable setup feedback.
+- **Regression coverage** - Added unit and Playwright coverage for prior-season production loading, inactive-season availability, live-game relevance, server-side live-scoring configuration, and historical tour navigation.

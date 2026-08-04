@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSleeperBase } from '../../context/SleeperContext';
-import { getLiveMatchups, getWeeklyStats } from '../../api/sleeperApi';
+import { getLiveMatchups, getNflState, getWeeklyStats } from '../../api/sleeperApi';
 import { calcPoints, calcPointsFromTotals } from '../../utils/scoringEngine';
 import { fetchSeasonSchedule } from '../../utils/playerApi.js';
 import { getCompanionInitials } from '../../utils/companionAssetVisuals.js';
@@ -83,8 +83,11 @@ import LivePerformerRail from './live/LivePerformerRail.jsx';
 import { LiveFeedFilter, LiveFeedList } from './live/LiveFeed.jsx';
 import { firstWordOf, lastNameOf } from './live/liveVisuals.js';
 import SeasonHintBanner from '../ui/SeasonHintBanner';
+import {
+  getLiveConfigurationMessage,
+  resolveFantasyLiveAvailability,
+} from '../../utils/fantasyLiveAvailability.js';
 
-const TOTAL_WEEKS = 18;
 const LIVE_REFRESH_MS = 5000;
 const FREE_TIER_REFRESH_MS = 60000;
 const MAX_FEED_EVENTS = 80;
@@ -109,13 +112,6 @@ function useIsDesktop() {
 function formatChipPoints(value) {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric.toFixed(1) : '—';
-}
-
-function clampWeek(value, totalWeeks, fallbackWeek) {
-  const numeric = Number(value);
-  const fallback = Number(fallbackWeek);
-  const base = Number.isFinite(numeric) ? numeric : Number.isFinite(fallback) ? fallback : 1;
-  return Math.max(1, Math.min(totalWeeks, base));
 }
 
 function getRosterName(roster, getUserDisplayName) {
@@ -575,17 +571,17 @@ export default function CompanionLive({ onViewPlayer = null }) {
 
   const isDesktop = useIsDesktop();
 
-  const lastScoredLeg = Number(league?.settings?.last_scored_leg);
-  const totalWeeks = useMemo(() => (
-    Number.isFinite(lastScoredLeg) && lastScoredLeg > 0 ? Math.min(lastScoredLeg + 1, TOTAL_WEEKS) : 17
-  ), [lastScoredLeg]);
-  const rawPlayoffStart = Number(league?.settings?.playoff_week_start);
-  const playoffStart = Number.isFinite(rawPlayoffStart) && rawPlayoffStart > 0 ? rawPlayoffStart : totalWeeks + 1;
-  // Live scoring only ever covers the week being played right now — there is
-  // nothing live about a finished week. Past weeks and their play history
-  // belong to Fantasy Matchups, which owns the historical week picker.
-  const week = clampWeek(playoffStart <= totalWeeks ? playoffStart - 1 : totalWeeks, totalWeeks, 1);
-
+  const [nflState, setNflState] = useState(null);
+  const [nflStateLoading, setNflStateLoading] = useState(true);
+  const [nflStateError, setNflStateError] = useState('');
+  const liveAvailability = useMemo(() => resolveFantasyLiveAvailability({
+    nflState,
+    leagueSeason: league?.season ?? season,
+  }), [league?.season, nflState, season]);
+  // Sleeper's NFL state is the source of truth for the active fantasy week.
+  // A league's last_scored_leg freezes after the season and must not be used
+  // to make an offseason page look live.
+  const week = liveAvailability.week;
   const [matchups, setMatchups] = useState([]);
   const [matchupsLoading, setMatchupsLoading] = useState(false);
   const [matchupIndex, setMatchupIndex] = useState(0);
@@ -702,7 +698,7 @@ export default function CompanionLive({ onViewPlayer = null }) {
     const observer = new ResizeObserver(update);
     observer.observe(node);
     return () => observer.disconnect();
-  }, [isDesktop]);
+  }, [isDesktop, week]);
 
   useEffect(() => {
     if (!isDesktop) {
@@ -723,10 +719,32 @@ export default function CompanionLive({ onViewPlayer = null }) {
       scroller?.removeEventListener('scroll', update);
       window.removeEventListener('resize', update);
     };
-  }, [isDesktop]);
+  }, [isDesktop, week]);
 
   useEffect(() => { loadPlayers(); }, [loadPlayers]);
   useEffect(() => { loadSeasonStats?.(); }, [loadSeasonStats]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setNflStateLoading(true);
+    setNflStateError('');
+    getNflState()
+      .then((payload) => {
+        if (!cancelled) setNflState(payload ?? null);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setNflState(null);
+          setNflStateError(error?.message ?? 'Could not confirm the current NFL week.');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setNflStateLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -744,7 +762,11 @@ export default function CompanionLive({ onViewPlayer = null }) {
   }, []);
 
   useEffect(() => {
-    if (platform !== 'sleeper' || !selectedLeagueId) return;
+    if (platform !== 'sleeper' || !selectedLeagueId || !week) {
+      setMatchups([]);
+      setMatchupsLoading(false);
+      return undefined;
+    }
     let cancelled = false;
     setMatchupsLoading(true);
     loadMatchups(selectedLeagueId, week)
@@ -873,7 +895,7 @@ export default function CompanionLive({ onViewPlayer = null }) {
   liveSnapshotContextRef.current = liveSnapshotContextKey;
 
   const fetchLiveSnapshot = useCallback(async ({ quiet = false } = {}) => {
-    if (!liveStatus?.session?.enabled || platform !== 'sleeper') return;
+    if (!week || !liveStatus?.session?.enabled || platform !== 'sleeper') return;
     const requestId = liveSnapshotRequestRef.current + 1;
     liveSnapshotRequestRef.current = requestId;
     const requestContext = liveSnapshotContextKey;
@@ -1795,8 +1817,14 @@ export default function CompanionLive({ onViewPlayer = null }) {
   const platformLabel = platform === 'espn' ? 'ESPN' : 'Sleeper';
   const liveEnabled = Boolean(liveStatus?.live?.enabled);
   const sessionEnabled = Boolean(liveStatus?.session?.enabled);
+  const liveConfigurationMessage = getLiveConfigurationMessage(liveStatus?.live, platformLabel);
   const mockPlaysEnabled = isMockPlayByPlayEnabled(liveStatus);
-  const liveGameCount = liveGames.filter((game) => isLiveGame(game)).length;
+  // The league week remains the page context all week. The transient live
+  // signal is narrower: only games involving a starter in the matchup being
+  // viewed can light it up.
+  const matchupLiveGameCount = sortRelevantGames(liveGames, matchupTeams)
+    .filter((game) => isLiveGame(game)).length;
+  const hasMatchupGameLive = matchupLiveGameCount > 0;
 
   // The play-built series is the real curve. Without play-by-play (free tier,
   // or before any play lands) the persisted odds history still carries both
@@ -1840,15 +1868,19 @@ export default function CompanionLive({ onViewPlayer = null }) {
   const updatedLabel = lastUpdatedAt
     ? lastUpdatedAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
     : null;
-  const kickerText = statusError
-    ? 'Live scoring unavailable'
-    : !liveEnabled
-      ? 'Live scoring not set up'
-      : !sessionEnabled
-        ? 'Live scoring ready'
-        // The left of the bar already says "Live", so this side only carries
-        // what changed: how many games are running and when we last heard.
-        : `${liveGameCount > 0 ? `${liveGameCount} ${liveGameCount === 1 ? 'game' : 'games'} live` : 'No games live'}${updatedLabel ? ` · ${updatedLabel}` : ' · waiting for data'}`;
+  const kickerText = nflStateLoading
+    ? 'Checking schedule'
+    : !week
+      ? 'No active matchup'
+      : statusError
+        ? 'Live scoring unavailable'
+        : !liveEnabled
+          ? 'Live scoring needs setup'
+          : !sessionEnabled
+            ? 'Live scoring ready'
+            // The left of the bar already says "Live", so this side only carries
+            // what changed: how many games are running and when we last heard.
+            : `${hasMatchupGameLive ? `${matchupLiveGameCount} matchup ${matchupLiveGameCount === 1 ? 'game' : 'games'} live` : 'No matchup games live'}${updatedLabel ? ` · ${updatedLabel}` : ' · waiting for data'}`;
 
   const matchedStarters = sideSummaries.reduce((sum, summary) => sum + summary.matchedCount, 0);
   const totalStarters = sideSummaries.reduce((sum, summary) => sum + summary.rows.length, 0);
@@ -1931,14 +1963,14 @@ export default function CompanionLive({ onViewPlayer = null }) {
 
   return (
     <div className="page-frame-workbench companion-live-shell pb-6">
-      <SeasonHintBanner capability="current-only" feature="Live scoring" className="mx-4 mb-3" />
+      <SeasonHintBanner capability="current-only" feature="Fantasy Live" className="mx-4 mb-3" />
       {(statusError || liveError) && (
         <div className="companion-live-alert" role="status">
           {statusError || liveError}
         </div>
       )}
 
-      {liveEnabled && !sessionEnabled && (
+      {week && liveEnabled && !sessionEnabled && (
         <div className="companion-live-gate">
           <div>
             <span>Live Access</span>
@@ -1976,10 +2008,12 @@ export default function CompanionLive({ onViewPlayer = null }) {
         style={{ '--fl-mchip-sticky-height': `${matchupStickyHeight}px` }}
       >
         <div className="fl-top">
-          <span className="fl-top__l">
-            {sessionEnabled && <span className="fl-live-dot" aria-hidden="true" />}
-            Live · Week {week}
-          </span>
+          {week && (
+            <span className="fl-top__l">
+              {sessionEnabled && hasMatchupGameLive && <span className="fl-live-dot" aria-hidden="true" />}
+              Live · Week {week}
+            </span>
+          )}
           <span className="fl-top__r">{kickerText}</span>
           <button
             type="button"
@@ -1992,7 +2026,7 @@ export default function CompanionLive({ onViewPlayer = null }) {
           </button>
         </div>
 
-        <div ref={matchupRailRef} className="fl-mchip-stick">
+        {week && <div ref={matchupRailRef} className="fl-mchip-stick">
           <CompanionSelectorRail
             label="Matchup"
             ariaLabel="Fantasy matchup"
@@ -2021,23 +2055,18 @@ export default function CompanionLive({ onViewPlayer = null }) {
               </CompanionSelectorButton>
             ))}
           </CompanionSelectorRail>
-        </div>
+        </div>}
 
         {showDetails && (
           <div className="companion-live-details">
             <dl>
-              <div><dt>Data server</dt><dd>{liveEnabled ? 'Ready' : 'Not configured'}</dd></div>
-              <div><dt>This league</dt><dd>{sessionEnabled ? 'Live scoring on' : 'Live scoring off'}</dd></div>
+              <div><dt>Data server</dt><dd>{liveStatus ? (liveEnabled ? 'Ready' : 'Needs setup') : (statusError ? 'Unavailable' : 'Checking…')}</dd></div>
+              <div><dt>This league</dt><dd>{sessionEnabled ? 'Live scoring on' : (liveEnabled ? 'Not enabled' : 'Waiting for server')}</dd></div>
               <div><dt>Snapshot age</dt><dd>{cacheMeta ? `${Math.round((cacheMeta.ageMs ?? 0) / 100) / 10}s` : '—'}</dd></div>
-              <div><dt>Games live</dt><dd>{sessionEnabled ? liveGameCount : '—'}</dd></div>
+              <div><dt>Matchup games live</dt><dd>{sessionEnabled ? matchupLiveGameCount : '—'}</dd></div>
               <div><dt>Live starters</dt><dd>{sessionEnabled && totalStarters ? `${matchedStarters}/${totalStarters}` : '—'}</dd></div>
             </dl>
-            {!liveEnabled && (
-              <p>
-                Live scoring isn't set up on this server yet. See the server setup
-                guide in the project docs.
-              </p>
-            )}
+            {liveConfigurationMessage && <p>{liveConfigurationMessage}</p>}
             {sessionEnabled && (
               <div className="companion-live-details__actions">
                 <button
@@ -2064,10 +2093,16 @@ export default function CompanionLive({ onViewPlayer = null }) {
           </div>
         )}
 
-        {matchupsLoading ? (
+        {nflStateLoading ? (
+          <div className="fl-empty">Checking the current fantasy week…</div>
+        ) : nflStateError ? (
+          <div className="fl-empty">Fantasy Live couldn't confirm the current NFL week. Refresh the page to try again.</div>
+        ) : !week ? (
+          <div className="fl-empty">{liveAvailability.message}</div>
+        ) : matchupsLoading ? (
           <div className="fl-empty">Loading fantasy matchups…</div>
         ) : !currentMatchup ? (
-          <div className="fl-empty">No {platformLabel} matchup is available for this week.</div>
+          <div className="fl-empty">There is no fantasy matchup for this league in Week {week}.</div>
         ) : !leftSide || !rightSide ? (
           // A one-sided matchup is a real state in odd-sized leagues, not a
           // missing matchup — say which it is.

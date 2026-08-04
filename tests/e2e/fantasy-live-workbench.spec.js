@@ -39,10 +39,75 @@ test.beforeEach(async ({ page }) => {
   }));
 });
 
+test('Fantasy Live shows an inactive-season state instead of a stale league week', async ({ page }) => {
+  await page.unroute('https://api.sleeper.app/v1/**');
+  await installTradeFixtures(page, {
+    nflState: {
+      season: '2026',
+      season_type: 'pre',
+      week: 1,
+      leg: 0,
+      display_week: 1,
+      league_season: '2026',
+    },
+  });
+  await page.route('**/api/live/status', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      ok: true,
+      live: {
+        enabled: false,
+        apiKeyReady: true,
+        leagueScopeEnabled: false,
+        cookieSigningReady: true,
+      },
+      session: { enabled: false },
+    }),
+  }));
+
+  await page.goto('/fantasy/live');
+
+  await expect(page.locator('.fl-top__l')).toHaveCount(0);
+  await expect(page.getByText('No active matchup', { exact: true })).toBeVisible();
+  await expect(page.getByText('There is no fantasy matchup this week. Fantasy Live begins with the NFL regular season.', { exact: true })).toBeVisible();
+  await expect(page.getByText(/Live · Week/)).toHaveCount(0);
+  await expect(page.getByText('Matchup', { exact: true })).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Live scoring options' }).click();
+  await expect(page.getByText('Live scoring needs an allowed Sleeper league ID.', { exact: true })).toBeVisible();
+});
+
+test('Fantasy Live keeps the league week visible without lighting up for an unrelated live game', async ({ page }) => {
+  const unrelatedLiveGame = liveGame('game-cle-lv', 'CLE', 'LV', 10, 7, '2026-10-18T17:00:00.000Z');
+  await page.route('**/api/live/games**', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ ok: true, data: [unrelatedLiveGame], cache: { ageMs: 120 } }),
+  }));
+  await page.route('**/api/live/player-stats**', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ ok: true, games: { [unrelatedLiveGame.id]: [] } }),
+  }));
+
+  await page.goto('/fantasy/live');
+
+  await expect(page.getByText('Live · Week 7', { exact: true })).toBeVisible();
+  await expect(page.locator('.fl-live-dot')).toHaveCount(0);
+  await expect(page.getByText(/No matchup games live/)).toBeVisible();
+
+  await page.getByRole('button', { name: 'Live scoring options' }).click();
+  await expect(page.getByText('Matchup games live', { exact: true })).toBeVisible();
+  await expect(page.locator('.companion-live-details dd').filter({ hasText: /^0$/ })).toHaveCount(1);
+});
+
 test('desktop Live keeps the feed and chart side by side with synchronized replay', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 960 });
   await page.goto('/fantasy/live');
 
+  await expect(page.locator('.fl-live-dot')).toHaveCount(1);
+  await expect(page.getByText(/4 matchup games live/)).toBeVisible();
   await expect.poll(() => page.locator('.fl-play').count()).toBeGreaterThan(8);
   await expect.poll(() => page.locator('.fl-chart__mark').count()).toBeGreaterThan(2);
   await expect(page.locator('.fl-desk__rail')).toHaveCount(0);

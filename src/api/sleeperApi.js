@@ -48,6 +48,10 @@ export function getLeagueUsers(leagueId) {
   return get(`/league/${leagueId}/users`);
 }
 
+export function getNflState() {
+  return getLive('/state/nfl');
+}
+
 export function getMatchups(leagueId, week) {
   return get(`/league/${leagueId}/matchups/${week}`);
 }

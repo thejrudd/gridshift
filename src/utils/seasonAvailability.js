@@ -42,7 +42,9 @@ export function getSeasonHint({ capability = 'historical-ok', isEmpty = false, f
     return {
       kind: 'current-only',
       targetSeason: target,
-      message: `${feature} follows the current season — you're viewing ${seasonKey}.`,
+      message: feature === 'Fantasy Live'
+        ? `Fantasy Live is only available for the current league year with active fantasy matchups. You're viewing ${seasonKey}.`
+        : `${feature} follows the current season — you're viewing ${seasonKey}.`,
     };
   }
 

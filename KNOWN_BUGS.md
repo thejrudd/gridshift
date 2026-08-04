@@ -16,6 +16,10 @@ Open bugs are listed first, deferred work next, fixed bugs below. Add new entrie
 
 | Bug | Fixed In |
 |-----|----------|
+| The What's New tour could reload the current route when advancing because its navigation buttons did not declare a non-submit button type, interrupting the historical tour. | v8.4.1 |
+| Fantasy Scoring could report that prior-season production was unavailable even when the connected Sleeper league had a linked previous season with enough data to calculate Position Strength. | v8.4.1 |
+| Fantasy Live could derive its “current” week from a league's last scored matchup, so offseason and other inactive periods remained stuck on a stale week and showed provider-specific missing-matchup copy instead of explaining that no fantasy matchup was active. | v8.4.1 |
+| Fantasy Live's red status pulse followed whether a live-data browser session was enabled instead of whether the selected fantasy matchup had a starter-relevant NFL game currently in progress. | v8.4.1 |
 | The What's New tour E2E gate can exit before Playwright starts because the dev launcher still sets retired `ESPN_API_*` host/port variables while the API server reads `GRIDSHIFT_API_*`, causing the test sidecar to collide with the default port. | v8.4 |
 | Fantasy Scoring's “See it scored” curated player samples can render initials instead of player photos because several samples omit their ESPN player IDs. | v8.4 |
 | Fantasy Scoring crashes while rendering because `CompanionScoring` uses `CompanionSelectorRail` without importing the shared component. | v8.4 |

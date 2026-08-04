@@ -30,6 +30,14 @@ export async function installTradeFixtures(page, overrides = {}) {
   const fixtureWinnersBracket = overrides.winnersBracket ?? [];
   const fixtureLosersBracket = overrides.losersBracket ?? [];
   const fixtureMatchupsForWeek = overrides.matchupsForWeek ?? matchupsForWeek;
+  const fixtureNflState = overrides.nflState ?? {
+    season: TEST_SEASON,
+    season_type: 'regular',
+    week: 7,
+    leg: 7,
+    display_week: 7,
+    league_season: TEST_SEASON,
+  };
 
   const installedVersion = Object.prototype.hasOwnProperty.call(overrides, 'installedVersion')
     ? overrides.installedVersion
@@ -52,6 +60,7 @@ export async function installTradeFixtures(page, overrides = {}) {
     const url = new URL(route.request().url());
     const path = url.pathname;
 
+    if (path === '/v1/state/nfl') return json(route, fixtureNflState);
     if (path === '/v1/players/nfl') return json(route, fixturePlayers);
     if (path === `/v1/user/${sleeperUser.username}`) return json(route, sleeperUser);
     if (path.startsWith(`/v1/user/${sleeperUser.user_id}/leagues/nfl/`)) {
@@ -89,8 +98,9 @@ export async function installTradeFixtures(page, overrides = {}) {
       if (suffix === 'traded_picks') return json(route, fixtureDraftTradedPicks);
       return json(route, fixtureDrafts.find((item) => String(item.draft_id) === draftId) ?? {});
     }
-    if (path.startsWith(`/v1/stats/nfl/regular/${TEST_SEASON}/`)) {
-      const week = Number(path.split('/').at(-1));
+    const statsPathMatch = path.match(/^\/v1\/stats\/nfl\/regular\/(\d{4})\/(\d+)$/);
+    if (statsPathMatch && [TEST_SEASON, String(Number(TEST_SEASON) - 1)].includes(statsPathMatch[1])) {
+      const week = Number(statsPathMatch[2]);
       return json(route, weeklyStatsForWeek(week));
     }
 

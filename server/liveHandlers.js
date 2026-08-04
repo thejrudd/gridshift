@@ -123,6 +123,7 @@ export function getLiveConfigStatus() {
     provider: 'balldontlie',
     leagueProvider: 'sleeper',
     tier: process.env.GRIDSHIFT_BDL_TIER || null,
+    apiKeyReady: hasApiKey,
     allowedLeagueCount: allowedLeagueKeys.length,
     leagueScopeEnabled: allowedLeagueKeys.length > 0,
     accessCodeRequired: hasAccessCode,

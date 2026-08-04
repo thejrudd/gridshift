@@ -289,6 +289,7 @@ export default function TourOverlay({ entries, navigate, currentRoute, context =
             </div>
             <div className="mt-3 flex items-center justify-between gap-3">
               <button
+                type="button"
                 onClick={finish}
                 className="rounded-lg px-3 py-2 text-sm font-semibold"
                 style={{ color: 'var(--color-label-secondary)' }}
@@ -296,6 +297,7 @@ export default function TourOverlay({ entries, navigate, currentRoute, context =
                 Skip tour
               </button>
               <button
+                type="button"
                 onClick={advance}
                 className="rounded-lg px-4 py-2 text-sm font-semibold"
                 style={{ background: 'var(--color-signature)', color: 'var(--color-signature-fg)' }}
@@ -312,6 +314,7 @@ export default function TourOverlay({ entries, navigate, currentRoute, context =
           style={{ background: 'rgba(0, 0, 0, 0.4)' }}
         >
           <button
+            type="button"
             onClick={finish}
             className="rounded-lg px-4 py-2 text-sm font-semibold"
             style={{ background: 'var(--color-bg-secondary)', color: 'var(--color-label)', border: '1px solid var(--color-separator)' }}

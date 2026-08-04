@@ -190,6 +190,26 @@ function buildEspnPlayerPoolFilter(offset = 0) {
     },
   };
 }
+
+function hasUsableSeasonStats(seasonStats) {
+  return Object.values(seasonStats ?? {}).some((stats) => {
+    const gamesPlayed = Number(stats?.gp ?? stats?.games_played ?? stats?.gamesPlayed);
+    return Number.isFinite(gamesPlayed) && gamesPlayed > 0;
+  });
+}
+
+function normalizeSeasonStatsPackage(pkg, seasonKey) {
+  if (!isCacheableWeeklyStats(pkg?.weeklyStats)) return null;
+  const seasonStats = hasUsableSeasonStats(pkg?.seasonStats)
+    ? pkg.seasonStats
+    : aggregateSeasonStats(pkg.weeklyStats);
+  if (!hasUsableSeasonStats(seasonStats)) return null;
+  return {
+    ...pkg,
+    season: String(pkg?.season ?? seasonKey),
+    seasonStats,
+  };
+}
 	
 export function FantasyProvider({ children }) {
   const persisted = loadPersistedState();
@@ -616,7 +636,7 @@ export function FantasyProvider({ children }) {
   // ── Player DB ───────────────────────────────────────────────────────────────
 
   const loadPlayers = useCallback(async () => {
-    if (players) return players;
+    if (players && Object.keys(players).length > 0) return players;
     if (platform === 'espn') return {};
     const data = await getAllPlayers();
     setPlayers(data);
@@ -814,17 +834,24 @@ export function FantasyProvider({ children }) {
     const seasonKey = String(targetSeason ?? season ?? '').trim();
     if (!seasonKey) return null;
 
-    if (seasonKey === String(season) && weeklyStats && seasonStats && scheduleMap) {
-      return {
+    if (seasonKey === String(season)) {
+      const selectedSeasonPackage = normalizeSeasonStatsPackage({
         season: seasonKey,
         weeklyStats,
         seasonStats,
         scheduleMap,
-      };
+      }, seasonKey);
+      if (selectedSeasonPackage) return selectedSeasonPackage;
     }
 
     const cached = statsBySeason[seasonKey];
-    if (cached) return cached;
+    const normalizedCached = normalizeSeasonStatsPackage(cached, seasonKey);
+    if (normalizedCached) {
+      if (normalizedCached.seasonStats !== cached.seasonStats) {
+        setStatsBySeason((current) => ({ ...current, [seasonKey]: normalizedCached }));
+      }
+      return normalizedCached;
+    }
 
     const inFlight = statsLoadBySeasonRef.current.get(seasonKey);
     if (inFlight) return inFlight;
@@ -833,28 +860,44 @@ export function FantasyProvider({ children }) {
       // Persistent cache (IndexedDB) — completed seasons never expire.
       const isCompletedSeason = Number(seasonKey) < Number(AVAILABLE_SLEEPER_SEASONS[0]);
       const cachedEntry = await getCachedSeasonStats(`sleeper:${seasonKey}`);
-      if (cachedEntry?.weeklyStats && (isCompletedSeason || Date.now() - cachedEntry.ts < CURRENT_SEASON_TTL)) {
-        const cachedPackage = {
+      if (isCompletedSeason || Date.now() - Number(cachedEntry?.ts ?? 0) < CURRENT_SEASON_TTL) {
+        const cachedPackage = normalizeSeasonStatsPackage({
           season: seasonKey,
-          weeklyStats: cachedEntry.weeklyStats,
-          seasonStats: cachedEntry.seasonStats,
-          scheduleMap: cachedEntry.scheduleMap ?? null,
-        };
-        setStatsBySeason((current) => ({ ...current, [seasonKey]: cachedPackage }));
-        return cachedPackage;
+          weeklyStats: cachedEntry?.weeklyStats,
+          seasonStats: cachedEntry?.seasonStats,
+          scheduleMap: cachedEntry?.scheduleMap ?? null,
+        }, seasonKey);
+        if (cachedPackage) {
+          setStatsBySeason((current) => ({ ...current, [seasonKey]: cachedPackage }));
+          return cachedPackage;
+        }
       }
 
-      const failedWeeks = [];
-      const [weekly, schedule] = await Promise.all([
+      let failedWeeks = [];
+      let [weekly, schedule] = await Promise.all([
         getAllWeeklyStats(seasonKey, 18, undefined, failedWeeks),
         fetchSeasonSchedule(seasonKey).catch(() => null),
       ]);
-      const nextPackage = {
+
+      // A transient provider failure previously left an empty package in memory,
+      // which looked like a completed load and permanently suppressed retries.
+      if (!isCacheableWeeklyStats(weekly)) {
+        failedWeeks = [];
+        [weekly, schedule] = await Promise.all([
+          getAllWeeklyStats(seasonKey, 18, undefined, failedWeeks),
+          schedule ? Promise.resolve(schedule) : fetchSeasonSchedule(seasonKey).catch(() => null),
+        ]);
+      }
+
+      const nextPackage = normalizeSeasonStatsPackage({
         season: seasonKey,
         weeklyStats: weekly,
         seasonStats: aggregateSeasonStats(weekly),
         scheduleMap: schedule,
-      };
+      }, seasonKey);
+      if (!nextPackage) {
+        throw new Error(`Sleeper did not return usable ${seasonKey} player production.`);
+      }
       setStatsBySeason((current) => ({ ...current, [seasonKey]: nextPackage }));
       if (isCacheableWeeklyStats(weekly, failedWeeks.length)) {
         void putCachedSeasonStats(`sleeper:${seasonKey}`, { ...nextPackage, enhanced: false });

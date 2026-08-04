@@ -138,6 +138,25 @@ test('Fantasy scoring preview Hold keeps Rankings scroll position fixed', async 
   await expectContentScrollNear(contentArea, beforeScrollTop);
 });
 
+test('Fantasy scoring builds Position Strength from prior-season production', async ({ page }) => {
+  const emptyHistoricalResponses = new Set();
+  await page.route('**/stats/nfl/regular/2025/*', async (route) => {
+    const url = route.request().url();
+    if (!emptyHistoricalResponses.has(url)) {
+      emptyHistoricalResponses.add(url);
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+      return;
+    }
+    await route.fallback();
+  });
+
+  await page.goto('/fantasy/scoring');
+
+  await expect(page.getByText('2025 production · current rules', { exact: true })).toBeVisible();
+  await expect.poll(async () => page.locator('.companion-scoring-position-strength__row').count()).toBeGreaterThan(0);
+  await expect(page.locator('.companion-scoring-position-strength__empty')).toHaveCount(0);
+});
+
 test('Heatmap mobile keeps filters collapsed above the grid', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 568 });
   await page.goto('/fantasy/heatmap');

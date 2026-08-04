@@ -70,7 +70,7 @@ Any change to a starter's projected number belongs in `resolveStarterProjection(
 
 `src/data/liveWinProbabilityModel.js` is generated from the local historical calibration workflow and is the only production coefficient contract. Do not ship league IDs, raw Sleeper payloads, or nflverse rows. Unfinished probabilities stay inside the model's open interval and render with tail labels; exact 0%/100% requires every starter to be officially final or on a bye proved by a complete schedule, followed by a fresh no-store Sleeper matchup response containing both final team totals and every starter's official points. Incomplete final responses retry quietly and remain projected.
 
-The week is derived, not selectable: Fantasy Live always shows the week currently being played. Historical weeks and their play history belong to Fantasy Matchups (`CompanionMatchup.jsx`, which owns `MatchupWeekPickerModal`). Do not add a week picker back to Live.
+The week is derived from Sleeper's `/state/nfl` response, not selectable: Fantasy Live shows a matchup only while Sleeper reports an active NFL regular-season week. That league-week label remains visible between NFL game windows; the red live pulse and “matchup games live” count appear only when a game involving a starter in the currently selected fantasy matchup is in progress. Preseason, offseason, and historical-league states must stay weekless rather than falling back to the league's frozen `last_scored_leg`. Historical weeks and their play history belong to Fantasy Matchups (`CompanionMatchup.jsx`, which owns `MatchupWeekPickerModal`). Do not add a week picker back to Live.
 
 ## Statistics Scores
 

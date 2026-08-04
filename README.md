@@ -120,11 +120,11 @@ Hosted owners can enable paid live scoring for selected Sleeper leagues by setti
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) + optional Node API sidecar |
 
-## What's New in v8.4.0
+## What's New in v8.4.1
 
-- **Fantasy Live (Alpha)** — Follow enabled Sleeper matchups through provider-backed scores, win probability, replay, scoring plays, and player drilldowns. Alpha means the core workflow is available early and may continue changing as real-season coverage expands.
-- **Statistics Scores (Beta)** — Explore live ESPN preseason scoreboards now. Beta means the experience is ready for broader testing while production regular-season archives are still being completed; development fixtures never appear in production.
-- **Fantasy Scoring Blueprint** — See reception premiums, position strength, detailed league rules, and itemized real-game scoring examples in one clearer workspace.
+- **Fantasy Scoring reliability** — Prior-season production now loads consistently for linked Sleeper leagues, keeping Position Strength available when the required historical data exists.
+- **Fantasy Live reliability** — Inactive-season messaging, current-week selection, server setup feedback, and matchup-specific live status now reflect the actual fantasy context.
+- **Tour reliability** — Historical What's New tour navigation remains in place while moving between lazy-loaded league views.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 

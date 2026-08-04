@@ -354,6 +354,7 @@ export default function CompanionScoring() {
   const [pickerLoading, setPickerLoading] = useState(false);
   const [pickerError, setPickerError] = useState(null);
   const [positionStrengthLoading, setPositionStrengthLoading] = useState(false);
+  const [positionStrengthError, setPositionStrengthError] = useState(null);
   const [positionStrengthSort, setPositionStrengthSort] = useState({ key: 'top8', direction: 'desc' });
   const effectiveScoringSettings = activeScoringSettings ?? scoringSettings;
   const settings = getFlatScoringSettings(effectiveScoringSettings);
@@ -365,6 +366,8 @@ export default function CompanionScoring() {
   const productionStats = platform === 'sleeper' && productionSeason
     ? statsBySeason?.[productionSeason]?.seasonStats
     : null;
+  const hasProductionStats = Object.keys(productionStats ?? {}).length > 0;
+  const hasPlayers = Object.keys(players ?? {}).length > 0;
   const scoringProfile = useMemo(
     () => getScoringProfile(effectiveScoringSettings, displayRosterPositions),
     [effectiveScoringSettings, displayRosterPositions],
@@ -422,16 +425,27 @@ export default function CompanionScoring() {
   }, []);
 
   useEffect(() => {
-    if (platform !== 'sleeper' || !productionSeason || productionStats) return undefined;
+    if (platform !== 'sleeper' || !productionSeason) return undefined;
+    if (hasProductionStats && hasPlayers) {
+      setPositionStrengthLoading(false);
+      setPositionStrengthError(null);
+      return undefined;
+    }
     let cancelled = false;
     setPositionStrengthLoading(true);
-    loadStatsForSeason(productionSeason)
-      .catch(() => null)
+    setPositionStrengthError(null);
+    Promise.all([
+      hasProductionStats ? Promise.resolve() : loadStatsForSeason(productionSeason),
+      hasPlayers ? Promise.resolve() : loadPlayers(),
+    ])
+      .catch((error) => {
+        if (!cancelled) setPositionStrengthError(error);
+      })
       .finally(() => {
         if (!cancelled) setPositionStrengthLoading(false);
       });
     return () => { cancelled = true; };
-  }, [loadStatsForSeason, platform, productionSeason, productionStats]);
+  }, [hasPlayers, hasProductionStats, loadPlayers, loadStatsForSeason, platform, productionSeason]);
   useEffect(() => {
     if (platform !== 'sleeper' || players) return;
     void loadPlayers().catch(() => null);
@@ -647,7 +661,11 @@ export default function CompanionScoring() {
               </div>
             ) : (
               <p className="companion-scoring-position-strength__empty">
-                {positionStrengthLoading ? 'Loading prior-season production…' : 'Prior-season production is not available for this league yet.'}
+                {positionStrengthLoading
+                  ? 'Loading prior-season production…'
+                  : positionStrengthError
+                    ? `Sleeper could not load ${productionSeason} production. Refresh the page to try again.`
+                    : `${productionSeason ?? 'Prior-season'} production does not contain enough eligible player data for this league.`}
               </p>
             )}
           </section>
