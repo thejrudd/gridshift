@@ -13,6 +13,7 @@ export default function Sidebar({
   darkMode,
   onToggleDarkMode,
   onDisplay,
+  onLegal,
   onAppTour,
   onGuide,
   onExportJSON,
@@ -28,24 +29,18 @@ export default function Sidebar({
   onToggleCollapse,
   leagueDisabled = false,
 }) {
-  const { platform, isConnected, disconnect } = useSleeperLeague();
-  const tradeDisabled = platform === 'espn';
+  const { isConnected, disconnect } = useSleeperLeague();
+  const tradeDisabled = false;
 
   return (
     <aside className="app-sidebar">
       {/* Brand — hidden when collapsed */}
       <div className="sidebar-brand" style={{ paddingRight: 44, position: 'relative' }}>
-        <div
-          className="font-display font-bold leading-none"
-          style={{ fontSize: '28px', letterSpacing: '0.08em' }}
-        >
+        <div className="sidebar-brand__wordmark font-display font-bold leading-none">
           <span style={{ color: 'var(--color-label)' }}>GRID</span>
           <span style={{ color: 'var(--color-label-secondary)' }}>SHIFT</span>
         </div>
-        <div
-          className="font-semibold mt-2"
-          style={{ fontSize: '11px', color: 'var(--color-label-tertiary)', letterSpacing: '0.06em' }}
-        >
+        <div className="sidebar-brand__season font-semibold">
           2026 SEASON
         </div>
         {favoriteTeam && (
@@ -260,7 +255,7 @@ export default function Sidebar({
           </>
         )}
         {(activeTab === 'fantasy' || activeTab === 'league' || activeTab === 'trade' || activeTab === 'draft') && isConnected && (
-          <SidebarAction label={`Disconnect ${platform === 'espn' ? 'ESPN' : 'Sleeper'}`} onClick={disconnect} />
+          <SidebarAction label="Disconnect Sleeper" onClick={disconnect} />
         )}
         {isInstallable && !isInstalled && (
           <SidebarAction label="Install App" onClick={onInstall} />
@@ -352,6 +347,12 @@ export default function Sidebar({
           Support GridShift
         </a>
         <a
+          href="mailto:featurerequest@gridshiftapp.com"
+          className="sidebar-action-item"
+        >
+          Feature Request
+        </a>
+        <a
           href="https://github.com/thejrudd/nfl-predictor"
           target="_blank"
           rel="noopener noreferrer"
@@ -359,11 +360,17 @@ export default function Sidebar({
         >
           About / GitHub
         </a>
+        <button
+          onClick={onLegal}
+          className="sidebar-action-item"
+        >
+          Privacy & Attributions
+        </button>
         <div
-          className="px-5 py-3 text-xs"
+          className="sidebar-version"
           style={{ color: 'var(--color-label-tertiary)' }}
         >
-          v8.3.1
+          v8.4.0
         </div>
       </div>
     </aside>
@@ -382,7 +389,7 @@ function SidebarProgressBar({ label, value, total, complete }) {
 
   return (
     <div className="sidebar-progress-metric" aria-label={`${label} progress`}>
-      <div className="flex items-center justify-between mb-1.5">
+      <div className="sidebar-progress-metric__header flex items-center justify-between">
         <span
           className="text-xs font-semibold uppercase tracking-widest"
           style={{ color: 'var(--color-label-tertiary)', letterSpacing: '0.08em' }}

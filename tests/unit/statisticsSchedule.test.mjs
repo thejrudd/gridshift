@@ -85,6 +85,17 @@ test('international schedule detection ignores U.S. neutral-site games', () => {
     neutralSite: true,
     location: 'Tottenham Hotspur Stadium, London, England',
   }), true);
+
+  assert.equal(isInternationalScheduleGame({
+    neutralSite: true,
+    location: 'Tom Benson Hall of Fame Stadium',
+  }), false);
+
+  assert.equal(isInternationalScheduleGame({
+    neutralSite: true,
+    location: 'Allianz Arena, Munich, BY, Germany',
+    venueCountry: 'Germany',
+  }), true);
 });
 
 test('international schedule rows include only non-U.S. venues in kickoff order', () => {
@@ -110,6 +121,20 @@ test('prime time schedule detection uses Eastern evening kickoffs', () => {
   }), false);
 
   assert.equal(isPrimeTimeScheduleGame({ kickoff: null }), false);
+});
+
+test('preseason games are never classified as prime time', () => {
+  assert.equal(isPrimeTimeScheduleGame({
+    phase: 'preseason',
+    kickoff: '2026-08-14T00:00:00Z',
+    isNationalBroadcast: true,
+  }), false);
+
+  assert.equal(isPrimeTimeScheduleGame({
+    phase: 'preseason',
+    kickoff: '2026-08-14T00:00:00Z',
+    isNationalBroadcast: false,
+  }), false);
 });
 
 test('prime time schedule rows include only evening games in kickoff order', () => {

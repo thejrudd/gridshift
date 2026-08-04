@@ -1,4 +1,4 @@
-import { normalizeIDPPos } from './idpEngine';
+import { normalizeIDPPos } from './idpEngine.js';
 
 const BASE_FILTERS = ['QB', 'RB', 'WR', 'TE', 'K'];
 const IDP_FILTERS = ['DL', 'LB', 'DB'];

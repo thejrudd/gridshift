@@ -6,7 +6,7 @@
 - **Dark mode**: `.dark` class on `<html>`
 - **PWA**: vite-plugin-pwa + nginx in Docker
 - **Active branch**: `main` — all work ships directly here
-- **Current version**: v8.1
+- **Current version**: v8.4.0
 
 ## API Secret Handling
 - Any BALLDONTLIE, CFBD/CollegeFootballData, or similar paid API key must be treated as a secret and must never be committed into the repo or exposed in the client bundle.
@@ -57,6 +57,7 @@ Critical rules (apply to every UI change):
 - Display density uses the persisted `gridshift-display-size` preference and `data-display-size="compact|comfortable|large"` on `<html>`, with Comfortable as the fallback. Apply it before React renders; never infer DPI or use CSS `zoom`/whole-app transforms.
 - Use the semantic `--type-*`, `--control-height`, and `--density-space-*` tokens instead of new fixed typography or control-density values. Meaningful labels start at `--type-label`; `--type-micro` is reserved for decorative badges and overlines. Inputs remain at least `16px`, and coarse-pointer controls remain at least `44px`.
 - Route roots must use the appropriate centered frame tier: `page-frame-readable` (`1200px`) for settings/detail content, `page-frame-data` (`1600px`) for lists and standings, or `page-frame-workbench` (`1920px`) for multi-panel tools. Keep identity, primary metrics, and actions in predictable columns rather than stretching rows across ultrawide displays.
+- Sticky controls inside an independently scrolling content area must paint an opaque surface through the scrollport's top padding or offset (use an isolated wrapper with a background shield when needed). Scrolled rows, cards, charts, and event text must never remain visible above or behind sticky tabs, filters, or headers.
 - Centered display/settings modals must keep headers and footers fixed within the modal while an inner content region scrolls. On narrow screens and Large display size, primary actions must remain visible and mobile navigation labels must not truncate.
 - Prefer fluid, container-aware responsive layouts over fixed pixel density. Use responsive grids, `clamp()`, `minmax()`, container-aware wrapping, flexible gaps, and viewport-sensitive spacing. Treat `44px` as a minimum comfortable touch-target floor, not a fixed sizing system. Fixed dimensions are acceptable only for documented shell constraints, fixed-format media/aspect ratios, or explicit feature contracts.
 - Companion and Trade-adjacent player/asset selector rows must use the shared row system documented in `docs/Companion Shared Rows.md`. Do not recreate local team-gradient, logo/avatar fallback, status badge, selector button, or gradient contrast logic in feature files.
@@ -124,7 +125,7 @@ For an upgrade spanning multiple feature versions (for example v8.0 → v8.2), v
 - If the version number is unclear, ask the user before writing the entry.
 
 ### GitHub Release Notes Format
-- Whenever the user asks for release notes, provide them in Markdown format.
+- Whenever the user asks for release notes, provide the raw Markdown source in a fenced `markdown` code block so it can be copied without rendered formatting.
 - When generating GitHub release notes, use Markdown with the release title as `# vX.Y[.Z] - Short Release Theme`.
 - Organize notes in this order: `## New Features`, then `## Improvements`, then `## Bug Fixes`.
 - Focus the notes on the changes included between the previous released version and the requested release tag/version.

@@ -6,6 +6,7 @@ export default function ActionSheet({
   activeTab,
   onGuide,
   onDisplay,
+  onLegal,
   onAppTour,
   onExportImage,
   onExportJSON,
@@ -98,6 +99,8 @@ export default function ActionSheet({
           />
           <Divider />
           <ActionRow label="Display" onClick={onDisplay} />
+          <Divider />
+          <ActionRow label="Privacy & Attributions" onClick={onLegal} />
           <Divider />
           <ActionLink
             label="Support GridShift"

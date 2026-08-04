@@ -62,10 +62,12 @@ const OnboardingWelcomeModal = lazy(() => import('./components/OnboardingWelcome
 const TourOverlay = lazy(() => import('./components/tour/TourOverlay'));
 const PlayerBrowser = lazy(() => import('./components/PlayerBrowser'));
 const StatisticsSchedule = lazy(() => import('./components/StatisticsSchedule'));
+const StatisticsScores = lazy(() => import('./components/statistics/scores/StatisticsScores'));
 const StatisticsStandings = lazy(() => import('./components/StatisticsStandings'));
 const StatisticsGame = lazy(() => import('./components/StatisticsGame'));
 const FavoriteTeamPicker = lazy(() => import('./components/FavoriteTeamPicker'));
 const DisplaySettingsModal = lazy(() => import('./components/DisplaySettingsModal'));
+const LegalModal = lazy(() => import('./components/LegalModal'));
 const CompanionConnect = lazy(() => import('./components/companion/CompanionConnect'));
 const CompanionRankings = lazy(() => import('./components/companion/CompanionRankings'));
 const CompanionLive = lazy(() => import('./components/companion/CompanionLive'));
@@ -544,6 +546,7 @@ function AppInner() {
   const [actionSheetOpen, setActionSheetOpen] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
   const [displaySettingsOpen, setDisplaySettingsOpen] = useState(false);
+  const [legalOpen, setLegalOpen] = useState(false);
   const [tourActive, setTourActive] = useState(false);
   const [tourDemoMode, setTourDemoMode] = useState(null);
   const { needRefresh, applyUpdate } = useServiceWorkerUpdate();
@@ -612,8 +615,8 @@ function AppInner() {
   const leagueView = appRoute.leagueView;
   const tradeView = appRoute.tradeView;
   const scoutView = appRoute.scoutView;
-  const tradeDisabledForPlatform = platform === 'espn';
-  const leagueDisabledForPlatform = platform === 'espn';
+  const tradeDisabledForPlatform = false;
+  const leagueDisabledForPlatform = false;
   const draftView = appRoute.draftView;
   const draftSleeperDraftId = appRoute.sleeperDraftId;
   const draftStatusOverrideId = getDevSleeperDraftIdOverride(draftSleeperDraftId);
@@ -936,6 +939,10 @@ function AppInner() {
     }
     if (view === 'standings') {
       applyRoute({ activeTab: 'statistics', statisticsView: 'standings' });
+      return;
+    }
+    if (view === 'scores') {
+      applyRoute({ activeTab: 'statistics', statisticsView: 'scores' });
       return;
     }
     applyRoute({ activeTab: 'statistics', statisticsView: 'browser' });
@@ -1296,6 +1303,7 @@ function AppInner() {
         darkMode={darkMode}
         onToggleDarkMode={toggleDarkMode}
         onDisplay={() => setDisplaySettingsOpen(true)}
+        onLegal={() => setLegalOpen(true)}
         onGuide={() => setGuideOpen(true)}
         onExportJSON={handleExportJSON}
         onImportJSON={handleImportClick}
@@ -1454,7 +1462,7 @@ function AppInner() {
         {activeTab === 'statistics' && (
           <div className="season-subnav">
             <StatisticsSubNav
-              activeView={statisticsView === 'schedule' || statisticsView === 'standings' ? statisticsView : 'stats'}
+              activeView={['schedule', 'scores', 'standings'].includes(statisticsView) ? statisticsView : 'stats'}
               onViewChange={navigateStatisticsSubView}
             />
           </div>
@@ -1514,6 +1522,12 @@ function AppInner() {
             </Suspense>
           )}
 
+          {activeTab === 'statistics' && statisticsView === 'scores' && (
+            <Suspense fallback={<SectionLoading label="Loading scores" />}>
+              <StatisticsScores />
+            </Suspense>
+          )}
+
           {activeTab === 'statistics' && statisticsView === 'standings' && (
             <Suspense fallback={<SectionLoading label="Loading standings" />}>
               <StatisticsStandings
@@ -1534,7 +1548,7 @@ function AppInner() {
             </Suspense>
           )}
 
-          {activeTab === 'statistics' && statisticsView !== 'schedule' && statisticsView !== 'standings' && statisticsView !== 'game' && (
+          {activeTab === 'statistics' && statisticsView !== 'schedule' && statisticsView !== 'scores' && statisticsView !== 'standings' && statisticsView !== 'game' && (
             <Suspense fallback={<SectionLoading label="Loading statistics" />}>
             <PlayerBrowser
               teams={scheduleData.teams}
@@ -1852,6 +1866,10 @@ function AppInner() {
             setActionSheetOpen(false);
             setDisplaySettingsOpen(true);
           }}
+          onLegal={() => {
+            setActionSheetOpen(false);
+            setLegalOpen(true);
+          }}
           onExportImage={handleExportImage}
           onExportJSON={handleExportJSON}
           onImportJSON={handleImportClick}
@@ -1954,6 +1972,11 @@ function AppInner() {
           />
         </Suspense>
       )}
+      {legalOpen && (
+        <Suspense fallback={<ModalLoading label="Loading legal information" />}>
+          <LegalModal onClose={() => setLegalOpen(false)} />
+        </Suspense>
+      )}
 
       {leagueSwitcherOpen && (
         <div
@@ -1976,7 +1999,7 @@ function AppInner() {
                   Switch League
                 </div>
                 <div className="mt-1 text-sm" style={{ color: 'var(--color-label-secondary)' }}>
-                  Choose a {platform === 'espn' ? 'ESPN' : 'Sleeper'} season and league.
+                  Choose a Sleeper season and league.
                 </div>
               </div>
               <button
@@ -1998,7 +2021,6 @@ function AppInner() {
               <Suspense fallback={<SectionLoading label="Loading leagues" />}>
                 <CompanionConnect
                   forceLeaguePicker
-                  allowEspnConnect={false}
                   onLeagueSelected={() => setLeagueSwitcherOpen(false)}
                 />
               </Suspense>

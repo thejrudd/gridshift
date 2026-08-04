@@ -7,11 +7,6 @@ New features requested or planned should be added here.
 
 ## Planned Versions
 
-### v8.4 - Live Fantasy Scoring & Team Tendencies
-
-- Add live fantasy scoring, a live scoring feed, matchup context, and win probability while keeping paid data server-side and Fantasy Live allowlisted.
-- Add team offense/defense rankings, sortable league/conference/division tables, fantasy matchup context, and the usage-based projection model. See docs/Projection Usage Model Plan.md.
-
 ## Optimizations
 
 - **Trade proposal card desktop sizing polish** - Continue refining desktop card sizing so larger cards remain crisp and readable without reintroducing vertical text overflow or awkward package wrapping on narrower desktop widths.
@@ -47,6 +42,10 @@ New features requested or planned should be added here.
 - **Interactive week-by-week picks** - Extend the schedule surface with a week-first prediction flow so users can pick games directly from the full weekly slate instead of entering game picks only through a team drilldown.
 
 ### Fantasy Companion
+- **Team tendencies and usage projections** - Add team offense/defense rankings, sortable league/conference/division tables, fantasy matchup context, and the usage-based projection model. See `docs/Projection Usage Model Plan.md`.
+- **Rankings week filter** - Let users view weekly player performances while keeping Season as the default Rankings view.
+- **Fantasy-team identity in Rankings** - Show each rostered player's fantasy team when space allows and remove the redundant “Rostered” label in those layouts.
+- **Backtested player projection model** - Build a walk-forward player projection model from historical Sleeper lineups/scoring and nflverse play-by-play, with rolling player usage plus as-of-week NFL team and opponent strength. Validate it against an untouched holdout before replacing projections outside Fantasy Live.
 - **Matchup-linked league records** - Link highest score, biggest blowout, and narrowest win records directly to their referenced Fantasy Matchups week and team, including linked historical seasons.
 - **Visual League Activity feed** - Add player headshots, NFL team-color identity, Sleeper fantasy-team avatars, glanceable transaction glyphs, and default-collapsed summaries for large multi-move entries.
 - **Roster player drilldown - stat category filter** - Allow filtering weekly stats by category (Pass, Rush, Rec, Defense, All) with a position-appropriate default.

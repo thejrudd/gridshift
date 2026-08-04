@@ -240,6 +240,7 @@ export function buildTeamScheduleRows(schedule = {}, teamId) {
       return {
         id: `${normalizedTeamId}-W${String(week.week).padStart(2, '0')}-BYE`,
         week: week.week,
+        weekLabel: week.label ?? null,
         isBye: true,
       };
     }
@@ -251,6 +252,7 @@ export function buildTeamScheduleRows(schedule = {}, teamId) {
     return {
       id: game.id ?? `${normalizedTeamId}-W${String(week.week).padStart(2, '0')}`,
       week: week.week,
+      weekLabel: week.label ?? null,
       game,
       isBye: false,
       isAway,
@@ -260,6 +262,13 @@ export function buildTeamScheduleRows(schedule = {}, teamId) {
 }
 
 export function isInternationalScheduleGame(game = {}) {
+  const venueCountry = typeof game?.venueCountry === 'string'
+    ? game.venueCountry.trim()
+    : '';
+  if (venueCountry) {
+    return !/^(USA|US|United States|United States of America)$/i.test(venueCountry);
+  }
+
   const location = typeof game?.location === 'string'
     ? game.location.trim()
     : typeof game?.venue === 'string'
@@ -267,7 +276,10 @@ export function isInternationalScheduleGame(game = {}) {
       : '';
 
   if (!location) return false;
-  return !/(,\s*(USA|United States)|\bUSA\b|\bUnited States\b)$/i.test(location);
+  const locationParts = location.split(',').map((part) => part.trim()).filter(Boolean);
+  if (locationParts.length < 3) return false;
+  const country = locationParts.at(-1);
+  return !/^(USA|US|United States|United States of America)$/i.test(country);
 }
 
 export function buildInternationalScheduleRows(schedule = {}) {
@@ -275,6 +287,7 @@ export function buildInternationalScheduleRows(schedule = {}) {
 }
 
 export function isPrimeTimeScheduleGame(game = {}) {
+  if (game?.phase === 'preseason') return false;
   const parts = getEasternDateParts(game?.kickoff);
   return Boolean(parts && parts.hour >= 19);
 }

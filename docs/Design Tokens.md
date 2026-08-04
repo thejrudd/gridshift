@@ -22,6 +22,8 @@ All colors defined as CSS custom properties in `src/index.css`. The `.dark` clas
 | `--color-accent-green` | `#00A844` | `#2ED578` |
 | `--color-accent-red` | `#E0270F` | `#FF4433` |
 | `--color-accent-orange` | `#E07800` | `#FF8C1A` |
+| `--color-live-defense` | `#526071` | `#64748B` |
+| `--color-live-defense-fg` | `#FFFFFF` | `#FFFFFF` |
 | `--color-signature` | `#F5B700` | `#F5B700` (same both modes) |
 | `--color-signature-fg` | `#0C0F14` | `#0C0F14` (same both modes) |
 | `--bar-bg` | `rgba(242,241,236,0.88)` | `rgba(12,15,20,0.90)` |

@@ -1185,3 +1185,18 @@ All notable changes, oldest first. Add new entries at the bottom.
 
 - **Fantasy Matchup picker** - Prevented Microsoft Edge on desktop from reverting a selected matchup after the picker closed.
 - **Tour test startup** - Kept the local API sidecar on the test’s dedicated port when a developer `.env` file also defines `PORT`.
+
+## v8.4.0 - Live Scoring & NFL Scores
+*2026-08-04*
+
+- **Fantasy Live Alpha** - Added a Sleeper-first live matchup workbench with provider-backed scoring, matchup selection, scoring-play feeds, player drilldowns, replay controls, pace charts, and calibrated win probability.
+- **Statistics Scores Beta** - Added an NFL Scores view with live ESPN preseason slates, broadcast scorebugs, week navigation, and a fixture-backed drilldown available only in development and test environments while production archive coverage is completed.
+- **Fantasy Scoring Blueprint** - Rebuilt league scoring into an accurate summary of reception premiums, offense, kicking, team defense, special teams, position strength, detailed rules, and itemized real-game examples.
+- **Preseason schedule support** - Added opt-in preseason weeks to Statistics Schedule and shared live ESPN preseason data across Schedule and Scores.
+- **Production data boundary** - Prevented synthetic Statistics Scores slates and Fantasy Live mock plays from appearing in production while retaining them for local development and automated testing.
+- **Fantasy Live replay polish** - Added real scoring milestones, linked chart/feed selection, compressed game-day timelines, matchup-safe replay state, responsive desktop workbench layouts, player identity, and full-week chart navigation.
+- **Win-probability reliability** - Guarded unfinished matchups from false certainty, reconciled authoritative totals and commissioner adjustments, improved player/game-state handling, and added historical calibration tooling and reporting.
+- **Navigation maturity labels** - Marked Statistics Scores as Beta and Fantasy Live as Alpha, with an upgrade tour explaining what each maturity level means.
+- **App and legal utilities** - Added Feature Request, Privacy & Attributions, MIT license, and privacy-policy access from the app and repository.
+- **Responsive and data fixes** - Corrected Statistics Scores comparison rails and sticky layering, preseason filter classification, Fantasy Scoring examples and rule grouping, Fantasy Live chart geometry and state restoration, and short-viewport sidebar clipping.
+- **Regression coverage** - Expanded unit and Playwright coverage for live timelines, scoring events, scoreboards, scoring guidance, chart geometry, win probability, responsive behavior, and the full historical upgrade tour.

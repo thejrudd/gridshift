@@ -89,6 +89,9 @@ function loadPersistedState() {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const state = JSON.parse(raw);
+      // ESPN Fantasy leagues are no longer supported. Start fresh rather than
+      // restoring an incompatible legacy connection.
+      if (state.platform === 'espn' || state.league?.platform === 'espn') return null;
       // Reset season if the persisted value falls outside the supported Sleeper season window.
       if (state.season == null || AVAILABLE_SLEEPER_SEASONS.includes(String(state.season)) === false) state.season = DEFAULT_SEASON;
       if (!Array.isArray(state.availableSeasons)) state.availableSeasons = [];
@@ -192,7 +195,7 @@ export function FantasyProvider({ children }) {
   const persisted = loadPersistedState();
 
   // Connection state
-  const [platform, setPlatform] = useState(persisted?.platform ?? persisted?.league?.platform ?? 'sleeper');
+  const [platform, setPlatform] = useState('sleeper');
   const [sleeperUser, setSleeperUser] = useState(persisted?.sleeperUser ?? null);
   const [leagues, setLeagues] = useState(persisted?.leagues ?? []);
   const [selectedLeagueId, setSelectedLeagueId] = useState(persisted?.selectedLeagueId ?? null);

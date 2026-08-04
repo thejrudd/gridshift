@@ -131,19 +131,158 @@ export function mapBdlStatsToGridShift(row) {
 
 // ── Game glance ──────────────────────────────────────────────────────────
 
+function getRawGameStatus(game) {
+  return String(game?.status ?? '').trim().toLowerCase();
+}
+
 export function getGameStatusText(game) {
   const raw = String(game?.status ?? '').trim();
   return raw || 'Scheduled';
 }
 
 export function isLiveGame(game) {
-  const status = getGameStatusText(game).toLowerCase();
-  return status.includes('progress') || status.includes('quarter') || status.includes('half') || status.includes('live');
+  const status = getRawGameStatus(game);
+  return status.includes('progress')
+    || status.includes('quarter')
+    || status.includes('qtr')
+    || status.includes('half')
+    || status.includes('live')
+    || status.includes('overtime')
+    || status === 'ot';
 }
 
 export function isFinalGame(game) {
-  const status = getGameStatusText(game).toLowerCase();
+  const status = getRawGameStatus(game);
   return status.includes('final') || status.includes('complete');
+}
+
+export const STARTER_GAME_STATE = Object.freeze({
+  SCHEDULED: 'scheduled',
+  LIVE: 'live',
+  OFFICIAL_FINAL: 'officialFinal',
+  CONFIRMED_BYE: 'confirmedBye',
+  UNRESOLVED: 'unresolved',
+});
+
+const MIN_COMPLETE_WEEK_TEAM_COUNT = 26;
+const FALLBACK_GAME_WINDOW_MS = 4 * 60 * 60 * 1000;
+
+/**
+ * A missing team can prove a bye only when the schedule looks like a complete
+ * NFL week. The reciprocal opponent check rejects partial or malformed maps;
+ * the team-count floor allows normal six-team bye weeks while failing closed
+ * if the provider returns only part of the slate.
+ */
+export function isCompleteScheduleWeek(schedule) {
+  if (!schedule || typeof schedule !== 'object') return false;
+  const teams = Object.keys(schedule).filter(Boolean);
+  if (teams.length < MIN_COMPLETE_WEEK_TEAM_COUNT) return false;
+  return teams.every((team) => {
+    const opponent = getTeamAbbr(schedule[team]?.opp);
+    return opponent && getTeamAbbr(schedule[opponent]?.opp) === getTeamAbbr(team);
+  });
+}
+
+/**
+ * Estimates progress without ever treating it as settlement evidence. This is
+ * used only when the live provider row is missing or unrecognized, preventing
+ * already-earned points from being added to a second full-game projection.
+ */
+export function getFallbackRemainingGameFraction({
+  scheduleEntry = null,
+  currentPoints = null,
+  now = Date.now(),
+} = {}) {
+  const kickoffAt = Date.parse(String(scheduleEntry?.kickoff ?? ''));
+  const observedAt = Number(now);
+  if (Number.isFinite(kickoffAt) && Number.isFinite(observedAt)) {
+    if (observedAt <= kickoffAt) return 1;
+    const elapsedFraction = (observedAt - kickoffAt) / FALLBACK_GAME_WINDOW_MS;
+    return Math.max(0.05, Math.min(1, 1 - elapsedFraction));
+  }
+  const rawPoints = currentPoints;
+  const points = rawPoints == null || rawPoints === '' ? 0 : Number(rawPoints);
+  return Number.isFinite(points) && Math.abs(points) > 0.001 ? 0.5 : 1;
+}
+
+function isScheduledGame(game) {
+  const status = getRawGameStatus(game);
+  if (!status) return false;
+  return status.includes('scheduled')
+    || status.includes('not started')
+    || status.includes('pre-game')
+    || status.includes('pregame')
+    || status.includes('upcoming')
+    || /\b\d{1,2}:\d{2}\s*(?:am|pm)\b/.test(status);
+}
+
+/**
+ * Keeps projection progress separate from settlement evidence. Missing game
+ * data is never interpreted as a final merely because no live row was found.
+ */
+export function resolveStarterGameState({
+  game = null,
+  scheduleEntry = null,
+  hasScheduleForWeek = false,
+  hasGameThisWeek = null,
+} = {}) {
+  if (game && isFinalGame(game)) {
+    return { state: STARTER_GAME_STATE.OFFICIAL_FINAL, remainingFraction: 0, settled: true };
+  }
+  if (scheduleEntry?.completed === true) {
+    return { state: STARTER_GAME_STATE.OFFICIAL_FINAL, remainingFraction: 0, settled: true };
+  }
+  if (game && isLiveGame(game)) {
+    return { state: STARTER_GAME_STATE.LIVE, remainingFraction: null, settled: false };
+  }
+  if (game && isScheduledGame(game)) {
+    return { state: STARTER_GAME_STATE.SCHEDULED, remainingFraction: 1, settled: false };
+  }
+  if (game) {
+    return { state: STARTER_GAME_STATE.UNRESOLVED, remainingFraction: 1, settled: false };
+  }
+  if (scheduleEntry || hasGameThisWeek === true) {
+    return { state: STARTER_GAME_STATE.SCHEDULED, remainingFraction: 1, settled: false };
+  }
+  if (hasScheduleForWeek && hasGameThisWeek === false) {
+    return { state: STARTER_GAME_STATE.CONFIRMED_BYE, remainingFraction: 0, settled: true };
+  }
+  return { state: STARTER_GAME_STATE.UNRESOLVED, remainingFraction: 1, settled: false };
+}
+
+export function getMatchupCustomPoints(row) {
+  const rawAdjustment = row?.custom_points;
+  if (rawAdjustment == null || rawAdjustment === '') return 0;
+  const adjustment = Number(rawAdjustment);
+  return Number.isFinite(adjustment) ? adjustment : 0;
+}
+
+export function getOfficialMatchupRowPoints(row) {
+  const rawPoints = row?.points;
+  if (rawPoints == null || rawPoints === '') return null;
+  const points = Number(rawPoints);
+  if (!Number.isFinite(points)) return null;
+  return points + getMatchupCustomPoints(row);
+}
+
+export function hasCompleteOfficialStarterPoints(row) {
+  const starters = (row?.starters ?? [])
+    .map((id) => String(id))
+    .filter((id) => id && id !== '0');
+  const playerPoints = row?.players_points;
+  return getOfficialMatchupRowPoints(row) != null
+    && playerPoints
+    && typeof playerPoints === 'object'
+    && starters.every((id) => (
+      playerPoints[id] != null
+      && playerPoints[id] !== ''
+      && Number.isFinite(Number(playerPoints[id]))
+    ));
+}
+
+export function hasReconciledMatchup(rows, matchupId) {
+  const sides = (rows ?? []).filter((row) => Number(row?.matchup_id) === Number(matchupId));
+  return sides.length === 2 && sides.every(hasCompleteOfficialStarterPoints);
 }
 
 export function findGameForTeam(games, teamAbbr) {
@@ -287,16 +426,48 @@ const DELTA_DESCRIPTIONS = [
   { key: 'idp_tkl', label: (v) => `${v} tkl` },
 ];
 
-export function getEventKind(delta, position) {
+const TEAM_DEFENSE_POSITIONS = new Set(['DEF', 'DST', 'D/ST']);
+const IDP_POSITIONS = new Set(['DL', 'DE', 'DT', 'LB', 'ILB', 'OLB', 'DB', 'CB', 'S', 'SS', 'FS']);
+
+function getEventMechanism(delta, position) {
   const pos = String(position ?? '').toUpperCase();
-  if (n(delta.pass_td) + n(delta.rush_td) + n(delta.rec_td) + n(delta.ret_td) + n(delta.fum_ret_td) + n(delta.idp_def_td) > 0) return 'td';
-  if (n(delta.fgm) + n(delta.xpm) > 0) return 'fg';
-  if (n(delta.pass_int) + n(delta.fum_lost) > 0) return 'to';
-  if (n(delta.idp_sack) + n(delta.idp_int) + n(delta.idp_fr) + n(delta.idp_tkl) + n(delta.idp_pd) > 0) return 'def';
-  if (pos === 'DEF') return 'def';
-  if (pos === 'K') return 'fg';
-  if (n(delta.rush_yd) || n(delta.rush_att)) return 'rush';
-  return 'pass';
+  const defensiveStats = n(delta.def_td) + n(delta.idp_def_td) + n(delta.idp_sack)
+    + n(delta.idp_int) + n(delta.idp_fr) + n(delta.idp_tkl) + n(delta.idp_pd);
+  if (defensiveStats || TEAM_DEFENSE_POSITIONS.has(pos) || IDP_POSITIONS.has(pos)) return 'def';
+  if (n(delta.ret_td) + n(delta.kr_td) + n(delta.pr_td) + n(delta.fum_ret_td) > 0) return 'return';
+  if (n(delta.pass_td) || n(delta.pass_yd) || n(delta.pass_att)
+    || n(delta.rec_td) || n(delta.rec) || n(delta.rec_yd)) return 'pass';
+  if (n(delta.rush_td) || n(delta.rush_yd) || n(delta.rush_att)) return 'rush';
+  return null;
+}
+
+/**
+ * Separates the result of a fantasy scoring event from the football action
+ * that produced it. `kind` remains the primary badge for compatibility with
+ * pace-chart milestones; `mechanism` supplies the optional compound marker.
+ */
+export function getEventClassification(delta, position) {
+  const pos = String(position ?? '').toUpperCase();
+  const mechanism = getEventMechanism(delta, pos);
+  let kind = null;
+
+  if (n(delta.pass_td) + n(delta.rush_td) + n(delta.rec_td) + n(delta.ret_td)
+    + n(delta.fum_ret_td) + n(delta.def_td) + n(delta.idp_def_td) > 0) kind = 'td';
+  else if (n(delta.fgm) > 0) kind = 'fg';
+  else if (n(delta.xpm) > 0) kind = 'xp';
+  else if (n(delta.pass_int) + n(delta.fum_lost) > 0) kind = 'to';
+  else if (mechanism) kind = mechanism;
+  else if (pos === 'K' || pos === 'PK') kind = 'fg';
+  else kind = 'pass';
+
+  return {
+    kind,
+    mechanism: mechanism && mechanism !== kind ? mechanism : null,
+  };
+}
+
+export function getEventKind(delta, position) {
+  return getEventClassification(delta, position).kind;
 }
 
 export function describeDelta(delta) {
@@ -338,10 +509,11 @@ export function buildDeltaEvents(prevSnapshot, nextSnapshot, playerMeta, { now =
     const meta = playerMeta.get(playerId) ?? {};
     const desc = describeDelta(delta);
     if (!desc) return;
+    const classification = getEventClassification(delta, meta.position);
     events.push({
       id: `${playerId}-${now}`,
       playerId,
-      kind: getEventKind(delta, meta.position),
+      ...classification,
       desc,
       pts: Math.round((points - n(prev.points)) * 10) / 10,
       at: now,
@@ -350,4 +522,13 @@ export function buildDeltaEvents(prevSnapshot, nextSnapshot, playerMeta, { now =
   return events;
 }
 
-export const EVENT_KIND_LABELS = { td: 'TD', fg: 'FG', to: 'TO', def: 'D', pass: 'P', rush: 'R' };
+export const EVENT_KIND_LABELS = {
+  td: 'TD',
+  fg: 'FG',
+  xp: 'XP',
+  to: 'TO',
+  def: 'D',
+  pass: 'P',
+  rush: 'R',
+  return: 'RET',
+};

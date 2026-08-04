@@ -37,13 +37,57 @@ Apply exactly one page-frame class to new route roots. Do not detect display DPI
 - `src/components/StandingsTable.jsx`
 - `src/components/PlayoffSeeding.jsx`
 
+## Fantasy Live
+
+- `src/components/companion/CompanionLive.jsx` — route state, live session gate, the matchup chip rail (scoreboard chips on the shared `CompanionSelectorRail`), and the pace/palette derivations that feed every piece below.
+- `src/components/companion/live/LiveHero.jsx` — split hero: team gradients on the diagonal, edge scores, top-three scorer lists, neutral win plate, odds rail. Each side's “Top scorers” block always shows the three leading names and point totals, and every scorer opens their player breakdown. Faces are ESPN cut-out headshots when the hero itself has enough inline room and the spotlight strip below that. Each half shows its top scorer in the foreground and adds the second- and third-highest scorer as the hero widens. The ranked portrait group and scorer list crossfade when their order changes. Both top scorers must resolve before cut-out mode activates, so a matchup with a missing featured headshot drops cleanly to spotlight instead of substituting a team logo; missing secondary cut-outs do not remove their score line.
+
+Sleeper leaves `espn_id` null for roughly three quarters of startable skill players, so `CompanionLive` folds `espnIdOverrides` (the context's ESPN roster cross-reference) into each starter's `espnId` before anything resolves imagery. Any new surface that shows a player photo should do the same.
+- `src/components/companion/live/LivePlayerSheet.jsx` — the drill-in record card: framed portrait, pace strip, Scoring / Box score / Plays. On every layout it replaces the pace graph inside the shared analysis slot while the performer list and play feed remain available; closing it restores the graph.
+- `src/components/companion/live/LivePaceChart.jsx` — scoring vs projected pace; drag to rewind the day, or pick a milestone to select and expand that exact play in the feed. A chosen moment persists across the chart and hero until another selection or Back to live. The feed jumps on pointer release, never mid-drag. Milestone selection clears a player-only feed focus and widens an opposing side filter to Both when needed so the target row cannot remain hidden.
+
+Hovering or focusing a milestone shows the scoring player's name beneath the compact clock/action readout. Player identity comes from the matchup's `entriesById` map in `CompanionLive.jsx`; keep it optional so fallback chart data and unresolved players still render cleanly.
+
+The production chart's x-axis is **game progress, not wallclock**: a 1pm and a 4pm game sit at different points of their own stories at the same moment, and pace is about the game. `getPlayProgress()` (`src/utils/livePlaysFeed.js`) puts every play on that 0..1 axis and `buildPaceSeries()` (`src/utils/livePace.js`) turns them into the stepped curve plus its milestones. Per-play points are estimates, so historical steps keep their event-time estimates; never rescale them with a later authoritative total. Replay prefers a complete persisted v3 snapshot recorded at or before the selected play. When none exists, the canonical engine reconstructs each starter independently from the points observed by that moment and that starter's own kickoff/game-progress timeline. `livePace.js` must not derive a second probability formula. Only the final chart point receives the current authoritative score and live snapshot directly, keeping the chart, hero, verdict, and explainer identical. Feed anchoring uses the same axis (`anchorProgress`), so any new event source must carry a `progress` value or it cannot be placed.
+
+The chart always reserves the complete 0..1 week axis. Actual score lines and their filled areas stop at NOW, while the neutral future field and full-week projection rays remain visible; do not renormalize partial-week data to the full plot width. On desktop, SVG height is derived from the measured chart viewport width and clamped between 240px and 420px, so the chart grows proportionally across the workbench and recomputes when a player drilldown changes the available width. Mobile keeps the compact 128px plot. Chromium `ctrl+wheel` trackpad pinch events and Safari gesture events continuously expand only the horizontal time axis from 1× to 3×, with animation-frame batching and the gesture midpoint held in place. The View buttons remain discrete shortcuts to useful 1×, 1.5×, 2×, and 3× anchors. `.fl-chart__viewport` owns horizontal scrolling and contains overscroll so the document keeps its own scroll position. Fit restores the full-week view. At fit width, horizontal drag scrubs the exact X-position; once zoomed, touch panning belongs to the chart viewport and a tap selects that point on the visible path unless it lands inside a score dot's snap radius.
+
+Mock play-by-play is the deliberate exception. `src/utils/liveDemoTimeline.js` reads the week's real kickoff dates, removes days without games, and gives each relevant game one consecutive chart segment in kickoff order. Day ticks therefore adapt to Thanksgiving, Christmas, and Saturday slates while busy game days receive proportionally more navigable room. Generated mock plays are distributed through all four quarters inside each segment. `src/utils/liveDemoPlays.js` adds a shared reception/fumble-return touchdown that credits an offensive starter and the opposing fantasy defense at the exact same chart position, using the active league scoring settings for both breakdowns. Mock generation covers every relevant scheduled game so late windows such as Monday night cannot be removed by the real play-by-play eight-game request budget. This keeps the demo chart steadily readable without changing production live-scoring behavior.
+
+On desktop the matchup selector is the top sticky layer, but the chart/feed workspace moves normally with the document. When the main pane is at least 720px wide, that workspace becomes a shared row: the independently scrolling play feed occupies the narrower left rail and the performer/analysis surface occupies the wider right side. The performer list always sits above the analysis slot; selecting a player swaps the pace graph for that player's drilldown without moving or hiding the feed. CSS size containment makes this right column define the row height so the feed cannot stretch the page; narrower main panes return to the same components in a linear stack. Once the full hero scrolls away, the chart header crossfades from chart context to a compact score/odds summary without changing height. Chart selection positions the matching row directly beneath the feed's own sticky filter without moving the document.
+
+Matchup navigation is also a state boundary. Before `matchupIndex` changes, Fantasy Live clears expanded feed plays, persisted chart moments, chart/feed anchors, side and player filters, player drilldowns, and saved mobile feed scroll so returning to a matchup always starts without stale selections.
+
+Everything drawn in that SVG is `pointer-events: none` except the milestones, so the scrub indicator drawn last cannot swallow a milestone click. The tracking line follows the pointer's exact X-position and samples each team's visible score path there. It snaps to a scoring milestone only inside that dot's two-dimensional hit radius, so crossing the same X-position above or below a dot does not make the tracker jump. Team paths use each point's scoring-side metadata and retain distinct same-X totals; every rendered score dot must sit on its own team's path.
+- `src/components/companion/live/LiveFeed.jsx` — side filter with counts and the play rows, including the inline scoring-math expansion.
+- `src/components/companion/live/LivePerformerRail.jsx`, `LiveVerdict.jsx`, `LiveAtoms.jsx`, `liveVisuals.js`.
+- `src/utils/livePace.js` and `src/utils/fantasyTeamIdentity.js` — pace maths and per-roster identity colours.
+- `src/index.css` — the `.fl-*` block.
+
+- The hero's win-probability plate opens an explainer built from `explainWinProbability()` (`src/utils/liveWinProbability.js`): each side's live points, what its unplayed starters still project to add, the projected margin, and the swing still available. Each starter is evaluated against the share of their pregame target expected by that point in their NFL game. Hover and keyboard focus open it on pointer devices; tap toggles it on touch. Touch fires `focus` before `click`, so both handlers check the last pointer type — changing one without the other makes the panel flicker shut on tap.
+
+Any change to a starter's projected number belongs in `resolveStarterProjection()` (`src/utils/liveWinProbability.js`) so the odds and the pace lines stay in agreement.
+
+`src/data/liveWinProbabilityModel.js` is generated from the local historical calibration workflow and is the only production coefficient contract. Do not ship league IDs, raw Sleeper payloads, or nflverse rows. Unfinished probabilities stay inside the model's open interval and render with tail labels; exact 0%/100% requires every starter to be officially final or on a bye proved by a complete schedule, followed by a fresh no-store Sleeper matchup response containing both final team totals and every starter's official points. Incomplete final responses retry quietly and remain projected.
+
+The week is derived, not selectable: Fantasy Live always shows the week currently being played. Historical weeks and their play history belong to Fantasy Matchups (`CompanionMatchup.jsx`, which owns `MatchupWeekPickerModal`). Do not add a week picker back to Live.
+
+## Statistics Scores
+
+- `src/components/statistics/scores/StatisticsScores.jsx` — route-level state, masthead, season selector, and week rail.
+- `src/components/statistics/scores/ScoresSeasonBoard.jsx` — selected-week Hero week + peek layout and chronological kickoff groups.
+- `src/components/statistics/scores/GameScorebug.jsx` — scheduled, live, final, favorite, delayed, offline, and unavailable matchup states.
+- `src/components/statistics/scores/ScoresGameDrilldown.jsx` — Overview, Team Stats, Players, Scoring, and Play-by-Play.
+- `src/components/statistics/scores/StatisticsScores.css` — feature-owned responsive and density-aware styling.
+- `src/data/statisticsScoresFixtures.js` — normalized local fixture contract. See `docs/Statistics Scores.md` before production data wiring.
+
 ## Fantasy Connection And League Data
 
 - `src/context/SleeperContext.jsx`
 - `src/api/sleeperApi.js`
 - `src/components/companion/CompanionConnect.jsx`
 
-Sleeper is the only supported fantasy connection. Legacy ESPN adapter and sidecar files remain for compatibility and tests, but must not be surfaced or expanded.
+Sleeper is the supported fantasy connection.
 
 ## League History, Standings, And Activity
 
@@ -68,7 +112,7 @@ Sleeper is the only supported fantasy connection. Legacy ESPN adapter and sideca
 ## Scoring And Projections
 
 - Start in `src/utils/scoringEngine.js`.
-- Sleeper imports use `importLeagueScoring()`. Legacy ESPN scoring-profile readers remain compatibility-only.
+- Sleeper imports use `importLeagueScoring()`.
 - Then audit:
   - `src/utils/draftAssistant/projections.js`
   - `src/utils/projectionEngine.js`

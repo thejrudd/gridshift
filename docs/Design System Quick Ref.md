@@ -17,6 +17,7 @@ Full token table and dark-mode values: **`docs/Design Tokens.md`**
 - Table headers should be vertically centered over their metric data and should not truncate. Let labels wrap or use controlled overflow while preserving consistent header height, and resize or remove lower-priority columns before table elements overlap.
 - Roster player names are priority content: do not truncate or ellipsize them. Let names wrap when needed, and drop lower-priority row chrome before hiding identity text.
 - Horizontal scroll cues must cover the same rendered width as the scroll rail they describe. For full-bleed mobile tab rails, wrap the cue around the full-bleed shell, not an inset parent, so tab text cannot peek through beside the arrow. Add or preserve Playwright geometry checks that compare the cue edge to the rail's actual rendered edge.
+- Sticky tabs, filters, and headers inside a scrolling content area must have an opaque surface that also shields any top padding/offset above them. Content must never paint through above or behind the sticky control.
 
 ## Team Color Palettes
 

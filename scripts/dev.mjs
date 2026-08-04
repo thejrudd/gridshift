@@ -56,13 +56,21 @@ const localServerEnv = parseEnvFile(envPath);
 
 const processes = [
   {
-    name: 'espn-api',
+    name: 'gridshift-api',
     command: nodeBin,
     args: [fileURLToPath(new URL('../server/index.js', import.meta.url))],
     env: {
       ...localServerEnv,
-      ESPN_API_HOST: process.env.ESPN_API_HOST ?? '127.0.0.1',
-      ESPN_API_PORT: process.env.ESPN_API_PORT ?? '3001',
+      GRIDSHIFT_API_HOST: process.env.GRIDSHIFT_API_HOST
+        ?? process.env.ESPN_API_HOST
+        ?? localServerEnv.GRIDSHIFT_API_HOST
+        ?? localServerEnv.ESPN_API_HOST
+        ?? '127.0.0.1',
+      GRIDSHIFT_API_PORT: process.env.GRIDSHIFT_API_PORT
+        ?? process.env.ESPN_API_PORT
+        ?? localServerEnv.GRIDSHIFT_API_PORT
+        ?? localServerEnv.ESPN_API_PORT
+        ?? '3001',
       PORT: process.env.PORT ?? localServerEnv.PORT,
     },
   },
