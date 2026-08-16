@@ -23,6 +23,23 @@ const DESKTOP_LABELS = {
   DNP: 'DNP',
 };
 
+const AVAILABILITY_FILTER_ORDER = [
+  'Questionable',
+  'Probable',
+  'Doubtful',
+  'Out',
+  'Injured Reserve',
+  'PUP',
+  'NFI',
+  'Suspended',
+  'Exempt',
+  'COVID-19',
+  'DNP',
+  'Inactive',
+  'Reserve',
+  'Retired',
+];
+
 function cleanStatus(status) {
   if (status == null) return '';
   return String(status)
@@ -87,6 +104,61 @@ export function getPlayerAvailabilityStatus(player, { isReserve = false } = {}) 
   }
 
   return null;
+}
+
+function cleanAvailabilityDetail(value) {
+  const cleaned = cleanStatus(value);
+  return cleaned || null;
+}
+
+export function getPlayerAvailabilityContext(player, { isReserve = false } = {}) {
+  const source = player?.raw ?? player ?? {};
+  const status = getPlayerAvailabilityStatus(source, { isReserve });
+  const bodyPart = cleanAvailabilityDetail(source.injury_body_part ?? source.injuryBodyPart);
+  const note = cleanAvailabilityDetail(source.injury_notes ?? source.injuryNotes);
+  const usefulBodyPart = bodyPart?.toLowerCase() === 'undisclosed' ? null : bodyPart;
+  const usefulNote = note && note.toLowerCase() !== usefulBodyPart?.toLowerCase() ? note : null;
+  const detail = [usefulBodyPart, usefulNote].filter(Boolean).join(' · ') || null;
+
+  return {
+    status,
+    bodyPart: usefulBodyPart,
+    note: usefulNote,
+    detail,
+    label: [status, detail].filter(Boolean).join(' · ') || null,
+  };
+}
+
+export function getPlayerAvailabilityFilterValue(player, options = {}) {
+  return getPlayerAvailabilityContext(player, options).status ?? 'healthy';
+}
+
+export function matchesPlayerAvailabilityFilter(player, filter = 'all', options = {}) {
+  if (!filter || filter === 'all') return true;
+  return getPlayerAvailabilityFilterValue(player, options) === filter;
+}
+
+export function getPlayerAvailabilityFilterOptions(players = []) {
+  const found = new Set();
+  for (const player of players ?? []) {
+    found.add(getPlayerAvailabilityFilterValue(player));
+  }
+
+  const orderedStatuses = [
+    ...AVAILABILITY_FILTER_ORDER.filter(status => found.has(status)),
+    ...[...found]
+      .filter(status => status !== 'healthy' && !AVAILABILITY_FILTER_ORDER.includes(status))
+      .sort((a, b) => a.localeCompare(b)),
+  ];
+
+  return [
+    { id: 'all', label: 'All Availability' },
+    ...(found.has('healthy') ? [{ id: 'healthy', label: 'Healthy' }] : []),
+    ...orderedStatuses.map(status => ({
+      id: status,
+      label: getAvailabilityStatusLabel(status, false) ?? status,
+    })),
+  ];
 }
 
 export function getAvailabilityStatusLabel(status, compact = false) {

@@ -2,7 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { DEFAULT_SCORING } from '../../src/utils/scoringEngine.js';
 import { getCompanionPlayerImageUrl } from '../../src/utils/companionAssetVisuals.js';
-import { SCORING_GAME_EXAMPLE_OPTIONS, SCORING_GAME_EXAMPLES, filterScoringGroups, getPositionStrengthRanking, getPreviousLeagueScoringOptions, getScoringGameExample, getScoringGameExampleCandidates, getScoringPositionOptions, getScoringProfile, getScoringRuleMeta, isNonStandardScoringSetting, isScoringRuleRosterEligible, pickRandomScoringGameExample, pickRandomScoringGameExampleId } from '../../src/utils/scoringGuide.js';
+import { SCORING_GAME_EXAMPLE_OPTIONS, SCORING_GAME_EXAMPLES, filterScoringGroups, getPositionStrengthRanking, getPreviousLeagueHistoryOptions, getScoringGameExample, getScoringGameExampleCandidates, getScoringPositionOptions, getScoringProfile, getScoringRuleMeta, isNonStandardScoringSetting, isScoringRuleRosterEligible, pickRandomScoringGameExample, pickRandomScoringGameExampleId } from '../../src/utils/scoringGuide.js';
 
 const GROUPS = [{ label: 'Rules', stats: [
   { key: 'pass_td' }, { key: 'bonus_rec_te' }, { key: 'idp_tkl' }, { key: 'fgm' }, { key: 'def_td' }, { key: 'kr_yd' },
@@ -275,7 +275,7 @@ describe('scoring guide helpers', () => {
     assert.equal(isNonStandardScoringSetting('idp_sack', 0), false);
   });
 
-  it('offers only participated seasons before the league season being viewed', () => {
+  it('offers only participated historical seasons before the league season being viewed', () => {
     const currentLeague = { league_id: 'league-2026', season: '2026' };
     const previousLeague = { league_id: 'league-2025', season: '2025' };
     const olderLeague = { league_id: 'league-2023', season: '2023' };
@@ -286,14 +286,41 @@ describe('scoring guide helpers', () => {
     ];
 
     assert.deepEqual(
-      getPreviousLeagueScoringOptions(linkedHistory, '2026').map((entry) => entry.season),
+      getPreviousLeagueHistoryOptions(linkedHistory, '2026').map((entry) => entry.season),
       ['2025', '2023'],
     );
     assert.deepEqual(
-      getPreviousLeagueScoringOptions(linkedHistory, '2025').map((entry) => entry.season),
+      getPreviousLeagueHistoryOptions(linkedHistory, '2025').map((entry) => entry.season),
       ['2023'],
     );
-    assert.deepEqual(getPreviousLeagueScoringOptions(linkedHistory, null), []);
+    assert.deepEqual(getPreviousLeagueHistoryOptions(linkedHistory, null), []);
+  });
+
+  it('recalculates historical production with the current league rules', () => {
+    const historicalStats = {
+      receiver: { rec: 10, rec_yd: 100, gp: 1 },
+    };
+    const players = {
+      receiver: { position: 'WR' },
+    };
+    const currentRules = { ...DEFAULT_SCORING, rec: 1, rec_yd: 0.1 };
+    const priorRules = { ...currentRules, rec: 0.5 };
+
+    const currentRuleRanking = getPositionStrengthRanking({
+      seasonStats: historicalStats,
+      players,
+      scoring: currentRules,
+      rosterPositions: ['WR'],
+    });
+    const priorRuleRanking = getPositionStrengthRanking({
+      seasonStats: historicalStats,
+      players,
+      scoring: priorRules,
+      rosterPositions: ['WR'],
+    });
+
+    assert.equal(currentRuleRanking[0].top8, 20);
+    assert.equal(priorRuleRanking[0].top8, 15);
   });
 
   it('separates D/ST special-teams rules from team defense and kicker scoring', () => {

@@ -10,6 +10,7 @@ import CompanionPlayerRow, {
   CompanionPlayerMetric,
   CompanionPlayerStatus,
 } from '../companion/CompanionPlayerRow.jsx';
+import PlayerStatusBadge from '../companion/PlayerStatusBadge.jsx';
 import {
   POSITION_COLORS,
   getCompanionPositionColor,
@@ -21,6 +22,11 @@ import { buildDraftBlueprintSummaries } from '../../utils/leagueHistory.js';
 import { getTeamVisualTheme } from '../../utils/teamVisualTheme.js';
 import { isLeagueSeasonComplete } from '../../utils/draftPickDisplay.js';
 import {
+  getPlayerAvailabilityContext,
+  getPlayerAvailabilityFilterOptions,
+  matchesPlayerAvailabilityFilter,
+} from '../../utils/playerAvailabilityStatus.js';
+import {
   DEFAULT_DRAFT_MODEL_WEIGHTS,
   buildDraftAssistantViewModel,
   buildDraftPositionRanks,
@@ -28,7 +34,9 @@ import {
   buildPickOrder,
   computeDraftOutcomes,
   getDraftResultsSeason,
+  getDraftRosterEligiblePositions,
   getDraftStatsSeason,
+  isPlayerEligibleForDraftRoster,
   getScheduledDraftCountdownParts,
   getSleeperDraftStartMs,
   getSleeperDraftPicksSignature,
@@ -61,6 +69,12 @@ import {
   removePlayerFromOrderedBoard,
 } from '../../utils/draftAssistant/board.js';
 import { getDraftAnalyticsCompareLimit } from '../../utils/draftAssistant/analytics.js';
+import {
+  DRAFT_RANKING_PRIORITY_CONTROLS,
+  DRAFT_RANKING_PRIORITY_HELP,
+  DRAFT_RANKING_PRIORITY_RESET_LABEL,
+  DRAFT_RANKING_PRIORITY_TITLE,
+} from '../../utils/draftAssistant/priorityCopy.js';
 import DraftPlayerAnalyticsSheet from './DraftPlayerAnalyticsSheet.jsx';
 
 const BOARD_STORAGE_PREFIX = 'draft_assistant_position_board_v2';
@@ -76,12 +90,7 @@ const RUNNING_DRAFT_CLOCK_POLL_MS = 1_000;
 const CLOCK_RESYNC_THRESHOLD_MS = 1_200;
 const DEV_DRAFT_OVERRIDE_PARAM_KEYS = ['sleeperDraftId', 'draftId'];
 const EMPTY_VIEW_MODEL_BOARD_IDS = Object.freeze([]);
-const MODEL_WEIGHT_CONTROLS = [
-  { key: 'marketRank', label: 'Market', description: 'How much the model follows external draft cost and market rank. Higher values keep recommendations closer to external market signals.' },
-  { key: 'pastProduction', label: 'PPG', description: 'How much recent fantasy points per game matter. Higher values favor players who already produced efficient weekly scoring.' },
-  { key: 'scoringFit', label: 'Scoring', description: 'How much your league scoring settings matter. Higher values favor players whose position and stat profile fit the active scoring rules.' },
-  { key: 'rosterNeed', label: 'Need', description: 'How much your roster construction matters. Higher values push recommendations toward positions where your team needs depth or starters.' },
-];
+const MODEL_WEIGHT_CONTROLS = DRAFT_RANKING_PRIORITY_CONTROLS;
 const MODEL_WEIGHT_MIN = 0;
 const MODEL_WEIGHT_MAX = 100;
 const BOARD_SCOPE_OPTIONS = [
@@ -1093,10 +1102,11 @@ function buildDraftOrderContext({ draft, rosters, draftTradedPicks, draftPicks, 
   };
 }
 
-function filterCandidates(candidates, position, query) {
+function filterCandidates(candidates, position, query, availabilityFilter = 'all') {
   const normalizedQuery = query.trim().toLowerCase();
   return candidates.filter((player) => {
     if (position !== 'ALL' && player.position !== position) return false;
+    if (!matchesPlayerAvailabilityFilter(player, availabilityFilter)) return false;
     if (!normalizedQuery) return true;
     const haystack = `${getPlayerName(player)} ${player.team} ${player.position}`.toLowerCase();
     return haystack.includes(normalizedQuery);
@@ -1556,6 +1566,23 @@ function PositionFilter({ positions, activePosition, onChange }) {
   );
 }
 
+function DraftAvailabilityFilter({ options, value, onChange, className = '' }) {
+  return (
+    <label className={['draft-availability-filter', className].filter(Boolean).join(' ')}>
+      <span className="sr-only">Player availability</span>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        aria-label="Filter by player availability"
+      >
+        {options.map((option) => (
+          <option key={option.id} value={option.id}>{option.label}</option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 function DraftSegmentedControl({ label, options, value, onChange, className = '' }) {
   return (
     <div className={['draft-segmented-control', className].filter(Boolean).join(' ')} role="group" aria-label={label}>
@@ -1643,7 +1670,7 @@ function DraftModelWeightInfo({ label, description }) {
       <button
         ref={buttonRef}
         type="button"
-        aria-label={`${label} weight info`}
+        aria-label={`${label} details`}
         aria-describedby={open ? tooltipId : undefined}
         onMouseEnter={() => setOpen(true)}
         onMouseLeave={() => setOpen(false)}
@@ -1722,10 +1749,11 @@ function DraftModelWeights({ weights, onChange, onReset, className = '', idPrefi
       <summary>
         <span className="draft-model-weights__summary-title">
           <span className="draft-model-weights__chevron" aria-hidden="true" />
-          <span>Model weights</span>
+          <span>{DRAFT_RANKING_PRIORITY_TITLE}</span>
         </span>
         <strong>{totalWeight}</strong>
       </summary>
+      <p className="draft-model-weights__help">{DRAFT_RANKING_PRIORITY_HELP}</p>
       <div className="draft-model-weights__grid">
         {MODEL_WEIGHT_CONTROLS.map((item) => {
           const value = getDisplayValue(item.key);
@@ -1764,13 +1792,13 @@ function DraftModelWeights({ weights, onChange, onReset, className = '', idPrefi
                 onKeyDown={(event) => {
                   if (event.key === 'Enter') event.currentTarget.blur();
                 }}
-                aria-label={`${item.label} weight`}
+                aria-label={`${item.label} priority`}
               />
             </div>
           );
         })}
       </div>
-      <button type="button" onClick={onReset}>Reset model</button>
+      <button type="button" onClick={onReset}>{DRAFT_RANKING_PRIORITY_RESET_LABEL}</button>
     </details>
   );
 }
@@ -1781,6 +1809,19 @@ function DraftBoardMetricValue({ label, value }) {
       {label ? <span className="draft-board-metric-value__label">{label}</span> : null}
       <span className="draft-board-metric-value__number">{value}</span>
     </span>
+  );
+}
+
+function DraftPlayerAvailabilityBadge({ player }) {
+  const availability = getPlayerAvailabilityContext(player);
+  if (!availability.status) return null;
+  return (
+    <PlayerStatusBadge
+      status={availability.status}
+      detail={availability.detail}
+      responsiveCompact
+      className="draft-player-availability-badge"
+    />
   );
 }
 
@@ -1808,6 +1849,8 @@ function DraftPlayerRow({
   ];
   const metricSlot = rowMetrics.length > 1 ? `minmax(${Math.min(280, Math.max(96, rowMetrics.length * 52))}px,auto)` : 'minmax(54px,auto)';
   const compactMetricSlot = rowMetrics.length > 1 ? `minmax(${Math.min(240, Math.max(82, rowMetrics.length * 44))}px,auto)` : 'minmax(44px,auto)';
+  const availability = getPlayerAvailabilityContext(player);
+  const availabilityBadge = availability.status ? <DraftPlayerAvailabilityBadge key="availability" player={player} /> : null;
   const gridTemplate = status
     ? `${leading ? '34px ' : ''}40px 30px minmax(0,1fr) 30px ${metricSlot} auto auto`
     : `${leading ? '34px ' : ''}40px 30px minmax(0,1fr) 30px ${metricSlot} auto`;
@@ -1818,6 +1861,7 @@ function DraftPlayerRow({
   const resolvedCompactGridTemplate = compactRowGridTemplate ?? rowGridTemplate ?? compactGridTemplate;
   const defaultMetaSegments = [
     player.team,
+    availabilityBadge,
     bye ? `Bye ${bye}` : null,
     player?.schedule?.label && player.schedule.label !== 'Unavailable' ? `${player.schedule.label} schedule` : null,
   ].filter(Boolean);
@@ -1832,6 +1876,7 @@ function DraftPlayerRow({
         position: player.position,
         raw: player.raw,
       }}
+      title={[getPlayerName(player), player.team, availability.label].filter(Boolean).join(' · ')}
       darkMode={darkMode}
       disabled={disabled}
       interactive
@@ -1948,13 +1993,16 @@ const BigBoard = memo(function BigBoard({
   darkMode,
   boardScope,
   onBoardScopeChange,
+  availabilityFilter,
+  availabilityOptions,
+  onAvailabilityFilterChange,
   statsLoading,
   modelWeights,
   onModelWeightChange,
   onResetModelWeights,
 }) {
   const [sortState, setSortState] = useState({ key: 'rating', direction: 'desc' });
-  const filtered = filterCandidates(candidates, activePosition, query);
+  const filtered = filterCandidates(candidates, activePosition, query, availabilityFilter);
   const sorted = useMemo(
     () => sortBigBoardRows(filtered, sortState).slice(0, 140),
     [filtered, sortState],
@@ -2006,6 +2054,11 @@ const BigBoard = memo(function BigBoard({
         options={BOARD_SCOPE_OPTIONS}
         value={boardScope}
         onChange={onBoardScopeChange}
+      />
+      <DraftAvailabilityFilter
+        options={availabilityOptions}
+        value={availabilityFilter}
+        onChange={onAvailabilityFilterChange}
       />
       <input
         className="draft-big-board-search"
@@ -2103,6 +2156,9 @@ const BigBoard = memo(function BigBoard({
   && previous.darkMode === next.darkMode
   && previous.boardScope === next.boardScope
   && previous.onBoardScopeChange === next.onBoardScopeChange
+  && previous.availabilityFilter === next.availabilityFilter
+  && previous.availabilityOptions === next.availabilityOptions
+  && previous.onAvailabilityFilterChange === next.onAvailabilityFilterChange
   && previous.statsLoading === next.statsLoading
   && previous.modelWeights === next.modelWeights
   && previous.onModelWeightChange === next.onModelWeightChange
@@ -2315,6 +2371,7 @@ function DraftBoardCardShell({
   const isDraftedByUser = Boolean(player?.draftedBy?.isMine);
   const canDrag = allowDrag && !disabled && !isGone;
   const cardMetric = getDraftBoardCardMetric(player, metricKey);
+  const availability = getPlayerAvailabilityContext(player);
   const actions = [];
 
   if (onAdd) {
@@ -2403,7 +2460,10 @@ function DraftBoardCardShell({
         metricColumnGridTemplate={null}
         rowGridTemplate={cardMetric ? 'var(--draft-board-card-grid-with-metric)' : 'var(--draft-board-card-grid)'}
         compactRowGridTemplate={cardMetric ? 'var(--draft-board-card-grid-with-metric)' : 'var(--draft-board-card-grid-compact)'}
-        identityMetaSegments={[[player.position, player.team || 'FA'].filter(Boolean).join(' · ')]}
+        identityMetaSegments={[
+          [player.position, player.team || 'FA'].filter(Boolean).join(' · '),
+          availability.status ? <DraftPlayerAvailabilityBadge key="availability" player={player} /> : null,
+        ].filter(Boolean)}
         compact={false}
         showPosition={false}
         status={boardStatus}
@@ -2802,6 +2862,9 @@ function MyBoardWorkspace({
   setQuery,
   boardScope,
   onBoardScopeChange,
+  availabilityFilter,
+  availabilityOptions,
+  onAvailabilityFilterChange,
   rosterSlots,
   cardMetricKey,
 }) {
@@ -2867,8 +2930,9 @@ function MyBoardWorkspace({
       availablePlayers.filter((player) => !boardIdSet.has(player.id) && player.available !== false),
       activePosition,
       query,
+      availabilityFilter,
     ).slice(0, 120)
-  ), [availablePlayers, boardIdSet, activePosition, query]);
+  ), [availablePlayers, boardIdSet, activePosition, query, availabilityFilter]);
 
   const rowsByPosition = useMemo(() => {
     const result = new Map();
@@ -3019,6 +3083,11 @@ function MyBoardWorkspace({
               placeholder="Search players"
               aria-label="Search available draft players"
             />
+            <DraftAvailabilityFilter
+              options={availabilityOptions}
+              value={availabilityFilter}
+              onChange={onAvailabilityFilterChange}
+            />
             <PositionFilter positions={positions} activePosition={activePosition} onChange={onPositionChange} />
           </div>
           <DraftAvailablePlayerList
@@ -3072,6 +3141,11 @@ function MyBoardWorkspace({
                     onChange={(event) => setQuery(event.target.value)}
                     placeholder="Search players"
                     aria-label="Search available draft players"
+                  />
+                  <DraftAvailabilityFilter
+                    options={availabilityOptions}
+                    value={availabilityFilter}
+                    onChange={onAvailabilityFilterChange}
                   />
                   <PositionFilter positions={positions} activePosition={activePosition} onChange={onPositionChange} />
                 </div>
@@ -3273,6 +3347,7 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
     refreshDraft,
   } = useSleeperDraftSync({ selectedLeagueId, league, sleeperDraftId });
   const [positionFilter, setPositionFilter] = useState('ALL');
+  const [availabilityFilter, setAvailabilityFilter] = useState('all');
   const [query, setQuery] = useState('');
   const [boardScope, setBoardScope] = useState('available');
   const [myBoardSortMode, setMyBoardSortMode] = useState('position');
@@ -3478,9 +3553,25 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
     () => normalizeOverallBoardIds(overallBoardIds, orderedBoardByPosition),
     [overallBoardIds, orderedBoardByPosition],
   );
+  const draftRosterEligiblePositions = useMemo(
+    () => getDraftRosterEligiblePositions(league?.roster_positions),
+    [league?.roster_positions],
+  );
+  const eligibleBoardIds = useMemo(
+    () => boardIds.filter((playerId) => (
+      isPlayerEligibleForDraftRoster(players?.[playerId], draftRosterEligiblePositions)
+    )),
+    [boardIds, draftRosterEligiblePositions, players],
+  );
+  const eligibleBoardIdSet = useMemo(() => new Set(eligibleBoardIds), [eligibleBoardIds]);
+  const eligibleOrderedBoardByPosition = useMemo(() => Object.fromEntries(
+    Object.entries(orderedBoardByPosition)
+      .map(([position, ids]) => [position, ids.filter((id) => eligibleBoardIdSet.has(String(id)))])
+      .filter(([, ids]) => ids.length > 0),
+  ), [eligibleBoardIdSet, orderedBoardByPosition]);
   const boardMembershipKey = useMemo(
-    () => [...boardIds].map((id) => String(id)).sort().join('|'),
-    [boardIds],
+    () => [...eligibleBoardIds].map((id) => String(id)).sort().join('|'),
+    [eligibleBoardIds],
   );
   useEffect(() => {
     if (isStandaloneBoard) {
@@ -3488,9 +3579,9 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
       return;
     }
     startTransition(() => {
-      setModelBoardIds(boardIds);
+      setModelBoardIds(eligibleBoardIds);
     });
-  }, [isStandaloneBoard, boardIds]);
+  }, [isStandaloneBoard, eligibleBoardIds]);
   const viewModelBoardIds = useMemo(
     () => (isStandaloneBoard ? EMPTY_VIEW_MODEL_BOARD_IDS : modelBoardIds),
     [isStandaloneBoard, modelBoardIds],
@@ -3594,7 +3685,7 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
   );
   const boardRows = useMemo(
     () => buildFastBoardRows({
-      boardIds,
+      boardIds: eligibleBoardIds,
       candidatesById,
       players,
       rosters,
@@ -3602,7 +3693,7 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
       myRosterId: myRosterData?.roster_id,
       getUserDisplayName,
     }),
-    [boardIds, candidatesById, players, rosters, draftOrderContext.normalizedPicks, myRosterData?.roster_id, getUserDisplayName],
+    [eligibleBoardIds, candidatesById, players, rosters, draftOrderContext.normalizedPicks, myRosterData?.roster_id, getUserDisplayName],
   );
   const boardRowsWithRanks = useMemo(
     () => decoratePositionRanks(boardRows, positionRankMap),
@@ -3631,15 +3722,25 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
     [...bigBoardPlayers, ...boardRowsWithRanks].map((player) => [String(player.id), player]),
   ), [bigBoardPlayers, boardRowsWithRanks]);
   dropPlayerLookupRef.current = dropPlayerLookup;
-  const boardIdSet = useMemo(() => new Set(boardIds), [boardMembershipKey]);
+  const boardIdSet = useMemo(() => new Set(eligibleBoardIds), [boardMembershipKey, eligibleBoardIds]);
   const positions = useMemo(
     () => getAvailablePositions(bigBoardPlayers, boardRowsWithRanks),
     [bigBoardPlayers, boardRowsWithRanks],
+  );
+  const availabilityOptions = useMemo(
+    () => getPlayerAvailabilityFilterOptions(activePlayersWithRanks),
+    [activePlayersWithRanks],
   );
 
   useEffect(() => {
     if (!positions.includes(positionFilter)) setPositionFilter('ALL');
   }, [positions, positionFilter]);
+
+  useEffect(() => {
+    if (!availabilityOptions.some((option) => option.id === availabilityFilter)) {
+      setAvailabilityFilter('all');
+    }
+  }, [availabilityFilter, availabilityOptions]);
 
   useEffect(() => {
     if (selectedAnalyticsPlayerId && !selectedAnalyticsPlayer) {
@@ -3845,11 +3946,11 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
           </div>
         </DraftMobileControlMenu>
         <MyBoardWorkspace
-          boardByPosition={orderedBoardByPosition}
-          overallBoardIds={boardIds}
+          boardByPosition={eligibleOrderedBoardByPosition}
+          overallBoardIds={eligibleBoardIds}
           boardRows={boardRowsWithRanks}
           availablePlayers={bigBoardPlayers}
-          boardIds={boardIds}
+          boardIds={eligibleBoardIds}
           positions={positions}
           darkMode={darkMode}
           onAdd={addToBoard}
@@ -3864,6 +3965,9 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
           setQuery={setQuery}
           boardScope={boardScope}
           onBoardScopeChange={setBoardScope}
+          availabilityFilter={availabilityFilter}
+          availabilityOptions={availabilityOptions}
+          onAvailabilityFilterChange={setAvailabilityFilter}
           rosterSlots={rosterSlots}
           cardMetricKey={draftBoardCardMetric}
         />
@@ -3899,6 +4003,9 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
           darkMode={darkMode}
           boardScope={boardScope}
           onBoardScopeChange={setBoardScope}
+          availabilityFilter={availabilityFilter}
+          availabilityOptions={availabilityOptions}
+          onAvailabilityFilterChange={setAvailabilityFilter}
           statsLoading={draftStatsLoading}
           modelWeights={modelWeights}
           onModelWeightChange={changeModelWeight}

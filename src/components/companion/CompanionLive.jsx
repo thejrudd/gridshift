@@ -30,6 +30,7 @@ import {
   getLiveStatus,
   startLiveSession,
 } from '../../api/liveApi';
+import { getStatisticsScoresStatus } from '../../api/statisticsScoresApi';
 import { fetchGameWeather } from '../../api/weatherApi';
 import {
   buildProjectionContext,
@@ -586,6 +587,8 @@ export default function CompanionLive({ onViewPlayer = null }) {
   const [matchupsLoading, setMatchupsLoading] = useState(false);
   const [matchupIndex, setMatchupIndex] = useState(0);
   const [liveStatus, setLiveStatus] = useState(null);
+  const [scoresProviderStatus, setScoresProviderStatus] = useState(null);
+  const [scoresProviderStatusError, setScoresProviderStatusError] = useState('');
   const [accessCode, setAccessCode] = useState('');
   const [liveGames, setLiveGames] = useState([]);
   const [statsByGame, setStatsByGame] = useState({});
@@ -740,6 +743,24 @@ export default function CompanionLive({ onViewPlayer = null }) {
       })
       .finally(() => {
         if (!cancelled) setNflStateLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setScoresProviderStatusError('');
+    getStatisticsScoresStatus()
+      .then((payload) => {
+        if (!cancelled) setScoresProviderStatus(payload);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setScoresProviderStatus(null);
+          setScoresProviderStatusError(error?.message ?? 'Could not confirm the Statistics Scores provider.');
+        }
       });
     return () => {
       cancelled = true;
@@ -1792,10 +1813,16 @@ export default function CompanionLive({ onViewPlayer = null }) {
 
   const disableLive = async () => {
     setSessionLoading(true);
+    setLiveError('');
     try {
-      await clearLiveSession();
-      const statusPayload = await getLiveStatus();
-      setLiveStatus(statusPayload);
+      const payload = await clearLiveSession();
+      // Clearing a browser session does not change server configuration. Keep
+      // the current live config and use the delete response to reopen the
+      // enable gate immediately, without depending on a second status fetch.
+      setLiveStatus((current) => ({
+        ...(current ?? {}),
+        session: payload?.session ?? { enabled: false },
+      }));
     } catch (error) {
       setLiveError(error?.message ?? 'Could not turn off live scoring.');
     } finally {
@@ -1817,6 +1844,7 @@ export default function CompanionLive({ onViewPlayer = null }) {
   const platformLabel = platform === 'espn' ? 'ESPN' : 'Sleeper';
   const liveEnabled = Boolean(liveStatus?.live?.enabled);
   const sessionEnabled = Boolean(liveStatus?.session?.enabled);
+  const sessionCanDisable = Boolean(liveStatus?.session?.canDisable);
   const liveConfigurationMessage = getLiveConfigurationMessage(liveStatus?.live, platformLabel);
   const mockPlaysEnabled = isMockPlayByPlayEnabled(liveStatus);
   // The league week remains the page context all week. The transient live
@@ -1970,7 +1998,7 @@ export default function CompanionLive({ onViewPlayer = null }) {
         </div>
       )}
 
-      {week && liveEnabled && !sessionEnabled && (
+      {liveEnabled && !sessionEnabled && (
         <div className="companion-live-gate">
           <div>
             <span>Live Access</span>
@@ -1986,7 +2014,7 @@ export default function CompanionLive({ onViewPlayer = null }) {
                 type="text"
                 value={accessCode}
                 onChange={(event) => setAccessCode(event.target.value)}
-                placeholder="Access code"
+                placeholder="Passphrase"
                 className="companion-live-input"
               />
             )}
@@ -2060,13 +2088,22 @@ export default function CompanionLive({ onViewPlayer = null }) {
         {showDetails && (
           <div className="companion-live-details">
             <dl>
-              <div><dt>Data server</dt><dd>{liveStatus ? (liveEnabled ? 'Ready' : 'Needs setup') : (statusError ? 'Unavailable' : 'Checking…')}</dd></div>
-              <div><dt>This league</dt><dd>{sessionEnabled ? 'Live scoring on' : (liveEnabled ? 'Not enabled' : 'Waiting for server')}</dd></div>
+              <div><dt>Fantasy Live server</dt><dd>{liveStatus ? (liveEnabled ? 'Ready' : 'Needs setup') : (statusError ? 'Unavailable' : 'Checking…')}</dd></div>
+              <div><dt>Fantasy Live league</dt><dd>{sessionEnabled ? 'Live scoring on' : (liveEnabled ? 'Not enabled' : 'Waiting for server')}</dd></div>
+              <div><dt>Scores provider</dt><dd>{scoresProviderStatus?.providerLabel ?? (scoresProviderStatusError ? 'Unavailable' : 'Checking…')}</dd></div>
               <div><dt>Snapshot age</dt><dd>{cacheMeta ? `${Math.round((cacheMeta.ageMs ?? 0) / 100) / 10}s` : '—'}</dd></div>
               <div><dt>Matchup games live</dt><dd>{sessionEnabled ? matchupLiveGameCount : '—'}</dd></div>
               <div><dt>Live starters</dt><dd>{sessionEnabled && totalStarters ? `${matchedStarters}/${totalStarters}` : '—'}</dd></div>
             </dl>
             {liveConfigurationMessage && <p>{liveConfigurationMessage}</p>}
+            <p>
+              Fantasy Live server and league access control this matchup view only. {scoresProviderStatus?.message ?? (scoresProviderStatusError || 'Statistics Scores provider status is still loading.')}
+            </p>
+            {sessionEnabled && !sessionCanDisable && (
+              <p>
+                Turning off Live requires the server passphrase used to enable this session.
+              </p>
+            )}
             {sessionEnabled && (
               <div className="companion-live-details__actions">
                 <button
@@ -2085,9 +2122,11 @@ export default function CompanionLive({ onViewPlayer = null }) {
                 >
                   {loadingLive ? 'Refreshing…' : 'Refresh'}
                 </button>
-                <button type="button" className="companion-live-chip-button" onClick={disableLive} disabled={sessionLoading}>
-                  Turn off live scoring for this browser
-                </button>
+                {sessionCanDisable && (
+                  <button type="button" className="companion-live-chip-button" onClick={disableLive} disabled={sessionLoading}>
+                    Turn off live scoring for this browser
+                  </button>
+                )}
               </div>
             )}
           </div>

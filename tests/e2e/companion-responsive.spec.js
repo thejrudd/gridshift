@@ -67,6 +67,74 @@ test('Fantasy horizontal affordances appear when rails overflow', async ({ page 
   await expect(page.locator('[data-scroll-cue="right"]').first()).toBeVisible();
 });
 
+test('Fantasy Rosters labels submitted Sleeper keepers', async ({ page }) => {
+  await page.goto('/fantasy/rosters?team=1');
+
+  const firstKeeper = page.getByRole('button', { name: 'Open Christopher Pocket Commander-Supercalifragilistic' });
+  const secondKeeper = page.getByRole('button', { name: 'Open Amon-Ra Saint Brown Extended Test' });
+  const nonKeeper = page.getByRole('button', { name: 'Open Jonathan Volume Runner The Third' });
+
+  await expect(firstKeeper.getByText('Keeper', { exact: true })).toBeVisible();
+  await expect(secondKeeper.getByText('Keeper', { exact: true })).toBeVisible();
+  await expect(nonKeeper.getByText('Keeper', { exact: true })).toHaveCount(0);
+
+  for (const keeperRow of [firstKeeper, secondKeeper]) {
+    const keeperLabel = keeperRow.locator('.companion-player-row__meta-item', { hasText: /^Keeper$/ });
+    await expect(keeperLabel).toBeVisible();
+    await expect(keeperRow.locator('.companion-player-row__identity-accessory')).toHaveCount(0);
+    await expect(keeperLabel).toHaveCSS('font-family', /Barlow Condensed/);
+
+    const geometry = await keeperLabel.evaluate((label) => {
+      const meta = label.closest('.companion-player-row__meta');
+      const labelRect = label.getBoundingClientRect();
+      const metaRect = meta?.getBoundingClientRect();
+      return metaRect ? {
+        labelHeight: labelRect.height,
+        metaHeight: metaRect.height,
+      } : null;
+    });
+    expect(geometry).not.toBeNull();
+    expect(geometry.labelHeight).toBeLessThanOrEqual(geometry.metaHeight + 1);
+  }
+});
+
+test('Fantasy Rosters desktop keeps long names on one line with aligned team logos', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 960 });
+  await page.goto('/fantasy/rosters?team=1');
+
+  const rows = page.locator('.companion-roster-player-row');
+  await expect(rows.first()).toBeVisible();
+
+  const geometry = await rows.evaluateAll((elements) => elements.map((row) => {
+    const label = row.querySelector('.companion-player-row__identity-label');
+    const logoSlot = row.querySelector('.companion-player-row__columns > .companion-player-row__column');
+    if (!label || !logoSlot) return null;
+
+    const labelStyle = getComputedStyle(label);
+    const labelRect = label.getBoundingClientRect();
+    const logoRect = logoSlot.getBoundingClientRect();
+    return {
+      name: label.textContent?.trim(),
+      whiteSpace: labelStyle.whiteSpace,
+      labelHeight: labelRect.height,
+      lineHeight: Number.parseFloat(labelStyle.lineHeight),
+      labelClientWidth: label.clientWidth,
+      labelScrollWidth: label.scrollWidth,
+      logoLeft: logoRect.left,
+    };
+  }).filter(Boolean));
+
+  expect(geometry.length).toBeGreaterThan(0);
+  for (const item of geometry) {
+    expect(item.whiteSpace, item.name).toBe('nowrap');
+    expect(item.labelHeight, item.name).toBeLessThanOrEqual(item.lineHeight + 1);
+    expect(item.labelScrollWidth, item.name).toBeLessThanOrEqual(item.labelClientWidth + 1);
+  }
+
+  const logoLefts = geometry.map((item) => item.logoLeft);
+  expect(Math.max(...logoLefts) - Math.min(...logoLefts)).toBeLessThanOrEqual(1);
+});
+
 test('Fantasy desktop overflow arrows and tab keyboard navigation are interactive', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'chromium-desktop', 'Desktop pointer controls are intentionally hidden for coarse-pointer contexts.');
   await page.setViewportSize({ width: 1024, height: 768 });
@@ -355,7 +423,11 @@ function responsiveFixtureOverrides() {
     })),
   ];
   const responsiveRosters = [
-    ...rosters,
+    ...rosters.map((roster) => (
+      roster.roster_id === 1
+        ? { ...roster, keepers: [101, '103'] }
+        : roster
+    )),
     ...responsiveUsers.slice(3).map((user, index) => ({
       roster_id: index + 4,
       owner_id: user.user_id,

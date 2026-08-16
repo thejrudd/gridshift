@@ -9,14 +9,19 @@ import useMediaQuery from '../../hooks/useMediaQuery.js';
 import HorizontalScrollCue from '../HorizontalScrollCue.jsx';
 import useHorizontalScrollCue from '../../hooks/useHorizontalScrollCue.js';
 import PlayerStatusBadge, { PlayerStatusLogoCluster } from './PlayerStatusBadge.jsx';
-import { getPlayerAvailabilityStatus } from '../../utils/playerAvailabilityStatus.js';
+import {
+  getPlayerAvailabilityContext,
+} from '../../utils/playerAvailabilityStatus.js';
 import {
   CompanionFantasyTeamMenu,
   CompanionSegmentedControl,
   CompanionSelectorButton,
 } from './CompanionSelectorControls.jsx';
 import { POSITION_COLORS } from '../../utils/companionAssetVisuals.js';
-import CompanionPlayerRow, { CompanionPlayerAction, CompanionPlayerMetric } from './CompanionPlayerRow.jsx';
+import CompanionPlayerRow, {
+  CompanionPlayerAction,
+  CompanionPlayerMetric,
+} from './CompanionPlayerRow.jsx';
 import StatsProgressBanner from '../ui/StatsProgressBanner';
 import UiEmptyState from '../ui/EmptyState';
 
@@ -102,9 +107,24 @@ function measureMaxNameWidth(players) {
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
   if (!ctx) return 0;
-  ctx.font = '600 14px Figtree, sans-serif';
-  return Math.ceil(players.reduce((max, p) =>
-    Math.max(max, ctx.measureText(p.name ?? '').width), 0)) + 8;
+
+  // Keep the measured column in lockstep with the actual roster identity
+  // typography. A fixed 14px measurement underestimates names when the
+  // display-size preference or the semantic emphasis token is larger, which
+  // makes the identity wrap before the logo/status rail can move over.
+  const probe = document.createElement('span');
+  probe.className = 'companion-player-row__identity';
+  probe.style.cssText = 'position:absolute; visibility:hidden; pointer-events:none; white-space:nowrap;';
+  document.body?.appendChild(probe);
+
+  try {
+    const computed = getComputedStyle(probe);
+    ctx.font = `${computed.fontStyle} ${computed.fontWeight} ${computed.fontSize} ${computed.fontFamily}`;
+    return Math.ceil(players.reduce((max, p) =>
+      Math.max(max, ctx.measureText(p.name ?? '').width), 0)) + 8;
+  } finally {
+    probe.remove();
+  }
 }
 
 function hexLuminance(hex) {
@@ -344,6 +364,7 @@ function LeagueRosterView({ onTradePlayer, onViewPlayer = null, tradeDisabled = 
 
   const rosterPlayers = useMemo(() => {
     if (!selectedRoster || !players) return [];
+    const keeperIds = new Set((selectedRoster.keepers ?? []).map(String));
     return selectedRosterPlayerIds.map(id => {
       const p = players[id];
       if (!p) return null;
@@ -353,6 +374,7 @@ function LeagueRosterView({ onTradePlayer, onViewPlayer = null, tradeDisabled = 
       const avgPPG = getRosterAvgPPG(weekly, stats, pts, activeScoringSettings, p.position);
       const rank = positionalRanks[id] ?? null;
       const isReserve = selectedRoster.reserve?.includes(id);
+      const availability = getPlayerAvailabilityContext(p, { isReserve });
       return {
         id,
         name: p.full_name || `${p.first_name} ${p.last_name}`,
@@ -362,7 +384,9 @@ function LeagueRosterView({ onTradePlayer, onViewPlayer = null, tradeDisabled = 
         avgPPG,
         rank,
         isReserve,
-        availabilityStatus: getPlayerAvailabilityStatus(p, { isReserve }),
+        isKeeper: keeperIds.has(String(id)),
+        availabilityStatus: availability.status,
+        availabilityDetail: availability.detail,
         teamTheme: teamRowTheme(p.team || '', darkMode),
       };
     }).filter(Boolean);
@@ -569,6 +593,7 @@ function LeagueResponsivePlayerRow({ player, onSelect, onTrade, tradeDisabled = 
   const metaSegments = [
     player.position,
     player.team,
+    player.isKeeper ? 'Keeper' : null,
     showReserveMeta ? 'IR' : null,
     rankLabel,
   ].filter(Boolean);
@@ -584,7 +609,7 @@ function LeagueResponsivePlayerRow({ player, onSelect, onTrade, tradeDisabled = 
           player={player}
           darkMode={darkMode}
           onClick={onSelect}
-          className="flex-1"
+          className={`companion-roster-player-row flex-1${player.isKeeper ? ' is-keeper' : ''}`}
           showPosition={false}
           showTeamLogo={false}
           compact={isCompactPhone}
@@ -598,6 +623,7 @@ function LeagueResponsivePlayerRow({ player, onSelect, onTrade, tradeDisabled = 
                 key="status"
                 logoKey={player.teamTheme.logoKey}
                 status={player.availabilityStatus}
+                detail={player.availabilityDetail}
                 className="justify-start self-center"
               />
             ),

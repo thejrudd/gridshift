@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { afterEach, describe, it } from 'node:test';
-import { getLiveConfigStatus } from '../../server/liveHandlers.js';
+import { buildLiveGamesParams, getLiveConfigStatus } from '../../server/liveHandlers.js';
 
 const originalNodeEnv = process.env.NODE_ENV;
 const originalMockPlays = process.env.GRIDSHIFT_LIVE_MOCK_PLAYS;
@@ -24,6 +24,17 @@ afterEach(() => {
 });
 
 describe('Fantasy Live placeholder-data boundary', () => {
+  it('keeps preseason out of the BALLDONTLIE live games request', () => {
+    const params = buildLiveGamesParams({
+      season: '2026',
+      week: '1',
+      seasonType: '1',
+    });
+
+    assert.deepEqual(params.getAll('season_type[]'), ['2', '3']);
+    assert.equal(params.getAll('season_type[]').includes('1'), false);
+  });
+
   it('allows mock plays in a local test environment', () => {
     process.env.NODE_ENV = 'test';
     process.env.GRIDSHIFT_LIVE_MOCK_PLAYS = 'true';

@@ -1,3 +1,5 @@
+import { NFL_SCOREBOARD_TIME_ZONE } from './statisticsScoresGrouping.js';
+
 const ESPN_NFL_SCOREBOARD_URL = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard';
 
 export const NFL_SEASON_PHASES = Object.freeze({
@@ -11,13 +13,14 @@ export const ESPN_SEASON_TYPES = Object.freeze({
 });
 
 export const PRESEASON_WEEK_COUNT = 4;
+export const REGULAR_WEEK_COUNT = 18;
 export const STATISTICS_PHASE_STORAGE_KEY = 'gridshift.statisticsNflPhase';
 
 const PRESEASON_WEEK_FALLBACKS = [
   { label: 'Hall of Fame Weekend', shortLabel: 'HOF' },
-  { label: 'Preseason Week 1', shortLabel: 'P1' },
-  { label: 'Preseason Week 2', shortLabel: 'P2' },
-  { label: 'Preseason Week 3', shortLabel: 'P3' },
+  { label: 'Preseason Week 1', shortLabel: 'Pre Wk 1' },
+  { label: 'Preseason Week 2', shortLabel: 'Pre Wk 2' },
+  { label: 'Preseason Week 3', shortLabel: 'Pre Wk 3' },
 ];
 
 export function normalizeNflSeasonPhase(value, fallback = NFL_SEASON_PHASES.REGULAR) {
@@ -122,19 +125,23 @@ function getStatusLabel(event, status) {
 function formatDate(value, options) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
-  return new Intl.DateTimeFormat('en-US', options).format(date);
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: NFL_SCOREBOARD_TIME_ZONE,
+    ...options,
+  }).format(date);
 }
 
-function getLiveSituation(competition, awayTeam, homeTeam) {
+function getLiveSituation(competition, awayTeam, homeTeam, eventStatus) {
   const situation = competition?.situation;
   const competitors = competition?.competitors ?? [];
   const possessionCompetitor = competitors.find((entry) => entry?.possession === true);
   const possession = possessionCompetitor?.team?.abbreviation?.toUpperCase?.() ?? null;
-  if (!situation && !possession) return null;
+  const status = competition?.status ?? eventStatus ?? {};
+  if (!situation && !possession && !status?.displayClock) return null;
 
   return {
-    period: competition?.status?.period ? String(competition.status.period) : null,
-    clock: competition?.status?.displayClock ?? null,
+    period: status?.period ? String(status.period) : null,
+    clock: status?.displayClock ?? null,
     possession,
     downDistance: situation?.shortDownDistanceText ?? situation?.downDistanceText ?? null,
     fieldPosition: situation?.possessionText ?? null,
@@ -142,6 +149,13 @@ function getLiveSituation(competition, awayTeam, homeTeam) {
     awayTimeouts: competitors.find((entry) => entry?.team?.abbreviation === awayTeam.id)?.timeouts ?? null,
     homeTimeouts: competitors.find((entry) => entry?.team?.abbreviation === homeTeam.id)?.timeouts ?? null,
   };
+}
+
+function getQuarterScores(competitor) {
+  const scores = (competitor?.linescores ?? [])
+    .map((entry) => asScore(entry?.value ?? entry?.displayValue))
+    .filter((score) => score != null);
+  return scores.length ? scores : null;
 }
 
 export function normalizeEspnScoreboardEvent(event, { phase = NFL_SEASON_PHASES.PRESEASON } = {}) {
@@ -178,7 +192,10 @@ export function normalizeEspnScoreboardEvent(event, { phase = NFL_SEASON_PHASES.
     location: venueDetails.location,
     venueCountry: venueDetails.country,
     neutralSite: Boolean(competition?.neutralSite),
-    detailsAvailable: false,
+    detailsAvailable: true,
+    provider: 'espn',
+    providerGameId: String(event.id),
+    playByPlayAvailable: false,
     away,
     home,
     awayTeam: away.id,
@@ -188,28 +205,37 @@ export function normalizeEspnScoreboardEvent(event, { phase = NFL_SEASON_PHASES.
     awayScore: score.away,
     homeScore: score.home,
     completed: status === 'final',
-    live: status === 'live' ? getLiveSituation(competition, away, home) : null,
+    quarterScores: {
+      away: getQuarterScores(awayCompetitor),
+      home: getQuarterScores(homeCompetitor),
+    },
+    live: status === 'live' ? getLiveSituation(competition, away, home, event?.status) : null,
   };
 }
 
-function getPreseasonCalendar(payload) {
+function getSeasonCalendar(payload, phase) {
   const calendar = payload?.leagues?.[0]?.calendar ?? [];
-  return calendar.find((entry) => String(entry?.value) === String(ESPN_SEASON_TYPES.preseason))?.entries ?? [];
+  return calendar.find((entry) => String(entry?.value) === String(ESPN_SEASON_TYPES[phase]))?.entries ?? [];
 }
 
 function normalizeWeek(payload, weekNumber, phase) {
-  const calendarEntry = getPreseasonCalendar(payload)[weekNumber - 1];
-  const fallback = PRESEASON_WEEK_FALLBACKS[weekNumber - 1] ?? {
-    label: `Preseason Week ${weekNumber}`,
-    shortLabel: `P${weekNumber}`,
-  };
+  const calendarEntry = getSeasonCalendar(payload, phase)[weekNumber - 1];
+  const fallback = phase === NFL_SEASON_PHASES.PRESEASON
+    ? PRESEASON_WEEK_FALLBACKS[weekNumber - 1] ?? {
+      label: `Preseason Week ${weekNumber}`,
+      shortLabel: `Pre Wk ${weekNumber}`,
+    }
+    : {
+      label: `Week ${weekNumber}`,
+      shortLabel: `W${weekNumber}`,
+    };
   const games = (payload?.events ?? [])
     .map((event) => normalizeEspnScoreboardEvent(event, { phase }))
     .filter(Boolean)
     .sort((left, right) => Date.parse(left.kickoff) - Date.parse(right.kickoff));
 
   return {
-    id: `pre-${weekNumber}`,
+    id: `${phase === NFL_SEASON_PHASES.PRESEASON ? 'pre' : 'reg'}-${weekNumber}`,
     week: weekNumber,
     label: asNonEmptyString(calendarEntry?.label) ?? fallback.label,
     shortLabel: asNonEmptyString(calendarEntry?.alternateLabel) ?? fallback.shortLabel,
@@ -283,6 +309,26 @@ export async function fetchEspnPreseason({
   return normalizeEspnScoreboardSeason(payloads, { season, phase: NFL_SEASON_PHASES.PRESEASON });
 }
 
+export async function fetchEspnRegularSeason({
+  season,
+  fetcher = fetch,
+  signal,
+} = {}) {
+  const payloads = await Promise.all(
+    Array.from({ length: REGULAR_WEEK_COUNT }, (_, index) => (
+      fetchEspnScoreboardWeek({
+        season,
+        week: index + 1,
+        phase: NFL_SEASON_PHASES.REGULAR,
+        fetcher,
+        signal,
+      })
+    )),
+  );
+
+  return normalizeEspnScoreboardSeason(payloads, { season, phase: NFL_SEASON_PHASES.REGULAR });
+}
+
 export function replaceEspnScoreboardWeek(seasonData, payload, weekNumber) {
   const replacement = normalizeWeek(payload, weekNumber, seasonData?.phase ?? NFL_SEASON_PHASES.PRESEASON);
   const weeks = (seasonData?.weeks ?? []).map((week) => week.week === weekNumber ? replacement : week);
@@ -294,6 +340,109 @@ export function replaceEspnScoreboardWeek(seasonData, payload, weekNumber) {
       ...seasonData?.metadata,
       hasSchedule: weeks.some((week) => week.games.length > 0),
       totalGames: weeks.reduce((total, week) => total + week.games.length, 0),
+    },
+  };
+}
+
+function normalizeCrosswalkTeamId(teamId) {
+  const normalized = String(teamId ?? '').trim().toUpperCase();
+  if (normalized === 'WSH') return 'WAS';
+  if (normalized === 'JAC') return 'JAX';
+  return normalized;
+}
+
+function sameNflMatchup(left, right) {
+  return normalizeCrosswalkTeamId(left?.away?.id ?? left?.awayTeam)
+      === normalizeCrosswalkTeamId(right?.away?.id ?? right?.awayTeam)
+    && normalizeCrosswalkTeamId(left?.home?.id ?? left?.homeTeam)
+      === normalizeCrosswalkTeamId(right?.home?.id ?? right?.homeTeam);
+}
+
+function overlayEspnSnapshot(baseGame, espnGame) {
+  const live = espnGame.live
+    ? { ...espnGame.live, possession: normalizeCrosswalkTeamId(espnGame.live.possession) || null }
+    : null;
+  return {
+    ...baseGame,
+    espnEventId: espnGame.espnEventId,
+    scoreboardProvider: 'espn',
+    detailsProvider: baseGame.provider,
+    status: espnGame.status,
+    statusLabel: espnGame.statusLabel,
+    score: espnGame.score,
+    awayScore: espnGame.awayScore,
+    homeScore: espnGame.homeScore,
+    completed: espnGame.completed,
+    live,
+    records: espnGame.records ?? baseGame.records,
+    quarterScores: espnGame.quarterScores ?? baseGame.quarterScores,
+    network: espnGame.network,
+    broadcasts: espnGame.broadcasts,
+    broadcastProvider: 'espn',
+    asOf: new Date().toISOString(),
+  };
+}
+
+function overlayEspnBroadcastMetadata(baseGame, espnGame) {
+  return {
+    ...baseGame,
+    network: espnGame.network,
+    broadcasts: espnGame.broadcasts,
+    broadcastProvider: 'espn',
+  };
+}
+
+export function overlayEspnBroadcastsWeek(seasonData, payload, weekNumber) {
+  const replacement = normalizeWeek(payload, weekNumber, seasonData?.phase ?? NFL_SEASON_PHASES.PRESEASON);
+  const weeks = (seasonData?.weeks ?? []).map((week) => {
+    if (week.week !== weekNumber) return week;
+    return {
+      ...week,
+      games: (week.games ?? []).map((game) => {
+        const espnGame = replacement.games.find((candidate) => sameNflMatchup(game, candidate));
+        return espnGame ? overlayEspnBroadcastMetadata(game, espnGame) : game;
+      }),
+    };
+  });
+
+  return {
+    ...seasonData,
+    weeks,
+    games: weeks.flatMap((week) => week.games),
+  };
+}
+
+export function overlayEspnScoreboardWeek(seasonData, payload, weekNumber) {
+  if (seasonData?.provider !== 'balldontlie') {
+    return replaceEspnScoreboardWeek(seasonData, payload, weekNumber);
+  }
+
+  const replacement = normalizeWeek(payload, weekNumber, seasonData.phase ?? NFL_SEASON_PHASES.PRESEASON);
+  const weeks = (seasonData.weeks ?? []).map((week) => {
+    if (week.week !== weekNumber) return week;
+    const matchedEspnIds = new Set();
+    const games = (week.games ?? []).map((game) => {
+      const espnGame = replacement.games.find((candidate) => sameNflMatchup(game, candidate));
+      if (!espnGame) return game;
+      matchedEspnIds.add(espnGame.id);
+      return overlayEspnSnapshot(game, espnGame);
+    });
+    replacement.games.forEach((game) => {
+      if (!matchedEspnIds.has(game.id)) {
+        games.push({ ...game, scoreboardProvider: 'espn', detailsProvider: 'espn' });
+      }
+    });
+    games.sort((left, right) => Date.parse(left.kickoff) - Date.parse(right.kickoff));
+    return { ...week, games };
+  });
+
+  return {
+    ...seasonData,
+    weeks,
+    games: weeks.flatMap((week) => week.games),
+    metadata: {
+      ...seasonData.metadata,
+      scoreboardSource: 'ESPN public scoreboard',
     },
   };
 }

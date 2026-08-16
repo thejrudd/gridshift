@@ -30,6 +30,7 @@ import {
   scheduleGameMatchesFilter,
   scheduleHasGames,
 } from '../utils/statisticsSchedule';
+import { getScoreNetworkLabel } from '../utils/statisticsBroadcasts';
 
 const SCHEDULE_MODE_STORAGE_KEY = 'gridshift.statisticsScheduleMode';
 const DIVISION_ORDER = [
@@ -123,11 +124,13 @@ function getBroadcasts(game = {}) {
     ? game.broadcasts.filter((broadcast) => broadcast?.name)
     : [];
   if (broadcasts.length > 0) return broadcasts;
-  return [{ name: game.network || 'TV TBD' }];
+  const network = getScoreNetworkLabel(game);
+  return network ? [{ name: network }] : [];
 }
 
 function BroadcastDisplay({ game, darkMode }) {
   const broadcasts = getBroadcasts(game);
+  if (broadcasts.length === 0) return null;
   const label = broadcasts.map((broadcast) => broadcast.name).join(' / ');
 
   return (

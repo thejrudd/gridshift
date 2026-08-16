@@ -1208,3 +1208,13 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Fantasy Live availability** - Use the active NFL state for the current fantasy week, explain inactive-season and historical-season states, and avoid rendering stale matchup controls when no fantasy matchup is active.
 - **Fantasy Live status** - Tie the live indicator to starter-relevant games in the selected matchup and expose separate server configuration prerequisites for actionable setup feedback.
 - **Regression coverage** - Added unit and Playwright coverage for prior-season production loading, inactive-season availability, live-game relevance, server-side live-scoring configuration, and historical tour navigation.
+
+## v8.5.0 - Fantasy & Draft Context
+*2026-08-16*
+
+- **Fantasy and Draft context** - Added injury availability context, roster-eligible Draft pools, and keeper labels that appear once the respective manager sets them in leagues that use keepers. Non-keeper leagues continue without keeper labels.
+- **Scoring-model clarity** - Added separate scoring-model and NFL-stat season selection so a results year can be evaluated using another linked league year's rules, with explicit calculation labels.
+- **Rankings export improvements** - Added branded top-player image exports that preserve the active rankings order and identify the scoring model and NFL-stat season.
+- **Statistics Scores reliability** - Corrected preseason rollover and labels, January season classification, live-state and refresh behavior, calendar grouping, reverse-ordered plays, drilldown eligibility, and real-data detail requests.
+- **Production data boundary** - Kept local Statistics Scores fixtures and source overrides in development/test-only paths; production builds do not expose the developer source picker.
+- **Regression coverage and architecture docs** - Added focused server, provider, clock, grouping, API, responsive, and source-boundary coverage alongside the shared live-data architecture reference.

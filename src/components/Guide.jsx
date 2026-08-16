@@ -252,7 +252,7 @@ const GUIDE_CONTENT = {
       },
       {
         title: 'Export the view',
-        description: 'Use Export to download the current list as CSV or text, keeping your filters and owner names. Preview another league in the Scoring tab first to project values under its rules.',
+        description: 'Use Export to download the current list as CSV or text, keeping your filters and owner names. Review historical production in the Scoring tab under your current league rules before comparing position strength.',
       },
       {
         title: 'Open players',
@@ -375,8 +375,8 @@ const GUIDE_CONTENT = {
         description: 'Active shows only non-zero fields; All shows every supported scoring key.',
       },
       {
-        title: 'Preview leagues',
-        description: 'Browse prior or linked leagues to preview another scoring system, then Reset to return to the selected league.',
+        title: 'Review historical results',
+        description: 'Choose a prior completed season to recalculate its production under the current league rules, then Reset season to return to the latest prior season.',
       },
       {
         title: 'Understand impact',

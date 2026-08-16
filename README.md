@@ -10,7 +10,7 @@ An interactive web app for the 2026 NFL season — with full Sleeper fantasy lea
 
 - Predictions — Game picks, constraints, standings, playoff seeding, and shareable infographic export.
 - Statistics — Schedules, standings, team/player profiles, game logs, honors, and scoring breakdowns.
-- Statistics Scores (Beta) — Live ESPN preseason scoreboards, with production regular-season coverage withheld until provider-backed archives are ready.
+- Statistics Scores (Beta) — Provider-backed current-season regular and preseason scoreboards, using server-side BALLDONTLIE when configured and ESPN as the deliberate fallback; broader historical archive coverage continues to expand.
 
 ### Fantasy & League
 
@@ -93,17 +93,21 @@ Server-only variables:
 |---|---|
 | `GRIDSHIFT_SESSION_SECRET` | Signs/encrypts server-managed session values in production. |
 | `GRIDSHIFT_BDL_API_KEY` | BALLDONTLIE API key for server-side NFL live data. Never prefix this with `VITE_`. |
-| `GRIDSHIFT_BDL_TIER` | BALLDONTLIE plan tier, such as `goat` or `all-star`, used for capability checks. |
+| `GRIDSHIFT_BDL_TIER` | BALLDONTLIE capability profile: `free`, `all-star`, `goat`, or `trial`. Unknown values fail conservatively. |
+| `GRIDSHIFT_BDL_EFFECTIVE_MAX_REQ_PER_MIN` | Actual account limit. Set this explicitly because a GOAT trial has GOAT endpoint access but only a 5 RPM limit. |
+| `GRIDSHIFT_BDL_INTERNAL_MAX_REQ_PER_MIN` | Optional operating ceiling. When blank, the shared gateway reserves 25% of the effective limit; paid GOAT therefore operates at 450 of 600 RPM. |
+| `GRIDSHIFT_BDL_CACHE_MAX_ENTRIES` | Maximum entries in the shared, bounded BALLDONTLIE response cache. |
+| `GRIDSHIFT_TRUST_PROXY_HOPS` | Number of trusted reverse-proxy hops used when resolving client IPs for public-route protection. Leave `0` when Node is reached directly. |
 | `GRIDSHIFT_LIVE_ALLOWED_LEAGUE_IDS` | Comma-separated Sleeper league IDs allowed to use paid live scoring on this instance. |
 | `GRIDSHIFT_LIVE_ACCESS_CODE` | Optional shared league code required before an allowlisted league member can use paid live mode. |
 | `GRIDSHIFT_LIVE_COOKIE_SECRET` | Optional live-scoring cookie secret; falls back to `GRIDSHIFT_SESSION_SECRET` when blank. |
 | `GRIDSHIFT_LIVE_CACHE_TTL_MS` | Server cache duration for upstream live-data responses. |
 | `GRIDSHIFT_LIVE_FINAL_TTL_MS` | Server retention tail for finalized live games before hot cache cleanup. |
-| `GRIDSHIFT_LIVE_ARCHIVE_ENABLED` | Enables normalized finalized-game play archives when live data supports them. |
-| `GRIDSHIFT_LIVE_MAX_REQ_PER_MIN` | Local guardrail for provider request volume. |
+| `GRIDSHIFT_LIVE_ARCHIVE_ENABLED` | Advertises archive mode in current server status. A persistence/archive writer is still planned. |
+| `GRIDSHIFT_LIVE_MAX_REQ_PER_MIN` | Per-league/client guardrail for incoming Fantasy Live proxy requests. This is not an account-wide BALLDONTLIE quota. |
 | `GRIDSHIFT_COOKIE_SECURE` | Set `true` for HTTPS production cookies; use `false` only for local HTTP testing. |
 
-Hosted owners can enable paid live scoring for selected Sleeper leagues by setting these variables on the server and keeping `GRIDSHIFT_LIVE_ALLOWED_LEAGUE_IDS` narrow. Self-hosters should supply their own BALLDONTLIE key and league allowlist. Variables prefixed with `VITE_` are public because Vite embeds them in the browser bundle, so paid keys and access codes must always use `GRIDSHIFT_` server variables.
+Hosted owners can enable paid live scoring for selected Sleeper leagues by setting these variables on the server and keeping `GRIDSHIFT_LIVE_ALLOWED_LEAGUE_IDS` narrow. Self-hosters should supply their own BALLDONTLIE key and league allowlist. A paid GOAT account uses `GRIDSHIFT_BDL_TIER=goat` with `GRIDSHIFT_BDL_EFFECTIVE_MAX_REQ_PER_MIN=600`; keep the effective limit at `5` for a GOAT trial or any unverified account. Variables prefixed with `VITE_` are public because Vite embeds them in the browser bundle, so paid keys and access codes must always use `GRIDSHIFT_` server variables.
 
 ## Tech Stack
 
@@ -120,11 +124,9 @@ Hosted owners can enable paid live scoring for selected Sleeper leagues by setti
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) + optional Node API sidecar |
 
-## What's New in v8.4.1
+## What's New in v8.5.0
 
-- **Fantasy Scoring reliability** — Prior-season production now loads consistently for linked Sleeper leagues, keeping Position Strength available when the required historical data exists.
-- **Fantasy Live reliability** — Inactive-season messaging, current-week selection, server setup feedback, and matchup-specific live status now reflect the actual fantasy context.
-- **Tour reliability** — Historical What's New tour navigation remains in place while moving between lazy-loaded league views.
+- **Fantasy and Draft context** — See platform-provided injury availability and roster eligibility while preparing your team. If your league is a keeper league, keeper labels appear once the respective manager sets them; non-keeper leagues continue without keeper labels.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 
@@ -133,6 +135,7 @@ For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 - Sleeper Player Data Caching — Server-side daily `/players/nfl` snapshots and client snapshot reuse.
 - Scout Rookie Projection Layer — Add next-season rookie projections for standard and IDP-focused draft prep.
 - Trade follow-through — Continue polishing Trade drilldowns, explanation copy, and proposal-card readability.
+- Live-data platform — Extend the shared, tier-aware Statistics Scores and Fantasy Live gateway with league ingest lifecycle, optional league-managed keys, and shared infrastructure for multi-instance scale. See [the architecture and rollout plan](docs/Live%20Data%20Server%20Architecture.md).
 
 ## Project Structure
 

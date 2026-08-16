@@ -12,7 +12,13 @@ import {
   positionMatchesLeagueFilter,
 } from '../../utils/leaguePositions';
 import { getPlayerRowTeamTheme } from '../../utils/playerRowTheme';
-import { downloadRankingsExport } from '../../utils/rankingsExport';
+import {
+  downloadRankingsExport,
+  downloadRankingsImage,
+  formatRankingsStatsLabel,
+  RANKINGS_IMAGE_MAX_COUNT,
+} from '../../utils/rankingsExport';
+import { getScoringProfile } from '../../utils/scoringGuide.js';
 import { getPlayerAvailabilityStatus } from '../../utils/playerAvailabilityStatus.js';
 import PlayerStatusBadge, { PlayerStatusLogoCluster } from './PlayerStatusBadge.jsx';
 import {
@@ -31,6 +37,7 @@ import CompanionPlayerRow, {
 import StatsProgressBanner from '../ui/StatsProgressBanner';
 import { SkeletonCard } from '../ui/Skeleton';
 import SeasonHintBanner from '../ui/SeasonHintBanner';
+import RankingsImageExportModal from './RankingsImageExportModal.jsx';
 const COMPACT_PHONE_QUERY = '(max-width: 480px)';
 const HIDE_AVG_QUERY = '(max-width: 900px)';
 const MOBILE_SHEET_QUERY = '(max-width: 1023px)';
@@ -224,6 +231,15 @@ function formatRankingsPpgLabel(value) {
   return `${value.toFixed(1)} PPG`;
 }
 
+function getRankingsSortLabel({ sortBy, sortDir, selectedSortOption, sortValueMode }) {
+  let method = 'Season Points';
+  if (sortBy === 'avg') method = 'Average Points Per Game';
+  else if (sortBy !== 'season') {
+    method = `${selectedSortOption.label} · ${sortValueMode === 'raw' ? 'Game Stats' : 'Fantasy Value'}`;
+  }
+  return `${method} · ${sortDir === 'asc' ? 'Ascending' : 'Descending'}`;
+}
+
 function getActionDisplayValue(player, sortValueMode, period) {
   const contribution = player.sortContribution ?? {};
   const total = sortValueMode === 'raw' ? contribution.raw : contribution.points;
@@ -295,6 +311,7 @@ export default function CompanionRankings({
     rosters,
     leagueUsers,
     league,
+    season,
     myRoster,
     getUserDisplayName,
   } = useSleeperBase();
@@ -313,6 +330,7 @@ export default function CompanionRankings({
   const [selectedRosterIds, setSelectedRosterIds] = useState(() => parseRosterFilter(rosterFilter));
   const [teamMenuOpen, setTeamMenuOpen] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  const [imageExportOpen, setImageExportOpen] = useState(false);
   const searchInputRef = useRef(null);
   const availablePositions = useMemo(
     () => getLeaguePositionFilters(league?.roster_positions),
@@ -494,13 +512,86 @@ export default function CompanionRankings({
   const showRankingsTable = hasAnyRankingsData;
   const sortOptions = useMemo(() => [...BASE_SORT_OPTIONS, ...actionSortOptions], [actionSortOptions]);
 
-  const activeScoringLabel = (scoringOverride && !scoringOverridePaused)
-    ? `${scoringOverride.leagueName}${scoringOverride.season ? ` (${scoringOverride.season})` : ''}`
+  const activeScoringModelYear = (scoringOverride && !scoringOverridePaused)
+    ? scoringOverride.season
+    : (league?.season ?? season);
+  const activeScoringSourceName = (scoringOverride && !scoringOverridePaused)
+    ? scoringOverride.leagueName
     : (league?.name ?? 'League scoring');
+  const activeScoringLabel = `${activeScoringSourceName}${activeScoringModelYear ? ` (${activeScoringModelYear})` : ''}`;
+  const activeScoringRosterPositions = (scoringOverride && !scoringOverridePaused)
+    ? scoringOverride.rosterPositions
+    : league?.roster_positions;
+  const activeScoringProfile = useMemo(
+    () => getScoringProfile(activeScoringSettings, activeScoringRosterPositions),
+    [activeScoringRosterPositions, activeScoringSettings],
+  );
+  const scoringModelLabel = `${activeScoringModelYear ? `${activeScoringModelYear} league year · ` : ''}${activeScoringProfile.title}`;
+  const scoringStatsLabel = formatRankingsStatsLabel(season ?? league?.season);
+  const sortMethodLabel = getRankingsSortLabel({ sortBy, sortDir, selectedSortOption, sortValueMode });
   const canExport = ranked.length > 0;
+
+  const rosterExportLabel = selectedRosterOptions.length
+    ? selectedRosterOptions.map(r => r.name).join(', ')
+    : 'All rosters';
+  const positionExportLabel = selectedFilters.includes('ALL')
+    ? 'All positions'
+    : selectedFilters.map(getFilterChipLabel).join(' + ');
+  const searchExportLabel = search.trim() ? ` · Search “${search.trim()}”` : '';
+  const exportContextLabel = `${positionExportLabel} · ${rosterExportLabel}${searchExportLabel}`;
+
+  function getImageExportRows() {
+    const isAverageSort = sortBy === 'avg';
+    const metricLabel = isActionSort
+      ? `${selectedSortOption.shortLabel ?? selectedSortOption.label}${sortValueMode === 'fantasy' ? ' Pts' : ''}`
+      : isAverageSort ? 'Avg PPG' : 'Season Pts';
+    const rows = ranked.map((player) => {
+      let primaryValue = player.pts != null ? player.pts.toFixed(1) : '—';
+      let secondaryValue = player.avgPPG != null ? `${player.avgPPG.toFixed(1)} PPG` : null;
+      if (isAverageSort) {
+        primaryValue = player.avgPPG != null ? player.avgPPG.toFixed(1) : '—';
+        secondaryValue = player.pts != null ? `${player.pts.toFixed(1)} season pts` : null;
+      } else if (isActionSort) {
+        primaryValue = formatRankingsMetric(getActionDisplayValue(player, sortValueMode, 'season'));
+        const perGame = getActionDisplayValue(player, sortValueMode, 'avg');
+        secondaryValue = Number.isFinite(perGame) ? `${formatRankingsMetric(perGame)} per game` : null;
+      }
+      return {
+        rank: player.rank,
+        player: player.name,
+        position: player.position,
+        team: player.team,
+        owner: ownerNameByPlayerId.get(String(player.id)) ?? '',
+        primaryValue,
+        secondaryValue,
+      };
+    });
+    return { rows, metricLabel };
+  }
+
+  async function handleImageExport(count) {
+    const { rows, metricLabel } = getImageExportRows();
+    await downloadRankingsImage({
+      rows,
+      count,
+      meta: {
+        subtitle: exportContextLabel,
+        sortLabel: sortMethodLabel,
+        scoringModelLabel,
+        scoringLabel: activeScoringLabel,
+        scoringStatsLabel,
+        metricLabel,
+        fileBase: `gridshift-rankings-${activeScoringLabel}`,
+      },
+    });
+  }
 
   function handleExport(format) {
     if (!ranked.length) return;
+    if (format === 'png') {
+      setImageExportOpen(true);
+      return;
+    }
     const statLabel = isActionSort ? (selectedSortOption.shortLabel ?? selectedSortOption.label) : null;
     const valueModeSuffix = sortValueMode === 'raw' ? '' : ' Pts';
     const columns = [
@@ -533,9 +624,6 @@ export default function CompanionRankings({
       return row;
     });
     const scopeLabel = rankScope === 'position' ? 'By Position' : 'Overall';
-    const rosterLabel = selectedRosterOptions.length
-      ? selectedRosterOptions.map(r => r.name).join(', ')
-      : 'All rosters';
     const searchLabel = search.trim() ? ` · Search "${search.trim()}"` : '';
     downloadRankingsExport({
       columns,
@@ -543,8 +631,9 @@ export default function CompanionRankings({
       format,
       meta: {
         title: 'GridShift Rankings',
-        subtitle: `${rosterLabel} · Ranked ${scopeLabel}${searchLabel}`,
+        subtitle: `${rosterExportLabel} · Ranked ${scopeLabel}${searchLabel}`,
         scoringLabel: activeScoringLabel,
+        scoringStatsLabel,
         fileBase: `gridshift-rankings-${activeScoringLabel}`,
       },
     });
@@ -765,6 +854,19 @@ export default function CompanionRankings({
           onViewStats={onViewPlayer}
         />
       )}
+
+      {imageExportOpen && (
+        <RankingsImageExportModal
+          maxCount={Math.min(ranked.length, RANKINGS_IMAGE_MAX_COUNT)}
+          sortLabel={sortMethodLabel}
+          scoringModelLabel={scoringModelLabel}
+          scoringSourceLabel={activeScoringLabel}
+          scoringStatsLabel={scoringStatsLabel}
+          contextLabel={exportContextLabel}
+          onClose={() => setImageExportOpen(false)}
+          onExport={handleImageExport}
+        />
+      )}
     </div>
   );
 }
@@ -825,6 +927,7 @@ function ExportGlyph() {
 }
 
 const EXPORT_FORMAT_OPTIONS = [
+  { id: 'png', label: 'Export Image', hint: 'Top X players' },
   { id: 'csv', label: 'Download CSV', hint: 'Spreadsheet' },
   { id: 'txt', label: 'Download Text', hint: 'Plain list' },
 ];

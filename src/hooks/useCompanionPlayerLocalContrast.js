@@ -66,11 +66,20 @@ export default function useCompanionPlayerLocalContrast(ref, enabled = true) {
     const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(update) : null;
     observer?.observe(row);
     observer?.observe(element);
+    const mutationObserver = typeof MutationObserver !== 'undefined'
+      ? new MutationObserver(update)
+      : null;
+    // Theme changes update the row's inline gradient foreground variables
+    // without changing its dimensions. Recalculate the designation color when
+    // those variables or the root theme class change.
+    mutationObserver?.observe(row, { attributes: true, attributeFilter: ['class', 'style'] });
+    mutationObserver?.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
     window.addEventListener('resize', update);
 
     return () => {
       if (frame) window.cancelAnimationFrame(frame);
       observer?.disconnect();
+      mutationObserver?.disconnect();
       window.removeEventListener('resize', update);
     };
   }, [enabled, ref]);

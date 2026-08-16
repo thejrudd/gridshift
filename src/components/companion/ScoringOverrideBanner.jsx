@@ -5,6 +5,7 @@ export default function ScoringOverrideBanner({ preserveContentScrollDuringUpdat
   const {
     scoringOverride, clearScoringOverride,
     scoringOverridePaused, setScoringOverridePaused,
+    league, season: resultSeason,
   } = useSleeperLeague();
 
   const setPausedWithScrollPreserved = useCallback((paused) => {
@@ -18,7 +19,9 @@ export default function ScoringOverrideBanner({ preserveContentScrollDuringUpdat
 
   if (!scoringOverride) return null;
 
-  const { leagueName, season } = scoringOverride;
+  const { leagueName, season: scoringSeason } = scoringOverride;
+  const statsSeason = String(league?.season ?? resultSeason ?? '').trim();
+  const activeDescription = `Using ${leagueName}${scoringSeason ? ` (${scoringSeason})` : ''} scoring${statsSeason ? ` · Calculated using ${statsSeason} NFL stats` : ''}`;
 
   return (
     <div
@@ -41,10 +44,10 @@ export default function ScoringOverrideBanner({ preserveContentScrollDuringUpdat
         </svg>
       )}
 
-      <span className="flex-1 text-sm font-semibold leading-tight truncate">
+      <span className="flex-1 text-sm font-semibold leading-tight truncate" title={activeDescription}>
         {scoringOverridePaused
-          ? <span style={{ opacity: 0.7 }}>Showing your league scoring</span>
-          : <>Using {leagueName}{season && <span className="font-normal opacity-80"> ({season})</span>} scoring</>
+          ? <span style={{ opacity: 0.7 }}>Showing your league scoring{statsSeason && <> · Calculated using {statsSeason} NFL stats</>}</span>
+          : <>Using {leagueName}{scoringSeason && <span className="font-normal opacity-80"> ({scoringSeason})</span>} scoring{statsSeason && <span className="font-normal opacity-80"> · Calculated using {statsSeason} NFL stats</span>}</>
         }
       </span>
 

@@ -19,9 +19,9 @@ test.beforeEach(async ({ page }) => {
         enabled: true,
         tier: 'paid',
         mockPlaysEnabled: true,
-        accessCodeRequired: false,
+        accessCodeRequired: true,
       },
-      session: { enabled: true },
+      session: { enabled: true, canDisable: true },
     }),
   }));
   await page.route('**/api/live/games**', (route) => route.fulfill({
@@ -76,6 +76,86 @@ test('Fantasy Live shows an inactive-season state instead of a stale league week
 
   await page.getByRole('button', { name: 'Live scoring options' }).click();
   await expect(page.getByText('Live scoring needs an allowed Sleeper league ID.', { exact: true })).toBeVisible();
+});
+
+test('Fantasy Live keeps the access control available outside the active NFL season', async ({ page }) => {
+  await page.unroute('**/api/live/status');
+  await page.route('**/api/live/status', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      ok: true,
+      live: {
+        enabled: true,
+        tier: 'paid',
+        accessCodeRequired: false,
+      },
+      session: { enabled: false },
+    }),
+  }));
+  await page.unroute('https://api.sleeper.app/v1/**');
+  await installTradeFixtures(page, {
+    nflState: {
+      season: '2026',
+      season_type: 'pre',
+      week: 1,
+      leg: 0,
+      display_week: 1,
+      league_season: '2026',
+    },
+  });
+
+  await page.goto('/fantasy/live');
+
+  await expect(page.getByText('Turn on live scoring for this league', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Turn on Live' })).toHaveCount(1);
+  await expect(page.getByText('There is no fantasy matchup this week. Fantasy Live begins with the NFL regular season.', { exact: true })).toBeVisible();
+});
+
+test('Fantasy Live reopens the enable gate after turning off the browser session', async ({ page }) => {
+  await page.route('**/api/live/session', (route) => {
+    if (route.request().method() !== 'DELETE') return route.continue();
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ ok: true, session: { enabled: false } }),
+    });
+  });
+
+  await page.goto('/fantasy/live');
+  await page.getByRole('button', { name: 'Live scoring options' }).click();
+
+  const turnOff = page.getByRole('button', { name: 'Turn off live scoring for this browser' });
+  await expect(turnOff).toHaveCount(1);
+  await turnOff.click();
+
+  await expect(page.getByText('Turn on live scoring for this league', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Turn on Live' })).toHaveCount(1);
+});
+
+test('Fantasy Live keeps ordinary sessions from turning Live off', async ({ page }) => {
+  await page.unroute('**/api/live/status');
+  await page.route('**/api/live/status', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      ok: true,
+      live: {
+        enabled: true,
+        tier: 'paid',
+        accessCodeRequired: true,
+      },
+      session: { enabled: true, canDisable: false },
+    }),
+  }));
+
+  await page.goto('/fantasy/live');
+  await page.getByRole('button', { name: 'Live scoring options' }).click();
+
+  await expect(page.getByRole('button', { name: 'Turn off live scoring for this browser' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Refresh' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Auto-updating' })).toBeVisible();
+  await expect(page.getByText('Turning off Live requires the server passphrase used to enable this session.', { exact: true })).toBeVisible();
 });
 
 test('Fantasy Live keeps the league week visible without lighting up for an unrelated live game', async ({ page }) => {

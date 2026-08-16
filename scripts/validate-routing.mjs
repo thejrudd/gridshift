@@ -27,6 +27,10 @@ assert(nginxConf.includes('try_files $uri $uri/ /index.html;'), 'nginx.conf is m
 
 const viteConfig = readFileSync(resolve(root, 'vite.config.js'), 'utf8');
 assert(viteConfig.includes("navigateFallback: '/index.html'"), 'vite.config.js is missing Workbox navigateFallback');
+assert(
+  viteConfig.includes('navigateFallbackDenylist: [/^\\/api(?:\\/|$)/]'),
+  'vite.config.js must exclude API URLs from the Workbox navigation fallback',
+);
 
 const distFiles = ['dist/index.html', 'dist/sw.js', 'dist/manifest.webmanifest'];
 for (const rel of distFiles) {

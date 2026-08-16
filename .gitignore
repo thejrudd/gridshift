@@ -38,8 +38,10 @@ tests/*
 tests/e2e/*
 !tests/e2e/companion-responsive.spec.js
 !tests/e2e/display-responsive.spec.js
+!tests/e2e/draft-injury-context.spec.js
 !tests/e2e/fantasy-live-workbench.spec.js
 !tests/e2e/league-history.spec.js
+!tests/e2e/statistics-scores-sources.spec.js
 !tests/e2e/tradeTestHarness.js
 !tests/e2e/whats-new-tour.spec.js
 !tests/unit/

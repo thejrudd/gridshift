@@ -1836,7 +1836,7 @@ body {
   border-radius: 7px;
   background: var(--color-fill);
   color: var(--color-label);
-  font-family: var(--font-display);
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
   font-size: var(--type-label);
   font-weight: 800;
   letter-spacing: 0.1em;
@@ -1886,7 +1886,7 @@ body {
 
 .companion-live-details dt {
   color: var(--color-label-tertiary);
-  font-family: var(--font-display);
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
   font-size: var(--type-micro);
   font-weight: 800;
   letter-spacing: 0.14em;
@@ -1896,6 +1896,7 @@ body {
 .companion-live-details dd {
   margin: 3px 0 0;
   color: var(--color-label);
+  font-family: var(--font-body, 'Figtree', sans-serif);
   font-size: var(--type-meta);
   font-weight: 750;
 }
@@ -1903,6 +1904,7 @@ body {
 .companion-live-details p {
   margin: 0;
   color: var(--color-label-secondary);
+  font-family: var(--font-body, 'Figtree', sans-serif);
   font-size: var(--type-meta);
   font-weight: 600;
   line-height: 1.45;
@@ -1934,6 +1936,7 @@ body {
 .companion-live-gate span {
   display: block;
   color: var(--color-label-tertiary);
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
   font-size: var(--type-label);
   font-weight: 900;
   letter-spacing: 0.08em;
@@ -1945,7 +1948,7 @@ body {
   display: block;
   margin-top: 5px;
   color: var(--color-label);
-  font-family: var(--font-display);
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
   font-size: clamp(20px, 3vw, 28px);
   font-weight: 800;
   letter-spacing: 0.04em;
@@ -1956,6 +1959,7 @@ body {
   margin: 8px 0 0;
   max-width: 58ch;
   color: var(--color-label-secondary);
+  font-family: var(--font-body, 'Figtree', sans-serif);
   font-size: var(--type-meta);
   font-weight: 650;
   line-height: 1.45;
@@ -1976,6 +1980,7 @@ body {
   border-radius: 8px;
   background: var(--color-fill);
   color: var(--color-label);
+  font-family: var(--font-body, 'Figtree', sans-serif);
   font-size: var(--type-emphasis);
   font-weight: 700;
   line-height: 1.2;
@@ -1991,7 +1996,7 @@ body {
   border-radius: 7px;
   background: var(--color-signature);
   color: var(--color-signature-fg);
-  font-family: var(--font-display);
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
   font-size: var(--type-label);
   font-weight: 900;
   letter-spacing: 0.08em;
@@ -8001,6 +8006,30 @@ body {
   box-sizing: border-box;
 }
 
+.draft-availability-filter {
+  display: block;
+  min-width: 0;
+}
+
+.draft-availability-filter select {
+  width: 100%;
+  min-width: 150px;
+  height: 36px;
+  padding: 0 30px 0 10px;
+  border: 1px solid var(--color-separator);
+  border-radius: 10px;
+  background-color: var(--color-bg);
+  color: var(--color-label);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.draft-availability-filter select:focus-visible {
+  border-color: var(--color-accent);
+  outline: 2px solid color-mix(in srgb, var(--color-accent) 28%, transparent);
+  outline-offset: 1px;
+}
+
 .draft-panel__header h2,
 .draft-position-group__header strong {
   margin: 0;
@@ -8102,6 +8131,15 @@ body {
 .draft-model-weights {
   border-bottom: 1px solid var(--color-separator);
   padding: 0 12px;
+}
+
+.draft-model-weights__help {
+  max-width: 640px;
+  margin: 0 0 10px 23px;
+  color: var(--color-label-tertiary);
+  font-size: var(--type-label);
+  font-weight: 600;
+  line-height: 1.4;
 }
 
 .draft-model-weights summary {
@@ -8576,6 +8614,11 @@ body {
 .draft-board-workspace__controls input:focus {
   border-color: var(--color-accent);
   outline: none;
+}
+
+.draft-board-workspace__controls .draft-availability-filter select {
+  min-width: 0;
+  border-radius: 0;
 }
 
 .draft-board-workspace__controls .draft-position-filter-shell {
@@ -9519,6 +9562,24 @@ body {
     justify-content: stretch;
     gap: 6px;
     width: 100%;
+  }
+
+  .draft-mobile-control-menu__content .draft-big-board-controls .draft-availability-filter {
+    grid-column: 1 / -1;
+  }
+
+  .draft-mobile-control-menu__content .draft-big-board-controls .draft-availability-filter select {
+    min-width: 0;
+    height: 36px;
+  }
+
+  .player-status-badge.is-responsive-compact .player-status-badge__label,
+  .player-status-badge.is-responsive-compact .player-status-badge__detail {
+    display: none;
+  }
+
+  .player-status-badge.is-responsive-compact .player-status-badge__compact-label {
+    display: inline;
   }
 
   .draft-mobile-control-menu__content .draft-panel__header-controls input {
@@ -17286,6 +17347,29 @@ body {
   white-space: nowrap;
 }
 
+.player-status-badge {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+  white-space: nowrap;
+}
+
+.player-status-badge__compact-label {
+  display: none;
+}
+
+.player-status-badge__detail {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.draft-player-availability-badge {
+  max-width: 100%;
+  text-transform: none;
+}
+
 .companion-player-row__status.is-warning {
   color: var(--color-signature-fg);
   background: var(--color-signature);
@@ -17620,6 +17704,36 @@ body {
   flex-shrink: 0;
 }
 
+@media (min-width: 768px) {
+  .draft-player-row--big-board.companion-player-row.is-compact .companion-player-row__meta {
+    display: block;
+    min-height: 0;
+    overflow: visible;
+    line-height: 1.25;
+    white-space: normal;
+  }
+
+  .draft-player-row--big-board.companion-player-row.is-compact .companion-player-row__meta-item {
+    display: inline;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+  }
+
+  .draft-player-row--big-board .draft-player-availability-badge {
+    flex-wrap: wrap;
+    overflow: visible;
+    line-height: 1.15;
+    white-space: normal;
+  }
+
+  .draft-player-row--big-board .draft-player-availability-badge .player-status-badge__detail {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+  }
+}
+
 @container (max-width: 560px) {
   .draft-player-row.companion-player-row.is-compact {
     gap: 7px;
@@ -17893,11 +18007,26 @@ body {
   gap: 4px;
 }
 
-.companion-roster-row .companion-player-row__identity {
-  overflow: visible;
-  text-overflow: clip;
-  white-space: normal;
-  overflow-wrap: break-word;
+@media (min-width: 1024px) {
+  .companion-roster-player-row .companion-player-row__identity {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: nowrap;
+  }
+
+  .companion-roster-player-row .companion-player-row__identity-label {
+    overflow: visible;
+    overflow-wrap: normal;
+    white-space: nowrap;
+  }
+}
+
+.companion-roster-player-row.is-keeper .companion-player-row__meta-item:nth-child(3) {
+  color: var(--companion-player-fg, var(--color-label));
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  line-height: inherit;
 }
 
 .trade-selection-row__gradient-overlay {

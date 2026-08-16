@@ -5,9 +5,12 @@ import {
   DEFAULT_SCORING, getEspnScoringImportAudit, getFlatScoringSettings, importLeagueScoring,
 } from '../../utils/scoringEngine';
 import { getLeague } from '../../api/sleeperApi';
+import { getEspnLeague } from '../../api/espnFantasyApi';
+import { normalizeEspnLeaguePayload } from '../../utils/espnFantasyAdapter';
+import { buildScoringModelOptions } from '../../utils/scoringModelOptions';
 import { formatScoringSettingValue } from '../../utils/scoringDisplay';
 import {
-  SCORING_GAME_EXAMPLE_OPTIONS, SCORING_PLAY_TYPES, filterScoringGroups, getPositionStrengthRanking, getPreviousLeagueScoringOptions, getScoringGameExample, getScoringGameExampleCandidates, getScoringProfile, isNonStandardScoringSetting, isScoringRuleRosterEligible, pickRandomScoringGameExample, pickRandomScoringGameExampleId,
+  SCORING_GAME_EXAMPLE_OPTIONS, SCORING_PLAY_TYPES, filterScoringGroups, getPositionStrengthRanking, getScoringGameExample, getScoringGameExampleCandidates, getScoringProfile, isNonStandardScoringSetting, isScoringRuleRosterEligible, pickRandomScoringGameExample, pickRandomScoringGameExampleId,
 } from '../../utils/scoringGuide';
 import {
   CompanionMenuChevron, CompanionMenuSelectionMark, CompanionMenuTrigger, CompanionSelectorButton, CompanionSelectorRail, CompanionSegmentedControl,
@@ -340,8 +343,9 @@ const STAT_GROUPS = [
 export default function CompanionScoring() {
   const { darkMode } = useTheme();
   const {
-    platform, scoringSettings, activeScoringSettings, league, season,
-    linkedLeagueHistory, setScoringOverride, scoringOverride, clearScoringOverride,
+    platform, scoringSettings, activeScoringSettings, scoringOverride,
+    setScoringOverride, clearScoringOverride, setScoringOverridePaused,
+    league, season, selectedLeagueId, linkedLeagueHistory, linkedLeagueSeasonOptions,
   } = useSleeperLeague();
   const { players, statsBySeason, loadPlayers, loadStatsForSeason } = useSleeperStats();
   const [showActiveOnly, setShowActiveOnly] = useState(true);
@@ -351,26 +355,28 @@ export default function CompanionScoring() {
   const [selectedExampleCandidate, setSelectedExampleCandidate] = useState(null);
   const [selectedPlayType, setSelectedPlayType] = useState('ALL');
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [pickerLoading, setPickerLoading] = useState(false);
-  const [pickerError, setPickerError] = useState(null);
+  const [pickerLoadingSeason, setPickerLoadingSeason] = useState(null);
+  const [pickerError, setPickerError] = useState('');
   const [positionStrengthLoading, setPositionStrengthLoading] = useState(false);
   const [positionStrengthError, setPositionStrengthError] = useState(null);
   const [positionStrengthSort, setPositionStrengthSort] = useState({ key: 'top8', direction: 'desc' });
-  const effectiveScoringSettings = activeScoringSettings ?? scoringSettings;
-  const settings = getFlatScoringSettings(effectiveScoringSettings);
+  const currentScoringSettings = activeScoringSettings ?? scoringSettings;
+  const settings = getFlatScoringSettings(currentScoringSettings);
   const displayRosterPositions = scoringOverride?.rosterPositions ?? league?.roster_positions;
   const scoringSeason = String(league?.season ?? season ?? '').trim();
-  const productionSeason = Number.isFinite(Number(scoringSeason))
+  const selectedScoringSeason = String(scoringOverride?.season ?? scoringSeason);
+  const defaultProductionSeason = Number.isFinite(Number(scoringSeason))
     ? String(Number(scoringSeason) - 1)
     : null;
+  const productionSeason = defaultProductionSeason;
   const productionStats = platform === 'sleeper' && productionSeason
     ? statsBySeason?.[productionSeason]?.seasonStats
     : null;
   const hasProductionStats = Object.keys(productionStats ?? {}).length > 0;
   const hasPlayers = Object.keys(players ?? {}).length > 0;
   const scoringProfile = useMemo(
-    () => getScoringProfile(effectiveScoringSettings, displayRosterPositions),
-    [effectiveScoringSettings, displayRosterPositions],
+    () => getScoringProfile(currentScoringSettings, displayRosterPositions),
+    [currentScoringSettings, displayRosterPositions],
   );
   const scoringExampleOptions = useMemo(() => ({
     allowTeamExample: scoringProfile.hasTeamSpecialTeamsRoster,
@@ -380,12 +386,12 @@ export default function CompanionScoring() {
     const availableIds = new Set(scoringProfile.availableExampleIds);
     return SCORING_GAME_EXAMPLE_OPTIONS.filter((option) => (
       availableIds.has(option.id)
-      && getScoringGameExampleCandidates(option.id, effectiveScoringSettings, scoringExampleOptions).length > 0
+      && getScoringGameExampleCandidates(option.id, currentScoringSettings, scoringExampleOptions).length > 0
     ));
-  }, [effectiveScoringSettings, scoringExampleOptions, scoringProfile.availableExampleIds]);
+  }, [currentScoringSettings, scoringExampleOptions, scoringProfile.availableExampleIds]);
   const selectedExampleCandidates = useMemo(
-    () => getScoringGameExampleCandidates(selectedExample, effectiveScoringSettings, scoringExampleOptions),
-    [effectiveScoringSettings, scoringExampleOptions, selectedExample],
+    () => getScoringGameExampleCandidates(selectedExample, currentScoringSettings, scoringExampleOptions),
+    [currentScoringSettings, scoringExampleOptions, selectedExample],
   );
   const playTypeOptions = useMemo(() => {
     const availableIds = new Set(scoringProfile.availablePlayTypeIds);
@@ -395,10 +401,10 @@ export default function CompanionScoring() {
     () => getPositionStrengthRanking({
       seasonStats: productionStats,
       players,
-      scoring: activeScoringSettings,
+      scoring: currentScoringSettings,
       rosterPositions: displayRosterPositions,
     }),
-    [activeScoringSettings, displayRosterPositions, players, productionStats],
+    [currentScoringSettings, displayRosterPositions, players, productionStats],
   );
   const sortedPositionStrength = useMemo(() => [...positionStrength].sort((left, right) => {
     const { key, direction } = positionStrengthSort;
@@ -482,14 +488,14 @@ export default function CompanionScoring() {
       const previousCandidateId = window.sessionStorage.getItem(
         `gridshift-scoring-example-candidate-id-${selectedExample}`,
       );
-      const nextCandidate = pickRandomScoringGameExample(selectedExample, effectiveScoringSettings, {
+      const nextCandidate = pickRandomScoringGameExample(selectedExample, currentScoringSettings, {
         ...scoringExampleOptions,
         previousCandidateId,
       });
       setSelectedExampleCandidate(nextCandidate?.id ?? null);
     }
   }, [
-    effectiveScoringSettings,
+    currentScoringSettings,
     exampleOptions,
     scoringExampleOptions,
     selectedExample,
@@ -506,54 +512,98 @@ export default function CompanionScoring() {
     const previousCandidateId = window.sessionStorage.getItem(
       `gridshift-scoring-example-candidate-id-${phaseId}`,
     );
-    const nextCandidate = pickRandomScoringGameExample(phaseId, effectiveScoringSettings, {
+    const nextCandidate = pickRandomScoringGameExample(phaseId, currentScoringSettings, {
       ...scoringExampleOptions,
       previousCandidateId,
     });
     setSelectedExample(phaseId);
     setSelectedExampleCandidate(nextCandidate?.id ?? null);
-  }, [effectiveScoringSettings, scoringExampleOptions]);
+  }, [currentScoringSettings, scoringExampleOptions]);
 
   const featuredGame = useMemo(
-    () => getScoringGameExample(selectedExample, effectiveScoringSettings, {
+    () => getScoringGameExample(selectedExample, currentScoringSettings, {
       ...scoringExampleOptions,
       candidateId: selectedExampleCandidate,
     }),
-    [effectiveScoringSettings, scoringExampleOptions, selectedExample, selectedExampleCandidate],
+    [currentScoringSettings, scoringExampleOptions, selectedExample, selectedExampleCandidate],
   );
   const featuredPoints = Number(featuredGame?.points);
   const featuredPointsLabel = Number.isFinite(featuredPoints) ? featuredPoints.toFixed(1) : '—';
   const espnAudit = useMemo(
-    () => (platform === 'espn' ? getEspnScoringImportAudit(effectiveScoringSettings) : null),
-    [effectiveScoringSettings, platform],
+    () => (platform === 'espn' ? getEspnScoringImportAudit(currentScoringSettings) : null),
+    [currentScoringSettings, platform],
   );
 
-  const handlePickLeague = useCallback(async (leagueId, leagueName, season) => {
-    setPickerLoading(true);
-    setPickerError(null);
-    try {
-      const fetched = await getLeague(leagueId);
-      if (!fetched?.scoring_settings) throw new Error('No scoring settings found for this league.');
-      const overrideSettings = { ...DEFAULT_SCORING, ...importLeagueScoring(fetched.scoring_settings) };
-      setScoringOverride({ settings: overrideSettings, leagueName, leagueId, season, rosterPositions: fetched.roster_positions ?? [] });
+  const scoringModelOptions = useMemo(() => buildScoringModelOptions({
+    platform,
+    resultSeason: scoringSeason,
+    linkedLeagueHistory,
+    linkedLeagueSeasonOptions,
+    activeLeague: league,
+  }), [league, linkedLeagueHistory, linkedLeagueSeasonOptions, platform, scoringSeason]);
+
+  const handleSelectScoringModel = useCallback(async (option) => {
+    if (!option?.season || pickerLoadingSeason) return;
+    setPickerError('');
+
+    if (option.season === scoringSeason) {
+      setScoringOverridePaused(false);
+      clearScoringOverride();
       setPickerOpen(false);
-    } catch (err) {
-      setPickerError(err.message ?? 'Failed to load league scoring.');
-    } finally {
-      setPickerLoading(false);
+      return;
     }
-  }, [setScoringOverride]);
 
-  const previousScoringOptions = useMemo(() => {
-    if (platform === 'espn') return [];
-    return getPreviousLeagueScoringOptions(linkedLeagueHistory, league?.season);
-  }, [league?.season, linkedLeagueHistory, platform]);
+    setPickerLoadingSeason(option.season);
+    try {
+      let modelSettings;
+      let modelLeagueName = option.leagueName;
+      let modelLeagueId = option.leagueId;
+      let rosterPositions = option.league?.roster_positions ?? [];
 
-  const handleResetPreview = useCallback(() => {
+      if (platform === 'espn') {
+        if (!selectedLeagueId) throw new Error('No ESPN league is selected.');
+        const payload = await getEspnLeague(option.season, selectedLeagueId);
+        const normalized = normalizeEspnLeaguePayload(payload, {
+          season: option.season,
+          leagueId: selectedLeagueId,
+        });
+        modelSettings = normalized.scoringSettings;
+        modelLeagueName = normalized.league?.name ?? modelLeagueName;
+        modelLeagueId = normalized.league?.league_id ?? selectedLeagueId;
+        rosterPositions = normalized.league?.roster_positions ?? [];
+      } else {
+        if (!option.leagueId) throw new Error('No linked Sleeper league was found for that year.');
+        const fetchedLeague = await getLeague(option.leagueId);
+        if (!fetchedLeague?.scoring_settings) throw new Error('That Sleeper league has no scoring settings.');
+        modelSettings = { ...DEFAULT_SCORING, ...importLeagueScoring(fetchedLeague.scoring_settings) };
+        modelLeagueName = fetchedLeague.name ?? modelLeagueName;
+        modelLeagueId = fetchedLeague.league_id ?? option.leagueId;
+        rosterPositions = fetchedLeague.roster_positions ?? [];
+      }
+
+      setScoringOverridePaused(false);
+      setScoringOverride({
+        settings: modelSettings,
+        leagueName: modelLeagueName,
+        leagueId: String(modelLeagueId),
+        season: option.season,
+        rosterPositions,
+      });
+      setPickerOpen(false);
+    } catch (error) {
+      const providerName = platform === 'espn' ? 'ESPN' : 'Sleeper';
+      setPickerError(error?.message ?? `${providerName} could not load ${option.season} scoring.`);
+    } finally {
+      setPickerLoadingSeason(null);
+    }
+  }, [clearScoringOverride, pickerLoadingSeason, platform, scoringSeason, selectedLeagueId, setScoringOverride, setScoringOverridePaused]);
+
+  const handleResetScoringModel = useCallback(() => {
+    setScoringOverridePaused(false);
     clearScoringOverride();
     setPickerOpen(false);
-    setPickerError(null);
-  }, [clearScoringOverride]);
+    setPickerError('');
+  }, [clearScoringOverride, setScoringOverridePaused]);
 
   const visibleGroups = useMemo(() => filterScoringGroups(STAT_GROUPS, {
     position: 'ALL',
@@ -561,8 +611,8 @@ export default function CompanionScoring() {
     showActiveOnly,
     includeIDP: scoringProfile.hasIDPScoring,
     rosterPositions: displayRosterPositions,
-    scoring: effectiveScoringSettings,
-  }), [displayRosterPositions, effectiveScoringSettings, selectedPlayType, showActiveOnly, scoringProfile.hasIDPScoring]);
+    scoring: currentScoringSettings,
+  }), [currentScoringSettings, displayRosterPositions, selectedPlayType, showActiveOnly, scoringProfile.hasIDPScoring]);
 
   return (
     <div className="page-frame-workbench companion-scoring-page pb-6">
@@ -575,16 +625,6 @@ export default function CompanionScoring() {
             {scoringProfile.facts.map((fact) => <span key={fact}>{fact}</span>)}
             <span>{scoringProfile.activeBonusCount} bonus categor{scoringProfile.activeBonusCount === 1 ? 'y' : 'ies'} active</span>
           </div>
-          {scoringOverride && (
-            <button
-              type="button"
-              onClick={handleResetPreview}
-              className="companion-scoring-reset mt-3"
-              title="Restore this league’s current scoring"
-            >
-              Reset preview
-            </button>
-          )}
         </header>
 
         <div className="companion-scoring-blueprint">
@@ -633,7 +673,7 @@ export default function CompanionScoring() {
                 <span>03</span>
                 <h2 id="scoring-position-strength-title">Position strength</h2>
               </div>
-              <p>{productionSeason ? `${productionSeason} production · current rules` : 'Prior-season production · current rules'}</p>
+              <p>{productionSeason ? `${productionSeason} results · ${selectedScoringSeason || 'current'} rules` : 'Historical results · selected rules'}</p>
             </div>
             {positionStrength.length > 0 ? (
               <div className="companion-scoring-position-strength__table" role="table" aria-label="Position strength by average fantasy points per game">
@@ -662,10 +702,10 @@ export default function CompanionScoring() {
             ) : (
               <p className="companion-scoring-position-strength__empty">
                 {positionStrengthLoading
-                  ? 'Loading prior-season production…'
+                  ? `Loading ${productionSeason ?? 'historical'} results…`
                   : positionStrengthError
-                    ? `Sleeper could not load ${productionSeason} production. Refresh the page to try again.`
-                    : `${productionSeason ?? 'Prior-season'} production does not contain enough eligible player data for this league.`}
+                    ? `Sleeper could not load ${productionSeason ?? 'historical'} results. Refresh the page to try again.`
+                    : `${productionSeason ?? 'Historical'} results do not contain enough eligible player data for this league.`}
               </p>
             )}
           </section>
@@ -674,7 +714,7 @@ export default function CompanionScoring() {
         <aside className="companion-scoring-overview__example" aria-labelledby="scoring-example-title">
           <div className="companion-scoring-example-heading">
             <div>
-              <span>2025 game sample</span>
+              <span>Historical game sample</span>
               <h2 id="scoring-example-title">See it scored</h2>
             </div>
           </div>
@@ -771,62 +811,68 @@ export default function CompanionScoring() {
             ariaLabel="Highlight non-standard fantasy scoring"
           />
 
-          {previousScoringOptions.length > 0 && (
+          {scoringModelOptions.length > 1 && (
             <div className="companion-scoring-preview-tool">
               <div className="companion-scoring-preview-tool__header">
-                <span>Scoring preview</span>
+                <span>Scoring model</span>
                 {scoringOverride && (
                   <button
                     type="button"
-                    onClick={handleResetPreview}
+                    onClick={handleResetScoringModel}
                     className="companion-scoring-reset"
-                    title="Restore this league’s current scoring"
+                    title={`Restore ${scoringSeason} league-year scoring`}
                   >
-                    Reset preview
+                    Use {scoringSeason}
                   </button>
                 )}
               </div>
               <CompanionMenuTrigger
-                value={scoringOverride ? `${scoringOverride.season} scoring` : 'Preview previous season'}
+                value={`${selectedScoringSeason} league year`}
                 open={pickerOpen}
                 engaged={Boolean(scoringOverride)}
-                onClick={() => setPickerOpen(v => !v)}
-                aria-label="Preview this league's scoring from a previous season"
+                onClick={() => {
+                  setPickerOpen(v => !v);
+                  setPickerError('');
+                }}
+                aria-label={`Choose scoring model year. Currently ${selectedScoringSeason}`}
               />
 
               {pickerOpen && (
                 <div className="companion-scoring-preview-tool__menu">
-                  {pickerLoading && (
-                    <div className="px-4 py-3 text-sm flex items-center gap-2" style={{ color: 'var(--color-label-secondary)' }}>
-                      <Spinner size="sm" />
-                      Loading leagues…
+                  {pickerError && (
+                    <div className="px-4 py-3 text-sm" style={{ color: 'var(--color-accent-red)' }}>
+                      {pickerError}
                     </div>
                   )}
-                  {pickerError && (
-                    <div className="px-4 py-3 text-sm" style={{ color: 'var(--color-accent-red)' }}>{pickerError}</div>
-                  )}
-                  {previousScoringOptions.map(({ season, league: previousLeague }, index) => {
-                    const isActive = scoringOverride?.leagueId === String(previousLeague.league_id);
+                  {scoringModelOptions.map((option, index) => {
+                    const isActive = option.season === selectedScoringSeason;
+                    const isLoading = option.season === pickerLoadingSeason;
                     return (
                       <button
-                        key={previousLeague.league_id}
+                        key={option.season}
                         type="button"
-                        disabled={pickerLoading}
+                        disabled={Boolean(pickerLoadingSeason)}
                         aria-pressed={isActive}
-                        onClick={() => handlePickLeague(previousLeague.league_id, previousLeague.name, season)}
-                        className={`companion-menu-item w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left disabled:opacity-50${isActive ? ' is-checked' : ''}`}
-                        style={{ borderTop: index > 0 ? '1px solid var(--color-separator)' : 'none' }}
+                        onClick={() => handleSelectScoringModel(option)}
+                        className={`companion-menu-item w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left disabled:opacity-60${isActive ? ' is-checked' : ''}`}
+                        style={{ borderTop: index > 0 || pickerError ? '1px solid var(--color-separator)' : 'none' }}
                       >
                         <CompanionMenuSelectionMark checked={isActive} mode="single" />
                         <span className="min-w-0 flex-1">
-                          <strong className="block">{season} season</strong>
-                          <span className="block truncate text-xs" style={{ color: 'var(--color-label-tertiary)' }}>{previousLeague.name}</span>
+                          <strong className="block">{option.season} league year</strong>
+                          <span className="block truncate text-xs" style={{ color: 'var(--color-label-tertiary)' }}>
+                            {option.isResultSeason ? 'Same year as the selected results' : option.leagueName}
+                          </span>
                         </span>
+                        {isLoading && <Spinner size="sm" />}
                       </button>
                     );
                   })}
                 </div>
               )}
+              <p className="mt-2 text-[length:var(--type-label)] leading-5" style={{ color: 'var(--color-label-tertiary)' }}>
+                Applies {selectedScoringSeason} rules across Fantasy. Calculated using {scoringSeason} NFL stats.
+              </p>
             </div>
           )}
         </aside>

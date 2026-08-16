@@ -1,16 +1,15 @@
+import { Buffer } from 'node:buffer';
 import crypto from 'node:crypto';
+import process from 'node:process';
 import express from 'express';
+import { createBalldontlieGateway } from './balldontlieGateway.js';
 import { parseCookies } from './sessionCrypto.js';
 
 export const LIVE_SESSION_COOKIE = 'gridshift_live_session';
 export const LIVE_SESSION_TTL_SECONDS = 60 * 60 * 24 * 7;
 const LIVE_SESSION_SECRET_ERROR = 'GRIDSHIFT_LIVE_COOKIE_SECRET or GRIDSHIFT_SESSION_SECRET is required for live access.';
-const BDL_BASE_URL = 'https://api.balldontlie.io';
-const LIVE_CACHE = new Map();
-const LIVE_IN_FLIGHT = new Map();
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_BUCKETS = new Map();
-const MAX_UPSTREAM_PAGES = 12;
 const DEFAULT_PER_PAGE = 100;
 
 function hasValue(value) {
@@ -215,12 +214,16 @@ function splitCsvParam(value) {
     .filter(Boolean);
 }
 
-function buildGamesParams(query = {}) {
+export function buildLiveGamesParams(query = {}) {
   const params = new URLSearchParams();
   params.set('per_page', String(DEFAULT_PER_PAGE));
   appendArrayParam(params, 'seasons[]', splitCsvParam(query.seasons ?? query.season));
   appendArrayParam(params, 'weeks[]', splitCsvParam(query.weeks ?? query.week));
   appendArrayParam(params, 'team_ids[]', splitCsvParam(query.teamIds ?? query.team_ids));
+  // Fantasy Live is regular/postseason-only. Do not let a caller opt this
+  // route into BALLDONTLIE's supported preseason season type (1).
+  params.append('season_type[]', '2');
+  params.append('season_type[]', '3');
 
   const dateValues = splitCsvParam(query.dates ?? query.date)
     .filter((date) => /^\d{4}-\d{2}-\d{2}$/.test(date));
@@ -280,125 +283,32 @@ function getCacheTtlMs(payload = null) {
   return getLiveConfigStatus().cacheTtlMs;
 }
 
-function buildCacheKey(endpoint, params) {
-  return `${endpoint}?${params.toString()}`;
-}
-
-function getCachedPayload(cacheKey) {
-  const cached = LIVE_CACHE.get(cacheKey);
-  if (!cached) return null;
-  const ageMs = Date.now() - cached.storedAt;
-  if (ageMs > cached.ttlMs) {
-    LIVE_CACHE.delete(cacheKey);
-    return null;
-  }
-  return { ...cached, ageMs };
-}
-
-function buildLiveResponse(payload, cacheInfo, session) {
+function buildLiveResponse(payload, cacheInfo, session, gatewayStatus = null) {
   return {
     ok: true,
     data: payload?.data ?? [],
     meta: payload?.meta ?? null,
-    session: { enabled: true, leagueKey: session.leagueKey, provider: session.provider },
+    session: {
+      enabled: true,
+      leagueKey: session.leagueKey,
+      provider: session.provider,
+      canDisable: session.accessCodeVerified === true,
+    },
     cache: {
       hit: Boolean(cacheInfo?.hit),
+      coalesced: Boolean(cacheInfo?.coalesced),
+      stale: Boolean(cacheInfo?.stale),
       ageMs: cacheInfo?.ageMs ?? 0,
       ttlMs: cacheInfo?.ttlMs ?? getLiveConfigStatus().cacheTtlMs,
       fetchedAt: cacheInfo?.fetchedAt ?? new Date().toISOString(),
     },
+    ...(cacheInfo?.freshness ? { freshness: cacheInfo.freshness } : {}),
+    ...(gatewayStatus ? {
+      capabilities: gatewayStatus.capabilities,
+      cadence: gatewayStatus.cadence,
+      rateLimit: gatewayStatus.rateLimit,
+    } : {}),
   };
-}
-
-async function fetchBdlPage(endpoint, params) {
-  const apiKey = String(process.env.GRIDSHIFT_BDL_API_KEY ?? '').trim();
-  if (!apiKey) {
-    const error = new Error('GridShift Live is not configured on this server.');
-    error.statusCode = 503;
-    throw error;
-  }
-
-  const url = new URL(endpoint, BDL_BASE_URL);
-  params.forEach((value, key) => url.searchParams.append(key, value));
-  const response = await fetch(url, {
-    headers: {
-      Authorization: apiKey,
-      Accept: 'application/json',
-    },
-  });
-  let payload = null;
-  try {
-    payload = await response.json();
-  } catch {
-    payload = null;
-  }
-
-  if (!response.ok) {
-    const error = new Error(payload?.error || `BALLDONTLIE returned ${response.status}.`);
-    error.statusCode = response.status;
-    throw error;
-  }
-  return payload ?? { data: [], meta: null };
-}
-
-async function fetchBdlAllPages(endpoint, initialParams) {
-  const data = [];
-  let meta = null;
-  let params = new URLSearchParams(initialParams);
-
-  for (let page = 0; page < MAX_UPSTREAM_PAGES; page += 1) {
-    const payload = await fetchBdlPage(endpoint, params);
-    if (Array.isArray(payload?.data)) data.push(...payload.data);
-    else if (payload?.data != null) data.push(payload.data);
-    meta = payload?.meta ?? null;
-
-    const nextCursor = sanitizeIntegerParam(meta?.next_cursor);
-    if (!nextCursor) break;
-    params = new URLSearchParams(initialParams);
-    params.set('cursor', String(nextCursor));
-  }
-
-  return { data, meta };
-}
-
-async function fetchCachedBdl(endpoint, params) {
-  const cacheKey = buildCacheKey(endpoint, params);
-  const cached = getCachedPayload(cacheKey);
-  if (cached) {
-    return {
-      payload: cached.payload,
-      cacheInfo: {
-        hit: true,
-        ageMs: cached.ageMs,
-        ttlMs: cached.ttlMs,
-        fetchedAt: cached.fetchedAt,
-      },
-    };
-  }
-
-  if (LIVE_IN_FLIGHT.has(cacheKey)) return LIVE_IN_FLIGHT.get(cacheKey);
-
-  const request = fetchBdlAllPages(endpoint, params)
-    .then((payload) => {
-      const ttlMs = getCacheTtlMs(payload);
-      const fetchedAt = new Date().toISOString();
-      LIVE_CACHE.set(cacheKey, {
-        payload,
-        storedAt: Date.now(),
-        ttlMs,
-        fetchedAt,
-      });
-      return {
-        payload,
-        cacheInfo: { hit: false, ageMs: 0, ttlMs, fetchedAt },
-      };
-    })
-    .finally(() => {
-      LIVE_IN_FLIGHT.delete(cacheKey);
-    });
-
-  LIVE_IN_FLIGHT.set(cacheKey, request);
-  return request;
 }
 
 function sendLiveError(res, error, fallbackMessage) {
@@ -408,8 +318,48 @@ function sendLiveError(res, error, fallbackMessage) {
   });
 }
 
-export function createLiveRouter() {
+export function createLiveRouter({
+  gateway: injectedGateway,
+  fetcher = fetch,
+  env = process.env,
+} = {}) {
   const router = express.Router();
+  const gateway = injectedGateway ?? createBalldontlieGateway({ fetcher, env });
+
+  async function fetchCachedBdl(endpoint, params, capability) {
+    const baseTtlMs = getLiveConfigStatus().cacheTtlMs;
+    const result = await gateway.request({
+      path: endpoint,
+      params,
+      capability,
+      paginate: true,
+      cacheTtlMs: baseTtlMs,
+      staleTtlMs: Math.max(getLiveConfigStatus().finalTtlMs, 5 * 60_000),
+      refreshAfterMs: baseTtlMs,
+      freshnessKey: `fantasy-live:${baseTtlMs}`,
+      lane: capability === 'games' ? 'live-core' : 'details',
+      resolveCacheTtlMs: (payload) => getCacheTtlMs(payload),
+    });
+    return {
+      payload: result.payload,
+      cacheInfo: {
+        ...result.cache,
+        ageMs: result.freshness.ageMs,
+        ttlMs: getCacheTtlMs(result.payload),
+        fetchedAt: result.freshness.providerFetchedAt,
+        freshness: result.freshness,
+      },
+    };
+  }
+
+  function buildSessionStatus(session) {
+    return {
+      enabled: true,
+      leagueKey: session.leagueKey,
+      provider: session.provider,
+      canDisable: session.accessCodeVerified === true,
+    };
+  }
 
   router.get('/status', (req, res) => {
     let session = null;
@@ -420,9 +370,9 @@ export function createLiveRouter() {
     }
     res.set('Cache-Control', 'no-store').json({
       ok: true,
-      live: getLiveConfigStatus(),
+      live: { ...getLiveConfigStatus(), ...gateway.getStatus() },
       session: session
-        ? { enabled: true, leagueKey: session.leagueKey, provider: session.provider }
+        ? buildSessionStatus(session)
         : { enabled: false },
     });
   });
@@ -452,13 +402,14 @@ export function createLiveRouter() {
         provider: 'sleeper',
         leagueKey,
         leagueId: leagueKey.replace(/^sleeper:/, ''),
+        accessCodeVerified: Boolean(requiredAccessCode && providedAccessCode === requiredAccessCode),
         createdAt: new Date().toISOString(),
       };
       const encrypted = encryptLiveSession(session, getLiveCookieSecret());
       return res
         .set('Cache-Control', 'no-store')
         .set('Set-Cookie', buildLiveSetCookieHeader(encrypted))
-        .json({ ok: true, session: { enabled: true, leagueKey, provider: 'sleeper' } });
+        .json({ ok: true, session: buildSessionStatus(session) });
     } catch (error) {
       return res.status(400).set('Cache-Control', 'no-store').json({
         ok: false,
@@ -467,7 +418,20 @@ export function createLiveRouter() {
     }
   });
 
-  router.delete('/session', (_req, res) => {
+  router.delete('/session', (req, res) => {
+    let session = null;
+    try {
+      session = getLiveSessionFromRequest(req);
+    } catch {
+      // A malformed or expired cookie can still be cleared safely.
+      session = null;
+    }
+    if (session?.leagueKey && session.accessCodeVerified !== true) {
+      return res.status(403).set('Cache-Control', 'no-store').json({
+        ok: false,
+        error: 'Turning off Live requires the server passphrase.',
+      });
+    }
     res
       .set('Cache-Control', 'no-store')
       .set('Set-Cookie', buildLiveSetCookieHeader('', { clear: true }))
@@ -478,9 +442,9 @@ export function createLiveRouter() {
     try {
       const session = requireLiveSession(req);
       requireRateLimit(req, session);
-      const params = buildGamesParams(req.query);
-      const { payload, cacheInfo } = await fetchCachedBdl('/nfl/v1/games', params);
-      return res.set('Cache-Control', 'no-store').json(buildLiveResponse(payload, cacheInfo, session));
+      const params = buildLiveGamesParams(req.query);
+      const { payload, cacheInfo } = await fetchCachedBdl('/nfl/v1/games', params, 'games');
+      return res.set('Cache-Control', 'no-store').json(buildLiveResponse(payload, cacheInfo, session, gateway.getStatus()));
     } catch (error) {
       return sendLiveError(res, error, 'Could not load live games.');
     }
@@ -492,8 +456,8 @@ export function createLiveRouter() {
       requireRateLimit(req, session);
       const { normalizedGameId, params } = buildGameScopedParams(req.params.gameId, req.query);
       params.set('game_id', String(normalizedGameId));
-      const { payload, cacheInfo } = await fetchCachedBdl('/nfl/v1/plays', params);
-      return res.set('Cache-Control', 'no-store').json(buildLiveResponse(payload, cacheInfo, session));
+      const { payload, cacheInfo } = await fetchCachedBdl('/nfl/v1/plays', params, 'plays');
+      return res.set('Cache-Control', 'no-store').json(buildLiveResponse(payload, cacheInfo, session, gateway.getStatus()));
     } catch (error) {
       return sendLiveError(res, error, 'Could not load live plays.');
     }
@@ -504,8 +468,8 @@ export function createLiveRouter() {
       const session = requireLiveSession(req);
       requireRateLimit(req, session);
       const params = buildMultiGameStatsParams(req.query);
-      const { payload, cacheInfo } = await fetchCachedBdl('/nfl/v1/stats', params);
-      const response = buildLiveResponse(payload, cacheInfo, session);
+      const { payload, cacheInfo } = await fetchCachedBdl('/nfl/v1/stats', params, 'stats');
+      const response = buildLiveResponse(payload, cacheInfo, session, gateway.getStatus());
       return res.set('Cache-Control', 'no-store').json({
         ...response,
         games: groupStatsByGameId(response.data),
@@ -521,8 +485,8 @@ export function createLiveRouter() {
       requireRateLimit(req, session);
       const { normalizedGameId, params } = buildGameScopedParams(req.params.gameId, req.query);
       params.append('game_ids[]', String(normalizedGameId));
-      const { payload, cacheInfo } = await fetchCachedBdl('/nfl/v1/stats', params);
-      return res.set('Cache-Control', 'no-store').json(buildLiveResponse(payload, cacheInfo, session));
+      const { payload, cacheInfo } = await fetchCachedBdl('/nfl/v1/stats', params, 'stats');
+      return res.set('Cache-Control', 'no-store').json(buildLiveResponse(payload, cacheInfo, session, gateway.getStatus()));
     } catch (error) {
       return sendLiveError(res, error, 'Could not load live player stats.');
     }

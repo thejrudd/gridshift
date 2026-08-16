@@ -40,6 +40,9 @@ Apply exactly one page-frame class to new route roots. Do not detect display DPI
 ## Fantasy Live
 
 - `src/components/companion/CompanionLive.jsx` — route state, live session gate, the matchup chip rail (scoreboard chips on the shared `CompanionSelectorRail`), and the pace/palette derivations that feed every piece below.
+- `src/api/liveApi.js` — browser-to-sidecar live session, games, stats, and plays requests.
+- `server/liveHandlers.js` — server-only BALLDONTLIE credential, league allowlist/session checks, proxy caching, and current downstream request guard.
+- [[Live Data Server Architecture]] — approved cross-feature plan for tier capabilities, page-aware quotas, league ingest lifecycle, safe coalescing, clock anchors, and later horizontal scale.
 - `src/components/companion/live/LiveHero.jsx` — split hero: team gradients on the diagonal, edge scores, top-three scorer lists, neutral win plate, odds rail. Each side's “Top scorers” block always shows the three leading names and point totals, and every scorer opens their player breakdown. Faces are ESPN cut-out headshots when the hero itself has enough inline room and the spotlight strip below that. Each half shows its top scorer in the foreground and adds the second- and third-highest scorer as the hero widens. The ranked portrait group and scorer list crossfade when their order changes. Both top scorers must resolve before cut-out mode activates, so a matchup with a missing featured headshot drops cleanly to spotlight instead of substituting a team logo; missing secondary cut-outs do not remove their score line.
 
 Sleeper leaves `espn_id` null for roughly three quarters of startable skill players, so `CompanionLive` folds `espnIdOverrides` (the context's ESPN roster cross-reference) into each starter's `espnId` before anything resolves imagery. Any new surface that shows a player photo should do the same.
@@ -79,7 +82,26 @@ The week is derived from Sleeper's `/state/nfl` response, not selectable: Fantas
 - `src/components/statistics/scores/GameScorebug.jsx` — scheduled, live, final, favorite, delayed, offline, and unavailable matchup states.
 - `src/components/statistics/scores/ScoresGameDrilldown.jsx` — Overview, Team Stats, Players, Scoring, and Play-by-Play.
 - `src/components/statistics/scores/StatisticsScores.css` — feature-owned responsive and density-aware styling.
+- `src/api/statisticsScoresApi.js` — browser-to-sidecar Scores requests.
+- `server/statisticsScoresHandlers.js` — public provider selection, BALLDONTLIE pagination/cache, ESPN snapshots, and drilldown aggregation.
+- `src/utils/statisticsScoresProvider.js`, `src/utils/balldontlieNflScoreboard.js`, and `src/utils/espnNflScoreboard.js` — source eligibility and normalized scoreboard adapters.
 - `src/data/statisticsScoresFixtures.js` — normalized local fixture contract. See `docs/Statistics Scores.md` before production data wiring.
+
+## Live Data Server, Budgets, And Scaling
+
+Start with [[Live Data Server Architecture]] before changing provider cadence, credential handling, caches, request limits, live clocks, or fallback behavior.
+
+- `server/index.js` — constructs the one process-wide provider gateway and mounts both route groups.
+- `server/balldontlieGateway.js` — shared credential, capabilities, bounded cache, pagination, quota accounting, backoff, and freshness metadata.
+- `server/publicRequestGuard.js` — bounded public Scores request/concurrency protection.
+- `server/liveHandlers.js` — Fantasy Live session/league boundary and gateway-backed route projection.
+- `server/statisticsScoresHandlers.js` — public Scores provider selection, selected-week live lane, details, and ESPN fallback.
+- `src/api/liveApi.js` and `src/api/statisticsScoresApi.js` — client contracts for the two server route groups.
+- `src/components/companion/CompanionLive.jsx` and `src/components/statistics/scores/StatisticsScores.jsx` — current browser polling and visibility/offline behavior.
+- `.env.example`, `docker-compose.yml`, `nginx.conf`, and `vite.config.js` — secrets, sidecar topology, and development/production proxy boundaries.
+- `tests/unit/balldontlieGateway.test.mjs`, `tests/unit/publicRequestGuard.test.mjs`, `tests/unit/liveConfigStatus.test.mjs`, `tests/unit/statisticsScoresHandlers.test.mjs`, `tests/unit/providerAnchoredGameClock.test.mjs`, and the live/Scores E2E specs — current boundary coverage.
+
+Any change here must audit both Statistics Scores and Fantasy Live. Count every provider cursor page and retry, keep downstream browser throttling separate from the account-wide provider budget, and do not run multiple live-data sidecar replicas until the shared-store/leader phase is implemented.
 
 ## Fantasy Connection And League Data
 

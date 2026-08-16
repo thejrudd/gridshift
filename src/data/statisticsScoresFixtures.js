@@ -77,6 +77,7 @@ function scheduledGame(weekIndex, gameIndex, awayId, homeId) {
   const dayNumber = 4 + weekIndex + (window.day === 'Sat' ? 2 : window.day === 'Sun' ? 3 : window.day === 'Mon' ? 4 : 0);
   return {
     id: `fixture-${weekIndex + 1}-${gameIndex + 1}`,
+    provider: 'fixture',
     status: 'scheduled',
     statusLabel: window.time,
     slot: window.slot,
@@ -225,6 +226,86 @@ const ALL_WEEKS = [...REGULAR_WEEKS, ...POSTSEASON_WEEKS].map((week, index) => (
   games: gamesForWeek(week, index),
 }));
 
+const PRESEASON_FIXTURE_WEEKS = [
+  {
+    id: 'pre-1',
+    week: 1,
+    label: 'Hall of Fame Weekend',
+    shortLabel: 'HOF',
+    dateRange: 'Aug 6',
+    games: [
+      { awayId: 'CAR', homeId: 'ARI', kickoff: '2026-08-06T23:00:00.000Z', status: 'final', awayScore: 33, homeScore: 30 },
+    ],
+  },
+  {
+    id: 'pre-2',
+    week: 2,
+    label: 'Preseason Week 1',
+    shortLabel: 'P1',
+    dateRange: 'Aug 13–17',
+    games: [
+      { awayId: 'DET', homeId: 'CIN', kickoff: '2026-08-13T23:00:00.000Z' },
+      { awayId: 'GB', homeId: 'PIT', kickoff: '2026-08-13T23:00:00.000Z' },
+      { awayId: 'IND', homeId: 'NE', kickoff: '2026-08-13T23:30:00.000Z' },
+      { awayId: 'ARI', homeId: 'LV', kickoff: '2026-08-14T00:00:00.000Z' },
+    ],
+  },
+  {
+    id: 'pre-3',
+    week: 3,
+    label: 'Preseason Week 2',
+    shortLabel: 'P2',
+    dateRange: 'Aug 20–24',
+    games: [
+      { awayId: 'BUF', homeId: 'PHI', kickoff: '2026-08-20T23:00:00.000Z' },
+      { awayId: 'KC', homeId: 'DAL', kickoff: '2026-08-21T00:00:00.000Z' },
+    ],
+  },
+  {
+    id: 'pre-4',
+    week: 4,
+    label: 'Preseason Week 3',
+    shortLabel: 'P3',
+    dateRange: 'Aug 27–30',
+    games: [
+      { awayId: 'MIA', homeId: 'TB', kickoff: '2026-08-27T23:00:00.000Z' },
+      { awayId: 'SEA', homeId: 'SF', kickoff: '2026-08-28T00:00:00.000Z' },
+    ],
+  },
+].map((week) => ({
+  ...week,
+  phase: 'preseason',
+  games: week.games.map((game, index) => {
+    const kickoff = new Date(game.kickoff);
+    const status = game.status ?? 'scheduled';
+    return {
+      id: `fixture-${week.id}-${index + 1}`,
+      provider: 'fixture',
+      phase: 'preseason',
+      status,
+      statusLabel: status === 'final'
+        ? 'Final'
+        : kickoff.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' }),
+      slot: game.kickoff.slice(0, 10),
+      slotLabel: kickoff.toLocaleDateString('en-US', { timeZone: 'America/New_York', weekday: 'long' }),
+      dateLabel: kickoff.toLocaleDateString('en-US', { timeZone: 'America/New_York', weekday: 'short', month: 'short', day: 'numeric' }),
+      kickoffLabel: kickoff.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' }),
+      kickoff: game.kickoff,
+      network: 'TV TBD',
+      venue: `${team(game.homeId).name} Stadium`,
+      away: team(game.awayId),
+      home: team(game.homeId),
+      records: { away: null, home: null },
+      score: {
+        away: status === 'final' ? game.awayScore : null,
+        home: status === 'final' ? game.homeScore : null,
+      },
+      completed: status === 'final',
+      detailsAvailable: false,
+    };
+  }),
+}));
+
 export const SCORES_FIXTURE_SEASONS = [2026, 2025, 2024, 2023];
 export const SCORES_FIXTURE_CURRENT_WEEK = '7';
 
@@ -234,6 +315,14 @@ export const STATISTICS_SCORES_FIXTURE = {
   updatedLabel: 'Fixture data · refreshed 14 sec ago',
   connectionState: 'offline-cache',
   weeks: ALL_WEEKS,
+};
+
+export const STATISTICS_SCORES_PRESEASON_FIXTURE = {
+  season: 2026,
+  phase: 'preseason',
+  updatedLabel: 'Fixture data · deterministic preseason slate',
+  weeks: PRESEASON_FIXTURE_WEEKS,
+  games: PRESEASON_FIXTURE_WEEKS.flatMap((week) => week.games),
 };
 
 export const SCORE_DETAIL_FIXTURE = {

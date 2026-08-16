@@ -1,6 +1,8 @@
 import { useMemo } from 'react';
 import { useTheme } from '../../../context/ThemeContext';
+import { isStatisticsScoresDrilldownStatus } from '../../../utils/statisticsScoresDrilldown';
 import { getTeamVisualTheme } from '../../../utils/teamVisualTheme';
+import { getScoreNetworkLabel } from '../../../utils/statisticsBroadcasts';
 
 const teamLogo = (teamId) => `https://a.espncdn.com/i/teamlogos/nfl/500/${String(teamId).toLowerCase()}.png`;
 
@@ -46,10 +48,10 @@ function statusTone(status) {
 }
 
 function statusMeta(game) {
-  if (game.status === 'scheduled') return `${game.dateLabel} · ${game.network}`;
+  const network = getScoreNetworkLabel(game);
+  if (game.status === 'scheduled') return `${game.dateLabel} · ${network}`;
   if (game.status === 'offline') return `Cached · as of ${game.asOf}`;
-  if (game.status === 'final') return game.network;
-  return game.network;
+  return network;
 }
 
 function situationContent(game) {
@@ -71,7 +73,9 @@ export function CompactScorebug({ game, onOpen }) {
   const final = game.status === 'final';
   const awayWinner = final && game.score?.away > game.score?.home;
   const homeWinner = final && game.score?.home > game.score?.away;
-  const detailsAvailable = game.detailsAvailable !== false && Boolean(onOpen);
+  const detailsAvailable = isStatisticsScoresDrilldownStatus(game.status)
+    && game.detailsAvailable !== false
+    && Boolean(onOpen);
 
   return (
     <button
@@ -87,7 +91,9 @@ export function CompactScorebug({ game, onOpen }) {
       <b className={awayWinner ? '' : 'is-muted'}>{game.score?.away ?? ''}</b>
       <span className={homeWinner ? '' : 'is-muted'}>{game.home.id}</span>
       <b className={homeWinner ? '' : 'is-muted'}>{game.score?.home ?? ''}</b>
-      <small>{game.status === 'live' ? `● ${game.statusLabel}` : game.statusLabel}</small>
+      <small>{game.status === 'live'
+        ? `● ${game.statusLabel}${game.live?.displayClockFrozen ? ' · Clock held' : ''}`
+        : game.statusLabel}</small>
     </button>
   );
 }
@@ -100,7 +106,9 @@ export default function GameScorebug({ game, onOpen }) {
     [darkMode, favoriteTeamId],
   );
   const situation = situationContent(game);
-  const disabled = game.status === 'unavailable' || game.detailsAvailable === false || !onOpen;
+  const disabled = !isStatisticsScoresDrilldownStatus(game.status)
+    || game.detailsAvailable === false
+    || !onOpen;
 
   return (
     <button
@@ -130,9 +138,11 @@ export default function GameScorebug({ game, onOpen }) {
         <span className="scores-scorebug-topline">
           <span className={`scores-status is-${statusTone(game.status)}`}>
             {game.status === 'live' && <span className="scores-live-dot" aria-hidden="true" />}
-            {game.status === 'live' ? `Live · ${game.statusLabel}` : game.statusLabel}
+            {game.status === 'live'
+              ? `Live · ${game.statusLabel}${game.live?.displayClockFrozen ? ' · Clock held' : ''}`
+              : game.statusLabel}
           </span>
-          <span>{statusMeta(game)}</span>
+          {statusMeta(game) && <span>{statusMeta(game)}</span>}
         </span>
 
         <span className="scores-scorebug-teams">

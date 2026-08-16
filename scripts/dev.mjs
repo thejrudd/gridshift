@@ -58,9 +58,14 @@ const processes = [
   {
     name: 'gridshift-api',
     command: nodeBin,
-    args: [fileURLToPath(new URL('../server/index.js', import.meta.url))],
+    args: [
+      '--watch',
+      '--watch-preserve-output',
+      fileURLToPath(new URL('../server/index.js', import.meta.url)),
+    ],
     env: {
       ...localServerEnv,
+      NODE_ENV: 'development',
       GRIDSHIFT_API_HOST: process.env.GRIDSHIFT_API_HOST
         ?? process.env.ESPN_API_HOST
         ?? localServerEnv.GRIDSHIFT_API_HOST

@@ -1,7 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { getStatisticsScoresGameDetail } from '../../../api/statisticsScoresApi';
 import { useTheme } from '../../../context/ThemeContext';
 import { getTeamVisualTheme, pickReadableForeground } from '../../../utils/teamVisualTheme';
-import { getScoreDetailFixture } from '../../../data/statisticsScoresFixtures';
+import { buildScoreDetailFromGame } from '../../../utils/balldontlieNflScoreboard';
+import { getScoreNetworkLabel } from '../../../utils/statisticsBroadcasts';
 
 const SECTIONS = [
   { id: 'overview', label: 'Overview' },
@@ -10,9 +12,9 @@ const SECTIONS = [
   { id: 'scoring', label: 'Scoring' },
   { id: 'plays', label: 'Play-by-Play' },
 ];
+const LIVE_DETAIL_REFRESH_INTERVAL_MS = 30_000;
 
 const teamLogo = (teamId) => `https://a.espncdn.com/i/teamlogos/nfl/500/${String(teamId).toLowerCase()}.png`;
-
 function getNumericRatio(stat, side) {
   const ratio = side === 'away' ? stat.awayRatio : stat.homeRatio;
   if (Number.isFinite(ratio)) return ratio;
@@ -37,6 +39,18 @@ function SectionHeading({ title, meta, action }) {
       {action}
     </header>
   );
+}
+
+function DetailUnavailable({ children }) {
+  return <p className="scores-detail-unavailable">{children}</p>;
+}
+
+function detailCoverageMessage(detail, fallback) {
+  if (detail.coverage?.detailStatus === 'loading') return 'Loading live game detail from BALLDONTLIE…';
+  if (detail.coverage?.detailStatus === 'error') {
+    return detail.coverage.detailError ?? 'BALLDONTLIE game detail could not be loaded.';
+  }
+  return fallback;
 }
 
 function StatAdvantageRail({ stat, awayId, homeId, awayColor, homeColor }) {
@@ -86,6 +100,7 @@ function ScoreHero({ game, detail, awayTheme, homeTheme }) {
   const awayLoser = final && detail.score.away < detail.score.home;
   const homeLoser = final && detail.score.home < detail.score.away;
   const centerForeground = pickReadableForeground([awayTheme?.gradientEnd, homeTheme?.gradientStart].filter(Boolean));
+  const network = getScoreNetworkLabel({ ...game, network: detail.network }, { fallback: true });
 
   return (
     <section
@@ -127,13 +142,18 @@ function ScoreHero({ game, detail, awayTheme, homeTheme }) {
         />
       </div>
       <footer>
-        <span>{detail.venue}</span><span>·</span><span>{detail.network}</span><span>·</span><span>{game.dateLabel}</span>
+        <span>{detail.venue}</span>
+        {network && <><span>·</span><span>{network}</span></>}
+        <span>·</span><span>{game.dateLabel}</span>
       </footer>
     </section>
   );
 }
 
 function LineScore({ detail }) {
+  if (!detail.quarterLabels.length || !detail.lineScore.away.length || !detail.lineScore.home.length) {
+    return <DetailUnavailable>Quarter-by-quarter scoring is not included in this provider response.</DetailUnavailable>;
+  }
   return (
     <div className="scores-line-score-shell">
       <table className="scores-line-score" aria-label="Score by quarter">
@@ -186,27 +206,33 @@ function Overview({ detail, awayTheme, homeTheme, onOpenPlays }) {
   return (
     <div className="scores-detail-overview">
       <SectionHeading title="Latest Play" meta="Updating with the game" />
-      <LatestPlay detail={detail} onOpenPlays={onOpenPlays} />
+      {detail.drives.length
+        ? <LatestPlay detail={detail} onOpenPlays={onOpenPlays} />
+        : <DetailUnavailable>{detail.provider === 'espn'
+          ? 'ESPN supplies the score and game header here. Play-by-play requires a BALLDONTLIE API key for this league.'
+          : detailCoverageMessage(detail, 'No play-by-play has been returned for this game yet.')}</DetailUnavailable>}
 
       <SectionHeading title="Line Score" />
       <LineScore detail={detail} />
 
       <SectionHeading title="Leaders" />
-      <Leaders detail={detail} />
+      {detail.leaders.length ? <Leaders detail={detail} /> : <DetailUnavailable>{detailCoverageMessage(detail, 'Player leaders are not included in this score feed.')}</DetailUnavailable>}
 
       <SectionHeading title="Matchup" meta={`${detail.away.id} left · ${detail.home.id} right`} />
-      <div className="scores-stat-grid">
-        {primaryStats.map((stat) => (
-          <StatAdvantageRail
-            key={stat.label}
-            stat={stat}
-            awayId={detail.away.id}
-            homeId={detail.home.id}
-            awayColor={awayTheme?.borderColor ?? awayTheme?.color}
-            homeColor={homeTheme?.borderColor ?? homeTheme?.color}
-          />
-        ))}
-      </div>
+      {primaryStats.length ? (
+        <div className="scores-stat-grid">
+          {primaryStats.map((stat) => (
+            <StatAdvantageRail
+              key={stat.label}
+              stat={stat}
+              awayId={detail.away.id}
+              homeId={detail.home.id}
+              awayColor={awayTheme?.borderColor ?? awayTheme?.color}
+              homeColor={homeTheme?.borderColor ?? homeTheme?.color}
+            />
+          ))}
+        </div>
+      ) : <DetailUnavailable>{detailCoverageMessage(detail, 'Team comparison data is not included in this score feed.')}</DetailUnavailable>}
     </div>
   );
 }
@@ -215,30 +241,41 @@ function TeamStats({ detail, awayTheme, homeTheme }) {
   return (
     <div>
       <SectionHeading title="Team Stats" meta={`${detail.away.id} left · ${detail.home.id} right`} />
-      <div className="scores-team-stat-groups">
-        {detail.statGroups.map((group) => (
-          <section key={group.id} className="scores-team-stat-group">
-            <h3>{group.label}</h3>
-            {group.stats.map((stat) => (
-              <StatAdvantageRail
-                key={stat.label}
-                stat={stat}
-                awayId={detail.away.id}
-                homeId={detail.home.id}
-                awayColor={awayTheme?.borderColor ?? awayTheme?.color}
-                homeColor={homeTheme?.borderColor ?? homeTheme?.color}
-              />
-            ))}
-          </section>
-        ))}
-      </div>
+      {detail.statGroups.length ? (
+        <div className="scores-team-stat-groups">
+          {detail.statGroups.map((group) => (
+            <section key={group.id} className="scores-team-stat-group">
+              <h3>{group.label}</h3>
+              {group.stats.map((stat) => (
+                <StatAdvantageRail
+                  key={stat.label}
+                  stat={stat}
+                  awayId={detail.away.id}
+                  homeId={detail.home.id}
+                  awayColor={awayTheme?.borderColor ?? awayTheme?.color}
+                  homeColor={homeTheme?.borderColor ?? homeTheme?.color}
+                />
+              ))}
+            </section>
+          ))}
+        </div>
+      ) : <DetailUnavailable>{detailCoverageMessage(detail, 'Team statistics are not included in this score feed.')}</DetailUnavailable>}
     </div>
   );
 }
 
 function PlayerStats({ detail }) {
-  const [activeGroup, setActiveGroup] = useState(detail.playerGroups[0].id);
+  const [activeGroup, setActiveGroup] = useState(() => detail.playerGroups[0]?.id ?? '');
   const group = detail.playerGroups.find((entry) => entry.id === activeGroup) ?? detail.playerGroups[0];
+  const effectiveActiveGroup = group?.id ?? '';
+  if (!group) {
+    return (
+      <section className="scores-player-stats">
+        <SectionHeading title="Player Statistics" meta="Complete box score" />
+        <DetailUnavailable>{detailCoverageMessage(detail, 'Player statistics are not included in this score feed.')}</DetailUnavailable>
+      </section>
+    );
+  }
   return (
     <section className="scores-player-stats">
       <SectionHeading title="Player Statistics" meta="Complete box score" />
@@ -248,8 +285,8 @@ function PlayerStats({ detail }) {
             key={entry.id}
             type="button"
             role="tab"
-            aria-selected={entry.id === activeGroup}
-            className={entry.id === activeGroup ? 'is-active' : ''}
+            aria-selected={entry.id === effectiveActiveGroup}
+            className={entry.id === effectiveActiveGroup ? 'is-active' : ''}
             onClick={() => setActiveGroup(entry.id)}
           >
             {entry.label}
@@ -286,7 +323,7 @@ function ScoringSummary({ detail }) {
   return (
     <section className="scores-scoring-summary">
       <SectionHeading title="Scoring Plays" meta="Chronological by quarter" />
-      {quarters.map((quarter) => (
+      {quarters.length ? quarters.map((quarter) => (
         <section key={quarter} className="scores-scoring-quarter">
           <h3>{quarter} Quarter</h3>
           <div>
@@ -300,7 +337,7 @@ function ScoringSummary({ detail }) {
             ))}
           </div>
         </section>
-      ))}
+      )) : <DetailUnavailable>{detailCoverageMessage(detail, 'Scoring-play detail is not included in this score feed.')}</DetailUnavailable>}
     </section>
   );
 }
@@ -308,7 +345,23 @@ function ScoringSummary({ detail }) {
 function PlayByPlay({ detail }) {
   const [filter, setFilter] = useState('all');
   const [expanded, setExpanded] = useState(() => new Set());
+  if (detail.coverage && detail.coverage.plays !== true) {
+    const message = detail.coverage?.playsStatus === 'loading'
+      ? 'Loading play-by-play from BALLDONTLIE…'
+      : detail.coverage?.playsStatus === 'error'
+        ? detail.coverage.playsError ?? 'BALLDONTLIE play-by-play could not be loaded.'
+      : detail.provider === 'espn'
+        ? 'Play-by-play requires a BALLDONTLIE API key for this league.'
+        : 'Play-by-play requires BALLDONTLIE play access for this league.';
+    return (
+      <section className="scores-play-feed">
+        <SectionHeading title="Play Feed" meta="Provider coverage" />
+        <DetailUnavailable>{message}</DetailUnavailable>
+      </section>
+    );
+  }
   const drives = filter === 'all' ? detail.drives : detail.drives.filter((drive) => drive.team === filter);
+  const displayedDrives = [...drives].reverse();
 
   const toggleDrive = (driveId) => {
     setExpanded((current) => {
@@ -321,7 +374,7 @@ function PlayByPlay({ detail }) {
 
   return (
     <section className="scores-play-feed">
-      <SectionHeading title="Play Feed" meta="Most recent drive last" />
+      <SectionHeading title="Play Feed" meta="Most recent play first" />
       <div className="scores-play-filter" role="group" aria-label="Filter drives by team">
         <button type="button" aria-pressed={filter === 'all'} onClick={() => setFilter('all')}>All</button>
         {[detail.away, detail.home].map((team) => (
@@ -331,7 +384,7 @@ function PlayByPlay({ detail }) {
         ))}
       </div>
       <div className="scores-drive-list">
-        {drives.map((drive) => {
+        {displayedDrives.map((drive) => {
           const open = expanded.has(drive.id);
           return (
             <article key={drive.id} className={`scores-drive${drive.score ? ' is-scoring' : ''}`}>
@@ -344,7 +397,7 @@ function PlayByPlay({ detail }) {
               </button>
               {open && (
                 <div className="scores-drive-plays">
-                  {drive.plays.map((play) => (
+                  {[...drive.plays].reverse().map((play) => (
                     <div key={`${drive.id}-${play.time}-${play.down}`} className={play.scoring ? 'is-scoring' : ''}>
                       <b>{play.down}</b><span>{play.spot}</span><p>{play.description}</p><time>{play.time}</time>
                     </div>
@@ -359,10 +412,100 @@ function PlayByPlay({ detail }) {
   );
 }
 
-export default function ScoresGameDrilldown({ game, onBack }) {
+export default function ScoresGameDrilldown({ game, fixtureDetail = null, onBack }) {
+  const fixtureData = game.provider === 'fixture' || String(game.id).startsWith('fixture-');
+  const detailsProvider = game.detailsProvider ?? game.provider;
   const [section, setSection] = useState('overview');
+  const gameKey = `${game.provider ?? 'espn'}:${game.bdlGameId ?? game.providerGameId ?? game.id}`;
+  const [detailState, setDetailState] = useState({
+    key: gameKey,
+    status: detailsProvider === 'balldontlie' ? 'loading' : 'unavailable',
+    data: null,
+    error: null,
+  });
+  const visibleDetailState = useMemo(() => detailState.key === gameKey
+    ? detailState
+    : {
+      key: gameKey,
+      status: detailsProvider === 'balldontlie' ? 'loading' : 'unavailable',
+      data: null,
+      error: null,
+    }, [detailState, detailsProvider, gameKey]);
   const { darkMode } = useTheme();
-  const detail = useMemo(() => getScoreDetailFixture(game), [game]);
+  useEffect(() => {
+    if (fixtureData || detailsProvider !== 'balldontlie' || !game.bdlGameId) return undefined;
+    const controller = new AbortController();
+    const refreshesLiveDetail = ['live', 'halftime', 'delayed'].includes(game.status);
+    let stopped = false;
+    let requestInFlight = false;
+    let timeoutId = null;
+
+    const scheduleRefresh = () => {
+      if (!refreshesLiveDetail || stopped || document.visibilityState === 'hidden' || !navigator.onLine) return;
+      timeoutId = window.setTimeout(loadDetail, LIVE_DETAIL_REFRESH_INTERVAL_MS);
+    };
+
+    async function loadDetail() {
+      if (stopped || requestInFlight || document.visibilityState === 'hidden' || !navigator.onLine) return;
+      requestInFlight = true;
+      try {
+        const payload = await getStatisticsScoresGameDetail(game.bdlGameId, {
+          phase: game.phase,
+          signal: controller.signal,
+        });
+        if (stopped || controller.signal.aborted) return;
+        setDetailState({ key: gameKey, status: 'ready', data: payload, error: null });
+      } catch (error) {
+        if (error.name === 'AbortError' || controller.signal.aborted || stopped) return;
+        setDetailState((current) => current.key === gameKey && current.data
+          ? { ...current, error: error.message }
+          : { key: gameKey, status: 'error', data: null, error: error.message });
+      } finally {
+        requestInFlight = false;
+        scheduleRefresh();
+      }
+    }
+
+    const refreshNow = () => {
+      if (timeoutId) window.clearTimeout(timeoutId);
+      timeoutId = null;
+      void loadDetail();
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') refreshNow();
+      else if (timeoutId) window.clearTimeout(timeoutId);
+    };
+    const handleOffline = () => {
+      if (timeoutId) window.clearTimeout(timeoutId);
+      timeoutId = null;
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('online', refreshNow);
+    window.addEventListener('offline', handleOffline);
+    void loadDetail();
+    return () => {
+      stopped = true;
+      controller.abort();
+      if (timeoutId) window.clearTimeout(timeoutId);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('online', refreshNow);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [detailsProvider, fixtureData, game.bdlGameId, game.phase, game.status, gameKey]);
+  const detail = useMemo(
+    () => fixtureData
+      ? fixtureDetail
+      : buildScoreDetailFromGame(game, {
+        providerDetail: visibleDetailState.data,
+        detailStatus: visibleDetailState.status,
+        detailError: visibleDetailState.error,
+      }),
+    [fixtureData, fixtureDetail, game, visibleDetailState],
+  );
+  if (!detail) {
+    return <p className="statistics-scores-state">Loading fixture comparison…</p>;
+  }
   const awayTheme = getTeamVisualTheme(detail.away.id, darkMode, { logoSide: 'start' });
   const homeTheme = getTeamVisualTheme(detail.home.id, darkMode, { logoSide: 'end' });
 

@@ -15,6 +15,7 @@ import {
   getDraftTourContext,
   isDraftLeagueSelectionReady,
   getDraftResultsSeason,
+  getDraftRosterEligiblePositions,
   getDraftStatsSeason,
   getScheduledDraftCountdownParts,
   getSleeperDraftStartMs,
@@ -23,6 +24,7 @@ import {
   isSleeperDraftPollable,
   isSleeperDraftPreDraft,
   isSleeperUserDraftParticipant,
+  isPlayerEligibleForDraftRoster,
   normalizeDraftPick,
   normalizeDraftModelWeights,
   rebalanceDraftModelWeights,
@@ -39,6 +41,12 @@ import {
   getDraftAnalyticsAxisOptions,
   getDraftAnalyticsCompareLimit,
 } from '../../src/utils/draftAssistant/analytics.js';
+import {
+  DRAFT_RANKING_PRIORITY_CONTROLS,
+  DRAFT_RANKING_PRIORITY_HELP,
+  DRAFT_RANKING_PRIORITY_RESET_LABEL,
+  DRAFT_RANKING_PRIORITY_TITLE,
+} from '../../src/utils/draftAssistant/priorityCopy.js';
 import { rankDraftCandidates } from '../../src/utils/draftAssistant/recommendations.js';
 import {
   addPlayerToBoard,
@@ -141,6 +149,45 @@ const leagueLogsProfiles = {
     { key: 'dynasty-2qb-12t-ppr1', profile: { format: 'dynasty', numQbs: 2, numTeams: 12, ppr: 1 } },
   ],
 };
+
+test('draft ranking priority copy explains the personalized ranking tradeoff', () => {
+  assert.equal(DRAFT_RANKING_PRIORITY_TITLE, 'Adjust ranking priorities');
+  assert.equal(DRAFT_RANKING_PRIORITY_RESET_LABEL, 'Reset priorities');
+  assert.match(DRAFT_RANKING_PRIORITY_HELP, /balance player value, scoring fit, and team needs/);
+  assert.match(DRAFT_RANKING_PRIORITY_HELP, /more influence on player rankings/);
+  assert.deepEqual(
+    DRAFT_RANKING_PRIORITY_CONTROLS.map(({ key, label }) => ({ key, label })),
+    [
+      { key: 'marketRank', label: 'Player value' },
+      { key: 'pastProduction', label: 'Points per game' },
+      { key: 'scoringFit', label: 'Scoring fit' },
+      { key: 'rosterNeed', label: 'Team need' },
+    ],
+  );
+});
+
+test('draft roster eligibility expands flex slots without treating bench slots as universal eligibility', () => {
+  assert.deepEqual(
+    [...getDraftRosterEligiblePositions(['QB', 'FLEX', 'BN', 'IR'])].sort(),
+    ['QB', 'RB', 'TE', 'WR'],
+  );
+  assert.equal(
+    isPlayerEligibleForDraftRoster({ position: 'LB', fantasy_positions: ['LB'] }, league.roster_positions),
+    false,
+  );
+  assert.equal(
+    isPlayerEligibleForDraftRoster({ position: 'LB', fantasy_positions: ['LB'] }, ['QB', 'IDP_FLEX', 'BN']),
+    true,
+  );
+  assert.equal(
+    isPlayerEligibleForDraftRoster({ position: 'DE', fantasy_positions: ['DE'] }, ['DL', 'BN']),
+    true,
+  );
+  assert.equal(
+    isPlayerEligibleForDraftRoster({ position: 'DST', fantasy_positions: ['DST'] }, ['DEF', 'BN']),
+    true,
+  );
+});
 
 test('draft route round-trips cleanly', () => {
   const route = parseAppRoute('/draft');
@@ -950,6 +997,57 @@ test('draft assistant recommendations respect board rank and current pick state'
   assert.equal(viewModel.bestByPosition.RB.id, 'rb1');
   assert.equal(viewModel.bestOverall.availability, undefined);
   assert.equal(viewModel.bestOverall.draftRoom.availability, undefined);
+});
+
+test('draft assistant excludes positions the league cannot roster from every decision pool', () => {
+  const draft = {
+    draft_id: 'draft-1',
+    type: 'snake',
+    status: 'pre_draft',
+    settings: { rounds: 4 },
+    slot_to_roster_id: { 1: 1, 2: 2, 3: 3 },
+  };
+  const playersWithUnsupportedPositions = {
+    ...players,
+    lb1: {
+      player_id: 'lb1',
+      full_name: 'Echo Linebacker',
+      position: 'LB',
+      fantasy_positions: ['LB'],
+      team: 'CHI',
+      search_rank: 20,
+    },
+    k1: {
+      player_id: 'k1',
+      full_name: 'Foxtrot Kicker',
+      position: 'K',
+      fantasy_positions: ['K'],
+      team: 'BAL',
+      search_rank: 30,
+    },
+  };
+
+  const viewModel = buildDraftAssistantViewModel({
+    players: playersWithUnsupportedPositions,
+    rosters,
+    league,
+    draft,
+    draftPicks: [],
+    myRoster: rosters[0],
+    scoringSettings: DEFAULT_SCORING,
+    season: '2026',
+    boardIds: ['lb1', 'k1', 'wr1'],
+  });
+
+  const candidateIds = new Set(viewModel.allCandidates.map((player) => player.id));
+  assert.equal(candidateIds.has('lb1'), false);
+  assert.equal(candidateIds.has('k1'), false);
+  assert.equal(candidateIds.has('wr1'), true);
+  assert.equal(viewModel.rankedCandidates.some((player) => player.id === 'lb1'), false);
+  assert.equal(viewModel.onClockRecommendation?.id === 'lb1', false);
+  assert.deepEqual(viewModel.boardRows.map((player) => player.id), ['wr1']);
+  assert.equal(viewModel.bestByPosition.LB, undefined);
+  assert.equal(viewModel.bestByPosition.K, undefined);
 });
 
 test('draft assistant enriches drafted players into draftedCardsById without leaking them into candidates', () => {

@@ -24,6 +24,11 @@ export default defineConfig({
         changeOrigin: true,
         secure: false,
       },
+      '/api/statistics/scores': {
+        target: 'http://127.0.0.1:3001',
+        changeOrigin: true,
+        secure: false,
+      },
     },
   },
   define: {
@@ -60,6 +65,9 @@ export default defineConfig({
       },
       workbox: {
         navigateFallback: '/index.html',
+        // API URLs must reach nginx/the server sidecar instead of being
+        // mistaken for client-side navigations by the installed PWA.
+        navigateFallbackDenylist: [/^\/api(?:\/|$)/],
         globIgnores: ['**/*.map', 'icons/icon.svg'],
         cleanupOutdatedCaches: true,
         runtimeCaching: [

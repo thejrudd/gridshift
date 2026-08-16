@@ -101,13 +101,18 @@ export function isNonStandardScoringSetting(key, value) {
   return Number.isFinite(current) && Math.abs(current - baseline) > 0.000001;
 }
 
-export function getPreviousLeagueScoringOptions(linkedLeagueHistory, currentSeason) {
+export function getPreviousLeagueHistoryOptions(linkedLeagueHistory, currentSeason) {
   const currentSeasonNumber = Number(currentSeason);
   if (!Number.isFinite(currentSeasonNumber)) return [];
   return (linkedLeagueHistory ?? [])
     .filter((entry) => entry?.league && Number(entry.season) < currentSeasonNumber)
     .sort((a, b) => Number(b.season) - Number(a.season));
 }
+
+// Compatibility alias for callers that used the original cross-league
+// scoring-preview name. These entries now identify historical production,
+// while the connected league remains the scoring source.
+export const getPreviousLeagueScoringOptions = getPreviousLeagueHistoryOptions;
 
 export function getScoringRuleMeta(key) {
   if (POSITION_ONLY[key]) return { roles: new Set(POSITION_ONLY[key]), playTypes: new Set(['OFFENSE']) };

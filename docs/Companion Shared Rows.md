@@ -84,7 +84,7 @@ Use explicit `gridTemplate` and `columnGridTemplate` values when a screen has fi
 Team gradients are not uniform. Text can be readable on the left side of a row and unreadable on the right side, or vice versa.
 
 - Use `CompanionPlayerMetric` for metric values; it reads the row's value-side contrast variables.
-- Use `PlayerStatusBadge` for player availability/injury statuses inside shared rows. Pass `compact` in mobile/limited-width slots so labels come from `src/utils/playerAvailabilityStatus.js` (`Questionable` → `Q`, `Injured Reserve` → `IR`, etc.). Use `CompanionPlayerStatus` only for generic contextual chips such as `ROSTERED`, `HOT`, or selected-state labels.
+- Use `PlayerStatusBadge` for player availability/injury statuses inside shared rows. Pass `detail` from `getPlayerAvailabilityContext()` when the surface has room so Sleeper's useful body-part/note context appears with the designation. Pass `compact` in mobile/limited-width slots so labels come from `src/utils/playerAvailabilityStatus.js` (`Questionable` → `Q`, `Injured Reserve` → `IR`, etc.); compact badges intentionally omit detail. Use `CompanionPlayerStatus` only for generic contextual chips such as `ROSTERED`, `HOT`, or selected-state labels.
 - Use `CompanionPlayerLocalContrastText` for custom overlay text such as `ROSTERED`.
 - Do not hardcode `var(--color-label)`, semantic red/green/orange, or team accent colors for text that sits on a team gradient unless the component intentionally opts out of local contrast.
 

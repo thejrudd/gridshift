@@ -302,4 +302,33 @@ export const WHATS_NEW = [
       },
     ],
   },
+  {
+    version: '8.5.0',
+    title: 'Fantasy & Draft Context',
+    features: [
+      {
+        id: 'fantasy-draft-context',
+        name: 'Fantasy and Draft context',
+        description: 'See injury availability and roster context while preparing your team, with keeper labels when your league uses keepers and managers have set them.',
+        steps: [
+          {
+            route: { activeTab: 'fantasy', companionView: 'rosters' },
+            anchor: '[data-tour="companion-view-roster"]',
+            anchorMobile: null,
+            title: 'More context in Fantasy',
+            body: 'Roster rows keep platform-provided injury availability visible. If your league is a keeper league, keepers are marked here once the respective manager sets them.',
+            placement: 'auto',
+          },
+          {
+            route: { activeTab: 'draft', draftView: 'war-room' },
+            anchor: '[data-tour="tab-draft"]',
+            anchorMobile: null,
+            title: 'More context for Draft decisions',
+            body: 'Draft tools keep injury status and roster eligibility close to the decisions you are making. Keeper labels appear only when your league and managers have provided them.',
+            placement: 'auto',
+          },
+        ],
+      },
+    ],
+  },
 ];

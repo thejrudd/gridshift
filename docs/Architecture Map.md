@@ -110,10 +110,16 @@ Entries resolved via Pass 1 or 2 are marked `_teamSource = 'espn'`. Pass 3 entri
 
 - Thin wrappers for external data sources.
 - `sleeperApi.js` calls Sleeper directly from the browser.
+- `liveApi.js` and `statisticsScoresApi.js` call the GridShift sidecar; they never send a BALLDONTLIE credential from the browser.
 
 ### `server`
 
-- Express sidecar API for optional live data.
+- `index.js` creates one process-wide BALLDONTLIE gateway and injects it into both live-data route groups.
+- `balldontlieGateway.js` owns the server credential, capability profile, canonical bounded cache, in-flight coalescing, cursor pagination, stale/backoff policy, page-aware quota, and protected live-score allocation.
+- `publicRequestGuard.js` provides bounded downstream request and concurrency protection for the public near-live Scores route; it is separate from provider quota accounting.
+- `liveHandlers.js` owns the Fantasy Live session/league boundary and routes all provider work through the shared gateway.
+- `statisticsScoresHandlers.js` owns the public Statistics Scores provider boundary, narrow selected-week live route, detail composition, and ESPN fallback.
+- Gateway state is process-local. Running multiple sidecar replicas would still multiply upstream work until the shared-store/leader phase in [[Live Data Server Architecture]].
 
 ### `src/data`
 
@@ -127,6 +133,6 @@ Entries resolved via Pass 1 or 2 are marked `_teamSource = 'espn'`. Pass 3 entri
 ## Build And Runtime Config
 
 - `package.json` defines the available npm scripts.
-- `vite.config.js` wires the React plugin, PWA behavior, `__APP_VERSION__`, the KTC proxy, and the local ESPN sidecar proxy.
-- `nginx.conf` proxies `/api/espn/` to the sidecar and marks authenticated responses `no-store`.
+- `vite.config.js` wires the React plugin, PWA behavior, `__APP_VERSION__`, the KTC proxy, and local `/api/espn`, `/api/live`, and `/api/statistics/scores` sidecar proxies.
+- `nginx.conf` proxies production `/api/live/` and `/api/statistics/scores/` traffic to the sidecar. The live route forwards its encrypted session cookie and is marked `no-store`; the public Scores route is also marked `no-store`.
 - `docker-compose.yml`, `Dockerfile`, `Dockerfile.prebuilt`, and `Dockerfile.server` cover deployment.

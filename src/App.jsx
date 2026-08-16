@@ -1524,7 +1524,7 @@ function AppInner() {
 
           {activeTab === 'statistics' && statisticsView === 'scores' && (
             <Suspense fallback={<SectionLoading label="Loading scores" />}>
-              <StatisticsScores />
+              <StatisticsScores leagueId={selectedLeagueId} platform={platform} />
             </Suspense>
           )}
 

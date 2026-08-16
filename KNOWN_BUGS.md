@@ -8,7 +8,11 @@ Open bugs are listed first, deferred work next, fixed bugs below. Add new entrie
 
 | Bug |
 |-----|
-| No open bugs currently tracked. |
+| Fantasy Roster player availability designations can retain the wrong foreground contrast after switching between light and dark mode, making status text unreadable on some team gradients. |
+| Fantasy Scoring's league-year model control no longer applies a selected year's rules across Fantasy, preventing managers from evaluating one results season with another linked league year's scoring. |
+| Fantasy Rankings image exports identify the active scoring model but omit the NFL-stat season used to calculate the rankings. |
+| Draft War Room player metadata can truncate team, availability, bye, or schedule text at laptop widths after injury designations were added. |
+| Draft War Room and Board can show players whose positions are not rosterable in the selected league, including IDP players in leagues without IDP slots. |
 
 ---
 
@@ -16,6 +20,17 @@ Open bugs are listed first, deferred work next, fixed bugs below. Add new entrie
 
 | Bug | Fixed In |
 |-----|----------|
+| Statistics Scores can keep Hall of Fame Weekend marked as the current preseason slate until Preseason Week 1's evening kickoff, instead of advancing at the start of the new slate's calendar day. | v8.5.0 |
+| Statistics Scores' conditional “This Week” toolbar control disappears and reappears while switching between Regular and Preseason, shifting the season controls. | v8.5.0 |
+| Statistics Scores can classify BALLDONTLIE's January regular-season games as preseason and group them under Hall of Fame Weekend when game rows do not include an explicit season type. | v8.5.0 |
+| Statistics Scores uses different preseason week labels for ESPN and BALLDONTLIE, making the week rail change from “Pre Wk 1” to “P1” when switching sources. | v8.5.0 |
+| Statistics Scores can trail live action because its 30-second browser polling compounds with a 30-second server cache, while BALLDONTLIE live rows whose state is provided through `status_state` can be misclassified as scheduled. | v8.5.0 |
+| Statistics Scores disables the game drilldown for every preseason scorebug, including BALLDONTLIE games with a valid provider game ID, and its detail fetch incorrectly depends on a separate Fantasy Live session. | v8.5.0 |
+| Statistics Scores' real-data drilldown can show an empty box score and play feed for valid BALLDONTLIE preseason games because detail requests omit `season_type=1` and the client only wires play rows instead of the provider's game, team-stat, and player-stat responses. | v8.5.0 |
+| Statistics Scores can render duplicate weekday sections and place Friday games under Thursday because it groups games by the kickoff's UTC date while labeling the section in the viewer's local calendar; active games also inherit a weekday heading instead of a dedicated Live section. | v8.5.0 |
+| Statistics Scores can treat a reverse-ordered BALLDONTLIE play response as chronological, causing Latest Play and the play feed to disagree about the game's final play. | v8.5.0 |
+| Statistics Scores' ESPN developer source can still open game drilldowns when a server-side BALLDONTLIE key exists, so the forced source does not faithfully represent ESPN-only or no-key behavior. | v8.5.0 |
+| Statistics Scores can offer game drilldowns before kickoff even though scheduled games do not yet have meaningful box-score, scoring, or play-by-play detail. | v8.5.0 |
 | The What's New tour could reload the current route when advancing because its navigation buttons did not declare a non-submit button type, interrupting the historical tour. | v8.4.1 |
 | Fantasy Scoring could report that prior-season production was unavailable even when the connected Sleeper league had a linked previous season with enough data to calculate Position Strength. | v8.4.1 |
 | Fantasy Live could derive its “current” week from a league's last scored matchup, so offseason and other inactive periods remained stuck on a stale week and showed provider-specific missing-matchup copy instead of explaining that no fantasy matchup was active. | v8.4.1 |

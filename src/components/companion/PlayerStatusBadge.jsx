@@ -5,8 +5,17 @@ import {
 } from '../../utils/playerAvailabilityStatus';
 import useCompanionPlayerLocalContrast from '../../hooks/useCompanionPlayerLocalContrast.js';
 
-export default function PlayerStatusBadge({ status, compact = false, className = '', localContrast = true }) {
+export default function PlayerStatusBadge({
+  status,
+  detail = null,
+  compact = false,
+  responsiveCompact = false,
+  className = '',
+  localContrast = true,
+}) {
   const label = getAvailabilityStatusLabel(status, compact);
+  const compactLabel = responsiveCompact ? getAvailabilityStatusLabel(status, true) : null;
+  const title = [status, detail].filter(Boolean).join(' · ');
   const ref = useRef(null);
   const contrast = useCompanionPlayerLocalContrast(ref, localContrast);
   if (!label) return null;
@@ -14,7 +23,7 @@ export default function PlayerStatusBadge({ status, compact = false, className =
   return (
     <span
       ref={ref}
-      className={`font-bold px-1.5 py-0.5 rounded-lg shrink-0 leading-none ${className}`}
+      className={`player-status-badge font-bold px-1.5 py-0.5 rounded-lg shrink-0 leading-none ${responsiveCompact ? 'is-responsive-compact' : ''} ${className}`}
       style={{
         ...getAvailabilityStatusBadgeStyle(status),
         ...(contrast ? {
@@ -25,10 +34,12 @@ export default function PlayerStatusBadge({ status, compact = false, className =
         } : {}),
         fontSize: compact ? 9 : 10,
       }}
-      title={status}
-      aria-label={status}
+      title={title}
+      aria-label={title}
     >
-      {label}
+      <span className="player-status-badge__label">{label}</span>
+      {compactLabel ? <span className="player-status-badge__compact-label">{compactLabel}</span> : null}
+      {!compact && detail ? <span className="player-status-badge__detail"> · {detail}</span> : null}
     </span>
   );
 }
@@ -36,6 +47,7 @@ export default function PlayerStatusBadge({ status, compact = false, className =
 export function PlayerStatusLogoCluster({
   logoKey,
   status,
+  detail = null,
   logoSize = 44,
   className = '',
   logoClassName = '',
@@ -61,7 +73,7 @@ export function PlayerStatusLogoCluster({
           style={{ width: logoSize, height: logoSize }}
         />
       )}
-      <PlayerStatusBadge status={status} />
+      <PlayerStatusBadge status={status} detail={detail} />
     </div>
   );
 }

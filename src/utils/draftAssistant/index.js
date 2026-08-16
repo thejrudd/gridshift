@@ -2,6 +2,7 @@ import { buildRosterNeedProfile, getPositionNeedScore } from './rosterNeed.js';
 import { getPlayerProjectionProfile, playerSupportsDraftAssistant, sortDraftPlayersByProjection } from './projections.js';
 import { rankDraftCandidates } from './recommendations.js';
 import { createPointsCalculator, getRecentAvg } from '../scoringEngine.js';
+import { getLeaguePositionFilters, getPlayerPositionFilterKeys } from '../leaguePositions.js';
 export {
   getDraftResultsPresentation,
   getDraftTourContext,
@@ -93,6 +94,27 @@ function normalizePosition(value) {
   const normalized = String(value ?? '').trim().toUpperCase();
   if (normalized === 'DST') return 'DEF';
   return normalized || null;
+}
+
+export function getDraftRosterEligiblePositions(rosterPositions = []) {
+  return new Set(getLeaguePositionFilters(rosterPositions, { includeAll: false }));
+}
+
+export function isPlayerEligibleForDraftRoster(player, rosterPositionsOrEligiblePositions = []) {
+  const eligiblePositions = rosterPositionsOrEligiblePositions instanceof Set
+    ? rosterPositionsOrEligiblePositions
+    : getDraftRosterEligiblePositions(rosterPositionsOrEligiblePositions);
+  if (eligiblePositions.size === 0) return false;
+  const playerPositions = [
+    ...(Array.isArray(player?.fantasy_positions) ? player.fantasy_positions : []),
+    ...(Array.isArray(player?.raw?.fantasy_positions) ? player.raw.fantasy_positions : []),
+    player?.position,
+    player?.raw?.position,
+  ]
+    .filter(Boolean);
+  return playerPositions.some((position) => (
+    [...getPlayerPositionFilterKeys(position)].some((filter) => eligiblePositions.has(filter))
+  ));
 }
 
 function toFiniteNumber(value) {
@@ -1169,7 +1191,11 @@ export function buildDraftAssistantViewModel({
   });
   const recentPositionCounts = buildRecentPositionCounts(normalizedPicks, players);
 
-  const boardIndex = new Map(boardIds.map((playerId, index) => [String(playerId), index + 1]));
+  const draftRosterEligiblePositions = getDraftRosterEligiblePositions(league?.roster_positions);
+  const eligibleBoardIds = boardIds.filter((playerId) => (
+    isPlayerEligibleForDraftRoster(players?.[playerId], draftRosterEligiblePositions)
+  ));
+  const boardIndex = new Map(eligibleBoardIds.map((playerId, index) => [String(playerId), index + 1]));
   const rosteredIds = getRosteredPlayerIds(rosters);
   const scoringCategories = categorizeDraftScoringSettings(scoringSettings);
   const positionRanks = seasonStats
@@ -1182,6 +1208,7 @@ export function buildDraftAssistantViewModel({
   const candidatesWithoutModel = Object.values(players)
     .filter((player) => player?.player_id != null && !draftedIds.has(String(player.player_id)))
     .filter((player) => playerSupportsDraftAssistant(player))
+    .filter((player) => isPlayerEligibleForDraftRoster(player, draftRosterEligiblePositions))
     .map((player) => {
       const playerId = String(player.player_id);
       const marketValue = getMarketValue(marketValuesByPlayerId, playerId);
@@ -1271,7 +1298,7 @@ export function buildDraftAssistantViewModel({
     if (!bestByPosition[candidate.position]) bestByPosition[candidate.position] = candidate;
   }
 
-  const boardRows = boardIds.map((playerId, index) => {
+  const boardRows = eligibleBoardIds.map((playerId, index) => {
     const matched = allCandidates.find((candidate) => candidate.id === String(playerId));
     if (matched) return { ...matched, boardRank: index + 1, available: true };
 

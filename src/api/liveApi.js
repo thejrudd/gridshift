@@ -9,6 +9,9 @@ async function parseLiveResponse(response, fallbackMessage) {
   if (!response.ok || payload?.ok === false) {
     throw new Error(payload?.error || fallbackMessage);
   }
+  if (!payload || typeof payload !== 'object') {
+    throw new Error(fallbackMessage);
+  }
   return payload;
 }
 
@@ -22,8 +25,8 @@ function buildQueryString(params = {}) {
   return query ? `?${query}` : '';
 }
 
-export async function getLiveStatus() {
-  const response = await fetch('/api/live/status', {
+export async function getLiveStatus({ leagueId } = {}) {
+  const response = await fetch(`/api/live/status${buildQueryString({ leagueId })}`, {
     credentials: 'include',
     headers: { Accept: 'application/json' },
   });
@@ -52,18 +55,20 @@ export async function clearLiveSession() {
   return parseLiveResponse(response, 'Could not clear GridShift Live.');
 }
 
-export async function getLiveGames({ season, week, date } = {}) {
-  const response = await fetch(`/api/live/games${buildQueryString({ season, week, date })}`, {
+export async function getLiveGames({ season, week, date, seasonType, signal } = {}) {
+  const response = await fetch(`/api/live/games${buildQueryString({ season, week, date, seasonType })}`, {
     credentials: 'include',
     headers: { Accept: 'application/json' },
+    signal,
   });
   return parseLiveResponse(response, 'Could not load live games.');
 }
 
-export async function getLiveGamePlays(gameId) {
+export async function getLiveGamePlays(gameId, { signal } = {}) {
   const response = await fetch(`/api/live/game/${encodeURIComponent(gameId)}/plays`, {
     credentials: 'include',
     headers: { Accept: 'application/json' },
+    signal,
   });
   return parseLiveResponse(response, 'Could not load live plays.');
 }

@@ -21,6 +21,7 @@
 ## Collaboration Defaults
 
 - Keep `AGENTS.md` and `CLAUDE.md` synchronized: any instruction or project-memory change made in `AGENTS.md` must be mirrored in `CLAUDE.md` in the same pass.
+- For any prompt that includes multiple fixes or changes, spawn subagents and delegate the distinct workstreams before implementation.
 - Ask, don't assume. If intent, architecture, or requirements are unclear, ask before writing code. When running unattended, pick the most reasonable interpretation, proceed, and record the assumption instead of blocking.
 - Match the solution to the problem. Use the simplest solution for simple problems, and reach for stronger architecture only when the problem actually needs it.
 - Keep changes scoped. Do not touch unrelated code; surface bad code or design smells discovered along the way so they can be addressed as separate issues.

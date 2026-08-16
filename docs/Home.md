@@ -20,6 +20,7 @@ Use this note as the entry point.
 - [[Win Probability Backtest Report]]
 - [[Upgrade Simulation]]
 - [[BALLDONTLIE NFL Integration]]
+- [[Live Data Server Architecture]]
 
 ## Archive
 
@@ -63,6 +64,7 @@ flowchart TD
   A --> P[Historical Game Data]
   A --> O[Win Probability Backtest Report]
   A --> H[BALLDONTLIE NFL Integration]
+  A --> Q["Live Data Server Architecture"]
 
   B --> B1[src/main.jsx]
   B --> B2[src/App.jsx]
@@ -97,4 +99,10 @@ flowchart TD
   P --> P1[Persistent server cache]
   P --> P2[Historical source coverage]
   P --> P3[Storage budget]
+  H --> Q
+  N --> Q
+  Q --> Q1["League-scoped ingests"]
+  Q --> Q2["Tier and request budgets"]
+  Q --> Q3["Provider-anchored clocks"]
+  Q --> Q4["Horizontal scale"]
 ```
