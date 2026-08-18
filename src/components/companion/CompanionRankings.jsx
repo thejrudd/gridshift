@@ -19,7 +19,7 @@ import {
   RANKINGS_IMAGE_MAX_COUNT,
 } from '../../utils/rankingsExport';
 import { getScoringProfile } from '../../utils/scoringGuide.js';
-import { getPlayerAvailabilityStatus } from '../../utils/playerAvailabilityStatus.js';
+import { getPlayerAvailabilityContext } from '../../utils/playerAvailabilityStatus.js';
 import PlayerStatusBadge, { PlayerStatusLogoCluster } from './PlayerStatusBadge.jsx';
 import {
   CompanionFantasyTeamMenu,
@@ -446,6 +446,8 @@ export default function CompanionRankings({
         const sortContribution = getActionSortContribution(stats, activeScoringSettings, sortPosition, selectedSortOption);
         if (sortBy !== 'season' && sortBy !== 'avg' && sortContribution.raw == null) return null;
 
+        const availability = getPlayerAvailabilityContext(p);
+
         return {
           id,
           name: p.full_name || `${p.first_name} ${p.last_name}`,
@@ -457,7 +459,8 @@ export default function CompanionRankings({
           sortContribution,
           sortGames: Number(stats?.gp) || null,
           isRostered: rosteredIds.has(id),
-          availabilityStatus: getPlayerAvailabilityStatus(p),
+          availabilityStatus: availability.status,
+          availabilityDetail: availability.detail,
           teamTheme: getPlayerRowTeamTheme(p.team || '', darkMode),
         };
       })
@@ -1222,6 +1225,7 @@ function RankRow({ rank, player, activeSortOption, sortValueMode, onSelect, hide
             <PlayerStatusLogoCluster
               logoKey={player.teamTheme.logoKey}
               status={player.availabilityStatus}
+              detail={player.availabilityDetail}
               className="justify-start"
             />
           )}

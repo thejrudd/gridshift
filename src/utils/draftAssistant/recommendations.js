@@ -30,7 +30,8 @@ function buildWhyLine({ boardRank, teamNeed, projectedPoints, fallbackRank, fall
     reasons.push(`${rankLabel} #${formatRank(fallbackRank)}`);
   }
   if (workload?.recentPpg && workload?.ppg && workload.recentPpg > workload.ppg + 1) reasons.push('recent usage is up');
-  if (schedule?.label === 'Favorable') reasons.push('favorable schedule context');
+  if (schedule?.tierKey === 'very-favorable') reasons.push('a very favorable schedule ahead');
+  else if (schedule?.tierKey === 'favorable') reasons.push('a favorable schedule ahead');
   if (boardRank != null) reasons.push(`ranked #${boardRank} on your board`);
   if (teamNeed > 0.65) reasons.push('fills an open starter need');
   return reasons.slice(0, 3).join(' • ');

@@ -5295,7 +5295,9 @@ body {
 .draft-status-banner {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(620px, 1.08fr) minmax(520px, 0.92fr);
+  /* minmax(0, …fr) lets both panels shrink with the viewport instead of
+     forcing a fixed pixel floor that overflows laptop-width content areas. */
+  grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.92fr);
   gap: 0;
   align-items: center;
   min-height: 112px;
@@ -5393,9 +5395,9 @@ body {
 
 .draft-status-banner__live-state {
   display: grid;
-  grid-template-columns: auto minmax(372px, max-content) minmax(118px, auto);
+  grid-template-columns: auto minmax(0, max-content) minmax(0, 1fr);
   align-items: center;
-  gap: 16px;
+  gap: clamp(10px, 1.2vw, 16px);
   background:
     linear-gradient(90deg, color-mix(in srgb, var(--color-label) 10%, transparent), transparent 82%);
 }
@@ -5486,11 +5488,13 @@ body {
 
 .draft-status-banner__clock-card {
   display: grid;
-  grid-template-columns: minmax(164px, 1fr) 82px 96px;
+  /* The team cell absorbs shrinkage while the Pick and Clock cells size to
+     their content, so multi-hour slow-draft clocks (6:59:25) never clip. */
+  grid-template-columns: minmax(0, 1fr) minmax(56px, auto) minmax(76px, auto);
   gap: 0;
   justify-self: start;
   width: 100%;
-  max-width: 386px;
+  max-width: min(100%, 420px);
   align-self: center;
   border: 1px solid color-mix(in srgb, var(--color-signature) 46%, var(--color-separator));
   border-radius: 8px;
@@ -5505,7 +5509,7 @@ body {
 
 .draft-status-banner__clock-card > div {
   min-width: 0;
-  padding: 10px 13px 12px;
+  padding: 10px clamp(8px, 1vw, 13px) 12px;
 }
 
 .draft-status-banner__clock-card-team {
@@ -5518,7 +5522,7 @@ body {
 
 .draft-status-banner__clock-card strong {
   margin-top: 5px;
-  font-size: 31px;
+  font-size: clamp(20px, 1.4vw + 12px, 31px);
   white-space: nowrap;
 }
 
@@ -5860,7 +5864,7 @@ body {
 
   .draft-status-banner__clock-card {
     width: 100%;
-    grid-template-columns: minmax(0, 1.2fr) repeat(2, minmax(74px, 0.8fr));
+    grid-template-columns: minmax(0, 1fr) auto auto;
     max-width: none;
   }
 
@@ -7023,12 +7027,6 @@ body {
   border-color: var(--draft-analytics-hero-subtle, var(--color-separator));
 }
 
-.draft-analytics-verdict__detail {
-  color: var(--draft-analytics-hero-muted, var(--color-label-secondary));
-  font-size: var(--type-label);
-  font-weight: 850;
-}
-
 .draft-analytics-body {
   display: flex;
   flex-direction: column;
@@ -7904,10 +7902,6 @@ body {
     font-size: 26px;
   }
 
-  .draft-analytics-verdict__detail {
-    display: none;
-  }
-
   .draft-analytics-action {
     min-height: 32px;
     flex: 1 1 0;
@@ -8482,12 +8476,13 @@ body {
 
 .draft-board-workspace {
   --draft-board-rail-width: 300px;
-  --draft-board-lane-width: clamp(300px, 32cqw, 380px);
+  --draft-board-lane-width: clamp(max(300px, var(--draft-board-card-min-width, 0px)), 32cqw, 380px);
   --draft-board-card-avatar: clamp(34px, 4.2cqw, 44px);
-  --draft-board-card-name-min: clamp(108px, 14cqw, 150px);
-  --draft-board-card-name-min-available: clamp(98px, 12cqw, 138px);
-  --draft-board-card-grid: var(--draft-board-card-avatar) minmax(0, 1fr) minmax(0, auto) auto;
-  --draft-board-card-grid-with-metric: var(--draft-board-card-avatar) minmax(0, 1fr) minmax(44px, auto) minmax(0, auto) auto;
+  --draft-board-card-name-min: max(clamp(108px, 14cqw, 150px), var(--draft-board-card-name-min-measured, 0px));
+  --draft-board-card-name-min-available: max(clamp(98px, 12cqw, 138px), var(--draft-board-card-name-min-measured, 0px));
+  --draft-board-card-grid: var(--draft-board-card-avatar) minmax(var(--draft-board-card-name-min), 1fr) minmax(0, auto) auto;
+  --draft-board-card-grid-available: var(--draft-board-card-avatar) minmax(var(--draft-board-card-name-min-available), 1fr) minmax(0, auto) auto;
+  --draft-board-card-grid-with-metric: var(--draft-board-card-avatar) minmax(var(--draft-board-card-name-min-available), 1fr) minmax(44px, auto) minmax(0, auto) auto;
   --draft-board-card-grid-compact: var(--draft-board-card-grid);
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -8533,15 +8528,25 @@ body {
 }
 
 .draft-board-view-control {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   flex: 0 0 auto;
 }
 
 .draft-board-card-metric-control {
-  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  flex: 0 0 auto;
   min-width: 0;
   max-width: 100%;
   overflow-x: auto;
   scrollbar-width: none;
+}
+
+.draft-board-view-control button,
+.draft-board-card-metric-control button {
+  width: 100%;
+  text-align: center;
 }
 
 .draft-board-card-metric-control::-webkit-scrollbar {
@@ -8861,15 +8866,32 @@ body {
   white-space: nowrap;
 }
 
+.draft-player-row--board-card .companion-player-row__meta-item:first-child {
+  flex-shrink: 0;
+}
+
+.draft-player-row--board-card .companion-player-row__meta-item:nth-child(n+2) {
+  flex-shrink: 1;
+  text-overflow: clip;
+}
+
+@container (max-width: 460px) {
+  .draft-player-row--board-card .player-status-badge.is-responsive-compact .player-status-badge__label,
+  .draft-player-row--board-card .player-status-badge.is-responsive-compact .player-status-badge__detail {
+    display: none;
+  }
+
+  .draft-player-row--board-card .player-status-badge.is-responsive-compact .player-status-badge__compact-label {
+    display: inline;
+  }
+}
+
 .draft-player-row--board-card .companion-player-row__identity-label {
-  display: -webkit-box;
   overflow: hidden;
   overflow-wrap: normal;
-  text-overflow: clip;
-  white-space: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   word-break: normal;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
 }
 
 .draft-player-row--board-card .companion-player-row__columns {
@@ -8981,7 +9003,7 @@ body {
 }
 
 .draft-player-row--available-card.companion-player-row:not(.has-board-card-metric) {
-  grid-template-columns: var(--draft-board-card-grid) !important;
+  grid-template-columns: var(--draft-board-card-grid-available) !important;
 }
 
 .draft-player-row--board-card.has-board-card-metric.companion-player-row {
@@ -9255,7 +9277,7 @@ body {
 
 @container draft-board-workspace (min-width: 56.25rem) {
   .draft-board-workspace {
-    grid-template-columns: minmax(220px, var(--draft-board-rail-width)) 6px minmax(0, 1fr);
+    grid-template-columns: minmax(max(220px, var(--draft-board-card-min-width, 220px)), var(--draft-board-rail-width)) 6px minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr) auto;
     align-items: stretch;
     height: 100%;
@@ -9294,12 +9316,13 @@ body {
 
 @container draft-board-workspace (max-width: 56.1875rem) {
   .draft-board-workspace {
-    --draft-board-lane-width: clamp(260px, 42cqw, 320px);
+    --draft-board-lane-width: clamp(max(260px, var(--draft-board-card-min-width, 0px)), 42cqw, 320px);
     --draft-board-card-avatar: clamp(34px, 5cqw, 40px);
-    --draft-board-card-name-min: clamp(84px, 20cqw, 118px);
-    --draft-board-card-name-min-available: clamp(82px, 18cqw, 112px);
-    --draft-board-card-grid: var(--draft-board-card-avatar) minmax(0, 1fr) minmax(0, auto) auto;
-    --draft-board-card-grid-with-metric: var(--draft-board-card-avatar) minmax(0, 1fr) minmax(44px, auto) minmax(0, auto) auto;
+    --draft-board-card-name-min: max(clamp(84px, 20cqw, 118px), var(--draft-board-card-name-min-measured, 0px));
+    --draft-board-card-name-min-available: max(clamp(82px, 18cqw, 112px), var(--draft-board-card-name-min-measured, 0px));
+    --draft-board-card-grid: var(--draft-board-card-avatar) minmax(var(--draft-board-card-name-min), 1fr) minmax(0, auto) auto;
+    --draft-board-card-grid-available: var(--draft-board-card-avatar) minmax(var(--draft-board-card-name-min-available), 1fr) minmax(0, auto) auto;
+    --draft-board-card-grid-with-metric: var(--draft-board-card-avatar) minmax(var(--draft-board-card-name-min-available), 1fr) minmax(44px, auto) minmax(0, auto) auto;
     --draft-board-card-grid-compact: var(--draft-board-card-grid);
   }
 
@@ -9394,7 +9417,7 @@ body {
   }
 
   .draft-board-workspace {
-    --draft-board-lane-width: clamp(260px, 48vw, 340px);
+    --draft-board-lane-width: clamp(max(260px, var(--draft-board-card-min-width, 0px)), 48vw, 340px);
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr) auto;
     gap: 0;
@@ -9688,10 +9711,11 @@ body {
   .draft-board-workspace {
     --draft-board-roster-expanded-height: 78px;
     --draft-board-roster-collapsed-height: 28px;
-    --draft-board-card-name-min: clamp(90px, 28cqw, 118px);
-    --draft-board-card-name-min-available: clamp(86px, 26cqw, 112px);
-    --draft-board-card-grid: var(--draft-board-card-avatar) minmax(0, 1fr) minmax(0, auto) auto;
-    --draft-board-card-grid-with-metric: var(--draft-board-card-avatar) minmax(0, 1fr) minmax(42px, auto) minmax(0, auto) auto;
+    --draft-board-card-name-min: max(clamp(90px, 28cqw, 118px), var(--draft-board-card-name-min-measured, 0px));
+    --draft-board-card-name-min-available: max(clamp(86px, 26cqw, 112px), var(--draft-board-card-name-min-measured, 0px));
+    --draft-board-card-grid: var(--draft-board-card-avatar) minmax(var(--draft-board-card-name-min), 1fr) minmax(0, auto) auto;
+    --draft-board-card-grid-available: var(--draft-board-card-avatar) minmax(var(--draft-board-card-name-min-available), 1fr) minmax(0, auto) auto;
+    --draft-board-card-grid-with-metric: var(--draft-board-card-avatar) minmax(var(--draft-board-card-name-min-available), 1fr) minmax(42px, auto) minmax(0, auto) auto;
     --draft-board-card-grid-compact: var(--draft-board-card-grid);
     padding-bottom: var(--draft-board-roster-expanded-height);
   }
@@ -10524,6 +10548,15 @@ body {
   display: flex;
   height: var(--bar-height-tab);
   align-items: stretch;
+}
+
+/* Installed PWA: portrait safe-area insets are 0, so the display's rounded
+   corners overlap the outermost tabs unless the row is inset from both edges */
+@media (display-mode: standalone) {
+  .tab-bar-inner {
+    padding-left: max(18px, env(safe-area-inset-left));
+    padding-right: max(18px, env(safe-area-inset-right));
+  }
 }
 
 .tab-item {
@@ -17704,20 +17737,44 @@ body {
   flex-shrink: 0;
 }
 
+/* Big Board identity reads as three predictable lines: name, then team/status,
+   then the schedule note on its own line instead of wrapping mid-phrase. */
+.draft-player-row--big-board.companion-player-row.is-compact .companion-player-row__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  min-height: 0;
+  overflow: visible;
+  row-gap: 3px;
+  line-height: 1.2;
+  white-space: normal;
+}
+
+.draft-player-row--big-board.companion-player-row.is-compact .companion-player-row__meta-item {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.draft-player-row--big-board.companion-player-row.is-compact .companion-player-row__meta-item:has(.draft-player-row__meta-schedule) {
+  flex: 0 0 100%;
+  max-width: 100%;
+}
+
+.draft-player-row--big-board.companion-player-row.is-compact .companion-player-row__meta-item:has(.draft-player-row__meta-schedule)::before {
+  content: none;
+  margin-right: 0;
+}
+
+@container (max-width: 560px) {
+  .draft-player-row--big-board .draft-player-row__meta-schedule-suffix {
+    display: none;
+  }
+}
+
 @media (min-width: 768px) {
   .draft-player-row--big-board.companion-player-row.is-compact .companion-player-row__meta {
-    display: block;
-    min-height: 0;
-    overflow: visible;
     line-height: 1.25;
-    white-space: normal;
-  }
-
-  .draft-player-row--big-board.companion-player-row.is-compact .companion-player-row__meta-item {
-    display: inline;
-    overflow: visible;
-    text-overflow: clip;
-    white-space: normal;
   }
 
   .draft-player-row--big-board .draft-player-availability-badge {

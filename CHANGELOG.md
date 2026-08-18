@@ -1218,3 +1218,18 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Statistics Scores reliability** - Corrected preseason rollover and labels, January season classification, live-state and refresh behavior, calendar grouping, reverse-ordered plays, drilldown eligibility, and real-data detail requests.
 - **Production data boundary** - Kept local Statistics Scores fixtures and source overrides in development/test-only paths; production builds do not expose the developer source picker.
 - **Regression coverage and architecture docs** - Added focused server, provider, clock, grouping, API, responsive, and source-boundary coverage alongside the shared live-data architecture reference.
+
+## v8.5.1 - Draft & Scores Fixes
+*2026-08-17*
+
+- **Statistics Scores winner presentation** - Completed games now carry the winning team's gradient on the scorebug, with the losing side de-emphasized and every text color contrast-picked against the gradient.
+- **Statistics Scores mobile layout** - Kept each team's score on its own side of the portrait matchup layout, removed horizontal page scrolling so the view scrolls only vertically, and improved drilldown stadium, broadcast, and date contrast against the team gradient.
+- **Installed app navigation** - Inset the bottom navigation bar from the display's rounded corners so the outermost tabs stay fully visible in the installed iOS app.
+- **Live draft clock** - Formatted multi-hour slow-draft pick timers as hours, minutes, and seconds instead of minutes-only, and made the live draft banner scale to the viewport instead of overflowing at laptop widths.
+- **Projected Selection consistency** - Gave Draft War Room, Board, and Results a single projection source so the pages can no longer disagree, and restricted projections to players actually available in the draft, honoring rostered players and the league's rookies-only, veterans-only, or all-players draft pool.
+- **Draft schedule strength** - Graded upcoming schedules against the upcoming season's real opponents from the current week forward, tiered them by percentile so players spread across the full range instead of collapsing into "Neutral", and gave schedule a default weight in the Draft Rating.
+- **Draft Board readability** - Stopped player cards from truncating the position, team, and availability line to bare ellipses as the Available rail or a lane narrows.
+- **Fantasy scoring accuracy** - Matched yardage-tier bonuses to the platform's highest-tier-only behavior so Fantasy Rankings season points agree with the Statistics drilldown for the same player, league, and season.
+- **Fantasy Rosters columns** - Centered the Season and Avg/G headers over their own values, stopped them overlapping on phones, and kept availability designations from shifting values out of alignment.
+- **Fantasy week boundaries** - Limited player drilldown Fantasy Values to weeks the connected league actually plays a matchup in, instead of always running through week 18.
+- **Regression coverage** - Added unit coverage for schedule strength, projected draft selection, league season week boundaries, fantasy value ranks, and yardage-tier bonuses.
