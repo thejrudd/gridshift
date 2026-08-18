@@ -105,21 +105,44 @@ export default function GameScorebug({ game, onOpen }) {
     () => favoriteTeamId ? getTeamVisualTheme(favoriteTeamId, darkMode, { logoSide: 'start' }) : null,
     [darkMode, favoriteTeamId],
   );
+  const awayScore = game.score?.away;
+  const homeScore = game.score?.home;
+  // Completed games (no ties) carry the winning team's gradient on the card.
+  const winnerTeamId = game.status === 'final'
+    && Number.isFinite(awayScore)
+    && Number.isFinite(homeScore)
+    && awayScore !== homeScore
+    ? (awayScore > homeScore ? game.away.id : game.home.id)
+    : null;
+  const winnerTheme = useMemo(
+    () => winnerTeamId ? getTeamVisualTheme(winnerTeamId, darkMode) : null,
+    [darkMode, winnerTeamId],
+  );
   const situation = situationContent(game);
   const disabled = !isStatisticsScoresDrilldownStatus(game.status)
     || game.detailsAvailable === false
     || !onOpen;
+  const themedStyle = (game.favorite || winnerTheme) ? {
+    ...(game.favorite ? {
+      '--scores-favorite-gradient': `${favoriteTheme?.gradientOverlay}, ${favoriteTheme?.gradient}`,
+      '--scores-favorite-fg': favoriteTheme?.gradientFullForeground,
+      '--scores-favorite-muted': favoriteTheme?.gradientFullMuted,
+      '--scores-favorite-border': favoriteTheme?.borderColor,
+    } : null),
+    ...(winnerTheme ? {
+      '--scores-winner-gradient': `${winnerTheme.gradientOverlay}, ${winnerTheme.gradient}`,
+      '--scores-winner-fg': winnerTheme.gradientFullForeground,
+      '--scores-winner-muted': winnerTheme.gradientFullMuted,
+      '--scores-winner-subtle': winnerTheme.gradientFullSubtle,
+      '--scores-winner-border': winnerTheme.borderColor,
+    } : null),
+  } : undefined;
 
   return (
     <button
       type="button"
-      className={`scores-scorebug${game.favorite ? ' is-favorite' : ''} is-${game.status}${game.live?.redZone ? ' is-red-zone' : ''}`}
-      style={game.favorite ? {
-        '--scores-favorite-gradient': `${favoriteTheme?.gradientOverlay}, ${favoriteTheme?.gradient}`,
-        '--scores-favorite-fg': favoriteTheme?.gradientFullForeground,
-        '--scores-favorite-muted': favoriteTheme?.gradientFullMuted,
-        '--scores-favorite-border': favoriteTheme?.borderColor,
-      } : undefined}
+      className={`scores-scorebug${game.favorite ? ' is-favorite' : ''}${winnerTheme ? ' is-winner-themed' : ''} is-${game.status}${game.live?.redZone ? ' is-red-zone' : ''}`}
+      style={themedStyle}
       onClick={() => !disabled && onOpen(game)}
       aria-label={disabled
         ? `${game.away.name} at ${game.home.name}`

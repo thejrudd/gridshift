@@ -10,6 +10,7 @@ import PlayerStatTable, { HonorBadge } from './PlayerStatTable';
 import honorsData from '../data/honors.json';
 import { matchEspnToSleeper } from '../utils/espnSleeperMatch';
 import { STATISTICS_MODES } from '../utils/playerDrilldown';
+import { getFantasyLeagueMaxWeek } from '../utils/fantasySeasonWeeks.js';
 import { DEFAULT_SCORING, importLeagueScoring, normalizeScoringProfile } from '../utils/scoringEngine';
 import { getEspnTeamDefensePlayerId, normalizeEspnLeaguePayload } from '../utils/espnFantasyAdapter';
 import { getTeamVisualTheme } from '../utils/teamVisualTheme.js';
@@ -31,13 +32,6 @@ const MODE_OPTIONS = [
 
 function normalizeLeagueId(id) {
   return id == null ? null : String(id);
-}
-
-function getFantasyLeagueMaxWeek(league) {
-  const value = Number(league?.settings?.matchup_periods);
-  const season = Number(league?.season);
-  const defaultMax = Number.isFinite(season) && season < 2021 ? 17 : 18;
-  return Math.max(Number.isFinite(value) && value > 0 ? value : 0, defaultMax);
 }
 
 function getAllSeasonLeagues(leaguesBySeason) {
@@ -100,7 +94,14 @@ function normalizeSleeperWeeklyRows(raw) {
   const rows = Array.isArray(raw) ? raw : Object.values(raw);
   return rows
     .filter(Boolean)
-    .map((entry) => ({ ...entry, week: Number(entry.week) }))
+    // getPlayerSeasonStats returns { week, opponent, stats: {...} } entries;
+    // stat keys must be flattened to the top level or the rows score as empty
+    // and the fantasy totals silently fall back to ESPN-derived stats.
+    .map((entry) => {
+      const { stats, ...meta } = entry;
+      const flat = stats && typeof stats === 'object' ? { ...stats, ...meta } : meta;
+      return { ...flat, week: Number(flat.week) };
+    })
     .filter((entry) => Number.isFinite(entry.week))
     .sort((left, right) => left.week - right.week);
 }

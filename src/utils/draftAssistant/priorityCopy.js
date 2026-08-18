@@ -1,5 +1,5 @@
 export const DRAFT_RANKING_PRIORITY_TITLE = 'Adjust ranking priorities';
-export const DRAFT_RANKING_PRIORITY_HELP = 'Personalize how rankings balance player value, scoring fit, and team needs. A higher priority gives that factor more influence on player rankings.';
+export const DRAFT_RANKING_PRIORITY_HELP = 'Personalize how rankings balance player value, scoring fit, team needs, and the schedule ahead. A higher priority gives that factor more influence on player rankings.';
 export const DRAFT_RANKING_PRIORITY_RESET_LABEL = 'Reset priorities';
 
 export const DRAFT_RANKING_PRIORITY_CONTROLS = Object.freeze([
@@ -22,5 +22,10 @@ export const DRAFT_RANKING_PRIORITY_CONTROLS = Object.freeze([
     key: 'rosterNeed',
     label: 'Team need',
     description: 'How much your roster needs matter. Higher values favor positions where you need starters or depth.',
+  }),
+  Object.freeze({
+    key: 'schedule',
+    label: 'Schedule',
+    description: 'How much the games ahead matter. Higher values favor players whose remaining opponents gave up the most fantasy points to their position last season.',
   }),
 ]);

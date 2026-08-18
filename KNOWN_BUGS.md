@@ -20,6 +20,22 @@ Open bugs are listed first, deferred work next, fixed bugs below. Add new entrie
 
 | Bug | Fixed In |
 |-----|----------|
+| The live draft banner clock renders long slow-draft pick timers as minutes-only (e.g. 419:25), overflowing its clock cell on laptop widths instead of formatting as HH:MM:SS, and the banner does not scale responsively to the viewport it is displayed on. | v8.5.1 |
+| Draft Results can show the Projected Selection as unavailable ("Waiting for draft model") while Draft Board simultaneously projects a player, and the projected player can be one who is not available in the draft — already rostered in dynasty leagues, or excluded by the Sleeper draft player pool (rookies-only, vets-only, or all players). | v8.5.1 |
+| Fantasy Rankings season fantasy points can disagree with the Statistics Stats drilldown for the same player, league, and season (e.g. Matthew Stafford 2025: 291.0 in Rankings vs 293.98 in Statistics against a true score of 290.98), indicating the Statistics fantasy-value path computes points differently from the league scoring used by Rankings. | v8.5.1 |
+| On iOS installed as a PWA, the device's rounded display corners cover the bottom-left and bottom-right of the bottom navigation bar because the bar's content does not account for the corner safe areas. | v8.5.1 |
+| Statistics Scores mobile portrait scorebug does not keep each team's score on its respective side of the matchup layout. | v8.5.1 |
+| Statistics Scores allows horizontal page scrolling on mobile even when no content extends beyond the viewport; the vertically-aligned page should be fixed-width and scroll only vertically. | v8.5.1 |
+| Statistics Scores drilldown game metadata (stadium, broadcast channel, and date) has insufficient contrast against the team-gradient background. | v8.5.1 |
+| QB first downs can be double-counted in leagues that score them because Sleeper weekly rows already carry `bonus_fd_qb` as a count that is scored directly, while `scoringEngine.js` also adds `(pass_fd + rush_fd) × bonus_fd_qb`. | v8.5.1 |
+| Fantasy Rosters' Season and Avg/G column headers overlap each other on phones and are not centered over the values they label. | v8.5.1 |
+| Fantasy Rosters renders a player's availability designation (Questionable, IR, PUP) to the right of the season and average values, so rows with a designation shift those values left and break column alignment against rows without one. | v8.5.1 |
+| Draft Board player cards truncate the position/team line and availability badge to bare ellipses as the Available rail or a lane narrows, because the identity/meta column had no minimum width and the availability badge's compact mode was gated to a phone-width media query instead of the card's own (much narrower) container width. | v8.5.1 |
+| Draft War Room reported nearly every player as "Neutral schedule": the schedule index was tiered against fixed 92/108 cutoffs, but averaging a slate of opponents compresses all 32 teams into roughly 95–105, so no team could reach either cutoff. | v8.5.1 |
+| Draft War Room derived a player's upcoming opponents from the prior season's schedule map — the same package as the prior-season defensive stats — so a 2026 draft was graded against each team's 2025 opponents. | v8.5.1 |
+| Draft War Room's schedule signal always read the first six weeks of the schedule regardless of the current week, so an in-season draft was graded on games that had already been played. | v8.5.1 |
+| Draft War Room's Draft Rating gave the schedule component no default weight, so schedule never influenced player rankings unless a user raised the slider manually. | v8.5.1 |
+| Statistics player drilldown Fantasy Values shows NFL weeks the connected league never plays a matchup in (e.g. week 18 in a 17-week league), because the fantasy week ceiling was floored at 18 instead of being derived from the league's matchup schedule. | v8.5.1 |
 | Statistics Scores can keep Hall of Fame Weekend marked as the current preseason slate until Preseason Week 1's evening kickoff, instead of advancing at the start of the new slate's calendar day. | v8.5.0 |
 | Statistics Scores' conditional “This Week” toolbar control disappears and reappears while switching between Regular and Preseason, shifting the season controls. | v8.5.0 |
 | Statistics Scores can classify BALLDONTLIE's January regular-season games as preseason and group them under Hall of Fame Weekend when game rows do not include an explicit season type. | v8.5.0 |

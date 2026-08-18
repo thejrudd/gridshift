@@ -2,6 +2,12 @@ import { buildRosterNeedProfile, getPositionNeedScore } from './rosterNeed.js';
 import { getPlayerProjectionProfile, playerSupportsDraftAssistant, sortDraftPlayersByProjection } from './projections.js';
 import { rankDraftCandidates } from './recommendations.js';
 import { createPointsCalculator, getRecentAvg } from '../scoringEngine.js';
+import {
+  buildPointsAllowedByOpponent,
+  buildScheduleStrengthTable,
+  getScheduleSignal,
+  scoreScheduleSignal,
+} from './scheduleStrength.js';
 import { getLeaguePositionFilters, getPlayerPositionFilterKeys } from '../leaguePositions.js';
 export {
   getDraftResultsPresentation,
@@ -26,10 +32,11 @@ export {
 } from './draftStatus.js';
 
 export const DEFAULT_DRAFT_MODEL_WEIGHTS = {
-  marketRank: 40,
+  marketRank: 35,
   pastProduction: 25,
   scoringFit: 20,
-  rosterNeed: 15,
+  rosterNeed: 10,
+  schedule: 10,
 };
 const DRAFT_MODEL_WEIGHT_TOTAL = 100;
 
@@ -602,85 +609,23 @@ function getTeamUsageContext(players = {}, seasonStats = {}) {
   return teams;
 }
 
-function getAveragePointsAllowed(defenseTable, team, position) {
-  const weekly = defenseTable?.[team]?.[position];
-  if (!weekly) return null;
-  const values = Object.values(weekly).map(Number).filter(Number.isFinite);
-  if (!values.length) return null;
-  return values.reduce((sum, value) => sum + value, 0) / values.length;
+/**
+ * Prior-season defensive production paired with the upcoming season's opponents.
+ * See scheduleStrength.js for why the two seasons are deliberately different.
+ */
+function buildDraftScheduleStrength({ weeklyStats, players, scheduleMap, upcomingScheduleMap, scoringSettings }) {
+  if (!weeklyStats || !players || !scheduleMap || !upcomingScheduleMap) return null;
+  const pointsAllowedByOpponent = buildPointsAllowedByOpponent({
+    weeklyStats,
+    players,
+    scheduleMap,
+    scoringSettings,
+  });
+  return buildScheduleStrengthTable({ pointsAllowedByOpponent, upcomingScheduleMap });
 }
 
-function getLeagueAveragePointsAllowed(defenseTable, position) {
-  const values = Object.keys(defenseTable ?? {})
-    .map((team) => getAveragePointsAllowed(defenseTable, team, position))
-    .filter((value) => value != null);
-  if (!values.length) return null;
-  return values.reduce((sum, value) => sum + value, 0) / values.length;
-}
-
-function buildDraftDefenseTable(weeklyStats, players, scheduleMap, scoringSettings) {
-  if (!weeklyStats || !players) return {};
-  const calcPoints = createPointsCalculator(scoringSettings);
-  const table = {};
-  const addValue = (team, position, week, value) => {
-    if (!team || !position || !Number.isFinite(value) || value <= 0) return;
-    if (!table[team]) table[team] = {};
-    if (!table[team][position]) table[team][position] = {};
-    table[team][position][week] = (table[team][position][week] ?? 0) + value;
-  };
-
-  for (const [playerId, playerWeeks] of Object.entries(weeklyStats ?? {})) {
-    const player = players?.[playerId];
-    const position = normalizePosition(player?.fantasy_positions?.[0] ?? player?.position);
-    if (!position) continue;
-    for (const weekEntry of playerWeeks ?? []) {
-      const week = Number(weekEntry?.week);
-      const team = String(weekEntry?.team ?? player?.team ?? '').toUpperCase();
-      const opponent = String(weekEntry?.opp ?? scheduleMap?.[week]?.[team]?.opp ?? '').toUpperCase();
-      const value = calcPoints(weekEntry, player?.position);
-      addValue(opponent, position, week, value);
-    }
-  }
-
-  return table;
-}
-
-function getUpcomingOpponents(team, scheduleMap) {
-  const normalizedTeam = String(team ?? '').toUpperCase();
-  if (!normalizedTeam || !scheduleMap) return [];
-  return Object.entries(scheduleMap)
-    .sort(([a], [b]) => Number(a) - Number(b))
-    .map(([week, weekData]) => ({
-      week: Number(week),
-      opponent: String(weekData?.[normalizedTeam]?.opp ?? '').toUpperCase(),
-    }))
-    .filter((item) => item.opponent);
-}
-
-function buildScheduleSignal({ player, defenseTable, scheduleMap }) {
-  const position = normalizePosition(player?.position);
-  const opponents = getUpcomingOpponents(player?.team, scheduleMap).slice(0, 6);
-  const opponentValues = opponents
-    .map((item) => getAveragePointsAllowed(defenseTable, item.opponent, position))
-    .filter((value) => value != null);
-  const leagueAverage = getLeagueAveragePointsAllowed(defenseTable, position);
-  if (!opponentValues.length || leagueAverage == null || leagueAverage === 0) {
-    return {
-      label: 'Unavailable',
-      value: null,
-      detail: null,
-      opponents,
-    };
-  }
-  const averageAllowed = opponentValues.reduce((sum, value) => sum + value, 0) / opponentValues.length;
-  const index = Math.round((averageAllowed / leagueAverage) * 100);
-  const label = index >= 108 ? 'Favorable' : index <= 92 ? 'Tough' : 'Neutral';
-  return {
-    label,
-    value: index,
-    detail: `${index} vs league avg`,
-    opponents,
-  };
+function buildScheduleSignal({ player, scheduleStrength }) {
+  return getScheduleSignal(scheduleStrength, player?.team, player?.position);
 }
 
 function getMarketTrend(marketValue) {
@@ -868,9 +813,8 @@ function scoreWorkload(position, volume) {
   return clamp((volume / baseline) * 82);
 }
 
-function scoreSchedule(index) {
-  if (index == null) return null;
-  return clamp(((index - 82) / 36) * 100);
+function scoreSchedule(schedule) {
+  return scoreScheduleSignal(schedule);
 }
 
 function scoreTeamContext(teamContext) {
@@ -893,7 +837,7 @@ function buildDraftModelSignal(candidate, weights) {
     pastProduction: scorePpg(candidate.position, candidate.workload?.ppg),
     workload: scoreWorkload(candidate.position, candidate.workload?.primaryVolume),
     scoringFit: scorePositionRank(candidate.scoringFit?.positionSeasonRank, candidate.scoringFit?.positionSeasonCount),
-    schedule: scoreSchedule(candidate.schedule?.value),
+    schedule: scoreSchedule(candidate.schedule),
     teamContext: scoreTeamContext(candidate.teamContext),
     rosterNeed: scoreRosterNeed(candidate.draftRoom?.teamNeed),
   };
@@ -1168,6 +1112,7 @@ export function buildDraftAssistantViewModel({
   seasonStats = null,
   weeklyStats = null,
   scheduleMap = null,
+  upcomingScheduleMap = null,
   modelWeights = DEFAULT_DRAFT_MODEL_WEIGHTS,
 }) {
   const normalizedModelWeights = normalizeDraftModelWeights(modelWeights);
@@ -1202,9 +1147,13 @@ export function buildDraftAssistantViewModel({
     ? computeDraftPositionalRanks(seasonStats, players, scoringSettings)
     : {};
   const teamUsage = getTeamUsageContext(players, seasonStats);
-  const defenseTable = weeklyStats && scheduleMap
-    ? buildDraftDefenseTable(weeklyStats, players, scheduleMap, scoringSettings)
-    : {};
+  const scheduleStrength = buildDraftScheduleStrength({
+    weeklyStats,
+    players,
+    scheduleMap,
+    upcomingScheduleMap,
+    scoringSettings,
+  });
   const candidatesWithoutModel = Object.values(players)
     .filter((player) => player?.player_id != null && !draftedIds.has(String(player.player_id)))
     .filter((player) => playerSupportsDraftAssistant(player))
@@ -1250,7 +1199,7 @@ export function buildDraftAssistantViewModel({
         workload,
       });
       const teamContext = buildTeamContextSignal({ player: baseCandidate, teamUsage });
-      const schedule = buildScheduleSignal({ player: baseCandidate, defenseTable, scheduleMap });
+      const schedule = buildScheduleSignal({ player: baseCandidate, scheduleStrength });
       const withDraftRoom = attachDraftRoomSignal({
         ...baseCandidate,
         rank,
@@ -1348,7 +1297,7 @@ export function buildDraftAssistantViewModel({
       }),
       workload,
       teamContext: buildTeamContextSignal({ player: baseCandidate, teamUsage }),
-      schedule: buildScheduleSignal({ player: baseCandidate, defenseTable, scheduleMap }),
+      schedule: buildScheduleSignal({ player: baseCandidate, scheduleStrength }),
       draftRoom: {
         boardRank: index + 1,
         teamNeed: getPositionNeedScore(myNeedRow?.profile ?? null, position),
@@ -1412,7 +1361,7 @@ export function buildDraftAssistantViewModel({
       }),
       workload,
       teamContext: buildTeamContextSignal({ player: baseCandidate, teamUsage }),
-      schedule: buildScheduleSignal({ player: baseCandidate, defenseTable, scheduleMap }),
+      schedule: buildScheduleSignal({ player: baseCandidate, scheduleStrength }),
       draftRoom: {
         teamNeed: getPositionNeedScore(myNeedRow?.profile ?? null, position),
         picksUntilUser: upcomingWindow.picksBeforeUser.length,
@@ -1463,6 +1412,7 @@ export function buildDraftResultsViewModel({
   seasonStats = null,
   weeklyStats = null,
   scheduleMap = null,
+  upcomingScheduleMap = null,
   modelWeights = DEFAULT_DRAFT_MODEL_WEIGHTS,
 }) {
   const normalizedModelWeights = normalizeDraftModelWeights(modelWeights);
@@ -1490,9 +1440,13 @@ export function buildDraftResultsViewModel({
     ? computeDraftPositionalRanks(seasonStats, players, scoringSettings)
     : {};
   const teamUsage = getTeamUsageContext(players, seasonStats);
-  const defenseTable = weeklyStats && scheduleMap
-    ? buildDraftDefenseTable(weeklyStats, players, scheduleMap, scoringSettings)
-    : {};
+  const scheduleStrength = buildDraftScheduleStrength({
+    weeklyStats,
+    players,
+    scheduleMap,
+    upcomingScheduleMap,
+    scoringSettings,
+  });
 
   const draftedCardsById = new Map();
   for (const pick of normalizedPicks) {
@@ -1542,7 +1496,7 @@ export function buildDraftResultsViewModel({
       }),
       workload,
       teamContext: buildTeamContextSignal({ player: baseCandidate, teamUsage }),
-      schedule: buildScheduleSignal({ player: baseCandidate, defenseTable, scheduleMap }),
+      schedule: buildScheduleSignal({ player: baseCandidate, scheduleStrength }),
       draftRoom: {
         teamNeed: getPositionNeedScore(myNeedRow?.profile ?? null, position),
         picksUntilUser: upcomingWindow.picksBeforeUser.length,

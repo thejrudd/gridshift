@@ -203,16 +203,12 @@ function SnapshotPills({ rows }) {
 function buildVerdict(player) {
   const rating = Number(player?.draftModel?.score);
   const market = Number(player?.draftModel?.components?.marketRank);
-  const ppg = Number(player?.draftModel?.components?.pastProduction);
-  const need = Number(player?.draftModel?.components?.rosterNeed);
   if (Number.isFinite(rating) && Number.isFinite(market)) {
     const edge = rating - market;
-    if (edge >= 14) return { label: 'Value vs Market', tone: 'pos', detail: 'Rating beats market price' };
-    if (edge <= -14) return { label: 'Market Reach', tone: 'neg', detail: 'Costs more than the rating' };
+    if (edge >= 14) return { label: 'Underpriced', tone: 'pos' };
+    if (edge <= -14) return { label: 'Overpriced', tone: 'neg' };
   }
-  if (Number.isFinite(need) && need >= 72) return { label: 'Need Fit', tone: 'pos', detail: 'Roster pressure supports the pick' };
-  if (Number.isFinite(ppg) && ppg >= 72) return { label: 'Production Edge', tone: 'pos', detail: 'Recent scoring backs the profile' };
-  return { label: 'Priced Right', tone: 'neu', detail: 'Rating tracks the market' };
+  return { label: 'Fair Price', tone: 'neu' };
 }
 
 function ScatterPlot({
@@ -453,7 +449,6 @@ export default function DraftPlayerAnalyticsSheet({
         </div>
         <div className="draft-analytics-hero__footer">
           <span className={`draft-analytics-verdict draft-analytics-verdict--${verdict.tone}`}>{verdict.label}</span>
-          <span className="draft-analytics-verdict__detail">{verdict.detail}</span>
           <span className="draft-analytics-hero__spacer" />
           <div className="draft-analytics-hero__actions">
             <button

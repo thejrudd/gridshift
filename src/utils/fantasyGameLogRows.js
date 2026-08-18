@@ -234,7 +234,9 @@ export function buildFantasyStatsFromGameLogStats(statsJson, position, meta = {}
   setNumericStat(entry, 'pass_sack', passSacks ?? 0);
   setNumericStat(entry, 'pass_fd', getNumericStat(statsMap, 'passingFirstDowns') ?? 0);
   setThresholdStat(entry, 'bonus_pass_cmp_25', passCmp ?? 0, 25);
-  setThresholdStat(entry, 'bonus_pass_yd_300', passYds ?? 0, 300);
+  // Sleeper emits yardage-tier bonuses exclusively (only the highest tier), so
+  // derived rows must match or mixed Sleeper/derived totals double-pay tiers.
+  setRangeStat(entry, 'bonus_pass_yd_300', passYds ?? 0, 300, 399);
   setThresholdStat(entry, 'bonus_pass_yd_400', passYds ?? 0, 400);
 
   setNumericStat(entry, 'rush_att', rushAtt ?? 0);
@@ -242,16 +244,16 @@ export function buildFantasyStatsFromGameLogStats(statsJson, position, meta = {}
   setNumericStat(entry, 'rush_td', rushTd ?? 0);
   setNumericStat(entry, 'rush_fd', getNumericStat(statsMap, 'rushingFirstDowns') ?? 0);
   setThresholdStat(entry, 'bonus_rush_att_20', rushAtt ?? 0, 20);
-  setThresholdStat(entry, 'bonus_rush_yd_100', rushYds ?? 0, 100);
+  setRangeStat(entry, 'bonus_rush_yd_100', rushYds ?? 0, 100, 199);
   setThresholdStat(entry, 'bonus_rush_yd_200', rushYds ?? 0, 200);
-  setThresholdStat(entry, 'bonus_rush_rec_yd_100', scrimmageYds, 100);
+  setRangeStat(entry, 'bonus_rush_rec_yd_100', scrimmageYds, 100, 199);
   setThresholdStat(entry, 'bonus_rush_rec_yd_200', scrimmageYds, 200);
 
   setNumericStat(entry, 'rec', rec ?? 0);
   setNumericStat(entry, 'rec_yd', recYds ?? 0);
   setNumericStat(entry, 'rec_td', recTd ?? 0);
   setNumericStat(entry, 'rec_fd', getNumericStat(statsMap, 'receivingFirstDowns') ?? 0);
-  setThresholdStat(entry, 'bonus_rec_yd_100', recYds ?? 0, 100);
+  setRangeStat(entry, 'bonus_rec_yd_100', recYds ?? 0, 100, 199);
   setThresholdStat(entry, 'bonus_rec_yd_200', recYds ?? 0, 200);
 
   setNumericStat(entry, 'fum', getNumericStat(statsMap, 'fumbles') ?? 0);

@@ -2,7 +2,12 @@ import { Fragment, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { buildStatMap, buildRankMap, getStatRows, getGameLogColumns, positionGroup } from '../utils/playerMetrics';
 import { useSleeperLeague, useSleeperStats } from '../context/SleeperContext';
 import {
+  buildFantasyRankDistributions,
+  getFantasyRankForValue,
+} from '../utils/fantasyValueRanks';
+import {
   calcPoints,
+  calcPointsFromTotals,
   DEFAULT_SCORING,
   getEspnAppliedStatFallbackId,
   getPositionScoringSettings,
@@ -1666,7 +1671,9 @@ function buildSleeperStatsFromGameLogStats(statsJson, position, meta = {}) {
   setNumericStat(entry, 'pass_sack', passSacks ?? 0);
   setNumericStat(entry, 'pass_fd', getNumericStat(statsMap, 'passingFirstDowns') ?? 0);
   setThresholdStat(entry, 'bonus_pass_cmp_25', passCmp ?? 0, 25);
-  setThresholdStat(entry, 'bonus_pass_yd_300', passYds ?? 0, 300);
+  // Sleeper emits yardage-tier bonuses exclusively (only the highest tier), so
+  // derived rows must match or mixed Sleeper/derived totals double-pay tiers.
+  setRangeStat(entry, 'bonus_pass_yd_300', passYds ?? 0, 300, 399);
   setThresholdStat(entry, 'bonus_pass_yd_400', passYds ?? 0, 400);
 
   setNumericStat(entry, 'rush_att', rushAtt ?? 0);
@@ -1674,16 +1681,16 @@ function buildSleeperStatsFromGameLogStats(statsJson, position, meta = {}) {
   setNumericStat(entry, 'rush_td', rushTd ?? 0);
   setNumericStat(entry, 'rush_fd', getNumericStat(statsMap, 'rushingFirstDowns') ?? 0);
   setThresholdStat(entry, 'bonus_rush_att_20', rushAtt ?? 0, 20);
-  setThresholdStat(entry, 'bonus_rush_yd_100', rushYds ?? 0, 100);
+  setRangeStat(entry, 'bonus_rush_yd_100', rushYds ?? 0, 100, 199);
   setThresholdStat(entry, 'bonus_rush_yd_200', rushYds ?? 0, 200);
-  setThresholdStat(entry, 'bonus_rush_rec_yd_100', scrimmageYds, 100);
+  setRangeStat(entry, 'bonus_rush_rec_yd_100', scrimmageYds, 100, 199);
   setThresholdStat(entry, 'bonus_rush_rec_yd_200', scrimmageYds, 200);
 
   setNumericStat(entry, 'rec', rec ?? 0);
   setNumericStat(entry, 'rec_yd', recYds ?? 0);
   setNumericStat(entry, 'rec_td', recTd ?? 0);
   setNumericStat(entry, 'rec_fd', getNumericStat(statsMap, 'receivingFirstDowns') ?? 0);
-  setThresholdStat(entry, 'bonus_rec_yd_100', recYds ?? 0, 100);
+  setRangeStat(entry, 'bonus_rec_yd_100', recYds ?? 0, 100, 199);
   setThresholdStat(entry, 'bonus_rec_yd_200', recYds ?? 0, 200);
 
   setNumericStat(entry, 'fum', getNumericStat(statsMap, 'fumbles') ?? 0);
@@ -1818,6 +1825,19 @@ function syncTeamResultStatsFromDerived(row, derived, position) {
   return next;
 }
 
+// Non-scoring metadata a derived (ESPN game log) row may contribute to a
+// Sleeper provider row, plus team results — Sleeper weekly stat rows never
+// carry team_win/team_loss/team_tie, so those must come from the game log.
+const DERIVED_ROW_META_KEYS = ['week', '_isPostseason', '_isBye', '_isInactive', 'team_win', 'team_loss', 'team_tie'];
+
+function pickDerivedRowMeta(derived) {
+  const meta = {};
+  for (const key of DERIVED_ROW_META_KEYS) {
+    if (derived?.[key] !== undefined) meta[key] = derived[key];
+  }
+  return meta;
+}
+
 function mergeFantasyRowsWithDerivedStats(providedRows = [], derivedRows = [], {
   preferDerived = false,
   position = null,
@@ -1830,16 +1850,22 @@ function mergeFantasyRowsWithDerivedStats(providedRows = [], derivedRows = [], {
       .map((row) => clearAppliedFantasyFieldsFromRow(row));
   }
 
-  if (!providedRows.length) return derivedRows;
-  if (!derivedRows.length) return providedRows;
+  const activeProvidedRows = providedRows.filter((row) => isActiveFantasyWeekRow(row, maxWeek));
+  // Season-total fallback rows carry no week and stay eligible; weekly rows
+  // outside the league's matchup weeks do not.
+  const activeDerivedRows = derivedRows.filter((row) => (
+    !Number.isFinite(Number(row?.week)) || isActiveFantasyWeekRow(row, maxWeek)
+  ));
+  if (!activeProvidedRows.length) return activeDerivedRows;
+  if (!activeDerivedRows.length) return activeProvidedRows;
 
   const derivedByWeek = new Map(
-    derivedRows
-      .filter((row) => isActiveFantasyWeekRow(row, maxWeek))
+    activeDerivedRows
+      .filter((row) => Number.isFinite(Number(row?.week)))
       .map((row) => [Number(row.week), row]),
   );
 
-  return providedRows.map((row) => {
+  return activeProvidedRows.map((row) => {
     const derived = derivedByWeek.get(Number(row?.week));
     if (!derived) return row;
     if (derived._espnScoringPlayEnriched) {
@@ -1854,7 +1880,12 @@ function mergeFantasyRowsWithDerivedStats(providedRows = [], derivedRows = [], {
         position,
       );
     }
-    return syncTeamResultStatsFromDerived({ ...derived, ...row }, derived, position);
+    // Provider (Sleeper) rows are the scoring source of truth: Sleeper omits
+    // zero/unearned keys, so spreading the full derived row underneath lets
+    // ESPN-derived values fill any absent scoring key and corrupt totals
+    // (e.g. a non-exclusive 300-yard bonus stacking onto a 400-yard week).
+    // Derived data may only contribute non-scoring row metadata.
+    return syncTeamResultStatsFromDerived({ ...pickDerivedRowMeta(derived), ...row }, derived, position);
   });
 }
 
@@ -1878,79 +1909,18 @@ function getGameLogFantasyTotalPoints(game, sleeperWeekByWeek, scoringSettings, 
   return calcPoints(weekEntry, scoringSettings, position);
 }
 
-function buildFantasyOptionRankMap(seasonStats, sleeperPlayers, scoringSettings) {
-  if (!seasonStats || !scoringSettings) return new Map();
-  const entriesByKey = new Map();
-
-  for (const [candidateId, totals] of Object.entries(seasonStats)) {
-    const candidatePosition = sleeperPlayers?.[candidateId]?.position ?? null;
-    for (const row of buildFantasyOptionRows(totals, scoringSettings, candidatePosition)) {
-      if (!entriesByKey.has(row.key)) entriesByKey.set(row.key, []);
-      entriesByKey.get(row.key).push({ sleeperId: candidateId, points: row.points });
-    }
+// Season total for a pool candidate. Weekly rows are preferred so per-game
+// bonuses (100-yard games, etc.) score the same way the subject's total does;
+// aggregated season totals are the fallback when weekly rows are unavailable.
+function getCandidateSeasonTotal(weeks, totals, scoringSettings, candidatePosition, maxWeek) {
+  if (Array.isArray(weeks) && weeks.length > 0) {
+    return weeks.reduce((sum, weekEntry) => (
+      isActiveFantasyWeekRow(weekEntry, maxWeek)
+        ? sum + calcPoints(weekEntry, scoringSettings, candidatePosition)
+        : sum
+    ), 0);
   }
-
-  const ranksByKey = new Map();
-  for (const [key, entries] of entriesByKey.entries()) {
-    const rankMap = new Map();
-    let previousScore = null;
-    let previousRank = 0;
-
-    entries
-      .sort((a, b) => b.points - a.points)
-      .forEach((entry, index) => {
-        const roundedScore = roundPoints(entry.points);
-        const rank = previousScore != null && roundedScore === previousScore ? previousRank : index + 1;
-        rankMap.set(entry.sleeperId, rank);
-        previousScore = roundedScore;
-        previousRank = rank;
-      });
-
-    ranksByKey.set(key, rankMap);
-  }
-
-  return ranksByKey;
-}
-
-function buildFantasyOptionPositionRankMap(seasonStats, sleeperPlayers, scoringSettings) {
-  if (!seasonStats || !sleeperPlayers || !scoringSettings) return new Map();
-  const entriesByKeyAndPosition = new Map();
-
-  for (const [candidateId, totals] of Object.entries(seasonStats)) {
-    const candidatePosition = positionGroup(sleeperPlayers?.[candidateId]?.position);
-    if (candidatePosition === 'OTHER') continue;
-
-    for (const row of buildFantasyOptionRows(totals, scoringSettings, sleeperPlayers[candidateId]?.position)) {
-      if (!entriesByKeyAndPosition.has(row.key)) entriesByKeyAndPosition.set(row.key, new Map());
-      const entriesByPosition = entriesByKeyAndPosition.get(row.key);
-      if (!entriesByPosition.has(candidatePosition)) entriesByPosition.set(candidatePosition, []);
-      entriesByPosition.get(candidatePosition).push({ sleeperId: candidateId, points: row.points });
-    }
-  }
-
-  const ranksByKey = new Map();
-  for (const [key, entriesByPosition] of entriesByKeyAndPosition.entries()) {
-    const rankMap = new Map();
-
-    for (const [posLabel, entries] of entriesByPosition.entries()) {
-      let previousScore = null;
-      let previousRank = 0;
-
-      entries
-        .sort((a, b) => b.points - a.points)
-        .forEach((entry, index) => {
-          const roundedScore = roundPoints(entry.points);
-          const rank = previousScore != null && roundedScore === previousScore ? previousRank : index + 1;
-          rankMap.set(entry.sleeperId, { rank, posLabel });
-          previousScore = roundedScore;
-          previousRank = rank;
-        });
-    }
-
-    ranksByKey.set(key, rankMap);
-  }
-
-  return ranksByKey;
+  return calcPointsFromTotals(totals, scoringSettings, candidatePosition);
 }
 
 const PlayerStatTable = ({
@@ -1982,14 +1952,17 @@ const PlayerStatTable = ({
   const [scoringPlayBonusesState, setScoringPlayBonusesState] = useState({ key: null, bonusesByWeek: {} });
   const fantasyDebugToken = useId();
   const isMobileFantasyLayout = useMediaQuery('(max-width: 1023px)');
-  const { hasLeague, activeScoringSettings } = useSleeperLeague();
+  const { hasLeague, activeScoringSettings, season: leagueStatsSeason } = useSleeperLeague();
   const {
     players: sleeperPlayers,
     seasonStats: sleeperSeasonStats,
     weeklyStats: sleeperWeeklyStats,
+    statsBySeason: sleeperStatsBySeason,
     statsLoading: sleeperStatsLoading,
     loadSeasonStats,
+    loadStatsForSeason,
   } = useSleeperStats();
+  const attemptedRankSeasonsRef = useRef(new Set());
 
   const label = year === 'career' ? 'Career' : `${year} Season`;
   const canShowFantasyValue = (fantasyAvailable ?? (String(year) === String(fantasySeason))) && hasLeague && !!(fantasyScoringSettings ?? activeScoringSettings);
@@ -2341,24 +2314,74 @@ const PlayerStatTable = ({
     () => new Map(sleeperWeeklyRows.map((weekEntry) => [Number(weekEntry.week), weekEntry])),
     [sleeperWeeklyRows],
   );
+  // Ranks compare the player against every other player in the SAME season, so
+  // a past season must be ranked against that season's pool — not the currently
+  // selected league season's stats.
+  const isLeagueStatsSeason = year !== 'career' && String(year) === String(leagueStatsSeason);
+  const rankSeasonPool = useMemo(() => {
+    if (year === 'career') return null;
+    if (isLeagueStatsSeason) {
+      return sleeperSeasonStats
+        ? { seasonStats: sleeperSeasonStats, weeklyStats: sleeperWeeklyStats }
+        : null;
+    }
+    const seasonPackage = sleeperStatsBySeason?.[String(year)];
+    return seasonPackage?.seasonStats
+      ? { seasonStats: seasonPackage.seasonStats, weeklyStats: seasonPackage.weeklyStats }
+      : null;
+  }, [isLeagueStatsSeason, sleeperSeasonStats, sleeperStatsBySeason, sleeperWeeklyStats, year]);
+
+  // Pull the ranking pool for whichever season is on screen.
+  useEffect(() => {
+    if (!expanded || !showFantasyOnly || !canShowFantasyValue || year === 'career') return;
+    if (isLeagueStatsSeason) {
+      if (!sleeperSeasonStats && !sleeperStatsLoading) void loadSeasonStats?.();
+      return;
+    }
+    const seasonKey = String(year);
+    if (sleeperStatsBySeason?.[seasonKey] || attemptedRankSeasonsRef.current.has(seasonKey)) return;
+    attemptedRankSeasonsRef.current.add(seasonKey);
+    Promise.resolve(loadStatsForSeason?.(seasonKey)).catch(() => {});
+  }, [
+    canShowFantasyValue,
+    expanded,
+    isLeagueStatsSeason,
+    loadSeasonStats,
+    loadStatsForSeason,
+    showFantasyOnly,
+    sleeperSeasonStats,
+    sleeperStatsBySeason,
+    sleeperStatsLoading,
+    year,
+  ]);
+
   const shouldBuildFantasyRanks = canShowFantasyValue
     && showFantasyOnly
-    && fantasyTotalsByKey.size > 0
-    && String(year) === String(fantasySeason);
-  const fantasyRankByOption = useMemo(() => (
+    && !!scoringSettings
+    && !!rankSeasonPool;
+  const fantasyRankDistributions = useMemo(() => (
     shouldBuildFantasyRanks
-      ? buildFantasyOptionRankMap(sleeperSeasonStats, sleeperPlayers, scoringSettings)
-      : new Map()
-  ), [scoringSettings, shouldBuildFantasyRanks, sleeperPlayers, sleeperSeasonStats]);
-  const fantasyPositionRankByOption = useMemo(() => (
-    shouldBuildFantasyRanks
-      ? buildFantasyOptionPositionRankMap(sleeperSeasonStats, sleeperPlayers, scoringSettings)
-      : new Map()
-  ), [scoringSettings, shouldBuildFantasyRanks, sleeperPlayers, sleeperSeasonStats]);
+      ? buildFantasyRankDistributions({
+        seasonStats: rankSeasonPool.seasonStats,
+        weeklyStats: rankSeasonPool.weeklyStats,
+        players: sleeperPlayers,
+        excludeIds: sleeperId ? [sleeperId] : [],
+        buildOptionRows: (totals, candidatePosition) => (
+          buildFantasyOptionRows(totals, scoringSettings, candidatePosition)
+        ),
+        calcTotalPoints: (weeks, totals, candidatePosition) => (
+          getCandidateSeasonTotal(weeks, totals, scoringSettings, candidatePosition, fantasyMaxWeek)
+        ),
+      })
+      : null
+  ), [fantasyMaxWeek, rankSeasonPool, scoringSettings, shouldBuildFantasyRanks, sleeperId, sleeperPlayers]);
 
   const fantasyValueSections = useMemo(() => {
     if (!showFantasyOnly) return [];
     const formattedTotal = formatFantasyValue(fantasyTotalPoints);
+    const totalRank = fantasyRankDistributions
+      ? getFantasyRankForValue(fantasyRankDistributions.total, fantasyTotalPoints, position)
+      : { rank: null, positionRank: null };
     const totalSection = formattedTotal !== '--'
       ? {
           heading: 'Fantasy Points',
@@ -2367,8 +2390,8 @@ const PlayerStatTable = ({
             label: 'Fantasy Points',
             value: formattedTotal,
             valueSuffix: formatFantasyPpg(fantasyPointsPerGame),
-            rank: null,
-            positionRank: null,
+            rank: totalRank.rank,
+            positionRank: totalRank.positionRank,
           }],
         }
       : null;
@@ -2379,13 +2402,17 @@ const PlayerStatTable = ({
 
     const rowsByKey = new Map(getFantasyOptionsForKeys(fantasyTotalsByKey.keys())
       .map((option) => {
+        const points = fantasyTotalsByKey.get(option.key);
+        const optionRank = fantasyRankDistributions
+          ? getFantasyRankForValue(fantasyRankDistributions.option.get(option.key), points, position)
+          : { rank: null, positionRank: null };
         const row = {
           key: option.key,
           label: option.label,
-          value: formatFantasyValue(fantasyTotalsByKey.get(option.key)),
+          value: formatFantasyValue(points),
           valueSuffix: null,
-          rank: sleeperId ? (fantasyRankByOption.get(option.key)?.get(sleeperId) ?? null) : null,
-          positionRank: sleeperId ? (fantasyPositionRankByOption.get(option.key)?.get(sleeperId) ?? null) : null,
+          rank: optionRank.rank,
+          positionRank: optionRank.positionRank,
         };
         return row.value !== '--' ? [option.key, row] : null;
       })
@@ -2393,7 +2420,7 @@ const PlayerStatTable = ({
 
     const sections = rowsByKey.size > 0 ? buildFantasyValueSectionsFromRows(rowsByKey, position) : [];
     return totalSection ? [totalSection, ...sections] : sections;
-  }, [fantasyPointsPerGame, fantasyPositionRankByOption, fantasyRankByOption, fantasyTotalPoints, fantasyTotalsByKey, position, showFantasyOnly, sleeperId]);
+  }, [fantasyPointsPerGame, fantasyRankDistributions, fantasyTotalPoints, fantasyTotalsByKey, position, showFantasyOnly]);
 
   // Merge advanced sections into display when More Stats is on.
   const displayBaseSections = showMoreStats ? [...standard, ...advanced] : standard;
@@ -2590,9 +2617,18 @@ function formatOrdinalRank(rank) {
 
 function formatRankMeta(rank, positionRank) {
   const parts = [];
-  if (rank) parts.push(formatOrdinalRank(rank));
   if (positionRank?.rank && positionRank?.posLabel) parts.push(`${positionRank.posLabel}${positionRank.rank}`);
-  return parts.length > 0 ? parts.join(' / ') : null;
+  if (rank) parts.push(`${formatOrdinalRank(rank)} Overall`);
+  return parts.length > 0 ? parts.join(' · ') : null;
+}
+
+function formatRankTitle(rank, positionRank) {
+  const parts = [];
+  if (positionRank?.rank && positionRank?.posLabel) {
+    parts.push(`${formatOrdinalRank(positionRank.rank)} among ${positionRank.posLabel}s`);
+  }
+  if (rank) parts.push(`${formatOrdinalRank(rank)} overall`);
+  return parts.length > 0 ? parts.join(' · ') : undefined;
 }
 
 const StatSections = ({ sections, accentColor }) => (
@@ -2614,15 +2650,20 @@ const StatSections = ({ sections, accentColor }) => (
             return (
               <div key={key ?? label} className="flex flex-col">
                 <span className="text-[length:var(--type-label)] uppercase tracking-wider text-[color:var(--color-label-tertiary)] font-semibold">{label}</span>
-                <div className="flex items-baseline gap-1">
+                <div className="flex flex-wrap items-baseline gap-x-1">
                   <span className="text-base font-bold text-[color:var(--color-label)]">{value}</span>
                   {valueSuffix && (
                     <span className="text-[length:var(--type-label)] font-semibold uppercase tracking-wider text-[color:var(--color-label-tertiary)]">{valueSuffix}</span>
                   )}
-                  {rankMeta && (
-                    <span className="text-[length:var(--type-label)] text-[color:var(--color-label-tertiary)] tabular-nums">{rankMeta}</span>
-                  )}
                 </div>
+                {rankMeta && (
+                  <span
+                    className="text-[length:var(--type-label)] font-semibold text-[color:var(--color-label-tertiary)] tabular-nums"
+                    title={formatRankTitle(rank, positionRank)}
+                  >
+                    {rankMeta}
+                  </span>
+                )}
               </div>
             );
           })}
@@ -2702,6 +2743,17 @@ const GameLog = ({
     return buildAttainedGameLogColumns(gameLog, [...standardGameCols, ...advancedGameCols]);
   }, [advancedGameCols, gameLog, standardGameCols]);
   const fantasyOnly = displayMode === 'fantasy' && !!scoringSettings;
+  // Fantasy Values only covers weeks the connected league actually plays a
+  // matchup in, so NFL weeks past the league's season length (and the NFL
+  // postseason) are dropped from the log entirely rather than rendered empty.
+  const visibleGameLog = useMemo(() => {
+    const rows = gameLog ?? [];
+    if (!fantasyOnly) return rows;
+    return rows.filter((game) => isActiveFantasyWeekRow(
+      { week: game?.meta?.week, _isPostseason: game?.meta?.isPostseason },
+      fantasyMaxWeek,
+    ));
+  }, [fantasyMaxWeek, fantasyOnly, gameLog]);
   const isMobileGameLogLayout = useMediaQuery('(max-width: 639px)');
   const visibleCoreCount = useVisibleGameStatColumnCount(
     tableContainerRef,
@@ -2804,9 +2856,9 @@ const GameLog = ({
     });
   };
   const sortedGameLog = useMemo(() => {
-    if (!sortConfig) return gameLog ?? [];
+    if (!sortConfig) return visibleGameLog;
 
-    return [...(gameLog ?? [])]
+    return [...visibleGameLog]
       .map((game, originalIndex) => ({ game, originalIndex }))
       .sort((left, right) => {
         const leftValue = getGameLogStatSortValue(left.game, sortConfig.col, fantasyOnly, scoringSettings, position, sleeperWeekByWeek, preferGameLogFantasyRows, fantasyMaxWeek);
@@ -2815,12 +2867,12 @@ const GameLog = ({
         return comparison || left.originalIndex - right.originalIndex;
       })
       .map(({ game }) => game);
-  }, [fantasyMaxWeek, fantasyOnly, gameLog, position, preferGameLogFantasyRows, scoringSettings, sleeperWeekByWeek, sortConfig]);
+  }, [fantasyMaxWeek, fantasyOnly, position, preferGameLogFantasyRows, scoringSettings, sleeperWeekByWeek, sortConfig, visibleGameLog]);
   const columnHighs = useMemo(() => {
     if (!highlightColumnHighs || cols.length === 0) return new Map();
 
     const highs = new Map();
-    for (const game of gameLog ?? []) {
+    for (const game of visibleGameLog) {
       if (game?.meta?.isBye || game?.meta?.isInactive) continue;
 
       for (const col of cols) {
@@ -2832,12 +2884,12 @@ const GameLog = ({
     }
 
     return highs;
-  }, [cols, fantasyMaxWeek, fantasyOnly, gameLog, highlightColumnHighs, position, preferGameLogFantasyRows, scoringSettings, sleeperWeekByWeek]);
+  }, [cols, fantasyMaxWeek, fantasyOnly, highlightColumnHighs, position, preferGameLogFantasyRows, scoringSettings, sleeperWeekByWeek, visibleGameLog]);
   const columnLows = useMemo(() => {
     if (!highlightColumnLows || cols.length === 0) return new Map();
 
     const lows = new Map();
-    for (const game of gameLog ?? []) {
+    for (const game of visibleGameLog) {
       if (game?.meta?.isBye || game?.meta?.isInactive) continue;
 
       for (const col of cols) {
@@ -2849,7 +2901,7 @@ const GameLog = ({
     }
 
     return lows;
-  }, [cols, fantasyMaxWeek, fantasyOnly, gameLog, highlightColumnLows, position, preferGameLogFantasyRows, scoringSettings, sleeperWeekByWeek]);
+  }, [cols, fantasyMaxWeek, fantasyOnly, highlightColumnLows, position, preferGameLogFantasyRows, scoringSettings, sleeperWeekByWeek, visibleGameLog]);
 
   useEffect(() => {
     if (!sortConfig) return;
@@ -2900,7 +2952,7 @@ const GameLog = ({
     );
   }
 
-  if (!gameLog || gameLog.length === 0) return null;
+  if (visibleGameLog.length === 0) return null;
 
   if (fantasyOnly && cols.length === 0) {
     return (

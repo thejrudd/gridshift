@@ -153,7 +153,7 @@ const leagueLogsProfiles = {
 test('draft ranking priority copy explains the personalized ranking tradeoff', () => {
   assert.equal(DRAFT_RANKING_PRIORITY_TITLE, 'Adjust ranking priorities');
   assert.equal(DRAFT_RANKING_PRIORITY_RESET_LABEL, 'Reset priorities');
-  assert.match(DRAFT_RANKING_PRIORITY_HELP, /balance player value, scoring fit, and team needs/);
+  assert.match(DRAFT_RANKING_PRIORITY_HELP, /balance player value, scoring fit, team needs, and the schedule ahead/);
   assert.match(DRAFT_RANKING_PRIORITY_HELP, /more influence on player rankings/);
   assert.deepEqual(
     DRAFT_RANKING_PRIORITY_CONTROLS.map(({ key, label }) => ({ key, label })),
@@ -162,6 +162,7 @@ test('draft ranking priority copy explains the personalized ranking tradeoff', (
       { key: 'pastProduction', label: 'Points per game' },
       { key: 'scoringFit', label: 'Scoring fit' },
       { key: 'rosterNeed', label: 'Team need' },
+      { key: 'schedule', label: 'Schedule' },
     ],
   );
 });
@@ -1206,11 +1207,12 @@ test('draft model weights normalize missing and out-of-range values', () => {
   });
 
   assert.equal(Object.values(weights).reduce((sum, value) => sum + value, 0), 100);
-  assert.deepEqual(Object.keys(weights), ['marketRank', 'pastProduction', 'scoringFit', 'rosterNeed']);
-  assert.equal(weights.marketRank, 74);
+  assert.deepEqual(Object.keys(weights), ['marketRank', 'pastProduction', 'scoringFit', 'rosterNeed', 'schedule']);
+  assert.equal(weights.marketRank, 72);
   assert.equal(weights.pastProduction, 0);
-  assert.equal(weights.scoringFit, 15);
-  assert.equal(weights.rosterNeed, 11);
+  assert.equal(weights.scoringFit, 14);
+  assert.equal(weights.rosterNeed, 7);
+  assert.equal(weights.schedule, 7);
   assert.equal(weights.workload, undefined);
 });
 
@@ -1329,6 +1331,11 @@ test('draft assistant builds transparent intelligence profiles from available st
     1: { DAL: { opp: 'NYG' }, NYG: { opp: 'DAL' }, KC: { opp: 'LV' }, LV: { opp: 'KC' } },
     2: { DAL: { opp: 'NYG' }, NYG: { opp: 'DAL' }, KC: { opp: 'LV' }, LV: { opp: 'KC' } },
   };
+  // Upcoming opponents come from the draft season's own schedule, not the prior season's.
+  const upcomingScheduleMap = {
+    1: { DAL: { opp: 'NYG', home: true }, NYG: { opp: 'DAL' }, KC: { opp: 'LV', home: true }, LV: { opp: 'KC' } },
+    2: { DAL: { opp: 'NYG' }, NYG: { opp: 'DAL', home: true }, KC: { opp: 'LV' }, LV: { opp: 'KC', home: true } },
+  };
 
   const viewModel = buildDraftAssistantViewModel({
     players,
@@ -1343,6 +1350,7 @@ test('draft assistant builds transparent intelligence profiles from available st
     seasonStats,
     weeklyStats,
     scheduleMap,
+    upcomingScheduleMap,
   });
 
   const wr = viewModel.allCandidates.find((player) => player.id === 'wr1');
@@ -1356,13 +1364,17 @@ test('draft assistant builds transparent intelligence profiles from available st
   assert.equal(wr.workload.primaryVolume, 24);
   assert.equal(wr.workload.targetShare, 100);
   assert.equal(wr.teamContext.byeWeek, null);
-  assert.equal(wr.schedule.value, 100);
+  // This fixture only covers four teams, which is below the coverage floor for percentile
+  // tiering — the signal must decline rather than tier off two data points. Full-league
+  // schedule behavior is covered in draftScheduleStrength.test.mjs.
+  assert.equal(wr.schedule.label, 'Unavailable');
+  assert.equal(wr.schedule.value, null);
   assert.equal(wr.draftRoom.boardRank, 1);
   assert.equal(typeof wr.draftModel.score, 'number');
   assert.equal(wr.draftModel.weights.marketRank, DEFAULT_DRAFT_MODEL_WEIGHTS.marketRank);
-  assert.deepEqual(Object.keys(wr.draftModel.weights), ['marketRank', 'pastProduction', 'scoringFit', 'rosterNeed']);
+  assert.deepEqual(Object.keys(wr.draftModel.weights), ['marketRank', 'pastProduction', 'scoringFit', 'rosterNeed', 'schedule']);
   assert.equal(wr.draftModel.components.workload != null, true);
-  assert.equal(wr.draftModel.components.schedule != null, true);
+  assert.equal(wr.draftModel.components.schedule, null, 'an unavailable schedule must not score as zero');
   assert.equal(Object.hasOwn(wr.draftModel.components, 'teamContext'), true);
   assert.equal(wr.draftModel.components.availability, undefined);
 });

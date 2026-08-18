@@ -124,9 +124,9 @@ Hosted owners can enable paid live scoring for selected Sleeper leagues by setti
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) + optional Node API sidecar |
 
-## What's New in v8.5.0
+## What's New in v8.5.1
 
-- **Fantasy and Draft context** — See platform-provided injury availability and roster eligibility while preparing your team. If your league is a keeper league, keeper labels appear once the respective manager sets them; non-keeper leagues continue without keeper labels.
+- **Draft & Scores fixes** — Final games now carry the winning team's colors, the live draft clock handles multi-hour slow drafts, War Room, Board, and Results agree on the projected pick, and upcoming schedule strength is graded against the real upcoming opponents.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 

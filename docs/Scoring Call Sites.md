@@ -40,7 +40,8 @@ When making any change to scoring logic (new fields in `DEFAULT_SCORING`/`STAT_T
 | `src/components/companion/CompanionDefense.jsx` | `defenseScoredTable` getValue callback `(wEntry, pos)` — called as `getValue(wEntry, player.position)` |
 | `src/components/companion/PlayerWeeklySheet.jsx` | `calcPoints` — passes `player?.position` |
 | `src/components/companion/CompanionScoring.jsx` | `STAT_GROUPS` — add any new scoring field so it's visible in UI |
-| `src/components/PlayerStatTable.jsx` | Fantasy labels, header labels, derived game-log fallback stats, and fantasy section grouping include new scoring field |
+| `src/components/PlayerStatTable.jsx` | Fantasy labels, header labels, derived game-log fallback stats, and fantasy section grouping include new scoring field; `getCandidateSeasonTotal` (weekly `calcPoints`, `calcPointsFromTotals` fallback) feeds the Fantasy Values rank pool and passes the candidate's position |
+| `src/utils/fantasyValueRanks.js` | Season rank distributions for Fantasy Values — scoring-agnostic, but new stat options must arrive through the caller's option-row builder to be rankable |
 | `src/components/companion/LeagueScoringBadge.jsx` | Use `getFlatScoringSettings()` before reading display multipliers |
 | `src/components/companion/trade/ValuationInfoSheet.jsx` | Read new scoring settings fields; add `AdjustmentRow` entries; update KTC baseline list |
 
@@ -58,3 +59,12 @@ When making any change to scoring logic (new fields in `DEFAULT_SCORING`/`STAT_T
 | `src/utils/ktcApi.js` — `computeKtcMultipliers` | Add multiplier logic for any new scoring field that materially affects positional value |
 
 **Before closing any scoring-related change:** grep for `calcPoints(` and `calcPointsFromTotals(` across the repo and verify every call site either (a) passes position or (b) is in a context where position is genuinely unavailable. For ESPN fixture changes, also run adapter tests that prove `appliedTotal` wins over recalculated raw stats.
+
+## Derived Game-Log Stats vs Provider Rows
+
+Two invariants introduced by the v8.5.1 Rankings/Statistics divergence fix:
+
+- **Exclusive yardage tiers.** Sleeper weekly rows carry only the highest cleared yardage-tier bonus (a 457-yard game has `bonus_pass_yd_400: 1` and *no* `bonus_pass_yd_300` key). Any builder that derives Sleeper-format stats from ESPN game logs (`buildSleeperStatsFromGameLogStats` in `PlayerStatTable.jsx`, `buildFantasyStatsFromGameLogStats` in `src/utils/fantasyGameLogRows.js`) must reproduce this exclusive convention via `setRangeStat`, never independent `>=` thresholds per tier.
+- **Provider rows are scoring truth.** When a Sleeper weekly row exists for a week, ESPN-derived data must never back-fill scoring stat keys into it — Sleeper omits zero/unearned keys, so a plain spread lets derived values fill every absent key. `mergeFantasyRowsWithDerivedStats` only merges the `DERIVED_ROW_META_KEYS` whitelist (row metadata plus `team_win`/`team_loss`/`team_tie`, which Sleeper rows never carry).
+
+Regression coverage: `tests/unit/fantasyTierBonuses.test.mjs` asserts tier exclusivity and the invariant that summing weekly `calcPoints` equals `calcPointsFromTotals` on the season aggregate.

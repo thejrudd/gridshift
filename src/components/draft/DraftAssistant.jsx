@@ -5,6 +5,7 @@ import { useSleeperBase } from '../../context/SleeperContext.jsx';
 import { useTheme } from '../../context/ThemeContext.jsx';
 import { fetchLeagueLogsMarketForLeague, formatLeagueLogsMarketProfile } from '../../api/leagueLogsApi.js';
 import useMediaQuery from '../../hooks/useMediaQuery.js';
+import { useUpcomingScheduleMap } from '../../hooks/useUpcomingScheduleMap.js';
 import CompanionPlayerRow, {
   CompanionPlayerAction,
   CompanionPlayerMetric,
@@ -52,6 +53,10 @@ import {
   shouldRefreshSleeperDraftPicks,
   shouldRefreshSleeperDraftTradedPicks,
 } from '../../utils/draftAssistant/index.js';
+import {
+  buildProjectedDraftSelection,
+  isDraftRookie,
+} from '../../utils/draftAssistant/projectedSelection.js';
 import {
   DRAFT_POSITION_ORDER as POSITION_ORDER,
   emptyBoard,
@@ -253,6 +258,7 @@ function getDraftViewModelCacheKey({
   seasonStats,
   weeklyStats,
   scheduleMap,
+  upcomingScheduleMap,
   modelWeights,
 }) {
   return [
@@ -270,6 +276,7 @@ function getDraftViewModelCacheKey({
     getDraftObjectCacheToken(seasonStats),
     getDraftObjectCacheToken(weeklyStats),
     getDraftObjectCacheToken(scheduleMap),
+    getDraftObjectCacheToken(upcomingScheduleMap),
     JSON.stringify(normalizeDraftModelWeights(modelWeights)),
   ].join('::');
 }
@@ -788,6 +795,7 @@ function getDraftProjectionReason(player) {
     { key: 'marketRank', label: 'Market value', value: components.marketRank, weight: DEFAULT_DRAFT_MODEL_WEIGHTS.marketRank },
     { key: 'pastProduction', label: 'PPG edge', value: components.pastProduction, weight: DEFAULT_DRAFT_MODEL_WEIGHTS.pastProduction },
     { key: 'scoringFit', label: 'Scoring fit', value: components.scoringFit, weight: DEFAULT_DRAFT_MODEL_WEIGHTS.scoringFit },
+    { key: 'schedule', label: 'Schedule', value: components.schedule, weight: DEFAULT_DRAFT_MODEL_WEIGHTS.schedule },
   ]
     .filter((signal) => Number.isFinite(signal.value) && signal.weight > 0)
     .map((signal) => ({ ...signal, weightedValue: signal.value * signal.weight }))
@@ -798,52 +806,6 @@ function getDraftProjectionReason(player) {
   if (primary && secondary) return `${primary.label} + ${secondary.label.toLowerCase()}`;
   if (primary) return primary.label;
   return 'Best model fit';
-}
-
-function parseDraftInteger(value) {
-  if (value == null || value === '') return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? Math.trunc(parsed) : null;
-}
-
-function firstDraftInteger(...values) {
-  for (const value of values) {
-    const parsed = parseDraftInteger(value);
-    if (parsed != null) return parsed;
-  }
-  return null;
-}
-
-function isDraftRookie(player, draftSeason) {
-  const raw = player?.raw ?? player ?? {};
-  const metadata = raw?.metadata ?? {};
-  const yearsExp = firstDraftInteger(
-    raw.years_exp,
-    raw.yearsExp,
-    raw.experience,
-    metadata.years_exp,
-    metadata.yearsExp,
-    metadata.experience,
-    player?.years_exp,
-    player?.yearsExp,
-  );
-  if (yearsExp === 0) return true;
-
-  const season = parseDraftInteger(draftSeason);
-  if (season == null) return false;
-
-  const rookieYear = firstDraftInteger(
-    raw.rookie_year,
-    raw.rookieYear,
-    raw.rookie_season,
-    raw.draft_year,
-    metadata.rookie_year,
-    metadata.rookieYear,
-    metadata.rookie_season,
-    metadata.draft_year,
-  );
-
-  return rookieYear === season;
 }
 
 function sortCandidates(candidates) {
@@ -1268,12 +1230,18 @@ function getLocalClockRemainingMs(clockState, now = getMonotonicNow()) {
   return Math.max(0, clockState.remainingMs - Math.max(0, now - baseline));
 }
 
+// Slow drafts allow multi-hour pick clocks, so the label adapts: MM:SS below one
+// hour (42:17) and H:MM:SS at one hour or more (6:59:25), seconds always ticking.
 function formatClockRemainingMs(remainingMs) {
   if (remainingMs == null) return null;
   const remaining = Math.max(0, Math.ceil(remainingMs / 1000));
-  const minutes = Math.floor(remaining / 60);
+  const hours = Math.floor(remaining / 3600);
+  const minutes = Math.floor((remaining % 3600) / 60);
   const seconds = remaining % 60;
-  return { label: `${minutes}:${String(seconds).padStart(2, '0')}`, expired: remaining === 0 };
+  const label = hours > 0
+    ? `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+    : `${minutes}:${String(seconds).padStart(2, '0')}`;
+  return { label, expired: remaining === 0 };
 }
 
 function formatScheduledDraftCountdown(parts) {
@@ -1379,7 +1347,7 @@ function useDraftPickCountdown(draft, live, paused = false) {
 
 // Live rooms show the full clock banner. Pre-draft rooms show only the scheduled start when
 // Sleeper exposes one; completed or unscheduled rooms lead straight into their board / pick list.
-function DraftStatusBanner({ draft, viewModel, getUserDisplayName, onClockExpired = null }) {
+function DraftStatusBanner({ draft, viewModel, getUserDisplayName, projectedSelection = null, onClockExpired = null }) {
   const status = String(draft?.status ?? 'unknown').toLowerCase();
   const live = isLiveDraftStatus(status);
   const paused = status === 'paused';
@@ -1443,14 +1411,18 @@ function DraftStatusBanner({ draft, viewModel, getUserDisplayName, onClockExpire
     ? `Round ${viewModel.nextMyPick.round}, Pick ${viewModel.nextMyPick.roundPick}`
     : 'No upcoming pick found';
   const picksBeforeUserCount = viewModel?.picksBeforeUser?.length ?? null;
-  const likelyPick = viewModel?.onClockRecommendation ?? null;
+  // The projection comes from the shared buildProjectedDraftSelection source so
+  // War Room, Board, and Results always agree on the projected player.
+  const likelyPick = projectedSelection ?? null;
   const likelyPickName = likelyPick ? getPlayerName(likelyPick) : 'Unavailable';
   const likelyPickMeta = likelyPick
     ? [likelyPick.position, likelyPick.team].filter(Boolean).join(' · ')
-    : 'Waiting for draft model';
-  const likelyPickRating = likelyPick?.draftModel?.score != null ? formatDecimalMetric(likelyPick.draftModel.score) : '—';
+    : 'Waiting for draft data';
+  const likelyPickRating = likelyPick?.draftModel?.score != null ? formatDecimalMetric(likelyPick.draftModel.score) : null;
   const likelyPickRank = likelyPick?.rank?.overallRank != null ? `#${formatRankMetric(likelyPick.rank.overallRank)}` : '—';
-  const likelyPickReason = likelyPick ? getDraftProjectionReason(likelyPick) : 'Waiting for draft model';
+  const likelyPickReason = likelyPick
+    ? (likelyPick.reason ?? getDraftProjectionReason(likelyPick))
+    : 'Waiting for draft data';
   const likelyPickPhotoUrl = getSleeperPlayerImageUrl(likelyPick?.id);
   const statusLabel = paused ? 'Paused' : 'Live';
 
@@ -1494,7 +1466,7 @@ function DraftStatusBanner({ draft, viewModel, getUserDisplayName, onClockExpire
               <span className="draft-status-banner__projection-meta">{likelyPickMeta}</span>
             </div>
             <div className="draft-status-banner__projection-metrics">
-              <span>Rating {likelyPickRating}</span>
+              {likelyPickRating != null ? <span>Rating {likelyPickRating}</span> : null}
               <span>Rank {likelyPickRank}</span>
               <span>{likelyPickReason}</span>
             </div>
@@ -1529,6 +1501,7 @@ const LiveDraftStatusBanner = memo(function LiveDraftStatusBanner({
   fallbackDraft,
   viewModel,
   getUserDisplayName,
+  projectedSelection = null,
   onClockExpired = null,
 }) {
   const draft = useDraftClockMeta(draftClockStore, fallbackDraft);
@@ -1537,10 +1510,28 @@ const LiveDraftStatusBanner = memo(function LiveDraftStatusBanner({
       draft={draft}
       viewModel={viewModel}
       getUserDisplayName={getUserDisplayName}
+      projectedSelection={projectedSelection}
       onClockExpired={onClockExpired}
     />
   );
 });
+
+// Single projection source for the live banner on War Room, Board, and Results.
+// Only active draft rooms need it; the memo re-runs when picks, rosters, or
+// market data change so drafted or rostered players immediately stop projecting.
+function useProjectedDraftSelection({ draftMeta, league, players, rosters, draftPicks, marketValuesByPlayerId }) {
+  return useMemo(() => {
+    if (!isActiveDraftRoomStatus(draftMeta?.status)) return null;
+    return buildProjectedDraftSelection({
+      draft: draftMeta,
+      league,
+      players,
+      rosters,
+      draftPicks,
+      marketValuesByPlayerId,
+    });
+  }, [draftMeta, league, players, rosters, draftPicks, marketValuesByPlayerId]);
+}
 
 function PositionFilter({ positions, activePosition, onChange }) {
   const filterRef = useRef(null);
@@ -1859,11 +1850,24 @@ function DraftPlayerRow({
     : `${leading ? '30px ' : ''}34px 28px minmax(0,1fr) 28px ${compactMetricSlot} auto`;
   const resolvedGridTemplate = rowGridTemplate ?? gridTemplate;
   const resolvedCompactGridTemplate = compactRowGridTemplate ?? rowGridTemplate ?? compactGridTemplate;
+  const scheduleMetaLabel = player?.schedule?.label && player.schedule.label !== 'Unavailable'
+    ? player.schedule.label
+    : null;
   const defaultMetaSegments = [
     player.team,
     availabilityBadge,
     bye ? `Bye ${bye}` : null,
-    player?.schedule?.label && player.schedule.label !== 'Unavailable' ? `${player.schedule.label} schedule` : null,
+    // Marked so wide rows can drop the schedule note onto its own line instead of
+    // letting it wrap mid-phrase behind the availability badge.
+    scheduleMetaLabel
+      ? (
+        <span key="schedule" className="draft-player-row__meta-schedule">
+          {scheduleMetaLabel}
+          {/* Dropped on narrow rows so the tier stays on a single line. */}
+          <span className="draft-player-row__meta-schedule-suffix"> schedule</span>
+        </span>
+      )
+      : null,
   ].filter(Boolean);
   const metaSegments = identityMetaSegments ?? defaultMetaSegments;
 
@@ -2842,6 +2846,19 @@ function DraftRosterTray({ slots, collapsed, onToggleCollapsed }) {
   );
 }
 
+const DRAFT_BOARD_CARD_CHROME_WIDTH = 150;
+let draftBoardNameMeasureCanvas = null;
+
+function measureDraftBoardCardNameWidth(names) {
+  if (typeof document === 'undefined' || !names.length) return 0;
+  if (!draftBoardNameMeasureCanvas) draftBoardNameMeasureCanvas = document.createElement('canvas');
+  const ctx = draftBoardNameMeasureCanvas.getContext('2d');
+  if (!ctx) return 0;
+  ctx.font = '850 16px Figtree, sans-serif';
+  const widest = names.reduce((max, name) => Math.max(max, ctx.measureText(name ?? '').width), 0);
+  return widest ? Math.ceil(widest) + 12 : 0;
+}
+
 function MyBoardWorkspace({
   boardByPosition,
   overallBoardIds,
@@ -2944,6 +2961,21 @@ function MyBoardWorkspace({
     return result;
   }, [lanePositions, boardByPosition, boardRowsById]);
 
+  const boardCardNameColPx = useMemo(
+    () => measureDraftBoardCardNameWidth(
+      [...visibleAvailablePlayers, ...boardRows].map((player) => getPlayerName(player)),
+    ),
+    [visibleAvailablePlayers, boardRows],
+  );
+  const boardCardMinWidth = boardCardNameColPx ? boardCardNameColPx + DRAFT_BOARD_CARD_CHROME_WIDTH : 0;
+  const boardCardMinWidthRef = useRef(boardCardMinWidth);
+  boardCardMinWidthRef.current = boardCardMinWidth;
+
+  useEffect(() => {
+    if (!boardCardMinWidth) return;
+    setAvailableRailWidth((current) => (current < boardCardMinWidth ? boardCardMinWidth : current));
+  }, [boardCardMinWidth]);
+
   const handleDragStart = useCallback((event, player, sourcePosition = null) => {
     const playerName = getPlayerName(player);
     dragRef.current = {
@@ -3037,7 +3069,9 @@ function MyBoardWorkspace({
 
     const resize = (moveEvent) => {
       const viewportMax = Math.max(260, Math.min(460, window.innerWidth * 0.38));
-      const nextWidth = Math.min(viewportMax, Math.max(220, startWidth + moveEvent.clientX - startX));
+      const floor = Math.max(220, boardCardMinWidthRef.current || 0);
+      const ceiling = Math.max(viewportMax, floor);
+      const nextWidth = Math.min(ceiling, Math.max(floor, startWidth + moveEvent.clientX - startX));
       setAvailableRailWidth(Math.round(nextWidth));
     };
 
@@ -3055,7 +3089,9 @@ function MyBoardWorkspace({
     event.preventDefault();
     const direction = event.key === 'ArrowLeft' ? -1 : 1;
     const viewportMax = Math.max(260, Math.min(460, window.innerWidth * 0.38));
-    setAvailableRailWidth((current) => Math.min(viewportMax, Math.max(220, current + direction * 16)));
+    const floor = Math.max(220, boardCardMinWidthRef.current || 0);
+    const ceiling = Math.max(viewportMax, floor);
+    setAvailableRailWidth((current) => Math.min(ceiling, Math.max(floor, current + direction * 16)));
   }, []);
 
   return (
@@ -3066,7 +3102,11 @@ function MyBoardWorkspace({
           draggingPlayerId ? 'is-dragging' : '',
           rosterCollapsed ? 'is-roster-collapsed' : '',
         ].filter(Boolean).join(' ')}
-        style={{ '--draft-board-rail-width': `${availableRailWidth}px` }}
+        style={{
+          '--draft-board-rail-width': `${availableRailWidth}px`,
+          '--draft-board-card-name-min-measured': boardCardNameColPx ? `${boardCardNameColPx}px` : undefined,
+          '--draft-board-card-min-width': boardCardMinWidth ? `${boardCardMinWidth}px` : undefined,
+        }}
       >
         <aside className="draft-board-available-rail" aria-label="Available players">
           <div className="draft-board-workspace__controls">
@@ -3363,6 +3403,7 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
   });
   const [draftStats, setDraftStats] = useState(null);
   const [draftStatsLoading, setDraftStatsLoading] = useState(false);
+  const upcomingScheduleMap = useUpcomingScheduleMap();
   const [marketState, setMarketState] = useState({
     loading: false,
     error: '',
@@ -3593,6 +3634,14 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
     draftPicks,
     myRosterData,
   }), [draftMeta, rosters, draftTradedPicks, draftPicks, myRosterData]);
+  const projectedSelection = useProjectedDraftSelection({
+    draftMeta,
+    league,
+    players,
+    rosters,
+    draftPicks,
+    marketValuesByPlayerId: marketState.valuesByPlayerId,
+  });
   const draftType = normalizeDraftType(draftMeta);
   const unsupportedDraft = draftMeta && draftType !== 'snake' && draftType !== 'linear';
   const fullDraftModelAllowed = Boolean(
@@ -3626,6 +3675,7 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
       seasonStats: draftStats?.seasonStats ?? null,
       weeklyStats: draftStats?.weeklyStats ?? null,
       scheduleMap: draftStats?.scheduleMap ?? null,
+      upcomingScheduleMap,
       modelWeights,
     });
     const cachedModel = readDraftViewModelCache(cacheKey);
@@ -3653,6 +3703,7 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
         seasonStats: draftStats?.seasonStats ?? null,
         weeklyStats: draftStats?.weeklyStats ?? null,
         scheduleMap: draftStats?.scheduleMap ?? null,
+      upcomingScheduleMap,
         modelWeights,
       });
       if (cancelled) return;
@@ -3666,7 +3717,7 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
       cancelled = true;
       cancelBuild?.();
     };
-  }, [players, rosters, league, draftMeta, draftPicks, draftTradedPicks, myRosterData, activeScoringSettings, season, viewModelBoardIds, marketState.valuesByPlayerId, draftStats, modelWeights, fullDraftModelAllowed]);
+  }, [players, rosters, league, draftMeta, draftPicks, draftTradedPicks, myRosterData, activeScoringSettings, season, viewModelBoardIds, marketState.valuesByPlayerId, draftStats, upcomingScheduleMap, modelWeights, fullDraftModelAllowed]);
 
   const viewModel = draftViewModelState.model;
   const viewModelBuilding = draftViewModelState.building;
@@ -3868,7 +3919,7 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
   if (!isStandaloneBoard && !isSleeperDraftPreDraft(draftMeta)) {
     return (
       <div className="draft-page">
-        <LiveDraftStatusBanner draftClockStore={draftClockStore} fallbackDraft={draftMeta} viewModel={draftOrderContext} getUserDisplayName={getUserDisplayName} onClockExpired={refreshDraft} />
+        <LiveDraftStatusBanner draftClockStore={draftClockStore} fallbackDraft={draftMeta} viewModel={draftOrderContext} getUserDisplayName={getUserDisplayName} projectedSelection={projectedSelection} onClockExpired={refreshDraft} />
         <DraftPageState
           title={`War Room is unavailable for the ${season} league year.`}
           description={`The ${season} draft has already started or finished. Use Results to review its order and picks, or switch to a pre-draft league year to use War Room.`}
@@ -3880,7 +3931,7 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
   if (isStandaloneBoard && !isSleeperDraftPreDraft(draftMeta) && !isActiveDraftRoomStatus(draftMeta?.status)) {
     return (
       <div className="draft-page">
-        <LiveDraftStatusBanner draftClockStore={draftClockStore} fallbackDraft={draftMeta} viewModel={draftOrderContext} getUserDisplayName={getUserDisplayName} onClockExpired={refreshDraft} />
+        <LiveDraftStatusBanner draftClockStore={draftClockStore} fallbackDraft={draftMeta} viewModel={draftOrderContext} getUserDisplayName={getUserDisplayName} projectedSelection={projectedSelection} onClockExpired={refreshDraft} />
         <DraftPageState
           title="Board is available before and during the draft."
           description="Use Results to review completed drafts."
@@ -3892,7 +3943,7 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
   if (!viewModel) {
     return (
       <div className="draft-page">
-        <LiveDraftStatusBanner draftClockStore={draftClockStore} fallbackDraft={draftMeta} viewModel={draftOrderContext} getUserDisplayName={getUserDisplayName} onClockExpired={refreshDraft} />
+        <LiveDraftStatusBanner draftClockStore={draftClockStore} fallbackDraft={draftMeta} viewModel={draftOrderContext} getUserDisplayName={getUserDisplayName} projectedSelection={projectedSelection} onClockExpired={refreshDraft} />
         <DraftPageState
           title={`Preparing ${viewLabel}`}
           description={viewModelBuilding ? 'Building draft rankings, roster context, and board state.' : 'Waiting for draft data.'}
@@ -3904,7 +3955,7 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
   if (isStandaloneBoard) {
     return (
       <div className="draft-page">
-        <LiveDraftStatusBanner draftClockStore={draftClockStore} fallbackDraft={draftMeta} viewModel={viewModel} getUserDisplayName={getUserDisplayName} onClockExpired={refreshDraft} />
+        <LiveDraftStatusBanner draftClockStore={draftClockStore} fallbackDraft={draftMeta} viewModel={viewModel} getUserDisplayName={getUserDisplayName} projectedSelection={projectedSelection} onClockExpired={refreshDraft} />
         <LeagueLogsAttribution
           attribution={marketState.valuesByPlayerId.size > 0 ? marketState.attribution : null}
           profileKey={marketState.profileKey}
@@ -3977,7 +4028,7 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
 
   return (
     <div className="draft-page">
-      <LiveDraftStatusBanner draftClockStore={draftClockStore} fallbackDraft={draftMeta} viewModel={viewModel} getUserDisplayName={getUserDisplayName} onClockExpired={refreshDraft} />
+      <LiveDraftStatusBanner draftClockStore={draftClockStore} fallbackDraft={draftMeta} viewModel={viewModel} getUserDisplayName={getUserDisplayName} projectedSelection={projectedSelection} onClockExpired={refreshDraft} />
       <LeagueLogsAttribution
         attribution={marketState.valuesByPlayerId.size > 0 ? marketState.attribution : null}
         profileKey={marketState.profileKey}
@@ -4278,6 +4329,7 @@ function DraftResultsView({ onViewPlayer, sleeperDraftId = '', tourDemoMode = nu
     refreshDraft,
   } = useSleeperDraftSync({ selectedLeagueId, league, sleeperDraftId });
   const [draftStats, setDraftStats] = useState(null);
+  const upcomingScheduleMap = useUpcomingScheduleMap();
   const [sortDirection, setSortDirection] = useState('asc');
   const [resultsMode, setResultsMode] = useState('blueprint');
   const [positionFilter, setPositionFilter] = useState('All');
@@ -4296,6 +4348,10 @@ function DraftResultsView({ onViewPlayer, sleeperDraftId = '', tourDemoMode = nu
     [draftPicks],
   );
   const showTourResultsDemo = tourDemoMode === 'draft-results';
+  // The live status banner (clock + projected selection) renders on Results while
+  // a draft room is active, so player and market data must load then as well —
+  // not only after the first completed pick.
+  const draftRoomActive = isActiveDraftRoomStatus(draftMeta?.status);
 
   const marketDraftContext = useMemo(() => ({
     metadata: { scoring_type: draftMeta?.metadata?.scoring_type },
@@ -4303,9 +4359,9 @@ function DraftResultsView({ onViewPlayer, sleeperDraftId = '', tourDemoMode = nu
   }), [draftMeta?.metadata?.scoring_type, draftMeta?.settings?.slots_qb]);
 
   useEffect(() => {
-    if (!hasCompletedDraftPicks) return;
+    if (!hasCompletedDraftPicks && !draftRoomActive) return;
     loadPlayers();
-  }, [hasCompletedDraftPicks, loadPlayers]);
+  }, [hasCompletedDraftPicks, draftRoomActive, loadPlayers]);
 
   // Reuse the user's saved model weights so the GridShift Rating shown here matches War Room.
   useEffect(() => {
@@ -4334,7 +4390,7 @@ function DraftResultsView({ onViewPlayer, sleeperDraftId = '', tourDemoMode = nu
   }, [hasCompletedDraftPicks, draftStatsSeason, loadStatsForSeason]);
 
   useEffect(() => {
-    if (!hasCompletedDraftPicks || !league) {
+    if ((!hasCompletedDraftPicks && !draftRoomActive) || !league) {
       setMarketState({ attribution: null, profileKey: null, lastRefreshed: null, valuesByPlayerId: new Map() });
       return undefined;
     }
@@ -4355,7 +4411,7 @@ function DraftResultsView({ onViewPlayer, sleeperDraftId = '', tourDemoMode = nu
       if (!cancelled) setMarketState({ attribution: null, profileKey: null, lastRefreshed: null, valuesByPlayerId: new Map() });
     });
     return () => { cancelled = true; };
-  }, [hasCompletedDraftPicks, league, activeScoringSettings, marketDraftContext]);
+  }, [hasCompletedDraftPicks, draftRoomActive, league, activeScoringSettings, marketDraftContext]);
 
   const myRosterData = useMemo(() => myRoster(), [myRoster]);
 
@@ -4376,9 +4432,10 @@ function DraftResultsView({ onViewPlayer, sleeperDraftId = '', tourDemoMode = nu
       seasonStats: draftStats?.seasonStats ?? null,
       weeklyStats: draftStats?.weeklyStats ?? null,
       scheduleMap: draftStats?.scheduleMap ?? null,
+      upcomingScheduleMap,
       modelWeights,
     });
-  }, [hasCompletedDraftPicks, players, rosters, league, draftMeta, draftPicks, draftTradedPicks, myRosterData, activeScoringSettings, season, marketState.valuesByPlayerId, draftStats, modelWeights]);
+  }, [hasCompletedDraftPicks, players, rosters, league, draftMeta, draftPicks, draftTradedPicks, myRosterData, activeScoringSettings, season, marketState.valuesByPlayerId, draftStats, upcomingScheduleMap, modelWeights]);
 
   const draftOrderContext = useMemo(() => (
     resultsViewModel ?? buildDraftOrderContext({
@@ -4389,6 +4446,15 @@ function DraftResultsView({ onViewPlayer, sleeperDraftId = '', tourDemoMode = nu
       myRosterData,
     })
   ), [resultsViewModel, draftMeta, rosters, draftTradedPicks, draftPicks, myRosterData]);
+
+  const projectedSelection = useProjectedDraftSelection({
+    draftMeta,
+    league,
+    players,
+    rosters,
+    draftPicks,
+    marketValuesByPlayerId: marketState.valuesByPlayerId,
+  });
 
   const draftManagerIdsKey = useMemo(() => (
     [...new Set((draftOrderContext.normalizedPicks ?? [])
@@ -4685,7 +4751,7 @@ function DraftResultsView({ onViewPlayer, sleeperDraftId = '', tourDemoMode = nu
 
   return (
     <div className="draft-page">
-      <LiveDraftStatusBanner draftClockStore={draftClockStore} fallbackDraft={draftMeta} viewModel={draftOrderContext} getUserDisplayName={getUserDisplayName} onClockExpired={refreshDraft} />
+      <LiveDraftStatusBanner draftClockStore={draftClockStore} fallbackDraft={draftMeta} viewModel={draftOrderContext} getUserDisplayName={getUserDisplayName} projectedSelection={projectedSelection} onClockExpired={refreshDraft} />
       {resultRows.length === 0 ? (
         <DraftOrderTable
           draftOrderContext={draftOrderContext}

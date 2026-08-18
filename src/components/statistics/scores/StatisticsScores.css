@@ -7,6 +7,13 @@
   min-width: 0;
   padding-bottom: calc(48px + env(safe-area-inset-bottom));
   color: var(--color-label);
+  /* The page is a single vertical column: clip any incidental child overflow so
+     the .content-area scrollport never gains a horizontal axis. `clip` (not
+     `hidden`) keeps this element out of the scroll-container chain, so the
+     sticky detail tabs continue to stick against .content-area. Genuinely wide
+     content (line score, player tables, week rail) scrolls inside its own
+     overflow-x: auto shell. */
+  overflow-x: clip;
 }
 
 .scores-masthead {
@@ -433,6 +440,35 @@
 .scores-scorebug.is-postponed .scores-scorebug-teams,
 .scores-scorebug.is-unavailable .scores-scorebug-teams { background: var(--color-fill-tertiary); }
 
+/* Final games carry the winning team's gradient. Every text color on the
+   gradient comes from teamVisualTheme's gradientFull* foregrounds, which are
+   contrast-picked against all gradient stops in the active theme mode. */
+.scores-scorebug.is-winner-themed {
+  border-color: var(--scores-winner-border);
+  background: var(--scores-winner-gradient);
+  color: var(--scores-winner-fg);
+}
+
+.scores-scorebug.is-winner-themed:hover:not([aria-disabled='true']) { border-color: var(--scores-winner-fg); }
+
+.scores-scorebug.is-winner-themed .scores-scorebug-topline {
+  border-bottom-color: var(--scores-winner-subtle);
+  color: var(--scores-winner-muted);
+}
+
+.scores-scorebug.is-winner-themed .scores-status { color: var(--scores-winner-fg); }
+.scores-scorebug.is-winner-themed .scores-scorebug-go,
+.scores-scorebug.is-winner-themed .scores-scorebug-at,
+.scores-scorebug.is-winner-themed .scores-scorebug-team-copy small { color: var(--scores-winner-muted); }
+.scores-scorebug.is-winner-themed .scores-scorebug-team.is-loser { color: var(--scores-winner-muted); }
+.scores-scorebug.is-winner-themed .scores-scorebug-team.is-loser small { color: var(--scores-winner-muted); }
+.scores-scorebug.is-winner-themed .scores-winner-mark { color: var(--scores-winner-fg); }
+
+.scores-scorebug.is-winner-themed .scores-scorebug-situation {
+  border-top-color: var(--scores-winner-subtle);
+  color: var(--scores-winner-muted);
+}
+
 .scores-week-peek {
   margin-top: 34px;
   padding-top: 10px;
@@ -639,9 +675,15 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 6px 10px;
-  padding: 0 28px 18px;
+  padding: 9px 28px 10px;
+  /* The metadata band spans both team gradient halves, so no single team
+     foreground is safe. Shield it with a fixed ink scrim (the design system's
+     #0C0F14 ink, matching teamVisualTheme's overlay/foreground candidates) and
+     near-white text: team gradients are brand colors independent of theme, so
+     this composite is readable over any pairing in light and dark mode. */
+  background: rgba(12, 15, 20, 0.64);
+  color: rgba(255, 255, 255, 0.92);
   font-size: var(--type-label);
-  opacity: 0.82;
 }
 
 .scores-detail-tabs-shell {
@@ -857,23 +899,24 @@
   .scores-masthead-side { justify-items: stretch; }
   .scores-as-of { order: 2; }
   .scores-toolbar-actions { justify-content: flex-start; }
-  .scores-week-rail-shell { margin-inline: calc(-1 * var(--density-space-sm)); }
   .scores-day-grid { grid-template-columns: minmax(0, 1fr); }
 
-  .scores-detail-scoreboard { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'away' 'status' 'home'; gap: 14px; padding: 20px 16px 12px; }
+  /* Portrait hero: each team stacks in its own column so away content stays on
+     the away gradient half (left) and home content on the home half (right). */
+  .scores-detail-scoreboard {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas: 'away home' 'status status';
+    gap: 12px;
+    padding: 20px 16px 14px;
+  }
   .scores-detail-team.is-away { grid-area: away; }
-  .scores-detail-team.is-home { grid-area: home; flex-direction: row; text-align: left; }
+  .scores-detail-team.is-home { grid-area: home; flex-direction: column; align-items: flex-end; text-align: right; }
   .scores-detail-status { grid-area: status; min-width: 0; flex-direction: row; justify-content: center; flex-wrap: wrap; }
-  .scores-detail-team { justify-content: space-between; }
-  .scores-detail-team > em { order: 3; }
+  .scores-detail-team { flex-direction: column; align-items: flex-start; justify-content: flex-start; gap: 8px; }
   .scores-detail-team img { width: 48px; height: 48px; }
   .scores-detail-team > em { font-size: 56px; }
-  .scores-detail-hero > footer { padding: 0 16px 14px; }
-  .scores-detail-tabs-shell {
-    --scores-detail-sticky-offset: 18px;
-    margin-inline: calc(-1 * var(--density-space-sm));
-  }
-  .scores-detail-tabs { padding-inline: var(--density-space-sm); }
+  .scores-detail-hero > footer { padding: 8px 16px 9px; }
+  .scores-detail-tabs-shell { --scores-detail-sticky-offset: 18px; }
 
   .scores-player-table-shell { display: none; }
   .scores-player-cards { display: grid; }

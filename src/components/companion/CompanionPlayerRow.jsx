@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { isValidElement, useRef, useState } from 'react';
 import useCardGlow from '../../hooks/useCardGlow.jsx';
 import useCompanionPlayerLocalContrast from '../../hooks/useCompanionPlayerLocalContrast.js';
 import { getTeamVisualTheme } from '../../utils/teamVisualTheme.js';
@@ -365,8 +365,13 @@ export default function CompanionPlayerRow({
         {normalizedMeta.length > 0 && (
           <div className="companion-player-row__meta">
             {metaPrefix && <span className="companion-player-row__meta-prefix">{metaPrefix}</span>}
-            {normalizedMeta.map((segment) => (
-              <span key={String(segment)} className="companion-player-row__meta-item">{segment}</span>
+            {normalizedMeta.map((segment, index) => (
+              <span
+                key={isValidElement(segment) ? (segment.key ?? `meta-${index}`) : String(segment)}
+                className="companion-player-row__meta-item"
+              >
+                {segment}
+              </span>
             ))}
           </div>
         )}

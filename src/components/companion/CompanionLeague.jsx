@@ -29,6 +29,9 @@ const POSITION_ORDER = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF', 'DL', 'LB', 'DB', 'D
 const MAX_ROUNDS = 36; // generous cap — Sleeper dynasty startups can run 25+ rounds
 
 const COMPACT_PHONE_QUERY = '(max-width: 480px)';
+// Mirrors CompanionRankings: below this width the season/avg pair collapses into a
+// single stacked metric (season points with a "x.x PPG" caption underneath).
+const STACK_METRIC_QUERY = '(max-width: 900px)';
 const MOBILE_SHEET_QUERY = '(max-width: 1023px)';
 const LEAGUE_ROW_LEFT_BORDER = 4;
 
@@ -75,14 +78,24 @@ function getRosterAvgPPG(weekly, stats, seasonPoints, scoring, position) {
   return null;
 }
 
-function getLeagueLayout(isCompactPhone, nameColPx) {
+function formatLeaguePpgLabel(value) {
+  if (!Number.isFinite(value) || !(value > 0)) return null;
+  return `${value.toFixed(1)} PPG`;
+}
+
+function getLeagueLayout(isCompactPhone, nameColPx, stackMetrics) {
   if (isCompactPhone) {
     return {
       avatarSize: 38,
       gap: 8,
       nameFontSize: 13,
       metaFontSize: 11,
-      rowTemplate: '38px minmax(0,1fr) 50px 44px 10px',
+      nameCol: 'minmax(0,1fr)',
+      // avatar | name | metric block | chevron. The status badge lives inside the
+      // metric block so it never shifts the season value out of its column.
+      rowTemplate: '38px minmax(0,1fr) auto 10px',
+      metricTemplate: stackMetrics ? '26px 80px' : '26px 58px 46px',
+      metricGap: 8,
       sidePadding: 8,
       tradeWidth: 30,
       verticalPadding: 11,
@@ -95,7 +108,10 @@ function getLeagueLayout(isCompactPhone, nameColPx) {
     gap: 10,
     nameFontSize: 14,
     metaFontSize: 12,
-    rowTemplate: `44px ${nameCol} auto 1fr 64px 56px 12px`,
+    nameCol,
+    rowTemplate: `44px ${nameCol} minmax(0,1fr) 12px`,
+    metricTemplate: stackMetrics ? 'auto 1fr 80px' : 'auto 1fr 64px 56px',
+    metricGap: 8,
     sidePadding: 14,
     tradeWidth: 84,
     verticalPadding: 10,
@@ -301,6 +317,7 @@ function LeagueRosterView({ onTradePlayer, onViewPlayer = null, tradeDisabled = 
   } = useSleeperBase();
   const { darkMode } = useTheme();
   const isCompactPhone = useMediaQuery(COMPACT_PHONE_QUERY);
+  const stackMetrics = useMediaQuery(STACK_METRIC_QUERY);
   const useMobilePreviewSheet = useMediaQuery(MOBILE_SHEET_QUERY);
   const useMobileTeamMenu = useMobilePreviewSheet;
 
@@ -393,7 +410,18 @@ function LeagueRosterView({ onTradePlayer, onViewPlayer = null, tradeDisabled = 
   }, [selectedRoster, selectedRosterPlayerIds, players, seasonStats, weeklyStats, activeScoringSettings, positionalRanks, darkMode]);
 
   const nameColPx = useMemo(() => measureMaxNameWidth(rosterPlayers), [rosterPlayers]);
-  const layout = useMemo(() => getLeagueLayout(isCompactPhone, nameColPx), [isCompactPhone, nameColPx]);
+  const layout = useMemo(
+    () => getLeagueLayout(isCompactPhone, nameColPx, stackMetrics),
+    [isCompactPhone, nameColPx, stackMetrics],
+  );
+  const headerTracking = isCompactPhone ? 0.1 : 0.18;
+  const metricHeaderClass = 'min-w-0 text-center text-[length:var(--type-label)] font-semibold uppercase whitespace-nowrap';
+  const metricHeaderStyle = {
+    color: 'var(--color-label-tertiary)',
+    letterSpacing: `${headerTracking}em`,
+    // Cancel the trailing letter-space so the label optically centers on its column.
+    marginRight: `-${headerTracking}em`,
+  };
 
   const grouped = useMemo(() => {
     const groups = {};
@@ -521,10 +549,16 @@ function LeagueRosterView({ onTradePlayer, onViewPlayer = null, tradeDisabled = 
           >
             <div />
             <span className="min-w-0 text-[length:var(--type-label)] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--color-label-tertiary)' }}>Player</span>
-            {!isCompactPhone && <div />}
-            {!isCompactPhone && <div />}
-            <span className="text-center text-[length:var(--type-label)] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--color-label-tertiary)' }}>Season</span>
-            <span className="text-center text-[length:var(--type-label)] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--color-label-tertiary)' }}>Avg/G</span>
+            {/* Mirrors the row's metric block so each label centers over its own column. */}
+            <div
+              className="grid items-center min-w-0"
+              style={{ gridTemplateColumns: layout.metricTemplate, columnGap: layout.metricGap }}
+            >
+              <div />
+              {!isCompactPhone && <div />}
+              {!stackMetrics && <span className={metricHeaderClass} style={metricHeaderStyle}>Season</span>}
+              <span className={metricHeaderClass} style={metricHeaderStyle}>{stackMetrics ? 'Season' : 'Avg/G'}</span>
+            </div>
             <div />
           </div>
           <div className="shrink-0 ml-2 sm:ml-3" style={{ width: layout.tradeWidth }} />
@@ -549,7 +583,7 @@ function LeagueRosterView({ onTradePlayer, onViewPlayer = null, tradeDisabled = 
               const isOpponent = selectedRosterId !== myRosterData?.roster_id;
               const isOwnRoster = selectedRosterId === myRosterData?.roster_id;
               return (
-                <LeagueResponsivePlayerRow key={player.id} player={player} layout={layout} isCompactPhone={isCompactPhone} statsPending={statsLoading} onSelect={() => {
+                <LeagueResponsivePlayerRow key={player.id} player={player} layout={layout} isCompactPhone={isCompactPhone} stackMetrics={stackMetrics} statsPending={statsLoading} onSelect={() => {
                   if (useMobilePreviewSheet) setSelectedPlayerId(player.id);
                   else onViewPlayer?.(player.id);
                 }}
@@ -586,7 +620,7 @@ function LeagueStatsLoadingBanner() {
   return <StatsProgressBanner progress={statsProgress} className="mx-4 mb-4" />;
 }
 
-function LeagueResponsivePlayerRow({ player, onSelect, onTrade, tradeDisabled = false, layout, isCompactPhone, statsPending = false }) {
+function LeagueResponsivePlayerRow({ player, onSelect, onTrade, tradeDisabled = false, layout, isCompactPhone, stackMetrics = false, statsPending = false }) {
   const { darkMode } = useTheme();
   const rankLabel = player.rank ? `${player.rank.posLabel}${player.rank.rank}` : null;
   const showReserveMeta = player.isReserve && player.availabilityStatus !== 'Injured Reserve';
@@ -597,10 +631,7 @@ function LeagueResponsivePlayerRow({ player, onSelect, onTrade, tradeDisabled = 
     showReserveMeta ? 'IR' : null,
     rankLabel,
   ].filter(Boolean);
-  const nameCol = layout.rowTemplate.match(/44px (.+?) auto 1fr/)?.[1] ?? 'minmax(0,1fr)';
-  const rowTemplate = isCompactPhone
-    ? '38px minmax(0,1fr) minmax(96px,auto) auto 10px'
-    : `44px ${nameCol} minmax(0,1fr) 12px`;
+  const rowTemplate = layout.rowTemplate;
 
   return (
     <div className="px-2 sm:px-4">
@@ -615,9 +646,14 @@ function LeagueResponsivePlayerRow({ player, onSelect, onTrade, tradeDisabled = 
           compact={isCompactPhone}
           metaSegments={metaSegments}
           gridTemplate={rowTemplate}
-          columnGridTemplate={isCompactPhone ? '50px 44px' : 'auto 1fr 64px 56px'}
-          status={isCompactPhone ? <PlayerStatusBadge status={player.availabilityStatus} compact /> : null}
+          columnGridTemplate={layout.metricTemplate}
+          status={null}
           columns={[
+            isCompactPhone && (
+              <div key="status" className="flex items-center justify-center">
+                <PlayerStatusBadge status={player.availabilityStatus} compact />
+              </div>
+            ),
             !isCompactPhone && (
               <PlayerStatusLogoCluster
                 key="status"
@@ -631,17 +667,20 @@ function LeagueResponsivePlayerRow({ player, onSelect, onTrade, tradeDisabled = 
             <CompanionPlayerMetric
               key="season"
               value={player.pts !== null ? player.pts.toFixed(1) : '-'}
+              label={stackMetrics ? formatLeaguePpgLabel(player.avgPPG) : null}
               pending={statsPending && player.pts === null}
               align="center"
               compact={isCompactPhone}
             />,
-            <CompanionPlayerMetric
-              key="avg"
-              value={player.avgPPG > 0 ? player.avgPPG.toFixed(1) : '-'}
-              pending={statsPending && !(player.avgPPG > 0)}
-              align="center"
-              compact={isCompactPhone}
-            />,
+            !stackMetrics && (
+              <CompanionPlayerMetric
+                key="avg"
+                value={player.avgPPG > 0 ? player.avgPPG.toFixed(1) : '-'}
+                pending={statsPending && !(player.avgPPG > 0)}
+                align="center"
+                compact={isCompactPhone}
+              />
+            ),
           ].filter(Boolean)}
           trailing={(
             <svg width={isCompactPhone ? 10 : 12} height={isCompactPhone ? 10 : 12} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--color-label-quaternary)', flexShrink: 0 }}>
