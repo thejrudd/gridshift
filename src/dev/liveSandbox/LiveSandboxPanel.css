@@ -1,0 +1,116 @@
+/* Dev-only styling for the Fantasy Live replay controls. Loaded only when the
+   sandbox flag is on, and dropped from production builds with the rest of the
+   sandbox. */
+
+.live-sandbox {
+  position: fixed;
+  right: var(--density-space-md);
+  /* Clear the mobile tab bar; on desktop that bar is hidden and the height
+     token collapses to the plain safe-area inset. */
+  bottom: calc(var(--bar-height-tab, 0px) + env(safe-area-inset-bottom, 0px) + var(--density-space-md));
+  z-index: 55;
+  width: min(360px, calc(100vw - (2 * var(--density-space-md))));
+  display: flex;
+  flex-direction: column;
+  gap: var(--density-space-sm);
+  padding: var(--density-space-md);
+  border: 1px solid var(--color-separator);
+  border-radius: 12px;
+  /* Opaque: the panel sits over the pace chart and feed. */
+  background: var(--color-bg-secondary);
+  box-shadow: 0 8px 32px rgb(0 0 0 / 0.28);
+}
+
+@media (min-width: 1024px) {
+  .live-sandbox {
+    bottom: calc(env(safe-area-inset-bottom, 0px) + var(--density-space-md));
+  }
+}
+
+.live-sandbox-head {
+  display: flex;
+  align-items: center;
+  gap: var(--density-space-sm);
+}
+
+.live-sandbox-title {
+  font-size: var(--type-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+  color: var(--color-signature);
+  white-space: nowrap;
+}
+
+.live-sandbox-status {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--type-label);
+  color: var(--color-label-secondary);
+}
+
+.live-sandbox-row {
+  display: flex;
+  align-items: center;
+  gap: var(--density-space-sm);
+}
+
+.live-sandbox-speeds {
+  flex-wrap: wrap;
+}
+
+.live-sandbox-play {
+  min-height: 36px;
+  min-width: 72px;
+  border-radius: 8px;
+  font-weight: 700;
+  background: var(--color-signature);
+  color: var(--color-signature-fg);
+}
+
+.live-sandbox-scrub {
+  flex: 1;
+  min-width: 0;
+  min-height: 36px;
+  accent-color: var(--color-signature);
+}
+
+.live-sandbox-pct {
+  min-width: 40px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-size: var(--type-label);
+  color: var(--color-label-secondary);
+}
+
+.live-sandbox-chip {
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--color-separator);
+  font-size: var(--type-label);
+  color: var(--color-label-primary);
+  background: transparent;
+}
+
+.live-sandbox-chip[data-active='true'] {
+  font-weight: 700;
+  background: var(--color-fill-secondary);
+}
+
+.live-sandbox-text {
+  min-height: 32px;
+  padding: 0 8px;
+  font-size: var(--type-label);
+  color: var(--color-label-secondary);
+}
+
+.live-sandbox-reset {
+  margin-left: auto;
+}
+
+/* Mode switch sits above the replay controls and stays visible in both modes. */
+.live-sandbox-modes {
+  padding-bottom: var(--density-space-sm);
+  border-bottom: 1px solid var(--color-separator);
+}

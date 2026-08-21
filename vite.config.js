@@ -6,7 +6,7 @@ import { VitePWA } from 'vite-plugin-pwa'
 const { version } = JSON.parse(readFileSync('./package.json', 'utf8'))
 const appVersion = process.env.GRIDSHIFT_APP_VERSION_OVERRIDE ?? version
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   server: {
     proxy: {
       '/ktc-proxy': {
@@ -30,6 +30,15 @@ export default defineConfig({
         secure: false,
       },
     },
+  },
+  resolve: {
+    alias: command === 'build'
+      // The Fantasy Live sandbox is a dev harness. Aliasing its entry to an
+      // inert stub keeps the fixture league, replay engine, and dev panel out
+      // of production bundles entirely, rather than relying on tree-shaking to
+      // prove the disabled branch dead across module boundaries.
+      ? [{ find: /^(.*)\/dev\/liveSandbox$/, replacement: '$1/dev/liveSandbox/production-stub.js' }]
+      : [],
   },
   define: {
     __APP_VERSION__: JSON.stringify(appVersion),
@@ -137,4 +146,4 @@ export default defineConfig({
       },
     }),
   ],
-})
+}))

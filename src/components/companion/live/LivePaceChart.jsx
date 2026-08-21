@@ -112,6 +112,10 @@ export default function LivePaceChart({
   onSelectMark,
   onReturnLive,
   collapsedSummary = false,
+  // 'projection' reserves headroom for each side's projected total; 'scoring'
+  // scales to points actually on the board. Only the dev sandbox passes
+  // anything but the default.
+  scaleMode = 'projection',
   liveWinProbA = 50,
   liveSettled = false,
   timelineMode = 'game',
@@ -161,17 +165,28 @@ export default function LivePaceChart({
   const markedMax = marks.reduce((highest, mark) => (
     Math.max(highest, Number.isFinite(Number(mark.y)) ? Number(mark.y) : 0)
   ), 0);
-  const maxY = Math.max(
+  // Actual scoring always has to fit, whichever way the axis is anchored.
+  const scoredCeiling = Math.max(
     left.pace.total,
     right.pace.total,
-    left.pace.projected,
-    right.pace.projected,
-    left.pace.liveProjected,
-    right.pace.liveProjected,
     plottedMax,
     markedMax,
     1,
-  ) * 1.2;
+  );
+  // The leading projection is the chart's reference point, so it is pinned to
+  // the top of the plot: its ray lands in the top-right corner and stays there
+  // while its value moves. Adding headroom above it, or letting the axis grow
+  // past it, means a rising projection silently shrinks everything already
+  // drawn — the scoring history appears to flatten even though nothing about
+  // it changed.
+  // The gutter label reads liveProjected — current points plus what is still
+  // expected — so the ray and the ceiling must use the same number, or the ray
+  // cannot sit where the label says it lands.
+  const projectedCeiling = Math.max(left.pace.liveProjected, right.pace.liveProjected);
+  const maxY = scaleMode === 'scoring'
+    // Scoring scale ignores projections entirely; the rays run off the top.
+    ? scoredCeiling * 1.2
+    : Math.max(projectedCeiling, scoredCeiling);
   const xAt = (value) => PAD_LEFT + (value / xMax) * innerWidth;
   const yAt = (value) => PAD_TOP + innerHeight - (Math.max(0, value) / maxY) * innerHeight;
   const nowX = xAt(slateProgress);
@@ -194,13 +209,22 @@ export default function LivePaceChart({
 
   // Projection labels sit in the right gutter; nudge them apart when the two
   // pace rays finish close together.
-  let labelA = yAt(left.pace.projected);
-  let labelB = yAt(right.pace.projected);
+  let labelA = yAt(left.pace.liveProjected);
+  let labelB = yAt(right.pace.liveProjected);
   if (Math.abs(labelA - labelB) < 15) {
     const push = (15 - Math.abs(labelA - labelB)) / 2;
     if (labelA <= labelB) { labelA -= push; labelB += push; } else { labelA += push; labelB -= push; }
   }
-  const labelY = { a: Math.max(PAD_TOP + 9, labelA), b: Math.max(PAD_TOP + 9, labelB) };
+  labelA = Math.max(PAD_TOP + 9, labelA);
+  labelB = Math.max(PAD_TOP + 9, labelB);
+  // Clamping can collapse both labels onto the ceiling when the pace rays
+  // finish above the plotted area — the symmetric nudge above cannot separate
+  // them there, so push the lower one clear instead.
+  if (Math.abs(labelA - labelB) < 15) {
+    if (labelA <= labelB) labelB = labelA + 15;
+    else labelA = labelB + 15;
+  }
+  const labelY = { a: labelA, b: labelB };
 
   // Track the pointer continuously along the visible paths. A score dot only
   // captures the tracker when the pointer enters its two-dimensional radius;
@@ -578,7 +602,7 @@ export default function LivePaceChart({
             x1={xAt(0)}
             y1={baseY}
             x2={xAt(xMax)}
-            y2={yAt(side.pace.projected)}
+            y2={yAt(side.pace.liveProjected)}
             stroke={side.palette[0]}
             strokeWidth="1.2"
             strokeDasharray="2 4"

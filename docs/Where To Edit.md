@@ -81,7 +81,19 @@ The week is derived from Sleeper's `/state/nfl` response, not selectable: Fantas
 - `src/components/statistics/scores/ScoresSeasonBoard.jsx` — selected-week Hero week + peek layout and chronological kickoff groups.
 - `src/components/statistics/scores/GameScorebug.jsx` — scheduled, live, final, favorite, delayed, offline, and unavailable matchup states.
 - `src/components/statistics/scores/ScoresGameDrilldown.jsx` — Overview, Team Stats, Players, Scoring, and Play-by-Play.
+- `src/components/statistics/scores/PlayCard.jsx` — one play in the feed: the text line (down and distance, spot, sentence with headshots, outcome tag, clock), the trajectory strip beneath it, and the expandable per-player breakdown. The only Statistics-specific piece of the play-by-play presentation.
 - `src/components/statistics/scores/StatisticsScores.css` — feature-owned responsive and density-aware styling.
+
+Play parsing and the field graphics are **not** Statistics-owned. Edit them in the shared layer:
+
+- `src/utils/nflPlays/playNarrative.js` — raw play text to a plain-language sentence and an ordered actor list. Add new play types as grammars; never loosen the `confident: false` fallback.
+- `src/utils/nflPlays/playerNameIndex.js` — name variants and ambiguity rules for matching play text to players. `livePlaysFeed.buildStarterNameIndex` is a thin adapter over it, so changes here reach Fantasy Live.
+- `src/utils/nflPlays/participants.js` — ESPN per-game participant and headshot resolution.
+- `src/utils/nflPlays/fieldGeometry.js` — yards-to-endzone to absolute field coordinates, the 120-yard canvas mapping (`fieldX`), play type/outcome classification, per-play trajectory geometry, and the shared kick helper. `isScoringPlay()` decides what reads as a score, and `playColor()` is the single owner of play colouring. `getOffenseTeam()` is the single owner of the possession correction — the feed's `team` names whoever holds the ball after the play, so on kicks and turnovers it is the receiving side. Both the field graphics and `groupBdlPlaysIntoDrives()` ask it rather than reading `team` directly. Kick direction and start spot come from the play description, because the numeric fields are inconsistent on punts.
+- `src/utils/nflPlays/playBeats.js` — one play as a scrubbable timeline: the ball's position over time plus the beats that fire as it reaches each moment. It composes `getPlayTrajectory()` and `parsePlayNarrative()` and owns no geometry or parsing of its own. Add a new play type as a branch that builds segments and beats; anything unhandled falls through to the generic path, which still travels the real start-to-end path and still speaks the full sentence. `estimateAirYards()` is the single owner of the estimated catch point — the feed reports no air yards, no catch spot and no yards after catch, so the estimate may position the ball and must never appear as a number in beat text.
+- `src/components/nflPlays/` — `fieldPrimitives.jsx` (end zones, yard lines, red zones, axis, glyphs, outcome marks, legend), `PlayTrajectoryStrip.jsx` (one play drawn in the Trajectory vocabulary), `DriveField.jsx` (the drive as stacked lanes on one field, and the Play drive toggle), `DrivePlayback.jsx` (the drive animated one snap at a time, with transport, scrubber and beat log), `WinProbabilityChart.jsx`, and their `NflPlays.css`. Both field views share one 120-yard canvas so a play strip lines up yard for yard with the drive field above it; any new field visual must go through `fieldX` and the shared kick helper rather than compute its own coordinates.
+- `src/components/shared/PlayerAvatar.jsx` — the headshot → team mark → initials avatar, shared with Fantasy Live (which imports it as `LiveAvatar` from `LiveAtoms.jsx`).
+- `tests/fixtures/bdlNflPlays.json` and `tests/fixtures/espnGameParticipants.json` — captured provider payloads. Read these instead of re-deriving field shapes.
 - `src/api/statisticsScoresApi.js` — browser-to-sidecar Scores requests.
 - `server/statisticsScoresHandlers.js` — public provider selection, BALLDONTLIE pagination/cache, ESPN snapshots, and drilldown aggregation.
 - `src/utils/statisticsScoresProvider.js`, `src/utils/balldontlieNflScoreboard.js`, and `src/utils/espnNflScoreboard.js` — source eligibility and normalized scoreboard adapters.
@@ -250,3 +262,28 @@ Feature screens such as Rosters, Rankings, Waivers, Matchups, Heatmap drilldowns
 - `Dockerfile`
 - `Dockerfile.prebuilt`
 - `Dockerfile.server`
+
+## Fantasy Live play filter
+
+The feed's play-type tiers and the pace chart's dot filtering.
+
+| Concern | File |
+| --- | --- |
+| Which groups and types a league gets, and what matches | `src/utils/liveFeedFilters.js` |
+| The two-tier chip UI | `LiveFeedPlayFilter` in `src/components/companion/live/LiveFeed.jsx` |
+| Chip styling | `.fl-playfilter*` in `src/index.css` |
+| Filter state, counts, and applying it | `src/components/companion/CompanionLive.jsx` |
+
+The filter set is **derived from the league**, never hardcoded: a group or type
+appears only when `activeScoringSettings` (or a roster slot) makes it scorable,
+so a kickerless league has no FG chip and a redraft league has no Defense
+group. Adding a type means declaring what has to score for it to exist.
+
+Filters read an event's `mechanism` (the football action) alongside its `kind`
+(the fantasy result), so a rushing touchdown belongs to both Rush and TD.
+"Big play" is pegged to the cheapest touchdown the league pays for, so it means
+the same thing at 4-point passing as at 6.
+
+The chart filters **marks only**. Lines are built from `points` and are never
+touched, so narrowing to touchdowns changes which dots are drawn without
+altering the shape of the week.

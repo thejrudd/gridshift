@@ -8,6 +8,7 @@
 
 import { calcPoints } from './scoringEngine.js';
 import { getTeamAbbr, normalizeName } from './liveScoringFeed.js';
+import { buildPlayerNameIndex } from './nflPlays/playerNameIndex.js';
 
 const MAX_DESC_LENGTH = 140;
 
@@ -35,7 +36,13 @@ export function normalizePlay(raw, gameId) {
     gameId,
     period: firstFinite(raw.period, raw.quarter),
     clock: firstString(raw.clock_display, raw.clock, raw.time),
-    type: firstString(raw.play_type, raw.type)?.toLowerCase() ?? '',
+    // BALLDONTLIE names this type_slug / type_text ("pass-reception", "rush",
+    // "passing-touchdown"); it has no play_type or type field. Reading the
+    // wrong keys left this empty on every play, so pass detection fell back to
+    // a regex that does not match the provider's phrasing ("pass short left
+    // to") — and quarterbacks were attributed as rushers.
+    type: firstString(raw.type_slug, raw.type_text, raw.type_abbreviation, raw.play_type, raw.type)
+      ?.toLowerCase() ?? '',
     yards: firstFinite(raw.yards_gained, raw.yards, raw.net_yards) ?? 0,
     scoring: Boolean(raw.scoring_play ?? raw.touchdown ?? /touchdown|field goal is good/i.test(description)),
     awayScore: firstFinite(raw.away_score, raw.visitor_score, raw.visitor_team_score),
@@ -44,6 +51,10 @@ export function normalizePlay(raw, gameId) {
     wallclock: Date.parse(raw.wallclock ?? '') || null,
     defenseTeamAbbr: getTeamAbbr(firstString(raw.defense_team?.abbreviation, raw.defense_team, raw.defensive_team)),
     description: description.length > MAX_DESC_LENGTH ? `${description.slice(0, MAX_DESC_LENGTH - 1)}…` : description,
+    // The provider row, kept intact. The feed only needs a sentence, but the
+    // field visual reads structured geometry — down, distance, yards to the
+    // end zone — that this normalisation deliberately flattens away.
+    raw,
   };
 }
 
@@ -59,51 +70,29 @@ function getDefensiveTeamForPlay(play, game) {
 
 /**
  * Index of matchup starters by normalized name variants and team DST starters.
- * Last-name-only variants are kept only when unique across the matchup; team
- * cross-checks resolve remaining ambiguity at match time.
+ *
+ * Thin adapter over the shared buildPlayerNameIndex — see
+ * `nflPlays/playerNameIndex.js` for the variant and ambiguity rules.
  */
 export function buildStarterNameIndex(rows) {
-  const variantOwners = new Map(); // variant -> Set(playerId)
-  const meta = new Map(); // playerId -> { team, position }
-  const teamDefenseIds = new Map(); // team -> Set(playerId)
+  const entries = (rows ?? [])
+    .filter(({ player }) => player)
+    .map(({ id, player }) => ({
+      id,
+      name: player.full_name || `${player.first_name ?? ''} ${player.last_name ?? ''}`,
+      team: getTeamAbbr(player.team),
+      position: String(player.position ?? '').toUpperCase(),
+    }));
 
-  (rows ?? []).forEach(({ id, player }) => {
-    if (!player) return;
-    const team = getTeamAbbr(player.team);
-    const position = String(player.position ?? '').toUpperCase();
-    meta.set(id, { team, position });
-    if (isTeamDefensePosition(position) && team) {
-      const owners = teamDefenseIds.get(team) ?? new Set();
-      owners.add(id);
-      teamDefenseIds.set(team, owners);
-    }
-
-    const full = normalizeName(player.full_name || `${player.first_name ?? ''} ${player.last_name ?? ''}`);
-    if (!full) return;
-    const parts = full.split(' ');
-    const last = parts[parts.length - 1];
-    const first = parts[0];
-    const variants = new Set([full]);
-    if (parts.length >= 2) {
-      variants.add(`${first[0]} ${last}`); // "b robinson" — matches "B. Robinson"
-      variants.add(`${first[0]}${last}`); // "brobinson" — matches "B.Robinson" (no space)
-      variants.add(last);
-    }
-    variants.forEach((variant) => {
-      const owners = variantOwners.get(variant) ?? new Set();
-      owners.add(id);
-      variantOwners.set(variant, owners);
-    });
-  });
-
-  const index = new Map();
-  variantOwners.forEach((owners, variant) => {
-    // Ambiguous bare last names are dropped; longer variants keep all owners
-    // and rely on the team cross-check during matching.
-    if (owners.size > 1 && !variant.includes(' ')) return;
-    index.set(variant, [...owners]);
-  });
-  return { index, meta, teamDefenseIds };
+  // normalizeName rather than the shared default: Fantasy Live matches against
+  // play text normalized the same way, and that normalizer leaves generational
+  // suffixes in place. Changing it here would change matching behavior.
+  const { index, meta, teamDefenseIds } = buildPlayerNameIndex(entries, { normalize: normalizeName });
+  return {
+    index,
+    meta: new Map([...meta].map(([id, record]) => [id, { team: record.team, position: record.position }])),
+    teamDefenseIds,
+  };
 }
 
 const PASSER_POSITIONS = new Set(['QB']);
@@ -424,6 +413,7 @@ export function buildPlayEvents(playsByGame, nameIndex, scoringSettings, positio
           source: 'play',
           estimated: true,
           glance: buildPlayGlance(play, game),
+          play,
         });
       });
     });
@@ -458,6 +448,7 @@ export function mergePlayEvents(playEvents, deltaEvents, { coverageWindowMs = 12
       progress: match.progress ?? event.progress ?? null,
       gameId: event.gameId ?? match.gameId ?? null,
       timelineAt: event.timelineAt ?? event.at ?? match.timelineAt ?? null,
+      play: event.play ?? match.play ?? null,
       source: 'play+delta',
     };
   });

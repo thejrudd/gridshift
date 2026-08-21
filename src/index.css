@@ -3328,7 +3328,9 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: var(--fl-display);
+  /* Fallback chain so the avatar also renders correctly outside the .fl scope,
+     where --fl-display is not defined (Statistics play-by-play uses it). */
+  font-family: var(--fl-display, var(--font-display, 'Barlow Condensed', sans-serif));
   font-weight: 800;
   letter-spacing: 0.04em;
   color: var(--color-label-secondary);
@@ -22078,3 +22080,195 @@ button.trade-history-asset-card:focus-visible {
     margin-inline: auto;
   }
 }
+
+/* ── Fantasy Live play-type filter ──────────────────────────────────────── */
+/* Two tiers under the side filter: groups always, types once a group is
+   chosen. Both scroll horizontally rather than wrapping, so the feed below
+   keeps a predictable position as chips come and go. */
+.fl-playfilter {
+  display: flex;
+  flex-direction: column;
+  gap: var(--density-space-xs);
+  padding-bottom: var(--density-space-xs);
+}
+
+/* The rail is the positioning context for the scroll cues, so each cue covers
+   exactly the row it describes rather than the whole filter block. */
+.fl-playfilter__rail {
+  position: relative;
+  min-width: 0;
+}
+
+.fl-playfilter__row {
+  display: flex;
+  align-items: center;
+  gap: var(--density-space-xs);
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.fl-playfilter__row::-webkit-scrollbar {
+  display: none;
+}
+
+.fl-playfilter__chip {
+  flex: 0 0 auto;
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--color-separator);
+  background: transparent;
+  color: var(--color-label-secondary);
+  font-size: var(--type-label);
+  font-weight: 600;
+  white-space: nowrap;
+  transition: background 120ms cubic-bezier(0.32, 0.72, 0, 1),
+    color 120ms cubic-bezier(0.32, 0.72, 0, 1),
+    border-color 120ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.fl-playfilter__chip:hover {
+  color: var(--color-label);
+  border-color: var(--color-label-quaternary);
+}
+
+.fl-playfilter__chip.is-active {
+  background: var(--color-fill-secondary);
+  border-color: var(--color-label-tertiary);
+  color: var(--color-label);
+  font-weight: 700;
+}
+
+/* The second tier reads as subordinate to the group that opened it. */
+.fl-playfilter__row.is-types .fl-playfilter__chip {
+  min-height: 28px;
+  font-size: var(--type-micro);
+}
+
+.fl-playfilter__count {
+  margin-left: 6px;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-label-tertiary);
+}
+
+.fl-playfilter__chip.is-active .fl-playfilter__count {
+  color: var(--color-label-secondary);
+}
+
+.fl-playfilter__divider {
+  flex: 0 0 auto;
+  width: 1px;
+  align-self: stretch;
+  margin: 4px 2px;
+  background: var(--color-separator);
+}
+
+/* Coarse pointers get the full comfortable target. */
+@media (pointer: coarse) {
+  .fl-playfilter__chip {
+    min-height: 44px;
+  }
+  .fl-playfilter__row.is-types .fl-playfilter__chip {
+    min-height: 40px;
+  }
+}
+
+/* The play drawn on a field inside an expanded Fantasy Live feed row. Sits
+   above the scoring breakdown so the picture and the sentence read together,
+   the same order the Statistics play-by-play card uses.
+   
+   Deliberately no `svg { height: auto }` here: that outspecifies the canvas's
+   own `height: 100%`, and an SVG is a replaced element, so it would fall back
+   to the viewBox's 12:1 aspect and letterbox inside the field — leaving the
+   ball, positioned in percentages of the field, adrift from the trail drawn
+   inside the canvas. */
+.fl-exp__field {
+  margin-bottom: var(--density-space-sm);
+  border-radius: 8px;
+}
+
+/* ── Fantasy Live animated play recap ───────────────────────────────────── */
+.fl-recap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--density-space-xs);
+}
+
+/* The same turf and yard-line values the Statistics field visuals use, so a
+   play looks like the same field in both places. Kept as local values rather
+   than imported: NflPlays.css scopes them to its own field containers. */
+.fl-recap__svg {
+  display: block;
+  width: 100%;
+  height: 72px;
+  border-radius: 8px;
+  --field-bg: #A9CCB2;
+  --field-line: rgba(12, 15, 20, 0.26);
+  --field-major: rgba(12, 15, 20, 0.44);
+}
+
+.fl-recap__turf {
+  fill: var(--field-bg);
+}
+
+.fl-recap__yard {
+  stroke: var(--field-line);
+  stroke-width: 1;
+}
+
+.fl-recap__yard.is-ten {
+  stroke: var(--field-major);
+  stroke-width: 1.5;
+}
+
+/* Where the ball was snapped, so the gain reads against a fixed reference. */
+.fl-recap__snap {
+  stroke: var(--field-major);
+  stroke-width: 2;
+  stroke-dasharray: 3 3;
+}
+
+.fl-recap__readout {
+  display: flex;
+  align-items: baseline;
+  gap: var(--density-space-sm);
+}
+
+.fl-recap__yards {
+  font-size: var(--type-label);
+  color: var(--color-label-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.fl-recap__ticker {
+  font-size: var(--type-title-3, 1.25rem);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.fl-recap__replay {
+  margin-left: auto;
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--color-separator);
+  font-size: var(--type-label);
+  color: var(--color-label-secondary);
+}
+
+.fl-recap__replay:disabled {
+  opacity: 0.4;
+}
+
+@media (pointer: coarse) {
+  .fl-recap__replay {
+    min-height: 44px;
+  }
+}
+
+/* Reduced motion gets the finished frame; nothing here animates on its own,
+   since the ball is positioned from state rather than by a CSS transition. */
+
+

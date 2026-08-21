@@ -13,6 +13,11 @@ Open bugs are listed first, deferred work next, fixed bugs below. Add new entrie
 | Fantasy Rankings image exports identify the active scoring model but omit the NFL-stat season used to calculate the rankings. |
 | Draft War Room player metadata can truncate team, availability, bye, or schedule text at laptop widths after injury designations were added. |
 | Draft War Room and Board can show players whose positions are not rosterable in the selected league, including IDP players in leagues without IDP slots. |
+| Some players aren't searchable in Statistics Stats, for example Najee Harris. |
+| Statistics Scores play-by-play drive headers can report impossible net yardage (for example −89 yards on a drive that gained 6), and the drive field draws a full-length bar no individual play accounts for, because clock stoppages report a phantom goal-line start spot and a turnover on downs is filed under the team that took over. |
+| Statistics Scores field graphics place every spot read out of a play description at the wrong end of the field for teams the official play-by-play spells differently from the team records (Cleveland is reported as CLE but written CLV, and likewise Washington, Arizona, Baltimore, Houston and Jacksonville). A 62-yard punt to the Cleveland 10 was drawn landing at the Cincinnati 10. Affects punt and kickoff geometry on every game involving one of those teams. |
+| Statistics Scores reverses the direction of play after a penalty on fourth down. A flag that awards a first down reports fourth down in, first down out, and fewer yards than were needed — indistinguishable from a defensive stop — so it is read as a turnover on downs, which hands the offense to the other team. The play is drawn attacking the wrong end zone, and because drive grouping asks the same question the drive breaks at the flag and every play after it is filed under the opposing team. |
+| Statistics Scores drive playback draws the throw on an interception travelling backwards when the feed credits the pick at a spot behind the line of scrimmage, making the offense look like it ran the wrong way for the whole play. |
 
 ---
 

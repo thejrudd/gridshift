@@ -1,9 +1,14 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { getStatisticsScoresGameDetail } from '../../../api/statisticsScoresApi';
 import { useTheme } from '../../../context/ThemeContext';
 import { getTeamVisualTheme, pickReadableForeground } from '../../../utils/teamVisualTheme';
 import { buildScoreDetailFromGame } from '../../../utils/balldontlieNflScoreboard';
 import { getScoreNetworkLabel } from '../../../utils/statisticsBroadcasts';
+import { deriveEspnEventId, fetchGameParticipants } from '../../../utils/nflPlays/participants.js';
+import { getDriveNetYards, isFieldFlipped } from '../../../utils/nflPlays/fieldGeometry.js';
+import { DriveField } from '../../nflPlays/DriveField.jsx';
+import { WinProbabilityChart } from '../../nflPlays/WinProbabilityChart.jsx';
+import { PlayCard } from './PlayCard.jsx';
 
 const SECTIONS = [
   { id: 'overview', label: 'Overview' },
@@ -171,22 +176,6 @@ function LineScore({ detail }) {
   );
 }
 
-function LatestPlay({ detail, onOpenPlays }) {
-  const drive = detail.drives.at(-1);
-  const play = drive?.plays.at(-1);
-  if (!drive || !play) return null;
-  return (
-    <section className="scores-latest-play">
-      <img src={teamLogo(drive.team)} alt="" />
-      <div>
-        <span>{play.down} · {play.spot} · {drive.quarter} {play.time}</span>
-        <strong>{play.description}</strong>
-      </div>
-      <button type="button" onClick={onOpenPlays}>Full play feed <span aria-hidden="true">→</span></button>
-    </section>
-  );
-}
-
 function Leaders({ detail }) {
   return (
     <div className="scores-detail-leaders">
@@ -201,16 +190,22 @@ function Leaders({ detail }) {
   );
 }
 
-function Overview({ detail, awayTheme, homeTheme, onOpenPlays }) {
+function Overview({ detail, awayTheme, homeTheme }) {
   const primaryStats = detail.statGroups.flatMap((group) => group.stats).slice(0, 10);
+  const allPlays = detail.drives.flatMap((drive) => drive.plays);
   return (
     <div className="scores-detail-overview">
-      <SectionHeading title="Latest Play" meta="Updating with the game" />
-      {detail.drives.length
-        ? <LatestPlay detail={detail} onOpenPlays={onOpenPlays} />
-        : <DetailUnavailable>{detail.provider === 'espn'
-          ? 'ESPN supplies the score and game header here. Play-by-play requires a BALLDONTLIE API key for this league.'
-          : detailCoverageMessage(detail, 'No play-by-play has been returned for this game yet.')}</DetailUnavailable>}
+      {allPlays.some((play) => play.homeWinProbability != null) && (
+        <>
+          <SectionHeading title="Win Probability" meta="Derived from play-by-play" />
+          <WinProbabilityChart
+            plays={allPlays}
+            homeTeam={detail.home.id}
+            awayTeam={detail.away.id}
+            homeColor={homeTheme?.color ?? null}
+          />
+        </>
+      )}
 
       <SectionHeading title="Line Score" />
       <LineScore detail={detail} />
@@ -342,9 +337,37 @@ function ScoringSummary({ detail }) {
   );
 }
 
-function PlayByPlay({ detail }) {
+const QUARTER_LABEL = { 1: '1st quarter', 2: '2nd quarter', 3: '3rd quarter', 4: '4th quarter' };
+
+function quarterLabel(play) {
+  const period = Number(play?.period);
+  if (!Number.isFinite(period) || period < 1) return null;
+  return QUARTER_LABEL[period] ?? 'Overtime';
+}
+
+function driveMeta(drive) {
+  const opening = drive.plays[0];
+  // `playCount` is the offensive snaps; `plays` also carries clock stoppages
+  // and the kickoff that ends a scoring drive.
+  const snaps = drive.playCount ?? drive.plays.length;
+  const count = `${snaps} ${snaps === 1 ? 'play' : 'plays'}`;
+  const yards = drive.netYards != null ? ` · ${drive.netYards} yds` : '';
+  const from = opening ? ` · from ${opening.time} ${opening.quarter}` : '';
+  return `${count}${yards}${from}`;
+}
+
+function PlayByPlay({ detail, participants }) {
+  const { darkMode } = useTheme();
   const [filter, setFilter] = useState('all');
+  // The kickoff-first order the design specifies is right for a game you're
+  // reading back. While a game is in progress the newest play is the one you
+  // came for, so the feed flips rather than making you scroll to the bottom.
+  const live = detail.status === 'live';
   const [expanded, setExpanded] = useState(() => new Set());
+
+  const awayTheme = getTeamVisualTheme(detail.away.id, darkMode);
+  const homeTheme = getTeamVisualTheme(detail.home.id, darkMode);
+
   if (detail.coverage && detail.coverage.plays !== true) {
     const message = detail.coverage?.playsStatus === 'loading'
       ? 'Loading play-by-play from BALLDONTLIE…'
@@ -360,8 +383,11 @@ function PlayByPlay({ detail }) {
       </section>
     );
   }
-  const drives = filter === 'all' ? detail.drives : detail.drives.filter((drive) => drive.team === filter);
-  const displayedDrives = [...drives].reverse();
+
+  const context = { homeTeam: detail.home.id, awayTeam: detail.away.id };
+  const drives = (filter === 'all' ? detail.drives : detail.drives.filter((drive) => drive.team === filter))
+    .map((drive) => ({ ...drive, netYards: getDriveNetYards(drive.plays, context) }));
+  const displayedDrives = live ? [...drives].reverse() : drives;
 
   const toggleDrive = (driveId) => {
     setExpanded((current) => {
@@ -372,9 +398,25 @@ function PlayByPlay({ detail }) {
     });
   };
 
+  // Quarter markers only make sense against an unbroken chronology, so they are
+  // suppressed once a team filter cuts the other side's drives out, or once the
+  // feed flips to newest-first for a live game.
+  const markers = new Map();
+  if (!live && filter === 'all') {
+    let lastQuarter = null;
+    displayedDrives.forEach((drive) => {
+      const label = quarterLabel(drive.plays[0]);
+      if (label && label !== lastQuarter) markers.set(drive.id, label);
+      if (label) lastQuarter = label;
+    });
+  }
+
   return (
     <section className="scores-play-feed">
-      <SectionHeading title="Play Feed" meta="Most recent play first" />
+      <SectionHeading
+        title="Play Feed"
+        meta={`${live ? 'Most recent first' : 'Kickoff first'} · ${drives.length} ${drives.length === 1 ? 'drive' : 'drives'}`}
+      />
       <div className="scores-play-filter" role="group" aria-label="Filter drives by team">
         <button type="button" aria-pressed={filter === 'all'} onClick={() => setFilter('all')}>All</button>
         {[detail.away, detail.home].map((team) => (
@@ -386,25 +428,59 @@ function PlayByPlay({ detail }) {
       <div className="scores-drive-list">
         {displayedDrives.map((drive) => {
           const open = expanded.has(drive.id);
+          const attacking = drive.team === detail.home.id ? homeTheme : awayTheme;
+          const barColor = attacking.accentColor ?? attacking.color ?? 'var(--color-accent)';
+          const marker = markers.get(drive.id);
+          const plays = live ? [...drive.plays].reverse() : drive.plays;
+          // Teams change ends every quarter. The drive's opening play settles
+          // the orientation for the whole drive, including a drive that runs
+          // across a quarter break, so the field and its play strips agree.
+          const flipped = isFieldFlipped(drive.plays[0]?.period);
+
           return (
-            <article key={drive.id} className={`scores-drive${drive.score ? ' is-scoring' : ''}`}>
-              <button type="button" className="scores-drive-header" aria-expanded={open} onClick={() => toggleDrive(drive.id)}>
-                <img src={teamLogo(drive.team)} alt="" />
-                <strong>{drive.result}</strong>
-                <span>{drive.summary} · {drive.quarter}</span>
-                <b>{drive.score}</b>
-                <i aria-hidden="true">{open ? '−' : '+'}</i>
-              </button>
-              {open && (
-                <div className="scores-drive-plays">
-                  {[...drive.plays].reverse().map((play) => (
-                    <div key={`${drive.id}-${play.time}-${play.down}`} className={play.scoring ? 'is-scoring' : ''}>
-                      <b>{play.down}</b><span>{play.spot}</span><p>{play.description}</p><time>{play.time}</time>
+            <Fragment key={drive.id}>
+              {marker && <div className="scores-drive-quarter">{marker}</div>}
+              <article className={`scores-drive${drive.score ? ' is-scoring' : ''}`}>
+                <button type="button" className="scores-drive-header" aria-expanded={open} onClick={() => toggleDrive(drive.id)}>
+                  <img src={teamLogo(drive.team)} alt="" />
+                  <strong>{drive.result}</strong>
+                  <span>{driveMeta(drive)}</span>
+                  <b>{drive.score}</b>
+                  <i aria-hidden="true">{open ? '−' : '+'}</i>
+                </button>
+                {open && (
+                  <div className="scores-drive-plays">
+                    <DriveField
+                      plays={drive.plays}
+                      drive={drive}
+                      homeTeam={detail.home.id}
+                      awayTeam={detail.away.id}
+                      awayTheme={awayTheme}
+                      homeTheme={homeTheme}
+                      barColor={barColor}
+                      flipped={flipped}
+                      participants={participants}
+                      playLabel={(play) => `${play.down} · ${play.description}`}
+                    />
+                    <div className="scores-drive-playlist">
+                      {plays.map((play) => (
+                        <PlayCard
+                          key={play.id ?? `${drive.id}-${play.time}-${play.down}`}
+                          play={play}
+                          participants={participants}
+                          homeTeam={detail.home.id}
+                          awayTeam={detail.away.id}
+                          awayTheme={awayTheme}
+                          homeTheme={homeTheme}
+                          barColor={barColor}
+                          flipped={flipped}
+                        />
+                      ))}
                     </div>
-                  ))}
-                </div>
-              )}
-            </article>
+                  </div>
+                )}
+              </article>
+            </Fragment>
           );
         })}
       </div>
@@ -493,6 +569,25 @@ export default function ScoresGameDrilldown({ game, fixtureDetail = null, onBack
       window.removeEventListener('offline', handleOffline);
     };
   }, [detailsProvider, fixtureData, game.bdlGameId, game.phase, game.status, gameKey]);
+  // Player photos for the play feed. Best-effort and entirely non-blocking:
+  // if ESPN is unreachable or the event id can't be derived, plays still render,
+  // just without faces.
+  const [participants, setParticipants] = useState(null);
+  const providerPlays = visibleDetailState.data?.plays;
+  const espnEventId = useMemo(() => deriveEspnEventId(providerPlays ?? []), [providerPlays]);
+  useEffect(() => {
+    setParticipants(null);
+    if (!espnEventId) return undefined;
+    let cancelled = false;
+    fetchGameParticipants(espnEventId, {
+      teams: [game.away?.id, game.home?.id].filter(Boolean),
+      isFinal: game.status === 'final',
+    }).then((resolved) => {
+      if (!cancelled) setParticipants(resolved);
+    });
+    return () => { cancelled = true; };
+  }, [espnEventId, game.away?.id, game.home?.id, game.status]);
+
   const detail = useMemo(
     () => fixtureData
       ? fixtureDetail
@@ -532,11 +627,11 @@ export default function ScoresGameDrilldown({ game, fixtureDetail = null, onBack
         </nav>
       </div>
 
-      {section === 'overview' && <Overview detail={detail} awayTheme={awayTheme} homeTheme={homeTheme} onOpenPlays={() => setSection('plays')} />}
+      {section === 'overview' && <Overview detail={detail} awayTheme={awayTheme} homeTheme={homeTheme} />}
       {section === 'team' && <TeamStats detail={detail} awayTheme={awayTheme} homeTheme={homeTheme} />}
       {section === 'players' && <PlayerStats detail={detail} />}
       {section === 'scoring' && <ScoringSummary detail={detail} />}
-      {section === 'plays' && <PlayByPlay detail={detail} />}
+      {section === 'plays' && <PlayByPlay detail={detail} participants={participants} />}
     </div>
   );
 }

@@ -1711,3 +1711,54 @@ test('draft assistant excludes retired historical players from the candidate poo
   assert.equal(viewModel.allCandidates.some((player) => player.id === 'inactiveQb'), false);
   assert.equal(viewModel.allCandidates.some((player) => player.id === 'qb1'), true);
 });
+
+test('draft assistant restricts a Sleeper rookie draft pool to rookies, even for stale-active retired veterans', () => {
+  const rookieDraft = {
+    draft_id: 'draft-rookie-1',
+    type: 'linear',
+    status: 'pre_draft',
+    season: '2026',
+    settings: { rounds: 4, player_type: 1 },
+    slot_to_roster_id: { 1: 1, 2: 2, 3: 3 },
+  };
+  const rookiePoolPlayers = {
+    ...players,
+    staleRetiredVeteranQb: {
+      player_id: 'staleRetiredVeteranQb',
+      full_name: 'Stale Retired Veteran Quarterback',
+      position: 'QB',
+      fantasy_positions: ['QB'],
+      team: 'PIT',
+      active: true,
+      status: 'Active',
+      years_exp: 18,
+      search_rank: 176,
+    },
+    rookieWr: {
+      player_id: 'rookieWr',
+      full_name: 'Foxtrot Rookie Receiver',
+      position: 'WR',
+      fantasy_positions: ['WR'],
+      team: 'CHI',
+      active: true,
+      status: 'Active',
+      years_exp: 0,
+      search_rank: 40,
+    },
+  };
+
+  const viewModel = buildDraftAssistantViewModel({
+    players: rookiePoolPlayers,
+    rosters,
+    league,
+    draft: rookieDraft,
+    draftPicks: [],
+    myRoster: rosters[0],
+    scoringSettings: DEFAULT_SCORING,
+    season: '2026',
+  });
+
+  assert.equal(viewModel.allCandidates.some((player) => player.id === 'staleRetiredVeteranQb'), false);
+  assert.equal(viewModel.allCandidates.some((player) => player.id === 'qb1'), false);
+  assert.equal(viewModel.allCandidates.some((player) => player.id === 'rookieWr'), true);
+});

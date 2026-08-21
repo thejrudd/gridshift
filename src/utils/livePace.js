@@ -170,6 +170,16 @@ export function buildPaceSeries({
   liveSnapshot = null,
   milestonePoints = 5,
   reconcileToTotals = false,
+  // Accumulate strictly along the chart's own axis instead of by timestamp.
+  //
+  // A live session can rely on the two agreeing: plays arrive in order and are
+  // stamped as they land. A replay cannot — position comes from where a play
+  // sits in the week while the timestamp is reconstructed, and any disagreement
+  // between them leaves early points holding a near-empty total and the last
+  // one holding all of it, which draws as a wall at NOW. Ordering by the axis
+  // the points are plotted on makes the running total monotonic by
+  // construction.
+  accumulateInOrder = false,
 } = {}) {
   const span = Math.min(1, Math.max(0.02, Number(slateProgress) || 0));
   const finalA = round1(Number(totals.a) || 0);
@@ -233,6 +243,8 @@ export function buildPaceSeries({
   scored.forEach((item, itemIndex) => {
     const momentAt = getReplayEventTime(item.event);
     const eventsAtMoment = reconcileToTotals
+      ? scored.slice(0, itemIndex + 1)
+      : accumulateInOrder
       ? scored.slice(0, itemIndex + 1)
       : Number.isFinite(momentAt)
       ? scored.filter((candidate) => {

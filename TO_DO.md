@@ -18,6 +18,14 @@ GridShift is a labor-of-love project: it should create something genuinely usefu
 
 ## Planned Versions
 
+### v8.6 — Play-by-Play Presentation
+
+- **Animated drive replay** - Shipped. A Play drive toggle on the drive field swaps the stacked overview for `DrivePlayback.jsx`, which runs the drive one snap at a time on the fixed 120-yard canvas with an accumulating beat log underneath. Note that a Next Gen Stats-style replay showing all 22 players is not buildable: neither BALLDONTLIE nor any public ESPN endpoint exposes player tracking coordinates.
+- **Broaden playback choreography beyond the captured fixtures** - Every play type in the two captured fixture games now has its own animation: rush, pass, incompletion, sack, punt, kickoff, field goal, extra point, interception, fumble and recovery, turnover on downs, and penalty. The generic fall-back path still exists and is still correct — it travels the real start-to-end path and speaks the parsed sentence — but nothing in the fixtures reaches it. Capture postseason and weather-affected games and check what falls through, particularly laterals, muffed punts, blocked kicks and safeties.
+- **Air yards and yards after catch in playback** - The catch point in a pass animation is estimated from the "short"/"deep" qualifier in the official description, because no field in BALLDONTLIE or the ESPN summary reports air yards, a catch spot, or yards after catch. The estimate positions the ball and is deliberately never spoken: the catch beat states no yard line and no YAC figure. If a source that reports air yards becomes available, `estimateAirYards()` in `playBeats.js` is the single place to replace, and the catch beat can then say the number.
+- **Flip the field every quarter** - Draw second- and fourth-quarter drives mirrored end for end, the way the teams actually changed ends, across the drive field and the play strips.
+- **Broaden play-narrative grammar coverage** - The parser handles every play type in the two captured fixture games. Capture postseason and weather-affected games and add grammars for anything that falls back to raw text, particularly laterals, multi-penalty plays, and blocked kicks.
+
 ## Optimizations
 
 - **Trade proposal card desktop sizing polish** - Continue refining desktop card sizing so larger cards remain crisp and readable without reintroducing vertical text overflow or awkward package wrapping on narrower desktop widths.
@@ -35,6 +43,8 @@ GridShift is a labor-of-love project: it should create something genuinely usefu
 - **Next-season fantasy projection layer for rookies** - Add a fantasy-facing projection surface for the upcoming NFL season so Scout can serve both standard rookie boards and IDP-aware formats without overloading the current prospect filters. Scope should cover offensive and IDP leagues, projection source-of-truth, display hierarchy, and how projections interact with draft status and college production.
 
 ### Live Data Infrastructure
+
+- **Migrate Fantasy Live onto the shared nflPlays layer** - `src/utils/livePlaysFeed.js` now routes its name index through `nflPlays/playerNameIndex.js`, but still keeps its own `normalizePlay` and its own regex-based `matchPlayToStarters` role tagging. The shared `nflPlays/playNarrative.js` derives strictly better roles from `type_slug` plus the full names in `short_text`, and emits Fantasy Live's role vocabulary as a subset. Switching the feed over should also let it show the same plain-language sentences the Statistics play feed uses. `tests/fixtures/bdlNflPlays.json` is the captured payload the file's own header notes was missing.
 
 - **Complete Phase 1 league isolation** - Build first-viewer/two-minute-warm Fantasy Live ingest lifecycle, per-league fair-use allocations, the five-hot-league GOAT ceiling, full operational metrics, broader public detail validation, and tier-adaptive Fantasy Live degradation. The shared page-aware gateway, bounded cache/coalescing, protected near-live Statistics Scores lane, provider-anchored clock, public live-route guard, backoff, and ESPN fallback are implemented. See `docs/Live Data Server Architecture.md`.
 - **Phase 2 — League-managed BALLDONTLIE keys** - Let a league-session holder attach one league-specific credential without exposing it to the browser, logs, or other leagues. Store keys with envelope encryption, isolate budgets and caches by credential, enforce tier-based league limits, support provider-side rotation instead of a GridShift remove action, and run scheduled suspect/dead-key cleanup with a non-secret credential index.

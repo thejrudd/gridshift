@@ -9,6 +9,7 @@ import {
   scoreScheduleSignal,
 } from './scheduleStrength.js';
 import { getLeaguePositionFilters, getPlayerPositionFilterKeys } from '../leaguePositions.js';
+import { getSleeperDraftPlayerPool, isDraftRookie } from './projectedSelection.js';
 export {
   getDraftResultsPresentation,
   getDraftTourContext,
@@ -1154,10 +1155,17 @@ export function buildDraftAssistantViewModel({
     upcomingScheduleMap,
     scoringSettings,
   });
+  const draftPlayerPool = getSleeperDraftPlayerPool(draft);
+  const draftSeason = draft?.season == null ? null : String(draft.season);
   const candidatesWithoutModel = Object.values(players)
     .filter((player) => player?.player_id != null && !draftedIds.has(String(player.player_id)))
     .filter((player) => playerSupportsDraftAssistant(player))
     .filter((player) => isPlayerEligibleForDraftRoster(player, draftRosterEligiblePositions))
+    .filter((player) => {
+      if (draftPlayerPool === 'rookies') return isDraftRookie(player, draftSeason);
+      if (draftPlayerPool === 'veterans') return !isDraftRookie(player, draftSeason);
+      return true;
+    })
     .map((player) => {
       const playerId = String(player.player_id);
       const marketValue = getMarketValue(marketValuesByPlayerId, playerId);

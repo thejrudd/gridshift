@@ -1,0 +1,966 @@
+/* NflPlays.css — the field graphics shared by Statistics play-by-play and the
+   win-probability chart.
+   
+   The field visuals follow the play-by-play design handoff: one 120-yard canvas
+   (two 10-yard end zones + 100 playing yards) shared by the drive field and the
+   play strips, so the two line up yard for yard. Geometry, colour and spacing
+   here are the design — treat pixel values as intentional.
+   
+   Colours come from the global tokens plus team palettes passed in as inline
+   custom properties, so both themes and every team work without per-surface
+   overrides. The turf surface is the one thing that swaps between themes: a
+   dark broadcast green in dark mode, a pale turf in light mode, each with the
+   line colour that reads on it. */
+
+/* ── surface ─────────────────────────────────────────────────────────── */
+.pv-canvas,
+.dpb-field,
+.df-field {
+  /* A real turf green rather than a wash of it. The paler original left the
+     yard lines close to invisible, and gave light team colours — the near-white
+     accent a few clubs carry — almost nothing to read against. */
+  --field-bg: #A9CCB2;
+  --field-line: rgba(12, 15, 20, 0.26);
+  --field-major: rgba(12, 15, 20, 0.44);
+  --field-band: rgba(12, 15, 20, 0.06);
+  --field-edge: rgba(255, 255, 255, 0.5);
+  position: relative;
+  /* The marks inside a field stack against each other. Without a stacking
+     context of its own the field's z-indexes escape to the root and paint over
+     the sticky section tabs above it. */
+  isolation: isolate;
+  overflow: hidden;
+  background: var(--field-bg);
+}
+
+.dark .pv-canvas,
+.dark .dpb-field,
+.dark .df-field {
+  --field-bg: #123A2C;
+  --field-line: rgba(255, 255, 255, 0.14);
+  --field-major: rgba(255, 255, 255, 0.30);
+  --field-band: rgba(255, 255, 255, 0.035);
+  --field-edge: rgba(255, 255, 255, 0.35);
+}
+
+/* Mown banding, every 5 yards of the canvas. */
+.pv-canvas::before,
+.dpb-field::before,
+.df-field::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(90deg, var(--field-band) 0 calc(100% / 24), transparent calc(100% / 24) calc(100% / 12));
+  pointer-events: none;
+}
+
+/* ── field furniture ─────────────────────────────────────────────────── */
+.fv-line { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--field-line); }
+.fv-line[data-major='true'] { background: var(--field-major); }
+
+.fv-rz { position: absolute; top: 0; bottom: 0; pointer-events: none; }
+.fv-rz.is-left { background: linear-gradient(90deg, color-mix(in srgb, var(--color-accent-red) 13%, transparent), transparent); }
+.fv-rz.is-right { background: linear-gradient(270deg, color-mix(in srgb, var(--color-accent-red) 13%, transparent), transparent); }
+
+.fv-ez {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.fv-ez.is-left { left: 0; box-shadow: inset -1px 0 0 var(--field-edge); }
+.fv-ez.is-right { right: 0; box-shadow: inset 1px 0 0 var(--field-edge); }
+.fv-ez img {
+  width: 74%;
+  max-width: 26px;
+  max-height: 74%;
+  object-fit: contain;
+  opacity: 0.95;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.35));
+}
+.fv-ez span {
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-micro);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  opacity: 0.9;
+}
+
+.fv-axis { position: relative; height: 17px; margin-top: 4px; }
+.fv-axis span {
+  position: absolute;
+  transform: translateX(-50%);
+  color: var(--color-label-secondary);
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-micro);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+.fv-axis span[data-goal='true'] { color: var(--color-label-secondary); }
+.fv-axis .fv-axis-team { position: absolute; transform: none; color: var(--color-label-secondary); font-weight: 700; }
+.fv-axis .fv-axis-team.is-left { left: 0; }
+.fv-axis .fv-axis-team.is-right { right: 0; }
+
+.fv-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  margin-top: 8px;
+  color: var(--color-label-secondary);
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-micro);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.fv-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.fv-legend span > i { width: 10px; height: 10px; border-radius: 1px; }
+/* Score and penalty share the signature yellow, so the legend has to show the
+   fill that separates them rather than the colour that doesn't. */
+.fv-legend .is-penalty {
+  background: repeating-linear-gradient(-45deg, var(--color-signature) 0 3px, color-mix(in srgb, var(--color-signature) 26%, transparent) 3px 6px) !important;
+}
+.fv-legend-fd > i { width: 2px !important; height: 12px !important; background: var(--color-signature); }
+.fv-legend-sack { gap: 4px !important; }
+.fv-legend-sack > i { width: 3px !important; height: 12px !important; margin-right: 5px; background: var(--color-accent-red); }
+.fv-legend .fv-glyph[data-type='rush'] { width: 0; height: 0; }
+
+/* ── play-type glyphs ────────────────────────────────────────────────── */
+.fv-glyph { display: inline-block; flex: 0 0 auto; width: var(--gs, 10px); height: var(--gs, 10px); }
+.fv-glyph[data-type='rush'] {
+  width: 0;
+  height: 0;
+  border-top: calc(var(--gs) / 1.7) solid transparent;
+  border-bottom: calc(var(--gs) / 1.7) solid transparent;
+  border-left: calc(var(--gs) / 1.35) solid var(--g);
+}
+.fv-glyph[data-type='rush'][data-dir='l'] { border-left: none; border-right: calc(var(--gs) / 1.35) solid var(--g); }
+.fv-glyph[data-type='pass'] { border: 1.5px solid var(--g); border-radius: 50%; }
+.fv-glyph[data-type='kick'] { width: calc(var(--gs) * 0.82); height: calc(var(--gs) * 0.82); border: 1.5px solid var(--g); transform: rotate(45deg); }
+.fv-glyph[data-type='penalty'] {
+  background: var(--color-signature);
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--color-signature-fg) 60%, transparent);
+}
+
+/* ── outcome marks ───────────────────────────────────────────────────── */
+.fv-mark { position: relative; display: inline-block; }
+.fv-mark.is-td { width: 4px; height: 18px; background: var(--color-signature); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25); }
+.fv-mark.is-turn { width: 11px; height: 11px; }
+.fv-mark.is-turn::before,
+.fv-mark.is-turn::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: var(--color-accent-red);
+}
+.fv-mark.is-turn::before { transform: rotate(45deg); }
+.fv-mark.is-turn::after { transform: rotate(-45deg); }
+.fv-mark.is-inc {
+  width: 9px;
+  height: 9px;
+  border: 1.5px solid var(--color-label-secondary);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--color-bg) 60%, transparent);
+}
+/* The slash is what stops an incompletion reading as a completed pass. */
+.fv-mark.is-inc::after {
+  content: '';
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  left: 50%;
+  width: 1.5px;
+  background: var(--color-label-secondary);
+  transform: translateX(-50%) rotate(45deg);
+}
+.fv-mark.is-kick { width: 8px; height: 8px; border: 1.5px solid var(--color-label-secondary); transform: rotate(45deg); }
+/* A kick that scored. The diamond stays so the shape still says how the points
+   came; only the colour changes. */
+.fv-mark.is-kick.is-scoring {
+  border-color: var(--color-signature);
+  background: color-mix(in srgb, var(--color-signature) 40%, transparent);
+}
+.fv-mark.is-pen { width: 9px; height: 9px; background: var(--color-signature); }
+.fv-mark.is-ret { width: 0; height: 0; border-top: 4px solid transparent; border-bottom: 4px solid transparent; }
+.fv-mark.is-ret[data-dir='r'] { border-left: 7px solid var(--color-label-secondary); }
+.fv-mark.is-ret[data-dir='l'] { border-right: 7px solid var(--color-label-secondary); }
+
+/* ── one play: the trajectory strip ──────────────────────────────────── */
+.pv { --pv-h: 30px; width: 100%; }
+[data-display-size='compact'] .pv { --pv-h: 26px; }
+[data-display-size='large'] .pv { --pv-h: 34px; }
+.pv .pv-canvas { height: calc(var(--pv-h) * 1.7); }
+.pv .fv-ez { opacity: 0.92; }
+
+.pv-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.pv-los { stroke: var(--color-label-quaternary); stroke-width: 1; stroke-dasharray: 3 3; }
+.pv-fdline { stroke: var(--color-signature); stroke-width: 2; }
+.pv-ground { stroke: color-mix(in srgb, var(--color-label) 22%, transparent); stroke-width: 1; }
+
+.pv-path { stroke-width: 2.5; stroke-linecap: round; }
+.pv-path[data-type='kick'] { stroke-dasharray: 6 5; }
+.pv-path[data-type='rush'] { stroke-width: 4; }
+.pv-path[data-type='penalty'] { stroke-dasharray: 3 4; }
+.pv-path.is-sack { stroke: var(--color-accent-red); stroke-width: 3.5; }
+.pv-path.is-inc { stroke: var(--color-label-tertiary); stroke-width: 2; stroke-dasharray: 5 4; }
+.pv-sackwall { stroke: var(--color-accent-red); stroke-width: 3; }
+.pv-return { stroke: var(--color-label-secondary); stroke-width: 2; stroke-dasharray: 4 4; stroke-linecap: round; }
+
+.pv-ball {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  z-index: 5;
+  width: 12px;
+  height: 7.5px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #A6572F, #743A1C);
+  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--color-bg) 70%, transparent);
+  transform: translate(-50%, -50%);
+}
+.pv-ball::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 5px;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.85);
+  transform: translate(-50%, -50%);
+}
+
+.pv-glyphwrap,
+.pv-endwrap {
+  position: absolute;
+  top: 50%;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  transform: translate(-50%, -50%);
+}
+/* Everything on a trajectory strip hangs off the ground line, not the middle. */
+.pv-ball.is-route,
+.pv-glyphwrap.is-route,
+.pv-endwrap.is-route { top: 74%; }
+.pv-endwrap.is-route.is-off { margin-left: 15px; }
+
+/* ── the drive as a field ────────────────────────────────────────────── */
+.df { margin: 10px 0 4px; }
+.df-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+.df-head > div { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; min-width: 0; }
+.df-head strong {
+  color: var(--color-label-secondary);
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-label);
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.df-head span { color: var(--color-label-secondary); font-size: var(--type-label); }
+/* The direction hint and the playback toggle share the right end of the header.
+   The hint kept its own `margin-left: auto` for the overview-only layout, so the
+   group takes over pushing them right and the hint's own margin is neutralised
+   inside it. */
+.df-headactions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.df-headactions .df-dirhint { margin-left: 0; }
+.df-dirhint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  color: var(--color-label-tertiary);
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-micro);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.df-dirhint::after {
+  content: '';
+  width: 0;
+  height: 0;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  border-left: 6px solid var(--color-label-tertiary);
+}
+.df-dirhint[data-dir='l']::after { border-left: none; border-right: 6px solid var(--color-label-tertiary); }
+
+.df-field { border: 1px solid var(--color-separator); }
+.df-lanes { position: absolute; inset: 7px 0; }
+.df-lane { position: absolute; right: 0; left: 0; }
+
+.df-bar {
+  position: absolute;
+  top: 50%;
+  height: calc(100% - 8px);
+  min-height: 9px;
+  border-radius: 2px;
+  background: var(--c);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  transform: translateY(-50%);
+}
+.df-bar[data-type='pass'] { background: color-mix(in srgb, var(--c) 30%, transparent); box-shadow: inset 0 0 0 1.5px var(--c); }
+.df-bar[data-type='kick'] { border: 1.5px dashed var(--c); background: transparent; box-shadow: none; }
+.df-bar[data-type='penalty'] {
+  background: repeating-linear-gradient(-45deg, var(--c) 0 5px, color-mix(in srgb, var(--c) 26%, transparent) 5px 10px);
+}
+/* Arrow tip, on the leading edge — which flips to the trailing edge on a loss. */
+.df-bar::after { content: ''; position: absolute; top: 50%; border-style: solid; border-color: transparent; transform: translateY(-50%); }
+.df-bar[data-dir='r']::after { right: -5px; border-width: 5px 0 5px 5px; border-left-color: var(--c); }
+.df-bar[data-dir='l']::after { left: -5px; border-width: 5px 5px 5px 0; border-right-color: var(--c); }
+.df-bar[data-loss='true'][data-dir='r']::after { right: auto; left: -5px; border-width: 5px 5px 5px 0; border-right-color: var(--c); border-left-color: transparent; }
+.df-bar[data-loss='true'][data-dir='l']::after { right: -5px; left: auto; border-width: 5px 0 5px 5px; border-left-color: var(--c); border-right-color: transparent; }
+
+.df-zero { position: absolute; top: 50%; width: 3px; height: calc(100% - 6px); background: var(--c); transform: translate(-50%, -50%); }
+.df-ret { position: absolute; top: 50%; z-index: 5; height: 2px; background: var(--color-label-secondary); transform: translateY(-50%); }
+.df-ret::after { content: ''; position: absolute; top: 50%; border-style: solid; border-color: transparent; border-width: 4px 0 4px 5px; transform: translateY(-50%); }
+.df-ret[data-dir='r']::after { right: -5px; border-left-color: var(--color-label-secondary); }
+.df-ret[data-dir='l']::after { left: -5px; border-width: 4px 5px 4px 0; border-right-color: var(--color-label-secondary); }
+.df-fd { position: absolute; top: 2px; bottom: 2px; width: 2px; background: color-mix(in srgb, var(--color-signature) 75%, transparent); }
+.df-ball {
+  position: absolute;
+  top: 50%;
+  z-index: 5;
+  width: 10px;
+  height: 6.5px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #A6572F, #743A1C);
+  box-shadow: 0 0 0 1.5px rgba(0, 0, 0, 0.35);
+  transform: translate(-50%, -50%);
+}
+.df-ball::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.85);
+  transform: translate(-50%, -50%);
+}
+.df-glyph,
+.df-end { position: absolute; top: 50%; z-index: 6; display: flex; align-items: center; transform: translate(-50%, -50%); }
+.df-glyph { margin-left: -12px; }
+.df-end { margin-left: 10px; }
+
+/* The field is a picture; this is the same drive in a sentence. */
+.df-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@container scoresplays (max-width: 560px) {
+  .fv-axis span:nth-child(2),
+  .fv-axis span:nth-child(4),
+  .fv-axis span:nth-child(5),
+  .fv-axis span:nth-child(7),
+  .fv-axis span:nth-child(8),
+  .fv-axis span:nth-child(10) { display: none; }
+  .fv-axis .fv-axis-team { display: none; }
+  .fv-ez img { max-width: 18px; }
+  .df-dirhint { display: none; }
+  .pv { --pv-h: 26px; }
+}
+
+.nfp-wp { display: grid; gap: 4px; }
+.nfp-wp__chart { display: block; width: 100%; overflow: visible; }
+.nfp-wp__area { fill: var(--nfp-wp-fill, var(--color-accent)); opacity: 0.18; }
+.nfp-wp__line { fill: none; stroke: var(--nfp-wp-stroke, var(--color-accent)); stroke-width: 1.75; stroke-linejoin: round; }
+.nfp-wp__midline { stroke: var(--color-separator-opaque); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+.nfp-wp__quarter { stroke: var(--color-separator); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.nfp-wp__swing { fill: var(--color-signature); }
+.nfp-wp__side {
+  color: var(--color-label-tertiary);
+  font-size: var(--type-micro);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.nfp-wp__caption {
+  color: var(--color-label-secondary);
+  font-size: var(--type-label);
+}
+.nfp-wp__caption > b { font-weight: 700; color: var(--color-label); }
+
+/* ── drive playback ──────────────────────────────────────────────────────
+   The animated counterpart to the drive field. It reuses every field
+   primitive above, so the only new geometry here is the taller canvas the ball
+   needs to arc through and the furniture underneath it: transport, scrubber,
+   and the beat log that assembles as the play runs.
+
+   The field is deliberately taller than the drive field's lanes. A pass has to
+   leave the ground visibly and a field goal has to clear the uprights, and both
+   read as flat wobbles in a 22px lane. */
+
+.dpb {
+  margin: var(--density-space-3, 12px) 0;
+}
+
+.dpb-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.dpb-count {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  letter-spacing: 0.04em;
+}
+.dpb-count strong { color: var(--color-label); font-size: var(--type-label); font-weight: 700; }
+.dpb-count span { color: var(--color-label-secondary); font-size: var(--type-micro); font-weight: 600; }
+.dpb-when {
+  color: var(--color-label-tertiary);
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-micro);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+.dpb-fieldwrap { position: relative; }
+.dpb-field {
+  /* Taller than the drive field's lanes: the ball is centred, arcs need
+     headroom above it, and the flag needs a clear strip below. */
+  height: clamp(104px, 25vw, 148px);
+  border-radius: 6px;
+}
+
+/* The painted down-and-distance banner.
+   
+   A telecast paints the down and distance onto the turf behind the line of
+   scrimmage, with chevrons pointing at the line to gain. This is that graphic,
+   translated to a flat field: the banner is anchored to the snap spot rather
+   than parked in a corner, so it reads as part of the ground the ball crosses
+   rather than as an overlay sitting on top of the picture.
+   
+   The flag is a rectangle. A skew was tried, on the theory that it would read as
+   the camera perspective a broadcast gets for free — on a flat field it just
+   reads as a graphic that isn't square.
+   
+   It sits below the ball, which rides the centre line, so it can never cover
+   the thing you are watching. */
+.dpb-banner {
+  position: absolute;
+  /* Below the ball, which rides the centre line for the whole play. Nothing the
+     play does can be hidden behind the flag, so it never has to be dodged or
+     faded out. */
+  bottom: 9%;
+  height: clamp(19px, 4.4vw, 28px);
+  z-index: 2;
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.34));
+  pointer-events: none;
+}
+/* Driving the other way: the chevrons lead, so they move to the other end and
+   the arrowheads mirror with them. */
+.dpb-banner[data-dir='l'] { flex-direction: row-reverse; }
+
+.dpb-banner__plate {
+  position: relative;
+  /* Content-sized: the plate is as wide as the down and distance needs and no
+     wider. */
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  /* The offense's own gradient, the same one their end zone is painted with, so
+     the flag and the end zone they are driving at read as one identity. */
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), inset 0 -1px 0 rgba(0, 0, 0, 0.24);
+  overflow: hidden;
+}
+/* A scrim over the team gradient. Several teams' gradients run to a pale second
+   stop, and the flag's text would sit on it with almost no contrast at exactly
+   the end where the distance is written. This darkens the plate a little without
+   flattening the identity out of it. */
+.dpb-banner__plate::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.06), rgba(0, 0, 0, 0.34));
+  pointer-events: none;
+}
+.dpb-banner__plate img,
+.dpb-banner__plate b { position: relative; }
+.dpb-banner__plate img {
+  flex: none;
+  height: 74%;
+  width: auto;
+  object-fit: contain;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.45));
+}
+.dpb-banner__plate b {
+  min-width: 0;
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  /* Tied to the flag's own height so the text fills it at every field size. */
+  font-size: clamp(12px, 2.9vw, 19px);
+  font-weight: 800;
+  letter-spacing: 0;
+  line-height: 1;
+  text-transform: uppercase;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+/* The chevrons take the signature yellow deliberately: they point at the line
+   to gain, which is drawn in the same yellow. The arrow and the line it aims at
+   are the same colour for the same reason. */
+.dpb-banner__chev {
+  flex: none;
+  /* Sized from the flag's own height rather than in pixels. At a fixed width the
+     arrowhead degenerates into a vertical sliver as the field gets shorter,
+     which is exactly where it most needs to still read as an arrow. */
+  height: 100%;
+  width: auto;
+  aspect-ratio: 0.42;
+  background: var(--color-signature);
+  clip-path: polygon(0 0, 52% 0, 100% 50%, 52% 100%, 0 100%, 48% 50%);
+}
+.dpb-banner[data-dir='l'] .dpb-banner__chev { transform: scaleX(-1); }
+
+/* An SVG is a replaced element: without an explicit height it takes the
+   viewBox's own 12:1 aspect and letterboxes inside the field, leaving the trail
+   drawn in one coordinate space while the ball — positioned in percentages of
+   the field — sits in another. The explicit 100% is what keeps them together. */
+.dpb-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.dpb-los { stroke: var(--color-label-quaternary); stroke-width: 1; stroke-dasharray: 3 3; }
+.dpb-fd { stroke: var(--color-signature); stroke-width: 2; }
+.dpb-ground { stroke: color-mix(in srgb, var(--color-label) 22%, transparent); stroke-width: 1; }
+.dpb-trace {
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.9;
+}
+/* The halo underneath every trail.
+   
+   A team colour is chosen to read against the app's surfaces, not against turf,
+   and a few clubs carry a near-white accent for exactly that reason — drawn
+   straight onto a light field their trail disappears. A dark under-stroke makes
+   any colour legible on any turf, the same job the ball's own ring does. */
+.dpb-trace-halo {
+  stroke: rgba(12, 15, 20, 0.34);
+  stroke-width: 6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.dark .dpb-trace-halo { stroke: rgba(0, 0, 0, 0.42); }
+/* A kick is dashed, the way it is on the drive field and the play strips. It is
+   the one flight the offense gave the ball away on purpose, and at a pass's
+   stroke it read as a deep throw. */
+.dpb-trace[data-tone='kick'] { stroke-dasharray: 7 6; }
+.dpb-trace[data-tone='turnover'] { stroke-width: 3.5; }
+.dpb-trace[data-tone='loss'] { stroke-width: 3.5; }
+/* A kick that missed keeps the kick's dash — it was still a kick — but in the
+   colour of a play that cost the offense. A make climbs away in gold. */
+.dpb-trace[data-tone='loss'][data-tone] { stroke-dasharray: none; }
+.dpb-trace[data-tone='score'] { stroke-width: 3.5; }
+
+/* Where a missed kick came down. A cross reads as "no" from across the field in
+   a way a colour alone does not, and a miss is the one outcome that leaves no
+   ball on the field to look at. */
+.dpb-miss {
+  position: absolute;
+  bottom: 50%;
+  z-index: 6;
+  width: 16px;
+  height: 16px;
+  margin: 0 0 -8px -8px;
+  pointer-events: none;
+}
+.dpb-miss::before,
+.dpb-miss::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 100%;
+  height: 3px;
+  margin-top: -1.5px;
+  border-radius: 2px;
+  background: var(--color-accent-red);
+  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--color-bg) 65%, transparent);
+}
+.dpb-miss::before { transform: rotate(45deg); }
+.dpb-miss::after { transform: rotate(-45deg); }
+@media (prefers-reduced-motion: no-preference) {
+  .dpb-miss { animation: dpb-alert-in 240ms cubic-bezier(0.32, 0.72, 0, 1) both; }
+}
+
+/* What just went wrong for the offense, called out where it happened. Sized and
+   coloured to be read before the log underneath it is. */
+.dpb-alert {
+  position: absolute;
+  bottom: 27%;
+  z-index: 7;
+  padding: 2px 7px;
+  transform: translateX(-50%);
+  border-radius: 3px;
+  background: var(--c, var(--color-accent-red));
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.4), inset 0 0 0 1px rgba(255, 255, 255, 0.24);
+  /* Never a fixed white: the chip wears a team colour, and a few clubs carry a
+     near-white accent, which put white text on a white plate. The ink is picked
+     against this chip's own background by the same helper the team gradients
+     use. */
+  color: var(--ink, #FFF);
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-micro);
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  line-height: 1.35;
+  text-transform: uppercase;
+  white-space: nowrap;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .dpb-alert { animation: dpb-alert-in 260ms cubic-bezier(0.32, 0.72, 0, 1) both; }
+}
+@keyframes dpb-alert-in {
+  from { opacity: 0; transform: translateX(-50%) scale(0.82); }
+  to { opacity: 1; transform: translateX(-50%) scale(1); }
+}
+
+/* A dot per player who has entered the play. The newest is filled and ringed;
+   the ones before it fade back so the eye lands on who is acting now. */
+.dpb-marker {
+  position: absolute;
+  bottom: 50%;
+  z-index: 4;
+  width: 9px;
+  height: 9px;
+  margin: 0 0 -4px -4.5px;
+  border-radius: 50%;
+  background: var(--color-bg);
+  box-shadow: inset 0 0 0 2px var(--c, var(--color-accent));
+  opacity: 0.45;
+  transition: opacity 160ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.dpb-marker[data-latest='true'] {
+  background: var(--c, var(--color-accent));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-bg) 70%, transparent);
+  opacity: 1;
+}
+.dpb-marker[data-role='tackler'],
+.dpb-marker[data-role='sacker'] { --c: var(--color-accent-red); }
+
+.dpb-ball {
+  position: absolute;
+  z-index: 6;
+  width: 13px;
+  height: 8px;
+  margin: 0 0 -4px -6.5px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #A6572F, #743A1C);
+  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--color-bg) 70%, transparent);
+}
+.dpb-ball[data-air='true'] {
+  transform: rotate(-18deg);
+  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--color-bg) 70%, transparent),
+    0 3px 6px rgba(0, 0, 0, 0.35);
+}
+
+.dpb-nameplate {
+  position: absolute;
+  bottom: calc(50% + 14px);
+  z-index: 7;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px 2px 3px;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-bg) 88%, transparent);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+  color: var(--color-label);
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-micro);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.dpb-nameplate .fl-av { flex: none; }
+
+/* Points get confetti where they were scored. Two stages in one keyframe: the
+   particles burst outward, then gravity takes them down as they fade — a purely
+   radial burst reads as a starburst rather than as confetti.
+
+   Each particle carries its own vector, duration, delay and spin as custom
+   properties set inline, so twenty particles share one keyframe rather than
+   needing twenty of them. */
+.dpb-burst {
+  position: absolute;
+  /* Above the ball rather than on it: at the ball's own height the particles
+     land behind the name plate and read as noise around the play instead of as
+     a celebration over it. */
+  bottom: 62%;
+  z-index: 8;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+.dpb-burst i {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 1px;
+  background: var(--c);
+  opacity: 0;
+  animation: dpb-confetti var(--dur) cubic-bezier(0.32, 0.72, 0, 1) var(--delay) forwards;
+}
+/* Every third particle is a ribbon rather than a square, which is what keeps a
+   burst from reading as a pixel explosion. */
+.dpb-burst i:nth-child(3n) { width: 3.5px; height: 9px; border-radius: 2px; }
+
+@keyframes dpb-confetti {
+  0% { opacity: 0; transform: translate(0, 0) scale(0.4) rotate(0deg); }
+  14% { opacity: 1; }
+  55% { opacity: 1; transform: translate(var(--dx), var(--dy)) scale(1) rotate(calc(var(--spin) * 0.5)); }
+  100% {
+    opacity: 0;
+    transform: translate(calc(var(--dx) * 1.18), calc(var(--dy) + 30px)) scale(0.85) rotate(var(--spin));
+  }
+}
+
+/* ── transport ───────────────────────────────────────────────────────── */
+.dpb-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+.dpb-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-height, 32px);
+  height: var(--control-height, 32px);
+  min-width: 32px;
+  min-height: 32px;
+  border: 1px solid var(--color-separator);
+  border-radius: 8px;
+  background: var(--color-fill);
+  color: var(--color-label);
+  font-size: var(--type-label);
+  line-height: 1;
+  cursor: pointer;
+  transition: background 140ms cubic-bezier(0.32, 0.72, 0, 1), border-color 140ms;
+}
+.dpb-btn:hover:not(:disabled) { background: var(--color-fill-secondary); }
+.dpb-btn:active:not(:disabled) { transform: scale(0.94); }
+.dpb-btn:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.dpb-btn:disabled { opacity: 0.38; cursor: default; }
+.dpb-btn.is-primary {
+  border-color: transparent;
+  background: var(--color-label);
+  color: var(--color-bg);
+}
+.dpb-btn.is-primary:hover:not(:disabled) { background: var(--color-label-secondary); }
+
+.dpb-progress {
+  flex: 1 1 auto;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--color-fill-secondary);
+  overflow: hidden;
+}
+.dpb-progress i { display: block; height: 100%; border-radius: 999px; }
+
+.dpb-speed { flex: none; display: inline-flex; gap: 2px; }
+.dpb-speed button {
+  min-width: 30px;
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-label-tertiary);
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-micro);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+.dpb-speed button:hover { color: var(--color-label); }
+.dpb-speed button[aria-pressed='true'] {
+  border-color: var(--color-separator);
+  background: var(--color-fill);
+  color: var(--color-label);
+}
+.dpb-speed button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+
+/* ── scrubber ────────────────────────────────────────────────────────── */
+.dpb-scrub {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+.dpb-chip {
+  min-width: 24px;
+  height: 24px;
+  padding: 0 4px;
+  border: 1px solid var(--color-separator);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-label-tertiary);
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-micro);
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 140ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.dpb-chip:hover { background: var(--color-fill); color: var(--color-label); }
+.dpb-chip:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.dpb-chip[data-state='past'] { color: var(--color-label-secondary); background: var(--color-fill); }
+.dpb-chip[data-state='current'] {
+  border-color: transparent;
+  background: var(--color-label);
+  color: var(--color-bg);
+}
+/* A scoring or turnover snap is marked in the scrubber so the drive's turning
+   points are findable without playing through it. */
+.dpb-chip[data-kind='score'] { border-color: var(--color-signature); }
+.dpb-chip[data-kind='td'] { border-color: var(--color-signature); }
+.dpb-chip[data-kind='int'],
+.dpb-chip[data-kind='fumble'] { border-color: var(--color-accent-red); }
+
+/* ── beat log ────────────────────────────────────────────────────────── */
+.dpb-log {
+  min-height: 84px;
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  border: 1px solid var(--color-separator);
+  border-radius: 8px;
+  background: var(--color-fill);
+  list-style: none;
+}
+.dpb-log li {
+  padding: 2px 0;
+  color: var(--color-label-secondary);
+  font-size: var(--type-label);
+  line-height: 1.35;
+}
+.dpb-log li[data-kind='setup'] {
+  color: var(--color-label-tertiary);
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.dpb-log li[data-latest='true'] { color: var(--color-label); font-weight: 600; }
+.dpb-log li[data-kind='score'] { color: var(--color-label); font-weight: 700; }
+.dpb-log li[data-kind='score']::after { content: ' ●'; color: var(--color-signature); }
+.dpb-log li[data-kind='incomplete'],
+.dpb-log li[data-kind='miss'] { color: var(--color-label-tertiary); }
+
+.dpb-note {
+  margin: 6px 0 0;
+  color: var(--color-label-tertiary);
+  font-size: var(--type-micro);
+  line-height: 1.4;
+}
+
+/* The playback toggle on the drive field header. */
+.df-playtoggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--color-separator);
+  border-radius: 999px;
+  background: var(--color-fill);
+  color: var(--color-label);
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-micro);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 140ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.df-playtoggle:hover { background: var(--color-fill-secondary); }
+.df-playtoggle:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+
+/* Phones: the field gets more vertical room so arcs and markers stay legible,
+   the transport collapses to icons only, and the beat log is capped so the
+   controls never leave the viewport. */
+@media (max-width: 560px) {
+  .dpb-field { height: clamp(112px, 34vw, 150px); }
+  /* The arrowheads are sized off the flag's height, but the flag's width comes
+     from the canvas — and a narrow field is proportionally much shorter than a
+     wide one, so two of them start eating the text. One arrow still points; a
+     clipped "1ST & 1" says nothing. */
+  /* Nothing here has to give way for the text any more — the flag grows to fit
+     what it says — so this is only trimming the plate to the smaller field. */
+  .dpb-banner { bottom: 8%; }
+  .dpb-banner__plate { padding: 0 5px; gap: 4px; }
+  .dpb-controls { gap: 6px; }
+  .dpb-speed button { min-width: 26px; padding: 0 4px; }
+  .dpb-log { max-height: 116px; overflow-y: auto; }
+  .dpb-scrub { max-height: 60px; overflow-y: auto; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dpb-marker,
+  .dpb-chip,
+  .dpb-btn { transition: none; }
+  .dpb-btn:active:not(:disabled) { transform: none; }
+  /* The component already withholds the burst under reduced motion; this is the
+     belt-and-braces for a preference that changes mid-play. */
+  .dpb-burst { display: none; }
+}
+
+/* ── Fantasy Live: the running score riding the ball ─────────────────────
+   Only rendered when Fantasy Live passes a points total. The plate tracks the
+   ball, so what the play is earning stays with the thing earning it. Held
+   inside the canvas near a goal line, the same way the nameplate is. */
+.dpb-fantasy {
+  position: absolute;
+  transform: translate(-50%, calc(50% + 18px));
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--c, var(--color-signature));
+  color: var(--color-signature-fg);
+  font-size: var(--type-micro);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.6;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 3;
+  /* The plate sits on turf, not on an app surface, so it carries its own ring
+     rather than relying on the background behind it. */
+  box-shadow: 0 0 0 1.5px rgb(255 255 255 / 0.85);
+}

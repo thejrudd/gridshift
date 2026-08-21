@@ -129,6 +129,7 @@ export function getLiveConfigStatus() {
     cookieSigningReady: hasCookieSecret,
     mockPlaysEnabled: process.env.NODE_ENV !== 'production'
       && process.env.GRIDSHIFT_LIVE_MOCK_PLAYS === 'true',
+    preseasonEnabled: isPreseasonAllowed(),
     cacheTtlMs: parsePositiveInteger(process.env.GRIDSHIFT_LIVE_CACHE_TTL_MS, 1000),
     finalTtlMs: parsePositiveInteger(process.env.GRIDSHIFT_LIVE_FINAL_TTL_MS, 14_400_000),
     archiveEnabled: process.env.GRIDSHIFT_LIVE_ARCHIVE_ENABLED !== 'false',
@@ -214,6 +215,14 @@ function splitCsvParam(value) {
     .filter(Boolean);
 }
 
+// Preseason is off-limits to Fantasy Live in production. The dev sandbox needs
+// it to exercise the page against preseason games, so it can be opened only
+// outside production and only with an explicit opt-in.
+export function isPreseasonAllowed() {
+  return process.env.NODE_ENV !== 'production'
+    && process.env.GRIDSHIFT_LIVE_ALLOW_PRESEASON === 'true';
+}
+
 export function buildLiveGamesParams(query = {}) {
   const params = new URLSearchParams();
   params.set('per_page', String(DEFAULT_PER_PAGE));
@@ -221,9 +230,19 @@ export function buildLiveGamesParams(query = {}) {
   appendArrayParam(params, 'weeks[]', splitCsvParam(query.weeks ?? query.week));
   appendArrayParam(params, 'team_ids[]', splitCsvParam(query.teamIds ?? query.team_ids));
   // Fantasy Live is regular/postseason-only. Do not let a caller opt this
-  // route into BALLDONTLIE's supported preseason season type (1).
-  params.append('season_type[]', '2');
-  params.append('season_type[]', '3');
+  // route into BALLDONTLIE's supported preseason season type (1). The dev
+  // sandbox is the one exception, and only when explicitly enabled.
+  const wantsPreseason = String(query.seasonType ?? query.season_type ?? '')
+    .trim()
+    .toLowerCase();
+  if (isPreseasonAllowed() && (wantsPreseason === 'pre' || wantsPreseason === '1')) {
+    // Preseason and regular-season weeks share numbering, so an unscoped
+    // request for week 3 returns both. Ask for preseason alone.
+    params.append('season_type[]', '1');
+  } else {
+    params.append('season_type[]', '2');
+    params.append('season_type[]', '3');
+  }
 
   const dateValues = splitCsvParam(query.dates ?? query.date)
     .filter((date) => /^\d{4}-\d{2}-\d{2}$/.test(date));

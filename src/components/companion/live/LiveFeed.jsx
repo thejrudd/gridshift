@@ -3,10 +3,15 @@
 // a way through to the player's full breakdown.
 
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import HorizontalScrollCue from '../../HorizontalScrollCue.jsx';
+import useHorizontalScrollCue from '../../../hooks/useHorizontalScrollCue.js';
 import { LiveAvatar, LiveGlyphBadge, LivePosChip } from './LiveAtoms.jsx';
 import { firstWordOf, getLiveEventLabel, getLiveKindMeta } from './liveVisuals.js';
 import { buildFantasyScoringBreakdown } from '../../../utils/fantasyBreakdownRows.js';
 import { getSleeperPlayerName } from '../../../utils/liveScoringFeed.js';
+import { toggleFilterValue } from '../../../utils/liveFeedFilters.js';
+import { DrivePlayback } from '../../nflPlays/DrivePlayback.jsx';
+import { normalizeBdlScorePlay } from '../../../utils/balldontlieNflScoreboard.js';
 import { withAlpha } from '../../../utils/fantasyTeamIdentity.js';
 
 // The counting stats worth surfacing under a play's scoring math, in the order
@@ -56,6 +61,96 @@ function scrollRowToFeedTop(row, behavior = 'auto') {
   scroller.scrollTo({ top: Math.max(0, targetTop), behavior });
 }
 
+/**
+ * Play-type tiers. The group row is always present; type chips appear only
+ * once a group is chosen, so the resting state costs one row. Both tiers come
+ * from the league's own scoring, so a chip never offers a filter that cannot
+ * match — see buildFeedFilterModel().
+ */
+export function LiveFeedPlayFilter({ model = [], value, onChange, positions = [], counts = {} }) {
+  const groupRowRef = useRef(null);
+  const typeRowRef = useRef(null);
+  const activeGroup = model.find((group) => group.id === value.group) ?? null;
+  // Cues track the rails they describe, so they appear only where there is
+  // more to reach in that direction.
+  const groupCue = useHorizontalScrollCue(groupRowRef, [model, positions, counts]);
+  const typeCue = useHorizontalScrollCue(typeRowRef, [activeGroup?.id, value.types]);
+
+  if (!model.length) return null;
+  const setGroup = (groupId) => onChange({
+    ...value,
+    // Types belong to the group that offered them.
+    group: value.group === groupId ? 'all' : groupId,
+    types: [],
+  });
+
+  return (
+    <div className="fl-playfilter">
+      <div className="fl-playfilter__rail">
+      <div className="fl-playfilter__row" ref={groupRowRef} role="group" aria-label="Play type">
+        {model.map((group) => (
+          <button
+            key={group.id}
+            type="button"
+            className={`fl-playfilter__chip${value.group === group.id ? ' is-active' : ''}`}
+            onClick={() => setGroup(group.id)}
+            aria-pressed={value.group === group.id}
+          >
+            {group.label}
+            {counts[group.id] != null && <span className="fl-playfilter__count">{counts[group.id]}</span>}
+          </button>
+        ))}
+        {positions.length > 0 && (
+          <span className="fl-playfilter__divider" aria-hidden="true" />
+        )}
+        {positions.map((position) => (
+          <button
+            key={position}
+            type="button"
+            className={`fl-playfilter__chip is-position${value.positions.includes(position) ? ' is-active' : ''}`}
+            onClick={() => onChange({ ...value, positions: toggleFilterValue(value.positions, position) })}
+            aria-pressed={value.positions.includes(position)}
+            aria-label={`${position} only`}
+          >
+            {position}
+          </button>
+        ))}
+      </div>
+      <HorizontalScrollCue
+        left={groupCue.left}
+        right={groupCue.right}
+        targetRef={groupRowRef}
+        label="play type filters"
+      />
+      </div>
+
+      {activeGroup?.types.length > 0 && (
+        <div className="fl-playfilter__rail">
+        <div className="fl-playfilter__row is-types" ref={typeRowRef} role="group" aria-label={`${activeGroup.label} play types`}>
+          {activeGroup.types.map((type) => (
+            <button
+              key={type.id}
+              type="button"
+              className={`fl-playfilter__chip is-type${value.types.includes(type.id) ? ' is-active' : ''}`}
+              onClick={() => onChange({ ...value, types: toggleFilterValue(value.types, type.id) })}
+              aria-pressed={value.types.includes(type.id)}
+            >
+              {type.label}
+            </button>
+          ))}
+        </div>
+        <HorizontalScrollCue
+          left={typeCue.left}
+          right={typeCue.right}
+          targetRef={typeRowRef}
+          label={`${activeGroup.label} play types`}
+        />
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function LiveFeedFilter({ left, right, value, counts, onChange, focusName, onClearFocus }) {
   const options = [
     { id: 'a', label: left?.isMine ? 'Mine' : (firstWordOf(left?.name) || 'Team A'), color: left?.palette?.[0], count: counts.a, side: left },
@@ -93,7 +188,46 @@ export function LiveFeedFilter({ left, right, value, counts, onChange, focusName
   );
 }
 
-function PlayDetail({ event, entry, side, scoringSettings, onOpenPlayer }) {
+/**
+ * The play drawn on a field, reusing the Statistics play-by-play visual.
+ *
+ * Only rendered when the event carries the provider's own play row — the feed's
+ * normalisation keeps a sentence, while the field needs down, distance and
+ * yards to the end zone. An event reconstructed from stat deltas has no such
+ * row and simply shows no field, rather than a fabricated one.
+ */
+function PlayFieldVisual({ event, side, scoringSettings, position }) {
+  const raw = event?.play?.raw;
+  const game = raw?.game ?? null;
+  const strip = useMemo(() => {
+    if (!raw) return null;
+    const normalized = normalizeBdlScorePlay(raw, game);
+    if (!normalized) return null;
+    const home = game?.home_team?.abbreviation ?? null;
+    const away = game?.visitor_team?.abbreviation ?? null;
+    if (!home || !away) return null;
+    return { normalized, home, away };
+  }, [game, raw]);
+
+  if (!strip) return null;
+  // A touchdown's points land when the ball is in, not along the way, so the
+  // ticker is told how much of the total is the score itself.
+  return (
+    <div className="fl-exp__field">
+      <DrivePlayback
+        plays={[strip.normalized]}
+        homeTeam={strip.home}
+        awayTeam={strip.away}
+        barColor={side.palette[0]}
+        fantasyStats={event.stats ?? null}
+        fantasyScoring={scoringSettings}
+        fantasyPosition={position}
+      />
+    </div>
+  );
+}
+
+function PlayDetail({ event, entry, side, scoringSettings, onOpenPlayer, showPlayField = false }) {
   const position = String(entry.row.player?.position ?? 'FLEX').toUpperCase();
   const meta = getLiveKindMeta(event.kind);
   const breakdown = useMemo(() => (
@@ -112,6 +246,14 @@ function PlayDetail({ event, entry, side, scoringSettings, onOpenPlayer }) {
 
   return (
     <div className="fl-exp" style={{ '--fl-team': side.palette[0] }}>
+      {showPlayField && (
+        <PlayFieldVisual
+          event={event}
+          side={side}
+          scoringSettings={scoringSettings}
+          position={position}
+        />
+      )}
       <div className="fl-exp__head">
         <span className="fl-exp__kind" style={{ color: meta.color }}>{getLiveEventLabel(event)}</span>
         {event.glance && (
@@ -182,6 +324,9 @@ export function LiveFeedList({
   selectionRequest = 0,
   onOpenPlayer,
   emptyMessage = 'No scoring plays yet.',
+  // The field visual is proven in the dev replay first; live scoring keeps its
+  // existing expanded row until it has been reviewed there.
+  showPlayField = false,
 }) {
   const [openId, setOpenId] = useState(null);
   const [flashId, setFlashId] = useState(null);
@@ -295,6 +440,7 @@ export function LiveFeedList({
             </button>
             {isOpen && (
               <PlayDetail
+                showPlayField={showPlayField}
                 event={event}
                 entry={entry}
                 side={side}

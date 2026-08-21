@@ -1,6 +1,7 @@
 import { NFL_SEASON_PHASES } from './espnNflScoreboard.js';
 import { reconcileProviderClockAnchor } from './providerAnchoredGameClock.js';
 import { NFL_SCOREBOARD_TIME_ZONE } from './statisticsScoresGrouping.js';
+import { NON_SNAP_SLUGS, getOffenseTeam, isTurnoverOnDowns } from './nflPlays/fieldGeometry.js';
 
 export const BDL_SEASON_TYPES = Object.freeze({
   [NFL_SEASON_PHASES.PRESEASON]: 1,
@@ -420,6 +421,31 @@ export function normalizeBdlScorePlay(play, game) {
     scoring: Boolean(play.scoring_play),
     score: formatPlayScore(play, game?.away?.id ?? 'AWAY', game?.home?.id ?? 'HOME'),
     wallclock: Date.parse(play.wallclock ?? '') || null,
+    // Structured fields carried through for the play narrative parser and the
+    // field/win-probability visuals. `*_yards_to_endzone`, `end_down_distance_text`,
+    // and `end_possession_text` are absent from BALLDONTLIE's published OpenAPI spec
+    // but present on every live play row, so every consumer must tolerate null.
+    typeSlug: firstString(play.type_slug, play.type_abbreviation),
+    shortText: firstString(play.short_text),
+    rawText: firstString(play.text, play.short_text),
+    startDown: asNumberOrNull(play.start_down),
+    startDistance: asNumberOrNull(play.start_distance),
+    endDown: asNumberOrNull(play.end_down),
+    endDistance: asNumberOrNull(play.end_distance),
+    startYardsToEndzone: asNumberOrNull(play.start_yards_to_endzone),
+    endYardsToEndzone: asNumberOrNull(play.end_yards_to_endzone),
+    // Absolute yard lines, measured from the home goal line. Unlike the
+    // `*_yards_to_endzone` pair above these never change frame, so the field
+    // graphics read position from them first.
+    startYardLine: asNumberOrNull(play.start_yard_line),
+    endYardLine: asNumberOrNull(play.end_yard_line),
+    startPossessionText: firstString(play.start_possession_text),
+    endPossessionText: firstString(play.end_possession_text),
+    endDownDistanceText: firstString(play.end_down_distance_text),
+    statYardage: asNumberOrNull(play.stat_yardage),
+    homeWinProbability: asNumberOrNull(play.home_win_probability),
+    awayScore: asScore(play.away_score),
+    homeScore: asScore(play.home_score),
   };
 }
 
@@ -460,49 +486,148 @@ function sortBdlPlaysChronologically(plays) {
     .map(({ play }) => play);
 }
 
+// Clock stoppages, and the kickoff that follows a score. None of them are
+// snaps the offense ran, so none of them belong in a drive's play count even
+// though they stay in the play list. The stoppages are shared with the field
+// graphics, which have to reject the same rows for the same reason.
+const UNCOUNTED_SLUGS = new Set([...NON_SNAP_SLUGS, 'kickoff']);
+
+function isCountedPlay(play) {
+  return !UNCOUNTED_SLUGS.has(String(play?.typeSlug ?? ''));
+}
+
+function countedPlays(plays) {
+  return plays.filter(isCountedPlay).length;
+}
+
+// Q1-Q2, Q3-Q4, then overtime. A drive can run across a quarter break but
+// never across halftime, and the provider's own end-of-half marker is filtered
+// out before grouping, so the period is the only thing left to split on.
+function halfOf(play) {
+  const period = Number(play?.period);
+  return Number.isFinite(period) && period >= 1 ? Math.ceil(period / 2) : null;
+}
+
+/**
+ * What the drive is called, from how it ended.
+ *
+ * A scoring drive is named by its scoring play, because the kickoff that
+ * follows the score now sits at the end of the drive that produced it. Every
+ * other drive is named by its last play, which since the grouping fix is the
+ * punt, the miss or the turnover that actually ended the possession rather
+ * than the opening play of the next one.
+ */
 function inferDriveResult(plays) {
+  // The scoring play's slug settles it before its text does. A touchdown's
+  // description is the highlight line — "Jared Wayne 5 Yd pass from Davis
+  // Mills" — and never contains the word, so reading only the text labelled
+  // every touchdown drive a plain "Drive".
   const scoringPlay = [...plays].reverse().find((play) => play.scoring);
-  const text = scoringPlay?.description ?? plays.at(-1)?.description ?? '';
+  const scoringSlug = String(scoringPlay?.typeSlug ?? '').toLowerCase();
+  const scoringText = scoringPlay?.description ?? '';
+  if (/touchdown/.test(scoringSlug) || /touchdown/i.test(scoringText)) return 'Touchdown';
+  if (/safety/.test(scoringSlug) || /safety/i.test(scoringText)) return 'Safety';
+  if (/field.?goal/.test(scoringSlug) || /field goal/i.test(scoringText)) return 'Field Goal';
+
+  // The play the possession actually ended on — not the clock stoppage that
+  // followed it, and not the kickoff that ends a scoring drive.
+  const finishing = [...plays].reverse().find(isCountedPlay) ?? plays.at(-1);
+  const text = finishing?.description ?? '';
   if (/touchdown/i.test(text)) return 'Touchdown';
-  if (/field goal/i.test(text)) return 'Field Goal';
-  if (/safety/i.test(text)) return 'Safety';
   if (/intercept/i.test(text)) return 'Interception';
   if (/fumble/i.test(text)) return 'Fumble';
+  // "No Good" has to be read before "field goal" or a miss reads as a make.
+  if (/no good|is blocked|blocked by/i.test(text)) return 'Missed FG';
+  if (/field goal/i.test(text)) return 'Field Goal';
   if (/punt/i.test(text)) return 'Punt';
-  if (/turnover on downs|downs/i.test(text)) return 'Downs';
+  // The provider never spells a turnover on downs out; the fourth down that
+  // came up short is the only record of it.
+  if (/turnover on downs|downs/i.test(text) || isTurnoverOnDowns(finishing)) return 'Downs';
+  if (/kneel|end of (?:half|game)/i.test(text)) {
+    return Number(finishing?.period) >= 4 ? 'End of game' : 'End of half';
+  }
   return 'Drive';
 }
 
+/**
+ * A drive is a possession, so it needs at least one play the offense ran.
+ *
+ * The kickoff that opens a half belongs to the kicking team but has no drive
+ * of theirs to end, so on its own it would stand as a one-play drive. Fold any
+ * group that is nothing but a kickoff and clock stoppages into the possession
+ * it leads into. Anything with a real play in it is a drive, including feeds
+ * that report no down and distance at all.
+ */
+function foldGroupsWithoutSnaps(groups) {
+  const isTransitionOnly = (group) => group.plays
+    .every((play) => UNCOUNTED_SLUGS.has(String(play?.typeSlug ?? '')));
+  const drives = [];
+  let pending = [];
+  groups.forEach((group) => {
+    if (isTransitionOnly(group)) {
+      pending.push(...group.plays);
+      return;
+    }
+    group.plays = [...pending, ...group.plays];
+    pending = [];
+    drives.push(group);
+  });
+  if (pending.length) {
+    if (drives.length) drives.at(-1).plays.push(...pending);
+    else drives.push({ team: groups[0]?.team ?? null, plays: pending });
+  }
+  return drives;
+}
+
+function describeDrive(group, index) {
+  const { plays } = group;
+  const scoringPlay = [...plays].reverse().find((play) => play.scoring);
+  const playCount = countedPlays(plays);
+  return {
+    id: `drive-${index + 1}`,
+    team: group.team,
+    quarter: plays.at(-1)?.quarter ?? plays[0]?.quarter ?? 'Game',
+    result: inferDriveResult(plays),
+    // Only a drive that actually scored carries a score. Every play reports the
+    // running score, so taking the latest one marked every drive as scoring.
+    score: scoringPlay?.score ?? '',
+    playCount,
+    summary: `${playCount} ${playCount === 1 ? 'play' : 'plays'}`,
+    plays,
+    // Field extrema so callers can size an axis without rescanning plays.
+    startYardsToEndzone: plays.find((play) => play.startYardsToEndzone != null)?.startYardsToEndzone ?? null,
+    endYardsToEndzone: [...plays].reverse().find((play) => play.endYardsToEndzone != null)?.endYardsToEndzone ?? null,
+  };
+}
+
 export function groupBdlPlaysIntoDrives(plays = [], game) {
+  const homeTeam = game?.home?.id ?? null;
+  const awayTeam = game?.away?.id ?? null;
   const normalized = sortBdlPlaysChronologically(plays)
     .filter((play) => !isPeriodBoundaryPlay(play))
     .map((play) => normalizeBdlScorePlay(play, game))
     .filter(Boolean);
-  const drives = [];
+
+  // Group by the team that ran each play, not by `team` — which names whoever
+  // finished with the ball. Grouping on `team` filed a punt under the returning
+  // side, so every drive opened with the previous possession's last play and
+  // ran two possessions long.
+  const groups = [];
   normalized.forEach((play) => {
-    const current = drives.at(-1);
-    const team = play.team ?? current?.team ?? game?.away?.id ?? 'NFL';
-    if (!current || current.team !== team) {
-      drives.push({
-        id: `drive-${drives.length + 1}`,
-        team,
-        quarter: play.quarter,
-        result: 'Drive',
-        score: play.score ?? '',
-        summary: '1 play',
-        plays: [play],
-      });
+    const current = groups.at(-1);
+    const team = getOffenseTeam(play, { homeTeam, awayTeam }) ?? current?.team ?? awayTeam ?? 'NFL';
+    const half = halfOf(play) ?? current?.half ?? null;
+    // Halftime always breaks the drive, even when the same offense takes the
+    // field on both sides of it — otherwise the second-half kickoff lands at
+    // the end of that team's last first-half possession.
+    if (!current || current.team !== team || current.half !== half) {
+      groups.push({ team, half, plays: [play] });
       return;
     }
     current.plays.push(play);
-    current.quarter = play.quarter;
-    current.score = play.score ?? current.score;
-    current.summary = `${current.plays.length} plays`;
   });
-  drives.forEach((drive) => {
-    drive.result = inferDriveResult(drive.plays);
-  });
-  return drives;
+
+  return foldGroupsWithoutSnaps(groups).map(describeDrive);
 }
 
 function isReported(value) {

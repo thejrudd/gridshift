@@ -329,6 +329,8 @@ export default function CompanionRankings({
   const [rankScope, setRankScope] = useState('overall');
   const [selectedRosterIds, setSelectedRosterIds] = useState(() => parseRosterFilter(rosterFilter));
   const [teamMenuOpen, setTeamMenuOpen] = useState(false);
+  const [selectedNflTeams, setSelectedNflTeams] = useState([]);
+  const [nflTeamMenuOpen, setNflTeamMenuOpen] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [imageExportOpen, setImageExportOpen] = useState(false);
   const searchInputRef = useRef(null);
@@ -483,20 +485,31 @@ export default function CompanionRankings({
 
   const allRanked = useMemo(() => rankPlayersByPosition(sortedPlayers), [sortedPlayers]);
 
-  // Apply position, fantasy team, and search filters on top of the ranked list - rank numbers are preserved from above.
+  const nflTeamOptions = useMemo(() => {
+    const teams = new Set(allRanked.map(p => p.team).filter(Boolean));
+    return [...teams].sort().map(team => ({ id: team, name: team }));
+  }, [allRanked]);
+  const selectedNflTeamSet = useMemo(() => new Set(selectedNflTeams), [selectedNflTeams]);
+  const selectedNflTeamOptions = useMemo(
+    () => nflTeamOptions.filter(option => selectedNflTeamSet.has(option.id)),
+    [nflTeamOptions, selectedNflTeamSet],
+  );
+
+  // Apply position, fantasy team, NFL team, and search filters on top of the ranked list - rank numbers are preserved from above.
   const ranked = useMemo(() => {
     const q = search.trim().toLowerCase();
     const filtered = allRanked.filter(p => {
       if (!selectedFiltersMatchPlayer(p.position, p.stats, selectedFilters, availablePositions)) return false;
       if (selectedRosterPlayerIds && !selectedRosterPlayerIds.has(String(p.id))) return false;
+      if (selectedNflTeamSet.size && !selectedNflTeamSet.has(p.team)) return false;
       if (!q) return true;
       return p.name.toLowerCase().includes(q) || p.team.toLowerCase().includes(q);
     }).map(player => ({
       ...player,
       rank: rankScope === 'position' ? player.positionRank : player.overallRank,
     }));
-    return selectedRosterIds.length || q ? filtered : filtered.slice(0, 100);
-  }, [allRanked, availablePositions, rankScope, search, selectedFilters, selectedRosterIds.length, selectedRosterPlayerIds]);
+    return selectedRosterIds.length || selectedNflTeamSet.size || q ? filtered : filtered.slice(0, 100);
+  }, [allRanked, availablePositions, rankScope, search, selectedFilters, selectedRosterIds.length, selectedRosterPlayerIds, selectedNflTeamSet]);
 
   const nameColPx = useMemo(() => measureMaxNameWidth(ranked), [ranked]);
   const hasLoadedStats = Boolean(seasonStats);
@@ -682,22 +695,43 @@ export default function CompanionRankings({
                 onSortValueModeChange={setSortValueMode}
               />
               <RankingsRankScopeToggle value={rankScope} onChange={setRankScope} />
+              {(rosterFilterOptions.length > 0 || nflTeamOptions.length > 0) && (
+                <div className="flex min-w-0 items-center gap-2">
+                  {rosterFilterOptions.length > 0 && (
+                    <CompanionFantasyTeamMenu
+                      open={teamMenuOpen}
+                      options={rosterFilterOptions}
+                      selectedIds={selectedRosterIds}
+                      selectedOptions={selectedRosterOptions}
+                      onOpenChange={(next) => { setTeamMenuOpen(next); if (next) setNflTeamMenuOpen(false); }}
+                      kicker="Fantasy Team"
+                      menuLabel="Fantasy team filter"
+                      className="flex-1"
+                      onChange={(nextRosterIds) => {
+                        setSelectedRosterIds(nextRosterIds);
+                        onRosterFilterChange?.(serializeRosterFilter(nextRosterIds));
+                      }}
+                    />
+                  )}
+                  {nflTeamOptions.length > 0 && (
+                    <CompanionFantasyTeamMenu
+                      open={nflTeamMenuOpen}
+                      options={nflTeamOptions}
+                      selectedIds={selectedNflTeams}
+                      selectedOptions={selectedNflTeamOptions}
+                      onOpenChange={(next) => { setNflTeamMenuOpen(next); if (next) setTeamMenuOpen(false); }}
+                      kicker="NFL Team"
+                      placeholder="All NFL Teams"
+                      allLabel="All NFL Teams"
+                      menuLabel="NFL team filter"
+                      pluralLabel="NFL Teams"
+                      className="flex-1"
+                      onChange={setSelectedNflTeams}
+                    />
+                  )}
+                </div>
+              )}
               <div className="flex min-w-0 items-center gap-2">
-                {rosterFilterOptions.length > 0 && (
-                  <CompanionFantasyTeamMenu
-                    open={teamMenuOpen}
-                    options={rosterFilterOptions}
-                    selectedIds={selectedRosterIds}
-                    selectedOptions={selectedRosterOptions}
-                    onOpenChange={setTeamMenuOpen}
-                    menuLabel="Fantasy team filter"
-                    className="flex-1"
-                    onChange={(nextRosterIds) => {
-                      setSelectedRosterIds(nextRosterIds);
-                      onRosterFilterChange?.(serializeRosterFilter(nextRosterIds));
-                    }}
-                  />
-                )}
                 <RankingsSearchIconButton
                   active={mobileSearchOpen || Boolean(search.trim())}
                   onClick={() => setMobileSearchOpen(current => !current)}
@@ -716,12 +750,28 @@ export default function CompanionRankings({
                   options={rosterFilterOptions}
                   selectedIds={selectedRosterIds}
                   selectedOptions={selectedRosterOptions}
-                  onOpenChange={setTeamMenuOpen}
+                  onOpenChange={(next) => { setTeamMenuOpen(next); if (next) setNflTeamMenuOpen(false); }}
+                  kicker="Fantasy Team"
                   menuLabel="Fantasy team filter"
                   onChange={(nextRosterIds) => {
                     setSelectedRosterIds(nextRosterIds);
                     onRosterFilterChange?.(serializeRosterFilter(nextRosterIds));
                   }}
+                />
+              )}
+              {nflTeamOptions.length > 0 && (
+                <CompanionFantasyTeamMenu
+                  open={nflTeamMenuOpen}
+                  options={nflTeamOptions}
+                  selectedIds={selectedNflTeams}
+                  selectedOptions={selectedNflTeamOptions}
+                  onOpenChange={(next) => { setNflTeamMenuOpen(next); if (next) setTeamMenuOpen(false); }}
+                  kicker="NFL Team"
+                  placeholder="All NFL Teams"
+                  allLabel="All NFL Teams"
+                  menuLabel="NFL team filter"
+                  pluralLabel="NFL Teams"
+                  onChange={setSelectedNflTeams}
                 />
               )}
               <RankingsSortSelect
