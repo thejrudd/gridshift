@@ -69,6 +69,7 @@ const FavoriteTeamPicker = lazy(() => import('./components/FavoriteTeamPicker'))
 const DisplaySettingsModal = lazy(() => import('./components/DisplaySettingsModal'));
 const LegalModal = lazy(() => import('./components/LegalModal'));
 const CompanionConnect = lazy(() => import('./components/companion/CompanionConnect'));
+import { LIVE_SANDBOX_ENABLED } from './dev/liveSandbox';
 const CompanionRankings = lazy(() => import('./components/companion/CompanionRankings'));
 const CompanionLive = lazy(() => import('./components/companion/CompanionLive'));
 const CompanionScoring = lazy(() => import('./components/companion/CompanionScoring'));
@@ -612,6 +613,13 @@ function AppInner() {
   const statisticsScheduleFilter = appRoute.statisticsScheduleFilter;
   const predictionsTeamId = appRoute.predictionsTeamId;
   const companionView = appRoute.companionView;
+
+  // The Fantasy Live dev sandbox supplies its own fixture league, so it renders
+  // without a connected one. Dev-only; compiled out of production builds.
+  const liveSandboxRoute = LIVE_SANDBOX_ENABLED
+    && activeTab === 'fantasy'
+    && companionView === 'live';
+
   const leagueView = appRoute.leagueView;
   const tradeView = appRoute.tradeView;
   const scoutView = appRoute.scoutView;
@@ -1375,7 +1383,7 @@ function AppInner() {
         )}
 
         {/* Fantasy sub-navigation */}
-        {activeTab === 'fantasy' && hasLeague && (
+        {activeTab === 'fantasy' && (hasLeague || liveSandboxRoute) && (
           <div className="season-subnav league-subnav">
             <div className="companion-subnav-row">
               <div className="min-w-0 flex-1">
@@ -1478,6 +1486,7 @@ function AppInner() {
           ref={contentAreaRef}
           className={[
             'content-area lg:px-8 pt-4 lg:pt-6',
+            activeTab === 'fantasy' && companionView === 'live' ? 'content-area--fantasy-live' : '',
             activeTab === 'draft' ? 'content-area--draft' : '',
             activeTab === 'draft' && draftView === 'war-room' ? 'content-area--draft-war-room' : '',
             activeTab === 'draft' && draftView === 'results' ? 'content-area--draft-results' : '',
@@ -1524,7 +1533,11 @@ function AppInner() {
 
           {activeTab === 'statistics' && statisticsView === 'scores' && (
             <Suspense fallback={<SectionLoading label="Loading scores" />}>
-              <StatisticsScores leagueId={selectedLeagueId} platform={platform} />
+              <StatisticsScores
+                leagueId={selectedLeagueId}
+                platform={platform}
+                tourDemoMode={tourDemoMode}
+              />
             </Suspense>
           )}
 
@@ -1587,7 +1600,7 @@ function AppInner() {
             </Suspense>
           )}
 
-          {(activeTab === 'fantasy' || activeTab === 'league') && !hasLeague && (
+          {(activeTab === 'fantasy' || activeTab === 'league') && !hasLeague && !liveSandboxRoute && (
             <Suspense fallback={<SectionLoading label="Loading connect" />}>
               <CompanionConnect />
             </Suspense>
@@ -1641,7 +1654,7 @@ function AppInner() {
             </Suspense>
           )}
 
-          {activeTab === 'fantasy' && hasLeague && (
+          {activeTab === 'fantasy' && (hasLeague || liveSandboxRoute) && (
             <>
               {companionView === 'rosters' && (
                 <Suspense fallback={<SectionLoading label="Loading Rosters" />}>

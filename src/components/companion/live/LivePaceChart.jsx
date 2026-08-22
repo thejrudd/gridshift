@@ -45,27 +45,28 @@ function formatZoom(value) {
 
 // The chart builds its geometry from the plot's real pixel width so text and
 // scrub maths never render through a stretched coordinate space.
-function useElementWidth(initial = 360) {
-  const [width, setWidth] = useState(initial);
+function useElementSize(initialWidth = 360) {
+  const [size, setSize] = useState({ width: initialWidth, height: 0 });
   const observerRef = useRef(null);
   const ref = useCallback((node) => {
     observerRef.current?.disconnect();
     observerRef.current = null;
     if (!node) return;
-    setWidth(node.clientWidth || initial);
+    setSize({ width: node.clientWidth || initialWidth, height: node.clientHeight || 0 });
     if (typeof ResizeObserver === 'undefined') return;
     const observer = new ResizeObserver((entries) => {
-      const next = entries[0]?.contentRect?.width;
-      if (next) setWidth(next);
+      const bounds = entries[0]?.contentRect;
+      if (!bounds?.width) return;
+      setSize({ width: bounds.width, height: bounds.height });
     });
     observer.observe(node);
     observerRef.current = observer;
-  }, [initial]);
+  }, [initialWidth]);
   useEffect(() => () => observerRef.current?.disconnect(), []);
-  return [ref, width];
+  return [ref, size];
 }
 
-function useChartHeight(width) {
+function useChartHeight(width, availableHeight) {
   const [desktop, setDesktop] = useState(
     () => typeof window !== 'undefined' && window.matchMedia?.('(min-width: 1024px)').matches,
   );
@@ -90,6 +91,7 @@ function useChartHeight(width) {
     };
   }, []);
   if (!desktop) return MOBILE_CHART_HEIGHT;
+  if (availableHeight > 0) return Math.max(1, Math.round(availableHeight));
   const viewportCap = Math.max(MOBILE_CHART_HEIGHT, viewportHeight * DESKTOP_CHART_VIEWPORT_RATIO);
   return Math.round(Math.min(
     DESKTOP_CHART_MAX_HEIGHT,
@@ -112,6 +114,10 @@ export default function LivePaceChart({
   onSelectMark,
   onReturnLive,
   collapsedSummary = false,
+  // 'projection' reserves headroom for each side's projected total; 'scoring'
+  // scales to points actually on the board. Only the dev sandbox passes
+  // anything but the default.
+  scaleMode = 'projection',
   liveWinProbA = 50,
   liveSettled = false,
   timelineMode = 'game',
@@ -119,15 +125,15 @@ export default function LivePaceChart({
 }) {
   const viewportNode = useRef(null);
   const pendingScrollFocus = useRef(null);
-  const [measureViewport, viewportWidth] = useElementWidth();
+  const [measureViewport, viewportSize] = useElementSize();
   const setViewportRef = useCallback((node) => {
     viewportNode.current = node;
     measureViewport(node);
   }, [measureViewport]);
   const [zoom, setZoomValue] = useState(MIN_ZOOM);
   const zoomRef = useRef(MIN_ZOOM);
-  const width = Math.max(1, Math.round(viewportWidth * zoom));
-  const height = useChartHeight(viewportWidth);
+  const width = Math.max(1, Math.round(viewportSize.width * zoom));
+  const height = useChartHeight(viewportSize.width, viewportSize.height);
   const [dragging, setDragging] = useState(false);
   const [activeMark, setActiveMark] = useState(null);
   const scrubbedTo = useRef(null);
@@ -161,17 +167,28 @@ export default function LivePaceChart({
   const markedMax = marks.reduce((highest, mark) => (
     Math.max(highest, Number.isFinite(Number(mark.y)) ? Number(mark.y) : 0)
   ), 0);
-  const maxY = Math.max(
+  // Actual scoring always has to fit, whichever way the axis is anchored.
+  const scoredCeiling = Math.max(
     left.pace.total,
     right.pace.total,
-    left.pace.projected,
-    right.pace.projected,
-    left.pace.liveProjected,
-    right.pace.liveProjected,
     plottedMax,
     markedMax,
     1,
-  ) * 1.2;
+  );
+  // The leading projection is the chart's reference point, so it is pinned to
+  // the top of the plot: its ray lands in the top-right corner and stays there
+  // while its value moves. Adding headroom above it, or letting the axis grow
+  // past it, means a rising projection silently shrinks everything already
+  // drawn — the scoring history appears to flatten even though nothing about
+  // it changed.
+  // The gutter label reads liveProjected — current points plus what is still
+  // expected — so the ray and the ceiling must use the same number, or the ray
+  // cannot sit where the label says it lands.
+  const projectedCeiling = Math.max(left.pace.liveProjected, right.pace.liveProjected);
+  const maxY = scaleMode === 'scoring'
+    // Scoring scale ignores projections entirely; the rays run off the top.
+    ? scoredCeiling * 1.2
+    : Math.max(projectedCeiling, scoredCeiling);
   const xAt = (value) => PAD_LEFT + (value / xMax) * innerWidth;
   const yAt = (value) => PAD_TOP + innerHeight - (Math.max(0, value) / maxY) * innerHeight;
   const nowX = xAt(slateProgress);
@@ -194,13 +211,22 @@ export default function LivePaceChart({
 
   // Projection labels sit in the right gutter; nudge them apart when the two
   // pace rays finish close together.
-  let labelA = yAt(left.pace.projected);
-  let labelB = yAt(right.pace.projected);
+  let labelA = yAt(left.pace.liveProjected);
+  let labelB = yAt(right.pace.liveProjected);
   if (Math.abs(labelA - labelB) < 15) {
     const push = (15 - Math.abs(labelA - labelB)) / 2;
     if (labelA <= labelB) { labelA -= push; labelB += push; } else { labelA += push; labelB -= push; }
   }
-  const labelY = { a: Math.max(PAD_TOP + 9, labelA), b: Math.max(PAD_TOP + 9, labelB) };
+  labelA = Math.max(PAD_TOP + 9, labelA);
+  labelB = Math.max(PAD_TOP + 9, labelB);
+  // Clamping can collapse both labels onto the ceiling when the pace rays
+  // finish above the plotted area — the symmetric nudge above cannot separate
+  // them there, so push the lower one clear instead.
+  if (Math.abs(labelA - labelB) < 15) {
+    if (labelA <= labelB) labelB = labelA + 15;
+    else labelA = labelB + 15;
+  }
+  const labelY = { a: labelA, b: labelB };
 
   // Track the pointer continuously along the visible paths. A score dot only
   // captures the tracker when the pointer enters its two-dimensional radius;
@@ -276,7 +302,7 @@ export default function LivePaceChart({
           0,
           Number(selection?.x ?? hover?.x ?? slateProgress) || 0,
         )),
-        offset: (viewport?.clientWidth ?? viewportWidth) / 2,
+        offset: (viewport?.clientWidth ?? viewportSize.width) / 2,
       };
     } else if (viewport?.scrollWidth) {
       pendingScrollFocus.current = {
@@ -578,7 +604,7 @@ export default function LivePaceChart({
             x1={xAt(0)}
             y1={baseY}
             x2={xAt(xMax)}
-            y2={yAt(side.pace.projected)}
+            y2={yAt(side.pace.liveProjected)}
             stroke={side.palette[0]}
             strokeWidth="1.2"
             strokeDasharray="2 4"

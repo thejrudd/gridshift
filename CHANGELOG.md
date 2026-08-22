@@ -1233,3 +1233,16 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Fantasy Rosters columns** - Centered the Season and Avg/G headers over their own values, stopped them overlapping on phones, and kept availability designations from shifting values out of alignment.
 - **Fantasy week boundaries** - Limited player drilldown Fantasy Values to weeks the connected league actually plays a matchup in, instead of always running through week 18.
 - **Regression coverage** - Added unit coverage for schedule strength, projected draft selection, league season week boundaries, fantasy value ranks, and yardage-tier bonuses.
+
+## v8.6.0 - Play-by-Play Presentation
+*2026-08-22*
+
+- **Statistics Scores play-by-play** - Added plain-language play presentation, latest-play context, drive summaries, field-position graphics, and an animated drive replay covering passes, runs, scoring plays, kicks, turnovers, penalties, and possession changes.
+- **Field-aware drive presentation** - Corrected team abbreviations, possession changes, drive yardage, interception and penalty direction, and quarter-by-quarter field orientation so static and animated play graphics follow the game as it was played.
+- **Fantasy Live Alpha replay reliability** - Kept replay scoring aligned with the selected moment, preserved every contributor on shared NFL plays, limited displayed fantasy impact to the viewer's side, and synchronized touchdown timing with the on-field replay.
+- **Fantasy Live narration and controls** - Brought the shared plain-language play narrative into Fantasy Live, improved starter attribution for compound plays, kept scoring breakdowns available for provider and snapshot events, and made feed filters and replay selection more dependable.
+- **Live Scores snapshot cohesion** - Coordinated Statistics Scores cards, drilldowns, clocks, and Latest Play around shared server snapshots so related live surfaces are less likely to represent different provider moments.
+- **Optional preseason ADP** - Added server-only BALLDONTLIE preseason ADP enrichment for Fantasy Rankings and Draft tools when the deployment's provider tier supports it. Local Sleeper identity, connected-league rules, and in-season scoring remain authoritative; unavailable enrichment leaves the core experience intact.
+- **Draft and player discovery improvements** - Tightened draft-pool eligibility, ranking and priority inputs, and player search parsing so Draft recommendations and player results better respect the active league and query.
+- **Desktop legibility** - Improved semantic type, density, control, frame, sticky-surface, and modal behavior across laptop, short-height, and wide-monitor layouts while retaining the user's display-size preference.
+- **Regression coverage and architecture docs** - Expanded unit and end-to-end coverage for play narration, playback, replay scoring, shared live snapshots, provider clocks, Scores sources, ADP boundaries, Draft behavior, search, and season availability, with supporting architecture and design references.

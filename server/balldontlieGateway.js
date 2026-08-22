@@ -11,27 +11,27 @@ const TIER_PROFILES = Object.freeze({
   free: Object.freeze({
     tier: 'free',
     requestsPerMinute: 5,
-    capabilities: Object.freeze({ games: true, stats: false, teamStats: false, plays: false }),
+    capabilities: Object.freeze({ games: true, stats: false, teamStats: false, plays: false, fantasy: false }),
   }),
   'all-star': Object.freeze({
     tier: 'all-star',
     requestsPerMinute: 60,
-    capabilities: Object.freeze({ games: true, stats: true, teamStats: true, plays: false }),
+    capabilities: Object.freeze({ games: true, stats: true, teamStats: true, plays: false, fantasy: false }),
   }),
   goat: Object.freeze({
     tier: 'goat',
     requestsPerMinute: 600,
-    capabilities: Object.freeze({ games: true, stats: true, teamStats: true, plays: true }),
+    capabilities: Object.freeze({ games: true, stats: true, teamStats: true, plays: true, fantasy: true }),
   }),
   trial: Object.freeze({
     tier: 'trial',
     requestsPerMinute: 5,
-    capabilities: Object.freeze({ games: true, stats: true, teamStats: true, plays: true }),
+    capabilities: Object.freeze({ games: true, stats: true, teamStats: true, plays: true, fantasy: true }),
   }),
   unknown: Object.freeze({
     tier: 'unknown',
     requestsPerMinute: 5,
-    capabilities: Object.freeze({ games: false, stats: false, teamStats: false, plays: false }),
+    capabilities: Object.freeze({ games: false, stats: false, teamStats: false, plays: false, fantasy: false }),
   }),
 });
 
@@ -309,8 +309,8 @@ export function createBalldontlieGateway({
       if (Array.isArray(payload?.data)) data.push(...payload.data);
       else if (payload?.data != null) data.push(payload.data);
       meta = payload?.meta ?? null;
-      const nextCursor = Number.parseInt(String(meta?.next_cursor ?? ''), 10);
-      if (!Number.isInteger(nextCursor) || nextCursor <= 0) break;
+      const nextCursor = String(meta?.next_cursor ?? '').trim();
+      if (!nextCursor || nextCursor === String(cursor ?? '')) break;
       cursor = nextCursor;
     }
     return { payload: { data, meta }, pageCount };

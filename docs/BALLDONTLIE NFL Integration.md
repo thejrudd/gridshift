@@ -82,7 +82,11 @@ The `plays` endpoint opens some more advanced ideas:
 
 GridShift already consumes play rows for provider-backed drilldowns and Fantasy Live. The shared gateway makes that usage capability-aware and quota-safe rather than expanding it into betting-adjacent features.
 
-BALLDONTLIE exposes individual play rows through `plays`; it does not document a separate NFL drive object in the public NFL API. GridShift can group adjacent plays by possession team for presentation, but those drive boundaries are an application-derived view rather than provider-authored drive records.
+BALLDONTLIE exposes individual play rows through `plays`; it does not document a separate NFL drive object in the public NFL API. GridShift groups adjacent plays into drives for presentation, but those boundaries are an application-derived view rather than provider-authored drive records.
+
+A play's `team` names whoever is in possession **when the play is over**, not the offense that ran it. On a kick or a turnover those are different teams — a punt is reported under the returners, an interception under the defense that caught it. The yardage fields follow the same rule: `start_yards_to_endzone` is measured from the offense, `end_yards_to_endzone` from whoever finished with the ball. Grouping on `team` therefore filed each possession's last play at the top of the next drive. `getOffenseTeam()` in `src/utils/nflPlays/fieldGeometry.js` is the single owner of that correction; nothing else should read `team` as the offense.
+
+`start_yards_to_endzone` is additionally unreliable on punts — some rows are offense-framed and some receiver-framed — which is why kick geometry is parsed from the play description rather than the numeric fields.
 
 ## Technical Fit
 
@@ -122,7 +126,22 @@ Starting policy is tier-sensitive: Free cannot power provider-backed fantasy sco
 
 The provider says in-progress Games data is updated in real time, but the published NFL Game schema does not guarantee a dedicated current clock or clock-running flag. Play rows include `clock_display` and `wallclock`, which describe an event rather than a continuously running clock.
 
-Live preseason verification found the current game clock encoded in the Games `status` text, while multiple one-second responses could repeat the same value. GridShift therefore treats that value as an anchor: the UI animates a one-second display for at most ten seconds, accepts each provider correction, and freezes at stoppage/safety boundaries or when the anchor becomes stale. That display remains an approximation; it is not a provider-authored second-by-second clock.
+Live preseason verification found the current game clock encoded in the Games `status` text, while multiple one-second responses could repeat the same value. GridShift combines that Games value with the newest canonical Play `clock_display`, rejects older progress, and displays only the provider-verified result. Repeated provider values remain repeated on screen rather than being presented as a fabricated second-by-second clock.
+
+## Play Row Fields
+
+The `plays` payload was captured against live data on 2026-08-17 and is committed as `tests/fixtures/bdlNflPlays.json` (two complete games, 349 plays). Consumers should read that fixture rather than re-deriving field shapes by inspection.
+
+Documented in the OpenAPI spec: `id`, `game`, `type_slug`, `type_abbreviation`, `type_text`, `text`, `short_text`, `away_score`, `home_score`, `scoring_play`, `period`, `clock_display`, `team`, `start_yard_line`, `start_down`, `start_distance`, `end_yard_line`, `end_down`, `end_distance`, `stat_yardage`, `home_win_probability`, `wallclock`.
+
+Present on every live row but **absent from the published spec**, so every consumer must tolerate them being missing: `start_yards_to_endzone`, `end_yards_to_endzone`, `end_down_distance_text`, `end_short_down_distance_text`, `end_possession_text`. In practice `start_possession_text` is never populated, and `end_yards_to_endzone` is null on touchdowns and made field goals because the ball left the field of play.
+
+Two properties are load-bearing for the Statistics play-by-play presentation and worth stating explicitly:
+
+- `short_text` carries **full player names** where `text` only carries initials and surnames. It is the only reliable source for identifying who was involved in a play, because play rows contain no player IDs of any kind.
+- Play IDs embed the ESPN event ID as their leading nine digits, which is how GridShift resolves participants to headshots. Verified across three games. This is an observed property, not a documented contract; the derived ID is validated against the game's team abbreviations before use, and photos are skipped rather than guessed when validation fails.
+
+Field position agrees between the numeric `end_yards_to_endzone` and the provider's own `end_possession_text` on all 314 fixture plays carrying both, including kicks and turnovers, once each is interpreted relative to the possessing team.
 
 ## Risks / Unknowns
 

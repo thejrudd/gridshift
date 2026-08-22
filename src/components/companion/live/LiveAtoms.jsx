@@ -2,18 +2,15 @@
 // the play-type glyphs, and the position chip. The vocabulary they draw from
 // lives in liveVisuals.js.
 
-import { useState } from 'react';
 import { ArrowUUpLeftIcon } from '@phosphor-icons/react/ArrowUUpLeft';
 import { FootballIcon } from '@phosphor-icons/react/Football';
 import { PersonSimpleRunIcon } from '@phosphor-icons/react/PersonSimpleRun';
 import { ShieldIcon } from '@phosphor-icons/react/Shield';
 import {
-  getCompanionInitials,
   getCompanionPositionColor,
   getPositionTextColor,
 } from '../../../utils/companionAssetVisuals.js';
-import { getSleeperPlayerName } from '../../../utils/liveScoringFeed.js';
-import { getLiveImageSources, getLiveKindMeta } from './liveVisuals.js';
+import { getLiveKindMeta } from './liveVisuals.js';
 
 const PHOSPHOR_GLYPHS = {
   def: ShieldIcon,
@@ -22,34 +19,13 @@ const PHOSPHOR_GLYPHS = {
   return: ArrowUUpLeftIcon,
 };
 
-/** Round player image with headshot → team mark → initials fallback. */
-export function LiveAvatar({ player = {}, size = 46, background, className = '' }) {
-  const [failed, setFailed] = useState({ key: '', count: 0 });
-  const { urls, logoIndex } = getLiveImageSources(player);
-  const key = urls.join('|');
-  const index = failed.key === key ? failed.count : 0;
-  const url = urls[index] ?? null;
-  const isMark = logoIndex >= 0 && index >= logoIndex;
-
-  return (
-    <span className={`fl-av ${className}`} style={{ width: size, height: size, background }} aria-hidden="true">
-      {url ? (
-        <img
-          src={url}
-          alt=""
-          loading="lazy"
-          draggable="false"
-          className={isMark ? 'is-mark' : ''}
-          onError={() => setFailed({ key, count: index + 1 })}
-        />
-      ) : (
-        <span className="fl-av__initials" style={{ fontSize: Math.round(size * 0.32) }}>
-          {getCompanionInitials(getSleeperPlayerName(player))}
-        </span>
-      )}
-    </span>
-  );
-}
+/**
+ * Round player image with headshot → team mark → initials fallback.
+ *
+ * Re-exported from the shared component so Statistics play-by-play can use the
+ * same avatar. Fantasy Live call sites keep importing `LiveAvatar` from here.
+ */
+export { PlayerAvatar as LiveAvatar } from '../../shared/PlayerAvatar.jsx';
 
 export function LiveGlyph({ glyph, mark = '', size = 11, color = '#fff' }) {
   const stroke = { stroke: color, strokeWidth: 1.9, fill: 'none', strokeLinecap: 'round', strokeLinejoin: 'round' };

@@ -206,6 +206,7 @@ export function CompanionFantasyTeamMenu({
   placeholder = 'All Teams',
   kicker = 'Team',
   menuLabel = 'Fantasy team selector',
+  pluralLabel = 'Fantasy Teams',
   className = '',
 }) {
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
@@ -216,7 +217,7 @@ export function CompanionFantasyTeamMenu({
     ? placeholder
     : resolvedSelectedOptions.length === 1
       ? resolvedSelectedOptions[0].name
-      : `${resolvedSelectedOptions.length} Fantasy Teams`;
+      : `${resolvedSelectedOptions.length} ${pluralLabel}`;
 
   const commitSelection = (nextIds) => {
     onChange?.(nextIds);

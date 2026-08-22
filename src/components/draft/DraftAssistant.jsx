@@ -4,6 +4,7 @@ import { getDraft, getDraftPicks, getDraftTradedPicks, getLeagueDrafts, getUserB
 import { useSleeperBase } from '../../context/SleeperContext.jsx';
 import { useTheme } from '../../context/ThemeContext.jsx';
 import { fetchLeagueLogsMarketForLeague, formatLeagueLogsMarketProfile } from '../../api/leagueLogsApi.js';
+import { getFantasyAdp } from '../../api/fantasyAdpApi.js';
 import useMediaQuery from '../../hooks/useMediaQuery.js';
 import { useUpcomingScheduleMap } from '../../hooks/useUpcomingScheduleMap.js';
 import CompanionPlayerRow, {
@@ -21,6 +22,7 @@ import {
 } from '../../utils/companionAssetVisuals.js';
 import { buildDraftBlueprintSummaries } from '../../utils/leagueHistory.js';
 import { getTeamVisualTheme } from '../../utils/teamVisualTheme.js';
+import { getFantasyAdpSnapshotUpdatedAt, mapFantasyAdpToSleeperPlayers } from '../../utils/fantasyAdp.js';
 import { isLeagueSeasonComplete } from '../../utils/draftPickDisplay.js';
 import {
   getPlayerAvailabilityContext,
@@ -111,6 +113,7 @@ const DRAFT_BOARD_CARD_METRIC_OPTIONS = [
   { id: 'none', label: 'None' },
   { id: 'sleeper', label: 'Rank' },
   { id: 'rating', label: 'Rate' },
+  { id: 'adp', label: 'ADP' },
   { id: 'ppg', label: 'PPG' },
   { id: 'volume', label: 'Vol' },
   { id: 'tier', label: 'Tier' },
@@ -148,16 +151,17 @@ const draftObjectCacheTokens = new WeakMap();
 let draftObjectCacheTokenCounter = 0;
 const BIG_BOARD_SORT_COLUMNS = [
   { key: 'player', label: 'Player', defaultDirection: 'asc' },
-  { key: 'rank', label: 'Sleeper', defaultDirection: 'asc' },
-  { key: 'rating', label: 'Rating', defaultDirection: 'desc' },
+  { key: 'rank', label: 'Market Rank', headerLines: ['Market', 'Rank'], defaultDirection: 'asc' },
+  { key: 'rating', label: 'GridShift Rating', headerLines: ['GridShift', 'Rating'], defaultDirection: 'desc' },
+  { key: 'adp', label: 'ADP', defaultDirection: 'asc' },
   { key: 'ppg', label: 'PPG', defaultDirection: 'desc' },
   { key: 'volume', label: 'Vol', defaultDirection: 'desc' },
   { key: 'tier', label: 'Tier', defaultDirection: 'asc' },
   { key: 'trend', label: 'Trend', defaultDirection: 'desc' },
 ];
-const BIG_BOARD_ROW_GRID_TEMPLATE = '34px 32px minmax(220px,1.2fr) 32px minmax(390px,2fr) 16px 76px';
+const BIG_BOARD_ROW_GRID_TEMPLATE = 'var(--draft-big-board-row-grid)';
 const BIG_BOARD_COMPACT_ROW_GRID_TEMPLATE = BIG_BOARD_ROW_GRID_TEMPLATE;
-const BIG_BOARD_METRIC_GRID_TEMPLATE = 'repeat(6, minmax(50px, 1fr))';
+const BIG_BOARD_METRIC_GRID_TEMPLATE = 'var(--draft-big-board-metric-grid)';
 const FUTURE_VIEW_LABELS = {
   gauntlet: 'Gauntlet',
   'tiers-runs': 'Tiers/Runs',
@@ -199,7 +203,9 @@ function getDraftObjectCacheToken(value) {
   if (value instanceof Map) {
     if (value.size === 0) return 'map:0';
     const sample = [...value.entries()].sort(([a], [b]) => String(a).localeCompare(String(b))).slice(0, 12).map(([key, entry]) => {
-      const rank = entry?.overallRank ?? entry?.rank ?? entry?.searchRank ?? entry?.value ?? '';
+      const rank = typeof entry === 'number' || typeof entry === 'string'
+        ? entry
+        : entry?.overallRank ?? entry?.rank ?? entry?.searchRank ?? entry?.averageDraftPosition ?? entry?.average_draft_position ?? entry?.adp ?? entry?.value ?? '';
       return `${String(key)}=${String(rank)}`;
     }).join('|');
     return `map:${value.size}:${sample}`;
@@ -255,6 +261,7 @@ function getDraftViewModelCacheKey({
   season,
   boardIds,
   marketValuesByPlayerId,
+  adpByPlayerId,
   seasonStats,
   weeklyStats,
   scheduleMap,
@@ -273,6 +280,7 @@ function getDraftViewModelCacheKey({
     String(season ?? ''),
     (boardIds ?? []).map((id) => String(id)).join(','),
     getDraftObjectCacheToken(marketValuesByPlayerId),
+    getDraftObjectCacheToken(adpByPlayerId),
     getDraftObjectCacheToken(seasonStats),
     getDraftObjectCacheToken(weeklyStats),
     getDraftObjectCacheToken(scheduleMap),
@@ -790,12 +798,14 @@ function getPlayerName(player) {
 
 function getDraftProjectionReason(player) {
   const components = player?.draftModel?.components ?? {};
+  const weights = player?.draftModel?.weights ?? DEFAULT_DRAFT_MODEL_WEIGHTS;
   const weightedSignals = [
-    { key: 'rosterNeed', label: 'Need fit', value: components.rosterNeed, weight: DEFAULT_DRAFT_MODEL_WEIGHTS.rosterNeed },
-    { key: 'marketRank', label: 'Market value', value: components.marketRank, weight: DEFAULT_DRAFT_MODEL_WEIGHTS.marketRank },
-    { key: 'pastProduction', label: 'PPG edge', value: components.pastProduction, weight: DEFAULT_DRAFT_MODEL_WEIGHTS.pastProduction },
-    { key: 'scoringFit', label: 'Scoring fit', value: components.scoringFit, weight: DEFAULT_DRAFT_MODEL_WEIGHTS.scoringFit },
-    { key: 'schedule', label: 'Schedule', value: components.schedule, weight: DEFAULT_DRAFT_MODEL_WEIGHTS.schedule },
+    { key: 'rosterNeed', label: 'Need fit', value: components.rosterNeed, weight: weights.rosterNeed },
+    { key: 'marketRank', label: 'Market value', value: components.marketRank, weight: weights.marketRank },
+    { key: 'adp', label: 'ADP value', value: components.adp, weight: weights.adp },
+    { key: 'pastProduction', label: 'PPG edge', value: components.pastProduction, weight: weights.pastProduction },
+    { key: 'scoringFit', label: 'Scoring fit', value: components.scoringFit, weight: weights.scoringFit },
+    { key: 'schedule', label: 'Schedule', value: components.schedule, weight: weights.schedule },
   ]
     .filter((signal) => Number.isFinite(signal.value) && signal.weight > 0)
     .map((signal) => ({ ...signal, weightedValue: signal.value * signal.weight }))
@@ -834,6 +844,8 @@ function getBigBoardSortValue(player, sortKey, originalIndex = 0) {
       return player?.rank?.overallRank ?? player?.projection?.fallbackRank ?? player?.projection?.searchRank ?? null;
     case 'rating':
       return player?.draftModel?.score ?? null;
+    case 'adp':
+      return player?.adp ?? null;
     case 'ppg':
       return player?.scoringFit?.pastPpg ?? player?.workload?.ppg ?? null;
     case 'volume':
@@ -886,28 +898,35 @@ function getMarketSortValue(player) {
 function getBigBoardMetrics(player) {
   return [
     {
-      key: 'overall-rank',
+      key: 'market',
       value: formatRankMetric(player?.rank?.overallRank ?? player?.projection?.fallbackRank),
-      label: player?.rank?.sourceLabel === 'Sleeper search rank' ? 'Search' : 'Rank',
+      label: null,
       title: player?.rank?.sourceLabel ?? 'Overall or market rank',
       align: 'center',
     },
     {
-      key: 'model-score',
+      key: 'rating',
       value: formatDecimalMetric(player?.draftModel?.score),
-      label: 'Rating',
-      title: 'GridShift Draft Rating from market rank, past PPG, scoring fit, and roster need',
+      label: null,
+      title: 'GridShift Draft Rating from market rank, past PPG, scoring fit, roster need, and any opted-in BALLDONTLIE ADP priority',
       align: 'center',
     },
     {
-      key: 'past-ppg',
+      key: 'adp',
+      value: formatRankMetric(player?.adp),
+      label: null,
+      title: 'BALLDONTLIE average draft position',
+      align: 'center',
+    },
+    {
+      key: 'ppg',
       value: formatDecimalMetric(player?.scoringFit?.pastPpg ?? player?.workload?.ppg),
-      label: 'PPG',
+      label: null,
       title: 'Past-season fantasy points per game in this league scoring',
       align: 'center',
     },
     {
-      key: 'workload',
+      key: 'volume',
       value: formatIntegerMetric(player?.workload?.primaryVolume),
       label: player?.position === 'QB' ? 'Att' : player?.position === 'RB' ? 'Touch' : 'Vol',
       title: 'Primary workload volume from available season stats',
@@ -916,14 +935,14 @@ function getBigBoardMetrics(player) {
     {
       key: 'tier',
       value: player?.rank?.tier ? `T${player.rank.tier}` : '—',
-      label: 'Tier',
+      label: null,
       title: 'Rank-derived tier',
       align: 'center',
     },
     {
       key: 'trend',
       value: formatTrendMetric(player?.rank?.trend ?? player?.workload?.trend),
-      label: 'Trend',
+      label: null,
       title: player?.rank?.trend?.label ?? player?.workload?.trend?.label ?? 'Trend',
       align: 'center',
     },
@@ -955,6 +974,18 @@ function getDraftBoardCardMetric(player, metricKey) {
         ),
         label: null,
         title: 'GridShift Draft Rating from market rank, past PPG, scoring fit, and roster need',
+      };
+    case 'adp':
+      return {
+        key: 'adp',
+        value: (
+          <DraftBoardMetricValue
+            label="ADP"
+            value={formatRankMetric(player?.adp)}
+          />
+        ),
+        label: null,
+        title: 'BALLDONTLIE average draft position',
       };
     case 'ppg':
       return {
@@ -1899,6 +1930,7 @@ function DraftPlayerRow({
           align={metric.align}
           tone={metric.tone}
           compact
+          className={`draft-player-row__metric--${metric.key}`}
         />
       ))}
       status={status}
@@ -1966,6 +1998,29 @@ function LeagueLogsAttribution({ attribution, profileKey, profile, lastRefreshed
   );
 }
 
+function getFantasyAdpRows(response) {
+  const payload = response?.data ?? response;
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.data)) return payload.data;
+  if (Array.isArray(payload?.rows)) return payload.rows;
+  if (Array.isArray(response?.rows)) return response.rows;
+  return [];
+}
+
+function FantasyAdpAttribution({ matchedPlayerCount, lastUpdated }) {
+  if (!matchedPlayerCount) return null;
+  const details = lastUpdated
+    ? `Updated ${new Date(lastUpdated).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`
+    : 'Market snapshot';
+
+  return (
+    <div className="draft-market-attribution">
+      <a href="https://www.balldontlie.io/" target="_blank" rel="noopener noreferrer">BALLDONTLIE ADP</a>
+      <span>{details}</span>
+    </div>
+  );
+}
+
 function haveSameSetValues(previousSet, nextSet) {
   if (previousSet === nextSet) return true;
   if (!previousSet || !nextSet || previousSet.size !== nextSet.size) return false;
@@ -2001,6 +2056,7 @@ const BigBoard = memo(function BigBoard({
   availabilityOptions,
   onAvailabilityFilterChange,
   statsLoading,
+  pastPpgSeason,
   modelWeights,
   onModelWeightChange,
   onResetModelWeights,
@@ -2025,6 +2081,30 @@ const BigBoard = memo(function BigBoard({
       };
     });
   };
+  const renderColumnLabel = (column) => {
+    if (column.key === 'ppg') {
+      return (
+        <span className="draft-big-board-header__label">
+          <span>{pastPpgSeason ?? 'Past'}</span>
+          <span>PPG</span>
+        </span>
+      );
+    }
+    if (column.key === 'volume') {
+      return (
+        <span className="draft-big-board-header__label">
+          <span className="draft-big-board-header__volume-wide">Volume</span>
+          <span className="draft-big-board-header__volume-compact">Vol</span>
+        </span>
+      );
+    }
+    const lines = column.headerLines ?? [column.label];
+    return (
+      <span className="draft-big-board-header__label">
+        {lines.map((line) => <span key={line}>{line}</span>)}
+      </span>
+    );
+  };
   const renderSortButton = (column, className = '') => {
     const active = sortState.key === column.key;
     const direction = active ? sortState.direction : column.defaultDirection;
@@ -2036,7 +2116,7 @@ const BigBoard = memo(function BigBoard({
       <button
         key={column.key}
         type="button"
-        className={[className, active ? 'is-active' : ''].filter(Boolean).join(' ')}
+        className={[className, `draft-big-board-header__metric--${column.key}`, active ? 'is-active' : ''].filter(Boolean).join(' ')}
         onClick={() => setSortColumn(column)}
         aria-label={active
           ? `${column.label}, sorted ${currentDirection}. Activate to sort ${nextDirection}.`
@@ -2044,7 +2124,7 @@ const BigBoard = memo(function BigBoard({
         aria-sort={active ? (direction === 'asc' ? 'ascending' : 'descending') : 'none'}
         title={active ? `Sorted ${currentDirection}` : `Sort by ${column.label}`}
       >
-        <span className="draft-big-board-header__label">{column.label}</span>
+        {renderColumnLabel(column)}
         <span aria-hidden="true" className="draft-big-board-header__sort">
           {direction === 'asc' ? '↑' : '↓'}
         </span>
@@ -2164,6 +2244,7 @@ const BigBoard = memo(function BigBoard({
   && previous.availabilityOptions === next.availabilityOptions
   && previous.onAvailabilityFilterChange === next.onAvailabilityFilterChange
   && previous.statsLoading === next.statsLoading
+  && previous.pastPpgSeason === next.pastPpgSeason
   && previous.modelWeights === next.modelWeights
   && previous.onModelWeightChange === next.onModelWeightChange
   && previous.onResetModelWeights === next.onResetModelWeights
@@ -3413,6 +3494,12 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
     lastRefreshed: null,
     valuesByPlayerId: new Map(),
   });
+  const [adpState, setAdpState] = useState({
+    loading: false,
+    error: '',
+    lastUpdated: null,
+    valuesByPlayerId: new Map(),
+  });
   const marketDraftContext = useMemo(() => ({
     metadata: { scoring_type: draftMeta?.metadata?.scoring_type },
     settings: { slots_qb: draftMeta?.settings?.slots_qb },
@@ -3505,6 +3592,10 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
     () => getDraftStatsSeason(draftMeta?.season ?? season),
     [draftMeta?.season, season],
   );
+  const fantasyAdpSeason = useMemo(
+    () => String(draftMeta?.season ?? season ?? '').trim(),
+    [draftMeta?.season, season],
+  );
 
   useEffect(() => {
     if (!draftStatsSeason || !loadStatsForSeason) {
@@ -3584,6 +3675,49 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
     activeScoringSettings,
     marketDraftContext,
   ]);
+
+  useEffect(() => {
+    if (!fantasyAdpSeason || !players || Object.keys(players).length === 0) {
+      setAdpState({
+        loading: false,
+        error: '',
+        lastUpdated: null,
+        valuesByPlayerId: new Map(),
+      });
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    let cancelled = false;
+    setAdpState((current) => ({ ...current, loading: true, error: '' }));
+
+    getFantasyAdp({ season: fantasyAdpSeason, signal: controller.signal })
+      .then((response) => {
+        if (cancelled) return;
+        const adpRows = getFantasyAdpRows(response);
+        const mapped = mapFantasyAdpToSleeperPlayers({ players, adpRows });
+        setAdpState({
+          loading: false,
+          error: '',
+          lastUpdated: getFantasyAdpSnapshotUpdatedAt(adpRows),
+          valuesByPlayerId: mapped instanceof Map ? mapped : new Map(),
+        });
+      })
+      .catch((error) => {
+        if (cancelled || error?.name === 'AbortError') return;
+        setAdpState({
+          loading: false,
+          error: error?.message ?? 'BALLDONTLIE ADP unavailable.',
+          lastUpdated: null,
+          valuesByPlayerId: new Map(),
+        });
+      });
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [fantasyAdpSeason, players]);
 
   const myRosterData = useMemo(() => myRoster(), [myRoster]);
   const orderedBoardByPosition = useMemo(
@@ -3672,6 +3806,7 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
       season,
       boardIds: viewModelBoardIds,
       marketValuesByPlayerId: marketState.valuesByPlayerId,
+      adpByPlayerId: adpState.valuesByPlayerId,
       seasonStats: draftStats?.seasonStats ?? null,
       weeklyStats: draftStats?.weeklyStats ?? null,
       scheduleMap: draftStats?.scheduleMap ?? null,
@@ -3700,6 +3835,7 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
         season,
         boardIds: viewModelBoardIds,
         marketValuesByPlayerId: marketState.valuesByPlayerId,
+        adpByPlayerId: adpState.valuesByPlayerId,
         seasonStats: draftStats?.seasonStats ?? null,
         weeklyStats: draftStats?.weeklyStats ?? null,
         scheduleMap: draftStats?.scheduleMap ?? null,
@@ -3717,7 +3853,7 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
       cancelled = true;
       cancelBuild?.();
     };
-  }, [players, rosters, league, draftMeta, draftPicks, draftTradedPicks, myRosterData, activeScoringSettings, season, viewModelBoardIds, marketState.valuesByPlayerId, draftStats, upcomingScheduleMap, modelWeights, fullDraftModelAllowed]);
+  }, [players, rosters, league, draftMeta, draftPicks, draftTradedPicks, myRosterData, activeScoringSettings, season, viewModelBoardIds, marketState.valuesByPlayerId, adpState.valuesByPlayerId, draftStats, upcomingScheduleMap, modelWeights, fullDraftModelAllowed]);
 
   const viewModel = draftViewModelState.model;
   const viewModelBuilding = draftViewModelState.building;
@@ -3962,6 +4098,10 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
           profile={marketState.profile}
           lastRefreshed={marketState.lastRefreshed}
         />
+        <FantasyAdpAttribution
+          matchedPlayerCount={adpState.valuesByPlayerId.size}
+          lastUpdated={adpState.lastUpdated}
+        />
         <div className="draft-board-page-controls draft-desktop-control-set">
           <DraftSegmentedControl
             label="Board view"
@@ -4035,6 +4175,10 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
         profile={marketState.profile}
         lastRefreshed={marketState.lastRefreshed}
       />
+      <FantasyAdpAttribution
+        matchedPlayerCount={adpState.valuesByPlayerId.size}
+        lastUpdated={adpState.lastUpdated}
+      />
       <div className={[
         'draft-war-room',
         'draft-war-room--analytics',
@@ -4058,6 +4202,7 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
           availabilityOptions={availabilityOptions}
           onAvailabilityFilterChange={setAvailabilityFilter}
           statsLoading={draftStatsLoading}
+          pastPpgSeason={draftStatsSeason}
           modelWeights={modelWeights}
           onModelWeightChange={changeModelWeight}
           onResetModelWeights={resetModelWeights}

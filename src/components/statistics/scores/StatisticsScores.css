@@ -397,6 +397,17 @@
   font-weight: 700;
 }
 
+.scores-possession {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-signature);
+  line-height: 1;
+}
+
 .scores-winner-mark { color: var(--color-signature); font-size: var(--type-micro); }
 
 .scores-scorebug-team > b {
@@ -407,15 +418,6 @@
   font-weight: 900;
   line-height: 1;
   text-align: right;
-}
-
-.scores-possession {
-  display: inline-block;
-  width: 0;
-  height: 0;
-  border-top: 4px solid transparent;
-  border-bottom: 4px solid transparent;
-  border-left: 6px solid var(--color-signature);
 }
 
 .scores-timeouts { display: inline-flex; gap: 2px; }
@@ -439,6 +441,71 @@
 .scores-scorebug.is-red-zone { border-bottom-color: var(--color-accent-red); }
 .scores-scorebug.is-postponed .scores-scorebug-teams,
 .scores-scorebug.is-unavailable .scores-scorebug-teams { background: var(--color-fill-tertiary); }
+
+.scores-latest-play {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  padding: 8px 12px 10px;
+  border-top: 1px solid var(--color-separator);
+  background: var(--color-fill-tertiary);
+  color: var(--color-label-secondary);
+  font-size: var(--type-label);
+  line-height: 1.3;
+}
+
+.scores-latest-play__label {
+  color: var(--color-accent-red);
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-micro);
+  font-weight: 850;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.scores-latest-play__meta {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 7px;
+  color: var(--color-label-tertiary);
+  font-size: var(--type-micro);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.scores-latest-play__meta b { color: var(--color-label-secondary); font-weight: 750; }
+.scores-latest-play__meta time { margin-left: auto; white-space: nowrap; }
+
+.scores-latest-play__text {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-label);
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scores-latest-play__text em,
+.scores-latest-play__context {
+  display: inline-block;
+  margin-left: 7px;
+  color: var(--color-label-secondary);
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-micro);
+  font-style: normal;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.scores-latest-play__text em[data-k='td'],
+.scores-latest-play__text em[data-k='fd'] { color: var(--color-signature); }
+.scores-latest-play__text em[data-k='loss'] { color: var(--color-accent-red); }
+.scores-latest-play__context { margin-left: 0; color: var(--color-accent-orange); }
+.scores-latest-play__message { color: var(--color-label-tertiary); font-style: italic; }
+.scores-latest-play.is-stale .scores-latest-play__label { color: var(--color-accent-orange); }
 
 /* Final games carry the winning team's gradient. Every text color on the
    gradient comes from teamVisualTheme's gradientFull* foregrounds, which are
@@ -468,6 +535,16 @@
   border-top-color: var(--scores-winner-subtle);
   color: var(--scores-winner-muted);
 }
+
+.scores-scorebug.is-winner-themed .scores-latest-play {
+  border-top-color: var(--scores-winner-subtle);
+  background: color-mix(in srgb, var(--scores-winner-fg) 8%, transparent);
+  color: var(--scores-winner-muted);
+}
+
+.scores-scorebug.is-winner-themed .scores-latest-play__text { color: var(--scores-winner-fg); }
+.scores-scorebug.is-winner-themed .scores-latest-play__meta,
+.scores-scorebug.is-winner-themed .scores-latest-play__message { color: var(--scores-winner-muted); }
 
 .scores-week-peek {
   margin-top: 34px;
@@ -530,6 +607,7 @@
 
 .scores-mini-scorebug:hover,
 .scores-week-peek-more:hover { border-color: var(--color-label-tertiary); }
+.scores-mini-scorebug > span { display: inline-flex; min-width: 0; align-items: center; gap: 5px; }
 .scores-mini-scorebug b { text-align: right; }
 .scores-mini-scorebug .is-muted { color: var(--color-label-tertiary); }
 .scores-mini-scorebug small { grid-column: 1 / -1; color: var(--color-label-tertiary); font-size: var(--type-micro); letter-spacing: 0.08em; text-transform: uppercase; }
@@ -774,26 +852,6 @@
   line-height: 1.5;
 }
 
-.scores-latest-play {
-  display: grid;
-  width: 100%;
-  max-width: 100%;
-  min-width: 0;
-  grid-template-columns: 30px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 14px;
-  padding: 13px 16px;
-  border: 1px solid var(--color-separator);
-  border-left: 4px solid var(--color-signature);
-  background: var(--color-bg-secondary);
-}
-
-.scores-latest-play > img { width: 28px; height: 28px; object-fit: contain; }
-.scores-latest-play > div { display: grid; min-width: 0; gap: 3px; }
-.scores-latest-play > div > span { color: var(--color-label-tertiary); font-family: var(--font-display, 'Barlow Condensed', sans-serif); font-size: var(--type-micro); font-variant-numeric: tabular-nums; font-weight: 750; letter-spacing: 0.1em; text-transform: uppercase; }
-.scores-latest-play > div > strong { font-size: var(--type-emphasis); overflow-wrap: anywhere; }
-.scores-latest-play > button { min-height: 40px; color: var(--color-label-secondary); font-family: var(--font-display, 'Barlow Condensed', sans-serif); font-size: var(--type-label); font-weight: 800; text-transform: uppercase; }
-
 .scores-line-score-shell { max-width: 100%; overflow-x: auto; }
 .scores-line-score { width: 100%; min-width: 520px; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .scores-line-score th,
@@ -868,23 +926,102 @@
 .scores-play-filter > button[aria-pressed='true'] { background: var(--color-label); color: var(--color-bg); }
 .scores-play-filter img { width: 18px; height: 18px; object-fit: contain; }
 
-.scores-drive-list { display: grid; }
+/* Play feed. Ported from the play-by-play design handoff: the drive list, the
+   drive header, and the play line that sits above each trajectory strip. The
+   field graphics themselves live in NflPlays.css. */
+.scores-play-feed { container-type: inline-size; container-name: scoresplays; }
+
+.scores-drive-quarter {
+  padding: 16px 0 6px;
+  border-bottom: 2px solid var(--color-label);
+  color: var(--color-label);
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-label);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.scores-drive-list { display: flex; flex-direction: column; }
 .scores-drive { border-bottom: 1px solid var(--color-separator); }
-.scores-drive-header { display: grid; width: 100%; min-height: 52px; grid-template-columns: 24px auto minmax(0, 1fr) auto 22px; align-items: center; gap: 12px; padding: 7px 2px; color: var(--color-label); text-align: left; }
+.scores-game-terminal {
+  display: grid;
+  gap: 2px;
+  padding: 16px 2px 18px;
+  border-bottom: 2px solid var(--color-label);
+}
+.scores-game-terminal > strong {
+  color: var(--color-label);
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-emphasis);
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.scores-game-terminal > span {
+  color: var(--color-label-secondary);
+  font-size: var(--type-label);
+  font-variant-numeric: tabular-nums;
+}
+.scores-drive-header { display: grid; width: 100%; min-height: 48px; grid-template-columns: 24px auto minmax(0, 1fr) auto 20px; align-items: center; gap: 12px; padding: 12px 2px; color: var(--color-label); text-align: left; }
 .scores-drive-header:hover { background: var(--color-fill-tertiary); }
 .scores-drive-header > img { width: 22px; height: 22px; object-fit: contain; }
-.scores-drive-header > strong { font-family: var(--font-display, 'Barlow Condensed', sans-serif); font-size: var(--type-emphasis); text-transform: uppercase; }
+.scores-drive-header > strong { font-family: var(--font-display, 'Barlow Condensed', sans-serif); font-size: var(--type-emphasis); font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap; }
 .scores-drive.is-scoring .scores-drive-header > strong { box-shadow: inset 0 -3px 0 var(--color-signature); }
-.scores-drive-header > span { min-width: 0; color: var(--color-label-tertiary); font-size: var(--type-label); }
-.scores-drive-header > b { font-family: var(--font-display, 'Barlow Condensed', sans-serif); font-size: var(--type-emphasis); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.scores-drive-header > span { min-width: 0; overflow: hidden; color: var(--color-label-secondary); font-size: var(--type-label); text-overflow: ellipsis; white-space: nowrap; }
+.scores-drive-header > b { font-family: var(--font-display, 'Barlow Condensed', sans-serif); font-size: var(--type-emphasis); font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .scores-drive-header > i { color: var(--color-label-tertiary); font-style: normal; font-size: var(--type-emphasis); text-align: center; }
-.scores-drive-plays { padding: 3px 0 12px 36px; border-top: 1px dashed var(--color-separator); }
-.scores-drive-plays > div { display: grid; grid-template-columns: 66px 60px minmax(0, 1fr) auto; gap: 12px; align-items: baseline; padding: 8px 0; border-bottom: 1px solid var(--color-fill-secondary); font-size: var(--type-label); }
-.scores-drive-plays > div > b { color: var(--color-label-secondary); font-family: var(--font-display, 'Barlow Condensed', sans-serif); }
-.scores-drive-plays > div > span,
-.scores-drive-plays > div > time { color: var(--color-label-tertiary); font-variant-numeric: tabular-nums; }
-.scores-drive-plays > div > p { margin: 0; }
-.scores-drive-plays > div.is-scoring { padding-inline: 8px; background: color-mix(in srgb, var(--color-signature) 9%, transparent); }
+.scores-drive-plays { padding: 4px 0 16px; border-top: 1px dashed var(--color-separator); }
+.scores-drive-playlist { display: flex; flex-direction: column; margin-top: 12px; }
+
+/* One play: the text line, then the trajectory strip drawing the same play on
+   the field. The breakdown and the raw NFL description appear on expand. */
+.scores-play { padding: 9px 0 11px; border-bottom: 1px solid var(--color-fill-secondary); }
+.scores-play[data-scoring='true'] { margin: 0 -8px; padding: 9px 8px 11px; background: color-mix(in srgb, var(--color-signature) 9%, transparent); }
+.scores-play:hover { box-shadow: inset 2px 0 0 var(--play-rule, var(--color-separator)); }
+
+.scores-play__line { display: grid; grid-template-columns: 66px 62px minmax(0, 1fr) auto; gap: 12px; align-items: baseline; margin-bottom: 7px; font-size: var(--type-label); }
+.scores-play__dd { color: var(--color-label-secondary); font-family: var(--font-display, 'Barlow Condensed', sans-serif); font-weight: 700; letter-spacing: 0.03em; white-space: nowrap; }
+.scores-play__spot { color: var(--color-label-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.scores-play__text { min-width: 0; margin: 0; color: var(--color-label); }
+.scores-play[data-scoring='true'] .scores-play__text { font-weight: 700; }
+.scores-play__line .scores-play__clock { color: var(--color-label-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.scores-play__tag { display: inline-flex; align-items: center; gap: 5px; margin-left: 8px; color: var(--color-label-secondary); font-family: var(--font-display, 'Barlow Condensed', sans-serif); font-size: var(--type-micro); font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
+.scores-play__tag[data-k='fd'] { color: var(--color-signature); }
+.scores-play__tag[data-k='td'] { color: var(--color-signature); }
+.scores-play__tag[data-k='loss'] { color: var(--color-accent-red); }
+
+/* Overlapping headshots, leading the description they belong to. */
+.scores-play__faces { display: inline-flex; margin-right: 8px; vertical-align: -6px; }
+.scores-play__faces > .scores-play__face + .scores-play__face { margin-left: -7px; }
+.scores-play__face { box-shadow: 0 0 0 2px var(--color-bg-secondary); }
+
+.scores-play__toggle { min-height: var(--control-height, 32px); padding: 0; color: var(--color-accent); font-size: var(--type-micro); letter-spacing: 0.05em; text-transform: uppercase; }
+.scores-play__toggle:hover { text-decoration: underline; }
+
+.scores-play__breakdown { display: grid; gap: 2px; padding: 4px 0 2px; border-top: 1px solid var(--color-fill-secondary); }
+.scores-play__actor { display: grid; grid-template-columns: 68px auto minmax(0, 1fr); align-items: center; gap: 10px; padding: 5px 0; }
+.scores-play__actor + .scores-play__actor { border-top: 1px solid var(--color-fill-tertiary); }
+.scores-play__role { color: var(--color-label-secondary); font-size: var(--type-micro); letter-spacing: 0.06em; text-transform: uppercase; }
+.scores-play__actor-name { min-width: 0; color: var(--color-label); font-size: var(--type-label); }
+.scores-play__actor-name > i { margin-left: 6px; color: var(--color-label-secondary); font-style: normal; font-size: var(--type-micro); }
+.scores-play__raw { margin: 6px 0 0; color: var(--color-label-secondary); font-size: var(--type-micro); line-height: 1.5; }
+
+/* Clock and administrative stoppages are not plays; they get a quiet single line. */
+.scores-play.is-admin { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--color-fill-tertiary); }
+.scores-play.is-admin:hover { box-shadow: none; }
+.scores-play__admin-text { margin: 0; color: var(--color-label-secondary); font-size: var(--type-micro); letter-spacing: 0.04em; text-transform: uppercase; }
+.scores-play__clock { color: var(--color-label-secondary); font-size: var(--type-micro); font-variant-numeric: tabular-nums; }
+
+/* Narrow columns wrap the play line and the drive meta onto a second row rather
+   than truncating either — both carry information the strip below can't. */
+@container scoresplays (max-width: 720px) {
+  .scores-play__line { grid-template-columns: 60px minmax(0, 1fr) auto; gap: 8px; }
+  .scores-play__spot { grid-row: 2; grid-column: 2 / 4; margin-top: -4px; }
+  .scores-drive-header { grid-template-columns: 24px minmax(0, 1fr) auto 20px; }
+  .scores-drive-header > span { grid-row: 2; grid-column: 2 / 4; }
+}
 
 @media (max-width: 1023px) {
   .scores-day-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -927,19 +1064,13 @@
   .scores-player-cards > article > header > b { font-family: var(--font-display, 'Barlow Condensed', sans-serif); font-size: var(--type-emphasis); font-variant-numeric: tabular-nums; }
   .scores-player-cards > article > p { margin: 4px 0 0; color: var(--color-label-secondary); font-size: var(--type-label); font-variant-numeric: tabular-nums; }
 
-  .scores-latest-play { grid-template-columns: 30px minmax(0, 1fr); }
-  .scores-latest-play > button { grid-column: 2; justify-self: start; }
   .scores-section-heading { flex-wrap: wrap; }
   .scores-section-heading::after { min-width: 40px; }
 
   .scores-scoring-quarter article { grid-template-columns: 48px 24px minmax(0, 1fr); padding-block: 8px; }
   .scores-scoring-quarter article > b { grid-column: 3; }
 
-  .scores-drive-header { grid-template-columns: 24px minmax(0, 1fr) auto 22px; }
-  .scores-drive-header > span { grid-column: 2 / 4; grid-row: 2; }
-  .scores-drive-plays { padding-left: 12px; }
-  .scores-drive-plays > div { grid-template-columns: 58px minmax(0, 1fr) auto; }
-  .scores-drive-plays > div > span { display: none; }
+  .scores-play__actor { grid-template-columns: 58px auto minmax(0, 1fr); gap: 8px; }
 }
 
 @media (max-width: 420px) {

@@ -197,6 +197,7 @@ export const SEARCH_PATTERNS = [
 const STOPWORDS = new Set([
   'in','on','the','a','an','for','at','from','who','are','is','playing',
   'plays','play','with','and','or','my','our','their','us','them','me',
+  'number','jersey',
 ]);
 
 /**
@@ -208,11 +209,18 @@ const STOPWORDS = new Set([
  * Unrecognized tokens become name search terms.
  *
  * AND logic between categories; OR within a category.
- * Returns { pos: Set, team: Set, div: Set, conf: Set, name: string[] }
+ * Returns { pos: Set, team: Set, div: Set, conf: Set, number: Set, name: string[] }
  */
 export function parseSearchQuery(q) {
-  const filters = { pos: new Set(), team: new Set(), div: new Set(), conf: new Set(), name: [] };
-  const words = q.toLowerCase().trim().split(/[\s,+&]+/).filter(Boolean);
+  const filters = {
+    pos: new Set(),
+    team: new Set(),
+    div: new Set(),
+    conf: new Set(),
+    number: new Set(),
+    name: [],
+  };
+  const words = q.toLowerCase().trim().split(/[\s,#+&]+/).filter(Boolean);
   if (!words.length) return filters;
 
   const consumed = new Array(words.length).fill(false);
@@ -223,6 +231,16 @@ export function parseSearchQuery(q) {
 
     // Consume stopwords without adding to name[]
     if (STOPWORDS.has(words[i])) { consumed[i] = true; continue; }
+
+    // Jersey numbers are not part of the phrase table because they are
+    // player data rather than a fixed vocabulary. Accept both "29" and
+    // "#29", including leading-zero forms such as "00".
+    const jerseyNumber = normalizeJerseyNumber(words[i]);
+    if (jerseyNumber) {
+      consumed[i] = true;
+      filters.number.add(jerseyNumber);
+      continue;
+    }
 
     // Try longest phrase starting at i, down to 1 word
     for (let len = Math.min(MAX_PHRASE_LEN, words.length - i); len >= 1; len--) {
@@ -241,6 +259,26 @@ export function parseSearchQuery(q) {
   // Unconsumed tokens with ≥2 chars become name search terms
   filters.name = words.filter((_, i) => !consumed[i] && words[i].length >= 2);
   return filters;
+}
+
+/**
+ * Normalize an NFL jersey number for query/player comparison.
+ * NFL jersey numbers are 0–99; leading zeroes are equivalent ("00" → "0").
+ */
+export function normalizeJerseyNumber(value) {
+  const raw = String(value ?? '').trim().replace(/^#/, '');
+  if (!/^\d{1,2}$/.test(raw)) return '';
+
+  const numeric = Number(raw);
+  return numeric >= 0 && numeric <= 99 ? String(numeric) : '';
+}
+
+/**
+ * Does a player jersey number match a parsed number filter.
+ */
+export function matchesJerseyNumber(playerNumber, filter) {
+  const normalizedPlayerNumber = normalizeJerseyNumber(playerNumber);
+  return Boolean(normalizedPlayerNumber) && normalizedPlayerNumber === String(filter);
 }
 
 /**

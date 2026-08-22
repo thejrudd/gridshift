@@ -170,6 +170,16 @@ export function buildPaceSeries({
   liveSnapshot = null,
   milestonePoints = 5,
   reconcileToTotals = false,
+  // Accumulate strictly along the chart's own axis instead of by timestamp.
+  //
+  // A live session can rely on the two agreeing: plays arrive in order and are
+  // stamped as they land. A replay cannot — position comes from where a play
+  // sits in the week while the timestamp is reconstructed, and any disagreement
+  // between them leaves early points holding a near-empty total and the last
+  // one holding all of it, which draws as a wall at NOW. Ordering by the axis
+  // the points are plotted on makes the running total monotonic by
+  // construction.
+  accumulateInOrder = false,
 } = {}) {
   const span = Math.min(1, Math.max(0.02, Number(slateProgress) || 0));
   const finalA = round1(Number(totals.a) || 0);
@@ -234,6 +244,8 @@ export function buildPaceSeries({
     const momentAt = getReplayEventTime(item.event);
     const eventsAtMoment = reconcileToTotals
       ? scored.slice(0, itemIndex + 1)
+      : accumulateInOrder
+      ? scored.slice(0, itemIndex + 1)
       : Number.isFinite(momentAt)
       ? scored.filter((candidate) => {
           const candidateAt = getReplayEventTime(candidate.event);
@@ -244,13 +256,22 @@ export function buildPaceSeries({
     const running = eventsAtMoment.reduce((totalsAtMoment, candidate) => {
       const pointsForPlay = (Number(candidate.event.pts) || 0) * estimateScale[candidate.side];
       totalsAtMoment[candidate.side] += pointsForPlay;
-      const playerId = candidate.event.playerId;
-      if (playerId != null) {
+      const contributors = candidate.event.contributors?.length
+        ? candidate.event.contributors
+        : [{ playerId: candidate.event.playerId, pts: candidate.event.pts }];
+      contributors.forEach((contributor) => {
+        const playerId = contributor.playerId;
+        if (playerId == null) return;
+        // A grouped feed entry moves the side total once, but the replay's
+        // per-starter context still needs each rostered player's own share.
+        // Otherwise a QB/WR touchdown would make the receiver appear to own
+        // the whole combined swing in the historical win-probability model.
+        const contribution = (Number(contributor.pts) || 0) * estimateScale[candidate.side];
         currentByPlayer.set(
           playerId,
-          (currentByPlayer.get(playerId) ?? 0) + pointsForPlay,
+          (currentByPlayer.get(playerId) ?? 0) + contribution,
         );
-      }
+      });
       return totalsAtMoment;
     }, { a: 0, b: 0 });
     const x = Math.min(span, item.x);
@@ -273,6 +294,7 @@ export function buildPaceSeries({
       currentByPlayer,
     });
     points.push(replayPoint);
+    if (item.event.hiddenFromMilestones) return;
     marks.push({
       x,
       y: replayPoint[item.side],

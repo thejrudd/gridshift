@@ -9,6 +9,7 @@ import {
   scoreScheduleSignal,
 } from './scheduleStrength.js';
 import { getLeaguePositionFilters, getPlayerPositionFilterKeys } from '../leaguePositions.js';
+import { getSleeperDraftPlayerPool, isDraftRookie } from './projectedSelection.js';
 export {
   getDraftResultsPresentation,
   getDraftTourContext,
@@ -37,6 +38,9 @@ export const DEFAULT_DRAFT_MODEL_WEIGHTS = {
   scoringFit: 20,
   rosterNeed: 10,
   schedule: 10,
+  // Added after the initial five-signal model. Keeping this neutral preserves
+  // existing persisted priority mixes and recommendations until a manager opts in.
+  adp: 0,
 };
 const DRAFT_MODEL_WEIGHT_TOTAL = 100;
 
@@ -834,6 +838,7 @@ function scoreRosterNeed(teamNeed) {
 function buildDraftModelSignal(candidate, weights) {
   const components = {
     marketRank: scoreRank(candidate.rank?.overallRank ?? candidate.projection?.fallbackRank ?? candidate.projection?.searchRank),
+    adp: scoreRank(candidate.adp),
     pastProduction: scorePpg(candidate.position, candidate.workload?.ppg),
     workload: scoreWorkload(candidate.position, candidate.workload?.primaryVolume),
     scoringFit: scorePositionRank(candidate.scoringFit?.positionSeasonRank, candidate.scoringFit?.positionSeasonCount),
@@ -990,6 +995,17 @@ function getMarketValue(marketValuesByPlayerId, playerId) {
   return marketValuesByPlayerId[key] ?? null;
 }
 
+function getAdpValue(adpByPlayerId, playerId) {
+  const adp = getMarketValue(adpByPlayerId, playerId);
+  if (typeof adp === 'number' || typeof adp === 'string') return toFiniteNumber(adp);
+  return toFiniteNumber(
+    adp?.averageDraftPosition
+    ?? adp?.average_draft_position
+    ?? adp?.adp
+    ?? adp?.value,
+  );
+}
+
 function enrichProjectionWithMarket(projection, marketValue) {
   if (!projection) return projection;
   const marketRank = toFiniteNumber(marketValue?.overallRank);
@@ -1071,6 +1087,7 @@ function buildOnClockRecommendation({
   currentPick = null,
   teamNeedRows = [],
   recentPositionCounts = {},
+  modelWeights = DEFAULT_DRAFT_MODEL_WEIGHTS,
 }) {
   if (!currentPick?.rosterId || !candidates.length) return null;
   const onClockNeedRow = teamNeedRows.find((row) => row.rosterId === currentPick.rosterId) ?? null;
@@ -1085,7 +1102,7 @@ function buildOnClockRecommendation({
       teamsBeforeUser: 0,
       recentPositionRun: recentPositionCounts[candidate.position] ?? 0,
     },
-  }, DEFAULT_DRAFT_MODEL_WEIGHTS));
+  }, modelWeights));
 
   return rankDraftCandidates({
     candidates: standardWeightedCandidates,
@@ -1109,6 +1126,7 @@ export function buildDraftAssistantViewModel({
   season = null,
   boardIds = [],
   marketValuesByPlayerId = null,
+  adpByPlayerId = null,
   seasonStats = null,
   weeklyStats = null,
   scheduleMap = null,
@@ -1154,13 +1172,21 @@ export function buildDraftAssistantViewModel({
     upcomingScheduleMap,
     scoringSettings,
   });
+  const draftPlayerPool = getSleeperDraftPlayerPool(draft);
+  const draftSeason = draft?.season == null ? null : String(draft.season);
   const candidatesWithoutModel = Object.values(players)
     .filter((player) => player?.player_id != null && !draftedIds.has(String(player.player_id)))
     .filter((player) => playerSupportsDraftAssistant(player))
     .filter((player) => isPlayerEligibleForDraftRoster(player, draftRosterEligiblePositions))
+    .filter((player) => {
+      if (draftPlayerPool === 'rookies') return isDraftRookie(player, draftSeason);
+      if (draftPlayerPool === 'veterans') return !isDraftRookie(player, draftSeason);
+      return true;
+    })
     .map((player) => {
       const playerId = String(player.player_id);
       const marketValue = getMarketValue(marketValuesByPlayerId, playerId);
+      const adp = getAdpValue(adpByPlayerId, playerId);
       const projection = enrichProjectionWithMarket(
         getPlayerProjectionProfile(player, scoringSettings, season),
         marketValue,
@@ -1172,6 +1198,7 @@ export function buildDraftAssistantViewModel({
         team: String(player.team ?? 'FA').toUpperCase(),
         position: normalizePosition(player.fantasy_positions?.[0] ?? player.position),
         projection,
+        adp,
         rostered: rosteredIds.has(playerId),
         raw: player,
       };
@@ -1220,10 +1247,12 @@ export function buildDraftAssistantViewModel({
   const allCandidates = attachDraftPoolRanks(candidatesWithoutModel)
     .map((candidate) => attachDraftModelSignal(candidate, normalizedModelWeights));
 
+  const adpPriorityActive = normalizedModelWeights.adp > 0;
   const rankedCandidatePool = allCandidates.filter((item) => (
     item.projection?.projectedPoints != null
     || item.projection?.fallbackRank != null
     || boardIndex.has(item.id)
+    || (adpPriorityActive && item.adp != null)
   ));
   const projectionBackedCandidates = rankedCandidatePool.filter((item) => item.projection?.projectedPoints != null);
   const rankedCandidates = rankDraftCandidates({
@@ -1241,6 +1270,7 @@ export function buildDraftAssistantViewModel({
     currentPick: upcomingWindow.currentPick,
     teamNeedRows,
     recentPositionCounts,
+    modelWeights: normalizedModelWeights,
   });
   const bestByPosition = {};
   for (const candidate of rankedCandidates) {
@@ -1254,6 +1284,7 @@ export function buildDraftAssistantViewModel({
     const rawPlayer = players?.[playerId];
     const position = normalizePosition(rawPlayer?.fantasy_positions?.[0] ?? rawPlayer?.position);
     const marketValue = getMarketValue(marketValuesByPlayerId, playerId);
+    const adp = getAdpValue(adpByPlayerId, playerId);
     const projection = enrichProjectionWithMarket(
       getPlayerProjectionProfile(rawPlayer ?? {}, scoringSettings, season),
       marketValue,
@@ -1264,6 +1295,7 @@ export function buildDraftAssistantViewModel({
       team: String(rawPlayer?.team ?? '—').toUpperCase(),
       position,
       projection,
+      adp,
       boardRank: index + 1,
       available: false,
       rostered: rosteredIds.has(String(playerId)),
@@ -1320,6 +1352,7 @@ export function buildDraftAssistantViewModel({
     const rawPlayer = players?.[playerId];
     const position = normalizePosition(rawPlayer?.fantasy_positions?.[0] ?? rawPlayer?.position);
     const marketValue = getMarketValue(marketValuesByPlayerId, playerId);
+    const adp = getAdpValue(adpByPlayerId, playerId);
     const projection = enrichProjectionWithMarket(
       getPlayerProjectionProfile(rawPlayer ?? {}, scoringSettings, season),
       marketValue,
@@ -1330,6 +1363,7 @@ export function buildDraftAssistantViewModel({
       team: String(rawPlayer?.team ?? '—').toUpperCase(),
       position,
       projection,
+      adp,
       rostered: rosteredIds.has(String(playerId)),
       raw: rawPlayer ?? null,
     };

@@ -3,11 +3,20 @@
 // a way through to the player's full breakdown.
 
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import HorizontalScrollCue from '../../HorizontalScrollCue.jsx';
+import useHorizontalScrollCue from '../../../hooks/useHorizontalScrollCue.js';
 import { LiveAvatar, LiveGlyphBadge, LivePosChip } from './LiveAtoms.jsx';
 import { firstWordOf, getLiveEventLabel, getLiveKindMeta } from './liveVisuals.js';
 import { buildFantasyScoringBreakdown } from '../../../utils/fantasyBreakdownRows.js';
 import { getSleeperPlayerName } from '../../../utils/liveScoringFeed.js';
+import { toggleFilterValue } from '../../../utils/liveFeedFilters.js';
+import { DrivePlayback } from '../../nflPlays/DrivePlayback.jsx';
+import { normalizeBdlScorePlay } from '../../../utils/balldontlieNflScoreboard.js';
+import { selectViewerFantasyReplay } from '../../../utils/nflPlays/playRecapFraming.js';
 import { withAlpha } from '../../../utils/fantasyTeamIdentity.js';
+import { getOffenseTeam } from '../../../utils/nflPlays/fieldGeometry.js';
+import { getTeamVisualTheme } from '../../../utils/teamVisualTheme.js';
+import { useTheme } from '../../../context/ThemeContext.jsx';
 
 // The counting stats worth surfacing under a play's scoring math, in the order
 // a reader wants them. Anything not listed stays in the scoring rows above.
@@ -20,7 +29,9 @@ const PLAY_STAT_LABELS = [
   ['rec_yd', 'Rec yds'],
   ['rec_td', 'Rec TD'],
   ['fgm', 'FG made'],
+  ['fgmiss', 'FG missed'],
   ['xpm', 'XP made'],
+  ['xpmiss', 'XP missed'],
   ['sack', 'Sacks'],
   ['int', 'Int'],
   ['fum_lost', 'Fumbles lost'],
@@ -54,6 +65,96 @@ function scrollRowToFeedTop(row, behavior = 'auto') {
     - filterHeight
   );
   scroller.scrollTo({ top: Math.max(0, targetTop), behavior });
+}
+
+/**
+ * Play-type tiers. The group row is always present; type chips appear only
+ * once a group is chosen, so the resting state costs one row. Both tiers come
+ * from the league's own scoring, so a chip never offers a filter that cannot
+ * match — see buildFeedFilterModel().
+ */
+export function LiveFeedPlayFilter({ model = [], value, onChange, positions = [], counts = {} }) {
+  const groupRowRef = useRef(null);
+  const typeRowRef = useRef(null);
+  const activeGroup = model.find((group) => group.id === value.group) ?? null;
+  // Cues track the rails they describe, so they appear only where there is
+  // more to reach in that direction.
+  const groupCue = useHorizontalScrollCue(groupRowRef, [model, positions, counts]);
+  const typeCue = useHorizontalScrollCue(typeRowRef, [activeGroup?.id, value.types]);
+
+  if (!model.length) return null;
+  const setGroup = (groupId) => onChange({
+    ...value,
+    // Types belong to the group that offered them.
+    group: value.group === groupId ? 'all' : groupId,
+    types: [],
+  });
+
+  return (
+    <div className="fl-playfilter">
+      <div className="fl-playfilter__rail">
+      <div className="fl-playfilter__row" ref={groupRowRef} role="group" aria-label="Play type">
+        {model.map((group) => (
+          <button
+            key={group.id}
+            type="button"
+            className={`fl-playfilter__chip${value.group === group.id ? ' is-active' : ''}`}
+            onClick={() => setGroup(group.id)}
+            aria-pressed={value.group === group.id}
+          >
+            {group.label}
+            {counts[group.id] != null && <span className="fl-playfilter__count">{counts[group.id]}</span>}
+          </button>
+        ))}
+        {positions.length > 0 && (
+          <span className="fl-playfilter__divider" aria-hidden="true" />
+        )}
+        {positions.map((position) => (
+          <button
+            key={position}
+            type="button"
+            className={`fl-playfilter__chip is-position${value.positions.includes(position) ? ' is-active' : ''}`}
+            onClick={() => onChange({ ...value, positions: toggleFilterValue(value.positions, position) })}
+            aria-pressed={value.positions.includes(position)}
+            aria-label={`${position} only`}
+          >
+            {position}
+          </button>
+        ))}
+      </div>
+      <HorizontalScrollCue
+        left={groupCue.left}
+        right={groupCue.right}
+        targetRef={groupRowRef}
+        label="play type filters"
+      />
+      </div>
+
+      {activeGroup?.types.length > 0 && (
+        <div className="fl-playfilter__rail">
+        <div className="fl-playfilter__row is-types" ref={typeRowRef} role="group" aria-label={`${activeGroup.label} play types`}>
+          {activeGroup.types.map((type) => (
+            <button
+              key={type.id}
+              type="button"
+              className={`fl-playfilter__chip is-type${value.types.includes(type.id) ? ' is-active' : ''}`}
+              onClick={() => onChange({ ...value, types: toggleFilterValue(value.types, type.id) })}
+              aria-pressed={value.types.includes(type.id)}
+            >
+              {type.label}
+            </button>
+          ))}
+        </div>
+        <HorizontalScrollCue
+          left={typeCue.left}
+          right={typeCue.right}
+          targetRef={typeRowRef}
+          label={`${activeGroup.label} play types`}
+        />
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function LiveFeedFilter({ left, right, value, counts, onChange, focusName, onClearFocus }) {
@@ -93,18 +194,94 @@ export function LiveFeedFilter({ left, right, value, counts, onChange, focusName
   );
 }
 
-function PlayDetail({ event, entry, side, scoringSettings, onOpenPlayer }) {
+/**
+ * The play drawn on a field, reusing the Statistics play-by-play visual.
+ *
+ * Only rendered when the event carries the provider's own play row — the feed's
+ * normalisation keeps a sentence, while the field needs down, distance and
+ * yards to the end zone. An event reconstructed from stat deltas has no such
+ * row and simply shows no field, rather than a fabricated one.
+ */
+function PlayFieldVisual({ event, side, scoringSettings, position, entriesById }) {
+  const { darkMode } = useTheme();
+  const raw = event?.play?.raw;
+  const game = event?.playGame ?? raw?.game ?? null;
+  const strip = useMemo(() => {
+    if (!raw) return null;
+    const normalized = normalizeBdlScorePlay(raw, game);
+    if (!normalized) return null;
+    // CompanionLive carries its normalized game record alongside the raw play,
+    // while a directly embedded provider row may still carry raw BDL team
+    // fields. Accept both contracts so the field does not disappear merely
+    // because the play arrived through the live hydration path.
+    const home = game?.home?.abbreviation
+      ?? game?.home?.id
+      ?? game?.home_team?.abbreviation
+      ?? game?.home_team?.id
+      ?? null;
+    const away = game?.away?.abbreviation
+      ?? game?.away?.id
+      ?? game?.visitor_team?.abbreviation
+      ?? game?.visitor_team?.id
+      ?? null;
+    if (!home || !away) return null;
+    const homeTheme = getTeamVisualTheme(home, darkMode);
+    const awayTheme = getTeamVisualTheme(away, darkMode);
+    const offense = getOffenseTeam(normalized, { homeTeam: home, awayTeam: away });
+    const offenseTheme = offense === home ? homeTheme : awayTheme;
+    return { normalized, home, away, homeTheme, awayTheme, offenseTheme };
+  }, [darkMode, game, raw]);
+  const fantasyReplay = selectViewerFantasyReplay(
+    event,
+    side?.isMine,
+    (playerId) => String(entriesById?.get(playerId)?.row?.player?.position ?? position).toUpperCase(),
+  );
+
+  if (!strip) return null;
+  // The viewer's event total is the replay authority; the playback still uses
+  // the stat line to reveal yardage, receptions and touchdowns at their actual
+  // football moments.
+  return (
+    <div className="fl-exp__field">
+      <DrivePlayback
+        plays={[strip.normalized]}
+        homeTeam={strip.home}
+        awayTeam={strip.away}
+        homeTheme={strip.homeTheme}
+        awayTheme={strip.awayTheme}
+        barColor={strip.offenseTheme?.borderColor ?? strip.offenseTheme?.color ?? side.palette[0]}
+        fantasyContributors={fantasyReplay}
+        fantasyScoring={scoringSettings}
+        fantasyPosition={position}
+      />
+    </div>
+  );
+}
+
+function PlayDetail({ event, entry, side, scoringSettings, onOpenPlayer, showPlayField = false, entriesById }) {
   const position = String(entry.row.player?.position ?? 'FLEX').toUpperCase();
   const meta = getLiveKindMeta(event.kind);
-  const breakdown = useMemo(() => (
-    event.stats
-      ? buildFantasyScoringBreakdown(event.stats, scoringSettings, position, {
-          authoritativeTotal: Number(event.pts) || 0,
-          adjustmentLabel: 'Play scoring adjustment',
-          fallbackTotalLabel: 'Play fantasy impact',
-        })
-      : { rows: [], total: Number(event.pts) || 0 }
-  ), [event.pts, event.stats, position, scoringSettings]);
+  const contributorBreakdowns = useMemo(() => (event.contributors?.length ? event.contributors : [event]).map((contributor) => {
+    const contributorEntry = entriesById?.get(contributor.playerId) ?? entry;
+    const contributorPosition = contributor.position
+      ?? String(contributorEntry?.row?.player?.position ?? position).toUpperCase();
+    return {
+      contributor,
+      entry: contributorEntry,
+      breakdown: contributor.stats
+        ? buildFantasyScoringBreakdown(contributor.stats, scoringSettings, contributorPosition, {
+            // Provider-play values are scored from this exact stat line. Do
+            // not turn a provisional snapshot share into a fictional scoring
+            // adjustment beneath an otherwise complete touchdown.
+            ...(contributor.estimated ? {} : { authoritativeTotal: Number(contributor.pts) || 0 }),
+            adjustmentLabel: 'Play scoring adjustment',
+            fallbackTotalLabel: 'Play fantasy impact',
+          })
+        : { rows: [], total: Number(contributor.pts) || 0 },
+    };
+  }), [event, entriesById, entry, position, scoringSettings]);
+  const hasSharedContributors = contributorBreakdowns.length > 1;
+  const hasBreakdown = contributorBreakdowns.some(({ breakdown }) => breakdown.rows.length > 0);
 
   const stats = PLAY_STAT_LABELS
     .map(([key, label]) => [label, Number(event.stats?.[key]) || 0])
@@ -112,6 +289,15 @@ function PlayDetail({ event, entry, side, scoringSettings, onOpenPlayer }) {
 
   return (
     <div className="fl-exp" style={{ '--fl-team': side.palette[0] }}>
+      {showPlayField && (
+        <PlayFieldVisual
+          event={event}
+          side={side}
+          scoringSettings={scoringSettings}
+          position={position}
+          entriesById={entriesById}
+        />
+      )}
       <div className="fl-exp__head">
         <span className="fl-exp__kind" style={{ color: meta.color }}>{getLiveEventLabel(event)}</span>
         {event.glance && (
@@ -121,17 +307,27 @@ function PlayDetail({ event, entry, side, scoringSettings, onOpenPlayer }) {
         )}
       </div>
 
-      {breakdown.rows.length > 0 ? (
+      {hasBreakdown ? (
         <div className="fl-exp__lines">
-          {breakdown.rows.map((row) => (
-            <div className="fl-exp__ln" key={row.key}>
-              <span>
-                {row.label}
-                {row.statVal ? <span className="fl-exp__dtl">{row.statVal}</span> : null}
-              </span>
-              <span className="fl-exp__lv" style={{ color: row.pts < 0 ? 'var(--color-accent-red)' : 'var(--color-label)' }}>
-                {formatSigned(row.pts)}
-              </span>
+          {contributorBreakdowns.map(({ contributor, entry: contributorEntry, breakdown }) => (
+            <div className="fl-exp__contributor" key={contributor.playerId ?? contributor.id}>
+              {hasSharedContributors && (
+                <div className="fl-exp__contributor-head">
+                  <span>{getSleeperPlayerName(contributorEntry?.row?.player)}</span>
+                  <span>{formatSigned(contributor.pts)}</span>
+                </div>
+              )}
+              {breakdown.rows.map((row) => (
+                <div className="fl-exp__ln" key={row.key}>
+                  <span>
+                    {row.label}
+                    {row.statVal ? <span className="fl-exp__dtl">{row.statVal}</span> : null}
+                  </span>
+                  <span className="fl-exp__lv" style={{ color: row.pts < 0 ? 'var(--color-accent-red)' : 'var(--color-label)' }}>
+                    {formatSigned(row.pts)}
+                  </span>
+                </div>
+              ))}
             </div>
           ))}
           <div className="fl-exp__ln is-total">
@@ -150,7 +346,7 @@ function PlayDetail({ event, entry, side, scoringSettings, onOpenPlayer }) {
         </p>
       )}
 
-      {stats.length > 0 && (
+      {!hasSharedContributors && stats.length > 0 && (
         <div className="fl-exp__statrow">
           {stats.map(([label, value]) => (
             <span className="fl-exp__stat" key={label}>
@@ -165,9 +361,22 @@ function PlayDetail({ event, entry, side, scoringSettings, onOpenPlayer }) {
         <p className="fl-exp__note">Estimated from the play description — the official stat line settles it.</p>
       )}
 
-      <button type="button" className="fl-exp__more" onClick={() => onOpenPlayer?.(entry, event)}>
-        Full player breakdown →
-      </button>
+      <div className="fl-exp__actions">
+        {contributorBreakdowns.map(({ contributor, entry: contributorEntry }) => {
+          if (!contributorEntry) return null;
+          const contributorName = getSleeperPlayerName(contributorEntry.row?.player);
+          return (
+            <button
+              type="button"
+              className="fl-exp__more"
+              key={contributor.playerId ?? contributor.id}
+              onClick={() => onOpenPlayer?.(contributorEntry, event)}
+            >
+              {contributorName} breakdown →
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -182,6 +391,10 @@ export function LiveFeedList({
   selectionRequest = 0,
   onOpenPlayer,
   emptyMessage = 'No scoring plays yet.',
+  // Provider-backed scoring plays can replay in both live and sandbox modes.
+  // PlayFieldVisual remains the eligibility boundary: rows reconstructed only
+  // from a stat delta have no honest field geometry and render no field.
+  showPlayField = true,
 }) {
   const [openId, setOpenId] = useState(null);
   const [flashId, setFlashId] = useState(null);
@@ -254,7 +467,13 @@ export function LiveFeedList({
         if (!entry) return null;
         const side = sidesByKey[entry.sideKey];
         const color = side.palette[0];
-        const name = getSleeperPlayerName(entry.row.player);
+        const contributorEntries = (event.contributors?.length ? event.contributors : [event])
+          .map((contributor) => entriesById.get(contributor.playerId))
+          .filter(Boolean);
+        const name = contributorEntries
+          .map((contributorEntry) => getSleeperPlayerName(contributorEntry.row.player))
+          .join(' + ') || getSleeperPlayerName(entry.row.player);
+        const isSharedPlay = contributorEntries.length > 1;
         const isOpen = openId === event.id;
         const isSelected = selectedEventId === event.id;
         return (
@@ -268,13 +487,20 @@ export function LiveFeedList({
               aria-expanded={isOpen}
             >
               <span className="fl-play__figure">
-                <LiveAvatar player={entry.row.player} size={46} className="fl-play__av" />
+                <LiveAvatar
+                  player={entry.row.player}
+                  size="var(--fl-feed-avatar)"
+                  initialsSize="var(--fl-feed-initials)"
+                  className="fl-play__av"
+                />
                 <LiveGlyphBadge kind={event.kind} />
               </span>
               <span className="fl-play__body">
                 <span className="fl-play__l1">
                   <span className="fl-play__nm">{name}</span>
-                  <LivePosChip position={entry.row.player?.position} />
+                  {isSharedPlay
+                    ? <span className="fl-play__shared">{contributorEntries.length} rostered</span>
+                    : <LivePosChip position={entry.row.player?.position} />}
                 </span>
                 <span className="fl-play__desc">{event.desc}</span>
                 {event.glance && (
@@ -290,16 +516,18 @@ export function LiveFeedList({
                 <span className={`fl-play__dv${(Number(event.pts) || 0) >= 0 ? ' is-up' : ' is-down'}`}>
                   {formatSigned(event.pts)}
                 </span>
-                <span className="fl-play__dt">{entry.pace.points.toFixed(1)} total</span>
+                <span className="fl-play__dt">{(isSharedPlay ? side.pace.total : entry.pace.points).toFixed(1)} total</span>
               </span>
             </button>
             {isOpen && (
               <PlayDetail
+                showPlayField={showPlayField}
                 event={event}
                 entry={entry}
                 side={side}
                 scoringSettings={scoringSettings}
                 onOpenPlayer={onOpenPlayer}
+                entriesById={entriesById}
               />
             )}
           </Fragment>

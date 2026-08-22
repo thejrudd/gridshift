@@ -331,4 +331,52 @@ export const WHATS_NEW = [
       },
     ],
   },
+  {
+    version: '8.6.0',
+    title: 'Live Play-by-Play',
+    features: [
+      {
+        id: 'fantasy-live-alpha-playback',
+        name: 'Fantasy Live (Alpha)',
+        description: 'Follow each fantasy matchup through a clearer scoring feed, focused filters, and animated play replays.',
+        supersedes: ['fantasy-live-alpha'],
+        steps: [{
+          route: { activeTab: 'fantasy', companionView: 'live' },
+          anchor: '[data-tour="companion-view-live"]',
+          anchorMobile: null,
+          title: 'Fantasy Live · Alpha',
+          body: 'Follow your matchup as it happens, filter the scoring feed, and expand a play to replay the action with your team\'s fantasy impact and every rostered contributor.',
+          placement: 'auto',
+        }],
+      },
+      {
+        id: 'statistics-scores-beta-current',
+        name: 'Statistics Scores (Beta)',
+        description: 'Track provider-backed NFL scores, live game context, and expanding game-detail coverage in one season board.',
+        supersedes: ['statistics-scores-beta'],
+        steps: [{
+          route: { activeTab: 'statistics', statisticsView: 'scores' },
+          anchor: '[data-tour="statistics-view-scores"]',
+          anchorMobile: null,
+          title: 'Statistics Scores · Beta',
+          body: 'Open Scores for provider-backed NFL results, live possession and latest-play context, plus game drilldowns when detailed coverage is available.',
+          placement: 'auto',
+        }],
+      },
+      {
+        id: 'statistics-scores-play-by-play',
+        name: 'Statistics Scores play-by-play',
+        description: 'Open a game drilldown to read its drives, inspect each play, and replay a drive snap by snap.',
+        steps: [{
+          route: { activeTab: 'statistics', statisticsView: 'scores' },
+          anchor: '[data-tour="statistics-scores-play-by-play"]',
+          anchorMobile: null,
+          title: 'Play-by-play, drive by drive',
+          body: 'This tour preview opens Play-by-Play with normalized descriptions and field position. Expand the drive, then choose Play drive to replay every snap in sequence.',
+          demoMode: 'statistics-scores-play-by-play',
+          placement: 'auto',
+        }],
+      },
+    ],
+  },
 ];

@@ -16,8 +16,6 @@ GridShift is a labor-of-love project: it should create something genuinely usefu
 - **Sustainable stewardship** — Support the project through voluntary contributions, sponsorships, paid official hosting, or support services.
 - **Quality over slop** — Prefer thoughtful, well-tested features that make GridShift more useful or enjoyable over novelty, growth, or monetization for its own sake.
 
-## Planned Versions
-
 ## Optimizations
 
 - **Trade proposal card desktop sizing polish** - Continue refining desktop card sizing so larger cards remain crisp and readable without reintroducing vertical text overflow or awkward package wrapping on narrower desktop widths.
@@ -36,13 +34,16 @@ GridShift is a labor-of-love project: it should create something genuinely usefu
 
 ### Live Data Infrastructure
 
+- **Broaden play-by-play fixture coverage** - Capture postseason and weather-affected games and extend playback and narration for any remaining fallbacks, especially laterals, muffed punts, blocked kicks, safeties, and multi-penalty plays.
+- **Replace estimated pass-flight geometry when source data exists** - BALLDONTLIE and the ESPN summary do not expose air yards, catch spots, or yards after catch, so playback currently uses the official description's short/deep qualifier only to position the ball. Keep displayed yardage provider-backed; replace the estimate only if a reliable source becomes available.
+
 - **Complete Phase 1 league isolation** - Build first-viewer/two-minute-warm Fantasy Live ingest lifecycle, per-league fair-use allocations, the five-hot-league GOAT ceiling, full operational metrics, broader public detail validation, and tier-adaptive Fantasy Live degradation. The shared page-aware gateway, bounded cache/coalescing, protected near-live Statistics Scores lane, provider-anchored clock, public live-route guard, backoff, and ESPN fallback are implemented. See `docs/Live Data Server Architecture.md`.
 - **Phase 2 — League-managed BALLDONTLIE keys** - Let a league-session holder attach one league-specific credential without exposing it to the browser, logs, or other leagues. Store keys with envelope encryption, isolate budgets and caches by credential, enforce tier-based league limits, support provider-side rotation instead of a GridShift remove action, and run scheduled suspect/dead-key cleanup with a non-secret credential index.
 - **Phase 3 — Horizontally scalable live-data delivery** - Move snapshots, rate state, credential indexes, and ingest leases out of process memory; add a shared cache and one elected/dedicated poller, stateless API replicas, bounded retention, backpressure, and changed-snapshot delivery through SSE or equivalent. Load-test and certify the path from 100 toward 1,000 active leagues/viewers.
 
 ### Deferred / Tabled
 
-- **Companion Roster draft-market lens (tabled)** - Revisit ADP or draft-market roster values after identifying a reliable, legally usable data source with broad offensive coverage, configurable league format support, and a clear plan for IDP or missing-player estimates. The Fantasy Football Calculator attempt was removed because API coverage left many rostered players blank.
+- **Companion Roster draft-market lens (tabled)** - Revisit extending optional draft-market context into roster values only after validating coverage, league-format behavior, and a clear plan for IDP or missing-player estimates. The current server-only BALLDONTLIE ADP enrichment is limited to preseason Rankings and Draft decisions and does not replace league-aware roster values.
 - **League-scoped shareable links (tabled from v6.5)** - Revisit after current performance and drilldown unification priorities. Scope remains: league-aware Companion/Trade URLs, league id format decision, ownership validation, connect-flow handoff, mismatch UX, and strict shareability boundaries.
 - **Shareable-link first phase (tabled from v6.3)** - Revisit page + selected-player URL sharing after the current Companion/Trade stabilization passes are complete.
 - **Season Narrative (deferred)** - Revisit only if a practical in-browser generation path matures; keep the core feature free and avoid making a hosted AI service or paywall a requirement.

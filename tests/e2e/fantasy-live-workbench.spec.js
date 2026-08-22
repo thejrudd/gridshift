@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { installTradeFixtures } from './tradeTestHarness.js';
+import { players as fixturePlayers } from '../fixtures/tradeFixtures.js';
 
 const LIVE_GAMES = [
   liveGame('game-buf-kc', 'BUF', 'KC', 17, 14, '2026-10-18T17:00:00.000Z'),
@@ -7,6 +8,8 @@ const LIVE_GAMES = [
   liveGame('game-mia-lac', 'MIA', 'LAC', 10, 13, '2026-10-19T00:20:00.000Z'),
   liveGame('game-cin-sf', 'CIN', 'SF', 14, 17, '2026-10-20T00:15:00.000Z'),
 ];
+
+const FANTASY_LIVE_PRODUCTION_ROUTE = '/fantasy/live?liveSandbox=off';
 
 test.beforeEach(async ({ page }) => {
   await installTradeFixtures(page);
@@ -39,6 +42,86 @@ test.beforeEach(async ({ page }) => {
   }));
 });
 
+test('a shared same-roster play opens each contributor with only their points', async ({ page }) => {
+  await page.unroute('https://api.sleeper.app/v1/**');
+  await installTradeFixtures(page, {
+    players: {
+      ...fixturePlayers,
+      103: { ...fixturePlayers[103], team: 'BUF' },
+    },
+  });
+  await page.unroute('**/api/live/status');
+  await page.route('**/api/live/status', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      ok: true,
+      live: {
+        enabled: true,
+        tier: 'paid',
+        mockPlaysEnabled: false,
+        accessCodeRequired: true,
+      },
+      session: { enabled: true, canDisable: true },
+    }),
+  }));
+  await page.route('**/api/live/game/*/plays', (route) => {
+    const gameId = route.request().url().match(/\/game\/([^/]+)\/plays/)?.[1];
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ok: true,
+        data: gameId === 'game-buf-kc' ? [{
+          id: 'shared-buf-touchdown',
+          game_id: 'game-buf-kc',
+          type_slug: 'passing-touchdown',
+          team: { abbreviation: 'BUF' },
+          possession_team: 'BUF',
+          period: 2,
+          clock: '3:38',
+          start_down: 1,
+          start_distance: 10,
+          start_yard_line: 61,
+          end_yard_line: 100,
+          start_yards_to_endzone: 39,
+          end_yards_to_endzone: 0,
+          short_text: 'Flex Receiver 39 yard pass from Pocket Commander for a touchdown',
+          text: 'Pocket Commander pass complete to Flex Receiver for 39 yards, touchdown.',
+          stat_yardage: 39,
+          scoring_play: true,
+          touchdown: true,
+          wallclock: '2026-10-18T18:20:00.000Z',
+          away_score: 23,
+          home_score: 14,
+        }] : [],
+      }),
+    });
+  });
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(FANTASY_LIVE_PRODUCTION_ROUTE);
+
+  const sharedRow = page.locator('.fl-play').filter({ hasText: 'Pocket Commander' }).filter({ hasText: 'Flex Receiver' });
+  await expect(sharedRow).toHaveCount(1);
+  await sharedRow.click();
+  await expect(page.locator('.fl-exp .dpb')).toBeVisible();
+  await expect(page.locator('.fl-exp .dpb-fantasy')).toHaveText(/^[+\u2212-]\d+\.\d$/);
+
+  const qbBreakdown = page.getByRole('button', { name: 'Pocket Commander breakdown' });
+  const receiverBreakdown = page.getByRole('button', { name: 'Flex Receiver breakdown' });
+  await expect(qbBreakdown).toBeVisible();
+  await expect(receiverBreakdown).toBeVisible();
+
+  await receiverBreakdown.click();
+  await expect(page.locator('.fl-analysis-stage .fl-phead__name')).toHaveText('Flex Receiver');
+  await expect(page.locator('.fl-analysis-stage .fl-brow.is-selected .fl-brow__p')).toHaveText('+10.9');
+
+  await qbBreakdown.click();
+  await expect(page.locator('.fl-analysis-stage .fl-phead__name')).toHaveText('Pocket Commander');
+  await expect(page.locator('.fl-analysis-stage .fl-brow.is-selected .fl-brow__p')).toHaveText('+5.6');
+});
+
 test('Fantasy Live shows an inactive-season state instead of a stale league week', async ({ page }) => {
   await page.unroute('https://api.sleeper.app/v1/**');
   await installTradeFixtures(page, {
@@ -66,7 +149,7 @@ test('Fantasy Live shows an inactive-season state instead of a stale league week
     }),
   }));
 
-  await page.goto('/fantasy/live');
+  await page.goto(FANTASY_LIVE_PRODUCTION_ROUTE);
 
   await expect(page.locator('.fl-top__l')).toHaveCount(0);
   await expect(page.getByText('No active matchup', { exact: true })).toBeVisible();
@@ -105,7 +188,7 @@ test('Fantasy Live keeps the access control available outside the active NFL sea
     },
   });
 
-  await page.goto('/fantasy/live');
+  await page.goto(FANTASY_LIVE_PRODUCTION_ROUTE);
 
   await expect(page.getByText('Turn on live scoring for this league', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Turn on Live' })).toHaveCount(1);
@@ -122,7 +205,7 @@ test('Fantasy Live reopens the enable gate after turning off the browser session
     });
   });
 
-  await page.goto('/fantasy/live');
+  await page.goto(FANTASY_LIVE_PRODUCTION_ROUTE);
   await page.getByRole('button', { name: 'Live scoring options' }).click();
 
   const turnOff = page.getByRole('button', { name: 'Turn off live scoring for this browser' });
@@ -149,7 +232,7 @@ test('Fantasy Live keeps ordinary sessions from turning Live off', async ({ page
     }),
   }));
 
-  await page.goto('/fantasy/live');
+  await page.goto(FANTASY_LIVE_PRODUCTION_ROUTE);
   await page.getByRole('button', { name: 'Live scoring options' }).click();
 
   await expect(page.getByRole('button', { name: 'Turn off live scoring for this browser' })).toHaveCount(0);
@@ -171,7 +254,7 @@ test('Fantasy Live keeps the league week visible without lighting up for an unre
     body: JSON.stringify({ ok: true, games: { [unrelatedLiveGame.id]: [] } }),
   }));
 
-  await page.goto('/fantasy/live');
+  await page.goto(FANTASY_LIVE_PRODUCTION_ROUTE);
 
   await expect(page.getByText('Live · Week 7', { exact: true })).toBeVisible();
   await expect(page.locator('.fl-live-dot')).toHaveCount(0);
@@ -184,7 +267,7 @@ test('Fantasy Live keeps the league week visible without lighting up for an unre
 
 test('desktop Live keeps the feed and chart side by side with synchronized replay', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 960 });
-  await page.goto('/fantasy/live');
+  await page.goto(FANTASY_LIVE_PRODUCTION_ROUTE);
 
   await expect(page.locator('.fl-live-dot')).toHaveCount(1);
   await expect(page.getByText(/4 matchup games live/)).toBeVisible();
@@ -197,6 +280,7 @@ test('desktop Live keeps the feed and chart side by side with synchronized repla
     const plot = element.getBoundingClientRect();
     const chart = element.closest('.fl-chart');
     const viewport = element.closest('.fl-chart__viewport');
+    const analysis = element.closest('.fl-analysis-stage');
     const content = document.querySelector('.content-area')?.getBoundingClientRect();
     const board = document.querySelector('.fl-live-board')?.getBoundingClientRect();
     const feed = document.querySelector('.fl-feed-scroll')?.getBoundingClientRect();
@@ -213,6 +297,8 @@ test('desktop Live keeps the feed and chart side by side with synchronized repla
         return { top: bounds.top, bottom: bounds.bottom, overflow: getComputedStyle(chart).overflow };
       })() : null,
       viewportOverflowX: viewport ? getComputedStyle(viewport).overflowX : '',
+      viewportHeight: viewport?.getBoundingClientRect().height ?? 0,
+      analysisHeight: analysis?.getBoundingClientRect().height ?? 0,
       plot: { top: plot.top, bottom: plot.bottom, overflow: getComputedStyle(element).overflow },
       feed: feed ? { top: feed.top, right: feed.right, height: feed.height } : null,
       controls: controls ? { top: controls.top, left: controls.left, height: controls.height } : null,
@@ -221,8 +307,9 @@ test('desktop Live keeps the feed and chart side by side with synchronized repla
   });
   expect(chartGeometry.width).toBeGreaterThan(600);
   expect(chartGeometry.boardWidth / chartGeometry.contentWidth).toBeGreaterThan(0.9);
-  expect(chartGeometry.height).toBeGreaterThanOrEqual(240);
-  expect(chartGeometry.height / chartGeometry.width).toBeCloseTo(0.34, 1);
+  expect(chartGeometry.height).toBeGreaterThan(0);
+  expect(Math.abs(chartGeometry.height - chartGeometry.viewportHeight)).toBeLessThanOrEqual(1);
+  expect(chartGeometry.height).toBeLessThan(chartGeometry.analysisHeight);
   expect(Math.abs(chartGeometry.height - chartGeometry.heightAttribute)).toBeLessThanOrEqual(1);
   expect(chartGeometry.chart?.overflow).toBe('hidden');
   expect(chartGeometry.viewportOverflowX).toBe('auto');
@@ -242,6 +329,37 @@ test('desktop Live keeps the feed and chart side by side with synchronized repla
   }));
   expect(feedGeometry.overflowY).toBe('auto');
   expect(feedGeometry.scrollHeight).toBeGreaterThan(feedGeometry.clientHeight);
+
+  const readability = await page.locator('.fl-live-board').evaluate((board) => {
+    const railAvatar = board.querySelector('.fl-rail__av');
+    const railName = board.querySelector('.fl-rail__nm');
+    const railPoints = board.querySelector('.fl-rail__pv');
+    const play = board.querySelector('.fl-play');
+    const playAvatar = board.querySelector('.fl-play__av');
+    const playName = board.querySelector('.fl-play__nm');
+    const playDescription = board.querySelector('.fl-play__desc');
+    const playMeta = board.querySelector('.fl-play__l3');
+    return {
+      railAvatar: railAvatar?.getBoundingClientRect().width ?? 0,
+      railNameSize: Number.parseFloat(getComputedStyle(railName).fontSize),
+      railPointsSize: Number.parseFloat(getComputedStyle(railPoints).fontSize),
+      railOpacity: Number.parseFloat(getComputedStyle(railName.closest('.fl-rail__pf')).opacity),
+      playHeight: play?.getBoundingClientRect().height ?? 0,
+      playAvatar: playAvatar?.getBoundingClientRect().width ?? 0,
+      playNameSize: Number.parseFloat(getComputedStyle(playName).fontSize),
+      playDescriptionSize: Number.parseFloat(getComputedStyle(playDescription).fontSize),
+      playMetaSize: Number.parseFloat(getComputedStyle(playMeta).fontSize),
+    };
+  });
+  expect(readability.railAvatar).toBeGreaterThanOrEqual(52);
+  expect(readability.railNameSize).toBeGreaterThanOrEqual(13);
+  expect(readability.railPointsSize).toBeGreaterThanOrEqual(15);
+  expect(readability.railOpacity).toBe(1);
+  expect(readability.playHeight).toBeGreaterThanOrEqual(80);
+  expect(readability.playAvatar).toBeGreaterThanOrEqual(52);
+  expect(readability.playNameSize).toBeGreaterThanOrEqual(16);
+  expect(readability.playDescriptionSize).toBeGreaterThanOrEqual(14);
+  expect(readability.playMetaSize).toBeGreaterThanOrEqual(12);
 
   const contentArea = page.locator('.content-area');
   const pageScrollBeforeFeed = await contentArea.evaluate((element) => element.scrollTop);
@@ -282,7 +400,32 @@ test('desktop Live keeps the feed and chart side by side with synchronized repla
   await expect(page.locator('.fl-feed-column')).toBeVisible();
   await expect(page.locator('.fl-lead__head')).toHaveCount(0);
 
-  await page.getByRole('button', { name: 'Close' }).click();
+  const closeBreakdown = page.getByRole('button', { name: 'Close player breakdown' });
+  const breakdownReadability = await page.locator('.fl-analysis-stage .fl-sheet').evaluate((sheet) => {
+    const close = sheet.querySelector('.fl-phead__back');
+    const scoringRow = sheet.querySelector('.fl-brow__l');
+    return {
+      closeHeight: close?.getBoundingClientRect().height ?? 0,
+      closeColor: getComputedStyle(close).color,
+      expectedCloseColor: getComputedStyle(document.documentElement)
+        .getPropertyValue('--color-label-secondary').trim(),
+      closeFontSize: Number.parseFloat(getComputedStyle(close).fontSize),
+      rowFontSize: scoringRow ? Number.parseFloat(getComputedStyle(scoringRow).fontSize) : 0,
+      bodyWidth: sheet.querySelector('.fl-pbody')?.getBoundingClientRect().width ?? 0,
+    };
+  });
+  expect(breakdownReadability.closeHeight).toBeGreaterThanOrEqual(44);
+  expect(breakdownReadability.closeColor).toBe(breakdownReadability.expectedCloseColor);
+  expect(breakdownReadability.closeFontSize).toBeGreaterThanOrEqual(14);
+  expect(breakdownReadability.rowFontSize).toBeGreaterThanOrEqual(14);
+  expect(breakdownReadability.bodyWidth).toBeLessThanOrEqual(1201);
+
+  await closeBreakdown.focus();
+  await expect.poll(() => closeBreakdown.evaluate((button) => (
+    Number.parseFloat(getComputedStyle(button).outlineWidth)
+  ))).toBeGreaterThanOrEqual(2);
+
+  await closeBreakdown.click();
   await expect(page.locator('.fl-analysis-stage .fl-chart')).toBeVisible();
   await page.getByRole('button', { name: 'Back to live' }).click();
   await expect(page.getByRole('button', { name: 'Back to live' })).toHaveCount(0);
@@ -290,9 +433,125 @@ test('desktop Live keeps the feed and chart side by side with synchronized repla
   await expect.poll(() => feed.evaluate((element) => element.scrollTop)).toBeLessThanOrEqual(1);
 });
 
+test('desktop Live fits the route viewport without document scrolling', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto(FANTASY_LIVE_PRODUCTION_ROUTE);
+
+  await expect(page.locator('.fl-chart svg')).toBeVisible();
+  const geometry = await page.locator('.content-area').evaluate((content) => {
+    const shell = content.querySelector('.companion-live-shell')?.getBoundingClientRect();
+    const board = content.querySelector('.fl-live-board')?.getBoundingClientRect();
+    const feed = content.querySelector('.fl-feed-scroll')?.getBoundingClientRect();
+    const chartViewport = content.querySelector('.fl-chart__viewport')?.getBoundingClientRect();
+    const bounds = content.getBoundingClientRect();
+    return {
+      overflowY: getComputedStyle(content).overflowY,
+      scrollDelta: content.scrollHeight - content.clientHeight,
+      contentBottom: bounds.bottom,
+      shellBottom: shell?.bottom ?? 0,
+      boardHeight: board?.height ?? 0,
+      feedHeight: feed?.height ?? 0,
+      chartHeight: chartViewport?.height ?? 0,
+    };
+  });
+
+  expect(geometry.overflowY).toBe('hidden');
+  expect(geometry.scrollDelta).toBeLessThanOrEqual(1);
+  expect(geometry.shellBottom).toBeLessThanOrEqual(geometry.contentBottom + 1);
+  expect(geometry.boardHeight).toBeGreaterThan(0);
+  expect(Math.abs(geometry.feedHeight - geometry.boardHeight)).toBeLessThanOrEqual(1);
+  expect(geometry.chartHeight).toBeGreaterThan(0);
+});
+
+test('desktop Live preserves an interactive chart on an unusually short viewport', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 600 });
+  await page.goto(FANTASY_LIVE_PRODUCTION_ROUTE);
+
+  await expect(page.locator('.fl-chart svg')).toBeVisible();
+  const geometry = await page.locator('.content-area').evaluate((content) => {
+    const chart = content.querySelector('.fl-chart__viewport')?.getBoundingClientRect();
+    const rail = content.querySelector('.fl-rail')?.getBoundingClientRect();
+    const railAvatar = content.querySelector('.fl-rail__av');
+    const railName = content.querySelector('.fl-rail__nm');
+    const railPoints = content.querySelector('.fl-rail__pv');
+    const railItem = content.querySelector('.fl-rail__pf');
+    return {
+      scrollDelta: content.scrollHeight - content.clientHeight,
+      chartHeight: chart?.height ?? 0,
+      railHeight: rail?.height ?? 0,
+      railAvatar: railAvatar?.getBoundingClientRect().width ?? 0,
+      railNameSize: Number.parseFloat(getComputedStyle(railName).fontSize),
+      railPointsSize: Number.parseFloat(getComputedStyle(railPoints).fontSize),
+      railOpacity: Number.parseFloat(getComputedStyle(railItem).opacity),
+    };
+  });
+
+  expect(geometry.scrollDelta).toBeLessThanOrEqual(1);
+  expect(geometry.chartHeight).toBeGreaterThanOrEqual(80);
+  expect(geometry.railHeight).toBeLessThanOrEqual(64);
+  expect(geometry.railAvatar).toBeGreaterThanOrEqual(44);
+  expect(geometry.railNameSize).toBeGreaterThanOrEqual(13);
+  expect(geometry.railPointsSize).toBeGreaterThanOrEqual(15);
+  expect(geometry.railOpacity).toBe(1);
+});
+
+test('desktop Live expands across a wide monitor instead of stopping at the workbench cap', async ({ page }) => {
+  await page.setViewportSize({ width: 2560, height: 1440 });
+  await page.goto(FANTASY_LIVE_PRODUCTION_ROUTE);
+
+  await expect(page.locator('.fl-chart svg')).toBeVisible();
+  const geometry = await page.locator('.content-area').evaluate((content) => {
+    const styles = getComputedStyle(content);
+    const shell = content.querySelector('.companion-live-shell');
+    const board = content.querySelector('.fl-live-board');
+    const railAvatar = content.querySelector('.fl-rail__av');
+    const railName = content.querySelector('.fl-rail__nm');
+    const railPoints = content.querySelector('.fl-rail__pv');
+    const railItem = content.querySelector('.fl-rail__pf');
+    const availableWidth = content.clientWidth
+      - Number.parseFloat(styles.paddingLeft)
+      - Number.parseFloat(styles.paddingRight);
+    return {
+      availableWidth,
+      shellWidth: shell?.getBoundingClientRect().width ?? 0,
+      boardWidth: board?.getBoundingClientRect().width ?? 0,
+      shellMaxWidth: shell ? getComputedStyle(shell).maxWidth : '',
+      railAvatar: railAvatar?.getBoundingClientRect().width ?? 0,
+      railNameSize: Number.parseFloat(getComputedStyle(railName).fontSize),
+      railPointsSize: Number.parseFloat(getComputedStyle(railPoints).fontSize),
+      railOpacity: Number.parseFloat(getComputedStyle(railItem).opacity),
+    };
+  });
+
+  expect(geometry.availableWidth).toBeGreaterThan(2200);
+  expect(Math.abs(geometry.shellWidth - geometry.availableWidth)).toBeLessThanOrEqual(2);
+  expect(Math.abs(geometry.boardWidth - geometry.shellWidth)).toBeLessThanOrEqual(2);
+  expect(geometry.shellMaxWidth).toBe('none');
+  expect(geometry.railAvatar).toBeGreaterThanOrEqual(64);
+  expect(geometry.railNameSize).toBeGreaterThanOrEqual(14);
+  expect(geometry.railPointsSize).toBeGreaterThanOrEqual(18);
+  expect(geometry.railOpacity).toBe(1);
+});
+
+test('Fantasy Live sandbox can fill the completed demo week immediately', async ({ page }) => {
+  await page.goto('/fantasy/live');
+
+  const fullWeek = page.getByRole('button', { name: 'Fill replay with the full week' });
+  const sandboxAvailable = await fullWeek.waitFor({ state: 'attached', timeout: 3000 })
+    .then(() => true)
+    .catch(() => false);
+  test.skip(!sandboxAvailable, 'Requires a server built with VITE_LIVE_SANDBOX=true.');
+  await expect(fullWeek).toBeVisible();
+  await fullWeek.click();
+
+  await expect(page.getByRole('slider', { name: 'Replay position' })).toHaveValue('1');
+  await expect(page.locator('.live-sandbox-pct')).toHaveText('100%');
+  await expect(fullWeek).toBeDisabled();
+});
+
 test('Fantasy Live pace chart zooms and scrolls without moving the page', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 960 });
-  await page.goto('/fantasy/live');
+  await page.goto(FANTASY_LIVE_PRODUCTION_ROUTE);
 
   await expect.poll(() => page.locator('.fl-chart__mark').count()).toBeGreaterThan(2);
   const chartViewport = page.locator('.fl-chart__viewport');
@@ -349,7 +608,7 @@ test('Fantasy Live pace chart zooms and scrolls without moving the page', async 
 
 test('Fantasy Live tracker follows the pointer and only snaps near a score dot', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 960 });
-  await page.goto('/fantasy/live');
+  await page.goto(FANTASY_LIVE_PRODUCTION_ROUTE);
 
   await expect.poll(() => page.locator('.fl-chart__mark').count()).toBeGreaterThan(2);
   const chart = page.locator('.fl-chart svg');
@@ -417,7 +676,7 @@ test('Fantasy Live tracker follows the pointer and only snaps near a score dot',
 
 test('desktop minimum width keeps the feed beside the chart when the pane permits', async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 900 });
-  await page.goto('/fantasy/live');
+  await page.goto(FANTASY_LIVE_PRODUCTION_ROUTE);
 
   await expect.poll(() => page.locator('.fl-play').count()).toBeGreaterThan(8);
   const geometry = await page.locator('.fl-live-board').evaluate((element) => {
@@ -440,7 +699,7 @@ test('desktop minimum width keeps the feed beside the chart when the pane permit
 
 test('desktop pace chart stays inside its panel on a short viewport', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 600 });
-  await page.goto('/fantasy/live');
+  await page.goto(FANTASY_LIVE_PRODUCTION_ROUTE);
 
   await expect.poll(() => page.locator('.fl-chart__mark').count()).toBeGreaterThan(2);
   const geometry = await page.locator('.fl-chart svg').evaluate((element) => {
@@ -478,7 +737,7 @@ test('desktop pace chart stays inside its panel on a short viewport', async ({ p
 
 test('mobile Live replaces the graph with the selected player while keeping the feed', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('/fantasy/live');
+  await page.goto(FANTASY_LIVE_PRODUCTION_ROUTE);
 
   await expect.poll(() => page.locator('.fl-play').count()).toBeGreaterThan(8);
   await expect(page.locator('.fl-chart__head')).not.toHaveClass(/is-collapsed/);
@@ -495,7 +754,10 @@ test('mobile Live replaces the graph with the selected player while keeping the 
   await expect(page.locator('.fl-analysis-stage .fl-sheet')).toBeVisible();
   await expect(page.locator('.fl-analysis-stage .fl-chart')).toHaveCount(0);
   await expect(page.locator('.fl-feed-column')).toBeVisible();
-  await page.getByRole('button', { name: 'Close' }).click();
+  const closeBreakdown = page.getByRole('button', { name: 'Close player breakdown' });
+  await expect(closeBreakdown).toBeVisible();
+  expect((await closeBreakdown.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+  await closeBreakdown.click();
   await expect(page.locator('.fl-analysis-stage .fl-chart')).toBeVisible();
   await page.getByRole('button', { name: 'Zoom chart in' }).click();
   const mobileZoomGeometry = await page.locator('.fl-chart').evaluate((element) => {

@@ -1,4 +1,5 @@
 import { NFL_SCOREBOARD_TIME_ZONE } from './statisticsScoresGrouping.js';
+import { reconcileProviderClockAnchor } from './providerAnchoredGameClock.js';
 
 const ESPN_NFL_SCOREBOARD_URL = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard';
 
@@ -248,9 +249,17 @@ function normalizeWeek(payload, weekNumber, phase) {
 export function normalizeEspnScoreboardSeason(payloads, {
   season = new Date().getFullYear(),
   phase = NFL_SEASON_PHASES.PRESEASON,
+  observedAt,
 } = {}) {
   const entries = Array.isArray(payloads) ? payloads : [];
-  const weeks = entries.map((payload, index) => normalizeWeek(payload, index + 1, phase));
+  const weeks = entries.map((payload, index) => {
+    const week = normalizeWeek(payload, index + 1, phase);
+    if (observedAt == null) return week;
+    return {
+      ...week,
+      games: week.games.map((game) => reconcileProviderClockAnchor(null, game, { observedAt })),
+    };
+  });
   const games = weeks.flatMap((week) => week.games);
 
   return {
@@ -306,7 +315,11 @@ export async function fetchEspnPreseason({
     )),
   );
 
-  return normalizeEspnScoreboardSeason(payloads, { season, phase: NFL_SEASON_PHASES.PRESEASON });
+  return normalizeEspnScoreboardSeason(payloads, {
+    season,
+    phase: NFL_SEASON_PHASES.PRESEASON,
+    observedAt: Date.now(),
+  });
 }
 
 export async function fetchEspnRegularSeason({
@@ -326,12 +339,20 @@ export async function fetchEspnRegularSeason({
     )),
   );
 
-  return normalizeEspnScoreboardSeason(payloads, { season, phase: NFL_SEASON_PHASES.REGULAR });
+  return normalizeEspnScoreboardSeason(payloads, {
+    season,
+    phase: NFL_SEASON_PHASES.REGULAR,
+    observedAt: Date.now(),
+  });
 }
 
-export function replaceEspnScoreboardWeek(seasonData, payload, weekNumber) {
+export function replaceEspnScoreboardWeek(seasonData, payload, weekNumber, options = {}) {
   const replacement = normalizeWeek(payload, weekNumber, seasonData?.phase ?? NFL_SEASON_PHASES.PRESEASON);
-  const weeks = (seasonData?.weeks ?? []).map((week) => week.week === weekNumber ? replacement : week);
+  const previousWeek = (seasonData?.weeks ?? []).find((week) => week.week === weekNumber);
+  const previousById = new Map((previousWeek?.games ?? []).map((game) => [String(game.id), game]));
+  const games = replacement.games.map((game) => overlayEspnSnapshot(previousById.get(String(game.id)) ?? null, game, options));
+  const replacementWeek = { ...replacement, games };
+  const weeks = (seasonData?.weeks ?? []).map((week) => week.week === weekNumber ? replacementWeek : week);
   return {
     ...seasonData,
     weeks,
@@ -358,15 +379,16 @@ function sameNflMatchup(left, right) {
       === normalizeCrosswalkTeamId(right?.home?.id ?? right?.homeTeam);
 }
 
-function overlayEspnSnapshot(baseGame, espnGame) {
+function overlayEspnSnapshot(baseGame, espnGame, options = {}) {
   const live = espnGame.live
     ? { ...espnGame.live, possession: normalizeCrosswalkTeamId(espnGame.live.possession) || null }
     : null;
-  return {
+  const nextGame = {
+    ...espnGame,
     ...baseGame,
     espnEventId: espnGame.espnEventId,
     scoreboardProvider: 'espn',
-    detailsProvider: baseGame.provider,
+    detailsProvider: baseGame?.provider ?? 'espn',
     status: espnGame.status,
     statusLabel: espnGame.statusLabel,
     score: espnGame.score,
@@ -379,8 +401,11 @@ function overlayEspnSnapshot(baseGame, espnGame) {
     network: espnGame.network,
     broadcasts: espnGame.broadcasts,
     broadcastProvider: 'espn',
-    asOf: new Date().toISOString(),
+    asOf: options.providerFetchedAt
+      ? new Date(options.providerFetchedAt).toISOString()
+      : new Date().toISOString(),
   };
+  return reconcileProviderClockAnchor(baseGame, nextGame, options);
 }
 
 function overlayEspnBroadcastMetadata(baseGame, espnGame) {
@@ -412,9 +437,9 @@ export function overlayEspnBroadcastsWeek(seasonData, payload, weekNumber) {
   };
 }
 
-export function overlayEspnScoreboardWeek(seasonData, payload, weekNumber) {
+export function overlayEspnScoreboardWeek(seasonData, payload, weekNumber, options = {}) {
   if (seasonData?.provider !== 'balldontlie') {
-    return replaceEspnScoreboardWeek(seasonData, payload, weekNumber);
+    return replaceEspnScoreboardWeek(seasonData, payload, weekNumber, options);
   }
 
   const replacement = normalizeWeek(payload, weekNumber, seasonData.phase ?? NFL_SEASON_PHASES.PRESEASON);
@@ -425,11 +450,11 @@ export function overlayEspnScoreboardWeek(seasonData, payload, weekNumber) {
       const espnGame = replacement.games.find((candidate) => sameNflMatchup(game, candidate));
       if (!espnGame) return game;
       matchedEspnIds.add(espnGame.id);
-      return overlayEspnSnapshot(game, espnGame);
+      return overlayEspnSnapshot(game, espnGame, options);
     });
     replacement.games.forEach((game) => {
       if (!matchedEspnIds.has(game.id)) {
-        games.push({ ...game, scoreboardProvider: 'espn', detailsProvider: 'espn' });
+        games.push(overlayEspnSnapshot(null, game, options));
       }
     });
     games.sort((left, right) => Date.parse(left.kickoff) - Date.parse(right.kickoff));

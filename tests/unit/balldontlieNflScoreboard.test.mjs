@@ -12,6 +12,7 @@ import {
   NFL_SEASON_PHASES,
   normalizeEspnScoreboardSeason,
 } from '../../src/utils/espnNflScoreboard.js';
+import { getPlayTimeline } from '../../src/utils/nflPlays/playBeats.js';
 
 const game = {
   id: 7001,
@@ -235,13 +236,48 @@ test('separates HOF and Preseason Week 1 by date and venue when raw week values 
   assert.equal(season.weeks[1].label, 'Preseason Week 1');
 });
 
+test('keeps week selection aligned when a partial payload uses raw week one for both preseason slates', () => {
+  const payload = { games: [
+    {
+      ...game,
+      id: 7403,
+      date: '2026-08-07T00:00:00.000Z',
+      venue: 'Tom Benson Hall of Fame Stadium',
+      week: 1,
+      postseason: false,
+    },
+    {
+      ...game,
+      id: 7404,
+      date: '2026-08-14T00:00:00.000Z',
+      venue: 'Gillette Stadium',
+      week: 1,
+      postseason: false,
+    },
+  ] };
+
+  const hof = normalizeBdlScoreboardWeek(payload, {
+    season: 2026,
+    phase: NFL_SEASON_PHASES.PRESEASON,
+    week: 1,
+  });
+  const ordinary = normalizeBdlScoreboardWeek(payload, {
+    season: 2026,
+    phase: NFL_SEASON_PHASES.PRESEASON,
+    week: 2,
+  });
+
+  assert.deepEqual(hof.games.map((entry) => entry.providerGameId), ['7403']);
+  assert.deepEqual(ordinary.games.map((entry) => entry.providerGameId), ['7404']);
+});
+
 test('labels the first ordinary preseason slate Week 1 when no HOF game is present', () => {
   const payload = { games: [{
     ...game,
     id: 7501,
     date: '2026-08-14T00:00:00.000Z',
     venue: 'Gillette Stadium',
-    week: 1,
+    week: 2,
     postseason: false,
   }] };
   const season = normalizeBdlScoreboardSeason(payload, {
@@ -258,6 +294,34 @@ test('labels the first ordinary preseason slate Week 1 when no HOF game is prese
   assert.equal(season.weeks[1].games[0].providerGameId, '7501');
   assert.equal(week.label, 'Preseason Week 1');
   assert.equal(week.games[0].providerGameId, '7501');
+});
+
+test('does not re-bucket a partial preseason live payload into the requested week', () => {
+  const payload = {
+    games: [{
+      ...game,
+      id: 7502,
+      date: '2026-08-21T23:00:00.000Z',
+      week: 3,
+      season_type: 1,
+      status_state: 'in_progress',
+      status: '12:27 - 1st',
+    }],
+  };
+
+  const weekTwo = normalizeBdlScoreboardWeek(payload, {
+    season: 2026,
+    phase: NFL_SEASON_PHASES.PRESEASON,
+    week: 2,
+  });
+  const weekThree = normalizeBdlScoreboardWeek(payload, {
+    season: 2026,
+    phase: NFL_SEASON_PHASES.PRESEASON,
+    week: 3,
+  });
+
+  assert.equal(weekTwo.games.length, 0);
+  assert.equal(weekThree.games[0].providerGameId, '7502');
 });
 
 test('rejects December and January regular-season rows from an unknown-phase preseason payload', () => {
@@ -369,6 +433,47 @@ test('removes provider period markers before grouping BDL plays into drives', ()
   assert.equal(drives[0].summary, '2 plays');
   assert.deepEqual(drives[0].plays.map((play) => play.id), ['real-1', 'real-2']);
   assert.equal(drives[0].plays.some((play) => /END/i.test(play.description)), false);
+});
+
+test('describes a final game that the provider ends at the two-minute warning', () => {
+  const normalizedGame = normalizeBdlScoreboardGame(game);
+  const terminalAt = '2026-08-22T02:26:29.000Z';
+  const earlyEnding = buildScoreDetailFromGame(normalizedGame, {
+    providerDetail: { plays: [
+      {
+        id: 'last-snap', text: 'Rush for 3 yards.', type_slug: 'rush', period: 4,
+        clock_display: '2:30', wallclock: '2026-08-22T02:25:50.000Z', team: { abbreviation: 'BAL' },
+      },
+      {
+        id: 'warning', text: 'Two-Minute Warning', type_slug: 'two-minute-warning', period: 4,
+        clock_display: '2:00', wallclock: terminalAt, team: { abbreviation: 'BAL' },
+      },
+      {
+        id: 'game-end', text: 'END GAME', type_slug: 'end-of-game', period: 4,
+        clock_display: '0:00', wallclock: terminalAt,
+      },
+    ] },
+    detailStatus: 'ready',
+  });
+  assert.deepEqual(earlyEnding.terminal, {
+    kind: 'ended-with-time-remaining',
+    clock: '2:00',
+  });
+
+  const ordinaryEnding = buildScoreDetailFromGame(normalizedGame, {
+    providerDetail: { plays: [
+      {
+        id: 'kneel', text: 'Quarterback kneels.', type_slug: 'rush', period: 4,
+        clock_display: '0:16', wallclock: '2026-09-06T03:29:44.000Z', team: { abbreviation: 'BAL' },
+      },
+      {
+        id: 'game-end', text: 'END GAME', type_slug: 'end-of-game', period: 4,
+        clock_display: '0:00', wallclock: '2026-09-06T03:29:44.000Z',
+      },
+    ] },
+    detailStatus: 'ready',
+  });
+  assert.equal(ordinaryEnding.terminal, null);
 });
 
 test('keeps provider coverage explicit when BDL plays are unavailable', () => {
@@ -510,4 +615,165 @@ test('translates provider field coordinates into the possessing team and opponen
 
   assert.equal(drives[0].plays[0].spot, 'BAL 29');
   assert.equal(drives[1].plays[0].spot, 'BAL 4');
+});
+
+// ── drive boundaries ────────────────────────────────────────────────────────
+//
+// `team` on a BDL play names whoever holds the ball once the play is over. On
+// a kick or a turnover that is the receiving team, so grouping on it filed the
+// punt under the returners and opened every drive with the previous
+// possession's last play.
+
+const normalizedGame = () => normalizeBdlScoreboardGame(game); // BAL at KC
+
+test('a punt ends the punting team’s drive instead of opening the returners’', () => {
+  const drives = groupBdlPlaysIntoDrives([
+    { id: 'a1', text: 'L.Jackson pass short right to Z.Flowers to BAL 30 for 5 yards.', type_slug: 'pass-reception', team: { abbreviation: 'BAL' }, period: 1, clock_display: '12:00', start_down: 1, start_distance: 10 },
+    { id: 'a2', text: 'D.Henry up the middle to BAL 32 for 2 yards.', type_slug: 'rush', team: { abbreviation: 'BAL' }, period: 1, clock_display: '11:20', start_down: 2, start_distance: 5 },
+    // Reported under KC because KC receives it — but BAL kicked it.
+    { id: 'a3', text: 'J.Stout punts 45 yards to KC 23, Center-N.Moore, fair catch by M.Hardman.', type_slug: 'punt', team: { abbreviation: 'KC' }, period: 1, clock_display: '10:35' },
+    { id: 'b1', text: 'P.Mahomes pass short left to T.Kelce to KC 31 for 8 yards.', type_slug: 'pass-reception', team: { abbreviation: 'KC' }, period: 1, clock_display: '10:28', start_down: 1, start_distance: 10 },
+  ], normalizedGame());
+
+  assert.equal(drives.length, 2);
+  assert.equal(drives[0].team, 'BAL');
+  assert.deepEqual(drives[0].plays.map((play) => play.id), ['a1', 'a2', 'a3']);
+  assert.equal(drives[0].result, 'Punt');
+  assert.equal(drives[1].team, 'KC');
+  assert.deepEqual(drives[1].plays.map((play) => play.id), ['b1']);
+});
+
+test('a turnover ends the drive that lost the ball', () => {
+  const drives = groupBdlPlaysIntoDrives([
+    { id: 'a1', text: 'L.Jackson pass short right to Z.Flowers to BAL 30 for 5 yards.', type_slug: 'pass-reception', team: { abbreviation: 'BAL' }, period: 2, clock_display: '08:00', start_down: 1, start_distance: 10 },
+    { id: 'a2', text: 'L.Jackson pass deep middle intended for M.Andrews INTERCEPTED by T.McDuffie at KC 40.', type_slug: 'pass-interception-return', team: { abbreviation: 'KC' }, period: 2, clock_display: '07:20' },
+    { id: 'b1', text: 'I.Pacheco right guard to KC 44 for 4 yards.', type_slug: 'rush', team: { abbreviation: 'KC' }, period: 2, clock_display: '07:12', start_down: 1, start_distance: 10 },
+  ], normalizedGame());
+
+  assert.equal(drives.length, 2);
+  assert.deepEqual(drives[0].plays.map((play) => play.id), ['a1', 'a2']);
+  assert.equal(drives[0].result, 'Interception');
+  assert.equal(drives[1].team, 'KC');
+});
+
+test('a summary-only pick-six inherits its passer from the same Statistics drive', () => {
+  const drives = groupBdlPlaysIntoDrives([
+    {
+      id: '401873286469', period: 1, clock_display: '8:18', type_slug: 'interception-return-touchdown',
+      type_text: 'Interception Return Touchdown', team: { abbreviation: 'HOU' },
+      short_text: "Wade Woodaz 80 Yd Interception Return (Ka'imi Fairbairn Kick)",
+      text: "Wade Woodaz 80 Yd Interception Return (Ka'imi Fairbairn Kick)",
+      start_down: 1, start_distance: 10, start_yard_line: 24, end_yard_line: 100,
+      start_yards_to_endzone: 24, end_yards_to_endzone: 0, stat_yardage: 80, scoring_play: true,
+    },
+    {
+      id: '401873286447', period: 1, clock_display: '9:16', type_slug: 'rush',
+      team: { abbreviation: 'LV' }, short_text: 'Mike Washington Jr. 33 Yd Rush',
+      text: 'M.Washington up the middle to HST 24 for 33 yards (J.Smith).', stat_yardage: 33,
+    },
+    {
+      id: '401873286422', period: 1, clock_display: '9:56', type_slug: 'pass-reception',
+      team: { abbreviation: 'LV' }, short_text: 'Fernando Mendoza Pass Complete for 22 Yds to Jalen Nailor',
+      text: '(Shotgun) F.Mendoza pass short right to J.Nailor to LV 43 for 22 yards (J.Reed).', stat_yardage: 22,
+    },
+  ], { away: { id: 'LV' }, home: { id: 'HOU' } });
+  const pickSix = drives.flatMap((drive) => drive.plays)
+    .find((play) => play.id === '401873286469');
+
+  assert.equal(pickSix.inferredPasserName, 'Fernando Mendoza');
+  const timeline = getPlayTimeline(pickSix, { homeTeam: 'HOU', awayTeam: 'LV' });
+  assert.match(timeline.beats.find((beat) => beat.role === 'passer')?.text ?? '', /^Fernando Mendoza drops back/);
+  assert.match(timeline.beats.find((beat) => beat.kind === 'release')?.text ?? '', /^Fernando Mendoza throws/);
+});
+
+test('a missed field goal ends the kicking team’s drive and is not called a make', () => {
+  const drives = groupBdlPlaysIntoDrives([
+    { id: 'a1', text: 'D.Henry up the middle to KC 20 for 3 yards.', type_slug: 'rush', team: { abbreviation: 'BAL' }, period: 3, clock_display: '05:00', start_down: 3, start_distance: 8 },
+    { id: 'a2', text: 'J.Tucker 41 yard field goal is No Good, Wide Right, Center-N.Moore.', type_slug: 'field-goal-missed', team: { abbreviation: 'KC' }, period: 3, clock_display: '04:20' },
+    { id: 'b1', text: 'P.Mahomes kneels.', type_slug: 'rush', team: { abbreviation: 'KC' }, period: 3, clock_display: '04:12', start_down: 1, start_distance: 10 },
+  ], normalizedGame());
+
+  assert.deepEqual(drives[0].plays.map((play) => play.id), ['a1', 'a2']);
+  assert.equal(drives[0].team, 'BAL');
+  assert.equal(drives[0].result, 'Missed FG');
+});
+
+test('the kickoff that opens a half does not stand as a drive of its own', () => {
+  const drives = groupBdlPlaysIntoDrives([
+    { id: 'k', text: 'H.Butker kicks 65 yards from KC 35 to end zone, Touchback.', type_slug: 'kickoff', team: { abbreviation: 'BAL' }, period: 1, clock_display: '15:00' },
+    { id: 'a1', text: 'D.Henry up the middle to BAL 28 for 3 yards.', type_slug: 'rush', team: { abbreviation: 'BAL' }, period: 1, clock_display: '14:55', start_down: 1, start_distance: 10 },
+  ], normalizedGame());
+
+  assert.equal(drives.length, 1);
+  assert.equal(drives[0].team, 'BAL');
+  assert.deepEqual(drives[0].plays.map((play) => play.id), ['k', 'a1']);
+});
+
+test('a drive counts the offense’s plays, not clock stoppages or the ensuing kickoff', () => {
+  const drives = groupBdlPlaysIntoDrives([
+    { id: 'a1', text: 'D.Henry up the middle to KC 8 for 3 yards.', type_slug: 'rush', team: { abbreviation: 'BAL' }, period: 1, clock_display: '09:00', start_down: 1, start_distance: 10 },
+    { id: 'a2', text: 'D.Henry up the middle for 8 yards, TOUCHDOWN.', type_slug: 'rushing-touchdown', team: { abbreviation: 'BAL' }, period: 1, clock_display: '08:30', scoring_play: true, away_score: 7, home_score: 0 },
+    { id: 'to', text: 'Official Timeout at 08:30.', type_slug: 'official-timeout', team: { abbreviation: 'BAL' }, period: 1, clock_display: '08:30' },
+    { id: 'ko', text: 'J.Tucker kicks 65 yards from BAL 35 to end zone, Touchback.', type_slug: 'kickoff', team: { abbreviation: 'KC' }, period: 1, clock_display: '08:30' },
+  ], normalizedGame());
+
+  assert.equal(drives.length, 1);
+  assert.equal(drives[0].plays.length, 4, 'the stoppage and the kickoff stay in the play list');
+  assert.equal(drives[0].playCount, 2, 'but only the offense’s snaps are counted');
+  assert.equal(drives[0].summary, '2 plays');
+  assert.equal(drives[0].result, 'Touchdown');
+});
+
+test('only a drive that scored carries a score', () => {
+  // Every play reports the running score, so taking the latest one marked
+  // every drive as a scoring drive and underlined all of them.
+  const drives = groupBdlPlaysIntoDrives([
+    { id: 'a1', text: 'D.Henry up the middle to BAL 30 for 3 yards.', type_slug: 'rush', team: { abbreviation: 'BAL' }, period: 1, clock_display: '09:00', start_down: 1, start_distance: 10, away_score: 7, home_score: 3 },
+    { id: 'a2', text: 'J.Stout punts 45 yards to KC 23, fair catch.', type_slug: 'punt', team: { abbreviation: 'KC' }, period: 1, clock_display: '08:20', away_score: 7, home_score: 3 },
+    { id: 'b1', text: 'P.Mahomes pass short left to T.Kelce for 12 yards, TOUCHDOWN.', type_slug: 'passing-touchdown', team: { abbreviation: 'KC' }, period: 1, clock_display: '07:40', scoring_play: true, away_score: 7, home_score: 10 },
+  ], normalizedGame());
+
+  assert.equal(drives[0].score, '');
+  assert.ok(drives[1].score, 'the scoring drive keeps its score');
+});
+
+test('halftime breaks the drive even when the same offense is on both sides of it', () => {
+  // The provider's end-of-half marker is filtered out before grouping, so
+  // without a period check the second-half kickoff lands at the end of that
+  // team's last first-half possession.
+  const drives = groupBdlPlaysIntoDrives([
+    { id: 'q2a', text: 'L.Jackson scrambles left end to BAL 35 for 1 yard.', type_slug: 'rush', team: { abbreviation: 'BAL' }, period: 2, clock_display: '00:12', start_down: 2, start_distance: 9 },
+    { id: 'q3k', text: 'J.Tucker kicks 63 yards from BAL 35 to KC 2.', type_slug: 'kickoff', team: { abbreviation: 'KC' }, period: 3, clock_display: '15:00' },
+    { id: 'q3a', text: 'I.Pacheco right guard to KC 30 for 4 yards.', type_slug: 'rush', team: { abbreviation: 'KC' }, period: 3, clock_display: '14:52', start_down: 1, start_distance: 10 },
+  ], normalizedGame());
+
+  assert.equal(drives.length, 2);
+  assert.deepEqual(drives[0].plays.map((play) => play.id), ['q2a']);
+  assert.equal(drives[0].team, 'BAL');
+  // The kickoff that opens a half has no drive of its own to end, so it leads
+  // into the possession that follows it.
+  assert.deepEqual(drives[1].plays.map((play) => play.id), ['q3k', 'q3a']);
+  assert.equal(drives[1].team, 'KC');
+});
+
+test('a drive that runs out the clock is named for the half it ended', () => {
+  const endOfGame = groupBdlPlaysIntoDrives([
+    { id: 'a1', text: 'J.Hurts kneels to DAL 36 for -1 yards.', type_slug: 'rush', team: { abbreviation: 'BAL' }, period: 4, clock_display: '00:40', start_down: 1, start_distance: 10 },
+  ], normalizedGame());
+  assert.equal(endOfGame[0].result, 'End of game');
+
+  const endOfHalf = groupBdlPlaysIntoDrives([
+    { id: 'a1', text: 'L.Jackson kneels to BAL 36 for -1 yards.', type_slug: 'rush', team: { abbreviation: 'BAL' }, period: 2, clock_display: '00:03', start_down: 1, start_distance: 10 },
+  ], normalizedGame());
+  assert.equal(endOfHalf[0].result, 'End of half');
+});
+
+test('a drive is named for the play it ended on, not the stoppage after it', () => {
+  const drives = groupBdlPlaysIntoDrives([
+    { id: 'a1', text: 'L.Jackson pass short right to Z.Flowers to BAL 30 for 5 yards.', type_slug: 'pass-reception', team: { abbreviation: 'BAL' }, period: 4, clock_display: '02:10', start_down: 3, start_distance: 9 },
+    { id: 'a2', text: 'J.Stout punts 45 yards to KC 23, fair catch.', type_slug: 'punt', team: { abbreviation: 'KC' }, period: 4, clock_display: '02:02' },
+    { id: 'a3', text: 'Two-Minute Warning', type_slug: 'two-minute-warning', team: { abbreviation: 'KC' }, period: 4, clock_display: '02:00' },
+  ], normalizedGame());
+
+  assert.equal(drives[0].result, 'Punt');
 });

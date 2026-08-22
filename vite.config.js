@@ -1,12 +1,44 @@
 import { defineConfig } from 'vite'
 import { readFileSync } from 'fs'
+import process from 'node:process'
 import react from '@vitejs/plugin-react-swc'
 import { VitePWA } from 'vite-plugin-pwa'
 
 const { version } = JSON.parse(readFileSync('./package.json', 'utf8'))
 const appVersion = process.env.GRIDSHIFT_APP_VERSION_OVERRIDE ?? version
 
-export default defineConfig({
+function devServiceWorkerReset() {
+  return {
+    name: 'gridshift-dev-service-worker-reset',
+    apply: 'serve',
+    configureServer(server) {
+      server.middlewares.use((request, response, next) => {
+        if (request.url?.split('?')[0] !== '/sw.js') {
+          next()
+          return
+        }
+
+        response.statusCode = 200
+        response.setHeader('Content-Type', 'text/javascript; charset=utf-8')
+        response.setHeader('Cache-Control', 'no-store, must-revalidate')
+        response.end(`
+self.addEventListener('install', () => self.skipWaiting())
+self.addEventListener('activate', (event) => {
+  event.waitUntil((async () => {
+    await self.registration.unregister()
+    await Promise.all((await caches.keys()).map((cacheName) => caches.delete(cacheName)))
+    for (const client of await self.clients.matchAll({ type: 'window' })) {
+      client.navigate(client.url)
+    }
+  })())
+})
+`)
+      })
+    },
+  }
+}
+
+export default defineConfig(({ command }) => ({
   server: {
     proxy: {
       '/ktc-proxy': {
@@ -29,12 +61,27 @@ export default defineConfig({
         changeOrigin: true,
         secure: false,
       },
+      '/api/fantasy': {
+        target: 'http://127.0.0.1:3001',
+        changeOrigin: true,
+        secure: false,
+      },
     },
+  },
+  resolve: {
+    alias: command === 'build'
+      // The Fantasy Live sandbox is a dev harness. Aliasing its entry to an
+      // inert stub keeps the fixture league, replay engine, and dev panel out
+      // of production bundles entirely, rather than relying on tree-shaking to
+      // prove the disabled branch dead across module boundaries.
+      ? [{ find: /^(.*)\/dev\/liveSandbox$/, replacement: '$1/dev/liveSandbox/production-stub.js' }]
+      : [],
   },
   define: {
     __APP_VERSION__: JSON.stringify(appVersion),
   },
   plugins: [
+    devServiceWorkerReset(),
     react(),
     VitePWA({
       registerType: 'prompt',
@@ -137,4 +184,4 @@ export default defineConfig({
       },
     }),
   ],
-})
+}))

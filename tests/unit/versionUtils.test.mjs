@@ -108,3 +108,16 @@ test('full-history replay applies feature supersession', () => {
     false,
   );
 });
+
+test('v8.6 refreshes the two live feature tours and keeps play-by-play distinct', () => {
+  const entries = collectWhatsNew(WHATS_NEW, '8.3.0', '8.6.0');
+  const featureIds = entries.flatMap((entry) => entry.features.map((feature) => feature.id));
+
+  assert.equal(featureIds.includes('fantasy-live-alpha'), false);
+  assert.equal(featureIds.includes('statistics-scores-beta'), false);
+  assert.deepEqual(featureIds.slice(-3), [
+    'fantasy-live-alpha-playback',
+    'statistics-scores-beta-current',
+    'statistics-scores-play-by-play',
+  ]);
+});

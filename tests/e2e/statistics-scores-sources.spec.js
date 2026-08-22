@@ -119,8 +119,7 @@ test('the developer fixture opens the fully populated comparison drilldown witho
   await page.getByRole('button', { name: 'Open Lions at Vikings game details' }).click();
 
   await expect(page.getByRole('button', { name: 'Back to Scores' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Latest Play' })).toBeVisible();
-  await expect(page.getByText('J. Goff pass complete to S. LaPorta for 19 yards. Touchdown.')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Line Score' })).toBeVisible();
   await expect(page.getByText('J. Goff · 238 YDS, 2 TD')).toBeVisible();
 
   await page.getByRole('tab', { name: 'Team Stats' }).click();
@@ -173,6 +172,7 @@ test('the local preseason fixture selects Preseason Week 1 on its first calendar
 test('a live ESPN week refreshes through the shared proxy after eight seconds', async ({ page }) => {
   const season = new Date().getFullYear();
   let espnProxyRequests = 0;
+  let providerBaseTime = new Date(`${season}-08-13T23:30:00.000Z`);
   const calendar = [{
     value: '1',
     entries: [
@@ -221,6 +221,9 @@ test('a live ESPN week refreshes through the shared proxy after eight seconds', 
     espnProxyRequests += 1;
     const url = new URL(route.request().url());
     const clock = espnProxyRequests > 1 ? '4:04' : '4:12';
+    const providerFetchedAt = new Date(
+      providerBaseTime.getTime() + Math.max(0, espnProxyRequests - 1) * 8_000,
+    ).toISOString();
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -231,12 +234,16 @@ test('a live ESPN week refreshes through the shared proxy after eight seconds', 
         phase: url.searchParams.get('phase'),
         week: Number(url.searchParams.get('week')),
         scoreboard: makeLivePayload(clock),
-        cache: { hit: false, fetchedAt: new Date().toISOString() },
+        cache: { hit: false, fetchedAt: providerFetchedAt },
       }),
     });
   });
 
   await page.goto('/statistics/scores');
+  await expect(page.getByRole('group', { name: 'Data source' })).toBeVisible();
+  const loadedAt = await page.evaluate(() => Date.now() + 5_000);
+  providerBaseTime = new Date(loadedAt);
+  await page.clock.pauseAt(loadedAt);
   await page.getByRole('button', { name: 'Preseason', exact: true }).click();
   await page.getByRole('group', { name: 'Data source' })
     .getByRole('button', { name: 'ESPN live' })
@@ -244,20 +251,29 @@ test('a live ESPN week refreshes through the shared proxy after eight seconds', 
 
   await expect(page.locator('.scores-status.is-live')).toContainText('4:12');
   await expect.poll(() => espnProxyRequests).toBeGreaterThan(0);
+  await page.clock.fastForward(1_000);
+  await expect(page.locator('.scores-status.is-live')).toContainText('4:12');
   const espnScorebug = page.locator('.scores-scorebug').first();
+  await expect(espnScorebug.locator('.scores-possession')).toHaveCount(1);
+  await expect(espnScorebug.locator('.scores-possession')).toHaveAttribute('aria-label', 'Lions possession');
   await expect(espnScorebug).toHaveAttribute('aria-disabled', 'true');
   await expect(espnScorebug).toHaveAttribute('aria-label', 'Lions at Bengals');
   await espnScorebug.click({ force: true });
   await expect(page.getByRole('button', { name: 'Back to Scores' })).toHaveCount(0);
   const initialProxyRequests = espnProxyRequests;
-  await page.clock.fastForward(8_000);
+  await page.clock.fastForward(7_000);
   await expect.poll(() => espnProxyRequests).toBeGreaterThan(initialProxyRequests);
   await expect(page.locator('.scores-status.is-live')).toContainText('4:04');
 });
 
-test('a BALLDONTLIE clock counts between provider anchors and then holds when stale', async ({ page }) => {
+test('the canonical BALLDONTLIE snapshot keeps the scorecard clock and latest play together', async ({ page }) => {
   const season = new Date().getFullYear();
   const now = new Date(`${season}-08-13T23:30:00.000Z`);
+  let providerAnchorTime = now.toISOString();
+  let liveWeekRequests = 0;
+  let serveUpdatedPlay = false;
+  let drilldownOpened = false;
+  let updatedProviderAnchorTime = null;
   await page.clock.install({ time: now });
   const liveGame = {
     id: 1393553,
@@ -274,7 +290,7 @@ test('a BALLDONTLIE clock counts between provider anchors and then holds when st
     home_team_score: 7,
   };
   const capabilities = { games: true, stats: true, teamStats: true, plays: true, liveScores: true };
-  const cadence = { scoresLiveEnabled: true, scoresLiveMs: 30000, scoresIdleMs: 30000, maxBackoffMs: 120000 };
+  const cadence = { scoresLiveEnabled: true, scoresLiveMs: 8000, scoresIdleMs: 30000, maxBackoffMs: 120000 };
 
   await page.route('**/api/statistics/scores/**', async (route) => {
     const url = new URL(route.request().url());
@@ -293,7 +309,15 @@ test('a BALLDONTLIE clock counts between provider anchors and then holds when st
       });
       return;
     }
-    const providerFetchedAt = new Date().toISOString();
+    const isLiveWeek = url.pathname.endsWith('/live-week');
+    if (isLiveWeek) liveWeekRequests += 1;
+    const playUpdated = isLiveWeek && serveUpdatedPlay;
+    const providerFetchedAt = isLiveWeek && drilldownOpened
+      ? updatedProviderAnchorTime ?? providerAnchorTime
+      : providerAnchorTime;
+    const currentGame = isLiveWeek && drilldownOpened
+      ? { ...liveGame, status: '3:42 - 1st', visitor_team_score: 10 }
+      : liveGame;
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -303,7 +327,35 @@ test('a BALLDONTLIE clock counts between provider anchors and then holds when st
         season,
         phase: url.searchParams.get('phase') ?? 'preseason',
         week: Number(url.searchParams.get('week') ?? 2),
-        games: [liveGame],
+        games: [playUpdated && !drilldownOpened
+          ? { ...currentGame, status: '3:52 - 1st', visitor_team_score: 10 }
+          : currentGame],
+        liveGameSnapshots: isLiveWeek ? [{
+          gameId: String(liveGame.id),
+          latestPlay: {
+            id: playUpdated ? 'latest-penalty' : 'latest-completion',
+            text: playUpdated ? 'PENALTY on SF, Defensive Holding' : 'Pass complete to TEN 18 for 12 yards',
+            short_text: playUpdated ? 'PENALTY on SF, Defensive Holding' : 'Pass complete to TEN 18 for 12 yards',
+            type_slug: playUpdated ? 'penalty' : 'pass-complete',
+            period: 1,
+            clock_display: playUpdated ? '03:52' : '04:12',
+            start_down: 1,
+            start_distance: 10,
+            start_yard_line: 42,
+            end_yard_line: playUpdated ? 42 : 30,
+            team: { abbreviation: 'TEN' },
+            scoring_play: false,
+            ...(playUpdated ? { away_score: 10, home_score: 7 } : {}),
+          },
+          freshness: {
+            providerFetchedAt,
+            receivedAt: providerFetchedAt,
+            ageMs: 0,
+            stale: false,
+            refreshAfterMs: 8_000,
+          },
+          cache: { hit: false, coalesced: false, stale: false, ageMs: 0, fetchedAt: providerFetchedAt },
+        }] : [],
         capabilities,
         cadence,
         freshness: {
@@ -311,8 +363,8 @@ test('a BALLDONTLIE clock counts between provider anchors and then holds when st
           receivedAt: providerFetchedAt,
           ageMs: 0,
           stale: false,
-          refreshAfterMs: 30000,
-          nextRefreshAt: new Date(Date.now() + 30000).toISOString(),
+          refreshAfterMs: 8000,
+          nextRefreshAt: new Date(Date.parse(providerFetchedAt) + 8000).toISOString(),
         },
         cache: { hit: false, coalesced: false, stale: false, ageMs: 0, fetchedAt: providerFetchedAt },
       }),
@@ -320,6 +372,10 @@ test('a BALLDONTLIE clock counts between provider anchors and then holds when st
   });
 
   await page.goto('/statistics/scores');
+  await expect(page.getByRole('group', { name: 'Data source' })).toBeVisible();
+  const loadedAt = await page.evaluate(() => Date.now() + 5_000);
+  providerAnchorTime = new Date(loadedAt).toISOString();
+  await page.clock.pauseAt(loadedAt);
   await page.getByRole('group', { name: 'Data source' })
     .getByRole('button', { name: 'BALLDONTLIE API' })
     .click();
@@ -327,11 +383,38 @@ test('a BALLDONTLIE clock counts between provider anchors and then holds when st
 
   const status = page.locator('.scores-status.is-live');
   await expect(status).toContainText('4:12');
-  await page.clock.fastForward(1_000);
-  await expect(status).toContainText('4:11');
-  await page.clock.fastForward(9_000);
-  await expect(status).toContainText('4:02');
-  await expect(status).toContainText('Clock held');
+  await expect(page.locator('.scores-latest-play')).toContainText('Latest play');
+  await expect(page.locator('.scores-latest-play')).toContainText('Pass complete');
+  await expect(page.locator('.scores-possession')).toHaveCount(1);
+  await expect(page.locator('.scores-possession')).toHaveAttribute('aria-label', 'Tennessee Titans possession');
+  await expect(page.locator('.scores-scorebug-situation')).toContainText('1st & 10');
+  const liveWeekRequestsBeforePlay = liveWeekRequests;
+  serveUpdatedPlay = true;
+  await page.clock.fastForward(8_000);
+  await expect.poll(() => liveWeekRequests).toBeGreaterThan(liveWeekRequestsBeforePlay);
+  await expect(page.locator('.scores-latest-play')).toContainText('Penalty');
+  await expect(status).toContainText('3:52');
+  await expect(page.locator('.scores-scorebug-team').nth(0).locator('b')).toHaveText('10');
+  await expect(page.locator('.scores-scorebug-team').nth(1).locator('b')).toHaveText('7');
+  await page.clock.fastForward(5_000);
+  await expect(status).toContainText('3:52');
+  await expect(status).not.toContainText('Clock held');
+
+  drilldownOpened = true;
+  updatedProviderAnchorTime = await page.evaluate(() => new Date(Date.now() + 30_000).toISOString());
+  await page.getByRole('button', {
+    name: 'Open Tennessee Titans at San Francisco 49ers game details',
+  }).click();
+  await expect(page.locator('.scores-detail-status > strong')).toContainText('3:52');
+  await expect(page.locator('.scores-detail-team.is-away > em')).toHaveText('10');
+  await expect(page.locator('.scores-detail-team.is-home > em')).toHaveText('7');
+
+  const liveWeekRequestsBeforeUpdate = liveWeekRequests;
+  await page.clock.fastForward(30_000);
+  await expect.poll(() => liveWeekRequests).toBeGreaterThan(liveWeekRequestsBeforeUpdate);
+  await expect(page.locator('.scores-detail-status > strong')).toContainText('3:42');
+  await expect(page.locator('.scores-detail-team.is-away > em')).toHaveText('10');
+  await expect(page.locator('.scores-detail-team.is-home > em')).toHaveText('7');
 });
 
 test('forced local BALLDONTLIE loads preseason rows and refreshes the narrow live-week route', async ({ page }) => {
@@ -522,7 +605,14 @@ test('forced local BALLDONTLIE loads preseason rows and refreshes the narrow liv
         { id: 'q1', text: 'END QUARTER 1', period: 1, clock_display: '0:00' },
         { id: 'half', type_text: 'End of Half', period: 2, clock_display: '0:00' },
         { id: 'q3', text: 'END OF QUARTER 3', period: 3, clock_display: '0:00' },
-        { id: 'game-end', text: 'END GAME', period: 4, clock_display: '0:00' }],
+        {
+          id: 'warning', text: 'Two-Minute Warning', type_slug: 'two-minute-warning', period: 4,
+          clock_display: '2:00', wallclock: `${season}-08-14T02:26:29.000Z`, team: { abbreviation: 'DET' },
+        },
+        {
+          id: 'game-end', text: 'END GAME', type_slug: 'end-of-game', period: 4,
+          clock_display: '0:00', wallclock: `${season}-08-14T02:26:29.000Z`,
+        }],
         scoringPlays: [],
         coverage: { game: true, teamStats: true, playerStats: true, plays: true, scoring: true },
         meta: {},
@@ -564,6 +654,8 @@ test('forced local BALLDONTLIE loads preseason rows and refreshes the narrow liv
   await expect(page.getByText('END QUARTER 1')).toHaveCount(0);
   await expect(page.locator('.scores-drive-header')).not.toContainText('provider sequence');
   await expect(page.locator('.scores-drive-header').first()).toContainText('1 play');
+  await expect(page.getByRole('status', { name: 'End of game' })).toContainText('End of game');
+  await expect(page.getByRole('status', { name: 'End of game' })).toContainText('Game ended with 2:00 remaining');
 
   await page.getByRole('button', { name: 'Back to Scores' }).click();
   await expect(weekRail.getByRole('tab', { name: /Pre Wk 1/ })).toHaveAttribute('aria-selected', 'true');

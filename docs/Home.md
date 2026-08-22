@@ -10,6 +10,7 @@ Use this note as the entry point.
 - [[Where To Edit]]
 - [[Design System Quick Ref]]
 - [[Design Tokens]]
+- [[Desktop Legibility]]
 - [[Companion Shared Rows]]
 - [[Scoring Call Sites]]
 - [[Trade Engine]]
@@ -21,6 +22,7 @@ Use this note as the entry point.
 - [[Upgrade Simulation]]
 - [[BALLDONTLIE NFL Integration]]
 - [[Live Data Server Architecture]]
+- [[Fantasy Live Sandbox]]
 
 ## Archive
 
@@ -54,6 +56,7 @@ Completed proposals and speculative integrations that are no longer active:
 flowchart TD
   A[Home] --> B[Architecture Map]
   A --> C[Design Tokens]
+  A --> R[Desktop Legibility]
   A --> L[Companion Shared Rows]
   A --> D[Where To Edit]
   A --> E[Scoring Call Sites]
@@ -75,6 +78,9 @@ flowchart TD
   C --> C1[Color Tokens Table]
   C --> C2[Signature Accent Rules]
   C --> C3[Key Conventions]
+  R --> R1[Viewing-distance hierarchy]
+  R --> R2[Contrast and state]
+  R --> R3[Viewport validation]
   L --> L1[Shared player rows]
   L --> L2[Selector controls]
   L --> L3[Gradient contrast]

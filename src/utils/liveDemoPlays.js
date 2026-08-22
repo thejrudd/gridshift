@@ -9,7 +9,7 @@ const OFFENSE_POSITIONS = new Set(['RB', 'WR', 'TE']);
 const TEAM_DEFENSE_POSITIONS = new Set(['DEF', 'DST', 'D/ST']);
 const IDP_POSITIONS = new Set(['DL', 'DE', 'DT', 'LB', 'ILB', 'OLB', 'DB', 'CB', 'S', 'SS', 'FS']);
 
-export function limitPlayByPlayGames(games = [], { mock = false, maxGames = 8 } = {}) {
+export function limitPlayByPlayGames(games = [], { mock = false, maxGames = 16 } = {}) {
   return mock ? games : games.slice(0, maxGames);
 }
 

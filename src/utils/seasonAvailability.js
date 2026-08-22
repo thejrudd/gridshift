@@ -7,6 +7,22 @@ import { AVAILABLE_SLEEPER_SEASONS, useFantasyLeague } from '../context/SleeperC
 //                     view reports itself empty.
 export const CURRENT_LEAGUE_YEAR = AVAILABLE_SLEEPER_SEASONS[0];
 
+// Preseason fantasy rankings are only eligible once that season's NFL Draft
+// has concluded. Keep this intentionally explicit: a new season must add its
+// verified end date instead of inheriting an assumed calendar rule.
+export const NFL_DRAFT_END_DATES = Object.freeze({
+  2026: '2026-04-25T23:59:59.999-04:00',
+});
+
+export function isAfterNflDraft(season, date = new Date()) {
+  const seasonYear = Number(season);
+  if (!Number.isInteger(seasonYear)) return false;
+
+  const draftEnd = NFL_DRAFT_END_DATES[seasonYear];
+  if (!draftEnd) return false;
+  return date.getTime() > new Date(draftEnd).getTime();
+}
+
 /**
  * NFL regular seasons begin on the Thursday after the first Monday in September.
  * Historical seasons are always considered started; future seasons are not.
@@ -24,6 +40,22 @@ export function isNflRegularSeasonStarted(season, date = new Date()) {
   const firstMonday = 1 + daysUntilMonday;
   const regularSeasonStart = new Date(currentYear, 8, firstMonday + 3);
   return date >= regularSeasonStart;
+}
+
+/**
+ * Select the only ranking source that is valid for a season at this moment.
+ * Historical results and every in-season state remain scoring-led; ADP is a
+ * current-season preseason signal only and never a fallback after kickoff.
+ */
+export function getFantasyRankingsDataMode(season, date = new Date()) {
+  const seasonYear = Number(season);
+  if (!Number.isInteger(seasonYear)) return 'unavailable';
+
+  const currentYear = date.getFullYear();
+  if (seasonYear < currentYear) return 'scoring';
+  if (seasonYear > currentYear) return 'unavailable';
+  if (isNflRegularSeasonStarted(seasonYear, date)) return 'scoring';
+  return isAfterNflDraft(seasonYear, date) ? 'adp' : 'unavailable';
 }
 
 /**

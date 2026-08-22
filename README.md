@@ -10,12 +10,12 @@ An interactive web app for the 2026 NFL season — with full Sleeper fantasy lea
 
 - Predictions — Game picks, constraints, standings, playoff seeding, and shareable infographic export.
 - Statistics — Schedules, standings, team/player profiles, game logs, honors, and scoring breakdowns.
-- Statistics Scores (Beta) — Provider-backed current-season regular and preseason scoreboards, using server-side BALLDONTLIE when configured and ESPN as the deliberate fallback; broader historical archive coverage continues to expand.
+- Statistics Scores (Beta) — Provider-backed current-season regular and preseason scoreboards with live clocks, Latest Play, plain-language play-by-play, and animated drive replay; broader historical archive coverage continues to expand.
 
 ### Fantasy & League
 
 - Sleeper integration — League connection, custom scoring, rosters, and season navigation.
-- Fantasy Live (Alpha) — Provider-backed live matchup scoring, win probability, replay, scoring plays, and player context for enabled Sleeper leagues.
+- Fantasy Live (Alpha) — Provider-backed live matchup scoring, win probability, moment-aware replay, shared-play attribution, scoring feeds, and player context for enabled Sleeper leagues.
 - Matchups — Cycle through every weekly league matchup with projections, ranks, weather, game context, and scoring details.
 - Fantasy Scoring Blueprint — League-rule summaries, position strengths, detailed scoring references, and itemized real-game examples.
 - League analysis — Player stats, fantasy points allowed, team defense, heatmaps, and roster/draft capital.
@@ -24,7 +24,7 @@ An interactive web app for the 2026 NFL season — with full Sleeper fantasy lea
 
 ### Draft & Scouting
 
-- Draft Assistant (Beta) — War Room rankings, Draft Board, live timing, team Draft Blueprints, and chronological Pick Lists.
+- Draft Assistant (Beta) — War Room rankings, Draft Board, live timing, team Draft Blueprints, chronological Pick Lists, and optional server-proxied preseason ADP when configured.
 - Scout (Beta) — 2026 prospects, filters, draft status, combine metrics, and comparisons.
 
 ### Sharing & App Experience
@@ -124,9 +124,13 @@ Hosted owners can enable paid live scoring for selected Sleeper leagues by setti
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) + optional Node API sidecar |
 
-## What's New in v8.5.1
+## What's New in v8.6.0
 
-- **Draft & Scores fixes** — Final games now carry the winning team's colors, the live draft clock handles multi-hour slow drafts, War Room, Board, and Results agree on the projected pick, and upcoming schedule strength is graded against the real upcoming opponents.
+- **Statistics Scores play-by-play** — Read plain-language game feeds, inspect field-aware drive summaries, and replay a drive snap by snap with animation for passes, runs, kicks, scores, penalties, and turnovers.
+- **Fantasy Live Alpha replay** — Replay scoring now stays aligned with the selected moment, preserves shared-play contributors, shows viewer-side fantasy impact, and uses the shared play narration with more dependable filters and attribution.
+- **Live snapshot cohesion** — Scorecards, drilldowns, clocks, and Latest Play now coordinate around shared server snapshots so the live game story stays together.
+- **Optional preseason ADP** — Eligible self-hosted deployments can add server-only BALLDONTLIE ADP context to Fantasy Rankings and Draft tools without replacing local Sleeper identity, connected-league scoring, or the in-season experience.
+- **Desktop and Draft polish** — Improved desktop readability across display sizes alongside tighter draft eligibility, recommendations, and player search behavior.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 

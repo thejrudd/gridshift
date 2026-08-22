@@ -54,6 +54,14 @@ function getMarketRank(player) {
   );
 }
 
+function getAdpRank(player) {
+  return toFiniteNumber(
+    player?.adp
+    ?? player?.fantasyAdp?.averageDraftPosition
+    ?? player?.fantasyAdp?.average_draft_position,
+  );
+}
+
 function getAnyMarketRank(player) {
   return toFiniteNumber(
     player?.projection?.marketRank
@@ -198,6 +206,9 @@ function isPositionalMapEligible(player) {
       && marketRank <= POSITIONAL_MAP_MAX_MARKET_RANK;
   }
 
+  const adpRank = getAdpRank(player);
+  if (adpRank != null) return adpRank > 0 && adpRank < POSITIONAL_MAP_SENTINEL_RANK;
+
   const marketValue = toFiniteNumber(player?.projection?.marketValue);
   if (marketValue != null) return marketValue >= POSITIONAL_MAP_MIN_MARKET_VALUE;
 
@@ -220,6 +231,7 @@ function isPositionalMapEligible(player) {
 export const DRAFT_ANALYTICS_AXIS_OPTIONS = [
   { id: 'rating', label: 'Rating' },
   { id: 'market', label: 'Market' },
+  { id: 'adp', label: 'ADP' },
   { id: 'ppg', label: 'PPG' },
   { id: 'workload', label: 'Workload' },
   { id: 'rosterNeed', label: 'Need' },
@@ -257,6 +269,12 @@ const AXIS_DEFINITIONS = {
     label: 'Market',
     higherIsBetter: false,
     getValue: getMarketRank,
+    formatValue: formatRank,
+  },
+  adp: {
+    label: 'ADP',
+    higherIsBetter: false,
+    getValue: getAdpRank,
     formatValue: formatRank,
   },
   ppg: {
@@ -420,6 +438,15 @@ export function buildDraftAnalyticsSnapshot(player, candidates = []) {
       higherIsBetter: AXIS_DEFINITIONS.market.higherIsBetter,
     },
     {
+      key: 'adp',
+      label: 'ADP',
+      value: formatRank(getAdpRank(player)),
+      detail: 'BALLDONTLIE',
+      score: getComponentScore(player, 'adp'),
+      rankValue: AXIS_DEFINITIONS.adp.getValue,
+      higherIsBetter: AXIS_DEFINITIONS.adp.higherIsBetter,
+    },
+    {
       key: 'ppg',
       label: 'PPG',
       value: formatPastProductionValue(player),
@@ -558,6 +585,14 @@ export function buildDraftAnalyticsCompareRows(players = []) {
       getCell: (player) => ({
         value: formatRank(getMarketRank(player)),
         score: getComponentScore(player, 'marketRank'),
+      }),
+    },
+    {
+      key: 'adp',
+      label: 'ADP',
+      getCell: (player) => ({
+        value: formatRank(getAdpRank(player)),
+        score: getComponentScore(player, 'adp'),
       }),
     },
     {

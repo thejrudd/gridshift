@@ -114,6 +114,16 @@ test('preserves live and final ESPN scores', () => {
   assert.deepEqual(final.score, { away: 21, home: 17 });
 });
 
+test('anchors live games from the initial ESPN season fetch', () => {
+  const observedAt = Date.parse('2026-08-07T00:21:00.000Z');
+  const season = normalizeEspnScoreboardSeason(
+    [{ events: [makeEvent({ state: 'in' })] }],
+    { season: 2026, observedAt },
+  );
+
+  assert.equal(season.weeks[0].games[0].live.providerClockAnchor.changedAt, observedAt);
+});
+
 test('normalizes four preseason weeks with ESPN calendar labels', () => {
   const calendar = [{
     value: '1',
@@ -229,7 +239,11 @@ test('overlays ESPN live truth while preserving BALLDONTLIE drilldown identity',
     homeScore: '10',
   });
 
-  const updated = overlayEspnScoreboardWeek(season, { events: [espnEvent] }, 1);
+  const providerFetchedAt = Date.parse('2026-08-07T00:21:00.000Z');
+  const updated = overlayEspnScoreboardWeek(season, { events: [espnEvent] }, 1, {
+    observedAt: providerFetchedAt + 2_000,
+    providerFetchedAt,
+  });
   const game = updated.weeks[0].games[0];
 
   assert.equal(game.id, 'bdl-7001');
@@ -242,6 +256,7 @@ test('overlays ESPN live truth while preserving BALLDONTLIE drilldown identity',
   assert.equal(game.status, 'live');
   assert.deepEqual(game.score, { away: 7, home: 10 });
   assert.equal(game.live.clock, '8:42');
+  assert.equal(game.live.providerClockAnchor.changedAt, providerFetchedAt);
   assert.equal(game.playByPlayAvailable, true);
 });
 

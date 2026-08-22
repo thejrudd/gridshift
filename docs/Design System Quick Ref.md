@@ -19,6 +19,41 @@ Full token table and dark-mode values: **`docs/Design Tokens.md`**
 - Horizontal scroll cues must cover the same rendered width as the scroll rail they describe. For full-bleed mobile tab rails, wrap the cue around the full-bleed shell, not an inset parent, so tab text cannot peek through beside the arrow. Add or preserve Playwright geometry checks that compare the cue edge to the rail's actual rendered edge.
 - Sticky tabs, filters, and headers inside a scrolling content area must have an opaque surface that also shields any top padding/offset above them. Content must never paint through above or behind the sticky control.
 
+## Desktop Legibility and Viewing Distance
+
+Full guidance and the Fantasy Live reference profile: **[[Desktop Legibility]]**
+
+- Design desktop workbenches for reading at a normal monitor distance, not only
+  for screenshot density. Validate at 100% browser zoom on a short laptop
+  viewport, a standard desktop viewport, and a wide/tall monitor.
+- A browser viewport does not reveal physical display size, DPI, OS scaling, or
+  viewing distance. Never infer them from `devicePixelRatio`, screen dimensions,
+  or resolution; never use CSS `zoom` or whole-app transforms. The persisted
+  Display Size preference remains the user-controlled global scale.
+- Use semantic type roles first, then refine a component against its container
+  with `clamp()`. Short-height tiers may recompose a dashboard but must not
+  shrink meaningful text below its semantic role.
+- At desktop viewing distance, primary row identity should normally use at least
+  `--type-emphasis`, readable descriptions at least `--type-body`, and persistent
+  supporting facts at least `--type-label` or preferably `--type-meta` when
+  space permits. Reserve `--type-micro` for nonessential overlines and badges.
+- Condensed uppercase text reads optically smaller than body text. Give
+  meaningful condensed labels sufficient weight, restrained tracking, and an
+  appropriate semantic size.
+- Meaningful text must use `--color-label` or a verified readable use of
+  `--color-label-secondary`. Timestamps, game state, totals, axis labels,
+  instructions, inactive choices, and identity are not tertiary decoration.
+- Never apply reduced opacity to a parent containing readable text. Express
+  inactive or selected state with fills, rings, borders, weight, position, or
+  semantic text tokens.
+- Support `prefers-contrast: more` on dense data surfaces by promoting meaningful
+  text and SVG labels while leaving decorative overlines subdued.
+- If larger type or imagery consumes space, reduce decorative chrome, change
+  orientation, or give the list an internal scroll owner. Preserve the route's
+  intended scroll ownership and any tested chart/canvas minimum.
+- Treat Fantasy Live's `52px` standard, `64px` wide/tall, and `44px` short-height
+  portraits as a calibrated reference—not a global component scale.
+
 ## Team Color Palettes
 
 - NFL teams — raw palettes live in `src/data/teamColors.js` (`TEAM_COLORS`, `getTeamPalette`); computed gradients, overlays, region-aware contrast, tints, reversed-gradient exceptions, side-sensitive logo contrast, and logo badge colors live in `src/utils/teamVisualTheme.js` (`getTeamVisualTheme`). `nyg` and `nyj` are side-sensitive: left-logo Statistics cards reverse them, while right-logo Trade rows/cards keep the default direction. Used for Statistics, Companion, Trade, Scout Results pick rows, and the Compare/Heatmap surfaces.

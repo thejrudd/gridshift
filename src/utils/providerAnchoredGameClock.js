@@ -26,13 +26,15 @@ function asTimestamp(value) {
 
 function gentlyCorrectClock(previousSeconds, targetSeconds) {
   const difference = targetSeconds - previousSeconds;
-  if (difference === 0 || Math.abs(difference) > 5) return targetSeconds;
+  if (difference === 0) return targetSeconds;
 
-  // If the provider moves the clock backward by a few seconds, hold the
-  // display until its authoritative clock catches up. This avoids showing an
-  // NFL clock count upward. If the provider moves forward, recover by at most
-  // one extra second per tick instead of making a conspicuous multi-second jump.
+  // A live game clock cannot count upward within the same period. Hold any
+  // provider correction that would move the visible value forward until a
+  // later anchor catches up. If the provider moves backward, recover by at
+  // most two seconds per visual tick unless the correction is large enough to
+  // be an authoritative snap.
   if (difference > 0) return previousSeconds;
+  if (difference < -5) return targetSeconds;
   return Math.max(targetSeconds, previousSeconds - 2);
 }
 
@@ -45,6 +47,7 @@ export function resolveProviderAnchoredGameClock({
   previousDisplayClock = null,
   previousPeriod = null,
   feedStale = false,
+  providerClockFrozen = false,
   staleAfterMs = PROVIDER_CLOCK_STALE_AFTER_MS,
 } = {}) {
   const providerSeconds = parseProviderGameClock(providerClock);
@@ -61,7 +64,7 @@ export function resolveProviderAnchoredGameClock({
   const stale = feedStale || elapsedMs >= staleWindowMs;
   const boundary = providerSeconds === 120 || providerSeconds === 0;
   const statusFrozen = FROZEN_GAME_STATUSES.has(normalizedStatus) || normalizedStatus !== 'live';
-  const elapsedSeconds = statusFrozen || boundary
+  const elapsedSeconds = statusFrozen || boundary || providerClockFrozen
     ? 0
     : Math.floor(Math.min(elapsedMs, staleWindowMs) / 1000);
   let targetSeconds = Math.max(0, providerSeconds - elapsedSeconds);
@@ -73,7 +76,7 @@ export function resolveProviderAnchoredGameClock({
   const previousSeconds = parseProviderGameClock(previousDisplayClock);
   const samePeriod = previousPeriod == null || period == null
     || String(previousPeriod) === String(period);
-  const displaySeconds = previousSeconds == null || !samePeriod || statusFrozen || boundary
+  const displaySeconds = previousSeconds == null || !samePeriod || statusFrozen || boundary || providerClockFrozen
     ? targetSeconds
     : feedStale
       ? previousSeconds
@@ -81,6 +84,7 @@ export function resolveProviderAnchoredGameClock({
 
   let frozenReason = null;
   if (statusFrozen) frozenReason = normalizedStatus || 'not-live';
+  else if (providerClockFrozen) frozenReason = 'provider-stoppage';
   else if (boundary || displaySeconds === 120 || displaySeconds === 0) frozenReason = 'boundary';
   else if (stale) frozenReason = 'stale';
 
@@ -98,18 +102,27 @@ export function resolveProviderAnchoredGameClock({
 
 export function reconcileProviderClockAnchor(previousGame, nextGame, {
   observedAt,
+  providerFetchedAt,
   feedStale = false,
+  providerClockFrozen = false,
   staleAfterMs = PROVIDER_CLOCK_STALE_AFTER_MS,
 } = {}) {
   if (!nextGame?.live?.clock || nextGame.status !== 'live') return nextGame;
 
-  const observedAtMs = asTimestamp(observedAt) ?? 0;
   const previousAnchor = previousGame?.live?.providerClockAnchor ?? null;
+  const observedAtMs = asTimestamp(observedAt);
+  const providerFetchedAtMs = asTimestamp(providerFetchedAt);
+  const effectiveProviderFetchedAtMs = providerFetchedAtMs != null && observedAtMs != null
+    ? Math.min(providerFetchedAtMs, observedAtMs)
+    : providerFetchedAtMs;
+  const anchorAtMs = effectiveProviderFetchedAtMs ?? observedAtMs ?? asTimestamp(previousAnchor?.changedAt);
+  if (anchorAtMs == null && !previousAnchor) return nextGame;
+
   const anchorKey = `${nextGame.live.period ?? ''}|${nextGame.live.clock}`;
   const anchorChanged = previousAnchor?.key !== anchorKey;
   const changedAt = anchorChanged
-    ? observedAtMs
-    : asTimestamp(previousAnchor?.changedAt) ?? observedAtMs;
+    ? anchorAtMs
+    : asTimestamp(previousAnchor?.changedAt) ?? anchorAtMs;
 
   return {
     ...nextGame,
@@ -118,12 +131,16 @@ export function reconcileProviderClockAnchor(previousGame, nextGame, {
       providerClockAnchor: {
         key: anchorKey,
         changedAt,
-        observedAt: observedAtMs,
+        observedAt: observedAtMs ?? anchorAtMs,
+        providerFetchedAt: providerFetchedAtMs
+          ?? asTimestamp(previousAnchor?.providerFetchedAt)
+          ?? anchorAtMs,
         staleAfterMs: Math.min(
           PROVIDER_CLOCK_STALE_AFTER_MS,
           Math.max(0, Number(staleAfterMs) || PROVIDER_CLOCK_STALE_AFTER_MS),
         ),
         feedStale: Boolean(feedStale),
+        providerClockFrozen: Boolean(providerClockFrozen),
       },
     },
   };
