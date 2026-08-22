@@ -90,7 +90,7 @@ export async function getLiveGamePlays(gameId, options) {
     const retryAt = cache.playsRetryAt.get(key) ?? 0;
     // Still cooling down from a rejected request. Report an empty slate rather
     // than queueing another one; a later tick will pick it up.
-    if (Date.now() < retryAt) return { data: [] };
+    if (Date.now() < retryAt) return { data: [], retryable: true };
     cache.playsPromises.set(key, fetchLiveGamePlays(gameId, options).then((payload) => {
       cache.plays.set(key, payload);
       cache.playsRetryAt.delete(key);
@@ -106,7 +106,7 @@ export async function getLiveGamePlays(gameId, options) {
     payload = cache.plays.get(key) ?? await cache.playsPromises.get(key);
   } catch {
     // A rate-limited or failed game simply has no plays yet this tick.
-    return { data: [] };
+    return { data: [], retryable: true };
   }
   const plays = Array.isArray(payload?.data) ? payload.data : [];
 

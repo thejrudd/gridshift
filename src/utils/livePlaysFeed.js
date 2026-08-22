@@ -8,7 +8,9 @@
 
 import { calcPoints } from './scoringEngine.js';
 import { getTeamAbbr, normalizeName } from './liveScoringFeed.js';
-import { buildPlayerNameIndex } from './nflPlays/playerNameIndex.js';
+import { parsePlayNarrative, PLAY_ROLES } from './nflPlays/playNarrative.js';
+import { buildPlayerNameIndex, lookupPlayerByName } from './nflPlays/playerNameIndex.js';
+import { enrichPlaySequenceContext } from './nflPlays/playSequenceContext.js';
 
 const MAX_DESC_LENGTH = 140;
 
@@ -27,10 +29,46 @@ function firstString(...values) {
   return null;
 }
 
-export function normalizePlay(raw, gameId) {
+function addInferredPasserToInterception(sentence, passerName) {
+  const possessive = `${passerName}${passerName.endsWith('s') ? "'" : "'s"}`;
+  const returned = sentence.replace(
+    /^(.+?) intercepted the pass and returned it\b/i,
+    `${possessive} pass was intercepted by $1 and returned`,
+  );
+  if (returned !== sentence) return returned;
+  const returns = sentence.replace(
+    /^(.+?) returns an interception\b/i,
+    `${possessive} pass is intercepted by $1, who returns it`,
+  );
+  return returns !== sentence ? returns : `${possessive} pass was intercepted. ${sentence}`;
+}
+
+export function normalizePlay(raw, gameId, { inferredPasserName = null } = {}) {
   if (!raw) return null;
   const description = firstString(raw.text, raw.description, raw.short_text, raw.desc);
   if (!description) return null;
+  // Statistics Scores already turns BDL's compact `short_text` plus official
+  // gamebook text into a plain-language sentence. Use that same conservative
+  // parser at Fantasy Live's event boundary so every Live surface (feed,
+  // replay header, chart tooltip, and player sheet) reads the same way. Unknown
+  // provider shapes keep the official description instead of being guessed at.
+  const narrative = parsePlayNarrative({
+    typeSlug: firstString(raw.type_slug, raw.type_abbreviation),
+    shortText: firstString(raw.short_text),
+    rawText: firstString(raw.text, raw.description, raw.short_text, raw.desc),
+    description,
+    statYardage: firstFinite(raw.stat_yardage, raw.yards_gained, raw.yards, raw.net_yards),
+  });
+  const parsedDescription = narrative.confident && narrative.sentence
+    ? narrative.sentence
+    : description;
+  const displayDescription = inferredPasserName && narrative.confident
+    && !narrative.actors?.some((actor) => actor.role === PLAY_ROLES.PASSER)
+    ? addInferredPasserToInterception(parsedDescription, inferredPasserName)
+    : parsedDescription;
+  const replayRaw = inferredPasserName
+    ? { ...raw, gridshift_inferred_passer_name: inferredPasserName }
+    : raw;
   return {
     id: raw.id ?? `${gameId}-${raw.sequence ?? description.slice(0, 24)}`,
     gameId,
@@ -43,29 +81,66 @@ export function normalizePlay(raw, gameId) {
     // to") — and quarterbacks were attributed as rushers.
     type: firstString(raw.type_slug, raw.type_text, raw.type_abbreviation, raw.play_type, raw.type)
       ?.toLowerCase() ?? '',
-    yards: firstFinite(raw.yards_gained, raw.yards, raw.net_yards) ?? 0,
+    yards: firstFinite(raw.yards_gained, raw.yards, raw.net_yards, raw.stat_yardage) ?? 0,
     scoring: Boolean(raw.scoring_play ?? raw.touchdown ?? /touchdown|field goal is good/i.test(description)),
     awayScore: firstFinite(raw.away_score, raw.visitor_score, raw.visitor_team_score),
     homeScore: firstFinite(raw.home_score, raw.home_team_score),
     teamAbbr: getTeamAbbr(firstString(raw.team?.abbreviation, raw.possession_team, raw.team)),
     wallclock: Date.parse(raw.wallclock ?? '') || null,
     defenseTeamAbbr: getTeamAbbr(firstString(raw.defense_team?.abbreviation, raw.defense_team, raw.defensive_team)),
-    description: description.length > MAX_DESC_LENGTH ? `${description.slice(0, MAX_DESC_LENGTH - 1)}…` : description,
+    inferredPasserName,
+    description: displayDescription.length > MAX_DESC_LENGTH
+      ? `${displayDescription.slice(0, MAX_DESC_LENGTH - 1)}…`
+      : displayDescription,
+    // Fantasy attribution follows the parser's explicit clauses. Rescanning
+    // the display sentence alone can give the primary play type to a kicker
+    // who is named only in a trailing extra-point result.
+    narrative: narrative.confident ? narrative : null,
     // The provider row, kept intact. The feed only needs a sentence, but the
     // field visual reads structured geometry — down, distance, yards to the
     // end zone — that this normalisation deliberately flattens away.
-    raw,
+    raw: replayRaw,
   };
+}
+
+function isPossessionChangingSummary(play) {
+  const type = String(play?.type ?? '').toLowerCase();
+  return type.includes('interception')
+    || (type.includes('fumble') && /opp|opponent/.test(type));
+}
+
+function getGameTeamAbbr(team) {
+  return getTeamAbbr(team?.abbreviation ?? team?.id ?? team);
+}
+
+function getOtherGameTeam(team, game) {
+  const away = getGameTeamAbbr(game?.visitor_team ?? game?.away);
+  const home = getGameTeamAbbr(game?.home_team ?? game?.home);
+  if (!team) return null;
+  if (team === away) return home;
+  if (team === home) return away;
+  return null;
 }
 
 function getDefensiveTeamForPlay(play, game) {
   if (play.defenseTeamAbbr) return play.defenseTeamAbbr;
-  const away = getTeamAbbr(game?.visitor_team);
-  const home = getTeamAbbr(game?.home_team);
+  // On an interception or opponent-recovered fumble the provider's `team`
+  // names who possesses the ball after the play — the defense that created
+  // the turnover. Inverting it credited the pick-six to Las Vegas instead of
+  // Houston.
+  if (isPossessionChangingSummary(play)) return play.teamAbbr;
+  const away = getGameTeamAbbr(game?.visitor_team ?? game?.away);
+  const home = getGameTeamAbbr(game?.home_team ?? game?.home);
   if (!play.teamAbbr) return null;
   if (play.teamAbbr === away) return home;
   if (play.teamAbbr === home) return away;
   return null;
+}
+
+function getOffensiveTeamForPlay(play, game) {
+  return isPossessionChangingSummary(play)
+    ? getOtherGameTeam(play.teamAbbr, game)
+    : play.teamAbbr;
 }
 
 /**
@@ -97,13 +172,102 @@ export function buildStarterNameIndex(rows) {
 
 const PASSER_POSITIONS = new Set(['QB']);
 
+function getFantasyRoleForActor(actorRole, playerMeta, play) {
+  if (actorRole === PLAY_ROLES.PASSER) return 'passer';
+  if (actorRole === PLAY_ROLES.RECEIVER) return 'receiver';
+  if (actorRole === PLAY_ROLES.RUSHER) return 'rusher';
+  if (actorRole === PLAY_ROLES.KICKER) return 'kicker';
+  if (actorRole === PLAY_ROLES.PUNTER) return 'punter';
+  if (actorRole === PLAY_ROLES.RETURNER) return 'returner';
+  if ([PLAY_ROLES.SACKER, PLAY_ROLES.INTERCEPTER, PLAY_ROLES.RECOVERER, PLAY_ROLES.TACKLER].includes(actorRole)) {
+    return 'defense';
+  }
+  if (actorRole === PLAY_ROLES.FUMBLER) {
+    const type = String(play?.type ?? '');
+    return PASSER_POSITIONS.has(playerMeta?.position) && type.includes('pass') ? 'passer' : 'rusher';
+  }
+  return null;
+}
+
+function getIndexedPlayerId(nameIndex, record) {
+  if (!record) return null;
+  return [...nameIndex.meta.entries()].find(([, candidate]) => candidate === record)?.[0] ?? null;
+}
+
+function matchNarrativeActors(play, nameIndex) {
+  const actors = play?.narrative?.actors;
+  if (!play?.narrative?.confident || !Array.isArray(actors)) return null;
+
+  const matches = new Map();
+  const teamDefenseMatches = nameIndex.teamDefenseIds?.get?.(play.defenseTeamAbbr);
+  if (teamDefenseMatches && isTeamDefenseScoringPlay(play)) {
+    teamDefenseMatches.forEach((playerId) => matches.set(playerId, {
+      playerId,
+      role: 'team_defense',
+      textPos: -1,
+      detail: null,
+    }));
+  }
+
+  if (play.inferredPasserName) {
+    const record = lookupPlayerByName(nameIndex, play.inferredPasserName, {
+      team: play.offenseTeamAbbr,
+      normalize: normalizeName,
+    });
+    const playerId = getIndexedPlayerId(nameIndex, record);
+    if (playerId) {
+      matches.set(playerId, {
+        playerId,
+        role: 'passer',
+        textPos: -0.5,
+        detail: null,
+      });
+    }
+  }
+
+  actors.forEach((actor, textPos) => {
+    const offensiveRole = [
+      PLAY_ROLES.PASSER,
+      PLAY_ROLES.RECEIVER,
+      PLAY_ROLES.RUSHER,
+      PLAY_ROLES.KICKER,
+      PLAY_ROLES.PUNTER,
+      PLAY_ROLES.FUMBLER,
+    ].includes(actor.role);
+    const record = lookupPlayerByName(nameIndex, actor.name, {
+      team: offensiveRole ? play.teamAbbr : null,
+      normalize: normalizeName,
+    });
+    const playerId = getIndexedPlayerId(nameIndex, record);
+    if (!playerId || matches.has(playerId)) return;
+    const role = getFantasyRoleForActor(actor.role, record, play);
+    if (!role) return;
+    matches.set(playerId, {
+      playerId,
+      role,
+      textPos,
+      detail: actor.detail ?? null,
+    });
+  });
+
+  return [...matches.values()].sort((left, right) => left.textPos - right.textPos);
+}
+
 /**
  * Returns [{ playerId, role }] for starters involved in the play.
- * Roles: passer | receiver | rusher | kicker | defense | team_defense.
+ * Roles: passer | receiver | rusher | returner | kicker | defense | team_defense.
  */
 export function matchPlayToStarters(play, nameIndex) {
+  const narrativeMatches = matchNarrativeActors(play, nameIndex);
+  if (narrativeMatches) return narrativeMatches;
+
   const { index, meta, teamDefenseIds } = nameIndex;
   const normalizedDesc = ` ${normalizeName(play.description)} `;
+  const type = play.type;
+  const isPass = type.includes('pass') || /pass (?:complete|incomplete|to)/i.test(play.description);
+  const isKick = type.includes('field') || type.includes('extra') || /field goal|extra point|\bPAT\b/i.test(play.description);
+  const isReturnPlay = type.includes('punt') || type.includes('kickoff')
+    || /punt|kickoff|return(?:ed)? for|fair catch by/i.test(play.description);
   const matches = new Map(); // playerId -> position in text
 
   const teamDefenseMatches = teamDefenseIds?.get?.(play.defenseTeamAbbr);
@@ -118,7 +282,11 @@ export function matchPlayToStarters(play, nameIndex) {
       const playerMeta = meta.get(playerId);
       // Team cross-check when the play carries possession info.
       if (play.teamAbbr && playerMeta?.team && playerMeta.team !== play.teamAbbr
-        && !isDefensiveRole(play, playerMeta)) {
+        && !isDefensiveRole(play, playerMeta)
+        // Punt and kickoff rows can name the receiving returner while the
+        // provider's `team` field still names the kicking side. Keep that
+        // named returner eligible for return-yard scoring.
+        && !isReturnPlay) {
         return;
       }
       const existing = matches.get(playerId);
@@ -126,9 +294,6 @@ export function matchPlayToStarters(play, nameIndex) {
     });
   });
 
-  const type = play.type;
-  const isPass = type.includes('pass') || /pass (?:complete|incomplete|to)/i.test(play.description);
-  const isKick = type.includes('field') || type.includes('extra') || /field goal|extra point/i.test(play.description);
   const isSack = /sack/i.test(play.description);
 
   return [...matches.entries()]
@@ -139,9 +304,11 @@ export function matchPlayToStarters(play, nameIndex) {
       if (isKick && playerMeta.position === 'K') role = 'kicker';
       else if (isTeamDefensePosition(playerMeta.position)) role = 'team_defense';
       else if (isDefensivePosition(playerMeta.position)) role = 'defense';
+      else if (isReturnPlay && ['K', 'P'].includes(playerMeta.position)) role = 'punter';
+      else if (isReturnPlay && !['K', 'P'].includes(playerMeta.position)) role = 'returner';
       else if (isPass) role = PASSER_POSITIONS.has(playerMeta.position) ? 'passer' : 'receiver';
       else if (isSack && PASSER_POSITIONS.has(playerMeta.position)) role = 'passer';
-      return { playerId, role, textPos };
+      return { playerId, role, textPos, detail: null };
     });
 }
 
@@ -161,27 +328,58 @@ function isDefensiveRole(play, playerMeta) {
  * Approximate fantasy points for one player's involvement in one play,
  * scored through the league settings (position always passed — scoring rule).
  */
-export function estimatePlayPoints(play, role, position, scoringSettings) {
-  return Math.round(calcPoints(buildPlayStatDelta(play, role), scoringSettings, position) * 10) / 10;
+export function estimatePlayPoints(play, role, position, scoringSettings, roleDetail = null) {
+  return Math.round(calcPoints(buildPlayStatDelta(play, role, roleDetail), scoringSettings, position) * 10) / 10;
 }
 
-export function buildPlayStatDelta(play, role) {
+export function buildPlayStatDelta(play, role, roleDetail = null) {
   const description = play.description;
   const yards = play.yards || extractYardsFromText(description) || 0;
-  const touchdown = play.scoring && /touchdown/i.test(description);
+  const type = String(play.type ?? '').toLowerCase();
+  const kickContext = [
+    type,
+    description,
+    play.raw?.short_text,
+    play.raw?.text,
+    roleDetail,
+  ].filter(Boolean).join(' ');
+  const touchdown = play.scoring && (
+    /touchdown|return td/i.test(description)
+    || /touchdown|return-touchdown|return_td/.test(type)
+  );
+  const twoPoint = /two.?point|2.?point/.test(type)
+    || /two.?point conversion|2.?point conversion/i.test(description);
   const delta = {};
 
   if (role === 'kicker') {
-    if (/extra point/i.test(description)) delta.xpm = 1;
-    else if (/field goal is good|field goal.*good/i.test(description) || (play.type.includes('field') && play.scoring)) {
-      const fieldGoalYards = extractYardsFromText(description);
+    const missedExtraPoint = /(?:extra point|\bPAT\b).*?(?:fail|miss|no good)|(?:fail|miss|no good).*?(?:extra point|\bPAT\b)/i.test(kickContext);
+    const madeExtraPoint = /extra point good|extra point.*?is good|\bPAT\b.*?good/i.test(kickContext)
+      || /extra point good/i.test(String(roleDetail ?? ''));
+    if (missedExtraPoint) delta.xpmiss = 1;
+    else if (madeExtraPoint || (type.includes('extra') && play.scoring)) delta.xpm = 1;
+    else if (/field goal.*?(?:miss|no good)/i.test(kickContext)) {
+      delta.fgmiss = 1;
+    } else if (/field goal is good|field goal.*good/i.test(kickContext) || (type.includes('field') && play.scoring)) {
+      const fieldGoalYards = extractYardsFromText(kickContext);
       delta.fgm = 1;
       if (fieldGoalYards) {
         delta.fgm_yds = fieldGoalYards;
         delta.fgm_yds_over_30 = Math.max(0, fieldGoalYards - 30);
       }
     }
-    else return 0; // missed kicks: leave to exact stat deltas
+    else return {};
+  } else if (role === 'returner') {
+    const kickoff = type.includes('kickoff') || /kickoff/i.test(description);
+    if (kickoff) delta.kr_yd = yards;
+    else delta.pr_yd = yards;
+    if (touchdown) {
+      delta.ret_td = 1;
+      if (kickoff) delta.kr_td = 1;
+      else delta.pr_td = 1;
+    }
+  } else if (role === 'punter') {
+    // Punt distance belongs to the kicking play, not a fantasy rushing line.
+    return {};
   } else if (role === 'team_defense') {
     return buildTeamDefensePlayDelta(play);
   } else if (role === 'defense') {
@@ -205,7 +403,9 @@ export function buildPlayStatDelta(play, role) {
     }
     if (!Object.keys(delta).length) delta.idp_tkl = 1;
   } else if (role === 'passer') {
-    if (/intercept/i.test(description)) {
+    if (twoPoint) {
+      delta.pass_2pt = 1;
+    } else if (/intercept/i.test(description)) {
       delta.pass_int = 1;
     } else if (/sack/i.test(description)) {
       delta.pass_sack = 1;
@@ -220,22 +420,30 @@ export function buildPlayStatDelta(play, role) {
       if (yards >= 40) delta.pass_cmp_40p = 1;
     }
   } else if (role === 'receiver') {
-    delta.rec = 1;
-    delta.rec_yd = yards;
-    if (touchdown) delta.rec_td = 1;
-    if (/first down/i.test(description)) delta.rec_fd = 1;
-    if (touchdown && yards >= 40) delta.rec_td_40p = 1;
-    if (touchdown && yards >= 50) delta.rec_td_50p = 1;
-    if (yards >= 40) delta.rec_40p = 1;
+    if (twoPoint) {
+      delta.rec_2pt = 1;
+    } else {
+      delta.rec = 1;
+      delta.rec_yd = yards;
+      if (touchdown) delta.rec_td = 1;
+      if (/first down/i.test(description)) delta.rec_fd = 1;
+      if (touchdown && yards >= 40) delta.rec_td_40p = 1;
+      if (touchdown && yards >= 50) delta.rec_td_50p = 1;
+      if (yards >= 40) delta.rec_40p = 1;
+    }
   } else {
-    if (/fumble/i.test(description) && /lost|recovered by/i.test(description)) delta.fum_lost = 1;
-    delta.rush_att = 1;
-    delta.rush_yd = yards;
-    if (touchdown) delta.rush_td = 1;
-    if (/first down/i.test(description)) delta.rush_fd = 1;
-    if (touchdown && yards >= 40) delta.rush_td_40p = 1;
-    if (touchdown && yards >= 50) delta.rush_td_50p = 1;
-    if (yards >= 40) delta.rush_40p = 1;
+    if (twoPoint) {
+      delta.rush_2pt = 1;
+    } else {
+      if (/fumble/i.test(description) && /lost|recovered by/i.test(description)) delta.fum_lost = 1;
+      delta.rush_att = 1;
+      delta.rush_yd = yards;
+      if (touchdown) delta.rush_td = 1;
+      if (/first down/i.test(description)) delta.rush_fd = 1;
+      if (touchdown && yards >= 40) delta.rush_td_40p = 1;
+      if (touchdown && yards >= 50) delta.rush_td_50p = 1;
+      if (yards >= 40) delta.rush_40p = 1;
+    }
   }
 
   return delta;
@@ -294,7 +502,7 @@ export function getPlayEventKind(play, role, position) {
 
 function getPlayMechanism(play, role) {
   if (role === 'defense' || role === 'team_defense') return 'def';
-  if (/kickoff|punt.*return|return(?:ed)? for/i.test(play.description)) return 'return';
+  if (role === 'returner' || /kickoff|punt|punt.*return|return(?:ed)? for/i.test(`${play.type} ${play.description}`)) return 'return';
   if (role === 'passer' || role === 'receiver') return 'pass';
   if (role === 'rusher') return 'rush';
   return null;
@@ -305,12 +513,13 @@ export function getPlayEventClassification(play, role, position, statDelta = nul
   const stat = (key) => Number(delta?.[key]) || 0;
   const mechanism = getPlayMechanism(play, role);
   const touchdown = stat('pass_td') + stat('rush_td') + stat('rec_td')
+    + stat('ret_td') + stat('kr_td') + stat('pr_td')
     + stat('def_td') + stat('idp_def_td') + stat('idp_int_td')
     + stat('idp_fr_td') > 0;
   let kind = null;
 
   if (touchdown) kind = 'td';
-  else if (role === 'kicker' && stat('xpm') > 0) kind = 'xp';
+  else if (role === 'kicker' && (stat('xpm') + stat('xpmiss')) > 0) kind = 'xp';
   else if (role === 'kicker') kind = 'fg';
   else if ((stat('pass_int') + stat('fum_lost')) > 0) kind = 'to';
   else if (mechanism) kind = mechanism;
@@ -386,19 +595,38 @@ export function buildPlayEvents(playsByGame, nameIndex, scoringSettings, positio
   const events = [];
   Object.entries(playsByGame ?? {}).forEach(([gameId, rawPlays]) => {
     const game = gamesById?.get?.(String(gameId)) ?? null;
-    (rawPlays ?? []).forEach((raw) => {
-      const play = normalizePlay(raw, gameId);
+    const context = {
+      awayTeam: getGameTeamAbbr(game?.visitor_team ?? game?.away),
+      homeTeam: getGameTeamAbbr(game?.home_team ?? game?.home),
+    };
+    const normalized = (rawPlays ?? [])
+      .map((raw) => normalizePlay(raw, gameId))
+      .filter(Boolean)
+      .sort((left, right) => getPlayOrder(left) - getPlayOrder(right));
+    const contextual = enrichPlaySequenceContext(normalized, context).map((play) => (
+      play.inferredPasserName
+        ? normalizePlay(play.raw, gameId, { inferredPasserName: play.inferredPasserName })
+        : play
+    ));
+    contextual.forEach((play) => {
       if (!play) return;
       play.defenseTeamAbbr = getDefensiveTeamForPlay(play, game);
-      matchPlayToStarters(play, nameIndex).forEach(({ playerId, role }) => {
+      play.offenseTeamAbbr = getOffensiveTeamForPlay(play, game);
+      matchPlayToStarters(play, nameIndex).forEach(({ playerId, role, detail }) => {
         const position = positionsById.get(playerId) ?? 'FLEX';
-        const statDelta = buildPlayStatDelta(play, role);
+        const statDelta = buildPlayStatDelta(play, role, detail);
         const pts = Math.round(calcPoints(statDelta, scoringSettings, position) * 10) / 10;
         if (!pts && !play.scoring) return; // ignore zero-impact involvements
         const classification = getPlayEventClassification(play, role, position, statDelta);
         events.push({
           id: `play-${play.id}-${playerId}`,
+          // One NFL snap can credit several rostered players (for example the
+          // quarterback and receiver on a passing touchdown). Keep the raw
+          // play identifier so the presentation layer can make that one
+          // shared fantasy moment without conflating unrelated plays.
+          sharedPlayId: String(play.id),
           playerId,
+          position,
           ...classification,
           desc: play.description,
           pts,
@@ -414,6 +642,11 @@ export function buildPlayEvents(playsByGame, nameIndex, scoringSettings, positio
           estimated: true,
           glance: buildPlayGlance(play, game),
           play,
+          // Game metadata is fetched separately from the provider's play row
+          // and is not guaranteed to be embedded at raw.game. Carry the
+          // resolved record so provider-backed feed rows can always build the
+          // field replay when their play geometry is present.
+          playGame: game,
         });
       });
     });
@@ -430,13 +663,30 @@ export function buildPlayEvents(playsByGame, nameIndex, scoringSettings, positio
 export function mergePlayEvents(playEvents, deltaEvents, { coverageWindowMs = 120000, ptsTolerance = 1.5 } = {}) {
   const consumedPlayIds = new Set();
   const enrichedDeltas = (deltaEvents ?? []).map((event) => {
-    const match = (playEvents ?? []).find((play) => (
-      !consumedPlayIds.has(play.id)
-      && play.playerId === event.playerId
-      && play.kind === event.kind
-      && Math.abs(play.pts - event.pts) <= ptsTolerance
-      && Math.abs((play.at ?? 0) - event.at) <= coverageWindowMs
-    ));
+    const candidates = (playEvents ?? [])
+      .filter((play) => {
+        if (consumedPlayIds.has(play.id)) return false;
+        if (play.playerId !== event.playerId || play.kind !== event.kind) return false;
+        const sameGame = play.gameId != null && event.gameId != null
+          && String(play.gameId) === String(event.gameId);
+        if (play.gameId != null && event.gameId != null && !sameGame) return false;
+        const closeInTime = Math.abs((play.at ?? 0) - (event.at ?? 0)) <= coverageWindowMs;
+        const closeInProgress = Number.isFinite(Number(play.progress))
+          && Number.isFinite(Number(event.progress))
+          && Math.abs(Number(play.progress) - Number(event.progress)) <= 0.05;
+        const sameStats = statLinesMatch(play.stats, event.stats);
+        const closeEnough = closeInTime || closeInProgress;
+        // A replay snapshot can be emitted before its provider play hydrates.
+        // When the stat line identifies the same single play, allow the wider
+        // replay interval to enrich the existing row, but keep a game and time
+        // boundary so two identical catches cannot merge arbitrarily.
+        const replayHydrationWindow = sameStats && sameGame
+          && Math.abs((play.at ?? 0) - (event.at ?? 0)) <= coverageWindowMs * 5;
+        return (Math.abs((play.pts ?? 0) - (event.pts ?? 0)) <= ptsTolerance && closeEnough)
+          || (sameStats && (closeEnough || replayHydrationWindow));
+      })
+      .sort((left, right) => Math.abs((left.at ?? 0) - (event.at ?? 0)) - Math.abs((right.at ?? 0) - (event.at ?? 0)));
+    const match = candidates[0] ?? null;
     if (!match) return event;
     consumedPlayIds.add(match.id);
     return {
@@ -449,6 +699,8 @@ export function mergePlayEvents(playEvents, deltaEvents, { coverageWindowMs = 12
       gameId: event.gameId ?? match.gameId ?? null,
       timelineAt: event.timelineAt ?? event.at ?? match.timelineAt ?? null,
       play: event.play ?? match.play ?? null,
+      playGame: event.playGame ?? match.playGame ?? null,
+      sharedPlayId: event.sharedPlayId ?? match.sharedPlayId ?? null,
       source: 'play+delta',
     };
   });
@@ -460,4 +712,79 @@ export function mergePlayEvents(playEvents, deltaEvents, { coverageWindowMs = 12
     .sort((left, right) => (
       ((right.at ?? 0) - (left.at ?? 0)) || ((right.order ?? 0) - (left.order ?? 0))
     ));
+}
+
+// Provider-derived play stats may carry optional bonus fields that the live box
+// score does not expose, while a snapshot delta may carry several plays at once.
+// Compare the core per-play counting stats so a one-play fallback can be
+// rehydrated without requiring every provider-specific field to line up.
+const PLAY_MATCH_STATS = new Set([
+  'pass_yd', 'pass_cmp', 'pass_att', 'pass_td', 'pass_int', 'pass_2pt',
+  'rush_yd', 'rush_att', 'rush_td', 'rush_2pt',
+  'rec', 'rec_yd', 'rec_td', 'rec_2pt',
+  'kr_yd', 'kr_td', 'pr_yd', 'pr_td', 'ret_td',
+  'fgm', 'fgmiss', 'xpm', 'xpmiss', 'fum_lost', 'fum_ret_td',
+]);
+
+function statLinesMatch(left, right) {
+  if (!left || !right || typeof left !== 'object' || typeof right !== 'object') return false;
+  const sharedKeys = [...PLAY_MATCH_STATS].filter((key) => (
+    Math.abs(Number(left[key]) || 0) > 0
+    && Math.abs(Number(right[key]) || 0) > 0
+  ));
+  return sharedKeys.length > 0 && sharedKeys.every((key) => (
+    Math.abs((Number(left[key]) || 0) - (Number(right[key]) || 0)) < 0.001
+  ));
+}
+
+/**
+ * Collapses contributors from the same NFL snap only when they belong to the
+ * same fantasy side. Opposing managers can each benefit from a shared snap
+ * (such as a receiver's catch and an opponent's defensive score); those must
+ * remain distinct feed and chart events so each side keeps its own movement.
+ */
+export function groupSharedPlayEvents(events = [], sideKeyOf) {
+  const groups = new Map();
+
+  events.forEach((event, index) => {
+    const sharedPlayId = event?.sharedPlayId;
+    const sideKey = sideKeyOf?.(event) ?? null;
+    if (!sharedPlayId || !sideKey) {
+      groups.set(`event:${event?.id ?? index}`, { events: [event], index, sideKey: null });
+      return;
+    }
+    const key = `play:${event.gameId ?? 'unknown'}:${sharedPlayId}:side:${sideKey}`;
+    const group = groups.get(key);
+    if (group) group.events.push(event);
+    else groups.set(key, { events: [event], index, sideKey });
+  });
+
+  return [...groups.values()]
+    .sort((left, right) => left.index - right.index)
+    .map((group) => {
+      const [primary, ...rest] = group.events;
+      if (!rest.length && !group.sideKey) return primary;
+      const contributors = group.events.map((event) => ({
+        playerId: event.playerId,
+        pts: event.pts,
+        stats: event.stats,
+        position: event.position,
+        kind: event.kind,
+        mechanism: event.mechanism,
+        estimated: event.estimated,
+      }));
+      return {
+        ...primary,
+        // Use the shared-snap identity even before every same-side contributor
+        // has arrived. The row therefore keeps its selection/chart identity
+        // when a later replay snapshot adds the receiver to the quarterback's
+        // already-visible play (or vice versa).
+        id: `shared-${primary.sharedPlayId}-${group.sideKey}`,
+        pts: Math.round(contributors.reduce((total, contributor) => (
+          total + (Number(contributor.pts) || 0)
+        ), 0) * 10) / 10,
+        contributorIds: contributors.map((contributor) => contributor.playerId),
+        contributors,
+      };
+    });
 }

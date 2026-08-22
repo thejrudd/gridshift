@@ -1,11 +1,11 @@
 /* NflPlays.css — the field graphics shared by Statistics play-by-play and the
    win-probability chart.
-   
+
    The field visuals follow the play-by-play design handoff: one 120-yard canvas
    (two 10-yard end zones + 100 playing yards) shared by the drive field and the
    play strips, so the two line up yard for yard. Geometry, colour and spacing
    here are the design — treat pixel values as intentional.
-   
+
    Colours come from the global tokens plus team palettes passed in as inline
    custom properties, so both themes and every team work without per-surface
    overrides. The turf surface is the one thing that swaps between themes: a
@@ -450,17 +450,17 @@
 }
 
 /* The painted down-and-distance banner.
-   
+
    A telecast paints the down and distance onto the turf behind the line of
    scrimmage, with chevrons pointing at the line to gain. This is that graphic,
    translated to a flat field: the banner is anchored to the snap spot rather
    than parked in a corner, so it reads as part of the ground the ball crosses
    rather than as an overlay sitting on top of the picture.
-   
+
    The flag is a rectangle. A skew was tried, on the theory that it would read as
    the camera perspective a broadcast gets for free — on a flat field it just
    reads as a graphic that isn't square.
-   
+
    It sits below the ball, which rides the centre line, so it can never cover
    the thing you are watching. */
 .dpb-banner {
@@ -476,6 +476,7 @@
   gap: 2px;
   filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.34));
   pointer-events: none;
+  transform: translateX(var(--dpb-banner-shift, 0px));
 }
 /* Driving the other way: the chevrons lead, so they move to the other end and
    the arrowheads mirror with them. */
@@ -560,7 +561,7 @@
   opacity: 0.9;
 }
 /* The halo underneath every trail.
-   
+
    A team colour is chosen to read against the app's surfaces, not against turf,
    and a few clubs carry a near-white accent for exactly that reason — drawn
    straight onto a light field their trail disappears. A dark under-stroke makes
@@ -943,9 +944,10 @@
 }
 
 /* ── Fantasy Live: the running score riding the ball ─────────────────────
-   Only rendered when Fantasy Live passes a points total. The plate tracks the
-   ball, so what the play is earning stays with the thing earning it. Held
-   inside the canvas near a goal line, the same way the nameplate is. */
+   Rendered whenever Fantasy Live supplies one or more viewer-roster
+   contributors. The single combined plate tracks the ball, so what the play is
+   earning stays with the thing earning it. Held inside the canvas near a goal
+   line, the same way the nameplate is. */
 .dpb-fantasy {
   position: absolute;
   transform: translate(-50%, calc(50% + 18px));

@@ -9,6 +9,11 @@ export const DRAFT_RANKING_PRIORITY_CONTROLS = Object.freeze([
     description: 'How much to follow current draft market value. Higher values favor players valued more highly by the draft market.',
   }),
   Object.freeze({
+    key: 'adp',
+    label: 'BALLDONTLIE ADP',
+    description: 'How much to follow BALLDONTLIE average draft position. Higher values favor players selected earlier across its tracked drafts.',
+  }),
+  Object.freeze({
     key: 'pastProduction',
     label: 'Points per game',
     description: 'How much recent fantasy points per game matter. Higher values favor players with stronger weekly production.',

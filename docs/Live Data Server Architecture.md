@@ -51,7 +51,7 @@ The two handlers now share one process-local gateway, bounded cache, in-flight r
 Current browser refresh behavior also differs from the target:
 
 - Statistics Scores uses a narrow BALLDONTLIE selected-week snapshot at the server-advertised cadence when the configured profile and effective limit support it; ESPN remains the explicit fallback. BALLDONTLIE detail refreshes every 30 seconds.
-- Fantasy Live uses a coarse Free-versus-paid cadence and submits matchup-shaped game ID sets. Similar leagues can therefore produce different provider cache keys.
+- Fantasy Live uses a coarse Free-versus-paid stats cadence and submits matchup-shaped game ID sets. Its play feed now reads the same canonical eight-second per-game snapshots as Statistics Scores; similar leagues can still produce different stats cache keys.
 - `GRIDSHIFT_LIVE_MAX_REQ_PER_MIN` limits incoming Fantasy Live requests per league/client, not the deployment's total BALLDONTLIE request volume.
 
 ## Target Phase 1 Topology
@@ -87,7 +87,8 @@ The gateway is the only module allowed to call BALLDONTLIE. The adapters decide 
 | `server/index.js` | **Current:** constructs one gateway and injects it into both route groups. |
 | `server/liveHandlers.js` | League session/allowlist, logical ingest lifecycle, league-scoped projection of cached provider data, and Fantasy Live response contracts. |
 | `server/statisticsScoresHandlers.js` | Public Scores provider selection, selected-week live slate, known-game detail validation, partial tier coverage, and ESPN fallback. |
-| `src/utils/providerAnchoredGameClock.js` | **Current:** pure provider-anchor-to-display-clock calculation with correction, boundary, and stale rules. |
+| `server/liveGameSnapshots.js` | **Current:** one sidecar-wide, provider-verified play snapshot and latest-play selection per game, shared across public Scores and authorized Fantasy Live projections. |
+| `src/utils/providerAnchoredGameClock.js` | **Current:** pure provider clock parsing and monotonic correction metadata at the normalization boundary; the UI does not synthesize a running clock. |
 | `src/api/liveApi.js` and `src/api/statisticsScoresApi.js` | Consume capability, cadence, provider-fetch time, stale state, and next-refresh hints without accepting provider credentials or priority overrides. |
 
 This is an implementation map, not a requirement to create every module before a smaller, testable extraction is useful. The non-negotiable boundary is that only one sidecar-wide gateway owns actual BALLDONTLIE requests.

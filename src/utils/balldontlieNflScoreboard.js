@@ -1,7 +1,14 @@
 import { NFL_SEASON_PHASES } from './espnNflScoreboard.js';
 import { reconcileProviderClockAnchor } from './providerAnchoredGameClock.js';
 import { NFL_SCOREBOARD_TIME_ZONE } from './statisticsScoresGrouping.js';
-import { NON_SNAP_SLUGS, getOffenseTeam, isTurnoverOnDowns } from './nflPlays/fieldGeometry.js';
+import {
+  NON_SNAP_SLUGS,
+  canonicalTeam,
+  getOffenseTeam,
+  isNonSnapPlay,
+  isTurnoverOnDowns,
+} from './nflPlays/fieldGeometry.js';
+import { enrichPlaySequenceContext } from './nflPlays/playSequenceContext.js';
 
 export const BDL_SEASON_TYPES = Object.freeze({
   [NFL_SEASON_PHASES.PRESEASON]: 1,
@@ -169,6 +176,18 @@ function normalizeBdlGame(game, {
   };
 }
 
+function attachInitialBdlClockAnchor(game, payload) {
+  if (!game?.live?.clock) return game;
+  const providerFetchedAt = payload?.freshness?.providerFetchedAt;
+  const observedAt = payload?.freshness?.receivedAt ?? providerFetchedAt;
+  if (!providerFetchedAt && !observedAt) return game;
+  return reconcileProviderClockAnchor(null, game, {
+    observedAt,
+    providerFetchedAt,
+    feedStale: payload?.freshness?.stale === true || payload?.cache?.stale === true,
+  });
+}
+
 function getBdlGamePhase(game) {
   const explicitPhase = String(game?.season_type ?? game?.seasonType ?? '').trim().toLowerCase();
   if (explicitPhase === '1' || explicitPhase.includes('pre')) return NFL_SEASON_PHASES.PRESEASON;
@@ -232,6 +251,25 @@ export function normalizeBdlScoreboardWeek(payload, {
   week = 1,
 } = {}) {
   const normalizedSeason = normalizeBdlScoreboardSeason(payload, { season, phase });
+  if (phase === NFL_SEASON_PHASES.PRESEASON) {
+    const sourceGames = getRawGames(payload)
+      .filter((game) => getBdlGamePhase(game) === phase);
+    const hasProviderWeeks = sourceGames.some((game) => Number.isInteger(Number(game?.week)));
+    const derivedGames = normalizedSeason.weeks.find((entry) => entry.week === week)?.games ?? [];
+    const providerGames = normalizedSeason.games.filter((game) => game.week === week);
+    const legacyOrdinaryGames = week > 1
+      ? derivedGames.filter((game) => Number(game.week) === 1 && !isHallOfFameGame(game))
+      : [];
+    const games = !hasProviderWeeks || week === 1
+      ? derivedGames
+      : [...providerGames, ...legacyOrdinaryGames.filter((game) => (
+        !providerGames.some((providerGame) => providerGame.id === game.id)
+      ))];
+    return {
+      ...makeWeek(week, phase, [...games]),
+      season,
+    };
+  }
   return {
     ...(normalizedSeason.weeks.find((entry) => entry.week === week) ?? makeWeek(week, phase, [])),
     season,
@@ -252,7 +290,8 @@ export function normalizeBdlScoreboardSeason(payload, {
     .filter((game) => getBdlGamePhase(game) === phase);
   const games = sourceGames
     .map((game) => normalizeBdlGame(game, { phase, detailsAvailable, playByPlayAvailable }))
-    .filter(Boolean);
+    .filter(Boolean)
+    .map((game) => attachInitialBdlClockAnchor(game, payload));
   if (phase === NFL_SEASON_PHASES.PRESEASON) {
     const sortedGames = [...games].sort((left, right) => Date.parse(left.kickoff) - Date.parse(right.kickoff));
     const ordinaryGames = sortedGames.filter((game) => !isHallOfFameGame(game));
@@ -299,6 +338,9 @@ export function normalizeBdlScoreboardSeason(payload, {
 
 export function overlayBdlScoreboardWeek(seasonData, payload, weekNumber, {
   observedAt = Date.now(),
+  providerFetchedAt = payload?.freshness?.providerFetchedAt
+    ?? payload?.freshness?.receivedAt
+    ?? payload?.cache?.fetchedAt,
 } = {}) {
   const replacement = normalizeBdlScoreboardWeek(payload, {
     season: seasonData?.season,
@@ -306,6 +348,9 @@ export function overlayBdlScoreboardWeek(seasonData, payload, weekNumber, {
     week: weekNumber,
   });
   const feedStale = payload?.freshness?.stale === true || payload?.cache?.stale === true;
+  const liveSnapshotsByGameId = new Map((payload?.liveGameSnapshots ?? [])
+    .filter((snapshot) => snapshot?.gameId != null)
+    .map((snapshot) => [String(snapshot.gameId), snapshot]));
   const weeks = (seasonData?.weeks ?? []).map((week) => {
     if (week.week !== weekNumber) return week;
 
@@ -334,12 +379,46 @@ export function overlayBdlScoreboardWeek(seasonData, payload, weekNumber, {
         network: game.network === 'TV TBD' ? previousGame?.network ?? game.network : game.network,
         broadcasts: game.broadcasts?.length ? game.broadcasts : previousGame?.broadcasts ?? [],
       };
-      return reconcileProviderClockAnchor(previousGame, merged, { observedAt, feedStale });
+      const withGameSnapshot = reconcileProviderClockAnchor(previousGame, merged, {
+        observedAt,
+        providerFetchedAt,
+        feedStale,
+      });
+      const liveSnapshot = liveSnapshotsByGameId.get(providerId);
+      if (!liveSnapshot?.latestPlay) return withGameSnapshot;
+      const play = normalizeBdlScorePlay(liveSnapshot.latestPlay, withGameSnapshot);
+      const updatedAt = liveSnapshot.freshness?.providerFetchedAt
+        ?? liveSnapshot.freshness?.receivedAt
+        ?? liveSnapshot.cache?.fetchedAt
+        ?? providerFetchedAt;
+      const latestPlay = {
+        status: 'ready',
+        play,
+        stale: liveSnapshot.freshness?.stale === true || liveSnapshot.cache?.stale === true,
+        updatedAt,
+        observedAt,
+        clockAnchorAt: play?.wallclock ?? updatedAt,
+        error: null,
+      };
+      const withCanonicalPlay = mergeBdlLatestPlayClock(
+        mergeBdlLatestPlayScore(withGameSnapshot, latestPlay),
+        latestPlay,
+      );
+      return { ...withCanonicalPlay, latestPlay };
     });
 
     (week.games ?? []).forEach((game) => {
       const providerId = game?.bdlGameId ?? game?.providerGameId;
-      if (providerId == null || !replacementIds.has(String(providerId))) games.push(game);
+      if (providerId == null || !replacementIds.has(String(providerId))) {
+        const staleLiveGame = game.status === 'live' && game.live?.clock
+          ? reconcileProviderClockAnchor(game, game, {
+            observedAt,
+            providerFetchedAt,
+            feedStale: true,
+          })
+          : game;
+        games.push(staleLiveGame);
+      }
     });
     games.sort((left, right) => Date.parse(left.kickoff) - Date.parse(right.kickoff));
     return { ...week, games };
@@ -443,17 +522,177 @@ export function normalizeBdlScorePlay(play, game) {
     endPossessionText: firstString(play.end_possession_text),
     endDownDistanceText: firstString(play.end_down_distance_text),
     statYardage: asNumberOrNull(play.stat_yardage),
+    // GridShift may recover the passer on a provider summary-only pick-six
+    // from earlier, positively identified passes in the same possession. This
+    // is app-owned context, never presented as a provider-supplied field.
+    inferredPasserName: firstString(play.gridshift_inferred_passer_name),
     homeWinProbability: asNumberOrNull(play.home_win_probability),
     awayScore: asScore(play.away_score),
     homeScore: asScore(play.home_score),
   };
 }
 
-function isPeriodBoundaryPlay(play) {
-  const values = [play?.text, play?.short_text, play?.type_text, play?.type_abbreviation, play?.type_slug]
+function parseBdlClockSeconds(value) {
+  const match = String(value ?? '').trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return null;
+  const minutes = Number(match[1]);
+  const seconds = Number(match[2]);
+  if (!Number.isInteger(minutes) || !Number.isInteger(seconds) || seconds > 59) return null;
+  return (minutes * 60) + seconds;
+}
+
+function getBdlClockProgress(period, clock) {
+  const periodNumber = Number(period);
+  const clockSeconds = parseBdlClockSeconds(clock);
+  if (!Number.isInteger(periodNumber) || periodNumber < 1 || clockSeconds == null) return null;
+  return ((periodNumber - 1) * 900) + (900 - Math.min(900, clockSeconds));
+}
+
+function timestampValue(value) {
+  if (Number.isFinite(value)) return Number(value);
+  if (value instanceof Date) return value.getTime();
+  const parsed = Date.parse(value ?? '');
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function latestPlayFetchedAt(latestPlay) {
+  return timestampValue(latestPlay?.updatedAt) ?? timestampValue(latestPlay?.observedAt);
+}
+
+function gameProviderFetchedAt(game) {
+  return timestampValue(game?.live?.providerClockAnchor?.providerFetchedAt)
+    ?? timestampValue(game?.asOf)
+    ?? timestampValue(game?.live?.providerClockAnchor?.changedAt);
+}
+
+function gameTeamId(game, teamId) {
+  const normalized = canonicalTeam(teamId);
+  if (!normalized) return null;
+  return [game?.away, game?.home]
+    .find((team) => canonicalTeam(team?.id) === normalized)
+    ?.id ?? null;
+}
+
+function latestPlaySituation(game, play) {
+  const live = game?.live;
+  if (!live || !play || isNonSnapPlay(play)) return live;
+
+  const possession = gameTeamId(game, play.team);
+  // The scorecard presents the latest snap's starting down and spot. Keep its
+  // red-zone label in that same frame: a scoring play can end at the goal line
+  // even when a long field goal or touchdown began outside the opponent 20.
+  const yardsToEndzone = play.startYardsToEndzone;
+  const hasValidYardsToEndzone = yardsToEndzone != null
+    && yardsToEndzone !== ''
+    && Number.isFinite(Number(yardsToEndzone));
+
+  return {
+    ...live,
+    possession: possession ?? live.possession ?? null,
+    downDistance: play.down ?? live.downDistance ?? null,
+    fieldPosition: play.spot && play.spot !== '—' ? play.spot : live.fieldPosition ?? null,
+    redZone: hasValidYardsToEndzone ? Number(yardsToEndzone) <= 20 : live.redZone,
+  };
+}
+
+/**
+ * Apply a newer BDL play clock to a live scorecard without allowing an older
+ * play response to replace a fresher game snapshot. The play clock is a
+ * discrete provider-verified value; the UI does not interpolate it.
+ */
+export function mergeBdlLatestPlayClock(game, latestPlay) {
+  if (game?.provider !== 'balldontlie' || game.status !== 'live' || !game.live) return game;
+  if (!latestPlay?.play || latestPlay.stale === true) return game;
+
+  const playPeriod = latestPlay.play.period;
+  const playClock = latestPlay.play.time;
+  const playProgress = getBdlClockProgress(playPeriod, playClock);
+  const mergedSituation = latestPlaySituation(game, latestPlay.play);
+  if (playProgress == null) {
+    return { ...game, live: mergedSituation };
+  }
+
+  const gameProgress = getBdlClockProgress(game.live.period, game.live.clock);
+  const providerClockFrozen = isNonSnapPlay(latestPlay.play);
+  if (gameProgress != null && playProgress < gameProgress && !providerClockFrozen) return game;
+
+  const observedAt = timestampValue(latestPlay.observedAt) ?? timestampValue(latestPlay.updatedAt);
+  const providerFetchedAt = timestampValue(latestPlay.clockAnchorAt) ?? observedAt;
+  const merged = {
+    ...game,
+    live: {
+      ...mergedSituation,
+      period: String(playPeriod),
+      clock: playClock,
+    },
+  };
+  return reconcileProviderClockAnchor(game, merged, {
+    observedAt,
+    providerFetchedAt,
+    feedStale: latestPlay.stale === true,
+    providerClockFrozen,
+  });
+}
+
+/**
+ * Apply post-play scores to a live scorecard when the latest-play lane has
+ * moved at least as far through the game, or its provider response is fresher
+ * than the current scoreboard snapshot. An older or stale play must never
+ * roll a score back.
+ */
+export function mergeBdlLatestPlayScore(game, latestPlay) {
+  if (game?.provider !== 'balldontlie' || game.status !== 'live' || !game.live) return game;
+  if (!latestPlay?.play || latestPlay.stale === true) return game;
+
+  const awayScore = latestPlay.play.awayScore;
+  const homeScore = latestPlay.play.homeScore;
+  if (!Number.isFinite(awayScore) || !Number.isFinite(homeScore)) return game;
+
+  // Plays can lag the Games total at the same clock (most visibly when a
+  // touchdown row arrives before its conversion row). A play may advance a
+  // score, but score reductions/corrections remain authoritative to Games.
+  const currentAwayScore = asScore(game.awayScore ?? game.score?.away);
+  const currentHomeScore = asScore(game.homeScore ?? game.score?.home);
+  if ((currentAwayScore != null && awayScore < currentAwayScore)
+    || (currentHomeScore != null && homeScore < currentHomeScore)) {
+    return game;
+  }
+
+  const playProgress = getBdlClockProgress(latestPlay.play.period, latestPlay.play.time);
+  if (playProgress == null) return game;
+  const gameProgress = getBdlClockProgress(game.live.period, game.live.clock);
+  const playFetchedAt = latestPlayFetchedAt(latestPlay);
+  const gameFetchedAt = gameProviderFetchedAt(game);
+  if (gameProgress != null && playProgress <= gameProgress
+    && (playFetchedAt == null || gameFetchedAt == null || playFetchedAt <= gameFetchedAt)) {
+    return game;
+  }
+
+  return {
+    ...game,
+    score: { away: awayScore, home: homeScore },
+    awayScore,
+    homeScore,
+  };
+}
+
+function periodBoundaryValues(play) {
+  return [play?.text, play?.short_text, play?.type_text, play?.type_abbreviation, play?.type_slug]
     .map((value) => String(value ?? '').trim().replace(/[_.-]+/g, ' '))
     .filter(Boolean);
-  return values.some((value) => /^end(?:\s+of)?\s+(?:quarter(?:\s*[1-4])?|half|game)$/i.test(value));
+}
+
+function isEndOfGamePlay(play) {
+  return periodBoundaryValues(play).some((value) => /^end(?:\s+of)?\s+game$/i.test(value));
+}
+
+function isTwoMinuteWarningPlay(play) {
+  return periodBoundaryValues(play).some((value) => /^two\s+minute\s+warning$/i.test(value));
+}
+
+function isPeriodBoundaryPlay(play) {
+  return periodBoundaryValues(play)
+    .some((value) => /^end(?:\s+of)?\s+(?:quarter(?:\s*[1-4])?|half|game)$/i.test(value));
 }
 
 function getBdlPlayProgress(play) {
@@ -484,6 +723,48 @@ function sortBdlPlaysChronologically(plays) {
       return left.index - right.index;
     })
     .map(({ play }) => play);
+}
+
+/** The provider row that the full drilldown feed will place last. */
+export function getLatestBdlScorePlay(plays = []) {
+  return sortBdlPlaysChronologically(plays).at(-1) ?? null;
+}
+
+function playClockSeconds(play) {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(String(play?.clock_display ?? play?.clock ?? '').trim());
+  if (!match || Number(match[2]) > 59) return null;
+  return (Number(match[1]) * 60) + Number(match[2]);
+}
+
+function displayPlayClock(play) {
+  const seconds = playClockSeconds(play);
+  if (seconds == null) return null;
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
+/**
+ * Describe the rare final state where the provider closes a game at the
+ * two-minute warning. The explicit stoppage plus equal wallclock timestamps
+ * distinguish it from a normal final snap whose remaining clock expires
+ * without generating another play row.
+ */
+function getBdlFinalGameTerminal(plays = [], gameStatus) {
+  if (gameStatus !== 'final') return null;
+  const chronological = sortBdlPlaysChronologically(plays);
+  const terminalIndex = chronological.length - 1;
+  if (terminalIndex < 1 || !isEndOfGamePlay(chronological[terminalIndex])) return null;
+
+  const terminal = chronological[terminalIndex];
+  const preceding = chronological[terminalIndex - 1];
+  if (!isTwoMinuteWarningPlay(preceding)) return null;
+  const terminalAt = Date.parse(terminal?.wallclock ?? '');
+  const precedingAt = Date.parse(preceding?.wallclock ?? '');
+  const remaining = playClockSeconds(preceding);
+  if (!Number.isFinite(terminalAt) || terminalAt !== precedingAt || remaining == null || remaining <= 0) return null;
+  return {
+    kind: 'ended-with-time-remaining',
+    clock: displayPlayClock(preceding),
+  };
 }
 
 // Clock stoppages, and the kickoff that follows a score. None of them are
@@ -603,10 +884,10 @@ function describeDrive(group, index) {
 export function groupBdlPlaysIntoDrives(plays = [], game) {
   const homeTeam = game?.home?.id ?? null;
   const awayTeam = game?.away?.id ?? null;
-  const normalized = sortBdlPlaysChronologically(plays)
+  const normalized = enrichPlaySequenceContext(sortBdlPlaysChronologically(plays)
     .filter((play) => !isPeriodBoundaryPlay(play))
     .map((play) => normalizeBdlScorePlay(play, game))
-    .filter(Boolean);
+    .filter(Boolean), { homeTeam, awayTeam });
 
   // Group by the team that ran each play, not by `team` — which names whoever
   // finished with the ball. Grouping on `team` filed a punt under the returning
@@ -878,6 +1159,7 @@ export function buildScoreDetailFromGame(game, {
   const detailsProvider = game?.detailsProvider ?? game?.provider;
   const supportsBdlDetail = detailsProvider === 'balldontlie';
   const drives = supportsBdlDetail ? groupBdlPlaysIntoDrives(rawPlays, game) : [];
+  const terminal = supportsBdlDetail ? getBdlFinalGameTerminal(rawPlays, game?.status) : null;
   const awayId = game?.away?.id ?? teamFromBdl(rawGame?.visitor_team).id;
   const homeId = game?.home?.id ?? teamFromBdl(rawGame?.home_team).id;
   const statGroups = buildTeamStatGroups(teamStats, playerStats, awayId, homeId);
@@ -909,6 +1191,7 @@ export function buildScoreDetailFromGame(game, {
       score: play.score ?? 'Score unavailable',
     }))),
     drives,
+    terminal,
     provider: detailsProvider ?? 'espn',
     coverage: {
       plays: playByPlayAvailable,

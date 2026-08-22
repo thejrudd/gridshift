@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  completeReplay,
   getClockState,
   resetClock,
   setProgress,
@@ -79,4 +80,14 @@ test('speed selection updates the replay window', () => {
   // An unknown id must be ignored rather than clearing the current speed.
   setSpeed('nonsense');
   assert.equal(getClockState().speedId, 'fast');
+});
+
+test('completing the replay jumps directly to the full week without signalling a rewind', () => {
+  resetClock();
+  setProgress(0.4);
+  const seen = collectRewinds(completeReplay);
+
+  assert.equal(getClockState().progress, 1);
+  assert.equal(getClockState().playing, false);
+  assert.deepEqual(seen, []);
 });

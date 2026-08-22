@@ -118,6 +118,16 @@ export function setSpeed(speedId) {
   emit();
 }
 
+// Jump straight to the completed slate without leaving the playback timer
+// running. This is the fast path for testing the fully populated week; unlike
+// a rewind it preserves everything consumers have already accumulated.
+export function completeReplay() {
+  stopTimer();
+  state.playing = false;
+  state.progress = 1;
+  emit();
+}
+
 export function resetClock() {
   pause();
   state.progress = 0;

@@ -1,6 +1,7 @@
 import express from 'express';
 import process from 'node:process';
 import { createBalldontlieGateway } from './balldontlieGateway.js';
+import { createLiveGameSnapshotStore } from './liveGameSnapshots.js';
 import { createPublicRequestGuard } from './publicRequestGuard.js';
 
 const ESPN_NFL_SCOREBOARD_URL = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard';
@@ -10,6 +11,7 @@ const ESPN_SCORE_CACHE_TTL_MS = 6_000;
 const ESPN_SCORE_CACHE = new Map();
 const ESPN_SCORE_IN_FLIGHT = new Map();
 const GATEWAYS_BY_FETCHER = new WeakMap();
+const SNAPSHOT_STORES_BY_GATEWAY = new WeakMap();
 const STATISTICS_SCORES_SOURCES = Object.freeze({
   FIXTURE: 'fixture',
   ESPN: 'espn',
@@ -68,6 +70,26 @@ function resolveGateway({ gateway, fetcher = fetch, env = process.env } = {}) {
     byEnv.set(env, resolved);
   }
   return resolved;
+}
+
+function resolveSnapshotStore({ snapshotStore, gateway }) {
+  if (snapshotStore) return snapshotStore;
+  let resolved = SNAPSHOT_STORES_BY_GATEWAY.get(gateway);
+  if (!resolved) {
+    resolved = createLiveGameSnapshotStore({ gateway });
+    SNAPSHOT_STORES_BY_GATEWAY.set(gateway, resolved);
+  }
+  return resolved;
+}
+
+function isLiveBdlGame(game) {
+  const state = String(game?.status_state ?? '').trim().toLowerCase();
+  const status = String(game?.status ?? '').trim().toLowerCase();
+  return state === 'in_progress'
+    || state === 'live'
+    || /\b(?:1st|2nd|3rd|4th|ot)\b/.test(status)
+    || status.includes('halftime')
+    || status.includes('delay');
 }
 
 function toCompatCache(result) {
@@ -215,6 +237,7 @@ export async function fetchStatisticsScoresGamePlays({
   fetcher = fetch,
   env = process.env,
   gateway,
+  snapshotStore,
 } = {}) {
   const parsedGameId = parseGameId(gameId);
   if (!parsedGameId) {
@@ -223,28 +246,59 @@ export async function fetchStatisticsScoresGamePlays({
     throw error;
   }
   const resolvedGateway = resolveGateway({ gateway, fetcher, env });
+  const resolvedSnapshotStore = resolveSnapshotStore({ snapshotStore, gateway: resolvedGateway });
   const resolvedPhase = normalizePhase(phase);
   const seasonType = getBdlSeasonType(resolvedPhase);
-  const params = new URLSearchParams({
-    game_id: String(parsedGameId),
-    season_type: String(seasonType),
-  });
-  const result = await resolvedGateway.request({
-    path: '/nfl/v1/plays',
-    params,
-    capability: 'plays',
-    paginate: true,
-    cacheTtlMs: SCORE_CACHE_TTL_MS,
-    staleTtlMs: 5 * 60_000,
-    refreshAfterMs: SCORE_CACHE_TTL_MS,
-  });
+  const result = await resolvedSnapshotStore.getPlays({ gameId: parsedGameId, seasonType });
   return {
     provider: STATISTICS_SCORES_SOURCES.BALLDONTLIE,
     gameId: parsedGameId,
     phase: resolvedPhase,
     seasonType,
-    data: result.payload.data,
-    meta: result.payload.meta,
+    data: result.plays,
+    meta: result.meta,
+    cache: toCompatCache(result),
+    freshness: result.freshness,
+    accounting: result.accounting,
+  };
+}
+
+/**
+ * Fetch the newest provider play for the live scorecard.
+ *
+ * The play endpoint is chronological, so the last row is the same newest play
+ * that the full drilldown feed will render after it normalizes the complete
+ * response. Keep this on the background lane: the score lane is reserved for
+ * the score and clock snapshot, while this endpoint may walk more than one
+ * provider page late in a game.
+ */
+export async function fetchStatisticsScoresLatestPlay({
+  gameId,
+  phase,
+  fetcher = fetch,
+  env = process.env,
+  gateway,
+  snapshotStore,
+} = {}) {
+  const parsedGameId = parseGameId(gameId);
+  if (!parsedGameId) {
+    const error = new Error('A valid BALLDONTLIE game ID is required.');
+    error.statusCode = 400;
+    throw error;
+  }
+  const resolvedGateway = resolveGateway({ gateway, fetcher, env });
+  const resolvedSnapshotStore = resolveSnapshotStore({ snapshotStore, gateway: resolvedGateway });
+  const resolvedPhase = normalizePhase(phase);
+  const seasonType = getBdlSeasonType(resolvedPhase);
+  const result = await resolvedSnapshotStore.getPlays({ gameId: parsedGameId, seasonType });
+  return {
+    provider: STATISTICS_SCORES_SOURCES.BALLDONTLIE,
+    gameId: parsedGameId,
+    phase: resolvedPhase,
+    seasonType,
+    play: result.latestPlay,
+    playsCount: result.plays.length,
+    meta: result.meta,
     cache: toCompatCache(result),
     freshness: result.freshness,
     accounting: result.accounting,
@@ -257,6 +311,7 @@ export async function fetchStatisticsScoresGameDetail({
   fetcher = fetch,
   env = process.env,
   gateway,
+  snapshotStore,
 } = {}) {
   const parsedGameId = parseGameId(gameId);
   if (!parsedGameId) {
@@ -265,6 +320,7 @@ export async function fetchStatisticsScoresGameDetail({
     throw error;
   }
   const resolvedGateway = resolveGateway({ gateway, fetcher, env });
+  const resolvedSnapshotStore = resolveSnapshotStore({ snapshotStore, gateway: resolvedGateway });
   const resolvedPhase = normalizePhase(phase);
   const seasonType = getBdlSeasonType(resolvedPhase);
   const seasonParams = new URLSearchParams({ season_type: String(seasonType) });
@@ -272,8 +328,6 @@ export async function fetchStatisticsScoresGameDetail({
   playerParams.append('game_ids[]', String(parsedGameId));
   const teamParams = new URLSearchParams(seasonParams);
   teamParams.append('game_ids[]', String(parsedGameId));
-  const playParams = new URLSearchParams(seasonParams);
-  playParams.set('game_id', String(parsedGameId));
   const requestResource = (options) => resolvedGateway.request({
     cacheTtlMs: SCORE_CACHE_TTL_MS,
     staleTtlMs: 5 * 60_000,
@@ -292,7 +346,7 @@ export async function fetchStatisticsScoresGameDetail({
     ? requestResource({ path: '/nfl/v1/team_stats', params: teamParams, capability: 'teamStats', paginate: true })
     : Promise.resolve(null);
   const playRequest = resolvedGateway.supports('plays')
-    ? requestResource({ path: '/nfl/v1/plays', params: playParams, capability: 'plays', paginate: true })
+    ? resolvedSnapshotStore.getPlays({ gameId: parsedGameId, seasonType })
     : Promise.resolve(null);
 
   const [gameResult, playerResult, teamResult, playResult] = await Promise.all([
@@ -304,7 +358,7 @@ export async function fetchStatisticsScoresGameDetail({
   const game = gameResult.payload?.data ?? null;
   const playerStats = playerResult?.payload?.data ?? [];
   const teamStats = teamResult?.payload?.data ?? [];
-  const plays = playResult?.payload?.data ?? [];
+  const plays = playResult?.plays ?? [];
   const scoringPlays = plays.filter((play) => play?.scoring_play === true);
   const freshnessResults = [gameResult, playerResult, teamResult, playResult].filter(Boolean);
   const oldestFreshness = freshnessResults
@@ -445,6 +499,7 @@ export async function fetchStatisticsScoresLiveWeek({
   fetcher = fetch,
   env = process.env,
   gateway,
+  snapshotStore,
 } = {}) {
   const parsedSeason = parseSeason(season);
   const parsedWeek = parseWeek(week);
@@ -455,6 +510,7 @@ export async function fetchStatisticsScoresLiveWeek({
   }
   const resolvedPhase = normalizePhase(phase);
   const resolvedGateway = resolveGateway({ gateway, fetcher, env });
+  const resolvedSnapshotStore = resolveSnapshotStore({ snapshotStore, gateway: resolvedGateway });
   const gatewayStatus = resolvedGateway.getStatus();
   const providerStatus = getStatisticsScoresConfigStatus(env, {
     source,
@@ -476,12 +532,31 @@ export async function fetchStatisticsScoresLiveWeek({
         freshnessKey: `scores-live:${gatewayStatus.cadence.scoresLiveMs}`,
         lane: 'scores-live',
       });
+      const games = Array.isArray(result.payload?.data) ? result.payload.data : [];
+      const liveGameSnapshots = (await Promise.allSettled(
+        games.filter(isLiveBdlGame).map(async (game) => {
+          const plays = await resolvedSnapshotStore.getPlays({
+            gameId: game.id,
+            seasonType: getBdlSeasonType(resolvedPhase),
+          });
+          return {
+            gameId: String(game.id),
+            latestPlay: plays.latestPlay,
+            playsVersion: plays.latestPlay?.id == null ? null : String(plays.latestPlay.id),
+            freshness: plays.freshness,
+            cache: toCompatCache(plays),
+          };
+        }),
+      )).flatMap((resultItem) => (
+        resultItem.status === 'fulfilled' ? [resultItem.value] : []
+      ));
       return {
         provider: STATISTICS_SCORES_SOURCES.BALLDONTLIE,
         season: parsedSeason,
         phase: resolvedPhase,
         week: parsedWeek,
-        games: Array.isArray(result.payload?.data) ? result.payload.data : [],
+        games,
+        liveGameSnapshots,
         meta: result.payload?.meta ?? null,
         capabilities: gatewayStatus.capabilities,
         cadence: gatewayStatus.cadence,
@@ -547,10 +622,12 @@ export function createStatisticsScoresRouter({
   fetcher = fetch,
   env = process.env,
   gateway: injectedGateway,
+  snapshotStore: injectedSnapshotStore,
   liveWeekGuard = createPublicRequestGuard(),
 } = {}) {
   const router = express.Router();
   const gateway = injectedGateway ?? resolveGateway({ fetcher, env });
+  const snapshotStore = resolveSnapshotStore({ snapshotStore: injectedSnapshotStore, gateway });
 
   router.get('/status', (req, res) => {
     res.set('Cache-Control', 'no-store').json({
@@ -588,6 +665,7 @@ export function createStatisticsScoresRouter({
         fetcher,
         env,
         gateway,
+        snapshotStore,
       });
       return res.set('Cache-Control', 'no-store').json({ ok: true, ...payload });
     } catch (error) {
@@ -604,6 +682,7 @@ export function createStatisticsScoresRouter({
         fetcher,
         env,
         gateway,
+        snapshotStore,
       });
       return res.set('Cache-Control', 'no-store').json({ ok: true, ...payload });
     } catch (error) {
@@ -622,6 +701,22 @@ export function createStatisticsScoresRouter({
         fetcher,
         env,
         gateway,
+        snapshotStore,
+      });
+      return res.set('Cache-Control', 'no-store').json({ ok: true, ...payload });
+    } catch (error) {
+      return sendScoresError(res, error);
+    }
+  });
+  router.get('/game/:gameId/latest-play', async (req, res) => {
+    try {
+      const payload = await fetchStatisticsScoresLatestPlay({
+        gameId: req.params.gameId,
+        phase: req.query.phase,
+        fetcher,
+        env,
+        gateway,
+        snapshotStore,
       });
       return res.set('Cache-Control', 'no-store').json({ ok: true, ...payload });
     } catch (error) {
@@ -636,6 +731,7 @@ export function createStatisticsScoresRouter({
         fetcher,
         env,
         gateway,
+        snapshotStore,
       });
       return res.set('Cache-Control', 'no-store').json({ ok: true, ...payload });
     } catch (error) {

@@ -1,10 +1,42 @@
 import { defineConfig } from 'vite'
 import { readFileSync } from 'fs'
+import process from 'node:process'
 import react from '@vitejs/plugin-react-swc'
 import { VitePWA } from 'vite-plugin-pwa'
 
 const { version } = JSON.parse(readFileSync('./package.json', 'utf8'))
 const appVersion = process.env.GRIDSHIFT_APP_VERSION_OVERRIDE ?? version
+
+function devServiceWorkerReset() {
+  return {
+    name: 'gridshift-dev-service-worker-reset',
+    apply: 'serve',
+    configureServer(server) {
+      server.middlewares.use((request, response, next) => {
+        if (request.url?.split('?')[0] !== '/sw.js') {
+          next()
+          return
+        }
+
+        response.statusCode = 200
+        response.setHeader('Content-Type', 'text/javascript; charset=utf-8')
+        response.setHeader('Cache-Control', 'no-store, must-revalidate')
+        response.end(`
+self.addEventListener('install', () => self.skipWaiting())
+self.addEventListener('activate', (event) => {
+  event.waitUntil((async () => {
+    await self.registration.unregister()
+    await Promise.all((await caches.keys()).map((cacheName) => caches.delete(cacheName)))
+    for (const client of await self.clients.matchAll({ type: 'window' })) {
+      client.navigate(client.url)
+    }
+  })())
+})
+`)
+      })
+    },
+  }
+}
 
 export default defineConfig(({ command }) => ({
   server: {
@@ -29,6 +61,11 @@ export default defineConfig(({ command }) => ({
         changeOrigin: true,
         secure: false,
       },
+      '/api/fantasy': {
+        target: 'http://127.0.0.1:3001',
+        changeOrigin: true,
+        secure: false,
+      },
     },
   },
   resolve: {
@@ -44,6 +81,7 @@ export default defineConfig(({ command }) => ({
     __APP_VERSION__: JSON.stringify(appVersion),
   },
   plugins: [
+    devServiceWorkerReset(),
     react(),
     VitePWA({
       registerType: 'prompt',

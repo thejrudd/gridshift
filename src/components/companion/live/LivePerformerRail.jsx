@@ -22,7 +22,12 @@ export default function LivePerformerRail({ performers = [], focusId = null, onS
             aria-pressed={active}
             title={`${name} · ${side.name}`}
           >
-            <LiveAvatar player={entry.row.player} size={42} className="fl-rail__av" />
+            <LiveAvatar
+              player={entry.row.player}
+              size="var(--fl-rail-avatar)"
+              initialsSize="var(--fl-rail-initials)"
+              className="fl-rail__av"
+            />
             <span className="fl-rail__pv">{entry.pace.points.toFixed(1)}</span>
             <span className="fl-rail__nm">{lastNameOf(name) || name}</span>
           </button>

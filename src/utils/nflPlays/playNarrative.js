@@ -91,7 +91,7 @@ const GRAMMARS = [
   },
   {
     kind: 'rush',
-    pattern: rx(`(${NAME}) (-?\\d+) Yd Rush(?: \\((${NAME}) (Kick|PAT Failed)\\))?`),
+    pattern: rx(`(${NAME}) (-?\\d+) Yd (?:Rush|Run)(?: \\((${NAME}) (Kick|PAT [Ff]ailed)\\))?`),
     build: ([, rusher, yards, kicker, patResult]) => ({
       yards: Number(yards),
       patResult: kicker ? patResult : null,
@@ -103,7 +103,7 @@ const GRAMMARS = [
   },
   {
     kind: 'passing-touchdown',
-    pattern: rx(`(${NAME}) (\\d+) Yd pass from (${NAME})(?: \\((${NAME}) (Kick|PAT Failed)\\))?`),
+    pattern: rx(`(${NAME}) (\\d+) Yd pass from (${NAME})(?: \\((${NAME}) (Kick|PAT [Ff]ailed)\\))?`),
     build: ([, receiver, yards, passer, kicker, patResult]) => ({
       yards: Number(yards),
       patResult: kicker ? patResult : null,
@@ -245,8 +245,13 @@ export function authoritativeText(rawText) {
  */
 export function parsePenaltyClause(rawText) {
   const text = String(rawText ?? '');
-  const match = /PENALTY on ([A-Z]{2,3})(?:-([^,]+))?, ([^,]+), (\d+) yards?/i.exec(text);
+  // Most flags report a yardage and say where it was "enforced". The dynamic
+  // kickoff landing-zone rule is different: the provider supplies no yardage
+  // and says the ball was "placed" at a fixed spot instead. Keep both shapes
+  // in one contract so playback can choreograph the kick before the placement.
+  const match = /PENALTY on ([A-Z]{2,3})(?:-([^,]+))?, ([^,.\n]+)(?:,\s*(\d+) yards?)?/i.exec(text);
   if (!match) return null;
+  const enforcement = new RegExp(`(?:enforced|placed) at ${SPOT_TEXT}`, 'i').exec(text);
   return {
     // The description spells a handful of clubs the league's own way — a
     // Cleveland foul is written "on CLV". That belongs nowhere near a sentence
@@ -254,9 +259,9 @@ export function parsePenaltyClause(rawText) {
     team: canonicalTeam(match[1]),
     name: match[2]?.trim() || null,
     infraction: match[3].trim(),
-    yards: Number(match[4]),
+    yards: match[4] == null ? null : Number(match[4]),
     declined: /, ?Penalty declined/i.test(text),
-    enforcedAt: new RegExp(`enforced at ${SPOT_TEXT}`, 'i').exec(text)?.[1] ?? null,
+    enforcedAt: enforcement?.[1] ?? null,
     noPlay: /-\s*No Play/i.test(text),
   };
 }
@@ -360,6 +365,11 @@ function parseDirection(rawText) {
  */
 function canonicalizeShortText(shortText) {
   return shortText
+    // ESPN/BDL replace some defensive-touchdown play descriptions with the
+    // scoring-summary form and append the ensuing conversion in parentheses:
+    // "Wade Woodaz 80 Yd Interception Return (Ka'imi Fairbairn Kick)".
+    // The kick is a separate snap and must not become an actor in this play.
+    .replace(/((?:Interception|Fumble) Return)\s+\([^)]+\s+(?:Kick|Extra Point)\)$/i, '$1')
     .replace(/ Rush, Loss of (\d+)(?: Yds?)?\b/i, (_, yards) => ` -${yards} Yd Rush`)
     .replace(/ Rush, No Gain\b/i, ' 0 Yd Rush')
     .replace(/ for Loss of (\d+) Yds?\b/i, (_, yards) => ` for -${yards} Yds`)
@@ -482,6 +492,9 @@ function buildSentence(kind, parsed, { touchdown, tacklerNames, penalty }) {
         ? `${first.name} made a ${parsed.distance} yard field goal.`
         : `${first.name} missed a ${parsed.distance} yard field goal, ${parsed.missDetail}.`;
     case 'interception':
+      if (touchdown) {
+        return `${first.name} intercepted the pass and returned it ${yardPhrase(parsed.yards)} for a touchdown.`;
+      }
       return parsed.yards > 0
         ? `${first.name} intercepted the pass and returned it ${yardPhrase(parsed.yards)}.`
         : `${first.name} intercepted the pass.`;
@@ -564,12 +577,15 @@ export function parsePlayNarrative(play) {
     // A penalty that wiped out the play has no base grammar of its own. It is
     // still fully describable from the penalty clause alone.
     if (penalty) {
+      const placement = penalty.yards == null && penalty.enforcedAt
+        ? `, placed at ${penalty.enforcedAt}`
+        : `, ${yardPhrase(penalty.yards)}`;
       return {
         confident: true,
         administrative: false,
         playKind: 'penalty',
         label: KIND_LABELS.penalty,
-        sentence: `Penalty on ${penalty.team}, ${penalty.infraction.toLowerCase()}, ${yardPhrase(penalty.yards)}.`,
+        sentence: `Penalty on ${penalty.team}, ${penalty.infraction.toLowerCase()}${placement}.`,
         actors: penalty.name
           ? [{ role: PLAY_ROLES.PENALIZED, name: penalty.name, abbreviated: true, detail: penalty.infraction }]
           : [],
@@ -614,6 +630,7 @@ export function parsePlayNarrative(play) {
     sentence,
     actors,
     yards: negated ? null : (play.statYardage ?? parsed.yards ?? null),
+    patResult: parsed.patResult ?? null,
     negated: Boolean(negated),
     penalty,
   };

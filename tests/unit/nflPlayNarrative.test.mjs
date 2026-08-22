@@ -102,6 +102,21 @@ test('a fumble names the ball carrier and the recovering defender', () => {
   assert.deepEqual(actorNames(narrative, PLAY_ROLES.RECOVERER), ['Quinyon Mitchell']);
 });
 
+test('a scoring-summary pick-six excludes the appended conversion snap', () => {
+  const narrative = parsePlayNarrative({
+    typeSlug: 'interception-return-touchdown',
+    shortText: "Wade Woodaz 80 Yd Interception Return (Ka'imi Fairbairn Kick)",
+    rawText: "Wade Woodaz 80 Yd Interception Return (Ka'imi Fairbairn Kick)",
+    statYardage: 80,
+  });
+
+  assert.equal(narrative.confident, true);
+  assert.equal(narrative.sentence, 'Wade Woodaz intercepted the pass and returned it 80 yards for a touchdown.');
+  assert.deepEqual(narrative.actors.map(({ role, name }) => ({ role, name })), [
+    { role: 'intercepter', name: 'Wade Woodaz' },
+  ]);
+});
+
 test('a missed field goal reports the direction it missed', () => {
   const narrative = parsePlayNarrative(findByShortText(423948, 'Missed 36 Yd FG'));
   assert.equal(narrative.sentence, 'Andre Szmyt missed a 36 yard field goal, wide right.');
@@ -163,4 +178,27 @@ test('the penalty clause is read out of the official description', () => {
   assert.equal(wiped.noPlay, true);
   assert.equal(wiped.enforcedAt, 'PHI 33');
   assert.equal(parsePenaltyClause('J.Williams left tackle to PHI 46 for 7 yards.'), null);
+});
+
+test('a kickoff landing-zone placement is parsed without invented penalty yards', () => {
+  const rawText = 'K.Fairbairn kicks 41 yards from HST 35 to LV 24, short of landing zone.PENALTY on HST-K.Fairbairn, Kickoff Short of Landing Zone, placed at LV 40.';
+  assert.deepEqual(parsePenaltyClause(rawText), {
+    team: 'HOU',
+    name: 'K.Fairbairn',
+    infraction: 'Kickoff Short of Landing Zone',
+    yards: null,
+    declined: false,
+    enforcedAt: 'LV 40',
+    noPlay: false,
+  });
+
+  const narrative = parsePlayNarrative({
+    typeSlug: 'kickoff',
+    shortText: "Ka'imi Fairbairn 41 Yd Kickoff Ka'imi Fairbairn Pnlty",
+    rawText,
+  });
+  assert.equal(narrative.confident, true);
+  assert.equal(narrative.playKind, 'penalty');
+  assert.match(narrative.sentence, /placed at LV 40/i);
+  assert.doesNotMatch(narrative.sentence, /0 yards/i);
 });

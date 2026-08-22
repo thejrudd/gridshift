@@ -1,6 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { fetchPlayerProfile, fetchRoster, headshot } from '../utils/playerApi';
-import { parseSearchQuery, matchesFilter } from '../utils/parseSearchQuery';
+import { matchesFilter, matchesJerseyNumber, parseSearchQuery } from '../utils/parseSearchQuery';
 import PlayerProfile from './PlayerProfile';
 import TeamPage from './TeamPage';
 import { getTeamVisualTheme } from '../utils/teamVisualTheme';
@@ -304,7 +304,7 @@ const PlayerBrowser = ({
       try {
         const filters = parseSearchQuery(q);
         const hasFilters = filters.pos.size || filters.team.size
-          || filters.div.size || filters.conf.size || filters.name.length;
+          || filters.div.size || filters.conf.size || filters.number.size || filters.name.length;
         if (!hasFilters) {
           setSearchResults([]);
           setSearchLoading(false);
@@ -340,6 +340,8 @@ const PlayerBrowser = ({
           if (effectivePos.size > 0) {
             if (![...effectivePos].some((pos) => matchesFilter(player.position, pos))) return false;
           }
+          if (filters.number.size > 0
+            && ![...filters.number].some((number) => matchesJerseyNumber(player.jersey, number))) return false;
           const teamInfo = player.teamId ? lookup[player.teamId] : null;
           if (filters.team.size > 0 && (!player.teamId || !filters.team.has(player.teamId))) return false;
           if (filters.div.size > 0 && (!teamInfo || !filters.div.has(teamInfo.division))) return false;
@@ -525,7 +527,8 @@ const PlayerBrowser = ({
               value={searchQuery}
               onChange={handleSearchInput}
               onFocus={() => searchQuery.length >= 1 && setShowSearchDropdown(true)}
-              placeholder="Search by name, position, team, division…"
+              placeholder="Search player, team, position, or #number…"
+              aria-label="Search NFL players"
               className="w-full pl-9 pr-4 py-2 rounded-lg text-base focus:outline-none"
               style={{
                 background: 'var(--color-bg-tertiary)',
@@ -538,6 +541,10 @@ const PlayerBrowser = ({
               <LoadingSpinner className="absolute right-3 top-1/2 -translate-y-1/2" />
             )}
           </div>
+
+          <p className="mt-2 text-[length:var(--type-label)]" style={{ color: 'var(--color-label-tertiary)' }}>
+            Try “Raiders 29” or “29 TE”; terms can be in any order.
+          </p>
 
           {showSearchDropdown && searchQuery.length >= 1 && (
             <div
@@ -564,7 +571,7 @@ const PlayerBrowser = ({
                   <div className="min-w-0">
                     <div className="font-semibold text-sm truncate" style={{ color: 'var(--color-label)' }}>{player.displayName}</div>
                     <div className="text-xs" style={{ color: 'var(--color-label-tertiary)' }}>
-                      {player.position}{player.teamName ? ` · ${player.teamName}` : ''}
+                      {player.position}{player.jersey ? ` · #${player.jersey}` : ''}{player.teamName ? ` · ${player.teamName}` : ''}
                     </div>
                   </div>
                 </button>

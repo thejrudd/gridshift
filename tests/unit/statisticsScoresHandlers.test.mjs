@@ -4,6 +4,7 @@ import {
   fetchStatisticsScoresEspnWeek,
   fetchStatisticsScoresGameDetail,
   fetchStatisticsScoresGamePlays,
+  fetchStatisticsScoresLatestPlay,
   fetchStatisticsScoresGames,
   fetchStatisticsScoresLiveWeek,
   getStatisticsScoresConfigStatus,
@@ -185,6 +186,36 @@ test('Statistics Scores fetches paginated BALLDONTLIE game detail without a Fant
   assert.equal(requests.length, 2);
   assert.equal(new URL(requests[0].url).pathname, '/nfl/v1/plays');
   assert.equal(new URL(requests[0].url).searchParams.get('game_id'), '987654');
+  assert.equal(requests[0].options.headers.Authorization, 'server-key');
+  assert.equal(new URL(requests[1].url).searchParams.get('cursor'), '42');
+});
+
+test('Statistics Scores latest-play endpoint selects the final chronological row', async () => {
+  const requests = [];
+  const result = await fetchStatisticsScoresLatestPlay({
+    gameId: 987655,
+    phase: 'regular',
+    env: { ...TEST_BDL_ENV },
+    fetcher: async (url, options) => {
+      requests.push({ url: String(url), options });
+      const cursor = new URL(url).searchParams.get('cursor');
+      return {
+        ok: true,
+        status: 200,
+        json: async () => cursor
+          ? { data: [{ id: 'opening-play', clock_display: '00:13', period: 1 }], meta: { next_cursor: null } }
+          : { data: [{ id: 'latest-play', text: 'PENALTY on HOU', clock_display: '00:05', period: 1 }], meta: { next_cursor: 42 } },
+      };
+    },
+  });
+
+  assert.equal(result.play.id, 'latest-play');
+  assert.equal(result.playsCount, 2);
+  assert.equal(result.phase, 'regular');
+  assert.equal(result.seasonType, 2);
+  assert.equal(requests.length, 2);
+  assert.equal(new URL(requests[0].url).searchParams.get('game_id'), '987655');
+  assert.equal(new URL(requests[0].url).searchParams.get('season_type'), '2');
   assert.equal(requests[0].options.headers.Authorization, 'server-key');
   assert.equal(new URL(requests[1].url).searchParams.get('cursor'), '42');
 });
@@ -507,6 +538,46 @@ test('selected-week live Scores requests only one narrow BALLDONTLIE week snapsh
   assert.deepEqual(params.getAll('weeks[]'), ['7']);
   assert.deepEqual(params.getAll('season_type[]'), ['2']);
   assert.equal(params.has('cursor'), false);
+});
+
+test('selected-week live Scores carries the canonical latest play in the same response', async () => {
+  const requests = [];
+  const result = await fetchStatisticsScoresLiveWeek({
+    season: 2123,
+    phase: 'regular',
+    week: 8,
+    env: { ...TEST_BDL_ENV },
+    fetcher: async (url) => {
+      const parsed = new URL(url);
+      requests.push(parsed);
+      if (parsed.pathname === '/nfl/v1/plays') {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            data: [{ id: 'snap-1', period: 2, clock_display: '08:41', text: 'Pass complete.' }],
+            meta: { next_cursor: null },
+          }),
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          data: [{ id: 1701, status_state: 'in_progress', status: '8:45 - 2nd' }],
+          meta: null,
+        }),
+      };
+    },
+  });
+
+  assert.equal(requests.length, 2);
+  assert.equal(result.liveGameSnapshots.length, 1);
+  assert.equal(result.liveGameSnapshots[0].gameId, '1701');
+  assert.equal(result.liveGameSnapshots[0].latestPlay.id, 'snap-1');
+  assert.equal(result.liveGameSnapshots[0].freshness.refreshAfterMs, 8_000);
+  assert.equal(requests[1].searchParams.get('game_id'), '1701');
+  assert.equal(requests[1].searchParams.get('season_type'), '2');
 });
 
 test('selected-week live Scores falls back to ESPN when the paid live lane is unavailable', async () => {

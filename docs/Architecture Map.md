@@ -114,11 +114,12 @@ Entries resolved via Pass 1 or 2 are marked `_teamSource = 'espn'`. Pass 3 entri
 
 ### `server`
 
-- `index.js` creates one process-wide BALLDONTLIE gateway and injects it into both live-data route groups.
+- `index.js` creates one process-wide BALLDONTLIE gateway and one canonical live-game snapshot store, then injects both into the live-data route groups.
 - `balldontlieGateway.js` owns the server credential, capability profile, canonical bounded cache, in-flight coalescing, cursor pagination, stale/backoff policy, page-aware quota, and protected live-score allocation.
+- `liveGameSnapshots.js` owns the canonical per-game play snapshot and newest-play selection shared by Statistics scorecards, Statistics drilldowns, and Fantasy Live.
 - `publicRequestGuard.js` provides bounded downstream request and concurrency protection for the public near-live Scores route; it is separate from provider quota accounting.
 - `liveHandlers.js` owns the Fantasy Live session/league boundary and routes all provider work through the shared gateway.
-- `statisticsScoresHandlers.js` owns the public Statistics Scores provider boundary, narrow selected-week live route, detail composition, and ESPN fallback.
+- `statisticsScoresHandlers.js` owns the public Statistics Scores provider boundary, narrow selected-week live route, detail composition, and ESPN fallback; it projects canonical play snapshots rather than creating a Scores-only play source.
 - `src/utils/nflPlays/` and `src/components/nflPlays/` are the shared, surface-agnostic play-by-play layer: narrative parsing, player name indexing, ESPN participant/headshot resolution, field geometry, and the field/momentum graphics. The field visuals (`fieldPrimitives.jsx`, `PlayTrajectoryStrip.jsx`, `DriveField.jsx`, `DrivePlayback.jsx`) share one 120-yard canvas through `fieldX`, and all kick geometry goes through `getKickGeometry`; a new field visual must reuse both rather than derive its own coordinates. `playBeats.js` is the time layer over that geometry: it turns one play into the ball's position over time plus the beats that fire as it travels, composing `getPlayTrajectory()` and `parsePlayNarrative()` without duplicating either. `DrivePlayback.jsx` is its only consumer and draws nothing the other field visuals don't already define. Statistics Scores consumes it today and `livePlaysFeed.js` already routes its name index through `nflPlays/playerNameIndex.js`; the rest of the Fantasy Live migration is still outstanding. New play-parsing work belongs here rather than under a feature folder. `src/components/shared/PlayerAvatar.jsx` owns the headshot fallback chain for both surfaces and is re-exported as `LiveAvatar` for existing Fantasy Live call sites.
 - Gateway state is process-local. Running multiple sidecar replicas would still multiply upstream work until the shared-store/leader phase in [[Live Data Server Architecture]].
 

@@ -142,8 +142,9 @@ export function matchesFeedFilter(event, filter = EMPTY_FEED_FILTER, { position 
   const positions = filter?.positions ?? [];
 
   if (positions.length) {
-    const resolved = String(position ?? '').toUpperCase();
-    if (!positions.includes(resolved)) return false;
+    const resolved = (Array.isArray(position) ? position : [position])
+      .map((value) => String(value ?? '').toUpperCase());
+    if (!resolved.some((value) => positions.includes(value))) return false;
   }
   if (group !== 'all' && !matchesGroup(event, group, threshold)) return false;
   if (types.length && !types.some((typeId) => matchesType(event, typeId, threshold))) return false;

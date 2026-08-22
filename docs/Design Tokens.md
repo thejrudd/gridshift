@@ -31,6 +31,22 @@ All colors defined as CSS custom properties in `src/index.css`. The `.dark` clas
 | `--bar-height-nav` | `44px` | — |
 | `--bar-height-tab` | `49px` | — |
 
+### Text Contrast Semantics
+
+- `--color-label` is for primary identity, values, instructions, actions, and
+  selected state.
+- `--color-label-secondary` is for supporting information that still needs to
+  be read. Verify its rendered contrast on the actual surface in both themes;
+  the token name is not a guarantee after blending.
+- `--color-label-tertiary` and `--color-label-quaternary` are for nonessential
+  decoration. Do not use them for timestamps, game state, totals, axis labels,
+  control hints, inactive options, or text required to operate a view.
+- Do not combine semantic text colors with parent opacity. Alpha compounds and
+  can turn otherwise readable text into decorative-level contrast.
+- Target at least `4.5:1` for normal text and `3:1` for qualifying large or bold
+  text. Dense data views should support `prefers-contrast: more`, promoting
+  meaningful text and SVG labels to `--color-label`.
+
 ## Signature Accent Usage (`#F5B700` / `--color-signature`)
 
 Decorative only: sidebar active border, season tab underline, progress bar fill, filter chip bg, bottom tab bar active icon/label. Never use as body text color. Text/icons placed ON a signature background use `--color-signature-fg` (`#0C0F14`).
@@ -53,6 +69,10 @@ GridShift applies a persisted `data-display-size` value to `<html>` before React
 
 Coarse-pointer controls remain at least `44px`, and inputs/selects/textareas remain at least `16px`, regardless of preset.
 
+Display Size, browser zoom, and OS scaling are additive. Test Compact,
+Comfortable, and Large at representative desktop geometries; a local component
+clamp must not cancel or flatten the selected preset.
+
 ### Semantic Type Tokens
 
 | Token | Comfortable role |
@@ -68,6 +88,29 @@ Coarse-pointer controls remain at least `44px`, and inputs/selects/textareas rem
 | `--type-display` | `44px` broadcast display type |
 
 Do not introduce meaningful user-facing text below `--type-label`. `--type-micro` is reserved for terse decorative/status chrome.
+
+### Desktop Viewing-Distance Roles
+
+These are semantic roles, not fixed component pixels. They inherit the active
+Display Size preset. A wide component may grow within the range; a short
+viewport should recompose before shrinking below the floor.
+
+| Content role | Desktop floor | Wide-container growth |
+|---|---|---|
+| Primary row identity | `--type-emphasis` | Up to `--type-heading-sm` |
+| Readable description/body | `--type-body` | Up to `--type-emphasis` |
+| Persistent supporting facts | `--type-label`; prefer `--type-meta` when space permits | Up to `--type-body` |
+| Decorative overline/badge | `--type-micro` | Usually unchanged |
+| Primary row metric | Role-appropriate heading/value token | One semantic step while it remains focal |
+
+Use container units and semantic endpoints, for example
+`clamp(var(--type-body), 0.75cqw, var(--type-emphasis))`. Do not create a second
+global scale keyed only to viewport width. The component container determines
+local growth; Display Size determines the user's global scale.
+
+When Barlow Condensed carries meaningful uppercase labels, prefer stronger
+weights and restrained tracking. Use Figtree for prose and descriptions. See
+[[Desktop Legibility]] for the complete audit and validation contract.
 
 ## Page Frame Tokens
 

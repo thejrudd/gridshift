@@ -65,7 +65,13 @@ export default function LivePlayerSheet({
 }) {
   const player = entry.row.player ?? {};
   const position = String(player.position ?? 'FLEX').toUpperCase();
-  const playerEvents = events.filter((event) => event.playerId === entry.id);
+  const playerEvents = events.flatMap((event) => {
+    if (event.hiddenFromFeed) return [];
+    const contributor = event.contributors?.find((candidate) => (
+      String(candidate.playerId) === String(entry.id)
+    )) ?? (String(event.playerId) === String(entry.id) ? event : null);
+    return contributor ? [{ event, points: contributor.pts ?? event.pts }] : [];
+  });
   // Arriving from a feed play opens on that play; otherwise the scoring math.
   // Reset during render rather than in an effect so switching players never
   // paints one player's tab against another's data.
@@ -89,11 +95,16 @@ export default function LivePlayerSheet({
   return (
     <div className={`fl-sheet${embedded ? ' is-embedded' : ''}`}>
       <div className="fl-phead" style={{ '--fl-team': side.palette[0] }}>
-        <button type="button" className="fl-phead__back" onClick={onClose}>
+        <button
+          type="button"
+          className="fl-phead__back"
+          onClick={onClose}
+          aria-label={embedded ? 'Close player breakdown' : 'Back to feed'}
+        >
           ‹ {embedded ? 'Close' : 'Back to feed'}
         </button>
         <div className="fl-phead__row">
-          <Portrait player={player} size={84} />
+          <Portrait player={player} size="var(--fl-detail-portrait)" />
           <div className="fl-phead__meta">
             <div className="fl-phead__chips">
               <LivePosChip position={position} />
@@ -206,7 +217,7 @@ export default function LivePlayerSheet({
           )
         ) : (
           playerEvents.length ? (
-            playerEvents.map((event) => (
+            playerEvents.map(({ event, points }) => (
               <div className={`fl-brow${selectedEventId === event.id ? ' is-selected' : ''}`} key={event.id}>
                 <span className="fl-brow__play">
                   <i style={{ background: getLiveKindMeta(event.kind).color }} aria-hidden="true" />
@@ -217,9 +228,9 @@ export default function LivePlayerSheet({
                 </span>
                 <span
                   className="fl-brow__p"
-                  style={{ color: (Number(event.pts) || 0) >= 0 ? 'var(--color-accent-green)' : 'var(--color-accent-red)' }}
+                  style={{ color: (Number(points) || 0) >= 0 ? 'var(--color-accent-green)' : 'var(--color-accent-red)' }}
                 >
-                  {formatSigned(event.pts)}
+                  {formatSigned(points)}
                 </span>
               </div>
             ))

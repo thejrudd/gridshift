@@ -1,6 +1,6 @@
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { fetchRoster } from '../../utils/playerApi';
-import { parseSearchQuery, matchesFilter } from '../../utils/parseSearchQuery';
+import { matchesFilter, matchesJerseyNumber, parseSearchQuery } from '../../utils/parseSearchQuery';
 import { TEAM_COLORS } from '../../data/teamColors';
 import { useTheme } from '../../context/ThemeContext';
 import Modal from '../Modal';
@@ -210,13 +210,15 @@ export default function ComparePickerSheet({ teams, excludeId, onSelect, onClose
 
     const filters = parseSearchQuery(trimmedQuery);
     const hasFilters = filters.pos.size || filters.team.size ||
-      filters.div.size || filters.conf.size || filters.name.length;
+      filters.div.size || filters.conf.size || filters.number.size || filters.name.length;
     if (!hasFilters) return [];
 
     return searchCorpus.filter((player) => {
       if (String(player.id) === String(excludeId)) return false;
       if (filters.name.length > 0 && !filters.name.every((term) => player.searchName.includes(term))) return false;
       if (filters.pos.size > 0 && ![...filters.pos].some((pos) => matchesFilter(player.position, pos))) return false;
+      if (filters.number.size > 0
+        && ![...filters.number].some((number) => matchesJerseyNumber(player.jersey, number))) return false;
       if (filters.team.size > 0 && !filters.team.has(player.teamId)) return false;
       if (filters.div.size > 0 && !filters.div.has(player.division)) return false;
       if (filters.conf.size > 0 && !filters.conf.has(player.conference)) return false;

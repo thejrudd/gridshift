@@ -45,27 +45,28 @@ function formatZoom(value) {
 
 // The chart builds its geometry from the plot's real pixel width so text and
 // scrub maths never render through a stretched coordinate space.
-function useElementWidth(initial = 360) {
-  const [width, setWidth] = useState(initial);
+function useElementSize(initialWidth = 360) {
+  const [size, setSize] = useState({ width: initialWidth, height: 0 });
   const observerRef = useRef(null);
   const ref = useCallback((node) => {
     observerRef.current?.disconnect();
     observerRef.current = null;
     if (!node) return;
-    setWidth(node.clientWidth || initial);
+    setSize({ width: node.clientWidth || initialWidth, height: node.clientHeight || 0 });
     if (typeof ResizeObserver === 'undefined') return;
     const observer = new ResizeObserver((entries) => {
-      const next = entries[0]?.contentRect?.width;
-      if (next) setWidth(next);
+      const bounds = entries[0]?.contentRect;
+      if (!bounds?.width) return;
+      setSize({ width: bounds.width, height: bounds.height });
     });
     observer.observe(node);
     observerRef.current = observer;
-  }, [initial]);
+  }, [initialWidth]);
   useEffect(() => () => observerRef.current?.disconnect(), []);
-  return [ref, width];
+  return [ref, size];
 }
 
-function useChartHeight(width) {
+function useChartHeight(width, availableHeight) {
   const [desktop, setDesktop] = useState(
     () => typeof window !== 'undefined' && window.matchMedia?.('(min-width: 1024px)').matches,
   );
@@ -90,6 +91,7 @@ function useChartHeight(width) {
     };
   }, []);
   if (!desktop) return MOBILE_CHART_HEIGHT;
+  if (availableHeight > 0) return Math.max(1, Math.round(availableHeight));
   const viewportCap = Math.max(MOBILE_CHART_HEIGHT, viewportHeight * DESKTOP_CHART_VIEWPORT_RATIO);
   return Math.round(Math.min(
     DESKTOP_CHART_MAX_HEIGHT,
@@ -123,15 +125,15 @@ export default function LivePaceChart({
 }) {
   const viewportNode = useRef(null);
   const pendingScrollFocus = useRef(null);
-  const [measureViewport, viewportWidth] = useElementWidth();
+  const [measureViewport, viewportSize] = useElementSize();
   const setViewportRef = useCallback((node) => {
     viewportNode.current = node;
     measureViewport(node);
   }, [measureViewport]);
   const [zoom, setZoomValue] = useState(MIN_ZOOM);
   const zoomRef = useRef(MIN_ZOOM);
-  const width = Math.max(1, Math.round(viewportWidth * zoom));
-  const height = useChartHeight(viewportWidth);
+  const width = Math.max(1, Math.round(viewportSize.width * zoom));
+  const height = useChartHeight(viewportSize.width, viewportSize.height);
   const [dragging, setDragging] = useState(false);
   const [activeMark, setActiveMark] = useState(null);
   const scrubbedTo = useRef(null);
@@ -300,7 +302,7 @@ export default function LivePaceChart({
           0,
           Number(selection?.x ?? hover?.x ?? slateProgress) || 0,
         )),
-        offset: (viewport?.clientWidth ?? viewportWidth) / 2,
+        offset: (viewport?.clientWidth ?? viewportSize.width) / 2,
       };
     } else if (viewport?.scrollWidth) {
       pendingScrollFocus.current = {

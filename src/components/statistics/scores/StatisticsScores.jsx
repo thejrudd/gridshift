@@ -44,6 +44,7 @@ const LOAD_DEVELOPER_FIXTURES = import.meta.env.DEV
   ? () => import('../../../data/statisticsScoresFixtures')
   : null;
 let developerFixturesPromise = null;
+let tourFixturesPromise = null;
 const PRODUCTION_SEASON = new Date().getFullYear();
 const EMPTY_FEED_STATE = Object.freeze({ status: 'loading', data: null, error: null, updatedAt: null });
 const DEVELOPER_SOURCES = Object.freeze([
@@ -56,6 +57,11 @@ function loadDeveloperFixtures() {
   if (!LOAD_DEVELOPER_FIXTURES) throw new Error('Local score fixtures are available only in development.');
   developerFixturesPromise ??= LOAD_DEVELOPER_FIXTURES();
   return developerFixturesPromise;
+}
+
+function loadTourFixtures() {
+  tourFixturesPromise ??= import('../../../data/statisticsScoresTourDemo');
+  return tourFixturesPromise;
 }
 
 function formatUpdatedLabel(value, provider = STATISTICS_SCORES_PROVIDERS.ESPN, scoreboardProvider = provider) {
@@ -171,8 +177,10 @@ function WeekRail({ weeks, selectedWeekId, currentWeekId, onSelectWeek }) {
   );
 }
 
-export default function StatisticsScores() {
+export default function StatisticsScores({ tourDemoMode = null }) {
   const desktop = useMediaQuery('(min-width: 1024px)');
+  const showPlayByPlayTourDemo = tourDemoMode === 'statistics-scores-play-by-play';
+  const [tourFixture, setTourFixture] = useState(null);
   const [fixtureCatalog, setFixtureCatalog] = useState(null);
   const fixtureSeason = fixtureCatalog?.regular.season ?? PRODUCTION_SEASON;
   const availableSeasons = DEVELOPER_SOURCE_ENABLED
@@ -193,6 +201,24 @@ export default function StatisticsScores() {
     notice: null,
   });
   const espnBroadcastRequests = useRef(new Map());
+
+  useEffect(() => {
+    if (!showPlayByPlayTourDemo) {
+      setTourFixture(null);
+      return undefined;
+    }
+
+    let cancelled = false;
+    loadTourFixtures().then((fixtures) => {
+      if (cancelled) return;
+      setTourFixture({
+        game: fixtures.STATISTICS_SCORES_TOUR_GAME,
+        detail: fixtures.STATISTICS_SCORES_TOUR_DETAIL,
+      });
+    });
+
+    return () => { cancelled = true; };
+  }, [showPlayByPlayTourDemo]);
 
   const currentSeason = season === fixtureSeason;
   const activeProvider = DEVELOPER_SOURCE_ENABLED
@@ -218,16 +244,23 @@ export default function StatisticsScores() {
   const selectedWeekNumber = Number.isInteger(selectedWeek?.week) ? selectedWeek.week : null;
   const selectedWeekHasLiveGames = selectedWeek?.games.some((game) => game.status === 'live') ?? false;
   const activeState = seasonPhase === NFL_SEASON_PHASES.PRESEASON ? preseasonState : regularState;
+  // The live-week response already contains the canonical provider game and
+  // latest-play snapshot. Scorecards must not run a second polling or clock
+  // interpolation path on top of it.
+  const scorecardWeek = selectedWeek;
   const selectedGameKey = selectedGame
     ? `${selectedGame.provider ?? 'unknown'}:${selectedGame.providerGameId ?? selectedGame.id}`
     : null;
   const currentSelectedGame = useMemo(() => {
     if (!selectedGameKey) return null;
+    const displayedGame = scorecardWeek?.games
+      .find((game) => `${game.provider ?? 'unknown'}:${game.providerGameId ?? game.id}` === selectedGameKey);
+    if (displayedGame) return displayedGame;
     return weeks
       .flatMap((week) => week.games)
       .find((game) => `${game.provider ?? 'unknown'}:${game.providerGameId ?? game.id}` === selectedGameKey)
       ?? selectedGame;
-  }, [selectedGame, selectedGameKey, weeks]);
+  }, [scorecardWeek, selectedGame, selectedGameKey, weeks]);
   useEffect(() => {
     if (DEVELOPER_SOURCE_ENABLED && developerSource !== STATISTICS_SCORES_PROVIDERS.BALLDONTLIE) {
       return undefined;
@@ -390,17 +423,25 @@ export default function StatisticsScores() {
         consecutiveFailures = 0;
         latestEnvelope = payload;
         const observedAt = Date.now();
-        const updatedAt = new Date(getLiveRefreshTimestamp(payload));
+        const providerFetchedAt = getLiveRefreshTimestamp(payload);
+        const updatedAt = new Date(providerFetchedAt);
         const updateState = (current) => ({
           ...current,
           data: payload.provider === STATISTICS_SCORES_PROVIDERS.BALLDONTLIE && Array.isArray(payload.games)
             ? (() => {
-              const withBdlLiveData = overlayBdlScoreboardWeek(current.data, payload, selectedWeekNumber, { observedAt });
+              const withBdlLiveData = overlayBdlScoreboardWeek(current.data, payload, selectedWeekNumber, {
+                observedAt,
+                providerFetchedAt,
+              });
               return resolvedEspnBroadcastPayload?.scoreboard
                 ? overlayEspnBroadcastsWeek(withBdlLiveData, resolvedEspnBroadcastPayload.scoreboard, selectedWeekNumber)
                 : withBdlLiveData;
             })()
-            : overlayEspnScoreboardWeek(current.data, payload.scoreboard, selectedWeekNumber),
+            : overlayEspnScoreboardWeek(current.data, payload.scoreboard, selectedWeekNumber, {
+              observedAt,
+              providerFetchedAt,
+              feedStale: payload.freshness?.stale === true || payload.cache?.stale === true,
+            }),
           error: null,
           liveNotice: payload.provider === STATISTICS_SCORES_PROVIDERS.ESPN
             ? getLiveFallbackNotice(payload.fallbackReason)
@@ -463,6 +504,18 @@ export default function StatisticsScores() {
   useEffect(() => {
     document.querySelector('.content-area')?.scrollTo({ top: 0, behavior: 'auto' });
   }, [selectedGame]);
+
+  if (showPlayByPlayTourDemo) {
+    if (!tourFixture) return <p className="statistics-scores-state">Loading play-by-play preview…</p>;
+    return (
+      <ScoresGameDrilldown
+        game={tourFixture.game}
+        fixtureDetail={tourFixture.detail}
+        initialSection="plays"
+        onBack={() => {}}
+      />
+    );
+  }
 
   if (selectedGame) {
     const drilldownGame = currentSelectedGame ?? selectedGame;
@@ -636,6 +689,7 @@ export default function StatisticsScores() {
           <ScoresSeasonBoard
             weeks={weeks}
             selectedWeekId={selectedWeek.id}
+            displayedWeek={scorecardWeek}
             desktop={desktop}
             onOpenGame={canOpenGame ? openGame : undefined}
             onSelectWeek={setSelectedWeekId}

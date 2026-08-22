@@ -23,22 +23,73 @@ function diffStats(previous, next) {
   return changed ? delta : null;
 }
 
-// Points per play come from the league's own scoring, but the plays together
-// have to add up to the change the snapshot actually recorded — the pace chart
-// plots the running total of these events and must land on the real score.
-function apportionPoints(plays, scoringSettings, position, totalPoints) {
-  const raw = plays.map((play) => calcPoints(play, scoringSettings, position));
-  const rawTotal = raw.reduce((sum, value) => sum + value, 0);
-  if (!plays.length) return [];
-  if (!Number.isFinite(totalPoints) || rawTotal === 0) {
-    return raw.map((value) => Math.round(value * 10) / 10);
+const roundPoint = (value) => Math.round((Number(value) || 0) * 10) / 10;
+
+// A snapshot can contain several kinds of play for one player. The synthetic
+// splitter groups those by stat category, while provider plays are chronological,
+// so their array indexes are not a valid correspondence. Remove the synthetic
+// row that most resembles each real play and leave only genuinely missing rows
+// for the fallback feed.
+function unmatchedReconstructedPlays(reconstructed, realPlays) {
+  const remaining = [...reconstructed];
+  realPlays.forEach((realPlay) => {
+    if (!remaining.length) return;
+    const realStats = realPlay?.stats ?? {};
+    let bestIndex = -1;
+    let bestScore = 0;
+    remaining.forEach((candidate, index) => {
+      const score = Object.entries(candidate).reduce((sum, [key, value]) => {
+        if (!(Number(value) || 0) || !(Number(realStats[key]) || 0)) return sum;
+        return sum + (key.endsWith('_td') || key.endsWith('_att') || key === 'rec' || key === 'fgm' || key === 'xpm' ? 4 : 1);
+      }, 0);
+      if (score > bestScore) {
+        bestScore = score;
+        bestIndex = index;
+      }
+    });
+    // Provider rows captured before play stats were added still count as one
+    // known row. Consume the next reconstruction rather than duplicating it.
+    remaining.splice(bestIndex >= 0 ? bestIndex : 0, 1);
+  });
+  return remaining;
+}
+
+function settleEventPoints(events, scoringSettings, position, authoritativeTotal, { playerId, now } = {}) {
+  if (!events.length) return events;
+  const settled = events.map((event) => ({
+    ...event,
+    pts: roundPoint(calcPoints(event.stats ?? {}, scoringSettings, position)),
+  }));
+  if (!Number.isFinite(authoritativeTotal)) return settled;
+
+  // Provider-backed values must always agree with their displayed stat line.
+  // A snapshot can cover a different interval than the available provider
+  // slice, so its residual belongs to an explicit non-shared reconciliation
+  // event, never to a real player's shared NFL play.
+  const calculatedTotal = settled.reduce((sum, event) => sum + event.pts, 0);
+  const residual = roundPoint(authoritativeTotal - calculatedTotal);
+  if (residual) {
+    const fallbackIndex = settled.findLastIndex((event) => event.source !== 'replay-play');
+    if (fallbackIndex >= 0) {
+      settled[fallbackIndex] = {
+        ...settled[fallbackIndex],
+        pts: roundPoint(settled[fallbackIndex].pts + residual),
+      };
+    } else {
+      settled.push({
+        id: `${playerId}-${now}-reconciliation`,
+        playerId,
+        kind: 'pass',
+        desc: 'Snapshot scoring reconciliation',
+        pts: residual,
+        at: now,
+        source: 'replay-reconciliation',
+        hiddenFromFeed: true,
+        hiddenFromMilestones: true,
+      });
+    }
   }
-  const scale = totalPoints / rawTotal;
-  const scaled = raw.map((value) => Math.round(value * scale * 10) / 10);
-  // Rounding drift lands on the last play so the sum stays exact.
-  const drift = Math.round((totalPoints - scaled.reduce((sum, v) => sum + v, 0)) * 10) / 10;
-  if (drift) scaled[scaled.length - 1] = Math.round((scaled[scaled.length - 1] + drift) * 10) / 10;
-  return scaled;
+  return settled;
 }
 
 /**
@@ -63,66 +114,90 @@ export function buildReplayDeltaEvents(
     now = Date.now(),
     playsByPlayer = null,
     playCursor = null,
+    throughProgress = null,
   } = {},
 ) {
-  const events = [];
+  const pending = [];
   nextSnapshot.forEach(({ stats, points }, playerId) => {
     const previous = previousSnapshot.get(playerId);
     if (!previous || !stats) return;
     const delta = diffStats(previous.stats, stats);
     if (!delta) return;
-
-    const meta = playerMeta.get(playerId) ?? {};
     const reconstructed = splitDeltaIntoPlays(delta);
     if (!reconstructed.length) return;
 
+    const available = playsByPlayer?.get(playerId) ?? [];
+    const storedCursor = playCursor?.get(playerId);
+    const consumedIds = storedCursor instanceof Set
+      ? new Set(storedCursor)
+      : new Set(available.slice(0, Number(storedCursor) || 0).map((play) => play.id));
+    const realPlays = available.filter((play) => (
+      !consumedIds.has(play.id)
+      && (!Number.isFinite(Number(throughProgress))
+        || !Number.isFinite(Number(play.slateProgress))
+        || Number(play.slateProgress) <= Number(throughProgress))
+    ));
+    pending.push({ playerId, points, previous, delta, reconstructed, realPlays, consumedIds });
+  });
+
+  const events = [];
+  pending.forEach(({ playerId, points, previous, reconstructed, realPlays, consumedIds }) => {
+    const meta = playerMeta.get(playerId) ?? {};
     const totalPoints = Math.round((points - (Number(previous.points) || 0)) * 10) / 10;
 
-    // The reconstruction says how many plays this delta represents; take that
-    // many real ones if they exist.
-    const available = playsByPlayer?.get(playerId) ?? [];
-    const cursor = playCursor?.get(playerId) ?? 0;
-    const realPlays = available.slice(cursor, cursor + reconstructed.length);
-
     if (realPlays.length) {
-      playCursor?.set(playerId, cursor + realPlays.length);
-      // Points are apportioned from the snapshot's own change rather than from
-      // each play's computed value: play scoring is approximate, and the pace
-      // chart's running total has to land on the real score.
-      const weights = realPlays.map((play) => Math.abs(Number(play.pts) || 0) || 1);
-      const weightTotal = weights.reduce((sum, value) => sum + value, 0);
-      let assigned = 0;
-      realPlays.forEach((play, index) => {
-        const isLast = index === realPlays.length - 1;
-        const share = isLast
-          ? Math.round((totalPoints - assigned) * 10) / 10
-          : Math.round((totalPoints * (weights[index] / weightTotal)) * 10) / 10;
-        assigned = Math.round((assigned + share) * 10) / 10;
-        events.push({
-          ...play,
-          id: `${playerId}-${now}-real-${index}`,
-          pts: share,
-          at: now,
-          source: 'replay-play',
-        });
-      });
+      realPlays.forEach((play) => consumedIds.add(play.id));
+      playCursor?.set(playerId, consumedIds);
+      const knownEvents = realPlays.map((play) => ({
+        ...play,
+        // Provider-backed identity does not depend on refresh time, and the
+        // same shared snap therefore keeps one id as contributors arrive.
+        id: `replay-${play.id}`,
+        at: now,
+        source: 'replay-play',
+      }));
+      const fallbackEvents = unmatchedReconstructedPlays(reconstructed, realPlays)
+        .map((fallbackPlay, index) => {
+          const desc = describeDelta(fallbackPlay);
+          if (!desc) return null;
+          return {
+            id: `${playerId}-${now}-fallback-${index}`,
+            playerId,
+            ...getEventClassification(fallbackPlay, meta.position),
+            desc,
+            stats: fallbackPlay,
+            at: now,
+          };
+        }).filter(Boolean);
+      events.push(...settleEventPoints(
+        [...knownEvents, ...fallbackEvents],
+        scoringSettings,
+        meta.position,
+        totalPoints,
+        { playerId, now },
+      ));
       return;
     }
 
-    const pointsPerPlay = apportionPoints(reconstructed, scoringSettings, meta.position, totalPoints);
-    reconstructed.forEach((play, index) => {
+    const fallbackEvents = reconstructed.map((play, index) => {
       const desc = describeDelta(play);
-      if (!desc) return;
-      events.push({
+      if (!desc) return null;
+      return {
         id: `${playerId}-${now}-${index}`,
         playerId,
         ...getEventClassification(play, meta.position),
         desc,
         stats: play,
-        pts: pointsPerPlay[index] ?? 0,
         at: now,
-      });
-    });
+      };
+    }).filter(Boolean);
+    events.push(...settleEventPoints(
+      fallbackEvents,
+      scoringSettings,
+      meta.position,
+      totalPoints,
+      { playerId, now },
+    ));
   });
   return events;
 }

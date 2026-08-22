@@ -98,6 +98,16 @@
   background: var(--color-fill-secondary);
 }
 
+.live-sandbox-full {
+  font-weight: 700;
+}
+
+.live-sandbox-chip:disabled {
+  cursor: default;
+  color: var(--color-label-quaternary);
+  opacity: 0.72;
+}
+
 .live-sandbox-text {
   min-height: 32px;
   padding: 0 8px;

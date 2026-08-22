@@ -397,6 +397,17 @@
   font-weight: 700;
 }
 
+.scores-possession {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-signature);
+  line-height: 1;
+}
+
 .scores-winner-mark { color: var(--color-signature); font-size: var(--type-micro); }
 
 .scores-scorebug-team > b {
@@ -407,15 +418,6 @@
   font-weight: 900;
   line-height: 1;
   text-align: right;
-}
-
-.scores-possession {
-  display: inline-block;
-  width: 0;
-  height: 0;
-  border-top: 4px solid transparent;
-  border-bottom: 4px solid transparent;
-  border-left: 6px solid var(--color-signature);
 }
 
 .scores-timeouts { display: inline-flex; gap: 2px; }
@@ -439,6 +441,71 @@
 .scores-scorebug.is-red-zone { border-bottom-color: var(--color-accent-red); }
 .scores-scorebug.is-postponed .scores-scorebug-teams,
 .scores-scorebug.is-unavailable .scores-scorebug-teams { background: var(--color-fill-tertiary); }
+
+.scores-latest-play {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  padding: 8px 12px 10px;
+  border-top: 1px solid var(--color-separator);
+  background: var(--color-fill-tertiary);
+  color: var(--color-label-secondary);
+  font-size: var(--type-label);
+  line-height: 1.3;
+}
+
+.scores-latest-play__label {
+  color: var(--color-accent-red);
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-micro);
+  font-weight: 850;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.scores-latest-play__meta {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 7px;
+  color: var(--color-label-tertiary);
+  font-size: var(--type-micro);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.scores-latest-play__meta b { color: var(--color-label-secondary); font-weight: 750; }
+.scores-latest-play__meta time { margin-left: auto; white-space: nowrap; }
+
+.scores-latest-play__text {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-label);
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scores-latest-play__text em,
+.scores-latest-play__context {
+  display: inline-block;
+  margin-left: 7px;
+  color: var(--color-label-secondary);
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-micro);
+  font-style: normal;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.scores-latest-play__text em[data-k='td'],
+.scores-latest-play__text em[data-k='fd'] { color: var(--color-signature); }
+.scores-latest-play__text em[data-k='loss'] { color: var(--color-accent-red); }
+.scores-latest-play__context { margin-left: 0; color: var(--color-accent-orange); }
+.scores-latest-play__message { color: var(--color-label-tertiary); font-style: italic; }
+.scores-latest-play.is-stale .scores-latest-play__label { color: var(--color-accent-orange); }
 
 /* Final games carry the winning team's gradient. Every text color on the
    gradient comes from teamVisualTheme's gradientFull* foregrounds, which are
@@ -468,6 +535,16 @@
   border-top-color: var(--scores-winner-subtle);
   color: var(--scores-winner-muted);
 }
+
+.scores-scorebug.is-winner-themed .scores-latest-play {
+  border-top-color: var(--scores-winner-subtle);
+  background: color-mix(in srgb, var(--scores-winner-fg) 8%, transparent);
+  color: var(--scores-winner-muted);
+}
+
+.scores-scorebug.is-winner-themed .scores-latest-play__text { color: var(--scores-winner-fg); }
+.scores-scorebug.is-winner-themed .scores-latest-play__meta,
+.scores-scorebug.is-winner-themed .scores-latest-play__message { color: var(--scores-winner-muted); }
 
 .scores-week-peek {
   margin-top: 34px;
@@ -530,6 +607,7 @@
 
 .scores-mini-scorebug:hover,
 .scores-week-peek-more:hover { border-color: var(--color-label-tertiary); }
+.scores-mini-scorebug > span { display: inline-flex; min-width: 0; align-items: center; gap: 5px; }
 .scores-mini-scorebug b { text-align: right; }
 .scores-mini-scorebug .is-muted { color: var(--color-label-tertiary); }
 .scores-mini-scorebug small { grid-column: 1 / -1; color: var(--color-label-tertiary); font-size: var(--type-micro); letter-spacing: 0.08em; text-transform: uppercase; }
@@ -866,6 +944,25 @@
 
 .scores-drive-list { display: flex; flex-direction: column; }
 .scores-drive { border-bottom: 1px solid var(--color-separator); }
+.scores-game-terminal {
+  display: grid;
+  gap: 2px;
+  padding: 16px 2px 18px;
+  border-bottom: 2px solid var(--color-label);
+}
+.scores-game-terminal > strong {
+  color: var(--color-label);
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-emphasis);
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.scores-game-terminal > span {
+  color: var(--color-label-secondary);
+  font-size: var(--type-label);
+  font-variant-numeric: tabular-nums;
+}
 .scores-drive-header { display: grid; width: 100%; min-height: 48px; grid-template-columns: 24px auto minmax(0, 1fr) auto 20px; align-items: center; gap: 12px; padding: 12px 2px; color: var(--color-label); text-align: left; }
 .scores-drive-header:hover { background: var(--color-fill-tertiary); }
 .scores-drive-header > img { width: 22px; height: 22px; object-fit: contain; }

@@ -1486,6 +1486,7 @@ function AppInner() {
           ref={contentAreaRef}
           className={[
             'content-area lg:px-8 pt-4 lg:pt-6',
+            activeTab === 'fantasy' && companionView === 'live' ? 'content-area--fantasy-live' : '',
             activeTab === 'draft' ? 'content-area--draft' : '',
             activeTab === 'draft' && draftView === 'war-room' ? 'content-area--draft-war-room' : '',
             activeTab === 'draft' && draftView === 'results' ? 'content-area--draft-results' : '',
@@ -1532,7 +1533,11 @@ function AppInner() {
 
           {activeTab === 'statistics' && statisticsView === 'scores' && (
             <Suspense fallback={<SectionLoading label="Loading scores" />}>
-              <StatisticsScores leagueId={selectedLeagueId} platform={platform} />
+              <StatisticsScores
+                leagueId={selectedLeagueId}
+                platform={platform}
+                tourDemoMode={tourDemoMode}
+              />
             </Suspense>
           )}
 

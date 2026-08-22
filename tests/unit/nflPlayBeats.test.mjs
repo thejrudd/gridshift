@@ -8,8 +8,10 @@ import {
   ballAt,
   beatsThrough,
   estimateAirYards,
+  getDisplayedPlaybackBeats,
   getDriveTimelines,
   getPlayTimeline,
+  getTouchdownMoment,
   TONE,
 } from '../../src/utils/nflPlays/playBeats.js';
 
@@ -197,6 +199,51 @@ test('an interception turns around at the spot it was picked off', () => {
   }
 });
 
+test('a summary-only pick-six reconstructs the throw, possession change, and goal-line score', () => {
+  const play = {
+    id: '401873286469',
+    team: 'HOU',
+    typeSlug: 'interception-return-touchdown',
+    down: '1st & 10',
+    startDown: 1,
+    startDistance: 10,
+    period: 1,
+    startYardLine: 24,
+    endYardLine: 100,
+    startYardsToEndzone: 24,
+    endYardsToEndzone: 0,
+    statYardage: 80,
+    scoring: true,
+    shortText: "Wade Woodaz 80 Yd Interception Return (Ka'imi Fairbairn Kick)",
+    rawText: "Wade Woodaz 80 Yd Interception Return (Ka'imi Fairbairn Kick)",
+    description: "Wade Woodaz 80 Yd Interception Return (Ka'imi Fairbairn Kick)",
+    inferredPasserName: 'Fernando Mendoza',
+  };
+  const line = getPlayTimeline(play, { homeTeam: 'HOU', awayTeam: 'LV' });
+
+  assert.equal(line.bespoke, true);
+  const release = line.beats.find((beat) => beat.kind === 'release');
+  const turnover = line.beats.find((beat) => beat.kind === 'turnover');
+  assert.match(release.text, /Fernando Mendoza throws/);
+  assert.ok(release.at < turnover.at);
+  assert.ok(Math.abs(ballAt(line.segments, turnover.at).yard - 80) < 0.5, '80-yard return must begin at HOU 20');
+  assert.equal(ballAt(line.segments, turnover.at - 1).tone, null, 'the throw still belongs to Las Vegas');
+  assert.ok(line.segments.some((segment) => segment.tone === TONE.turnover), 'the return must belong to Houston');
+  assert.ok(Math.abs(ballAt(line.segments, line.duration).yard - (-5)) < 0.5, 'the return must finish inside the LV end zone');
+
+  const touchdownAt = getTouchdownMoment(line);
+  assert.ok(Number.isFinite(touchdownAt));
+  assert.ok(Math.abs(ballAt(line.segments, touchdownAt).yard) < 0.001, 'the touchdown must happen at the LV goal line');
+  const displayed = getDisplayedPlaybackBeats(line, touchdownAt);
+  const score = displayed.filter((beat) => beat.kind === 'score');
+  assert.equal(score.length, 1);
+  assert.ok(Math.abs(score[0].marker) < 0.001);
+
+  const anonymous = getPlayTimeline({ ...play, inferredPasserName: null }, { homeTeam: 'HOU', awayTeam: 'LV' });
+  assert.match(anonymous.beats.find((beat) => beat.kind === 'release').text, /^The quarterback throws/);
+  assert.equal(anonymous.beats.some((beat) => /Fernando Mendoza/.test(beat.text)), false);
+});
+
 test('a fumble comes loose where the carrier was hit and changes hands there', () => {
   const found = findPlay((play) => /fumble/.test(play.typeSlug ?? ''));
   const line = getPlayTimeline(found.play, found.context);
@@ -263,6 +310,62 @@ test('a rushing touchdown is choreographed as a rush, not dropped to the generic
   const score = line.beats.find((beat) => beat.kind === 'score');
   assert.ok(score, 'a touchdown must fire a score beat');
   assert.ok(score.text.length > 'Touchdown.'.length, 'the score beat should say how it happened');
+});
+
+test('a rushing touchdown becomes true exactly at the goal-line plane', () => {
+  const found = findPlay((play) => /rushing-touchdown|rush.*touchdown/.test(play.typeSlug ?? '')
+    || (classifyPlay(play).type === 'rush' && classifyPlay(play).flag === 'td'));
+  if (!found) return;
+  const line = getPlayTimeline(found.play, found.context);
+  const touchdownAt = getTouchdownMoment(line);
+  const scoreBeat = line.beats.find((beat) => beat.kind === 'score');
+  const atPlane = ballAt(line.segments, touchdownAt).yard;
+
+  assert.ok(Number.isFinite(touchdownAt), 'a rushing score needs a plane-crossing instant');
+  assert.ok(touchdownAt < scoreBeat.at, 'the touchdown must not wait for the later outcome beat');
+  assert.ok(Math.abs(atPlane - line.geometry.end) < 0.001, `touchdown fired at ${atPlane}, not the goal line`);
+
+  const immediatelyBefore = getDisplayedPlaybackBeats(line, touchdownAt - 0.01);
+  const atTouchdown = getDisplayedPlaybackBeats(line, touchdownAt);
+  const afterNarrative = getDisplayedPlaybackBeats(line, scoreBeat.at);
+  assert.equal(immediatelyBefore.some((beat) => beat.kind === 'score'), false);
+  assert.equal(atTouchdown.filter((beat) => beat.kind === 'score').length, 1);
+  assert.equal(afterNarrative.filter((beat) => beat.kind === 'score').length, 1, 'the later outcome beat duplicated the touchdown');
+  assert.ok(Math.abs(atTouchdown.find((beat) => beat.kind === 'score').marker - line.geometry.end) < 0.001);
+
+  const reverseDirection = {
+    geometry: { scoring: true, flag: 'td', type: 'rush', dir: -1, end: 0 },
+    segments: [{ start: 0, ms: 1000, from: { yard: 5 }, to: { yard: -5 } }],
+    beats: [{ at: 1400, kind: 'score', text: 'Touchdown.' }],
+  };
+  assert.equal(getTouchdownMoment(reverseDirection), 500, 'the opposite end zone must use the same plane timing');
+});
+
+test('a passing touchdown waits for both the catch and the goal-line plane', () => {
+  const caughtInEndZone = {
+    geometry: { scoring: true, flag: 'td', type: 'pass', dir: 1, end: 100 },
+    segments: [{ start: 0, ms: 1000, from: { yard: 95 }, to: { yard: 105 } }],
+    beats: [{ at: 1000, kind: 'catch' }, { at: 2400, kind: 'score' }],
+  };
+  assert.equal(getTouchdownMoment(caughtInEndZone), 1000, 'a ball in flight cannot score before it is caught');
+
+  const catchAndRun = {
+    geometry: { scoring: true, flag: 'td', type: 'pass', dir: 1, end: 100 },
+    segments: [
+      { start: 0, ms: 1000, from: { yard: 80 }, to: { yard: 95 } },
+      { start: 1000, ms: 1000, from: { yard: 95 }, to: { yard: 105 } },
+    ],
+    beats: [{ at: 1000, kind: 'catch' }, { at: 2400, kind: 'score' }],
+  };
+  assert.equal(getTouchdownMoment(catchAndRun), 1500, 'a catch short must wait for the plane crossing');
+});
+
+test('non-touchdown scores keep their existing score-beat timing', () => {
+  assert.equal(getTouchdownMoment({
+    geometry: { scoring: true, flag: 'fg', type: 'kick', dir: 1, end: 100 },
+    segments: [],
+    beats: [{ at: 1000, kind: 'score' }],
+  }), null);
 });
 
 test('only the down-and-distance line is a setup beat', () => {
@@ -412,6 +515,44 @@ test('a kick is toned as a kick and flies higher than a throw', () => {
   // At a pass's apex a punt came out looking like a deep throw, which is the one
   // shape it must not share.
   assert.ok(peak(kickLine) > peak(getPlayTimeline(pass.play, pass.context)) * 1.5, 'a kick has to hang');
+});
+
+test('a short-of-landing-zone kickoff flies to the reported landing spot before placement', () => {
+  const rawText = 'K.Fairbairn kicks 41 yards from HST 35 to LV 24, short of landing zone.PENALTY on HST-K.Fairbairn, Kickoff Short of Landing Zone, placed at LV 40.';
+  const play = {
+    id: 'short-landing-zone',
+    team: 'LV',
+    typeSlug: 'kickoff',
+    down: 'Kickoff',
+    startDown: null,
+    startDistance: null,
+    endDown: 1,
+    endDistance: 10,
+    startYardLine: 35,
+    endYardLine: 60,
+    endDownDistanceText: '1st & 10 at LV 40',
+    scoring: false,
+    shortText: "Ka'imi Fairbairn 41 Yd Kickoff Ka'imi Fairbairn Pnlty",
+    rawText,
+    description: rawText,
+  };
+  const context = { homeTeam: 'HOU', awayTeam: 'LV' };
+  const geometry = getPlayTrajectory(play, context);
+  const line = getPlayTimeline(play, context);
+
+  assert.equal(geometry.kick.returnYards, 0, 'the placement spot must not be invented as a return');
+  assert.equal(geometry.kick.land, 24);
+  assert.equal(geometry.kick.finish, 24);
+  assert.equal(line.bespoke, true);
+  assert.ok(line.segments.some((segment) => segment.tone === TONE.kick), 'the kickoff must use the high kick flight');
+
+  const landingBeat = line.beats.find((beat) => /lands at the LV 24/i.test(beat.text));
+  const flagBeat = line.beats.find((beat) => beat.alert === 'Penalty');
+  const placementBeat = line.beats.find((beat) => /Ball placed at the LV 40/i.test(beat.text));
+  assert.ok(landingBeat, 'the reported landing spot must be shown');
+  assert.ok(flagBeat && flagBeat.at > landingBeat.at, 'the flag must follow the flight');
+  assert.ok(placementBeat && placementBeat.at > flagBeat.at, 'the placement must follow the flag');
+  assert.ok(Math.abs(ballAt(line.segments, line.duration).yard - 40) < 0.5, 'the animation must finish at LV 40');
 });
 
 test('an alert is raised only when the offense lost something', () => {

@@ -105,7 +105,12 @@ export function useLiveSandbox() {
   const clock = useReplayClock();
   const mode = useSandboxMode();
   return useMemo(() => {
-    if (!LIVE_SANDBOX_ENABLED) return null;
+    // Automated production-path checks can opt out even when the developer's
+    // local server has the replay harness enabled. This stays inside the
+    // dev-only sandbox module and is absent from production bundles.
+    const disabledForRoute = typeof window !== 'undefined'
+      && new URLSearchParams(window.location.search).get('liveSandbox') === 'off';
+    if (!LIVE_SANDBOX_ENABLED || disabledForRoute) return null;
     const built = BUILT[mode] ?? BUILT.replay;
     return {
       mode,

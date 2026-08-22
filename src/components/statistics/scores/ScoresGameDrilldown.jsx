@@ -17,7 +17,11 @@ const SECTIONS = [
   { id: 'scoring', label: 'Scoring' },
   { id: 'plays', label: 'Play-by-Play' },
 ];
-const LIVE_DETAIL_REFRESH_INTERVAL_MS = 30_000;
+// The server keeps team/player detail on its longer cache while projecting the
+// canonical play snapshot every eight seconds. Refreshing the envelope at the
+// play cadence keeps this feed aligned without multiplying upstream box-score
+// work.
+const LIVE_DETAIL_REFRESH_INTERVAL_MS = 8_000;
 
 const teamLogo = (teamId) => `https://a.espncdn.com/i/teamlogos/nfl/500/${String(teamId).toLowerCase()}.png`;
 function getNumericRatio(stat, side) {
@@ -352,7 +356,12 @@ function driveMeta(drive) {
   const snaps = drive.playCount ?? drive.plays.length;
   const count = `${snaps} ${snaps === 1 ? 'play' : 'plays'}`;
   const yards = drive.netYards != null ? ` · ${drive.netYards} yds` : '';
-  const from = opening ? ` · from ${opening.time} ${opening.quarter}` : '';
+  const openingQuarter = opening
+    ? quarterLabel(opening)
+      ?? (typeof opening.quarter === 'string' ? opening.quarter : null)
+      ?? (typeof drive.quarter === 'string' ? drive.quarter : null)
+    : null;
+  const from = opening ? ` · from ${opening.time}${openingQuarter ? ` ${openingQuarter}` : ''}` : '';
   return `${count}${yards}${from}`;
 }
 
@@ -412,7 +421,7 @@ function PlayByPlay({ detail, participants }) {
   }
 
   return (
-    <section className="scores-play-feed">
+    <section className="scores-play-feed" data-tour="statistics-scores-play-by-play">
       <SectionHeading
         title="Play Feed"
         meta={`${live ? 'Most recent first' : 'Kickoff first'} · ${drives.length} ${drives.length === 1 ? 'drive' : 'drives'}`}
@@ -483,15 +492,21 @@ function PlayByPlay({ detail, participants }) {
             </Fragment>
           );
         })}
+        {detail.terminal?.kind === 'ended-with-time-remaining' && (
+          <div className="scores-game-terminal" role="status" aria-label="End of game">
+            <strong>End of game</strong>
+            <span>Game ended with {detail.terminal.clock} remaining</span>
+          </div>
+        )}
       </div>
     </section>
   );
 }
 
-export default function ScoresGameDrilldown({ game, fixtureDetail = null, onBack }) {
+export default function ScoresGameDrilldown({ game, fixtureDetail = null, onBack, initialSection = 'overview' }) {
   const fixtureData = game.provider === 'fixture' || String(game.id).startsWith('fixture-');
   const detailsProvider = game.detailsProvider ?? game.provider;
-  const [section, setSection] = useState('overview');
+  const [section, setSection] = useState(initialSection);
   const gameKey = `${game.provider ?? 'espn'}:${game.bdlGameId ?? game.providerGameId ?? game.id}`;
   const [detailState, setDetailState] = useState({
     key: gameKey,

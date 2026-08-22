@@ -5,6 +5,7 @@
 
 import { useState } from 'react';
 import {
+  completeReplay,
   REPLAY_SPEEDS,
   resetClock,
   setProgress,
@@ -109,6 +110,15 @@ export default function LiveSandboxPanel() {
                 {speed.label}
               </button>
             ))}
+            <button
+              type="button"
+              className="live-sandbox-chip live-sandbox-full"
+              onClick={completeReplay}
+              disabled={clock.progress >= 1}
+              aria-label="Fill replay with the full week"
+            >
+              Full
+            </button>
             <button
               type="button"
               className="live-sandbox-text live-sandbox-reset"

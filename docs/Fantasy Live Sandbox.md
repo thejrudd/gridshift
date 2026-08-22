@@ -137,9 +137,12 @@ well as forwards:
   intervals. Every part of the slider lands on football while stagger and
   overlap stay true to life.
 
-`liveSandboxClock.js` owns progress, play/pause, and speed at module scope. Its
-`version` counter is folded into `liveSnapshotContextKey` in `CompanionLive`, so
-scrubbing re-slices immediately instead of waiting for the next refresh tick.
+`liveSandboxClock.js` owns progress, play/pause, and speed at module scope. The
+panel's **Full** action stops playback and jumps progress directly to 100%,
+making the entire demo week available without waiting for the accelerated
+clock. Its `version` counter triggers a fresh slice in `CompanionLive`, but it
+is excluded from request identity so a 500 ms clock tick cannot cancel slower
+hydration for the same matchup.
 
 ### The feed and pace chart accumulate
 
@@ -152,9 +155,14 @@ the moment the page loads. With it off, both build from real observed activity:
 - Feed events come from stat deltas between replay snapshots, so points arrive
   in small real increments as each game progresses.
 - Play-by-play comes from the week's actual plays, sliced to those that had
-  happened by the current instant.
+  happened by the current instant. It enriches the complete stat-delta batch
+  with real descriptions and field position without replacing that batch's
+  authoritative fantasy-point change, blocking the feed while provider slices
+  catch up, or dropping reconstructed remainder rows.
 - The pace chart plots only events observed so far, drawing up to a `NOW`
-  marker with the rest of the week left empty.
+  marker with the rest of the week left empty. Actual-score paths connect each
+  team's cumulative scoring dots directly, and hover interpolates continuously
+  along that same visible line.
 
 Two details make this work. Plays are refetched whenever replay progress
 changes: the live throttle (`PLAYS_REFRESH_MIN_MS`, 45s of wall time) would
@@ -247,6 +255,19 @@ already exact and monotonic — the reconstruction could only make them worse,
 and did, overshooting the real total and then sliding back down to it. Replay
 mode keeps the callback's probability output and drops its scores, and passes
 no historical snapshots.
+
+The fixture's `players_points` values are the completed week's official result,
+not a current replay snapshot. Until a starter has a time-sliced provider stat
+row, replay mode counts that starter at zero instead of falling back to the
+fixture total. Otherwise a slow stat request leaks the final score into an early
+replay and the chart draws a vertical jump from the observed events to that
+future total at `NOW`.
+
+Replay clock ticks trigger new snapshot and play slices, but they do not cancel
+an in-flight request for the same matchup. Only a hard context change — league,
+week, matchup, mode, or session — invalidates it. Failed play enrichment remains
+retryable, including while the replay is paused; stat deltas still provide the
+canonical feed and scoring totals when play-by-play is unavailable.
 
 ### The first snapshot counts
 
@@ -416,6 +437,13 @@ Replay mode therefore passes `accumulateInOrder`, and the running total is built
 strictly along the axis the points are plotted on. Monotonic by construction,
 and immune to the clock entirely. Live scoring keeps the default.
 
+Real play rows remain enrichment rather than scoring authority. A replay batch
+apportions its exact point change across every reconstructed play, substitutes
+real descriptions where available, and retains fallback rows for the rest. The
+event total therefore reaches the authoritative current score at the last
+observed event, allowing the solid path and fill to hold flat through `NOW`
+instead of silently interpolating missing points across scoreless time.
+
 `tests/unit/livePaceAccumulation.test.mjs` pins it, including the negative case:
 with clock ordering the point before the close is *not* the side's total, which
 is precisely the wall.
@@ -494,7 +522,7 @@ index, scoring, delta feed, pace chart, win probability — runs unmodified:
 | `src/api/liveDataSource.js` | Indirection Fantasy Live reads through; real `liveApi` unless the sandbox is on |
 | `src/dev/liveSandbox/index.js` | Public entry: flag, hook, panel, data source |
 | `src/dev/liveSandbox/liveSandboxSource.js` | Fetches the week once, serves time-sliced views |
-| `src/dev/liveSandbox/LiveSandboxPanel.jsx` | Play/pause, scrub, speed controls |
+| `src/dev/liveSandbox/LiveSandboxPanel.jsx` | Play/pause, scrub, speed, and full-week controls |
 | `src/dev/liveSandbox/production-stub.js` | Inert stand-in aliased in at build time |
 
 `CompanionLive` merges the sandbox over `useSleeperBase()`, so anything the

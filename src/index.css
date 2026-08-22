@@ -2068,6 +2068,19 @@ body {
 .fl {
   --fl-ease: cubic-bezier(0.32, 0.72, 0, 1);
   --fl-display: var(--font-display, 'Barlow Condensed', sans-serif);
+  --fl-feed-avatar: 46px;
+  --fl-feed-initials: var(--type-body);
+  --fl-feed-name-size: clamp(14px, 2.6vw, 15px);
+  --fl-feed-body-size: var(--type-meta);
+  --fl-feed-meta-size: var(--type-micro);
+  --fl-feed-delta-size: clamp(21px, 5vw, 25px);
+  /* One semantic reading scale across feed rows, their expanded scoring math,
+     the replay log and the selected-player analysis. Detail surfaces can grow
+     these roles against their own container without changing their meaning. */
+  --fl-data-body-size: var(--fl-feed-body-size);
+  --fl-data-meta-size: var(--fl-feed-meta-size);
+  --fl-data-label-size: var(--type-label);
+  --fl-data-value-size: var(--type-emphasis);
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -2907,7 +2920,11 @@ body {
 .fl-live-board,
 .fl-feed-column { min-width: 0; }
 .fl-controls { background: var(--color-bg); }
-.fl-analysis-stage { min-width: 0; }
+.fl-analysis-stage {
+  min-width: 0;
+  container-name: fl-analysis;
+  container-type: inline-size;
+}
 
 .fl-feed-scroll { min-width: 0; }
 
@@ -3245,6 +3262,11 @@ body {
 /* ── Performer rail ────────────────────────────────────────────────────── */
 
 .fl-rail {
+  --fl-rail-avatar: 42px;
+  --fl-rail-initials: var(--type-body);
+  --fl-rail-item: 60px;
+  --fl-rail-points: var(--type-body);
+  --fl-rail-name: var(--type-micro);
   display: flex;
   gap: 2px;
   overflow-x: auto;
@@ -3262,10 +3284,11 @@ body {
   flex-direction: column;
   align-items: center;
   gap: 5px;
-  width: 60px;
+  width: var(--fl-rail-item);
   padding: 0 2px;
   border: 0;
   background: transparent;
+  border-radius: 6px;
   opacity: 0.55;
   transition: opacity 160ms var(--fl-ease), transform 160ms var(--fl-ease);
 }
@@ -3279,7 +3302,7 @@ body {
 .fl-rail__pv {
   font-family: var(--fl-display);
   font-weight: 800;
-  font-size: var(--type-body);
+  font-size: var(--fl-rail-points);
   font-variant-numeric: tabular-nums;
   line-height: 1;
   color: var(--color-label);
@@ -3288,11 +3311,11 @@ body {
 .fl-rail__pf.is-active .fl-rail__pv { color: var(--fl-team); }
 
 .fl-rail__nm {
-  max-width: 58px;
+  max-width: calc(var(--fl-rail-item) - 4px);
   font-family: var(--fl-display);
   font-weight: 700;
-  font-size: var(--type-micro);
-  letter-spacing: 0.06em;
+  font-size: var(--fl-rail-name);
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--color-label-secondary);
   white-space: nowrap;
@@ -3435,7 +3458,7 @@ body {
 .fl-play {
   position: relative;
   display: grid;
-  grid-template-columns: 46px minmax(0, 1fr) auto;
+  grid-template-columns: var(--fl-feed-avatar) minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
   width: 100%;
@@ -3468,15 +3491,15 @@ body {
 .fl-play.is-flash { animation: fl-flash 1100ms var(--fl-ease); }
 
 .fl-play__figure { position: relative; display: block; }
-.fl-play__av { width: 46px; height: 46px; }
+.fl-play__av { width: var(--fl-feed-avatar); height: var(--fl-feed-avatar); }
 .fl-play__body { min-width: 0; }
 
-.fl-play__l1 { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.fl-play__l1 { display: flex; align-items: center; gap: 5px 7px; min-width: 0; }
 
 .fl-play__nm {
   font-family: var(--fl-display);
   font-weight: 800;
-  font-size: clamp(14px, 2.6vw, 15px);
+  font-size: var(--fl-feed-name-size);
   line-height: 1.05;
   letter-spacing: 0.015em;
   text-transform: uppercase;
@@ -3486,10 +3509,20 @@ body {
   white-space: nowrap;
 }
 
+.fl-play__shared {
+  flex: 0 0 auto;
+  font-family: var(--fl-display);
+  font-weight: 700;
+  font-size: var(--type-micro);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-label-quaternary);
+}
+
 .fl-play__desc {
   display: block;
   margin-top: 3px;
-  font-size: var(--type-meta);
+  font-size: var(--fl-feed-body-size);
   line-height: 1.32;
   color: var(--color-label-secondary);
   text-wrap: pretty;
@@ -3502,7 +3535,7 @@ body {
   margin-top: 5px;
   font-family: var(--fl-display);
   font-weight: 700;
-  font-size: var(--type-micro);
+  font-size: var(--fl-feed-meta-size);
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--color-label-tertiary);
@@ -3517,7 +3550,7 @@ body {
 .fl-play__dv {
   font-family: var(--fl-display);
   font-weight: 800;
-  font-size: clamp(21px, 5vw, 25px);
+  font-size: var(--fl-feed-delta-size);
   line-height: 0.9;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
@@ -3529,7 +3562,7 @@ body {
 .fl-play__dt {
   font-family: var(--fl-display);
   font-weight: 700;
-  font-size: var(--type-micro);
+  font-size: var(--fl-feed-meta-size);
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--color-label-quaternary);
@@ -3574,13 +3607,34 @@ body {
 .fl-exp__ctx {
   font-family: var(--fl-display);
   font-weight: 700;
-  font-size: var(--type-micro);
+  font-size: var(--fl-data-meta-size);
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--color-label-quaternary);
+  color: var(--color-label-secondary);
 }
 
 .fl-exp__lines { display: flex; flex-direction: column; }
+
+.fl-exp__contributor + .fl-exp__contributor { margin-top: 8px; }
+
+.fl-exp__contributor-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0 2px;
+  font-family: var(--fl-display);
+  font-weight: 800;
+  font-size: var(--fl-data-label-size);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-label);
+}
+
+.fl-exp__contributor-head > span:last-child {
+  color: var(--color-accent-green);
+  font-variant-numeric: tabular-nums;
+}
 
 .fl-exp__ln {
   display: flex;
@@ -3589,14 +3643,14 @@ body {
   gap: 12px;
   padding: 6px 0;
   border-top: 1px solid var(--color-separator);
-  font-size: var(--type-meta);
+  font-size: var(--fl-data-body-size);
   color: var(--color-label-secondary);
 }
 
 .fl-exp__lv {
   font-family: var(--fl-display);
   font-weight: 800;
-  font-size: var(--type-emphasis);
+  font-size: var(--fl-data-value-size);
   font-variant-numeric: tabular-nums;
   color: var(--color-label);
 }
@@ -3605,10 +3659,10 @@ body {
   margin-left: 8px;
   font-family: var(--fl-display);
   font-weight: 600;
-  font-size: var(--type-micro);
+  font-size: var(--fl-data-meta-size);
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--color-label-quaternary);
+  color: var(--color-label-secondary);
 }
 
 .fl-exp__ln.is-total { border-top: 1.5px solid var(--color-label); }
@@ -3622,7 +3676,7 @@ body {
   color: var(--color-label);
 }
 
-.fl-exp__ln.is-total .fl-exp__lv { font-size: 20px; }
+.fl-exp__ln.is-total .fl-exp__lv { font-size: var(--fl-data-value-size); }
 
 .fl-exp__statrow { display: flex; flex-wrap: wrap; gap: 16px; padding: 10px 0 2px; }
 .fl-exp__stat { display: flex; flex-direction: column; gap: 1px; }
@@ -3630,7 +3684,7 @@ body {
 .fl-exp__stat b {
   font-family: var(--fl-display);
   font-weight: 800;
-  font-size: 17px;
+  font-size: var(--fl-data-value-size);
   line-height: 1;
   font-variant-numeric: tabular-nums;
   color: var(--color-label);
@@ -3639,28 +3693,35 @@ body {
 .fl-exp__stat span {
   font-family: var(--fl-display);
   font-weight: 700;
-  font-size: var(--type-micro);
+  font-size: var(--fl-data-meta-size);
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--color-label-quaternary);
+  color: var(--color-label-secondary);
 }
 
 .fl-exp__note {
   margin: 10px 0 0;
-  font-size: var(--type-label);
+  font-size: var(--fl-data-body-size);
   line-height: 1.4;
-  color: var(--color-label-tertiary);
+  color: var(--color-label-secondary);
   text-wrap: pretty;
 }
 
-.fl-exp__more {
+.fl-exp__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--density-space-xs) var(--density-space-md);
   margin-top: 12px;
-  padding: 0;
+}
+
+.fl-exp__more {
+  min-height: 40px;
+  padding: 6px 0;
   border: 0;
   background: transparent;
   font-family: var(--fl-display);
   font-weight: 800;
-  font-size: var(--type-label);
+  font-size: var(--fl-data-label-size);
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--color-signature);
@@ -3684,6 +3745,13 @@ body {
 /* A record card, deliberately unlike the broadcast hero: flat surface, framed
    portrait at true aspect, fantasy-team colour only as a top edge accent. */
 .fl-sheet {
+  --fl-detail-portrait: 84px;
+  --fl-detail-body-size: var(--fl-data-body-size);
+  --fl-detail-meta-size: var(--fl-data-meta-size);
+  --fl-detail-label-size: var(--fl-data-label-size);
+  --fl-detail-value-size: var(--fl-data-value-size);
+  --fl-detail-name-size: clamp(21px, 4.6vw, 26px);
+  --fl-detail-total-size: clamp(30px, 7vw, 36px);
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -3699,22 +3767,41 @@ body {
 }
 
 .fl-phead__back {
-  display: block;
-  padding: 11px 14px 2px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 8px 14px;
   border: 0;
   background: transparent;
   font-family: var(--fl-display);
   font-weight: 800;
-  font-size: var(--type-label);
+  font-size: var(--fl-detail-body-size);
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--color-label-tertiary);
-  transition: color 140ms var(--fl-ease);
+  color: var(--color-label-secondary);
+  transition: color 140ms var(--fl-ease), background-color 140ms var(--fl-ease);
 }
 
-.fl-phead__back:hover { color: var(--color-label); }
+.fl-phead__back:hover {
+  background: var(--color-fill-secondary);
+  color: var(--color-label);
+}
 
-.fl-phead__row { display: flex; align-items: flex-start; gap: 14px; padding: 8px 14px 12px; }
+.fl-phead__back:focus-visible {
+  outline: 2px solid var(--color-signature);
+  outline-offset: -2px;
+  background: var(--color-fill-secondary);
+  color: var(--color-label);
+}
+
+.fl-phead__row {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  width: min(100%, 1200px);
+  margin-inline: auto;
+  padding: 8px 14px 12px;
+}
 
 .fl-phead__frame {
   position: relative;
@@ -3769,7 +3856,7 @@ body {
   margin-top: 7px;
   font-family: var(--fl-display);
   font-weight: 800;
-  font-size: clamp(21px, 4.6vw, 26px);
+  font-size: var(--fl-detail-name-size);
   line-height: 0.94;
   letter-spacing: 0.01em;
   text-transform: uppercase;
@@ -3785,10 +3872,10 @@ body {
   margin-top: 6px;
   font-family: var(--fl-display);
   font-weight: 700;
-  font-size: var(--type-micro);
+  font-size: var(--fl-detail-meta-size);
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--color-label-tertiary);
+  color: var(--color-label-secondary);
 }
 
 .fl-phead__d { color: var(--color-label-quaternary); }
@@ -3805,7 +3892,7 @@ body {
 .fl-phead__v {
   font-family: var(--fl-display);
   font-weight: 800;
-  font-size: clamp(30px, 7vw, 36px);
+  font-size: var(--fl-detail-total-size);
   line-height: 0.84;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.03em;
@@ -3815,13 +3902,18 @@ body {
 .fl-phead__l {
   font-family: var(--fl-display);
   font-weight: 700;
-  font-size: var(--type-micro);
+  font-size: var(--fl-detail-meta-size);
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: var(--color-label-quaternary);
+  color: var(--color-label-secondary);
 }
 
-.fl-phead__strip { display: flex; border-top: 1px solid var(--color-separator); }
+.fl-phead__strip {
+  display: flex;
+  width: min(100%, 1200px);
+  margin-inline: auto;
+  border-top: 1px solid var(--color-separator);
+}
 
 .fl-phead__strip > span {
   flex: 1;
@@ -3838,7 +3930,7 @@ body {
 .fl-phead__strip b {
   font-family: var(--fl-display);
   font-weight: 800;
-  font-size: 17px;
+  font-size: var(--fl-detail-value-size);
   line-height: 1;
   font-variant-numeric: tabular-nums;
   color: var(--color-label);
@@ -3847,10 +3939,10 @@ body {
 .fl-phead__strip > span > span {
   font-family: var(--fl-display);
   font-weight: 700;
-  font-size: var(--type-micro);
+  font-size: var(--fl-detail-meta-size);
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--color-label-quaternary);
+  color: var(--color-label-secondary);
   white-space: nowrap;
 }
 
@@ -3864,6 +3956,8 @@ body {
   display: flex;
   flex: 0 0 auto;
   gap: 16px;
+  width: min(100%, 1200px);
+  margin-inline: auto;
   padding: 11px 14px 0;
   border-bottom: 1px solid var(--color-separator);
 }
@@ -3875,46 +3969,57 @@ body {
   background: transparent;
   font-family: var(--fl-display);
   font-weight: 800;
-  font-size: var(--type-label);
+  font-size: var(--fl-detail-label-size);
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--color-label-tertiary);
+  color: var(--color-label-secondary);
   transition: color 140ms var(--fl-ease);
 }
 
 .fl-ptabs button:hover { color: var(--color-label-secondary); }
 .fl-ptabs button.is-active { color: var(--color-label); border-bottom-color: var(--color-signature); }
 
-.fl-pbody { min-width: 0; }
+.fl-pbody {
+  width: min(100%, 1200px);
+  min-width: 0;
+  margin-inline: auto;
+}
 
 .fl-brow {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
-  padding: 11px 14px;
+  padding: var(--density-space-md) 14px;
   border-bottom: 1px solid var(--color-separator);
 }
 
 .fl-brow.is-selected { background: var(--color-fill); }
-.fl-brow__l { display: block; font-size: var(--type-body); color: var(--color-label); text-wrap: pretty; }
+.fl-brow__l {
+  display: block;
+  max-width: 75ch;
+  font-size: var(--fl-detail-body-size);
+  line-height: 1.45;
+  color: var(--color-label);
+  text-wrap: pretty;
+}
 
 .fl-brow__d {
   display: block;
   margin-top: 2px;
   font-family: var(--fl-display);
   font-weight: 600;
-  font-size: var(--type-micro);
+  font-size: var(--fl-detail-meta-size);
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--color-label-quaternary);
+  color: var(--color-label-secondary);
 }
 
 .fl-brow__p {
   flex: 0 0 auto;
   font-family: var(--fl-display);
   font-weight: 800;
-  font-size: 17px;
+  font-size: var(--fl-detail-value-size);
   font-variant-numeric: tabular-nums;
 }
 
@@ -3926,12 +4031,12 @@ body {
 .fl-brow.is-total .fl-brow__l {
   font-family: var(--fl-display);
   font-weight: 800;
-  font-size: var(--type-label);
+  font-size: var(--fl-detail-label-size);
   letter-spacing: 0.18em;
   text-transform: uppercase;
 }
 
-.fl-brow.is-total .fl-brow__p { font-size: 24px; }
+.fl-brow.is-total .fl-brow__p { font-size: var(--fl-detail-total-size); }
 
 .fl-pstats {
   display: flex;
@@ -3946,7 +4051,7 @@ body {
 .fl-pstats__s b {
   font-family: var(--fl-display);
   font-weight: 800;
-  font-size: 22px;
+  font-size: var(--fl-detail-total-size);
   line-height: 1;
   font-variant-numeric: tabular-nums;
   color: var(--color-label);
@@ -3955,10 +4060,10 @@ body {
 .fl-pstats__s span {
   font-family: var(--fl-display);
   font-weight: 700;
-  font-size: var(--type-micro);
+  font-size: var(--fl-detail-meta-size);
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--color-label-quaternary);
+  color: var(--color-label-secondary);
 }
 
 .fl-sheet__more {
@@ -3970,10 +4075,34 @@ body {
   text-align: left;
   font-family: var(--fl-display);
   font-weight: 800;
-  font-size: var(--type-label);
+  font-size: var(--fl-detail-label-size);
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--color-signature);
+}
+
+/* The replay is visually part of the feed expansion, so its assembling play
+   sentence uses the same reading role as the expanded scoring math around it.
+   The shared playback stylesheet remains surface-agnostic. */
+.fl-exp__field .dpb-log li { font-size: var(--fl-data-body-size); }
+
+/* The selected-player panel owns a different share of the workbench at every
+   breakpoint. Scale against that panel, not against the monitor, so ultrawide
+   layouts grow for viewing distance while short laptops retain their compact
+   fixed header and scrollable body. */
+@container fl-analysis (min-width: 720px) {
+  .fl-sheet {
+    --fl-detail-portrait: clamp(84px, 8cqw, 104px);
+    --fl-detail-body-size: clamp(var(--type-body), 1.35cqw, var(--type-heading-sm));
+    --fl-detail-meta-size: clamp(var(--type-label), 1.05cqw, var(--type-body));
+    --fl-detail-label-size: clamp(var(--type-label), 1.1cqw, var(--type-body));
+    --fl-detail-value-size: clamp(var(--type-emphasis), 1.6cqw, var(--type-heading-md));
+    --fl-detail-name-size: clamp(26px, 2.6cqw, 36px);
+    --fl-detail-total-size: clamp(36px, 3.4cqw, 48px);
+  }
+
+  .fl-phead__row { gap: clamp(14px, 1.4cqw, 22px); }
+  .fl-brow { padding-block: clamp(var(--density-space-md), 1cqw, var(--density-space-lg)); }
 }
 
 /* ── Leaderboard rail ──────────────────────────────────────────────────── */
@@ -4068,8 +4197,135 @@ body {
 /* ── Breakpoints ───────────────────────────────────────────────────────── */
 
 @media (min-width: 1024px) {
-  .companion-live-shell {
+  /* Fantasy Live is a dashboard, not a document. Its route fills the content
+     scrollport and gives overflow ownership to the feed and chart instead of
+     making the whole page scroll. */
+  .content-area.content-area--fantasy-live {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding-right: clamp(12px, 1.2vw, 24px);
+    padding-bottom: 8px;
+    padding-left: clamp(12px, 1.2vw, 24px);
+  }
+
+  .page-frame-workbench.companion-live-shell {
+    flex: 1;
+    min-height: 0;
+    max-width: none;
     padding-inline: 0;
+    padding-bottom: 0;
+  }
+
+  .companion-live-shell > .fl {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    flex-direction: column;
+  }
+
+  .fl-top__r {
+    color: var(--color-label-secondary);
+    font-size: var(--type-label);
+  }
+
+  .fl-verdict__muted,
+  .fl-verdict__right {
+    color: var(--color-label-secondary);
+  }
+
+  .fl-rail {
+    --fl-rail-avatar: 52px;
+    --fl-rail-initials: var(--type-emphasis);
+    --fl-rail-item: 76px;
+    --fl-rail-points: max(var(--type-body), 0.9375rem);
+    --fl-rail-name: max(var(--type-label), 0.8125rem);
+    gap: 4px;
+    padding: 8px 10px;
+  }
+
+  .fl-rail__pf {
+    opacity: 1;
+    transition: background-color 160ms var(--fl-ease), transform 160ms var(--fl-ease);
+  }
+
+  .fl-rail__pf:hover {
+    background: var(--color-fill);
+    opacity: 1;
+  }
+
+  .fl-rail__pf.is-active {
+    background: var(--color-fill-secondary);
+  }
+
+  .fl-rail__pf.is-active .fl-rail__pv {
+    color: var(--color-label);
+  }
+
+  .fl-rail__nm {
+    font-weight: 750;
+    letter-spacing: 0.04em;
+  }
+
+  .fl-filter__f,
+  .fl-filter__count {
+    color: var(--color-label-secondary);
+  }
+
+  .fl-filter__clear {
+    color: var(--color-accent);
+    font-size: var(--type-label);
+  }
+
+  .fl-play__l1 {
+    flex-wrap: wrap;
+  }
+
+  .fl-play__nm {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+  }
+
+  .fl-play__shared {
+    color: var(--color-label-secondary);
+    font-size: var(--type-label);
+  }
+
+  .fl-play__desc {
+    font-weight: 550;
+    line-height: 1.42;
+  }
+
+  .fl-play__l3,
+  .fl-play__dt {
+    color: var(--color-label-secondary);
+  }
+
+  .fl-chart__t,
+  .fl-chart-summary__state,
+  .fl-chart-summary__odds {
+    color: var(--color-label-secondary);
+    font-size: var(--type-label);
+  }
+
+  .fl-chart__live {
+    color: var(--color-accent);
+    font-size: var(--type-label);
+  }
+
+  .fl-chart__zoom-label,
+  .fl-chart__pan-hint {
+    color: var(--color-label-secondary);
+  }
+
+  .fl-chart__axis-label {
+    fill: var(--color-label-secondary);
+    font-size: var(--type-label);
+  }
+
+  .fl-chart__axis-label.is-strong {
+    fill: var(--color-label);
   }
 
   .fl-mchip-stick {
@@ -4127,16 +4383,24 @@ body {
     transform: translateY(0);
   }
 
-  /* The matchup selector remains the route's sticky navigation layer. The
-     chart/feed workspace itself moves with the document so page scrolling and
-     feed scrolling never compete for ownership of the same surface. */
+  /* The matchup selector remains the route's navigation layer. The desktop
+     route is viewport-bound, while the feed and chart keep their own scroll
+     ownership so the surfaces never compete. */
   .fl-scroll {
     background: var(--color-bg);
   }
 
   .fl-desk {
+    flex: 1;
     grid-template-columns: minmax(0, 1fr);
+    min-height: 0;
     align-items: start;
+  }
+
+  .fl-desk__main,
+  .fl-scroll {
+    height: 100%;
+    min-height: 0;
   }
 
   /* The play feed owns its scroll position. Chart selection can therefore
@@ -4181,7 +4445,15 @@ body {
      the threshold, in which case the readable stacked flow returns. */
   @container fl-workbench (min-width: 720px) {
     .fl-live-board {
+      --fl-feed-avatar: clamp(52px, 3.2cqw, 64px);
+      --fl-feed-initials: clamp(var(--type-body), 1cqw, var(--type-heading-sm));
+      --fl-feed-name-size: clamp(var(--type-emphasis), 0.85cqw, var(--type-heading-sm));
+      --fl-feed-body-size: clamp(var(--type-body), 0.72cqw, var(--type-emphasis));
+      --fl-feed-meta-size: clamp(var(--type-label), 0.62cqw, var(--type-body));
+      --fl-feed-delta-size: clamp(var(--type-heading-md), 1.25cqw, var(--type-heading-lg));
       display: grid;
+      height: 100%;
+      min-height: 0;
       grid-template-areas: "feed chart";
       grid-template-columns: minmax(280px, 0.82fr) minmax(440px, 1.65fr);
       align-items: stretch;
@@ -4189,6 +4461,10 @@ body {
     }
 
     .fl-controls {
+      display: flex;
+      height: 100%;
+      min-height: 0;
+      flex-direction: column;
       grid-area: chart;
       min-width: 0;
       align-self: start;
@@ -4205,11 +4481,171 @@ body {
       contain: size;
     }
 
+    .fl-analysis-stage {
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .fl-analysis-stage > .fl-chart,
+    .fl-analysis-stage > .fl-sheet {
+      height: 100%;
+      min-height: 0;
+    }
+
+    .fl-analysis-stage > .fl-chart {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .fl-chart__viewport {
+      flex: 1;
+      min-height: 0;
+    }
+
     .fl-feed-scroll {
       height: 100%;
       overflow-y: auto;
     }
+
+    .fl-play {
+      gap: var(--density-space-lg);
+      padding: var(--density-space-lg);
+    }
   }
+}
+
+@media (min-width: 1920px) and (min-height: 900px) {
+  .fl-rail {
+    --fl-rail-avatar: 64px;
+    --fl-rail-initials: var(--type-heading-sm);
+    --fl-rail-item: 88px;
+    --fl-rail-points: var(--type-heading-sm);
+    --fl-rail-name: var(--type-body);
+    gap: 6px;
+    padding: 10px 12px;
+  }
+
+  .fl-play {
+    padding-block: calc(var(--density-space-lg) + var(--density-space-xs));
+  }
+}
+
+@media (min-width: 1024px) and (max-height: 800px) {
+  .content-area.content-area--fantasy-live {
+    padding-top: 10px;
+  }
+
+  .page-frame-workbench.companion-live-shell {
+    gap: 6px;
+  }
+
+  .fl-top {
+    min-height: 32px;
+  }
+
+  .fl-mchip-rail {
+    padding-top: 5px;
+    padding-bottom: 6px;
+  }
+
+  .fl-hero {
+    min-height: clamp(132px, 21dvh, 170px);
+  }
+
+  .fl-verdict {
+    padding-top: 7px;
+    padding-bottom: 7px;
+  }
+
+  .fl-rail {
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+
+  .fl-chart {
+    padding-top: 8px;
+    padding-bottom: 5px;
+  }
+
+  .fl-chart__head {
+    height: 30px;
+    min-height: 30px;
+  }
+}
+
+@media (min-width: 1024px) and (max-height: 680px) {
+  .fl-top {
+    min-height: 28px;
+  }
+
+  .fl-mchip-rail {
+    padding-top: 3px;
+    padding-bottom: 4px;
+  }
+
+  .fl-hero {
+    flex: 0 0 102px;
+    min-height: 102px;
+    overflow: hidden;
+  }
+
+  /* Preserve enough of the fixed-height workbench for its two interactive
+     surfaces. The scorer rail repeats immediately below the hero, so hiding
+     this duplicate summary is the least costly short-height reduction. */
+  .fl-hero__feats { display: none; }
+
+  .fl-hero__plate {
+    padding-top: 8px;
+    padding-bottom: 6px;
+  }
+
+  .fl-verdict {
+    padding-top: 5px;
+    padding-bottom: 5px;
+  }
+
+  .fl-rail {
+    --fl-rail-avatar: 44px;
+    --fl-rail-initials: var(--type-body);
+    --fl-rail-item: 112px;
+    gap: 8px;
+    padding: 4px 8px;
+  }
+
+  .fl-rail__pf {
+    display: grid;
+    width: var(--fl-rail-item);
+    grid-template-columns: var(--fl-rail-avatar) minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    align-items: center;
+    column-gap: 6px;
+    row-gap: 1px;
+    text-align: left;
+  }
+
+  .fl-rail__av {
+    width: var(--fl-rail-avatar) !important;
+    height: var(--fl-rail-avatar) !important;
+    grid-row: 1 / 3;
+  }
+
+  .fl-rail__pv {
+    align-self: end;
+    font-size: max(var(--type-body), 0.9375rem);
+  }
+
+  .fl-rail__nm {
+    align-self: start;
+    max-width: calc(var(--fl-rail-item) - var(--fl-rail-avatar) - 10px);
+  }
+
+  .fl-chart__tools {
+    min-height: 28px;
+    margin-bottom: 2px;
+  }
+
+  .fl-chart__viewport { min-height: 80px; }
 }
 
 @media (max-width: 560px) {
@@ -10024,6 +10460,7 @@ body {
   width: 100%;
   overflow: hidden;
   justify-self: stretch;
+  gap: 6px;
 }
 
 .draft-player-row--big-board .companion-player-row__actions,
@@ -10043,15 +10480,18 @@ body {
 .draft-big-board {
   container-type: inline-size;
   container-name: draft-big-board;
+  --draft-big-board-row-grid: 34px 32px minmax(220px, 1.2fr) 32px minmax(390px, 2fr) 16px 76px;
+  --draft-big-board-metric-grid: repeat(7, minmax(50px, 1fr));
 }
 
 .draft-big-board-header {
   display: grid;
-  grid-template-columns: 34px 32px minmax(220px, 1.2fr) 32px minmax(390px, 2fr) 16px 76px;
+  grid-template-columns: var(--draft-big-board-row-grid);
   gap: 8px;
   align-items: center;
   min-height: 40px;
-  padding: 8px 10px 8px 12px;
+  /* Align with the list inset plus the row's 3px accent border and padding. */
+  padding: 8px 21px 8px 23px;
   border-bottom: 1px solid var(--color-separator);
   color: var(--color-label-tertiary);
   font-size: var(--type-label);
@@ -10067,9 +10507,7 @@ body {
 
 .draft-big-board-header button {
   position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, max-content) 10px;
-  column-gap: 3px;
+  display: flex;
   width: 100%;
   min-width: 0;
   min-height: 28px;
@@ -10090,8 +10528,11 @@ body {
 }
 
 .draft-big-board-header__label {
-  width: auto;
+  display: grid;
+  width: 100%;
   min-width: 0;
+  gap: 1px;
+  justify-items: center;
   overflow: visible;
   text-align: center;
   text-overflow: clip;
@@ -10108,7 +10549,6 @@ body {
 
 .draft-big-board-header button.draft-big-board-header__player {
   grid-column: 3;
-  grid-template-columns: minmax(0, max-content) 10px;
   justify-content: flex-start;
 }
 
@@ -10123,7 +10563,7 @@ body {
 .draft-big-board-header__metrics {
   display: grid;
   grid-column: 5;
-  grid-template-columns: repeat(6, minmax(50px, 1fr));
+  grid-template-columns: var(--draft-big-board-metric-grid);
   gap: 6px;
   align-items: center;
   justify-self: stretch;
@@ -10149,13 +10589,19 @@ body {
 }
 
 .draft-big-board-header__sort {
-  position: static;
-  grid-column: 2;
+  position: absolute;
+  top: 50%;
+  right: 3px;
+  transform: translateY(-50%);
   color: currentColor;
   font-size: var(--type-micro);
   line-height: 1;
   text-align: right;
   visibility: hidden;
+}
+
+.draft-big-board-header__volume-compact {
+  display: none;
 }
 
 .draft-big-board-header button.is-active .draft-big-board-header__sort {
@@ -17796,7 +18242,7 @@ body {
 @container (max-width: 560px) {
   .draft-player-row.companion-player-row.is-compact {
     gap: 7px;
-    padding-inline: 9px;
+    padding-inline: 13px 11px;
   }
 
   .draft-player-row.companion-player-row.is-compact .companion-player-row__identity {
@@ -17839,6 +18285,11 @@ body {
 }
 
 @container draft-big-board (max-width: 900px) {
+  .draft-big-board {
+    --draft-big-board-row-grid: 34px 28px minmax(220px, 1fr) minmax(300px, 1.3fr) 10px 64px;
+    --draft-big-board-metric-grid: repeat(6, minmax(48px, 1fr));
+  }
+
   .draft-player-row--big-board.companion-player-row.is-compact .companion-player-row__identity {
     font-size: var(--type-meta);
   }
@@ -17849,7 +18300,7 @@ body {
   }
 
   .draft-player-row--big-board.companion-player-row.is-compact {
-    grid-template-columns: 34px 28px minmax(220px, 1fr) minmax(300px, 1.3fr) 10px 64px !important;
+    grid-template-columns: var(--draft-big-board-row-grid) !important;
   }
 
   .draft-player-row--big-board.companion-player-row.is-compact .companion-player-row__team-logo,
@@ -17858,8 +18309,8 @@ body {
   }
 
   .draft-big-board-header {
-    grid-template-columns: 34px 28px minmax(220px, 1fr) minmax(300px, 1.3fr) 10px 64px;
-    padding-inline: 9px;
+    grid-template-columns: var(--draft-big-board-row-grid);
+    padding-inline: 23px 21px;
     font-size: var(--type-label);
     letter-spacing: 0.04em;
   }
@@ -17870,7 +18321,7 @@ body {
 
   .draft-big-board-header__metrics {
     grid-column: 4;
-    grid-template-columns: repeat(5, minmax(48px, 1fr));
+    grid-template-columns: var(--draft-big-board-metric-grid);
   }
 
   .draft-big-board-header__action-spacer {
@@ -17884,34 +18335,45 @@ body {
     min-width: 64px;
   }
 
-  .draft-big-board-header__metrics > :nth-child(5) {
-    display: none;
-  }
-
   .draft-player-row--big-board .companion-player-row__columns {
-    grid-template-columns: repeat(5, minmax(48px, 1fr)) !important;
+    grid-template-columns: var(--draft-big-board-metric-grid) !important;
   }
 
-  .draft-player-row--big-board .companion-player-row__column:nth-child(5) {
+  .draft-big-board-header__metric--trend,
+  .draft-player-row--big-board .draft-player-row__metric--trend {
     display: none;
+  }
+
+  .draft-big-board-header__volume-wide {
+    display: none;
+  }
+
+  .draft-big-board-header__volume-compact {
+    display: inline;
   }
 }
 
 @container draft-big-board (max-width: 620px) {
+  .draft-big-board {
+    --draft-big-board-row-grid: 32px 28px minmax(180px, 1fr) minmax(150px, 0.9fr) 8px 44px;
+    --draft-big-board-metric-grid: repeat(3, minmax(42px, 1fr));
+  }
+
   .draft-player-row--big-board.companion-player-row.is-compact {
-    grid-template-columns: 32px 28px minmax(180px, 1fr) minmax(150px, 0.9fr) 8px 44px !important;
+    grid-template-columns: var(--draft-big-board-row-grid) !important;
     gap: 6px;
     padding-inline: 8px;
   }
 
   .draft-big-board-header {
-    grid-template-columns: 32px 28px minmax(180px, 1fr) minmax(150px, 0.9fr) 8px 44px;
+    grid-template-columns: var(--draft-big-board-row-grid);
     gap: 6px;
+    padding-inline: 11px 9px;
   }
 
   .draft-big-board-header__metrics,
   .draft-player-row--big-board .companion-player-row__columns {
-    grid-template-columns: repeat(3, minmax(42px, 1fr)) !important;
+    grid-template-columns: var(--draft-big-board-metric-grid) !important;
   }
 
   .draft-player-row--big-board .companion-player-row__actions,
@@ -17934,35 +18396,41 @@ body {
     line-height: 1;
   }
 
-  /* Core metrics only at this width: keep Rank (1), Rating (2), and Trend (6); drop PPG (3), Vol (4),
-     and Tier (5). Their detail remains available in the player profile opened on row tap. */
-  .draft-big-board-header__metrics > :nth-child(3),
-  .draft-big-board-header__metrics > :nth-child(4),
-  .draft-big-board-header__metrics > :nth-child(5),
-  .draft-player-row--big-board .companion-player-row__column:nth-child(3),
-  .draft-player-row--big-board .companion-player-row__column:nth-child(4),
-  .draft-player-row--big-board .companion-player-row__column:nth-child(5) {
+  /* Keep the three draft-decision signals at this width: existing Market Rank,
+     GridShift Rating, and external ADP. Production, volume, tier, and trend stay
+     available in the player analytics sheet. */
+  .draft-big-board-header__metric--ppg,
+  .draft-big-board-header__metric--volume,
+  .draft-big-board-header__metric--tier,
+  .draft-player-row--big-board .draft-player-row__metric--ppg,
+  .draft-player-row--big-board .draft-player-row__metric--volume,
+  .draft-player-row--big-board .draft-player-row__metric--tier {
     display: none;
   }
 }
 
 @container draft-big-board (max-width: 460px) {
+  .draft-big-board {
+    --draft-big-board-row-grid: 30px 24px minmax(136px, 1fr) minmax(92px, 0.75fr) 4px 36px;
+    --draft-big-board-metric-grid: repeat(3, minmax(30px, 1fr));
+  }
+
   .draft-player-row--big-board.companion-player-row.is-compact {
-    grid-template-columns: 30px 24px minmax(136px, 1fr) minmax(92px, 0.75fr) 4px 36px !important;
+    grid-template-columns: var(--draft-big-board-row-grid) !important;
     min-height: 76px;
     gap: 6px;
     padding-inline: 8px;
   }
 
   .draft-big-board-header {
-    grid-template-columns: 30px 24px minmax(136px, 1fr) minmax(92px, 0.75fr) 4px 36px;
+    grid-template-columns: var(--draft-big-board-row-grid);
     gap: 6px;
-    padding-inline: 8px;
+    padding-inline: 11px 9px;
   }
 
   .draft-big-board-header__metrics,
   .draft-player-row--big-board .companion-player-row__columns {
-    grid-template-columns: repeat(3, minmax(30px, 1fr)) !important;
+    grid-template-columns: var(--draft-big-board-metric-grid) !important;
   }
 
   .draft-player-row--big-board .companion-player-row__actions,
@@ -17989,8 +18457,13 @@ body {
 }
 
 @container draft-big-board (max-width: 380px) {
+  .draft-big-board {
+    --draft-big-board-row-grid: 30px 24px minmax(92px, 1fr) minmax(66px, 0.6fr) 4px 34px;
+    --draft-big-board-metric-grid: repeat(2, minmax(30px, 1fr));
+  }
+
   .draft-player-row--big-board.companion-player-row.is-compact {
-    grid-template-columns: 30px 24px minmax(92px, 1fr) minmax(66px, 0.6fr) 4px 34px !important;
+    grid-template-columns: var(--draft-big-board-row-grid) !important;
     min-height: 78px;
     gap: 5px;
   }
@@ -18002,7 +18475,7 @@ body {
   }
 
   .draft-big-board-header {
-    grid-template-columns: 30px 24px minmax(92px, 1fr) minmax(66px, 0.6fr) 4px 34px;
+    grid-template-columns: var(--draft-big-board-row-grid);
     gap: 5px;
   }
 
@@ -18020,16 +18493,16 @@ body {
 
   .draft-big-board-header__metrics {
     grid-column: 4;
-    grid-template-columns: repeat(2, minmax(30px, 1fr)) !important;
-  }
-
-  .draft-big-board-header__metrics > :nth-child(6),
-  .draft-player-row--big-board .companion-player-row__column:nth-child(6) {
-    display: none;
+    grid-template-columns: var(--draft-big-board-metric-grid) !important;
   }
 
   .draft-player-row--big-board .companion-player-row__columns {
-    grid-template-columns: repeat(2, minmax(30px, 1fr)) !important;
+    grid-template-columns: var(--draft-big-board-metric-grid) !important;
+  }
+
+  .draft-big-board-header__metric--rank,
+  .draft-player-row--big-board .draft-player-row__metric--market {
+    display: none;
   }
 
   .draft-big-board-header__action-spacer {
@@ -18041,6 +18514,20 @@ body {
     grid-column: 6;
     width: 34px;
     min-width: 34px;
+  }
+}
+
+/* Narrow layouts remove the player-list side inset, so the header tracks the
+   row's own border-and-padding geometry instead. */
+@media (max-width: 767px) {
+  .draft-big-board-header {
+    padding-inline: 13px 11px;
+  }
+}
+
+@media (max-width: 620px) {
+  .draft-big-board-header {
+    padding-inline: 11px 9px;
   }
 }
 
@@ -22152,6 +22639,47 @@ button.trade-history-asset-card:focus-visible {
   color: var(--color-label-tertiary);
 }
 
+@media (min-width: 1024px) {
+  .fl-playfilter__chip {
+    min-height: 36px;
+    padding-inline: 12px;
+  }
+
+  .fl-playfilter__row.is-types .fl-playfilter__chip {
+    min-height: 32px;
+    color: var(--color-label-secondary);
+    font-size: var(--type-label);
+  }
+
+  .fl-playfilter__count {
+    color: var(--color-label-secondary);
+  }
+}
+
+@media (prefers-contrast: more) {
+  .fl-rail__nm,
+  .fl-play__desc,
+  .fl-play__l3,
+  .fl-play__dt,
+  .fl-play__shared,
+  .fl-filter__f,
+  .fl-filter__count,
+  .fl-playfilter__chip,
+  .fl-playfilter__count,
+  .fl-chart__t,
+  .fl-chart__zoom-label,
+  .fl-chart__pan-hint,
+  .fl-top__r,
+  .fl-verdict__muted,
+  .fl-verdict__right {
+    color: var(--color-label);
+  }
+
+  .fl-chart__axis-label {
+    fill: var(--color-label);
+  }
+}
+
 .fl-playfilter__chip.is-active .fl-playfilter__count {
   color: var(--color-label-secondary);
 }
@@ -22177,7 +22705,7 @@ button.trade-history-asset-card:focus-visible {
 /* The play drawn on a field inside an expanded Fantasy Live feed row. Sits
    above the scoring breakdown so the picture and the sentence read together,
    the same order the Statistics play-by-play card uses.
-   
+
    Deliberately no `svg { height: auto }` here: that outspecifies the canvas's
    own `height: 100%`, and an SVG is a replaced element, so it would fall back
    to the viewBox's 12:1 aspect and letterbox inside the field — leaving the
@@ -22270,5 +22798,3 @@ button.trade-history-asset-card:focus-visible {
 
 /* Reduced motion gets the finished frame; nothing here animates on its own,
    since the ball is positioned from state rather than by a CSS transition. */
-
-

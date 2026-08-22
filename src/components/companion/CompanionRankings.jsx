@@ -20,6 +20,9 @@ import {
 } from '../../utils/rankingsExport';
 import { getScoringProfile } from '../../utils/scoringGuide.js';
 import { getPlayerAvailabilityContext } from '../../utils/playerAvailabilityStatus.js';
+import { getFantasyRankingsDataMode } from '../../utils/seasonAvailability.js';
+import { getFantasyAdp } from '../../api/fantasyAdpApi.js';
+import { getFantasyAdpSnapshotUpdatedAt, mapFantasyAdpToSleeperPlayers } from '../../utils/fantasyAdp.js';
 import PlayerStatusBadge, { PlayerStatusLogoCluster } from './PlayerStatusBadge.jsx';
 import {
   CompanionFantasyTeamMenu,
@@ -37,6 +40,7 @@ import CompanionPlayerRow, {
 import StatsProgressBanner from '../ui/StatsProgressBanner';
 import { SkeletonCard } from '../ui/Skeleton';
 import SeasonHintBanner from '../ui/SeasonHintBanner';
+import EmptyState from '../ui/EmptyState.jsx';
 import RankingsImageExportModal from './RankingsImageExportModal.jsx';
 const COMPACT_PHONE_QUERY = '(max-width: 480px)';
 const HIDE_AVG_QUERY = '(max-width: 900px)';
@@ -231,6 +235,73 @@ function formatRankingsPpgLabel(value) {
   return `${value.toFixed(1)} PPG`;
 }
 
+function formatAdpValue(value) {
+  if (!Number.isFinite(value)) return '—';
+  return value.toFixed(1).replace(/\.0$/, '');
+}
+
+function normalizeFantasyAdpResponse(response) {
+  if (Array.isArray(response)) return { rows: response, snapshot: null };
+  const rows = [
+    response?.adpRows,
+    response?.rows,
+    response?.data?.data,
+    response?.data,
+  ].find(Array.isArray) ?? [];
+  return {
+    rows,
+    snapshot: response?.snapshot ?? response?.metadata ?? response?.meta ?? response ?? null,
+  };
+}
+
+function formatAdpSnapshotLabel(adpRows) {
+  const timestamp = getFantasyAdpSnapshotUpdatedAt(adpRows);
+  if (!timestamp) return 'BALLDONTLIE ADP · Snapshot date unavailable';
+
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return 'BALLDONTLIE ADP · Snapshot date unavailable';
+  const formatted = new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'America/New_York',
+  }).format(date);
+  return `BALLDONTLIE ADP · Snapshot updated ${formatted}`;
+}
+
+function getMappedAdpEntries(mappedAdp) {
+  if (Array.isArray(mappedAdp)) return mappedAdp;
+  if (mappedAdp instanceof Map) {
+    return [...mappedAdp.entries()].map(([playerId, value]) => (
+      typeof value === 'object' && value != null
+        ? { ...value, playerId: value.playerId ?? playerId }
+        : { playerId, adp: value }
+    ));
+  }
+  return mappedAdp?.players ?? mappedAdp?.rows ?? [];
+}
+
+function normalizeMappedAdpPlayer(entry, players) {
+  const playerId = entry?.playerId
+    ?? entry?.sleeperPlayerId
+    ?? entry?.sleeper_player_id
+    ?? entry?.player?.player_id
+    ?? entry?.player_id
+    ?? entry?.id;
+  const player = entry?.player ?? (playerId != null ? players?.[String(playerId)] : null);
+  const adpSource = entry?.adpRow ?? entry?.row ?? entry?.adp ?? entry;
+  const adp = Number(
+    typeof adpSource === 'number'
+      ? adpSource
+      : adpSource?.averageDraftPosition
+        ?? adpSource?.average_draft_position
+        ?? entry?.averageDraftPosition
+        ?? entry?.average_draft_position,
+  );
+  if (!player || !Number.isFinite(adp) || adp <= 0) return null;
+  return { player, playerId: String(playerId ?? player.player_id), adp };
+}
+
 function getRankingsSortLabel({ sortBy, sortDir, selectedSortOption, sortValueMode }) {
   let method = 'Season Points';
   if (sortBy === 'avg') method = 'Average Points Per Game';
@@ -319,6 +390,11 @@ export default function CompanionRankings({
   const isCompactPhone = useMediaQuery(COMPACT_PHONE_QUERY);
   const useMobilePreviewSheet = useMediaQuery(MOBILE_SHEET_QUERY);
   const hideAvgColumn = useMediaQuery(HIDE_AVG_QUERY);
+  const [rankingsAvailabilityDate, setRankingsAvailabilityDate] = useState(() => new Date());
+  const rankingsDataMode = getFantasyRankingsDataMode(season, rankingsAvailabilityDate);
+  const isAdpMode = rankingsDataMode === 'adp';
+  const isScoringMode = rankingsDataMode === 'scoring';
+  const selectedSeasonKey = String(season ?? '');
 
   const [selectedFilters, setSelectedFilters] = useState([positionFilter]);
   const [search, setSearch] = useState('');
@@ -333,6 +409,13 @@ export default function CompanionRankings({
   const [nflTeamMenuOpen, setNflTeamMenuOpen] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [imageExportOpen, setImageExportOpen] = useState(false);
+  const [adpState, setAdpState] = useState({
+    season: null,
+    status: 'idle',
+    rows: [],
+    snapshot: null,
+    error: '',
+  });
   const searchInputRef = useRef(null);
   const availablePositions = useMemo(
     () => getLeaguePositionFilters(league?.roster_positions),
@@ -396,7 +479,7 @@ export default function CompanionRankings({
     [activeScoringSettings, availablePositions, selectedFilters],
   );
   const selectedSortOption = useMemo(() => getSortOptionById(sortBy), [sortBy]);
-  const isActionSort = sortBy !== 'season' && sortBy !== 'avg';
+  const isActionSort = !isAdpMode && sortBy !== 'season' && sortBy !== 'avg';
 
   useEffect(() => {
     setSelectedFilters([isValidLeaguePositionFilter(positionFilter, availablePositions) ? positionFilter : 'ALL']);
@@ -414,11 +497,63 @@ export default function CompanionRankings({
   useEffect(() => {
     if (mobileSearchOpen) searchInputRef.current?.focus?.();
   }, [mobileSearchOpen]);
+  useEffect(() => {
+    const interval = window.setInterval(() => setRankingsAvailabilityDate(new Date()), 60_000);
+    return () => window.clearInterval(interval);
+  }, []);
 
   useEffect(() => { loadPlayers(); }, [loadPlayers]);
   useEffect(() => {
+    if (!isScoringMode) return;
     if (!seasonStats && !statsLoading) loadSeasonStats();
-  }, [seasonStats, statsLoading, loadSeasonStats]);
+  }, [isScoringMode, seasonStats, statsLoading, loadSeasonStats]);
+  useEffect(() => {
+    if (!isAdpMode || !selectedSeasonKey) return undefined;
+
+    const controller = new AbortController();
+    let cancelled = false;
+
+    async function loadAdp() {
+      await Promise.resolve();
+      if (cancelled) return;
+      setAdpState({
+        season: selectedSeasonKey,
+        status: 'loading',
+        rows: [],
+        snapshot: null,
+        error: '',
+      });
+
+      try {
+        const response = await getFantasyAdp({ season: selectedSeasonKey, signal: controller.signal });
+        if (cancelled) return;
+        const { rows, snapshot } = normalizeFantasyAdpResponse(response);
+        setAdpState({
+          season: selectedSeasonKey,
+          status: 'ready',
+          rows,
+          snapshot,
+          error: '',
+        });
+      } catch (error) {
+        if (cancelled || error?.name === 'AbortError') return;
+        setAdpState({
+          season: selectedSeasonKey,
+          status: 'error',
+          rows: [],
+          snapshot: null,
+          error: error?.message ?? 'BALLDONTLIE ADP could not be loaded.',
+        });
+      }
+    }
+
+    void loadAdp();
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [isAdpMode, selectedSeasonKey]);
 
   // Build set of all rostered player IDs for highlighting
   const rosteredIds = useMemo(() => {
@@ -430,8 +565,44 @@ export default function CompanionRankings({
     return ids;
   }, [rosters]);
 
+  const adpSourceReady = isAdpMode
+    && adpState.season === selectedSeasonKey
+    && adpState.status === 'ready';
+  const adpLoading = isAdpMode
+    && (adpState.season !== selectedSeasonKey || adpState.status === 'idle' || adpState.status === 'loading');
+  const adpSnapshotLabel = useMemo(
+    () => formatAdpSnapshotLabel(adpState.rows),
+    [adpState.rows],
+  );
+  const adpSortedPlayers = useMemo(() => {
+    if (!adpSourceReady || !players) return [];
+
+    const mapped = mapFantasyAdpToSleeperPlayers({ players, adpRows: adpState.rows });
+    return getMappedAdpEntries(mapped)
+      .map(entry => normalizeMappedAdpPlayer(entry, players))
+      .filter(Boolean)
+      .filter(({ player }) => positionMatchesLeagueFilter(player.position, 'ALL', { availableFilters: availablePositions }))
+      .map(({ player, playerId, adp }) => {
+        const availability = getPlayerAvailabilityContext(player);
+        return {
+          id: playerId,
+          name: player.full_name || `${player.first_name} ${player.last_name}`,
+          position: player.position,
+          team: player.team || 'FA',
+          stats: null,
+          adp,
+          isRostered: rosteredIds.has(playerId),
+          availabilityStatus: availability.status,
+          availabilityDetail: availability.detail,
+          teamTheme: getPlayerRowTeamTheme(player.team || '', darkMode),
+        };
+      })
+      .sort((a, b) => a.adp - b.adp || a.name.localeCompare(b.name))
+      .map((player, index) => ({ ...player, overallRank: index + 1 }));
+  }, [adpSourceReady, adpState.rows, availablePositions, darkMode, players, rosteredIds]);
+
   // Full sorted list with true ranks - search and fantasy team filters are NOT applied here so ranks are stable.
-  const sortedPlayers = useMemo(() => {
+  const scoringSortedPlayers = useMemo(() => {
     if (!players || !seasonStats) return [];
 
     return Object.entries(seasonStats)
@@ -483,6 +654,7 @@ export default function CompanionRankings({
       .map((player, i) => ({ ...player, overallRank: i + 1 }));
   }, [players, seasonStats, activeScoringSettings, availablePositions, rosteredIds, darkMode, sortBy, selectedSortOption, sortValueMode, sortDir]);
 
+  const sortedPlayers = isAdpMode ? adpSortedPlayers : scoringSortedPlayers;
   const allRanked = useMemo(() => rankPlayersByPosition(sortedPlayers), [sortedPlayers]);
 
   const nflTeamOptions = useMemo(() => {
@@ -513,7 +685,7 @@ export default function CompanionRankings({
 
   const nameColPx = useMemo(() => measureMaxNameWidth(ranked), [ranked]);
   const hasLoadedStats = Boolean(seasonStats);
-  const hasAnyRankingsData = useMemo(() => {
+  const hasAnyScoringRankingsData = useMemo(() => {
     if (!players || !seasonStats) return false;
 
     return Object.entries(seasonStats).some(([id, stats]) => {
@@ -523,10 +695,15 @@ export default function CompanionRankings({
       return calcPointsFromTotals(stats, activeScoringSettings, p.position) > 0;
     });
   }, [activeScoringSettings, availablePositions, players, seasonStats]);
+  const hasAnyRankingsData = isAdpMode ? adpSortedPlayers.length > 0 : hasAnyScoringRankingsData;
   const hasRankingsData = sortedPlayers.some((player) => selectedFiltersMatchPlayer(player.position, player.stats, selectedFilters, availablePositions));
   const showRankingsControls = hasAnyRankingsData;
   const showRankingsTable = hasAnyRankingsData;
-  const sortOptions = useMemo(() => [...BASE_SORT_OPTIONS, ...actionSortOptions], [actionSortOptions]);
+  const effectiveHideAvgColumn = isAdpMode || hideAvgColumn;
+  const sortOptions = useMemo(
+    () => isAdpMode ? [] : [...BASE_SORT_OPTIONS, ...actionSortOptions],
+    [actionSortOptions, isAdpMode],
+  );
 
   const activeScoringModelYear = (scoringOverride && !scoringOverridePaused)
     ? scoringOverride.season
@@ -544,7 +721,9 @@ export default function CompanionRankings({
   );
   const scoringModelLabel = `${activeScoringModelYear ? `${activeScoringModelYear} league year · ` : ''}${activeScoringProfile.title}`;
   const scoringStatsLabel = formatRankingsStatsLabel(season ?? league?.season);
-  const sortMethodLabel = getRankingsSortLabel({ sortBy, sortDir, selectedSortOption, sortValueMode });
+  const sortMethodLabel = isAdpMode
+    ? 'Average draft position · Lowest first'
+    : getRankingsSortLabel({ sortBy, sortDir, selectedSortOption, sortValueMode });
   const canExport = ranked.length > 0;
 
   const rosterExportLabel = selectedRosterOptions.length
@@ -557,6 +736,21 @@ export default function CompanionRankings({
   const exportContextLabel = `${positionExportLabel} · ${rosterExportLabel}${searchExportLabel}`;
 
   function getImageExportRows() {
+    if (isAdpMode) {
+      return {
+        metricLabel: 'ADP',
+        rows: ranked.map(player => ({
+          rank: player.rank,
+          player: player.name,
+          position: player.position,
+          team: player.team,
+          owner: ownerNameByPlayerId.get(String(player.id)) ?? '',
+          primaryValue: formatAdpValue(player.adp),
+          secondaryValue: null,
+        })),
+      };
+    }
+
     const isAverageSort = sortBy === 'avg';
     const metricLabel = isActionSort
       ? `${selectedSortOption.shortLabel ?? selectedSortOption.label}${sortValueMode === 'fantasy' ? ' Pts' : ''}`
@@ -593,11 +787,11 @@ export default function CompanionRankings({
       meta: {
         subtitle: exportContextLabel,
         sortLabel: sortMethodLabel,
-        scoringModelLabel,
-        scoringLabel: activeScoringLabel,
-        scoringStatsLabel,
+        scoringModelLabel: isAdpMode ? 'BALLDONTLIE ADP' : scoringModelLabel,
+        scoringLabel: isAdpMode ? 'Preseason market ranking' : activeScoringLabel,
+        scoringStatsLabel: isAdpMode ? adpSnapshotLabel : scoringStatsLabel,
         metricLabel,
-        fileBase: `gridshift-rankings-${activeScoringLabel}`,
+        fileBase: isAdpMode ? `gridshift-rankings-adp-${selectedSeasonKey}` : `gridshift-rankings-${activeScoringLabel}`,
       },
     });
   }
@@ -610,20 +804,39 @@ export default function CompanionRankings({
     }
     const statLabel = isActionSort ? (selectedSortOption.shortLabel ?? selectedSortOption.label) : null;
     const valueModeSuffix = sortValueMode === 'raw' ? '' : ' Pts';
-    const columns = [
-      { key: 'rank', label: 'Rank' },
-      { key: 'player', label: 'Player' },
-      { key: 'position', label: 'Pos' },
-      { key: 'team', label: 'Team' },
-      { key: 'owner', label: 'Rostered By' },
-      { key: 'seasonPts', label: 'Season Pts' },
-      { key: 'avgPpg', label: 'Avg PPG' },
-    ];
-    if (isActionSort) {
+    const columns = isAdpMode
+      ? [
+        { key: 'rank', label: 'Rank' },
+        { key: 'player', label: 'Player' },
+        { key: 'position', label: 'Pos' },
+        { key: 'team', label: 'Team' },
+        { key: 'owner', label: 'Rostered By' },
+        { key: 'adp', label: 'ADP' },
+      ]
+      : [
+        { key: 'rank', label: 'Rank' },
+        { key: 'player', label: 'Player' },
+        { key: 'position', label: 'Pos' },
+        { key: 'team', label: 'Team' },
+        { key: 'owner', label: 'Rostered By' },
+        { key: 'seasonPts', label: 'Season Pts' },
+        { key: 'avgPpg', label: 'Avg PPG' },
+      ];
+    if (!isAdpMode && isActionSort) {
       columns.push({ key: 'statTotal', label: `${statLabel}${valueModeSuffix}` });
       columns.push({ key: 'statPerGame', label: `${statLabel}/G` });
     }
     const rows = ranked.map((p) => {
+      if (isAdpMode) {
+        return {
+          rank: p.rank,
+          player: p.name,
+          position: p.position ?? '',
+          team: p.team ?? '',
+          owner: ownerNameByPlayerId.get(String(p.id)) ?? '',
+          adp: formatAdpValue(p.adp),
+        };
+      }
       const row = {
         rank: p.rank,
         player: p.name,
@@ -648,15 +861,23 @@ export default function CompanionRankings({
       meta: {
         title: 'GridShift Rankings',
         subtitle: `${rosterExportLabel} · Ranked ${scopeLabel}${searchLabel}`,
-        scoringLabel: activeScoringLabel,
-        scoringStatsLabel,
-        fileBase: `gridshift-rankings-${activeScoringLabel}`,
+        scoringLabel: isAdpMode ? 'BALLDONTLIE ADP' : activeScoringLabel,
+        scoringStatsLabel: isAdpMode ? adpSnapshotLabel : scoringStatsLabel,
+        fileBase: isAdpMode ? `gridshift-rankings-adp-${selectedSeasonKey}` : `gridshift-rankings-${activeScoringLabel}`,
       },
     });
   }
 
   return (
     <div className="page-frame-data pb-6">
+      {isAdpMode && adpSourceReady && hasAnyRankingsData && (
+        <div className="mx-4 mb-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-[length:var(--type-label)]" style={{ color: 'var(--color-label-tertiary)' }}>
+          <span className="font-bold uppercase tracking-[0.12em]">Rankings source</span>
+          <span aria-hidden="true">·</span>
+          <span>{adpSnapshotLabel}</span>
+        </div>
+      )}
+
       {/* Filters */}
       {showRankingsControls && (
         <div className="px-4 pb-3 flex flex-col gap-2">
@@ -683,17 +904,19 @@ export default function CompanionRankings({
 
           {useMobilePreviewSheet ? (
             <>
-              <RankingsMobileSortControls
-                value={sortBy}
-                options={sortOptions}
-                sortValueMode={sortValueMode}
-                showValueMode={isActionSort}
-                onSortChange={(nextSort) => {
-                  setSortBy(nextSort);
-                  setSortDir('desc');
-                }}
-                onSortValueModeChange={setSortValueMode}
-              />
+              {!isAdpMode && (
+                <RankingsMobileSortControls
+                  value={sortBy}
+                  options={sortOptions}
+                  sortValueMode={sortValueMode}
+                  showValueMode={isActionSort}
+                  onSortChange={(nextSort) => {
+                    setSortBy(nextSort);
+                    setSortDir('desc');
+                  }}
+                  onSortValueModeChange={setSortValueMode}
+                />
+              )}
               <RankingsRankScopeToggle value={rankScope} onChange={setRankScope} />
               {(rosterFilterOptions.length > 0 || nflTeamOptions.length > 0) && (
                 <div className="flex min-w-0 items-center gap-2">
@@ -774,19 +997,23 @@ export default function CompanionRankings({
                   onChange={setSelectedNflTeams}
                 />
               )}
-              <RankingsSortSelect
-                value={sortBy}
-                options={sortOptions}
-                onChange={(nextSort) => {
-                  setSortBy(nextSort);
-                  setSortDir('desc');
-                }}
-              />
-              {isActionSort && (
-                <RankingsValueModeChips
-                  value={sortValueMode}
-                  onChange={setSortValueMode}
-                />
+              {!isAdpMode && (
+                <>
+                  <RankingsSortSelect
+                    value={sortBy}
+                    options={sortOptions}
+                    onChange={(nextSort) => {
+                      setSortBy(nextSort);
+                      setSortDir('desc');
+                    }}
+                  />
+                  {isActionSort && (
+                    <RankingsValueModeChips
+                      value={sortValueMode}
+                      onChange={setSortValueMode}
+                    />
+                  )}
+                </>
               )}
               {canExport && (
                 <RankingsExportMenu className="ml-auto" align="right" onExport={handleExport} />
@@ -807,8 +1034,10 @@ export default function CompanionRankings({
       )}
 
       {/* Stats loading */}
-      <SeasonHintBanner isEmpty={hasLoadedStats && !statsLoading && ranked.length === 0} className="mx-4 mb-3" />
-      {statsLoading && <RankingsStatsLoadingBanner />}
+      {isScoringMode && (
+        <SeasonHintBanner isEmpty={hasLoadedStats && !statsLoading && ranked.length === 0} className="mx-4 mb-3" />
+      )}
+      {isScoringMode && statsLoading && <RankingsStatsLoadingBanner />}
 
       {/* Column headers */}
       {showRankingsTable && (
@@ -817,7 +1046,7 @@ export default function CompanionRankings({
           style={{
             borderBottom: '1px solid var(--color-separator)',
             color: 'var(--color-label-tertiary)',
-            gridTemplateColumns: getRankingsGridTemplate({ hideAvgColumn, isCompactPhone, nameColPx }),
+            gridTemplateColumns: getRankingsGridTemplate({ hideAvgColumn: effectiveHideAvgColumn, isCompactPhone, nameColPx }),
             columnGap: RANKINGS_ROW_GAP,
           }}
         >
@@ -825,7 +1054,7 @@ export default function CompanionRankings({
           <div />
           <span className="min-w-0">Player</span>
           <div />
-          {!hideAvgColumn && (
+          {!effectiveHideAvgColumn && (
             <SortHeader
               label={isActionSort ? 'Per Game' : 'Avg PPG'}
               active={sortBy === 'avg'}
@@ -840,24 +1069,28 @@ export default function CompanionRankings({
               }}
             />
           )}
-          <SortHeader
-            label={isActionSort ? (selectedSortOption.shortLabel ?? selectedSortOption.label) : 'Season'}
-            active={sortBy !== 'avg'}
-            direction={sortDir}
-            onClick={() => {
-              if (sortBy === 'avg') {
-                setSortBy('season');
-                setSortDir('desc');
-              } else {
-                setSortDir(current => current === 'desc' ? 'asc' : 'desc');
-              }
-            }}
-          />
+          {isAdpMode ? (
+            <span className="text-center">ADP</span>
+          ) : (
+            <SortHeader
+              label={isActionSort ? (selectedSortOption.shortLabel ?? selectedSortOption.label) : 'Season'}
+              active={sortBy !== 'avg'}
+              direction={sortDir}
+              onClick={() => {
+                if (sortBy === 'avg') {
+                  setSortBy('season');
+                  setSortDir('desc');
+                } else {
+                  setSortDir(current => current === 'desc' ? 'asc' : 'desc');
+                }
+              }}
+            />
+          )}
           <div />
         </div>
       )}
 
-      {!seasonStats && !statsLoading && (
+      {isScoringMode && !seasonStats && !statsLoading && (
         <div className="px-4 py-4 flex flex-col gap-3">
           <SkeletonCard height="3.5rem" />
           <SkeletonCard height="3.5rem" />
@@ -872,7 +1105,8 @@ export default function CompanionRankings({
           player={player}
           activeSortOption={selectedSortOption}
           sortValueMode={sortValueMode}
-          hideAvgColumn={hideAvgColumn}
+          rankingMode={isAdpMode ? 'adp' : 'scoring'}
+          hideAvgColumn={effectiveHideAvgColumn}
           isCompactPhone={isCompactPhone}
           nameColPx={nameColPx}
           statsPending={statsLoading}
@@ -883,21 +1117,50 @@ export default function CompanionRankings({
         />
       ))}
 
-      {ranked.length === 0 && hasLoadedStats && (
-        <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
-          <span className="text-sm font-semibold" style={{ color: 'var(--color-label)' }}>
-            {!hasAnyRankingsData
-              ? 'Rankings will appear once season stats are available.'
-              : hasRankingsData
-                ? 'No matching players.'
-                : 'No rankings for this position yet.'}
-          </span>
-          {!hasAnyRankingsData && (
-            <span className="mt-1 max-w-md text-xs leading-5" style={{ color: 'var(--color-label-secondary)' }}>
-              Pre-season leagues may not have any player results yet, so there is nothing to rank right now.
-            </span>
-          )}
+      {adpLoading && (
+        <div className="px-4 py-4 flex flex-col gap-3">
+          <SkeletonCard height="3.5rem" />
+          <SkeletonCard height="3.5rem" />
+          <SkeletonCard height="3.5rem" />
         </div>
+      )}
+
+      {rankingsDataMode === 'unavailable' && (
+        <EmptyState
+          title={Number(season) === rankingsAvailabilityDate.getFullYear()
+            ? 'Preseason rankings will appear after the NFL Draft.'
+            : `Preseason rankings are not available for ${season} yet.`}
+          hint={Number(season) === rankingsAvailabilityDate.getFullYear()
+            ? 'BALLDONTLIE ADP becomes available after the NFL Draft and before the regular season begins.'
+            : 'Historical seasons use calculated fantasy scoring once player results are available.'}
+        />
+      )}
+
+      {isAdpMode && adpState.status === 'error' && adpState.season === selectedSeasonKey && (
+        <EmptyState
+          title="BALLDONTLIE ADP is unavailable right now."
+          hint="Preseason rankings will return when the current market snapshot can be loaded."
+        />
+      )}
+
+      {isAdpMode && adpSourceReady && !hasAnyRankingsData && (
+        <EmptyState
+          title="No matched ADP rankings are available."
+          hint="The current BALLDONTLIE market snapshot did not include players that match this league's available positions."
+        />
+      )}
+
+      {isScoringMode && ranked.length === 0 && hasLoadedStats && (
+        <EmptyState
+          title={!hasAnyRankingsData
+            ? 'Rankings will appear once season stats are available.'
+            : hasRankingsData
+              ? 'No matching players.'
+              : 'No rankings for this position yet.'}
+          hint={!hasAnyRankingsData
+            ? 'Pre-season leagues may not have any player results yet, so there is nothing to rank right now.'
+            : null}
+        />
       )}
 
       {selectedPlayerId && (
@@ -1220,9 +1483,10 @@ function SortHeader({ label, active, direction = 'desc', onClick }) {
   );
 }
 
-function RankRow({ rank, player, activeSortOption, sortValueMode, onSelect, hideAvgColumn, isCompactPhone, nameColPx, statsPending = false }) {
+function RankRow({ rank, player, activeSortOption, sortValueMode, rankingMode = 'scoring', onSelect, hideAvgColumn, isCompactPhone, nameColPx, statsPending = false }) {
   const { darkMode } = useTheme();
-  const isActionSort = activeSortOption?.id !== 'season';
+  const isAdpMode = rankingMode === 'adp';
+  const isActionSort = !isAdpMode && activeSortOption?.id !== 'season';
   const columnGridTemplate = hideAvgColumn ? 'auto 80px' : 'auto 64px 80px';
   const nameCol = nameColPx ? `minmax(0,${nameColPx}px)` : 'minmax(0,1fr)';
   const rowTemplate = isCompactPhone
@@ -1293,9 +1557,13 @@ function RankRow({ rank, player, activeSortOption, sortValueMode, onSelect, hide
         ),
         <CompanionPlayerMetric
           key="season"
-          value={isActionSort ? formatRankingsMetric(getActionDisplayValue(player, sortValueMode, 'season')) : player.pts.toFixed(1)}
-          label={hideAvgColumn && !isActionSort ? formatRankingsPpgLabel(player.avgPPG) : null}
-          pending={statsPending && !isActionSort && !(player.pts > 0)}
+          value={isAdpMode
+            ? formatAdpValue(player.adp)
+            : isActionSort
+              ? formatRankingsMetric(getActionDisplayValue(player, sortValueMode, 'season'))
+              : player.pts.toFixed(1)}
+          label={!isAdpMode && hideAvgColumn && !isActionSort ? formatRankingsPpgLabel(player.avgPPG) : null}
+          pending={!isAdpMode && statsPending && !isActionSort && !(player.pts > 0)}
           align="center"
         />,
       ].filter(Boolean)}

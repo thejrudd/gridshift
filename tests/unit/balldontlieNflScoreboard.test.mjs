@@ -12,6 +12,7 @@ import {
   NFL_SEASON_PHASES,
   normalizeEspnScoreboardSeason,
 } from '../../src/utils/espnNflScoreboard.js';
+import { getPlayTimeline } from '../../src/utils/nflPlays/playBeats.js';
 
 const game = {
   id: 7001,
@@ -235,13 +236,48 @@ test('separates HOF and Preseason Week 1 by date and venue when raw week values 
   assert.equal(season.weeks[1].label, 'Preseason Week 1');
 });
 
+test('keeps week selection aligned when a partial payload uses raw week one for both preseason slates', () => {
+  const payload = { games: [
+    {
+      ...game,
+      id: 7403,
+      date: '2026-08-07T00:00:00.000Z',
+      venue: 'Tom Benson Hall of Fame Stadium',
+      week: 1,
+      postseason: false,
+    },
+    {
+      ...game,
+      id: 7404,
+      date: '2026-08-14T00:00:00.000Z',
+      venue: 'Gillette Stadium',
+      week: 1,
+      postseason: false,
+    },
+  ] };
+
+  const hof = normalizeBdlScoreboardWeek(payload, {
+    season: 2026,
+    phase: NFL_SEASON_PHASES.PRESEASON,
+    week: 1,
+  });
+  const ordinary = normalizeBdlScoreboardWeek(payload, {
+    season: 2026,
+    phase: NFL_SEASON_PHASES.PRESEASON,
+    week: 2,
+  });
+
+  assert.deepEqual(hof.games.map((entry) => entry.providerGameId), ['7403']);
+  assert.deepEqual(ordinary.games.map((entry) => entry.providerGameId), ['7404']);
+});
+
 test('labels the first ordinary preseason slate Week 1 when no HOF game is present', () => {
   const payload = { games: [{
     ...game,
     id: 7501,
     date: '2026-08-14T00:00:00.000Z',
     venue: 'Gillette Stadium',
-    week: 1,
+    week: 2,
     postseason: false,
   }] };
   const season = normalizeBdlScoreboardSeason(payload, {
@@ -258,6 +294,34 @@ test('labels the first ordinary preseason slate Week 1 when no HOF game is prese
   assert.equal(season.weeks[1].games[0].providerGameId, '7501');
   assert.equal(week.label, 'Preseason Week 1');
   assert.equal(week.games[0].providerGameId, '7501');
+});
+
+test('does not re-bucket a partial preseason live payload into the requested week', () => {
+  const payload = {
+    games: [{
+      ...game,
+      id: 7502,
+      date: '2026-08-21T23:00:00.000Z',
+      week: 3,
+      season_type: 1,
+      status_state: 'in_progress',
+      status: '12:27 - 1st',
+    }],
+  };
+
+  const weekTwo = normalizeBdlScoreboardWeek(payload, {
+    season: 2026,
+    phase: NFL_SEASON_PHASES.PRESEASON,
+    week: 2,
+  });
+  const weekThree = normalizeBdlScoreboardWeek(payload, {
+    season: 2026,
+    phase: NFL_SEASON_PHASES.PRESEASON,
+    week: 3,
+  });
+
+  assert.equal(weekTwo.games.length, 0);
+  assert.equal(weekThree.games[0].providerGameId, '7502');
 });
 
 test('rejects December and January regular-season rows from an unknown-phase preseason payload', () => {
@@ -369,6 +433,47 @@ test('removes provider period markers before grouping BDL plays into drives', ()
   assert.equal(drives[0].summary, '2 plays');
   assert.deepEqual(drives[0].plays.map((play) => play.id), ['real-1', 'real-2']);
   assert.equal(drives[0].plays.some((play) => /END/i.test(play.description)), false);
+});
+
+test('describes a final game that the provider ends at the two-minute warning', () => {
+  const normalizedGame = normalizeBdlScoreboardGame(game);
+  const terminalAt = '2026-08-22T02:26:29.000Z';
+  const earlyEnding = buildScoreDetailFromGame(normalizedGame, {
+    providerDetail: { plays: [
+      {
+        id: 'last-snap', text: 'Rush for 3 yards.', type_slug: 'rush', period: 4,
+        clock_display: '2:30', wallclock: '2026-08-22T02:25:50.000Z', team: { abbreviation: 'BAL' },
+      },
+      {
+        id: 'warning', text: 'Two-Minute Warning', type_slug: 'two-minute-warning', period: 4,
+        clock_display: '2:00', wallclock: terminalAt, team: { abbreviation: 'BAL' },
+      },
+      {
+        id: 'game-end', text: 'END GAME', type_slug: 'end-of-game', period: 4,
+        clock_display: '0:00', wallclock: terminalAt,
+      },
+    ] },
+    detailStatus: 'ready',
+  });
+  assert.deepEqual(earlyEnding.terminal, {
+    kind: 'ended-with-time-remaining',
+    clock: '2:00',
+  });
+
+  const ordinaryEnding = buildScoreDetailFromGame(normalizedGame, {
+    providerDetail: { plays: [
+      {
+        id: 'kneel', text: 'Quarterback kneels.', type_slug: 'rush', period: 4,
+        clock_display: '0:16', wallclock: '2026-09-06T03:29:44.000Z', team: { abbreviation: 'BAL' },
+      },
+      {
+        id: 'game-end', text: 'END GAME', type_slug: 'end-of-game', period: 4,
+        clock_display: '0:00', wallclock: '2026-09-06T03:29:44.000Z',
+      },
+    ] },
+    detailStatus: 'ready',
+  });
+  assert.equal(ordinaryEnding.terminal, null);
 });
 
 test('keeps provider coverage explicit when BDL plays are unavailable', () => {
@@ -549,6 +654,36 @@ test('a turnover ends the drive that lost the ball', () => {
   assert.deepEqual(drives[0].plays.map((play) => play.id), ['a1', 'a2']);
   assert.equal(drives[0].result, 'Interception');
   assert.equal(drives[1].team, 'KC');
+});
+
+test('a summary-only pick-six inherits its passer from the same Statistics drive', () => {
+  const drives = groupBdlPlaysIntoDrives([
+    {
+      id: '401873286469', period: 1, clock_display: '8:18', type_slug: 'interception-return-touchdown',
+      type_text: 'Interception Return Touchdown', team: { abbreviation: 'HOU' },
+      short_text: "Wade Woodaz 80 Yd Interception Return (Ka'imi Fairbairn Kick)",
+      text: "Wade Woodaz 80 Yd Interception Return (Ka'imi Fairbairn Kick)",
+      start_down: 1, start_distance: 10, start_yard_line: 24, end_yard_line: 100,
+      start_yards_to_endzone: 24, end_yards_to_endzone: 0, stat_yardage: 80, scoring_play: true,
+    },
+    {
+      id: '401873286447', period: 1, clock_display: '9:16', type_slug: 'rush',
+      team: { abbreviation: 'LV' }, short_text: 'Mike Washington Jr. 33 Yd Rush',
+      text: 'M.Washington up the middle to HST 24 for 33 yards (J.Smith).', stat_yardage: 33,
+    },
+    {
+      id: '401873286422', period: 1, clock_display: '9:56', type_slug: 'pass-reception',
+      team: { abbreviation: 'LV' }, short_text: 'Fernando Mendoza Pass Complete for 22 Yds to Jalen Nailor',
+      text: '(Shotgun) F.Mendoza pass short right to J.Nailor to LV 43 for 22 yards (J.Reed).', stat_yardage: 22,
+    },
+  ], { away: { id: 'LV' }, home: { id: 'HOU' } });
+  const pickSix = drives.flatMap((drive) => drive.plays)
+    .find((play) => play.id === '401873286469');
+
+  assert.equal(pickSix.inferredPasserName, 'Fernando Mendoza');
+  const timeline = getPlayTimeline(pickSix, { homeTeam: 'HOU', awayTeam: 'LV' });
+  assert.match(timeline.beats.find((beat) => beat.role === 'passer')?.text ?? '', /^Fernando Mendoza drops back/);
+  assert.match(timeline.beats.find((beat) => beat.kind === 'release')?.text ?? '', /^Fernando Mendoza throws/);
 });
 
 test('a missed field goal ends the kicking team’s drive and is not called a make', () => {

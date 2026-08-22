@@ -16,6 +16,7 @@ import { PlayTrajectoryStrip } from '../../nflPlays/PlayTrajectoryStrip.jsx';
 import { formatFieldSpot, getPlayTrajectory } from '../../../utils/nflPlays/fieldGeometry.js';
 import { parsePlayNarrative, getRoleLabel } from '../../../utils/nflPlays/playNarrative.js';
 import { lookupPlayerByName } from '../../../utils/nflPlays/playerNameIndex.js';
+import { getPlayTag } from '../../../utils/nflPlays/playPresentation.js';
 
 const MAX_FACES = 3;
 
@@ -24,37 +25,6 @@ function resolveActors(actors, participants, teamAbbr) {
     const player = participants ? lookupPlayerByName(participants, actor.name, { team: teamAbbr }) : null;
     return { ...actor, player, displayName: player?.name ?? actor.name };
   });
-}
-
-/**
- * The one tag that matters most on this play, or null.
- *
- * Only one is ever shown: a play that both gained a first down and scored is a
- * touchdown, and saying so twice would just crowd the line.
- */
-function playTag(play, geometry) {
-  const yards = geometry.yards;
-  if (geometry.flag === 'td') return ['td', 'Touchdown'];
-  if (geometry.scoring && geometry.type === 'kick') return ['td', 'Good'];
-  if (geometry.flag === 'fg') return ['loss', 'No good'];
-  if (geometry.flag === 'int') return ['loss', 'Intercepted'];
-  if (geometry.flag === 'fumble') return ['loss', 'Fumble'];
-  // Incompletions and penalties are named before yardage is: a penalty
-  // enforcement can leave an incomplete pass with a negative net, and "-22 yds"
-  // on a ball that was never caught reads as a loss the offense actually took.
-  if (geometry.flag === 'incomplete') return ['', 'Incomplete'];
-  if (geometry.flag === 'penalty') return ['', 'Penalty'];
-  if (gainedFirstDown(play, geometry)) return ['fd', '1st down'];
-  if (yards != null && yards < 0 && geometry.type !== 'kick') return ['loss', `${yards} yds`];
-  return null;
-}
-
-function gainedFirstDown(play, geometry) {
-  const startDown = Number(play?.startDown);
-  const distance = Number(play?.startDistance);
-  if (geometry.flag || !Number.isFinite(startDown) || startDown < 1) return false;
-  if (Number(play?.endDown) !== 1) return false;
-  return Number.isFinite(distance) && geometry.yards != null && geometry.yards >= distance;
 }
 
 export function PlayCard({ play, participants, homeTeam, awayTeam, awayTheme, homeTheme, barColor, flipped = false }) {
@@ -74,7 +44,7 @@ export function PlayCard({ play, participants, homeTeam, awayTeam, awayTheme, ho
   const actors = narrative.confident ? resolveActors(narrative.actors, participants, play.team) : [];
   const faces = actors.filter((actor) => actor.player).slice(0, MAX_FACES);
   const canExpand = narrative.confident && actors.length > 0;
-  const tag = playTag(play, geometry);
+  const tag = getPlayTag(play, geometry);
   // `flag === 'fg'` covers a miss as well as a make, so the scoreboard answer is
   // the only one that can tell them apart.
   const scoring = geometry.scoring;

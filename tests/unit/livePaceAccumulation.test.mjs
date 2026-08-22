@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { buildPaceSeries } from '../../src/utils/livePace.js';
+import { resolveCurrentPlayerPoints } from '../../src/utils/liveScoringFeed.js';
 
 // Positions are in order; timestamps deliberately are not. A replay
 // reconstructs the clock, so the two can disagree — the chart must not care.
@@ -55,6 +56,87 @@ test('the default is unchanged, so live scoring keeps its clock ordering', () =>
   const withDefault = build(scrambled, {}).points.map((point) => point.a);
   const byClock = build(scrambled, { accumulateInOrder: false }).points.map((point) => point.a);
   assert.deepEqual(withDefault, byClock);
+});
+
+test('unmatched replay fixture points cannot create a vertical close at NOW', () => {
+  const events = [
+    { id: 'a1', playerId: 'mapped-a', pts: 3.4, progress: 0.03, at: 100 },
+    { id: 'b1', playerId: 'mapped-b', pts: 2.1, progress: 0.05, at: 200 },
+  ];
+  const totals = {
+    a: resolveCurrentPlayerPoints({ hasMappedStats: true, livePoints: 3.4, suppressFallback: true })
+      + resolveCurrentPlayerPoints({ sleeperPoints: 241.44, suppressFallback: true }),
+    b: resolveCurrentPlayerPoints({ hasMappedStats: true, livePoints: 2.1, suppressFallback: true })
+      + resolveCurrentPlayerPoints({ sleeperPoints: 187.46, suppressFallback: true }),
+  };
+  const { points } = buildPaceSeries({
+    events,
+    sideKeyOf: (event) => event.playerId.endsWith('-a') ? 'a' : 'b',
+    totals,
+    slateProgress: 0.05,
+    accumulateInOrder: true,
+  });
+  const beforeClose = points.at(-2);
+  const close = points.at(-1);
+
+  assert.deepEqual(totals, { a: 3.4, b: 2.1 });
+  assert.equal(beforeClose.x, close.x);
+  assert.equal(beforeClose.a, close.a);
+  assert.equal(beforeClose.b, close.b);
+});
+
+test('a grouped play moves the side once while preserving each starter contribution', () => {
+  let playerTotals = null;
+  const result = buildPaceSeries({
+    events: [{
+      id: 'shared-pass-td',
+      playerId: 'qb',
+      pts: 16.5,
+      progress: 0.4,
+      at: 400,
+      contributors: [
+        { playerId: 'qb', pts: 5.6 },
+        { playerId: 'wr', pts: 10.9 },
+      ],
+    }],
+    sideKeyOf: () => 'a',
+    totals: { a: 16.5, b: 0 },
+    slateProgress: 0.4,
+    snapshotAt: (_point, context) => {
+      if (context?.event) playerTotals = context.currentByPlayer;
+      return {};
+    },
+    accumulateInOrder: true,
+  });
+
+  assert.equal(result.marks.length, 1);
+  assert.equal(result.marks[0].y, 16.5);
+  assert.equal(playerTotals.get('qb'), 5.6);
+  assert.equal(playerTotals.get('wr'), 10.9);
+});
+
+test('hidden replay reconciliation adjusts the curve without creating a selectable play', () => {
+  const result = buildPaceSeries({
+    events: [
+      { id: 'provider-play', playerId: 'wr', pts: 2.1, progress: 0.4, at: 400 },
+      {
+        id: 'reconciliation',
+        playerId: 'wr',
+        pts: -2,
+        progress: 0.4,
+        at: 400,
+        hiddenFromFeed: true,
+        hiddenFromMilestones: true,
+      },
+    ],
+    sideKeyOf: () => 'a',
+    totals: { a: 0.1, b: 0 },
+    slateProgress: 0.4,
+    accumulateInOrder: true,
+  });
+
+  assert.equal(result.points.at(-2).a, 0.1);
+  assert.deepEqual(result.marks.map((mark) => mark.event.id), ['provider-play']);
 });
 
 // ── Spreading a batch across the interval it covers ──────────────────────

@@ -89,7 +89,33 @@ export function buildStatIndex(statsByGame) {
   return index;
 }
 
+/**
+ * Chooses the score that represents a starter at the current live moment.
+ *
+ * A replay fixture carries the completed week's Sleeper totals so the final
+ * result can reconcile exactly. Those totals are future information while the
+ * replay is still moving, so an unmatched provider row must remain at zero
+ * until its time-sliced stats arrive.
+ */
+export function resolveCurrentPlayerPoints({
+  hasMappedStats = false,
+  livePoints = 0,
+  sleeperPoints = null,
+  sleeperDerivedPoints = null,
+  suppressFallback = false,
+} = {}) {
+  if (hasMappedStats) return Number.isFinite(Number(livePoints)) ? Number(livePoints) : 0;
+  if (suppressFallback) return 0;
+  if (Number.isFinite(Number(sleeperPoints))) return Number(sleeperPoints);
+  return Number.isFinite(Number(sleeperDerivedPoints)) ? Number(sleeperDerivedPoints) : 0;
+}
+
 export function mapBdlStatsToGridShift(row) {
+  const fieldGoalsMade = Number(row?.field_goals_made) || 0;
+  const fieldGoalAttempts = Number(row?.field_goal_attempts);
+  const extraPointsMade = Number(row?.extra_points_made) || 0;
+  const extraPointAttemptsRaw = row?.extra_point_attempts ?? row?.extra_points_attempted;
+  const extraPointAttempts = Number(extraPointAttemptsRaw);
   return {
     pass_yd: row?.passing_yards ?? 0,
     pass_td: row?.passing_touchdowns ?? 0,
@@ -112,8 +138,13 @@ export function mapBdlStatsToGridShift(row) {
     kr_td: row?.kick_return_touchdowns ?? 0,
     pr_td: row?.punt_return_touchdowns ?? 0,
     ret_td: (row?.kick_return_touchdowns ?? 0) + (row?.punt_return_touchdowns ?? 0),
-    fgm: row?.field_goals_made ?? 0,
-    xpm: row?.extra_points_made ?? 0,
+    fgm: fieldGoalsMade,
+    fgmiss: Number.isFinite(fieldGoalAttempts) ? Math.max(0, fieldGoalAttempts - fieldGoalsMade) : 0,
+    xpm: extraPointsMade,
+    // The documented game-stat contract currently guarantees XP makes but
+    // not XP attempts. Derive misses only when a provider payload actually
+    // supplies an attempt field; never infer one from the team score.
+    xpmiss: Number.isFinite(extraPointAttempts) ? Math.max(0, extraPointAttempts - extraPointsMade) : 0,
     idp_tkl: row?.total_tackles ?? 0,
     idp_tkl_solo: row?.solo_tackles ?? 0,
     idp_tkl_loss: row?.tackles_for_loss ?? 0,
@@ -410,19 +441,35 @@ const DELTA_DESCRIPTIONS = [
   { key: 'pass_td', label: (v) => `${v > 1 ? `${v} passing TDs` : 'Passing TD'}` },
   { key: 'rush_td', label: (v) => `${v > 1 ? `${v} rushing TDs` : 'Rushing TD'}` },
   { key: 'rec_td', label: (v) => `${v > 1 ? `${v} receiving TDs` : 'Receiving TD'}` },
+  { key: 'kr_td', label: (v) => `${v > 1 ? `${v} kickoff return TDs` : 'Kickoff return TD'}` },
+  { key: 'pr_td', label: (v) => `${v > 1 ? `${v} punt return TDs` : 'Punt return TD'}` },
   { key: 'ret_td', label: () => 'Return TD' },
   { key: 'fum_ret_td', label: () => 'Fumble return TD' },
   { key: 'fgm', label: (v) => `${v > 1 ? `${v} FGs made` : 'FG made'}` },
+  { key: 'fgmiss', label: (v) => `${v > 1 ? `${v} FGs missed` : 'FG missed'}` },
   { key: 'xpm', label: (v) => `${v > 1 ? `${v} XPs` : 'XP made'}` },
+  { key: 'xpmiss', label: (v) => `${v > 1 ? `${v} XPs missed` : 'XP missed'}` },
   { key: 'pass_int', label: (v) => `${v > 1 ? `${v} INTs thrown` : 'INT thrown'}` },
+  { key: 'pass_2pt', label: () => 'Passing 2-point conversion' },
+  { key: 'rush_2pt', label: () => 'Rushing 2-point conversion' },
+  { key: 'rec_2pt', label: () => 'Receiving 2-point conversion' },
   { key: 'fum_lost', label: () => 'Fumble lost' },
   { key: 'idp_sack', label: (v) => `${v > 1 ? `${v} sacks` : 'Sack'}` },
   { key: 'idp_int', label: () => 'Interception' },
   { key: 'idp_fr', label: () => 'Fumble recovery' },
   { key: 'pass_yd', label: (v) => `${v > 0 ? '+' : ''}${v} pass yds` },
+  { key: 'pass_cmp', label: (v) => `${v} completion${v === 1 ? '' : 's'}` },
+  { key: 'pass_att', label: (v) => `${v} pass attempt${v === 1 ? '' : 's'}` },
+  { key: 'pass_inc', label: (v) => `${v} incomplete pass${v === 1 ? '' : 'es'}` },
+  { key: 'pass_fd', label: (v) => `${v} pass first down${v === 1 ? '' : 's'}` },
   { key: 'rush_yd', label: (v) => `${v > 0 ? '+' : ''}${v} rush yds` },
+  { key: 'rush_att', label: (v) => `${v} rush attempt${v === 1 ? '' : 's'}` },
+  { key: 'rush_fd', label: (v) => `${v} rush first down${v === 1 ? '' : 's'}` },
   { key: 'rec', label: (v) => `${v} rec` },
   { key: 'rec_yd', label: (v) => `${v > 0 ? '+' : ''}${v} rec yds` },
+  { key: 'rec_fd', label: (v) => `${v} receiving first down${v === 1 ? '' : 's'}` },
+  { key: 'kr_yd', label: (v) => `${v > 0 ? '+' : ''}${v} kick return yds` },
+  { key: 'pr_yd', label: (v) => `${v > 0 ? '+' : ''}${v} punt return yds` },
   { key: 'idp_tkl', label: (v) => `${v} tkl` },
 ];
 
@@ -434,7 +481,8 @@ function getEventMechanism(delta, position) {
   const defensiveStats = n(delta.def_td) + n(delta.idp_def_td) + n(delta.idp_sack)
     + n(delta.idp_int) + n(delta.idp_fr) + n(delta.idp_tkl) + n(delta.idp_pd);
   if (defensiveStats || TEAM_DEFENSE_POSITIONS.has(pos) || IDP_POSITIONS.has(pos)) return 'def';
-  if (n(delta.ret_td) + n(delta.kr_td) + n(delta.pr_td) + n(delta.fum_ret_td) > 0) return 'return';
+  if (n(delta.ret_td) + n(delta.kr_td) + n(delta.pr_td) + n(delta.fum_ret_td)
+    + n(delta.kr_yd) + n(delta.pr_yd) > 0) return 'return';
   if (n(delta.pass_td) || n(delta.pass_yd) || n(delta.pass_att)
     || n(delta.rec_td) || n(delta.rec) || n(delta.rec_yd)) return 'pass';
   if (n(delta.rush_td) || n(delta.rush_yd) || n(delta.rush_att)) return 'rush';
@@ -452,9 +500,10 @@ export function getEventClassification(delta, position) {
   let kind = null;
 
   if (n(delta.pass_td) + n(delta.rush_td) + n(delta.rec_td) + n(delta.ret_td)
+    + n(delta.kr_td) + n(delta.pr_td)
     + n(delta.fum_ret_td) + n(delta.def_td) + n(delta.idp_def_td) > 0) kind = 'td';
-  else if (n(delta.fgm) > 0) kind = 'fg';
-  else if (n(delta.xpm) > 0) kind = 'xp';
+  else if (n(delta.fgm) + n(delta.fgmiss) > 0) kind = 'fg';
+  else if (n(delta.xpm) + n(delta.xpmiss) > 0) kind = 'xp';
   else if (n(delta.pass_int) + n(delta.fum_lost) > 0) kind = 'to';
   else if (mechanism) kind = mechanism;
   else if (pos === 'K' || pos === 'PK') kind = 'fg';
@@ -478,7 +527,10 @@ export function describeDelta(delta) {
     parts.push(label(value));
     if (parts.length >= 3) break;
   }
-  return parts.join(', ');
+  if (parts.length) return parts.join(', ');
+  return Object.values(delta ?? {}).some((value) => n(value) !== 0)
+    ? 'Fantasy scoring update'
+    : '';
 }
 
 function diffStats(prev, next) {
@@ -515,6 +567,10 @@ export function buildDeltaEvents(prevSnapshot, nextSnapshot, playerMeta, { now =
       playerId,
       ...classification,
       desc,
+      // The description and point change are both derived from this exact
+      // stat delta. Keep it on the event so an unmatched live snapshot still
+      // has the same scoring breakdown as a provider-enriched play.
+      stats: delta,
       pts: Math.round((points - n(prev.points)) * 10) / 10,
       at: now,
     });

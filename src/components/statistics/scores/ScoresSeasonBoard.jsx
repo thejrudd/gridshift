@@ -1,85 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { resolveProviderAnchoredGameClock } from '../../../utils/providerAnchoredGameClock';
+import { useMemo } from 'react';
 import { groupStatisticsScoresGames } from '../../../utils/statisticsScoresGrouping';
 import GameScorebug, { CompactScorebug } from './GameScorebug';
-
-function useProviderAnchoredWeek(week) {
-  const [displayedClocks, setDisplayedClocks] = useState(() => new Map());
-  const hasProviderClocks = week.games.some((game) => (
-    game.status === 'live' && Boolean(game.live?.providerClockAnchor)
-  ));
-  const updateDisplayedClocks = useCallback((now) => {
-    setDisplayedClocks((previousClocks) => {
-      const nextClocks = new Map();
-      week.games.forEach((game) => {
-        const anchor = game.live?.providerClockAnchor;
-        if (game.status !== 'live' || !anchor) return;
-        const previous = previousClocks.get(game.id);
-        const resolved = resolveProviderAnchoredGameClock({
-          status: game.status,
-          period: game.live.period,
-          providerClock: game.live.clock,
-          anchorChangedAt: anchor.changedAt,
-          now,
-          previousDisplayClock: previous?.clock,
-          previousPeriod: previous?.period,
-          feedStale: anchor.feedStale,
-          staleAfterMs: anchor.staleAfterMs,
-        });
-        if (resolved) nextClocks.set(game.id, resolved);
-      });
-      return nextClocks;
-    });
-  }, [week]);
-
-  useEffect(() => {
-    if (!hasProviderClocks) return undefined;
-    let intervalId = null;
-    const stop = () => {
-      if (intervalId) window.clearInterval(intervalId);
-      intervalId = null;
-    };
-    const start = () => {
-      stop();
-      if (document.visibilityState === 'hidden' || !navigator.onLine) return;
-      updateDisplayedClocks(Date.now());
-      intervalId = window.setInterval(() => updateDisplayedClocks(Date.now()), 1000);
-    };
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') start();
-      else stop();
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('online', start);
-    window.addEventListener('offline', stop);
-    start();
-    return () => {
-      stop();
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('online', start);
-      window.removeEventListener('offline', stop);
-    };
-  }, [hasProviderClocks, updateDisplayedClocks]);
-
-  return useMemo(() => {
-    const games = week.games.map((game) => {
-      const resolved = displayedClocks.get(game.id);
-      if (!resolved) return game;
-      return {
-        ...game,
-        statusLabel: `Q${game.live.period} · ${resolved.clock}`,
-        live: {
-          ...game.live,
-          displayClock: resolved.clock,
-          displayClockFrozen: resolved.frozen,
-          displayClockStale: resolved.stale,
-        },
-      };
-    });
-    return { ...week, games };
-  }, [displayedClocks, week]);
-}
 
 function DayGroup({ group, onOpenGame }) {
   return (
@@ -119,13 +40,13 @@ function WeekPeek({ eyebrow, week, onSelectWeek, onOpenGame }) {
   );
 }
 
-export default function ScoresSeasonBoard({ weeks, selectedWeekId, desktop, onOpenGame, onSelectWeek }) {
+export default function ScoresSeasonBoard({ weeks, selectedWeekId, displayedWeek, desktop, onOpenGame, onSelectWeek }) {
   const selectedIndex = Math.max(0, weeks.findIndex((week) => week.id === selectedWeekId));
   const selectedWeek = weeks[selectedIndex] ?? weeks[0];
-  const displayedWeek = useProviderAnchoredWeek(selectedWeek);
+  const activeDisplayedWeek = displayedWeek?.id === selectedWeek?.id ? displayedWeek : selectedWeek;
   const groups = useMemo(
-    () => groupStatisticsScoresGames(displayedWeek.games),
-    [displayedWeek.games],
+    () => groupStatisticsScoresGames(activeDisplayedWeek?.games ?? []),
+    [activeDisplayedWeek?.games],
   );
 
   return (

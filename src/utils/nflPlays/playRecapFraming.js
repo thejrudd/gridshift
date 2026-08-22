@@ -16,13 +16,24 @@ const STAT_UNLOCKED_BY = {
   ret_td: 'score',
   kr_td: 'score',
   pr_td: 'score',
+  def_td: 'score',
+  def_int_td: 'score',
+  idp_def_td: 'score',
+  idp_int_td: 'score',
+  idp_fr_td: 'score',
+  bonus_def_int_td_50p: 'score',
+  bonus_def_fum_td_50p: 'score',
   fgm: 'score',
   xpm: 'score',
+  xpmiss: 'score',
   pass_int: 'turnover',
+  int: 'turnover',
+  idp_int: 'turnover',
   fum_lost: 'turnover',
 };
 const YARDAGE_STATS = new Set([
   'pass_yd', 'rush_yd', 'rec_yd', 'kr_yd', 'pr_yd',
+  'int_ret_yd', 'idp_int_ret_yd', 'idp_fr_yd',
 ]);
 
 /**
@@ -55,6 +66,53 @@ export function buildPartialPlayStats(stats, { yardsSoFar = 0, totalYards = 0, f
   });
 
   return partial;
+}
+
+/**
+ * Fantasy Live's feed value is authoritative for the selected player's event.
+ * The replay still scores the partial stat line so yards, catches and scores
+ * arrive at the right moments, then scales that running value to finish at the
+ * same player-only total the feed reports. This prevents another scorer on the
+ * NFL play from leaking into the animated ticker.
+ */
+export function reconcileFantasyTickerPoints(
+  partialPoints,
+  finalCalculatedPoints,
+  authoritativeTotal,
+  { settled = false } = {},
+) {
+  const partial = Number(partialPoints);
+  const fallback = Number.isFinite(partial) ? partial : 0;
+  if (authoritativeTotal == null) return fallback;
+
+  const authoritative = Number(authoritativeTotal);
+  if (!Number.isFinite(authoritative)) return fallback;
+
+  const calculated = Number(finalCalculatedPoints);
+  if (Number.isFinite(calculated) && Math.abs(calculated) > Number.EPSILON) {
+    return fallback * (authoritative / calculated);
+  }
+  return settled ? authoritative : fallback;
+}
+
+/** Only the viewer's roster earns points in the Fantasy Live replay. */
+export function selectViewerFantasyReplay(event, isViewerTeam, positionOf = () => null) {
+  if (!isViewerTeam) return [];
+  const contributors = event?.contributors?.length
+    ? event.contributors
+    : event?.stats
+      ? [event]
+      : [];
+  return contributors
+    .filter((contributor) => contributor?.stats)
+    .map((contributor) => ({
+      stats: contributor.stats,
+      // Estimated play totals are already calculated from this exact stat
+      // line. Leaving this unset keeps the animation from scaling a complete
+      // touchdown down to a fractional snapshot share.
+      points: contributor.estimated ? null : contributor.pts ?? null,
+      position: contributor.position ?? positionOf(contributor.playerId),
+    }));
 }
 
 /**

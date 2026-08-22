@@ -443,7 +443,12 @@ export function getKickGeometry(play, { dir, start, flag, homeTeam }) {
 
   // Everything after the landing spot is the return. A touchback has none, and
   // reading past it would pick up the penalty-enforcement spot instead.
-  const tail = landing ? text.slice(landing.index + landing[0].length) : '';
+  // Enforcement/placement spots belong to the penalty, not to a return. A
+  // landing-zone flag says "to LV 24 ... PENALTY ... placed at LV 40"; reading
+  // through the clause invents a 16-yard return that never happened.
+  const tail = landing
+    ? text.slice(landing.index + landing[0].length).split(/PENALTY on/i)[0]
+    : '';
   const returnSpot = possessionTextToPercent((new RegExp(`\\b(?:at|to)\\s+${SPOT}`, 'i').exec(tail) ?? [])[1], { homeTeam });
   const returnYards = returnSpot != null
     ? Math.abs(returnSpot - land)

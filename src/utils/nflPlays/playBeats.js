@@ -124,7 +124,14 @@ export const TONE = Object.freeze({
  * boundary. Everything that scores finishes inside the end zone instead.
  */
 function finishYard(end, dir, scoring) {
-  return scoring ? clampYard(end + END_ZONE_DEPTH * dir) : end;
+  if (!scoring) return end;
+  // A turnover return scores in the opposite direction from the offense that
+  // snapped the ball. Its geometry therefore retains the original offense's
+  // `dir` while `end` sits on the other goal line. The boundary is the
+  // authority for which end zone the scorer entered.
+  if (end <= 0) return -END_ZONE_DEPTH;
+  if (end >= 100) return 100 + END_ZONE_DEPTH;
+  return clampYard(end + END_ZONE_DEPTH * dir);
 }
 
 /**
@@ -206,6 +213,71 @@ export function beatsThrough(beats, ms) {
 }
 
 /**
+ * The football instant at which a touchdown becomes true in playback.
+ *
+ * A runner scores at the goal-line plane. A completed pass must also have been
+ * caught, so a throw that crosses the plane in flight waits for the catch while
+ * a catch short of the end zone waits for the receiver to cross it. The later
+ * narrative beat can still provide reading time after the ball carries through
+ * the end zone; it no longer owns the scoring instant.
+ */
+export function getTouchdownMoment(playTimeline) {
+  const geometry = playTimeline?.geometry;
+  if (!geometry?.scoring || geometry.flag === 'fg') return null;
+
+  const segments = playTimeline.segments ?? [];
+  const finish = Number(segments.at(-1)?.to?.yard);
+  const geometryEnd = Number(geometry.end);
+  const goalLine = finish < 0 || geometryEnd <= 0
+    ? 0
+    : finish > 100 || geometryEnd >= 100
+      ? 100
+      : null;
+  if (goalLine == null) return null;
+
+  let crossingAt = null;
+  for (const segment of segments) {
+    const from = Number(segment?.from?.yard);
+    const to = Number(segment?.to?.yard);
+    if (!Number.isFinite(from) || !Number.isFinite(to) || from === to) continue;
+    const reachesPlane = Math.min(from, to) <= goalLine && Math.max(from, to) >= goalLine;
+    if (!reachesPlane) continue;
+    const progress = (goalLine - from) / (to - from);
+    crossingAt = segment.start + segment.ms * Math.min(1, Math.max(0, progress));
+    break;
+  }
+  if (!Number.isFinite(crossingAt)) return null;
+  // An ordinary passing touchdown cannot score until it is caught. A pick-six
+  // has already changed hands at its turnover beat and needs no catch gate.
+  if (geometry.type === 'pass' && geometry.flag === 'td') {
+    const catchAt = playTimeline.beats?.find((beat) => beat.kind === 'catch')?.at;
+    return Number.isFinite(catchAt) ? Math.max(crossingAt, catchAt) : null;
+  }
+  return crossingAt;
+}
+
+/**
+ * Beats visible at one playback instant, with a touchdown's later narrative
+ * beat promoted to the football scoring moment. The same beat replaces the
+ * original once it fires, preventing a duplicate touchdown line or burst.
+ */
+export function getDisplayedPlaybackBeats(playTimeline, elapsed) {
+  const fired = beatsThrough(playTimeline?.beats ?? [], elapsed);
+  const touchdownAt = getTouchdownMoment(playTimeline);
+  const scoreBeat = playTimeline?.beats?.find((beat) => beat.kind === 'score') ?? null;
+  if (touchdownAt == null || elapsed < touchdownAt || !scoreBeat) return fired;
+
+  const promotedScore = {
+    ...scoreBeat,
+    at: touchdownAt,
+    marker: ballAt(playTimeline.segments ?? [], touchdownAt).yard,
+  };
+  return fired.some((beat) => beat.kind === 'score')
+    ? fired.map((beat) => (beat.kind === 'score' ? promotedScore : beat))
+    : [...fired, promotedScore];
+}
+
+/**
  * How far the ball travelled in the air before it was caught, or null.
  *
  * Derived from the only depth signal the feed carries — the "short"/"deep"
@@ -247,6 +319,11 @@ function joinNames(names) {
 function yardPhrase(yards) {
   const magnitude = Math.abs(Math.round(yards));
   return `${magnitude} yard${magnitude === 1 ? '' : 's'}`;
+}
+
+function officialKickActor(play) {
+  const text = String(play?.rawText ?? play?.description ?? '');
+  return /\b([A-Z][A-Za-z.'’-]*\.[A-Za-z.'’-]+)\s+(?:kicks?|punts?)\b/i.exec(text)?.[1] ?? null;
 }
 
 /**
@@ -317,6 +394,11 @@ export function getPlayTimeline(play, { homeTeam, awayTeam, resolveName = (name)
   const { type, flag } = classifyPlay(play);
   const { start, end, dir, dist, scoring, yards } = geometry;
   const track = timeline(start);
+  const rawText = String(play.rawText ?? play.description ?? '');
+  const kickPenalty = type === 'kick' ? parsePenaltyClause(rawText) : null;
+  const placedKickPenalty = kickPenalty?.enforcedAt && /\bplaced at\b/i.test(rawText)
+    ? kickPenalty
+    : null;
 
   // Anything the first pass doesn't choreograph — turnovers, penalties,
   // anything the narrative parser wasn't confident about — still animates and
@@ -333,9 +415,11 @@ export function getPlayTimeline(play, { homeTeam, awayTeam, resolveName = (name)
   };
 
   const bespokePass = type === 'pass' && (flag == null || flag === 'td');
-  const bespokeKick = type === 'kick' && flag !== 'penalty';
+  const bespokeKick = type === 'kick'
+    && (flag !== 'penalty' || placedKickPenalty)
+    && (narrative.confident || placedKickPenalty);
 
-  if (!narrative.confident) return generic();
+  if (!narrative.confident && !bespokeKick) return generic();
 
   if (bespokePass) {
     track.beat(`${play.down} at the ${spotOf(start)}`, { kind: 'setup' });
@@ -431,7 +515,11 @@ export function getPlayTimeline(play, { homeTeam, awayTeam, resolveName = (name)
 
   if (bespokeKick && geometry.kick) {
     const { kick } = geometry;
-    const kicker = named(who.kicker) ?? named(who.punter);
+    const isKickoff = /kickoff/.test(String(play.typeSlug ?? '').toLowerCase());
+    const fallbackKicker = officialKickActor(play);
+    const kicker = named(who.kicker) ?? named(who.punter)
+      ?? (fallbackKicker ? resolveName(fallbackKicker, isKickoff ? PLAY_ROLES.KICKER : PLAY_ROLES.PUNTER) : null)
+      ?? (isKickoff ? 'The kicker' : 'The punter');
     track.beat(`${play.down} at the ${spotOf(start)}`, { kind: 'setup' });
     track.wait(SNAP_MS);
 
@@ -462,7 +550,6 @@ export function getPlayTimeline(play, { homeTeam, awayTeam, resolveName = (name)
       return track.build({ geometry, narrative, bespoke: true, hold: holdFor(geometry, play) });
     }
 
-    const isKickoff = /kickoff/.test(String(play.typeSlug ?? '').toLowerCase());
     track.beat(
       `${kicker} ${isKickoff ? 'kicks off' : 'punts'} ${yardPhrase(kick.kickYards)}.`,
       { kind: 'release', role: isKickoff ? PLAY_ROLES.KICKER : PLAY_ROLES.PUNTER, name: kicker },
@@ -476,15 +563,40 @@ export function getPlayTimeline(play, { homeTeam, awayTeam, resolveName = (name)
     if (kick.returnYards > 0 && who.returner) {
       track.beat(`Fielded by ${named(who.returner)}.`, { kind: 'catch', role: PLAY_ROLES.RETURNER, name: named(who.returner) });
       track.wait(SETTLE_MS);
-      const returnEnd = finishYard(kick.finish, kick.dir, scoring);
+      const returnEnd = finishYard(kick.finish, -kick.dir, scoring);
       track.move(returnEnd, travelMs(returnEnd - kick.land, 22), { tone: TONE.turnover });
       endingBeat(track, {
         scoring, flag: null, gained: kick.returnYards, tacklers: tacklerNames,
         spot: spotOf(kick.finish), carrier: named(who.returner),
         scoreText: narrative.sentence, role: PLAY_ROLES.RETURNER,
       });
+    } else if (placedKickPenalty) {
+      track.beat(`The kick lands at the ${spotOf(kick.land)}, short of the landing zone.`, { kind: 'stop' });
     } else {
       track.beat(narrative.sentence ?? 'The kick is down.', { kind: 'stop' });
+    }
+
+    if (placedKickPenalty) {
+      const placement = possessionTextToPercent(placedKickPenalty.enforcedAt, { homeTeam });
+      const offender = placedKickPenalty.name
+        ? resolveName(placedKickPenalty.name, PLAY_ROLES.PENALIZED)
+        : null;
+      track.wait(SETTLE_MS);
+      track.beat('Flag on the kickoff.', { kind: 'flag', marker: kick.land });
+      track.wait(READ_MS);
+      track.beat(
+        `${placedKickPenalty.infraction} on ${placedKickPenalty.team}${offender ? `, ${offender}` : ''}.`,
+        {
+          kind: 'flag', role: PLAY_ROLES.PENALIZED, name: offender,
+          alert: 'Penalty', marker: kick.land,
+        },
+      );
+      if (placement != null && Math.abs(placement - track.yard) > 0.5) {
+        track.move(placement, travelMs(placement - track.yard, 40));
+      } else {
+        track.wait(READ_MS);
+      }
+      track.beat(`Ball placed at the ${spotOf(placement ?? track.yard)}.`, { kind: 'stop' });
     }
     track.wait(OUTCOME_MS);
     return track.build({ geometry, narrative, bespoke: true, hold: holdFor(geometry, play) });
@@ -520,8 +632,30 @@ export function getPlayTimeline(play, { homeTeam, awayTeam, resolveName = (name)
   // throw, the moment it is picked off, and the return the other way are three
   // separate movements around a spot only the description reports.
   if (flag === 'int') {
-    const pick = parseInterception(play.rawText ?? play.description);
-    const at = pick && possessionTextToPercent(pick.at, { homeTeam });
+    const officialPick = parseInterception(play.rawText ?? play.description);
+    const officialAt = officialPick && possessionTextToPercent(officialPick.at, { homeTeam });
+    // Some scoring plays contain only the scoreboard summary. It still gives
+    // us the defender, return distance, authoritative endpoint, and original
+    // line of scrimmage. The interception spot is therefore exact: walk the
+    // reported return distance back from its endpoint in the original
+    // offense's direction. For the HOU pick-six from the LV-facing goal line,
+    // 0 + 80 yards = HOU 20 (absolute yard 80).
+    const summaryReturnYards = Number(narrative.yards);
+    const summaryAt = Number.isFinite(summaryReturnYards)
+      ? clampYard(end + summaryReturnYards * dir)
+      : null;
+    const summaryDefender = named(who.intercepter);
+    const hasSummaryPick = !officialPick && summaryDefender && summaryAt != null;
+    const pick = officialPick ?? (hasSummaryPick ? {
+      passer: play.inferredPasserName ?? null,
+      intendedFor: null,
+      depth: null,
+      defender: summaryDefender,
+      at: null,
+      returnTo: null,
+      returnYards: summaryReturnYards,
+    } : null);
+    const at = officialAt ?? summaryAt;
     if (pick && at != null) {
       // A forward pass is thrown forward. The feed sometimes reports the ball
       // picked off behind the line of scrimmage — a tipped ball, or simply where
@@ -542,16 +676,17 @@ export function getPlayTimeline(play, { homeTeam, awayTeam, resolveName = (name)
         : Math.max(6, Math.min(dist || 8, 15));
       const caughtAt = downfield ? at : clampYard(start + depthGuess * dir);
       const defender = named(who.intercepter) ?? resolveName(pick.defender, PLAY_ROLES.INTERCEPTER);
-      const passer = resolveName(pick.passer, PLAY_ROLES.PASSER);
+      const passer = pick.passer ? resolveName(pick.passer, PLAY_ROLES.PASSER) : null;
+      const passerText = passer ?? 'The quarterback';
       const target = pick.intendedFor ? resolveName(pick.intendedFor, PLAY_ROLES.RECEIVER) : null;
       const back = possessionTextToPercent(pick.returnTo, { homeTeam }) ?? end;
 
       track.beat(`${play.down} at the ${spotOf(start)}`, { kind: 'setup' });
       track.wait(PRESNAP_MS);
-      track.beat(`${passer} drops back.`, { role: PLAY_ROLES.PASSER, name: passer });
+      track.beat(`${passerText} drops back.`, { role: PLAY_ROLES.PASSER, name: passer });
       track.move(start - 3 * dir, DROPBACK_MS);
       track.beat(
-        `${passer} throws${pick.depth ? ` ${pick.depth}` : ''}${target ? ` for ${target}` : ''}.`,
+        `${passerText} throws${pick.depth ? ` ${pick.depth}` : ''}${target ? ` for ${target}` : ''}.`,
         { kind: 'release', role: PLAY_ROLES.PASSER, name: passer },
       );
       track.move(caughtAt, travelMs(caughtAt - track.yard, 22), { apex: 0.9 });
@@ -560,8 +695,9 @@ export function getPlayTimeline(play, { homeTeam, awayTeam, resolveName = (name)
         { kind: 'turnover', role: PLAY_ROLES.INTERCEPTER, name: defender, alert: 'Intercepted' },
       );
       track.wait(SETTLE_MS);
-      if (Math.abs(back - caughtAt) > 0.5) {
-        track.move(back, travelMs(back - caughtAt, 24), { tone: TONE.turnover });
+      const returnEnd = finishYard(back, -dir, scoring);
+      if (Math.abs(returnEnd - caughtAt) > 0.5) {
+        track.move(returnEnd, travelMs(returnEnd - caughtAt, 24), { tone: TONE.turnover });
       }
       endingBeat(track, {
         scoring, flag: null, gained: pick.returnYards, tacklers: tacklerNames,
@@ -603,7 +739,8 @@ export function getPlayTimeline(play, { homeTeam, awayTeam, resolveName = (name)
         kind: 'turnover', role: PLAY_ROLES.RECOVERER, name: recoverer, alert: 'Recovered',
       });
       track.wait(SETTLE_MS);
-      if (Math.abs(back - at) > 0.5) track.move(back, travelMs(back - at, 24), { tone: TONE.turnover });
+      const returnEnd = finishYard(back, -dir, scoring);
+      if (Math.abs(returnEnd - at) > 0.5) track.move(returnEnd, travelMs(returnEnd - at, 24), { tone: TONE.turnover });
       endingBeat(track, {
         scoring, flag: null, gained: lost.returnYards, tacklers: tacklerNames,
         spot: spotOf(back), carrier: recoverer, scoreText: narrative.sentence,

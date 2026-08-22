@@ -12,13 +12,20 @@
 // line it sits on up there, and field position stays readable across the whole
 // drive rather than being rescaled per play.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { fieldX, teamLogo } from '../../utils/nflPlays/fieldGeometry.js';
-import { ballAt, beatsThrough, getDriveTimelines } from '../../utils/nflPlays/playBeats.js';
+import {
+  ballAt,
+  beatsThrough,
+  getDisplayedPlaybackBeats,
+  getDriveTimelines,
+  getTouchdownMoment,
+} from '../../utils/nflPlays/playBeats.js';
 import { lookupPlayerByName } from '../../utils/nflPlays/playerNameIndex.js';
 import {
   buildPartialPlayStats,
   getYardageProgress,
+  reconcileFantasyTickerPoints,
 } from '../../utils/nflPlays/playRecapFraming.js';
 import { calcPoints } from '../../utils/scoringEngine.js';
 import { mixHex, pickReadableForeground } from '../../utils/teamVisualTheme.js';
@@ -82,12 +89,14 @@ function usePrefersReducedMotion() {
 export function DrivePlayback({
   plays = [], homeTeam, awayTeam, awayTheme, homeTheme, barColor, participants = null, flipped = false,
   // Fantasy Live rides the same playback but asks a different question: not
-  // "what happened" but "what did this earn me". Given a points total, the
-  // running value travels with the ball. Statistics passes none of these and
-  // renders exactly as before.
+  // "what happened" but "what did this earn me". Given the selected player's
+  // stats and authoritative event total, the running value travels with the
+  // ball. Statistics passes none of these and renders exactly as before.
   fantasyStats = null,
   fantasyScoring = null,
   fantasyPosition = null,
+  fantasyPoints = null,
+  fantasyContributors = null,
 }) {
   const reducedMotion = usePrefersReducedMotion();
 
@@ -121,12 +130,15 @@ export function DrivePlayback({
   const current = timelines[active] ?? null;
   const total = current ? current.timeline.duration + current.timeline.hold : 0;
   const atLastPlay = active >= timelines.length - 1;
+  const touchdownMoment = current ? getTouchdownMoment(current.timeline) : null;
 
   // The animation loop reads and writes the clock through a ref so it can run
   // without re-subscribing on every frame. `seek` is the one way the clock
   // moves, which keeps the ref in step with the jumps that come from outside
   // it — a chip click, a step button, the handoff to the next play.
   const elapsedRef = useRef(0);
+  const fieldRef = useRef(null);
+  const bannerRef = useRef(null);
   const seek = useCallback((ms) => {
     elapsedRef.current = ms;
     setElapsed(ms);
@@ -183,8 +195,13 @@ export function DrivePlayback({
   useEffect(() => {
     if (!playing || !current || !reducedMotion) return undefined;
 
-    const next = current.timeline.beats.find((beat) => beat.at > elapsed);
-    const target = next ? next.at : total;
+    const nextBeatAt = current.timeline.beats.find((beat) => beat.at > elapsed)?.at ?? null;
+    const nextTouchdownAt = touchdownMoment != null && touchdownMoment > elapsed ? touchdownMoment : null;
+    const target = Math.min(
+      nextBeatAt ?? Number.POSITIVE_INFINITY,
+      nextTouchdownAt ?? Number.POSITIVE_INFINITY,
+      total,
+    );
     const timer = setTimeout(() => {
       if (elapsed >= total) {
         if (atLastPlay) setPlaying(false);
@@ -194,7 +211,45 @@ export function DrivePlayback({
       }
     }, Math.max(120, (target - elapsed) / speed));
     return () => clearTimeout(timer);
-  }, [playing, current, total, speed, atLastPlay, reducedMotion, elapsed, active, goTo, seek]);
+  }, [playing, current, total, speed, atLastPlay, reducedMotion, elapsed, active, goTo, seek, touchdownMoment]);
+
+  // The down-and-distance flag trails behind the line of scrimmage. When a
+  // drive starts against its own goal line there is not enough turf behind the
+  // snap for the content-sized plate, so the field's intentional clipping cuts
+  // off the team mark or down. Keep the field and the true LOS where they are;
+  // only translate the visual flag far enough to keep its full rect on turf.
+  // ResizeObserver covers responsive layout and the team logo settling after
+  // its image loads without coupling the correction to any one viewport size.
+  useLayoutEffect(() => {
+    const field = fieldRef.current;
+    const banner = bannerRef.current;
+    if (!field || !banner) return undefined;
+
+    const clampBanner = () => {
+      const fieldRect = field.getBoundingClientRect();
+      const bannerRect = banner.getBoundingClientRect();
+      const applied = Number.parseFloat(banner.style.getPropertyValue('--dpb-banner-shift')) || 0;
+      const naturalLeft = bannerRect.left - applied;
+      const naturalRight = bannerRect.right - applied;
+      const inset = 2;
+      let shift = 0;
+
+      if (naturalLeft < fieldRect.left + inset) {
+        shift = fieldRect.left + inset - naturalLeft;
+      } else if (naturalRight > fieldRect.right - inset) {
+        shift = fieldRect.right - inset - naturalRight;
+      }
+
+      banner.style.setProperty('--dpb-banner-shift', `${shift.toFixed(2)}px`);
+    };
+
+    clampBanner();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(clampBanner);
+    observer.observe(field);
+    observer.observe(banner);
+    return () => observer.disconnect();
+  }, [active, flipped, current?.play?.down]);
 
   if (!timelines.length || !current) return null;
 
@@ -204,6 +259,7 @@ export function DrivePlayback({
 
   const fired = beatsThrough(line.beats, elapsed);
   const geometry = line.geometry;
+  const displayedBeats = getDisplayedPlaybackBeats(line, elapsed);
 
   const x = (yard) => fieldX(yard, flipped);
 
@@ -236,7 +292,7 @@ export function DrivePlayback({
   // Only the newest is labelled: on a whole-field view three name plates
   // collide long before three dots do.
   const markers = [];
-  fired.forEach((beat) => {
+  displayedBeats.forEach((beat) => {
     if (!beat.name) return;
     const existing = markers.findIndex((marker) => marker.name === beat.name);
     if (existing >= 0) markers.splice(existing, 1);
@@ -246,32 +302,55 @@ export function DrivePlayback({
 
   // Scoring the stat line as it stands — rather than interpolating the play's
   // final points — is what makes each unit land whole: a tenth per yard as the
-  // ball advances, the reception's full point at the catch, the touchdown at
-  // the score. Yardage is read off the ball, so it stops when the ball stops
-  // rather than drifting on through the beats after the whistle.
-  const fantasyTicker = fantasyStats
+  // ball advances, the reception's full point at the catch, and the touchdown
+  // when it is actually earned. Yardage is read off the ball, so it stops when
+  // the ball stops rather than drifting on through the beats after the whistle.
+  const tickerContributors = fantasyContributors?.length
+    ? fantasyContributors
+    : fantasyStats
+      ? [{ stats: fantasyStats, points: fantasyPoints, position: fantasyPosition }]
+      : [];
+  const fantasyTicker = tickerContributors.length
     ? (() => {
       const totalYards = Math.abs(Number(geometry?.gained) || 0);
       const covered = getYardageProgress(geometry, ball.yard);
-      const partial = buildPartialPlayStats(fantasyStats, {
-        yardsSoFar: totalYards * covered,
-        totalYards,
-        fired: new Set(fired.map((beat) => beat.kind)),
-      });
-      return Math.round(calcPoints(partial, fantasyScoring, fantasyPosition) * 10) / 10;
+      const firedKinds = new Set(displayedBeats.map((beat) => beat.kind));
+      const total = tickerContributors.reduce((sum, contributor) => {
+        const partial = buildPartialPlayStats(contributor.stats, {
+          yardsSoFar: totalYards * covered,
+          totalYards,
+          fired: firedKinds,
+        });
+        const calculated = calcPoints(partial, fantasyScoring, contributor.position ?? fantasyPosition);
+        const finalCalculated = calcPoints(contributor.stats, fantasyScoring, contributor.position ?? fantasyPosition);
+        return sum + reconcileFantasyTickerPoints(
+          calculated,
+          finalCalculated,
+          contributor.points,
+          { settled: covered >= 1 || firedKinds.has('score') },
+        );
+      }, 0);
+      return Math.round(total * 10) / 10;
     })()
     : 0;
   const latestPlayer = latest && participants ? lookupPlayerByName(participants, latest.name) : null;
 
-  // Points get a burst where they were scored. It mounts when the score beat
-  // fires and is keyed to the play, so it plays once per scoring snap rather
-  // than restarting on every animation frame.
-  const scoreBeat = fired.find((beat) => beat.kind === 'score') ?? null;
+  // Points burst at the football scoring instant. For a touchdown that is the
+  // plane/catch moment above, not the later beat where the outcome sentence
+  // happened to be placed for reading cadence.
+  const scoreBeat = displayedBeats.find((beat) => beat.kind === 'score') ?? null;
 
   // The team that ends up with the ball on a turnover, and the colour its half
   // of the play is drawn in.
   const defenseTheme = geometry.defendingTeam === homeTeam ? homeTheme : awayTheme;
-  const defenseColor = defenseTheme?.accentColor ?? defenseTheme?.color ?? 'var(--color-accent-red)';
+  // Use the defending club's identity colour, not its accessibility accent.
+  // Several dark palettes intentionally swap `accentColor` to neutral silver
+  // for text contrast; Houston therefore looked identical to Las Vegas even
+  // after the trail's turnover tone had changed correctly.
+  const defenseColor = defenseTheme?.borderColor
+    ?? defenseTheme?.color
+    ?? defenseTheme?.accentColor
+    ?? 'var(--color-accent-red)';
   const toneColor = (tone) => (tone === 'turnover' ? defenseColor
     : tone === 'loss' ? 'var(--color-accent-red)'
     : tone === 'score' ? 'var(--color-signature)'
@@ -345,7 +424,7 @@ export function DrivePlayback({
       </header>
 
       <div className="dpb-fieldwrap">
-        <div className="dpb-field">
+        <div className="dpb-field" ref={fieldRef}>
           <RedZones />
           <FieldLines />
           <EndZone side="left" team={leftTeam} theme={leftTheme} />
@@ -354,6 +433,7 @@ export function DrivePlayback({
           {banner && (
             <div
               className="dpb-banner"
+              ref={bannerRef}
               data-dir={banner.dir > 0 ? 'r' : 'l'}
               style={{
                 ...(banner.dir > 0
@@ -436,7 +516,7 @@ export function DrivePlayback({
             }}
           />
 
-          {fantasyStats && (
+          {tickerContributors.length > 0 && (
             <span
               className="dpb-fantasy"
               style={{
@@ -485,7 +565,7 @@ export function DrivePlayback({
             <ScoreBurst
               key={`${active}-burst`}
               left={Math.min(88, Math.max(12, x(scoreBeat.marker)))}
-              color={barColor}
+              color={geometry.flag === 'int' || geometry.flag === 'fumble' ? defenseColor : barColor}
             />
           )}
 
@@ -542,30 +622,32 @@ export function DrivePlayback({
         </div>
       </div>
 
-      <div className="dpb-scrub" role="group" aria-label="Jump to a play">
-        {timelines.map((entry, position) => (
-          <button
-            key={entry.play.id ?? position}
-            type="button"
-            className="dpb-chip"
-            data-state={position === active ? 'current' : position < active ? 'past' : 'future'}
-            data-kind={entry.timeline.geometry.scoring ? 'score' : entry.timeline.geometry.flag ?? ''}
-            aria-current={position === active ? 'true' : undefined}
-            aria-label={`Play ${position + 1}: ${entry.play.description}`}
-            title={`${entry.play.down} · ${entry.play.description}`}
-            // Picking a play is asking to watch it, the same way switching the
-            // drive field into playback is. Jumping used to pause, which meant
-            // every jump cost a second click to do the obvious thing.
-            onClick={() => { goTo(position); setPlaying(true); }}
-          >
-            {position + 1}
-          </button>
-        ))}
-      </div>
+      {timelines.length > 1 && (
+        <div className="dpb-scrub" role="group" aria-label="Jump to a play">
+          {timelines.map((entry, position) => (
+            <button
+              key={entry.play.id ?? position}
+              type="button"
+              className="dpb-chip"
+              data-state={position === active ? 'current' : position < active ? 'past' : 'future'}
+              data-kind={entry.timeline.geometry.scoring ? 'score' : entry.timeline.geometry.flag ?? ''}
+              aria-current={position === active ? 'true' : undefined}
+              aria-label={`Play ${position + 1}: ${entry.play.description}`}
+              title={`${entry.play.down} · ${entry.play.description}`}
+              // Picking a play is asking to watch it, the same way switching the
+              // drive field into playback is. Jumping used to pause, which meant
+              // every jump cost a second click to do the obvious thing.
+              onClick={() => { goTo(position); setPlaying(true); }}
+            >
+              {position + 1}
+            </button>
+          ))}
+        </div>
+      )}
 
       <ol className="dpb-log" aria-live="polite">
-        {fired.map((beat, position) => (
-          <li key={`${beat.at}-${position}`} data-kind={beat.kind} data-latest={position === fired.length - 1 ? 'true' : 'false'}>
+        {displayedBeats.map((beat, position) => (
+          <li key={`${beat.at}-${position}`} data-kind={beat.kind} data-latest={position === displayedBeats.length - 1 ? 'true' : 'false'}>
             {beat.text}
           </li>
         ))}

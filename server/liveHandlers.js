@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import process from 'node:process';
 import express from 'express';
 import { createBalldontlieGateway } from './balldontlieGateway.js';
+import { createLiveGameSnapshotStore } from './liveGameSnapshots.js';
 import { parseCookies } from './sessionCrypto.js';
 
 export const LIVE_SESSION_COOKIE = 'gridshift_live_session';
@@ -339,11 +340,13 @@ function sendLiveError(res, error, fallbackMessage) {
 
 export function createLiveRouter({
   gateway: injectedGateway,
+  snapshotStore: injectedSnapshotStore,
   fetcher = fetch,
   env = process.env,
 } = {}) {
   const router = express.Router();
   const gateway = injectedGateway ?? createBalldontlieGateway({ fetcher, env });
+  const snapshotStore = injectedSnapshotStore ?? createLiveGameSnapshotStore({ gateway });
 
   async function fetchCachedBdl(endpoint, params, capability) {
     const baseTtlMs = getLiveConfigStatus().cacheTtlMs;
@@ -473,9 +476,20 @@ export function createLiveRouter({
     try {
       const session = requireLiveSession(req);
       requireRateLimit(req, session);
-      const { normalizedGameId, params } = buildGameScopedParams(req.params.gameId, req.query);
-      params.set('game_id', String(normalizedGameId));
-      const { payload, cacheInfo } = await fetchCachedBdl('/nfl/v1/plays', params, 'plays');
+      const { normalizedGameId } = buildGameScopedParams(req.params.gameId, req.query);
+      const seasonType = isPreseasonAllowed()
+        && ['pre', '1'].includes(String(req.query.seasonType ?? req.query.season_type ?? '').toLowerCase())
+        ? 1
+        : 2;
+      const snapshot = await snapshotStore.getPlays({ gameId: normalizedGameId, seasonType });
+      const payload = { data: snapshot.plays, meta: snapshot.meta };
+      const cacheInfo = {
+        ...snapshot.cache,
+        ageMs: snapshot.freshness.ageMs,
+        ttlMs: snapshotStore.refreshMs,
+        fetchedAt: snapshot.freshness.providerFetchedAt,
+        freshness: snapshot.freshness,
+      };
       return res.set('Cache-Control', 'no-store').json(buildLiveResponse(payload, cacheInfo, session, gateway.getStatus()));
     } catch (error) {
       return sendLiveError(res, error, 'Could not load live plays.');

@@ -159,6 +159,7 @@ test('draft ranking priority copy explains the personalized ranking tradeoff', (
     DRAFT_RANKING_PRIORITY_CONTROLS.map(({ key, label }) => ({ key, label })),
     [
       { key: 'marketRank', label: 'Player value' },
+      { key: 'adp', label: 'BALLDONTLIE ADP' },
       { key: 'pastProduction', label: 'Points per game' },
       { key: 'scoringFit', label: 'Scoring fit' },
       { key: 'rosterNeed', label: 'Team need' },
@@ -542,6 +543,30 @@ test('draft analytics scatter uses a dynamic trend line for non-market rating ax
   );
 });
 
+test('draft analytics supports BALLDONTLIE ADP as a lower-is-better selectable axis', () => {
+  const candidates = [
+    { ...analyticsCandidates[0], adp: 36.5, draftModel: { ...analyticsCandidates[0].draftModel, components: { ...analyticsCandidates[0].draftModel.components, adp: 88 } } },
+    { ...analyticsCandidates[1], adp: 8.2, draftModel: { ...analyticsCandidates[1].draftModel, components: { ...analyticsCandidates[1].draftModel.components, adp: 98 } } },
+  ];
+  const scatter = buildDraftAnalyticsScatter({
+    candidates,
+    focusedPlayerId: 'wr1',
+    xAxis: 'adp',
+    yAxis: 'rating',
+  });
+  const alpha = scatter.points.find((point) => point.id === 'wr1');
+  const beta = scatter.points.find((point) => point.id === 'wr2');
+  const snapshot = buildDraftAnalyticsSnapshot(candidates[0], candidates);
+
+  assert.equal(scatter.xAxis.id, 'adp');
+  assert.equal(scatter.xAxis.label, 'ADP');
+  assert.equal(alpha.x < beta.x, true);
+  assert.equal(scatter.xAxis.minLabel, '#37');
+  assert.equal(scatter.xAxis.maxLabel, '#8');
+  assert.equal(snapshot.find((row) => row.key === 'adp').value, '#37');
+  assert.equal(buildDraftAnalyticsCompareRows(candidates).find((row) => row.key === 'adp').cells[1].value, '#8');
+});
+
 test('draft analytics compare rows cap at four players and preserve unavailable values', () => {
   const rows = buildDraftAnalyticsCompareRows([
     ...analyticsCandidates,
@@ -570,7 +595,7 @@ test('draft analytics treats rookie past production and workload as unavailable'
   assert.equal(workloadRow.rank, null);
   assert.deepEqual(
     getDraftAnalyticsAxisOptions(rookie).map((option) => option.id),
-    ['rating', 'market', 'rosterNeed'],
+    ['rating', 'market', 'adp', 'rosterNeed'],
   );
 
   const scatter = buildDraftAnalyticsScatter({
@@ -1207,12 +1232,13 @@ test('draft model weights normalize missing and out-of-range values', () => {
   });
 
   assert.equal(Object.values(weights).reduce((sum, value) => sum + value, 0), 100);
-  assert.deepEqual(Object.keys(weights), ['marketRank', 'pastProduction', 'scoringFit', 'rosterNeed', 'schedule']);
+  assert.deepEqual(Object.keys(weights), ['marketRank', 'pastProduction', 'scoringFit', 'rosterNeed', 'schedule', 'adp']);
   assert.equal(weights.marketRank, 72);
   assert.equal(weights.pastProduction, 0);
   assert.equal(weights.scoringFit, 14);
   assert.equal(weights.rosterNeed, 7);
   assert.equal(weights.schedule, 7);
+  assert.equal(weights.adp, 0);
   assert.equal(weights.workload, undefined);
 });
 
@@ -1372,7 +1398,9 @@ test('draft assistant builds transparent intelligence profiles from available st
   assert.equal(wr.draftRoom.boardRank, 1);
   assert.equal(typeof wr.draftModel.score, 'number');
   assert.equal(wr.draftModel.weights.marketRank, DEFAULT_DRAFT_MODEL_WEIGHTS.marketRank);
-  assert.deepEqual(Object.keys(wr.draftModel.weights), ['marketRank', 'pastProduction', 'scoringFit', 'rosterNeed', 'schedule']);
+  assert.deepEqual(Object.keys(wr.draftModel.weights), ['marketRank', 'pastProduction', 'scoringFit', 'rosterNeed', 'schedule', 'adp']);
+  assert.equal(wr.draftModel.weights.adp, 0);
+  assert.equal(wr.draftModel.components.adp, null);
   assert.equal(wr.draftModel.components.workload != null, true);
   assert.equal(wr.draftModel.components.schedule, null, 'an unavailable schedule must not score as zero');
   assert.equal(Object.hasOwn(wr.draftModel.components, 'teamContext'), true);
@@ -1445,6 +1473,56 @@ test('draft model weights affect derived recommendation order', () => {
 
   assert.equal(marketWeighted.rankedCandidates[0].id, 'rb1');
   assert.equal(productionWeighted.rankedCandidates[0].id, 'wr1');
+});
+
+test('BALLDONTLIE ADP stays neutral by default and changes model order only when prioritized', () => {
+  const draft = {
+    draft_id: 'draft-adp-1',
+    type: 'snake',
+    status: 'pre_draft',
+    settings: { rounds: 4 },
+    slot_to_roster_id: { 1: 1, 2: 2, 3: 3 },
+  };
+  const rankingOnlyPlayers = {
+    rb1: { ...players.rb1, projected: undefined, search_rank: 10 },
+    wr1: { ...players.wr1, projected: undefined, search_rank: 80 },
+  };
+  const adpByPlayerId = new Map([
+    ['rb1', { average_draft_position: 75.4 }],
+    ['wr1', { average_draft_position: 4.6 }],
+  ]);
+  const sharedArgs = {
+    players: rankingOnlyPlayers,
+    rosters,
+    league,
+    draft,
+    draftPicks: [],
+    myRoster: rosters[0],
+    scoringSettings: DEFAULT_SCORING,
+    season: '2026',
+  };
+  const baseline = buildDraftAssistantViewModel(sharedArgs);
+  const neutralAdp = buildDraftAssistantViewModel({ ...sharedArgs, adpByPlayerId });
+  const adpWeighted = buildDraftAssistantViewModel({
+    ...sharedArgs,
+    adpByPlayerId,
+    modelWeights: {
+      marketRank: 0,
+      adp: 100,
+      pastProduction: 0,
+      scoringFit: 0,
+      rosterNeed: 0,
+      schedule: 0,
+    },
+  });
+
+  assert.equal(DEFAULT_DRAFT_MODEL_WEIGHTS.adp, 0);
+  assert.equal(neutralAdp.modelWeights.adp, 0);
+  assert.equal(neutralAdp.allCandidates.find((player) => player.id === 'rb1').adp, 75.4);
+  assert.equal(neutralAdp.allCandidates.find((player) => player.id === 'wr1').adp, 4.6);
+  assert.equal(neutralAdp.rankedCandidates[0].id, baseline.rankedCandidates[0].id);
+  assert.equal(adpWeighted.rankedCandidates[0].id, 'wr1');
+  assert.equal(adpWeighted.rankedCandidates[0].draftModel.components.adp > adpWeighted.rankedCandidates[1].draftModel.components.adp, true);
 });
 
 test('draft assistant pick window follows current traded-pick owners', () => {

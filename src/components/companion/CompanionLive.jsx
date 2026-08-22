@@ -20,6 +20,7 @@ import {
   isFinalGame,
   isLiveGame,
   mapBdlStatsToGridShift,
+  resolveCurrentPlayerPoints,
   resolveStarterGameState,
 } from '../../utils/liveScoringFeed.js';
 import {
@@ -53,6 +54,7 @@ import {
 import {
   buildPlayEvents,
   buildStarterNameIndex,
+  groupSharedPlayEvents,
   mergePlayEvents,
   parseGlanceProgress,
 } from '../../utils/livePlaysFeed.js';
@@ -110,7 +112,7 @@ const MAX_FEED_EVENTS = 80;
 // A full Sunday slate, so every starter's game can supply play-by-play rather
 // than only the first handful.
 const MAX_PLAYS_GAMES = 16;
-const PLAYS_REFRESH_MIN_MS = 45000;
+const PLAYS_REFRESH_MIN_MS = 8_000;
 const RAIL_PERFORMER_LIMIT = 14;
 const FINAL_RECONCILIATION_RETRY_MS = 30000;
 
@@ -597,6 +599,7 @@ export default function CompanionLive({ onViewPlayer = null }) {
   const [nflState, setNflState] = useState(null);
   const [nflStateLoading, setNflStateLoading] = useState(true);
   const [nflStateError, setNflStateError] = useState('');
+  const [liveStatus, setLiveStatus] = useState(null);
   const effectiveNflState = sandbox?.nflState ?? nflState;
   // Primitive so the weather effect can depend on this without churning on
   // every replay tick, since `sandbox` is a fresh object each time.
@@ -621,7 +624,6 @@ export default function CompanionLive({ onViewPlayer = null }) {
   const [matchups, setMatchups] = useState([]);
   const [matchupsLoading, setMatchupsLoading] = useState(false);
   const [matchupIndex, setMatchupIndex] = useState(0);
-  const [liveStatus, setLiveStatus] = useState(null);
   const [scoresProviderStatus, setScoresProviderStatus] = useState(null);
   const [scoresProviderStatusError, setScoresProviderStatusError] = useState('');
   const [accessCode, setAccessCode] = useState('');
@@ -681,7 +683,9 @@ export default function CompanionLive({ onViewPlayer = null }) {
   const playCursorRef = useRef(new Map());
   const playEventsByPlayerRef = useRef(new Map());
   const playsFetchedRef = useRef(new Map());
-  const pendingPlayGamesRef = useRef(new Set());
+  const liveSnapshotInFlightContextsRef = useRef(new Set());
+  const playFetchInFlightContextsRef = useRef(new Set());
+  const playRequestContextRef = useRef(null);
   const weatherPendingRef = useRef(new Set());
   const liveSnapshotRequestRef = useRef(0);
   const liveSnapshotContextRef = useRef(null);
@@ -703,7 +707,6 @@ export default function CompanionLive({ onViewPlayer = null }) {
       snapshotRef.current = new Map();
       snapshotSlateProgressRef.current = 0;
       playsFetchedRef.current = new Map();
-      pendingPlayGamesRef.current = new Set();
       setFeedEvents([]);
       setPlaysByGame({});
       setWinProbHistory([]);
@@ -936,7 +939,6 @@ export default function CompanionLive({ onViewPlayer = null }) {
   useEffect(() => {
     snapshotRef.current = new Map();
     playsFetchedRef.current = new Map();
-    pendingPlayGamesRef.current = new Set();
     setFeedEvents([]);
     setPlaysByGame({});
     resetMatchupSelections();
@@ -978,21 +980,28 @@ export default function CompanionLive({ onViewPlayer = null }) {
     return teams;
   }, [matchupStarterIds, players]);
 
+  // A replay tick should request a fresher slice without invalidating a slower
+  // request that is already hydrating the same matchup. Context changes still
+  // reject stale responses; the clock version is a refresh trigger only.
   const liveSnapshotContextKey = [
     selectedLeagueId,
     season,
     week,
-    sandbox?.clockVersion ?? '',
+    currentMatchup?.matchupId ?? '',
+    sandbox?.mode ?? 'live',
     liveStatus?.session?.enabled ? 'enabled' : 'disabled',
     ...[...matchupTeams].sort(),
   ].join(':');
+  const liveSnapshotRefreshVersion = sandbox?.clockVersion ?? '';
   liveSnapshotContextRef.current = liveSnapshotContextKey;
 
   const fetchLiveSnapshot = useCallback(async ({ quiet = false } = {}) => {
     if (!week || !liveStatus?.session?.enabled || platform !== 'sleeper') return;
+    const requestContext = liveSnapshotContextKey;
+    if (liveSnapshotInFlightContextsRef.current.has(requestContext)) return;
+    liveSnapshotInFlightContextsRef.current.add(requestContext);
     const requestId = liveSnapshotRequestRef.current + 1;
     liveSnapshotRequestRef.current = requestId;
-    const requestContext = liveSnapshotContextKey;
     const isCurrentRequest = () => (
       requestId === liveSnapshotRequestRef.current
       && requestContext === liveSnapshotContextRef.current
@@ -1023,6 +1032,7 @@ export default function CompanionLive({ onViewPlayer = null }) {
         setLiveError(error?.message ?? 'Could not load live scoring data.');
       }
     } finally {
+      liveSnapshotInFlightContextsRef.current.delete(requestContext);
       if (!quiet && isCurrentRequest()) setLoadingLive(false);
     }
   }, [
@@ -1036,7 +1046,7 @@ export default function CompanionLive({ onViewPlayer = null }) {
 
   useEffect(() => {
     void fetchLiveSnapshot();
-  }, [fetchLiveSnapshot]);
+  }, [fetchLiveSnapshot, liveSnapshotRefreshVersion]);
 
   useEffect(() => {
     if (!autoRefresh || !liveStatus?.session?.enabled) return undefined;
@@ -1087,7 +1097,16 @@ export default function CompanionLive({ onViewPlayer = null }) {
           sleeperPoints,
           // Live-calculated points when stats are matched; Sleeper's official
           // number otherwise, so pre-kickoff and past weeks stay truthful.
-          points: mappedStats ? livePoints : (sleeperPoints ?? sleeperDerivedPoints ?? 0),
+          points: resolveCurrentPlayerPoints({
+            hasMappedStats: Boolean(mappedStats),
+            livePoints,
+            sleeperPoints,
+            sleeperDerivedPoints,
+            // The replay fixture stores the completed week's official result.
+            // Falling back to it here leaks the final score into the early
+            // replay and draws a vertical jump at NOW.
+            suppressFallback: Boolean(sandbox?.replay),
+          }),
         };
       }).filter(Boolean);
       const matchedCount = rows.filter((row) => row.bdlRow).length;
@@ -1107,7 +1126,7 @@ export default function CompanionLive({ onViewPlayer = null }) {
         isMine,
       };
     })
-  ), [activeScoringSettings, currentMatchup, espnIdOverrides, myRosterId, players, sleeperStatsByPlayer, statIndex, week]);
+  ), [activeScoringSettings, currentMatchup, espnIdOverrides, myRosterId, players, sandbox?.replay, sleeperStatsByPlayer, statIndex, week]);
 
   const cumulativeResultsByRoster = useMemo(
     () => buildCumulativeRosterResults(cumulativeMatchupsByWeek, week, rawSideSummaries),
@@ -1178,6 +1197,7 @@ export default function CompanionLive({ onViewPlayer = null }) {
           scoringSettings: activeScoringSettings,
           playsByPlayer: playEventsByPlayerRef.current,
           playCursor: playCursorRef.current,
+          throughProgress: sandbox.progress,
         })
         : buildDeltaEvents(prev, next, meta);
       const rawEvents = deltaEvents.map((event) => {
@@ -1223,13 +1243,6 @@ export default function CompanionLive({ onViewPlayer = null }) {
         setFeedEvents((current) => {
           const next = [...events, ...current];
           return sandbox?.replay ? next : next.slice(0, MAX_FEED_EVENTS);
-        });
-        // Flag these players' games for a plays refresh so the delta can be
-        // matched to a real play description on the next sync.
-        events.forEach((event) => {
-          const row = sideSummaries.flatMap((summary) => summary.rows).find((r) => r.id === event.playerId);
-          const gameId = row?.bdlRow?.gameId;
-          if (gameId) pendingPlayGamesRef.current.add(String(gameId));
         });
       }
     }
@@ -1695,14 +1708,31 @@ export default function CompanionLive({ onViewPlayer = null }) {
   }, [entriesById]);
 
   // ── Play-by-play backfill + throttled live refresh ───────────────────────
-  // Budgeted for the BDL free tier: backfill each relevant game once (live
-  // games first), never refetch finals, and refresh a live game's plays only
-  // when one of its starters just produced a stat delta (≥45s apart).
+  // Backfill each relevant game once (live games first), never refetch finals,
+  // and read the canonical server snapshot at its eight-second play cadence.
+  // The shared sidecar store coalesces this with Statistics scorecards and
+  // drilldowns, so each UI can update without creating its own provider truth.
+  const playRequestContextKey = [
+    selectedLeagueId,
+    season,
+    week,
+    currentMatchup?.matchupId ?? '',
+    sandbox?.mode ?? 'live',
+    liveStatus?.session?.enabled ? 'enabled' : 'disabled',
+  ].join(':');
+  playRequestContextRef.current = playRequestContextKey;
+
+  useEffect(() => () => {
+    playRequestContextRef.current = null;
+  }, []);
+
   useEffect(() => {
     if (!liveStatus?.session?.enabled || !currentMatchup || !liveGames.length) return undefined;
     const mockPlays = demoFeedEnabled;
     if (isFreeLiveTier(liveStatus) && !mockPlays) return undefined;
-    let cancelled = false;
+    const requestContext = playRequestContextKey;
+    if (playFetchInFlightContextsRef.current.has(requestContext)) return undefined;
+    playFetchInFlightContextsRef.current.add(requestContext);
     const starterRows = sideSummaries.flatMap((summary) => summary.rows);
     const relevant = limitPlayByPlayGames(
       sortRelevantGames(liveGames, matchupTeams)
@@ -1711,44 +1741,50 @@ export default function CompanionLive({ onViewPlayer = null }) {
     );
 
     (async () => {
-      for (const game of relevant) {
-        if (cancelled) return;
-        const gameId = String(game.id);
-        const marker = playsFetchedRef.current.get(gameId);
-        const final = isFinalGame(game);
-        const wantsRefresh = pendingPlayGamesRef.current.has(gameId);
-        const now = Date.now();
-        // The replay clock advances far faster than wall time, so the live
-        // throttle would freeze plays at whatever slice was fetched first.
-        // Re-slicing is local to the sandbox cache, so refetching is cheap.
-        const shouldFetch = sandbox?.replay
-          ? marker?.progress !== sandbox.progress
-          : !marker
-            || (final && !marker.final)
-            || (!final && wantsRefresh && now - marker.at >= PLAYS_REFRESH_MIN_MS);
-        if (!shouldFetch) continue;
-        try {
-          const data = mockPlays
-            ? buildMockLivePlays(game, starterRows.filter((row) => getTeamAbbr(row.player?.team)
-              && [getTeamAbbr(game?.visitor_team), getTeamAbbr(game?.home_team)].includes(getTeamAbbr(row.player.team))))
-            : (await getLiveGamePlays(gameId)).data;
-          if (cancelled) return;
-          playsFetchedRef.current.set(gameId, { at: Date.now(), final, progress: sandbox?.progress });
-          pendingPlayGamesRef.current.delete(gameId);
-          setPlaysByGame((prev) => ({
-            ...prev,
-            [gameId]: Array.isArray(data) ? data : [],
-          }));
-        } catch {
-          // Leave the marker unset so a later tick can retry.
+      try {
+        for (const game of relevant) {
+          if (playRequestContextRef.current !== requestContext) return;
+          const gameId = String(game.id);
+          const marker = playsFetchedRef.current.get(gameId);
+          const final = isFinalGame(game);
+          const now = Date.now();
+          // The replay clock advances far faster than wall time, so the live
+          // throttle would freeze plays at whatever slice was fetched first.
+          // Re-slicing is local to the sandbox cache, so refetching is cheap.
+          const shouldFetch = sandbox?.replay
+            ? marker?.progress !== sandbox.progress
+            : !marker
+              || (final && !marker.final)
+              || (!final && now - marker.at >= PLAYS_REFRESH_MIN_MS);
+          if (!shouldFetch) continue;
+          try {
+            const payload = mockPlays
+              ? {
+                  data: buildMockLivePlays(game, starterRows.filter((row) => getTeamAbbr(row.player?.team)
+                    && [getTeamAbbr(game?.visitor_team), getTeamAbbr(game?.home_team)].includes(getTeamAbbr(row.player.team)))),
+                }
+              : await getLiveGamePlays(gameId);
+            if (playRequestContextRef.current !== requestContext) return;
+            const data = payload?.data;
+            // A transport failure is not a valid empty play slice. Keep the game
+            // unmarked so the next snapshot refresh retries even while paused.
+            if (payload?.retryable) continue;
+            playsFetchedRef.current.set(gameId, { at: Date.now(), final, progress: sandbox?.progress });
+            setPlaysByGame((prev) => ({
+              ...prev,
+              [gameId]: Array.isArray(data) ? data : [],
+            }));
+          } catch {
+            // Leave the marker unset so a later tick can retry.
+          }
         }
+      } finally {
+        playFetchInFlightContextsRef.current.delete(requestContext);
       }
     })();
 
-    return () => {
-      cancelled = true;
-    };
-  }, [currentMatchup, demoFeedEnabled, lastUpdatedAt, liveGames, liveStatus, matchupTeams, sandbox, sideSummaries]);
+    return undefined;
+  }, [currentMatchup, demoFeedEnabled, lastUpdatedAt, liveGames, liveStatus, matchupTeams, playRequestContextKey, sandbox, sideSummaries]);
 
   const gamesById = useMemo(() => {
     const map = new Map();
@@ -1869,14 +1905,20 @@ export default function CompanionLive({ onViewPlayer = null }) {
         progress: mapGameProgressToDemoTimeline(gameProgress, window) ?? gameProgress,
       };
     });
-    if (!demoTimeline) return events;
-    return events
+    const withDemoEvents = !demoTimeline
+      ? events
+      : events
       .concat(buildSharedDemoScoringEvents({
         sides: sideSummaries,
         scoringSettings: activeScoringSettings,
       }))
-      .sort((left, right) => (Number(right.progress) || 0) - (Number(left.progress) || 0))
-  }, [activeScoringSettings, demoTimeline, entriesById, feedEvents, liveGames, playEvents, sandbox, sideSummaries]);
+      .sort((left, right) => (Number(right.progress) || 0) - (Number(left.progress) || 0));
+
+    return groupSharedPlayEvents(
+      withDemoEvents,
+      (event) => playerSideKey.get(event.playerId) ?? null,
+    );
+  }, [activeScoringSettings, demoTimeline, entriesById, feedEvents, liveGames, playEvents, playerSideKey, sandbox, sideSummaries]);
 
   // Real scoring measures shared game progress. The mock feed instead closes
   // at its latest active-game event on the compressed schedule.
@@ -1917,15 +1959,18 @@ export default function CompanionLive({ onViewPlayer = null }) {
   }, [positionsById]);
 
   const matchesPlayFilter = useCallback((event) => matchesFeedFilter(event, feedFilter, {
-    position: positionsById.get(event.playerId) ?? null,
+    position: event.contributors?.length
+      ? event.contributors.map((contributor) => contributor.position ?? positionsById.get(contributor.playerId))
+      : positionsById.get(event.playerId) ?? null,
     threshold: bigPlayThreshold,
   }), [bigPlayThreshold, feedFilter, positionsById]);
 
   const visibleFeed = useMemo(() => (
     mergedFeed.filter((event) => {
+      if (event.hiddenFromFeed) return false;
       const sideKey = playerSideKey.get(event.playerId);
       if (!sideKey || (feedSide !== 'both' && sideKey !== feedSide)) return false;
-      if (focusPlayerId && event.playerId !== focusPlayerId) return false;
+      if (focusPlayerId && ![event.playerId, ...(event.contributorIds ?? [])].includes(focusPlayerId)) return false;
       return matchesPlayFilter(event);
     })
   ), [feedSide, focusPlayerId, matchesPlayFilter, mergedFeed, playerSideKey]);
@@ -1935,10 +1980,13 @@ export default function CompanionLive({ onViewPlayer = null }) {
     const counts = {};
     playFilterModel.forEach((group) => {
       counts[group.id] = mergedFeed.reduce((total, event) => {
+        if (event.hiddenFromFeed) return total;
         const sideKey = playerSideKey.get(event.playerId);
         if (!sideKey || (feedSide !== 'both' && sideKey !== feedSide)) return total;
         const matched = matchesFeedFilter(event, { group: group.id, types: [], positions: [] }, {
-          position: positionsById.get(event.playerId) ?? null,
+          position: event.contributors?.length
+            ? event.contributors.map((contributor) => contributor.position ?? positionsById.get(contributor.playerId))
+            : positionsById.get(event.playerId) ?? null,
           threshold: bigPlayThreshold,
         });
         return matched ? total + 1 : total;
@@ -1950,6 +1998,7 @@ export default function CompanionLive({ onViewPlayer = null }) {
   const feedCounts = useMemo(() => {
     const counts = { a: 0, b: 0 };
     mergedFeed.forEach((event) => {
+      if (event.hiddenFromFeed) return;
       const sideKey = playerSideKey.get(event.playerId);
       if (sideKey) counts[sideKey] += 1;
     });
@@ -2542,7 +2591,11 @@ export default function CompanionLive({ onViewPlayer = null }) {
                           selectionRequest={feedSelection?.requestId ?? 0}
                           onOpenPlayer={openPlayer}
                           emptyMessage={feedEmptyMessage}
-                          showPlayField={Boolean(sandbox?.replay)}
+                          // A provider-backed play is just as trustworthy in
+                          // the real live view as it is in the sandbox. The
+                          // detail component still declines to draw synthetic
+                          // stat-delta rows that have no field geometry.
+                          showPlayField
                         />
                       </div>
                     </div>

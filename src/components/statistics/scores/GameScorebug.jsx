@@ -1,8 +1,10 @@
 import { useMemo } from 'react';
+import { FootballIcon } from '@phosphor-icons/react/Football';
 import { useTheme } from '../../../context/ThemeContext';
 import { isStatisticsScoresDrilldownStatus } from '../../../utils/statisticsScoresDrilldown';
 import { getTeamVisualTheme } from '../../../utils/teamVisualTheme';
 import { getScoreNetworkLabel } from '../../../utils/statisticsBroadcasts';
+import LatestPlayStrip from './LatestPlayStrip.jsx';
 
 const teamLogo = (teamId) => `https://a.espncdn.com/i/teamlogos/nfl/500/${String(teamId).toLowerCase()}.png`;
 
@@ -13,6 +15,19 @@ function TimeoutMarkers({ count, teamName }) {
       {[0, 1, 2].map((index) => (
         <span key={index} className={index < count ? 'is-available' : ''} aria-hidden="true" />
       ))}
+    </span>
+  );
+}
+
+function PossessionGlyph({ teamName }) {
+  return (
+    <span
+      className="scores-possession is-active"
+      title="Possession"
+      role="img"
+      aria-label={`${teamName} possession`}
+    >
+      <FootballIcon size={14} weight="fill" aria-hidden="true" />
     </span>
   );
 }
@@ -31,7 +46,7 @@ function TeamLine({ team, score, opponentScore, record, game, side }) {
       <span className="scores-scorebug-team-copy">
         <strong>{team.id}</strong>
         {winner && <span className="scores-winner-mark" aria-hidden="true">◀</span>}
-        {possession && <span className="scores-possession is-active" title="Possession" aria-label={`${team.name} possession`} />}
+        {possession && <PossessionGlyph teamName={team.name} />}
         {record && <small>{record}</small>}
       </span>
       <TimeoutMarkers count={timeoutCount} teamName={team.name} />
@@ -57,11 +72,15 @@ function statusMeta(game) {
 function situationContent(game) {
   if (game.status === 'scheduled') return <><span>{game.venue}</span></>;
   if (game.live) {
+    const redZone = game.live.redZone ? <strong>Red Zone</strong> : null;
+    const downDistance = game.live.downDistance ? <span>{game.live.downDistance}</span> : null;
+    const fieldPosition = game.live.fieldPosition ? <span>· {game.live.fieldPosition}</span> : null;
+    if (!redZone && !downDistance && !fieldPosition) return null;
     return (
       <>
-        {game.live.redZone && <strong>Red Zone</strong>}
-        <span>{game.live.downDistance}</span>
-        <span>{game.live.fieldPosition ? `· ${game.live.fieldPosition}` : ''}</span>
+        {redZone}
+        {downDistance}
+        {fieldPosition}
       </>
     );
   }
@@ -73,6 +92,8 @@ export function CompactScorebug({ game, onOpen }) {
   const final = game.status === 'final';
   const awayWinner = final && game.score?.away > game.score?.home;
   const homeWinner = final && game.score?.home > game.score?.away;
+  const awayPossession = game.status === 'live' && game.live?.possession === game.away.id;
+  const homePossession = game.status === 'live' && game.live?.possession === game.home.id;
   const detailsAvailable = isStatisticsScoresDrilldownStatus(game.status)
     && game.detailsAvailable !== false
     && Boolean(onOpen);
@@ -87,12 +108,18 @@ export function CompactScorebug({ game, onOpen }) {
         : `${game.away.name} at ${game.home.name}`}
       aria-disabled={!detailsAvailable || undefined}
     >
-      <span className={awayWinner ? '' : 'is-muted'}>{game.away.id}</span>
+      <span className={awayWinner ? '' : 'is-muted'}>
+        {game.away.id}
+        {awayPossession && <PossessionGlyph teamName={game.away.name} />}
+      </span>
       <b className={awayWinner ? '' : 'is-muted'}>{game.score?.away ?? ''}</b>
-      <span className={homeWinner ? '' : 'is-muted'}>{game.home.id}</span>
+      <span className={homeWinner ? '' : 'is-muted'}>
+        {game.home.id}
+        {homePossession && <PossessionGlyph teamName={game.home.name} />}
+      </span>
       <b className={homeWinner ? '' : 'is-muted'}>{game.score?.home ?? ''}</b>
       <small>{game.status === 'live'
-        ? `● ${game.statusLabel}${game.live?.displayClockFrozen ? ' · Clock held' : ''}`
+        ? `● ${game.statusLabel}`
         : game.statusLabel}</small>
     </button>
   );
@@ -162,7 +189,7 @@ export default function GameScorebug({ game, onOpen }) {
           <span className={`scores-status is-${statusTone(game.status)}`}>
             {game.status === 'live' && <span className="scores-live-dot" aria-hidden="true" />}
             {game.status === 'live'
-              ? `Live · ${game.statusLabel}${game.live?.displayClockFrozen ? ' · Clock held' : ''}`
+              ? `Live · ${game.statusLabel}`
               : game.statusLabel}
           </span>
           {statusMeta(game) && <span>{statusMeta(game)}</span>}
@@ -189,6 +216,7 @@ export default function GameScorebug({ game, onOpen }) {
 
         {situation && <span className="scores-scorebug-situation">{situation}</span>}
       </span>
+      <LatestPlayStrip game={game} />
       {!disabled && <span className="scores-scorebug-go" aria-hidden="true">→</span>}
     </button>
   );

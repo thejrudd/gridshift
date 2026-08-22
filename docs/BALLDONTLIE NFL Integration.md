@@ -126,7 +126,7 @@ Starting policy is tier-sensitive: Free cannot power provider-backed fantasy sco
 
 The provider says in-progress Games data is updated in real time, but the published NFL Game schema does not guarantee a dedicated current clock or clock-running flag. Play rows include `clock_display` and `wallclock`, which describe an event rather than a continuously running clock.
 
-Live preseason verification found the current game clock encoded in the Games `status` text, while multiple one-second responses could repeat the same value. GridShift therefore treats that value as an anchor: the UI animates a one-second display for at most ten seconds, accepts each provider correction, and freezes at stoppage/safety boundaries or when the anchor becomes stale. That display remains an approximation; it is not a provider-authored second-by-second clock.
+Live preseason verification found the current game clock encoded in the Games `status` text, while multiple one-second responses could repeat the same value. GridShift combines that Games value with the newest canonical Play `clock_display`, rejects older progress, and displays only the provider-verified result. Repeated provider values remain repeated on screen rather than being presented as a fabricated second-by-second clock.
 
 ## Play Row Fields
 

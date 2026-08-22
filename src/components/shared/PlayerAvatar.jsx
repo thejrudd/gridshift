@@ -17,13 +17,17 @@ function getDisplayName(player) {
     || 'Unknown Player';
 }
 
-export function PlayerAvatar({ player = {}, size = 46, background, className = '', name }) {
+export function PlayerAvatar({ player = {}, size = 46, initialsSize, background, className = '', name }) {
   const [failed, setFailed] = useState({ key: '', count: 0 });
   const { urls, logoIndex } = getLiveImageSources(player);
   const key = urls.join('|');
   const index = failed.key === key ? failed.count : 0;
   const url = urls[index] ?? null;
   const isMark = logoIndex >= 0 && index >= logoIndex;
+  const numericSize = Number(size);
+  const resolvedInitialsSize = initialsSize ?? (Number.isFinite(numericSize)
+    ? Math.round(numericSize * 0.32)
+    : '1em');
 
   return (
     <span className={`fl-av ${className}`} style={{ width: size, height: size, background }} aria-hidden="true">
@@ -37,7 +41,7 @@ export function PlayerAvatar({ player = {}, size = 46, background, className = '
           onError={() => setFailed({ key, count: index + 1 })}
         />
       ) : (
-        <span className="fl-av__initials" style={{ fontSize: Math.round(size * 0.32) }}>
+        <span className="fl-av__initials" style={{ fontSize: resolvedInitialsSize }}>
           {getCompanionInitials(name ?? getDisplayName(player))}
         </span>
       )}

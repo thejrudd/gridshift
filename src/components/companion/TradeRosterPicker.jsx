@@ -10,7 +10,7 @@ import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } f
 import { findKtcPlayerFromSleeper, getKtcValue, fmtKtcValue, productionAdjustedValue } from '../../utils/ktcApi';
 import { resolveTradePlayerValueDetail } from '../../utils/tradeValue';
 import { computePositionalRanks, computePositionalAvgPPG, computePositionalValuePerPPG } from '../../utils/projectionEngine';
-import { parseSearchQuery, matchesFilter } from '../../utils/parseSearchQuery';
+import { matchesFilter, matchesJerseyNumber, parseSearchQuery } from '../../utils/parseSearchQuery';
 import { getTeamColorKey } from '../../data/teamColors';
 import { getTeamVisualTheme } from '../../utils/teamVisualTheme';
 import { getPlayerAvailabilityStatus } from '../../utils/playerAvailabilityStatus.js';
@@ -302,6 +302,7 @@ export default function TradeRosterPicker({
         return {
           id,
           name: sp.full_name ?? `${sp.first_name ?? ''} ${sp.last_name ?? ''}`.trim(),
+          jersey: sp.number ?? '',
           position: sp.position ?? '',
           team: sp.team ?? '',
           teamKey,
@@ -335,7 +336,8 @@ export default function TradeRosterPicker({
   const filtered = useMemo(() => {
     if (!trimmedSearch) return posFiltered;
     const filters = parsedSearch;
-    const hasFilters = filters.pos.size || filters.team.size || filters.div.size || filters.conf.size || filters.name.length;
+    const hasFilters = filters.pos.size || filters.team.size || filters.div.size
+      || filters.conf.size || filters.number.size || filters.name.length;
     if (!hasFilters) return posFiltered;
     return posFiltered.filter(p => {
       if (filters.name.length > 0) {
@@ -344,6 +346,8 @@ export default function TradeRosterPicker({
       if (filters.pos.size > 0) {
         if (![...filters.pos].some(pos => matchesFilter(p.position, pos))) return false;
       }
+      if (filters.number.size > 0
+        && ![...filters.number].some(number => matchesJerseyNumber(p.jersey, number))) return false;
       if (filters.team.size > 0 && !filters.team.has(p.teamKey)) return false;
       const teamInfo = NFL_TEAM_INFO[p.teamKey];
       if (filters.div.size > 0 && (!teamInfo || !filters.div.has(teamInfo.division))) return false;
