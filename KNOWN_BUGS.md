@@ -448,3 +448,4 @@ Open bugs are listed first, deferred work next, fixed bugs below. Add new entrie
 | Fantasy Live preseason charts can oscillate and collapse to zero because cross-game events are plotted and accumulated on different timelines, while the performer rail falls back to zero fixture totals when play-by-play exists but provider box scores do not. | v8.6.1 |
 | Fantasy Live preseason play values can ignore the connected league's scoring profile, and incompletions or penalty-negated passes can be credited as completed passes with positive fantasy points. | v8.6.1 |
 | Draft Board's Highlight conflicts toggle can show no warning between saved targets with the same bye week in keeper and dynasty leagues. | v8.6.1 |
+| Fantasy Rankings and Draft can omit valid BALLDONTLIE ADP when the provider includes a terminal generational suffix such as Jr., Sr., or III that Sleeper omits. | v8.6.2 |

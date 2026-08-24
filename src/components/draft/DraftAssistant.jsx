@@ -9,6 +9,7 @@ import useMediaQuery from '../../hooks/useMediaQuery.js';
 import { useUpcomingScheduleBundle } from '../../hooks/useUpcomingScheduleMap.js';
 import CompanionPlayerRow, {
   CompanionPlayerAction,
+  CompanionPlayerLocalContrastText,
   CompanionPlayerMetric,
   CompanionPlayerStatus,
 } from '../companion/CompanionPlayerRow.jsx';
@@ -61,6 +62,11 @@ import {
   isDraftRookie,
 } from '../../utils/draftAssistant/projectedSelection.js';
 import {
+  getRosterProjectionSlotEligibilities,
+  getRosterProjectionSlotOrder,
+  selectNextAvailableRosterProjection,
+} from '../../utils/draftAssistant/rosterProjection.js';
+import {
   DRAFT_POSITION_ORDER as POSITION_ORDER,
   emptyBoard,
   flattenBoardIds,
@@ -77,7 +83,10 @@ import {
   removePlayerFromOrderedBoard,
 } from '../../utils/draftAssistant/board.js';
 import { getDraftAnalyticsCompareLimit } from '../../utils/draftAssistant/analytics.js';
-import { buildDraftByeConflictModel } from '../../utils/draftAssistant/byeConflicts.js';
+import {
+  buildDraftByeConflictModel,
+  buildDraftRosterByeConflictModel,
+} from '../../utils/draftAssistant/byeConflicts.js';
 import { getByeWeekForTeam, isByeWeekBundleForSeason } from '../../utils/draftAssistant/byeWeeks.js';
 import {
   DRAFT_RANKING_PRIORITY_CONTROLS,
@@ -2430,34 +2439,15 @@ function normalizeRosterSlot(slot) {
   return value || 'BN';
 }
 
-const ROSTER_FLEX_SLOT_POSITIONS = {
-  FLEX: ['RB', 'WR', 'TE'],
-  REC_FLEX: ['RB', 'WR', 'TE'],
-  WRT_FLEX: ['RB', 'WR', 'TE'],
-  WRRB_FLEX: ['RB', 'WR'],
-  RBWR_FLEX: ['RB', 'WR'],
-  RB_WR: ['RB', 'WR'],
-  WRTE_FLEX: ['WR', 'TE'],
-  WR_TE: ['WR', 'TE'],
-  SUPER_FLEX: ['QB', 'RB', 'WR', 'TE'],
-  SUPERFLEX: ['QB', 'RB', 'WR', 'TE'],
-  OP: ['QB', 'RB', 'WR', 'TE'],
-  IDP_FLEX: ['DL', 'LB', 'DB'],
-  FLEX_IDP: ['DL', 'LB', 'DB'],
-  DP: ['DL', 'LB', 'DB'],
-};
-
 function formatRosterSlotLabel(slot) {
   const normalized = normalizeRosterSlot(slot);
-  if (ROSTER_FLEX_SLOT_POSITIONS[normalized]) return ROSTER_FLEX_SLOT_POSITIONS[normalized].join('/');
+  const eligibilities = getRosterProjectionSlotEligibilities(normalized);
+  if (eligibilities?.size > 1) return [...eligibilities].join('/');
   return normalized;
 }
 
 function getRosterSlotEligibilities(slot) {
-  const normalized = normalizeRosterSlot(slot);
-  if (ROSTER_FLEX_SLOT_POSITIONS[normalized]) return new Set(ROSTER_FLEX_SLOT_POSITIONS[normalized]);
-  if (normalized === 'BN' || normalized === 'IR' || normalized === 'TAXI') return null;
-  return new Set([normalizePosition(normalized)]);
+  return getRosterProjectionSlotEligibilities(normalizeRosterSlot(slot));
 }
 
 function slotAcceptsPosition(slot, position) {
@@ -2489,6 +2479,7 @@ function buildRosterTrayPlayer({
     name: getSleeperPlayerName(rawPlayer, `Player ${id}`),
     position,
     team: String(rawPlayer?.team ?? '').toUpperCase(),
+    raw: rawPlayer,
     byeWeek: resolveDraftPlayerByeWeek({
       player: rawPlayer,
       team: rawPlayer?.team,
@@ -2506,6 +2497,7 @@ function buildMyDraftRosterTray({
   myRosterData,
   players,
   keeperIds = new Set(),
+  preferredPlayersByPosition = {},
   byeWeekBundle = null,
   draftSeason = null,
 }) {
@@ -2572,12 +2564,15 @@ function buildMyDraftRosterTray({
     rosterEntries.push(player);
   });
 
-  const findSlotIndex = (position, exactOnly = false) => slots.findIndex((slot) => {
-    if (slot.player) return false;
-    const slotName = normalizeRosterSlot(slot.slot);
-    if (exactOnly) return slotName === normalizePosition(position);
-    return slotAcceptsPosition(slotName, position);
-  });
+  const findSlotIndex = (position, exactOnly = false) => getRosterProjectionSlotOrder(slots)
+    .find((slotIndex) => {
+      const slot = slots[slotIndex];
+      if (slot.player) return false;
+      const eligibilities = getRosterSlotEligibilities(slot.slot);
+      if (!eligibilities) return false;
+      if (exactOnly) return eligibilities.size === 1 && eligibilities.has(normalizePosition(position));
+      return eligibilities.size > 1 && eligibilities.has(normalizePosition(position));
+    }) ?? -1;
 
   const assignPlayer = (player, exactOnly) => {
     const slotIndex = findSlotIndex(player.position, exactOnly);
@@ -2612,6 +2607,45 @@ function buildMyDraftRosterTray({
         isKeeper: keeperIds.has(player.id),
       },
     });
+  }
+
+  const claimedPlayerIds = new Set(
+    slots.map((slot) => slot.player?.id).filter(Boolean),
+  );
+  for (const slotIndex of getRosterProjectionSlotOrder(slots)) {
+    const slot = slots[slotIndex];
+    const eligibilities = getRosterSlotEligibilities(slot.slot);
+    // Bench slots have no single position to project. Leaving them open keeps
+    // the tray focused on the manager's position-specific Board priorities.
+    if (slot.player || !eligibilities) continue;
+
+    const candidate = selectNextAvailableRosterProjection({
+      eligiblePositions: [...eligibilities],
+      preferredPlayersByPosition,
+      claimedPlayerIds,
+    });
+    if (!candidate) continue;
+
+    const player = buildRosterTrayPlayer({
+      playerId: candidate.id,
+      rawPlayer: candidate.raw ?? players?.[candidate.id] ?? null,
+      sourceLabel: 'Top available Board target',
+      sortOrder: candidate.boardRank ?? Number.MAX_SAFE_INTEGER,
+      byeWeekBundle,
+      draftSeason,
+    });
+    if (!player) continue;
+
+    slot.player = {
+      ...player,
+      name: candidate.name ?? player.name,
+      position: candidate.position ?? player.position,
+      team: candidate.team ?? player.team,
+      byeWeek: candidate.byeWeek ?? player.byeWeek,
+      isProjected: true,
+      boardRank: candidate.boardRank ?? null,
+    };
+    claimedPlayerIds.add(player.id);
   }
 
   return slots;
@@ -3112,18 +3146,59 @@ const DraftBoardLane = memo(function DraftBoardLane({
   && haveSamePlayerRows(previous.rows, next.rows)
 ));
 
-function DraftRosterTray({ slots, collapsed, onToggleCollapsed }) {
+function DraftRosterTargetGlyph({ label = 'Top available Board preference' }) {
+  return (
+    <span className="draft-board-roster-glyph is-target" role="img" aria-label={label} title={label}>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="7.5" />
+        <circle cx="12" cy="12" r="2" fill="currentColor" stroke="none" />
+        <path d="M12 2.5v3M21.5 12h-3M12 21.5v-3M2.5 12h3" />
+      </svg>
+    </span>
+  );
+}
+
+function DraftRosterLockGlyph({ label = 'Locked on your roster' }) {
+  return (
+    <span className="draft-board-roster-glyph is-locked" role="img" aria-label={label} title={label}>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <rect x="4.75" y="10.25" width="14.5" height="10" rx="2" />
+        <path d="M8.25 10.25V7a3.75 3.75 0 0 1 7.5 0v3.25" />
+        <path d="M12 14.25v2" />
+      </svg>
+    </span>
+  );
+}
+
+function DraftRosterByeConflictGlyph({ player, conflict }) {
+  const description = getByeConflictDescription(player, conflict);
+  if (!description) return null;
+  return (
+    <span className="draft-board-roster-glyph is-bye-conflict" role="img" aria-label={description} title={description}>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M12 3 2.8 20.25h18.4L12 3Z" />
+        <path d="M12 8v5.5M12 17.25v.1" />
+      </svg>
+    </span>
+  );
+}
+
+function DraftRosterTray({ slots, collapsed, onToggleCollapsed, darkMode, conflictByPlayerId = null }) {
   const slotsRef = useRef(null);
   const filledCount = slots.filter((slot) => slot.player).length;
   return (
-    <section className={['draft-board-roster-tray', collapsed ? 'is-collapsed' : ''].filter(Boolean).join(' ')} aria-label="My roster">
+    <section className={['draft-board-roster-tray', collapsed ? 'is-collapsed' : ''].filter(Boolean).join(' ')} aria-label="Projected roster">
       <button
         type="button"
         className="draft-board-roster-tray__label"
         aria-expanded={!collapsed}
         onClick={onToggleCollapsed}
       >
-        <span>My Roster</span>
+        <span>Projected Roster</span>
+        <span className="draft-board-roster-tray__legend" title="Target marks the top available player from your Board for that position.">
+          <DraftRosterTargetGlyph />
+          <span>Target</span>
+        </span>
         <strong>{filledCount}/{slots.length}</strong>
         <ArrowIcon direction={collapsed ? 'up' : 'down'} />
       </button>
@@ -3135,16 +3210,49 @@ function DraftRosterTray({ slots, collapsed, onToggleCollapsed }) {
               className={[
                 'draft-board-roster-slot',
                 slot.player ? 'is-filled' : '',
+                slot.player?.isProjected ? 'is-projected' : '',
               ].filter(Boolean).join(' ')}
             >
-              <span className="draft-board-roster-slot__slot">{formatRosterSlotLabel(slot.slot)}</span>
               {slot.player ? (
-                <>
-                  <strong>{slot.player.name}</strong>
-                  <span>{[slot.player.position, slot.player.team].filter(Boolean).join(' · ')}</span>
-                </>
+                <CompanionPlayerRow
+                  player={slot.player}
+                  darkMode={darkMode}
+                  interactive={false}
+                  compact
+                  showPosition={false}
+                  showTeamLogo
+                  metaPrefix={formatRosterSlotLabel(slot.slot)}
+                  metaSegments={[
+                    slot.player.byeWeek != null ? `Bye ${slot.player.byeWeek}` : null,
+                  ].filter(Boolean)}
+                  identityAccessory={
+                    <CompanionPlayerLocalContrastText className="draft-board-roster-slot__identity-accessories">
+                      {slot.player.isProjected ? <DraftRosterTargetGlyph /> : <DraftRosterLockGlyph />}
+                      {!slot.player.isProjected ? (
+                        <DraftRosterByeConflictGlyph
+                          player={slot.player}
+                          conflict={conflictByPlayerId?.get(String(slot.player.id)) ?? null}
+                        />
+                      ) : null}
+                    </CompanionPlayerLocalContrastText>
+                  }
+                  title={[
+                    slot.player.name,
+                    slot.player.isProjected ? 'Top available Board preference' : 'Locked roster player',
+                    slot.player.byeWeek != null ? `Bye ${slot.player.byeWeek}` : null,
+                    !slot.player.isProjected
+                      ? getByeConflictDescription(slot.player, conflictByPlayerId?.get(String(slot.player.id)) ?? null)
+                      : null,
+                  ].filter(Boolean).join(' · ')}
+                  className="draft-board-roster-slot__player"
+                  gridTemplate="28px minmax(0, 1fr) 20px"
+                  compactGridTemplate="24px minmax(0, 1fr) 18px"
+                />
               ) : (
-                <span>Open</span>
+                <>
+                  <span className="draft-board-roster-slot__slot">{formatRosterSlotLabel(slot.slot)}</span>
+                  <span>Open</span>
+                </>
               )}
             </div>
           ))}
@@ -3211,6 +3319,7 @@ function MyBoardWorkspace({
   availabilityOptions,
   onAvailabilityFilterChange,
   rosterSlots,
+  rosterConflictByPlayerId,
   cardMetricKey,
   conflictByPlayerId,
   displaySize,
@@ -3592,6 +3701,8 @@ function MyBoardWorkspace({
           slots={rosterSlots}
           collapsed={rosterCollapsed}
           onToggleCollapsed={() => setRosterCollapsed((current) => !current)}
+          darkMode={darkMode}
+          conflictByPlayerId={rosterConflictByPlayerId}
         />
         <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
           {dragAnnouncement}
@@ -4145,6 +4256,34 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
     () => decoratePositionRanks(boardRows, positionRankMap),
     [boardRows, positionRankMap],
   );
+  const preferredPlayersByPosition = useMemo(() => {
+    const boardRowsById = new Map(boardRowsWithRanks.map((player) => [String(player.id), player]));
+    return Object.fromEntries(
+      Object.entries(eligibleOrderedBoardByPosition).map(([position, ids]) => [
+        normalizePosition(position),
+        ids.map((id) => boardRowsById.get(String(id))).filter(Boolean),
+      ]),
+    );
+  }, [eligibleOrderedBoardByPosition, boardRowsWithRanks]);
+  const rosterSlots = useMemo(() => buildMyDraftRosterTray({
+    league,
+    draftOrderContext,
+    myRosterData,
+    players,
+    keeperIds,
+    preferredPlayersByPosition,
+    byeWeekBundle,
+    draftSeason,
+  }), [
+    league,
+    draftOrderContext,
+    myRosterData,
+    players,
+    keeperIds,
+    preferredPlayersByPosition,
+    byeWeekBundle,
+    draftSeason,
+  ]);
   const bigBoardPlayers = useMemo(() => {
     if (boardScope === 'all') return activePlayersWithRanks;
     if (boardScope === 'rookies') {
@@ -4248,16 +4387,6 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
     setModelWeights(normalizeDraftModelWeights(DEFAULT_DRAFT_MODEL_WEIGHTS));
   };
 
-  const rosterSlots = useMemo(() => buildMyDraftRosterTray({
-    league,
-    draftOrderContext,
-    myRosterData,
-    players,
-    keeperIds,
-    byeWeekBundle,
-    draftSeason,
-  }), [league, draftOrderContext, myRosterData, players, keeperIds, byeWeekBundle, draftSeason]);
-
   const byeConflictAvailable = isByeWeekBundleForSeason(byeWeekBundle, draftSeason);
   const byeConflictCandidateIds = useMemo(() => (
     [...new Set(
@@ -4335,6 +4464,19 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
     draftOrderContext.normalizedPicks,
     myRosterData?.roster_id,
   ]);
+  const lockedRosterTrayPlayerIds = useMemo(() => (
+    rosterSlots
+      .map((slot) => slot.player)
+      .filter((player) => player && !player.isProjected)
+      .map((player) => String(player.id))
+  ), [rosterSlots]);
+  const rosterTrayByeConflicts = useMemo(() => {
+    if (!byeConflictAvailable) return null;
+    return buildDraftRosterByeConflictModel({
+      playersById: byeConflictPlayersById,
+      playerIds: lockedRosterTrayPlayerIds,
+    }).byPlayerId;
+  }, [byeConflictAvailable, byeConflictPlayersById, lockedRosterTrayPlayerIds]);
   const visibleByeConflicts = highlightByeConflicts ? byeConflictModel?.byPlayerId ?? null : null;
 
 
@@ -4515,6 +4657,7 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
           availabilityOptions={availabilityOptions}
           onAvailabilityFilterChange={setAvailabilityFilter}
           rosterSlots={rosterSlots}
+          rosterConflictByPlayerId={rosterTrayByeConflicts}
           cardMetricKey={draftBoardCardMetric}
           conflictByPlayerId={visibleByeConflicts}
           displaySize={displaySize}

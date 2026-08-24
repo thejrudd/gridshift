@@ -9938,7 +9938,7 @@ body {
 .draft-board-roster-tray {
   display: grid;
   grid-column: 1 / -1;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: 88px minmax(0, 1fr);
   gap: 10px;
   align-items: stretch;
   min-width: 0;
@@ -9950,10 +9950,11 @@ body {
 
 .draft-board-roster-tray__label {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  min-width: 28px;
-  padding: 0 4px;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 8px;
   border: 0;
   border-right: 1px solid var(--color-separator);
   background: transparent;
@@ -9962,20 +9963,37 @@ body {
   font-family: var(--font-display, 'Barlow Condensed', sans-serif);
   font-size: var(--type-label);
   font-weight: 900;
-  line-height: 1;
+  line-height: 0.95;
+  text-align: center;
   text-transform: uppercase;
-  writing-mode: vertical-rl;
-  transform: rotate(180deg);
+  writing-mode: initial;
+  transform: none;
 }
 
-.draft-board-roster-tray__label strong,
-.draft-board-roster-tray__label svg {
-  display: none;
+.draft-board-roster-tray__legend {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  color: var(--color-label-secondary);
+  font-family: var(--font-body, 'Figtree', sans-serif);
+  font-size: var(--type-micro);
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  text-transform: none;
+}
+
+.draft-board-roster-tray__label strong {
+  color: var(--color-label-tertiary);
+  font-family: var(--font-body, 'Figtree', sans-serif);
+  font-size: var(--type-label);
+  font-weight: 850;
 }
 
 .draft-board-roster-tray__slots {
   display: grid;
-  grid-auto-columns: minmax(132px, 1fr);
+  grid-auto-columns: minmax(216px, 1fr);
   grid-auto-flow: column;
   gap: 8px;
   min-width: 0;
@@ -9987,6 +10005,7 @@ body {
   display: grid;
   align-content: start;
   gap: 3px;
+  height: 66px;
   min-height: 66px;
   padding: 7px 8px;
   border: 1px dashed var(--color-separator);
@@ -9996,9 +10015,15 @@ body {
 }
 
 .draft-board-roster-slot.is-filled {
+  overflow: hidden;
+  padding: 0;
   border-style: solid;
-  background: var(--color-fill);
-  color: var(--color-label-secondary);
+  background: var(--color-bg);
+  color: var(--color-label);
+}
+
+.draft-board-roster-slot.is-projected {
+  border-style: dashed;
 }
 
 .draft-board-roster-slot__slot {
@@ -10008,7 +10033,7 @@ body {
   line-height: 1;
 }
 
-.draft-board-roster-slot strong {
+.draft-board-roster-slot > strong {
   min-width: 0;
   overflow: hidden;
   color: var(--color-label);
@@ -10019,7 +10044,7 @@ body {
   white-space: nowrap;
 }
 
-.draft-board-roster-slot span:not(.draft-board-roster-slot__slot) {
+.draft-board-roster-slot > span:not(.draft-board-roster-slot__slot) {
   min-width: 0;
   overflow: hidden;
   font-size: var(--type-label);
@@ -10027,6 +10052,88 @@ body {
   line-height: 1.1;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.draft-board-roster-slot__player.companion-player-row {
+  width: 100%;
+  min-height: 64px;
+  height: 100%;
+  gap: 5px;
+  padding: 6px;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none !important;
+}
+
+.draft-board-roster-slot__player.companion-player-row .companion-player-row__avatar {
+  width: 28px;
+  height: 28px;
+}
+
+.draft-board-roster-slot__player.companion-player-row .companion-player-row__team-logo,
+.draft-board-roster-slot__player.companion-player-row .companion-player-row__team-logo-spacer {
+  display: block !important;
+  width: 20px;
+  height: 20px;
+}
+
+.draft-board-roster-slot__player.companion-player-row .companion-player-row__identity {
+  gap: 3px;
+  font-size: var(--type-label);
+  font-weight: 900;
+  line-height: 1;
+}
+
+.draft-board-roster-slot__player.companion-player-row .companion-player-row__identity-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.draft-board-roster-slot__player.companion-player-row .companion-player-row__meta {
+  display: flex !important;
+  gap: 3px;
+  margin-top: 3px;
+  font-size: var(--type-micro);
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.draft-board-roster-slot__player.companion-player-row .companion-player-row__meta-item {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.draft-board-roster-slot__identity-accessories {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.draft-board-roster-glyph {
+  display: inline-grid;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  place-items: center;
+  color: currentColor;
+}
+
+.draft-board-roster-glyph svg {
+  width: 100%;
+  height: 100%;
+}
+
+.draft-board-roster-glyph.is-bye-conflict {
+  color: var(--color-accent-orange);
+}
+
+.draft-board-roster-tray__legend .draft-board-roster-glyph {
+  width: 12px;
+  height: 12px;
 }
 
 @container draft-board-workspace (min-width: 56.25rem) {
@@ -10732,6 +10839,7 @@ body {
   }
 
   .draft-board-roster-tray__label {
+    flex-direction: row;
     justify-content: space-between;
     min-width: 0;
     min-height: var(--draft-board-roster-collapsed-height);
@@ -10748,6 +10856,12 @@ body {
   .draft-board-roster-tray__label strong,
   .draft-board-roster-tray__label svg {
     display: block;
+  }
+
+  .draft-board-roster-tray__label .draft-board-roster-tray__legend {
+    display: inline-flex;
+    margin-left: auto;
+    margin-right: 8px;
   }
 
   .draft-board-roster-tray__label strong {
@@ -10773,11 +10887,12 @@ body {
   }
 
   .draft-board-roster-tray__slots {
-    grid-auto-columns: minmax(92px, 25vw);
+    grid-auto-columns: minmax(132px, 36vw);
     gap: 6px;
   }
 
   .draft-board-roster-slot {
+    height: 42px;
     min-height: 42px;
     padding: 4px 6px;
   }
@@ -10787,14 +10902,51 @@ body {
     white-space: nowrap;
   }
 
-  .draft-board-roster-slot span:not(.draft-board-roster-slot__slot) {
+  .draft-board-roster-slot > span:not(.draft-board-roster-slot__slot) {
     font-size: var(--type-micro);
+  }
+
+  .draft-board-roster-slot.is-filled {
+    padding: 0;
+  }
+
+  .draft-board-roster-slot__player.companion-player-row {
+    min-height: 42px;
+    gap: 4px;
+    padding: 4px;
+  }
+
+  .draft-board-roster-slot__player.companion-player-row .companion-player-row__avatar {
+    width: 24px;
+    height: 24px;
+  }
+
+  .draft-board-roster-slot__player.companion-player-row .companion-player-row__team-logo,
+  .draft-board-roster-slot__player.companion-player-row .companion-player-row__team-logo-spacer {
+    width: 18px;
+    height: 18px;
+  }
+
+  .draft-board-roster-slot__player.companion-player-row .companion-player-row__identity {
+    font-size: var(--type-label);
+  }
+
+  .draft-board-roster-slot__player.companion-player-row .companion-player-row__meta {
+    gap: 2px;
+    margin-top: 1px;
+    font-size: var(--type-micro);
+  }
+
+  .draft-board-roster-glyph {
+    width: 12px;
+    height: 12px;
+    flex-basis: 12px;
   }
 }
 
 @media (max-width: 360px) {
   .draft-board-roster-tray__slots {
-    grid-auto-columns: minmax(84px, 28vw);
+    grid-auto-columns: minmax(116px, 36vw);
   }
 
 }

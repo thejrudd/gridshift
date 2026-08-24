@@ -370,7 +370,7 @@ export default function Sidebar({
           className="sidebar-version"
           style={{ color: 'var(--color-label-tertiary)' }}
         >
-          v8.6.1
+          v8.6.2
         </div>
       </div>
     </aside>

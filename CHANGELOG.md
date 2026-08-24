@@ -1257,3 +1257,14 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Preseason Rankings and Live reliability** - Preserved valid ADP matches while league positions initialize; applied connected-league scoring to preseason play values; kept incompletions and negated plays from earning positive completion points; aligned cross-game timelines; and filled unmatched performer rows from observed plays without overriding provider-backed rows.
 - **League history placements** - Derived final postseason placements from championship and consolation results, including uneven and Toilet Bowl brackets.
 - **Regression coverage** - Expanded unit and responsive browser coverage for Draft, Statistics, Fantasy, Live, League History, ADP, win probability, schedule selection, and mobile layout behavior.
+
+## v8.6.2 - Draft Board & ADP Reliability
+*2026-08-24*
+
+- **Projected Roster** - Rebuilt the Draft Board roster tray as a live projection with locked-player headshots, NFL team gradients and logos, bye weeks, a padlock state, and separate bye-conflict warnings.
+- **Live Board targets** - Filled each open starter slot with the best still-available saved Board target, using a compact target glyph and updating immediately as draft picks remove players from the Board.
+- **Starter and FLEX priority** - Fill dedicated position slots before flexible slots regardless of provider slot order, then resolve FLEX slots from narrowest to broadest eligibility using overall saved Board rank across every eligible position.
+- **Responsive Draft Board** - Widened Projected Roster cards without adding height, preserving the compact mobile tray and horizontal scroll behavior.
+- **ADP name matching** - Restored valid BALLDONTLIE ADP for players whose provider names include terminal generational suffixes such as Jr., Sr., or III while preserving strict team and position matching.
+- **IDP boundary** - Kept players without a corresponding BALLDONTLIE fantasy-ADP record, such as individual IDP players, unavailable rather than inventing a market value.
+- **Regression coverage** - Added focused coverage for roster projection and FLEX priority, locked-roster bye conflicts, suffix variants, provider/team mismatches, and IDP players without a BDL ADP record.

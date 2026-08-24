@@ -1,6 +1,10 @@
 import { getTeamAbbr, normalizeName } from './liveScoringFeed.js';
 import { positionMatchesLeagueFilter } from './leaguePositions.js';
 
+function normalizeAdpName(name) {
+  return normalizeName(name).replace(/\s+(?:jr|sr|ii|iii|iv|v)$/i, '');
+}
+
 function normalizePosition(position) {
   const value = String(position ?? '').trim().toUpperCase();
   if (['DST', 'D/ST', 'DEF', 'DEFENSE'].includes(value)) return 'DST';
@@ -57,7 +61,7 @@ function makePlayerKey({ name, team, position }) {
   const normalizedTeam = getTeamAbbr(team);
   if (!normalizedPosition || !normalizedTeam) return null;
   if (normalizedPosition === 'DST') return `dst|${normalizedTeam}`;
-  const normalizedName = normalizeName(name);
+  const normalizedName = normalizeAdpName(name);
   return normalizedName ? `${normalizedName}|${normalizedTeam}|${normalizedPosition}` : null;
 }
 

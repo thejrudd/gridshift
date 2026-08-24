@@ -94,6 +94,48 @@ test('accepts provider fallback identity fields and preserves matches before lea
   assert.equal(quarterbackOnly.size, 0);
 });
 
+test('matches terminal generational suffixes without relaxing team or position checks', () => {
+  const matched = mapFantasyAdpToSleeperPlayers({
+    players: {
+      etienne: { full_name: 'Travis Etienne', team: 'NO', position: 'RB' },
+      pitts: { full_name: 'Kyle Pitts', team: 'ATL', position: 'TE' },
+      cook: { full_name: 'James Cook', team: 'BUF', position: 'RB' },
+      hamilton: { full_name: 'Kyle Hamilton', team: 'BAL', position: 'DB' },
+    },
+    adpRows: [
+      {
+        player: { first_name: 'Travis', last_name: 'Etienne Jr.', position_abbreviation: 'RB' },
+        team: { abbreviation: 'NO' },
+        position: 'RB',
+        average_draft_position: 44.21,
+      },
+      {
+        player: { first_name: 'Kyle', last_name: 'Pitts Sr.', position_abbreviation: 'TE' },
+        team: { abbreviation: 'ATL' },
+        position: 'TE',
+        average_draft_position: 64.91,
+      },
+      {
+        player: { first_name: 'James', last_name: 'Cook III', position_abbreviation: 'RB' },
+        team: { abbreviation: 'BUF' },
+        position: 'RB',
+        average_draft_position: 31.4,
+      },
+      {
+        player: { first_name: 'Travis', last_name: 'Etienne Jr.', position_abbreviation: 'RB' },
+        team: { abbreviation: 'JAX' },
+        position: 'RB',
+        average_draft_position: 12,
+      },
+    ],
+  });
+
+  assert.equal(matched.get('etienne')?.averageDraftPosition, 44.21);
+  assert.equal(matched.get('pitts')?.averageDraftPosition, 64.91);
+  assert.equal(matched.get('cook')?.averageDraftPosition, 31.4);
+  assert.equal(matched.has('hamilton'), false);
+});
+
 test('uses the newest available market timestamp for attribution', () => {
   assert.equal(getFantasyAdpSnapshotUpdatedAt([
     { collected_at: '2026-08-20T13:15:00.154Z' },

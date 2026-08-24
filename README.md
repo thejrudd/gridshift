@@ -124,13 +124,11 @@ Hosted owners can enable paid live scoring for selected Sleeper leagues by setti
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) + optional Node API sidecar |
 
-## What's New in v8.6.1
+## What's New in v8.6.2
 
-- **Mobile Draft tools** — Keep Draft search, priorities, analytics, board metrics, ranking values, and add-player actions usable on narrow screens with touch-safe controls and interactive chart points.
-- **Bye-week Draft context** — Show schedule-backed byes and format-aware conflict highlights while making drafted-player ownership and board-card identity clearer.
-- **Mobile Statistics and Fantasy polish** — Improve Schedule, Scores, Standings, Companion selectors, preview sheets, Heatmap, Defense, Rosters, Trade, and Predictions layouts across phone and tablet widths.
-- **Fantasy Live preseason reliability** — Preserve the connected league's scoring profile, keep play values truthful for incompletions and negated snaps, align cross-game chart timelines, and fill unmatched performer rows from observed plays without replacing provider-backed data.
-- **League history and responsive coverage** — Derive final postseason placements more completely and expand regression coverage across Draft, Statistics, Fantasy, Live, and League surfaces.
+- **Projected Roster** — Turn Draft Board's roster tray into a live lineup projection with player identity, team context, bye information, locked-player and conflict indicators, and top available Board targets for open slots.
+- **Smarter FLEX assignment** — Fill dedicated starter slots first, then choose the best remaining overall Board target for each compatible FLEX slot, from the narrowest FLEX to the broadest.
+- **ADP name matching** — Restore valid BALLDONTLIE ADP for players whose provider names include terminal generational suffixes such as Jr., Sr., or III while preserving strict team and position matching.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 

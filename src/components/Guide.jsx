@@ -546,7 +546,7 @@ const GUIDE_CONTENT = {
       },
       {
         title: 'Watch your roster',
-        description: 'The roster tray fills from your Sleeper picks while drafted players stay visible as gone on your board.',
+        description: 'Projected Roster keeps locked Sleeper players current, then marks the top available Board target for each open position.',
       },
     ],
   },

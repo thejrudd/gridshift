@@ -4,7 +4,13 @@ import test from 'node:test';
 import {
   DRAFT_BYE_CONFLICT_SEVERITY,
   buildDraftByeConflictModel,
+  buildDraftRosterByeConflictModel,
 } from '../../src/utils/draftAssistant/byeConflicts.js';
+import {
+  getRosterProjectionSlotEligibilities,
+  getRosterProjectionSlotOrder,
+  selectNextAvailableRosterProjection,
+} from '../../src/utils/draftAssistant/rosterProjection.js';
 
 const player = (id, name, position, byeWeek) => ({
   player_id: id,
@@ -165,4 +171,64 @@ test('empty input returns a stable empty redraft model', () => {
   assert.equal(model.format, 'redraft');
   assert.deepEqual(model.comparisonPlayerIds, []);
   assert.equal(model.byPlayerId.size, 0);
+});
+
+test('locked roster conflict model compares every current commitment without Board eligibility rules', () => {
+  const model = buildDraftRosterByeConflictModel({
+    playersById: {
+      qb: player('qb', 'Locked Quarterback', 'QB', 9),
+      wrOne: player('wrOne', 'Locked Receiver One', 'WR', 9),
+      wrTwo: player('wrTwo', 'Locked Receiver Two', 'WR', 9),
+      unknown: player('unknown', 'Unknown Bye', 'TE', null),
+    },
+    playerIds: ['qb', 'wrOne', 'wrTwo', 'unknown', 'wrOne'],
+  });
+
+  assert.deepEqual(model.comparisonPlayerIds, ['qb', 'wrOne', 'wrTwo', 'unknown']);
+  assert.equal(model.byPlayerId.get('qb').severity, DRAFT_BYE_CONFLICT_SEVERITY.MEDIUM);
+  assert.equal(model.byPlayerId.get('wrOne').severity, DRAFT_BYE_CONFLICT_SEVERITY.HIGH);
+  assert.deepEqual(model.byPlayerId.get('wrOne').matchingPlayerNames, ['Locked Quarterback', 'Locked Receiver Two']);
+  assert.equal(model.byPlayerId.get('unknown').severity, DRAFT_BYE_CONFLICT_SEVERITY.NONE);
+});
+
+test('projected roster selection advances to the next live Board preference and respects flex order', () => {
+  const preferences = {
+    RB: [
+      { id: 'rb-gone', boardRank: 1, available: false },
+      { id: 'rb-live', boardRank: 4, available: true },
+    ],
+    WR: [
+      { id: 'wr-live', boardRank: 2, available: true },
+      { id: 'wr-next', boardRank: 5, available: true },
+    ],
+  };
+
+  assert.equal(selectNextAvailableRosterProjection({
+    eligiblePositions: ['RB'],
+    preferredPlayersByPosition: preferences,
+  })?.id, 'rb-live');
+  assert.equal(selectNextAvailableRosterProjection({
+    eligiblePositions: ['RB', 'WR'],
+    preferredPlayersByPosition: preferences,
+    claimedPlayerIds: new Set(['wr-live']),
+  })?.id, 'rb-live');
+  assert.equal(selectNextAvailableRosterProjection({
+    eligiblePositions: ['RB', 'WR'],
+    preferredPlayersByPosition: preferences,
+    claimedPlayerIds: new Set(['rb-live']),
+  })?.id, 'wr-live');
+});
+
+test('projected roster prioritizes dedicated slots, then the narrowest compatible flex slots', () => {
+  const slots = ['FLEX', 'WR', 'SUPER_FLEX', 'WRRB_FLEX', 'RB', 'QB/WR/RB/TE FLEX'];
+
+  assert.deepEqual(getRosterProjectionSlotOrder(slots), [1, 4, 3, 0, 2, 5]);
+  assert.deepEqual(
+    [...getRosterProjectionSlotEligibilities('QB/WR/RB/TE FLEX')],
+    ['QB', 'WR', 'RB', 'TE'],
+  );
+  assert.deepEqual(
+    [...getRosterProjectionSlotEligibilities('IDP FLEX')],
+    ['DL', 'LB', 'DB'],
+  );
 });

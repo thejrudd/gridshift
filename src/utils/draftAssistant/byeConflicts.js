@@ -228,3 +228,62 @@ export function buildDraftByeConflictModel({
     byPlayerId,
   };
 }
+
+/**
+ * Build bye-conflict annotations for the players already locked into one roster.
+ *
+ * Unlike the Draft Board model above, this deliberately has no format or draft
+ * availability rules: every supplied player is a current roster commitment and
+ * therefore a valid comparison peer. Keeping this separate means the Board can
+ * retain its saved-target rules while a projected roster accurately describes
+ * the manager's actual locked players.
+ */
+export function buildDraftRosterByeConflictModel({
+  playersById = {},
+  playerIds = [],
+} = {}) {
+  const committedPlayerIds = uniqueIds(playerIds);
+  const detailsById = new Map();
+  const getDetails = (playerId) => {
+    if (!detailsById.has(playerId)) {
+      detailsById.set(playerId, getPlayerDetails(playersById, playerId));
+    }
+    return detailsById.get(playerId);
+  };
+  const byPlayerId = new Map();
+
+  for (const playerId of committedPlayerIds) {
+    const details = getDetails(playerId);
+    if (details.week == null) {
+      byPlayerId.set(playerId, emptyConflict(details));
+      continue;
+    }
+
+    const matchingPlayers = committedPlayerIds
+      .filter((comparisonId) => comparisonId !== playerId)
+      .map(getDetails)
+      .filter((comparison) => comparison.week === details.week);
+    const exactPositionOverlaps = details.position == null
+      ? 0
+      : matchingPlayers.filter((comparison) => comparison.position === details.position).length;
+
+    byPlayerId.set(playerId, {
+      playerId,
+      week: details.week,
+      matchingPlayerIds: matchingPlayers.map((player) => player.playerId),
+      matchingPlayerNames: matchingPlayers.map((player) => player.name),
+      totalOverlaps: matchingPlayers.length,
+      exactPositionOverlaps,
+      severity: exactPositionOverlaps > 0
+        ? DRAFT_BYE_CONFLICT_SEVERITY.HIGH
+        : matchingPlayers.length > 0
+          ? DRAFT_BYE_CONFLICT_SEVERITY.MEDIUM
+          : DRAFT_BYE_CONFLICT_SEVERITY.NONE,
+    });
+  }
+
+  return {
+    comparisonPlayerIds: committedPlayerIds,
+    byPlayerId,
+  };
+}
