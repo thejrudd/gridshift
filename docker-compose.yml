@@ -1,24 +1,47 @@
 services:
   gridshift:
-    build: .
+    image: gridshift-web:deploy
+
+    build:
+      context: .
+      dockerfile: Dockerfile
+
     depends_on:
-      - gridshift-api
+      gridshift-api:
+        condition: service_healthy
+        required: true
+
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - wget -q -O /dev/null http://127.0.0.1/ || exit 1
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
     restart: unless-stopped
 
+
   gridshift-api:
+    image: gridshift-api:deploy
+
     build:
       context: .
       dockerfile: Dockerfile.server
+
     environment:
       NODE_ENV: production
       PORT: "3001"
 
       GRIDSHIFT_SESSION_SECRET: ${GRIDSHIFT_SESSION_SECRET:?GRIDSHIFT_SESSION_SECRET is required}
+
       GRIDSHIFT_BDL_API_KEY: ${GRIDSHIFT_BDL_API_KEY:-}
       GRIDSHIFT_BDL_TIER: ${GRIDSHIFT_BDL_TIER:-unknown}
       GRIDSHIFT_BDL_EFFECTIVE_MAX_REQ_PER_MIN: ${GRIDSHIFT_BDL_EFFECTIVE_MAX_REQ_PER_MIN:-5}
       GRIDSHIFT_BDL_INTERNAL_MAX_REQ_PER_MIN: ${GRIDSHIFT_BDL_INTERNAL_MAX_REQ_PER_MIN:-}
       GRIDSHIFT_BDL_CACHE_MAX_ENTRIES: ${GRIDSHIFT_BDL_CACHE_MAX_ENTRIES:-250}
+
       GRIDSHIFT_TRUST_PROXY_HOPS: ${GRIDSHIFT_TRUST_PROXY_HOPS:-0}
 
       GRIDSHIFT_LIVE_ALLOWED_LEAGUE_IDS: ${GRIDSHIFT_LIVE_ALLOWED_LEAGUE_IDS:-}
@@ -29,9 +52,24 @@ services:
       GRIDSHIFT_LIVE_FINAL_TTL_MS: ${GRIDSHIFT_LIVE_FINAL_TTL_MS:-14400000}
       GRIDSHIFT_LIVE_ARCHIVE_ENABLED: ${GRIDSHIFT_LIVE_ARCHIVE_ENABLED:-true}
       GRIDSHIFT_LIVE_MAX_REQ_PER_MIN: ${GRIDSHIFT_LIVE_MAX_REQ_PER_MIN:-300}
-      GRIDSHIFT_COOKIE_SECURE: ${GRIDSHIFT_COOKIE_SECURE:-true}
-    restart: unless-stopped
 
+      GRIDSHIFT_COOKIE_SECURE: ${GRIDSHIFT_COOKIE_SECURE:-true}
+
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - >-
+          fetch('http://127.0.0.1:3001/api/health')
+          .then(r => process.exit(r.ok ? 0 : 1))
+          .catch(() => process.exit(1))
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
+    restart: unless-stopped
   cloudflared:
     image: cloudflare/cloudflared:latest
     command: tunnel --no-autoupdate run
