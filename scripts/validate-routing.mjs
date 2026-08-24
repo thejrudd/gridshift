@@ -24,6 +24,17 @@ function expectRoundTrip(route, expectedPath = null) {
 
 const nginxConf = readFileSync(resolve(root, 'nginx.conf'), 'utf8');
 assert(nginxConf.includes('try_files $uri $uri/ /index.html;'), 'nginx.conf is missing SPA try_files fallback');
+assert(
+  nginxConf.includes('location /api/fantasy/ {')
+    && nginxConf.includes('proxy_pass http://gridshift-api:3001/api/fantasy/;'),
+  'nginx.conf is missing the Fantasy API sidecar proxy',
+);
+
+const serverDockerfile = readFileSync(resolve(root, 'Dockerfile.server'), 'utf8');
+assert(
+  serverDockerfile.includes('COPY src/utils ./src/utils'),
+  'Dockerfile.server is missing the server-side provider utility modules',
+);
 
 const viteConfig = readFileSync(resolve(root, 'vite.config.js'), 'utf8');
 assert(viteConfig.includes("navigateFallback: '/index.html'"), 'vite.config.js is missing Workbox navigateFallback');

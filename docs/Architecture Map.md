@@ -136,5 +136,5 @@ Entries resolved via Pass 1 or 2 are marked `_teamSource = 'espn'`. Pass 3 entri
 
 - `package.json` defines the available npm scripts.
 - `vite.config.js` wires the React plugin, PWA behavior, `__APP_VERSION__`, the KTC proxy, and local `/api/espn`, `/api/live`, and `/api/statistics/scores` sidecar proxies.
-- `nginx.conf` proxies production `/api/live/` and `/api/statistics/scores/` traffic to the sidecar. The live route forwards its encrypted session cookie and is marked `no-store`; the public Scores route is also marked `no-store`.
+- `nginx.conf` proxies production `/api/live/`, `/api/statistics/scores/`, and `/api/fantasy/` traffic to the sidecar. The live route forwards its encrypted session cookie; all three server-only provider routes are marked `no-store`.
 - `docker-compose.yml`, `Dockerfile`, `Dockerfile.prebuilt`, and `Dockerfile.server` cover deployment.
