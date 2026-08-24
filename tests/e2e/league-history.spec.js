@@ -135,6 +135,45 @@ test('League archive routes render focused Sleeper states and content', async ({
   await expect(page).toHaveURL(/\/statistics\/player\/1006\/bench-runner/);
 });
 
+test('historical Standings shows postseason-only final placement for the full league size', async ({ page }) => {
+  const archivedLeague = {
+    ...league,
+    season: '2025',
+    status: 'complete',
+    total_rosters: 3,
+    settings: { ...league.settings, last_scored_leg: 17, playoff_week_start: 15, playoff_teams: 3 },
+  };
+  const archivedState = {
+    ...persistedSleeperState(),
+    league: archivedLeague,
+    leagues: [archivedLeague],
+    season: '2025',
+    availableSeasons: ['2025'],
+    leaguesBySeason: { 2025: [archivedLeague] },
+  };
+  await installTradeFixtures(page, {
+    persistedSleeperState: archivedState,
+    league: archivedLeague,
+    leaguesBySeason: { 2025: [archivedLeague] },
+    winnersBracket: [
+      { r: 1, m: 1, t1: 2, t2: 3, w: 2, l: 3 },
+      { r: 2, m: 2, t1: 1, t2_from: { w: 1 }, w: 1, l: 2, p: 1 },
+    ],
+    losersBracket: [],
+  });
+
+  await page.goto('/league/standings');
+  await expect(page.getByRole('heading', { name: 'Final placement' })).toBeVisible();
+  await expect(page.getByText('3-team postseason finish')).toBeVisible();
+  const placements = page.getByTestId('league-final-placements');
+  await expect(placements.locator('.league-final-placement')).toHaveCount(3);
+  await expect(placements.getByText('1st', { exact: true })).toBeVisible();
+  await expect(placements.getByText('2nd', { exact: true })).toBeVisible();
+  await expect(placements.getByText('3rd', { exact: true })).toBeVisible();
+  await expect(placements.getByText('Your Team', { exact: true })).toBeVisible();
+  await expect(placements.getByText('Third Team', { exact: true })).toBeVisible();
+});
+
 test('historical Standings uses named divisions and identifies a verified Toilet Bowl', async ({ page }) => {
   const archivedLeague = {
     ...league,

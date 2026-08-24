@@ -1,10 +1,17 @@
 import { expect, test } from '@playwright/test';
 
+const MOBILE_STATISTICS_VIEWPORTS = [
+  { name: 'small phone', width: 320, height: 568 },
+  { name: 'common phone', width: 390, height: 844 },
+  { name: 'large phone', width: 430, height: 932 },
+];
+
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     if (!localStorage.getItem('gridshift.statisticsNflPhase')) {
       localStorage.setItem('gridshift.statisticsNflPhase', 'regular');
     }
+    localStorage.setItem('gridshift:installedVersion', '8.6.0');
   });
 });
 
@@ -168,6 +175,86 @@ test('the local preseason fixture selects Preseason Week 1 on its first calendar
   await expect(page.getByRole('button', { name: /This Week/i })).toHaveCount(0);
   await expect(page.locator('.scores-scorebug').first()).toHaveAttribute('aria-disabled', 'true');
 });
+
+for (const viewport of MOBILE_STATISTICS_VIEWPORTS) {
+  test(`Statistics mobile layouts fit ${viewport.name}`, async ({ page }) => {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+
+    await page.goto('/statistics/scores');
+    await page.getByRole('group', { name: 'Data source' }).getByRole('button', { name: 'Fixture' }).click();
+    const weekSeven = page.getByRole('tab', { name: /^W7/ });
+    await weekSeven.scrollIntoViewIfNeeded();
+    await weekSeven.click();
+    await page.getByRole('button', { name: 'Open Lions at Vikings game details' }).click();
+    await expect(page.getByRole('button', { name: 'Back to Scores' })).toBeVisible();
+
+    for (const tab of ['Overview', 'Team Stats', 'Players', 'Scoring', 'Play-by-Play']) {
+      await page.getByRole('tab', { name: tab, exact: true }).click();
+      const geometry = await page.locator('.statistics-scores-detail > .scores-detail-tabs-shell ~ *').evaluate((section) => {
+        const style = getComputedStyle(section);
+        return {
+          leftGutter: Number.parseFloat(style.paddingLeft),
+          rightGutter: Number.parseFloat(style.paddingRight),
+          documentWidth: document.documentElement.scrollWidth,
+          viewportWidth: document.documentElement.clientWidth,
+        };
+      });
+      expect(geometry.leftGutter, tab).toBeGreaterThanOrEqual(15);
+      expect(geometry.rightGutter, tab).toBeGreaterThanOrEqual(15);
+      expect(geometry.documentWidth, tab).toBeLessThanOrEqual(geometry.viewportWidth + 1);
+    }
+
+    await page.getByRole('tab', { name: 'Players', exact: true }).click();
+    const rail = page.getByRole('tablist', { name: 'Player statistic categories' });
+    const railGeometry = await rail.evaluate((element) => {
+      const buttons = [...element.querySelectorAll('button')];
+      const tops = buttons.map((button) => button.getBoundingClientRect().top);
+      return {
+        flexWrap: getComputedStyle(element).flexWrap,
+        topSpread: Math.max(...tops) - Math.min(...tops),
+      };
+    });
+    expect(railGeometry.flexWrap).toBe('nowrap');
+    expect(railGeometry.topSpread).toBeLessThanOrEqual(1);
+
+    await page.goto('/statistics/schedule?mode=team');
+    const option = page.locator('.statistics-schedule-team-option').first();
+    await expect(option).toBeAttached();
+    const teamOptionGeometry = await option.evaluate((element) => ({
+      height: element.getBoundingClientRect().height,
+      backgroundImage: getComputedStyle(element).backgroundImage,
+      documentWidth: document.documentElement.scrollWidth,
+      viewportWidth: document.documentElement.clientWidth,
+    }));
+    expect(teamOptionGeometry.height).toBeGreaterThanOrEqual(56);
+    expect(teamOptionGeometry.backgroundImage).toContain('linear-gradient');
+    expect(teamOptionGeometry.documentWidth).toBeLessThanOrEqual(teamOptionGeometry.viewportWidth + 1);
+
+    await page.goto('/statistics/standings');
+    const scrollport = page.locator('.statistics-standings-table-scroll').first();
+    await expect(scrollport).toBeVisible();
+    const standingsGeometry = await scrollport.evaluate((element) => {
+      const table = element.querySelector('table');
+      const headers = [...table.querySelectorAll('thead th')];
+      const cells = [...table.querySelectorAll('tbody tr:first-child td')];
+      const portRect = element.getBoundingClientRect();
+      const finalCellRect = cells.at(-1).getBoundingClientRect();
+      return {
+        columnCount: headers.length,
+        rowColumnCount: cells.length,
+        scrollWidth: element.scrollWidth,
+        clientWidth: element.clientWidth,
+        finalCellRight: finalCellRect.right,
+        portRight: portRect.right,
+      };
+    });
+    expect(standingsGeometry.columnCount).toBe(7);
+    expect(standingsGeometry.rowColumnCount).toBe(7);
+    expect(standingsGeometry.scrollWidth).toBeLessThanOrEqual(standingsGeometry.clientWidth + 1);
+    expect(standingsGeometry.finalCellRight).toBeLessThanOrEqual(standingsGeometry.portRight + 1);
+    await expect(scrollport.locator('.statistics-standings-team-name')).toHaveCount(0);
+  });
+}
 
 test('a live ESPN week refreshes through the shared proxy after eight seconds', async ({ page }) => {
   const season = new Date().getFullYear();

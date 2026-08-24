@@ -1910,8 +1910,19 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
               flex: '1 1 auto',
               overflowY: 'auto',
               textAlign: 'center',
+              position: 'relative',
             }}
           >
+            <button
+              type="button"
+              className="companion-heatmap-drilldown-close"
+              onClick={() => setDrilldown(null)}
+              aria-label="Close heatmap drilldown"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
+                <path d="M18 6 6 18M6 6l12 12" />
+              </svg>
+            </button>
             {/* Header */}
             {(() => {
               const sched = scheduleMap?.[drilldown.week]?.[drilldown.team];

@@ -1246,3 +1246,14 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Draft and player discovery improvements** - Tightened draft-pool eligibility, ranking and priority inputs, and player search parsing so Draft recommendations and player results better respect the active league and query.
 - **Desktop legibility** - Improved semantic type, density, control, frame, sticky-surface, and modal behavior across laptop, short-height, and wide-monitor layouts while retaining the user's display-size preference.
 - **Regression coverage and architecture docs** - Expanded unit and end-to-end coverage for play narration, playback, replay scoring, shared live snapshots, provider clocks, Scores sources, ADP boundaries, Draft behavior, search, and season availability, with supporting architecture and design references.
+
+## v8.6.1 - Mobile UX & Reliability
+*2026-08-24*
+
+- **Draft mobile tools** - Kept search, ranking priorities, sort controls, ranking values, add-player actions, and positional analytics reachable on narrow screens with touch-safe interactive chart points and two-finger gestures.
+- **Draft Board context** - Added schedule-backed Bye information, format-aware bye-conflict highlighting, clearer drafting-team ownership, stable card sizing, and more direct mobile board controls.
+- **Statistics mobile surfaces** - Improved Schedule week selection and team identity, Scores drilldown spacing and win-probability progress, and compact Standings columns without relying on page-wide horizontal scrolling.
+- **Fantasy and Companion mobile polish** - Improved selector rails, preview-sheet sizing, Heatmap controls, Defense filters, roster metadata alignment, team identity, and Trade partner prerequisites across phone and tablet layouts.
+- **Preseason Rankings and Live reliability** - Preserved valid ADP matches while league positions initialize; applied connected-league scoring to preseason play values; kept incompletions and negated plays from earning positive completion points; aligned cross-game timelines; and filled unmatched performer rows from observed plays without overriding provider-backed rows.
+- **League history placements** - Derived final postseason placements from championship and consolation results, including uneven and Toilet Bowl brackets.
+- **Regression coverage** - Expanded unit and responsive browser coverage for Draft, Statistics, Fantasy, Live, League History, ADP, win probability, schedule selection, and mobile layout behavior.

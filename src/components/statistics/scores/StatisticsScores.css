@@ -896,9 +896,14 @@
 
 .scores-player-category-rail {
   display: flex;
+  max-width: 100%;
+  flex-wrap: nowrap;
   overflow-x: auto;
+  overscroll-behavior-x: contain;
+  touch-action: pan-x;
   border-bottom: 1px solid var(--color-separator);
   scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
 }
 
 .scores-player-category-rail::-webkit-scrollbar { display: none; }
@@ -1032,6 +1037,20 @@
 }
 
 @media (max-width: 760px) {
+  .statistics-scores-detail {
+    --scores-detail-mobile-gutter: 16px;
+  }
+  .scores-detail-back {
+    margin-right: var(--scores-detail-mobile-gutter);
+    margin-left: var(--scores-detail-mobile-gutter);
+  }
+  .statistics-scores-detail > .scores-detail-tabs-shell ~ * {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    padding-right: var(--scores-detail-mobile-gutter);
+    padding-left: var(--scores-detail-mobile-gutter);
+  }
   .scores-masthead { align-items: stretch; flex-direction: column; padding-top: 20px; }
   .scores-masthead-side { justify-items: stretch; }
   .scores-as-of { order: 2; }

@@ -10,6 +10,7 @@ import {
 } from './scheduleStrength.js';
 import { getLeaguePositionFilters, getPlayerPositionFilterKeys } from '../leaguePositions.js';
 import { getSleeperDraftPlayerPool, isDraftRookie } from './projectedSelection.js';
+import { getByeWeekForTeam } from './byeWeeks.js';
 export {
   getDraftResultsPresentation,
   getDraftTourContext,
@@ -105,6 +106,22 @@ function normalizePosition(value) {
   const normalized = String(value ?? '').trim().toUpperCase();
   if (normalized === 'DST') return 'DEF';
   return normalized || null;
+}
+
+function normalizeByeWeek(value) {
+  const parsed = Number.parseInt(String(value ?? ''), 10);
+  return Number.isInteger(parsed) && parsed >= 1 && parsed <= 18 ? parsed : null;
+}
+
+export function resolveDraftPlayerByeWeek({ player, team, draftSeason, byeWeekBundle }) {
+  const scheduleWeek = getByeWeekForTeam(byeWeekBundle, team, draftSeason);
+  if (scheduleWeek != null) return scheduleWeek;
+  if (byeWeekBundle?.status === 'season-mismatch') return null;
+  return normalizeByeWeek(
+    player?.bye_week
+      ?? player?.metadata?.bye_week
+      ?? player?.metadata?.bye,
+  );
 }
 
 export function getDraftRosterEligiblePositions(rosterPositions = []) {
@@ -736,7 +753,7 @@ function buildWorkloadSignal({ player, seasonStats, weeklyStats, scoringSettings
   };
 }
 
-function buildTeamContextSignal({ player, teamUsage }) {
+function buildTeamContextSignal({ player, teamUsage, byeWeek = null }) {
   const team = teamUsage?.[player.team] ?? null;
   const passPlayRate = team && (team.passAttempts + team.rushAttempts) > 0
     ? Math.round((team.passAttempts / (team.passAttempts + team.rushAttempts)) * 100)
@@ -748,7 +765,7 @@ function buildTeamContextSignal({ player, teamUsage }) {
       ? team?.rushingPoints ?? null
       : null;
   return {
-    byeWeek: player.raw?.bye_week ?? player.raw?.metadata?.bye_week ?? player.raw?.metadata?.bye ?? null,
+    byeWeek,
     passPlayRate,
     supportValue,
     supportLabel: supportValue == null ? null : supportValue >= 450 ? 'Strong' : supportValue >= 260 ? 'Average' : 'Thin',
@@ -1131,6 +1148,7 @@ export function buildDraftAssistantViewModel({
   weeklyStats = null,
   scheduleMap = null,
   upcomingScheduleMap = null,
+  byeWeekBundle = null,
   modelWeights = DEFAULT_DRAFT_MODEL_WEIGHTS,
 }) {
   const normalizedModelWeights = normalizeDraftModelWeights(modelWeights);
@@ -1200,6 +1218,12 @@ export function buildDraftAssistantViewModel({
         projection,
         adp,
         rostered: rosteredIds.has(playerId),
+        byeWeek: resolveDraftPlayerByeWeek({
+          player,
+          team: player.team,
+          draftSeason: draft?.season ?? season,
+          byeWeekBundle,
+        }),
         raw: player,
       };
       const workload = buildWorkloadSignal({
@@ -1225,7 +1249,11 @@ export function buildDraftAssistantViewModel({
         scoringSettings,
         workload,
       });
-      const teamContext = buildTeamContextSignal({ player: baseCandidate, teamUsage });
+      const teamContext = buildTeamContextSignal({
+        player: baseCandidate,
+        teamUsage,
+        byeWeek: baseCandidate.byeWeek,
+      });
       const schedule = buildScheduleSignal({ player: baseCandidate, scheduleStrength });
       const withDraftRoom = attachDraftRoomSignal({
         ...baseCandidate,
@@ -1299,6 +1327,12 @@ export function buildDraftAssistantViewModel({
       boardRank: index + 1,
       available: false,
       rostered: rosteredIds.has(String(playerId)),
+      byeWeek: resolveDraftPlayerByeWeek({
+        player: rawPlayer,
+        team: rawPlayer?.team,
+        draftSeason: draft?.season ?? season,
+        byeWeekBundle,
+      }),
       raw: rawPlayer ?? null,
     };
     const workload = buildWorkloadSignal({
@@ -1328,7 +1362,11 @@ export function buildDraftAssistantViewModel({
         workload,
       }),
       workload,
-      teamContext: buildTeamContextSignal({ player: baseCandidate, teamUsage }),
+      teamContext: buildTeamContextSignal({
+        player: baseCandidate,
+        teamUsage,
+        byeWeek: baseCandidate.byeWeek,
+      }),
       schedule: buildScheduleSignal({ player: baseCandidate, scheduleStrength }),
       draftRoom: {
         boardRank: index + 1,
@@ -1365,6 +1403,12 @@ export function buildDraftAssistantViewModel({
       projection,
       adp,
       rostered: rosteredIds.has(String(playerId)),
+      byeWeek: resolveDraftPlayerByeWeek({
+        player: rawPlayer,
+        team: rawPlayer?.team,
+        draftSeason: draft?.season ?? season,
+        byeWeekBundle,
+      }),
       raw: rawPlayer ?? null,
     };
     const workload = buildWorkloadSignal({
@@ -1394,7 +1438,11 @@ export function buildDraftAssistantViewModel({
         workload,
       }),
       workload,
-      teamContext: buildTeamContextSignal({ player: baseCandidate, teamUsage }),
+      teamContext: buildTeamContextSignal({
+        player: baseCandidate,
+        teamUsage,
+        byeWeek: baseCandidate.byeWeek,
+      }),
       schedule: buildScheduleSignal({ player: baseCandidate, scheduleStrength }),
       draftRoom: {
         teamNeed: getPositionNeedScore(myNeedRow?.profile ?? null, position),
@@ -1447,6 +1495,7 @@ export function buildDraftResultsViewModel({
   weeklyStats = null,
   scheduleMap = null,
   upcomingScheduleMap = null,
+  byeWeekBundle = null,
   modelWeights = DEFAULT_DRAFT_MODEL_WEIGHTS,
 }) {
   const normalizedModelWeights = normalizeDraftModelWeights(modelWeights);
@@ -1500,6 +1549,12 @@ export function buildDraftResultsViewModel({
       position,
       projection,
       rostered: rosteredIds.has(String(playerId)),
+      byeWeek: resolveDraftPlayerByeWeek({
+        player: rawPlayer,
+        team: rawPlayer?.team,
+        draftSeason: draft?.season ?? season,
+        byeWeekBundle,
+      }),
       raw: rawPlayer ?? null,
     };
     const workload = buildWorkloadSignal({
@@ -1529,7 +1584,11 @@ export function buildDraftResultsViewModel({
         workload,
       }),
       workload,
-      teamContext: buildTeamContextSignal({ player: baseCandidate, teamUsage }),
+      teamContext: buildTeamContextSignal({
+        player: baseCandidate,
+        teamUsage,
+        byeWeek: baseCandidate.byeWeek,
+      }),
       schedule: buildScheduleSignal({ player: baseCandidate, scheduleStrength }),
       draftRoom: {
         teamNeed: getPositionNeedScore(myNeedRow?.profile ?? null, position),

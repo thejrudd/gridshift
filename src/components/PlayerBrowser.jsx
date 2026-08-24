@@ -580,7 +580,7 @@ const PlayerBrowser = ({
           )}
         </div>
 
-        <div className="flex flex-wrap gap-2 items-center">
+        <div className="player-browser-position-rail" aria-label="Player positions">
           {POSITION_FILTERS.map((pos) => (
             <button
               key={pos}

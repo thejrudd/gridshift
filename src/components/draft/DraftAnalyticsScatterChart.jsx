@@ -251,25 +251,24 @@ export default function DraftAnalyticsScatterChart({
     drag.current = null;
   };
 
-  const handleTouchStart = (event) => {
+  const handleTouchStart = useCallback((event) => {
     moved.current = false;
     if (event.touches.length === 2) {
       const [a, b] = event.touches;
+      const rect = wrapRef.current?.getBoundingClientRect();
+      if (!rect) return;
       pinch.current = {
-        dist: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY),
+        dist: Math.max(1, Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY)),
         k: view.k,
         tx: view.tx,
         ty: view.ty,
-        midX: (a.clientX + b.clientX) / 2,
-        midY: (a.clientY + b.clientY) / 2,
+        midX: ((a.clientX + b.clientX) / 2) - rect.left - pad.left,
+        midY: ((a.clientY + b.clientY) / 2) - rect.top - pad.top,
       };
-    } else if (event.touches.length === 1) {
-      const touch = event.touches[0];
-      drag.current = { x: touch.clientX, y: touch.clientY, tx: view.tx, ty: view.ty };
     }
-  };
+  }, [pad.left, pad.top, view.k, view.tx, view.ty]);
 
-  const handleTouchMove = (event) => {
+  const handleTouchMove = useCallback((event) => {
     if (pinch.current && event.touches.length === 2) {
       event.preventDefault();
       const [a, b] = event.touches;
@@ -278,33 +277,44 @@ export default function DraftAnalyticsScatterChart({
       const dist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
       const nextK = clamp(pinch.current.k * (dist / pinch.current.dist), 1, 8);
       const ratio = nextK / pinch.current.k;
-      const cx = pinch.current.midX - rect.left - pad.left;
-      const cy = pinch.current.midY - rect.top - pad.top;
-      moved.current = true;
+      const currentMidX = ((a.clientX + b.clientX) / 2) - rect.left - pad.left;
+      const currentMidY = ((a.clientY + b.clientY) / 2) - rect.top - pad.top;
+      if (
+        Math.abs(currentMidX - pinch.current.midX)
+        + Math.abs(currentMidY - pinch.current.midY)
+        + Math.abs(dist - pinch.current.dist) > 3
+      ) moved.current = true;
       setView(clampView({
         k: nextK,
-        tx: cx - (cx - pinch.current.tx) * ratio,
-        ty: cy - (cy - pinch.current.ty) * ratio,
+        tx: currentMidX - (pinch.current.midX - pinch.current.tx) * ratio,
+        ty: currentMidY - (pinch.current.midY - pinch.current.ty) * ratio,
       }, innerW, innerH));
-    } else if (drag.current && event.touches.length === 1 && (view.k > 1 || fullscreen)) {
-      const dragState = drag.current;
-      const touch = event.touches[0];
-      const dx = touch.clientX - dragState.x;
-      const dy = touch.clientY - dragState.y;
-      if (Math.abs(dx) + Math.abs(dy) > 4) {
-        moved.current = true;
-        event.preventDefault();
-      }
-      setView((current) => clampView({ k: current.k, tx: dragState.tx + dx, ty: dragState.ty + dy }, innerW, innerH));
     }
-  };
+  }, [innerH, innerW, pad.left, pad.top]);
 
-  const handleTouchEnd = (event) => {
+  const handleTouchEnd = useCallback((event) => {
     if (event.touches.length === 0) {
       drag.current = null;
       pinch.current = null;
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    const element = wrapRef.current;
+    if (!element) return undefined;
+
+    element.addEventListener('touchstart', handleTouchStart, { passive: true });
+    element.addEventListener('touchmove', handleTouchMove, { passive: false });
+    element.addEventListener('touchend', handleTouchEnd, { passive: true });
+    element.addEventListener('touchcancel', handleTouchEnd, { passive: true });
+
+    return () => {
+      element.removeEventListener('touchstart', handleTouchStart);
+      element.removeEventListener('touchmove', handleTouchMove);
+      element.removeEventListener('touchend', handleTouchEnd);
+      element.removeEventListener('touchcancel', handleTouchEnd);
+    };
+  }, [handleTouchEnd, handleTouchMove, handleTouchStart]);
 
   const selectPoint = (point) => {
     if (moved.current) return false;
@@ -355,11 +365,11 @@ export default function DraftAnalyticsScatterChart({
           setHoverId(null);
           setInspectId(null);
         }}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-        style={{ touchAction: fullscreen || view.k > 1 ? 'none' : 'pan-y' }}
-        role="img"
+        style={{ touchAction: 'pan-y' }}
+        data-chart-scale={view.k.toFixed(3)}
+        data-chart-translate-x={view.tx.toFixed(1)}
+        data-chart-translate-y={view.ty.toFixed(1)}
+        role="group"
         aria-label={`${scatter?.xAxis?.label ?? 'X'} by ${scatter?.yAxis?.label ?? 'Y'} scatter plot`}
       >
         <svg width={size.w} height={size.h} className="draft-analytics-scatter__grid" aria-hidden="true">
@@ -405,7 +415,13 @@ export default function DraftAnalyticsScatterChart({
                 active ? 'is-active' : '',
                 face ? 'has-face' : '',
               ].filter(Boolean).join(' ')}
-              style={{ left: x, top: y, background: getPointColor(point) }}
+              data-chart-point="dot"
+              data-point-state={point.focused ? 'selected' : point.pinned ? 'pinned' : 'peer'}
+              style={{
+                left: x,
+                top: y,
+                background: 'transparent',
+              }}
               onPointerDown={(event) => {
                 event.stopPropagation();
                 moved.current = false;
@@ -417,9 +433,18 @@ export default function DraftAnalyticsScatterChart({
               }}
               onPointerLeave={scheduleHoverHide}
               onClick={(event) => handlePointClick(event, point)}
-              aria-label={`${point.name}: ${scatter?.xAxis?.label} ${point.xLabel}, ${scatter?.yAxis?.label} ${point.yLabel}`}
+              aria-current={point.focused ? 'true' : undefined}
+              aria-label={`${point.name}${point.focused ? ', selected' : point.pinned ? ', pinned' : ', peer'}: ${scatter?.xAxis?.label} ${point.xLabel}, ${scatter?.yAxis?.label} ${point.yLabel}`}
             >
-              {face ? <PlayerFace point={point} size={point.focused ? 34 : 28} ring={point.focused ? 'var(--color-signature)' : 'var(--color-accent)'} /> : null}
+              {face ? (
+                <PlayerFace point={point} size={point.focused ? 34 : 28} ring={point.focused ? 'var(--color-signature)' : 'var(--color-accent)'} />
+              ) : (
+                <span
+                  className="draft-analytics-scatter__dot-mark"
+                  style={{ background: getPointColor(point) }}
+                  aria-hidden="true"
+                />
+              )}
             </button>
           );
         }) : (

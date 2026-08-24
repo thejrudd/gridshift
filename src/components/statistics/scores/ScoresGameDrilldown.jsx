@@ -207,6 +207,7 @@ function Overview({ detail, awayTheme, homeTheme }) {
             homeTeam={detail.home.id}
             awayTeam={detail.away.id}
             homeColor={homeTheme?.color ?? null}
+            gameStatus={detail.status}
           />
         </>
       )}

@@ -61,12 +61,15 @@ import {
 import {
   buildPaceSeries,
   buildGameProgressTimelines,
+  buildObservedPlayerPoints,
   buildSidePace,
   buildTopPerformers,
   buildVerdict,
+  applyObservedPointFallback,
   getStarterReplayRemainingFraction,
   getStarterPace,
   pickFeaturedStarter,
+  preservePaceSeriesScores,
 } from '../../utils/livePace.js';
 import {
   buildDemoTimeline,
@@ -573,6 +576,12 @@ export default function CompanionLive({ onViewPlayer = null }) {
   // Dev-only. Returns null in production, where the whole module is dropped.
   const sandbox = useLiveSandbox();
   const sandboxChartScale = useChartScale();
+  const connectedBase = useSleeperBase();
+  const connectedPreseasonScoring = sandbox?.mode === 'preseason'
+    && connectedBase.selectedLeagueId
+    && connectedBase.league?.scoring_settings
+    ? connectedBase.activeScoringSettings
+    : null;
   const {
     platform,
     selectedLeagueId,
@@ -592,7 +601,14 @@ export default function CompanionLive({ onViewPlayer = null }) {
     espnIdOverrides,
     // The sandbox supplies a synthetic league so Fantasy Live can run outside
     // the regular season; anything it omits falls through to the real context.
-  } = { ...useSleeperBase(), ...(sandbox?.base ?? {}) };
+  } = {
+    ...connectedBase,
+    ...(sandbox?.base ?? {}),
+    // Preseason supplies a synthetic roster and games, but its scoring should
+    // still reflect the league the user connected. The fixture profile remains
+    // the fallback when there is no connected league.
+    ...(connectedPreseasonScoring ? { activeScoringSettings: connectedPreseasonScoring } : {}),
+  };
 
   const isDesktop = useIsDesktop();
 
@@ -1599,7 +1615,7 @@ export default function CompanionLive({ onViewPlayer = null }) {
   // chart's ghost pace rays and the performer ordering.
   const paletteSlots = useMemo(() => buildFantasyPaletteSlots(rosters), [rosters]);
 
-  const sides = useMemo(() => sideSummaries.map((summary) => {
+  const baseSides = useMemo(() => sideSummaries.map((summary) => {
     const entries = summary.rows.map((row) => ({
       id: row.id,
       row,
@@ -1653,59 +1669,20 @@ export default function CompanionLive({ onViewPlayer = null }) {
     starterGameStateById,
   ]);
 
-  const leftSide = sides[0] ?? null;
-  const rightSide = sides[1] ?? null;
-  const sidesByKey = useMemo(
-    () => Object.fromEntries(sides.map((side) => [side.key, side])),
-    [sides],
-  );
-  const verdict = useMemo(
-    () => buildVerdict(leftSide?.pace, rightSide?.pace),
-    [leftSide, rightSide],
-  );
-  const performers = useMemo(() => buildTopPerformers(sides, RAIL_PERFORMER_LIMIT), [sides]);
-  const entriesById = useMemo(() => {
+  const baseEntriesById = useMemo(() => {
     const map = new Map();
-    sides.forEach((side) => side.entries.forEach((entry) => map.set(entry.id, entry)));
+    baseSides.forEach((side) => side.entries.forEach((entry) => map.set(entry.id, entry)));
     return map;
-  }, [sides]);
-
-  // Every matchup in the league as a scoreboard chip. Points come from the
-  // league's official numbers, except the selected matchup, which uses the
-  // live total so the chip and the hero never disagree.
-  const matchupChips = useMemo(() => matchupPairs.map((pair, index) => ({
-    key: pair.matchupId,
-    index,
-    mine: pair.mine,
-    sides: pair.sides.slice(0, 2).map((side, sideIndex) => {
-      const rosterId = getRosterIdFromMatchupRow(side.row);
-      const isMine = Number(rosterId) === Number(myRosterId);
-      const liveSide = index === matchupIndex ? sides[sideIndex] : null;
-      return {
-        key: `${pair.matchupId}-${rosterId ?? sideIndex}`,
-        label: isMine ? 'You' : (firstWordOf(side.name) || side.name),
-        fullName: side.name,
-        points: liveSide ? liveSide.pace.total : getMatchupRowPoints(side.row),
-        color: getFantasyTeamPalette(rosterId, paletteSlots)[0],
-      };
-    }),
-  })), [matchupIndex, matchupPairs, myRosterId, paletteSlots, sides]);
-  const matchupChipNameWidth = useMemo(
-    () => `${Math.min(14, Math.max(
-      7,
-      ...matchupChips.flatMap((chip) => chip.sides.map((side) => side.label.length)),
-    )) * 0.46}em`,
-    [matchupChips],
-  );
+  }, [baseSides]);
 
   // Focusing a starter must always land on their plays, so a focus on the side
   // the feed is currently hiding widens the filter back to both.
   const focusStarter = useCallback((playerId) => {
     setFocusPlayerId(playerId);
     if (!playerId) return;
-    const entry = entriesById.get(playerId);
+    const entry = baseEntriesById.get(playerId);
     if (entry) setFeedSide((current) => (current === entry.sideKey || current === 'both' ? current : 'both'));
-  }, [entriesById]);
+  }, [baseEntriesById]);
 
   // ── Play-by-play backfill + throttled live refresh ───────────────────────
   // Backfill each relevant game once (live games first), never refetch finals,
@@ -1763,7 +1740,9 @@ export default function CompanionLive({ onViewPlayer = null }) {
                   data: buildMockLivePlays(game, starterRows.filter((row) => getTeamAbbr(row.player?.team)
                     && [getTeamAbbr(game?.visitor_team), getTeamAbbr(game?.home_team)].includes(getTeamAbbr(row.player.team)))),
                 }
-              : await getLiveGamePlays(gameId);
+                  : await getLiveGamePlays(gameId, sandbox?.mode === 'preseason'
+                    ? { seasonType: 'preseason' }
+                    : undefined);
             if (playRequestContextRef.current !== requestContext) return;
             const data = payload?.data;
             // A transport failure is not a valid empty play slice. Keep the game
@@ -1825,6 +1804,11 @@ export default function CompanionLive({ onViewPlayer = null }) {
     });
   }, [activeScoringSettings, gamesById, playsByGame, positionsById, sandbox, starterNameIndex]);
 
+  const observedPlayPoints = useMemo(
+    () => buildObservedPlayerPoints(playEvents),
+    [playEvents],
+  );
+
   // The delta effect runs above this in the file but after render, so it reads
   // the plays through a ref rather than forcing a reorder.
   const playEventsByPlayer = useMemo(() => {
@@ -1856,13 +1840,13 @@ export default function CompanionLive({ onViewPlayer = null }) {
       ? merged.filter((event) => event.source !== 'play')
       : merged;
     const events = scoped.map((event) => {
-      const starterTeam = getTeamAbbr(entriesById.get(event.playerId)?.row?.player?.team);
+      const starterTeam = getTeamAbbr(baseEntriesById.get(event.playerId)?.row?.player?.team);
       const fallbackGameId = findGameForTeam(liveGames, starterTeam)?.id;
       const gameId = event.gameId ?? fallbackGameId ?? null;
       const gameProgress = Number.isFinite(Number(event.progress))
         ? Number(event.progress)
         : parseGlanceProgress(event.glance?.clock)
-          ?? entriesById.get(event.playerId)?.pace?.progress
+          ?? baseEntriesById.get(event.playerId)?.pace?.progress
           ?? null;
       const timelineAt = event.timelineAt
         ?? (event.source === 'play' ? null : event.at)
@@ -1918,7 +1902,61 @@ export default function CompanionLive({ onViewPlayer = null }) {
       withDemoEvents,
       (event) => playerSideKey.get(event.playerId) ?? null,
     );
-  }, [activeScoringSettings, demoTimeline, entriesById, feedEvents, liveGames, playEvents, playerSideKey, sandbox, sideSummaries]);
+  }, [activeScoringSettings, baseEntriesById, demoTimeline, feedEvents, liveGames, playEvents, playerSideKey, sandbox, sideSummaries]);
+
+  // Live preseason box scores can lag behind the play feed. In that one dev
+  // mode, observed play values keep the rail, hero, and chart close current for
+  // starters with no provider stat row. A matched box-score row still wins,
+  // including when its authoritative value is zero.
+  const sides = useMemo(() => applyObservedPointFallback(
+    baseSides,
+    observedPlayPoints,
+    sandbox?.mode === 'preseason',
+  ), [baseSides, observedPlayPoints, sandbox?.mode]);
+  const leftSide = sides[0] ?? null;
+  const rightSide = sides[1] ?? null;
+  const sidesByKey = useMemo(
+    () => Object.fromEntries(sides.map((side) => [side.key, side])),
+    [sides],
+  );
+  const verdict = useMemo(
+    () => buildVerdict(leftSide?.pace, rightSide?.pace),
+    [leftSide, rightSide],
+  );
+  const performers = useMemo(() => buildTopPerformers(sides, RAIL_PERFORMER_LIMIT), [sides]);
+  const entriesById = useMemo(() => {
+    const map = new Map();
+    sides.forEach((side) => side.entries.forEach((entry) => map.set(entry.id, entry)));
+    return map;
+  }, [sides]);
+
+  // Every matchup in the league as a scoreboard chip. Points come from the
+  // league's official numbers, except the selected matchup, which uses the
+  // same fallback-aware live total as the hero and chart.
+  const matchupChips = useMemo(() => matchupPairs.map((pair, index) => ({
+    key: pair.matchupId,
+    index,
+    mine: pair.mine,
+    sides: pair.sides.slice(0, 2).map((side, sideIndex) => {
+      const rosterId = getRosterIdFromMatchupRow(side.row);
+      const isMine = Number(rosterId) === Number(myRosterId);
+      const liveSide = index === matchupIndex ? sides[sideIndex] : null;
+      return {
+        key: `${pair.matchupId}-${rosterId ?? sideIndex}`,
+        label: isMine ? 'You' : (firstWordOf(side.name) || side.name),
+        fullName: side.name,
+        points: liveSide ? liveSide.pace.total : getMatchupRowPoints(side.row),
+        color: getFantasyTeamPalette(rosterId, paletteSlots)[0],
+      };
+    }),
+  })), [matchupIndex, matchupPairs, myRosterId, paletteSlots, sides]);
+  const matchupChipNameWidth = useMemo(
+    () => `${Math.min(14, Math.max(
+      7,
+      ...matchupChips.flatMap((chip) => chip.sides.map((side) => side.label.length)),
+    )) * 0.46}em`,
+    [matchupChips],
+  );
 
   // Real scoring measures shared game progress. The mock feed instead closes
   // at its latest active-game event on the compressed schedule.
@@ -1930,10 +1968,10 @@ export default function CompanionLive({ onViewPlayer = null }) {
         Number.isFinite(Number(event.progress)) ? Math.max(latest, Number(event.progress)) : latest
       ), 0);
     }
-    const all = sides.flatMap((side) => side.entries);
+    const all = baseSides.flatMap((side) => side.entries);
     if (!all.length) return 0;
     return all.reduce((sum, entry) => sum + entry.pace.progress, 0) / all.length;
-  }, [demoTimeline, mergedFeed, sandbox, sides]);
+  }, [baseSides, demoTimeline, mergedFeed, sandbox]);
 
   // Only the groups and types this league can actually score. Derived from the
   // scoring settings rather than hardcoded, so a kickerless or IDP league gets
@@ -2088,14 +2126,8 @@ export default function CompanionLive({ onViewPlayer = null }) {
     // computes are exact — and monotonic. Letting the reconstruction overwrite
     // them is what made the curve overshoot the real total and then slide back
     // down to it. Keep its probability output, drop its scores.
-    const replaySnapshotAt = sandbox?.replay && snapshotAt
-      ? (point, context) => {
-        const resolved = snapshotAt(point, context);
-        if (!resolved) return resolved;
-        const { a: _a, b: _b, ...withoutScores } = resolved;
-        return withoutScores;
-      }
-      : snapshotAt;
+    const eventAxisIsAuthoritative = Boolean(sandbox?.replay || sandbox?.mode === 'preseason');
+    const replaySnapshotAt = preservePaceSeriesScores(snapshotAt, eventAxisIsAuthoritative);
 
     return buildPaceSeries({
       events: mergedFeed,
@@ -2105,10 +2137,10 @@ export default function CompanionLive({ onViewPlayer = null }) {
       snapshotAt: replaySnapshotAt,
       // Same reason: sparse persisted history cannot improve on a complete
       // event log, and its wall-clock stamps do not line up with replay time.
-      historicalSnapshots: (demoTimeline || sandbox?.replay) ? [] : winProbHistory,
+      historicalSnapshots: (demoTimeline || eventAxisIsAuthoritative) ? [] : winProbHistory,
       // The replay's positions are authoritative; its timestamps are
       // reconstructed. Accumulate along the axis rather than the clock.
-      accumulateInOrder: Boolean(sandbox?.replay),
+      accumulateInOrder: eventAxisIsAuthoritative,
       liveSnapshot,
       reconcileToTotals: Boolean(demoTimeline),
     });

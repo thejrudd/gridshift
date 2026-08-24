@@ -159,6 +159,32 @@ test('semantic display tiers increase monotonically and preserve input readabili
   expect(sizes.large.input).toBeGreaterThanOrEqual(16);
 });
 
+test('mobile Predict Record keeps comfortable gutters without clipping its controls', async ({ page }) => {
+  for (const viewport of [
+    { width: 320, height: 568 },
+    { width: 390, height: 844 },
+    { width: 430, height: 932 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto('/predictions');
+
+    const surface = page.locator('.predictions-record-board');
+    await expect(surface).toBeVisible();
+    const geometry = await surface.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      return {
+        left: rect.left,
+        right: window.innerWidth - rect.right,
+        documentOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      };
+    });
+
+    expect(geometry.left).toBeGreaterThanOrEqual(18);
+    expect(geometry.right).toBeGreaterThanOrEqual(18);
+    expect(geometry.documentOverflow).toBeLessThanOrEqual(1);
+  }
+});
+
 for (const viewport of RESPONSIVE_VIEWPORTS) {
   test(`representative routes reflow without document overflow at ${viewport.name}`, async ({ page }) => {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });

@@ -1,4 +1,5 @@
 import { getTeamAbbr, normalizeName } from './liveScoringFeed.js';
+import { positionMatchesLeagueFilter } from './leaguePositions.js';
 
 function normalizePosition(position) {
   const value = String(position ?? '').trim().toUpperCase();
@@ -14,20 +15,40 @@ function getPlayerName(player) {
 }
 
 function getAdpPosition(row) {
-  return normalizePosition(row?.position ?? row?.player?.position_abbreviation ?? row?.player?.position);
+  return [
+    row?.position,
+    row?.player?.position_abbreviation,
+    row?.player?.position,
+  ].map(normalizePosition).find(Boolean) ?? null;
 }
 
 function getAdpTeam(row) {
-  return getTeamAbbr(row?.team?.abbreviation ?? row?.team ?? row?.player?.team);
+  const candidates = [
+    row?.team?.abbreviation,
+    row?.team?.short_name,
+    row?.team?.name,
+    row?.team,
+    row?.player?.team?.abbreviation,
+    row?.player?.team?.short_name,
+    row?.player?.team?.name,
+    row?.player?.team,
+  ];
+  return candidates
+    .map((candidate) => getTeamAbbr(candidate))
+    .find((team) => team && team.length <= 3) ?? '';
 }
 
 function getAdpName(row) {
   const player = row?.player ?? {};
-  return player.full_name || [player.first_name, player.last_name].filter(Boolean).join(' ') || '';
+  return player.full_name
+    || [player.first_name, player.last_name].filter(Boolean).join(' ')
+    || row?.full_name
+    || [row?.first_name, row?.last_name].filter(Boolean).join(' ')
+    || '';
 }
 
 function getAdpValue(row) {
-  const value = Number(row?.average_draft_position);
+  const value = Number(row?.average_draft_position ?? row?.averageDraftPosition ?? row?.adp);
   return Number.isFinite(value) && value > 0 ? value : null;
 }
 
@@ -89,6 +110,25 @@ export function mapFantasyAdpToSleeperPlayers({ players, adpRows } = {}) {
     });
   });
   return matched;
+}
+
+/**
+ * Applies the connected league's position scope without treating an
+ * uninitialized roster-position list (`['ALL']`) as a filter that excludes
+ * every otherwise valid ADP match.
+ */
+export function getFantasyAdpPlayersForLeague({ players, adpRows, availablePositions } = {}) {
+  const matched = mapFantasyAdpToSleeperPlayers({ players, adpRows });
+  const configuredPositions = (availablePositions ?? [])
+    .map((position) => String(position ?? '').trim().toUpperCase())
+    .filter((position) => position && position !== 'ALL');
+  if (!configuredPositions.length) return matched;
+
+  return new Map([...matched].filter(([playerId]) => (
+    positionMatchesLeagueFilter(players?.[String(playerId)]?.position, 'ALL', {
+      availableFilters: ['ALL', ...configuredPositions],
+    })
+  )));
 }
 
 export function getFantasyAdpSnapshotUpdatedAt(adpRows = []) {

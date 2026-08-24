@@ -1,7 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildPaceSeries } from '../../src/utils/livePace.js';
+import {
+  applyObservedPointFallback,
+  buildObservedPlayerPoints,
+  buildPaceSeries,
+  preservePaceSeriesScores,
+} from '../../src/utils/livePace.js';
 import { resolveCurrentPlayerPoints } from '../../src/utils/liveScoringFeed.js';
 
 // Positions are in order; timestamps deliberately are not. A replay
@@ -137,6 +142,101 @@ test('hidden replay reconciliation adjusts the curve without creating a selectab
 
   assert.equal(result.points.at(-2).a, 0.1);
   assert.deepEqual(result.marks.map((mark) => mark.event.id), ['provider-play']);
+});
+
+test('observed grouped plays retain each contributor share without duplicating the side swing', () => {
+  const observed = buildObservedPlayerPoints([{
+    playerId: 'qb',
+    pts: 16.5,
+    contributors: [
+      { playerId: 'qb', pts: 5.6 },
+      { playerId: 'wr', pts: 10.9 },
+    ],
+  }]);
+
+  assert.deepEqual(Object.fromEntries(observed), { qb: 5.6, wr: 10.9 });
+});
+
+test('preseason observed points fill unmatched starters while mapped box stats remain authoritative', () => {
+  const sides = [{
+    key: 'a',
+    pace: { total: 0, liveProjected: 20, vsPace: -10 },
+    entries: [
+      { id: 'unmatched', row: { mappedStats: null }, pace: { points: 0, pace: 6, liveProjected: 10, vsPace: -6 } },
+      { id: 'mapped', row: { mappedStats: { pass_yd: 0 } }, pace: { points: 0, pace: 4, liveProjected: 10, vsPace: -4 } },
+    ],
+  }];
+  const result = applyObservedPointFallback(
+    sides,
+    new Map([['unmatched', 7.2], ['mapped', 8.4]]),
+    true,
+  );
+
+  assert.equal(result[0].entries[0].pace.points, 7.2);
+  assert.equal(result[0].entries[1].pace.points, 0);
+  assert.equal(result[0].pace.total, 7.2);
+  assert.equal(result[0].pace.liveProjected, 27.2);
+  assert.equal(result[0].pace.vsPace, -2.8);
+});
+
+test('axis accumulation preserves a genuine negative fantasy event', () => {
+  const result = buildPaceSeries({
+    events: [
+      { id: 'gain', playerId: 'qb', pts: 4, progress: 0.2, at: 900 },
+      { id: 'turnover', playerId: 'qb', pts: -2, progress: 0.3, at: 100 },
+      { id: 'recovery', playerId: 'qb', pts: 3, progress: 0.4, at: 700 },
+    ],
+    sideKeyOf: () => 'a',
+    totals: { a: 5, b: 0 },
+    slateProgress: 0.4,
+    accumulateInOrder: true,
+  });
+
+  assert.deepEqual(result.points.slice(1, -1).map((point) => point.a), [4, 2, 5]);
+});
+
+test('an event-authoritative chart keeps probability metadata without snapshot score rewrites', () => {
+  const snapshotAt = preservePaceSeriesScores(
+    () => ({ a: 99, b: 88, p: 64, expectedA: 23, expectedB: 19 }),
+    true,
+  );
+  const result = buildPaceSeries({
+    events: [{ id: 'score', playerId: 'qb', pts: 4, progress: 0.2, at: 900 }],
+    sideKeyOf: () => 'a',
+    totals: { a: 4, b: 0 },
+    slateProgress: 0.2,
+    snapshotAt,
+    accumulateInOrder: true,
+  });
+
+  assert.equal(result.points[1].a, 4);
+  assert.equal(result.points[1].b, 0);
+  assert.equal(result.points[1].p, 64);
+  assert.equal(result.points[1].expectedA, 23);
+});
+
+test('observed preseason fallback supplies the chart close without a zero-point cliff', () => {
+  const events = [{ id: 'score', playerId: 'qb', pts: 4.2, progress: 0.35, at: 300 }];
+  const observed = buildObservedPlayerPoints(events);
+  const [side] = applyObservedPointFallback([{
+    key: 'a',
+    pace: { total: 0, liveProjected: 10, vsPace: -5 },
+    entries: [{
+      id: 'qb',
+      row: { mappedStats: null },
+      pace: { points: 0, pace: 5, projected: 10, liveProjected: 10, vsPace: -5 },
+    }],
+  }], observed, true);
+  const result = buildPaceSeries({
+    events,
+    sideKeyOf: () => 'a',
+    totals: { a: side.pace.total, b: 0 },
+    slateProgress: 0.35,
+    accumulateInOrder: true,
+  });
+
+  assert.equal(result.points.at(-2).a, 4.2);
+  assert.equal(result.points.at(-1).a, 4.2);
 });
 
 // ── Spreading a batch across the interval it covers ──────────────────────

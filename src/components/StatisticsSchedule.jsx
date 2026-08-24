@@ -17,6 +17,7 @@ import {
   STATISTICS_SCHEDULE_MODES,
   buildTeamScheduleRows,
   filterTeamScheduleRows,
+  getCurrentPreseasonWeekSelection,
   getDefaultScheduleWeek,
   getGameKickoffMs,
   getPopulatedScheduleWeeks,
@@ -59,7 +60,6 @@ const SCHEDULE_LOGO_CONTRAST_GRADIENT_TEAMS = new Set([
   'la',
   'lar',
 ]);
-
 const teamLogo = (teamId) => `https://a.espncdn.com/i/teamlogos/nfl/500/${String(teamId).toLowerCase()}.png`;
 
 function readStoredMode() {
@@ -579,13 +579,24 @@ function TeamPicker({ teams, onSelectTeam, darkMode }) {
             <div className="statistics-schedule-team-picker-grid">
               {group.teams.map((team) => {
                 const theme = getTeamVisualTheme(team.id, darkMode, { logoSide: 'start' });
+                const gradientBackground = theme?.gradient
+                  ? `${theme.gradientOverlay}, ${theme.gradient}`
+                  : 'var(--color-bg-secondary)';
                 return (
                   <button
                     key={team.id}
                     type="button"
                     className="statistics-schedule-team-option"
-                    style={{ '--statistics-schedule-row-accent': theme?.borderColor ?? 'var(--color-separator)' }}
+                    style={{
+                      '--statistics-schedule-row-accent': theme?.borderColor ?? 'var(--color-separator)',
+                      '--statistics-schedule-row-fg': theme?.gradientFullForeground ?? 'var(--color-label)',
+                      '--statistics-schedule-row-muted': theme?.gradientFullMuted ?? 'var(--color-label-secondary)',
+                      minHeight: '56px',
+                      background: gradientBackground,
+                      color: theme?.gradientFullForeground ?? 'var(--color-label)',
+                    }}
                     onClick={() => onSelectTeam(team.id)}
+                    aria-label={`View ${getTeamName(team)} schedule`}
                   >
                     <TeamIdentity team={team} compact />
                     <span>{team.nickname ?? team.name}</span>
@@ -779,6 +790,7 @@ export default function StatisticsSchedule({
     error: null,
     season: initialPreseasonWeek ? scheduleSeason : null,
   });
+  const selectCurrentPreseasonOnLoadRef = useRef(false);
   const routeMode = normalizeStatisticsScheduleMode(mode, null);
   const activeMode = routeMode ?? readStoredMode();
   const requestedFilter = normalizeStatisticsScheduleFilter(filter, STATISTICS_SCHEDULE_FILTERS.ALL);
@@ -863,15 +875,17 @@ export default function StatisticsSchedule({
 
   const togglePreseason = (nextIncluded) => {
     setIncludePreseason(nextIncluded);
+    selectCurrentPreseasonOnLoadRef.current = nextIncluded
+      && activeMode === STATISTICS_SCHEDULE_MODES.WEEK;
     if (nextIncluded && !preseasonScheduleData) {
       setPreseasonState({ status: 'loading', data: null, error: null, season: scheduleSeason });
     }
 
-    if (!nextIncluded && routePreseasonWeek) {
+    if (!nextIncluded && activeMode === STATISTICS_SCHEDULE_MODES.WEEK) {
       onRouteChange?.({
         statisticsScheduleMode: activeMode,
-        statisticsScheduleWeek: activeMode === STATISTICS_SCHEDULE_MODES.WEEK ? defaultRegularWeek : null,
-        statisticsScheduleTeamId: activeMode === STATISTICS_SCHEDULE_MODES.TEAM ? selectedTeamId : null,
+        statisticsScheduleWeek: defaultRegularWeek,
+        statisticsScheduleTeamId: null,
         statisticsScheduleFilter: null,
       });
     }
@@ -891,6 +905,40 @@ export default function StatisticsSchedule({
       statisticsScheduleFilter: nextFilter === STATISTICS_SCHEDULE_FILTERS.ALL ? null : nextFilter,
     });
   };
+
+  useEffect(() => {
+    if (!selectCurrentPreseasonOnLoadRef.current) return;
+    if (preseasonStatus === 'error') {
+      selectCurrentPreseasonOnLoadRef.current = false;
+      return;
+    }
+    if (!preseasonScheduleData) return;
+
+    selectCurrentPreseasonOnLoadRef.current = false;
+    const currentPreseasonWeek = getCurrentPreseasonWeekSelection({
+      preseasonWeekOptions,
+      regularWeekOptions,
+    });
+    if (!currentPreseasonWeek) return;
+    const nextWeekOption = preseasonWeekOptions.find((entry) => entry.selection === currentPreseasonWeek);
+    const nextFilter = requestedFilter === STATISTICS_SCHEDULE_FILTERS.PRIMETIME
+      ? STATISTICS_SCHEDULE_FILTERS.ALL
+      : getAvailableFilterForGames(nextWeekOption?.games ?? [], requestedFilter);
+    writeStoredMode(STATISTICS_SCHEDULE_MODES.WEEK);
+    onRouteChange?.({
+      statisticsScheduleMode: STATISTICS_SCHEDULE_MODES.WEEK,
+      statisticsScheduleWeek: currentPreseasonWeek,
+      statisticsScheduleTeamId: null,
+      statisticsScheduleFilter: nextFilter === STATISTICS_SCHEDULE_FILTERS.ALL ? null : nextFilter,
+    });
+  }, [
+    onRouteChange,
+    preseasonScheduleData,
+    preseasonStatus,
+    preseasonWeekOptions,
+    regularWeekOptions,
+    requestedFilter,
+  ]);
 
   const selectTeam = (nextTeamId) => {
     writeStoredMode(STATISTICS_SCHEDULE_MODES.TEAM);

@@ -14,6 +14,16 @@ import { getStarterOutlook } from './liveWinProbability.js';
 
 const round1 = (value) => Math.round((Number(value) || 0) * 10) / 10;
 
+export function preservePaceSeriesScores(snapshotAt, enabled = false) {
+  if (!enabled || typeof snapshotAt !== 'function') return snapshotAt;
+  return (...args) => {
+    const resolved = snapshotAt(...args);
+    if (!resolved) return resolved;
+    const { a: _a, b: _b, ...withoutScores } = resolved;
+    return withoutScores;
+  };
+}
+
 /**
  * Pace figures for a single starter.
  * `remainingFraction` is the share of their NFL game still to play (0 = done).
@@ -433,4 +443,70 @@ export function buildTopPerformers(sides = [], limit = 12) {
     .flatMap((side) => (side?.entries ?? []).map((entry) => ({ entry, side })))
     .sort((left, right) => (right.entry.pace?.points ?? 0) - (left.entry.pace?.points ?? 0))
     .slice(0, limit);
+}
+
+/**
+ * Totals each starter's observed play value without charging a grouped play to
+ * every contributor. The grouped event moves the fantasy side once, while the
+ * contributor rows retain the player-specific shares used by the performer UI.
+ */
+export function buildObservedPlayerPoints(events = []) {
+  const totals = new Map();
+  events.forEach((event) => {
+    const contributors = Array.isArray(event?.contributors) && event.contributors.length
+      ? event.contributors
+      : [{ playerId: event?.playerId, pts: event?.pts }];
+    contributors.forEach((contributor) => {
+      if (contributor?.playerId == null) return;
+      const points = Number(contributor.pts);
+      if (!Number.isFinite(points)) return;
+      const playerId = String(contributor.playerId);
+      totals.set(playerId, round1((totals.get(playerId) ?? 0) + points));
+    });
+  });
+  return totals;
+}
+
+/**
+ * Preseason box scores can trail play-by-play. Fill only unmatched starters
+ * from observed plays; a matched provider row remains authoritative, including
+ * an authoritative zero. Side totals and projections move by the same delta so
+ * the rail, hero, verdict, and chart close stay in agreement.
+ */
+export function applyObservedPointFallback(sides = [], observedPoints = new Map(), enabled = false) {
+  if (!enabled || !observedPoints?.size) return sides;
+  return sides.map((side) => {
+    let sideDelta = 0;
+    const entries = (side?.entries ?? []).map((entry) => {
+      if (entry?.row?.mappedStats) return entry;
+      const observed = observedPoints.get(String(entry?.id));
+      if (!Number.isFinite(Number(observed))) return entry;
+      const current = Number(entry?.pace?.points) || 0;
+      const nextPoints = round1(observed);
+      const delta = nextPoints - current;
+      if (Math.abs(delta) < 0.001) return entry;
+      sideDelta += delta;
+      return {
+        ...entry,
+        pace: {
+          ...entry.pace,
+          points: nextPoints,
+          liveProjected: round1((Number(entry.pace?.liveProjected) || 0) + delta),
+          vsPace: round1(nextPoints - (Number(entry.pace?.pace) || 0)),
+        },
+      };
+    });
+    if (Math.abs(sideDelta) < 0.001) return side;
+    const next = {
+      ...side,
+      entries,
+      pace: {
+        ...side.pace,
+        total: round1((Number(side.pace?.total) || 0) + sideDelta),
+        liveProjected: round1((Number(side.pace?.liveProjected) || 0) + sideDelta),
+        vsPace: round1((Number(side.pace?.vsPace) || 0) + sideDelta),
+      },
+    };
+    return { ...next, featured: pickFeaturedStarter(entries, 'top') };
+  });
 }

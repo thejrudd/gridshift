@@ -224,6 +224,13 @@ export function isPreseasonAllowed() {
     && process.env.GRIDSHIFT_LIVE_ALLOW_PRESEASON === 'true';
 }
 
+export function resolveLivePlaySeasonType(query = {}) {
+  return isPreseasonAllowed()
+    && ['pre', 'preseason', '1'].includes(String(query.seasonType ?? query.season_type ?? '').toLowerCase())
+    ? 1
+    : 2;
+}
+
 export function buildLiveGamesParams(query = {}) {
   const params = new URLSearchParams();
   params.set('per_page', String(DEFAULT_PER_PAGE));
@@ -477,10 +484,7 @@ export function createLiveRouter({
       const session = requireLiveSession(req);
       requireRateLimit(req, session);
       const { normalizedGameId } = buildGameScopedParams(req.params.gameId, req.query);
-      const seasonType = isPreseasonAllowed()
-        && ['pre', '1'].includes(String(req.query.seasonType ?? req.query.season_type ?? '').toLowerCase())
-        ? 1
-        : 2;
+      const seasonType = resolveLivePlaySeasonType(req.query);
       const snapshot = await snapshotStore.getPlays({ gameId: normalizedGameId, seasonType });
       const payload = { data: snapshot.plays, meta: snapshot.meta };
       const cacheInfo = {

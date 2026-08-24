@@ -419,9 +419,21 @@ function TradePlate({ side, items, onRemovePlayer, onRemovePick, onAddPlayer, on
         </div>
       )}
       <div className="flex gap-1.5" style={{ marginTop: items.length ? 4 : 0 }}>
-        <button onClick={onAddPlayer} className="flex-1 py-2.5 rounded-lg font-medium"
+        <button
+          type="button"
+          onClick={onAddPlayer}
+          disabled={!onAddPlayer}
+          className="flex-1 py-2.5 rounded-lg font-medium"
           data-testid={`trade-plate-${side}-add-player`}
-          style={{ fontSize: 'var(--type-meta)', border: '1px dashed var(--color-separator)', color: 'var(--color-label-tertiary)', background: 'transparent', cursor: 'pointer' }}>
+          style={{
+            fontSize: 'var(--type-meta)',
+            border: '1px dashed var(--color-separator)',
+            color: 'var(--color-label-tertiary)',
+            background: 'transparent',
+            cursor: onAddPlayer ? 'pointer' : 'not-allowed',
+            opacity: onAddPlayer ? 1 : 0.4,
+          }}
+        >
           + Player
         </button>
         {onAddPick && (
@@ -463,13 +475,12 @@ function RosterShelf({
   const [activeTab, setActiveTab] = useState('yours');
   const [posFilter, setPosFilter] = useState('ALL');
   const [showPicks, setShowPicks] = useState(false);
-  useEffect(() => {
-    if (!picksEnabled) setShowPicks(false);
-  }, [picksEnabled]);
-  const roster = activeTab === 'yours' ? myPlayers : partnerPlayers;
-  const inTradePlayers = activeTab === 'yours' ? yourTradePlayers : theirTradePlayers;
+  const visibleShowPicks = picksEnabled && showPicks;
+  const visibleTab = hasPartner ? activeTab : 'yours';
+  const roster = visibleTab === 'yours' ? myPlayers : partnerPlayers;
+  const inTradePlayers = visibleTab === 'yours' ? yourTradePlayers : theirTradePlayers;
   const inTradePickKeys = new Set(
-    (activeTab === 'yours' ? yourTradePicks : theirTradePicks).map(p => p.key)
+    (visibleTab === 'yours' ? yourTradePicks : theirTradePicks).map(p => p.key)
   );
 
   const filteredPlayers = (roster ?? [])
@@ -479,13 +490,13 @@ function RosterShelf({
     })
     .sort((a, b) => (playerTradeValueMap?.get(b) ?? 0) - (playerTradeValueMap?.get(a) ?? 0));
 
-  const rosterId = activeTab === 'yours' ? myRosterId : shelfPartnerRosterId;
+  const rosterId = visibleTab === 'yours' ? myRosterId : shelfPartnerRosterId;
   const shelfPicks = (picksEnabled && rosterPicks && slots && rosterId)
     ? (getPicksForRoster(rosterId, rosterPicks, slots) ?? [])
     : [];
 
   const handleDragStart = (type, id, pickData) => {
-    if (shelfDragRef) shelfDragRef.current = { type, id, shelfTab: activeTab, pickData };
+    if (shelfDragRef) shelfDragRef.current = { type, id, shelfTab: visibleTab, pickData };
   };
 
   const tabButtonStyle = isActive => ({
@@ -513,10 +524,15 @@ function RosterShelf({
       <div style={{ display: 'flex', borderBottom: '1px solid var(--color-separator)', background: 'var(--color-bg-secondary)', flexShrink: 0 }}>
         <button onClick={() => setActiveTab('yours')}
           data-testid="trade-shelf-tab-yours"
-          style={{ ...tabButtonStyle(activeTab === 'yours'), cursor: 'pointer' }}>
+          style={{ ...tabButtonStyle(visibleTab === 'yours'), cursor: 'pointer' }}>
           {myName || 'YOU'}
         </button>
-        <button onClick={() => setActiveTab('theirs')} data-testid="trade-shelf-tab-theirs" style={{ ...tabButtonStyle(activeTab === 'theirs'), cursor: 'pointer' }}>
+        <button
+          onClick={() => hasPartner && setActiveTab('theirs')}
+          data-testid="trade-shelf-tab-theirs"
+          disabled={!hasPartner}
+          style={{ ...tabButtonStyle(visibleTab === 'theirs'), cursor: hasPartner ? 'pointer' : 'not-allowed', opacity: hasPartner ? 1 : 0.45 }}
+        >
           {partnerName ? partnerName + "'s Roster" : "Trade Partner's Roster"}
         </button>
       </div>
@@ -524,7 +540,7 @@ function RosterShelf({
       <div style={{ padding: '7px 10px', background: 'var(--color-bg-secondary)', borderBottom: '1px solid var(--color-separator)', flexShrink: 0 }}>
         <CompanionSelectorRail ariaLabel="Trade shelf filters">
           {SHELF_POSITIONS.map(pos => (
-            <CompanionSelectorButton key={pos} size="xs" active={!showPicks && posFilter === pos} onClick={() => { setShowPicks(false); setPosFilter(pos); }}>
+            <CompanionSelectorButton key={pos} size="xs" active={!visibleShowPicks && posFilter === pos} onClick={() => { setShowPicks(false); setPosFilter(pos); }}>
               {pos}
             </CompanionSelectorButton>
           ))}
@@ -537,20 +553,20 @@ function RosterShelf({
       </div>
       {/* List */}
       <div style={{ flex: 1, minHeight: 0, padding: '4px 8px 8px', display: 'flex', flexDirection: 'column', gap: 3, overflowY: 'auto' }}>
-        {showPicks ? (
+        {visibleShowPicks ? (
           shelfPicks.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '14px 0', fontSize: 'var(--type-label)', color: 'var(--color-label-quaternary)' }}>
-              {!hasPartner && activeTab === 'theirs' ? 'Select a partner first' : 'No picks'}
+              {!hasPartner && visibleTab === 'theirs' ? 'Select a partner first' : 'No picks'}
             </div>
           ) : shelfPicks.map(pick => {
             const inTrade = inTradePickKeys.has(pick.key);
             const label = `${pick.year ?? ''} · Rd ${pick.round}`;
             return (
               <button key={pick.key}
-                data-testid={`trade-shelf-${activeTab}-pick-${pick.key}`}
+                data-testid={`trade-shelf-${visibleTab}-pick-${pick.key}`}
                 draggable={!inTrade}
                 onDragStart={() => handleDragStart('pick', pick.key, pick)}
-                onClick={() => !inTrade && (activeTab === 'yours' ? onAddPickToYours(pick) : onAddPickToTheirs(pick))}
+                onClick={() => !inTrade && (visibleTab === 'yours' ? onAddPickToYours(pick) : onAddPickToTheirs(pick))}
                 disabled={inTrade}
                 className="group"
                 style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 7px', borderRadius: 7, border: inTrade ? '1px dashed var(--color-separator)' : '1px solid var(--color-separator)', background: 'var(--color-bg)', opacity: inTrade ? 0.35 : 1, cursor: inTrade ? 'default' : 'grab', textAlign: 'left', width: '100%' }}>
@@ -567,7 +583,7 @@ function RosterShelf({
           })
         ) : filteredPlayers.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '14px 0', fontSize: 'var(--type-label)', color: 'var(--color-label-quaternary)' }}>
-            {!hasPartner && activeTab === 'theirs' ? 'Select a partner first' : 'No players'}
+            {!hasPartner && visibleTab === 'theirs' ? 'Select a partner first' : 'No players'}
           </div>
         ) : filteredPlayers.map(id => {
           const p = sleeperPlayers?.[id];
@@ -578,10 +594,10 @@ function RosterShelf({
           const posColor = POSITION_COLORS[pos];
           return (
             <button key={id}
-              data-testid={`trade-shelf-${activeTab}-player-${id}`}
+              data-testid={`trade-shelf-${visibleTab}-player-${id}`}
               draggable={!isInTrade}
               onDragStart={() => handleDragStart('player', id, null)}
-              onClick={() => !isInTrade && (activeTab === 'yours' ? onAddToYours(id) : onAddToTheirs(id))}
+              onClick={() => !isInTrade && (visibleTab === 'yours' ? onAddToYours(id) : onAddToTheirs(id))}
               disabled={isInTrade}
               className="group"
               style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 7px', borderRadius: 7, border: isInTrade ? '1px dashed var(--color-separator)' : '1px solid var(--color-separator)', background: 'var(--color-bg)', opacity: isInTrade ? 0.35 : 1, cursor: isInTrade ? 'default' : 'grab', textAlign: 'left', width: '100%' }}>
@@ -618,13 +634,12 @@ function MobileRosterShelf({
   const [activeTab, setActiveTab] = useState('yours');
   const [posFilter, setPosFilter] = useState('ALL');
   const [showPicks, setShowPicks] = useState(false);
-  useEffect(() => {
-    if (!picksEnabled) setShowPicks(false);
-  }, [picksEnabled]);
-  const roster = activeTab === 'yours' ? myPlayers : partnerPlayers;
-  const inTradePlayers = activeTab === 'yours' ? yourTradePlayers : theirTradePlayers;
+  const visibleShowPicks = picksEnabled && showPicks;
+  const visibleTab = hasPartner ? activeTab : 'yours';
+  const roster = visibleTab === 'yours' ? myPlayers : partnerPlayers;
+  const inTradePlayers = visibleTab === 'yours' ? yourTradePlayers : theirTradePlayers;
   const inTradePickKeys = new Set(
-    (activeTab === 'yours' ? yourTradePicks : theirTradePicks).map(p => p.key)
+    (visibleTab === 'yours' ? yourTradePicks : theirTradePicks).map(p => p.key)
   );
 
   const filteredPlayers = (roster ?? [])
@@ -634,7 +649,7 @@ function MobileRosterShelf({
     })
     .sort((a, b) => (playerTradeValueMap?.get(b) ?? 0) - (playerTradeValueMap?.get(a) ?? 0));
 
-  const rosterId = activeTab === 'yours' ? myRosterId : shelfPartnerRosterId;
+  const rosterId = visibleTab === 'yours' ? myRosterId : shelfPartnerRosterId;
   const shelfPicks = (picksEnabled && rosterPicks && slots && rosterId)
     ? (getPicksForRoster(rosterId, rosterPicks, slots) ?? [])
     : [];
@@ -663,10 +678,15 @@ function MobileRosterShelf({
       <div style={{ padding: '0 14px 8px', display: 'flex', alignItems: 'center', gap: 8, borderBottom: '1px solid var(--color-separator)' }}>
         <button onClick={() => setActiveTab('yours')}
           data-testid="trade-shelf-tab-yours"
-          style={{ ...tabButtonStyle(activeTab === 'yours'), cursor: 'pointer' }}>
+          style={{ ...tabButtonStyle(visibleTab === 'yours'), cursor: 'pointer' }}>
           {myName || 'YOU'}
         </button>
-        <button onClick={() => setActiveTab('theirs')} data-testid="trade-shelf-tab-theirs" style={{ ...tabButtonStyle(activeTab === 'theirs'), cursor: 'pointer' }}>
+        <button
+          onClick={() => hasPartner && setActiveTab('theirs')}
+          data-testid="trade-shelf-tab-theirs"
+          disabled={!hasPartner}
+          style={{ ...tabButtonStyle(visibleTab === 'theirs'), cursor: hasPartner ? 'pointer' : 'not-allowed', opacity: hasPartner ? 1 : 0.45 }}
+        >
           {partnerName ? partnerName + "'s Roster" : "Trade Partner's Roster"}
         </button>
       </div>
@@ -674,7 +694,7 @@ function MobileRosterShelf({
       <div style={{ padding: '8px 14px', borderBottom: '1px solid var(--color-separator)' }}>
         <CompanionSelectorRail ariaLabel="Trade shelf filters" wrapOnDesktop={false}>
           {SHELF_POSITIONS.map(pos => (
-            <CompanionSelectorButton key={pos} size="sm" active={!showPicks && posFilter === pos} onClick={() => { setShowPicks(false); setPosFilter(pos); }}>
+            <CompanionSelectorButton key={pos} size="sm" active={!visibleShowPicks && posFilter === pos} onClick={() => { setShowPicks(false); setPosFilter(pos); }}>
               {pos}
             </CompanionSelectorButton>
           ))}
@@ -687,18 +707,18 @@ function MobileRosterShelf({
       </div>
       {/* Vertical player/pick list */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 3, padding: '6px 14px 12px', maxHeight: 280, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
-        {showPicks ? (
+        {visibleShowPicks ? (
           shelfPicks.length === 0 ? (
             <div style={{ padding: '14px 0', fontSize: 'var(--type-meta)', color: 'var(--color-label-quaternary)', textAlign: 'center' }}>
-              {!hasPartner && activeTab === 'theirs' ? 'Select a partner first' : 'No picks'}
+              {!hasPartner && visibleTab === 'theirs' ? 'Select a partner first' : 'No picks'}
             </div>
           ) : shelfPicks.map(pick => {
             const inTrade = inTradePickKeys.has(pick.key);
             const label = `${pick.year ?? ''} · Rd ${pick.round}`;
             return (
               <button key={pick.key}
-                data-testid={`trade-shelf-${activeTab}-pick-${pick.key}`}
-                onClick={() => !inTrade && (activeTab === 'yours' ? onAddPickToYours(pick) : onAddPickToTheirs(pick))}
+                data-testid={`trade-shelf-${visibleTab}-pick-${pick.key}`}
+                onClick={() => !inTrade && (visibleTab === 'yours' ? onAddPickToYours(pick) : onAddPickToTheirs(pick))}
                 disabled={inTrade}
                 style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 10px', borderRadius: 10, border: inTrade ? '1px dashed var(--color-separator)' : '1px solid var(--color-separator)', background: 'var(--color-bg)', opacity: inTrade ? 0.4 : 1, cursor: inTrade ? 'default' : 'pointer', textAlign: 'left', width: '100%', minHeight: 44 }}>
                 <span style={{ fontSize: 'var(--type-label)', fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: 'rgba(245,183,0,0.12)', color: '#F5B700', flexShrink: 0, fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.06em' }}>PICK</span>
@@ -708,7 +728,7 @@ function MobileRosterShelf({
           })
         ) : filteredPlayers.length === 0 ? (
           <div style={{ padding: '14px 0', fontSize: 'var(--type-meta)', color: 'var(--color-label-quaternary)', textAlign: 'center' }}>
-            {!hasPartner && activeTab === 'theirs' ? 'Select a partner first' : 'No players'}
+            {!hasPartner && visibleTab === 'theirs' ? 'Select a partner first' : 'No players'}
           </div>
         ) : filteredPlayers.map(id => {
           const p = sleeperPlayers?.[id];
@@ -719,8 +739,8 @@ function MobileRosterShelf({
           const posColor = POSITION_COLORS[pos];
           return (
             <button key={id}
-              data-testid={`trade-shelf-${activeTab}-player-${id}`}
-              onClick={() => !isInTrade && (activeTab === 'yours' ? onAddToYours(id) : onAddToTheirs(id))}
+              data-testid={`trade-shelf-${visibleTab}-player-${id}`}
+              onClick={() => !isInTrade && (visibleTab === 'yours' ? onAddToYours(id) : onAddToTheirs(id))}
               disabled={isInTrade}
               style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 10px', borderRadius: 10, border: isInTrade ? '1px dashed var(--color-separator)' : '1px solid var(--color-separator)', background: 'var(--color-bg)', opacity: isInTrade ? 0.4 : 1, cursor: isInTrade ? 'default' : 'pointer', textAlign: 'left', width: '100%', minHeight: 44 }}>
               <span style={{ fontSize: 'var(--type-label)', fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: posColor ? `${posColor}22` : 'var(--color-fill)', color: posColor ?? 'var(--color-label-tertiary)', flexShrink: 0, fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.06em' }}>{pos}</span>
@@ -923,7 +943,7 @@ export default function TradeProposalBuilder({
                             total={theirSide.total}
                             onRemovePlayer={id => removePlayer('theirs', id)}
                             onRemovePick={key => removePick('theirs', key)}
-                            onAddPlayer={() => setPickerOpen({ side: 'theirs', type: 'player', allRosters: !partnerRosterId })}
+                            onAddPlayer={partnerRosterId ? () => setPickerOpen({ side: 'theirs', type: 'player' }) : null}
                             onAddPick={picksEnabled && partnerRosterId ? () => setPickerOpen({ side: 'theirs', type: 'pick' }) : null}
                             onOpenPlayer={openStatsModalForPlayer}
                             {...sharedPlateProps}
@@ -993,7 +1013,7 @@ export default function TradeProposalBuilder({
                         total={theirSide.total}
                         onRemovePlayer={id => removePlayer('theirs', id)}
                         onRemovePick={key => removePick('theirs', key)}
-                        onAddPlayer={() => setPickerOpen({ side: 'theirs', type: 'player', allRosters: !partnerRosterId })}
+                        onAddPlayer={partnerRosterId ? () => setPickerOpen({ side: 'theirs', type: 'player' }) : null}
                         onAddPick={picksEnabled && partnerRosterId ? () => setPickerOpen({ side: 'theirs', type: 'pick' }) : null}
                         onOpenPlayer={openStatsModalForPlayer}
                         {...sharedPlateProps}

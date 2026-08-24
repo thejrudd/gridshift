@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   aggregateParticipantIdentities,
   buildActivitySeasonGroups,
+  buildFinalPlacements,
   buildDraftBlueprintSummaries,
   buildLeagueHistoryModel,
   buildSeasonStandings,
@@ -104,6 +105,18 @@ test('historical standings stop at the final regular-season week and retain leag
   assert.equal(standings.rows[0].teamName, 'Beta');
   assert.deepEqual(standings.rows.map((row) => row.seed), [1, 2]);
   assert.deepEqual(standings.divisions.map((division) => division.label), ['North Division', 'South Division']);
+});
+
+test('builds final placement from postseason results instead of regular-season seed', () => {
+  const finalPlacements = buildFinalPlacements({
+    ...snapshot2024,
+    winnersBracket: [{ r: 1, m: 1, t1: 1, t2: 2, w: 1, l: 2, p: 1 }],
+  });
+  assert.equal(finalPlacements.complete, true);
+  assert.deepEqual(finalPlacements.rows.map((row) => [row.participantId, row.placement]), [
+    ['user-a', 1],
+    ['user-b', 2],
+  ]);
 });
 
 test('detects championship and consolation brackets only from actual matchup evidence', () => {
@@ -410,6 +423,62 @@ test('matches the CTRL+ALT+DEFEAT 2025 Sleeper championship bracket exactly', ()
   assert.deepEqual(bracket.championshipPlacement.map((matchup) => matchup.id).sort(), ['6', '9']);
   const semifinal = bracket.championship.find((matchup) => matchup.id === '5');
   assert.deepEqual([semifinal.team1Score, semifinal.team2Score], [156.41, 124.15]);
+});
+
+test('fills final placement slots for uneven championship and toilet-bowl brackets', () => {
+  const championshipTeams = [
+    [1, 'One'], [2, 'Two'], [6, 'Six'], [8, 'Eight'], [9, 'Nine'], [10, 'Ten'], [11, 'Eleven'],
+  ];
+  const championshipSnapshot = {
+    season: '2025',
+    completed: true,
+    league: { settings: { playoff_week_start: 15, playoff_teams: 7 } },
+    users: championshipTeams.map(([rosterId, teamName]) => ({ user_id: `u${rosterId}`, display_name: teamName, metadata: { team_name: teamName } })),
+    rosters: championshipTeams.map(([rosterId]) => ({ roster_id: rosterId, owner_id: `u${rosterId}` })),
+    winnersBracket: [
+      { m: 1, r: 1, t1: 8, t2: 2, w: 8, l: 2 },
+      { m: 2, r: 1, t1: 10, t2: 11, w: 11, l: 10 },
+      { m: 3, r: 1, t1: 1, t2: 6, w: 6, l: 1 },
+      { m: 4, r: 2, t1: 9, t2_from: { w: 1 }, w: 8, l: 9 },
+      { m: 5, r: 2, t1: 11, t2: 6, t1_from: { w: 2 }, t2_from: { w: 3 }, w: 11, l: 6 },
+      { m: 6, r: 2, t1: 10, t2: 1, t1_from: { l: 2 }, t2_from: { l: 3 }, w: 10, l: 1 },
+      { p: 1, m: 7, r: 3, t1: 8, t2: 11, t1_from: { w: 4 }, t2_from: { w: 5 }, w: 8, l: 11 },
+      { p: 3, m: 8, r: 3, t1: 9, t2: 6, t1_from: { l: 4 }, t2_from: { l: 5 }, w: 9, l: 6 },
+      { p: 5, m: 9, r: 3, t1: 2, t2: 10, t1_from: { l: 1 }, t2_from: { w: 6 }, w: 2, l: 10 },
+    ],
+    losersBracket: [],
+  };
+  const championshipPlacements = buildFinalPlacements(championshipSnapshot);
+  assert.equal(championshipPlacements.complete, true);
+  assert.deepEqual(championshipPlacements.rows.map((row) => [row.rosterId, row.placement]), [
+    ['8', 1], ['11', 2], ['9', 3], ['6', 4], ['2', 5], ['10', 6], ['1', 7],
+  ]);
+
+  const toiletTeams = [8, 9, 10, 11, 12, 13, 14];
+  const toiletSnapshot = {
+    season: '2025',
+    completed: true,
+    league: { total_rosters: 14, settings: { playoff_week_start: 15, playoff_teams: 7, playoff_type: 0 } },
+    users: toiletTeams.map((rosterId) => ({ user_id: `u${rosterId}`, display_name: `Team ${rosterId}`, metadata: { team_name: `Team ${rosterId}` } })),
+    rosters: toiletTeams.map((rosterId) => ({ roster_id: rosterId, owner_id: `u${rosterId}` })),
+    winnersBracket: [],
+    losersBracket: [
+      { r: 1, m: 1, t1: 11, t2: 10, w: 10, l: 11 },
+      { r: 1, m: 2, t1: 13, t2: 8, w: 8, l: 13 },
+      { r: 1, m: 3, t1: 12, t2: 9, w: 9, l: 12 },
+      { r: 2, m: 4, t1: 14, t2_from: { l: 1 }, w: 14, l: 11 },
+      { r: 2, m: 5, t1_from: { l: 2 }, t2_from: { l: 3 }, w: 12, l: 13 },
+      { r: 2, m: 6, t1_from: { w: 2 }, t2_from: { w: 3 }, w: 8, l: 9 },
+      { r: 3, m: 7, t1_from: { l: 4 }, t2_from: { l: 5 }, w: 11, l: 13, p: 1 },
+      { r: 3, m: 8, t1_from: { w: 4 }, t2_from: { w: 5 }, w: 12, l: 14, p: 3 },
+      { r: 3, m: 9, t1_from: { w: 1 }, t2_from: { l: 6 }, w: 10, l: 9, p: 5 },
+    ],
+  };
+  const toiletPlacements = buildFinalPlacements(toiletSnapshot);
+  assert.equal(toiletPlacements.complete, true);
+  assert.deepEqual(toiletPlacements.rows.map((row) => [row.rosterId, row.placement]), [
+    ['8', 8], ['9', 9], ['10', 10], ['14', 11], ['12', 12], ['13', 13], ['11', 14],
+  ]);
 });
 
 test('builds lifetime leaderboard, rivalries, champions, and core record leaders', () => {

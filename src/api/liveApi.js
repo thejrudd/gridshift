@@ -64,8 +64,8 @@ export async function getLiveGames({ season, week, date, seasonType, signal } = 
   return parseLiveResponse(response, 'Could not load live games.');
 }
 
-export async function getLiveGamePlays(gameId, { signal } = {}) {
-  const response = await fetch(`/api/live/game/${encodeURIComponent(gameId)}/plays`, {
+export async function getLiveGamePlays(gameId, { signal, seasonType } = {}) {
+  const response = await fetch(`/api/live/game/${encodeURIComponent(gameId)}/plays${buildQueryString({ seasonType })}`, {
     credentials: 'include',
     headers: { Accept: 'application/json' },
     signal,
