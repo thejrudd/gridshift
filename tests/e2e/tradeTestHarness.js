@@ -1,0 +1,201 @@
+import {
+  TEST_LEAGUE_ID,
+  TEST_SEASON,
+  drafts,
+  ktcHtml,
+  league,
+  leagueUsers,
+  leaguesBySeason,
+  matchupsForWeek,
+  persistedSleeperState,
+  players,
+  rosters,
+  sleeperUser,
+  tradedPicks,
+  weeklyStatsForWeek,
+} from '../fixtures/tradeFixtures.js';
+
+export async function installTradeFixtures(page, overrides = {}) {
+  const fixtureState = overrides.persistedSleeperState ?? persistedSleeperState();
+  const fixturePlayers = overrides.players ?? players;
+  const fixtureRosters = overrides.rosters ?? rosters;
+  const fixtureLeagueUsers = overrides.leagueUsers ?? leagueUsers;
+  const fixtureLeague = overrides.league ?? league;
+  const fixtureLeaguesBySeason = overrides.leaguesBySeason ?? leaguesBySeason;
+  const fixtureTradedPicks = overrides.tradedPicks ?? tradedPicks;
+  const fixtureDrafts = overrides.drafts ?? drafts;
+  const fixtureDraftPicks = overrides.draftPicks ?? [];
+  const fixtureDraftTradedPicks = overrides.draftTradedPicks ?? fixtureTradedPicks;
+  const fixtureTransactionsByRound = overrides.transactionsByRound ?? {};
+  const fixtureWinnersBracket = overrides.winnersBracket ?? [];
+  const fixtureLosersBracket = overrides.losersBracket ?? [];
+  const fixtureMatchupsForWeek = overrides.matchupsForWeek ?? matchupsForWeek;
+  const fixtureNflState = overrides.nflState ?? {
+    season: TEST_SEASON,
+    season_type: 'regular',
+    week: 7,
+    leg: 7,
+    display_week: 7,
+    league_season: TEST_SEASON,
+  };
+
+  const installedVersion = Object.prototype.hasOwnProperty.call(overrides, 'installedVersion')
+    ? overrides.installedVersion
+    : '8.2.1';
+  await page.addInitScript(({ state, version }) => {
+    window.localStorage.setItem('sleeper_state_v1', JSON.stringify(state));
+    window.localStorage.setItem('nfl-predictor-dark-mode', 'false');
+    if (version) window.localStorage.setItem('gridshift:installedVersion', version);
+  }, { state: fixtureState, version: installedVersion });
+
+  await page.route('**/ktc-proxy/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'text/html',
+      body: ktcHtml(),
+    });
+  });
+
+  await page.route('https://api.sleeper.app/v1/**', async (route) => {
+    const url = new URL(route.request().url());
+    const path = url.pathname;
+
+    if (path === '/v1/state/nfl') return json(route, fixtureNflState);
+    if (path === '/v1/players/nfl') return json(route, fixturePlayers);
+    if (path === `/v1/user/${sleeperUser.username}`) return json(route, sleeperUser);
+    if (path.startsWith(`/v1/user/${sleeperUser.user_id}/leagues/nfl/`)) {
+      const season = path.split('/').at(-1);
+      return json(route, fixtureLeaguesBySeason[season] ?? []);
+    }
+    if (path === `/v1/league/${TEST_LEAGUE_ID}`) return json(route, fixtureLeague);
+    const leaguePathMatch = path.match(/^\/v1\/league\/([^/]+)$/);
+    if (leaguePathMatch) {
+      const leagueId = decodeURIComponent(leaguePathMatch[1]);
+      const seasonLeagues = Object.values(fixtureLeaguesBySeason ?? {}).flatMap((seasonItems) => seasonItems ?? []);
+      const matchingLeague = [fixtureLeague, ...seasonLeagues]
+        .find((item) => String(item?.league_id) === leagueId);
+      return json(route, matchingLeague ?? {});
+    }
+    if (path === `/v1/league/${TEST_LEAGUE_ID}/rosters`) return json(route, fixtureRosters);
+    if (path === `/v1/league/${TEST_LEAGUE_ID}/users`) return json(route, fixtureLeagueUsers);
+    if (path === `/v1/league/${TEST_LEAGUE_ID}/traded_picks`) return json(route, fixtureTradedPicks);
+    if (path === `/v1/league/${TEST_LEAGUE_ID}/drafts`) return json(route, fixtureDrafts);
+    if (path === `/v1/league/${TEST_LEAGUE_ID}/winners_bracket`) return json(route, fixtureWinnersBracket);
+    if (path === `/v1/league/${TEST_LEAGUE_ID}/losers_bracket`) return json(route, fixtureLosersBracket);
+    if (path.startsWith(`/v1/league/${TEST_LEAGUE_ID}/transactions/`)) {
+      const round = Number(path.split('/').at(-1));
+      return json(route, fixtureTransactionsByRound[round] ?? []);
+    }
+    if (path.startsWith(`/v1/league/${TEST_LEAGUE_ID}/matchups/`)) {
+      const week = Number(path.split('/').at(-1));
+      return json(route, fixtureMatchupsForWeek(week));
+    }
+    const draftPathMatch = path.match(/^\/v1\/draft\/([^/]+)(?:\/(picks|traded_picks))?$/);
+    if (draftPathMatch) {
+      const draftId = decodeURIComponent(draftPathMatch[1]);
+      const suffix = draftPathMatch[2];
+      if (suffix === 'picks') return json(route, fixtureDraftPicks);
+      if (suffix === 'traded_picks') return json(route, fixtureDraftTradedPicks);
+      return json(route, fixtureDrafts.find((item) => String(item.draft_id) === draftId) ?? {});
+    }
+    const statsPathMatch = path.match(/^\/v1\/stats\/nfl\/regular\/(\d{4})\/(\d+)$/);
+    if (statsPathMatch && [TEST_SEASON, String(Number(TEST_SEASON) - 1)].includes(statsPathMatch[1])) {
+      const week = Number(statsPathMatch[2]);
+      return json(route, weeklyStatsForWeek(week));
+    }
+
+    return json(route, {});
+  });
+
+  await page.route('https://site.api.espn.com/**', async (route) => {
+    const url = new URL(route.request().url());
+    const teamId = url.pathname.match(/\/teams\/([^/]+)\/roster$/)?.[1]?.toUpperCase();
+    if (teamId) return json(route, espnRosterFixture(teamId, fixturePlayers));
+    return json(route, {});
+  });
+  await page.route('https://site.web.api.espn.com/**', async (route) => json(route, {}));
+  await page.route('https://a.espncdn.com/**', async (route) => route.abort());
+  await page.route('https://sleepercdn.com/**', async (route) => route.abort());
+}
+
+function espnRosterFixture(teamId, fixturePlayers = players) {
+  const normalizedTeamId = normalizeEspnFixtureTeamId(teamId);
+  const items = Object.values(fixturePlayers)
+    .filter((player) => player.team === normalizedTeamId)
+    .map((player) => ({
+      id: player.espn_id,
+      uid: `s:20~l:28~a:${player.espn_id}`,
+      guid: player.espn_id,
+      displayName: player.full_name,
+      fullName: player.full_name,
+      jersey: player.number,
+      position: {
+        abbreviation: player.position,
+        displayName: positionName(player.position),
+      },
+      experience: { years: player.years_exp },
+      status: { type: { description: 'Active' } },
+    }));
+
+  return { athletes: items.length ? [{ items }] : [] };
+}
+
+function normalizeEspnFixtureTeamId(teamId) {
+  const key = String(teamId ?? '').toUpperCase();
+  const aliases = {
+    ARI: 'ARI',
+    ATL: 'ATL',
+    BAL: 'BAL',
+    BUF: 'BUF',
+    CAR: 'CAR',
+    CHI: 'CHI',
+    CIN: 'CIN',
+    CLE: 'CLE',
+    DAL: 'DAL',
+    DEN: 'DEN',
+    DET: 'DET',
+    GB: 'GB',
+    HOU: 'HOU',
+    IND: 'IND',
+    JAC: 'JAX',
+    JAX: 'JAX',
+    KC: 'KC',
+    LV: 'LV',
+    LAC: 'LAC',
+    LAR: 'LAR',
+    LA: 'LAR',
+    MIA: 'MIA',
+    MIN: 'MIN',
+    NE: 'NE',
+    NO: 'NO',
+    NYG: 'NYG',
+    NYJ: 'NYJ',
+    PHI: 'PHI',
+    PIT: 'PIT',
+    SEA: 'SEA',
+    SF: 'SF',
+    TB: 'TB',
+    TEN: 'TEN',
+    WAS: 'WAS',
+    WSH: 'WAS',
+  };
+  return aliases[key] ?? key;
+}
+
+function positionName(position) {
+  switch (position) {
+    case 'QB': return 'Quarterback';
+    case 'RB': return 'Running Back';
+    case 'WR': return 'Wide Receiver';
+    case 'TE': return 'Tight End';
+    default: return position;
+  }
+}
+
+async function json(route, value) {
+  await route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify(value),
+  });
+}

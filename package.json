@@ -1,0 +1,63 @@
+{
+  "name": "gridshift",
+  "private": true,
+  "version": "8.6.2",
+  "description": "An interactive NFL season planner and fantasy football companion.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/thejrudd/nfl-predictor.git"
+  },
+  "bugs": {
+    "url": "https://github.com/thejrudd/nfl-predictor/issues"
+  },
+  "homepage": "https://github.com/thejrudd/nfl-predictor#readme",
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:upgrade:8.1.1-to-8.2": "node scripts/dev.mjs --upgrade-from 8.1.1 --upgrade-to 8.2.0",
+    "dev:client": "vite",
+    "server": "node server/index.js",
+    "build": "vite build",
+    "lint": "eslint .",
+    "preview": "vite preview",
+    "validate:routing": "node scripts/validate-routing.mjs",
+    "validate:tour": "node scripts/validate-whats-new-tour.mjs",
+    "test:unit": "node --test tests/unit/*.test.mjs",
+    "test:e2e": "TMPDIR=/tmp playwright test",
+    "test:e2e:tour": "TMPDIR=/tmp playwright test tests/e2e/whats-new-tour.spec.js --config=playwright.tour.config.js",
+    "test:e2e:headed": "TMPDIR=/tmp playwright test --headed",
+    "test:e2e:ui": "TMPDIR=/tmp playwright test --ui",
+    "generate-pwa-assets": "pwa-assets-generator --preset minimal public/icons/icon.svg"
+  },
+  "dependencies": {
+    "@phosphor-icons/react": "^2.1.10",
+    "@vitejs/plugin-react": "^5.1.4",
+    "express": "^5.2.1",
+    "html2canvas": "^1.4.1",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-grid-layout": "^2.2.2",
+    "reaviz": "^16.1.2"
+  },
+  "overrides": {
+    "picomatch": "^2.3.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "@playwright/test": "^1.59.1",
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "@vite-pwa/assets-generator": "^1.0.2",
+    "@vitejs/plugin-react-swc": "^4.2.3",
+    "autoprefixer": "^10.4.24",
+    "eslint": "^9.39.4",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-refresh": "^0.4.24",
+    "globals": "^16.5.0",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.19",
+    "vite": "^7.3.1",
+    "vite-plugin-pwa": "^1.2.0"
+  }
+}

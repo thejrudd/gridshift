@@ -1,0 +1,73 @@
+# Design System Quick Ref — "Broadcast Editorial"
+
+Full token table and dark-mode values: **`docs/Design Tokens.md`**
+
+## Key Rules
+
+- All colors via CSS custom properties in `src/index.css` — never hardcoded Tailwind palette or hex values in components. The `.dark` class on `<html>` swaps all values.
+- `--color-signature` (`#F5B700`) is decorative only — never body text. Use `--color-signature-fg` for text ON signature backgrounds.
+- `font-size: 16px` on all inputs (prevents iOS auto-zoom)
+- Safe area insets: `env(safe-area-inset-bottom)` on fixed bottom bars
+- Motion: spring-curve easing `cubic-bezier(0.32, 0.72, 0, 1)`
+- Display size is controlled by `data-display-size="compact|comfortable|large"` on `<html>` and persisted under `gridshift-display-size`; Comfortable is the default. Never add DPI/device-pixel-ratio auto-scaling, CSS `zoom`, or transform scaling.
+- Use semantic `--type-*` tokens instead of new pixel font sizes. Meaningful labels start at `--type-label`; `--type-micro` is decorative/status chrome only.
+- Route roots use one intentional frame: readable (`1200px`), data (`1600px`), or workbench (`1920px`). Long lists should not stretch identity and metrics across the full monitor width.
+- Important user-facing content must fit without truncation. Names, dates, venues, stats, scores, labels, and controls should wrap, reflow, resize, or drop lower-priority chrome before using ellipsis. Ellipsis is only acceptable for nonessential decorative metadata.
+- Mobile controls, menus, popovers, and other interactive elements must stay fully within the viewport at 100% zoom. Open flyouts inward from their nearest edge, cap widths with viewport-relative constraints, and avoid horizontal page overflow.
+- Table headers should be vertically centered over their metric data and should not truncate. Let labels wrap or use controlled overflow while preserving consistent header height, and resize or remove lower-priority columns before table elements overlap.
+- Roster player names are priority content: do not truncate or ellipsize them. Let names wrap when needed, and drop lower-priority row chrome before hiding identity text.
+- Horizontal scroll cues must cover the same rendered width as the scroll rail they describe. For full-bleed mobile tab rails, wrap the cue around the full-bleed shell, not an inset parent, so tab text cannot peek through beside the arrow. Add or preserve Playwright geometry checks that compare the cue edge to the rail's actual rendered edge.
+- Sticky tabs, filters, and headers inside a scrolling content area must have an opaque surface that also shields any top padding/offset above them. Content must never paint through above or behind the sticky control.
+
+## Desktop Legibility and Viewing Distance
+
+Full guidance and the Fantasy Live reference profile: **[[Desktop Legibility]]**
+
+- Design desktop workbenches for reading at a normal monitor distance, not only
+  for screenshot density. Validate at 100% browser zoom on a short laptop
+  viewport, a standard desktop viewport, and a wide/tall monitor.
+- A browser viewport does not reveal physical display size, DPI, OS scaling, or
+  viewing distance. Never infer them from `devicePixelRatio`, screen dimensions,
+  or resolution; never use CSS `zoom` or whole-app transforms. The persisted
+  Display Size preference remains the user-controlled global scale.
+- Use semantic type roles first, then refine a component against its container
+  with `clamp()`. Short-height tiers may recompose a dashboard but must not
+  shrink meaningful text below its semantic role.
+- At desktop viewing distance, primary row identity should normally use at least
+  `--type-emphasis`, readable descriptions at least `--type-body`, and persistent
+  supporting facts at least `--type-label` or preferably `--type-meta` when
+  space permits. Reserve `--type-micro` for nonessential overlines and badges.
+- Condensed uppercase text reads optically smaller than body text. Give
+  meaningful condensed labels sufficient weight, restrained tracking, and an
+  appropriate semantic size.
+- Meaningful text must use `--color-label` or a verified readable use of
+  `--color-label-secondary`. Timestamps, game state, totals, axis labels,
+  instructions, inactive choices, and identity are not tertiary decoration.
+- Never apply reduced opacity to a parent containing readable text. Express
+  inactive or selected state with fills, rings, borders, weight, position, or
+  semantic text tokens.
+- Support `prefers-contrast: more` on dense data surfaces by promoting meaningful
+  text and SVG labels while leaving decorative overlines subdued.
+- If larger type or imagery consumes space, reduce decorative chrome, change
+  orientation, or give the list an internal scroll owner. Preserve the route's
+  intended scroll ownership and any tested chart/canvas minimum.
+- Treat Fantasy Live's `52px` standard, `64px` wide/tall, and `44px` short-height
+  portraits as a calibrated reference—not a global component scale.
+
+## Team Color Palettes
+
+- NFL teams — raw palettes live in `src/data/teamColors.js` (`TEAM_COLORS`, `getTeamPalette`); computed gradients, overlays, region-aware contrast, tints, reversed-gradient exceptions, side-sensitive logo contrast, and logo badge colors live in `src/utils/teamVisualTheme.js` (`getTeamVisualTheme`). `nyg` and `nyj` are side-sensitive: left-logo Statistics cards reverse them, while right-logo Trade rows/cards keep the default direction. Used for Statistics, Companion, Trade, Scout Results pick rows, and the Compare/Heatmap surfaces.
+- College teams — `src/data/collegeColors.js` (`COLLEGE_COLORS`, `getCollegePalette`, `buildCollegeRowGradient`, `getCollegeForeground`). Used for the optional Scout Prospects "Team Colors" toggle. Mirrors the NFL palette structure (primary / secondary / darkPrimary / darkSecondary) and the same `linear-gradient(135deg, primary 0%, darken(primary,0.28) 58%, secondary 100%)` row treatment used by Scout Results.
+- When adding a new school to `ROOKIES_2026`, add a matching entry to `COLLEGE_COLORS` keyed by the normalized college name (`normalizeCollegeKey`). If the official primary is near-black or very dark navy, set `darkPrimary` to the brighter accent so the gradient still reads in dark mode.
+
+## Companion And Trade Row Rendering
+
+See [[Companion Shared Rows]] before changing Companion/Trade-adjacent selector rows.
+
+- `CompanionPlayerRow`, `CompanionAssetRow`, and `CompanionSelectorControls` are the single source of truth for player rows, asset rows, selector rails, buttons, segmented controls, and search fields.
+- Scrollable selector/tab rails should use the shared horizontal cue pattern (`useHorizontalScrollCue` + `HorizontalScrollCue`). The cue container must match the rail's visual bleed width, especially on mobile.
+- `teamVisualTheme.js` owns NFL team gradients, overlays, tints, reversed-gradient exceptions, side-sensitive logo options, and contrast variables. Feature components should not create duplicate luminance/darken/team-palette helpers.
+- `companionAssetVisuals.js` owns shared player images, fallback initials, team logos, position colors, and asset visual decisions.
+- Player status badges, `ROSTERED` labels, trend labels, and metric text on team gradients must use the shared local-contrast path (`PlayerStatusBadge`, `CompanionPlayerStatus`, `CompanionPlayerLocalContrastText`, or `CompanionPlayerMetric`). Do not hardcode text colors based only on light/dark mode or team accent.
+- Preserve row slots. Failed headshots should fall back to initials and failed logos should leave a spacer; never remove a grid cell with `display: none` because it can collapse player identity columns.
+- Wide player rows remain inside a data/workbench frame so the measured name column, adjacent logo/status slot, flexible spacer, metrics, and action stay visually anchored instead of drifting across ultrawide space.

@@ -1,0 +1,5528 @@
+import { Fragment, memo, startTransition, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { createPortal, flushSync } from 'react-dom';
+import { getDraft, getDraftPicks, getDraftTradedPicks, getLeagueDrafts, getUserById } from '../../api/sleeperApi.js';
+import { useSleeperBase } from '../../context/SleeperContext.jsx';
+import { useTheme } from '../../context/ThemeContext.jsx';
+import { fetchLeagueLogsMarketForLeague, formatLeagueLogsMarketProfile } from '../../api/leagueLogsApi.js';
+import { getFantasyAdp } from '../../api/fantasyAdpApi.js';
+import useMediaQuery from '../../hooks/useMediaQuery.js';
+import { useUpcomingScheduleBundle } from '../../hooks/useUpcomingScheduleMap.js';
+import CompanionPlayerRow, {
+  CompanionPlayerAction,
+  CompanionPlayerLocalContrastText,
+  CompanionPlayerMetric,
+  CompanionPlayerStatus,
+} from '../companion/CompanionPlayerRow.jsx';
+import PlayerStatusBadge from '../companion/PlayerStatusBadge.jsx';
+import {
+  POSITION_COLORS,
+  getCompanionPositionColor,
+  getCompanionInitials,
+  getPositionTextColor,
+  getSleeperPlayerImageUrl,
+} from '../../utils/companionAssetVisuals.js';
+import { buildDraftBlueprintSummaries } from '../../utils/leagueHistory.js';
+import { getTeamVisualTheme } from '../../utils/teamVisualTheme.js';
+import { getFantasyAdpSnapshotUpdatedAt, mapFantasyAdpToSleeperPlayers } from '../../utils/fantasyAdp.js';
+import { isLeagueSeasonComplete } from '../../utils/draftPickDisplay.js';
+import {
+  getPlayerAvailabilityContext,
+  getPlayerAvailabilityFilterOptions,
+  matchesPlayerAvailabilityFilter,
+} from '../../utils/playerAvailabilityStatus.js';
+import {
+  DEFAULT_DRAFT_MODEL_WEIGHTS,
+  buildDraftAssistantViewModel,
+  buildDraftPositionRanks,
+  buildDraftResultsViewModel,
+  buildPickOrder,
+  computeDraftOutcomes,
+  getDraftResultsSeason,
+  getDraftRosterEligiblePositions,
+  getDraftStatsSeason,
+  isPlayerEligibleForDraftRoster,
+  getScheduledDraftCountdownParts,
+  getSleeperDraftStartMs,
+  getSleeperDraftPicksSignature,
+  getSleeperDraftSemanticSignature,
+  getSleeperDraftTradedPicksSignature,
+  isSleeperDraftPollable,
+  isSleeperDraftPreDraft,
+  normalizeDraftModelWeights,
+  normalizeDraftPick,
+  rebalanceDraftModelWeights,
+  resolveDraftPlayerByeWeek,
+  resolveDraftPickManagerId,
+  resolveLeagueDraftId,
+  shouldRefreshSleeperDraftPicks,
+  shouldRefreshSleeperDraftTradedPicks,
+} from '../../utils/draftAssistant/index.js';
+import {
+  buildProjectedDraftSelection,
+  isDraftRookie,
+} from '../../utils/draftAssistant/projectedSelection.js';
+import {
+  getRosterProjectionSlotEligibilities,
+  getRosterProjectionSlotOrder,
+  selectNextAvailableRosterProjection,
+} from '../../utils/draftAssistant/rosterProjection.js';
+import {
+  DRAFT_POSITION_ORDER as POSITION_ORDER,
+  emptyBoard,
+  flattenBoardIds,
+  addPlayerToOrderedBoard,
+  createOrderedBoardState,
+  moveOverallBoardPlayer,
+  playerCanSlotIntoBoardPosition,
+  moveOrderedBoardPlayerWithinPosition,
+  movePlayerToOrderedBoardPosition,
+  normalizeBoardByPosition,
+  normalizeOverallBoardIds,
+  orderBoardByOverall,
+  normalizeBoardPosition as normalizePosition,
+  removePlayerFromOrderedBoard,
+} from '../../utils/draftAssistant/board.js';
+import { getDraftAnalyticsCompareLimit } from '../../utils/draftAssistant/analytics.js';
+import {
+  buildDraftByeConflictModel,
+  buildDraftRosterByeConflictModel,
+} from '../../utils/draftAssistant/byeConflicts.js';
+import { getByeWeekForTeam, isByeWeekBundleForSeason } from '../../utils/draftAssistant/byeWeeks.js';
+import {
+  DRAFT_RANKING_PRIORITY_CONTROLS,
+  DRAFT_RANKING_PRIORITY_HELP,
+  DRAFT_RANKING_PRIORITY_RESET_LABEL,
+  DRAFT_RANKING_PRIORITY_TITLE,
+} from '../../utils/draftAssistant/priorityCopy.js';
+import DraftPlayerAnalyticsSheet from './DraftPlayerAnalyticsSheet.jsx';
+
+const BOARD_STORAGE_PREFIX = 'draft_assistant_position_board_v2';
+const LEGACY_BOARD_STORAGE_PREFIX = 'draft_assistant_board_v1';
+const MODEL_STORAGE_PREFIX = 'draft_assistant_model_weights_v2';
+const KEEPER_STORAGE_PREFIX = 'draft_assistant_roster_keepers_v1';
+const ROSTER_TRAY_COLLAPSED_SESSION_KEY = 'draft_board_roster_tray_collapsed_v1';
+const POLL_MS = 15_000;
+const LIVE_DRAFT_POLL_MS = 5_000;
+const LIVE_DRAFT_TRADED_PICK_POLL_MS = 30_000;
+const LIVE_DRAFT_STATUS_POLL_MS = 1_000;
+const RUNNING_DRAFT_CLOCK_POLL_MS = 1_000;
+const CLOCK_RESYNC_THRESHOLD_MS = 1_200;
+const DEV_DRAFT_OVERRIDE_PARAM_KEYS = ['sleeperDraftId', 'draftId'];
+const EMPTY_VIEW_MODEL_BOARD_IDS = Object.freeze([]);
+const MODEL_WEIGHT_CONTROLS = DRAFT_RANKING_PRIORITY_CONTROLS;
+const MODEL_WEIGHT_MIN = 0;
+const MODEL_WEIGHT_MAX = 100;
+const BOARD_SCOPE_OPTIONS = [
+  { id: 'available', label: 'Available' },
+  { id: 'all', label: 'All Players' },
+  { id: 'rookies', label: 'Rookies' },
+];
+const MY_BOARD_SORT_OPTIONS = [
+  { id: 'position', label: 'Positional' },
+  { id: 'overall', label: 'Overall' },
+];
+const DRAFT_BOARD_CARD_METRIC_OPTIONS = [
+  { id: 'none', label: 'None' },
+  { id: 'bye', label: 'Bye' },
+  { id: 'sleeper', label: 'Rank' },
+  { id: 'rating', label: 'Rate' },
+  { id: 'adp', label: 'ADP' },
+  { id: 'ppg', label: 'PPG' },
+  { id: 'volume', label: 'Vol' },
+  { id: 'tier', label: 'Tier' },
+];
+const DRAFT_RESULTS_SORT_OPTIONS = [
+  { id: 'asc', label: 'First to Last' },
+  { id: 'desc', label: 'Last to First' },
+  { id: 'strength-desc', label: 'Strongest First' },
+  { id: 'strength-asc', label: 'Weakest First' },
+];
+const DRAFT_OUTCOME_STRENGTH = {
+  Boom: 4,
+  Strong: 3,
+  Even: 2,
+  Weak: 1,
+  Bust: 0,
+};
+const DRAFT_RESULTS_RANK_MODE_OPTIONS = [
+  { id: 'off', label: 'Off' },
+  { id: 'draft', label: 'Draft Rank' },
+  { id: 'finish', label: 'Season Finish' },
+];
+const DRAFT_RESULTS_TOUR_ROWS = [
+  { key: 'tour-pick-1', pickLabel: '1.01', overall: 1, fantasyTeamId: 'tour-team-1', ownerLabel: 'Harbor Hawks', isMine: false, isDemo: true, player: { id: 'tour-player-1', name: 'Sample Quarterback', position: 'QB', team: 'TBD', raw: null } },
+  { key: 'tour-pick-2', pickLabel: '1.02', overall: 2, fantasyTeamId: 'tour-team-2', ownerLabel: 'Fourth & Goal', isMine: false, isDemo: true, player: { id: 'tour-player-2', name: 'Demo Running Back', position: 'RB', team: 'TBD', raw: null } },
+  { key: 'tour-pick-3', pickLabel: '1.03', overall: 3, fantasyTeamId: 'tour-team-3', ownerLabel: 'Sunday Captains', isMine: false, isDemo: true, player: { id: 'tour-player-3', name: 'Placeholder Receiver', position: 'WR', team: 'TBD', raw: null } },
+  { key: 'tour-pick-4', pickLabel: '1.04', overall: 4, fantasyTeamId: 'tour-team-4', ownerLabel: 'End Zone Club', isMine: false, isDemo: true, player: { id: 'tour-player-4', name: 'Sample Tight End', position: 'TE', team: 'TBD', raw: null } },
+];
+const DRAFT_MODEL_BUILD_DELAY_MS = 24;
+const DRAFT_SYNC_CACHE_LIMIT = 6;
+const DRAFT_VIEW_MODEL_CACHE_LIMIT = 4;
+const draftSyncCache = new Map();
+const draftViewModelCache = new Map();
+const draftObjectCacheTokens = new WeakMap();
+let draftObjectCacheTokenCounter = 0;
+const BIG_BOARD_SORT_COLUMNS = [
+  { key: 'player', label: 'Player', defaultDirection: 'asc' },
+  { key: 'rank', label: 'Market Rank', headerLines: ['Market', 'Rank'], defaultDirection: 'asc' },
+  { key: 'rating', label: 'GridShift Rating', headerLines: ['GridShift', 'Rating'], defaultDirection: 'desc' },
+  { key: 'adp', label: 'ADP', defaultDirection: 'asc' },
+  { key: 'ppg', label: 'PPG', defaultDirection: 'desc' },
+  { key: 'volume', label: 'Vol', defaultDirection: 'desc' },
+  { key: 'tier', label: 'Tier', defaultDirection: 'asc' },
+  { key: 'trend', label: 'Trend', defaultDirection: 'desc' },
+];
+const BIG_BOARD_ROW_GRID_TEMPLATE = 'var(--draft-big-board-row-grid)';
+const BIG_BOARD_COMPACT_ROW_GRID_TEMPLATE = BIG_BOARD_ROW_GRID_TEMPLATE;
+const BIG_BOARD_METRIC_GRID_TEMPLATE = 'var(--draft-big-board-metric-grid)';
+const FUTURE_VIEW_LABELS = {
+  gauntlet: 'Gauntlet',
+  'tiers-runs': 'Tiers/Runs',
+};
+
+function normalizeDraftType(draft) {
+  return String(draft?.type ?? draft?.settings?.type ?? 'snake').toLowerCase();
+}
+
+function isLiveDraftStatus(status) {
+  const normalized = String(status ?? '').toLowerCase();
+  return normalized === 'drafting' || normalized === 'in_progress';
+}
+
+function isActiveDraftRoomStatus(status) {
+  const normalized = String(status ?? '').toLowerCase();
+  return normalized === 'drafting' || normalized === 'in_progress' || normalized === 'paused';
+}
+
+function getDraftPollIntervalMs(draft) {
+  const status = String(draft?.status ?? '').toLowerCase();
+  if (isLiveDraftStatus(status)) return RUNNING_DRAFT_CLOCK_POLL_MS;
+  if (isActiveDraftRoomStatus(status)) return LIVE_DRAFT_STATUS_POLL_MS;
+  return POLL_MS;
+}
+
+function scheduleDraftModelBuild(callback) {
+  if (typeof window === 'undefined') return null;
+  if (typeof window.requestIdleCallback === 'function') {
+    const idleId = window.requestIdleCallback(callback, { timeout: 500 });
+    return () => window.cancelIdleCallback?.(idleId);
+  }
+  const timeoutId = window.setTimeout(callback, DRAFT_MODEL_BUILD_DELAY_MS);
+  return () => window.clearTimeout(timeoutId);
+}
+
+function getDraftObjectCacheToken(value) {
+  if (!value || (typeof value !== 'object' && typeof value !== 'function')) return String(value ?? '');
+  if (value instanceof Map) {
+    if (value.size === 0) return 'map:0';
+    const sample = [...value.entries()].sort(([a], [b]) => String(a).localeCompare(String(b))).slice(0, 12).map(([key, entry]) => {
+      const rank = typeof entry === 'number' || typeof entry === 'string'
+        ? entry
+        : entry?.overallRank ?? entry?.rank ?? entry?.searchRank ?? entry?.averageDraftPosition ?? entry?.average_draft_position ?? entry?.adp ?? entry?.value ?? '';
+      return `${String(key)}=${String(rank)}`;
+    }).join('|');
+    return `map:${value.size}:${sample}`;
+  }
+  const existing = draftObjectCacheTokens.get(value);
+  if (existing) return existing;
+  draftObjectCacheTokenCounter += 1;
+  const nextToken = `obj:${draftObjectCacheTokenCounter}`;
+  draftObjectCacheTokens.set(value, nextToken);
+  return nextToken;
+}
+
+function trimMapToLimit(map, limit) {
+  while (map.size > limit) {
+    const oldestKey = map.keys().next().value;
+    map.delete(oldestKey);
+  }
+}
+
+function getDraftSyncCacheKey({ selectedLeagueId, league, sleeperDraftId = '' }) {
+  const leagueId = String(selectedLeagueId ?? league?.league_id ?? '').trim();
+  const explicitDraftId = extractSleeperDraftId(sleeperDraftId);
+  const leagueDraftId = extractSleeperDraftId(league?.draft_id ?? '');
+  return `${leagueId}:${explicitDraftId || leagueDraftId || 'active'}`;
+}
+
+function readDraftSyncCache(cacheKey) {
+  if (!cacheKey) return null;
+  return draftSyncCache.get(cacheKey) ?? null;
+}
+
+function rememberDraftSyncCache(cacheKey, snapshot) {
+  if (!cacheKey || !snapshot?.draftMeta) return;
+  draftSyncCache.delete(cacheKey);
+  draftSyncCache.set(cacheKey, {
+    draftMeta: snapshot.draftMeta,
+    draftPicks: Array.isArray(snapshot.draftPicks) ? snapshot.draftPicks : [],
+    draftTradedPicks: Array.isArray(snapshot.draftTradedPicks) ? snapshot.draftTradedPicks : [],
+    loadedAt: Date.now(),
+  });
+  trimMapToLimit(draftSyncCache, DRAFT_SYNC_CACHE_LIMIT);
+}
+
+function getDraftViewModelCacheKey({
+  players,
+  rosters,
+  league,
+  draft,
+  draftPicks,
+  draftTradedPicks,
+  myRoster,
+  scoringSettings,
+  season,
+  boardIds,
+  marketValuesByPlayerId,
+  adpByPlayerId,
+  seasonStats,
+  weeklyStats,
+  scheduleMap,
+  upcomingScheduleMap,
+  byeWeekBundle,
+  modelWeights,
+}) {
+  return [
+    getDraftObjectCacheToken(players),
+    getDraftObjectCacheToken(rosters),
+    getDraftObjectCacheToken(league),
+    getSleeperDraftSemanticSignature(draft),
+    getSleeperDraftPicksSignature(draftPicks),
+    getSleeperDraftTradedPicksSignature(draftTradedPicks),
+    String(myRoster?.roster_id ?? ''),
+    JSON.stringify(scoringSettings ?? {}),
+    String(season ?? ''),
+    (boardIds ?? []).map((id) => String(id)).join(','),
+    getDraftObjectCacheToken(marketValuesByPlayerId),
+    getDraftObjectCacheToken(adpByPlayerId),
+    getDraftObjectCacheToken(seasonStats),
+    getDraftObjectCacheToken(weeklyStats),
+    getDraftObjectCacheToken(scheduleMap),
+    getDraftObjectCacheToken(upcomingScheduleMap),
+    getDraftObjectCacheToken(byeWeekBundle),
+    JSON.stringify(normalizeDraftModelWeights(modelWeights)),
+  ].join('::');
+}
+
+function readDraftViewModelCache(cacheKey) {
+  if (!cacheKey) return null;
+  const cached = draftViewModelCache.get(cacheKey);
+  if (!cached) return null;
+  draftViewModelCache.delete(cacheKey);
+  draftViewModelCache.set(cacheKey, cached);
+  return cached;
+}
+
+function rememberDraftViewModelCache(cacheKey, model) {
+  if (!cacheKey || !model) return;
+  draftViewModelCache.delete(cacheKey);
+  draftViewModelCache.set(cacheKey, model);
+  trimMapToLimit(draftViewModelCache, DRAFT_VIEW_MODEL_CACHE_LIMIT);
+}
+
+function extractSleeperDraftId(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  const numericId = raw.match(/\d{10,}/)?.[0];
+  return numericId ?? raw;
+}
+
+function getDevSleeperDraftIdOverride(sleeperDraftId = '') {
+  if (!import.meta.env.DEV) return '';
+
+  const explicitDraftId = extractSleeperDraftId(sleeperDraftId);
+  if (explicitDraftId) return explicitDraftId;
+
+  if (typeof window !== 'undefined') {
+    const params = new URLSearchParams(window.location.search);
+    for (const key of DEV_DRAFT_OVERRIDE_PARAM_KEYS) {
+      const value = extractSleeperDraftId(params.get(key));
+      if (value) return value;
+    }
+  }
+
+  return extractSleeperDraftId(import.meta.env.VITE_SLEEPER_DRAFT_ID_OVERRIDE);
+}
+
+async function resolveActiveDraftId({ league, leagueId, sleeperDraftId = '' }) {
+  const overrideDraftId = getDevSleeperDraftIdOverride(sleeperDraftId);
+  if (overrideDraftId) return overrideDraftId;
+
+  const drafts = await getLeagueDrafts(leagueId).catch(() => []);
+  return resolveLeagueDraftId(league, drafts);
+}
+
+function createDraftClockStore() {
+  let snapshot = null;
+  const listeners = new Set();
+
+  return {
+    getSnapshot: () => snapshot,
+    setSnapshot: (nextSnapshot) => {
+      snapshot = nextSnapshot;
+      listeners.forEach((listener) => listener());
+    },
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  };
+}
+
+function useDraftClockMeta(draftClockStore, fallbackDraft = null) {
+  const clockDraft = useSyncExternalStore(
+    draftClockStore.subscribe,
+    draftClockStore.getSnapshot,
+    draftClockStore.getSnapshot,
+  );
+  return clockDraft ?? fallbackDraft;
+}
+
+function useSleeperDraftSync({ selectedLeagueId, league, sleeperDraftId = '' }) {
+  const draftSyncCacheKey = getDraftSyncCacheKey({ selectedLeagueId, league, sleeperDraftId });
+  const cachedDraftSync = readDraftSyncCache(draftSyncCacheKey);
+  const [draftMeta, setDraftMeta] = useState(() => cachedDraftSync?.draftMeta ?? null);
+  const [draftPicks, setDraftPicks] = useState(() => cachedDraftSync?.draftPicks ?? []);
+  const [draftTradedPicks, setDraftTradedPicks] = useState(() => cachedDraftSync?.draftTradedPicks ?? []);
+  const [draftLoading, setDraftLoading] = useState(false);
+  const [draftError, setDraftError] = useState('');
+  const refreshDraftRef = useRef(() => {});
+  const draftClockStoreRef = useRef(null);
+  if (!draftClockStoreRef.current) {
+    draftClockStoreRef.current = createDraftClockStore();
+  }
+
+  useEffect(() => {
+    if (!selectedLeagueId || !league) {
+      setDraftMeta(null);
+      setDraftPicks([]);
+      setDraftTradedPicks([]);
+      setDraftError('');
+      setDraftLoading(false);
+      draftClockStoreRef.current?.setSnapshot(null);
+      return undefined;
+    }
+    const draftClockStore = draftClockStoreRef.current;
+    const cachedSnapshot = readDraftSyncCache(draftSyncCacheKey);
+
+    let cancelled = false;
+    let timeoutId = null;
+    let inFlight = false;
+    let pendingForcePicks = false;
+    let pendingForceTradedPicks = false;
+    let cachedDraftPicks = cachedSnapshot?.draftPicks ?? [];
+    let cachedDraftTradedPicks = cachedSnapshot?.draftTradedPicks ?? [];
+    let hasLoadedDraft = Boolean(cachedSnapshot?.draftMeta);
+    let lastPollableDraft = cachedSnapshot?.draftMeta ? isSleeperDraftPollable(cachedSnapshot.draftMeta) : false;
+    let lastDraftMeta = cachedSnapshot?.draftMeta ?? null;
+    let lastPicksPollAt = cachedSnapshot?.loadedAt ?? 0;
+    let lastTradedPicksPollAt = cachedSnapshot?.loadedAt ?? 0;
+    let draftSemanticSignature = cachedSnapshot?.draftMeta ? getSleeperDraftSemanticSignature(cachedSnapshot.draftMeta) : '';
+    let draftPicksSignature = getSleeperDraftPicksSignature(cachedDraftPicks);
+    let draftTradedPicksSignature = getSleeperDraftTradedPicksSignature(cachedDraftTradedPicks);
+
+    if (cachedSnapshot?.draftMeta) {
+      draftClockStore.setSnapshot(cachedSnapshot.draftMeta);
+      setDraftMeta(cachedSnapshot.draftMeta);
+      setDraftPicks(cachedDraftPicks);
+      setDraftTradedPicks(cachedDraftTradedPicks);
+      setDraftError('');
+      setDraftLoading(false);
+    } else {
+      setDraftMeta(null);
+      draftClockStore.setSnapshot(null);
+      setDraftPicks([]);
+      setDraftTradedPicks([]);
+    }
+
+    const clearPollTimeout = () => {
+      if (timeoutId) window.clearTimeout(timeoutId);
+      timeoutId = null;
+    };
+
+    const resetDraftState = () => {
+      setDraftMeta(null);
+      draftClockStore.setSnapshot(null);
+      setDraftPicks([]);
+      setDraftTradedPicks([]);
+      draftSemanticSignature = '';
+      draftPicksSignature = '';
+      draftTradedPicksSignature = '';
+      lastPicksPollAt = 0;
+      lastTradedPicksPollAt = 0;
+    };
+
+    const scheduleNextPoll = () => {
+      clearPollTimeout();
+      if (!cancelled && lastPollableDraft) {
+        timeoutId = window.setTimeout(loadDraft, getDraftPollIntervalMs(lastDraftMeta));
+      }
+    };
+
+    const loadDraft = async ({ forcePicks = false, forceTradedPicks = false } = {}) => {
+      if (inFlight) {
+        pendingForcePicks = pendingForcePicks || forcePicks;
+        pendingForceTradedPicks = pendingForceTradedPicks || forceTradedPicks;
+        return;
+      }
+
+      inFlight = true;
+      clearPollTimeout();
+      const initialLoad = !hasLoadedDraft;
+      const shouldForcePicks = forcePicks || pendingForcePicks;
+      const shouldForceTradedPicks = forceTradedPicks || pendingForceTradedPicks;
+      pendingForcePicks = false;
+      pendingForceTradedPicks = false;
+
+      if (initialLoad) {
+        setDraftLoading(true);
+        setDraftError('');
+      }
+
+      try {
+        const draftId = await resolveActiveDraftId({ league, leagueId: selectedLeagueId, sleeperDraftId });
+        if (!draftId) {
+          if (!cancelled) {
+            resetDraftState();
+            hasLoadedDraft = true;
+            lastPollableDraft = false;
+            lastDraftMeta = null;
+          }
+          return;
+        }
+
+        const nextDraft = await getDraft(draftId);
+        const pollReceivedAt = Date.now();
+        const shouldFetchPicks = shouldForcePicks || shouldRefreshSleeperDraftPicks({
+          initialLoad,
+          nextDraft,
+          previousDraft: lastDraftMeta,
+          now: pollReceivedAt,
+          lastPicksPollAt,
+          liveRefreshMs: LIVE_DRAFT_POLL_MS,
+          idleRefreshMs: POLL_MS,
+        });
+        const shouldFetchTradedPicks = shouldForceTradedPicks || shouldRefreshSleeperDraftTradedPicks({
+          initialLoad,
+          nextDraft,
+          previousDraft: lastDraftMeta,
+          now: pollReceivedAt,
+          lastTradedPicksPollAt,
+          refreshMs: LIVE_DRAFT_TRADED_PICK_POLL_MS,
+        });
+        const [nextPicks, nextTradedPicks] = await Promise.all([
+          shouldFetchPicks ? getDraftPicks(draftId).catch(() => null) : Promise.resolve(null),
+          shouldFetchTradedPicks ? getDraftTradedPicks(draftId).catch(() => null) : Promise.resolve(null),
+        ]);
+
+        if (cancelled) return;
+
+        const nextSemanticSignature = getSleeperDraftSemanticSignature(nextDraft);
+        draftClockStore.setSnapshot(nextDraft);
+        if (nextSemanticSignature !== draftSemanticSignature) {
+          draftSemanticSignature = nextSemanticSignature;
+          startTransition(() => setDraftMeta(nextDraft));
+        }
+
+        if (Array.isArray(nextPicks)) {
+          lastPicksPollAt = pollReceivedAt;
+          cachedDraftPicks = nextPicks;
+          const nextPicksSignature = getSleeperDraftPicksSignature(nextPicks);
+          if (nextPicksSignature !== draftPicksSignature) {
+            draftPicksSignature = nextPicksSignature;
+            startTransition(() => setDraftPicks(nextPicks));
+          }
+        }
+
+        if (Array.isArray(nextTradedPicks)) {
+          lastTradedPicksPollAt = pollReceivedAt;
+          cachedDraftTradedPicks = nextTradedPicks;
+          const nextTradedPicksSignature = getSleeperDraftTradedPicksSignature(nextTradedPicks);
+          if (nextTradedPicksSignature !== draftTradedPicksSignature) {
+            draftTradedPicksSignature = nextTradedPicksSignature;
+            startTransition(() => setDraftTradedPicks(nextTradedPicks));
+          }
+        }
+
+        setDraftError('');
+        hasLoadedDraft = true;
+        lastPollableDraft = isSleeperDraftPollable(nextDraft);
+        lastDraftMeta = nextDraft;
+        rememberDraftSyncCache(draftSyncCacheKey, {
+          draftMeta: nextDraft,
+          draftPicks: cachedDraftPicks,
+          draftTradedPicks: cachedDraftTradedPicks,
+        });
+      } catch (error) {
+        if (!cancelled && initialLoad) {
+          setDraftError(error?.message ?? 'Could not load Sleeper draft state.');
+          resetDraftState();
+          hasLoadedDraft = true;
+        }
+      } finally {
+        inFlight = false;
+        if (!cancelled && initialLoad) setDraftLoading(false);
+        if (!cancelled && (pendingForcePicks || pendingForceTradedPicks)) {
+          const nextForcePicks = pendingForcePicks;
+          const nextForceTradedPicks = pendingForceTradedPicks;
+          timeoutId = window.setTimeout(() => loadDraft({
+            forcePicks: nextForcePicks,
+            forceTradedPicks: nextForceTradedPicks,
+          }), 0);
+        } else {
+          scheduleNextPoll();
+        }
+      }
+    };
+
+    const refreshNow = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      clearPollTimeout();
+      loadDraft();
+    };
+    refreshDraftRef.current = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      clearPollTimeout();
+      loadDraft({ forcePicks: true });
+    };
+
+    loadDraft();
+
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', refreshNow);
+    }
+    if (typeof window !== 'undefined') {
+      window.addEventListener('focus', refreshNow);
+    }
+
+    return () => {
+      cancelled = true;
+      clearPollTimeout();
+      refreshDraftRef.current = () => {};
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', refreshNow);
+      }
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('focus', refreshNow);
+      }
+    };
+  }, [selectedLeagueId, league, sleeperDraftId, draftSyncCacheKey]);
+
+  const refreshDraft = useCallback(() => {
+    refreshDraftRef.current();
+  }, []);
+
+  return {
+    draftMeta,
+    draftClockStore: draftClockStoreRef.current,
+    draftPicks,
+    draftTradedPicks,
+    draftLoading,
+    draftError,
+    refreshDraft,
+  };
+}
+
+function getBoardStorageKey({ leagueId, season, draftId }) {
+  return `${BOARD_STORAGE_PREFIX}:${leagueId ?? 'none'}:${season ?? 'unknown'}:${draftId ?? 'none'}`;
+}
+
+function getLegacyBoardStorageKey(leagueId, season) {
+  return `${LEGACY_BOARD_STORAGE_PREFIX}:${leagueId ?? 'none'}:${season ?? 'unknown'}`;
+}
+
+function buildPositionLookup(players = {}) {
+  return new Map(Object.entries(players).map(([id, player]) => [
+    String(id),
+    normalizePosition(player?.fantasy_positions?.[0] ?? player?.position),
+  ]));
+}
+
+function groupLegacyBoard(ids, players = {}) {
+  const positionLookup = buildPositionLookup(players);
+  return ids.reduce((acc, id) => {
+    const playerId = String(id);
+    const position = positionLookup.get(playerId) ?? 'FLEX';
+    acc[position] = acc[position] ?? [];
+    if (!acc[position].includes(playerId)) acc[position].push(playerId);
+    return acc;
+  }, {});
+}
+
+function filterBoardByEligibility(boardByPosition, players = {}) {
+  if (!players || Object.keys(players).length === 0) return boardByPosition;
+  const next = {};
+  for (const [position, ids] of Object.entries(boardByPosition ?? {})) {
+    const filtered = (ids ?? []).filter((id) => {
+      const player = players[String(id)];
+      return !player || playerCanSlotIntoBoardPosition(player, position);
+    });
+    if (filtered.length > 0) next[position] = filtered;
+  }
+  return next;
+}
+
+function normalizeStoredBoard(value, players = {}) {
+  const rawByPosition = value?.byPosition && typeof value.byPosition === 'object'
+    ? value.byPosition
+    : value;
+  const boardByPosition = filterBoardByEligibility(normalizeBoardByPosition(rawByPosition), players);
+  const overallIds = Array.isArray(value?.overall)
+    ? value.overall
+    : flattenBoardIds(boardByPosition);
+  return createOrderedBoardState(boardByPosition, overallIds);
+}
+
+function loadBoard({ leagueId, season, draftId, players }) {
+  try {
+    const raw = localStorage.getItem(getBoardStorageKey({ leagueId, season, draftId }));
+    if (raw) return normalizeStoredBoard(JSON.parse(raw), players);
+
+    const legacyRaw = localStorage.getItem(getLegacyBoardStorageKey(leagueId, season));
+    const legacy = legacyRaw ? JSON.parse(legacyRaw) : [];
+    if (Array.isArray(legacy)) return createOrderedBoardState(filterBoardByEligibility(groupLegacyBoard(legacy, players), players), legacy);
+  } catch {
+    return createOrderedBoardState(emptyBoard(), []);
+  }
+  return createOrderedBoardState(emptyBoard(), []);
+}
+
+function saveBoard({ leagueId, season, draftId, boardByPosition, overallIds }) {
+  const boardState = createOrderedBoardState(boardByPosition, overallIds);
+  try {
+    localStorage.setItem(
+      getBoardStorageKey({ leagueId, season, draftId }),
+      JSON.stringify({
+        byPosition: boardState.boardByPosition,
+        overall: boardState.overallIds,
+      }),
+    );
+  } catch {
+    // Local board persistence is best-effort only.
+  }
+}
+
+function getModelStorageKey({ leagueId, season, draftId }) {
+  return `${MODEL_STORAGE_PREFIX}:${leagueId ?? 'none'}:${season ?? 'unknown'}:${draftId ?? 'none'}`;
+}
+
+function loadModelWeights({ leagueId, season, draftId }) {
+  try {
+    const raw = localStorage.getItem(getModelStorageKey({ leagueId, season, draftId }));
+    if (raw) return normalizeDraftModelWeights(JSON.parse(raw));
+  } catch {
+    // Model persistence is best-effort only.
+  }
+  return normalizeDraftModelWeights(DEFAULT_DRAFT_MODEL_WEIGHTS);
+}
+
+function saveModelWeights({ leagueId, season, draftId, weights }) {
+  try {
+    localStorage.setItem(
+      getModelStorageKey({ leagueId, season, draftId }),
+      JSON.stringify(normalizeDraftModelWeights(weights)),
+    );
+  } catch {
+    // Model persistence is best-effort only.
+  }
+}
+
+function getKeeperStorageKey({ leagueId, season, draftId }) {
+  return `${KEEPER_STORAGE_PREFIX}:${leagueId ?? 'none'}:${season ?? 'unknown'}:${draftId ?? 'none'}`;
+}
+
+function loadKeeperIds({ leagueId, season, draftId }) {
+  try {
+    const raw = localStorage.getItem(getKeeperStorageKey({ leagueId, season, draftId }));
+    const parsed = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(parsed) ? parsed.map((id) => String(id)).filter(Boolean) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function saveKeeperIds({ leagueId, season, draftId, keeperIds }) {
+  try {
+    localStorage.setItem(
+      getKeeperStorageKey({ leagueId, season, draftId }),
+      JSON.stringify([...keeperIds].map((id) => String(id)).filter(Boolean)),
+    );
+  } catch {
+    // Keeper persistence is best-effort only.
+  }
+}
+
+function formatPickLabel(pick) {
+  if (!pick) return 'Pick';
+  const roundPick = pick.roundPick != null
+    ? String(pick.roundPick).padStart(2, '0')
+    : String(pick.overall ?? '').padStart(2, '0');
+  return `${pick.round}.${roundPick}`;
+}
+
+function formatRankMetric(value) {
+  if (value == null) return '—';
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+function formatIntegerMetric(value) {
+  if (value == null || value === 0) return '—';
+  return String(Math.round(value));
+}
+
+function formatDecimalMetric(value) {
+  if (value == null || value === 0) return '—';
+  return Number(value).toFixed(1);
+}
+
+function formatTrendMetric(trend) {
+  if (trend?.direction === 'up') return '▲';
+  if (trend?.direction === 'down') return '▼';
+  return '—';
+}
+
+function getTrendSortValue(trend) {
+  if (trend?.direction === 'up') return 2;
+  if (trend?.direction === 'flat') return 1;
+  if (trend?.direction === 'down') return 0;
+  return null;
+}
+
+function getMarketMetric(player) {
+  const marketRank = player?.rank?.overallRank ?? player?.projection?.marketRank;
+  if (marketRank != null) return { key: 'market', value: formatRankMetric(marketRank), label: 'Overall' };
+  const searchRank = player?.projection?.searchRank;
+  if (searchRank != null) return { key: 'sleeper-search', value: formatRankMetric(searchRank), label: 'Search' };
+  return { key: 'market', value: '—', label: 'Overall' };
+}
+
+function formatPositionRank(player) {
+  if (player?.rank?.positionRankLabel) return player.rank.positionRankLabel;
+  const marketPositionRank = player?.rank?.positionRank ?? player?.projection?.marketPositionRank;
+  if (marketPositionRank != null && player?.position) return `${player.position}${formatRankMetric(marketPositionRank)}`;
+  return player?.positionRankLabel ?? '—';
+}
+
+function getByeWeek(player) {
+  return player?.byeWeek ?? player?.teamContext?.byeWeek ?? player?.raw?.bye_week ?? player?.raw?.metadata?.bye_week ?? player?.raw?.metadata?.bye ?? player?.bye ?? null;
+}
+
+function getPlayerName(player) {
+  return player?.name || player?.raw?.full_name || `${player?.raw?.first_name ?? ''} ${player?.raw?.last_name ?? ''}`.trim() || 'Player';
+}
+
+function getDraftProjectionReason(player) {
+  const components = player?.draftModel?.components ?? {};
+  const weights = player?.draftModel?.weights ?? DEFAULT_DRAFT_MODEL_WEIGHTS;
+  const weightedSignals = [
+    { key: 'rosterNeed', label: 'Need fit', value: components.rosterNeed, weight: weights.rosterNeed },
+    { key: 'marketRank', label: 'Market value', value: components.marketRank, weight: weights.marketRank },
+    { key: 'adp', label: 'ADP value', value: components.adp, weight: weights.adp },
+    { key: 'pastProduction', label: 'PPG edge', value: components.pastProduction, weight: weights.pastProduction },
+    { key: 'scoringFit', label: 'Scoring fit', value: components.scoringFit, weight: weights.scoringFit },
+    { key: 'schedule', label: 'Schedule', value: components.schedule, weight: weights.schedule },
+  ]
+    .filter((signal) => Number.isFinite(signal.value) && signal.weight > 0)
+    .map((signal) => ({ ...signal, weightedValue: signal.value * signal.weight }))
+    .sort((a, b) => b.weightedValue - a.weightedValue);
+
+  const primary = weightedSignals[0];
+  const secondary = weightedSignals.find((signal) => signal.key !== primary?.key && signal.value >= 72);
+  if (primary && secondary) return `${primary.label} + ${secondary.label.toLowerCase()}`;
+  if (primary) return primary.label;
+  return 'Best model fit';
+}
+
+function sortCandidates(candidates) {
+  return [...(candidates ?? [])].sort((a, b) => {
+    const aScore = a?.draftModel?.score ?? null;
+    const bScore = b?.draftModel?.score ?? null;
+    if (aScore != null || bScore != null) {
+      if (aScore == null) return 1;
+      if (bScore == null) return -1;
+      if (aScore !== bScore) return bScore - aScore;
+    }
+    const aRank = getMarketSortValue(a);
+    const bRank = getMarketSortValue(b);
+    if (aRank !== bRank) return aRank - bRank;
+    return getPlayerName(a).localeCompare(getPlayerName(b));
+  });
+}
+
+function getBigBoardSortValue(player, sortKey, originalIndex = 0) {
+  switch (sortKey) {
+    case 'board':
+      return originalIndex;
+    case 'player':
+      return getPlayerName(player).toLowerCase();
+    case 'rank':
+      return player?.rank?.overallRank ?? player?.projection?.fallbackRank ?? player?.projection?.searchRank ?? null;
+    case 'rating':
+      return player?.draftModel?.score ?? null;
+    case 'adp':
+      return player?.adp ?? null;
+    case 'ppg':
+      return player?.scoringFit?.pastPpg ?? player?.workload?.ppg ?? null;
+    case 'volume':
+      return player?.workload?.primaryVolume ?? null;
+    case 'tier':
+      return player?.rank?.tier ?? null;
+    case 'trend':
+      return getTrendSortValue(player?.rank?.trend ?? player?.workload?.trend);
+    default:
+      return null;
+  }
+}
+
+function compareBigBoardValues(a, b, direction) {
+  const multiplier = direction === 'desc' ? -1 : 1;
+  if (a == null && b == null) return 0;
+  if (a == null) return 1;
+  if (b == null) return -1;
+  if (typeof a === 'string' || typeof b === 'string') {
+    return String(a).localeCompare(String(b)) * multiplier;
+  }
+  return (Number(a) - Number(b)) * multiplier;
+}
+
+function sortBigBoardRows(rows, sortState) {
+  const sortKey = sortState?.key ?? 'rating';
+  const direction = sortState?.direction ?? 'desc';
+  return [...(rows ?? [])]
+    .map((player, index) => ({ player, index }))
+    .sort((a, b) => {
+      const primary = compareBigBoardValues(
+        getBigBoardSortValue(a.player, sortKey, a.index),
+        getBigBoardSortValue(b.player, sortKey, b.index),
+        direction,
+      );
+      if (primary !== 0) return primary;
+      return a.index - b.index;
+    })
+    .map((item) => item.player);
+}
+
+function getMarketSortValue(player) {
+  return player?.rank?.overallRank
+    ?? player?.projection?.marketRank
+    ?? player?.projection?.fallbackRank
+    ?? player?.projection?.searchRank
+    ?? Infinity;
+}
+
+function getBigBoardMetrics(player) {
+  return [
+    {
+      key: 'market',
+      value: formatRankMetric(player?.rank?.overallRank ?? player?.projection?.fallbackRank),
+      label: null,
+      title: player?.rank?.sourceLabel ?? 'Overall or market rank',
+      align: 'center',
+    },
+    {
+      key: 'rating',
+      value: formatDecimalMetric(player?.draftModel?.score),
+      label: null,
+      title: 'GridShift Draft Rating from market rank, past PPG, scoring fit, roster need, and any opted-in BALLDONTLIE ADP priority',
+      align: 'center',
+    },
+    {
+      key: 'adp',
+      value: formatRankMetric(player?.adp),
+      label: null,
+      title: 'BALLDONTLIE average draft position',
+      align: 'center',
+    },
+    {
+      key: 'ppg',
+      value: formatDecimalMetric(player?.scoringFit?.pastPpg ?? player?.workload?.ppg),
+      label: null,
+      title: 'Past-season fantasy points per game in this league scoring',
+      align: 'center',
+    },
+    {
+      key: 'volume',
+      value: formatIntegerMetric(player?.workload?.primaryVolume),
+      label: player?.position === 'QB' ? 'Att' : player?.position === 'RB' ? 'Touch' : 'Vol',
+      title: 'Primary workload volume from available season stats',
+      align: 'center',
+    },
+    {
+      key: 'tier',
+      value: player?.rank?.tier ? `T${player.rank.tier}` : '—',
+      label: null,
+      title: 'Rank-derived tier',
+      align: 'center',
+    },
+    {
+      key: 'trend',
+      value: formatTrendMetric(player?.rank?.trend ?? player?.workload?.trend),
+      label: null,
+      title: player?.rank?.trend?.label ?? player?.workload?.trend?.label ?? 'Trend',
+      align: 'center',
+    },
+  ];
+}
+
+function getDraftBoardCardMetric(player, metricKey) {
+  switch (metricKey) {
+    case 'bye':
+      return {
+        key: 'bye',
+        value: (
+          <DraftBoardMetricValue
+            label="Bye"
+            value={formatRankMetric(getByeWeek(player))}
+          />
+        ),
+        label: null,
+        title: getByeWeek(player) == null ? 'Bye week unavailable' : `Bye week ${getByeWeek(player)}`,
+      };
+    case 'sleeper':
+      return {
+        key: 'sleeper',
+        value: (
+          <DraftBoardMetricValue
+            label="Sleeper"
+            value={formatRankMetric(player?.rank?.overallRank ?? player?.projection?.fallbackRank ?? player?.projection?.searchRank)}
+          />
+        ),
+        label: null,
+        title: player?.rank?.sourceLabel ?? 'Sleeper search / market overall rank',
+      };
+    case 'rating':
+      return {
+        key: 'rating',
+        value: (
+          <DraftBoardMetricValue
+            label="Rating"
+            value={formatDecimalMetric(player?.draftModel?.score)}
+          />
+        ),
+        label: null,
+        title: 'GridShift Draft Rating from market rank, past PPG, scoring fit, and roster need',
+      };
+    case 'adp':
+      return {
+        key: 'adp',
+        value: (
+          <DraftBoardMetricValue
+            label="ADP"
+            value={formatRankMetric(player?.adp)}
+          />
+        ),
+        label: null,
+        title: 'BALLDONTLIE average draft position',
+      };
+    case 'ppg':
+      return {
+        key: 'ppg',
+        value: (
+          <DraftBoardMetricValue
+            label="PPG"
+            value={formatDecimalMetric(player?.scoringFit?.pastPpg ?? player?.workload?.ppg)}
+          />
+        ),
+        label: null,
+        title: 'Past-season fantasy points per game in this league scoring',
+      };
+    case 'volume':
+      return {
+        key: 'volume',
+        value: (
+          <DraftBoardMetricValue
+            label={player?.position === 'QB' ? 'Att' : player?.position === 'RB' ? 'Touch' : 'Vol'}
+            value={formatIntegerMetric(player?.workload?.primaryVolume)}
+          />
+        ),
+        label: null,
+        title: 'Primary workload volume from available season stats',
+      };
+    case 'tier':
+      return {
+        key: 'tier',
+        value: (
+          <DraftBoardMetricValue
+            label="Tier"
+            value={player?.rank?.tier ? `T${player.rank.tier}` : '—'}
+          />
+        ),
+        label: null,
+        title: 'Rank-derived tier',
+      };
+    case 'none':
+    default:
+      return null;
+  }
+}
+
+function sortRowsByMarket(rows) {
+  return [...(rows ?? [])].sort((a, b) => {
+    const aRank = getMarketSortValue(a);
+    const bRank = getMarketSortValue(b);
+    if (aRank !== bRank) return aRank - bRank;
+    return getPlayerName(a).localeCompare(getPlayerName(b));
+  });
+}
+
+function buildPositionRankMap(players) {
+  const byPosition = new Map();
+  for (const player of players ?? []) {
+    const position = normalizePosition(player?.position);
+    if (!position) continue;
+    if (!byPosition.has(position)) byPosition.set(position, []);
+    byPosition.get(position).push(player);
+  }
+
+  const positionRanks = new Map();
+  for (const [position, rows] of byPosition.entries()) {
+    sortRowsByMarket(rows).forEach((player, index) => {
+      positionRanks.set(String(player.id), `${position}${index + 1}`);
+    });
+  }
+  return positionRanks;
+}
+
+function decoratePositionRanks(rows, positionRankMap) {
+  return (rows ?? []).map((row) => ({
+    ...row,
+    positionRankLabel: positionRankMap.get(String(row.id)) ?? null,
+  }));
+}
+
+function getNormalizedDraftPicks(draftPicks, draft) {
+  return (draftPicks ?? [])
+    .map((pick, index) => normalizeDraftPick(pick, index, draft))
+    .filter(Boolean)
+    .sort((a, b) => a.overall - b.overall);
+}
+
+function buildDraftOrderContext({ draft, rosters, draftTradedPicks, draftPicks, myRosterData }) {
+  const normalizedPicks = getNormalizedDraftPicks(draftPicks, draft);
+  const pickOrder = buildPickOrder(draft, rosters, draftTradedPicks);
+  const currentOverall = normalizedPicks.length + 1;
+  const myRosterId = myRosterData?.roster_id != null ? String(myRosterData.roster_id) : null;
+  const currentPick = pickOrder.find((pick) => pick.overall === currentOverall) ?? null;
+  const nextMyPick = myRosterId
+    ? pickOrder.find((pick) => pick.overall >= currentOverall && pick.rosterId === myRosterId) ?? null
+    : null;
+  const upcomingPicks = pickOrder.filter((pick) => pick.overall >= currentOverall);
+  const picksBeforeUser = nextMyPick
+    ? pickOrder.filter((pick) => pick.overall >= currentOverall && pick.overall < nextMyPick.overall)
+    : [];
+
+  return {
+    normalizedPicks,
+    pickOrder,
+    currentOverall,
+    currentPick,
+    nextMyPick,
+    upcomingPicks,
+    picksBeforeUser,
+  };
+}
+
+function filterCandidates(candidates, position, query, availabilityFilter = 'all') {
+  const normalizedQuery = query.trim().toLowerCase();
+  return candidates.filter((player) => {
+    if (position !== 'ALL' && player.position !== position) return false;
+    if (!matchesPlayerAvailabilityFilter(player, availabilityFilter)) return false;
+    if (!normalizedQuery) return true;
+    const haystack = `${getPlayerName(player)} ${player.team} ${player.position}`.toLowerCase();
+    return haystack.includes(normalizedQuery);
+  });
+}
+
+function getAvailablePositions(candidates, boardRows) {
+  const found = new Set(['ALL']);
+  for (const player of [...(candidates ?? []), ...(boardRows ?? [])]) {
+    if (player?.position) found.add(normalizePosition(player.position));
+  }
+  return ['ALL', ...POSITION_ORDER.filter((position) => found.has(position))];
+}
+
+function buildFastBoardRows({
+  boardIds,
+  candidatesById,
+  draftedCardsById = new Map(),
+  players,
+  rosters,
+  normalizedPicks = [],
+  myRosterId = null,
+  getUserDisplayName = null,
+  byeWeekBundle = null,
+  draftSeason = null,
+}) {
+  const rosterOwnerById = new Map((rosters ?? []).map((roster) => [
+    String(roster?.roster_id),
+    roster?.owner_id != null ? String(roster.owner_id) : null,
+  ]));
+  const rosteredIds = new Set();
+  for (const roster of rosters ?? []) {
+    for (const playerId of [
+      ...(roster?.players ?? []),
+      ...(roster?.reserve ?? []),
+      ...(roster?.taxi ?? []),
+      ...(roster?.starters ?? []),
+    ]) {
+      if (playerId != null) rosteredIds.add(String(playerId));
+    }
+  }
+  const draftedByPlayerId = new Map();
+  for (const pick of normalizedPicks ?? []) {
+    if (!pick?.playerId) continue;
+    const rosterId = pick.rosterId != null ? String(pick.rosterId) : null;
+    const ownerId = resolveDraftPickManagerId(pick) ?? rosterOwnerById.get(rosterId) ?? null;
+    const ownerLabel = rosterId && rosterId === String(myRosterId)
+      ? 'You'
+      : (ownerId && getUserDisplayName ? getUserDisplayName(ownerId) : null);
+    draftedByPlayerId.set(String(pick.playerId), {
+      rosterId,
+      ownerId,
+      label: ownerLabel && ownerLabel !== 'Unknown' ? ownerLabel : (rosterId ? `Roster ${rosterId}` : 'Unknown'),
+      isMine: Boolean(rosterId && myRosterId && rosterId === String(myRosterId)),
+      overall: pick.overall,
+      round: pick.round,
+    });
+  }
+
+  return (boardIds ?? []).map((playerId, index) => {
+    const id = String(playerId);
+    const availableCandidate = candidatesById.get(id) ?? null;
+    const draftedCandidate = draftedCardsById.get(id) ?? null;
+    const matched = availableCandidate ?? draftedCandidate;
+    if (matched) {
+      return {
+        ...matched,
+        boardRank: index + 1,
+        available: Boolean(availableCandidate),
+        draftedBy: draftedByPlayerId.get(id) ?? matched.draftedBy ?? null,
+        draftRoom: {
+          ...(matched.draftRoom ?? {}),
+          boardRank: index + 1,
+        },
+      };
+    }
+
+    const rawPlayer = players?.[id] ?? null;
+    const draftedBy = draftedByPlayerId.get(id) ?? null;
+    return {
+      id,
+      name: rawPlayer?.full_name || `${rawPlayer?.first_name ?? ''} ${rawPlayer?.last_name ?? ''}`.trim() || `Player ${id}`,
+      team: String(rawPlayer?.team ?? '—').toUpperCase(),
+      position: normalizePosition(rawPlayer?.fantasy_positions?.[0] ?? rawPlayer?.position),
+      projection: null,
+      rank: null,
+      scoringFit: null,
+      workload: null,
+      byeWeek: resolveDraftPlayerByeWeek({
+        player: rawPlayer,
+        team: rawPlayer?.team,
+        draftSeason,
+        byeWeekBundle,
+      }),
+      teamContext: {
+        byeWeek: resolveDraftPlayerByeWeek({
+          player: rawPlayer,
+          team: rawPlayer?.team,
+          draftSeason,
+          byeWeekBundle,
+        }),
+      },
+      schedule: null,
+      draftRoom: { boardRank: index + 1 },
+      boardRank: index + 1,
+      available: false,
+      rostered: rosteredIds.has(id),
+      draftedBy,
+      raw: rawPlayer,
+    };
+  });
+}
+
+function EmptyState({ title, description = null, variant = 'inline' }) {
+  const isPage = variant === 'page';
+  return (
+    <div
+      className={['draft-empty-state', isPage ? 'draft-empty-state--page' : ''].filter(Boolean).join(' ')}
+      style={isPage ? undefined : { background: 'var(--color-bg-secondary)', borderColor: 'var(--color-separator)' }}
+    >
+      <p>{title}</p>
+      {description ? <span>{description}</span> : null}
+    </div>
+  );
+}
+
+function DraftPageState({ title, description = null }) {
+  return <EmptyState title={title} description={description} variant="page" />;
+}
+
+function FutureDraftView({ view }) {
+  const label = FUTURE_VIEW_LABELS[view] ?? 'Draft view';
+  return (
+    <div className="draft-page">
+      <DraftPageState
+        title={`${label} is staged for future work.`}
+        description="The route and navigation slot are in place, but War Room, Board, and Results are the active Draft views in this implementation."
+      />
+    </div>
+  );
+}
+
+function normalizeSleeperElapsedPickTimer(value, pickTimer) {
+  const raw = Number(value);
+  if (!Number.isFinite(raw) || raw < 0) return null;
+  return raw > pickTimer ? raw : raw * 1000;
+}
+
+function getMonotonicNow() {
+  return typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? performance.now()
+    : Date.now();
+}
+
+function getDraftClockSnapshot(draft, live, paused, receivedAt = Date.now(), receivedAtMonotonic = getMonotonicNow()) {
+  const pickTimer = Number(draft?.settings?.pick_timer ?? 0);
+  const lastPicked = Number(draft?.last_picked ?? 0);
+  if (!(pickTimer > 0) || (!live && !paused)) return null;
+
+  const pickTimerMs = pickTimer * 1000;
+  const elapsedMs = normalizeSleeperElapsedPickTimer(draft?.metadata?.elapsed_pick_timer, pickTimer);
+  const fallbackElapsedMs = live && lastPicked > 0 ? Math.max(0, receivedAt - lastPicked) : null;
+  const serverElapsedMs = elapsedMs ?? fallbackElapsedMs ?? 0;
+  const remainingMs = Math.max(0, pickTimerMs - serverElapsedMs);
+
+  return {
+    draftId: String(draft?.draft_id ?? ''),
+    status: String(draft?.status ?? '').toLowerCase(),
+    lastPicked,
+    pickTimer,
+    remainingMs,
+    receivedAt,
+    receivedAtMonotonic,
+    running: live,
+  };
+}
+
+function getLocalClockRemainingMs(clockState, now = getMonotonicNow()) {
+  if (!clockState) return null;
+  if (!clockState.running) return clockState.remainingMs;
+  const baseline = clockState.receivedAtMonotonic ?? clockState.receivedAt;
+  return Math.max(0, clockState.remainingMs - Math.max(0, now - baseline));
+}
+
+// Slow drafts allow multi-hour pick clocks, so the label adapts: MM:SS below one
+// hour (42:17) and H:MM:SS at one hour or more (6:59:25), seconds always ticking.
+function formatClockRemainingMs(remainingMs) {
+  if (remainingMs == null) return null;
+  const remaining = Math.max(0, Math.ceil(remainingMs / 1000));
+  const hours = Math.floor(remaining / 3600);
+  const minutes = Math.floor((remaining % 3600) / 60);
+  const seconds = remaining % 60;
+  const label = hours > 0
+    ? `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+    : `${minutes}:${String(seconds).padStart(2, '0')}`;
+  return { label, expired: remaining === 0 };
+}
+
+function formatScheduledDraftCountdown(parts) {
+  if (!parts) return null;
+  const segments = [
+    ['M', parts.months],
+    ['W', parts.weeks],
+    ['D', parts.days],
+    ['H', parts.hours],
+  ].filter(([, value]) => value > 0);
+  if (parts.minutes > 0) segments.push(['m', parts.minutes]);
+  segments.push(['S', parts.seconds]);
+  return segments.map(([unit, value]) => `${value}${unit}`).join(' ');
+}
+
+function formatScheduledDraftDate(startMs) {
+  if (!Number.isFinite(startMs)) return '';
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(new Date(startMs));
+}
+
+function useScheduledDraftCountdown(draft) {
+  const startMs = getSleeperDraftStartMs(draft);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    setNowMs(Date.now());
+    if (!isSleeperDraftPreDraft(draft) || startMs == null || startMs <= Date.now()) return undefined;
+
+    const intervalId = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(intervalId);
+  }, [draft?.draft_id, draft?.status, startMs]);
+
+  if (!isSleeperDraftPreDraft(draft) || startMs == null) return null;
+  const countdownParts = getScheduledDraftCountdownParts(startMs, nowMs);
+  if (!countdownParts) return null;
+
+  return {
+    countdownLabel: formatScheduledDraftCountdown(countdownParts),
+    dateLabel: formatScheduledDraftDate(startMs),
+  };
+}
+
+// Sleeper polling validates the draft clock, while the browser owns the visible countdown between
+// polls. This avoids the timer stutter caused by rebuilding the display directly from every poll.
+function useDraftPickCountdown(draft, live, paused = false) {
+  const [now, setNow] = useState(() => getMonotonicNow());
+  const [clockState, setClockState] = useState(() => getDraftClockSnapshot(draft, live, paused));
+
+  useEffect(() => {
+    const nextSnapshot = getDraftClockSnapshot(draft, live, paused);
+    if (!nextSnapshot) {
+      setClockState(null);
+      return;
+    }
+
+    setNow(nextSnapshot.receivedAtMonotonic);
+    setClockState((previous) => {
+      if (!previous) return nextSnapshot;
+      const sameClock =
+        previous.draftId === nextSnapshot.draftId
+        && previous.status === nextSnapshot.status
+        && previous.lastPicked === nextSnapshot.lastPicked
+        && previous.pickTimer === nextSnapshot.pickTimer;
+      const previousRemaining = getLocalClockRemainingMs(previous, nextSnapshot.receivedAtMonotonic);
+      const driftMs = previousRemaining == null
+        ? Infinity
+        : Math.abs(previousRemaining - nextSnapshot.remainingMs);
+      if (sameClock && driftMs <= CLOCK_RESYNC_THRESHOLD_MS) return previous;
+      return nextSnapshot;
+    });
+  }, [
+    draft?.draft_id,
+    draft?.status,
+    draft?.last_picked,
+    draft?.settings?.pick_timer,
+    draft?.metadata?.elapsed_pick_timer,
+    live,
+    paused,
+  ]);
+
+  useEffect(() => {
+    if (!clockState?.running) return undefined;
+    let timeoutId = null;
+
+    const tick = () => {
+      setNow(getMonotonicNow());
+      timeoutId = window.setTimeout(tick, 1000);
+    };
+
+    timeoutId = window.setTimeout(tick, 1000);
+    return () => {
+      if (timeoutId) window.clearTimeout(timeoutId);
+    };
+  }, [clockState?.draftId, clockState?.lastPicked, clockState?.pickTimer, clockState?.running, clockState?.status]);
+
+  return formatClockRemainingMs(getLocalClockRemainingMs(clockState, now));
+}
+
+// Live rooms show the full clock banner. Pre-draft rooms show only the scheduled start when
+// Sleeper exposes one; completed or unscheduled rooms lead straight into their board / pick list.
+function DraftStatusBanner({ draft, viewModel, getUserDisplayName, projectedSelection = null, onClockExpired = null }) {
+  const status = String(draft?.status ?? 'unknown').toLowerCase();
+  const live = isLiveDraftStatus(status);
+  const paused = status === 'paused';
+  const activeRoom = live || paused;
+  const countdown = useDraftPickCountdown(draft, live, paused);
+  const scheduledDraft = useScheduledDraftCountdown(draft);
+  const expiredRefreshKeyRef = useRef('');
+
+  useEffect(() => {
+    const clockKey = [
+      draft?.draft_id ?? '',
+      status,
+      draft?.last_picked ?? '',
+      draft?.settings?.pick_timer ?? '',
+    ].join(':');
+    if (!countdown?.expired || !live) {
+      expiredRefreshKeyRef.current = '';
+      return;
+    }
+    if (expiredRefreshKeyRef.current === clockKey) return;
+    expiredRefreshKeyRef.current = clockKey;
+    onClockExpired?.();
+  }, [
+    countdown?.expired,
+    draft?.draft_id,
+    draft?.last_picked,
+    draft?.settings?.pick_timer,
+    live,
+    onClockExpired,
+    status,
+  ]);
+
+  if (!activeRoom) {
+    if (!scheduledDraft) return null;
+    return (
+      <div className="draft-status-banner-shell">
+        <section className="draft-status-banner draft-status-banner--scheduled">
+          <div className="draft-status-banner__scheduled-line">
+            <span className="draft-status-banner__label">Draft Starts</span>
+            <strong>{scheduledDraft.dateLabel}</strong>
+            <span className="draft-status-banner__scheduled-divider" aria-hidden="true">•</span>
+            <span className="draft-status-banner__scheduled-countdown-value" aria-label={`Draft countdown ${scheduledDraft.countdownLabel}`}>
+              {scheduledDraft.countdownLabel}
+            </span>
+          </div>
+        </section>
+      </div>
+    );
+  }
+
+  const currentPick = viewModel?.currentPick ?? null;
+  const onClockTeam = currentPick?.roster?.owner_id
+    ? getUserDisplayName(currentPick.roster.owner_id)
+    : (currentPick?.rosterId ? `Team ${currentPick.rosterId}` : 'Unknown');
+  const nextPick = (viewModel?.upcomingPicks ?? []).find((pick) => pick.overall > (viewModel?.currentOverall ?? 0)) ?? null;
+  const nextPickTeam = nextPick?.roster?.owner_id
+    ? getUserDisplayName(nextPick.roster.owner_id)
+    : (nextPick?.rosterId ? `Team ${nextPick.rosterId}` : null);
+  const nextMyPickLabel = viewModel?.nextMyPick ? formatPickLabel(viewModel.nextMyPick) : '—';
+  const nextMyPickDetail = viewModel?.nextMyPick
+    ? `Round ${viewModel.nextMyPick.round}, Pick ${viewModel.nextMyPick.roundPick}`
+    : 'No upcoming pick found';
+  const picksBeforeUserCount = viewModel?.picksBeforeUser?.length ?? null;
+  // The projection comes from the shared buildProjectedDraftSelection source so
+  // War Room, Board, and Results always agree on the projected player.
+  const likelyPick = projectedSelection ?? null;
+  const likelyPickName = likelyPick ? getPlayerName(likelyPick) : 'Unavailable';
+  const likelyPickMeta = likelyPick
+    ? [likelyPick.position, likelyPick.team].filter(Boolean).join(' · ')
+    : 'Waiting for draft data';
+  const likelyPickRating = likelyPick?.draftModel?.score != null ? formatDecimalMetric(likelyPick.draftModel.score) : null;
+  const likelyPickRank = likelyPick?.rank?.overallRank != null ? `#${formatRankMetric(likelyPick.rank.overallRank)}` : '—';
+  const likelyPickReason = likelyPick
+    ? (likelyPick.reason ?? getDraftProjectionReason(likelyPick))
+    : 'Waiting for draft data';
+  const likelyPickPhotoUrl = getSleeperPlayerImageUrl(likelyPick?.id);
+  const statusLabel = paused ? 'Paused' : 'Live';
+
+  return (
+    <div className="draft-status-banner-shell">
+      <section className={`draft-status-banner ${paused ? 'is-paused' : 'is-live'}`}>
+        <div className="draft-status-banner__live-state">
+          <div className="draft-status-banner__heading">
+            <span className="draft-live-pill">
+              <span className="draft-live-dot" aria-hidden="true" />
+              {statusLabel}
+            </span>
+          </div>
+          <div className="draft-status-banner__clock-card">
+            <div className="draft-status-banner__clock-card-team">
+              <span className="draft-status-banner__label">On Clock</span>
+              <strong>{onClockTeam}</strong>
+            </div>
+            <div>
+              <span className="draft-status-banner__label">Pick</span>
+              <strong>{currentPick ? formatPickLabel(currentPick) : '—'}</strong>
+            </div>
+            <div>
+              <span className="draft-status-banner__label">Clock</span>
+              <strong className={`draft-status-banner__clock${countdown?.expired ? ' is-expired' : ''}`} aria-label="Time remaining on the clock">
+                {countdown?.label ?? '—'}
+              </strong>
+            </div>
+          </div>
+          {nextPick ? (
+            <span className="draft-status-banner__next-pick">
+              {`Up next: ${nextPickTeam ?? 'Unknown'}`}
+            </span>
+          ) : null}
+        </div>
+        <div className="draft-status-banner__projection">
+          <div className="draft-status-banner__projection-copy">
+            <span className="draft-status-banner__label">Projected Selection</span>
+            <div className="draft-status-banner__projection-player">
+              <strong>{likelyPickName}</strong>
+              <span className="draft-status-banner__projection-meta">{likelyPickMeta}</span>
+            </div>
+            <div className="draft-status-banner__projection-metrics">
+              {likelyPickRating != null ? <span>Rating {likelyPickRating}</span> : null}
+              <span>Rank {likelyPickRank}</span>
+              <span>{likelyPickReason}</span>
+            </div>
+          </div>
+          <div className="draft-status-banner__projection-photo" aria-hidden="true">
+            <span>{getCompanionInitials(likelyPickName)}</span>
+            {likelyPickPhotoUrl ? (
+              <img
+                src={likelyPickPhotoUrl}
+                alt=""
+                width="64"
+                height="64"
+                loading="lazy"
+                onError={(event) => { event.currentTarget.hidden = true; }}
+              />
+            ) : null}
+          </div>
+        </div>
+      </section>
+      <div className="draft-status-banner__user-pick-summary">
+        <span>Your next pick</span>
+        <strong>{nextMyPickLabel}</strong>
+        {picksBeforeUserCount != null ? <em>{picksBeforeUserCount} picks away</em> : null}
+        <span>{nextMyPickDetail}</span>
+      </div>
+    </div>
+  );
+}
+
+const LiveDraftStatusBanner = memo(function LiveDraftStatusBanner({
+  draftClockStore,
+  fallbackDraft,
+  viewModel,
+  getUserDisplayName,
+  projectedSelection = null,
+  onClockExpired = null,
+}) {
+  const draft = useDraftClockMeta(draftClockStore, fallbackDraft);
+  return (
+    <DraftStatusBanner
+      draft={draft}
+      viewModel={viewModel}
+      getUserDisplayName={getUserDisplayName}
+      projectedSelection={projectedSelection}
+      onClockExpired={onClockExpired}
+    />
+  );
+});
+
+// Single projection source for the live banner on War Room, Board, and Results.
+// Only active draft rooms need it; the memo re-runs when picks, rosters, or
+// market data change so drafted or rostered players immediately stop projecting.
+function useProjectedDraftSelection({ draftMeta, league, players, rosters, draftPicks, marketValuesByPlayerId }) {
+  return useMemo(() => {
+    if (!isActiveDraftRoomStatus(draftMeta?.status)) return null;
+    return buildProjectedDraftSelection({
+      draft: draftMeta,
+      league,
+      players,
+      rosters,
+      draftPicks,
+      marketValuesByPlayerId,
+    });
+  }, [draftMeta, league, players, rosters, draftPicks, marketValuesByPlayerId]);
+}
+
+function PositionFilter({ positions, activePosition, onChange }) {
+  const filterRef = useRef(null);
+
+  return (
+    <div className="draft-position-filter-shell draft-scroll-region">
+      <div ref={filterRef} className="draft-position-filter" role="tablist" aria-label="Draft player positions">
+        {positions.map((position) => (
+          <button
+            key={position}
+            type="button"
+            role="tab"
+            aria-selected={activePosition === position}
+            onClick={() => onChange(position)}
+            className={activePosition === position ? 'is-active' : ''}
+          >
+            {position}
+          </button>
+        ))}
+      </div>
+      <DraftScrollControls targetRef={filterRef} axis="x" label="draft positions" />
+    </div>
+  );
+}
+
+function DraftAvailabilityFilter({ options, value, onChange, className = '' }) {
+  return (
+    <label className={['draft-availability-filter', className].filter(Boolean).join(' ')}>
+      <span className="sr-only">Player availability</span>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        aria-label="Filter by player availability"
+      >
+        {options.map((option) => (
+          <option key={option.id} value={option.id}>{option.label}</option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function DraftSegmentedControl({ label, options, value, onChange, className = '' }) {
+  return (
+    <div className={['draft-segmented-control', className].filter(Boolean).join(' ')} role="group" aria-label={label}>
+      {options.map((option) => (
+        <button
+          key={option.id}
+          type="button"
+          className={value === option.id ? 'is-active' : ''}
+          onClick={() => onChange(option.id)}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function DraftByeConflictToggle({ checked, disabled, onChange }) {
+  const unavailableCopy = 'Conflict highlighting needs a complete schedule for the selected draft season.';
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label="Highlight bye week conflicts"
+      className="draft-bye-conflict-toggle"
+      onClick={() => onChange(!checked)}
+      disabled={disabled}
+      title={disabled ? unavailableCopy : 'Highlight players whose bye overlaps your format-aware comparison set'}
+    >
+      <span className="draft-bye-conflict-toggle__track" aria-hidden="true">
+        <span />
+      </span>
+      <span>Highlight conflicts</span>
+    </button>
+  );
+}
+
+function DraftFilterIcon() {
+  return (
+    <svg className="draft-filter-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M4 6h16" />
+      <path d="M7 12h10" />
+      <path d="M10 18h4" />
+    </svg>
+  );
+}
+
+function DraftMobileControlMenu({ label = 'Filters', children, className = '', lead = null, showFilterIcon = false }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className={['draft-mobile-control-menu', open ? 'is-open' : '', className].filter(Boolean).join(' ')}>
+      {lead ? <div className="draft-mobile-control-menu__lead">{lead}</div> : null}
+      <button
+        type="button"
+        className="draft-mobile-control-menu__button"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <span className="draft-mobile-control-menu__button-label" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+          {showFilterIcon ? <DraftFilterIcon /> : null}
+          <span>{label}</span>
+        </span>
+        <ArrowIcon direction={open ? 'up' : 'down'} />
+      </button>
+      <div className="draft-mobile-control-menu__content">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function clampDraftModelWeightInput(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return MODEL_WEIGHT_MIN;
+  return Math.min(MODEL_WEIGHT_MAX, Math.max(MODEL_WEIGHT_MIN, Math.round(parsed)));
+}
+
+function DraftModelWeightInfo({ label, description }) {
+  const buttonRef = useRef(null);
+  const tooltipRef = useRef(null);
+  const [open, setOpen] = useState(false);
+  const [position, setPosition] = useState(null);
+  const tooltipId = `draft-model-weight-info-${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const handlePointerDown = (event) => {
+      if (buttonRef.current?.contains(event.target)) return;
+      if (tooltipRef.current?.contains(event.target)) return;
+      setOpen(false);
+    };
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || !buttonRef.current) return undefined;
+
+    const updatePosition = () => {
+      const rect = buttonRef.current.getBoundingClientRect();
+      const tooltipWidth = Math.min(280, window.innerWidth - 16);
+      const left = Math.max(8, Math.min(window.innerWidth - tooltipWidth - 8, rect.left + rect.width / 2 - tooltipWidth / 2));
+      const top = Math.min(window.innerHeight - 12, rect.bottom + 8);
+      setPosition({ left, top, width: tooltipWidth });
+    };
+
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [open]);
+
+  return (
+    <span className="draft-model-weight-info">
+      <button
+        ref={buttonRef}
+        type="button"
+        aria-label={`${label} details`}
+        aria-describedby={open ? tooltipId : undefined}
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        onClick={() => setOpen(true)}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') setOpen(false);
+        }}
+      >
+        i
+      </button>
+      {open && position && createPortal(
+        <div
+          ref={tooltipRef}
+          id={tooltipId}
+          role="tooltip"
+          className="draft-model-weight-tooltip"
+          style={{
+            left: position.left,
+            top: position.top,
+            width: position.width,
+          }}
+        >
+          <strong>{label}</strong>
+          <span>{description}</span>
+        </div>,
+        document.body,
+      )}
+    </span>
+  );
+}
+
+function DraftModelWeights({ weights, onChange, onReset, className = '', idPrefix = 'draft-model-weight-label', defaultOpen = false }) {
+  const [draftWeights, setDraftWeights] = useState(() => normalizeDraftModelWeights(weights));
+  const [expanded, setExpanded] = useState(defaultOpen);
+  const draftWeightsRef = useRef(draftWeights);
+
+  useEffect(() => {
+    const nextWeights = normalizeDraftModelWeights(weights);
+    draftWeightsRef.current = nextWeights;
+    setDraftWeights(nextWeights);
+  }, [weights]);
+
+  const getDisplayValue = (key) => draftWeights?.[key] ?? DEFAULT_DRAFT_MODEL_WEIGHTS[key];
+
+  const setLocalWeight = (key, value) => {
+    setDraftWeights((current) => {
+      const nextWeights = rebalanceDraftModelWeights(
+        current,
+        key,
+        clampDraftModelWeightInput(value),
+      );
+      draftWeightsRef.current = nextWeights;
+      return nextWeights;
+    });
+  };
+
+  const commitWeight = (key, value) => {
+    const nextWeights = rebalanceDraftModelWeights(
+      draftWeightsRef.current,
+      key,
+      clampDraftModelWeightInput(value),
+    );
+    draftWeightsRef.current = nextWeights;
+    setDraftWeights(nextWeights);
+    onChange(nextWeights);
+  };
+
+  const totalWeight = MODEL_WEIGHT_CONTROLS.reduce((sum, item) => {
+    const value = Number(getDisplayValue(item.key));
+    return sum + (Number.isFinite(value) ? value : 0);
+  }, 0);
+
+  return (
+    <details
+      className={['draft-model-weights', className].filter(Boolean).join(' ')}
+      open={expanded}
+      onToggle={(event) => setExpanded(event.currentTarget.open)}
+    >
+      <summary>
+        <span className="draft-model-weights__summary-title">
+          <span className="draft-model-weights__chevron" aria-hidden="true" />
+          <span>{DRAFT_RANKING_PRIORITY_TITLE}</span>
+        </span>
+        <strong>{totalWeight}</strong>
+      </summary>
+      <p className="draft-model-weights__help">{DRAFT_RANKING_PRIORITY_HELP}</p>
+      <div className="draft-model-weights__grid">
+        {MODEL_WEIGHT_CONTROLS.map((item) => {
+          const value = getDisplayValue(item.key);
+          const rangeValue = value === '' ? MODEL_WEIGHT_MIN : value;
+          const labelId = `${idPrefix}-${item.key}`;
+
+          return (
+            <div key={item.key} className="draft-model-weights__control">
+              <span id={labelId} className="draft-model-weights__label">
+                <span>{item.label}</span>
+                <DraftModelWeightInfo label={item.label} description={item.description} />
+              </span>
+              <input
+                type="range"
+                aria-labelledby={labelId}
+                min={MODEL_WEIGHT_MIN}
+                max={MODEL_WEIGHT_MAX}
+                step="1"
+                value={rangeValue}
+                style={{ '--draft-weight-progress': `${rangeValue}%` }}
+                onChange={(event) => setLocalWeight(item.key, event.target.value)}
+                onPointerUp={(event) => commitWeight(item.key, event.currentTarget.value)}
+                onBlur={(event) => commitWeight(item.key, event.currentTarget.value)}
+              />
+              <input
+                type="number"
+                aria-labelledby={labelId}
+                min={MODEL_WEIGHT_MIN}
+                max={MODEL_WEIGHT_MAX}
+                step="1"
+                inputMode="numeric"
+                value={value}
+                onChange={(event) => setLocalWeight(item.key, event.target.value)}
+                onBlur={(event) => commitWeight(item.key, event.currentTarget.value)}
+                onFocus={(event) => event.currentTarget.select()}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') event.currentTarget.blur();
+                }}
+                aria-label={`${item.label} priority`}
+              />
+            </div>
+          );
+        })}
+      </div>
+      <button type="button" onClick={onReset}>{DRAFT_RANKING_PRIORITY_RESET_LABEL}</button>
+    </details>
+  );
+}
+
+function DraftBoardMetricValue({ label, value }) {
+  return (
+    <span className="draft-board-metric-value">
+      {label ? <span className="draft-board-metric-value__label">{label}</span> : null}
+      <span className="draft-board-metric-value__number">{value}</span>
+    </span>
+  );
+}
+
+function getByeConflictDescription(player, conflict) {
+  if (!conflict || conflict.severity === 'none' || conflict.week == null) return null;
+  const names = conflict.matchingPlayerNames ?? [];
+  const matchingCopy = names.length
+    ? names.join(', ')
+    : `${conflict.totalOverlaps} other player${conflict.totalOverlaps === 1 ? '' : 's'}`;
+  const positionCopy = conflict.exactPositionOverlaps > 0
+    ? ` Same-position conflict with ${conflict.exactPositionOverlaps} ${player.position} player${conflict.exactPositionOverlaps === 1 ? '' : 's'}.`
+    : '';
+  return `Bye week ${conflict.week} overlaps with ${matchingCopy}.${positionCopy}`;
+}
+
+function DraftByeConflictMarker({ player, conflict }) {
+  const description = getByeConflictDescription(player, conflict);
+  if (!description) return null;
+  const positional = conflict.severity === 'high';
+  return (
+    <span
+      className={[
+        'draft-bye-conflict-marker',
+        positional ? 'is-positional' : '',
+      ].filter(Boolean).join(' ')}
+      title={description}
+      aria-label={positional
+        ? `${player.position} positional conflict, bye ${conflict.week}`
+        : `Bye conflict, week ${conflict.week}`}
+    >
+      Bye {conflict.week}
+    </span>
+  );
+}
+
+function DraftPlayerAvailabilityBadge({ player }) {
+  const availability = getPlayerAvailabilityContext(player);
+  if (!availability.status) return null;
+  return (
+    <PlayerStatusBadge
+      status={availability.status}
+      detail={availability.detail}
+      responsiveCompact
+      className="draft-player-availability-badge"
+    />
+  );
+}
+
+function DraftPlayerRow({
+  player,
+  darkMode,
+  onViewPlayer,
+  actions,
+  status = null,
+  disabled = false,
+  metrics = null,
+  metricColumnGridTemplate = null,
+  rowGridTemplate = null,
+  compactRowGridTemplate = null,
+  leading = null,
+  trailing = null,
+  identityMetaSegments = null,
+  className = '',
+  compact = true,
+  showPosition = true,
+  showTeamLogo = true,
+  ariaLabel = null,
+  titleSupplement = null,
+}) {
+  const bye = getByeWeek(player);
+  const rowMetrics = metrics ?? [
+    getMarketMetric(player),
+  ];
+  const metricSlot = rowMetrics.length > 1 ? `minmax(${Math.min(280, Math.max(96, rowMetrics.length * 52))}px,auto)` : 'minmax(54px,auto)';
+  const compactMetricSlot = rowMetrics.length > 1 ? `minmax(${Math.min(240, Math.max(82, rowMetrics.length * 44))}px,auto)` : 'minmax(44px,auto)';
+  const availability = getPlayerAvailabilityContext(player);
+  const availabilityBadge = availability.status ? <DraftPlayerAvailabilityBadge key="availability" player={player} /> : null;
+  const gridTemplate = status
+    ? `${leading ? '34px ' : ''}40px 30px minmax(0,1fr) 30px ${metricSlot} auto auto`
+    : `${leading ? '34px ' : ''}40px 30px minmax(0,1fr) 30px ${metricSlot} auto`;
+  const compactGridTemplate = status
+    ? `${leading ? '30px ' : ''}34px 28px minmax(0,1fr) 28px ${compactMetricSlot} auto auto`
+    : `${leading ? '30px ' : ''}34px 28px minmax(0,1fr) 28px ${compactMetricSlot} auto`;
+  const resolvedGridTemplate = rowGridTemplate ?? gridTemplate;
+  const resolvedCompactGridTemplate = compactRowGridTemplate ?? rowGridTemplate ?? compactGridTemplate;
+  const scheduleMetaLabel = player?.schedule?.label && player.schedule.label !== 'Unavailable'
+    ? player.schedule.label
+    : null;
+  const defaultMetaSegments = [
+    player.team,
+    availabilityBadge,
+    bye ? `Bye ${bye}` : null,
+    // Marked so wide rows can drop the schedule note onto its own line instead of
+    // letting it wrap mid-phrase behind the availability badge.
+    scheduleMetaLabel
+      ? (
+        <span key="schedule" className="draft-player-row__meta-schedule">
+          {scheduleMetaLabel}
+          {/* Dropped on narrow rows so the tier stays on a single line. */}
+          <span className="draft-player-row__meta-schedule-suffix"> schedule</span>
+        </span>
+      )
+      : null,
+  ].filter(Boolean);
+  const metaSegments = identityMetaSegments ?? defaultMetaSegments;
+
+  return (
+    <CompanionPlayerRow
+      player={{
+        id: player.id,
+        name: getPlayerName(player),
+        team: player.team,
+        position: player.position,
+        raw: player.raw,
+      }}
+      title={[getPlayerName(player), player.team, availability.label, titleSupplement].filter(Boolean).join(' · ')}
+      ariaLabel={ariaLabel}
+      darkMode={darkMode}
+      disabled={disabled}
+      interactive
+      compact={compact}
+      showPosition={showPosition}
+      showTeamLogo={showTeamLogo}
+      onClick={() => onViewPlayer?.(player.id)}
+      leading={leading}
+      trailing={trailing}
+      metaSegments={metaSegments}
+      columns={rowMetrics.map((metric) => (
+        <CompanionPlayerMetric
+          key={metric.key}
+          value={metric.value}
+          label={metric.label}
+          title={metric.title}
+          align={metric.align}
+          tone={metric.tone}
+          compact
+          className={`draft-player-row__metric--${metric.key}`}
+        />
+      ))}
+      status={status}
+      actions={actions}
+      gridTemplate={resolvedGridTemplate}
+      compactGridTemplate={resolvedCompactGridTemplate}
+      columnGridTemplate={metricColumnGridTemplate ?? (rowMetrics.length > 1 ? `repeat(${rowMetrics.length}, minmax(40px,auto))` : 'minmax(44px,auto)')}
+      className={['draft-player-row', className].filter(Boolean).join(' ')}
+    />
+  );
+}
+
+function getBoardRowMetrics(player) {
+  return [
+    {
+      key: 'pos-rank',
+      value: (
+        <DraftBoardMetricValue
+          label={null}
+          value={player.available === false ? '—' : formatPositionRank(player)}
+        />
+      ),
+      label: null,
+      title: 'Position rank',
+    },
+    {
+      key: 'market',
+      value: (
+        <DraftBoardMetricValue
+          label={getMarketMetric(player).label}
+          value={getMarketMetric(player).value}
+        />
+      ),
+      label: null,
+      title: 'LeagueLogs Market Index overall rank',
+    },
+  ];
+}
+
+function getDraftBoardStatus(player) {
+  if (player?.available !== false) return null;
+  const draftedBy = player?.draftedBy ?? null;
+  if (!draftedBy) return <CompanionPlayerStatus label="Gone" />;
+  const label = draftedBy.isMine ? 'Drafted by You' : `Drafted by ${draftedBy.label}`;
+  return (
+    <CompanionPlayerStatus
+      label={label}
+      className={['draft-board-owner-status', draftedBy.isMine ? 'is-user-team' : ''].filter(Boolean).join(' ')}
+    />
+  );
+}
+
+function LeagueLogsAttribution({ attribution, profileKey, profile, lastRefreshed }) {
+  if (!attribution?.text || !attribution?.url) return null;
+  const details = [
+    formatLeagueLogsMarketProfile({ profile, profileKey }),
+    lastRefreshed ? `Updated ${new Date(lastRefreshed).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}` : null,
+  ].filter(Boolean).join(' · ');
+
+  return (
+    <div className="draft-market-attribution">
+      <a href={attribution.url} target="_blank" rel="noopener noreferrer">{attribution.text}</a>
+      {details ? <span>{details}</span> : null}
+    </div>
+  );
+}
+
+function getFantasyAdpRows(response) {
+  const payload = response?.data ?? response;
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.data)) return payload.data;
+  if (Array.isArray(payload?.rows)) return payload.rows;
+  if (Array.isArray(response?.rows)) return response.rows;
+  return [];
+}
+
+function FantasyAdpAttribution({ matchedPlayerCount, lastUpdated }) {
+  if (!matchedPlayerCount) return null;
+  const details = lastUpdated
+    ? `Updated ${new Date(lastUpdated).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`
+    : 'Market snapshot';
+
+  return (
+    <div className="draft-market-attribution">
+      <a href="https://www.balldontlie.io/" target="_blank" rel="noopener noreferrer">BALLDONTLIE ADP</a>
+      <span>{details}</span>
+    </div>
+  );
+}
+
+function haveSameSetValues(previousSet, nextSet) {
+  if (previousSet === nextSet) return true;
+  if (!previousSet || !nextSet || previousSet.size !== nextSet.size) return false;
+  for (const value of previousSet) {
+    if (!nextSet.has(value)) return false;
+  }
+  return true;
+}
+
+function haveSameStringArray(previousArray = [], nextArray = []) {
+  if (previousArray === nextArray) return true;
+  if (previousArray.length !== nextArray.length) return false;
+  for (let index = 0; index < previousArray.length; index += 1) {
+    if (String(previousArray[index]) !== String(nextArray[index])) return false;
+  }
+  return true;
+}
+
+const BigBoard = memo(function BigBoard({
+  candidates,
+  boardIds,
+  activePosition,
+  query,
+  setQuery,
+  positions,
+  onPositionChange,
+  onAdd,
+  onViewPlayer,
+  darkMode,
+  boardScope,
+  onBoardScopeChange,
+  availabilityFilter,
+  availabilityOptions,
+  onAvailabilityFilterChange,
+  statsLoading,
+  pastPpgSeason,
+  modelWeights,
+  onModelWeightChange,
+  onResetModelWeights,
+}) {
+  const [sortState, setSortState] = useState({ key: 'rating', direction: 'desc' });
+  const isMobileBoard = useMediaQuery('(max-width: 767px)');
+  const filtered = filterCandidates(candidates, activePosition, query, availabilityFilter);
+  const sorted = useMemo(
+    () => sortBigBoardRows(filtered, sortState).slice(0, 140),
+    [filtered, sortState],
+  );
+  const setSortColumn = (column) => {
+    setSortState((current) => {
+      if (current.key === column.key) {
+        return {
+          key: column.key,
+          direction: current.direction === 'asc' ? 'desc' : 'asc',
+        };
+      }
+      return {
+        key: column.key,
+        direction: column.defaultDirection,
+      };
+    });
+  };
+  const renderColumnLabel = (column, centered = false) => {
+    if (column.key === 'ppg') {
+      return (
+        <span className="draft-big-board-header__label">
+          <span>{pastPpgSeason ?? 'Past'}</span>
+          <span>PPG</span>
+        </span>
+      );
+    }
+    if (column.key === 'volume') {
+      return (
+        <span className="draft-big-board-header__label">
+          <span className="draft-big-board-header__volume-wide">Volume</span>
+          <span className="draft-big-board-header__volume-compact">Vol</span>
+        </span>
+      );
+    }
+    const lines = column.headerLines ?? [column.label];
+    return (
+      <span
+        className="draft-big-board-header__label"
+        style={centered ? { justifyItems: 'center', textAlign: 'center' } : undefined}
+      >
+        {lines.map((line) => <span key={line}>{line}</span>)}
+      </span>
+    );
+  };
+  const renderSortButton = (column, className = '', { mobilePlayer = false } = {}) => {
+    const active = sortState.key === column.key;
+    const direction = active ? sortState.direction : column.defaultDirection;
+    const nextDirection = active
+      ? (direction === 'asc' ? 'descending' : 'ascending')
+      : (column.defaultDirection === 'asc' ? 'ascending' : 'descending');
+    const currentDirection = direction === 'asc' ? 'ascending' : 'descending';
+    return (
+      <button
+        key={column.key}
+        type="button"
+        className={[className, `draft-big-board-header__metric--${column.key}`, active ? 'is-active' : ''].filter(Boolean).join(' ')}
+        onClick={() => setSortColumn(column)}
+        aria-label={active
+          ? `${column.label}, sorted ${currentDirection}. Activate to sort ${nextDirection}.`
+          : `Sort by ${column.label} ${nextDirection}.`}
+        aria-sort={active ? (direction === 'asc' ? 'ascending' : 'descending') : 'none'}
+        title={active ? `Sorted ${currentDirection}` : `Sort by ${column.label}`}
+        style={mobilePlayer ? { gridColumn: '1 / 4', justifyContent: 'center', textAlign: 'center' } : undefined}
+      >
+        {renderColumnLabel(column, mobilePlayer)}
+        <span aria-hidden="true" className="draft-big-board-header__sort">
+          {direction === 'asc' ? '↑' : '↓'}
+        </span>
+      </button>
+    );
+  };
+  const renderControlFields = ({ className = '', includeSearch = true } = {}) => (
+    <div className={['draft-panel__header-controls', 'draft-big-board-controls', className].filter(Boolean).join(' ')}>
+      <DraftSegmentedControl
+        label="Big Board player scope"
+        options={BOARD_SCOPE_OPTIONS}
+        value={boardScope}
+        onChange={onBoardScopeChange}
+      />
+      <DraftAvailabilityFilter
+        options={availabilityOptions}
+        value={availabilityFilter}
+        onChange={onAvailabilityFilterChange}
+      />
+      {includeSearch ? (
+        <input
+          type="search"
+          className="draft-big-board-search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search players"
+          aria-label="Search draft players"
+        />
+      ) : null}
+    </div>
+  );
+  const renderSortHeader = (className = '', { mobile = false } = {}) => (
+    <div className={['draft-big-board-header', className].filter(Boolean).join(' ')} role="row">
+      {mobile ? (
+        renderSortButton(BIG_BOARD_SORT_COLUMNS[0], 'draft-big-board-header__player draft-big-board-header__player--mobile', { mobilePlayer: true })
+      ) : (
+        <>
+          <span className="draft-big-board-header__avatar-spacer" aria-hidden="true" />
+          <span className="draft-big-board-header__position-spacer" aria-hidden="true" />
+          {renderSortButton(BIG_BOARD_SORT_COLUMNS[0], 'draft-big-board-header__player')}
+          <span className="draft-big-board-header__logo-spacer" aria-hidden="true" />
+        </>
+      )}
+      <div className="draft-big-board-header__metrics">
+        {(mobile ? BIG_BOARD_SORT_COLUMNS.slice(1, 3) : BIG_BOARD_SORT_COLUMNS.slice(1))
+          .map((column) => renderSortButton(column))}
+      </div>
+      <span className="draft-big-board-header__action-spacer" aria-hidden="true" />
+    </div>
+  );
+
+  const mobileBoardGridStyle = isMobileBoard ? {
+    '--draft-big-board-row-grid': '30px 24px minmax(102px, 1fr) minmax(92px, 0.82fr) 4px 44px',
+    '--draft-big-board-metric-grid': 'repeat(2, minmax(38px, 1fr))',
+  } : undefined;
+
+  return (
+    <section className="draft-panel draft-big-board" style={mobileBoardGridStyle}>
+      <div className="draft-panel__header">
+        <div>
+          <h2>Big Board</h2>
+          {statsLoading ? <span>Refreshing rankings</span> : null}
+        </div>
+        {renderControlFields({ className: 'draft-desktop-control-set' })}
+      </div>
+      <PositionFilter positions={positions} activePosition={activePosition} onChange={onPositionChange} />
+      <DraftMobileControlMenu
+        label="Filters"
+        className="draft-big-board__mobile-controls"
+        showFilterIcon
+        lead={(
+          <div className="draft-big-board-mobile-search" style={{ padding: 8 }}>
+            <input
+              type="search"
+              className="draft-big-board-search draft-big-board-search--mobile"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search players"
+              aria-label="Search draft players"
+              style={{ width: '100%', minWidth: 0, minHeight: 44, margin: 0 }}
+            />
+          </div>
+        )}
+      >
+        {renderControlFields({ includeSearch: false })}
+        <DraftModelWeights
+          weights={modelWeights}
+          onChange={onModelWeightChange}
+          onReset={onResetModelWeights}
+          idPrefix="draft-mobile-model-weight-label"
+          defaultOpen
+        />
+      </DraftMobileControlMenu>
+      <DraftModelWeights
+        weights={modelWeights}
+        onChange={onModelWeightChange}
+        onReset={onResetModelWeights}
+        className="draft-desktop-control-set"
+      />
+      {renderSortHeader('draft-mobile-sort-header', { mobile: true })}
+      {renderSortHeader('draft-desktop-control-set')}
+      <div className="draft-player-list">
+        {sorted.length === 0 ? (
+          <EmptyState title="No players match this filter." />
+        ) : sorted.map((player) => {
+          const included = boardIds.has(player.id);
+          return (
+            <DraftPlayerRow
+              key={player.id}
+              player={player}
+              darkMode={darkMode}
+              className="draft-player-row--big-board"
+              onViewPlayer={onViewPlayer}
+              metrics={isMobileBoard ? getBigBoardMetrics(player).slice(0, 2) : getBigBoardMetrics(player)}
+              metricColumnGridTemplate={BIG_BOARD_METRIC_GRID_TEMPLATE}
+              rowGridTemplate={BIG_BOARD_ROW_GRID_TEMPLATE}
+              compactRowGridTemplate={BIG_BOARD_COMPACT_ROW_GRID_TEMPLATE}
+              actions={[
+                <CompanionPlayerAction
+                  key="add"
+                  label={included ? `${getPlayerName(player)} is already on your board` : `Add ${getPlayerName(player)} to board`}
+                  selected={included}
+                  disabled={included}
+                  className={included ? 'draft-player-row__add-action is-added-icon' : 'draft-player-row__add-action'}
+                  onClick={() => onAdd(player)}
+                >
+                  {included ? <CheckIcon /> : isMobileBoard ? (
+                    <span className="draft-player-row__add-glyph" aria-hidden="true" style={{ fontSize: 'var(--type-heading-sm)', lineHeight: 1 }}>+</span>
+                  ) : 'Add'}
+                </CompanionPlayerAction>,
+              ]}
+            />
+          );
+        })}
+      </div>
+    </section>
+  );
+}, (previous, next) => (
+  previous.candidates === next.candidates
+  && haveSameSetValues(previous.boardIds, next.boardIds)
+  && previous.activePosition === next.activePosition
+  && previous.query === next.query
+  && previous.setQuery === next.setQuery
+  && haveSameStringArray(previous.positions, next.positions)
+  && previous.onPositionChange === next.onPositionChange
+  && previous.onAdd === next.onAdd
+  && previous.onViewPlayer === next.onViewPlayer
+  && previous.darkMode === next.darkMode
+  && previous.boardScope === next.boardScope
+  && previous.onBoardScopeChange === next.onBoardScopeChange
+  && previous.availabilityFilter === next.availabilityFilter
+  && previous.availabilityOptions === next.availabilityOptions
+  && previous.onAvailabilityFilterChange === next.onAvailabilityFilterChange
+  && previous.statsLoading === next.statsLoading
+  && previous.pastPpgSeason === next.pastPpgSeason
+  && previous.modelWeights === next.modelWeights
+  && previous.onModelWeightChange === next.onModelWeightChange
+  && previous.onResetModelWeights === next.onResetModelWeights
+));
+
+function getWorkspaceLanePositions(positions, boardByPosition) {
+  const found = new Set();
+  for (const position of positions ?? []) {
+    const normalized = normalizePosition(position);
+    if (normalized && normalized !== 'ALL') found.add(normalized);
+  }
+  for (const position of Object.keys(boardByPosition ?? {})) {
+    const normalized = normalizePosition(position);
+    if (normalized && normalized !== 'ALL') found.add(normalized);
+  }
+  const ordered = POSITION_ORDER.filter((position) => found.has(position));
+  const extras = [...found].filter((position) => !POSITION_ORDER.includes(position)).sort();
+  return ordered.length || extras.length ? [...ordered, ...extras] : ['QB', 'RB', 'WR', 'TE'];
+}
+
+function normalizeRosterSlot(slot) {
+  const value = String(slot ?? '').trim().toUpperCase();
+  if (value === 'DST') return 'DEF';
+  if (value === 'BE' || value === 'BENCH') return 'BN';
+  return value || 'BN';
+}
+
+function formatRosterSlotLabel(slot) {
+  const normalized = normalizeRosterSlot(slot);
+  const eligibilities = getRosterProjectionSlotEligibilities(normalized);
+  if (eligibilities?.size > 1) return [...eligibilities].join('/');
+  return normalized;
+}
+
+function getRosterSlotEligibilities(slot) {
+  return getRosterProjectionSlotEligibilities(normalizeRosterSlot(slot));
+}
+
+function slotAcceptsPosition(slot, position) {
+  const eligibilities = getRosterSlotEligibilities(slot);
+  if (!eligibilities) return true;
+  return eligibilities.has(normalizePosition(position));
+}
+
+function getSleeperPlayerName(player, fallback = 'Player') {
+  return player?.full_name
+    || `${player?.first_name ?? ''} ${player?.last_name ?? ''}`.trim()
+    || player?.metadata?.full_name
+    || fallback;
+}
+
+function buildRosterTrayPlayer({
+  playerId,
+  rawPlayer,
+  sourceLabel = null,
+  sortOrder = 0,
+  byeWeekBundle = null,
+  draftSeason = null,
+}) {
+  const id = String(playerId ?? '');
+  if (!id) return null;
+  const position = normalizePosition(rawPlayer?.fantasy_positions?.[0] ?? rawPlayer?.position);
+  return {
+    id,
+    name: getSleeperPlayerName(rawPlayer, `Player ${id}`),
+    position,
+    team: String(rawPlayer?.team ?? '').toUpperCase(),
+    raw: rawPlayer,
+    byeWeek: resolveDraftPlayerByeWeek({
+      player: rawPlayer,
+      team: rawPlayer?.team,
+      draftSeason,
+      byeWeekBundle,
+    }),
+    sourceLabel,
+    sortOrder,
+  };
+}
+
+function buildMyDraftRosterTray({
+  league,
+  draftOrderContext,
+  myRosterData,
+  players,
+  keeperIds = new Set(),
+  preferredPlayersByPosition = {},
+  byeWeekBundle = null,
+  draftSeason = null,
+}) {
+  const myRosterId = myRosterData?.roster_id != null ? String(myRosterData.roster_id) : null;
+  const slots = (league?.roster_positions ?? [])
+    .filter((slot) => normalizeRosterSlot(slot) !== 'IR' && normalizeRosterSlot(slot) !== 'TAXI')
+    .map((slot, index) => ({
+      id: `${slot}-${index}`,
+      slot: normalizeRosterSlot(slot),
+      originalSlot: slot,
+      player: null,
+    }));
+
+  if (!myRosterId || slots.length === 0) return slots;
+
+  const rosterEntries = [];
+  const seenPlayerIds = new Set();
+  const starterIds = Array.isArray(myRosterData?.starters)
+    ? myRosterData.starters.map((id) => String(id)).filter((id) => id && id !== '0')
+    : [];
+  const rosterPlayerIds = Array.isArray(myRosterData?.players)
+    ? myRosterData.players.map((id) => String(id)).filter(Boolean)
+    : [];
+  const orderedRosterIds = [
+    ...starterIds,
+    ...rosterPlayerIds.filter((id) => !starterIds.includes(id)),
+  ];
+
+  orderedRosterIds.forEach((playerId, index) => {
+    if (seenPlayerIds.has(playerId)) return;
+    const player = buildRosterTrayPlayer({
+      playerId,
+      rawPlayer: players?.[playerId] ?? null,
+      sourceLabel: 'Roster',
+      sortOrder: index,
+      byeWeekBundle,
+      draftSeason,
+    });
+    if (!player) return;
+    seenPlayerIds.add(playerId);
+    rosterEntries.push(player);
+  });
+
+  const myPicks = (draftOrderContext?.normalizedPicks ?? [])
+    .filter((pick) => pick.playerId && pick.rosterId === myRosterId)
+    .slice()
+    .sort((a, b) => a.overall - b.overall);
+
+  myPicks.forEach((pick, index) => {
+    const playerId = String(pick.playerId);
+    if (seenPlayerIds.has(playerId)) return;
+    const rawPlayer = players?.[playerId] ?? null;
+    const player = buildRosterTrayPlayer({
+      playerId,
+      rawPlayer,
+      sourceLabel: formatPickLabel(pick),
+      sortOrder: 10_000 + index,
+      byeWeekBundle,
+      draftSeason,
+    });
+    if (!player) return;
+    player.name = getDraftedPlayerLabel(pick, players);
+    seenPlayerIds.add(playerId);
+    rosterEntries.push(player);
+  });
+
+  const findSlotIndex = (position, exactOnly = false) => getRosterProjectionSlotOrder(slots)
+    .find((slotIndex) => {
+      const slot = slots[slotIndex];
+      if (slot.player) return false;
+      const eligibilities = getRosterSlotEligibilities(slot.slot);
+      if (!eligibilities) return false;
+      if (exactOnly) return eligibilities.size === 1 && eligibilities.has(normalizePosition(position));
+      return eligibilities.size > 1 && eligibilities.has(normalizePosition(position));
+    }) ?? -1;
+
+  const assignPlayer = (player, exactOnly) => {
+    const slotIndex = findSlotIndex(player.position, exactOnly);
+    if (slotIndex < 0) return false;
+    slots[slotIndex] = {
+      ...slots[slotIndex],
+      player: {
+        ...player,
+        isKeeper: keeperIds.has(player.id),
+      },
+    };
+    return true;
+  };
+
+  const unassigned = [];
+  for (const player of rosterEntries.sort((a, b) => a.sortOrder - b.sortOrder)) {
+    if (!assignPlayer(player, true)) unassigned.push(player);
+  }
+
+  const overflow = [];
+  for (const player of unassigned) {
+    if (!assignPlayer(player, false)) overflow.push(player);
+  }
+
+  for (const player of overflow) {
+    slots.push({
+      id: `overflow-${player.id}`,
+      slot: 'BN',
+      originalSlot: 'BN',
+      player: {
+        ...player,
+        isKeeper: keeperIds.has(player.id),
+      },
+    });
+  }
+
+  const claimedPlayerIds = new Set(
+    slots.map((slot) => slot.player?.id).filter(Boolean),
+  );
+  for (const slotIndex of getRosterProjectionSlotOrder(slots)) {
+    const slot = slots[slotIndex];
+    const eligibilities = getRosterSlotEligibilities(slot.slot);
+    // Bench slots have no single position to project. Leaving them open keeps
+    // the tray focused on the manager's position-specific Board priorities.
+    if (slot.player || !eligibilities) continue;
+
+    const candidate = selectNextAvailableRosterProjection({
+      eligiblePositions: [...eligibilities],
+      preferredPlayersByPosition,
+      claimedPlayerIds,
+    });
+    if (!candidate) continue;
+
+    const player = buildRosterTrayPlayer({
+      playerId: candidate.id,
+      rawPlayer: candidate.raw ?? players?.[candidate.id] ?? null,
+      sourceLabel: 'Top available Board target',
+      sortOrder: candidate.boardRank ?? Number.MAX_SAFE_INTEGER,
+      byeWeekBundle,
+      draftSeason,
+    });
+    if (!player) continue;
+
+    slot.player = {
+      ...player,
+      name: candidate.name ?? player.name,
+      position: candidate.position ?? player.position,
+      team: candidate.team ?? player.team,
+      byeWeek: candidate.byeWeek ?? player.byeWeek,
+      isProjected: true,
+      boardRank: candidate.boardRank ?? null,
+    };
+    claimedPlayerIds.add(player.id);
+  }
+
+  return slots;
+}
+
+function DraftBoardCardShell({
+  player,
+  darkMode,
+  index = null,
+  isLast = false,
+  metricKey = 'none',
+  onViewPlayer,
+  onDragStart,
+  onDragEnd = null,
+  onMove = null,
+  onRemove = null,
+  onAdd = null,
+  position = null,
+  allowReorder = false,
+  allowDrag = true,
+  disabled = false,
+  isDragging = false,
+  conflict = null,
+}) {
+  const isGone = player?.available === false;
+  const isDraftedByUser = Boolean(player?.draftedBy?.isMine);
+  const isDraftedByOther = isGone && Boolean(player?.draftedBy) && !isDraftedByUser;
+  const draftedOwnershipLabel = isGone && player?.draftedBy
+    ? (isDraftedByUser ? 'Drafted by You' : `Drafted by ${player.draftedBy.label}`)
+    : null;
+  const canDrag = allowDrag && !disabled && !isGone;
+  const cardMetric = getDraftBoardCardMetric(player, metricKey);
+  const availability = getPlayerAvailabilityContext(player);
+  const actions = [];
+
+  if (!isGone && onAdd) {
+    actions.push(
+      <CompanionPlayerAction
+        key="add"
+        label={`Add ${getPlayerName(player)} to board`}
+        onClick={() => onAdd(player)}
+      >
+        Add
+      </CompanionPlayerAction>,
+    );
+  }
+
+  if (!isGone && allowReorder && onMove && position) {
+    actions.push(
+      <CompanionPlayerAction
+        key="up"
+        label={`Move ${getPlayerName(player)} up`}
+        disabled={index === 0}
+        onClick={() => onMove(position, player.id, -1)}
+      >
+        <ArrowIcon direction="up" />
+      </CompanionPlayerAction>,
+      <CompanionPlayerAction
+        key="down"
+        label={`Move ${getPlayerName(player)} down`}
+        disabled={index === null || isLast}
+        onClick={() => onMove(position, player.id, 1)}
+      >
+        <ArrowIcon direction="down" />
+      </CompanionPlayerAction>,
+    );
+  }
+
+  if (!isGone && onRemove) {
+    actions.push(
+      <CompanionPlayerAction
+        key="remove"
+        label={`Remove ${getPlayerName(player)} from board`}
+        onClick={() => onRemove(player.id)}
+      >
+        <CloseIcon />
+      </CompanionPlayerAction>,
+    );
+  }
+
+  const boardStatus = draftedOwnershipLabel ? null : getDraftBoardStatus(player);
+  const conflictDescription = isDraftedByOther ? null : getByeConflictDescription(player, conflict);
+  const hasConflict = Boolean(conflictDescription);
+  const hasPositionalConflict = conflict?.severity === 'high';
+  const cardTrailing = cardMetric || actions.length > 0 ? (
+    <div className="draft-board-card-trailing">
+      {cardMetric ? (
+        <CompanionPlayerMetric
+          value={cardMetric.value}
+          label={cardMetric.label}
+          title={cardMetric.title}
+          align={cardMetric.align}
+          tone={cardMetric.tone}
+          compact
+          className={`draft-player-row__metric--${cardMetric.key}`}
+        />
+      ) : null}
+      {actions.length > 0 ? (
+        <div className="draft-board-card-trailing__actions">
+          {actions}
+        </div>
+      ) : null}
+    </div>
+  ) : null;
+
+  return (
+    <div
+      className={[
+        'draft-board-card-shell',
+        canDrag ? 'is-draggable' : '',
+        isDragging ? 'is-dragging-source' : '',
+        isGone ? 'is-gone' : '',
+        isDraftedByUser ? 'is-drafted-by-user' : '',
+        isGone && !isDraftedByUser ? 'is-drafted-by-other' : '',
+        hasConflict ? 'is-bye-conflict' : '',
+        hasPositionalConflict ? 'is-positional-bye-conflict' : '',
+      ].filter(Boolean).join(' ')}
+      data-player-id={String(player.id)}
+      draggable={canDrag}
+      onDragStart={canDrag ? (event) => onDragStart?.(event, player, position) : undefined}
+      onDragEnd={canDrag ? onDragEnd : undefined}
+    >
+      {canDrag ? (
+        <span className="draft-board-card-drag-handle" aria-hidden="true">
+          <span />
+          <span />
+          <span />
+        </span>
+      ) : null}
+      <DraftPlayerRow
+        player={player}
+        darkMode={darkMode}
+        className={[
+          'draft-player-row--board-card',
+          index != null ? 'draft-player-row--ranked-card' : 'draft-player-row--available-card',
+          cardTrailing ? 'has-board-card-trailing' : '',
+          boardStatus ? 'has-board-card-status' : '',
+          isDraftedByUser ? 'is-drafted-by-user' : '',
+          isGone && !isDraftedByUser ? 'is-drafted-by-other' : '',
+        ].filter(Boolean).join(' ')}
+        disabled={disabled || isGone}
+        onViewPlayer={onViewPlayer}
+        metrics={[]}
+        metricColumnGridTemplate={null}
+        rowGridTemplate={cardTrailing ? 'var(--draft-board-card-grid-trailing)' : 'var(--draft-board-card-grid)'}
+        compactRowGridTemplate={cardTrailing ? 'var(--draft-board-card-grid-trailing)' : 'var(--draft-board-card-grid-compact)'}
+        identityMetaSegments={[
+          draftedOwnershipLabel
+            ?? [player.position, player.team || 'FA'].filter(Boolean).join(' · '),
+          !isDraftedByOther && hasConflict
+            ? <DraftByeConflictMarker key="bye-conflict" player={player} conflict={conflict} />
+            : null,
+          !isDraftedByOther && availability.status
+            ? <DraftPlayerAvailabilityBadge key="availability" player={player} />
+            : null,
+        ].filter(Boolean)}
+        compact={false}
+        showPosition={false}
+        status={boardStatus}
+        actions={null}
+        trailing={cardTrailing}
+        showTeamLogo={false}
+        titleSupplement={conflictDescription}
+        ariaLabel={conflictDescription ? `Open ${getPlayerName(player)}. ${conflictDescription}` : null}
+      />
+    </div>
+  );
+}
+
+function getScrollMetrics(element, axis) {
+  if (!element) return { scrollable: false, atStart: true, atEnd: true };
+  const scrollPos = axis === 'x' ? element.scrollLeft : element.scrollTop;
+  const clientSize = axis === 'x' ? element.clientWidth : element.clientHeight;
+  const scrollSize = axis === 'x' ? element.scrollWidth : element.scrollHeight;
+  const maxScroll = Math.max(0, scrollSize - clientSize);
+  return {
+    scrollable: maxScroll > 2,
+    atStart: scrollPos <= 1,
+    atEnd: scrollPos >= maxScroll - 1,
+  };
+}
+
+function DraftScrollIcon({ axis, direction }) {
+  const horizontal = axis === 'x';
+  const points = horizontal
+    ? (direction === 'start' ? '15 18 9 12 15 6' : '9 18 15 12 9 6')
+    : (direction === 'start' ? '6 15 12 9 18 15' : '6 9 12 15 18 9');
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <polyline points={points} />
+    </svg>
+  );
+}
+
+function DraftScrollControls({ targetRef, axis = 'x', label }) {
+  const [scrollState, setScrollState] = useState(() => ({ scrollable: false, atStart: true, atEnd: true }));
+
+  useEffect(() => {
+    const element = targetRef.current;
+    if (!element) return undefined;
+
+    const update = () => setScrollState(getScrollMetrics(element, axis));
+    update();
+
+    element.addEventListener('scroll', update, { passive: true });
+    window.addEventListener('resize', update);
+    const resizeObserver = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(update) : null;
+    resizeObserver?.observe(element);
+
+    return () => {
+      element.removeEventListener('scroll', update);
+      window.removeEventListener('resize', update);
+      resizeObserver?.disconnect();
+    };
+  }, [axis, targetRef]);
+
+  if (!scrollState.scrollable) return null;
+
+  if (axis === 'x') {
+    return (
+      <div
+        className={[
+          'draft-scroll-controls',
+          'is-x',
+          !scrollState.atStart ? 'can-scroll-start' : '',
+          !scrollState.atEnd ? 'can-scroll-end' : '',
+        ].filter(Boolean).join(' ')}
+        aria-hidden="true"
+      >
+        {!scrollState.atStart ? (
+          <span className="draft-scroll-cue is-start">
+            <DraftScrollIcon axis={axis} direction="start" />
+          </span>
+        ) : null}
+        {!scrollState.atEnd ? (
+          <span className="draft-scroll-cue is-end">
+            <DraftScrollIcon axis={axis} direction="end" />
+          </span>
+        ) : null}
+      </div>
+    );
+  }
+
+  const scroll = (direction) => {
+    const element = targetRef.current;
+    if (!element) return;
+    const distance = Math.max(96, Math.floor(element.clientHeight * 0.72));
+    element.scrollBy({
+      top: direction === 'start' ? -distance : distance,
+      behavior: 'smooth',
+    });
+  };
+
+  return (
+    <div
+      className={[
+        'draft-scroll-controls',
+        'is-y',
+        !scrollState.atStart ? 'can-scroll-start' : '',
+        !scrollState.atEnd ? 'can-scroll-end' : '',
+      ].filter(Boolean).join(' ')}
+      aria-label={`${label} scroll controls`}
+    >
+      {!scrollState.atStart ? (
+        <button
+          type="button"
+          className="draft-scroll-arrow is-start"
+          onClick={() => scroll('start')}
+          aria-label={`Scroll ${label} up`}
+        >
+          <DraftScrollIcon axis={axis} direction="start" />
+        </button>
+      ) : null}
+      {!scrollState.atEnd ? (
+        <button
+          type="button"
+          className="draft-scroll-arrow is-end"
+          onClick={() => scroll('end')}
+          aria-label={`Scroll ${label} down`}
+        >
+          <DraftScrollIcon axis={axis} direction="end" />
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function haveSamePlayerRows(previousRows = [], nextRows = []) {
+  if (previousRows === nextRows) return true;
+  if (previousRows.length !== nextRows.length) return false;
+  for (let index = 0; index < previousRows.length; index += 1) {
+    const previous = previousRows[index];
+    const next = nextRows[index];
+    if (
+      String(previous?.id) !== String(next?.id)
+      || previous?.available !== next?.available
+      || previous?.isKeeper !== next?.isKeeper
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+const DraftAvailablePlayerList = memo(function DraftAvailablePlayerList({
+  players,
+  darkMode,
+  metricKey,
+  onAdd,
+  onDragStart,
+  onDragEnd,
+  onViewPlayer,
+  draggingPlayerId = null,
+  emptyTitle = 'No available players match this filter.',
+  conflictByPlayerId = null,
+}) {
+  const listRef = useRef(null);
+  if (players.length === 0) return <EmptyState title={emptyTitle} />;
+  return (
+    <div className="draft-scroll-region draft-board-available-list-shell">
+      <div ref={listRef} className="draft-board-available-list">
+        {players.map((player) => (
+          <DraftBoardCardShell
+            key={player.id}
+            player={player}
+            darkMode={darkMode}
+            metricKey={metricKey}
+            onAdd={onAdd}
+            onDragStart={onDragStart}
+            onDragEnd={onDragEnd}
+            onViewPlayer={onViewPlayer}
+            allowDrag
+            isDragging={String(player.id) === draggingPlayerId}
+            conflict={conflictByPlayerId?.get(String(player.id)) ?? null}
+          />
+        ))}
+      </div>
+      <DraftScrollControls targetRef={listRef} axis="y" label="available players" />
+    </div>
+  );
+}, (previous, next) => (
+  previous.darkMode === next.darkMode
+  && previous.metricKey === next.metricKey
+  && previous.onAdd === next.onAdd
+  && previous.onDragStart === next.onDragStart
+  && previous.onDragEnd === next.onDragEnd
+  && previous.onViewPlayer === next.onViewPlayer
+  && previous.draggingPlayerId === next.draggingPlayerId
+  && previous.emptyTitle === next.emptyTitle
+  && previous.conflictByPlayerId === next.conflictByPlayerId
+  && haveSamePlayerRows(previous.players, next.players)
+));
+
+const DraftBoardLane = memo(function DraftBoardLane({
+  position,
+  rows,
+  darkMode,
+  metricKey,
+  onDragStart,
+  onDragEnd,
+  onDropPlayer,
+  onMove,
+  onRemove,
+  onViewPlayer,
+  allowDrop = true,
+  allowReorder = true,
+  canAcceptDrop = true,
+  activeMobile = false,
+  draggingPlayerId = null,
+  dropTarget = null,
+  onDragTargetChange,
+  conflictByPlayerId = null,
+}) {
+  const liveRows = rows.filter((row) => row.available !== false);
+  const stackRef = useRef(null);
+  const normalizedPosition = normalizePosition(position);
+  const companionPositionColor = POSITION_COLORS[normalizedPosition] ?? null;
+  const isOverallLane = position === 'Overall';
+  const positionColor = isOverallLane
+    ? 'var(--color-signature)'
+    : companionPositionColor ?? 'var(--color-fill-secondary)';
+  const positionTextColor = isOverallLane
+    ? 'var(--color-signature-fg)'
+    : (companionPositionColor ? getPositionTextColor(companionPositionColor) : 'var(--color-label)');
+  const isDroppable = allowDrop && canAcceptDrop;
+  const drop = (event, beforePlayerId = null) => {
+    event.preventDefault();
+    event.stopPropagation();
+    onDropPlayer(position, beforePlayerId);
+  };
+  const getBeforePlayerId = (event) => {
+    const cards = [...(stackRef.current?.querySelectorAll('.draft-board-card-shell[data-player-id]') ?? [])]
+      .filter((card) => card.dataset.playerId !== String(draggingPlayerId));
+    const nextCard = cards.find((card) => {
+      const rect = card.getBoundingClientRect();
+      return event.clientY < rect.top + (rect.height / 2);
+    });
+    return nextCard?.dataset.playerId ?? null;
+  };
+  const updateDropTarget = (event) => {
+    if (!allowDrop) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = isDroppable ? 'move' : 'none';
+
+    if (!isDroppable) {
+      onDragTargetChange(position, null, false);
+      return;
+    }
+
+    onDragTargetChange(position, getBeforePlayerId(event), true);
+  };
+  const isActiveDropTarget = dropTarget?.position === position;
+
+  return (
+    <section
+      className={[
+        'draft-board-lane',
+        activeMobile ? 'is-active-mobile' : '',
+        position === 'Overall' ? 'is-overall' : '',
+        isDroppable ? 'can-drop' : '',
+        allowDrop && !canAcceptDrop ? 'cannot-drop' : '',
+        isActiveDropTarget ? 'is-drop-target' : '',
+        isActiveDropTarget && !dropTarget.valid ? 'is-invalid-drop-target' : '',
+      ].filter(Boolean).join(' ')}
+      style={{
+        '--draft-board-lane-color': positionColor,
+        '--draft-board-lane-fg': positionTextColor,
+      }}
+      onDragEnter={allowDrop ? updateDropTarget : undefined}
+      onDragOver={allowDrop ? updateDropTarget : undefined}
+      onDrop={allowDrop ? (event) => drop(event, isDroppable ? getBeforePlayerId(event) : null) : undefined}
+    >
+      <div className="draft-board-lane__header">
+        <strong>{position}</strong>
+        <span>{liveRows.length} live · {rows.length} targets</span>
+      </div>
+      <div className="draft-scroll-region draft-board-lane__stack-shell">
+        <div ref={stackRef} className="draft-board-lane__stack">
+          {rows.map((player, index) => (
+            <Fragment key={player.id}>
+              {isActiveDropTarget && dropTarget.valid && String(dropTarget.beforePlayerId) === String(player.id) ? (
+                <div className="draft-board-insertion-line" aria-hidden="true" />
+              ) : null}
+              <DraftBoardCardShell
+                player={player}
+                darkMode={darkMode}
+                metricKey={metricKey}
+                index={index}
+                isLast={index === rows.length - 1}
+                position={position}
+                onDragStart={onDragStart}
+                onDragEnd={onDragEnd}
+                onMove={allowReorder ? onMove : null}
+                onRemove={onRemove}
+                onViewPlayer={onViewPlayer}
+                allowReorder={allowReorder}
+                allowDrag={allowDrop}
+                isDragging={String(player.id) === draggingPlayerId}
+                conflict={conflictByPlayerId?.get(String(player.id)) ?? null}
+              />
+            </Fragment>
+          ))}
+          {isActiveDropTarget && dropTarget.valid && dropTarget.beforePlayerId == null ? (
+            <div className="draft-board-insertion-line is-end" aria-hidden="true" />
+          ) : null}
+          {rows.length === 0 ? (
+            <div className="draft-board-lane__empty">
+              Add players from Available to sort this view.
+            </div>
+          ) : (
+            allowDrop ? <div className="draft-board-lane__drop">Drop to add at bottom</div> : null
+          )}
+        </div>
+        <DraftScrollControls targetRef={stackRef} axis="y" label={`${position} lane`} />
+      </div>
+    </section>
+  );
+}, (previous, next) => (
+  previous.position === next.position
+  && previous.darkMode === next.darkMode
+  && previous.metricKey === next.metricKey
+  && previous.allowDrop === next.allowDrop
+  && previous.allowReorder === next.allowReorder
+  && previous.canAcceptDrop === next.canAcceptDrop
+  && previous.activeMobile === next.activeMobile
+  && previous.draggingPlayerId === next.draggingPlayerId
+  && previous.dropTarget?.position === next.dropTarget?.position
+  && previous.dropTarget?.beforePlayerId === next.dropTarget?.beforePlayerId
+  && previous.dropTarget?.valid === next.dropTarget?.valid
+  && previous.onDragTargetChange === next.onDragTargetChange
+  && previous.onDragStart === next.onDragStart
+  && previous.onDragEnd === next.onDragEnd
+  && previous.onDropPlayer === next.onDropPlayer
+  && previous.onMove === next.onMove
+  && previous.onRemove === next.onRemove
+  && previous.onViewPlayer === next.onViewPlayer
+  && previous.conflictByPlayerId === next.conflictByPlayerId
+  && haveSamePlayerRows(previous.rows, next.rows)
+));
+
+function DraftRosterTargetGlyph({ label = 'Top available Board preference' }) {
+  return (
+    <span className="draft-board-roster-glyph is-target" role="img" aria-label={label} title={label}>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="7.5" />
+        <circle cx="12" cy="12" r="2" fill="currentColor" stroke="none" />
+        <path d="M12 2.5v3M21.5 12h-3M12 21.5v-3M2.5 12h3" />
+      </svg>
+    </span>
+  );
+}
+
+function DraftRosterLockGlyph({ label = 'Locked on your roster' }) {
+  return (
+    <span className="draft-board-roster-glyph is-locked" role="img" aria-label={label} title={label}>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <rect x="4.75" y="10.25" width="14.5" height="10" rx="2" />
+        <path d="M8.25 10.25V7a3.75 3.75 0 0 1 7.5 0v3.25" />
+        <path d="M12 14.25v2" />
+      </svg>
+    </span>
+  );
+}
+
+function DraftRosterByeConflictGlyph({ player, conflict }) {
+  const description = getByeConflictDescription(player, conflict);
+  if (!description) return null;
+  return (
+    <span className="draft-board-roster-glyph is-bye-conflict" role="img" aria-label={description} title={description}>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M12 3 2.8 20.25h18.4L12 3Z" />
+        <path d="M12 8v5.5M12 17.25v.1" />
+      </svg>
+    </span>
+  );
+}
+
+function DraftRosterTray({ slots, collapsed, onToggleCollapsed, darkMode, conflictByPlayerId = null }) {
+  const slotsRef = useRef(null);
+  const filledCount = slots.filter((slot) => slot.player).length;
+  return (
+    <section className={['draft-board-roster-tray', collapsed ? 'is-collapsed' : ''].filter(Boolean).join(' ')} aria-label="Projected roster">
+      <button
+        type="button"
+        className="draft-board-roster-tray__label"
+        aria-expanded={!collapsed}
+        onClick={onToggleCollapsed}
+      >
+        <span>Projected Roster</span>
+        <span className="draft-board-roster-tray__legend" title="Target marks the top available player from your Board for that position.">
+          <DraftRosterTargetGlyph />
+          <span>Target</span>
+        </span>
+        <strong>{filledCount}/{slots.length}</strong>
+        <ArrowIcon direction={collapsed ? 'up' : 'down'} />
+      </button>
+      <div className="draft-scroll-region draft-board-roster-tray__slots-shell">
+        <div ref={slotsRef} className="draft-board-roster-tray__slots">
+          {slots.map((slot) => (
+            <div
+              key={slot.id}
+              className={[
+                'draft-board-roster-slot',
+                slot.player ? 'is-filled' : '',
+                slot.player?.isProjected ? 'is-projected' : '',
+              ].filter(Boolean).join(' ')}
+            >
+              {slot.player ? (
+                <CompanionPlayerRow
+                  player={slot.player}
+                  darkMode={darkMode}
+                  interactive={false}
+                  compact
+                  showPosition={false}
+                  showTeamLogo
+                  metaPrefix={formatRosterSlotLabel(slot.slot)}
+                  metaSegments={[
+                    slot.player.byeWeek != null ? `Bye ${slot.player.byeWeek}` : null,
+                  ].filter(Boolean)}
+                  identityAccessory={
+                    <CompanionPlayerLocalContrastText className="draft-board-roster-slot__identity-accessories">
+                      {slot.player.isProjected ? <DraftRosterTargetGlyph /> : <DraftRosterLockGlyph />}
+                      {!slot.player.isProjected ? (
+                        <DraftRosterByeConflictGlyph
+                          player={slot.player}
+                          conflict={conflictByPlayerId?.get(String(slot.player.id)) ?? null}
+                        />
+                      ) : null}
+                    </CompanionPlayerLocalContrastText>
+                  }
+                  title={[
+                    slot.player.name,
+                    slot.player.isProjected ? 'Top available Board preference' : 'Locked roster player',
+                    slot.player.byeWeek != null ? `Bye ${slot.player.byeWeek}` : null,
+                    !slot.player.isProjected
+                      ? getByeConflictDescription(slot.player, conflictByPlayerId?.get(String(slot.player.id)) ?? null)
+                      : null,
+                  ].filter(Boolean).join(' · ')}
+                  className="draft-board-roster-slot__player"
+                  gridTemplate="28px minmax(0, 1fr) 20px"
+                  compactGridTemplate="24px minmax(0, 1fr) 18px"
+                />
+              ) : (
+                <>
+                  <span className="draft-board-roster-slot__slot">{formatRosterSlotLabel(slot.slot)}</span>
+                  <span>Open</span>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+        <DraftScrollControls targetRef={slotsRef} axis="x" label="roster tray" />
+      </div>
+    </section>
+  );
+}
+
+const DRAFT_BOARD_CARD_CHROME_WIDTH = 220;
+let draftBoardNameMeasureCanvas = null;
+
+function measureDraftBoardCardIdentityWidth(players) {
+  if (typeof document === 'undefined' || !players.length) return 0;
+  if (!draftBoardNameMeasureCanvas) draftBoardNameMeasureCanvas = document.createElement('canvas');
+  const ctx = draftBoardNameMeasureCanvas.getContext('2d');
+  if (!ctx) return 0;
+  const probe = document.createElement('span');
+  probe.className = 'draft-player-row--board-card companion-player-row__identity';
+  probe.style.cssText = 'position:absolute; visibility:hidden; pointer-events:none; white-space:nowrap;';
+  document.body?.appendChild(probe);
+
+  try {
+    const computed = getComputedStyle(probe);
+    ctx.font = `${computed.fontStyle} ${computed.fontWeight} ${computed.fontSize} ${computed.fontFamily}`;
+    const letterSpacing = Number.parseFloat(computed.letterSpacing);
+    const measure = (text) => (
+      ctx.measureText(text).width
+      + (Number.isFinite(letterSpacing) ? letterSpacing * Math.max(0, text.length - 1) : 0)
+    );
+    const widest = players.reduce((max, player) => {
+      const name = getPlayerName(player);
+      const metadata = [player.position, player.team || 'FA'].filter(Boolean).join(' · ');
+      return Math.max(max, measure(name), measure(metadata));
+    }, 0);
+    return widest ? Math.ceil(widest) + 12 : 0;
+  } finally {
+    probe.remove();
+  }
+}
+
+function MyBoardWorkspace({
+  boardByPosition,
+  overallBoardIds,
+  boardRows,
+  availablePlayers,
+  boardIds,
+  positions,
+  darkMode,
+  onAdd,
+  onDropPlayer,
+  onMove,
+  onRemove,
+  onViewPlayer,
+  boardViewMode,
+  activePosition,
+  onPositionChange,
+  query,
+  setQuery,
+  boardScope,
+  onBoardScopeChange,
+  availabilityFilter,
+  availabilityOptions,
+  onAvailabilityFilterChange,
+  rosterSlots,
+  rosterConflictByPlayerId,
+  cardMetricKey,
+  conflictByPlayerId,
+  displaySize,
+}) {
+  const boardRowsById = useMemo(() => new Map(boardRows.map((row) => [String(row.id), row])), [boardRows]);
+  const workspacePlayersById = useMemo(() => new Map(
+    [...boardRows, ...availablePlayers].map((row) => [String(row.id), row]),
+  ), [boardRows, availablePlayers]);
+  const workspacePlayersByIdRef = useRef(workspacePlayersById);
+  workspacePlayersByIdRef.current = workspacePlayersById;
+  const boardMembershipKey = useMemo(
+    () => [...boardIds].map((id) => String(id)).sort().join('|'),
+    [boardIds],
+  );
+  const deferredBoardIds = useDeferredValue(boardIds);
+  const deferredBoardMembershipKey = useDeferredValue(boardMembershipKey);
+  const boardIdSet = useMemo(() => new Set(deferredBoardIds), [deferredBoardMembershipKey]);
+  const lanePositions = useMemo(
+    () => getWorkspaceLanePositions(positions, boardByPosition),
+    [positions, boardByPosition],
+  );
+  const overallRows = useMemo(
+    () => overallBoardIds.map((id) => boardRowsById.get(String(id))).filter(Boolean),
+    [overallBoardIds, boardRowsById],
+  );
+  const [activeLane, setActiveLane] = useState(() => lanePositions[0] ?? 'QB');
+  const [draggingPlayerId, setDraggingPlayerId] = useState(null);
+  const [dropTarget, setDropTarget] = useState(null);
+  const [dragAnnouncement, setDragAnnouncement] = useState('');
+  const [availableRailWidth, setAvailableRailWidth] = useState(300);
+  const [mobileAvailableOpen, setMobileAvailableOpen] = useState(false);
+  const [rosterCollapsed, setRosterCollapsed] = useState(() => {
+    if (typeof window === 'undefined') return true;
+    try {
+      return window.sessionStorage.getItem(ROSTER_TRAY_COLLAPSED_SESSION_KEY) !== 'expanded';
+    } catch {
+      return true;
+    }
+  });
+  const lanesRef = useRef(null);
+  const dragRef = useRef(null);
+  const dropTargetRef = useRef(null);
+
+  const announceDrag = useCallback((message) => {
+    setDragAnnouncement('');
+    window.requestAnimationFrame(() => setDragAnnouncement(message));
+  }, []);
+
+  useEffect(() => {
+    if (!lanePositions.includes(activeLane)) setActiveLane(lanePositions[0] ?? 'QB');
+  }, [lanePositions, activeLane]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.sessionStorage.setItem(ROSTER_TRAY_COLLAPSED_SESSION_KEY, rosterCollapsed ? 'collapsed' : 'expanded');
+    } catch {
+      // Session persistence is optional; the UI still works without it.
+    }
+  }, [rosterCollapsed]);
+
+  const visibleAvailablePlayers = useMemo(() => (
+    filterCandidates(
+      availablePlayers.filter((player) => !boardIdSet.has(player.id) && player.available !== false),
+      activePosition,
+      query,
+      availabilityFilter,
+    ).slice(0, 120)
+  ), [availablePlayers, boardIdSet, activePosition, query, availabilityFilter]);
+
+  const rowsByPosition = useMemo(() => {
+    const result = new Map();
+    for (const position of lanePositions) {
+      result.set(position, (boardByPosition[position] ?? [])
+        .map((id) => boardRowsById.get(String(id)))
+        .filter(Boolean));
+    }
+    return result;
+  }, [lanePositions, boardByPosition, boardRowsById]);
+
+  const boardCardNameColPx = useMemo(
+    () => measureDraftBoardCardIdentityWidth([...visibleAvailablePlayers, ...boardRows]),
+    [visibleAvailablePlayers, boardRows, displaySize],
+  );
+  const boardCardMinWidth = boardCardNameColPx ? boardCardNameColPx + DRAFT_BOARD_CARD_CHROME_WIDTH : 0;
+  const boardCardMinWidthRef = useRef(boardCardMinWidth);
+  boardCardMinWidthRef.current = boardCardMinWidth;
+
+  useEffect(() => {
+    if (!boardCardMinWidth) return;
+    setAvailableRailWidth((current) => (current < boardCardMinWidth ? boardCardMinWidth : current));
+  }, [boardCardMinWidth]);
+
+  const handleDragStart = useCallback((event, player, sourcePosition = null) => {
+    const playerName = getPlayerName(player);
+    dragRef.current = {
+      playerId: String(player.id),
+      sourcePosition,
+      playerName,
+    };
+    flushSync(() => {
+      setDraggingPlayerId(String(player.id));
+    });
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', String(player.id));
+    const sourceCard = event.currentTarget;
+    const preview = sourceCard.cloneNode(true);
+    const sourceRect = sourceCard.getBoundingClientRect();
+    preview.classList.add('draft-board-drag-preview');
+    preview.setAttribute('aria-hidden', 'true');
+    preview.style.width = `${sourceRect.width}px`;
+    document.body.appendChild(preview);
+    event.dataTransfer.setDragImage(preview, Math.min(28, sourceRect.width / 2), Math.min(28, sourceRect.height / 2));
+    window.setTimeout(() => preview.remove(), 0);
+
+    const destinations = lanePositions.filter((position) => playerCanSlotIntoBoardPosition(player, position));
+    announceDrag(`Picked up ${playerName}. Available destinations: ${destinations.join(', ')} ${destinations.length === 1 ? 'lane' : 'lanes'}.`);
+  }, [announceDrag, lanePositions]);
+
+  const handleDragEnd = useCallback(() => {
+    const cancelledPlayerName = dragRef.current?.playerName;
+    dragRef.current = null;
+    dropTargetRef.current = null;
+    setDraggingPlayerId(null);
+    setDropTarget(null);
+    if (cancelledPlayerName) announceDrag(`Drag cancelled. ${cancelledPlayerName} was not moved.`);
+  }, [announceDrag]);
+
+  const canDropPlayerIntoPosition = useCallback((playerId, position) => {
+    const player = workspacePlayersByIdRef.current.get(String(playerId));
+    return playerCanSlotIntoBoardPosition(player, position);
+  }, []);
+
+  const handleDragTargetChange = useCallback((position, beforePlayerId, valid) => {
+    const playerName = dragRef.current?.playerName;
+    const current = dropTargetRef.current;
+    if (
+      current?.position === position
+      && current?.beforePlayerId === beforePlayerId
+      && current?.valid === valid
+    ) return;
+
+    const nextTarget = { position, beforePlayerId, valid };
+    dropTargetRef.current = nextTarget;
+    setDropTarget(nextTarget);
+    if (playerName) {
+      const beforePlayer = beforePlayerId == null
+        ? null
+        : workspacePlayersByIdRef.current.get(String(beforePlayerId));
+      const destination = beforePlayer ? `before ${getPlayerName(beforePlayer)}` : 'at the bottom';
+      announceDrag(valid
+        ? `${position} lane, ${destination}.`
+        : `${position} lane is not available for ${playerName}.`);
+    }
+  }, [announceDrag]);
+
+  const handleDropPlayer = useCallback((position, beforePlayerId = null) => {
+    const playerId = dragRef.current?.playerId;
+    const playerName = dragRef.current?.playerName;
+    if (!playerId) return;
+    if (!canDropPlayerIntoPosition(playerId, position)) {
+      dragRef.current = null;
+      dropTargetRef.current = null;
+      setDraggingPlayerId(null);
+      setDropTarget(null);
+      announceDrag(`${playerName} was not moved. ${position} is not an eligible destination.`);
+      return;
+    }
+    const beforePlayer = beforePlayerId == null
+      ? null
+      : workspacePlayersByIdRef.current.get(String(beforePlayerId));
+    onDropPlayer(position, playerId, beforePlayerId);
+    dragRef.current = null;
+    dropTargetRef.current = null;
+    setDraggingPlayerId(null);
+    setDropTarget(null);
+    announceDrag(`Dropped ${playerName} in the ${position} lane${beforePlayer ? ` before ${getPlayerName(beforePlayer)}` : ' at the bottom'}.`);
+  }, [announceDrag, canDropPlayerIntoPosition, onDropPlayer]);
+
+  const startRailResize = useCallback((event) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = availableRailWidth;
+
+    const resize = (moveEvent) => {
+      const viewportMax = Math.max(260, Math.min(460, window.innerWidth * 0.38));
+      const floor = Math.max(220, boardCardMinWidthRef.current || 0);
+      const ceiling = Math.max(viewportMax, floor);
+      const nextWidth = Math.min(ceiling, Math.max(floor, startWidth + moveEvent.clientX - startX));
+      setAvailableRailWidth(Math.round(nextWidth));
+    };
+
+    const stopResize = () => {
+      window.removeEventListener('pointermove', resize);
+      window.removeEventListener('pointerup', stopResize);
+    };
+
+    window.addEventListener('pointermove', resize);
+    window.addEventListener('pointerup', stopResize, { once: true });
+  }, [availableRailWidth]);
+
+  const resizeRailWithKeyboard = useCallback((event) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    event.preventDefault();
+    const direction = event.key === 'ArrowLeft' ? -1 : 1;
+    const viewportMax = Math.max(260, Math.min(460, window.innerWidth * 0.38));
+    const floor = Math.max(220, boardCardMinWidthRef.current || 0);
+    const ceiling = Math.max(viewportMax, floor);
+    setAvailableRailWidth((current) => Math.min(ceiling, Math.max(floor, current + direction * 16)));
+  }, []);
+
+  return (
+    <div className="draft-board-workspace-shell">
+      <div
+        className={[
+          'draft-board-workspace',
+          draggingPlayerId ? 'is-dragging' : '',
+          rosterCollapsed ? 'is-roster-collapsed' : '',
+        ].filter(Boolean).join(' ')}
+        style={{
+          '--draft-board-rail-width': `${availableRailWidth}px`,
+          '--draft-board-card-name-min-measured': boardCardNameColPx ? `${boardCardNameColPx}px` : undefined,
+          '--draft-board-card-min-width': boardCardMinWidth ? `${boardCardMinWidth}px` : undefined,
+        }}
+      >
+        <aside className="draft-board-available-rail" aria-label="Available players">
+          <div className="draft-board-workspace__controls">
+            <DraftSegmentedControl
+              label="Available player scope"
+              options={BOARD_SCOPE_OPTIONS}
+              value={boardScope}
+              onChange={onBoardScopeChange}
+              className="draft-segmented-control--split"
+            />
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search players"
+              aria-label="Search available draft players"
+            />
+            <DraftAvailabilityFilter
+              options={availabilityOptions}
+              value={availabilityFilter}
+              onChange={onAvailabilityFilterChange}
+            />
+            <PositionFilter positions={positions} activePosition={activePosition} onChange={onPositionChange} />
+          </div>
+          <DraftAvailablePlayerList
+            players={visibleAvailablePlayers}
+            darkMode={darkMode}
+            metricKey={cardMetricKey}
+            onAdd={onAdd}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+            onViewPlayer={onViewPlayer}
+            draggingPlayerId={draggingPlayerId}
+            conflictByPlayerId={conflictByPlayerId}
+          />
+        </aside>
+
+        <button
+          type="button"
+          className="draft-board-rail-resizer"
+          aria-label="Resize available players panel. Use Left and Right Arrow keys."
+          onPointerDown={startRailResize}
+          onKeyDown={resizeRailWithKeyboard}
+        >
+          <span className="draft-board-rail-resizer__grip" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+          </span>
+        </button>
+
+        <section className="draft-board-main" aria-label="My draft board">
+          <section className={['draft-board-mobile-available', mobileAvailableOpen ? 'is-open' : ''].filter(Boolean).join(' ')}>
+            <button
+              type="button"
+              className="draft-board-mobile-available__summary"
+              aria-expanded={mobileAvailableOpen}
+              onClick={() => setMobileAvailableOpen((current) => !current)}
+            >
+              <span>{mobileAvailableOpen ? 'Hide Available Players' : 'View Available Players'}</span>
+            </button>
+            {mobileAvailableOpen ? (
+              <>
+                <div className="draft-board-workspace__controls">
+                  <DraftSegmentedControl
+                    label="Available player scope"
+                    options={BOARD_SCOPE_OPTIONS}
+                    value={boardScope}
+                    onChange={onBoardScopeChange}
+                    className="draft-segmented-control--split"
+                  />
+                  <input
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    placeholder="Search players"
+                    aria-label="Search available draft players"
+                  />
+                  <DraftAvailabilityFilter
+                    options={availabilityOptions}
+                    value={availabilityFilter}
+                    onChange={onAvailabilityFilterChange}
+                  />
+                  <PositionFilter positions={positions} activePosition={activePosition} onChange={onPositionChange} />
+                </div>
+                <DraftAvailablePlayerList
+                  players={visibleAvailablePlayers}
+                  darkMode={darkMode}
+                  metricKey={cardMetricKey}
+                  onAdd={onAdd}
+                  onDragStart={handleDragStart}
+                  onDragEnd={handleDragEnd}
+                  onViewPlayer={onViewPlayer}
+                  draggingPlayerId={draggingPlayerId}
+                  conflictByPlayerId={conflictByPlayerId}
+                />
+              </>
+            ) : null}
+          </section>
+
+          {boardViewMode === 'position' ? (
+            <div className="draft-board-mobile-lane-filter">
+              <PositionFilter positions={lanePositions} activePosition={activeLane} onChange={setActiveLane} />
+            </div>
+          ) : null}
+
+          <div className="draft-scroll-region draft-board-lanes-shell">
+            <div
+              ref={lanesRef}
+              className={['draft-board-lanes', boardViewMode === 'overall' ? 'is-overall-view' : ''].filter(Boolean).join(' ')}
+            >
+              {boardViewMode === 'overall' ? (
+                <DraftBoardLane
+                  position="Overall"
+                  rows={overallRows}
+                  darkMode={darkMode}
+                  metricKey={cardMetricKey}
+                  onDragStart={handleDragStart}
+                  onDragEnd={handleDragEnd}
+                  onDropPlayer={handleDropPlayer}
+                  onMove={onMove}
+                  onRemove={onRemove}
+                  onViewPlayer={onViewPlayer}
+                  allowDrop={false}
+                  allowReorder
+                  activeMobile
+                  draggingPlayerId={draggingPlayerId}
+                  conflictByPlayerId={conflictByPlayerId}
+                />
+              ) : lanePositions.map((position) => (
+                <DraftBoardLane
+                  key={position}
+                  position={position}
+                  rows={rowsByPosition.get(position) ?? []}
+                  darkMode={darkMode}
+                  metricKey={cardMetricKey}
+                  onDragStart={handleDragStart}
+                  onDragEnd={handleDragEnd}
+                  onDropPlayer={handleDropPlayer}
+                  onMove={onMove}
+                  onRemove={onRemove}
+                  onViewPlayer={onViewPlayer}
+                  canAcceptDrop={draggingPlayerId ? canDropPlayerIntoPosition(draggingPlayerId, position) : true}
+                  activeMobile={position === activeLane}
+                  draggingPlayerId={draggingPlayerId}
+                  dropTarget={dropTarget}
+                  onDragTargetChange={handleDragTargetChange}
+                  conflictByPlayerId={conflictByPlayerId}
+                />
+              ))}
+            </div>
+            <DraftScrollControls targetRef={lanesRef} axis="x" label="board lanes" />
+          </div>
+        </section>
+
+        <DraftRosterTray
+          slots={rosterSlots}
+          collapsed={rosterCollapsed}
+          onToggleCollapsed={() => setRosterCollapsed((current) => !current)}
+          darkMode={darkMode}
+          conflictByPlayerId={rosterConflictByPlayerId}
+        />
+        <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+          {dragAnnouncement}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function getDraftedPlayerLabel(pick, players) {
+  if (!pick?.playerId) return 'Pending';
+  const metadataName = pick.metadata?.first_name || pick.metadata?.last_name
+    ? `${pick.metadata?.first_name ?? ''} ${pick.metadata?.last_name ?? ''}`.trim()
+    : null;
+  const player = players?.[pick.playerId];
+  return metadataName || player?.full_name || `${player?.first_name ?? ''} ${player?.last_name ?? ''}`.trim() || `Player ${pick.playerId}`;
+}
+
+function DraftOrderTable({
+  draftOrderContext,
+  myRosterData,
+  getUserDisplayName,
+  players,
+}) {
+  const picksByOverall = useMemo(
+    () => new Map(draftOrderContext.normalizedPicks.map((pick) => [pick.overall, pick])),
+    [draftOrderContext.normalizedPicks],
+  );
+
+  return (
+    <section className="draft-panel draft-order-panel" data-tour="draft-results-content">
+      <span data-tour="draft-blueprint-content" className="sr-only" aria-hidden="true" />
+      <div className="draft-panel__header">
+        <div>
+          <h2>Draft Order</h2>
+          <span>{draftOrderContext.pickOrder.length} picks · {draftOrderContext.normalizedPicks.length} made</span>
+        </div>
+      </div>
+      <div className="draft-order-table">
+        {draftOrderContext.pickOrder.map((pick) => {
+          const madePick = picksByOverall.get(pick.overall) ?? null;
+          const ownerLabel = pick.rosterId === String(myRosterData?.roster_id)
+            ? 'You'
+            : getUserDisplayName(pick.roster?.owner_id);
+          return (
+            <div
+              key={pick.overall}
+              className={[
+                pick.overall === draftOrderContext.currentOverall ? 'is-current' : '',
+                madePick ? 'is-picked' : '',
+                pick.rosterId === String(myRosterData?.roster_id) ? 'is-mine' : '',
+              ].filter(Boolean).join(' ')}
+            >
+              <strong>{formatPickLabel(pick)}</strong>
+              <span>{ownerLabel}</span>
+              <small>{pick.acquired && pick.originalRoster ? `from ${getUserDisplayName(pick.originalRoster.owner_id)}` : `${pick.overall} overall`}</small>
+              <em>{madePick ? getDraftedPlayerLabel(madePick, players) : 'Pending'}</em>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function ArrowIcon({ direction }) {
+  const points = direction === 'up' ? '12 5 5 12 7 14 12 9 17 14 19 12' : '12 19 5 12 7 10 12 15 17 10 19 12';
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <polygon points={points} />
+    </svg>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
+      <path d="M6 6l12 12" />
+      <path d="M18 6L6 18" />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M20 6 9 17l-5-5" />
+    </svg>
+  );
+}
+
+function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = '' }) {
+  const {
+    players,
+    loadPlayers,
+    league,
+    rosters,
+    selectedLeagueId,
+    season,
+    loadStatsForSeason,
+    activeScoringSettings,
+    myRoster,
+    getUserDisplayName,
+  } = useSleeperBase();
+  const { darkMode, displaySize } = useTheme();
+  const isStandaloneBoard = mode === 'my-board';
+  const viewLabel = isStandaloneBoard ? 'Board' : 'Draft War Room';
+  // Below the 1180px two-column breakpoint the inline pane would render beneath the full
+  // board list, off-screen — the modal sheet is the only presentation that stays in view.
+  const useAnalyticsModal = useMediaQuery('(max-width: 1179px)');
+
+  const [boardState, setBoardState] = useState(() => createOrderedBoardState(emptyBoard(), []));
+  const [boardReady, setBoardReady] = useState(false);
+  const [modelBoardIds, setModelBoardIds] = useState(EMPTY_VIEW_MODEL_BOARD_IDS);
+  const [keeperIds, setKeeperIds] = useState(() => new Set());
+  const [keepersReady, setKeepersReady] = useState(false);
+  const dropPlayerLookupRef = useRef(new Map());
+  const {
+    draftMeta,
+    draftClockStore,
+    draftPicks,
+    draftTradedPicks,
+    draftLoading,
+    draftError,
+    refreshDraft,
+  } = useSleeperDraftSync({ selectedLeagueId, league, sleeperDraftId });
+  const [positionFilter, setPositionFilter] = useState('ALL');
+  const [availabilityFilter, setAvailabilityFilter] = useState('all');
+  const [query, setQuery] = useState('');
+  const [boardScope, setBoardScope] = useState('available');
+  const [myBoardSortMode, setMyBoardSortMode] = useState('position');
+  const [draftBoardCardMetric, setDraftBoardCardMetric] = useState('none');
+  const [highlightByeConflicts, setHighlightByeConflicts] = useState(false);
+  const [selectedAnalyticsPlayerId, setSelectedAnalyticsPlayerId] = useState(null);
+  const [pinnedCompareIds, setPinnedCompareIds] = useState([]);
+  const [analyticsAxes, setAnalyticsAxes] = useState({ xAxis: 'market', yAxis: 'rating' });
+  const [modelWeights, setModelWeights] = useState(() => normalizeDraftModelWeights(DEFAULT_DRAFT_MODEL_WEIGHTS));
+  const [modelWeightsReady, setModelWeightsReady] = useState(false);
+  const [draftViewModelState, setDraftViewModelState] = useState({
+    building: false,
+    model: null,
+  });
+  const [draftStats, setDraftStats] = useState(null);
+  const [draftStatsLoading, setDraftStatsLoading] = useState(false);
+  const draftSeason = String(draftMeta?.season ?? season ?? '');
+  const byeWeekBundle = useUpcomingScheduleBundle(draftSeason || null);
+  const upcomingScheduleMap = byeWeekBundle?.scheduleMap ?? null;
+  const [marketState, setMarketState] = useState({
+    loading: false,
+    error: '',
+    attribution: null,
+    profileKey: null,
+    profile: null,
+    lastRefreshed: null,
+    valuesByPlayerId: new Map(),
+  });
+  const [adpState, setAdpState] = useState({
+    loading: false,
+    error: '',
+    lastUpdated: null,
+    valuesByPlayerId: new Map(),
+  });
+  const marketDraftContext = useMemo(() => ({
+    metadata: { scoring_type: draftMeta?.metadata?.scoring_type },
+    settings: { slots_qb: draftMeta?.settings?.slots_qb },
+  }), [draftMeta?.metadata?.scoring_type, draftMeta?.settings?.slots_qb]);
+  const boardByPosition = boardState.boardByPosition;
+  const overallBoardIds = boardState.overallIds;
+
+  useEffect(() => {
+    loadPlayers();
+  }, [loadPlayers]);
+
+  useEffect(() => {
+    setBoardReady(false);
+    if (!selectedLeagueId || !season || !draftMeta?.draft_id || !players) {
+      setBoardState(createOrderedBoardState(emptyBoard(), []));
+      return;
+    }
+    setBoardState(loadBoard({
+      leagueId: selectedLeagueId,
+      season,
+      draftId: draftMeta.draft_id,
+      players,
+    }));
+    setBoardReady(true);
+  }, [selectedLeagueId, season, draftMeta?.draft_id, players]);
+
+  useEffect(() => {
+    if (!boardReady || !selectedLeagueId || !season || !draftMeta?.draft_id) return;
+    const timeoutId = window.setTimeout(() => {
+      saveBoard({
+        leagueId: selectedLeagueId,
+        season,
+        draftId: draftMeta.draft_id,
+        boardByPosition: boardState.boardByPosition,
+        overallIds: boardState.overallIds,
+      });
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
+  }, [boardReady, selectedLeagueId, season, draftMeta?.draft_id, boardState]);
+
+  useEffect(() => {
+    setKeepersReady(false);
+    if (!selectedLeagueId || !season || !draftMeta?.draft_id) {
+      setKeeperIds(new Set());
+      return;
+    }
+    setKeeperIds(loadKeeperIds({
+      leagueId: selectedLeagueId,
+      season,
+      draftId: draftMeta.draft_id,
+    }));
+    setKeepersReady(true);
+  }, [selectedLeagueId, season, draftMeta?.draft_id]);
+
+  useEffect(() => {
+    if (!keepersReady || !selectedLeagueId || !season || !draftMeta?.draft_id) return;
+    saveKeeperIds({
+      leagueId: selectedLeagueId,
+      season,
+      draftId: draftMeta.draft_id,
+      keeperIds,
+    });
+  }, [keepersReady, selectedLeagueId, season, draftMeta?.draft_id, keeperIds]);
+
+  useEffect(() => {
+    setModelWeightsReady(false);
+    if (!selectedLeagueId || !season || !draftMeta?.draft_id) {
+      setModelWeights(normalizeDraftModelWeights(DEFAULT_DRAFT_MODEL_WEIGHTS));
+      return;
+    }
+    setModelWeights(loadModelWeights({
+      leagueId: selectedLeagueId,
+      season,
+      draftId: draftMeta.draft_id,
+    }));
+    setModelWeightsReady(true);
+  }, [selectedLeagueId, season, draftMeta?.draft_id]);
+
+  useEffect(() => {
+    if (!modelWeightsReady || !selectedLeagueId || !season || !draftMeta?.draft_id) return;
+    saveModelWeights({
+      leagueId: selectedLeagueId,
+      season,
+      draftId: draftMeta.draft_id,
+      weights: modelWeights,
+    });
+  }, [modelWeightsReady, selectedLeagueId, season, draftMeta?.draft_id, modelWeights]);
+
+  const draftStatsSeason = useMemo(
+    () => getDraftStatsSeason(draftMeta?.season ?? season),
+    [draftMeta?.season, season],
+  );
+  const fantasyAdpSeason = useMemo(
+    () => String(draftMeta?.season ?? season ?? '').trim(),
+    [draftMeta?.season, season],
+  );
+
+  useEffect(() => {
+    if (!draftStatsSeason || !loadStatsForSeason) {
+      setDraftStats(null);
+      setDraftStatsLoading(false);
+      return undefined;
+    }
+
+    let cancelled = false;
+    setDraftStatsLoading(true);
+
+    loadStatsForSeason(draftStatsSeason).then((statsPackage) => {
+      if (cancelled) return;
+      setDraftStats(statsPackage);
+    }).catch(() => {
+      if (cancelled) return;
+      setDraftStats(null);
+    }).finally(() => {
+      if (!cancelled) setDraftStatsLoading(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [draftStatsSeason, loadStatsForSeason]);
+
+  useEffect(() => {
+    if (!league) {
+      setMarketState({
+        loading: false,
+        error: '',
+        attribution: null,
+        profileKey: null,
+        profile: null,
+        lastRefreshed: null,
+        valuesByPlayerId: new Map(),
+      });
+      return undefined;
+    }
+
+    let cancelled = false;
+    setMarketState((current) => ({ ...current, loading: true, error: '' }));
+
+    fetchLeagueLogsMarketForLeague({
+      league,
+      draft: marketDraftContext,
+      scoringSettings: activeScoringSettings,
+    }).then((market) => {
+      if (cancelled) return;
+      setMarketState({
+        loading: false,
+        error: '',
+        attribution: market?.attribution ?? null,
+        profileKey: market?.profileKey ?? null,
+        profile: market?.profile ?? null,
+        lastRefreshed: market?.lastRefreshed ?? null,
+        valuesByPlayerId: market?.valuesByPlayerId ?? new Map(),
+      });
+    }).catch((error) => {
+      if (cancelled) return;
+      setMarketState({
+        loading: false,
+        error: error?.message ?? 'Market data unavailable.',
+        attribution: null,
+        profileKey: null,
+        profile: null,
+        lastRefreshed: null,
+        valuesByPlayerId: new Map(),
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    league,
+    activeScoringSettings,
+    marketDraftContext,
+  ]);
+
+  useEffect(() => {
+    if (!fantasyAdpSeason || !players || Object.keys(players).length === 0) {
+      setAdpState({
+        loading: false,
+        error: '',
+        lastUpdated: null,
+        valuesByPlayerId: new Map(),
+      });
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    let cancelled = false;
+    setAdpState((current) => ({ ...current, loading: true, error: '' }));
+
+    getFantasyAdp({ season: fantasyAdpSeason, signal: controller.signal })
+      .then((response) => {
+        if (cancelled) return;
+        const adpRows = getFantasyAdpRows(response);
+        const mapped = mapFantasyAdpToSleeperPlayers({ players, adpRows });
+        setAdpState({
+          loading: false,
+          error: '',
+          lastUpdated: getFantasyAdpSnapshotUpdatedAt(adpRows),
+          valuesByPlayerId: mapped instanceof Map ? mapped : new Map(),
+        });
+      })
+      .catch((error) => {
+        if (cancelled || error?.name === 'AbortError') return;
+        setAdpState({
+          loading: false,
+          error: error?.message ?? 'BALLDONTLIE ADP unavailable.',
+          lastUpdated: null,
+          valuesByPlayerId: new Map(),
+        });
+      });
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [fantasyAdpSeason, players]);
+
+  const myRosterData = useMemo(() => myRoster(), [myRoster]);
+  const orderedBoardByPosition = useMemo(
+    () => orderBoardByOverall(boardByPosition, overallBoardIds),
+    [boardByPosition, overallBoardIds],
+  );
+  const boardIds = useMemo(
+    () => normalizeOverallBoardIds(overallBoardIds, orderedBoardByPosition),
+    [overallBoardIds, orderedBoardByPosition],
+  );
+  const draftRosterEligiblePositions = useMemo(
+    () => getDraftRosterEligiblePositions(league?.roster_positions),
+    [league?.roster_positions],
+  );
+  const eligibleBoardIds = useMemo(
+    () => boardIds.filter((playerId) => (
+      isPlayerEligibleForDraftRoster(players?.[playerId], draftRosterEligiblePositions)
+    )),
+    [boardIds, draftRosterEligiblePositions, players],
+  );
+  const eligibleBoardIdSet = useMemo(() => new Set(eligibleBoardIds), [eligibleBoardIds]);
+  const eligibleOrderedBoardByPosition = useMemo(() => Object.fromEntries(
+    Object.entries(orderedBoardByPosition)
+      .map(([position, ids]) => [position, ids.filter((id) => eligibleBoardIdSet.has(String(id)))])
+      .filter(([, ids]) => ids.length > 0),
+  ), [eligibleBoardIdSet, orderedBoardByPosition]);
+  const boardMembershipKey = useMemo(
+    () => [...eligibleBoardIds].map((id) => String(id)).sort().join('|'),
+    [eligibleBoardIds],
+  );
+  useEffect(() => {
+    if (isStandaloneBoard) {
+      setModelBoardIds(EMPTY_VIEW_MODEL_BOARD_IDS);
+      return;
+    }
+    startTransition(() => {
+      setModelBoardIds(eligibleBoardIds);
+    });
+  }, [isStandaloneBoard, eligibleBoardIds]);
+  const viewModelBoardIds = useMemo(
+    () => (isStandaloneBoard ? EMPTY_VIEW_MODEL_BOARD_IDS : modelBoardIds),
+    [isStandaloneBoard, modelBoardIds],
+  );
+  const draftOrderContext = useMemo(() => buildDraftOrderContext({
+    draft: draftMeta,
+    rosters,
+    draftTradedPicks,
+    draftPicks,
+    myRosterData,
+  }), [draftMeta, rosters, draftTradedPicks, draftPicks, myRosterData]);
+  const projectedSelection = useProjectedDraftSelection({
+    draftMeta,
+    league,
+    players,
+    rosters,
+    draftPicks,
+    marketValuesByPlayerId: marketState.valuesByPlayerId,
+  });
+  const draftType = normalizeDraftType(draftMeta);
+  const unsupportedDraft = draftMeta && draftType !== 'snake' && draftType !== 'linear';
+  const fullDraftModelAllowed = Boolean(
+    draftMeta
+    && !unsupportedDraft
+    && (
+      isStandaloneBoard
+        ? isSleeperDraftPreDraft(draftMeta) || isActiveDraftRoomStatus(draftMeta?.status)
+        : isSleeperDraftPreDraft(draftMeta)
+    ),
+  );
+
+  useEffect(() => {
+    if (!players || !league || !myRosterData || !draftMeta || !fullDraftModelAllowed) {
+      setDraftViewModelState({ building: false, model: null });
+      return undefined;
+    }
+
+    const cacheKey = getDraftViewModelCacheKey({
+      players,
+      rosters,
+      league,
+      draft: draftMeta,
+      draftPicks,
+      draftTradedPicks,
+      myRoster: myRosterData,
+      scoringSettings: activeScoringSettings,
+      season,
+      boardIds: viewModelBoardIds,
+      marketValuesByPlayerId: marketState.valuesByPlayerId,
+      adpByPlayerId: adpState.valuesByPlayerId,
+      seasonStats: draftStats?.seasonStats ?? null,
+      weeklyStats: draftStats?.weeklyStats ?? null,
+      scheduleMap: draftStats?.scheduleMap ?? null,
+      upcomingScheduleMap,
+      byeWeekBundle,
+      modelWeights,
+    });
+    const cachedModel = readDraftViewModelCache(cacheKey);
+    if (cachedModel) {
+      setDraftViewModelState({ building: false, model: cachedModel });
+      return undefined;
+    }
+
+    let cancelled = false;
+    setDraftViewModelState((current) => ({ ...current, building: true }));
+
+    const cancelBuild = scheduleDraftModelBuild(() => {
+      const nextModel = buildDraftAssistantViewModel({
+        players,
+        rosters,
+        league,
+        draft: draftMeta,
+        draftPicks,
+        draftTradedPicks,
+        myRoster: myRosterData,
+        scoringSettings: activeScoringSettings,
+        season,
+        boardIds: viewModelBoardIds,
+        marketValuesByPlayerId: marketState.valuesByPlayerId,
+        adpByPlayerId: adpState.valuesByPlayerId,
+        seasonStats: draftStats?.seasonStats ?? null,
+        weeklyStats: draftStats?.weeklyStats ?? null,
+        scheduleMap: draftStats?.scheduleMap ?? null,
+        upcomingScheduleMap,
+        byeWeekBundle,
+        modelWeights,
+      });
+      if (cancelled) return;
+      rememberDraftViewModelCache(cacheKey, nextModel);
+      startTransition(() => {
+        setDraftViewModelState({ building: false, model: nextModel });
+      });
+    });
+
+    return () => {
+      cancelled = true;
+      cancelBuild?.();
+    };
+  }, [players, rosters, league, draftMeta, draftPicks, draftTradedPicks, myRosterData, activeScoringSettings, season, viewModelBoardIds, marketState.valuesByPlayerId, adpState.valuesByPlayerId, draftStats, upcomingScheduleMap, byeWeekBundle, modelWeights, fullDraftModelAllowed]);
+
+  const viewModel = draftViewModelState.model;
+  const viewModelBuilding = draftViewModelState.building;
+
+  const activePlayers = useMemo(() => sortCandidates(
+    (viewModel?.allCandidates ?? []).filter((player) => player?.raw?.active !== false),
+  ), [viewModel]);
+  const positionRankMap = useMemo(() => buildPositionRankMap(activePlayers), [activePlayers]);
+  const activePlayersWithRanks = useMemo(
+    () => decoratePositionRanks(activePlayers, positionRankMap),
+    [activePlayers, positionRankMap],
+  );
+  const candidatesById = useMemo(
+    () => new Map((viewModel?.allCandidates ?? []).map((player) => [String(player.id), player])),
+    [viewModel],
+  );
+  const boardRows = useMemo(
+    () => buildFastBoardRows({
+      boardIds: eligibleBoardIds,
+      candidatesById,
+      draftedCardsById: viewModel?.draftedCardsById,
+      players,
+      rosters,
+      normalizedPicks: draftOrderContext.normalizedPicks,
+      myRosterId: myRosterData?.roster_id,
+      getUserDisplayName,
+      byeWeekBundle,
+      draftSeason,
+    }),
+    [eligibleBoardIds, candidatesById, viewModel?.draftedCardsById, players, rosters, draftOrderContext.normalizedPicks, myRosterData?.roster_id, getUserDisplayName, byeWeekBundle, draftSeason],
+  );
+  const boardRowsWithRanks = useMemo(
+    () => decoratePositionRanks(boardRows, positionRankMap),
+    [boardRows, positionRankMap],
+  );
+  const preferredPlayersByPosition = useMemo(() => {
+    const boardRowsById = new Map(boardRowsWithRanks.map((player) => [String(player.id), player]));
+    return Object.fromEntries(
+      Object.entries(eligibleOrderedBoardByPosition).map(([position, ids]) => [
+        normalizePosition(position),
+        ids.map((id) => boardRowsById.get(String(id))).filter(Boolean),
+      ]),
+    );
+  }, [eligibleOrderedBoardByPosition, boardRowsWithRanks]);
+  const rosterSlots = useMemo(() => buildMyDraftRosterTray({
+    league,
+    draftOrderContext,
+    myRosterData,
+    players,
+    keeperIds,
+    preferredPlayersByPosition,
+    byeWeekBundle,
+    draftSeason,
+  }), [
+    league,
+    draftOrderContext,
+    myRosterData,
+    players,
+    keeperIds,
+    preferredPlayersByPosition,
+    byeWeekBundle,
+    draftSeason,
+  ]);
+  const bigBoardPlayers = useMemo(() => {
+    if (boardScope === 'all') return activePlayersWithRanks;
+    if (boardScope === 'rookies') {
+      return activePlayersWithRanks.filter((player) => isDraftRookie(player, draftMeta?.season ?? season));
+    }
+    return activePlayersWithRanks.filter((player) => !player.rostered);
+  }, [activePlayersWithRanks, boardScope, draftMeta?.season, season]);
+  const analyticsPlayerById = useMemo(
+    () => new Map(activePlayersWithRanks.map((player) => [String(player.id), player])),
+    [activePlayersWithRanks],
+  );
+  const selectedAnalyticsPlayer = selectedAnalyticsPlayerId
+    ? analyticsPlayerById.get(String(selectedAnalyticsPlayerId)) ?? null
+    : null;
+  const analyticsCandidates = useMemo(() => [
+    ...bigBoardPlayers,
+    selectedAnalyticsPlayer,
+    ...pinnedCompareIds.map((id) => analyticsPlayerById.get(String(id))).filter(Boolean),
+  ].filter(Boolean), [analyticsPlayerById, bigBoardPlayers, pinnedCompareIds, selectedAnalyticsPlayer]);
+  const dropPlayerLookup = useMemo(() => new Map(
+    [...bigBoardPlayers, ...boardRowsWithRanks].map((player) => [String(player.id), player]),
+  ), [bigBoardPlayers, boardRowsWithRanks]);
+  dropPlayerLookupRef.current = dropPlayerLookup;
+  const boardIdSet = useMemo(() => new Set(eligibleBoardIds), [boardMembershipKey, eligibleBoardIds]);
+  const positions = useMemo(
+    () => getAvailablePositions(bigBoardPlayers, boardRowsWithRanks),
+    [bigBoardPlayers, boardRowsWithRanks],
+  );
+  const availabilityOptions = useMemo(
+    () => getPlayerAvailabilityFilterOptions(activePlayersWithRanks),
+    [activePlayersWithRanks],
+  );
+
+  useEffect(() => {
+    if (!positions.includes(positionFilter)) setPositionFilter('ALL');
+  }, [positions, positionFilter]);
+
+  useEffect(() => {
+    if (!availabilityOptions.some((option) => option.id === availabilityFilter)) {
+      setAvailabilityFilter('all');
+    }
+  }, [availabilityFilter, availabilityOptions]);
+
+  useEffect(() => {
+    if (selectedAnalyticsPlayerId && !selectedAnalyticsPlayer) {
+      setSelectedAnalyticsPlayerId(null);
+    }
+  }, [selectedAnalyticsPlayer, selectedAnalyticsPlayerId]);
+
+  const updateBoardState = useCallback((updater) => {
+    if (isStandaloneBoard) {
+      flushSync(() => {
+        setBoardState(updater);
+      });
+      return;
+    }
+    setBoardState(updater);
+  }, [isStandaloneBoard]);
+
+  const addToBoard = useCallback((player) => {
+    updateBoardState((current) => addPlayerToOrderedBoard(current, player));
+  }, [updateBoardState]);
+
+  const dropBoardPlayer = useCallback((position, playerId, beforePlayerId = null) => {
+    const player = dropPlayerLookupRef.current.get(String(playerId)) ?? null;
+    updateBoardState((current) => movePlayerToOrderedBoardPosition(current, position, playerId, beforePlayerId, player));
+  }, [updateBoardState]);
+
+  const removeFromBoard = useCallback((playerId) => {
+    updateBoardState((current) => removePlayerFromOrderedBoard(current, playerId));
+  }, [updateBoardState]);
+
+  const moveBoardPlayer = useCallback((position, playerId, direction) => {
+    updateBoardState((current) => (
+      position === 'Overall'
+        ? moveOverallBoardPlayer(current, playerId, direction)
+        : moveOrderedBoardPlayerWithinPosition(current, position, playerId, direction)
+    ));
+  }, [updateBoardState]);
+
+  const toggleComparePin = useCallback((playerId) => {
+    const id = String(playerId ?? '');
+    if (!id) return;
+    setPinnedCompareIds((current) => {
+      if (current.includes(id)) return current.filter((item) => item !== id);
+      if (current.length >= getDraftAnalyticsCompareLimit()) return current;
+      return [...current, id];
+    });
+  }, []);
+
+  const openAnalyticsPlayerStatistics = useCallback((playerId) => {
+    setSelectedAnalyticsPlayerId(null);
+    onViewPlayer?.(playerId);
+  }, [onViewPlayer]);
+
+  const changeModelWeight = (weights) => {
+    setModelWeights(normalizeDraftModelWeights(weights));
+  };
+
+  const resetModelWeights = () => {
+    setModelWeights(normalizeDraftModelWeights(DEFAULT_DRAFT_MODEL_WEIGHTS));
+  };
+
+  const byeConflictAvailable = isByeWeekBundleForSeason(byeWeekBundle, draftSeason);
+  const byeConflictCandidateIds = useMemo(() => (
+    [...new Set(
+      [...bigBoardPlayers, ...boardRowsWithRanks]
+        .map((player) => String(player.id))
+        .filter(Boolean),
+    )]
+  ), [bigBoardPlayers, boardRowsWithRanks]);
+  const existingRosterPlayerIds = useMemo(() => ([
+    ...(myRosterData?.players ?? []),
+    ...(myRosterData?.starters ?? []),
+    ...(myRosterData?.reserve ?? []),
+    ...(myRosterData?.taxi ?? []),
+  ]), [myRosterData]);
+  const byeConflictPlayersById = useMemo(() => {
+    const referencedPlayerIds = new Set([
+      ...byeConflictCandidateIds,
+      ...eligibleBoardIds.map(String),
+      ...existingRosterPlayerIds.map(String),
+      ...draftOrderContext.normalizedPicks
+        .map((pick) => pick?.playerId == null ? null : String(pick.playerId))
+        .filter(Boolean),
+    ]);
+    const rows = new Map();
+    for (const playerId of referencedPlayerIds) {
+      const rawPlayer = players?.[playerId] ?? null;
+      if (!rawPlayer) continue;
+      rows.set(playerId, {
+        id: playerId,
+        name: getSleeperPlayerName(rawPlayer, `Player ${playerId}`),
+        team: String(rawPlayer?.team ?? '').toUpperCase(),
+        position: normalizePosition(rawPlayer?.fantasy_positions?.[0] ?? rawPlayer?.position),
+        byeWeek: getByeWeekForTeam(byeWeekBundle, rawPlayer?.team, draftSeason),
+        raw: rawPlayer,
+      });
+    }
+    for (const row of [
+      ...rosterSlots.map((slot) => slot.player).filter(Boolean),
+      ...bigBoardPlayers,
+      ...boardRowsWithRanks,
+    ]) {
+      rows.set(String(row.id), row);
+    }
+    return rows;
+  }, [
+    byeConflictCandidateIds,
+    eligibleBoardIds,
+    existingRosterPlayerIds,
+    draftOrderContext.normalizedPicks,
+    players,
+    byeWeekBundle,
+    draftSeason,
+    rosterSlots,
+    bigBoardPlayers,
+    boardRowsWithRanks,
+  ]);
+  const byeConflictModel = useMemo(() => {
+    if (!byeConflictAvailable) return null;
+    return buildDraftByeConflictModel({
+      leagueType: league?.settings?.type,
+      playersById: byeConflictPlayersById,
+      candidatePlayerIds: byeConflictCandidateIds,
+      savedTargetIds: eligibleBoardIds,
+      existingRosterPlayerIds,
+      draftPicks: draftOrderContext.normalizedPicks,
+      myRosterId: myRosterData?.roster_id,
+    });
+  }, [
+    byeConflictAvailable,
+    league?.settings?.type,
+    byeConflictPlayersById,
+    byeConflictCandidateIds,
+    eligibleBoardIds,
+    existingRosterPlayerIds,
+    draftOrderContext.normalizedPicks,
+    myRosterData?.roster_id,
+  ]);
+  const lockedRosterTrayPlayerIds = useMemo(() => (
+    rosterSlots
+      .map((slot) => slot.player)
+      .filter((player) => player && !player.isProjected)
+      .map((player) => String(player.id))
+  ), [rosterSlots]);
+  const rosterTrayByeConflicts = useMemo(() => {
+    if (!byeConflictAvailable) return null;
+    return buildDraftRosterByeConflictModel({
+      playersById: byeConflictPlayersById,
+      playerIds: lockedRosterTrayPlayerIds,
+    }).byPlayerId;
+  }, [byeConflictAvailable, byeConflictPlayersById, lockedRosterTrayPlayerIds]);
+  const visibleByeConflicts = highlightByeConflicts ? byeConflictModel?.byPlayerId ?? null : null;
+
+
+  if (!league) {
+    return (
+      <div className="draft-page">
+        <DraftPageState title={`Connect a league to open ${viewLabel}.`} />
+      </div>
+    );
+  }
+
+  if (!myRosterData) {
+    return (
+      <div className="draft-page">
+        <DraftPageState title="Could not find your roster in this league." />
+      </div>
+    );
+  }
+
+  if (!players || draftLoading) {
+    return (
+      <div className="draft-page">
+        <DraftPageState title={`Loading ${viewLabel}`} description="Fetching Sleeper players, draft metadata, and live picks." />
+      </div>
+    );
+  }
+
+  if (draftError) {
+    return (
+      <div className="draft-page">
+        <DraftPageState title={`${viewLabel} unavailable`} description={draftError} />
+      </div>
+    );
+  }
+
+  if (!draftMeta) {
+    return (
+      <div className="draft-page">
+        <DraftPageState
+          title="No Sleeper draft found for this league."
+          description={`${viewLabel} needs a Sleeper draft room so it can track picks and remove drafted players from your board.`}
+        />
+      </div>
+    );
+  }
+
+  if (unsupportedDraft) {
+    return (
+      <div className="draft-page">
+        <DraftPageState
+          title="Auction drafts are not supported yet."
+          description={`Sleeper's public draft endpoints support pick data well for snake and linear drafts, but live auction nomination and bid state are not exposed clearly enough for this ${viewLabel} pass.`}
+        />
+      </div>
+    );
+  }
+
+  if (!isStandaloneBoard && !isSleeperDraftPreDraft(draftMeta)) {
+    return (
+      <div className="draft-page">
+        <LiveDraftStatusBanner draftClockStore={draftClockStore} fallbackDraft={draftMeta} viewModel={draftOrderContext} getUserDisplayName={getUserDisplayName} projectedSelection={projectedSelection} onClockExpired={refreshDraft} />
+        <DraftPageState
+          title={`War Room is unavailable for the ${season} league year.`}
+          description={`The ${season} draft has already started or finished. Use Results to review its order and picks, or switch to a pre-draft league year to use War Room.`}
+        />
+      </div>
+    );
+  }
+
+  if (isStandaloneBoard && !isSleeperDraftPreDraft(draftMeta) && !isActiveDraftRoomStatus(draftMeta?.status)) {
+    return (
+      <div className="draft-page">
+        <LiveDraftStatusBanner draftClockStore={draftClockStore} fallbackDraft={draftMeta} viewModel={draftOrderContext} getUserDisplayName={getUserDisplayName} projectedSelection={projectedSelection} onClockExpired={refreshDraft} />
+        <DraftPageState
+          title="Board is available before and during the draft."
+          description="Use Results to review completed drafts."
+        />
+      </div>
+    );
+  }
+
+  if (!viewModel) {
+    return (
+      <div className="draft-page">
+        <LiveDraftStatusBanner draftClockStore={draftClockStore} fallbackDraft={draftMeta} viewModel={draftOrderContext} getUserDisplayName={getUserDisplayName} projectedSelection={projectedSelection} onClockExpired={refreshDraft} />
+        <DraftPageState
+          title={`Preparing ${viewLabel}`}
+          description={viewModelBuilding ? 'Building draft rankings, roster context, and board state.' : 'Waiting for draft data.'}
+        />
+      </div>
+    );
+  }
+
+  if (isStandaloneBoard) {
+    return (
+      <div className="draft-page">
+        <LiveDraftStatusBanner draftClockStore={draftClockStore} fallbackDraft={draftMeta} viewModel={viewModel} getUserDisplayName={getUserDisplayName} projectedSelection={projectedSelection} onClockExpired={refreshDraft} />
+        <LeagueLogsAttribution
+          attribution={marketState.valuesByPlayerId.size > 0 ? marketState.attribution : null}
+          profileKey={marketState.profileKey}
+          profile={marketState.profile}
+          lastRefreshed={marketState.lastRefreshed}
+        />
+        <FantasyAdpAttribution
+          matchedPlayerCount={adpState.valuesByPlayerId.size}
+          lastUpdated={adpState.lastUpdated}
+        />
+        <div className="draft-board-page-controls draft-desktop-control-set">
+          <DraftSegmentedControl
+            label="Board view"
+            options={MY_BOARD_SORT_OPTIONS}
+            value={myBoardSortMode}
+            onChange={setMyBoardSortMode}
+            className="draft-board-view-control"
+          />
+          <DraftSegmentedControl
+            label="Board card metric"
+            options={DRAFT_BOARD_CARD_METRIC_OPTIONS}
+            value={draftBoardCardMetric}
+            onChange={setDraftBoardCardMetric}
+            className="draft-board-card-metric-control"
+          />
+          <DraftByeConflictToggle
+            checked={highlightByeConflicts && byeConflictAvailable}
+            disabled={!byeConflictAvailable}
+            onChange={setHighlightByeConflicts}
+          />
+        </div>
+        <div className="draft-board-page-mobile-controls" aria-label="Board controls">
+          <div className="draft-board-page-mobile-controls__primary">
+            <DraftSegmentedControl
+              label="Board view"
+              options={MY_BOARD_SORT_OPTIONS}
+              value={myBoardSortMode}
+              onChange={setMyBoardSortMode}
+              className="draft-board-view-control"
+            />
+            <label className="draft-board-page-mobile-controls__label-select">
+              <span>Card labels</span>
+              <select
+                aria-label="Board card labels"
+                value={draftBoardCardMetric}
+                onChange={(event) => setDraftBoardCardMetric(event.target.value)}
+              >
+                {DRAFT_BOARD_CARD_METRIC_OPTIONS.map((option) => (
+                  <option key={option.id} value={option.id}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <DraftByeConflictToggle
+            checked={highlightByeConflicts && byeConflictAvailable}
+            disabled={!byeConflictAvailable}
+            onChange={setHighlightByeConflicts}
+          />
+        </div>
+        <MyBoardWorkspace
+          boardByPosition={eligibleOrderedBoardByPosition}
+          overallBoardIds={eligibleBoardIds}
+          boardRows={boardRowsWithRanks}
+          availablePlayers={bigBoardPlayers}
+          boardIds={eligibleBoardIds}
+          positions={positions}
+          darkMode={darkMode}
+          onAdd={addToBoard}
+          onDropPlayer={dropBoardPlayer}
+          onMove={moveBoardPlayer}
+          onRemove={removeFromBoard}
+          onViewPlayer={onViewPlayer}
+          boardViewMode={myBoardSortMode}
+          activePosition={positionFilter}
+          onPositionChange={setPositionFilter}
+          query={query}
+          setQuery={setQuery}
+          boardScope={boardScope}
+          onBoardScopeChange={setBoardScope}
+          availabilityFilter={availabilityFilter}
+          availabilityOptions={availabilityOptions}
+          onAvailabilityFilterChange={setAvailabilityFilter}
+          rosterSlots={rosterSlots}
+          rosterConflictByPlayerId={rosterTrayByeConflicts}
+          cardMetricKey={draftBoardCardMetric}
+          conflictByPlayerId={visibleByeConflicts}
+          displaySize={displaySize}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="draft-page">
+      <LiveDraftStatusBanner draftClockStore={draftClockStore} fallbackDraft={draftMeta} viewModel={viewModel} getUserDisplayName={getUserDisplayName} projectedSelection={projectedSelection} onClockExpired={refreshDraft} />
+      <LeagueLogsAttribution
+        attribution={marketState.valuesByPlayerId.size > 0 ? marketState.attribution : null}
+        profileKey={marketState.profileKey}
+        profile={marketState.profile}
+        lastRefreshed={marketState.lastRefreshed}
+      />
+      <FantasyAdpAttribution
+        matchedPlayerCount={adpState.valuesByPlayerId.size}
+        lastUpdated={adpState.lastUpdated}
+      />
+      <div className={[
+        'draft-war-room',
+        'draft-war-room--analytics',
+        selectedAnalyticsPlayer && !useAnalyticsModal ? 'has-inline-analytics' : '',
+      ].filter(Boolean).join(' ')}
+      >
+        <BigBoard
+          candidates={bigBoardPlayers}
+          boardIds={boardIdSet}
+          activePosition={positionFilter}
+          query={query}
+          setQuery={setQuery}
+          positions={positions}
+          onPositionChange={setPositionFilter}
+          onAdd={addToBoard}
+          onViewPlayer={(playerId) => setSelectedAnalyticsPlayerId(String(playerId))}
+          darkMode={darkMode}
+          boardScope={boardScope}
+          onBoardScopeChange={setBoardScope}
+          availabilityFilter={availabilityFilter}
+          availabilityOptions={availabilityOptions}
+          onAvailabilityFilterChange={setAvailabilityFilter}
+          statsLoading={draftStatsLoading}
+          pastPpgSeason={draftStatsSeason}
+          modelWeights={modelWeights}
+          onModelWeightChange={changeModelWeight}
+          onResetModelWeights={resetModelWeights}
+        />
+        {selectedAnalyticsPlayer && !useAnalyticsModal ? (
+          <DraftPlayerAnalyticsSheet
+            presentation="inline"
+            className="draft-war-room__analytics-pane"
+            player={selectedAnalyticsPlayer}
+            candidates={analyticsCandidates}
+            pinnedPlayerIds={pinnedCompareIds}
+            xAxis={analyticsAxes.xAxis}
+            yAxis={analyticsAxes.yAxis}
+            onAxisChange={setAnalyticsAxes}
+            onTogglePin={toggleComparePin}
+            onAddToBoard={addToBoard}
+            boardIds={boardIdSet}
+            onSelectPlayer={(playerId) => setSelectedAnalyticsPlayerId(String(playerId))}
+            onOpenStatistics={openAnalyticsPlayerStatistics}
+            onClose={() => setSelectedAnalyticsPlayerId(null)}
+          />
+        ) : null}
+      </div>
+      {selectedAnalyticsPlayer && useAnalyticsModal ? (
+        <DraftPlayerAnalyticsSheet
+          presentation="modal"
+          player={selectedAnalyticsPlayer}
+          candidates={analyticsCandidates}
+          pinnedPlayerIds={pinnedCompareIds}
+          xAxis={analyticsAxes.xAxis}
+          yAxis={analyticsAxes.yAxis}
+          onAxisChange={setAnalyticsAxes}
+          onTogglePin={toggleComparePin}
+          onAddToBoard={addToBoard}
+          boardIds={boardIdSet}
+          onSelectPlayer={(playerId) => setSelectedAnalyticsPlayerId(String(playerId))}
+          onOpenStatistics={openAnalyticsPlayerStatistics}
+          onClose={() => setSelectedAnalyticsPlayerId(null)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function DraftOutcomeStrengthInfo() {
+  const buttonRef = useRef(null);
+  const tooltipRef = useRef(null);
+  const [open, setOpen] = useState(false);
+  const [position, setPosition] = useState(null);
+  const tooltipId = 'draft-outcome-strength-info';
+
+  const updatePosition = useCallback(() => {
+    if (!buttonRef.current) return;
+    const rect = buttonRef.current.getBoundingClientRect();
+    const width = Math.min(336, window.innerWidth - 16);
+    const left = Math.max(8, Math.min(window.innerWidth - width - 8, rect.left + rect.width / 2 - width / 2));
+    const estimatedHeight = 230;
+    const below = rect.bottom + 8;
+    const top = below + estimatedHeight <= window.innerHeight - 8
+      ? below
+      : Math.max(8, rect.top - estimatedHeight - 8);
+    setPosition({ left, top, width });
+  }, []);
+
+  const closeTooltip = useCallback(() => setOpen(false), []);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const handlePointerDown = (event) => {
+      if (buttonRef.current?.contains(event.target) || tooltipRef.current?.contains(event.target)) return;
+      closeTooltip();
+    };
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') closeTooltip();
+    };
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [open, closeTooltip, updatePosition]);
+
+  const toggleTooltip = () => {
+    setOpen((current) => !current);
+    window.requestAnimationFrame(updatePosition);
+  };
+
+  return (
+    <span className="draft-outcome-strength-info">
+      <button
+        ref={buttonRef}
+        type="button"
+        aria-label="How Draft Strength is calculated"
+        aria-expanded={open}
+        aria-controls={tooltipId}
+        onClick={toggleTooltip}
+      >
+        i
+      </button>
+      {open && position && createPortal(
+        <section
+          ref={tooltipRef}
+          id={tooltipId}
+          role="dialog"
+          aria-label="How Draft Strength is calculated"
+          className="draft-outcome-strength-tooltip"
+          style={position}
+        >
+          <div className="draft-outcome-strength-tooltip__header">
+            <strong>How Draft Strength Works</strong>
+            <button type="button" onClick={closeTooltip} aria-label="Close Draft Strength explanation">×</button>
+          </div>
+          <p>Draft Strength compares a player&apos;s positional order in your league&apos;s draft with that player&apos;s positional finish for the same season.</p>
+          <p>The grading band is whichever is larger: three places or 15% of the player&apos;s positional draft rank.</p>
+          <ul>
+            <li><b>Even</b> stays within one band.</li>
+            <li><b>Strong</b> or <b>Weak</b> shows a clear rise or fall beyond that band.</li>
+            <li><b>Boom</b> or <b>Bust</b> means a change of three or more bands.</li>
+          </ul>
+        </section>,
+        document.body,
+      )}
+    </span>
+  );
+}
+
+function DraftResultRow({ row, darkMode, onViewPlayer, showInsights = false, seasonIsComplete = false }) {
+  const rankMetric = { key: 'rank-mode', value: row.rankModeLabel ?? '—', label: 'Rank' };
+  const outcomeMetric = row.draftOutcome ? {
+    key: 'draft-outcome',
+    value: row.draftOutcome.tier,
+    label: 'Outcome',
+    tone: row.draftOutcome.colorTone,
+    title: `Selected ${row.pickLabel} overall as ${row.draftOutcome.position}${row.draftOutcome.draftPositionRank}; finished ${row.draftOutcome.position}${row.draftOutcome.seasonFinishRank}.`,
+  } : {
+    key: 'draft-outcome',
+    value: '—',
+    label: seasonIsComplete ? 'Outcome' : 'In Progress',
+    title: seasonIsComplete ? 'No qualifying season finish for this pick' : 'Draft outcome shows once the season is complete',
+  };
+  const rowGrid = showInsights ? 'var(--draft-results-row-grid-insights)' : 'var(--draft-results-row-grid)';
+  return (
+    <DraftPlayerRow
+      player={row.player}
+      darkMode={darkMode}
+      onViewPlayer={row.isDemo ? null : onViewPlayer}
+      metrics={showInsights ? [rankMetric, outcomeMetric] : []}
+      metricColumnGridTemplate={showInsights ? '72px minmax(92px, 1fr)' : null}
+      rowGridTemplate={rowGrid}
+      compactRowGridTemplate={rowGrid}
+      leading={<span className="draft-results-pick" title={`${row.overall} overall`}>{row.pickLabel}</span>}
+      identityMetaSegments={[row.player.team, row.ownerLabel].filter(Boolean)}
+      status={(
+        <CompanionPlayerStatus
+          label={`Drafted by ${row.ownerLabel}`}
+          className={['draft-results-owner-status', row.isMine ? 'is-user-team' : ''].filter(Boolean).join(' ')}
+          localContrast={!row.isMine}
+          title={row.isMine ? `${row.ownerLabel} is your fantasy team` : row.ownerLabel}
+        >
+          <span className="draft-results-owner-status__kicker">Drafted by</span>
+          <span className="draft-results-owner-status__name">{row.ownerLabel}</span>
+          {row.isMine ? (
+            <span className="draft-results-owner-status__marker">Your Team</span>
+          ) : null}
+        </CompanionPlayerStatus>
+      )}
+      className={['draft-player-row--results', showInsights ? 'draft-player-row--insights' : '', row.isMine ? 'is-mine' : ''].filter(Boolean).join(' ')}
+    />
+  );
+}
+
+function DraftFantasyTeamFilter({ options, selectedIds, onChange }) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef(null);
+  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const selectedOption = selectedIds.length === 1
+    ? options.find((option) => option.id === selectedIds[0])
+    : null;
+  const buttonLabel = selectedIds.length === 0
+    ? 'All Fantasy Teams'
+    : selectedOption
+      ? selectedOption.label
+      : `${selectedIds.length} Teams`;
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const handlePointerDown = (event) => {
+      if (!rootRef.current?.contains(event.target)) setOpen(false);
+    };
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, [open]);
+
+  const toggleOption = (optionId) => {
+    onChange(selectedSet.has(optionId)
+      ? selectedIds.filter((id) => id !== optionId)
+      : [...selectedIds, optionId]);
+  };
+
+  return (
+    <div className="draft-results-team-filter" ref={rootRef}>
+      <button
+        type="button"
+        className="draft-results-team-filter__button"
+        aria-expanded={open}
+        aria-haspopup="true"
+        onClick={() => setOpen((current) => !current)}
+      >
+        <span>{buttonLabel}</span>
+        <ArrowIcon direction="down" />
+      </button>
+      {open && (
+        <div className="draft-results-team-filter__menu">
+          <div className="draft-results-team-filter__menu-head">
+            <span>Fantasy Teams</span>
+            {selectedIds.length > 0 && (
+              <button type="button" onClick={() => onChange([])}>
+                Clear
+              </button>
+            )}
+          </div>
+          <div className="draft-results-team-filter__options">
+            {options.map((option) => (
+              <label key={option.id} className="draft-results-team-filter__option">
+                <input
+                  type="checkbox"
+                  checked={selectedSet.has(option.id)}
+                  onChange={() => toggleOption(option.id)}
+                />
+                <span>{option.label}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DraftResultsView({ onViewPlayer, sleeperDraftId = '', tourDemoMode = null }) {
+  const {
+    players,
+    loadPlayers,
+    league,
+    rosters,
+    leagueUsers,
+    sleeperUser,
+    selectedLeagueId,
+    season,
+    loadStatsForSeason,
+    activeScoringSettings,
+    myRoster,
+    getUserDisplayName,
+  } = useSleeperBase();
+  const { darkMode } = useTheme();
+
+  const {
+    draftMeta,
+    draftClockStore,
+    draftPicks,
+    draftTradedPicks,
+    draftLoading,
+    draftError,
+    refreshDraft,
+  } = useSleeperDraftSync({ selectedLeagueId, league, sleeperDraftId });
+  const [draftStats, setDraftStats] = useState(null);
+  const resultsDraftSeason = String(draftMeta?.season ?? season ?? '');
+  const byeWeekBundle = useUpcomingScheduleBundle(resultsDraftSeason || null);
+  const upcomingScheduleMap = byeWeekBundle?.scheduleMap ?? null;
+  const [sortDirection, setSortDirection] = useState('asc');
+  const [resultsMode, setResultsMode] = useState('blueprint');
+  const [positionFilter, setPositionFilter] = useState('All');
+  const [selectedFantasyTeamIds, setSelectedFantasyTeamIds] = useState([]);
+  const [rankMode, setRankMode] = useState('off');
+  const [departedDraftUsersById, setDepartedDraftUsersById] = useState(() => new Map());
+  const [modelWeights, setModelWeights] = useState(() => normalizeDraftModelWeights(DEFAULT_DRAFT_MODEL_WEIGHTS));
+  const [marketState, setMarketState] = useState({
+    attribution: null,
+    profileKey: null,
+    lastRefreshed: null,
+    valuesByPlayerId: new Map(),
+  });
+  const hasCompletedDraftPicks = useMemo(
+    () => (draftPicks ?? []).some((pick) => pick?.player_id || pick?.playerId || pick?.metadata?.player_id),
+    [draftPicks],
+  );
+  const showTourResultsDemo = tourDemoMode === 'draft-results';
+  // The live status banner (clock + projected selection) renders on Results while
+  // a draft room is active, so player and market data must load then as well —
+  // not only after the first completed pick.
+  const draftRoomActive = isActiveDraftRoomStatus(draftMeta?.status);
+
+  const marketDraftContext = useMemo(() => ({
+    metadata: { scoring_type: draftMeta?.metadata?.scoring_type },
+    settings: { slots_qb: draftMeta?.settings?.slots_qb },
+  }), [draftMeta?.metadata?.scoring_type, draftMeta?.settings?.slots_qb]);
+
+  useEffect(() => {
+    if (!hasCompletedDraftPicks && !draftRoomActive) return;
+    loadPlayers();
+  }, [hasCompletedDraftPicks, draftRoomActive, loadPlayers]);
+
+  // Reuse the user's saved model weights so the GridShift Rating shown here matches War Room.
+  useEffect(() => {
+    if (!selectedLeagueId || !season || !draftMeta?.draft_id) {
+      setModelWeights(normalizeDraftModelWeights(DEFAULT_DRAFT_MODEL_WEIGHTS));
+      return;
+    }
+    setModelWeights(loadModelWeights({ leagueId: selectedLeagueId, season, draftId: draftMeta.draft_id }));
+  }, [selectedLeagueId, season, draftMeta?.draft_id]);
+
+  const draftStatsSeason = useMemo(
+    () => getDraftResultsSeason(draftMeta?.season ?? season),
+    [draftMeta?.season, season],
+  );
+
+  useEffect(() => {
+    if (!hasCompletedDraftPicks || !draftStatsSeason || !loadStatsForSeason) {
+      setDraftStats(null);
+      return undefined;
+    }
+    let cancelled = false;
+    loadStatsForSeason(draftStatsSeason)
+      .then((statsPackage) => { if (!cancelled) setDraftStats(statsPackage); })
+      .catch(() => { if (!cancelled) setDraftStats(null); });
+    return () => { cancelled = true; };
+  }, [hasCompletedDraftPicks, draftStatsSeason, loadStatsForSeason]);
+
+  useEffect(() => {
+    if ((!hasCompletedDraftPicks && !draftRoomActive) || !league) {
+      setMarketState({ attribution: null, profileKey: null, lastRefreshed: null, valuesByPlayerId: new Map() });
+      return undefined;
+    }
+    let cancelled = false;
+    fetchLeagueLogsMarketForLeague({
+      league,
+      draft: marketDraftContext,
+      scoringSettings: activeScoringSettings,
+    }).then((market) => {
+      if (cancelled) return;
+      setMarketState({
+        attribution: market?.attribution ?? null,
+        profileKey: market?.profileKey ?? null,
+        lastRefreshed: market?.lastRefreshed ?? null,
+        valuesByPlayerId: market?.valuesByPlayerId ?? new Map(),
+      });
+    }).catch(() => {
+      if (!cancelled) setMarketState({ attribution: null, profileKey: null, lastRefreshed: null, valuesByPlayerId: new Map() });
+    });
+    return () => { cancelled = true; };
+  }, [hasCompletedDraftPicks, draftRoomActive, league, activeScoringSettings, marketDraftContext]);
+
+  const myRosterData = useMemo(() => myRoster(), [myRoster]);
+
+  const resultsViewModel = useMemo(() => {
+    if (!hasCompletedDraftPicks || !league || !myRosterData || !draftMeta) return null;
+    return buildDraftResultsViewModel({
+      players: players ?? {},
+      rosters,
+      league,
+      draft: draftMeta,
+      draftPicks,
+      draftTradedPicks,
+      myRoster: myRosterData,
+      scoringSettings: activeScoringSettings,
+      season,
+      boardIds: [],
+      marketValuesByPlayerId: marketState.valuesByPlayerId,
+      seasonStats: draftStats?.seasonStats ?? null,
+      weeklyStats: draftStats?.weeklyStats ?? null,
+      scheduleMap: draftStats?.scheduleMap ?? null,
+      upcomingScheduleMap,
+      byeWeekBundle,
+      modelWeights,
+    });
+  }, [hasCompletedDraftPicks, players, rosters, league, draftMeta, draftPicks, draftTradedPicks, myRosterData, activeScoringSettings, season, marketState.valuesByPlayerId, draftStats, upcomingScheduleMap, byeWeekBundle, modelWeights]);
+
+  const draftOrderContext = useMemo(() => (
+    resultsViewModel ?? buildDraftOrderContext({
+      draft: draftMeta,
+      rosters,
+      draftTradedPicks,
+      draftPicks,
+      myRosterData,
+    })
+  ), [resultsViewModel, draftMeta, rosters, draftTradedPicks, draftPicks, myRosterData]);
+
+  const projectedSelection = useProjectedDraftSelection({
+    draftMeta,
+    league,
+    players,
+    rosters,
+    draftPicks,
+    marketValuesByPlayerId: marketState.valuesByPlayerId,
+  });
+
+  const draftManagerIdsKey = useMemo(() => (
+    [...new Set((draftOrderContext.normalizedPicks ?? [])
+      .map((pick) => resolveDraftPickManagerId(pick, draftMeta) ?? '')
+      .filter(Boolean))]
+      .sort()
+      .join('|')
+  ), [draftOrderContext.normalizedPicks, draftMeta]);
+
+  useEffect(() => {
+    const currentUserIds = new Set((leagueUsers ?? []).map((user) => String(user?.user_id ?? '')).filter(Boolean));
+    const missingUserIds = draftManagerIdsKey.split('|').filter((userId) => userId && !currentUserIds.has(userId));
+    if (!missingUserIds.length) return undefined;
+
+    let cancelled = false;
+    Promise.all(missingUserIds.map(async (userId) => {
+      try {
+        const user = await getUserById(userId);
+        return user?.user_id ? [String(user.user_id), user] : null;
+      } catch {
+        return null;
+      }
+    })).then((entries) => {
+      if (!cancelled) setDepartedDraftUsersById(new Map(entries.filter(Boolean)));
+    });
+    return () => { cancelled = true; };
+  }, [draftManagerIdsKey, leagueUsers]);
+
+  const draftUsersById = useMemo(() => new Map([
+    ...departedDraftUsersById,
+    ...(leagueUsers ?? []).map((user) => [String(user?.user_id ?? ''), user]),
+  ].filter(([userId]) => userId)), [leagueUsers, departedDraftUsersById]);
+
+  const getDraftManagerLabel = useCallback((managerId, rosterId = null) => {
+    const user = managerId ? draftUsersById.get(String(managerId)) : null;
+    const label = user?.metadata?.team_name ?? user?.display_name ?? user?.username;
+    if (label && String(label).trim()) return String(label).trim();
+    const connectedLabel = managerId ? getUserDisplayName(managerId) : '';
+    if (connectedLabel && connectedLabel !== 'Unknown') return connectedLabel;
+    return rosterId ? `Roster ${rosterId} · manager unavailable` : 'Manager unavailable';
+  }, [draftUsersById, getUserDisplayName]);
+
+  const orderByOverall = useMemo(
+    () => new Map((draftOrderContext.pickOrder ?? []).map((pick) => [pick.overall, pick])),
+    [draftOrderContext.pickOrder],
+  );
+
+  const seasonIsComplete = isLeagueSeasonComplete(league);
+  const draftRanksByPickId = useMemo(
+    () => buildDraftPositionRanks(draftOrderContext.normalizedPicks ?? [], players ?? {}),
+    [draftOrderContext.normalizedPicks, players],
+  );
+  const draftOutcomesByPickId = useMemo(() => {
+    if (!seasonIsComplete || !draftStats?.seasonStats) return new Map();
+    return computeDraftOutcomes(
+      draftOrderContext.normalizedPicks ?? [],
+      draftStats.seasonStats,
+      players ?? {},
+      activeScoringSettings,
+    );
+  }, [seasonIsComplete, draftStats, draftOrderContext.normalizedPicks, players, activeScoringSettings]);
+
+  const draftResultsSortOptions = useMemo(
+    () => seasonIsComplete
+      ? DRAFT_RESULTS_SORT_OPTIONS
+      : DRAFT_RESULTS_SORT_OPTIONS.filter((option) => !option.id.startsWith('strength-')),
+    [seasonIsComplete],
+  );
+  const activeSortDirection = !seasonIsComplete && sortDirection.startsWith('strength-')
+    ? 'asc'
+    : sortDirection;
+
+  const myRosterId = myRosterData?.roster_id != null ? String(myRosterData.roster_id) : null;
+  const getFantasyTeamLabel = useCallback((rosterId, ownerId = null) => {
+    return getDraftManagerLabel(ownerId, rosterId);
+  }, [getDraftManagerLabel]);
+
+  const fantasyTeamOptions = useMemo(() => {
+    const optionsByRosterId = new Map();
+    for (const pick of draftOrderContext.normalizedPicks ?? []) {
+      if (!pick.rosterId || optionsByRosterId.has(pick.rosterId)) continue;
+      const managerId = resolveDraftPickManagerId(pick, draftMeta);
+      optionsByRosterId.set(pick.rosterId, {
+        id: pick.rosterId,
+        label: getFantasyTeamLabel(pick.rosterId, managerId),
+      });
+    }
+    for (const pick of draftOrderContext.pickOrder ?? []) {
+      if (!pick.rosterId || optionsByRosterId.has(pick.rosterId)) continue;
+      optionsByRosterId.set(pick.rosterId, {
+        id: pick.rosterId,
+        label: getFantasyTeamLabel(pick.rosterId),
+      });
+    }
+    for (const roster of rosters ?? []) {
+      const rosterId = roster?.roster_id != null ? String(roster.roster_id) : null;
+      if (!rosterId || optionsByRosterId.has(rosterId)) continue;
+      optionsByRosterId.set(rosterId, {
+        id: rosterId,
+        label: getFantasyTeamLabel(rosterId),
+      });
+    }
+    return [...optionsByRosterId.values()].sort((a, b) => {
+      if (a.id === myRosterId) return -1;
+      if (b.id === myRosterId) return 1;
+      return a.label.localeCompare(b.label);
+    });
+  }, [draftOrderContext.normalizedPicks, draftOrderContext.pickOrder, rosters, myRosterId, draftMeta, getFantasyTeamLabel]);
+
+  useEffect(() => {
+    const availableIds = new Set(fantasyTeamOptions.map((option) => option.id));
+    setSelectedFantasyTeamIds((current) => {
+      const next = current.filter((id) => availableIds.has(id));
+      return next.length === current.length ? current : next;
+    });
+  }, [fantasyTeamOptions]);
+
+  // Completed picks only, first pick first — each joined to its enriched card for metrics.
+  const resultRows = useMemo(() => {
+    const completed = (draftOrderContext.normalizedPicks ?? []).filter((pick) => pick.playerId);
+    return completed
+      .slice()
+      .sort((a, b) => a.overall - b.overall)
+      .map((pick) => {
+        const orderPick = orderByOverall.get(pick.overall) ?? null;
+        const card = resultsViewModel?.draftedCardsById?.get(String(pick.playerId)) ?? null;
+        const rawPlayer = players?.[pick.playerId] ?? null;
+        const ownerId = resolveDraftPickManagerId(pick, draftMeta);
+        const isMine = Boolean(ownerId && ownerId === String(sleeperUser?.user_id ?? ''));
+        const fallbackName = getDraftedPlayerLabel(pick, players ?? {});
+        const rawFallbackPosition = rawPlayer?.fantasy_positions?.[0] ?? rawPlayer?.position ?? pick.metadata?.position ?? null;
+        const fallbackPosition = rawFallbackPosition ? normalizePosition(rawFallbackPosition) : '';
+        const fallbackTeam = String(rawPlayer?.team ?? pick.metadata?.team ?? '—').toUpperCase();
+        const player = card ? {
+          ...card,
+          name: card.raw ? getPlayerName(card) : fallbackName,
+          position: card.position ?? fallbackPosition,
+          team: card.team ?? fallbackTeam,
+          raw: card.raw ?? rawPlayer,
+        } : {
+          id: String(pick.playerId),
+          name: fallbackName,
+          position: fallbackPosition,
+          team: fallbackTeam,
+          raw: rawPlayer,
+        };
+        const rankModeLabel = rankMode === 'off'
+          ? null
+          : rankMode === 'finish'
+            ? (card?.rank?.seasonFinishLabel ?? '—')
+            : (draftRanksByPickId.get(pick.id)?.label ?? '—');
+        return {
+          key: pick.id,
+          pickLabel: formatPickLabel(orderPick ?? pick),
+          overall: pick.overall,
+          fantasyTeamId: pick.rosterId,
+          ownerLabel: getFantasyTeamLabel(pick.rosterId, ownerId),
+          isMine,
+          player,
+          rating: card?.draftModel?.score ?? null,
+          sleeperRank: card?.rank?.overallRank ?? card?.projection?.fallbackRank ?? null,
+          tier: card?.rank?.tier ?? null,
+          rankModeLabel,
+          draftOutcome: draftOutcomesByPickId.get(pick.id) ?? null,
+        };
+      });
+  }, [draftOrderContext.normalizedPicks, orderByOverall, resultsViewModel, players, rosters, draftMeta, sleeperUser?.user_id, getFantasyTeamLabel, rankMode, draftRanksByPickId, draftOutcomesByPickId]);
+
+  const blueprint = useMemo(() => buildDraftBlueprintSummaries({
+    picks: draftOrderContext.normalizedPicks ?? [],
+    rosters,
+    users: [...draftUsersById.values()],
+    draft: draftMeta,
+    league,
+    players: players ?? {},
+    myRosterId,
+    myUserId: sleeperUser?.user_id ?? null,
+  }), [draftOrderContext.normalizedPicks, rosters, draftUsersById, draftMeta, league, players, myRosterId, sleeperUser?.user_id]);
+
+  const positionOptions = useMemo(() => {
+    const available = new Set(resultRows.map((row) => row.player?.position).filter(Boolean));
+    const ordered = POSITION_ORDER.filter((position) => available.has(position));
+    const extras = [...available].filter((position) => !POSITION_ORDER.includes(position)).sort();
+    return ['All', ...ordered, ...extras];
+  }, [resultRows]);
+
+  useEffect(() => {
+    if (!positionOptions.includes(positionFilter)) setPositionFilter('All');
+  }, [positionOptions, positionFilter]);
+
+  const visibleRows = useMemo(() => {
+    const selectedTeamSet = new Set(selectedFantasyTeamIds);
+    const filtered = resultRows.filter((row) => {
+      if (positionFilter !== 'All' && row.player?.position !== positionFilter) return false;
+      if (selectedTeamSet.size > 0 && !selectedTeamSet.has(row.fantasyTeamId)) return false;
+      return true;
+    });
+    if (activeSortDirection === 'desc') return [...filtered].reverse();
+    if (!activeSortDirection.startsWith('strength-')) return filtered;
+
+    const direction = activeSortDirection === 'strength-desc' ? -1 : 1;
+    return [...filtered].sort((left, right) => {
+      const leftStrength = DRAFT_OUTCOME_STRENGTH[left.draftOutcome?.tier];
+      const rightStrength = DRAFT_OUTCOME_STRENGTH[right.draftOutcome?.tier];
+      const leftHasOutcome = Number.isFinite(leftStrength);
+      const rightHasOutcome = Number.isFinite(rightStrength);
+      if (leftHasOutcome !== rightHasOutcome) return leftHasOutcome ? -1 : 1;
+      if (!leftHasOutcome) return left.overall - right.overall;
+      if (leftStrength !== rightStrength) return (leftStrength - rightStrength) * direction;
+      if (left.draftOutcome.rankDelta !== right.draftOutcome.rankDelta) {
+        return (left.draftOutcome.rankDelta - right.draftOutcome.rankDelta) * direction;
+      }
+      return left.overall - right.overall;
+    });
+  }, [resultRows, positionFilter, selectedFantasyTeamIds, activeSortDirection]);
+
+  const draftType = normalizeDraftType(draftMeta);
+  const unsupportedDraft = draftMeta && draftType !== 'snake' && draftType !== 'linear';
+
+  if (!league) {
+    return (
+      <div className="draft-page">
+        <DraftPageState title="Connect a league to view draft results." />
+      </div>
+    );
+  }
+
+  if (showTourResultsDemo) {
+    return (
+      <div className="draft-page">
+        <section className="draft-panel draft-results-panel" data-tour="draft-results-content">
+          <p className="px-4 pt-4 text-sm font-semibold" style={{ color: 'var(--color-label-secondary)' }}>
+            Tour preview - placeholder picks only
+          </p>
+          <div className="draft-results-list">
+            {DRAFT_RESULTS_TOUR_ROWS.map((row) => (
+              <DraftResultRow
+                key={row.key}
+                row={row}
+                darkMode={darkMode}
+                onViewPlayer={null}
+                showInsights={false}
+                seasonIsComplete={false}
+              />
+            ))}
+          </div>
+        </section>
+      </div>
+    );
+  }
+
+  if (!myRosterData) {
+    return (
+      <div className="draft-page">
+        <DraftPageState title="Could not find your roster in this league." />
+      </div>
+    );
+  }
+
+  if (draftLoading) {
+    return (
+      <div className="draft-page">
+        <DraftPageState title="Loading results" description="Fetching Sleeper draft metadata and picks." />
+      </div>
+    );
+  }
+
+  if (draftError) {
+    return (
+      <div className="draft-page">
+        <DraftPageState title="Draft results unavailable" description={draftError} />
+      </div>
+    );
+  }
+
+  if (!draftMeta) {
+    return (
+      <div className="draft-page">
+        <DraftPageState title="No Sleeper draft found for this league." />
+      </div>
+    );
+  }
+
+  if (unsupportedDraft) {
+    return (
+      <div className="draft-page">
+        <DraftPageState
+          title="Auction drafts are not supported yet."
+          description="Sleeper's public draft endpoints expose pick data well for snake and linear drafts, but live auction nomination and bid state are not available for the results board."
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="draft-page">
+      <LiveDraftStatusBanner draftClockStore={draftClockStore} fallbackDraft={draftMeta} viewModel={draftOrderContext} getUserDisplayName={getUserDisplayName} projectedSelection={projectedSelection} onClockExpired={refreshDraft} />
+      {resultRows.length === 0 ? (
+        <DraftOrderTable
+          draftOrderContext={draftOrderContext}
+          myRosterData={myRosterData}
+          getUserDisplayName={getUserDisplayName}
+          players={players ?? {}}
+        />
+      ) : (
+        <section className="draft-panel draft-results-panel" data-tour="draft-results-content">
+          <div className="draft-results-view-header" data-tour="draft-blueprint-content">
+            <div>
+              <span>Draft Results</span>
+              <h2>{resultsMode === 'blueprint' ? 'Draft Blueprint' : 'Pick List'}</h2>
+              <p>{resultsMode === 'blueprint' ? 'Team-by-team roster construction from the completed Sleeper draft.' : 'Every completed selection in chronological order.'}</p>
+            </div>
+            <DraftSegmentedControl
+              label="Draft results view"
+              options={[{ id: 'blueprint', label: 'Blueprint' }, { id: 'picks', label: 'Pick List' }]}
+              value={resultsMode}
+              onChange={setResultsMode}
+            />
+          </div>
+          {resultsMode === 'blueprint' ? (
+            <div className="draft-blueprint-grid">
+              {blueprint.teams.map((team) => {
+                const firstPickTheme = getTeamVisualTheme(team.firstRoundPick?.nflTeam, darkMode);
+                const nextPicks = team.earlyPicks.filter((pick) => pick !== team.firstRoundPick).slice(0, 3);
+                const firstPickStyle = firstPickTheme.gradient ? {
+                  backgroundImage: `${firstPickTheme.gradientOverlay}, ${firstPickTheme.gradient}`,
+                  color: firstPickTheme.gradientFullForeground,
+                  '--draft-blueprint-featured-muted': firstPickTheme.gradientFullMuted,
+                } : undefined;
+                return (
+                  <button
+                    key={team.rosterId}
+                    type="button"
+                    className={`draft-blueprint-team${team.isMine ? ' is-user-team' : ''}`}
+                    onClick={() => {
+                      setSelectedFantasyTeamIds([team.rosterId]);
+                      setResultsMode('picks');
+                    }}
+                    aria-label={`Open ${team.teamName} picks`}
+                  >
+                    <div className="draft-blueprint-team__heading">
+                      <span><strong>{team.teamName}</strong><small>{team.managerName}{team.isMine ? ' · Your team' : ''}</small></span>
+                      <span className="draft-blueprint-team__count"><strong>{team.pickCount}</strong><small>Picks</small></span>
+                    </div>
+                    <div className="draft-blueprint-first-round" style={firstPickStyle}>
+                      <span>Round 1{team.firstRoundPick?.pickLabel ? ` · Pick ${team.firstRoundPick.pickLabel}` : ''}</span>
+                      <strong>{team.firstRoundPick?.playerName ?? 'No first-round pick'}</strong>
+                      {team.firstRoundPick && <small>{team.firstRoundPick.position}{team.firstRoundPick.nflTeam ? ` · ${team.firstRoundPick.nflTeam}` : ''}</small>}
+                    </div>
+                    <div className="draft-blueprint-team__body">
+                      <div className="draft-blueprint-position-bar" aria-label={`${team.teamName} position distribution`}>
+                        {blueprint.positions.map((position) => {
+                          const count = team.positionCounts[position] ?? 0;
+                          if (!count) return null;
+                          return <span key={position} style={{ flexGrow: count, background: getCompanionPositionColor(position) ?? 'var(--color-fill)' }} title={`${position}: ${count}`} />;
+                        })}
+                      </div>
+                      <div className="draft-blueprint-position-legend">
+                        {blueprint.positions.map((position) => {
+                          const count = team.positionCounts[position] ?? 0;
+                          if (!count) return null;
+                          return <span key={position}><i style={{ background: getCompanionPositionColor(position) ?? 'var(--color-fill)' }} />{position}<b>{count}</b></span>;
+                        })}
+                      </div>
+                      {nextPicks.length > 0 && (
+                        <div className="draft-blueprint-next-picks">
+                          {nextPicks.map((pick) => (
+                            <span key={`${pick.round}-${pick.overall}-${pick.playerId}`}>
+                              <i style={{ background: getCompanionPositionColor(pick.position) ?? 'var(--color-fill)' }} />
+                              <strong>{pick.playerName}</strong>
+                              <small>R{pick.round}{pick.pickLabel ? ` · ${pick.pickLabel}` : ''}</small>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      <span className="draft-blueprint-team__cta">View pick list <span aria-hidden="true">→</span></span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <>
+              <div className="draft-results-controls">
+                <div className="draft-results-control-row draft-results-control-row--positions">
+                  <span className="draft-results-control-row__label">Position</span>
+                  <PositionFilter positions={positionOptions} activePosition={positionFilter} onChange={setPositionFilter} />
+                </div>
+                <div className="draft-results-control-row draft-results-control-row--sort">
+                  <span className="draft-results-control-row__label">Sort</span>
+                  <DraftSegmentedControl label="Sort draft results" options={draftResultsSortOptions} value={activeSortDirection} onChange={setSortDirection} />
+                  <DraftFantasyTeamFilter options={fantasyTeamOptions} selectedIds={selectedFantasyTeamIds} onChange={setSelectedFantasyTeamIds} />
+                </div>
+                <div className="draft-results-control-row draft-results-control-row--rank">
+                  <span className="draft-results-control-row__label">Insights</span>
+                  <div className="draft-results-insights-control">
+                    <DraftSegmentedControl label="Draft rank and outcome insights" options={DRAFT_RESULTS_RANK_MODE_OPTIONS} value={rankMode} onChange={setRankMode} />
+                    <DraftOutcomeStrengthInfo />
+                  </div>
+                </div>
+              </div>
+              {visibleRows.length === 0 ? <EmptyState title="No picks match these filters." /> : (
+                <div className="draft-results-list">
+                  {visibleRows.map((row) => (
+                    <DraftResultRow key={row.key} row={row} darkMode={darkMode} onViewPlayer={onViewPlayer} showInsights={rankMode !== 'off'} seasonIsComplete={seasonIsComplete} />
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </section>
+      )}
+    </div>
+  );
+}
+
+export default function DraftAssistant({ view = 'war-room', sleeperDraftId = '', onViewPlayer = null, tourDemoMode = null }) {
+  if (view === 'draft-order') return <DraftResultsView sleeperDraftId={sleeperDraftId} onViewPlayer={onViewPlayer} tourDemoMode={tourDemoMode} />;
+  if (view === 'results') return <DraftResultsView sleeperDraftId={sleeperDraftId} onViewPlayer={onViewPlayer} tourDemoMode={tourDemoMode} />;
+  if (view === 'my-board') return <DraftBoardDataView mode="my-board" sleeperDraftId={sleeperDraftId} onViewPlayer={onViewPlayer} />;
+  if (view !== 'war-room') return <FutureDraftView view={view} />;
+  return <DraftBoardDataView mode="war-room" sleeperDraftId={sleeperDraftId} onViewPlayer={onViewPlayer} />;
+}

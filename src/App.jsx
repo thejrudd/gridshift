@@ -1,0 +1,2064 @@
+import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useState, useRef, useTransition } from 'react';
+import { loadScheduleData } from './utils/scheduleParser';
+import { loadSeasonSchedule } from './utils/seasonSchedule';
+import { usePredictions } from './context/PredictionContext';
+import { useTheme } from './context/ThemeContext';
+import { exportAsJSON, importFromJSON } from './utils/exportImport';
+import { usePWAInstall } from './hooks/usePWAInstall';
+import useBodyScrollLock from './hooks/useBodyScrollLock';
+import useServiceWorkerUpdate from './hooks/useServiceWorkerUpdate';
+import useWhatsNew from './hooks/useWhatsNew';
+import useOnboardingTour from './hooks/useOnboardingTour';
+import { ONBOARDING_TOUR } from './data/onboardingTour';
+import { ONBOARDING_PHASE } from './utils/onboardingTour';
+import UpdateBanner from './components/UpdateBanner';
+import NavBar from './components/NavBar';
+import BottomTabBar from './components/BottomTabBar';
+import SeasonSubNav from './components/SeasonSubNav';
+import StatisticsSubNav from './components/StatisticsSubNav';
+import CompanionSubNav from './components/CompanionSubNav';
+import LeagueSubNav from './components/LeagueSubNav';
+import TradeSubNav from './components/TradeSubNav';
+import ScoutSubNav from './components/ScoutSubNav';
+import DraftSubNav from './components/DraftSubNav';
+import ActionSheet from './components/ActionSheet';
+import Sidebar from './components/Sidebar';
+import { FantasyProvider, useFantasyLeague, useFantasyStats } from './context/SleeperContext';
+import { getDraft, getLeagueDrafts } from './api/sleeperApi';
+import {
+  getDraftResultsPresentation,
+  getDraftTourContext,
+  getSleeperDraftStatus,
+  isDraftLeagueSelectionReady,
+  isSleeperDraftMock,
+  isSleeperDraftPollable,
+  resolveLeagueDraftId,
+  shouldShowSleeperDraftGlobalNotice,
+} from './utils/draftAssistant/draftStatus';
+import {
+  buildAppPath,
+  getDefaultRouteForTab,
+  isSameAppRoute,
+  normalizeAppRoute,
+  parseAppRoute,
+  slugifyRouteSegment,
+} from './utils/appRoutes';
+import {
+  buildStatisticsPlayerMeta,
+  resolveStatisticsPlayerMetaFromSleeperId,
+  STATISTICS_MODES,
+} from './utils/playerDrilldown';
+import { debugCompanionLog, debugCompanionTimeAsync } from './utils/companionPerfDebug';
+import ScoringOverrideBanner from './components/companion/ScoringOverrideBanner';
+import Spinner from './components/ui/Spinner';
+import SectionSkeleton from './components/ui/SectionSkeleton';
+import SeasonChip from './components/ui/SeasonChip';
+
+const ExportPreview = lazy(() => import('./components/ExportPreview'));
+const PredictionsRedesign = lazy(() => import('./components/predictions/PredictionsRedesign'));
+const Guide = lazy(() => import('./components/Guide'));
+const WhatsNewModal = lazy(() => import('./components/WhatsNewModal'));
+const OnboardingWelcomeModal = lazy(() => import('./components/OnboardingWelcomeModal'));
+const TourOverlay = lazy(() => import('./components/tour/TourOverlay'));
+const PlayerBrowser = lazy(() => import('./components/PlayerBrowser'));
+const StatisticsSchedule = lazy(() => import('./components/StatisticsSchedule'));
+const StatisticsScores = lazy(() => import('./components/statistics/scores/StatisticsScores'));
+const StatisticsStandings = lazy(() => import('./components/StatisticsStandings'));
+const StatisticsGame = lazy(() => import('./components/StatisticsGame'));
+const FavoriteTeamPicker = lazy(() => import('./components/FavoriteTeamPicker'));
+const DisplaySettingsModal = lazy(() => import('./components/DisplaySettingsModal'));
+const LegalModal = lazy(() => import('./components/LegalModal'));
+const CompanionConnect = lazy(() => import('./components/companion/CompanionConnect'));
+import { LIVE_SANDBOX_ENABLED } from './dev/liveSandbox';
+const CompanionRankings = lazy(() => import('./components/companion/CompanionRankings'));
+const CompanionLive = lazy(() => import('./components/companion/CompanionLive'));
+const CompanionScoring = lazy(() => import('./components/companion/CompanionScoring'));
+const CompanionLeague = lazy(() => import('./components/companion/CompanionLeague'));
+const CompanionStandings = lazy(() => import('./components/companion/CompanionStandings'));
+const CompanionHistory = lazy(() => import('./components/companion/CompanionHistory'));
+const CompanionActivity = lazy(() => import('./components/companion/CompanionActivity'));
+const CompanionMatchup = lazy(() => debugCompanionTimeAsync(
+  'CompanionMatchup chunk import',
+  () => import('./components/companion/CompanionMatchup'),
+));
+const CompanionWaiver = lazy(() => debugCompanionTimeAsync(
+  'CompanionWaiver chunk import',
+  () => import('./components/companion/CompanionWaiver'),
+));
+const CompanionHeatmap = lazy(() => import('./components/companion/CompanionHeatmap'));
+const CompanionDefense = lazy(() => import('./components/companion/CompanionDefense'));
+const CompanionTrade = lazy(() => import('./components/companion/CompanionTrade'));
+const TradeHistory = lazy(() => import('./components/companion/TradeHistory'));
+const ScoutTab = lazy(() => import('./components/scout/ScoutTab'));
+const DraftAssistant = lazy(() => import('./components/draft/DraftAssistant'));
+const DRAFT_NAV_POLL_MS = 15_000;
+const DRAFT_ACTIVITY_NOTICE_TABS = new Set(['predictions', 'statistics', 'fantasy', 'league', 'trade', 'scout']);
+const DEV_DRAFT_OVERRIDE_PARAM_KEYS = ['sleeperDraftId', 'draftId'];
+
+function extractSleeperDraftId(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  const numericId = raw.match(/\d{10,}/)?.[0];
+  return numericId ?? raw;
+}
+
+function getDevSleeperDraftIdOverride(sleeperDraftId = '') {
+  if (!import.meta.env.DEV) return extractSleeperDraftId(sleeperDraftId);
+
+  const explicitDraftId = extractSleeperDraftId(sleeperDraftId);
+  if (explicitDraftId) return explicitDraftId;
+
+  if (typeof window !== 'undefined') {
+    const params = new URLSearchParams(window.location.search);
+    for (const key of DEV_DRAFT_OVERRIDE_PARAM_KEYS) {
+      const value = extractSleeperDraftId(params.get(key));
+      if (value) return value;
+    }
+  }
+
+  return extractSleeperDraftId(import.meta.env.VITE_SLEEPER_DRAFT_ID_OVERRIDE);
+}
+
+function SectionLoading({ label = 'Loading section' }) {
+  return <SectionSkeleton label={label} />;
+}
+
+function ModalLoading({ label = 'Loading' }) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center px-4"
+      style={{ background: 'rgba(0,0,0,0.5)' }}
+    >
+      <div
+        className="w-full max-w-md rounded-2xl px-5 py-4"
+        style={{
+          background: 'var(--color-bg-secondary)',
+          border: '1px solid var(--color-separator)',
+          boxShadow: '0 12px 40px rgba(0,0,0,0.12), 0 4px 12px rgba(0,0,0,0.06)',
+        }}
+      >
+        <div className="flex items-center gap-3">
+          <Spinner size="sm" />
+          <span className="text-sm" style={{ color: 'var(--color-label-secondary)' }}>{label}...</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RouteLoadingOverlay({ label = 'Opening player' }) {
+  return (
+    <div
+      className="fixed inset-0 z-[70] flex items-center justify-center px-4"
+      style={{
+        background: 'var(--color-bg)',
+        backgroundColor: 'color-mix(in srgb, var(--color-bg) 84%, transparent)',
+        backdropFilter: 'blur(6px)',
+      }}
+      role="status"
+      aria-live="polite"
+    >
+      <div
+        className="flex w-full max-w-md items-center gap-3 rounded-lg px-4 py-3"
+        style={{
+          background: 'var(--color-bg-secondary)',
+          border: '1px solid var(--color-separator)',
+          boxShadow: '0 18px 52px rgba(0,0,0,0.22)',
+          color: 'var(--color-label-secondary)',
+        }}
+      >
+        <Spinner size="md" />
+        <span className="min-w-0 truncate text-sm font-semibold">{label}...</span>
+      </div>
+    </div>
+  );
+}
+
+function DraftActivityMiniBanner({ draft, leagueName, leagueId, onOpenDraft }) {
+  const paused = getSleeperDraftStatus(draft) === 'paused';
+  const draftKind = isSleeperDraftMock(draft, leagueId) ? 'Mock draft' : 'Draft';
+  const title = `${draftKind} ${paused ? 'paused' : 'live'}`;
+  const context = paused
+    ? `${leagueName ?? 'Sleeper'} draft is paused.`
+    : `${leagueName ?? 'Sleeper'} draft is in progress.`;
+
+  return (
+    <div className={`draft-activity-mini-banner${paused ? ' is-paused' : ' is-live'}`} role="status" aria-live="polite">
+      <div className="draft-activity-mini-banner__copy">
+        <span className="draft-activity-mini-banner__dot" aria-hidden="true" />
+        <strong>{title}</strong>
+        <span>{context}</span>
+      </div>
+      <button type="button" className="draft-activity-mini-banner__action" onClick={onOpenDraft}>
+        Open Draft
+      </button>
+    </div>
+  );
+}
+
+function LeagueContextHeader({
+  league,
+  season,
+  changeSeason,
+  seasonOptions,
+  seasonSwitching,
+  onSwitchLeague,
+  className,
+}) {
+  const years = seasonOptions?.length ? seasonOptions : [String(league?.season ?? season)];
+
+  return (
+    <div className={className ?? 'flex items-center gap-2 mt-3 mb-3 px-4'}>
+      <div className="flex-1 min-w-0">
+        <span className="text-xs font-semibold truncate" style={{ color: 'var(--color-label-secondary)' }}>
+          {league?.name ?? 'League'}
+        </span>
+      </div>
+      {years.length > 1 && (
+        <div className="flex gap-1 shrink-0">
+          {years.map(s => {
+            const isActive = season === s;
+            const isPending = seasonSwitching === s;
+            return (
+              <button
+                key={s}
+                type="button"
+                onClick={() => changeSeason(s)}
+                disabled={seasonSwitching != null}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-semibold transition-colors"
+                style={{
+                  background: isActive || isPending ? 'var(--color-signature)' : 'var(--color-fill)',
+                  color: isActive || isPending ? 'var(--color-signature-fg)' : 'var(--color-label-tertiary)',
+                  opacity: seasonSwitching != null && !isPending ? 0.5 : 1,
+                }}
+              >
+                {isPending && <Spinner size="sm" style={{ color: 'var(--color-signature-fg)' }} />}
+                {s}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      <button
+        type="button"
+        onClick={onSwitchLeague}
+        className="inline-flex items-center gap-1.5 text-xs font-semibold shrink-0 px-2.5 py-1 rounded-lg active:opacity-70"
+        style={{
+          background: 'var(--color-fill)',
+          color: 'var(--color-label-secondary)',
+          border: '1px solid var(--color-separator)',
+        }}
+        aria-label="Switch league"
+      >
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M7 7h11l-3-3" />
+          <path d="M17 17H6l3 3" />
+          <path d="M18 7l-3 3" />
+          <path d="M6 17l3-3" />
+        </svg>
+        Switch
+      </button>
+    </div>
+  );
+}
+
+function getScheduleTeamId(value) {
+  if (typeof value === 'string') return value.toUpperCase();
+  return value?.id ? String(value.id).toUpperCase() : null;
+}
+
+function getScheduleGameTeamId(game, side) {
+  if (side === 'away') {
+    return getScheduleTeamId(game?.awayTeam)
+      ?? getScheduleTeamId(game?.away)
+      ?? getScheduleTeamId(game?.awayTeamId)
+      ?? getScheduleTeamId(game?.awayId);
+  }
+  return getScheduleTeamId(game?.homeTeam)
+    ?? getScheduleTeamId(game?.home)
+    ?? getScheduleTeamId(game?.homeTeamId)
+    ?? getScheduleTeamId(game?.homeId);
+}
+
+function buildPredictionScheduleModel(seasonSchedule, teams = []) {
+  const teamSchedules = new Map(teams.map((team) => [team.id, []]));
+  const hasScheduleGames = seasonSchedule?.metadata?.hasSchedule || seasonSchedule?.games?.length > 0;
+
+  if (!hasScheduleGames) {
+    return {
+      schedule: seasonSchedule,
+      teams,
+      hasScheduleGames: false,
+    };
+  }
+
+  const weeks = (seasonSchedule?.weeks ?? []).map((week) => ({
+    ...week,
+    games: (week.games ?? []).map((game, index) => {
+      const awayTeam = getScheduleGameTeamId(game, 'away');
+      const homeTeam = getScheduleGameTeamId(game, 'home');
+      const awaySchedule = teamSchedules.get(awayTeam) ?? [];
+      const homeSchedule = teamSchedules.get(homeTeam) ?? [];
+      const awayGameIndex = awaySchedule.length;
+      const homeGameIndex = homeSchedule.length;
+      const id = game.id ?? `${seasonSchedule.season ?? 2026}-W${String(week.week).padStart(2, '0')}-${awayTeam}-${homeTeam}-${index + 1}`;
+      const normalizedGame = {
+        ...game,
+        id,
+        week: week.week,
+        awayTeam,
+        homeTeam,
+        awayGameIndex,
+        homeGameIndex,
+      };
+
+      if (awayTeam) {
+        awaySchedule.push({
+          id,
+          week: week.week,
+          opponentId: homeTeam,
+          awayTeam,
+          homeTeam,
+          gameIndex: awayGameIndex,
+        });
+        teamSchedules.set(awayTeam, awaySchedule);
+      }
+
+      if (homeTeam) {
+        homeSchedule.push({
+          id,
+          week: week.week,
+          opponentId: awayTeam,
+          awayTeam,
+          homeTeam,
+          gameIndex: homeGameIndex,
+        });
+        teamSchedules.set(homeTeam, homeSchedule);
+      }
+
+      return normalizedGame;
+    }),
+  }));
+
+  const predictionTeams = teams.map((team) => {
+    const schedule = teamSchedules.get(team.id) ?? [];
+    if (!schedule.length) return team;
+    return {
+      ...team,
+      schedule,
+      opponents: schedule.map((entry) => entry.opponentId),
+    };
+  });
+
+  return {
+    schedule: { ...seasonSchedule, weeks, games: weeks.flatMap((week) => week.games) },
+    teams: predictionTeams,
+    hasScheduleGames: true,
+  };
+}
+
+function getPredictionGameWinner(game, predictions) {
+  const awayTeam = getScheduleGameTeamId(game, 'away');
+  const homeTeam = getScheduleGameTeamId(game, 'home');
+  const awayResult = predictions?.[awayTeam]?.gameResults?.[game.awayGameIndex];
+  const homeResult = predictions?.[homeTeam]?.gameResults?.[game.homeGameIndex];
+
+  if (awayResult === 'W' || homeResult === 'L') return awayTeam;
+  if (awayResult === 'L' || homeResult === 'W') return homeTeam;
+  if (awayResult === 'T' || homeResult === 'T') return 'T';
+  return null;
+}
+
+function buildPredictionPickMap(weeks = [], predictions = {}) {
+  return weeks.reduce((acc, week) => {
+    for (const game of week.games ?? []) {
+      const winner = getPredictionGameWinner(game, predictions);
+      if (winner) acc[game.id] = winner;
+    }
+    return acc;
+  }, {});
+}
+
+const VALID_PREDICTION_RESULTS = new Set(['W', 'L', 'T']);
+const FULL_SEASON_GAME_COUNT = 17;
+const REGULAR_SEASON_GAME_COUNT = 272;
+
+function getPositiveCount(value) {
+  const count = Number(value);
+  return Number.isFinite(count) ? Math.max(0, count) : 0;
+}
+
+function getTeamPredictionGameCount(team) {
+  return Math.max(
+    team?.opponents?.length || 0,
+    team?.schedule?.length || 0,
+    FULL_SEASON_GAME_COUNT,
+  );
+}
+
+function countRecordDecisionSlots(record, teamGameCount) {
+  if (!record) return 0;
+  const decisions = getPositiveCount(record.wins)
+    + getPositiveCount(record.losses)
+    + getPositiveCount(record.ties);
+  return Math.min(teamGameCount, decisions);
+}
+
+function countExplicitGameSlots(record, teamGameCount) {
+  return Object.entries(record?.gameResults ?? {}).reduce((count, [slot, result]) => {
+    const index = Number(slot);
+    if (!Number.isInteger(index) || index < 0 || index >= teamGameCount) return count;
+    return VALID_PREDICTION_RESULTS.has(result) ? count + 1 : count;
+  }, 0);
+}
+
+function isManualRecordPrediction(record) {
+  return Boolean(record?.manualOverride || record?.recordSource === 'manual');
+}
+
+function getPredictionProgressSummary(teams = [], predictions = {}, gameCounts = {}) {
+  let completedTeams = 0;
+  let manualTeamSlots = 0;
+  let totalTeamSlots = gameCounts.totalTeamSlots ?? 0;
+
+  if (!totalTeamSlots) {
+    totalTeamSlots = teams.reduce((sum, team) => sum + getTeamPredictionGameCount(team), 0);
+  }
+
+  for (const team of teams) {
+    const teamGameCount = getTeamPredictionGameCount(team);
+    const record = predictions?.[team.id];
+    const recordSlots = countRecordDecisionSlots(record, teamGameCount);
+    const explicitSlots = countExplicitGameSlots(record, teamGameCount);
+    const hasCompleteManualRecord = isManualRecordPrediction(record) && recordSlots >= teamGameCount;
+    const hasCompleteGamePicks = explicitSlots >= teamGameCount;
+
+    if (hasCompleteManualRecord || hasCompleteGamePicks) {
+      completedTeams += 1;
+    }
+
+    if (isManualRecordPrediction(record)) {
+      manualTeamSlots += Math.max(0, recordSlots - explicitSlots);
+    }
+  }
+
+  const totalGames = gameCounts.totalGames
+    || Math.round(totalTeamSlots / 2)
+    || (teams.length ? REGULAR_SEASON_GAME_COUNT : 0);
+  const pickedGames = Math.min(
+    totalGames,
+    (gameCounts.pickedGames ?? 0) + (manualTeamSlots / 2),
+  );
+
+  return {
+    completedTeams,
+    totalTeams: teams.length,
+    pickedGames,
+    totalGames,
+  };
+}
+
+function prunePlayoffPicksAfterChange(previous, matchupId) {
+  const next = { ...previous };
+  const conference = matchupId.startsWith('AFC-') ? 'AFC' : matchupId.startsWith('NFC-') ? 'NFC' : null;
+  if (matchupId === 'super-bowl') return next;
+
+  if (conference && matchupId.includes('-wc-')) {
+    delete next[`${conference}-div-1`];
+    delete next[`${conference}-div-2`];
+    delete next[`${conference}-championship`];
+    delete next['super-bowl'];
+    return next;
+  }
+
+  if (conference && matchupId.includes('-div-')) {
+    delete next[`${conference}-championship`];
+    delete next['super-bowl'];
+    return next;
+  }
+
+  if (conference && matchupId.endsWith('-championship')) {
+    delete next['super-bowl'];
+  }
+
+  return next;
+}
+
+function AppInner() {
+  const [scheduleData, setScheduleData] = useState(null);
+  const [seasonSchedule, setSeasonSchedule] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [appRoute, setAppRoute] = useState(() => parseAppRoute(window.location.pathname, window.location.search));
+  const [statsNavBack, setStatsNavBack] = useState(null); // { label, onBack } | null — contextual back from external nav
+  const [statsDrilldownPending, setStatsDrilldownPending] = useState(null);
+  const draftPlayerOpenTokenRef = useRef(0);
+  const [tradeAnalyticsPrewarmRequested, setTradeAnalyticsPrewarmRequested] = useState(false);
+  const [, startRouteTransition] = useTransition();
+
+  const {
+    platform,
+    hasLeague,
+    selectedLeagueId,
+    season,
+    changeSeason,
+    seasonSwitching,
+    league,
+    linkedLeagueSeasonOptions,
+    scoringOverridePaused,
+    sleeperUser,
+  } = useFantasyLeague();
+  const {
+    statsLoading,
+    seasonStats,
+    players: sleeperPlayers,
+    espnIdOverrides,
+  } = useFantasyStats();
+
+  const {
+    getPredictionCount,
+    getGamePredictionCounts,
+    resetAllPredictions,
+    predictions,
+    importPredictions,
+    generateRandomPredictions,
+    setManualTeamRecord,
+    setTeamGameResults,
+  } = usePredictions();
+  const { darkMode, toggleDarkMode, favoriteTeam, displaySize, setDisplaySize } = useTheme();
+  const fileInputRef = useRef(null);
+  const contentAreaRef = useRef(null);
+  const pendingContentScrollTopRef = useRef(null);
+  const onboardingRestoreSidebarRef = useRef(false);
+  const latestAppRouteRef = useRef(appRoute);
+  const heatmapRouteUpdateTimerRef = useRef(null);
+  const pendingHeatmapRoutePatchRef = useRef(null);
+
+  const [contentScrolled, setContentScrolled] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try { return localStorage.getItem('sidebarCollapsed') === 'true'; } catch { return false; }
+  });
+  const toggleSidebarCollapsed = () => setSidebarCollapsed(prev => {
+    const next = !prev;
+    try { localStorage.setItem('sidebarCollapsed', String(next)); } catch { /* ignore */ }
+    return next;
+  });
+  const [exportPreviewOpen, setExportPreviewOpen] = useState(false);
+  const [actionSheetOpen, setActionSheetOpen] = useState(false);
+  const [guideOpen, setGuideOpen] = useState(false);
+  const [displaySettingsOpen, setDisplaySettingsOpen] = useState(false);
+  const [legalOpen, setLegalOpen] = useState(false);
+  const [tourActive, setTourActive] = useState(false);
+  const [tourDemoMode, setTourDemoMode] = useState(null);
+  const { needRefresh, applyUpdate } = useServiceWorkerUpdate();
+  const {
+    pending: whatsNewPending,
+    markSeen: markWhatsNewSeen,
+    isFirstRun,
+  } = useWhatsNew({ enabled: hasLeague });
+  const {
+    phase: onboardingPhase, begin: beginOnboarding, startManual: startManualOnboarding, complete: completeOnboarding,
+  } = useOnboardingTour({ isFirstRun, hasLeague });
+  const [teamPickerOpen, setTeamPickerOpen] = useState(false);
+  const [leagueSwitcherOpen, setLeagueSwitcherOpen] = useState(false);
+  const [draftNavState, setDraftNavState] = useState({
+    loading: false,
+    draft: null,
+    error: '',
+    leagueId: null,
+    season: null,
+  });
+  useBodyScrollLock(leagueSwitcherOpen);
+
+  // An available update takes precedence over What's New. The tour should
+  // describe the version the user has just installed, not the waiting build.
+  useEffect(() => {
+    if (needRefresh && tourActive) {
+      setTourActive(false);
+      setTourDemoMode(null);
+    }
+  }, [needRefresh, tourActive]);
+
+  const preserveContentScrollDuringUpdate = useCallback((update) => {
+    pendingContentScrollTopRef.current = contentAreaRef.current?.scrollTop ?? null;
+    update();
+  }, []);
+
+  useLayoutEffect(() => {
+    const scrollTop = pendingContentScrollTopRef.current;
+    if (scrollTop == null) return;
+    pendingContentScrollTopRef.current = null;
+
+    const contentArea = contentAreaRef.current;
+    if (!contentArea) return;
+    const maxScrollTop = Math.max(0, contentArea.scrollHeight - contentArea.clientHeight);
+    contentArea.scrollTop = Math.min(scrollTop, maxScrollTop);
+  }, [scoringOverridePaused]);
+
+  const [predictionPickMode, setPredictionPickMode] = useState('record');
+  const [playoffPicks, setPlayoffPicks] = useState({});
+
+  const { isInstallable, isInstalled, triggerInstall } = usePWAInstall();
+
+  const activeTab = appRoute.activeTab;
+  const seasonView = appRoute.seasonView;
+  const statisticsView = appRoute.statisticsView;
+  const statisticsTeamId = appRoute.statisticsTeamId;
+  const statisticsPlayerId = appRoute.statisticsPlayerId;
+  const statisticsGameId = appRoute.statisticsGameId;
+  const statisticsMode = appRoute.statisticsMode ?? STATISTICS_MODES.GAME;
+  const statisticsScheduleMode = appRoute.statisticsScheduleMode;
+  const statisticsScheduleWeek = appRoute.statisticsScheduleWeek;
+  const statisticsScheduleTeamId = appRoute.statisticsScheduleTeamId;
+  const statisticsScheduleFilter = appRoute.statisticsScheduleFilter;
+  const predictionsTeamId = appRoute.predictionsTeamId;
+  const companionView = appRoute.companionView;
+
+  // The Fantasy Live dev sandbox supplies its own fixture league, so it renders
+  // without a connected one. Dev-only; compiled out of production builds.
+  const liveSandboxRoute = LIVE_SANDBOX_ENABLED
+    && activeTab === 'fantasy'
+    && companionView === 'live';
+
+  const leagueView = appRoute.leagueView;
+  const tradeView = appRoute.tradeView;
+  const scoutView = appRoute.scoutView;
+  const tradeDisabledForPlatform = false;
+  const leagueDisabledForPlatform = false;
+  const draftView = appRoute.draftView;
+  const draftSleeperDraftId = appRoute.sleeperDraftId;
+  const draftStatusOverrideId = getDevSleeperDraftIdOverride(draftSleeperDraftId);
+  const draftNavMatchesSelection = draftNavState.leagueId === selectedLeagueId && draftNavState.season === season;
+  const selectedDraft = draftNavMatchesSelection ? draftNavState.draft : null;
+  const draftResultsPresentation = getDraftResultsPresentation(selectedDraft);
+  const currentLeagueSeason = [...linkedLeagueSeasonOptions]
+    .map((value) => String(value))
+    .sort((left, right) => Number(right) - Number(left))[0] ?? String(season);
+  const draftTourContext = getDraftTourContext({
+    selectedSeason: season,
+    currentSeason: currentLeagueSeason,
+    draft: selectedDraft,
+  });
+  const draftLeagueSelectionReady = isDraftLeagueSelectionReady({
+    season,
+    league,
+    seasonSwitching,
+  });
+  const activeDraftNoticeDraft = draftNavMatchesSelection ? draftNavState.draft : null;
+  const activeDraftNoticeDraftId = activeDraftNoticeDraft?.draft_id == null
+    ? draftStatusOverrideId
+    : String(activeDraftNoticeDraft.draft_id);
+  const showDraftActivityNotice = Boolean(
+    DRAFT_ACTIVITY_NOTICE_TABS.has(activeTab)
+    && activeTab !== 'draft'
+    && shouldShowSleeperDraftGlobalNotice({
+      draft: activeDraftNoticeDraft,
+      userId: sleeperUser?.user_id,
+      leagueId: selectedLeagueId,
+    }),
+  );
+
+  useEffect(() => {
+    latestAppRouteRef.current = appRoute;
+  }, [appRoute]);
+
+  const tradeInitPlayer = appRoute.tradePlayerId
+    ? {
+        sleeperId: appRoute.tradePlayerId,
+        side: appRoute.tradeSide ?? 'give',
+        partnerRosterId: appRoute.tradePartnerRosterId ?? undefined,
+        otherSleeperId: appRoute.tradeOtherPlayerId ?? undefined,
+      }
+    : null;
+  const sleeperPlayerCount = sleeperPlayers ? Object.keys(sleeperPlayers).length : 0;
+
+  useEffect(() => {
+    if (activeTab !== 'fantasy') return;
+    debugCompanionLog('Route entered Companion', {
+      companionView,
+      selectedLeagueId,
+      season,
+      hasLeague,
+      statsLoading,
+      hasSeasonStats: Boolean(seasonStats),
+      hasSleeperPlayers: sleeperPlayerCount > 0,
+    });
+  }, [activeTab, companionView, selectedLeagueId, season, hasLeague, statsLoading, seasonStats, sleeperPlayerCount]);
+  const waiverInitRequest = appRoute.companionView === 'waivers' && appRoute.waiverPosition
+    ? { position: appRoute.waiverPosition }
+    : null;
+  const matchupInitRequest = appRoute.companionView === 'matchups' && (appRoute.matchupWeek || appRoute.matchupPlayerId)
+    ? { week: appRoute.matchupWeek, playerId: appRoute.matchupPlayerId }
+    : null;
+  const rankingsPosition = appRoute.companionView === 'rankings' ? (appRoute.rankingsPosition ?? 'ALL') : 'ALL';
+  const rankingsRosterId = appRoute.companionView === 'rankings' ? appRoute.rankingsRosterId : null;
+  const leagueRouteState = appRoute.companionView === 'rosters'
+    ? {
+        subView: appRoute.leagueSubview ?? 'roster',
+        rosterId: appRoute.leagueRosterId ?? null,
+      }
+    : { subView: 'roster', rosterId: null };
+  const heatmapRouteState = appRoute.companionView === 'heatmap'
+    ? {
+        viewMode: appRoute.heatmapViewMode ?? 'offense',
+        position: appRoute.heatmapPosition ?? 'ALL',
+        defensePosition: appRoute.heatmapDefensePosition ?? 'ALL',
+        statMode: appRoute.heatmapStatMode ?? 'pts',
+        defenseStatMode: appRoute.heatmapDefenseStatMode ?? 'pts',
+        scope: appRoute.heatmapScope ?? 'overall',
+        location: appRoute.heatmapLocation ?? 'all',
+        sortKey: appRoute.heatmapSortKey ?? 'avg',
+        sortDir: appRoute.heatmapSortDir ?? 'desc',
+        teamSort: appRoute.heatmapTeamSort ?? 'alpha',
+        useTeamColors: appRoute.heatmapUseTeamColors === '1',
+        vegasView: appRoute.heatmapVegasView ?? 'spread',
+    }
+    : null;
+  const defenseRouteState = appRoute.companionView === 'defenses'
+    ? {
+        mode: appRoute.defenseMode ?? 'stats',
+        position: appRoute.defensePosition ?? 'QB',
+        stat: appRoute.defenseStat ?? 'pass_yd',
+        sort: appRoute.defenseSort ?? 'total',
+        dir: appRoute.defenseDir ?? 'desc',
+        query: appRoute.defenseQuery ?? '',
+      }
+    : null;
+  const readHistoryState = useCallback(() => {
+    const current = window.history.state;
+    return current && typeof current === 'object' ? current : {};
+  }, []);
+
+  const applyRoute = useCallback((nextRoute, { replace = false, state = null } = {}) => {
+    const normalized = normalizeAppRoute(nextRoute);
+    const nextPath = buildAppPath(normalized);
+    const currentState = readHistoryState();
+    const nextState = { ...currentState, ...(state ?? {}), _nav: 'app' };
+    const samePath = nextPath === `${window.location.pathname}${window.location.search}`;
+
+    if (replace) {
+      window.history.replaceState(nextState, '', nextPath);
+    } else if (!samePath || state) {
+      window.history.pushState(nextState, '', nextPath);
+    }
+
+    startRouteTransition(() => {
+      setAppRoute((prev) => (isSameAppRoute(prev, normalized) ? prev : normalized));
+    });
+  }, [readHistoryState, startRouteTransition]);
+
+  const navigateToTab = useCallback((tab) => {
+    if (tab === 'trade' && tradeDisabledForPlatform) return;
+    applyRoute(getDefaultRouteForTab(tab));
+  }, [applyRoute, tradeDisabledForPlatform]);
+
+  useEffect(() => {
+    if (!tradeDisabledForPlatform || activeTab !== 'trade') return;
+    applyRoute({ activeTab: 'fantasy', companionView: 'rosters' }, { replace: true });
+  }, [activeTab, applyRoute, tradeDisabledForPlatform]);
+
+  const navigateSeasonView = useCallback((view) => {
+    applyRoute({ activeTab: 'predictions', seasonView: view });
+  }, [applyRoute]);
+
+  const navigatePredictionTeam = useCallback((team) => {
+    if (!team?.id) return;
+    applyRoute({ activeTab: 'predictions', seasonView: 'predictions', predictionsTeamId: team.id });
+  }, [applyRoute]);
+
+  const navigateCompanionView = useCallback((view) => {
+    applyRoute({ activeTab: 'fantasy', companionView: view });
+  }, [applyRoute]);
+
+  const updateCompanionRoute = useCallback((patch, options = {}) => {
+    applyRoute({ ...appRoute, activeTab: 'fantasy', ...patch }, options);
+  }, [appRoute, applyRoute]);
+
+  const navigateLeagueView = useCallback((view) => {
+    applyRoute({ activeTab: 'league', leagueView: view });
+  }, [applyRoute]);
+
+  const scheduleHeatmapRouteUpdate = useCallback((nextState) => {
+    pendingHeatmapRoutePatchRef.current = {
+      companionView: 'heatmap',
+      heatmapViewMode: nextState.viewMode,
+      heatmapPosition: nextState.position === 'ALL' ? null : nextState.position,
+      heatmapDefensePosition: nextState.defensePosition === 'ALL' ? null : nextState.defensePosition,
+      heatmapStatMode: nextState.statMode,
+      heatmapDefenseStatMode: nextState.defenseStatMode,
+      heatmapScope: nextState.scope,
+      heatmapLocation: nextState.location,
+      heatmapSortKey: nextState.sortKey,
+      heatmapSortDir: nextState.sortDir,
+      heatmapTeamSort: nextState.teamSort,
+      heatmapUseTeamColors: nextState.useTeamColors ? '1' : '0',
+      heatmapVegasView: nextState.vegasView,
+    };
+
+    if (heatmapRouteUpdateTimerRef.current) {
+      window.clearTimeout(heatmapRouteUpdateTimerRef.current);
+    }
+
+    heatmapRouteUpdateTimerRef.current = window.setTimeout(() => {
+      heatmapRouteUpdateTimerRef.current = null;
+      const patch = pendingHeatmapRoutePatchRef.current;
+      pendingHeatmapRoutePatchRef.current = null;
+      if (!patch) return;
+
+      const currentRoute = latestAppRouteRef.current;
+      if (currentRoute.activeTab !== 'fantasy' || currentRoute.companionView !== 'heatmap') return;
+
+      applyRoute({ ...currentRoute, activeTab: 'fantasy', ...patch }, { replace: true });
+    }, 120);
+  }, [applyRoute]);
+
+  useEffect(() => () => {
+    if (heatmapRouteUpdateTimerRef.current) {
+      window.clearTimeout(heatmapRouteUpdateTimerRef.current);
+      heatmapRouteUpdateTimerRef.current = null;
+    }
+    pendingHeatmapRoutePatchRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'fantasy' && companionView === 'heatmap') return;
+    if (heatmapRouteUpdateTimerRef.current) {
+      window.clearTimeout(heatmapRouteUpdateTimerRef.current);
+      heatmapRouteUpdateTimerRef.current = null;
+    }
+    pendingHeatmapRoutePatchRef.current = null;
+  }, [activeTab, companionView]);
+
+  const navigateTradeView = useCallback((view) => {
+    if (tradeDisabledForPlatform) return;
+    applyRoute({ activeTab: 'trade', tradeView: view });
+  }, [applyRoute, tradeDisabledForPlatform]);
+
+  const navigateScoutView = useCallback((view) => {
+    applyRoute({ activeTab: 'scout', scoutView: view });
+  }, [applyRoute]);
+
+  const navigateDraftView = useCallback((view) => {
+    applyRoute({
+      activeTab: 'draft',
+      draftView: view,
+      sleeperDraftId: draftSleeperDraftId,
+    });
+  }, [applyRoute, draftSleeperDraftId]);
+
+  const navigateToActiveDraft = useCallback(() => {
+    applyRoute({
+      activeTab: 'draft',
+      draftView: 'results',
+      sleeperDraftId: activeDraftNoticeDraftId,
+    });
+  }, [activeDraftNoticeDraftId, applyRoute]);
+
+  useEffect(() => {
+    if (!hasLeague || !selectedLeagueId || !league) {
+      setDraftNavState({ loading: false, draft: null, error: '', leagueId: null, season: null });
+      return undefined;
+    }
+
+    let cancelled = false;
+    let timeoutId = null;
+    let hasLoadedDraft = false;
+
+    const loadDraftStatus = async () => {
+      const initialLoad = !hasLoadedDraft;
+      if (initialLoad) {
+        setDraftNavState({
+          loading: true,
+          draft: null,
+          error: '',
+          leagueId: selectedLeagueId,
+          season,
+        });
+      }
+
+      try {
+        const draftId = draftStatusOverrideId
+          || resolveLeagueDraftId(league, await getLeagueDrafts(selectedLeagueId).catch(() => []));
+        if (!draftId) {
+          if (!cancelled) {
+            setDraftNavState({ loading: false, draft: null, error: '', leagueId: selectedLeagueId, season });
+            hasLoadedDraft = true;
+          }
+          return;
+        }
+
+        const nextDraft = await getDraft(draftId);
+        if (cancelled) return;
+
+        setDraftNavState({ loading: false, draft: nextDraft, error: '', leagueId: selectedLeagueId, season });
+        hasLoadedDraft = true;
+
+        if (isSleeperDraftPollable(nextDraft)) {
+          timeoutId = window.setTimeout(loadDraftStatus, DRAFT_NAV_POLL_MS);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setDraftNavState({
+            loading: false,
+            draft: null,
+            error: error?.message ?? 'Could not load draft status.',
+            leagueId: selectedLeagueId,
+            season,
+          });
+          hasLoadedDraft = true;
+        }
+      }
+    };
+
+    loadDraftStatus();
+
+    return () => {
+      cancelled = true;
+      if (timeoutId) window.clearTimeout(timeoutId);
+    };
+  }, [hasLeague, selectedLeagueId, season, league, draftStatusOverrideId]);
+
+  const prewarmTradeView = useCallback((view) => {
+    if (view === 'intelligence' || view === 'upgrade') {
+      setTradeAnalyticsPrewarmRequested(true);
+    }
+  }, []);
+
+  const buildStatsBackContext = useCallback((label, backRoute) => {
+    if (!label || !backRoute) return null;
+    const normalizedBackRoute = normalizeAppRoute(backRoute);
+    return {
+      label,
+      onBack: () => {
+        applyRoute(normalizedBackRoute);
+        setStatsNavBack(null);
+      },
+    };
+  }, [applyRoute]);
+
+  const navigateToStatisticsHome = useCallback(() => {
+    applyRoute({ activeTab: 'statistics', statisticsView: 'browser' });
+  }, [applyRoute]);
+
+  const navigateStatisticsSubView = useCallback((view) => {
+    if (view === 'schedule') {
+      applyRoute({ activeTab: 'statistics', statisticsView: 'schedule' });
+      return;
+    }
+    if (view === 'standings') {
+      applyRoute({ activeTab: 'statistics', statisticsView: 'standings' });
+      return;
+    }
+    if (view === 'scores') {
+      applyRoute({ activeTab: 'statistics', statisticsView: 'scores' });
+      return;
+    }
+    applyRoute({ activeTab: 'statistics', statisticsView: 'browser' });
+  }, [applyRoute]);
+
+  const navigateToStatisticsTeam = useCallback((team) => {
+    if (!team?.id) return;
+    applyRoute({
+      activeTab: 'statistics',
+      statisticsView: 'team',
+      statisticsTeamId: team.id,
+    });
+  }, [applyRoute]);
+
+  const navigateToStatisticsScheduleTeam = useCallback((teamId) => {
+    if (!teamId) return;
+    applyRoute({
+      activeTab: 'statistics',
+      statisticsView: 'schedule',
+      statisticsScheduleMode: 'team',
+      statisticsScheduleTeamId: teamId,
+    });
+  }, [applyRoute]);
+
+  const navigateToStatisticsGame = useCallback((game) => {
+    const gameId = game?.espnEventId ?? game?.eventId ?? game?.id;
+    if (!gameId) return;
+    applyRoute({
+      activeTab: 'statistics',
+      statisticsView: 'game',
+      statisticsGameId: String(gameId),
+    });
+  }, [applyRoute]);
+
+  const updateStatisticsScheduleRoute = useCallback((patch, options = {}) => {
+    applyRoute({
+      ...appRoute,
+      activeTab: 'statistics',
+      statisticsView: 'schedule',
+      ...patch,
+    }, options);
+  }, [appRoute, applyRoute]);
+
+  const navigateToStatisticsPlayer = useCallback((player, { backLabel = null, backRoute = null, mode = STATISTICS_MODES.GAME } = {}) => {
+    if (!player?.id) return;
+
+    const playerMeta = buildStatisticsPlayerMeta(player);
+    if (!playerMeta?.id) return;
+    const nextBackContext = buildStatsBackContext(backLabel, backRoute);
+
+    setStatsDrilldownPending({
+      playerId: playerMeta.id,
+      label: `Opening ${playerMeta.displayName || 'player'}`,
+    });
+    setStatsNavBack(nextBackContext);
+    const playerRoute = {
+      activeTab: 'statistics',
+      statisticsView: 'player',
+      statisticsPlayerId: playerMeta.id,
+      statisticsPlayerSlug: slugifyRouteSegment(playerMeta.displayName || playerMeta.id) || 'player',
+      statisticsMode: mode,
+    };
+    applyRoute(playerRoute, {
+      state: {
+        statsBackLabel: backLabel ?? null,
+        statsBackRoute: backRoute ? normalizeAppRoute(backRoute) : null,
+        statsPlayerMeta: playerMeta,
+      },
+    });
+    window.location.assign(buildAppPath(playerRoute));
+  }, [applyRoute, buildStatsBackContext]);
+
+  const navigateToCompanionSleeperPlayer = useCallback(async (sleeperId, backLabel, resolvedPlayerMeta = null) => {
+    if (resolvedPlayerMeta?.id) {
+      navigateToStatisticsPlayer(resolvedPlayerMeta, {
+        backLabel,
+        backRoute: appRoute,
+        mode: STATISTICS_MODES.FANTASY,
+      });
+      return;
+    }
+
+    const playerMeta = await resolveStatisticsPlayerMetaFromSleeperId(sleeperId, sleeperPlayers, espnIdOverrides);
+    if (!playerMeta) return;
+
+    navigateToStatisticsPlayer(playerMeta, {
+      backLabel,
+      backRoute: appRoute,
+      mode: STATISTICS_MODES.FANTASY,
+    });
+  }, [appRoute, espnIdOverrides, navigateToStatisticsPlayer, sleeperPlayers]);
+
+  const navigateDraftPlayerToStatistics = useCallback(async (sleeperId) => {
+    if (!sleeperId) return;
+    const token = draftPlayerOpenTokenRef.current + 1;
+    draftPlayerOpenTokenRef.current = token;
+
+    const sleeperPlayer = sleeperPlayers?.[sleeperId];
+    const displayName = sleeperPlayer?.full_name
+      || `${sleeperPlayer?.first_name ?? ''} ${sleeperPlayer?.last_name ?? ''}`.trim()
+      || 'player';
+
+    setStatsDrilldownPending({
+      playerId: `draft:${sleeperId}`,
+      label: `Opening ${displayName}`,
+    });
+
+    try {
+      const playerMeta = await resolveStatisticsPlayerMetaFromSleeperId(sleeperId, sleeperPlayers, espnIdOverrides);
+      if (draftPlayerOpenTokenRef.current !== token) return;
+      if (!playerMeta) {
+        setStatsDrilldownPending(null);
+        return;
+      }
+
+      navigateToStatisticsPlayer(playerMeta, {
+        backLabel: 'Draft',
+        backRoute: appRoute,
+        mode: STATISTICS_MODES.FANTASY,
+      });
+    } catch {
+      if (draftPlayerOpenTokenRef.current === token) setStatsDrilldownPending(null);
+    }
+  }, [appRoute, espnIdOverrides, navigateToStatisticsPlayer, sleeperPlayers]);
+
+  useEffect(() => {
+    if (!statsDrilldownPending) return undefined;
+    const routeHasOpenedPendingPlayer = activeTab === 'statistics'
+      && statisticsView === 'player'
+      && statisticsPlayerId === statsDrilldownPending.playerId;
+
+    if (!routeHasOpenedPendingPlayer) return undefined;
+
+    const frame = requestAnimationFrame(() => {
+      setStatsDrilldownPending(null);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [activeTab, statisticsPlayerId, statisticsView, statsDrilldownPending]);
+
+  useEffect(() => {
+    if (!statsDrilldownPending) return undefined;
+    const timeout = window.setTimeout(() => {
+      setStatsDrilldownPending(null);
+    }, 8000);
+    return () => window.clearTimeout(timeout);
+  }, [statsDrilldownPending]);
+
+  const updateStatisticsMode = useCallback((mode) => {
+    if (activeTab !== 'statistics' || statisticsView !== 'player' || !statisticsPlayerId) return;
+    applyRoute({
+      ...appRoute,
+      activeTab: 'statistics',
+      statisticsView: 'player',
+      statisticsPlayerId,
+      statisticsMode: mode,
+    });
+  }, [activeTab, appRoute, applyRoute, statisticsPlayerId, statisticsView]);
+
+  useEffect(() => {
+    const parsedRoute = parseAppRoute(window.location.pathname, window.location.search);
+    const canonicalPath = buildAppPath(parsedRoute);
+    const currentState = readHistoryState();
+    const currentPath = `${window.location.pathname}${window.location.search}`;
+
+    if (canonicalPath !== currentPath || currentState._nav !== 'app') {
+      window.history.replaceState({ ...currentState, _nav: 'app' }, '', canonicalPath);
+    }
+
+    setAppRoute((prev) => (isSameAppRoute(prev, parsedRoute) ? prev : parsedRoute));
+  }, [readHistoryState]);
+
+  useEffect(() => {
+    const onPopState = () => {
+      setAppRoute(parseAppRoute(window.location.pathname, window.location.search));
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
+  useEffect(() => {
+    if (activeTab !== 'statistics' || statisticsView !== 'player') {
+      setStatsNavBack(null);
+      return;
+    }
+
+    const currentState = readHistoryState();
+    if (currentState.statsBackLabel && currentState.statsBackRoute) {
+      setStatsNavBack(buildStatsBackContext(currentState.statsBackLabel, currentState.statsBackRoute));
+      return;
+    }
+
+    setStatsNavBack(null);
+  }, [activeTab, statisticsView, statisticsPlayerId, buildStatsBackContext, readHistoryState]);
+
+  useEffect(() => {
+    Promise.all([loadScheduleData(), loadSeasonSchedule()])
+      .then(([data, loadedSeasonSchedule]) => {
+        setScheduleData(data);
+        setSeasonSchedule(loadedSeasonSchedule);
+        setLoading(false);
+      })
+      .catch(err => { setError(err.message); setLoading(false); });
+  }, []);
+
+  const handleExportJSON = () => { exportAsJSON(predictions); setActionSheetOpen(false); };
+
+  const handleImport = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      const data = await importFromJSON(file);
+      importPredictions(data);
+      alert(`Imported predictions for ${Object.keys(data).length} teams.`);
+    } catch (err) {
+      alert(`Import failed: ${err.message}`);
+    }
+    e.target.value = '';
+  };
+
+  const handleExportImage = () => { setExportPreviewOpen(true); setActionSheetOpen(false); };
+  const handleRandom = () => {
+    setActionSheetOpen(false);
+    if (!window.confirm('This will replace all current predictions with random ones. Continue?')) return;
+    if (scheduleData) generateRandomPredictions(scheduleData.teams);
+  };
+  const handleReset = () => {
+    setActionSheetOpen(false);
+    if (!window.confirm('Are you sure you want to reset all predictions? This cannot be undone.')) return;
+    resetAllPredictions();
+  };
+  const handleInstall = () => { triggerInstall(); setActionSheetOpen(false); };
+  const handleImportClick = () => { fileInputRef.current?.click(); setActionSheetOpen(false); };
+  const handleMyTeam = () => { setTeamPickerOpen(true); setActionSheetOpen(false); };
+
+  const prepareOnboardingLayout = useCallback(() => {
+    setActionSheetOpen(false);
+    setGuideOpen(false);
+    setTourActive(false);
+    setTourDemoMode(null);
+    if (window.innerWidth >= 1024 && sidebarCollapsed) {
+      onboardingRestoreSidebarRef.current = true;
+      setSidebarCollapsed(false);
+    }
+  }, [sidebarCollapsed]);
+
+  const restoreOnboardingLayout = useCallback(() => {
+    if (onboardingRestoreSidebarRef.current) {
+      onboardingRestoreSidebarRef.current = false;
+      setSidebarCollapsed(true);
+    }
+  }, []);
+
+  const handleStartAppTour = useCallback(() => {
+    prepareOnboardingLayout();
+    startManualOnboarding();
+  }, [prepareOnboardingLayout, startManualOnboarding]);
+
+  const handleBeginOnboarding = useCallback(() => {
+    prepareOnboardingLayout();
+    beginOnboarding();
+    if (!hasLeague) {
+      applyRoute({ activeTab: 'fantasy', companionView: 'rosters' });
+    }
+  }, [applyRoute, beginOnboarding, hasLeague, prepareOnboardingLayout]);
+
+  const handleCompleteOnboarding = useCallback(() => {
+    completeOnboarding();
+    restoreOnboardingLayout();
+  }, [completeOnboarding, restoreOnboardingLayout]);
+
+  const predictionScheduleModel = useMemo(
+    () => buildPredictionScheduleModel(seasonSchedule, scheduleData?.teams ?? []),
+    [scheduleData, seasonSchedule],
+  );
+  const predictionTeams = predictionScheduleModel.teams;
+  const predictionSchedule = predictionScheduleModel.schedule;
+  const predictionPickMap = useMemo(
+    () => buildPredictionPickMap(predictionSchedule?.weeks ?? [], predictions),
+    [predictionSchedule, predictions],
+  );
+
+  const handlePredictionRecordChange = useCallback(({ teamId, record }) => {
+    if (!teamId || !record) return;
+    setManualTeamRecord(teamId, record, predictionTeams);
+  }, [predictionTeams, setManualTeamRecord]);
+
+  const handlePredictionGameResultsSave = useCallback(({ teamId, gameResults }) => {
+    if (!teamId) return false;
+    return setTeamGameResults(teamId, gameResults, predictionTeams);
+  }, [predictionTeams, setTeamGameResults]);
+
+  const handlePlayoffPick = useCallback(({ matchupId, winnerId }) => {
+    if (!matchupId || !winnerId) return;
+    setPlayoffPicks((prev) => {
+      const next = prunePlayoffPicksAfterChange(prev, matchupId);
+      if (prev[matchupId] === winnerId) {
+        delete next[matchupId];
+      } else {
+        next[matchupId] = winnerId;
+      }
+      return next;
+    });
+  }, []);
+
+  const handleOpenPredictionTeam = useCallback((team) => {
+    navigatePredictionTeam(team);
+  }, [navigatePredictionTeam]);
+
+  const handleBackToAdvancedMode = useCallback(() => {
+    setPredictionPickMode('advanced');
+    applyRoute({ activeTab: 'predictions', seasonView: 'predictions' });
+  }, [applyRoute]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen" style={{ background: 'var(--color-bg)' }}>
+        <span className="text-sm" style={{ color: 'var(--color-label-secondary)' }}>Loading…</span>
+      </div>
+    );
+  }
+
+  if (error || !scheduleData) {
+    return (
+      <div className="flex items-center justify-center min-h-screen" style={{ background: 'var(--color-bg)' }}>
+        <span className="text-sm" style={{ color: 'var(--color-accent-red)' }}>{error || 'No data available'}</span>
+      </div>
+    );
+  }
+
+  const predictionCount = getPredictionCount();
+  const progressSummary = getPredictionProgressSummary(
+    predictionTeams,
+    predictions,
+    getGamePredictionCounts(predictionTeams),
+  );
+  const completedTeamCount = progressSummary.completedTeams;
+  const totalTeams = progressSummary.totalTeams || scheduleData.teams.length;
+  const pickedGameCount = progressSummary.pickedGames;
+  const totalGames = progressSummary.totalGames;
+  const isSeasonComplete = totalTeams > 0 && completedTeamCount === totalTeams;
+  const statsRoutePlayerMeta = activeTab === 'statistics' && statisticsView === 'player'
+    ? (readHistoryState().statsPlayerMeta ?? null)
+    : null;
+
+  return (
+    <div className={`app-shell${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
+
+      {/* ── Desktop Sidebar (lg+) ─────────────────────────────── */}
+      <Sidebar
+        activeTab={activeTab}
+        onTabChange={navigateToTab}
+        predictionCount={predictionCount}
+        completedTeamCount={completedTeamCount}
+        totalTeams={totalTeams}
+        pickedGameCount={pickedGameCount}
+        totalGames={totalGames}
+        isSeasonComplete={isSeasonComplete}
+        darkMode={darkMode}
+        onToggleDarkMode={toggleDarkMode}
+        onDisplay={() => setDisplaySettingsOpen(true)}
+        onLegal={() => setLegalOpen(true)}
+        onGuide={() => setGuideOpen(true)}
+        onExportJSON={handleExportJSON}
+        onImportJSON={handleImportClick}
+        onRandom={handleRandom}
+        onAppTour={handleStartAppTour}
+        onReset={handleReset}
+        isInstallable={isInstallable}
+        isInstalled={isInstalled}
+        onInstall={handleInstall}
+        favoriteTeam={favoriteTeam}
+        onMyTeam={handleMyTeam}
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={toggleSidebarCollapsed}
+        leagueDisabled={leagueDisabledForPlatform}
+      />
+
+      {/* ── Main panel ───────────────────────────────────────── */}
+      <div className="app-main">
+
+        {/* Top nav bar — mobile/tablet only, hidden lg+ via CSS */}
+        <NavBar
+          darkMode={darkMode}
+          onToggleDarkMode={toggleDarkMode}
+          onMenuOpen={() => setActionSheetOpen(true)}
+          seasonSelector={hasLeague && (activeTab === 'fantasy' || activeTab === 'league' || activeTab === 'trade' || activeTab === 'draft') ? (
+            <SeasonChip
+              season={season}
+              seasons={linkedLeagueSeasonOptions}
+              seasonSwitching={seasonSwitching}
+              onChange={changeSeason}
+              compact
+            />
+          ) : null}
+          scrolled={contentScrolled}
+        />
+
+        {showDraftActivityNotice && (
+          <DraftActivityMiniBanner
+            draft={activeDraftNoticeDraft}
+            leagueName={league?.name}
+            leagueId={selectedLeagueId}
+            onOpenDraft={navigateToActiveDraft}
+          />
+        )}
+
+        {/* Season sub-navigation */}
+        {activeTab === 'predictions' && (
+          <div className="season-subnav">
+            {/* Title + progress — shown on mobile (lg+ has this in sidebar) */}
+            <div className="season-subnav-header lg:hidden">
+              <h1
+                className="font-display font-bold"
+                style={{ fontSize: '20px', color: 'var(--color-label)', letterSpacing: '0.08em' }}
+              >
+                2026 SEASON
+              </h1>
+              <span
+                className="text-xs font-bold tabular-nums px-2 py-0.5 rounded"
+                style={{
+                  background: isSeasonComplete ? 'rgba(46,213,120,0.12)' : 'var(--color-fill)',
+                  color: isSeasonComplete ? 'var(--color-accent-green)' : 'var(--color-label-secondary)',
+                }}
+              >
+                Teams {completedTeamCount}/{totalTeams}{isSeasonComplete && ' ✓'}
+              </span>
+            </div>
+            <SeasonSubNav activeView={seasonView} onViewChange={navigateSeasonView} />
+          </div>
+        )}
+
+        {/* Fantasy sub-navigation */}
+        {activeTab === 'fantasy' && (hasLeague || liveSandboxRoute) && (
+          <div className="season-subnav league-subnav">
+            <div className="companion-subnav-row">
+              <div className="min-w-0 flex-1">
+                <CompanionSubNav activeView={companionView} onViewChange={navigateCompanionView} />
+              </div>
+              {/* Desktop: shares the row with the tabs, aligned with tab text */}
+              <div className="hidden lg:flex items-center shrink-0 pb-[9px]">
+                <LeagueContextHeader
+                  league={league}
+                  season={season}
+                  changeSeason={changeSeason}
+                  seasonSwitching={seasonSwitching}
+                  seasonOptions={linkedLeagueSeasonOptions}
+                  onSwitchLeague={() => setLeagueSwitcherOpen(true)}
+                  className="flex items-center gap-2"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'league' && hasLeague && (
+          <div className="season-subnav league-subnav">
+            <LeagueSubNav activeView={leagueView} onViewChange={navigateLeagueView} />
+            <div className="hidden lg:flex items-center absolute bottom-0 right-8 pb-[9px]">
+              <LeagueContextHeader
+                league={league}
+                season={season}
+                changeSeason={changeSeason}
+                seasonSwitching={seasonSwitching}
+                seasonOptions={linkedLeagueSeasonOptions}
+                onSwitchLeague={() => setLeagueSwitcherOpen(true)}
+                className="flex items-center gap-2"
+              />
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'trade' && hasLeague && !tradeDisabledForPlatform && (
+          <div className="season-subnav league-subnav">
+            <TradeSubNav activeView={tradeView} onViewChange={navigateTradeView} onViewIntent={prewarmTradeView} />
+            {/* Desktop: bottom-right of subnav bar, aligned with tab text */}
+            <div className="hidden lg:flex items-center absolute bottom-0 right-8 pb-[9px]">
+              <LeagueContextHeader
+                league={league}
+                season={season}
+                changeSeason={changeSeason}
+                seasonSwitching={seasonSwitching}
+                seasonOptions={linkedLeagueSeasonOptions}
+                onSwitchLeague={() => setLeagueSwitcherOpen(true)}
+                className="flex items-center gap-2"
+              />
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'scout' && (
+          <div className="season-subnav">
+            <ScoutSubNav activeView={scoutView} onViewChange={navigateScoutView} />
+          </div>
+        )}
+
+        {activeTab === 'draft' && hasLeague && (
+          <div className="season-subnav league-subnav">
+            <DraftSubNav
+              activeView={draftView}
+              onViewChange={navigateDraftView}
+              resultsLabel={draftResultsPresentation.label}
+            />
+            <div className="hidden lg:flex items-center absolute bottom-0 right-8 pb-[9px]">
+              <LeagueContextHeader
+                league={league}
+                season={season}
+                changeSeason={changeSeason}
+                seasonSwitching={seasonSwitching}
+                seasonOptions={linkedLeagueSeasonOptions}
+                onSwitchLeague={() => setLeagueSwitcherOpen(true)}
+                className="flex items-center gap-2"
+              />
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'statistics' && (
+          <div className="season-subnav">
+            <StatisticsSubNav
+              activeView={['schedule', 'scores', 'standings'].includes(statisticsView) ? statisticsView : 'stats'}
+              onViewChange={navigateStatisticsSubView}
+            />
+          </div>
+        )}
+
+        {/* Scoring override banner — frozen above scroll area */}
+        {activeTab === 'fantasy' && hasLeague && companionView !== 'scoring' && (
+          <ScoringOverrideBanner preserveContentScrollDuringUpdate={preserveContentScrollDuringUpdate} />
+        )}
+
+        {/* ── Content area ─────────────────────────────────── */}
+        <div
+          ref={contentAreaRef}
+          className={[
+            'content-area lg:px-8 pt-4 lg:pt-6',
+            activeTab === 'fantasy' && companionView === 'live' ? 'content-area--fantasy-live' : '',
+            activeTab === 'draft' ? 'content-area--draft' : '',
+            activeTab === 'draft' && draftView === 'war-room' ? 'content-area--draft-war-room' : '',
+            activeTab === 'draft' && draftView === 'results' ? 'content-area--draft-results' : '',
+            activeTab === 'draft' && draftView === 'my-board' ? 'content-area--draft-board' : '',
+          ].filter(Boolean).join(' ')}
+          onScroll={(e) => setContentScrolled(e.currentTarget.scrollTop > 2)}
+        >
+
+          {activeTab === 'predictions' && (
+            <Suspense fallback={<SectionLoading label="Loading predictions" />}>
+              <PredictionsRedesign
+                teams={predictionTeams}
+                scheduleData={predictionSchedule}
+                seasonView={seasonView}
+                pickMode={predictionPickMode}
+                onPickModeChange={setPredictionPickMode}
+                selectedTeamId={predictionsTeamId}
+                picks={predictionPickMap}
+                predictions={predictions}
+                onRecordChange={handlePredictionRecordChange}
+                onSaveTeamGameResults={handlePredictionGameResultsSave}
+                playoffPicks={playoffPicks}
+                onPlayoffPick={handlePlayoffPick}
+                onOpenTeam={handleOpenPredictionTeam}
+                onBackToAdvancedMode={handleBackToAdvancedMode}
+              />
+            </Suspense>
+          )}
+
+          {activeTab === 'statistics' && statisticsView === 'schedule' && (
+            <Suspense fallback={<SectionLoading label="Loading schedule" />}>
+              <StatisticsSchedule
+                teams={predictionTeams}
+                scheduleData={predictionSchedule}
+                mode={statisticsScheduleMode}
+                week={statisticsScheduleWeek}
+                teamId={statisticsScheduleTeamId}
+                filter={statisticsScheduleFilter}
+                onRouteChange={updateStatisticsScheduleRoute}
+                onViewGameStats={navigateToStatisticsGame}
+              />
+            </Suspense>
+          )}
+
+          {activeTab === 'statistics' && statisticsView === 'scores' && (
+            <Suspense fallback={<SectionLoading label="Loading scores" />}>
+              <StatisticsScores
+                leagueId={selectedLeagueId}
+                platform={platform}
+                tourDemoMode={tourDemoMode}
+              />
+            </Suspense>
+          )}
+
+          {activeTab === 'statistics' && statisticsView === 'standings' && (
+            <Suspense fallback={<SectionLoading label="Loading standings" />}>
+              <StatisticsStandings
+                teams={predictionTeams}
+                scheduleData={predictionSchedule}
+              />
+            </Suspense>
+          )}
+
+          {activeTab === 'statistics' && statisticsView === 'game' && (
+            <Suspense fallback={<SectionLoading label="Loading game statistics" />}>
+              <StatisticsGame
+                gameId={statisticsGameId}
+                teams={predictionTeams}
+                scheduleData={predictionSchedule}
+                onBackToSchedule={() => navigateStatisticsSubView('schedule')}
+              />
+            </Suspense>
+          )}
+
+          {activeTab === 'statistics' && statisticsView !== 'schedule' && statisticsView !== 'scores' && statisticsView !== 'standings' && statisticsView !== 'game' && (
+            <Suspense fallback={<SectionLoading label="Loading statistics" />}>
+            <PlayerBrowser
+              teams={scheduleData.teams}
+              darkMode={darkMode}
+              statsView={statisticsView}
+              selectedTeamId={statisticsTeamId}
+              selectedPlayerId={statisticsPlayerId}
+              selectedPlayerMeta={statsRoutePlayerMeta}
+              selectedPlayerMode={statisticsMode}
+              leagueSeason={season}
+              navBack={statsNavBack}
+              onNavigateHome={navigateToStatisticsHome}
+              onNavigateTeam={navigateToStatisticsTeam}
+              onNavigatePlayer={navigateToStatisticsPlayer}
+              onViewSchedule={navigateToStatisticsScheduleTeam}
+              onPlayerModeChange={updateStatisticsMode}
+              tradeDisabled={tradeDisabledForPlatform}
+              onBuildTrade={(initialTrade) => {
+                if (tradeDisabledForPlatform) return;
+                applyRoute({
+                  activeTab: 'trade',
+                  tradeView: initialTrade?.view ?? 'agent',
+                  tradePlayerId: initialTrade?.sleeperId,
+                  tradeSide: initialTrade?.side,
+                  tradePartnerRosterId: initialTrade?.partnerRosterId,
+                  tradeOtherPlayerId: initialTrade?.otherSleeperId,
+                });
+              }}
+            />
+            </Suspense>
+          )}
+
+          {activeTab === 'scout' && (
+            <Suspense fallback={<SectionLoading label="Loading scout" />}>
+              <ScoutTab view={scoutView} onViewChange={navigateScoutView} />
+            </Suspense>
+          )}
+
+          {(activeTab === 'fantasy' || activeTab === 'league') && !hasLeague && !liveSandboxRoute && (
+            <Suspense fallback={<SectionLoading label="Loading connect" />}>
+              <CompanionConnect />
+            </Suspense>
+          )}
+
+          {activeTab === 'trade' && !hasLeague && (
+            <Suspense fallback={<SectionLoading label="Loading connect" />}>
+              <CompanionConnect />
+            </Suspense>
+          )}
+
+          {activeTab === 'draft' && !hasLeague && (
+            <Suspense fallback={<SectionLoading label="Loading connect" />}>
+              <CompanionConnect />
+            </Suspense>
+          )}
+
+          {activeTab === 'trade' && hasLeague && !tradeDisabledForPlatform && (
+            <Suspense fallback={<SectionLoading label="Loading Trade" />}>
+              {tradeView === 'history' ? (
+                <TradeHistory
+                  onViewPlayer={(sleeperId) => {
+                    void navigateToCompanionSleeperPlayer(sleeperId, 'Trade History');
+                  }}
+                />
+              ) : (
+                <CompanionTrade
+                initialPlayer={tradeInitPlayer}
+                onConsumeInitialPlayer={() => applyRoute({
+                  activeTab: 'trade',
+                  tradeView,
+                }, { replace: true })}
+                onViewPlayer={(id, meta) => {
+                  navigateToStatisticsPlayer({ id, ...meta }, {
+                    backLabel: 'Trade',
+                    backRoute: {
+                      activeTab: 'trade',
+                      tradeView,
+                    },
+                  });
+                }}
+                onOpenWaiver={(position) => {
+                  if (!position) return;
+                  applyRoute({ activeTab: 'fantasy', companionView: 'waivers', waiverPosition: position });
+                }}
+                prewarmAnalytics={tradeAnalyticsPrewarmRequested}
+                view={tradeView}
+                onViewChange={navigateTradeView}
+              />
+              )}
+            </Suspense>
+          )}
+
+          {activeTab === 'fantasy' && (hasLeague || liveSandboxRoute) && (
+            <>
+              {companionView === 'rosters' && (
+                <Suspense fallback={<SectionLoading label="Loading Rosters" />}>
+                  <CompanionLeague
+                    routeState={leagueRouteState}
+                    onRouteStateChange={(nextState) => updateCompanionRoute({
+                      companionView: 'rosters',
+                      leagueSubview: nextState.subView ?? 'roster',
+                      leagueRosterId: nextState.rosterId ?? null,
+                    }, { replace: true })}
+                    onViewPlayer={(playerOrMeta, playerMeta) => {
+                      const resolvedMeta = playerMeta ?? (typeof playerOrMeta === 'object' ? playerOrMeta : null);
+                      const sleeperId = resolvedMeta?.sleeperId ?? playerOrMeta;
+                      navigateToCompanionSleeperPlayer(sleeperId, 'Rosters', resolvedMeta);
+                    }}
+                    onTradePlayer={(sleeperId, partnerRosterId, side = 'get') => {
+                      if (tradeDisabledForPlatform) return;
+                      applyRoute({
+                        activeTab: 'trade',
+                        tradeView: 'agent',
+                        tradePlayerId: sleeperId,
+                        tradeSide: side,
+                        tradePartnerRosterId: partnerRosterId,
+                      });
+                    }}
+                    tradeDisabled={tradeDisabledForPlatform}
+                  />
+                </Suspense>
+              )}
+              {companionView === 'rankings'  && (
+                <Suspense fallback={<SectionLoading label="Loading Rankings" />}>
+                  <CompanionRankings
+                    positionFilter={rankingsPosition}
+                    rosterFilter={rankingsRosterId}
+                    onPositionFilterChange={(position) => updateCompanionRoute({
+                      companionView: 'rankings',
+                      rankingsPosition: position === 'ALL' ? null : position,
+                    }, { replace: true })}
+                    onRosterFilterChange={(rosterId) => updateCompanionRoute({
+                      companionView: 'rankings',
+                      rankingsRosterId: rosterId,
+                    }, { replace: true })}
+                    onViewPlayer={(playerOrMeta, playerMeta) => {
+                      const resolvedMeta = playerMeta ?? (typeof playerOrMeta === 'object' ? playerOrMeta : null);
+                      const sleeperId = resolvedMeta?.sleeperId ?? playerOrMeta;
+                      navigateToCompanionSleeperPlayer(sleeperId, 'Rankings', resolvedMeta);
+                    }}
+                  />
+                </Suspense>
+              )}
+              {companionView === 'live'   && (
+                <Suspense fallback={<SectionLoading label="Loading Live" />}>
+                  <CompanionLive
+                    onViewPlayer={(playerOrMeta, playerMeta) => {
+                      const resolvedMeta = playerMeta ?? (typeof playerOrMeta === 'object' ? playerOrMeta : null);
+                      const sleeperId = resolvedMeta?.sleeperId ?? playerOrMeta;
+                      navigateToCompanionSleeperPlayer(sleeperId, 'Live', resolvedMeta);
+                    }}
+                  />
+                </Suspense>
+              )}
+              {companionView === 'matchups'   && (
+                <Suspense fallback={<SectionLoading label="Loading Matchup" />}>
+                  <CompanionMatchup
+                    initialWeekRequest={matchupInitRequest}
+                    selectedWeek={appRoute.matchupWeek ?? null}
+                    onWeekChange={(week) => updateCompanionRoute({
+                      companionView: 'matchups',
+                      matchupWeek: week,
+                    }, { replace: true })}
+                    selectedRosterId={appRoute.matchupRosterId ?? null}
+                    onSelectedRosterChange={(rosterId) => updateCompanionRoute({
+                      companionView: 'matchups',
+                      matchupRosterId: rosterId ?? null,
+                    }, { replace: true })}
+                    onConsumeInitialWeekRequest={() => updateCompanionRoute({
+                      companionView: 'matchups',
+                      matchupWeek: appRoute.matchupWeek ?? null,
+                      matchupPlayerId: null,
+                    }, { replace: true })}
+                    onViewPlayer={(id, meta, options = {}) => {
+                      navigateToStatisticsPlayer({ id, ...meta }, {
+                        backLabel: 'Matchups',
+                        backRoute: appRoute,
+                        mode: options.mode ?? STATISTICS_MODES.FANTASY,
+                      });
+                    }}
+                  />
+                </Suspense>
+              )}
+              {companionView === 'waivers'    && (
+                <Suspense fallback={<SectionLoading label="Loading Waiver" />}>
+                  <CompanionWaiver
+                    initialPositionRequest={waiverInitRequest}
+                    positionFilter={appRoute.waiverPosition ?? 'ALL'}
+                    onPositionFilterChange={(position) => updateCompanionRoute({
+                      companionView: 'waivers',
+                      waiverPosition: position === 'ALL' ? null : position,
+                    }, { replace: true })}
+                    onConsumeInitialPositionRequest={() => {}}
+                    onViewPlayer={(id, meta) => {
+                      navigateToStatisticsPlayer({ id, ...meta }, {
+                        backLabel: 'Waivers',
+                        backRoute: appRoute,
+                        mode: STATISTICS_MODES.FANTASY,
+                      });
+                    }}
+                  />
+                </Suspense>
+              )}
+              {companionView === 'heatmap'   && (
+                <Suspense fallback={<SectionLoading label="Loading Heatmap" />}>
+                  <CompanionHeatmap
+                    routeState={heatmapRouteState}
+                    onRouteStateChange={scheduleHeatmapRouteUpdate}
+                    onViewPlayer={(id, meta) => {
+                      navigateToStatisticsPlayer({ id, ...meta }, {
+                        backLabel: 'Heatmap',
+                        backRoute: appRoute,
+                        mode: STATISTICS_MODES.FANTASY,
+                      });
+                    }}
+                  />
+                </Suspense>
+              )}
+              {companionView === 'defenses'   && (
+                <Suspense fallback={<SectionLoading label="Loading Defense" />}>
+                  <CompanionDefense
+                    routeState={defenseRouteState}
+                    onRouteStateChange={(nextState) => updateCompanionRoute({
+                      companionView: 'defenses',
+                      defenseMode: nextState.mode,
+                      defensePosition: nextState.position,
+                      defenseStat: nextState.stat,
+                      defenseSort: nextState.sort,
+                      defenseDir: nextState.dir,
+                      defenseQuery: nextState.query || null,
+                    }, { replace: true })}
+                  />
+                </Suspense>
+              )}
+              {companionView === 'scoring'   && (
+                <Suspense fallback={<SectionLoading label="Loading Scoring" />}>
+                  <CompanionScoring />
+                </Suspense>
+              )}
+            </>
+          )}
+
+          {activeTab === 'league' && hasLeague && (
+            <>
+              {leagueView === 'standings' && (
+                <Suspense fallback={<SectionLoading label="Loading Standings" />}>
+                  <CompanionStandings />
+                </Suspense>
+              )}
+              {leagueView === 'history' && (
+                <Suspense fallback={<SectionLoading label="Loading League History" />}>
+                  <CompanionHistory
+                    onOpenMatchup={async ({ season: recordSeason, week, rosterId }) => {
+                      if (String(recordSeason) !== String(season)) await changeSeason(recordSeason);
+                      applyRoute({
+                        activeTab: 'fantasy',
+                        companionView: 'matchups',
+                        matchupWeek: week,
+                        matchupRosterId: rosterId,
+                      });
+                    }}
+                  />
+                </Suspense>
+              )}
+              {leagueView === 'activity' && (
+                <Suspense fallback={<SectionLoading label="Loading League Activity" />}>
+                  <CompanionActivity
+                    onViewPlayer={(sleeperId) => {
+                      void navigateToCompanionSleeperPlayer(sleeperId, 'League Activity');
+                    }}
+                  />
+                </Suspense>
+              )}
+            </>
+          )}
+
+          {activeTab === 'draft' && hasLeague && (
+            draftLeagueSelectionReady ? (
+              <Suspense fallback={<SectionLoading label="Loading Draft" />}>
+                <DraftAssistant
+                  key={`${selectedLeagueId}:${season}`}
+                  view={draftView}
+                  sleeperDraftId={draftSleeperDraftId}
+                  onViewPlayer={navigateDraftPlayerToStatistics}
+                  tourDemoMode={tourDemoMode}
+                />
+              </Suspense>
+            ) : (
+              <SectionLoading label={`Switching to ${seasonSwitching ?? season} league year`} />
+            )
+          )}
+        </div>
+
+        {/* Bottom tab bar — mobile/tablet only, hidden lg+ via CSS */}
+        <BottomTabBar
+          activeTab={activeTab}
+          onTabChange={navigateToTab}
+          tradeDisabled={tradeDisabledForPlatform}
+          leagueDisabled={leagueDisabledForPlatform}
+        />
+      </div>
+
+      {statsDrilldownPending && (
+        <RouteLoadingOverlay label={statsDrilldownPending.label} />
+      )}
+
+      {/* ── Action Sheet (mobile menu) ───────────────────────── */}
+      {actionSheetOpen && (
+        <ActionSheet
+          onClose={() => setActionSheetOpen(false)}
+          predictionCount={predictionCount}
+          activeTab={activeTab}
+          onGuide={() => { setGuideOpen(true); setActionSheetOpen(false); }}
+          onDisplay={() => {
+            setActionSheetOpen(false);
+            setDisplaySettingsOpen(true);
+          }}
+          onLegal={() => {
+            setActionSheetOpen(false);
+            setLegalOpen(true);
+          }}
+          onExportImage={handleExportImage}
+          onExportJSON={handleExportJSON}
+          onImportJSON={handleImportClick}
+          onAppTour={handleStartAppTour}
+          onRandom={handleRandom}
+          onReset={handleReset}
+          onInstall={isInstallable && !isInstalled ? handleInstall : null}
+          onMyTeam={handleMyTeam}
+          favoriteTeam={favoriteTeam}
+          league={hasLeague && (activeTab === 'fantasy' || activeTab === 'league' || activeTab === 'trade' || activeTab === 'draft') ? league : null}
+          leagueSeason={season}
+          leagueSeasonOptions={linkedLeagueSeasonOptions}
+          leagueSeasonSwitching={seasonSwitching}
+          onLeagueSeasonChange={changeSeason}
+          onSwitchLeague={() => {
+            setActionSheetOpen(false);
+            setLeagueSwitcherOpen(true);
+          }}
+        />
+      )}
+
+      {/* ── Update banner + What's New tour ───────────────────── */}
+      {needRefresh && <UpdateBanner onInstall={applyUpdate} />}
+      {!needRefresh && onboardingPhase === ONBOARDING_PHASE.welcome && !tourActive && (
+        <Suspense fallback={null}>
+          <OnboardingWelcomeModal
+            hasLeague={hasLeague}
+            onBegin={handleBeginOnboarding}
+            onDismiss={handleCompleteOnboarding}
+          />
+        </Suspense>
+      )}
+      {!needRefresh && onboardingPhase === ONBOARDING_PHASE.tour && (
+        <Suspense fallback={null}>
+          <TourOverlay
+            entries={ONBOARDING_TOUR}
+            navigate={applyRoute}
+            currentRoute={appRoute}
+            context={{ tourViewport: window.innerWidth < 1024 ? 'mobile' : 'desktop' }}
+            onFinish={handleCompleteOnboarding}
+          />
+        </Suspense>
+      )}
+      {hasLeague && !needRefresh && onboardingPhase === ONBOARDING_PHASE.idle && whatsNewPending.length > 0 && !tourActive && (
+        <Suspense fallback={null}>
+          <WhatsNewModal
+            entries={whatsNewPending}
+            onStartTour={() => {
+              setTourDemoMode(null);
+              setTourActive(true);
+            }}
+            onDismiss={markWhatsNewSeen}
+          />
+        </Suspense>
+      )}
+      {hasLeague && !needRefresh && onboardingPhase === ONBOARDING_PHASE.idle && tourActive && whatsNewPending.length > 0 && (
+        <Suspense fallback={null}>
+          <TourOverlay
+            entries={whatsNewPending}
+            navigate={applyRoute}
+            currentRoute={appRoute}
+            context={{ draftPhase: draftResultsPresentation.phase, ...draftTourContext }}
+            onStepChange={(step) => setTourDemoMode(step?.demoMode ?? null)}
+            onFinish={() => {
+              setTourDemoMode(null);
+              setTourActive(false);
+              markWhatsNewSeen();
+            }}
+          />
+        </Suspense>
+      )}
+
+      {/* ── Modals ────────────────────────────────────────────── */}
+      {guideOpen && (
+        <Suspense fallback={<ModalLoading label="Loading guide" />}>
+          <Guide
+            onClose={() => setGuideOpen(false)}
+            activeTab={activeTab}
+            seasonView={seasonView}
+            statisticsView={statisticsView}
+            companionView={companionView}
+            leagueView={leagueView}
+            tradeView={tradeView}
+            scoutView={scoutView}
+            draftView={draftView}
+          />
+        </Suspense>
+      )}
+      {teamPickerOpen && (
+        <Suspense fallback={<ModalLoading label="Loading team picker" />}>
+          <FavoriteTeamPicker onClose={() => setTeamPickerOpen(false)} />
+        </Suspense>
+      )}
+      {displaySettingsOpen && (
+        <Suspense fallback={<ModalLoading label="Loading display settings" />}>
+          <DisplaySettingsModal
+            displaySize={displaySize}
+            onChange={setDisplaySize}
+            onClose={() => setDisplaySettingsOpen(false)}
+          />
+        </Suspense>
+      )}
+      {legalOpen && (
+        <Suspense fallback={<ModalLoading label="Loading legal information" />}>
+          <LegalModal onClose={() => setLegalOpen(false)} />
+        </Suspense>
+      )}
+
+      {leagueSwitcherOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center px-4"
+          style={{ background: 'rgba(0,0,0,0.5)' }}
+          onClick={() => setLeagueSwitcherOpen(false)}
+        >
+          <div
+            className="modal-panel w-full max-w-xl rounded-2xl overflow-hidden max-h-[86vh] flex flex-col"
+            style={{
+              background: 'var(--color-bg-secondary)',
+              border: '1px solid var(--color-separator)',
+              boxShadow: '0 12px 40px rgba(0,0,0,0.12), 0 4px 12px rgba(0,0,0,0.06)',
+            }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: '1px solid var(--color-separator)' }}>
+              <div>
+                <div className="text-xs font-bold uppercase tracking-[0.18em]" style={{ color: 'var(--color-label-tertiary)', fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif" }}>
+                  Switch League
+                </div>
+                <div className="mt-1 text-sm" style={{ color: 'var(--color-label-secondary)' }}>
+                  Choose a Sleeper season and league.
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setLeagueSwitcherOpen(false)}
+                className="px-3 py-1.5 text-xs font-bold uppercase tracking-[0.18em] active:opacity-60"
+                style={{
+                  fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif",
+                  background: 'var(--color-fill)',
+                  color: 'var(--color-label-secondary)',
+                  border: '1px solid var(--color-separator)',
+                  borderRadius: 0,
+                }}
+              >
+                Close
+              </button>
+            </div>
+            <div className="overflow-y-auto">
+              <Suspense fallback={<SectionLoading label="Loading leagues" />}>
+                <CompanionConnect
+                  forceLeaguePicker
+                  onLeagueSelected={() => setLeagueSwitcherOpen(false)}
+                />
+              </Suspense>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {exportPreviewOpen && (
+        <Suspense fallback={<ModalLoading label="Preparing export" />}>
+          <ExportPreview teams={scheduleData.teams} onClose={() => setExportPreviewOpen(false)} />
+        </Suspense>
+      )}
+
+      <input ref={fileInputRef} type="file" accept=".json" onChange={handleImport} className="hidden" />
+    </div>
+  );
+}
+
+function App() {
+  return (
+    <FantasyProvider>
+      <AppInner />
+    </FantasyProvider>
+  );
+}
+
+export default App;

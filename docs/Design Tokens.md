@@ -1,0 +1,123 @@
+# Design Tokens — "Broadcast Editorial"
+
+All colors defined as CSS custom properties in `src/index.css`. The `.dark` class on `<html>` swaps all values.
+
+## Color Tokens
+
+| Token | Light | Dark |
+|---|---|---|
+| `--color-bg` | `#F2F1EC` (warm off-white) | `#0C0F14` (deep slate-charcoal) |
+| `--color-bg-secondary` | `#FFFFFF` | `#141A22` |
+| `--color-bg-tertiary` | `#E9E8E2` | `#1C2332` |
+| `--color-label` | `rgba(12,15,20,1)` | `rgba(228,235,244,1)` |
+| `--color-label-secondary` | `rgba(12,15,20,0.58)` | `rgba(228,235,244,0.58)` |
+| `--color-label-tertiary` | `rgba(12,15,20,0.35)` | `rgba(228,235,244,0.35)` |
+| `--color-label-quaternary` | `rgba(12,15,20,0.20)` | `rgba(228,235,244,0.20)` |
+| `--color-fill` | `rgba(12,15,20,0.07)` | `rgba(228,235,244,0.09)` |
+| `--color-fill-secondary` | `rgba(12,15,20,0.05)` | `rgba(228,235,244,0.06)` |
+| `--color-fill-tertiary` | `rgba(12,15,20,0.03)` | `rgba(228,235,244,0.04)` |
+| `--color-separator` | `rgba(12,15,20,0.12)` | `rgba(228,235,244,0.10)` |
+| `--color-separator-opaque` | `#D0CFC8` | `#252E3C` |
+| `--color-accent` | `#1A6EFF` | `#5AADFF` |
+| `--color-accent-green` | `#00A844` | `#2ED578` |
+| `--color-accent-red` | `#E0270F` | `#FF4433` |
+| `--color-accent-orange` | `#E07800` | `#FF8C1A` |
+| `--color-live-defense` | `#526071` | `#64748B` |
+| `--color-live-defense-fg` | `#FFFFFF` | `#FFFFFF` |
+| `--color-signature` | `#F5B700` | `#F5B700` (same both modes) |
+| `--color-signature-fg` | `#0C0F14` | `#0C0F14` (same both modes) |
+| `--bar-bg` | `rgba(242,241,236,0.88)` | `rgba(12,15,20,0.90)` |
+| `--bar-border` | `rgba(12,15,20,0.12)` | `rgba(228,235,244,0.10)` |
+| `--bar-height-nav` | `44px` | — |
+| `--bar-height-tab` | `49px` | — |
+
+### Text Contrast Semantics
+
+- `--color-label` is for primary identity, values, instructions, actions, and
+  selected state.
+- `--color-label-secondary` is for supporting information that still needs to
+  be read. Verify its rendered contrast on the actual surface in both themes;
+  the token name is not a guarantee after blending.
+- `--color-label-tertiary` and `--color-label-quaternary` are for nonessential
+  decoration. Do not use them for timestamps, game state, totals, axis labels,
+  control hints, inactive options, or text required to operate a view.
+- Do not combine semantic text colors with parent opacity. Alpha compounds and
+  can turn otherwise readable text into decorative-level contrast.
+- Target at least `4.5:1` for normal text and `3:1` for qualifying large or bold
+  text. Dense data views should support `prefers-contrast: more`, promoting
+  meaningful text and SVG labels to `--color-label`.
+
+## Signature Accent Usage (`#F5B700` / `--color-signature`)
+
+Decorative only: sidebar active border, season tab underline, progress bar fill, filter chip bg, bottom tab bar active icon/label. Never use as body text color. Text/icons placed ON a signature background use `--color-signature-fg` (`#0C0F14`).
+
+## Key Conventions
+
+- `font-size: 16px` on all inputs (prevents iOS auto-zoom)
+- Safe area insets: `env(safe-area-inset-bottom)` on fixed bottom bars
+- Motion: CSS animations, spring-curve easing `cubic-bezier(0.32, 0.72, 0, 1)`
+
+## Responsive Display Scale
+
+GridShift applies a persisted `data-display-size` value to `<html>` before React renders. The supported values are `compact`, `comfortable`, and `large`; invalid or missing values normalize to `comfortable`. Browser zoom and operating-system scaling remain additive and must never be inferred from device-pixel ratio.
+
+| Preset | Root size | Desktop control height | Density |
+|---|---:|---:|---|
+| Compact | `15px` | `36px` | Tight |
+| Comfortable | `16px` | `40px` | Standard |
+| Large | `18px` | `44px` | Expanded |
+
+Coarse-pointer controls remain at least `44px`, and inputs/selects/textareas remain at least `16px`, regardless of preset.
+
+Display Size, browser zoom, and OS scaling are additive. Test Compact,
+Comfortable, and Large at representative desktop geometries; a local component
+clamp must not cancel or flatten the selected preset.
+
+### Semantic Type Tokens
+
+| Token | Comfortable role |
+|---|---|
+| `--type-micro` | `11px` decorative badges and overlines only |
+| `--type-label` | `12px` readable labels and compact headers |
+| `--type-meta` | `13px` supporting player/team metadata |
+| `--type-body` | `14px` standard UI copy |
+| `--type-emphasis` | `16px` emphasized body and primary row identity |
+| `--type-heading-sm` | `18px` subsection headings |
+| `--type-heading-md` | `24px` section headings |
+| `--type-heading-lg` | `32px` page headings |
+| `--type-display` | `44px` broadcast display type |
+
+Do not introduce meaningful user-facing text below `--type-label`. `--type-micro` is reserved for terse decorative/status chrome.
+
+### Desktop Viewing-Distance Roles
+
+These are semantic roles, not fixed component pixels. They inherit the active
+Display Size preset. A wide component may grow within the range; a short
+viewport should recompose before shrinking below the floor.
+
+| Content role | Desktop floor | Wide-container growth |
+|---|---|---|
+| Primary row identity | `--type-emphasis` | Up to `--type-heading-sm` |
+| Readable description/body | `--type-body` | Up to `--type-emphasis` |
+| Persistent supporting facts | `--type-label`; prefer `--type-meta` when space permits | Up to `--type-body` |
+| Decorative overline/badge | `--type-micro` | Usually unchanged |
+| Primary row metric | Role-appropriate heading/value token | One semantic step while it remains focal |
+
+Use container units and semantic endpoints, for example
+`clamp(var(--type-body), 0.75cqw, var(--type-emphasis))`. Do not create a second
+global scale keyed only to viewport width. The component container determines
+local growth; Display Size determines the user's global scale.
+
+When Barlow Condensed carries meaningful uppercase labels, prefer stronger
+weights and restrained tracking. Use Figtree for prose and descriptions. See
+[[Desktop Legibility]] for the complete audit and validation contract.
+
+## Page Frame Tokens
+
+| Frame | Maximum | Intended surfaces |
+|---|---:|---|
+| `--page-frame-readable` | `1200px` | Settings, scoring, instructional/detail content |
+| `--page-frame-data` | `1600px` | Rosters, rankings, waiver, schedules, standings, history, activity |
+| `--page-frame-workbench` | `1920px` | Trade, Draft, Scout, Compare, Matchup, Heatmap |
+
+Use `.page-frame-readable`, `.page-frame-data`, or `.page-frame-workbench` on the route root. Frames center themselves and preserve the normal mobile/tablet flow.

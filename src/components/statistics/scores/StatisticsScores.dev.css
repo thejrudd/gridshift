@@ -1,0 +1,79 @@
+/* Developer-only source controls. This file is dynamically imported only in Vite development builds. */
+.scores-developer-source {
+  display: grid;
+  grid-template-columns: auto auto minmax(180px, 1fr);
+  min-height: 48px;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 10px;
+  border-block: 1px solid var(--color-separator);
+  background: var(--color-fill);
+}
+
+.scores-developer-source > div:first-child {
+  display: grid;
+  gap: 1px;
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  text-transform: uppercase;
+}
+
+.scores-developer-source > div:first-child span {
+  color: var(--color-label-tertiary);
+  font-size: var(--type-micro);
+  font-weight: 750;
+  letter-spacing: 0.14em;
+}
+
+.scores-developer-source > div:first-child strong {
+  color: var(--color-label);
+  font-size: var(--type-label);
+  font-weight: 850;
+  letter-spacing: 0.08em;
+}
+
+.scores-developer-source-options {
+  display: inline-grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 3px;
+  border: 1px solid var(--color-separator-opaque);
+  background: var(--color-bg-secondary);
+}
+
+.scores-developer-source-options > button {
+  min-height: 36px;
+  padding: 0 12px;
+  color: var(--color-label-secondary);
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-label);
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.scores-developer-source-options > button:hover { color: var(--color-label); }
+.scores-developer-source-options > button.is-active {
+  background: var(--color-signature);
+  color: var(--color-signature-fg);
+}
+
+.scores-developer-source > p {
+  min-width: 0;
+  margin: 0;
+  color: var(--color-label-tertiary);
+  font-size: var(--type-label);
+  font-weight: 650;
+  text-align: right;
+}
+
+@media (max-width: 700px) {
+  .scores-developer-source {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+    gap: 8px;
+    padding: 10px;
+  }
+  .scores-developer-source > div:first-child { grid-template-columns: auto 1fr; align-items: baseline; gap: 8px; }
+  .scores-developer-source-options { width: 100%; }
+  .scores-developer-source-options > button { min-height: 44px; padding-inline: 8px; }
+  .scores-developer-source > p { min-height: 20px; text-align: left; }
+}

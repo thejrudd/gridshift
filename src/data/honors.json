@@ -1,0 +1,66 @@
+{
+  "_note": "Pro Bowl and All-Pro selections by player ESPN ID and season year. Add/correct entries here — API awards (MVP, OPOY, etc.) are fetched automatically and do not need to be listed here.",
+  "_format": "{ \"<espnPlayerId>\": { \"<season_year>\": [\"Pro Bowl\", \"1st Team All-Pro\"] } }",
+
+  "3918298": {
+    "2020": ["Pro Bowl", "1st Team All-Pro"],
+    "2021": ["Pro Bowl", "1st Team All-Pro"],
+    "2022": ["Pro Bowl"],
+    "2023": ["Pro Bowl", "1st Team All-Pro"],
+    "2024": ["Pro Bowl", "1st Team All-Pro"]
+  },
+
+  "3139477": {
+    "2018": ["Pro Bowl", "1st Team All-Pro"],
+    "2019": ["Pro Bowl", "1st Team All-Pro"],
+    "2020": ["Pro Bowl"],
+    "2021": ["Pro Bowl"],
+    "2022": ["Pro Bowl", "1st Team All-Pro"],
+    "2023": ["Pro Bowl"],
+    "2024": ["Pro Bowl"]
+  },
+
+  "3916387": {
+    "2019": ["Pro Bowl", "1st Team All-Pro"],
+    "2021": ["Pro Bowl", "1st Team All-Pro"],
+    "2022": ["Pro Bowl", "1st Team All-Pro"],
+    "2023": ["Pro Bowl", "1st Team All-Pro"],
+    "2024": ["Pro Bowl", "1st Team All-Pro"]
+  },
+
+  "3116406": {
+    "2016": ["Pro Bowl", "1st Team All-Pro"],
+    "2017": ["Pro Bowl", "1st Team All-Pro"],
+    "2018": ["Pro Bowl", "1st Team All-Pro"],
+    "2019": ["Pro Bowl", "1st Team All-Pro"],
+    "2020": ["Pro Bowl"],
+    "2021": ["Pro Bowl"],
+    "2022": ["Pro Bowl"],
+    "2023": ["Pro Bowl"]
+  },
+
+  "4262921": {
+    "2020": ["Pro Bowl", "1st Team All-Pro"],
+    "2021": ["Pro Bowl", "1st Team All-Pro"],
+    "2022": ["Pro Bowl", "1st Team All-Pro"],
+    "2023": ["Pro Bowl", "1st Team All-Pro"]
+  },
+
+  "3043078": {
+    "2019": ["Pro Bowl", "1st Team All-Pro"],
+    "2020": ["Pro Bowl"],
+    "2022": ["Pro Bowl"],
+    "2024": ["Pro Bowl", "1st Team All-Pro"]
+  },
+
+  "15847": {
+    "2016": ["Pro Bowl", "1st Team All-Pro"],
+    "2017": ["Pro Bowl", "1st Team All-Pro"],
+    "2018": ["Pro Bowl", "1st Team All-Pro"],
+    "2019": ["Pro Bowl", "1st Team All-Pro"],
+    "2020": ["Pro Bowl", "1st Team All-Pro"],
+    "2021": ["Pro Bowl"],
+    "2022": ["Pro Bowl"],
+    "2023": ["Pro Bowl"]
+  }
+}
