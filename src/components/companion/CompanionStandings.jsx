@@ -1,7 +1,7 @@
 import { useMemo, useRef } from 'react';
 import useLeagueHistoryData from '../../hooks/useLeagueHistoryData.js';
 import useHorizontalScrollCue from '../../hooks/useHorizontalScrollCue.js';
-import { buildSeasonStandings, normalizeSeasonBrackets } from '../../utils/leagueHistory.js';
+import { buildFinalPlacements, buildSeasonStandings, normalizeSeasonBrackets } from '../../utils/leagueHistory.js';
 import HorizontalScrollCue from '../HorizontalScrollCue.jsx';
 import LeagueHistoryIcon from './LeagueHistoryIcon.jsx';
 import LeagueHistoryState from './LeagueHistoryState.jsx';
@@ -22,12 +22,12 @@ function ordinal(value) {
   return `${numeric}th`;
 }
 
-function SectionHeading({ title, meta, icon }) {
+function SectionHeading({ title, meta, icon, id }) {
   return (
     <div className="league-history-section__heading">
       <span className="league-history-section__title">
         {icon && <LeagueHistoryIcon name={icon} size="sm" />}
-        <h2>{title}</h2>
+        <h2 id={id}>{title}</h2>
       </span>
       {meta && <span>{meta}</span>}
     </div>
@@ -53,6 +53,22 @@ function StandingRows({ rows, historical, playoffTeamCount }) {
           );
         })}</tbody>
       </table>
+    </div>
+  );
+}
+
+function FinalPlacementRows({ rows }) {
+  return (
+    <div className="league-final-placements" data-testid="league-final-placements">
+      {rows.map((row) => (
+        <div className="league-final-placement" key={row.participantId}>
+          <span className="league-final-placement__rank">{ordinal(row.placement)}</span>
+          <span className="league-final-placement__team">
+            <strong>{row.teamName}</strong>
+            <small>{row.managerName}</small>
+          </span>
+        </div>
+      ))}
     </div>
   );
 }
@@ -357,6 +373,10 @@ export default function CompanionStandings() {
   const historical = Boolean(snapshot?.completed);
   const standings = useMemo(() => snapshot ? buildSeasonStandings(snapshot, { historical }) : null, [snapshot, historical]);
   const brackets = useMemo(() => snapshot ? normalizeSeasonBrackets(snapshot) : null, [snapshot]);
+  const finalPlacements = useMemo(
+    () => historical && snapshot ? buildFinalPlacements(snapshot, brackets) : null,
+    [brackets, historical, snapshot],
+  );
   const hasStandings = Boolean(standings?.rows?.length && standings.throughWeek > 0);
   const state = <LeagueHistoryState platform={history.platform} loading={history.loading} error={history.error} empty={!hasStandings} noun="Standings" season={history.season} priorSeasonCount={Math.max(0, history.eligibleLeagueHistory.length - 1)} onRetry={history.retry} />;
   if (history.platform !== 'sleeper' || history.loading || history.error || !hasStandings) {
@@ -379,6 +399,12 @@ export default function CompanionStandings() {
       </div>
       {historical && brackets?.hasChampionship && <Bracket title="Championship playoff" rows={brackets.championship} champion />}
       {historical && brackets?.hasConsolation && <Bracket title={losersBracket.title} meta={losersBracket.meta} rows={brackets.consolation} toiletBowl={brackets.losersBracketType === 'toilet-bowl'} />}
+      {historical && finalPlacements?.complete && (
+        <section className="league-history-section league-final-placements-section" aria-labelledby="league-final-placements-title">
+          <SectionHeading id="league-final-placements-title" title="Final placement" meta={`${finalPlacements.totalTeams}-team postseason finish`} icon="trophy" />
+          <FinalPlacementRows rows={finalPlacements.rows} />
+        </section>
+      )}
       {!historical && (
         <div className="league-standings-live-note">
           <LeagueHistoryIcon name="target" tone="blue" size="sm" />

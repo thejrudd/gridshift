@@ -6,7 +6,7 @@ import { useTheme } from '../../context/ThemeContext.jsx';
 import { fetchLeagueLogsMarketForLeague, formatLeagueLogsMarketProfile } from '../../api/leagueLogsApi.js';
 import { getFantasyAdp } from '../../api/fantasyAdpApi.js';
 import useMediaQuery from '../../hooks/useMediaQuery.js';
-import { useUpcomingScheduleMap } from '../../hooks/useUpcomingScheduleMap.js';
+import { useUpcomingScheduleBundle } from '../../hooks/useUpcomingScheduleMap.js';
 import CompanionPlayerRow, {
   CompanionPlayerAction,
   CompanionPlayerMetric,
@@ -50,6 +50,7 @@ import {
   normalizeDraftModelWeights,
   normalizeDraftPick,
   rebalanceDraftModelWeights,
+  resolveDraftPlayerByeWeek,
   resolveDraftPickManagerId,
   resolveLeagueDraftId,
   shouldRefreshSleeperDraftPicks,
@@ -76,6 +77,8 @@ import {
   removePlayerFromOrderedBoard,
 } from '../../utils/draftAssistant/board.js';
 import { getDraftAnalyticsCompareLimit } from '../../utils/draftAssistant/analytics.js';
+import { buildDraftByeConflictModel } from '../../utils/draftAssistant/byeConflicts.js';
+import { getByeWeekForTeam, isByeWeekBundleForSeason } from '../../utils/draftAssistant/byeWeeks.js';
 import {
   DRAFT_RANKING_PRIORITY_CONTROLS,
   DRAFT_RANKING_PRIORITY_HELP,
@@ -111,6 +114,7 @@ const MY_BOARD_SORT_OPTIONS = [
 ];
 const DRAFT_BOARD_CARD_METRIC_OPTIONS = [
   { id: 'none', label: 'None' },
+  { id: 'bye', label: 'Bye' },
   { id: 'sleeper', label: 'Rank' },
   { id: 'rating', label: 'Rate' },
   { id: 'adp', label: 'ADP' },
@@ -266,6 +270,7 @@ function getDraftViewModelCacheKey({
   weeklyStats,
   scheduleMap,
   upcomingScheduleMap,
+  byeWeekBundle,
   modelWeights,
 }) {
   return [
@@ -285,6 +290,7 @@ function getDraftViewModelCacheKey({
     getDraftObjectCacheToken(weeklyStats),
     getDraftObjectCacheToken(scheduleMap),
     getDraftObjectCacheToken(upcomingScheduleMap),
+    getDraftObjectCacheToken(byeWeekBundle),
     JSON.stringify(normalizeDraftModelWeights(modelWeights)),
   ].join('::');
 }
@@ -789,7 +795,7 @@ function formatPositionRank(player) {
 }
 
 function getByeWeek(player) {
-  return player?.teamContext?.byeWeek ?? player?.raw?.bye_week ?? player?.raw?.metadata?.bye_week ?? player?.raw?.metadata?.bye ?? player?.bye ?? null;
+  return player?.byeWeek ?? player?.teamContext?.byeWeek ?? player?.raw?.bye_week ?? player?.raw?.metadata?.bye_week ?? player?.raw?.metadata?.bye ?? player?.bye ?? null;
 }
 
 function getPlayerName(player) {
@@ -951,6 +957,18 @@ function getBigBoardMetrics(player) {
 
 function getDraftBoardCardMetric(player, metricKey) {
   switch (metricKey) {
+    case 'bye':
+      return {
+        key: 'bye',
+        value: (
+          <DraftBoardMetricValue
+            label="Bye"
+            value={formatRankMetric(getByeWeek(player))}
+          />
+        ),
+        label: null,
+        title: getByeWeek(player) == null ? 'Bye week unavailable' : `Bye week ${getByeWeek(player)}`,
+      };
     case 'sleeper':
       return {
         key: 'sleeper',
@@ -1117,12 +1135,19 @@ function getAvailablePositions(candidates, boardRows) {
 function buildFastBoardRows({
   boardIds,
   candidatesById,
+  draftedCardsById = new Map(),
   players,
   rosters,
   normalizedPicks = [],
   myRosterId = null,
   getUserDisplayName = null,
+  byeWeekBundle = null,
+  draftSeason = null,
 }) {
+  const rosterOwnerById = new Map((rosters ?? []).map((roster) => [
+    String(roster?.roster_id),
+    roster?.owner_id != null ? String(roster.owner_id) : null,
+  ]));
   const rosteredIds = new Set();
   for (const roster of rosters ?? []) {
     for (const playerId of [
@@ -1138,7 +1163,7 @@ function buildFastBoardRows({
   for (const pick of normalizedPicks ?? []) {
     if (!pick?.playerId) continue;
     const rosterId = pick.rosterId != null ? String(pick.rosterId) : null;
-    const ownerId = resolveDraftPickManagerId(pick);
+    const ownerId = resolveDraftPickManagerId(pick) ?? rosterOwnerById.get(rosterId) ?? null;
     const ownerLabel = rosterId && rosterId === String(myRosterId)
       ? 'You'
       : (ownerId && getUserDisplayName ? getUserDisplayName(ownerId) : null);
@@ -1154,12 +1179,15 @@ function buildFastBoardRows({
 
   return (boardIds ?? []).map((playerId, index) => {
     const id = String(playerId);
-    const matched = candidatesById.get(id);
+    const availableCandidate = candidatesById.get(id) ?? null;
+    const draftedCandidate = draftedCardsById.get(id) ?? null;
+    const matched = availableCandidate ?? draftedCandidate;
     if (matched) {
       return {
         ...matched,
         boardRank: index + 1,
-        available: true,
+        available: Boolean(availableCandidate),
+        draftedBy: draftedByPlayerId.get(id) ?? matched.draftedBy ?? null,
         draftRoom: {
           ...(matched.draftRoom ?? {}),
           boardRank: index + 1,
@@ -1178,7 +1206,20 @@ function buildFastBoardRows({
       rank: null,
       scoringFit: null,
       workload: null,
-      teamContext: null,
+      byeWeek: resolveDraftPlayerByeWeek({
+        player: rawPlayer,
+        team: rawPlayer?.team,
+        draftSeason,
+        byeWeekBundle,
+      }),
+      teamContext: {
+        byeWeek: resolveDraftPlayerByeWeek({
+          player: rawPlayer,
+          team: rawPlayer?.team,
+          draftSeason,
+          byeWeekBundle,
+        }),
+      },
       schedule: null,
       draftRoom: { boardRank: index + 1 },
       boardRank: index + 1,
@@ -1622,18 +1663,53 @@ function DraftSegmentedControl({ label, options, value, onChange, className = ''
   );
 }
 
-function DraftMobileControlMenu({ label = 'Filters', children, className = '' }) {
+function DraftByeConflictToggle({ checked, disabled, onChange }) {
+  const unavailableCopy = 'Conflict highlighting needs a complete schedule for the selected draft season.';
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label="Highlight bye week conflicts"
+      className="draft-bye-conflict-toggle"
+      onClick={() => onChange(!checked)}
+      disabled={disabled}
+      title={disabled ? unavailableCopy : 'Highlight players whose bye overlaps your format-aware comparison set'}
+    >
+      <span className="draft-bye-conflict-toggle__track" aria-hidden="true">
+        <span />
+      </span>
+      <span>Highlight conflicts</span>
+    </button>
+  );
+}
+
+function DraftFilterIcon() {
+  return (
+    <svg className="draft-filter-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M4 6h16" />
+      <path d="M7 12h10" />
+      <path d="M10 18h4" />
+    </svg>
+  );
+}
+
+function DraftMobileControlMenu({ label = 'Filters', children, className = '', lead = null, showFilterIcon = false }) {
   const [open, setOpen] = useState(false);
 
   return (
     <div className={['draft-mobile-control-menu', open ? 'is-open' : '', className].filter(Boolean).join(' ')}>
+      {lead ? <div className="draft-mobile-control-menu__lead">{lead}</div> : null}
       <button
         type="button"
         className="draft-mobile-control-menu__button"
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
       >
-        <span>{label}</span>
+        <span className="draft-mobile-control-menu__button-label" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+          {showFilterIcon ? <DraftFilterIcon /> : null}
+          <span>{label}</span>
+        </span>
         <ArrowIcon direction={open ? 'up' : 'down'} />
       </button>
       <div className="draft-mobile-control-menu__content">
@@ -1726,8 +1802,9 @@ function DraftModelWeightInfo({ label, description }) {
   );
 }
 
-function DraftModelWeights({ weights, onChange, onReset, className = '', idPrefix = 'draft-model-weight-label' }) {
+function DraftModelWeights({ weights, onChange, onReset, className = '', idPrefix = 'draft-model-weight-label', defaultOpen = false }) {
   const [draftWeights, setDraftWeights] = useState(() => normalizeDraftModelWeights(weights));
+  const [expanded, setExpanded] = useState(defaultOpen);
   const draftWeightsRef = useRef(draftWeights);
 
   useEffect(() => {
@@ -1767,7 +1844,11 @@ function DraftModelWeights({ weights, onChange, onReset, className = '', idPrefi
   }, 0);
 
   return (
-    <details className={['draft-model-weights', className].filter(Boolean).join(' ')}>
+    <details
+      className={['draft-model-weights', className].filter(Boolean).join(' ')}
+      open={expanded}
+      onToggle={(event) => setExpanded(event.currentTarget.open)}
+    >
       <summary>
         <span className="draft-model-weights__summary-title">
           <span className="draft-model-weights__chevron" aria-hidden="true" />
@@ -1834,6 +1915,38 @@ function DraftBoardMetricValue({ label, value }) {
   );
 }
 
+function getByeConflictDescription(player, conflict) {
+  if (!conflict || conflict.severity === 'none' || conflict.week == null) return null;
+  const names = conflict.matchingPlayerNames ?? [];
+  const matchingCopy = names.length
+    ? names.join(', ')
+    : `${conflict.totalOverlaps} other player${conflict.totalOverlaps === 1 ? '' : 's'}`;
+  const positionCopy = conflict.exactPositionOverlaps > 0
+    ? ` Same-position conflict with ${conflict.exactPositionOverlaps} ${player.position} player${conflict.exactPositionOverlaps === 1 ? '' : 's'}.`
+    : '';
+  return `Bye week ${conflict.week} overlaps with ${matchingCopy}.${positionCopy}`;
+}
+
+function DraftByeConflictMarker({ player, conflict }) {
+  const description = getByeConflictDescription(player, conflict);
+  if (!description) return null;
+  const positional = conflict.severity === 'high';
+  return (
+    <span
+      className={[
+        'draft-bye-conflict-marker',
+        positional ? 'is-positional' : '',
+      ].filter(Boolean).join(' ')}
+      title={description}
+      aria-label={positional
+        ? `${player.position} positional conflict, bye ${conflict.week}`
+        : `Bye conflict, week ${conflict.week}`}
+    >
+      Bye {conflict.week}
+    </span>
+  );
+}
+
 function DraftPlayerAvailabilityBadge({ player }) {
   const availability = getPlayerAvailabilityContext(player);
   if (!availability.status) return null;
@@ -1859,11 +1972,14 @@ function DraftPlayerRow({
   rowGridTemplate = null,
   compactRowGridTemplate = null,
   leading = null,
+  trailing = null,
   identityMetaSegments = null,
   className = '',
   compact = true,
   showPosition = true,
   showTeamLogo = true,
+  ariaLabel = null,
+  titleSupplement = null,
 }) {
   const bye = getByeWeek(player);
   const rowMetrics = metrics ?? [
@@ -1911,7 +2027,8 @@ function DraftPlayerRow({
         position: player.position,
         raw: player.raw,
       }}
-      title={[getPlayerName(player), player.team, availability.label].filter(Boolean).join(' · ')}
+      title={[getPlayerName(player), player.team, availability.label, titleSupplement].filter(Boolean).join(' · ')}
+      ariaLabel={ariaLabel}
       darkMode={darkMode}
       disabled={disabled}
       interactive
@@ -1920,6 +2037,7 @@ function DraftPlayerRow({
       showTeamLogo={showTeamLogo}
       onClick={() => onViewPlayer?.(player.id)}
       leading={leading}
+      trailing={trailing}
       metaSegments={metaSegments}
       columns={rowMetrics.map((metric) => (
         <CompanionPlayerMetric
@@ -2062,6 +2180,7 @@ const BigBoard = memo(function BigBoard({
   onResetModelWeights,
 }) {
   const [sortState, setSortState] = useState({ key: 'rating', direction: 'desc' });
+  const isMobileBoard = useMediaQuery('(max-width: 767px)');
   const filtered = filterCandidates(candidates, activePosition, query, availabilityFilter);
   const sorted = useMemo(
     () => sortBigBoardRows(filtered, sortState).slice(0, 140),
@@ -2081,7 +2200,7 @@ const BigBoard = memo(function BigBoard({
       };
     });
   };
-  const renderColumnLabel = (column) => {
+  const renderColumnLabel = (column, centered = false) => {
     if (column.key === 'ppg') {
       return (
         <span className="draft-big-board-header__label">
@@ -2100,12 +2219,15 @@ const BigBoard = memo(function BigBoard({
     }
     const lines = column.headerLines ?? [column.label];
     return (
-      <span className="draft-big-board-header__label">
+      <span
+        className="draft-big-board-header__label"
+        style={centered ? { justifyItems: 'center', textAlign: 'center' } : undefined}
+      >
         {lines.map((line) => <span key={line}>{line}</span>)}
       </span>
     );
   };
-  const renderSortButton = (column, className = '') => {
+  const renderSortButton = (column, className = '', { mobilePlayer = false } = {}) => {
     const active = sortState.key === column.key;
     const direction = active ? sortState.direction : column.defaultDirection;
     const nextDirection = active
@@ -2123,15 +2245,16 @@ const BigBoard = memo(function BigBoard({
           : `Sort by ${column.label} ${nextDirection}.`}
         aria-sort={active ? (direction === 'asc' ? 'ascending' : 'descending') : 'none'}
         title={active ? `Sorted ${currentDirection}` : `Sort by ${column.label}`}
+        style={mobilePlayer ? { gridColumn: '1 / 4', justifyContent: 'center', textAlign: 'center' } : undefined}
       >
-        {renderColumnLabel(column)}
+        {renderColumnLabel(column, mobilePlayer)}
         <span aria-hidden="true" className="draft-big-board-header__sort">
           {direction === 'asc' ? '↑' : '↓'}
         </span>
       </button>
     );
   };
-  const renderControlFields = (className = '') => (
+  const renderControlFields = ({ className = '', includeSearch = true } = {}) => (
     <div className={['draft-panel__header-controls', 'draft-big-board-controls', className].filter(Boolean).join(' ')}>
       <DraftSegmentedControl
         label="Big Board player scope"
@@ -2144,45 +2267,78 @@ const BigBoard = memo(function BigBoard({
         value={availabilityFilter}
         onChange={onAvailabilityFilterChange}
       />
-      <input
-        className="draft-big-board-search"
-        value={query}
-        onChange={(event) => setQuery(event.target.value)}
-        placeholder="Search players"
-        aria-label="Search draft players"
-      />
+      {includeSearch ? (
+        <input
+          type="search"
+          className="draft-big-board-search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search players"
+          aria-label="Search draft players"
+        />
+      ) : null}
     </div>
   );
-  const renderSortHeader = (className = '') => (
+  const renderSortHeader = (className = '', { mobile = false } = {}) => (
     <div className={['draft-big-board-header', className].filter(Boolean).join(' ')} role="row">
-      <span className="draft-big-board-header__avatar-spacer" aria-hidden="true" />
-      <span className="draft-big-board-header__position-spacer" aria-hidden="true" />
-      {renderSortButton(BIG_BOARD_SORT_COLUMNS[0], 'draft-big-board-header__player')}
-      <span className="draft-big-board-header__logo-spacer" aria-hidden="true" />
+      {mobile ? (
+        renderSortButton(BIG_BOARD_SORT_COLUMNS[0], 'draft-big-board-header__player draft-big-board-header__player--mobile', { mobilePlayer: true })
+      ) : (
+        <>
+          <span className="draft-big-board-header__avatar-spacer" aria-hidden="true" />
+          <span className="draft-big-board-header__position-spacer" aria-hidden="true" />
+          {renderSortButton(BIG_BOARD_SORT_COLUMNS[0], 'draft-big-board-header__player')}
+          <span className="draft-big-board-header__logo-spacer" aria-hidden="true" />
+        </>
+      )}
       <div className="draft-big-board-header__metrics">
-        {BIG_BOARD_SORT_COLUMNS.slice(1).map((column) => renderSortButton(column))}
+        {(mobile ? BIG_BOARD_SORT_COLUMNS.slice(1, 3) : BIG_BOARD_SORT_COLUMNS.slice(1))
+          .map((column) => renderSortButton(column))}
       </div>
       <span className="draft-big-board-header__action-spacer" aria-hidden="true" />
     </div>
   );
 
+  const mobileBoardGridStyle = isMobileBoard ? {
+    '--draft-big-board-row-grid': '30px 24px minmax(102px, 1fr) minmax(92px, 0.82fr) 4px 44px',
+    '--draft-big-board-metric-grid': 'repeat(2, minmax(38px, 1fr))',
+  } : undefined;
+
   return (
-    <section className="draft-panel draft-big-board">
+    <section className="draft-panel draft-big-board" style={mobileBoardGridStyle}>
       <div className="draft-panel__header">
         <div>
           <h2>Big Board</h2>
           {statsLoading ? <span>Refreshing rankings</span> : null}
         </div>
-        {renderControlFields('draft-desktop-control-set')}
+        {renderControlFields({ className: 'draft-desktop-control-set' })}
       </div>
       <PositionFilter positions={positions} activePosition={activePosition} onChange={onPositionChange} />
-      <DraftMobileControlMenu label="Filters" className="draft-big-board__mobile-controls">
-        {renderControlFields()}
+      <DraftMobileControlMenu
+        label="Filters"
+        className="draft-big-board__mobile-controls"
+        showFilterIcon
+        lead={(
+          <div className="draft-big-board-mobile-search" style={{ padding: 8 }}>
+            <input
+              type="search"
+              className="draft-big-board-search draft-big-board-search--mobile"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search players"
+              aria-label="Search draft players"
+              style={{ width: '100%', minWidth: 0, minHeight: 44, margin: 0 }}
+            />
+          </div>
+        )}
+      >
+        {renderControlFields({ includeSearch: false })}
         <DraftModelWeights
           weights={modelWeights}
           onChange={onModelWeightChange}
           onReset={onResetModelWeights}
           idPrefix="draft-mobile-model-weight-label"
+          defaultOpen
         />
       </DraftMobileControlMenu>
       <DraftModelWeights
@@ -2191,12 +2347,12 @@ const BigBoard = memo(function BigBoard({
         onReset={onResetModelWeights}
         className="draft-desktop-control-set"
       />
-      {renderSortHeader('draft-mobile-sort-header')}
+      {renderSortHeader('draft-mobile-sort-header', { mobile: true })}
       {renderSortHeader('draft-desktop-control-set')}
       <div className="draft-player-list">
         {sorted.length === 0 ? (
           <EmptyState title="No players match this filter." />
-        ) : sorted.map((player, index) => {
+        ) : sorted.map((player) => {
           const included = boardIds.has(player.id);
           return (
             <DraftPlayerRow
@@ -2205,7 +2361,7 @@ const BigBoard = memo(function BigBoard({
               darkMode={darkMode}
               className="draft-player-row--big-board"
               onViewPlayer={onViewPlayer}
-              metrics={getBigBoardMetrics(player)}
+              metrics={isMobileBoard ? getBigBoardMetrics(player).slice(0, 2) : getBigBoardMetrics(player)}
               metricColumnGridTemplate={BIG_BOARD_METRIC_GRID_TEMPLATE}
               rowGridTemplate={BIG_BOARD_ROW_GRID_TEMPLATE}
               compactRowGridTemplate={BIG_BOARD_COMPACT_ROW_GRID_TEMPLATE}
@@ -2218,7 +2374,9 @@ const BigBoard = memo(function BigBoard({
                   className={included ? 'draft-player-row__add-action is-added-icon' : 'draft-player-row__add-action'}
                   onClick={() => onAdd(player)}
                 >
-                  {included ? <CheckIcon /> : 'Add'}
+                  {included ? <CheckIcon /> : isMobileBoard ? (
+                    <span className="draft-player-row__add-glyph" aria-hidden="true" style={{ fontSize: 'var(--type-heading-sm)', lineHeight: 1 }}>+</span>
+                  ) : 'Add'}
                 </CompanionPlayerAction>,
               ]}
             />
@@ -2315,7 +2473,14 @@ function getSleeperPlayerName(player, fallback = 'Player') {
     || fallback;
 }
 
-function buildRosterTrayPlayer({ playerId, rawPlayer, sourceLabel = null, sortOrder = 0 }) {
+function buildRosterTrayPlayer({
+  playerId,
+  rawPlayer,
+  sourceLabel = null,
+  sortOrder = 0,
+  byeWeekBundle = null,
+  draftSeason = null,
+}) {
   const id = String(playerId ?? '');
   if (!id) return null;
   const position = normalizePosition(rawPlayer?.fantasy_positions?.[0] ?? rawPlayer?.position);
@@ -2324,12 +2489,26 @@ function buildRosterTrayPlayer({ playerId, rawPlayer, sourceLabel = null, sortOr
     name: getSleeperPlayerName(rawPlayer, `Player ${id}`),
     position,
     team: String(rawPlayer?.team ?? '').toUpperCase(),
+    byeWeek: resolveDraftPlayerByeWeek({
+      player: rawPlayer,
+      team: rawPlayer?.team,
+      draftSeason,
+      byeWeekBundle,
+    }),
     sourceLabel,
     sortOrder,
   };
 }
 
-function buildMyDraftRosterTray({ league, draftOrderContext, myRosterData, players, keeperIds = new Set() }) {
+function buildMyDraftRosterTray({
+  league,
+  draftOrderContext,
+  myRosterData,
+  players,
+  keeperIds = new Set(),
+  byeWeekBundle = null,
+  draftSeason = null,
+}) {
   const myRosterId = myRosterData?.roster_id != null ? String(myRosterData.roster_id) : null;
   const slots = (league?.roster_positions ?? [])
     .filter((slot) => normalizeRosterSlot(slot) !== 'IR' && normalizeRosterSlot(slot) !== 'TAXI')
@@ -2362,6 +2541,8 @@ function buildMyDraftRosterTray({ league, draftOrderContext, myRosterData, playe
       rawPlayer: players?.[playerId] ?? null,
       sourceLabel: 'Roster',
       sortOrder: index,
+      byeWeekBundle,
+      draftSeason,
     });
     if (!player) return;
     seenPlayerIds.add(playerId);
@@ -2382,6 +2563,8 @@ function buildMyDraftRosterTray({ league, draftOrderContext, myRosterData, playe
       rawPlayer,
       sourceLabel: formatPickLabel(pick),
       sortOrder: 10_000 + index,
+      byeWeekBundle,
+      draftSeason,
     });
     if (!player) return;
     player.name = getDraftedPlayerLabel(pick, players);
@@ -2451,15 +2634,20 @@ function DraftBoardCardShell({
   allowDrag = true,
   disabled = false,
   isDragging = false,
+  conflict = null,
 }) {
   const isGone = player?.available === false;
   const isDraftedByUser = Boolean(player?.draftedBy?.isMine);
+  const isDraftedByOther = isGone && Boolean(player?.draftedBy) && !isDraftedByUser;
+  const draftedOwnershipLabel = isGone && player?.draftedBy
+    ? (isDraftedByUser ? 'Drafted by You' : `Drafted by ${player.draftedBy.label}`)
+    : null;
   const canDrag = allowDrag && !disabled && !isGone;
   const cardMetric = getDraftBoardCardMetric(player, metricKey);
   const availability = getPlayerAvailabilityContext(player);
   const actions = [];
 
-  if (onAdd) {
+  if (!isGone && onAdd) {
     actions.push(
       <CompanionPlayerAction
         key="add"
@@ -2471,7 +2659,7 @@ function DraftBoardCardShell({
     );
   }
 
-  if (allowReorder && onMove && position) {
+  if (!isGone && allowReorder && onMove && position) {
     actions.push(
       <CompanionPlayerAction
         key="up"
@@ -2492,7 +2680,7 @@ function DraftBoardCardShell({
     );
   }
 
-  if (onRemove) {
+  if (!isGone && onRemove) {
     actions.push(
       <CompanionPlayerAction
         key="remove"
@@ -2504,7 +2692,30 @@ function DraftBoardCardShell({
     );
   }
 
-  const boardStatus = getDraftBoardStatus(player);
+  const boardStatus = draftedOwnershipLabel ? null : getDraftBoardStatus(player);
+  const conflictDescription = isDraftedByOther ? null : getByeConflictDescription(player, conflict);
+  const hasConflict = Boolean(conflictDescription);
+  const hasPositionalConflict = conflict?.severity === 'high';
+  const cardTrailing = cardMetric || actions.length > 0 ? (
+    <div className="draft-board-card-trailing">
+      {cardMetric ? (
+        <CompanionPlayerMetric
+          value={cardMetric.value}
+          label={cardMetric.label}
+          title={cardMetric.title}
+          align={cardMetric.align}
+          tone={cardMetric.tone}
+          compact
+          className={`draft-player-row__metric--${cardMetric.key}`}
+        />
+      ) : null}
+      {actions.length > 0 ? (
+        <div className="draft-board-card-trailing__actions">
+          {actions}
+        </div>
+      ) : null}
+    </div>
+  ) : null;
 
   return (
     <div
@@ -2515,6 +2726,8 @@ function DraftBoardCardShell({
         isGone ? 'is-gone' : '',
         isDraftedByUser ? 'is-drafted-by-user' : '',
         isGone && !isDraftedByUser ? 'is-drafted-by-other' : '',
+        hasConflict ? 'is-bye-conflict' : '',
+        hasPositionalConflict ? 'is-positional-bye-conflict' : '',
       ].filter(Boolean).join(' ')}
       data-player-id={String(player.id)}
       draggable={canDrag}
@@ -2534,26 +2747,35 @@ function DraftBoardCardShell({
         className={[
           'draft-player-row--board-card',
           index != null ? 'draft-player-row--ranked-card' : 'draft-player-row--available-card',
-          cardMetric ? 'has-board-card-metric' : '',
+          cardTrailing ? 'has-board-card-trailing' : '',
           boardStatus ? 'has-board-card-status' : '',
           isDraftedByUser ? 'is-drafted-by-user' : '',
           isGone && !isDraftedByUser ? 'is-drafted-by-other' : '',
         ].filter(Boolean).join(' ')}
         disabled={disabled || isGone}
         onViewPlayer={onViewPlayer}
-        metrics={cardMetric ? [cardMetric] : []}
+        metrics={[]}
         metricColumnGridTemplate={null}
-        rowGridTemplate={cardMetric ? 'var(--draft-board-card-grid-with-metric)' : 'var(--draft-board-card-grid)'}
-        compactRowGridTemplate={cardMetric ? 'var(--draft-board-card-grid-with-metric)' : 'var(--draft-board-card-grid-compact)'}
+        rowGridTemplate={cardTrailing ? 'var(--draft-board-card-grid-trailing)' : 'var(--draft-board-card-grid)'}
+        compactRowGridTemplate={cardTrailing ? 'var(--draft-board-card-grid-trailing)' : 'var(--draft-board-card-grid-compact)'}
         identityMetaSegments={[
-          [player.position, player.team || 'FA'].filter(Boolean).join(' · '),
-          availability.status ? <DraftPlayerAvailabilityBadge key="availability" player={player} /> : null,
+          draftedOwnershipLabel
+            ?? [player.position, player.team || 'FA'].filter(Boolean).join(' · '),
+          !isDraftedByOther && hasConflict
+            ? <DraftByeConflictMarker key="bye-conflict" player={player} conflict={conflict} />
+            : null,
+          !isDraftedByOther && availability.status
+            ? <DraftPlayerAvailabilityBadge key="availability" player={player} />
+            : null,
         ].filter(Boolean)}
         compact={false}
         showPosition={false}
         status={boardStatus}
-        actions={actions}
+        actions={null}
+        trailing={cardTrailing}
         showTeamLogo={false}
+        titleSupplement={conflictDescription}
+        ariaLabel={conflictDescription ? `Open ${getPlayerName(player)}. ${conflictDescription}` : null}
       />
     </div>
   );
@@ -2704,6 +2926,7 @@ const DraftAvailablePlayerList = memo(function DraftAvailablePlayerList({
   onViewPlayer,
   draggingPlayerId = null,
   emptyTitle = 'No available players match this filter.',
+  conflictByPlayerId = null,
 }) {
   const listRef = useRef(null);
   if (players.length === 0) return <EmptyState title={emptyTitle} />;
@@ -2722,6 +2945,7 @@ const DraftAvailablePlayerList = memo(function DraftAvailablePlayerList({
             onViewPlayer={onViewPlayer}
             allowDrag
             isDragging={String(player.id) === draggingPlayerId}
+            conflict={conflictByPlayerId?.get(String(player.id)) ?? null}
           />
         ))}
       </div>
@@ -2737,6 +2961,7 @@ const DraftAvailablePlayerList = memo(function DraftAvailablePlayerList({
   && previous.onViewPlayer === next.onViewPlayer
   && previous.draggingPlayerId === next.draggingPlayerId
   && previous.emptyTitle === next.emptyTitle
+  && previous.conflictByPlayerId === next.conflictByPlayerId
   && haveSamePlayerRows(previous.players, next.players)
 ));
 
@@ -2758,6 +2983,7 @@ const DraftBoardLane = memo(function DraftBoardLane({
   draggingPlayerId = null,
   dropTarget = null,
   onDragTargetChange,
+  conflictByPlayerId = null,
 }) {
   const liveRows = rows.filter((row) => row.available !== false);
   const stackRef = useRef(null);
@@ -2844,6 +3070,7 @@ const DraftBoardLane = memo(function DraftBoardLane({
                 allowReorder={allowReorder}
                 allowDrag={allowDrop}
                 isDragging={String(player.id) === draggingPlayerId}
+                conflict={conflictByPlayerId?.get(String(player.id)) ?? null}
               />
             </Fragment>
           ))}
@@ -2881,6 +3108,7 @@ const DraftBoardLane = memo(function DraftBoardLane({
   && previous.onMove === next.onMove
   && previous.onRemove === next.onRemove
   && previous.onViewPlayer === next.onViewPlayer
+  && previous.conflictByPlayerId === next.conflictByPlayerId
   && haveSamePlayerRows(previous.rows, next.rows)
 ));
 
@@ -2927,17 +3155,36 @@ function DraftRosterTray({ slots, collapsed, onToggleCollapsed }) {
   );
 }
 
-const DRAFT_BOARD_CARD_CHROME_WIDTH = 150;
+const DRAFT_BOARD_CARD_CHROME_WIDTH = 220;
 let draftBoardNameMeasureCanvas = null;
 
-function measureDraftBoardCardNameWidth(names) {
-  if (typeof document === 'undefined' || !names.length) return 0;
+function measureDraftBoardCardIdentityWidth(players) {
+  if (typeof document === 'undefined' || !players.length) return 0;
   if (!draftBoardNameMeasureCanvas) draftBoardNameMeasureCanvas = document.createElement('canvas');
   const ctx = draftBoardNameMeasureCanvas.getContext('2d');
   if (!ctx) return 0;
-  ctx.font = '850 16px Figtree, sans-serif';
-  const widest = names.reduce((max, name) => Math.max(max, ctx.measureText(name ?? '').width), 0);
-  return widest ? Math.ceil(widest) + 12 : 0;
+  const probe = document.createElement('span');
+  probe.className = 'draft-player-row--board-card companion-player-row__identity';
+  probe.style.cssText = 'position:absolute; visibility:hidden; pointer-events:none; white-space:nowrap;';
+  document.body?.appendChild(probe);
+
+  try {
+    const computed = getComputedStyle(probe);
+    ctx.font = `${computed.fontStyle} ${computed.fontWeight} ${computed.fontSize} ${computed.fontFamily}`;
+    const letterSpacing = Number.parseFloat(computed.letterSpacing);
+    const measure = (text) => (
+      ctx.measureText(text).width
+      + (Number.isFinite(letterSpacing) ? letterSpacing * Math.max(0, text.length - 1) : 0)
+    );
+    const widest = players.reduce((max, player) => {
+      const name = getPlayerName(player);
+      const metadata = [player.position, player.team || 'FA'].filter(Boolean).join(' · ');
+      return Math.max(max, measure(name), measure(metadata));
+    }, 0);
+    return widest ? Math.ceil(widest) + 12 : 0;
+  } finally {
+    probe.remove();
+  }
 }
 
 function MyBoardWorkspace({
@@ -2965,6 +3212,8 @@ function MyBoardWorkspace({
   onAvailabilityFilterChange,
   rosterSlots,
   cardMetricKey,
+  conflictByPlayerId,
+  displaySize,
 }) {
   const boardRowsById = useMemo(() => new Map(boardRows.map((row) => [String(row.id), row])), [boardRows]);
   const workspacePlayersById = useMemo(() => new Map(
@@ -3043,10 +3292,8 @@ function MyBoardWorkspace({
   }, [lanePositions, boardByPosition, boardRowsById]);
 
   const boardCardNameColPx = useMemo(
-    () => measureDraftBoardCardNameWidth(
-      [...visibleAvailablePlayers, ...boardRows].map((player) => getPlayerName(player)),
-    ),
-    [visibleAvailablePlayers, boardRows],
+    () => measureDraftBoardCardIdentityWidth([...visibleAvailablePlayers, ...boardRows]),
+    [visibleAvailablePlayers, boardRows, displaySize],
   );
   const boardCardMinWidth = boardCardNameColPx ? boardCardNameColPx + DRAFT_BOARD_CARD_CHROME_WIDTH : 0;
   const boardCardMinWidthRef = useRef(boardCardMinWidth);
@@ -3220,6 +3467,7 @@ function MyBoardWorkspace({
             onDragEnd={handleDragEnd}
             onViewPlayer={onViewPlayer}
             draggingPlayerId={draggingPlayerId}
+            conflictByPlayerId={conflictByPlayerId}
           />
         </aside>
 
@@ -3245,7 +3493,7 @@ function MyBoardWorkspace({
               aria-expanded={mobileAvailableOpen}
               onClick={() => setMobileAvailableOpen((current) => !current)}
             >
-              <span>Available Players</span>
+              <span>{mobileAvailableOpen ? 'Hide Available Players' : 'View Available Players'}</span>
             </button>
             {mobileAvailableOpen ? (
               <>
@@ -3279,6 +3527,7 @@ function MyBoardWorkspace({
                   onDragEnd={handleDragEnd}
                   onViewPlayer={onViewPlayer}
                   draggingPlayerId={draggingPlayerId}
+                  conflictByPlayerId={conflictByPlayerId}
                 />
               </>
             ) : null}
@@ -3311,6 +3560,7 @@ function MyBoardWorkspace({
                   allowReorder
                   activeMobile
                   draggingPlayerId={draggingPlayerId}
+                  conflictByPlayerId={conflictByPlayerId}
                 />
               ) : lanePositions.map((position) => (
                 <DraftBoardLane
@@ -3330,6 +3580,7 @@ function MyBoardWorkspace({
                   draggingPlayerId={draggingPlayerId}
                   dropTarget={dropTarget}
                   onDragTargetChange={handleDragTargetChange}
+                  conflictByPlayerId={conflictByPlayerId}
                 />
               ))}
             </div>
@@ -3445,7 +3696,7 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
     myRoster,
     getUserDisplayName,
   } = useSleeperBase();
-  const { darkMode } = useTheme();
+  const { darkMode, displaySize } = useTheme();
   const isStandaloneBoard = mode === 'my-board';
   const viewLabel = isStandaloneBoard ? 'Board' : 'Draft War Room';
   // Below the 1180px two-column breakpoint the inline pane would render beneath the full
@@ -3473,6 +3724,7 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
   const [boardScope, setBoardScope] = useState('available');
   const [myBoardSortMode, setMyBoardSortMode] = useState('position');
   const [draftBoardCardMetric, setDraftBoardCardMetric] = useState('none');
+  const [highlightByeConflicts, setHighlightByeConflicts] = useState(false);
   const [selectedAnalyticsPlayerId, setSelectedAnalyticsPlayerId] = useState(null);
   const [pinnedCompareIds, setPinnedCompareIds] = useState([]);
   const [analyticsAxes, setAnalyticsAxes] = useState({ xAxis: 'market', yAxis: 'rating' });
@@ -3484,7 +3736,9 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
   });
   const [draftStats, setDraftStats] = useState(null);
   const [draftStatsLoading, setDraftStatsLoading] = useState(false);
-  const upcomingScheduleMap = useUpcomingScheduleMap();
+  const draftSeason = String(draftMeta?.season ?? season ?? '');
+  const byeWeekBundle = useUpcomingScheduleBundle(draftSeason || null);
+  const upcomingScheduleMap = byeWeekBundle?.scheduleMap ?? null;
   const [marketState, setMarketState] = useState({
     loading: false,
     error: '',
@@ -3811,6 +4065,7 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
       weeklyStats: draftStats?.weeklyStats ?? null,
       scheduleMap: draftStats?.scheduleMap ?? null,
       upcomingScheduleMap,
+      byeWeekBundle,
       modelWeights,
     });
     const cachedModel = readDraftViewModelCache(cacheKey);
@@ -3839,7 +4094,8 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
         seasonStats: draftStats?.seasonStats ?? null,
         weeklyStats: draftStats?.weeklyStats ?? null,
         scheduleMap: draftStats?.scheduleMap ?? null,
-      upcomingScheduleMap,
+        upcomingScheduleMap,
+        byeWeekBundle,
         modelWeights,
       });
       if (cancelled) return;
@@ -3853,7 +4109,7 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
       cancelled = true;
       cancelBuild?.();
     };
-  }, [players, rosters, league, draftMeta, draftPicks, draftTradedPicks, myRosterData, activeScoringSettings, season, viewModelBoardIds, marketState.valuesByPlayerId, adpState.valuesByPlayerId, draftStats, upcomingScheduleMap, modelWeights, fullDraftModelAllowed]);
+  }, [players, rosters, league, draftMeta, draftPicks, draftTradedPicks, myRosterData, activeScoringSettings, season, viewModelBoardIds, marketState.valuesByPlayerId, adpState.valuesByPlayerId, draftStats, upcomingScheduleMap, byeWeekBundle, modelWeights, fullDraftModelAllowed]);
 
   const viewModel = draftViewModelState.model;
   const viewModelBuilding = draftViewModelState.building;
@@ -3874,13 +4130,16 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
     () => buildFastBoardRows({
       boardIds: eligibleBoardIds,
       candidatesById,
+      draftedCardsById: viewModel?.draftedCardsById,
       players,
       rosters,
       normalizedPicks: draftOrderContext.normalizedPicks,
       myRosterId: myRosterData?.roster_id,
       getUserDisplayName,
+      byeWeekBundle,
+      draftSeason,
     }),
-    [eligibleBoardIds, candidatesById, players, rosters, draftOrderContext.normalizedPicks, myRosterData?.roster_id, getUserDisplayName],
+    [eligibleBoardIds, candidatesById, viewModel?.draftedCardsById, players, rosters, draftOrderContext.normalizedPicks, myRosterData?.roster_id, getUserDisplayName, byeWeekBundle, draftSeason],
   );
   const boardRowsWithRanks = useMemo(
     () => decoratePositionRanks(boardRows, positionRankMap),
@@ -3995,7 +4254,88 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
     myRosterData,
     players,
     keeperIds,
-  }), [league, draftOrderContext, myRosterData, players, keeperIds]);
+    byeWeekBundle,
+    draftSeason,
+  }), [league, draftOrderContext, myRosterData, players, keeperIds, byeWeekBundle, draftSeason]);
+
+  const byeConflictAvailable = isByeWeekBundleForSeason(byeWeekBundle, draftSeason);
+  const byeConflictCandidateIds = useMemo(() => (
+    [...new Set(
+      [...bigBoardPlayers, ...boardRowsWithRanks]
+        .map((player) => String(player.id))
+        .filter(Boolean),
+    )]
+  ), [bigBoardPlayers, boardRowsWithRanks]);
+  const existingRosterPlayerIds = useMemo(() => ([
+    ...(myRosterData?.players ?? []),
+    ...(myRosterData?.starters ?? []),
+    ...(myRosterData?.reserve ?? []),
+    ...(myRosterData?.taxi ?? []),
+  ]), [myRosterData]);
+  const byeConflictPlayersById = useMemo(() => {
+    const referencedPlayerIds = new Set([
+      ...byeConflictCandidateIds,
+      ...eligibleBoardIds.map(String),
+      ...existingRosterPlayerIds.map(String),
+      ...draftOrderContext.normalizedPicks
+        .map((pick) => pick?.playerId == null ? null : String(pick.playerId))
+        .filter(Boolean),
+    ]);
+    const rows = new Map();
+    for (const playerId of referencedPlayerIds) {
+      const rawPlayer = players?.[playerId] ?? null;
+      if (!rawPlayer) continue;
+      rows.set(playerId, {
+        id: playerId,
+        name: getSleeperPlayerName(rawPlayer, `Player ${playerId}`),
+        team: String(rawPlayer?.team ?? '').toUpperCase(),
+        position: normalizePosition(rawPlayer?.fantasy_positions?.[0] ?? rawPlayer?.position),
+        byeWeek: getByeWeekForTeam(byeWeekBundle, rawPlayer?.team, draftSeason),
+        raw: rawPlayer,
+      });
+    }
+    for (const row of [
+      ...rosterSlots.map((slot) => slot.player).filter(Boolean),
+      ...bigBoardPlayers,
+      ...boardRowsWithRanks,
+    ]) {
+      rows.set(String(row.id), row);
+    }
+    return rows;
+  }, [
+    byeConflictCandidateIds,
+    eligibleBoardIds,
+    existingRosterPlayerIds,
+    draftOrderContext.normalizedPicks,
+    players,
+    byeWeekBundle,
+    draftSeason,
+    rosterSlots,
+    bigBoardPlayers,
+    boardRowsWithRanks,
+  ]);
+  const byeConflictModel = useMemo(() => {
+    if (!byeConflictAvailable) return null;
+    return buildDraftByeConflictModel({
+      leagueType: league?.settings?.type,
+      playersById: byeConflictPlayersById,
+      candidatePlayerIds: byeConflictCandidateIds,
+      savedTargetIds: eligibleBoardIds,
+      existingRosterPlayerIds,
+      draftPicks: draftOrderContext.normalizedPicks,
+      myRosterId: myRosterData?.roster_id,
+    });
+  }, [
+    byeConflictAvailable,
+    league?.settings?.type,
+    byeConflictPlayersById,
+    byeConflictCandidateIds,
+    eligibleBoardIds,
+    existingRosterPlayerIds,
+    draftOrderContext.normalizedPicks,
+    myRosterData?.roster_id,
+  ]);
+  const visibleByeConflicts = highlightByeConflicts ? byeConflictModel?.byPlayerId ?? null : null;
 
 
   if (!league) {
@@ -4117,9 +4457,14 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
             onChange={setDraftBoardCardMetric}
             className="draft-board-card-metric-control"
           />
+          <DraftByeConflictToggle
+            checked={highlightByeConflicts && byeConflictAvailable}
+            disabled={!byeConflictAvailable}
+            onChange={setHighlightByeConflicts}
+          />
         </div>
-        <DraftMobileControlMenu label="Board filters" className="draft-board-page-mobile-controls">
-          <div className="draft-board-page-controls">
+        <div className="draft-board-page-mobile-controls" aria-label="Board controls">
+          <div className="draft-board-page-mobile-controls__primary">
             <DraftSegmentedControl
               label="Board view"
               options={MY_BOARD_SORT_OPTIONS}
@@ -4127,15 +4472,25 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
               onChange={setMyBoardSortMode}
               className="draft-board-view-control"
             />
-            <DraftSegmentedControl
-              label="Board card metric"
-              options={DRAFT_BOARD_CARD_METRIC_OPTIONS}
-              value={draftBoardCardMetric}
-              onChange={setDraftBoardCardMetric}
-              className="draft-board-card-metric-control"
-            />
+            <label className="draft-board-page-mobile-controls__label-select">
+              <span>Card labels</span>
+              <select
+                aria-label="Board card labels"
+                value={draftBoardCardMetric}
+                onChange={(event) => setDraftBoardCardMetric(event.target.value)}
+              >
+                {DRAFT_BOARD_CARD_METRIC_OPTIONS.map((option) => (
+                  <option key={option.id} value={option.id}>{option.label}</option>
+                ))}
+              </select>
+            </label>
           </div>
-        </DraftMobileControlMenu>
+          <DraftByeConflictToggle
+            checked={highlightByeConflicts && byeConflictAvailable}
+            disabled={!byeConflictAvailable}
+            onChange={setHighlightByeConflicts}
+          />
+        </div>
         <MyBoardWorkspace
           boardByPosition={eligibleOrderedBoardByPosition}
           overallBoardIds={eligibleBoardIds}
@@ -4161,6 +4516,8 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
           onAvailabilityFilterChange={setAvailabilityFilter}
           rosterSlots={rosterSlots}
           cardMetricKey={draftBoardCardMetric}
+          conflictByPlayerId={visibleByeConflicts}
+          displaySize={displaySize}
         />
       </div>
     );
@@ -4474,7 +4831,9 @@ function DraftResultsView({ onViewPlayer, sleeperDraftId = '', tourDemoMode = nu
     refreshDraft,
   } = useSleeperDraftSync({ selectedLeagueId, league, sleeperDraftId });
   const [draftStats, setDraftStats] = useState(null);
-  const upcomingScheduleMap = useUpcomingScheduleMap();
+  const resultsDraftSeason = String(draftMeta?.season ?? season ?? '');
+  const byeWeekBundle = useUpcomingScheduleBundle(resultsDraftSeason || null);
+  const upcomingScheduleMap = byeWeekBundle?.scheduleMap ?? null;
   const [sortDirection, setSortDirection] = useState('asc');
   const [resultsMode, setResultsMode] = useState('blueprint');
   const [positionFilter, setPositionFilter] = useState('All');
@@ -4578,9 +4937,10 @@ function DraftResultsView({ onViewPlayer, sleeperDraftId = '', tourDemoMode = nu
       weeklyStats: draftStats?.weeklyStats ?? null,
       scheduleMap: draftStats?.scheduleMap ?? null,
       upcomingScheduleMap,
+      byeWeekBundle,
       modelWeights,
     });
-  }, [hasCompletedDraftPicks, players, rosters, league, draftMeta, draftPicks, draftTradedPicks, myRosterData, activeScoringSettings, season, marketState.valuesByPlayerId, draftStats, upcomingScheduleMap, modelWeights]);
+  }, [hasCompletedDraftPicks, players, rosters, league, draftMeta, draftPicks, draftTradedPicks, myRosterData, activeScoringSettings, season, marketState.valuesByPlayerId, draftStats, upcomingScheduleMap, byeWeekBundle, modelWeights]);
 
   const draftOrderContext = useMemo(() => (
     resultsViewModel ?? buildDraftOrderContext({

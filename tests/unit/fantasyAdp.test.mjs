@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { getFantasyAdpSnapshotUpdatedAt, mapFantasyAdpToSleeperPlayers } from '../../src/utils/fantasyAdp.js';
+import {
+  getFantasyAdpPlayersForLeague,
+  getFantasyAdpSnapshotUpdatedAt,
+  mapFantasyAdpToSleeperPlayers,
+} from '../../src/utils/fantasyAdp.js';
 
 const players = {
   allen: { full_name: 'Josh Allen', team: 'BUF', position: 'QB' },
@@ -54,6 +58,40 @@ test('omits ambiguous player matches instead of guessing', () => {
   });
 
   assert.equal(matched.size, 0);
+});
+
+test('accepts provider fallback identity fields and preserves matches before league filters initialize', () => {
+  const adpRows = [{
+    player: {
+      first_name: 'Jahmyr',
+      last_name: 'Gibbs',
+      position_abbreviation: 'RB',
+      team: { abbreviation: 'DET' },
+    },
+    position: 'Running Back',
+    team: { name: 'Detroit Lions' },
+    average_draft_position: 1.47,
+  }];
+
+  const mapped = mapFantasyAdpToSleeperPlayers({
+    players: { gibbs: players.gibbs },
+    adpRows,
+  });
+  assert.equal(mapped.get('gibbs')?.averageDraftPosition, 1.47);
+
+  const uninitialized = getFantasyAdpPlayersForLeague({
+    players: { gibbs: players.gibbs },
+    adpRows,
+    availablePositions: ['ALL'],
+  });
+  assert.equal(uninitialized.size, 1);
+
+  const quarterbackOnly = getFantasyAdpPlayersForLeague({
+    players: { gibbs: players.gibbs },
+    adpRows,
+    availablePositions: ['ALL', 'QB'],
+  });
+  assert.equal(quarterbackOnly.size, 0);
 });
 
 test('uses the newest available market timestamp for attribution', () => {

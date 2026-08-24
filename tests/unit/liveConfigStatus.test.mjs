@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
-import { afterEach, describe, it } from 'node:test';
-import { buildLiveGamesParams, getLiveConfigStatus } from '../../server/liveHandlers.js';
+import test, { afterEach, describe, it } from 'node:test';
+import {
+  buildLiveGamesParams,
+  getLiveConfigStatus,
+  resolveLivePlaySeasonType,
+} from '../../server/liveHandlers.js';
 
 const originalNodeEnv = process.env.NODE_ENV;
 const originalMockPlays = process.env.GRIDSHIFT_LIVE_MOCK_PLAYS;
@@ -8,6 +12,7 @@ const originalApiKey = process.env.GRIDSHIFT_BDL_API_KEY;
 const originalAllowedLeagueIds = process.env.GRIDSHIFT_LIVE_ALLOWED_LEAGUE_IDS;
 const originalCookieSecret = process.env.GRIDSHIFT_LIVE_COOKIE_SECRET;
 const originalSessionSecret = process.env.GRIDSHIFT_SESSION_SECRET;
+const originalAllowPreseason = process.env.GRIDSHIFT_LIVE_ALLOW_PRESEASON;
 
 function restoreEnv(key, value) {
   if (value == null) delete process.env[key];
@@ -21,6 +26,14 @@ afterEach(() => {
   restoreEnv('GRIDSHIFT_LIVE_ALLOWED_LEAGUE_IDS', originalAllowedLeagueIds);
   restoreEnv('GRIDSHIFT_LIVE_COOKIE_SECRET', originalCookieSecret);
   restoreEnv('GRIDSHIFT_SESSION_SECRET', originalSessionSecret);
+  restoreEnv('GRIDSHIFT_LIVE_ALLOW_PRESEASON', originalAllowPreseason);
+});
+
+test('the local preseason play boundary selects the preseason snapshot cache key', () => {
+  process.env.NODE_ENV = 'test';
+  process.env.GRIDSHIFT_LIVE_ALLOW_PRESEASON = 'true';
+  assert.equal(resolveLivePlaySeasonType({ seasonType: 'preseason' }), 1);
+  assert.equal(resolveLivePlaySeasonType({}), 2);
 });
 
 describe('Fantasy Live placeholder-data boundary', () => {

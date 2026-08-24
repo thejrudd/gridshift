@@ -146,6 +146,59 @@ test('a provider passing touchdown retains stat_yardage for both rostered scorer
   assert.equal(quarterback.sharedPlayId, receiver.sharedPlayId);
 });
 
+test('a completed pass uses the full league scoring profile before display rounding', () => {
+  const completion = {
+    id: 'no-pass-14',
+    type_slug: 'pass-reception',
+    team: { abbreviation: 'NO' },
+    short_text: 'Ty Simpson Pass Complete for 14 Yds to Alex Bachman',
+    text: 'T.Simpson pass short right to A.Bachman to the LAR 38 for 14 yards.',
+    stat_yardage: 14,
+  };
+  const [quarterback] = buildPlayEvents(
+    { 'game-no': [completion] },
+    buildStarterNameIndex([
+      { id: 'simpson', player: { full_name: 'Ty Simpson', position: 'QB', team: 'NO' } },
+    ]),
+    { pass_yd: 0.02, pass_cmp: 0.4, pass_att: 0 },
+    new Map([['simpson', 'QB']]),
+    new Map(),
+  );
+
+  assert.deepEqual(quarterback.stats, { pass_yd: 14, pass_cmp: 1, pass_att: 1 });
+  assert.equal(quarterback.pts, 0.7);
+});
+
+test('an incompletion records an attempt and incompletion without pass or receiving yards', () => {
+  const incomplete = normalizePlay({
+    id: 'no-incomplete',
+    type_slug: 'pass-incompletion',
+    team: { abbreviation: 'NO' },
+    short_text: 'Ty Simpson Incomplete Pass, Intended For Alex Bachman',
+    text: 'T.Simpson pass incomplete short right to A.Bachman.',
+    stat_yardage: 9,
+  }, 'game-no');
+
+  assert.deepEqual(buildPlayStatDelta(incomplete, 'passer'), { pass_att: 1, pass_inc: 1 });
+  assert.deepEqual(buildPlayStatDelta(incomplete, 'receiver'), {});
+});
+
+test('a defensive interference no-play keeps raw geometry but has no fantasy stats', () => {
+  const noPlay = normalizePlay({
+    id: 'no-defensive-pi',
+    type_slug: 'pass-incompletion',
+    team: { abbreviation: 'NO' },
+    short_text: 'Ty Simpson Incomplete Pass, Intended For Alex Bachman',
+    text: 'T.Simpson pass incomplete to A.Bachman. PENALTY on LAR-X.Player, Defensive Pass Interference, 10 yards, enforced at NO 24 - No Play.',
+    stat_yardage: 10,
+  }, 'game-no');
+
+  assert.equal(noPlay.yards, 10);
+  assert.equal(noPlay.narrative.negated, true);
+  assert.deepEqual(buildPlayStatDelta(noPlay, 'passer'), {});
+  assert.deepEqual(buildPlayStatDelta(noPlay, 'receiver'), {});
+});
+
 test('a punt return credits the returner without inventing rushing stats for the punter', () => {
   const punt = {
     id: 'punt-return-1',

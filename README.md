@@ -124,13 +124,13 @@ Hosted owners can enable paid live scoring for selected Sleeper leagues by setti
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) + optional Node API sidecar |
 
-## What's New in v8.6.0
+## What's New in v8.6.1
 
-- **Statistics Scores play-by-play** — Read plain-language game feeds, inspect field-aware drive summaries, and replay a drive snap by snap with animation for passes, runs, kicks, scores, penalties, and turnovers.
-- **Fantasy Live Alpha replay** — Replay scoring now stays aligned with the selected moment, preserves shared-play contributors, shows viewer-side fantasy impact, and uses the shared play narration with more dependable filters and attribution.
-- **Live snapshot cohesion** — Scorecards, drilldowns, clocks, and Latest Play now coordinate around shared server snapshots so the live game story stays together.
-- **Optional preseason ADP** — Eligible self-hosted deployments can add server-only BALLDONTLIE ADP context to Fantasy Rankings and Draft tools without replacing local Sleeper identity, connected-league scoring, or the in-season experience.
-- **Desktop and Draft polish** — Improved desktop readability across display sizes alongside tighter draft eligibility, recommendations, and player search behavior.
+- **Mobile Draft tools** — Keep Draft search, priorities, analytics, board metrics, ranking values, and add-player actions usable on narrow screens with touch-safe controls and interactive chart points.
+- **Bye-week Draft context** — Show schedule-backed byes and format-aware conflict highlights while making drafted-player ownership and board-card identity clearer.
+- **Mobile Statistics and Fantasy polish** — Improve Schedule, Scores, Standings, Companion selectors, preview sheets, Heatmap, Defense, Rosters, Trade, and Predictions layouts across phone and tablet widths.
+- **Fantasy Live preseason reliability** — Preserve the connected league's scoring profile, keep play values truthful for incompletions and negated snaps, align cross-game chart timelines, and fill unmatched performer rows from observed plays without replacing provider-backed data.
+- **League history and responsive coverage** — Derive final postseason placements more completely and expand regression coverage across Draft, Statistics, Fantasy, Live, and League surfaces.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 

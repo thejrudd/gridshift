@@ -40,9 +40,9 @@ function formatRank(value) {
   return `#${Math.round(rank)}`;
 }
 
-function formatPercent(value) {
+function formatNeedScore(value) {
   const rounded = roundTo(value, 0);
-  return rounded == null ? '—' : `${rounded}%`;
+  return rounded == null ? '—' : `${rounded}/100`;
 }
 
 function getMarketRank(player) {
@@ -91,9 +91,12 @@ function getTierLabel(player) {
   return tier == null ? '—' : `T${Math.round(tier)}`;
 }
 
-function getRosterNeedPercent(player) {
-  const value = toFiniteNumber(player?.draftRoom?.teamNeed);
-  return value == null ? null : value * 100;
+function getRosterNeedScore(player) {
+  const modelScore = toFiniteNumber(player?.draftModel?.components?.rosterNeed);
+  if (modelScore != null) return clamp(modelScore);
+
+  const rawNeed = toFiniteNumber(player?.draftRoom?.teamNeed);
+  return rawNeed == null ? null : clamp(rawNeed * 100);
 }
 
 function parseDraftInteger(value) {
@@ -234,7 +237,7 @@ export const DRAFT_ANALYTICS_AXIS_OPTIONS = [
   { id: 'adp', label: 'ADP' },
   { id: 'ppg', label: 'PPG' },
   { id: 'workload', label: 'Workload' },
-  { id: 'rosterNeed', label: 'Need' },
+  { id: 'rosterNeed', label: 'Team need' },
 ];
 
 const ROOKIE_UNAVAILABLE_AXIS_IDS = new Set(['ppg', 'workload']);
@@ -290,13 +293,10 @@ const AXIS_DEFINITIONS = {
     formatValue: (value) => formatNumber(value, 0),
   },
   rosterNeed: {
-    label: 'Need',
+    label: 'Team need',
     higherIsBetter: true,
-    getValue: (player) => {
-      const value = toFiniteNumber(player?.draftRoom?.teamNeed);
-      return value == null ? null : value * 100;
-    },
-    formatValue: formatPercent,
+    getValue: getRosterNeedScore,
+    formatValue: formatNeedScore,
   },
 };
 
@@ -467,8 +467,8 @@ export function buildDraftAnalyticsSnapshot(player, candidates = []) {
     {
       key: 'need',
       label: 'Need',
-      value: formatPercent(getRosterNeedPercent(player)),
-      detail: 'Roster fit',
+      value: formatNeedScore(getRosterNeedScore(player)),
+      detail: 'Team need score',
       score: getComponentScore(player, 'rosterNeed'),
       rankValue: AXIS_DEFINITIONS.rosterNeed.getValue,
       higherIsBetter: AXIS_DEFINITIONS.rosterNeed.higherIsBetter,
@@ -615,7 +615,7 @@ export function buildDraftAnalyticsCompareRows(players = []) {
       key: 'need',
       label: 'Need',
       getCell: (player) => ({
-        value: formatPercent(getRosterNeedPercent(player)),
+        value: formatNeedScore(getRosterNeedScore(player)),
         score: getComponentScore(player, 'rosterNeed'),
       }),
     },

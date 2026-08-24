@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import HorizontalScrollCue from '../HorizontalScrollCue';
 import useHorizontalScrollCue from '../../hooks/useHorizontalScrollCue';
 import useMenuEscapeClose from '../../hooks/useMenuEscapeClose';
@@ -193,6 +193,43 @@ export function CompanionSearchField({
   );
 }
 
+function CompanionMenuOptionIdentity({ option }) {
+  const [logoFailed, setLogoFailed] = useState(false);
+
+  if (option.logoUrl && !logoFailed) {
+    return (
+      <img
+        src={option.logoUrl}
+        alt=""
+        aria-hidden="true"
+        className="companion-menu-item__team-logo h-6 w-6 shrink-0 object-contain"
+        data-testid="companion-menu-team-logo"
+        onError={() => setLogoFailed(true)}
+      />
+    );
+  }
+
+  if (option.avatarHash) {
+    return (
+      <img
+        src={`https://sleepercdn.com/avatars/thumbs/${option.avatarHash}`}
+        alt={option.name}
+        className="h-6 w-6 shrink-0 rounded-full object-cover"
+        onError={(event) => { event.currentTarget.style.display = 'none'; }}
+      />
+    );
+  }
+
+  return (
+    <span
+      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[length:var(--type-label)] font-bold"
+      style={{ background: 'var(--color-fill)', color: 'var(--color-label-secondary)' }}
+    >
+      {option.name?.[0]?.toUpperCase()}
+    </span>
+  );
+}
+
 export function CompanionFantasyTeamMenu({
   open,
   options,
@@ -292,21 +329,7 @@ export function CompanionFantasyTeamMenu({
                     onClick={() => toggleRoster(roster.id)}
                   >
                     <CompanionMenuSelectionMark checked={checked} mode={mode} />
-                    {roster.avatarHash ? (
-                      <img
-                        src={`https://sleepercdn.com/avatars/thumbs/${roster.avatarHash}`}
-                        alt={roster.name}
-                        className="h-6 w-6 shrink-0 rounded-full object-cover"
-                        onError={(event) => { event.currentTarget.style.display = 'none'; }}
-                      />
-                    ) : (
-                      <span
-                        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[length:var(--type-label)] font-bold"
-                        style={{ background: 'var(--color-fill)', color: 'var(--color-label-secondary)' }}
-                      >
-                        {roster.name[0]?.toUpperCase()}
-                      </span>
-                    )}
+                    <CompanionMenuOptionIdentity option={roster} />
                     <span className="min-w-0 flex-1 truncate">{roster.name}{roster.isMe ? ' (Me)' : ''}</span>
                   </button>
                 );

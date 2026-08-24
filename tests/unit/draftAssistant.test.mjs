@@ -567,6 +567,55 @@ test('draft analytics supports BALLDONTLIE ADP as a lower-is-better selectable a
   assert.equal(buildDraftAnalyticsCompareRows(candidates).find((row) => row.key === 'adp').cells[1].value, '#8');
 });
 
+test('draft analytics presents roster need as a bounded score instead of an impossible percentage', () => {
+  const highNeedPlayer = {
+    ...analyticsCandidates[0],
+    id: 'wr-high-need',
+    draftRoom: { teamNeed: 1.45 },
+    draftModel: {
+      ...analyticsCandidates[0].draftModel,
+      components: {
+        ...analyticsCandidates[0].draftModel.components,
+        rosterNeed: 145,
+      },
+    },
+  };
+  const fallbackNeedPlayer = {
+    ...analyticsCandidates[1],
+    id: 'wr-fallback-need',
+    draftRoom: { teamNeed: 1.25 },
+    draftModel: {
+      ...analyticsCandidates[1].draftModel,
+      components: {
+        ...analyticsCandidates[1].draftModel.components,
+        rosterNeed: undefined,
+      },
+    },
+  };
+  const candidates = [highNeedPlayer, fallbackNeedPlayer];
+  const snapshot = buildDraftAnalyticsSnapshot(highNeedPlayer, candidates);
+  const compareNeed = buildDraftAnalyticsCompareRows(candidates).find((row) => row.key === 'need');
+  const scatter = buildDraftAnalyticsScatter({
+    candidates,
+    focusedPlayerId: highNeedPlayer.id,
+    xAxis: 'rosterNeed',
+    yAxis: 'rating',
+  });
+
+  const snapshotNeed = snapshot.find((row) => row.key === 'need');
+  assert.equal(snapshotNeed.label, 'Need');
+  assert.equal(snapshotNeed.value, '100/100');
+  assert.equal(snapshotNeed.detail, 'Team need score');
+  assert.equal(snapshotNeed.score, 100);
+  assert.deepEqual(compareNeed.cells.map((cell) => cell.value), ['100/100', '100/100']);
+  assert.equal(scatter.xAxis.label, 'Team need');
+  assert.equal(scatter.xAxis.domain.max, 100);
+  assert.equal(scatter.points.every((point) => point.xRaw >= 0 && point.xRaw <= 100), true);
+  assert.equal(scatter.xAxis.minLabel.endsWith('/100'), true);
+  assert.equal(scatter.xAxis.maxLabel.endsWith('/100'), true);
+  assert.equal(JSON.stringify({ snapshot, compareNeed, scatter }).includes('145%'), false);
+});
+
 test('draft analytics compare rows cap at four players and preserve unavailable values', () => {
   const rows = buildDraftAnalyticsCompareRows([
     ...analyticsCandidates,

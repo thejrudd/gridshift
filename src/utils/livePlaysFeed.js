@@ -349,7 +349,20 @@ export function buildPlayStatDelta(play, role, roleDetail = null) {
   );
   const twoPoint = /two.?point|2.?point/.test(type)
     || /two.?point conversion|2.?point conversion/i.test(description);
+  const incomplete = play.narrative?.playKind === 'incompletion'
+    || type.includes('incompletion')
+    || /\bincomplete\b/i.test(description);
+  const negated = play.narrative?.negated === true
+    || /\bno play\b|wiped out by/i.test([
+      description,
+      play.raw?.short_text,
+      play.raw?.text,
+    ].filter(Boolean).join(' '));
   const delta = {};
+
+  // Keep the provider's raw yardage on the normalized play for field geometry,
+  // but a snap explicitly ruled "No Play" has no fantasy stat attribution.
+  if (negated) return delta;
 
   if (role === 'kicker') {
     const missedExtraPoint = /(?:extra point|\bPAT\b).*?(?:fail|miss|no good)|(?:fail|miss|no good).*?(?:extra point|\bPAT\b)/i.test(kickContext);
@@ -409,6 +422,9 @@ export function buildPlayStatDelta(play, role, roleDetail = null) {
       delta.pass_int = 1;
     } else if (/sack/i.test(description)) {
       delta.pass_sack = 1;
+    } else if (incomplete) {
+      delta.pass_att = 1;
+      delta.pass_inc = 1;
     } else {
       delta.pass_yd = yards;
       delta.pass_cmp = 1;
@@ -422,6 +438,8 @@ export function buildPlayStatDelta(play, role, roleDetail = null) {
   } else if (role === 'receiver') {
     if (twoPoint) {
       delta.rec_2pt = 1;
+    } else if (incomplete) {
+      return delta;
     } else {
       delta.rec = 1;
       delta.rec_yd = yards;

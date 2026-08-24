@@ -28,6 +28,7 @@ import CompanionPlayerRow, { CompanionPlayerMetric } from './CompanionPlayerRow.
 const ALL_TEAMS = Object.keys(STADIUMS).sort();
 const ESPN_LOGO_KEY = { WAS: 'wsh' };
 const COMPACT_ROW_QUERY = '(max-width: 720px)';
+const COMPACT_FILTER_QUERY = '(max-width: 767px)';
 const MOBILE_DRILLDOWN_QUERY = '(max-width: 1023px)';
 const TEAM_DISPLAY_NAMES = {
   ARI: 'Arizona Cardinals',
@@ -186,7 +187,9 @@ export default function CompanionDefense({ routeState, onRouteStateChange }) {
   const statsEnhancing = useSleeperStatsEnhancing();
   const { darkMode } = useTheme();
   const compactRows = useMediaQuery(COMPACT_ROW_QUERY);
+  const compactFilters = useMediaQuery(COMPACT_FILTER_QUERY);
   const mobileDrilldown = useMediaQuery(MOBILE_DRILLDOWN_QUERY);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [selectedTeam, setSelectedTeam] = useState(null);
   const seasonStarted = isNflRegularSeasonStarted(season);
   const state = useMemo(() => normalizeRouteState(routeState ?? DEFAULT_DEFENSE_RANKING_STATE), [routeState]);
@@ -251,7 +254,26 @@ export default function CompanionDefense({ routeState, onRouteStateChange }) {
   return (
     <div className="companion-defense-shell page-frame-data pb-6">
       {hasDefenseData && <div className="companion-defense-toolbar px-4 pb-3">
-        <div className="companion-defense-filter-stack">
+        <button
+          type="button"
+          className="companion-defense-filter-toggle"
+          aria-expanded={!compactFilters || filtersOpen}
+          aria-controls="companion-defense-filter-stack"
+          onClick={() => setFiltersOpen((open) => !open)}
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 6h16M7 12h10M10 18h4" />
+          </svg>
+          <span>Filters</span>
+          <span className="companion-defense-filter-toggle__summary" aria-hidden="true">
+            {state.position === 'ALL' ? 'All' : state.position} · {state.mode === 'fantasy' ? 'Fantasy' : 'Game stats'}
+          </span>
+        </button>
+
+        <div
+          id="companion-defense-filter-stack"
+          className={`companion-defense-filter-stack${compactFilters && !filtersOpen ? ' is-collapsed' : ''}`}
+        >
           <CompanionSelectorRail ariaLabel="Defense value mode">
             {[
               { id: 'stats', label: 'Game Stats' },

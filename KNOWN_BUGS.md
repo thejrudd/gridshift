@@ -12,7 +12,6 @@ Open bugs are listed first, deferred work next, fixed bugs below. Add new entrie
 | Fantasy Scoring's league-year model control no longer applies a selected year's rules across Fantasy, preventing managers from evaluating one results season with another linked league year's scoring. |
 | Fantasy Rankings image exports identify the active scoring model but omit the NFL-stat season used to calculate the rankings. |
 | Some players aren't searchable in Statistics Stats, for example Najee Harris. |
-| Fantasy Live's solid score paths and hover values regressed from direct interpolation to step-after geometry, making every scoring event read as a vertical wall instead of the preferred continuous line between score dots. |
 
 ---
 
@@ -435,3 +434,17 @@ Open bugs are listed first, deferred work next, fixed bugs below. Add new entrie
 | Fantasy Live can animate a provider scoring-summary pick-six as one offense-colored ground run: the quarterback's throw and interception are omitted, the return never changes to the intercepting team's color, and the touchdown can be awarded at the reported post-play spot instead of at the goal line. | v8.6.0 |
 | Fantasy Live can attribute a compound touchdown play's rushing yards and touchdown to a rostered kicker named only in a trailing failed-PAT clause, showing the scorer's full fantasy value instead of the kicker's league-configured missed-extra-point penalty. | v8.6.0 |
 | Fantasy Live crashes outside the local sandbox with “Cannot access 'liveStatus' before initialization” because demo-feed capability is derived before the `liveStatus` state is declared. | v8.6.0 |
+| Fantasy Rosters sizes its desktop identity column from player names alone, truncating position, team, keeper, and reserve metadata even when the row has available space. | v8.6.1 |
+| Draft Board cards can change height when their label, availability, or pick state changes, hide the drafting team behind a generic “Gone” state, and tuck mobile card-label and bye-conflict controls into an unnecessary submenu. | v8.6.1 |
+| Fantasy Live's solid score paths and hover values regressed from direct interpolation to step-after geometry, making every scoring event read as a vertical wall instead of the preferred continuous line between score dots. | v8.6.1 |
+| Fantasy Rankings can show “No matched ADP rankings are available” for a connected preseason league while its league-position metadata is still initializing, even though the shared ADP matcher has valid player matches. | v8.6.1 |
+| Statistics Scores mobile drilldowns crowd charts and comparison visuals against the viewport edges, wrap player-stat tabs, hide standings columns behind horizontal scrolling, and render live win-probability fill as if the game were already complete. | v8.6.1 |
+| Statistics Schedule does not select the active preseason or regular-season week when its season scope changes, and its mobile team picker lacks the shared team-gradient identity and touch-safe sizing used elsewhere. | v8.6.1 |
+| Draft War Room mobile analytics can report roster fit above 100%, render peer values as non-interactive vertical bars, bury search and priority controls inside nested filters, and clip ranking values and the add-to-board action from player rows. | v8.6.1 |
+| Trade Agent exposes “Select Partner's Roster” before a trade partner exists, allowing an action whose required context has not been selected. | v8.6.1 |
+| Fantasy mobile data surfaces can overlap Position Strength headers, reflow the player preview sheet between tabs, wrap Statistics position filters, omit an obvious Heatmap sheet close action, misorder roster draft-round markers, and leave Defense filters permanently expanded. | v8.6.1 |
+| Predictions Predict Record crowds its primary mobile work surface against the viewport edges. | v8.6.1 |
+| Fantasy Live's play feed can paint scrolled rows through the top inset above its sticky team filter header on mobile and tablet widths. | v8.6.1 |
+| Fantasy Live preseason charts can oscillate and collapse to zero because cross-game events are plotted and accumulated on different timelines, while the performer rail falls back to zero fixture totals when play-by-play exists but provider box scores do not. | v8.6.1 |
+| Fantasy Live preseason play values can ignore the connected league's scoring profile, and incompletions or penalty-negated passes can be credited as completed passes with positive fantasy points. | v8.6.1 |
+| Draft Board's Highlight conflicts toggle can show no warning between saved targets with the same bye week in keeper and dynasty leagues. | v8.6.1 |

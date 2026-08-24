@@ -11,6 +11,8 @@ import {
   isValidLeaguePositionFilter,
   positionMatchesLeagueFilter,
 } from '../../utils/leaguePositions';
+import { getTeamColorKey } from '../../data/teamColors.js';
+import { getNflTeamLogoUrl } from '../../utils/companionAssetVisuals.js';
 import { getPlayerRowTeamTheme } from '../../utils/playerRowTheme';
 import {
   downloadRankingsExport,
@@ -22,7 +24,7 @@ import { getScoringProfile } from '../../utils/scoringGuide.js';
 import { getPlayerAvailabilityContext } from '../../utils/playerAvailabilityStatus.js';
 import { getFantasyRankingsDataMode } from '../../utils/seasonAvailability.js';
 import { getFantasyAdp } from '../../api/fantasyAdpApi.js';
-import { getFantasyAdpSnapshotUpdatedAt, mapFantasyAdpToSleeperPlayers } from '../../utils/fantasyAdp.js';
+import { getFantasyAdpPlayersForLeague, getFantasyAdpSnapshotUpdatedAt } from '../../utils/fantasyAdp.js';
 import PlayerStatusBadge, { PlayerStatusLogoCluster } from './PlayerStatusBadge.jsx';
 import {
   CompanionFantasyTeamMenu,
@@ -577,11 +579,14 @@ export default function CompanionRankings({
   const adpSortedPlayers = useMemo(() => {
     if (!adpSourceReady || !players) return [];
 
-    const mapped = mapFantasyAdpToSleeperPlayers({ players, adpRows: adpState.rows });
+    const mapped = getFantasyAdpPlayersForLeague({
+      players,
+      adpRows: adpState.rows,
+      availablePositions,
+    });
     return getMappedAdpEntries(mapped)
       .map(entry => normalizeMappedAdpPlayer(entry, players))
       .filter(Boolean)
-      .filter(({ player }) => positionMatchesLeagueFilter(player.position, 'ALL', { availableFilters: availablePositions }))
       .map(({ player, playerId, adp }) => {
         const availability = getPlayerAvailabilityContext(player);
         return {
@@ -659,7 +664,11 @@ export default function CompanionRankings({
 
   const nflTeamOptions = useMemo(() => {
     const teams = new Set(allRanked.map(p => p.team).filter(Boolean));
-    return [...teams].sort().map(team => ({ id: team, name: team }));
+    return [...teams].sort().map(team => ({
+      id: team,
+      name: team,
+      logoUrl: getNflTeamLogoUrl(getTeamColorKey(team)),
+    }));
   }, [allRanked]);
   const selectedNflTeamSet = useMemo(() => new Set(selectedNflTeams), [selectedNflTeams]);
   const selectedNflTeamOptions = useMemo(

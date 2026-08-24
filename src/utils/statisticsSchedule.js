@@ -1,3 +1,5 @@
+import { resolveStatisticsScoresCurrentWeekId } from './statisticsScoresWeek.js';
+
 export const STATISTICS_SCHEDULE_MODES = Object.freeze({
   WEEK: 'week',
   TEAM: 'team',
@@ -22,6 +24,50 @@ const EASTERN_DATE_PARTS_FORMATTER = new Intl.DateTimeFormat('en-US', {
   minute: '2-digit',
   hourCycle: 'h23',
 });
+
+function getFirstWeekKickoff(weekOptions = []) {
+  const kickoffs = weekOptions
+    .flatMap((weekOption) => weekOption.games ?? [])
+    .map((game) => Date.parse(game.kickoff))
+    .filter(Number.isFinite);
+  return kickoffs.length ? Math.min(...kickoffs) : null;
+}
+
+export function getCurrentPreseasonWeekSelection({
+  preseasonWeekOptions = [],
+  regularWeekOptions = [],
+  now = Date.now(),
+} = {}) {
+  const firstPreseasonKickoff = getFirstWeekKickoff(preseasonWeekOptions);
+  if (!Number.isFinite(firstPreseasonKickoff)) return null;
+
+  const nowMs = getTimeMs(now);
+  if (!Number.isFinite(nowMs)) return null;
+  const firstRegularKickoff = getFirstWeekKickoff(regularWeekOptions);
+  const nowParts = getEasternDateParts(nowMs);
+  const firstPreseasonParts = getEasternDateParts(firstPreseasonKickoff);
+  const nowCalendarDay = nowParts ? (nowParts.year * 10_000) + (nowParts.month * 100) + nowParts.day : null;
+  const firstPreseasonCalendarDay = firstPreseasonParts
+    ? (firstPreseasonParts.year * 10_000) + (firstPreseasonParts.month * 100) + firstPreseasonParts.day
+    : null;
+  const preseasonHasStarted = Number.isFinite(nowCalendarDay)
+    && Number.isFinite(firstPreseasonCalendarDay)
+    && nowCalendarDay >= firstPreseasonCalendarDay;
+  const regularSeasonHasStarted = Number.isFinite(firstRegularKickoff) && nowMs >= firstRegularKickoff;
+  if (!preseasonHasStarted || regularSeasonHasStarted) return null;
+
+  const currentWeekId = resolveStatisticsScoresCurrentWeekId(
+    preseasonWeekOptions.map((weekOption) => ({
+      id: weekOption.selection,
+      phase: 'preseason',
+      games: weekOption.games ?? [],
+    })),
+    { now: nowMs, phase: 'preseason' },
+  );
+  return currentWeekId && preseasonWeekOptions.some((weekOption) => weekOption.selection === currentWeekId)
+    ? currentWeekId
+    : null;
+}
 
 export function normalizeStatisticsScheduleMode(value, fallback = STATISTICS_SCHEDULE_MODES.WEEK) {
   if (typeof value !== 'string') return fallback;

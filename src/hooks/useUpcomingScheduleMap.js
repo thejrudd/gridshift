@@ -1,21 +1,26 @@
 import { useEffect, useState } from 'react';
 import { loadSeasonSchedule } from '../utils/seasonSchedule.js';
 import { buildUpcomingScheduleMap } from '../utils/draftAssistant/scheduleStrength.js';
+import { buildByeWeekScheduleBundle } from '../utils/draftAssistant/byeWeeks.js';
 
 // public/season-schedule.json is a static build asset, so one fetch per session is enough
 // no matter how many War Room surfaces mount.
-let cachedPromise = null;
+let cachedSchedulePromise = null;
 
-function loadUpcomingScheduleMap() {
-  if (!cachedPromise) {
-    cachedPromise = loadSeasonSchedule()
-      .then((schedule) => {
-        const map = buildUpcomingScheduleMap(schedule);
-        return Object.keys(map).length ? map : null;
-      })
-      .catch(() => null);
+function loadUpcomingSchedule() {
+  if (!cachedSchedulePromise) {
+    cachedSchedulePromise = loadSeasonSchedule().catch(() => null);
   }
-  return cachedPromise;
+  return cachedSchedulePromise;
+}
+
+function loadUpcomingScheduleBundle(expectedSeason = null) {
+  return loadUpcomingSchedule().then((schedule) => {
+    if (!schedule) return buildByeWeekScheduleBundle(null, { expectedSeason });
+    const rawMap = buildUpcomingScheduleMap(schedule);
+    const scheduleMap = Object.keys(rawMap).length ? rawMap : null;
+    return buildByeWeekScheduleBundle(schedule, { expectedSeason, scheduleMap });
+  });
 }
 
 /**
@@ -27,11 +32,30 @@ export function useUpcomingScheduleMap() {
 
   useEffect(() => {
     let cancelled = false;
-    loadUpcomingScheduleMap().then((map) => {
-      if (!cancelled) setScheduleMap(map);
+    loadUpcomingScheduleBundle().then((bundle) => {
+      if (!cancelled) setScheduleMap(bundle?.scheduleMap ?? null);
     });
     return () => { cancelled = true; };
   }, []);
 
   return scheduleMap;
+}
+
+/**
+ * Season-aware companion to useUpcomingScheduleMap. Consumers that infer a bye
+ * from a missing team must use this validated bundle rather than the raw map.
+ */
+export function useUpcomingScheduleBundle(expectedSeason = null) {
+  const [bundle, setBundle] = useState(null);
+  const seasonKey = expectedSeason == null ? null : String(expectedSeason);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadUpcomingScheduleBundle(seasonKey).then((nextBundle) => {
+      if (!cancelled) setBundle(nextBundle);
+    });
+    return () => { cancelled = true; };
+  }, [seasonKey]);
+
+  return bundle;
 }

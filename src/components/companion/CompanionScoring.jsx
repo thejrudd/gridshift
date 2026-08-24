@@ -683,7 +683,7 @@ export default function CompanionScoring() {
                     return (
                       <span key={column.key} role="columnheader" aria-sort={isActive ? (positionStrengthSort.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
                         <button type="button" onClick={() => handlePositionStrengthSort(column.key)}>
-                          {column.label}<span aria-hidden="true">{isActive ? (positionStrengthSort.direction === 'asc' ? '↑' : '↓') : '↕'}</span>
+                          {column.label}<span aria-hidden="true">{isActive ? (positionStrengthSort.direction === 'asc' ? '↑' : '↓') : '↕︎'}</span>
                         </button>
                       </span>
                     );

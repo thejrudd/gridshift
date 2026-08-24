@@ -7,6 +7,7 @@ import {
   buildPrimeTimeScheduleRows,
   buildTeamScheduleRows,
   filterTeamScheduleRows,
+  getCurrentPreseasonWeekSelection,
   getDefaultScheduleWeek,
   getHolidayLabelForScheduleGame,
   getScheduleGameScore,
@@ -56,6 +57,28 @@ test('default schedule week uses the last populated week after the season', () =
   ]);
 
   assert.equal(getDefaultScheduleWeek(schedule, '2027-02-01T12:00:00Z'), 18);
+});
+
+test('preseason schedule selection follows the current preseason week until regular-season kickoff', () => {
+  const preseasonWeekOptions = [
+    { selection: 'pre-1', games: [{ kickoff: '2026-08-07T00:00:00.000Z' }] },
+    { selection: 'pre-2', games: [{ kickoff: '2026-08-14T23:00:00.000Z' }] },
+    { selection: 'pre-3', games: [{ kickoff: '2026-08-21T23:00:00.000Z' }] },
+  ];
+  const regularWeekOptions = [
+    { selection: 1, games: [{ kickoff: '2026-09-10T00:20:00.000Z' }] },
+  ];
+
+  assert.equal(getCurrentPreseasonWeekSelection({
+    preseasonWeekOptions,
+    regularWeekOptions,
+    now: '2026-08-14T04:05:00.000Z',
+  }), 'pre-2');
+  assert.equal(getCurrentPreseasonWeekSelection({
+    preseasonWeekOptions,
+    regularWeekOptions,
+    now: '2026-09-10T00:21:00.000Z',
+  }), null);
 });
 
 test('team schedule rows include visible bye weeks', () => {

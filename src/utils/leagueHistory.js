@@ -555,6 +555,113 @@ export function normalizeSeasonBrackets(snapshot) {
   };
 }
 
+function assignFinalPlacement(placements, participantId, placement) {
+  if (!participantId || !Number.isFinite(placement) || placement < 1) return;
+  if (!placements.has(participantId)) placements.set(participantId, placement);
+}
+
+function routedOutcomeFor(source) {
+  return source?.outcome === 'w' || source?.outcome === 'l' ? source.outcome : null;
+}
+
+function otherBracketOutcome(outcome) {
+  return outcome === 'w' ? 'l' : outcome === 'l' ? 'w' : null;
+}
+
+function bracketPlacementRows(rows, toiletBowl) {
+  return (rows ?? []).flatMap((matchup) => {
+    if (matchup?.placement == null || !matchup.winner?.id || !matchup.loser?.id) return [];
+    const winnerPlacement = matchup.placement;
+    const loserPlacement = toiletBowl ? matchup.placement - 1 : matchup.placement + 1;
+    return [
+      { participantId: matchup.winner.id, placement: winnerPlacement },
+      { participantId: matchup.loser.id, placement: loserPlacement },
+    ];
+  });
+}
+
+function inferUnmarkedBracketPlacements(rows, placements, toiletBowl) {
+  const rowsById = new Map((rows ?? []).map((matchup) => [matchup.id, matchup]));
+  const routedOutcomes = new Map();
+  (rows ?? []).forEach((matchup) => {
+    [matchup.team1Source, matchup.team2Source].forEach((source) => {
+      const outcome = routedOutcomeFor(source);
+      if (!source?.matchupId || !outcome) return;
+      if (!routedOutcomes.has(source.matchupId)) routedOutcomes.set(source.matchupId, new Set());
+      routedOutcomes.get(source.matchupId).add(outcome);
+    });
+  });
+
+  (rows ?? []).filter((matchup) => matchup?.placement != null).forEach((placementMatchup) => {
+    const placementBand = toiletBowl
+      ? [placementMatchup.placement - 1, placementMatchup.placement]
+      : [placementMatchup.placement, placementMatchup.placement + 1];
+    [placementMatchup.team1Source, placementMatchup.team2Source].forEach((source) => {
+      const routedOutcome = routedOutcomeFor(source);
+      const otherOutcome = otherBracketOutcome(routedOutcome);
+      const sourceMatchup = source?.matchupId ? rowsById.get(source.matchupId) : null;
+      if (!routedOutcome || !otherOutcome || !sourceMatchup) return;
+      const routedTeam = routedOutcome === 'w' ? sourceMatchup.winner : sourceMatchup.loser;
+      const nonRoutedTeam = otherOutcome === 'w' ? sourceMatchup.winner : sourceMatchup.loser;
+      if (!routedTeam?.id || !nonRoutedTeam?.id || routedOutcomes.get(source.matchupId)?.has(otherOutcome)) return;
+      if (placements.has(nonRoutedTeam.id) || !placements.has(routedTeam.id)) return;
+
+      const inferredPlacement = toiletBowl
+        ? Math.min(...placementBand) - 1
+        : Math.max(...placementBand) + 1;
+      assignFinalPlacement(placements, nonRoutedTeam.id, inferredPlacement);
+    });
+  });
+}
+
+/**
+ * Build final postseason placements without using regular-season standings.
+ * Sleeper marks placement games with p; toilet-bowl brackets reverse the
+ * winner/loser direction, so their normalized placement is the worse finish.
+ */
+export function buildFinalPlacements(snapshot, brackets = null) {
+  if (!snapshot?.completed) return { rows: [], complete: false, totalTeams: 0 };
+  const normalized = brackets ?? normalizeSeasonBrackets(snapshot);
+  const identities = buildSeasonParticipantIdentities(snapshot);
+  const placements = new Map();
+  const bracketGroups = [
+    {
+      rows: [...(normalized?.championship ?? []), ...(normalized?.championshipPlacement ?? [])],
+      toiletBowl: false,
+    },
+    {
+      rows: normalized?.consolation ?? [],
+      toiletBowl: normalized?.losersBracketType === 'toilet-bowl',
+    },
+  ];
+
+  bracketGroups.forEach(({ rows, toiletBowl }) => {
+    bracketPlacementRows(rows, toiletBowl).forEach(({ participantId, placement }) => (
+      assignFinalPlacement(placements, participantId, placement)
+    ));
+    inferUnmarkedBracketPlacements(rows, placements, toiletBowl);
+  });
+
+  const rows = [...identities.values()]
+    .map((identity) => ({
+      participantId: identity.id,
+      rosterId: identity.rosterId,
+      managerName: identity.managerName,
+      teamName: identity.teamName,
+      placement: placements.get(identity.id) ?? null,
+    }))
+    .filter((row) => row.placement != null)
+    .sort((left, right) => left.placement - right.placement || left.teamName.localeCompare(right.teamName));
+  const placementValues = rows.map((row) => row.placement);
+  const complete = rows.length === identities.size
+    && new Set(placementValues).size === rows.length;
+  return {
+    rows,
+    complete,
+    totalTeams: identities.size,
+  };
+}
+
 export function getSeasonChampion(snapshot) {
   if (!snapshot?.completed) return null;
   const brackets = normalizeSeasonBrackets(snapshot);

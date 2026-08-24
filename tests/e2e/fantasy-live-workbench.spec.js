@@ -781,6 +781,50 @@ test('mobile Live replaces the graph with the selected player while keeping the 
   );
 });
 
+test('mobile Live shields the feed through the sticky filter inset', async ({ page }) => {
+  await page.setViewportSize({ width: 835, height: 720 });
+  await page.goto(FANTASY_LIVE_PRODUCTION_ROUTE);
+
+  await expect.poll(() => page.locator('.fl-play').count()).toBeGreaterThan(8);
+  const contentArea = page.locator('.content-area');
+  await contentArea.evaluate((element) => {
+    const filter = element.querySelector('.fl-filter-wrap');
+    const firstPlay = element.querySelector('.fl-play');
+    if (!filter || !firstPlay) return;
+    const contentBounds = element.getBoundingClientRect();
+    const paddingTop = Number.parseFloat(getComputedStyle(element).paddingTop) || 0;
+    const filterTop = filter.getBoundingClientRect().top;
+    const firstPlayBottom = firstPlay.getBoundingClientRect().bottom;
+    // Put a prior row in the inset above the sticky filter, which is the
+    // boundary that previously allowed the leak shown in the bug report.
+    element.scrollTop += (
+      filterTop - (contentBounds.top + paddingTop)
+      + firstPlayBottom - (filterTop - 2)
+    );
+  });
+
+  const geometry = await contentArea.evaluate((element) => {
+    const filter = element.querySelector('.fl-filter-wrap');
+    const firstPlay = element.querySelector('.fl-play');
+    const content = element.getBoundingClientRect();
+    const filterBounds = filter?.getBoundingClientRect();
+    const firstPlayBounds = firstPlay?.getBoundingClientRect();
+    return {
+      contentTop: content.top,
+      contentPaddingTop: Number.parseFloat(getComputedStyle(element).paddingTop),
+      filterTop: filterBounds?.top ?? 0,
+      firstPlayBottom: firstPlayBounds?.bottom ?? 0,
+      shieldHeight: filter
+        ? Number.parseFloat(getComputedStyle(filter, '::before').height)
+        : 0,
+    };
+  });
+
+  expect(Math.abs(geometry.filterTop - (geometry.contentTop + geometry.contentPaddingTop))).toBeLessThanOrEqual(1);
+  expect(geometry.firstPlayBottom).toBeLessThanOrEqual(geometry.filterTop);
+  expect(geometry.shieldHeight).toBeGreaterThanOrEqual(geometry.contentPaddingTop - 1);
+});
+
 function liveGame(id, visitorTeam, homeTeam, visitorScore, homeScore, date) {
   return {
     id,

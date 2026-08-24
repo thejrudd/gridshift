@@ -18,6 +18,7 @@ import {
   CompanionSelectorButton,
 } from './CompanionSelectorControls.jsx';
 import { POSITION_COLORS } from '../../utils/companionAssetVisuals.js';
+import { getDraftSlotForRoster } from '../../utils/draftPickDisplay.js';
 import CompanionPlayerRow, {
   CompanionPlayerAction,
   CompanionPlayerMetric,
@@ -83,7 +84,19 @@ function formatLeaguePpgLabel(value) {
   return `${value.toFixed(1)} PPG`;
 }
 
-function getLeagueLayout(isCompactPhone, nameColPx, stackMetrics) {
+function getLeagueMetaSegments(player) {
+  const rankLabel = player.rank ? `${player.rank.posLabel}${player.rank.rank}` : null;
+  const showReserveMeta = player.isReserve && player.availabilityStatus !== 'Injured Reserve';
+  return [
+    player.position,
+    player.team,
+    player.isKeeper ? 'Keeper' : null,
+    showReserveMeta ? 'IR' : null,
+    rankLabel,
+  ].filter(Boolean);
+}
+
+function getLeagueLayout(isCompactPhone, bodyColPx, stackMetrics) {
   if (isCompactPhone) {
     return {
       avatarSize: 38,
@@ -102,14 +115,17 @@ function getLeagueLayout(isCompactPhone, nameColPx, stackMetrics) {
     };
   }
 
-  const nameCol = nameColPx ? `minmax(0,${nameColPx}px)` : 'minmax(0,1fr)';
+  // The identity and roster facts share this column. Reserving only the name
+  // width clips short names with a longer "position · team · keeper" line even
+  // when the row has unused desktop space.
+  const bodyCol = bodyColPx ? `minmax(0,${bodyColPx}px)` : 'minmax(0,1fr)';
   return {
     avatarSize: 44,
     gap: 10,
     nameFontSize: 14,
     metaFontSize: 12,
-    nameCol,
-    rowTemplate: `44px ${nameCol} minmax(0,1fr) 12px`,
+    nameCol: bodyCol,
+    rowTemplate: `44px ${bodyCol} minmax(0,1fr) 12px`,
     metricTemplate: stackMetrics ? 'auto 1fr 80px' : 'auto 1fr 64px 56px',
     metricGap: 8,
     sidePadding: 14,
@@ -118,28 +134,50 @@ function getLeagueLayout(isCompactPhone, nameColPx, stackMetrics) {
   };
 }
 
-function measureMaxNameWidth(players) {
+function measureTextWidth(ctx, computed, text) {
+  const letterSpacing = Number.parseFloat(computed.letterSpacing);
+  const spacing = Number.isFinite(letterSpacing) ? letterSpacing * Math.max(0, text.length - 1) : 0;
+  return ctx.measureText(text).width + spacing;
+}
+
+function measureMaxRosterBodyWidth(players) {
   if (typeof document === 'undefined' || !players.length) return 0;
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
   if (!ctx) return 0;
 
-  // Keep the measured column in lockstep with the actual roster identity
-  // typography. A fixed 14px measurement underestimates names when the
-  // display-size preference or the semantic emphasis token is larger, which
-  // makes the identity wrap before the logo/status rail can move over.
-  const probe = document.createElement('span');
-  probe.className = 'companion-player-row__identity';
-  probe.style.cssText = 'position:absolute; visibility:hidden; pointer-events:none; white-space:nowrap;';
-  document.body?.appendChild(probe);
+  // Keep this measured column in lockstep with both pieces of visible roster
+  // identity. The body holds the player name and the position/team/keeper
+  // metadata, so measuring only names causes the shorter one to be obscured.
+  const nameProbe = document.createElement('span');
+  nameProbe.className = 'companion-player-row__identity';
+  const metaProbe = document.createElement('span');
+  metaProbe.className = 'companion-player-row__meta';
+  for (const probe of [nameProbe, metaProbe]) {
+    probe.style.cssText = 'position:absolute; visibility:hidden; pointer-events:none; white-space:nowrap;';
+    document.body?.appendChild(probe);
+  }
 
   try {
-    const computed = getComputedStyle(probe);
-    ctx.font = `${computed.fontStyle} ${computed.fontWeight} ${computed.fontSize} ${computed.fontFamily}`;
-    return Math.ceil(players.reduce((max, p) =>
-      Math.max(max, ctx.measureText(p.name ?? '').width), 0)) + 8;
+    const nameStyle = getComputedStyle(nameProbe);
+    const metaStyle = getComputedStyle(metaProbe);
+    const measure = (computed, text) => {
+      ctx.font = `${computed.fontStyle} ${computed.fontWeight} ${computed.fontSize} ${computed.fontFamily}`;
+      return measureTextWidth(ctx, computed, text);
+    };
+    return Math.ceil(players.reduce((max, player) => {
+      const nameWidth = measure(nameStyle, player.name ?? '');
+      const metaSegments = getLeagueMetaSegments(player);
+      if (!metaSegments.length) return Math.max(max, nameWidth);
+
+      // Each following segment has a 5px flex gap and a 5px separator margin.
+      const metaWidth = measure(metaStyle, metaSegments.join('·'))
+        + (metaSegments.length - 1) * 10;
+      return Math.max(max, nameWidth, metaWidth);
+    }, 0)) + 8;
   } finally {
-    probe.remove();
+    nameProbe.remove();
+    metaProbe.remove();
   }
 }
 
@@ -409,10 +447,10 @@ function LeagueRosterView({ onTradePlayer, onViewPlayer = null, tradeDisabled = 
     }).filter(Boolean);
   }, [selectedRoster, selectedRosterPlayerIds, players, seasonStats, weeklyStats, activeScoringSettings, positionalRanks, darkMode]);
 
-  const nameColPx = useMemo(() => measureMaxNameWidth(rosterPlayers), [rosterPlayers]);
+  const bodyColPx = useMemo(() => measureMaxRosterBodyWidth(rosterPlayers), [rosterPlayers]);
   const layout = useMemo(
-    () => getLeagueLayout(isCompactPhone, nameColPx, stackMetrics),
-    [isCompactPhone, nameColPx, stackMetrics],
+    () => getLeagueLayout(isCompactPhone, bodyColPx, stackMetrics),
+    [isCompactPhone, bodyColPx, stackMetrics],
   );
   const headerTracking = isCompactPhone ? 0.1 : 0.18;
   const metricHeaderClass = 'min-w-0 text-center text-[length:var(--type-label)] font-semibold uppercase whitespace-nowrap';
@@ -622,15 +660,7 @@ function LeagueStatsLoadingBanner() {
 
 function LeagueResponsivePlayerRow({ player, onSelect, onTrade, tradeDisabled = false, layout, isCompactPhone, stackMetrics = false, statsPending = false }) {
   const { darkMode } = useTheme();
-  const rankLabel = player.rank ? `${player.rank.posLabel}${player.rank.rank}` : null;
-  const showReserveMeta = player.isReserve && player.availabilityStatus !== 'Injured Reserve';
-  const metaSegments = [
-    player.position,
-    player.team,
-    player.isKeeper ? 'Keeper' : null,
-    showReserveMeta ? 'IR' : null,
-    rankLabel,
-  ].filter(Boolean);
+  const metaSegments = getLeagueMetaSegments(player);
   const rowTemplate = layout.rowTemplate;
 
   return (
@@ -743,6 +773,7 @@ function LeaguePicksView() {
   } = useSleeperLeague();
   const [tradedPicks, setTradedPicks] = useState(null);
   const [draftRounds, setDraftRounds] = useState(null); // max rounds across all league drafts
+  const [leagueDrafts, setLeagueDrafts] = useState([]);
   const [picksLoading, setPicksLoading] = useState(false);
 
   useEffect(() => {
@@ -753,6 +784,7 @@ function LeaguePicksView() {
       getLeagueDraftsForLeague(selectedLeagueId).catch(() => []),
     ]).then(([picks, drafts]) => {
       setTradedPicks(picks ?? []);
+      setLeagueDrafts(drafts ?? []);
       // Take the highest rounds value across all drafts (startup > rookie in dynasty)
       const maxFromDrafts = (drafts ?? []).reduce((max, d) => Math.max(max, d.settings?.rounds ?? 0), 0);
       setDraftRounds(maxFromDrafts || null);
@@ -830,16 +862,35 @@ function LeaguePicksView() {
     return { slots, years, rosterPicks };
   }, [tradedPicks, draftRounds, rosters, league, season]);
 
-  // Sort rosters by total picks currently held (most to least), then by owner name
+  const draftOrderSource = useMemo(() => {
+    const orderedDrafts = leagueDrafts.filter((draft) => (
+      draft?.draft_order
+      && typeof draft.draft_order === 'object'
+      && Object.keys(draft.draft_order).length > 0
+    ));
+    if (!orderedDrafts.length) return null;
+
+    const seasonDrafts = orderedDrafts.filter((draft) => String(draft?.season ?? '') === String(season));
+    const candidates = seasonDrafts.length ? seasonDrafts : orderedDrafts;
+    const liveStatuses = new Set(['drafting', 'in_progress', 'paused', 'pre_draft']);
+    return candidates.find((draft) => liveStatuses.has(String(draft?.status ?? '').toLowerCase()))
+      ?? candidates[0];
+  }, [leagueDrafts, season]);
+
+  // Match the visible top-to-bottom team order to the league's actual draft
+  // slots. Roster order remains the stable fallback when a platform response
+  // does not include draft_order.
   const sortedRosters = useMemo(() => {
-    if (!rosters.length || !Object.keys(rosterPicks).length) return rosters;
+    if (!rosters.length || !draftOrderSource) return rosters;
     return [...rosters].sort((a, b) => {
-      const picksA = countPicksHeld(rosterPicks[a.roster_id]);
-      const picksB = countPicksHeld(rosterPicks[b.roster_id]);
-      if (picksB !== picksA) return picksB - picksA;
-      return getUserDisplayName(a.owner_id).localeCompare(getUserDisplayName(b.owner_id));
+      const slotA = getDraftSlotForRoster(a.roster_id, rosters, draftOrderSource);
+      const slotB = getDraftSlotForRoster(b.roster_id, rosters, draftOrderSource);
+      if (slotA == null && slotB == null) return 0;
+      if (slotA == null) return 1;
+      if (slotB == null) return -1;
+      return slotA - slotB;
     });
-  }, [rosters, rosterPicks, getUserDisplayName]);
+  }, [draftOrderSource, rosters]);
 
   // Dynamic team-name column width (must be before early returns to maintain hook order)
   const LEFT_COL = useMemo(() => {
@@ -967,7 +1018,8 @@ function LeaguePicksView() {
           return (
             <div
               key={roster.roster_id}
-              className="flex items-center"
+              className="companion-league-picks-row flex items-center"
+              data-roster-id={roster.roster_id}
               style={{
                 borderBottom: '1px solid var(--color-separator)',
                 background: rowIdx % 2 === 0 ? 'transparent' : 'var(--color-fill-secondary)',
