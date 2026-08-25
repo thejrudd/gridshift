@@ -106,8 +106,14 @@ Server-only variables:
 | `GRIDSHIFT_LIVE_ARCHIVE_ENABLED` | Advertises archive mode in current server status. A persistence/archive writer is still planned. |
 | `GRIDSHIFT_LIVE_MAX_REQ_PER_MIN` | Per-league/client guardrail for incoming Fantasy Live proxy requests. This is not an account-wide BALLDONTLIE quota. |
 | `GRIDSHIFT_COOKIE_SECURE` | Set `true` for HTTPS production cookies; use `false` only for local HTTP testing. |
+| `GRIDSHIFT_DRAFT_SYNC_ENABLED` | Enables optional device-to-device Draft War Room/Board sync. Defaults to `false`. |
+| `GRIDSHIFT_DRAFT_SYNC_DATA_DIR` | Persistent directory for the Draft Sync SQLite file. Mount this directory to a durable Docker volume when enabled. |
+| `GRIDSHIFT_DRAFT_SYNC_PAIRING_TTL_MS` | Lifetime of a one-time pairing code. Defaults to 10 minutes. |
+| `GRIDSHIFT_DRAFT_SYNC_MAX_PAYLOAD_BYTES` | Maximum synchronized Draft JSON payload size. Defaults to 64 KiB. |
 
 Hosted owners can enable paid live scoring for selected Sleeper leagues by setting these variables on the server and keeping `GRIDSHIFT_LIVE_ALLOWED_LEAGUE_IDS` narrow. Self-hosters should supply their own BALLDONTLIE key and league allowlist. A paid GOAT account uses `GRIDSHIFT_BDL_TIER=goat` with `GRIDSHIFT_BDL_EFFECTIVE_MAX_REQ_PER_MIN=600`; keep the effective limit at `5` for a GOAT trial or any unverified account. Variables prefixed with `VITE_` are public because Vite embeds them in the browser bundle, so paid keys and access codes must always use `GRIDSHIFT_` server variables.
+
+Draft Sync is an optional capability of the existing API sidecar, not a required database service. When enabled, the sidecar stores a small SQLite database under `GRIDSHIFT_DRAFT_SYNC_DATA_DIR`; the Docker Compose example mounts `/data` as a persistent volume. A volume restart preserves sync state, but deleting the volume removes it. Hosters should include that volume in their normal backup process; Draft Sync does not provide off-site backups automatically.
 
 ## Tech Stack
 
@@ -124,11 +130,9 @@ Hosted owners can enable paid live scoring for selected Sleeper leagues by setti
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) + optional Node API sidecar |
 
-## What's New in v8.6.2
+## What's New in v8.7.0
 
-- **Projected Roster** — Turn Draft Board's roster tray into a live lineup projection with player identity, team context, bye information, locked-player and conflict indicators, and top available Board targets for open slots.
-- **Smarter FLEX assignment** — Fill dedicated starter slots first, then choose the best remaining overall Board target for each compatible FLEX slot, from the narrowest FLEX to the broadest.
-- **ADP name matching** — Restore valid BALLDONTLIE ADP for players whose provider names include terminal generational suffixes such as Jr., Sr., or III while preserving strict team and position matching.
+- **Draft Sync** — Optionally pair devices with a one-time code to keep War Room and Draft Board plans available across devices. Sync is disabled by default, stores only a bounded draft-state document, and keeps local draft work available when the server is offline.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 

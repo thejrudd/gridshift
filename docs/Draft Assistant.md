@@ -8,6 +8,17 @@ Draft Assistant is a top-level Beta section for the `v8.0` release line. War Roo
 
 Gauntlet and Tiers/Runs are staged as Draft subnav routes. Sleeper live draft updates are handled by polling the public draft metadata and picks endpoints. This first pass supports Sleeper `snake` and `linear` drafts only.
 
+## Optional Draft Sync
+
+Draft Sync is an opt-in, host-controlled feature. Set `GRIDSHIFT_DRAFT_SYNC_ENABLED=true` on the server to expose Draft Sync from the desktop Draft sidebar and the mobile app menu. The setup flow opens its own dialog so users can switch between instructions for setting up the current device and pairing another device. Leave it unset or `false` to keep Draft entirely local.
+
+- The server stores only the minimal planning document shared by War Room and Board: saved Board membership/order, model weights, and keeper IDs. Sleeper draft metadata, picks, full player payloads, filters, analytics state, and comparison pins remain outside the synced document.
+- The existing API sidecar stores the document in `${GRIDSHIFT_DRAFT_SYNC_DATA_DIR}/draft-sync.sqlite` using SQLite WAL transactions. Docker deployments should mount the configured directory to a persistent volume. A container restart or new app image preserves the document; deleting the volume does not.
+- A device token authorizes sync. Pairing uses a one-time eight-character code such as `Q7XM-4K9P`, expires after the configured TTL, and is associated with the connected Sleeper user ID. The Sleeper ID is an identity check, not a secret.
+- Local Draft edits render and persist immediately. Writes are debounced after changes, while visible War Room and Board surfaces poll for a changed server revision every two seconds using conditional requests. Polling pauses when Draft is inactive, hidden, or offline.
+- Offline edits remain local and queue for retry. Authorization failures require pairing again. Revision conflicts preserve both copies and are resolved from the Draft Sync dialog without silently overwriting a Board.
+- The server database is durable persistence, not an automatic off-site backup. Hosters should back up the Docker volume containing the SQLite file if they need recovery after volume deletion.
+
 ## Results View
 
 - Route: `/draft/results` (`draftView === 'results'`, registered in `appRoutes.js` `DRAFT_VIEWS` and `DraftSubNav.jsx`). `DraftAssistant.jsx` dispatches `DraftResultsView`. Legacy `/draft/draft-order` routes normalize to `/draft/results`.

@@ -54,6 +54,7 @@ import {
   createOrderedBoardState,
   moveOverallBoardPlayer,
   movePlayerToBoardPosition,
+  movePlayerToOrderedBoardPosition,
   moveOrderedBoardPlayerWithinPosition,
   moveWithinPosition,
   playerCanSlotIntoBoardPosition,
@@ -356,6 +357,29 @@ test('draft board overall moves persist while positional view stays derived', ()
   state = moveOverallBoardPlayer(state, 'rb2', -1);
   assert.deepEqual(state.overallIds, ['rb2', 'rb1', 'wr1']);
   assert.deepEqual(state.boardByPosition.RB, ['rb2', 'rb1']);
+});
+
+test('draft board overall drops reorder global order without changing position membership', () => {
+  let state = createOrderedBoardState({
+    RB: ['rb1', 'rb2'],
+    WR: ['wr1'],
+  }, ['rb1', 'wr1', 'rb2']);
+
+  state = movePlayerToOrderedBoardPosition(state, 'Overall', 'rb2', 'rb1', {
+    id: 'rb2',
+    position: 'RB',
+    fantasy_positions: ['RB'],
+  });
+  assert.deepEqual(state.overallIds, ['rb2', 'rb1', 'wr1']);
+  assert.deepEqual(state.boardByPosition, { RB: ['rb2', 'rb1'], WR: ['wr1'] });
+
+  state = movePlayerToOrderedBoardPosition(state, 'Overall', 'te1', 'wr1', {
+    id: 'te1',
+    position: 'TE',
+    fantasy_positions: ['TE'],
+  });
+  assert.deepEqual(state.overallIds, ['rb2', 'rb1', 'te1', 'wr1']);
+  assert.deepEqual(state.boardByPosition, { RB: ['rb2', 'rb1'], WR: ['wr1'], TE: ['te1'] });
 });
 
 test('draft board ordered helper appends new players to overall memory', () => {

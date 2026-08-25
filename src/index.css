@@ -9048,13 +9048,6 @@ body {
   padding: 0 0 6px;
 }
 
-/* The Board page presents its desktop control strip and a deliberately compact
-   mobile equivalent. Keep the latter out of desktop layout entirely instead
-   of relying on the old collapsible-menu wrapper to hide it. */
-.draft-board-page-mobile-controls {
-  display: none;
-}
-
 .draft-board-view-control {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -9411,19 +9404,19 @@ body {
 }
 
 .draft-board-card-shell.is-bye-conflict:not(.is-drafted-by-user) .draft-player-row--board-card.companion-player-row {
-  border-color: color-mix(in srgb, var(--color-accent-orange) 44%, var(--color-separator));
+  border-color: color-mix(in srgb, var(--draft-bye-conflict-color, var(--color-accent-orange)) 44%, var(--color-separator));
   background:
-    linear-gradient(90deg, color-mix(in srgb, var(--color-accent-orange) 8%, transparent), transparent 55%),
-    var(--color-surface-raised);
-  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--color-accent-orange) 68%, transparent) !important;
+    linear-gradient(90deg, color-mix(in srgb, var(--draft-bye-conflict-color, var(--color-accent-orange)) 22%, transparent), transparent 55%),
+    var(--color-bg-secondary);
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--draft-bye-conflict-color, var(--color-accent-orange)) 68%, transparent) !important;
 }
 
 .draft-board-card-shell.is-positional-bye-conflict:not(.is-drafted-by-user) .draft-player-row--board-card.companion-player-row {
-  border-color: color-mix(in srgb, var(--color-accent-orange) 74%, var(--color-separator));
+  border-color: color-mix(in srgb, var(--draft-bye-conflict-color, var(--color-accent-orange)) 74%, var(--color-separator));
   background:
-    linear-gradient(90deg, color-mix(in srgb, var(--color-accent-orange) 15%, transparent), transparent 62%),
-    var(--color-surface-raised);
-  box-shadow: inset 4px 0 0 var(--color-accent-orange) !important;
+    linear-gradient(90deg, color-mix(in srgb, var(--draft-bye-conflict-color, var(--color-accent-orange)) 34%, transparent), transparent 62%),
+    var(--color-bg-secondary);
+  box-shadow: inset 4px 0 0 var(--draft-bye-conflict-color, var(--color-accent-orange)) !important;
 }
 
 .draft-player-row--board.is-drafted-by-user.companion-player-row,
@@ -9509,10 +9502,10 @@ body {
   min-height: 20px;
   align-items: center;
   padding: 3px 6px;
-  border: 1px solid color-mix(in srgb, var(--color-accent-orange) 82%, var(--color-separator));
+  border: 1px solid color-mix(in srgb, var(--draft-bye-conflict-color, var(--color-accent-orange)) 82%, var(--color-separator));
   border-radius: 4px;
-  background: var(--color-accent-orange);
-  color: var(--color-signature-fg);
+  background: var(--draft-bye-conflict-color, var(--color-accent-orange));
+  color: var(--draft-bye-conflict-fg, var(--color-label));
   font-family: var(--font-display, 'Barlow Condensed', sans-serif);
   font-size: var(--type-label);
   font-weight: 900;
@@ -9530,8 +9523,8 @@ body {
   place-items: center;
   margin-right: 4px;
   border-radius: 50%;
-  background: var(--color-signature-fg);
-  color: var(--color-accent-orange);
+  background: var(--color-bg-secondary);
+  color: var(--draft-bye-conflict-color, var(--color-accent-orange));
   font-size: 10px;
   line-height: 1;
 }
@@ -9908,6 +9901,16 @@ body {
 }
 
 @media (pointer: coarse) {
+  .draft-board-card-shell.is-draggable {
+    touch-action: pan-y;
+    -webkit-touch-callout: none;
+    user-select: none;
+  }
+
+  .draft-board-card-shell.is-draggable.is-dragging-source {
+    touch-action: none;
+  }
+
   .draft-board-card-drag-handle {
     display: none;
   }
@@ -10128,7 +10131,7 @@ body {
 }
 
 .draft-board-roster-glyph.is-bye-conflict {
-  color: var(--color-accent-orange);
+  color: var(--draft-bye-conflict-color, var(--color-accent-orange));
 }
 
 .draft-board-roster-tray__legend .draft-board-roster-glyph {
@@ -10210,48 +10213,6 @@ body {
     margin-left: 0;
   }
 
-  .draft-board-mobile-available__summary {
-    display: flex;
-    width: 100%;
-    min-height: 44px;
-    cursor: pointer;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    padding: 0 10px 0 12px;
-    border: 0;
-    background: transparent;
-    color: var(--color-label);
-    font-family: inherit;
-    font-size: var(--type-meta);
-    font-weight: 900;
-    text-align: left;
-  }
-
-  .draft-board-mobile-available__summary::after {
-    content: "+";
-    display: grid;
-    width: 30px;
-    height: 30px;
-    flex: 0 0 30px;
-    place-items: center;
-    border: 1px solid var(--color-separator);
-    border-radius: 6px;
-    background: var(--color-fill-secondary);
-    color: var(--color-label-secondary);
-    font-size: 22px;
-    font-weight: 900;
-    line-height: 1;
-  }
-
-  .draft-board-mobile-available.is-open .draft-board-mobile-available__summary {
-    border-bottom: 1px solid var(--color-separator);
-  }
-
-  .draft-board-mobile-available.is-open .draft-board-mobile-available__summary::after {
-    content: "-";
-  }
-
   .draft-board-card-shell .draft-player-row--board-card.companion-player-row {
     min-height: 70px;
   }
@@ -10295,7 +10256,7 @@ body {
   .draft-board-main {
     grid-column: 1;
     grid-row: 1;
-    grid-template-rows: auto auto minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
     height: 100%;
     min-height: 0;
   }
@@ -10307,13 +10268,12 @@ body {
 
   .draft-board-mobile-available.is-open {
     display: grid;
-    grid-row: 1 / -1;
-    grid-template-rows: auto auto minmax(0, 1fr);
+    grid-row: 2;
+    grid-template-rows: auto minmax(0, 1fr);
     height: 100%;
     overflow: hidden;
   }
 
-  .draft-board-mobile-available.is-open ~ .draft-board-mobile-lane-filter,
   .draft-board-mobile-available.is-open ~ .draft-board-lanes-shell {
     display: none;
   }
@@ -10532,75 +10492,13 @@ body {
     display: grid !important;
   }
 
-  .draft-board-page-mobile-controls {
-    display: grid;
-    gap: 8px;
-    padding: 8px;
-    border-bottom: 1px solid var(--color-separator);
-    background: var(--color-bg-secondary);
-  }
-
-  .draft-board-page-mobile-controls__primary {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    align-items: end;
-    gap: 8px;
-  }
-
-  .draft-board-page-mobile-controls .draft-board-view-control {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    width: 100%;
-  }
-
-  .draft-board-page-mobile-controls__label-select {
-    display: grid;
-    min-width: 0;
-    gap: 4px;
-    color: var(--color-label-secondary);
-    font-family: var(--font-display, 'Barlow Condensed', sans-serif);
-    font-size: var(--type-label);
-    font-weight: 850;
-    letter-spacing: 0.05em;
-    line-height: 1;
-    text-transform: uppercase;
-  }
-
-  .draft-board-page-mobile-controls__label-select select {
-    width: 100%;
-    min-width: 0;
-    min-height: 44px;
-    padding: 0 8px;
-    border: 1px solid var(--color-separator);
-    border-radius: 6px;
-    background: var(--color-bg);
-    color: var(--color-label);
-    font-family: inherit;
-    font-size: 16px;
-    font-weight: 750;
-  }
-
-  .draft-board-page-mobile-controls .draft-bye-conflict-toggle {
-    width: 100%;
-    min-height: 44px;
-    justify-content: center;
-    padding-inline: 10px;
-    font-size: var(--type-label);
-  }
-
-  .draft-board-page-mobile-controls .draft-segmented-control button {
-    min-height: 44px;
-    padding-inline: 6px;
-    font-size: var(--type-label);
-  }
-
   .draft-market-attribution {
     gap: 6px;
     font-size: var(--type-label);
   }
 
   .draft-board-workspace {
-    --draft-board-roster-expanded-height: 78px;
+    --draft-board-roster-expanded-height: 100px;
     --draft-board-roster-collapsed-height: 28px;
     --draft-board-card-name-min: max(clamp(90px, 28cqw, 118px), var(--draft-board-card-name-min-measured, 0px));
     --draft-board-card-name-min-available: max(clamp(86px, 26cqw, 112px), var(--draft-board-card-name-min-measured, 0px));
@@ -10719,40 +10617,182 @@ body {
 
   .draft-board-mobile-lane-filter {
     display: block;
+    min-width: 0;
     border-bottom: 1px solid var(--color-separator);
   }
 
-  .draft-board-mobile-lane-filter::before {
-    content: "Positions";
+  .draft-board-mobile-lane-filter__row {
     display: flex;
+    min-width: 0;
     align-items: center;
-    min-height: 22px;
-    padding: 0 8px;
-    color: var(--color-label-tertiary);
-    font-size: var(--type-micro);
-    font-weight: 900;
-    letter-spacing: 0.08em;
+    gap: 6px;
+    padding: 4px 6px;
+  }
+
+  .draft-board-mobile-lane-filter__row .draft-position-filter-shell {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .draft-board-mobile-lane-filter__row .draft-position-filter {
+    min-width: 0;
+    padding: 0;
+    gap: 6px;
+  }
+
+  .draft-board-mobile-filter-toggle,
+  .draft-board-mobile-available-chip {
+    display: inline-flex;
+    min-width: 44px;
+    min-height: 44px;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--color-separator);
+    border-radius: 8px;
+    background: var(--color-bg-secondary);
+    color: var(--color-label-secondary);
+    font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+    font-size: var(--type-label);
+    font-weight: 850;
+    letter-spacing: 0.03em;
     line-height: 1;
     text-transform: uppercase;
   }
 
+  .draft-board-mobile-filter-toggle svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .draft-board-mobile-filter-toggle.is-active,
+  .draft-board-mobile-available-chip.is-active {
+    border-color: var(--color-signature);
+    background: var(--color-signature);
+    color: var(--color-signature-fg);
+  }
+
+  .draft-board-mobile-filter-toggle:focus-visible,
+  .draft-board-mobile-available-chip:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+
+  .draft-board-mobile-filters {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: end;
+    gap: 8px;
+    padding: 8px;
+    border-top: 1px solid var(--color-separator);
+    background: var(--color-bg-secondary);
+  }
+
+  .draft-board-mobile-filters.is-available {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .draft-board-mobile-filters__available-scope {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    min-width: 0;
+  }
+
+  .draft-board-mobile-filters__available-scope button {
+    min-height: 44px;
+    padding-inline: 6px;
+    font-size: var(--type-label);
+  }
+
+  .draft-board-mobile-filters__available-search {
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    padding: 0 10px;
+    border: 1px solid var(--color-separator);
+    border-radius: 6px;
+    background: var(--color-bg);
+    color: var(--color-label);
+    font-family: inherit;
+    font-size: 16px;
+  }
+
+  .draft-board-mobile-filters__available-filter,
+  .draft-board-mobile-filters__available-filter select {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .draft-board-mobile-filters__available-filter select {
+    min-height: 44px;
+  }
+
+  .draft-board-mobile-filters .draft-board-view-control {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    min-width: 0;
+  }
+
+  .draft-board-mobile-filters .draft-board-view-control button {
+    min-height: 44px;
+    padding-inline: 6px;
+    font-size: var(--type-label);
+  }
+
+  .draft-board-mobile-filters__label-select {
+    display: grid;
+    min-width: 0;
+    gap: 4px;
+    color: var(--color-label-secondary);
+    font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+    font-size: var(--type-label);
+    font-weight: 850;
+    letter-spacing: 0.05em;
+    line-height: 1;
+    text-transform: uppercase;
+  }
+
+  .draft-board-mobile-filters__label-select select {
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    padding: 0 8px;
+    border: 1px solid var(--color-separator);
+    border-radius: 6px;
+    background: var(--color-bg);
+    color: var(--color-label);
+    font-family: inherit;
+    font-size: 16px;
+    font-weight: 750;
+  }
+
+  .draft-board-mobile-filters .draft-bye-conflict-toggle {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-height: 44px;
+    justify-content: center;
+    padding-inline: 10px;
+    font-size: var(--type-label);
+  }
+
   .draft-board-main {
-    grid-template-rows: auto auto minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
     border: 0;
   }
 
   .draft-board-lanes-shell {
-    grid-row: 3;
+    grid-row: 2;
   }
 
   .draft-board-mobile-lane-filter .draft-position-filter {
     border-bottom: 0;
-    padding: 6px 8px 7px;
+    padding: 0;
     gap: 6px;
   }
 
   .draft-board-mobile-lane-filter .draft-position-filter button {
-    min-height: 34px;
+    min-height: 44px;
     padding: 0 9px;
     border-radius: 6px;
     font-size: var(--type-label);
@@ -10887,14 +10927,14 @@ body {
   }
 
   .draft-board-roster-tray__slots {
-    grid-auto-columns: minmax(132px, 36vw);
+    grid-auto-columns: minmax(216px, 1fr);
     gap: 6px;
   }
 
   .draft-board-roster-slot {
-    height: 42px;
-    min-height: 42px;
-    padding: 4px 6px;
+    height: 64px;
+    min-height: 64px;
+    padding: 6px 8px;
   }
 
   .draft-board-roster-slot strong {
@@ -10911,20 +10951,20 @@ body {
   }
 
   .draft-board-roster-slot__player.companion-player-row {
-    min-height: 42px;
-    gap: 4px;
-    padding: 4px;
+    min-height: 64px;
+    gap: 5px;
+    padding: 6px;
   }
 
   .draft-board-roster-slot__player.companion-player-row .companion-player-row__avatar {
-    width: 24px;
-    height: 24px;
+    width: 30px;
+    height: 30px;
   }
 
   .draft-board-roster-slot__player.companion-player-row .companion-player-row__team-logo,
   .draft-board-roster-slot__player.companion-player-row .companion-player-row__team-logo-spacer {
-    width: 18px;
-    height: 18px;
+    width: 20px;
+    height: 20px;
   }
 
   .draft-board-roster-slot__player.companion-player-row .companion-player-row__identity {
@@ -10933,7 +10973,7 @@ body {
 
   .draft-board-roster-slot__player.companion-player-row .companion-player-row__meta {
     gap: 2px;
-    margin-top: 1px;
+    margin-top: 3px;
     font-size: var(--type-micro);
   }
 
@@ -10942,13 +10982,6 @@ body {
     height: 12px;
     flex-basis: 12px;
   }
-}
-
-@media (max-width: 360px) {
-  .draft-board-roster-tray__slots {
-    grid-auto-columns: minmax(116px, 36vw);
-  }
-
 }
 
 .draft-player-row .companion-player-row__action {
@@ -13625,15 +13658,6 @@ body {
     border-radius: 0;
     padding: 24px 12px;
     text-align: center;
-  }
-
-  .content-area--draft-board .draft-board-page-mobile-controls {
-    border-top: 1px solid var(--color-separator);
-  }
-
-  .content-area--draft-board .draft-board-page-mobile-controls .draft-mobile-control-menu__button {
-    min-height: 44px;
-    padding-inline: 12px;
   }
 
   .content-area--draft {
@@ -23380,5 +23404,41 @@ button.trade-history-asset-card:focus-visible {
   }
 }
 
-/* Reduced motion gets the finished frame; nothing here animates on its own,
-   since the ball is positioned from state rather than by a CSS transition. */
+/* Bye conflict markers use a reserved identity column so they share a stable
+   start edge across cards. The column lives inside the name body, leaving the
+   row's metrics, statuses, and actions in their existing grid columns. */
+.draft-board-workspace.is-bye-conflict-highlights .draft-player-row--board-card .companion-player-row__identity {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--draft-bye-conflict-slot-width, 66px);
+  align-items: center;
+  column-gap: 6px;
+  overflow: visible;
+  white-space: normal;
+}
+
+.draft-board-workspace.is-bye-conflict-highlights .draft-player-row--board-card .companion-player-row__identity-label {
+  grid-column: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.draft-board-workspace.is-bye-conflict-highlights .draft-player-row--board-card .companion-player-row__identity-accessory {
+  display: flex;
+  grid-column: 2;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-start;
+  overflow: visible;
+}
+
+.draft-board-workspace.is-bye-conflict-highlights .draft-player-row--board-card .draft-bye-conflict-marker {
+  max-width: 100%;
+}
+
+@media (max-width: 640px) {
+  .draft-board-workspace.is-bye-conflict-highlights {
+    --draft-bye-conflict-slot-width: 62px;
+  }
+}

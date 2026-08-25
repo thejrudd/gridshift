@@ -1268,3 +1268,14 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **ADP name matching** - Restored valid BALLDONTLIE ADP for players whose provider names include terminal generational suffixes such as Jr., Sr., or III while preserving strict team and position matching.
 - **IDP boundary** - Kept players without a corresponding BALLDONTLIE fantasy-ADP record, such as individual IDP players, unavailable rather than inventing a market value.
 - **Regression coverage** - Added focused coverage for roster projection and FLEX priority, locked-roster bye conflicts, suffix variants, provider/team mismatches, and IDP players without a BDL ADP record.
+
+## v8.7 - Draft Sync Across Devices
+*2026-08-24*
+
+- **Optional Draft Sync** - Pair devices with a one-time code and keep War Room and Draft Board plans available across devices without making server storage required for the core Draft experience.
+- **Draft Sync reliability** - Persist only bounded, schema-checked draft state behind the API sidecar, preserve local work during offline periods, and surface revision conflicts for an explicit local-or-remote choice.
+- **Draft setup guidance** - Add a centered setup dialog with two clear actions: generate a code for another device or enter a code from another device. Generated-code setup can be cancelled, and revoking a device visibly returns to the unpaired state.
+- **Draft Board mobile space** - Improved the available vertical space on the mobile Draft Board layout so more of the board remains visible while drafting.
+- **Draft Board cleanup** - Restore the board's remove control for saved players after another manager drafts them, so stale targets can be cleared without rebuilding the board.
+- **Tour coverage** - Add the Draft Sync functionality to the What's New tour for desktop and mobile layouts.
+- **Regression coverage** - Add unit and API coverage for pairing, authorization, bounded payloads, revision checks, offline handling, and the corrected pairing-code entry flow.

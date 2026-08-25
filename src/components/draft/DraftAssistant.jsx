@@ -2,6 +2,7 @@ import { Fragment, memo, startTransition, useCallback, useDeferredValue, useEffe
 import { createPortal, flushSync } from 'react-dom';
 import { getDraft, getDraftPicks, getDraftTradedPicks, getLeagueDrafts, getUserById } from '../../api/sleeperApi.js';
 import { useSleeperBase } from '../../context/SleeperContext.jsx';
+import useDraftSync from '../../hooks/useDraftSync.js';
 import { useTheme } from '../../context/ThemeContext.jsx';
 import { fetchLeagueLogsMarketForLeague, formatLeagueLogsMarketProfile } from '../../api/leagueLogsApi.js';
 import { getFantasyAdp } from '../../api/fantasyAdpApi.js';
@@ -117,6 +118,7 @@ const BOARD_SCOPE_OPTIONS = [
   { id: 'all', label: 'All Players' },
   { id: 'rookies', label: 'Rookies' },
 ];
+const MOBILE_AVAILABLE_SCOPE_OPTIONS = BOARD_SCOPE_OPTIONS.filter((option) => option.id !== 'available');
 const MY_BOARD_SORT_OPTIONS = [
   { id: 'position', label: 'Positional' },
   { id: 'overall', label: 'Overall' },
@@ -131,6 +133,8 @@ const DRAFT_BOARD_CARD_METRIC_OPTIONS = [
   { id: 'volume', label: 'Vol' },
   { id: 'tier', label: 'Tier' },
 ];
+const DRAFT_BOARD_TOUCH_DRAG_DELAY_MS = 280;
+const DRAFT_BOARD_TOUCH_DRAG_THRESHOLD_PX = 10;
 const DRAFT_RESULTS_SORT_OPTIONS = [
   { id: 'asc', label: 'First to Last' },
   { id: 'desc', label: 'Last to First' },
@@ -1614,12 +1618,12 @@ function useProjectedDraftSelection({ draftMeta, league, players, rosters, draft
   }, [draftMeta, league, players, rosters, draftPicks, marketValuesByPlayerId]);
 }
 
-function PositionFilter({ positions, activePosition, onChange }) {
+function PositionFilter({ positions, activePosition, onChange, ariaLabel = 'Draft player positions' }) {
   const filterRef = useRef(null);
 
   return (
     <div className="draft-position-filter-shell draft-scroll-region">
-      <div ref={filterRef} className="draft-position-filter" role="tablist" aria-label="Draft player positions">
+      <div ref={filterRef} className="draft-position-filter" role="tablist" aria-label={ariaLabel}>
         {positions.map((position) => (
           <button
             key={position}
@@ -1926,9 +1930,11 @@ function DraftBoardMetricValue({ label, value }) {
 
 function getByeConflictDescription(player, conflict) {
   if (!conflict || conflict.severity === 'none' || conflict.week == null) return null;
-  const names = conflict.matchingPlayerNames ?? [];
-  const matchingCopy = names.length
-    ? names.join(', ')
+  const matchingPlayers = conflict.matchingPlayerLabels?.length
+    ? conflict.matchingPlayerLabels
+    : conflict.matchingPlayerNames ?? [];
+  const matchingCopy = matchingPlayers.length
+    ? matchingPlayers.join(', ')
     : `${conflict.totalOverlaps} other player${conflict.totalOverlaps === 1 ? '' : 's'}`;
   const positionCopy = conflict.exactPositionOverlaps > 0
     ? ` Same-position conflict with ${conflict.exactPositionOverlaps} ${player.position} player${conflict.exactPositionOverlaps === 1 ? '' : 's'}.`
@@ -1936,7 +1942,32 @@ function getByeConflictDescription(player, conflict) {
   return `Bye week ${conflict.week} overlaps with ${matchingCopy}.${positionCopy}`;
 }
 
-function DraftByeConflictMarker({ player, conflict }) {
+// Ten colors cover the standard NFL bye window (Weeks 5–14) without reuse.
+const DRAFT_BYE_CONFLICT_COLORS = [
+  { color: 'var(--color-accent)', lightForeground: 'var(--color-live-defense-fg)', darkForeground: 'var(--color-signature-fg)' },
+  { color: 'var(--color-alpha)', lightForeground: 'var(--color-live-defense-fg)', darkForeground: 'var(--color-signature-fg)' },
+  { color: 'var(--color-accent-green)', lightForeground: 'var(--color-signature-fg)', darkForeground: 'var(--color-signature-fg)' },
+  { color: 'var(--color-accent-orange)', lightForeground: 'var(--color-signature-fg)', darkForeground: 'var(--color-signature-fg)' },
+  { color: 'var(--color-accent-red)', lightForeground: 'var(--color-live-defense-fg)', darkForeground: 'var(--color-signature-fg)' },
+  { color: 'var(--scout-db)', lightForeground: 'var(--color-live-defense-fg)', darkForeground: 'var(--color-live-defense-fg)' },
+  { color: 'var(--scout-lb)', lightForeground: 'var(--color-signature-fg)', darkForeground: 'var(--color-signature-fg)' },
+  { color: 'var(--scout-dl)', lightForeground: 'var(--color-signature-fg)', darkForeground: 'var(--color-signature-fg)' },
+  { color: 'var(--scout-qb)', lightForeground: 'var(--color-signature-fg)', darkForeground: 'var(--color-signature-fg)' },
+  { color: 'var(--scout-ol)', lightForeground: 'var(--color-live-defense-fg)', darkForeground: 'var(--color-live-defense-fg)' },
+];
+
+function getByeConflictStyle(week, darkMode = false) {
+  const normalizedWeek = Number(week);
+  const paletteEntry = Number.isInteger(normalizedWeek) && normalizedWeek >= 1
+    ? DRAFT_BYE_CONFLICT_COLORS[(normalizedWeek - 1) % DRAFT_BYE_CONFLICT_COLORS.length]
+    : DRAFT_BYE_CONFLICT_COLORS[3];
+  return {
+    '--draft-bye-conflict-color': paletteEntry.color,
+    '--draft-bye-conflict-fg': darkMode ? paletteEntry.darkForeground : paletteEntry.lightForeground,
+  };
+}
+
+function DraftByeConflictMarker({ player, conflict, darkMode = false }) {
   const description = getByeConflictDescription(player, conflict);
   if (!description) return null;
   const positional = conflict.severity === 'high';
@@ -1946,6 +1977,7 @@ function DraftByeConflictMarker({ player, conflict }) {
         'draft-bye-conflict-marker',
         positional ? 'is-positional' : '',
       ].filter(Boolean).join(' ')}
+      style={getByeConflictStyle(conflict.week, darkMode)}
       title={description}
       aria-label={positional
         ? `${player.position} positional conflict, bye ${conflict.week}`
@@ -1982,6 +2014,7 @@ function DraftPlayerRow({
   compactRowGridTemplate = null,
   leading = null,
   trailing = null,
+  identityAccessory = null,
   identityMetaSegments = null,
   className = '',
   compact = true,
@@ -2047,6 +2080,7 @@ function DraftPlayerRow({
       onClick={() => onViewPlayer?.(player.id)}
       leading={leading}
       trailing={trailing}
+      identityAccessory={identityAccessory}
       metaSegments={metaSegments}
       columns={rowMetrics.map((metric) => (
         <CompanionPlayerMetric
@@ -2660,6 +2694,10 @@ function DraftBoardCardShell({
   onViewPlayer,
   onDragStart,
   onDragEnd = null,
+  onTouchDragPointerDown = null,
+  onTouchDragPointerMove = null,
+  onTouchDragPointerUp = null,
+  onTouchDragPointerCancel = null,
   onMove = null,
   onRemove = null,
   onAdd = null,
@@ -2677,6 +2715,7 @@ function DraftBoardCardShell({
     ? (isDraftedByUser ? 'Drafted by You' : `Drafted by ${player.draftedBy.label}`)
     : null;
   const canDrag = allowDrag && !disabled && !isGone;
+  const rowDisabled = disabled || (isGone && !onRemove);
   const cardMetric = getDraftBoardCardMetric(player, metricKey);
   const availability = getPlayerAvailabilityContext(player);
   const actions = [];
@@ -2714,7 +2753,7 @@ function DraftBoardCardShell({
     );
   }
 
-  if (!isGone && onRemove) {
+  if (onRemove) {
     actions.push(
       <CompanionPlayerAction
         key="remove"
@@ -2763,10 +2802,17 @@ function DraftBoardCardShell({
         hasConflict ? 'is-bye-conflict' : '',
         hasPositionalConflict ? 'is-positional-bye-conflict' : '',
       ].filter(Boolean).join(' ')}
+      style={hasConflict ? {
+        ...getByeConflictStyle(conflict.week, darkMode),
+      } : undefined}
       data-player-id={String(player.id)}
       draggable={canDrag}
       onDragStart={canDrag ? (event) => onDragStart?.(event, player, position) : undefined}
       onDragEnd={canDrag ? onDragEnd : undefined}
+      onPointerDown={canDrag ? (event) => onTouchDragPointerDown?.(event, player, position) : undefined}
+      onPointerMove={canDrag ? onTouchDragPointerMove : undefined}
+      onPointerUp={canDrag ? onTouchDragPointerUp : undefined}
+      onPointerCancel={canDrag ? onTouchDragPointerCancel : undefined}
     >
       {canDrag ? (
         <span className="draft-board-card-drag-handle" aria-hidden="true">
@@ -2786,7 +2832,7 @@ function DraftBoardCardShell({
           isDraftedByUser ? 'is-drafted-by-user' : '',
           isGone && !isDraftedByUser ? 'is-drafted-by-other' : '',
         ].filter(Boolean).join(' ')}
-        disabled={disabled || isGone}
+        disabled={rowDisabled}
         onViewPlayer={onViewPlayer}
         metrics={[]}
         metricColumnGridTemplate={null}
@@ -2795,13 +2841,13 @@ function DraftBoardCardShell({
         identityMetaSegments={[
           draftedOwnershipLabel
             ?? [player.position, player.team || 'FA'].filter(Boolean).join(' · '),
-          !isDraftedByOther && hasConflict
-            ? <DraftByeConflictMarker key="bye-conflict" player={player} conflict={conflict} />
-            : null,
           !isDraftedByOther && availability.status
             ? <DraftPlayerAvailabilityBadge key="availability" player={player} />
             : null,
         ].filter(Boolean)}
+        identityAccessory={!isDraftedByOther && hasConflict
+          ? <DraftByeConflictMarker player={player} conflict={conflict} darkMode={darkMode} />
+          : null}
         compact={false}
         showPosition={false}
         status={boardStatus}
@@ -2957,6 +3003,10 @@ const DraftAvailablePlayerList = memo(function DraftAvailablePlayerList({
   onAdd,
   onDragStart,
   onDragEnd,
+  onTouchDragPointerDown = null,
+  onTouchDragPointerMove = null,
+  onTouchDragPointerUp = null,
+  onTouchDragPointerCancel = null,
   onViewPlayer,
   draggingPlayerId = null,
   emptyTitle = 'No available players match this filter.',
@@ -2976,6 +3026,10 @@ const DraftAvailablePlayerList = memo(function DraftAvailablePlayerList({
             onAdd={onAdd}
             onDragStart={onDragStart}
             onDragEnd={onDragEnd}
+            onTouchDragPointerDown={onTouchDragPointerDown}
+            onTouchDragPointerMove={onTouchDragPointerMove}
+            onTouchDragPointerUp={onTouchDragPointerUp}
+            onTouchDragPointerCancel={onTouchDragPointerCancel}
             onViewPlayer={onViewPlayer}
             allowDrag
             isDragging={String(player.id) === draggingPlayerId}
@@ -2992,6 +3046,10 @@ const DraftAvailablePlayerList = memo(function DraftAvailablePlayerList({
   && previous.onAdd === next.onAdd
   && previous.onDragStart === next.onDragStart
   && previous.onDragEnd === next.onDragEnd
+  && previous.onTouchDragPointerDown === next.onTouchDragPointerDown
+  && previous.onTouchDragPointerMove === next.onTouchDragPointerMove
+  && previous.onTouchDragPointerUp === next.onTouchDragPointerUp
+  && previous.onTouchDragPointerCancel === next.onTouchDragPointerCancel
   && previous.onViewPlayer === next.onViewPlayer
   && previous.draggingPlayerId === next.draggingPlayerId
   && previous.emptyTitle === next.emptyTitle
@@ -3006,6 +3064,10 @@ const DraftBoardLane = memo(function DraftBoardLane({
   metricKey,
   onDragStart,
   onDragEnd,
+  onTouchDragPointerDown,
+  onTouchDragPointerMove,
+  onTouchDragPointerUp,
+  onTouchDragPointerCancel,
   onDropPlayer,
   onMove,
   onRemove,
@@ -3098,6 +3160,10 @@ const DraftBoardLane = memo(function DraftBoardLane({
                 position={position}
                 onDragStart={onDragStart}
                 onDragEnd={onDragEnd}
+                onTouchDragPointerDown={onTouchDragPointerDown}
+                onTouchDragPointerMove={onTouchDragPointerMove}
+                onTouchDragPointerUp={onTouchDragPointerUp}
+                onTouchDragPointerCancel={onTouchDragPointerCancel}
                 onMove={allowReorder ? onMove : null}
                 onRemove={onRemove}
                 onViewPlayer={onViewPlayer}
@@ -3138,6 +3204,10 @@ const DraftBoardLane = memo(function DraftBoardLane({
   && previous.onDragTargetChange === next.onDragTargetChange
   && previous.onDragStart === next.onDragStart
   && previous.onDragEnd === next.onDragEnd
+  && previous.onTouchDragPointerDown === next.onTouchDragPointerDown
+  && previous.onTouchDragPointerMove === next.onTouchDragPointerMove
+  && previous.onTouchDragPointerUp === next.onTouchDragPointerUp
+  && previous.onTouchDragPointerCancel === next.onTouchDragPointerCancel
   && previous.onDropPlayer === next.onDropPlayer
   && previous.onMove === next.onMove
   && previous.onRemove === next.onRemove
@@ -3170,11 +3240,17 @@ function DraftRosterLockGlyph({ label = 'Locked on your roster' }) {
   );
 }
 
-function DraftRosterByeConflictGlyph({ player, conflict }) {
+function DraftRosterByeConflictGlyph({ player, conflict, darkMode = false }) {
   const description = getByeConflictDescription(player, conflict);
   if (!description) return null;
   return (
-    <span className="draft-board-roster-glyph is-bye-conflict" role="img" aria-label={description} title={description}>
+    <span
+      className="draft-board-roster-glyph is-bye-conflict"
+      style={getByeConflictStyle(conflict.week, darkMode)}
+      role="img"
+      aria-label={description}
+      title={description}
+    >
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
         <path d="M12 3 2.8 20.25h18.4L12 3Z" />
         <path d="M12 8v5.5M12 17.25v.1" />
@@ -3232,6 +3308,7 @@ function DraftRosterTray({ slots, collapsed, onToggleCollapsed, darkMode, confli
                         <DraftRosterByeConflictGlyph
                           player={slot.player}
                           conflict={conflictByPlayerId?.get(String(slot.player.id)) ?? null}
+                          darkMode={darkMode}
                         />
                       ) : null}
                     </CompanionPlayerLocalContrastText>
@@ -3309,6 +3386,7 @@ function MyBoardWorkspace({
   onRemove,
   onViewPlayer,
   boardViewMode,
+  onBoardViewModeChange,
   activePosition,
   onPositionChange,
   query,
@@ -3321,7 +3399,11 @@ function MyBoardWorkspace({
   rosterSlots,
   rosterConflictByPlayerId,
   cardMetricKey,
+  onCardMetricChange,
   conflictByPlayerId,
+  highlightByeConflicts,
+  byeConflictAvailable,
+  onHighlightByeConflictsChange,
   displaySize,
 }) {
   const boardRowsById = useMemo(() => new Map(boardRows.map((row) => [String(row.id), row])), [boardRows]);
@@ -3351,6 +3433,7 @@ function MyBoardWorkspace({
   const [dragAnnouncement, setDragAnnouncement] = useState('');
   const [availableRailWidth, setAvailableRailWidth] = useState(300);
   const [mobileAvailableOpen, setMobileAvailableOpen] = useState(false);
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [rosterCollapsed, setRosterCollapsed] = useState(() => {
     if (typeof window === 'undefined') return true;
     try {
@@ -3362,6 +3445,7 @@ function MyBoardWorkspace({
   const lanesRef = useRef(null);
   const dragRef = useRef(null);
   const dropTargetRef = useRef(null);
+  const touchDragRef = useRef(null);
 
   const announceDrag = useCallback((message) => {
     setDragAnnouncement('');
@@ -3435,9 +3519,13 @@ function MyBoardWorkspace({
     event.dataTransfer.setDragImage(preview, Math.min(28, sourceRect.width / 2), Math.min(28, sourceRect.height / 2));
     window.setTimeout(() => preview.remove(), 0);
 
-    const destinations = lanePositions.filter((position) => playerCanSlotIntoBoardPosition(player, position));
+    const destinations = sourcePosition === 'Overall'
+      ? ['Overall']
+      : boardViewMode === 'overall'
+        ? ['Overall']
+        : lanePositions.filter((position) => playerCanSlotIntoBoardPosition(player, position));
     announceDrag(`Picked up ${playerName}. Available destinations: ${destinations.join(', ')} ${destinations.length === 1 ? 'lane' : 'lanes'}.`);
-  }, [announceDrag, lanePositions]);
+  }, [announceDrag, boardViewMode, lanePositions]);
 
   const handleDragEnd = useCallback(() => {
     const cancelledPlayerName = dragRef.current?.playerName;
@@ -3480,7 +3568,8 @@ function MyBoardWorkspace({
     const playerId = dragRef.current?.playerId;
     const playerName = dragRef.current?.playerName;
     if (!playerId) return;
-    if (!canDropPlayerIntoPosition(playerId, position)) {
+    const canDrop = position === 'Overall' || canDropPlayerIntoPosition(playerId, position);
+    if (!canDrop) {
       dragRef.current = null;
       dropTargetRef.current = null;
       setDraggingPlayerId(null);
@@ -3498,6 +3587,101 @@ function MyBoardWorkspace({
     setDropTarget(null);
     announceDrag(`Dropped ${playerName} in the ${position} lane${beforePlayer ? ` before ${getPlayerName(beforePlayer)}` : ' at the bottom'}.`);
   }, [announceDrag, canDropPlayerIntoPosition, onDropPlayer]);
+
+  const clearTouchDrag = useCallback(() => {
+    const current = touchDragRef.current;
+    if (current?.timer) window.clearTimeout(current.timer);
+    touchDragRef.current = null;
+  }, []);
+
+  const getOverallBeforePlayerIdAtPoint = useCallback((clientY) => {
+    const stack = document.querySelector('.draft-board-main .draft-board-lane.is-overall .draft-board-lane__stack');
+    if (!stack) return null;
+    const draggingId = touchDragRef.current?.playerId ?? dragRef.current?.playerId;
+    const cards = [...stack.querySelectorAll('.draft-board-card-shell[data-player-id]')]
+      .filter((card) => card.dataset.playerId !== String(draggingId));
+    const nextCard = cards.find((card) => {
+      const rect = card.getBoundingClientRect();
+      return clientY < rect.top + (rect.height / 2);
+    });
+    return nextCard?.dataset.playerId ?? null;
+  }, []);
+
+  const handleTouchDragPointerDown = useCallback((event, player, sourcePosition = null) => {
+    if (event.pointerType !== 'touch' || boardViewMode !== 'overall') return;
+    const target = event.target;
+    if (
+      event.button !== 0
+      || (target instanceof Element && target.closest('button, a, input, select, textarea, [role="button"]'))
+    ) return;
+
+    clearTouchDrag();
+    const sourceCard = event.currentTarget;
+    const pointerId = event.pointerId;
+    const playerId = String(player.id);
+    const playerName = getPlayerName(player);
+    sourceCard.setPointerCapture?.(pointerId);
+    touchDragRef.current = {
+      pointerId,
+      playerId,
+      playerName,
+      sourcePosition,
+      startX: event.clientX,
+      startY: event.clientY,
+      active: false,
+      timer: window.setTimeout(() => {
+        const current = touchDragRef.current;
+        if (!current || current.pointerId !== pointerId) return;
+        current.active = true;
+        sourceCard.setPointerCapture(pointerId);
+        dragRef.current = { playerId, sourcePosition, playerName };
+        flushSync(() => {
+          setDraggingPlayerId(playerId);
+        });
+        announceDrag(`Picked up ${playerName}. Available destination: Overall lane.`);
+      }, DRAFT_BOARD_TOUCH_DRAG_DELAY_MS),
+    };
+  }, [announceDrag, boardViewMode, clearTouchDrag]);
+
+  const handleTouchDragPointerMove = useCallback((event) => {
+    if (event.pointerType !== 'touch') return;
+    const current = touchDragRef.current;
+    if (!current || current.pointerId !== event.pointerId) return;
+
+    if (!current.active) {
+      const distance = Math.hypot(event.clientX - current.startX, event.clientY - current.startY);
+      if (distance >= DRAFT_BOARD_TOUCH_DRAG_THRESHOLD_PX) clearTouchDrag();
+      return;
+    }
+
+    event.preventDefault();
+    handleDragTargetChange('Overall', getOverallBeforePlayerIdAtPoint(event.clientY), true);
+  }, [clearTouchDrag, getOverallBeforePlayerIdAtPoint, handleDragTargetChange]);
+
+  const handleTouchDragPointerUp = useCallback((event) => {
+    if (event.pointerType !== 'touch') return;
+    const current = touchDragRef.current;
+    if (!current || current.pointerId !== event.pointerId) return;
+
+    if (!current.active) {
+      clearTouchDrag();
+      return;
+    }
+
+    event.preventDefault();
+    const beforePlayerId = getOverallBeforePlayerIdAtPoint(event.clientY);
+    clearTouchDrag();
+    handleDropPlayer('Overall', beforePlayerId);
+  }, [clearTouchDrag, getOverallBeforePlayerIdAtPoint, handleDropPlayer]);
+
+  const handleTouchDragPointerCancel = useCallback((event) => {
+    if (event.pointerType !== 'touch') return;
+    const current = touchDragRef.current;
+    if (!current || current.pointerId !== event.pointerId) return;
+    const wasActive = current.active;
+    clearTouchDrag();
+    if (wasActive) handleDragEnd();
+  }, [clearTouchDrag, handleDragEnd]);
 
   const startRailResize = useCallback((event) => {
     event.preventDefault();
@@ -3531,11 +3715,43 @@ function MyBoardWorkspace({
     setAvailableRailWidth((current) => Math.min(ceiling, Math.max(floor, current + direction * 16)));
   }, []);
 
+  const mobileFilterIsActive = !mobileAvailableOpen && (
+    mobileFiltersOpen
+      || boardViewMode !== 'position'
+      || cardMetricKey !== 'none'
+      || highlightByeConflicts
+  );
+  const mobileFilterPositions = mobileAvailableOpen || boardViewMode === 'position'
+    ? (mobileAvailableOpen
+      ? positions.filter((position) => normalizePosition(position) !== 'ALL')
+      : lanePositions)
+    : [];
+  const mobileFilterPosition = mobileAvailableOpen && normalizePosition(activePosition) !== 'ALL'
+    ? activePosition
+    : activeLane;
+  const handleMobilePositionChange = (position) => {
+    if (mobileAvailableOpen) {
+      onPositionChange(position);
+      return;
+    }
+    setActiveLane(position);
+  };
+  const toggleMobileAvailable = () => {
+    if (mobileFiltersOpen) setMobileFiltersOpen(false);
+    if (!mobileAvailableOpen && activeLane) onPositionChange(activeLane);
+    setMobileAvailableOpen((current) => !current);
+  };
+  const toggleMobileFilters = () => {
+    if (mobileAvailableOpen) setMobileAvailableOpen(false);
+    setMobileFiltersOpen((current) => !current);
+  };
+
   return (
     <div className="draft-board-workspace-shell">
       <div
         className={[
           'draft-board-workspace',
+          conflictByPlayerId ? 'is-bye-conflict-highlights' : '',
           draggingPlayerId ? 'is-dragging' : '',
           rosterCollapsed ? 'is-roster-collapsed' : '',
         ].filter(Boolean).join(' ')}
@@ -3574,6 +3790,10 @@ function MyBoardWorkspace({
             onAdd={onAdd}
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
+            onTouchDragPointerDown={handleTouchDragPointerDown}
+            onTouchDragPointerMove={handleTouchDragPointerMove}
+            onTouchDragPointerUp={handleTouchDragPointerUp}
+            onTouchDragPointerCancel={handleTouchDragPointerCancel}
             onViewPlayer={onViewPlayer}
             draggingPlayerId={draggingPlayerId}
             conflictByPlayerId={conflictByPlayerId}
@@ -3595,57 +3815,114 @@ function MyBoardWorkspace({
         </button>
 
         <section className="draft-board-main" aria-label="My draft board">
-          <section className={['draft-board-mobile-available', mobileAvailableOpen ? 'is-open' : ''].filter(Boolean).join(' ')}>
-            <button
-              type="button"
-              className="draft-board-mobile-available__summary"
-              aria-expanded={mobileAvailableOpen}
-              onClick={() => setMobileAvailableOpen((current) => !current)}
-            >
-              <span>{mobileAvailableOpen ? 'Hide Available Players' : 'View Available Players'}</span>
-            </button>
-            {mobileAvailableOpen ? (
-              <>
-                <div className="draft-board-workspace__controls">
-                  <DraftSegmentedControl
-                    label="Available player scope"
-                    options={BOARD_SCOPE_OPTIONS}
-                    value={boardScope}
-                    onChange={onBoardScopeChange}
-                    className="draft-segmented-control--split"
-                  />
-                  <input
-                    value={query}
-                    onChange={(event) => setQuery(event.target.value)}
-                    placeholder="Search players"
-                    aria-label="Search available draft players"
-                  />
-                  <DraftAvailabilityFilter
-                    options={availabilityOptions}
-                    value={availabilityFilter}
-                    onChange={onAvailabilityFilterChange}
-                  />
-                  <PositionFilter positions={positions} activePosition={activePosition} onChange={onPositionChange} />
-                </div>
-                <DraftAvailablePlayerList
-                  players={visibleAvailablePlayers}
-                  darkMode={darkMode}
-                  metricKey={cardMetricKey}
-                  onAdd={onAdd}
-                  onDragStart={handleDragStart}
-                  onDragEnd={handleDragEnd}
-                  onViewPlayer={onViewPlayer}
-                  draggingPlayerId={draggingPlayerId}
-                  conflictByPlayerId={conflictByPlayerId}
+          <div className="draft-board-mobile-lane-filter">
+            <div className="draft-board-mobile-lane-filter__row">
+              <button
+                type="button"
+                className={['draft-board-mobile-filter-toggle', mobileFilterIsActive ? 'is-active' : ''].filter(Boolean).join(' ')}
+                aria-expanded={mobileFiltersOpen}
+                aria-controls="draft-board-mobile-filters"
+                aria-label={mobileFiltersOpen ? 'Close board filters' : 'Open board filters'}
+                onClick={toggleMobileFilters}
+              >
+                <DraftFilterIcon />
+              </button>
+              <button
+                type="button"
+                className={['draft-board-mobile-available-chip', mobileAvailableOpen ? 'is-active' : ''].filter(Boolean).join(' ')}
+                aria-expanded={mobileAvailableOpen}
+                aria-controls="draft-board-mobile-available"
+                aria-label={mobileAvailableOpen ? 'Close available players' : 'Open available players'}
+                onClick={toggleMobileAvailable}
+              >
+                Available
+              </button>
+              {mobileFilterPositions.length > 0 ? (
+                <PositionFilter
+                  positions={mobileFilterPositions}
+                  activePosition={mobileFilterPosition}
+                  onChange={handleMobilePositionChange}
+                  ariaLabel={mobileAvailableOpen ? 'Available player positions' : 'Draft board positions'}
                 />
-              </>
-            ) : null}
-          </section>
-
-          {boardViewMode === 'position' ? (
-            <div className="draft-board-mobile-lane-filter">
-              <PositionFilter positions={lanePositions} activePosition={activeLane} onChange={setActiveLane} />
+              ) : null}
             </div>
+            {mobileAvailableOpen ? (
+              <div
+                id="draft-board-mobile-available-filters"
+                className="draft-board-mobile-filters is-available"
+              >
+                <DraftSegmentedControl
+                  label="Available player scope"
+                  options={MOBILE_AVAILABLE_SCOPE_OPTIONS}
+                  value={boardScope}
+                  onChange={onBoardScopeChange}
+                  className="draft-board-mobile-filters__available-scope"
+                />
+                <input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Search players"
+                  aria-label="Search available draft players"
+                  className="draft-board-mobile-filters__available-search"
+                />
+                <DraftAvailabilityFilter
+                  options={availabilityOptions}
+                  value={availabilityFilter}
+                  onChange={onAvailabilityFilterChange}
+                  className="draft-board-mobile-filters__available-filter"
+                />
+              </div>
+            ) : mobileFiltersOpen ? (
+              <div
+                id="draft-board-mobile-filters"
+                className="draft-board-mobile-filters"
+              >
+                <DraftSegmentedControl
+                  label="Board view"
+                  options={MY_BOARD_SORT_OPTIONS}
+                  value={boardViewMode}
+                  onChange={onBoardViewModeChange}
+                  className="draft-board-view-control"
+                />
+                <label className="draft-board-mobile-filters__label-select">
+                  <span>Card labels</span>
+                  <select
+                    aria-label="Board card labels"
+                    value={cardMetricKey}
+                    onChange={(event) => onCardMetricChange(event.target.value)}
+                  >
+                    {DRAFT_BOARD_CARD_METRIC_OPTIONS.map((option) => (
+                      <option key={option.id} value={option.id}>{option.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <DraftByeConflictToggle
+                  checked={highlightByeConflicts && byeConflictAvailable}
+                  disabled={!byeConflictAvailable}
+                  onChange={onHighlightByeConflictsChange}
+                />
+              </div>
+            ) : null}
+          </div>
+
+          {mobileAvailableOpen ? (
+            <section id="draft-board-mobile-available" className="draft-board-mobile-available is-open" aria-label="Available players">
+              <DraftAvailablePlayerList
+                players={visibleAvailablePlayers}
+                darkMode={darkMode}
+                metricKey={cardMetricKey}
+                onAdd={onAdd}
+                onDragStart={handleDragStart}
+                onDragEnd={handleDragEnd}
+                onTouchDragPointerDown={handleTouchDragPointerDown}
+                onTouchDragPointerMove={handleTouchDragPointerMove}
+                onTouchDragPointerUp={handleTouchDragPointerUp}
+                onTouchDragPointerCancel={handleTouchDragPointerCancel}
+                onViewPlayer={onViewPlayer}
+                draggingPlayerId={draggingPlayerId}
+                conflictByPlayerId={conflictByPlayerId}
+              />
+            </section>
           ) : null}
 
           <div className="draft-scroll-region draft-board-lanes-shell">
@@ -3661,14 +3938,20 @@ function MyBoardWorkspace({
                   metricKey={cardMetricKey}
                   onDragStart={handleDragStart}
                   onDragEnd={handleDragEnd}
+                  onTouchDragPointerDown={handleTouchDragPointerDown}
+                  onTouchDragPointerMove={handleTouchDragPointerMove}
+                  onTouchDragPointerUp={handleTouchDragPointerUp}
+                  onTouchDragPointerCancel={handleTouchDragPointerCancel}
                   onDropPlayer={handleDropPlayer}
                   onMove={onMove}
                   onRemove={onRemove}
                   onViewPlayer={onViewPlayer}
-                  allowDrop={false}
+                  allowDrop
                   allowReorder
                   activeMobile
                   draggingPlayerId={draggingPlayerId}
+                  dropTarget={dropTarget}
+                  onDragTargetChange={handleDragTargetChange}
                   conflictByPlayerId={conflictByPlayerId}
                 />
               ) : lanePositions.map((position) => (
@@ -3841,6 +4124,10 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
   const [analyticsAxes, setAnalyticsAxes] = useState({ xAxis: 'market', yAxis: 'rating' });
   const [modelWeights, setModelWeights] = useState(() => normalizeDraftModelWeights(DEFAULT_DRAFT_MODEL_WEIGHTS));
   const [modelWeightsReady, setModelWeightsReady] = useState(false);
+  const { registerDraftScope, publishDraftState } = useDraftSync();
+  const draftSyncStateRef = useRef(null);
+  const draftSyncSkipNextPublishRef = useRef(true);
+  const draftSyncRemoteApplyRef = useRef(false);
   const [draftViewModelState, setDraftViewModelState] = useState({
     building: false,
     model: null,
@@ -3952,6 +4239,58 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
       weights: modelWeights,
     });
   }, [modelWeightsReady, selectedLeagueId, season, draftMeta?.draft_id, modelWeights]);
+
+  const draftSyncState = useMemo(() => ({
+    schemaVersion: 1,
+    board: {
+      byPosition: boardState.boardByPosition,
+      overall: boardState.overallIds,
+    },
+    modelWeights,
+    keeperIds: [...keeperIds].map(String).filter(Boolean),
+  }), [boardState.boardByPosition, boardState.overallIds, keeperIds, modelWeights]);
+
+  useEffect(() => {
+    draftSyncStateRef.current = draftSyncState;
+  }, [draftSyncState]);
+
+  const applyRemoteDraftState = useCallback((remoteState) => {
+    draftSyncRemoteApplyRef.current = true;
+    setBoardState(normalizeStoredBoard({
+      byPosition: remoteState?.board?.byPosition,
+      overall: remoteState?.board?.overall,
+    }, players));
+    setModelWeights(normalizeDraftModelWeights(remoteState?.modelWeights ?? DEFAULT_DRAFT_MODEL_WEIGHTS));
+    setKeeperIds(new Set(Array.isArray(remoteState?.keeperIds) ? remoteState.keeperIds.map(String).filter(Boolean) : []));
+    setBoardReady(true);
+    setKeepersReady(true);
+    setModelWeightsReady(true);
+  }, [players]);
+
+  useEffect(() => {
+    if (!boardReady || !keepersReady || !modelWeightsReady || !selectedLeagueId || !season || !draftMeta?.draft_id || !players) return undefined;
+    draftSyncSkipNextPublishRef.current = true;
+    return registerDraftScope({
+      leagueId: selectedLeagueId,
+      season,
+      draftId: draftMeta.draft_id,
+      getLocalState: () => draftSyncStateRef.current,
+      onRemoteState: applyRemoteDraftState,
+    });
+  }, [applyRemoteDraftState, boardReady, draftMeta?.draft_id, keepersReady, modelWeightsReady, players, registerDraftScope, season, selectedLeagueId]);
+
+  useEffect(() => {
+    if (!boardReady || !keepersReady || !modelWeightsReady || !selectedLeagueId || !season || !draftMeta?.draft_id || !players) return;
+    if (draftSyncSkipNextPublishRef.current) {
+      draftSyncSkipNextPublishRef.current = false;
+      return;
+    }
+    if (draftSyncRemoteApplyRef.current) {
+      draftSyncRemoteApplyRef.current = false;
+      return;
+    }
+    publishDraftState(draftSyncStateRef.current);
+  }, [boardState, keepersReady, keeperIds, modelWeights, modelWeightsReady, players, publishDraftState, season, selectedLeagueId, boardReady, draftMeta?.draft_id]);
 
   const draftStatsSeason = useMemo(
     () => getDraftStatsSeason(draftMeta?.season ?? season),
@@ -4605,34 +4944,6 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
             onChange={setHighlightByeConflicts}
           />
         </div>
-        <div className="draft-board-page-mobile-controls" aria-label="Board controls">
-          <div className="draft-board-page-mobile-controls__primary">
-            <DraftSegmentedControl
-              label="Board view"
-              options={MY_BOARD_SORT_OPTIONS}
-              value={myBoardSortMode}
-              onChange={setMyBoardSortMode}
-              className="draft-board-view-control"
-            />
-            <label className="draft-board-page-mobile-controls__label-select">
-              <span>Card labels</span>
-              <select
-                aria-label="Board card labels"
-                value={draftBoardCardMetric}
-                onChange={(event) => setDraftBoardCardMetric(event.target.value)}
-              >
-                {DRAFT_BOARD_CARD_METRIC_OPTIONS.map((option) => (
-                  <option key={option.id} value={option.id}>{option.label}</option>
-                ))}
-              </select>
-            </label>
-          </div>
-          <DraftByeConflictToggle
-            checked={highlightByeConflicts && byeConflictAvailable}
-            disabled={!byeConflictAvailable}
-            onChange={setHighlightByeConflicts}
-          />
-        </div>
         <MyBoardWorkspace
           boardByPosition={eligibleOrderedBoardByPosition}
           overallBoardIds={eligibleBoardIds}
@@ -4647,6 +4958,7 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
           onRemove={removeFromBoard}
           onViewPlayer={onViewPlayer}
           boardViewMode={myBoardSortMode}
+          onBoardViewModeChange={setMyBoardSortMode}
           activePosition={positionFilter}
           onPositionChange={setPositionFilter}
           query={query}
@@ -4659,7 +4971,11 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
           rosterSlots={rosterSlots}
           rosterConflictByPlayerId={rosterTrayByeConflicts}
           cardMetricKey={draftBoardCardMetric}
+          onCardMetricChange={setDraftBoardCardMetric}
           conflictByPlayerId={visibleByeConflicts}
+          highlightByeConflicts={highlightByeConflicts}
+          byeConflictAvailable={byeConflictAvailable}
+          onHighlightByeConflictsChange={setHighlightByeConflicts}
           displaySize={displaySize}
         />
       </div>

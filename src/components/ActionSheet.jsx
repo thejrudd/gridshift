@@ -22,10 +22,12 @@ export default function ActionSheet({
   leagueSeasonSwitching = null,
   onLeagueSeasonChange,
   onSwitchLeague,
+  onDraftSync,
 }) {
   const hasPicks = predictionCount > 0;
   const isPredictions = activeTab === 'predictions';
   const showLeagueControls = Boolean(league);
+  const showDraftSync = activeTab === 'draft' && Boolean(onDraftSync);
   const years = leagueSeasonOptions?.length
     ? leagueSeasonOptions
     : league
@@ -90,6 +92,18 @@ export default function ActionSheet({
                 </div>
               )}
               <ActionRow label="Switch League" onClick={onSwitchLeague} />
+              {showDraftSync && (
+                <>
+                  <Divider />
+                  <ActionRow label="Draft Sync" onClick={onDraftSync} dataTour="draft-sync" />
+                </>
+              )}
+              <Divider />
+            </>
+          )}
+          {!showLeagueControls && showDraftSync && (
+            <>
+              <ActionRow label="Draft Sync" onClick={onDraftSync} dataTour="draft-sync" />
               <Divider />
             </>
           )}
@@ -165,11 +179,12 @@ export default function ActionSheet({
   );
 }
 
-function ActionRow({ label, onClick, disabled, destructive }) {
+function ActionRow({ label, onClick, disabled, destructive, dataTour }) {
   return (
     <button
       onClick={disabled ? undefined : onClick}
       disabled={disabled}
+      data-tour={dataTour}
       className="w-full flex items-center py-4 text-left transition-opacity active:opacity-50"
       style={{
         color: disabled

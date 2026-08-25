@@ -379,4 +379,24 @@ export const WHATS_NEW = [
       },
     ],
   },
+  {
+    version: '8.7.0',
+    title: 'Draft Sync Across Devices',
+    features: [
+      {
+        id: 'draft-sync-across-devices',
+        name: 'Draft Sync across devices',
+        description: 'Pair your devices to keep War Room and Draft Board plans available wherever you draft.',
+        requiresCapability: 'draftSync',
+        steps: [{
+          route: { activeTab: 'draft', draftView: 'war-room' },
+          anchor: '[data-tour="draft-sync"]',
+          anchorMobile: '[data-tour="app-menu"]',
+          title: 'Keep your draft plan in sync',
+          body: 'Open Draft Sync from Draft tools to pair another device with a one-time code. Your War Room and Draft Board plan stays available across devices, while local work remains available if the server is offline.',
+          placement: 'auto',
+        }],
+      },
+    ],
+  },
 ];

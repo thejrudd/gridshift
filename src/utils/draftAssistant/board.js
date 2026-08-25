@@ -148,6 +148,20 @@ export function movePlayerToOrderedBoardPosition(boardState, position, playerId,
   const id = String(playerId ?? '');
   if (!id) return current;
 
+  if (normalizedPosition === 'OVERALL') {
+    let nextBoard = current.boardByPosition;
+    if (!flattenBoardIds(nextBoard).includes(id)) {
+      if (!player) return current;
+      nextBoard = addPlayerToBoard(nextBoard, player);
+    }
+
+    const nextOverall = createOrderedBoardState(nextBoard, current.overallIds);
+    return createOrderedBoardState(
+      nextBoard,
+      moveIdBefore(nextOverall.overallIds, id, beforePlayerId),
+    );
+  }
+
   const nextBoard = movePlayerToBoardPosition(current.boardByPosition, normalizedPosition, id, beforePlayerId, player);
   if (nextBoard === current.boardByPosition) return current;
 

@@ -20,6 +20,7 @@ export default function Sidebar({
   onImportJSON,
   onRandom,
   onReset,
+  onDraftSync,
   isInstallable,
   isInstalled,
   onInstall,
@@ -257,6 +258,9 @@ export default function Sidebar({
         {(activeTab === 'fantasy' || activeTab === 'league' || activeTab === 'trade' || activeTab === 'draft') && isConnected && (
           <SidebarAction label="Disconnect Sleeper" onClick={disconnect} />
         )}
+        {activeTab === 'draft' && onDraftSync && (
+          <SidebarAction label="Draft Sync" onClick={onDraftSync} dataTour="draft-sync" />
+        )}
         {isInstallable && !isInstalled && (
           <SidebarAction label="Install App" onClick={onInstall} />
         )}
@@ -370,7 +374,7 @@ export default function Sidebar({
           className="sidebar-version"
           style={{ color: 'var(--color-label-tertiary)' }}
         >
-          v8.6.2
+          v8.7.0
         </div>
       </div>
     </aside>

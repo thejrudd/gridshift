@@ -114,6 +114,7 @@ function emptyConflict(details) {
     week: details.week,
     matchingPlayerIds: [],
     matchingPlayerNames: [],
+    matchingPlayerLabels: [],
     totalOverlaps: 0,
     exactPositionOverlaps: 0,
     severity: DRAFT_BYE_CONFLICT_SEVERITY.NONE,
@@ -216,6 +217,9 @@ export function buildDraftByeConflictModel({
       week: details.week,
       matchingPlayerIds: matchingPlayers.map((player) => player.playerId),
       matchingPlayerNames: matchingPlayers.map((player) => player.name),
+      matchingPlayerLabels: matchingPlayers.map((player) => (
+        player.position ? `${player.name} (${player.position})` : player.name
+      )),
       totalOverlaps: matchingPlayers.length,
       exactPositionOverlaps,
       severity,
@@ -272,6 +276,9 @@ export function buildDraftRosterByeConflictModel({
       week: details.week,
       matchingPlayerIds: matchingPlayers.map((player) => player.playerId),
       matchingPlayerNames: matchingPlayers.map((player) => player.name),
+      matchingPlayerLabels: matchingPlayers.map((player) => (
+        player.position ? `${player.name} (${player.position})` : player.name
+      )),
       totalOverlaps: matchingPlayers.length,
       exactPositionOverlaps,
       severity: exactPositionOverlaps > 0

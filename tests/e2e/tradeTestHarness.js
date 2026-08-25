@@ -56,6 +56,17 @@ export async function installTradeFixtures(page, overrides = {}) {
     });
   });
 
+  await page.route('**/api/draft-sync/status', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ok: true,
+        draftSync: { enabled: true, ready: true },
+      }),
+    });
+  });
+
   await page.route('https://api.sleeper.app/v1/**', async (route) => {
     const url = new URL(route.request().url());
     const path = url.pathname;

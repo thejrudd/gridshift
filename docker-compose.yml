@@ -55,6 +55,14 @@ services:
 
       GRIDSHIFT_COOKIE_SECURE: ${GRIDSHIFT_COOKIE_SECURE:-true}
 
+      GRIDSHIFT_DRAFT_SYNC_ENABLED: ${GRIDSHIFT_DRAFT_SYNC_ENABLED:-false}
+      GRIDSHIFT_DRAFT_SYNC_DATA_DIR: ${GRIDSHIFT_DRAFT_SYNC_DATA_DIR:-/data}
+      GRIDSHIFT_DRAFT_SYNC_PAIRING_TTL_MS: ${GRIDSHIFT_DRAFT_SYNC_PAIRING_TTL_MS:-600000}
+      GRIDSHIFT_DRAFT_SYNC_MAX_PAYLOAD_BYTES: ${GRIDSHIFT_DRAFT_SYNC_MAX_PAYLOAD_BYTES:-65536}
+
+    volumes:
+      - gridshift_api_data:/data
+
     healthcheck:
       test:
         - CMD
@@ -70,6 +78,7 @@ services:
       start_period: 10s
 
     restart: unless-stopped
+
   cloudflared:
     image: cloudflare/cloudflared:latest
     command: tunnel --no-autoupdate run
@@ -78,3 +87,6 @@ services:
     depends_on:
       - gridshift
     restart: unless-stopped
+
+volumes:
+  gridshift_api_data:
