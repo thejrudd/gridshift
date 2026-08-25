@@ -19,6 +19,8 @@ Open bugs are listed first, deferred work next, fixed bugs below. Add new entrie
 
 | Bug | Fixed In |
 |-----|----------|
+| Draft Sync's setup dialog did not expose the pairing-code field for the device joining an existing synced draft plan, and generated-code setup had no clear way to cancel back to the unpaired choices. | v8.7.0 |
+| Draft Board hid the remove control after a saved player was drafted by another manager, leaving the stale target on the board with no visible way to clear it. | v8.7.0 |
 | The live draft banner clock renders long slow-draft pick timers as minutes-only (e.g. 419:25), overflowing its clock cell on laptop widths instead of formatting as HH:MM:SS, and the banner does not scale responsively to the viewport it is displayed on. | v8.5.1 |
 | Draft Results can show the Projected Selection as unavailable ("Waiting for draft model") while Draft Board simultaneously projects a player, and the projected player can be one who is not available in the draft — already rostered in dynasty leagues, or excluded by the Sleeper draft player pool (rookies-only, vets-only, or all players). | v8.5.1 |
 | Fantasy Rankings season fantasy points can disagree with the Statistics Stats drilldown for the same player, league, and season (e.g. Matthew Stafford 2025: 291.0 in Rankings vs 293.98 in Statistics against a true score of 290.98), indicating the Statistics fantasy-value path computes points differently from the league scoring used by Rankings. | v8.5.1 |

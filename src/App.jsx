@@ -9,6 +9,7 @@ import useBodyScrollLock from './hooks/useBodyScrollLock';
 import useServiceWorkerUpdate from './hooks/useServiceWorkerUpdate';
 import useWhatsNew from './hooks/useWhatsNew';
 import useOnboardingTour from './hooks/useOnboardingTour';
+import useDraftSync from './hooks/useDraftSync.js';
 import { ONBOARDING_TOUR } from './data/onboardingTour';
 import { ONBOARDING_PHASE } from './utils/onboardingTour';
 import UpdateBanner from './components/UpdateBanner';
@@ -24,6 +25,7 @@ import DraftSubNav from './components/DraftSubNav';
 import ActionSheet from './components/ActionSheet';
 import Sidebar from './components/Sidebar';
 import { FantasyProvider, useFantasyLeague, useFantasyStats } from './context/SleeperContext';
+import { DraftSyncProvider } from './context/DraftSyncContext.jsx';
 import { getDraft, getLeagueDrafts } from './api/sleeperApi';
 import {
   getDraftResultsPresentation,
@@ -53,6 +55,7 @@ import ScoringOverrideBanner from './components/companion/ScoringOverrideBanner'
 import Spinner from './components/ui/Spinner';
 import SectionSkeleton from './components/ui/SectionSkeleton';
 import SeasonChip from './components/ui/SeasonChip';
+import DraftSyncModal from './components/DraftSyncModal.jsx';
 
 const ExportPreview = lazy(() => import('./components/ExportPreview'));
 const PredictionsRedesign = lazy(() => import('./components/predictions/PredictionsRedesign'));
@@ -526,6 +529,7 @@ function AppInner() {
     setTeamGameResults,
   } = usePredictions();
   const { darkMode, toggleDarkMode, favoriteTeam, displaySize, setDisplaySize } = useTheme();
+  const { enabled: draftSyncEnabled } = useDraftSync();
   const fileInputRef = useRef(null);
   const contentAreaRef = useRef(null);
   const pendingContentScrollTopRef = useRef(null);
@@ -559,7 +563,16 @@ function AppInner() {
   const {
     phase: onboardingPhase, begin: beginOnboarding, startManual: startManualOnboarding, complete: completeOnboarding,
   } = useOnboardingTour({ isFirstRun, hasLeague });
+  const whatsNewEntries = useMemo(() => whatsNewPending
+    .map((entry) => ({
+      ...entry,
+      features: entry.features.filter((feature) => (
+        feature.requiresCapability !== 'draftSync' || draftSyncEnabled
+      )),
+    }))
+    .filter((entry) => entry.features.length > 0), [draftSyncEnabled, whatsNewPending]);
   const [teamPickerOpen, setTeamPickerOpen] = useState(false);
+  const [draftSyncOpen, setDraftSyncOpen] = useState(false);
   const [leagueSwitcherOpen, setLeagueSwitcherOpen] = useState(false);
   const [draftNavState, setDraftNavState] = useState({
     loading: false,
@@ -1184,6 +1197,7 @@ function AppInner() {
   const handleInstall = () => { triggerInstall(); setActionSheetOpen(false); };
   const handleImportClick = () => { fileInputRef.current?.click(); setActionSheetOpen(false); };
   const handleMyTeam = () => { setTeamPickerOpen(true); setActionSheetOpen(false); };
+  const handleDraftSync = () => { setDraftSyncOpen(true); setActionSheetOpen(false); };
 
   const prepareOnboardingLayout = useCallback(() => {
     setActionSheetOpen(false);
@@ -1318,6 +1332,7 @@ function AppInner() {
         onRandom={handleRandom}
         onAppTour={handleStartAppTour}
         onReset={handleReset}
+        onDraftSync={activeTab === 'draft' && draftSyncEnabled ? handleDraftSync : null}
         isInstallable={isInstallable}
         isInstalled={isInstalled}
         onInstall={handleInstall}
@@ -1901,6 +1916,7 @@ function AppInner() {
             setActionSheetOpen(false);
             setLeagueSwitcherOpen(true);
           }}
+          onDraftSync={draftSyncEnabled ? handleDraftSync : null}
         />
       )}
 
@@ -1926,10 +1942,10 @@ function AppInner() {
           />
         </Suspense>
       )}
-      {hasLeague && !needRefresh && onboardingPhase === ONBOARDING_PHASE.idle && whatsNewPending.length > 0 && !tourActive && (
+      {hasLeague && !needRefresh && onboardingPhase === ONBOARDING_PHASE.idle && whatsNewEntries.length > 0 && !tourActive && (
         <Suspense fallback={null}>
           <WhatsNewModal
-            entries={whatsNewPending}
+            entries={whatsNewEntries}
             onStartTour={() => {
               setTourDemoMode(null);
               setTourActive(true);
@@ -1938,10 +1954,10 @@ function AppInner() {
           />
         </Suspense>
       )}
-      {hasLeague && !needRefresh && onboardingPhase === ONBOARDING_PHASE.idle && tourActive && whatsNewPending.length > 0 && (
+      {hasLeague && !needRefresh && onboardingPhase === ONBOARDING_PHASE.idle && tourActive && whatsNewEntries.length > 0 && (
         <Suspense fallback={null}>
           <TourOverlay
-            entries={whatsNewPending}
+            entries={whatsNewEntries}
             navigate={applyRoute}
             currentRoute={appRoute}
             context={{ draftPhase: draftResultsPresentation.phase, ...draftTourContext }}
@@ -1989,6 +2005,10 @@ function AppInner() {
         <Suspense fallback={<ModalLoading label="Loading legal information" />}>
           <LegalModal onClose={() => setLegalOpen(false)} />
         </Suspense>
+      )}
+
+      {draftSyncOpen && draftSyncEnabled && (
+        <DraftSyncModal onClose={() => setDraftSyncOpen(false)} />
       )}
 
       {leagueSwitcherOpen && (
@@ -2056,7 +2076,9 @@ function AppInner() {
 function App() {
   return (
     <FantasyProvider>
-      <AppInner />
+      <DraftSyncProvider>
+        <AppInner />
+      </DraftSyncProvider>
     </FantasyProvider>
   );
 }

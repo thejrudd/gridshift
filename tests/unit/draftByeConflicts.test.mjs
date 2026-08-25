@@ -48,6 +48,7 @@ test('redraft compares available saved targets and own picks while excluding oth
     week: 7,
     matchingPlayerIds: ['b', 'c'],
     matchingPlayerNames: ['Beta Runner', 'Current Pick'],
+    matchingPlayerLabels: ['Beta Runner (RB)', 'Current Pick (WR)'],
     totalOverlaps: 2,
     exactPositionOverlaps: 1,
     severity: DRAFT_BYE_CONFLICT_SEVERITY.HIGH,
