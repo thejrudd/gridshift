@@ -16,6 +16,10 @@ export default function Sidebar({
   onLegal,
   onAppTour,
   onGuide,
+  onExportImage,
+  predictionShareReady = false,
+  predictionShareReason = '',
+  predictionShareBlockedLabel = 'Complete Picks To Share',
   onExportJSON,
   onImportJSON,
   onRandom,
@@ -250,6 +254,13 @@ export default function Sidebar({
         <SidebarAction label="Guide" onClick={onGuide} dataTour="app-guide" />
         {activeTab === 'predictions' && (
           <>
+            <SidebarAction
+              label={predictionShareReady ? 'Create Share Card' : predictionShareBlockedLabel}
+              onClick={onExportImage}
+              disabled={!predictionShareReady}
+              title={predictionShareReason}
+              dataTour="prediction-share-card"
+            />
             <SidebarAction label="Export JSON" onClick={onExportJSON} disabled={predictionCount === 0} secondary />
             <SidebarAction label="Import JSON" onClick={onImportJSON} secondary />
             <SidebarAction label="Randomize Predictions" onClick={onRandom} secondary />
@@ -260,6 +271,9 @@ export default function Sidebar({
         )}
         {activeTab === 'draft' && onDraftSync && (
           <SidebarAction label="Draft Sync" onClick={onDraftSync} dataTour="draft-sync" />
+        )}
+        {activeTab === 'predictions' && onDraftSync && (
+          <SidebarAction label="Device Sync" onClick={onDraftSync} dataTour="prediction-device-sync" />
         )}
         {isInstallable && !isInstalled && (
           <SidebarAction label="Install App" onClick={onInstall} />
@@ -374,7 +388,7 @@ export default function Sidebar({
           className="sidebar-version"
           style={{ color: 'var(--color-label-tertiary)' }}
         >
-          v8.7.0
+          v8.8.0
         </div>
       </div>
     </aside>
@@ -457,12 +471,13 @@ function AlphaBadge() {
   return <StatusBadge kind="alpha" />;
 }
 
-function SidebarAction({ label, onClick, disabled, destructive, secondary, dataTour }) {
+function SidebarAction({ label, onClick, disabled, destructive, secondary, dataTour, title }) {
   return (
     <button
       data-tour={dataTour}
       onClick={disabled ? undefined : onClick}
       disabled={disabled}
+      title={title || undefined}
       className={`sidebar-action-item${destructive ? ' destructive' : ''}`}
       style={secondary && !destructive ? { color: 'var(--color-label-tertiary)' } : undefined}
     >

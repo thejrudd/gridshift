@@ -21,6 +21,10 @@ function scopeKey(scope) {
   return JSON.stringify([scope.sleeperUserId, scope.leagueId, scope.season, scope.draftId]);
 }
 
+function predictionScopeKey(scope) {
+  return JSON.stringify([scope.sleeperUserId, scope.season]);
+}
+
 function storeError(message, kind, details = {}) {
   const error = new Error(message);
   error.kind = kind;
@@ -66,6 +70,14 @@ export function createDraftSyncStore({ config, now = () => Date.now(), Database 
       initial_choice_at INTEGER,
       updated_at INTEGER NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS prediction_states (
+      scope_key TEXT PRIMARY KEY,
+      sleeper_user_id TEXT NOT NULL,
+      season TEXT NOT NULL,
+      revision INTEGER NOT NULL DEFAULT 0,
+      payload_json TEXT,
+      updated_at INTEGER NOT NULL
+    );
     CREATE INDEX IF NOT EXISTS pairings_expiry_idx ON pairings (expires_at);
   `);
 
@@ -99,6 +111,9 @@ export function createDraftSyncStore({ config, now = () => Date.now(), Database 
     stateByScope: db.prepare('SELECT revision, payload_json, initial_choice_at, updated_at FROM draft_states WHERE scope_key = ?'),
     insertState: db.prepare('INSERT INTO draft_states (scope_key, sleeper_user_id, league_id, season, draft_id, revision, payload_json, initial_choice_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'),
     updateState: db.prepare('UPDATE draft_states SET revision = ?, payload_json = ?, initial_choice_at = ?, updated_at = ? WHERE scope_key = ? AND revision = ?'),
+    predictionStateByScope: db.prepare('SELECT revision, payload_json, updated_at FROM prediction_states WHERE scope_key = ?'),
+    insertPredictionState: db.prepare('INSERT INTO prediction_states (scope_key, sleeper_user_id, season, revision, payload_json, updated_at) VALUES (?, ?, ?, ?, ?, ?)'),
+    updatePredictionState: db.prepare('UPDATE prediction_states SET revision = ?, payload_json = ?, updated_at = ? WHERE scope_key = ? AND revision = ?'),
     revokeDevice: db.prepare('UPDATE devices SET revoked_at = ? WHERE token_hash = ? AND revoked_at IS NULL'),
   };
 
@@ -228,6 +243,34 @@ export function createDraftSyncStore({ config, now = () => Date.now(), Database 
     });
   }
 
+  function getPredictionState(scope) {
+    const row = statements.predictionStateByScope.get(predictionScopeKey(scope));
+    return {
+      revision: row ? Number(row.revision) : 0,
+      state: row ? JSON.parse(row.payload_json) : null,
+      updatedAt: row ? Number(row.updated_at) : null,
+    };
+  }
+
+  function putPredictionState(scope, expectedRevision, state, updatedAt) {
+    const key = predictionScopeKey(scope);
+    const payloadJson = JSON.stringify(state);
+    return transaction(() => {
+      const current = statements.predictionStateByScope.get(key);
+      const currentRevision = current ? Number(current.revision) : 0;
+      if (currentRevision !== expectedRevision) return { conflict: true, ...getPredictionState(scope) };
+
+      const nextRevision = currentRevision + 1;
+      if (current) {
+        const updated = statements.updatePredictionState.run(nextRevision, payloadJson, updatedAt, key, expectedRevision);
+        if (changesFrom(updated) !== 1) return { conflict: true, ...getPredictionState(scope) };
+      } else {
+        statements.insertPredictionState.run(key, scope.sleeperUserId, scope.season, nextRevision, payloadJson, updatedAt);
+      }
+      return { conflict: false, revision: nextRevision, state, updatedAt };
+    });
+  }
+
   return Object.freeze({
     databasePath,
     getDevice,
@@ -236,6 +279,8 @@ export function createDraftSyncStore({ config, now = () => Date.now(), Database 
     getPairingStatus,
     getState,
     putState,
+    getPredictionState,
+    putPredictionState,
     revokeDevice,
     close() { db.close(); },
   });

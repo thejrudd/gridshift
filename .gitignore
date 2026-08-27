@@ -38,6 +38,7 @@ tests/*
 tests/e2e/*
 !tests/e2e/companion-responsive.spec.js
 !tests/e2e/display-responsive.spec.js
+!tests/e2e/draft-sync.spec.js
 !tests/e2e/draft-injury-context.spec.js
 !tests/e2e/fantasy-live-workbench.spec.js
 !tests/e2e/league-history.spec.js

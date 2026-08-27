@@ -2,8 +2,19 @@ import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useSt
 import { loadScheduleData } from './utils/scheduleParser';
 import { loadSeasonSchedule } from './utils/seasonSchedule';
 import { usePredictions } from './context/PredictionContext';
+import { PredictionProvider } from './context/PredictionContext.jsx';
 import { useTheme } from './context/ThemeContext';
 import { exportAsJSON, importFromJSON } from './utils/exportImport';
+import {
+  buildCanonicalGamePicks,
+  createScheduleFingerprint,
+  getCanonicalScheduleGameIds,
+  materializePredictionsFromSnapshot,
+  validatePlayoffPicks,
+  validatePredictionCompletion,
+  validatePredictionSnapshot,
+} from './utils/predictionSnapshot';
+import { decodePredictionShareUrl } from './utils/predictionShareCodec';
 import { usePWAInstall } from './hooks/usePWAInstall';
 import useBodyScrollLock from './hooks/useBodyScrollLock';
 import useServiceWorkerUpdate from './hooks/useServiceWorkerUpdate';
@@ -144,6 +155,33 @@ function ModalLoading({ label = 'Loading' }) {
           <Spinner size="sm" />
           <span className="text-sm" style={{ color: 'var(--color-label-secondary)' }}>{label}...</span>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function PredictionSyncNotice({ status, conflict, onResolve }) {
+  // Normal local-first saves are intentionally silent. The pick interaction is
+  // the primary feedback; this strip is reserved for states that need action.
+  if (status === 'local-only' || status === 'synced' || status === 'syncing') return null;
+  const label = {
+    syncing: 'Saving picks across your paired devices…',
+    offline: 'Offline — your picks are saved on this device.',
+    'waiting-for-primary': 'Waiting for the first forecast from your other device.',
+    'pairing-required': 'Pair this device in Draft Sync to sync predictions.',
+    'update-required': 'Update GridShift to sync this prediction set.',
+    conflict: 'Predictions changed on another device.',
+  }[status] ?? 'Prediction sync is temporarily unavailable.';
+  return (
+    <div className="page-frame-data mb-3 px-1">
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg px-3 py-2 text-xs" style={{ background: 'var(--color-fill-tertiary)', border: '1px solid var(--color-separator)', color: 'var(--color-label-secondary)' }}>
+        <span>{label}</span>
+        {status === 'conflict' && conflict && (
+          <span className="flex items-center gap-2">
+            <button type="button" className="font-bold" style={{ color: 'var(--color-accent)' }} onClick={() => onResolve('server')}>Use other device</button>
+            <button type="button" className="font-bold" style={{ color: 'var(--color-accent)' }} onClick={() => onResolve('local')}>Keep this device</button>
+          </span>
+        )}
       </div>
     </div>
   );
@@ -523,10 +561,20 @@ function AppInner() {
     getGamePredictionCounts,
     resetAllPredictions,
     predictions,
+    predictionSeason,
+    playoffPicks,
+    setPlayoffPicks,
     importPredictions,
+    predictionImportBackup,
+    restorePredictionImportBackup,
     generateRandomPredictions,
     setManualTeamRecord,
     setTeamGameResults,
+    setPredictionSyncActive,
+    setPredictionSyncScheduleFingerprint,
+    predictionSyncStatus,
+    predictionSyncConflict,
+    resolvePredictionSyncConflict,
   } = usePredictions();
   const { darkMode, toggleDarkMode, favoriteTeam, displaySize, setDisplaySize } = useTheme();
   const { enabled: draftSyncEnabled } = useDraftSync();
@@ -548,6 +596,11 @@ function AppInner() {
     return next;
   });
   const [exportPreviewOpen, setExportPreviewOpen] = useState(false);
+  const [sharedPredictionEnvelope, setSharedPredictionEnvelope] = useState(null);
+  const [sharedPredictionError, setSharedPredictionError] = useState('');
+  const [pendingPredictionShare, setPendingPredictionShare] = useState(
+    typeof window !== 'undefined' && /^#gs\d+\./.test(window.location.hash) ? window.location.hash : '',
+  );
   const [actionSheetOpen, setActionSheetOpen] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
   const [displaySettingsOpen, setDisplaySettingsOpen] = useState(false);
@@ -609,7 +662,6 @@ function AppInner() {
   }, [scoringOverridePaused]);
 
   const [predictionPickMode, setPredictionPickMode] = useState('record');
-  const [playoffPicks, setPlayoffPicks] = useState({});
 
   const { isInstallable, isInstalled, triggerInstall } = usePWAInstall();
 
@@ -1125,11 +1177,13 @@ function AppInner() {
   useEffect(() => {
     const parsedRoute = parseAppRoute(window.location.pathname, window.location.search);
     const canonicalPath = buildAppPath(parsedRoute);
+    const shareHash = /^#gs\d+\./.test(window.location.hash) ? window.location.hash : '';
+    const canonicalUrl = `${canonicalPath}${shareHash}`;
     const currentState = readHistoryState();
-    const currentPath = `${window.location.pathname}${window.location.search}`;
+    const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
 
-    if (canonicalPath !== currentPath || currentState._nav !== 'app') {
-      window.history.replaceState({ ...currentState, _nav: 'app' }, '', canonicalPath);
+    if (canonicalUrl !== currentPath || currentState._nav !== 'app') {
+      window.history.replaceState({ ...currentState, _nav: 'app' }, '', canonicalUrl);
     }
 
     setAppRoute((prev) => (isSameAppRoute(prev, parsedRoute) ? prev : parsedRoute));
@@ -1187,7 +1241,7 @@ function AppInner() {
   const handleRandom = () => {
     setActionSheetOpen(false);
     if (!window.confirm('This will replace all current predictions with random ones. Continue?')) return;
-    if (scheduleData) generateRandomPredictions(scheduleData.teams);
+    if (predictionTeams.length) generateRandomPredictions(predictionTeams);
   };
   const handleReset = () => {
     setActionSheetOpen(false);
@@ -1241,9 +1295,92 @@ function AppInner() {
   );
   const predictionTeams = predictionScheduleModel.teams;
   const predictionSchedule = predictionScheduleModel.schedule;
-  const predictionPickMap = useMemo(
-    () => buildPredictionPickMap(predictionSchedule?.weeks ?? [], predictions),
-    [predictionSchedule, predictions],
+
+  useEffect(() => {
+    setPredictionSyncActive(activeTab === 'predictions');
+  }, [activeTab, setPredictionSyncActive]);
+
+  useEffect(() => {
+    if (!predictionSchedule) return;
+    setPredictionSyncScheduleFingerprint(predictionSchedule.season, createScheduleFingerprint(predictionSchedule));
+  }, [predictionSchedule, setPredictionSyncScheduleFingerprint]);
+  const predictionShareState = useMemo(() => {
+    const mode = predictionPickMode === 'advanced' ? 'advanced' : 'record';
+    let advancedGamePicks = {};
+    if (mode === 'advanced') {
+      try {
+        advancedGamePicks = buildCanonicalGamePicks({ predictions, schedule: predictionSchedule });
+      } catch { advancedGamePicks = {}; }
+    }
+    const completion = validatePredictionCompletion({
+      records: predictions,
+      teams: predictionTeams,
+      mode,
+      gamePicks: mode === 'advanced' ? advancedGamePicks : {},
+      schedule: predictionSchedule,
+    });
+    const playoffs = validatePlayoffPicks({
+      playoffPicks,
+      records: completion.records,
+      teams: predictionTeams,
+    });
+    const errors = [...completion.errors, ...playoffs.errors];
+    if (Number(predictionSeason) !== Number(predictionSchedule?.season)) {
+      errors.push(`The ${predictionSeason} schedule is not available yet.`);
+    }
+    if (!sleeperUser?.user_id) errors.push('Connect Sleeper before creating a share card.');
+    let blockedLabel = '';
+    if (completion.errors.length) blockedLabel = 'Complete Regular Season To Share';
+    else if (playoffs.errors.length) blockedLabel = 'Complete Playoff Bracket To Share';
+    else if (!sleeperUser?.user_id) blockedLabel = 'Connect Sleeper To Share';
+    else if (Number(predictionSeason) !== Number(predictionSchedule?.season)) blockedLabel = 'Season Schedule Required To Share';
+    return { mode, ready: errors.length === 0, errors, blockedLabel };
+  }, [playoffPicks, predictionPickMode, predictionSchedule, predictionSeason, predictionTeams, predictions, sleeperUser]);
+
+  useEffect(() => {
+    const token = pendingPredictionShare;
+    if (!token || !predictionTeams.length || !predictionSchedule) return undefined;
+    let cancelled = false;
+    (async () => {
+      try {
+        const envelope = await decodePredictionShareUrl(token, {
+          scheduleGameIds: getCanonicalScheduleGameIds(predictionSchedule),
+          scheduleFingerprint: createScheduleFingerprint(predictionSchedule),
+        });
+        const sameSchedule = Number(envelope.snapshot.season) === Number(predictionSchedule.season);
+        const validation = validatePredictionSnapshot(envelope.snapshot, {
+          teams: predictionTeams,
+          ...(sameSchedule ? { schedule: predictionSchedule } : {}),
+        });
+        if (!validation.valid && sameSchedule) throw new Error(validation.errors[0]);
+        const sharedPredictions = materializePredictionsFromSnapshot(envelope.snapshot, {
+          teams: predictionTeams,
+          schedule: sameSchedule ? predictionSchedule : null,
+        });
+        if (!cancelled) {
+          setSharedPredictionEnvelope({
+            ...envelope,
+            predictions: sharedPredictions,
+            historical: !sameSchedule,
+          });
+          setSharedPredictionError('');
+          setPendingPredictionShare('');
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setSharedPredictionError(error?.message ?? 'This prediction share link could not be opened.');
+          setPendingPredictionShare('');
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [pendingPredictionShare, predictionSchedule, predictionTeams]);
+
+  const displayedPredictions = sharedPredictionEnvelope?.predictions ?? predictions;
+  const displayedPlayoffPicks = sharedPredictionEnvelope?.snapshot?.playoffPicks ?? playoffPicks;
+  const displayedPickMap = useMemo(
+    () => buildPredictionPickMap(predictionSchedule?.weeks ?? [], displayedPredictions),
+    [displayedPredictions, predictionSchedule],
   );
 
   const handlePredictionRecordChange = useCallback(({ teamId, record }) => {
@@ -1267,7 +1404,7 @@ function AppInner() {
       }
       return next;
     });
-  }, []);
+  }, [setPlayoffPicks]);
 
   const handleOpenPredictionTeam = useCallback((team) => {
     navigatePredictionTeam(team);
@@ -1327,12 +1464,16 @@ function AppInner() {
         onDisplay={() => setDisplaySettingsOpen(true)}
         onLegal={() => setLegalOpen(true)}
         onGuide={() => setGuideOpen(true)}
+        onExportImage={handleExportImage}
+        predictionShareReady={predictionShareState.ready}
+        predictionShareReason={predictionShareState.errors[0]}
+        predictionShareBlockedLabel={predictionShareState.blockedLabel}
         onExportJSON={handleExportJSON}
         onImportJSON={handleImportClick}
         onRandom={handleRandom}
         onAppTour={handleStartAppTour}
         onReset={handleReset}
-        onDraftSync={activeTab === 'draft' && draftSyncEnabled ? handleDraftSync : null}
+        onDraftSync={(activeTab === 'draft' || activeTab === 'predictions') && draftSyncEnabled ? handleDraftSync : null}
         isInstallable={isInstallable}
         isInstalled={isInstalled}
         onInstall={handleInstall}
@@ -1512,21 +1653,74 @@ function AppInner() {
 
           {activeTab === 'predictions' && (
             <Suspense fallback={<SectionLoading label="Loading predictions" />}>
+              <PredictionSyncNotice
+                status={predictionSyncStatus}
+                conflict={predictionSyncConflict}
+                onResolve={resolvePredictionSyncConflict}
+              />
+              {(sharedPredictionEnvelope || sharedPredictionError || predictionImportBackup) && (
+                <div className="page-frame-data mb-4 px-1">
+                  {sharedPredictionEnvelope && (
+                    <div className="rounded-lg px-4 py-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center" style={{ background: 'var(--color-fill-tertiary)', border: '1px solid var(--color-separator)' }}>
+                      <div className="min-w-0 w-full sm:flex-1">
+                        <strong className="block text-sm" style={{ color: 'var(--color-label)' }}>
+                          Shared by {sharedPredictionEnvelope.snapshot.manager.displayName} · @{sharedPredictionEnvelope.snapshot.manager.username}
+                        </strong>
+                        <span className="text-xs" style={{ color: 'var(--color-label-secondary)' }}>
+                          {sharedPredictionEnvelope.snapshot.season} season · {sharedPredictionEnvelope.historical ? 'Read-only historical snapshot' : 'Your local picks are unchanged'}
+                        </span>
+                      </div>
+                      <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center sm:gap-3">
+                        {!sharedPredictionEnvelope.historical && (
+                          <button
+                            type="button"
+                            className="col-span-2 inline-flex min-h-11 items-center justify-center rounded px-3 py-2 text-xs font-bold sm:col-auto sm:min-h-0"
+                            style={{ background: 'var(--color-signature)', color: 'var(--color-signature-fg)' }}
+                            onClick={() => {
+                              if (!window.confirm('Replace your current predictions with this shared snapshot? Your current picks will be available to restore.')) return;
+                              importPredictions(sharedPredictionEnvelope.predictions, {
+                                season: sharedPredictionEnvelope.snapshot.season,
+                                playoffPicks: sharedPredictionEnvelope.snapshot.playoffPicks,
+                              });
+                              setSharedPredictionEnvelope(null);
+                              window.history.replaceState(window.history.state, '', window.location.pathname);
+                            }}
+                          >
+                            Save as my predictions
+                          </button>
+                        )}
+                        {!sharedPredictionEnvelope.historical && <button type="button" className="inline-flex min-h-11 items-center justify-center px-3 py-2 text-xs font-bold sm:min-h-0" style={{ color: 'var(--color-accent)' }} onClick={() => setExportPreviewOpen(true)}>Open share card</button>}
+                        <button type="button" className={`${sharedPredictionEnvelope.historical ? 'col-span-2' : ''} inline-flex min-h-11 items-center justify-center px-3 py-2 text-xs font-bold sm:min-h-0`} style={{ color: 'var(--color-accent)' }} onClick={() => {
+                          setSharedPredictionEnvelope(null);
+                          window.history.replaceState(window.history.state, '', window.location.pathname);
+                        }}>Dismiss</button>
+                      </div>
+                    </div>
+                  )}
+                  {sharedPredictionError && <p className="m-0 text-center text-sm" role="alert" style={{ color: 'var(--color-accent-red)' }}>{sharedPredictionError}</p>}
+                  {!sharedPredictionEnvelope && predictionImportBackup && (
+                    <div className="mt-2 flex items-center justify-center gap-3 text-sm" style={{ color: 'var(--color-label-secondary)' }}>
+                      <span>Previous predictions are available to restore.</span>
+                      <button type="button" className="font-bold" style={{ color: 'var(--color-accent)' }} onClick={restorePredictionImportBackup}>Restore previous picks</button>
+                    </div>
+                  )}
+                </div>
+              )}
               <PredictionsRedesign
                 teams={predictionTeams}
                 scheduleData={predictionSchedule}
                 seasonView={seasonView}
-                pickMode={predictionPickMode}
-                onPickModeChange={setPredictionPickMode}
+                pickMode={sharedPredictionEnvelope?.snapshot?.mode ?? predictionPickMode}
+                onPickModeChange={sharedPredictionEnvelope ? undefined : setPredictionPickMode}
                 selectedTeamId={predictionsTeamId}
-                picks={predictionPickMap}
-                predictions={predictions}
-                onRecordChange={handlePredictionRecordChange}
-                onSaveTeamGameResults={handlePredictionGameResultsSave}
-                playoffPicks={playoffPicks}
-                onPlayoffPick={handlePlayoffPick}
-                onOpenTeam={handleOpenPredictionTeam}
-                onBackToAdvancedMode={handleBackToAdvancedMode}
+                picks={displayedPickMap}
+                predictions={displayedPredictions}
+                onRecordChange={sharedPredictionEnvelope ? undefined : handlePredictionRecordChange}
+                onSaveTeamGameResults={sharedPredictionEnvelope ? undefined : handlePredictionGameResultsSave}
+                playoffPicks={displayedPlayoffPicks}
+                onPlayoffPick={sharedPredictionEnvelope ? undefined : handlePlayoffPick}
+                onOpenTeam={sharedPredictionEnvelope ? undefined : handleOpenPredictionTeam}
+                onBackToAdvancedMode={sharedPredictionEnvelope ? undefined : handleBackToAdvancedMode}
               />
             </Suspense>
           )}
@@ -1899,6 +2093,9 @@ function AppInner() {
             setLegalOpen(true);
           }}
           onExportImage={handleExportImage}
+          predictionShareReady={predictionShareState.ready}
+          predictionShareReason={predictionShareState.errors[0]}
+          predictionShareBlockedLabel={predictionShareState.blockedLabel}
           onExportJSON={handleExportJSON}
           onImportJSON={handleImportClick}
           onAppTour={handleStartAppTour}
@@ -2064,7 +2261,22 @@ function AppInner() {
 
       {exportPreviewOpen && (
         <Suspense fallback={<ModalLoading label="Preparing export" />}>
-          <ExportPreview teams={scheduleData.teams} onClose={() => setExportPreviewOpen(false)} />
+          <ExportPreview
+            teams={predictionTeams}
+            schedule={predictionSchedule}
+            predictions={sharedPredictionEnvelope?.predictions ?? predictions}
+            playoffPicks={sharedPredictionEnvelope?.snapshot?.playoffPicks ?? playoffPicks}
+            predictionMode={sharedPredictionEnvelope?.snapshot?.mode ?? predictionShareState.mode}
+            predictionSeason={sharedPredictionEnvelope?.snapshot?.season ?? predictionSeason}
+            sleeperUser={sharedPredictionEnvelope ? {
+              user_id: sharedPredictionEnvelope.snapshot.manager.userId,
+              username: sharedPredictionEnvelope.snapshot.manager.username,
+              display_name: sharedPredictionEnvelope.snapshot.manager.displayName,
+            } : sleeperUser}
+            sourceSnapshot={sharedPredictionEnvelope?.snapshot ?? null}
+            initialPresentation={sharedPredictionEnvelope?.presentation ?? null}
+            onClose={() => setExportPreviewOpen(false)}
+          />
         </Suspense>
       )}
 
@@ -2077,7 +2289,9 @@ function App() {
   return (
     <FantasyProvider>
       <DraftSyncProvider>
-        <AppInner />
+        <PredictionProvider>
+          <AppInner />
+        </PredictionProvider>
       </DraftSyncProvider>
     </FantasyProvider>
   );

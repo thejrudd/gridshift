@@ -34,9 +34,11 @@ Back: [[Home]]
 
 ### `src/context/PredictionContext.jsx`
 
-- Stores season prediction state in localStorage.
+- Stores season-scoped prediction state in localStorage.
 - Syncs opposing game results across teams.
 - Handles reset, import, and random prediction generation.
+- Persists playoff selections and a restorable backup when a recipient explicitly applies a shared prediction snapshot.
+- See [[Prediction Share Cards]] for the snapshot, portable-link, recipient, and export contracts.
 
 ### `src/context/ThemeContext.jsx`
 
@@ -80,6 +82,7 @@ Entries resolved via Pass 1 or 2 are marked `_teamSource = 'espn'`. Pass 3 entri
 ### `src/components`
 
 - App shell, views, modals, and feature UI.
+- Prediction share-card rendering lives under `src/components/predictions/share/`; `ExportPreview.jsx` is the responsive studio around its fixed 1080px canvases.
 
 ### `src/components/companion`
 
@@ -102,6 +105,7 @@ Entries resolved via Pass 1 or 2 are marked `_teamSource = 'espn'`. Pass 3 entri
 ### `src/utils`
 
 - Most domain logic lives here: scoring, projections, trade math, export shaping, search parsing.
+- `predictionSnapshot.js`, `predictionShareCodec.js`, `predictionShareModel.js`, and `playoffBracket.js` own validated prediction snapshots, database-free share fragments, card-ready projections, and NFL reseeding. See [[Prediction Share Cards]].
 - `leagueHistory.js` is the shared Sleeper league-lineage data layer. It loads and caches season rosters, users, matchups, transactions, and real bracket payloads, then exposes normalized participants, finalized standings with named divisions and recent form, score-backed brackets, Toilet Bowl versus consolation progression, activity entries, history aggregates, record leaders, and Draft Blueprint summaries with named early-round picks. Stable participant identity uses Sleeper user ID with a season-roster fallback.
 - Trade opportunity logic keeps `src/utils/opportunityEngine.js` as the public facade, with implementation modules under `src/utils/opportunity/`.
 - Live scoring splits into `liveScoringFeed.js` (stat lines, explicit starter game states, complete-schedule bye proof, and authoritative Sleeper final-score checks), `livePlaysFeed.js` (play-by-play matching and per-play stat deltas), `liveWinProbability.js` (player-level outlooks, calibrated odds, explanations, and persisted replay snapshots), `livePace.js` (pace curves, verdict copy, featured starters, and performer ordering), and `fantasyTeamIdentity.js` (per-roster identity colours). `resolveStarterProjection()` in `liveWinProbability.js` is the single projection source shared by pace and odds, while `src/data/liveWinProbabilityModel.js` is the frozen production coefficient contract. Exact 0%/100% is allowed only after every starter is officially final or on a confirmed bye and a fresh, cache-bypassed Sleeper matchup response supplies both totals plus every starter's official points.
@@ -136,5 +140,5 @@ Entries resolved via Pass 1 or 2 are marked `_teamSource = 'espn'`. Pass 3 entri
 
 - `package.json` defines the available npm scripts.
 - `vite.config.js` wires the React plugin, PWA behavior, `__APP_VERSION__`, the KTC proxy, and local `/api/espn`, `/api/live`, and `/api/statistics/scores` sidecar proxies.
-- `nginx.conf` proxies production `/api/live/`, `/api/statistics/scores/`, and `/api/fantasy/` traffic to the sidecar. The live route forwards its encrypted session cookie; all three server-only provider routes are marked `no-store`.
+- `nginx.conf` proxies production `/api/live/`, `/api/statistics/scores/`, `/api/fantasy/`, `/api/draft-sync/`, and `/api/predictions-sync/` traffic to the sidecar. Device-sync routes forward bearer and conditional-revision headers; all server-only provider routes are marked `no-store`.
 - `docker-compose.yml`, `Dockerfile`, `Dockerfile.prebuilt`, and `Dockerfile.server` cover deployment.

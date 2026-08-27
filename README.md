@@ -8,7 +8,7 @@ An interactive web app for the 2026 NFL season — with full Sleeper fantasy lea
 
 ### Season Planning
 
-- Predictions — Game picks, constraints, standings, playoff seeding, and shareable infographic export.
+- Predictions — Game picks, constraints, standings, playoff seeding, share-card exports, and portable shared snapshots.
 - Statistics — Schedules, standings, team/player profiles, game logs, honors, and scoring breakdowns.
 - Statistics Scores (Beta) — Provider-backed current-season regular and preseason scoreboards with live clocks, Latest Play, plain-language play-by-play, and animated drive replay; broader historical archive coverage continues to expand.
 
@@ -130,9 +130,11 @@ Draft Sync is an optional capability of the existing API sidecar, not a required
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) + optional Node API sidecar |
 
-## What's New in v8.7.0
+## What's New in v8.8.0
 
-- **Draft Sync** — Optionally pair devices with a one-time code to keep War Room and Draft Board plans available across devices. Sync is disabled by default, stores only a bounded draft-state document, and keeps local draft work available when the server is offline.
+- **Prediction Share Cards** — Turn a complete season into polished Division Winners, Playoff Seeding, or Full Bracket cards with season, pick-week, and connected-manager context.
+- **Shareable prediction links** — Send a compact link or QR code that opens a validated read-only snapshot; recipients can inspect it without replacing their own picks until they choose to apply it.
+- **Prediction Device Sync** — Optionally pair devices with a one-time code to keep one prediction plan current across them, while retaining local-first saves and clear device revocation.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 

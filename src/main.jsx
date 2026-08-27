@@ -9,7 +9,6 @@ if (!import.meta.env.PROD) {
 }
 import './index.css'
 import App from './App.jsx'
-import { PredictionProvider } from './context/PredictionContext.jsx'
 import { ThemeProvider } from './context/ThemeContext.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
 import { applyDisplaySize, readDisplaySize } from './utils/displayPreferences.js'
@@ -20,9 +19,7 @@ createRoot(document.getElementById('root')).render(
   <StrictMode>
     <ErrorBoundary>
       <ThemeProvider>
-        <PredictionProvider>
-          <App />
-        </PredictionProvider>
+        <App />
       </ThemeProvider>
     </ErrorBoundary>
   </StrictMode>,

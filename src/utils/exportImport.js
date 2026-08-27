@@ -116,7 +116,7 @@ const freezeDimensions = (orig, clone) => {
 };
 
 // Export a DOM element as a PNG image download
-export const exportAsImage = async (element, { scale = 2 } = {}) => {
+export const exportAsImage = async (element, { scale = 2, filename = 'nfl-predictions-2026.png' } = {}) => {
   // Inline images as base64 on the live DOM before capture
   const originals = await inlineAllImages(element);
 
@@ -136,7 +136,7 @@ export const exportAsImage = async (element, { scale = 2 } = {}) => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'nfl-predictions-2026.png';
+    a.download = filename;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

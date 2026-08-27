@@ -1,0 +1,502 @@
+/*
+ * Export canvas, not application chrome. The fixed dimensions make the cards
+ * deterministic for raster export; preview owners can scale this element with
+ * transform rather than allowing responsive layout to change the PNG.
+ */
+.prediction-share-card {
+  --prediction-share-ink: var(--color-prediction-share-ink);
+  --prediction-share-paper: var(--color-prediction-share-paper);
+  --prediction-share-light: var(--color-prediction-share-light);
+  --prediction-share-rule: var(--color-prediction-share-dark-rule);
+  box-sizing: border-box;
+  width: 1080px;
+  height: 1080px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--prediction-share-ink);
+  color: var(--prediction-share-light);
+  font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  font-variant-numeric: tabular-nums;
+}
+
+.prediction-share-card[data-share-size='tall'] {
+  height: 1350px;
+}
+
+.prediction-share-card--poster {
+  --prediction-share-rule: var(--color-prediction-share-light-rule);
+  background: var(--prediction-share-paper);
+  color: var(--prediction-share-ink);
+}
+
+.prediction-share-card *,
+.prediction-share-card *::before,
+.prediction-share-card *::after {
+  box-sizing: border-box;
+}
+
+.prediction-share-card__header {
+  min-height: 238px;
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: space-between;
+  gap: 32px;
+  padding: 42px 48px 26px;
+  border-bottom: 2px solid var(--prediction-share-rule);
+}
+
+.prediction-share-card__kicker,
+.prediction-share-card__header h2,
+.prediction-share-card__subtitle,
+.prediction-share-card__stamp,
+.prediction-share-card__body p,
+.prediction-share-card__body h3,
+.prediction-share-card__footer {
+  margin: 0;
+}
+
+.prediction-share-card__kicker {
+  color: var(--color-signature);
+  font-size: 21px;
+  line-height: 1;
+  letter-spacing: 0.25em;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.prediction-share-card__header h2 {
+  margin-top: 14px;
+  max-width: 650px;
+  color: inherit;
+  font-size: 78px;
+  line-height: 0.8;
+  letter-spacing: -0.028em;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.prediction-share-card__header h2 > span { display: block; }
+
+.prediction-share-card__subtitle {
+  margin-top: 16px;
+  color: currentColor;
+  opacity: 0.58;
+  font-family: 'Figtree', sans-serif;
+  font-size: 18px;
+  line-height: 1.25;
+  font-weight: 600;
+}
+
+.prediction-share-card__stamp {
+  padding-top: 10px;
+  max-width: 240px;
+  display: grid;
+  gap: 7px;
+  color: currentColor;
+  opacity: 0.56;
+  text-align: right;
+  font-size: 18px;
+  line-height: 1.1;
+  letter-spacing: 0.18em;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.prediction-share-card__body {
+  min-height: 0;
+  flex: 1 1 auto;
+  padding: 28px 48px;
+}
+
+.prediction-share-card__footer {
+  min-height: 292px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 21px 48px 31px;
+  border-top: 2px solid var(--prediction-share-rule);
+}
+
+.prediction-share-card__footer > strong {
+  max-width: 405px;
+  overflow: hidden;
+  color: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 30px;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  font-weight: 800;
+}
+
+.prediction-share-card__footer-spacer { flex: 1; }
+
+.prediction-share-card__brand {
+  display: grid;
+  gap: 3px;
+  color: inherit;
+  opacity: 0.62;
+  text-align: right;
+  font-size: 19px;
+  line-height: 0.9;
+  letter-spacing: 0.2em;
+  font-weight: 800;
+}
+
+.prediction-share-card__brand span {
+  font-family: 'Figtree', sans-serif;
+  font-size: 14px;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+}
+
+.prediction-share-card__qr {
+  width: 256px;
+  height: 256px;
+  flex: 0 0 256px;
+  border-radius: 6px;
+  object-fit: contain;
+  background: var(--color-prediction-share-qr);
+}
+
+.prediction-share-card__team-surface {
+  background: var(--prediction-share-team-bg);
+  color: var(--prediction-share-team-fg);
+  box-shadow: inset 0 0 0 1px var(--prediction-share-team-border);
+}
+
+.prediction-share-card__team-logo {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 4px var(--color-prediction-share-logo-shadow));
+}
+
+.prediction-share-card__team-logo--empty { display: block; opacity: 0; }
+
+/* Full-board: a compact division rhythm puts the records before decoration. */
+.prediction-share-card__board {
+  display: grid;
+  grid-template-rows: repeat(8, minmax(0, 1fr));
+  gap: 13px;
+}
+
+.prediction-share-card__board-division {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.prediction-share-card__board-division h3 { min-height: 14px; font-size: 14px; }
+.prediction-share-card__board-team .prediction-share-card__team-logo { width: 30px; height: 30px; flex-basis: 30px; }
+
+.prediction-share-card__board-division h3,
+.prediction-share-card__seed-columns h3,
+.prediction-share-card__bracket-round h3 {
+  display: flex;
+  align-items: center;
+  min-height: 19px;
+  color: inherit;
+  opacity: 0.48;
+  font-size: 17px;
+  line-height: 1;
+  letter-spacing: 0.22em;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.prediction-share-card__board-division h3::after,
+.prediction-share-card__bracket-round h3::after {
+  content: '';
+  height: 1px;
+  flex: 1;
+  margin-left: 12px;
+  background: currentColor;
+  opacity: 0.35;
+}
+
+.prediction-share-card__board-teams {
+  min-height: 0;
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.prediction-share-card__board-team {
+  min-width: 0;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border-radius: 5px;
+}
+
+.prediction-share-card__board-team b {
+  color: inherit;
+  font-size: 27px;
+  line-height: 1;
+  letter-spacing: 0.02em;
+}
+
+.prediction-share-card__board-team span {
+  margin-left: auto;
+  color: inherit;
+  font-family: 'Figtree', sans-serif;
+  font-size: 18px;
+  line-height: 1;
+  font-weight: 800;
+}
+
+/* Champion: deliberate large focal point, supporting conference calls below. */
+.prediction-share-card__champions {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.prediction-share-card__champion-hero {
+  position: relative;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+  padding: 42px;
+  display: flex;
+  align-items: flex-end;
+  border-radius: 10px;
+}
+
+.prediction-share-card__champion-hero::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, var(--color-prediction-share-dark-overlay), transparent 74%);
+}
+
+.prediction-share-card--poster .prediction-share-card__champion-hero::after { background: linear-gradient(90deg, var(--color-prediction-share-light-overlay), transparent 74%); }
+
+.prediction-share-card__champion-logo {
+  position: absolute;
+  z-index: 0;
+  top: -31px;
+  right: -21px;
+  width: 450px;
+  height: 450px;
+  object-fit: contain;
+  filter: drop-shadow(0 18px 26px var(--color-prediction-share-hero-shadow));
+}
+
+.prediction-share-card__champion-hero > div {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 11px;
+}
+
+.prediction-share-card__champion-hero p,
+.prediction-share-card__conference-champion p,
+.prediction-share-card__division-winner p,
+.prediction-share-card__seed-champion span,
+.prediction-share-card__bracket-champion > span {
+  color: inherit;
+  opacity: 0.8;
+  font-size: 18px;
+  line-height: 1;
+  letter-spacing: 0.21em;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.prediction-share-card__champion-hero span {
+  max-width: 560px;
+  color: inherit;
+  font-size: 92px;
+  line-height: 0.78;
+  letter-spacing: -0.03em;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.prediction-share-card__champion-hero b {
+  color: inherit;
+  font-family: 'Figtree', sans-serif;
+  font-size: 25px;
+  line-height: 1;
+}
+
+.prediction-share-card__conference-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.prediction-share-card__conference-champion {
+  min-height: 116px;
+  padding: 18px;
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  border-radius: 7px;
+}
+
+.prediction-share-card__conference-champion > div { display: grid; gap: 7px; min-width: 0; }
+.prediction-share-card__conference-champion b { color: inherit; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 31px; line-height: .9; text-transform: uppercase; }
+.prediction-share-card__conference-champion span { color: inherit; opacity: .82; font-family: 'Figtree', sans-serif; font-size: 16px; font-weight: 800; }
+
+/* Division winners: eight equal banners are intentionally more graphic. */
+.prediction-share-card__division-winners {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.prediction-share-card__division-winner {
+  min-width: 0;
+  min-height: 0;
+  padding: 12px 16px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto 1fr;
+  column-gap: 15px;
+  border-radius: 7px;
+}
+
+.prediction-share-card__division-winner p { grid-column: 1 / -1; margin-bottom: 5px; }
+.prediction-share-card__division-winner .prediction-share-card__team-logo { align-self: center; width: 56px; height: 56px; flex-basis: 56px; }
+.prediction-share-card__division-winner > div { align-self: center; min-width: 0; display: grid; gap: 5px; }
+.prediction-share-card__division-winner b { overflow: hidden; color: inherit; white-space: nowrap; text-overflow: ellipsis; font-size: 37px; line-height: .8; text-transform: uppercase; }
+.prediction-share-card__division-winner span { color: inherit; opacity: .85; font-family: 'Figtree', sans-serif; font-size: 17px; line-height: 1; font-weight: 800; }
+
+/* Seeds: the matching conference columns allow instant comparison. */
+.prediction-share-card__seeding { display: flex; flex-direction: column; gap: 18px; }
+.prediction-share-card__seed-columns { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 25px; min-height: 0; }
+.prediction-share-card__seed-columns > section { display: flex; min-height: 0; flex-direction: column; gap: 8px; }
+.prediction-share-card__seed-row { min-height: 0; flex: 1; padding: 0 13px; display: flex; align-items: center; gap: 10px; border-radius: 5px; }
+.prediction-share-card__seed-row .prediction-share-card__team-logo { width: 32px; height: 32px; max-height: calc(100% - 8px); flex-basis: 32px; }
+.prediction-share-card__seed-row i { width: 28px; height: 28px; flex: 0 0 28px; display: grid; place-items: center; background: var(--color-prediction-share-light-soft); color: inherit; border-radius: 50%; font-family: 'Figtree', sans-serif; font-size: 15px; font-style: normal; font-weight: 800; }
+.prediction-share-card--poster .prediction-share-card__seed-row i { background: var(--color-prediction-share-dark-soft); }
+.prediction-share-card__seed-row:first-of-type i { background: var(--color-signature); color: var(--color-signature-fg); }
+.prediction-share-card__seed-row b { color: inherit; font-size: 29px; line-height: 1; letter-spacing: .02em; }
+.prediction-share-card__seed-row span { margin-left: auto; color: inherit; font-family: 'Figtree', sans-serif; font-size: 17px; font-weight: 800; }
+.prediction-share-card__seed-champion { min-height: 94px; padding: 15px 19px; display: flex; align-items: center; gap: 14px; border-radius: 6px; }
+.prediction-share-card__seed-champion > span { margin-left: 5px; }
+.prediction-share-card__seed-champion b { margin-left: auto; color: inherit; font-size: 32px; line-height: .9; text-transform: uppercase; }
+
+/* Full bracket: each conference owns a fixed band so rounds can never collide. */
+.prediction-share-card__bracket {
+  padding-top: 20px;
+  padding-bottom: 20px;
+  display: grid;
+  grid-template-rows: repeat(2, minmax(0, 1fr)) 66px;
+  gap: 12px;
+}
+
+.prediction-share-card__bracket-conference {
+  min-height: 0;
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: 20px minmax(0, 1fr);
+  gap: 6px;
+}
+
+.prediction-share-card__bracket-label {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  color: inherit;
+  opacity: .54;
+  font-size: 17px;
+  line-height: 1;
+  letter-spacing: .22em;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.prediction-share-card__bracket-label i {
+  height: 1px;
+  flex: 1;
+  background: currentColor;
+  opacity: .36;
+}
+
+.prediction-share-card__bracket-grid {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1.22fr 1fr .88fr;
+  gap: 14px;
+}
+
+.prediction-share-card__bracket-round {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: 18px minmax(0, 1fr);
+  gap: 5px;
+}
+
+.prediction-share-card__bracket-round > div {
+  min-height: 0;
+  display: grid;
+  align-content: center;
+  gap: 4px;
+}
+
+.prediction-share-card__bracket-match { min-height: 0; display: grid; gap: 2px; }
+.prediction-share-card__bracket-team { height: 20px; min-width: 0; padding: 1px 5px; display: flex; align-items: center; gap: 5px; border-radius: 3px; }
+.prediction-share-card__bracket-team.is-loser { filter: grayscale(.62) saturate(.38); opacity: .76; }
+.prediction-share-card__bracket-team.is-winner { filter: none; opacity: 1; box-shadow: inset 3px 0 0 var(--color-signature), inset 0 0 0 1px var(--prediction-share-team-border); }
+.prediction-share-card__bracket-team .prediction-share-card__team-logo { width: 16px; height: 16px; flex-basis: 16px; }
+.prediction-share-card__bracket-team b { min-width: 0; flex: 1; overflow: hidden; color: inherit; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; line-height: 1; }
+.prediction-share-card__bracket-record { color: inherit; font-family: 'Figtree', sans-serif; font-size: 10px; line-height: 1; font-weight: 800; }
+.prediction-share-card__bracket-outcome { width: 13px; height: 13px; flex: 0 0 13px; display: grid; place-items: center; background: var(--color-signature); color: var(--color-signature-fg); border-radius: 3px; font-family: 'Figtree', sans-serif; font-size: 9px; line-height: 1; font-weight: 900; }
+.prediction-share-card__bracket-outcome-label { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.prediction-share-card__bracket-empty { align-self: center; color: inherit; opacity: .46; font-family: 'Figtree', sans-serif; font-size: 15px; font-weight: 600; }
+.prediction-share-card__bracket-super-bowl { min-width: 0; padding: 8px 18px; display: grid; grid-template-columns: 180px minmax(0, 1fr); align-items: center; gap: 16px; border: 1px solid var(--prediction-share-rule); border-radius: 6px; }
+.prediction-share-card__bracket-super-bowl-heading { min-width: 0; display: grid; gap: 5px; }
+.prediction-share-card__bracket-super-bowl-heading span { color: var(--color-signature); font-size: 12px; line-height: 1; letter-spacing: .18em; font-weight: 800; text-transform: uppercase; }
+.prediction-share-card__bracket-super-bowl-heading b { color: inherit; font-size: 23px; line-height: .86; text-transform: uppercase; }
+.prediction-share-card__bracket-super-bowl-matchup { min-width: 0; display: grid; gap: 3px; }
+
+.prediction-share-card--poster .prediction-share-card__header { background: var(--color-prediction-share-ink); color: var(--color-prediction-share-light); }
+.prediction-share-card--poster .prediction-share-card__header .prediction-share-card__stamp { color: var(--color-prediction-share-light); }
+
+/* The tall canvas gives the board and bracket modestly more breathing room. */
+.prediction-share-card[data-share-size='tall'] .prediction-share-card__header { min-height: 255px; }
+
+.prediction-share-card[data-share-size='tall'] .prediction-share-card__footer { min-height: 304px; }
+
+.prediction-share-card[data-share-size='tall'] .prediction-share-card__bracket {
+  grid-template-rows: repeat(2, minmax(0, 1fr)) 82px;
+  gap: 18px;
+  padding-top: 28px;
+  padding-bottom: 28px;
+}
+
+.prediction-share-card[data-share-size='tall'] .prediction-share-card__bracket-conference {
+  grid-template-rows: 22px minmax(0, 1fr);
+  gap: 9px;
+}
+
+.prediction-share-card[data-share-size='tall'] .prediction-share-card__bracket-round {
+  grid-template-rows: 20px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.prediction-share-card[data-share-size='tall'] .prediction-share-card__bracket-round > div { gap: 8px; }
+.prediction-share-card[data-share-size='tall'] .prediction-share-card__bracket-match { gap: 3px; }
+.prediction-share-card[data-share-size='tall'] .prediction-share-card__bracket-team { height: 31px; padding: 3px 8px; }
+.prediction-share-card[data-share-size='tall'] .prediction-share-card__bracket-team .prediction-share-card__team-logo { width: 23px; height: 23px; flex-basis: 23px; }
+.prediction-share-card[data-share-size='tall'] .prediction-share-card__bracket-team b { font-size: 19px; }
+.prediction-share-card[data-share-size='tall'] .prediction-share-card__bracket-record { font-size: 11px; }
+.prediction-share-card[data-share-size='tall'] .prediction-share-card__bracket-outcome { width: 16px; height: 16px; flex-basis: 16px; font-size: 11px; }
+.prediction-share-card[data-share-size='tall'] .prediction-share-card__bracket-super-bowl { padding-top: 6px; padding-bottom: 6px; }
+.prediction-share-card[data-share-size='tall'] .prediction-share-card__bracket-super-bowl .prediction-share-card__bracket-team { height: 28px; padding-top: 2px; padding-bottom: 2px; }
+.prediction-share-card[data-share-size='tall'] .prediction-share-card__bracket-super-bowl .prediction-share-card__team-logo { width: 21px; height: 21px; flex-basis: 21px; }

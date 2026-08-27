@@ -30,6 +30,8 @@ Apply exactly one page-frame class to new route roots. Do not detect display DPI
 ## Predictions And Standings
 
 - `src/context/PredictionContext.jsx`
+- `src/utils/predictionSnapshot.js` — completion rules, season policy, immutable snapshot schema, and import materialization
+- `src/utils/playoffBracket.js` — NFL lowest-remaining-seed reseeding
 - `src/utils/scheduleParser.js`
 - `src/utils/validation.js`
 - `src/components/TeamList.jsx`
@@ -249,11 +251,15 @@ Feature screens such as Rosters, Rankings, Waivers, Matchups, Heatmap drilldowns
 
 ## Export / Import / Shareable Image
 
-- `src/components/ExportPreview.jsx`
+- `src/components/ExportPreview.jsx` — prediction share-card studio, link/QR generation, copy, and PNG download
+- `src/components/predictions/share/` — five fixed-format card renderers, curated titles, and export geometry
+- `src/utils/predictionShareCodec.js` — compressed, checksummed URL-fragment transport
+- `src/utils/predictionShareModel.js` — pick-week context and snapshot-to-card projection
 - `src/components/ShareableImage.jsx`
 - `src/utils/exportImport.js`
 - `src/utils/exportStats.js`
 - `src/utils/layoutUtils.js`
+- [[Prediction Share Cards]] — product, privacy, state, recipient, and future-grading contracts
 
 ## Build, PWA, And Deployment
 

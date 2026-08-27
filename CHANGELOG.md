@@ -1279,3 +1279,12 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Draft Board cleanup** - Restore the board's remove control for saved players after another manager drafts them, so stale targets can be cleared without rebuilding the board.
 - **Tour coverage** - Add the Draft Sync functionality to the What's New tour for desktop and mobile layouts.
 - **Regression coverage** - Add unit and API coverage for pairing, authorization, bounded payloads, revision checks, offline handling, and the corrected pairing-code entry flow.
+
+## v8.8.0 - Prediction Sharing & Device Sync
+*2026-08-26*
+
+- **Prediction Share Cards** - Turn complete predictions into polished Division Winners, Playoff Seeding, and Full Bracket image exports with connected-manager, season, and pick-week context.
+- **Portable shared snapshots** - Create compact validated prediction links and QR codes that recipients can inspect without a Sleeper sign-in, then explicitly apply without silently replacing their own local picks.
+- **Prediction Device Sync** - Extend the opt-in paired-device model to prediction state with authoritative initial pairing, local-first saves, one-time-code revocation, responsive propagation, and server/proxy routing.
+- **Prediction reliability and polish** - Correct playoff reseeding, complete randomized playoff brackets, accurately detect share readiness, and protect share-card content from record, logo, and bracket-layout overflow.
+- **Regression coverage and documentation** - Add prediction snapshot, codec, playoff, share-card, sync-store, and browser coverage with updated architecture and edit-guide references.

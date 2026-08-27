@@ -6,6 +6,7 @@ import { createLiveGameSnapshotStore } from './liveGameSnapshots.js';
 import { createLiveRouter, getLiveConfigStatus } from './liveHandlers.js';
 import { createStatisticsScoresRouter } from './statisticsScoresHandlers.js';
 import { createDraftSyncRouter } from './draftSyncHandlers.js';
+import { createPredictionsSyncRouter } from './predictionsSyncHandlers.js';
 
 const app = express();
 const port = Number(process.env.PORT ?? process.env.GRIDSHIFT_API_PORT ?? 3001);
@@ -18,6 +19,7 @@ app.set('trust proxy', trustProxyHops);
 // Draft Sync owns its parser so its configured payload limit produces a
 // consistent 413 response. It is mounted before the app-wide parser below.
 app.use('/api/draft-sync', createDraftSyncRouter());
+app.use('/api/predictions-sync', createPredictionsSyncRouter());
 app.use(express.json({ limit: '64kb' }));
 
 app.get('/api/health', (_req, res) => {

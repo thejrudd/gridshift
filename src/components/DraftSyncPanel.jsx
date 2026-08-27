@@ -44,7 +44,6 @@ export default function DraftSyncPanel() {
     startPairing,
     claimPairing,
     revokeDevice,
-    disconnectDevice,
     resolveConflict,
   } = useDraftSync();
   const [claimCode, setClaimCode] = useState('');
@@ -89,15 +88,15 @@ export default function DraftSyncPanel() {
         background: 'var(--color-fill-tertiary)',
         border: '1px solid var(--color-separator)',
       }}
-      aria-labelledby="draft-sync-title"
+      aria-labelledby="device-sync-title"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div id="draft-sync-title" className="text-xs font-bold uppercase tracking-[0.16em]" style={{ color: 'var(--color-label-tertiary)', fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif" }}>
-            Draft Sync
+          <div id="device-sync-title" className="text-xs font-bold uppercase tracking-[0.16em]" style={{ color: 'var(--color-label-tertiary)', fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif" }}>
+            Device Sync
           </div>
           <p className="mt-1 text-sm leading-5" style={{ color: 'var(--color-label-secondary)' }}>
-            Keep your War Room and Draft Board available across devices.
+            Keep Draft planning and Predictions available across your paired devices.
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-1.5 text-xs font-semibold" style={{ color: statusTone(statusLabel) }}>
@@ -182,7 +181,14 @@ export default function DraftSyncPanel() {
                 inputMode="text"
                 autoCapitalize="characters"
                 className="min-w-0 flex-1 rounded-lg px-3 py-2 text-sm font-semibold tracking-[0.12em] outline-none"
-                style={{ background: 'var(--color-bg-secondary)', color: 'var(--color-label)', border: '1px solid var(--color-separator)' }}
+                style={{
+                  background: 'var(--color-bg-secondary)',
+                  color: 'var(--color-label)',
+                  border: '1px solid var(--color-separator)',
+                  // Mobile Safari zooms focused text inputs below 16px. This must
+                  // remain an absolute floor even in GridShift's Compact display size.
+                  fontSize: 'max(16px, 1rem)',
+                }}
               />
               <ActionButton
                 onClick={() => run(() => claimPairing(formattedClaimCode))}
@@ -201,10 +207,7 @@ export default function DraftSyncPanel() {
             Pair another device
           </ActionButton>
           <ActionButton onClick={() => run(revokeDevice)} disabled={busy}>
-            Revoke device
-          </ActionButton>
-          <ActionButton onClick={disconnectDevice} disabled={busy}>
-            Disconnect sync on this device
+            Remove this device from sync
           </ActionButton>
         </div>
       )}

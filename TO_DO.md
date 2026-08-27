@@ -75,7 +75,7 @@ GridShift is a labor-of-love project: it should create something genuinely usefu
 
 - **Historical Comparison** - Show how your predicted record compares to each team's actual results from recent seasons. Highlight where you're more bullish or bearish than history.
 - **Compare Mode** - Import a friend's exported JSON predictions and diff against yours: side-by-side records, agree/disagree highlights, biggest divergences.
-- **Image Export Redesign** - Redesign as a compact ~1080x1080 shareable summary instead of a raw page screenshot.
+- **Prediction outcome grading** - Compare a saved, season-stamped prediction snapshot with the completed NFL season, explain what was right or wrong, and award a transparent letter grade. Reuse the v8.8 snapshot schema so exported/shared picks and later grading evaluate the same committed prediction set.
 
 ### Player Info
 
@@ -94,5 +94,4 @@ GridShift is a labor-of-love project: it should create something genuinely usefu
 
 - **Confetti / Animations** - Celebrate when all 32 teams are predicted and the season is valid.
 - **Richer PWA Install UI** - Add `screenshots` to the web manifest for the enhanced Chrome install dialog. Requires desktop (1280x800) and mobile (390x844) screenshots in `public/screenshots/` referenced in `vite.config.js`. Non-blocking - basic install prompt works without this.
-- **Shareable Links** - Encode predictions into a URL hash for sharing without import/export.
 - **Undo/Redo** - Allow users to back out of recent changes without a full reset.

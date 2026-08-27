@@ -8,10 +8,6 @@ Open bugs are listed first, deferred work next, fixed bugs below. Add new entrie
 
 | Bug |
 |-----|
-| Fantasy Roster player availability designations can retain the wrong foreground contrast after switching between light and dark mode, making status text unreadable on some team gradients. |
-| Fantasy Scoring's league-year model control no longer applies a selected year's rules across Fantasy, preventing managers from evaluating one results season with another linked league year's scoring. |
-| Fantasy Rankings image exports identify the active scoring model but omit the NFL-stat season used to calculate the rankings. |
-| Some players aren't searchable in Statistics Stats, for example Najee Harris. |
 
 ---
 
@@ -19,6 +15,21 @@ Open bugs are listed first, deferred work next, fixed bugs below. Add new entrie
 
 | Bug | Fixed In |
 |-----|----------|
+| Fantasy Roster player availability designations can retain the wrong foreground contrast after switching between light and dark mode, making status text unreadable on some team gradients. | v8.8.0 |
+| Fantasy Scoring's league-year model control no longer applies a selected year's rules across Fantasy, preventing managers from evaluating one results season with another linked league year's scoring. | v8.8.0 |
+| Fantasy Rankings image exports identify the active scoring model but omit the NFL-stat season used to calculate the rankings. | v8.8.0 |
+| Some players aren't searchable in Statistics Stats, for example Najee Harris. | v8.8.0 |
+| Predictions playoff reseeding can send the wrong wild-card winner to the No. 1 seed after an upset, causing the interactive bracket and any exported full-bracket image to show an invalid divisional matchup. | v8.8.0 |
+| Prediction share-card readiness can remain stuck on “Complete Picks To Share” after every regular-season matchup has been filled. | v8.8.0 |
+| Randomize Predictions fills regular-season predictions but leaves the playoff bracket empty, preventing the randomized season from becoming share-ready. | v8.8.0 |
+| Prediction share-card studio controls use nested rounded containers, uneven control padding, and clipped header/identity text at desktop display sizes. | v8.8.0 |
+| Division Winners share cards allow team records to overflow below their division tiles. | v8.8.0 |
+| Full Bracket share cards overlap conference rounds, team rows, and the Super Bowl champion banner in exported images. | v8.8.0 |
+| Playoff Seeding share cards allow some team logos to exceed the vertical bounds of their seed rows. | v8.8.0 |
+| Predictions Sync cannot reach the server because production nginx and the local Vite proxy omit `/api/predictions-sync/`, returning the SPA instead of JSON; initial pairing must seed from the code-generating authoritative device before the joining device reads and retries, must not ask the user to choose initial authority, routine local-first saves should not interrupt each pick with a sync message, and ongoing propagation should match Draft Sync rather than waiting on a 12-second poll. | v8.8.0 |
+| Focusing the Device Sync pairing-code input on mobile can trigger browser auto-zoom because the field renders below the 16px mobile input floor. | v8.8.0 |
+| Device Sync “Cancel setup” revokes the generating device token but does not invalidate its pending one-time pairing code, allowing that code to remain claimable until it expires. | v8.8.0 |
+| Device Sync presents both “Revoke device” and a local-only disconnect action, even though the latter leaves an unused but still-valid credential authorized on the server. | v8.8.0 |
 | Draft Sync's setup dialog did not expose the pairing-code field for the device joining an existing synced draft plan, and generated-code setup had no clear way to cancel back to the unpaired choices. | v8.7.0 |
 | Draft Board hid the remove control after a saved player was drafted by another manager, leaving the stale target on the board with no visible way to clear it. | v8.7.0 |
 | The live draft banner clock renders long slow-draft pick timers as minutes-only (e.g. 419:25), overflowing its clock cell on laptop widths instead of formatting as HH:MM:SS, and the banner does not scale responsively to the viewport it is displayed on. | v8.5.1 |

@@ -64,6 +64,21 @@
   /* Foreground color for text/icons placed on a --color-signature background */
   --color-signature-fg:    #0C0F14;
 
+  /* Prediction share-card export palette — fixed across app themes */
+  --color-prediction-share-ink: #0C0F14;
+  --color-prediction-share-paper: #F2F1EC;
+  --color-prediction-share-light: #E4EBF4;
+  --color-prediction-share-qr: #FFFFFF;
+  --color-prediction-share-preview: #07090C;
+  --color-prediction-share-dark-rule: rgba(228, 235, 244, 0.16);
+  --color-prediction-share-light-rule: rgba(12, 15, 20, 0.16);
+  --color-prediction-share-dark-overlay: rgba(12, 15, 20, 0.42);
+  --color-prediction-share-light-overlay: rgba(12, 15, 20, 0.20);
+  --color-prediction-share-dark-soft: rgba(12, 15, 20, 0.12);
+  --color-prediction-share-light-soft: rgba(255, 255, 255, 0.20);
+  --color-prediction-share-logo-shadow: rgba(0, 0, 0, 0.33);
+  --color-prediction-share-hero-shadow: rgba(0, 0, 0, 0.35);
+
   /* Scout — position identity colors */
   --scout-qb:              #4A7FC1;
   --scout-rb:              #6B8F4E;

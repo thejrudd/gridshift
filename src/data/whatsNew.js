@@ -399,4 +399,50 @@ export const WHATS_NEW = [
       },
     ],
   },
+  {
+    version: '8.8.0',
+    title: 'Prediction Sharing & Device Sync',
+    features: [
+      {
+        id: 'prediction-share-cards',
+        name: 'Prediction Share Cards',
+        description: 'Turn a complete season into a polished Division Winners, Playoff Seeding, or Full Bracket card.',
+        steps: [{
+          route: { activeTab: 'predictions', seasonView: 'predictions' },
+          anchor: '[data-tour="prediction-share-card"]',
+          anchorMobile: '[data-tour="app-menu"]',
+          title: 'Create a share card',
+          body: 'Complete your predictions, then choose Create Share Card to select a format and export a polished season summary.',
+          placement: 'auto',
+        }],
+      },
+      {
+        id: 'prediction-share-links',
+        name: 'Shareable links and QR codes',
+        description: 'Send a validated prediction snapshot without requiring recipients to sign in.',
+        steps: [{
+          route: { activeTab: 'predictions', seasonView: 'predictions' },
+          anchor: '[data-tour="prediction-share-card"]',
+          anchorMobile: '[data-tour="app-menu"]',
+          title: 'Share a portable snapshot',
+          body: 'Open a share card to copy a compact link or QR code. Recipients can inspect it before choosing whether to apply the picks locally.',
+          placement: 'auto',
+        }],
+      },
+      {
+        id: 'prediction-device-sync',
+        name: 'Device Sync for Predictions',
+        description: 'Optionally pair devices to keep one prediction plan current across them.',
+        requiresCapability: 'draftSync',
+        steps: [{
+          route: { activeTab: 'predictions', seasonView: 'predictions' },
+          anchor: '[data-tour="prediction-device-sync"]',
+          anchorMobile: '[data-tour="app-menu"]',
+          title: 'Keep predictions in sync',
+          body: 'Open Device Sync to pair another device with a one-time code. Your local picks stay responsive while paired devices receive updates.',
+          placement: 'auto',
+        }],
+      },
+    ],
+  },
 ];
