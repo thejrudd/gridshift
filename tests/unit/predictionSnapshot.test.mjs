@@ -7,11 +7,16 @@ import {
   createPredictionSnapshot,
   createScheduleFingerprint,
   deriveRecordsFromGamePicks,
+  formatManualRecordBalanceNotice,
   generateRandomPlayoffPicks,
   getCreatablePredictionSeasons,
   getCanonicalScheduleGameIds,
+  getManualRecordLeagueStatus,
   materializePredictionsFromSnapshot,
   getCurrentPredictionSeason,
+  getTeamAdvancedPredictionStatus,
+  getTeamAdvancedShareSchedule,
+  rebalanceCompleteManualRecords,
   validatePlayoffPicks,
   validatePredictionCompletion,
   validatePredictionSnapshot,
@@ -169,6 +174,60 @@ test('record completion rejects partial, unbalanced, and division-inconsistent r
   assert.match(validation.errors.join('\n'), /supported by predicted ties/i);
 });
 
+test('record completion rejects totals that require more than 11 nondivision wins', () => {
+  const teams = buildTeams();
+  const records = buildBalancedRecords(teams);
+  records.A00 = { wins: 12, losses: 5, ties: 0, divisionWins: 0 };
+
+  const validation = validatePredictionCompletion({ records, teams, mode: 'record' });
+  assert.equal(validation.isComplete, false);
+  assert.match(validation.errors.join('\n'), /A00 has too few division wins/i);
+});
+
+test('complete manual records rebalance closest-to-500 teams without changing the edited target', () => {
+  const teams = buildTeams();
+  const records = Object.fromEntries(teams.map((team) => [team.id, {
+    wins: 8,
+    losses: 9,
+    ties: 0,
+    divisionWins: 3,
+    recordSource: 'manual',
+    manualOverride: true,
+  }]));
+  records.A00 = { ...records.A00, wins: 17, losses: 0, divisionWins: 6 };
+
+  const result = rebalanceCompleteManualRecords({ records, teams, targetTeamId: 'A00' });
+  const status = getManualRecordLeagueStatus({ records: result.records, teams });
+  assert.equal(result.isBalanced, true);
+  assert.equal(status.totalWins, 272);
+  assert.equal(result.records.A00.wins, 17);
+  assert.equal(result.adjustments[0].teamId, 'A01');
+  assert.ok(result.adjustments.every(({ record }) => record.wins >= record.divisionWins && record.wins <= 11 + record.divisionWins));
+});
+
+test('the last 9-8 target stays unchanged while one-win corrections spread across the closest teams', () => {
+  const teams = buildTeams();
+  const targetTeamId = teams.at(-1).id;
+  const records = Object.fromEntries(teams.map((team) => [team.id, {
+    wins: 9,
+    losses: 8,
+    ties: 0,
+    divisionWins: 3,
+    recordSource: 'manual',
+    manualOverride: true,
+  }]));
+
+  const result = rebalanceCompleteManualRecords({ records, teams, targetTeamId });
+  assert.equal(result.isBalanced, true);
+  assert.equal(result.records[targetTeamId].wins, 9);
+  assert.equal(getManualRecordLeagueStatus({ records: result.records, teams }).totalWins, 272);
+  assert.equal(result.adjustments.length, 16);
+  assert.ok(result.adjustments.every(({ previousRecord, record }) => previousRecord.wins === 9 && record.wins === 8));
+  const notice = formatManualRecordBalanceNotice({ adjustments: result.adjustments, teams });
+  assert.match(notice, /League records balanced automatically:/);
+  assert.ok(result.adjustments.every(({ teamId }) => notice.includes(teams.find((team) => team.id === teamId).name)));
+});
+
 test('record completion accepts balanced ties and division-win deficits supported by them', () => {
   const teams = buildTeams();
   const records = buildBalancedRecords(teams);
@@ -266,6 +325,92 @@ test('advanced snapshots canonicalize each game once and verify records against 
   const validation = validatePredictionSnapshot(changed, { teams, schedule });
   assert.equal(validation.valid, false);
   assert.match(validation.errors.join('\n'), /does not match its advanced game picks/i);
+});
+
+test('single-team Advanced share schedules require exactly 17 legal team results', () => {
+  const teams = buildTeams();
+  const schedule = buildSchedule(teams);
+  const team = teams[0];
+  const teamGames = schedule.games.filter((game) => game.awayTeam === team.id || game.homeTeam === team.id);
+  const gameResults = Object.fromEntries(teamGames.map((game) => [
+    game.awayTeam === team.id ? game.awayGameIndex : game.homeGameIndex,
+    'W',
+  ]));
+
+  const complete = getTeamAdvancedShareSchedule({
+    teamId: team.id.toLowerCase(),
+    predictions: { [team.id]: { gameResults } },
+    schedule,
+  });
+  assert.equal(complete.isComplete, true);
+  assert.equal(complete.teamId, team.id);
+  assert.equal(complete.rows.length, 17);
+  assert.ok(complete.rows.every((row) => row.venue === 'home' || row.venue === 'away'));
+  assert.ok(complete.rows.every((row) => row.opponentId && row.result === 'W'));
+
+  const missing = structuredClone(gameResults);
+  delete missing[complete.rows[0].gameIndex];
+  const incomplete = getTeamAdvancedShareSchedule({
+    teamId: team.id,
+    predictions: { [team.id]: { gameResults: missing } },
+    schedule,
+  });
+  assert.equal(incomplete.isComplete, false);
+  assert.match(incomplete.errors.join('\n'), /missing a valid/i);
+
+  const invalid = { ...gameResults, [complete.rows[0].gameIndex]: 'X' };
+  assert.equal(getTeamAdvancedShareSchedule({
+    teamId: team.id,
+    predictions: { [team.id]: { gameResults: invalid } },
+    schedule,
+  }).isComplete, false);
+});
+
+test('single-team Advanced completion rejects 17 picks that disagree with the displayed record', () => {
+  const teams = buildTeams();
+  const schedule = buildSchedule(teams);
+  const team = teams[0];
+  const teamGames = schedule.games.filter((game) => game.awayTeam === team.id || game.homeTeam === team.id);
+  const gameResults = Object.fromEntries(teamGames.map((game) => [
+    game.awayTeam === team.id ? game.awayGameIndex : game.homeGameIndex,
+    'W',
+  ]));
+
+  const status = getTeamAdvancedPredictionStatus({
+    teamId: team.id,
+    predictions: { [team.id]: { wins: 16, losses: 1, ties: 0, divisionWins: 6, gameResults } },
+    schedule,
+    teams,
+  });
+  assert.equal(status.isComplete, false);
+  assert.equal(status.matchesRecord, false);
+  assert.match(status.errors.join('\n'), /do not match its predicted record/i);
+});
+
+test('single-team Advanced share schedules reject missing, duplicate, and extra scheduled games', () => {
+  const teams = buildTeams();
+  const schedule = buildSchedule(teams);
+  const team = teams[0];
+  const teamGames = schedule.games.filter((game) => game.awayTeam === team.id || game.homeTeam === team.id);
+  const gameResults = Object.fromEntries(teamGames.map((game) => [
+    game.awayTeam === team.id ? game.awayGameIndex : game.homeGameIndex,
+    'L',
+  ]));
+  const withoutOne = { ...schedule, games: schedule.games.filter((game) => game.id !== teamGames[0].id) };
+  assert.match(getTeamAdvancedShareSchedule({
+    teamId: team.id,
+    predictions: { [team.id]: { gameResults } },
+    schedule: withoutOne,
+  }).errors.join('\n'), /exactly 17/i);
+
+  const duplicate = { ...schedule, games: [...schedule.games, { ...teamGames[0] }] };
+  const duplicateResult = getTeamAdvancedShareSchedule({
+    teamId: team.id,
+    predictions: { [team.id]: { gameResults } },
+    schedule: duplicate,
+  });
+  assert.equal(duplicateResult.isComplete, false);
+  assert.match(duplicateResult.errors.join('\n'), /exactly 17|duplicate/i);
 });
 
 test('canonical game picks detect mirrored conflicts and schedule fingerprints are stable', () => {

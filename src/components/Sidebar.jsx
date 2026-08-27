@@ -10,6 +10,7 @@ export default function Sidebar({
   pickedGameCount = 0,
   totalGames = 0,
   isSeasonComplete,
+  predictionProgress = null,
   darkMode,
   onToggleDarkMode,
   onDisplay,
@@ -86,16 +87,18 @@ export default function Sidebar({
         {activeTab === 'predictions' && (
           <>
           <SidebarProgressBar
-            label="Teams"
-            value={completedTeamCount}
-            total={totalTeams}
-            complete={isSeasonComplete}
+            label={predictionProgress?.primary?.label ?? 'Teams'}
+            value={predictionProgress?.primary?.value ?? completedTeamCount}
+            total={predictionProgress?.primary?.total ?? totalTeams}
+            complete={(predictionProgress?.primary?.status ?? (isSeasonComplete ? 'complete' : 'incomplete')) === 'complete'}
+            status={predictionProgress?.primary?.status}
           />
           <SidebarProgressBar
-            label="Games"
-            value={pickedGameCount}
-            total={totalGames}
-            complete={totalGames > 0 && pickedGameCount >= totalGames}
+            label={predictionProgress?.secondary?.label ?? 'Games'}
+            value={predictionProgress?.secondary?.value ?? pickedGameCount}
+            total={predictionProgress?.secondary?.total ?? totalGames}
+            complete={(predictionProgress?.secondary?.status ?? (totalGames > 0 && pickedGameCount >= totalGames ? 'complete' : 'incomplete')) === 'complete'}
+            status={predictionProgress?.secondary?.status}
           />
           </>
         )}
@@ -169,6 +172,7 @@ export default function Sidebar({
           onClick={() => onTabChange('predictions')}
           icon={<SeasonIcon />}
           label="Predictions"
+          beta
           collapsed={collapsed}
         />
         {collapsed && (
@@ -388,7 +392,7 @@ export default function Sidebar({
           className="sidebar-version"
           style={{ color: 'var(--color-label-tertiary)' }}
         >
-          v8.8.0
+          v8.8.1
         </div>
       </div>
     </aside>
@@ -400,10 +404,13 @@ function formatProgressValue(value) {
   return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
 }
 
-function SidebarProgressBar({ label, value, total, complete }) {
+function SidebarProgressBar({ label, value, total, complete, status = 'incomplete' }) {
   const safeTotal = Math.max(0, Number(total) || 0);
-  const safeValue = Math.min(safeTotal, Math.max(0, Number(value) || 0));
+  const displayValue = Math.max(0, Number(value) || 0);
+  const safeValue = Math.min(safeTotal, displayValue);
   const progress = safeTotal > 0 ? (safeValue / safeTotal) * 100 : 0;
+  const hasError = status === 'invalid' || status === 'excess';
+  const statusLabel = status === 'excess' ? ' · Excess' : status === 'invalid' ? ' · Invalid' : '';
 
   return (
     <div className="sidebar-progress-metric" aria-label={`${label} progress`}>
@@ -417,10 +424,10 @@ function SidebarProgressBar({ label, value, total, complete }) {
         <span
           className="text-xs font-bold tabular-nums"
           style={{
-            color: complete ? 'var(--color-accent-green)' : 'var(--color-label-secondary)',
+            color: hasError ? 'var(--color-accent-red)' : complete ? 'var(--color-accent-green)' : 'var(--color-label-secondary)',
           }}
         >
-          {formatProgressValue(safeValue)}/{formatProgressValue(safeTotal)}
+          {formatProgressValue(displayValue)}/{formatProgressValue(safeTotal)}{statusLabel}
           {complete && ' ✓'}
         </span>
       </div>
@@ -432,7 +439,7 @@ function SidebarProgressBar({ label, value, total, complete }) {
           className="h-full rounded-full transition-all duration-500"
           style={{
             width: `${progress}%`,
-            background: complete ? 'var(--color-accent-green)' : 'var(--color-signature)',
+            background: hasError ? 'var(--color-accent-red)' : complete ? 'var(--color-accent-green)' : 'var(--color-signature)',
           }}
         />
       </div>

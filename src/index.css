@@ -20693,6 +20693,16 @@ body {
   padding: 14px;
 }
 
+.predictions-record-balance-notice {
+  margin: 0;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--color-separator);
+  background: var(--color-fill-secondary);
+  color: var(--color-label-secondary);
+  font-size: var(--type-body);
+  line-height: 1.45;
+}
+
 @media (min-width: 900px) {
   .predictions-record-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -20809,6 +20819,25 @@ body {
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.predictions-record-set-default {
+  min-height: 44px;
+  margin-top: 4px;
+  padding: 0 12px;
+  border: 1px solid color-mix(in srgb, var(--prediction-team-fg, var(--color-label)) 28%, transparent);
+  border-radius: 999px;
+  background: var(--prediction-team-subtle, var(--color-fill-secondary));
+  color: var(--prediction-team-fg, var(--color-label));
+  font-family: var(--font-body, 'Figtree', sans-serif);
+  font-size: var(--type-label);
+  font-weight: 800;
+  line-height: 1;
+}
+
+.predictions-record-set-default:hover,
+.predictions-record-set-default:focus-visible {
+  border-color: var(--prediction-team-fg, var(--color-label));
 }
 
 .predictions-record-row-status strong,

@@ -59,7 +59,7 @@ export default function DraftSyncPanel() {
     try {
       await action();
     } catch (nextError) {
-      setError(nextError?.message ?? 'Draft Sync is unavailable right now.');
+      setError(nextError?.message ?? 'Device Sync is unavailable right now.');
     } finally {
       setBusy(false);
     }
@@ -177,7 +177,7 @@ export default function DraftSyncPanel() {
                 value={formattedClaimCode}
                 onChange={(event) => setClaimCode(event.target.value)}
                 placeholder="XXXX-XXXX"
-                aria-label="Draft Sync pairing code"
+                aria-label="Device Sync pairing code"
                 inputMode="text"
                 autoCapitalize="characters"
                 className="min-w-0 flex-1 rounded-lg px-3 py-2 text-sm font-semibold tracking-[0.12em] outline-none"

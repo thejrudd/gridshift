@@ -273,6 +273,203 @@ export function buildCanonicalGamePicks({ predictions = {}, schedule = {} } = {}
   return picks;
 }
 
+/**
+ * Builds the fixed 17-game Advanced Mode schedule used by a single-team
+ * record share card. This deliberately validates only the selected team's
+ * schedule; the ordinary season-share gate remains independent of whether
+ * the rest of the league has game-by-game picks.
+ */
+export function getTeamAdvancedPredictionStatus({ teamId, predictions = {}, schedule = {}, teams = [] } = {}) {
+  const normalizedTeamId = normalizeTeamId(teamId);
+  const errors = [];
+  if (!normalizedTeamId) {
+    return { teamId: null, isComplete: false, completedCount: 0, totalGames: NFL_TEAM_GAMES, remainingCount: NFL_TEAM_GAMES, matchups: [], rows: [], errors: ['A team is required.'] };
+  }
+
+  const season = normalizeInteger(schedule?.season) ?? 0;
+  const rows = getScheduleGames(schedule).flatMap((game, index) => {
+    const awayId = getTeamIdFromGame(game, 'away');
+    const homeId = getTeamIdFromGame(game, 'home');
+    const isAway = awayId === normalizedTeamId;
+    const isHome = homeId === normalizedTeamId;
+    if (!isAway && !isHome) return [];
+
+    const gameId = getScheduleGameId(game, index, season);
+    const gameIndex = getTeamGameIndex(game, isAway ? 'away' : 'home');
+    const result = gameIndex == null ? null : predictions?.[normalizedTeamId]?.gameResults?.[gameIndex];
+    if (gameIndex == null) errors.push(`Game ${gameId} is missing ${normalizedTeamId}'s schedule position.`);
+    if (!['W', 'L', 'T'].includes(result)) errors.push(`Game ${gameId} is missing a valid ${normalizedTeamId} result.`);
+
+    return [{
+      gameId,
+      week: normalizeInteger(game?.week),
+      teamId: normalizedTeamId,
+      opponentId: isAway ? homeId : awayId,
+      venue: isAway ? 'away' : 'home',
+      gameIndex,
+      result: ['W', 'L', 'T'].includes(result) ? result : null,
+    }];
+  });
+
+  if (rows.length !== NFL_TEAM_GAMES) {
+    errors.push(`${normalizedTeamId} must have exactly ${NFL_TEAM_GAMES} scheduled games.`);
+  }
+  if (new Set(rows.map((row) => row.gameId)).size !== rows.length) {
+    errors.push(`${normalizedTeamId}'s schedule contains duplicate games.`);
+  }
+  if (new Set(rows.map((row) => row.gameIndex).filter(Number.isInteger)).size !== rows.length) {
+    errors.push(`${normalizedTeamId}'s schedule positions must be unique.`);
+  }
+
+  const selectedTeam = teams.find((team) => normalizeTeamId(team?.id) === normalizedTeamId);
+  const teamById = new Map(teams.map((team) => [normalizeTeamId(team?.id), team]));
+  const derivedRecord = rows.reduce((record, row) => {
+    if (row.result === 'W') {
+      record.wins += 1;
+      if (selectedTeam?.division && teamById.get(row.opponentId)?.division === selectedTeam.division) {
+        record.divisionWins += 1;
+      }
+    } else if (row.result === 'L') record.losses += 1;
+    else if (row.result === 'T') record.ties += 1;
+    return record;
+  }, { wins: 0, losses: 0, ties: 0, divisionWins: 0 });
+  const expectedRecord = normalizeRecord(predictions?.[normalizedTeamId]);
+  const canCompareRecord = teams.length > 0
+    && ['wins', 'losses', 'ties', 'divisionWins'].every((key) => Number.isInteger(predictions?.[normalizedTeamId]?.[key]));
+  const matchesRecord = !canCompareRecord || ['wins', 'losses', 'ties', 'divisionWins']
+    .every((key) => derivedRecord[key] === expectedRecord[key]);
+  if (rows.length === NFL_TEAM_GAMES && rows.every((row) => row.result) && !matchesRecord) {
+    errors.push(`${normalizedTeamId}'s Advanced Mode matchups do not match its predicted record.`);
+  }
+
+  const matchups = Object.freeze(rows.map((row) => Object.freeze({
+    ...row,
+    isAway: row.venue === 'away',
+  })));
+  const completedCount = rows.filter((row) => row.result != null).length;
+
+  return {
+    teamId: normalizedTeamId,
+    isComplete: errors.length === 0,
+    completedCount,
+    totalGames: NFL_TEAM_GAMES,
+    remainingCount: Math.max(0, NFL_TEAM_GAMES - completedCount),
+    matchesRecord,
+    derivedRecord: Object.freeze(derivedRecord),
+    matchups,
+    rows: matchups,
+    errors: [...new Set(errors)],
+  };
+}
+
+export function getTeamAdvancedShareSchedule(options = {}) {
+  return getTeamAdvancedPredictionStatus(options);
+}
+
+function isSemanticRecord(record) {
+  if (!isPlainObject(record)) return false;
+  const normalized = normalizeRecord(record);
+  return Object.values(normalized).every(Number.isInteger)
+    && normalized.wins >= 0
+    && normalized.losses >= 0
+    && normalized.ties >= 0
+    && normalized.wins + normalized.losses + normalized.ties === NFL_TEAM_GAMES;
+}
+
+export function getManualRecordLeagueStatus({ records = {}, teams = [] } = {}) {
+  const teamIds = teams.map((team) => normalizeTeamId(team?.id)).filter(Boolean);
+  const enteredTeamIds = teamIds.filter((teamId) => Object.hasOwn(records, teamId) && isSemanticRecord(records[teamId]));
+  const totalWins = enteredTeamIds.reduce((sum, teamId) => sum + normalizeRecord(records[teamId]).wins, 0);
+  const totalLosses = enteredTeamIds.reduce((sum, teamId) => sum + normalizeRecord(records[teamId]).losses, 0);
+  const totalTies = enteredTeamIds.reduce((sum, teamId) => sum + normalizeRecord(records[teamId]).ties, 0);
+  const targetWins = (teamIds.length * NFL_TEAM_GAMES - totalTies) / 2;
+  return {
+    isComplete: teamIds.length === NFL_TEAM_COUNT && enteredTeamIds.length === teamIds.length,
+    enteredTeamIds,
+    enteredCount: enteredTeamIds.length,
+    remainingCount: Math.max(0, teamIds.length - enteredTeamIds.length),
+    totalWins,
+    totalLosses,
+    totalTies,
+    targetWins,
+    winDelta: targetWins - totalWins,
+  };
+}
+
+export function rebalanceCompleteManualRecords({ records = {}, teams = [], targetTeamId } = {}) {
+  const status = getManualRecordLeagueStatus({ records, teams });
+  const nextRecords = { ...records };
+  const adjustments = [];
+  if (!status.isComplete || !Number.isInteger(status.winDelta) || status.winDelta === 0) {
+    return { records: nextRecords, adjustments, isBalanced: status.isComplete && status.winDelta === 0, remainingDelta: status.winDelta };
+  }
+
+  let remainingDelta = status.winDelta;
+  const candidates = teams
+    .filter((team) => normalizeTeamId(team?.id) !== normalizeTeamId(targetTeamId))
+    .map((team) => {
+      const teamId = normalizeTeamId(team?.id);
+      const record = normalizeRecord(records[teamId]);
+      return {
+        teamId,
+        originalRecord: record,
+        record,
+        adjustmentCount: 0,
+        minWins: Math.max(0, record.divisionWins),
+        maxWins: Math.min(NFL_TEAM_GAMES - record.ties, 11 + record.divisionWins),
+      };
+    });
+
+  while (remainingDelta !== 0) {
+    const direction = remainingDelta > 0 ? 1 : -1;
+    const candidate = candidates
+      .filter((entry) => direction > 0 ? entry.record.wins < entry.maxWins : entry.record.wins > entry.minWins)
+      .sort((left, right) => {
+        const leftNextWins = left.record.wins + direction;
+        const rightNextWins = right.record.wins + direction;
+        return Math.abs(leftNextWins - 8.5) - Math.abs(rightNextWins - 8.5)
+          || left.adjustmentCount - right.adjustmentCount
+          || left.teamId.localeCompare(right.teamId);
+      })[0];
+    if (!candidate) break;
+    const wins = candidate.record.wins + direction;
+    candidate.record = { ...candidate.record, wins, losses: NFL_TEAM_GAMES - wins - candidate.record.ties };
+    candidate.adjustmentCount += 1;
+    remainingDelta -= direction;
+  }
+
+  for (const candidate of candidates.filter((entry) => entry.adjustmentCount > 0)) {
+    const { wins, losses } = candidate.record;
+    const updated = {
+      ...records[candidate.teamId],
+      wins,
+      losses,
+      recordSource: 'manual',
+      manualOverride: true,
+      manualRecord: { wins, losses, ties: candidate.record.ties, divisionWins: candidate.record.divisionWins },
+    };
+    nextRecords[candidate.teamId] = updated;
+    adjustments.push({ teamId: candidate.teamId, previousRecord: candidate.originalRecord, record: normalizeRecord(updated) });
+  }
+
+  return { records: nextRecords, adjustments, isBalanced: remainingDelta === 0, remainingDelta };
+}
+
+export function formatManualRecordBalanceNotice({ adjustments = [], teams = [] } = {}) {
+  if (!adjustments.length) return '';
+  const teamById = new Map(teams.map((team) => [normalizeTeamId(team?.id), team]));
+  const affected = adjustments.map(({ teamId, record }) => {
+    const team = teamById.get(normalizeTeamId(teamId));
+    const label = team?.nickname || team?.name || team?.id || normalizeTeamId(teamId);
+    const normalized = normalizeRecord(record);
+    const recordLabel = normalized.ties > 0
+      ? `${normalized.wins}-${normalized.losses}-${normalized.ties}`
+      : `${normalized.wins}-${normalized.losses}`;
+    return `${label} to ${recordLabel}`;
+  });
+  return `League records balanced automatically: ${affected.join(', ')}.`;
+}
+
 export function deriveRecordsFromGamePicks({ gamePicks = {}, schedule = {}, teams = [] } = {}) {
   const { teams: normalizedTeams, teamIds, teamById } = getKnownTeams(teams);
   const records = Object.fromEntries(teamIds.map((teamId) => [teamId, {
@@ -382,6 +579,7 @@ export function validatePredictionCompletion({
     appendError(errors, record.wins + record.losses + record.ties === NFL_TEAM_GAMES, `${teamId} must total ${NFL_TEAM_GAMES} games.`);
     appendError(errors, record.divisionWins >= 0 && record.divisionWins <= 6, `${teamId} has an invalid division-win total.`);
     appendError(errors, record.divisionWins <= record.wins, `${teamId} has more division wins than total wins.`);
+    appendError(errors, record.divisionWins >= Math.max(0, record.wins - 11), `${teamId} has too few division wins for its total wins.`);
     totalWins += record.wins;
     totalLosses += record.losses;
     totalTies += record.ties;

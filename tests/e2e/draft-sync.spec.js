@@ -60,7 +60,7 @@ test('Draft Sync offers generate, cancel, and pair flows from one dialog', async
   const dialog = page.getByRole('dialog', { name: 'Device Sync' });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole('button', { name: 'Generate pairing code' })).toBeVisible();
-  const pairingInput = dialog.getByLabel('Draft Sync pairing code');
+  const pairingInput = dialog.getByLabel('Device Sync pairing code');
   await expect(pairingInput).toBeVisible();
   expect(await pairingInput.evaluate((input) => Number.parseFloat(getComputedStyle(input).fontSize))).toBeGreaterThanOrEqual(16);
 
@@ -72,7 +72,7 @@ test('Draft Sync offers generate, cancel, and pair flows from one dialog', async
   await expect(dialog.getByRole('button', { name: 'Generate pairing code' })).toBeVisible();
   await expect(dialog.getByText('Not connected', { exact: true })).toBeVisible();
 
-  await dialog.getByLabel('Draft Sync pairing code').fill('ABCD-EFGH');
+  await dialog.getByLabel('Device Sync pairing code').fill('ABCD-EFGH');
   await dialog.getByRole('button', { name: 'Pair', exact: true }).click();
   await expect(dialog.getByRole('button', { name: 'Pair another device' })).toBeVisible();
   await expect(dialog.getByRole('button', { name: 'Remove this device from sync' })).toBeVisible();

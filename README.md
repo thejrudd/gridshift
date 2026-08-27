@@ -123,18 +123,19 @@ Draft Sync is an optional capability of the existing API sidecar, not a required
 | Build tool | Vite 7 |
 | Styling | Tailwind CSS 3 + CSS custom properties |
 | Bento grid | react-grid-layout |
-| Image export | html2canvas |
+| Share-card capture | Browser-native screenshot view |
 | Fantasy data | Sleeper API (client-side) |
 | Player data | ESPN public APIs (client-side) |
 | Live data | Optional BALLDONTLIE NFL API via server-side GridShift API |
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) + optional Node API sidecar |
 
-## What's New in v8.8.0
+## What's New in v8.8.1
 
-- **Prediction Share Cards** — Turn a complete season into polished Division Winners, Playoff Seeding, or Full Bracket cards with season, pick-week, and connected-manager context.
-- **Shareable prediction links** — Send a compact link or QR code that opens a validated read-only snapshot; recipients can inspect it without replacing their own picks until they choose to apply it.
-- **Prediction Device Sync** — Optionally pair devices with a one-time code to keep one prediction plan current across them, while retaining local-first saves and clear device revocation.
+- **Prediction Share Card reliability** — Render team identity completely, validate the exact records and playoff selections being shared, and provide a faithful screenshot view for saving cards from any device.
+- **Team Record card** — Capture one selected team's complete 17-game Advanced Mode schedule with direct guidance when that team's schedule still needs picks.
+- **Prediction progress and integrity** — Keep record completion separate from Advanced Mode completion, show integer progress, identify impossible league-wide records, and clear stale matchup picks when a manual record changes.
+- **Device Sync identity safety** — Keep paired credentials scoped to the active Sleeper user so account hydration and switching do not make Draft and Predictions appear independently configured.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 

@@ -15,6 +15,14 @@ Open bugs are listed first, deferred work next, fixed bugs below. Add new entrie
 
 | Bug | Fixed In |
 |-----|----------|
+| Device Sync setup can appear independent between Draft and Predictions because Sleeper identity hydration or account switching can overwrite or erase the shared locally stored device credential before the paired user's token is restored. | v8.8.1 |
+| Prediction Share Cards can render without NFL team logos, leaving team identity incomplete in the visible card and downloaded image. | v8.8.1 |
+| Prediction Share Card PNG downloads are reconstructed by `html2canvas` instead of capturing the rendered card faithfully, causing collapsed, overlapping layouts that do not match the in-app preview. | v8.8.1 |
+| Prediction Share Cards can say “Complete the playoff bracket” even after picks are present, because the export uses a separate readiness flag instead of validating the exact records and playoff selections it will encode. | v8.8.1 |
+| “Complete Regular Season To Share” incorrectly requires every Advanced Mode matchup when Advanced Mode is selected, instead of becoming available when all team records are complete. | v8.8.1 |
+| Predictions sidebar progress mixes aggregate record slots with canonical Advanced Mode matchups, allowing a completed-looking record slate to show values such as 31/32 teams and 263.5/272 games. | v8.8.1 |
+| Predict Record allows league-wide win totals that cannot balance against the 272-game NFL schedule, such as assigning all 32 teams nine wins, without preventing or clearly identifying the impossible season. | v8.8.1 |
+| Changing a manual 17–0 or 0–17 prediction back to a non-perfect record can preserve its forced 17 Advanced Mode results and mirrored opponent picks, leaving records and matchup-level data inconsistent. | v8.8.1 |
 | Fantasy Roster player availability designations can retain the wrong foreground contrast after switching between light and dark mode, making status text unreadable on some team gradients. | v8.8.0 |
 | Fantasy Scoring's league-year model control no longer applies a selected year's rules across Fantasy, preventing managers from evaluating one results season with another linked league year's scoring. | v8.8.0 |
 | Fantasy Rankings image exports identify the active scoring model but omit the NFL-stat season used to calculate the rankings. | v8.8.0 |

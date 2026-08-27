@@ -4,6 +4,10 @@ import useCardGlow from '../../hooks/useCardGlow.jsx';
 import { getAllDivisions, getTeamsByDivision, sortTeamsByRecord } from '../../utils/scheduleParser';
 import { getTeamVisualTheme } from '../../utils/teamVisualTheme';
 import { getLowestRemainingSeedTeam } from '../../utils/playoffBracket';
+import {
+  formatManualRecordBalanceNotice,
+  rebalanceCompleteManualRecords,
+} from '../../utils/predictionSnapshot';
 
 const SEASON_VIEWS = [
   { id: 'predictions', label: 'Picks' },
@@ -621,6 +625,15 @@ function RecordTeamRow({ team, record, onRecordChange, darkMode }) {
       <div className="predictions-record-row-status">
         <strong>{recordStatusLabel(record)}</strong>
         {recordIsSet && <span>{divisionRecordLabel(record)}</span>}
+        {!recordIsSet && (
+          <button
+            type="button"
+            className="predictions-record-set-default"
+            onClick={() => onRecordChange?.({ teamId: team.id, record: editableRecord })}
+          >
+            Set 8-9
+          </button>
+        )}
       </div>
       <RecordControls
         compact
@@ -684,11 +697,9 @@ function AdvancedTeamRow({ team, record, onOpenTeam, darkMode }) {
   );
 }
 
-function DivisionRecordGroup({ division, teams, records, onRecordChange, advanced = false, onOpenTeam, darkMode }) {
+function DivisionRecordGroup({ division, teams, records, onRecordsChange, advanced = false, onOpenTeam, darkMode }) {
   const handleRecordChange = ({ teamId, record }) => {
-    rebalanceDivisionRecords(teams, records, teamId, record).forEach(([balancedTeamId, balancedRecord]) => {
-      onRecordChange?.({ teamId: balancedTeamId, record: balancedRecord });
-    });
+    onRecordsChange?.(rebalanceDivisionRecords(teams, records, teamId, record), teamId);
   };
 
   return (
@@ -741,6 +752,26 @@ export function PredictionsPicks({
   onOpenTeam,
   darkMode = false,
 }) {
+  const [balanceNotice, setBalanceNotice] = useState('');
+  const handleRecordsChange = (entries, targetTeamId) => {
+    const nextRecords = { ...records };
+    entries.forEach(([teamId, record]) => { nextRecords[teamId] = record; });
+    const balanced = rebalanceCompleteManualRecords({
+      records: nextRecords,
+      teams,
+      targetTeamId,
+    });
+    const updates = new Map(entries);
+    balanced.adjustments.forEach(({ teamId, record }) => updates.set(teamId, record));
+    updates.forEach((record, teamId) => onRecordChange?.({ teamId, record }));
+
+    if (balanced.adjustments.length) {
+      setBalanceNotice(formatManualRecordBalanceNotice({ adjustments: balanced.adjustments, teams }));
+    } else {
+      setBalanceNotice('');
+    }
+  };
+
   return (
     <section className="predictions-picks-view">
       <div className="predictions-control-bar">
@@ -753,6 +784,11 @@ export function PredictionsPicks({
             <p className="predictions-eyebrow">{pickMode === 'record' ? 'Record-first picks' : 'Team drilldown'}</p>
             <h2>{pickMode === 'record' ? 'Predict Record' : 'Advanced Mode'}</h2>
           </header>
+          {pickMode === 'record' && balanceNotice && (
+            <p className="predictions-record-balance-notice" role="status" aria-live="polite">
+              {balanceNotice}
+            </p>
+          )}
           <div className="predictions-record-grid">
             {getAllDivisions().map((division) => (
               <DivisionRecordGroup
@@ -760,7 +796,7 @@ export function PredictionsPicks({
                 division={division}
                 teams={getTeamsByDivision(teams, division)}
                 records={records}
-                onRecordChange={onRecordChange}
+                onRecordsChange={handleRecordsChange}
                 advanced={pickMode === 'advanced'}
                 onOpenTeam={onOpenTeam}
                 darkMode={darkMode}
