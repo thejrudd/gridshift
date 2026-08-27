@@ -5,6 +5,7 @@ import {
   createPredictionShareView,
   formatPredictionRecord,
   getBracketRound,
+  getPredictionShareTeamLogoUrl,
   getShareCardTeamId,
 } from './shareCardModel.js';
 import './predictionShareCards.css';
@@ -15,15 +16,20 @@ const CARD_SPECS = {
   divisions: { kicker: 'Division winners', subtitle: 'Every division called' },
   seeding: { kicker: 'Playoff picture', subtitle: 'Seeds 1–7 · both conferences' },
   bracket: { kicker: 'My bracket', subtitle: 'Wild card through Super Bowl' },
+  'team-record': { kicker: 'Team forecast', subtitle: 'Every regular-season matchup called' },
 };
 
-const teamLogo = (team) => team?.logoUrl ?? `https://a.espncdn.com/i/teamlogos/nfl/500/${String(team?.id ?? '').toLowerCase()}.png`;
 const teamName = (team) => team?.nickname ?? team?.name ?? team?.id ?? 'TBD';
 const teamFullName = (team) => team?.name ?? [team?.city, team?.nickname].filter(Boolean).join(' ') ?? 'TBD';
 
 function TeamMark({ team, className = 'prediction-share-card__team-logo' }) {
   if (!team) return <span className={`${className} prediction-share-card__team-logo--empty`} aria-hidden="true" />;
-  return <img className={className} src={teamLogo(team)} alt="" crossOrigin="anonymous" />;
+  return <img
+    className={className}
+    src={getPredictionShareTeamLogoUrl(team)}
+    alt=""
+    onError={(event) => { event.currentTarget.style.visibility = 'hidden'; }}
+  />;
 }
 
 function TeamSurface({ team, tone, children, className = '', style = {} }) {
@@ -191,6 +197,27 @@ function BracketCard({ view, tone }) {
   </div>;
 }
 
+function TeamRecordCard({ view, tone }) {
+  const team = view.teamRecord?.team;
+  const matchups = view.teamRecord?.matchups ?? [];
+  return <div className="prediction-share-card__body prediction-share-card__team-record">
+    <TeamSurface team={team} tone={tone} className="prediction-share-card__team-record-hero">
+      <TeamMark team={team} className="prediction-share-card__team-record-logo" />
+      <div><p>{team?.division}</p><b>{teamFullName(team)}</b></div>
+      <strong>{formatPredictionRecord(team?.record)}</strong>
+    </TeamSurface>
+    <div className="prediction-share-card__team-record-grid">
+      {matchups.map((matchup) => <TeamSurface key={matchup.gameId ?? `${matchup.week}-${matchup.gameIndex}`} team={matchup.opponent} tone={tone} className="prediction-share-card__team-record-game">
+        <span className="prediction-share-card__team-record-week">W{matchup.week}</span>
+        <span className="prediction-share-card__team-record-venue">{matchup.venue === 'away' ? '@' : 'vs'}</span>
+        <TeamMark team={matchup.opponent} />
+        <b>{matchup.opponent?.id ?? 'TBD'}</b>
+        <strong data-result={matchup.result}>{matchup.result}</strong>
+      </TeamSurface>)}
+    </div>
+  </div>;
+}
+
 /**
  * Fixed-size, image-exportable prediction card. `model` is a canonical
  * prediction snapshot or the derived model supplied by the share feature.
@@ -215,6 +242,7 @@ export const PredictionShareCard = forwardRef(function PredictionShareCard({
     divisions: <DivisionsCard view={view} tone={tone} />,
     seeding: <SeedingCard view={view} tone={tone} />,
     bracket: <BracketCard view={view} tone={tone} />,
+    'team-record': <TeamRecordCard view={view} tone={tone} />,
   }[format] ?? <BoardCard view={view} tone={tone} />;
 
   return <article

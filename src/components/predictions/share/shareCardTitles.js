@@ -39,9 +39,16 @@ export const SHARE_CARD_TITLES = {
     ['Every Round', 'Called'], ['The Road', 'Is Drawn'], ['One Team', 'Survives'],
     ['The Final', 'Fourteen'], ['Postseason', 'Script'], ['Chase The', 'Trophy'],
   ],
+  'team-record': [
+    ['Seventeen', 'Calls'], ['Every Week', 'Called'], ['The Season', 'Game By Game'],
+    ['My Team', 'My Picks'], ['The Full', 'Schedule'], ['Road To', 'The Record'],
+    ['Week By', 'Week'], ['The Record', 'Explained'], ['Sunday By', 'Sunday'],
+    ['Every Matchup', 'Matters'], ['The Team', 'Forecast'], ['How They', 'Get There'],
+    ['One Team', 'Seventeen Games'], ['The Season', 'Mapped'], ['Final Record', 'Called'],
+  ],
 };
 
-export const SHARE_CARD_FORMATS = ['board', 'champions', 'divisions', 'seeding', 'bracket'];
+export const SHARE_CARD_FORMATS = ['board', 'champions', 'divisions', 'seeding', 'bracket', 'team-record'];
 
 export function getShareCardTitle(format, titleId = 0) {
   const titles = SHARE_CARD_TITLES[format] ?? SHARE_CARD_TITLES.board;

@@ -11,8 +11,8 @@ import {
   revokeDraftSyncDevice,
   startDraftSyncPairing,
 } from '../api/draftSyncApi.js';
+import { readDeviceSyncToken, writeDeviceSyncToken } from '../utils/deviceSyncCredentials.js';
 
-const DEVICE_TOKEN_STORAGE_KEY = 'gridshift_draft_sync_device_tokens_v1';
 const SYNC_META_PREFIX = 'gridshift_draft_sync_meta_v1';
 const POLL_INTERVAL_MS = 2_000;
 const WRITE_DEBOUNCE_MS = 500;
@@ -34,32 +34,6 @@ function getScopeKey(scope) {
   return [scope?.sleeperUserId, scope?.leagueId, scope?.season, scope?.draftId]
     .map((value) => String(value ?? ''))
     .join(':');
-}
-
-function readTokenMap() {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(DEVICE_TOKEN_STORAGE_KEY) || '{}');
-    return parsed && typeof parsed === 'object' ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-
-function readToken(userId) {
-  if (!userId) return '';
-  return String(readTokenMap()[userId] ?? '');
-}
-
-function writeToken(userId, token) {
-  if (!userId) return;
-  try {
-    const tokens = readTokenMap();
-    if (token) tokens[userId] = token;
-    else delete tokens[userId];
-    localStorage.setItem(DEVICE_TOKEN_STORAGE_KEY, JSON.stringify(tokens));
-  } catch {
-    // Device credentials are best-effort local state. A cleared browser can re-pair.
-  }
 }
 
 function readMeta(scopeKey) {
@@ -105,7 +79,7 @@ export function DraftSyncProvider({ children }) {
   const { platform, sleeperUser } = useFantasyLeague();
   const sleeperUserId = normalizeUserId(sleeperUser?.user_id);
   const [serverStatus, setServerStatus] = useState({ loading: true, enabled: false, error: null });
-  const [deviceToken, setDeviceToken] = useState(() => readToken(sleeperUserId));
+  const [deviceToken, setDeviceToken] = useState(() => readDeviceSyncToken(sleeperUserId));
   const [pairingCode, setPairingCode] = useState('');
   const [pairingId, setPairingId] = useState('');
   const [pairingStatus, setPairingStatus] = useState('');
@@ -116,6 +90,7 @@ export function DraftSyncProvider({ children }) {
   const [scope, setScope] = useState(null);
   const registrationRef = useRef(null);
   const scopeRef = useRef(null);
+  const sleeperUserIdRef = useRef(sleeperUserId);
   const tokenRef = useRef(deviceToken);
   const deviceRoleRef = useRef(deviceRole);
   const revisionRef = useRef(0);
@@ -130,11 +105,12 @@ export function DraftSyncProvider({ children }) {
   const pendingAuthorityAtRef = useRef(null);
   const authorityPublishPendingRef = useRef(false);
 
+  sleeperUserIdRef.current = sleeperUserId;
+
   useEffect(() => {
     tokenRef.current = deviceToken;
     deviceRoleRef.current = deviceRole;
-    writeToken(sleeperUserId, deviceToken);
-  }, [deviceRole, deviceToken, sleeperUserId]);
+  }, [deviceRole, deviceToken]);
 
   useEffect(() => {
     if (!serverStatus.enabled || !deviceToken) return undefined;
@@ -155,7 +131,9 @@ export function DraftSyncProvider({ children }) {
   }, [deviceToken, serverStatus.enabled]);
 
   useEffect(() => {
-    setDeviceToken(readToken(sleeperUserId));
+    const nextToken = readDeviceSyncToken(sleeperUserId);
+    tokenRef.current = nextToken;
+    setDeviceToken(nextToken);
     setPairingCode('');
     setPairingId('');
     setPairingStatus('');
@@ -511,11 +489,14 @@ export function DraftSyncProvider({ children }) {
   }, [deviceToken, pairingId, pairingStatus, queueAuthoritativeState, serverStatus.enabled]);
 
   const startPairing = useCallback(async () => {
-    if (!sleeperUserId) throw new Error('Connect a Sleeper account before setting up Draft Sync.');
-    const result = await startDraftSyncPairing({ sleeperUserId });
+    if (!sleeperUserId) throw new Error('Connect a Sleeper account before setting up Device Sync.');
+    const pairingUserId = sleeperUserId;
+    const result = await startDraftSyncPairing({ sleeperUserId: pairingUserId });
     const nextToken = result?.deviceToken ?? '';
     const nextRole = normalizeDeviceRole(result?.deviceRole) ?? DEVICE_ROLE_AUTHORITATIVE;
     if (nextToken) {
+      writeDeviceSyncToken(pairingUserId, nextToken);
+      if (sleeperUserIdRef.current !== pairingUserId) return result;
       tokenRef.current = nextToken;
       setDeviceToken(nextToken);
     }
@@ -533,10 +514,13 @@ export function DraftSyncProvider({ children }) {
 
   const claimPairing = useCallback(async (code) => {
     if (!sleeperUserId) throw new Error('Connect a Sleeper account before pairing this device.');
-    const result = await claimDraftSyncPairing({ sleeperUserId, pairingCode: code });
+    const pairingUserId = sleeperUserId;
+    const result = await claimDraftSyncPairing({ sleeperUserId: pairingUserId, pairingCode: code });
     const nextToken = result?.deviceToken ?? '';
     const nextRole = normalizeDeviceRole(result?.deviceRole) ?? DEVICE_ROLE_NON_AUTHORITATIVE;
     if (nextToken) {
+      writeDeviceSyncToken(pairingUserId, nextToken);
+      if (sleeperUserIdRef.current !== pairingUserId) return result;
       tokenRef.current = nextToken;
       setDeviceToken(nextToken);
     }
@@ -553,30 +537,34 @@ export function DraftSyncProvider({ children }) {
 
   const revokeDevice = useCallback(async () => {
     const token = tokenRef.current;
+    const revokedUserId = sleeperUserId;
     let revokeError = null;
     try {
       if (token) await revokeDraftSyncDevice({ token });
     } catch (error) {
       revokeError = error;
     } finally {
-      clearTimers();
-      setDeviceToken('');
-      setPairingCode('');
-      setPairingId('');
-      pairingStatusRef.current = '';
-      setPairingStatus('');
-      deviceRoleRef.current = null;
-      setDeviceRole(null);
-      setConflict(null);
-      initialSyncSetupRef.current = null;
-      setInitialSyncSetup(null);
-      pendingAuthorityAtRef.current = null;
-      pendingStateRef.current = null;
-      authorityPublishPendingRef.current = false;
-      setSyncStatus('local-only');
+      writeDeviceSyncToken(revokedUserId, '');
+      if (sleeperUserIdRef.current === revokedUserId) {
+        clearTimers();
+        setDeviceToken('');
+        setPairingCode('');
+        setPairingId('');
+        pairingStatusRef.current = '';
+        setPairingStatus('');
+        deviceRoleRef.current = null;
+        setDeviceRole(null);
+        setConflict(null);
+        initialSyncSetupRef.current = null;
+        setInitialSyncSetup(null);
+        pendingAuthorityAtRef.current = null;
+        pendingStateRef.current = null;
+        authorityPublishPendingRef.current = false;
+        setSyncStatus('local-only');
+      }
     }
     if (revokeError) throw revokeError;
-  }, [clearTimers]);
+  }, [clearTimers, sleeperUserId]);
 
   const resolveConflict = useCallback(async (choice) => {
     const current = conflict;

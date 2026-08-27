@@ -1288,3 +1288,13 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Prediction Device Sync** - Extend the opt-in paired-device model to prediction state with authoritative initial pairing, local-first saves, one-time-code revocation, responsive propagation, and server/proxy routing.
 - **Prediction reliability and polish** - Correct playoff reseeding, complete randomized playoff brackets, accurately detect share readiness, and protect share-card content from record, logo, and bracket-layout overflow.
 - **Regression coverage and documentation** - Add prediction snapshot, codec, playoff, share-card, sync-store, and browser coverage with updated architecture and edit-guide references.
+
+## v8.8.1 - Prediction Sharing Reliability
+*2026-08-27*
+
+- **Team Record share card** - Added a screenshot-only card for one selected NFL team's complete 17-game Advanced Mode schedule, with direct navigation back to that team's unfinished picks.
+- **Faithful card capture** - Replaced reconstructed PNG export with a device-ready screenshot view that preserves the rendered card layout and supports both canvas sizes and themes.
+- **Share readiness** - Validated the exact records and playoff selections used by the card and portable snapshot, so record-based cards can open as soon as the regular-season records are complete while playoff formats explain remaining requirements.
+- **Prediction progress and integrity** - Separated record progress from Advanced Mode progress, kept counters integer and schedule-aware, identified impossible league-wide records, and cleared stale Advanced Mode results when manual records change.
+- **Device Sync identity safety** - Scoped stored device credentials to the active Sleeper user through identity hydration and account switching.
+- **Regression coverage and documentation** - Added focused coverage for credential isolation, progress summaries, screenshot sizing, team-record snapshots, and the updated share-card contract.

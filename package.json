@@ -1,7 +1,7 @@
 {
   "name": "gridshift",
   "private": true,
-  "version": "8.8.0",
+  "version": "8.8.1",
   "description": "An interactive NFL season planner and fantasy football companion.",
   "license": "MIT",
   "repository": {
@@ -34,7 +34,6 @@
     "@phosphor-icons/react": "^2.1.10",
     "@vitejs/plugin-react": "^5.1.4",
     "express": "^5.2.1",
-    "html2canvas": "^1.4.1",
     "qrcode": "^1.5.4",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",

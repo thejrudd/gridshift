@@ -9,6 +9,11 @@ const teamId = (team) => String(typeof team === 'string' ? team : team?.id ?? ''
 
 export const getShareCardTeamId = teamId;
 
+export function getPredictionShareTeamLogoUrl(team) {
+  const id = teamId(team);
+  return id ? `/logos/${id}.png` : null;
+}
+
 export function formatPredictionRecord(record = {}) {
   const wins = Number(record.wins ?? record.w ?? 0);
   const losses = Number(record.losses ?? record.l ?? 0);
@@ -105,6 +110,15 @@ export function createPredictionShareView(model = {}) {
       ?? null,
   ]));
 
+  const selectedTeam = expandTeam(model.teamRecord?.team ?? model.teamRecord?.teamId, byId, records);
+  const teamRecord = selectedTeam ? {
+    team: selectedTeam,
+    matchups: (model.teamRecord?.matchups ?? model.teamRecord?.rows ?? []).map((row) => ({
+      ...row,
+      opponent: expandTeam(row.opponent ?? row.opponentId, byId, records),
+    })),
+  } : null;
+
   return {
     season: model.season ?? 'Season',
     weekLabel: model.weekLabel ?? model.progressLabel ?? null,
@@ -116,6 +130,7 @@ export function createPredictionShareView(model = {}) {
     playoff,
     champion,
     conferenceChampions,
+    teamRecord,
   };
 }
 

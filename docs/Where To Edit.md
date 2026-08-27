@@ -252,7 +252,7 @@ Feature screens such as Rosters, Rankings, Waivers, Matchups, Heatmap drilldowns
 ## Export / Import / Shareable Image
 
 - `src/components/ExportPreview.jsx` — prediction share-card studio, link/QR generation, copy, and PNG download
-- `src/components/predictions/share/` — five fixed-format card renderers, curated titles, and export geometry
+- `src/components/predictions/share/` — six fixed-format card renderers, curated titles, and export geometry; Team Record is screenshot-only and derives one team's 17 rows from Advanced Mode
 - `src/utils/predictionShareCodec.js` — compressed, checksummed URL-fragment transport
 - `src/utils/predictionShareModel.js` — pick-week context and snapshot-to-card projection
 - `src/components/ShareableImage.jsx`

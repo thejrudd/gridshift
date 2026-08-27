@@ -3,6 +3,7 @@ import Modal from './Modal';
 export default function ActionSheet({
   onClose,
   predictionCount,
+  predictionProgress = null,
   activeTab,
   onGuide,
   onDisplay,
@@ -48,6 +49,19 @@ export default function ActionSheet({
 
         {/* Primary actions group */}
         <div className="px-4 py-2">
+          {isPredictions && predictionProgress && (
+            <div className="mb-3 grid grid-cols-2 gap-2" aria-label="Prediction progress">
+              {[predictionProgress.primary, predictionProgress.secondary].map((metric) => {
+                const hasError = metric.status === 'invalid' || metric.status === 'excess';
+                return <div key={metric.label} className="px-3 py-2" style={{ background: 'var(--color-fill)', border: '1px solid var(--color-separator)' }}>
+                  <span className="block text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--color-label-tertiary)' }}>{metric.label}</span>
+                  <strong className="tabular-nums" style={{ color: hasError ? 'var(--color-accent-red)' : metric.status === 'complete' ? 'var(--color-accent-green)' : 'var(--color-label)' }}>
+                    {metric.value}/{metric.total}{metric.status === 'excess' ? ' · Excess' : metric.status === 'invalid' ? ' · Invalid' : ''}
+                  </strong>
+                </div>;
+              })}
+            </div>
+          )}
           {showLeagueControls && (
             <>
               <div className="px-1 pb-2 pt-1">

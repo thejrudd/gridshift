@@ -952,22 +952,19 @@ export const PredictionProvider = ({ children }) => {
       return;
     }
 
-    setPredictions(prev => {
-      const current = prev[teamId] || {};
-      const manualRecord = { wins, losses, ties, divisionWins };
-
-      return {
-        ...prev,
-        [teamId]: {
-          ...current,
-          ...manualRecord,
-          gameResults: current.gameResults || {},
-          recordSource: 'manual',
-          manualOverride: true,
-          manualRecord,
-        },
-      };
-    });
+    // A manual record is authoritative. Clear any previously forced or partial
+    // game results (and their mirrored opponent results) so Advanced Mode can
+    // never appear complete with a schedule that describes a different record.
+    setTeamRecord(
+      teamId,
+      wins,
+      losses,
+      divisionWins,
+      {},
+      allTeams,
+      ties,
+      { manualOverride: true, recordSource: 'manual', opponentSyncMode: 'preserve' },
+    );
   };
 
   const setTeamGameResults = (teamId, gameResults = {}, allTeams = []) => {

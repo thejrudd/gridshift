@@ -15,6 +15,7 @@ import {
   validatePredictionSnapshot,
 } from './utils/predictionSnapshot';
 import { decodePredictionShareUrl } from './utils/predictionShareCodec';
+import { getPredictionProgressSummary } from './utils/predictionProgress.js';
 import { usePWAInstall } from './hooks/usePWAInstall';
 import useBodyScrollLock from './hooks/useBodyScrollLock';
 import useServiceWorkerUpdate from './hooks/useServiceWorkerUpdate';
@@ -418,85 +419,6 @@ function buildPredictionPickMap(weeks = [], predictions = {}) {
     }
     return acc;
   }, {});
-}
-
-const VALID_PREDICTION_RESULTS = new Set(['W', 'L', 'T']);
-const FULL_SEASON_GAME_COUNT = 17;
-const REGULAR_SEASON_GAME_COUNT = 272;
-
-function getPositiveCount(value) {
-  const count = Number(value);
-  return Number.isFinite(count) ? Math.max(0, count) : 0;
-}
-
-function getTeamPredictionGameCount(team) {
-  return Math.max(
-    team?.opponents?.length || 0,
-    team?.schedule?.length || 0,
-    FULL_SEASON_GAME_COUNT,
-  );
-}
-
-function countRecordDecisionSlots(record, teamGameCount) {
-  if (!record) return 0;
-  const decisions = getPositiveCount(record.wins)
-    + getPositiveCount(record.losses)
-    + getPositiveCount(record.ties);
-  return Math.min(teamGameCount, decisions);
-}
-
-function countExplicitGameSlots(record, teamGameCount) {
-  return Object.entries(record?.gameResults ?? {}).reduce((count, [slot, result]) => {
-    const index = Number(slot);
-    if (!Number.isInteger(index) || index < 0 || index >= teamGameCount) return count;
-    return VALID_PREDICTION_RESULTS.has(result) ? count + 1 : count;
-  }, 0);
-}
-
-function isManualRecordPrediction(record) {
-  return Boolean(record?.manualOverride || record?.recordSource === 'manual');
-}
-
-function getPredictionProgressSummary(teams = [], predictions = {}, gameCounts = {}) {
-  let completedTeams = 0;
-  let manualTeamSlots = 0;
-  let totalTeamSlots = gameCounts.totalTeamSlots ?? 0;
-
-  if (!totalTeamSlots) {
-    totalTeamSlots = teams.reduce((sum, team) => sum + getTeamPredictionGameCount(team), 0);
-  }
-
-  for (const team of teams) {
-    const teamGameCount = getTeamPredictionGameCount(team);
-    const record = predictions?.[team.id];
-    const recordSlots = countRecordDecisionSlots(record, teamGameCount);
-    const explicitSlots = countExplicitGameSlots(record, teamGameCount);
-    const hasCompleteManualRecord = isManualRecordPrediction(record) && recordSlots >= teamGameCount;
-    const hasCompleteGamePicks = explicitSlots >= teamGameCount;
-
-    if (hasCompleteManualRecord || hasCompleteGamePicks) {
-      completedTeams += 1;
-    }
-
-    if (isManualRecordPrediction(record)) {
-      manualTeamSlots += Math.max(0, recordSlots - explicitSlots);
-    }
-  }
-
-  const totalGames = gameCounts.totalGames
-    || Math.round(totalTeamSlots / 2)
-    || (teams.length ? REGULAR_SEASON_GAME_COUNT : 0);
-  const pickedGames = Math.min(
-    totalGames,
-    (gameCounts.pickedGames ?? 0) + (manualTeamSlots / 2),
-  );
-
-  return {
-    completedTeams,
-    totalTeams: teams.length,
-    pickedGames,
-    totalGames,
-  };
 }
 
 function prunePlayoffPicksAfterChange(previous, matchupId) {
@@ -1305,37 +1227,50 @@ function AppInner() {
     setPredictionSyncScheduleFingerprint(predictionSchedule.season, createScheduleFingerprint(predictionSchedule));
   }, [predictionSchedule, setPredictionSyncScheduleFingerprint]);
   const predictionShareState = useMemo(() => {
-    const mode = predictionPickMode === 'advanced' ? 'advanced' : 'record';
-    let advancedGamePicks = {};
-    if (mode === 'advanced') {
-      try {
-        advancedGamePicks = buildCanonicalGamePicks({ predictions, schedule: predictionSchedule });
-      } catch { advancedGamePicks = {}; }
-    }
-    const completion = validatePredictionCompletion({
+    const recordCompletion = validatePredictionCompletion({
       records: predictions,
       teams: predictionTeams,
-      mode,
-      gamePicks: mode === 'advanced' ? advancedGamePicks : {},
+      mode: 'record',
+    });
+    let advancedGamePicks = {};
+    try {
+      advancedGamePicks = buildCanonicalGamePicks({ predictions, schedule: predictionSchedule });
+    } catch { advancedGamePicks = {}; }
+    const advancedCompletion = validatePredictionCompletion({
+      records: predictions,
+      teams: predictionTeams,
+      mode: 'advanced',
+      gamePicks: advancedGamePicks,
       schedule: predictionSchedule,
     });
     const playoffs = validatePlayoffPicks({
       playoffPicks,
-      records: completion.records,
+      records: recordCompletion.records,
       teams: predictionTeams,
     });
-    const errors = [...completion.errors, ...playoffs.errors];
+    const errors = [...recordCompletion.errors];
     if (Number(predictionSeason) !== Number(predictionSchedule?.season)) {
       errors.push(`The ${predictionSeason} schedule is not available yet.`);
     }
     if (!sleeperUser?.user_id) errors.push('Connect Sleeper before creating a share card.');
     let blockedLabel = '';
-    if (completion.errors.length) blockedLabel = 'Complete Regular Season To Share';
-    else if (playoffs.errors.length) blockedLabel = 'Complete Playoff Bracket To Share';
+    if (recordCompletion.errors.length) blockedLabel = 'Complete Regular Season To Share';
     else if (!sleeperUser?.user_id) blockedLabel = 'Connect Sleeper To Share';
     else if (Number(predictionSeason) !== Number(predictionSchedule?.season)) blockedLabel = 'Season Schedule Required To Share';
-    return { mode, ready: errors.length === 0, errors, blockedLabel };
-  }, [playoffPicks, predictionPickMode, predictionSchedule, predictionSeason, predictionTeams, predictions, sleeperUser]);
+    const mode = advancedCompletion.isComplete ? 'advanced' : 'record';
+    return {
+      mode,
+      ready: errors.length === 0,
+      errors,
+      blockedLabel,
+      capabilities: {
+        regularSeasonReady: recordCompletion.isComplete,
+        playoffReady: playoffs.isComplete,
+        advancedReady: advancedCompletion.isComplete,
+        snapshotMode: mode,
+      },
+    };
+  }, [playoffPicks, predictionSchedule, predictionSeason, predictionTeams, predictions, sleeperUser]);
 
   useEffect(() => {
     const token = pendingPredictionShare;
@@ -1410,6 +1345,15 @@ function AppInner() {
     navigatePredictionTeam(team);
   }, [navigatePredictionTeam]);
 
+  const handleOpenTeamAdvanced = useCallback((teamOrId) => {
+    const teamId = typeof teamOrId === 'object' ? teamOrId?.id : teamOrId;
+    const team = predictionTeams.find((candidate) => candidate.id === String(teamId ?? '').toUpperCase());
+    if (!team) return;
+    setExportPreviewOpen(false);
+    setPredictionPickMode('advanced');
+    navigatePredictionTeam(team);
+  }, [navigatePredictionTeam, predictionTeams]);
+
   const handleBackToAdvancedMode = useCallback(() => {
     setPredictionPickMode('advanced');
     applyRoute({ activeTab: 'predictions', seasonView: 'predictions' });
@@ -1432,16 +1376,19 @@ function AppInner() {
   }
 
   const predictionCount = getPredictionCount();
-  const progressSummary = getPredictionProgressSummary(
-    predictionTeams,
+  const progressSummary = getPredictionProgressSummary({
+    teams: predictionTeams,
     predictions,
-    getGamePredictionCounts(predictionTeams),
-  );
+    gameCounts: getGamePredictionCounts(predictionTeams),
+    mode: predictionPickMode,
+  });
   const completedTeamCount = progressSummary.completedTeams;
   const totalTeams = progressSummary.totalTeams || scheduleData.teams.length;
   const pickedGameCount = progressSummary.pickedGames;
   const totalGames = progressSummary.totalGames;
   const isSeasonComplete = totalTeams > 0 && completedTeamCount === totalTeams;
+  const mobileProgressMetric = progressSummary.primary;
+  const mobileProgressHasError = mobileProgressMetric.status === 'invalid' || mobileProgressMetric.status === 'excess';
   const statsRoutePlayerMeta = activeTab === 'statistics' && statisticsView === 'player'
     ? (readHistoryState().statsPlayerMeta ?? null)
     : null;
@@ -1459,6 +1406,7 @@ function AppInner() {
         pickedGameCount={pickedGameCount}
         totalGames={totalGames}
         isSeasonComplete={isSeasonComplete}
+        predictionProgress={progressSummary}
         darkMode={darkMode}
         onToggleDarkMode={toggleDarkMode}
         onDisplay={() => setDisplaySettingsOpen(true)}
@@ -1527,11 +1475,17 @@ function AppInner() {
               <span
                 className="text-xs font-bold tabular-nums px-2 py-0.5 rounded"
                 style={{
-                  background: isSeasonComplete ? 'rgba(46,213,120,0.12)' : 'var(--color-fill)',
-                  color: isSeasonComplete ? 'var(--color-accent-green)' : 'var(--color-label-secondary)',
+                  background: mobileProgressMetric.status === 'complete' ? 'rgba(46,213,120,0.12)' : 'var(--color-fill)',
+                  color: mobileProgressHasError
+                    ? 'var(--color-accent-red)'
+                    : mobileProgressMetric.status === 'complete'
+                      ? 'var(--color-accent-green)'
+                      : 'var(--color-label-secondary)',
                 }}
               >
-                Teams {completedTeamCount}/{totalTeams}{isSeasonComplete && ' ✓'}
+                {mobileProgressMetric.label} {mobileProgressMetric.value}/{mobileProgressMetric.total}
+                {mobileProgressMetric.status === 'complete' && ' ✓'}
+                {mobileProgressMetric.status === 'invalid' && ' · Invalid'}
               </span>
             </div>
             <SeasonSubNav activeView={seasonView} onViewChange={navigateSeasonView} />
@@ -2082,6 +2036,7 @@ function AppInner() {
         <ActionSheet
           onClose={() => setActionSheetOpen(false)}
           predictionCount={predictionCount}
+          predictionProgress={progressSummary}
           activeTab={activeTab}
           onGuide={() => { setGuideOpen(true); setActionSheetOpen(false); }}
           onDisplay={() => {
@@ -2267,6 +2222,7 @@ function AppInner() {
             predictions={sharedPredictionEnvelope?.predictions ?? predictions}
             playoffPicks={sharedPredictionEnvelope?.snapshot?.playoffPicks ?? playoffPicks}
             predictionMode={sharedPredictionEnvelope?.snapshot?.mode ?? predictionShareState.mode}
+            predictionShareCapabilities={predictionShareState.capabilities}
             predictionSeason={sharedPredictionEnvelope?.snapshot?.season ?? predictionSeason}
             sleeperUser={sharedPredictionEnvelope ? {
               user_id: sharedPredictionEnvelope.snapshot.manager.userId,
@@ -2275,6 +2231,8 @@ function AppInner() {
             } : sleeperUser}
             sourceSnapshot={sharedPredictionEnvelope?.snapshot ?? null}
             initialPresentation={sharedPredictionEnvelope?.presentation ?? null}
+            initialTeamId={predictionsTeamId}
+            onOpenTeamAdvanced={sharedPredictionEnvelope ? undefined : handleOpenTeamAdvanced}
             onClose={() => setExportPreviewOpen(false)}
           />
         </Suspense>

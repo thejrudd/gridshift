@@ -17,7 +17,7 @@ const providers = [
 
 const libraries = [
   ['React', 'MIT'], ['Vite', 'MIT'], ['Tailwind CSS', 'MIT'], ['Express', 'MIT'],
-  ['html2canvas', 'MIT'], ['react-grid-layout', 'MIT'], ['Reaviz', 'MIT'], ['Workbox', 'Apache-2.0'],
+  ['react-grid-layout', 'MIT'], ['Reaviz', 'MIT'], ['Workbox', 'Apache-2.0'],
 ];
 
 export default function LegalModal({ onClose }) {

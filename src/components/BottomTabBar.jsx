@@ -9,7 +9,7 @@ export default function BottomTabBar({ activeTab, onTabChange, tradeDisabled = f
     { id: 'statistics',  label: 'Statistics',  renderIcon: (active) => <PlayersIcon active={active} /> },
     { id: 'trade',       label: 'Trade',       renderIcon: (active) => <TradeIcon active={active} />, disabled: tradeDisabled },
     { id: 'draft',       label: 'Draft',       renderIcon: (active) => <DraftIcon active={active} />, beta: true },
-    { id: 'predictions', label: 'Predictions', renderIcon: (active) => <SeasonIcon active={active} /> },
+    { id: 'predictions', label: 'Predictions', renderIcon: (active) => <SeasonIcon active={active} />, beta: true },
   ];
 
   return (
