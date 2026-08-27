@@ -3,6 +3,7 @@ import { useTheme } from '../../context/ThemeContext';
 import useCardGlow from '../../hooks/useCardGlow.jsx';
 import { getAllDivisions, getTeamsByDivision, sortTeamsByRecord } from '../../utils/scheduleParser';
 import { getTeamVisualTheme } from '../../utils/teamVisualTheme';
+import { getLowestRemainingSeedTeam } from '../../utils/playoffBracket';
 
 const SEASON_VIEWS = [
   { id: 'predictions', label: 'Picks' },
@@ -1158,7 +1159,7 @@ function ConferenceBracket({ conference, seeds, picks, onPlayoffPick }) {
     [`${conference}-wc-4-5`]: seeds.find((team) => team.id === picks?.[`${conference}-wc-4-5`]),
   };
   const divisionalTeams = Object.values(wildCardWinners).filter(Boolean);
-  const lowestRemaining = [...divisionalTeams].reverse()[0];
+  const lowestRemaining = getLowestRemainingSeedTeam(seeds, divisionalTeams);
   const remainingDivisionalTeams = divisionalTeams.filter((team) => team.id !== lowestRemaining?.id);
 
   return (

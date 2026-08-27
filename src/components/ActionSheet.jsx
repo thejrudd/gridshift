@@ -9,6 +9,9 @@ export default function ActionSheet({
   onLegal,
   onAppTour,
   onExportImage,
+  predictionShareReady = false,
+  predictionShareReason = '',
+  predictionShareBlockedLabel = 'Complete Picks To Share',
   onExportJSON,
   onImportJSON,
   onRandom,
@@ -28,6 +31,7 @@ export default function ActionSheet({
   const isPredictions = activeTab === 'predictions';
   const showLeagueControls = Boolean(league);
   const showDraftSync = activeTab === 'draft' && Boolean(onDraftSync);
+  const showPredictionsSync = activeTab === 'predictions' && Boolean(onDraftSync);
   const years = leagueSeasonOptions?.length
     ? leagueSeasonOptions
     : league
@@ -98,12 +102,24 @@ export default function ActionSheet({
                   <ActionRow label="Draft Sync" onClick={onDraftSync} dataTour="draft-sync" />
                 </>
               )}
+              {showPredictionsSync && (
+                <>
+                  <Divider />
+                  <ActionRow label="Device Sync" onClick={onDraftSync} />
+                </>
+              )}
               <Divider />
             </>
           )}
           {!showLeagueControls && showDraftSync && (
             <>
               <ActionRow label="Draft Sync" onClick={onDraftSync} dataTour="draft-sync" />
+              <Divider />
+            </>
+          )}
+          {!showLeagueControls && showPredictionsSync && (
+            <>
+              <ActionRow label="Device Sync" onClick={onDraftSync} />
               <Divider />
             </>
           )}
@@ -127,7 +143,12 @@ export default function ActionSheet({
           {isPredictions && (
             <>
               <Divider />
-              <ActionRow label="Create Image" onClick={onExportImage} disabled={!hasPicks} />
+              <ActionRow
+                label={predictionShareReady ? 'Create Share Card' : predictionShareBlockedLabel}
+                onClick={onExportImage}
+                disabled={!predictionShareReady}
+                title={predictionShareReason}
+              />
               <Divider />
               <ActionRow label="Export JSON" onClick={onExportJSON} disabled={!hasPicks} />
               <Divider />
@@ -179,12 +200,13 @@ export default function ActionSheet({
   );
 }
 
-function ActionRow({ label, onClick, disabled, destructive, dataTour }) {
+function ActionRow({ label, onClick, disabled, destructive, dataTour, title }) {
   return (
     <button
       onClick={disabled ? undefined : onClick}
       disabled={disabled}
       data-tour={dataTour}
+      title={title || undefined}
       className="w-full flex items-center py-4 text-left transition-opacity active:opacity-50"
       style={{
         color: disabled

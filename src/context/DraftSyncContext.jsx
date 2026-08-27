@@ -578,24 +578,6 @@ export function DraftSyncProvider({ children }) {
     if (revokeError) throw revokeError;
   }, [clearTimers]);
 
-  const disconnectDevice = useCallback(() => {
-    clearTimers();
-    setDeviceToken('');
-    setPairingCode('');
-    setPairingId('');
-    pairingStatusRef.current = '';
-    setPairingStatus('');
-    deviceRoleRef.current = null;
-    setDeviceRole(null);
-    setConflict(null);
-    initialSyncSetupRef.current = null;
-    setInitialSyncSetup(null);
-    pendingAuthorityAtRef.current = null;
-    pendingStateRef.current = null;
-    authorityPublishPendingRef.current = false;
-    setSyncStatus('local-only');
-  }, [clearTimers]);
-
   const resolveConflict = useCallback(async (choice) => {
     const current = conflict;
     if (!current) return;
@@ -644,7 +626,6 @@ export function DraftSyncProvider({ children }) {
     startPairing,
     claimPairing,
     revokeDevice,
-    disconnectDevice,
     registerDraftScope,
     publishDraftState,
     resolveConflict,
@@ -653,7 +634,6 @@ export function DraftSyncProvider({ children }) {
     conflict,
     deviceToken,
     deviceRole,
-    disconnectDevice,
     pairingCode,
     pairingId,
     pairingStatus,

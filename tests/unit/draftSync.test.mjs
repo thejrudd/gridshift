@@ -6,6 +6,7 @@ import test from 'node:test';
 import { getDraftSyncConfig } from '../../server/draftSyncConfig.js';
 import { createDraftSyncRouter } from '../../server/draftSyncHandlers.js';
 import { createDraftSyncStore } from '../../server/draftSyncStore.js';
+import { createPredictionsSyncRouter } from '../../server/predictionsSyncHandlers.js';
 
 function temporaryDirectory() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'gridshift-draft-sync-'));
@@ -60,6 +61,17 @@ function draftState(ids = []) {
     board: { byPosition: { QB: ids }, overall: ids },
     modelWeights: { market: 25, production: 25, scoringFit: 20, need: 20, schedule: 10 },
     keeperIds: [],
+  };
+}
+
+function predictionsState(overrides = {}) {
+  return {
+    schemaVersion: 1,
+    season: '2026',
+    scheduleFingerprint: '2026-schedule-fingerprint',
+    predictions: { 'game-1': { winnerTeamId: 'ARI' } },
+    playoffPicks: { championTeamId: 'ARI' },
+    ...overrides,
   };
 }
 
@@ -367,6 +379,67 @@ test('Draft Sync SQLite store uses a WAL database and stores only token hashes',
     assert.equal(store.getDevice(rawToken), null);
     assert.equal(store.databasePath.endsWith('draft-sync.sqlite'), true);
     assert.equal(fs.existsSync(`${store.databasePath}-wal`), true);
+  } finally {
+    store.close();
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
+test('Predictions Sync reuses paired Draft devices while isolating season state and revisions', () => {
+  const dataDir = temporaryDirectory();
+  const config = enabledConfig(dataDir);
+  const store = createDraftSyncStore({ config, now: () => 1_000 });
+  const draftRouter = createDraftSyncRouter({ config, store, now: () => 1_000 });
+  const predictionsRouter = createPredictionsSyncRouter({ config, store, now: () => 2_000 });
+  const predictionScope = { sleeperUserId: 'user-1', season: '2026' };
+
+  try {
+    const status = invoke(predictionsRouter, '/status', 'get');
+    assert.equal(status.response.statusCode, 200);
+    assert.equal(status.body.predictionsSync.enabled, true);
+    assert.equal(status.body.predictionsSync.credentialSource, 'draft-sync');
+
+    const started = invoke(draftRouter, '/pairing/start', 'post', { body: { sleeperUserId: 'user-1' } });
+    const initial = invoke(predictionsRouter, '/state', 'get', { token: started.body.deviceToken, query: predictionScope });
+    assert.equal(initial.response.statusCode, 200);
+    assert.equal(initial.body.revision, 0);
+    assert.equal(initial.body.state, null);
+
+    const written = invoke(predictionsRouter, '/state', 'put', {
+      token: started.body.deviceToken,
+      headers: { 'if-match': '"0"' },
+      body: { ...predictionScope, state: predictionsState() },
+    });
+    assert.equal(written.response.statusCode, 200);
+    assert.equal(written.body.revision, 1);
+
+    const unchanged = invoke(predictionsRouter, '/state', 'get', {
+      token: started.body.deviceToken,
+      query: predictionScope,
+      headers: { 'if-none-match': '"1"' },
+    });
+    assert.equal(unchanged.response.statusCode, 304);
+
+    const conflict = invoke(predictionsRouter, '/state', 'put', {
+      token: started.body.deviceToken,
+      headers: { 'if-match': '"0"' },
+      body: { ...predictionScope, state: predictionsState({ predictions: { 'game-1': { winnerTeamId: 'ATL' } } }) },
+    });
+    assert.equal(conflict.response.statusCode, 409);
+    assert.equal(conflict.body.revision, 1);
+
+    const invalidSeason = invoke(predictionsRouter, '/state', 'put', {
+      token: started.body.deviceToken,
+      headers: { 'if-match': '"1"' },
+      body: { ...predictionScope, state: predictionsState({ season: '2025' }) },
+    });
+    assert.equal(invalidSeason.response.statusCode, 400);
+
+    const wrongUser = invoke(predictionsRouter, '/state', 'get', {
+      token: started.body.deviceToken,
+      query: { sleeperUserId: 'user-2', season: '2026' },
+    });
+    assert.equal(wrongUser.response.statusCode, 403);
   } finally {
     store.close();
     fs.rmSync(dataDir, { recursive: true, force: true });

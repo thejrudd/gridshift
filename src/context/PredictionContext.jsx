@@ -1,5 +1,14 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { useFantasyLeague } from './SleeperContext.jsx';
+import useDraftSync from '../hooks/useDraftSync.js';
+import { getPredictionsSyncState, putPredictionsSyncState } from '../api/predictionsSyncApi.js';
 import { findCorrespondingGameIndex } from '../utils/scheduleParser';
+import {
+  generateRandomPlayoffPicks,
+  getCreatablePredictionSeasons,
+  getCurrentPredictionSeason,
+  isCreatablePredictionSeason,
+} from '../utils/predictionSnapshot.js';
 
 const PredictionContext = createContext();
 const VALID_GAME_RESULTS = new Set(['W', 'L', 'T']);
@@ -7,6 +16,86 @@ const TEAM_SCHEDULE_KEYS = ['games', 'schedule', 'matchups'];
 const GAME_ID_KEYS = ['gameId', 'id', 'espnEventId', 'eventId'];
 const FULL_SEASON_GAMES = 17;
 const DEFAULT_MANUAL_RECORD = { wins: 8, losses: 9, ties: 0, divisionWins: 3 };
+const LEGACY_PREDICTION_STORAGE_KEY = 'nfl-predictions-2026';
+const PREDICTION_STORAGE_KEY = 'gridshift-predictions-v2';
+const PREDICTION_IMPORT_BACKUP_KEY = 'gridshift-predictions-import-backup-v1';
+const PREDICTION_STORAGE_VERSION = 2;
+const PREDICTIONS_SYNC_SCHEMA_VERSION = 1;
+const PREDICTIONS_SYNC_META_PREFIX = 'gridshift_predictions_sync_meta_v1';
+const PREDICTIONS_SYNC_WRITE_DEBOUNCE_MS = 500;
+const PREDICTIONS_SYNC_POLL_MS = 2_000;
+
+const isPlainObject = (value) => Boolean(value && typeof value === 'object' && !Array.isArray(value));
+
+const createEmptySeasonState = () => ({ predictions: {}, playoffPicks: {} });
+
+const normalizeSeasonState = (value) => ({
+  predictions: isPlainObject(value?.predictions) ? value.predictions : {},
+  playoffPicks: isPlainObject(value?.playoffPicks) ? value.playoffPicks : {},
+  scheduleFingerprint: typeof value?.scheduleFingerprint === 'string' ? value.scheduleFingerprint : '',
+});
+
+const getPredictionsSyncMetaKey = (userId, season) => `${PREDICTIONS_SYNC_META_PREFIX}:${String(userId ?? '')}:${String(season ?? '')}`;
+
+const readPredictionsSyncMeta = (userId, season) => {
+  try {
+    const value = JSON.parse(localStorage.getItem(getPredictionsSyncMetaKey(userId, season)) || '{}');
+    return isPlainObject(value) ? value : {};
+  } catch { return {}; }
+};
+
+const writePredictionsSyncMeta = (userId, season, update) => {
+  try {
+    localStorage.setItem(getPredictionsSyncMetaKey(userId, season), JSON.stringify({
+      ...readPredictionsSyncMeta(userId, season),
+      ...update,
+    }));
+  } catch { /* Sync metadata must never block local predictions. */ }
+};
+
+const loadPredictionStore = () => {
+  const currentSeason = getCurrentPredictionSeason();
+  try {
+    const saved = localStorage.getItem(PREDICTION_STORAGE_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (parsed?.version === PREDICTION_STORAGE_VERSION && isPlainObject(parsed.seasons)) {
+        const activeSeason = Number(parsed.activeSeason);
+        const normalizedActiveSeason = isCreatablePredictionSeason(activeSeason) ? activeSeason : currentSeason;
+        return {
+          version: PREDICTION_STORAGE_VERSION,
+          activeSeason: normalizedActiveSeason,
+          seasons: Object.fromEntries(
+            Object.entries(parsed.seasons).map(([season, value]) => [String(season), normalizeSeasonState(value)]),
+          ),
+        };
+      }
+    }
+
+    const legacySaved = localStorage.getItem(LEGACY_PREDICTION_STORAGE_KEY);
+    if (legacySaved) {
+      const legacyPredictions = JSON.parse(legacySaved);
+      if (isPlainObject(legacyPredictions)) {
+        const legacySeason = 2026;
+        return {
+          version: PREDICTION_STORAGE_VERSION,
+          activeSeason: isCreatablePredictionSeason(legacySeason) ? legacySeason : currentSeason,
+          seasons: {
+            [legacySeason]: { predictions: legacyPredictions, playoffPicks: {} },
+          },
+        };
+      }
+    }
+  } catch (error) {
+    console.warn('Could not load saved predictions:', error);
+  }
+
+  return {
+    version: PREDICTION_STORAGE_VERSION,
+    activeSeason: currentSeason,
+    seasons: { [currentSeason]: createEmptySeasonState() },
+  };
+};
 
 const invertResult = (result) => {
   if (result === 'W') return 'L';
@@ -308,33 +397,453 @@ const normalizeResultForTeam = (result, teamId, opponentId, game) => {
 };
 
 export const PredictionProvider = ({ children }) => {
+  const { platform, sleeperUser } = useFantasyLeague();
+  const {
+    enabled: draftSyncEnabled,
+    deviceToken,
+    deviceRole,
+    pairingStatus,
+    initialSyncSetup,
+  } = useDraftSync();
+  const sleeperUserId = String(sleeperUser?.user_id ?? '').trim();
+  const [predictionStore, setPredictionStore] = useState(loadPredictionStore);
+  const [predictionSyncStatus, setPredictionSyncStatus] = useState('local-only');
+  const [predictionSyncConflict, setPredictionSyncConflict] = useState(null);
+  const [predictionSyncActive, setPredictionSyncActiveState] = useState(false);
+  const predictionStoreRef = useRef(predictionStore);
+  const predictionSyncRevisionRef = useRef(0);
+  const predictionSyncEtagRef = useRef(null);
+  const predictionSyncPendingRef = useRef(null);
+  const predictionSyncTimerRef = useRef(null);
+  const predictionSyncInFlightRef = useRef(false);
+  const predictionSyncActiveRef = useRef(false);
+  const authorityInitialPublishRef = useRef(false);
+  const authorityStateKnownRef = useRef(false);
+  const [predictionImportBackup, setPredictionImportBackup] = useState(() => {
+    try {
+      const saved = localStorage.getItem(PREDICTION_IMPORT_BACKUP_KEY);
+      return saved ? JSON.parse(saved) : null;
+    } catch { return null; }
+  });
+  const predictionSeason = predictionStore.activeSeason;
+  const activeSeasonState = normalizeSeasonState(predictionStore.seasons?.[predictionSeason]);
   // predictions = { "KC": {wins: 14, losses: 3, divisionWins: 5}, "BUF": {wins: 12, losses: 5, divisionWins: 4}, ... }
-  const [predictions, setPredictions] = useState({});
+  const predictions = activeSeasonState.predictions;
+  const playoffPicks = activeSeasonState.playoffPicks;
 
-  // Load predictions from localStorage on mount
-  useEffect(() => {
-    const saved = localStorage.getItem('nfl-predictions-2026');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        setPredictions(parsed);
-        console.log('Loaded predictions from localStorage:', parsed);
-      } catch (error) {
-        console.error('Error loading predictions from localStorage:', error);
-      }
-    }
+  useEffect(() => { predictionStoreRef.current = predictionStore; }, [predictionStore]);
+
+  const getSyncState = useCallback((season, source = predictionStoreRef.current) => {
+    const seasonState = normalizeSeasonState(source.seasons?.[String(season)]);
+    return {
+      schemaVersion: PREDICTIONS_SYNC_SCHEMA_VERSION,
+      season: String(season),
+      // The schedule fingerprint is intentionally opaque here. The schedule-facing
+      // surface may replace this with its canonical fingerprint without changing
+      // the sync envelope.
+      scheduleFingerprint: seasonState.scheduleFingerprint || `season-${season}`,
+      predictions: seasonState.predictions,
+      playoffPicks: seasonState.playoffPicks,
+    };
   }, []);
 
-  // Save predictions to localStorage whenever they change
-  useEffect(() => {
-    if (Object.keys(predictions).length > 0) {
-      try {
-        localStorage.setItem('nfl-predictions-2026', JSON.stringify(predictions));
-      } catch (e) {
-        console.warn('Could not save predictions to localStorage:', e);
+  const applyRemotePredictionState = useCallback((season, remoteState, revision, etag) => {
+    if (!remoteState || Number(remoteState.season) !== Number(season)) return;
+    setPredictionStore((current) => ({
+      ...current,
+      seasons: {
+        ...current.seasons,
+        [String(season)]: normalizeSeasonState(remoteState),
+      },
+    }));
+    predictionSyncRevisionRef.current = Number(revision ?? 0);
+    predictionSyncEtagRef.current = etag ?? null;
+    predictionSyncPendingRef.current = null;
+    writePredictionsSyncMeta(sleeperUserId, season, { revision: predictionSyncRevisionRef.current, dirty: false });
+    setPredictionSyncConflict(null);
+    setPredictionSyncStatus('synced');
+  }, [sleeperUserId]);
+
+  const flushPredictionSync = useCallback(async () => {
+    const pending = predictionSyncPendingRef.current;
+    if (!pending || !draftSyncEnabled || !deviceToken || !sleeperUserId || predictionSyncInFlightRef.current) return;
+    predictionSyncInFlightRef.current = true;
+    setPredictionSyncStatus('syncing');
+    try {
+      const result = await putPredictionsSyncState({
+        token: deviceToken,
+        sleeperUserId,
+        season: pending.season,
+        state: pending.state,
+        expectedRevision: predictionSyncRevisionRef.current,
+      });
+      predictionSyncRevisionRef.current = Number(result.revision ?? predictionSyncRevisionRef.current + 1);
+      predictionSyncEtagRef.current = result.etag ?? predictionSyncEtagRef.current;
+      predictionSyncPendingRef.current = null;
+      authorityStateKnownRef.current = true;
+      authorityInitialPublishRef.current = false;
+      writePredictionsSyncMeta(sleeperUserId, pending.season, { revision: predictionSyncRevisionRef.current, dirty: false });
+      setPredictionSyncConflict(null);
+      setPredictionSyncStatus('synced');
+    } catch (error) {
+      if (error?.status === 409) {
+        const remoteRevision = Number(error.payload?.revision ?? predictionSyncRevisionRef.current);
+        const remoteEtag = error.etag ?? `"${remoteRevision}"`;
+        predictionSyncRevisionRef.current = remoteRevision;
+        predictionSyncEtagRef.current = remoteEtag;
+        if (deviceRole === 'authoritative' && authorityInitialPublishRef.current) {
+          predictionSyncPendingRef.current = { season: pending.season, state: pending.state };
+          if (predictionSyncTimerRef.current) window.clearTimeout(predictionSyncTimerRef.current);
+          predictionSyncTimerRef.current = window.setTimeout(() => {
+            predictionSyncTimerRef.current = null;
+            void flushPredictionSync();
+          }, 0);
+          return;
+        }
+        setPredictionSyncConflict({
+          season: pending.season,
+          localState: pending.state,
+          remoteState: error.payload?.state ?? null,
+          remoteRevision,
+          remoteEtag,
+        });
+        setPredictionSyncStatus('conflict');
+      } else if (error?.status === 401 || error?.status === 403) {
+        setPredictionSyncStatus('pairing-required');
+      } else {
+        setPredictionSyncStatus('offline');
       }
+    } finally {
+      predictionSyncInFlightRef.current = false;
     }
-  }, [predictions]);
+  }, [deviceRole, deviceToken, draftSyncEnabled, sleeperUserId]);
+
+  const queuePredictionSync = useCallback((season, source) => {
+    if (!draftSyncEnabled || !deviceToken || !sleeperUserId) {
+      setPredictionSyncStatus('local-only');
+      return;
+    }
+    const state = getSyncState(season, source);
+    predictionSyncPendingRef.current = { season, state };
+    writePredictionsSyncMeta(sleeperUserId, season, { revision: predictionSyncRevisionRef.current, dirty: true });
+    setPredictionSyncStatus('syncing');
+    if (predictionSyncTimerRef.current) window.clearTimeout(predictionSyncTimerRef.current);
+    predictionSyncTimerRef.current = window.setTimeout(() => {
+      predictionSyncTimerRef.current = null;
+      void flushPredictionSync();
+    }, PREDICTIONS_SYNC_WRITE_DEBOUNCE_MS);
+  }, [deviceToken, draftSyncEnabled, flushPredictionSync, getSyncState, sleeperUserId]);
+
+  const refreshPredictionSync = useCallback(async ({ allowInactive = false } = {}) => {
+    const season = predictionStoreRef.current.activeSeason;
+    if ((!allowInactive && !predictionSyncActiveRef.current) || !draftSyncEnabled || !deviceToken || !sleeperUserId || predictionSyncInFlightRef.current) return;
+    predictionSyncInFlightRef.current = true;
+    try {
+      const result = await getPredictionsSyncState({
+        token: deviceToken,
+        sleeperUserId,
+        season,
+        etag: predictionSyncEtagRef.current,
+      });
+      if (result.notModified) {
+        if (deviceRole === 'authoritative' && authorityInitialPublishRef.current) {
+          queuePredictionSync(season, predictionStoreRef.current);
+          return;
+        }
+        setPredictionSyncStatus((status) => status === 'syncing' ? 'synced' : status);
+        return;
+      }
+      if (result.missing) {
+        predictionSyncRevisionRef.current = 0;
+        predictionSyncEtagRef.current = null;
+        authorityStateKnownRef.current = false;
+        if (deviceRole === 'authoritative') {
+          authorityInitialPublishRef.current = true;
+          queuePredictionSync(season, predictionStoreRef.current);
+        } else if (deviceRole === 'non-authoritative') {
+          setPredictionSyncStatus('waiting-for-primary');
+        } else {
+          setPredictionSyncStatus('synced');
+        }
+        return;
+      }
+      const remoteState = result.state ?? null;
+      if (!remoteState || remoteState.schemaVersion !== PREDICTIONS_SYNC_SCHEMA_VERSION || Number(remoteState.season) !== Number(season)) {
+        setPredictionSyncStatus('update-required');
+        return;
+      }
+      if (deviceRole === 'authoritative' && authorityInitialPublishRef.current) {
+        predictionSyncRevisionRef.current = Number(result.revision ?? 0);
+        predictionSyncEtagRef.current = result.etag ?? null;
+        queuePredictionSync(season, predictionStoreRef.current);
+        return;
+      }
+      const meta = readPredictionsSyncMeta(sleeperUserId, season);
+      const joiningPairing = deviceRole === 'non-authoritative'
+        && (initialSyncSetup?.status === 'waiting' || meta.hydrated !== true);
+      if (meta.dirty && !joiningPairing) {
+        predictionSyncRevisionRef.current = Number(result.revision ?? 0);
+        predictionSyncEtagRef.current = result.etag ?? null;
+        setPredictionSyncConflict({
+          season,
+          localState: getSyncState(season),
+          remoteState,
+          remoteRevision: predictionSyncRevisionRef.current,
+          remoteEtag: predictionSyncEtagRef.current,
+        });
+        setPredictionSyncStatus('conflict');
+        return;
+      }
+      applyRemotePredictionState(season, remoteState, result.revision, result.etag);
+      writePredictionsSyncMeta(sleeperUserId, season, { hydrated: true });
+    } catch (error) {
+      if (error?.status === 401 || error?.status === 403) setPredictionSyncStatus('pairing-required');
+      else setPredictionSyncStatus('offline');
+    } finally {
+      predictionSyncInFlightRef.current = false;
+    }
+  }, [applyRemotePredictionState, deviceRole, deviceToken, draftSyncEnabled, getSyncState, initialSyncSetup, queuePredictionSync, sleeperUserId]);
+
+  const setPredictionSyncActive = useCallback((active) => {
+    const nextActive = Boolean(active);
+    predictionSyncActiveRef.current = nextActive;
+    setPredictionSyncActiveState(nextActive);
+  }, []);
+
+  const resolvePredictionSyncConflict = useCallback(async (choice) => {
+    const conflict = predictionSyncConflict;
+    if (!conflict) return;
+    if (choice === 'server') {
+      applyRemotePredictionState(conflict.season, conflict.remoteState, conflict.remoteRevision, conflict.remoteEtag);
+      return;
+    }
+    predictionSyncRevisionRef.current = conflict.remoteRevision;
+    predictionSyncEtagRef.current = conflict.remoteEtag;
+    predictionSyncPendingRef.current = { season: conflict.season, state: conflict.localState };
+    writePredictionsSyncMeta(sleeperUserId, conflict.season, { revision: conflict.remoteRevision, dirty: true });
+    setPredictionSyncConflict(null);
+    await flushPredictionSync();
+  }, [applyRemotePredictionState, flushPredictionSync, predictionSyncConflict, sleeperUserId]);
+
+  useEffect(() => {
+    const meta = readPredictionsSyncMeta(sleeperUserId, predictionSeason);
+    predictionSyncRevisionRef.current = Number(meta.revision ?? 0);
+    predictionSyncEtagRef.current = null;
+    predictionSyncPendingRef.current = null;
+    authorityStateKnownRef.current = false;
+    setPredictionSyncConflict(null);
+  }, [predictionSeason, sleeperUserId]);
+
+  useEffect(() => {
+    if (deviceRole !== 'authoritative') {
+      authorityInitialPublishRef.current = false;
+      authorityStateKnownRef.current = false;
+      return;
+    }
+    if (pairingStatus === 'pending') {
+      authorityInitialPublishRef.current = true;
+      authorityStateKnownRef.current = false;
+    }
+  }, [deviceRole, pairingStatus]);
+
+  const seedAuthoritativePredictionSync = useCallback(async () => {
+    if (
+      platform !== 'sleeper'
+      || !draftSyncEnabled
+      || !deviceToken
+      || !sleeperUserId
+      || deviceRole !== 'authoritative'
+      || predictionSyncInFlightRef.current
+      || (authorityStateKnownRef.current && !authorityInitialPublishRef.current)
+    ) return;
+
+    const season = predictionStoreRef.current.activeSeason;
+    predictionSyncInFlightRef.current = true;
+    try {
+      const remote = await getPredictionsSyncState({
+        token: deviceToken,
+        sleeperUserId,
+        season,
+        etag: authorityInitialPublishRef.current ? null : predictionSyncEtagRef.current,
+      });
+      if (remote.notModified) {
+        authorityStateKnownRef.current = true;
+        return;
+      }
+      predictionSyncRevisionRef.current = remote.missing ? 0 : Number(remote.revision ?? 0);
+      predictionSyncEtagRef.current = remote.missing ? null : remote.etag ?? null;
+      if (remote.missing) {
+        authorityStateKnownRef.current = false;
+        authorityInitialPublishRef.current = true;
+        queuePredictionSync(season, predictionStoreRef.current);
+      } else if (authorityInitialPublishRef.current) {
+        // A new pairing-code generator owns the collision state. Keep this
+        // marker through the first successful write, even if the code is
+        // claimed before that write completes.
+        queuePredictionSync(season, predictionStoreRef.current);
+      } else {
+        authorityStateKnownRef.current = true;
+        setPredictionSyncStatus('synced');
+      }
+    } catch (error) {
+      setPredictionSyncStatus(error?.status === 401 || error?.status === 403 ? 'pairing-required' : 'offline');
+    } finally {
+      predictionSyncInFlightRef.current = false;
+    }
+  }, [
+    deviceRole,
+    deviceToken,
+    draftSyncEnabled,
+    platform,
+    queuePredictionSync,
+    sleeperUserId,
+  ]);
+
+  // An authoritative device retries an unknown/missing scope independent of
+  // the transient pairing status. Active-surface reads reset the known marker
+  // after a sidecar restart, without rewriting an existing remote state.
+  useEffect(() => {
+    if (
+      platform !== 'sleeper'
+      || !draftSyncEnabled
+      || !deviceToken
+      || !sleeperUserId
+      || deviceRole !== 'authoritative'
+    ) return undefined;
+
+    void seedAuthoritativePredictionSync();
+    const retryId = window.setInterval(() => {
+      void seedAuthoritativePredictionSync();
+    }, 2_000);
+    return () => window.clearInterval(retryId);
+  }, [
+    deviceRole,
+    deviceToken,
+    draftSyncEnabled,
+    platform,
+    seedAuthoritativePredictionSync,
+    sleeperUserId,
+  ]);
+
+  // A joining device never writes its local copy into an empty remote scope.
+  // It briefly retries the read after pairing so the authoritative device's
+  // debounced first publish arrives without requiring the user to edit again.
+  useEffect(() => {
+    if (
+      platform !== 'sleeper'
+      || !draftSyncEnabled
+      || !deviceToken
+      || !sleeperUserId
+      || deviceRole !== 'non-authoritative'
+      || predictionSyncStatus === 'synced'
+    ) return undefined;
+
+    void refreshPredictionSync({ allowInactive: true });
+    const retryId = window.setInterval(() => {
+      void refreshPredictionSync({ allowInactive: true });
+    }, 2_000);
+    return () => window.clearInterval(retryId);
+  }, [
+    deviceRole,
+    deviceToken,
+    draftSyncEnabled,
+    platform,
+    predictionSyncStatus,
+    refreshPredictionSync,
+    sleeperUserId,
+  ]);
+
+  useEffect(() => {
+    if (!predictionSyncActiveRef.current || !draftSyncEnabled || !deviceToken || !sleeperUserId || platform !== 'sleeper') return undefined;
+    const refresh = () => { if (document.visibilityState === 'visible') void refreshPredictionSync(); };
+    void refreshPredictionSync();
+    document.addEventListener('visibilitychange', refresh);
+    window.addEventListener('online', refresh);
+    const intervalId = window.setInterval(refresh, PREDICTIONS_SYNC_POLL_MS);
+    return () => {
+      document.removeEventListener('visibilitychange', refresh);
+      window.removeEventListener('online', refresh);
+      window.clearInterval(intervalId);
+    };
+  }, [deviceToken, draftSyncEnabled, platform, predictionSyncActive, refreshPredictionSync, sleeperUserId, predictionSeason]);
+
+  useEffect(() => () => {
+    if (predictionSyncTimerRef.current) window.clearTimeout(predictionSyncTimerRef.current);
+  }, []);
+
+  const updateSeasonState = (season, updater) => {
+    setPredictionStore((previousStore) => {
+      const seasonKey = String(season);
+      const previousSeasonState = normalizeSeasonState(previousStore.seasons?.[seasonKey]);
+      const nextSeasonState = normalizeSeasonState(updater(previousSeasonState));
+      const nextStore = {
+        ...previousStore,
+        seasons: {
+          ...previousStore.seasons,
+          [seasonKey]: nextSeasonState,
+        },
+      };
+      queuePredictionSync(season, nextStore);
+      return nextStore;
+    });
+  };
+
+  const setPredictions = (updater) => {
+    updateSeasonState(predictionSeason, (previousSeasonState) => ({
+      ...previousSeasonState,
+      predictions: typeof updater === 'function'
+        ? updater(previousSeasonState.predictions)
+        : updater,
+    }));
+  };
+
+  const setPlayoffPicks = (updater) => {
+    updateSeasonState(predictionSeason, (previousSeasonState) => ({
+      ...previousSeasonState,
+      playoffPicks: typeof updater === 'function'
+        ? updater(previousSeasonState.playoffPicks)
+        : updater,
+    }));
+  };
+
+  const setPredictionSeason = (season) => {
+    const normalizedSeason = Number(season);
+    if (!isCreatablePredictionSeason(normalizedSeason)) return false;
+    setPredictionStore((previousStore) => ({
+      ...previousStore,
+      activeSeason: normalizedSeason,
+      seasons: {
+        ...previousStore.seasons,
+        [normalizedSeason]: normalizeSeasonState(previousStore.seasons?.[normalizedSeason]),
+      },
+    }));
+    return true;
+  };
+
+  const setPredictionSyncScheduleFingerprint = useCallback((season, fingerprint) => {
+    const normalizedFingerprint = String(fingerprint ?? '').trim();
+    if (!normalizedFingerprint) return;
+    setPredictionStore((previousStore) => {
+      const seasonKey = String(season);
+      const previousSeasonState = normalizeSeasonState(previousStore.seasons?.[seasonKey]);
+      if (previousSeasonState.scheduleFingerprint === normalizedFingerprint) return previousStore;
+      return {
+        ...previousStore,
+        seasons: {
+          ...previousStore.seasons,
+          [seasonKey]: { ...previousSeasonState, scheduleFingerprint: normalizedFingerprint },
+        },
+      };
+    });
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(PREDICTION_STORAGE_KEY, JSON.stringify(predictionStore));
+    } catch (error) {
+      console.warn('Could not save predictions to localStorage:', error);
+    }
+  }, [predictionStore]);
 
   // Set a team's win/loss record, division record, and optional game results
   // allTeams is needed for cross-team sync of game results
@@ -522,8 +1031,7 @@ export const PredictionProvider = ({ children }) => {
 
   // Reset all predictions
   const resetAllPredictions = () => {
-    setPredictions({});
-    try { localStorage.removeItem('nfl-predictions-2026'); } catch (e) { console.warn(e); }
+    updateSeasonState(predictionSeason, () => createEmptySeasonState());
   };
 
   // Get count of teams with predictions
@@ -610,20 +1118,62 @@ export const PredictionProvider = ({ children }) => {
       newPredictions[team.id] = { wins, losses, ties, divisionWins: divWins, gameResults, recordSource: 'games', manualOverride: false };
     }
 
-    setPredictions(newPredictions);
-    try { localStorage.setItem('nfl-predictions-2026', JSON.stringify(newPredictions)); } catch (e) { console.warn(e); }
+    let randomizedPlayoffPicks = {};
+    try {
+      randomizedPlayoffPicks = generateRandomPlayoffPicks({ teams: allTeams, records: newPredictions });
+    } catch (error) {
+      console.warn('Could not generate randomized playoff predictions:', error);
+    }
+
+    updateSeasonState(predictionSeason, () => ({
+      predictions: newPredictions,
+      playoffPicks: randomizedPlayoffPicks,
+    }));
   };
 
   // Import predictions from an exported JSON object
-  const importPredictions = (data) => {
-    setPredictions(data);
-    try { localStorage.setItem('nfl-predictions-2026', JSON.stringify(data)); } catch (e) { console.warn(e); }
+  const importPredictions = (data, options = {}) => {
+    const targetSeason = Number(options.season ?? predictionSeason);
+    if (!isCreatablePredictionSeason(targetSeason)) {
+      throw new Error('Predictions can only be imported for the current or upcoming season.');
+    }
+    const backup = {
+      season: targetSeason,
+      state: normalizeSeasonState(predictionStore.seasons?.[String(targetSeason)]),
+    };
+    setPredictionImportBackup(backup);
+    try { localStorage.setItem(PREDICTION_IMPORT_BACKUP_KEY, JSON.stringify(backup)); } catch { /* ignore */ }
+    updateSeasonState(targetSeason, (previousSeasonState) => ({
+        predictions: data,
+        playoffPicks: isPlainObject(options.playoffPicks)
+          ? options.playoffPicks
+          : previousSeasonState.playoffPicks,
+    }));
+    if (targetSeason !== predictionSeason) {
+      setPredictionStore((previousStore) => ({ ...previousStore, activeSeason: targetSeason }));
+    }
+  };
+
+  const restorePredictionImportBackup = () => {
+    const backupSeason = Number(predictionImportBackup?.season);
+    if (!predictionImportBackup?.state || !isCreatablePredictionSeason(backupSeason)) return false;
+    updateSeasonState(backupSeason, () => normalizeSeasonState(predictionImportBackup.state));
+    setPredictionStore((previousStore) => ({ ...previousStore, activeSeason: backupSeason }));
+    setPredictionImportBackup(null);
+    try { localStorage.removeItem(PREDICTION_IMPORT_BACKUP_KEY); } catch { /* ignore */ }
+    return true;
   };
 
   return (
     <PredictionContext.Provider
       value={{
         predictions,
+        predictionSeason,
+        predictionSeasonOptions: getCreatablePredictionSeasons(),
+        setPredictionSeason,
+        setPredictionSyncScheduleFingerprint,
+        playoffPicks,
+        setPlayoffPicks,
         setTeamRecord,
         setManualTeamRecord,
         setGameResult,
@@ -635,7 +1185,14 @@ export const PredictionProvider = ({ children }) => {
         getGamePredictionCounts,
         getPickedGameCount,
         importPredictions,
-        generateRandomPredictions
+        predictionImportBackup,
+        restorePredictionImportBackup,
+        generateRandomPredictions,
+        predictionSyncStatus,
+        predictionSyncConflict,
+        setPredictionSyncActive,
+        refreshPredictionSync,
+        resolvePredictionSyncConflict,
       }}
     >
       {children}
@@ -644,6 +1201,7 @@ export const PredictionProvider = ({ children }) => {
 };
 
 // Custom hook to use the prediction context
+// eslint-disable-next-line react-refresh/only-export-components
 export const usePredictions = () => {
   const context = useContext(PredictionContext);
   if (!context) {
