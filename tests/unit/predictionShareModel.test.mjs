@@ -38,3 +38,20 @@ test('reseeds the lowest remaining wild-card seed against the one seed', () => {
   assert.equal(model.conferenceChampions.NFC.id, 'NFA');
   assert.equal(model.champion.id, 'AFA');
 });
+
+test('uses the canonical tied-record order for playoff seeds and bracket matchups', () => {
+  const records = Object.fromEntries(teams.map((team, index) => [team.id, {
+    wins: 10,
+    losses: 7,
+    ties: 0,
+    divisionWins: 6 - (index % 7),
+  }]));
+  const model = buildPredictionShareModel({
+    snapshot: { season: 2026, createdAt: '2026-09-20T12:00:00Z', mode: 'record', records, playoffPicks: {} },
+    teams,
+    schedule: { weeks: [] },
+  });
+
+  assert.deepEqual(model.seeds.AFC.map((team) => team.id), ['AFA', 'AFB', 'AFC', 'AFD', 'AFE', 'AFF', 'AFG']);
+  assert.deepEqual(model.playoff.AFC.wildCard[2].teams.map((team) => team.id), ['AFD', 'AFE']);
+});

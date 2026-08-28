@@ -1298,3 +1298,10 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Prediction progress and integrity** - Separated record progress from Advanced Mode progress, kept counters integer and schedule-aware, identified impossible league-wide records, and cleared stale Advanced Mode results when manual records change.
 - **Device Sync identity safety** - Scoped stored device credentials to the active Sleeper user through identity hydration and account switching.
 - **Regression coverage and documentation** - Added focused coverage for credential isolation, progress summaries, screenshot sizing, team-record snapshots, and the updated share-card contract.
+
+## v8.8.2 - Prediction Integrity
+*2026-08-28*
+
+- **Playoff seeding consistency** - Shared one deterministic division-winner, wild-card, and tied-record ordering across the picker, validation, randomizer, exports, and share cards so accepted playoff matchups remain valid everywhere.
+- **Prediction JSON backups** - Include the selected season and playoff bracket with regular-season records, and clear existing playoff picks when importing an older record-only file instead of combining them with unrelated records.
+- **Regression coverage and documentation** - Added focused tests for tied playoff seeds, partial division fields, versioned exports, legacy imports, and the shared prediction-seeding contract.

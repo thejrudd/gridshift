@@ -15,6 +15,8 @@ Open bugs are listed first, deferred work next, fixed bugs below. Add new entrie
 
 | Bug | Fixed In |
 |-----|----------|
+| Prediction playoff seeding is calculated independently by the picker, snapshot validator, and share-card renderer with conflicting tied-record ordering, so a visibly valid AFC or NFC wild-card winner can be rejected as not belonging to that matchup. | v8.8.2 |
+| Prediction JSON exports omit playoff picks, while importing a record-only file silently preserves the browser's existing bracket, allowing newly imported seeds to be combined with stale winners that are not in their matchups. | v8.8.2 |
 | Device Sync setup can appear independent between Draft and Predictions because Sleeper identity hydration or account switching can overwrite or erase the shared locally stored device credential before the paired user's token is restored. | v8.8.1 |
 | Prediction Share Cards can render without NFL team logos, leaving team identity incomplete in the visible card and downloaded image. | v8.8.1 |
 | Prediction Share Card PNG downloads are reconstructed by `html2canvas` instead of capturing the rendered card faithfully, causing collapsed, overlapping layouts that do not match the in-app preview. | v8.8.1 |

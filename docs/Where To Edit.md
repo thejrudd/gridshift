@@ -31,6 +31,7 @@ Apply exactly one page-frame class to new route roots. Do not detect display DPI
 
 - `src/context/PredictionContext.jsx`
 - `src/utils/predictionSnapshot.js` — completion rules, season policy, immutable snapshot schema, and import materialization
+- `src/utils/predictionPlayoffSeeding.js` — canonical division-winner, wild-card, and tied-record seed ordering shared by the picker, validator, randomizer, and share cards
 - `src/utils/playoffBracket.js` — NFL lowest-remaining-seed reseeding
 - `src/utils/scheduleParser.js`
 - `src/utils/validation.js`

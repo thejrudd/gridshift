@@ -1,3 +1,8 @@
+import {
+  comparePredictionTeams,
+  getPredictionPlayoffSeeds,
+} from '../../../utils/predictionPlayoffSeeding.js';
+
 const DIVISION_ORDER = [
   'AFC East', 'AFC North', 'AFC South', 'AFC West',
   'NFC East', 'NFC North', 'NFC South', 'NFC West',
@@ -38,12 +43,7 @@ function divisionFor(team) {
 }
 
 function compareTeams(a, b) {
-  const aRecord = a.record ?? {};
-  const bRecord = b.record ?? {};
-  return (Number(bRecord.wins ?? bRecord.w ?? 0) - Number(aRecord.wins ?? aRecord.w ?? 0))
-    || (Number(aRecord.losses ?? aRecord.l ?? 0) - Number(bRecord.losses ?? bRecord.l ?? 0))
-    || (Number(bRecord.divisionWins ?? 0) - Number(aRecord.divisionWins ?? 0))
-    || teamId(a).localeCompare(teamId(b));
+  return comparePredictionTeams(a, b);
 }
 
 function expandTeam(entry, byId, records) {
@@ -91,14 +91,11 @@ export function createPredictionShareView(model = {}) {
     ? resolveList(model.divisionWinners, byId, records)
     : divisions.map(division => division.teams[0]).filter(Boolean);
 
+  const fallbackSeeds = getPredictionPlayoffSeeds(teams, records);
   const seeds = Object.fromEntries(CONFERENCES.map((conference) => {
     const supplied = model.seeds?.[conference] ?? model.playoffSeeds?.[conference];
     if (supplied?.length) return [conference, resolveList(supplied, byId, records)];
-    const divisionWinnerIds = new Set(divisionWinners.filter(team => team.conference === conference).map(team => team.id));
-    return [conference, teams
-      .filter(team => team.conference === conference)
-      .sort((a, b) => Number(divisionWinnerIds.has(b.id)) - Number(divisionWinnerIds.has(a.id)) || compareTeams(a, b))
-      .slice(0, 7)];
+    return [conference, fallbackSeeds[conference] ?? []];
   }));
 
   const playoff = model.playoff ?? model.bracket ?? {};

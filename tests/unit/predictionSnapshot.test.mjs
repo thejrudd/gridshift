@@ -21,6 +21,7 @@ import {
   validatePredictionCompletion,
   validatePredictionSnapshot,
 } from '../../src/utils/predictionSnapshot.js';
+import { getPredictionPlayoffSeeds } from '../../src/utils/predictionPlayoffSeeding.js';
 
 function buildTeams() {
   return ['AFC', 'NFC'].flatMap((conference) => (
@@ -45,25 +46,8 @@ function buildBalancedRecords(teams) {
   return Object.fromEntries(teams.map((team, index) => [team.id, { ...templates[index % 4] }]));
 }
 
-function sortByRecord(teams, records) {
-  return [...teams].sort((left, right) => (
-    records[right.id].wins - records[left.id].wins
-      || records[left.id].losses - records[right.id].losses
-      || left.name.localeCompare(right.name)
-  ));
-}
-
 function getSeeds(teams, records, conference) {
-  const conferenceTeams = teams.filter((team) => team.conference === conference);
-  const divisions = [...new Set(conferenceTeams.map((team) => team.division))];
-  const divisionWinners = [];
-  const wildCards = [];
-  for (const division of divisions) {
-    const sorted = sortByRecord(conferenceTeams.filter((team) => team.division === division), records);
-    divisionWinners.push(sorted[0]);
-    wildCards.push(...sorted.slice(1));
-  }
-  return [...sortByRecord(divisionWinners, records), ...sortByRecord(wildCards, records).slice(0, 3)];
+  return getPredictionPlayoffSeeds(teams, records)[conference] ?? [];
 }
 
 function buildPlayoffPicks(teams, records) {
@@ -266,6 +250,21 @@ test('playoff completion rejects a missing or impossible winner', () => {
   validation = validatePlayoffPicks({ playoffPicks: impossible, records, teams });
   assert.equal(validation.isComplete, false);
   assert.match(validation.errors.join('\n'), /winner is not in that matchup/i);
+});
+
+test('playoff validation shares the picker tie order for the AFC four-versus-five matchup', () => {
+  const nicknames = {
+    A00: 'Zulu', A10: 'Alpha', A20: 'Bravo', A30: 'Charlie',
+    A01: 'Delta', A11: 'Echo', A21: 'Foxtrot', A31: 'Golf',
+  };
+  const teams = buildTeams().map((team) => ({ ...team, nickname: nicknames[team.id] ?? team.name }));
+  const records = buildBalancedRecords(teams);
+  const seeds = getSeeds(teams, records, 'AFC');
+  const playoffPicks = buildPlayoffPicks(teams, records);
+
+  assert.deepEqual(seeds.slice(0, 5).map((team) => team.id), ['A10', 'A20', 'A30', 'A00', 'A01']);
+  assert.equal(playoffPicks['AFC-wc-4-5'], 'A00');
+  assert.equal(validatePlayoffPicks({ playoffPicks, records, teams }).isComplete, true);
 });
 
 test('random playoff generation fills all 13 legal matchups', () => {

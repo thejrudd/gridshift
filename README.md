@@ -130,12 +130,10 @@ Draft Sync is an optional capability of the existing API sidecar, not a required
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) + optional Node API sidecar |
 
-## What's New in v8.8.1
+## What's New in v8.8.2
 
-- **Prediction Share Card reliability** — Render team identity completely, validate the exact records and playoff selections being shared, and provide a faithful screenshot view for saving cards from any device.
-- **Team Record card** — Capture one selected team's complete 17-game Advanced Mode schedule with direct guidance when that team's schedule still needs picks.
-- **Prediction progress and integrity** — Keep record completion separate from Advanced Mode completion, show integer progress, identify impossible league-wide records, and clear stale matchup picks when a manual record changes.
-- **Device Sync identity safety** — Keep paired credentials scoped to the active Sleeper user so account hydration and switching do not make Draft and Predictions appear independently configured.
+- **Playoff seeding consistency** — Use one deterministic tied-record order across playoff picking, validation, randomization, exports, and share cards so valid matchups stay valid across the prediction experience.
+- **Prediction JSON backups** — Keep the selected season, regular-season records, and playoff bracket together, while clearing the bracket when importing an older record-only backup that cannot prove it matches those records.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 
