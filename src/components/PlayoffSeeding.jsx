@@ -1,5 +1,6 @@
-import { getAllDivisions, getTeamsByDivision, sortTeamsByRecord, getConferenceRecord } from '../utils/scheduleParser';
+import { getAllDivisions, getTeamsByDivision, getConferenceRecord } from '../utils/scheduleParser';
 import { usePredictions } from '../context/PredictionContext';
+import { getPredictionPlayoffField } from '../utils/predictionPlayoffSeeding.js';
 
 const seedBadgeColors = [
   'bg-[color:var(--color-signature)] text-[color:var(--color-signature-fg)]',   // #1 seed
@@ -13,28 +14,16 @@ const seedBadgeColors = [
 
 const getConferenceSeeding = (teams, predictions, conference) => {
   const divisions = getAllDivisions().filter(d => d.startsWith(conference));
-
-  // Only include a division winner when all 4 teams in that division have predictions
-  const divisionWinners = [];
-  const nonWinners = [];
-
-  for (const division of divisions) {
-    const divTeams = getTeamsByDivision(teams, division);
-    const allPredicted = divTeams.every(t => predictions[t.id]);
-    if (!allPredicted) continue;
-
-    const sorted = sortTeamsByRecord(divTeams, predictions, teams);
-    divisionWinners.push({ ...sorted[0], division });
-    nonWinners.push(...sorted.slice(1).map(t => ({ ...t, division })));
-  }
-
-  // Sort division winners by record to determine seeds 1-4
-  const sortedWinners = sortTeamsByRecord(divisionWinners, predictions, teams);
-
-  // Wild cards: only from divisions that are fully predicted, take best 3
-  const sortedWildCards = sortTeamsByRecord(nonWinners, predictions, teams).slice(0, 3);
-
-  return { divisionWinners: sortedWinners, wildCards: sortedWildCards };
+  const eligibleDivisions = new Set(divisions.filter((division) => {
+    const divisionTeams = getTeamsByDivision(teams, division);
+    return divisionTeams.length === 4 && divisionTeams.every((team) => predictions[team.id]);
+  }));
+  const eligibleTeams = teams.filter((team) => eligibleDivisions.has(team.division));
+  const field = getPredictionPlayoffField(eligibleTeams, predictions)[conference];
+  return {
+    divisionWinners: field?.divisionWinners ?? [],
+    wildCards: field?.wildCards ?? [],
+  };
 };
 
 const PlayoffSeeding = ({ teams }) => {

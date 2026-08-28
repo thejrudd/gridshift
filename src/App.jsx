@@ -1144,15 +1144,25 @@ function AppInner() {
       .catch(err => { setError(err.message); setLoading(false); });
   }, []);
 
-  const handleExportJSON = () => { exportAsJSON(predictions); setActionSheetOpen(false); };
+  const handleExportJSON = () => {
+    exportAsJSON({ predictions, playoffPicks, season: predictionSeason });
+    setActionSheetOpen(false);
+  };
 
   const handleImport = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
     try {
-      const data = await importFromJSON(file);
-      importPredictions(data);
-      alert(`Imported predictions for ${Object.keys(data).length} teams.`);
+      const imported = await importFromJSON(file);
+      const importedSeason = imported.season ?? predictionSeason;
+      importPredictions(imported.predictions, {
+        playoffPicks: imported.playoffPicks,
+        season: importedSeason,
+      });
+      const bracketMessage = imported.legacy
+        ? ' The older file did not contain a playoff bracket, so existing playoff picks were cleared.'
+        : ' The saved playoff bracket was imported with them.';
+      alert(`Imported ${importedSeason} predictions for ${Object.keys(imported.predictions).length} teams.${bracketMessage}`);
     } catch (err) {
       alert(`Import failed: ${err.message}`);
     }

@@ -1140,11 +1140,11 @@ export const PredictionProvider = ({ children }) => {
     };
     setPredictionImportBackup(backup);
     try { localStorage.setItem(PREDICTION_IMPORT_BACKUP_KEY, JSON.stringify(backup)); } catch { /* ignore */ }
-    updateSeasonState(targetSeason, (previousSeasonState) => ({
+    updateSeasonState(targetSeason, () => ({
         predictions: data,
         playoffPicks: isPlainObject(options.playoffPicks)
           ? options.playoffPicks
-          : previousSeasonState.playoffPicks,
+          : {},
     }));
     if (targetSeason !== predictionSeason) {
       setPredictionStore((previousStore) => ({ ...previousStore, activeSeason: targetSeason }));

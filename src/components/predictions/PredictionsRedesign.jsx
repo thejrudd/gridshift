@@ -4,6 +4,7 @@ import useCardGlow from '../../hooks/useCardGlow.jsx';
 import { getAllDivisions, getTeamsByDivision, sortTeamsByRecord } from '../../utils/scheduleParser';
 import { getTeamVisualTheme } from '../../utils/teamVisualTheme';
 import { getLowestRemainingSeedTeam } from '../../utils/playoffBracket';
+import { getPredictionPlayoffSeeds } from '../../utils/predictionPlayoffSeeding.js';
 import {
   formatManualRecordBalanceNotice,
   rebalanceCompleteManualRecords,
@@ -353,26 +354,6 @@ const sortByRecord = (teams, records) => [...teams].sort((a, b) => {
   if (aLosses !== bLosses) return aLosses - bLosses;
   return getTeamLabel(a).localeCompare(getTeamLabel(b));
 });
-
-const getPlayoffSeeds = (teams, records) => Object.fromEntries(CONFERENCES.map((conference) => {
-  const divisions = getAllDivisions().filter((division) => division.startsWith(conference));
-  const divisionWinners = [];
-  const wildCards = [];
-
-  divisions.forEach((division) => {
-    const divisionTeams = getTeamsByDivision(teams, division);
-    const sortedDivision = sortByRecord(divisionTeams, records);
-    if (sortedDivision[0]) divisionWinners.push(sortedDivision[0]);
-    wildCards.push(...sortedDivision.slice(1));
-  });
-
-  const seeds = [
-    ...sortByRecord(divisionWinners, records),
-    ...sortByRecord(wildCards, records).slice(0, 3),
-  ].slice(0, 7);
-
-  return [conference, seeds];
-}));
 
 const getTeamGames = (team, weeks) => {
   const rows = [];
@@ -1037,7 +1018,7 @@ export function PredictionsStandings({ teams = [], records = {}, predictions = {
 function PlayoffPictureRail({ teams = [], weeks = [], records }) {
   const displayRecords = records ?? getRecordFromPicks(teams, weeks, {});
   const enteredTeams = getTeamsWithEnteredRecords(teams, displayRecords);
-  const seedsByConference = getPlayoffSeeds(enteredTeams, displayRecords);
+  const seedsByConference = getPredictionPlayoffSeeds(enteredTeams, displayRecords);
 
   return (
     <aside className="predictions-playoff-picture-rail" aria-label="Desktop playoff picture">
@@ -1261,7 +1242,7 @@ export function PredictionsPlayoffs({
   const enteredTeams = getTeamsWithEnteredRecords(teams, records);
   const enteredPlayoffSeeds = filterPlayoffSeedsToEnteredRecords(playoffSeeds, enteredTeams);
   const seedsByConference = enteredTeams.length
-    ? (enteredPlayoffSeeds ?? getPlayoffSeeds(enteredTeams, records))
+    ? (enteredPlayoffSeeds ?? getPredictionPlayoffSeeds(enteredTeams, records))
     : Object.fromEntries(CONFERENCES.map((conference) => [conference, []]));
   const superBowlTeams = CONFERENCES.map((conference) => seedsByConference[conference]?.find((team) => team.id === playoffPicks[`${conference}-championship`]));
 

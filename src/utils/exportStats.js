@@ -1,4 +1,15 @@
 import { getAllDivisions, getTeamsByDivision, sortTeamsByRecord, getTeamsByConference, getStrengthOfSchedule } from './scheduleParser';
+import { getPredictionPlayoffField } from './predictionPlayoffSeeding.js';
+
+const getFullyPredictedPlayoffTeams = (predictions, teams, conference = null) => {
+  const eligibleDivisions = new Set(getAllDivisions()
+    .filter((division) => !conference || division.startsWith(conference))
+    .filter((division) => {
+      const divisionTeams = getTeamsByDivision(teams, division);
+      return divisionTeams.length === 4 && divisionTeams.every((team) => predictions[team.id]);
+    }));
+  return teams.filter((team) => eligibleDivisions.has(team.division));
+};
 
 // Returns the team(s) with most wins and most losses
 export const getBestAndWorstTeams = (predictions, teams) => {
@@ -68,19 +79,8 @@ export const getConferenceChampions = (predictions, teams) => {
 
 // Returns division winners for a conference (replicates PlayoffSeeding logic)
 export const getDivisionWinners = (predictions, teams, conference) => {
-  const divisions = getAllDivisions().filter(d => d.startsWith(conference));
-  const winners = [];
-
-  for (const division of divisions) {
-    const divTeams = getTeamsByDivision(teams, division);
-    const allPredicted = divTeams.every(t => predictions[t.id]);
-    if (!allPredicted) continue;
-
-    const sorted = sortTeamsByRecord(divTeams, predictions, teams);
-    winners.push({ ...sorted[0], division });
-  }
-
-  return sortTeamsByRecord(winners, predictions, teams);
+  const eligibleTeams = getFullyPredictedPlayoffTeams(predictions, teams, conference);
+  return getPredictionPlayoffField(eligibleTeams, predictions)[conference]?.divisionWinners ?? [];
 };
 
 // Returns the division with the fewest combined wins
@@ -145,26 +145,9 @@ export const getClosestDivisionRace = (predictions, teams) => {
 
 // Returns wild card teams (non-division-winners in playoff spots, seeds 5-7)
 export const getWildCardTeams = (predictions, teams) => {
-  const result = {};
-  for (const conference of ['AFC', 'NFC']) {
-    const divWinnerIds = new Set();
-    const confDivisions = getAllDivisions().filter(d => d.startsWith(conference));
-
-    for (const division of confDivisions) {
-      const divTeams = getTeamsByDivision(teams, division);
-      if (!divTeams.every(t => predictions[t.id])) continue;
-      const sorted = sortTeamsByRecord(divTeams, predictions, teams);
-      divWinnerIds.add(sorted[0].id);
-    }
-
-    const confTeams = getTeamsByConference(teams, conference).filter(
-      t => predictions[t.id] && !divWinnerIds.has(t.id)
-    );
-    const sorted = sortTeamsByRecord(confTeams, predictions, teams);
-    result[conference] = sorted.slice(0, 3);
-  }
-
-  return result;
+  const eligibleTeams = getFullyPredictedPlayoffTeams(predictions, teams);
+  const field = getPredictionPlayoffField(eligibleTeams, predictions);
+  return Object.fromEntries(['AFC', 'NFC'].map((conference) => [conference, field[conference]?.wildCards ?? []]));
 };
 
 // Returns count of teams near .500 (7-10 wins) and teams at extremes

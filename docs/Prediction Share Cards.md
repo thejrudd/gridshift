@@ -28,6 +28,10 @@ Prediction share cards turn completed GridShift records into fixed-format screen
 
 `src/context/PredictionContext.jsx` persists prediction state by season under `gridshift-predictions-v2`. It migrates the previous single-season key once, retains playoff selections with their season, and keeps a one-step local backup when a recipient applies shared predictions. Imported snapshots are validated before they can reach the provider.
 
+`src/utils/predictionPlayoffSeeding.js` is the single source of truth for division winners, wild cards, and seeds 1–7. The playoff picker, randomizer, snapshot validator, and share-card renderer use its wins, losses, and user-visible team-label ordering so a matchup accepted in the app is the same matchup encoded in a portable link.
+
+Prediction JSON backups use a separate versioned `gridshift-predictions` envelope containing the selected season, regular-season records, and matching playoff picks. Older record-only JSON files remain importable, but importing one clears existing playoff picks because the file cannot prove that the browser's saved bracket belongs to its records.
+
 ## Portable Links And QR Codes
 
 `src/utils/predictionShareCodec.js` creates a versioned, checksummed payload in the URL fragment. The fragment is never sent to a web server as part of the HTTP request, so the first release needs no prediction database or short-link service.

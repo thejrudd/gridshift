@@ -1,4 +1,5 @@
 import { getLowestRemainingSeedTeam } from './playoffBracket.js';
+import { getPredictionPlayoffSeeds } from './predictionPlayoffSeeding.js';
 
 const SNAPSHOT_SCHEMA = 'gridshift.prediction-snapshot';
 
@@ -107,36 +108,6 @@ function getKnownTeams(teams) {
   };
 }
 
-function sortTeamsByRecord(teams, records) {
-  return [...teams].sort((left, right) => {
-    const leftRecord = records[left.id] ?? {};
-    const rightRecord = records[right.id] ?? {};
-    if (rightRecord.wins !== leftRecord.wins) return rightRecord.wins - leftRecord.wins;
-    if (leftRecord.losses !== rightRecord.losses) return leftRecord.losses - rightRecord.losses;
-    return String(left.name ?? left.nickname ?? left.id).localeCompare(String(right.name ?? right.nickname ?? right.id));
-  });
-}
-
-function getPlayoffSeeds(teams, records) {
-  return Object.fromEntries(CONFERENCES.map((conference) => {
-    const conferenceTeams = teams.filter((team) => team.conference === conference);
-    const divisions = [...new Set(conferenceTeams.map((team) => team.division).filter(Boolean))];
-    const divisionWinners = [];
-    const wildCards = [];
-
-    for (const division of divisions) {
-      const sorted = sortTeamsByRecord(conferenceTeams.filter((team) => team.division === division), records);
-      if (sorted[0]) divisionWinners.push(sorted[0]);
-      wildCards.push(...sorted.slice(1));
-    }
-
-    return [conference, [
-      ...sortTeamsByRecord(divisionWinners, records),
-      ...sortTeamsByRecord(wildCards, records).slice(0, 3),
-    ].slice(0, 7)];
-  }));
-}
-
 function chooseRandomTeam(options, random) {
   if (!Array.isArray(options) || options.length !== 2 || options.some((team) => !team?.id)) {
     throw new PredictionSnapshotError('A complete two-team playoff matchup is required.');
@@ -148,7 +119,7 @@ export function generateRandomPlayoffPicks({ teams = [], records = {}, random = 
   if (typeof random !== 'function') throw new TypeError('A random-number function is required.');
   const { teams: normalizedTeams, teamIds } = getKnownTeams(teams);
   const normalizedRecords = cloneRecords(records, teamIds);
-  const seedsByConference = getPlayoffSeeds(normalizedTeams, normalizedRecords);
+  const seedsByConference = getPredictionPlayoffSeeds(normalizedTeams, normalizedRecords);
   const picks = {};
 
   for (const conference of CONFERENCES) {
@@ -661,7 +632,7 @@ export function validatePlayoffPicks({ playoffPicks = {}, records = {}, teams = 
     return { isComplete: false, errors: [...new Set(errors)] };
   }
 
-  const seedsByConference = getPlayoffSeeds(normalizedTeams, records);
+  const seedsByConference = getPredictionPlayoffSeeds(normalizedTeams, records);
   for (const conference of CONFERENCES) {
     const seeds = seedsByConference[conference] ?? [];
     appendError(errors, seeds.length === 7, `${conference} playoff seeding could not be resolved.`);
