@@ -127,7 +127,9 @@ export default function ValuationInfoSheet({ format, leagueType, scoringSettings
               Trade values are sourced from{' '}
               <span className="font-semibold">KeepTradeCut</span>, a community-driven
               platform where dynasty managers submit real trade offers to establish
-              consensus market values. Values are on a <span className="font-semibold">0–10,000</span> scale.
+              consensus market values. KTC-backed values use its <span className="font-semibold">0–10,000</span> scale;
+              scoring-derived defensive values can exceed that range when your league's
+              scoring and production support it.
             </p>
             <p className="text-sm leading-relaxed" style={{ color: 'var(--color-label-secondary)' }}>
               KTC publishes separate value sets for{' '}
@@ -402,9 +404,10 @@ export default function ValuationInfoSheet({ format, leagueType, scoringSettings
                 style={{ color: 'var(--color-label-tertiary)', letterSpacing: '0.08em' }}>
                 Defensive Scoring
               </h3>
-              <p className="text-sm leading-relaxed" style={{ color: 'var(--color-label-secondary)' }}>
-                Defensive values are based on <span className="font-semibold">live season production in your Sleeper scoring</span>,
-                then translated onto the same value-per-PPG scale as offensive players.
+            <p className="text-sm leading-relaxed" style={{ color: 'var(--color-label-secondary)' }}>
+                Defensive values are based on <span className="font-semibold">production scored with your Sleeper settings</span>,
+                then translated onto the same value-per-PPG scale as offensive players. Before the season has
+                usable production, GridShift uses the most recently completed season with your current scoring rules.
               </p>
               <div className="rounded-xl px-3 py-2.5 flex gap-4"
                 style={{ background: 'var(--color-fill)' }}>
@@ -463,15 +466,17 @@ export default function ValuationInfoSheet({ format, leagueType, scoringSettings
               style={{ color: 'var(--color-label-tertiary)', letterSpacing: '0.08em' }}>
               Season Performance Adjustments
             </h3>
-            <p className="text-sm leading-relaxed" style={{ color: 'var(--color-label-secondary)' }}>
+              <p className="text-sm leading-relaxed" style={{ color: 'var(--color-label-secondary)' }}>
               After scoring multipliers are applied, two additional layers adjust each player's
-              value based on <span className="font-semibold">how they're actually performing in your league</span> this season.
+              value based on <span className="font-semibold">how they perform under your league's scoring</span>.
+              Before the season begins, these use the most recently completed season; current-season production
+              takes over once it is available.
             </p>
             <div className="flex flex-col gap-3">
               <div className="flex flex-col gap-1">
                 <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-label-tertiary)' }}>PPG Adjustment</span>
                 <p className="text-sm leading-relaxed" style={{ color: 'var(--color-label-secondary)' }}>
-                  Each player's season average PPG is compared to the positional average in your league.
+                  Each player's average PPG is compared to the positional average in your league.
                   Players scoring above average gain value; below-average players lose value.
                   Range: <span className="font-semibold">×0.80 floor → ×1.40 ceiling</span>, with a 50% blend weight
                   so KTC consensus still anchors the result. Applies to players with direct KTC rankings only —
@@ -482,7 +487,7 @@ export default function ValuationInfoSheet({ format, leagueType, scoringSettings
                 <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-label-tertiary)' }}>Total Points Rank Adjustment</span>
                 <p className="text-sm leading-relaxed" style={{ color: 'var(--color-label-secondary)' }}>
                   After the PPG adjustment, a ±12% nudge is applied based on each player's
-                  positional rank by <span className="font-semibold">total season points</span> (PPG × games played) in your league.
+                  positional rank by <span className="font-semibold">total points</span> (PPG × games played) in your league.
                   Rank #1 at the position receives +12%; the median rank is unchanged; last rank receives −12%.
                   Players with no recorded stats are unaffected.
                 </p>
@@ -511,14 +516,15 @@ export default function ValuationInfoSheet({ format, leagueType, scoringSettings
             ) : (
               <>
                 <p className="text-sm leading-relaxed" style={{ color: 'var(--color-label-secondary)' }}>
-                  Redraft pick values are <span className="font-semibold">computed from KTC's player rankings</span> rather
-                  than dynasty RDP entries, since redraft picks represent access to players in a
-                  specific draft slot — not long-term dynasty asset value.
+                  Redraft pick values represent the <span className="font-semibold">likely Trade value of players available near that slot</span>,
+                  rather than dynasty RDP entries. GridShift uses the league's size to place the pick in the correct
+                  round and range, then evaluates nearby Draft-ranked players with the same Trade calculation used for players.
                 </p>
                 <div className="flex flex-col gap-1 mt-0.5">
                   {[
                     ['Early / Mid / Late', 'Each round is split into thirds by draft position. Early picks cover the top third of the round, Late picks the bottom third.'],
-                    ['Round depth discount', 'Later rounds carry more uncertainty. Round 1 ≈ 10% off the median player value in that tier. Round 5 ≈ 38% off. Round 10+ ≈ 70–80% off.'],
+                    ['Draft range', 'The neutral Draft order blends market rank, production, scoring fit, schedule, and—when available in preseason—BALLDONTLIE ADP. Missing ADP never lowers a player’s rank, so unsupported IDPs continue to use their scoring and production signals.'],
+                    ['Selection-risk discount', 'A pick is not the player it could become. A current early first is about 7% below the expected player range; the discount grows by round as outcomes become less certain.'],
                     ['Year discount', 'Picks usable sooner are worth more. Each additional year in the future reduces value by ~10%, floored at 40% off for picks 4+ years out.'],
                   ].map(([label, desc]) => (
                     <div key={label} className="rounded-lg px-3 py-2.5 flex flex-col gap-0.5"

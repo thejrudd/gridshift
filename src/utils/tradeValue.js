@@ -6,7 +6,7 @@ import { calcPointsFromTotals } from './scoringEngine.js';
 // age/upside; a ~0.60 factor brings them roughly in line with redraft scale.
 export const DYNASTY_FALLBACK_MULT = 0.60;
 
-const IDP_DST_POSITIONS = new Set(['DEF', 'DL', 'LB', 'DB', 'DE', 'DT', 'CB', 'S', 'ILB', 'OLB', 'SS', 'FS']);
+const IDP_POSITIONS = new Set(['DL', 'LB', 'DB', 'DE', 'DT', 'CB', 'S', 'ILB', 'OLB', 'SS', 'FS', 'EDG', 'EDGE']);
 
 export function computeTradePlayerValueDetail({
   id,
@@ -40,14 +40,16 @@ export function computeTradePlayerValueDetail({
 
   const isEstimated = rawVal == null && mergedIDPMap?.has(id);
   if (isEstimated) rawVal = mergedIDPMap.get(id);
-  rawVal = rawVal ?? (adjustedKtcPlayers?.length > 0 ? 0 : null);
+  // KTC does not publish IDP market values. Until GridShift has trustworthy
+  // production to calculate one, leave the player unavailable instead of
+  // presenting an invented zero value.
+  rawVal = rawVal ?? (adjustedKtcPlayers?.length > 0 && !IDP_POSITIONS.has(player.position) ? 0 : null);
 
   const stats = seasonStats?.[id];
   const pts = stats ? calcPointsFromTotals(stats, scoringSettings, player.position) : null;
   const gp = stats?.gp ?? 0;
   const avgPPG = pts != null && gp ? pts / gp : null;
   const rankInfo = rankMap?.[id] ?? null;
-  const isIDPDST = isEstimated || IDP_DST_POSITIONS.has(player.position);
 
   let value;
   if (isEstimated) {
@@ -58,7 +60,11 @@ export function computeTradePlayerValueDetail({
     value = productionAdjustedValue(rawVal, avgPPG, positionalAvgPPG?.[player.position], blendWeight);
   }
 
-  if (!isIDPDST && rankInfo?.rank != null && rankInfo?.posCount > 1) {
+  // Every position receives the same light positional-finish adjustment.
+  // Generated IDP/DST values already originate in league-scored PPG; applying
+  // the shared rank modifier keeps their relative finish treatment aligned
+  // with KTC-backed offensive players.
+  if (rankInfo?.rank != null && rankInfo?.posCount > 1) {
     const percentile = 1 - (rankInfo.rank - 1) / (rankInfo.posCount - 1);
     value = Math.round(value * (0.88 + 0.24 * percentile));
   }

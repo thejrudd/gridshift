@@ -65,6 +65,12 @@ test('display settings are available from the collapsed rail and mobile menu', a
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole('button', { name: 'Open menu' }).click();
+  const mobileMenu = page.getByRole('dialog', { name: 'Options' });
+  await expect(mobileMenu.getByRole('link', { name: 'Support GridShift', exact: true })).toBeVisible();
+  await expect(mobileMenu.getByRole('link', { name: 'Feature Request', exact: true })).toBeVisible();
+  await expect(mobileMenu.getByRole('link', { name: 'About / GitHub', exact: true })).toBeVisible();
+  const mobileRelease = mobileMenu.getByRole('link', { name: /View GridShift v.+ release on GitHub/ });
+  await expect(mobileRelease).toHaveAttribute('href', /\/releases\/tag\/v\d+(?:\.\d+){1,2}$/);
   await page.getByRole('button', { name: 'Display', exact: true }).click();
   const mobileDialog = page.getByRole('dialog', { name: 'Display settings' });
   await expect(mobileDialog).toBeVisible();
@@ -93,8 +99,37 @@ test('expanded desktop sidebar keeps every option and the version visible on sho
 
       const sidebar = page.locator('.app-sidebar');
       await expect(sidebar).toBeVisible();
-      await expect(sidebar.getByText('Privacy & Attributions', { exact: true })).toBeVisible();
-      await expect(sidebar.getByText('v8.3.1', { exact: true })).toBeVisible();
+      const footerActions = [
+        { role: 'link', name: 'Support GridShift on Buy Me a Coffee', tooltip: 'Support GridShift' },
+        { role: 'link', name: 'Email a feature request', tooltip: 'Feature Request' },
+        { role: 'link', name: 'Open GridShift on GitHub', tooltip: 'About / GitHub' },
+        { role: 'button', name: 'Open Privacy & Attributions', tooltip: 'Privacy & Attributions' },
+      ];
+      for (const action of footerActions) {
+        const control = sidebar.getByRole(action.role, { name: action.name, exact: true });
+        await expect(control).toBeVisible();
+        await expect(control).toHaveAttribute('title', action.tooltip);
+        await control.focus();
+        await expect.poll(() => control.locator('.sidebar-footer-tooltip').evaluate((element) => getComputedStyle(element).opacity)).toBe('1');
+        const tooltipGeometry = await control.locator('.sidebar-footer-tooltip').evaluate((element) => {
+          const tooltipRect = element.getBoundingClientRect();
+          const sidebarRect = element.closest('.app-sidebar').getBoundingClientRect();
+          return {
+            position: getComputedStyle(element).position,
+            left: tooltipRect.left,
+            right: tooltipRect.right,
+            sidebarRight: sidebarRect.right,
+            viewportWidth: window.innerWidth,
+          };
+        });
+        expect(tooltipGeometry.position).toBe('fixed');
+        expect(tooltipGeometry.left).toBeGreaterThanOrEqual(tooltipGeometry.sidebarRight);
+        expect(tooltipGeometry.right).toBeLessThanOrEqual(tooltipGeometry.viewportWidth);
+      }
+
+      const releaseLink = sidebar.getByRole('link', { name: /View GridShift v.+ release on GitHub/ });
+      await expect(releaseLink).toBeVisible();
+      await expect(releaseLink).toHaveAttribute('href', /\/releases\/tag\/v\d+(?:\.\d+){1,2}$/);
 
       const geometry = await sidebar.evaluate((element) => {
         const visibleChildren = [...element.children].filter((child) => {

@@ -59,6 +59,8 @@ export function buildTradeAnalyticsSnapshot({
   rosters,
   players,
   seasonStats,
+  valuationSeasonStats = null,
+  idpSeasonStats = null,
   weeklyStats = null,
   scoringSettings,
   scheduleMap = null,
@@ -70,14 +72,19 @@ export function buildTradeAnalyticsSnapshot({
   includePlayerTradeValues = false,
   includeOpportunityLayer = false,
 }) {
-  const rankMap = computePositionalRanks(seasonStats, players, scoringSettings);
-  const positionalAvgPPG = computePositionalAvgPPG(rosters, seasonStats, players, scoringSettings);
+  // A season may not have begun yet. In that case the caller supplies the
+  // most recent completed season so all player types receive the same active
+  // league-scoring treatment. `idpSeasonStats` remains a compatibility alias
+  // for callers from the original preseason-IDP path.
+  const playerValueSeasonStats = valuationSeasonStats ?? idpSeasonStats ?? seasonStats;
+  const rankMap = computePositionalRanks(playerValueSeasonStats, players, scoringSettings);
+  const positionalAvgPPG = computePositionalAvgPPG(rosters, playerValueSeasonStats, players, scoringSettings);
   const positionalValuePerPPG = computePositionalValuePerPPG(
     rosters,
     players,
     adjustedKtcPlayers,
     leagueType,
-    seasonStats,
+    playerValueSeasonStats,
     scoringSettings,
     findKtcPlayerFromSleeper,
     getKtcValue,
@@ -85,18 +92,21 @@ export function buildTradeAnalyticsSnapshot({
   );
   const leagueAvgMult = computeLeagueAvgMult(
     rosters,
-    seasonStats,
+    playerValueSeasonStats,
     players,
     scoringSettings,
     productionAdjustedValue,
   );
 
   const { hasIDP, hasDST } = detectLeagueDefensiveType(league?.roster_positions);
+  // IDP has no KTC market value, so score its production against the same
+  // player-value season and league-specific PPG scale as the rest of Trade.
+  const idpProductionStats = playerValueSeasonStats;
   const idpComputedMap = hasIDP
-    ? computeIDPValues(players, seasonStats, scoringSettings, league?.roster_positions, positionalValuePerPPG)
+    ? computeIDPValues(players, idpProductionStats, scoringSettings, league?.roster_positions, positionalValuePerPPG)
     : null;
   const dstComputedMap = hasDST
-    ? computeDSTValues(players, seasonStats, scoringSettings, positionalValuePerPPG)
+    ? computeDSTValues(players, playerValueSeasonStats, scoringSettings, positionalValuePerPPG)
     : null;
   const mergedIDPMap = idpComputedMap || dstComputedMap
     ? new Map([...(idpComputedMap ?? []), ...(dstComputedMap ?? [])])
@@ -109,7 +119,7 @@ export function buildTradeAnalyticsSnapshot({
         adjustedKtcPlayers,
         adjustedDynastyKtcPlayers,
         leagueType,
-        seasonStats,
+        seasonStats: playerValueSeasonStats,
         scoringSettings,
         positionalAvgPPG,
         positionalValuePerPPG,

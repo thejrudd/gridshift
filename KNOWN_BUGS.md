@@ -8,6 +8,7 @@ Open bugs are listed first, deferred work next, fixed bugs below. Add new entrie
 
 | Bug |
 |-----|
+| *(No open bugs currently assigned to v8.8.3.)* |
 
 ---
 
@@ -15,6 +16,8 @@ Open bugs are listed first, deferred work next, fixed bugs below. Add new entrie
 
 | Bug | Fixed In |
 |-----|----------|
+| Trade Agent selected player cards could truncate or obscure team, rank, and average metadata, or wrap optional estimate text onto a third line, when the row's fixed controls left limited identity space. | v8.8.3 |
+| Before the active NFL season recorded production, IDP players received a trade value of 0 because KTC has no IDP market data and GridShift's generated IDP values only read the empty active-season stats package. | v8.8.3 |
 | Prediction playoff seeding is calculated independently by the picker, snapshot validator, and share-card renderer with conflicting tied-record ordering, so a visibly valid AFC or NFC wild-card winner can be rejected as not belonging to that matchup. | v8.8.2 |
 | Prediction JSON exports omit playoff picks, while importing a record-only file silently preserves the browser's existing bracket, allowing newly imported seeds to be combined with stale winners that are not in their matchups. | v8.8.2 |
 | Device Sync setup can appear independent between Draft and Predictions because Sleeper identity hydration or account switching can overwrite or erase the shared locally stored device credential before the paired user's token is restored. | v8.8.1 |

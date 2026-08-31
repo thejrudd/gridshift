@@ -1,5 +1,8 @@
 import Modal from './Modal';
 
+const GITHUB_REPOSITORY_URL = 'https://github.com/thejrudd/nfl-predictor';
+const CURRENT_RELEASE_URL = `${GITHUB_REPOSITORY_URL}/releases/tag/v${__APP_VERSION__}`;
+
 export default function ActionSheet({
   onClose,
   predictionCount,
@@ -144,12 +147,23 @@ export default function ActionSheet({
           <Divider />
           <ActionRow label="Display" onClick={onDisplay} />
           <Divider />
-          <ActionRow label="Privacy & Attributions" onClick={onLegal} />
-          <Divider />
           <ActionLink
             label="Support GridShift"
             href="https://buymeacoffee.com/gridshift"
           />
+          <Divider />
+          <ActionLink
+            label="Feature Request"
+            href="mailto:featurerequest@gridshiftapp.com"
+            external={false}
+          />
+          <Divider />
+          <ActionLink
+            label="About / GitHub"
+            href={GITHUB_REPOSITORY_URL}
+          />
+          <Divider />
+          <ActionRow label="Privacy & Attributions" onClick={onLegal} />
           <Divider />
           <ActionRow label="Guide" onClick={onGuide} />
           <Divider />
@@ -203,12 +217,17 @@ export default function ActionSheet({
           >
             Cancel
           </button>
-          <div
-            className="pt-4 text-center text-xs font-semibold"
+          <a
+            href={CURRENT_RELEASE_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block pt-4 text-center text-xs font-semibold"
             style={{ color: 'var(--color-label-tertiary)', letterSpacing: '0.08em' }}
+            aria-label={`View GridShift v${__APP_VERSION__} release on GitHub`}
+            title={`View GridShift v${__APP_VERSION__} release on GitHub`}
           >
             v{__APP_VERSION__}
-          </div>
+          </a>
         </div>
     </Modal>
   );
@@ -236,12 +255,12 @@ function ActionRow({ label, onClick, disabled, destructive, dataTour, title }) {
   );
 }
 
-function ActionLink({ label, href }) {
+function ActionLink({ label, href, external = true }) {
   return (
     <a
       href={href}
-      target="_blank"
-      rel="noopener noreferrer"
+      target={external ? '_blank' : undefined}
+      rel={external ? 'noopener noreferrer' : undefined}
       className="w-full flex items-center py-4 text-left transition-opacity active:opacity-50"
       style={{
         color: 'var(--color-accent)',

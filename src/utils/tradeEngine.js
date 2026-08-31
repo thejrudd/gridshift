@@ -9,21 +9,6 @@ import { resolveTradePlayerValueDetail } from './tradeValue.js';
 // ── Redraft pick valuation ────────────────────────────────────────────────────
 
 /**
- * Compute draft pick values for a REDRAFT league by bucketing KTC player values
- * into draft rounds (leagueSize players per round), then splitting each round
- * into Early / Mid / Late thirds.
- *
- * Uncertainty discount scales with round depth: a 1st-round pick is
- * relatively predictable; a 15th-round pick is nearly a lottery ticket.
- * Discount = max(20%, 90% - (round-1) × 7%) — so round 1 ≈ 10% off,
- * round 5 ≈ 38% off, round 10 ≈ 73% off, round 13+ ≈ 80% off.
- *
- * @param {Array}  ktcPlayers - KTC player dataset (redraft-format values)
- * @param {number} leagueSize - Number of teams (picks per round)
- * @param {string} leagueType - '1qb' | 'sf'
- * @returns {{ [round: number]: { Early: number, Mid: number, Late: number } }}
- */
-/**
  * Detect 1QB vs superflex league type from roster_positions.
  * Shared by Trade and Draft Results so both value picks/players the same way.
  */
@@ -32,7 +17,59 @@ export function detectLeagueType(league) {
   return hasSF ? 'sf' : '1qb';
 }
 
-export function computeRedraftPickValues(ktcPlayers, leagueSize, leagueType) {
+function median(values) {
+  if (!values.length) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)] ?? 0;
+}
+
+function getCalibrationTierValue(bucket) {
+  if (!bucket.length) return null;
+  const values = bucket
+    .map((candidate) => Number(candidate?.value))
+    .filter((value) => Number.isFinite(value) && value > 0);
+
+  // Do not price a tier from a lone known player when most of its projected
+  // options are unavailable. The KTC fallback is more honest in that case.
+  if (values.length < Math.ceil(bucket.length / 2)) return null;
+  return Math.round(median(values));
+}
+
+function normalizeCalibrationPool(calibrationPool) {
+  if (!Array.isArray(calibrationPool)) return [];
+  return calibrationPool
+    .map((candidate, index) => ({
+      rank: Number(candidate?.rank ?? index + 1),
+      value: candidate?.value ?? null,
+    }))
+    .filter((candidate) => Number.isFinite(candidate.rank) && candidate.rank > 0)
+    .sort((a, b) => a.rank - b.rank);
+}
+
+/**
+ * Compute draft pick values for a REDRAFT league. When a scoring-aware Draft
+ * calibration pool is available, its neutral Draft order determines which
+ * players project into each pick tier and their canonical Trade values price
+ * that tier. KTC-only values remain the fallback whenever that pool is sparse
+ * or unavailable.
+ *
+ * Uncertainty discount scales with round depth: a 1st-round pick is
+ * relatively predictable; a 15th-round pick is nearly a lottery ticket.
+ * Discount = max(25%, 93% - (round-1) × 6%) — so round 1 ≈ 7% off,
+ * round 5 ≈ 31% off, round 10 ≈ 61% off, round 13+ ≈ 75% off.
+ *
+ * @param {Array}  ktcPlayers - KTC player dataset (redraft-format values)
+ * @param {number} leagueSize - Number of teams (picks per round)
+ * @param {string} leagueType - '1qb' | 'sf'
+ * @param {{ calibrationPool?: Array<{rank: number, value: number|null}>, fallbackValueMultiplier?: number }} options
+ * @returns {{ [round: number]: { Early: number, Mid: number, Late: number } }}
+ */
+export function computeRedraftPickValues(
+  ktcPlayers,
+  leagueSize,
+  leagueType,
+  { calibrationPool = null, fallbackValueMultiplier = 1 } = {},
+) {
   if (!ktcPlayers?.length || !leagueSize) return {};
 
   // All non-RDP players sorted by value desc
@@ -42,13 +79,8 @@ export function computeRedraftPickValues(ktcPlayers, leagueSize, leagueType) {
     .filter(v => v > 0)
     .sort((a, b) => b - a);
 
-  const median = arr => {
-    if (!arr.length) return 0;
-    const s = [...arr].sort((a, b) => a - b);
-    return s[Math.floor(s.length / 2)] ?? 0;
-  };
-
   const third = Math.max(1, Math.floor(leagueSize / 3));
+  const normalizedCalibrationPool = normalizeCalibrationPool(calibrationPool);
   const map = {};
 
   for (let round = 1; round <= 25; round++) {
@@ -57,13 +89,25 @@ export function computeRedraftPickValues(ktcPlayers, leagueSize, leagueType) {
     if (bucket.length === 0) break;
 
     // Uncertainty increases sharply for later rounds
-    const discount = Math.max(0.20, 0.90 - (round - 1) * 0.07);
+    const discount = Math.max(0.25, 0.93 - (round - 1) * 0.06);
 
-    map[round] = {
-      Early: Math.round(median(bucket.slice(0, third))          * discount),
-      Mid:   Math.round(median(bucket.slice(third, third * 2))  * discount),
-      Late:  Math.round(median(bucket.slice(third * 2))         * discount),
+    const calibrationBucket = normalizedCalibrationPool.slice(start, start + leagueSize);
+    const fallbackTiers = {
+      Early: median(bucket.slice(0, third)),
+      Mid: median(bucket.slice(third, third * 2)),
+      Late: median(bucket.slice(third * 2)),
     };
+
+    map[round] = Object.fromEntries(Object.entries({
+      Early: calibrationBucket.slice(0, third),
+      Mid: calibrationBucket.slice(third, third * 2),
+      Late: calibrationBucket.slice(third * 2),
+    }).map(([quality, candidates]) => {
+      const calibrated = getCalibrationTierValue(candidates);
+      const tierValue = calibrated ?? fallbackTiers[quality];
+      const multiplier = calibrated == null ? fallbackValueMultiplier : 1;
+      return [quality, Math.round(tierValue * discount * multiplier)];
+    }));
   }
 
   return map;

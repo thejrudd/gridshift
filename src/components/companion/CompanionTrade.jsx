@@ -10,6 +10,11 @@ import { useState, useEffect, useMemo, useCallback, useDeferredValue, useRef, us
 import { useSleeperLeague, useSleeperStats } from '../../context/SleeperContext';
 import { useTheme } from '../../context/ThemeContext';
 import { fetchKtcPlayers, computeKtcMultipliers, applyKtcMultipliers, findKtcPlayerFromSleeper } from '../../utils/ktcApi';
+import { fetchLeagueLogsMarketForLeague } from '../../api/leagueLogsApi';
+import { getFantasyAdp } from '../../api/fantasyAdpApi';
+import { buildDraftAssistantViewModel } from '../../utils/draftAssistant';
+import { mapFantasyAdpToSleeperPlayers } from '../../utils/fantasyAdp';
+import { getFantasyRankingsDataMode } from '../../utils/seasonAvailability';
 import {
   buildRosterPicks,
   valueSide,
@@ -40,6 +45,22 @@ function detectLeagueFormat(league) {
 }
 
 const TRADE_OPPORTUNITY_LAYER_CACHE_LIMIT = 8;
+const TRADE_PICK_CALIBRATION_ROUNDS = 25;
+// Pick assets have a league-wide value, not a manager-specific recommendation.
+// Reuse Draft's market/production/scoring blend while excluding personal roster
+// need, board placement, and on-the-clock behavior. Any unavailable signal
+// follows Draft's normal null propagation instead of being treated as zero.
+const NEUTRAL_TRADE_DRAFT_MODEL_WEIGHTS = Object.freeze({
+  marketRank: 30,
+  pastProduction: 25,
+  scoringFit: 20,
+  rosterNeed: 0,
+  schedule: 10,
+  // ADP is useful context for supported positions, but it is intentionally
+  // absent for most IDPs. Draft's weighted-signal calculation removes a
+  // missing signal from the denominator, so it can never penalize an IDP.
+  adp: 15,
+});
 const tradeOpportunityLayerCache = new Map();
 
 function stableShallowObjectSignature(value) {
@@ -147,6 +168,38 @@ function buildUpgradeSearchCacheKey(request, leagueId, season) {
     season,
   });
 }
+
+function hasRecordedSeasonProduction(seasonStats) {
+  return Object.values(seasonStats ?? {}).some((stats) => {
+    const gamesPlayed = Number(stats?.gp ?? stats?.games_played ?? stats?.gamesPlayed);
+    return Number.isFinite(gamesPlayed) && gamesPlayed > 0;
+  });
+}
+
+function getPreviousSeasonKey(season) {
+  const seasonYear = Number(season);
+  return Number.isInteger(seasonYear) && seasonYear > 0 ? String(seasonYear - 1) : null;
+}
+
+function hasCompletedScoredLeg(league) {
+  const lastScoredLeg = Number(league?.settings?.last_scored_leg);
+  return Number.isFinite(lastScoredLeg) && lastScoredLeg > 0;
+}
+
+function getTradePickCalibrationDraft(drafts, season) {
+  const seasonKey = String(season ?? '');
+  const matchingDrafts = (drafts ?? []).filter((draft) => String(draft?.season ?? '') === seasonKey);
+  return matchingDrafts.find((draft) => draft?.status !== 'complete') ?? matchingDrafts[0] ?? null;
+}
+
+function getFantasyAdpRows(response) {
+  const payload = response?.data ?? response;
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.data)) return payload.data;
+  if (Array.isArray(payload?.rows)) return payload.rows;
+  if (Array.isArray(response?.rows)) return response.rows;
+  return [];
+}
 // ── Main component ───────────────────────────────────────────────────────────
 
 export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, view = 'agent', onViewChange, onViewPlayer, prewarmAnalytics = false }) {
@@ -160,7 +213,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
   } = useSleeperLeague();
   const {
     players: sleeperPlayers, seasonStats, weeklyStats,
-    loadPlayers, loadSeasonStats, statsLoading, espnIdOverrides,
+    statsBySeason, loadPlayers, loadSeasonStats, loadStatsForSeason, statsLoading, espnIdOverrides,
   } = useSleeperStats();
   const { darkMode } = useTheme();
 
@@ -185,6 +238,19 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
   const format = detectLeagueFormat(league);
   const leagueType = detectLeagueType(league);
   const picksEnabled = platform !== 'espn';
+  const tradeAdpEligible = getFantasyRankingsDataMode(season) === 'adp';
+  const hasCurrentSeasonProduction = hasRecordedSeasonProduction(seasonStats);
+  const usePriorSeasonProduction = !hasCurrentSeasonProduction
+    && !hasCompletedScoredLeg(league);
+  const previousSeasonKey = getPreviousSeasonKey(season);
+  const preseasonValuationStats = usePriorSeasonProduction && previousSeasonKey
+    ? statsBySeason?.[previousSeasonKey]?.seasonStats ?? null
+    : null;
+  const preseasonValuationWeeklyStats = usePriorSeasonProduction && previousSeasonKey
+    ? statsBySeason?.[previousSeasonKey]?.weeklyStats ?? null
+    : null;
+  const valuationSeasonStats = preseasonValuationStats ?? seasonStats;
+  const valuationWeeklyStats = preseasonValuationWeeklyStats ?? weeklyStats;
 
   // Trade partner
   const [partnerRosterId, setPartnerRosterId] = useState(null);
@@ -205,6 +271,9 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
   const [tradedPicks, setTradedPicks] = useState(null);
   const [leagueDrafts, setLeagueDrafts] = useState([]);
   const [draftRounds, setDraftRounds] = useState(null);
+  const [draftPickMarketValues, setDraftPickMarketValues] = useState(() => new Map());
+  const [draftPickAdpValues, setDraftPickAdpValues] = useState(() => new Map());
+  const [draftPickCalibrationCandidates, setDraftPickCalibrationCandidates] = useState(null);
 
   // Picker state
   const [pickerOpen, setPickerOpen] = useState(null); // { side: 'yours'|'theirs', type: 'player'|'pick' }
@@ -312,6 +381,61 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
     });
   }, [getLeagueDraftsForLeague, getTradedPicksForLeague, selectedLeagueId]);
 
+  useEffect(() => {
+    if (format !== 'redraft' || !league) {
+      setDraftPickMarketValues(new Map());
+      return undefined;
+    }
+
+    let cancelled = false;
+    const draft = getTradePickCalibrationDraft(leagueDrafts, season);
+    fetchLeagueLogsMarketForLeague({
+      league,
+      draft,
+      scoringSettings,
+    }).then((market) => {
+      if (!cancelled) setDraftPickMarketValues(market?.valuesByPlayerId ?? new Map());
+    }).catch(() => {
+      if (!cancelled) setDraftPickMarketValues(new Map());
+    });
+
+    return () => { cancelled = true; };
+  }, [format, league, leagueDrafts, scoringSettings, season]);
+
+  useEffect(() => {
+    if (
+      format !== 'redraft'
+      || !tradeAdpEligible
+      || !sleeperPlayers
+      || Object.keys(sleeperPlayers).length === 0
+    ) {
+      setDraftPickAdpValues(new Map());
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    let cancelled = false;
+
+    getFantasyAdp({ season, signal: controller.signal })
+      .then((response) => {
+        if (cancelled) return;
+        const mapped = mapFantasyAdpToSleeperPlayers({
+          players: sleeperPlayers,
+          adpRows: getFantasyAdpRows(response),
+        });
+        setDraftPickAdpValues(mapped instanceof Map ? mapped : new Map());
+      })
+      .catch((error) => {
+        if (cancelled || error?.name === 'AbortError') return;
+        setDraftPickAdpValues(new Map());
+      });
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [format, season, sleeperPlayers, tradeAdpEligible]);
+
   useEffect(() => { loadPlayers(); }, [loadPlayers]);
   useEffect(() => {
     if (wantsTradeAnalytics && !statsRequested) {
@@ -344,6 +468,80 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
     if (!statsRequested || seasonStats || statsLoading) return;
     loadSeasonStats();
   }, [statsRequested, seasonStats, statsLoading, loadSeasonStats]);
+
+  useEffect(() => {
+    if (
+      !statsRequested
+      || platform !== 'sleeper'
+      || !usePriorSeasonProduction
+      || !previousSeasonKey
+      || preseasonValuationStats
+    ) return;
+
+    // Before the active season starts, value every position against the most
+    // recent completed production season under the new league scoring rules.
+    void loadStatsForSeason(previousSeasonKey).catch(() => null);
+  }, [
+    loadStatsForSeason,
+    platform,
+    preseasonValuationStats,
+    previousSeasonKey,
+    statsRequested,
+    usePriorSeasonProduction,
+  ]);
+
+  useEffect(() => {
+    if (format !== 'redraft' || !league || !sleeperPlayers) {
+      setDraftPickCalibrationCandidates(null);
+      return undefined;
+    }
+
+    let cancelled = false;
+    const candidateLimit = TRADE_PICK_CALIBRATION_ROUNDS * Math.max(1, rosters?.length ?? 0);
+    const draft = getTradePickCalibrationDraft(leagueDrafts, season);
+    const cancelTask = scheduleDeferredTradeTask(() => {
+      const draftModel = buildDraftAssistantViewModel({
+        players: sleeperPlayers,
+        rosters: [],
+        league,
+        draft,
+        draftPicks: [],
+        draftTradedPicks: [],
+        myRoster: null,
+        scoringSettings,
+        season,
+        marketValuesByPlayerId: draftPickMarketValues,
+        adpByPlayerId: draftPickAdpValues,
+        seasonStats: valuationSeasonStats,
+        weeklyStats: valuationWeeklyStats,
+        modelWeights: NEUTRAL_TRADE_DRAFT_MODEL_WEIGHTS,
+      });
+      if (cancelled) return;
+      setDraftPickCalibrationCandidates(
+        draftModel.rankedCandidates.slice(0, candidateLimit).map((candidate, index) => ({
+          id: candidate.id,
+          rank: index + 1,
+        })),
+      );
+    }, 260);
+
+    return () => {
+      cancelled = true;
+      cancelTask?.();
+    };
+  }, [
+    format,
+    league,
+    leagueDrafts,
+    rosters,
+    season,
+    sleeperPlayers,
+    scoringSettings,
+    draftPickMarketValues,
+    draftPickAdpValues,
+    valuationSeasonStats,
+    valuationWeeklyStats,
+  ]);
 
   useEffect(() => {
     if (!wantsTradeAnalytics || tradeAnalyticsRequested) return;
@@ -464,13 +662,6 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
     [ktcMultipliers],
   );
 
-  // Redraft pick values — derived from KTC player tier buckets rather than dynasty RDP entries.
-  // null for dynasty leagues (KTC RDP values are used directly instead).
-  const pickValueMap = useMemo(() => {
-    if (format !== 'redraft' || !adjustedKtcPlayers?.length || !rosters?.length) return null;
-    return computeRedraftPickValues(adjustedKtcPlayers, rosters.length, leagueType);
-  }, [format, adjustedKtcPlayers, leagueType, rosters]);
-
   // Sort rosters: my team first, then alphabetically (excluding self for partner list)
   const partnerRosters = useMemo(() => {
     if (!rosters.length || !myRosterData) return [];
@@ -494,6 +685,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
       rosters,
       players: sleeperPlayers,
       seasonStats,
+      valuationSeasonStats,
       weeklyStats: analyticsWeeklyStats,
       scoringSettings,
       scheduleMap: null,
@@ -508,6 +700,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
     rosters,
     sleeperPlayers,
     seasonStats,
+    valuationSeasonStats,
     analyticsWeeklyStats,
     scoringSettings,
     myRosterData?.roster_id,
@@ -527,6 +720,55 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
     playerTradeValueDetailsMap,
     playerTradeValueMap,
   } = tradeAnalyticsSnapshot;
+  const draftPickCalibrationPool = useMemo(() => {
+    if (!draftPickCalibrationCandidates?.length || !sleeperPlayers) return null;
+    return draftPickCalibrationCandidates.map((candidate) => {
+      const sharedDetail = playerTradeValueDetailsMap?.get(candidate.id) ?? null;
+      const detail = sharedDetail ?? computeTradePlayerValueDetail({
+        id: candidate.id,
+        players: sleeperPlayers,
+        adjustedKtcPlayers,
+        adjustedDynastyKtcPlayers,
+        leagueType,
+        seasonStats: valuationSeasonStats,
+        scoringSettings,
+        positionalAvgPPG,
+        positionalValuePerPPG,
+        rankMap,
+        mergedIDPMap,
+        blendWeight: 0.50,
+      });
+      return {
+        rank: candidate.rank,
+        value: detail?.value ?? null,
+      };
+    });
+  }, [
+    draftPickCalibrationCandidates,
+    sleeperPlayers,
+    playerTradeValueDetailsMap,
+    adjustedKtcPlayers,
+    adjustedDynastyKtcPlayers,
+    leagueType,
+    valuationSeasonStats,
+    scoringSettings,
+    positionalAvgPPG,
+    positionalValuePerPPG,
+    rankMap,
+    mergedIDPMap,
+  ]);
+
+  // Redraft picks represent the player range expected at that selection. Use
+  // Draft's neutral, league-scored ranking to choose the range and canonical
+  // Trade values to price it; retain KTC tiers while the calibration is sparse.
+  // Dynasty leagues continue to use direct KTC RDP values.
+  const pickValueMap = useMemo(() => {
+    if (format !== 'redraft' || !adjustedKtcPlayers?.length || !rosters?.length) return null;
+    return computeRedraftPickValues(adjustedKtcPlayers, rosters.length, leagueType, {
+      calibrationPool: draftPickCalibrationPool,
+      fallbackValueMultiplier: leagueAvgMult,
+    });
+  }, [format, adjustedKtcPlayers, leagueType, rosters, draftPickCalibrationPool, leagueAvgMult]);
   const tradeOpportunityLayerCacheKey = useMemo(() => {
     if (!tradeAnalyticsReady) return null;
     return buildTradeOpportunityLayerCacheKey({
@@ -815,13 +1057,13 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
     leagueType,
   ]);
 
-  // Enrich a valueSide result: apply production adjustment to player vals, scale picks by leagueAvgMult
+  // Enrich a valueSide result with canonical player details. Pick values are
+  // already calibrated to the final Trade scale in computeRedraftPickValues.
   function enrichItems(side) {
     if (!side.items.length) return side;
     const enriched = side.items.map(it => {
       if (it.type === 'pick') {
-        const adjVal = it.val != null ? Math.round(it.val * leagueAvgMult) : it.val;
-        return { ...it, adjVal };
+        return { ...it, adjVal: it.val };
       }
       const sharedTradeValueDetail = playerTradeValueDetailsMap?.get(it.id) ?? null;
       const ktcEntry = it.ktcEntry ?? findKtcPlayerFromSleeper(it.id, sleeperPlayers, adjustedKtcPlayers ?? []);
@@ -831,7 +1073,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
         adjustedKtcPlayers,
         adjustedDynastyKtcPlayers,
         leagueType,
-        seasonStats,
+        seasonStats: valuationSeasonStats,
         scoringSettings,
         positionalAvgPPG,
         positionalValuePerPPG,
@@ -887,7 +1129,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
 
     const dynFallbackOpts = {
       dynastyKtcPlayers: adjustedDynastyKtcPlayers,
-      seasonStats,
+      seasonStats: valuationSeasonStats,
       scoringSettings,
       positionalValuePerPPG,
       positionalAvgPPG,
@@ -934,7 +1176,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
     myRosterData,
     partnerRosterId,
     adjustedDynastyKtcPlayers,
-    seasonStats,
+    valuationSeasonStats,
     scoringSettings,
     positionalValuePerPPG,
     positionalAvgPPG,
@@ -1179,7 +1421,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
           results={upgradeSearchResults}
           postureOptions={UPGRADE_TRADE_POSTURES}
           darkMode={darkMode}
-          seasonStats={seasonStats}
+          seasonStats={valuationSeasonStats}
           sleeperPlayers={sleeperPlayers}
           ktcPlayers={adjustedKtcPlayers}
           dynastyKtcPlayers={adjustedDynastyKtcPlayers}
@@ -1244,6 +1486,12 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
             yourPicks={yourPicks}
             theirPicks={theirPicks}
             league={league}
+            rosters={rosters}
+            ktcPlayers={adjustedKtcPlayers}
+            leagueType={leagueType}
+            pickValueMap={pickValueMap}
+            currentSeason={season}
+            drafts={leagueDrafts}
             leagueUserById={leagueUserById}
             partnerRosters={partnerRosters}
             switchPartnerTradeContext={switchPartnerTradeContext}
@@ -1395,7 +1643,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
             ? [...yourPlayers, ...theirPlayers]
             : (pickerOpen.side === 'yours' ? yourPlayers : theirPlayers)}
           includeOwnRoster={pickerOpen.allRosters === true}
-          seasonStats={seasonStats}
+          seasonStats={valuationSeasonStats}
           scoringSettings={scoringSettings}
           getUserDisplayName={getUserDisplayName}
           myRosterId={myRosterData?.roster_id}
@@ -1449,7 +1697,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
           pickValueMap={pickValueMap}
           rosters={rosters}
           ownerNameByRosterId={ownerNameByRosterId}
-          seasonStats={seasonStats}
+          seasonStats={valuationSeasonStats}
           scoringSettings={scoringSettings}
           positionalAvgPPG={positionalAvgPPG}
           positionalValuePerPPG={positionalValuePerPPG}

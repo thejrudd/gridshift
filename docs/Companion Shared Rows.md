@@ -105,6 +105,8 @@ When a section needs aligned team logos, keep logos in the shared row logo slot 
 
 Desktop rows should reserve predictable columns for status/logo/metrics so missing data does not reshape the row. Mobile rows should keep the priority order tight: avatar, identity, highest-priority metric/status, and action.
 
+Trade asset rows keep metadata segments readable as whole units. When the available identity space is tight, segments may wrap to another metadata line, but they must not be shrunk into ellipses or clipped; the value and remove controls remain fixed and visible.
+
 For compact phones, it is fine to hide lower-priority logos or columns, but do not hide identity text before removing decorative chrome.
 
 ## Known Pitfalls
