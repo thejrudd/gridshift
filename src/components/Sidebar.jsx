@@ -1,5 +1,13 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSleeperLeague } from '../context/SleeperContext';
+import { ChatCircleTextIcon } from '@phosphor-icons/react/ChatCircleText';
+import { CoffeeIcon } from '@phosphor-icons/react/Coffee';
+import { GithubLogoIcon } from '@phosphor-icons/react/GithubLogo';
+import { ShieldCheckIcon } from '@phosphor-icons/react/ShieldCheck';
 import StatusBadge from './ui/StatusBadge';
+
+const GITHUB_REPOSITORY_URL = 'https://github.com/thejrudd/nfl-predictor';
+const CURRENT_RELEASE_URL = `${GITHUB_REPOSITORY_URL}/releases/tag/v${__APP_VERSION__}`;
 
 export default function Sidebar({
   activeTab,
@@ -357,43 +365,47 @@ export default function Sidebar({
             App Tour
           </span>
         </button>
-        <a
-          href="https://buymeacoffee.com/gridshift"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="sidebar-action-item"
-          aria-label="Support GridShift on Buy Me a Coffee"
-          style={{ display: 'flex', alignItems: 'center', gap: '10px' }}
-        >
-          <SupportIcon />
-          Support GridShift
-        </a>
-        <a
-          href="mailto:featurerequest@gridshiftapp.com"
-          className="sidebar-action-item"
-        >
-          Feature Request
-        </a>
-        <a
-          href="https://github.com/thejrudd/nfl-predictor"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="sidebar-action-item"
-        >
-          About / GitHub
-        </a>
-        <button
-          onClick={onLegal}
-          className="sidebar-action-item"
-        >
-          Privacy & Attributions
-        </button>
-        <div
-          className="sidebar-version"
-          style={{ color: 'var(--color-label-tertiary)' }}
-        >
-          v8.8.2
+        <div className="sidebar-footer-actions" role="group" aria-label="GridShift resources">
+          <SidebarFooterLink
+            href="https://buymeacoffee.com/gridshift"
+            label="Support GridShift"
+            ariaLabel="Support GridShift on Buy Me a Coffee"
+          >
+            <CoffeeIcon size={19} weight="bold" aria-hidden="true" />
+          </SidebarFooterLink>
+          <SidebarFooterLink
+            href="mailto:featurerequest@gridshiftapp.com"
+            label="Feature Request"
+            ariaLabel="Email a feature request"
+            external={false}
+          >
+            <ChatCircleTextIcon size={19} weight="bold" aria-hidden="true" />
+          </SidebarFooterLink>
+          <SidebarFooterLink
+            href={GITHUB_REPOSITORY_URL}
+            label="About / GitHub"
+            ariaLabel="Open GridShift on GitHub"
+          >
+            <GithubLogoIcon size={19} weight="bold" aria-hidden="true" />
+          </SidebarFooterLink>
+          <SidebarFooterButton
+            label="Privacy & Attributions"
+            ariaLabel="Open Privacy & Attributions"
+            onClick={onLegal}
+          >
+            <ShieldCheckIcon size={19} weight="bold" aria-hidden="true" />
+          </SidebarFooterButton>
         </div>
+        <a
+          href={CURRENT_RELEASE_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="sidebar-version"
+          aria-label={`View GridShift v${__APP_VERSION__} release on GitHub`}
+          title={`View GridShift v${__APP_VERSION__} release on GitHub`}
+        >
+          v{__APP_VERSION__}
+        </a>
       </div>
     </aside>
   );
@@ -493,16 +505,86 @@ function SidebarAction({ label, onClick, disabled, destructive, secondary, dataT
   );
 }
 
-function SupportIcon() {
+function SidebarFooterLink({ href, label, ariaLabel, children, external = true }) {
   return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M4 8.5h11v4.25a5.25 5.25 0 0 1-5.25 5.25H9.25A5.25 5.25 0 0 1 4 12.75V8.5z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
-      <path d="M15 10h2.25a2.75 2.75 0 0 1 0 5.5H15" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-      <path d="M7.5 6.25c0-.9.75-1.2.75-2.1" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-      <path d="M11 6.25c0-.9.75-1.2.75-2.1" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-    </svg>
+    <SidebarFooterIcon
+      as="a"
+      href={href}
+      target={external ? '_blank' : undefined}
+      rel={external ? 'noopener noreferrer' : undefined}
+      aria-label={ariaLabel}
+      title={label}
+      label={label}
+    >{children}</SidebarFooterIcon>
   );
 }
+
+function SidebarFooterButton({ label, ariaLabel, onClick, children }) {
+  return (
+    <SidebarFooterIcon
+      as="button"
+      type="button"
+      onClick={onClick}
+      aria-label={ariaLabel}
+      title={label}
+      label={label}
+    >{children}</SidebarFooterIcon>
+  );
+}
+
+function SidebarFooterIcon({ as: elementType, label, children, ...props }) {
+  const controlRef = useRef(null);
+  const [tooltipPosition, setTooltipPosition] = useState(null);
+  const [tooltipVisible, setTooltipVisible] = useState(false);
+  const FooterElement = elementType;
+
+  const updateTooltipPosition = useCallback(() => {
+    const rect = controlRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setTooltipPosition({
+      left: `${rect.right + 8}px`,
+      top: `${rect.top + rect.height / 2}px`,
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!tooltipVisible) return undefined;
+
+    const sidebar = controlRef.current?.closest('.app-sidebar');
+    window.addEventListener('resize', updateTooltipPosition);
+    sidebar?.addEventListener('scroll', updateTooltipPosition, { passive: true });
+
+    return () => {
+      window.removeEventListener('resize', updateTooltipPosition);
+      sidebar?.removeEventListener('scroll', updateTooltipPosition);
+    };
+  }, [tooltipVisible, updateTooltipPosition]);
+
+  const showTooltip = () => {
+    updateTooltipPosition();
+    setTooltipVisible(true);
+  };
+
+  return (
+    <FooterElement
+      {...props}
+      ref={controlRef}
+      className={`sidebar-footer-icon${tooltipVisible ? ' is-tooltip-visible' : ''}`}
+      onMouseEnter={showTooltip}
+      onFocus={showTooltip}
+      onMouseLeave={() => setTooltipVisible(false)}
+      onBlur={() => setTooltipVisible(false)}
+      style={tooltipPosition ? {
+        '--sidebar-footer-tooltip-left': tooltipPosition.left,
+        '--sidebar-footer-tooltip-top': tooltipPosition.top,
+      } : undefined}
+    >
+      {children}
+      <span className="sidebar-footer-tooltip" aria-hidden="true">{label}</span>
+    </FooterElement>
+  );
+}
+
 function TourIcon() {
   return (
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">

@@ -1305,3 +1305,11 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Playoff seeding consistency** - Shared one deterministic division-winner, wild-card, and tied-record ordering across the picker, validation, randomizer, exports, and share cards so accepted playoff matchups remain valid everywhere.
 - **Prediction JSON backups** - Include the selected season and playoff bracket with regular-season records, and clear existing playoff picks when importing an older record-only file instead of combining them with unrelated records.
 - **Regression coverage and documentation** - Added focused tests for tied playoff seeds, partial division fields, versioned exports, legacy imports, and the shared prediction-seeding contract.
+
+## v8.8.3 - Trade Valuation & Readability
+*2026-09-01*
+
+- **Trade Agent card readability** - Kept team, rank, average, and estimate metadata readable as complete units in selected-player rows while preserving fixed value and remove controls when space is constrained.
+- **League-aware redraft pick valuation** - Calibrated redraft picks against the available player range, active league scoring, prior production, and supported preseason ADP, with sparse-data fallback to the adjusted market model.
+- **Preseason defensive valuation** - Used the most recent completed production season for IDP and D/ST values before the active season recorded stats, then switched automatically to current-season production.
+- **Regression coverage and documentation** - Added focused Trade valuation and responsive layout coverage and expanded the Trade and architecture references for the new valuation boundaries.
