@@ -64,6 +64,10 @@ Sleeper is the supported fantasy provider for players and draft picks.
 
 This shared value is what reduced earlier drift between Agent, Intelligence, and Upgrade surfaces.
 
+KTC does not publish IDP market values. Every Trade player value is evaluated with the selected league's scoring settings. When the active Sleeper season has not yet recorded any player production, Trade loads the immediately prior completed Sleeper season in the background and applies the active scoring rules to that production for offensive players, IDP, and D/ST alike. Once current-season production exists, it takes over automatically. Current-season opportunity analysis remains on the active-season data path.
+
+Generated IDP and D/ST values convert league-scored PPG into the same market scale as offensive player values, then receive the shared positional-finish adjustment. They are not hard-capped at 10,000: KTC-backed offensive values can exceed that number, so a defensive value may do so only when the league's scoring and production justify it.
+
 ### Agent flow
 
 `CompanionTrade.jsx` -> `TradeProposalBuilder.jsx` -> `tradeEngine.js`
@@ -215,6 +219,12 @@ Main logic in `tradeEngine.js`:
   Builds likely refinement candidates.
 - `detectLeagueType(league)`
   Shared 1QB/superflex detection from `roster_positions`, used by Companion Trade to keep trade valuation on one league-format check.
+
+### Redraft pick calibration
+
+Redraft picks stand for the range of players expected to be available at that selection. `CompanionTrade.jsx` builds a neutral Draft candidate order from the available Draft market, prior-production, scoring-fit, and—during the supported preseason window—strictly matched BALLDONTLIE ADP signals under the active league scoring rules. It deliberately excludes personal board placement, team need, and on-the-clock recommendation logic because a pick is a league-wide asset. ADP is additive only: unavailable or unsupported ADP, including the normal absence of IDP ADP, is removed from that player's weighted signal calculation rather than treated as zero.
+
+`computeRedraftPickValues(...)` then takes the median canonical Trade value of the available players projected into each Early/Mid/Late round tier. This lets IDP-heavy or scoring-specific leagues price picks against the players they could actually become, rather than against an offense-only KTC list. It then applies a selection-risk discount: a current early first remains close to that expected player range, while later picks receive progressively larger discounts; future-year discounts still apply separately. If fewer than half of a tier's projected players have a trustworthy Trade value, that tier falls back to the adjusted KTC-based calculation instead of inventing a value.
 
 When modifying Agent, verify:
 - roster-id comparisons remain tolerant of string vs number inputs

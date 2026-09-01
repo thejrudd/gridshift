@@ -130,10 +130,12 @@ Draft Sync is an optional capability of the existing API sidecar, not a required
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) + optional Node API sidecar |
 
-## What's New in v8.8.2
+## What's New in v8.8.3
 
-- **Playoff seeding consistency** — Use one deterministic tied-record order across playoff picking, validation, randomization, exports, and share cards so valid matchups stay valid across the prediction experience.
-- **Prediction JSON backups** — Keep the selected season, regular-season records, and playoff bracket together, while clearing the bracket when importing an older record-only backup that cannot prove it matches those records.
+- **Trade Agent readability** — Keep selected player metadata readable as complete segments while preserving fixed value and remove controls across constrained layouts.
+- **League-aware redraft pick values** — Calibrate redraft picks against the available player range, active league scoring, prior production, and supported preseason ADP instead of relying only on an offense-focused market list.
+- **Preseason defensive values** — Use the most recent completed production season for IDP and D/ST valuation before the active season has recorded stats, then switch automatically to current-season production.
+- **Regression coverage and documentation** — Add focused Trade valuation, responsive card, and preseason fallback coverage with updated Trade and architecture references.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 

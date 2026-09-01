@@ -94,6 +94,150 @@ test('preseason Fantasy Rankings keeps shared ADP rows and team logos visible', 
   await expect(teamMenu.getByTestId('companion-menu-team-logo')).toHaveAttribute('src', /teamlogos\/nfl\/500\/buf\.png$/);
 });
 
+test('preseason Trade shows a prior-production IDP estimate instead of zero', async ({ page }) => {
+  const idpPlayerId = 'idp-401';
+  const priorSeason = String(Number(TEST_SEASON) - 1);
+  const preseasonLeague = {
+    ...league,
+    settings: { ...league.settings, last_scored_leg: 0 },
+    scoring_settings: { ...league.scoring_settings, idp_tkl: 1.5, idp_sack: 4 },
+    roster_positions: [...league.roster_positions, 'LB'],
+  };
+  const preseasonPlayers = {
+    ...players,
+    [idpPlayerId]: {
+      ...players[101],
+      player_id: idpPlayerId,
+      full_name: 'Production Linebacker',
+      first_name: 'Production',
+      last_name: 'Linebacker',
+      position: 'LB',
+      fantasy_positions: ['LB'],
+      mflid: '9401',
+      espn_id: '9401',
+    },
+  };
+  const preseasonRosters = rosters.map((roster) => roster.roster_id === 1
+    ? { ...roster, players: [...roster.players, idpPlayerId] }
+    : roster);
+  const preseasonLeaguesBySeason = { ...leaguesBySeason, [TEST_SEASON]: [preseasonLeague] };
+  const preseasonState = {
+    ...persistedSleeperState(),
+    leagues: [preseasonLeague],
+    league: preseasonLeague,
+    rosters: preseasonRosters,
+    leaguesBySeason: preseasonLeaguesBySeason,
+    scoringSettings: { ...persistedSleeperState().scoringSettings, ...preseasonLeague.scoring_settings },
+  };
+
+  await page.unroute('https://api.sleeper.app/v1/**');
+  await installTradeFixtures(page, {
+    league: preseasonLeague,
+    leaguesBySeason: preseasonLeaguesBySeason,
+    players: preseasonPlayers,
+    rosters: preseasonRosters,
+    persistedSleeperState: preseasonState,
+  });
+  await page.route(`https://api.sleeper.app/v1/stats/nfl/regular/${TEST_SEASON}/**`, async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+  });
+  await page.route(`https://api.sleeper.app/v1/stats/nfl/regular/${priorSeason}/**`, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ [idpPlayerId]: { gp: 1, idp_tkl: 8, idp_sack: 0 } }),
+    });
+  });
+
+  await page.goto('/trade/agent');
+
+  const idpShelfCard = page.getByTestId(`trade-shelf-yours-player-${idpPlayerId}`).filter({ visible: true });
+  await expect(idpShelfCard).toBeVisible();
+  await expect(idpShelfCard).toContainText('Production Linebacker');
+  await expect(idpShelfCard).toContainText('3,840');
+});
+
+test('Trade selected asset cards keep metadata readable', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto('/trade/agent?player=103&side=give&other=201');
+
+  const playerRows = page.locator('[data-testid^="trade-side-asset-player-"]:visible');
+  await expect(playerRows).toHaveCount(2);
+  await expect(playerRows.first()).toBeVisible();
+
+  for (const viewport of [
+    { width: 1280, height: 720 },
+    { width: 1440, height: 600 },
+    { width: 2560, height: 1440 },
+  ]) {
+    await page.setViewportSize(viewport);
+    const geometry = await playerRows.evaluateAll((rows) => rows.map((row) => {
+      const rowRect = row.getBoundingClientRect();
+      const meta = row.querySelector('.trade-selection-row__meta');
+      const metaRect = meta?.getBoundingClientRect();
+      const items = [...(meta?.querySelectorAll('.trade-selection-row__meta-item') ?? [])];
+      return {
+        rowWidth: row.clientWidth,
+        rowScrollWidth: row.scrollWidth,
+        metaVisible: Boolean(metaRect && metaRect.width > 0 && metaRect.height > 0),
+        metaBottomWithinRow: metaRect ? metaRect.bottom <= rowRect.bottom + 1 : true,
+        metaLineHeight: meta ? Number.parseFloat(getComputedStyle(meta).lineHeight) : 0,
+        metaHeight: metaRect?.height ?? 0,
+        items: items.map((item) => {
+          const style = getComputedStyle(item);
+          return {
+            text: item.textContent?.trim(),
+            textOverflow: style.textOverflow,
+            scrollWidth: item.scrollWidth,
+            clientWidth: item.clientWidth,
+          };
+        }),
+      };
+    }));
+
+    expect(geometry.length, `${viewport.width}×${viewport.height}`).toBe(2);
+    for (const row of geometry) {
+      expect(row.rowScrollWidth, `${viewport.width}×${viewport.height} row overflow`).toBeLessThanOrEqual(row.rowWidth + 1);
+      if (!row.metaVisible) continue;
+      expect(row.metaBottomWithinRow, `${viewport.width}×${viewport.height} metadata is clipped vertically`).toBe(true);
+      expect(row.metaHeight, `${viewport.width}×${viewport.height} metadata wraps to a third line`).toBeLessThanOrEqual((row.metaLineHeight * 2) + 3);
+      for (const item of row.items) {
+        expect(item.textOverflow, `${viewport.width}×${viewport.height}: ${item.text}`).not.toBe('ellipsis');
+        expect(item.scrollWidth, `${viewport.width}×${viewport.height}: ${item.text}`).toBeLessThanOrEqual(item.clientWidth + 1);
+      }
+    }
+  }
+});
+
+test('Trade shelf keeps add actions and pick values visible', async ({ page }) => {
+  for (const viewport of [
+    { width: 1280, height: 720 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto('/trade/agent');
+
+    const picksFilter = page.getByTestId('trade-shelf-filter-picks').filter({ visible: true });
+    await expect(picksFilter).toBeVisible();
+    await picksFilter.click();
+
+    const pickRows = page.locator('[data-testid^="trade-shelf-yours-pick-"]:visible');
+    await expect(pickRows.first()).toBeVisible();
+    await expect(pickRows.first().getByText('ADD', { exact: true })).toBeVisible();
+
+    const pickRowState = await pickRows.first().evaluate((row) => {
+      const value = [...row.querySelectorAll('span')]
+        .find((span) => /\d/.test(span.textContent ?? '') && getComputedStyle(span).fontVariantNumeric.includes('tabular'));
+      return {
+        text: row.textContent ?? '',
+        valueText: value?.textContent?.trim() ?? '',
+      };
+    });
+    expect(pickRowState.valueText, `${viewport.width}×${viewport.height}`).toMatch(/\d/);
+    expect(pickRowState.text, `${viewport.width}×${viewport.height}`).toContain('ADD');
+  }
+});
+
 for (const viewport of MOBILE_VIEWPORTS) {
   test(`Companion views adapt without priority text clipping at ${viewport.name}`, async ({ page }) => {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
