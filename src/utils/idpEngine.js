@@ -15,7 +15,7 @@ import { calcPointsFromTotals } from './scoringEngine.js';
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const IDP_POS_GROUPS = {
-  DL: new Set(['DL', 'DE', 'DT']),
+  DL: new Set(['DL', 'DE', 'DT', 'EDG', 'EDGE']),
   LB: new Set(['LB', 'ILB', 'OLB']),
   DB: new Set(['DB', 'CB', 'S', 'SS', 'FS']),
 };
@@ -25,8 +25,6 @@ const IDP_FLEX_SLOTS = new Set(['IDP_FLEX', 'FLEX_IDP', 'DP']);
 /** Minimum games played to include a player in value computation. */
 const MIN_GAMES = 3;
 
-/** Hard cap matching KTC's maximum value scale. */
-const IDP_MAX_VAL = 10_000;
 const IDP_VALUE_CACHE = new WeakMap();
 const DST_VALUE_CACHE = new WeakMap();
 
@@ -117,7 +115,11 @@ function getRosterPositionsCacheKey(rosterPositions) {
 /**
  * Compute production-based trade values for all IDP (DL / LB / DB) players.
  *
- * Value formula: min(10,000, round(ppg × avgSkillValPerPPG))
+ * Value formula: round(ppg × avgSkillValPerPPG).
+ *
+ * KTC-backed offensive players are allowed to exceed 10,000. Generated IDP
+ * values must be able to do the same so one scoring format is not silently
+ * capped while another is not.
  *
  * Players with fewer than MIN_GAMES (3) games played are excluded and will
  * display as "—" or 0 depending on KTC load state — graceful early-season
@@ -167,7 +169,7 @@ export function computeIDPValues(
       const pts = calcPointsFromTotals(stats, scoringSettings, p.position);
       if (!pts || pts <= 0) continue;
       const ppg = pts / stats.gp;
-      result.set(id, Math.min(IDP_MAX_VAL, Math.round(ppg * valPerPPG)));
+      result.set(id, Math.round(ppg * valPerPPG));
     }
   }
 
@@ -220,7 +222,7 @@ export function computeDSTValues(
     const pts = calcPointsFromTotals(stats, scoringSettings, 'DEF');
     if (!pts || pts <= 0) continue;
     const ppg = pts / stats.gp;
-    result.set(id, Math.min(IDP_MAX_VAL, Math.round(ppg * valPerPPG)));
+    result.set(id, Math.round(ppg * valPerPPG));
   }
 
   if (canCache) {

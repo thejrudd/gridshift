@@ -1598,6 +1598,65 @@ test('BALLDONTLIE ADP stays neutral by default and changes model order only when
   assert.equal(adpWeighted.rankedCandidates[0].draftModel.components.adp > adpWeighted.rankedCandidates[1].draftModel.components.adp, true);
 });
 
+test('an IDP without provider ADP keeps its scoring and production-based Draft signal', () => {
+  const idpLeague = {
+    ...league,
+    roster_positions: [...league.roster_positions, 'IDP_FLEX'],
+  };
+  const idpPlayers = {
+    wr1: { ...players.wr1, projected: undefined },
+    lb1: {
+      player_id: 'lb1',
+      full_name: 'Elite Linebacker',
+      position: 'LB',
+      fantasy_positions: ['LB'],
+      team: 'BUF',
+      search_rank: 50,
+      projected: undefined,
+    },
+  };
+  const modelArgs = {
+    players: idpPlayers,
+    rosters,
+    league: idpLeague,
+    draft: {
+      draft_id: 'draft-idp-adp-1',
+      type: 'snake',
+      status: 'pre_draft',
+      settings: { rounds: 4 },
+      slot_to_roster_id: { 1: 1, 2: 2, 3: 3 },
+    },
+    draftPicks: [],
+    myRoster: rosters[0],
+    scoringSettings: { ...DEFAULT_SCORING, idp_tkl: 1.5, idp_sack: 4 },
+    season: '2026',
+    seasonStats: {
+      wr1: { gp: 17, rec: 80, rec_yd: 1_000, rec_td: 7 },
+      lb1: { gp: 17, idp_tkl: 150, idp_sack: 6 },
+    },
+    modelWeights: {
+      marketRank: 0,
+      adp: 20,
+      pastProduction: 40,
+      scoringFit: 40,
+      rosterNeed: 0,
+      schedule: 0,
+    },
+  };
+  const withoutAdp = buildDraftAssistantViewModel(modelArgs);
+  const withOffenseOnlyAdp = buildDraftAssistantViewModel({
+    ...modelArgs,
+    adpByPlayerId: new Map([['wr1', { average_draft_position: 5 }]]),
+  });
+
+  const baselineIdp = withoutAdp.allCandidates.find((player) => player.id === 'lb1');
+  const adpModelIdp = withOffenseOnlyAdp.allCandidates.find((player) => player.id === 'lb1');
+  assert.equal(adpModelIdp.adp, null);
+  assert.equal(adpModelIdp.draftModel.components.adp, null);
+  assert.equal(adpModelIdp.draftModel.score, baselineIdp.draftModel.score);
+  assert.ok(adpModelIdp.draftModel.score > 0);
+});
+
 test('draft assistant pick window follows current traded-pick owners', () => {
   const draft = {
     draft_id: 'draft-1',

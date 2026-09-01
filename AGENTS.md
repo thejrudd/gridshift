@@ -1,248 +1,533 @@
 # GridShift — Project Memory
 
 ## Project Overview
+
 - **Tech stack**: React 19 + Vite 7 + Tailwind CSS 3
 - **Fonts**: Barlow Condensed (display/brand), Figtree (body/UI)
 - **Dark mode**: `.dark` class on `<html>`
 - **PWA**: vite-plugin-pwa + nginx in Docker
 - **Active branch**: `main` — all work ships directly here
-- **Current version**: v8.4.0
+- **Current version**: v8.8.3
+
+---
+
+## Core Working Rules
+
+### Task Startup
+
+Before implementation:
+
+1. Identify the smallest set of files likely involved.
+2. Read the relevant architecture or implementation references from `docs/Where To Edit.md`.
+3. Check `TO_DO.md` when the task affects planned work.
+4. Check `KNOWN_BUGS.md` when the task fixes or investigates a tracked bug.
+5. Delegate independent workstreams when subagents would materially improve speed or quality.
+6. Do not scan the entire repository unless targeted exploration fails.
+
+### Investigation Before Editing
+
+For non-trivial bugs, regressions, or architectural changes:
+
+- Determine the likely root cause before modifying code.
+- Prefer targeted searches and call-site tracing over broad exploration or refactoring.
+- Identify the intended fix and affected surfaces before editing.
+- When root cause is uncertain, prefer a small localized experiment over speculative changes across multiple systems.
+
+### Decision Making
+
+Do not ask for clarification when a reasonable, reversible interpretation exists.
+
+Ask when:
+
+- different interpretations materially change user-visible behavior,
+- the choice is difficult to reverse,
+- it affects data integrity, security, billing, or architecture,
+- or the user explicitly owns the product/design decision.
+
+For low-risk implementation details, choose the option most consistent with the existing codebase and record meaningful assumptions.
+
+When operating unattended, proceed with the most reasonable interpretation instead of blocking on low-risk ambiguity.
+
+### Scope and Simplicity
+
+- Match the solution to the problem. Use the simplest solution that reliably satisfies the requirement.
+- Keep changes scoped to the requested work.
+- Do not opportunistically refactor adjacent code or reformat unrelated files.
+- Do not introduce abstractions solely for hypothetical future needs.
+- Surface worthwhile follow-up work separately rather than folding it into the current task.
+- Suggest materially better long-term approaches when relevant, but do not expand scope without reason.
+
+Once the requested behavior works and relevant validation passes, stop editing.
+
+### Reuse Before Creation
+
+Before creating a new component, hook, utility, formatter, token, data model, or shared pattern:
+
+1. Search for an existing equivalent.
+2. Prefer extending an existing shared implementation when responsibilities genuinely align.
+3. Do not consolidate code merely because it looks similar when the behaviors differ materially.
+
+### Uncertainty
+
+- Flag meaningful uncertainty explicitly.
+- Prefer evidence from the existing code and documentation over assumptions.
+- When useful, run a small, localized, low-risk experiment to test a hypothesis.
+- Do not leave speculative changes in place simply because they appear to work.
+
+---
+
+## Model and Subagent Policy
+
+Use subagents when parallel work, independent verification, specialization, or separation of independent workstreams would materially improve the result.
+
+For prompts containing multiple distinct fixes or changes, delegate independent workstreams when they can be meaningfully separated. Do not create subagents merely to satisfy this rule.
+
+Choose the least expensive model capable of reliably completing each delegated task.
+
+Prefer:
+
+- **Luna** for routine exploration, implementation, editing, repository research, and straightforward reasoning.
+- **Terra** for difficult debugging, architecture, cross-cutting changes, complex implementation, or reasoning-heavy investigation.
+- **Sol** for exceptionally difficult tasks, high-risk review, ambiguous architectural decisions, failed Terra attempts, or situations where maximum reasoning quality is justified.
+
+Do not escalate models merely because a task is large. Escalate based on reasoning difficulty, risk, and demonstrated need.
+
+### Preferred Subagent Roles
+
+Prefer delegating:
+
+- repository and code-path investigation,
+- independent root-cause analysis,
+- test and regression review,
+- documentation impact analysis,
+- isolated implementation workstreams.
+
+Avoid having multiple agents modify the same files unless necessary.
+
+For high-risk changes, prefer one implementation agent plus one independent review agent over multiple overlapping implementation agents.
+
+The parent agent owns the final result and must synthesize and verify subagent work rather than assuming it is correct.
+
+---
+
+## Validation
+
+Use validation proportional to the change.
+
+### During Implementation
+
+Run the smallest relevant check needed to confirm the current change, such as:
+
+- targeted unit tests,
+- targeted lint or type checks,
+- localized build/import checks,
+- focused browser or E2E tests.
+
+Do not repeatedly run full-project validation after every small edit unless the change has broad architectural impact.
+
+### Before Declaring a Task Complete
+
+Validate the affected feature and its immediate integration surfaces.
+
+A task is complete when:
+
+- the requested behavior is implemented,
+- relevant edge cases identified during the task are handled,
+- required documentation is updated,
+- appropriate validation passes,
+- unrelated files were not changed,
+- and remaining uncertainty or follow-up work is clearly reported.
+
+A commit is a separate action and occurs only when explicitly requested.
+
+### Before Commit
+
+Run all commit-specific and release-specific gates defined below.
+
+---
+
+## Collaboration and Project Memory
+
+- Keep `AGENTS.md` and `CLAUDE.md` synchronized. Any instruction or project-memory change made in one must be mirrored in the other during the same pass.
+- Prefer plain-language communication and implementation choices over unnecessary complexity.
+- Keep project-specific implementation knowledge in the relevant `docs/` file instead of expanding this file unless the rule must apply broadly to future tasks.
+
+---
 
 ## API Secret Handling
-- Any BALLDONTLIE, CFBD/CollegeFootballData, or similar paid API key must be treated as a secret and must never be committed into the repo or exposed in the client bundle.
-- If the project upgrades to a paid BALLDONTLIE or CFBD subscription, rotate the existing key and move all access behind a server-side or proxy boundary before production use.
 
-## Versioning Roadmap
-- **v6.0** — Trade Suite (shipped)
-- **v7.0** — Draft Coach (rookie scouting data, combine results, dynasty ADP)
-
----
-
-## Collaboration Defaults
-
-- Keep `AGENTS.md` and `CLAUDE.md` synchronized: any instruction or project-memory change made in `AGENTS.md` must be mirrored in `CLAUDE.md` in the same pass.
-- For any prompt that includes multiple fixes or changes, spawn subagents and delegate the distinct workstreams before implementation.
-- Ask, don't assume. If intent, architecture, or requirements are unclear, ask before writing code. When running unattended, pick the most reasonable interpretation, proceed, and record the assumption instead of blocking.
-- Match the solution to the problem. Use the simplest solution for simple problems, and reach for stronger architecture only when the problem actually needs it.
-- Keep changes scoped. Do not touch unrelated code; surface bad code or design smells discovered along the way so they can be addressed as separate issues.
-- Flag uncertainty explicitly. If unsure, ask. When helpful, run a small, localized, low-risk experiment, then bring the hypothesis and result back for discussion.
-- Suggest better paths when they matter. Tactical fixes are welcome, but call out alternatives with longer-lasting impact when they would be meaningfully better.
+- Treat BALLDONTLIE, CFBD/CollegeFootballData, and similar paid API keys as secrets.
+- Never commit secrets to the repository or expose them in the client bundle.
+- Paid API access must cross a server-side or proxy boundary before production use.
+- If moving an existing client-used API to a paid plan, rotate the existing key as part of the migration.
 
 ---
 
-## Docs First
+## Documentation Map
 
-Prefer the docs folder for current architecture and implementation references instead of duplicating long guidance in this file.
+Use `docs/Where To Edit.md` to determine which references apply before implementation.
 
-- `docs/Home.md` — doc map / entry point
-- `docs/Architecture Map.md` — current architectural layout and file ownership
+Key references:
+
+- `docs/Home.md` — documentation map and entry point
+- `docs/Architecture Map.md` — architecture and file ownership
 - `docs/Where To Edit.md` — feature-to-file edit guide
-- `docs/Design System Quick Ref.md` — key rules checklist and team color palette details
-- `docs/Design Tokens.md` — full token table and design-system details
-- `docs/Companion Shared Rows.md` — canonical Companion/Trade selector row rendering, team-gradient contrast, player row slots, badges, logos, and responsive row rules
-- `docs/Scoring Call Sites.md` — full scoring audit checklist
-- `docs/Trade Engine.md` — Trade engine architecture, explanation rules, and maintenance reference
-- `docs/Trade Proposal Cards.md` — Trade proposal card sizing, content priority, and no-clipping rules
-- `docs/Scout.md` — Scout tab architecture, APIs, CFBD importers, generated production data, Prospect Statistics modal data contracts, route integration, and real-data wiring checklist
-- `QA_CHECKLIST.md` — manual QA flows; only open when explicitly doing QA or test validation
+- `docs/Design System Quick Ref.md` — core design rules and team colors
+- `docs/Design Tokens.md` — full design token reference
+- `docs/Companion Shared Rows.md` — canonical Companion/Trade row system
+- `docs/Scoring Call Sites.md` — scoring-change audit checklist
+- `docs/Fantasy Live.md` — Fantasy Live implementation rules (pace chart, replay, win probability, play filter)
+- `docs/Trade Engine.md` — Trade architecture, valuation, selection, and explanation rules
+- `docs/Trade Proposal Cards.md` — Trade proposal card layout and sizing
+- `docs/Scout.md` — Scout architecture, APIs, importers, production data, modals, and routing
+- `QA_CHECKLIST.md` — manual QA flows
+
+Do not load `QA_CHECKLIST.md` during normal implementation unless the task is explicitly about QA, testing, validation, or regression review.
 
 ---
 
 ## Design System — "Broadcast Editorial"
 
-All colors via CSS custom properties in `src/index.css` — never hardcoded Tailwind palette or hex values. The `.dark` class on `<html>` swaps all values. Full rules and team color palette details: **`docs/Design System Quick Ref.md`** — full token table: **`docs/Design Tokens.md`**
+Follow `docs/Design System Quick Ref.md` for all UI changes and `docs/Design Tokens.md` for the complete token set.
 
-Critical rules (apply to every UI change):
-- `--color-signature` (`#F5B700`) decorative only — never body text. Use `--color-signature-fg` for text ON signature backgrounds.
-- `font-size: 16px` on all inputs (prevents iOS auto-zoom). Safe areas: `env(safe-area-inset-bottom)` on fixed bottom bars. Motion: `cubic-bezier(0.32, 0.72, 0, 1)`.
-- Display density uses the persisted `gridshift-display-size` preference and `data-display-size="compact|comfortable|large"` on `<html>`, with Comfortable as the fallback. Apply it before React renders; never infer DPI or use CSS `zoom`/whole-app transforms.
-- Use the semantic `--type-*`, `--control-height`, and `--density-space-*` tokens instead of new fixed typography or control-density values. Meaningful labels start at `--type-label`; `--type-micro` is reserved for decorative badges and overlines. Inputs remain at least `16px`, and coarse-pointer controls remain at least `44px`.
-- Route roots must use the appropriate centered frame tier: `page-frame-readable` (`1200px`) for settings/detail content, `page-frame-data` (`1600px`) for lists and standings, or `page-frame-workbench` (`1920px`) for multi-panel tools. Keep identity, primary metrics, and actions in predictable columns rather than stretching rows across ultrawide displays.
-- Sticky controls inside an independently scrolling content area must paint an opaque surface through the scrollport's top padding or offset (use an isolated wrapper with a background shield when needed). Scrolled rows, cards, charts, and event text must never remain visible above or behind sticky tabs, filters, or headers.
-- Centered display/settings modals must keep headers and footers fixed within the modal while an inner content region scrolls. On narrow screens and Large display size, primary actions must remain visible and mobile navigation labels must not truncate.
-- Prefer fluid, container-aware responsive layouts over fixed pixel density. Use responsive grids, `clamp()`, `minmax()`, container-aware wrapping, flexible gaps, and viewport-sensitive spacing. Treat `44px` as a minimum comfortable touch-target floor, not a fixed sizing system. Fixed dimensions are acceptable only for documented shell constraints, fixed-format media/aspect ratios, or explicit feature contracts.
-- Companion and Trade-adjacent player/asset selector rows must use the shared row system documented in `docs/Companion Shared Rows.md`. Do not recreate local team-gradient, logo/avatar fallback, status badge, selector button, or gradient contrast logic in feature files.
-- Page-level unavailable, loading, or empty-route reason messages must be centered in the page as unframed text, matching the Companion Matchup empty-state pattern. Do not render page availability reasons as bordered cards or left-aligned panels; keep compact framed empty states only for inline list/table/filter results.
+Critical invariants:
+
+- Use CSS custom properties from `src/index.css`; do not introduce hardcoded Tailwind palette colors or hex colors into feature code.
+- `--color-signature` is decorative only. Use `--color-signature-fg` for text on signature-colored backgrounds.
+- Inputs must use at least `16px` font size to prevent iOS auto-zoom.
+- Coarse-pointer controls must remain at least `44px`.
+- Fixed bottom UI must respect `env(safe-area-inset-bottom)`.
+- Standard motion easing is `cubic-bezier(0.32, 0.72, 0, 1)`.
+- Display density is driven by persisted `gridshift-display-size` and `data-display-size="compact|comfortable|large"` on `<html>`, with Comfortable as fallback.
+- Apply display density before React renders.
+- Never infer display density from DPI or use CSS `zoom` or whole-app transforms.
+- Prefer semantic `--type-*`, `--control-height`, and `--density-space-*` tokens over new fixed typography or density values.
+- `--type-micro` is for decorative badges and overlines, not meaningful labels.
+- Prefer fluid, container-aware responsive layouts using tools such as `clamp()`, `minmax()`, wrapping, flexible gaps, and viewport-sensitive spacing.
+- Fixed dimensions are appropriate only for documented shell constraints, fixed-format media/aspect ratios, or explicit feature contracts.
+
+### Page Frames
+
+Route roots must use the appropriate centered frame tier:
+
+- `page-frame-readable` — `1200px`, settings/detail content
+- `page-frame-data` — `1600px`, lists and standings
+- `page-frame-workbench` — `1920px`, multi-panel tools
+
+Keep identity, primary metrics, and actions in predictable columns instead of stretching rows across ultrawide displays.
+
+### Sticky and Modal Behavior
+
+Sticky controls inside independently scrolling regions must paint an opaque surface through the scrollport's top padding or offset. Scrolled content must never remain visible behind sticky tabs, filters, or headers.
+
+Centered display/settings modals must keep headers and footers fixed within the modal while an inner region scrolls. Primary actions must remain visible on narrow screens and at Large display size.
+
+Use the shared `src/components/Modal.jsx` for standard centered modals. Bottom sheets and ActionSheets are separate patterns and must not use `Modal`.
+
+### Shared Companion and Trade Rows
+
+Companion and Trade-adjacent player or asset selector rows must use the shared system documented in `docs/Companion Shared Rows.md`.
+
+Do not recreate local:
+
+- team-gradient logic,
+- logo/avatar fallback behavior,
+- status badges,
+- selector controls,
+- gradient contrast logic.
+
+### Empty and Unavailable States
+
+Page-level unavailable, loading, or empty-route reason messages must be centered, unframed text matching the Companion Matchup empty-state pattern.
+
+Compact framed empty states remain appropriate for inline list, table, and filter results.
 
 ---
 
 ## Navigation Architecture
 
-### Layout Breakpoints
-- `< 1024px` (lg): Mobile/tablet — bottom tab bar + sticky NavBar (44px)
-- `≥ 1024px` (lg+): Desktop — left sidebar (240px) + full-width content area
+### Breakpoints
 
-### State Variables
-- `activeTab`: `'predictions'` | `'statistics'` | `'companion'` | `'compare'`
-- `seasonView`: `'predictions'` | `'standings'` | `'playoffs'`
-- `companionView`: `'roster'` | `'rankings'` | `'live'` | `'matchup'` | `'waiver'` | `'league'` | `'defense'` | `'trade'` | `'scoring'`
+- `< 1024px`: mobile/tablet — bottom tab bar + sticky 44px NavBar
+- `≥ 1024px`: desktop — 240px left sidebar + content area
 
-### Key Layout Files
-- `src/App.jsx` — Two-panel shell
-- `src/components/Sidebar.jsx` — 240px persistent desktop sidebar (lg+): brand, progress, nav, actions, version string
-- `src/components/NavBar.jsx` — 44px sticky top nav (mobile/tablet only)
-- `src/components/BottomTabBar.jsx` — Bottom tab bar (mobile/tablet, hidden lg+)
+### Navigation State
 
----
+- `activeTab`: `'predictions' | 'statistics' | 'companion' | 'compare'`
+- `seasonView`: `'predictions' | 'standings' | 'playoffs'`
+- `companionView`: `'roster' | 'rankings' | 'live' | 'matchup' | 'waiver' | 'league' | 'defense' | 'trade' | 'scoring'`
 
-## Commit & Version Workflow
+### Key Files
 
-### Never auto-commit
-Do NOT create commits, bump versions, or update any of the 7 tracked files unless the user explicitly asks. Mentioning a version number (e.g. "let's work on v5.9") means that's the version context — not a commit instruction. Only commit when the user says something like "commit this", "make a commit", or "bump the version".
-
-**Why:** Auto-committing causes version creep and races ahead of planned roadmap milestones.
-
-### 7-File Commit Checklist
-On every commit that bumps the version, update ALL of these before committing:
-
-1. **`CHANGELOG.md`** — Add a new version section with bullet points for all changes. New entries at the **bottom** (oldest first, newest last).
-2. **`KNOWN_BUGS.md`** — Move fixed bugs from Open → Fixed with the correct version number; add any new bugs.
-3. **`TO_DO.md`** — Remove completed items (see TO_DO workflow below).
-4. **`package.json`** — Bump `"version"` to the new version number.
-5. **`src/components/Sidebar.jsx`** — Update the hardcoded version string in the sidebar footer.
-6. **`README.md`** — See README rules below.
-7. **`src/data/whatsNew.js`** — **Feature versions only** (skip patch/bug-fix releases): ASK THE USER which shipped changes should be highlighted with in-app "What's New" tour tooltips. Append a `{ version, title, features }` entry at the **end** of `WHATS_NEW` (oldest-first, mirroring CHANGELOG). Each feature gets `id`, `name`, `description`, and 1–3 `steps` — a `route` in `applyRoute` shape, an `anchor` selector like `[data-tour="..."]` (add the `data-tour` attribute to the target element if it doesn't exist yet), and tooltip `title`/`body`. When a newer feature replaces or materially changes an older toured feature, add `supersedes: ['older-feature-id']` to the newer feature so skipped-version upgrades show only the current explanation. Never rewrite past entries except to repair broken anchors/routes/copy; use supersession to preserve history without replaying obsolete behavior. The version comparison is driven by this file: a version with no entry shows nothing after update.
-
-After committing: do NOT run `git push` — the user pushes manually.
-
-**Why package.json matters:** The version bump forces vite-plugin-pwa to regenerate the service worker precache manifest with a new revision hash, so browsers/PWA installs fetch the updated build instead of serving stale cache.
-
-Before any commit: ask the user whether the open bugs for the target version have in fact been resolved. Do not move version-specific bugs from Open to Fixed based only on implementation assumptions.
-
-### What's New Tour Regression Gate
-
-Before every commit, invoke `$validate-gridshift-tour` and validate the complete historical tour in `src/data/whatsNew.js`, not only the entry for the version being committed. The gate must:
-
-1. Run `npm run validate:tour` to check entry ordering, unique feature IDs, route normalization/round trips, required copy, and source-backed desktop/mobile anchors.
-2. Run `npm run test:e2e:tour` to replay the full upgrade tour on desktop and mobile with the supported fixture data. Every step must reach its declared route, resolve a visible anchor, display its tooltip, and advance without timing out or silently skipping.
-3. Build a feature-evolution map across every crossed version. Compare older and newer bullets that share a route, anchor, feature surface, or user outcome against the current UI. If a later feature replaces or materially changes an earlier one, declare `supersedes` and verify the obsolete bullet and steps are removed from the effective upgrade tour.
-4. Review the staged diff for changes to routes, navigation, conditional rendering, feature names/copy, tour context/demo state, or any component owning a `data-tour` anchor. Confirm every remaining tooltip describes the current UI rather than only proving that its selector exists.
-5. Treat any mechanical or semantic historical failure as a commit blocker. Repair the implementation, supersession relationship, or affected tour copy, rerun both checks, and report the effective feature list before committing.
-
-For an upgrade spanning multiple feature versions (for example v8.0 → v8.2), validate the effective crossed entries in order after applying supersession. Never flatten and replay raw `WHATS_NEW` entries because that can revive obsolete features. A successful build or unit-test run does not replace this tour gate.
-
-### CHANGELOG.md Rules
-- Never use "Unreleased" as a section header — always assign changes to a specific version number, even if not yet released.
-- If the version number is unclear, ask the user before writing the entry.
-
-### GitHub Release Notes Format
-- Whenever the user asks for release notes, provide the raw Markdown source in a fenced `markdown` code block so it can be copied without rendered formatting.
-- When generating GitHub release notes, use Markdown with the release title as `# vX.Y[.Z] - Short Release Theme`.
-- Organize notes in this order: `## New Features`, then `## Improvements`, then `## Bug Fixes`.
-- Focus the notes on the changes included between the previous released version and the requested release tag/version.
-- Keep bullets user-facing and grouped by feature area; avoid internal implementation detail unless it helps explain the release impact.
-
-### Commit Message Rules
-- Version/release commits must use a glance-able subject in this format: `vX.Y[.Z] - Short Release Theme`.
-- Do not use generic subjects like `Release v6.3`; GitHub shows the subject in file history, so it must summarize what shipped.
-- Include a commit body with a short summary sentence and a `Highlights:` list covering the major shipped changes.
-- Keep the commit body aligned with `CHANGELOG.md`, `README.md` What's New, and the actual files changed.
-
-### README.md Rules
-- **Features section**: Major features only, one line each. Update when a new major feature ships. No bug fixes or minor polish.
-- **What's New section**: Contains ONLY the most recently committed version. Replace the previous entry entirely — do not accumulate multiple "What's New" sections. Link to CHANGELOG.md for history.
-- **Roadmap section**: Derived from TO_DO.md, but only major planned versions and significant blocked features. No backlog polish or unversioned experiments.
+- `src/App.jsx` — primary shell
+- `src/components/Sidebar.jsx` — persistent desktop sidebar
+- `src/components/NavBar.jsx` — mobile/tablet sticky top navigation
+- `src/components/BottomTabBar.jsx` — mobile/tablet bottom navigation
 
 ---
 
-## Bug Tracking (KNOWN_BUGS.md)
+## High-Risk Areas
 
-- When a bug is identified (whether reported or found during work): add it to the **Open** section immediately, before fixing it.
-- If the bug was previously in **Fixed**: move it back to Open and remove the "Fixed In" version note.
-- Move a bug to **Fixed** at commit time, using the version number being committed. Never use "Unreleased".
+Treat changes to these surfaces as higher blast-radius work and validate accordingly:
 
----
-
-## TO_DO.md Workflow
-
-- File is `TO_DO.md` at project root (not `to-do list.md` or any other name).
-- Versioned sections are **chronological — earliest version first**, latest version last.
-- **Backlog (Unversioned)** section is always at the bottom.
-- Whenever a new feature is requested or planned, add it to TO_DO.md in the appropriate version section or backlog immediately.
-- Completed versions are **deleted entirely** from TO_DO.md — no strikethroughs, no "✓ Complete" stubs. They live in CHANGELOG.md.
-- Before every commit: cross-check TO_DO.md against CHANGELOG.md, remove everything that has been shipped. The earliest entry in TO_DO.md should always be the next unshipped version.
+- `SleeperContext.jsx` — cascades through Companion and Compare
+- `PredictionContext.jsx` — can create subtle opposing-game-result synchronization regressions
+- `scoringEngine.js` — affects Companion, Compare, KTC adjustments, and scoring-derived behavior
 
 ---
 
-## Modal Pattern
+## Feature-Specific Maintenance Rules
 
-All modals must be center-aligned. Never bottom-sheet style unless it's a deliberate ActionSheet.
+### Scoring
 
-Use the shared `src/components/Modal.jsx` wrapper — it handles backdrop, scroll lock, centering, and stopPropagation automatically:
+For any scoring-logic change, including new fields, bonuses, or Sleeper stat keys:
 
-```jsx
-<Modal onClose={onClose} containerClassName="max-w-lg" containerStyle={{ border: '1px solid var(--color-separator)' }}>
-  {/* content */}
-</Modal>
-```
+- Follow the complete audit in `docs/Scoring Call Sites.md`.
+- Verify every relevant `calcPoints()` and `calcPointsFromTotals()` call passes `position`.
+- Search all call sites before declaring the change complete.
 
-- `containerClassName` — Tailwind classes for the inner container (e.g. `max-w-3xl`, `flex flex-col`)
-- `containerStyle` — inline styles (maxWidth, maxHeight, border, boxShadow, etc.)
-- Scrollable content goes in an **inner** div with `overflow-y-auto`, not the Modal container itself
-- Bottom-sheet / ActionSheet components use their own pattern (`rounded-t-2xl`, `fixed bottom-0`) — do not wrap with `Modal`
+### Trade Engine
 
----
+Any change to:
 
-## Guide Content Style
+- Trade valuation,
+- proposal generation,
+- proposal selection or ranking,
+- Upgrade logic,
+- or Trade explanation wording
 
-Keep Guide content succinct, instructional, and not verbose.
-- 1–2 sentences per step max
-- Lead with what the feature does, follow with how to use it
-- Skip background explanation; don't restate what the UI already shows
-- 2–4 steps per tab is the right range
+must update `docs/Trade Engine.md` in the same pass.
 
-## Communication Preference
+Prefer user-facing fantasy-football language in Trade UI. Keep internal engine terminology in documentation unless explicitly useful to users.
 
-- Prefer plain-language labels over niche or non-standardized acronyms in UI copy.
-- Avoid acronyms when they speed up communication at the expense of understanding.
-- Any new user-facing fantasy-platform error message must conditionally reference the current connected platform (for example ESPN vs Sleeper) instead of hardcoding a provider name.
-- Do not load or reference `QA_CHECKLIST.md` during normal implementation work unless the task is explicitly about QA, testing, validation, or regression review.
+### Trade Proposal Cards
 
----
+When changing Trade proposal player or draft-card layout, follow `docs/Trade Proposal Cards.md` and validate its sizing, ratio, content-priority, responsive, and equal-height requirements.
 
-## Scoring Call Sites
+### Companion Shared Rows
 
-When making any change to scoring logic (new fields, position bonuses, new Sleeper stat keys), audit the full checklist in **`docs/Scoring Call Sites.md`**.
+When changing Companion or Trade-adjacent player/asset rows, follow `docs/Companion Shared Rows.md` and use its shared components and visual helpers.
 
-Quick summary: every `calcPoints()` and `calcPointsFromTotals()` call must pass `position`. Grep for these across the repo before closing any scoring PR.
+Do not recreate row alignment or team-visual behavior in feature components.
 
----
+### Ranked Search Results
 
-## Trade Engine Maintenance
+When a ranked list can be filtered:
 
-- Any change to Trade valuation, proposal generation, proposal selection/ranking, Upgrade logic, or Trade explanation wording must be reflected in `docs/Trade Engine.md` in the same pass.
-- Prefer user-facing fantasy-football language in Trade UI; keep internal engine terms in the docs, not in explanation cards, unless clearly labeled.
+- Compute rank on the complete sorted list before filtering.
+- Carry the rank as data.
+- Render the stored rank rather than the filtered array index.
 
----
+### `productionAdjustedValue`
 
-## State Risk Areas
+Preserve null propagation.
 
-- `SleeperContext.jsx` has the widest blast radius — changes cascade into all Companion and Compare views.
-- `PredictionContext.jsx` can create subtle sync regressions (opposing game results).
-- `scoringEngine.js` changes cascade into Companion, Compare, and KTC adjustments.
+The early-return guard must return `ktcVal`, not `ktcVal ?? 0`, so missing values remain missing and render as `—` rather than `0`.
 
 ---
 
-## Common Gotchas
+## UI Content Style
 
-### Trade proposal card sizing
-Detailed rules live in `docs/Trade Proposal Cards.md`. Any time proposal player or draft cards are resized, verify the fixed 5:7 ratio, single-line identity labels, desktop stat fit, mobile width caps, and equal-height syncing across a trade package.
+### Guides
 
-### Ranked lists with search filters
-Always compute rank (`i + 1`) on the full sorted list, then filter for display. Never derive rank after filtering — the rank number will reflect position in the filtered subset, not the true overall rank. Carry `rank` as a property on each item; render uses `item.rank`, not the map index.
+Keep Guide content succinct and instructional:
 
-### `productionAdjustedValue` null propagation
-The early-return guard must be `return ktcVal` (not `return ktcVal ?? 0`). Returning `0` for players with no KTC match causes `fmtKtcValue(0)` to render "0" instead of "—", since `adjVal ?? it.val` only falls back on null/undefined, not `0`.
+- 1–2 sentences per step
+- lead with what the feature does, then how to use it
+- do not restate obvious UI text
+- generally use 2–4 steps per tab
 
-### Team logo alignment in grid rows
-Before adding or changing Companion/Trade-adjacent player rows, read `docs/Companion Shared Rows.md`. Use `CompanionPlayerRow`, `CompanionAssetRow`, `CompanionSelectorControls`, `teamVisualTheme.js`, and `companionAssetVisuals.js` as the single source of truth for row visuals.
+### User-Facing Copy
 
-When team logos (or any element like "ROSTERED" badges) must sit immediately after a player name **and** be horizontally aligned across all rows, use this three-part pattern:
+- Prefer plain-language labels over niche or non-standard acronyms.
+- Avoid acronyms when they reduce comprehension.
+- Fantasy-platform error messages must reference the currently connected platform dynamically rather than hardcoding ESPN, Sleeper, or another provider.
 
-1. **Measure the longest name** with a canvas — `measureMaxNameWidth(players)` renders each name at the exact CSS font and returns the widest pixel width.
-2. **Set the name column to `minmax(0, <measured>px)`** in `gridTemplateColumns`. This caps the column at the widest name so no names truncate, but allows it to shrink on narrow viewports.
-3. **Put the logo/badge in a separate `auto` column**, and add a **`1fr` spacer column** between the logo and the stat columns to absorb leftover row width.
+---
 
-The `1fr` spacer is critical — without it, `minmax(0, Npx)` leaves unallocated space in the grid that pushes the logo toward the center instead of keeping it tight against the name. On compact phones, skip the measured column, the logo column, and the spacer entirely (use `minmax(0,1fr)` for the name and don't render the logo/spacer divs).
+# Commit and Release Workflow
 
-Reference implementations: `CompanionRankings.jsx` and `CompanionLeague.jsx`.
+## Never Auto-Commit
+
+Do not:
+
+- create commits,
+- bump versions,
+- update release-tracking files solely because a version was mentioned,
+- or push changes
+
+unless the user explicitly asks.
+
+A statement such as "let's work on v8.7" establishes version context; it is not permission to commit.
+
+After committing, do not run `git push`. The user pushes manually.
+
+---
+
+## Before Every Commit
+
+Before committing:
+
+1. Ask the user whether open bugs assigned to the target version have actually been resolved.
+2. Do not move version-specific bugs to Fixed based only on implementation assumptions.
+3. Run the required validation and historical What's New tour gate.
+4. Cross-check release metadata against the actual diff.
+
+---
+
+## Version-Bump Checklist
+
+For every commit that bumps the version, update all applicable release files:
+
+1. `CHANGELOG.md`
+2. `KNOWN_BUGS.md`
+3. `TO_DO.md`
+4. `package.json`
+5. `src/components/Sidebar.jsx`
+6. `README.md`
+7. `src/data/whatsNew.js` for feature releases only
+
+Updating `package.json` is required because the version change forces vite-plugin-pwa to regenerate the service-worker precache revision.
+
+### What's New
+
+For feature releases, ask the user which shipped changes should receive in-app What's New tour coverage.
+
+Append the new version entry to `src/data/whatsNew.js`; entries remain oldest-first.
+
+Each feature must contain:
+
+- `id`
+- `name`
+- `description`
+- 1–3 tour `steps`
+
+Each step must include:
+
+- a route using the `applyRoute` shape,
+- an anchor selector such as `[data-tour="..."]`,
+- tooltip title,
+- tooltip body.
+
+Add missing `data-tour` attributes where needed.
+
+If a newer feature replaces or materially changes an older toured feature, use `supersedes: ['older-feature-id']`.
+
+Do not rewrite historical entries except to repair broken routes, anchors, or copy. Preserve history through supersession.
+
+Patch/bug-fix versions do not receive What's New entries.
+
+---
+
+## What's New Tour Regression Gate
+
+Before every commit, invoke `$validate-gridshift-tour` and validate the complete historical tour, not only the target release.
+
+The gate must:
+
+1. Run `npm run validate:tour`.
+2. Run `npm run test:e2e:tour`.
+3. Validate desktop and mobile routes, anchors, tooltips, and advancement.
+4. Evaluate feature evolution across crossed versions and apply supersession where newer behavior replaces older behavior.
+5. Review staged changes affecting routes, navigation, conditional rendering, feature names/copy, tour context/demo state, or `data-tour` anchor owners.
+6. Confirm remaining historical tooltip text accurately describes the current UI.
+7. Treat mechanical or semantic historical failures as commit blockers.
+
+For upgrades spanning multiple feature versions, validate effective crossed entries in order after supersession. Do not replay raw historical entries when doing so would revive obsolete behavior.
+
+A successful build or unit-test run does not replace this gate.
+
+---
+
+## CHANGELOG.md
+
+- Never use an `Unreleased` section.
+- Every entry belongs to a specific version.
+- Entries are chronological: oldest first, newest last.
+- If the target version is unclear, ask before writing the entry.
+
+---
+
+## KNOWN_BUGS.md
+
+Add a bug to **Open** before fixing it when:
+
+- it is user-visible,
+- it is a regression,
+- it may survive the current work session,
+- or separately tracking it has value.
+
+Do not create tracker churn for trivial implementation mistakes discovered and corrected within the same active task before they reach a completed state.
+
+If a previously fixed bug recurs, move it back to Open and remove its Fixed In version.
+
+Move bugs to **Fixed** only at commit time, using the actual committed version. Never use `Unreleased`.
+
+---
+
+## TO_DO.md
+
+- The file is `TO_DO.md`.
+- Versioned sections are chronological, earliest first.
+- `Backlog (Unversioned)` remains last.
+- Add newly planned features to the appropriate upcoming version or backlog when requested or agreed upon.
+- Delete completed version sections entirely once shipped; completed work belongs in `CHANGELOG.md`.
+- Before committing, cross-check `TO_DO.md` against `CHANGELOG.md` and remove shipped work.
+- The earliest versioned section should always represent the next unshipped version.
+
+---
+
+## README.md
+
+### Features
+
+List major features only, one line each. Do not add bug fixes or minor polish.
+
+### What's New
+
+Show only the most recently committed version. Replace the previous entry rather than accumulating historical entries.
+
+Link to `CHANGELOG.md` for history.
+
+### Roadmap
+
+Derive major planned versions and significant blocked features from `TO_DO.md`.
+
+Do not include backlog polish or unversioned experiments.
+
+---
+
+## Commit Messages
+
+Version/release commit subjects must use:
+
+`vX.Y[.Z] - Short Release Theme`
+
+Do not use generic subjects such as `Release v6.3`.
+
+Include a commit body with:
+
+- a short summary sentence
+- a `Highlights:` list of the major shipped changes
+
+Keep the message aligned with the actual diff, `CHANGELOG.md`, and `README.md`.
+
+---
+
+## GitHub Release Notes
+
+When asked for GitHub release notes, return raw Markdown source.
+
+Use:
+
+`# vX.Y[.Z] - Short Release Theme`
+
+Sections appear in this order when applicable:
+
+1. `## New Features`
+2. `## Improvements`
+3. `## Bug Fixes`
+
+Describe changes between the previous released version and the requested release.
+
+Keep bullets user-facing and grouped by feature area. Avoid unnecessary implementation detail.

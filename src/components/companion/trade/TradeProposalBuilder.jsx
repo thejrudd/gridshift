@@ -1,8 +1,8 @@
 /* eslint-disable react-hooks/static-components */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTheme } from '../../../context/ThemeContext';
 import { fmtKtcValue } from '../../../utils/ktcApi';
-import { getPicksForRoster } from '../../../utils/tradeEngine';
+import { getPicksForRoster, valueDraftPick } from '../../../utils/tradeEngine';
 import CompanionAssetRow from '../CompanionAssetRow.jsx';
 import { CompanionSelectorButton, CompanionSelectorRail } from '../CompanionSelectorControls.jsx';
 import Spinner from '../../ui/Spinner';
@@ -26,11 +26,11 @@ function getTradeAssetMetaSegments(item) {
     return segments.filter(Boolean);
   }
 
+  // Average and estimate state stay in the fixed value block, so the identity
+  // line only carries team and rank context and cannot grow into a third line.
   const segments = [
     [item.position, item.team].filter(Boolean).join(' · '),
     item.rankInfo ? `#${item.rankInfo.rank} ${item.rankInfo.posLabel}` : null,
-    item.avgPPG != null ? `${item.avgPPG.toFixed(1)} avg` : null,
-    item.dynastyFallback ? 'DYN est.' : item.idpFallback ? 'est.' : null,
   ];
   return segments.filter(Boolean);
 }
@@ -463,6 +463,31 @@ function shelfPlayerName(player) {
     || 'Player';
 }
 
+function getShelfPickValues(picks, {
+  rosters,
+  ktcPlayers,
+  leagueType,
+  pickValueMap,
+  currentSeason,
+  league,
+  drafts,
+}) {
+  return new Map(
+    (picks ?? []).map((pick) => [
+      pick.key,
+      valueDraftPick(pick, {
+        rosters,
+        ktcPlayers,
+        leagueType,
+        pickValueMap,
+        currentSeason,
+        league,
+        drafts,
+      }).val,
+    ]),
+  );
+}
+
 // ── RosterShelf ────────────────────────────────────────────────────────────────
 function RosterShelf({
   myPlayers, partnerPlayers, yourTradePlayers, theirTradePlayers,
@@ -471,6 +496,7 @@ function RosterShelf({
   rosterPicks, slots, myRosterId, partnerRosterId: shelfPartnerRosterId,
   yourTradePicks, theirTradePicks, onAddPickToYours, onAddPickToTheirs,
   shelfDragRef, partnerRosters, onPartnerChange, picksEnabled = true,
+  rosters, ktcPlayers, leagueType, pickValueMap, currentSeason, league, drafts,
 }) {
   const [activeTab, setActiveTab] = useState('yours');
   const [posFilter, setPosFilter] = useState('ALL');
@@ -491,9 +517,19 @@ function RosterShelf({
     .sort((a, b) => (playerTradeValueMap?.get(b) ?? 0) - (playerTradeValueMap?.get(a) ?? 0));
 
   const rosterId = visibleTab === 'yours' ? myRosterId : shelfPartnerRosterId;
-  const shelfPicks = (picksEnabled && rosterPicks && slots && rosterId)
-    ? (getPicksForRoster(rosterId, rosterPicks, slots) ?? [])
-    : [];
+  const shelfPicks = useMemo(() => {
+    if (!picksEnabled || !rosterPicks || !slots || !rosterId) return [];
+    return getPicksForRoster(rosterId, rosterPicks, slots) ?? [];
+  }, [picksEnabled, rosterPicks, slots, rosterId]);
+  const shelfPickValues = useMemo(() => getShelfPickValues(shelfPicks, {
+    rosters,
+    ktcPlayers,
+    leagueType,
+    pickValueMap,
+    currentSeason,
+    league,
+    drafts,
+  }), [shelfPicks, rosters, ktcPlayers, leagueType, pickValueMap, currentSeason, league, drafts]);
 
   const handleDragStart = (type, id, pickData) => {
     if (shelfDragRef) shelfDragRef.current = { type, id, shelfTab: visibleTab, pickData };
@@ -572,8 +608,9 @@ function RosterShelf({
                 style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 7px', borderRadius: 7, border: inTrade ? '1px dashed var(--color-separator)' : '1px solid var(--color-separator)', background: 'var(--color-bg)', opacity: inTrade ? 0.35 : 1, cursor: inTrade ? 'default' : 'grab', textAlign: 'left', width: '100%' }}>
                 <span style={{ fontSize: 'var(--type-label)', fontWeight: 700, padding: '1px 6px', borderRadius: 3, background: 'rgba(245,183,0,0.12)', color: '#F5B700', flexShrink: 0, letterSpacing: '0.04em' }}>PICK</span>
                 <span style={{ flex: 1, minWidth: 0, fontSize: 'var(--type-label)', fontWeight: 600, color: 'var(--color-label)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+                <span style={{ fontSize: 'var(--type-label)', fontWeight: 700, color: shelfPickValues.get(pick.key) != null ? 'var(--color-label-secondary)' : 'var(--color-label-quaternary)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{fmtKtcValue(shelfPickValues.get(pick.key))}</span>
                 {!inTrade && (
-                  <span className="hidden lg:inline-flex opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity" style={{ fontSize: 'var(--type-micro)', fontWeight: 800, letterSpacing: '0.08em', color: 'var(--color-signature)', flexShrink: 0 }}>ADD</span>
+                  <span style={{ fontSize: 'var(--type-micro)', fontWeight: 800, letterSpacing: '0.08em', color: 'var(--color-signature)', flexShrink: 0 }}>ADD</span>
                 )}
                 {inTrade && (
                   <span className="hidden lg:inline-flex" style={{ fontSize: 'var(--type-micro)', fontWeight: 800, letterSpacing: '0.08em', color: 'var(--color-label-quaternary)', flexShrink: 0 }}>ADDED</span>
@@ -609,7 +646,7 @@ function RosterShelf({
                 <span style={{ fontSize: 'var(--type-label)', fontWeight: 700, color: 'var(--color-label-secondary)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{fmtKtcValue(val)}</span>
               )}
               {!isInTrade && (
-                <span className="hidden lg:inline-flex opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity" style={{ fontSize: 'var(--type-micro)', fontWeight: 800, letterSpacing: '0.08em', color: 'var(--color-signature)', flexShrink: 0 }}>ADD</span>
+                <span style={{ fontSize: 'var(--type-micro)', fontWeight: 800, letterSpacing: '0.08em', color: 'var(--color-signature)', flexShrink: 0 }}>ADD</span>
               )}
               {isInTrade && (
                 <span className="hidden lg:inline-flex" style={{ fontSize: 'var(--type-micro)', fontWeight: 800, letterSpacing: '0.08em', color: 'var(--color-label-quaternary)', flexShrink: 0 }}>ADDED</span>
@@ -630,6 +667,7 @@ function MobileRosterShelf({
   rosterPicks, slots, myRosterId, partnerRosterId: shelfPartnerRosterId,
   yourTradePicks, theirTradePicks, onAddPickToYours, onAddPickToTheirs,
   partnerRosters, onPartnerChange, picksEnabled = true,
+  rosters, ktcPlayers, leagueType, pickValueMap, currentSeason, league, drafts,
 }) {
   const [activeTab, setActiveTab] = useState('yours');
   const [posFilter, setPosFilter] = useState('ALL');
@@ -650,9 +688,19 @@ function MobileRosterShelf({
     .sort((a, b) => (playerTradeValueMap?.get(b) ?? 0) - (playerTradeValueMap?.get(a) ?? 0));
 
   const rosterId = visibleTab === 'yours' ? myRosterId : shelfPartnerRosterId;
-  const shelfPicks = (picksEnabled && rosterPicks && slots && rosterId)
-    ? (getPicksForRoster(rosterId, rosterPicks, slots) ?? [])
-    : [];
+  const shelfPicks = useMemo(() => {
+    if (!picksEnabled || !rosterPicks || !slots || !rosterId) return [];
+    return getPicksForRoster(rosterId, rosterPicks, slots) ?? [];
+  }, [picksEnabled, rosterPicks, slots, rosterId]);
+  const shelfPickValues = useMemo(() => getShelfPickValues(shelfPicks, {
+    rosters,
+    ktcPlayers,
+    leagueType,
+    pickValueMap,
+    currentSeason,
+    league,
+    drafts,
+  }), [shelfPicks, rosters, ktcPlayers, leagueType, pickValueMap, currentSeason, league, drafts]);
 
   const tabButtonStyle = isActive => ({
     flex: 1,
@@ -722,7 +770,14 @@ function MobileRosterShelf({
                 disabled={inTrade}
                 style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 10px', borderRadius: 10, border: inTrade ? '1px dashed var(--color-separator)' : '1px solid var(--color-separator)', background: 'var(--color-bg)', opacity: inTrade ? 0.4 : 1, cursor: inTrade ? 'default' : 'pointer', textAlign: 'left', width: '100%', minHeight: 44 }}>
                 <span style={{ fontSize: 'var(--type-label)', fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: 'rgba(245,183,0,0.12)', color: '#F5B700', flexShrink: 0, fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.06em' }}>PICK</span>
-                <span style={{ flex: 1, fontSize: 'var(--type-meta)', fontWeight: 600, color: 'var(--color-label)' }}>{label}</span>
+                <span style={{ flex: 1, minWidth: 0, fontSize: 'var(--type-meta)', fontWeight: 600, color: 'var(--color-label)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+                <span style={{ fontSize: 'var(--type-label)', fontWeight: 700, color: shelfPickValues.get(pick.key) != null ? 'var(--color-label-secondary)' : 'var(--color-label-quaternary)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{fmtKtcValue(shelfPickValues.get(pick.key))}</span>
+                {!inTrade && (
+                  <span style={{ fontSize: 'var(--type-micro)', fontWeight: 800, letterSpacing: '0.08em', color: 'var(--color-signature)', flexShrink: 0 }}>ADD</span>
+                )}
+                {inTrade && (
+                  <span style={{ fontSize: 'var(--type-micro)', fontWeight: 800, letterSpacing: '0.08em', color: 'var(--color-label-quaternary)', flexShrink: 0 }}>ADDED</span>
+                )}
               </button>
             );
           })
@@ -747,8 +802,12 @@ function MobileRosterShelf({
               <span style={{ flex: 1, minWidth: 0, fontSize: 'var(--type-meta)', fontWeight: 600, color: 'var(--color-label)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {shelfPlayerName(p)}
               </span>
-              {val != null && (
-                <span style={{ fontSize: 'var(--type-label)', fontWeight: 700, color: 'var(--color-label-secondary)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{fmtKtcValue(val)}</span>
+              <span style={{ fontSize: 'var(--type-label)', fontWeight: 700, color: val != null ? 'var(--color-label-secondary)' : 'var(--color-label-quaternary)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{fmtKtcValue(val)}</span>
+              {!isInTrade && (
+                <span style={{ fontSize: 'var(--type-micro)', fontWeight: 800, letterSpacing: '0.08em', color: 'var(--color-signature)', flexShrink: 0 }}>ADD</span>
+              )}
+              {isInTrade && (
+                <span style={{ fontSize: 'var(--type-micro)', fontWeight: 800, letterSpacing: '0.08em', color: 'var(--color-label-quaternary)', flexShrink: 0 }}>ADDED</span>
               )}
             </button>
           );
@@ -777,6 +836,12 @@ export default function TradeProposalBuilder({
   yourPicks,
   theirPicks,
   league,
+  rosters,
+  ktcPlayers,
+  leagueType,
+  pickValueMap,
+  currentSeason,
+  drafts,
   leagueUserById,
   partnerRosters,
   switchPartnerTradeContext,
@@ -822,13 +887,19 @@ export default function TradeProposalBuilder({
               rosterPicks,
               slots,
               picksEnabled,
+              rosters,
+              ktcPlayers,
+              leagueType,
+              pickValueMap,
+              currentSeason,
+              league,
+              drafts,
               myRosterId: myRosterData?.roster_id,
               partnerRosterId,
               yourTradePicks: yourPicks,
               theirTradePicks: theirPicks,
               onAddPickToYours: picksEnabled ? (pick => addPick('yours', pick)) : null,
               onAddPickToTheirs: picksEnabled ? (pick => addPick('theirs', pick)) : null,
-              league,
               myAvatar: leagueUserById.get(myRosterData?.owner_id ?? '')?.avatar ?? null,
               partnerAvatar: partnerRosterId
                 ? (leagueUserById.get(rosterById.get(partnerRosterId)?.owner_id ?? '')?.avatar ?? null)

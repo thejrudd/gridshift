@@ -23,18 +23,22 @@ before(async () => {
   const [
     tradeValue,
     tradeEngine,
+    tradeAnalytics,
     sleeperApi,
     projectionEngine,
     ktcApi,
+    idpEngine,
   ] = await Promise.all([
     server.ssrLoadModule('/src/utils/tradeValue.js'),
     server.ssrLoadModule('/src/utils/tradeEngine.js'),
+    server.ssrLoadModule('/src/utils/tradeAnalytics.js'),
     server.ssrLoadModule('/src/api/sleeperApi.js'),
     server.ssrLoadModule('/src/utils/projectionEngine.js'),
     server.ssrLoadModule('/src/utils/ktcApi.js'),
+    server.ssrLoadModule('/src/utils/idpEngine.js'),
   ]);
 
-  modules = { tradeValue, tradeEngine, sleeperApi, projectionEngine, ktcApi };
+  modules = { tradeValue, tradeEngine, tradeAnalytics, sleeperApi, projectionEngine, ktcApi, idpEngine };
   const weeklyStats = Object.fromEntries(
     Object.keys(players).map((id) => [id, Array.from({ length: 6 }, (_, index) => weeklyStatsForWeek(index + 1)[id])]),
   );
@@ -145,5 +149,201 @@ describe('canonical trade values', () => {
     assert.equal(typeof valued.value, 'number');
     assert.equal(valued.val, valued.value);
     assert.ok(valued.displayInfo.label.includes('2027'));
+  });
+
+  it('uses prior completed-season production for preseason IDP estimates', () => {
+    const idpPlayerId = 'idp-101';
+    const idpPlayers = {
+      ...players,
+      [idpPlayerId]: {
+        player_id: idpPlayerId,
+        full_name: 'Production Linebacker',
+        position: 'LB',
+        team: 'BUF',
+      },
+    };
+    const idpRosters = rosters.map((roster) => roster.roster_id === 1
+      ? { ...roster, players: [...roster.players, idpPlayerId] }
+      : roster);
+    const priorSeasonStats = {
+      ...inputs.seasonStats,
+      [idpPlayerId]: { gp: 17, idp_tkl: 112, idp_sack: 4 },
+    };
+    const idpLeague = {
+      ...league,
+      roster_positions: [...league.roster_positions, 'LB'],
+    };
+    const idpScoring = {
+      ...inputs.scoringSettings,
+      idp_tkl: 1.5,
+      idp_sack: 4,
+    };
+
+    const snapshot = modules.tradeAnalytics.buildTradeAnalyticsSnapshot({
+      league: idpLeague,
+      rosters: idpRosters,
+      players: idpPlayers,
+      seasonStats: null,
+      idpSeasonStats: priorSeasonStats,
+      scoringSettings: idpScoring,
+      adjustedKtcPlayers: ktcPlayers,
+      adjustedDynastyKtcPlayers: ktcPlayers,
+      leagueType: '1qb',
+      includePlayerTradeValues: true,
+    });
+
+    const detail = snapshot.playerTradeValueDetailsMap.get(idpPlayerId);
+    assert.equal(detail.isEstimated, true);
+    assert.ok(detail.value > 0);
+    assert.equal(detail.rawVal, snapshot.mergedIDPMap.get(idpPlayerId));
+  });
+
+  it('does not present an unsupported IDP player as a zero-value KTC fallback', () => {
+    const detail = modules.tradeValue.computeTradePlayerValueDetail({
+      id: 'idp-rookie',
+      players: {
+        'idp-rookie': {
+          player_id: 'idp-rookie',
+          full_name: 'Rookie Linebacker',
+          position: 'LB',
+          team: 'BUF',
+        },
+      },
+      adjustedKtcPlayers: ktcPlayers,
+      adjustedDynastyKtcPlayers: [],
+      leagueType: '1qb',
+      seasonStats: null,
+      scoringSettings: inputs.scoringSettings,
+      positionalAvgPPG: null,
+      positionalValuePerPPG: null,
+      rankMap: null,
+      mergedIDPMap: new Map(),
+    });
+
+    assert.equal(detail, null);
+  });
+
+  it('applies league scoring to both KTC-backed offense and generated IDP values', () => {
+    const scoringPlayers = {
+      wr: {
+        player_id: 'wr',
+        full_name: 'Reception Specialist',
+        position: 'WR',
+        team: 'BUF',
+        mflid: 'wr-1',
+      },
+      lb: {
+        player_id: 'lb',
+        full_name: 'Tackle Specialist',
+        position: 'LB',
+        team: 'BUF',
+      },
+    };
+    const scoringKtc = [{
+      mflid: 'wr-1',
+      playerName: 'Reception Specialist',
+      position: 'WR',
+      oneQBValues: { value: 5000 },
+      superflexValues: { value: 5000 },
+    }];
+    const stats = {
+      wr: { gp: 10, rec: 100, rec_yd: 1000 },
+      lb: { gp: 10, idp_tkl: 100 },
+    };
+    const lowScoring = { ...DEFAULT_SCORING, rec: 0, idp_tkl: 0.25 };
+    const highScoring = { ...DEFAULT_SCORING, rec: 2, idp_tkl: 2 };
+
+    const lowOffense = modules.tradeValue.computeTradePlayerValueDetail({
+      id: 'wr',
+      players: scoringPlayers,
+      adjustedKtcPlayers: scoringKtc,
+      adjustedDynastyKtcPlayers: [],
+      leagueType: '1qb',
+      seasonStats: stats,
+      scoringSettings: lowScoring,
+      positionalAvgPPG: { WR: 20 },
+      positionalValuePerPPG: null,
+      rankMap: null,
+      mergedIDPMap: null,
+    });
+    const highOffense = modules.tradeValue.computeTradePlayerValueDetail({
+      id: 'wr',
+      players: scoringPlayers,
+      adjustedKtcPlayers: scoringKtc,
+      adjustedDynastyKtcPlayers: [],
+      leagueType: '1qb',
+      seasonStats: stats,
+      scoringSettings: highScoring,
+      positionalAvgPPG: { WR: 20 },
+      positionalValuePerPPG: null,
+      rankMap: null,
+      mergedIDPMap: null,
+    });
+    const lowIDP = modules.idpEngine.computeIDPValues(scoringPlayers, stats, lowScoring, ['LB']);
+    const highIDP = modules.idpEngine.computeIDPValues(scoringPlayers, stats, highScoring, ['LB']);
+
+    assert.ok(highOffense.value > lowOffense.value);
+    assert.ok(highIDP.get('lb') > lowIDP.get('lb'));
+  });
+
+  it('does not cap a scoring-derived IDP value below an offensive value above 10,000', () => {
+    const values = modules.idpEngine.computeIDPValues(
+      {
+        lb: { player_id: 'lb', full_name: 'Elite Linebacker', position: 'LB', team: 'BUF' },
+      },
+      {
+        lb: { gp: 10, idp_tkl: 500 },
+      },
+      { ...DEFAULT_SCORING, idp_tkl: 1 },
+      ['LB'],
+    );
+
+    assert.ok(values.get('lb') > 10_000);
+  });
+
+  it('calibrates redraft pick tiers from Draft order and canonical player values', () => {
+    const calibrationPool = [
+      { rank: 1, value: 1000 },
+      { rank: 2, value: 1500 },
+      { rank: 3, value: 2000 },
+    ];
+    const calibrated = modules.tradeEngine.computeRedraftPickValues(ktcPlayers, 3, '1qb', {
+      calibrationPool,
+      fallbackValueMultiplier: 1.4,
+    });
+
+    // Three teams create one projected player in each Early/Mid/Late tier.
+    // Calibration values are already on the Trade scale, so only the 7%
+    // first-round uncertainty discount applies.
+    assert.equal(calibrated[1].Early, 930);
+    assert.equal(calibrated[1].Mid, 1395);
+    assert.equal(calibrated[1].Late, 1860);
+  });
+
+  it('keeps early picks close to their expected player range while discounting later rounds more', () => {
+    const calibrationPool = Array.from({ length: 32 }, (_, index) => ({
+      rank: index + 1,
+      value: 10_000 - index * 100,
+    }));
+    const values = modules.tradeEngine.computeRedraftPickValues(ktcPlayers, 16, '1qb', {
+      calibrationPool,
+    });
+
+    // Overall pick 23 is round 2, seventh in a 16-team round, which is Mid.
+    // It is priced from the nearby rank range, then discounted for selection risk.
+    assert.equal(values[2].Mid, Math.round(7_700 * 0.87));
+    assert.equal(values[1].Early, Math.round(9_800 * 0.93));
+  });
+
+  it('falls back to adjusted KTC pick tiers when a projected tier is too sparse', () => {
+    const fallback = modules.tradeEngine.computeRedraftPickValues(ktcPlayers, 3, '1qb', {
+      fallbackValueMultiplier: 1.2,
+    });
+    const sparse = modules.tradeEngine.computeRedraftPickValues(ktcPlayers, 3, '1qb', {
+      calibrationPool: [{ rank: 1, value: null }],
+      fallbackValueMultiplier: 1.2,
+    });
+
+    assert.deepEqual(sparse[1], fallback[1]);
   });
 });
