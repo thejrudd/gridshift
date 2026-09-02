@@ -1,11 +1,93 @@
 import { defineConfig } from 'vite'
-import { readFileSync } from 'fs'
+import { resolve as resolvePath } from 'node:path'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import process from 'node:process'
 import react from '@vitejs/plugin-react-swc'
 import { VitePWA } from 'vite-plugin-pwa'
+import { parseAppRoute } from './src/utils/appRoutes.js'
+import { getPageShareMetadata, renderPageShareMetadataHtml } from './src/utils/pageShare.js'
 
 const { version } = JSON.parse(readFileSync('./package.json', 'utf8'))
 const appVersion = process.env.GRIDSHIFT_APP_VERSION_OVERRIDE ?? version
+const shareData = JSON.parse(readFileSync('./public/nfl-data-2026.json', 'utf8'))
+const shareSeason = shareData.season ?? 2026
+const shareTeams = shareData.teams ?? []
+const STATIC_SHARE_ROUTES = [
+  '/predictions',
+  '/predictions/standings',
+  '/predictions/playoffs',
+  '/fantasy/rosters',
+  '/fantasy/rankings',
+  '/fantasy/live',
+  '/fantasy/matchups',
+  '/fantasy/waivers',
+  '/fantasy/heatmap',
+  '/fantasy/defenses',
+  '/fantasy/scoring',
+  '/league/standings',
+  '/league/history',
+  '/league/activity',
+  '/statistics',
+  '/statistics/schedule',
+  '/statistics/scores',
+  '/statistics/standings',
+  '/trade/agent',
+  '/trade/intelligence',
+  '/trade/upgrade',
+  '/trade/history',
+  '/trade/inbox',
+  '/scout',
+  '/scout/picks',
+  '/scout/results',
+  '/draft',
+  '/draft/my-board',
+  '/draft/results',
+  ...shareTeams.flatMap((team) => {
+    const rawTeamId = String(team.id ?? '').trim().toLowerCase()
+    const teamId = rawTeamId ? encodeURIComponent(rawTeamId) : ''
+    return teamId ? [`/predictions/team/${teamId}`, `/statistics/team/${teamId}`] : []
+  }),
+]
+
+function getShareMetadataForUrl(requestUrl) {
+  const url = new URL(requestUrl, 'http://gridshift.local')
+  return getPageShareMetadata({
+    route: parseAppRoute(url.pathname, url.search),
+    season: shareSeason,
+    teams: shareTeams,
+  })
+}
+
+function pageShareMetadataPlugin() {
+  let projectRoot = process.cwd()
+
+  return {
+    name: 'gridshift-page-share-metadata',
+    configResolved(config) {
+      projectRoot = config.root
+    },
+    transformIndexHtml: {
+      order: 'pre',
+      handler(html, context) {
+        const requestUrl = context?.originalUrl ?? context?.path ?? '/'
+        return renderPageShareMetadataHtml(html, getShareMetadataForUrl(requestUrl))
+      },
+    },
+    closeBundle() {
+      const distDirectory = resolvePath(projectRoot, 'dist')
+      const indexPath = resolvePath(distDirectory, 'index.html')
+      if (!existsSync(indexPath)) return
+
+      const baseHtml = readFileSync(indexPath, 'utf8')
+      STATIC_SHARE_ROUTES.forEach((routePath) => {
+        const routeHtml = renderPageShareMetadataHtml(baseHtml, getShareMetadataForUrl(routePath))
+        const routeDirectory = resolvePath(distDirectory, routePath.slice(1))
+        mkdirSync(routeDirectory, { recursive: true })
+        writeFileSync(resolvePath(routeDirectory, 'index.html'), routeHtml)
+      })
+    },
+  }
+}
 
 function devServiceWorkerReset() {
   return {
@@ -76,6 +158,16 @@ export default defineConfig(({ command }) => ({
         changeOrigin: true,
         secure: false,
       },
+      '/api/trade-proposals': {
+        target: 'http://127.0.0.1:3001',
+        changeOrigin: true,
+        secure: false,
+      },
+      '/trade/share': {
+        target: 'http://127.0.0.1:3001',
+        changeOrigin: true,
+        secure: false,
+      },
     },
   },
   resolve: {
@@ -92,6 +184,7 @@ export default defineConfig(({ command }) => ({
   },
   plugins: [
     devServiceWorkerReset(),
+    pageShareMetadataPlugin(),
     react(),
     VitePWA({
       registerType: 'prompt',
@@ -100,6 +193,7 @@ export default defineConfig(({ command }) => ({
         'icons/pwa-192x192.png',
         'icons/pwa-512x512.png',
         'icons/apple-touch-icon-180x180.png',
+        'icons/favicon.ico',
         'logos/*.png',
         'nfl-data-2026.json',
       ],
@@ -125,7 +219,7 @@ export default defineConfig(({ command }) => ({
         // API URLs must reach nginx/the server sidecar instead of being
         // mistaken for client-side navigations by the installed PWA.
         navigateFallbackDenylist: [/^\/api(?:\/|$)/],
-        globIgnores: ['**/*.map', 'icons/icon.svg'],
+          globIgnores: ['**/*.map', 'icons/icon.png'],
         cleanupOutdatedCaches: true,
         runtimeCaching: [
           // Google Fonts stylesheet

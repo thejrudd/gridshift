@@ -307,7 +307,7 @@ function summarizeFantasyRow(row = {}) {
   };
 }
 
-const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_MODES.GAME, leagueSeason = CURRENT_SEASON, onModeChange, onBack, backLabel, onCompare, onBuildTrade, tradeDisabled = false, onViewSchedule }) => {
+const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_MODES.GAME, leagueSeason = CURRENT_SEASON, onModeChange, onBack, backLabel, onCompare, onBuildTrade, tradeDisabled = false, tradeDisabledTitle = 'Trade is not available for the connected platform.', onViewSchedule }) => {
   const { getTeamRecord } = usePredictions();
   const {
     hasLeague,
@@ -1027,7 +1027,7 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_
                     <button
                       type="button"
                       disabled={tradeDisabled}
-                      title={tradeDisabled ? 'Trade is not available for ESPN leagues yet.' : undefined}
+                      title={tradeDisabled ? tradeDisabledTitle : undefined}
                       onClick={() => onBuildTrade({ sleeperId, view: 'upgrade' })}
                       className="statistics-player-hero__action statistics-player-hero__action--outline group"
                     >
@@ -1076,7 +1076,7 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_
                     <button
                       type="button"
                       disabled={tradeDisabled}
-                      title={tradeDisabled ? 'Trade is not available for ESPN leagues yet.' : undefined}
+                      title={tradeDisabled ? tradeDisabledTitle : undefined}
                       onClick={() => onBuildTrade({
                         sleeperId,
                         side: isOnMyRoster ? 'give' : 'get',

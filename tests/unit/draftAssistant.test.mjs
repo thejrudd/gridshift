@@ -60,6 +60,10 @@ import {
   playerCanSlotIntoBoardPosition,
   removePlayerFromBoard,
 } from '../../src/utils/draftAssistant/board.js';
+import {
+  filterDraftPlayersBySearch,
+  getDraftPlayerSearchNumber,
+} from '../../src/utils/draftAssistant/search.js';
 import { DEFAULT_SCORING } from '../../src/utils/scoringEngine.js';
 
 const players = {
@@ -199,6 +203,25 @@ test('draft route round-trips cleanly', () => {
   assert.equal(buildAppPath(route), '/draft');
 });
 
+test('Draft search matches team abbreviations, positions, cities, and jersey numbers', () => {
+  const candidates = [
+    { id: 'gb-rb', name: 'Green Bay Runner', position: 'RB', team: 'GB', raw: { number: '8' } },
+    { id: 'gb-wr', name: 'Green Bay Receiver', position: 'WR', team: 'GB', raw: { number: '18' } },
+    { id: 'kc-rb', name: 'Kansas City Runner', position: 'RB', team: 'KC', raw: { number: '8' } },
+  ];
+
+  assert.deepEqual(
+    filterDraftPlayersBySearch(candidates, 'ALL', 'gb rb').map((player) => player.id),
+    ['gb-rb'],
+  );
+  assert.deepEqual(
+    filterDraftPlayersBySearch(candidates, 'ALL', 'Green Bay 8').map((player) => player.id),
+    ['gb-rb'],
+  );
+  assert.deepEqual(filterDraftPlayersBySearch(candidates, 'ALL', 'in'), []);
+  assert.equal(getDraftPlayerSearchNumber(candidates[0]), '8');
+});
+
 test('legacy companion draft route redirects to top-level draft', () => {
   const route = parseAppRoute('/companion/draft');
   assert.equal(route.activeTab, 'draft');
@@ -276,11 +299,13 @@ test('draft board route round-trips cleanly', () => {
   assert.equal(buildAppPath(route), '/draft/my-board');
 });
 
-test('future draft routes normalize for staged views', () => {
-  const route = parseAppRoute('/draft/gauntlet');
-  assert.equal(route.activeTab, 'draft');
-  assert.equal(route.draftView, 'gauntlet');
-  assert.equal(buildAppPath(route), '/draft/gauntlet');
+test('retired draft routes fall back to War Room', () => {
+  for (const view of ['gauntlet', 'tiers-runs']) {
+    const route = parseAppRoute(`/draft/${view}`);
+    assert.equal(route.activeTab, 'draft');
+    assert.equal(route.draftView, 'war-room');
+    assert.equal(buildAppPath(route), '/draft');
+  }
 });
 
 test('legacy draft order route normalizes to results', () => {

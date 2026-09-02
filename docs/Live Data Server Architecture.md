@@ -6,7 +6,7 @@ Related: [[Architecture Map]] · [[Where To Edit]] · [[Statistics Scores]] · [
 
 ## Status And Scope
 
-**Status:** Active rollout plan. The shared sidecar gateway and near-live Statistics Scores slice are implemented; league ingest lifecycle, bring-your-own-key support, and horizontal scale remain planned.
+**Status:** Active rollout plan. The shared sidecar gateway, near-live Statistics Scores slice, bounded StoryStats NFL beta, and production primetime warming are implemented; league ingest lifecycle, bring-your-own-key support, durable story scheduling, and horizontal scale remain planned.
 
 Current behavior is documented in [[Statistics Scores]] and the Fantasy Live sections of [[Architecture Map]] and [[Where To Edit]]. Target-only sections below remain explicitly phased.
 
@@ -31,6 +31,7 @@ These decisions are settled for the implementation:
 8. Browser clocks may animate once per second between provider anchors, but the provider snapshot remains the source of truth. The animation is presentation, not synthetic game state.
 9. Phase 1 supports one API sidecar replica. Shared state, leader election, and push delivery are Phase 3 requirements before horizontal scaling.
 10. Odds, props, wagering workflows, and betting-adjacent features are outside this plan.
+11. StoryStats is an optional editorial/statistical sidecar using a separate `GRIDSHIFT_STORY_STATS_API_KEY`. GridShift fixes requests to `audience=stats` and `tone=editorial`; it never uses StoryStats as a prediction, recommendation, or betting source.
 
 ## Current State
 
@@ -42,17 +43,20 @@ flowchart LR
   N --> A["Express API sidecar"]
   A --> L["Fantasy Live handler"]
   A --> S["Statistics Scores handler"]
+  A --> T["StoryStats handler"]
   L --> D["BALLDONTLIE"]
   S --> D
+  T --> D
 ```
 
-The two handlers now share one process-local gateway, bounded cache, in-flight registry, provider request ledger, and cursor pagination implementation. Fantasy Live retains its league session and allowlist flow. Statistics Scores has a bounded downstream guard on the selected-week live route. Adding a second API replica would still duplicate gateway state and upstream work.
+The three handlers now share one process-local gateway, bounded cache, in-flight registry, provider request ledger, and cursor pagination implementation. Fantasy Live retains its league session and allowlist flow. Statistics Scores has a bounded downstream guard on the selected-week live route, while StoryStats has a separate game-story cache and conservative daily beta ledger. Adding a second API replica would still duplicate gateway state and upstream work.
 
 Current browser refresh behavior also differs from the target:
 
 - Statistics Scores uses a narrow BALLDONTLIE selected-week snapshot at the server-advertised cadence when the configured profile and effective limit support it; ESPN remains the explicit fallback. BALLDONTLIE detail refreshes every 30 seconds.
 - Fantasy Live uses a coarse Free-versus-paid stats cadence and submits matchup-shaped game ID sets. Its play feed now reads the same canonical eight-second per-game snapshots as Statistics Scores; similar leagues can still produce different stats cache keys.
 - `GRIDSHIFT_LIVE_MAX_REQ_PER_MIN` limits incoming Fantasy Live requests per league/client, not the deployment's total BALLDONTLIE request volume.
+- StoryStats requests are game-scoped and phase-scoped. Production automation discovers regular-season primetime games, waits until one hour before kickoff for pregame, requests at most one live story for each observed regulation period rather than polling on the play cadence, and requests postgame after a final score. Development keeps the Game Story section as a manual trigger. The default local guard allows 10 StoryStats requests per API key per UTC day.
 
 ## Target Phase 1 Topology
 
@@ -61,9 +65,11 @@ Phase 1 retains the current browser polling routes and one Node sidecar. The ser
 ```mermaid
 flowchart TB
   B1["Statistics Scores clients"] --> SG["Global Scores adapter"]
+  B4["StoryStats clients"] --> ST["StoryStats adapter"]
   B2["League A members"] --> LA["League A ingest"]
   B3["League B members"] --> LB["League B ingest"]
   SG --> G["BALLDONTLIE gateway"]
+  ST --> G
   LA --> G
   LB --> G
   G --> Q["Page-aware scheduler and quota"]
@@ -81,12 +87,14 @@ The gateway is the only module allowed to call BALLDONTLIE. The adapters decide 
 
 | File | Current or planned responsibility |
 |---|---|
-| `server/balldontlieGateway.js` | **Current:** provider client, canonical request keys, bounded cache, in-flight coalescing, pagination, stale-if-error, capability checks, backoff, protected Scores allocation, and sanitized metadata. |
+| `server/balldontlieGateway.js` | **Current:** provider client, separate core/StoryStats credential handling, canonical request keys, bounded cache, in-flight coalescing, pagination, stale-if-error, capability checks, backoff, protected Scores allocation, StoryStats daily allowance, and sanitized metadata. |
 | `server/balldontlieQuota.js` | Credential-level token bucket, page accounting, per-league allocations, priority queues, borrowing, reserve protection, and metrics. This may begin in the gateway module and be extracted when the implementation warrants it. |
 | `server/publicRequestGuard.js` | **Current for selected-week live:** per-IP downstream throttling, concurrency limits, and bounded limiter state. Broader detail-route validation remains planned. |
-| `server/index.js` | **Current:** constructs one gateway and injects it into both route groups. |
+| `server/index.js` | **Current:** constructs one gateway and injects it into the live, Scores, and StoryStats route groups, then starts the production-only StoryStats scheduler. |
 | `server/liveHandlers.js` | League session/allowlist, logical ingest lifecycle, league-scoped projection of cached provider data, and Fantasy Live response contracts. |
 | `server/statisticsScoresHandlers.js` | Public Scores provider selection, selected-week live slate, known-game detail validation, partial tier coverage, and ESPN fallback. |
+| `server/storyStatsHandlers.js` | **Current beta:** fixed stats/editorial StoryStats requests, game-phase validation, bounded narrative cache/coalescing, daily free-tier guard, normalized story responses, and production cache-only reads. |
+| `server/storyStatsScheduler.js` | **Current beta:** production-only primetime schedule discovery, game-state polling, pregame/live/postgame warming, and process-local phase de-duplication. |
 | `server/liveGameSnapshots.js` | **Current:** one sidecar-wide, provider-verified play snapshot and latest-play selection per game, shared across public Scores and authorized Fantasy Live projections. |
 | `src/utils/providerAnchoredGameClock.js` | **Current:** pure provider clock parsing and monotonic correction metadata at the normalization boundary; the UI does not synthesize a running clock. |
 | `src/api/liveApi.js` and `src/api/statisticsScoresApi.js` | Consume capability, cadence, provider-fetch time, stale state, and next-refresh hints without accepting provider credentials or priority overrides. |
@@ -97,12 +105,13 @@ This is an implementation map, not a requirement to create every module before a
 
 ### Eligibility And Ingest Lifecycle
 
-- The deployment owner provides one `GRIDSHIFT_BDL_API_KEY` and an explicit `GRIDSHIFT_LIVE_ALLOWED_LEAGUE_IDS` allowlist.
+- The deployment owner provides one `GRIDSHIFT_BDL_API_KEY` and an explicit `GRIDSHIFT_LIVE_ALLOWED_LEAGUE_IDS` allowlist. StoryStats beta narratives use the separate `GRIDSHIFT_STORY_STATS_API_KEY`.
 - Statistics Scores can use that key independently of any connected fantasy league or Fantasy Live session.
 - An allowlisted Fantasy Live league starts one logical ingest when its first viewer opens Live. The ingest serves every member and matchup in that league.
 - The ingest remains warm for two minutes after its last viewer disconnects or stops refreshing, then releases hot polling work.
 - A non-allowlisted league receives the limited ESPN scoreboard slate and clear setup/availability copy. It does not receive BALLDONTLIE-backed fantasy point updates, box scores, or play-by-play.
-- Anyone who can establish the existing league session may use an enabled league. Phase 1 does not add a league-admin role or a key-submission screen.
+- An allowlisted league with no `GRIDSHIFT_LIVE_ACCESS_CODE` establishes its encrypted browser session automatically. When that optional code is configured, it remains a second gate in front of the session. Every status response is scoped to the requested league, so an open session for one allowlisted league cannot authorize another selected league.
+- Phase 1 does not add a league-admin role or a key-submission screen.
 - The initial developer-key ceiling is **five allowlisted leagues on GOAT**, with no more than five concurrently hot league ingests. A host must raise this only alongside measured page cost and an explicit provider-budget change.
 
 ### Safe Cross-League Coalescing

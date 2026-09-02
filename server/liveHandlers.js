@@ -107,6 +107,25 @@ function getAllowedLeagueKeys() {
     .filter(Boolean);
 }
 
+export function isLiveLeagueAllowed(value, provider = 'sleeper') {
+  try {
+    const leagueKey = normalizeLiveLeagueKey(value, provider);
+    return Boolean(leagueKey && getAllowedLeagueKeys().includes(leagueKey));
+  } catch {
+    return false;
+  }
+}
+
+export function liveSessionMatchesLeague(session, value, provider = 'sleeper') {
+  if (!hasValue(value)) return true;
+  try {
+    const leagueKey = normalizeLiveLeagueKey(value, provider);
+    return Boolean(leagueKey && session?.leagueKey === leagueKey);
+  } catch {
+    return false;
+  }
+}
+
 function parsePositiveInteger(value, fallback) {
   const parsed = Number.parseInt(String(value ?? ''), 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
@@ -397,10 +416,26 @@ export function createLiveRouter({
     } catch {
       session = null;
     }
+
+    const requestedLeagueId = req.query.leagueId ?? req.query.leagueKey;
+    let leagueAllowed = null;
+    if (hasValue(requestedLeagueId)) {
+      try {
+        leagueAllowed = isLiveLeagueAllowed(requestedLeagueId, req.query.provider ?? 'sleeper');
+      } catch {
+        leagueAllowed = false;
+      }
+    }
+
+    const sessionMatchesRequestedLeague = liveSessionMatchesLeague(session, requestedLeagueId, req.query.provider ?? 'sleeper');
     res.set('Cache-Control', 'no-store').json({
       ok: true,
-      live: { ...getLiveConfigStatus(), ...gateway.getStatus() },
-      session: session
+      live: {
+        ...getLiveConfigStatus(),
+        ...gateway.getStatus(),
+        leagueAllowed,
+      },
+      session: session && sessionMatchesRequestedLeague
         ? buildSessionStatus(session)
         : { enabled: false },
     });
@@ -431,7 +466,10 @@ export function createLiveRouter({
         provider: 'sleeper',
         leagueKey,
         leagueId: leagueKey.replace(/^sleeper:/, ''),
-        accessCodeVerified: Boolean(requiredAccessCode && providedAccessCode === requiredAccessCode),
+        // The allowlist is sufficient when no optional access code is
+        // configured. In that mode the viewer may clear their own browser
+        // session; a configured code still protects session shutdown.
+        accessCodeVerified: !requiredAccessCode || providedAccessCode === requiredAccessCode,
         createdAt: new Date().toISOString(),
       };
       const encrypted = encryptLiveSession(session, getLiveCookieSecret());

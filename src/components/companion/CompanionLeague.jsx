@@ -310,7 +310,7 @@ function teamRowTheme(team, darkMode) {
   };
 }
 
-export default function CompanionLeague({ onTradePlayer, onViewPlayer = null, tradeDisabled = false, routeState = null, onRouteStateChange = null }) {
+export default function CompanionLeague({ onTradePlayer, onViewPlayer = null, tradeDisabled = false, tradeDisabledTitle = 'Trade is not available for the connected platform.', routeState = null, onRouteStateChange = null }) {
   const subView = routeState?.subView ?? 'roster';
 
   return (
@@ -333,6 +333,7 @@ export default function CompanionLeague({ onTradePlayer, onViewPlayer = null, tr
           onTradePlayer={onTradePlayer}
           onViewPlayer={onViewPlayer}
           tradeDisabled={tradeDisabled}
+          tradeDisabledTitle={tradeDisabledTitle}
           selectedRosterIdProp={routeState?.rosterId ?? null}
           onSelectedRosterChange={(rosterId) => onRouteStateChange?.({ ...(routeState ?? {}), subView: 'roster', rosterId })}
         />
@@ -344,7 +345,7 @@ export default function CompanionLeague({ onTradePlayer, onViewPlayer = null, tr
 
 // ── Roster sub-view ───────────────────────────────────────────────────────────
 
-function LeagueRosterView({ onTradePlayer, onViewPlayer = null, tradeDisabled = false, selectedRosterIdProp = null, onSelectedRosterChange = null }) {
+function LeagueRosterView({ onTradePlayer, onViewPlayer = null, tradeDisabled = false, tradeDisabledTitle = 'Trade is not available for the connected platform.', selectedRosterIdProp = null, onSelectedRosterChange = null }) {
   const {
     platform, season,
     leagueUsers, rosters, myRoster, getUserDisplayName,
@@ -631,6 +632,7 @@ function LeagueRosterView({ onTradePlayer, onViewPlayer = null, tradeDisabled = 
                     : null
                   }
                   tradeDisabled={tradeDisabled}
+                  tradeDisabledTitle={tradeDisabledTitle}
                 />
               );
             })}
@@ -658,7 +660,7 @@ function LeagueStatsLoadingBanner() {
   return <StatsProgressBanner progress={statsProgress} className="mx-4 mb-4" />;
 }
 
-function LeagueResponsivePlayerRow({ player, onSelect, onTrade, tradeDisabled = false, layout, isCompactPhone, stackMetrics = false, statsPending = false }) {
+function LeagueResponsivePlayerRow({ player, onSelect, onTrade, tradeDisabled = false, tradeDisabledTitle = 'Trade is not available for the connected platform.', layout, isCompactPhone, stackMetrics = false, statsPending = false }) {
   const { darkMode } = useTheme();
   const metaSegments = getLeagueMetaSegments(player);
   const rowTemplate = layout.rowTemplate;
@@ -739,7 +741,7 @@ function LeagueResponsivePlayerRow({ player, onSelect, onTrade, tradeDisabled = 
               label={`Trade ${player.name}`}
               onClick={onTrade}
               disabled={tradeDisabled}
-              title={tradeDisabled ? 'Trade is not available for ESPN leagues yet.' : undefined}
+              title={tradeDisabled ? tradeDisabledTitle : undefined}
               className="w-full rounded-lg font-semibold transition-colors active:opacity-60 inline-flex items-center justify-center gap-1.5"
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

@@ -6,7 +6,7 @@ Back: [[Home]]
 
 Draft Assistant is a top-level Beta section for the `v8.0` release line. War Room connects to the active Sleeper league before the draft starts, reads the current draft room, keeps the Big Board primary, and opens a tall analytics sheet from player row taps. Phone layouts show the analytics as a bottom sheet; tablet and desktop layouts render it inline inside War Room where the board panel used to live. The War Room `Add` action still saves players to the user's local board, while the standalone Board view owns full board ranking, lane management, and reordering before or during a live draft. The Results route is labeled Picks while Sleeper reports the draft as pre-draft and shows the upcoming order. When the draft starts, the tab automatically becomes Results and renders a broadcast-style board of completed Sleeper picks, first pick first by default, focused on pick number, player, NFL team, position, and the drafting fantasy team.
 
-Gauntlet and Tiers/Runs are staged as Draft subnav routes. Sleeper live draft updates are handled by polling the public draft metadata and picks endpoints. This first pass supports Sleeper `snake` and `linear` drafts only.
+Sleeper live draft updates are handled by polling the public draft metadata and picks endpoints. This first pass supports Sleeper `snake` and `linear` drafts only.
 
 ## Optional Draft Sync
 
@@ -48,6 +48,7 @@ Draft Sync is an opt-in, host-controlled feature. Set `GRIDSHIFT_DRAFT_SYNC_ENAB
 - Bye and conflict treatments are advisory UI only. They do not change Draft Rating, recommendations, sorting, saved overall order, position lanes, roster need, or drag/drop eligibility.
 - Keeper toggles are stored locally with `draft_assistant_roster_keepers_v1:<leagueId>:<season>:<draftId>` and only affect roster-tray highlighting.
 - Scrollable board regions show arrow controls in addition to native scrolling.
+- The Available rail and Big Board search accept player names, jersey numbers, position names or abbreviations, and NFL team names, cities, nicknames, or abbreviations in any order. Recognized terms combine with AND logic, so `gb rb` finds Green Bay running backs while the existing position, availability, scope, and eligibility filters remain active.
 
 ## War Room Analytics Sheet
 
@@ -73,6 +74,7 @@ src/components/draft/
 src/utils/draftAssistant/
   analytics.js
   byeConflicts.js
+  search.js
   byeWeeks.js
   index.js
   draftStatus.js
@@ -128,7 +130,7 @@ src/api/
 ## Product Rules
 
 - Draft Assistant is a top-level Beta app section, not a Companion subview.
-- `War Room` renders its full tools only while Sleeper reports the selected draft as `pre_draft`. For live, completed, or historical post-draft league years, the War Room route remains selected and revisitable but shows a centered, season-aware unavailable explanation until the user chooses another Draft view or returns to a pre-draft year. `Board` stays active during `pre_draft`, `drafting`, and `in_progress` draft states. `Results` stays active before, during, and after the draft; `Gauntlet` and `Tiers/Runs` are staged routes only.
+- `War Room` renders its full tools only while Sleeper reports the selected draft as `pre_draft`. For live, completed, or historical post-draft league years, the War Room route remains selected and revisitable but shows a centered, season-aware unavailable explanation until the user chooses another Draft view or returns to a pre-draft year. `Board` stays active during `pre_draft`, `drafting`, and `in_progress` draft states. `Results` stays active before, during, and after the draft.
 - The shared Results route is labeled Picks while Sleeper reports pre-draft, then changes to Results when the draft starts. Picks shows the upcoming order; Results shows completed picks first pick first by default. Completed pick rows prioritize pick number, player photo, player name, NFL team, position, and drafting fantasy team over Draft Rating, Sleeper rank, or Tier because the post-draft view is a historical pick record rather than an active recommendation surface. When Insights are enabled, Draft Rank is rebuilt from that league's actual positional pick order (not the current market rank), while Season Finish uses the matching draft-year result. Each Outcome keeps a concise hover summary of the overall pick plus positional draft rank and season finish; the separate tappable `i` control beside Insights explains the Boom/Strong/Even/Weak/Bust calculation. The tolerance band is the greater of three spots or 15% of the draft rank, and `Even` is deliberately neutral, including a top positional pick who finishes a few spots lower.
 - War Room is for Big Board review, quick Add, analytics, and comparison. Full saved-board ranking and player movement belong in the standalone Board view.
 - The v8.2 feature tour follows the same draft-status presentation and always names the selected league year. It distinguishes the latest linked league year from historical league history, states whether the selected draft is pre-draft or in Results, previews future Results with tour-only placeholder teams and players, and points back to the latest year when the tour opens on a past season.

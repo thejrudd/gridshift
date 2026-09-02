@@ -10,6 +10,8 @@ Primary implementation:
 ## Core Contract
 
 - Proposal cards use a fixed `5:7` classic trading-card ratio via `aspect-[5/7]`.
+- Each manager panel shows both `SENDS` and `RECEIVES` groups. The receives group mirrors the counterparty's assets and names that counterparty so each manager can read the full exchange from their own panel.
+- When viewer identity is available, the viewer's manager is always the left panel and the other participant is always the right panel. Public or otherwise unidentified views fall back to the current revision sender first.
 - Cards are sized from available proposal-section width and viewport height, not from the number of assets in the package.
 - Cards must not stretch to fill full mobile width.
 - Cards should not wrap line-by-line while horizontal space is available.

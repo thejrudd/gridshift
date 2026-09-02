@@ -1,4 +1,5 @@
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { FunnelSimpleIcon } from '@phosphor-icons/react/FunnelSimple';
 import { useSleeperBase, useSleeperStatsEnhancing } from '../../context/SleeperContext';
 import { useTheme } from '../../context/ThemeContext';
 import { calcPoints, DEFAULT_SCORING } from '../../utils/scoringEngine';
@@ -76,14 +77,6 @@ const HEATMAP_OFFENSE_TABLE_CACHE = new WeakMap();
 const HEATMAP_DEFENSE_TABLE_CACHE = new WeakMap();
 const SHARED_GAME_STAT_MODES = new Set(['game_score', 'vegas_odds']);
 const POSITIONLESS_GAME_STAT_MODES = new Set(['game_score', 'vegas_odds']);
-const FILTER_GROUP_WIDTHS = {
-  phase: 188,
-  position: 320,
-  stat: 530,
-  location: 216,
-  color: 252,
-  result: 158,
-};
 const HEATMAP_FILTER_LABEL_WIDTH = 62;
 const MOBILE_FILTER_LABEL_WIDTH = HEATMAP_FILTER_LABEL_WIDTH;
 
@@ -535,12 +528,10 @@ function Btn({ active, disabled = false, onClick, title, children }) {
   );
 }
 
-function FilterGroup({ label, width = null, style = null, labelWidth = null, children }) {
-  const sizingStyle = width ? { flex: `1 1 ${width}px`, maxWidth: `${width}px` } : null;
+function FilterGroup({ label, labelWidth = null, className = '', children }) {
   return (
     <div
-      className="companion-selector-rail-row"
-      style={{ ...(sizingStyle ?? {}), ...(style ?? {}) }}
+      className={['companion-heatmap-filter-group', 'companion-selector-rail-row', className].filter(Boolean).join(' ')}
     >
       <span
         className="companion-selector-rail-label"
@@ -549,10 +540,9 @@ function FilterGroup({ label, width = null, style = null, labelWidth = null, chi
         {label}
       </span>
       <div
-        className="companion-selector-rail"
+        className="companion-selector-rail companion-heatmap-filter-group__rail"
         role="group"
         aria-label={`${label} filter`}
-        style={{ flexWrap: 'wrap', overflow: 'visible', paddingBottom: 0 }}
       >
         {children}
       </div>
@@ -807,7 +797,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
   const [useTeamColors, setUseTeamColors] = useState(false);
   const [vegasOddsView, setVegasOddsView] = useState('spread'); // 'spread' | 'ou'
   const [vegasInfoOpen, setVegasInfoOpen] = useState(false);
-  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [gridMaxHeight, setGridMaxHeight] = useState('60vh');
   const filterBarRef = useRef(null);
   const tableContainerRef = useRef(null);
@@ -975,7 +965,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
 
   useEffect(() => {
     computeGridMaxHeight();
-  }, [computeGridMaxHeight, mobileFiltersOpen]);
+  }, [computeGridMaxHeight, filtersOpen]);
 
   // Lock page scroll so only the grid scrolls (applies on all viewport sizes)
   useEffect(() => {
@@ -1625,7 +1615,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
     return summary;
   }, [activeLocationLabel, activePos, activeScopeLabel, activeStatLabel, statMode, vegasOddsView, viewMode]);
 
-  const showFilterPanel = !useMobilePreviewSheet || mobileFiltersOpen;
+  const showFilterPanel = filtersOpen;
 
   useEffect(() => {
     if (!loaded) return;
@@ -1634,21 +1624,24 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
 
   return (
     <div className="page-frame-workbench lg:-mx-8">
-      {hasHeatmapData && <div ref={filterBarRef} className="px-4 sm:px-6 lg:px-8 pb-3">
-        <div className="companion-heatmap-mobile-filter-summary">
+      {hasHeatmapData && <div ref={filterBarRef} className="companion-heatmap-filter-bar px-4 sm:px-6 lg:px-8 pb-3">
+        <div className="companion-heatmap-filter-summary">
           <CompanionSelectorButton
-            active={mobileFiltersOpen}
-            className="companion-heatmap-mobile-filter-toggle"
+            active={filtersOpen}
+            className="companion-heatmap-filter-toggle"
             size="xs"
-            onClick={() => setMobileFiltersOpen(open => !open)}
-            aria-expanded={mobileFiltersOpen}
+            onClick={() => setFiltersOpen(open => !open)}
+            aria-label={filtersOpen ? 'Hide Filters' : 'Show Filters'}
+            title={filtersOpen ? 'Hide heatmap filters' : 'Show heatmap filters'}
+            aria-expanded={filtersOpen}
             aria-controls="companion-heatmap-filter-panel"
           >
-            {mobileFiltersOpen ? 'Hide Filters' : 'Show Filters'}
+            <FunnelSimpleIcon size={20} weight={filtersOpen ? 'bold' : 'regular'} aria-hidden="true" />
+            <span className="sr-only">{filtersOpen ? 'Hide Filters' : 'Show Filters'}</span>
           </CompanionSelectorButton>
-          <div className="companion-heatmap-mobile-filter-summary__rail" aria-label="Active heatmap filters">
+          <div className="companion-heatmap-filter-summary__rail" aria-label="Active heatmap filters">
             {mobileFilterSummary.map(item => (
-              <span key={item} className="companion-heatmap-mobile-filter-summary__chip">
+              <span key={item} className="companion-heatmap-filter-summary__chip">
                 {item}
               </span>
             ))}
@@ -1656,7 +1649,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
           {statMode === 'vegas_odds' && (
             <div className="relative shrink-0">
               <button
-                className="w-5 h-5 rounded-full flex items-center justify-center text-[length:var(--type-label)] font-bold"
+                className="companion-heatmap-odds-info w-5 h-5 rounded-full flex items-center justify-center text-[length:var(--type-label)] font-bold"
                 style={{ background: 'var(--color-fill)', color: 'var(--color-label-tertiary)' }}
                 onMouseEnter={() => setVegasInfoOpen(true)}
                 onMouseLeave={() => setVegasInfoOpen(false)}
@@ -1686,19 +1679,9 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
         </div>
 
         {showFilterPanel && (
-          <div id="companion-heatmap-filter-panel" className="flex items-center gap-2 max-lg:pt-2">
-            {/* Filter groups wrap as needed instead of becoming horizontally scrollable. */}
-            <div className="flex-1 min-w-0 flex flex-wrap items-start gap-x-5 gap-y-2 overflow-visible">
-          <div
-            style={{
-              display: 'flex',
-              flex: `1 1 ${FILTER_GROUP_WIDTHS.position}px`,
-              maxWidth: `${FILTER_GROUP_WIDTHS.position}px`,
-              flexDirection: 'column',
-              gap: 8,
-            }}
-          >
-            <FilterGroup label="Phase" labelWidth={heatmapFilterLabelWidth} style={{ flex: '0 0 auto', maxWidth: 'none' }}>
+          <div id="companion-heatmap-filter-panel" className="companion-heatmap-filter-panel">
+            <div className="companion-heatmap-filter-groups">
+            <FilterGroup label="Phase" labelWidth={heatmapFilterLabelWidth}>
               {[{ id: 'offense', label: 'Offense' }, { id: 'defense', label: 'Defense' }].map(m => {
                 return (
                   <Btn
@@ -1712,7 +1695,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
               })}
             </FilterGroup>
 
-            <FilterGroup label="Position" labelWidth={heatmapFilterLabelWidth} style={{ flex: '0 0 auto', maxWidth: 'none' }}>
+            <FilterGroup label="Position" labelWidth={heatmapFilterLabelWidth}>
               {activePositions.map(p => {
                 const disabled = POSITIONLESS_GAME_STAT_MODES.has(statMode);
                 return (
@@ -1728,9 +1711,8 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
                 );
               })}
             </FilterGroup>
-          </div>
 
-          <FilterGroup label="Stat" width={FILTER_GROUP_WIDTHS.stat} labelWidth={heatmapFilterLabelWidth}>
+          <FilterGroup label="Stat" labelWidth={heatmapFilterLabelWidth}>
             {activeStatModes.map(m => {
               const sharedGameStat = SHARED_GAME_STAT_MODES.has(m.id);
               const active = sharedGameStat || viewMode === 'offense'
@@ -1756,7 +1738,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
             })}
           </FilterGroup>
 
-          <FilterGroup label="Location" width={FILTER_GROUP_WIDTHS.location} labelWidth={heatmapFilterLabelWidth}>
+          <FilterGroup label="Location" labelWidth={heatmapFilterLabelWidth}>
             {[{ id: 'all', label: 'All' }, { id: 'home', label: 'Home' }, { id: 'away', label: 'Away' }].map(opt => (
               <Btn key={opt.id} active={locationFilter === opt.id} onClick={() => setLocationFilter(opt.id)}>
                 {opt.label}
@@ -1764,7 +1746,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
             ))}
           </FilterGroup>
 
-          <FilterGroup label="Color" width={FILTER_GROUP_WIDTHS.color} labelWidth={heatmapFilterLabelWidth}>
+          <FilterGroup label="Color" labelWidth={heatmapFilterLabelWidth}>
             {HEATMAP_SCOPES.map(s => {
               const disabled = statMode === 'vegas_odds';
               return (
@@ -1782,17 +1764,14 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
           </FilterGroup>
 
           {favoriteTeam && (
-            <Btn active={useTeamColors} onClick={() => setUseTeamColors(v => !v)}>
-              {favoriteTeam.toUpperCase()} Colors
-            </Btn>
+            <FilterGroup label="Theme" labelWidth={heatmapFilterLabelWidth} className="companion-heatmap-filter-group--theme">
+              <Btn active={useTeamColors} onClick={() => setUseTeamColors(v => !v)}>
+                {favoriteTeam.toUpperCase()} Colors
+              </Btn>
+            </FilterGroup>
           )}
 
-          <FilterGroup
-            label="Result"
-            width={FILTER_GROUP_WIDTHS.result}
-            labelWidth={heatmapFilterLabelWidth}
-            style={useMobilePreviewSheet ? null : { marginLeft: 'auto' }}
-          >
+          <FilterGroup label="Result" labelWidth={heatmapFilterLabelWidth}>
             {[
               { id: 'spread', label: 'Spread' },
               { id: 'ou', label: 'O/U' },
@@ -1809,41 +1788,9 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
                   {opt.label}
                 </Btn>
               );
-            })}
-          </FilterGroup>
-        </div>
-
-        {/* Info icon — outside the overflow container so tooltip is never clipped */}
-        {statMode === 'vegas_odds' && !useMobilePreviewSheet && (
-          <div className="relative shrink-0">
-            <button
-              className="w-4 h-4 rounded-full flex items-center justify-center text-[length:var(--type-micro)] font-bold"
-              style={{ background: 'var(--color-fill)', color: 'var(--color-label-tertiary)' }}
-              onMouseEnter={() => setVegasInfoOpen(true)}
-              onMouseLeave={() => setVegasInfoOpen(false)}
-              onClick={() => setVegasInfoOpen(v => !v)}
-              aria-label="Odds data info"
-            >
-              i
-            </button>
-            {vegasInfoOpen && (
-              <div
-                className="absolute bottom-full right-0 mb-2 z-20 rounded-lg p-2.5 text-xs leading-relaxed"
-                style={{
-                  background: 'var(--color-bg-secondary)',
-                  border: '1px solid var(--color-separator)',
-                  color: 'var(--color-label-secondary)',
-                  boxShadow: '0 4px 12px rgba(0,0,0,0.18)',
-                  width: '280px',
-                }}
-              >
-                {vegasOddsView === 'ou'
-                  ? `Odds via nflverse · ${ODDS_SEASON} season · margin shown is actual total − O/U line (+ = over, − = under)`
-                  : `Odds via nflverse · ${ODDS_SEASON} season · spread shown is from each team's perspective (− = favored)`}
-              </div>
-            )}
-          </div>
-        )}
+              })}
+            </FilterGroup>
+            </div>
           </div>
         )}
       </div>}

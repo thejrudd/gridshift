@@ -56,6 +56,7 @@ const UpgradeFinderPage = memo(function UpgradeFinderPage({
   onTradePostureChange,
   onRunSearch,
   onApplyProposal,
+  onShareProposal,
   onOpenPlayer,
 }) {
   const resultsRef = useRef(null);
@@ -285,6 +286,7 @@ const UpgradeFinderPage = memo(function UpgradeFinderPage({
                       darkMode={darkMode}
                       seasonStats={seasonStats}
                       onApplyProposal={onApplyProposal}
+                      onShareProposal={onShareProposal}
                       onOpenPlayer={onOpenPlayer}
                     />
                   );

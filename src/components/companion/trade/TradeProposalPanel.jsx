@@ -518,6 +518,7 @@ const TradeProposalItem = memo(function TradeProposalItem({
   darkMode,
   seasonStats,
   onApplyProposal,
+  onShareProposal,
   onOpenPlayer,
   containerClassName = '',
   renderAllAssetsAsCards = false,
@@ -674,14 +675,10 @@ const TradeProposalItem = memo(function TradeProposalItem({
                 {resultSubtext}
               </div>
             </div>
-            <button
-              type="button"
-              onClick={() => onApplyProposal?.(proposal)}
-              className="shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors"
-              style={{ background: 'var(--color-signature)', color: 'var(--color-signature-fg)' }}
-            >
-              Apply
-            </button>
+            <div className="flex shrink-0 items-center gap-1.5">
+              <button type="button" onClick={() => onShareProposal?.(proposal)} className="rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors" style={{ borderColor: 'var(--color-separator)', background: 'var(--color-fill)', color: 'var(--color-label)' }}>Share</button>
+              <button type="button" onClick={() => onApplyProposal?.(proposal)} className="rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors" style={{ background: 'var(--color-signature)', color: 'var(--color-signature-fg)' }}>Apply</button>
+            </div>
           </div>
 
           {renderWorkspaceSide({
@@ -780,11 +777,10 @@ const TradeProposalItem = memo(function TradeProposalItem({
             </div>
           )}
         </div>
-        <button onClick={() => onApplyProposal?.(proposal)}
-          className="px-3 py-1 rounded-lg text-xs font-semibold transition-colors shrink-0"
-          style={{ background: 'var(--color-signature)', color: 'var(--color-signature-fg)' }}>
-          Apply
-        </button>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <button onClick={() => onShareProposal?.(proposal)} className="rounded-lg border px-3 py-1 text-xs font-semibold transition-colors" style={{ borderColor: 'var(--color-separator)', background: 'var(--color-fill)', color: 'var(--color-label)' }}>Share</button>
+          <button onClick={() => onApplyProposal?.(proposal)} className="rounded-lg px-3 py-1 text-xs font-semibold transition-colors" style={{ background: 'var(--color-signature)', color: 'var(--color-signature-fg)' }}>Apply</button>
+        </div>
       </div>
 
       <div
@@ -1162,6 +1158,7 @@ const UpgradeResultGroup = memo(function UpgradeResultGroup({
   darkMode,
   seasonStats,
   onApplyProposal,
+  onShareProposal,
   onOpenPlayer,
 }) {
   return (
@@ -1196,6 +1193,7 @@ const UpgradeResultGroup = memo(function UpgradeResultGroup({
               darkMode={darkMode}
               seasonStats={seasonStats}
               onApplyProposal={onApplyProposal}
+              onShareProposal={onShareProposal}
               onOpenPlayer={onOpenPlayer}
               renderAllAssetsAsCards
               resultVariant="upgrade"
@@ -1536,6 +1534,7 @@ const TradeProposalPanel = memo(function TradeProposalPanel({
   onModeChange,
   onPartnerChange,
   onApplyProposal,
+  onShareProposal,
   onOpenPlayer,
   isPreparingPartner = false,
   isShowingStaleResults = false,
@@ -1811,6 +1810,7 @@ const TradeProposalPanel = memo(function TradeProposalPanel({
                         darkMode={darkMode}
                         seasonStats={seasonStats}
                         onApplyProposal={onApplyProposal}
+                        onShareProposal={onShareProposal}
                         onOpenPlayer={onOpenPlayer}
                         containerClassName="w-full"
                         renderAllAssetsAsCards

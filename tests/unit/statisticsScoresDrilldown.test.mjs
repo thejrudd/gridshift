@@ -5,8 +5,9 @@ import {
   STATISTICS_SCORES_DRILLDOWN_STATUSES,
 } from '../../src/utils/statisticsScoresDrilldown.js';
 
-test('Statistics Scores drilldown is limited to completed and in-progress game states', () => {
+test('Statistics Scores drilldown includes scheduled games for pregame stories', () => {
   assert.deepEqual(STATISTICS_SCORES_DRILLDOWN_STATUSES, [
+    'scheduled',
     'final',
     'live',
     'halftime',
@@ -17,7 +18,7 @@ test('Statistics Scores drilldown is limited to completed and in-progress game s
     assert.equal(isStatisticsScoresDrilldownStatus(status), true, `${status} should open detail`);
   }
 
-  for (const status of ['scheduled', 'postponed', 'partial', 'offline', 'unavailable', '', null]) {
+  for (const status of ['postponed', 'partial', 'offline', 'unavailable', '', null]) {
     assert.equal(isStatisticsScoresDrilldownStatus(status), false, `${status} should not open detail`);
   }
 });

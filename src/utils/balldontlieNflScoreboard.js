@@ -283,7 +283,10 @@ export function normalizeBdlScoreboardSeason(payload, {
   const weekCount = phase === NFL_SEASON_PHASES.PRESEASON ? PRESEASON_WEEK_COUNT : REGULAR_WEEK_COUNT;
   const capabilities = payload?.capabilities ?? null;
   const detailsAvailable = capabilities
-    ? capabilities.stats === true || capabilities.teamStats === true || capabilities.plays === true
+    ? capabilities.stats === true
+      || capabilities.teamStats === true
+      || capabilities.plays === true
+      || capabilities.storyStats === true
     : true;
   const playByPlayAvailable = capabilities ? capabilities.plays === true : null;
   const sourceGames = getRawGames(payload)

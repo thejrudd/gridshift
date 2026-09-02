@@ -1313,3 +1313,14 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **League-aware redraft pick valuation** - Calibrated redraft picks against the available player range, active league scoring, prior production, and supported preseason ADP, with sparse-data fallback to the adjusted market model.
 - **Preseason defensive valuation** - Used the most recent completed production season for IDP and D/ST values before the active season recorded stats, then switched automatically to current-season production.
 - **Regression coverage and documentation** - Added focused Trade valuation and responsive layout coverage and expanded the Trade and architecture references for the new valuation boundaries.
+
+## v8.9.0 - Trade Proposals
+*2026-09-02*
+
+- **Trade Proposal rooms** - Create private, league- and season-scoped trade conversations between the two connected Sleeper participants, with bounded expiry choices, counters, accept/decline/withdraw actions, unread updates, and terminal status timestamps.
+- **Shareable proposal previews** - Share an opaque, revocable proposal link or QR code with a readable exchange preview while keeping the GridShift page and proposal actions participant-gated.
+- **Sleeper follow-through** - After acceptance, guide the accepting manager to recreate the trade in Sleeper, inspect a possible matching transaction, and mark the GridShift record done without pretending GridShift can submit the Sleeper transaction.
+- **Page sharing and route-aware previews** - Add native page sharing with a copy-link fallback and route-aware document/social metadata for the current GridShift surface.
+- **Live and Statistics improvements** - Strengthen provider-backed clock/replay handling and add optional server-only StoryStats narratives with bounded caching, quota handling, and production scheduling.
+- **Stable NFL calendar boundaries** - Resolve prediction league-year and preseason-to-regular-season boundaries against UTC calendar dates so behavior and automated checks do not change with the host timezone.
+- **Regression coverage and documentation** - Add focused coverage across Trade Proposals, sharing, routing, StoryStats, live data, Statistics Scores, and responsive surfaces, with updated deployment and feature references.

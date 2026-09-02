@@ -35,7 +35,7 @@ For non-trivial bugs, regressions, or architectural changes:
 
 ### Decision Making
 
-Do not ask for clarification when a reasonable, reversible interpretation exists.
+Do not ask for clarification when a reasonable, reversible interpretation exists and the instructions, existing product rules, or repository conventions make the choice clear.
 
 Ask when:
 
@@ -43,6 +43,8 @@ Ask when:
 - the choice is difficult to reverse,
 - it affects data integrity, security, billing, or architecture,
 - or the user explicitly owns the product/design decision.
+
+For these preference questions, ask before implementation rather than after making a draft. Present concise options, include the recommended option, and allow the user to simply accept the recommendation. Do not ask preference questions for low-risk implementation details that can be resolved from the repository.
 
 For low-risk implementation details, choose the option most consistent with the existing codebase and record meaningful assumptions.
 
@@ -78,19 +80,27 @@ Before creating a new component, hook, utility, formatter, token, data model, or
 
 ## Model and Subagent Policy
 
-Use subagents when parallel work, independent verification, specialization, or separation of independent workstreams would materially improve the result.
+Delegation and model selection are deliberate routing decisions, not defaults supplied by the runner. Before dispatching work, classify each workstream by purpose, risk, and reasoning difficulty; choose a model, reasoning effort, and relevant skillset that fit that classification. Do not use Luna at Extra High/xhigh reasoning for routine work merely because it is the available default.
 
-For prompts containing multiple distinct fixes or changes, delegate independent workstreams when they can be meaningfully separated. Do not create subagents merely to satisfy this rule.
+For one clearly scoped change, the parent agent should implement it directly. If that change is high-risk and independent review would materially reduce risk, ask about that preference before implementation rather than delegating automatically. For prompts containing multiple distinct fixes or changes, split independent workstreams and give each one an explicit role before implementation. A single catch-all subagent is not a substitute for tailored exploration, implementation, and verification when those responsibilities can be separated.
 
-Choose the least expensive model capable of reliably completing each delegated task.
+Use this routing guide as the default:
 
-Prefer:
+| Workstream | Default model / reasoning | Typical skillset |
+| --- | --- | --- |
+| Targeted repository exploration, code-path tracing, or documentation lookup | **Luna / low** | Repository research; the relevant feature or documentation skill |
+| Straightforward isolated implementation or editing | **Luna / medium** | The relevant implementation skill; add UI/accessibility guidance for interface work |
+| Test authoring, regression review, changed-file lint, or focused validation | **Luna / low–medium** | Testing/review skill; browser or desktop-legibility skill when the claim is visual |
+| Visual/interface design, responsive behavior, or interaction polish | **Luna / medium** | `interface-design`, plus the narrow skill that matches the surface, such as `apple-design`, `gridshift-desktop-legibility`, or `design-taste-frontend` |
+| Difficult debugging, multi-file implementation, or cross-cutting behavior | **Terra / high** | The relevant feature skill plus testing or architecture guidance |
+| Architecture, data integrity, security, production recovery, or unresolved high-impact regressions | **Terra / xhigh** | Architecture/security/feature-specific skill and an independent verification role |
+| Exceptionally ambiguous, high-risk, or failed-Terra work | **Sol / max** | The narrowest applicable specialist skill; use only when the risk justifies it |
 
-- **Luna** for routine exploration, implementation, editing, repository research, and straightforward reasoning.
-- **Terra** for difficult debugging, architecture, cross-cutting changes, complex implementation, or reasoning-heavy investigation.
-- **Sol** for exceptionally difficult tasks, high-risk review, ambiguous architectural decisions, failed Terra attempts, or situations where maximum reasoning quality is justified.
+Reasoning effort is independent of model family. Optimize for first-pass completion, not the lowest nominal token cost: start at the lowest level likely to succeed, but choose Terra before dispatch whenever a missed dependency, uncertain root cause, or broad downstream effect would likely cause rework. **Luna / xhigh is an exception, not a baseline**; routine work should use Luna low or medium.
 
-Do not escalate models merely because a task is large. Escalate based on reasoning difficulty, risk, and demonstrated need.
+Use **Sol / max** only when the cost of a wrong or incomplete first pass justifies the highest reasoning level: unusually ambiguous architecture or product decisions, security or data-integrity boundaries, production recovery with significant blast radius, contradictory evidence after Terra investigation, a failed Terra attempt that needs a fresh senior review, or an explicitly requested maximum-quality second opinion. Do not use Sol merely because a task is large, touches many files, or is time-consuming; use Terra when the problem is difficult but structurally understood.
+
+Every delegation must identify all four items before dispatch: the workstream purpose, the selected model and reasoning effort, the applicable skillset, and the expected deliverable. Announce this routing to the user when the choice is non-obvious; otherwise keep it concise and proceed. If no subagent is used for a non-trivial task, state why the work is better kept in the parent agent (for example, it is one clearly scoped change, tightly coupled edits, no meaningful parallelism, or a final synthesis step).
 
 ### Preferred Subagent Roles
 
@@ -102,9 +112,11 @@ Prefer delegating:
 - documentation impact analysis,
 - isolated implementation workstreams.
 
-Avoid having multiple agents modify the same files unless necessary.
+For multi-workstream changes, use this sequence: read-only investigation first, one designated implementation owner second, and an independent review agent afterward. For a high-risk single-scope change, ask before implementation whether to add the independent review. The reviewer checks the resulting diff and evidence rather than repeating the implementation. For visual changes, include a browser-visible, geometry, accessibility, or design-system review as appropriate.
 
-For high-risk changes, prefer one implementation agent plus one independent review agent over multiple overlapping implementation agents.
+Avoid having multiple agents modify the same files unless necessary. Prefer read-only investigation and review agents when ownership overlaps, and make the parent agent the final owner of conflicting recommendations.
+
+Delegated agents must read the relevant `SKILL.md` completely before acting and must stay within the assigned purpose. They should return concrete findings, changed paths, validation results, and unresolved uncertainty so the parent can synthesize rather than blindly accept the result.
 
 The parent agent owns the final result and must synthesize and verify subagent work rather than assuming it is correct.
 
@@ -115,6 +127,8 @@ The parent agent owns the final result and must synthesize and verify subagent w
 Use validation proportional to the change.
 
 ### During Implementation
+
+Before implementation begins on work that needs validation, ask whether a usage test is wanted in Codex or whether the user plans to test manually in the live developer environment. Do not infer that choice from the existence of automated tests.
 
 Run the smallest relevant check needed to confirm the current change, such as:
 

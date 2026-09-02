@@ -13,6 +13,7 @@ import {
 import { createPredictionShareUrl } from '../utils/predictionShareCodec';
 import { buildPredictionShareModel, getPredictionPickWeekContext } from '../utils/predictionShareModel';
 import { getPredictionScreenshotScale } from '../utils/predictionScreenshot.js';
+import { copyText } from '../utils/pageShare.js';
 import { PredictionShareCard, SHARE_CARD_TITLES } from './predictions/share';
 import './predictionShareExport.css';
 
@@ -29,18 +30,6 @@ const CARD_IDS = new Set(CARD_OPTIONS.map(option => option.id));
 const CANVAS_IDS = new Set(['square', 'tall']);
 const THEME_IDS = new Set(['dark', 'poster']);
 const SCREENSHOT_CONTROLS_HIDE_MS = 3_000;
-
-const copyText = async (value) => {
-  if (navigator.clipboard?.writeText) return navigator.clipboard.writeText(value);
-  const textarea = document.createElement('textarea');
-  textarea.value = value;
-  textarea.style.position = 'fixed';
-  textarea.style.opacity = '0';
-  document.body.appendChild(textarea);
-  textarea.select();
-  document.execCommand('copy');
-  textarea.remove();
-};
 
 function SegmentedControl({ label, value, options, onChange }) {
   return <fieldset className="prediction-share-export__field">

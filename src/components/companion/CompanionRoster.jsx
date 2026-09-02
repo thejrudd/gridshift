@@ -13,6 +13,7 @@ export default function CompanionRoster({
   onTradePlayer,
   onViewPlayer,
   tradeDisabled = false,
+  tradeDisabledTitle = 'Trade is not available for the connected platform.',
   routeState = null,
   onRouteStateChange = null,
 }) {
@@ -25,6 +26,7 @@ export default function CompanionRoster({
       onTradePlayer={onTradePlayer}
       onViewPlayer={onViewPlayer}
       tradeDisabled={tradeDisabled}
+      tradeDisabledTitle={tradeDisabledTitle}
       routeState={resolvedRouteState}
       onRouteStateChange={handleRouteStateChange}
     />
