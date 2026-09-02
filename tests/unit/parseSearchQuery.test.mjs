@@ -18,6 +18,14 @@ test('parses jersey numbers alongside team and position in any order', () => {
   assert.deepEqual([...tightEnd.pos], ['TE']);
 });
 
+test('parses NFL team abbreviations alongside positions', () => {
+  const filters = parseSearchQuery('gb rb');
+
+  assert.deepEqual([...filters.team], ['gb']);
+  assert.deepEqual([...filters.pos], ['RB']);
+  assert.deepEqual(filters.name, []);
+});
+
 test('parses full team and position phrases with a jersey number', () => {
   const filters = parseSearchQuery('Green Bay Tight End 31');
 

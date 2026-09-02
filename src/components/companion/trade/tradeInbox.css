@@ -1,0 +1,51 @@
+.trade-inbox { padding:24px 16px 48px; }
+.trade-inbox__intro { display:flex; align-items:flex-end; justify-content:space-between; gap:18px; margin-bottom:20px; }
+.trade-inbox__intro p { margin:0; color:var(--color-label-tertiary); font:700 var(--type-label)/1 'Barlow Condensed',sans-serif; letter-spacing:.17em; text-transform:uppercase; }
+.trade-inbox__intro h1 { margin:5px 0 4px; color:var(--color-label); font:800 clamp(32px,5vw,54px)/.92 'Barlow Condensed',sans-serif; }
+.trade-inbox__intro span:not(.trade-inbox__count) { color:var(--color-label-secondary); font-size:var(--type-body); }
+.trade-inbox__count { flex:none; padding:8px 10px; border:1px solid var(--color-separator); color:var(--color-label-secondary); font:700 var(--type-label) 'Barlow Condensed',sans-serif; text-transform:uppercase; letter-spacing:.1em; }
+.trade-inbox__error { margin-bottom:14px; padding:11px 12px; border-left:3px solid var(--color-accent-red); background:var(--color-fill); color:var(--color-accent-red); font-size:var(--type-meta); }
+.trade-inbox__details-error { margin:12px 0; padding:11px 12px; border-left:3px solid var(--color-accent-red); background:var(--color-fill); color:var(--color-accent-red); font-size:var(--type-meta); }
+.trade-inbox__proposal-notifications { margin-bottom:14px; padding:0 12px; border-left:3px solid var(--color-signature); background:var(--color-fill); }
+.trade-inbox__proposal-notification { width:100%; min-height:44px; display:flex; align-items:center; gap:10px; padding:10px 0; border:0; border-bottom:1px solid var(--color-separator); background:transparent; color:var(--color-label); text-align:left; cursor:pointer; }
+.trade-inbox__proposal-notification:last-child { border-bottom:0; }
+.trade-inbox__proposal-notification:focus-visible { outline:2px solid var(--color-signature); outline-offset:-2px; }
+.trade-inbox__event-dot { width:8px; height:8px; flex:none; border-radius:50%; background:var(--color-signature); }
+.trade-inbox__proposal-notification span:last-child { display:flex; flex-direction:column; gap:2px; }
+.trade-inbox__proposal-notification small { color:var(--color-label-tertiary); font-size:var(--type-label); }
+.trade-inbox__empty { padding:28px 0; color:var(--color-label-tertiary); text-align:center; }
+.trade-inbox__list { display:flex; flex-direction:column; gap:18px; }
+.trade-inbox__proposal { padding:16px; background:var(--color-bg-secondary); border:1px solid var(--color-separator); border-top:3px solid var(--color-signature); }
+.trade-inbox__proposal--countered { border-top-color:var(--color-accent-orange); }
+.trade-inbox__proposal--accepted { border-top-color:var(--color-accent-green); }
+.trade-inbox__proposal--declined, .trade-inbox__proposal--withdrawn { border-top-color:var(--color-label-quaternary); }
+.trade-inbox__proposal-header { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:12px; }
+.trade-inbox__status { color:var(--color-signature); font:800 var(--type-label)/1 'Barlow Condensed',sans-serif; letter-spacing:.14em; text-transform:uppercase; }
+.trade-inbox__proposal h2 { margin:5px 0 3px; color:var(--color-label); font:800 clamp(22px,3vw,32px)/.95 'Barlow Condensed',sans-serif; overflow-wrap:anywhere; }
+.trade-inbox__proposal-header p { margin:0; color:var(--color-label-tertiary); font-size:var(--type-label); }
+.trade-inbox__role { flex:none; padding:6px 8px; background:var(--color-fill); color:var(--color-label-secondary); font-size:var(--type-label); font-weight:700; text-transform:uppercase; letter-spacing:.08em; }
+.trade-inbox__proposal-context { display:flex; align-items:center; gap:9px; margin-bottom:12px; color:var(--color-label-tertiary); font-size:var(--type-label); text-transform:uppercase; letter-spacing:.08em; }
+.trade-inbox__proposal-context strong { color:var(--color-label-secondary); font-weight:800; }
+.trade-inbox__proposal-context span { padding-left:9px; border-left:1px solid var(--color-separator); }
+.trade-inbox__proposal .trade-share-card { padding:16px; border-radius:12px; }
+.trade-inbox__proposal .trade-share-card__qr-wrap, .trade-inbox__proposal .trade-share-card__url { display:none; }
+.trade-inbox__proposal .trade-share-card__footer { grid-template-columns:1fr; }
+.trade-inbox__outcome { margin-top:12px; padding:10px 12px; background:var(--color-fill); color:var(--color-label-secondary); font-size:var(--type-meta); }
+.trade-inbox__next-steps { margin-top:14px; padding:14px; border-left:3px solid var(--color-signature); background:var(--color-fill); }
+.trade-inbox__next-steps-kicker { margin:0; color:var(--color-signature); font:800 var(--type-label)/1 'Barlow Condensed',sans-serif; letter-spacing:.14em; }
+.trade-inbox__next-steps h2 { margin:5px 0 8px; color:var(--color-label); font:800 clamp(20px,3vw,28px)/.98 'Barlow Condensed',sans-serif; }
+.trade-inbox__next-steps ol { margin:0 0 12px 18px; padding:0; color:var(--color-label-secondary); font-size:var(--type-meta); line-height:1.45; }
+.trade-inbox__next-steps li + li { margin-top:4px; }
+.trade-inbox__next-steps-note { margin:10px 0 0; color:var(--color-label-tertiary); font-size:var(--type-label); line-height:1.4; }
+.trade-inbox__actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:14px; padding-top:14px; border-top:1px solid var(--color-separator); }
+.trade-inbox__actions button, .trade-inbox__actions a, .trade-inbox__next-steps .trade-inbox__primary-action { min-height:44px; display:inline-flex; align-items:center; justify-content:center; padding:9px 11px; border:1px solid var(--color-separator); border-radius:8px; background:var(--color-fill); color:var(--color-label); font-size:var(--type-label); font-weight:800; text-decoration:none; cursor:pointer; }
+.trade-inbox__actions .trade-inbox__primary-action, .trade-inbox__next-steps .trade-inbox__primary-action { background:var(--color-signature); border-color:var(--color-signature); color:var(--color-signature-fg); }
+.trade-inbox__actions .trade-inbox__danger { color:var(--color-accent-red); }
+.trade-inbox__actions button:disabled { cursor:not-allowed; opacity:.5; }
+@media (max-width: 760px) {
+  .trade-inbox { padding:18px 14px calc(32px + env(safe-area-inset-bottom)); }
+  .trade-inbox__intro { align-items:flex-start; flex-direction:column; }
+  .trade-inbox__proposal { padding:12px; }
+  .trade-inbox__role { display:none; }
+  .trade-inbox__actions > * { flex:1 1 calc(50% - 8px); }
+}

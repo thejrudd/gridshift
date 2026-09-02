@@ -9,6 +9,7 @@ Layer-by-layer ownership map: who owns which state, where domain logic lives, an
 - `src/main.jsx` bootstraps React, registers the service worker, and wraps the app with providers.
 - `src/App.jsx` is the effective router and shell coordinator. **There is no React Router.**
 - `src/index.css` defines the global design tokens and theme variables used by components.
+- `src/utils/pageShare.js` derives route-aware share titles/descriptions and updates the client document metadata; it deliberately does not serialize connected league state into public links.
 
 ## Entry Points
 
@@ -63,14 +64,14 @@ Entries resolved via Pass 1 or 2 are marked `_teamSource = 'espn'`; Pass 3 entri
 
 | Folder | Owns |
 | --- | --- |
-| `src/components` | App shell, views, modals, feature UI. Prediction share cards live under `src/components/predictions/share/`; `ExportPreview.jsx` is the responsive studio around its fixed 1080px canvases |
+| `src/components` | App shell, views, modals, feature UI. `PageShareSheet.jsx` is the current-page share fallback; prediction share cards live under `src/components/predictions/share/`; `ExportPreview.jsx` is the responsive studio around its fixed 1080px canvases |
 | `src/components/companion` | Fantasy league tools on top of Sleeper state and scoring logic — see below |
 | `src/components/compare` | Side-by-side player comparison across ESPN stats, fantasy output, and trade value |
 | `src/components/scout` | Rookie scouting UI (Prospects, Picks, Results); reads static/generated Scout datasets from `src/data`; local-only CFBD import scripts |
 | `src/components/nflPlays` | Shared surface-agnostic field/momentum graphics — see the shared play layer below |
 | `src/utils` | Most domain logic: scoring, projections, trade math, export shaping, search parsing — see below |
 | `src/api` | Thin wrappers for external data sources — see the client/server boundary below |
-| `server` | The GridShift sidecar: provider gateway, quotas, live-data route groups — see below |
+| `server` | The GridShift sidecar: provider gateway, quotas, live-data route groups, and persistent league-scoped Trade proposal rooms — see below |
 | `src/data` | Static datasets (team colors, honors, stadiums, team history); Scout datasets (`rookies.js`, `draftPicks.js`, `draftResults.js`, `rookieProduction.generated.js`, `rookieGameLogs.generated.js`); `liveWinProbabilityModel.js` (frozen generated coefficient contract) |
 | `scripts` | Scout importers (`import-scout-production.mjs`, `import-scout-game-logs.mjs`) call CFBD locally with `CFBD_API_KEY` and write generated data files. API keys must not enter the client bundle |
 
@@ -123,6 +124,10 @@ Deep doc: [[Live Data Server Architecture]].
 | `publicRequestGuard.js` | Bounded downstream request/concurrency protection for the public near-live Scores route — separate from provider quota accounting |
 | `liveHandlers.js` | Fantasy Live session/league boundary; routes all provider work through the shared gateway |
 | `statisticsScoresHandlers.js` | Public Statistics Scores provider boundary, narrow selected-week live route, detail composition, ESPN fallback; projects canonical play snapshots rather than creating a Scores-only play source |
+| `tradeProposalHandlers.js` | Participant-token sessions, exact Sleeper league/roster/asset validation, proposal revisions, inbox actions, expiring share capabilities, and cautious Sleeper reconciliation |
+| `tradeProposalStore.js` | Separate SQLite/WAL proposal database. Stores immutable revision payloads and event state; expired payloads are removed while a bounded tombstone remains for the retention window |
+| `tradeProposalCrypto.js`, `tradeProposalConfig.js` | HMAC token hashing, opaque proposal/session capabilities, bounded expiry/retention settings, and production secret/data-directory configuration |
+| `sleeperTradeApi.js` | Server-side read-only Sleeper boundary used to validate league membership/ownership and inspect completed transactions |
 
 Rule: gateway state is process-local. Running multiple sidecar replicas would multiply upstream work until the shared-store/leader phase in [[Live Data Server Architecture]].
 
@@ -131,6 +136,6 @@ Rule: gateway state is process-local. Running multiple sidecar replicas would mu
 | File | Owns |
 | --- | --- |
 | `package.json` | npm scripts; version drives PWA cache busting |
-| `vite.config.js` | React plugin, PWA behavior, `__APP_VERSION__`, KTC proxy, local `/api/espn`, `/api/live`, `/api/statistics/scores` sidecar proxies |
-| `nginx.conf` | Production proxying of `/api/live/`, `/api/statistics/scores/`, `/api/fantasy/`, `/api/draft-sync/`, `/api/predictions-sync/` to the sidecar. Device-sync routes forward bearer and conditional-revision headers; all server-only provider routes are `no-store` |
+| `vite.config.js` | React plugin, route-aware social/share HTML metadata in development and production entry files, PWA behavior, `__APP_VERSION__`, KTC proxy, and local sidecar proxies including Trade proposals/share metadata |
+| `nginx.conf` | Production proxying of `/api/live/`, `/api/statistics/scores/`, `/api/fantasy/`, `/api/draft-sync/`, `/api/predictions-sync/`, `/api/trade-proposals/`, and `/trade/share/` to the sidecar. Bearer credentials are forwarded and server-backed routes are `no-store` |
 | `docker-compose.yml`, `Dockerfile`, `Dockerfile.prebuilt`, `Dockerfile.server` | Deployment |

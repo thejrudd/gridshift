@@ -705,6 +705,7 @@ export default function CompanionLive({ onViewPlayer = null }) {
   const weatherPendingRef = useRef(new Set());
   const liveSnapshotRequestRef = useRef(0);
   const liveSnapshotContextRef = useRef(null);
+  const autoSessionAttemptedRef = useRef(new Set());
   const gridRef = useRef(null);
   const matchupRailRef = useRef(null);
   const heroStageRef = useRef(null);
@@ -861,9 +862,45 @@ export default function CompanionLive({ onViewPlayer = null }) {
   useEffect(() => {
     let cancelled = false;
     setStatusError('');
-    getLiveStatus()
-      .then((payload) => {
-        if (!cancelled) setLiveStatus(payload);
+    setSessionLoading(false);
+    const leagueId = platform === 'sleeper' ? selectedLeagueId : null;
+    if (leagueId) setLiveStatus(null);
+    getLiveStatus({ leagueId })
+      .then(async (payload) => {
+        if (cancelled) return;
+
+        // The allowlist is the normal production authorization boundary. Keep
+        // the browser session cookie because the data routes require it, but
+        // do not make an allowlisted viewer click through a redundant gate.
+        // A configured access code remains an intentional second factor and
+        // keeps the manual gate visible.
+        const shouldStartAllowlistedSession = Boolean(
+          leagueId
+          && payload.live?.enabled
+          && payload.live?.leagueAllowed === true
+          && !payload.live?.accessCodeRequired
+          && !payload.session?.enabled
+          && !autoSessionAttemptedRef.current.has(String(leagueId)),
+        );
+        if (!shouldStartAllowlistedSession) {
+          setLiveStatus(payload);
+          return;
+        }
+
+        autoSessionAttemptedRef.current.add(String(leagueId));
+        setSessionLoading(true);
+        try {
+          await startLiveSession({ leagueId, provider: 'sleeper' });
+          const refreshed = await getLiveStatus({ leagueId });
+          if (!cancelled) setLiveStatus(refreshed);
+        } catch (error) {
+          if (!cancelled) {
+            setLiveStatus(payload);
+            setLiveError(error?.message ?? 'Could not turn on live scoring.');
+          }
+        } finally {
+          if (!cancelled) setSessionLoading(false);
+        }
       })
       .catch((error) => {
         if (!cancelled) setStatusError(error?.message ?? 'Could not reach the live scoring server.');
@@ -871,7 +908,7 @@ export default function CompanionLive({ onViewPlayer = null }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [platform, selectedLeagueId]);
 
   useEffect(() => {
     if (platform !== 'sleeper' || !selectedLeagueId || !week) {
@@ -2141,6 +2178,10 @@ export default function CompanionLive({ onViewPlayer = null }) {
       // The replay's positions are authoritative; its timestamps are
       // reconstructed. Accumulate along the axis rather than the clock.
       accumulateInOrder: eventAxisIsAuthoritative,
+      // Production still uses wall-clock ordering for probability snapshots,
+      // but its score paths are drawn on the game-progress axis. Otherwise a
+      // later kickoff can make an earlier positive score appear to disappear.
+      scoreAxisIsAuthoritative: true,
       liveSnapshot,
       reconcileToTotals: Boolean(demoTimeline),
     });
@@ -2170,7 +2211,7 @@ export default function CompanionLive({ onViewPlayer = null }) {
     setLiveError('');
     try {
       const payload = await startLiveSession({ leagueId: selectedLeagueId, provider: 'sleeper', accessCode });
-      const statusPayload = await getLiveStatus();
+      const statusPayload = await getLiveStatus({ leagueId: selectedLeagueId });
       setLiveStatus({ ...statusPayload, session: payload.session ?? statusPayload.session });
     } catch (error) {
       setLiveError(error?.message ?? 'Could not turn on live scoring.');

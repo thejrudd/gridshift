@@ -131,6 +131,7 @@ const PlayerBrowser = ({
   onComparePlayer,
   onBuildTrade,
   tradeDisabled = false,
+  tradeDisabledTitle = 'Trade is not available for the connected platform.',
 }) => {
   const { loadPlayers, espnIdOverrides } = useSleeperStats();
   const [resolvedPlayer, setResolvedPlayer] = useState(() => (
@@ -429,6 +430,7 @@ const PlayerBrowser = ({
           onCompare={onComparePlayer}
           onBuildTrade={onBuildTrade}
           tradeDisabled={tradeDisabled}
+          tradeDisabledTitle={tradeDisabledTitle}
           onViewSchedule={selectedPlayer.teamId ? () => onViewSchedule?.(selectedPlayer.teamId) : undefined}
         />
       );

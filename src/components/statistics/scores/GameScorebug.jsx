@@ -4,6 +4,7 @@ import { useTheme } from '../../../context/ThemeContext';
 import { isStatisticsScoresDrilldownStatus } from '../../../utils/statisticsScoresDrilldown';
 import { getTeamVisualTheme } from '../../../utils/teamVisualTheme';
 import { getScoreNetworkLabel } from '../../../utils/statisticsBroadcasts';
+import { formatStatisticsScoresLocalKickoff } from '../../../utils/statisticsScoresTime';
 import LatestPlayStrip from './LatestPlayStrip.jsx';
 
 const teamLogo = (teamId) => `https://a.espncdn.com/i/teamlogos/nfl/500/${String(teamId).toLowerCase()}.png`;
@@ -64,9 +65,23 @@ function statusTone(status) {
 
 function statusMeta(game) {
   const network = getScoreNetworkLabel(game);
-  if (game.status === 'scheduled') return `${game.dateLabel} · ${network}`;
+  if (game.status === 'scheduled') {
+    const localKickoff = formatStatisticsScoresLocalKickoff(game.kickoff);
+    return `${localKickoff ?? game.dateLabel ?? 'Date TBD'} · ${network}`;
+  }
   if (game.status === 'offline') return `Cached · as of ${game.asOf}`;
   return network;
+}
+
+function statusLabel(game) {
+  if (game.status === 'scheduled') {
+    return formatStatisticsScoresLocalKickoff(game.kickoff)
+      ? 'Scheduled'
+      : (game.statusLabel ?? 'Scheduled');
+  }
+  return game.status === 'live'
+    ? `● ${game.statusLabel}`
+    : game.statusLabel;
 }
 
 function situationContent(game) {
@@ -118,9 +133,9 @@ export function CompactScorebug({ game, onOpen }) {
         {homePossession && <PossessionGlyph teamName={game.home.name} />}
       </span>
       <b className={homeWinner ? '' : 'is-muted'}>{game.score?.home ?? ''}</b>
-      <small>{game.status === 'live'
-        ? `● ${game.statusLabel}`
-        : game.statusLabel}</small>
+      <small>{game.status === 'scheduled'
+        ? (formatStatisticsScoresLocalKickoff(game.kickoff) ?? game.statusLabel)
+        : statusLabel(game)}</small>
     </button>
   );
 }
@@ -188,9 +203,7 @@ export default function GameScorebug({ game, onOpen }) {
         <span className="scores-scorebug-topline">
           <span className={`scores-status is-${statusTone(game.status)}`}>
             {game.status === 'live' && <span className="scores-live-dot" aria-hidden="true" />}
-            {game.status === 'live'
-              ? `Live · ${game.statusLabel}`
-              : game.statusLabel}
+            {game.status === 'live' ? `Live · ${game.statusLabel}` : statusLabel(game)}
           </span>
           {statusMeta(game) && <span>{statusMeta(game)}</span>}
         </span>

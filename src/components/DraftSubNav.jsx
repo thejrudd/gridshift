@@ -2,8 +2,6 @@ const VIEWS = [
   { id: 'war-room', label: 'War Room' },
   { id: 'my-board', label: 'Board' },
   { id: 'results', label: 'Results' },
-  { id: 'gauntlet', label: 'Gauntlet', disabled: true },
-  { id: 'tiers-runs', label: 'Tiers/Runs', disabled: true },
 ];
 
 export default function DraftSubNav({ activeView, onViewChange, disabledViews = {}, resultsLabel = 'Results' }) {

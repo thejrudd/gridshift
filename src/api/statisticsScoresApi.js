@@ -110,6 +110,21 @@ export async function getStatisticsScoresGameDetail(gameId, { phase, signal } = 
   return parseScoresResponse(response, 'Could not load BALLDONTLIE game detail.');
 }
 
+const STORY_STATS_PHASES = new Set(['pregame', 'live', 'postgame']);
+
+export async function getStatisticsScoresStory(gameId, phase, { signal } = {}) {
+  const normalizedPhase = String(phase ?? '').trim().toLowerCase();
+  if (!STORY_STATS_PHASES.has(normalizedPhase)) {
+    throw new Error('A valid StoryStats phase is required.');
+  }
+  const params = new URLSearchParams({ phase: normalizedPhase });
+  const response = await fetch(`/api/statistics/scores/game/${encodeURIComponent(gameId)}/story?${params}`, {
+    signal,
+    headers: { Accept: 'application/json' },
+  });
+  return parseScoresResponse(response, 'Could not load the StoryStats game story.');
+}
+
 export async function getStatisticsScoresPreseason({ season, source, signal } = {}) {
   const params = appendSource(new URLSearchParams({ season: String(season) }), source);
   const response = await fetch(`/api/statistics/scores/preseason?${params}`, {

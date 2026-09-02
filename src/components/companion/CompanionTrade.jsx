@@ -35,6 +35,8 @@ import TradeProposalPanel, { DEFAULT_PROPOSAL_FILTERS } from './trade/TradePropo
 import UpgradeFinderPage from './trade/UpgradeFinderPage';
 import ValuationInfoSheet from './trade/ValuationInfoSheet';
 import RosterBrowseModal from './trade/RosterBrowseModal';
+import TradeShareSheet from './trade/TradeShareSheet';
+import { buildTradeProposalSnapshot, buildTradeProposalSnapshotFromCurrentPerspective } from '../../utils/tradeProposal';
 import { UPGRADE_TRADE_POSTURES, normalizeRosterId, scheduleDeferredTradeTask } from './trade/tradeUiHelpers';
 
 // Derive league format and type from Sleeper league settings
@@ -202,11 +204,12 @@ function getFantasyAdpRows(response) {
 }
 // ── Main component ───────────────────────────────────────────────────────────
 
-export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, view = 'agent', onViewChange, onViewPlayer, prewarmAnalytics = false }) {
+export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, initialTradeProposal = null, onConsumeInitialTradeProposal, tradeProposalActions = null, view = 'agent', onViewChange, onViewPlayer, prewarmAnalytics = false }) {
   const {
     platform,
     rosters, leagueUsers, myRoster,
     selectedLeagueId, league, season, getUserDisplayName,
+    sleeperUser,
     scoringSettings,
     getTradedPicksForLeague,
     getLeagueDraftsForLeague,
@@ -295,6 +298,11 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
   const [statsModalPlayer, setStatsModalPlayer] = useState(null);
   const [statsRequested, setStatsRequested] = useState(() => view === 'intelligence' || view === 'upgrade');
   const [tradeAnalyticsRequested, setTradeAnalyticsRequested] = useState(() => view === 'intelligence' || view === 'upgrade');
+  const [tradeShareRequest, setTradeShareRequest] = useState(null);
+  const [tradeShareResult, setTradeShareResult] = useState(null);
+  const [tradeShareError, setTradeShareError] = useState('');
+  const [tradeShareSubmitting, setTradeShareSubmitting] = useState(false);
+  const [counterTarget, setCounterTarget] = useState(null);
   const [tradeIntelligence, setTradeIntelligence] = useState(null);
   const [tradeIntelligencePartnerId, setTradeIntelligencePartnerId] = useState(null);
   const [upgradeSearchResults, setUpgradeSearchResults] = useState(null);
@@ -926,6 +934,22 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
     setStatsModalPlayer(meta);
   }, [resolvePlayerModalMeta]);
 
+  const getTradeShareAssetValue = useCallback((asset) => {
+    if (asset?.type !== 'player') return null;
+    return playerTradeValueMap?.get(String(asset.id)) ?? null;
+  }, [playerTradeValueMap]);
+
+  const openTradeSharePlayer = useCallback((asset) => {
+    if (asset?.type !== 'player') return;
+    const meta = resolvePlayerModalMeta({
+      id: String(asset.id),
+      displayName: asset.label,
+      position: asset.position,
+      team: asset.team,
+    });
+    if (meta) onViewPlayer?.(meta.id, meta);
+  }, [onViewPlayer, resolvePlayerModalMeta]);
+
   const myRosterOpportunityPlayers = useMemo(
     () => [...(opportunityLayer?.rosterAnalysesById?.[myRosterData?.roster_id]?.rosterPlayers ?? [])]
       .sort((a, b) => (b.ppg ?? 0) - (a.ppg ?? 0) || a.name.localeCompare(b.name)),
@@ -1124,6 +1148,118 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
 
   const hasItems = showTradeBuilder && (yourSide.items.length > 0 || theirSide.items.length > 0);
   const hasDynastyFallback = showTradeBuilder && [...yourSide.items, ...theirSide.items].some((it) => it.dynastyFallback);
+
+  const getTradeParticipant = useCallback((rosterId) => {
+    const roster = rosterById.get(rosterId) ?? null;
+    const user = roster ? leagueUserById.get(roster.owner_id) : null;
+    return {
+      userId: roster?.owner_id ?? null,
+      rosterId: roster?.roster_id ?? rosterId ?? null,
+      name: user?.display_name ?? user?.username ?? getUserDisplayName(roster?.owner_id ?? ''),
+      teamName: user?.metadata?.team_name ?? roster?.metadata?.team_name ?? getUserDisplayName(roster?.owner_id ?? ''),
+      avatarHash: user?.avatar ?? null,
+    };
+  }, [getUserDisplayName, leagueUserById, rosterById]);
+
+  const buildCurrentTradeSnapshot = useCallback(() => {
+    if (!myRosterData?.roster_id || !partnerRosterId || !sleeperUser?.user_id) return null;
+    // A counter is authored by the participant opening this composer. The
+    // hydrated trade sides already represent the local user's roster as
+    // `yourSide`, regardless of who authored the current revision. Keeping
+    // that perspective here prevents counters from re-submitting the prior
+    // sender's assets under the new sender key.
+    return buildTradeProposalSnapshotFromCurrentPerspective({
+      leagueId: selectedLeagueId,
+      season,
+      currentParticipant: getTradeParticipant(myRosterData.roster_id),
+      partnerParticipant: getTradeParticipant(partnerRosterId),
+      currentSide: yourSide,
+      partnerSide: theirSide,
+      verdict,
+    });
+  }, [getTradeParticipant, myRosterData?.roster_id, partnerRosterId, selectedLeagueId, season, sleeperUser?.user_id, theirSide, verdict, yourSide]);
+
+  const buildEngineTradeSnapshot = useCallback((proposal) => {
+    if (!proposal?.targetRosterId || !myRosterData?.roster_id) return null;
+    const sumAssets = (assets = []) => assets.reduce((total, asset) => total + (Number(asset.value ?? asset.val) || 0), 0);
+    const outgoingTotal = sumAssets(proposal.outgoingAssets);
+    const incomingTotal = sumAssets(proposal.incomingAssets);
+    return buildTradeProposalSnapshot({
+      leagueId: selectedLeagueId,
+      season,
+      sender: getTradeParticipant(myRosterData.roster_id),
+      recipient: getTradeParticipant(proposal.targetRosterId),
+      senderAssets: proposal.outgoingAssets ?? [],
+      recipientAssets: proposal.incomingAssets ?? [],
+      totals: { sender: outgoingTotal, recipient: incomingTotal },
+      verdict: evaluateTrade(outgoingTotal, incomingTotal),
+    });
+  }, [getTradeParticipant, myRosterData?.roster_id, season, selectedLeagueId]);
+
+  useEffect(() => {
+    const snapshot = initialTradeProposal?.revision?.snapshot;
+    if (!initialTradeProposal?.id || !snapshot || !myRosterData?.roster_id || !sleeperUser?.user_id || !sleeperPlayers || Object.keys(sleeperPlayers).length === 0) return;
+    const senderRosterId = normalizeRosterId(snapshot.sender?.rosterId ?? initialTradeProposal.senderRosterId);
+    const recipientRosterId = normalizeRosterId(snapshot.recipient?.rosterId ?? initialTradeProposal.recipientRosterId);
+    const isCurrentSender = String(snapshot.sender?.userId ?? initialTradeProposal.senderUserId) === String(sleeperUser.user_id);
+    const ownSide = isCurrentSender ? snapshot.sender : snapshot.recipient;
+    const otherSide = isCurrentSender ? snapshot.recipient : snapshot.sender;
+    const otherRosterId = otherSide?.rosterId ?? (isCurrentSender ? initialTradeProposal.recipientRosterId : initialTradeProposal.senderRosterId);
+    const ownRosterId = isCurrentSender ? senderRosterId : recipientRosterId;
+    const hasAssets = (ownSide?.assets?.length ?? 0) + (otherSide?.assets?.length ?? 0) > 0;
+    if (!ownSide || !otherSide || !ownRosterId || String(ownRosterId) !== String(myRosterData.roster_id) || !hasAssets) return;
+    const picksFromAssets = (assets = [], ownerRosterId) => assets.filter((asset) => asset.type === 'pick').map((asset) => ({
+      year: String(asset.year),
+      round: Number(asset.round),
+      fromRosterId: String(asset.originalRosterId ?? asset.fromRosterId ?? ownerRosterId),
+      isOwn: String(asset.originalRosterId ?? asset.fromRosterId ?? ownerRosterId) === String(ownerRosterId),
+      key: String(asset.originalRosterId ?? asset.fromRosterId ?? ownerRosterId) === String(ownerRosterId)
+        ? `${asset.year}|${asset.round}`
+        : `${asset.year}|${asset.round}|from${asset.originalRosterId ?? asset.fromRosterId}`,
+    }));
+    setPartnerRosterId(normalizeRosterId(otherRosterId));
+    setYourPlayers((ownSide?.assets ?? []).filter((asset) => asset.type === 'player' && asset.id != null).map((asset) => String(asset.id)));
+    setYourPicks(picksEnabled ? picksFromAssets(ownSide?.assets, myRosterData.roster_id) : []);
+    setTheirPlayers((otherSide?.assets ?? []).filter((asset) => asset.type === 'player' && asset.id != null).map((asset) => String(asset.id)));
+    setTheirPicks(picksEnabled ? picksFromAssets(otherSide?.assets, otherRosterId) : []);
+    setCounterTarget(initialTradeProposal);
+    onConsumeInitialTradeProposal?.();
+  }, [initialTradeProposal, myRosterData?.roster_id, onConsumeInitialTradeProposal, picksEnabled, sleeperPlayers, sleeperUser?.user_id]);
+
+  const openTradeShare = useCallback((snapshot, mode = 'send', proposal = null) => {
+    if (!snapshot || !tradeProposalActions) return;
+    setTradeShareRequest({ snapshot, mode, proposal });
+    setTradeShareResult(null);
+    setTradeShareError('');
+  }, [tradeProposalActions]);
+
+  const submitTradeShare = useCallback(async (expiryPreset) => {
+    if (!tradeShareRequest || !tradeProposalActions) return;
+    setTradeShareSubmitting(true);
+    setTradeShareError('');
+    try {
+      const response = tradeShareRequest.mode === 'counter'
+        ? await tradeProposalActions.sendCounter(tradeShareRequest.proposal.id, tradeShareRequest.proposal.currentRevision, tradeShareRequest.snapshot, expiryPreset)
+        : await tradeProposalActions.sendProposal(
+          tradeShareRequest.snapshot,
+          tradeShareRequest.snapshot.recipient.userId,
+          tradeShareRequest.snapshot.recipient.rosterId,
+          expiryPreset,
+        );
+      setTradeShareResult(response);
+      if (tradeShareRequest.mode === 'counter') setCounterTarget(null);
+    } catch (error) {
+      setTradeShareError(error?.message ?? 'The trade proposal could not be sent.');
+    } finally {
+      setTradeShareSubmitting(false);
+    }
+  }, [tradeProposalActions, tradeShareRequest]);
+
+  const closeTradeShare = useCallback(() => {
+    setTradeShareRequest(null);
+    setTradeShareResult(null);
+    setTradeShareError('');
+  }, []);
   const suggestionBasePools = useMemo(() => {
     if (!showTradeBuilder || !adjustedKtcPlayers || !myRosterData?.roster_id || !partnerRosterId) return null;
 
@@ -1451,6 +1587,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
           onTradePostureChange={setUpgradeTradePostureLevel}
           onRunSearch={runUpgradeFinderSearch}
           onApplyProposal={applyTradeProposal}
+          onShareProposal={(proposal) => openTradeShare(buildEngineTradeSnapshot(proposal))}
           onOpenPlayer={openStatsModalForPlayer}
           onBack={() => onViewChange?.('agent')}
         />
@@ -1510,6 +1647,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
             setPickerOpen={setTradePickerOpen}
             openStatsModalForPlayer={openStatsModalForPlayer}
             clearTrade={clearTrade}
+            onShareTrade={() => openTradeShare(buildCurrentTradeSnapshot(), counterTarget ? 'counter' : 'send', counterTarget)}
             attribution={<TradeValueAttribution
               format={format}
               leagueType={leagueType}
@@ -1606,6 +1744,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
               onModeChange={setTradeProposalMode}
               onPartnerChange={switchPartnerTradeContext}
               onApplyProposal={applyTradeProposal}
+              onShareProposal={(proposal) => openTradeShare(buildEngineTradeSnapshot(proposal))}
               onOpenPlayer={openStatsModalForPlayer}
               isPreparingPartner={isTradeIntelligencePreparingPartner}
               isShowingStaleResults={isTradeIntelligenceShowingStaleResults}
@@ -1716,6 +1855,22 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
       )}
 
       {statsModal}
+
+      {tradeShareRequest && (
+        <TradeShareSheet
+          snapshot={tradeShareRequest.snapshot}
+          mode={tradeShareRequest.mode}
+          onSubmit={submitTradeShare}
+          onClose={closeTradeShare}
+          submitting={tradeShareSubmitting}
+          result={tradeShareResult}
+          error={tradeShareError}
+          viewerUserId={sleeperUser?.user_id}
+          valueResolver={getTradeShareAssetValue}
+          onOpenPlayer={openTradeSharePlayer}
+          onOpenProposals={() => onViewChange?.('inbox')}
+        />
+      )}
     </div>
   );
 }

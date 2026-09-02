@@ -161,6 +161,44 @@ test('Fantasy Live shows an inactive-season state instead of a stale league week
   await expect(page.getByText('Live scoring needs an allowed Sleeper league ID.', { exact: true })).toBeVisible();
 });
 
+test('Fantasy Live starts an allowlisted no-code session without showing the enable gate', async ({ page }) => {
+  let statusCalls = 0;
+  await page.unroute('**/api/live/status');
+  await page.route('**/api/live/status', (route) => {
+    statusCalls += 1;
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ok: true,
+        live: {
+          enabled: true,
+          tier: 'paid',
+          mockPlaysEnabled: false,
+          accessCodeRequired: false,
+          leagueAllowed: true,
+        },
+        session: { enabled: statusCalls > 1, canDisable: true },
+      }),
+    });
+  });
+  await page.route('**/api/live/session', (route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ ok: true, session: { enabled: true, canDisable: true } }),
+    });
+  });
+
+  await page.goto(FANTASY_LIVE_PRODUCTION_ROUTE);
+
+  await expect.poll(() => statusCalls).toBeGreaterThanOrEqual(2);
+  await expect(page.getByText('Turn on live scoring for this league', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Turn on Live' })).toHaveCount(0);
+  await expect(page.getByText(/No matchup games live|matchup games live/)).toBeVisible();
+});
+
 test('Fantasy Live keeps the access control available outside the active NFL season', async ({ page }) => {
   await page.unroute('**/api/live/status');
   await page.route('**/api/live/status', (route) => route.fulfill({

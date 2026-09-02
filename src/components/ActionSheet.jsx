@@ -13,6 +13,7 @@ export default function ActionSheet({
   onLegal,
   onAppTour,
   onExportImage,
+  onSharePage,
   predictionShareReady = false,
   predictionShareReason = '',
   predictionShareBlockedLabel = 'Complete Picks To Share',
@@ -166,6 +167,8 @@ export default function ActionSheet({
           <ActionRow label="Privacy & Attributions" onClick={onLegal} />
           <Divider />
           <ActionRow label="Guide" onClick={onGuide} />
+          <Divider />
+          <ActionRow label="Share this page" onClick={onSharePage} dataTour="share-page" />
           <Divider />
           <ActionRow label="App Tour" onClick={onAppTour} />
           {isPredictions && (

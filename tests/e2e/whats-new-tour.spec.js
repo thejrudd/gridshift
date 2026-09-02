@@ -95,8 +95,10 @@ test('full upgrade history replays every tour step', async ({ page, isMobile }) 
         selectedLeagueSeason: TEST_SEASON,
         currentLeagueSeason: TEST_SEASON,
       }));
-    const tooltipText = await tour.textContent();
-    expect(copyOptions.some((copy) => tooltipText.includes(copy.title) && tooltipText.includes(copy.body))).toBeTruthy();
+    await expect.poll(async () => {
+      const tooltipText = await tour.textContent();
+      return copyOptions.some((copy) => tooltipText.includes(copy.title) && tooltipText.includes(copy.body));
+    }).toBe(true);
 
     const advance = tour.getByRole('button', { name: index === steps.length - 1 ? 'Finish' : 'Next' });
     await expect(advance).toBeVisible();
@@ -113,15 +115,27 @@ test(HISTORICAL_TOUR_TEST, async ({ page }) => {
   await whatsNew.getByRole('button', { name: 'Show me' }).click();
 
   const tour = page.getByRole('dialog', { name: 'Feature tour' });
-  for (let index = 0; index < 3; index += 1) {
+  // Trade surfaces are current-season only. When this historical fixture
+  // reaches the old Trade History content step, the tour skips its unavailable
+  // anchor before continuing to the draft-history copy.
+  await expect(tour).toContainText('Defense rankings');
+  await tour.getByRole('button', { name: 'Next' }).click();
+  await expect(tour).toContainText('Trade History');
+  await tour.getByRole('button', { name: 'Next' }).click();
+  await expect(tour).toContainText('Browse Every Linked Season');
+  const tradeHistoryContentNext = tour.getByRole('button', { name: 'Next' });
+  if (await tradeHistoryContentNext.isVisible()) await tradeHistoryContentNext.click();
+  await expect.poll(async () => {
+    const text = await tour.textContent();
+    return text?.includes('2025 Historical Draft Results') || text?.includes('Review 2025 Draft History');
+  }, { timeout: 10_000 }).toBe(true);
+  if ((await tour.textContent())?.includes('2025 Historical Draft Results')) {
+    await expect(tour).toContainText('You are viewing 2025 league history, not the current 2026 league year.');
+    await expect(tour).toContainText('Results shows the selections recorded for this past season.');
     await tour.getByRole('button', { name: 'Next' }).click();
   }
-
-  await expect(tour).toContainText('2025 Historical Draft Results');
-  await expect(tour).toContainText('You are viewing 2025 league history, not the current 2026 league year.');
-  await expect(tour).toContainText('Results shows the selections recorded for this past season.');
-  await tour.getByRole('button', { name: 'Next' }).click();
   await expect(tour).toContainText('Review 2025 Draft History');
+  await expect(tour).toContainText('These are the recorded selections for the historical 2025 league year.');
   await expect(tour).toContainText('Switch to 2026 at the top of the page to return to your current league year.');
 });
 

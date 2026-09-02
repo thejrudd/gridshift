@@ -174,9 +174,9 @@ function cloneRecords(records, teamIds) {
 export function getCurrentPredictionSeason(date = new Date()) {
   const resolved = date instanceof Date ? date : new Date(date);
   if (Number.isNaN(resolved.getTime())) throw new TypeError('A valid date is required.');
-  return resolved.getMonth() >= PREDICTION_SEASON_START_MONTH
-    ? resolved.getFullYear()
-    : resolved.getFullYear() - 1;
+  return resolved.getUTCMonth() >= PREDICTION_SEASON_START_MONTH
+    ? resolved.getUTCFullYear()
+    : resolved.getUTCFullYear() - 1;
 }
 
 export function getCreatablePredictionSeasons(date = new Date()) {

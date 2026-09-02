@@ -9,11 +9,13 @@ const isolatedSource = source
 const {
   NFL_DRAFT_END_DATES,
   getFantasyRankingsDataMode,
+  getSeasonHint,
   isAfterNflDraft,
+  isTradeAvailableForSeason,
   isNflRegularSeasonStarted,
-} = new Function(`${isolatedSource}\nreturn { NFL_DRAFT_END_DATES, getFantasyRankingsDataMode, isAfterNflDraft, isNflRegularSeasonStarted };`)();
+} = new Function(`${isolatedSource}\nreturn { NFL_DRAFT_END_DATES, getFantasyRankingsDataMode, getSeasonHint, isAfterNflDraft, isTradeAvailableForSeason, isNflRegularSeasonStarted };`)();
 
-describe('fantasy rankings season availability', () => {
+describe('season availability', () => {
   it('uses an explicit NFL Draft end date before preseason ADP becomes eligible', () => {
     assert.equal(NFL_DRAFT_END_DATES[2026], '2026-04-25T23:59:59.999-04:00');
     assert.equal(isAfterNflDraft(2026, new Date('2026-04-25T23:59:59.999-04:00')), false);
@@ -28,15 +30,39 @@ describe('fantasy rankings season availability', () => {
   });
 
   it('stays scoring-led at and after the regular-season start, regardless of stats readiness', () => {
-    const regularSeasonStart = new Date(2026, 8, 10);
+    const regularSeasonStart = new Date('2026-09-10T00:00:00.000Z');
     assert.equal(isNflRegularSeasonStarted(2026, regularSeasonStart), true);
     assert.equal(getFantasyRankingsDataMode(2026, regularSeasonStart), 'scoring');
-    assert.equal(getFantasyRankingsDataMode(2026, new Date(2026, 8, 14, 12)), 'scoring');
+    assert.equal(getFantasyRankingsDataMode(2026, new Date('2026-09-14T12:00:00.000Z')), 'scoring');
   });
 
   it('keeps past seasons scoring-led and unsupported future seasons unavailable', () => {
     const currentPreseasonDate = new Date('2026-08-21T12:00:00-04:00');
     assert.equal(getFantasyRankingsDataMode(2025, currentPreseasonDate), 'scoring');
     assert.equal(getFantasyRankingsDataMode(2027, currentPreseasonDate), 'unavailable');
+  });
+
+  it('allows Trade only for the selected current league season', () => {
+    assert.equal(isTradeAvailableForSeason('2026', '2026'), true);
+    assert.equal(isTradeAvailableForSeason(2026, '2026'), true);
+    assert.equal(isTradeAvailableForSeason('2025', '2026'), false);
+    assert.equal(isTradeAvailableForSeason(null, '2026'), true);
+  });
+
+  it('resolves current-only hints against the linked league season', () => {
+    assert.deepEqual(
+      getSeasonHint({
+        capability: 'current-only',
+        feature: 'Trade',
+        season: '2025',
+        currentSeason: '2026',
+        seasonOptions: ['2026', '2025'],
+      }),
+      {
+        kind: 'current-only',
+        targetSeason: '2026',
+        message: "Trade is only available for the current 2026 league season. You're viewing 2025.",
+      },
+    );
   });
 });

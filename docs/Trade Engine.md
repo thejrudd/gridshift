@@ -14,9 +14,26 @@ The app has four different Trade surfaces:
 - `Agent`: manual trade building, valuation, and refinement
 - `Intelligence`: partner-specific trade ideas driven by roster needs and surplus
 - `Upgrades`: league-wide search for better players at a chosen position or target slot
-- `History`: a factual archive of finalized trades from the selected linked-league season and earlier
+- `History`: a factual archive of finalized trades from the selected linked-league season and earlier; its current-season workspace is available when the latest linked-league season is selected
+- `Proposals`: private GridShift proposal rooms for the two connected Sleeper participants in the active league; includes both incoming and outgoing proposals
+
+Agent, Intelligence, Upgrades, History, and Proposals are current-season surfaces. When a prior linked-league season is selected, the Trade section remains visible and navigable but shows a current-season hint with a one-tap switch back to the latest linked-league season. Trade actions from roster/player views and proposal polling remain unavailable until then. Historical league data and finalized transaction records remain available through the League views.
 
 These surfaces share some underlying valuation inputs, but they do not all use the exact same pipeline.
+
+## GridShift Trade Proposal Rooms
+
+Trade valuation remains local and is captured into an immutable snapshot when a proposal is sent. The server does not recompute KTC or roster-fit recommendations; it authorizes and persists the proposal only after checking the exact Sleeper league, season, two roster owners, and current player/draft-pick/FAAB ownership. The Proposals list includes the proposal for both participants, so the sender can review the outgoing conversation after sending it.
+
+The sidecar stores a separate `trade-proposals.sqlite` database under the persistent `/data` volume. Participant sessions and share capabilities are HMAC-hashed. A proposal can be sent from the Agent, Intelligence, or Upgrade surfaces, then revised through alternating counter-proposals. Each revision chooses one of the bounded expiries: 1 hour, end of day, 24 hours, 2 days, or 1 week. There is no permanent proposal option. Each revision snapshot treats its author as the current sender for status, expiry, and action semantics; when a viewer identity is available, the card presents that viewer's manager on the left and the other participant on the right, with an unidentified viewer falling back to the revision sender first. The proposal envelope retains both participants for access and original-proposal actions. The revision retains that sender's IANA time zone, so `end of day` is resolved from the sender's calendar day and the card can show the expiry in sender time; active proposal cards recalculate the countdown in real time and include seconds, while accepted or declined cards preserve a fixed terminal event time.
+
+When an open proposal expires, its full snapshot, revisions, and notifications are deleted. A proposal that reaches `accepted` leaves the response window and remains available until the accepting manager marks the Sleeper transaction done. A small tombstone retains the league/roster scope, fingerprint, expiry, and any recorded Sleeper outcome for the configured retention window (30 days by default), allowing the UI to explain that an unaccepted link expired without retaining the trade payload.
+
+Share URLs are opaque server capabilities. The dynamic `/trade/share/:token` page exposes the accepted rich bearer preview metadata to link unfurlers, while the GridShift page and all actions remain participant-gated. QR codes encode that same revocable URL; they do not carry raw trade JSON. Export image mode renders the readable trade snapshot and QR together in the screenshot view.
+
+The Proposals surface polls while GridShift is open and exposes `Counter`, a contextual `Withdraw` or `Decline` action, and `Accept`. Only the participant who authored the latest revision can withdraw it; the other participant can decline or accept that current offer. Acceptance changes the GridShift conversation to `accepted`, records which participant accepted the current revision and when, and creates a recipient-only acceptance message for the other manager. Once accepted, neither participant can counter, decline, or withdraw the proposal.
+
+Only the accepting manager sees the `What to do next` handoff: re-create the same Sends and Receives in Sleeper, send the actual trade to the other manager, return after Sleeper processes it, and use `Check Sleeper` followed by `Mark Done`. GridShift cannot submit the transaction to Sleeper. The accepted state, Sleeper's `possible_match` reconciliation result, and the final GridShift completion mark are separate states; an exact match is preferred, but the published Sleeper transaction payload may omit `adds`/`drops`, so a missing detail never becomes an automatic completion or decline.
 
 ## Core file map
 
