@@ -1,7 +1,26 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { getLiveGamePlays } from '../../src/api/liveApi.js';
+import { getLiveGamePlays, getLiveStatus } from '../../src/api/liveApi.js';
+
+test('Fantasy Live scopes status to the selected league without exposing credentials', async () => {
+  const originalFetch = globalThis.fetch;
+  let request = null;
+  globalThis.fetch = async (url, options) => {
+    request = { url: String(url), options };
+    return { ok: true, json: async () => ({ ok: true, live: {}, session: { enabled: false } }) };
+  };
+  try {
+    await getLiveStatus({ leagueId: 'league-73' });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.equal(request.url, '/api/live/status?leagueId=league-73');
+  assert.deepEqual(request.options.headers, { Accept: 'application/json' });
+  assert.equal(request.options.credentials, 'include');
+  assert.equal(request.url.includes('key='), false);
+});
 
 test('Fantasy Live serializes preseason play scope without exposing provider credentials', async () => {
   const originalFetch = globalThis.fetch;

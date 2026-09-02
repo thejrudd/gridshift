@@ -7,6 +7,14 @@ import { AVAILABLE_SLEEPER_SEASONS, useFantasyLeague } from '../context/SleeperC
 //                     view reports itself empty.
 export const CURRENT_LEAGUE_YEAR = AVAILABLE_SLEEPER_SEASONS[0];
 
+export function isTradeAvailableForSeason(selectedSeason, currentSeason) {
+  if (selectedSeason == null || currentSeason == null) return true;
+  const selectedSeasonKey = String(selectedSeason).trim();
+  const currentSeasonKey = String(currentSeason).trim();
+  if (!selectedSeasonKey || !currentSeasonKey) return true;
+  return selectedSeasonKey === currentSeasonKey;
+}
+
 // Preseason fantasy rankings are only eligible once that season's NFL Draft
 // has concluded. Keep this intentionally explicit: a new season must add its
 // verified end date instead of inheriting an assumed calendar rule.
@@ -31,14 +39,14 @@ export function isNflRegularSeasonStarted(season, date = new Date()) {
   const seasonYear = Number(season);
   if (!Number.isInteger(seasonYear)) return false;
 
-  const currentYear = date.getFullYear();
+  const currentYear = date.getUTCFullYear();
   if (seasonYear < currentYear) return true;
   if (seasonYear > currentYear) return false;
 
-  const septemberFirst = new Date(currentYear, 8, 1);
-  const daysUntilMonday = (8 - septemberFirst.getDay()) % 7;
+  const septemberFirst = new Date(Date.UTC(currentYear, 8, 1));
+  const daysUntilMonday = (8 - septemberFirst.getUTCDay()) % 7;
   const firstMonday = 1 + daysUntilMonday;
-  const regularSeasonStart = new Date(currentYear, 8, firstMonday + 3);
+  const regularSeasonStart = new Date(Date.UTC(currentYear, 8, firstMonday + 3));
   return date >= regularSeasonStart;
 }
 
@@ -51,7 +59,7 @@ export function getFantasyRankingsDataMode(season, date = new Date()) {
   const seasonYear = Number(season);
   if (!Number.isInteger(seasonYear)) return 'unavailable';
 
-  const currentYear = date.getFullYear();
+  const currentYear = date.getUTCFullYear();
   if (seasonYear < currentYear) return 'scoring';
   if (seasonYear > currentYear) return 'unavailable';
   if (isNflRegularSeasonStarted(seasonYear, date)) return 'scoring';
@@ -62,20 +70,23 @@ export function getFantasyRankingsDataMode(season, date = new Date()) {
  * Pure hint resolver — returns null or { kind, targetSeason, message }.
  * Views pass their own emptiness; this never guesses from render output.
  */
-export function getSeasonHint({ capability = 'historical-ok', isEmpty = false, feature = 'This view', season, seasonOptions = [] }) {
+export function getSeasonHint({ capability = 'historical-ok', isEmpty = false, feature = 'This view', season, seasonOptions = [], currentSeason = CURRENT_LEAGUE_YEAR }) {
   const seasonKey = String(season ?? '');
   if (!seasonKey) return null;
   const options = seasonOptions.map(String);
-  const isCurrent = seasonKey === String(CURRENT_LEAGUE_YEAR);
+  const currentSeasonKey = String(currentSeason ?? CURRENT_LEAGUE_YEAR);
+  const isCurrent = seasonKey === currentSeasonKey;
 
   if (capability === 'current-only' && !isCurrent) {
-    const target = options.find((year) => year === String(CURRENT_LEAGUE_YEAR));
+    const target = options.find((year) => year === currentSeasonKey);
     if (!target) return null;
     return {
       kind: 'current-only',
       targetSeason: target,
       message: feature === 'Fantasy Live'
         ? `Fantasy Live is only available for the current league year with active fantasy matchups. You're viewing ${seasonKey}.`
+        : feature === 'Trade'
+          ? `Trade is only available for the current ${currentSeasonKey} league season. You're viewing ${seasonKey}.`
         : `${feature} follows the current season — you're viewing ${seasonKey}.`,
     };
   }
@@ -97,7 +108,7 @@ export function getSeasonHint({ capability = 'historical-ok', isEmpty = false, f
 }
 
 /** Context-aware wrapper used by SeasonHintBanner. */
-export function useSeasonHint({ capability, isEmpty, feature }) {
+export function useSeasonHint({ capability, isEmpty, feature, currentSeason }) {
   const { season, linkedLeagueSeasonOptions, changeSeason, seasonSwitching } = useFantasyLeague();
   const hint = getSeasonHint({
     capability,
@@ -105,6 +116,7 @@ export function useSeasonHint({ capability, isEmpty, feature }) {
     feature,
     season,
     seasonOptions: linkedLeagueSeasonOptions ?? [],
+    currentSeason,
   });
   return hint ? { ...hint, changeSeason, seasonSwitching } : null;
 }

@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
-import { getStatisticsScoresGameDetail } from '../../../api/statisticsScoresApi';
+import { getStatisticsScoresGameDetail, getStatisticsScoresStory } from '../../../api/statisticsScoresApi';
 import { useTheme } from '../../../context/ThemeContext';
 import { getTeamVisualTheme, pickReadableForeground } from '../../../utils/teamVisualTheme';
 import { buildScoreDetailFromGame } from '../../../utils/balldontlieNflScoreboard';
@@ -9,6 +9,7 @@ import { getDriveNetYards, isFieldFlipped } from '../../../utils/nflPlays/fieldG
 import { DriveField } from '../../nflPlays/DriveField.jsx';
 import { WinProbabilityChart } from '../../nflPlays/WinProbabilityChart.jsx';
 import { PlayCard } from './PlayCard.jsx';
+import StoryStatsPanel from './StoryStatsPanel.jsx';
 
 const SECTIONS = [
   { id: 'overview', label: 'Overview' },
@@ -16,14 +17,62 @@ const SECTIONS = [
   { id: 'players', label: 'Players' },
   { id: 'scoring', label: 'Scoring' },
   { id: 'plays', label: 'Play-by-Play' },
+  { id: 'story', label: 'Game Story' },
 ];
 // The server keeps team/player detail on its longer cache while projecting the
 // canonical play snapshot every eight seconds. Refreshing the envelope at the
 // play cadence keeps this feed aligned without multiplying upstream box-score
 // work.
 const LIVE_DETAIL_REFRESH_INTERVAL_MS = 8_000;
+const STORY_STATS_PREGAME_WINDOW_MS = 60 * 60_000;
+const STORY_STATS_LIVE_STATUSES = new Set(['live', 'halftime', 'delayed']);
 
 const teamLogo = (teamId) => `https://a.espncdn.com/i/teamlogos/nfl/500/${String(teamId).toLowerCase()}.png`;
+
+function resolveStoryStatsContext({ provider, bdlGameId, status, kickoff, livePeriod }, gameKey, nowMs = Date.now()) {
+  if (provider !== 'balldontlie' || !bdlGameId) {
+    return { key: `${gameKey}:unavailable`, phase: null, shouldRequest: false, status: 'unavailable' };
+  }
+
+  if (status === 'scheduled') {
+    const kickoffMs = Date.parse(kickoff ?? '');
+    if (!Number.isFinite(kickoffMs)) {
+      return { key: `${gameKey}:pregame`, phase: 'pregame', shouldRequest: false, status: 'idle' };
+    }
+    const openAtMs = kickoffMs - STORY_STATS_PREGAME_WINDOW_MS;
+    return {
+      key: `${gameKey}:pregame`,
+      phase: 'pregame',
+      shouldRequest: nowMs >= openAtMs,
+      waitMs: Math.max(0, openAtMs - nowMs),
+      status: 'idle',
+    };
+  }
+
+  if (status === 'final') {
+    return { key: `${gameKey}:postgame`, phase: 'postgame', shouldRequest: true, status: 'idle' };
+  }
+
+  if (STORY_STATS_LIVE_STATUSES.has(status)) {
+    const period = Number(livePeriod);
+    return {
+      key: `${gameKey}:live:${Number.isInteger(period) && period > 0 ? period : 'current'}`,
+      phase: 'live',
+      period: Number.isInteger(period) && period > 0 ? period : null,
+      shouldRequest: true,
+      status: 'idle',
+    };
+  }
+
+  return { key: `${gameKey}:unavailable`, phase: null, shouldRequest: false, status: 'unavailable' };
+}
+
+function storiesFromPayload(payload) {
+  if (Array.isArray(payload?.stories)) return payload.stories;
+  if (payload?.story && typeof payload.story === 'object') return [payload.story];
+  if (Array.isArray(payload?.data)) return payload.data;
+  return [];
+}
 function getNumericRatio(stat, side) {
   const ratio = side === 'away' ? stat.awayRatio : stat.homeRatio;
   if (Number.isFinite(ratio)) return ratio;
@@ -524,6 +573,111 @@ export default function ScoresGameDrilldown({ game, fixtureDetail = null, onBack
       error: null,
     }, [detailState, detailsProvider, gameKey]);
   const { darkMode } = useTheme();
+  const [storyNow, setStoryNow] = useState(() => Date.now());
+  const storyProvider = game.provider;
+  const storyGameId = game.bdlGameId;
+  const storyStatus = game.status;
+  const storyKickoff = game.kickoff;
+  const storyLivePeriod = game.live?.period;
+  const storyContext = useMemo(
+    () => resolveStoryStatsContext({
+      provider: storyProvider,
+      bdlGameId: storyGameId,
+      status: storyStatus,
+      kickoff: storyKickoff,
+      livePeriod: storyLivePeriod,
+    }, gameKey, storyNow),
+    [gameKey, storyGameId, storyKickoff, storyLivePeriod, storyNow, storyProvider, storyStatus],
+  );
+  const [storyRetry, setStoryRetry] = useState(0);
+  const [storyState, setStoryState] = useState({
+    key: storyContext.key,
+    status: storyContext.status,
+    stories: [],
+    error: null,
+    quota: null,
+  });
+  const visibleStoryState = storyState.key === storyContext.key
+    ? storyState
+    : {
+      key: storyContext.key,
+      status: storyContext.status,
+      stories: [],
+      error: null,
+      quota: null,
+  };
+
+  useEffect(() => {
+    // StoryStats is an optional, request-metered enrichment. Only spend a
+    // provider call when the user opens its dedicated drilldown section; the
+    // score, detail, and play-by-play tabs remain independent of the story
+    // budget.
+    if (section !== 'story') return undefined;
+
+    let timerId = null;
+    if (!storyContext.shouldRequest) {
+      setStoryState((current) => current.key === storyContext.key
+        ? { ...current, status: storyContext.status }
+        : {
+          key: storyContext.key,
+          status: storyContext.status,
+          stories: [],
+          error: null,
+          quota: null,
+        });
+      if (storyContext.waitMs > 0) {
+        timerId = window.setTimeout(() => setStoryNow(Date.now()), storyContext.waitMs + 50);
+      }
+      return () => {
+        if (timerId) window.clearTimeout(timerId);
+      };
+    }
+
+    const controller = new AbortController();
+    let stopped = false;
+    setStoryState((current) => ({
+      key: storyContext.key,
+      status: 'loading',
+      stories: current.key.startsWith(gameKey) ? current.stories : [],
+      error: null,
+      quota: current.key.startsWith(gameKey) ? current.quota : null,
+    }));
+
+    async function loadStory() {
+      try {
+        const payload = await getStatisticsScoresStory(storyGameId, storyContext.phase, {
+          signal: controller.signal,
+        });
+        if (stopped || controller.signal.aborted) return;
+        setStoryState({
+          key: storyContext.key,
+          status: 'ready',
+          stories: storiesFromPayload(payload),
+          error: null,
+          quota: payload.quota ?? payload.storyStats ?? payload.accounting ?? null,
+        });
+      } catch (error) {
+        if (error.name === 'AbortError' || controller.signal.aborted || stopped) return;
+        setStoryState((current) => current.key === storyContext.key
+          ? { ...current, status: 'error', error: error.message }
+          : {
+            key: storyContext.key,
+            status: 'error',
+            stories: [],
+            error: error.message,
+            quota: null,
+          });
+      }
+    }
+
+    void loadStory();
+    return () => {
+      stopped = true;
+      controller.abort();
+      if (timerId) window.clearTimeout(timerId);
+    };
+  }, [gameKey, section, storyContext, storyRetry, storyGameId]);
+
   useEffect(() => {
     if (fixtureData || detailsProvider !== 'balldontlie' || !game.bdlGameId) return undefined;
     const controller = new AbortController();
@@ -648,6 +802,18 @@ export default function ScoresGameDrilldown({ game, fixtureDetail = null, onBack
       {section === 'players' && <PlayerStats detail={detail} />}
       {section === 'scoring' && <ScoringSummary detail={detail} />}
       {section === 'plays' && <PlayByPlay detail={detail} participants={participants} />}
+      {section === 'story' && (
+        <StoryStatsPanel
+          stories={visibleStoryState.stories}
+          status={visibleStoryState.status}
+          error={visibleStoryState.error}
+          phase={storyContext.phase}
+          gameStatus={game.status}
+          statusLabel={detail.statusLabel}
+          quota={visibleStoryState.quota}
+          onRetry={() => setStoryRetry((current) => current + 1)}
+        />
+      )}
     </div>
   );
 }

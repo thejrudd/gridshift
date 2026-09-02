@@ -1,7 +1,7 @@
 {
   "name": "gridshift",
   "private": true,
-  "version": "8.8.3",
+  "version": "8.9.0",
   "description": "An interactive NFL season planner and fantasy football companion.",
   "license": "MIT",
   "repository": {
@@ -28,7 +28,7 @@
     "test:e2e:tour": "TMPDIR=/tmp playwright test tests/e2e/whats-new-tour.spec.js --config=playwright.tour.config.js",
     "test:e2e:headed": "TMPDIR=/tmp playwright test --headed",
     "test:e2e:ui": "TMPDIR=/tmp playwright test --ui",
-    "generate-pwa-assets": "pwa-assets-generator --preset minimal public/icons/icon.svg"
+    "generate-pwa-assets": "pwa-assets-generator --preset minimal public/icons/icon.png"
   },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.10",

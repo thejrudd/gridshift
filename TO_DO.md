@@ -45,7 +45,7 @@ GridShift is a labor-of-love project: it should create something genuinely usefu
 
 - **Companion Roster draft-market lens (tabled)** - Revisit extending optional draft-market context into roster values only after validating coverage, league-format behavior, and a clear plan for IDP or missing-player estimates. The current server-only BALLDONTLIE ADP enrichment is limited to preseason Rankings and Draft decisions and does not replace league-aware roster values.
 - **League-scoped shareable links (tabled from v6.5)** - Revisit after current performance and drilldown unification priorities. Scope remains: league-aware Companion/Trade URLs, league id format decision, ownership validation, connect-flow handoff, mismatch UX, and strict shareability boundaries.
-- **Shareable-link first phase (tabled from v6.3)** - Revisit page + selected-player URL sharing after the current Companion/Trade stabilization passes are complete.
+- **Dynamic social/embed cards** - Vite now serves route-aware HTML metadata during development and emits static preview entry points for the main routes and known NFL team pages; the client also updates metadata after navigation. Add server-side or edge-rendered metadata for arbitrary query-driven player/game pages, canonical preview images, and a focused public iframe route when social crawlers and league-safe embeds are worth the added hosting boundary.
 - **Season Narrative (deferred)** - Revisit only if a practical in-browser generation path matures; keep the core feature free and avoid making a hosted AI service or paywall a requirement.
 - **Per-team detail theming (deferred from v3.0)** - Do not pursue as a separate feature while global favorite-team theming remains the app-wide accent model.
 
@@ -55,6 +55,10 @@ GridShift is a labor-of-love project: it should create something genuinely usefu
 - **Pretext evaluation** - Investigate how Pretext's rich-text / structured-editor concepts could support future in-app note-taking, report building, annotation, or editorial workflows tied to Trade, Draft Coach, or Statistics drilldowns.
 - **LeagueLogs fantasy API evaluation** - Evaluate whether the free LeagueLogs API can supplement Trade, Companion, or Scout with redraft/dynasty player values, rookie pick values, Sleeper-keyed player data, player status/news blurbs, and NFL state. Verify data provenance, refresh cadence, attribution requirements, durability, and licensing before use. Reddit note: [Built a free fantasy football API](https://www.reddit.com/r/fantasyfootballcoding/comments/1t1xzg4/built_a_free_fantasy_football_api_redraft_dynasty/); docs: [developer.leaguelogs.com](https://developer.leaguelogs.com).
 - **Optional hosted-deployment architecture** — Keep GridShift free, open source, ad-free, and self-hostable without authentication. If future hosted deployments need access control or optional memberships to cover their own hosting/API costs, keep those services opt-in, host-controlled, and separate from the core application. Support project sustainability through voluntary contributions, sponsorships, paid official hosting, or support services—not required royalties on independent hosts.
+
+### Draft Assistant
+
+- **Draft strategy modes (tabled)** — Revisit the former Gauntlet and Tiers/Runs concepts only after defining the user problem, workflow, and success criteria; they are intentionally not part of the current Draft navigation or route model.
 
 ### Season Predictions (Unblocked When Data Available)
 

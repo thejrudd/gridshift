@@ -25,6 +25,7 @@ export default function Sidebar({
   onLegal,
   onAppTour,
   onGuide,
+  onSharePage,
   onExportImage,
   predictionShareReady = false,
   predictionShareReason = '',
@@ -42,9 +43,11 @@ export default function Sidebar({
   collapsed,
   onToggleCollapse,
   leagueDisabled = false,
+  tradeDisabled = false,
+  tradeDisabledTitle = 'Trade is not available for the connected platform.',
+  tradeUnreadCount = 0,
 }) {
   const { isConnected, disconnect } = useSleeperLeague();
-  const tradeDisabled = false;
 
   return (
     <aside className="app-sidebar">
@@ -52,7 +55,7 @@ export default function Sidebar({
       <div className="sidebar-brand" style={{ paddingRight: 44, position: 'relative' }}>
         <div className="sidebar-brand__wordmark font-display font-bold leading-none">
           <span style={{ color: 'var(--color-label)' }}>GRID</span>
-          <span style={{ color: 'var(--color-label-secondary)' }}>SHIFT</span>
+          <span style={{ color: 'var(--color-signature)' }}>SHIFT</span>
         </div>
         <div className="sidebar-brand__season font-semibold">
           2026 SEASON
@@ -165,6 +168,8 @@ export default function Sidebar({
           icon={<TradeIcon />}
           label="Trade"
           disabled={tradeDisabled}
+          disabledTitle={tradeDisabledTitle}
+          notificationCount={tradeUnreadCount}
           collapsed={collapsed}
         />
         <SidebarNavItem
@@ -264,6 +269,7 @@ export default function Sidebar({
               : 'Actions'}
         </div>
         <SidebarAction label="Guide" onClick={onGuide} dataTour="app-guide" />
+        <SidebarAction label="Share this page" onClick={onSharePage} dataTour="share-page" />
         {activeTab === 'predictions' && (
           <>
             <SidebarAction
@@ -459,26 +465,54 @@ function SidebarProgressBar({ label, value, total, complete, status = 'incomplet
   );
 }
 
-function SidebarNavItem({ active, onClick, icon, label, beta, alpha, collapsed, disabled = false, disabledTitle = null, dataTour = null }) {
+function SidebarNavItem({ active, onClick, icon, label, beta, alpha, collapsed, disabled = false, disabledTitle = null, dataTour = null, notificationCount = 0 }) {
+  const numericNotificationCount = Number(notificationCount);
+  const unreadCount = Number.isFinite(numericNotificationCount)
+    ? Math.max(0, Math.floor(numericNotificationCount))
+    : 0;
+  const hasNotification = !disabled && unreadCount > 0;
+  const accessibleLabel = hasNotification
+    ? `${label}, ${unreadCount} unread proposal updates`
+    : label;
+
   return (
     <button
       onClick={disabled ? undefined : onClick}
       className={`sidebar-nav-item${active ? ' active' : ''}${disabled ? ' is-disabled' : ''}`}
       data-tour={dataTour ?? `tab-${label.toLowerCase()}`}
       aria-current={active ? 'page' : undefined}
+      aria-label={accessibleLabel}
       aria-disabled={disabled ? 'true' : undefined}
       disabled={disabled}
-      title={disabled ? (disabledTitle ?? 'This section is not available for the connected platform.') : (collapsed ? label : undefined)}
+      title={disabled ? (disabledTitle ?? 'This section is not available for the connected platform.') : (collapsed ? accessibleLabel : undefined)}
     >
-      <span className="sidebar-nav-icon">{icon}</span>
+      <span className={`sidebar-nav-icon${hasNotification ? ' is-notifying' : ''}`}>
+        {icon}
+        {collapsed && hasNotification && <UnreadNotificationBadge count={unreadCount} />}
+      </span>
       {!collapsed && (
-        <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          {label}
-          {beta && <BetaBadge />}
-          {alpha && <AlphaBadge />}
+        <span className="sidebar-nav-label">
+          <span>{label}</span>
+          <span className="sidebar-nav-label__meta">
+            {beta && <BetaBadge />}
+            {alpha && <AlphaBadge />}
+            {hasNotification && <UnreadNotificationBadge count={unreadCount} />}
+          </span>
         </span>
       )}
     </button>
+  );
+}
+
+function UnreadNotificationBadge({ count }) {
+  return (
+    <span
+      className="sidebar-nav-notification"
+      aria-hidden="true"
+      data-testid="sidebar-trade-notification"
+    >
+      {count > 99 ? '99+' : count}
+    </span>
   );
 }
 

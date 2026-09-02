@@ -8,13 +8,13 @@ const FANTASY_VIEW_ALIASES = new Map([
   ['defense', 'defenses'],
 ]);
 const LEAGUE_VIEWS = new Set(['standings', 'history', 'activity']);
-const TRADE_VIEWS = new Set(['agent', 'intelligence', 'upgrade', 'history']);
+const TRADE_VIEWS = new Set(['agent', 'intelligence', 'upgrade', 'history', 'inbox']);
 const STATISTICS_VIEWS = new Set(['browser', 'team', 'player', 'schedule', 'scores', 'standings', 'game']);
 const STATISTICS_MODES = new Set(['game', 'fantasy', 'visual']);
 const STATISTICS_SCHEDULE_MODES = new Set(['week', 'team']);
 const STATISTICS_SCHEDULE_FILTERS = new Set(['international', 'primetime', 'holiday']);
 const SCOUT_VIEWS = new Set(['prospects', 'picks', 'results']);
-const DRAFT_VIEWS = new Set(['war-room', 'my-board', 'results', 'gauntlet', 'tiers-runs']);
+const DRAFT_VIEWS = new Set(['war-room', 'my-board', 'results']);
 
 function normalizeCompanionView(view) {
   const aliased = FANTASY_VIEW_ALIASES.get(view) ?? view;
@@ -68,6 +68,7 @@ const DEFAULT_ROUTE = {
   tradeSide: null,
   tradePartnerRosterId: null,
   tradeOtherPlayerId: null,
+  tradeShareToken: null,
   scoutView: 'prospects',
   draftView: 'war-room',
   sleeperDraftId: null,
@@ -384,6 +385,7 @@ export function normalizeAppRoute(route = {}) {
       tradeSide: route.tradeSide === 'get' ? 'get' : route.tradeSide === 'give' ? 'give' : null,
       tradePartnerRosterId: normalizePlayerId(route.tradePartnerRosterId),
       tradeOtherPlayerId: normalizePlayerId(route.tradeOtherPlayerId),
+      tradeShareToken: normalizePlayerId(route.tradeShareToken),
     };
   }
 
@@ -527,6 +529,7 @@ export function parseAppRoute(pathname = '/', search = '') {
         tradeSide: parseQueryValue(searchParams, 'side'),
         tradePartnerRosterId: parseQueryValue(searchParams, 'partner'),
         tradeOtherPlayerId: parseQueryValue(searchParams, 'other'),
+        tradeShareToken: parseQueryValue(searchParams, 'share'),
       });
     case 'scout':
       return normalizeAppRoute({ activeTab: 'scout', scoutView: subview });
@@ -664,6 +667,7 @@ export function buildAppPath(route) {
         ['side', normalized.tradeSide],
         ['partner', normalized.tradePartnerRosterId],
         ['other', normalized.tradeOtherPlayerId],
+        ['share', normalized.tradeShareToken],
       ])}`;
     case 'predictions':
     default:
@@ -725,6 +729,7 @@ export function isSameAppRoute(a, b) {
     && left.tradeSide === right.tradeSide
     && left.tradePartnerRosterId === right.tradePartnerRosterId
     && left.tradeOtherPlayerId === right.tradeOtherPlayerId
+    && left.tradeShareToken === right.tradeShareToken
     && left.scoutView === right.scoutView
     && left.draftView === right.draftView
     && left.sleeperDraftId === right.sleeperDraftId

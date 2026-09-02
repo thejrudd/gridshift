@@ -180,7 +180,14 @@ export function buildPaceSeries({
   liveSnapshot = null,
   milestonePoints = 5,
   reconcileToTotals = false,
-  // Accumulate strictly along the chart's own axis instead of by timestamp.
+  // The chart plots events by game progress, while live probability snapshots
+  // may still need wall-clock ordering to account for staggered games. Keep
+  // those two orderings independent so a later kickoff cannot make an
+  // earlier game's positive score draw backwards on the plotted axis.
+  scoreAxisIsAuthoritative = false,
+  // Accumulate the snapshot/player context strictly along the chart's own
+  // axis instead of by timestamp. `scoreAxisIsAuthoritative` handles the
+  // plotted score coordinates independently for production.
   //
   // A live session can rely on the two agreeing: plays arrive in order and are
   // stamped as they land. A replay cannot — position comes from where a play
@@ -231,9 +238,10 @@ export function buildPaceSeries({
     return {
       ...point,
       ...resolved,
-      // Demo probability reconstruction may calculate its own current totals.
-      // Keep the calibrated chart coordinates as the visual source of truth.
-      ...(reconcileToTotals ? { a: point.a, b: point.b } : {}),
+      // Probability reconstruction may calculate its own current totals. Keep
+      // the event-axis chart coordinates as the visual source of truth when
+      // that axis is authoritative.
+      ...(reconcileToTotals || scoreAxisIsAuthoritative ? { a: point.a, b: point.b } : {}),
     };
   };
 
@@ -262,10 +270,16 @@ export function buildPaceSeries({
           return Number.isFinite(candidateAt) && candidateAt <= momentAt;
         })
       : scored.slice(0, itemIndex + 1);
+    const scoreEventsAtMoment = scoreAxisIsAuthoritative && !reconcileToTotals
+      ? scored.slice(0, itemIndex + 1)
+      : eventsAtMoment;
     const currentByPlayer = new Map();
-    const running = eventsAtMoment.reduce((totalsAtMoment, candidate) => {
+    const running = scoreEventsAtMoment.reduce((totalsAtMoment, candidate) => {
       const pointsForPlay = (Number(candidate.event.pts) || 0) * estimateScale[candidate.side];
       totalsAtMoment[candidate.side] += pointsForPlay;
+      return totalsAtMoment;
+    }, { a: 0, b: 0 });
+    eventsAtMoment.forEach((candidate) => {
       const contributors = candidate.event.contributors?.length
         ? candidate.event.contributors
         : [{ playerId: candidate.event.playerId, pts: candidate.event.pts }];
@@ -282,8 +296,7 @@ export function buildPaceSeries({
           (currentByPlayer.get(playerId) ?? 0) + contribution,
         );
       });
-      return totalsAtMoment;
-    }, { a: 0, b: 0 });
+    });
     const x = Math.min(span, item.x);
     const a = round1(reconcileToTotals
       ? Math.min(finalA, Math.max(0, running.a))

@@ -50,6 +50,16 @@ test('ordering by timestamp is what produced the wall', () => {
   assert.notEqual(beforeClose.a, 40);
 });
 
+test('production score paths follow game progress while probability keeps timestamp context', () => {
+  const { points } = build(scrambled, {
+    snapshotAt: () => ({ a: 99, b: 88, p: 61 }),
+    scoreAxisIsAuthoritative: true,
+  });
+
+  assert.deepEqual(points.slice(1, -1).map((point) => point.a), [10, 20, 30, 40]);
+  assert.deepEqual(points.slice(1, -1).map((point) => point.p), [61, 61, 61, 61]);
+});
+
 test('events in agreement give the same answer either way', () => {
   const ordered = scrambled.map((event, index) => ({ ...event, at: index * 100 }));
   const byOrder = build(ordered, { accumulateInOrder: true }).points.map((p) => p.a);
