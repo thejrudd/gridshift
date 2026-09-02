@@ -766,10 +766,9 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
     mergedIDPMap,
   ]);
 
-  // Redraft picks represent the player range expected at that selection. Use
-  // Draft's neutral, league-scored ranking to choose the range and canonical
-  // Trade values to price it; retain KTC tiers while the calibration is sparse.
-  // Dynasty leagues continue to use direct KTC RDP values.
+  // Redraft picks use one league-scored, round-level baseline. The pick's
+  // current owner must not change its value because Sleeper does not assign a
+  // reliable future slot before the draft.
   const pickValueMap = useMemo(() => {
     if (format !== 'redraft' || !adjustedKtcPlayers?.length || !rosters?.length) return null;
     return computeRedraftPickValues(adjustedKtcPlayers, rosters.length, leagueType, {

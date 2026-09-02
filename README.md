@@ -130,12 +130,11 @@ Draft Sync is an optional capability of the existing API sidecar, not a required
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) + optional Node API sidecar |
 
-## What's New in v8.9.0
+## What's New in v8.9.1
 
-- **Trade Proposals** — Create private, Sleeper-scoped trade conversations with expiry controls, counters, accept/decline actions, unread updates, and participant-only access.
-- **Trade sharing and follow-through** — Share opaque proposal links or QR codes, preview the complete exchange, and continue accepted trades in Sleeper before reconciling and marking them done in GridShift.
-- **Page sharing and live-data improvements** — Share the current page with route-aware metadata, while Statistics Scores and Fantasy Live gain stronger provider-backed timing, replay, and optional StoryStats handling.
-- **Regression coverage and documentation** — Add focused Trade Proposal, StoryStats, live-data, sharing, route, and responsive coverage with updated deployment and feature references.
+- **Trade pick clarity** — Keep future pick labels to their guaranteed year and round, without implying a projected slot or current quality tier.
+- **Stable Trade pick values** — Use one value for each tradable pick year and round, independent of its original roster owner, while preserving year-based uncertainty discounts.
+- **Regression coverage and documentation** — Add focused coverage and update the Trade references for the corrected pick-label and valuation boundaries.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 

@@ -18,7 +18,7 @@ export default function TradePickPicker({
     return owned
       .filter(p => !excludeSet.has(p.key))
       .map(p => {
-        const { val, displayInfo, quality, valueQuality } = valueDraftPick(p, {
+        const { val, displayInfo } = valueDraftPick(p, {
           rosters,
           ktcPlayers,
           leagueType,
@@ -32,18 +32,10 @@ export default function TradePickPicker({
         )})`;
         return {
           ...p,
-          quality,
-          valueQuality,
           originLabel,
           val,
           label: displayInfo.label,
           displayMode: displayInfo.displayMode,
-          lockedSlot: displayInfo.lockedSlot ?? null,
-          pickNumberLabel: displayInfo.pickNumberLabel ?? null,
-          pickRangeLabel: displayInfo.pickRangeLabel ?? null,
-          cardHeadline: displayInfo.cardHeadline ?? null,
-          cardMetaLabel: displayInfo.cardMetaLabel ?? null,
-          sortSlot: displayInfo.sortSlot ?? null,
         };
       })
       .sort(compareDraftPickAssets);

@@ -3,7 +3,7 @@ import { memo, useState, useEffect, useMemo, useCallback, useDeferredValue, useR
 import { useSleeperStats } from '../../../context/SleeperContext';
 import { useTheme } from '../../../context/ThemeContext';
 import { fmtKtcValue } from '../../../utils/ktcApi';
-import { compareDraftPickAssets } from '../../../utils/draftPickDisplay';
+import { compareDraftPickAssets, getDraftPickLabel } from '../../../utils/draftPickDisplay';
 import useMediaQuery from '../../../hooks/useMediaQuery.js';
 import CompanionAssetRow from '../CompanionAssetRow.jsx';
 import { CompanionSelectorButton, CompanionSelectorRail } from '../CompanionSelectorControls.jsx';
@@ -38,23 +38,7 @@ function AssetBadge({ asset }) {
 }
 
 function getProposalPickIdentity(pick) {
-  if (!pick) return 'Draft Pick';
-  const roundNumber = Number(pick.round);
-  const hasRound = Number.isFinite(roundNumber) && roundNumber > 0;
-  const compactPickNumberLabel = pick.pickNumberLabel ?? pick.pickRangeLabel ?? null;
-  const parsedPickSlot = typeof compactPickNumberLabel === 'string'
-    ? Number(compactPickNumberLabel.match(/^\d+\.(\d+)$/)?.[1])
-    : null;
-  const lockedPickSlot = Number(pick.lockedSlot ?? parsedPickSlot);
-  const hasLockedPickSlot = Number.isFinite(lockedPickSlot) && lockedPickSlot > 0;
-  const compactRoundLabel = hasRound ? `Round ${roundNumber}` : null;
-  const compactPickSlotLabel = hasLockedPickSlot ? `Pick ${lockedPickSlot}` : compactPickNumberLabel;
-
-  return [
-    pick.year,
-    compactRoundLabel,
-    compactPickSlotLabel,
-  ].filter(Boolean).join(' · ') || pick.label || 'Draft Pick';
+  return getDraftPickLabel(pick);
 }
 
 function ProposalAssetRow({ asset, darkMode, onOpenPlayer }) {
@@ -65,15 +49,13 @@ function ProposalAssetRow({ asset, darkMode, onOpenPlayer }) {
   const value = asset.value ?? asset.val;
 
   if (!isPlayer) {
-    const quality = asset.displayQuality ?? asset.quality ?? null;
-    const metaSegments = [quality, asset.pickRangeLabel].filter(Boolean);
     return (
       <CompanionAssetRow
         asset={{ ...asset, label: getProposalPickIdentity(asset) }}
         darkMode={darkMode}
         className="trade-selection-row--proposal"
         teamThemeOptions={TRADE_LOGO_SIDE_THEME_OPTIONS}
-        metaSegments={metaSegments.length ? metaSegments : [asset.cardHeadline || 'Draft pick']}
+        metaSegments={[]}
         valueKicker="Value"
         valueLabel={value != null ? fmtKtcValue(value) : '—'}
       />

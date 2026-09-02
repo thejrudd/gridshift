@@ -8,7 +8,7 @@ Open bugs are listed first, deferred work next, fixed bugs below. Add new entrie
 
 | Bug |
 |-----|
-| *(No open bugs currently assigned to v8.9.0.)* |
+| *(No open bugs currently assigned to v8.9.1.)* |
 
 ---
 
@@ -16,6 +16,7 @@ Open bugs are listed first, deferred work next, fixed bugs below. Add new entrie
 
 | Bug | Fixed In |
 |-----|----------|
+| Trade Agent draft-pick cards and values could imply a projected slot even though Sleeper only guarantees a future pick's year and round, causing redundant metadata and taller selected cards. | v8.9.1 |
 | The desktop sidebar did not show an unread notification glyph on Trade when Proposals contained unread updates. | v8.9.0 |
 | Trade Proposals continued showing a live expiry countdown after a proposal was accepted or declined instead of preserving the terminal event time. | v8.9.0 |
 | Trade Agent selected player cards could truncate or obscure team, rank, and average metadata, or wrap optional estimate text onto a third line, when the row's fixed controls left limited identity space. | v8.8.3 |

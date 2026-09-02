@@ -52,7 +52,6 @@ export function normalizeTradeProposalAsset(asset, fromRosterId, toRosterId) {
     normalized.year = cleanText(asset.year);
     normalized.round = Number(asset.round);
     normalized.originalRosterId = cleanId(asset.originalRosterId ?? asset.pickData?.fromRosterId ?? asset.fromRosterId ?? fromRosterId);
-    normalized.pickNumberLabel = cleanText(asset.pickNumberLabel ?? asset.pickRangeLabel) || null;
   } else {
     normalized.amount = Number(asset.amount);
   }

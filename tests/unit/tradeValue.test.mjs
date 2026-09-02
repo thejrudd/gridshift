@@ -28,6 +28,7 @@ before(async () => {
     projectionEngine,
     ktcApi,
     idpEngine,
+    draftPickDisplay,
   ] = await Promise.all([
     server.ssrLoadModule('/src/utils/tradeValue.js'),
     server.ssrLoadModule('/src/utils/tradeEngine.js'),
@@ -36,9 +37,10 @@ before(async () => {
     server.ssrLoadModule('/src/utils/projectionEngine.js'),
     server.ssrLoadModule('/src/utils/ktcApi.js'),
     server.ssrLoadModule('/src/utils/idpEngine.js'),
+    server.ssrLoadModule('/src/utils/draftPickDisplay.js'),
   ]);
 
-  modules = { tradeValue, tradeEngine, tradeAnalytics, sleeperApi, projectionEngine, ktcApi, idpEngine };
+  modules = { tradeValue, tradeEngine, tradeAnalytics, sleeperApi, projectionEngine, ktcApi, idpEngine, draftPickDisplay };
   const weeklyStats = Object.fromEntries(
     Object.keys(players).map((id) => [id, Array.from({ length: 6 }, (_, index) => weeklyStatsForWeek(index + 1)[id])]),
   );
@@ -149,6 +151,34 @@ describe('canonical trade values', () => {
     assert.equal(typeof valued.value, 'number');
     assert.equal(valued.val, valued.value);
     assert.ok(valued.displayInfo.label.includes('2027'));
+  });
+
+  it('uses only year and round for tradable pick labels', () => {
+    const displayInfo = modules.draftPickDisplay.getDraftPickDisplayInfo({
+      year: '2027',
+      round: 1,
+      fromRosterId: 2,
+    });
+
+    assert.deepEqual(displayInfo, {
+      displayMode: 'round',
+      label: '2027 1st',
+      roundOrdinal: '1st',
+    });
+  });
+
+  it('uses one flat redraft value for every pick in a year and round', () => {
+    const firstPick = modules.tradeEngine.valueDraftPick({ year: TEST_SEASON, round: 1, fromRosterId: 1 }, {
+      pickValueMap: { 1: 5000 },
+      currentSeason: TEST_SEASON,
+    });
+    const secondPick = modules.tradeEngine.valueDraftPick({ year: TEST_SEASON, round: 1, fromRosterId: 2 }, {
+      pickValueMap: { 1: 5000 },
+      currentSeason: TEST_SEASON,
+    });
+
+    assert.equal(firstPick.value, 5000);
+    assert.equal(firstPick.value, secondPick.value);
   });
 
   it('uses prior completed-season production for preseason IDP estimates', () => {
@@ -301,7 +331,7 @@ describe('canonical trade values', () => {
     assert.ok(values.get('lb') > 10_000);
   });
 
-  it('calibrates redraft pick tiers from Draft order and canonical player values', () => {
+  it('calibrates one flat redraft pick value per round from canonical player values', () => {
     const calibrationPool = [
       { rank: 1, value: 1000 },
       { rank: 2, value: 1500 },
@@ -312,12 +342,9 @@ describe('canonical trade values', () => {
       fallbackValueMultiplier: 1.4,
     });
 
-    // Three teams create one projected player in each Early/Mid/Late tier.
-    // Calibration values are already on the Trade scale, so only the 7%
+    // The full round median is already on the Trade scale, so only the 7%
     // first-round uncertainty discount applies.
-    assert.equal(calibrated[1].Early, 930);
-    assert.equal(calibrated[1].Mid, 1395);
-    assert.equal(calibrated[1].Late, 1860);
+    assert.equal(calibrated[1], 1395);
   });
 
   it('keeps early picks close to their expected player range while discounting later rounds more', () => {
@@ -329,13 +356,13 @@ describe('canonical trade values', () => {
       calibrationPool,
     });
 
-    // Overall pick 23 is round 2, seventh in a 16-team round, which is Mid.
-    // It is priced from the nearby rank range, then discounted for selection risk.
-    assert.equal(values[2].Mid, Math.round(7_700 * 0.87));
-    assert.equal(values[1].Early, Math.round(9_800 * 0.93));
+    // Every pick in a round uses the full round's median, then receives the
+    // round's selection-risk discount.
+    assert.equal(values[2], Math.round(7_700 * 0.87));
+    assert.equal(values[1], Math.round(9_300 * 0.93));
   });
 
-  it('falls back to adjusted KTC pick tiers when a projected tier is too sparse', () => {
+  it('falls back to adjusted KTC round values when the calibration round is too sparse', () => {
     const fallback = modules.tradeEngine.computeRedraftPickValues(ktcPlayers, 3, '1qb', {
       fallbackValueMultiplier: 1.2,
     });
@@ -344,6 +371,28 @@ describe('canonical trade values', () => {
       fallbackValueMultiplier: 1.2,
     });
 
-    assert.deepEqual(sparse[1], fallback[1]);
+    assert.equal(sparse[1], fallback[1]);
+  });
+
+  it('uses the same dynasty pick value regardless of original roster', () => {
+    const firstPick = modules.tradeEngine.valueDraftPick({ year: '2027', round: 1, fromRosterId: 1 }, {
+      rosters,
+      ktcPlayers,
+      leagueType: '1qb',
+      currentSeason: TEST_SEASON,
+      league,
+      drafts,
+    });
+    const secondPick = modules.tradeEngine.valueDraftPick({ year: '2027', round: 1, fromRosterId: 2 }, {
+      rosters,
+      ktcPlayers,
+      leagueType: '1qb',
+      currentSeason: TEST_SEASON,
+      league,
+      drafts,
+    });
+
+    assert.equal(firstPick.value, secondPick.value);
+    assert.equal(firstPick.value, 3870);
   });
 });
