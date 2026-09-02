@@ -2,12 +2,12 @@ import StatusBadge from './ui/StatusBadge';
 
 const TAB_BADGE_OVERLAY = { position: 'absolute', top: '-5px', right: '-15px' };
 
-export default function BottomTabBar({ activeTab, onTabChange, tradeDisabled = false, leagueDisabled = false }) {
+export default function BottomTabBar({ activeTab, onTabChange, tradeDisabled = false, tradeDisabledTitle = 'Trade is not available for the connected platform.', leagueDisabled = false }) {
   const tabs = [
     { id: 'fantasy',     label: 'Fantasy',      renderIcon: (active) => <CompanionIcon active={active} />, dataTour: 'tab-companion' },
     { id: 'league',      label: 'League',       renderIcon: (active) => <LeagueIcon active={active} />, disabled: leagueDisabled, disabledTitle: 'League history is available for connected Sleeper leagues.' },
     { id: 'statistics',  label: 'Statistics',  renderIcon: (active) => <PlayersIcon active={active} /> },
-    { id: 'trade',       label: 'Trade',       renderIcon: (active) => <TradeIcon active={active} />, disabled: tradeDisabled },
+    { id: 'trade',       label: 'Trade',       renderIcon: (active) => <TradeIcon active={active} />, disabled: tradeDisabled, disabledTitle: tradeDisabledTitle },
     { id: 'draft',       label: 'Draft',       renderIcon: (active) => <DraftIcon active={active} />, beta: true },
     { id: 'predictions', label: 'Predictions', renderIcon: (active) => <SeasonIcon active={active} />, beta: true },
   ];

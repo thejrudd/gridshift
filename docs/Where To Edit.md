@@ -24,6 +24,7 @@ Routing table: match the task to a section, open the listed files, and read the 
 | Rookie scouting data and Scout tab | [Scout](#scout) |
 | Draft Assistant, War Room, draft results | [Draft Assistant](#draft-assistant) |
 | Share cards, export/import, shareable images | [Export / Import / Shareable Image](#export--import--shareable-image) |
+| GridShift Trade rooms, proposals, expiring links, counters, acceptance, decline, Sleeper handoff, completion, reconciliation | [Trade Proposal Rooms](#trade-proposal-rooms) |
 | Build, PWA, Docker, deployment | [Build, PWA, And Deployment](#build-pwa-and-deployment) |
 
 ## Navigation And Layout
@@ -38,6 +39,8 @@ Routing table: match the task to a section, open the listed files, and read the 
 | `src/components/CompanionSubNav.jsx` | Companion view sub-nav |
 | `src/components/LeagueSubNav.jsx` | League view sub-nav |
 | `src/components/HorizontalScrollCue.jsx` | Scroll affordance for horizontal rails |
+| `src/components/PageShareSheet.jsx`, `src/utils/pageShare.js`, `vite.config.js` | Page-aware share metadata, server-readable preview HTML, native Web Share handoff, and copy-link fallback |
+| `public/icons/` | PWA, Apple touch, favicon, and share-preview assets |
 | `src/utils/appRoutes.js` | Canonical route table and aliases |
 | `src/index.css` | Tokens and shared layout CSS |
 
@@ -104,6 +107,7 @@ Read first: [[Statistics Scores]] before production data wiring.
 | `src/components/statistics/scores/GameScorebug.jsx` | Scheduled/live/final/favorite/delayed/offline/unavailable states |
 | `src/components/statistics/scores/LatestPlayStrip.jsx` | Compact live latest-play row (from the selected-week canonical live snapshot) |
 | `src/components/statistics/scores/ScoresGameDrilldown.jsx` | Overview, Team Stats, Players, Scoring, Play-by-Play |
+| `src/components/statistics/scores/StoryStatsPanel.jsx`, `server/storyStatsHandlers.js`, `server/storyStatsScheduler.js` | Optional Game Story section, fixed stats/editorial StoryStats requests, automatic production primetime warming, and daily beta guard |
 | `src/components/statistics/scores/PlayCard.jsx` | One play row: sentence, trajectory strip, per-player breakdown |
 | `src/components/statistics/scores/StatisticsScores.css` | Feature-owned responsive styling |
 | `src/api/statisticsScoresApi.js` | Browser-to-sidecar Scores requests |
@@ -268,6 +272,7 @@ Read first: [[Draft Assistant]].
 | `src/utils/draftAssistant/projections.js` | Projection normalization |
 | `src/utils/draftAssistant/rosterNeed.js` | Roster need |
 | `src/utils/draftAssistant/availability.js` | Availability |
+| `src/utils/draftAssistant/search.js` | Draft player search matching |
 | `src/utils/draftAssistant/recommendations.js` | Recommendation heuristics |
 | `src/utils/leagueHistory.js` | `buildDraftBlueprintSummaries(...)` — per-team position counts, named rounds 1–3, IDP-only defensive position exposure |
 | `src/api/sleeperApi.js`, `src/api/leagueLogsApi.js` | Data sources |
@@ -280,17 +285,40 @@ Read first: [[Prediction Share Cards]] — product, privacy, state, recipient, a
 | --- | --- |
 | `src/components/ExportPreview.jsx` | Share-card studio, link/QR generation, copy, PNG download |
 | `src/components/predictions/share/` | Six fixed-format card renderers, curated titles, export geometry; Team Record is screenshot-only |
+| `src/components/PageShareSheet.jsx`, `src/utils/pageShare.js`, `vite.config.js` | Current-page share sheet, route-aware social metadata, static preview entry files, and native Web Share fallback |
 | `src/utils/predictionShareCodec.js` | Compressed, checksummed URL-fragment transport |
 | `src/utils/predictionShareModel.js` | Pick-week context, snapshot-to-card projection |
 | `src/components/ShareableImage.jsx` | Legacy shareable image |
 | `src/utils/exportImport.js`, `src/utils/exportStats.js`, `src/utils/layoutUtils.js` | Export/import helpers |
+
+## Trade Proposal Rooms
+
+Read first: [[Trade Engine]] and [[Trade Proposal Cards]]. Proposal-room access is server-authoritative and must remain scoped to the exact Sleeper league and season. The visible surface is Proposals; `/trade/inbox` and `/api/trade-proposals/inbox` remain compatibility identifiers.
+
+| File | Owns |
+| --- | --- |
+| `src/components/companion/CompanionTrade.jsx` | Creates snapshots from the local Agent/Intelligence/Upgrade proposal and opens send/counter sharing |
+| `src/components/companion/TradeInbox.jsx` | Active incoming/outgoing proposal list, unread notifications, contextual response actions, accepted-state handoff guide for the accepting manager, completion action, decline states, and Sleeper reconciliation prompt |
+| `src/components/companion/TradeShareLanding.jsx` | Rich link handoff and participant-only claim gate |
+| `src/components/companion/trade/TradeShareSheet.jsx`, `TradeShareCard.jsx`, `tradeShare.css`, `tradeInbox.css` | Expiry selection, opaque-link QR generation, readable export/screenshot card, and responsive room styling |
+| `src/hooks/useTradeProposals.js` | League/user-scoped participant session, in-app polling, proposal mutations, and local session-token storage |
+| `src/api/tradeProposalApi.js` | Browser wrapper for proposal sessions, sharing, proposal-list actions, counters, acceptance, completion, and reconciliation |
+| `src/utils/tradeProposal.js` | Portable snapshot normalization, expiry labels, asset fingerprints, and counter perspective helpers |
+| `server/tradeProposalHandlers.js` | API/share routes, acceptance/completion authorization, and server-side Sleeper validation; never trust client league/roster/asset claims without rechecking |
+| `server/tradeProposalStore.js` | Proposal/revision/event SQLite persistence, acceptance actor, expiry cleanup, and retention tombstones |
+| `server/sleeperTradeApi.js` | Read-only Sleeper calls for league boundary and completed-transaction inspection |
+| `server/tradeProposalConfig.js`, `server/tradeProposalCrypto.js` | Secret, data directory, retention, bounded payload, HMAC, and opaque-token contracts |
+| `src/utils/appRoutes.js`, `src/App.jsx`, `src/components/TradeSubNav.jsx` | Proposals/share routes, unread badge, and route-level claim/counter/handoff navigation; legacy Inbox route remains supported |
+| `nginx.conf`, `vite.config.js`, `docker-compose.yml`, `server/index.js` | Production/local proxying, persistent sidecar configuration, and route mounting |
+
+Do not reuse the prediction fragment codec for server Trade rooms. Proposal revisions, revocation, expiry, participant authorization, and Sleeper reconciliation require a server-held payload and opaque capability URL.
 
 ## Build, PWA, And Deployment
 
 | File | Owns |
 | --- | --- |
 | `package.json` | Version (drives PWA cache busting), scripts |
-| `vite.config.js` | Build + PWA plugin + dev proxy |
+| `vite.config.js` | Build + PWA plugin + dev proxy + route-aware preview metadata |
 | `nginx.conf` | Production serving |
 | `src/main.jsx` | App entry |
 | `src/hooks/usePWAInstall.js` | Install prompt |

@@ -56,8 +56,10 @@ GRIDSHIFT_LIVE_ALLOWED_LEAGUE_IDS=<your ids>,gridshift-live-sandbox
 Restart the dev server after editing `.env`: `scripts/dev.mjs` reads it once at
 startup and `node --watch` does not watch it.
 
-Then open `/fantasy/live` and press **Turn on Live** once to start the live
-session. The sandbox renders without a connected league.
+Then open `/fantasy/live`. Because the sandbox league is allowlisted, its live
+session starts automatically when no local access code is configured. If a
+local `GRIDSHIFT_LIVE_ACCESS_CODE` is set, enter that code through the normal
+**Turn on Live** gate. The sandbox renders without a connected league.
 
 Never allowlist `gridshift-live-sandbox` in production.
 

@@ -88,6 +88,7 @@ import {
   buildDraftByeConflictModel,
   buildDraftRosterByeConflictModel,
 } from '../../utils/draftAssistant/byeConflicts.js';
+import { filterDraftPlayersBySearch } from '../../utils/draftAssistant/search.js';
 import { getByeWeekForTeam, isByeWeekBundleForSeason } from '../../utils/draftAssistant/byeWeeks.js';
 import {
   DRAFT_RANKING_PRIORITY_CONTROLS,
@@ -179,10 +180,6 @@ const BIG_BOARD_SORT_COLUMNS = [
 const BIG_BOARD_ROW_GRID_TEMPLATE = 'var(--draft-big-board-row-grid)';
 const BIG_BOARD_COMPACT_ROW_GRID_TEMPLATE = BIG_BOARD_ROW_GRID_TEMPLATE;
 const BIG_BOARD_METRIC_GRID_TEMPLATE = 'var(--draft-big-board-metric-grid)';
-const FUTURE_VIEW_LABELS = {
-  gauntlet: 'Gauntlet',
-  'tiers-runs': 'Tiers/Runs',
-};
 
 function normalizeDraftType(draft) {
   return String(draft?.type ?? draft?.settings?.type ?? 'snake').toLowerCase();
@@ -1127,14 +1124,8 @@ function buildDraftOrderContext({ draft, rosters, draftTradedPicks, draftPicks, 
 }
 
 function filterCandidates(candidates, position, query, availabilityFilter = 'all') {
-  const normalizedQuery = query.trim().toLowerCase();
-  return candidates.filter((player) => {
-    if (position !== 'ALL' && player.position !== position) return false;
-    if (!matchesPlayerAvailabilityFilter(player, availabilityFilter)) return false;
-    if (!normalizedQuery) return true;
-    const haystack = `${getPlayerName(player)} ${player.team} ${player.position}`.toLowerCase();
-    return haystack.includes(normalizedQuery);
-  });
+  return filterDraftPlayersBySearch(candidates, position, query)
+    .filter((player) => matchesPlayerAvailabilityFilter(player, availabilityFilter));
 }
 
 function getAvailablePositions(candidates, boardRows) {
@@ -1259,18 +1250,6 @@ function EmptyState({ title, description = null, variant = 'inline' }) {
 
 function DraftPageState({ title, description = null }) {
   return <EmptyState title={title} description={description} variant="page" />;
-}
-
-function FutureDraftView({ view }) {
-  const label = FUTURE_VIEW_LABELS[view] ?? 'Draft view';
-  return (
-    <div className="draft-page">
-      <DraftPageState
-        title={`${label} is staged for future work.`}
-        description="The route and navigation slot are in place, but War Room, Board, and Results are the active Draft views in this implementation."
-      />
-    </div>
-  );
 }
 
 function normalizeSleeperElapsedPickTimer(value, pickTimer) {
@@ -5839,6 +5818,5 @@ export default function DraftAssistant({ view = 'war-room', sleeperDraftId = '',
   if (view === 'draft-order') return <DraftResultsView sleeperDraftId={sleeperDraftId} onViewPlayer={onViewPlayer} tourDemoMode={tourDemoMode} />;
   if (view === 'results') return <DraftResultsView sleeperDraftId={sleeperDraftId} onViewPlayer={onViewPlayer} tourDemoMode={tourDemoMode} />;
   if (view === 'my-board') return <DraftBoardDataView mode="my-board" sleeperDraftId={sleeperDraftId} onViewPlayer={onViewPlayer} />;
-  if (view !== 'war-room') return <FutureDraftView view={view} />;
   return <DraftBoardDataView mode="war-room" sleeperDraftId={sleeperDraftId} onViewPlayer={onViewPlayer} />;
 }

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import useBodyScrollLock from '../../hooks/useBodyScrollLock';
 
-const ANCHOR_TIMEOUT_MS = 3000;
+const ANCHOR_TIMEOUT_MS = 10000;
 const SPOTLIGHT_PADDING = 6;
 const TOOLTIP_GAP = 12;
 const TOOLTIP_WIDTH = 300;
@@ -101,6 +101,8 @@ export default function TourOverlay({ entries, navigate, currentRoute, context =
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 1024;
 
   const rawStep = steps[stepIndex];
+  const routeReady = !rawStep?.route || Object.entries(rawStep.route)
+    .every(([key, value]) => currentRoute?.[key] === value);
   const contextualCopy = rawStep?.contextKey
     ? rawStep.copyByContext?.[context[rawStep.contextKey]] ?? rawStep.copyByContext?.default
     : null;
@@ -154,6 +156,7 @@ export default function TourOverlay({ entries, navigate, currentRoute, context =
     if (!step) return undefined;
     let cancelled = false;
     let rafId = null;
+    let timeoutId = null;
     setAnchorRect(null);
     setTimedOut(false);
     anchorElRef.current = null;
@@ -162,6 +165,10 @@ export default function TourOverlay({ entries, navigate, currentRoute, context =
 
     const tryResolve = () => {
       if (cancelled) return;
+      if (!routeReady) {
+        rafId = requestAnimationFrame(tryResolve);
+        return;
+      }
       const el = findVisibleAnchor(selector);
       if (el) {
         anchorElRef.current = el;
@@ -177,13 +184,15 @@ export default function TourOverlay({ entries, navigate, currentRoute, context =
       rafId = requestAnimationFrame(tryResolve);
     };
 
-    const timeoutId = window.setTimeout(() => {
-      if (!cancelled && !anchorElRef.current) {
-        cancelled = true;
-        if (rafId) cancelAnimationFrame(rafId);
-        setTimedOut(true);
-      }
-    }, ANCHOR_TIMEOUT_MS);
+    if (routeReady) {
+      timeoutId = window.setTimeout(() => {
+        if (!cancelled && !anchorElRef.current) {
+          cancelled = true;
+          if (rafId) cancelAnimationFrame(rafId);
+          setTimedOut(true);
+        }
+      }, ANCHOR_TIMEOUT_MS);
+    }
 
     tryResolve();
 
@@ -195,7 +204,7 @@ export default function TourOverlay({ entries, navigate, currentRoute, context =
     // isMobile intentionally read fresh per step; breakpoint changes are
     // handled by the reposition effect below re-running measurement.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stepIndex, step]);
+  }, [routeReady, stepIndex, step]);
 
   // Skip a step whose anchor never appeared.
   useEffect(() => {

@@ -140,7 +140,7 @@ function normalizeCreatedAt(value) {
 export function getCurrentPredictionShareSeason(date = new Date()) {
   const resolved = date instanceof Date ? date : new Date(date);
   if (Number.isNaN(resolved.getTime())) fail('invalid_date', 'A valid date is required.');
-  return resolved.getMonth() >= 2 ? resolved.getFullYear() : resolved.getFullYear() - 1;
+  return resolved.getUTCMonth() >= 2 ? resolved.getUTCFullYear() : resolved.getUTCFullYear() - 1;
 }
 
 export function getCreatablePredictionShareSeasons({ now = new Date(), currentSeason } = {}) {

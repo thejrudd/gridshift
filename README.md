@@ -99,7 +99,7 @@ Server-only variables:
 | `GRIDSHIFT_BDL_CACHE_MAX_ENTRIES` | Maximum entries in the shared, bounded BALLDONTLIE response cache. |
 | `GRIDSHIFT_TRUST_PROXY_HOPS` | Number of trusted reverse-proxy hops used when resolving client IPs for public-route protection. Leave `0` when Node is reached directly. |
 | `GRIDSHIFT_LIVE_ALLOWED_LEAGUE_IDS` | Comma-separated Sleeper league IDs allowed to use paid live scoring on this instance. |
-| `GRIDSHIFT_LIVE_ACCESS_CODE` | Optional shared league code required before an allowlisted league member can use paid live mode. |
+| `GRIDSHIFT_LIVE_ACCESS_CODE` | Optional second gate for allowlisted league members; when blank, allowlisted leagues start Live automatically. |
 | `GRIDSHIFT_LIVE_COOKIE_SECRET` | Optional live-scoring cookie secret; falls back to `GRIDSHIFT_SESSION_SECRET` when blank. |
 | `GRIDSHIFT_LIVE_CACHE_TTL_MS` | Server cache duration for upstream live-data responses. |
 | `GRIDSHIFT_LIVE_FINAL_TTL_MS` | Server retention tail for finalized live games before hot cache cleanup. |
@@ -130,12 +130,12 @@ Draft Sync is an optional capability of the existing API sidecar, not a required
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) + optional Node API sidecar |
 
-## What's New in v8.8.3
+## What's New in v8.9.0
 
-- **Trade Agent readability** — Keep selected player metadata readable as complete segments while preserving fixed value and remove controls across constrained layouts.
-- **League-aware redraft pick values** — Calibrate redraft picks against the available player range, active league scoring, prior production, and supported preseason ADP instead of relying only on an offense-focused market list.
-- **Preseason defensive values** — Use the most recent completed production season for IDP and D/ST valuation before the active season has recorded stats, then switch automatically to current-season production.
-- **Regression coverage and documentation** — Add focused Trade valuation, responsive card, and preseason fallback coverage with updated Trade and architecture references.
+- **Trade Proposals** — Create private, Sleeper-scoped trade conversations with expiry controls, counters, accept/decline actions, unread updates, and participant-only access.
+- **Trade sharing and follow-through** — Share opaque proposal links or QR codes, preview the complete exchange, and continue accepted trades in Sleeper before reconciling and marking them done in GridShift.
+- **Page sharing and live-data improvements** — Share the current page with route-aware metadata, while Statistics Scores and Fantasy Live gain stronger provider-backed timing, replay, and optional StoryStats handling.
+- **Regression coverage and documentation** — Add focused Trade Proposal, StoryStats, live-data, sharing, route, and responsive coverage with updated deployment and feature references.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 
@@ -143,7 +143,6 @@ For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 
 - Sleeper Player Data Caching — Server-side daily `/players/nfl` snapshots and client snapshot reuse.
 - Scout Rookie Projection Layer — Add next-season rookie projections for standard and IDP-focused draft prep.
-- Trade follow-through — Continue polishing Trade drilldowns, explanation copy, and proposal-card readability.
 - Live-data platform — Extend the shared, tier-aware Statistics Scores and Fantasy Live gateway with league ingest lifecycle, optional league-managed keys, and shared infrastructure for multi-instance scale. See [the architecture and rollout plan](docs/Live%20Data%20Server%20Architecture.md).
 
 ## Project Structure

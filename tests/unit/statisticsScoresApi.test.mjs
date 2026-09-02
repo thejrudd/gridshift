@@ -7,6 +7,7 @@ import {
   getStatisticsScoresGames,
   getStatisticsScoresPreseason,
   getStatisticsScoresStatus,
+  getStatisticsScoresStory,
 } from '../../src/api/statisticsScoresApi.js';
 
 async function captureRequest(run) {
@@ -63,6 +64,14 @@ test('Statistics Scores browser API requests BALLDONTLIE detail through the Scor
   assert.equal(plays.url, '/api/statistics/scores/game/1393548/plays');
   assert.deepEqual(detail.options.headers, { Accept: 'application/json' });
   assert.equal(JSON.stringify([detail, plays]).includes('server-key'), false);
+});
+
+test('Statistics Scores browser API requests StoryStats through the server boundary', async () => {
+  const request = await captureRequest(() => getStatisticsScoresStory(1393548, 'live'));
+
+  assert.equal(request.url, '/api/statistics/scores/game/1393548/story?phase=live');
+  assert.deepEqual(request.options.headers, { Accept: 'application/json' });
+  assert.equal(JSON.stringify(request).includes('server-key'), false);
 });
 
 test('Statistics Scores status keeps its existing URL when no override is supplied', async () => {

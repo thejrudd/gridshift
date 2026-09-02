@@ -445,4 +445,41 @@ export const WHATS_NEW = [
       },
     ],
   },
+  {
+    version: '8.9.0',
+    title: 'Trade Proposals',
+    features: [
+      {
+        id: 'trade-proposals',
+        name: 'Trade Proposals',
+        description: 'Create private Sleeper-scoped trade conversations, share the exchange, and follow accepted deals through completion.',
+        steps: [
+          {
+            route: { activeTab: 'trade', tradeView: 'inbox' },
+            anchor: '[data-tour="trade-view-proposals"]',
+            anchorMobile: null,
+            title: 'Review Trade Proposals',
+            body: 'Open Proposals to review incoming and outgoing trade conversations between the two connected Sleeper participants.',
+            placement: 'auto',
+          },
+          {
+            route: { activeTab: 'trade', tradeView: 'agent' },
+            anchor: '[data-tour="trade-proposal-builder"]',
+            anchorMobile: null,
+            title: 'Send an offer in GridShift',
+            body: 'Build a package in Agent, choose a trade partner, and send an expiring proposal with participant-only sharing and counter support.',
+            placement: 'auto',
+          },
+          {
+            route: { activeTab: 'trade', tradeView: 'inbox' },
+            anchor: '[data-tour="trade-proposals-content"]',
+            anchorMobile: null,
+            title: 'Follow through in Sleeper',
+            body: 'After both managers accept, recreate the exchange in Sleeper, then return to Check Sleeper and Mark Done when the league processes it.',
+            placement: 'auto',
+          },
+        ],
+      },
+    ],
+  },
 ];

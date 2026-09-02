@@ -1,4 +1,5 @@
 export const STATISTICS_SCORES_DRILLDOWN_STATUSES = Object.freeze([
+  'scheduled',
   'final',
   'live',
   'halftime',

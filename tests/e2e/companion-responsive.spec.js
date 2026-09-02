@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import {
+  TEST_LEAGUE_ID,
   TEST_SEASON,
   drafts,
   league,
@@ -155,6 +156,47 @@ test('preseason Trade shows a prior-production IDP estimate instead of zero', as
   await expect(idpShelfCard).toBeVisible();
   await expect(idpShelfCard).toContainText('Production Linebacker');
   await expect(idpShelfCard).toContainText('3,840');
+});
+
+test('Trade remains available but shows a current-season hint for previous linked league seasons', async ({ page }) => {
+  const priorSeason = String(Number(TEST_SEASON) - 1);
+  const priorLeague = {
+    ...league,
+    season: priorSeason,
+    previous_league_id: null,
+  };
+  const currentLeague = {
+    ...league,
+    league_id: 'league-current-2026',
+    previous_league_id: TEST_LEAGUE_ID,
+  };
+  const linkedLeaguesBySeason = {
+    [priorSeason]: [priorLeague],
+    [TEST_SEASON]: [currentLeague],
+  };
+  const priorSeasonState = {
+    ...persistedSleeperState(),
+    league: priorLeague,
+    leagues: [priorLeague],
+    season: priorSeason,
+    availableSeasons: [TEST_SEASON, priorSeason],
+    leaguesBySeason: linkedLeaguesBySeason,
+  };
+
+  await page.unroute('https://api.sleeper.app/v1/**');
+  await installTradeFixtures(page, {
+    league: priorLeague,
+    leaguesBySeason: linkedLeaguesBySeason,
+    persistedSleeperState: priorSeasonState,
+  });
+
+  await page.goto('/trade/agent');
+
+  await expect(page).toHaveURL(/\/trade\/agent$/);
+  await expect(page.getByText("Trade is only available for the current 2026 league season. You're viewing 2025.", { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Switch to 2026', exact: true })).toBeVisible();
+  const tradeTab = page.getByRole('button', { name: 'Trade', exact: true }).filter({ visible: true });
+  await expect(tradeTab).toBeEnabled();
 });
 
 test('Trade selected asset cards keep metadata readable', async ({ page }) => {
@@ -566,6 +608,30 @@ test('Heatmap mobile keeps filters collapsed above the grid', async ({ page }) =
   await expect(page.locator('#companion-heatmap-filter-panel')).toBeVisible();
   await page.getByRole('button', { name: 'Hide Filters' }).click();
   await expect(page.locator('#companion-heatmap-filter-panel')).toHaveCount(0);
+});
+
+test('Heatmap desktop keeps filters collapsed and groups controls in one row', async ({ page }) => {
+  await page.setViewportSize({ width: 2560, height: 1440 });
+  await page.goto('/fantasy/heatmap');
+
+  const filterToggle = page.getByRole('button', { name: 'Show Filters' });
+  await expect(filterToggle).toBeVisible();
+  await expect(page.locator('#companion-heatmap-filter-panel')).toHaveCount(0);
+  await expect(page.locator('td[data-heatmap-week]').first()).toBeVisible();
+
+  await filterToggle.click();
+  const filterGroups = page.locator('#companion-heatmap-filter-panel .companion-heatmap-filter-group');
+  await expect(filterGroups).toHaveCount(6);
+
+  const groupTops = await filterGroups.evaluateAll((groups) => (
+    groups.map((group) => Math.round(group.getBoundingClientRect().top))
+  ));
+  expect(Math.max(...groupTops) - Math.min(...groupTops)).toBeLessThanOrEqual(1);
+
+  const resultRect = await filterGroups.filter({ hasText: 'Result' }).boundingBox();
+  const firstGroupRect = await filterGroups.first().boundingBox();
+  expect(resultRect?.y).toBe(firstGroupRect?.y);
+  expect(resultRect?.x).toBeGreaterThan(firstGroupRect?.x ?? 0);
 });
 
 test('Matchup team scoring breakdown opens as a mobile bottom sheet', async ({ page }) => {

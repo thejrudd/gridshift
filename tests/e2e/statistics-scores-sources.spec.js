@@ -176,6 +176,21 @@ test('the local preseason fixture selects Preseason Week 1 on its first calendar
   await expect(page.locator('.scores-scorebug').first()).toHaveAttribute('aria-disabled', 'true');
 });
 
+test('scheduled scorebugs use the browser timezone for upcoming kickoffs', async ({ page }) => {
+  await page.emulateTimezone('Pacific/Auckland');
+  await page.clock.install({ time: new Date('2026-08-13T17:00:00.000Z') });
+  await page.goto('/statistics/scores');
+  await page.evaluate(() => {
+    localStorage.setItem('gridshift.statisticsNflPhase', 'preseason');
+  });
+  await page.reload();
+
+  await expect(page.getByRole('tab', { name: 'P1 Now' })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('.scores-scorebug').first().locator('.scores-status')).toHaveText('Scheduled');
+  await expect(page.locator('.scores-scorebug').first().locator('.scores-scorebug-topline > span').nth(1))
+    .toContainText(/Fri, Aug 14, 11:00 AM (GMT\+12|NZST)/);
+});
+
 for (const viewport of MOBILE_STATISTICS_VIEWPORTS) {
   test(`Statistics mobile layouts fit ${viewport.name}`, async ({ page }) => {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });

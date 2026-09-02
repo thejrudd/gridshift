@@ -7,12 +7,13 @@ import Spinner from './Spinner';
  *
  * Usage:
  *   <SeasonHintBanner capability="current-only" feature="Live scoring" />
+ *   <SeasonHintBanner capability="current-only" feature="Trade" currentSeason="2026" />
  *   <SeasonHintBanner isEmpty={rows.length === 0} />
  *
  * Renders nothing when no hint applies.
  */
-export default function SeasonHintBanner({ capability, isEmpty = false, feature, className = '' }) {
-  const hint = useSeasonHint({ capability, isEmpty, feature });
+export default function SeasonHintBanner({ capability, isEmpty = false, feature, currentSeason, className = '' }) {
+  const hint = useSeasonHint({ capability, isEmpty, feature, currentSeason });
   if (!hint) return null;
 
   const pending = hint.seasonSwitching != null;

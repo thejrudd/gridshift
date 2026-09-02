@@ -493,6 +493,28 @@ const GUIDE_CONTENT = {
     ],
   },
 
+  trade_inbox: {
+    title: 'PROPOSALS',
+    steps: [
+      {
+        title: 'Review the latest offer',
+        description: 'Read the current Sends and Receives sides, values, expiry, and status. Proposals includes both offers you sent and offers you received.',
+      },
+      {
+        title: 'Choose your response',
+        description: 'Counter changes the terms; Withdraw closes the latest offer you authored; Decline closes the latest offer from the other participant.',
+      },
+      {
+        title: 'Accept the trade',
+        description: 'The manager reviewing the latest offer can accept it in GridShift. That sends an update to the other manager and unlocks the Sleeper handoff for the accepting manager.',
+      },
+      {
+        title: 'Re-create and finish',
+        description: 'The accepting manager re-creates the accepted Sends and Receives in Sleeper, sends it to the other manager, then returns here after Sleeper processes it. They use Check Sleeper and Mark Done to finish the record.',
+      },
+    ],
+  },
+
   compare: {
     title: 'COMPARE',
     steps: [

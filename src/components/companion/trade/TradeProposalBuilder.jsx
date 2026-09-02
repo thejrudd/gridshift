@@ -225,7 +225,7 @@ function getColorCommentary(verdict, gap, partnerName) {
 }
 
 // ── BroadcastScoreboard ────────────────────────────────────────────────────────
-function BroadcastScoreboard({ yourTotal, theirTotal, yourName, yourAvatar, partnerName, partnerAvatar, verdict, hasItems, onClear, attribution }) {
+function BroadcastScoreboard({ yourTotal, theirTotal, yourName, yourAvatar, partnerName, partnerAvatar, verdict, hasItems, onClear, onShareTrade, attribution }) {
   const { verdict: v, pct = 0, gap = 0 } = verdict;
   const sign = v === 'favors_you' ? 1 : v === 'favors_them' ? -1 : 0;
   const angleDeg = hasItems ? sign * Math.min((pct / 100) * 72, 72) : 0;
@@ -285,13 +285,18 @@ function BroadcastScoreboard({ yourTotal, theirTotal, yourName, yourAvatar, part
   );
 
   return (
-    <div className="trade-scoreboard" style={{ background: '#0D1117', color: 'white', padding: '8px 20px 12px', flexShrink: 0, position: 'relative' }}>
+    <div className="trade-scoreboard" data-tour="trade-proposal-builder" style={{ background: '#0D1117', color: 'white', padding: '8px 20px 12px', flexShrink: 0, position: 'relative' }}>
       <div style={{ minHeight: 24, marginBottom: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
         {hasItems ? (
           <button onClick={onClear} style={{ fontFamily: df, fontSize: 'var(--type-label)', letterSpacing: '0.12em', color: '#F5B700', background: 'none', border: 0, cursor: 'pointer', fontWeight: 700, padding: '4px 0', textTransform: 'uppercase' }}>
             CLEAR
           </button>
         ) : <span aria-hidden="true" />}
+        {hasItems && partnerName && onShareTrade && (
+          <button type="button" onClick={onShareTrade} style={{ minHeight: 36, padding: '6px 11px', border: '1px solid #F5B700', borderRadius: 7, background: '#F5B700', color: '#0D1117', fontFamily: df, fontSize: 'var(--type-label)', letterSpacing: '0.08em', fontWeight: 800, cursor: 'pointer', textTransform: 'uppercase' }}>
+            Send in GridShift
+          </button>
+        )}
         {attribution && <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>{attribution}</div>}
       </div>
       <div className="trade-scoreboard__grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto minmax(0,1fr)', gap: 24, alignItems: 'center' }}>
@@ -861,6 +866,7 @@ export default function TradeProposalBuilder({
   openStatsModalForPlayer,
   clearTrade,
   attribution,
+  onShareTrade,
 }) {
             const handleShelfDrop = drag => {
               if (!drag) return;
@@ -992,6 +998,7 @@ export default function TradeProposalBuilder({
                       verdict={verdict}
                       hasItems={hasItems}
                       onClear={clearTrade}
+                      onShareTrade={onShareTrade}
                       attribution={attribution}
                     />
                     {!ktcLoading && !ktcError ? (
@@ -1063,6 +1070,7 @@ export default function TradeProposalBuilder({
                     verdict={verdict}
                     hasItems={hasItems}
                     onClear={clearTrade}
+                    onShareTrade={onShareTrade}
                     attribution={attribution}
                   />
                   {!ktcLoading && !ktcError ? (

@@ -22,6 +22,7 @@ import useServiceWorkerUpdate from './hooks/useServiceWorkerUpdate';
 import useWhatsNew from './hooks/useWhatsNew';
 import useOnboardingTour from './hooks/useOnboardingTour';
 import useDraftSync from './hooks/useDraftSync.js';
+import useTradeProposals from './hooks/useTradeProposals.js';
 import { ONBOARDING_TOUR } from './data/onboardingTour';
 import { ONBOARDING_PHASE } from './utils/onboardingTour';
 import UpdateBanner from './components/UpdateBanner';
@@ -35,10 +36,12 @@ import TradeSubNav from './components/TradeSubNav';
 import ScoutSubNav from './components/ScoutSubNav';
 import DraftSubNav from './components/DraftSubNav';
 import ActionSheet from './components/ActionSheet';
+import PageShareSheet from './components/PageShareSheet.jsx';
 import Sidebar from './components/Sidebar';
 import { FantasyProvider, useFantasyLeague, useFantasyStats } from './context/SleeperContext';
 import { DraftSyncProvider } from './context/DraftSyncContext.jsx';
 import { getDraft, getLeagueDrafts } from './api/sleeperApi';
+import { getSharedTradeProposal } from './api/tradeProposalApi.js';
 import {
   getDraftResultsPresentation,
   getDraftTourContext,
@@ -62,11 +65,20 @@ import {
   resolveStatisticsPlayerMetaFromSleeperId,
   STATISTICS_MODES,
 } from './utils/playerDrilldown';
+import { hasTradeProposalAssets } from './utils/tradeProposal.js';
+import { isTradeAvailableForSeason } from './utils/seasonAvailability.js';
 import { debugCompanionLog, debugCompanionTimeAsync } from './utils/companionPerfDebug';
+import {
+  applyPageShareMetadata,
+  getCurrentShareUrl,
+  getPageShareMetadata,
+  sharePage as sharePageWithNative,
+} from './utils/pageShare.js';
 import ScoringOverrideBanner from './components/companion/ScoringOverrideBanner';
 import Spinner from './components/ui/Spinner';
 import SectionSkeleton from './components/ui/SectionSkeleton';
 import SeasonChip from './components/ui/SeasonChip';
+import SeasonHintBanner from './components/ui/SeasonHintBanner';
 import DraftSyncModal from './components/DraftSyncModal.jsx';
 
 const ExportPreview = lazy(() => import('./components/ExportPreview'));
@@ -104,6 +116,8 @@ const CompanionHeatmap = lazy(() => import('./components/companion/CompanionHeat
 const CompanionDefense = lazy(() => import('./components/companion/CompanionDefense'));
 const CompanionTrade = lazy(() => import('./components/companion/CompanionTrade'));
 const TradeHistory = lazy(() => import('./components/companion/TradeHistory'));
+const TradeInbox = lazy(() => import('./components/companion/TradeInbox.jsx'));
+const TradeShareLanding = lazy(() => import('./components/companion/TradeShareLanding.jsx'));
 const ScoutTab = lazy(() => import('./components/scout/ScoutTab'));
 const DraftAssistant = lazy(() => import('./components/draft/DraftAssistant'));
 const DRAFT_NAV_POLL_MS = 15_000;
@@ -477,6 +491,17 @@ function AppInner() {
     players: sleeperPlayers,
     espnIdOverrides,
   } = useFantasyStats();
+  const currentLeagueSeason = [...linkedLeagueSeasonOptions]
+    .map((value) => String(value))
+    .sort((left, right) => Number(right) - Number(left))[0] ?? String(season);
+  const tradeDisabledForPlatform = false;
+  const tradeSeasonUnavailable = hasLeague && !isTradeAvailableForSeason(season, currentLeagueSeason);
+  const tradeNavDisabled = tradeDisabledForPlatform;
+  const tradeDisabled = tradeDisabledForPlatform || tradeSeasonUnavailable;
+  const tradeDisabledTitle = tradeSeasonUnavailable
+    ? `Trade is only available for the current ${currentLeagueSeason} league season.`
+    : undefined;
+  const tradeProposalActions = useTradeProposals({ enabled: !tradeDisabled });
 
   const {
     getPredictionCount,
@@ -520,10 +545,19 @@ function AppInner() {
   const [exportPreviewOpen, setExportPreviewOpen] = useState(false);
   const [sharedPredictionEnvelope, setSharedPredictionEnvelope] = useState(null);
   const [sharedPredictionError, setSharedPredictionError] = useState('');
+  const [sharedTradeData, setSharedTradeData] = useState(null);
+  const [sharedTradeLoading, setSharedTradeLoading] = useState(false);
+  const [sharedTradeError, setSharedTradeError] = useState('');
+  const [sharedTradeClaimLoading, setSharedTradeClaimLoading] = useState(false);
+  const [pendingTradeProposal, setPendingTradeProposal] = useState(null);
+  const [tradeCounterProposalId, setTradeCounterProposalId] = useState(null);
+  const [tradeCounterLoading, setTradeCounterLoading] = useState(false);
+  const [tradeCounterError, setTradeCounterError] = useState('');
   const [pendingPredictionShare, setPendingPredictionShare] = useState(
     typeof window !== 'undefined' && /^#gs\d+\./.test(window.location.hash) ? window.location.hash : '',
   );
   const [actionSheetOpen, setActionSheetOpen] = useState(false);
+  const [pageShareOpen, setPageShareOpen] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
   const [displaySettingsOpen, setDisplaySettingsOpen] = useState(false);
   const [legalOpen, setLegalOpen] = useState(false);
@@ -609,8 +643,8 @@ function AppInner() {
 
   const leagueView = appRoute.leagueView;
   const tradeView = appRoute.tradeView;
+  const tradeShareToken = appRoute.tradeShareToken;
   const scoutView = appRoute.scoutView;
-  const tradeDisabledForPlatform = false;
   const leagueDisabledForPlatform = false;
   const draftView = appRoute.draftView;
   const draftSleeperDraftId = appRoute.sleeperDraftId;
@@ -618,9 +652,6 @@ function AppInner() {
   const draftNavMatchesSelection = draftNavState.leagueId === selectedLeagueId && draftNavState.season === season;
   const selectedDraft = draftNavMatchesSelection ? draftNavState.draft : null;
   const draftResultsPresentation = getDraftResultsPresentation(selectedDraft);
-  const currentLeagueSeason = [...linkedLeagueSeasonOptions]
-    .map((value) => String(value))
-    .sort((left, right) => Number(right) - Number(left))[0] ?? String(season);
   const draftTourContext = getDraftTourContext({
     selectedSeason: season,
     currentSeason: currentLeagueSeason,
@@ -648,6 +679,29 @@ function AppInner() {
   useEffect(() => {
     latestAppRouteRef.current = appRoute;
   }, [appRoute]);
+
+  useEffect(() => {
+    if (!tradeShareToken) {
+      setSharedTradeData(null);
+      setSharedTradeError('');
+      setSharedTradeLoading(false);
+      return undefined;
+    }
+    let cancelled = false;
+    setSharedTradeLoading(true);
+    setSharedTradeError('');
+    getSharedTradeProposal(tradeShareToken)
+      .then((response) => {
+        if (!cancelled) setSharedTradeData(response);
+      })
+      .catch((requestError) => {
+        if (!cancelled) setSharedTradeError(requestError?.message ?? 'This trade proposal link is unavailable.');
+      })
+      .finally(() => {
+        if (!cancelled) setSharedTradeLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [tradeShareToken]);
 
   const tradeInitPlayer = appRoute.tradePlayerId
     ? {
@@ -734,15 +788,79 @@ function AppInner() {
     });
   }, [readHistoryState, startRouteTransition]);
 
+  const sharedTradeProposal = sharedTradeData?.proposal ?? null;
+  const sharedTradeParticipant = Boolean(
+    sharedTradeProposal
+    && sleeperUser?.user_id
+    && [sharedTradeProposal.sender?.userId, sharedTradeProposal.recipient?.userId].includes(String(sleeperUser.user_id))
+    && String(selectedLeagueId ?? '') === String(sharedTradeProposal.leagueId ?? '')
+    && String(season ?? '') === String(sharedTradeProposal.season ?? ''),
+  );
+
+  const claimSharedTrade = useCallback(async (shareToken) => {
+    setSharedTradeClaimLoading(true);
+    setSharedTradeError('');
+    try {
+      await tradeProposalActions.claimShare(shareToken);
+      applyRoute({ activeTab: 'trade', tradeView: 'inbox', tradeShareToken: null });
+    } catch (requestError) {
+      setSharedTradeError(requestError?.message ?? 'This trade proposal could not be claimed.');
+    } finally {
+      setSharedTradeClaimLoading(false);
+    }
+  }, [applyRoute, tradeProposalActions]);
+
+  const openTradeProposals = useCallback(() => {
+    applyRoute({ activeTab: 'trade', tradeView: 'inbox', tradeShareToken: null });
+  }, [applyRoute]);
+
+  const startTradeCounter = useCallback(async (proposal) => {
+    if (!proposal?.id || tradeCounterLoading) return;
+    setTradeCounterProposalId(proposal.id);
+    setTradeCounterLoading(true);
+    setTradeCounterError('');
+    try {
+      const currentProposal = await tradeProposalActions.loadProposal(proposal.id);
+      const snapshot = currentProposal?.revision?.snapshot;
+      const currentAuthor = currentProposal?.revision?.authorUserId;
+      const isCurrentAuthor = String(currentAuthor ?? '') === String(sleeperUser?.user_id ?? '');
+      if (!currentProposal?.id || !['pending', 'countered'].includes(currentProposal.status)) {
+        throw new Error('This trade proposal is no longer open for a counter-proposal.');
+      }
+      if (isCurrentAuthor) {
+        throw new Error('The other participant must respond before you send another counter-proposal.');
+      }
+      if (!hasTradeProposalAssets(snapshot)) {
+        throw new Error('This trade proposal’s details could not be loaded. Refresh Proposals and try again.');
+      }
+      setPendingTradeProposal(currentProposal);
+      applyRoute({ activeTab: 'trade', tradeView: 'agent', tradeShareToken: null });
+    } catch (requestError) {
+      setTradeCounterError(requestError?.message ?? 'This trade proposal could not be opened for editing.');
+    } finally {
+      setTradeCounterLoading(false);
+      setTradeCounterProposalId(null);
+    }
+  }, [applyRoute, sleeperUser?.user_id, tradeCounterLoading, tradeProposalActions]);
+
+  const handleTradeAction = useCallback(async (action, ...args) => {
+    try {
+      await action(...args);
+    } catch {
+      // The hook exposes the latest action error to Proposals; the action
+      // itself remains responsible for preserving the server response.
+    }
+  }, []);
+
   const navigateToTab = useCallback((tab) => {
-    if (tab === 'trade' && tradeDisabledForPlatform) return;
+    if (tab === 'trade' && tradeNavDisabled) return;
     applyRoute(getDefaultRouteForTab(tab));
-  }, [applyRoute, tradeDisabledForPlatform]);
+  }, [applyRoute, tradeNavDisabled]);
 
   useEffect(() => {
-    if (!tradeDisabledForPlatform || activeTab !== 'trade') return;
+    if (!tradeNavDisabled || activeTab !== 'trade') return;
     applyRoute({ activeTab: 'fantasy', companionView: 'rosters' }, { replace: true });
-  }, [activeTab, applyRoute, tradeDisabledForPlatform]);
+  }, [activeTab, applyRoute, tradeNavDisabled]);
 
   const navigateSeasonView = useCallback((view) => {
     applyRoute({ activeTab: 'predictions', seasonView: view });
@@ -817,9 +935,9 @@ function AppInner() {
   }, [activeTab, companionView]);
 
   const navigateTradeView = useCallback((view) => {
-    if (tradeDisabledForPlatform) return;
+    if (tradeNavDisabled) return;
     applyRoute({ activeTab: 'trade', tradeView: view });
-  }, [applyRoute, tradeDisabledForPlatform]);
+  }, [applyRoute, tradeNavDisabled]);
 
   const navigateScoutView = useCallback((view) => {
     applyRoute({ activeTab: 'scout', scoutView: view });
@@ -1062,6 +1180,11 @@ function AppInner() {
       if (draftPlayerOpenTokenRef.current === token) setStatsDrilldownPending(null);
     }
   }, [appRoute, espnIdOverrides, navigateToStatisticsPlayer, sleeperPlayers]);
+
+  const openTradeProposalPlayer = useCallback((asset) => {
+    if (!asset?.id) return;
+    void navigateToCompanionSleeperPlayer(String(asset.id), 'Trade');
+  }, [navigateToCompanionSleeperPlayer]);
 
   useEffect(() => {
     if (!statsDrilldownPending) return undefined;
@@ -1369,6 +1492,41 @@ function AppInner() {
     applyRoute({ activeTab: 'predictions', seasonView: 'predictions' });
   }, [applyRoute]);
 
+  const statsRoutePlayerMeta = activeTab === 'statistics' && statisticsView === 'player'
+    ? (readHistoryState().statsPlayerMeta ?? null)
+    : null;
+  const pageShareMetadata = useMemo(() => getPageShareMetadata({
+    route: appRoute,
+    season: season ?? predictionSeason,
+    teams: predictionTeams.length ? predictionTeams : (scheduleData?.teams ?? []),
+    playerMeta: statsRoutePlayerMeta,
+  }), [appRoute, predictionSeason, predictionTeams, scheduleData?.teams, season, statsRoutePlayerMeta]);
+  const pageShareUrl = getCurrentShareUrl();
+
+  useEffect(() => {
+    applyPageShareMetadata(pageShareMetadata);
+  }, [pageShareMetadata]);
+
+  const requestNativePageShare = useCallback(() => sharePageWithNative({
+      title: pageShareMetadata.title,
+      text: pageShareMetadata.text,
+      url: getCurrentShareUrl(),
+    }), [pageShareMetadata]);
+
+  const handleNativePageShare = useCallback(async () => {
+    const result = await requestNativePageShare();
+    if (result === 'fallback') setPageShareOpen(true);
+    if (result === 'shared' || result === 'cancelled') setPageShareOpen(false);
+    return result;
+  }, [requestNativePageShare]);
+
+  const handleSharePage = useCallback(async () => {
+    const result = await requestNativePageShare();
+    setActionSheetOpen(false);
+    if (result === 'fallback') setPageShareOpen(true);
+    return result;
+  }, [requestNativePageShare]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen" style={{ background: 'var(--color-bg)' }}>
@@ -1399,9 +1557,6 @@ function AppInner() {
   const isSeasonComplete = totalTeams > 0 && completedTeamCount === totalTeams;
   const mobileProgressMetric = progressSummary.primary;
   const mobileProgressHasError = mobileProgressMetric.status === 'invalid' || mobileProgressMetric.status === 'excess';
-  const statsRoutePlayerMeta = activeTab === 'statistics' && statisticsView === 'player'
-    ? (readHistoryState().statsPlayerMeta ?? null)
-    : null;
 
   return (
     <div className={`app-shell${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
@@ -1422,6 +1577,7 @@ function AppInner() {
         onDisplay={() => setDisplaySettingsOpen(true)}
         onLegal={() => setLegalOpen(true)}
         onGuide={() => setGuideOpen(true)}
+        onSharePage={handleSharePage}
         onExportImage={handleExportImage}
         predictionShareReady={predictionShareState.ready}
         predictionShareReason={predictionShareState.errors[0]}
@@ -1440,6 +1596,8 @@ function AppInner() {
         collapsed={sidebarCollapsed}
         onToggleCollapse={toggleSidebarCollapsed}
         leagueDisabled={leagueDisabledForPlatform}
+        tradeDisabled={tradeNavDisabled}
+        tradeUnreadCount={tradeProposalActions.unreadCount}
       />
 
       {/* ── Main panel ───────────────────────────────────────── */}
@@ -1542,9 +1700,9 @@ function AppInner() {
           </div>
         )}
 
-        {activeTab === 'trade' && hasLeague && !tradeDisabledForPlatform && (
+        {activeTab === 'trade' && hasLeague && !tradeNavDisabled && (
           <div className="season-subnav league-subnav">
-            <TradeSubNav activeView={tradeView} onViewChange={navigateTradeView} onViewIntent={prewarmTradeView} />
+            <TradeSubNav activeView={tradeView} onViewChange={navigateTradeView} onViewIntent={prewarmTradeView} unreadCount={tradeProposalActions.unreadCount} />
             {/* Desktop: bottom-right of subnav bar, aligned with tab text */}
             <div className="hidden lg:flex items-center absolute bottom-0 right-8 pb-[9px]">
               <LeagueContextHeader
@@ -1751,9 +1909,10 @@ function AppInner() {
               onNavigatePlayer={navigateToStatisticsPlayer}
               onViewSchedule={navigateToStatisticsScheduleTeam}
               onPlayerModeChange={updateStatisticsMode}
-              tradeDisabled={tradeDisabledForPlatform}
+              tradeDisabled={tradeDisabled}
+              tradeDisabledTitle={tradeDisabledTitle}
               onBuildTrade={(initialTrade) => {
-                if (tradeDisabledForPlatform) return;
+                if (tradeDisabled) return;
                 applyRoute({
                   activeTab: 'trade',
                   tradeView: initialTrade?.view ?? 'agent',
@@ -1779,7 +1938,7 @@ function AppInner() {
             </Suspense>
           )}
 
-          {activeTab === 'trade' && !hasLeague && (
+          {activeTab === 'trade' && !hasLeague && !tradeShareToken && (
             <Suspense fallback={<SectionLoading label="Loading connect" />}>
               <CompanionConnect />
             </Suspense>
@@ -1791,9 +1950,51 @@ function AppInner() {
             </Suspense>
           )}
 
-          {activeTab === 'trade' && hasLeague && !tradeDisabledForPlatform && (
+          {activeTab === 'trade' && !tradeNavDisabled && tradeSeasonUnavailable && (
+            <SeasonHintBanner
+              capability="current-only"
+              feature="Trade"
+              currentSeason={currentLeagueSeason}
+              className="mx-4 mb-3"
+            />
+          )}
+
+          {activeTab === 'trade' && !tradeNavDisabled && !tradeSeasonUnavailable && tradeShareToken && (
+            <Suspense fallback={<SectionLoading label="Loading shared trade" />}>
+              <TradeShareLanding
+                shareToken={tradeShareToken}
+                sharedData={sharedTradeData}
+                loading={sharedTradeLoading}
+                error={sharedTradeError}
+                canClaim={sharedTradeParticipant}
+                claimLoading={sharedTradeClaimLoading}
+                onClaim={claimSharedTrade}
+                onOpenProposals={openTradeProposals}
+                viewerUserId={sleeperUser?.user_id}
+                onOpenPlayer={openTradeProposalPlayer}
+              />
+            </Suspense>
+          )}
+
+          {activeTab === 'trade' && hasLeague && !tradeNavDisabled && !tradeSeasonUnavailable && !tradeShareToken && (
             <Suspense fallback={<SectionLoading label="Loading Trade" />}>
-              {tradeView === 'history' ? (
+              {tradeView === 'inbox' ? (
+                <TradeInbox
+                  inbox={tradeProposalActions.inbox}
+                  userId={sleeperUser?.user_id}
+                  onAccept={(proposal) => handleTradeAction(tradeProposalActions.accept, proposal.id)}
+                  onCounter={startTradeCounter}
+                  onDecline={(proposal) => handleTradeAction(tradeProposalActions.decline, proposal.id)}
+                  onWithdraw={(proposal) => handleTradeAction(tradeProposalActions.withdraw, proposal.id)}
+                  onReconcile={(proposal) => handleTradeAction(tradeProposalActions.reconcile, proposal.id)}
+                  onMarkDone={(proposal) => handleTradeAction(tradeProposalActions.markDone, proposal.id)}
+                  onMarkRead={(event) => handleTradeAction(tradeProposalActions.markRead, event.id)}
+                  busyProposalId={tradeCounterLoading ? tradeCounterProposalId : null}
+                  loading={tradeProposalActions.loading}
+                  error={tradeCounterError || tradeProposalActions.error}
+                  onOpenPlayer={openTradeProposalPlayer}
+                />
+              ) : tradeView === 'history' ? (
                 <TradeHistory
                   onViewPlayer={(sleeperId) => {
                     void navigateToCompanionSleeperPlayer(sleeperId, 'Trade History');
@@ -1802,6 +2003,9 @@ function AppInner() {
               ) : (
                 <CompanionTrade
                 initialPlayer={tradeInitPlayer}
+                initialTradeProposal={pendingTradeProposal}
+                onConsumeInitialTradeProposal={() => setPendingTradeProposal(null)}
+                tradeProposalActions={tradeProposalActions}
                 onConsumeInitialPlayer={() => applyRoute({
                   activeTab: 'trade',
                   tradeView,
@@ -1844,7 +2048,7 @@ function AppInner() {
                       navigateToCompanionSleeperPlayer(sleeperId, 'Rosters', resolvedMeta);
                     }}
                     onTradePlayer={(sleeperId, partnerRosterId, side = 'get') => {
-                      if (tradeDisabledForPlatform) return;
+                      if (tradeDisabled) return;
                       applyRoute({
                         activeTab: 'trade',
                         tradeView: 'agent',
@@ -1853,7 +2057,8 @@ function AppInner() {
                         tradePartnerRosterId: partnerRosterId,
                       });
                     }}
-                    tradeDisabled={tradeDisabledForPlatform}
+                    tradeDisabled={tradeDisabled}
+                    tradeDisabledTitle={tradeDisabledTitle}
                   />
                 </Suspense>
               )}
@@ -2032,7 +2237,7 @@ function AppInner() {
         <BottomTabBar
           activeTab={activeTab}
           onTabChange={navigateToTab}
-          tradeDisabled={tradeDisabledForPlatform}
+          tradeDisabled={tradeNavDisabled}
           leagueDisabled={leagueDisabledForPlatform}
         />
       </div>
@@ -2057,6 +2262,7 @@ function AppInner() {
             setActionSheetOpen(false);
             setLegalOpen(true);
           }}
+          onSharePage={handleSharePage}
           onExportImage={handleExportImage}
           predictionShareReady={predictionShareState.ready}
           predictionShareReason={predictionShareState.errors[0]}
@@ -2079,6 +2285,15 @@ function AppInner() {
             setLeagueSwitcherOpen(true);
           }}
           onDraftSync={draftSyncEnabled ? handleDraftSync : null}
+        />
+      )}
+
+      {pageShareOpen && (
+        <PageShareSheet
+          metadata={pageShareMetadata}
+          url={pageShareUrl}
+          onClose={() => setPageShareOpen(false)}
+          onNativeShare={() => { void handleNativePageShare(); }}
         />
       )}
 

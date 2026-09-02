@@ -31,6 +31,67 @@ test('BALLDONTLIE gateway uses conservative unknown defaults and explicit GOAT h
   assert.equal(goat.cadence.scoresLiveMs, 1_000);
 });
 
+test('BALLDONTLIE gateway keeps StoryStats on its Bearer credential and daily budget lane', async () => {
+  let nowMs = Date.UTC(2026, 8, 2, 12, 0, 0);
+  const requests = [];
+  const gateway = createBalldontlieGateway({
+    env: {
+      GRIDSHIFT_STORY_STATS_API_KEY: 'story-key',
+      GRIDSHIFT_STORY_STATS_DAILY_LIMIT: '2',
+    },
+    now: () => nowMs,
+    fetcher: async (url, options) => {
+      requests.push({ url: new URL(url), options });
+      return ok({ game: { id: 424095 }, story: { id: 1, content: 'Stats story.' } });
+    },
+  });
+
+  assert.equal(gateway.supports('storyStats'), true);
+  const first = await gateway.request({
+    path: '/stories/nfl/games/424095/pregame',
+    params: new URLSearchParams({ audience: 'stats', tone: 'editorial' }),
+    capability: 'storyStats',
+    cacheTtlMs: 60_000,
+  });
+  const cached = await gateway.request({
+    path: '/stories/nfl/games/424095/pregame',
+    params: new URLSearchParams({ tone: 'editorial', audience: 'stats' }),
+    capability: 'storyStats',
+    cacheTtlMs: 60_000,
+  });
+
+  assert.equal(first.payload.story.content, 'Stats story.');
+  assert.equal(cached.cache.hit, true);
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].url.pathname, '/stories/nfl/games/424095/pregame');
+  assert.equal(requests[0].options.headers.Authorization, 'Bearer story-key');
+  assert.equal(gateway.getStatus().storyStats.usedRequests, 1);
+  assert.equal(gateway.getStatus().rateLimit.usedRequests, 0);
+});
+
+test('StoryStats gateway daily budget resets at the UTC boundary', async () => {
+  let nowMs = Date.UTC(2026, 8, 2, 23, 59, 30);
+  const gateway = createBalldontlieGateway({
+    env: {
+      GRIDSHIFT_STORY_STATS_API_KEY: 'story-key',
+      GRIDSHIFT_STORY_STATS_DAILY_LIMIT: '1',
+    },
+    now: () => nowMs,
+    fetcher: async () => ok({ data: [] }),
+  });
+  const request = (gameId) => gateway.request({
+    path: `/stories/nfl/games/${gameId}/live`,
+    capability: 'storyStats',
+    cacheTtlMs: 0,
+  });
+
+  await request(1);
+  await assert.rejects(request(2), /daily beta request limit/);
+  nowMs = Date.UTC(2026, 8, 3, 0, 0, 1);
+  await request(2);
+  assert.equal(gateway.getStatus().storyStats.usedRequests, 1);
+});
+
 test('BALLDONTLIE request keys sort and deduplicate arrays while retaining distinct values and freshness', () => {
   const left = new URLSearchParams();
   left.append('season_type[]', '3');
