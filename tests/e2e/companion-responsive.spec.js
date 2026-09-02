@@ -251,6 +251,43 @@ test('Trade selected asset cards keep metadata readable', async ({ page }) => {
   }
 });
 
+test('Trade pick asset cards match player card dimensions without duplicate metadata', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto('/trade/agent?player=103&side=give&other=201');
+
+  const picksFilter = page.getByTestId('trade-shelf-filter-picks').filter({ visible: true });
+  await expect(picksFilter).toBeVisible();
+  await picksFilter.click();
+
+  const shelfPick = page.locator('[data-testid^="trade-shelf-yours-pick-"]:visible').first();
+  await expect(shelfPick).toBeVisible();
+  await shelfPick.click();
+
+  const playerRow = page.locator('[data-testid^="trade-side-asset-player-"]:visible').first();
+  const pickRow = page.locator('[data-testid^="trade-side-asset-pick-"]:visible').first();
+  await expect(playerRow).toBeVisible();
+  await expect(pickRow).toBeVisible();
+
+  const state = await pickRow.evaluate((row) => {
+    const meta = row.querySelector('.trade-selection-row__meta');
+    const metaText = meta?.textContent?.trim() ?? '';
+    const identityText = row.querySelector('.trade-selection-row__identity')?.textContent?.trim() ?? '';
+    return {
+      height: row.getBoundingClientRect().height,
+      metaText,
+      identityText,
+      projectedLabelCount: (metaText.match(/PROJECTED|EARLY|MID|LATE/gi) ?? []).length,
+    };
+  });
+  const playerHeight = await playerRow.evaluate((row) => row.getBoundingClientRect().height);
+
+  expect(Math.abs(state.height - playerHeight)).toBeLessThanOrEqual(1);
+  expect(state.metaText).not.toContain('DRAFT PICK');
+  expect(state.metaText).not.toContain('2027');
+  expect(state.identityText).toMatch(/^\d{4} \d+(st|nd|rd|th)$/);
+  expect(state.projectedLabelCount).toBe(0);
+});
+
 test('Trade shelf keeps add actions and pick values visible', async ({ page }) => {
   for (const viewport of [
     { width: 1280, height: 720 },

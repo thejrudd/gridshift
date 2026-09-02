@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { fmtKtcValue } from '../../../utils/ktcApi';
+import { getDraftPickLabel } from '../../../utils/draftPickDisplay';
 import {
   formatTradeProposalExpiry,
   formatTradeProposalEventTime,
@@ -24,7 +25,7 @@ function getViewerRelativeSnapshot(snapshot, viewerUserId) {
 
 function getAssetLabel(asset) {
   if (asset?.type === 'faab') return `$${asset.amount} FAAB`;
-  if (asset?.type === 'pick') return asset.label || `${asset.year} Round ${asset.round} pick`;
+  if (asset?.type === 'pick') return getDraftPickLabel(asset);
   return asset?.label || asset?.name || 'Asset';
 }
 
@@ -33,9 +34,7 @@ function TradeShareAsset({ asset, darkMode, valueResolver, onOpenPlayer }) {
   const isPick = asset?.type === 'pick';
   const meta = isPlayer
     ? [asset.position, asset.team].filter(Boolean).join(' · ') || 'Player'
-    : isPick
-      ? [asset.year, `Round ${asset.round}`].filter(Boolean).join(' · ')
-      : 'Waiver budget';
+    : isPick ? null : 'Waiver budget';
   const label = getAssetLabel(asset);
   const normalizedAsset = { ...asset, label };
   const value = getTradeProposalAssetValue(asset, valueResolver);
@@ -53,7 +52,7 @@ function TradeShareAsset({ asset, darkMode, valueResolver, onOpenPlayer }) {
         loading="eager"
         leading={leading}
         metaPrefix=""
-        metaSegments={[meta, ...(isPick && asset.pickNumberLabel ? [asset.pickNumberLabel] : [])]}
+        metaSegments={meta ? [meta] : []}
         valueKicker="Value"
         valueLabel={value != null ? fmtKtcValue(value) : '—'}
         className="trade-share-card__asset-row"

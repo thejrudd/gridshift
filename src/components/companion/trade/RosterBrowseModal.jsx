@@ -132,11 +132,11 @@ export default function RosterBrowseModal({
     ];
   }, [hasDST, hasIDP, players]);
 
-  // Pick list — enriched with quality label and value
+  // Pick list — enriched with the shared year-plus-round label and value
   const picks = useMemo(() => {
     if (!roster || !rosterPicks || !slots) return [];
     return getPicksForRoster(roster.roster_id, rosterPicks, slots).map(pick => {
-      const { val, displayInfo, quality, valueQuality } = valueDraftPick(pick, {
+      const { val, displayInfo } = valueDraftPick(pick, {
         rosters,
         ktcPlayers: adjustedKtcPlayers,
         leagueType,
@@ -148,18 +148,10 @@ export default function RosterBrowseModal({
       const fromOwner = pick.isOwn ? null : (ownerNameByRosterId?.get(pick.fromRosterId) ?? null);
       return {
         ...pick,
-        quality,
-        valueQuality,
         label: displayInfo.label,
         val,
         fromOwner,
         displayMode: displayInfo.displayMode,
-        lockedSlot: displayInfo.lockedSlot ?? null,
-        pickNumberLabel: displayInfo.pickNumberLabel ?? null,
-        pickRangeLabel: displayInfo.pickRangeLabel ?? null,
-        cardHeadline: displayInfo.cardHeadline ?? null,
-        cardMetaLabel: displayInfo.cardMetaLabel ?? null,
-        sortSlot: displayInfo.sortSlot ?? null,
       };
     }).sort(compareDraftPickAssets);
   }, [roster, rosterPicks, slots, rosters, adjustedKtcPlayers, leagueType, league, drafts, pickValueMap, season, ownerNameByRosterId]);

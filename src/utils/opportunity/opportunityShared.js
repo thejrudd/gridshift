@@ -249,7 +249,7 @@ export function buildPlayerAsset(player, rosterId, playerValueMap = null) {
 
 export function buildPickAsset(pick, rosters, pickValueMap, currentSeason, league = null, drafts = [], ktcPlayers = [], leagueType = '1qb') {
   if (!pick) return null;
-  const { value, displayInfo, quality, valueQuality } = valueDraftPick(pick, {
+  const { value, displayInfo } = valueDraftPick(pick, {
     rosters,
     ktcPlayers,
     leagueType,
@@ -266,15 +266,7 @@ export function buildPickAsset(pick, rosters, pickValueMap, currentSeason, leagu
     pickData: pick,
     round: pick.round,
     year: pick.year,
-    quality,
-    valueQuality,
     displayMode: displayInfo.displayMode,
-    lockedSlot: displayInfo.lockedSlot ?? null,
-    pickNumberLabel: displayInfo.pickNumberLabel ?? null,
-    pickRangeLabel: displayInfo.pickRangeLabel ?? null,
-    cardHeadline: displayInfo.cardHeadline ?? null,
-    cardMetaLabel: displayInfo.cardMetaLabel ?? null,
-    sortSlot: displayInfo.sortSlot ?? null,
     value,
     isOwn: !!pick.isOwn,
   };

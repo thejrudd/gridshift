@@ -1,9 +1,9 @@
-import { useSleeperLeague } from '../../../context/SleeperContext';
 import { useTheme } from '../../../context/ThemeContext';
 import { fmtKtcValue } from '../../../utils/ktcApi';
 import { normalizeIDPPos } from '../../../utils/idpEngine';
 import useCardGlow from '../../../hooks/useCardGlow.jsx';
 import { teamPalette } from './tradeUiHelpers';
+import { getDraftPickLabel, getRoundOrdinal } from '../../../utils/draftPickDisplay';
 
 // Position-specific season stat definitions for desktop card breakdown.
 const CARD_STAT_DEFS = {
@@ -53,7 +53,6 @@ export default function ProposalPlayerCard({ player = null, palette = null, pick
   const primaryPalette = palette ?? null;
   const primaryPick = pick ?? null;
   const { darkMode, favoriteTeam } = useTheme();
-  const { rosters } = useSleeperLeague();
 
   const teamColor = primaryPalette?.color ?? null;
   const teamGradient = primaryPalette?.gradient ?? null;
@@ -97,45 +96,12 @@ export default function ProposalPlayerCard({ player = null, palette = null, pick
 
   // ── Pick-only card ──────────────────────────────────────────────────────
   if (!primary && primaryPick) {
-    const pickOrdinals = { 1: '1st', 2: '2nd', 3: '3rd', 4: '4th', 5: '5th' };
     const roundNumber = Number(primaryPick.round);
     const hasRound = Number.isFinite(roundNumber) && roundNumber > 0;
-    const roundOrd = hasRound ? (pickOrdinals[roundNumber] ?? `${roundNumber}th`) : null;
+    const roundOrd = hasRound ? getRoundOrdinal(roundNumber) : null;
     const roundHeroParts = roundOrd?.match(/^(\d+)(\D+)$/);
-    const quality = primaryPick.displayQuality ?? primaryPick.quality ?? '';
-    const qualityLabel = quality === 'Early' ? 'Early' : quality === 'Mid' ? 'Middle' : quality === 'Late' ? 'Late' : '';
-    const r = hasRound ? roundNumber : 1;
-    // Dynamic pick range based on league size
-    const teamCount = rosters?.length || 12;
-    const earlyEnd = Math.floor(teamCount / 3);
-    const midEnd = Math.floor((2 * teamCount) / 3);
-    const QUALITY_SLOTS = {
-      Early: [1, earlyEnd],
-      Mid:   [earlyEnd + 1, midEnd],
-      Late:  [midEnd + 1, teamCount],
-    };
-    const slots = QUALITY_SLOTS[quality];
-    const pickRange = slots
-      ? `${r}.${String(slots[0]).padStart(2, '0')} – ${r}.${String(slots[1]).padStart(2, '0')}`
-      : null;
-    const cardHeadline = primaryPick.cardHeadline
-      ?? (qualityLabel && roundOrd ? `${roundOrd} Round · ${qualityLabel}` : `Round ${primaryPick.round ?? '—'}`);
-    const pickMetaLabel = primaryPick.cardMetaLabel ?? (primaryPick.displayMode === 'future' ? null : 'Projected Range');
-    const pickMetaValue = primaryPick.pickRangeLabel ?? pickRange;
-    const showPickMeta = Boolean(pickMetaLabel && pickMetaValue);
-    const compactPickNumberLabel = primaryPick.pickNumberLabel ?? primaryPick.pickRangeLabel ?? null;
-    const parsedPickSlot = typeof compactPickNumberLabel === 'string'
-      ? Number(compactPickNumberLabel.match(/^\d+\.(\d+)$/)?.[1])
-      : null;
-    const lockedPickSlot = Number(primaryPick.lockedSlot ?? parsedPickSlot);
-    const hasLockedPickSlot = Number.isFinite(lockedPickSlot) && lockedPickSlot > 0;
-    const compactRoundLabel = hasRound ? `Round ${roundNumber}` : null;
-    const compactPickSlotLabel = hasLockedPickSlot ? `Pick ${lockedPickSlot}` : compactPickNumberLabel;
-    const compactPickIdentity = [
-      primaryPick.year,
-      compactRoundLabel,
-      compactPickSlotLabel,
-    ].filter(Boolean).join(' · ') || primaryPick.label || 'Draft Pick';
+    const cardHeadline = roundOrd ? `${roundOrd} Round` : 'Draft Pick';
+    const compactPickIdentity = getDraftPickLabel(primaryPick);
 
     // Derive color theme: My Team > dark gold > light gold
     const favPalette = favoriteTeam ? teamPalette(favoriteTeam, darkMode) : null;
@@ -385,27 +351,6 @@ export default function ProposalPlayerCard({ player = null, palette = null, pick
             </span>
           </div>
 
-          {showPickMeta && (
-          <div className={compactTradeCard ? 'hidden' : 'hidden min-[420px]:flex gap-1 w-full lg:hidden min-h-0 overflow-hidden'}>
-            <div className="flex-1 rounded-lg p-1.5 flex flex-col gap-px" style={{ background: 'rgba(0,0,0,0.22)' }}>
-              <span className="text-[length:var(--type-micro)] font-bold uppercase tracking-wide mb-0.5" style={{ color: pt.accentMuted }}>{pickMetaLabel}</span>
-              <span className="text-[length:var(--type-micro)] font-semibold tabular-nums" style={{ color: pt.labelText }}>
-                {pickMetaValue}
-              </span>
-            </div>
-          </div>
-          )}
-
-          {showPickMeta && (
-          <div className="hidden lg:flex gap-1.5 w-full min-h-0 overflow-hidden">
-            <div className="flex-1 rounded-lg p-1.5 flex flex-col gap-px" style={{ background: 'rgba(0,0,0,0.22)' }}>
-              <span className="text-[length:var(--type-micro)] font-bold uppercase tracking-wide mb-0.5" style={{ color: pt.accentMuted }}>{pickMetaLabel}</span>
-              <span className="text-[length:var(--type-label)] font-semibold tabular-nums" style={{ color: pt.labelText }}>
-                {pickMetaValue}
-              </span>
-            </div>
-          </div>
-          )}
         </div>
         </>
         )}

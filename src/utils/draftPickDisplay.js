@@ -6,54 +6,9 @@ const ORDINALS = {
   5: '5th',
 };
 
-const QUALITY_SORT_ORDER = {
-  Early: 0,
-  Mid: 1,
-  Late: 2,
-};
-
 function toNumber(value, fallback = null) {
   const next = Number(value);
   return Number.isFinite(next) ? next : fallback;
-}
-
-function getRosterPoints(roster) {
-  const settings = roster?.settings ?? {};
-  return (toNumber(settings.fpts, 0) ?? 0) + ((toNumber(settings.fpts_decimal, 0) ?? 0) / 100);
-}
-
-function compareRostersForDraftOrder(a, b) {
-  const winsA = toNumber(a?.settings?.wins, 0) ?? 0;
-  const winsB = toNumber(b?.settings?.wins, 0) ?? 0;
-  if (winsA !== winsB) return winsA - winsB;
-
-  const lossesA = toNumber(a?.settings?.losses, 0) ?? 0;
-  const lossesB = toNumber(b?.settings?.losses, 0) ?? 0;
-  if (lossesA !== lossesB) return lossesB - lossesA;
-
-  const pointsA = getRosterPoints(a);
-  const pointsB = getRosterPoints(b);
-  if (pointsA !== pointsB) return pointsA - pointsB;
-
-  return String(a?.roster_id ?? '').localeCompare(String(b?.roster_id ?? ''), undefined, { numeric: true });
-}
-
-function padPickSlot(slot) {
-  return String(slot).padStart(2, '0');
-}
-
-function getProjectedSlotRange(quality, teamCount, round) {
-  if (!quality || !teamCount || !round) return null;
-  const earlyEnd = Math.max(1, Math.floor(teamCount / 3));
-  const midEnd = Math.max(earlyEnd + 1, Math.floor((2 * teamCount) / 3));
-  const ranges = {
-    Early: [1, earlyEnd],
-    Mid: [earlyEnd + 1, midEnd],
-    Late: [midEnd + 1, teamCount],
-  };
-  const slots = ranges[quality];
-  if (!slots) return null;
-  return `${round}.${padPickSlot(slots[0])} - ${round}.${padPickSlot(slots[1])}`;
 }
 
 export function getRoundOrdinal(round) {
@@ -62,17 +17,11 @@ export function getRoundOrdinal(round) {
   return ORDINALS[normalizedRound] ?? `${normalizedRound}th`;
 }
 
-export function getProjectedPickQuality(rosterId, rosters) {
-  if (!rosters?.length) return 'Mid';
-
-  const sorted = [...rosters].sort(compareRostersForDraftOrder);
-  const idx = sorted.findIndex((roster) => String(roster.roster_id) === String(rosterId));
-  if (idx === -1) return 'Mid';
-
-  const third = Math.ceil(sorted.length / 3);
-  if (idx < third) return 'Early';
-  if (idx < third * 2) return 'Mid';
-  return 'Late';
+export function getDraftPickLabel(pick) {
+  const year = toNumber(pick?.year, null);
+  const round = toNumber(pick?.round, null);
+  if (!year || !round) return 'Draft Pick';
+  return `${year} ${getRoundOrdinal(round)}`;
 }
 
 export function isLeagueSeasonComplete(league) {
@@ -88,13 +37,6 @@ export function isLeagueSeasonComplete(league) {
 export function getDraftForPickYear(drafts, year) {
   const normalizedYear = String(year ?? '');
   return (drafts ?? []).find((draft) => String(draft?.season ?? '') === normalizedYear) ?? null;
-}
-
-export function getFinalStandingsDraftSlot(rosterId, rosters) {
-  if (!rosters?.length) return null;
-  const sorted = [...rosters].sort(compareRostersForDraftOrder);
-  const idx = sorted.findIndex((roster) => String(roster.roster_id) === String(rosterId));
-  return idx === -1 ? null : idx + 1;
 }
 
 export function getDraftSlotForRoster(rosterId, rosters, draft) {
@@ -119,81 +61,14 @@ export function getDraftSlotForRoster(rosterId, rosters, draft) {
   return null;
 }
 
-export function getDraftPickDisplayInfo(pick, {
-  league = null,
-  rosters = [],
-  drafts = [],
-  currentSeason = null,
-} = {}) {
+export function getDraftPickDisplayInfo(pick) {
   const year = toNumber(pick?.year, null);
   const round = toNumber(pick?.round, null);
-  const current = toNumber(currentSeason ?? league?.season, new Date().getFullYear());
-  const upcomingYear = current == null ? null : current + 1;
   const roundOrdinal = getRoundOrdinal(round);
-  const projectedQuality = getProjectedPickQuality(pick?.fromRosterId, rosters);
-  const teamCount = rosters?.length || 12;
-
-  if (!year || !round) {
-    return {
-      displayMode: 'unknown',
-      label: 'Draft Pick',
-      roundOrdinal,
-      quality: projectedQuality,
-      valueQuality: projectedQuality,
-      sortSlot: null,
-    };
-  }
-
-  if (upcomingYear != null && year > upcomingYear) {
-    return {
-      displayMode: 'future',
-      label: `${year} ${roundOrdinal}`,
-      cardHeadline: `${roundOrdinal} Round`,
-      cardMetaLabel: null,
-      pickRangeLabel: null,
-      roundOrdinal,
-      quality: null,
-      valueQuality: 'Mid',
-      sortSlot: null,
-    };
-  }
-
-  const draft = getDraftForPickYear(drafts, year);
-  const draftComplete = draft?.status === 'complete';
-  const seasonComplete = isLeagueSeasonComplete(league);
-  const shouldShowLockedSlot = draftComplete || (upcomingYear != null && year === upcomingYear && seasonComplete);
-  const lockedSlot = shouldShowLockedSlot
-    ? (getDraftSlotForRoster(pick?.fromRosterId, rosters, draft) ?? getFinalStandingsDraftSlot(pick?.fromRosterId, rosters))
-    : null;
-
-  if (lockedSlot) {
-    const pickNumberLabel = `${round}.${padPickSlot(lockedSlot)}`;
-    return {
-      displayMode: 'locked',
-      label: `${year} ${pickNumberLabel}`,
-      cardHeadline: `${roundOrdinal} Round · Pick ${pickNumberLabel}`,
-      cardMetaLabel: 'Locked Pick',
-      pickRangeLabel: pickNumberLabel,
-      pickNumberLabel,
-      lockedSlot,
-      roundOrdinal,
-      quality: null,
-      valueQuality: projectedQuality,
-      sortSlot: lockedSlot,
-    };
-  }
-
-  const projectedRange = getProjectedSlotRange(projectedQuality, teamCount, round);
   return {
-    displayMode: 'projected',
-    label: `${year} Projected ${projectedQuality} ${roundOrdinal}`,
-    cardHeadline: `${roundOrdinal} Round · Projected ${projectedQuality}`,
-    cardMetaLabel: 'Projected Range',
-    pickRangeLabel: projectedRange,
+    displayMode: year && round ? 'round' : 'unknown',
+    label: getDraftPickLabel(pick),
     roundOrdinal,
-    quality: projectedQuality,
-    valueQuality: projectedQuality,
-    sortSlot: QUALITY_SORT_ORDER[projectedQuality] ?? 1,
   };
 }
 
@@ -205,14 +80,6 @@ export function applyDraftPickDisplayInfo(pickAsset, options = {}) {
     ...pickAsset,
     label: displayInfo.label,
     displayMode: displayInfo.displayMode,
-    displayQuality: displayInfo.quality,
-    valueQuality: displayInfo.valueQuality,
-    lockedSlot: displayInfo.lockedSlot ?? null,
-    pickNumberLabel: displayInfo.pickNumberLabel ?? null,
-    pickRangeLabel: displayInfo.pickRangeLabel ?? null,
-    cardHeadline: displayInfo.cardHeadline ?? null,
-    cardMetaLabel: displayInfo.cardMetaLabel ?? null,
-    sortSlot: displayInfo.sortSlot ?? null,
   };
 }
 
@@ -225,12 +92,6 @@ export function compareDraftPickAssets(a, b) {
 
   const roundDiff = (toNumber(a?.round ?? aPick.round, 99) ?? 99) - (toNumber(b?.round ?? bPick.round, 99) ?? 99);
   if (roundDiff) return roundDiff;
-
-  const slotDiff = (toNumber(a?.lockedSlot ?? a?.sortSlot, 99) ?? 99) - (toNumber(b?.lockedSlot ?? b?.sortSlot, 99) ?? 99);
-  if (slotDiff) return slotDiff;
-
-  const qualityDiff = (QUALITY_SORT_ORDER[a?.quality ?? a?.displayQuality] ?? 1) - (QUALITY_SORT_ORDER[b?.quality ?? b?.displayQuality] ?? 1);
-  if (qualityDiff) return qualityDiff;
 
   return String(a?.id ?? aPick.key ?? '').localeCompare(String(b?.id ?? bPick.key ?? ''), undefined, { numeric: true });
 }

@@ -2,8 +2,8 @@
 // Value balancing, package suggestions, and draft pick ownership for the
 // Companion Trade Agent.
 
-import { findKtcDraftPick, getKtcValue } from './ktcApi.js';
-import { getDraftPickDisplayInfo, getProjectedPickQuality } from './draftPickDisplay.js';
+import { findKtcDraftPickBaseline, getKtcValue } from './ktcApi.js';
+import { getDraftPickDisplayInfo } from './draftPickDisplay.js';
 import { resolveTradePlayerValueDetail } from './tradeValue.js';
 
 // ── Redraft pick valuation ────────────────────────────────────────────────────
@@ -23,13 +23,13 @@ function median(values) {
   return sorted[Math.floor(sorted.length / 2)] ?? 0;
 }
 
-function getCalibrationTierValue(bucket) {
+function getCalibrationRoundValue(bucket) {
   if (!bucket.length) return null;
   const values = bucket
     .map((candidate) => Number(candidate?.value))
     .filter((value) => Number.isFinite(value) && value > 0);
 
-  // Do not price a tier from a lone known player when most of its projected
+  // Do not price a round from a lone known player when most of its expected
   // options are unavailable. The KTC fallback is more honest in that case.
   if (values.length < Math.ceil(bucket.length / 2)) return null;
   return Math.round(median(values));
@@ -49,9 +49,9 @@ function normalizeCalibrationPool(calibrationPool) {
 /**
  * Compute draft pick values for a REDRAFT league. When a scoring-aware Draft
  * calibration pool is available, its neutral Draft order determines which
- * players project into each pick tier and their canonical Trade values price
- * that tier. KTC-only values remain the fallback whenever that pool is sparse
- * or unavailable.
+ * players are expected across the full round and their canonical Trade values
+ * price that round. KTC-only values remain the fallback whenever that pool is
+ * sparse or unavailable.
  *
  * Uncertainty discount scales with round depth: a 1st-round pick is
  * relatively predictable; a 15th-round pick is nearly a lottery ticket.
@@ -62,7 +62,7 @@ function normalizeCalibrationPool(calibrationPool) {
  * @param {number} leagueSize - Number of teams (picks per round)
  * @param {string} leagueType - '1qb' | 'sf'
  * @param {{ calibrationPool?: Array<{rank: number, value: number|null}>, fallbackValueMultiplier?: number }} options
- * @returns {{ [round: number]: { Early: number, Mid: number, Late: number } }}
+ * @returns {{ [round: number]: number }}
  */
 export function computeRedraftPickValues(
   ktcPlayers,
@@ -79,7 +79,6 @@ export function computeRedraftPickValues(
     .filter(v => v > 0)
     .sort((a, b) => b - a);
 
-  const third = Math.max(1, Math.floor(leagueSize / 3));
   const normalizedCalibrationPool = normalizeCalibrationPool(calibrationPool);
   const map = {};
 
@@ -92,22 +91,10 @@ export function computeRedraftPickValues(
     const discount = Math.max(0.25, 0.93 - (round - 1) * 0.06);
 
     const calibrationBucket = normalizedCalibrationPool.slice(start, start + leagueSize);
-    const fallbackTiers = {
-      Early: median(bucket.slice(0, third)),
-      Mid: median(bucket.slice(third, third * 2)),
-      Late: median(bucket.slice(third * 2)),
-    };
-
-    map[round] = Object.fromEntries(Object.entries({
-      Early: calibrationBucket.slice(0, third),
-      Mid: calibrationBucket.slice(third, third * 2),
-      Late: calibrationBucket.slice(third * 2),
-    }).map(([quality, candidates]) => {
-      const calibrated = getCalibrationTierValue(candidates);
-      const tierValue = calibrated ?? fallbackTiers[quality];
-      const multiplier = calibrated == null ? fallbackValueMultiplier : 1;
-      return [quality, Math.round(tierValue * discount * multiplier)];
-    }));
+    const calibrated = getCalibrationRoundValue(calibrationBucket);
+    const roundValue = calibrated ?? median(bucket);
+    const multiplier = calibrated == null ? fallbackValueMultiplier : 1;
+    map[round] = Math.round(roundValue * discount * multiplier);
   }
 
   return map;
@@ -217,43 +204,28 @@ export function getPicksForRoster(rosterId, rosterPicks, slots) {
   return picks;
 }
 
-// ── Pick quality from standings ───────────────────────────────────────────────
-
-/**
- * Determine pick quality (Early/Mid/Late) based on a roster's current season
- * standing within the league. Only meaningful for current/next-season picks.
- *
- * @param {number} rosterId - The original owner of the pick
- * @param {Array}  rosters  - All league rosters (each has .settings.wins, .settings.losses)
- * @returns 'Early' | 'Mid' | 'Late'
- */
-export function getPickQuality(rosterId, rosters) {
-  return getProjectedPickQuality(rosterId, rosters);
-}
-
 export function valueDraftPick(
   pick,
   {
-    rosters = [],
     ktcPlayers = [],
     leagueType = '1qb',
     pickValueMap = null,
     currentSeason = null,
-    league = null,
-    drafts = [],
   } = {},
 ) {
-  const displayInfo = getDraftPickDisplayInfo(pick, { league, rosters, drafts, currentSeason });
-  const quality = displayInfo.valueQuality ?? getPickQuality(pick?.fromRosterId, rosters);
+  const displayInfo = getDraftPickDisplayInfo(pick);
 
   let val = null;
   let ktcEntry = null;
   if (pickValueMap?.[pick?.round] != null) {
-    const tierVal = pickValueMap[pick.round][quality] ?? pickValueMap[pick.round].Mid ?? null;
-    val = tierVal != null ? Math.round(tierVal * pickYearDiscount(pick.year, currentSeason)) : null;
+    const roundVal = typeof pickValueMap[pick.round] === 'number'
+      ? pickValueMap[pick.round]
+      : pickValueMap[pick.round].value ?? null;
+    val = roundVal != null ? Math.round(roundVal * pickYearDiscount(pick.year, currentSeason)) : null;
   } else {
-    ktcEntry = findKtcDraftPick(pick?.year, pick?.round, quality, ktcPlayers);
-    val = getKtcValue(ktcEntry, leagueType);
+    ktcEntry = findKtcDraftPickBaseline(pick?.year, pick?.round, ktcPlayers);
+    const baseValue = getKtcValue(ktcEntry, leagueType);
+    val = baseValue != null ? Math.round(baseValue * pickYearDiscount(pick.year, currentSeason)) : null;
   }
 
   return {
@@ -261,8 +233,6 @@ export function valueDraftPick(
     value: val,
     ktcEntry,
     displayInfo,
-    quality: displayInfo.quality ?? quality,
-    valueQuality: quality,
   };
 }
 
@@ -287,7 +257,7 @@ function buildPlayerTradeItem(playerId, player, detail, { ktcPlayers = [] } = {}
 }
 
 function buildDraftPickTradeItem(pick, valuation, { includeKtcEntry = false } = {}) {
-  const { val, ktcEntry, displayInfo, quality, valueQuality } = valuation;
+  const { val, ktcEntry, displayInfo } = valuation;
   const item = {
     id: pick.key,
     label: displayInfo.label,
@@ -296,15 +266,7 @@ function buildDraftPickTradeItem(pick, valuation, { includeKtcEntry = false } = 
     pickData: pick,
     year: pick.year,
     round: pick.round,
-    quality,
-    valueQuality,
     displayMode: displayInfo.displayMode,
-    lockedSlot: displayInfo.lockedSlot ?? null,
-    pickNumberLabel: displayInfo.pickNumberLabel ?? null,
-    pickRangeLabel: displayInfo.pickRangeLabel ?? null,
-    cardHeadline: displayInfo.cardHeadline ?? null,
-    cardMetaLabel: displayInfo.cardMetaLabel ?? null,
-    sortSlot: displayInfo.sortSlot ?? null,
   };
 
   if (includeKtcEntry) item.ktcEntry = ktcEntry;
@@ -321,7 +283,7 @@ function buildDraftPickTradeItem(pick, valuation, { includeKtcEntry = false } = 
  * @param {object}   sleeperPlayers - Full Sleeper players map
  * @param {Array}    ktcPlayers     - KTC dataset
  * @param {string}   leagueType     - '1qb' | 'sf'
- * @param {Array}    rosters        - For pick quality estimation
+ * @param {Array}    rosters        - League rosters retained for ownership/context
  * @param {string}   currentSeason  - e.g. "2025" — for year-based pick discount
  * @returns {{ total: number, items: Array<{ id, label, val, type }> }}
  */

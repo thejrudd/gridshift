@@ -1324,3 +1324,11 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Live and Statistics improvements** - Strengthen provider-backed clock/replay handling and add optional server-only StoryStats narratives with bounded caching, quota handling, and production scheduling.
 - **Stable NFL calendar boundaries** - Resolve prediction league-year and preseason-to-regular-season boundaries against UTC calendar dates so behavior and automated checks do not change with the host timezone.
 - **Regression coverage and documentation** - Add focused coverage across Trade Proposals, sharing, routing, StoryStats, live data, Statistics Scores, and responsive surfaces, with updated deployment and feature references.
+
+## v8.9.1 - Trade Pick Clarity & Valuation
+*2026-09-02*
+
+- **Tradable pick labels** - Show only the guaranteed year and round for future picks instead of implying a projected slot or Early/Mid/Late quality.
+- **Stable pick valuation** - Give every tradable pick in the same year and round one consistent value, independent of its original roster owner, while retaining the year-based uncertainty discount.
+- **Trade card consistency** - Keep pick cards aligned with player cards by removing duplicate pick metadata and redundant projected labels.
+- **Regression coverage and documentation** - Add focused unit and responsive coverage and update the Trade references for the corrected pick-label and valuation boundaries.

@@ -507,24 +507,24 @@ export default function ValuationInfoSheet({ format, leagueType, scoringSettings
             </h3>
             {format === 'dynasty' ? (
               <p className="text-sm leading-relaxed" style={{ color: 'var(--color-label-secondary)' }}>
-                Dynasty picks use <span className="font-semibold">KTC's published RDP values</span> directly.
-                Quality (Early / Mid / Late) is determined by current standings — the worst-record
-                teams produce Early picks. Pick values are <span className="font-semibold">not adjusted</span> by
+                Dynasty picks use a <span className="font-semibold">round-level KTC RDP baseline</span> built from
+                the available market values for that round. Sleeper does not provide a reliable future slot for
+                a tradable pick, so values are <span className="font-semibold">not adjusted</span> by
                 league scoring settings, as KTC community consensus already prices future asset value
-                on a scoring-agnostic basis.
+                on a scoring-agnostic basis. A separate future-year discount still applies.
               </p>
             ) : (
               <>
                 <p className="text-sm leading-relaxed" style={{ color: 'var(--color-label-secondary)' }}>
-                  Redraft pick values represent the <span className="font-semibold">likely Trade value of players available near that slot</span>,
+                  Redraft pick values represent the <span className="font-semibold">likely Trade value of players available across that round</span>,
                   rather than dynasty RDP entries. GridShift uses the league's size to place the pick in the correct
-                  round and range, then evaluates nearby Draft-ranked players with the same Trade calculation used for players.
+                  round, then evaluates the round's Draft-ranked players with the same Trade calculation used for players.
                 </p>
                 <div className="flex flex-col gap-1 mt-0.5">
                   {[
-                    ['Early / Mid / Late', 'Each round is split into thirds by draft position. Early picks cover the top third of the round, Late picks the bottom third.'],
+                    ['Round-level value', 'Every pick in the same year and round has the same value. Sleeper identifies tradable future picks by year and round, not by a guaranteed slot.'],
                     ['Draft range', 'The neutral Draft order blends market rank, production, scoring fit, schedule, and—when available in preseason—BALLDONTLIE ADP. Missing ADP never lowers a player’s rank, so unsupported IDPs continue to use their scoring and production signals.'],
-                    ['Selection-risk discount', 'A pick is not the player it could become. A current early first is about 7% below the expected player range; the discount grows by round as outcomes become less certain.'],
+                    ['Round-risk discount', 'A pick is not the player it could become. First-round picks stay closer to the expected player range; the discount grows by round as outcomes become less certain.'],
                     ['Year discount', 'Picks usable sooner are worth more. Each additional year in the future reduces value by ~10%, floored at 40% off for picks 4+ years out.'],
                   ].map(([label, desc]) => (
                     <div key={label} className="rounded-lg px-3 py-2.5 flex flex-col gap-0.5"

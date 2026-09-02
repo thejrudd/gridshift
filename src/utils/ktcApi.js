@@ -524,3 +524,45 @@ export function findKtcDraftPick(year, round, quality, ktcPlayers) {
 
   return null;
 }
+
+function median(values) {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)] ?? null;
+}
+
+/**
+ * Build one round-level KTC pick entry from the available Early/Mid/Late
+ * market entries. Future tradable picks do not have a reliable slot, so their
+ * baseline must not depend on the original owner's current standings.
+ */
+export function findKtcDraftPickBaseline(year, round, ktcPlayers) {
+  if (!ktcPlayers?.length) return null;
+
+  const entries = ['Early', 'Mid', 'Late']
+    .map((quality) => findKtcDraftPick(year, round, quality, ktcPlayers))
+    .filter(Boolean)
+    .filter((entry, index, all) => all.findIndex((candidate) => (
+      (candidate.mflid ?? candidate.playerName) === (entry.mflid ?? entry.playerName)
+    )) === index);
+  if (!entries.length) return null;
+
+  const buildValues = (key) => {
+    const values = entries
+      .map((entry) => Number(entry?.[key]?.value))
+      .filter((value) => Number.isFinite(value) && value > 0);
+    if (!values.length) return null;
+    const value = median(values);
+    const source = entries.find((entry) => entry?.[key]?.value != null)?.[key] ?? {};
+    return { ...source, value };
+  };
+
+  const ordinal = ORDINALS[round] ?? `${round}th`;
+  return {
+    ...entries[0],
+    playerName: `${year} ${ordinal}`,
+    oneQBValues: buildValues('oneQBValues'),
+    superflexValues: buildValues('superflexValues'),
+    isSynthetic: true,
+  };
+}

@@ -159,9 +159,9 @@ Pick cards:
 - Use a themed pick background based on favorite team when available.
 - Show draft-pick hero content in the top area.
 - Compact pick hero text should share one padded stack so the round marker and year label cannot overlap when cards shrink.
-- Show round/quality label in the banner.
+- Show the round label in the banner; do not infer or display a pick-quality tier.
 - Show pick trade value with the same uniform value color as player cards.
-- May show projected pick range as optional detail on larger cards.
+- Do not show a projected pick range or inferred exact pick slot.
 - Must follow the same no-wrap/no-truncation identity-label rule.
 
 ## Equal Height Behavior

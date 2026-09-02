@@ -220,12 +220,10 @@ Main logic in `tradeEngine.js`:
   Builds full pick ownership by roster and round/year.
 - `getPicksForRoster(...)`
   Flattens owned picks for a roster.
-- `getPickQuality(...)`
-  Estimates Early / Mid / Late from current standings.
 - `valueDraftPick(...)`
-  Single source of truth for draft pick valuation. Redraft picks use `pickValueMap` plus `pickYearDiscount(...)`; dynasty/fallback picks use KTC RDP entries. Trade Agent, pick pickers, roster browse, Trade Intelligence, and Trade Upgrades must call this helper instead of duplicating pick value math.
+  Single source of truth for draft pick valuation. Picks use one flat value per year and round, with redraft values coming from `pickValueMap` plus `pickYearDiscount(...)`, and dynasty/fallback values coming from a round-level KTC RDP baseline plus the same year discount. Trade Agent, pick pickers, roster browse, Trade Intelligence, and Trade Upgrades must call this helper instead of duplicating pick value math.
 - `draftPickDisplay.js`
-  Centralizes user-facing draft pick labels, locked/projected pick display, and chronological pick-card sorting.
+  Centralizes user-facing year-plus-round pick labels and chronological pick-card sorting.
 - `valueSide(...)`
   Values a list of players and picks.
 - `evaluateTrade(...)`
@@ -239,9 +237,9 @@ Main logic in `tradeEngine.js`:
 
 ### Redraft pick calibration
 
-Redraft picks stand for the range of players expected to be available at that selection. `CompanionTrade.jsx` builds a neutral Draft candidate order from the available Draft market, prior-production, scoring-fit, and—during the supported preseason window—strictly matched BALLDONTLIE ADP signals under the active league scoring rules. It deliberately excludes personal board placement, team need, and on-the-clock recommendation logic because a pick is a league-wide asset. ADP is additive only: unavailable or unsupported ADP, including the normal absence of IDP ADP, is removed from that player's weighted signal calculation rather than treated as zero.
+Redraft picks stand for the range of players expected across a round. `CompanionTrade.jsx` builds a neutral Draft candidate order from the available Draft market, prior-production, scoring-fit, and—during the supported preseason window—strictly matched BALLDONTLIE ADP signals under the active league scoring rules. It deliberately excludes personal board placement, team need, and on-the-clock recommendation logic because a pick is a league-wide asset. ADP is additive only: unavailable or unsupported ADP, including the normal absence of IDP ADP, is removed from that player's weighted signal calculation rather than treated as zero.
 
-`computeRedraftPickValues(...)` then takes the median canonical Trade value of the available players projected into each Early/Mid/Late round tier. This lets IDP-heavy or scoring-specific leagues price picks against the players they could actually become, rather than against an offense-only KTC list. It then applies a selection-risk discount: a current early first remains close to that expected player range, while later picks receive progressively larger discounts; future-year discounts still apply separately. If fewer than half of a tier's projected players have a trustworthy Trade value, that tier falls back to the adjusted KTC-based calculation instead of inventing a value.
+`computeRedraftPickValues(...)` then takes the median canonical Trade value of the available players across each full round. This lets IDP-heavy or scoring-specific leagues price picks against the players they could actually become, rather than against an offense-only KTC list. It then applies a round-risk discount: earlier rounds remain more valuable, while later rounds receive progressively larger discounts; future-year discounts apply separately. If fewer than half of a round's expected players have a trustworthy Trade value, that round falls back to the adjusted KTC-based calculation instead of inventing a value.
 
 When modifying Agent, verify:
 - roster-id comparisons remain tolerant of string vs number inputs
@@ -274,10 +272,10 @@ Known design behavior:
 - Intelligence results render as Upgrade-style Give/Get deal rows with side totals, Apply actions, two-column explanation copy, UI-only sort chips, and compact player/pick filters.
 - Proposal card dimensions should come from the responsive card sizing contract, not from how many assets are on either side of the package; Intelligence and Upgrade result rows can use side-fitted card math at the `1200px` result-row breakpoint
 - Trade proposal card layout rules live in `docs/Trade Proposal Cards.md`; keep card sizing, identity text, stat fit, and no-clipping behavior aligned with that contract.
-- Proposal pick cards sort chronologically within each side of a trade: year, then round, then locked/projected slot. Player cards keep their generated order; pick cards are sorted among the pick group.
-- Draft pick labels must use `draftPickDisplay.js`, not duplicated string formatting. Sleeper league `status` values are expected to be `pre_draft`, `drafting`, `in_season`, or `complete`; `complete` means the upcoming pick can be shown as locked when the draft has not happened yet.
+- Proposal pick cards sort chronologically within each side of a trade: year, then round. Player cards keep their generated order; pick cards are sorted among the pick group.
+- Draft pick labels must use `draftPickDisplay.js`, not duplicated string formatting. Sleeper's traded-pick data identifies a tradable asset by season and round; Trade surfaces therefore display only year plus round and never infer a future slot from standings or draft setup metadata.
 - Draft pick values must use `valueDraftPick(...)`, not duplicated redraft discounts or KTC RDP lookup. Pass KTC players and league type into proposal engines so dynasty/fallback pick values match Trade Agent.
-- Upcoming-year picks show as projected while the league is not complete. Once the league is complete, they show a locked pick number from the completed draft order when available, or from final standings. Picks more than one year out display only year + round and value as a middle pick because future team performance is not knowable.
+- All tradable picks display only year plus round. Actual used draft results, if needed in a historical surface later, should come from Sleeper's completed draft-picks records rather than being inferred in the Trade model.
 - `Use Surplus` is structurally player-first; do not expose UI options that imply unsupported pick-only outgoing behavior there
 - `Fix Needs` can use picks, but proposal selection must explicitly protect pick-inclusive and pick-only shapes if the product wants them visible
 - proposal explanations depend heavily on `buildProposalContext(...)`; if the text looks wrong, inspect context first before changing the renderer

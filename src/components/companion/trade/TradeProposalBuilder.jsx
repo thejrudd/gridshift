@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTheme } from '../../../context/ThemeContext';
 import { fmtKtcValue } from '../../../utils/ktcApi';
 import { getPicksForRoster, valueDraftPick } from '../../../utils/tradeEngine';
+import { getDraftPickLabel } from '../../../utils/draftPickDisplay';
 import CompanionAssetRow from '../CompanionAssetRow.jsx';
 import { CompanionSelectorButton, CompanionSelectorRail } from '../CompanionSelectorControls.jsx';
 import Spinner from '../../ui/Spinner';
@@ -14,16 +15,7 @@ const TRADE_LOGO_SIDE_THEME_OPTIONS = { logoSide: 'end' };
 
 function getTradeAssetMetaSegments(item) {
   if (item.type === 'pick') {
-    const segments = [
-      item.year,
-      item.round != null ? `Round ${item.round}` : null,
-      item.pickNumberLabel ?? item.pickRangeLabel,
-      item.quality,
-    ];
-    if (item.cardMetaLabel && item.pickRangeLabel && item.cardMetaLabel !== item.pickRangeLabel) {
-      segments.push(`${item.cardMetaLabel}: ${item.pickRangeLabel}`);
-    }
-    return segments.filter(Boolean);
+    return [];
   }
 
   // Average and estimate state stay in the fixed value block, so the identity
@@ -52,7 +44,7 @@ function TradeSideAssetRow({ item, darkMode, onOpenPlayer, onRemove }) {
       teamThemeOptions={TRADE_LOGO_SIDE_THEME_OPTIONS}
       interactive={isInteractive}
       dataTestId={`trade-side-asset-${item.type}-${item.id}`}
-      metaPrefix={item.type === 'pick' ? 'Draft Pick' : ''}
+      metaPrefix=""
       metaSegments={metaSegments}
       valueKicker={valueKicker}
       valueLabel={`${valueIsEstimated ? '~' : ''}${fmtKtcValue(value)}`}
@@ -601,7 +593,7 @@ function RosterShelf({
             </div>
           ) : shelfPicks.map(pick => {
             const inTrade = inTradePickKeys.has(pick.key);
-            const label = `${pick.year ?? ''} · Rd ${pick.round}`;
+            const label = getDraftPickLabel(pick);
             return (
               <button key={pick.key}
                 data-testid={`trade-shelf-${visibleTab}-pick-${pick.key}`}
@@ -767,7 +759,7 @@ function MobileRosterShelf({
             </div>
           ) : shelfPicks.map(pick => {
             const inTrade = inTradePickKeys.has(pick.key);
-            const label = `${pick.year ?? ''} · Rd ${pick.round}`;
+            const label = getDraftPickLabel(pick);
             return (
               <button key={pick.key}
                 data-testid={`trade-shelf-${visibleTab}-pick-${pick.key}`}
