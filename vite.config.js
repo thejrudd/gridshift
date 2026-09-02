@@ -9,6 +9,8 @@ import { getPageShareMetadata, renderPageShareMetadataHtml } from './src/utils/p
 
 const { version } = JSON.parse(readFileSync('./package.json', 'utf8'))
 const appVersion = process.env.GRIDSHIFT_APP_VERSION_OVERRIDE ?? version
+const iconVersion = encodeURIComponent(appVersion)
+const versionedIconPath = (fileName) => `/icons/${fileName}?v=${iconVersion}`
 const shareData = JSON.parse(readFileSync('./public/nfl-data-2026.json', 'utf8'))
 const shareSeason = shareData.season ?? 2026
 const shareTeams = shareData.teams ?? []
@@ -85,6 +87,18 @@ function pageShareMetadataPlugin() {
         mkdirSync(routeDirectory, { recursive: true })
         writeFileSync(resolvePath(routeDirectory, 'index.html'), routeHtml)
       })
+    },
+  }
+}
+
+function versionedIconReferencesPlugin() {
+  return {
+    name: 'gridshift-versioned-icon-references',
+    transformIndexHtml: {
+      order: 'post',
+      handler(html) {
+        return html.replaceAll('__GRIDSHIFT_ICON_VERSION__', iconVersion)
+      },
     },
   }
 }
@@ -185,6 +199,7 @@ export default defineConfig(({ command }) => ({
   plugins: [
     devServiceWorkerReset(),
     pageShareMetadataPlugin(),
+    versionedIconReferencesPlugin(),
     react(),
     VitePWA({
       registerType: 'prompt',
@@ -194,6 +209,7 @@ export default defineConfig(({ command }) => ({
         'icons/pwa-512x512.png',
         'icons/apple-touch-icon-180x180.png',
         'icons/favicon.ico',
+        'icons/maskable-icon-512x512.png',
         'logos/*.png',
         'nfl-data-2026.json',
       ],
@@ -208,14 +224,15 @@ export default defineConfig(({ command }) => ({
         scope: '/',
         start_url: '/',
         icons: [
-          { src: '/icons/pwa-64x64.png', sizes: '64x64', type: 'image/png' },
-          { src: '/icons/pwa-192x192.png', sizes: '192x192', type: 'image/png' },
-          { src: '/icons/pwa-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
-          { src: '/icons/maskable-icon-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          { src: versionedIconPath('pwa-64x64.png'), sizes: '64x64', type: 'image/png' },
+          { src: versionedIconPath('pwa-192x192.png'), sizes: '192x192', type: 'image/png' },
+          { src: versionedIconPath('pwa-512x512.png'), sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: versionedIconPath('maskable-icon-512x512.png'), sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
       },
       workbox: {
         navigateFallback: '/index.html',
+        ignoreURLParametersMatching: [/^utm_/, /^v$/],
         // API URLs must reach nginx/the server sidecar instead of being
         // mistaken for client-side navigations by the installed PWA.
         navigateFallbackDenylist: [/^\/api(?:\/|$)/],
