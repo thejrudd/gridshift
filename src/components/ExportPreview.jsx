@@ -18,12 +18,12 @@ import { PredictionShareCard, SHARE_CARD_TITLES } from './predictions/share';
 import './predictionShareExport.css';
 
 const CARD_OPTIONS = [
-  { id: 'board', label: 'Full board' },
-  { id: 'champions', label: 'Champions' },
-  { id: 'divisions', label: 'Division winners' },
-  { id: 'seeding', label: 'Playoff seeding' },
-  { id: 'bracket', label: 'Full bracket' },
-  { id: 'team-record', label: 'Team record' },
+  { id: 'board', label: 'Standings', description: 'All 32 teams and their projected records' },
+  { id: 'champions', label: 'Champions', description: 'Conference and Super Bowl picks' },
+  { id: 'divisions', label: 'Division winners', description: 'Your predicted division leaders' },
+  { id: 'seeding', label: 'Playoff seeding', description: 'AFC and NFC seeds from your records' },
+  { id: 'bracket', label: 'Full bracket', description: 'Every playoff matchup and winner' },
+  { id: 'team-record', label: 'Team record', description: 'One team’s game-by-game forecast' },
 ];
 
 const CARD_IDS = new Set(CARD_OPTIONS.map(option => option.id));
@@ -123,13 +123,24 @@ export default function ExportPreview({
   sourceSnapshot = null,
   initialPresentation = null,
   initialTeamId = null,
+  predictionShareReady = true,
+  predictionShareReason = '',
+  predictionShareCapabilities = null,
   onOpenTeamAdvanced,
+  onOpenPlayoffs,
   onClose,
 }) {
   const previewFrameRef = useRef(null);
-  const initialFormat = CARD_IDS.has(initialPresentation?.cardId) ? initialPresentation.cardId : 'board';
-  const initialSize = CANVAS_IDS.has(initialPresentation?.format) ? initialPresentation.format : 'square';
-  const initialTone = THEME_IDS.has(initialPresentation?.themeId) ? initialPresentation.themeId : 'dark';
+  const hasSourceSnapshot = Boolean(sourceSnapshot);
+  const initialFormat = CARD_IDS.has(initialPresentation?.cardId)
+    ? initialPresentation.cardId
+    : hasSourceSnapshot ? 'board' : null;
+  const initialSize = CANVAS_IDS.has(initialPresentation?.format)
+    ? initialPresentation.format
+    : hasSourceSnapshot ? 'square' : null;
+  const initialTone = THEME_IDS.has(initialPresentation?.themeId)
+    ? initialPresentation.themeId
+    : hasSourceSnapshot ? 'dark' : null;
   const [createdAt] = useState(() => new Date().toISOString());
   const [format, setFormat] = useState(initialFormat);
   const [selectedTeamId, setSelectedTeamId] = useState(() => {
@@ -140,13 +151,15 @@ export default function ExportPreview({
   const [tone, setTone] = useState(initialTone);
   const [titleId, setTitleId] = useState(() => {
     const parsed = Number(initialPresentation?.titleId);
-    return Number.isInteger(parsed) && parsed >= 0 && parsed < SHARE_CARD_TITLES[initialFormat].length ? parsed : 0;
+    return Number.isInteger(parsed) && parsed >= 0 && initialFormat && parsed < SHARE_CARD_TITLES[initialFormat].length
+      ? parsed
+      : null;
   });
   const [previewScale, setPreviewScale] = useState(0.5);
   const [shareUrl, setShareUrl] = useState('');
   const [qrImage, setQrImage] = useState('');
   const [shareError, setShareError] = useState('');
-  const [copyState, setCopyState] = useState('Copy link');
+  const [copyState, setCopyState] = useState('Copy Link');
   const [screenshotOpen, setScreenshotOpen] = useState(false);
 
   // Validate the exact records and selections that will be encoded, rather than
@@ -159,9 +172,13 @@ export default function ExportPreview({
   ), [playoffPicks, predictions, sourceSnapshot, teams]);
   const playoffReady = playoffValidation.isComplete;
   const playoffError = playoffValidation.errors[0] ?? 'Complete every playoff outcome to create a portable link.';
+  const regularSeasonReady = hasSourceSnapshot || (predictionShareCapabilities?.regularSeasonReady ?? predictionShareReady);
+  const baseShareReady = hasSourceSnapshot || predictionShareReady;
   const portableSnapshotResult = useMemo(() => {
     try {
       if (sourceSnapshot) return { snapshot: sourceSnapshot, error: '' };
+      if (!regularSeasonReady) return { snapshot: null, error: predictionShareReason || 'Complete all 32 team records in Records before sharing.' };
+      if (!baseShareReady) return { snapshot: null, error: predictionShareReason || 'Connect Sleeper before creating a portable share link.' };
       if (!playoffReady) return { snapshot: null, error: playoffError };
       const { pickWeek } = getPredictionPickWeekContext(schedule, createdAt);
       return { snapshot: createPredictionSnapshot({
@@ -172,7 +189,7 @@ export default function ExportPreview({
     } catch (error) {
       return { snapshot: null, error: error?.errors?.[0] ?? error?.message ?? 'These predictions are not ready to share.' };
     }
-  }, [createdAt, playoffError, playoffPicks, playoffReady, predictionMode, predictionSeason, predictions, schedule, sleeperUser, sourceSnapshot, teams]);
+  }, [baseShareReady, createdAt, playoffError, playoffPicks, playoffReady, predictionMode, predictionSeason, predictionShareReason, predictions, regularSeasonReady, schedule, sleeperUser, sourceSnapshot, teams]);
 
   const previewSnapshot = useMemo(() => sourceSnapshot ?? {
     season: predictionSeason,
@@ -202,7 +219,9 @@ export default function ExportPreview({
   const managerName = manager?.displayName && manager?.username ? `${manager.displayName} · @${manager.username}` : '';
   const isTeamRecord = format === 'team-record';
   const needsPlayoffs = format === 'champions' || format === 'bracket';
-  const formatReady = isTeamRecord ? teamStatus.isComplete : (!needsPlayoffs || playoffReady);
+  const previewConfigured = Boolean(format && size && tone);
+  const formatConfigured = previewConfigured && titleId != null;
+  const formatReady = formatConfigured && (isTeamRecord ? teamStatus.isComplete : (regularSeasonReady && baseShareReady && (!needsPlayoffs || playoffReady)));
   const selectedTeam = teams.find(team => team.id === selectedTeamId);
 
   useEffect(() => {
@@ -223,10 +242,10 @@ export default function ExportPreview({
 
   useEffect(() => {
     let cancelled = false;
-    if (isTeamRecord || !portableSnapshotResult.snapshot) {
+    if (isTeamRecord || !format || titleId == null || !size || !tone || !portableSnapshotResult.snapshot) {
       queueMicrotask(() => {
         if (!cancelled) {
-          setShareUrl(''); setQrImage(''); setShareError(isTeamRecord ? '' : portableSnapshotResult.error);
+          setShareUrl(''); setQrImage(''); setShareError(isTeamRecord || !format || titleId == null || !size || !tone ? '' : portableSnapshotResult.error);
         }
       });
       return () => { cancelled = true; };
@@ -250,11 +269,18 @@ export default function ExportPreview({
   }, [format, isTeamRecord, portableSnapshotResult.error, portableSnapshotResult.snapshot, schedule, size, titleId, tone]);
 
   const cardHeight = size === 'tall' ? 1350 : 1080;
+  const portableLinkMessage = !formatConfigured
+    ? !format ? 'Choose a card, title, canvas, and theme to prepare the preview.' : 'Choose a title to enable Create Share Card and Copy Link.'
+    : !regularSeasonReady
+      ? predictionShareReason || 'Complete all 32 team records in Records before creating a portable link.'
+      : !baseShareReady
+        ? predictionShareReason || 'Connect Sleeper before creating a portable link.'
+        : 'Complete the playoff bracket to add a portable link and QR code.';
   const handleCopy = async () => {
     if (!shareUrl) return;
     await copyText(shareUrl);
     setCopyState('Copied');
-    window.setTimeout(() => setCopyState('Copy link'), 1800);
+    window.setTimeout(() => setCopyState('Copy Link'), 1800);
   };
 
   if (screenshotOpen && model && formatReady) {
@@ -274,7 +300,7 @@ export default function ExportPreview({
   return <Modal onClose={onClose} ariaLabel="Create prediction share card" containerClassName="prediction-share-export" containerStyle={{ maxWidth: '1240px', maxHeight: '94vh', background: 'var(--color-bg-secondary)' }}>
     <header className="prediction-share-export__header">
       <div className="prediction-share-export__heading">
-        <p>Prediction share cards</p>
+        <p>Share card studio</p>
         <h2>Create your season call</h2>
         <div className="prediction-share-export__context">
           <span>{predictionSeason} · {model?.weekLabel ?? 'Automatic pick week'}</span>
@@ -285,26 +311,91 @@ export default function ExportPreview({
     </header>
     <div className="prediction-share-export__content">
       <div ref={previewFrameRef} className="prediction-share-export__preview-frame" style={{ height: `${cardHeight * previewScale}px` }}>
-        {formatReady ? <div className="prediction-share-export__preview-scale" style={{ transform: `scale(${previewScale}) translateX(-50%)` }}>
+        {previewConfigured ? <div className="prediction-share-export__preview-scale" style={{ transform: `scale(${previewScale}) translateX(-50%)` }}>
           <PredictionShareCard model={model} format={format} size={size} tone={tone} titleId={titleId} managerName={managerName} qrImage={isTeamRecord ? '' : qrImage} shareLabel={isTeamRecord ? 'Team forecast' : 'Open these picks'} />
         </div> : <div className="prediction-share-export__requirement" role="status">
-          {isTeamRecord ? <>
+          {!format ? <>
+            <strong>Choose a card to begin</strong>
+            <span>{!regularSeasonReady
+              ? `${predictionShareReason || 'Complete all 32 team records in Records before creating this card.'} Start with Step 1 when you are ready.`
+              : 'Start with Step 1. Standings, Division Winners, and Playoff Seeding can render without a completed bracket; Champions and Full Bracket need every playoff outcome.'}</span>
+          </> : titleId == null ? <>
+            <strong>Choose a title next</strong>
+            <span>Continue with Step 2 to give this card its headline.</span>
+          </> : !size || !tone ? <>
+            <strong>Set the canvas and theme</strong>
+            <span>Finish Step 3 to prepare the card preview.</span>
+          </> : !isTeamRecord && !regularSeasonReady ? <>
+            <strong>Finish your regular-season picks</strong>
+            <span>{predictionShareReason || 'Complete all 32 team records in Records before creating this card.'}</span>
+          </> : !isTeamRecord && !baseShareReady ? <>
+            <strong>Connect Sleeper to continue</strong>
+            <span>{predictionShareReason || 'Connect Sleeper before creating this share card.'}</span>
+          </> : isTeamRecord ? <>
             <strong>Complete {selectedTeam?.name ?? selectedTeamId} in Advanced Mode</strong>
             <span>{teamStatus.remainingCount} of 17 matchups remain before this team card can be rendered.</span>
             {onOpenTeamAdvanced && <button type="button" onClick={() => onOpenTeamAdvanced(selectedTeamId)}>Open {selectedTeam?.nickname ?? selectedTeamId} in Advanced Mode</button>}
           </> : <>
             <strong>Complete the playoff bracket</strong>
             <span>{format === 'champions' ? 'Champions' : 'Full Bracket'} needs all playoff outcomes before it can be rendered.</span>
+            {onOpenPlayoffs && <button type="button" onClick={onOpenPlayoffs}>Open Playoffs</button>}
           </>}
         </div>}
       </div>
       <aside className="prediction-share-export__controls">
-        <label className="prediction-share-export__field"><span>Card</span><select value={format} onChange={(event) => { setFormat(event.target.value); setTitleId(0); }}>{CARD_OPTIONS.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
-        {isTeamRecord && <label className="prediction-share-export__field"><span>Team</span><select value={selectedTeamId} onChange={event => setSelectedTeamId(event.target.value)}>{teams.map(team => <option key={team.id} value={team.id}>{team.name ?? team.id}</option>)}</select></label>}
-        <label className="prediction-share-export__field"><span>Title</span><select value={titleId} onChange={event => setTitleId(Number(event.target.value))}>{SHARE_CARD_TITLES[format].map((title, index) => <option key={`${format}-${index}`} value={index}>{title.join(' ')}</option>)}</select></label>
-        <SegmentedControl label="Canvas" value={size} onChange={setSize} options={[{ id: 'square', label: 'Square' }, { id: 'tall', label: 'Tall' }]} />
-        <SegmentedControl label="Theme" value={tone} onChange={setTone} options={[{ id: 'dark', label: 'Broadcast dark' }, { id: 'poster', label: 'Bright poster' }]} />
-        {shareError && !isTeamRecord && <p className="prediction-share-export__message" role="status">{shareError}</p>}
+        <div className="prediction-share-export__steps">
+          <section className={`prediction-share-export__step${format ? ' is-complete' : ' is-active'}`}>
+            <div className="prediction-share-export__step-heading">
+              <span className="prediction-share-export__step-number">1</span>
+              <div><p>Step 1</p><strong>Choose a card</strong></div>
+            </div>
+            <div className="prediction-share-export__card-options" role="radiogroup" aria-label="Choose a share card">
+              {CARD_OPTIONS.map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  className="prediction-share-export__card-option"
+                  aria-pressed={format === option.id}
+                  onClick={() => { setFormat(option.id); setTitleId(null); setSize('square'); setTone('dark'); }}
+                >
+                  <strong>{option.label}</strong>
+                  <span>{option.description}</span>
+                </button>
+              ))}
+            </div>
+            {isTeamRecord && <label className="prediction-share-export__field"><span>Team</span><select value={selectedTeamId} onChange={event => setSelectedTeamId(event.target.value)}>{teams.map(team => <option key={team.id} value={team.id}>{team.name ?? team.id}</option>)}</select></label>}
+          </section>
+
+          <section className={`prediction-share-export__step${format && titleId == null ? ' is-active' : ''}${titleId != null ? ' is-complete' : ''}`}>
+            <div className="prediction-share-export__step-heading">
+              <span className="prediction-share-export__step-number">2</span>
+              <div><p>Step 2</p><strong>Choose a title</strong></div>
+            </div>
+            {format ? <label className="prediction-share-export__field">
+              <span>Title</span>
+              <select
+                value={titleId ?? ''}
+                onChange={event => setTitleId(event.target.value === '' ? null : Number(event.target.value))}
+                aria-label="Choose a card title"
+              >
+                <option value="" disabled>Choose a title</option>
+                {SHARE_CARD_TITLES[format].map((title, index) => <option key={`${format}-${index}`} value={index}>{title.join(' ')}</option>)}
+              </select>
+            </label> : <p className="prediction-share-export__step-help">Choose a card first.</p>}
+          </section>
+
+          <section className={`prediction-share-export__step${format && titleId != null && (!size || !tone) ? ' is-active' : ''}${format && titleId != null && size && tone ? ' is-complete' : ''}`}>
+            <div className="prediction-share-export__step-heading">
+              <span className="prediction-share-export__step-number">3</span>
+              <div><p>Step 3</p><strong>Choose canvas and theme</strong></div>
+            </div>
+            {format && titleId != null ? <div className="prediction-share-export__step-fields">
+              <SegmentedControl label="Canvas" value={size} onChange={setSize} options={[{ id: 'square', label: 'Square' }, { id: 'tall', label: 'Tall' }]} />
+              <SegmentedControl label="Theme" value={tone} onChange={setTone} options={[{ id: 'dark', label: 'Broadcast dark' }, { id: 'poster', label: 'Bright poster' }]} />
+            </div> : <p className="prediction-share-export__step-help">Choose a card and title first.</p>}
+          </section>
+        </div>
+        {shareError && !isTeamRecord && needsPlayoffs && <p className="prediction-share-export__message" role="status">{shareError}</p>}
       </aside>
     </div>
     <footer className="prediction-share-export__footer">
@@ -312,8 +403,8 @@ export default function ExportPreview({
         ? 'This team schedule card is a local screenshot render. It does not create a link or QR code.'
         : shareUrl
           ? 'Open a clean full-screen card and use your device screenshot controls. The QR and link contain this completed prediction snapshot.'
-          : 'Open a clean screenshot when this card is ready. Complete the playoff bracket to add a portable link and QR code.'}</p>
-      <div className="prediction-share-export__actions"><button type="button" onClick={() => setScreenshotOpen(true)} disabled={!formatReady}>Open screenshot view</button>{!isTeamRecord && <button type="button" onClick={handleCopy} disabled={!shareUrl}>{copyState}</button>}</div>
+          : `Open a clean screenshot when this card is ready. ${portableLinkMessage}`}</p>
+      <div className="prediction-share-export__actions"><button type="button" onClick={() => setScreenshotOpen(true)} disabled={!formatReady}>Create Share Card</button>{!isTeamRecord && <button type="button" onClick={handleCopy} disabled={titleId == null || !shareUrl}>{copyState}</button>}</div>
     </footer>
   </Modal>;
 }

@@ -25,11 +25,6 @@ export default function Sidebar({
   onLegal,
   onAppTour,
   onGuide,
-  onSharePage,
-  onExportImage,
-  predictionShareReady = false,
-  predictionShareReason = '',
-  predictionShareBlockedLabel = 'Complete Picks To Share',
   onExportJSON,
   onImportJSON,
   onRandom,
@@ -184,7 +179,7 @@ export default function Sidebar({
           active={activeTab === 'predictions'}
           onClick={() => onTabChange('predictions')}
           icon={<SeasonIcon />}
-          label="Predictions"
+          label="Predict"
           beta
           collapsed={collapsed}
         />
@@ -258,30 +253,15 @@ export default function Sidebar({
 
       <div className="sidebar-divider" />
 
-      {/* Actions — section label is contextual; utility actions read one step
-          stronger than data I/O actions */}
+      {/* Actions — the same label keeps utility controls discoverable across sections. */}
       <div className="sidebar-actions">
-        <div className="sidebar-section-label">
-          {activeTab === 'predictions'
-            ? 'Predictions'
-            : (activeTab === 'fantasy' || activeTab === 'league' || activeTab === 'trade' || activeTab === 'draft')
-              ? 'League'
-              : 'Actions'}
-        </div>
+        <div className="sidebar-section-label">Actions</div>
         <SidebarAction label="Guide" onClick={onGuide} dataTour="app-guide" />
-        <SidebarAction label="Share this page" onClick={onSharePage} dataTour="share-page" />
         {activeTab === 'predictions' && (
           <>
-            <SidebarAction
-              label={predictionShareReady ? 'Create Share Card' : predictionShareBlockedLabel}
-              onClick={onExportImage}
-              disabled={!predictionShareReady}
-              title={predictionShareReason}
-              dataTour="prediction-share-card"
-            />
-            <SidebarAction label="Export JSON" onClick={onExportJSON} disabled={predictionCount === 0} secondary />
-            <SidebarAction label="Import JSON" onClick={onImportJSON} secondary />
-            <SidebarAction label="Randomize Predictions" onClick={onRandom} secondary />
+            <SidebarAction label="Backup" onClick={onExportJSON} />
+            <SidebarAction label="Restore" onClick={onImportJSON} />
+            <SidebarAction label="Randomize Predictions" onClick={onRandom} />
           </>
         )}
         {(activeTab === 'fantasy' || activeTab === 'league' || activeTab === 'trade' || activeTab === 'draft') && isConnected && (
@@ -300,7 +280,7 @@ export default function Sidebar({
           <>
             <div className="sidebar-divider" style={{ marginTop: '10px' }} />
             <SidebarAction
-              label="Reset All"
+              label="Reset Predictions"
               onClick={onReset}
               disabled={predictionCount === 0}
               destructive

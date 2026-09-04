@@ -119,7 +119,7 @@ export function generateRandomPlayoffPicks({ teams = [], records = {}, random = 
   if (typeof random !== 'function') throw new TypeError('A random-number function is required.');
   const { teams: normalizedTeams, teamIds } = getKnownTeams(teams);
   const normalizedRecords = cloneRecords(records, teamIds);
-  const seedsByConference = getPredictionPlayoffSeeds(normalizedTeams, normalizedRecords);
+  const seedsByConference = getPredictionPlayoffSeeds(normalizedTeams, normalizedRecords, normalizedTeams);
   const picks = {};
 
   for (const conference of CONFERENCES) {
@@ -371,7 +371,9 @@ export function rebalanceCompleteManualRecords({ records = {}, teams = [], targe
   const status = getManualRecordLeagueStatus({ records, teams });
   const nextRecords = { ...records };
   const adjustments = [];
-  if (!status.isComplete || !Number.isInteger(status.winDelta) || status.winDelta === 0) {
+  // An under-target total is still a valid in-progress prediction. Only an
+  // excess total is impossible and should trigger automatic corrections.
+  if (!status.isComplete || !Number.isInteger(status.winDelta) || status.winDelta >= 0) {
     return { records: nextRecords, adjustments, isBalanced: status.isComplete && status.winDelta === 0, remainingDelta: status.winDelta };
   }
 
@@ -632,7 +634,7 @@ export function validatePlayoffPicks({ playoffPicks = {}, records = {}, teams = 
     return { isComplete: false, errors: [...new Set(errors)] };
   }
 
-  const seedsByConference = getPredictionPlayoffSeeds(normalizedTeams, records);
+  const seedsByConference = getPredictionPlayoffSeeds(normalizedTeams, records, normalizedTeams);
   for (const conference of CONFERENCES) {
     const seeds = seedsByConference[conference] ?? [];
     appendError(errors, seeds.length === 7, `${conference} playoff seeding could not be resolved.`);

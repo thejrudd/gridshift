@@ -1,25 +1,31 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { TrophyIcon } from '@phosphor-icons/react/Trophy';
 import { useTheme } from '../../context/ThemeContext';
 import useCardGlow from '../../hooks/useCardGlow.jsx';
-import { getAllDivisions, getTeamsByDivision, sortTeamsByRecord } from '../../utils/scheduleParser';
+import { getAllDivisions, getTeamsByDivision } from '../../utils/scheduleParser';
 import { getTeamVisualTheme } from '../../utils/teamVisualTheme';
 import { getLowestRemainingSeedTeam } from '../../utils/playoffBracket';
-import { getPredictionPlayoffSeeds } from '../../utils/predictionPlayoffSeeding.js';
+import {
+  getPredictionPlayoffField,
+  getPredictionPlayoffSeeds,
+} from '../../utils/predictionPlayoffSeeding.js';
 import {
   formatManualRecordBalanceNotice,
   rebalanceCompleteManualRecords,
 } from '../../utils/predictionSnapshot';
 
 const SEASON_VIEWS = [
-  { id: 'predictions', label: 'Picks' },
-  { id: 'standings', label: 'Standings' },
+  { id: 'predictions', label: 'Records' },
   { id: 'playoffs', label: 'Playoffs' },
 ];
 
 const PICK_MODES = [
-  { id: 'record', label: 'Predict Record' },
-  { id: 'advanced', label: 'Advanced Mode' },
+  { id: 'record', label: 'Standard' },
+  { id: 'advanced', label: 'Advanced' },
 ];
+
+const BALANCE_NOTICE_DURATION_MS = 6_000;
+const BALANCE_NOTICE_EXIT_MS = 220;
 
 const CONFERENCES = ['AFC', 'NFC'];
 const DEFAULT_RECORD = { wins: 8, losses: 9, ties: 0, divisionWins: 3 };
@@ -333,8 +339,7 @@ const getRecordFromPicks = (teams, weeks, picks) => {
   return records;
 };
 
-const getDisplayRecords = (teams, weeks, picks, predictions, standings) => {
-  if (standings && typeof standings === 'object') return standings;
+const getDisplayRecords = (teams, weeks, picks, predictions) => {
   const pickRecords = getRecordFromPicks(teams, weeks, picks);
 
   return Object.fromEntries(teams.map((team) => {
@@ -342,18 +347,6 @@ const getDisplayRecords = (teams, weeks, picks, predictions, standings) => {
     return [team.id, predictionRecord ?? pickRecords[team.id] ?? { wins: 0, losses: 0, ties: 0, divisionWins: 0 }];
   }));
 };
-
-const sortByRecord = (teams, records) => [...teams].sort((a, b) => {
-  const aRecord = records[a.id] ?? {};
-  const bRecord = records[b.id] ?? {};
-  const aWins = aRecord.wins ?? 0;
-  const bWins = bRecord.wins ?? 0;
-  const aLosses = aRecord.losses ?? 0;
-  const bLosses = bRecord.losses ?? 0;
-  if (bWins !== aWins) return bWins - aWins;
-  if (aLosses !== bLosses) return aLosses - bLosses;
-  return getTeamLabel(a).localeCompare(getTeamLabel(b));
-});
 
 const getTeamGames = (team, weeks) => {
   const rows = [];
@@ -432,21 +425,23 @@ function TeamIdentity({ team, seed, compact = false }) {
   );
 }
 
-function ViewTabs({ seasonView, onSeasonViewChange }) {
+function ViewTabs({ seasonView, onSeasonViewChange, playoffsEnabled = true }) {
   return (
     <div className="predictions-redesign-tabs" role="tablist" aria-label="Predictions views">
-      {SEASON_VIEWS.map((view) => (
-        <button
+      {SEASON_VIEWS.map((view) => {
+        const locked = view.id === 'playoffs' && !playoffsEnabled;
+        return <button
           key={view.id}
           type="button"
-          className={`predictions-redesign-tab${seasonView === view.id ? ' is-active' : ''}`}
+          className={`predictions-redesign-tab${seasonView === view.id ? ' is-active' : ''}${locked ? ' is-locked' : ''}`}
           aria-selected={seasonView === view.id}
+          aria-disabled={locked || undefined}
           role="tab"
           onClick={() => onSeasonViewChange?.(view.id)}
         >
           {view.label}
-        </button>
-      ))}
+        </button>;
+      })}
     </div>
   );
 }
@@ -731,9 +726,73 @@ export function PredictionsPicks({
   records = {},
   onRecordChange,
   onOpenTeam,
+  regularSeasonReady = false,
+  playoffReady = false,
+  onOpenPlayoffs,
   darkMode = false,
 }) {
-  const [balanceNotice, setBalanceNotice] = useState('');
+  const [balanceNotice, setBalanceNotice] = useState(null);
+  const [balanceNoticePhase, setBalanceNoticePhase] = useState('hidden');
+  const [balanceNoticePaused, setBalanceNoticePaused] = useState(false);
+  const balanceNoticeEntryFrameRef = useRef(null);
+  const balanceNoticeExitTimerRef = useRef(null);
+
+  const dismissBalanceNotice = useCallback(() => {
+    if (!balanceNotice || balanceNoticePhase === 'closing') return;
+    if (balanceNoticeEntryFrameRef.current) {
+      window.cancelAnimationFrame(balanceNoticeEntryFrameRef.current);
+      balanceNoticeEntryFrameRef.current = null;
+    }
+    setBalanceNoticePhase('closing');
+    balanceNoticeExitTimerRef.current = window.setTimeout(() => {
+      balanceNoticeExitTimerRef.current = null;
+      setBalanceNotice(null);
+      setBalanceNoticePhase('hidden');
+      setBalanceNoticePaused(false);
+    }, BALANCE_NOTICE_EXIT_MS);
+  }, [balanceNotice, balanceNoticePhase]);
+
+  useEffect(() => {
+    if (!balanceNotice || balanceNoticePhase !== 'visible' || balanceNoticePaused) return undefined;
+    const timer = window.setTimeout(dismissBalanceNotice, BALANCE_NOTICE_DURATION_MS);
+    return () => window.clearTimeout(timer);
+  }, [balanceNotice, balanceNoticePaused, balanceNoticePhase, dismissBalanceNotice]);
+
+  useEffect(() => {
+    return () => {
+      if (balanceNoticeEntryFrameRef.current) window.cancelAnimationFrame(balanceNoticeEntryFrameRef.current);
+      if (balanceNoticeExitTimerRef.current) window.clearTimeout(balanceNoticeExitTimerRef.current);
+    };
+  }, []);
+
+  const showBalanceNotice = (notice) => {
+    if (balanceNoticeEntryFrameRef.current) window.cancelAnimationFrame(balanceNoticeEntryFrameRef.current);
+    if (balanceNoticeExitTimerRef.current) {
+      window.clearTimeout(balanceNoticeExitTimerRef.current);
+      balanceNoticeExitTimerRef.current = null;
+    }
+    setBalanceNoticePhase('hidden');
+    setBalanceNoticePaused(false);
+    setBalanceNotice(notice);
+    balanceNoticeEntryFrameRef.current = window.requestAnimationFrame(() => {
+      balanceNoticeEntryFrameRef.current = null;
+      setBalanceNoticePhase('visible');
+    });
+  };
+
+  const handlePickModeChange = (nextPickMode) => {
+    if (nextPickMode !== 'record') dismissBalanceNotice();
+    onPickModeChange?.(nextPickMode);
+  };
+
+  const undoBalanceAdjustments = () => {
+    if (!balanceNotice) return;
+    balanceNotice.undoRecords.forEach(({ teamId, previousRecord }) => {
+      onRecordChange?.({ teamId, record: previousRecord });
+    });
+    dismissBalanceNotice();
+  };
+
   const handleRecordsChange = (entries, targetTeamId) => {
     const nextRecords = { ...records };
     entries.forEach(([teamId, record]) => { nextRecords[teamId] = record; });
@@ -747,29 +806,74 @@ export function PredictionsPicks({
     updates.forEach((record, teamId) => onRecordChange?.({ teamId, record }));
 
     if (balanced.adjustments.length) {
-      setBalanceNotice(formatManualRecordBalanceNotice({ adjustments: balanced.adjustments, teams }));
+      showBalanceNotice({
+        message: formatManualRecordBalanceNotice({ adjustments: balanced.adjustments, teams }),
+        undoRecords: [...updates.keys()].map((teamId) => ({
+          teamId,
+          previousRecord: records[teamId],
+        })),
+      });
     } else {
-      setBalanceNotice('');
+      dismissBalanceNotice();
     }
   };
 
   return (
     <section className="predictions-picks-view">
       <div className="predictions-control-bar">
-        <PickModeToggle pickMode={pickMode} onPickModeChange={onPickModeChange} />
+        <PickModeToggle pickMode={pickMode} onPickModeChange={handlePickModeChange} />
       </div>
+
+      {pickMode === 'record' && balanceNotice && (
+        <div
+          className={`predictions-record-balance-toast is-${balanceNoticePhase}`}
+          data-testid="prediction-record-balance-notice"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+          onMouseEnter={() => setBalanceNoticePaused(true)}
+          onMouseLeave={() => setBalanceNoticePaused(false)}
+          onFocusCapture={() => setBalanceNoticePaused(true)}
+          onBlurCapture={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget)) setBalanceNoticePaused(false);
+          }}
+        >
+          <div className="predictions-record-balance-toast__message">
+            <span className="predictions-record-balance-toast__indicator" aria-hidden="true" />
+            <p>{balanceNotice.message}</p>
+          </div>
+          <div className="predictions-record-balance-toast__actions">
+            <button
+              type="button"
+              className="predictions-record-balance-toast__action predictions-record-balance-toast__action--undo"
+              onClick={undoBalanceAdjustments}
+            >
+              Undo
+            </button>
+            <button
+              type="button"
+              className="predictions-record-balance-toast__action predictions-record-balance-toast__action--dismiss"
+              onClick={dismissBalanceNotice}
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
+
+      {regularSeasonReady && !playoffReady && (
+        <div className="predictions-playoff-handoff" role="status">
+          <div>
+            <p className="predictions-eyebrow">Regular season set</p>
+            <strong>Build your playoff bracket next</strong>
+            <span>All 32 team records are complete. Choose every matchup winner to finish your season call.</span>
+          </div>
+          {onOpenPlayoffs && <button type="button" onClick={onOpenPlayoffs}>Open Playoffs</button>}
+        </div>
+      )}
 
       <div className="predictions-week-layout">
         <div className="predictions-record-board">
-          <header className="predictions-section-header">
-            <p className="predictions-eyebrow">{pickMode === 'record' ? 'Record-first picks' : 'Team drilldown'}</p>
-            <h2>{pickMode === 'record' ? 'Predict Record' : 'Advanced Mode'}</h2>
-          </header>
-          {pickMode === 'record' && balanceNotice && (
-            <p className="predictions-record-balance-notice" role="status" aria-live="polite">
-              {balanceNotice}
-            </p>
-          )}
           <div className="predictions-record-grid">
             {getAllDivisions().map((division) => (
               <DivisionRecordGroup
@@ -888,6 +992,7 @@ function AdvancedTeamPage({
   const resetGameResults = () => {
     setDraftGameResults({ ...(predictions?.[team.id]?.gameResults ?? {}) });
     setGamePicksTouched(false);
+    onBack?.();
   };
 
   return (
@@ -943,88 +1048,21 @@ function AdvancedTeamPage({
   );
 }
 
-const divisionShortRecordLabel = (record) => {
-  if (!isRecordSet(record)) return '-';
-  const divisionWins = record?.divisionWins ?? 0;
-  return `${divisionWins}-${DIVISION_GAMES - divisionWins}`;
-};
-
-function StandingRow({ team, record, rank, darkMode = false }) {
-  return (
-    <tr className="predictions-standings-row" style={getTeamRowStyle(team, darkMode)}>
-      <td>
-        <span className="predictions-rank">{rank}</span>
-      </td>
-      <td>
-        <TeamIdentity team={team} compact />
-      </td>
-      <td>{recordLabel(record)}</td>
-      <td>{divisionShortRecordLabel(record)}</td>
-    </tr>
-  );
-}
-
-export function PredictionsStandings({ teams = [], records = {}, predictions = {} }) {
-  const { darkMode } = useTheme();
-
-  return (
-    <section className="predictions-standings-view">
-      <header className="predictions-section-header">
-        <p className="predictions-eyebrow">Editorial standings</p>
-        <h2>Projected Division Standings</h2>
-      </header>
-
-      <div className="predictions-standings-grid">
-        {getAllDivisions().map((division) => {
-          const divisionTeams = getTeamsByDivision(teams, division);
-          const sortedTeams = Object.keys(predictions).length
-            ? sortTeamsByRecord(divisionTeams, predictions, teams)
-            : sortByRecord(divisionTeams, records);
-
-          return (
-            <section key={division} className="predictions-division-table">
-              <header className="predictions-division-header">
-                <span>{division}</span>
-              </header>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Rank</th>
-                    <th>Team</th>
-                    <th>Record</th>
-                    <th>Div</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedTeams.map((team, index) => (
-                    <StandingRow
-                      key={team.id}
-                      team={team}
-                      record={records[team.id] ?? predictions[team.id]}
-                      rank={index + 1}
-                      darkMode={darkMode}
-                    />
-                  ))}
-                </tbody>
-              </table>
-            </section>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
-
 function PlayoffPictureRail({ teams = [], weeks = [], records }) {
+  const { darkMode } = useTheme();
   const displayRecords = records ?? getRecordFromPicks(teams, weeks, {});
   const enteredTeams = getTeamsWithEnteredRecords(teams, displayRecords);
-  const seedsByConference = getPredictionPlayoffSeeds(enteredTeams, displayRecords);
+  const seedsByConference = getPredictionPlayoffSeeds(enteredTeams, displayRecords, teams);
+  const playoffField = getPredictionPlayoffField(enteredTeams, displayRecords, teams);
+  const divisionChampionIdsByConference = Object.fromEntries(CONFERENCES.map((conference) => [
+    conference,
+    new Set((playoffField[conference]?.divisionWinners ?? []).map((team) => team.id)),
+  ]));
 
   return (
-    <aside className="predictions-playoff-picture-rail" aria-label="Desktop playoff picture">
+    <aside className="predictions-playoff-picture-rail" aria-label="Playoff Seeds">
       <header>
-        <p className="predictions-eyebrow">Playoff picture</p>
-        <h3>Live Seeds</h3>
+        <h3>Playoff Seeds</h3>
       </header>
       {!enteredTeams.length ? (
         <div className="predictions-rail-empty">
@@ -1037,9 +1075,21 @@ function PlayoffPictureRail({ teams = [], weeks = [], records }) {
             <h4>{conference}</h4>
             <ol>
               {(seedsByConference[conference] ?? []).map((team, index) => (
-                <li key={team.id}>
-                  <TeamIdentity team={team} seed={index + 1} compact />
-                  <span>{recordLabel(displayRecords[team.id])}</span>
+                <li
+                  key={team.id}
+                  className="predictions-rail-seed predictions-team-gradient-row"
+                  style={getTeamRowStyle(team, darkMode)}
+                >
+                  <div className="predictions-rail-seed-team">
+                    <TeamIdentity team={team} seed={index + 1} compact />
+                    {divisionChampionIdsByConference[conference].has(team.id) && (
+                      <span className="predictions-rail-seed-flavor">
+                        <TrophyIcon size={14} weight="fill" aria-hidden="true" />
+                        {team.division ? `${team.division} division champion` : 'Division champion'}
+                      </span>
+                    )}
+                  </div>
+                  <span className="predictions-rail-seed-record">{recordLabel(displayRecords[team.id])}</span>
                 </li>
               ))}
             </ol>
@@ -1050,11 +1100,14 @@ function PlayoffPictureRail({ teams = [], weeks = [], records }) {
   );
 }
 
-function PlayoffTeamButton({ team, seed, picked, onPick }) {
+function PlayoffTeamButton({ team, seed, picked, eliminated, onPick }) {
+  const { darkMode } = useTheme();
+
   return (
     <button
       type="button"
-      className={`predictions-playoff-team${picked ? ' is-picked' : ''}`}
+      className={`predictions-playoff-team${picked ? ' is-picked' : ''}${eliminated ? ' is-eliminated' : ''}`}
+      style={picked && team?.id ? getTeamRowStyle(team, darkMode) : undefined}
       aria-pressed={picked}
       disabled={!team?.id}
       onClick={() => team?.id && onPick?.(team.id)}
@@ -1075,12 +1128,14 @@ function BracketMatchup({ id, label, top, bottom, picks, onPlayoffPick }) {
           team={top?.team}
           seed={top?.seed}
           picked={winnerId === top?.team?.id}
+          eliminated={Boolean(winnerId) && winnerId !== top?.team?.id}
           onPick={(winnerId) => onPlayoffPick?.({ matchupId: id, winnerId })}
         />
         <PlayoffTeamButton
           team={bottom?.team}
           seed={bottom?.seed}
           picked={winnerId === bottom?.team?.id}
+          eliminated={Boolean(winnerId) && winnerId !== bottom?.team?.id}
           onPick={(winnerId) => onPlayoffPick?.({ matchupId: id, winnerId })}
         />
       </div>
@@ -1093,15 +1148,17 @@ const getTeamSeedNumber = (team, seeds = []) => {
   return index >= 0 ? index + 1 : null;
 };
 
-function ChampionTeamPanel({ team, seed, conference, record, winner, onPick, align = 'start' }) {
+function ChampionTeamPanel({ team, seed, conference, record, winner, eliminated, onPick, align = 'start' }) {
   const { darkMode } = useTheme();
 
   if (!team) return null;
 
+  const stateClass = winner ? 'is-winner' : eliminated ? 'is-runner-up' : 'is-pending';
+
   return (
     <button
       type="button"
-      className={`predictions-champion-team predictions-champion-team--${align}${winner ? ' is-winner' : ' is-runner-up'}`}
+      className={`predictions-champion-team predictions-champion-team--${align} ${stateClass}`}
       style={winner ? getTeamRowStyle(team, darkMode) : undefined}
       aria-pressed={winner}
       onClick={() => onPick?.(team.id)}
@@ -1109,9 +1166,9 @@ function ChampionTeamPanel({ team, seed, conference, record, winner, onPick, ali
       <img src={teamLogo(team.id)} alt="" className="predictions-champion-logo" loading="lazy" />
       <span className="predictions-champion-team-copy">
         {winner && <span className="predictions-champion-winner-badge">Selected champion</span>}
-        <span className="predictions-champion-seed">{conference} - {seed ? `${seed} seed` : 'champion'}</span>
+        <span className="predictions-champion-seed">{conference} - {seed ? `${seed} seed` : winner ? 'champion' : 'finalist'}</span>
         <strong>{getTeamLabel(team)}</strong>
-        <span>{recordLabel(record)} {winner ? 'projected' : 'runner-up'}</span>
+        <span>{recordLabel(record)} {winner ? 'projected' : eliminated ? 'runner-up' : 'finalist'}</span>
       </span>
     </button>
   );
@@ -1121,25 +1178,8 @@ function SuperBowlChampionCard({ teams, seedsByConference, records, picks, onPla
   const [afcTeam, nfcTeam] = teams;
   const winnerId = picks?.['super-bowl'];
 
-  if (!winnerId) {
-    return (
-      <section className="predictions-super-bowl-card">
-        <header>Super Bowl</header>
-        <BracketMatchup
-          id="super-bowl"
-          label="AFC vs NFC"
-          top={{ seed: null, team: afcTeam }}
-          bottom={{ seed: null, team: nfcTeam }}
-          picks={picks}
-          onPlayoffPick={onPlayoffPick}
-        />
-      </section>
-    );
-  }
-
   return (
     <section className="predictions-super-bowl-card predictions-super-bowl-card--champion">
-      <header>Super Bowl</header>
       <div className="predictions-champion-banner">
         <ChampionTeamPanel
           team={afcTeam}
@@ -1147,6 +1187,7 @@ function SuperBowlChampionCard({ teams, seedsByConference, records, picks, onPla
           conference="AFC"
           record={records[afcTeam?.id]}
           winner={winnerId === afcTeam?.id}
+          eliminated={Boolean(winnerId) && winnerId !== afcTeam?.id}
           onPick={(teamId) => onPlayoffPick?.({ matchupId: 'super-bowl', winnerId: teamId })}
         />
         <div className="predictions-champion-center" aria-live="polite">
@@ -1160,6 +1201,7 @@ function SuperBowlChampionCard({ teams, seedsByConference, records, picks, onPla
           conference="NFC"
           record={records[nfcTeam?.id]}
           winner={winnerId === nfcTeam?.id}
+          eliminated={Boolean(winnerId) && winnerId !== nfcTeam?.id}
           onPick={(teamId) => onPlayoffPick?.({ matchupId: 'super-bowl', winnerId: teamId })}
           align="end"
         />
@@ -1180,52 +1222,61 @@ function ConferenceBracket({ conference, seeds, picks, onPlayoffPick }) {
   const remainingDivisionalTeams = divisionalTeams.filter((team) => team.id !== lowestRemaining?.id);
 
   return (
-    <section className="predictions-conference-bracket">
+    <section className={`predictions-conference-bracket predictions-conference-bracket--${conference.toLowerCase()}`}>
       <header className="predictions-division-header">
-        <span>{conference}</span>
+        <span className="predictions-conference-heading">
+          <span className="predictions-conference-mark" aria-hidden="true">{conference === 'AFC' ? 'A' : 'N'}</span>
+          <strong>{conference}</strong>
+        </span>
       </header>
       <div className="predictions-bracket-rounds">
         <div className="predictions-bracket-round">
           <h3>Wild Card</h3>
-          <BracketMatchup id={`${conference}-wc-2-7`} label="2 vs 7" top={seed(2)} bottom={seed(7)} picks={picks} onPlayoffPick={onPlayoffPick} />
-          <BracketMatchup id={`${conference}-wc-3-6`} label="3 vs 6" top={seed(3)} bottom={seed(6)} picks={picks} onPlayoffPick={onPlayoffPick} />
-          <BracketMatchup id={`${conference}-wc-4-5`} label="4 vs 5" top={seed(4)} bottom={seed(5)} picks={picks} onPlayoffPick={onPlayoffPick} />
+          <div className="predictions-bracket-matchups">
+            <BracketMatchup id={`${conference}-wc-2-7`} label="2 vs 7" top={seed(2)} bottom={seed(7)} picks={picks} onPlayoffPick={onPlayoffPick} />
+            <BracketMatchup id={`${conference}-wc-3-6`} label="3 vs 6" top={seed(3)} bottom={seed(6)} picks={picks} onPlayoffPick={onPlayoffPick} />
+            <BracketMatchup id={`${conference}-wc-4-5`} label="4 vs 5" top={seed(4)} bottom={seed(5)} picks={picks} onPlayoffPick={onPlayoffPick} />
+          </div>
         </div>
         <div className="predictions-bracket-round">
           <h3>Divisional</h3>
-          <BracketMatchup
-            id={`${conference}-div-1`}
-            label="1 seed matchup"
-            top={seed(1)}
-            bottom={{ seed: lowestRemaining ? seeds.findIndex((team) => team.id === lowestRemaining.id) + 1 : null, team: lowestRemaining }}
-            picks={picks}
-            onPlayoffPick={onPlayoffPick}
-          />
-          <BracketMatchup
-            id={`${conference}-div-2`}
-            label="Remaining seeds"
-            top={{
-              seed: remainingDivisionalTeams[0] ? seeds.findIndex((team) => team.id === remainingDivisionalTeams[0].id) + 1 : null,
-              team: remainingDivisionalTeams[0],
-            }}
-            bottom={{
-              seed: remainingDivisionalTeams[1] ? seeds.findIndex((team) => team.id === remainingDivisionalTeams[1].id) + 1 : null,
-              team: remainingDivisionalTeams[1],
-            }}
-            picks={picks}
-            onPlayoffPick={onPlayoffPick}
-          />
+          <div className="predictions-bracket-matchups">
+            <BracketMatchup
+              id={`${conference}-div-1`}
+              label="1 seed matchup"
+              top={seed(1)}
+              bottom={{ seed: lowestRemaining ? seeds.findIndex((team) => team.id === lowestRemaining.id) + 1 : null, team: lowestRemaining }}
+              picks={picks}
+              onPlayoffPick={onPlayoffPick}
+            />
+            <BracketMatchup
+              id={`${conference}-div-2`}
+              label="Remaining seeds"
+              top={{
+                seed: remainingDivisionalTeams[0] ? seeds.findIndex((team) => team.id === remainingDivisionalTeams[0].id) + 1 : null,
+                team: remainingDivisionalTeams[0],
+              }}
+              bottom={{
+                seed: remainingDivisionalTeams[1] ? seeds.findIndex((team) => team.id === remainingDivisionalTeams[1].id) + 1 : null,
+                team: remainingDivisionalTeams[1],
+              }}
+              picks={picks}
+              onPlayoffPick={onPlayoffPick}
+            />
+          </div>
         </div>
         <div className="predictions-bracket-round">
           <h3>Conference</h3>
-          <BracketMatchup
-            id={`${conference}-championship`}
-            label={`${conference} Championship`}
-            top={{ seed: null, team: seeds.find((team) => team.id === picks?.[`${conference}-div-1`]) }}
-            bottom={{ seed: null, team: seeds.find((team) => team.id === picks?.[`${conference}-div-2`]) }}
-            picks={picks}
-            onPlayoffPick={onPlayoffPick}
-          />
+          <div className="predictions-bracket-matchups">
+            <BracketMatchup
+              id={`${conference}-championship`}
+              label={`${conference} Championship`}
+              top={{ seed: null, team: seeds.find((team) => team.id === picks?.[`${conference}-div-1`]) }}
+              bottom={{ seed: null, team: seeds.find((team) => team.id === picks?.[`${conference}-div-2`]) }}
+              picks={picks}
+              onPlayoffPick={onPlayoffPick}
+            />
+          </div>
         </div>
       </div>
     </section>
@@ -1238,27 +1289,41 @@ export function PredictionsPlayoffs({
   playoffSeeds,
   playoffPicks = {},
   onPlayoffPick,
+  regularSeasonReady = false,
+  onBackToPicks,
 }) {
+  if (!regularSeasonReady) {
+    return (
+      <section className="predictions-playoffs-view">
+        <header className="predictions-section-header">
+          <p className="predictions-eyebrow">Playoffs locked</p>
+          <h2>Finish Your Regular Season</h2>
+        </header>
+        <div className="predictions-empty-state">
+          <p className="predictions-eyebrow">32 records required</p>
+          <h3>Complete every team in Records</h3>
+          <p>Finish all 32 team records in <span>Records</span> before building the playoff bracket.</p>
+          {onBackToPicks && <button type="button" className="predictions-empty-state__action" onClick={onBackToPicks}>Back to Records</button>}
+        </div>
+      </section>
+    );
+  }
+
   const enteredTeams = getTeamsWithEnteredRecords(teams, records);
   const enteredPlayoffSeeds = filterPlayoffSeedsToEnteredRecords(playoffSeeds, enteredTeams);
   const seedsByConference = enteredTeams.length
-    ? (enteredPlayoffSeeds ?? getPredictionPlayoffSeeds(enteredTeams, records))
+    ? (enteredPlayoffSeeds ?? getPredictionPlayoffSeeds(enteredTeams, records, teams))
     : Object.fromEntries(CONFERENCES.map((conference) => [conference, []]));
   const superBowlTeams = CONFERENCES.map((conference) => seedsByConference[conference]?.find((team) => team.id === playoffPicks[`${conference}-championship`]));
 
   return (
     <section className="predictions-playoffs-view">
-      <header className="predictions-section-header">
-        <p className="predictions-eyebrow">Manual-pick playoffs</p>
-        <h2>Choose Every Matchup Winner</h2>
-      </header>
-
       {!enteredTeams.length ? (
         <div className="predictions-empty-state">
           <p className="predictions-eyebrow">Waiting on records</p>
           <h3>Select Team Records</h3>
           <p>
-            Predict records in <span>Picks</span> before building the playoff bracket.
+            Predict records in <span>Records</span> before building the playoff bracket.
           </p>
         </div>
       ) : (
@@ -1298,7 +1363,6 @@ export default function PredictionsRedesign({
   selectedTeamId,
   picks = {},
   predictions = {},
-  standings,
   playoffSeeds,
   playoffPicks = {},
   onPlayoffPick,
@@ -1306,6 +1370,10 @@ export default function PredictionsRedesign({
   onSaveTeamGameResults,
   onOpenTeam,
   onBackToAdvancedMode,
+  regularSeasonReady = false,
+  playoffReady = false,
+  onOpenPlayoffs,
+  onBackToPicks,
   showInternalTabs = false,
 }) {
   const { darkMode } = useTheme();
@@ -1313,15 +1381,15 @@ export default function PredictionsRedesign({
   const teamsById = useMemo(() => new Map(teams.map((team) => [team.id, team])), [teams]);
   const weeks = useMemo(() => getWeeks({ scheduleData, teams, teamsById }), [scheduleData, teams, teamsById]);
   const records = useMemo(
-    () => getDisplayRecords(teams, weeks, picks, predictions, standings),
-    [teams, weeks, picks, predictions, standings],
+    () => getDisplayRecords(teams, weeks, picks, predictions),
+    [teams, weeks, picks, predictions],
   );
   const selectedTeam = selectedTeamId ? teamsById.get(String(selectedTeamId).toUpperCase()) : null;
 
   return (
     <div className="predictions-redesign">
       {showInternalTabs && (
-        <ViewTabs seasonView={seasonView} onSeasonViewChange={onSeasonViewChange} />
+        <ViewTabs seasonView={seasonView} onSeasonViewChange={onSeasonViewChange} playoffsEnabled={regularSeasonReady} />
       )}
 
       {seasonView === 'predictions' && selectedTeam && (
@@ -1346,12 +1414,11 @@ export default function PredictionsRedesign({
           records={records}
           onRecordChange={onRecordChange}
           onOpenTeam={onOpenTeam}
+          regularSeasonReady={regularSeasonReady}
+          playoffReady={playoffReady}
+          onOpenPlayoffs={onOpenPlayoffs}
           darkMode={darkMode}
         />
-      )}
-
-      {seasonView === 'standings' && (
-        <PredictionsStandings teams={teams} records={records} predictions={predictions} />
       )}
 
       {seasonView === 'playoffs' && (
@@ -1361,6 +1428,8 @@ export default function PredictionsRedesign({
           playoffSeeds={playoffSeeds}
           playoffPicks={playoffPicks}
           onPlayoffPick={onPlayoffPick}
+          regularSeasonReady={regularSeasonReady}
+          onBackToPicks={onBackToPicks}
         />
       )}
     </div>

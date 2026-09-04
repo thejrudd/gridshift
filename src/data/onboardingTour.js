@@ -71,14 +71,14 @@ export const ONBOARDING_TOUR = [
       },
       {
         id: 'onboarding-predictions',
-        name: 'Predictions',
+        name: 'Predict',
         description: 'Build your view of the NFL season.',
         steps: [{
           route: null,
           anchor: '[data-tour="tab-predictions"]',
           anchorMobile: null,
           title: 'Predict the season',
-          body: 'Pick team records and games, then follow the standings and playoff picture created by your predictions.',
+          body: 'Choose team records and games, then build the playoff picture created by your predictions.',
           placement: 'auto',
         }],
       },

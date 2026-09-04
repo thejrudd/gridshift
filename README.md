@@ -93,6 +93,9 @@ Server-only variables:
 |---|---|
 | `GRIDSHIFT_SESSION_SECRET` | Signs/encrypts server-managed session values in production. |
 | `GRIDSHIFT_BDL_API_KEY` | BALLDONTLIE API key for server-side NFL live data. Never prefix this with `VITE_`. |
+| `GRIDSHIFT_STORY_STATS_API_KEY` | Optional external StoryStats API key for the Statistics Scores **Game Story** section. StoryStats is not bundled with GridShift; keep this credential server-only and never prefix it with `VITE_`. |
+| `GRIDSHIFT_STORY_STATS_DAILY_LIMIT` | Optional per-process StoryStats request guard. Defaults to `10` requests per API key per UTC day. |
+| `GRIDSHIFT_STORY_STATS_AUTOMATION_ENABLED` | Enables production-only automatic primetime story warming. Development remains a manual Game Story test surface. |
 | `GRIDSHIFT_BDL_TIER` | BALLDONTLIE capability profile: `free`, `all-star`, `goat`, or `trial`. Unknown values fail conservatively. |
 | `GRIDSHIFT_BDL_EFFECTIVE_MAX_REQ_PER_MIN` | Actual account limit. Set this explicitly because a GOAT trial has GOAT endpoint access but only a 5 RPM limit. |
 | `GRIDSHIFT_BDL_INTERNAL_MAX_REQ_PER_MIN` | Optional operating ceiling. When blank, the shared gateway reserves 25% of the effective limit; paid GOAT therefore operates at 450 of 600 RPM. |
@@ -111,7 +114,7 @@ Server-only variables:
 | `GRIDSHIFT_DRAFT_SYNC_PAIRING_TTL_MS` | Lifetime of a one-time pairing code. Defaults to 10 minutes. |
 | `GRIDSHIFT_DRAFT_SYNC_MAX_PAYLOAD_BYTES` | Maximum synchronized Draft JSON payload size. Defaults to 64 KiB. |
 
-Hosted owners can enable paid live scoring for selected Sleeper leagues by setting these variables on the server and keeping `GRIDSHIFT_LIVE_ALLOWED_LEAGUE_IDS` narrow. Self-hosters should supply their own BALLDONTLIE key and league allowlist. A paid GOAT account uses `GRIDSHIFT_BDL_TIER=goat` with `GRIDSHIFT_BDL_EFFECTIVE_MAX_REQ_PER_MIN=600`; keep the effective limit at `5` for a GOAT trial or any unverified account. Variables prefixed with `VITE_` are public because Vite embeds them in the browser bundle, so paid keys and access codes must always use `GRIDSHIFT_` server variables.
+Hosted owners can enable paid live scoring for selected Sleeper leagues by setting these variables on the server and keeping `GRIDSHIFT_LIVE_ALLOWED_LEAGUE_IDS` narrow. Self-hosters should supply their own BALLDONTLIE key and league allowlist. The optional Statistics Scores **Game Story** section also requires a separate external StoryStats API key in `GRIDSHIFT_STORY_STATS_API_KEY`; without that key, the rest of GridShift continues to work but Game Story remains unavailable. GridShift fixes StoryStats requests to the `stats` audience and `editorial` tone, so those values do not need to be configured. A paid GOAT account uses `GRIDSHIFT_BDL_TIER=goat` with `GRIDSHIFT_BDL_EFFECTIVE_MAX_REQ_PER_MIN=600`; keep the effective limit at `5` for a GOAT trial or any unverified account. Variables prefixed with `VITE_` are public because Vite embeds them in the browser bundle, so paid keys and access codes must always use `GRIDSHIFT_` server variables.
 
 Draft Sync is an optional capability of the existing API sidecar, not a required database service. When enabled, the sidecar stores a small SQLite database under `GRIDSHIFT_DRAFT_SYNC_DATA_DIR`; the Docker Compose example mounts `/data` as a persistent volume. A volume restart preserves sync state, but deleting the volume removes it. Hosters should include that volume in their normal backup process; Draft Sync does not provide off-site backups automatically.
 
@@ -130,11 +133,12 @@ Draft Sync is an optional capability of the existing API sidecar, not a required
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) + optional Node API sidecar |
 
-## What's New in v8.9.1
+## What's New in v8.9.2
 
-- **Trade pick clarity** — Keep future pick labels to their guaranteed year and round, without implying a projected slot or current quality tier.
-- **Stable Trade pick values** — Use one value for each tradable pick year and round, independent of its original roster owner, while preserving year-based uncertainty discounts.
-- **Regression coverage and documentation** — Add focused coverage and update the Trade references for the corrected pick-label and valuation boundaries.
+- **Prediction workflow** — Build records first, then complete the playoff picture, with clearer season-aware navigation and retired-route handling.
+- **Share Card studio** — Choose the card, title, canvas, and theme in order, then export polished Standings, Division Winners, Playoff Seeding, Champions, Full Bracket, or Team Record cards.
+- **Trade Agent continuity** — Keep an in-progress partner and selected assets when moving between GridShift sections, scoped safely to the connected account, league, and season.
+- **PWA and responsive polish** — Refresh generated app icons and improve share-card, action-sheet, and prediction layouts across display sizes.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 

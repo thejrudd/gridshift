@@ -268,7 +268,7 @@ Compact framed empty states remain appropriate for inline list, table, and filte
 ### Navigation State
 
 - `activeTab`: `'predictions' | 'statistics' | 'companion' | 'compare'`
-- `seasonView`: `'predictions' | 'standings' | 'playoffs'`
+- `seasonView`: `'predictions' | 'playoffs'`
 - `companionView`: `'roster' | 'rankings' | 'live' | 'matchup' | 'waiver' | 'league' | 'defense' | 'trade' | 'scoring'`
 
 ### Key Files

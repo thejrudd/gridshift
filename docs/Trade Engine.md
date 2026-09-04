@@ -95,6 +95,12 @@ Main responsibilities:
 - evaluate fairness / imbalance
 - generate refinement ideas and candidate additions/removals
 
+The in-progress Agent draft (selected players, picks, and partner roster) is
+saved in browser storage under the connected Sleeper user, league, and season.
+It is restored after leaving Trade or reloading the app; explicit entry points
+such as Build Trade and counter-proposal editing replace the saved draft, while
+Clear Trade saves the cleared asset state.
+
 ### Intelligence flow
 
 `CompanionTrade.jsx` -> `TradeProposalPanel.jsx` -> `tradeAnalytics.js` -> `opportunityEngine.js` facade -> `src/utils/opportunity/*`
