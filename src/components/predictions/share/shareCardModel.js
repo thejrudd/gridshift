@@ -42,10 +42,6 @@ function divisionFor(team) {
   return division ? `${conference} ${division}` : `${conference} Other`;
 }
 
-function compareTeams(a, b) {
-  return comparePredictionTeams(a, b);
-}
-
 function expandTeam(entry, byId, records) {
   const source = typeof entry === 'string' ? byId[teamId(entry)] : entry;
   if (!source) return null;
@@ -85,13 +81,16 @@ export function createPredictionShareView(model = {}) {
       teams: teams.filter(team => team.division === division),
     })))
     .filter(division => division.teams.length)
-    .map(division => ({ ...division, teams: [...division.teams].sort(compareTeams) }));
+    .map(division => ({
+      ...division,
+      teams: [...division.teams].sort((a, b) => comparePredictionTeams(a, b, records, teams)),
+    }));
 
   const divisionWinners = model.divisionWinners?.length
     ? resolveList(model.divisionWinners, byId, records)
     : divisions.map(division => division.teams[0]).filter(Boolean);
 
-  const fallbackSeeds = getPredictionPlayoffSeeds(teams, records);
+  const fallbackSeeds = getPredictionPlayoffSeeds(teams, records, teams);
   const seeds = Object.fromEntries(CONFERENCES.map((conference) => {
     const supplied = model.seeds?.[conference] ?? model.playoffSeeds?.[conference];
     if (supplied?.length) return [conference, resolveList(supplied, byId, records)];

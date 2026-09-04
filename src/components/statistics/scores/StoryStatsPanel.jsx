@@ -247,7 +247,6 @@ export default function StoryStatsPanel({
     <section
       className={`scores-story-panel is-${resolvedStatus}`}
       aria-labelledby={headingId}
-      aria-describedby={`${headingId}-note`}
     >
       <header className="scores-story-header">
         <div>
@@ -261,10 +260,6 @@ export default function StoryStatsPanel({
           </div>
         )}
       </header>
-
-      <p id={`${headingId}-note`} className="scores-story-note">
-        These stories provide editorial context only. They are not predictions or betting advice.
-      </p>
 
       {resolvedStatus === 'loading' && <LoadingState hasStories={hasStories} />}
       {resolvedStatus === 'error' && <ErrorState error={error} onRetry={onRetry} />}

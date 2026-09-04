@@ -37,6 +37,7 @@ import ValuationInfoSheet from './trade/ValuationInfoSheet';
 import RosterBrowseModal from './trade/RosterBrowseModal';
 import TradeShareSheet from './trade/TradeShareSheet';
 import { buildTradeProposalSnapshot, buildTradeProposalSnapshotFromCurrentPerspective } from '../../utils/tradeProposal';
+import { getTradeDraftStorageKey, readTradeDraftState, writeTradeDraftState } from '../../utils/tradeDraftState';
 import { UPGRADE_TRADE_POSTURES, normalizeRosterId, scheduleDeferredTradeTask } from './trade/tradeUiHelpers';
 
 // Derive league format and type from Sleeper league settings
@@ -241,6 +242,11 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
   const format = detectLeagueFormat(league);
   const leagueType = detectLeagueType(league);
   const picksEnabled = platform !== 'espn';
+  const tradeDraftStorageKey = getTradeDraftStorageKey({
+    leagueId: selectedLeagueId,
+    season,
+    sleeperUserId: sleeperUser?.user_id,
+  });
   const tradeAdpEligible = getFantasyRankingsDataMode(season) === 'adp';
   const hasCurrentSeasonProduction = hasRecordedSeasonProduction(seasonStats);
   const usePriorSeasonProduction = !hasCurrentSeasonProduction
@@ -255,14 +261,17 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
   const valuationSeasonStats = preseasonValuationStats ?? seasonStats;
   const valuationWeeklyStats = preseasonValuationWeeklyStats ?? weeklyStats;
 
+  const [persistedTradeDraft] = useState(() => readTradeDraftState(tradeDraftStorageKey));
+
   // Trade partner
-  const [partnerRosterId, setPartnerRosterId] = useState(null);
+  const [partnerRosterId, setPartnerRosterId] = useState(() => persistedTradeDraft?.partnerRosterId ?? null);
 
   // Trade contents
-  const [yourPlayers, setYourPlayers]   = useState([]);   // sleeper IDs
-  const [yourPicks, setYourPicks]       = useState([]);   // { year, round, fromRosterId, key }
-  const [theirPlayers, setTheirPlayers] = useState([]);
-  const [theirPicks, setTheirPicks]     = useState([]);
+  const [yourPlayers, setYourPlayers]   = useState(() => persistedTradeDraft?.yourPlayers ?? []);   // sleeper IDs
+  const [yourPicks, setYourPicks]       = useState(() => persistedTradeDraft?.yourPicks ?? []);   // { year, round, fromRosterId, key }
+  const [theirPlayers, setTheirPlayers] = useState(() => persistedTradeDraft?.theirPlayers ?? []);
+  const [theirPicks, setTheirPicks]     = useState(() => persistedTradeDraft?.theirPicks ?? []);
+  const tradeDraftHydrationRef = useRef({ key: tradeDraftStorageKey, pending: false });
 
   // KTC data
   const [ktcPlayers, setKtcPlayers]             = useState(null);
@@ -314,6 +323,39 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
   const [isUpgradeResultsPending, startUpgradeResultsTransition] = useTransition();
   const [isPartnerSwitchPending, startPartnerSwitchTransition] = useTransition();
   const deferredPartnerRosterId = useDeferredValue(partnerRosterId);
+
+  useEffect(() => {
+    if (!tradeDraftStorageKey) {
+      tradeDraftHydrationRef.current = { key: null, pending: false };
+      return;
+    }
+    if (tradeDraftHydrationRef.current.key === tradeDraftStorageKey) return;
+
+    tradeDraftHydrationRef.current = { key: tradeDraftStorageKey, pending: true };
+    const savedDraft = readTradeDraftState(tradeDraftStorageKey);
+    setPartnerRosterId(savedDraft?.partnerRosterId ?? null);
+    setYourPlayers(savedDraft?.yourPlayers ?? []);
+    setYourPicks(savedDraft?.yourPicks ?? []);
+    setTheirPlayers(savedDraft?.theirPlayers ?? []);
+    setTheirPicks(savedDraft?.theirPicks ?? []);
+  }, [tradeDraftStorageKey]);
+
+  useEffect(() => {
+    if (!tradeDraftStorageKey || tradeDraftHydrationRef.current.key !== tradeDraftStorageKey) return;
+    if (tradeDraftHydrationRef.current.pending) {
+      // The first effect after a league/account switch still has the previous
+      // context's state. Wait for the hydrated setters to render before saving.
+      tradeDraftHydrationRef.current.pending = false;
+      return;
+    }
+    writeTradeDraftState(tradeDraftStorageKey, {
+      partnerRosterId,
+      yourPlayers,
+      yourPicks,
+      theirPlayers,
+      theirPicks,
+    });
+  }, [partnerRosterId, theirPicks, theirPlayers, tradeDraftStorageKey, yourPicks, yourPlayers]);
 
   const setTradePickerOpen = useCallback((request) => {
     if (request?.type === 'pick' && !picksEnabled) return;

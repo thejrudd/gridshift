@@ -38,12 +38,12 @@
 }
 
 .prediction-share-card__header {
-  min-height: 238px;
+  min-height: 0;
   flex: 0 0 auto;
   display: flex;
   justify-content: space-between;
-  gap: 32px;
-  padding: 42px 48px 26px;
+  gap: 24px;
+  padding: 28px 40px 20px;
   border-bottom: 2px solid var(--prediction-share-rule);
 }
 
@@ -67,22 +67,24 @@
 }
 
 .prediction-share-card__header h2 {
-  margin-top: 14px;
+  margin-top: 10px;
   max-width: 650px;
   color: inherit;
-  font-size: 78px;
-  line-height: 0.8;
+  font-size: 52px;
+  line-height: 0.95;
   letter-spacing: -0.028em;
   font-weight: 800;
   text-transform: uppercase;
 }
 
-.prediction-share-card__header h2 > span { display: block; }
+.prediction-share-card__header > div:first-child { min-width: 0; }
+.prediction-share-card__header h2 > span { display: inline; }
+.prediction-share-card__header h2 > span + span::before { content: ' '; }
+.prediction-share-card__header[data-has-title='false'] h2 { display: none; }
 
 .prediction-share-card__subtitle {
   margin-top: 16px;
   color: currentColor;
-  opacity: 0.58;
   font-family: 'Figtree', sans-serif;
   font-size: 18px;
   line-height: 1.25;
@@ -92,14 +94,15 @@
 .prediction-share-card__stamp {
   padding-top: 10px;
   max-width: 240px;
+  flex-shrink: 0;
   display: grid;
+  align-content: start;
   gap: 7px;
   color: currentColor;
-  opacity: 0.56;
   text-align: right;
-  font-size: 18px;
+  font-size: 17px;
   line-height: 1.1;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.08em;
   font-weight: 800;
   text-transform: uppercase;
 }
@@ -107,26 +110,24 @@
 .prediction-share-card__body {
   min-height: 0;
   flex: 1 1 auto;
-  padding: 28px 48px;
+  padding: 20px 40px;
 }
 
 .prediction-share-card__footer {
-  min-height: 292px;
+  min-height: 96px;
   flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 20px;
-  padding: 21px 48px 31px;
+  padding: 16px 40px;
   border-top: 2px solid var(--prediction-share-rule);
 }
 
 .prediction-share-card__footer > strong {
   max-width: 405px;
-  overflow: hidden;
   color: inherit;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 30px;
+  overflow-wrap: anywhere;
+  font-size: 28px;
   line-height: 1;
   letter-spacing: 0.01em;
   font-weight: 800;
@@ -202,10 +203,9 @@
   align-items: center;
   min-height: 19px;
   color: inherit;
-  opacity: 0.48;
-  font-size: 17px;
+  font-size: 18px;
   line-height: 1;
-  letter-spacing: 0.22em;
+  letter-spacing: 0.08em;
   font-weight: 800;
   text-transform: uppercase;
 }
@@ -283,10 +283,11 @@
 .prediction-share-card__champion-logo {
   position: absolute;
   z-index: 0;
-  top: -31px;
-  right: -21px;
-  width: 450px;
-  height: 450px;
+  top: 0;
+  right: 0;
+  width: 45%;
+  height: 100%;
+  max-height: 450px;
   object-fit: contain;
   filter: drop-shadow(0 18px 26px var(--color-prediction-share-hero-shadow));
 }
@@ -304,7 +305,6 @@
 .prediction-share-card__seed-champion span,
 .prediction-share-card__bracket-champion > span {
   color: inherit;
-  opacity: 0.8;
   font-size: 18px;
   line-height: 1;
   letter-spacing: 0.21em;
@@ -316,7 +316,8 @@
   max-width: 560px;
   color: inherit;
   font-size: 92px;
-  line-height: 0.78;
+  line-height: 0.9;
+  overflow-wrap: anywhere;
   letter-spacing: -0.03em;
   font-weight: 800;
   text-transform: uppercase;
@@ -345,8 +346,8 @@
 }
 
 .prediction-share-card__conference-champion > div { display: grid; gap: 7px; min-width: 0; }
-.prediction-share-card__conference-champion b { color: inherit; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 31px; line-height: .9; text-transform: uppercase; }
-.prediction-share-card__conference-champion span { color: inherit; opacity: .82; font-family: 'Figtree', sans-serif; font-size: 16px; font-weight: 800; }
+.prediction-share-card__conference-champion b { color: inherit; overflow-wrap: anywhere; font-size: 31px; line-height: 1; text-transform: uppercase; }
+.prediction-share-card__conference-champion span { color: inherit; font-family: 'Figtree', sans-serif; font-size: 16px; font-weight: 800; }
 
 /* Division winners: eight equal banners are intentionally more graphic. */
 .prediction-share-card__division-winners {
@@ -370,8 +371,8 @@
 .prediction-share-card__division-winner p { grid-column: 1 / -1; margin-bottom: 5px; }
 .prediction-share-card__division-winner .prediction-share-card__team-logo { align-self: center; width: 56px; height: 56px; flex-basis: 56px; }
 .prediction-share-card__division-winner > div { align-self: center; min-width: 0; display: grid; gap: 5px; }
-.prediction-share-card__division-winner b { overflow: hidden; color: inherit; white-space: nowrap; text-overflow: ellipsis; font-size: 37px; line-height: .8; text-transform: uppercase; }
-.prediction-share-card__division-winner span { color: inherit; opacity: .85; font-family: 'Figtree', sans-serif; font-size: 17px; line-height: 1; font-weight: 800; }
+.prediction-share-card__division-winner b { color: inherit; overflow-wrap: anywhere; font-size: 37px; line-height: 1; text-transform: uppercase; }
+.prediction-share-card__division-winner span { color: inherit; font-family: 'Figtree', sans-serif; font-size: 17px; line-height: 1; font-weight: 800; }
 
 /* Seeds: the matching conference columns allow instant comparison. */
 .prediction-share-card__seeding { display: flex; flex-direction: column; gap: 18px; }
@@ -388,88 +389,65 @@
 .prediction-share-card__seed-champion > span { margin-left: 5px; }
 .prediction-share-card__seed-champion b { margin-left: auto; color: inherit; font-size: 32px; line-height: .9; text-transform: uppercase; }
 
-/* Full bracket: each conference owns a fixed band so rounds can never collide. */
+/* Social bracket: connected matchup boxes narrow down to each conference winner.
+ * Fixed pixel typography is intentional for the 1080px export canvas. */
 .prediction-share-card__bracket {
-  padding-top: 20px;
-  padding-bottom: 20px;
+  padding: 16px 40px;
   display: grid;
-  grid-template-rows: repeat(2, minmax(0, 1fr)) 66px;
-  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: minmax(0, 1fr) 160px;
+  gap: 16px 24px;
 }
-
-.prediction-share-card__bracket-conference {
-  min-height: 0;
-  overflow: hidden;
-  display: grid;
-  grid-template-rows: 20px minmax(0, 1fr);
-  gap: 6px;
+.prediction-share-card__bracket-conference { min-height: 0; display: flex; flex-direction: column; gap: 10px; }
+.prediction-share-card__bracket-conference--afc { --prediction-share-conference-color: var(--color-accent); }
+.prediction-share-card__bracket-conference--nfc { --prediction-share-conference-color: var(--color-accent-red); }
+.prediction-share-card__bracket-label { display: flex; align-items: center; gap: 10px; height: 30px; flex: 0 0 30px; color: inherit; }
+.prediction-share-card__bracket-mark { width: 28px; height: 28px; display: grid; place-items: center; background: var(--prediction-share-conference-color); color: var(--color-signature-fg); font-size: 20px; font-weight: 900; }
+.prediction-share-card__bracket-label strong { color: inherit; font-size: 28px; line-height: 1; }
+.prediction-share-card__bracket-label i { height: 3px; flex: 1; background: var(--prediction-share-conference-color); }
+.prediction-share-card__bracket-grid { min-height: 0; flex: 1; display: flex; flex-direction: column; }
+.prediction-share-card__bracket-round { position: relative; min-height: 0; flex: 1; display: flex; flex-direction: column; padding-top: 24px; }
+.prediction-share-card__bracket-round.has-feeders { padding-top: 32px; flex-grow: 1.1; }
+.prediction-share-card__bracket-round h3 { position: absolute; z-index: 1; top: 0; left: 50%; transform: translateX(-50%); width: max-content; max-width: 100%; min-height: 24px; padding: 0 8px; font-size: 20px; letter-spacing: .06em; opacity: 1; background: var(--prediction-share-ink); }
+.prediction-share-card--poster .prediction-share-card__bracket-round h3 { background: var(--prediction-share-paper); }
+.prediction-share-card__bracket-round.has-feeders h3 { top: 8px; }
+.prediction-share-card__bracket-round h3::after { display: none; }
+.prediction-share-card__bracket-connectors { position: absolute; top: 0; left: 0; width: 100%; height: 32px; overflow: visible; fill: none; stroke: var(--prediction-share-conference-color); stroke-width: 2; }
+.prediction-share-card__bracket-matches { min-height: 88px; flex: 1; display: flex; justify-content: center; gap: 5%; }
+.prediction-share-card__bracket-match { width: 30%; min-width: 0; display: grid; grid-template-rows: repeat(2, minmax(44px, 1fr)); border: 1px solid var(--prediction-share-conference-color); border-radius: 4px; overflow: hidden; }
+.prediction-share-card__bracket-team { position: relative; min-width: 0; padding: 3px 6px; display: flex; align-items: center; gap: 6px; }
+.prediction-share-card__bracket-team + .prediction-share-card__bracket-team { border-top: 1px solid var(--prediction-share-conference-color); }
+.prediction-share-card__bracket-team.is-loser { background: var(--prediction-share-rule); color: inherit; box-shadow: none; }
+.prediction-share-card__bracket-team.is-winner { box-shadow: inset 3px 0 var(--color-signature); }
+.prediction-share-card__bracket-team .prediction-share-card__team-logo { width: 36px; height: 36px; flex-basis: 36px; }
+.prediction-share-card__bracket-identity { min-width: 0; flex: 1; display: grid; gap: 2px; }
+.prediction-share-card__bracket-team b { color: inherit; font-size: 22px; line-height: 1; }
+.prediction-share-card__bracket-record { color: inherit; font-family: 'Figtree', sans-serif; font-size: 14px; line-height: 1; font-weight: 700; white-space: nowrap; }
+.prediction-share-card__bracket-outcome { width: 14px; height: 14px; flex: 0 0 14px; display: grid; place-items: center; background: var(--color-signature); color: var(--color-signature-fg); border-radius: 3px; font-family: 'Figtree', sans-serif; font-size: 11px; font-weight: 900; }
+.prediction-share-card__bracket-outcome-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.prediction-share-card__bracket-empty { align-self: center; font-family: 'Figtree', sans-serif; font-size: 18px; }
+.prediction-share-card__bracket-super-bowl { grid-column: 1 / -1; padding: 12px 20px; display: flex; flex-direction: column; gap: 8px; background: var(--color-signature); color: var(--color-signature-fg); }
+.prediction-share-card__bracket-super-bowl-heading { text-align: center; line-height: 1; text-transform: uppercase; }
+.prediction-share-card__bracket-super-bowl-heading span { font-size: 22px; font-weight: 800; letter-spacing: .12em; }
+.prediction-share-card__bracket-super-bowl-matchup { min-height: 0; flex: 1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; align-items: center; }
+.prediction-share-card__bracket-super-bowl-matchup.has-champion { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
+.prediction-share-card__finalist { min-width: 0; display: flex; align-items: center; gap: 12px; }
+.prediction-share-card__finalist > div { min-width: 0; }
+.prediction-share-card__finalist .prediction-share-card__team-logo { width: 48px; height: 48px; flex-basis: 48px; }
+.prediction-share-card__finalist.is-champion .prediction-share-card__team-logo { width: 104px; height: 104px; flex-basis: 104px; }
+.prediction-share-card__finalist span, .prediction-share-card__finalist p { font-family: 'Figtree', sans-serif; font-size: 16px; line-height: 1.2; font-weight: 700; }
+.prediction-share-card__finalist b { display: block; color: inherit; font-size: 32px; line-height: 1; text-transform: uppercase; overflow-wrap: anywhere; }
+.prediction-share-card__finalist.is-champion b { font-size: 60px; }
+.prediction-share-card__finalist.is-champion span { font-size: 18px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
+.prediction-share-card__bracket-super-bowl-matchup.has-champion .prediction-share-card__finalist:not(.is-champion) {
+  color: color-mix(in srgb, var(--color-signature-fg) 78%, var(--color-signature));
 }
-
-.prediction-share-card__bracket-label {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 13px;
-  color: inherit;
-  opacity: .54;
-  font-size: 17px;
-  line-height: 1;
-  letter-spacing: .22em;
-  font-weight: 800;
-  text-transform: uppercase;
+.prediction-share-card__bracket-super-bowl-matchup.has-champion .prediction-share-card__finalist:not(.is-champion) .prediction-share-card__team-logo {
+  filter: grayscale(1);
+  opacity: .7;
 }
-
-.prediction-share-card__bracket-label i {
-  height: 1px;
-  flex: 1;
-  background: currentColor;
-  opacity: .36;
-}
-
-.prediction-share-card__bracket-grid {
-  min-width: 0;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: 1.22fr 1fr .88fr;
-  gap: 14px;
-}
-
-.prediction-share-card__bracket-round {
-  min-width: 0;
-  min-height: 0;
-  display: grid;
-  grid-template-rows: 18px minmax(0, 1fr);
-  gap: 5px;
-}
-
-.prediction-share-card__bracket-round > div {
-  min-height: 0;
-  display: grid;
-  align-content: center;
-  gap: 4px;
-}
-
-.prediction-share-card__bracket-match { min-height: 0; display: grid; gap: 2px; }
-.prediction-share-card__bracket-team { height: 20px; min-width: 0; padding: 1px 5px; display: flex; align-items: center; gap: 5px; border-radius: 3px; }
-.prediction-share-card__bracket-team.is-loser { filter: grayscale(.62) saturate(.38); opacity: .76; }
-.prediction-share-card__bracket-team.is-winner { filter: none; opacity: 1; box-shadow: inset 3px 0 0 var(--color-signature), inset 0 0 0 1px var(--prediction-share-team-border); }
-.prediction-share-card__bracket-team .prediction-share-card__team-logo { width: 16px; height: 16px; flex-basis: 16px; }
-.prediction-share-card__bracket-team b { min-width: 0; flex: 1; overflow: hidden; color: inherit; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; line-height: 1; }
-.prediction-share-card__bracket-record { color: inherit; font-family: 'Figtree', sans-serif; font-size: 10px; line-height: 1; font-weight: 800; }
-.prediction-share-card__bracket-outcome { width: 13px; height: 13px; flex: 0 0 13px; display: grid; place-items: center; background: var(--color-signature); color: var(--color-signature-fg); border-radius: 3px; font-family: 'Figtree', sans-serif; font-size: 9px; line-height: 1; font-weight: 900; }
-.prediction-share-card__bracket-outcome-label { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
-.prediction-share-card__bracket-empty { align-self: center; color: inherit; opacity: .46; font-family: 'Figtree', sans-serif; font-size: 15px; font-weight: 600; }
-.prediction-share-card__bracket-super-bowl { min-width: 0; padding: 8px 18px; display: grid; grid-template-columns: 180px minmax(0, 1fr); align-items: center; gap: 16px; border: 1px solid var(--prediction-share-rule); border-radius: 6px; }
-.prediction-share-card__bracket-super-bowl-heading { min-width: 0; display: grid; gap: 5px; }
-.prediction-share-card__bracket-super-bowl-heading span { color: var(--color-signature); font-size: 12px; line-height: 1; letter-spacing: .18em; font-weight: 800; text-transform: uppercase; }
-.prediction-share-card__bracket-super-bowl-heading b { color: inherit; font-size: 23px; line-height: .86; text-transform: uppercase; }
-.prediction-share-card__bracket-super-bowl-matchup { min-width: 0; display: grid; gap: 3px; }
 
 /* Team record: one club leads, with its 17 Advanced Mode calls as evidence. */
-.prediction-share-card[data-share-format='team-record'] .prediction-share-card__footer {
-  min-height: 112px;
-}
-
 .prediction-share-card__team-record {
   display: flex;
   flex-direction: column;
@@ -501,7 +479,6 @@
 
 .prediction-share-card__team-record-hero p {
   color: inherit;
-  opacity: .78;
   font-size: 17px;
   line-height: 1;
   letter-spacing: .18em;
@@ -510,12 +487,10 @@
 }
 
 .prediction-share-card__team-record-hero b {
-  overflow: hidden;
   color: inherit;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
   font-size: 47px;
-  line-height: .84;
+  line-height: 1;
   text-transform: uppercase;
 }
 
@@ -557,7 +532,6 @@
 .prediction-share-card__team-record-week,
 .prediction-share-card__team-record-venue {
   color: inherit;
-  opacity: .74;
   font-family: 'Figtree', sans-serif;
   font-size: 14px;
   line-height: 1;
@@ -572,40 +546,14 @@
 .prediction-share-card--poster .prediction-share-card__header { background: var(--color-prediction-share-ink); color: var(--color-prediction-share-light); }
 .prediction-share-card--poster .prediction-share-card__header .prediction-share-card__stamp { color: var(--color-prediction-share-light); }
 
-/* The tall canvas gives the board and bracket modestly more breathing room. */
-.prediction-share-card[data-share-size='tall'] .prediction-share-card__header { min-height: 255px; }
-
-.prediction-share-card[data-share-size='tall'] .prediction-share-card__footer { min-height: 304px; }
-
-.prediction-share-card[data-share-format='team-record'][data-share-size='tall'] .prediction-share-card__footer { min-height: 124px; }
+/* Extra portrait height belongs to the content, not empty title or QR space. */
+.prediction-share-card[data-share-size='tall'] .prediction-share-card__footer { min-height: 112px; }
 .prediction-share-card[data-share-format='team-record'][data-share-size='tall'] .prediction-share-card__team-record { padding-top: 36px; padding-bottom: 36px; gap: 24px; }
 .prediction-share-card[data-share-format='team-record'][data-share-size='tall'] .prediction-share-card__team-record-hero { min-height: 150px; }
 .prediction-share-card[data-share-format='team-record'][data-share-size='tall'] .prediction-share-card__team-record-grid { gap: 12px 16px; }
 
-.prediction-share-card[data-share-size='tall'] .prediction-share-card__bracket {
-  grid-template-rows: repeat(2, minmax(0, 1fr)) 82px;
-  gap: 18px;
-  padding-top: 28px;
-  padding-bottom: 28px;
-}
-
-.prediction-share-card[data-share-size='tall'] .prediction-share-card__bracket-conference {
-  grid-template-rows: 22px minmax(0, 1fr);
-  gap: 9px;
-}
-
-.prediction-share-card[data-share-size='tall'] .prediction-share-card__bracket-round {
-  grid-template-rows: 20px minmax(0, 1fr);
-  gap: 8px;
-}
-
-.prediction-share-card[data-share-size='tall'] .prediction-share-card__bracket-round > div { gap: 8px; }
-.prediction-share-card[data-share-size='tall'] .prediction-share-card__bracket-match { gap: 3px; }
-.prediction-share-card[data-share-size='tall'] .prediction-share-card__bracket-team { height: 31px; padding: 3px 8px; }
-.prediction-share-card[data-share-size='tall'] .prediction-share-card__bracket-team .prediction-share-card__team-logo { width: 23px; height: 23px; flex-basis: 23px; }
-.prediction-share-card[data-share-size='tall'] .prediction-share-card__bracket-team b { font-size: 19px; }
-.prediction-share-card[data-share-size='tall'] .prediction-share-card__bracket-record { font-size: 11px; }
-.prediction-share-card[data-share-size='tall'] .prediction-share-card__bracket-outcome { width: 16px; height: 16px; flex-basis: 16px; font-size: 11px; }
-.prediction-share-card[data-share-size='tall'] .prediction-share-card__bracket-super-bowl { padding-top: 6px; padding-bottom: 6px; }
-.prediction-share-card[data-share-size='tall'] .prediction-share-card__bracket-super-bowl .prediction-share-card__bracket-team { height: 28px; padding-top: 2px; padding-bottom: 2px; }
-.prediction-share-card[data-share-size='tall'] .prediction-share-card__bracket-super-bowl .prediction-share-card__team-logo { width: 21px; height: 21px; flex-basis: 21px; }
+/* Spend extra portrait height on matchup legibility and the championship. */
+.prediction-share-card[data-share-size='tall'] .prediction-share-card__bracket { grid-template-rows: minmax(0, 1fr) 220px; gap: 28px 24px; }
+.prediction-share-card[data-share-size='tall'] .prediction-share-card__bracket-team b { font-size: 24px; }
+.prediction-share-card[data-share-size='tall'] .prediction-share-card__bracket-team .prediction-share-card__team-logo { width: 40px; height: 40px; flex-basis: 40px; }
+.prediction-share-card[data-share-size='tall'] .prediction-share-card__finalist.is-champion .prediction-share-card__team-logo { width: 128px; height: 128px; flex-basis: 128px; }

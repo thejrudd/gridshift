@@ -1332,3 +1332,13 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Stable pick valuation** - Give every tradable pick in the same year and round one consistent value, independent of its original roster owner, while retaining the year-based uncertainty discount.
 - **Trade card consistency** - Keep pick cards aligned with player cards by removing duplicate pick metadata and redundant projected labels.
 - **Regression coverage and documentation** - Add focused unit and responsive coverage and update the Trade references for the corrected pick-label and valuation boundaries.
+
+## v8.9.2 - Prediction Workflow & Share Cards
+*2026-09-05*
+
+- **Prediction workflow** - Reworked Predict around a records-first flow followed by the playoff picture, with season-aware labels, clearer prerequisites, and retired-route handling.
+- **Share Card studio** - Added an ordered card, title, canvas, and theme workflow for Standings, Division Winners, Playoff Seeding, Champions, Full Bracket, and Team Record exports, with faithful screenshot capture, clearer readiness guidance, and responsive studio geometry.
+- **Playoff integrity** - Strengthened deterministic reseeding and tied-record ordering so the interactive playoff view, snapshots, and share cards agree on legal matchups.
+- **Trade Agent continuity** - Persisted an in-progress trade partner and selected assets by connected account, league, and season so navigation does not discard the draft.
+- **PWA and responsive polish** - Regenerated full-bleed app icons and refined prediction, action-sheet, export, and display-size layouts across desktop and mobile surfaces.
+- **Regression coverage and documentation** - Expanded prediction, trade-draft, routing, responsive, and tour-adjacent coverage and updated the related architecture and feature references.

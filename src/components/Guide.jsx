@@ -2,11 +2,11 @@ import Modal from './Modal';
 
 const GUIDE_CONTENT = {
   predictions_picks: {
-    title: 'PICKS',
+    title: 'RECORDS',
     steps: [
       {
         title: 'Pick a mode',
-        description: 'Predict Record edits wins and division wins by team. Advanced Mode opens a team schedule for game-by-game W/L/T picks.',
+        description: 'Records edits wins and division wins by team. Advanced Mode opens a team schedule for game-by-game W/L/T picks.',
       },
       {
         title: 'Balance the season',
@@ -14,29 +14,11 @@ const GUIDE_CONTENT = {
       },
       {
         title: 'Watch progress',
-        description: 'The sidebar and mobile header track completed teams and games. Standings and Playoffs update from the records you enter.',
+        description: 'The sidebar and mobile header track completed teams and games. The playoff picture updates from your records.',
       },
       {
         title: 'Save your work',
-        description: 'Use Actions to export predictions as JSON, import a saved file, randomize picks, or reset the season.',
-      },
-    ],
-  },
-
-  predictions_standings: {
-    title: 'STANDINGS',
-    steps: [
-      {
-        title: 'Read the divisions',
-        description: 'Teams are ranked inside each division from your current predictions, with record and division record shown together.',
-      },
-      {
-        title: 'Fix a ranking',
-        description: 'Return to Picks to change a team record or game picks. Standings recalculate immediately.',
-      },
-      {
-        title: 'Set playoff context',
-        description: 'Division winners and wild cards feed the Playoffs tab once predicted records exist.',
+        description: 'Use Actions to back up predictions, restore a saved file, randomize records, or reset predictions.',
       },
     ],
   },
@@ -46,7 +28,7 @@ const GUIDE_CONTENT = {
     steps: [
       {
         title: 'Build from records',
-        description: 'Predict records in Picks first; the bracket uses the live AFC/NFC seeds from those records.',
+        description: 'Complete all 32 team records in Records first; Playoffs then opens with the AFC/NFC seeds from those records.',
       },
       {
         title: 'Pick winners',

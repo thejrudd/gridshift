@@ -90,6 +90,9 @@ const validatedPaths = [
 const legacyDefenseSackPath = buildAppPath(parseAppRoute('/companion/defense', '?stat=pass_sack'));
 assert(legacyDefenseSackPath === '/fantasy/defenses', `Expected legacy QB sack defense stat to normalize away, got ${legacyDefenseSackPath}`);
 
+const legacyPredictionStandingsPath = buildAppPath(parseAppRoute('/predictions/standings'));
+assert(legacyPredictionStandingsPath === '/predictions', `Expected retired Predictions Standings route to return to Picks, got ${legacyPredictionStandingsPath}`);
+
 const legacyRostersPath = buildAppPath(parseAppRoute('/companion/league', '?sub=picks&team=5'));
 assert(legacyRostersPath === '/fantasy/rosters?sub=picks&team=5', `Expected legacy League route to retain roster state, got ${legacyRostersPath}`);
 

@@ -74,7 +74,6 @@ export function getPageShareMetadata({ route = {}, season = DEFAULT_SEASON, team
     const view = route.seasonView ?? 'predictions';
     const viewTitle = {
       predictions: 'NFL Predictions',
-      standings: 'NFL Standings',
       playoffs: 'NFL Playoff Bracket',
     }[view] ?? 'NFL Predictions';
     const selectedTeam = route.predictionsTeamId ? teamLabel(teams, route.predictionsTeamId) : '';

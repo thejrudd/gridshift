@@ -1,4 +1,8 @@
 import Modal from './Modal';
+import { ChatCircleTextIcon } from '@phosphor-icons/react/ChatCircleText';
+import { CoffeeIcon } from '@phosphor-icons/react/Coffee';
+import { GithubLogoIcon } from '@phosphor-icons/react/GithubLogo';
+import { ShieldCheckIcon } from '@phosphor-icons/react/ShieldCheck';
 
 const GITHUB_REPOSITORY_URL = 'https://github.com/thejrudd/nfl-predictor';
 const CURRENT_RELEASE_URL = `${GITHUB_REPOSITORY_URL}/releases/tag/v${__APP_VERSION__}`;
@@ -12,11 +16,6 @@ export default function ActionSheet({
   onDisplay,
   onLegal,
   onAppTour,
-  onExportImage,
-  onSharePage,
-  predictionShareReady = false,
-  predictionShareReason = '',
-  predictionShareBlockedLabel = 'Complete Picks To Share',
   onExportJSON,
   onImportJSON,
   onRandom,
@@ -47,9 +46,13 @@ export default function ActionSheet({
     <Modal
       onClose={onClose}
       mobileSheet
-      ariaLabel="Options"
+      ariaLabel="Actions"
+      containerClassName="action-sheet-modal"
       containerStyle={{ background: 'var(--color-bg-secondary)', maxWidth: '640px' }}
     >
+      <div className="action-sheet-modal__scroll-region min-h-0 overflow-y-auto">
+
+        <div className="action-sheet-heading">Actions</div>
 
         {/* Primary actions group */}
         <div className="px-4 py-2">
@@ -148,42 +151,15 @@ export default function ActionSheet({
           <Divider />
           <ActionRow label="Display" onClick={onDisplay} />
           <Divider />
-          <ActionLink
-            label="Support GridShift"
-            href="https://buymeacoffee.com/gridshift"
-          />
-          <Divider />
-          <ActionLink
-            label="Feature Request"
-            href="mailto:featurerequest@gridshiftapp.com"
-            external={false}
-          />
-          <Divider />
-          <ActionLink
-            label="About / GitHub"
-            href={GITHUB_REPOSITORY_URL}
-          />
-          <Divider />
-          <ActionRow label="Privacy & Attributions" onClick={onLegal} />
-          <Divider />
           <ActionRow label="Guide" onClick={onGuide} />
-          <Divider />
-          <ActionRow label="Share this page" onClick={onSharePage} dataTour="share-page" />
           <Divider />
           <ActionRow label="App Tour" onClick={onAppTour} />
           {isPredictions && (
             <>
               <Divider />
-              <ActionRow
-                label={predictionShareReady ? 'Create Share Card' : predictionShareBlockedLabel}
-                onClick={onExportImage}
-                disabled={!predictionShareReady}
-                title={predictionShareReason}
-              />
+              <ActionRow label="Backup" onClick={onExportJSON} />
               <Divider />
-              <ActionRow label="Export JSON" onClick={onExportJSON} disabled={!hasPicks} />
-              <Divider />
-              <ActionRow label="Import JSON" onClick={onImportJSON} />
+              <ActionRow label="Restore" onClick={onImportJSON} />
               <Divider />
               <ActionRow label="Randomize Predictions" onClick={onRandom} />
             </>
@@ -203,14 +179,17 @@ export default function ActionSheet({
             className="rounded-xl overflow-hidden"
             style={{ background: 'var(--color-fill-tertiary)' }}
           >
-            <ActionRow label="Reset All" onClick={onReset} disabled={!hasPicks} destructive />
+            <ActionRow label="Reset Predictions" onClick={onReset} disabled={!hasPicks} destructive />
           </div>
         </div>
         )}
 
-        {/* Cancel */}
-        <div className="px-4 pb-4 pt-1">
+      </div>
+
+      <div className="action-sheet-modal__footer">
+        <div className="px-4 pb-2 pt-1">
           <button
+            type="button"
             onClick={onClose}
             className="w-full py-4 rounded-xl font-semibold text-sm transition-opacity active:opacity-60"
             style={{
@@ -220,18 +199,60 @@ export default function ActionSheet({
           >
             Cancel
           </button>
+        </div>
+
+        <div className="action-sheet-footer-actions" role="group" aria-label="GridShift resources">
           <a
-            href={CURRENT_RELEASE_URL}
+            href="https://buymeacoffee.com/gridshift"
             target="_blank"
             rel="noopener noreferrer"
-            className="block pt-4 text-center text-xs font-semibold"
-            style={{ color: 'var(--color-label-tertiary)', letterSpacing: '0.08em' }}
-            aria-label={`View GridShift v${__APP_VERSION__} release on GitHub`}
-            title={`View GridShift v${__APP_VERSION__} release on GitHub`}
+            className="action-sheet-footer-icon"
+            aria-label="Support GridShift"
+            title="Support GridShift"
           >
-            v{__APP_VERSION__}
+            <CoffeeIcon size={19} weight="bold" aria-hidden="true" />
           </a>
+          <a
+            href="mailto:featurerequest@gridshiftapp.com"
+            className="action-sheet-footer-icon"
+            aria-label="Feature Request"
+            title="Feature Request"
+          >
+            <ChatCircleTextIcon size={19} weight="bold" aria-hidden="true" />
+          </a>
+          <a
+            href={GITHUB_REPOSITORY_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="action-sheet-footer-icon"
+            aria-label="About / GitHub"
+            title="About / GitHub"
+          >
+            <GithubLogoIcon size={19} weight="bold" aria-hidden="true" />
+          </a>
+          <button
+            type="button"
+            onClick={onLegal}
+            className="action-sheet-footer-icon"
+            aria-label="Privacy & Attributions"
+            title="Privacy & Attributions"
+          >
+            <ShieldCheckIcon size={19} weight="bold" aria-hidden="true" />
+          </button>
         </div>
+
+        <a
+          href={CURRENT_RELEASE_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="block px-4 pb-3 pt-2 text-center text-xs font-semibold"
+          style={{ color: 'var(--color-label-tertiary)', letterSpacing: '0.08em' }}
+          aria-label={`View GridShift v${__APP_VERSION__} release on GitHub`}
+          title={`View GridShift v${__APP_VERSION__} release on GitHub`}
+        >
+          v{__APP_VERSION__}
+        </a>
+      </div>
     </Modal>
   );
 }
@@ -243,7 +264,7 @@ function ActionRow({ label, onClick, disabled, destructive, dataTour, title }) {
       disabled={disabled}
       data-tour={dataTour}
       title={title || undefined}
-      className="w-full flex items-center py-4 text-left transition-opacity active:opacity-50"
+      className="flex min-h-11 w-full items-center py-4 text-left transition-opacity active:opacity-50"
       style={{
         color: disabled
           ? 'var(--color-label-tertiary)'
@@ -255,23 +276,6 @@ function ActionRow({ label, onClick, disabled, destructive, dataTour, title }) {
     >
       <span className="text-sm font-medium">{label}</span>
     </button>
-  );
-}
-
-function ActionLink({ label, href, external = true }) {
-  return (
-    <a
-      href={href}
-      target={external ? '_blank' : undefined}
-      rel={external ? 'noopener noreferrer' : undefined}
-      className="w-full flex items-center py-4 text-left transition-opacity active:opacity-50"
-      style={{
-        color: 'var(--color-accent)',
-        cursor: 'pointer',
-      }}
-    >
-      <span className="text-sm font-medium">{label}</span>
-    </a>
   );
 }
 
