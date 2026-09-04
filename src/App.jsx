@@ -36,7 +36,6 @@ import TradeSubNav from './components/TradeSubNav';
 import ScoutSubNav from './components/ScoutSubNav';
 import DraftSubNav from './components/DraftSubNav';
 import ActionSheet from './components/ActionSheet';
-import PageShareSheet from './components/PageShareSheet.jsx';
 import Sidebar from './components/Sidebar';
 import { FantasyProvider, useFantasyLeague, useFantasyStats } from './context/SleeperContext';
 import { DraftSyncProvider } from './context/DraftSyncContext.jsx';
@@ -70,9 +69,7 @@ import { isTradeAvailableForSeason } from './utils/seasonAvailability.js';
 import { debugCompanionLog, debugCompanionTimeAsync } from './utils/companionPerfDebug';
 import {
   applyPageShareMetadata,
-  getCurrentShareUrl,
   getPageShareMetadata,
-  sharePage as sharePageWithNative,
 } from './utils/pageShare.js';
 import ScoringOverrideBanner from './components/companion/ScoringOverrideBanner';
 import Spinner from './components/ui/Spinner';
@@ -543,6 +540,7 @@ function AppInner() {
     return next;
   });
   const [exportPreviewOpen, setExportPreviewOpen] = useState(false);
+  const [predictionNavigationNotice, setPredictionNavigationNotice] = useState('');
   const [sharedPredictionEnvelope, setSharedPredictionEnvelope] = useState(null);
   const [sharedPredictionError, setSharedPredictionError] = useState('');
   const [sharedTradeData, setSharedTradeData] = useState(null);
@@ -557,7 +555,6 @@ function AppInner() {
     typeof window !== 'undefined' && /^#gs\d+\./.test(window.location.hash) ? window.location.hash : '',
   );
   const [actionSheetOpen, setActionSheetOpen] = useState(false);
-  const [pageShareOpen, setPageShareOpen] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
   const [displaySettingsOpen, setDisplaySettingsOpen] = useState(false);
   const [legalOpen, setLegalOpen] = useState(false);
@@ -1300,7 +1297,7 @@ function AppInner() {
   };
   const handleReset = () => {
     setActionSheetOpen(false);
-    if (!window.confirm('Are you sure you want to reset all predictions? This cannot be undone.')) return;
+    if (!window.confirm('Are you sure you want to reset your predictions? This cannot be undone.')) return;
     resetAllPredictions();
   };
   const handleInstall = () => { triggerInstall(); setActionSheetOpen(false); };
@@ -1381,21 +1378,30 @@ function AppInner() {
       records: recordCompletion.records,
       teams: predictionTeams,
     });
+    const scheduleReady = Boolean(predictionSchedule) && Number(predictionSeason) === Number(predictionSchedule.season);
     const errors = [...recordCompletion.errors];
-    if (Number(predictionSeason) !== Number(predictionSchedule?.season)) {
+    if (!scheduleReady) {
       errors.push(`The ${predictionSeason} schedule is not available yet.`);
     }
     if (!sleeperUser?.user_id) errors.push('Connect Sleeper before creating a share card.');
-    let blockedLabel = '';
-    if (recordCompletion.errors.length) blockedLabel = 'Complete Regular Season To Share';
-    else if (!sleeperUser?.user_id) blockedLabel = 'Connect Sleeper To Share';
-    else if (Number(predictionSeason) !== Number(predictionSchedule?.season)) blockedLabel = 'Season Schedule Required To Share';
+    const guidance = recordCompletion.errors[0]
+      || (!playoffs.isComplete ? 'Complete all 13 playoff outcomes in Playoffs before creating a share card.' : '')
+      || (!sleeperUser?.user_id ? 'Connect Sleeper to add your manager name and a portable link.' : '')
+      || (!scheduleReady ? `The ${predictionSeason} schedule is not available yet.` : '');
+    const missingShareCardRequirements = [
+      !recordCompletion.isComplete && (recordCompletion.errors[0] || 'Complete all 32 team records in Records.'),
+      !playoffs.isComplete && 'Complete all 13 playoff outcomes in Playoffs.',
+      !sleeperUser?.user_id && 'Connect Sleeper.',
+      !scheduleReady && `Wait for the ${predictionSeason} schedule to be available.`,
+    ].filter(Boolean);
     const mode = advancedCompletion.isComplete ? 'advanced' : 'record';
     return {
       mode,
       ready: errors.length === 0,
+      shareCardReady: recordCompletion.isComplete && playoffs.isComplete && errors.length === 0,
+      missingShareCardRequirements,
       errors,
-      blockedLabel,
+      guidance,
       capabilities: {
         regularSeasonReady: recordCompletion.isComplete,
         playoffReady: playoffs.isComplete,
@@ -1404,6 +1410,24 @@ function AppInner() {
       },
     };
   }, [playoffPicks, predictionSchedule, predictionSeason, predictionTeams, predictions, sleeperUser]);
+  const predictionFlowCapabilities = sharedPredictionEnvelope
+    ? { regularSeasonReady: true, playoffReady: true }
+    : predictionShareState.capabilities;
+
+  const handlePredictionSeasonView = useCallback((view) => {
+    if (view === 'playoffs' && !predictionFlowCapabilities.regularSeasonReady && !sharedPredictionEnvelope && !pendingPredictionShare) {
+      setPredictionNavigationNotice('Complete all 32 team records in Records before opening Playoffs.');
+      return;
+    }
+    setPredictionNavigationNotice('');
+    navigateSeasonView(view);
+  }, [navigateSeasonView, pendingPredictionShare, predictionFlowCapabilities.regularSeasonReady, sharedPredictionEnvelope]);
+
+  useEffect(() => {
+    if (!predictionNavigationNotice) return undefined;
+    const timeoutId = window.setTimeout(() => setPredictionNavigationNotice(''), 5_000);
+    return () => window.clearTimeout(timeoutId);
+  }, [predictionNavigationNotice]);
 
   useEffect(() => {
     const token = pendingPredictionShare;
@@ -1501,31 +1525,10 @@ function AppInner() {
     teams: predictionTeams.length ? predictionTeams : (scheduleData?.teams ?? []),
     playerMeta: statsRoutePlayerMeta,
   }), [appRoute, predictionSeason, predictionTeams, scheduleData?.teams, season, statsRoutePlayerMeta]);
-  const pageShareUrl = getCurrentShareUrl();
 
   useEffect(() => {
     applyPageShareMetadata(pageShareMetadata);
   }, [pageShareMetadata]);
-
-  const requestNativePageShare = useCallback(() => sharePageWithNative({
-      title: pageShareMetadata.title,
-      text: pageShareMetadata.text,
-      url: getCurrentShareUrl(),
-    }), [pageShareMetadata]);
-
-  const handleNativePageShare = useCallback(async () => {
-    const result = await requestNativePageShare();
-    if (result === 'fallback') setPageShareOpen(true);
-    if (result === 'shared' || result === 'cancelled') setPageShareOpen(false);
-    return result;
-  }, [requestNativePageShare]);
-
-  const handleSharePage = useCallback(async () => {
-    const result = await requestNativePageShare();
-    setActionSheetOpen(false);
-    if (result === 'fallback') setPageShareOpen(true);
-    return result;
-  }, [requestNativePageShare]);
 
   if (loading) {
     return (
@@ -1557,6 +1560,8 @@ function AppInner() {
   const isSeasonComplete = totalTeams > 0 && completedTeamCount === totalTeams;
   const mobileProgressMetric = progressSummary.primary;
   const mobileProgressHasError = mobileProgressMetric.status === 'invalid' || mobileProgressMetric.status === 'excess';
+  const shareCardEntryReady = Boolean(sharedPredictionEnvelope) || predictionShareState.shareCardReady;
+  const shareCardMissingRequirements = sharedPredictionEnvelope ? [] : predictionShareState.missingShareCardRequirements;
 
   return (
     <div className={`app-shell${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
@@ -1577,11 +1582,6 @@ function AppInner() {
         onDisplay={() => setDisplaySettingsOpen(true)}
         onLegal={() => setLegalOpen(true)}
         onGuide={() => setGuideOpen(true)}
-        onSharePage={handleSharePage}
-        onExportImage={handleExportImage}
-        predictionShareReady={predictionShareState.ready}
-        predictionShareReason={predictionShareState.errors[0]}
-        predictionShareBlockedLabel={predictionShareState.blockedLabel}
         onExportJSON={handleExportJSON}
         onImportJSON={handleImportClick}
         onRandom={handleRandom}
@@ -1638,7 +1638,7 @@ function AppInner() {
                 className="font-display font-bold"
                 style={{ fontSize: '20px', color: 'var(--color-label)', letterSpacing: '0.08em' }}
               >
-                2026 SEASON
+                {predictionSeason} SEASON
               </h1>
               <span
                 className="text-xs font-bold tabular-nums px-2 py-0.5 rounded"
@@ -1656,7 +1656,12 @@ function AppInner() {
                 {mobileProgressMetric.status === 'invalid' && ' · Invalid'}
               </span>
             </div>
-            <SeasonSubNav activeView={seasonView} onViewChange={navigateSeasonView} />
+            <SeasonSubNav
+              activeView={seasonView}
+              onViewChange={handlePredictionSeasonView}
+              playoffsEnabled={predictionFlowCapabilities.regularSeasonReady}
+            />
+            {predictionNavigationNotice && <p className="predictions-navigation-notice" role="status" aria-live="polite">{predictionNavigationNotice}</p>}
           </div>
         )}
 
@@ -1828,6 +1833,26 @@ function AppInner() {
                   )}
                 </div>
               )}
+              {!sharedPredictionEnvelope?.historical && (
+                <div className="predictions-share-entry page-frame-data">
+                  <div className="predictions-share-entry__copy">
+                    <p className="predictions-eyebrow">Prediction cards</p>
+                    <strong>Turn your season call into a share card</strong>
+                    <span id="prediction-share-card-requirements">{shareCardEntryReady
+                      ? 'Your Records and playoff bracket are ready to share.'
+                      : `Still needed: ${shareCardMissingRequirements.join(' · ') || 'Complete your Records and playoff bracket.'}`}</span>
+                  </div>
+                  <button
+                    type="button"
+                    data-tour="prediction-share-card"
+                    onClick={handleExportImage}
+                    disabled={!shareCardEntryReady}
+                    aria-describedby={!shareCardEntryReady ? 'prediction-share-card-requirements' : undefined}
+                  >
+                    Create Share Card
+                  </button>
+                </div>
+              )}
               <PredictionsRedesign
                 teams={predictionTeams}
                 scheduleData={predictionSchedule}
@@ -1843,6 +1868,10 @@ function AppInner() {
                 onPlayoffPick={sharedPredictionEnvelope ? undefined : handlePlayoffPick}
                 onOpenTeam={sharedPredictionEnvelope ? undefined : handleOpenPredictionTeam}
                 onBackToAdvancedMode={sharedPredictionEnvelope ? undefined : handleBackToAdvancedMode}
+                regularSeasonReady={predictionFlowCapabilities.regularSeasonReady}
+                playoffReady={predictionFlowCapabilities.playoffReady}
+                onOpenPlayoffs={() => handlePredictionSeasonView('playoffs')}
+                onBackToPicks={() => handlePredictionSeasonView('predictions')}
               />
             </Suspense>
           )}
@@ -2262,11 +2291,6 @@ function AppInner() {
             setActionSheetOpen(false);
             setLegalOpen(true);
           }}
-          onSharePage={handleSharePage}
-          onExportImage={handleExportImage}
-          predictionShareReady={predictionShareState.ready}
-          predictionShareReason={predictionShareState.errors[0]}
-          predictionShareBlockedLabel={predictionShareState.blockedLabel}
           onExportJSON={handleExportJSON}
           onImportJSON={handleImportClick}
           onAppTour={handleStartAppTour}
@@ -2285,15 +2309,6 @@ function AppInner() {
             setLeagueSwitcherOpen(true);
           }}
           onDraftSync={draftSyncEnabled ? handleDraftSync : null}
-        />
-      )}
-
-      {pageShareOpen && (
-        <PageShareSheet
-          metadata={pageShareMetadata}
-          url={pageShareUrl}
-          onClose={() => setPageShareOpen(false)}
-          onNativeShare={() => { void handleNativePageShare(); }}
         />
       )}
 
@@ -2447,6 +2462,8 @@ function AppInner() {
             predictions={sharedPredictionEnvelope?.predictions ?? predictions}
             playoffPicks={sharedPredictionEnvelope?.snapshot?.playoffPicks ?? playoffPicks}
             predictionMode={sharedPredictionEnvelope?.snapshot?.mode ?? predictionShareState.mode}
+            predictionShareReady={predictionShareState.ready}
+            predictionShareReason={predictionShareState.guidance}
             predictionShareCapabilities={predictionShareState.capabilities}
             predictionSeason={sharedPredictionEnvelope?.snapshot?.season ?? predictionSeason}
             sleeperUser={sharedPredictionEnvelope ? {
@@ -2458,6 +2475,10 @@ function AppInner() {
             initialPresentation={sharedPredictionEnvelope?.presentation ?? null}
             initialTeamId={predictionsTeamId}
             onOpenTeamAdvanced={sharedPredictionEnvelope ? undefined : handleOpenTeamAdvanced}
+            onOpenPlayoffs={() => {
+              setExportPreviewOpen(false);
+              handlePredictionSeasonView('playoffs');
+            }}
             onClose={() => setExportPreviewOpen(false)}
           />
         </Suspense>

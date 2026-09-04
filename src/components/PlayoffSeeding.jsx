@@ -19,7 +19,7 @@ const getConferenceSeeding = (teams, predictions, conference) => {
     return divisionTeams.length === 4 && divisionTeams.every((team) => predictions[team.id]);
   }));
   const eligibleTeams = teams.filter((team) => eligibleDivisions.has(team.division));
-  const field = getPredictionPlayoffField(eligibleTeams, predictions)[conference];
+  const field = getPredictionPlayoffField(eligibleTeams, predictions, teams)[conference];
   return {
     divisionWinners: field?.divisionWinners ?? [],
     wildCards: field?.wildCards ?? [],

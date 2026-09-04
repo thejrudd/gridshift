@@ -64,7 +64,7 @@ Entries resolved via Pass 1 or 2 are marked `_teamSource = 'espn'`; Pass 3 entri
 
 | Folder | Owns |
 | --- | --- |
-| `src/components` | App shell, views, modals, feature UI. `PageShareSheet.jsx` is the current-page share fallback; prediction share cards live under `src/components/predictions/share/`; `ExportPreview.jsx` is the responsive studio around its fixed 1080px canvases |
+| `src/components` | App shell, views, modals, feature UI. `PageShareSheet.jsx` is retained for a future current-page share flow; prediction share cards live under `src/components/predictions/share/`; `ExportPreview.jsx` is the responsive studio around its fixed 1080px canvases |
 | `src/components/companion` | Fantasy league tools on top of Sleeper state and scoring logic — see below |
 | `src/components/compare` | Side-by-side player comparison across ESPN stats, fantasy output, and trade value |
 | `src/components/scout` | Rookie scouting UI (Prospects, Picks, Results); reads static/generated Scout datasets from `src/data`; local-only CFBD import scripts |

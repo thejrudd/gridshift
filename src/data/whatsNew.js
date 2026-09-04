@@ -406,13 +406,13 @@ export const WHATS_NEW = [
       {
         id: 'prediction-share-cards',
         name: 'Prediction Share Cards',
-        description: 'Turn a complete season into a polished Division Winners, Playoff Seeding, or Full Bracket card.',
+        description: 'Turn your season call into a polished Standings, Division Winners, Playoff Seeding, or Full Bracket card.',
         steps: [{
           route: { activeTab: 'predictions', seasonView: 'predictions' },
           anchor: '[data-tour="prediction-share-card"]',
-          anchorMobile: '[data-tour="app-menu"]',
+          anchorMobile: '[data-tour="prediction-share-card"]',
           title: 'Create a share card',
-          body: 'Complete your predictions, then choose Create Share Card to select a format and export a polished season summary.',
+          body: 'Open Create Share Card anytime. Choose the card first, then its title, canvas, and theme; the studio explains any picks still needed.',
           placement: 'auto',
         }],
       },
@@ -423,7 +423,7 @@ export const WHATS_NEW = [
         steps: [{
           route: { activeTab: 'predictions', seasonView: 'predictions' },
           anchor: '[data-tour="prediction-share-card"]',
-          anchorMobile: '[data-tour="app-menu"]',
+          anchorMobile: '[data-tour="prediction-share-card"]',
           title: 'Share a portable snapshot',
           body: 'Open a share card to copy a compact link or QR code. Recipients can inspect it before choosing whether to apply the picks locally.',
           placement: 'auto',
