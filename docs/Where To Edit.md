@@ -10,7 +10,7 @@ Routing table: match the task to a section, open the listed files, and read the 
 | --- | --- |
 | Shell, tabs, sidebar, sub-navs, routing chrome | [Navigation And Layout](#navigation-and-layout) |
 | Display density, type tokens, page frames | [Display Size, Typography, And Wide Layouts](#display-size-typography-and-wide-layouts) |
-| Prediction picks, standings, playoff seeding | [Predictions And Standings](#predictions-and-standings) |
+| Prediction picks, playoff seeding, and share cards | [Predictions And Share Cards](#predictions-and-share-cards) |
 | Live fantasy scoring view (hero, pace chart, feed, win odds) | [Fantasy Live](#fantasy-live) |
 | NFL scoreboard, box scores, play-by-play visuals | [Statistics Scores And NFL Plays](#statistics-scores-and-nfl-plays) |
 | Provider gateway, quotas, caches, sidecar server | [Live Data Server, Budgets, And Scaling](#live-data-server-budgets-and-scaling) |
@@ -39,7 +39,7 @@ Routing table: match the task to a section, open the listed files, and read the 
 | `src/components/CompanionSubNav.jsx` | Companion view sub-nav |
 | `src/components/LeagueSubNav.jsx` | League view sub-nav |
 | `src/components/HorizontalScrollCue.jsx` | Scroll affordance for horizontal rails |
-| `src/components/PageShareSheet.jsx`, `src/utils/pageShare.js`, `vite.config.js` | Page-aware share metadata, server-readable preview HTML, native Web Share handoff, and copy-link fallback |
+| `src/components/PageShareSheet.jsx`, `src/utils/pageShare.js`, `vite.config.js` | Page-aware share metadata and retained future page-share support; prediction sharing is handled by the Share Card studio |
 | `public/icons/` | PWA, Apple touch, favicon, and share-preview assets |
 | `src/utils/appRoutes.js` | Canonical route table and aliases |
 | `src/index.css` | Tokens and shared layout CSS |
@@ -56,7 +56,7 @@ Routing table: match the task to a section, open the listed files, and read the 
 
 Rules: apply exactly one page-frame class to new route roots. Never detect display DPI, use CSS `zoom`, or add transform-based whole-app scaling.
 
-## Predictions And Standings
+## Predictions And Share Cards
 
 | File | Owns |
 | --- | --- |
@@ -67,7 +67,8 @@ Rules: apply exactly one page-frame class to new route roots. Never detect displ
 | `src/utils/scheduleParser.js` | Schedule ingestion |
 | `src/utils/validation.js` | Prediction validation |
 | `src/components/TeamList.jsx`, `src/components/TeamDetail.jsx` | Pick UI |
-| `src/components/StandingsTable.jsx`, `src/components/PlayoffSeeding.jsx` | Standings and seeding UI |
+| `src/components/predictions/PredictionsRedesign.jsx` | Records, inline playoff picture, and playoff bracket UI |
+| `src/components/predictions/share/`, `src/components/ExportPreview.jsx` | Share-card formats, ordered studio controls, and screenshot/link export |
 
 ## Fantasy Live
 
@@ -285,7 +286,7 @@ Read first: [[Prediction Share Cards]] — product, privacy, state, recipient, a
 | --- | --- |
 | `src/components/ExportPreview.jsx` | Share-card studio, link/QR generation, copy, PNG download |
 | `src/components/predictions/share/` | Six fixed-format card renderers, curated titles, export geometry; Team Record is screenshot-only |
-| `src/components/PageShareSheet.jsx`, `src/utils/pageShare.js`, `vite.config.js` | Current-page share sheet, route-aware social metadata, static preview entry files, and native Web Share fallback |
+| `src/components/PageShareSheet.jsx`, `src/utils/pageShare.js`, `vite.config.js` | Retained future page-share sheet, route-aware social metadata, and static preview entry files |
 | `src/utils/predictionShareCodec.js` | Compressed, checksummed URL-fragment transport |
 | `src/utils/predictionShareModel.js` | Pick-week context, snapshot-to-card projection |
 | `src/components/ShareableImage.jsx` | Legacy shareable image |

@@ -168,11 +168,11 @@ test('record completion rejects totals that require more than 11 nondivision win
   assert.match(validation.errors.join('\n'), /A00 has too few division wins/i);
 });
 
-test('complete manual records rebalance closest-to-500 teams without changing the edited target', () => {
+test('excess complete manual records rebalance closest-to-500 teams without changing the edited target', () => {
   const teams = buildTeams();
   const records = Object.fromEntries(teams.map((team) => [team.id, {
-    wins: 8,
-    losses: 9,
+    wins: 9,
+    losses: 8,
     ties: 0,
     divisionWins: 3,
     recordSource: 'manual',
@@ -210,6 +210,26 @@ test('the last 9-8 target stays unchanged while one-win corrections spread acros
   const notice = formatManualRecordBalanceNotice({ adjustments: result.adjustments, teams });
   assert.match(notice, /League records balanced automatically:/);
   assert.ok(result.adjustments.every(({ teamId }) => notice.includes(teams.find((team) => team.id === teamId).name)));
+});
+
+test('under-target complete records stay unchanged while the prediction is still in progress', () => {
+  const teams = buildTeams();
+  const records = Object.fromEntries(teams.map((team, index) => [team.id, {
+    wins: index < 12 ? 9 : 8,
+    losses: index < 4 ? 7 : index < 12 ? 8 : 9,
+    ties: index < 4 ? 1 : 0,
+    divisionWins: 3,
+    recordSource: 'manual',
+    manualOverride: true,
+  }]));
+
+  const result = rebalanceCompleteManualRecords({ records, teams, targetTeamId: teams[0].id });
+
+  assert.equal(getManualRecordLeagueStatus({ records, teams }).totalWins, 268);
+  assert.equal(getManualRecordLeagueStatus({ records, teams }).targetWins, 270);
+  assert.deepEqual(result.records, records);
+  assert.deepEqual(result.adjustments, []);
+  assert.equal(result.remainingDelta, 2);
 });
 
 test('record completion accepts balanced ties and division-win deficits supported by them', () => {

@@ -80,7 +80,7 @@ export const getConferenceChampions = (predictions, teams) => {
 // Returns division winners for a conference (replicates PlayoffSeeding logic)
 export const getDivisionWinners = (predictions, teams, conference) => {
   const eligibleTeams = getFullyPredictedPlayoffTeams(predictions, teams, conference);
-  return getPredictionPlayoffField(eligibleTeams, predictions)[conference]?.divisionWinners ?? [];
+  return getPredictionPlayoffField(eligibleTeams, predictions, teams)[conference]?.divisionWinners ?? [];
 };
 
 // Returns the division with the fewest combined wins
@@ -146,7 +146,7 @@ export const getClosestDivisionRace = (predictions, teams) => {
 // Returns wild card teams (non-division-winners in playoff spots, seeds 5-7)
 export const getWildCardTeams = (predictions, teams) => {
   const eligibleTeams = getFullyPredictedPlayoffTeams(predictions, teams);
-  const field = getPredictionPlayoffField(eligibleTeams, predictions);
+  const field = getPredictionPlayoffField(eligibleTeams, predictions, teams);
   return Object.fromEntries(['AFC', 'NFC'].map((conference) => [conference, field[conference]?.wildCards ?? []]));
 };
 

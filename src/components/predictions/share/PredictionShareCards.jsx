@@ -11,7 +11,7 @@ import {
 import './predictionShareCards.css';
 
 const CARD_SPECS = {
-  board: { kicker: 'Projected final standings', subtitle: 'All 32 teams · every record called' },
+  board: { kicker: 'Standings', subtitle: 'All 32 teams · every record called' },
   champions: { kicker: 'My champions', subtitle: 'Super Bowl and conference winners' },
   divisions: { kicker: 'Division winners', subtitle: 'Every division called' },
   seeding: { kicker: 'Playoff picture', subtitle: 'Seeds 1–7 · both conferences' },
@@ -51,13 +51,14 @@ function TeamSurface({ team, tone, children, className = '', style = {} }) {
 }
 
 function CardHeader({ view, format, titleId }) {
-  const [lineOne, lineTwo] = getShareCardTitle(format, titleId);
+  const hasTitle = titleId != null;
+  const [lineOne, lineTwo] = hasTitle ? getShareCardTitle(format, titleId) : ['', ''];
   const spec = CARD_SPECS[format];
   return (
-    <header className="prediction-share-card__header">
+    <header className="prediction-share-card__header" data-has-title={hasTitle}>
       <div>
         <p className="prediction-share-card__kicker">{spec.kicker}</p>
-        <h2><span>{lineOne}</span><span>{lineTwo}</span></h2>
+        <h2 aria-hidden={!hasTitle || undefined}><span>{lineOne || '\u00a0'}</span><span>{lineTwo || '\u00a0'}</span></h2>
         <p className="prediction-share-card__subtitle">{spec.subtitle}</p>
       </div>
       <div className="prediction-share-card__stamp">
@@ -138,8 +139,10 @@ function SeedingCard({ view, tone }) {
 function BracketTeam({ team, outcome = 'pending', tone }) {
   return <TeamSurface team={team} tone={tone} className={`prediction-share-card__bracket-team is-${outcome}`}>
     <TeamMark team={team} />
-    <b>{team?.id ?? 'TBD'}</b>
-    <span className="prediction-share-card__bracket-record">{team ? formatPredictionRecord(team.record) : ''}</span>
+    <div className="prediction-share-card__bracket-identity">
+      <b>{team?.id ?? 'TBD'}</b>
+      <span className="prediction-share-card__bracket-record">{team ? formatPredictionRecord(team.record) : ''}</span>
+    </div>
     {outcome === 'winner' && <span className="prediction-share-card__bracket-outcome" aria-hidden="true">✓</span>}
     <span className="prediction-share-card__bracket-outcome-label">{outcome === 'winner' ? 'Winner' : outcome === 'loser' ? 'Eliminated' : 'Pending'}</span>
   </TeamSurface>;
@@ -162,10 +165,26 @@ function matchupsFor(view, conference, round) {
   });
 }
 
-function BracketRound({ view, conference, round, label, tone }) {
+// Match boxes are 30% wide, separated by 5%, and centered within each round.
+function bracketMatchCenter(index, count) {
+  return 50 + (index - (count - 1) / 2) * 35;
+}
+
+function BracketRound({ view, conference, round, label, tone, previousRound }) {
   const matchups = matchupsFor(view, conference, round);
-  return <div className="prediction-share-card__bracket-round"><h3>{label}</h3>
-    <div>{matchups.length ? matchups.map((matchup, index) => <div className="prediction-share-card__bracket-match" key={`${round}-${index}`}>
+  const previous = previousRound ? matchupsFor(view, conference, previousRound) : [];
+  return <div className={`prediction-share-card__bracket-round${previousRound ? ' has-feeders' : ''}`}>
+    {previousRound && <svg className="prediction-share-card__bracket-connectors" viewBox="0 0 100 48" preserveAspectRatio="none" aria-hidden="true">
+      {previous.map((matchup, index) => {
+        const target = matchups.findIndex(next => matchup.winnerId && next.teams.some(team => getShareCardTeamId(team) === matchup.winnerId));
+        if (target < 0) return null;
+        const from = bracketMatchCenter(index, previous.length);
+        const to = bracketMatchCenter(target, matchups.length);
+        return <path key={index} d={`M ${from} 0 V 12 H ${to} V 48`} vectorEffect="non-scaling-stroke" />;
+      })}
+    </svg>}
+    <h3>{label}</h3>
+    <div className="prediction-share-card__bracket-matches">{matchups.length ? matchups.map((matchup, index) => <div className="prediction-share-card__bracket-match" key={`${round}-${index}`} role="group" aria-label={`${conference} ${label}: ${matchup.teams.map(team => team.id).join(' versus ')}`}>
       {matchup.teams.map(team => <BracketTeam key={team.id} team={team} outcome={bracketOutcome(team, matchup.winnerId)} tone={tone} />)}
     </div>) : <p className="prediction-share-card__bracket-empty">Awaiting picks</p>}</div>
   </div>;
@@ -175,23 +194,31 @@ function BracketCard({ view, tone }) {
   const superBowlTeams = ['AFC', 'NFC'].map(conference => view.conferenceChampions[conference]).filter(Boolean);
   const championId = getShareCardTeamId(view.champion);
   return <div className="prediction-share-card__body prediction-share-card__bracket">
-    {['AFC', 'NFC'].map(conference => <section key={conference} className="prediction-share-card__bracket-conference">
-      <div className="prediction-share-card__bracket-label"><span>{conference}</span><i aria-hidden="true" /></div>
+    {['AFC', 'NFC'].map(conference => <section key={conference} className={`prediction-share-card__bracket-conference prediction-share-card__bracket-conference--${conference.toLowerCase()}`}>
+      <div className="prediction-share-card__bracket-label">
+        <span className="prediction-share-card__bracket-mark" aria-hidden="true">{conference === 'AFC' ? 'A' : 'N'}</span>
+        <strong>{conference}</strong>
+        <i aria-hidden="true" />
+      </div>
       <div className="prediction-share-card__bracket-grid">
         <BracketRound view={view} conference={conference} round="wildCard" label="Wild card" tone={tone} />
-        <BracketRound view={view} conference={conference} round="divisional" label="Divisional" tone={tone} />
-        <BracketRound view={view} conference={conference} round="conference" label="Championship" tone={tone} />
+        <BracketRound view={view} conference={conference} round="divisional" previousRound="wildCard" label="Divisional" tone={tone} />
+        <BracketRound view={view} conference={conference} round="conference" previousRound="divisional" label="Championship" tone={tone} />
       </div>
     </section>)}
     <section className="prediction-share-card__bracket-super-bowl">
-      <div className="prediction-share-card__bracket-super-bowl-heading"><span>Super Bowl</span><b>Projected matchup</b></div>
-      <div className="prediction-share-card__bracket-super-bowl-matchup">
-        {superBowlTeams.length ? superBowlTeams.map(team => <BracketTeam
-          key={team.id}
-          team={team}
-          outcome={bracketOutcome(team, championId)}
-          tone={tone}
-        />) : <p className="prediction-share-card__bracket-empty">Awaiting picks</p>}
+      <div className="prediction-share-card__bracket-super-bowl-heading"><span>Super Bowl</span></div>
+      <div className={`prediction-share-card__bracket-super-bowl-matchup${view.champion ? ' has-champion' : ''}`}>
+        {superBowlTeams.length ? [...superBowlTeams].sort((a, b) => Number(getShareCardTeamId(b) === championId) - Number(getShareCardTeamId(a) === championId)).map(team => {
+          const isChampion = getShareCardTeamId(team) === championId;
+          return <div key={team.id} className={`prediction-share-card__finalist ${isChampion ? 'is-champion' : ''}`}>
+            <TeamMark team={team} />
+            <div><span>{isChampion ? 'Champion' : view.champion ? 'Runner-up' : `${team.conference} champion`}</span>
+              <b>{teamName(team)}</b>
+              <p>{team.conference} · {formatPredictionRecord(team.record)}</p>
+            </div>
+          </div>;
+        }) : <p className="prediction-share-card__bracket-empty">Awaiting picks</p>}
       </div>
     </section>
   </div>;

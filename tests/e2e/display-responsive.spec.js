@@ -64,11 +64,18 @@ test('display settings are available from the collapsed rail and mobile menu', a
   await page.getByRole('button', { name: 'Close display settings' }).click();
 
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/predictions');
   await page.getByRole('button', { name: 'Open menu' }).click();
-  const mobileMenu = page.getByRole('dialog', { name: 'Options' });
+  const mobileMenu = page.getByRole('dialog', { name: 'Actions' });
+  const actionScrollRegion = mobileMenu.locator('.action-sheet-modal__scroll-region');
+  await expect(actionScrollRegion).toBeVisible();
+  await expect.poll(() => actionScrollRegion.evaluate((element) => (
+    element.scrollHeight > element.clientHeight
+  ))).toBe(true);
   await expect(mobileMenu.getByRole('link', { name: 'Support GridShift', exact: true })).toBeVisible();
   await expect(mobileMenu.getByRole('link', { name: 'Feature Request', exact: true })).toBeVisible();
   await expect(mobileMenu.getByRole('link', { name: 'About / GitHub', exact: true })).toBeVisible();
+  await expect(mobileMenu.getByRole('button', { name: 'Privacy & Attributions', exact: true })).toBeVisible();
   const mobileRelease = mobileMenu.getByRole('link', { name: /View GridShift v.+ release on GitHub/ });
   await expect(mobileRelease).toHaveAttribute('href', /\/releases\/tag\/v\d+(?:\.\d+){1,2}$/);
   await page.getByRole('button', { name: 'Display', exact: true }).click();
@@ -218,6 +225,30 @@ test('mobile Predict Record keeps comfortable gutters without clipping its contr
     expect(geometry.right).toBeGreaterThanOrEqual(18);
     expect(geometry.documentOverflow).toBeLessThanOrEqual(1);
   }
+});
+
+test('Advanced Mode Cancel discards game picks and returns to the team list', async ({ page }) => {
+  await page.goto('/predictions');
+
+  const dismissUpdate = page.getByRole('button', { name: 'Dismiss update notice', exact: true });
+  if (await dismissUpdate.count()) await dismissUpdate.click();
+
+  await page.getByRole('button', { name: 'Advanced Mode', exact: true }).click();
+  const teamRow = page.locator('.predictions-advanced-team-row').first();
+  await expect(teamRow).toBeVisible();
+  await teamRow.click();
+
+  const gameRow = page.locator('.predictions-team-game-row:not(.is-bye)').first();
+  await expect(gameRow).toBeVisible();
+  await gameRow.getByRole('button', { name: 'W', exact: true }).click();
+  await expect(gameRow.getByRole('button', { name: 'W', exact: true })).toHaveAttribute('aria-pressed', 'true');
+
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+
+  await expect(page).toHaveURL(/\/predictions$/);
+  await expect(page.getByRole('heading', { name: 'Advanced Mode', exact: true })).toBeVisible();
+  await expect(page.locator('.predictions-team-page')).toHaveCount(0);
+  await expect(page.locator('.predictions-advanced-team-row').first()).toContainText('No record yet');
 });
 
 for (const viewport of RESPONSIVE_VIEWPORTS) {

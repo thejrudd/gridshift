@@ -16,7 +16,6 @@ const shareSeason = shareData.season ?? 2026
 const shareTeams = shareData.teams ?? []
 const STATIC_SHARE_ROUTES = [
   '/predictions',
-  '/predictions/standings',
   '/predictions/playoffs',
   '/fantasy/rosters',
   '/fantasy/rankings',
@@ -226,8 +225,7 @@ export default defineConfig(({ command }) => ({
         icons: [
           { src: versionedIconPath('pwa-64x64.png'), sizes: '64x64', type: 'image/png' },
           { src: versionedIconPath('pwa-192x192.png'), sizes: '192x192', type: 'image/png' },
-          { src: versionedIconPath('pwa-512x512.png'), sizes: '512x512', type: 'image/png', purpose: 'any' },
-          { src: versionedIconPath('maskable-icon-512x512.png'), sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          { src: versionedIconPath('maskable-icon-512x512.png'), sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
         ],
       },
       workbox: {

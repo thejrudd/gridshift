@@ -1,4 +1,4 @@
-const PREDICTIONS_VIEWS = new Set(['predictions', 'standings', 'playoffs']);
+const PREDICTIONS_VIEWS = new Set(['predictions', 'playoffs']);
 const FANTASY_VIEWS = new Set(['rosters', 'rankings', 'live', 'matchups', 'waivers', 'heatmap', 'defenses', 'scoring']);
 const FANTASY_VIEW_ALIASES = new Map([
   ['roster', 'rosters'],

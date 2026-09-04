@@ -251,6 +251,22 @@ test('Trade selected asset cards keep metadata readable', async ({ page }) => {
   }
 });
 
+test('Trade Agent draft survives navigating to full player stats and returning', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto('/trade/agent?player=103&side=give&other=201');
+
+  const selectedPlayers = page.locator('[data-testid^="trade-side-asset-player-"]:visible');
+  await expect(selectedPlayers).toHaveCount(2);
+
+  await page.goto('/statistics/player/1003/flex-receiver');
+  await expect(page).toHaveURL(/\/statistics\/player\/1003\/flex-receiver/);
+
+  await page.getByRole('button', { name: 'Trade', exact: true }).filter({ visible: true }).click();
+  await expect(page).toHaveURL(/\/trade\/agent$/);
+  await expect(page.getByTestId('trade-side-asset-player-103').first()).toBeVisible();
+  await expect(page.getByTestId('trade-side-asset-player-201').first()).toBeVisible();
+});
+
 test('Trade pick asset cards match player card dimensions without duplicate metadata', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto('/trade/agent?player=103&side=give&other=201');
