@@ -1342,3 +1342,10 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Trade Agent continuity** - Persisted an in-progress trade partner and selected assets by connected account, league, and season so navigation does not discard the draft.
 - **PWA and responsive polish** - Regenerated full-bleed app icons and refined prediction, action-sheet, export, and display-size layouts across desktop and mobile surfaces.
 - **Regression coverage and documentation** - Expanded prediction, trade-draft, routing, responsive, and tour-adjacent coverage and updated the related architecture and feature references.
+
+## v8.9.3 - Draft Board Conflict Clarity
+*2026-09-06*
+
+- **Roster-only conflict highlighting** - Highlight a Draft Board candidate only when its bye overlaps a player currently rostered by the manager; saved Board candidates are no longer compared with one another.
+- **Bye visibility and marker alignment** - Keep the `Bye` metric available for reviewing every player's bye week and vertically center conflict markers within their Board cards.
+- **Regression coverage and documentation** - Update the Draft behavior reference and focused unit and responsive coverage for the roster-only comparison boundary.

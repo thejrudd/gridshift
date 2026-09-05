@@ -423,15 +423,15 @@ test('Bye metric and conflict highlighting stay independent across Board surface
   await expect(toggle).toHaveAttribute('aria-checked', 'true');
   await closeBoardControls(page, mobile);
 
-  await expect(buffaloCard).toHaveClass(/is-positional-bye-conflict/);
-  await expect(buffaloCard.locator('.draft-bye-conflict-marker')).toHaveText('Bye 7');
-  await expect(buffaloCard.locator('.draft-bye-conflict-marker')).toHaveAttribute('aria-label', 'QB positional conflict, bye 7');
-  const buffaloByeMarker = buffaloCard.locator('.draft-bye-conflict-marker');
-  const partnerByeMarker = visibleBoardCard(page, '202').locator('.draft-bye-conflict-marker');
-  await expect(buffaloByeMarker).toHaveAttribute('title', expect.stringContaining('Partner Quarterback (QB)'));
-  const markerLefts = await Promise.all([buffaloByeMarker, partnerByeMarker].map(async (marker) => (await marker.boundingBox()).left));
-  expect(Math.abs(markerLefts[0] - markerLefts[1])).toBeLessThanOrEqual(1);
-  const sameWeekMarkerColors = await Promise.all([buffaloByeMarker, partnerByeMarker].map((marker) => marker.evaluate((element) => {
+  await expect(buffaloCard).not.toHaveClass(/is-bye-conflict/);
+  await expect(buffaloCard.locator('.draft-bye-conflict-marker')).toHaveCount(0);
+  const partnerCard = visibleBoardCard(page, '202');
+  const partnerByeMarker = partnerCard.locator('.draft-bye-conflict-marker');
+  await expect(partnerCard).toHaveClass(/is-positional-bye-conflict/);
+  await expect(partnerByeMarker).toHaveText('Bye 7');
+  await expect(partnerByeMarker).toHaveAttribute('aria-label', 'QB positional conflict, bye 7');
+  await expect(partnerByeMarker).toHaveAttribute('title', expect.stringContaining('Pocket Commander (QB)'));
+  const partnerMarkerColor = await partnerByeMarker.evaluate((element) => {
     const style = getComputedStyle(element);
     const parseColor = (value) => value.match(/[\d.]+/g).slice(0, 3).map(Number).map((channel) => channel / 255);
     const luminance = (value) => value.map((channel) => (
@@ -445,11 +445,10 @@ test('Bye metric and conflict highlighting stay independent across Board surface
       background: style.backgroundColor,
       contrast: (Math.max(textLuminance, backgroundLuminance) + 0.05) / (Math.min(textLuminance, backgroundLuminance) + 0.05),
     };
-  })));
-  expect(sameWeekMarkerColors[0].border).toBe(sameWeekMarkerColors[1].border);
-  expect(sameWeekMarkerColors[0].text).not.toBe(sameWeekMarkerColors[0].background);
-  expect(sameWeekMarkerColors[0].contrast).toBeGreaterThanOrEqual(4.5);
-  await expect(buffaloCard.getByRole('button', { name: /Open Pocket Commander.*Partner Quarterback/ })).toBeVisible();
+  });
+  expect(partnerMarkerColor.text).not.toBe(partnerMarkerColor.background);
+  expect(partnerMarkerColor.contrast).toBeGreaterThanOrEqual(4.5);
+  await expect(partnerCard.getByRole('button', { name: /Open Partner Quarterback.*Pocket Commander/ })).toBeVisible();
 
   if (mobile) {
     await expect(page.getByRole('button', { name: 'View Available Players' })).toBeVisible();
@@ -458,12 +457,8 @@ test('Bye metric and conflict highlighting stay independent across Board surface
   }
   await page.getByRole('button', { name: 'All Players', exact: true }).filter({ visible: true }).click();
   const philadelphiaAvailableCard = page.locator('.draft-board-available-list:visible .draft-board-card-shell[data-player-id="302"]').first();
-  await expect(philadelphiaAvailableCard).toHaveClass(/is-bye-conflict/);
-  await expect(philadelphiaAvailableCard).not.toHaveClass(/is-positional-bye-conflict/);
-  await expect(philadelphiaAvailableCard.locator('.draft-bye-conflict-marker')).toHaveText('Bye 10');
-  const philadelphiaMarkerColor = await philadelphiaAvailableCard.locator('.draft-bye-conflict-marker')
-    .evaluate((element) => getComputedStyle(element).borderTopColor);
-  expect(philadelphiaMarkerColor).not.toBe(sameWeekMarkerColors[0].border);
+  await expect(philadelphiaAvailableCard).not.toHaveClass(/is-bye-conflict/);
+  await expect(philadelphiaAvailableCard.locator('.draft-bye-conflict-marker')).toHaveCount(0);
   if (mobile) await page.locator('.draft-board-mobile-available__summary').click();
 
   await openBoardControls(page, mobile);
@@ -473,7 +468,7 @@ test('Bye metric and conflict highlighting stay independent across Board surface
 
   const overallBuffaloCard = visibleBoardCard(page, '101');
   await expect(overallBuffaloCard.locator('.draft-board-metric-value__label')).toHaveText('Sleeper');
-  await expect(overallBuffaloCard.locator('.draft-bye-conflict-marker')).toContainText('Bye 7');
+  await expect(overallBuffaloCard.locator('.draft-bye-conflict-marker')).toHaveCount(0);
   await overallBuffaloCard.getByRole('button', { name: /Open Pocket Commander/ }).focus();
   await expect(overallBuffaloCard.getByRole('button', { name: /Open Pocket Commander/ })).toBeFocused();
 
@@ -493,16 +488,17 @@ test('Bye metric and conflict highlighting stay independent across Board surface
     const qbPeer = visibleBoardCard(page, '202');
     await overallBuffaloCard.dragTo(qbPeer);
     await expect(page.locator('.draft-board-main .draft-board-card-shell[data-player-id="101"]')).toHaveCount(1);
-    await expect(visibleBoardCard(page, '101').locator('.draft-bye-conflict-marker')).toContainText('Bye 7');
+    await expect(visibleBoardCard(page, '101').locator('.draft-bye-conflict-marker')).toHaveCount(0);
+    await expect(visibleBoardCard(page, '202').locator('.draft-bye-conflict-marker')).toContainText('Bye 7');
   }
 });
 
 for (const format of [
-  { name: 'redraft saved targets', type: 0, board: { QB: ['101', '202'] }, overall: ['101', '202'], picks: [], playerId: '101' },
-  { name: 'keeper saved targets', type: 1, board: { QB: ['101', '202'] }, overall: ['101', '202'], picks: [], playerId: '101' },
-  { name: 'dynasty saved targets', type: 2, board: { QB: ['101', '202'] }, overall: ['101', '202'], picks: [], playerId: '101' },
+  { name: 'redraft roster conflicts', type: 0, board: { QB: ['101', '202'] }, overall: ['101', '202'], picks: [], playerId: '202' },
+  { name: 'keeper roster conflicts', type: 1, board: { QB: ['101', '202'] }, overall: ['101', '202'], picks: [], playerId: '202' },
+  { name: 'dynasty roster conflicts', type: 2, board: { QB: ['101', '202'] }, overall: ['101', '202'], picks: [], playerId: '202' },
 ]) {
-  test(`${format.name} supplies the expected comparison set`, async ({ page }, testInfo) => {
+  test(`${format.name} uses rostered players as the comparison set`, async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== 'chromium-desktop', 'Format matrix runs once in the desktop project.');
     const formatLeague = { ...league, settings: { ...league.settings, type: format.type } };
     await installBoardState(page, {
@@ -523,7 +519,7 @@ for (const format of [
   });
 }
 
-test('a target drafted by another manager clears the redraft conflict on refresh', async ({ page }, testInfo) => {
+test('a Board target drafted by another manager clears its roster conflict on refresh', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'chromium-desktop', 'Live-pick refresh runs once in the desktop project.');
   const livePicks = [];
   const liveDraft = [{ ...preDraft[0], status: 'drafting' }];
@@ -538,7 +534,7 @@ test('a target drafted by another manager clears the redraft conflict on refresh
   const toggle = page.getByRole('switch', { name: 'Highlight bye week conflicts' });
   await expect(toggle).toBeEnabled({ timeout: 20_000 });
   await toggle.click();
-  await expect(visibleBoardCard(page, '101')).toHaveClass(/is-positional-bye-conflict/);
+  await expect(visibleBoardCard(page, '202')).toHaveClass(/is-positional-bye-conflict/);
 
   livePicks.push({ roster_id: 2, player_id: '202', round: 1, pick_no: 1 });
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));

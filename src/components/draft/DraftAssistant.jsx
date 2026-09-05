@@ -84,10 +84,7 @@ import {
   removePlayerFromOrderedBoard,
 } from '../../utils/draftAssistant/board.js';
 import { getDraftAnalyticsCompareLimit } from '../../utils/draftAssistant/analytics.js';
-import {
-  buildDraftByeConflictModel,
-  buildDraftRosterByeConflictModel,
-} from '../../utils/draftAssistant/byeConflicts.js';
+import { buildDraftByeConflictModel } from '../../utils/draftAssistant/byeConflicts.js';
 import { filterDraftPlayersBySearch } from '../../utils/draftAssistant/search.js';
 import { getByeWeekForTeam, isByeWeekBundleForSeason } from '../../utils/draftAssistant/byeWeeks.js';
 import {
@@ -1666,7 +1663,7 @@ function DraftByeConflictToggle({ checked, disabled, onChange }) {
       className="draft-bye-conflict-toggle"
       onClick={() => onChange(!checked)}
       disabled={disabled}
-      title={disabled ? unavailableCopy : 'Highlight players whose bye overlaps your format-aware comparison set'}
+      title={disabled ? unavailableCopy : 'Highlight players whose bye overlaps a player on your roster'}
     >
       <span className="draft-bye-conflict-toggle__track" aria-hidden="true">
         <span />
@@ -4761,40 +4758,21 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
     bigBoardPlayers,
     boardRowsWithRanks,
   ]);
-  const byeConflictModel = useMemo(() => {
-    if (!byeConflictAvailable) return null;
-    return buildDraftByeConflictModel({
-      leagueType: league?.settings?.type,
-      playersById: byeConflictPlayersById,
-      candidatePlayerIds: byeConflictCandidateIds,
-      savedTargetIds: eligibleBoardIds,
-      existingRosterPlayerIds,
-      draftPicks: draftOrderContext.normalizedPicks,
-      myRosterId: myRosterData?.roster_id,
-    });
-  }, [
-    byeConflictAvailable,
-    league?.settings?.type,
-    byeConflictPlayersById,
-    byeConflictCandidateIds,
-    eligibleBoardIds,
-    existingRosterPlayerIds,
-    draftOrderContext.normalizedPicks,
-    myRosterData?.roster_id,
-  ]);
   const lockedRosterTrayPlayerIds = useMemo(() => (
     rosterSlots
       .map((slot) => slot.player)
       .filter((player) => player && !player.isProjected)
       .map((player) => String(player.id))
   ), [rosterSlots]);
-  const rosterTrayByeConflicts = useMemo(() => {
+  const byeConflictModel = useMemo(() => {
     if (!byeConflictAvailable) return null;
-    return buildDraftRosterByeConflictModel({
+    return buildDraftByeConflictModel({
       playersById: byeConflictPlayersById,
-      playerIds: lockedRosterTrayPlayerIds,
-    }).byPlayerId;
-  }, [byeConflictAvailable, byeConflictPlayersById, lockedRosterTrayPlayerIds]);
+      candidatePlayerIds: byeConflictCandidateIds,
+      rosteredPlayerIds: lockedRosterTrayPlayerIds,
+    });
+  }, [byeConflictAvailable, byeConflictPlayersById, byeConflictCandidateIds, lockedRosterTrayPlayerIds]);
+  const rosterTrayByeConflicts = byeConflictModel?.byPlayerId ?? null;
   const visibleByeConflicts = highlightByeConflicts ? byeConflictModel?.byPlayerId ?? null : null;
 
 

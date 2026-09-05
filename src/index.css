@@ -24263,12 +24263,16 @@ button.trade-history-asset-card:focus-visible {
 }
 
 .draft-board-workspace.is-bye-conflict-highlights .draft-player-row--board-card .companion-player-row__identity-accessory {
+  position: absolute;
+  inset-inline-end: 0;
+  top: 50%;
   display: flex;
   grid-column: 2;
   min-width: 0;
   align-items: center;
   justify-content: flex-start;
   overflow: visible;
+  transform: translateY(-50%);
 }
 
 .draft-board-workspace.is-bye-conflict-highlights .draft-player-row--board-card .draft-bye-conflict-marker {

@@ -8,7 +8,7 @@ Open bugs are listed first, deferred work next, fixed bugs below. Add new entrie
 
 | Bug |
 |-----|
-| *(No open bugs currently assigned to v8.9.2.)* |
+| *(No open bugs currently assigned to v8.9.3.)* |
 
 ---
 
