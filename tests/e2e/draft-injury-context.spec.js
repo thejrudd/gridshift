@@ -5,6 +5,7 @@ import {
   drafts,
   league,
   players,
+  persistedSleeperState,
   rosters,
 } from '../fixtures/tradeFixtures.js';
 import { installTradeFixtures } from './tradeTestHarness.js';
@@ -49,6 +50,79 @@ const preDraft = [{
   status: 'pre_draft',
   type: 'snake',
 }];
+
+const tailRosteredPlayer = {
+  player_id: 'tail-rostered',
+  full_name: 'Tail Rostered Quarterback',
+  first_name: 'Tail Rostered',
+  last_name: 'Quarterback',
+  position: 'QB',
+  fantasy_positions: ['QB'],
+  team: 'BUF',
+  active: true,
+  years_exp: 3,
+  search_rank: null,
+};
+const cappedDraftPlayers = {
+  ...injuryPlayers,
+  'tail-rostered': tailRosteredPlayer,
+  ...Object.fromEntries(Array.from({ length: 150 }, (_, index) => {
+    const playerId = `free-${index + 1}`;
+    return [playerId, {
+      player_id: playerId,
+      full_name: `Free Agent ${index + 1}`,
+      first_name: 'Free Agent',
+      last_name: String(index + 1),
+      position: 'WR',
+      fantasy_positions: ['WR'],
+      team: 'BUF',
+      active: true,
+      years_exp: 3,
+      search_rank: index + 1,
+    }];
+  })),
+};
+const cappedDraftRosters = rosters.map((roster, index) => (
+  index === 0
+    ? { ...roster, players: [...roster.players, 'tail-rostered'] }
+    : roster
+));
+const rosteredVeteranPlayers = {
+  ...injuryPlayers,
+  mahomes: {
+    player_id: 'mahomes',
+    full_name: 'Patrick Mahomes',
+    first_name: 'Patrick',
+    last_name: 'Mahomes',
+    position: 'QB',
+    fantasy_positions: ['QB'],
+    team: 'KC',
+    active: true,
+    years_exp: 8,
+    search_rank: 1,
+  },
+  darnold: {
+    player_id: 'darnold',
+    full_name: 'Sam Darnold',
+    first_name: 'Sam',
+    last_name: 'Darnold',
+    position: 'QB',
+    fantasy_positions: ['QB'],
+    team: 'SEA',
+    active: true,
+    years_exp: 7,
+    search_rank: 2,
+  },
+};
+const rosteredVeteranRosters = [
+  { ...rosters[0], players: [...rosters[0].players, 'mahomes'] },
+  { ...rosters[1], players: [...rosters[1].players, 'darnold'] },
+  rosters[2],
+];
+const rookiePoolPreDraft = preDraft.map((draft) => ({
+  ...draft,
+  settings: { ...draft.settings, player_type: 1 },
+}));
 
 const PHONE_VIEWPORTS = [
   { name: 'compact Android', width: 360, height: 800 },
@@ -128,6 +202,133 @@ test('Board availability pool filters Sleeper designations', async ({ page }, te
   await expect(pupCard).toBeVisible();
   await expect(page.getByRole('button', { name: 'Open Pocket Commander' }).filter({ visible: true })).toHaveCount(0);
   await expect(pupCard.locator('.draft-player-availability-badge')).toContainText('PUP');
+});
+
+test('All Players keeps rostered rows visible beyond the ranked display cap', async ({ page }, testInfo) => {
+  const mobile = testInfo.project.name === 'chromium-mobile';
+  const state = persistedSleeperState();
+  await installTradeFixtures(page, {
+    persistedSleeperState: { ...state, rosters: cappedDraftRosters },
+    players: cappedDraftPlayers,
+    rosters: cappedDraftRosters,
+    drafts: preDraft,
+  });
+
+  await page.goto('/draft/war-room');
+  if (mobile) await page.getByRole('button', { name: 'Filters' }).click();
+  await page.getByRole('button', { name: 'All Players' }).filter({ visible: true }).click();
+  await page.getByRole('tab', { name: 'QB' }).filter({ visible: true }).click();
+  await expect(page.getByRole('button', { name: 'Open Tail Rostered Quarterback' }).filter({ visible: true })).toBeVisible({ timeout: 20_000 });
+
+  await page.goto('/draft/my-board');
+  if (mobile) await page.getByRole('button', { name: 'Available Players' }).click();
+  await page.getByRole('button', { name: 'All Players' }).filter({ visible: true }).click();
+  await page.getByRole('tab', { name: 'QB' }).filter({ visible: true }).click();
+  await expect(page.getByRole('button', { name: 'Open Tail Rostered Quarterback' }).filter({ visible: true })).toBeVisible({ timeout: 20_000 });
+});
+
+test('All Players exposes rostered veterans outside restricted and recorded draft pools', async ({ page }, testInfo) => {
+  const state = persistedSleeperState();
+  await installTradeFixtures(page, {
+    persistedSleeperState: { ...state, rosters: rosteredVeteranRosters },
+    players: rosteredVeteranPlayers,
+    rosters: rosteredVeteranRosters,
+    drafts: rookiePoolPreDraft,
+    draftPicks: [
+      { roster_id: 1, player_id: 'mahomes', round: 1, pick_no: 1 },
+      { roster_id: 2, player_id: 'darnold', round: 1, pick_no: 2 },
+    ],
+  });
+
+  await page.goto('/draft/war-room');
+  if (testInfo.project.name === 'chromium-mobile') await page.getByRole('button', { name: 'Filters' }).click();
+  await page.getByRole('button', { name: 'All Players' }).filter({ visible: true }).click();
+  await page.getByRole('tab', { name: 'QB' }).filter({ visible: true }).click();
+
+  const search = page.getByRole('searchbox', { name: 'Search draft players' }).filter({ visible: true });
+  await search.fill('Patrick Mahomes');
+  await expect(page.getByRole('button', { name: 'Open Patrick Mahomes' }).filter({ visible: true })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole('button', { name: 'Patrick Mahomes is already drafted' }).filter({ visible: true })).toBeDisabled();
+  await search.fill('Sam Darnold');
+  await expect(page.getByRole('button', { name: 'Open Sam Darnold' }).filter({ visible: true })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole('button', { name: 'Sam Darnold is already drafted' }).filter({ visible: true })).toBeDisabled();
+
+  await page.goto('/draft/my-board');
+  if (testInfo.project.name === 'chromium-mobile') await page.getByRole('button', { name: 'Available Players' }).click();
+  await page.getByRole('button', { name: 'All Players' }).filter({ visible: true }).click();
+  await page.getByRole('tab', { name: 'QB' }).filter({ visible: true }).click();
+
+  const boardSearch = page.getByLabel('Search available draft players').filter({ visible: true });
+  await boardSearch.fill('Patrick Mahomes');
+  await expect(page.getByRole('button', { name: 'Open Patrick Mahomes' }).filter({ visible: true })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole('button', { name: 'Add Patrick Mahomes to board' }).filter({ visible: true })).toHaveCount(0);
+  await boardSearch.fill('Sam Darnold');
+  await expect(page.getByRole('button', { name: 'Open Sam Darnold' }).filter({ visible: true })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole('button', { name: 'Add Sam Darnold to board' }).filter({ visible: true })).toHaveCount(0);
+});
+
+test('Board search keeps Gone status separate from the selected card metric', async ({ page }, testInfo) => {
+  const mobile = testInfo.project.name === 'chromium-mobile';
+  const state = persistedSleeperState();
+  await installTradeFixtures(page, {
+    persistedSleeperState: { ...state, rosters: rosteredVeteranRosters },
+    players: rosteredVeteranPlayers,
+    rosters: rosteredVeteranRosters,
+    drafts: rookiePoolPreDraft,
+    draftPicks: [
+      { roster_id: 1, player_id: 'mahomes', round: 1, pick_no: 1 },
+    ],
+  });
+
+  await page.goto('/draft/my-board');
+  if (mobile) {
+    await page.getByRole('button', { name: 'Open board filters', exact: true }).click();
+    await page.getByLabel('Board card labels').selectOption('rating');
+    await page.getByRole('button', { name: 'Close board filters', exact: true }).click();
+    await page.getByRole('button', { name: 'Open available players', exact: true }).click();
+  }
+  await page.getByRole('button', { name: 'All Players', exact: true }).filter({ visible: true }).click();
+  await page.getByRole('tab', { name: 'QB', exact: true }).filter({ visible: true }).click();
+  if (!mobile) await setBoardCardMetric(page, false, 'rating', 'Rate');
+
+  const search = page.getByLabel('Search available draft players').filter({ visible: true });
+  await search.fill('Patrick Mahomes');
+  const mahomesCard = page.locator('.draft-board-available-list:visible .draft-board-card-shell[data-player-id="mahomes"]');
+  await expect(mahomesCard.getByRole('button', { name: 'Open Patrick Mahomes', exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(mahomesCard.locator('.companion-player-row__status')).toHaveText('Gone');
+  await expect(mahomesCard.locator('.draft-board-metric-value__label')).toHaveText('Rating');
+
+  const viewports = mobile
+    ? PHONE_VIEWPORTS.map(({ width, height }) => ({ width, height }))
+    : [{ width: 1280, height: 800 }, { width: 1440, height: 800 }];
+  for (const viewport of viewports) {
+    await page.setViewportSize(viewport);
+    const layout = await mahomesCard.evaluate((card) => {
+      const statusRect = card.querySelector('.companion-player-row__status')?.getBoundingClientRect();
+      const metricRect = card.querySelector('.draft-board-card-trailing > .companion-player-row__metric')?.getBoundingClientRect();
+      return {
+        status: statusRect && {
+          left: statusRect.left,
+          right: statusRect.right,
+          top: statusRect.top,
+          bottom: statusRect.bottom,
+        },
+        metric: metricRect && {
+          left: metricRect.left,
+          right: metricRect.right,
+          top: metricRect.top,
+          bottom: metricRect.bottom,
+        },
+      };
+    });
+    expect(layout.status).toBeTruthy();
+    expect(layout.metric).toBeTruthy();
+    const separated = layout.status.right <= layout.metric.left + 1
+      || layout.metric.right <= layout.status.left + 1
+      || layout.status.bottom <= layout.metric.top + 1
+      || layout.metric.bottom <= layout.status.top + 1;
+    expect(separated).toBe(true);
+  }
 });
 
 test('War Room and Board hide positions the league cannot roster', async ({ page }, testInfo) => {

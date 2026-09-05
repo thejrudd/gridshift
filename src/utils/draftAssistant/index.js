@@ -1,3 +1,4 @@
+import { buildUpcomingDraftWindow } from './pickProgress.js';
 import { buildRosterNeedProfile, getPositionNeedScore } from './rosterNeed.js';
 import { getPlayerProjectionProfile, playerSupportsDraftAssistant, sortDraftPlayersByProjection } from './projections.js';
 import { rankDraftCandidates } from './recommendations.js';
@@ -440,6 +441,12 @@ function isCurrentDraftCandidate(player, projection) {
   if (player?.active === false) return false;
   if (projection?.marketRank != null || projection?.marketPositionRank != null) return true;
   return hasCurrentTeam(player);
+}
+
+function isPlayerInDraftPool(player, draftPlayerPool, draftSeason) {
+  if (draftPlayerPool === 'rookies') return isDraftRookie(player, draftSeason);
+  if (draftPlayerPool === 'veterans') return !isDraftRookie(player, draftSeason);
+  return true;
 }
 
 function resolvePickRosterId(rawPick, draft = null) {
@@ -1082,22 +1089,6 @@ function buildRecentPositionCounts(normalizedPicks, players) {
   return counts;
 }
 
-function getMyUpcomingWindow(pickOrder, myRosterId, normalizedPicks) {
-  const currentOverall = normalizedPicks.length + 1;
-  const currentPick = pickOrder.find((pick) => pick.overall === currentOverall) ?? null;
-  const nextMyPick = pickOrder.find((pick) => pick.overall >= currentOverall && pick.rosterId === myRosterId) ?? null;
-  const upcomingPicks = pickOrder.filter((pick) => pick.overall >= currentOverall);
-  const picksBeforeUser = nextMyPick
-    ? pickOrder.filter((pick) => pick.overall >= currentOverall && pick.overall < nextMyPick.overall)
-    : [];
-  return {
-    currentOverall,
-    currentPick,
-    nextMyPick,
-    upcomingPicks,
-    picksBeforeUser,
-  };
-}
 
 function buildOnClockRecommendation({
   candidates = [],
@@ -1161,7 +1152,7 @@ export function buildDraftAssistantViewModel({
   const myRosterId = myRoster?.roster_id != null ? String(myRoster.roster_id) : null;
   const teamNeedRows = buildTeamNeedRows({ rosters, draft: league ?? draft, normalizedPicks, players });
   const myNeedRow = teamNeedRows.find((row) => row.rosterId === myRosterId) ?? null;
-  const upcomingWindow = getMyUpcomingWindow(pickOrder, myRosterId, normalizedPicks);
+  const upcomingWindow = buildUpcomingDraftWindow(pickOrder, myRosterId, normalizedPicks);
   const teamsBeforeUser = upcomingWindow.picksBeforeUser.map((pick) => {
     const team = teamNeedRows.find((row) => row.rosterId === pick.rosterId);
     return {
@@ -1197,12 +1188,16 @@ export function buildDraftAssistantViewModel({
     .filter((player) => playerSupportsDraftAssistant(player))
     .filter((player) => isPlayerEligibleForDraftRoster(player, draftRosterEligiblePositions))
     .filter((player) => {
-      if (draftPlayerPool === 'rookies') return isDraftRookie(player, draftSeason);
-      if (draftPlayerPool === 'veterans') return !isDraftRookie(player, draftSeason);
-      return true;
+      const rostered = rosteredIds.has(String(player.player_id));
+      const inDraftPool = isPlayerInDraftPool(player, draftPlayerPool, draftSeason);
+      // All Players needs roster context even when Sleeper limits the actual draft
+      // pool to rookies or veterans. Available still removes these rows by their
+      // rostered flag, while the recommendation pool only uses true draft-pool rows.
+      return rostered || inDraftPool;
     })
     .map((player) => {
       const playerId = String(player.player_id);
+      const inDraftPool = isPlayerInDraftPool(player, draftPlayerPool, draftSeason);
       const marketValue = getMarketValue(marketValuesByPlayerId, playerId);
       const adp = getAdpValue(adpByPlayerId, playerId);
       const projection = enrichProjectionWithMarket(
@@ -1217,6 +1212,7 @@ export function buildDraftAssistantViewModel({
         position: normalizePosition(player.fantasy_positions?.[0] ?? player.position),
         projection,
         adp,
+        draftPoolEligible: inDraftPool,
         rostered: rosteredIds.has(playerId),
         byeWeek: resolveDraftPlayerByeWeek({
           player,
@@ -1276,7 +1272,7 @@ export function buildDraftAssistantViewModel({
     .map((candidate) => attachDraftModelSignal(candidate, normalizedModelWeights));
 
   const adpPriorityActive = normalizedModelWeights.adp > 0;
-  const rankedCandidatePool = allCandidates.filter((item) => (
+  const rankedCandidatePool = allCandidates.filter((item) => item.draftPoolEligible && (
     item.projection?.projectedPoints != null
     || item.projection?.fallbackRank != null
     || boardIndex.has(item.id)
@@ -1379,10 +1375,10 @@ export function buildDraftAssistantViewModel({
     return attachDraftModelSignal(row, normalizedModelWeights);
   });
 
-  // Drafted players are excluded from the candidate pool above, so their Rating/Rank/Tier are
-  // never computed there. Enrich them on their own (same signal builders + model score path as
-  // boardRows) so the Results view can surface War-Room-grade metrics for completed picks. Keeps
-  // the candidate pool — and therefore War Room — untouched.
+  // Drafted players are excluded from the recommendation candidate pool above, so their
+  // Rating/Rank/Tier are never computed there. Enrich them on their own (same signal builders +
+  // model score path as boardRows) so Results and the All Players display can surface
+  // War-Room-grade metrics for completed picks without changing recommendations.
   const draftedCardsById = new Map();
   for (const pick of normalizedPicks) {
     const playerId = pick.playerId;
@@ -1507,7 +1503,7 @@ export function buildDraftResultsViewModel({
   const myRosterId = myRoster?.roster_id != null ? String(myRoster.roster_id) : null;
   const teamNeedRows = buildTeamNeedRows({ rosters, draft: league ?? draft, normalizedPicks, players });
   const myNeedRow = teamNeedRows.find((row) => row.rosterId === myRosterId) ?? null;
-  const upcomingWindow = getMyUpcomingWindow(pickOrder, myRosterId, normalizedPicks);
+  const upcomingWindow = buildUpcomingDraftWindow(pickOrder, myRosterId, normalizedPicks);
   const teamsBeforeUser = upcomingWindow.picksBeforeUser.map((pick) => {
     const team = teamNeedRows.find((row) => row.rosterId === pick.rosterId);
     return {

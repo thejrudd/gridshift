@@ -1,3 +1,4 @@
+import { buildUpcomingDraftWindow } from '../../utils/draftAssistant/pickProgress.js';
 import { Fragment, memo, startTransition, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal, flushSync } from 'react-dom';
 import { getDraft, getDraftPicks, getDraftTradedPicks, getLeagueDrafts, getUserById } from '../../api/sleeperApi.js';
@@ -67,6 +68,7 @@ import {
   getRosterProjectionSlotOrder,
   selectNextAvailableRosterProjection,
 } from '../../utils/draftAssistant/rosterProjection.js';
+import { limitDraftRows } from '../../utils/draftAssistant/playerScope.js';
 import {
   DRAFT_POSITION_ORDER as POSITION_ORDER,
   emptyBoard,
@@ -1088,6 +1090,36 @@ function decoratePositionRanks(rows, positionRankMap) {
   }));
 }
 
+function mergeRosteredDraftCardsIntoPlayers({
+  activePlayers,
+  draftedCardsById,
+  draftRosterEligiblePositions,
+}) {
+  const rows = [...(activePlayers ?? [])];
+  const visibleIds = new Set(rows.map((player) => String(player?.id ?? '')));
+  const draftedCards = draftedCardsById instanceof Map ? [...draftedCardsById.values()] : [];
+
+  for (const card of draftedCards) {
+    const playerId = String(card?.id ?? '');
+    if (
+      !playerId
+      || visibleIds.has(playerId)
+      || !card?.rostered
+      || card?.raw?.active === false
+      || !isPlayerEligibleForDraftRoster(card?.raw, draftRosterEligiblePositions)
+    ) continue;
+
+    rows.push({
+      ...card,
+      available: false,
+      drafted: true,
+    });
+    visibleIds.add(playerId);
+  }
+
+  return rows;
+}
+
 function getNormalizedDraftPicks(draftPicks, draft) {
   return (draftPicks ?? [])
     .map((pick, index) => normalizeDraftPick(pick, index, draft))
@@ -1098,25 +1130,11 @@ function getNormalizedDraftPicks(draftPicks, draft) {
 function buildDraftOrderContext({ draft, rosters, draftTradedPicks, draftPicks, myRosterData }) {
   const normalizedPicks = getNormalizedDraftPicks(draftPicks, draft);
   const pickOrder = buildPickOrder(draft, rosters, draftTradedPicks);
-  const currentOverall = normalizedPicks.length + 1;
   const myRosterId = myRosterData?.roster_id != null ? String(myRosterData.roster_id) : null;
-  const currentPick = pickOrder.find((pick) => pick.overall === currentOverall) ?? null;
-  const nextMyPick = myRosterId
-    ? pickOrder.find((pick) => pick.overall >= currentOverall && pick.rosterId === myRosterId) ?? null
-    : null;
-  const upcomingPicks = pickOrder.filter((pick) => pick.overall >= currentOverall);
-  const picksBeforeUser = nextMyPick
-    ? pickOrder.filter((pick) => pick.overall >= currentOverall && pick.overall < nextMyPick.overall)
-    : [];
-
   return {
     normalizedPicks,
     pickOrder,
-    currentOverall,
-    currentPick,
-    nextMyPick,
-    upcomingPicks,
-    picksBeforeUser,
+    ...buildUpcomingDraftWindow(pickOrder, myRosterId, normalizedPicks),
   };
 }
 
@@ -2202,8 +2220,11 @@ const BigBoard = memo(function BigBoard({
   const isMobileBoard = useMediaQuery('(max-width: 767px)');
   const filtered = filterCandidates(candidates, activePosition, query, availabilityFilter);
   const sorted = useMemo(
-    () => sortBigBoardRows(filtered, sortState).slice(0, 140),
-    [filtered, sortState],
+    () => limitDraftRows(sortBigBoardRows(filtered, sortState), {
+      limit: 140,
+      includeRostered: boardScope === 'all',
+    }),
+    [boardScope, filtered, sortState],
   );
   const setSortColumn = (column) => {
     setSortState((current) => {
@@ -2373,6 +2394,7 @@ const BigBoard = memo(function BigBoard({
           <EmptyState title="No players match this filter." />
         ) : sorted.map((player) => {
           const included = boardIds.has(player.id);
+          const unavailable = player.available === false;
           return (
             <DraftPlayerRow
               key={player.id}
@@ -2387,13 +2409,19 @@ const BigBoard = memo(function BigBoard({
               actions={[
                 <CompanionPlayerAction
                   key="add"
-                  label={included ? `${getPlayerName(player)} is already on your board` : `Add ${getPlayerName(player)} to board`}
+                  label={included
+                    ? `${getPlayerName(player)} is already on your board`
+                    : unavailable
+                      ? `${getPlayerName(player)} is already drafted`
+                      : `Add ${getPlayerName(player)} to board`}
                   selected={included}
-                  disabled={included}
+                  disabled={included || unavailable}
                   className={included ? 'draft-player-row__add-action is-added-icon' : 'draft-player-row__add-action'}
                   onClick={() => onAdd(player)}
                 >
-                  {included ? <CheckIcon /> : isMobileBoard ? (
+                  {included ? <CheckIcon /> : unavailable ? (
+                    isMobileBoard ? '—' : 'Gone'
+                  ) : isMobileBoard ? (
                     <span className="draft-player-row__add-glyph" aria-hidden="true" style={{ fontSize: 'var(--type-heading-sm)', lineHeight: 1 }}>+</span>
                   ) : 'Add'}
                 </CompanionPlayerAction>,
@@ -3442,13 +3470,22 @@ function MyBoardWorkspace({
   }, [rosterCollapsed]);
 
   const visibleAvailablePlayers = useMemo(() => (
-    filterCandidates(
-      availablePlayers.filter((player) => !boardIdSet.has(player.id) && player.available !== false),
-      activePosition,
-      query,
-      availabilityFilter,
-    ).slice(0, 120)
-  ), [availablePlayers, boardIdSet, activePosition, query, availabilityFilter]);
+    limitDraftRows(
+      filterCandidates(
+        availablePlayers.filter((player) => (
+          !boardIdSet.has(player.id)
+          && (boardScope === 'all' || player.available !== false)
+        )),
+        activePosition,
+        query,
+        availabilityFilter,
+      ),
+      {
+        limit: 120,
+        includeRostered: boardScope === 'all',
+      },
+    )
+  ), [availablePlayers, boardIdSet, activePosition, query, availabilityFilter, boardScope]);
 
   const rowsByPosition = useMemo(() => {
     const result = new Map();
@@ -4548,6 +4585,14 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
     () => decoratePositionRanks(activePlayers, positionRankMap),
     [activePlayers, positionRankMap],
   );
+  const allPlayersWithRanks = useMemo(
+    () => mergeRosteredDraftCardsIntoPlayers({
+      activePlayers: activePlayersWithRanks,
+      draftedCardsById: viewModel?.draftedCardsById,
+      draftRosterEligiblePositions,
+    }),
+    [activePlayersWithRanks, draftRosterEligiblePositions, viewModel?.draftedCardsById],
+  );
   const candidatesById = useMemo(
     () => new Map((viewModel?.allCandidates ?? []).map((player) => [String(player.id), player])),
     [viewModel],
@@ -4600,15 +4645,15 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
     draftSeason,
   ]);
   const bigBoardPlayers = useMemo(() => {
-    if (boardScope === 'all') return activePlayersWithRanks;
+    if (boardScope === 'all') return allPlayersWithRanks;
     if (boardScope === 'rookies') {
       return activePlayersWithRanks.filter((player) => isDraftRookie(player, draftMeta?.season ?? season));
     }
     return activePlayersWithRanks.filter((player) => !player.rostered);
-  }, [activePlayersWithRanks, boardScope, draftMeta?.season, season]);
+  }, [activePlayersWithRanks, allPlayersWithRanks, boardScope, draftMeta?.season, season]);
   const analyticsPlayerById = useMemo(
-    () => new Map(activePlayersWithRanks.map((player) => [String(player.id), player])),
-    [activePlayersWithRanks],
+    () => new Map(allPlayersWithRanks.map((player) => [String(player.id), player])),
+    [allPlayersWithRanks],
   );
   const selectedAnalyticsPlayer = selectedAnalyticsPlayerId
     ? analyticsPlayerById.get(String(selectedAnalyticsPlayerId)) ?? null

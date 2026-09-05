@@ -133,10 +133,11 @@ Draft Sync is an optional capability of the existing API sidecar, not a required
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) + optional Node API sidecar |
 
-## What's New in v8.9.3
+## What's New in v8.9.4
 
-- **Draft Board conflict highlighting** — Compare Board candidates only with players currently rostered by the manager, while the `Bye` metric remains available for all individual bye weeks.
-- **Bye marker alignment** — Center conflict markers vertically within Draft Board player cards.
+- **All Players visibility** — Keep rostered players visible in War Room and Board, including keepers and players outside the ranked display window or restricted draft pool.
+- **Keeper-aware draft timing** — Show the correct on-clock team, next team, and picks until your turn when future keeper selections are already assigned.
+- **Draft card readability** — Separate drafted-player status from the selected metric across Board card sizes.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 

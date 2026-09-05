@@ -1349,3 +1349,11 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Roster-only conflict highlighting** - Highlight a Draft Board candidate only when its bye overlaps a player currently rostered by the manager; saved Board candidates are no longer compared with one another.
 - **Bye visibility and marker alignment** - Keep the `Bye` metric available for reviewing every player's bye week and vertically center conflict markers within their Board cards.
 - **Regression coverage and documentation** - Update the Draft behavior reference and focused unit and responsive coverage for the roster-only comparison boundary.
+
+## v8.9.4 - Draft Player Visibility & Keeper Timing
+*2026-09-06*
+
+- **All Players completeness** - Keep rostered players visible in War Room and Board, including players outside restricted draft pools, recorded keeper picks, and players beyond the ranked display window. Already drafted players remain reference-only.
+- **Keeper-aware live timing** - Follow the first unfilled draft slot and skip future keeper selections when showing the on-clock team, next team, and picks until your turn across Draft views and recommendation timing.
+- **Draft card readability** - Keep drafted-player status separate from the selected card metric on wide and narrow Board cards.
+- **Regression coverage and documentation** - Add focused player-scope, keeper-progress, and responsive coverage and update the Draft reference.
