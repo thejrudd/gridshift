@@ -133,12 +133,10 @@ Draft Sync is an optional capability of the existing API sidecar, not a required
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) + optional Node API sidecar |
 
-## What's New in v8.9.2
+## What's New in v8.9.3
 
-- **Prediction workflow** — Build records first, then complete the playoff picture, with clearer season-aware navigation and retired-route handling.
-- **Share Card studio** — Choose the card, title, canvas, and theme in order, then export polished Standings, Division Winners, Playoff Seeding, Champions, Full Bracket, or Team Record cards.
-- **Trade Agent continuity** — Keep an in-progress partner and selected assets when moving between GridShift sections, scoped safely to the connected account, league, and season.
-- **PWA and responsive polish** — Refresh generated app icons and improve share-card, action-sheet, and prediction layouts across display sizes.
+- **Draft Board conflict highlighting** — Compare Board candidates only with players currently rostered by the manager, while the `Bye` metric remains available for all individual bye weeks.
+- **Bye marker alignment** — Center conflict markers vertically within Draft Board player cards.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 
