@@ -10014,6 +10014,23 @@ body {
   grid-template-columns: var(--draft-board-card-grid-trailing) !important;
 }
 
+/* A searched drafted player can carry both the selected card metric and the
+   fallback Gone status. Reserve separate trailing tracks so the status never
+   paints over the metric on wider cards. */
+.draft-player-row--board-card.has-board-card-status.has-board-card-trailing.companion-player-row {
+  grid-template-columns: var(--draft-board-card-avatar) minmax(0, 1fr) minmax(0, auto) auto !important;
+}
+
+.draft-player-row--board-card.has-board-card-status.has-board-card-trailing .companion-player-row__status-slot {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+.draft-player-row--board-card.has-board-card-status.has-board-card-trailing .companion-player-row__trailing {
+  grid-column: 4;
+  grid-row: 1;
+}
+
 /* Constrained board cards stay dense and single-row unless they actually carry
    a drafted-owner status. Identity yields space to the metric and controls;
    it never paints into those operational columns. */
@@ -10069,6 +10086,21 @@ body {
 
   .draft-board-card-shell .draft-player-row--board-card.has-board-card-metric .companion-player-row__actions {
     grid-column: 4;
+    grid-row: 1;
+  }
+
+  .draft-board-card-shell .draft-player-row--board-card.has-board-card-status.has-board-card-trailing.companion-player-row {
+    grid-template-columns: var(--draft-board-card-avatar) minmax(0, 1fr) auto !important;
+    grid-template-rows: auto auto;
+  }
+
+  .draft-board-card-shell .draft-player-row--board-card.has-board-card-status.has-board-card-trailing .companion-player-row__status-slot {
+    grid-column: 2 / -1;
+    grid-row: 2;
+  }
+
+  .draft-board-card-shell .draft-player-row--board-card.has-board-card-status.has-board-card-trailing .companion-player-row__trailing {
+    grid-column: 3;
     grid-row: 1;
   }
 }

@@ -64,6 +64,7 @@ import {
   filterDraftPlayersBySearch,
   getDraftPlayerSearchNumber,
 } from '../../src/utils/draftAssistant/search.js';
+import { limitDraftRows } from '../../src/utils/draftAssistant/playerScope.js';
 import { DEFAULT_SCORING } from '../../src/utils/scoringEngine.js';
 
 const players = {
@@ -220,6 +221,20 @@ test('Draft search matches team abbreviations, positions, cities, and jersey num
   );
   assert.deepEqual(filterDraftPlayersBySearch(candidates, 'ALL', 'in'), []);
   assert.equal(getDraftPlayerSearchNumber(candidates[0]), '8');
+});
+
+test('All Players keeps rostered rows visible beyond the ranked display cap', () => {
+  const rows = [
+    { id: 'top', rostered: false },
+    { id: 'rostered', rostered: true },
+    { id: 'tail', rostered: false },
+  ];
+
+  assert.deepEqual(limitDraftRows(rows, { limit: 1 }), [{ id: 'top', rostered: false }]);
+  assert.deepEqual(
+    limitDraftRows(rows, { limit: 1, includeRostered: true }),
+    [rows[0], rows[1]],
+  );
 });
 
 test('legacy companion draft route redirects to top-level draft', () => {
@@ -1818,6 +1833,63 @@ test('draft assistant marks rostered players separately from drafted players', (
   assert.equal(viewModel.allCandidates.find((player) => player.id === 'qb1').rostered, false);
   assert.equal(viewModel.boardRows.find((player) => player.id === 'rb1').rostered, true);
   assert.equal(viewModel.boardRows.find((player) => player.id === 'qb1').rostered, false);
+});
+
+test('draft assistant keeps rostered veterans in All Players for a rookie draft', () => {
+  const rookieDraft = {
+    draft_id: 'draft-rookie-1',
+    type: 'linear',
+    status: 'pre_draft',
+    season: '2026',
+    settings: { rounds: 4, player_type: 1 },
+    slot_to_roster_id: { 1: 1, 2: 2, 3: 3 },
+  };
+  const rosteredVeterans = {
+    ...players,
+    mahomes: {
+      player_id: 'mahomes',
+      full_name: 'Patrick Mahomes',
+      position: 'QB',
+      fantasy_positions: ['QB'],
+      team: 'KC',
+      active: true,
+      years_exp: 8,
+      search_rank: 1,
+    },
+    darnold: {
+      player_id: 'darnold',
+      full_name: 'Sam Darnold',
+      position: 'QB',
+      fantasy_positions: ['QB'],
+      team: 'SEA',
+      active: true,
+      years_exp: 7,
+      search_rank: 2,
+    },
+  };
+  const rosteredVeteranRosters = [
+    { ...rosters[0], players: ['mahomes'] },
+    { ...rosters[1], players: ['darnold'] },
+    rosters[2],
+  ];
+
+  const viewModel = buildDraftAssistantViewModel({
+    players: rosteredVeterans,
+    rosters: rosteredVeteranRosters,
+    league,
+    draft: rookieDraft,
+    draftPicks: [],
+    myRoster: rosteredVeteranRosters[0],
+    scoringSettings: DEFAULT_SCORING,
+    season: '2026',
+    boardIds: [],
+  });
+
+  assert.equal(viewModel.allCandidates.find((player) => player.id === 'mahomes')?.rostered, true);
+  assert.equal(viewModel.allCandidates.find((player) => player.id === 'darnold')?.rostered, true);
+  assert.equal(viewModel.allCandidates.some((player) => player.id === 'qb1'), false);
+  assert.equal(viewModel.rankedCandidatePool.some((player) => player.id === 'mahomes'), false);
+  assert.equal(viewModel.rankedCandidatePool.some((player) => player.id === 'darnold'), false);
 });
 
 test('LeagueLogs profile selection follows league scoring and QB setup', () => {
