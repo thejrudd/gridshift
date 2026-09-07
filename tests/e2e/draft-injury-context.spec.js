@@ -810,3 +810,32 @@ test('desktop Board keeps card controls and drafting status inside one fixed car
     expect(layout.statusBelowActions).toBe(true);
   }
 });
+
+test('War Room stays available while a draft is in progress', async ({ page }, testInfo) => {
+  await installTradeFixtures(page, {
+    installedVersion: '8.4.1',
+    players,
+    drafts: [{ ...preDraft[0], status: 'drafting' }],
+  });
+
+  await page.goto('/draft/war-room');
+
+  await expect(page.getByText(`War Room is unavailable for the ${TEST_SEASON} league year.`)).toHaveCount(0);
+  if (testInfo.project.name === 'chromium-mobile') {
+    await page.getByRole('button', { name: 'Filters' }).click();
+  }
+  await expect(page.getByRole('button', { name: 'All Players' }).filter({ visible: true })).toBeVisible();
+});
+
+test('War Room closes once a draft is complete', async ({ page }) => {
+  await installTradeFixtures(page, {
+    installedVersion: '8.4.1',
+    players,
+    drafts: [{ ...preDraft[0], status: 'complete' }],
+  });
+
+  await page.goto('/draft/war-room');
+
+  await expect(page.getByText(`War Room is unavailable for the ${TEST_SEASON} league year.`)).toBeVisible();
+  await expect(page.getByText(`The ${TEST_SEASON} draft has already finished.`)).toBeVisible();
+});

@@ -4495,15 +4495,10 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
   });
   const draftType = normalizeDraftType(draftMeta);
   const unsupportedDraft = draftMeta && draftType !== 'snake' && draftType !== 'linear';
-  const fullDraftModelAllowed = Boolean(
-    draftMeta
-    && !unsupportedDraft
-    && (
-      isStandaloneBoard
-        ? isSleeperDraftPreDraft(draftMeta) || isActiveDraftRoomStatus(draftMeta?.status)
-        : isSleeperDraftPreDraft(draftMeta)
-    ),
-  );
+  // War Room and Board are both usable before and during a draft. Only a completed or
+  // otherwise inactive draft room falls back to Results, so the two views share one predicate.
+  const draftRoomUsable = isSleeperDraftPreDraft(draftMeta) || isActiveDraftRoomStatus(draftMeta?.status);
+  const fullDraftModelAllowed = Boolean(draftMeta && !unsupportedDraft && draftRoomUsable);
 
   useEffect(() => {
     if (!players || !league || !myRosterData || !draftMeta || !fullDraftModelAllowed) {
@@ -4875,25 +4870,17 @@ function DraftBoardDataView({ mode = 'war-room', onViewPlayer, sleeperDraftId = 
     );
   }
 
-  if (!isStandaloneBoard && !isSleeperDraftPreDraft(draftMeta)) {
+  if (!draftRoomUsable) {
     return (
       <div className="draft-page">
         <LiveDraftStatusBanner draftClockStore={draftClockStore} fallbackDraft={draftMeta} viewModel={draftOrderContext} getUserDisplayName={getUserDisplayName} projectedSelection={projectedSelection} onClockExpired={refreshDraft} />
         <DraftPageState
-          title={`War Room is unavailable for the ${season} league year.`}
-          description={`The ${season} draft has already started or finished. Use Results to review its order and picks, or switch to a pre-draft league year to use War Room.`}
-        />
-      </div>
-    );
-  }
-
-  if (isStandaloneBoard && !isSleeperDraftPreDraft(draftMeta) && !isActiveDraftRoomStatus(draftMeta?.status)) {
-    return (
-      <div className="draft-page">
-        <LiveDraftStatusBanner draftClockStore={draftClockStore} fallbackDraft={draftMeta} viewModel={draftOrderContext} getUserDisplayName={getUserDisplayName} projectedSelection={projectedSelection} onClockExpired={refreshDraft} />
-        <DraftPageState
-          title="Board is available before and during the draft."
-          description="Use Results to review completed drafts."
+          title={isStandaloneBoard
+            ? 'Board is available before and during the draft.'
+            : `War Room is unavailable for the ${season} league year.`}
+          description={isStandaloneBoard
+            ? 'Use Results to review completed drafts.'
+            : `The ${season} draft has already finished. Use Results to review its order and picks, or switch to a league year whose draft has not finished to use War Room.`}
         />
       </div>
     );
