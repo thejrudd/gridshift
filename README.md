@@ -133,11 +133,10 @@ Draft Sync is an optional capability of the existing API sidecar, not a required
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) + optional Node API sidecar |
 
-## What's New in v8.9.4
+## What's New in v8.9.5
 
-- **All Players visibility** — Keep rostered players visible in War Room and Board, including keepers and players outside the ranked display window or restricted draft pool.
-- **Keeper-aware draft timing** — Show the correct on-clock team, next team, and picks until your turn when future keeper selections are already assigned.
-- **Draft card readability** — Separate drafted-player status from the selected metric across Board card sizes.
+- **War Room during live drafts** — Keep War Room available once a draft is underway instead of closing it when the draft starts.
+- **Consistent draft availability** — War Room and Board now share one availability rule; completed drafts still send you to Results.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 

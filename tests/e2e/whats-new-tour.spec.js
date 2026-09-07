@@ -149,7 +149,7 @@ test(HISTORICAL_WAR_ROOM_TEST, async ({ page }) => {
   await expect(warRoomTab).toHaveAttribute('aria-selected', 'true');
   await expect(page).toHaveURL(/\/draft$/);
   await expect(page.getByText('War Room is unavailable for the 2025 league year.')).toBeVisible();
-  await expect(page.getByText('The 2025 draft has already started or finished.')).toBeVisible();
+  await expect(page.getByText('The 2025 draft has already finished.')).toBeVisible();
 
   await page.getByRole('tab', { name: 'Results' }).click();
   await expect(page).toHaveURL(/\/draft\/results$/);

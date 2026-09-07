@@ -1357,3 +1357,10 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Keeper-aware live timing** - Follow the first unfilled draft slot and skip future keeper selections when showing the on-clock team, next team, and picks until your turn across Draft views and recommendation timing.
 - **Draft card readability** - Keep drafted-player status separate from the selected card metric on wide and narrow Board cards.
 - **Regression coverage and documentation** - Add focused player-scope, keeper-progress, and responsive coverage and update the Draft reference.
+
+## v8.9.5 - Live Draft War Room Access
+*2026-09-07*
+
+- **War Room during live drafts** - Keep War Room fully available while a Sleeper draft room is active, matching Board, instead of closing it the moment the draft starts. Completed and historical post-draft league years still route to Results.
+- **Shared draft availability rule** - Give War Room and Board one availability predicate so the two views cannot drift apart again, and correct the unavailable copy to describe a finished draft rather than one that has started.
+- **Regression coverage and documentation** - Add focused live-draft and completed-draft War Room coverage and update the Draft reference.
