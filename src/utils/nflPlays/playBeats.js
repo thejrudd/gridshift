@@ -399,6 +399,12 @@ export function getPlayTimeline(play, { homeTeam, awayTeam, resolveName = (name)
   const placedKickPenalty = kickPenalty?.enforcedAt && /\bplaced at\b/i.test(rawText)
     ? kickPenalty
     : null;
+  // Unlike most bespoke timelines, an interception does not need the compact
+  // `short_text` grammar when the official description already identifies the
+  // throw, defender, and pick spot. Keep that authoritative parse available
+  // before the confidence gate so a missing or unfamiliar compact summary does
+  // not collapse a clearly described pass into the ground-level generic path.
+  const officialInterception = flag === 'int' ? parseInterception(rawText) : null;
 
   // Anything the first pass doesn't choreograph — turnovers, penalties,
   // anything the narrative parser wasn't confident about — still animates and
@@ -419,7 +425,7 @@ export function getPlayTimeline(play, { homeTeam, awayTeam, resolveName = (name)
     && (flag !== 'penalty' || placedKickPenalty)
     && (narrative.confident || placedKickPenalty);
 
-  if (!narrative.confident && !bespokeKick) return generic();
+  if (!narrative.confident && !bespokeKick && !officialInterception) return generic();
 
   if (bespokePass) {
     track.beat(`${play.down} at the ${spotOf(start)}`, { kind: 'setup' });
@@ -632,8 +638,9 @@ export function getPlayTimeline(play, { homeTeam, awayTeam, resolveName = (name)
   // throw, the moment it is picked off, and the return the other way are three
   // separate movements around a spot only the description reports.
   if (flag === 'int') {
-    const officialPick = parseInterception(play.rawText ?? play.description);
-    const officialAt = officialPick && possessionTextToPercent(officialPick.at, { homeTeam });
+    const officialPick = officialInterception;
+    const officialAt = geometry.turnover?.at
+      ?? (officialPick && possessionTextToPercent(officialPick.at, { homeTeam }));
     // Some scoring plays contain only the scoreboard summary. It still gives
     // us the defender, return distance, authoritative endpoint, and original
     // line of scrimmage. The interception spot is therefore exact: walk the
@@ -679,7 +686,9 @@ export function getPlayTimeline(play, { homeTeam, awayTeam, resolveName = (name)
       const passer = pick.passer ? resolveName(pick.passer, PLAY_ROLES.PASSER) : null;
       const passerText = passer ?? 'The quarterback';
       const target = pick.intendedFor ? resolveName(pick.intendedFor, PLAY_ROLES.RECEIVER) : null;
-      const back = possessionTextToPercent(pick.returnTo, { homeTeam }) ?? end;
+      const back = geometry.turnover?.finish
+        ?? possessionTextToPercent(pick.returnTo, { homeTeam })
+        ?? end;
 
       track.beat(`${play.down} at the ${spotOf(start)}`, { kind: 'setup' });
       track.wait(PRESNAP_MS);

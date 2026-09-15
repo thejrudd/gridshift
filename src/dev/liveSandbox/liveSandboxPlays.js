@@ -23,7 +23,7 @@ function diffStats(previous, next) {
   return changed ? delta : null;
 }
 
-const roundPoint = (value) => Math.round((Number(value) || 0) * 10) / 10;
+const roundPoint = (value) => Math.round((Number(value) || 0) * 100) / 100;
 
 // A snapshot can contain several kinds of play for one player. The synthetic
 // splitter groups those by stat category, while provider plays are chronological,
@@ -143,7 +143,7 @@ export function buildReplayDeltaEvents(
   const events = [];
   pending.forEach(({ playerId, points, previous, reconstructed, realPlays, consumedIds }) => {
     const meta = playerMeta.get(playerId) ?? {};
-    const totalPoints = Math.round((points - (Number(previous.points) || 0)) * 10) / 10;
+    const totalPoints = Math.round((points - (Number(previous.points) || 0)) * 100) / 100;
 
     if (realPlays.length) {
       realPlays.forEach((play) => consumedIds.add(play.id));

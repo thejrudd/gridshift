@@ -34,6 +34,12 @@ Feature screens own:
 - Contextual metrics such as rank, season points, projected points, KTC value, owner, matchup, trend, or actions.
 - Section-specific column templates passed into the shared row.
 
+Fantasy player-card surfaces pass `showAccentRail={false}` so team and position
+identity comes from the row treatment without a decorative vertical border;
+the shared hover/focus glow remains available for interactive rows.
+Draft and Trade may retain an accent rail where it communicates selection,
+ownership, or another feature-specific state.
+
 Do not re-create local luminance helpers, team-gradient helpers, headshot fallback logic, status badge contrast, or selector button styles in feature components. Extend the shared files instead.
 
 ## Scrollable Rails And Cues

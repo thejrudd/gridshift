@@ -9,6 +9,7 @@ import {
   getReplayWindow,
   getReplayActiveDuration,
   getReplaySegments,
+  getReplayChartProgress,
   getScoreAtProgress,
   projectGameAtProgress,
   projectGamesAtProgress,
@@ -302,6 +303,53 @@ test('staggered games keep their real order on the slate axis', () => {
   const earlyEnd = getSlateProgressForGameProgress(games, 1, 1);
   const lateStart = getSlateProgressForGameProgress(games, 2, 0);
   assert.ok(lateStart >= earlyEnd, `late game started at ${lateStart}, before ${earlyEnd}`);
+});
+
+test('a busy Sunday receives consecutive chart room instead of sharing one wall-clock interval', () => {
+  const sundayGames = Array.from({ length: 14 }, (_, index) => makeGame({
+    id: `sun-${index + 1}`,
+    date: '2025-11-23T18:00:00.000Z',
+  }));
+  const games = [
+    makeGame({ id: 'thu', date: '2025-11-21T01:15:00.000Z' }),
+    ...sundayGames,
+    makeGame({ id: 'mon', date: '2025-11-25T01:15:00.000Z' }),
+  ];
+
+  const thursdayEnd = getSlateProgressForGameProgress(games, 'thu', 1);
+  const sundayStart = getSlateProgressForGameProgress(games, 'sun-1', 0);
+  const sundayEnd = getSlateProgressForGameProgress(games, 'sun-14', 1);
+  const mondayStart = getSlateProgressForGameProgress(games, 'mon', 0);
+
+  assert.equal(thursdayEnd, sundayStart);
+  assert.equal(sundayEnd, mondayStart);
+  assert.equal(thursdayEnd, 1 / games.length);
+  assert.equal(sundayEnd, (games.length - 1) / games.length);
+
+  sundayGames.slice(1).forEach((game, index) => {
+    const previous = sundayGames[index];
+    assert.equal(
+      getSlateProgressForGameProgress(games, previous.id, 1),
+      getSlateProgressForGameProgress(games, game.id, 0),
+    );
+  });
+});
+
+test('chart NOW follows the furthest started scheduled game, not the active-clock fraction', () => {
+  const sundayGames = Array.from({ length: 14 }, (_, index) => makeGame({
+    id: `sun-${index + 1}`,
+    date: '2025-11-23T18:00:00.000Z',
+  }));
+  const games = [
+    makeGame({ id: 'thu', date: '2025-11-21T01:15:00.000Z' }),
+    ...sundayGames,
+    makeGame({ id: 'mon', date: '2025-11-25T01:15:00.000Z' }),
+  ];
+
+  // At 50% of the active Sunday block, every Sunday game is half played. The
+  // rightmost one therefore reaches 15/16 of the scheduled chart axis.
+  assert.equal(getReplayChartProgress(games, 0.5), 0.90625);
+  assert.equal(getReplayChartProgress(games, 1), 1);
 });
 
 test('an unknown game has no slate position', () => {

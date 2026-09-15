@@ -475,6 +475,11 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_
     && String(playerOwnerRosterId) !== String(myRosterData?.roster_id ?? '')
     ? playerOwnerRosterId
     : null;
+  const hasLoadedSeasonStats = Object.values(statsByYear).some(hasRecordedSeasonStats);
+  const hasLoadedFantasyRows = activeFantasyRowsMatch?.rows?.length > 0
+    || Object.values(fantasyRowsByYear).some((rows) => Array.isArray(rows) && rows.length > 0);
+  const profileDataLoading = Object.values(loadingYears).some(Boolean)
+    || Object.values(loadingFantasyYears).some(Boolean);
 
   useEffect(() => {
     let cancelled = false;
@@ -868,6 +873,10 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_
     : [];
 
   const isRookie = playerMeta.experience === 0;
+  const showRookiePlaceholder = isRookie
+    && !hasLoadedSeasonStats
+    && !hasLoadedFantasyRows
+    && !profileDataLoading;
   const rookieLabel = isRookie ? 'Rookie Season' : `Active Since ${firstSeason}`;
   const canUseVisualForActiveYear = Boolean(
     sleeperId
@@ -1162,7 +1171,7 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_
               fantasyScoringByYear={fantasyScoringByYear}
             />
           </Suspense>
-        ) : isRookie ? (
+        ) : showRookiePlaceholder ? (
           <RookieSeasonPlaceholder
             honorsByYear={honorsByYear}
             accentColor={heroAccent ?? heroBg}

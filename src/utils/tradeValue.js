@@ -6,7 +6,22 @@ import { calcPointsFromTotals } from './scoringEngine.js';
 // age/upside; a ~0.60 factor brings them roughly in line with redraft scale.
 export const DYNASTY_FALLBACK_MULT = 0.60;
 
-const IDP_POSITIONS = new Set(['DL', 'LB', 'DB', 'DE', 'DT', 'CB', 'S', 'ILB', 'OLB', 'SS', 'FS', 'EDG', 'EDGE']);
+// An empty side is worth zero; a side containing an unknown asset has no total.
+export function sumTradeValues(values) {
+  return values.every(Number.isFinite) ? values.reduce((sum, value) => sum + value, 0) : null;
+}
+
+// KTC does not publish market values for these roster positions. Some payloads
+// can still contain a name-matched placeholder row with value 0, which must not
+// short-circuit the league-scored production estimate.
+const GENERATED_VALUE_POSITIONS = new Set([
+  'DL', 'LB', 'DB', 'DE', 'DT', 'EDG', 'EDGE', 'ILB', 'OLB', 'CB', 'S', 'SS', 'FS',
+  'DEF', 'DST', 'D/ST', 'K', 'PK', 'KICKER',
+]);
+
+function isGeneratedValuePosition(position) {
+  return GENERATED_VALUE_POSITIONS.has(String(position ?? '').trim().toUpperCase());
+}
 
 export function computeTradePlayerValueDetail({
   id,
@@ -25,11 +40,14 @@ export function computeTradePlayerValueDetail({
   const player = players?.[id];
   if (!player) return null;
 
-  const ktc = findKtcPlayerFromSleeper(id, players, adjustedKtcPlayers ?? []);
-  let rawVal = getKtcValue(ktc, leagueType);
+  const usesGeneratedValue = isGeneratedValuePosition(player.position);
+  const ktc = usesGeneratedValue
+    ? null
+    : findKtcPlayerFromSleeper(id, players, adjustedKtcPlayers ?? []);
+  let rawVal = usesGeneratedValue ? null : getKtcValue(ktc, leagueType);
   let dynastyFallback = false;
 
-  if (rawVal == null && adjustedDynastyKtcPlayers?.length) {
+  if (!usesGeneratedValue && rawVal == null && adjustedDynastyKtcPlayers?.length) {
     const dynastyKtc = findKtcPlayerFromSleeper(id, players, adjustedDynastyKtcPlayers);
     const dynastyVal = getKtcValue(dynastyKtc, leagueType);
     if (dynastyVal != null) {
@@ -40,10 +58,10 @@ export function computeTradePlayerValueDetail({
 
   const isEstimated = rawVal == null && mergedIDPMap?.has(id);
   if (isEstimated) rawVal = mergedIDPMap.get(id);
-  // KTC does not publish IDP market values. Until GridShift has trustworthy
-  // production to calculate one, leave the player unavailable instead of
-  // presenting an invented zero value.
-  rawVal = rawVal ?? (adjustedKtcPlayers?.length > 0 && !IDP_POSITIONS.has(player.position) ? 0 : null);
+  // Loaded market data does not establish a zero for an unlisted player.
+  // Return before rank arithmetic: JavaScript would coerce null * multiplier
+  // to zero, especially for ranked players below the production game minimum.
+  if (rawVal == null) return null;
 
   const stats = seasonStats?.[id];
   const pts = stats ? calcPointsFromTotals(stats, scoringSettings, player.position) : null;
@@ -61,7 +79,7 @@ export function computeTradePlayerValueDetail({
   }
 
   // Every position receives the same light positional-finish adjustment.
-  // Generated IDP/DST values already originate in league-scored PPG; applying
+  // Generated IDP/DST/kicker values already originate in league-scored PPG; applying
   // the shared rank modifier keeps their relative finish treatment aligned
   // with KTC-backed offensive players.
   if (rankInfo?.rank != null && rankInfo?.posCount > 1) {

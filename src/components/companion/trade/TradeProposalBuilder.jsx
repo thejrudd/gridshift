@@ -218,9 +218,12 @@ function getColorCommentary(verdict, gap, partnerName) {
 
 // ── BroadcastScoreboard ────────────────────────────────────────────────────────
 function BroadcastScoreboard({ yourTotal, theirTotal, yourName, yourAvatar, partnerName, partnerAvatar, verdict, hasItems, onClear, onShareTrade, attribution }) {
-  const { verdict: v, pct = 0, gap = 0 } = verdict;
+  const { verdict: v, pct, gap } = verdict;
+  const valuesUnavailable = hasItems && v === 'unavailable';
+  const safePct = Number.isFinite(pct) ? pct : 0;
+  const safeGap = Number.isFinite(gap) ? gap : 0;
   const sign = v === 'favors_you' ? 1 : v === 'favors_them' ? -1 : 0;
-  const angleDeg = hasItems ? sign * Math.min((pct / 100) * 72, 72) : 0;
+  const angleDeg = hasItems && !valuesUnavailable ? sign * Math.min((safePct / 100) * 72, 72) : 0;
   const angleRad = (angleDeg * Math.PI) / 180;
   const cx = 110; const cy = 112;
   const needleX = cx + 66 * Math.sin(angleRad);
@@ -229,17 +232,21 @@ function BroadcastScoreboard({ yourTotal, theirTotal, yourName, yourAvatar, part
   const amberLen = Math.max(0, Math.min(((90 + angleDeg) / 180) * arcLen, arcLen));
   const verdictText = !hasItems
     ? 'Build Trade'
+    : valuesUnavailable
+      ? 'Values Unavailable'
     : v === 'fair'
       ? 'Fair Deal'
       : v === 'favors_you'
         ? 'Favors You'
         : 'Favors Them';
-  const verdictFill = !hasItems ? 'rgba(255,255,255,0.52)' : v === 'fair' ? '#F5B700' : v === 'favors_you' ? '#22c55e' : '#ef4444';
+  const verdictFill = !hasItems || valuesUnavailable ? 'rgba(255,255,255,0.52)' : v === 'fair' ? '#F5B700' : v === 'favors_you' ? '#22c55e' : '#ef4444';
   const detailText = !hasItems
     ? 'Add players or picks to compare values'
+    : valuesUnavailable
+      ? 'Add players with available values to compare'
     : v === 'fair'
       ? 'Trade values are balanced'
-      : `${fmtKtcValue(gap)} gap · ${pct}% ${v === 'favors_you' ? 'your way' : 'their way'}`;
+      : `${fmtKtcValue(safeGap)} gap · ${safePct}% ${v === 'favors_you' ? 'your way' : 'their way'}`;
   const df = "var(--font-display, 'Barlow Condensed', sans-serif)";
   const ticks = [-64, 0, 64].map((deg) => {
     const rad = (deg * Math.PI) / 180;
@@ -269,7 +276,7 @@ function BroadcastScoreboard({ yourTotal, theirTotal, yourName, yourAvatar, part
       <div className="trade-scoreboard__team-copy" style={{ display: 'flex', flexDirection: 'column', alignItems: align === 'right' ? 'flex-end' : 'flex-start', gap: 2, minWidth: 0, textAlign: align === 'right' ? 'right' : 'left' }}>
         <span className="trade-scoreboard__team-name" style={{ fontFamily: "'Figtree', sans-serif", fontWeight: 700, fontSize: 'var(--type-body)', lineHeight: 1.1, color: 'rgba(255,255,255,0.78)', maxWidth: 210, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
         <span className="trade-scoreboard__team-total" style={{ fontFamily: df, fontWeight: 800, fontSize: 40, lineHeight: 0.92, fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.01em', color: '#fff' }}>
-          {hasItems ? fmtKtcValue(total) : '0'}
+          {hasItems ? (Number.isFinite(total) ? fmtKtcValue(total) : '—') : '0'}
         </span>
       </div>
       {align === 'right' && <Avatar hash={avatar} name={name} align={align} />}

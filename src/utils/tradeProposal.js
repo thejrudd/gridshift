@@ -21,6 +21,7 @@ function cleanText(value, fallback = '') {
 }
 
 function normalizeValue(value) {
+  if (value == null || value === '') return null;
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : null;
 }

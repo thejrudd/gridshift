@@ -43,7 +43,7 @@ export function PlayTrajectoryStrip({ play, homeTeam, awayTeam, awayTheme, homeT
   const geometry = getPlayTrajectory(play, { homeTeam, awayTeam });
   if (!geometry.drawable) return null;
 
-  const { dir, start, end, flag, type, dist, firstDown, kick, scoring } = geometry;
+  const { dir, start, end, flag, type, dist, firstDown, kick, turnover, scoring } = geometry;
   const color = playColor(geometry, barColor);
   // Yard lines stay absolute; `x`/`vx` are the only mirror, and `drawDir` is
   // the direction the mirrored drawing travels.
@@ -88,6 +88,30 @@ export function PlayTrajectoryStrip({ play, homeTeam, awayTeam, awayTheme, homeT
         </span>,
       );
     }
+  } else if (flag === 'int' && turnover) {
+    const xPick = vx(turnover.at);
+    const xFinish = vx(turnover.finish);
+    const air = Math.min(46, Math.abs(turnover.at - start) * 1.6 + 10);
+    paths.push(
+      <path key="throw" className="pv-path" data-type="pass" style={{ stroke: color }} fill="none" vectorEffect="non-scaling-stroke"
+        d={`M${x0} ${GROUND_Y} Q ${(x0 + xPick) / 2} ${GROUND_Y - air} ${xPick} ${GROUND_Y}`} />,
+    );
+    if (turnover.hasReturn) {
+      paths.push(
+        <path key="return" className="pv-return" fill="none" vectorEffect="non-scaling-stroke"
+          d={`M${xPick} ${GROUND_Y} L ${xFinish} ${GROUND_Y}`} />,
+      );
+      marks.push(
+        <span key="finish" className="pv-endwrap is-route" style={{ left: `${x(turnover.finish)}%` }}>
+          <i className="fv-mark is-ret" data-dir={drawDir > 0 ? 'l' : 'r'} title="Return" />
+        </span>,
+      );
+    }
+    marks.push(
+      <span key="outcome" className="pv-endwrap is-route" style={{ left: `${x(turnover.at)}%` }}>
+        <OutcomeMark flag={flag} scoring={scoring} />
+      </span>,
+    );
   } else if (flag === 'sack') {
     // Dragged backwards, then stopped dead — the wall is what makes a sack read
     // as a sack without needing the plays around it for context.

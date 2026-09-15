@@ -4,7 +4,7 @@
 
 import { findKtcDraftPickBaseline, getKtcValue } from './ktcApi.js';
 import { getDraftPickDisplayInfo } from './draftPickDisplay.js';
-import { resolveTradePlayerValueDetail } from './tradeValue.js';
+import { resolveTradePlayerValueDetail, sumTradeValues } from './tradeValue.js';
 
 // ── Redraft pick valuation ────────────────────────────────────────────────────
 
@@ -240,15 +240,13 @@ function getPlayerLabel(player, fallbackId) {
   return player?.full_name ?? (`${player?.first_name ?? ''} ${player?.last_name ?? ''}`.trim() || fallbackId);
 }
 
-function buildPlayerTradeItem(playerId, player, detail, { ktcPlayers = [] } = {}) {
-  const missingPlayerFallbackVal = !player && ktcPlayers?.length > 0 ? 0 : null;
-
+function buildPlayerTradeItem(playerId, player, detail) {
   return {
     id: playerId,
     label: getPlayerLabel(player, playerId),
     position: player?.position ?? '',
     team: player?.team ?? '',
-    val: detail?.value ?? missingPlayerFallbackVal,
+    val: detail?.value ?? null,
     dynastyFallback: detail?.dynastyFallback ?? false,
     idpFallback: detail?.isEstimated ?? false,
     type: 'player',
@@ -301,7 +299,7 @@ export function valueSide(playerIds, pickItems, sleeperPlayers, ktcPlayers, leag
       leagueType,
       mergedIDPMap: idpValueMap,
     });
-    items.push(buildPlayerTradeItem(pid, sp, detail, { ktcPlayers }));
+    items.push(buildPlayerTradeItem(pid, sp, detail));
   }
 
   for (const pick of pickItems) {
@@ -318,7 +316,7 @@ export function valueSide(playerIds, pickItems, sleeperPlayers, ktcPlayers, leag
     items.push(buildDraftPickTradeItem(pick, valuation, { includeKtcEntry: true }));
   }
 
-  const total = items.reduce((sum, it) => sum + (it.val ?? 0), 0);
+  const total = sumTradeValues(items.map((it) => it.val));
   return { total, items };
 }
 
@@ -329,6 +327,9 @@ export function valueSide(playerIds, pickItems, sleeperPlayers, ktcPlayers, leag
  * @returns {{ verdict: 'fair'|'favors_you'|'favors_them', gap: number, pct: number }}
  */
 export function evaluateTrade(yourTotal, theirTotal) {
+  if (!Number.isFinite(yourTotal) || !Number.isFinite(theirTotal)) {
+    return { verdict: 'unavailable', gap: null, pct: null };
+  }
   const gap = Math.abs(yourTotal - theirTotal);
   const maxVal = Math.max(yourTotal, theirTotal);
   const pct = maxVal > 0 ? Math.round((gap / maxVal) * 100) : 0;

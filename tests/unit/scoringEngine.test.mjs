@@ -24,6 +24,23 @@ describe('scoring engine provider profiles', () => {
     assert.equal(points, 23);
   });
 
+  it('applies field-goal yard bonuses and excludes IDP tackle scoring from offense', () => {
+    assert.equal(calcPoints({ fgm_yds_over_30: 22 }, {
+      ...DEFAULT_SCORING,
+      fgm_yds_over_30: 0.1,
+    }, 'K'), 2.2);
+    assert.equal(calcPoints({ idp_tkl: 4, idp_tkl_ast: 2 }, {
+      ...DEFAULT_SCORING,
+      idp_tkl: 1,
+      idp_tkl_ast: 0.5,
+    }, 'WR'), 0);
+    assert.equal(calcPoints({ idp_tkl: 4, idp_tkl_ast: 2 }, {
+      ...DEFAULT_SCORING,
+      idp_tkl: 1,
+      idp_tkl_ast: 0.5,
+    }, 'LB'), 5);
+  });
+
   it('applies ESPN position overrides by player position', () => {
     const profile = importEspnScoringProfile({
       scoringItems: [

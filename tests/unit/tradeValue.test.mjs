@@ -228,6 +228,29 @@ describe('canonical trade values', () => {
     assert.equal(detail.rawVal, snapshot.mergedIDPMap.get(idpPlayerId));
   });
 
+  it('computes every IDP group for an IDP-flex-only league', () => {
+    const flexPlayers = {
+      dl: { player_id: 'dl', full_name: 'Flex Edge', position: 'DL', team: 'BUF' },
+      lb: { player_id: 'lb', full_name: 'Flex Linebacker', position: 'LB', team: 'BUF' },
+      db: { player_id: 'db', full_name: 'Flex Defensive Back', position: 'DB', team: 'BUF' },
+    };
+    const flexStats = {
+      dl: { gp: 3, idp_tkl: 30 },
+      lb: { gp: 3, idp_tkl: 30 },
+      db: { gp: 3, idp_tkl: 30 },
+    };
+    const flexScoring = { ...DEFAULT_SCORING, idp_tkl: 1 };
+    const values = modules.idpEngine.computeIDPValues(
+      flexPlayers,
+      flexStats,
+      flexScoring,
+      ['IDP_FLEX'],
+    );
+
+    assert.deepEqual([...values.keys()].sort(), ['db', 'dl', 'lb']);
+    assert.ok([...values.values()].every((value) => value > 0));
+  });
+
   it('does not present an unsupported IDP player as a zero-value KTC fallback', () => {
     const detail = modules.tradeValue.computeTradePlayerValueDetail({
       id: 'idp-rookie',

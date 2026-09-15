@@ -3,6 +3,9 @@
 // snapshot deltas as feed events, and formats stat lines / game glances for
 // the Companion Live tab.
 
+import { calcPoints } from './scoringEngine.js';
+import { splitDeltaIntoPlays } from './livePlaySplitting.js';
+
 const TEAM_ALIASES = {
   ARI: 'ARI',
   ATL: 'ATL',
@@ -78,6 +81,51 @@ function getStatKeyForBdlRow(row) {
   return `${normalizeName(getBdlPlayerName(row))}|${getTeamAbbr(row?.team ?? row?.player?.team)}`;
 }
 
+function finiteNumber(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function firstFiniteNumber(...values) {
+  for (const value of values) {
+    const numeric = finiteNumber(value);
+    if (numeric != null) return numeric;
+  }
+  return null;
+}
+
+function roundLivePoints(value) {
+  return Math.round(Number(value) * 100) / 100;
+}
+
+/**
+ * Compare the BDL-derived player total with Sleeper's fantasy total without
+ * changing either source. Sleeper owns the score; BDL remains the explanation
+ * layer. The adjustment is surfaced by the Live breakdown when the two differ.
+ */
+export function reconcileLiveFantasyPoints({
+  derivedPoints = null,
+  authoritativePoints = null,
+} = {}) {
+  const derived = finiteNumber(derivedPoints);
+  const authoritative = finiteNumber(authoritativePoints);
+  if (derived == null || authoritative == null) {
+    return {
+      status: 'unavailable',
+      derivedPoints: derived,
+      authoritativePoints: authoritative,
+      adjustment: null,
+    };
+  }
+  const adjustment = roundLivePoints(authoritative - derived);
+  return {
+    status: Math.abs(adjustment) < 0.01 ? 'matched' : 'adjusted',
+    derivedPoints: roundLivePoints(derived),
+    authoritativePoints: roundLivePoints(authoritative),
+    adjustment,
+  };
+}
+
 export function buildStatIndex(statsByGame) {
   const index = new Map();
   Object.entries(statsByGame ?? {}).forEach(([gameId, rows]) => {
@@ -103,25 +151,57 @@ export function resolveCurrentPlayerPoints({
   sleeperPoints = null,
   sleeperDerivedPoints = null,
   suppressFallback = false,
+  preferAuthoritative = false,
 } = {}) {
+  if (preferAuthoritative && !suppressFallback) {
+    if (Number.isFinite(Number(sleeperPoints))) return Number(sleeperPoints);
+    if (Number.isFinite(Number(sleeperDerivedPoints))) return Number(sleeperDerivedPoints);
+  }
   if (hasMappedStats) return Number.isFinite(Number(livePoints)) ? Number(livePoints) : 0;
   if (suppressFallback) return 0;
   if (Number.isFinite(Number(sleeperPoints))) return Number(sleeperPoints);
   return Number.isFinite(Number(sleeperDerivedPoints)) ? Number(sleeperDerivedPoints) : 0;
 }
 
-export function mapBdlStatsToGridShift(row) {
+export function mapBdlStatsToGridShift(row, position = null) {
+  const passingCompletions = finiteNumber(row?.passing_completions);
+  const passingAttempts = finiteNumber(row?.passing_attempts);
+  const passingIncompletions = finiteNumber(row?.passing_incompletions);
   const fieldGoalsMade = Number(row?.field_goals_made) || 0;
   const fieldGoalAttempts = Number(row?.field_goal_attempts);
   const extraPointsMade = Number(row?.extra_points_made) || 0;
   const extraPointAttemptsRaw = row?.extra_point_attempts ?? row?.extra_points_attempted;
   const extraPointAttempts = Number(extraPointAttemptsRaw);
+  const totalTackles = firstFiniteNumber(row?.total_tackles) ?? 0;
+  const soloTackles = firstFiniteNumber(row?.solo_tackles) ?? 0;
+  const assistedTackles = firstFiniteNumber(
+    row?.assisted_tackles,
+    row?.assistedTackles,
+    row?.assist_tackles,
+    row?.assistTackles,
+  ) ?? Math.max(0, totalTackles - soloTackles);
+  const hasPosition = position != null && String(position).trim() !== '';
+  const includeIdpStats = !hasPosition || IDP_POSITIONS.has(String(position).toUpperCase());
   return {
     pass_yd: row?.passing_yards ?? 0,
     pass_td: row?.passing_touchdowns ?? 0,
     pass_int: row?.passing_interceptions ?? 0,
-    pass_cmp: row?.passing_completions ?? 0,
-    pass_att: row?.passing_attempts ?? 0,
+    pass_cmp: passingCompletions ?? 0,
+    pass_att: passingAttempts ?? 0,
+    // The live game-stat endpoint exposes attempts and completions but not
+    // always an explicit incompletions counter. Keep an explicit provider
+    // value when one is present and otherwise derive the NFL box-score total.
+    pass_inc: passingIncompletions ?? (
+      passingAttempts != null && passingCompletions != null
+        ? Math.max(0, passingAttempts - passingCompletions)
+        : 0
+    ),
+    // These fields are accepted as forward-compatible provider aliases. The
+    // current BDL game-stat contract does not guarantee them; connected
+    // Sleeper weekly stats supply the authoritative values when available.
+    pass_fd: row?.passing_first_downs ?? 0,
+    rush_fd: row?.rushing_first_downs ?? 0,
+    rec_fd: row?.receiving_first_downs ?? 0,
     pass_sack: row?.sacks ?? 0,
     rush_att: row?.rushing_attempts ?? 0,
     rush_yd: row?.rushing_yards ?? 0,
@@ -145,25 +225,64 @@ export function mapBdlStatsToGridShift(row) {
     // not XP attempts. Derive misses only when a provider payload actually
     // supplies an attempt field; never infer one from the team score.
     xpmiss: Number.isFinite(extraPointAttempts) ? Math.max(0, extraPointAttempts - extraPointsMade) : 0,
-    idp_tkl: row?.total_tackles ?? 0,
-    idp_tkl_solo: row?.solo_tackles ?? 0,
-    idp_tkl_loss: row?.tackles_for_loss ?? 0,
-    idp_pd: row?.passes_defended ?? 0,
-    idp_qbhit: row?.qb_hits ?? 0,
-    idp_sack: row?.defensive_sacks ?? 0,
-    idp_int: row?.defensive_interceptions ?? 0,
-    idp_int_ret_yd: row?.interception_yards ?? 0,
-    idp_int_td: row?.interception_touchdowns ?? 0,
-    idp_fr: row?.fumbles_recovered ?? 0,
-    idp_fr_td: row?.fumbles_touchdowns ?? 0,
-    idp_def_td: (row?.interception_touchdowns ?? 0) + (row?.fumbles_touchdowns ?? 0),
+    idp_tkl: includeIdpStats ? totalTackles : 0,
+    idp_tkl_solo: includeIdpStats ? soloTackles : 0,
+    idp_tkl_ast: includeIdpStats ? assistedTackles : 0,
+    idp_tkl_loss: includeIdpStats ? (row?.tackles_for_loss ?? 0) : 0,
+    idp_pd: includeIdpStats ? (row?.passes_defended ?? 0) : 0,
+    idp_qbhit: includeIdpStats ? (row?.qb_hits ?? 0) : 0,
+    idp_sack: includeIdpStats ? (row?.defensive_sacks ?? 0) : 0,
+    idp_int: includeIdpStats ? (row?.defensive_interceptions ?? 0) : 0,
+    idp_int_ret_yd: includeIdpStats ? (row?.interception_yards ?? 0) : 0,
+    idp_int_td: includeIdpStats ? (row?.interception_touchdowns ?? 0) : 0,
+    idp_fr: includeIdpStats ? (row?.fumbles_recovered ?? 0) : 0,
+    idp_fr_td: includeIdpStats ? (row?.fumbles_touchdowns ?? 0) : 0,
+    idp_def_td: includeIdpStats
+      ? (row?.interception_touchdowns ?? 0) + (row?.fumbles_touchdowns ?? 0)
+      : 0,
   };
+}
+
+/**
+ * The BDL live game-stat row is intentionally sparse: it is excellent for
+ * current box-score counters, but its documented shape does not include the
+ * player-level first-down counters used by custom Sleeper leagues. Overlay
+ * only those scoring inputs from the weekly Sleeper row; the rest of the live
+ * row remains provider-current.
+ */
+export function mergeLiveScoringStats(liveStats, weeklyStats) {
+  if (!liveStats && !weeklyStats) return null;
+  if (!liveStats) return weeklyStats ? { ...weeklyStats } : null;
+  if (!weeklyStats || typeof weeklyStats !== 'object') return { ...liveStats };
+
+  const merged = { ...liveStats };
+  const aliases = {
+    pass_inc: ['pass_inc', 'passing_incompletions'],
+    pass_fd: ['pass_fd', 'passing_first_downs'],
+    rush_fd: ['rush_fd', 'rushing_first_downs'],
+    rec_fd: ['rec_fd', 'receiving_first_downs'],
+    fgm_yds: ['fgm_yds', 'field_goal_yards'],
+    fgm_yds_over_30: ['fgm_yds_over_30', 'field_goal_yards_over_30'],
+    idp_tkl_ast: ['idp_tkl_ast', 'assisted_tackles', 'assistedTackles', 'assist_tackles'],
+  };
+  Object.entries(aliases).forEach(([target, keys]) => {
+    const value = keys.map((key) => finiteNumber(weeklyStats[key])).find((entry) => entry != null);
+    if (value != null) merged[target] = value;
+  });
+  return merged;
 }
 
 // ── Game glance ──────────────────────────────────────────────────────────
 
 function getRawGameStatus(game) {
   return String(game?.status ?? '').trim().toLowerCase();
+}
+
+function getRawGameStatusState(game) {
+  return String(game?.status_state ?? game?.statusState ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ');
 }
 
 export function getGameStatusText(game) {
@@ -173,7 +292,19 @@ export function getGameStatusText(game) {
 
 export function isLiveGame(game) {
   const status = getRawGameStatus(game);
-  return status.includes('progress')
+  const state = getRawGameStatusState(game);
+  if (['completed', 'complete', 'final', 'post', 'closed', 'scheduled', 'pre', 'not started', 'upcoming', 'delayed', 'delay', 'postponed'].includes(state)) {
+    return false;
+  }
+  // BALLDONTLIE's raw Games response can expose an in-progress game as a
+  // clock-first status such as "4:12 - 1st". Statistics Scores normalizes that
+  // shape before rendering, while Fantasy Live consumes the raw response.
+  const clockQuarterStatus = /^\d{1,2}:\d{2}\s*(?:-|·)\s*\d+(?:st|nd|rd|th)(?:\s+(?:q|quarter))?$/i.test(status);
+  return state === 'in progress'
+    || state === 'live'
+    || state === 'in'
+    || clockQuarterStatus
+    || status.includes('progress')
     || status.includes('quarter')
     || status.includes('qtr')
     || status.includes('half')
@@ -216,8 +347,9 @@ export function isCompleteScheduleWeek(schedule) {
 
 /**
  * Estimates progress without ever treating it as settlement evidence. This is
- * used only when the live provider row is missing or unrecognized, preventing
- * already-earned points from being added to a second full-game projection.
+ * a conservative fallback when live provider timing is missing or
+ * unrecognized, preventing already-earned points from being added to a second
+ * full-game projection.
  */
 export function getFallbackRemainingGameFraction({
   scheduleEntry = null,
@@ -446,6 +578,7 @@ const DELTA_DESCRIPTIONS = [
   { key: 'ret_td', label: () => 'Return TD' },
   { key: 'fum_ret_td', label: () => 'Fumble return TD' },
   { key: 'fgm', label: (v) => `${v > 1 ? `${v} FGs made` : 'FG made'}` },
+  { key: 'fgm_yds_over_30', label: (v) => `${v} FG yards over 30` },
   { key: 'fgmiss', label: (v) => `${v > 1 ? `${v} FGs missed` : 'FG missed'}` },
   { key: 'xpm', label: (v) => `${v > 1 ? `${v} XPs` : 'XP made'}` },
   { key: 'xpmiss', label: (v) => `${v > 1 ? `${v} XPs missed` : 'XP missed'}` },
@@ -470,6 +603,8 @@ const DELTA_DESCRIPTIONS = [
   { key: 'rec_fd', label: (v) => `${v} receiving first down${v === 1 ? '' : 's'}` },
   { key: 'kr_yd', label: (v) => `${v > 0 ? '+' : ''}${v} kick return yds` },
   { key: 'pr_yd', label: (v) => `${v > 0 ? '+' : ''}${v} punt return yds` },
+  { key: 'idp_tkl_ast', label: (v) => `${v} assisted tackle${v === 1 ? '' : 's'}` },
+  { key: 'idp_tkl_solo', label: (v) => `${v} solo tackle${v === 1 ? '' : 's'}` },
   { key: 'idp_tkl', label: (v) => `${v} tkl` },
 ];
 
@@ -520,15 +655,16 @@ export function getEventKind(delta, position) {
 }
 
 export function describeDelta(delta) {
+  const safeDelta = delta ?? {};
   const parts = [];
   for (const { key, label } of DELTA_DESCRIPTIONS) {
-    const value = n(delta[key]);
+    const value = n(safeDelta[key]);
     if (!value) continue;
     parts.push(label(value));
     if (parts.length >= 3) break;
   }
   if (parts.length) return parts.join(', ');
-  return Object.values(delta ?? {}).some((value) => n(value) !== 0)
+  return Object.values(safeDelta).some((value) => n(value) !== 0)
     ? 'Fantasy scoring update'
     : '';
 }
@@ -551,28 +687,66 @@ function diffStats(prev, next) {
  * and returns new feed events (most recent first). `snapshots` are Maps of
  * playerId -> { stats, points }.
  */
-export function buildDeltaEvents(prevSnapshot, nextSnapshot, playerMeta, { now = Date.now() } = {}) {
+export function buildDeltaEvents(
+  prevSnapshot,
+  nextSnapshot,
+  playerMeta,
+  { now = Date.now(), scoringSettings = null } = {},
+) {
   const events = [];
   nextSnapshot.forEach(({ stats, points }, playerId) => {
     const prev = prevSnapshot.get(playerId);
     if (!prev || !stats) return;
     const delta = diffStats(prev.stats, stats);
+    // A points-only change is a Sleeper correction, not a football event. The
+    // reconciler pins it to the play it belongs to as an adjustment; emitting
+    // a feed row for it here would double the moment.
     if (!delta) return;
+    const pointDelta = Math.round((points - n(prev.points)) * 100) / 100;
+    if (!Number.isFinite(pointDelta) || pointDelta === 0) return;
     const meta = playerMeta.get(playerId) ?? {};
-    const desc = describeDelta(delta);
-    if (!desc) return;
-    const classification = getEventClassification(delta, meta.position);
-    events.push({
-      id: `${playerId}-${now}`,
-      playerId,
-      ...classification,
-      desc,
-      // The description and point change are both derived from this exact
-      // stat delta. Keep it on the event so an unmatched live snapshot still
-      // has the same scoring breakdown as a provider-enriched play.
-      stats: delta,
-      pts: Math.round((points - n(prev.points)) * 10) / 10,
-      at: now,
+    const splitPlays = splitDeltaIntoPlays(delta);
+    if (!splitPlays.length) return;
+
+    // Use the active league scoring to allocate the snapshot's point movement
+    // to each split play. When the scoring profile is unavailable (older call
+    // sites and small utilities), preserve the authoritative aggregate by
+    // distributing it evenly and correcting the final row for rounding.
+    const calculated = splitPlays.map((eventStats) => (
+      scoringSettings
+        ? calcPoints(eventStats, scoringSettings, meta.position)
+        : pointDelta / splitPlays.length
+    ));
+    const hasScoredPlay = calculated.some((value) => Number.isFinite(value) && value !== 0);
+    const relevant = splitPlays
+      .map((eventStats, index) => ({ eventStats, value: calculated[index] }))
+      .filter(({ value }) => !scoringSettings || !hasScoredPlay || (Number.isFinite(value) && value !== 0));
+    if (!relevant.length) return;
+
+    const values = relevant.map(({ value }) => (
+      Math.round((Number.isFinite(value) ? value : 0) * 100) / 100
+    ));
+    const allocated = values.reduce((sum, value) => sum + value, 0);
+    values[values.length - 1] = Math.round((values.at(-1) + pointDelta - allocated) * 100) / 100;
+
+    relevant.forEach(({ eventStats }, index) => {
+      const desc = describeDelta(eventStats);
+      if (!desc || !Number.isFinite(values[index]) || values[index] === 0) return;
+      const classification = getEventClassification(eventStats, meta.position);
+      events.push({
+        id: `${playerId}-${now}-${index}`,
+        playerId,
+        ...classification,
+        desc,
+        // The description and point change are both derived from this exact
+        // split stat delta. Keep each slice on its own row so a polling gap
+        // cannot turn several football plays into one headline.
+        stats: eventStats,
+        pts: values[index],
+        at: now,
+        source: 'stats-delta',
+        estimated: false,
+      });
     });
   });
   return events;

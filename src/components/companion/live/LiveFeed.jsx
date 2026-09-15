@@ -29,6 +29,7 @@ const PLAY_STAT_LABELS = [
   ['rec_yd', 'Rec yds'],
   ['rec_td', 'Rec TD'],
   ['fgm', 'FG made'],
+  ['fgm_yds_over_30', 'FG yds over 30'],
   ['fgmiss', 'FG missed'],
   ['xpm', 'XP made'],
   ['xpmiss', 'XP missed'],
@@ -37,11 +38,12 @@ const PLAY_STAT_LABELS = [
   ['fum_lost', 'Fumbles lost'],
   ['def_ff', 'Forced fum'],
   ['def_pass_def', 'Pass def'],
+  ['idp_tkl_ast', 'Assisted tackles'],
 ];
 
 function formatSigned(value) {
   const numeric = Number(value) || 0;
-  return `${numeric >= 0 ? '+' : '−'}${Math.abs(numeric).toFixed(1)}`;
+  return `${numeric >= 0 ? '+' : '−'}${Math.abs(numeric).toFixed(2)}`;
 }
 
 function scrollRowToFeedTop(row, behavior = 'auto') {
@@ -265,23 +267,37 @@ function PlayDetail({ event, entry, side, scoringSettings, onOpenPlayer, showPla
     const contributorEntry = entriesById?.get(contributor.playerId) ?? entry;
     const contributorPosition = contributor.position
       ?? String(contributorEntry?.row?.player?.position ?? position).toUpperCase();
+    // The play's own scored value, before the residual the reconciler pinned
+    // to it. The stat lines below explain that number and nothing else; the
+    // residual is Sleeper's, and gets its own line.
+    const playPts = Number(contributor.rawPts ?? contributor.pts) || 0;
     return {
       contributor,
       entry: contributorEntry,
+      adjustment: Number(contributor.adjustment) || 0,
+      playPts,
+      uncredited: contributor.status === 'unconfirmed',
       breakdown: contributor.stats
         ? buildFantasyScoringBreakdown(contributor.stats, scoringSettings, contributorPosition, {
             // Provider-play values are scored from this exact stat line. Do
             // not turn a provisional snapshot share into a fictional scoring
             // adjustment beneath an otherwise complete touchdown.
-            ...(contributor.estimated ? {} : { authoritativeTotal: Number(contributor.pts) || 0 }),
-            adjustmentLabel: 'Play scoring adjustment',
+            ...(contributor.estimated ? {} : { authoritativeTotal: playPts }),
+            adjustmentLabel: contributor.source === 'stats-delta'
+              ? 'Sleeper scoring adjustment'
+              : 'Play scoring adjustment',
             fallbackTotalLabel: 'Play fantasy impact',
           })
-        : { rows: [], total: Number(contributor.pts) || 0 },
+        : { rows: [], total: playPts },
     };
   }), [event, entriesById, entry, position, scoringSettings]);
   const hasSharedContributors = contributorBreakdowns.length > 1;
-  const hasBreakdown = contributorBreakdowns.some(({ breakdown }) => breakdown.rows.length > 0);
+  const hasBreakdown = contributorBreakdowns.some(({ breakdown, adjustment, uncredited }) => (
+    breakdown.rows.length > 0 || adjustment !== 0 || uncredited
+  ));
+  const displayPts = Number.isFinite(Number(event.displayPts))
+    ? Number(event.displayPts)
+    : Number(event.pts) || 0;
 
   const stats = PLAY_STAT_LABELS
     .map(([key, label]) => [label, Number(event.stats?.[key]) || 0])
@@ -309,7 +325,9 @@ function PlayDetail({ event, entry, side, scoringSettings, onOpenPlayer, showPla
 
       {hasBreakdown ? (
         <div className="fl-exp__lines">
-          {contributorBreakdowns.map(({ contributor, entry: contributorEntry, breakdown }) => (
+          {contributorBreakdowns.map(({
+            contributor, entry: contributorEntry, breakdown, adjustment, playPts, uncredited,
+          }) => (
             <div className="fl-exp__contributor" key={contributor.playerId ?? contributor.id}>
               {hasSharedContributors && (
                 <div className="fl-exp__contributor-head">
@@ -328,15 +346,38 @@ function PlayDetail({ event, entry, side, scoringSettings, onOpenPlayer, showPla
                   </span>
                 </div>
               ))}
+              {/* The residual between Sleeper's number for this player and the
+                  plays it has confirmed, pinned to their latest confirmed
+                  play. It belongs to Sleeper, not to the football above. */}
+              {adjustment !== 0 && !uncredited && (
+                <div className="fl-exp__ln">
+                  <span>Sleeper adjustment</span>
+                  <span
+                    className="fl-exp__lv"
+                    style={{ color: adjustment < 0 ? 'var(--color-accent-red)' : 'var(--color-label)' }}
+                  >
+                    {formatSigned(adjustment)}
+                  </span>
+                </div>
+              )}
+              {/* The stat lines above are what the play description says
+                  happened. Sleeper's own line never contained it, so the value
+                  they add up to is not in anybody's total. */}
+              {uncredited && (
+                <div className="fl-exp__ln is-uncredited">
+                  <span>Not credited by Sleeper</span>
+                  <span className="fl-exp__lv">{formatSigned(playPts)}</span>
+                </div>
+              )}
             </div>
           ))}
           <div className="fl-exp__ln is-total">
             <span>This play</span>
             <span
               className="fl-exp__lv"
-              style={{ color: (Number(event.pts) || 0) >= 0 ? 'var(--color-accent-green)' : 'var(--color-accent-red)' }}
+              style={{ color: displayPts >= 0 ? 'var(--color-accent-green)' : 'var(--color-accent-red)' }}
             >
-              {formatSigned(event.pts)}
+              {formatSigned(displayPts)}
             </span>
           </div>
         </div>
@@ -389,6 +430,7 @@ export function LiveFeedList({
   anchorProgress = null,
   selectedEventId = null,
   selectionRequest = 0,
+  onSelectEvent,
   onOpenPlayer,
   emptyMessage = 'No scoring plays yet.',
   // Provider-backed scoring plays can replay in both live and sandbox modes.
@@ -402,9 +444,9 @@ export function LiveFeedList({
   const handledSelectionRef = useRef(null);
 
   // Scrubbing the pace chart drops the feed at the play that was on screen at
-  // that moment. The chart's axis is game progress, so the anchor is too: the
-  // latest play at or before that point of the games is what a viewer would
-  // have been looking at.
+  // that moment. The feed and chart share the kickoff-ordered slate axis, so
+  // the latest play at or before that point is what a viewer would have been
+  // looking at.
   let anchorId = null;
   if (anchorProgress != null && events.length) {
     let latest = -1;
@@ -427,11 +469,16 @@ export function LiveFeedList({
   }, [anchorProgress, anchorId]);
 
   useEffect(() => {
-    if (!selectedEventId) return undefined;
-    const selectionKey = `${selectedEventId}:${selectionRequest}`;
-    if (handledSelectionRef.current === selectionKey) return undefined;
+    // `selectionRequest` is the chart-to-feed navigation nonce. A feed click
+    // also changes selectedEventId, but it must not cause the row to scroll
+    // itself back to the top of the independent feed viewport.
+    if (!selectedEventId || !selectionRequest) {
+      if (!selectedEventId) handledSelectionRef.current = null;
+      return undefined;
+    }
+    if (handledSelectionRef.current === selectionRequest) return undefined;
     if (!events.some((event) => event.id === selectedEventId)) return undefined;
-    handledSelectionRef.current = selectionKey;
+    handledSelectionRef.current = selectionRequest;
     let scrollFrame = null;
     const stateFrame = window.requestAnimationFrame(() => {
       setOpenId(selectedEventId);
@@ -476,14 +523,35 @@ export function LiveFeedList({
         const isSharedPlay = contributorEntries.length > 1;
         const isOpen = openId === event.id;
         const isSelected = selectedEventId === event.id;
+        // A shared snap can mix statuses, so the row reads its contributors
+        // rather than only the player it is filed under. Confirmed rows carry
+        // no marker at all — the absence is the "settled" state.
+        const rowStatuses = (event.contributors?.length ? event.contributors : [event])
+          .map((contributor) => contributor.status);
+        // A play Sleeper has had its chance to credit and did not: it counts
+        // nothing, so saying so is the only honest thing left to do.
+        const isUncredited = rowStatuses.length > 0
+          && rowStatuses.every((status) => status === 'unconfirmed');
+        // A play Sleeper has not accounted for yet.
+        const isPending = !isUncredited && rowStatuses.some((status) => status === 'pending');
+        // The narrow fallback: Sleeper reported stats no play explained, so
+        // this row is a stat line rather than a described football moment.
+        const isStatUpdate = event.source === 'stat-update';
+        const displayPts = Number.isFinite(Number(event.displayPts))
+          ? Number(event.displayPts)
+          : Number(event.pts) || 0;
         return (
           <Fragment key={event.id}>
             <button
               type="button"
               ref={(node) => { rowRefs.current[event.id] = node; }}
-              className={`fl-play${isOpen ? ' is-open' : ''}${isSelected ? ' is-selected' : ''}${flashId === event.id ? ' is-flash' : ''}`}
+              className={`fl-play${isOpen ? ' is-open' : ''}${isSelected ? ' is-selected' : ''}${flashId === event.id ? ' is-flash' : ''}${isUncredited ? ' is-uncredited' : ''}`}
+              data-event-id={event.id}
               style={{ '--fl-team': color, '--fl-wash': withAlpha(color, 0.13) }}
-              onClick={() => setOpenId(isOpen ? null : event.id)}
+              onClick={() => {
+                setOpenId(isOpen ? null : event.id);
+                onSelectEvent?.(event);
+              }}
               aria-expanded={isOpen}
             >
               <span className="fl-play__figure">
@@ -501,6 +569,9 @@ export function LiveFeedList({
                   {isSharedPlay
                     ? <span className="fl-play__shared">{contributorEntries.length} rostered</span>
                     : <LivePosChip position={entry.row.player?.position} />}
+                  {isStatUpdate && <span className="fl-play__shared">Stat update</span>}
+                  {isPending && <span className="fl-play__shared">Pending</span>}
+                  {isUncredited && <span className="fl-play__shared">Not credited</span>}
                 </span>
                 <span className="fl-play__desc">{event.desc}</span>
                 {event.glance && (
@@ -513,15 +584,17 @@ export function LiveFeedList({
                 )}
               </span>
               <span className="fl-play__delta">
-                <span className={`fl-play__dv${(Number(event.pts) || 0) >= 0 ? ' is-up' : ' is-down'}`}>
-                  {formatSigned(event.pts)}
+                <span className={`fl-play__dv${displayPts >= 0 ? ' is-up' : ' is-down'}`}>
+                  {formatSigned(displayPts)}
                 </span>
-                <span className="fl-play__dt">{(isSharedPlay ? side.pace.total : entry.pace.points).toFixed(1)} total</span>
+                <span className="fl-play__dt">{(isSharedPlay ? side.pace.total : entry.pace.points).toFixed(2)} total</span>
               </span>
             </button>
             {isOpen && (
               <PlayDetail
-                showPlayField={showPlayField}
+                // A stat-update row is a Sleeper stat line, not a snap: there
+                // is no play to draw on the field.
+                showPlayField={showPlayField && !isStatUpdate}
                 event={event}
                 entry={entry}
                 side={side}

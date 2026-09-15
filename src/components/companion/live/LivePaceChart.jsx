@@ -7,8 +7,9 @@
 // touchdowns and long field goals — are drawn as selectable milestones. Pick
 // one and it opens that play in the scoring player's card.
 //
-// Production uses shared game progress. Mock play-by-play uses consecutive
-// schedule-aware game segments so inactive weekdays do not consume chart room.
+// The chart uses consecutive kickoff-ordered game segments so feed rows and
+// chart milestones share one chronological slate axis. Player/game progress is
+// retained separately for pace and win-probability calculations.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { formatGameClock, getLiveEventLabel } from './liveVisuals.js';
@@ -279,10 +280,10 @@ export default function LivePaceChart({
     : null;
   const readoutSource = activeMark ?? selectedMark;
   const readoutMark = readoutSource
-    ? `${getLiveEventLabel(readoutSource.event)} · ${readoutSource.event.pts >= 0 ? '+' : '−'}${Math.abs(Number(readoutSource.event.pts) || 0).toFixed(1)}`
+    ? `${getLiveEventLabel(readoutSource.event)} · ${readoutSource.event.pts >= 0 ? '+' : '−'}${Math.abs(Number(readoutSource.event.pts) || 0).toFixed(2)}`
     : null;
-  const summaryScoreA = Number(displayPoint?.a ?? left.pace.total).toFixed(1);
-  const summaryScoreB = Number(displayPoint?.b ?? right.pace.total).toFixed(1);
+  const summaryScoreA = Number(displayPoint?.a ?? left.pace.total).toFixed(2);
+  const summaryScoreB = Number(displayPoint?.b ?? right.pace.total).toFixed(2);
   const summaryProbA = Number(displayPoint?.p ?? liveWinProbA);
   const probabilityLabels = formatWinProbabilityPair(summaryProbA, {
     settled: Boolean(displayPoint?.settled ?? liveSettled),
@@ -443,9 +444,9 @@ export default function LivePaceChart({
           ) : displayPoint ? (
             <span className="fl-chart__readout">
               <span className="fl-chart__t">{isLive ? 'Now' : formatTimelinePoint(displayPoint.x)}</span>
-              <span style={{ color: left.palette[0] }}>{Number(displayPoint.a ?? 0).toFixed(1)}</span>
+              <span style={{ color: left.palette[0] }}>{Number(displayPoint.a ?? 0).toFixed(2)}</span>
               <span className="fl-chart__dash" aria-hidden="true">–</span>
-              <span style={{ color: right.palette[0] }}>{Number(displayPoint.b ?? 0).toFixed(1)}</span>
+              <span style={{ color: right.palette[0] }}>{Number(displayPoint.b ?? 0).toFixed(2)}</span>
               {Number.isFinite(Number(displayPoint.p)) && (
                 <span className="fl-chart__t is-strong">{probabilityLabels.a} {left.initials}</span>
               )}
@@ -547,7 +548,7 @@ export default function LivePaceChart({
           style={{ height: `${height}px`, width: `${width}px` }}
           viewBox={`0 0 ${width} ${height}`}
           role="img"
-          aria-label={`Scoring pace. ${left.name} ${left.pace.total.toFixed(1)}, ${right.name} ${right.pace.total.toFixed(1)}.`}
+          aria-label={`Scoring pace. ${left.name} ${left.pace.total.toFixed(2)}, ${right.name} ${right.pace.total.toFixed(2)}.`}
           onPointerMove={(event) => {
             const point = pickPoint(event.clientX, event.clientY, event.currentTarget);
             onHover?.(point);
@@ -636,6 +637,7 @@ export default function LivePaceChart({
               key={mark.event.id}
               className={`fl-chart__mark${mark.negative ? ' is-negative' : ''}${isActive ? ' is-active' : ''}${isSelected ? ' is-selected' : ''}`}
               data-side={mark.side}
+              data-event-id={mark.event.id}
               role="button"
               tabIndex={0}
               aria-label={[
@@ -672,7 +674,7 @@ export default function LivePaceChart({
         <line x1={nowX} y1={yAt(left.pace.total)} x2={nowX} y2={yAt(right.pace.total)} className="fl-chart__gap" />
         {gapPx > 16 && (
           <text x={nowX - 7} y={(yAt(left.pace.total) + yAt(right.pace.total)) / 2 + 4} textAnchor="end" className="fl-chart__margin">
-            {left.pace.total >= right.pace.total ? '+' : '−'}{margin.toFixed(1)}
+            {left.pace.total >= right.pace.total ? '+' : '−'}{margin.toFixed(2)}
           </text>
         )}
 
@@ -681,7 +683,7 @@ export default function LivePaceChart({
             <circle cx={nowX} cy={yAt(side.pace.total)} r="4.4" fill={side.palette[0]} className="fl-chart__cap" />
             <text x={xAt(xMax) + 7} y={labelY[key] - 6} className="fl-chart__axis-label">Proj</text>
             <text x={xAt(xMax) + 7} y={labelY[key] + 6} fill={side.palette[0]} className="fl-chart__proj">
-              {side.pace.liveProjected.toFixed(1)}
+              {side.pace.liveProjected.toFixed(2)}
             </text>
           </g>
         ))}

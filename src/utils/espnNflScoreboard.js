@@ -365,7 +365,7 @@ export function replaceEspnScoreboardWeek(seasonData, payload, weekNumber, optio
   };
 }
 
-function normalizeCrosswalkTeamId(teamId) {
+export function normalizeCrosswalkTeamId(teamId) {
   const normalized = String(teamId ?? '').trim().toUpperCase();
   if (normalized === 'WSH') return 'WAS';
   if (normalized === 'JAC') return 'JAX';

@@ -731,6 +731,7 @@ export default function CompanionScoring() {
               : featuredGame}
             darkMode={darkMode}
             compact
+            showAccentRail={false}
             showTeamLogo={!featuredGame?.isTeam}
             showSelectionMark={false}
             metaSegments={[featuredGame?.opponent]}

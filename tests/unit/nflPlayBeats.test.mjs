@@ -638,3 +638,39 @@ test('a forward pass is always thrown forward, even when the pick is reported be
   const named = downfield.beats.find((beat) => beat.kind === 'turnover');
   assert.match(named.text, /CAR 45/);
 });
+
+test('the Seattle end-zone interception without compact text still throws forward to the signed pick spot', () => {
+  const context = { homeTeam: 'SEA', awayTeam: 'NE' };
+  const play = {
+    id: 'sea-ne-game-sealing-int',
+    team: 'SEA',
+    typeSlug: 'pass-interception-return',
+    down: '3rd & 5',
+    startDown: 3,
+    startDistance: 5,
+    endDown: 1,
+    period: 4,
+    startYardLine: 16,
+    endYardLine: 20,
+    startPossessionText: 'SEA 16',
+    endPossessionText: 'SEA 20',
+    statYardage: 0,
+    shortText: null,
+    rawText: '(Shotgun) D.Maye pass deep right intended for M.Hollins INTERCEPTED by J.Jobe [D.Lawrence] at SEA -3. Touchback.',
+    description: 'interception',
+  };
+
+  const line = getPlayTimeline(play, context);
+  const release = line.beats.find((beat) => beat.kind === 'release');
+  const turnover = line.beats.find((beat) => beat.kind === 'turnover');
+  const releasedAt = ballAt(line.segments, release.at).yard;
+  const pickedAt = ballAt(line.segments, turnover.at).yard;
+
+  assert.equal(line.narrative.confident, false, 'the official description must carry this replay without short_text');
+  assert.equal(line.bespoke, true);
+  assert.ok(release.at < turnover.at, 'the throw must happen before the interception');
+  assert.ok((pickedAt - releasedAt) * line.geometry.dir > 0, 'the pass must travel toward Seattle’s end zone');
+  assert.ok(Math.abs(pickedAt - 103) < 0.5, `the pick must occur at SEA -3, not ${pickedAt}`);
+  assert.match(turnover.text, /SEA -3/);
+  assert.ok(Math.abs(ballAt(line.segments, line.duration).yard - 103) < 0.5, 'a touchback adds no return to the Seattle 20');
+});

@@ -26,6 +26,7 @@ From the public docs and spec, the most relevant endpoints for this app are:
 - `standings` — current season standings
 - `plays` — play-by-play feed with wallclock ordering
 - `odds` and `odds/player_props` — sportsbook context for games and players
+- `fantasy/projections` — GOAT-tier weekly projected stat lines and provider fantasy totals
 
 As verified against the provider documentation on 2026-08-13, the tier/rate-limit constraints are:
 
@@ -113,6 +114,10 @@ One sidecar-wide gateway now coordinates the existing Fantasy Live and Statistic
 Statistics Scores uses dedicated server-side provider status, selected-week live, season, and game-detail routes. A configured key plus verified capability profile and explicit effective request limit selects BALLDONTLIE independently of Fantasy Live session or league readiness; missing, low-limit, or unavailable provider status uses the clearly labeled ESPN fallback. ESPN fallback scorebugs remain visible and live-updating but do not open a drilldown because the required BALLDONTLIE detail contract is unavailable. The development ESPN source enforces the same boundary even when the local server has a key. With BALLDONTLIE active, drilldown navigation is limited to final, live, halftime, and in-game delayed states; scheduled and otherwise unavailable states do not request detail.
 
 The current implementation intentionally does not accept a BALLDONTLIE key from the browser. Statistics Scores sends a server-side phase parameter and the proxy maps it to provider season types: the games collection uses array filters (`season_type[]=1` for Preseason; `season_type[]=2` and `season_type[]=3` for Regular), while game-detail collections use the required scalar filter (`season_type=1` or `season_type=2`). The selected-week live route adds one bounded week filter and never polls the full-season collection at one-second cadence. The detail route aggregates `/games/{id}`, fully paginated `/stats`, `/team_stats`, and tier-supported `/plays` responses. Phase and freshness are part of gateway cache identity. A key must not be placed in Vite environment variables intended for client code, local storage, or a client request header.
+
+### Fantasy Matchup Projection Boundary
+
+Fantasy Matchups uses the server-only `/nfl/v1/fantasy/projections` endpoint when the configured BDL capability profile includes `fantasy` (GOAT or an equivalent trial profile). The sidecar validates the season/week, paginates and caches the weekly snapshot, and returns only the identity, game, projected-stat, and sanitized freshness fields needed by the browser. GridShift recalculates projected points from the provider stat line under the connected league's scoring rules, using BDL's precomputed format total only when the raw stat line cannot produce a usable local score. When the provider is missing, unsupported, unavailable, or cannot be matched unambiguously to the connected player directory, Matchups falls back to its current-season model and—at the opening of a season—the prior completed Sleeper season; no BDL response is required for the page to remain usable.
 
 Phase 1 keeps the deployment-owner key and explicit league allowlist while adding league-scoped Fantasy Live ingests and a shared gateway. Phase 2 later adds encrypted league-managed keys, one active key per league, credential indexing, external rotation, and automatic dead-key cleanup. There is intentionally no browser-visible key removal endpoint; the provider remains the revocation authority. The complete lifecycle is in [[Live Data Server Architecture]].
 

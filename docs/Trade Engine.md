@@ -48,7 +48,7 @@ Only the accepting manager sees the `What to do next` handoff: re-create the sam
 - `src/utils/tradeValue.js`
   Shared player trade-value detail builder. This is the common source for blended trade values used across Trade surfaces.
 - `src/utils/tradeAnalytics.js`
-  Precomputes Trade analytics snapshots: positional averages, value-per-PPG, IDP/DST computed values, and the optional opportunity layer.
+  Precomputes Trade analytics snapshots: positional averages, value-per-PPG, IDP/DST/kicker computed values, and the optional opportunity layer.
 - `src/utils/tradeEngine.js`
   Manual Trade Agent logic: side valuation, pick ownership, candidate pool building, trade evaluation, and refinement suggestions.
 - `src/utils/opportunityEngine.js`
@@ -77,13 +77,13 @@ Sleeper is the supported fantasy provider for players and draft picks.
 - production context from scoring + season stats
 - positional rank adjustment
 - dynasty fallback when redraft KTC is missing
-- IDP/DST estimated value when KTC has no direct entry
+- IDP/DST/kicker estimated value when KTC has no direct entry
 
 This shared value is what reduced earlier drift between Agent, Intelligence, and Upgrade surfaces.
 
-KTC does not publish IDP market values. Every Trade player value is evaluated with the selected league's scoring settings. When the active Sleeper season has not yet recorded any player production, Trade loads the immediately prior completed Sleeper season in the background and applies the active scoring rules to that production for offensive players, IDP, and D/ST alike. Once current-season production exists, it takes over automatically. Current-season opportunity analysis remains on the active-season data path.
+KTC does not publish IDP or kicker market values. Every Trade player value is evaluated with the selected league's scoring settings. Explicit DL/LB/DB roster slots and IDP flex slots (`IDP_FLEX`, `FLEX_IDP`, or `DP`) enable production-based values for the relevant IDP groups; a `DEF` slot enables D/ST, and a `K` slot enables kickers. Trade does not use KTC rows for these generated positions, including zero-valued placeholder rows that could otherwise suppress the GridShift estimate through a name match. Trade loads the immediately prior completed season in the background whenever one of those generated-value paths is available. For each generated IDP, D/ST, or kicker value, it first requires current-season production of at least three recorded games and positive league-scored points; if that player does not qualify, it applies the current league scoring to that player's prior-season production and uses it only when it meets the same threshold. Otherwise the value remains unavailable (`—`). Current production always wins for an individually qualified player. Prior-season data never substitutes for current-season offensive KTC production adjustments, ranks, pick calibration, or opportunity analysis.
 
-Generated IDP and D/ST values convert league-scored PPG into the same market scale as offensive player values, then receive the shared positional-finish adjustment. They are not hard-capped at 10,000: KTC-backed offensive values can exceed that number, so a defensive value may do so only when the league's scoring and production justify it.
+Generated IDP, D/ST, and kicker values convert league-scored PPG into the same market scale as offensive player values, then receive the shared positional-finish adjustment. They are not hard-capped at 10,000: KTC-backed offensive values can exceed that number, so a generated value may do so only when the league's scoring and production justify it. Production-backed values require three recorded games; missing or insufficient production remains unavailable (`—`) and is never converted to zero. Intelligence and Upgrade assets that receive the canonical player-value map preserve that same unavailable state when an entry is missing; only the standalone opportunity fallback without a canonical map may use its local heuristic estimate. A trade side containing an unavailable asset cannot receive a fairness verdict until all of its assets have values.
 
 ### Agent flow
 

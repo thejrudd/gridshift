@@ -3,6 +3,7 @@ import { memo, useState, useEffect, useMemo, useCallback, useDeferredValue, useR
 import { useSleeperStats } from '../../../context/SleeperContext';
 import { useTheme } from '../../../context/ThemeContext';
 import { fmtKtcValue } from '../../../utils/ktcApi';
+import { sumTradeValues } from '../../../utils/tradeValue';
 import { compareDraftPickAssets, getDraftPickLabel } from '../../../utils/draftPickDisplay';
 import useMediaQuery from '../../../hooks/useMediaQuery.js';
 import CompanionAssetRow from '../CompanionAssetRow.jsx';
@@ -275,7 +276,13 @@ function buildProposalCardAssets(bucket, renderAllAssetsAsCards) {
 }
 
 function sumProposalAssetValues(assets = []) {
-  return Math.round((assets ?? []).reduce((sum, asset) => sum + Number(asset?.value ?? asset?.val ?? 0), 0));
+  const total = sumTradeValues((assets ?? []).map((asset) => {
+    const rawValue = asset?.value ?? asset?.val;
+    if (rawValue == null || rawValue === '') return null;
+    const numericValue = Number(rawValue);
+    return Number.isFinite(numericValue) ? numericValue : null;
+  }));
+  return total == null ? null : Math.round(total);
 }
 
 function countProposalAssets(proposal) {

@@ -6,9 +6,10 @@
 //
 //   replay    — scrub a completed regular-season week
 //   preseason — a roster of likely snap-takers against real preseason games
+//   live      — the connected league against the current live-season data
 //
-// Changing mode swaps the fixture league, the reported NFL week, and the data
-// source, so consumers must treat it as a hard reset rather than a filter.
+// Changing mode swaps the fixture league, the reported NFL week, and/or the
+// data source, so consumers must treat it as a hard reset rather than a filter.
 
 import { useEffect, useState } from 'react';
 import { LIVE_SANDBOX_ENABLED, LIVE_SANDBOX_DEFAULT_MODE } from './liveSandboxFlag';
@@ -18,6 +19,7 @@ import { resetSandboxCache } from './liveSandboxSource';
 export const SANDBOX_MODES = Object.freeze([
   { id: 'replay', label: 'Replay' },
   { id: 'preseason', label: 'Preseason' },
+  { id: 'live', label: 'Live data' },
 ]);
 
 const STORAGE_KEY = 'gridshift-live-sandbox-mode';
@@ -46,6 +48,10 @@ export function isReplayMode() {
 
 export function isPreseasonMode() {
   return LIVE_SANDBOX_ENABLED && currentMode === 'preseason';
+}
+
+export function isLiveMode() {
+  return LIVE_SANDBOX_ENABLED && currentMode === 'live';
 }
 
 export function subscribeToMode(listener) {

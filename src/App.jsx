@@ -23,6 +23,7 @@ import useWhatsNew from './hooks/useWhatsNew';
 import useOnboardingTour from './hooks/useOnboardingTour';
 import useDraftSync from './hooks/useDraftSync.js';
 import useTradeProposals from './hooks/useTradeProposals.js';
+import useSeasonScheduleResults from './hooks/useSeasonScheduleResults.js';
 import { ONBOARDING_TOUR } from './data/onboardingTour';
 import { ONBOARDING_PHASE } from './utils/onboardingTour';
 import UpdateBanner from './components/UpdateBanner';
@@ -88,7 +89,6 @@ const PlayerBrowser = lazy(() => import('./components/PlayerBrowser'));
 const StatisticsSchedule = lazy(() => import('./components/StatisticsSchedule'));
 const StatisticsScores = lazy(() => import('./components/statistics/scores/StatisticsScores'));
 const StatisticsStandings = lazy(() => import('./components/StatisticsStandings'));
-const StatisticsGame = lazy(() => import('./components/StatisticsGame'));
 const FavoriteTeamPicker = lazy(() => import('./components/FavoriteTeamPicker'));
 const DisplaySettingsModal = lazy(() => import('./components/DisplaySettingsModal'));
 const LegalModal = lazy(() => import('./components/LegalModal'));
@@ -589,6 +589,15 @@ function AppInner() {
   });
   useBodyScrollLock(leagueSwitcherOpen);
 
+  useEffect(() => {
+    if (!leagueSwitcherOpen) return undefined;
+    const handleLeagueSwitcherKeyDown = (event) => {
+      if (event.key === 'Escape') setLeagueSwitcherOpen(false);
+    };
+    window.addEventListener('keydown', handleLeagueSwitcherKeyDown);
+    return () => window.removeEventListener('keydown', handleLeagueSwitcherKeyDown);
+  }, [leagueSwitcherOpen]);
+
   // An available update takes precedence over What's New. The tour should
   // describe the version the user has just installed, not the waiting build.
   useEffect(() => {
@@ -623,8 +632,15 @@ function AppInner() {
   const statisticsView = appRoute.statisticsView;
   const statisticsTeamId = appRoute.statisticsTeamId;
   const statisticsPlayerId = appRoute.statisticsPlayerId;
-  const statisticsGameId = appRoute.statisticsGameId;
   const statisticsMode = appRoute.statisticsMode ?? STATISTICS_MODES.GAME;
+  const statisticsScoresSeason = appRoute.statisticsScoresSeason;
+  const statisticsScoresPhase = appRoute.statisticsScoresPhase;
+  const statisticsScoresWeek = appRoute.statisticsScoresWeek;
+  const statisticsScoresGameId = appRoute.statisticsScoresGameId;
+  const statisticsScoresSection = appRoute.statisticsScoresSection;
+  const statisticsScoresPlayerGroup = appRoute.statisticsScoresPlayerGroup;
+  const statisticsScoresAwayTeamId = appRoute.statisticsScoresAwayTeamId;
+  const statisticsScoresHomeTeamId = appRoute.statisticsScoresHomeTeamId;
   const statisticsScheduleMode = appRoute.statisticsScheduleMode;
   const statisticsScheduleWeek = appRoute.statisticsScheduleWeek;
   const statisticsScheduleTeamId = appRoute.statisticsScheduleTeamId;
@@ -784,6 +800,23 @@ function AppInner() {
       setAppRoute((prev) => (isSameAppRoute(prev, normalized) ? prev : normalized));
     });
   }, [readHistoryState, startRouteTransition]);
+
+  const openHistoricalMatchup = useCallback(async ({ season: recordSeason, week, rosterId }) => {
+    const historyState = readHistoryState();
+    const fromSheet = Boolean(historyState._sheet);
+    // A season switch can unmount the modal before routing finishes. Detach
+    // its history entry now so cleanup cannot navigate back during the switch.
+    if (fromSheet) {
+      window.history.replaceState({ ...historyState, _sheet: null }, '', window.location.href);
+    }
+    if (String(recordSeason) !== String(season)) await changeSeason(recordSeason);
+    applyRoute({
+      activeTab: 'fantasy',
+      companionView: 'matchups',
+      matchupWeek: week,
+      matchupRosterId: rosterId,
+    }, { replace: fromSheet, state: { _sheet: null } });
+  }, [applyRoute, changeSeason, readHistoryState, season]);
 
   const sharedTradeProposal = sharedTradeData?.proposal ?? null;
   const sharedTradeParticipant = Boolean(
@@ -1082,8 +1115,14 @@ function AppInner() {
     if (!gameId) return;
     applyRoute({
       activeTab: 'statistics',
-      statisticsView: 'game',
-      statisticsGameId: String(gameId),
+      statisticsView: 'scores',
+      statisticsScoresSeason: game?.season ?? null,
+      statisticsScoresPhase: game?.phase ?? null,
+      statisticsScoresWeek: game?.week ?? null,
+      statisticsScoresGameId: String(gameId),
+      statisticsScoresSection: 'team',
+      statisticsScoresAwayTeamId: game?.awayTeamId ?? null,
+      statisticsScoresHomeTeamId: game?.homeTeamId ?? null,
     });
   }, [applyRoute]);
 
@@ -1092,6 +1131,15 @@ function AppInner() {
       ...appRoute,
       activeTab: 'statistics',
       statisticsView: 'schedule',
+      ...patch,
+    }, options);
+  }, [appRoute, applyRoute]);
+
+  const updateStatisticsScoresRoute = useCallback((patch, options = {}) => {
+    applyRoute({
+      ...appRoute,
+      activeTab: 'statistics',
+      statisticsView: 'scores',
       ...patch,
     }, options);
   }, [appRoute, applyRoute]);
@@ -1341,9 +1389,12 @@ function AppInner() {
     restoreOnboardingLayout();
   }, [completeOnboarding, restoreOnboardingLayout]);
 
+  // season-schedule.json ships without scores; hydrate it with live ESPN results
+  // so Standings, Schedule, and the Game view all read real outcomes.
+  const hydratedSeasonSchedule = useSeasonScheduleResults(seasonSchedule);
   const predictionScheduleModel = useMemo(
-    () => buildPredictionScheduleModel(seasonSchedule, scheduleData?.teams ?? []),
-    [scheduleData, seasonSchedule],
+    () => buildPredictionScheduleModel(hydratedSeasonSchedule, scheduleData?.teams ?? []),
+    [hydratedSeasonSchedule, scheduleData],
   );
   const predictionTeams = predictionScheduleModel.teams;
   const predictionSchedule = predictionScheduleModel.schedule;
@@ -1897,6 +1948,15 @@ function AppInner() {
                 leagueId={selectedLeagueId}
                 platform={platform}
                 tourDemoMode={tourDemoMode}
+                routeSeason={statisticsScoresSeason}
+                routePhase={statisticsScoresPhase}
+                routeWeek={statisticsScoresWeek}
+                routeGameId={statisticsScoresGameId}
+                routeSection={statisticsScoresSection}
+                routePlayerGroup={statisticsScoresPlayerGroup}
+                routeAwayTeamId={statisticsScoresAwayTeamId}
+                routeHomeTeamId={statisticsScoresHomeTeamId}
+                onRouteChange={updateStatisticsScoresRoute}
               />
             </Suspense>
           )}
@@ -1910,18 +1970,7 @@ function AppInner() {
             </Suspense>
           )}
 
-          {activeTab === 'statistics' && statisticsView === 'game' && (
-            <Suspense fallback={<SectionLoading label="Loading game statistics" />}>
-              <StatisticsGame
-                gameId={statisticsGameId}
-                teams={predictionTeams}
-                scheduleData={predictionSchedule}
-                onBackToSchedule={() => navigateStatisticsSubView('schedule')}
-              />
-            </Suspense>
-          )}
-
-          {activeTab === 'statistics' && statisticsView !== 'schedule' && statisticsView !== 'scores' && statisticsView !== 'standings' && statisticsView !== 'game' && (
+          {activeTab === 'statistics' && statisticsView !== 'schedule' && statisticsView !== 'scores' && statisticsView !== 'standings' && (
             <Suspense fallback={<SectionLoading label="Loading statistics" />}>
             <PlayerBrowser
               teams={scheduleData.teams}
@@ -2126,6 +2175,7 @@ function AppInner() {
               {companionView === 'matchups'   && (
                 <Suspense fallback={<SectionLoading label="Loading Matchup" />}>
                   <CompanionMatchup
+                    onOpenHistoricalMatchup={openHistoricalMatchup}
                     initialWeekRequest={matchupInitRequest}
                     selectedWeek={appRoute.matchupWeek ?? null}
                     onWeekChange={(week) => updateCompanionRoute({
@@ -2221,15 +2271,7 @@ function AppInner() {
               {leagueView === 'history' && (
                 <Suspense fallback={<SectionLoading label="Loading League History" />}>
                   <CompanionHistory
-                    onOpenMatchup={async ({ season: recordSeason, week, rosterId }) => {
-                      if (String(recordSeason) !== String(season)) await changeSeason(recordSeason);
-                      applyRoute({
-                        activeTab: 'fantasy',
-                        companionView: 'matchups',
-                        matchupWeek: week,
-                        matchupRosterId: rosterId,
-                      });
-                    }}
+                    onOpenMatchup={openHistoricalMatchup}
                   />
                 </Suspense>
               )}
@@ -2405,12 +2447,16 @@ function AppInner() {
 
       {leagueSwitcherOpen && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center px-4"
+          className="league-switcher-modal"
           style={{ background: 'rgba(0,0,0,0.5)' }}
           onClick={() => setLeagueSwitcherOpen(false)}
         >
           <div
-            className="modal-panel w-full max-w-xl rounded-2xl overflow-hidden max-h-[86vh] flex flex-col"
+            className="modal-panel league-switcher-modal__panel"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="league-switcher-title"
+            aria-describedby="league-switcher-description"
             style={{
               background: 'var(--color-bg-secondary)',
               border: '1px solid var(--color-separator)',
@@ -2418,31 +2464,22 @@ function AppInner() {
             }}
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: '1px solid var(--color-separator)' }}>
+            <div className="league-switcher-modal__header">
               <div>
-                <div className="text-xs font-bold uppercase tracking-[0.18em]" style={{ color: 'var(--color-label-tertiary)', fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif" }}>
-                  Switch League
-                </div>
-                <div className="mt-1 text-sm" style={{ color: 'var(--color-label-secondary)' }}>
-                  Choose a Sleeper season and league.
-                </div>
+                <span className="league-switcher-modal__eyebrow">Switch league</span>
+                <h2 id="league-switcher-title">Choose your league</h2>
+                <p id="league-switcher-description">Pick a league year, then choose where you want to go.</p>
               </div>
               <button
                 type="button"
                 onClick={() => setLeagueSwitcherOpen(false)}
-                className="px-3 py-1.5 text-xs font-bold uppercase tracking-[0.18em] active:opacity-60"
-                style={{
-                  fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif",
-                  background: 'var(--color-fill)',
-                  color: 'var(--color-label-secondary)',
-                  border: '1px solid var(--color-separator)',
-                  borderRadius: 0,
-                }}
+                className="league-switcher-modal__close"
+                aria-label="Close league switcher"
               >
-                Close
+                <span aria-hidden="true">×</span>
               </button>
             </div>
-            <div className="overflow-y-auto">
+            <div className="league-switcher-modal__body overflow-y-auto">
               <Suspense fallback={<SectionLoading label="Loading leagues" />}>
                 <CompanionConnect
                   forceLeaguePicker

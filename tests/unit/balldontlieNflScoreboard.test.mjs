@@ -596,6 +596,132 @@ test('builds the real drilldown contract from BALLDONTLIE team, player, and play
   assert.equal(detail.coverage.plays, true);
 });
 
+test('derives quarter player splits from confident BALLDONTLIE play actors', () => {
+  const normalizedGame = normalizeBdlScoreboardGame(game);
+  const player = (firstName, lastName, team, values) => ({
+    player: { first_name: firstName, last_name: lastName },
+    team: { abbreviation: team, full_name: team === 'BAL' ? 'Baltimore Ravens' : 'Kansas City Chiefs' },
+    ...values,
+  });
+  const providerDetail = {
+    game,
+    playerStats: [
+      player('Lamar', 'Jackson', 'BAL', { passing_completions: 2, passing_attempts: 2, passing_yards: 20 }),
+      player('Zay', 'Flowers', 'BAL', { receptions: 2, receiving_targets: 2, receiving_yards: 20 }),
+      player('Derrick', 'Henry', 'BAL', { rushing_attempts: 1, rushing_yards: 5, yards_per_rush_attempt: 5 }),
+      player('Jordan', 'Stout', 'BAL', { punts: 1, punt_yards: 45, gross_avg_punt_yards: 45 }),
+      player('DeAndre', 'Carter', 'KC', { punt_returns: 1, punt_return_yards: 14 }),
+      player('Justin', 'Tucker', 'BAL', { field_goal_attempts: 1, field_goals_made: 1, long_field_goal_made: 41, total_points: 3 }),
+      player('Roquan', 'Smith', 'BAL', { total_tackles: 1, defensive_sacks: 1 }),
+    ],
+    plays: [
+      {
+        id: 'q1-pass', period: 1, type_slug: 'pass-reception', team: { abbreviation: 'BAL' },
+        short_text: 'Lamar Jackson Pass Complete for 12 Yds to Zay Flowers',
+        text: 'L.Jackson pass short right to Z.Flowers to KC 40 for 12 yards (R.Smith).',
+        stat_yardage: 12,
+      },
+      {
+        id: 'q1-rush', period: 1, type_slug: 'rush', team: { abbreviation: 'BAL' },
+        short_text: 'Derrick Henry 5 Yd Rush',
+        text: 'D.Henry right guard to KC 35 for 5 yards.',
+        stat_yardage: 5,
+      },
+      {
+        id: 'q2-pass', period: 2, type_slug: 'passing-touchdown', team: { abbreviation: 'BAL' },
+        short_text: 'Zay Flowers 8 Yd pass from Lamar Jackson (Justin Tucker Kick)',
+        text: 'L.Jackson pass short right to Z.Flowers for 8 yards, TOUCHDOWN.',
+        stat_yardage: 8,
+      },
+      {
+        id: 'q2-punt', period: 2, type_slug: 'punt', team: { abbreviation: 'KC' },
+        short_text: 'Jordan Stout 45 Yd Punt DeAndre Carter 14 Yd Punt Return',
+        text: 'J.Stout punts 45 yards to KC 23. D.Carter returned 14 yards.',
+        stat_yardage: 14,
+      },
+      {
+        id: 'q3-fg', period: 3, type_slug: 'field-goal-good', team: { abbreviation: 'BAL' },
+        short_text: 'Justin Tucker 41 Yd Field Goal',
+        text: 'J.Tucker 41 yard field goal is GOOD.',
+      },
+      {
+        id: 'q3-sack', period: 3, type_slug: 'sack', team: { abbreviation: 'KC' },
+        short_text: 'Patrick Mahomes Sacked by Roquan Smith For 7 Yd Loss',
+        text: 'P.Mahomes sacked for -7 yards (R.Smith).',
+        stat_yardage: -7,
+      },
+    ],
+  };
+
+  const detail = buildScoreDetailFromGame(normalizedGame, { providerDetail, detailStatus: 'ready' });
+  const passing = detail.playerGroups.find((entry) => entry.id === 'passing');
+  const rushing = detail.playerGroups.find((entry) => entry.id === 'rushing');
+  const receiving = detail.playerGroups.find((entry) => entry.id === 'receiving');
+  const punting = detail.playerGroups.find((entry) => entry.id === 'punting');
+  const returns = detail.playerGroups.find((entry) => entry.id === 'returns');
+  const kicking = detail.playerGroups.find((entry) => entry.id === 'kicking');
+  const defense = detail.playerGroups.find((entry) => entry.id === 'defense');
+
+  assert.deepEqual(passing.rows[0].quarterValues.periods[0].values.slice(0, 4), ['1/1', '12', '0', '0']);
+  assert.deepEqual(passing.rows[0].quarterValues.periods[1].values.slice(0, 4), ['1/1', '8', '1', '0']);
+  assert.deepEqual(passing.rows[0].quarterValues.periods[3].values, ['—', '—', '—', '—', '—']);
+  assert.deepEqual(rushing.rows[0].quarterValues.periods[0].values, ['1', '5', '5.0', '0', '5']);
+  assert.deepEqual(receiving.rows[0].quarterValues.periods[1].values.slice(0, 4), ['1', '1', '8', '8.0']);
+  assert.deepEqual(punting.rows[0].quarterValues.periods[1].values, ['1', '45.0', '—', '45']);
+  assert.deepEqual(returns.rows[0].quarterValues.periods[1].values, ['1', '14', '14.0', '14']);
+  assert.deepEqual(kicking.rows[0].quarterValues.periods[2].values, ['1/1', '41', '—', '3']);
+  assert.deepEqual(defense.rows[0].quarterValues.periods[2].values, ['1', '—', '1.0', '—', '—']);
+  assert.equal(passing.rows[0].quarterValues.source, 'play-by-play');
+});
+
+test('assigns a compact interception to its passer from the official play text', () => {
+  const normalizedGame = normalizeBdlScoreboardGame({
+    ...game,
+    visitor_team: { abbreviation: 'NE', full_name: 'New England Patriots' },
+    home_team: { abbreviation: 'SEA', full_name: 'Seattle Seahawks' },
+  });
+  const providerGame = {
+    ...game,
+    visitor_team: { abbreviation: 'NE', full_name: 'New England Patriots' },
+    home_team: { abbreviation: 'SEA', full_name: 'Seattle Seahawks' },
+  };
+  const detail = buildScoreDetailFromGame(normalizedGame, {
+    providerDetail: {
+      game: providerGame,
+      playerStats: [{
+        player: { first_name: 'Drake', last_name: 'Maye' },
+        team: { abbreviation: 'NE', full_name: 'New England Patriots' },
+        passing_completions: 1,
+        passing_attempts: 2,
+        passing_yards: 10,
+        passing_interceptions: 1,
+      }],
+      plays: [{
+        id: 'compact-interception',
+        period: 3,
+        clock_display: '04:12',
+        type_slug: 'pass-interception-return',
+        team: { abbreviation: 'SEA' },
+        short_text: 'Nick Pritchett 30 Yd Interception Return',
+        text: '10-D.Maye pass deep left intended for 87-R.Doubs INTERCEPTED by 28-N.Pritchett (24-R.Thomas) at SEA 3. 28-N.Pritchett to SEA 33 for 30 yards (55-J.Wilson).',
+      }, {
+        id: 'q3-completion-after-interception',
+        period: 3,
+        clock_display: '03:05',
+        type_slug: 'pass-reception',
+        team: { abbreviation: 'NE' },
+        short_text: 'Drake Maye Pass Complete for 10 Yds to Kayshon Boutte',
+        text: 'D.Maye pass short left to K.Boutte for 10 yards.',
+        stat_yardage: 10,
+      }],
+    },
+    detailStatus: 'ready',
+  });
+  const passing = detail.playerGroups.find((entry) => entry.id === 'passing');
+
+  assert.deepEqual(passing.rows[0].quarterValues.periods[2].values.slice(0, 4), ['1/2', '10', '0', '1']);
+});
+
 test('preserves provider play order when wallclock timestamps are absent', () => {
   const normalizedGame = normalizeBdlScoreboardGame(game);
   const plays = [

@@ -4,7 +4,7 @@ import {
   computePositionalValuePerPPG,
   computeLeagueAvgMult,
 } from './projectionEngine';
-import { detectLeagueDefensiveType, computeIDPValues, computeDSTValues } from './idpEngine';
+import { detectLeagueDefensiveType, computeIDPValues, computeDSTValues, computeKickerValues } from './idpEngine';
 import { buildRosterOpportunityLayer } from './opportunityEngine';
 import { findKtcPlayerFromSleeper, getKtcValue, productionAdjustedValue } from './ktcApi';
 import { computeTradePlayerValueDetail } from './tradeValue';
@@ -21,13 +21,16 @@ function buildPlayerTradeValueDetailsMap({
   positionalValuePerPPG,
   rankMap,
   mergedIDPMap,
+  ids: requestedIds = null,
 }) {
   if (!players || !rosters?.length) return null;
 
-  const ids = new Set();
-  for (const roster of rosters) {
-    const rosterIds = [...new Set([...(roster.players ?? []), ...(roster.reserve ?? [])])];
-    for (const id of rosterIds) ids.add(id);
+  const ids = requestedIds ? new Set(requestedIds) : new Set();
+  if (!requestedIds) {
+    for (const roster of rosters) {
+      const rosterIds = [...new Set([...(roster.players ?? []), ...(roster.reserve ?? [])])];
+      for (const id of rosterIds) ids.add(id);
+    }
   }
 
   const detailsMap = new Map();
@@ -59,6 +62,7 @@ export function buildTradeAnalyticsSnapshot({
   rosters,
   players,
   seasonStats,
+  priorSeasonStats = null,
   valuationSeasonStats = null,
   idpSeasonStats = null,
   weeklyStats = null,
@@ -72,19 +76,19 @@ export function buildTradeAnalyticsSnapshot({
   includePlayerTradeValues = false,
   includeOpportunityLayer = false,
 }) {
-  // A season may not have begun yet. In that case the caller supplies the
-  // most recent completed season so all player types receive the same active
-  // league-scoring treatment. `idpSeasonStats` remains a compatibility alias
-  // for callers from the original preseason-IDP path.
-  const playerValueSeasonStats = valuationSeasonStats ?? idpSeasonStats ?? seasonStats;
-  const rankMap = computePositionalRanks(playerValueSeasonStats, players, scoringSettings);
-  const positionalAvgPPG = computePositionalAvgPPG(rosters, playerValueSeasonStats, players, scoringSettings);
+  // Keep current-season production as the only input to KTC-backed player
+  // adjustments, ranks, and pick calibration. Prior-season production is a
+  // per-player fallback for generated IDP/D/ST/kicker values only. The two
+  // legacy names remain accepted for callers from the original preseason path.
+  const fallbackProductionSeasonStats = priorSeasonStats ?? valuationSeasonStats ?? idpSeasonStats ?? null;
+  const rankMap = computePositionalRanks(seasonStats, players, scoringSettings);
+  const positionalAvgPPG = computePositionalAvgPPG(rosters, seasonStats, players, scoringSettings);
   const positionalValuePerPPG = computePositionalValuePerPPG(
     rosters,
     players,
     adjustedKtcPlayers,
     leagueType,
-    playerValueSeasonStats,
+    seasonStats,
     scoringSettings,
     findKtcPlayerFromSleeper,
     getKtcValue,
@@ -92,34 +96,76 @@ export function buildTradeAnalyticsSnapshot({
   );
   const leagueAvgMult = computeLeagueAvgMult(
     rosters,
-    playerValueSeasonStats,
+    seasonStats,
     players,
     scoringSettings,
     productionAdjustedValue,
   );
 
   const { hasIDP, hasDST } = detectLeagueDefensiveType(league?.roster_positions);
-  // IDP has no KTC market value, so score its production against the same
-  // player-value season and league-specific PPG scale as the rest of Trade.
-  const idpProductionStats = playerValueSeasonStats;
+  // Generate current values first. Each position helper enforces the shared
+  // three-game, positive-league-points threshold.
+  const idpProductionStats = seasonStats;
   const idpComputedMap = hasIDP
     ? computeIDPValues(players, idpProductionStats, scoringSettings, league?.roster_positions, positionalValuePerPPG)
     : null;
   const dstComputedMap = hasDST
-    ? computeDSTValues(players, playerValueSeasonStats, scoringSettings, positionalValuePerPPG)
+    ? computeDSTValues(players, seasonStats, scoringSettings, positionalValuePerPPG)
     : null;
-  const mergedIDPMap = idpComputedMap || dstComputedMap
-    ? new Map([...(idpComputedMap ?? []), ...(dstComputedMap ?? [])])
+  const kickerComputedMap = league?.roster_positions?.includes('K')
+    ? computeKickerValues(players, seasonStats, scoringSettings, positionalValuePerPPG)
+    : null;
+  const currentGeneratedMap = new Map([
+    ...(idpComputedMap ?? []),
+    ...(dstComputedMap ?? []),
+    ...(kickerComputedMap ?? []),
+  ]);
+
+  // Prior production is calculated separately with the current league scoring
+  // rules. It only fills players that were not currently reliable, never
+  // replacing a current generated value or leaking into offensive KTC math.
+  const priorRankMap = computePositionalRanks(fallbackProductionSeasonStats, players, scoringSettings);
+  const priorPositionalAvgPPG = computePositionalAvgPPG(rosters, fallbackProductionSeasonStats, players, scoringSettings);
+  const priorPositionalValuePerPPG = computePositionalValuePerPPG(
+    rosters,
+    players,
+    adjustedKtcPlayers,
+    leagueType,
+    fallbackProductionSeasonStats,
+    scoringSettings,
+    findKtcPlayerFromSleeper,
+    getKtcValue,
+    productionAdjustedValue,
+  );
+  const priorIdpComputedMap = hasIDP
+    ? computeIDPValues(players, fallbackProductionSeasonStats, scoringSettings, league?.roster_positions, priorPositionalValuePerPPG)
+    : null;
+  const priorDstComputedMap = hasDST
+    ? computeDSTValues(players, fallbackProductionSeasonStats, scoringSettings, priorPositionalValuePerPPG)
+    : null;
+  const priorKickerComputedMap = league?.roster_positions?.includes('K')
+    ? computeKickerValues(players, fallbackProductionSeasonStats, scoringSettings, priorPositionalValuePerPPG)
+    : null;
+  const priorGeneratedMap = new Map([
+    ...(priorIdpComputedMap ?? []),
+    ...(priorDstComputedMap ?? []),
+    ...(priorKickerComputedMap ?? []),
+  ]);
+  // Preserve the existing consumer contract; this map contains all generated
+  // values, including kickers, despite its historical IDP name. Current
+  // entries win; prior entries only fill players missing current reliability.
+  const mergedIDPMap = hasIDP || hasDST || league?.roster_positions?.includes('K')
+    ? new Map([...priorGeneratedMap, ...currentGeneratedMap])
     : null;
 
-  const playerTradeValueDetailsMap = includePlayerTradeValues
+  const currentPlayerTradeValueDetailsMap = includePlayerTradeValues
     ? buildPlayerTradeValueDetailsMap({
         rosters,
         players,
         adjustedKtcPlayers,
         adjustedDynastyKtcPlayers,
         leagueType,
-        seasonStats: playerValueSeasonStats,
+        seasonStats,
         scoringSettings,
         positionalAvgPPG,
         positionalValuePerPPG,
@@ -127,6 +173,31 @@ export function buildTradeAnalyticsSnapshot({
         mergedIDPMap,
       })
     : null;
+  const playerTradeValueDetailsMap = currentPlayerTradeValueDetailsMap
+    ? new Map(currentPlayerTradeValueDetailsMap)
+    : null;
+  if (playerTradeValueDetailsMap && priorGeneratedMap.size) {
+    const priorGeneratedDetails = buildPlayerTradeValueDetailsMap({
+      rosters,
+      players,
+      adjustedKtcPlayers,
+      adjustedDynastyKtcPlayers,
+      leagueType,
+      seasonStats: fallbackProductionSeasonStats,
+      scoringSettings,
+      positionalAvgPPG: priorPositionalAvgPPG,
+      positionalValuePerPPG: priorPositionalValuePerPPG,
+      rankMap: priorRankMap,
+      mergedIDPMap: priorGeneratedMap,
+      ids: playerTradeValueDetailsMap.keys(),
+    });
+    for (const [id, priorDetail] of priorGeneratedDetails ?? []) {
+      const currentDetail = playerTradeValueDetailsMap.get(id);
+      if (!currentGeneratedMap.has(id) && currentDetail?.isEstimated !== false) {
+        playerTradeValueDetailsMap.set(id, priorDetail);
+      }
+    }
+  }
   const playerTradeValueMap = playerTradeValueDetailsMap
     ? new Map(Array.from(playerTradeValueDetailsMap.entries(), ([id, detail]) => [id, detail.value]))
     : null;

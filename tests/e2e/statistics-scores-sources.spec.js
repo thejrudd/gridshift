@@ -136,8 +136,29 @@ test('the developer fixture opens the fully populated comparison drilldown witho
   await page.getByRole('tab', { name: 'Players' }).click();
   await expect(page.getByRole('heading', { name: 'Player Statistics' })).toBeVisible();
   await expect(page.locator('.scores-player-stats')).toContainText('Jared Goff');
+  await expect(page.locator('.scores-player-table .scores-player-team-logo-slot img').first()).toHaveAttribute('src', /det\.png/);
+  await expect(page.locator('.scores-player-table thead th').nth(2)).toHaveAttribute('aria-sort', 'descending');
+  const passingRows = page.locator('.scores-player-table tbody > tr:not(.scores-player-detail-row)');
+  await page.getByRole('button', { name: 'Sort Passing by INT descending' }).click();
+  await expect(page.locator('.scores-player-table thead th').nth(4)).toHaveAttribute('aria-sort', 'descending');
+  await expect(passingRows.locator('.scores-player-row-name > strong')).toHaveText(['J.J. McCarthy', 'Jared Goff']);
+  await page.getByRole('button', { name: 'Sort Passing by INT ascending' }).click();
+  await expect(page.locator('.scores-player-table thead th').nth(4)).toHaveAttribute('aria-sort', 'ascending');
+  await expect(passingRows.locator('.scores-player-row-name > strong')).toHaveText(['Jared Goff', 'J.J. McCarthy']);
+  await page.getByRole('button', { name: 'Expand Jared Goff Lions Passing stats' }).click();
+  await expect(page.getByRole('table', { name: 'Jared Goff Passing by quarter' })).toBeVisible();
+  await expect(page.getByRole('table', { name: 'Jared Goff Passing by quarter' })).toContainText('Q1');
+  await expect(page.getByRole('table', { name: 'Jared Goff Passing by quarter' })).toContainText('Total');
+  await expect(page.getByText('Illustrative fixture quarter split')).toBeVisible();
   await page.getByRole('tab', { name: 'Rushing' }).click();
   await expect(page.locator('.scores-player-stats')).toContainText('Jahmyr Gibbs');
+  const rushingRows = page.locator('.scores-player-table tbody > tr:not(.scores-player-detail-row)');
+  await page.getByRole('button', { name: 'Sort Rushing by AVG descending' }).click();
+  await expect(rushingRows.locator('.scores-player-row-name > strong')).toHaveText(['Jahmyr Gibbs', 'David Montgomery', 'Aaron Jones']);
+  await page.getByRole('button', { name: 'Sort Rushing by AVG ascending' }).click();
+  await expect(rushingRows.locator('.scores-player-row-name > strong')).toHaveText(['Aaron Jones', 'David Montgomery', 'Jahmyr Gibbs']);
+  await page.getByRole('button', { name: 'Expand Jahmyr Gibbs Lions Rushing stats' }).click();
+  await expect(page.getByRole('table', { name: 'Jahmyr Gibbs Rushing by quarter' })).toBeVisible();
 
   await page.getByRole('tab', { name: 'Scoring' }).click();
   await expect(page.getByText('A. St. Brown 14-yard reception')).toBeVisible();
@@ -158,6 +179,49 @@ test('the developer fixture opens the fully populated comparison drilldown witho
   await page.getByRole('button', { name: 'Back to Scores' }).click();
   await expect(page.getByRole('tab', { name: 'W7 Now' })).toHaveAttribute('aria-selected', 'true');
   await expect(sourceControl.getByRole('button', { name: 'Fixture' })).toHaveAttribute('aria-pressed', 'true');
+});
+
+test('canonical Scores links restore the selected week, matchup, drilldown tab, and player category', async ({ page }) => {
+  const sharedPath = '/statistics/scores?season=2026&phase=regular&week=7&game=fixture-live-favorite&tab=plays';
+  await page.goto(sharedPath);
+
+  await expect(page.getByRole('button', { name: 'Back to Scores' })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'W7 Now' })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('tab', { name: 'Play-by-Play' })).toHaveAttribute('aria-selected', 'true');
+  expect(new URL(page.url()).pathname + new URL(page.url()).search).toBe(sharedPath);
+
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Back to Scores' })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Play-by-Play' })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('heading', { name: 'Play Feed' })).toBeVisible();
+
+  await page.getByRole('tab', { name: 'Players' }).click();
+  await page.getByRole('tab', { name: 'Rushing', exact: true }).click();
+  await expect(page.locator('.scores-player-stats')).toContainText('Jahmyr Gibbs');
+  const playerUrl = new URL(page.url());
+  expect(playerUrl.searchParams.get('game')).toBe('fixture-live-favorite');
+  expect(playerUrl.searchParams.get('tab')).toBe('players');
+  expect(playerUrl.searchParams.get('group')).toBe('rushing');
+
+  await page.reload();
+  await expect(page.getByRole('tab', { name: 'Players' })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('tab', { name: 'Rushing', exact: true })).toHaveAttribute('aria-selected', 'true');
+
+  await page.getByRole('button', { name: 'Back to Scores' }).click();
+  await expect(page.getByRole('button', { name: 'Back to Scores' })).toHaveCount(0);
+  const scoresUrl = new URL(page.url());
+  expect(scoresUrl.pathname).toBe('/statistics/scores');
+  expect(scoresUrl.searchParams.get('season')).toBe('2026');
+  expect(scoresUrl.searchParams.get('week')).toBe('7');
+  expect(scoresUrl.searchParams.get('game')).toBeNull();
+  expect(scoresUrl.searchParams.get('tab')).toBeNull();
+  expect(scoresUrl.searchParams.get('group')).toBeNull();
+
+  const weekEight = page.getByRole('tab', { name: /^W8/ });
+  await weekEight.scrollIntoViewIfNeeded();
+  await weekEight.click();
+  await expect(weekEight).toHaveAttribute('aria-selected', 'true');
+  expect(new URL(page.url()).searchParams.get('week')).toBe('8');
 });
 
 test('the local preseason fixture selects Preseason Week 1 on its first calendar day', async ({ page }) => {
@@ -231,6 +295,15 @@ for (const viewport of MOBILE_STATISTICS_VIEWPORTS) {
     });
     expect(railGeometry.flexWrap).toBe('nowrap');
     expect(railGeometry.topSpread).toBeLessThanOrEqual(1);
+
+    await page.getByRole('tab', { name: 'Rushing', exact: true }).click();
+    const sortSelect = page.locator('#scores-player-sort-rushing');
+    await expect(sortSelect).toBeVisible();
+    await sortSelect.selectOption('2');
+    const mobilePlayerNames = page.locator('.scores-player-cards > article > header strong');
+    await expect(mobilePlayerNames).toHaveText(['Jahmyr Gibbs', 'David Montgomery', 'Aaron Jones']);
+    await page.getByRole('button', { name: 'Sort Rushing by AVG ascending' }).click();
+    await expect(mobilePlayerNames).toHaveText(['Aaron Jones', 'David Montgomery', 'Jahmyr Gibbs']);
 
     await page.goto('/statistics/schedule?mode=team');
     const option = page.locator('.statistics-schedule-team-option').first();
@@ -747,6 +820,8 @@ test('forced local BALLDONTLIE loads preseason rows and refreshes the narrow liv
   await expect(page.getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true');
   await expect(page.locator('.scores-detail-hero > footer')).toContainText('NFL Network');
   await expect(page.locator('.scores-detail-hero > footer')).not.toContainText('TV TBD');
+  const detailTeamText = await page.locator('.scores-detail-team').allTextContents();
+  expect(detailTeamText.join(' ')).not.toContain('Ball');
   await expect.poll(() => requestedDetailGameId).toBe('1393548');
   expect(requestedDetailPhase).toBe('preseason');
   await expect(page.getByText('L. Altmyer · 69 YDS')).toBeVisible();

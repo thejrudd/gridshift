@@ -674,6 +674,7 @@ function ResponsiveWaiverRow({ player, onSelect, sortBy, layout, isCompactPhone 
         player={player}
         darkMode={darkMode}
         compact={isCompactPhone}
+        showAccentRail={false}
         showPosition={false}
         showTeamLogo={!isCompactPhone}
         interactive={canNav}

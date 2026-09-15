@@ -6,7 +6,18 @@ Open bugs are listed first, deferred work next, fixed bugs below. Add new entrie
 
 ## Open
 
-No open bugs.
+| Bug | Status |
+|-----|--------|
+| Fantasy Matchups' individual player drilldown can overwhelm managers with raw scoring rows, bury opponent positional difficulty, and lose projection context after kickoff. | Fix implemented; awaiting manual usage verification and commit. |
+| League History counts unplayed matchups as completed ties when the current season has no finalized weeks, contaminating rivalry records and highlights. | Fix implemented; awaiting verification and commit. |
+| Statistics Scores' completed game-detail hero can keep showing the last possession as “Ball” after the game is final. | Fix implemented; awaiting verification and commit. |
+| Fantasy Matchups can keep a completed prior matchup at `>99%` instead of locking the winning side to `100%` when stale or missing schedule metadata leaves projected points in the outlook. | Fix implemented; awaiting verification and commit. |
+| Fantasy Matchups can show a current W/L marker before all starter games are final, presenting the live leader as a completed result. | Fix implemented; awaiting verification and commit. |
+| Fantasy Matchups use the global blue accent for projected player scores on team-colored rows, reducing the visual distinction between projected and actual points. | Fix implemented; awaiting verification and commit. |
+| Statistics Scores and Fantasy Live can misplace an interception in the end zone and omit its forward-pass replay when the NFL description uses a signed spot such as `SEA -3`, inserts a bracketed defensive attribution before the spot, and lacks a recognized compact summary. | Fix revised after manual verification; awaiting re-test and commit. |
+| Statistics Scores' drive overview places its interception marker at the post-play field position, omits turnovers from the field glossary, and does not make clear that an interception is already counted as a pass in the drive mix. | Fix implemented; awaiting manual verification and commit. |
+| Statistics Scores' game drilldown can jump back to the top while reading Play-by-Play because a background scoreboard refresh replaces the selected game object and is mistaken for opening a different game. | Fix implemented; awaiting manual verification and commit. |
+| Statistics Scores' quarter split can undercount interceptions when a provider play uses jersey-prefixed official names, even though the full-game passing row reports the correct total. | Fix implemented; awaiting verification and commit. |
 
 ---
 

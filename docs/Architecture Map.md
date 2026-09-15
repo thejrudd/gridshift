@@ -110,7 +110,7 @@ Rules:
 | File | Owns |
 | --- | --- |
 | `sleeperApi.js` | Calls Sleeper directly from the browser |
-| `liveApi.js`, `statisticsScoresApi.js` | Call the GridShift sidecar; they **never** send a BALLDONTLIE credential from the browser |
+| `liveApi.js`, `statisticsScoresApi.js`, `fantasyProjectionsApi.js` | Call the GridShift sidecar; they **never** send a BALLDONTLIE credential from the browser |
 
 ### `server` (sidecar)
 
@@ -120,6 +120,7 @@ Deep doc: [[Live Data Server Architecture]].
 | --- | --- |
 | `index.js` | Creates one process-wide BALLDONTLIE gateway and one canonical live-game snapshot store, injects both into the live-data route groups |
 | `balldontlieGateway.js` | Server credential, capability profile, canonical bounded cache, in-flight coalescing, cursor pagination, stale/backoff policy, page-aware quota, protected live-score allocation |
+| `fantasyProjectionHandlers.js` | Optional weekly BDL fantasy-projection route; validates season/week, normalizes the public response, and uses the shared background gateway lane |
 | `liveGameSnapshots.js` | Canonical per-game play snapshot and newest-play selection shared by Statistics scorecards, Statistics drilldowns, and Fantasy Live |
 | `publicRequestGuard.js` | Bounded downstream request/concurrency protection for the public near-live Scores route — separate from provider quota accounting |
 | `liveHandlers.js` | Fantasy Live session/league boundary; routes all provider work through the shared gateway |
@@ -139,3 +140,9 @@ Rule: gateway state is process-local. Running multiple sidecar replicas would mu
 | `vite.config.js` | React plugin, route-aware social/share HTML metadata in development and production entry files, PWA behavior, `__APP_VERSION__`, KTC proxy, and local sidecar proxies including Trade proposals/share metadata |
 | `nginx.conf` | Production proxying of `/api/live/`, `/api/statistics/scores/`, `/api/fantasy/`, `/api/draft-sync/`, `/api/predictions-sync/`, `/api/trade-proposals/`, and `/trade/share/` to the sidecar. Bearer credentials are forwarded and server-backed routes are `no-store` |
 | `docker-compose.yml`, `Dockerfile`, `Dockerfile.prebuilt`, `Dockerfile.server` | Deployment |
+
+### Fantasy Matchups comparison and rivalry
+
+The player Tale of the Tape keeps hero and metric columns aligned and contains only player-specific data. The manager VS button opens `MatchupRivalryModal.jsx`, reusing linked Sleeper history. Each `leagueHistory.js` rivalry includes completed meetings; seasons without a finalized week contribute no game results. `matchupRivalry.js` preserves selected manager orientation, orders meetings newest-first, and derives closest meeting (including ties), biggest decisive win, and highest team score. The modal has loading, unavailable, retry, and empty states.
+
+Rivalry meeting highlights retain each season's roster IDs for navigation through the shared `openHistoricalMatchup` handler in `App.jsx`. Starter highlights use recorded Sleeper player points (including zero and negatives), exclude bench/empty slots, preserve ties, and are unavailable when any starter score is missing. Player identity comes from the player database, without attributing today's NFL team to a historical performance. Manager palette washes and the shared player-row/icon components provide visual identity. Summary highlights, meeting scores, and starter rows open their source matchup. Saved history does not include play-by-play, so it cannot establish a biggest-play highlight.

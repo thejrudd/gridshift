@@ -222,6 +222,27 @@ function getRawStatValue(entry, statKey) {
   return Number.isFinite(value) ? value : 0;
 }
 
+function isTeamDefensePosition(position) {
+  return ['DST', 'D/ST', 'DEF', 'DEFENSE'].includes(String(position ?? '').toUpperCase());
+}
+
+const IDP_POSITIONS = new Set(['DL', 'DE', 'DT', 'LB', 'ILB', 'OLB', 'DB', 'CB', 'S', 'SS', 'FS']);
+
+function isIdpStatKey(statKey) {
+  const scoringKey = STAT_TO_SCORING_KEY[statKey] ?? statKey;
+  return scoringKey.startsWith('idp_') || ['bonus_sack_2p', 'bonus_tkl_10p'].includes(scoringKey);
+}
+
+function getPositionEligibleEntry(entry, position) {
+  const hasPosition = position != null && String(position).trim() !== '';
+  const normalizedPosition = String(position ?? '').toUpperCase();
+  if (hasPosition && !isTeamDefensePosition(position) && !IDP_POSITIONS.has(normalizedPosition)) {
+    return Object.fromEntries(Object.entries(entry ?? {}).filter(([statKey]) => !isIdpStatKey(statKey)));
+  }
+  if (!isTeamDefensePosition(position)) return entry;
+  return Object.fromEntries(Object.entries(entry ?? {}).filter(([statKey]) => !isIdpStatKey(statKey)));
+}
+
 function addPositionSpecificRows(rows, entry, settings, position) {
   if (!position) return;
   const normalizedPosition = String(position).toUpperCase();
@@ -264,16 +285,18 @@ function addPositionSpecificRows(rows, entry, settings, position) {
 export function buildFantasyScoringBreakdown(entry, scoringSettings = DEFAULT_SCORING, position = null, options = {}) {
   if (!entry) return { rows: [], total: 0 };
 
+  const eligibleEntry = getPositionEligibleEntry(entry, position);
   const settings = getPositionScoringSettings(scoringSettings ?? DEFAULT_SCORING, position);
   const authoritativeTotal = Number.isFinite(Number(options.authoritativeTotal))
     ? Number(options.authoritativeTotal)
-    : calcPoints(entry, scoringSettings ?? DEFAULT_SCORING, position);
-  const appliedContributions = options.preferRawStats ? null : entry?._fantasyContributions;
+    : calcPoints(eligibleEntry, scoringSettings ?? DEFAULT_SCORING, position);
+  const appliedContributions = options.preferRawStats ? null : eligibleEntry?._fantasyContributions;
   const rows = [];
   const seenKeys = new Set();
 
   if (appliedContributions && typeof appliedContributions === 'object') {
     for (const [key, points] of Object.entries(appliedContributions)) {
+      if (isTeamDefensePosition(position) && isIdpStatKey(key)) continue;
       const pts = Number(points);
       if (!Number.isFinite(pts)) continue;
       seenKeys.add(key);
@@ -289,7 +312,8 @@ export function buildFantasyScoringBreakdown(entry, scoringSettings = DEFAULT_SC
 
   for (const [statKey, scoringKey] of Object.entries(STAT_TO_SCORING_KEY)) {
     if (seenKeys.has(scoringKey)) continue;
-    const statVal = getRawStatValue(entry, statKey);
+    if (isTeamDefensePosition(position) && isIdpStatKey(statKey)) continue;
+    const statVal = getRawStatValue(eligibleEntry, statKey);
     if (!statVal) continue;
     const multiplier = Number(settings[scoringKey] ?? 0);
     if (!multiplier) continue;
@@ -303,7 +327,7 @@ export function buildFantasyScoringBreakdown(entry, scoringSettings = DEFAULT_SC
     });
   }
 
-  addPositionSpecificRows(rows, entry, settings, position);
+  addPositionSpecificRows(rows, eligibleEntry, settings, position);
 
   const rowTotal = roundPoints(rows.reduce((sum, row) => sum + row.pts, 0));
   const adjustment = roundPoints(authoritativeTotal - rowTotal);

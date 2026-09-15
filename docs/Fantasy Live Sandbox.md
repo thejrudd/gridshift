@@ -18,28 +18,33 @@ Fantasy Live is unusable outside the season for two reasons:
 
 The sandbox addresses both, without changing production behaviour.
 
-## Two modes
+## Three modes
 
 | Mode | Fixture | Data | Use |
 | --- | --- | --- | --- |
 | Replay (default) | `liveSandboxFixture.js` | Time-sliced replay of a completed week | Testing any time, at any point of a week |
 | Preseason | `liveSandboxPreseasonFixture.js` | Real live routes, scoped to the preseason | Watching real preseason games as they happen |
+| Live data | Connected Sleeper league | Normal current-season live routes and real team data | Testing Fantasy Live against the active season |
 
-Both are always available and switch from the **Replay / Preseason** buttons in
-the sandbox panel — no rebuild, no restart. The choice persists in
-`localStorage`, so a reload keeps it.
+All three are switchable from the mode buttons in the sandbox panel — no
+rebuild, no restart. The choice persists in `localStorage`, so a reload keeps
+it. Live data is enabled only when a Sleeper league is connected; it uses the
+normal league session and server allowlist, while Replay and Preseason continue
+to use the synthetic sandbox league.
 
 Preseason is live rather than replayed, so the clock and scrubber hide in that
-mode. Everything else — the fixture league, the regular-season gate override,
-the connect-gate bypass — works the same in both.
+mode. Replay and Preseason use the fixture league and regular-season gate
+override; Live data uses the connected league and its normal live access gate.
 
 Switching modes is a hard reset, not a filter: the two fixtures cover different
-seasons entirely (2025 week 12 versus 2026 preseason week 3). `setSandboxMode()`
-drops the cached slate and rewinds the clock, which also clears the feed, plays,
-and win-probability trail gathered under the previous mode.
+seasons entirely (2025 week 12 versus 2026 preseason week 3), and Live data
+returns to the connected league. `setSandboxMode()` drops the cached slate and
+rewinds the clock, which also clears the feed, plays, and win-probability trail
+gathered under the previous mode.
 
 `VITE_LIVE_SANDBOX_MODE` still exists, but only sets which mode a browser opens
-in before it has chosen one.
+in before it has chosen one. Set it to `live` to start with connected live data
+when the dev browser already has a Sleeper league selected.
 
 ## Enabling it
 
@@ -165,6 +170,17 @@ the moment the page loads. With it off, both build from real observed activity:
   marker with the rest of the week left empty. Actual-score paths connect each
   team's cumulative scoring dots directly, and hover interpolates continuously
   along that same visible line.
+
+Sleeper itself is synthesized rather than fixture-frozen. `getSleeperReplaySlice()`
+(`liveSandboxSource.js`) re-slices the same final BDL box scores at
+`max(0, progress − lag)` — a deliberately earlier point than the stats/plays
+above use — maps them through `mapBdlStatsToGridShift` and scores them with
+`calcPoints()`, so replay `players_points`/`points` and `loadWeeklyStats()` are
+always a box-score-derived, ~20-slate-second-lagged echo of what the feed
+already shows, never the fixture's own stored finals. That gap between "BDL
+just happened" and "Sleeper confirms it" is what lets the reconciliation
+engine's pending→confirmed flips and residual pinning actually exercise in the
+sandbox instead of every play confirming the instant it appears.
 
 Two details make this work. Plays are refetched whenever replay progress
 changes: the live throttle (`PLAYS_REFRESH_MIN_MS`, 45s of wall time) would

@@ -230,6 +230,14 @@ export function getPositionDepthCount(rosterAnalysis, position, benchmark, exclu
 
 export function buildPlayerAsset(player, rosterId, playerValueMap = null) {
   if (!player) return null;
+  // A supplied map is the canonical Trade valuation contract. Its missing
+  // entries are intentionally unavailable (not permission to invent a
+  // heuristic value), which matters for IDP/kicker production below the
+  // minimum sample size. Callers without a canonical map retain the legacy
+  // opportunity-only estimate.
+  const value = playerValueMap != null
+    ? (playerValueMap.get(player.id) ?? null)
+    : estimatePlayerTradeValue(player);
   return {
     type: 'player',
     id: player.id,
@@ -243,7 +251,7 @@ export function buildPlayerAsset(player, rosterId, playerValueMap = null) {
     recentAvg: player.recentAvg ?? 0,
     seasonPts: player.seasonPts ?? 0,
     rank: player.rank ?? null,
-    value: playerValueMap?.get(player.id) ?? estimatePlayerTradeValue(player),
+    value,
   };
 }
 

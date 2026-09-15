@@ -124,6 +124,7 @@ export function FieldLegend({ barColor }) {
       <span><TypeGlyph type="kick" color="var(--color-label-secondary)" />Kick</span>
       <span className="fv-legend-sack"><TypeGlyph type="rush" dir={-1} color="var(--color-accent-red)" /><i />Sack</span>
       <span><i className="fv-mark is-inc" />Incomplete</span>
+      <span><i className="fv-mark is-turn" />Turnover</span>
       <span className="fv-legend-fd"><i />To gain</span>
     </div>
   );

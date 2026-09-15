@@ -13,6 +13,7 @@ import { buildPlayerNameIndex, lookupPlayerByName } from './nflPlays/playerNameI
 import { enrichPlaySequenceContext } from './nflPlays/playSequenceContext.js';
 
 const MAX_DESC_LENGTH = 140;
+const GAME_DURATION_MS = 3 * 60 * 60 * 1000 + 10 * 60 * 1000;
 
 function firstFinite(...values) {
   for (const value of values) {
@@ -25,6 +26,18 @@ function firstFinite(...values) {
 function firstString(...values) {
   for (const value of values) {
     if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return null;
+}
+
+function firstBoolean(...values) {
+  for (const value of values) {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number' && Number.isFinite(value)) return value !== 0;
+    if (typeof value !== 'string' || !value.trim()) continue;
+    const normalized = value.trim().toLowerCase();
+    if (['true', 'yes', 'y', '1'].includes(normalized)) return true;
+    if (['false', 'no', 'n', '0'].includes(normalized)) return false;
   }
   return null;
 }
@@ -82,11 +95,14 @@ export function normalizePlay(raw, gameId, { inferredPasserName = null } = {}) {
     type: firstString(raw.type_slug, raw.type_text, raw.type_abbreviation, raw.play_type, raw.type)
       ?.toLowerCase() ?? '',
     yards: firstFinite(raw.yards_gained, raw.yards, raw.net_yards, raw.stat_yardage) ?? 0,
-    scoring: Boolean(raw.scoring_play ?? raw.touchdown ?? /touchdown|field goal is good/i.test(description)),
+    scoring: firstBoolean(raw.scoring_play, raw.touchdown)
+      ?? /touchdown|field goal is good/i.test(description),
     awayScore: firstFinite(raw.away_score, raw.visitor_score, raw.visitor_team_score),
     homeScore: firstFinite(raw.home_score, raw.home_team_score),
     teamAbbr: getTeamAbbr(firstString(raw.team?.abbreviation, raw.possession_team, raw.team)),
-    wallclock: Date.parse(raw.wallclock ?? '') || null,
+    wallclock: Number.isFinite(Date.parse(raw.wallclock ?? ''))
+      ? Date.parse(raw.wallclock ?? '')
+      : null,
     defenseTeamAbbr: getTeamAbbr(firstString(raw.defense_team?.abbreviation, raw.defense_team, raw.defensive_team)),
     inferredPasserName,
     description: displayDescription.length > MAX_DESC_LENGTH
@@ -107,6 +123,32 @@ function isPossessionChangingSummary(play) {
   const type = String(play?.type ?? '').toLowerCase();
   return type.includes('interception')
     || (type.includes('fumble') && /opp|opponent/.test(type));
+}
+
+function isFirstDownPlay(play) {
+  const description = String(play?.description ?? '');
+  if (/first down/i.test(description)) return true;
+
+  // BALLDONTLIE exposes the down at the start and end of the snap. An
+  // offensive play ending on a new first down is still a first down when the
+  // provider's sentence omits the phrase (which is common in short_text).
+  // Leave incompletions, sacks, interceptions, and no-plays to their existing
+  // branches so an end_down value cannot invent a positive offensive stat.
+  const raw = play?.raw ?? {};
+  const endDown = firstFinite(raw.end_down, raw.endDown);
+  const incomplete = play?.narrative?.playKind === 'incompletion'
+    || String(play?.type ?? '').toLowerCase().includes('incompletion')
+    || /\bincomplete\b/i.test(description);
+  const negated = play?.narrative?.negated === true
+    || /\bno play\b|wiped out by/i.test([
+      description,
+      raw.short_text,
+      raw.text,
+    ].filter(Boolean).join(' '));
+  if (incomplete || negated || /\bintercept/i.test(String(play?.type ?? '')) || /\bsack\b/i.test(description)) {
+    return false;
+  }
+  return endDown === 1;
 }
 
 function getGameTeamAbbr(team) {
@@ -165,7 +207,13 @@ export function buildStarterNameIndex(rows) {
   const { index, meta, teamDefenseIds } = buildPlayerNameIndex(entries, { normalize: normalizeName });
   return {
     index,
-    meta: new Map([...meta].map(([id, record]) => [id, { team: record.team, position: record.position }])),
+    // normalizedName carries through: lookupPlayerByName reads it back off
+    // each candidate record to tell a genuine same-team, same-initial
+    // teammate apart from the actual named player when a full first name is
+    // given (see its "fullFirstNameGiven" check).
+    meta: new Map([...meta].map(([id, record]) => (
+      [id, { team: record.team, position: record.position, normalizedName: record.normalizedName }]
+    ))),
     teamDefenseIds,
   };
 }
@@ -180,7 +228,7 @@ function getFantasyRoleForActor(actorRole, playerMeta, play) {
   if (actorRole === PLAY_ROLES.PUNTER) return 'punter';
   if (actorRole === PLAY_ROLES.RETURNER) return 'returner';
   if ([PLAY_ROLES.SACKER, PLAY_ROLES.INTERCEPTER, PLAY_ROLES.RECOVERER, PLAY_ROLES.TACKLER].includes(actorRole)) {
-    return 'defense';
+    return isDefensivePosition(playerMeta?.position) ? 'defense' : null;
   }
   if (actorRole === PLAY_ROLES.FUMBLER) {
     const type = String(play?.type ?? '');
@@ -235,7 +283,18 @@ function matchNarrativeActors(play, nameIndex) {
       PLAY_ROLES.FUMBLER,
     ].includes(actor.role);
     const record = lookupPlayerByName(nameIndex, actor.name, {
-      team: offensiveRole ? play.teamAbbr : null,
+      // Defensive names in BDL's trailing tackle/recovery clauses can belong
+      // to either side of the turnover. Restrict them to the resolved defense
+      // so an offensive player named after a recovery cannot become an IDP.
+      //
+      // Use the resolved offenseTeamAbbr, not the raw play.teamAbbr: on an
+      // interception or opponent-recovered fumble, BDL's `team` field names
+      // the team that now possesses the ball (the defense), so a passer or
+      // fumbler cross-checked against play.teamAbbr on those plays would be
+      // compared to the wrong side and dropped as a mismatch. offenseTeamAbbr
+      // (and defenseTeamAbbr, on the other side) already account for that
+      // inversion — see getOffensiveTeamForPlay / getDefensiveTeamForPlay.
+      team: offensiveRole ? play.offenseTeamAbbr : play.defenseTeamAbbr,
       normalize: normalizeName,
     });
     const playerId = getIndexedPlayerId(nameIndex, record);
@@ -280,13 +339,21 @@ export function matchPlayToStarters(play, nameIndex) {
     if (at < 0) return;
     owners.forEach((playerId) => {
       const playerMeta = meta.get(playerId);
-      // Team cross-check when the play carries possession info.
-      if (play.teamAbbr && playerMeta?.team && playerMeta.team !== play.teamAbbr
-        && !isDefensiveRole(play, playerMeta)
-        // Punt and kickoff rows can name the receiving returner while the
-        // provider's `team` field still names the kicking side. Keep that
-        // named returner eligible for return-yard scoring.
-        && !isReturnPlay) {
+      // Every non-defensive fallback candidate is checked against the team its
+      // eventual role implies: non-kicking returners belong to the resolved
+      // defense, and every other eligible fallback role belongs to the offense.
+      const expectedTeam = getExpectedCandidateTeam(play, playerMeta, isReturnPlay);
+      // This branch only runs when the narrative parser could not identify
+      // actors. A defensive starter mentioned in a mixed pass/fumble sentence
+      // is not, by itself, evidence that they made the recovery or tackle.
+      // Those credits require the parser's explicit defensive actor; otherwise
+      // leave the play unattributed instead of manufacturing an IDP event.
+      if (isDefensivePosition(playerMeta?.position)) return;
+      // A rostered player's team is positive attribution evidence, not a hint.
+      // When the provider row lacks enough game context to resolve the team
+      // implied by the candidate's role, fail closed. This prevents a same-name
+      // defender from another game from surviving an ambiguous fallback scan.
+      if (playerMeta?.team && (!expectedTeam || playerMeta.team !== expectedTeam)) {
         return;
       }
       const existing = matches.get(playerId);
@@ -320,8 +387,21 @@ function isDefensivePosition(position) {
   return isTeamDefensePosition(position) || ['DL', 'DE', 'DT', 'LB', 'ILB', 'OLB', 'DB', 'CB', 'S', 'SS', 'FS'].includes(position);
 }
 
-function isDefensiveRole(play, playerMeta) {
-  return isDefensivePosition(playerMeta?.position);
+/**
+ * The team a name-match candidate must belong to, given the play and the
+ * candidate's own position — used to reject a same-name player on the wrong
+ * roster before a role is even assigned.
+ *
+ * On a punt or kickoff, BDL's `team` names the kicking side, so the
+ * receiving-side returner is checked against the resolved defense (see
+ * getDefensiveTeamForPlay) — the kicker/punter stays on the offense side.
+ * Everything else (passer, rusher, receiver, kicker, punter) is checked
+ * against the resolved offense.
+ */
+function getExpectedCandidateTeam(play, playerMeta, isReturnPlay) {
+  const position = playerMeta?.position;
+  if (isReturnPlay && !['K', 'P'].includes(position)) return play.defenseTeamAbbr ?? null;
+  return play.offenseTeamAbbr ?? play.teamAbbr ?? null;
 }
 
 /**
@@ -329,7 +409,7 @@ function isDefensiveRole(play, playerMeta) {
  * scored through the league settings (position always passed — scoring rule).
  */
 export function estimatePlayPoints(play, role, position, scoringSettings, roleDetail = null) {
-  return Math.round(calcPoints(buildPlayStatDelta(play, role, roleDetail), scoringSettings, position) * 10) / 10;
+  return Math.round(calcPoints(buildPlayStatDelta(play, role, roleDetail), scoringSettings, position) * 100) / 100;
 }
 
 export function buildPlayStatDelta(play, role, roleDetail = null) {
@@ -359,6 +439,7 @@ export function buildPlayStatDelta(play, role, roleDetail = null) {
       play.raw?.text,
     ].filter(Boolean).join(' '));
   const delta = {};
+  const firstDown = isFirstDownPlay(play);
 
   // Keep the provider's raw yardage on the normalized play for field geometry,
   // but a snap explicitly ruled "No Play" has no fantasy stat attribution.
@@ -399,7 +480,14 @@ export function buildPlayStatDelta(play, role, roleDetail = null) {
     if (/sack/i.test(description)) delta.idp_sack = 1;
     if (/intercept/i.test(description)) delta.idp_int = 1;
     if (/forced fumble|fumble forced/i.test(description)) delta.idp_ff = 1;
-    if (/fumble.*recover/i.test(description)) delta.idp_fr = 1;
+    if (/fumble.*recover/i.test(description)) {
+      delta.idp_fr = 1;
+      const fumbleReturnYards = firstFinite(
+        play.narrative?.returnYards,
+        extractReturnYards(description),
+      );
+      if (fumbleReturnYards != null && fumbleReturnYards > 0) delta.idp_fr_yd = fumbleReturnYards;
+    }
     if (/safety/i.test(description)) delta.idp_safety = 1;
     if (/pass (?:defensed|defended|broken up)|pass breakup|incomplete/i.test(description)) delta.idp_pd = 1;
     if (touchdown) {
@@ -430,7 +518,7 @@ export function buildPlayStatDelta(play, role, roleDetail = null) {
       delta.pass_cmp = 1;
       delta.pass_att = 1;
       if (touchdown) delta.pass_td = 1;
-      if (/first down/i.test(description)) delta.pass_fd = 1;
+      if (firstDown) delta.pass_fd = 1;
       if (touchdown && yards >= 40) delta.pass_td_40p = 1;
       if (touchdown && yards >= 50) delta.pass_td_50p = 1;
       if (yards >= 40) delta.pass_cmp_40p = 1;
@@ -444,7 +532,7 @@ export function buildPlayStatDelta(play, role, roleDetail = null) {
       delta.rec = 1;
       delta.rec_yd = yards;
       if (touchdown) delta.rec_td = 1;
-      if (/first down/i.test(description)) delta.rec_fd = 1;
+      if (firstDown) delta.rec_fd = 1;
       if (touchdown && yards >= 40) delta.rec_td_40p = 1;
       if (touchdown && yards >= 50) delta.rec_td_50p = 1;
       if (yards >= 40) delta.rec_40p = 1;
@@ -457,7 +545,7 @@ export function buildPlayStatDelta(play, role, roleDetail = null) {
       delta.rush_att = 1;
       delta.rush_yd = yards;
       if (touchdown) delta.rush_td = 1;
-      if (/first down/i.test(description)) delta.rush_fd = 1;
+      if (firstDown) delta.rush_fd = 1;
       if (touchdown && yards >= 40) delta.rush_td_40p = 1;
       if (touchdown && yards >= 50) delta.rush_td_50p = 1;
       if (yards >= 40) delta.rush_40p = 1;
@@ -565,9 +653,11 @@ function buildPlayGlance(play, game) {
   };
 }
 
-/** Sort key: newest first across games (wallclock preferred, game-time fallback). */
+/** Sort key: newest first within one game. */
 function getPlayOrder(play) {
-  if (play.wallclock) return play.wallclock;
+  if (play?.wallclock != null && Number.isFinite(Number(play.wallclock))) {
+    return Number(play.wallclock);
+  }
   const period = play.period ?? 0;
   const clockParts = /(\d{1,2}):(\d{2})/.exec(play.clock ?? '');
   const secondsLeft = clockParts ? Number(clockParts[1]) * 60 + Number(clockParts[2]) : 900;
@@ -595,6 +685,100 @@ export function getPlayProgress(play) {
   return Math.min(1, Math.max(0, elapsed / REGULATION_SECONDS));
 }
 
+function getGameKickoffMs(game) {
+  const kickoff = Date.parse(game?.date ?? '');
+  return Number.isFinite(kickoff) ? kickoff : null;
+}
+
+// `getPlayOrder()` is intentionally game-local so it remains useful while a
+// single provider response is being enriched. Feed ordering needs a shared
+// key, though: without a wallclock, yesterday's completed Q4 otherwise sorts
+// above today's live Q2. Kickoff plus the play's own progress preserves the
+// real slate order without changing the per-game progress used by scoring.
+function getPlayTimelineOrder(play, game, fallbackGameIndex = 0, fallbackStart = 0) {
+  if (play?.wallclock != null && Number.isFinite(Number(play.wallclock))) {
+    return Number(play.wallclock);
+  }
+  const kickoff = getGameKickoffMs(game);
+  const base = kickoff ?? fallbackStart + fallbackGameIndex * GAME_DURATION_MS;
+  const progress = getPlayProgress(play);
+  return base + (Number.isFinite(Number(progress)) ? Number(progress) : 0) * GAME_DURATION_MS;
+}
+
+function compareDescending(left, right) {
+  return right - left;
+}
+
+function firstFiniteEventValue(event, keys) {
+  for (const key of keys) {
+    if (event?.[key] == null || event?.[key] === '') continue;
+    const value = Number(event?.[key]);
+    if (Number.isFinite(value)) return value;
+  }
+  return null;
+}
+
+/** Newest first on the shared chart/feed axis. */
+export function compareLiveFeedEvents(left, right) {
+  const leftProgress = left?.progress == null || left?.progress === ''
+    ? Number.NaN
+    : Number(left.progress);
+  const rightProgress = right?.progress == null || right?.progress === ''
+    ? Number.NaN
+    : Number(right.progress);
+  if (Number.isFinite(leftProgress) && Number.isFinite(rightProgress)
+    && leftProgress !== rightProgress) {
+    return compareDescending(leftProgress, rightProgress);
+  }
+  if (Number.isFinite(leftProgress) !== Number.isFinite(rightProgress)) {
+    return Number.isFinite(rightProgress) ? 1 : -1;
+  }
+
+  const leftTime = firstFiniteEventValue(left, ['timelineAt', 'at']);
+  const rightTime = firstFiniteEventValue(right, ['timelineAt', 'at']);
+  if (leftTime != null && rightTime != null && leftTime !== rightTime) {
+    return compareDescending(leftTime, rightTime);
+  }
+  if ((leftTime != null) !== (rightTime != null)) return rightTime != null ? 1 : -1;
+
+  const leftOrder = Number(left?.order);
+  const rightOrder = Number(right?.order);
+  if (Number.isFinite(leftOrder) && Number.isFinite(rightOrder) && leftOrder !== rightOrder) {
+    return compareDescending(leftOrder, rightOrder);
+  }
+  if (Number.isFinite(leftOrder) !== Number.isFinite(rightOrder)) {
+    return Number.isFinite(rightOrder) ? 1 : -1;
+  }
+  return String(right?.id ?? '').localeCompare(String(left?.id ?? ''), undefined, { numeric: true });
+}
+
+export function sortLiveFeedEvents(events = []) {
+  return [...events].sort(compareLiveFeedEvents);
+}
+
+function compareUnmappedFeedEvents(left, right) {
+  const leftTime = firstFiniteEventValue(left, ['timelineAt']);
+  const rightTime = firstFiniteEventValue(right, ['timelineAt']);
+  if (leftTime != null && rightTime != null && leftTime !== rightTime) {
+    return compareDescending(leftTime, rightTime);
+  }
+  if ((leftTime != null) !== (rightTime != null)) return rightTime != null ? 1 : -1;
+
+  const leftOrder = Number(left?.order);
+  const rightOrder = Number(right?.order);
+  if (Number.isFinite(leftOrder) && Number.isFinite(rightOrder) && leftOrder !== rightOrder) {
+    return compareDescending(leftOrder, rightOrder);
+  }
+  if (Number.isFinite(leftOrder) !== Number.isFinite(rightOrder)) {
+    return Number.isFinite(rightOrder) ? 1 : -1;
+  }
+
+  const leftAt = firstFiniteEventValue(left, ['at']);
+  const rightAt = firstFiniteEventValue(right, ['at']);
+  if (leftAt != null && rightAt != null && leftAt !== rightAt) return compareDescending(leftAt, rightAt);
+  return String(right?.id ?? '').localeCompare(String(left?.id ?? ''), undefined, { numeric: true });
+}
+
 /** Same reading, from a rendered glance clock such as `Q3 7:12`. */
 export function parseGlanceProgress(clock) {
   const match = /Q(\d)(?:\s+(\d{1,2}):(\d{2}))?/i.exec(String(clock ?? ''));
@@ -611,19 +795,49 @@ export function parseGlanceProgress(clock) {
  */
 export function buildPlayEvents(playsByGame, nameIndex, scoringSettings, positionsById, gamesById) {
   const events = [];
-  Object.entries(playsByGame ?? {}).forEach(([gameId, rawPlays]) => {
+  const gameIds = Object.keys(playsByGame ?? {}).sort((leftId, rightId) => {
+    const left = gamesById?.get?.(String(leftId));
+    const right = gamesById?.get?.(String(rightId));
+    const leftKickoff = getGameKickoffMs(left);
+    const rightKickoff = getGameKickoffMs(right);
+    if (leftKickoff != null && rightKickoff != null && leftKickoff !== rightKickoff) {
+      return leftKickoff - rightKickoff;
+    }
+    if (leftKickoff != null) return -1;
+    if (rightKickoff != null) return 1;
+    return String(leftId).localeCompare(String(rightId), undefined, { numeric: true });
+  });
+  const knownKickoffs = gameIds
+    .map((gameId) => getGameKickoffMs(gamesById?.get?.(String(gameId))))
+    .filter((kickoff) => kickoff != null);
+  const fallbackStart = knownKickoffs.length ? Math.min(...knownKickoffs) : 0;
+  const gameIndexById = new Map(gameIds.map((gameId, index) => [String(gameId), index]));
+
+  gameIds.forEach((gameId) => {
+    const rawPlays = playsByGame?.[gameId];
     const game = gamesById?.get?.(String(gameId)) ?? null;
+    const fallbackGameIndex = gameIndexById.get(String(gameId)) ?? 0;
     const context = {
       awayTeam: getGameTeamAbbr(game?.visitor_team ?? game?.away),
       homeTeam: getGameTeamAbbr(game?.home_team ?? game?.home),
     };
     const normalized = (rawPlays ?? [])
-      .map((raw) => normalizePlay(raw, gameId))
+      .map((raw, rawIndex) => {
+        const play = normalizePlay(raw, gameId);
+        if (!play || raw.id != null || raw.sequence != null) return play;
+        // Some provider snapshots omit both id and sequence. A description is
+        // not an identity: repeated short plays must not collapse into one
+        // shared row when the snapshot is reconciled or grouped later.
+        return { ...play, id: `${gameId}-${rawIndex}-${play.id}` };
+      })
       .filter(Boolean)
       .sort((left, right) => getPlayOrder(left) - getPlayOrder(right));
     const contextual = enrichPlaySequenceContext(normalized, context).map((play) => (
       play.inferredPasserName
-        ? normalizePlay(play.raw, gameId, { inferredPasserName: play.inferredPasserName })
+        ? {
+            ...normalizePlay(play.raw, gameId, { inferredPasserName: play.inferredPasserName }),
+            id: play.id,
+          }
         : play
     ));
     contextual.forEach((play) => {
@@ -633,8 +847,8 @@ export function buildPlayEvents(playsByGame, nameIndex, scoringSettings, positio
       matchPlayToStarters(play, nameIndex).forEach(({ playerId, role, detail }) => {
         const position = positionsById.get(playerId) ?? 'FLEX';
         const statDelta = buildPlayStatDelta(play, role, detail);
-        const pts = Math.round(calcPoints(statDelta, scoringSettings, position) * 10) / 10;
-        if (!pts && !play.scoring) return; // ignore zero-impact involvements
+        const pts = Math.round(calcPoints(statDelta, scoringSettings, position) * 100) / 100;
+        if (!Number.isFinite(pts) || pts === 0) return; // only fantasy-relevant involvements
         const classification = getPlayEventClassification(play, role, position, statDelta);
         events.push({
           id: `play-${play.id}-${playerId}`,
@@ -654,7 +868,10 @@ export function buildPlayEvents(playsByGame, nameIndex, scoringSettings, positio
           // timestamp. Replay must not mistake build time for event time.
           timelineAt: play.wallclock,
           progress: getPlayProgress(play),
-          order: getPlayOrder(play),
+          // `order` is shared across games. The per-game game clock remains in
+          // `progress`; using the local quarter/clock number here made a
+          // completed earlier game outrank a live later game.
+          order: getPlayTimelineOrder(play, game, fallbackGameIndex, fallbackStart),
           gameId,
           source: 'play',
           estimated: true,
@@ -715,7 +932,15 @@ export function mergePlayEvents(playEvents, deltaEvents, { coverageWindowMs = 12
       // The play knows its game clock; the stat delta only knows "just now".
       progress: match.progress ?? event.progress ?? null,
       gameId: event.gameId ?? match.gameId ?? null,
-      timelineAt: event.timelineAt ?? event.at ?? match.timelineAt ?? null,
+      // A stats-delta timestamp means "the poll arrived", not necessarily
+      // when the matched play happened. Prefer the provider play's time for
+      // hydrated rows; unmatched deltas keep their poll time.
+      timelineAt: event.source === 'stats-delta'
+        ? match.timelineAt ?? event.timelineAt ?? event.at ?? null
+        : event.timelineAt ?? match.timelineAt ?? event.at ?? null,
+      order: event.source === 'stats-delta'
+        ? match.order ?? event.order ?? null
+        : event.order ?? match.order ?? null,
       play: event.play ?? match.play ?? null,
       playGame: event.playGame ?? match.playGame ?? null,
       sharedPlayId: event.sharedPlayId ?? match.sharedPlayId ?? null,
@@ -724,27 +949,26 @@ export function mergePlayEvents(playEvents, deltaEvents, { coverageWindowMs = 12
   });
 
   const remainingPlays = (playEvents ?? []).filter((play) => !consumedPlayIds.has(play.id));
-  // Primary sort on wallclock-ish `at`; `order` (game time) breaks ties among
-  // backfilled plays that lack a wallclock and share a build timestamp.
+  // Prefer a real play timestamp, then the shared kickoff/game-time order, and
+  // only use the polling timestamp for unmatched stat-delta rows.
   return [...enrichedDeltas, ...remainingPlays]
-    .sort((left, right) => (
-      ((right.at ?? 0) - (left.at ?? 0)) || ((right.order ?? 0) - (left.order ?? 0))
-    ));
+    .sort(compareUnmappedFeedEvents);
 }
 
 // Provider-derived play stats may carry optional bonus fields that the live box
 // score does not expose, while a snapshot delta may carry several plays at once.
 // Compare the core per-play counting stats so a one-play fallback can be
 // rehydrated without requiring every provider-specific field to line up.
-const PLAY_MATCH_STATS = new Set([
-  'pass_yd', 'pass_cmp', 'pass_att', 'pass_td', 'pass_int', 'pass_2pt',
-  'rush_yd', 'rush_att', 'rush_td', 'rush_2pt',
-  'rec', 'rec_yd', 'rec_td', 'rec_2pt',
+export const PLAY_MATCH_STATS = new Set([
+  'pass_yd', 'pass_cmp', 'pass_att', 'pass_inc', 'pass_fd', 'pass_td', 'pass_int', 'pass_2pt',
+  'rush_yd', 'rush_att', 'rush_fd', 'rush_td', 'rush_2pt',
+  'rec', 'rec_yd', 'rec_fd', 'rec_td', 'rec_2pt',
   'kr_yd', 'kr_td', 'pr_yd', 'pr_td', 'ret_td',
   'fgm', 'fgmiss', 'xpm', 'xpmiss', 'fum_lost', 'fum_ret_td',
+  'fgm_yds', 'fgm_yds_over_30', 'idp_tkl', 'idp_tkl_solo', 'idp_tkl_ast',
 ]);
 
-function statLinesMatch(left, right) {
+export function statLinesMatch(left, right) {
   if (!left || !right || typeof left !== 'object' || typeof right !== 'object') return false;
   const sharedKeys = [...PLAY_MATCH_STATS].filter((key) => (
     Math.abs(Number(left[key]) || 0) > 0
@@ -790,6 +1014,17 @@ export function groupSharedPlayEvents(events = [], sideKeyOf) {
         kind: event.kind,
         mechanism: event.mechanism,
         estimated: event.estimated,
+        source: event.source,
+        // Reconciled rows arrive with the displayed total in `pts` and the
+        // play's own score moved to `rawPts`. The scoring-math expansion reads
+        // both per contributor, so dropping them here made every expansion
+        // score against the displayed total and hid the adjustment line.
+        // Undefined when absent, leaving demo and preseason rows unchanged.
+        rawPts: event.rawPts,
+        adjustment: event.adjustment,
+        displayPts: event.displayPts,
+        status: event.status,
+        confirmedBy: event.confirmedBy,
       }));
       return {
         ...primary,
@@ -800,7 +1035,7 @@ export function groupSharedPlayEvents(events = [], sideKeyOf) {
         id: `shared-${primary.sharedPlayId}-${group.sideKey}`,
         pts: Math.round(contributors.reduce((total, contributor) => (
           total + (Number(contributor.pts) || 0)
-        ), 0) * 10) / 10,
+        ), 0) * 100) / 100,
         contributorIds: contributors.map((contributor) => contributor.playerId),
         contributors,
       };

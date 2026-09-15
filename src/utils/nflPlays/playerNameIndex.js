@@ -111,15 +111,50 @@ export function lookupPlayerByName(nameIndex, name, { team = null, normalize = n
     ? [normalized, `${parts[0][0]} ${parts[parts.length - 1]}`, `${parts[0][0]}${parts[parts.length - 1]}`]
     : [normalized];
 
+  // Whether the caller supplied a full first name rather than a bare initial
+  // ("Javonte Williams" vs "J.Williams"), read off the raw string's own
+  // punctuation/whitespace rather than the normalized one. The two
+  // `normalize` implementations in use disagree on what "A.St. Brown" does
+  // to its first token — normalizePlayerName's blanket non-alnum collapse
+  // keeps "a" and "st" apart, while normalizeName deletes periods outright
+  // and merges them into "ast" — so the normalized string can't tell a real
+  // multi-letter first name from an initial glued to the next word by a
+  // provider's "A.St." abbreviation. The raw text can.
+  const rawFirstToken = String(name ?? '').trim().split(/[.\s]+/).filter(Boolean)[0] ?? '';
+  const fullFirstNameGiven = rawFirstToken.length > 1;
+  const normalizedFirstToken = fullFirstNameGiven
+    ? (normalize(rawFirstToken).split(' ').filter(Boolean)[0] ?? '')
+    : '';
+
   for (const key of candidateKeys) {
     const owners = nameIndex.index.get(key);
     if (!owners?.length) continue;
-    const records = owners.map((id) => nameIndex.meta.get(id)).filter(Boolean);
-    if (records.length === 1) return records[0];
+    let records = owners.map((id) => nameIndex.meta.get(id)).filter(Boolean);
     if (team) {
-      const onTeam = records.filter((record) => record.team === team);
-      if (onTeam.length === 1) return onTeam[0];
+      // Drop candidates that are known to be on a different team. Records
+      // with no team on file stay eligible — we have no basis to exclude
+      // them, and excluding them would make a genuinely unambiguous match
+      // disappear just because roster data is incomplete.
+      records = records.filter((record) => !record.team || record.team === team);
     }
+    // A fallback key built from just the first initial (every key after the
+    // exact full-name key) can be shared by two teammates with different
+    // first names and the same initial and last name — "Javonte Williams"
+    // and "Jameson Williams" both produce "j williams". When the caller gave
+    // a full first name, only keep a candidate whose own first name is
+    // actually consistent with it: equal, or one a prefix of the other (a
+    // hyphenated first name like "Amon-Ra" normalizes to two tokens, "amon
+    // ra", one more than a plain comparison expects).
+    if (fullFirstNameGiven && key !== normalized && normalizedFirstToken) {
+      records = records.filter((record) => {
+        const candidateFirstToken = String(record.normalizedName ?? '').split(' ').filter(Boolean)[0] ?? '';
+        if (!candidateFirstToken) return true;
+        return candidateFirstToken === normalizedFirstToken
+          || candidateFirstToken.startsWith(normalizedFirstToken)
+          || normalizedFirstToken.startsWith(candidateFirstToken);
+      });
+    }
+    if (records.length === 1) return records[0];
     return null;
   }
   return null;

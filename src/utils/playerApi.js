@@ -2,7 +2,13 @@ import { cachedFetch, TTL } from './playerCache.js';
 
 const ESPN_BASE = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl';
 const ESPN_CORE = 'https://sports.core.api.espn.com/v2/sports/football/leagues/nfl';
-const CURRENT_SEASON = 2025;
+// GridShift's league year runs from March through February, matching the
+// season range used by SleeperContext. Keep statistics consumers aligned with
+// the active fantasy season instead of leaving a stale calendar-year literal.
+const CURRENT_SEASON = (() => {
+  const now = new Date();
+  return now.getMonth() >= 2 ? now.getFullYear() : now.getFullYear() - 1;
+})();
 const CAREER_STAT_REPAIR_START_SEASON = 2006;
 
 // Some app IDs differ from ESPN's roster endpoint slug

@@ -1508,6 +1508,7 @@ function RankRow({ rank, player, activeSortOption, sortValueMode, rankingMode = 
       player={player}
       darkMode={darkMode}
       onClick={onSelect}
+      showAccentRail={false}
       showPosition={false}
       showTeamLogo={false}
       metaSegments={metaSegments}

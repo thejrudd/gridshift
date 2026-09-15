@@ -42,6 +42,22 @@ test('the last plotted point holds every event, so the close is not a jump', () 
   assert.equal(beforeClose.a, 40);
 });
 
+test('replay preserves an observed chart position beyond the active-clock NOW', () => {
+  const { points } = buildPaceSeries({
+    events: [{ id: 'sunday-play', pts: 4, progress: 0.8, at: 100 }],
+    sideKeyOf: () => 'a',
+    totals: { a: 4, b: 0 },
+    // Replay progress is measured on merged active intervals; the event's
+    // chart position is measured on the kickoff-ordered game windows.
+    slateProgress: 0.5,
+    accumulateInOrder: true,
+  });
+
+  assert.equal(points.at(-2).x, 0.8);
+  assert.equal(points.at(-1).x, 0.8);
+  assert.equal(points.at(-2).a, points.at(-1).a);
+});
+
 test('ordering by timestamp is what produced the wall', () => {
   // The same events accumulated by clock: an early position holds a late
   // timestamp's total, and the point before the close is nowhere near it.

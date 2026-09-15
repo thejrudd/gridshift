@@ -373,6 +373,7 @@ export default function CompanionDefense({ routeState, onRouteStateChange }) {
                 darkMode={darkMode}
                 interactive
                 compact={compactRows}
+                showAccentRail={false}
                 showAvatar={false}
                 showPosition={false}
                 showTeamLogo={false}

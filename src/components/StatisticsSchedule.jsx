@@ -11,6 +11,7 @@ import {
   getTeamVisualTheme,
   mixHex,
   pickReadableForeground,
+  tuneGradientStopForMode,
 } from '../utils/teamVisualTheme';
 import {
   STATISTICS_SCHEDULE_FILTERS,
@@ -22,6 +23,7 @@ import {
   getGameKickoffMs,
   getPopulatedScheduleWeeks,
   getScheduleGameTeamId,
+  getScheduleWeeks,
   getScheduleGameScore,
   isFinalScheduleGame,
   normalizeScheduleTeamId,
@@ -54,7 +56,15 @@ const SCHEDULE_FILTER_OPTIONS = [
   { filter: STATISTICS_SCHEDULE_FILTERS.PRIMETIME, label: 'PrimeTime' },
   { filter: STATISTICS_SCHEDULE_FILTERS.HOLIDAY, label: 'Holiday' },
 ];
+// Home/Away is only meaningful relative to a selected team, so it's appended
+// for the By Team view only rather than shown alongside the By Week filters.
+const TEAM_SCHEDULE_FILTER_OPTIONS = [
+  ...SCHEDULE_FILTER_OPTIONS,
+  { filter: STATISTICS_SCHEDULE_FILTERS.HOME, label: 'Home' },
+  { filter: STATISTICS_SCHEDULE_FILTERS.AWAY, label: 'Away' },
+];
 const PRESEASON_HIDDEN_FILTERS = new Set([STATISTICS_SCHEDULE_FILTERS.PRIMETIME]);
+const TEAM_ONLY_FILTERS = new Set([STATISTICS_SCHEDULE_FILTERS.HOME, STATISTICS_SCHEDULE_FILTERS.AWAY]);
 const SCHEDULE_LOGO_CONTRAST_GRADIENT_TEAMS = new Set([
   ...TEAM_LOGO_SIDE_SENSITIVE_GRADIENT_TEAMS,
   'la',
@@ -176,6 +186,21 @@ function subtleForRowForeground(foreground) {
     : 'rgba(12,15,20,0.14)';
 }
 
+// Result and action chips sit on top of an arbitrary team gradient, so a fixed
+// accent has no dependable ground beneath it. Each row hands its chips an
+// opaque scrim plus the win/loss accents tuned for that scrim, which keeps the
+// contrast constant no matter which two teams are being mixed.
+function chipVarsForRowForeground(foreground) {
+  const onDarkChip = foreground === '#FFFFFF';
+  return {
+    '--statistics-schedule-chip-bg': onDarkChip ? 'rgba(8,10,14,0.82)' : 'rgba(255,255,255,0.88)',
+    '--statistics-schedule-chip-fg': onDarkChip ? '#F2F5F9' : '#0C0F14',
+    '--statistics-schedule-chip-border': onDarkChip ? 'rgba(255,255,255,0.22)' : 'rgba(12,15,20,0.20)',
+    '--statistics-schedule-chip-win': onDarkChip ? '#43DE86' : '#00702C',
+    '--statistics-schedule-chip-loss': onDarkChip ? '#FF9585' : '#B81C08',
+  };
+}
+
 function getMatchupRowPresentation(awayTeamId, homeTeamId, darkMode) {
   const awayTheme = getTeamVisualTheme(awayTeamId, darkMode, { middleStop: false });
   const homeTheme = getTeamVisualTheme(homeTeamId, darkMode, { middleStop: false });
@@ -187,10 +212,14 @@ function getMatchupRowPresentation(awayTeamId, homeTeamId, darkMode) {
     const primary = darkMode
       ? (palette.darkPrimary ?? palette.primary)
       : palette.primary;
-    if (SCHEDULE_LOGO_CONTRAST_GRADIENT_TEAMS.has(key) || SCHEDULE_LOGO_CONTRAST_GRADIENT_TEAMS.has(logoKey)) {
-      return palette.secondary ?? palette.darkSecondary ?? primary;
-    }
-    return primary ?? theme?.primary ?? theme?.color;
+    // These stops go through the same mode tuning as every other team surface.
+    // Reading the palette raw let brand colours onto the row at full strength
+    // (Steelers gold at 0.55 luminance against a 0.006 canvas), which made
+    // Schedule the only surface in the app that ignored the dark-mode curve.
+    const stop = SCHEDULE_LOGO_CONTRAST_GRADIENT_TEAMS.has(key) || SCHEDULE_LOGO_CONTRAST_GRADIENT_TEAMS.has(logoKey)
+      ? (palette.secondary ?? palette.darkSecondary ?? primary)
+      : (primary ?? theme?.primary ?? theme?.color);
+    return stop ? tuneGradientStopForMode(stop, darkMode) : stop;
   };
   const start = getScheduleGradientStop(awayTeamId, awayTheme);
   const end = getScheduleGradientStop(homeTeamId, homeTheme);
@@ -199,6 +228,7 @@ function getMatchupRowPresentation(awayTeamId, homeTeamId, darkMode) {
     return {
       style: {
         '--statistics-schedule-row-accent': homeTheme?.borderColor ?? awayTheme?.borderColor ?? 'var(--color-separator)',
+        ...chipVarsForRowForeground(darkMode ? '#FFFFFF' : '#0C0F14'),
       },
       preferDarkBroadcastLogo: darkMode,
     };
@@ -220,6 +250,7 @@ function getMatchupRowPresentation(awayTeamId, homeTeamId, darkMode) {
       '--statistics-schedule-row-fg': foreground,
       '--statistics-schedule-row-muted': mutedForRowForeground(foreground),
       '--statistics-schedule-row-subtle': subtleForRowForeground(foreground),
+      ...chipVarsForRowForeground(foreground),
     },
     preferDarkBroadcastLogo: foreground === '#FFFFFF',
   };
@@ -257,14 +288,17 @@ function GameResultBadge({ game, selectedTeamId = null }) {
   );
 }
 
-function GameStatsAction({ game, onViewGameStats }) {
+function GameStatsAction({ game, season, phase, week, onViewGameStats }) {
   if (!onViewGameStats || !isFinalScheduleGame(game) || !getGameStatsEventId(game)) return null;
+
+  const awayTeamId = getScheduleGameTeamId(game, 'away');
+  const homeTeamId = getScheduleGameTeamId(game, 'home');
 
   return (
     <button
       type="button"
       className="statistics-schedule-game-stats-button"
-      onClick={() => onViewGameStats(game)}
+      onClick={() => onViewGameStats({ ...game, season, phase, week, awayTeamId, homeTeamId })}
     >
       Game Stats
     </button>
@@ -315,7 +349,7 @@ function ModeButton({ mode, activeMode, label, onClick, variant = 'primary' }) {
 }
 
 function getFilterLabel(filter) {
-  return SCHEDULE_FILTER_OPTIONS.find((option) => option.filter === filter)?.label ?? 'All Games';
+  return TEAM_SCHEDULE_FILTER_OPTIONS.find((option) => option.filter === filter)?.label ?? 'All Games';
 }
 
 function getPreseasonWeekSelection(value) {
@@ -362,6 +396,14 @@ function getFilterAvailability(games = []) {
   }, {});
 }
 
+function getTeamFilterAvailability(rows = []) {
+  const games = rows.filter((row) => !row.isBye && row.game).map((row) => row.game);
+  const availability = getFilterAvailability(games);
+  availability[STATISTICS_SCHEDULE_FILTERS.HOME] = rows.some((row) => !row.isBye && row.isAway === false);
+  availability[STATISTICS_SCHEDULE_FILTERS.AWAY] = rows.some((row) => !row.isBye && row.isAway === true);
+  return availability;
+}
+
 function getAvailableFilterForGames(games = [], filter = STATISTICS_SCHEDULE_FILTERS.ALL) {
   if (filter === STATISTICS_SCHEDULE_FILTERS.ALL) return filter;
   return games.some((game) => scheduleGameMatchesFilter(game, filter))
@@ -369,10 +411,10 @@ function getAvailableFilterForGames(games = [], filter = STATISTICS_SCHEDULE_FIL
     : STATISTICS_SCHEDULE_FILTERS.ALL;
 }
 
-function ScheduleFilterChips({ activeFilter, availability, onFilterChange, hiddenFilters = null }) {
+function ScheduleFilterChips({ activeFilter, availability, onFilterChange, hiddenFilters = null, options = SCHEDULE_FILTER_OPTIONS }) {
   return (
     <div className="statistics-schedule-filter-rail" role="group" aria-label="Schedule filters">
-      {SCHEDULE_FILTER_OPTIONS.filter((option) => !hiddenFilters?.has(option.filter)).map((option) => (
+      {options.filter((option) => !hiddenFilters?.has(option.filter)).map((option) => (
         <FilterChip
           key={option.filter}
           filter={option.filter}
@@ -388,14 +430,15 @@ function ScheduleFilterChips({ activeFilter, availability, onFilterChange, hidde
 
 function IncludePreseasonControl({ checked, onChange }) {
   return (
-    <label className="statistics-schedule-preseason-control">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(event) => onChange(event.target.checked)}
-      />
-      <strong>Include preseason</strong>
-    </label>
+    <button
+      type="button"
+      className={`statistics-schedule-toggle-chip${checked ? ' is-active' : ''}`}
+      aria-pressed={checked}
+      title="Include preseason weeks"
+      onClick={() => onChange(!checked)}
+    >
+      Preseason
+    </button>
   );
 }
 
@@ -421,7 +464,7 @@ function TeamIdentity({ team, fallbackId, compact = false }) {
   );
 }
 
-function GameRow({ game, teamsById, darkMode, onViewGameStats }) {
+function GameRow({ game, teamsById, darkMode, season, phase, week, onViewGameStats }) {
   const awayTeamId = getScheduleGameTeamId(game, 'away');
   const homeTeamId = getScheduleGameTeamId(game, 'home');
   const awayTeam = teamsById.get(awayTeamId);
@@ -445,9 +488,9 @@ function GameRow({ game, teamsById, darkMode, onViewGameStats }) {
       <div className="statistics-schedule-row-detail">
         <GameResultBadge game={game} />
         <BroadcastDisplay game={game} darkMode={rowPresentation.preferDarkBroadcastLogo} />
-        <span>{formatVenue(game.location ?? game.venue)}</span>
+        <span className="statistics-schedule-venue">{formatVenue(game.location ?? game.venue)}</span>
         {game.neutralSite && <span className="statistics-schedule-pill">Neutral</span>}
-        <GameStatsAction game={game} onViewGameStats={onViewGameStats} />
+        <GameStatsAction game={game} season={season} phase={phase} week={week} onViewGameStats={onViewGameStats} />
       </div>
     </article>
   );
@@ -461,6 +504,7 @@ function WeekScheduleView({
   onWeekChange,
   onFilterChange,
   darkMode,
+  season,
   onViewGameStats,
 }) {
   const weekScrubberRef = useRef(null);
@@ -509,104 +553,400 @@ function WeekScheduleView({
         />
       </div>
 
-      <section className="statistics-schedule-panel">
-        <header className="statistics-schedule-section-header">
-          <p className="statistics-schedule-eyebrow">League slate</p>
-          <h2>{selectedWeekOption?.fullLabel ?? 'Week not selected'}</h2>
-          <span>
-            {activeFilter === STATISTICS_SCHEDULE_FILTERS.ALL
-              ? `${games.length} ${games.length === 1 ? 'game' : 'games'}`
-              : `${games.length} of ${allGames.length} games · ${filterLabel}`}
-          </span>
-        </header>
+      {activeFilter !== STATISTICS_SCHEDULE_FILTERS.ALL && groups.length > 0 && (
+        <p className="statistics-schedule-status statistics-schedule-status--slate">
+          {`${games.length} of ${allGames.length} games · ${filterLabel}`}
+        </p>
+      )}
 
-        {groups.length ? (
-          <div className="statistics-schedule-groups">
-            {groups.map((group) => (
-              <section key={group.key} className="statistics-schedule-kickoff-group">
-                <header className="statistics-schedule-group-header">
-                  <span>{formatKickoffSlot(group.kickoff)}</span>
-                  <span>{group.games.length}</span>
-                </header>
-                <div className="statistics-schedule-row-list">
-                  {group.games.map((game) => (
-                    <GameRow
-                      key={game.id}
-                      game={game}
-                      teamsById={teamsById}
-                      darkMode={darkMode}
-                      onViewGameStats={onViewGameStats}
-                    />
-                  ))}
-                </div>
-              </section>
-            ))}
-          </div>
-        ) : (
-          <InlineEmptyState
-            title={activeFilter === STATISTICS_SCHEDULE_FILTERS.ALL ? 'No games for this week' : 'No games match this filter'}
-            copy={activeFilter === STATISTICS_SCHEDULE_FILTERS.ALL
-              ? 'Choose another week from the schedule rail.'
-              : 'Choose All Games or another schedule filter.'}
-          />
-        )}
-      </section>
+      {groups.length ? (
+        <section
+          className="statistics-schedule-sheet"
+          aria-label={`${selectedWeekOption?.fullLabel ?? 'Selected week'} slate`}
+        >
+          {groups.map((group) => (
+            <div key={group.key} className="statistics-schedule-kickoff-group">
+              <h2 className="statistics-schedule-group-row">{formatKickoffSlot(group.kickoff)}</h2>
+              {group.games.map((game) => (
+                <GameRow
+                  key={game.id}
+                  game={game}
+                  teamsById={teamsById}
+                  darkMode={darkMode}
+                  season={season}
+                  phase={selectedWeekOption?.phase}
+                  week={selectedWeekOption?.week}
+                  onViewGameStats={onViewGameStats}
+                />
+              ))}
+            </div>
+          ))}
+        </section>
+      ) : (
+        <InlineEmptyState
+          title={activeFilter === STATISTICS_SCHEDULE_FILTERS.ALL ? 'No games for this week' : 'No games match this filter'}
+          copy={activeFilter === STATISTICS_SCHEDULE_FILTERS.ALL
+            ? 'Choose another week from the schedule rail.'
+            : 'Choose All Games or another schedule filter.'}
+        />
+      )}
     </div>
   );
 }
 
-function TeamPicker({ teams, onSelectTeam, darkMode }) {
-  const divisions = DIVISION_ORDER
-    .map((division) => ({
-      division,
-      teams: teams
-        .filter((team) => team.division === division)
-        .sort((left, right) => getTeamName(left).localeCompare(getTeamName(right))),
+const TEAM_PICKER_SORTS = {
+  DIVISION: 'division',
+  ALPHA: 'alpha',
+  CONFERENCE: 'conference',
+  KICKOFF: 'kickoff',
+};
+const TEAM_PICKER_SORT_OPTIONS = [
+  { sort: TEAM_PICKER_SORTS.ALPHA, label: 'A–Z' },
+  { sort: TEAM_PICKER_SORTS.DIVISION, label: 'Division' },
+  { sort: TEAM_PICKER_SORTS.CONFERENCE, label: 'Conference' },
+  { sort: TEAM_PICKER_SORTS.KICKOFF, label: 'Next Kickoff' },
+];
+const TEAM_PICKER_SORT_VALUES = new Set(Object.values(TEAM_PICKER_SORTS));
+const TEAM_PICKER_SORT_STORAGE_KEY = 'gridshift.statisticsScheduleTeamSort';
+const RECENT_TEAM_STORAGE_KEY = 'gridshift.statisticsScheduleRecentTeam';
+// The stored favorite comes from the local color data, which spells a couple of
+// franchises differently than the schedule feed, so it is resolved against the
+// loaded team list rather than compared directly.
+const TEAM_ID_ALIASES = {
+  LA: 'LAR',
+  LAR: 'LA',
+  WAS: 'WSH',
+  WSH: 'WAS',
+};
+
+function readStoredTeamSort() {
+  try {
+    const stored = localStorage.getItem(TEAM_PICKER_SORT_STORAGE_KEY);
+    return TEAM_PICKER_SORT_VALUES.has(stored) ? stored : TEAM_PICKER_SORTS.ALPHA;
+  } catch {
+    return TEAM_PICKER_SORTS.ALPHA;
+  }
+}
+
+function writeStoredTeamSort(sort) {
+  if (!TEAM_PICKER_SORT_VALUES.has(sort)) return;
+  try {
+    localStorage.setItem(TEAM_PICKER_SORT_STORAGE_KEY, sort);
+  } catch {
+    // Sort order is a preference only; the picker still renders without it.
+  }
+}
+
+function readRecentTeamId() {
+  try {
+    return normalizeScheduleTeamId(localStorage.getItem(RECENT_TEAM_STORAGE_KEY));
+  } catch {
+    return null;
+  }
+}
+
+function writeRecentTeamId(teamId) {
+  const normalized = normalizeScheduleTeamId(teamId);
+  if (!normalized) return;
+  try {
+    localStorage.setItem(RECENT_TEAM_STORAGE_KEY, normalized);
+  } catch {
+    // The recent-team shortcut is additive; routing remains the source of truth.
+  }
+}
+
+function resolveTeamId(value, teamsById) {
+  const normalized = normalizeScheduleTeamId(value);
+  if (!normalized) return null;
+  if (teamsById.has(normalized)) return normalized;
+  const alias = TEAM_ID_ALIASES[normalized];
+  return alias && teamsById.has(alias) ? alias : null;
+}
+
+function getTeamNickname(team, fallbackId) {
+  return team?.nickname || team?.name || getTeamCode(team, fallbackId);
+}
+
+function getTeamConference(team) {
+  const division = typeof team?.division === 'string' ? team.division.trim() : '';
+  return division.split(' ')[0] || 'Other';
+}
+
+function matchesTeamQuery(team, query) {
+  if (!query) return true;
+  return [getTeamCode(team), getTeamName(team), getTeamNickname(team), team?.division]
+    .filter((value) => typeof value === 'string' && value)
+    .some((value) => value.toLowerCase().includes(query));
+}
+
+function compareTeamsByName(left, right) {
+  return getTeamName(left).localeCompare(getTeamName(right));
+}
+
+// Weeks are walked in order and the earliest upcoming kickoff wins, so a team
+// that has already played this week sorts by its next game rather than its last.
+function buildNextGameIndex(schedules = [], nowMs) {
+  const index = new Map();
+
+  schedules.filter(Boolean).forEach((schedule) => {
+    getScheduleWeeks(schedule).forEach((week) => {
+      week.games.forEach((game) => {
+        const kickoffMs = getGameKickoffMs(game);
+        if (kickoffMs == null || kickoffMs < nowMs || isFinalScheduleGame(game)) return;
+        const awayTeamId = getScheduleGameTeamId(game, 'away');
+        const homeTeamId = getScheduleGameTeamId(game, 'home');
+        [
+          { teamId: awayTeamId, opponentTeamId: homeTeamId, isAway: true },
+          { teamId: homeTeamId, opponentTeamId: awayTeamId, isAway: false },
+        ].forEach(({ teamId, opponentTeamId, isAway }) => {
+          if (!teamId) return;
+          const current = index.get(teamId);
+          if (current && current.kickoffMs <= kickoffMs) return;
+          index.set(teamId, {
+            kickoffMs,
+            week: week.week,
+            weekLabel: week.label ?? null,
+            opponentTeamId,
+            isAway,
+          });
+        });
+      });
+    });
+  });
+
+  return index;
+}
+
+function formatNextGameMeta(entry, teamsById) {
+  if (!entry) return 'No game scheduled';
+  const label = typeof entry.weekLabel === 'string' && entry.weekLabel.trim()
+    ? entry.weekLabel.trim()
+    : `Week ${entry.week}`;
+  const compactLabel = label
+    .replace(/preseason\s+week/i, 'Pre W')
+    .replace(/^week\s+/i, 'W');
+  const opponent = teamsById.get(entry.opponentTeamId);
+  return `${compactLabel} · ${entry.isAway ? '@' : 'vs'} ${getTeamCode(opponent, entry.opponentTeamId)}`;
+}
+
+function sortTeamsForPicker(teams, sort, nextGameIndex) {
+  const sorted = [...teams];
+  if (sort !== TEAM_PICKER_SORTS.KICKOFF) return sorted.sort(compareTeamsByName);
+  return sorted.sort((left, right) => {
+    const leftMs = nextGameIndex.get(left.id)?.kickoffMs ?? Number.POSITIVE_INFINITY;
+    const rightMs = nextGameIndex.get(right.id)?.kickoffMs ?? Number.POSITIVE_INFINITY;
+    if (leftMs !== rightMs) return leftMs - rightMs;
+    return compareTeamsByName(left, right);
+  });
+}
+
+function buildTeamPickerGroups(teams, sort, nextGameIndex) {
+  if (sort === TEAM_PICKER_SORTS.ALPHA || sort === TEAM_PICKER_SORTS.KICKOFF) {
+    return [{ key: sort, label: null, teams: sortTeamsForPicker(teams, sort, nextGameIndex) }];
+  }
+
+  const keyFor = sort === TEAM_PICKER_SORTS.CONFERENCE
+    ? getTeamConference
+    : (team) => (typeof team?.division === 'string' ? team.division.trim() : '');
+  const preferredOrder = sort === TEAM_PICKER_SORTS.CONFERENCE ? ['AFC', 'NFC'] : DIVISION_ORDER;
+  const present = [...new Set(teams.map(keyFor))];
+  // Anything the feed reports outside the known order still gets a group rather
+  // than dropping out of the picker entirely.
+  const order = [
+    ...preferredOrder.filter((value) => present.includes(value)),
+    ...present.filter((value) => value && !preferredOrder.includes(value)).sort(),
+  ];
+
+  return order
+    .map((value) => ({
+      key: value,
+      label: value,
+      teams: sortTeamsForPicker(teams.filter((team) => keyFor(team) === value), sort, nextGameIndex),
     }))
     .filter((group) => group.teams.length > 0);
+}
+
+function getTeamRowMeta(team, sort, nextGameIndex, teamsById) {
+  if (sort === TEAM_PICKER_SORTS.KICKOFF) {
+    return formatNextGameMeta(nextGameIndex.get(team.id), teamsById);
+  }
+  if (sort === TEAM_PICKER_SORTS.DIVISION) return null;
+  return typeof team?.division === 'string' ? team.division : null;
+}
+
+function TeamPickerRow({ team, darkMode, onSelect, badge = null, meta = null, isFavorite = false }) {
+  const theme = getTeamVisualTheme(team?.id, darkMode, { logoSide: 'start' });
+  const code = getTeamCode(team);
+  const gradient = [theme?.gradientOverlay, theme?.gradient].filter(Boolean).join(', ');
 
   return (
-    <section className="statistics-schedule-panel">
-      <header className="statistics-schedule-section-header">
-        <p className="statistics-schedule-eyebrow">Team schedule</p>
-        <h2>Choose a Team</h2>
-        <span>32 teams</span>
-      </header>
-      <div className="statistics-schedule-team-picker">
-        {divisions.map((group) => (
-          <section key={group.division} className="statistics-schedule-team-picker-group">
-            <h3>{group.division}</h3>
-            <div className="statistics-schedule-team-picker-grid">
-              {group.teams.map((team) => {
-                const theme = getTeamVisualTheme(team.id, darkMode, { logoSide: 'start' });
-                const gradientBackground = theme?.gradient
-                  ? `${theme.gradientOverlay}, ${theme.gradient}`
-                  : 'var(--color-bg-secondary)';
-                return (
-                  <button
-                    key={team.id}
-                    type="button"
-                    className="statistics-schedule-team-option"
-                    style={{
-                      '--statistics-schedule-row-accent': theme?.borderColor ?? 'var(--color-separator)',
-                      '--statistics-schedule-row-fg': theme?.gradientFullForeground ?? 'var(--color-label)',
-                      '--statistics-schedule-row-muted': theme?.gradientFullMuted ?? 'var(--color-label-secondary)',
-                      minHeight: '56px',
-                      background: gradientBackground,
-                      color: theme?.gradientFullForeground ?? 'var(--color-label)',
-                    }}
-                    onClick={() => onSelectTeam(team.id)}
-                    aria-label={`View ${getTeamName(team)} schedule`}
-                  >
-                    <TeamIdentity team={team} compact />
-                    <span>{team.nickname ?? team.name}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </section>
-        ))}
+    <button
+      type="button"
+      className={`statistics-schedule-team-option${isFavorite ? ' is-favorite' : ''}`}
+      style={{
+        '--statistics-schedule-row-accent': theme?.borderColor ?? 'var(--color-separator)',
+        '--statistics-schedule-team-gradient': gradient || 'var(--color-bg-tertiary)',
+        '--statistics-schedule-team-gradient-fg': theme?.gradientFullForeground ?? 'var(--color-label)',
+        '--statistics-schedule-team-gradient-muted': theme?.gradientFullMuted ?? 'var(--color-label-secondary)',
+      }}
+      onClick={() => onSelect(team.id)}
+      aria-label={`View ${getTeamName(team)} schedule`}
+    >
+      {code !== 'TBD' && (
+        <img
+          src={teamLogo(code)}
+          alt=""
+          className="statistics-schedule-team-option-logo"
+          loading="lazy"
+          decoding="async"
+          onError={(event) => { event.currentTarget.style.visibility = 'hidden'; }}
+        />
+      )}
+      <span className="statistics-schedule-team-option-code">{code}</span>
+      <span className="statistics-schedule-team-option-name">{getTeamName(team)}</span>
+      <span className="statistics-schedule-team-option-trail">
+        {meta && <span className="statistics-schedule-team-option-meta">{meta}</span>}
+        {badge && <span className="statistics-schedule-team-option-badge">{badge}</span>}
+      </span>
+    </button>
+  );
+}
+
+function TeamPicker({
+  teams,
+  teamsById,
+  onSelectTeam,
+  darkMode,
+  scheduleData,
+  preseasonScheduleData,
+  includePreseason,
+  favoriteTeamId,
+  recentTeamId,
+}) {
+  const [query, setQuery] = useState('');
+  const [sort, setSort] = useState(readStoredTeamSort);
+
+  // Pinned once per mount so the kickoff order stays stable across re-renders.
+  const [nowMs] = useState(() => Date.now());
+
+  const normalizedQuery = query.trim().toLowerCase();
+  const searching = normalizedQuery.length > 0;
+
+  // The next-kickoff order is the only sort that needs the slate itself, so the
+  // index stays unbuilt until that sort is actually selected.
+  const nextGameIndex = useMemo(() => (
+    sort === TEAM_PICKER_SORTS.KICKOFF
+      ? buildNextGameIndex([scheduleData, includePreseason ? preseasonScheduleData : null], nowMs)
+      : new Map()
+  ), [sort, scheduleData, preseasonScheduleData, includePreseason, nowMs]);
+
+  const groups = useMemo(() => {
+    const matched = teams.filter((team) => matchesTeamQuery(team, normalizedQuery));
+    if (searching) {
+      return matched.length
+        ? [{
+          key: 'results',
+          label: `${matched.length} ${matched.length === 1 ? 'team' : 'teams'}`,
+          teams: sortTeamsForPicker(matched, sort, nextGameIndex),
+        }]
+        : [];
+    }
+    return buildTeamPickerGroups(matched, sort, nextGameIndex);
+  }, [teams, normalizedQuery, searching, sort, nextGameIndex]);
+
+  const quickPicks = [favoriteTeamId, recentTeamId]
+    .filter((teamId, index, list) => teamId && list.indexOf(teamId) === index)
+    .map((teamId) => teamsById.get(teamId))
+    .filter(Boolean);
+
+  const selectSort = (nextSort) => {
+    setSort(nextSort);
+    writeStoredTeamSort(nextSort);
+  };
+
+  const handleSearchKeyDown = (event) => {
+    if (event.key === 'Escape') {
+      setQuery('');
+      return;
+    }
+    if (event.key !== 'Enter') return;
+    const firstMatch = groups[0]?.teams?.[0];
+    if (firstMatch) onSelectTeam(firstMatch.id);
+  };
+
+
+  return (
+    <section className="statistics-schedule-team-picker-section" aria-label="Choose a team">
+      <div className="statistics-schedule-team-finder">
+        <div className="statistics-schedule-team-finder-row">
+          <input
+            type="search"
+            className="statistics-schedule-team-search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={handleSearchKeyDown}
+            placeholder="Search teams"
+            aria-label="Search teams by city, nickname, abbreviation, or division"
+            autoComplete="off"
+            spellCheck="false"
+          />
+          <div className="statistics-schedule-team-sort" role="group" aria-label="Sort teams">
+            {TEAM_PICKER_SORT_OPTIONS.map((option) => (
+              <button
+                key={option.sort}
+                type="button"
+                className={`statistics-schedule-filter-chip${sort === option.sort ? ' is-active' : ''}`}
+                aria-pressed={sort === option.sort}
+                onClick={() => selectSort(option.sort)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        {!searching && quickPicks.length > 0 && (
+          <div className="statistics-schedule-team-quickpicks">
+            <span className="statistics-schedule-eyebrow">Jump to</span>
+            {quickPicks.map((team) => (
+              <TeamPickerRow
+                key={`quick-${team.id}`}
+                team={team}
+                darkMode={darkMode}
+                onSelect={onSelectTeam}
+                isFavorite={team.id === favoriteTeamId}
+                badge={team.id === favoriteTeamId ? 'Your team' : 'Recent'}
+              />
+            ))}
+          </div>
+        )}
       </div>
+
+      {groups.length ? (
+        <div className="statistics-schedule-team-picker">
+          {groups.map((group) => (
+            <section key={group.key} className="statistics-schedule-team-picker-group">
+              {group.label && <h3>{group.label}</h3>}
+              <div className="statistics-schedule-team-picker-list">
+                {group.teams.map((team) => (
+                  <TeamPickerRow
+                    key={team.id}
+                    team={team}
+                    darkMode={darkMode}
+                    onSelect={onSelectTeam}
+                    isFavorite={team.id === favoriteTeamId}
+                    meta={getTeamRowMeta(team, sort, nextGameIndex, teamsById)}
+                  />
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      ) : (
+        <InlineEmptyState
+          title="No teams match that search"
+          copy="Try a city, nickname, abbreviation, or division — Sea, Hawks, SEA, or NFC West."
+        />
+      )}
     </section>
   );
 }
@@ -623,13 +963,16 @@ function TeamScheduleHeaderIdentity({ team, gameCount, byeCount }) {
   );
 }
 
-function TeamScheduleRow({ row, team, opponent, darkMode, onViewGameStats, preseason = false }) {
+function TeamScheduleRow({ row, team, opponent, darkMode, season, onViewGameStats, preseason = false }) {
   const awayTeamId = getScheduleGameTeamId(row.game, 'away');
   const homeTeamId = getScheduleGameTeamId(row.game, 'home');
   const rowTheme = getTeamVisualTheme(team?.id, darkMode, { logoSide: 'start' });
   const rowPresentation = row.isBye
     ? {
-        style: { '--statistics-schedule-row-accent': rowTheme?.borderColor ?? 'var(--color-separator)' },
+        style: {
+          '--statistics-schedule-row-accent': rowTheme?.borderColor ?? 'var(--color-separator)',
+          ...chipVarsForRowForeground(darkMode ? '#FFFFFF' : '#0C0F14'),
+        },
         preferDarkBroadcastLogo: darkMode,
       }
     : getMatchupRowPresentation(awayTeamId, homeTeamId, darkMode);
@@ -663,10 +1006,10 @@ function TeamScheduleRow({ row, team, opponent, darkMode, onViewGameStats, prese
           <>
             <GameResultBadge game={row.game} selectedTeamId={team?.id} />
             <BroadcastDisplay game={row.game} darkMode={rowPresentation.preferDarkBroadcastLogo} />
-            <span>{formatKickoffDate(row.game?.kickoff)}</span>
-            <span>{formatVenue(row.game?.location ?? row.game?.venue)}</span>
+            <span className="statistics-schedule-date">{formatKickoffDate(row.game?.kickoff)}</span>
+            <span className="statistics-schedule-venue">{formatVenue(row.game?.location ?? row.game?.venue)}</span>
             {row.game?.neutralSite && <span className="statistics-schedule-pill">Neutral</span>}
-            <GameStatsAction game={row.game} onViewGameStats={onViewGameStats} />
+            <GameStatsAction game={row.game} season={season} phase={row.phase} week={row.week} onViewGameStats={onViewGameStats} />
           </>
         )}
       </div>
@@ -685,7 +1028,10 @@ function TeamScheduleView({
   onSelectTeam,
   onFilterChange,
   darkMode,
+  season,
   onViewGameStats,
+  favoriteTeamId,
+  recentTeamId,
 }) {
   const selectedTeam = selectedTeamId ? teamsById.get(selectedTeamId) : null;
   const regularRows = buildTeamScheduleRows(scheduleData, selectedTeamId)
@@ -697,19 +1043,30 @@ function TeamScheduleView({
     : [];
   const rows = [...preseasonRows, ...regularRows];
   const visibleRows = filterTeamScheduleRows(rows, activeFilter);
-  const games = rows.filter((row) => !row.isBye && row.game).map((row) => row.game);
   const teamTheme = getTeamVisualTheme(selectedTeam?.id, darkMode, { logoSide: 'start' });
   const gameCount = rows.filter((row) => !row.isBye).length;
   const byeCount = regularRows.filter((row) => row.isBye).length;
   const filterLabel = getFilterLabel(activeFilter);
-  const filterAvailability = getFilterAvailability(games);
+  const filterAvailability = getTeamFilterAvailability(rows);
 
   if (!selectedTeam) {
-    return <TeamPicker teams={teams} onSelectTeam={onSelectTeam} darkMode={darkMode} />;
+    return (
+      <TeamPicker
+        teams={teams}
+        teamsById={teamsById}
+        onSelectTeam={onSelectTeam}
+        darkMode={darkMode}
+        scheduleData={scheduleData}
+        preseasonScheduleData={preseasonScheduleData}
+        includePreseason={includePreseason}
+        favoriteTeamId={favoriteTeamId}
+        recentTeamId={recentTeamId}
+      />
+    );
   }
 
   return (
-    <section className="statistics-schedule-panel statistics-schedule-team-panel">
+    <section className="statistics-schedule-team-panel">
       <header
         className="statistics-schedule-team-header"
         style={{
@@ -717,9 +1074,12 @@ function TeamScheduleView({
         }}
       >
         <TeamScheduleHeaderIdentity team={selectedTeam} gameCount={gameCount} byeCount={byeCount} />
-        <label className="statistics-schedule-team-select">
-          <span>Team</span>
-          <select value={selectedTeam.id} onChange={(event) => onSelectTeam(event.target.value)}>
+        <div className="statistics-schedule-team-select">
+          <select
+            aria-label="Team"
+            value={selectedTeam.id}
+            onChange={(event) => onSelectTeam(event.target.value)}
+          >
             {teams
               .slice()
               .sort((left, right) => getTeamName(left).localeCompare(getTeamName(right)))
@@ -727,17 +1087,18 @@ function TeamScheduleView({
                 <option key={team.id} value={team.id}>{team.name}</option>
               ))}
           </select>
-        </label>
+        </div>
       </header>
 
       <ScheduleFilterChips
         activeFilter={activeFilter}
         availability={filterAvailability}
         onFilterChange={onFilterChange}
+        options={TEAM_SCHEDULE_FILTER_OPTIONS}
       />
 
       {visibleRows.length ? (
-        <div className="statistics-schedule-row-list">
+        <div className="statistics-schedule-sheet">
           {visibleRows.map((row) => (
             <TeamScheduleRow
               key={row.id}
@@ -745,6 +1106,7 @@ function TeamScheduleView({
               team={selectedTeam}
               opponent={teamsById.get(row.opponentTeamId)}
               darkMode={darkMode}
+              season={season}
               onViewGameStats={onViewGameStats}
               preseason={row.phase === NFL_SEASON_PHASES.PRESEASON}
             />
@@ -780,7 +1142,7 @@ export default function StatisticsSchedule({
   onRouteChange,
   onViewGameStats,
 }) {
-  const { darkMode } = useTheme();
+  const { darkMode, favoriteTeam } = useTheme();
   const scheduleSeason = scheduleData?.season ?? new Date().getFullYear();
   const initialPreseasonWeek = getPreseasonWeekSelection(week);
   const [includePreseason, setIncludePreseason] = useState(Boolean(initialPreseasonWeek));
@@ -827,6 +1189,12 @@ export default function StatisticsSchedule({
   const hasRegularSchedule = scheduleHasGames(scheduleData);
   const hasSchedule = hasRegularSchedule || (preseasonRequested && scheduleHasGames(preseasonScheduleData));
   const teamsById = useMemo(() => new Map(teams.map((team) => [team.id, team])), [teams]);
+  const favoriteTeamId = useMemo(() => resolveTeamId(favoriteTeam, teamsById), [favoriteTeam, teamsById]);
+  const [recentTeamId, setRecentTeamId] = useState(readRecentTeamId);
+  const resolvedRecentTeamId = useMemo(
+    () => (recentTeamId === favoriteTeamId ? null : resolveTeamId(recentTeamId, teamsById)),
+    [recentTeamId, favoriteTeamId, teamsById],
+  );
   const preseasonStatus = !preseasonRequested
     ? 'idle'
     : preseasonScheduleData
@@ -865,11 +1233,15 @@ export default function StatisticsSchedule({
       writeStoredMode(nextMode);
     }
 
+    const nextFilter = nextMode === STATISTICS_SCHEDULE_MODES.WEEK && TEAM_ONLY_FILTERS.has(activeFilter)
+      ? STATISTICS_SCHEDULE_FILTERS.ALL
+      : activeFilter;
+
     onRouteChange?.({
       statisticsScheduleMode: nextMode,
       statisticsScheduleWeek: nextMode === STATISTICS_SCHEDULE_MODES.WEEK ? activeWeek : null,
       statisticsScheduleTeamId: nextMode === STATISTICS_SCHEDULE_MODES.TEAM ? selectedTeamId : null,
-      statisticsScheduleFilter: activeFilter === STATISTICS_SCHEDULE_FILTERS.ALL ? null : activeFilter,
+      statisticsScheduleFilter: nextFilter === STATISTICS_SCHEDULE_FILTERS.ALL ? null : nextFilter,
     });
   };
 
@@ -942,6 +1314,8 @@ export default function StatisticsSchedule({
 
   const selectTeam = (nextTeamId) => {
     writeStoredMode(STATISTICS_SCHEDULE_MODES.TEAM);
+    writeRecentTeamId(nextTeamId);
+    setRecentTeamId(normalizeScheduleTeamId(nextTeamId));
     onRouteChange?.({
       statisticsScheduleMode: STATISTICS_SCHEDULE_MODES.TEAM,
       statisticsScheduleWeek: null,
@@ -963,43 +1337,37 @@ export default function StatisticsSchedule({
 
   return (
     <div className="statistics-schedule">
-      <div className="statistics-schedule-toolbar">
-        <div className="statistics-schedule-toolbar-copy">
-          <p className="statistics-schedule-eyebrow">NFL Schedule</p>
-          <h1>{scheduleSeason} Season</h1>
-          <span>{scheduleStatusLabel}</span>
-        </div>
-        <div className="statistics-schedule-controls">
-          <div className="statistics-schedule-mode-toggle" role="group" aria-label="Primary schedule view">
-            <ModeButton
-              mode={STATISTICS_SCHEDULE_MODES.WEEK}
-              activeMode={activeMode}
-              label="View by Week"
-              onClick={() => setMode(STATISTICS_SCHEDULE_MODES.WEEK)}
-            />
-            <ModeButton
-              mode={STATISTICS_SCHEDULE_MODES.TEAM}
-              activeMode={activeMode}
-              label="View by Team"
-              onClick={() => setMode(STATISTICS_SCHEDULE_MODES.TEAM)}
-            />
-          </div>
-          <IncludePreseasonControl
-            checked={preseasonRequested}
-            onChange={togglePreseason}
+      <div className="statistics-schedule-controlbar">
+        <div className="statistics-schedule-mode-toggle" role="group" aria-label="Primary schedule view">
+          <ModeButton
+            mode={STATISTICS_SCHEDULE_MODES.WEEK}
+            activeMode={activeMode}
+            label="By Week"
+            onClick={() => setMode(STATISTICS_SCHEDULE_MODES.WEEK)}
+          />
+          <ModeButton
+            mode={STATISTICS_SCHEDULE_MODES.TEAM}
+            activeMode={activeMode}
+            label="By Team"
+            onClick={() => setMode(STATISTICS_SCHEDULE_MODES.TEAM)}
           />
         </div>
+        <IncludePreseasonControl
+          checked={preseasonRequested}
+          onChange={togglePreseason}
+        />
+        <span className="statistics-schedule-status">{scheduleStatusLabel}</span>
       </div>
 
       {!hasRegularSchedule && preseasonRequested && preseasonStatus === 'loading' ? (
-        <section className="statistics-schedule-panel">
+        <section className="statistics-schedule-empty-section">
           <InlineEmptyState
             title="Loading the preseason schedule"
             copy="Fetching the latest NFL preseason slate from ESPN."
           />
         </section>
       ) : !hasSchedule ? (
-        <section className="statistics-schedule-panel">
+        <section className="statistics-schedule-empty-section">
           <InlineEmptyState
             title={preseasonRequested && preseasonStatus === 'error' ? 'Preseason schedule is unavailable' : 'NFL schedule is not available yet'}
             copy={preseasonRequested && preseasonStatus === 'error'
@@ -1019,7 +1387,10 @@ export default function StatisticsSchedule({
           onSelectTeam={selectTeam}
           onFilterChange={selectFilter}
           darkMode={darkMode}
+          season={scheduleSeason}
           onViewGameStats={onViewGameStats}
+          favoriteTeamId={favoriteTeamId}
+          recentTeamId={resolvedRecentTeamId}
         />
       ) : (
         <WeekScheduleView
@@ -1030,6 +1401,7 @@ export default function StatisticsSchedule({
           onWeekChange={selectWeek}
           onFilterChange={selectFilter}
           darkMode={darkMode}
+          season={scheduleSeason}
           onViewGameStats={onViewGameStats}
         />
       )}

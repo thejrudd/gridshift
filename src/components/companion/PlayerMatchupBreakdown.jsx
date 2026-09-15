@@ -4,47 +4,38 @@ import { useSleeperBase } from '../../context/SleeperContext';
 import { useTheme } from '../../context/ThemeContext';
 import { DEFAULT_SCORING } from '../../utils/scoringEngine';
 import { formatWeather } from '../../api/weatherApi';
-import { getTeamPalette } from '../../data/teamColors.js';
-import { getCompanionInitials, getCompanionPlayerImageUrl } from '../../utils/companionAssetVisuals.js';
+import { formatStatisticsScoresLocalKickoff } from '../../utils/statisticsScoresTime.js';
+import { getNflTeamLogoUrl } from '../../utils/companionAssetVisuals.js';
+import { getTeamVisualTheme } from '../../utils/teamVisualTheme.js';
 import { STATISTICS_MODES } from '../../utils/playerDrilldown';
 import { buildFantasyScoringBreakdown, mergeOfficialFantasyTotal } from '../../utils/fantasyBreakdownRows.js';
 import { isEspnFantasyGameLogPosition, loadEspnFantasyGameLogWeekRow } from '../../utils/espnFantasyGameLogRows.js';
 import Modal from '../Modal';
+import PlayerAvatar from '../shared/PlayerAvatar.jsx';
+import { CompanionSegmentedControl } from './CompanionSelectorControls.jsx';
+import PlayerStatusBadge from './PlayerStatusBadge.jsx';
+import {
+  buildPlayerHeadlineParts,
+  buildPlayerOutlook,
+  buildPlayerProjectionBreakdown,
+  getNoteworthyWeather,
+  getPlayerPerformanceTarget,
+  getPlayerMatchupPhase,
+  matchupNumber,
+  resolvePlayerDisplayProjection,
+} from '../../utils/playerMatchupPresentation.js';
+import { buildPlayerDefensePerformance } from '../../utils/playerDefensePerformance.js';
+import { buildPlayerMatchupBenchOption } from '../../utils/playerMatchupBenchOption.js';
+import { usePlayerMatchupTimeline } from '../../hooks/usePlayerMatchupTimeline.js';
+import { DRILLDOWN_DEV_SLOTS_ENABLED } from '../../utils/drilldownDevSlots.js';
+import './PlayerMatchupBreakdown.css';
 
-function hexLuminance(hex) {
-  const r = parseInt(hex.slice(1, 3), 16) / 255;
-  const g = parseInt(hex.slice(3, 5), 16) / 255;
-  const b = parseInt(hex.slice(5, 7), 16) / 255;
-  const lin = c => c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
-}
-
-function darkenHex(hex, amount = 0.28) {
-  const r = Math.max(0, Math.round(parseInt(hex.slice(1, 3), 16) * (1 - amount)));
-  const g = Math.max(0, Math.round(parseInt(hex.slice(3, 5), 16) * (1 - amount)));
-  const b = Math.max(0, Math.round(parseInt(hex.slice(5, 7), 16) * (1 - amount)));
-  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
-}
-
-function HeaderActionButton({ label, onClick, heroBg, heroOnBg, icon }) {
-  const [isHovered, setIsHovered] = useState(false);
-
+function HeaderActionButton({ label, onClick, icon }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-      onFocus={() => setIsHovered(true)}
-      onBlur={() => setIsHovered(false)}
-      className="shrink-0 px-3 py-2 rounded-lg text-xs font-semibold transition-colors duration-150 flex items-center gap-1 cursor-pointer"
-      style={{
-        background: heroBg
-          ? (isHovered ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.15)')
-          : (isHovered ? 'var(--color-fill)' : 'transparent'),
-        border: heroBg ? '1px solid rgba(255,255,255,0.25)' : '1px solid var(--color-separator)',
-        color: heroBg ? heroOnBg : 'var(--color-accent)',
-      }}
+      className="matchup-header-action"
     >
       <span>{label}</span>
       {icon}
@@ -232,236 +223,534 @@ export const STAT_LABELS = {
   yds_allow_550p:    '550+ Yards Allowed',
 };
 
-function ProjectionMath({ baseAvg, factors, projected, projMin, projMax, oppTeam, locationStr, weatherStr, defLabel }) {
-  const displayFont = "'Barlow Condensed', 'Arial Narrow', sans-serif";
-  function fc(f) {
-    if (f > 1.02) return '#22c55e';
-    if (f < 0.98) return '#ef4444';
-    return 'var(--color-label-secondary)';
+export const formatNumber = (value, digits = 1) => value == null ? '—' : Number(value).toFixed(digits);
+const formatStat = value => value == null ? '—' : Number.isInteger(value) ? String(value) : Number(value).toFixed(1);
+export const signed = value => value == null ? '—' : `${value > 0 ? '+' : ''}${Number(value).toFixed(1)}`;
+const formatMatchupGameDate = (value) => {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+};
+export const formatOrdinal = value => {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return '—';
+  const mod100 = number % 100;
+  const suffix = mod100 >= 11 && mod100 <= 13 ? 'th' : ({ 1: 'st', 2: 'nd', 3: 'rd' }[number % 10] ?? 'th');
+  return `${number}${suffix}`;
+};
+
+function PerformanceTable({ rows, projected = false }) {
+  return (
+    <table className="matchup-performance-table">
+      <caption>{projected ? 'Projected stat line' : 'Fantasy scoring breakdown'}</caption>
+      <thead><tr><th scope="col">Stat</th><th scope="col">Value</th><th scope="col">Fantasy pts</th></tr></thead>
+      <tbody>{rows.map(row => <tr key={row.key ?? row.statKey}>
+        <th scope="row">{row.label}</th><td>{formatStat(row.statVal)}</td>
+        <td className={row.pts < 0 ? 'matchup-negative' : undefined}>{formatNumber(row.pts, 2)}</td>
+      </tr>)}</tbody>
+    </table>
+  );
+}
+
+
+export function getSeasonBenchmark({ player, peerModel, projection }) {
+  if (matchupNumber(peerModel?.overall?.ppg) != null && (peerModel?.overall?.games ?? 0) > 0) {
+    return {
+      value: peerModel.overall.ppg,
+      label: 'Season average',
+      source: `${peerModel.overall.games} qualifying ${peerModel.overall.games === 1 ? 'game' : 'games'}`,
+    };
   }
-  function fmt(f) { return `${f.toFixed(2)}×`; }
-  function impactText(f) {
-    const pct = Math.round((f - 1) * 100);
-    if (pct > 0) return `+${pct}%`;
-    if (pct < 0) return `${pct}%`;
-    return 'Even';
+  const playerAverage = matchupNumber(player?.avgPPG);
+  if (playerAverage != null && playerAverage > 0) {
+    return { value: playerAverage, label: 'Season average', source: 'Current season' };
+  }
+  const projectionAverage = matchupNumber(projection?.factors?.seasonBase);
+  if (projectionAverage != null) {
+    const prior = projection?.factors?.source === 'prior-season';
+    return {
+      value: projectionAverage,
+      label: prior ? 'Prior-season average' : 'Projection baseline',
+      source: prior ? 'Used until current-season form is established' : 'Projection model input',
+    };
+  }
+  return { value: null, label: 'Season average', source: 'Not established' };
+}
+
+export function getOpponentEvidenceLabel(context) {
+  if (!context) return 'Opponent context unavailable';
+  if (context.evidenceKind === 'blended') {
+    return `Early-season blend · ${Math.round(context.currentWeight * 100)}% current`;
+  }
+  if (context.evidenceKind === 'prior') return 'Prior-season context';
+  return `Current season · ${context.currentGames} ${context.currentGames === 1 ? 'game' : 'games'}`;
+}
+
+
+export function getChartMaximum(...values) {
+  const finiteValues = values.flat().map(matchupNumber).filter(value => value != null && value >= 0);
+  const maximum = finiteValues.length ? Math.max(...finiteValues) : 0;
+  return Math.max(10, Math.ceil(maximum * 1.15));
+}
+
+export function getChartPosition(value, maximum) {
+  const numeric = matchupNumber(value);
+  if (numeric == null || !Number.isFinite(maximum) || maximum <= 0) return null;
+  return Math.max(0, Math.min(100, numeric / maximum * 100));
+}
+
+
+
+
+
+
+function ProjectionOpponentDetails({ player, position }) {
+  const opponentContext = player?.opponentFantasyContext ?? (player?.defStrength ? {
+    ...player.defStrength,
+    team: player?.oppTeam,
+    position,
+    currentGames: player.defStrength.gamesAnalyzed,
+    evidenceKind: 'current',
+  } : null);
+  if (!opponentContext) return null;
+  return <details className="matchup-opponent-details"><summary>Opponent sample and ranking methodology</summary>
+    <p>{getOpponentEvidenceLabel(opponentContext)}. Rank 1 is the fewest fantasy points allowed to this position under the active league scoring.</p>
+    {opponentContext.evidenceKind === 'blended' && <p>Current season: {formatNumber(opponentContext.currentPtsAllowedPerGame)} across {opponentContext.currentGames} games · Prior season: {formatNumber(opponentContext.priorPtsAllowedPerGame)} across {opponentContext.priorGames} games. The prior-season share phases out after four current games.</p>}
+    {opponentContext.evidenceKind === 'prior' && <p>This estimate uses {opponentContext.priorGames} prior-season games because current-season evidence is not yet established.</p>}
+  </details>;
+}
+
+function RankStrip({ label, result, peerLabel }) {
+  const hasRank = result?.rank != null && result?.peerCount > 1;
+  const percentile = hasRank ? (result.peerCount - result.rank) / (result.peerCount - 1) * 100 : null;
+  return (
+    <div className="matchup-rank-strip">
+      <div className="matchup-rank-strip__heading"><strong>{label}</strong>
+        <span>{result?.rank != null ? `${result.rank} of ${result.peerCount}` : 'Rank unavailable'}</span>
+      </div>
+      {hasRank && <>
+        <div className="matchup-rank-strip__track" role="img" aria-label={`${label}: rank ${result.rank} of ${result.peerCount} ${peerLabel}.`}>
+          <span className="matchup-rank-strip__marker" style={{ left: `${percentile}%` }} />
+        </div>
+        <div className="matchup-rank-strip__ends"><span>Lower fantasy PPG</span><span>Higher fantasy PPG</span></div>
+      </>}
+      <p className="matchup-performance-note">{formatNumber(result?.ppg)} fantasy pts/game · {result?.games ?? 0} qualifying games</p>
+      {!hasRank && <p className="matchup-performance-note">{result?.rankingUnavailableReason ?? ((result?.games ?? 0) < 3 ? 'Peer ranking requires at least 3 qualifying games.' : 'Not enough qualifying peers to plot a ranking.')}</p>}
+    </div>
+  );
+}
+
+function EvidenceGames({ rows = [] }) {
+  if (!rows.length) return null;
+  return <table className="matchup-performance-table matchup-performance-table--evidence">
+    <caption>Contributing games</caption><thead><tr><th scope="col">Week</th><th scope="col">Opponent</th><th scope="col">Fantasy pts</th></tr></thead>
+    <tbody>{rows.map(row => <tr key={row.week}><th scope="row">{row.week}</th><td>{row.opponent ?? row.opp}</td><td>{formatNumber(row.points, 2)}</td></tr>)}</tbody>
+  </table>;
+}
+
+function PlayerPeerContext({ model, season }) {
+  const [metricId, setMetricId] = useState('receiving');
+  const metric = model?.metrics?.find(item => item.id === metricId) ?? model?.metrics?.[0];
+  if (!model?.completedThroughWeek) return <p className="matchup-performance-note">Current-season rankings will appear after a complete NFL week and its player stats are available.</p>;
+  return <section className="matchup-peer-context" aria-label="Season and opponent rankings">
+    <div className="matchup-performance-section-heading"><h3>Among {model.peerLabel}</h3><span>{season} · through Week {model.completedThroughWeek}</span></div>
+    <RankStrip label="Season fantasy points per game" result={model.overall} peerLabel={model.peerLabel} />
+    {model.statRanks?.length > 0 && <>
+      <h3>Common stat rankings</h3>
+      {model.statRanks.map(result => <RankStrip key={result.key} label={result.label} result={result} peerLabel={model.peerLabel} />)}
+    </>}
+    {!!model.metrics?.length && <>
+      <h3>Performance by opposing defense</h3>
+      <CompanionSegmentedControl value={metric?.id} options={model.metrics.map(item => ({ value: item.id, label: item.label }))} onChange={setMetricId} ariaLabel="Defense measure" columns={2} />
+      <p className="matchup-performance-note">{metric?.definition}</p>
+      {metric?.opponent?.rank != null && <p className="matchup-opponent-measure"><strong>{metric.opponent.team}</strong> · {metric.opponent.rank} of {metric.opponent.teamCount} defenses · {formatNumber(metric.opponent.perGame)} yards allowed/game · {metric.opponent.games} games</p>}
+      {metric?.coverageReason && <p className="matchup-performance-note">{metric.coverageReason}</p>}
+      {!metric?.coverageReason && metric?.buckets?.map(bucket => <div key={`${metric.id}-${bucket.id}`} className="matchup-evidence">
+        <RankStrip label={`Against ${bucket.label.toLowerCase()} defenses`} result={bucket} peerLabel={model.peerLabel} />
+        {bucket.gameRows.length > 0 && <details>
+          <summary className="matchup-evidence__hint">View contributing games</summary>
+          <EvidenceGames rows={bucket.gameRows} />
+        </details>}
+      </div>)}
+      <p className="matchup-performance-note">Strong: fewest yards allowed (top quarter). Average: middle half. Weak: most yards allowed (bottom quarter). The same current-season classification is applied to every past opponent. Game counts describe the sample, not statistical confidence.</p>
+    </>}
+  </section>;
+}
+
+
+
+
+function ProjectionDetails({ projection }) {
+  const factors = projection?.factors;
+  if (!factors) return null;
+  const source = factors.source === 'balldontlie' ? 'BALLDONTLIE projection' : factors.source === 'prior-season' ? 'GridShift projection using prior-season history' : 'GridShift projection';
+  const adjustments = [
+    ['Matchup', factors.oppFactor], ['Home / away', factors.locationFactor],
+    ['Weather', factors.weatherFactor],
+    ['Availability', factors.availabilityFactor],
+  ].filter(([, value]) => matchupNumber(value) != null);
+  return <div className="matchup-projection-details__content">
+    <h3>Projection source and expected range</h3>
+    <p>{source}. {factors.source === 'balldontlie' ? 'Available projected stats are translated using the active league scoring.' : 'Historical scoring is adjusted for the available matchup, venue, weather, and availability inputs.'}</p>
+    <p>The expected range applies this projection to the player’s historical 25th-to-75th-percentile scoring profile. It describes a likely band, not a guaranteed floor or ceiling.</p>
+    {adjustments.length > 0 && <dl>{adjustments.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{formatNumber(value, 2)}×</dd></div>)}</dl>}
+    {(factors.recentBase != null || factors.seasonBase != null) && <p>Recent average: {formatNumber(factors.recentBase)} · Season average: {formatNumber(factors.seasonBase)}</p>}
+  </div>;
+}
+
+/* ── design slots ──
+   One slot order at every width, selected entirely by game phase. There is no
+   performance view switcher: pregame shows the projection briefing, live shows
+   accumulating points and play contributions, final shows the settled result. */
+
+export const ACCENT = 'var(--color-accent)';
+export const POSITIVE = 'var(--color-accent-green)';
+export const NEGATIVE = 'var(--color-accent-red)';
+export const CAUTION = 'var(--color-accent-orange)';
+
+function Emphasis({ parts }) {
+  if (!parts?.length) return null;
+  return <p className="pmd-headline">
+    {parts.map((part, index) => (part.emphasis
+      ? <em key={index}>{part.text}</em>
+      : <span key={index}>{part.text}</span>))}
+  </p>;
+}
+
+function BulletBar({ value, tick, tickLabel, band, bandLabel, tone }) {
+  const maximum = getChartMaximum(value, tick, band?.[1]);
+  const valuePosition = getChartPosition(value, maximum);
+  const tickPosition = getChartPosition(tick, maximum);
+  const lowPosition = getChartPosition(band?.[0], maximum);
+  const highPosition = getChartPosition(band?.[1], maximum);
+  const hasBand = lowPosition != null && highPosition != null && highPosition > lowPosition;
+  if (valuePosition == null && tickPosition == null) return null;
+  return <>
+    <div className="pmd-bb" aria-hidden="true">
+      {hasBand && <span className="pmd-bb__band" style={{ left: `${lowPosition}%`, width: `${highPosition - lowPosition}%` }} />}
+      {valuePosition != null && <span className="pmd-bb__fill" style={{ width: `${valuePosition}%`, background: tone }} />}
+      {tickPosition != null && <span className="pmd-bb__tick" style={{ left: `${tickPosition}%` }} />}
+    </div>
+    <div className="pmd-legend">
+      {tickPosition != null && tickLabel && <span><i className="is-tick" />{tickLabel}</span>}
+      {hasBand && bandLabel && <span><i className="is-band" />{bandLabel}</span>}
+    </div>
+  </>;
+}
+
+function Hero({ model }) {
+  if (!model) return null;
+  return <section className="pmd-sec" data-slot="hero" aria-label={model.overline}>
+    <div className="pmd-eyebrow">{model.overline}</div>
+    <div className="pmd-hero__top">
+      <strong className={`pmd-big pmd-num ${model.delta ? `pmd-${model.delta.tone}` : 'pmd-flat'}`}>{formatNumber(model.value, model.digits ?? 1)}</strong>
+      <span className="pmd-unit pmd-cond">PTS</span>
+      {model.delta && <div className="pmd-delta">
+        <div className={`pmd-delta__v pmd-num pmd-${model.delta.tone}`}>{model.delta.v}</div>
+        <div className="pmd-delta__l">{model.delta.l}</div>
+      </div>}
+    </div>
+    <BulletBar {...model.bar} />
+    {model.note && <p className="matchup-performance-note">{model.note}</p>}
+  </section>;
+}
+
+function RankSlot({ model }) {
+  if (!model) return null;
+  return <section className="pmd-sec" data-slot="rank" aria-label={model.ariaLabel}>
+    <div className="pmd-rank__row">
+      <div className="pmd-rank__v pmd-num">{model.value}</div>
+      <div className="pmd-rank__meta">{model.title} · <strong>{model.detail}</strong><br />{model.note}</div>
+    </div>
+    {model.position != null && <>
+      <div className="pmd-rail" role="img" aria-label={model.ariaLabel}>
+        <span className="pmd-rail__mark" style={{ left: `calc(${model.position}% - 2px)` }} />
+      </div>
+      <div className="pmd-rail__ends"><span>Best in position</span><span>Worst</span></div>
+    </>}
+  </section>;
+}
+
+function Cells({ cells }) {
+  if (!cells?.length) return null;
+  return <div className="pmd-cells" data-slot="cells" style={{ '--pmd-cells': cells.length }}>
+    {cells.map(cell => <div className="pmd-cell" key={cell.label}>
+      <div className="pmd-cell__l">{cell.label}</div>
+      <div className="pmd-cell__v pmd-num">{cell.value}</div>
+      <div className="pmd-cell__s">{cell.detail}</div>
+      {cell.bar != null && <div className="pmd-mbar" aria-hidden="true">
+        <i style={{ width: `${Math.max(0, Math.min(1, cell.bar)) * 100}%`, background: cell.tone }} />
+      </div>}
+    </div>)}
+  </div>;
+}
+
+function Ladder({ model }) {
+  if (!model?.rows?.length) return null;
+  const maximum = getChartMaximum(model.rows.map(row => row.points), model.average);
+  const averagePosition = getChartPosition(model.average, maximum);
+  return <section className="pmd-sec" data-slot="ladder" aria-label={model.title}>
+    <div className="pmd-eyebrow">{model.title}</div>
+    <div className="pmd-ladder">
+      {model.rows.map(row => {
+        const points = matchupNumber(row.points);
+        const position = getChartPosition(points, maximum);
+        const above = model.average == null || points == null ? null : points >= model.average;
+        return <div className="pmd-lrow" key={`${row.week}-${row.opponent ?? row.opp ?? ''}`}>
+          <div className="pmd-lrow__k">Wk {row.week} · {row.opponent ?? row.opp ?? '—'}</div>
+          <div className="pmd-lrow__t" aria-hidden="true">
+            {position != null && <i style={{ width: `${position}%`, background: above == null ? ACCENT : above ? POSITIVE : NEGATIVE }} />}
+            {averagePosition != null && <u style={{ left: `${averagePosition}%` }} />}
+          </div>
+          <div className={`pmd-lrow__v pmd-num ${above == null ? '' : above ? 'pmd-up' : 'pmd-down'}`}>{formatNumber(points)}</div>
+        </div>;
+      })}
+    </div>
+    {model.average != null && <div className="pmd-legend"><span><i className="is-tick" style={{ background: 'var(--color-label-tertiary)' }} />{model.averageLabel}</span></div>}
+  </section>;
+}
+
+function Plays({ model }) {
+  if (!model || model.status === 'idle') return null;
+  const events = model.events ?? [];
+  return <section className="pmd-sec" data-slot="plays" aria-label="Estimated play contributions">
+    <div className="pmd-eyebrow">What earned the points{model.stale ? ' · latest available play data' : ''}</div>
+    {model.status === 'loading'
+      ? <p className="matchup-performance-note">Loading estimated play contributions…</p>
+      : events.length > 0
+        ? <div className="pmd-plays">
+          {events.map(event => <div className="pmd-play" key={event.id}>
+            <div className="pmd-play__t pmd-num">{event.glance?.clock ?? '—'}</div>
+            <div className="pmd-play__d">{event.desc}</div>
+            <div className={`pmd-play__p pmd-num ${event.pts < 0 ? 'pmd-down' : 'pmd-up'}`}>{signed(event.pts)}</div>
+          </div>)}
+        </div>
+        : <p className="matchup-performance-note">{model.message ?? 'Estimated play contributions are unavailable for this game.'}</p>}
+    <p className="matchup-performance-note">Estimated play contributions; bonuses, corrections and missing plays can differ from the official total.</p>
+  </section>;
+}
+
+function Swap({ option, onView }) {
+  if (!option || !onView) return null;
+  const candidate = option.player;
+  const name = candidate?.full_name ?? candidate?.name ?? 'Bench player';
+  return <div className="pmd-wrap" data-slot="swap">
+    <section className="pmd-swap" aria-label="Higher projected bench option">
+      <div className="pmd-swap__h">Higher projected option on your bench</div>
+      <button type="button" className="pmd-swap__b" onClick={() => onView(candidate.id)} aria-label={`View ${name} bench comparison`}>
+        <PlayerAvatar player={candidate} name={name} size={34} />
+        <span className="pmd-swap__identity">
+          <span className="pmd-swap__n">{name}</span>
+          <span className="pmd-swap__s">{[candidate.position, candidate.team, option.slot].filter(Boolean).join(' · ')}</span>
+        </span>
+        {candidate.availabilityStatus && <PlayerStatusBadge status={candidate.availabilityStatus} compact />}
+        <span className="pmd-swap__v">
+          <strong className="pmd-num">{formatNumber(option.projected)}</strong>
+          <small>+{formatNumber(option.improvement)} projected pts</small>
+        </span>
+      </button>
+    </section>
+  </div>;
+}
+
+function DevSlot({ items }) {
+  if (!DRILLDOWN_DEV_SLOTS_ENABLED || !items?.length) return null;
+  return <div className="pmd-wrap" data-slot="slot">
+    <div className="pmd-slot">
+      <div className="pmd-slot__l">{'// not wired yet'}</div>
+      <div className="pmd-slot__i">{items.map(item => <div key={item}>{item}</div>)}</div>
+    </div>
+  </div>;
+}
+
+function DiscRow({ label, hint, children }) {
+  if (!children) return null;
+  return <details>
+    <summary>{label}{hint && <span className="pmd-disc__hint">{hint}</span>}</summary>
+    <div className="pmd-disc__body">{children}</div>
+  </details>;
+}
+
+function buildHeroModel({ phase, total, projectionView, seasonBenchmark, performanceTarget = null }) {
+  const projected = matchupNumber(projectionView?.projection?.projected);
+  const low = matchupNumber(projectionView?.projection?.min);
+  const high = matchupNumber(projectionView?.projection?.max);
+  const band = low != null && high != null && high > low ? [low, high] : null;
+  const bandLabel = band ? `Likely range ${formatNumber(low)}–${formatNumber(high)}` : null;
+  const season = matchupNumber(seasonBenchmark?.value);
+
+  if (phase === 'pregame') {
+    if (projected == null) return null;
+    return {
+      overline: 'Projected fantasy points',
+      value: projected,
+      delta: null,
+      bar: {
+        value: projected,
+        tick: season,
+        tickLabel: season != null ? `${seasonBenchmark.label} ${formatNumber(season)}` : null,
+        band,
+        bandLabel,
+        tone: ACCENT,
+      },
+    };
   }
 
-  const opp    = factors.oppFactor ?? 1;
-  const loc    = factors.locationFactor ?? 1;
-  const wth    = factors.weatherFactor ?? 1;
-  const snap   = factors.snapFactor ?? 1;
-  const floor  = factors.floorBase ?? null;
-  const ceil   = factors.ceilingBase ?? null;
-  const recent = factors.recentBase ?? null;
-  const season = factors.seasonBase ?? null;
-
-  // Detail line for the Base row: show recent vs season avg when they differ meaningfully
-  const baseDetail = recent != null && season != null && Math.abs(recent - season) >= 0.5
-    ? `${recent.toFixed(1)} recent · ${season.toFixed(1)} season`
-    : null;
-
-  const snapDetail = (() => {
-    if (snap > 1.05) return 'Usage ↑';
-    if (snap < 0.95) return 'Usage ↓';
-    return 'On trend';
-  })();
-
-  const showLocation = Math.abs(loc - 1) >= 0.01;
-  const factorsList = [
-    {
-      label: 'Base average',
-      detail: baseDetail,
-      value: baseAvg != null ? baseAvg.toFixed(1) : '—',
-      meta: 'Starting point',
-      color: 'var(--color-label)',
-    },
-    ...(showLocation ? [{
-      label: 'Home/Away',
-      detail: locationStr ?? 'Neutral',
-      value: fmt(loc),
-      meta: impactText(loc),
-      color: fc(loc),
-    }] : []),
-    {
-      label: 'Matchup',
-      detail: oppTeam ? `vs ${oppTeam}${defLabel ? ` · ${defLabel}` : ''}` : 'No data',
-      value: fmt(opp),
-      meta: impactText(opp),
-      color: fc(opp),
-    },
-    {
-      label: 'Weather',
-      detail: weatherStr || 'Indoor / N/A',
-      value: fmt(wth),
-      meta: impactText(wth),
-      color: fc(wth),
-    },
-    {
-      label: 'Snap use',
-      detail: snapDetail,
-      value: fmt(snap),
-      meta: impactText(snap),
-      color: fc(snap),
-    },
-  ];
-  const range = [
-    { label: 'Floor', value: projMin, source: floor },
-    { label: 'Projection', value: projected, source: baseAvg },
-    { label: 'Ceiling', value: projMax, source: ceil },
-  ];
-
-  return (
-    <div className="p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div
-            className="text-xs font-bold uppercase tracking-widest"
-            style={{ color: 'var(--color-label-secondary)', fontFamily: displayFont }}
-          >
-            Projection Math
-          </div>
-          <div className="mt-1 text-[length:var(--type-meta)] leading-snug" style={{ color: 'var(--color-label)' }}>
-            Base scoring adjusted by matchup, venue, weather, and recent usage.
-          </div>
-        </div>
-        <div className="text-right shrink-0">
-          <div
-            className="text-xs font-bold uppercase tracking-widest"
-            style={{ color: 'var(--color-label-secondary)', fontFamily: displayFont }}
-          >
-            Proj
-          </div>
-          <div className="text-2xl font-black tabular-nums leading-none" style={{ color: 'var(--color-signature)', fontFamily: displayFont }}>
-            {projected != null ? projected.toFixed(1) : '—'}
-          </div>
-        </div>
-      </div>
-
-      <div className="mt-4 rounded-md overflow-hidden" style={{ border: '1px solid var(--color-separator)', background: 'var(--color-bg-tertiary)' }}>
-        {factorsList.map((row, i) => (
-          <div
-            key={row.label}
-            className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 px-3 py-2.5"
-            style={{
-              background: i % 2 === 0 ? 'var(--color-fill-secondary)' : 'transparent',
-              borderTop: i === 0 ? 'none' : '1px solid var(--color-separator)',
-            }}
-          >
-            <div className="min-w-0">
-              <div className="text-sm font-bold leading-tight" style={{ color: 'var(--color-label)', fontFamily: displayFont }}>{row.label}</div>
-              {row.detail && (
-                <div className="mt-0.5 text-[length:var(--type-label)] truncate" style={{ color: 'var(--color-label-secondary)' }}>{row.detail}</div>
-              )}
-            </div>
-            <div className="text-right">
-              <div className="text-base font-black tabular-nums leading-tight" style={{ color: row.color, fontFamily: displayFont }}>{row.value}</div>
-              <div className="text-[length:var(--type-label)] tabular-nums" style={{ color: 'var(--color-label-secondary)' }}>{row.meta}</div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div className="mt-3 grid grid-cols-3 gap-2">
-        {range.map(item => (
-          <div key={item.label} className="rounded-md px-2.5 py-2.5" style={{ background: 'var(--color-bg-tertiary)', border: '1px solid var(--color-separator)' }}>
-            <div
-              className="text-[length:var(--type-label)] font-bold uppercase tracking-widest"
-              style={{ color: 'var(--color-label-secondary)', fontFamily: displayFont }}
-            >
-              {item.label}
-            </div>
-            <div className="mt-1 text-xl font-black tabular-nums leading-none" style={{ color: item.label === 'Projection' ? 'var(--color-signature)' : 'var(--color-label)', fontFamily: displayFont }}>
-              {item.value != null ? item.value.toFixed(1) : '—'}
-            </div>
-            {item.source != null && (
-              <div className="mt-1 text-[length:var(--type-label)] tabular-nums" style={{ color: 'var(--color-label-secondary)' }}>
-                from {item.source.toFixed(1)}
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-
-      <div className="mt-4 text-[length:var(--type-label)] leading-relaxed" style={{ color: 'var(--color-label-secondary)' }}>
-        Matchup uses fantasy points per game allowed to the position group in prior weeks. Floor and ceiling start from this player's 25th and 75th percentile games, then receive a lighter matchup adjustment.
-      </div>
-    </div>
-  );
-}
-
-function SectionHeader({ label }) {
-  return (
-    <div
-      className="px-5 pt-4 pb-1.5"
-      style={{ borderBottom: '1px solid var(--color-separator)' }}
-    >
-      <span className="text-[length:var(--type-label)] font-bold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>
-        {label}
-      </span>
-    </div>
-  );
-}
-
-function InfoRow({ label, children }) {
-  return (
-    <div className="flex items-center px-5 py-2" style={{ borderBottom: '1px solid var(--color-separator)' }}>
-      <span className="w-28 shrink-0 text-xs" style={{ color: 'var(--color-label-tertiary)' }}>{label}</span>
-      <div className="flex-1 flex items-center gap-1.5 flex-wrap">
-        {children}
-      </div>
-    </div>
-  );
-}
-
-function getPositionGroupShortLabel(pos) {
-  const key = String(pos ?? '').toUpperCase();
+  const scored = matchupNumber(total);
+  const target = phase === 'live' ? matchupNumber(performanceTarget) : projected;
+  const difference = scored != null && target != null ? scored - target : null;
   return {
-    QB: 'QBs',
-    RB: 'RBs',
-    WR: 'WRs',
-    TE: 'TEs',
-  }[key] ?? (key ? `${key}s` : 'position group');
+    overline: phase === 'final' ? 'Final fantasy points' : 'Fantasy points so far',
+    value: scored,
+    digits: 2,
+    note: scored == null ? 'Actual scoring has not been reported for this player.' : null,
+    delta: difference == null ? null : {
+      v: signed(difference),
+      l: `vs ${formatNumber(target)} ${phase === 'final' ? 'projected' : 'expected pace'}`,
+      tone: difference >= 0 ? 'up' : 'down',
+    },
+    bar: {
+      value: scored,
+      tick: projected,
+      tickLabel: projected != null ? `${projectionView.label} ${formatNumber(projected)}` : null,
+      band,
+      bandLabel,
+      tone: difference == null ? ACCENT : difference >= 0 ? POSITIVE : NEGATIVE,
+    },
+  };
 }
 
-export default function PlayerMatchupBreakdown({ playerId, week, projection, enrichedPlayer, onClose, onViewStats }) {
-  const { platform, players, weeklyStats, activeScoringSettings, espnIdOverrides, season } = useSleeperBase();
+function buildRankModel({ phase, rank, weekRank, position, week }) {
+  // weekRank is only populated once the NFL week has fully concluded, so live
+  // games fall back to the season-points rank rather than inventing a live one.
+  const useWeek = phase === 'final' && weekRank?.rank != null;
+  const source = useWeek ? weekRank : rank;
+  const rankValue = matchupNumber(source?.rank);
+  const peerCount = matchupNumber(source?.posCount);
+  const label = source?.posLabel ?? position ?? '';
+  if (rankValue == null || peerCount == null || peerCount <= 0) {
+    return {
+      value: '—',
+      title: useWeek ? `Week ${week} finish` : 'Season points rank',
+      detail: 'Not established',
+      note: 'A rank appears once positional scoring data is available.',
+      position: null,
+      ariaLabel: 'Rank not established',
+    };
+  }
+  return {
+    value: `${label}${rankValue}`,
+    title: useWeek ? `Week ${week} finish` : 'Season points rank',
+    detail: `${formatOrdinal(rankValue)} of ${peerCount}`,
+    note: useWeek ? `${label || 'Position'} players this week` : 'by total season fantasy points',
+    position: peerCount > 1 ? Math.max(0, Math.min(100, (rankValue - 1) / (peerCount - 1) * 100)) : null,
+    ariaLabel: `${useWeek ? `Week ${week} finish` : 'Season points rank'} ${rankValue} of ${peerCount} ${label} players.`,
+  };
+}
+
+function buildPregameCells({ player, position, seasonBenchmark, opponentContext, noteworthyWeather }) {
+  const allowed = matchupNumber(opponentContext?.ptsAllowedPerGame);
+  const leagueAllowed = matchupNumber(opponentContext?.leagueAveragePtsAllowed);
+  const rank = matchupNumber(opponentContext?.rank);
+  const teamCount = matchupNumber(opponentContext?.teamCount);
+  const difference = allowed != null && leagueAllowed != null ? allowed - leagueAllowed : null;
+  const season = matchupNumber(seasonBenchmark?.value);
+  const wind = matchupNumber(player?.weather?.wind_kph);
+  const indoor = player?.isIndoor === true;
+  const cells = [
+    {
+      label: player?.oppTeam ? `${player.oppTeam} vs ${position}` : `Opponent vs ${position}`,
+      value: rank != null ? `#${rank}` : formatNumber(allowed),
+      detail: allowed != null
+        ? `${formatNumber(allowed)} pts allowed/game${leagueAllowed != null ? ` · ${formatNumber(leagueAllowed)} league average` : ''}`
+        : getOpponentEvidenceLabel(opponentContext),
+      bar: rank != null && teamCount ? rank / teamCount : null,
+      tone: difference == null ? ACCENT : difference >= 0 ? POSITIVE : NEGATIVE,
+    },
+    {
+      label: seasonBenchmark.label,
+      value: formatNumber(season),
+      detail: seasonBenchmark.source,
+      bar: season != null ? Math.min(1, season / getChartMaximum(season)) : null,
+      tone: ACCENT,
+    },
+  ];
+  if (indoor) {
+    cells.push({ label: 'Conditions', value: 'Indoor', detail: 'Weather not applied', bar: 0, tone: ACCENT });
+  } else if (noteworthyWeather) {
+    cells.push({
+      label: 'Weather risk',
+      value: wind != null ? String(Math.round(wind)) : 'Flagged',
+      detail: wind != null ? 'km/h wind — flagged by model' : noteworthyWeather.label,
+      bar: 0.72,
+      tone: CAUTION,
+    });
+  } else {
+    const formatted = formatWeather(player?.weather, false);
+    cells.push({
+      label: 'Conditions',
+      value: formatted ?? '—',
+      detail: formatted ? 'No model flag' : 'Outdoor conditions unavailable',
+      bar: formatted ? 0.25 : null,
+      tone: ACCENT,
+    });
+  }
+  return cells;
+}
+
+function buildFinalCells(rows) {
+  const scoring = rows.filter(row => matchupNumber(row.pts) != null && row.pts !== 0);
+  if (!scoring.length) return null;
+  const ranked = [...scoring].sort((a, b) => Math.abs(b.pts) - Math.abs(a.pts)).slice(0, 3);
+  const maximum = Math.max(...ranked.map(row => Math.abs(row.pts)));
+  return ranked.map(row => ({
+    label: row.label,
+    value: formatStat(row.statVal),
+    detail: `${signed(row.pts)} pts`,
+    bar: maximum > 0 ? Math.abs(row.pts) / maximum : null,
+    tone: row.pts < 0 ? NEGATIVE : row.pts > 0 ? POSITIVE : ACCENT,
+  }));
+}
+
+export default function PlayerMatchupBreakdown({ playerId, week, projection, baseline = null, enrichedPlayer, onClose, onViewStats, benchComparison = null, onViewBenchPlayer }) {
+  const { platform, players, weeklyStats, activeScoringSettings, espnIdOverrides, season, scheduleMap, selectedLeagueId } = useSleeperBase();
   const { darkMode } = useTheme();
-  const [failedImageUrl, setFailedImageUrl] = useState(null);
   const [espnDerivedWeekEntryState, setEspnDerivedWeekEntryState] = useState({ key: '', row: null });
 
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
   const player = players?.[playerId];
+  const scheduleEntry = scheduleMap?.[week]?.[player?.team] ?? enrichedPlayer?.scheduleEntry;
+  const phase = getPlayerMatchupPhase({ scheduleEntry, gameStarted: enrichedPlayer?.gameStarted, now });
+  const isPregame = phase === 'pregame';
   const position = player?.position ?? enrichedPlayer?.position ?? null;
   const espnId = player?.espn_id ?? espnIdOverrides?.[playerId];
 
-  // Team color palette
-  const palette = getTeamPalette(player?.team);
-  const heroBg = palette ? (darkMode ? palette.darkPrimary : palette.primary) : null;
-  const heroAccent = palette ? (darkMode ? palette.darkSecondary : palette.secondary) : null;
-  const heroOnBg = heroBg && hexLuminance(heroBg) > 0.3 ? '#0C0F14' : '#FFFFFF';
-  const heroOnBgMuted = heroOnBg === '#FFFFFF' ? 'rgba(255,255,255,0.65)' : 'rgba(12,15,20,0.60)';
-  const playerImageUrl = getCompanionPlayerImageUrl({ ...player, ...enrichedPlayer, id: playerId });
-  const showPlayerImage = Boolean(playerImageUrl && failedImageUrl !== playerImageUrl);
+  const teamTheme = getTeamVisualTheme(player?.team, darkMode);
+  const headerStyle = {
+    background: teamTheme?.gradient ?? 'var(--color-bg-secondary)',
+    '--matchup-header-fg': teamTheme?.gradientForeground ?? 'var(--color-label)',
+    '--matchup-header-muted': teamTheme?.gradientMuted ?? 'var(--color-label-secondary)',
+    '--matchup-header-subtle': teamTheme?.gradientSubtle ?? 'var(--color-fill-secondary)',
+    '--matchup-header-accent': teamTheme?.accentColor ?? 'var(--color-accent)',
+  };
   const baseWeekEntry = useMemo(() => {
+    if (isPregame) return null;
     const entry = weeklyStats?.[playerId]?.find(w => w.week === week) ?? null;
-    const fallbackPoints = Number(enrichedPlayer?.weekPts);
+    const fallbackPoints = matchupNumber(enrichedPlayer?.weekPts);
     if (entry) {
       if (!Number.isFinite(fallbackPoints)) return entry;
       if (entry._fantasyPoints != null || entry.fantasy_points != null || entry.appliedTotal != null) return entry;
-      return {
-        ...entry,
-        _fantasyPoints: fallbackPoints,
-        fantasy_points: fallbackPoints,
-      };
+      return { ...entry, _fantasyPoints: fallbackPoints, fantasy_points: fallbackPoints };
     }
     if (!Number.isFinite(fallbackPoints)) return null;
-    return {
-      week,
-      _fantasyPoints: fallbackPoints,
-      fantasy_points: fallbackPoints,
-    };
-  }, [enrichedPlayer?.weekPts, playerId, week, weeklyStats]);
-  const shouldLoadEspnDerivedBreakdown = platform === 'espn'
+    return { week, _fantasyPoints: fallbackPoints, fantasy_points: fallbackPoints };
+  }, [isPregame, enrichedPlayer?.weekPts, playerId, week, weeklyStats]);
+  const shouldLoadEspnDerivedBreakdown = !isPregame && platform === 'espn'
     && isEspnFantasyGameLogPosition(position)
     && Boolean(espnId)
     && Number.isFinite(Number(week));
@@ -474,444 +763,240 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, enr
 
   useEffect(() => {
     if (!espnDerivedWeekEntryKey) return undefined;
-
     let cancelled = false;
     void loadEspnFantasyGameLogWeekRow({
       playerId: espnId,
-      player: {
-        ...(player ?? {}),
-        espn_id: espnId,
-        position,
-        team: player?.team ?? enrichedPlayer?.team ?? null,
-      },
+      player: { ...(player ?? {}), espn_id: espnId, position, team: player?.team ?? enrichedPlayer?.team ?? null },
       season,
       scoringSettings: activeScoringSettings,
       week,
     })
-      .then((row) => {
-        if (!cancelled) setEspnDerivedWeekEntryState({ key: espnDerivedWeekEntryKey, row: row ?? null });
-      })
-      .catch(() => {
-        if (!cancelled) setEspnDerivedWeekEntryState({ key: espnDerivedWeekEntryKey, row: null });
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    activeScoringSettings,
-    enrichedPlayer?.team,
-    espnId,
-    espnDerivedWeekEntryKey,
-    player,
-    position,
-    season,
-    week,
-  ]);
+      .then((row) => { if (!cancelled) setEspnDerivedWeekEntryState({ key: espnDerivedWeekEntryKey, row: row ?? null }); })
+      .catch(() => { if (!cancelled) setEspnDerivedWeekEntryState({ key: espnDerivedWeekEntryKey, row: null }); });
+    return () => { cancelled = true; };
+  }, [activeScoringSettings, enrichedPlayer?.team, espnId, espnDerivedWeekEntryKey, player, position, season, week]);
 
   const weekEntry = useMemo(() => (
-    espnDerivedWeekEntry
+    isPregame ? null : espnDerivedWeekEntry
       ? mergeOfficialFantasyTotal(baseWeekEntry, espnDerivedWeekEntry)
       : baseWeekEntry
-  ), [baseWeekEntry, espnDerivedWeekEntry]);
+  ), [baseWeekEntry, espnDerivedWeekEntry, isPregame]);
 
   const { breakdown, total } = useMemo(() => {
-    if (!weekEntry) return { breakdown: [], total: 0 };
+    if (!weekEntry) return { breakdown: [], total: null };
     const scoringSettings = activeScoringSettings ?? DEFAULT_SCORING;
     const result = buildFantasyScoringBreakdown(weekEntry, scoringSettings, position, {
       preferRawStats: Boolean(espnDerivedWeekEntry),
       adjustmentLabel: platform === 'espn' ? 'Official Scoring Adjustment' : 'Scoring Adjustment',
     });
-    return {
-      breakdown: result.rows,
-      total: result.total,
-    };
+    return { breakdown: result.rows, total: result.total };
   }, [weekEntry, activeScoringSettings, position, espnDerivedWeekEntry, platform]);
-  const projectedScore = projection?.projected ?? null;
-  const diff = projectedScore !== null ? Math.round((total - projectedScore) * 10) / 10 : null;
-  const metProjection = diff !== null ? diff >= 0 : null;
 
-  // ── Rankings ─────────────────────────────────────────────────────────────────
-  const ssnRank = enrichedPlayer?.rank ? `${enrichedPlayer.rank.posLabel}${enrichedPlayer.rank.rank}` : null;
-  const wkRank  = enrichedPlayer?.weekRank ? `${enrichedPlayer.weekRank.posLabel}${enrichedPlayer.weekRank.rank}` : null;
-  const avgPPG  = enrichedPlayer?.avgPPG > 0 ? enrichedPlayer.avgPPG : null;
-  const hasRankings = ssnRank || wkRank || avgPPG;
+  const projectionView = useMemo(() => resolvePlayerDisplayProjection({ isPregame, projection, baseline }), [baseline, isPregame, projection]);
+  const displayProjection = projectionView.projection;
+  const projectedBreakdown = useMemo(() => buildPlayerProjectionBreakdown(displayProjection, activeScoringSettings ?? DEFAULT_SCORING, position), [displayProjection, activeScoringSettings, position]);
+  const peerModel = useMemo(() => buildPlayerDefensePerformance({ playerId, oppTeam: enrichedPlayer?.oppTeam, weeklyStats, players, scheduleMap, currentWeek: week, scoringSettings: activeScoringSettings ?? DEFAULT_SCORING }), [playerId, enrichedPlayer?.oppTeam, weeklyStats, players, scheduleMap, week, activeScoringSettings]);
+  const timeline = usePlayerMatchupTimeline({
+    enabled: phase === 'live',
+    phase,
+    leagueId: selectedLeagueId,
+    platform,
+    season,
+    week,
+    playerId,
+    players,
+    team: player?.team,
+    opponent: enrichedPlayer?.oppTeam,
+    scoringSettings: activeScoringSettings ?? DEFAULT_SCORING,
+  });
+  const benchOption = buildPlayerMatchupBenchOption({ context: benchComparison, now });
 
-  // ── Game context ──────────────────────────────────────────────────────────────
-  const oppTeam    = enrichedPlayer?.oppTeam ?? null;
-  const locationStr = enrichedPlayer?.isHome === true ? 'Home' : enrichedPlayer?.isHome === false ? 'Away' : null;
-  const stadium    = enrichedPlayer?.stadium ?? null;
-  const weatherStr = enrichedPlayer ? formatWeather(enrichedPlayer.weather, enrichedPlayer.isIndoor ?? false) : null;
-  const def        = enrichedPlayer?.defStrength ?? null;
-  const defPercentile = enrichedPlayer?.defPercentile ?? null;
+  const seasonBenchmark = getSeasonBenchmark({ player: enrichedPlayer, peerModel, projection: displayProjection });
+  const opponentContext = enrichedPlayer?.opponentFantasyContext ?? (enrichedPlayer?.defStrength ? {
+    ...enrichedPlayer.defStrength,
+    team: enrichedPlayer?.oppTeam,
+    position,
+    currentGames: enrichedPlayer.defStrength.gamesAnalyzed,
+    evidenceKind: 'current',
+  } : null);
+  const noteworthyWeather = getNoteworthyWeather({ weather: enrichedPlayer?.weather, isIndoor: enrichedPlayer?.isIndoor, position });
+  const outlook = buildPlayerOutlook({
+    projection: displayProjection?.projected,
+    seasonAverage: seasonBenchmark.value,
+    opponentContext,
+    availabilityStatus: enrichedPlayer?.availabilityStatus,
+    noteworthyWeather,
+  });
 
-  let defLabel = null, defBg = null, defText = null;
-  if (defPercentile !== null) {
-    if (defPercentile <= 0.20)      { defLabel = 'Difficult';   defBg = 'rgba(239,68,68,0.18)';   defText = '#ef4444'; }
-    else if (defPercentile <= 0.40) { defLabel = 'Challenging'; defBg = 'rgba(249,115,22,0.18)';  defText = '#f97316'; }
-    else if (defPercentile <= 0.60) { defLabel = 'Average';     defBg = 'rgba(120,120,128,0.16)'; defText = 'var(--color-label-tertiary)'; }
-    else if (defPercentile <= 0.80) { defLabel = 'Favorable';   defBg = 'rgba(132,204,22,0.18)';  defText = '#84cc16'; }
-    else                            { defLabel = 'Easy';         defBg = 'rgba(34,197,94,0.18)';   defText = '#22c55e'; }
-  }
+  const performanceTarget = getPlayerPerformanceTarget({
+    phase,
+    total,
+    projected: displayProjection?.projected,
+    scheduleEntry,
+    now,
+  });
+  const hero = buildHeroModel({ phase, total, projectionView, seasonBenchmark, performanceTarget });
+  const headline = buildPlayerHeadlineParts({
+    phase,
+    total,
+    projected: displayProjection?.projected,
+    performanceTarget,
+    seasonAverage: seasonBenchmark.value,
+    opponentContext,
+    outlook,
+  });
+  const rankModel = buildRankModel({ phase, rank: enrichedPlayer?.rank, weekRank: enrichedPlayer?.weekRank, position, week });
+  const cells = isPregame
+    ? buildPregameCells({ player: enrichedPlayer, position, seasonBenchmark, opponentContext, noteworthyWeather })
+    : phase === 'final' ? buildFinalCells(breakdown) : null;
+  const formRows = peerModel?.overall?.gameRows?.slice(-5).reverse() ?? [];
+  const ladder = formRows.length ? {
+    title: phase === 'pregame' ? 'Last 5 games vs season average' : 'Season to date vs season average',
+    rows: formRows,
+    average: matchupNumber(peerModel?.overall?.ppg),
+    averageLabel: `Season average ${formatNumber(peerModel?.overall?.ppg)}`,
+  } : null;
 
-  const projMin = projection?.min ?? null;
-  const projMax = projection?.max ?? null;
-  const factors = projection?.factors ?? null;
+  const weather = enrichedPlayer ? formatWeather(enrichedPlayer.weather, enrichedPlayer.isIndoor ?? false) : null;
+  const teamScore = matchupNumber(enrichedPlayer?.scheduleEntry?.ptsFor);
+  const opponentScore = matchupNumber(enrichedPlayer?.scheduleEntry?.ptsAgainst);
+  const finalScore = phase === 'final' && teamScore != null && opponentScore != null
+    ? { team: player?.team ?? enrichedPlayer?.team, teamScore, opponent: enrichedPlayer?.oppTeam, opponentScore }
+    : null;
+  // A settled game does not need its kickoff time, only the day it was played.
+  const kickoff = (finalScore ? formatMatchupGameDate(enrichedPlayer?.scheduleEntry?.kickoff) : null)
+    ?? formatStatisticsScoresLocalKickoff(enrichedPlayer?.scheduleEntry?.kickoff)
+    ?? enrichedPlayer?.gameDate
+    ?? null;
+  const opponentLogo = enrichedPlayer?.oppTeam ? getNflTeamLogoUrl(String(enrichedPlayer.oppTeam).toLowerCase()) : null;
+  const opponentLine = [
+    enrichedPlayer?.isHome == null
+      ? (enrichedPlayer?.oppTeam ? `vs ${enrichedPlayer.oppTeam}` : enrichedPlayer?.isBye ? 'Bye week' : 'Opponent unavailable')
+      : enrichedPlayer.isHome ? `Home vs ${enrichedPlayer.oppTeam}` : `Away at ${enrichedPlayer.oppTeam}`,
+    enrichedPlayer?.stadium?.name,
+    enrichedPlayer?.stadium?.city,
+    enrichedPlayer?.isIndoor === true ? 'Indoor' : weather,
+  ].filter(Boolean).join(' · ');
+
   const canOpenStatistics = Boolean(onViewStats && espnId);
-  const openStatisticsMode = (mode) => {
+  const openStatisticsMode = (statisticsMode) => {
     if (!canOpenStatistics) return;
     onClose();
-    const yearsExp = player?.years_exp;
     onViewStats(String(espnId), {
-      displayName: player?.full_name,
-      teamId: player?.team?.toUpperCase(),
-      position: player?.position,
-      experience: yearsExp != null ? yearsExp + 1 : undefined,
-    }, { mode });
+      displayName: player?.full_name, teamId: player?.team?.toUpperCase(), position,
+      experience: player?.years_exp != null ? player.years_exp + 1 : undefined,
+    }, { mode: statisticsMode });
   };
 
-  // Projection math reveal: persistent side rail on desktop, explicit toggle on smaller screens.
-  const [mathPinned, setMathPinned] = useState(false);
-  const [closeHover, setCloseHover] = useState(false);
-  const mathVisible = mathPinned;
-
-  // Season avg base back-calculated from projected (excludes floor/ceiling bases)
-  const baseAvg = useMemo(() => {
-    if (!projectedScore || !factors) return null;
-    const denom = (factors.locationFactor ?? 1) * (factors.oppFactor ?? 1) *
-                  (factors.weatherFactor ?? 1) * (factors.snapFactor ?? 1);
-    return denom > 0 ? Math.round((projectedScore / denom) * 10) / 10 : null;
-  }, [projectedScore, factors]);
+  const hasProjectedStatLine = projectedBreakdown?.rows?.some(row => row.statVal != null);
 
   return (
-    <Modal
-      onClose={onClose}
-      mobileSheet
-      ariaLabel="Player matchup breakdown"
-      containerClassName="matchup-breakdown-dialog w-full flex flex-col xl:flex-row"
-      containerStyle={{
-        background: 'var(--color-bg-secondary)',
-        border: '1px solid var(--color-separator)',
-        boxShadow: '0 12px 40px rgba(0,0,0,0.12), 0 4px 12px rgba(0,0,0,0.06)',
-        maxWidth: factors ? '860px' : '480px',
-        maxHeight: '80vh',
-      }}
-    >
-      <div className="flex min-h-0 flex-1 flex-col xl:max-w-[480px]">
-          {/* Player header */}
-          <div
-            className="px-5 pt-4 pb-3 shrink-0 relative"
-            style={{
-              background: heroBg
-                ? `linear-gradient(135deg, ${heroBg} 0%, ${darkenHex(heroBg, 0.32)} 100%)`
-                : 'var(--color-bg-secondary)',
-              borderBottom: heroBg ? 'none' : '1px solid var(--color-separator)',
-              borderLeft: heroAccent ? `4px solid ${heroAccent}` : undefined,
-            }}
-          >
-            {/* Top row: avatar + name + close */}
-            <div className="flex items-center gap-3">
-              {showPlayerImage ? (
-                <img
-                  src={playerImageUrl}
-                  alt={player?.full_name ?? enrichedPlayer?.name ?? 'Player'}
-                  className="w-12 h-12 rounded-full object-cover shrink-0"
-                  style={{
-                    background: heroBg ? 'rgba(255,255,255,0.15)' : 'var(--color-fill)',
-                    border: heroBg ? `2px solid ${heroAccent ?? 'rgba(255,255,255,0.25)'}` : 'none',
-                  }}
-                  onError={() => setFailedImageUrl(playerImageUrl)}
-                />
-              ) : (
-                <div
-                  className="w-12 h-12 rounded-full shrink-0 flex items-center justify-center text-sm font-black"
-                  style={{
-                    background: heroBg ? 'rgba(255,255,255,0.15)' : 'var(--color-fill)',
-                    border: heroBg ? `2px solid ${heroAccent ?? 'rgba(255,255,255,0.25)'}` : '1px solid var(--color-separator)',
-                    color: heroBg ? heroOnBg : 'var(--color-label)',
-                  }}
-                  aria-hidden="true"
-                >
-                  {getCompanionInitials(player?.full_name ?? enrichedPlayer?.name, '?')}
-                </div>
-              )}
-              <div className="flex-1 min-w-0">
-                <div className="font-bold text-base" style={{ color: heroBg ? heroOnBg : 'var(--color-label)' }}>
-                  {player?.full_name ?? 'Unknown Player'}
-                </div>
-                <div className="text-xs mt-0.5" style={{ color: heroBg ? heroOnBgMuted : 'var(--color-label-tertiary)' }}>
-                  {player?.position} · {player?.team ?? 'FA'} · Week {week}
-                </div>
-              </div>
-              <button
-                onClick={onClose}
-                onMouseEnter={() => setCloseHover(true)}
-                onMouseLeave={() => setCloseHover(false)}
-                onFocus={() => setCloseHover(true)}
-                onBlur={() => setCloseHover(false)}
-                className="shrink-0 p-2 rounded-lg transition-colors duration-150 cursor-pointer"
-                style={{
-                  color: heroBg ? heroOnBgMuted : 'var(--color-label-secondary)',
-                  background: closeHover
-                    ? (heroBg ? 'rgba(255,255,255,0.14)' : 'var(--color-fill)')
-                    : 'transparent',
-                }}
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-                </svg>
-              </button>
-            </div>
-            {/* Action buttons row */}
-            {canOpenStatistics && (
-              <div className="flex items-center gap-2 mt-2" style={{ paddingLeft: '60px' }}>
-                <HeaderActionButton
-                  label="Fantasy Value"
-                  onClick={() => openStatisticsMode(STATISTICS_MODES.FANTASY)}
-                  heroBg={heroBg}
-                  heroOnBg={heroOnBg}
-                  icon={(
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M9 6l6 6-6 6" />
-                    </svg>
-                  )}
-                />
-                <HeaderActionButton
-                  label="Game Stats"
-                  onClick={() => openStatisticsMode(STATISTICS_MODES.GAME)}
-                  heroBg={heroBg}
-                  heroOnBg={heroOnBg}
-                  icon={(
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M9 6l6 6-6 6" />
-                    </svg>
-                  )}
-                />
-              </div>
-            )}
+    <Modal onClose={onClose} mobileSheet ariaLabel="Player matchup breakdown"
+      containerClassName="matchup-breakdown-dialog w-full flex flex-col"
+      containerStyle={{ background: 'var(--color-bg)', border: '1px solid var(--color-separator)', maxWidth: '1280px', maxHeight: '90dvh' }}>
+      <header className="pmd-hd" style={headerStyle}>
+        <PlayerAvatar
+          player={{ ...player, ...enrichedPlayer, id: playerId }}
+          name={player?.full_name ?? enrichedPlayer?.name}
+          size={48}
+          className="pmd-hd__avatar"
+          background="var(--matchup-header-subtle)"
+        />
+        <div className="pmd-hd__identity">
+          <div className="pmd-hd__name">
+            <strong>{player?.full_name ?? 'Unknown Player'}</strong>
+            {enrichedPlayer?.availabilityStatus && <PlayerStatusBadge status={enrichedPlayer.availabilityStatus} localContrast={false} />}
           </div>
+          <span className="pmd-hd__meta">{player?.position} · {player?.team ?? 'FA'} · Week {week}</span>
+        </div>
+        {canOpenStatistics && <nav className="pmd-hd__actions" aria-label="Player statistics">
+          <HeaderActionButton
+            label="Fantasy Value"
+            onClick={() => openStatisticsMode(STATISTICS_MODES.FANTASY)}
+            icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l6 6-6 6" /></svg>}
+          />
+          <HeaderActionButton
+            label="Game Stats"
+            onClick={() => openStatisticsMode(STATISTICS_MODES.GAME)}
+            icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l6 6-6 6" /></svg>}
+          />
+        </nav>}
+        <button type="button" onClick={onClose} aria-label="Close player matchup breakdown" className="pmd-hd__close">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      </header>
 
-          {/* Scrollable body */}
-          <div className="overflow-y-auto flex-1">
-
-            {/* ── Rankings ──────────────────────────────────────────────────── */}
-            {hasRankings && (
-              <>
-                <SectionHeader label="Rankings" />
-                <div className="flex gap-6 px-5 py-3" style={{ borderBottom: '1px solid var(--color-separator)' }}>
-                  {wkRank && (
-                    <div>
-                      <div className="text-[length:var(--type-label)] uppercase tracking-widest mb-0.5" style={{ color: 'var(--color-label-tertiary)' }}>Week {week}</div>
-                      <div className="text-sm font-bold tabular-nums" style={{ color: 'var(--color-label)' }}>{wkRank}</div>
-                    </div>
-                  )}
-                  {ssnRank && (
-                    <div>
-                      <div className="text-[length:var(--type-label)] uppercase tracking-widest mb-0.5" style={{ color: 'var(--color-label-tertiary)' }}>Season</div>
-                      <div className="text-sm font-bold tabular-nums" style={{ color: 'var(--color-label)' }}>{ssnRank}</div>
-                    </div>
-                  )}
-                  {avgPPG && (
-                    <div>
-                      <div className="text-[length:var(--type-label)] uppercase tracking-widest mb-0.5" style={{ color: 'var(--color-label-tertiary)' }}>Avg PPG</div>
-                      <div className="text-sm tabular-nums" style={{ color: 'var(--color-label)' }}>{avgPPG.toFixed(1)}</div>
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
-
-            {/* ── Game context ──────────────────────────────────────────────── */}
-            {oppTeam && (
-              <>
-                <SectionHeader label="Game Context" />
-                <InfoRow label="Opponent">
-                  <span className="text-xs font-semibold" style={{ color: 'var(--color-label)' }}>vs {oppTeam}</span>
-                  {locationStr && (
-                    <span className="text-xs" style={{ color: 'var(--color-label-tertiary)' }}>· {locationStr}</span>
-                  )}
-                </InfoRow>
-                {(stadium || weatherStr) && (
-                  <InfoRow label="Venue">
-                    {stadium?.name && (
-                      <span className="text-xs" style={{ color: 'var(--color-label)' }}>{stadium.name}</span>
-                    )}
-                    {weatherStr && (
-                      <span className="text-xs" style={{ color: 'var(--color-label-tertiary)' }}>
-                        {stadium?.name ? '· ' : ''}{weatherStr}
-                      </span>
-                    )}
-                  </InfoRow>
-                )}
-                {def && (() => {
-                  const pos = player?.position ?? enrichedPlayer?.position ?? '';
-                  const posGroupLabel = getPositionGroupShortLabel(pos);
-                  return (
-                    <InfoRow label="Defense">
-                      {defLabel && (
-                        <span
-                          className="text-[length:var(--type-label)] font-bold px-1.5 py-0.5 rounded-full"
-                          style={{ background: defBg, color: defText }}
-                        >
-                          {defLabel}
-                        </span>
-                      )}
-                      <span className="text-xs tabular-nums" style={{ color: 'var(--color-label)' }}>
-                        Opposing {posGroupLabel} combine for {def.ptsAllowedPerGame.toFixed(1)} points per game
-                      </span>
-                    </InfoRow>
-                  );
-                })()}
-                {projectedScore !== null && (
-                  <div>
-                    <InfoRow label="Projection">
-                      <span className="text-xs font-semibold tabular-nums" style={{ color: 'var(--color-label)' }}>
-                        {projectedScore.toFixed(1)} pts
-                      </span>
-                      {projMin != null && projMax != null && (
-                        <span className="text-xs tabular-nums" style={{ color: 'var(--color-label-tertiary)' }}>
-                          · range {projMin}–{projMax}
-                        </span>
-                      )}
-                      {factors && (
-                        <button
-                          type="button"
-                          className="ml-auto shrink-0 text-[length:var(--type-label)] font-bold w-5 h-5 rounded-full flex xl:hidden items-center justify-center transition-colors"
-                          style={{
-                            background: mathVisible ? 'var(--color-accent)' : 'var(--color-fill-secondary)',
-                            color: mathVisible ? '#fff' : 'var(--color-label-tertiary)',
-                          }}
-                          onClick={() => setMathPinned(v => !v)}
-                          aria-expanded={mathVisible}
-                          aria-label="Show projection formula"
-                        >
-                          i
-                        </button>
-                      )}
-                    </InfoRow>
-                    {mathPinned && factors && (
-                      <div className="xl:hidden" style={{ borderBottom: '1px solid var(--color-separator)' }}>
-                        <ProjectionMath
-                          baseAvg={baseAvg}
-                          factors={factors}
-                          projected={projectedScore}
-                          projMin={projMin}
-                          projMax={projMax}
-                          oppTeam={oppTeam}
-                          locationStr={locationStr}
-                          weatherStr={weatherStr}
-                          defLabel={defLabel}
-                        />
-                      </div>
-                    )}
-                  </div>
-                )}
-              </>
-            )}
-
-            {/* ── Week stats ────────────────────────────────────────────────── */}
-            {!weekEntry ? (
-              <div className="flex items-center justify-center py-16">
-                <span className="text-sm" style={{ color: 'var(--color-label-secondary)' }}>
-                  No stats available for Week {week}.
-                </span>
-              </div>
-            ) : breakdown.length === 0 ? (
-              <div className="flex items-center justify-center py-16">
-                <span className="text-sm" style={{ color: 'var(--color-label-secondary)' }}>
-                  No fantasy points scored in Week {week}.
-                </span>
-              </div>
-            ) : (
-              <>
-                <SectionHeader label={`Week ${week} Fantasy Score`} />
-
-                {/* Column headers */}
-                <div
-                  className="flex items-center px-5 py-2 sticky top-0"
-                  style={{ background: 'var(--color-bg-secondary)', borderBottom: '1px solid var(--color-separator)' }}
-                >
-                  <span className="flex-1 text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>Stat</span>
-                  <span className="w-14 text-right text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>Value</span>
-                  <span className="w-16 text-right text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>Pts</span>
-                </div>
-
-                {breakdown.map(row => (
-                  <div
-                    key={row.key ?? row.statKey}
-                    className="flex items-center px-5 py-2.5"
-                    style={{ borderBottom: '1px solid var(--color-separator)' }}
-                  >
-                    <span className="flex-1 text-sm" style={{ color: 'var(--color-label)' }}>{row.label}</span>
-                    <span className="w-14 text-right text-sm tabular-nums" style={{ color: 'var(--color-label-secondary)' }}>
-                      {row.statVal == null ? '—' : Number.isInteger(row.statVal) ? row.statVal : row.statVal.toFixed(1)}
-                    </span>
-                    <span
-                      className="w-16 text-right text-sm font-semibold tabular-nums"
-                      style={{ color: row.pts < 0 ? 'var(--color-accent-red)' : 'var(--color-label)' }}
-                    >
-                      {row.pts > 0 ? `+${row.pts.toFixed(2)}` : row.pts.toFixed(2)}
-                    </span>
-                  </div>
-                ))}
-
-                {/* Total row */}
-                <div
-                  className="flex items-center px-5 py-4"
-                  style={{ background: 'var(--color-fill-secondary)', borderTop: '1px solid var(--color-separator)' }}
-                >
-                  <div className="flex-1">
-                    <span className="text-sm font-bold" style={{ color: 'var(--color-label)' }}>Total</span>
-                    {projectedScore !== null && (
-                      <span className="ml-2 text-xs" style={{ color: 'var(--color-label-tertiary)' }}>
-                        Proj: {projectedScore.toFixed(1)}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {diff !== null && (
-                      <span
-                        className="text-xs font-bold px-1.5 py-0.5 rounded tabular-nums"
-                        style={{
-                          background: metProjection ? 'color-mix(in srgb, var(--color-accent-green) 12%, transparent)' : 'color-mix(in srgb, var(--color-accent-red) 12%, transparent)',
-                          color: metProjection ? 'var(--color-accent-green)' : 'var(--color-accent-red)',
-                        }}
-                      >
-                        {diff >= 0 ? `+${diff.toFixed(1)}` : diff.toFixed(1)}
-                      </span>
-                    )}
-                    <span className="text-xl font-bold tabular-nums" style={{ color: 'var(--color-label)' }}>
-                      {total.toFixed(2)}
-                    </span>
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
+      <div className="pmd-strip">
+        <div className="pmd-strip__row">
+          <span className={`pmd-phase pmd-cond${phase === 'live' ? ' is-live' : ''}`}>
+            {phase === 'pregame' ? 'Pregame' : phase === 'final' ? 'Final' : 'Live'}
+          </span>
+          {kickoff && <span className="pmd-ctx pmd-ctx--lead pmd-num">{kickoff}</span>}
+        </div>
+        <div className="pmd-strip__row">
+          <span className="pmd-logo">
+            {opponentLogo && <img src={opponentLogo} alt="" aria-hidden="true" onError={(event) => { event.currentTarget.hidden = true; }} />}
+          </span>
+          {finalScore
+            ? <span className="pmd-ctx">
+              {finalScore.teamScore >= finalScore.opponentScore
+                ? <><strong>{finalScore.team} {finalScore.teamScore}</strong> · {finalScore.opponent} {finalScore.opponentScore}</>
+                : <>{finalScore.team} {finalScore.teamScore} · <strong>{finalScore.opponent} {finalScore.opponentScore}</strong></>}
+            </span>
+            : <span className="pmd-ctx">{opponentLine}</span>}
+        </div>
       </div>
 
-      {factors && projectedScore !== null && (
-        <aside
-          className="hidden xl:block w-[380px] shrink-0 overflow-y-auto"
-          style={{
-            borderLeft: '1px solid var(--color-separator)',
-            background: 'var(--color-bg-secondary)',
-          }}
-          aria-label="Projection formula"
-        >
-          <ProjectionMath
-            baseAvg={baseAvg}
-            factors={factors}
-            projected={projectedScore}
-            projMin={projMin}
-            projMax={projMax}
-            oppTeam={oppTeam}
-            locationStr={locationStr}
-            weatherStr={weatherStr}
-            defLabel={defLabel}
-          />
-        </aside>
-      )}
+      <div className="pmd-body" data-game-phase={phase}>
+        <Hero model={hero} />
+        {headline && <section className="pmd-sec" data-slot="headline"><Emphasis parts={headline} /></section>}
+        <RankSlot model={rankModel} />
+        <Cells cells={cells} />
+        {phase === 'live' && <Plays model={timeline} />}
+        <Ladder model={ladder} />
+        {isPregame && <Swap option={benchOption} onView={onViewBenchPlayer} />}
+        {!isPregame && <DevSlot items={phase === 'live'
+          ? ['Remaining opportunity estimate', 'Teammate cannibalization — who else is eating', 'Live positional rank and movement since kickoff']
+          : ['Snap share and usage rate', 'What this means for next week', 'Per-week projection history for the form ladder']} />}
+
+        <div className="pmd-disc" data-slot="disc">
+          {isPregame ? <>
+            <DiscRow label="Projected stat line" hint={hasProjectedStatLine ? undefined : 'Unavailable'}>
+              {displayProjection && <>
+                {hasProjectedStatLine
+                  ? <PerformanceTable rows={projectedBreakdown.rows} projected />
+                  : <p className="matchup-performance-note">Detailed projected stats are unavailable for this projection source.</p>}
+                <ProjectionDetails projection={displayProjection} />
+              </>}
+            </DiscRow>
+            <DiscRow label="Opponent sample & method" hint={opponentContext ? getOpponentEvidenceLabel(opponentContext) : undefined}>
+              {opponentContext && <ProjectionOpponentDetails player={enrichedPlayer} position={position} />}
+            </DiscRow>
+          </> : <>
+            <DiscRow label="Full scoring breakdown" hint={breakdown.length ? `${breakdown.length} scoring lines` : undefined}>
+              {breakdown.length ? <PerformanceTable rows={breakdown} /> : null}
+            </DiscRow>
+            <DiscRow
+              label={projectionView.recorded ? 'Pregame projection & range' : 'Projection & expected range'}
+              hint={matchupNumber(displayProjection?.projected) != null ? formatNumber(displayProjection.projected) : undefined}
+            >
+              {displayProjection && <>
+                <p className="matchup-performance-note">
+                  {projectionView.recorded
+                    ? `Recorded before kickoff · ${new Date(baseline.capturedAt).toLocaleString()}`
+                    : 'Available estimate; the original pregame projection was not recorded.'}
+                </p>
+                <ProjectionDetails projection={displayProjection} />
+              </>}
+            </DiscRow>
+          </>}
+          <DiscRow label="Season performance & defense splits">
+            <PlayerPeerContext model={peerModel} season={season} />
+          </DiscRow>
+        </div>
+      </div>
     </Modal>
   );
 }

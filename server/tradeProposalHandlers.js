@@ -73,6 +73,12 @@ function safeLabel(value, fallback) {
   return (label || fallback).slice(0, MAX_LABEL_LENGTH);
 }
 
+function normalizeFiniteNumber(value) {
+  if (value == null || value === '') return null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
 function getUserName(user, fallback) {
   return safeLabel(user?.display_name ?? user?.username, fallback);
 }
@@ -150,7 +156,7 @@ function normalizeAsset(asset, fromRosterId, toRosterId) {
     type,
     id: asset.id == null ? null : normalizeAssetId(asset.id),
     label: safeLabel(asset.label, type === 'player' ? `Player ${asset.id ?? ''}` : 'Trade asset'),
-    value: Number.isFinite(Number(asset.value ?? asset.val)) ? Number(asset.value ?? asset.val) : null,
+    value: normalizeFiniteNumber(asset.value ?? asset.val),
     fromRosterId: from,
     toRosterId: to,
   };
@@ -262,13 +268,13 @@ function normalizeSnapshot(rawSnapshot, maps, sender, recipient, { requireAssets
     sender: senderSide,
     recipient: recipientSide,
     totals: {
-      sender: Number.isFinite(Number(totals.sender)) ? Number(totals.sender) : null,
-      recipient: Number.isFinite(Number(totals.recipient)) ? Number(totals.recipient) : null,
+      sender: normalizeFiniteNumber(totals.sender),
+      recipient: normalizeFiniteNumber(totals.recipient),
     },
     verdict: {
       verdict: safeLabel(verdict.verdict, 'Trade proposal'),
-      gap: Number.isFinite(Number(verdict.gap)) ? Number(verdict.gap) : null,
-      pct: Number.isFinite(Number(verdict.pct)) ? Number(verdict.pct) : null,
+      gap: normalizeFiniteNumber(verdict.gap),
+      pct: normalizeFiniteNumber(verdict.pct),
     },
     fingerprint: buildTradeProposalFingerprint(fingerprintData),
     fingerprintData,
@@ -369,7 +375,8 @@ function makeShareUrl(req, token) {
 
 function assetSummary(asset) {
   if (asset.type === 'faab') return `$${asset.amount} FAAB`;
-  const value = Number.isFinite(Number(asset.value)) ? ` (${Math.round(Number(asset.value))})` : '';
+  const numericValue = normalizeFiniteNumber(asset.value);
+  const value = numericValue != null ? ` (${Math.round(numericValue)})` : '';
   return `${asset.label}${value}`;
 }
 
@@ -380,7 +387,10 @@ function renderTradeShareHtml(proposal, shareUrl) {
   const senderAssets = (snapshot.sender?.assets ?? []).map(assetSummary);
   const recipientAssets = (snapshot.recipient?.assets ?? []).map(assetSummary);
   const totals = [snapshot.totals?.sender, snapshot.totals?.recipient]
-    .map((value) => Number.isFinite(Number(value)) ? Math.round(Number(value)) : null);
+    .map((value) => {
+      const numericValue = normalizeFiniteNumber(value);
+      return numericValue == null ? null : Math.round(numericValue);
+    });
   const summary = `${senderName} sends ${senderAssets.join(', ') || 'no listed assets'} for ${recipientName} sending ${recipientAssets.join(', ') || 'no listed assets'}${totals.every((value) => value != null) ? `. Trade values: ${totals[0]} offered and ${totals[1]} requested.` : '.'}`;
   const title = `${senderName} ↔ ${recipientName} · Trade Proposal | GridShift`;
   const escape = (value) => String(value).replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));

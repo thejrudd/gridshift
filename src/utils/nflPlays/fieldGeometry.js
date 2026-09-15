@@ -10,6 +10,11 @@
 // always drives left to right and the home team right to left, which is how
 // broadcast field graphics are read.
 
+import { parseInterception } from './playNarrative.js';
+import { FIELD_SPOT_PATTERN, possessionTextToPercent } from './fieldSpots.js';
+
+export { canonicalTeam, possessionTextToPercent } from './fieldSpots.js';
+
 /** Absolute field percentage, or null when the play doesn't report position. */
 export function toFieldPercent(yardsToEndzone, { possessionTeam, homeTeam } = {}) {
   if (yardsToEndzone == null || !Number.isFinite(Number(yardsToEndzone))) return null;
@@ -31,17 +36,6 @@ export function toFieldPercent(yardsToEndzone, { possessionTeam, homeTeam } = {}
  * Both sides are folded to one canonical form so the comparison works whichever
  * spelling each source happens to use.
  */
-const TEAM_ALIASES = new Map([
-  ['ARZ', 'ARI'], ['BLT', 'BAL'], ['CLV', 'CLE'], ['HST', 'HOU'], ['WSH', 'WAS'],
-  ['JAC', 'JAX'], ['LA', 'LAR'], ['LVR', 'LV'], ['SD', 'LAC'], ['SL', 'LAR'],
-]);
-
-/** A team abbreviation in the one spelling everything compares against. */
-export function canonicalTeam(team) {
-  const value = String(team ?? '').trim().toUpperCase();
-  return TEAM_ALIASES.get(value) ?? value;
-}
-
 /**
  * A team's mark, for the end zones and the down-and-distance flag.
  *
@@ -50,21 +44,6 @@ export function canonicalTeam(team) {
  * end zones and playback need the same one.
  */
 export const teamLogo = (teamId) => `https://a.espncdn.com/i/teamlogos/nfl/500/${String(teamId).toLowerCase()}.png`;
-
-/**
- * Absolute field percentage from a possession string like "PHI 36".
- *
- * This is the provider's own rendering of the spot and is authoritative when
- * present — it survives the possession changes that make the numeric fields
- * ambiguous on kicks and turnovers.
- */
-export function possessionTextToPercent(text, { homeTeam } = {}) {
-  const match = /^([A-Z]{2,3})\s+(\d{1,2})$/.exec(String(text ?? '').trim());
-  if (!match || !homeTeam) return null;
-  const [, team, yardLine] = match;
-  const yards = clamp(Number(yardLine), 0, 50);
-  return canonicalTeam(team) === canonicalTeam(homeTeam) ? 100 - yards : yards;
-}
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
@@ -373,7 +352,7 @@ export function classifyPlay(play) {
 }
 
 
-const SPOT = '([A-Z]{2,3}\\s+\\d{1,2})';
+const SPOT = FIELD_SPOT_PATTERN;
 
 /**
  * Did this play put points on the board?
@@ -482,11 +461,38 @@ export function getPlayTrajectory(play, { homeTeam, awayTeam } = {}) {
   const firstDown = start == null || !dist ? null : clamp(start + dist * dir, 0, 100);
 
   const kick = type === 'kick' ? getKickGeometry(play, { dir, start, flag, homeTeam }) : null;
+  const interception = flag === 'int'
+    ? parseInterception(play?.rawText ?? play?.description)
+    : null;
+  const turnoverAt = interception
+    ? possessionTextToPercent(interception.at, { homeTeam })
+    : null;
+  const turnoverReturnTo = interception?.returnTo
+    ? possessionTextToPercent(interception.returnTo, { homeTeam })
+    : null;
+  // A touchback's post-play fields describe the administrative placement for
+  // the next possession, not a return. With no stated return, the play ends
+  // where the defender caught it. This is also the point the turnover mark and
+  // replay must share.
+  const turnover = turnoverAt == null ? null : {
+    at: turnoverAt,
+    finish: turnoverReturnTo ?? turnoverAt,
+    returnYards: interception.returnYards,
+    hasReturn: turnoverReturnTo != null && Math.abs(turnoverReturnTo - turnoverAt) > 0.5,
+  };
 
   // A kick reads its own frame off the description, because the possession
   // fields it would otherwise use are reported from the receiving team.
-  const drawable = type === 'kick' ? kick != null && kick.kickYards > 0 : segment.drawable;
-  const yards = kick ? kick.kickYards : segment.gained;
+  const drawable = type === 'kick'
+    ? kick != null && kick.kickYards > 0
+    : turnover
+      ? start != null
+      : segment.drawable;
+  const yards = kick
+    ? kick.kickYards
+    : turnover
+      ? Math.round(Math.abs(turnover.at - start))
+      : segment.gained;
 
   return {
     ...segment,
@@ -498,11 +504,12 @@ export function getPlayTrajectory(play, { homeTeam, awayTeam } = {}) {
     scoring: isScoringPlay(play, flag),
     dir: kick ? kick.dir : dir,
     start: kick ? kick.start : start,
-    end: kick ? kick.finish : segment.endPct,
+    end: kick ? kick.finish : turnover?.finish ?? segment.endPct,
     yards,
     dist,
     firstDown: kick ? null : firstDown,
     kick,
+    turnover,
     zero: yards != null && Math.abs(yards) < 0.5,
   };
 }
@@ -549,6 +556,9 @@ export function playColor(trajectory, barColor) {
   // them to orange was tried and is worse — it collides with the team colour on
   // Cleveland, Cincinnati, Chicago, Denver and Miami.
   if (trajectory.type === 'penalty' || trajectory.flag === 'penalty') return 'var(--color-signature)';
+  // The pass leading to an interception still belongs to the offense. Its
+  // outcome mark and any return carry the turnover treatment separately.
+  if (trajectory.flag === 'int') return barColor;
   if (trajectory.yards != null && trajectory.yards < 0) return 'var(--color-accent-red)';
   return barColor;
 }
@@ -558,7 +568,9 @@ export function formatFieldSpot(absoluteYardline, { homeTeam, awayTeam } = {}) {
   if (absoluteYardline == null || !Number.isFinite(absoluteYardline)) return null;
   const yard = Math.round(absoluteYardline);
   if (yard === 50) return '50';
-  if (yard <= 0) return `${awayTeam} Goal`;
-  if (yard >= 100) return `${homeTeam} Goal`;
+  if (yard < 0) return `${awayTeam} ${yard}`;
+  if (yard > 100) return `${homeTeam} ${100 - yard}`;
+  if (yard === 0) return `${awayTeam} Goal`;
+  if (yard === 100) return `${homeTeam} Goal`;
   return yard < 50 ? `${awayTeam} ${yard}` : `${homeTeam} ${100 - yard}`;
 }

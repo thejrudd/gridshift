@@ -361,6 +361,27 @@ export function computeWinProbability(
     };
   }
 
+  // A side with no starters left to play can no longer add points. If its
+  // final score already trails the other side's current score, the outcome
+  // is locked in — the trailing side can only lose, and the other side can
+  // only win — regardless of whether the opponent (or an official scoring
+  // reconciliation) has finished yet.
+  const aLockedLoss = sideA.playersRemaining === 0 && sideA.current < sideB.current;
+  const bLockedLoss = sideB.playersRemaining === 0 && sideB.current < sideA.current;
+  if (aLockedLoss || bLockedLoss) {
+    const probA = aLockedLoss ? 0 : 100;
+    return {
+      probA,
+      rawProbA: probA,
+      expectedA,
+      expectedB,
+      expectedMarginA: margin,
+      sigma: 0,
+      settled: true,
+      modelId: model.modelId,
+    };
+  }
+
   const sigmaFloor = Number(model?.variance?.matchupSigmaFloor) || 3;
   const sigma = Math.max(sigmaFloor, Math.sqrt(sideA.remainingVar + sideB.remainingVar));
   const rawProbability = normalCdf(margin / sigma);

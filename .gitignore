@@ -42,6 +42,7 @@ tests/e2e/*
 !tests/e2e/draft-injury-context.spec.js
 !tests/e2e/fantasy-live-workbench.spec.js
 !tests/e2e/league-history.spec.js
+!tests/e2e/player-matchup-drilldown.spec.js
 !tests/e2e/statistics-scores-sources.spec.js
 !tests/e2e/tradeTestHarness.js
 !tests/e2e/whats-new-tour.spec.js
@@ -69,6 +70,18 @@ docs/archive/Historical Release Notes Drafts.md
 # Claude Code
 .claude/
 .agents/
+!.agents/
+.agents/*
+!.agents/skills/
+.agents/skills/*
+!.agents/skills/gridshift-desktop-legibility/
+!.agents/skills/gridshift-desktop-legibility/**
+!.agents/skills/design-pass/
+!.agents/skills/design-pass/**
+!.agents/skills/flat-data-surface/
+!.agents/skills/flat-data-surface/**
+!.agents/skills/validate-gridshift-tour/
+!.agents/skills/validate-gridshift-tour/**
 .continue/
 .interface-design/
 skills-lock.json

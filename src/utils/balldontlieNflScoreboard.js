@@ -9,6 +9,7 @@ import {
   isTurnoverOnDowns,
 } from './nflPlays/fieldGeometry.js';
 import { enrichPlaySequenceContext } from './nflPlays/playSequenceContext.js';
+import { buildPlayerQuarterStats, getStatisticsPlayerKey } from './statisticsPlayerQuarterStats.js';
 
 export const BDL_SEASON_TYPES = Object.freeze({
   [NFL_SEASON_PHASES.PRESEASON]: 1,
@@ -1042,46 +1043,66 @@ function playerTeam(row) {
   return firstString(row?.team?.abbreviation, row?.player?.team?.abbreviation, 'NFL')?.toUpperCase() ?? 'NFL';
 }
 
+function playerTeamName(row) {
+  return firstString(
+    row?.team?.full_name,
+    row?.team?.name,
+    row?.player?.team?.full_name,
+    row?.player?.team?.name,
+    playerTeam(row),
+  ) ?? playerTeam(row);
+}
+
 function hasProduction(row, keys) {
   return keys.some((key) => (asNumberOrNull(row?.[key]) ?? 0) !== 0);
 }
 
-function makePlayerGroup(id, label, columns, rows, keys, values, primaryKey) {
+function makePlayerGroup(id, label, columns, rows, keys, values, primaryKey, quarterStats = null) {
   const available = rows
     .filter((row) => hasProduction(row, keys))
     .sort((left, right) => (asNumberOrNull(right?.[primaryKey]) ?? 0) - (asNumberOrNull(left?.[primaryKey]) ?? 0))
-    .map((row) => ({ team: playerTeam(row), player: playerName(row), values: values(row) }));
+    .map((row) => {
+      const key = getStatisticsPlayerKey(row);
+      return {
+        key,
+        team: playerTeam(row),
+        teamName: playerTeamName(row),
+        player: playerName(row),
+        values: values(row),
+        quarterValues: quarterStats?.byPlayer?.[key]?.[id] ?? null,
+      };
+    });
   return available.length ? { id, label, columns, rows: available } : null;
 }
 
-function buildPlayerGroups(rows = []) {
+function buildPlayerGroups(rows = [], quarterStats = null) {
   const totalReturns = (row) => (asNumberOrNull(row?.kick_returns) ?? 0) + (asNumberOrNull(row?.punt_returns) ?? 0);
   const totalReturnYards = (row) => (asNumberOrNull(row?.kick_return_yards) ?? 0) + (asNumberOrNull(row?.punt_return_yards) ?? 0);
   return [
     makePlayerGroup('passing', 'Passing', ['C/ATT', 'YDS', 'TD', 'INT', 'RTG'], rows,
       ['passing_attempts', 'passing_completions', 'passing_yards', 'passing_touchdowns', 'passing_interceptions'],
       (row) => [`${formatStat(row.passing_completions)}/${formatStat(row.passing_attempts)}`, formatStat(row.passing_yards), formatStat(row.passing_touchdowns), formatStat(row.passing_interceptions), formatStat(row.qb_rating, { digits: 1 })],
-      'passing_yards'),
+      'passing_yards', quarterStats),
     makePlayerGroup('rushing', 'Rushing', ['CAR', 'YDS', 'AVG', 'TD', 'LONG'], rows,
       ['rushing_attempts', 'rushing_yards', 'rushing_touchdowns'],
       (row) => [formatStat(row.rushing_attempts), formatStat(row.rushing_yards), formatStat(row.yards_per_rush_attempt, { digits: 1 }), formatStat(row.rushing_touchdowns), formatStat(row.long_rushing)],
-      'rushing_yards'),
+      'rushing_yards', quarterStats),
     makePlayerGroup('receiving', 'Receiving', ['REC', 'TGT', 'YDS', 'AVG', 'TD'], rows,
       ['receptions', 'receiving_targets', 'receiving_yards', 'receiving_touchdowns'],
       (row) => [formatStat(row.receptions), formatStat(row.receiving_targets), formatStat(row.receiving_yards), formatStat(row.yards_per_reception, { digits: 1 }), formatStat(row.receiving_touchdowns)],
-      'receiving_yards'),
+      'receiving_yards', quarterStats),
     makePlayerGroup('defense', 'Defense', ['TOT', 'SOLO', 'SACK', 'TFL', 'PD'], rows,
       ['total_tackles', 'solo_tackles', 'defensive_sacks', 'tackles_for_loss', 'passes_defended'],
       (row) => [formatStat(row.total_tackles), formatStat(row.solo_tackles), formatStat(row.defensive_sacks, { digits: 1 }), formatStat(row.tackles_for_loss), formatStat(row.passes_defended)],
-      'total_tackles'),
+      'total_tackles', quarterStats),
     makePlayerGroup('kicking', 'Kicking', ['FG', 'LONG', 'XP', 'PTS'], rows,
       ['field_goal_attempts', 'field_goals_made', 'extra_points_made', 'total_points'],
       (row) => [`${formatStat(row.field_goals_made)}/${formatStat(row.field_goal_attempts)}`, formatStat(row.long_field_goal_made), formatStat(row.extra_points_made), formatStat(row.total_points)],
-      'total_points'),
+      'total_points', quarterStats),
     makePlayerGroup('punting', 'Punting', ['PUNTS', 'AVG', 'IN 20', 'LONG'], rows,
       ['punts', 'punt_yards', 'punts_inside_20'],
       (row) => [formatStat(row.punts), formatStat(row.gross_avg_punt_yards, { digits: 1 }), formatStat(row.punts_inside_20), formatStat(row.long_punt)],
-      'punt_yards'),
+      'punt_yards', quarterStats),
     makePlayerGroup('returns', 'Returns', ['RET', 'YDS', 'AVG', 'LONG'], rows,
       ['kick_returns', 'kick_return_yards', 'punt_returns', 'punt_return_yards'],
       (row) => {
@@ -1089,7 +1110,7 @@ function buildPlayerGroups(rows = []) {
         const yards = totalReturnYards(row);
         return [String(returns), String(yards), returns ? (yards / returns).toFixed(1) : '—', formatStat(Math.max(asNumberOrNull(row.long_kick_return) ?? 0, asNumberOrNull(row.long_punt_return) ?? 0))];
       },
-      'kick_return_yards'),
+      'kick_return_yards', quarterStats),
   ].filter(Boolean);
 }
 
@@ -1166,7 +1187,16 @@ export function buildScoreDetailFromGame(game, {
   const awayId = game?.away?.id ?? teamFromBdl(rawGame?.visitor_team).id;
   const homeId = game?.home?.id ?? teamFromBdl(rawGame?.home_team).id;
   const statGroups = buildTeamStatGroups(teamStats, playerStats, awayId, homeId);
-  const playerGroups = buildPlayerGroups(playerStats);
+  const quarterStats = supportsBdlDetail
+    ? buildPlayerQuarterStats({
+      plays: drives.flatMap((drive) => drive.plays),
+      players: playerStats,
+      homeTeam: homeId,
+      awayTeam: awayId,
+      quarterLabels: quarterValues.labels,
+    })
+    : null;
+  const playerGroups = buildPlayerGroups(playerStats, quarterStats);
   const playByPlayAvailable = detailStatus === 'ready' && drives.length > 0;
   return {
     status: game?.status ?? 'scheduled',

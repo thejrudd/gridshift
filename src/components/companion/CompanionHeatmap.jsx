@@ -3,6 +3,7 @@ import { FunnelSimpleIcon } from '@phosphor-icons/react/FunnelSimple';
 import { useSleeperBase, useSleeperStatsEnhancing } from '../../context/SleeperContext';
 import { useTheme } from '../../context/ThemeContext';
 import { calcPoints, DEFAULT_SCORING } from '../../utils/scoringEngine';
+import { getCachedOffenseAllowedTable } from '../../utils/fantasyHeatmapData.js';
 import { STADIUMS } from '../../data/stadiums';
 import { TEAM_COLORS } from '../../data/teamColors';
 import { NFL_ODDS } from '../../data/odds';
@@ -19,7 +20,6 @@ import SeasonHintBanner from '../ui/SeasonHintBanner';
 const OFF_POSITIONS = ['ALL', 'QB', 'RB', 'WR', 'TE', 'K'];
 const DEF_POSITIONS = ['ALL', 'DEF', 'DL', 'LB', 'DB'];
 const ALL_TEAMS = Object.keys(STADIUMS).sort();
-const OFFENSE_POS_SET = new Set(['QB', 'RB', 'WR', 'TE', 'K']);
 const TEAM_CELL_PAD_X = 10;
 const TEAM_CELL_PAD_Y = 5;
 const TEAM_LOGO_SIZE = 18;
@@ -73,78 +73,11 @@ function filterHeatmapPositions(positionOrder, leaguePositions) {
   return ['ALL', ...concretePositions];
 }
 
-const HEATMAP_OFFENSE_TABLE_CACHE = new WeakMap();
 const HEATMAP_DEFENSE_TABLE_CACHE = new WeakMap();
 const SHARED_GAME_STAT_MODES = new Set(['game_score', 'vegas_odds']);
 const POSITIONLESS_GAME_STAT_MODES = new Set(['game_score', 'vegas_odds']);
 const HEATMAP_FILTER_LABEL_WIDTH = 62;
 const MOBILE_FILTER_LABEL_WIDTH = HEATMAP_FILTER_LABEL_WIDTH;
-
-function getCachedOffenseAllowedTable(weeklyStats, players, scheduleMap, activeScoringSettings, statMode) {
-  let byPlayers = HEATMAP_OFFENSE_TABLE_CACHE.get(weeklyStats);
-  if (!byPlayers) {
-    byPlayers = new WeakMap();
-    HEATMAP_OFFENSE_TABLE_CACHE.set(weeklyStats, byPlayers);
-  }
-
-  let bySchedule = byPlayers.get(players);
-  if (!bySchedule) {
-    bySchedule = new WeakMap();
-    byPlayers.set(players, bySchedule);
-  }
-
-  let byScoring = bySchedule.get(scheduleMap);
-  if (!byScoring) {
-    byScoring = new WeakMap();
-    bySchedule.set(scheduleMap, byScoring);
-  }
-
-  let byStatMode = byScoring.get(activeScoringSettings);
-  if (!byStatMode) {
-    byStatMode = new Map();
-    byScoring.set(activeScoringSettings, byStatMode);
-  }
-
-  if (byStatMode.has(statMode)) return byStatMode.get(statMode);
-
-  const table = {};
-  const fallbackSeasonTeam = {};
-
-  const addVal = (team, position, week, val) => {
-    if (!table[team]) table[team] = {};
-    if (!table[team][position]) table[team][position] = {};
-    table[team][position][week] = (table[team][position][week] ?? 0) + val;
-  };
-
-  for (const [playerId, playerWeeks] of Object.entries(weeklyStats)) {
-    const player = players[playerId];
-    const position = player?.position;
-    if (!OFFENSE_POS_SET.has(position)) continue;
-
-    for (const wEntry of playerWeeks) {
-      let val;
-      if (statMode === 'rec_yd') val = wEntry.rec_yd ?? 0;
-      else if (statMode === 'rush_yd') val = wEntry.rush_yd ?? 0;
-      else val = calcPoints(wEntry, activeScoringSettings, position);
-      if (val <= 0) continue;
-
-      let team = wEntry.team?.toUpperCase() ?? null;
-      if (!team) {
-        team = fallbackSeasonTeam[playerId];
-        if (team === undefined) {
-          const enhanced = playerWeeks.find(w => w._teamSource === 'espn' && w.team);
-          team = enhanced?.team?.toUpperCase() ?? player.team?.toUpperCase() ?? null;
-          fallbackSeasonTeam[playerId] = team;
-        }
-      }
-      if (!team) continue;
-      addVal(team, position, wEntry.week, val);
-    }
-  }
-
-  byStatMode.set(statMode, table);
-  return table;
-}
 
 const STAT_MODES = [
   { id: 'pts',        label: 'Fantasy Pts' },
@@ -1636,7 +1569,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
             aria-expanded={filtersOpen}
             aria-controls="companion-heatmap-filter-panel"
           >
-            <FunnelSimpleIcon size={20} weight={filtersOpen ? 'bold' : 'regular'} aria-hidden="true" />
+            <FunnelSimpleIcon size={20} weight={filtersOpen ? 'fill' : 'regular'} aria-hidden="true" />
             <span className="sr-only">{filtersOpen ? 'Hide Filters' : 'Show Filters'}</span>
           </CompanionSelectorButton>
           <div className="companion-heatmap-filter-summary__rail" aria-label="Active heatmap filters">
@@ -2056,6 +1989,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
                             player={{ ...(players?.[playerId] ?? {}), id: playerId, name, position, team: teamId }}
                             darkMode={darkMode}
                             compact
+                            showAccentRail={false}
                             showTeamLogo={false}
                             interactive={canNav}
                             onClick={canNav ? () => {
@@ -2111,6 +2045,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
                         player={{ ...(players?.[playerId] ?? {}), id: playerId, name, position, team: teamId }}
                         darkMode={darkMode}
                         compact
+                        showAccentRail={false}
                         showTeamLogo={false}
                         interactive={canNav}
                         onClick={canNav ? () => {

@@ -1,4 +1,5 @@
-// Dev-only control surface for the Fantasy Live replay clock.
+// Dev-only control surface for the Fantasy Live sandbox and connected-data
+// switch. The replay clock controls remain available only for Replay mode.
 //
 // Renders nothing unless VITE_LIVE_SANDBOX=true, and the whole module is
 // dropped from production builds along with the rest of the sandbox.
@@ -20,7 +21,7 @@ import { SANDBOX_MODES, setSandboxMode, useSandboxMode } from './liveSandboxMode
 import { CHART_SCALES, setChartScale, useChartScale } from './liveSandboxChartScale';
 import './LiveSandboxPanel.css';
 
-export default function LiveSandboxPanel() {
+export default function LiveSandboxPanel({ canUseLiveData = false }) {
   const clock = useReplayClock();
   const mode = useSandboxMode();
   const chartScale = useChartScale();
@@ -30,9 +31,11 @@ export default function LiveSandboxPanel() {
 
   const replay = mode === 'replay';
   // Derived straight from the cached slate; the clock re-renders this panel.
-  const label = replay
-    ? describeReplayInstant(getCachedGames(), clock.progress)
-    : 'Live preseason games — no replay clock';
+  const label = mode === 'live'
+    ? (canUseLiveData ? 'Connected league — live routes' : 'Connect a Sleeper league for live data')
+    : replay
+      ? describeReplayInstant(getCachedGames(), clock.progress)
+      : 'Live preseason games — no replay clock';
 
   return (
     <div className="live-sandbox">
@@ -58,6 +61,8 @@ export default function LiveSandboxPanel() {
                 className="live-sandbox-chip"
                 data-active={mode === entry.id}
                 onClick={() => setSandboxMode(entry.id)}
+                disabled={entry.id === 'live' && !canUseLiveData}
+                title={entry.id === 'live' && !canUseLiveData ? 'Connect a Sleeper league before using live data' : undefined}
               >
                 {entry.label}
               </button>

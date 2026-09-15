@@ -11,12 +11,16 @@ import {
   getLiveGames as fetchLiveGames,
   getLivePlayerStatsForGames as fetchLivePlayerStats,
 } from '../../api/liveApi';
+import { getTeamAbbr } from '../../utils/liveScoringFeed.js';
 import { getClockState } from './liveSandboxClock';
 import {
   getGameProgress,
   getReplayInstant,
+  getReplayChartProgress as getReplayChartProgressForGames,
   getSlateProgressForGameProgress,
+  getSleeperStreamLagProgress,
   projectGamesAtProgress,
+  projectSleeperReplaySlice,
   projectStatsAtProgress,
 } from './liveSandboxReplay';
 
@@ -167,4 +171,47 @@ export function getReplayInstantAt(progress) {
 // A position inside one game, expressed on the shared slate axis.
 export function toSlateProgress(gameId, gameProgress) {
   return getSlateProgressForGameProgress(cache.games ?? [], gameId, gameProgress);
+}
+
+// The active replay clock drives data slicing; the chart follows the furthest
+// started scheduled-game segment so its NOW marker contains every visible play.
+export function getReplayChartProgress(progress = currentProgress()) {
+  return getReplayChartProgressForGames(cache.games ?? [], progress);
+}
+
+// The teams a fixture's rostered players actually play for, so the synthesized
+// Sleeper stream only needs to warm the handful of games those teams are in
+// rather than every game on the slate.
+function getFixtureTeams(fixture) {
+  return new Set(
+    Object.values(fixture?.players ?? {})
+      .map((player) => getTeamAbbr(player?.team))
+      .filter(Boolean),
+  );
+}
+
+/**
+ * The synthesized Sleeper stream (rule 10): `{ matchups, weeklyStats }` for
+ * the fixture at the current replay clock, as Sleeper would report it if its
+ * own pipeline were `lagSlateProgress` (default: `getSleeperStreamLagProgress`,
+ * ~20s of replay slate time) behind the BDL box score. Reuses the same games
+ * and final-stats cache `getLiveGames`/`getLivePlayerStatsForGames` warm, so a
+ * replay tick that has already fetched a week's data never refetches it here.
+ */
+export async function getSleeperReplaySlice(fixture, { lagSlateProgress } = {}) {
+  const games = await loadFinalGames(fixture?.season, fixture?.week);
+  const fixtureTeams = getFixtureTeams(fixture);
+  const gameIds = games
+    .filter((game) => fixtureTeams.has(getTeamAbbr(game?.home_team))
+      || fixtureTeams.has(getTeamAbbr(game?.visitor_team)))
+    .map((game) => game.id);
+  const finalStatsByGame = await loadFinalStats(gameIds);
+  const lagProgress = lagSlateProgress ?? getSleeperStreamLagProgress(games);
+  return projectSleeperReplaySlice({
+    progress: currentProgress(),
+    lagProgress,
+    games,
+    finalStatsByGame,
+    fixture,
+  });
 }

@@ -13,6 +13,7 @@ import {
   NFL_SEASON_PHASES,
   fetchEspnPreseason,
   fetchEspnRegularSeason,
+  normalizeCrosswalkTeamId,
   overlayEspnBroadcastsWeek,
   overlayEspnScoreboardWeek,
   readStoredNflSeasonPhase,
@@ -26,6 +27,7 @@ import {
   resolveStatisticsScoresProvider,
   STATISTICS_SCORES_PROVIDERS,
 } from '../../../utils/statisticsScoresProvider';
+import { isStatisticsScoresDrilldownStatus } from '../../../utils/statisticsScoresDrilldown';
 import { resolveStatisticsScoresCurrentWeekId } from '../../../utils/statisticsScoresWeek';
 import ScoresSeasonBoard from './ScoresSeasonBoard';
 import ScoresGameDrilldown from './ScoresGameDrilldown';
@@ -52,6 +54,60 @@ const DEVELOPER_SOURCES = Object.freeze([
   { id: STATISTICS_SCORES_PROVIDERS.ESPN, label: 'ESPN live' },
   { id: STATISTICS_SCORES_PROVIDERS.BALLDONTLIE, label: 'BALLDONTLIE API' },
 ]);
+
+function scoresGameRouteId(game) {
+  const candidate = [game?.bdlGameId, game?.providerGameId, game?.espnEventId, game?.eventId, game?.id]
+    .find((value) => value != null && String(value).trim());
+  return candidate == null ? null : String(candidate);
+}
+
+function scoresGameMatchesRouteId(game, routeGameId) {
+  if (routeGameId == null) return false;
+  const target = String(routeGameId);
+  return [game?.bdlGameId, game?.providerGameId, game?.espnEventId, game?.eventId, game?.id]
+    .some((value) => value != null && String(value) === target);
+}
+
+function scoresWeekMatchesRouteValue(week, routeWeek) {
+  if (routeWeek == null) return false;
+  const target = String(routeWeek).trim().toLowerCase();
+  const id = String(week?.id ?? '').trim().toLowerCase();
+  if (id === target) return true;
+  if (Number.isInteger(Number(week?.week)) && String(Number(week.week)) === target) return true;
+  return id.replace(/^(?:pre|reg)-/, '') === target;
+}
+
+function scoresWeekRouteValue(week) {
+  if (!week) return null;
+  if (week.phase === 'postseason') return String(week.id);
+  if (Number.isInteger(Number(week.week)) && Number(week.week) > 0) return Number(week.week);
+  const numericId = String(week.id ?? '').match(/^(?:pre|reg)-(\d+)$/)?.[1];
+  return numericId ? Number(numericId) : String(week.id ?? '');
+}
+
+function findScoresWeek(weeks, routeWeek) {
+  return (weeks ?? []).find((week) => scoresWeekMatchesRouteValue(week, routeWeek)) ?? null;
+}
+
+function scoresGameMatchesTeams(game, awayTeamId, homeTeamId) {
+  if (!awayTeamId || !homeTeamId) return false;
+  const gameAway = normalizeCrosswalkTeamId(game?.away?.id ?? game?.awayTeam);
+  const gameHome = normalizeCrosswalkTeamId(game?.home?.id ?? game?.homeTeam);
+  return gameAway === normalizeCrosswalkTeamId(awayTeamId) && gameHome === normalizeCrosswalkTeamId(homeTeamId);
+}
+
+function findScoresGame(weeks, routeGameId, routeWeek, awayTeamId, homeTeamId) {
+  const idMatch = routeGameId != null
+    ? (weeks ?? []).flatMap((week) => week.games ?? []).find((game) => scoresGameMatchesRouteId(game, routeGameId))
+    : null;
+  if (idMatch) return idMatch;
+  // A game routed in from another surface (e.g. the Schedule tab) may carry an
+  // id from a different provider than the one currently active here. The
+  // matchup + week it links to is still unique, so fall back to that.
+  if (!awayTeamId || !homeTeamId) return null;
+  const week = findScoresWeek(weeks, routeWeek);
+  return (week?.games ?? []).find((game) => scoresGameMatchesTeams(game, awayTeamId, homeTeamId)) ?? null;
+}
 
 function loadDeveloperFixtures() {
   if (!LOAD_DEVELOPER_FIXTURES) throw new Error('Local score fixtures are available only in development.');
@@ -177,7 +233,18 @@ function WeekRail({ weeks, selectedWeekId, currentWeekId, onSelectWeek }) {
   );
 }
 
-export default function StatisticsScores({ tourDemoMode = null }) {
+export default function StatisticsScores({
+  tourDemoMode = null,
+  routeSeason = null,
+  routePhase = null,
+  routeWeek = null,
+  routeGameId = null,
+  routeSection = 'overview',
+  routePlayerGroup = null,
+  routeAwayTeamId = null,
+  routeHomeTeamId = null,
+  onRouteChange = null,
+}) {
   const desktop = useMediaQuery('(min-width: 1024px)');
   const showPlayByPlayTourDemo = tourDemoMode === 'statistics-scores-play-by-play';
   const [tourFixture, setTourFixture] = useState(null);
@@ -186,15 +253,14 @@ export default function StatisticsScores({ tourDemoMode = null }) {
   const availableSeasons = DEVELOPER_SOURCE_ENABLED
     ? fixtureCatalog?.seasons ?? [fixtureSeason]
     : [PRODUCTION_SEASON];
-  const [season, setSeason] = useState(fixtureSeason);
-  const [seasonPhase, setSeasonPhase] = useState(readStoredNflSeasonPhase);
+  const [storedSeasonPhase, setStoredSeasonPhase] = useState(readStoredNflSeasonPhase);
+  const season = routeSeason ?? fixtureSeason;
+  const seasonPhase = routePhase ?? storedSeasonPhase;
   const [developerSource, setDeveloperSource] = useState(
     DEVELOPER_SOURCE_ENABLED ? STATISTICS_SCORES_PROVIDERS.FIXTURE : null,
   );
   const [regularState, setRegularState] = useState(EMPTY_FEED_STATE);
   const [preseasonState, setPreseasonState] = useState(EMPTY_FEED_STATE);
-  const [selectedWeekId, setSelectedWeekId] = useState(null);
-  const [selectedGame, setSelectedGame] = useState(null);
   const [sourceState, setSourceState] = useState({
     status: DEVELOPER_SOURCE_ENABLED ? 'ready' : 'loading',
     provider: DEVELOPER_SOURCE_ENABLED ? STATISTICS_SCORES_PROVIDERS.FIXTURE : null,
@@ -236,31 +302,40 @@ export default function StatisticsScores({ tourDemoMode = null }) {
     : currentSeason && activeProvider === STATISTICS_SCORES_PROVIDERS.FIXTURE
       ? regularState.data?.currentWeekId ?? null
       : resolveStatisticsScoresCurrentWeekId(weeks, { phase: seasonPhase });
+  const routedGame = useMemo(
+    () => findScoresGame(weeks, routeGameId, routeWeek, routeAwayTeamId, routeHomeTeamId),
+    [routeAwayTeamId, routeGameId, routeHomeTeamId, routeWeek, weeks],
+  );
+  const routedGameWeek = useMemo(
+    () => routedGame
+      ? weeks.find((week) => (week.games ?? []).some((game) => game === routedGame)) ?? null
+      : null,
+    [routedGame, weeks],
+  );
   const selectedWeek = useMemo(
-    () => weeks.find((week) => week.id === selectedWeekId) ?? weeks[0] ?? null,
-    [selectedWeekId, weeks],
+    () => routedGameWeek
+      ?? findScoresWeek(weeks, routeWeek)
+      ?? weeks.find((week) => week.id === currentWeekId)
+      ?? weeks[0]
+      ?? null,
+    [currentWeekId, routeWeek, routedGameWeek, weeks],
   );
   const liveCount = selectedWeek?.games.filter((game) => ['live', 'halftime', 'delayed'].includes(game.status)).length ?? 0;
   const selectedWeekNumber = Number.isInteger(selectedWeek?.week) ? selectedWeek.week : null;
   const selectedWeekHasLiveGames = selectedWeek?.games.some((game) => game.status === 'live') ?? false;
   const activeState = seasonPhase === NFL_SEASON_PHASES.PRESEASON ? preseasonState : regularState;
+  const canOpenGame = activeProvider === STATISTICS_SCORES_PROVIDERS.BALLDONTLIE
+    || (activeProvider === STATISTICS_SCORES_PROVIDERS.FIXTURE
+      && seasonPhase === NFL_SEASON_PHASES.REGULAR);
+  const selectedGame = useMemo(() => {
+    if (!routedGame || !canOpenGame || routedGame.detailsAvailable === false) return null;
+    return isStatisticsScoresDrilldownStatus(routedGame.status) ? routedGame : null;
+  }, [canOpenGame, routedGame]);
+  const selectedGameRouteId = selectedGame ? scoresGameRouteId(selectedGame) : null;
   // The live-week response already contains the canonical provider game and
   // latest-play snapshot. Scorecards must not run a second polling or clock
   // interpolation path on top of it.
   const scorecardWeek = selectedWeek;
-  const selectedGameKey = selectedGame
-    ? `${selectedGame.provider ?? 'unknown'}:${selectedGame.providerGameId ?? selectedGame.id}`
-    : null;
-  const currentSelectedGame = useMemo(() => {
-    if (!selectedGameKey) return null;
-    const displayedGame = scorecardWeek?.games
-      .find((game) => `${game.provider ?? 'unknown'}:${game.providerGameId ?? game.id}` === selectedGameKey);
-    if (displayedGame) return displayedGame;
-    return weeks
-      .flatMap((week) => week.games)
-      .find((game) => `${game.provider ?? 'unknown'}:${game.providerGameId ?? game.id}` === selectedGameKey)
-      ?? selectedGame;
-  }, [scorecardWeek, selectedGame, selectedGameKey, weeks]);
   useEffect(() => {
     if (DEVELOPER_SOURCE_ENABLED && developerSource !== STATISTICS_SCORES_PROVIDERS.BALLDONTLIE) {
       return undefined;
@@ -325,11 +400,6 @@ export default function StatisticsScores({ tourDemoMode = null }) {
         const nextState = { status: 'ready', data: withProvider, error: null, updatedAt: new Date() };
         if (seasonPhase === NFL_SEASON_PHASES.PRESEASON) setPreseasonState(nextState);
         else setRegularState(nextState);
-        setSelectedWeekId(
-          activeProvider === STATISTICS_SCORES_PROVIDERS.FIXTURE && seasonPhase === NFL_SEASON_PHASES.REGULAR
-            ? withProvider.currentWeekId
-            : resolveStatisticsScoresCurrentWeekId(withProvider.weeks, { phase: seasonPhase }),
-        );
       } catch (error) {
         if (error.name === 'AbortError' || controller.signal.aborted) return;
         if (!DEVELOPER_SOURCE_ENABLED && activeProvider === STATISTICS_SCORES_PROVIDERS.BALLDONTLIE) {
@@ -348,6 +418,37 @@ export default function StatisticsScores({ tourDemoMode = null }) {
     void load();
     return () => controller.abort();
   }, [activeProvider, developerSource, season, seasonPhase, sourceState.status]);
+
+  useEffect(() => {
+    if (!onRouteChange || sourceState.status !== 'ready' || activeState.status !== 'ready' || !selectedWeek) return;
+
+    const canonicalPhase = seasonPhase;
+    const canonicalGameId = selectedGameRouteId;
+    const canonicalSection = selectedGame ? routeSection : 'overview';
+    const canonicalPlayerGroup = selectedGame && canonicalSection === 'players' ? routePlayerGroup : null;
+    const sameValue = (left, right) => (left == null || right == null)
+      ? left == null && right == null
+      : String(left) === String(right);
+    const alreadyCanonical = sameValue(routeSeason, season)
+      && sameValue(routePhase, canonicalPhase)
+      && sameValue(routeWeek, scoresWeekRouteValue(selectedWeek))
+      && sameValue(routeGameId, canonicalGameId)
+      && routeSection === canonicalSection
+      && routePlayerGroup === canonicalPlayerGroup;
+
+    if (!alreadyCanonical) {
+      onRouteChange({
+        statisticsScoresSeason: season,
+        statisticsScoresPhase: canonicalPhase,
+        statisticsScoresWeek: scoresWeekRouteValue(selectedWeek),
+        statisticsScoresGameId: canonicalGameId,
+        statisticsScoresSection: canonicalSection,
+        statisticsScoresPlayerGroup: canonicalPlayerGroup,
+        statisticsScoresAwayTeamId: null,
+        statisticsScoresHomeTeamId: null,
+      }, { replace: true });
+    }
+  }, [activeState.status, onRouteChange, routeGameId, routePhase, routePlayerGroup, routeSeason, routeSection, routeWeek, season, seasonPhase, selectedGame, selectedGameRouteId, selectedWeek, sourceState.status]);
 
   useEffect(() => {
     if (activeProvider === STATISTICS_SCORES_PROVIDERS.FIXTURE
@@ -503,7 +604,7 @@ export default function StatisticsScores({ tourDemoMode = null }) {
 
   useEffect(() => {
     document.querySelector('.content-area')?.scrollTo({ top: 0, behavior: 'auto' });
-  }, [selectedGame]);
+  }, [selectedGameRouteId]);
 
   if (showPlayByPlayTourDemo) {
     if (!tourFixture) return <p className="statistics-scores-state">Loading play-by-play preview…</p>;
@@ -518,17 +619,45 @@ export default function StatisticsScores({ tourDemoMode = null }) {
   }
 
   if (selectedGame) {
-    const drilldownGame = currentSelectedGame ?? selectedGame;
+    const drilldownGame = selectedGame;
     return (
       <ScoresGameDrilldown
         game={drilldownGame}
         fixtureDetail={drilldownGame.provider === STATISTICS_SCORES_PROVIDERS.FIXTURE
           ? fixtureCatalog?.getDetail(drilldownGame) ?? null
           : null}
-        onBack={() => setSelectedGame(null)}
+        selectedSection={routeSection}
+        selectedPlayerGroup={routePlayerGroup}
+        onSectionChange={(section) => onRouteChange?.({
+          statisticsScoresSection: section,
+          statisticsScoresPlayerGroup: section === 'players' ? routePlayerGroup : null,
+        }, { replace: true })}
+        onPlayerGroupChange={(group) => onRouteChange?.({
+          statisticsScoresSection: 'players',
+          statisticsScoresPlayerGroup: group,
+        }, { replace: true })}
+        onBack={() => onRouteChange?.({
+          statisticsScoresGameId: null,
+          statisticsScoresSection: 'overview',
+          statisticsScoresPlayerGroup: null,
+        }, { replace: true })}
       />
     );
   }
+
+  const routePhaseValue = seasonPhase;
+
+  const selectWeek = (nextWeekId) => {
+    const nextWeek = weeks.find((week) => week.id === nextWeekId) ?? null;
+    onRouteChange?.({
+      statisticsScoresSeason: season,
+      statisticsScoresPhase: routePhaseValue,
+      statisticsScoresWeek: scoresWeekRouteValue(nextWeek),
+      statisticsScoresGameId: null,
+      statisticsScoresSection: 'overview',
+      statisticsScoresPlayerGroup: null,
+    }, { replace: true });
+  };
 
   const selectDeveloperSource = (nextSource) => {
     if (!DEVELOPER_SOURCE_ENABLED || nextSource === developerSource) return;
@@ -540,8 +669,11 @@ export default function StatisticsScores({ tourDemoMode = null }) {
     });
     setRegularState(EMPTY_FEED_STATE);
     setPreseasonState(EMPTY_FEED_STATE);
-    setSelectedWeekId(null);
-    setSelectedGame(null);
+    onRouteChange?.({
+      statisticsScoresGameId: null,
+      statisticsScoresSection: 'overview',
+      statisticsScoresPlayerGroup: null,
+    }, { replace: true });
   };
 
   const selectSeasonPhase = (nextPhase) => {
@@ -551,23 +683,29 @@ export default function StatisticsScores({ tourDemoMode = null }) {
     } else if (activeProvider !== STATISTICS_SCORES_PROVIDERS.FIXTURE) {
       setRegularState({ status: 'loading', data: null, error: null, updatedAt: null });
     }
-    setSeasonPhase(normalized);
-    setSelectedGame(null);
-    setSelectedWeekId(
-      normalized === NFL_SEASON_PHASES.REGULAR && activeProvider === STATISTICS_SCORES_PROVIDERS.FIXTURE
-        ? regularState.data?.currentWeekId ?? null
-        : null,
-    );
+    setStoredSeasonPhase(normalized);
+    onRouteChange?.({
+      statisticsScoresSeason: season,
+      statisticsScoresPhase: normalized,
+      statisticsScoresWeek: null,
+      statisticsScoresGameId: null,
+      statisticsScoresSection: 'overview',
+      statisticsScoresPlayerGroup: null,
+    });
   };
 
   const openGame = (game) => {
+    if (!canOpenGame || game.detailsAvailable === false || !isStatisticsScoresDrilldownStatus(game.status)) return;
     const gameWeek = weeks.find((week) => week.games.some((entry) => entry.id === game.id));
-    if (gameWeek && gameWeek.id !== selectedWeekId) setSelectedWeekId(gameWeek.id);
-    setSelectedGame(game);
+    onRouteChange?.({
+      statisticsScoresSeason: season,
+      statisticsScoresPhase: routePhaseValue,
+      statisticsScoresWeek: scoresWeekRouteValue(gameWeek ?? selectedWeek),
+      statisticsScoresGameId: scoresGameRouteId(game),
+      statisticsScoresSection: 'overview',
+      statisticsScoresPlayerGroup: null,
+    });
   };
-  const canOpenGame = activeProvider === STATISTICS_SCORES_PROVIDERS.BALLDONTLIE
-    || (activeProvider === STATISTICS_SCORES_PROVIDERS.FIXTURE
-      && seasonPhase === NFL_SEASON_PHASES.REGULAR);
 
   return (
     <div className="statistics-scores page-frame-data">
@@ -599,18 +737,20 @@ export default function StatisticsScores({ tourDemoMode = null }) {
               <select
                 value={season}
                 onChange={(event) => {
-                  setSeason(Number(event.target.value));
+                  const nextSeason = Number(event.target.value);
                   if (activeProvider !== STATISTICS_SCORES_PROVIDERS.FIXTURE && seasonPhase === NFL_SEASON_PHASES.PRESEASON) {
                     setPreseasonState({ status: 'loading', data: null, error: null, updatedAt: null });
                   } else if (activeProvider !== STATISTICS_SCORES_PROVIDERS.FIXTURE) {
                     setRegularState({ status: 'loading', data: null, error: null, updatedAt: null });
                   }
-                  setSelectedWeekId(
-                    seasonPhase === NFL_SEASON_PHASES.REGULAR && activeProvider === STATISTICS_SCORES_PROVIDERS.FIXTURE
-                      ? regularState.data?.currentWeekId ?? null
-                      : null,
-                  );
-                  setSelectedGame(null);
+                  onRouteChange?.({
+                    statisticsScoresSeason: nextSeason,
+                    statisticsScoresPhase: routePhaseValue,
+                    statisticsScoresWeek: null,
+                    statisticsScoresGameId: null,
+                    statisticsScoresSection: 'overview',
+                    statisticsScoresPlayerGroup: null,
+                  });
                 }}
                 aria-label="Season"
               >
@@ -683,7 +823,7 @@ export default function StatisticsScores({ tourDemoMode = null }) {
             weeks={weeks}
             selectedWeekId={selectedWeek.id}
             currentWeekId={currentWeekId}
-            onSelectWeek={setSelectedWeekId}
+            onSelectWeek={selectWeek}
           />
 
           <ScoresSeasonBoard
@@ -692,7 +832,7 @@ export default function StatisticsScores({ tourDemoMode = null }) {
             displayedWeek={scorecardWeek}
             desktop={desktop}
             onOpenGame={canOpenGame ? openGame : undefined}
-            onSelectWeek={setSelectedWeekId}
+            onSelectWeek={selectWeek}
           />
         </>
       ) : (

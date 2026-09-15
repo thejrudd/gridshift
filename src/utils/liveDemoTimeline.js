@@ -24,11 +24,10 @@ function getKickoff(game) {
 function compareGames(left, right) {
   const leftKickoff = getKickoff(left);
   const rightKickoff = getKickoff(right);
-  if (leftKickoff != null && rightKickoff != null && leftKickoff !== rightKickoff) {
-    return leftKickoff - rightKickoff;
-  }
-  if (leftKickoff != null) return -1;
-  if (rightKickoff != null) return 1;
+  if (leftKickoff != null && rightKickoff != null) {
+    if (leftKickoff !== rightKickoff) return leftKickoff - rightKickoff;
+  } else if (leftKickoff != null) return -1;
+  else if (rightKickoff != null) return 1;
   return String(left?.id ?? '').localeCompare(String(right?.id ?? ''), undefined, { numeric: true });
 }
 

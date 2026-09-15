@@ -26,7 +26,8 @@ import {
 } from '../../utils/tradeEngine';
 import { buildPartnerTradeIntelligence, buildRosterOpportunityLayer, findLeagueWideUpgradeGroups } from '../../utils/opportunityEngine';
 import { buildTradeAnalyticsSnapshot } from '../../utils/tradeAnalytics';
-import { computeTradePlayerValueDetail } from '../../utils/tradeValue';
+import { computeTradePlayerValueDetail, sumTradeValues } from '../../utils/tradeValue';
+import { hasGeneratedProductionTradeValues } from '../../utils/idpEngine';
 import TradeRosterPicker from './TradeRosterPicker';
 import TradePickPicker from './TradePickPicker';
 import PlayerStatsModal from '../PlayerStatsModal';
@@ -172,21 +173,9 @@ function buildUpgradeSearchCacheKey(request, leagueId, season) {
   });
 }
 
-function hasRecordedSeasonProduction(seasonStats) {
-  return Object.values(seasonStats ?? {}).some((stats) => {
-    const gamesPlayed = Number(stats?.gp ?? stats?.games_played ?? stats?.gamesPlayed);
-    return Number.isFinite(gamesPlayed) && gamesPlayed > 0;
-  });
-}
-
 function getPreviousSeasonKey(season) {
   const seasonYear = Number(season);
   return Number.isInteger(seasonYear) && seasonYear > 0 ? String(seasonYear - 1) : null;
-}
-
-function hasCompletedScoredLeg(league) {
-  const lastScoredLeg = Number(league?.settings?.last_scored_leg);
-  return Number.isFinite(lastScoredLeg) && lastScoredLeg > 0;
 }
 
 function getTradePickCalibrationDraft(drafts, season) {
@@ -248,18 +237,13 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
     sleeperUserId: sleeperUser?.user_id,
   });
   const tradeAdpEligible = getFantasyRankingsDataMode(season) === 'adp';
-  const hasCurrentSeasonProduction = hasRecordedSeasonProduction(seasonStats);
-  const usePriorSeasonProduction = !hasCurrentSeasonProduction
-    && !hasCompletedScoredLeg(league);
   const previousSeasonKey = getPreviousSeasonKey(season);
-  const preseasonValuationStats = usePriorSeasonProduction && previousSeasonKey
+  const needsGeneratedProductionFallback = hasGeneratedProductionTradeValues(league?.roster_positions);
+  const priorSeasonStats = previousSeasonKey
     ? statsBySeason?.[previousSeasonKey]?.seasonStats ?? null
     : null;
-  const preseasonValuationWeeklyStats = usePriorSeasonProduction && previousSeasonKey
-    ? statsBySeason?.[previousSeasonKey]?.weeklyStats ?? null
-    : null;
-  const valuationSeasonStats = preseasonValuationStats ?? seasonStats;
-  const valuationWeeklyStats = preseasonValuationWeeklyStats ?? weeklyStats;
+  const valuationSeasonStats = seasonStats;
+  const valuationWeeklyStats = weeklyStats;
 
   const [persistedTradeDraft] = useState(() => readTradeDraftState(tradeDraftStorageKey));
 
@@ -523,21 +507,21 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
     if (
       !statsRequested
       || platform !== 'sleeper'
-      || !usePriorSeasonProduction
+      || !needsGeneratedProductionFallback
       || !previousSeasonKey
-      || preseasonValuationStats
+      || priorSeasonStats
     ) return;
 
-    // Before the active season starts, value every position against the most
-    // recent completed production season under the new league scoring rules.
+    // Generated IDP/D/ST/kicker values can independently fall back to the
+    // prior completed season; current KTC-backed player values never do.
     void loadStatsForSeason(previousSeasonKey).catch(() => null);
   }, [
     loadStatsForSeason,
     platform,
-    preseasonValuationStats,
+    priorSeasonStats,
     previousSeasonKey,
     statsRequested,
-    usePriorSeasonProduction,
+    needsGeneratedProductionFallback,
   ]);
 
   useEffect(() => {
@@ -735,7 +719,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
       rosters,
       players: sleeperPlayers,
       seasonStats,
-      valuationSeasonStats,
+      priorSeasonStats,
       weeklyStats: analyticsWeeklyStats,
       scoringSettings,
       scheduleMap: null,
@@ -750,7 +734,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
     rosters,
     sleeperPlayers,
     seasonStats,
-    valuationSeasonStats,
+    priorSeasonStats,
     analyticsWeeklyStats,
     scoringSettings,
     myRosterData?.roster_id,
@@ -1162,7 +1146,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
         idpFallback: fallbackTradeValueDetail?.isEstimated ?? it.idpFallback ?? false,
       };
     });
-    const adjTotal = enriched.reduce((sum, it) => sum + (it.adjVal ?? it.val ?? 0), 0);
+    const adjTotal = sumTradeValues(enriched.map((it) => it.adjVal ?? it.val));
     return { ...side, items: enriched, total: adjTotal };
   }
 
@@ -1222,7 +1206,12 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
 
   const buildEngineTradeSnapshot = useCallback((proposal) => {
     if (!proposal?.targetRosterId || !myRosterData?.roster_id) return null;
-    const sumAssets = (assets = []) => assets.reduce((total, asset) => total + (Number(asset.value ?? asset.val) || 0), 0);
+    const sumAssets = (assets = []) => sumTradeValues((assets ?? []).map((asset) => {
+      const rawValue = asset?.value ?? asset?.val;
+      if (rawValue == null || rawValue === '') return null;
+      const numericValue = Number(rawValue);
+      return Number.isFinite(numericValue) ? numericValue : null;
+    }));
     const outgoingTotal = sumAssets(proposal.outgoingAssets);
     const incomingTotal = sumAssets(proposal.incomingAssets);
     return buildTradeProposalSnapshot({
@@ -1433,6 +1422,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
 
   const handleSuggest = useCallback(() => {
     if (!adjustedKtcPlayers || !partnerRosterId || !suggestionBasePools) return;
+    if (!Number.isFinite(yourSide.total) || !Number.isFinite(theirSide.total)) return;
     const gap = Math.abs(yourSide.total - theirSide.total);
     if (gap <= 0) return;
 

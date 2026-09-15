@@ -69,10 +69,17 @@ export function mixHex(hexA, hexB, weight = 0.5) {
   return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${blue.toString(16).padStart(2, '0')}`;
 }
 
-function tuneGradientStopForMode(hex, darkMode) {
+// Near-white stops are the only ones bright enough to hit the top branch, and
+// mixing them toward pure black lands on a flat mid-grey that washes the whole
+// row out. Folding them into the canvas ink instead keeps them a cool graphite
+// that reads as the shadow end of the gradient. Nine teams carry a white
+// secondary; every other stop resolves exactly as before.
+const DARK_MODE_STOP_INK = '#0C0F14';
+
+export function tuneGradientStopForMode(hex, darkMode) {
   const luminance = hexLuminance(hex);
   if (darkMode) {
-    if (luminance > 0.72) return mixHex(hex, '#000000', 0.42);
+    if (luminance > 0.72) return mixHex(hex, DARK_MODE_STOP_INK, 0.68);
     if (luminance > 0.45) return mixHex(hex, '#000000', 0.28);
     if (luminance > 0.28) return mixHex(hex, '#000000', 0.16);
     return hex;

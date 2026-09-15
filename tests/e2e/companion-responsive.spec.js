@@ -6,6 +6,7 @@ import {
   league,
   leagueUsers,
   leaguesBySeason,
+  matchupsForWeek,
   persistedSleeperState,
   players,
   rosters,
@@ -95,7 +96,20 @@ test('preseason Fantasy Rankings keeps shared ADP rows and team logos visible', 
   await expect(teamMenu.getByTestId('companion-menu-team-logo')).toHaveAttribute('src', /teamlogos\/nfl\/500\/buf\.png$/);
 });
 
-test('preseason Trade shows a prior-production IDP estimate instead of zero', async ({ page }) => {
+test('Fantasy player rows keep their hover glow when the accent rail is hidden', async ({ page }) => {
+  await page.goto('/fantasy/rankings');
+
+  const row = page.locator('.companion-player-row.is-interactive').first();
+  await expect(row).toBeVisible();
+  const dismissTour = page.getByRole('button', { name: 'Dismiss' });
+  if (await dismissTour.count()) await dismissTour.click();
+  await expect.poll(() => row.evaluate((element) => getComputedStyle(element).borderLeftWidth)).toBe('0px');
+
+  await row.hover({ position: { x: 12, y: 12 } });
+  await expect.poll(() => row.evaluate((element) => getComputedStyle(element).boxShadow)).not.toBe('none');
+});
+
+test('Trade falls back to prior-production IDP after an insufficient current season', async ({ page }) => {
   const idpPlayerId = 'idp-401';
   const priorSeason = String(Number(TEST_SEASON) - 1);
   const preseasonLeague = {
@@ -140,13 +154,21 @@ test('preseason Trade shows a prior-production IDP estimate instead of zero', as
     persistedSleeperState: preseasonState,
   });
   await page.route(`https://api.sleeper.app/v1/stats/nfl/regular/${TEST_SEASON}/**`, async (route) => {
-    await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
-  });
-  await page.route(`https://api.sleeper.app/v1/stats/nfl/regular/${priorSeason}/**`, async (route) => {
+    const week = Number(new URL(route.request().url()).pathname.split('/').at(-1));
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ [idpPlayerId]: { gp: 1, idp_tkl: 8, idp_sack: 0 } }),
+      body: JSON.stringify(week === 1 ? { [idpPlayerId]: { gp: 1, idp_tkl: 8, idp_sack: 0 } } : {}),
+    });
+  });
+  await page.route(`https://api.sleeper.app/v1/stats/nfl/regular/${priorSeason}/**`, async (route) => {
+    const week = Number(new URL(route.request().url()).pathname.split('/').at(-1));
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      // Three qualifying weekly rows aggregate to the MIN_GAMES threshold,
+      // while the current season above remains intentionally one game short.
+      body: JSON.stringify(week <= 3 ? { [idpPlayerId]: { gp: 1, idp_tkl: 8, idp_sack: 0 } } : {}),
     });
   });
 
@@ -393,6 +415,28 @@ test('Fantasy Rosters labels submitted Sleeper keepers', async ({ page }) => {
     expect(geometry).not.toBeNull();
     expect(geometry.labelHeight).toBeLessThanOrEqual(geometry.metaHeight + 1);
   }
+});
+
+test('Fantasy Rosters shows seasonal positional rank beside season points', async ({ page }) => {
+  await page.goto('/fantasy/rosters?team=1');
+
+  const row = page.getByRole('button', { name: 'Open Christopher Pocket Commander-Supercalifragilistic' });
+  const metrics = row.locator('.companion-player-row__metric');
+  const rankMetric = metrics.nth(0);
+  const seasonMetric = metrics.nth(1);
+
+  await expect(rankMetric.locator('.companion-player-row__metric-value')).toHaveText(/^QB\d+$/);
+  await expect(rankMetric).toHaveAttribute('title', /QB\d+ seasonal fantasy rank/);
+  await expect(seasonMetric.locator('.companion-player-row__metric-value')).toHaveText(/^\d+\.\d$/);
+  await expect(seasonMetric.locator('.companion-player-row__metric-label')).toHaveText(/^\d+\.\d PPG$/);
+  await expect(row.locator('.companion-player-row__meta')).not.toContainText(/QB\d+/);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.reload();
+  const narrowMetrics = row.locator('.companion-player-row__metric');
+  await expect(narrowMetrics.nth(0).locator('.companion-player-row__metric-value')).toHaveText(/^QB\d+$/);
+  await expect(narrowMetrics.nth(1).locator('.companion-player-row__metric-value')).toHaveText(/^\d+\.\d$/);
+  await expect(narrowMetrics.nth(1).locator('.companion-player-row__metric-label')).toHaveText(/^\d+\.\d PPG$/);
 });
 
 test('Fantasy Rosters desktop keeps identity and metadata readable with aligned team logos', async ({ page }) => {
@@ -694,12 +738,586 @@ test('Matchup team scoring breakdown opens as a mobile bottom sheet', async ({ p
 
   await expect(page.locator('.companion-matchup-column-header')).toBeHidden();
   await expect(page.locator('.companion-matchup-side-headings')).toHaveCount(0);
+  const dismissTour = page.getByRole('button', { name: 'Dismiss' });
+  if (await dismissTour.count()) await dismissTour.click();
 
   await page.getByRole('button', { name: /scoring breakdown, your team/i }).click();
   const sheet = page.locator('.modal-overlay--mobile-sheet .team-score-breakdown-sheet');
   await expect(sheet).toBeVisible();
 
   await expectMobileSheetFillsBottom(sheet, viewport);
+  await expect(sheet.getByText('85.55', { exact: true })).toBeVisible();
+
+  await page.getByRole('button', { name: 'By player', exact: true }).click();
+  const playerRows = sheet.locator('.team-score-breakdown-player-row');
+  await expect(playerRows).toHaveCount(5);
+  await expect(playerRows.first()).toContainText('Pocket Commander');
+  await expect(playerRows.first()).toContainText('21.40');
+  await expect(sheet.getByText('85.55', { exact: true })).toBeVisible();
+});
+
+test('Fantasy Matchups shows a Week 1 forecast from the optional BDL projection lane', async ({ page }) => {
+  const fixturePlayers = responsiveFixtureOverrides().players;
+  const projectionRows = Object.values(fixturePlayers).map((player, index) => ({
+    id: index + 1,
+    season: Number(TEST_SEASON),
+    week: 1,
+    player: {
+      first_name: player.first_name,
+      last_name: player.last_name,
+      position_abbreviation: player.position,
+    },
+    team: { abbreviation: player.team },
+    position: player.position,
+    stats: player.position === 'QB'
+      ? { passing_yards: 240, passing_touchdowns: 2 }
+      : player.position === 'RB'
+        ? { rushing_yards: 80, receptions: 3, receiving_yards: 20 }
+        : { receptions: 5, receiving_yards: 60 },
+  }));
+
+  await page.route('**/api/fantasy/projections*', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ok: true,
+        season: Number(TEST_SEASON),
+        week: 1,
+        data: projectionRows,
+        source: { provider: 'balldontlie', providerLabel: 'BALLDONTLIE', dataset: 'fantasy-projections' },
+      }),
+    });
+  });
+  const pregameMatchups = matchupsForWeek(1).map((matchup) => ({
+    ...matchup,
+    players_points: Object.fromEntries(Object.keys(matchup.players_points ?? {}).map((id) => [id, 0])),
+    points: 0,
+  }));
+  await page.route(`https://api.sleeper.app/v1/league/${TEST_LEAGUE_ID}/matchups/1`, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(pregameMatchups),
+    });
+  });
+  await page.route(`https://api.sleeper.app/v1/stats/nfl/regular/${TEST_SEASON}/1`, async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+  });
+
+  await page.goto('/fantasy/matchups?week=1');
+
+  await expect(page.getByTestId('matchup-forecast-mine')).toBeVisible();
+  await expect(page.getByTestId('matchup-forecast-opponent')).toBeVisible();
+  await expect(page.getByTestId('matchup-win-probability')).toBeVisible();
+  await expect(page.locator('.companion-matchup-masthead__outcome')).toHaveCount(0);
+  const projectedMetricColors = await page.locator('.companion-matchup-player-metric--projection .companion-player-row__metric-value').evaluateAll((nodes) => {
+    const toRgb = (value) => {
+      const match = value.trim().match(/^#([0-9a-f]{6})$/i);
+      if (!match) return value.trim();
+      const hex = match[1];
+      return `rgb(${Number.parseInt(hex.slice(0, 2), 16)}, ${Number.parseInt(hex.slice(2, 4), 16)}, ${Number.parseInt(hex.slice(4, 6), 16)})`;
+    };
+    return nodes.map((node) => {
+      const row = node.closest('.companion-player-row');
+      const expected = getComputedStyle(row).getPropertyValue('--companion-player-value-fg').trim();
+      return { actual: getComputedStyle(node).color, expected: toRgb(expected) };
+    });
+  });
+  expect(projectedMetricColors.length).toBeGreaterThan(0);
+  expect(projectedMetricColors.every(({ actual, expected }) => actual === expected)).toBe(true);
+  await expect(page.getByTestId('matchup-win-probability')).toContainText(/win/i);
+  await expect(page.getByTestId('matchup-win-probability')).toContainText('BALLDONTLIE');
+  const dismissTour = page.getByRole('button', { name: 'Dismiss' });
+  if (await dismissTour.count()) await dismissTour.click();
+  await page.getByTestId('matchup-forecast-details').getByText('Forecast details').click();
+  await expect(page.getByTestId('matchup-forecast-details')).toContainText('Projected final');
+  await expect(page.getByTestId('matchup-forecast-details')).toContainText('Expected edge');
+  await expect(page.locator('.companion-matchup-player-metric--projection').first()).toBeVisible();
+  await expect(page.locator('.companion-matchup-player-row .companion-player-row__metric-label').filter({ hasText: /pts/i })).toHaveCount(0);
+  await expect(page.locator('.companion-matchup-player-row .companion-player-row__metric-label').filter({ hasText: /proj/i })).toHaveCount(0);
+  await expect(page.locator('.companion-matchup-player-metric--actual .companion-player-row__metric-value').first()).toHaveText('—');
+  await expect(page.getByText('0.00', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('League Team', { exact: true })).toHaveCount(0);
+
+  const alignedEdges = await page.evaluate(() => {
+    const actual = [...document.querySelectorAll('.companion-matchup-scorecard')].slice(0, 2);
+    const forecast = [
+      document.querySelector('[data-testid="matchup-forecast-mine"]'),
+      document.querySelector('[data-testid="matchup-forecast-opponent"]'),
+    ];
+    return actual.length === 2 && forecast.every(Boolean)
+      ? actual.flatMap((card, index) => {
+        const cardRect = card.getBoundingClientRect();
+        const forecastRect = forecast[index].getBoundingClientRect();
+        return [Math.abs(cardRect.left - forecastRect.left), Math.abs(cardRect.right - forecastRect.right)];
+      })
+      : [Infinity];
+  });
+  expect(Math.max(...alignedEdges)).toBeLessThanOrEqual(1);
+});
+
+test('Fantasy Matchups locks a historical matchup after stale schedule metadata is reconciled', async ({ page }) => {
+  await page.addInitScript(() => {
+    const NativeDate = Date;
+    const fixedNow = new NativeDate('2026-09-08T12:00:00.000Z').getTime();
+    class FixedDate extends NativeDate {
+      constructor(...args) {
+        super(...(args.length ? args : [fixedNow]));
+      }
+
+      static now() {
+        return fixedNow;
+      }
+    }
+    globalThis.Date = FixedDate;
+  });
+
+  const historicalGames = [
+    ['BUF', 'MIA'],
+    ['KC', 'LAC'],
+    ['DET', 'CHI'],
+    ['DAL', 'CIN'],
+    ['SF', 'BAL'],
+  ].map(([away, home], index) => ({
+    id: `historical-final-${index}`,
+    date: '2026-09-07T10:00:00.000Z',
+    week: { number: 1 },
+    competitions: [{
+      status: { type: { completed: false } },
+      competitors: [
+        { homeAway: 'away', team: { abbreviation: away, id: `${index * 2 + 1}` }, score: '24' },
+        { homeAway: 'home', team: { abbreviation: home, id: `${index * 2 + 2}` }, score: '17' },
+      ],
+    }],
+  }));
+  await page.route('https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard*', async (route) => {
+    const url = new URL(route.request().url());
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ events: url.searchParams.get('week') === '1' ? historicalGames : [] }),
+    });
+  });
+
+  const reconciliationUrls = [];
+  await page.route(`https://api.sleeper.app/v1/league/${TEST_LEAGUE_ID}/matchups/1*`, async (route) => {
+    reconciliationUrls.push(route.request().url());
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(matchupsForWeek(1)),
+    });
+  });
+
+  await page.goto('/fantasy/matchups?week=1');
+
+  await expect(page.getByTestId('matchup-win-probability')).toContainText('100%');
+  await expect(page.getByTestId('matchup-win-probability')).toContainText('Final score locked');
+  await expect(page.getByTestId('matchup-win-probability')).toContainText('Final result');
+  await expect.poll(() => reconciliationUrls.some((url) => url.includes('_gridshift='))).toBe(true);
+  await expect(page.locator('.companion-matchup-masthead__projected-final')).toHaveCount(0);
+
+  const dismissTour = page.getByRole('button', { name: 'Dismiss' });
+  if (await dismissTour.count()) await dismissTour.click();
+  await page.getByTestId('matchup-forecast-details').locator('summary').click();
+  await expect(page.getByTestId('matchup-forecast-details')).toContainText('Final score');
+  await expect(page.getByTestId('matchup-forecast-details')).toContainText('no points remaining');
+});
+
+test('Fantasy Matchups desktop controls fill the masthead and show the bench by default', async ({ page }) => {
+  const desktopViewports = [
+    { width: 1280, height: 720 },
+    { width: 1440, height: 600 },
+    { width: 1440, height: 800 },
+    { width: 2560, height: 1440 },
+  ];
+
+  for (const viewport of desktopViewports) {
+    await page.setViewportSize(viewport);
+    await page.goto('/fantasy/matchups?week=1');
+
+    const benchRows = page.locator('.companion-matchup-bench-list .companion-matchup-player-row');
+    await expect(page.locator('.companion-matchup-controls__rail .companion-selector-rail')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Hide bench players' })).toBeVisible();
+    await expect(benchRows.first()).toBeVisible();
+
+    const geometry = await page.evaluate(() => {
+      const getRect = (selector) => {
+        const element = document.querySelector(selector);
+        if (!element) return null;
+        const rect = element.getBoundingClientRect();
+        return { left: rect.left, right: rect.right, width: rect.width, height: rect.height };
+      };
+
+      return {
+        rail: getRect('.companion-matchup-controls__rail .companion-selector-rail'),
+        masthead: getRect('.companion-matchup-masthead'),
+        week: getRect('.companion-matchup-week-trigger'),
+        pager: getRect('.companion-matchup-controls__pager'),
+        pagerButtons: [...document.querySelectorAll('.companion-matchup-controls__pager > button')].map((button) => {
+          const rect = button.getBoundingClientRect();
+          return { height: rect.height };
+        }),
+        bench: getRect('button[aria-label="Hide bench players"]'),
+      };
+    });
+
+    expect(geometry.rail).not.toBeNull();
+    expect(geometry.masthead).not.toBeNull();
+    expect(geometry.week).not.toBeNull();
+    expect(geometry.pager).not.toBeNull();
+    expect(geometry.bench).not.toBeNull();
+    expect(Math.abs(geometry.rail.left - geometry.masthead.left)).toBeLessThanOrEqual(1);
+    expect(Math.abs(geometry.rail.right - geometry.masthead.right)).toBeLessThanOrEqual(1);
+    expect(new Set([geometry.week.height, geometry.pager.height, geometry.bench.height]).size).toBe(1);
+    expect(geometry.pagerButtons.every(({ height }) => Math.abs(height - geometry.week.height) <= 1)).toBe(true);
+    expect(Math.abs(geometry.bench.right - geometry.rail.right)).toBeLessThanOrEqual(1);
+    expect(geometry.pager.width).toBeGreaterThan(348);
+  }
+
+  const hideBench = page.getByRole('button', { name: 'Hide bench players' });
+  await hideBench.click();
+  await expect(page.getByRole('button', { name: 'Show bench players' })).toBeVisible();
+  await expect(page.locator('.companion-matchup-bench-list')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Show bench players' }).click();
+  await expect(page.locator('.companion-matchup-bench-list .companion-matchup-player-row').first()).toBeVisible();
+});
+
+test('Fantasy Matchups keeps D/ST projections in the row metric track', async ({ page }) => {
+  const base = responsiveFixtureOverrides();
+  const dstLeague = {
+    ...base.league,
+    roster_positions: [
+      ...base.league.roster_positions.slice(0, -3),
+      'DEF',
+      'BN',
+      'BN',
+      'BN',
+    ],
+  };
+  const dstPlayers = {
+    ...base.players,
+    'dst-mine': {
+      ...base.players[101],
+      player_id: 'dst-mine',
+      first_name: 'Washington',
+      last_name: 'Commanders',
+      full_name: 'Washington Commanders',
+      position: 'DEF',
+      fantasy_positions: ['DEF'],
+      team: 'WAS',
+    },
+    'dst-opponent': {
+      ...base.players[202],
+      player_id: 'dst-opponent',
+      first_name: 'Cincinnati',
+      last_name: 'Bengals',
+      full_name: 'Cincinnati Bengals',
+      position: 'DEF',
+      fantasy_positions: ['DEF'],
+      team: 'CIN',
+    },
+  };
+  const dstRosters = base.rosters.map((roster) => {
+    if (roster.roster_id === 1) return { ...roster, players: [...roster.players, 'dst-mine'] };
+    if (roster.roster_id === 2) return { ...roster, players: [...roster.players, 'dst-opponent'] };
+    return roster;
+  });
+  const dstMatchupsForWeek = (week) => matchupsForWeek(week).map((matchup) => {
+    if (matchup.roster_id === 1) {
+      return {
+        ...matchup,
+        starters: [...matchup.starters, 'dst-mine'],
+        players: [...matchup.players, 'dst-mine'],
+        players_points: { ...matchup.players_points, 'dst-mine': 0 },
+      };
+    }
+    if (matchup.roster_id === 2) {
+      return {
+        ...matchup,
+        starters: [...matchup.starters, 'dst-opponent'],
+        players: [...matchup.players, 'dst-opponent'],
+        players_points: { ...matchup.players_points, 'dst-opponent': 0 },
+      };
+    }
+    return matchup;
+  });
+  const dstState = {
+    ...base.persistedSleeperState,
+    league: dstLeague,
+    leagues: [dstLeague],
+    rosters: dstRosters,
+    scoringSettings: { ...base.persistedSleeperState.scoringSettings, ...dstLeague.scoring_settings },
+  };
+
+  await page.unroute('https://api.sleeper.app/v1/**');
+  await installTradeFixtures(page, {
+    ...base,
+    league: dstLeague,
+    players: dstPlayers,
+    rosters: dstRosters,
+    persistedSleeperState: dstState,
+    matchupsForWeek: dstMatchupsForWeek,
+  });
+  await page.route('https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard*', async (route) => {
+    const url = new URL(route.request().url());
+    const week = Number(url.searchParams.get('week'));
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        events: week === 1 ? [
+          {
+            id: 'dst-was-phi',
+            date: '2099-09-10T17:00:00Z',
+            competitions: [{
+              status: { type: { completed: false } },
+              competitors: [
+                { homeAway: 'home', team: { abbreviation: 'PHI', id: '21' } },
+                { homeAway: 'away', team: { abbreviation: 'WAS', id: '28' } },
+              ],
+            }],
+          },
+          {
+            id: 'dst-tb-cin',
+            date: '2099-09-11T17:00:00Z',
+            competitions: [{
+              status: { type: { completed: false } },
+              competitors: [
+                { homeAway: 'home', team: { abbreviation: 'CIN', id: '4' } },
+                { homeAway: 'away', team: { abbreviation: 'TB', id: '27' } },
+              ],
+            }],
+          },
+        ] : [],
+      }),
+    });
+  });
+  await page.route('**/api/fantasy/projections*', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ok: true,
+        season: Number(TEST_SEASON),
+        week: 1,
+        data: [
+          { id: 1, team: { abbreviation: 'WAS' }, position: 'DST', stats: { defensive_sacks: 2, points_allowed: 17, yards_allowed: 300 } },
+          { id: 2, team: { abbreviation: 'CIN' }, position: 'DST', stats: { defensive_sacks: 3, points_allowed: 14, yards_allowed: 280 } },
+        ],
+        source: { provider: 'balldontlie', providerLabel: 'BALLDONTLIE', dataset: 'fantasy-projections' },
+      }),
+    });
+  });
+  await page.route(`https://api.sleeper.app/v1/league/${TEST_LEAGUE_ID}/matchups/1`, async (route) => {
+    const pregameMatchups = dstMatchupsForWeek(1).map((matchup) => ({
+      ...matchup,
+      players_points: Object.fromEntries(Object.keys(matchup.players_points ?? {}).map((id) => [id, 0])),
+      points: 0,
+    }));
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(pregameMatchups) });
+  });
+  await page.route(`https://api.sleeper.app/v1/stats/nfl/regular/${TEST_SEASON}/1`, async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+  });
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/fantasy/matchups?week=1');
+
+  const dstRows = page.locator('.companion-matchup-player-row.is-team-defense');
+  await expect(dstRows).toHaveCount(2);
+  await expect(dstRows.locator('.companion-matchup-player-metric--projection')).toHaveCount(2);
+  await expect(dstRows.nth(0).locator('.companion-player-row__identity-label')).toHaveText('Washington Commanders');
+  await expect(dstRows.nth(0).locator('.companion-player-row__meta')).toContainText('DEF WAS @ PHI');
+  await expect(dstRows.nth(1).locator('.companion-player-row__identity-label')).toHaveText('Cincinnati Bengals');
+  await expect(dstRows.nth(1).locator('.companion-player-row__meta')).toContainText('DEF TB @ CIN');
+
+  const geometry = await dstRows.evaluateAll((rows) => rows.map((row) => {
+    const rowRect = row.getBoundingClientRect();
+    const bodyRect = row.querySelector('.companion-player-row__body')?.getBoundingClientRect();
+    const identityRect = row.querySelector('.companion-player-row__identity')?.getBoundingClientRect();
+    const metaRect = row.querySelector('.companion-player-row__meta')?.getBoundingClientRect();
+    const columnsRect = row.querySelector('.companion-player-row__columns')?.getBoundingClientRect();
+    return {
+      height: rowRect.height,
+      renderedTeamLogoCount: row.querySelectorAll('.companion-player-row__team-logo').length,
+      avatarCount: row.querySelectorAll('.companion-player-row__avatar').length,
+      metricStartsAfterIdentity: Boolean(bodyRect && columnsRect && columnsRect.left >= bodyRect.right - 1),
+      metricWithinRow: Boolean(columnsRect && columnsRect.top >= rowRect.top - 1 && columnsRect.bottom <= rowRect.bottom + 1),
+      identityAboveMeta: Boolean(identityRect && metaRect && identityRect.bottom <= metaRect.top + 1),
+    };
+  }));
+
+  expect(geometry).toEqual([
+    {
+      height: expect.any(Number),
+      renderedTeamLogoCount: 0,
+      avatarCount: 1,
+      metricStartsAfterIdentity: true,
+      metricWithinRow: true,
+      identityAboveMeta: true,
+    },
+    {
+      height: expect.any(Number),
+      renderedTeamLogoCount: 0,
+      avatarCount: 1,
+      metricStartsAfterIdentity: true,
+      metricWithinRow: true,
+      identityAboveMeta: true,
+    },
+  ]);
+  geometry.forEach((row) => expect(row.height).toBeLessThanOrEqual(72));
+});
+
+test('Fantasy Matchups shows a started player actual score above the projection', async ({ page }) => {
+  const fixturePlayers = responsiveFixtureOverrides().players;
+  const player = fixturePlayers[101];
+  await page.route('**/api/fantasy/projections*', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ok: true,
+        season: Number(TEST_SEASON),
+        week: 1,
+        data: [{
+          id: 1,
+          season: Number(TEST_SEASON),
+          week: 1,
+          player: {
+            first_name: player.first_name,
+            last_name: player.last_name,
+            position_abbreviation: player.position,
+          },
+          team: { abbreviation: player.team },
+          position: player.position,
+          stats: { passing_yards: 200, passing_touchdowns: 1 },
+        }],
+        source: { provider: 'balldontlie', providerLabel: 'BALLDONTLIE', dataset: 'fantasy-projections' },
+      }),
+    });
+  });
+  const startedMatchups = matchupsForWeek(1).map((matchup) => ({
+    ...matchup,
+    players_points: Object.fromEntries(Object.keys(matchup.players_points ?? {}).map((id) => [
+      id,
+      id === '101' ? 8 : id === '102' ? 1 : 0,
+    ])),
+    points: matchup.roster_id === 1 ? 9 : 0,
+  }));
+  await page.route(`https://api.sleeper.app/v1/league/${TEST_LEAGUE_ID}/matchups/1`, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(startedMatchups),
+    });
+  });
+  await page.route(`https://api.sleeper.app/v1/stats/nfl/regular/${TEST_SEASON}/1`, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(Object.fromEntries(
+        Object.keys(fixturePlayers).map((id) => [id, { week: 1, gp: 1 }]),
+      )),
+    });
+  });
+
+  await page.goto('/fantasy/matchups?week=1');
+
+  const firstRow = page.locator('.companion-matchup-player-row').first();
+  await expect(firstRow.locator('.companion-player-row__metric-label').filter({ hasText: /pts|proj/i })).toHaveCount(0);
+  await expect(firstRow.locator('.companion-matchup-player-metric--actual')).toHaveCount(1);
+  await expect(firstRow.locator('.companion-matchup-player-metric--projection')).toHaveCount(1);
+  await expect(firstRow.locator('.companion-matchup-player-metric--actual .companion-player-row__metric-value')).toHaveText('8.00');
+  await expect(firstRow.locator('.companion-player-row__metric.is-positive')).toBeVisible();
+  await expect(firstRow.locator('.companion-matchup-player-performance-delta')).toHaveCount(0);
+  await expect(firstRow.locator('.companion-matchup-player-metrics .companion-player-row__metric').nth(0)).toHaveClass(/companion-matchup-player-metric--actual/);
+  await expect(firstRow.locator('.companion-matchup-player-metrics .companion-player-row__metric').nth(1)).toHaveClass(/companion-matchup-player-metric--projection/);
+  const metricGeometry = await firstRow.evaluate((row) => {
+    const metrics = [...row.querySelectorAll('.companion-matchup-player-metrics .companion-player-row__metric')];
+    const rowRect = row.getBoundingClientRect();
+    return {
+      actualBottom: metrics[0]?.getBoundingClientRect().bottom ?? Infinity,
+      projectionTop: metrics[1]?.getBoundingClientRect().top ?? -Infinity,
+      projectionBottom: metrics[1]?.getBoundingClientRect().bottom ?? Infinity,
+      actualFontSize: Number.parseFloat(getComputedStyle(metrics[0]?.querySelector('.companion-player-row__metric-value')).fontSize),
+      projectionFontSize: Number.parseFloat(getComputedStyle(metrics[1]?.querySelector('.companion-player-row__metric-value')).fontSize),
+      rowBottom: rowRect.bottom,
+    };
+  });
+  expect(metricGeometry.actualBottom).toBeLessThanOrEqual(metricGeometry.projectionTop + 1);
+  expect(metricGeometry.projectionBottom).toBeLessThanOrEqual(metricGeometry.rowBottom + 1);
+  expect(metricGeometry.actualFontSize - metricGeometry.projectionFontSize).toBeGreaterThanOrEqual(3);
+});
+
+test('Fantasy Matchups keeps a finished player score neutral without a differential', async ({ page }) => {
+  const fixturePlayers = responsiveFixtureOverrides().players;
+  const player = fixturePlayers[101];
+  await page.route('**/api/fantasy/projections*', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ok: true,
+        season: Number(TEST_SEASON),
+        week: 1,
+        data: [{
+          id: 1,
+          season: Number(TEST_SEASON),
+          week: 1,
+          player: {
+            first_name: player.first_name,
+            last_name: player.last_name,
+            position_abbreviation: player.position,
+          },
+          team: { abbreviation: player.team },
+          position: player.position,
+          stats: { passing_yards: 200, passing_touchdowns: 1 },
+        }],
+        source: { provider: 'balldontlie', providerLabel: 'BALLDONTLIE', dataset: 'fantasy-projections' },
+      }),
+    });
+  });
+  await page.route('https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard*', async (route) => {
+    const url = new URL(route.request().url());
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        events: url.searchParams.get('week') === '1' ? [{
+          id: 'finished-buf-mia',
+          date: '2026-09-07T10:00:00.000Z',
+          competitions: [{
+            status: { type: { completed: true, state: 'post', name: 'STATUS_FINAL' } },
+            competitors: [
+              { homeAway: 'away', team: { abbreviation: 'BUF', id: '2' }, score: '24' },
+              { homeAway: 'home', team: { abbreviation: 'MIA', id: '20' }, score: '17' },
+            ],
+          }],
+        }] : [],
+      }),
+    });
+  });
+
+  await page.goto('/fantasy/matchups?week=1');
+
+  const firstRow = page.locator('.companion-matchup-player-row').first();
+  await expect(firstRow.locator('.companion-matchup-player-metric--actual .companion-player-row__metric-value')).toHaveText('21.40');
+  await expect(firstRow.locator('.companion-matchup-player-metric--projection')).toHaveCount(1);
+  await expect(firstRow.locator('.companion-matchup-player-performance-delta')).toHaveCount(0);
+  await expect.poll(
+    () => firstRow.locator('.companion-matchup-player-metric--actual.is-positive, .companion-matchup-player-metric--actual.is-negative').count(),
+  ).toBe(0);
+
+  const metricGeometry = await firstRow.evaluate((row) => {
+    const metrics = [...row.querySelectorAll('.companion-matchup-player-metrics .companion-player-row__metric')];
+    return {
+      actualFontSize: Number.parseFloat(getComputedStyle(metrics[0]?.querySelector('.companion-player-row__metric-value')).fontSize),
+      projectionFontSize: Number.parseFloat(getComputedStyle(metrics[1]?.querySelector('.companion-player-row__metric-value')).fontSize),
+    };
+  });
+  expect(metricGeometry.actualFontSize - metricGeometry.projectionFontSize).toBeGreaterThanOrEqual(3);
 });
 
 test('Matchup week picker opens as a shared mobile selection sheet', async ({ page }) => {
