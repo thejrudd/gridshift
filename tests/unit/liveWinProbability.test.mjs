@@ -103,18 +103,26 @@ describe('win-probability guardrails and calibration', () => {
     assert.deepEqual(formatWinProbabilityPair(Number.NaN), { a: '—', b: '—' });
   });
 
-  it('waits for explicit final reconciliation even when no player time remains', () => {
+  it('locks the outcome once a trailing side has no player time left, even before official reconciliation', () => {
     const sideA = computeSideOutlook([starter({ current: 30, projected: 15, fraction: 0 })]);
     const sideB = computeSideOutlook([starter({ current: 20, projected: 15, fraction: 0 })]);
     const pending = computeWinProbability(sideA, sideB);
     const confirmed = computeWinProbability(sideA, sideB, { settledConfirmed: true });
 
-    assert.equal(pending.settled, false);
-    assert.equal(pending.settlementPending, true);
-    assert.notEqual(pending.probA, 100);
+    assert.equal(pending.settled, true);
+    assert.equal(pending.probA, 100);
     assert.equal(confirmed.settled, true);
     assert.equal(confirmed.probA, 100);
     assert.deepEqual(formatWinProbabilityPair(confirmed.probA, { settled: true }), { a: '100%', b: '0%' });
+  });
+
+  it('locks the trailing side\'s loss even while the leading side still has players in progress', () => {
+    const sideA = computeSideOutlook([starter({ current: 30, projected: 40, fraction: 0.2 })]);
+    const sideB = computeSideOutlook([starter({ current: 20, projected: 15, fraction: 0 })]);
+    const result = computeWinProbability(sideA, sideB);
+
+    assert.equal(result.settled, true);
+    assert.equal(result.probA, 100);
   });
 
   it('applies bounded ahead-or-behind-pace carryover per starter', () => {

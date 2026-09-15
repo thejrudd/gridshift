@@ -1,6 +1,6 @@
-// ── IDP & D/ST Trade Value Engine ─────────────────────────────────────────────
+// ── IDP, D/ST & Kicker Trade Value Engine ──────────────────────────────────────
 //
-// Computes production-based trade values for IDP (DL / LB / DB) and D/ST (DEF)
+// Computes production-based trade values for IDP, D/ST (DEF), and kickers (K)
 // players in leagues that roster them.  Values are anchored to the same
 // PPG → value conversion used for skill positions via `positionalValuePerPPG`,
 // so a LB averaging 12 PPG is worth the same as a WR averaging 12 PPG.
@@ -8,7 +8,7 @@
 // computed values will reflect that automatically.
 //
 // Integration: values flow into `valueSide()` / `buildCandidatePool()` in
-// tradeEngine.js as the last fallback before 0 (after KTC + dynasty fallback).
+// tradeEngine.js after KTC + dynasty fallback. Missing values remain null.
 
 import { calcPointsFromTotals } from './scoringEngine.js';
 
@@ -26,7 +26,7 @@ const IDP_FLEX_SLOTS = new Set(['IDP_FLEX', 'FLEX_IDP', 'DP']);
 const MIN_GAMES = 3;
 
 const IDP_VALUE_CACHE = new WeakMap();
-const DST_VALUE_CACHE = new WeakMap();
+const POSITION_VALUE_CACHE = new WeakMap();
 
 /**
  * Fallback value-per-PPG when `positionalValuePerPPG` is not yet available
@@ -62,6 +62,15 @@ export function detectLeagueDefensiveType(rosterPositions) {
     hasIDP: positions.some(p => normalizeIDPPos(p) !== null || IDP_FLEX_SLOTS.has(p)),
     hasDST: positions.includes('DEF'),
   };
+}
+
+/**
+ * Whether a league has any position whose Trade value may be generated from
+ * league-scored production rather than a direct KTC market entry.
+ */
+export function hasGeneratedProductionTradeValues(rosterPositions) {
+  const { hasIDP, hasDST } = detectLeagueDefensiveType(rosterPositions);
+  return hasIDP || hasDST || (rosterPositions ?? []).includes('K');
 }
 
 /**
@@ -121,9 +130,8 @@ function getRosterPositionsCacheKey(rosterPositions) {
  * values must be able to do the same so one scoring format is not silently
  * capped while another is not.
  *
- * Players with fewer than MIN_GAMES (3) games played are excluded and will
- * display as "—" or 0 depending on KTC load state — graceful early-season
- * degradation.
+ * Players with fewer than MIN_GAMES (3) games played are excluded and remain
+ * unavailable ("—") unless they have a market value.
  *
  * @param {object}       sleeperPlayers         - Full Sleeper player map { [id]: playerObj }
  * @param {object}       seasonStats            - { [playerId]: { gp: number, ...totals } }
@@ -142,9 +150,17 @@ export function computeIDPValues(
   const result = new Map();
   if (!sleeperPlayers || !seasonStats || !scoringSettings) return result;
 
+  const rosterSlots = rosterPositions ?? [];
   const usedGroups = new Set(
-    (rosterPositions ?? []).map(normalizeIDPPos).filter(Boolean),
+    rosterSlots.map(normalizeIDPPos).filter(Boolean),
   );
+  // A flex-only IDP league still allows every defensive player group. The
+  // league detector treats these slots as IDP, so the value engine must do the
+  // same instead of returning an empty map until an explicit DL/LB/DB slot is
+  // present.
+  if (rosterSlots.some((slot) => IDP_FLEX_SLOTS.has(slot))) {
+    for (const group of Object.keys(IDP_POS_GROUPS)) usedGroups.add(group);
+  }
   if (!usedGroups.size) return result;
 
   const canCache = isCacheKeyable(sleeperPlayers)
@@ -199,6 +215,15 @@ export function computeDSTValues(
   scoringSettings,
   positionalValuePerPPG = null,
 ) {
+  return computePositionValues(sleeperPlayers, seasonStats, scoringSettings, positionalValuePerPPG, 'DEF');
+}
+
+/** Kickers use the same league-scored production scale and game minimum. */
+export function computeKickerValues(sleeperPlayers, seasonStats, scoringSettings, positionalValuePerPPG = null) {
+  return computePositionValues(sleeperPlayers, seasonStats, scoringSettings, positionalValuePerPPG, 'K');
+}
+
+function computePositionValues(sleeperPlayers, seasonStats, scoringSettings, positionalValuePerPPG, position) {
   const result = new Map();
   if (!sleeperPlayers || !seasonStats || !scoringSettings) return result;
 
@@ -206,9 +231,9 @@ export function computeDSTValues(
     && isCacheKeyable(seasonStats)
     && isCacheKeyable(scoringSettings);
   const valPerPPG = getBaseValPerPPG(positionalValuePerPPG);
-  const cacheKey = valPerPPG.toFixed(4);
+  const cacheKey = `${position}|${valPerPPG.toFixed(4)}`;
   if (canCache) {
-    const byStats = getWeakCacheNode(DST_VALUE_CACHE, sleeperPlayers);
+    const byStats = getWeakCacheNode(POSITION_VALUE_CACHE, sleeperPlayers);
     const byScoring = getWeakCacheNode(byStats, seasonStats);
     const byKey = getMapCacheNode(byScoring, scoringSettings);
     const cached = byKey.get(cacheKey);
@@ -216,17 +241,17 @@ export function computeDSTValues(
   }
 
   for (const [id, p] of Object.entries(sleeperPlayers)) {
-    if (p.position !== 'DEF') continue;
+    if (p.position !== position) continue;
     const stats = seasonStats[id];
     if (!stats?.gp || stats.gp < MIN_GAMES) continue;
-    const pts = calcPointsFromTotals(stats, scoringSettings, 'DEF');
+    const pts = calcPointsFromTotals(stats, scoringSettings, position);
     if (!pts || pts <= 0) continue;
     const ppg = pts / stats.gp;
     result.set(id, Math.round(ppg * valPerPPG));
   }
 
   if (canCache) {
-    const byStats = getWeakCacheNode(DST_VALUE_CACHE, sleeperPlayers);
+    const byStats = getWeakCacheNode(POSITION_VALUE_CACHE, sleeperPlayers);
     const byScoring = getWeakCacheNode(byStats, seasonStats);
     const byKey = getMapCacheNode(byScoring, scoringSettings);
     byKey.set(cacheKey, result);

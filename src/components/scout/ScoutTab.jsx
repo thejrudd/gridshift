@@ -138,7 +138,7 @@ function getDraftTeamMeta(teamName) {
     textColor = '#0C0F14';
     gradient = `linear-gradient(135deg, ${primary} 0%, ${primary} 48%, ${secondary} 100%)`;
   } else if (teamId === 'nyg') {
-    gradient = `linear-gradient(315deg, ${primary} 0%, ${darkenHex(primary, 0.28)} 58%, ${secondary} 100%)`;
+    gradient = `linear-gradient(135deg, ${primary} 0%, ${darkenHex(primary, 0.28)} 58%, ${secondary} 100%)`;
   }
 
   return {

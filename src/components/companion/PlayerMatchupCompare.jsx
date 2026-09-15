@@ -1,0 +1,568 @@
+// ── PlayerMatchupCompare ─────────────────────────────────────────────────────
+// Two-player sibling of PlayerMatchupBreakdown.jsx — same pmd-* design system
+// and data pipeline (phase detection, projection, opponent context, season
+// rank/defense splits via buildPlayerDefensePerformance), but every slot is
+// mirrored so both players read against each other directly instead of each
+// reading against their own single-player benchmark.
+//
+// Replaces the flatter Tale of the Tape modal at the same call site
+// (CompanionMatchup.jsx's per-slot "Compare" action).
+
+import { useMemo } from 'react';
+import { useSleeperBase } from '../../context/SleeperContext';
+import { useTheme } from '../../context/ThemeContext';
+import { DEFAULT_SCORING } from '../../utils/scoringEngine';
+import { formatWeather } from '../../api/weatherApi';
+import { getTeamColorKey } from '../../data/teamColors.js';
+import { getNflTeamLogoUrl } from '../../utils/companionAssetVisuals.js';
+import { getTeamVisualTheme } from '../../utils/teamVisualTheme.js';
+import { buildFantasyScoringBreakdown } from '../../utils/fantasyBreakdownRows.js';
+import Modal from '../Modal';
+import PlayerAvatar from '../shared/PlayerAvatar.jsx';
+import PlayerStatusBadge from './PlayerStatusBadge.jsx';
+import {
+  buildPlayerProjectionBreakdown,
+  getPlayerMatchupPhase,
+  matchupNumber,
+  resolvePlayerDisplayProjection,
+} from '../../utils/playerMatchupPresentation.js';
+import { buildPlayerDefensePerformance } from '../../utils/playerDefensePerformance.js';
+import {
+  STAT_LABELS, formatNumber, formatOrdinal, signed,
+  getChartMaximum, getChartPosition, getOpponentEvidenceLabel, getSeasonBenchmark,
+} from './PlayerMatchupBreakdown.jsx';
+import './PlayerMatchupBreakdown.css';
+
+// ── per-side model ───────────────────────────────────────────────────────────
+
+function usePlayerCompareModel({ player, week, baseline, weeklyStats, activeScoringSettings, players, scheduleMap }) {
+  const phase = getPlayerMatchupPhase({ scheduleEntry: player?.scheduleEntry, gameStarted: player?.gameStarted });
+  const isPregame = phase === 'pregame';
+  const position = player?.position ?? null;
+
+  const weekEntry = (() => {
+    if (!player?.id || isPregame) return null;
+    const entry = weeklyStats?.[player.id]?.find(w => w.week === week) ?? null;
+    const fallbackPoints = matchupNumber(player?.weekPts);
+    if (entry) return entry;
+    if (!Number.isFinite(fallbackPoints)) return null;
+    return { week, _fantasyPoints: fallbackPoints, fantasy_points: fallbackPoints };
+  })();
+
+  const { breakdown, total } = useMemo(() => {
+    if (!weekEntry) return { breakdown: [], total: null };
+    const result = buildFantasyScoringBreakdown(weekEntry, activeScoringSettings ?? DEFAULT_SCORING, position);
+    return { breakdown: result.rows, total: result.total };
+  }, [weekEntry, activeScoringSettings, position]);
+
+  const projectionView = useMemo(
+    () => resolvePlayerDisplayProjection({ isPregame, projection: player?.projection ?? null, baseline }),
+    [isPregame, player?.projection, baseline],
+  );
+  const displayProjection = projectionView.projection;
+  const projectedBreakdown = useMemo(
+    () => buildPlayerProjectionBreakdown(displayProjection, activeScoringSettings ?? DEFAULT_SCORING, position),
+    [displayProjection, activeScoringSettings, position],
+  );
+
+  const peerModel = useMemo(() => buildPlayerDefensePerformance({
+    playerId: player?.id, oppTeam: player?.oppTeam, weeklyStats, players, scheduleMap,
+    currentWeek: week, scoringSettings: activeScoringSettings ?? DEFAULT_SCORING,
+  }), [player?.id, player?.oppTeam, weeklyStats, players, scheduleMap, week, activeScoringSettings]);
+
+  const seasonBenchmark = getSeasonBenchmark({ player, peerModel, projection: displayProjection });
+  const opponentContext = player?.opponentFantasyContext ?? (player?.defStrength ? {
+    ...player.defStrength, team: player?.oppTeam, position,
+    currentGames: player.defStrength.gamesAnalyzed, evidenceKind: 'current',
+  } : null);
+  const heroValue = isPregame ? matchupNumber(displayProjection?.projected) : matchupNumber(total);
+  const statRows = isPregame ? (projectedBreakdown?.rows ?? []) : breakdown;
+  const statByKey = new Map(statRows.map(row => [row.key ?? row.statKey, row]));
+
+  const rankValue = matchupNumber(player?.rank?.rank);
+  const peerCount = matchupNumber(player?.rank?.posCount);
+  const rankLabel = player?.rank?.posLabel ?? position ?? '';
+
+  const gameRows = peerModel?.overall?.gameRows ?? [];
+  const ladderRows = gameRows.slice(-5).reverse();
+  const seasonHigh = gameRows.length
+    ? Math.max(...gameRows.map(row => matchupNumber(row.points)).filter(v => v != null))
+    : null;
+
+  const teamScore = matchupNumber(player?.scheduleEntry?.ptsFor);
+  const opponentScore = matchupNumber(player?.scheduleEntry?.ptsAgainst);
+  const finalScore = phase === 'final' && teamScore != null && opponentScore != null
+    ? { teamScore, opponentScore }
+    : null;
+
+  return {
+    id: player?.id, name: player?.name, position, team: player?.team,
+    availabilityStatus: player?.availabilityStatus, oppTeam: player?.oppTeam, isHome: player?.isHome,
+    phase, isPregame, finalScore,
+    weather: player?.weather, isIndoor: player?.isIndoor,
+    total, displayProjection, projectionView,
+    heroValue,
+    rangeLow: matchupNumber(displayProjection?.min), rangeHigh: matchupNumber(displayProjection?.max),
+    seasonBenchmark, opponentContext,
+    rankValue, peerCount, rankLabel,
+    ladderRows,
+    seasonAvg: matchupNumber(peerModel?.overall?.ppg),
+    seasonPoints: matchupNumber(peerModel?.overall?.points),
+    seasonHigh,
+    gamesPlayed: matchupNumber(peerModel?.overall?.games),
+    statByKey,
+    player,
+  };
+}
+
+// ── verdict ───────────────────────────────────────────────────────────────────
+
+// Countable, narratively significant scoring events — the kind of stat that
+// explains *why* a score happened, unlike a yardage total that only explains
+// magnitude. Used to pick the one standout line the verdict calls out.
+const HIGHLIGHT_STATS = {
+  pass_td: (n) => `${n} passing touchdown${n === 1 ? '' : 's'}`,
+  rush_td: (n) => `${n} rushing touchdown${n === 1 ? '' : 's'}`,
+  rec_td: (n) => `${n} receiving touchdown${n === 1 ? '' : 's'}`,
+  pass_int: (n) => `${n} interception${n === 1 ? '' : 's'}`,
+  fgm: (n) => `${n} field goal${n === 1 ? '' : 's'}`,
+  idp_sack: (n) => `${n} sack${n === 1 ? '' : 's'}`,
+  idp_int: (n) => `${n} interception${n === 1 ? '' : 's'}`,
+  def_td: (n) => `${n} defensive touchdown${n === 1 ? '' : 's'}`,
+  ret_td: (n) => `${n} return touchdown${n === 1 ? '' : 's'}`,
+};
+
+const PRIMARY_TD_STAT_BY_POSITION = {
+  QB: { key: 'pass_td', label: 'passing touchdown' },
+  RB: { key: 'rush_td', label: 'rushing touchdown' },
+  WR: { key: 'rec_td', label: 'receiving touchdown' },
+  TE: { key: 'rec_td', label: 'receiving touchdown' },
+};
+
+function describeStandoutStat(model) {
+  let best = null;
+  for (const [key, describe] of Object.entries(HIGHLIGHT_STATS)) {
+    const row = model.statByKey.get(key);
+    const statVal = matchupNumber(row?.statVal);
+    const pts = matchupNumber(row?.pts);
+    if (statVal == null || statVal <= 0 || pts == null || pts <= 0) continue;
+    if (!best || pts > best.pts) best = { pts, text: describe(statVal) };
+  }
+  return best?.text ?? null;
+}
+
+function buildCompareVerdict(left, right) {
+  if (!left || !right) return null;
+  const bothStarted = !left.isPregame && !right.isPregame;
+  const bothFinal = left.phase === 'final' && right.phase === 'final';
+  const bothPregame = left.isPregame && right.isPregame;
+
+  if (bothStarted && left.heroValue != null && right.heroValue != null && left.heroValue !== right.heroValue) {
+    const winner = left.heroValue > right.heroValue ? left : right;
+    const loser = winner === left ? right : left;
+    const diff = Math.abs(left.heroValue - right.heroValue);
+    const verb = bothFinal ? 'outscored' : 'is outscoring';
+    const timeframe = bothFinal ? 'this week' : 'so far';
+    let sentence = `${winner.name} ${verb} ${loser.name} by ${diff.toFixed(1)} points ${timeframe}`;
+
+    const winnerProjected = matchupNumber(winner.displayProjection?.projected);
+    if (winnerProjected != null) {
+      const winnerProjDelta = winner.heroValue - winnerProjected;
+      if (Math.abs(winnerProjDelta) >= 1) {
+        sentence += `, ${winnerProjDelta >= 0 ? 'beating' : 'missing'} projections by ${Math.abs(winnerProjDelta).toFixed(1)} points`;
+      }
+    }
+
+    const standout = describeStandoutStat(winner);
+    if (standout) sentence += ` with ${standout}`;
+    sentence += '.';
+
+    // A second sentence only when the trailing player had a genuinely bad
+    // week: missed their own projection by a wide margin and was shut out on
+    // their position's headline scoring stat.
+    if (bothFinal) {
+      const loserProjected = matchupNumber(loser.displayProjection?.projected);
+      const primary = PRIMARY_TD_STAT_BY_POSITION[loser.position];
+      if (loserProjected != null && primary) {
+        const loserProjDelta = loser.heroValue - loserProjected;
+        const loserHadNone = !(matchupNumber(loser.statByKey.get(primary.key)?.statVal) > 0);
+        if (loserProjDelta <= -3 && loserHadNone) {
+          sentence += ` ${loser.name} underperformed by ${loserProjDelta.toFixed(1)} without a single ${primary.label}.`;
+        }
+      }
+    }
+
+    return sentence;
+  }
+
+  if (bothPregame && left.heroValue != null && right.heroValue != null && Math.abs(left.heroValue - right.heroValue) >= 0.3) {
+    const winner = left.heroValue > right.heroValue ? left : right;
+    const diff = Math.abs(left.heroValue - right.heroValue);
+    const matchupNote = winner.opponentContext?.ptsAllowedPerGame != null && winner.opponentContext?.leagueAveragePtsAllowed != null
+      && winner.opponentContext.ptsAllowedPerGame > winner.opponentContext.leagueAveragePtsAllowed
+      ? `, drawing the softer matchup against ${winner.oppTeam}`
+      : '';
+    return `${winner.name} projects ${diff.toFixed(1)} higher${matchupNote}.`;
+  }
+
+  return null;
+}
+
+// ── mirrored row primitives ─────────────────────────────────────────────────
+
+function CompareRow({ label, sub, valA, valB, numA, numB, higher = 'better', neutral = false, nobar = false, highlight, subA, subB }) {
+  const finite = (v) => typeof v === 'number' && Number.isFinite(v);
+  const canCompare = !neutral && finite(numA) && finite(numB) && numA !== numB;
+  const aLead = canCompare && (higher === 'lower' ? numA < numB : numA > numB);
+  const bLead = canCompare && !aLead;
+  const barMax = Math.max(Math.abs(numA ?? 0), Math.abs(numB ?? 0)) || 1;
+  const barPct = (v) => (!neutral && !nobar && finite(v)) ? `${Math.min(1, Math.abs(v) / barMax) * 100}%` : '0%';
+
+  return (
+    <div className="pmd-cmp-row">
+      <div className={`pmd-cmp-v is-left${aLead ? ' is-leading' : ''}`} style={{ '--pmd-cmp-w': barPct(numA), '--pmd-cmp-color': 'var(--pmd-cmp-left-bar, var(--color-accent))' }}>
+        <span className={`pmd-cmp-n pmd-num${highlight ? ' is-big' : ''}`}>
+          {aLead && <i className="pmd-cmp-tick" aria-hidden="true">▲</i>}
+          {valA}
+        </span>
+        {subA && <span className="pmd-cmp-s">{subA}</span>}
+      </div>
+      <div className="pmd-cmp-l">
+        <span>{label}</span>
+        {sub && <small>{sub}</small>}
+      </div>
+      <div className={`pmd-cmp-v is-right${bLead ? ' is-leading' : ''}`} style={{ '--pmd-cmp-w': barPct(numB), '--pmd-cmp-color': 'var(--pmd-cmp-right-bar, var(--color-accent-orange))' }}>
+        <span className={`pmd-cmp-n pmd-num${highlight ? ' is-big' : ''}`}>
+          {valB}
+          {bLead && <i className="pmd-cmp-tick" aria-hidden="true">▲</i>}
+        </span>
+        {subB && <span className="pmd-cmp-s">{subB}</span>}
+      </div>
+    </div>
+  );
+}
+
+function CompareRankRail({ left, right }) {
+  if (!left.rankValue || !right.rankValue || !left.peerCount || !right.peerCount || left.rankLabel !== right.rankLabel) return null;
+  const leftPos = Math.max(0, Math.min(100, (left.rankValue - 1) / Math.max(1, left.peerCount - 1) * 100));
+  const rightPos = Math.max(0, Math.min(100, (right.rankValue - 1) / Math.max(1, right.peerCount - 1) * 100));
+  const markerEdgeClass = (position) => position <= 8 ? ' is-near-start' : position >= 92 ? ' is-near-end' : '';
+  const leftLeading = left.rankValue < right.rankValue;
+  const rightLeading = right.rankValue < left.rankValue;
+  return (
+    <section className="pmd-sec">
+      <div className="pmd-eyebrow">Season points rank{' · '}<span>{left.peerCount}-{left.rankLabel} pool</span></div>
+      <div className="pmd-cmp-rank-plot">
+        <span className="pmd-cmp-rank-boundary is-best" aria-hidden="true">Best</span>
+        <div className="pmd-cmp-rank-scale">
+          <div className="pmd-rail" role="img" aria-label={`${left.name} ranks ${formatOrdinal(left.rankValue)}, ${right.name} ranks ${formatOrdinal(right.rankValue)}, from best to worst of ${left.peerCount} ${left.rankLabel} players.`} />
+          <div
+            className={`pmd-cmp-rank-player is-left${markerEdgeClass(leftPos)}`}
+            style={{ left: `${leftPos}%`, '--pmd-cmp-player-color': 'var(--pmd-cmp-left-bar, var(--color-accent))' }}
+          >
+            <PlayerAvatar
+              player={left.player}
+              name={left.name}
+              size={44}
+              className="pmd-cmp-rank-avatar"
+              background="var(--color-fill-secondary)"
+            />
+            <span className="pmd-cmp-rank-player__identity">
+              <span className="pmd-cmp-rank-player__name">{left.name}</span>
+              <span className={`pmd-cmp-rank-player__rank pmd-num${leftLeading ? ' is-leading' : ''}`}>{left.rankLabel}{left.rankValue}</span>
+            </span>
+          </div>
+          <div
+            className={`pmd-cmp-rank-player is-right${markerEdgeClass(rightPos)}`}
+            style={{ left: `${rightPos}%`, '--pmd-cmp-player-color': 'var(--pmd-cmp-right-bar, var(--color-accent-orange))' }}
+          >
+            <PlayerAvatar
+              player={right.player}
+              name={right.name}
+              size={44}
+              className="pmd-cmp-rank-avatar"
+              background="var(--color-fill-secondary)"
+            />
+            <span className="pmd-cmp-rank-player__identity">
+              <span className="pmd-cmp-rank-player__name">{right.name}</span>
+              <span className={`pmd-cmp-rank-player__rank pmd-num${rightLeading ? ' is-leading' : ''}`}>{right.rankLabel}{right.rankValue}</span>
+            </span>
+          </div>
+        </div>
+        <span className="pmd-cmp-rank-boundary is-worst" aria-hidden="true">Worst</span>
+      </div>
+    </section>
+  );
+}
+
+function CompareLadder({ left, right }) {
+  if (!left.ladderRows.length && !right.ladderRows.length) return null;
+  const weeks = Array.from(new Set([...left.ladderRows.map(r => r.week), ...right.ladderRows.map(r => r.week)])).sort((a, b) => b - a).slice(0, 5);
+  if (!weeks.length) return null;
+  const byWeekLeft = new Map(left.ladderRows.map(r => [r.week, r.points]));
+  const byWeekRight = new Map(right.ladderRows.map(r => [r.week, r.points]));
+  const maximum = getChartMaximum(weeks.map(w => byWeekLeft.get(w)), weeks.map(w => byWeekRight.get(w)));
+  return (
+    <section className="pmd-sec">
+      <div className="pmd-eyebrow">Recent form{' · '}<span>fantasy points by week</span></div>
+      <div className="pmd-cmp-ladder">
+        {weeks.map(week => {
+          const a = matchupNumber(byWeekLeft.get(week));
+          const b = matchupNumber(byWeekRight.get(week));
+          const leftLeading = a != null && b != null && a > b;
+          const rightLeading = a != null && b != null && b > a;
+          return (
+            <div className="pmd-cmp-lrow" key={week}>
+              <div className={`pmd-cmp-lrow-v is-left pmd-num${leftLeading ? ' is-leading' : ''}`}>{formatNumber(a)}</div>
+              <div className="pmd-cmp-ftrack is-left"><i style={{ width: `${getChartPosition(a, maximum) ?? 0}%`, background: 'var(--pmd-cmp-left-bar, var(--color-accent))' }} /></div>
+              <div className="pmd-cmp-lrow-k pmd-cond">Wk {week}</div>
+              <div className="pmd-cmp-ftrack is-right"><i style={{ width: `${getChartPosition(b, maximum) ?? 0}%`, background: 'var(--pmd-cmp-right-bar, var(--color-accent-orange))' }} /></div>
+              <div className={`pmd-cmp-lrow-v pmd-num${rightLeading ? ' is-leading' : ''}`}>{formatNumber(b)}</div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+// ── hero ─────────────────────────────────────────────────────────────────────
+
+function CompareHero({ player, side, darkMode, onViewStats }) {
+  const teamTheme = getTeamVisualTheme(player?.team, darkMode);
+  const style = {
+    background: teamTheme?.gradient ?? 'var(--color-fill-secondary)',
+    color: teamTheme?.gradientFullForeground ?? 'var(--color-label)',
+    '--pmd-cmp-hero-muted': teamTheme?.gradientFullMuted ?? 'var(--color-label-secondary)',
+    '--pmd-cmp-hero-accent': teamTheme?.accentColor ?? 'var(--color-accent)',
+  };
+  const clickable = Boolean(onViewStats);
+  const Tag = clickable ? 'button' : 'div';
+  return (
+    <Tag
+      type={clickable ? 'button' : undefined}
+      onClick={clickable ? onViewStats : undefined}
+      className={`pmd-cmp-hero is-${side}`}
+      style={style}
+    >
+      <PlayerAvatar player={player} name={player?.name} size={84} className="pmd-cmp-hero-avatar" />
+      <div className="pmd-cmp-hero-name">{player?.name ?? 'Unknown'}</div>
+      <div className="pmd-cmp-hero-meta">
+        <span>{player?.position ?? '—'}</span><span aria-hidden="true">·</span>
+        <span className="pmd-cmp-hero-team">
+          <TeamLogo team={player?.team} className="pmd-cmp-hero-logo" />
+          <span>{player?.team ?? 'FA'}</span>
+        </span>
+      </div>
+      {player?.availabilityStatus && <PlayerStatusBadge status={player.availabilityStatus} compact />}
+    </Tag>
+  );
+}
+
+function TeamLogo({ team, className = 'pmd-cmp-game-logo' }) {
+  const url = team ? getNflTeamLogoUrl(getTeamColorKey(team)) : null;
+  if (!url) return null;
+  return <img src={url} alt="" aria-hidden="true" className={className} onError={(e) => { e.currentTarget.hidden = true; }} />;
+}
+
+function CompareGameChip({ model }) {
+  if (!model) return <div className="pmd-cmp-game" />;
+  const phaseLabel = model.phase === 'pregame' ? 'Pregame' : model.phase === 'final' ? 'Final' : 'Live';
+
+  if (model.finalScore) {
+    const teamWon = model.finalScore.teamScore >= model.finalScore.opponentScore;
+    return (
+      <div className="pmd-cmp-game">
+        <span className="pmd-phase pmd-cond">{phaseLabel}</span>
+        <div className="pmd-cmp-game-score">
+          <span className={`pmd-cmp-game-team${teamWon ? ' is-winner' : ''}`}>
+            <TeamLogo team={model.team} />{model.team} <b className="pmd-num">{formatNumber(model.finalScore.teamScore, 0)}</b>
+          </span>
+          <span className="pmd-cmp-game-sep">·</span>
+          <span className={`pmd-cmp-game-team${!teamWon ? ' is-winner' : ''}`}>
+            <TeamLogo team={model.oppTeam} />{model.oppTeam} <b className="pmd-num">{formatNumber(model.finalScore.opponentScore, 0)}</b>
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  const oppText = model.oppTeam
+    ? (model.isHome == null ? `vs ${model.oppTeam}` : model.isHome ? `Home vs ${model.oppTeam}` : `Away at ${model.oppTeam}`)
+    : '—';
+  const weather = model.isIndoor ? 'Indoor' : formatWeather(model.weather, false);
+  return (
+    <div className="pmd-cmp-game">
+      <span className={`pmd-phase pmd-cond${model.phase === 'live' ? ' is-live' : ''}`}>{phaseLabel}</span>
+      <div className="pmd-cmp-game-o"><TeamLogo team={model.oppTeam} />{[oppText, weather].filter(Boolean).join(' · ')}</div>
+    </div>
+  );
+}
+
+// ── main ─────────────────────────────────────────────────────────────────────
+
+export default function PlayerMatchupCompare({ left, right, week, slotLabel, leftBaseline = null, rightBaseline = null, onClose, onViewStats }) {
+  const { players, weeklyStats, activeScoringSettings, scheduleMap } = useSleeperBase();
+  const { darkMode } = useTheme();
+
+  const leftModel = usePlayerCompareModel({ player: left, week, baseline: leftBaseline, weeklyStats, activeScoringSettings, players, scheduleMap });
+  const rightModel = usePlayerCompareModel({ player: right, week, baseline: rightBaseline, weeklyStats, activeScoringSettings, players, scheduleMap });
+
+  if (!left?.id || !right?.id || left.name === 'Empty' || right.name === 'Empty') return null;
+
+  const verdict = buildCompareVerdict(leftModel, rightModel);
+  const bothStarted = !leftModel.isPregame && !rightModel.isPregame;
+  const bothPregame = leftModel.isPregame && rightModel.isPregame;
+  const pointsLabel = bothPregame ? 'Projected points' : bothStarted ? 'Points' : 'Points (mixed status)';
+  const leftTeamTheme = getTeamVisualTheme(leftModel.team, darkMode);
+  const rightTeamTheme = getTeamVisualTheme(rightModel.team, darkMode);
+  // Bars sit on the neutral comparison canvas, so use the mode-appropriate
+  // readable team treatment rather than the hero-only foreground accent.
+  const leftTeamColor = (darkMode ? leftTeamTheme?.accentColor : leftTeamTheme?.borderColor)
+    ?? leftTeamTheme?.color
+    ?? 'var(--color-accent)';
+  const rightTeamColor = (darkMode ? rightTeamTheme?.accentColor : rightTeamTheme?.borderColor)
+    ?? rightTeamTheme?.color
+    ?? 'var(--color-accent-orange)';
+
+  const hasRange = bothPregame && (leftModel.rangeLow != null || rightModel.rangeLow != null);
+  const canOpenStats = (player) => Boolean(onViewStats && player?.id);
+
+  // Generalized stat-category comparison, keyed off whatever rows each side
+  // actually has (final box score if the game has started, else the
+  // projected stat line) — works for any position automatically. Curated to
+  // the handful of categories that actually moved the score, ranked by
+  // whichever side scored more off that category, so a QB shows passing
+  // touchdowns and yards rather than every scored field (2-pt conversions,
+  // first downs, etc.) at once.
+  const MAX_STAT_ROWS = 6;
+  const statKeys = Array.from(new Set([...leftModel.statByKey.keys(), ...rightModel.statByKey.keys()]))
+    .filter(Boolean)
+    .map(key => {
+      const ptsA = matchupNumber(leftModel.statByKey.get(key)?.pts);
+      const ptsB = matchupNumber(rightModel.statByKey.get(key)?.pts);
+      return { key, weight: Math.max(Math.abs(ptsA ?? 0), Math.abs(ptsB ?? 0)) };
+    })
+    .filter(row => row.weight > 0)
+    .sort((a, b) => b.weight - a.weight)
+    .slice(0, MAX_STAT_ROWS)
+    .map(row => row.key);
+
+  return (
+    <Modal
+      onClose={onClose}
+      mobileSheet
+      ariaLabel={`Compare ${leftModel.name} and ${rightModel.name}`}
+      containerClassName="matchup-breakdown-dialog pmd-cmp-dialog flex flex-col"
+      containerStyle={{ background: 'var(--color-bg)', border: '1px solid var(--color-separator)', maxWidth: '900px', maxHeight: '90dvh' }}
+    >
+      <header className="pmd-cmp-hd">
+        <span className="pmd-slot pmd-cond">{leftModel.position === rightModel.position ? leftModel.position : (slotLabel ?? 'Compare')}</span>
+        <span className="pmd-ctx--lead pmd-num">Week {week}</span>
+        <button type="button" onClick={onClose} aria-label="Close comparison" className="pmd-hd__close" style={{ marginLeft: 'auto' }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      </header>
+
+      <div className="pmd-cmp-body" style={{ '--pmd-cmp-left-bar': leftTeamColor, '--pmd-cmp-right-bar': rightTeamColor }}>
+        <div className="pmd-cmp-heroes">
+          <CompareHero player={left} side="left" darkMode={darkMode} onViewStats={canOpenStats(left) ? () => { onClose(); onViewStats(left.id); } : null} />
+          <CompareHero player={right} side="right" darkMode={darkMode} onViewStats={canOpenStats(right) ? () => { onClose(); onViewStats(right.id); } : null} />
+          <span className="pmd-cmp-heroes__versus" aria-hidden="true">
+            <svg viewBox="0 0 100 100" focusable="false">
+              <path d="M10 14 50 86 90 14" />
+            </svg>
+          </span>
+        </div>
+
+        <div className="pmd-cmp-games">
+          <CompareGameChip model={leftModel} />
+          <i />
+          <CompareGameChip model={rightModel} />
+        </div>
+
+        {verdict && <div className="pmd-sec"><p className="pmd-headline">{verdict}</p></div>}
+
+        <section className="pmd-sec">
+          <div className="pmd-eyebrow">Week {week}</div>
+          <CompareRow
+            label={pointsLabel}
+            valA={leftModel.heroValue != null ? formatNumber(leftModel.heroValue, bothStarted ? 2 : 1) : '—'}
+            valB={rightModel.heroValue != null ? formatNumber(rightModel.heroValue, bothStarted ? 2 : 1) : '—'}
+            numA={leftModel.heroValue} numB={rightModel.heroValue}
+            subA={!leftModel.isPregame && leftModel.displayProjection?.projected != null ? `${signed(leftModel.heroValue - leftModel.displayProjection.projected)} vs projected` : null}
+            subB={!rightModel.isPregame && rightModel.displayProjection?.projected != null ? `${signed(rightModel.heroValue - rightModel.displayProjection.projected)} vs projected` : null}
+            highlight
+          />
+          {hasRange && (
+            <CompareRow
+              label="Likely range"
+              valA={leftModel.rangeLow != null ? `${formatNumber(leftModel.rangeLow)}–${formatNumber(leftModel.rangeHigh)}` : '—'}
+              valB={rightModel.rangeLow != null ? `${formatNumber(rightModel.rangeLow)}–${formatNumber(rightModel.rangeHigh)}` : '—'}
+              neutral
+            />
+          )}
+          {(leftModel.opponentContext || rightModel.opponentContext) && (
+            <CompareRow
+              label="Opponent vs position"
+              valA={leftModel.opponentContext ? `#${leftModel.opponentContext.rank ?? '—'}` : '—'}
+              valB={rightModel.opponentContext ? `#${rightModel.opponentContext.rank ?? '—'}` : '—'}
+              subA={leftModel.opponentContext ? `${leftModel.oppTeam} · ${formatNumber(leftModel.opponentContext.ptsAllowedPerGame)} allowed` : getOpponentEvidenceLabel(null)}
+              subB={rightModel.opponentContext ? `${rightModel.oppTeam} · ${formatNumber(rightModel.opponentContext.ptsAllowedPerGame)} allowed` : getOpponentEvidenceLabel(null)}
+              neutral
+            />
+          )}
+        </section>
+
+        <CompareRankRail left={leftModel} right={rightModel} />
+
+        <section className="pmd-sec">
+          <div className="pmd-eyebrow">Season form{' · '}<span>through {Math.max(leftModel.gamesPlayed ?? 0, rightModel.gamesPlayed ?? 0)} game{Math.max(leftModel.gamesPlayed ?? 0, rightModel.gamesPlayed ?? 0) === 1 ? '' : 's'}</span></div>
+          {leftModel.rankLabel === rightModel.rankLabel && (leftModel.rankValue || rightModel.rankValue) && (
+            <CompareRow
+              label="Season rank" sub="position pool"
+              valA={leftModel.rankValue ? `${leftModel.rankLabel}${leftModel.rankValue}` : '—'}
+              valB={rightModel.rankValue ? `${rightModel.rankLabel}${rightModel.rankValue}` : '—'}
+              numA={leftModel.rankValue} numB={rightModel.rankValue}
+              higher="lower" nobar
+            />
+          )}
+          <CompareRow label="Points per game" valA={formatNumber(leftModel.seasonAvg)} valB={formatNumber(rightModel.seasonAvg)} numA={leftModel.seasonAvg} numB={rightModel.seasonAvg} />
+          <CompareRow label="Total points" valA={formatNumber(leftModel.seasonPoints)} valB={formatNumber(rightModel.seasonPoints)} numA={leftModel.seasonPoints} numB={rightModel.seasonPoints} />
+          <CompareRow label="Season high" valA={formatNumber(leftModel.seasonHigh)} valB={formatNumber(rightModel.seasonHigh)} numA={leftModel.seasonHigh} numB={rightModel.seasonHigh} />
+          <CompareRow label="Games played" valA={leftModel.gamesPlayed != null ? String(leftModel.gamesPlayed) : '—'} valB={rightModel.gamesPlayed != null ? String(rightModel.gamesPlayed) : '—'} numA={leftModel.gamesPlayed} numB={rightModel.gamesPlayed} neutral />
+        </section>
+
+        <CompareLadder left={leftModel} right={rightModel} />
+
+        {statKeys.length > 0 && (
+          <section className="pmd-sec">
+            <div className="pmd-eyebrow">{bothStarted ? 'Scoring breakdown' : 'Projected stat line'}</div>
+            {statKeys.map(key => {
+              const rowA = leftModel.statByKey.get(key);
+              const rowB = rightModel.statByKey.get(key);
+              const label = rowA?.label ?? rowB?.label ?? STAT_LABELS[key] ?? key;
+              const ptsA = matchupNumber(rowA?.pts);
+              const ptsB = matchupNumber(rowB?.pts);
+              if (ptsA == null && ptsB == null) return null;
+              return (
+                <CompareRow
+                  key={key}
+                  label={label}
+                  valA={rowA?.statVal != null ? String(rowA.statVal) : '—'}
+                  valB={rowB?.statVal != null ? String(rowB.statVal) : '—'}
+                  subA={ptsA != null ? `${signed(ptsA)} pts` : null}
+                  subB={ptsB != null ? `${signed(ptsB)} pts` : null}
+                  numA={ptsA} numB={ptsB}
+                />
+              );
+            })}
+          </section>
+        )}
+
+      </div>
+    </Modal>
+  );
+}

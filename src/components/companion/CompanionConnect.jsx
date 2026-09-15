@@ -1,5 +1,32 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { useFantasy } from '../../context/SleeperContext';
+import { copyText } from '../../utils/pageShare.js';
+import { CompanionSegmentedControl } from './CompanionSelectorControls.jsx';
+
+function getInitials(value, fallback = 'L') {
+  const words = String(value ?? '').trim().split(/\s+/).filter(Boolean);
+  return words.slice(0, 2).map((word) => word[0]).join('').toUpperCase() || fallback;
+}
+
+function SleeperAccountAvatar({ user }) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const avatarHash = String(user?.avatar ?? '').trim();
+  const label = user?.display_name || user?.username || 'Sleeper account';
+
+  return (
+    <span className="companion-league-switcher__account-avatar" aria-hidden="true">
+      {avatarHash && !imageFailed ? (
+        <img
+          src={`https://sleepercdn.com/avatars/thumbs/${avatarHash}`}
+          alt=""
+          onError={() => setImageFailed(true)}
+        />
+      ) : (
+        <span className="companion-league-switcher__account-avatar-fallback">{getInitials(label, 'S')}</span>
+      )}
+    </span>
+  );
+}
 
 export default function CompanionConnect({ forceLeaguePicker = false, onLeagueSelected = null }) {
   const {
@@ -8,10 +35,12 @@ export default function CompanionConnect({ forceLeaguePicker = false, onLeagueSe
     disconnect,
     sleeperUser,
     leagues,
+    selectedLeagueId,
     season,
     changeSeason,
     availableSeasons,
     connectLoading,
+    seasonSwitching,
     connectError,
     setConnectError,
     isConnected,
@@ -63,17 +92,27 @@ export default function CompanionConnect({ forceLeaguePicker = false, onLeagueSe
 
   if (!hasLeague || forceLeaguePicker) {
     return (
-      <div className="mx-auto flex max-w-lg flex-col px-4 py-8">
-        <div className="mb-6 flex items-center gap-3">
-          <img
-            src={sleeperUser?.avatar ? `https://sleepercdn.com/avatars/thumbs/${sleeperUser.avatar}` : 'https://sleepercdn.com/images/v2/icons/player_default.webp'}
-            alt={sleeperUser?.display_name ?? 'Sleeper user'}
-            className="h-10 w-10 rounded-full"
-          />
-          <div><div className="text-sm font-semibold" style={{ color: 'var(--color-label)' }}>{sleeperUser?.display_name || sleeperUser?.username}</div><div className="text-xs" style={{ color: 'var(--color-label-tertiary)' }}>@{sleeperUser?.username}</div></div>
-          <button type="button" onClick={disconnect} className="ml-auto rounded-lg px-2.5 py-1 text-xs font-medium" style={{ background: 'var(--color-fill)', color: 'var(--color-label-secondary)' }}>Disconnect</button>
+      <div className={`companion-league-switcher${forceLeaguePicker ? ' is-modal' : ''}`}>
+        <div className="companion-league-switcher__account">
+          <SleeperAccountAvatar user={sleeperUser} />
+          <div className="companion-league-switcher__account-copy">
+            <span>Sleeper account</span>
+            <strong>{sleeperUser?.display_name || sleeperUser?.username}</strong>
+            <small>@{sleeperUser?.username}</small>
+          </div>
+          <button type="button" onClick={disconnect} className="companion-league-switcher__disconnect">Disconnect</button>
         </div>
-        <LeagueList leagues={leagues} season={season} availableSeasons={availableSeasons} changeSeason={changeSeason} connectLoading={connectLoading} connectError={connectError} onSelectLeague={handleSelectLeague} />
+        <LeagueList
+          leagues={leagues}
+          selectedLeagueId={selectedLeagueId}
+          season={season}
+          availableSeasons={availableSeasons}
+          changeSeason={changeSeason}
+          connectLoading={connectLoading}
+          seasonSwitching={seasonSwitching}
+          connectError={connectError}
+          onSelectLeague={handleSelectLeague}
+        />
       </div>
     );
   }
@@ -81,14 +120,130 @@ export default function CompanionConnect({ forceLeaguePicker = false, onLeagueSe
   return null;
 }
 
-function LeagueList({ leagues, season, availableSeasons, changeSeason, connectLoading, connectError, onSelectLeague }) {
-  if (availableSeasons.length === 0) return <p className="text-sm" style={{ color: 'var(--color-label-secondary)' }}>This Sleeper account does not currently return any NFL leagues for the supported league years.</p>;
-  return <>
-    <div className="mb-4 flex items-start gap-3"><div><div className="mb-1 text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>Season</div><p className="text-xs" style={{ color: 'var(--color-label-secondary)' }}>Choose from the league years available for this account.</p></div><div className="ml-auto flex flex-wrap justify-end gap-1.5">{availableSeasons.map((option) => <button key={option} type="button" onClick={() => changeSeason(option)} className="rounded-lg px-2.5 py-1 text-xs font-semibold" style={{ background: season === option ? 'var(--color-signature)' : 'var(--color-fill)', color: season === option ? 'var(--color-signature-fg)' : 'var(--color-label-secondary)' }}>{option}</button>)}</div></div>
-    <h3 className="mb-3 font-display font-bold" style={{ fontSize: '13px', letterSpacing: '0.1em', color: 'var(--color-label-tertiary)' }}>SELECT A LEAGUE</h3>
-    <ConnectError error={connectError} />
-    <div className="mt-3 flex flex-col gap-2">{leagues.map((league) => <button key={league.league_id} type="button" onClick={() => onSelectLeague(league.league_id)} disabled={connectLoading} className="flex items-center gap-3 rounded-xl px-4 py-3 text-left transition-opacity active:opacity-60 disabled:opacity-40" style={{ background: 'var(--color-fill-secondary)' }}><div className="min-w-0 flex-1"><div className="truncate text-sm font-semibold" style={{ color: 'var(--color-label)' }}>{league.name}</div><div className="mt-0.5 text-xs" style={{ color: 'var(--color-label-tertiary)' }}>{league.total_rosters} teams · {league.settings?.type === 2 ? 'Dynasty' : league.settings?.type === 1 ? 'Keeper' : 'Redraft'}</div></div><span aria-hidden="true" style={{ color: 'var(--color-label-quaternary)' }}>›</span></button>)}</div>
-  </>;
+function LeagueAvatar({ league }) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const avatarHash = String(league?.avatar ?? '').trim();
+  const initials = getInitials(league?.name, 'L');
+
+  return (
+    <span className="companion-league-switch-row__avatar" aria-hidden="true">
+      {avatarHash && !imageFailed ? (
+        <img
+          src={`https://sleepercdn.com/avatars/thumbs/${avatarHash}`}
+          alt=""
+          onError={() => setImageFailed(true)}
+        />
+      ) : (
+        <span className="companion-league-switch-row__avatar-fallback">{initials}</span>
+      )}
+    </span>
+  );
+}
+
+function LeagueList({ leagues, selectedLeagueId, season, availableSeasons, changeSeason, connectLoading, seasonSwitching, connectError, onSelectLeague }) {
+  const headingIdBase = useId();
+  const [copyFeedback, setCopyFeedback] = useState(null);
+  const leagueYearHeadingId = `${headingIdBase}-year`;
+  const leagueChoiceHeadingId = `${headingIdBase}-league`;
+
+  const handleCopyLeagueId = async (leagueId) => {
+    if (!leagueId) return;
+    try {
+      await copyText(leagueId);
+      setCopyFeedback({ leagueId, status: 'copied' });
+      window.setTimeout(() => {
+        setCopyFeedback((current) => current?.leagueId === leagueId ? null : current);
+      }, 1600);
+    } catch {
+      setCopyFeedback({ leagueId, status: 'failed' });
+    }
+  };
+
+  if (availableSeasons.length === 0) return <p className="companion-league-switcher__empty">This Sleeper account does not currently return any NFL leagues for the supported league years.</p>;
+
+  const seasonOptions = availableSeasons.map((option) => ({
+    value: String(option),
+    label: String(option),
+    disabled: connectLoading && String(option) !== String(season),
+  }));
+
+  return <div className="companion-league-switcher__choices">
+    <section className="companion-league-switcher__stage" aria-labelledby={leagueYearHeadingId}>
+      <div className="companion-league-switcher__stage-header">
+        <span className="companion-league-switcher__step" aria-hidden="true">1</span>
+        <div>
+          <h3 id={leagueYearHeadingId}>League year</h3>
+          <p>Choose the season you want to view.</p>
+        </div>
+      </div>
+      <CompanionSegmentedControl
+        value={String(season)}
+        options={seasonOptions}
+        onChange={changeSeason}
+        ariaLabel="League year"
+        columns={seasonOptions.length}
+        className="companion-league-switcher__season-control"
+      />
+      <div className="companion-league-switcher__loading" aria-live="polite">
+        {seasonSwitching ? `Loading ${seasonSwitching} leagues...` : ''}
+      </div>
+    </section>
+
+    <section className="companion-league-switcher__stage" aria-labelledby={leagueChoiceHeadingId}>
+      <div className="companion-league-switcher__stage-header">
+        <span className="companion-league-switcher__step" aria-hidden="true">2</span>
+        <div>
+          <h3 id={leagueChoiceHeadingId}>Choose a league</h3>
+          <p>{leagues.length} {leagues.length === 1 ? 'league' : 'leagues'} available for {season}.</p>
+        </div>
+      </div>
+      <ConnectError error={connectError} />
+      <div className="companion-league-switcher__league-list">{leagues.map((league) => {
+      const leagueId = String(league?.league_id ?? '').trim();
+      const isCurrentLeague = leagueId && leagueId === String(selectedLeagueId ?? '').trim();
+      const teamCount = Number(league?.total_rosters);
+      const leagueType = league.settings?.type === 2 ? 'Dynasty' : league.settings?.type === 1 ? 'Keeper' : 'Redraft';
+      const leagueMeta = [Number.isFinite(teamCount) && teamCount > 0 ? `${teamCount} teams` : null, leagueType].filter(Boolean).join(' · ');
+      const feedback = copyFeedback?.leagueId === leagueId ? copyFeedback.status : null;
+      const copyLabel = feedback === 'copied' ? 'Copied' : feedback === 'failed' ? 'Copy failed' : 'Copy ID';
+
+      return (
+        <div key={league.league_id} className={`companion-league-switch-row${isCurrentLeague ? ' is-current' : ''}`} data-current={isCurrentLeague ? 'true' : 'false'}>
+          <button
+            type="button"
+            onClick={() => onSelectLeague(league.league_id)}
+            disabled={connectLoading}
+            className="companion-league-switch-row__select"
+            aria-label={`${isCurrentLeague ? 'Currently viewing' : 'View'} ${league.name}`}
+          >
+            <LeagueAvatar league={league} />
+            <div className="companion-league-switch-row__identity">
+              <div className="companion-league-switch-row__name-line">
+                <strong>{league.name}</strong>
+                {isCurrentLeague && <span className="companion-league-switch-row__current">Viewing</span>}
+              </div>
+              <div className="companion-league-switch-row__meta">{leagueMeta}</div>
+              <div className="companion-league-switch-row__id">
+                <span className="companion-league-switch-row__id-label">League ID</span>
+                <code className="companion-league-switch-row__id-value">{leagueId || 'Unavailable'}</code>
+              </div>
+            </div>
+            <span aria-hidden="true" className="companion-league-switch-row__chevron">›</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => handleCopyLeagueId(leagueId)}
+            disabled={connectLoading || !leagueId}
+            className={`companion-league-switch-row__copy${feedback ? ` is-${feedback}` : ''}`}
+            aria-label={`${feedback === 'copied' ? 'Copied' : 'Copy'} league ID${leagueId ? ` ${leagueId}` : ''}`}
+          >
+            <span aria-live="polite">{copyLabel}</span>
+          </button>
+        </div>
+      );
+    })}</div>
+    </section>
+  </div>;
 }
 
 function ConnectError({ error }) { return error ? <p className="text-center text-xs" style={{ color: 'var(--color-accent-red)' }}>{error}</p> : null; }

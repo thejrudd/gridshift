@@ -23,6 +23,9 @@ export function isReplayMode() {
 export function isPreseasonMode() {
   return false;
 }
+export function isLiveMode() {
+  return false;
+}
 export function setSandboxMode() {}
 export function subscribeToMode() {
   return () => {};

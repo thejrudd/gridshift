@@ -20,6 +20,8 @@ import {
   isFinalGame,
   isLiveGame,
   mapBdlStatsToGridShift,
+  mergeLiveScoringStats,
+  reconcileLiveFantasyPoints,
   resolveCurrentPlayerPoints,
   resolveStarterGameState,
 } from '../../utils/liveScoringFeed.js';
@@ -54,10 +56,14 @@ import {
 import {
   buildPlayEvents,
   buildStarterNameIndex,
-  groupSharedPlayEvents,
   mergePlayEvents,
   parseGlanceProgress,
+  sortLiveFeedEvents,
 } from '../../utils/livePlaysFeed.js';
+import {
+  createReconciliationState,
+  reconcileLivePlays,
+} from '../../utils/liveReconciliation.js';
 import {
   buildPaceSeries,
   buildGameProgressTimelines,
@@ -102,15 +108,17 @@ import {
 import {
   LIVE_SANDBOX_ENABLED,
   LiveSandboxPanel,
-  buildReplayDeltaEvents,
+  isLiveMode,
   useChartScale,
-  spreadEventsAcrossInterval,
   subscribeToRewind,
   useLiveSandbox,
 } from '../../dev/liveSandbox';
 
 const LIVE_REFRESH_MS = 5000;
 const FREE_TIER_REFRESH_MS = 60000;
+// Sleeper's weekly stat lines move only when a game is running, so they are
+// polled on their own slower cadence than the matchup/points refresh.
+const SLEEPER_STATS_REFRESH_MS = 30000;
 const MAX_FEED_EVENTS = 80;
 // A full Sunday slate, so every starter's game can supply play-by-play rather
 // than only the first handful.
@@ -118,6 +126,11 @@ const MAX_PLAYS_GAMES = 16;
 const PLAYS_REFRESH_MIN_MS = 8_000;
 const RAIL_PERFORMER_LIMIT = 14;
 const FINAL_RECONCILIATION_RETRY_MS = 30000;
+
+function isFantasyFeedEvent(event) {
+  const points = Number(event?.rawPts ?? event?.pts);
+  return Number.isFinite(points) && points !== 0;
+}
 
 function useIsDesktop() {
   const [desktop, setDesktop] = useState(false);
@@ -134,7 +147,7 @@ function useIsDesktop() {
 
 function formatChipPoints(value) {
   const numeric = Number(value);
-  return Number.isFinite(numeric) ? numeric.toFixed(1) : '—';
+  return Number.isFinite(numeric) ? numeric.toFixed(2) : '—';
 }
 
 function getRosterName(roster, getUserDisplayName) {
@@ -577,6 +590,7 @@ export default function CompanionLive({ onViewPlayer = null }) {
   const sandbox = useLiveSandbox();
   const sandboxChartScale = useChartScale();
   const connectedBase = useSleeperBase();
+  const connectedLiveMode = isLiveMode();
   const connectedPreseasonScoring = sandbox?.mode === 'preseason'
     && connectedBase.selectedLeagueId
     && connectedBase.league?.scoring_settings
@@ -591,6 +605,9 @@ export default function CompanionLive({ onViewPlayer = null }) {
     players,
     loadPlayers,
     loadMatchups,
+    // Sandbox-only: the replay's synthesized Sleeper stat lines stand in for
+    // getWeeklyStats(). The connected context does not define it.
+    loadWeeklyStats,
     myRoster,
     getUserDisplayName,
     activeScoringSettings,
@@ -620,11 +637,18 @@ export default function CompanionLive({ onViewPlayer = null }) {
   // Primitive so the weather effect can depend on this without churning on
   // every replay tick, since `sandbox` is a fresh object each time.
   const sandboxActive = Boolean(sandbox);
+  const sandboxMode = sandbox?.mode ?? 'live';
+  const sandboxReplay = Boolean(sandbox?.replay);
   // The demo feed synthesises a whole week of scoring from current totals, so
   // it renders the feed and pace chart fully populated the moment the page
   // loads. The sandbox drives those from its own clock instead, accumulating
   // events as the replay advances, so the demo path must stay off.
-  const demoFeedEnabled = !sandbox && isMockPlayByPlayEnabled(liveStatus);
+  const demoFeedEnabled = !sandbox && !connectedLiveMode && isMockPlayByPlayEnabled(liveStatus);
+  // Connected live and the replay sandbox both have real BDL plays and a real
+  // (or synthesized) Sleeper stream, so both go through the reconciliation
+  // engine. The demo timeline invents its plays and preseason has no Sleeper
+  // matchup to reconcile against; those keep the stat-delta feed.
+  const reconcilerEnabled = sandbox ? Boolean(sandbox.replay) : !demoFeedEnabled;
   // The sandbox already knows its week, so Sleeper's state fetch cannot block
   // or fail the view.
   const nflStateBlocking = !sandbox && nflStateLoading;
@@ -646,6 +670,7 @@ export default function CompanionLive({ onViewPlayer = null }) {
   const [liveGames, setLiveGames] = useState([]);
   const [statsByGame, setStatsByGame] = useState({});
   const [sleeperStatsByPlayer, setSleeperStatsByPlayer] = useState({});
+  const [sleeperStatsFetchedAt, setSleeperStatsFetchedAt] = useState(null);
   const [cumulativeMatchupsByWeek, setCumulativeMatchupsByWeek] = useState({});
   const [localScheduleMap, setLocalScheduleMap] = useState(null);
   const [liveError, setLiveError] = useState('');
@@ -662,7 +687,7 @@ export default function CompanionLive({ onViewPlayer = null }) {
   const [selectedEventId, setSelectedEventId] = useState(null);
   // Scrubbing the pace chart rewinds the hero (chartHover) and drops the feed
   // at the play that was on screen at that point of the games
-  // (feedAnchorProgress — game progress, the chart's own axis).
+  // (feedAnchorProgress — shared slate progress, the chart's own axis).
   const [chartHover, setChartHover] = useState(null);
   const [selectedMoment, setSelectedMoment] = useState(null);
   const [feedAnchorProgress, setFeedAnchorProgress] = useState(null);
@@ -681,6 +706,12 @@ export default function CompanionLive({ onViewPlayer = null }) {
     completedAt: null,
     attempts: 0,
   });
+  // The BDL-play/Sleeper reconciliation engine's accumulated state. It is the
+  // single source of the feed and of every displayed point total in connected
+  // live and in replay; demo timeline and preseason keep the stat-delta path.
+  const reconciliationRef = useRef(null);
+  if (!reconciliationRef.current) reconciliationRef.current = createReconciliationState();
+  const [reconciliation, setReconciliation] = useState(reconciliationRef.current);
   const snapshotRef = useRef(new Map());
   // When the replay was last rewound. Snapshots taken before this moment
   // describe a part of the week that is no longer reached, so they must not
@@ -691,13 +722,6 @@ export default function CompanionLive({ onViewPlayer = null }) {
   // the baseline — doing so shrinks the interval a later batch is spread
   // across, collapsing it into a vertical wall at the current moment.
   const processedUpdateRef = useRef(null);
-  // Slate position when the stat baseline was captured, so a batch of deltas
-  // can be laid out across the stretch of the week that just elapsed.
-  const snapshotSlateProgressRef = useRef(0);
-  // How far into each player's real plays the replay has read, so each play is
-  // handed out once and in order.
-  const playCursorRef = useRef(new Map());
-  const playEventsByPlayerRef = useRef(new Map());
   const playsFetchedRef = useRef(new Map());
   const liveSnapshotInFlightContextsRef = useRef(new Set());
   const playFetchInFlightContextsRef = useRef(new Set());
@@ -715,20 +739,24 @@ export default function CompanionLive({ onViewPlayer = null }) {
   // Rewinding the replay invalidates everything gathered after the new
   // instant: accumulated stat deltas, fetched plays, and the win-probability
   // trail all belong to a part of the week that has not happened again yet.
+  const resetReconciliation = useCallback(() => {
+    reconciliationRef.current = createReconciliationState();
+    setReconciliation(reconciliationRef.current);
+  }, []);
+
   useEffect(() => {
     if (!LIVE_SANDBOX_ENABLED) return undefined;
     return subscribeToRewind(() => {
       rewindAtRef.current = Date.now();
       processedUpdateRef.current = null;
-      playCursorRef.current = new Map();
       snapshotRef.current = new Map();
-      snapshotSlateProgressRef.current = 0;
       playsFetchedRef.current = new Map();
+      resetReconciliation();
       setFeedEvents([]);
       setPlaysByGame({});
       setWinProbHistory([]);
     });
-  }, []);
+  }, [resetReconciliation]);
 
   const resetMatchupSelections = useCallback(() => {
     // A matchup is its own navigation context. Clear every drill-in and feed
@@ -955,23 +983,6 @@ export default function CompanionLive({ onViewPlayer = null }) {
     };
   }, [loadMatchups, platform, selectedLeagueId, week]);
 
-  useEffect(() => {
-    if (platform !== 'sleeper' || !selectedLeagueId || !season || !week) {
-      setSleeperStatsByPlayer({});
-      return undefined;
-    }
-    let cancelled = false;
-    getWeeklyStats(season, week)
-      .then((rows) => {
-        if (!cancelled) setSleeperStatsByPlayer(rows ?? {});
-      })
-      .catch(() => {
-        if (!cancelled) setSleeperStatsByPlayer({});
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [platform, season, selectedLeagueId, week]);
 
   useEffect(() => {
     if (platform !== 'sleeper' || !season || scheduleMap || localScheduleMap) return undefined;
@@ -988,14 +999,17 @@ export default function CompanionLive({ onViewPlayer = null }) {
     };
   }, [localScheduleMap, platform, scheduleMap, season]);
 
-  // Changing week or matchup starts a fresh play-tracking session.
+  // Changing week, matchup, or sandbox mode starts a fresh play-tracking
+  // session: accumulated plays, their reconciliation against Sleeper, and the
+  // feed built from them all describe a matchup that is no longer on screen.
   useEffect(() => {
     snapshotRef.current = new Map();
     playsFetchedRef.current = new Map();
+    resetReconciliation();
     setFeedEvents([]);
     setPlaysByGame({});
     resetMatchupSelections();
-  }, [week, matchupIndex, resetMatchupSelections]);
+  }, [week, matchupIndex, sandboxMode, resetMatchupSelections, resetReconciliation]);
 
   const myRosterId = myRoster()?.roster_id ?? null;
   const matchupPairs = useMemo(
@@ -1079,6 +1093,25 @@ export default function CompanionLive({ onViewPlayer = null }) {
       } else {
         setStatsByGame({});
       }
+      // Sleeper's players_points is what the reconciler confirms plays
+      // against, so it has to be refreshed on the same tick as BDL. Replay's
+      // loadMatchups is the synthesized, time-sliced Sleeper stream and must
+      // be re-read every tick for the same reason; preseason has no Sleeper
+      // matchup at all and keeps its fixture.
+      const refreshMatchups = sandboxReplay
+        ? () => loadMatchups(selectedLeagueId, week)
+        : !sandboxActive
+          ? () => getLiveMatchups(selectedLeagueId, week)
+          : null;
+      if (refreshMatchups) {
+        try {
+          const freshMatchups = await refreshMatchups();
+          if (isCurrentRequest() && Array.isArray(freshMatchups)) setMatchups(freshMatchups);
+        } catch {
+          // Keep the last good Sleeper matchup payload; BDL remains the
+          // explanatory fallback when the authoritative refresh is unavailable.
+        }
+      }
       setLastUpdatedAt(new Date());
     } catch (error) {
       if (isCurrentRequest()) {
@@ -1091,8 +1124,12 @@ export default function CompanionLive({ onViewPlayer = null }) {
   }, [
     liveSnapshotContextKey,
     liveStatus?.session?.enabled,
+    loadMatchups,
     matchupTeams,
     platform,
+    sandboxActive,
+    sandboxReplay,
+    selectedLeagueId,
     season,
     week,
   ]);
@@ -1109,35 +1146,125 @@ export default function CompanionLive({ onViewPlayer = null }) {
     return () => window.clearInterval(interval);
   }, [autoRefresh, fetchLiveSnapshot, liveStatus]);
 
+  // The league week stays the page context all week; this narrower signal only
+  // counts games a starter in the selected matchup is actually playing in. It
+  // drives the live pulse and the Sleeper stat-line polling cadence.
+  const matchupLiveGameCount = useMemo(() => (
+    sortRelevantGames(liveGames, matchupTeams).filter((game) => isLiveGame(game)).length
+  ), [liveGames, matchupTeams]);
+
+  // Sleeper's weekly stat lines are the reconciler's confirmation evidence.
+  // They only move while a game is running, so poll them every 30s then and
+  // fetch once otherwise. Replay reads the synthesized stream on every tick,
+  // because its clock — not wall time — is what advances the slate.
+  useEffect(() => {
+    if (platform !== 'sleeper' || !selectedLeagueId || !season || !week) {
+      setSleeperStatsByPlayer({});
+      setSleeperStatsFetchedAt(null);
+      return undefined;
+    }
+    let cancelled = false;
+    const load = () => (sandboxReplay && loadWeeklyStats
+      ? loadWeeklyStats(season, week)
+      : getWeeklyStats(season, week))
+      .then((rows) => {
+        if (cancelled) return;
+        setSleeperStatsByPlayer(rows ?? {});
+        setSleeperStatsFetchedAt(Date.now());
+      })
+      .catch(() => {
+        // A failed poll keeps the last good stat lines. Their fetch time is
+        // what ages them out: once they are older than the engine's freshness
+        // window it stops confirming by stat line and falls back to points,
+        // which is the intended degraded mode rather than an empty feed.
+        if (cancelled) return;
+      });
+    void load();
+    if (!matchupLiveGameCount || sandboxReplay) {
+      return () => {
+        cancelled = true;
+      };
+    }
+    const interval = window.setInterval(() => { void load(); }, SLEEPER_STATS_REFRESH_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [
+    loadWeeklyStats,
+    matchupLiveGameCount,
+    platform,
+    sandboxReplay,
+    season,
+    selectedLeagueId,
+    week,
+    // A replay tick re-slices the synthesized stream; wall time does not move.
+    liveSnapshotRefreshVersion,
+  ]);
+
+  // The reconciler only ever needs stat lines for the starters on screen.
+  // Handing it the whole week would make it watch every bench player's stat
+  // surplus and emit "stat update" rows nobody is looking at.
+  const starterSleeperStats = useMemo(() => {
+    const map = new Map();
+    matchupStarterIds.forEach((id) => {
+      const stats = sleeperStatsByPlayer?.[id];
+      if (stats) map.set(id, stats);
+    });
+    return map;
+  }, [matchupStarterIds, sleeperStatsByPlayer]);
+
   const statIndex = useMemo(() => buildStatIndex(statsByGame), [statsByGame]);
+
+  // Starter identity is resolved before any scoring is, because the play
+  // matcher and the position map are inputs to the reconciler and the
+  // reconciler is an input to the rows. Deriving them from the rows instead
+  // would close that loop.
+  const starterPlayersById = useMemo(() => {
+    const map = new Map();
+    matchupStarterIds.forEach((id) => {
+      const rawPlayer = players?.[id];
+      if (!rawPlayer) return;
+      map.set(id, {
+        ...rawPlayer,
+        id: rawPlayer.id ?? id,
+        player_id: rawPlayer.player_id ?? id,
+        sleeperId: rawPlayer.sleeperId ?? id,
+        // Sleeper leaves espn_id null for roughly three quarters of startable
+        // skill players, so fold in the ids the context's roster
+        // cross-reference resolved. Everything downstream that resolves
+        // imagery reads espnId first.
+        espnId: rawPlayer.espn_id ?? espnIdOverrides?.[id] ?? null,
+      });
+    });
+    return map;
+  }, [espnIdOverrides, matchupStarterIds, players]);
 
   const rawSideSummaries = useMemo(() => (
     (currentMatchup?.sides ?? []).slice(0, 2).map((side, index) => {
       const sleeperPlayerPoints = side.row?.players_points ?? {};
       const rows = getStarterIds(side).map((id) => {
-        const rawPlayer = players?.[id];
-        const player = rawPlayer
-          ? {
-              ...rawPlayer,
-              id: rawPlayer.id ?? id,
-              player_id: rawPlayer.player_id ?? id,
-              sleeperId: rawPlayer.sleeperId ?? id,
-              // Sleeper leaves espn_id null for roughly three quarters of
-              // startable skill players, so fold in the ids the context's
-              // roster cross-reference resolved. Everything downstream that
-              // resolves imagery reads espnId first.
-              espnId: rawPlayer.espn_id ?? espnIdOverrides?.[id] ?? null,
-            }
-          : null;
+        const player = starterPlayersById.get(id) ?? null;
         if (!player) return null;
         const bdlRow = statIndex.get(getStatKeyForSleeperPlayer(player)) ?? null;
-        const mappedStats = bdlRow ? mapBdlStatsToGridShift(bdlRow) : null;
         const sleeperStats = sleeperStatsByPlayer?.[id] ? { week, ...sleeperStatsByPlayer[id] } : null;
+        const mappedStats = bdlRow ? mergeLiveScoringStats(
+          mapBdlStatsToGridShift(bdlRow, player.position),
+          sleeperStats,
+        ) : null;
         const detailStats = mappedStats ?? sleeperStats;
         const livePoints = mappedStats ? calcPoints(mappedStats, activeScoringSettings, player.position) : 0;
         const sleeperDerivedPoints = sleeperStats ? calcPoints(sleeperStats, activeScoringSettings, player.position) : null;
         const rawSleeperPoints = Number(sleeperPlayerPoints[id]);
         const sleeperPoints = Number.isFinite(rawSleeperPoints) ? rawSleeperPoints : null;
+        const authoritativePoints = sandboxReplay
+          ? null
+          : sleeperPoints ?? sleeperDerivedPoints;
+        // The engine's own view of this player: Sleeper's last word, the plays
+        // it has not covered yet, and the residual pinned to the latest
+        // confirmed play. It exists only in the modes the reconciler runs in.
+        const reconciled = reconciliation.players.get(id) ?? null;
+        const reconciledPoints = Number(reconciled?.displayedPoints);
         return {
           id,
           player,
@@ -1148,9 +1275,23 @@ export default function CompanionLive({ onViewPlayer = null }) {
           detailSource: mappedStats ? 'live' : sleeperStats ? 'weekly' : null,
           livePoints,
           sleeperPoints,
-          // Live-calculated points when stats are matched; Sleeper's official
-          // number otherwise, so pre-kickoff and past weeks stay truthful.
-          points: resolveCurrentPlayerPoints({
+          reconciliation: reconciled
+            ? {
+                status: reconciled.adjustment === 0 ? 'matched' : 'adjusted',
+                source: 'engine',
+                sleeperPoints: reconciled.sleeperPoints,
+                pendingPoints: reconciled.pendingPoints,
+                displayedPoints: reconciled.displayedPoints,
+                adjustment: reconciled.adjustment,
+              }
+            : reconcileLiveFantasyPoints({
+                derivedPoints: mappedStats ? livePoints : null,
+                authoritativePoints,
+              }),
+          // Sleeper's last word plus the plays it has not confirmed yet. The
+          // fallback covers the modes with no reconciler and the first render
+          // of a matchup, before the engine has been stepped once.
+          points: Number.isFinite(reconciledPoints) ? reconciledPoints : resolveCurrentPlayerPoints({
             hasMappedStats: Boolean(mappedStats),
             livePoints,
             sleeperPoints,
@@ -1158,12 +1299,14 @@ export default function CompanionLive({ onViewPlayer = null }) {
             // The replay fixture stores the completed week's official result.
             // Falling back to it here leaks the final score into the early
             // replay and draws a vertical jump at NOW.
-            suppressFallback: Boolean(sandbox?.replay),
+            suppressFallback: sandboxReplay,
           }),
         };
       }).filter(Boolean);
       const matchedCount = rows.filter((row) => row.bdlRow).length;
-      const total = rows.reduce((sum, row) => sum + row.points, 0);
+      // Side total is the sum of the displayed player totals — the one number
+      // the hero, rail, chart, verdict and feed header all read.
+      const total = Math.round(rows.reduce((sum, row) => sum + row.points, 0) * 100) / 100;
       const sleeperTotal = Number(side.row?.points);
       const isMine = Number(side.roster?.roster_id) === Number(myRosterId);
       return {
@@ -1179,7 +1322,17 @@ export default function CompanionLive({ onViewPlayer = null }) {
         isMine,
       };
     })
-  ), [activeScoringSettings, currentMatchup, espnIdOverrides, myRosterId, players, sandbox?.replay, sleeperStatsByPlayer, statIndex, week]);
+  ), [
+    activeScoringSettings,
+    currentMatchup,
+    myRosterId,
+    reconciliation,
+    sandboxReplay,
+    sleeperStatsByPlayer,
+    starterPlayersById,
+    statIndex,
+    week,
+  ]);
 
   const cumulativeResultsByRoster = useMemo(
     () => buildCumulativeRosterResults(cumulativeMatchupsByWeek, week, rawSideSummaries),
@@ -1206,9 +1359,11 @@ export default function CompanionLive({ onViewPlayer = null }) {
     return map;
   }, [sideSummaries]);
 
-  // Track stat deltas between refreshes as scoring-play feed events.
+  // Track stat deltas between refreshes as scoring-play feed events. Only the
+  // demo timeline and preseason still build their feed this way: where the
+  // reconciler runs, BDL plays are the feed and Sleeper reconciles them.
   useEffect(() => {
-    if (!currentMatchup) return;
+    if (!currentMatchup || reconcilerEnabled) return;
     // Rewinding leaves the last fetch's (higher) totals on screen until fresh
     // data lands. Diffing against those would emit large negative "scoring"
     // events, so drop the baseline and wait for a post-rewind snapshot.
@@ -1225,35 +1380,16 @@ export default function CompanionLive({ onViewPlayer = null }) {
     const meta = new Map();
     sideSummaries.forEach((summary) => summary.rows.forEach((row) => {
       meta.set(row.id, { position: row.player?.position });
-      if (row.mappedStats) next.set(row.id, { stats: row.mappedStats, points: row.livePoints });
+      if (row.mappedStats) next.set(row.id, { stats: row.mappedStats, points: row.points });
     }));
     // A live session joins a week already in progress, so its first snapshot is
-    // a starting point rather than scoring to report. A replay always begins at
-    // zero, so whatever the first snapshot holds genuinely happened and must be
-    // emitted — otherwise the opening stretch of the week vanishes into the
-    // baseline and the chart starts flat.
-    //
-    // buildDeltaEvents skips any player it has no previous entry for, so an
-    // empty baseline reports nothing at all. Seeding zeros gives it something
-    // to diff against, which also covers scrubbing straight into the middle of
-    // a week: everything scored up to that point arrives as one batch.
-    let emitted = false;
-    const prev = snapshotRef.current.size || !sandbox?.replay
-      ? snapshotRef.current
-      : new Map([...next.keys()].map((id) => [id, { stats: {}, points: 0 }]));
+    // a starting point rather than scoring to report.
+    const prev = snapshotRef.current;
     if (prev.size) {
-      // A replay step spans many plays, so it emits one event per play rather
-      // than one aggregate per player — otherwise a single row claims two
-      // touchdowns, which cannot happen on one snap.
-      const deltaEvents = sandbox?.replay
-        ? buildReplayDeltaEvents(prev, next, meta, {
-          scoringSettings: activeScoringSettings,
-          playsByPlayer: playEventsByPlayerRef.current,
-          playCursor: playCursorRef.current,
-          throughProgress: sandbox.progress,
-        })
-        : buildDeltaEvents(prev, next, meta);
-      const rawEvents = deltaEvents.map((event) => {
+      const events = buildDeltaEvents(prev, next, meta, {
+        now: updatedAt ?? Date.now(),
+        scoringSettings: activeScoringSettings,
+      }).map((event, eventIndex, eventList) => {
         const row = sideSummaries
           .flatMap((summary) => summary.rows)
           .find((candidate) => candidate.id === event.playerId);
@@ -1262,50 +1398,30 @@ export default function CompanionLive({ onViewPlayer = null }) {
           : findGameForTeam(liveGames, row?.player?.team);
         const gameId = row?.bdlRow?.gameId ?? game?.id ?? null;
         const remaining = game ? getRemainingGameFraction(game) : null;
+        const eventAt = event.at - Math.max(0, eventList.length - 1 - eventIndex) * 1000;
+        const currentProgress = Number.isFinite(remaining) ? 1 - remaining : null;
         return {
           ...event,
           gameId,
-          gameProgress: Number.isFinite(remaining) ? 1 - remaining : null,
-          timelineAt: event.at,
+          // A polling delta may cover several snaps. Their exact clocks are
+          // unavailable, so keep a small deterministic interval between the
+          // split rows instead of stacking the whole batch at one refresh.
+          at: eventAt,
+          gameProgress: Number.isFinite(currentProgress)
+            ? Math.max(0, currentProgress - Math.max(0, eventList.length - 1 - eventIndex) * 0.002)
+            : null,
+          timelineAt: eventAt,
         };
       });
 
-      // A replay step covers far more game time than a live poll does, so a
-      // whole batch would otherwise land on one position and stack vertically
-      // at the current moment. Lay the batch out across the slate time that
-      // just elapsed, and stamp each event with the instant it now sits at, so
-      // ordering by time and ordering along the chart agree.
-      const events = sandbox?.replay
-        ? spreadEventsAcrossInterval(
-          rawEvents,
-          snapshotSlateProgressRef.current,
-          sandbox.progress,
-        ).map((event) => {
-          const at = sandbox.instantAt(event.slateProgress);
-          return Number.isFinite(at) ? { ...event, at, timelineAt: at } : event;
-        })
-        : rawEvents;
-      emitted = events.length > 0;
       if (events.length) {
-        // The live feed keeps a bounded window because the chart derives its
-        // values from win-probability snapshots, so dropping old rows costs
-        // nothing. A replay plots the running total of the events themselves —
-        // trimming them makes the curve under-count, and the closing point at
-        // the authoritative total then jumps straight up at NOW. A full week
-        // is a few hundred events, so keep them all.
-        setFeedEvents((current) => {
-          const next = [...events, ...current];
-          return sandbox?.replay ? next : next.slice(0, MAX_FEED_EVENTS);
-        });
+        // The feed keeps a bounded window because the chart derives its values
+        // from win-probability snapshots, so dropping old rows costs nothing.
+        setFeedEvents((current) => [...events, ...current].slice(0, MAX_FEED_EVENTS));
       }
     }
     snapshotRef.current = next;
-    // Only move the baseline when something was actually recorded. A snapshot
-    // producing no deltas has not advanced the story, and moving it anyway
-    // leaves the next real batch a zero-width interval to spread across — every
-    // event then lands on the same position, which is the wall at NOW.
-    if (sandbox?.replay && emitted) snapshotSlateProgressRef.current = sandbox.progress;
-  }, [activeScoringSettings, currentMatchup, lastUpdatedAt, liveGames, sandbox, sideSummaries]);
+  }, [activeScoringSettings, currentMatchup, lastUpdatedAt, liveGames, reconcilerEnabled, sideSummaries]);
 
   const activeScheduleMapForContext = scheduleMap ?? localScheduleMap;
 
@@ -1630,8 +1746,8 @@ export default function CompanionLive({ onViewPlayer = null }) {
       const next = appendWinProbPoint(current, {
         t: Date.now(),
         p: winProb.probA,
-        a: winProb.explain?.a?.current ?? Math.round((leftSummary.total ?? 0) * 10) / 10,
-        b: winProb.explain?.b?.current ?? Math.round((rightSummary.total ?? 0) * 10) / 10,
+        a: winProb.explain?.a?.current ?? Math.round((leftSummary.total ?? 0) * 100) / 100,
+        b: winProb.explain?.b?.current ?? Math.round((rightSummary.total ?? 0) * 100) / 100,
         settled: winProb.settled,
         settlementPending: winProb.settlementPending,
         modelId: winProb.modelId,
@@ -1676,7 +1792,14 @@ export default function CompanionLive({ onViewPlayer = null }) {
           vsPace: basePace.vsPace + adjustment,
         }
       : basePace;
-    const officialTotal = settledConfirmed ? getOfficialMatchupRowPoints(summary.side?.row) : null;
+    // The one place Sleeper's own side total still wins: the week is over and
+    // a fresh no-store response has confirmed every starter's official points.
+    // While the week is live the displayed total is Σ row.points — Sleeper's
+    // last word plus the plays it has not confirmed yet — so overriding it
+    // with Sleeper's lagging team total would put the hero behind the feed.
+    const officialTotal = settledConfirmed && !sandboxActive
+      ? getOfficialMatchupRowPoints(summary.side?.row)
+      : null;
     return {
       key: summary.key,
       name: summary.name,
@@ -1701,6 +1824,7 @@ export default function CompanionLive({ onViewPlayer = null }) {
     fallbackAvgById,
     paletteSlots,
     projectionsById,
+    sandboxActive,
     settledConfirmed,
     sideSummaries,
     starterGameStateById,
@@ -1808,32 +1932,47 @@ export default function CompanionLive({ onViewPlayer = null }) {
     return map;
   }, [liveGames]);
 
-  const demoTimeline = useMemo(() => (
-    demoFeedEnabled
-      ? buildDemoTimeline(sortRelevantGames(liveGames, matchupTeams))
-      : null
-  ), [demoFeedEnabled, liveGames, matchupTeams]);
+  // Every mode uses one kickoff-ordered slate axis. The old production path
+  // left each event on its game's local 0..1 clock, so a completed Q4 from an
+  // earlier game could be compared directly with a live Q2 from a later one.
+  // `gameProgress` remains available for player/game calculations; `progress`
+  // is the shared axis consumed by both the feed and the chart.
+  const slateTimeline = useMemo(
+    () => buildDemoTimeline(sortRelevantGames(liveGames, matchupTeams)),
+    [liveGames, matchupTeams],
+  );
+  const demoTimeline = demoFeedEnabled ? slateTimeline : null;
 
+  // Both are built from the starter roster rather than the scored rows: they
+  // are inputs to the play matcher, which feeds the reconciler, which is what
+  // scores the rows.
   const positionsById = useMemo(() => {
     const map = new Map();
-    sideSummaries.forEach((summary) => summary.rows.forEach((row) => {
-      map.set(row.id, String(row.player?.position ?? 'FLEX').toUpperCase());
-    }));
+    starterPlayersById.forEach((player, id) => {
+      map.set(id, String(player?.position ?? 'FLEX').toUpperCase());
+    });
     return map;
-  }, [sideSummaries]);
+  }, [starterPlayersById]);
 
   const starterNameIndex = useMemo(() => (
-    buildStarterNameIndex(sideSummaries.flatMap((summary) => summary.rows))
-  ), [sideSummaries]);
+    buildStarterNameIndex([...starterPlayersById].map(([id, player]) => ({ id, player })))
+  ), [starterPlayersById]);
+
+  // Games that have ended. The reconciler uses them to stop counting plays
+  // Sleeper never credited: once a game is final there is no later poll that
+  // will explain them (spec rule 12). A replay's sliced games carry the same
+  // final status, so this works there without a separate path.
+  const finalGameIds = useMemo(() => (
+    liveGames.filter((game) => isFinalGame(game)).map((game) => String(game.id))
+  ), [liveGames]);
 
   const playEvents = useMemo(() => {
     const built = buildPlayEvents(playsByGame, starterNameIndex, activeScoringSettings, positionsById, gamesById);
     if (!sandbox?.replay) return built;
-    // A play and the stat delta it produced are the same scoring event, and
-    // mergePlayEvents() collapses them only when their timestamps fall within
-    // two minutes of each other. Delta events run on the replay clock, so
-    // plays must too — otherwise nothing dedupes and every score is counted
-    // twice, pushing the pace curve above the real total.
+    // Each replayed game runs on its own clock inside a compressed week, so a
+    // play's position has to be restated on the shared slate axis before it
+    // can be ordered against the other games — or against the replay clock the
+    // reconciler is stepped with.
     return built.map((event) => {
       const slate = sandbox.toSlateProgress(event.gameId, event.progress);
       const at = Number.isFinite(slate) ? sandbox.instantAt(slate) : null;
@@ -1846,37 +1985,61 @@ export default function CompanionLive({ onViewPlayer = null }) {
     [playEvents],
   );
 
-  // The delta effect runs above this in the file but after render, so it reads
-  // the plays through a ref rather than forcing a reorder.
-  const playEventsByPlayer = useMemo(() => {
-    const byPlayer = new Map();
-    [...playEvents]
-      .sort((left, right) => (left.order ?? 0) - (right.order ?? 0))
-      .forEach((event) => {
-        if (!byPlayer.has(event.playerId)) byPlayer.set(event.playerId, []);
-        byPlayer.get(event.playerId).push(event);
-      });
-    return byPlayer;
-  }, [playEvents]);
-  playEventsByPlayerRef.current = playEventsByPlayer;
+  // ── Reconciliation step ──────────────────────────────────────────────────
+  // Every new batch of plays, every Sleeper matchup refresh, and every stat
+  // line fetch advances the engine. It runs in an effect rather than a memo so
+  // that the rows it scores can never become an input to the plays it reads:
+  // the rows are one render behind the engine, and the engine is pure.
+  useEffect(() => {
+    if (!reconcilerEnabled || !currentMatchup) return;
+    const now = sandboxReplay ? sandbox.instantAt(sandbox.progress) : Date.now();
+    const next = reconcileLivePlays(reconciliationRef.current, {
+      playEvents,
+      sleeperPointsById: currentStarterPointsById,
+      sleeperStatsById: starterSleeperStats,
+      sleeperStatsFetchedAt,
+      scoringSettings: activeScoringSettings,
+      positionsById,
+      finalGameIds,
+      now: Number.isFinite(now) ? now : Date.now(),
+    });
+    reconciliationRef.current = next;
+    setReconciliation(next);
+  }, [
+    activeScoringSettings,
+    currentMatchup,
+    currentStarterPointsById,
+    finalGameIds,
+    playEvents,
+    positionsById,
+    reconcilerEnabled,
+    sandbox,
+    sandboxReplay,
+    starterSleeperStats,
+    sleeperStatsFetchedAt,
+  ]);
 
-  // Stat-delta events only know "just now"; give them the game progress of the
-  // starter they belong to so every feed row can sit on the chart's axis.
+  // Rows that carry no clock of their own — stat-update fallbacks, and the
+  // stat-delta events demo/preseason still build — are given the game progress
+  // of the starter they belong to, then mapped to the shared slate axis so
+  // every feed row sits on the same timeline as the chart.
   const mergedFeed = useMemo(() => {
-    const merged = mergePlayEvents(playEvents, feedEvents);
-    // A play and the stat delta it produced describe the same scoring, and
-    // mergePlayEvents() collapses the pair only when it can match them one to
-    // one. A replay step covers many plays at once, so a batched delta never
-    // matches a single play and both survive — double-counting every score.
-    //
-    // Deltas are the source to keep: they are derived from the box scores, so
-    // they cover every game and sum to the exact side totals. Play-by-play is
-    // fetched for a limited number of games, so standalone play rows are both
-    // duplicates and incomplete. They stay only where they enriched a delta.
-    const scoped = sandbox?.replay
-      ? merged.filter((event) => event.source !== 'play')
-      : merged;
-    const events = scoped.map((event) => {
+    // Where the reconciler runs, its own output is the feed: every row is a
+    // BDL play (or the narrow stat-update fallback), already carrying its
+    // status, residual adjustment and displayed value. Live keeps a bounded
+    // window; a replay plots the running total of the events themselves, so
+    // trimming them would make the curve under-count.
+    const merged = reconcilerEnabled
+      ? reconciliation.feedEvents
+        // The chart, hero and player sheet consume `pts`, and what they must
+        // add up is the displayed total — pending plays included and the
+        // residual pinned to its own play. The play's own scored value stays
+        // on the row as `rawPts` for the scoring-math expansion.
+        .map((event) => (Number.isFinite(Number(event.displayPts))
+          ? { ...event, pts: Number(event.displayPts), rawPts: event.pts }
+          : event))
+      : mergePlayEvents(playEvents, feedEvents);
+    const events = merged.map((event) => {
       const starterTeam = getTeamAbbr(baseEntriesById.get(event.playerId)?.row?.player?.team);
       const fallbackGameId = findGameForTeam(liveGames, starterTeam)?.id;
       const gameId = event.gameId ?? fallbackGameId ?? null;
@@ -1918,28 +2081,44 @@ export default function CompanionLive({ onViewPlayer = null }) {
         timelineAt,
         progress: gameProgress,
       };
-      if (!demoTimeline) return normalized;
+      const window = slateTimeline.gameWindows.get(String(gameId ?? ''));
+      const slate = mapGameProgressToDemoTimeline(gameProgress, window);
+      if (!Number.isFinite(Number(slate))) return normalized;
 
-      const window = demoTimeline.gameWindows.get(String(gameId ?? ''));
       return {
         ...normalized,
-        progress: mapGameProgressToDemoTimeline(gameProgress, window) ?? gameProgress,
+        progress: slate,
       };
     });
-    const withDemoEvents = !demoTimeline
-      ? events
-      : events
-      .concat(buildSharedDemoScoringEvents({
-        sides: sideSummaries,
-        scoringSettings: activeScoringSettings,
-      }))
-      .sort((left, right) => (Number(right.progress) || 0) - (Number(left.progress) || 0));
+    const withDemoEvents = demoTimeline
+      ? events.concat(buildSharedDemoScoringEvents({
+          sides: sideSummaries,
+          scoringSettings: activeScoringSettings,
+        }))
+      : events;
 
-    return groupSharedPlayEvents(
-      withDemoEvents,
-      (event) => playerSideKey.get(event.playerId) ?? null,
-    );
-  }, [activeScoringSettings, baseEntriesById, demoTimeline, feedEvents, liveGames, playEvents, playerSideKey, sandbox, sideSummaries]);
+    // Keep the feed and chart on the same individual event stream. A shared
+    // NFL snap can produce two fantasy rows (QB + receiver, or offense +
+    // defense); collapsing them here hid that breakdown and gave the row the
+    // timestamp/order of whichever contributor happened to be primary.
+    const ordered = sortLiveFeedEvents(withDemoEvents);
+    return reconcilerEnabled && !sandboxReplay
+      ? ordered.slice(0, MAX_FEED_EVENTS)
+      : ordered;
+  }, [
+    activeScoringSettings,
+    baseEntriesById,
+    demoTimeline,
+    feedEvents,
+    liveGames,
+    playEvents,
+    reconcilerEnabled,
+    reconciliation,
+    sandbox,
+    sandboxReplay,
+    slateTimeline,
+    sideSummaries,
+  ]);
 
   // Live preseason box scores can lag behind the play feed. In that one dev
   // mode, observed play values keep the rail, hero, and chart close current for
@@ -1995,20 +2174,35 @@ export default function CompanionLive({ onViewPlayer = null }) {
     [matchupChips],
   );
 
-  // Real scoring measures shared game progress. The mock feed instead closes
-  // at its latest active-game event on the compressed schedule.
+  // The chart and feed share the kickoff-ordered slate axis. The current
+  // marker follows the furthest starter game in that axis, while each event
+  // also keeps its own `gameProgress` for pace/win-probability calculations.
   const slateProgress = useMemo(() => {
-    // The replay's own position is the axis every event was placed on.
-    if (sandbox?.replay) return sandbox.progress;
+    // Replay slicing uses the active-football clock; the chart follows the
+    // consecutive scheduled-game axis used to place its events.
+    if (sandbox?.replay) return sandbox.getChartProgress?.(sandbox.progress) ?? sandbox.progress;
     if (demoTimeline) {
       return mergedFeed.reduce((latest, event) => (
         Number.isFinite(Number(event.progress)) ? Math.max(latest, Number(event.progress)) : latest
       ), 0);
     }
+    if (slateTimeline.gameWindows.size) {
+      const starterProgresses = baseSides.flatMap((side) => side.entries.map((entry) => {
+        const team = getTeamAbbr(entry.row?.player?.team);
+        const game = findGameForTeam(liveGames, team);
+        const window = slateTimeline.gameWindows.get(String(game?.id ?? ''));
+        return mapGameProgressToDemoTimeline(entry.pace?.progress, window);
+      })).filter((value) => Number.isFinite(Number(value)));
+      if (starterProgresses.length) return Math.max(...starterProgresses);
+      const eventProgresses = mergedFeed
+        .map((event) => Number(event.progress))
+        .filter((value) => Number.isFinite(value));
+      if (eventProgresses.length) return Math.max(...eventProgresses);
+    }
     const all = baseSides.flatMap((side) => side.entries);
     if (!all.length) return 0;
     return all.reduce((sum, entry) => sum + entry.pace.progress, 0) / all.length;
-  }, [baseSides, demoTimeline, mergedFeed, sandbox]);
+  }, [baseSides, demoTimeline, liveGames, mergedFeed, sandbox, slateTimeline]);
 
   // Only the groups and types this league can actually score. Derived from the
   // scoring settings rather than hardcoded, so a kickerless or IDP league gets
@@ -2043,6 +2237,7 @@ export default function CompanionLive({ onViewPlayer = null }) {
   const visibleFeed = useMemo(() => (
     mergedFeed.filter((event) => {
       if (event.hiddenFromFeed) return false;
+      if (!isFantasyFeedEvent(event)) return false;
       const sideKey = playerSideKey.get(event.playerId);
       if (!sideKey || (feedSide !== 'both' && sideKey !== feedSide)) return false;
       if (focusPlayerId && ![event.playerId, ...(event.contributorIds ?? [])].includes(focusPlayerId)) return false;
@@ -2056,6 +2251,7 @@ export default function CompanionLive({ onViewPlayer = null }) {
     playFilterModel.forEach((group) => {
       counts[group.id] = mergedFeed.reduce((total, event) => {
         if (event.hiddenFromFeed) return total;
+        if (!isFantasyFeedEvent(event)) return total;
         const sideKey = playerSideKey.get(event.playerId);
         if (!sideKey || (feedSide !== 'both' && sideKey !== feedSide)) return total;
         const matched = matchesFeedFilter(event, { group: group.id, types: [], positions: [] }, {
@@ -2074,6 +2270,7 @@ export default function CompanionLive({ onViewPlayer = null }) {
     const counts = { a: 0, b: 0 };
     mergedFeed.forEach((event) => {
       if (event.hiddenFromFeed) return;
+      if (!isFantasyFeedEvent(event)) return;
       const sideKey = playerSideKey.get(event.playerId);
       if (sideKey) counts[sideKey] += 1;
     });
@@ -2179,7 +2376,7 @@ export default function CompanionLive({ onViewPlayer = null }) {
       // reconstructed. Accumulate along the axis rather than the clock.
       accumulateInOrder: eventAxisIsAuthoritative,
       // Production still uses wall-clock ordering for probability snapshots,
-      // but its score paths are drawn on the game-progress axis. Otherwise a
+      // but its score paths are drawn on the shared slate axis. Otherwise a
       // later kickoff can make an earlier positive score appear to disappear.
       scoreAxisIsAuthoritative: true,
       liveSnapshot,
@@ -2256,11 +2453,6 @@ export default function CompanionLive({ onViewPlayer = null }) {
   const sessionCanDisable = Boolean(liveStatus?.session?.canDisable);
   const liveConfigurationMessage = getLiveConfigurationMessage(liveStatus?.live, platformLabel);
   const mockPlaysEnabled = demoFeedEnabled;
-  // The league week remains the page context all week. The transient live
-  // signal is narrower: only games involving a starter in the matchup being
-  // viewed can light it up.
-  const matchupLiveGameCount = sortRelevantGames(liveGames, matchupTeams)
-    .filter((game) => isLiveGame(game)).length;
   const hasMatchupGameLive = matchupLiveGameCount > 0;
 
   // The play-built series is the real curve. Without play-by-play (free tier,
@@ -2356,6 +2548,22 @@ export default function CompanionLive({ onViewPlayer = null }) {
     setSelectedMoment(point);
     setFeedSelection(null);
     setFeedAnchorProgress(point.x);
+  };
+
+  // A feed row and a chart milestone describe the same scoring event. Keep
+  // the chart's selected moment in step with a row click without issuing a
+  // chart-to-feed navigation request back to the feed.
+  const selectFeedEvent = (event) => {
+    if (!event) return;
+    const point = paceModel.points.find((candidate) => candidate.eventId === event.id);
+    if (!point) return;
+    setChartHover(null);
+    setSelectedMoment(point);
+    setFeedAnchorProgress(null);
+    setFeedSelection((current) => ({
+      eventId: event.id,
+      requestId: current?.requestId ?? 0,
+    }));
   };
 
   // A chart milestone is a direct link to its evidence in the feed. Widen any
@@ -2628,8 +2836,8 @@ export default function CompanionLive({ onViewPlayer = null }) {
                             collapsedSummary={heroCollapsed}
                             liveWinProbA={winProb?.probA ?? 50}
                             liveSettled={winProb?.settled ?? false}
-                            timelineMode={mockPlaysEnabled ? 'schedule' : 'game'}
-                            timeline={demoTimeline}
+                            timelineMode={slateTimeline.gameWindows.size ? 'schedule' : 'game'}
+                            timeline={slateTimeline}
                           />
                           </>
                         ) : null}
@@ -2662,6 +2870,7 @@ export default function CompanionLive({ onViewPlayer = null }) {
                           anchorProgress={feedAnchorProgress}
                           selectedEventId={feedSelection?.eventId ?? null}
                           selectionRequest={feedSelection?.requestId ?? 0}
+                          onSelectEvent={selectFeedEvent}
                           onOpenPlayer={openPlayer}
                           emptyMessage={feedEmptyMessage}
                           // A provider-backed play is just as trustworthy in
@@ -2680,7 +2889,15 @@ export default function CompanionLive({ onViewPlayer = null }) {
           </>
         )}
       </div>
-      {LIVE_SANDBOX_ENABLED && <LiveSandboxPanel />}
+      {LIVE_SANDBOX_ENABLED && (
+        <LiveSandboxPanel
+          canUseLiveData={Boolean(
+            connectedBase.platform === 'sleeper'
+            && connectedBase.selectedLeagueId
+            && connectedBase.league,
+          )}
+        />
+      )}
     </div>
   );
 }

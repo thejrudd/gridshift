@@ -163,9 +163,11 @@ export default function CompanionPlayerRow({
   interactive = undefined,
   compact = false,
   showAvatar = true,
+  useTeamLogoAsAvatar = false,
   showPosition = true,
   showTeamLogo = true,
   showSelectionMark = false,
+  showAccentRail = true,
   metaPrefix = undefined,
   metaSegments = [],
   leading = null,
@@ -212,8 +214,9 @@ export default function CompanionPlayerRow({
   const positionColor = getCompanionPositionColor(position);
   const positionTextColor = positionColor ? getPositionTextColor(positionColor) : rowForeground;
   const imageUrl = getCompanionPlayerImageUrl(safePlayer);
-  const teamLogoUrl = showTeamLogo ? getCompanionTeamLogoUrl(safePlayer, theme) : null;
-  const avatarFailed = Boolean(imageUrl && failedAvatarUrl === imageUrl);
+  const teamLogoUrl = (showTeamLogo || useTeamLogoAsAvatar) ? getCompanionTeamLogoUrl(safePlayer, theme) : null;
+  const avatarUrl = useTeamLogoAsAvatar ? teamLogoUrl : imageUrl;
+  const avatarFailed = Boolean(avatarUrl && failedAvatarUrl === avatarUrl);
   const teamLogoFailed = Boolean(teamLogoUrl && failedTeamLogoUrl === teamLogoUrl);
   const normalizedMeta = normalizeSlotItems(metaSegments);
   const normalizedColumns = normalizeSlotItems(columns);
@@ -244,10 +247,14 @@ export default function CompanionPlayerRow({
     '--companion-player-end-fg': theme?.gradientEndForeground ?? rowValueForeground,
     '--companion-player-full-fg': theme?.gradientFullForeground ?? rowForeground,
     gridTemplateColumns: resolvedGridTemplate,
-    boxShadow: selected ? `${rowShadow === 'none' ? '' : `${rowShadow}, `}inset 3px 0 0 var(--color-signature)` : rowShadow,
+    boxShadow: selected && showAccentRail ? `${rowShadow === 'none' ? '' : `${rowShadow}, `}inset 3px 0 0 var(--color-signature)` : rowShadow,
     opacity: disabled ? 0.45 : 1,
     cursor: disabled ? 'default' : isInteractive ? 'pointer' : undefined,
     ...style,
+    ...(!showAccentRail ? {
+      borderLeft: 0,
+      borderRight: 0,
+    } : {}),
   };
 
   const activate = (event) => {
@@ -326,14 +333,14 @@ export default function CompanionPlayerRow({
       )}
       {leading && <div className="companion-player-row__leading">{leading}</div>}
       {showAvatar && (
-        imageUrl && !avatarFailed ? (
+        avatarUrl && !avatarFailed ? (
           <img
-            src={imageUrl}
+            src={avatarUrl}
             alt=""
-            className="companion-player-row__avatar"
+            className={`companion-player-row__avatar${useTeamLogoAsAvatar ? ' companion-player-row__team-logo-avatar' : ''}`}
             loading={loading}
             decoding="async"
-            onError={() => setFailedAvatarUrl(imageUrl)}
+            onError={() => setFailedAvatarUrl(avatarUrl)}
           />
         ) : (
           <div className="companion-player-row__avatar companion-player-row__avatar-fallback" style={{ color: rowMuted }}>
@@ -376,7 +383,7 @@ export default function CompanionPlayerRow({
           </div>
         )}
       </div>
-      {teamLogoUrl && !teamLogoFailed ? (
+      {showTeamLogo && teamLogoUrl && !teamLogoFailed ? (
         <img
           src={teamLogoUrl}
           aria-hidden="true"

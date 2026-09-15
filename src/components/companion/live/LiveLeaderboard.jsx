@@ -37,7 +37,7 @@ export default function LiveLeaderboard({ performers = [], focusId = null, onOpe
                 className="fl-leadrow__pv"
                 style={{ color: points >= entry.pace.pace ? 'var(--color-label)' : 'var(--color-label-tertiary)' }}
               >
-                {points.toFixed(1)}
+                {points.toFixed(2)}
               </span>
               <i className="fl-leadrow__bar" style={{ width: `${Math.max(0, (points / max) * 100)}%`, background: side.palette[0] }} aria-hidden="true" />
             </button>

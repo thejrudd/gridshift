@@ -10,6 +10,8 @@ export const STATISTICS_SCHEDULE_FILTERS = Object.freeze({
   INTERNATIONAL: 'international',
   PRIMETIME: 'primetime',
   HOLIDAY: 'holiday',
+  HOME: 'home',
+  AWAY: 'away',
 });
 
 const SCHEDULE_MODE_VALUES = new Set(Object.values(STATISTICS_SCHEDULE_MODES));
@@ -381,5 +383,11 @@ export function scheduleGameMatchesFilter(game = {}, filter = STATISTICS_SCHEDUL
 export function filterTeamScheduleRows(rows = [], filter = STATISTICS_SCHEDULE_FILTERS.ALL) {
   const normalizedFilter = normalizeStatisticsScheduleFilter(filter);
   if (normalizedFilter === STATISTICS_SCHEDULE_FILTERS.ALL) return rows;
+  if (normalizedFilter === STATISTICS_SCHEDULE_FILTERS.HOME) {
+    return rows.filter((row) => !row?.isBye && row?.isAway === false);
+  }
+  if (normalizedFilter === STATISTICS_SCHEDULE_FILTERS.AWAY) {
+    return rows.filter((row) => !row?.isBye && row?.isAway === true);
+  }
   return rows.filter((row) => !row?.isBye && scheduleGameMatchesFilter(row?.game, normalizedFilter));
 }

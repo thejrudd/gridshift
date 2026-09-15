@@ -82,3 +82,22 @@ test('server-readable metadata varies the static preview by route', () => {
   assert.match(rendered, /property="og:title" content="NFL Scores · 2026"/);
   assert.doesNotMatch(rendered, /2026 NFL Season/);
 });
+
+test('Scores metadata describes the copied matchup tab and player category', () => {
+  const metadata = getPageShareMetadata({
+    route: {
+      activeTab: 'statistics',
+      statisticsView: 'scores',
+      statisticsScoresSeason: 2026,
+      statisticsScoresPhase: 'preseason',
+      statisticsScoresWeek: 2,
+      statisticsScoresGameId: '1393548',
+      statisticsScoresSection: 'players',
+      statisticsScoresPlayerGroup: 'rushing',
+    },
+    season: 2026,
+  });
+
+  assert.equal(metadata.title, 'NFL Scores · Preseason Week 2 · Players · Rushing · 2026');
+  assert.equal(metadata.description, "Review this NFL matchup's player details in GridShift.");
+});

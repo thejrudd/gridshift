@@ -12,7 +12,7 @@
 
 import { getStarterOutlook } from './liveWinProbability.js';
 
-const round1 = (value) => Math.round((Number(value) || 0) * 10) / 10;
+const round1 = (value) => Math.round((Number(value) || 0) * 100) / 100;
 
 export function preservePaceSeriesScores(snapshotAt, enabled = false) {
   if (!enabled || typeof snapshotAt !== 'function') return snapshotAt;
@@ -116,7 +116,7 @@ export function pickFeaturedStarter(entries = [], mode = 'top', latestEvent = nu
     return {
       entry: best,
       eyebrow: 'Biggest swing',
-      note: `${swing >= 0 ? '+' : '−'}${Math.abs(swing).toFixed(1)} vs pace`,
+      note: `${swing >= 0 ? '+' : '−'}${Math.abs(swing).toFixed(2)} vs pace`,
     };
   }
 
@@ -126,7 +126,7 @@ export function pickFeaturedStarter(entries = [], mode = 'top', latestEvent = nu
       return {
         entry: match,
         eyebrow: 'Latest score',
-        note: `+${Math.abs(Number(latestEvent.pts) || 0).toFixed(1)} · ${latestEvent.glance?.clock || 'just now'}`,
+        note: `+${Math.abs(Number(latestEvent.pts) || 0).toFixed(2)} · ${latestEvent.glance?.clock || 'just now'}`,
       };
     }
   }
@@ -137,7 +137,7 @@ export function pickFeaturedStarter(entries = [], mode = 'top', latestEvent = nu
     entry: best,
     eyebrow: 'Top scorer',
     note: sideTotal > 0
-      ? `${best.pace.points.toFixed(1)} of ${round1(sideTotal).toFixed(1)} team pts`
+      ? `${best.pace.points.toFixed(2)} of ${round1(sideTotal).toFixed(2)} team pts`
       : 'Yet to score',
   };
 }
@@ -147,9 +147,11 @@ export function pickFeaturedStarter(entries = [], mode = 'top', latestEvent = nu
  * matchup's own scoring plays.
  *
  * Each side's curve is the running total of its starters' scoring plays, laid
- * out on the shared 0..1 "how far through the game" axis (see
- * `getPlayProgress`). Every play is a step, so the line has the shape of the
- * afternoon rather than the straight line a sparse odds history produces.
+ * out on the shared 0..1 slate axis. Each event keeps its own game progress
+ * for player/game calculations, while the plotted position preserves kickoff
+ * order across the games in the matchup. Every play is a step, so the line has
+ * the shape of the afternoon rather than the straight line a sparse odds
+ * history produces.
  *
  * Two things keep it honest:
  *
@@ -180,10 +182,9 @@ export function buildPaceSeries({
   liveSnapshot = null,
   milestonePoints = 5,
   reconcileToTotals = false,
-  // The chart plots events by game progress, while live probability snapshots
-  // may still need wall-clock ordering to account for staggered games. Keep
-  // those two orderings independent so a later kickoff cannot make an
-  // earlier game's positive score draw backwards on the plotted axis.
+  // The chart plots events by the shared slate progress supplied by the view,
+  // while live probability snapshots may still need wall-clock ordering to
+  // account for staggered games. Keep those contexts independent.
   scoreAxisIsAuthoritative = false,
   // Accumulate the snapshot/player context strictly along the chart's own
   // axis instead of by timestamp. `scoreAxisIsAuthoritative` handles the
@@ -198,7 +199,7 @@ export function buildPaceSeries({
   // construction.
   accumulateInOrder = false,
 } = {}) {
-  const span = Math.min(1, Math.max(0.02, Number(slateProgress) || 0));
+  const requestedSpan = Math.min(1, Math.max(0.02, Number(slateProgress) || 0));
   const finalA = round1(Number(totals.a) || 0);
   const finalB = round1(Number(totals.b) || 0);
   const scored = events
@@ -212,6 +213,15 @@ export function buildPaceSeries({
     .sort((left, right) => left.x - right.x);
 
   if (!scored.length) return { points: [], marks: [] };
+
+  // Replay events use the kickoff-ordered chart axis, while `slateProgress`
+  // still comes from the gap-free active replay clock. An observed event can
+  // therefore sit beyond that clock's numeric NOW; never clamp it back onto
+  // NOW, or the event and close become a vertical wall again.
+  const observedSpan = accumulateInOrder
+    ? scored.reduce((latest, item) => Math.max(latest, item.x), 0)
+    : 0;
+  const span = Math.min(1, Math.max(requestedSpan, observedSpan));
 
   const estimatedTotals = scored.reduce((result, item) => {
     result[item.side] += Number(item.event.pts) || 0;
@@ -344,7 +354,10 @@ export function buildPaceSeries({
 }
 
 function getReplayEventTime(event) {
-  const raw = event?.timelineAt ?? event?.at;
+  // A provider play without wall-clock data still has a canonical cross-game
+  // `order` from kickoff + game progress. Prefer it over the refresh timestamp
+  // so a whole backfilled batch does not look like one simultaneous moment.
+  const raw = event?.timelineAt ?? event?.order ?? event?.at;
   if (raw == null) return null;
   const value = Number(raw);
   return Number.isFinite(value) ? value : null;

@@ -7,6 +7,18 @@
 //
 // Nothing in this module is shipped to production; see liveSandbox.js.
 
+import {
+  buildStatIndex,
+  getStatKeyForSleeperPlayer,
+  mapBdlStatsToGridShift,
+} from '../../utils/liveScoringFeed.js';
+import { calcPoints } from '../../utils/scoringEngine.js';
+import {
+  buildDemoTimeline,
+  mapGameProgressToDemoTimeline,
+} from '../../utils/liveDemoTimeline.js';
+export { splitDeltaIntoPlays } from '../../utils/livePlaySplitting.js';
+
 // A regulation game occupies roughly this much wall-clock time.
 export const GAME_DURATION_MS = 3 * 60 * 60 * 1000 + 10 * 60 * 1000;
 const QUARTER_MS = GAME_DURATION_MS / 4;
@@ -241,17 +253,43 @@ export function getReplayProgressAtInstant(games, instantMs) {
   return clamp01(elapsed / total);
 }
 
-// Converts a position inside one game onto the shared slate axis.
+// Converts a position inside one game onto the chart's shared slate axis.
 //
-// The pace chart plots x from events and derives y from their ordering in time.
-// Those only agree while every game runs in step with the wall clock. A replay
-// staggers games across a compressed week, so both must be expressed against
-// the same slate timeline or the curve doubles back on itself.
+// Replay slicing still uses merged active intervals so its clock lands on live
+// football. The chart cannot use that clock: concurrent Sunday games would all
+// receive the same x range and collapse into a vertical wall. Give every
+// scheduled game one consecutive segment in kickoff order instead, preserving
+// game-day order while making busy days proportionally navigable.
 export function getSlateProgressForGameProgress(games, gameId, gameProgress) {
   const game = (games ?? []).find((entry) => String(entry.id) === String(gameId));
   const kickoff = getGameKickoffMs(game);
   if (kickoff == null || !Number.isFinite(Number(gameProgress))) return null;
-  return getReplayProgressAtInstant(games, kickoff + clamp01(gameProgress) * GAME_DURATION_MS);
+  const gameWindow = buildDemoTimeline(games).gameWindows.get(String(game.id));
+  return mapGameProgressToDemoTimeline(gameProgress, gameWindow);
+}
+
+// The replay clock remains an active-football clock for slicing concurrent
+// games. The chart's x-axis is a consecutive scheduled-game axis, so its NOW
+// marker must follow the furthest game that has started rather than the active
+// clock fraction. Otherwise later Sunday games would render beyond NOW and
+// their points would stack against the marker until the whole slate finished.
+export function getReplayChartProgress(games = [], progress = 0) {
+  const fallback = clamp01(progress);
+  const instant = getReplayInstant(games, fallback);
+  if (instant == null) return fallback;
+  const timeline = buildDemoTimeline(games);
+  let latest = 0;
+  let mapped = false;
+  (games ?? []).forEach((game) => {
+    const gameProgress = getGameProgress(game, instant);
+    if (!(gameProgress > 0)) return;
+    const window = timeline.gameWindows.get(String(game.id));
+    const slate = mapGameProgressToDemoTimeline(gameProgress, window);
+    if (!Number.isFinite(Number(slate))) return;
+    mapped = true;
+    latest = Math.max(latest, Number(slate));
+  });
+  return mapped ? latest : fallback;
 }
 
 // A readable label for the sandbox panel: where the slate sits overall.
@@ -291,79 +329,100 @@ export function spreadEventsAcrossInterval(events, startProgress, endProgress) {
   }));
 }
 
-// ── Splitting a stat delta back into individual plays ─────────────────────
+// ── Synthesized Sleeper stream (rule 10) ───────────────────────────────────
 //
-// A replay step covers a stretch of game time, so diffing two snapshots yields
-// everything a player did across it — which reads as one impossible mega-play
-// ("Passing TD, 2 rushing TDs, +289 pass yds"). Real football deals those out
-// one snap at a time, and a player cannot score twice on the same play.
-//
-// Splitting happens per category because a carry, a catch and a completion are
-// different plays. Two *different* players sharing one play — a quarterback's
-// passing touchdown and his receiver's receiving touchdown — are already
-// separate entries, since events are built per player.
+// The replay sandbox has no real Sleeper feed to poll — only the sliced BDL
+// box scores it already serves for stats and plays. In connected live,
+// Sleeper's own pipeline always trails the raw box score by however long it
+// takes them to process and post a play, and the reconciliation engine is
+// built to lean on that lag (pending plays, then confirmation once Sleeper
+// catches up). Faking that here means re-slicing the same BDL stats at an
+// earlier point in the slate (`progress - lag`) and running that earlier
+// slice through the real scoring math, rather than reading the fixture's
+// stored final totals directly — which is what makes the replay exercise
+// pending→confirmed flips and residual pinning instead of every play
+// confirming the instant it appears.
 
-const n = (value) => Number(value ?? 0) || 0;
+const DEFAULT_SLEEPER_STREAM_LAG_SECONDS = 20;
+let sleeperStreamLagSeconds = DEFAULT_SLEEPER_STREAM_LAG_SECONDS;
 
-// Stats that describe a discrete play, and the count field that says how many
-// of those plays there were.
-const PLAY_CATEGORIES = [
-  { count: 'pass_cmp', yards: 'pass_yd', tds: 'pass_td' },
-  { count: 'rush_att', yards: 'rush_yd', tds: 'rush_td' },
-  { count: 'rec', yards: 'rec_yd', tds: 'rec_td' },
-];
-// One play each, no yardage to share out.
-const SINGLETON_STATS = ['fgm', 'xpm', 'pass_int', 'fum_lost'];
-const CATEGORY_KEYS = new Set([
-  ...PLAY_CATEGORIES.flatMap(({ count, yards, tds }) => [count, yards, tds]),
-  ...SINGLETON_STATS,
-]);
-
-// Spreads a yardage total over a number of plays, keeping the sum exact.
-function shareYards(total, plays) {
-  if (!plays) return [];
-  const base = Math.trunc(total / plays);
-  const shares = new Array(plays).fill(base);
-  shares[plays - 1] += total - base * plays;
-  return shares;
+export function setSleeperStreamLagSeconds(seconds) {
+  const parsed = Number(seconds);
+  sleeperStreamLagSeconds = Number.isFinite(parsed) && parsed >= 0
+    ? parsed
+    : DEFAULT_SLEEPER_STREAM_LAG_SECONDS;
 }
 
-export function splitDeltaIntoPlays(delta) {
-  if (!delta) return [];
-  const plays = [];
+export function getSleeperStreamLagSeconds() {
+  return sleeperStreamLagSeconds;
+}
 
-  PLAY_CATEGORIES.forEach(({ count, yards, tds }) => {
-    const scores = n(delta[tds]);
-    const yardage = n(delta[yards]);
-    // A recorded count is the truth; fall back to the touchdowns, or to a
-    // single play when only yardage moved.
-    const total = Math.max(n(delta[count]), scores, yardage !== 0 ? 1 : 0);
-    if (!total) return;
-    const shares = shareYards(yardage, total);
-    for (let index = 0; index < total; index += 1) {
-      const play = { [count]: 1, [yards]: shares[index] };
-      // Touchdowns go on the closing plays, one apiece — never two together.
-      if (index >= total - scores) play[tds] = 1;
-      plays.push(play);
-    }
+// The lag is a real-world delay, but the replay clock runs on the compressed
+// slate axis that has already had dead air between games removed. Expressing
+// it in progress units means dividing by that same active (non-dead-air)
+// duration — the figure getReplayActiveDuration/instantAt/toSlateProgress
+// already use — not by the wall-clock span from first kickoff to last whistle.
+export function getSleeperStreamLagProgress(games, lagSeconds = sleeperStreamLagSeconds) {
+  const activeDurationMs = getReplayActiveDuration(games);
+  if (!activeDurationMs) return 0;
+  return clamp01(((Math.max(0, Number(lagSeconds)) || 0) * 1000) / activeDurationMs);
+}
+
+function roundToCents(value) {
+  return Math.round((Number(value) || 0) * 100) / 100;
+}
+
+/**
+ * Pure core of the synthesized Sleeper stream: given the replay's already-
+ * loaded games and final BDL stats plus the sandbox fixture, produces the
+ * `{ matchups, weeklyStats }` Sleeper would show at `progress`, as if Sleeper
+ * were `lagProgress` behind the box score.
+ *
+ * `matchups` is the fixture's own matchup rows with `players_points` and
+ * `points` replaced by the sliced/lagged/scored values — never the fixture's
+ * stored ones — so the stream is internally consistent with itself at every
+ * progress, including 1. `weeklyStats` is keyed by Sleeper player id.
+ *
+ * At progress >= 1 the lag is dropped rather than applied: a still-lagging
+ * Sleeper snapshot at the literal end of the slate would never quite reach
+ * the final BDL-derived totals (progress - lag < 1), and the reconciliation
+ * engine's own contract is that Sleeper never permanently disagrees with the
+ * box score once it has had a chance to catch up.
+ */
+export function projectSleeperReplaySlice({
+  progress,
+  lagProgress = 0,
+  games = [],
+  finalStatsByGame = {},
+  fixture,
+}) {
+  const clamped = clamp01(progress);
+  const effectiveProgress = clamped >= 1 ? 1 : Math.max(0, clamped - clamp01(lagProgress));
+  const slicedStats = projectStatsAtProgress(finalStatsByGame, games, effectiveProgress);
+  const statIndex = buildStatIndex(slicedStats);
+
+  const weeklyStats = {};
+  const pointsByPlayerId = {};
+  Object.entries(fixture?.players ?? {}).forEach(([playerId, player]) => {
+    const bdlRow = statIndex.get(getStatKeyForSleeperPlayer(player)) ?? null;
+    const stats = mapBdlStatsToGridShift(bdlRow, player?.position);
+    weeklyStats[playerId] = stats;
+    pointsByPlayerId[playerId] = roundToCents(
+      calcPoints(stats, fixture?.league?.scoring_settings, player?.position),
+    );
   });
 
-  SINGLETON_STATS.forEach((key) => {
-    const total = Math.abs(n(delta[key]));
-    for (let index = 0; index < total; index += 1) {
-      plays.push({ [key]: Math.sign(n(delta[key])) });
-    }
+  const matchups = (fixture?.matchups ?? []).map((row) => {
+    const playersPoints = Object.fromEntries(
+      (row.players ?? []).map((id) => [id, pointsByPlayerId[id] ?? 0]),
+    );
+    // Sleeper's matchup `points` totals starters only — confirmed by the
+    // fixture itself, whose stored `points` equals the sum of `starters_points`.
+    const points = roundToCents(
+      (row.starters ?? []).reduce((sum, id) => sum + (playersPoints[id] ?? 0), 0),
+    );
+    return { ...row, players_points: playersPoints, points };
   });
 
-  // Anything with no play structure of its own — defensive tallies, fumbles
-  // recovered — rides along rather than being dropped.
-  const leftovers = Object.entries(delta)
-    .filter(([key, value]) => !CATEGORY_KEYS.has(key) && n(value) !== 0);
-  if (leftovers.length) {
-    const carrier = plays.length ? plays[0] : {};
-    leftovers.forEach(([key, value]) => { carrier[key] = value; });
-    if (!plays.length) plays.push(carrier);
-  }
-
-  return plays;
+  return { matchups, weeklyStats };
 }

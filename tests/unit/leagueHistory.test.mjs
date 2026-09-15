@@ -631,3 +631,22 @@ test('shows individual defensive positions only for IDP league blueprints', () =
   assert.deepEqual(result.positions, ['LB', 'CB']);
   assert.deepEqual(result.teams[0].positionCounts, { LB: 1, CB: 1 });
 });
+
+
+test('history excludes unplayed or live matchups before the first finalized week', () => {
+  const current = {
+    ...snapshot2024,
+    completed: false,
+    league: { settings: { last_scored_leg: 0 } },
+    matchupsByWeek: {
+      1: [{ matchup_id: 1, roster_id: 1, points: 0 }, { matchup_id: 1, roster_id: 2, points: 0 }],
+      2: [{ matchup_id: 1, roster_id: 1, points: 20 }, { matchup_id: 1, roster_id: 2, points: 5 }],
+    },
+  };
+  const model = buildLeagueHistoryModel([current]);
+  assert.deepEqual(model.rivalries, []);
+  assert.ok(model.leaderboard.every((row) => row.games === 0 && row.ties === 0));
+  assert.equal(model.records.highestScore, null);
+  const completed = buildLeagueHistoryModel([snapshot2024]);
+  assert.equal(completed.rivalries[0].meetings.length, 3);
+});

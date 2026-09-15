@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import { normalizeBdlScorePlay } from '../../src/utils/balldontlieNflScoreboard.js';
 import {
   PLAY_ROLES,
+  parseInterception,
   parsePenaltyClause,
   parsePlayNarrative,
   parseTacklers,
@@ -115,6 +116,38 @@ test('a scoring-summary pick-six excludes the appended conversion snap', () => {
   assert.deepEqual(narrative.actors.map(({ role, name }) => ({ role, name })), [
     { role: 'intercepter', name: 'Wade Woodaz' },
   ]);
+});
+
+test('an interception inside the end zone preserves the provider signed spot', () => {
+  const interception = parseInterception(
+    '(Shotgun) D.Maye pass deep right intended for M.Hollins INTERCEPTED by J.Jobe [D.Lawrence] at SEA -3. Touchback.',
+  );
+
+  assert.deepEqual(interception, {
+    passer: 'D.Maye',
+    intendedFor: 'M.Hollins',
+    depth: 'deep right',
+    defender: 'J.Jobe',
+    at: 'SEA -3',
+    returnTo: null,
+    returnYards: 0,
+  });
+});
+
+test('an interception parser accepts jersey-prefixed official player names', () => {
+  const interception = parseInterception(
+    '10-D.Maye pass deep left intended for 87-R.Doubs INTERCEPTED by 28-N.Pritchett (24-R.Thomas) at SEA 3. 28-N.Pritchett to SEA 33 for 30 yards (55-J.Wilson).',
+  );
+
+  assert.deepEqual(interception, {
+    passer: 'D.Maye',
+    intendedFor: 'R.Doubs',
+    depth: 'deep left',
+    defender: 'N.Pritchett',
+    at: 'SEA 3',
+    returnTo: 'SEA 33',
+    returnYards: 30,
+  });
 });
 
 test('a missed field goal reports the direction it missed', () => {

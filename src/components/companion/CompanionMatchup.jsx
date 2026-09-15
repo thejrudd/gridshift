@@ -11,22 +11,38 @@ import {
   getDefensePercentile,
   getDefenseStrength,
 } from '../../utils/projectionEngine';
-import { buildProjectionContext, projectFromGameInfo } from '../../utils/starterProjections.js';
+import { buildProjectionContext, getProjectionScoreTone, isStarterGameStarted, projectFromGameInfo } from '../../utils/starterProjections.js';
 import { STADIUMS, WEEK_DATES_2025 } from '../../data/stadiums';
 import { fetchGameWeather, formatWeather } from '../../api/weatherApi';
+import { getFantasyProjections } from '../../api/fantasyProjectionsApi.js';
+import { getLiveMatchups } from '../../api/sleeperApi';
+import {
+  getFantasyProjectionSourceLabel,
+  mapFantasyProjectionsToSleeperPlayers,
+} from '../../utils/fantasyProjections.js';
 import PlayerMatchupBreakdown from './PlayerMatchupBreakdown';
-import { buildFantasyScoringBreakdown, mergeOfficialFantasyTotal } from '../../utils/fantasyBreakdownRows.js';
+import useMatchupProjectionBaselines from '../../hooks/useMatchupProjectionBaselines.js';
+import { buildDrilldownOpponentContext } from '../../utils/playerMatchupPresentation.js';
 import { isEspnFantasyGameLogPosition, loadEspnFantasyGameLogWeekRow } from '../../utils/espnFantasyGameLogRows.js';
+import { buildFantasyMatchupScoringBreakdown } from '../../utils/fantasyMatchupBreakdown.js';
 import CompanionLoadingState from './CompanionLoadingState';
 import Modal from '../Modal';
+import MatchupRivalryModal from './MatchupRivalryModal';
 import useCardGlow from '../../hooks/useCardGlow.jsx';
 import useMediaQuery from '../../hooks/useMediaQuery.js';
 import { getPlayerRowTeamTheme } from '../../utils/playerRowTheme';
 import { getPlayerAvailabilityStatus } from '../../utils/playerAvailabilityStatus.js';
 import { debugCompanionLog, debugCompanionMeasure, debugCompanionTimeAsync } from '../../utils/companionPerfDebug';
-import { CompanionSelectorButton, CompanionSelectorRail } from './CompanionSelectorControls.jsx';
+import { CompanionSelectorButton, CompanionSelectorRail, CompanionSegmentedControl } from './CompanionSelectorControls.jsx';
 import { POSITION_COLORS } from '../../utils/companionAssetVisuals.js';
 import CompanionPlayerRow, { CompanionPlayerMetric, CompanionPlayerStatus } from './CompanionPlayerRow.jsx';
+import PlayerAvatar from '../shared/PlayerAvatar.jsx';
+import { buildFantasyPaletteSlots, fantasyHeroGradient, getFantasyTeamPalette } from '../../utils/fantasyTeamIdentity.js';
+import { ArrowsLeftRightIcon } from '@phosphor-icons/react/ArrowsLeftRight';
+import { ChartLineUpIcon } from '@phosphor-icons/react/ChartLineUp';
+import { ClockIcon } from '@phosphor-icons/react/Clock';
+import { InfoIcon } from '@phosphor-icons/react/Info';
+import { TrophyIcon } from '@phosphor-icons/react/Trophy';
 import StatsProgressBanner from '../ui/StatsProgressBanner';
 import SeasonHintBanner from '../ui/SeasonHintBanner';
 import UiEmptyState from '../ui/EmptyState';
@@ -34,13 +50,24 @@ import {
   buildFantasyMatchupGroups,
   findMatchupGroupIndexByRosterId,
 } from '../../utils/fantasyMatchups.js';
+import { buildMatchupWinProbability, hasFinalMatchupGameEvidence } from '../../utils/matchupWinProbability.js';
+import { formatWinProbabilityPair, getStarterOutlook } from '../../utils/liveWinProbability.js';
+import {
+  getFallbackRemainingGameFraction,
+  getOfficialMatchupRowPoints,
+  hasReconciledMatchup,
+  isCompleteScheduleWeek,
+} from '../../utils/liveScoringFeed.js';
+import { getLeagueHistorySnapshot, buildLeagueHistoryModel } from '../../utils/leagueHistory.js';
+import { isFullGameWeekComplete } from '../../utils/matchupTaleOfTape.js';
+import PlayerMatchupCompare from './PlayerMatchupCompare.jsx';
 
 const TOTAL_WEEKS = 18;
-const MATCHUP_CARD_SHADOW = '0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06)';
 const COMPACT_PHONE_QUERY = '(max-width: 480px)';
-const MOBILE_LAYOUT_QUERY = '(max-width: 1023px)';
 const MATCHUP_RESPONSE_CACHE = new Map();
 const MATCHUP_RESPONSE_IN_FLIGHT = new Map();
+const MATCHUP_TAPE_HISTORY_CACHE = new Map();
+const FINAL_MATCHUP_RECONCILIATION_RETRY_MS = 30000;
 
 function isTeamDefensePosition(position) {
   const normalized = String(position ?? '').toUpperCase();
@@ -70,23 +97,6 @@ function getLongestTokenLength(label) {
     .trim()
     .split(/\s+/)
     .reduce((max, token) => Math.max(max, token.length), 0);
-}
-
-function getSharedHeaderTeamNameFontSize(labels, compact = false) {
-  const maxTokenLength = labels.reduce(
-    (max, label) => Math.max(max, getLongestTokenLength(label)),
-    0,
-  );
-  if (compact) {
-    if (maxTokenLength >= 14) return 'clamp(14px, 4vw, 18px)';
-    if (maxTokenLength >= 11) return 'clamp(16px, 4.3vw, 20px)';
-    if (maxTokenLength >= 9) return 'clamp(18px, 4.8vw, 22px)';
-    return 'clamp(20px, 5.2vw, 24px)';
-  }
-  if (maxTokenLength >= 14) return 'clamp(16px, 4.5vw, 20px)';
-  if (maxTokenLength >= 11) return 'clamp(18px, 4.9vw, 24px)';
-  if (maxTokenLength >= 9) return 'clamp(20px, 5.2vw, 28px)';
-  return 'clamp(22px, 5.6vw, 32px)';
 }
 
 function getUnifiedPlayerNameFontSize(labels, compact = false) {
@@ -137,9 +147,49 @@ function getMatchupDataCacheKey({
   ].join('|');
 }
 
+function summarizeTeamForecast(players) {
+  const rosterPlayers = (players ?? []).filter(Boolean);
+  const projectedPlayers = rosterPlayers.filter((player) => Number.isFinite(Number(player?.projection?.projected)));
+  if (!projectedPlayers.length) return null;
+
+  const total = projectedPlayers.reduce((sum, player) => sum + Number(player.projection.projected), 0);
+  const sources = [...new Set(projectedPlayers.map((player) => getFantasyProjectionSourceLabel(player.projection)).filter(Boolean))];
+  return {
+    total: Math.round(total * 10) / 10,
+    projectedCount: projectedPlayers.length,
+    starterCount: rosterPlayers.length,
+    complete: projectedPlayers.length === rosterPlayers.length,
+    sourceLabel: sources.length === 1 ? sources[0] : sources.length > 1 ? 'Mixed model' : null,
+  };
+}
+
+function formatForecastFreshness(collectedAt) {
+  const collectedMs = Date.parse(collectedAt ?? '');
+  if (!Number.isFinite(collectedMs)) return null;
+  const minutes = Math.max(0, Math.round((Date.now() - collectedMs) / 60000));
+  if (minutes < 2) return 'collected just now';
+  if (minutes < 60) return `collected ${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `collected ${hours}h ago`;
+  return `collected ${Math.round(hours / 24)}d ago`;
+}
+
+function getMatchupForecastSourceLabel(winProbability) {
+  if (!winProbability) return null;
+  const source = winProbability.primarySource;
+  if (source === 'balldontlie') {
+    return `BALLDONTLIE projection · ${winProbability.usesLeagueScoring ? 'league scoring' : 'provider scoring fallback'}`;
+  }
+  if (source === 'current-season') return 'GridShift model · current season';
+  if (source === 'prior-season') return 'GridShift model · prior season';
+  if (source === 'mixed') return 'Mixed forecast sources';
+  return 'GridShift fallback estimate';
+}
+
 export default function CompanionMatchup({
   onViewPlayer,
   onComparePlayers = null,
+  onOpenHistoricalMatchup = null,
   initialWeekRequest = null,
   selectedWeek = null,
   onWeekChange = null,
@@ -149,13 +199,13 @@ export default function CompanionMatchup({
 }) {
   const { darkMode } = useTheme();
   const isCompactPhone = useMediaQuery(COMPACT_PHONE_QUERY);
-  const isMobileLayout = useMediaQuery(MOBILE_LAYOUT_QUERY);
   const {
     platform, selectedLeagueId, league, season,
     rosters, players, loadPlayers,
     weeklyStats, seasonStats, scheduleMap, loadSeasonStats,
+    statsBySeason, loadStatsForSeason,
     statsLoading, activeScoringSettings, scoringOverride,
-    myRoster, getUserDisplayName, espnIdOverrides, loadMatchups,
+    myRoster, getUserDisplayName, espnIdOverrides, loadMatchups, linkedLeagueHistory,
   } = useSleeperBase();
 
   const lastScoredLeg = Number(league?.settings?.last_scored_leg);
@@ -185,7 +235,7 @@ export default function CompanionMatchup({
   const [week, setWeek] = useState(() => clampMatchupWeek(selectedWeek, totalWeeks, defaultWeek));
   const [requestedWeek, setRequestedWeek] = useState(() => clampMatchupWeek(selectedWeek, totalWeeks, defaultWeek));
   const [matchupLoading, setMatchupLoading] = useState(false);
-  const [showBench, setShowBench] = useState(false);
+  const [showBench, setShowBench] = useState(true);
   const [showWeekPicker, setShowWeekPicker] = useState(false);
   const [showMatchupPicker, setShowMatchupPicker] = useState(false);
   const [selectedRosterIdState, setSelectedRosterIdState] = useState(selectedRosterId);
@@ -193,6 +243,11 @@ export default function CompanionMatchup({
   const [selectedPlayer, setSelectedPlayer] = useState(null); // { id, projection }
   const [selectedTeam, setSelectedTeam] = useState(null); // 'mine' | 'opp'
   const [weatherMap, setWeatherMap] = useState({}); // { 'TEAM-DATE': weather }
+  const [providerProjectionState, setProviderProjectionState] = useState({ key: '', status: 'idle', map: new Map(), error: null });
+  const [finalMatchupReconciliation, setFinalMatchupReconciliation] = useState({ key: '', status: 'idle', attempts: 0 });
+  const [taleOfTape, setTaleOfTape] = useState(null);
+  const [rivalrySelection, setRivalrySelection] = useState(null);
+  const [tapeHistoryState, setTapeHistoryState] = useState({ key: '', status: 'idle', model: null });
   const [isMineHeaderHovered, setIsMineHeaderHovered] = useState(false);
   const [isOppHeaderHovered, setIsOppHeaderHovered] = useState(false);
   const [insightsRequested, setInsightsRequested] = useState(false);
@@ -203,6 +258,7 @@ export default function CompanionMatchup({
     defenseTable: { key: '', value: null },
     leagueAvgByPos: { key: '', value: {} },
   });
+  const tapeHistoryRequestRef = useRef(null);
 
   useEffect(() => {
     debugCompanionLog('Matchup mounted', {
@@ -341,10 +397,21 @@ export default function CompanionMatchup({
   const opponentName = rightSide?.name ?? 'Opponent';
   const leftIsUser = Boolean(leftSide?.isUser);
   const rightIsUser = Boolean(rightSide?.isUser);
+  const fantasyPaletteSlots = useMemo(() => buildFantasyPaletteSlots(rosters), [rosters]);
+  const myFantasyPalette = useMemo(
+    () => getFantasyTeamPalette(myRosterId, fantasyPaletteSlots),
+    [fantasyPaletteSlots, myRosterId],
+  );
+  const opponentFantasyPalette = useMemo(
+    () => getFantasyTeamPalette(opponentMatchup?.roster_id ?? rightSide?.rosterId, fantasyPaletteSlots),
+    [fantasyPaletteSlots, opponentMatchup?.roster_id, rightSide?.rosterId],
+  );
   const hasAdvancedStats = Boolean(insightsRequested && weeklyStats && seasonStats && players);
   const playerCount = players ? Object.keys(players).length : 0;
   const seasonStatCount = seasonStats ? Object.keys(seasonStats).length : 0;
   const weeklyStatCount = weeklyStats ? Object.keys(weeklyStats).length : 0;
+  const matchupWeekSchedule = scheduleMap?.[week] ?? scheduleMap?.[String(week)] ?? null;
+  const isFullGameWeekConcluded = isFullGameWeekComplete(matchupWeekSchedule);
   const matchupDataCacheKey = useMemo(() => getMatchupDataCacheKey({
     selectedLeagueId,
     season,
@@ -355,6 +422,83 @@ export default function CompanionMatchup({
     scheduleMap,
     activeScoringSettings,
   }), [selectedLeagueId, season, week, playerCount, seasonStatCount, weeklyStatCount, scheduleMap, activeScoringSettings]);
+
+  const previousSeasonKey = useMemo(() => {
+    const seasonYear = Number(season);
+    return Number.isInteger(seasonYear) && seasonYear > 0 ? String(seasonYear - 1) : null;
+  }, [season]);
+
+  const previousSeasonPackage = previousSeasonKey ? statsBySeason?.[previousSeasonKey] ?? null : null;
+  const providerProjections = providerProjectionState.map;
+  const projectionLoadKey = useMemo(() => [
+    season ?? '',
+    week,
+    playerCount,
+    JSON.stringify(activeScoringSettings ?? {}),
+  ].join('|'), [activeScoringSettings, playerCount, season, week]);
+  const projectionRequestRef = useRef(null);
+
+  useEffect(() => {
+    if (!hasAdvancedStats || !players || !selectedLeagueId || !season || !week) return undefined;
+    if (projectionRequestRef.current?.key === projectionLoadKey) return undefined;
+
+    const controller = new AbortController();
+    let cancelled = false;
+    projectionRequestRef.current = { key: projectionLoadKey, controller };
+    setProviderProjectionState({ key: projectionLoadKey, status: 'loading', map: new Map(), error: null });
+
+    const loadEarlySeasonHistory = async () => {
+      if (
+        platform !== 'sleeper'
+        || week > 4
+        || !previousSeasonKey
+        || previousSeasonPackage?.weeklyStats
+        || cancelled
+      ) return;
+      try {
+        await loadStatsForSeason(previousSeasonKey);
+      } catch {
+        // The current-season model and BDL remain fully optional paths.
+      }
+    };
+
+    void getFantasyProjections({ season, week, signal: controller.signal })
+      .then((payload) => {
+        if (cancelled) return;
+        const mapped = mapFantasyProjectionsToSleeperPlayers({
+          players,
+          projectionRows: payload?.data,
+          scoringSettings: activeScoringSettings,
+        });
+        setProviderProjectionState({ key: projectionLoadKey, status: 'ready', map: mapped, error: null });
+        void loadEarlySeasonHistory();
+      })
+      .catch((error) => {
+        if (cancelled || error?.name === 'AbortError') return;
+        setProviderProjectionState({ key: projectionLoadKey, status: 'unavailable', map: new Map(), error: error?.message ?? null });
+        void loadEarlySeasonHistory();
+      });
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+      if (projectionRequestRef.current?.controller === controller) {
+        projectionRequestRef.current = null;
+      }
+    };
+  }, [
+    activeScoringSettings,
+    hasAdvancedStats,
+    loadStatsForSeason,
+    players,
+    platform,
+    previousSeasonKey,
+    previousSeasonPackage?.weeklyStats,
+    projectionLoadKey,
+    season,
+    selectedLeagueId,
+    week,
+  ]);
   const myPointsMap = myMatchup?.players_points ?? {};
   const oppPointsMap = opponentMatchup?.players_points ?? {};
   const fantasyPlatformLabel = platform === 'espn' ? 'ESPN' : 'Sleeper';
@@ -368,6 +512,10 @@ export default function CompanionMatchup({
     if (starters.length) return starters;
     return (myMatchup?.players ?? []).filter(Boolean);
   }, [myMatchup]);
+  const opponentBreakdownPlayerIds = useMemo(
+    () => (opponentMatchup?.starters ?? []).filter(Boolean),
+    [opponentMatchup],
+  );
 
   useEffect(() => {
     if (platform !== 'espn' || !selectedLeagueId || !myRosterId) {
@@ -450,53 +598,6 @@ export default function CompanionMatchup({
     if (!scoringOverride) return opponentMatchup?.points ?? null;
     return calcStarterTotal(opponentMatchup?.starters) ?? opponentMatchup?.points ?? null;
   }, [scoringOverride, opponentMatchup, calcStarterTotal]);
-
-  const matchupOutcome = useMemo(() => {
-    if (myDisplayPoints == null || oppDisplayPoints == null) return { mine: 'pending', opp: 'pending' };
-    if (myDisplayPoints === oppDisplayPoints) return { mine: 'tie', opp: 'tie' };
-    return myDisplayPoints > oppDisplayPoints
-      ? { mine: 'win', opp: 'loss' }
-      : { mine: 'loss', opp: 'win' };
-  }, [myDisplayPoints, oppDisplayPoints]);
-  const neutralHeaderGlow = darkMode ? '#FFFFFF' : '#F5B700';
-  const mineHeaderGlowColor = matchupOutcome.mine === 'win'
-    ? '#2ED578'
-    : matchupOutcome.mine === 'loss'
-      ? '#FF4433'
-      : neutralHeaderGlow;
-  const oppHeaderGlowColor = matchupOutcome.opp === 'win'
-    ? '#2ED578'
-    : matchupOutcome.opp === 'loss'
-      ? '#FF4433'
-      : neutralHeaderGlow;
-  const mineHeaderGlow = useCardGlow({
-    enabled: isMineHeaderHovered,
-    color: mineHeaderGlowColor,
-    cardColor: matchupOutcome.mine === 'pending' || matchupOutcome.mine === 'tie' ? null : mineHeaderGlowColor,
-    darkMode,
-    coreColor: darkMode ? '#FFFFFF' : null,
-    outerColor: mineHeaderGlowColor,
-  });
-  const oppHeaderGlow = useCardGlow({
-    enabled: isOppHeaderHovered,
-    color: oppHeaderGlowColor,
-    cardColor: matchupOutcome.opp === 'pending' || matchupOutcome.opp === 'tie' ? null : oppHeaderGlowColor,
-    darkMode,
-    coreColor: darkMode ? '#FFFFFF' : null,
-    outerColor: oppHeaderGlowColor,
-  });
-  const matchupHeaderNameLabels = useMemo(() => {
-    const labels = new Set([myName, opponentName]);
-    for (const roster of rosters) {
-      if (roster?.owner_id) labels.add(getUserDisplayName(roster.owner_id));
-    }
-    return Array.from(labels).filter(Boolean);
-  }, [myName, opponentName, rosters, getUserDisplayName]);
-  const sharedTeamNameFontSize = useMemo(
-    () => getSharedHeaderTeamNameFontSize(matchupHeaderNameLabels, isCompactPhone),
-    [matchupHeaderNameLabels, isCompactPhone],
-  );
-
   const positionalRanks = useMemo(() => {
     if (!hasAdvancedStats) return {};
     const cacheKey = `season|${matchupDataCacheKey}`;
@@ -515,7 +616,7 @@ export default function CompanionMatchup({
   }, [hasAdvancedStats, seasonStats, players, activeScoringSettings, matchupDataCacheKey, playerCount, seasonStatCount]);
 
   const weeklyRanks = useMemo(() => {
-    if (!hasAdvancedStats) return {};
+    if (!hasAdvancedStats || !isFullGameWeekConcluded) return {};
     const cacheKey = `week|${matchupDataCacheKey}`;
     if (advancedCacheRef.current.weeklyRanks.key === cacheKey) {
       debugCompanionLog('Matchup weekly ranks cache hit', { week, weeklyStatCount });
@@ -529,7 +630,7 @@ export default function CompanionMatchup({
     });
     advancedCacheRef.current.weeklyRanks = { key: cacheKey, value: nextRanks };
     return nextRanks;
-  }, [hasAdvancedStats, weeklyStats, players, activeScoringSettings, week, matchupDataCacheKey, weeklyStatCount]);
+  }, [hasAdvancedStats, weeklyStats, players, activeScoringSettings, week, matchupDataCacheKey, weeklyStatCount, isFullGameWeekConcluded]);
 
   // Pre-computed defense table: { [teamAbbr]: { [normPos]: { [week]: totalPts } } }
   // Built once when all data is available; used for O(1) opponent strength lookups.
@@ -549,7 +650,15 @@ export default function CompanionMatchup({
     });
     advancedCacheRef.current.defenseTable = { key: cacheKey, value: nextDefenseTable };
     return nextDefenseTable;
-  }, [hasAdvancedStats, weeklyStats, players, scheduleMap, activeScoringSettings, matchupDataCacheKey, playerCount, weeklyStatCount]);
+  }, [hasAdvancedStats, weeklyStats, players, scheduleMap, activeScoringSettings, matchupDataCacheKey, playerCount, weeklyStatCount, week]);
+
+  // Drilldown-only historical context. This table is never used by the shared
+  // projection or Heatmap classification paths.
+  const previousDefenseTable = useMemo(() => {
+    const previousWeeklyStats = previousSeasonPackage?.weeklyStats;
+    if (!hasAdvancedStats || !previousWeeklyStats || !players) return null;
+    return buildDefenseTable(previousWeeklyStats, players, null, activeScoringSettings);
+  }, [activeScoringSettings, hasAdvancedStats, players, previousSeasonPackage?.weeklyStats]);
 
   const leagueAvgByPos = useMemo(() => {
     if (!hasAdvancedStats || !defenseTable) return {};
@@ -580,6 +689,80 @@ export default function CompanionMatchup({
     };
   }, [players, espnIdOverrides]);
 
+  const rosterOwnerById = useMemo(
+    () => new Map((rosters ?? []).map((roster) => [String(roster?.roster_id), roster?.owner_id ?? null])),
+    [rosters],
+  );
+
+  const loadTaleOfTapeHistory = useCallback((historyKey) => {
+    if (platform !== 'sleeper' || !historyKey || !linkedLeagueHistory?.length) {
+      setTapeHistoryState({ key: historyKey, status: 'unavailable', model: null });
+      return;
+    }
+    const cached = MATCHUP_TAPE_HISTORY_CACHE.get(historyKey);
+    if (cached) {
+      setTapeHistoryState({ key: historyKey, status: 'ready', model: cached });
+      return;
+    }
+    if (tapeHistoryRequestRef.current?.key === historyKey) {
+      setTapeHistoryState({ key: historyKey, status: 'loading', model: null });
+      return;
+    }
+
+    const request = Promise.all(linkedLeagueHistory.map((entry) => getLeagueHistorySnapshot({
+      league: entry.league,
+      season: entry.season,
+      completed: Number(entry.season) < Number(season),
+    })))
+      .then((snapshots) => buildLeagueHistoryModel(snapshots, players ?? {}));
+    tapeHistoryRequestRef.current = { key: historyKey, request };
+    setTapeHistoryState({ key: historyKey, status: 'loading', model: null });
+    request
+      .then((model) => {
+        MATCHUP_TAPE_HISTORY_CACHE.set(historyKey, model);
+        if (tapeHistoryRequestRef.current?.key === historyKey) {
+          setTapeHistoryState({ key: historyKey, status: 'ready', model });
+        }
+      })
+      .catch(() => {
+        if (tapeHistoryRequestRef.current?.key === historyKey) {
+          tapeHistoryRequestRef.current = null;
+          setTapeHistoryState({ key: historyKey, status: 'error', model: null });
+        }
+      });
+  }, [linkedLeagueHistory, platform, players, season]);
+
+  const openTaleOfTape = useCallback((leftPlayer, rightPlayer, slotPos) => {
+    if (!leftPlayer || !rightPlayer || leftPlayer.name === 'Empty' || rightPlayer.name === 'Empty') return;
+    if (onComparePlayers) {
+      const leftSeed = toCompareSeed(leftPlayer);
+      const rightSeed = toCompareSeed(rightPlayer);
+      if (leftSeed && rightSeed) {
+        onComparePlayers(leftSeed, rightSeed);
+        return;
+      }
+    }
+    setTaleOfTape({
+      left: leftPlayer,
+      right: rightPlayer,
+      slotLabel: SLOT_LABELS[slotPos] ?? slotPos ?? leftPlayer.position ?? rightPlayer.position ?? 'Position',
+    });
+  }, [onComparePlayers, toCompareSeed]);
+
+  const openRivalry = () => {
+    const historyKey = `${selectedLeagueId}|${season}`;
+    setRivalrySelection({
+      historyKey,
+      leftManagerId: rosterOwnerById.get(String(leftSide?.rosterId)) ?? null,
+      rightManagerId: rosterOwnerById.get(String(rightSide?.rosterId)) ?? null,
+      leftName: myName,
+      rightName: opponentName,
+      leftPalette: myFantasyPalette,
+      rightPalette: opponentFantasyPalette,
+    });
+    loadTaleOfTapeHistory(historyKey);
+  };
+
   const enrichPlayer = useCallback((id, pointsMap = null) => {
     if (!id || !players) return null;
     const p = players[id];
@@ -605,12 +788,26 @@ export default function CompanionMatchup({
     const defPercentile = hasAdvancedStats && oppTeam && defenseTable && !isDefensivePos
       ? getDefensePercentile(defenseTable, oppTeam, p.position, week)
       : null;
+    const opponentFantasyContext = hasAdvancedStats && oppTeam && defenseTable && !isDefensivePos
+      ? buildDrilldownOpponentContext({
+          currentDefenseTable: defenseTable,
+          priorDefenseTable: previousDefenseTable,
+          oppTeam,
+          position: p.position,
+          beforeWeek: week,
+        })
+      : null;
     // Bye detection: week has games for other teams but not this team
     const weekHasGames = !!scheduleMap && Object.keys(scheduleMap[week] ?? {}).length > 0;
     const isBye = weekHasGames && !schedEntry && myTeam !== 'FA';
     const fallbackWeekPts = pointsMap && Number.isFinite(Number(pointsMap[id])) ? Number(pointsMap[id]) : null;
     const statWeekPts = weekEntry ? calcPoints(weekEntry, activeScoringSettings, p.position) : null;
     const preferStatWeekPts = platform === 'espn' && weekEntry && !isTeamDefensePosition(p.position);
+    const gameStarted = isStarterGameStarted({
+      scheduleEntry: schedEntry,
+      weekEntry,
+      fallbackPoints: fallbackWeekPts,
+    });
 
     return {
       id,
@@ -620,21 +817,24 @@ export default function CompanionMatchup({
       weekPts: preferStatWeekPts ? statWeekPts : (fallbackWeekPts ?? statWeekPts),
       avgPPG: hasAdvancedStats ? getAvgPPG(weekly, activeScoringSettings, p.position) : null,
       rank: positionalRanks[id] ?? null,
-      weekRank: weeklyRanks[id] ?? null,
+      weekRank: isFullGameWeekConcluded ? weeklyRanks[id] ?? null : null,
       oppTeam,
       isHome,
       homeTeam,
+      scheduleEntry: schedEntry,
       gameDate: schedEntry?.date ?? WEEK_DATES_2025[week] ?? null,
+      gameStarted,
       stadium,
       isIndoor: stadium?.indoor ?? null,
       weekly,
       availabilityStatus: getPlayerAvailabilityStatus(p),
       defStrength,
       defPercentile,
+      opponentFantasyContext,
       isBye,
       teamTheme: getPlayerRowTeamTheme(myTeam, darkMode),
     };
-  }, [players, hasAdvancedStats, weeklyStats, activeScoringSettings, positionalRanks, weeklyRanks, week, scheduleMap, defenseTable, darkMode, platform]);
+  }, [players, hasAdvancedStats, weeklyStats, activeScoringSettings, positionalRanks, weeklyRanks, week, scheduleMap, defenseTable, previousDefenseTable, darkMode, platform, isFullGameWeekConcluded]);
 
   // Ordered slot positions for each starter slot (filters out BN/IR)
   const starterPositions = useMemo(
@@ -754,7 +954,7 @@ export default function CompanionMatchup({
   // Shared projection context — the same assembly Companion Live uses, so both
   // tabs produce identical pre-kickoff projections for the same player/week.
   const projectionContext = useMemo(() => {
-    if (!hasAdvancedStats || !defenseTable) return null;
+    if (!hasAdvancedStats) return null;
     return buildProjectionContext({
       weeklyStats,
       players,
@@ -763,43 +963,300 @@ export default function CompanionMatchup({
       week,
       defenseTable,
       leagueAvgByPos,
+      historicalWeeklyStats: previousSeasonPackage?.weeklyStats ?? null,
+      providerProjections,
     });
-  }, [hasAdvancedStats, defenseTable, weeklyStats, players, scheduleMap, activeScoringSettings, week, leagueAvgByPos]);
+  }, [
+    hasAdvancedStats,
+    defenseTable,
+    weeklyStats,
+    players,
+    scheduleMap,
+    activeScoringSettings,
+    week,
+    leagueAvgByPos,
+    previousSeasonPackage?.weeklyStats,
+    providerProjections,
+  ]);
+
+  const addProjection = useCallback((player) => {
+    if (!player || !projectionContext || player.name === 'Empty') return player;
+    const date = player.gameDate ?? WEEK_DATES_2025[week];
+    const key = player.homeTeam && date ? `${player.homeTeam}-${date}` : null;
+    const weather = player.isIndoor ? null : (key ? (weatherMap[key] ?? null) : null);
+    return { ...player, projection: projectFromGameInfo(player, projectionContext, { weather }), weather };
+  }, [projectionContext, weatherMap, week]);
 
   // Add projections once weather is available
   const enrichedSlots = useMemo(() => {
-    if (!hasAdvancedStats || !projectionContext) return starterSlots;
+    if (!hasAdvancedStats) return starterSlots;
 
-    return debugCompanionMeasure('Matchup starter projections', () => {
-      function addProjection(player) {
-        if (!player || !player.weekly?.length || player.name === 'Empty') return player;
-        const date = player.gameDate ?? WEEK_DATES_2025[week];
-        const key = player.homeTeam && date ? `${player.homeTeam}-${date}` : null;
-        const weather = player.isIndoor ? null : (key ? (weatherMap[key] ?? null) : null);
-        const proj = projectFromGameInfo(player, projectionContext, { weather });
-        return { ...player, projection: proj, weather };
-      }
-
-      return starterSlots.map(slot => ({
-        mine: addProjection(slot.mine),
-        opp: addProjection(slot.opp),
-        slotPos: slot.slotPos,
-      }));
-    }, {
+    return debugCompanionMeasure('Matchup starter projections', () => starterSlots.map(slot => ({
+      mine: addProjection(slot.mine),
+      opp: addProjection(slot.opp),
+      slotPos: slot.slotPos,
+    })), {
       week,
       starterSlotCount: starterSlots.length,
       weatherEntries: Object.keys(weatherMap).length,
     });
-  }, [hasAdvancedStats, projectionContext, starterSlots, weatherMap, week]);
+  }, [addProjection, hasAdvancedStats, starterSlots, week, weatherMap]);
+
+  const enrichedMyBench = useMemo(() => myBench.map(addProjection), [addProjection, myBench]);
+  const enrichedOppBench = useMemo(() => oppBench.map(addProjection), [addProjection, oppBench]);
+  const drilldownPlayers = useMemo(() => [
+    ...enrichedSlots.flatMap(slot => [slot.mine, slot.opp]),
+    ...enrichedMyBench, ...enrichedOppBench,
+  ].filter(player => player?.id), [enrichedSlots, enrichedMyBench, enrichedOppBench]);
+  const projectionBaselines = useMatchupProjectionBaselines({
+    leagueId: selectedLeagueId, season, week, scoringSettings: activeScoringSettings,
+    players: drilldownPlayers,
+  });
+  // Keep an open drilldown connected to incoming stats and projection updates.
+  const selectedDrilldownPlayer = selectedPlayer
+    ? drilldownPlayers.find(player => String(player.id) === String(selectedPlayer.id)) ?? null
+    : null;
+  const drilldownBenchComparison = (() => {
+    if (!selectedDrilldownPlayer) return null;
+    const side = leftIsUser ? 'mine' : rightIsUser ? 'opp' : null;
+    if (!side) return null;
+    const starterSlot = enrichedSlots.find(slot => String(slot[side]?.id) === String(selectedDrilldownPlayer.id));
+    if (!starterSlot) return null;
+    const roster = side === 'mine' ? myRosterData : opponentRoster;
+    return {
+      isUser: true,
+      starter: selectedDrilldownPlayer,
+      slot: starterSlot.slotPos,
+      bench: side === 'mine' ? enrichedMyBench : enrichedOppBench,
+      excludedIds: [...(roster?.reserve ?? []), ...(roster?.taxi ?? [])],
+      players,
+    };
+  })();
+
+
+  const currentMatchupId = myMatchup?.matchup_id ?? opponentMatchup?.matchup_id ?? null;
+  const hasFinalMatchupGameEvidenceForWeek = useMemo(() => (
+    hasFinalMatchupGameEvidence(
+      starterSlots.flatMap((slot) => [slot.mine, slot.opp]),
+      {
+        scheduleWeekComplete: isCompleteScheduleWeek(matchupWeekSchedule),
+      },
+    )
+  ), [matchupWeekSchedule, starterSlots]);
+  const finalMatchupReconciliationKey = selectedLeagueId && currentMatchupId != null
+    ? `${selectedLeagueId}:${season}:${week}:${currentMatchupId}`
+    : null;
+  const hasCompleteOfficialMatchupPoints = useMemo(() => (
+    currentMatchupId != null && hasReconciledMatchup(matchups, currentMatchupId)
+  ), [currentMatchupId, matchups]);
+  const shouldReconcileFinalMatchup = Boolean(
+    platform === 'sleeper'
+    && hasFinalMatchupGameEvidenceForWeek
+    && finalMatchupReconciliationKey,
+  );
+  const matchupSettlementConfirmed = Boolean(
+    hasFinalMatchupGameEvidenceForWeek
+    && hasCompleteOfficialMatchupPoints
+    && (platform !== 'sleeper' || finalMatchupReconciliation.status === 'success'),
+  );
+
+  useEffect(() => {
+    setFinalMatchupReconciliation({
+      key: finalMatchupReconciliationKey,
+      status: 'idle',
+      attempts: 0,
+    });
+  }, [finalMatchupReconciliationKey]);
+
+  useEffect(() => {
+    if (
+      !shouldReconcileFinalMatchup
+      || !selectedLeagueId
+      || currentMatchupId == null
+      || finalMatchupReconciliation.key !== finalMatchupReconciliationKey
+      || finalMatchupReconciliation.status !== 'idle'
+    ) return undefined;
+
+    let cancelled = false;
+    const attempts = finalMatchupReconciliation.attempts + 1;
+    setFinalMatchupReconciliation({
+      key: finalMatchupReconciliationKey,
+      status: 'pending',
+      attempts,
+    });
+    getLiveMatchups(selectedLeagueId, week)
+      .then((rows) => {
+        if (cancelled) return;
+        const nextMatchups = Array.isArray(rows) ? rows : [];
+        const reconciled = hasReconciledMatchup(nextMatchups, currentMatchupId);
+        if (reconciled) {
+          MATCHUP_RESPONSE_CACHE.set(`${selectedLeagueId}|${season}|${week}`, nextMatchups);
+          setMatchups(nextMatchups);
+        }
+        setFinalMatchupReconciliation({
+          key: finalMatchupReconciliationKey,
+          status: reconciled ? 'success' : 'incomplete',
+          attempts,
+        });
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setFinalMatchupReconciliation({
+          key: finalMatchupReconciliationKey,
+          status: 'error',
+          attempts,
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    currentMatchupId,
+    finalMatchupReconciliation.attempts,
+    finalMatchupReconciliation.key,
+    finalMatchupReconciliation.status,
+    finalMatchupReconciliationKey,
+    platform,
+    season,
+    selectedLeagueId,
+    shouldReconcileFinalMatchup,
+    week,
+  ]);
+
+  // Sleeper may publish official player points shortly after the last NFL
+  // game is final. Keep the forecast visible until a fresh response proves
+  // both sides are complete, then retry quietly if that response lags.
+  useEffect(() => {
+    if (
+      !shouldReconcileFinalMatchup
+      || finalMatchupReconciliation.key !== finalMatchupReconciliationKey
+      || !['error', 'incomplete'].includes(finalMatchupReconciliation.status)
+    ) return undefined;
+    const retryDelay = Math.min(
+      FINAL_MATCHUP_RECONCILIATION_RETRY_MS * Math.max(1, finalMatchupReconciliation.attempts),
+      120000,
+    );
+    const timer = window.setTimeout(() => {
+      setFinalMatchupReconciliation((current) => (
+        current.key === finalMatchupReconciliationKey
+        && ['error', 'incomplete'].includes(current.status)
+          ? { ...current, status: 'idle' }
+          : current
+      ));
+    }, retryDelay);
+    return () => window.clearTimeout(timer);
+  }, [
+    finalMatchupReconciliation.attempts,
+    finalMatchupReconciliation.key,
+    finalMatchupReconciliation.status,
+    finalMatchupReconciliationKey,
+    shouldReconcileFinalMatchup,
+  ]);
+
+  const myTeamGameStarted = useMemo(
+    () => starterSlots.some(slot => slot.mine?.gameStarted),
+    [starterSlots],
+  );
+  const opponentGameStarted = useMemo(
+    () => starterSlots.some(slot => slot.opp?.gameStarted),
+    [starterSlots],
+  );
+  const matchupGameStarted = myTeamGameStarted || opponentGameStarted;
+  const matchupOutcomePointsA = matchupSettlementConfirmed && !scoringOverride
+    ? getOfficialMatchupRowPoints(myMatchup) ?? myDisplayPoints
+    : myDisplayPoints;
+  const matchupOutcomePointsB = matchupSettlementConfirmed && !scoringOverride
+    ? getOfficialMatchupRowPoints(opponentMatchup) ?? oppDisplayPoints
+    : oppDisplayPoints;
+  const matchupOutcome = useMemo(() => {
+    if (!matchupGameStarted || matchupOutcomePointsA == null || matchupOutcomePointsB == null) {
+      return { mine: 'pending', opp: 'pending' };
+    }
+    if (matchupOutcomePointsA === matchupOutcomePointsB) return { mine: 'tie', opp: 'tie' };
+    return matchupOutcomePointsA > matchupOutcomePointsB
+      ? { mine: 'win', opp: 'loss' }
+      : { mine: 'loss', opp: 'win' };
+  }, [matchupGameStarted, matchupOutcomePointsA, matchupOutcomePointsB]);
+  const neutralHeaderGlow = darkMode ? '#FFFFFF' : '#F5B700';
+  const mineHeaderGlowColor = matchupOutcome.mine === 'win'
+    ? '#2ED578'
+    : matchupOutcome.mine === 'loss'
+      ? '#FF4433'
+      : neutralHeaderGlow;
+  const oppHeaderGlowColor = matchupOutcome.opp === 'win'
+    ? '#2ED578'
+    : matchupOutcome.opp === 'loss'
+      ? '#FF4433'
+      : neutralHeaderGlow;
+  const mineHeaderGlow = useCardGlow({
+    enabled: isMineHeaderHovered,
+    color: mineHeaderGlowColor,
+    cardColor: matchupOutcome.mine === 'pending' || matchupOutcome.mine === 'tie' ? null : mineHeaderGlowColor,
+    darkMode,
+    coreColor: darkMode ? '#FFFFFF' : null,
+    outerColor: mineHeaderGlowColor,
+  });
+  const oppHeaderGlow = useCardGlow({
+    enabled: isOppHeaderHovered,
+    color: oppHeaderGlowColor,
+    cardColor: matchupOutcome.opp === 'pending' || matchupOutcome.opp === 'tie' ? null : oppHeaderGlowColor,
+    darkMode,
+    coreColor: darkMode ? '#FFFFFF' : null,
+    outerColor: oppHeaderGlowColor,
+  });
+  const myForecast = useMemo(
+    () => summarizeTeamForecast(enrichedSlots.map((slot) => slot.mine)),
+    [enrichedSlots],
+  );
+  const oppForecast = useMemo(
+    () => summarizeTeamForecast(enrichedSlots.map((slot) => slot.opp)),
+    [enrichedSlots],
+  );
+  const matchupWinProbability = useMemo(() => (
+    buildMatchupWinProbability({
+      myPlayers: enrichedSlots.map((slot) => slot.mine),
+      opponentPlayers: enrichedSlots.map((slot) => slot.opp),
+      myCustomPoints: myMatchup?.custom_points,
+      opponentCustomPoints: opponentMatchup?.custom_points,
+      settledConfirmed: matchupSettlementConfirmed,
+      officialPoints: !scoringOverride && hasCompleteOfficialMatchupPoints
+        ? {
+            mine: getOfficialMatchupRowPoints(myMatchup),
+            opponent: getOfficialMatchupRowPoints(opponentMatchup),
+          }
+        : null,
+    })
+  ), [
+    enrichedSlots,
+    hasCompleteOfficialMatchupPoints,
+    myMatchup,
+    opponentMatchup,
+    scoringOverride,
+    matchupSettlementConfirmed,
+  ]);
+  // Once either side has started, both matchup totals are meaningful actual
+  // scores. Keep the projection secondary even when the other side's first
+  // game has not kicked off yet (its actual total will usually be 0.00).
+  const mineScoreIsLive = matchupGameStarted && myDisplayPoints != null;
+  const oppScoreIsLive = matchupGameStarted && oppDisplayPoints != null;
+  const mineForecastTotal = matchupWinProbability?.expectedA ?? myForecast?.total ?? null;
+  const oppForecastTotal = matchupWinProbability?.expectedB ?? oppForecast?.total ?? null;
+  const displayedMineScore = mineScoreIsLive
+    ? myDisplayPoints.toFixed(2)
+    : mineForecastTotal != null ? mineForecastTotal.toFixed(1) : '—';
+  const displayedOppScore = oppScoreIsLive
+    ? oppDisplayPoints.toFixed(2)
+    : oppForecastTotal != null ? oppForecastTotal.toFixed(1) : '—';
 
   const sharedPlayerNameFontSize = useMemo(() => {
     const labels = [
       ...enrichedSlots.flatMap(slot => [slot.mine?.name, slot.opp?.name]),
-      ...myBench.map(player => player?.name),
-      ...oppBench.map(player => player?.name),
+      ...enrichedMyBench.map(player => player?.name),
+      ...enrichedOppBench.map(player => player?.name),
     ].filter(Boolean);
     return getUnifiedPlayerNameFontSize(labels, isCompactPhone);
-  }, [enrichedSlots, myBench, oppBench, isCompactPhone]);
+  }, [enrichedMyBench, enrichedOppBench, enrichedSlots, isCompactPhone]);
 
   useEffect(() => {
     const requestedPlayerId = initialWeekRequest?.playerId;
@@ -808,8 +1265,8 @@ export default function CompanionMatchup({
 
     const matchupPlayers = [
       ...enrichedSlots.flatMap((slot) => [slot.mine, slot.opp]),
-      ...myBench,
-      ...oppBench,
+      ...enrichedMyBench,
+      ...enrichedOppBench,
     ].filter(Boolean);
 
     const match = matchupPlayers.find((player) => player?.id === requestedPlayerId);
@@ -821,7 +1278,7 @@ export default function CompanionMatchup({
       });
     }
     onConsumeInitialWeekRequest?.();
-  }, [enrichedSlots, initialWeekRequest, myBench, oppBench, onConsumeInitialWeekRequest, week]);
+  }, [enrichedMyBench, enrichedOppBench, enrichedSlots, initialWeekRequest, onConsumeInitialWeekRequest, week]);
 
   useEffect(() => {
     setSelectedPlayer(null);
@@ -869,8 +1326,8 @@ export default function CompanionMatchup({
       || (hasStarterIds && !hasRenderableStarterRows)
     );
   const matchupControls = selectedLeagueId && !hasNoMatchup && (hasStarterIds || hasRenderableStarterRows) ? (
-    <div className={`mx-2 sm:mx-4 mb-3 ${isCompactPhone ? '' : ''}`}>
-      <CompanionSelectorRail ariaLabel="Matchup controls" wrapOnDesktop={false}>
+    <div className="companion-matchup-controls mx-2 sm:mx-4 mb-3">
+      <CompanionSelectorRail ariaLabel="Matchup controls" wrapOnDesktop={false} className="companion-matchup-controls__rail">
         <CompanionSelectorButton
           onClick={() => setShowWeekPicker(true)}
           size="sm"
@@ -896,12 +1353,10 @@ export default function CompanionMatchup({
             aria-label="Browse weekly matchups"
             tabIndex={0}
             onKeyDown={handleMatchupPagerKeyDown}
-            className="inline-flex min-w-0 shrink-0 items-stretch focus-visible:outline-none focus-visible:ring-2"
+            className="companion-matchup-controls__pager inline-flex min-w-0 items-stretch focus-visible:outline-none focus-visible:ring-2"
             style={{
-              width: isCompactPhone ? 252 : 348,
-              minWidth: isCompactPhone ? 252 : 348,
-              border: '1px solid var(--color-separator)',
               borderRadius: 8,
+              boxShadow: 'inset 0 0 0 1px var(--color-separator)',
               overflow: 'hidden',
               '--tw-ring-color': 'var(--color-signature)',
             }}
@@ -915,7 +1370,6 @@ export default function CompanionMatchup({
               style={{
                 width: 44,
                 minWidth: 44,
-                height: 44,
                 background: 'var(--color-fill)',
                 color: 'var(--color-label)',
                 borderRight: '1px solid var(--color-separator)',
@@ -936,7 +1390,6 @@ export default function CompanionMatchup({
               onClick={() => setShowMatchupPicker(true)}
               className="inline-flex min-w-0 flex-1 flex-col items-center justify-center px-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset"
               style={{
-                height: 44,
                 background: 'var(--color-fill)',
                 color: 'var(--color-label)',
                 '--tw-ring-color': 'var(--color-signature)',
@@ -958,7 +1411,6 @@ export default function CompanionMatchup({
               style={{
                 width: 44,
                 minWidth: 44,
-                height: 44,
                 background: 'var(--color-fill)',
                 color: 'var(--color-label)',
                 borderLeft: '1px solid var(--color-separator)',
@@ -1067,6 +1519,9 @@ export default function CompanionMatchup({
           <TeamScoreBreakdown
             teamName={myName}
             playerIds={myBreakdownPlayerIds}
+            playerPoints={scoringOverride ? null : myPointsMap}
+            teamTotal={myDisplayPoints}
+            scoringOverride={scoringOverride}
             week={week}
             onClose={() => setSelectedTeam(null)}
           />
@@ -1094,157 +1549,38 @@ export default function CompanionMatchup({
   return (
     <div className="page-frame-workbench pb-6">
       <SeasonHintBanner capability="current-only" feature="Weekly matchups" className="mx-2 sm:mx-4 mb-3" />
-      {/* Scoreboard header */}
-          <div className="mb-4">
-            {matchupControls}
-            <div className="px-2 sm:px-4">
-              <div className="grid grid-cols-[minmax(0,1fr)_24px_minmax(0,1fr)] sm:grid-cols-[minmax(0,1fr)_44px_minmax(0,1fr)] items-stretch gap-1 sm:gap-2">
-              <button
-                aria-label={`${myName} scoring breakdown${leftIsUser ? ', your team' : ''}`}
-                className="companion-matchup-scorecard min-w-0 px-2 sm:px-4 py-2.5 sm:py-3 text-center active:opacity-60 transition-opacity flex flex-col justify-center"
-                onClick={() => setSelectedTeam('mine')}
-                onMouseMove={mineHeaderGlow.glowHandlers.onMouseMove}
-                onMouseEnter={() => setIsMineHeaderHovered(true)}
-                onMouseLeave={() => setIsMineHeaderHovered(false)}
-                onFocus={() => setIsMineHeaderHovered(true)}
-                onBlur={() => setIsMineHeaderHovered(false)}
-                style={{
-                  border: '1px solid var(--color-separator)',
-                  background: isMineHeaderHovered
-                    ? matchupOutcome.mine === 'win'
-                      ? 'rgba(46,213,120,0.24)'
-                      : matchupOutcome.mine === 'loss'
-                        ? 'rgba(255,68,51,0.22)'
-                        : 'var(--color-fill)'
-                    : matchupOutcome.mine === 'win'
-                      ? 'rgba(46,213,120,0.18)'
-                      : matchupOutcome.mine === 'loss'
-                        ? 'rgba(255,68,51,0.16)'
-                        : 'var(--color-fill-secondary)',
-                  borderRadius: 0,
-                  position: 'relative',
-                  overflow: 'hidden',
-                  minHeight: isMobileLayout ? (isCompactPhone ? 88 : 104) : 132,
-                  display: 'grid',
-                  alignContent: 'center',
-                  justifyItems: 'center',
-                  gridTemplateRows: isMobileLayout
-                    ? isCompactPhone ? 'minmax(0, max-content) 26px' : 'minmax(0, max-content) 34px'
-                    : '18px minmax(0, 1fr) 34px',
-                  boxShadow: isMineHeaderHovered
-                    ? `${mineHeaderGlow.glowShadow ? `${mineHeaderGlow.glowShadow}, ` : ''}${MATCHUP_CARD_SHADOW}`
-                    : 'none',
-                  transform: isMineHeaderHovered ? 'translateY(-1px)' : 'translateY(0)',
-                  transition: 'background 150ms cubic-bezier(0.32, 0.72, 0, 1), box-shadow 200ms cubic-bezier(0.32, 0.72, 0, 1), transform 200ms cubic-bezier(0.32, 0.72, 0, 1)',
-                }}
-              >
-                {mineHeaderGlow.borderOverlay}
-                {matchupOutcome.mine !== 'pending' && matchupOutcome.mine !== 'tie' && (
-                  <div
-                    aria-hidden="true"
-                    className="hidden sm:block"
-                    style={{
-                      position: 'absolute',
-                      top: '50%',
-                      right: 'clamp(8px, 2vw, 18px)',
-                      transform: 'translateY(-50%)',
-                      fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif",
-                      fontSize: 'clamp(40px, 8vw, 64px)',
-                      fontWeight: 800,
-                      lineHeight: 0.9,
-                      color: matchupOutcome.mine === 'win' ? 'rgba(46,213,120,0.30)' : 'rgba(255,68,51,0.28)',
-                      pointerEvents: 'none',
-                    }}
-                  >
-                    {matchupOutcome.mine === 'win' ? 'W' : 'L'}
-                  </div>
-                )}
-                <div className="hidden lg:block relative z-[1] self-center text-[length:var(--type-label)] sm:text-[length:var(--type-label)] font-bold uppercase tracking-[0.18em] sm:tracking-[0.2em]" style={{ color: 'var(--color-label-secondary)', fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif" }}>{leftIsUser ? 'You' : 'League Team'}</div>
-                <div className="relative z-[1] mt-1 self-center uppercase whitespace-normal" style={{ color: 'var(--color-label)', fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif", fontSize: sharedTeamNameFontSize, fontWeight: 800, lineHeight: 0.96, wordBreak: 'normal', overflowWrap: 'normal' }}>
-                  {myName}
-                  {leftIsUser && <span className="ml-1 inline-block align-middle text-[length:var(--type-micro)] tracking-[0.14em] lg:hidden" style={{ color: 'var(--color-label-secondary)' }}>You</span>}
-                </div>
-                <div className="relative z-[1] mt-1 self-center tabular-nums" style={{ color: 'var(--color-label)', fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif", fontSize: isCompactPhone ? 'clamp(24px, 6.2vw, 30px)' : 'clamp(30px, 7vw, 38px)', fontWeight: 800, lineHeight: 0.92 }}>
-                  {myDisplayPoints?.toFixed(2) ?? '?'}
-                </div>
-              </button>
-              <div className="flex items-center justify-center self-stretch">
-                <div className="px-1 py-0 text-xs font-bold uppercase tracking-[0.18em]" style={{ background: 'transparent', color: 'var(--color-label-secondary)', borderRadius: 0 }}>
-                  vs
-                </div>
-              </div>
-              <button
-                aria-label={`${opponentName} scoring breakdown${rightIsUser ? ', your team' : ''}`}
-                className="companion-matchup-scorecard min-w-0 px-2 sm:px-4 py-2.5 sm:py-3 text-center active:opacity-60 transition-opacity flex flex-col justify-center"
-                onClick={() => setSelectedTeam('opp')}
-                onMouseMove={oppHeaderGlow.glowHandlers.onMouseMove}
-                onMouseEnter={() => setIsOppHeaderHovered(true)}
-                onMouseLeave={() => setIsOppHeaderHovered(false)}
-                onFocus={() => setIsOppHeaderHovered(true)}
-                onBlur={() => setIsOppHeaderHovered(false)}
-                style={{
-                  border: '1px solid var(--color-separator)',
-                  background: isOppHeaderHovered
-                    ? matchupOutcome.opp === 'win'
-                      ? 'rgba(46,213,120,0.24)'
-                      : matchupOutcome.opp === 'loss'
-                        ? 'rgba(255,68,51,0.22)'
-                        : 'var(--color-fill)'
-                    : matchupOutcome.opp === 'win'
-                      ? 'rgba(46,213,120,0.18)'
-                      : matchupOutcome.opp === 'loss'
-                        ? 'rgba(255,68,51,0.16)'
-                        : 'var(--color-fill-secondary)',
-                  borderRadius: 0,
-                  position: 'relative',
-                  overflow: 'hidden',
-                  minHeight: isMobileLayout ? (isCompactPhone ? 88 : 104) : 132,
-                  display: 'grid',
-                  alignContent: 'center',
-                  justifyItems: 'center',
-                  gridTemplateRows: isMobileLayout
-                    ? isCompactPhone ? 'minmax(0, max-content) 26px' : 'minmax(0, max-content) 34px'
-                    : '18px minmax(0, 1fr) 34px',
-                  boxShadow: isOppHeaderHovered
-                    ? `${oppHeaderGlow.glowShadow ? `${oppHeaderGlow.glowShadow}, ` : ''}${MATCHUP_CARD_SHADOW}`
-                    : 'none',
-                  transform: isOppHeaderHovered ? 'translateY(-1px)' : 'translateY(0)',
-                  transition: 'background 150ms cubic-bezier(0.32, 0.72, 0, 1), box-shadow 200ms cubic-bezier(0.32, 0.72, 0, 1), transform 200ms cubic-bezier(0.32, 0.72, 0, 1)',
-                }}
-              >
-                {oppHeaderGlow.borderOverlay}
-                {matchupOutcome.opp !== 'pending' && matchupOutcome.opp !== 'tie' && (
-                  <div
-                    aria-hidden="true"
-                    className="hidden sm:block"
-                    style={{
-                      position: 'absolute',
-                      top: '50%',
-                      left: 'clamp(8px, 2vw, 18px)',
-                      transform: 'translateY(-50%)',
-                      fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif",
-                      fontSize: 'clamp(40px, 8vw, 64px)',
-                      fontWeight: 800,
-                      lineHeight: 0.9,
-                      color: matchupOutcome.opp === 'win' ? 'rgba(46,213,120,0.30)' : 'rgba(255,68,51,0.28)',
-                      pointerEvents: 'none',
-                    }}
-                  >
-                    {matchupOutcome.opp === 'win' ? 'W' : 'L'}
-                  </div>
-                )}
-                <div className="hidden lg:block relative z-[1] self-center text-[length:var(--type-label)] sm:text-[length:var(--type-label)] font-bold uppercase tracking-[0.18em] sm:tracking-[0.2em]" style={{ color: 'var(--color-label-secondary)', fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif" }}>{rightIsUser ? 'You' : 'League Team'}</div>
-                <div className="relative z-[1] mt-1 self-center uppercase whitespace-normal" style={{ color: 'var(--color-label)', fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif", fontSize: sharedTeamNameFontSize, fontWeight: 800, lineHeight: 0.96, wordBreak: 'normal', overflowWrap: 'normal' }}>
-                  {opponentName}
-                  {rightIsUser && <span className="ml-1 inline-block align-middle text-[length:var(--type-micro)] tracking-[0.14em] lg:hidden" style={{ color: 'var(--color-label-secondary)' }}>You</span>}
-                </div>
-                <div className="relative z-[1] mt-1 self-center tabular-nums" style={{ color: 'var(--color-label)', fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif", fontSize: isCompactPhone ? 'clamp(24px, 6.2vw, 30px)' : 'clamp(30px, 7vw, 38px)', fontWeight: 800, lineHeight: 0.92 }}>
-                  {oppDisplayPoints?.toFixed(2) ?? '?'}
-                </div>
-              </button>
-            </div>
-          </div>
-          </div>
+      {/* Integrated matchup masthead: score, probability, and provenance share one visual field. */}
+      <div className="mb-4">
+        {matchupControls}
+        <MatchupMasthead
+          myName={myName}
+          opponentName={opponentName}
+          myPalette={myFantasyPalette}
+          opponentPalette={opponentFantasyPalette}
+          myScore={displayedMineScore}
+          opponentScore={displayedOppScore}
+          myScoreLabel={matchupWinProbability?.settled ? 'Final score' : mineScoreIsLive ? 'Live score' : mineForecastTotal != null ? 'Projected points' : 'Score pending'}
+          opponentScoreLabel={matchupWinProbability?.settled ? 'Final score' : oppScoreIsLive ? 'Live score' : oppForecastTotal != null ? 'Projected points' : 'Score pending'}
+          myProjectedFinal={matchupWinProbability?.settled ? null : mineScoreIsLive && mineForecastTotal != null ? mineForecastTotal : null}
+          opponentProjectedFinal={matchupWinProbability?.settled ? null : oppScoreIsLive && oppForecastTotal != null ? oppForecastTotal : null}
+          leftIsUser={leftIsUser}
+          rightIsUser={rightIsUser}
+          matchupOutcome={matchupOutcome}
+          myForecast={myForecast}
+          oppForecast={oppForecast}
+          winProbability={matchupWinProbability}
+          loading={providerProjectionState.status === 'loading' && !myForecast && !oppForecast}
+          onOpenRivalry={openRivalry}
+          onOpenMine={() => setSelectedTeam('mine')}
+          onOpenOpponent={() => setSelectedTeam('opp')}
+          myHeaderGlow={mineHeaderGlow}
+          opponentHeaderGlow={oppHeaderGlow}
+          isMineHeaderHovered={isMineHeaderHovered}
+          isOpponentHeaderHovered={isOppHeaderHovered}
+          setIsMineHeaderHovered={setIsMineHeaderHovered}
+          setIsOpponentHeaderHovered={setIsOppHeaderHovered}
+        />
+      </div>
 
           {/* Head-to-head starter rows */}
           <div>
@@ -1255,15 +1591,7 @@ export default function CompanionMatchup({
                 opp={slot.opp}
                 slotPos={slot.slotPos}
                 sharedPlayerNameFontSize={sharedPlayerNameFontSize}
-                onComparePlayers={(() => {
-                  if (!onComparePlayers) return null;
-                  const playerA = toCompareSeed(slot.mine);
-                  const playerB = toCompareSeed(slot.opp);
-                  if (!playerA || !playerB) return null;
-                  return () => {
-                      onComparePlayers(playerA, playerB);
-                  };
-                })()}
+                onComparePlayers={slot.mine && slot.opp ? () => openTaleOfTape(slot.mine, slot.opp, slot.slotPos) : null}
                 onSelectMine={() => slot.mine?.id && setSelectedPlayer({ id: slot.mine.id, projection: slot.mine.projection ?? null, enriched: slot.mine })}
                 onSelectOpp={() => slot.opp?.id && setSelectedPlayer({ id: slot.opp.id, projection: slot.opp.projection ?? null, enriched: slot.opp })}
               />
@@ -1271,7 +1599,7 @@ export default function CompanionMatchup({
           </div>
 
           {/* Bench section */}
-          {(myBench.length > 0 || oppBench.length > 0) && (
+          {(enrichedMyBench.length > 0 || enrichedOppBench.length > 0) && (
             <>
               <div
                 className="mx-2 sm:mx-4 mt-5 mb-2 px-4 py-2 text-xs font-bold uppercase tracking-widest"
@@ -1285,18 +1613,18 @@ export default function CompanionMatchup({
                 Bench
               </div>
               {showBench && (() => {
-                const len = Math.max(myBench.length, oppBench.length);
+                const len = Math.max(enrichedMyBench.length, enrichedOppBench.length);
                 return (
-                  <div>
+                  <div className="companion-matchup-bench-list">
                     {Array.from({ length: len }, (_, i) => (
                       <HeadToHeadRow
                         key={i}
-                        mine={myBench[i] ?? null}
-                        opp={oppBench[i] ?? null}
+                        mine={enrichedMyBench[i] ?? null}
+                        opp={enrichedOppBench[i] ?? null}
                         bench
                         sharedPlayerNameFontSize={sharedPlayerNameFontSize}
-                        onSelectMine={() => myBench[i]?.id && setSelectedPlayer({ id: myBench[i].id, projection: null, enriched: myBench[i] })}
-                        onSelectOpp={() => oppBench[i]?.id && setSelectedPlayer({ id: oppBench[i].id, projection: null, enriched: oppBench[i] })}
+                        onSelectMine={() => enrichedMyBench[i]?.id && setSelectedPlayer({ id: enrichedMyBench[i].id, projection: enrichedMyBench[i].projection ?? null, enriched: enrichedMyBench[i] })}
+                        onSelectOpp={() => enrichedOppBench[i]?.id && setSelectedPlayer({ id: enrichedOppBench[i].id, projection: enrichedOppBench[i].projection ?? null, enriched: enrichedOppBench[i] })}
                       />
                     ))}
                   </div>
@@ -1306,10 +1634,14 @@ export default function CompanionMatchup({
           )}
       {selectedPlayer && (
         <PlayerMatchupBreakdown
+          key={`${selectedLeagueId}:${season}:${week}:${selectedPlayer.id}`}
           playerId={selectedPlayer.id}
           week={week}
-          projection={selectedPlayer.projection}
-          enrichedPlayer={selectedPlayer.enriched ?? null}
+          projection={selectedDrilldownPlayer?.projection ?? null}
+          baseline={projectionBaselines[selectedPlayer.id] ?? null}
+          enrichedPlayer={selectedDrilldownPlayer}
+          benchComparison={drilldownBenchComparison}
+          onViewBenchPlayer={(playerId) => setSelectedPlayer({ id: playerId })}
           onClose={() => setSelectedPlayer(null)}
           onViewStats={onViewPlayer}
         />
@@ -1318,12 +1650,37 @@ export default function CompanionMatchup({
       {selectedTeam && (
         <TeamScoreBreakdown
           teamName={selectedTeam === 'mine' ? myName : opponentName}
-          playerIds={enrichedSlots.map(s => selectedTeam === 'mine' ? s.mine?.id : s.opp?.id).filter(Boolean)}
+          playerIds={selectedTeam === 'mine' ? myBreakdownPlayerIds : opponentBreakdownPlayerIds}
+          playerPoints={scoringOverride ? null : selectedTeam === 'mine' ? myPointsMap : oppPointsMap}
+          teamTotal={selectedTeam === 'mine' ? myDisplayPoints : oppDisplayPoints}
+          scoringOverride={scoringOverride}
           week={week}
           onClose={() => setSelectedTeam(null)}
         />
       )}
 
+      {taleOfTape && (
+        <PlayerMatchupCompare
+          left={taleOfTape.left}
+          right={taleOfTape.right}
+          slotLabel={taleOfTape.slotLabel}
+          week={week}
+          leftBaseline={projectionBaselines[taleOfTape.left?.id] ?? null}
+          rightBaseline={projectionBaselines[taleOfTape.right?.id] ?? null}
+          onClose={() => setTaleOfTape(null)}
+        />
+      )}
+
+      {rivalrySelection && (
+        <MatchupRivalryModal
+          selection={rivalrySelection}
+          players={players}
+          onOpenMatchup={onOpenHistoricalMatchup}
+          historyState={tapeHistoryState.key === rivalrySelection.historyKey ? tapeHistoryState : { status: 'loading', model: null }}
+          onRetry={() => loadTaleOfTapeHistory(rivalrySelection.historyKey)}
+          onClose={() => setRivalrySelection(null)}
+        />
+      )}
       {weekPickerModal}
       {matchupPickerModal}
     </div>
@@ -1394,6 +1751,194 @@ function ByeWeekMatchup({ teamName, week, points, onOpenBreakdown }) {
         </div>
       </div>
     </div>
+  );
+}
+
+function MatchupMasthead({
+  myName,
+  opponentName,
+  myPalette,
+  opponentPalette,
+  myScore,
+  opponentScore,
+  myScoreLabel,
+  opponentScoreLabel,
+  myProjectedFinal,
+  opponentProjectedFinal,
+  leftIsUser,
+  rightIsUser,
+  matchupOutcome,
+  myForecast,
+  oppForecast,
+  winProbability,
+  loading,
+  onOpenMine,
+  onOpenOpponent,
+  onOpenRivalry,
+  myHeaderGlow,
+  opponentHeaderGlow,
+  isMineHeaderHovered,
+  isOpponentHeaderHovered,
+  setIsMineHeaderHovered,
+  setIsOpponentHeaderHovered,
+}) {
+  const probabilityLabels = formatWinProbabilityPair(winProbability?.probA, { settled: winProbability?.settled });
+  const isSettled = Boolean(winProbability?.settled);
+  const modeLabel = isSettled ? 'Final result' : winProbability?.mode === 'live' ? 'Live outlook' : 'Pregame forecast';
+  const sourceLabel = isSettled ? 'Official matchup totals' : getMatchupForecastSourceLabel(winProbability);
+  const freshnessLabel = formatForecastFreshness(winProbability?.providerCollectedAt);
+  const missingProjectionCount = Math.max(0, (winProbability?.starterCount ?? 0) - (winProbability?.projectedCount ?? 0));
+  const confidenceLabel = !winProbability
+    ? loading ? 'Forecast loading' : 'Coverage unavailable'
+    : isSettled
+      ? 'Final score locked'
+    : winProbability.complete
+      ? 'Complete lineup'
+      : missingProjectionCount > 0
+        ? `${missingProjectionCount} fallback estimate${missingProjectionCount === 1 ? '' : 's'}`
+        : 'Game state unresolved';
+  const leadKey = winProbability?.expectedMarginA >= 0 ? 'mine' : 'opponent';
+  const leadName = leadKey === 'mine' ? myName : opponentName;
+  const margin = Math.abs(Number(winProbability?.expectedMarginA) || 0).toFixed(1);
+  const probabilityA = Math.max(0, Math.min(100, Number(winProbability?.probA) || 0));
+  const myDirectCoverage = myForecast ? `${myForecast.projectedCount}/${myForecast.starterCount}` : null;
+  const oppDirectCoverage = oppForecast ? `${oppForecast.projectedCount}/${oppForecast.starterCount}` : null;
+  const coverageLabel = myDirectCoverage && oppDirectCoverage
+    ? `${Number(myForecast?.projectedCount ?? 0) + Number(oppForecast?.projectedCount ?? 0)}/${Number(myForecast?.starterCount ?? 0) + Number(oppForecast?.starterCount ?? 0)} direct projections`
+    : null;
+  const paletteForSide = (palette, fallback) => palette?.[0] ?? fallback;
+  const leftAccent = paletteForSide(myPalette, 'var(--color-accent)');
+  const rightAccent = paletteForSide(opponentPalette, 'var(--color-signature)');
+  const leftBackground = myPalette?.length ? fantasyHeroGradient(myPalette[0], myPalette[1], 135) : 'var(--color-fill-secondary)';
+  const rightBackground = opponentPalette?.length ? fantasyHeroGradient(opponentPalette[0], opponentPalette[1], 225) : 'var(--color-fill-secondary)';
+
+  const renderScoreSide = ({
+    name,
+    score,
+    scoreLabel,
+    projectedFinal,
+    isUser,
+    outcome,
+    side,
+    background,
+    accent,
+    onClick,
+    onMouseMove,
+    hovered,
+    setHovered,
+    glow,
+  }) => (
+    <button
+      type="button"
+      aria-label={`${name} scoring breakdown${isUser ? ', your team' : ''}`}
+      data-testid={side === 'mine' ? 'matchup-forecast-mine' : 'matchup-forecast-opponent'}
+      className={`companion-matchup-scorecard companion-matchup-masthead__side is-${side}`}
+      onClick={onClick}
+      onMouseMove={onMouseMove}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onFocus={() => setHovered(true)}
+      onBlur={() => setHovered(false)}
+      style={{
+        '--matchup-masthead-accent': accent,
+        background,
+        boxShadow: hovered ? (glow.glowShadow ?? '0 0 0 1px var(--color-separator)') : 'none',
+        transform: hovered ? 'translateY(-1px)' : 'translateY(0)',
+      }}
+    >
+      {glow.borderOverlay}
+      <span className="companion-matchup-masthead__side-accent" aria-hidden="true" />
+      <span className="companion-matchup-masthead__team-name">{name}</span>
+      <span className="companion-matchup-masthead__score-label">{scoreLabel}</span>
+      <strong className="companion-matchup-masthead__score tabular-nums">{score}</strong>
+      {projectedFinal != null && (
+        <span className="companion-matchup-masthead__projected-final">Projected final {projectedFinal.toFixed(1)}</span>
+      )}
+      {isSettled && outcome !== 'pending' && outcome !== 'tie' && (
+        <span className={`companion-matchup-masthead__outcome is-${outcome}`} aria-label={outcome === 'win' ? 'Winning' : 'Losing'}>
+          {outcome === 'win' ? 'W' : 'L'}
+        </span>
+      )}
+    </button>
+  );
+
+  return (
+    <section
+      className="companion-matchup-masthead mx-2 mb-3 sm:mx-4"
+      aria-label={isSettled ? 'Final matchup result' : winProbability?.mode === 'live' ? 'Live matchup win chance' : 'Matchup forecast'}
+      data-testid={winProbability ? 'matchup-win-probability' : undefined}
+    >
+      <div className="companion-matchup-masthead__score-grid">
+        {renderScoreSide({ name: myName, score: myScore, scoreLabel: myScoreLabel, projectedFinal: myProjectedFinal, isUser: leftIsUser, outcome: matchupOutcome.mine, side: 'mine', background: leftBackground, accent: leftAccent, onClick: onOpenMine, onMouseMove: myHeaderGlow.glowHandlers.onMouseMove, hovered: isMineHeaderHovered, setHovered: setIsMineHeaderHovered, glow: myHeaderGlow })}
+        <button type="button" className="companion-matchup-masthead__axis" onClick={onOpenRivalry} aria-label={`Open rivalry history: ${myName} versus ${opponentName}`} aria-haspopup="dialog">
+          <span className="companion-matchup-masthead__axis-icon"><ArrowsLeftRightIcon size={17} weight="bold" aria-hidden="true" /></span>
+          <span className="companion-matchup-masthead__axis-label">VS</span>
+          {winProbability ? <span className="companion-matchup-masthead__axis-mode">{modeLabel}</span> : <span className="companion-matchup-masthead__axis-mode">Matchup</span>}
+        </button>
+        {renderScoreSide({ name: opponentName, score: opponentScore, scoreLabel: opponentScoreLabel, projectedFinal: opponentProjectedFinal, isUser: rightIsUser, outcome: matchupOutcome.opp, side: 'opponent', background: rightBackground, accent: rightAccent, onClick: onOpenOpponent, onMouseMove: opponentHeaderGlow.glowHandlers.onMouseMove, hovered: isOpponentHeaderHovered, setHovered: setIsOpponentHeaderHovered, glow: opponentHeaderGlow })}
+      </div>
+
+      {winProbability ? (
+        <div className="companion-matchup-masthead__probability" data-testid="matchup-forecast-summary">
+          <div className="companion-matchup-masthead__probability-labels">
+            <div className="companion-matchup-masthead__probability-side is-left">
+              <strong style={{ color: leftAccent }}>{probabilityLabels.a}</strong>
+              <span>{myName}</span>
+            </div>
+            <div className="companion-matchup-masthead__probability-center">
+              <span>{isSettled ? 'Final result' : 'Estimated win chance'}</span>
+              <strong>{leadName} by {margin}</strong>
+            </div>
+            <div className="companion-matchup-masthead__probability-side is-right">
+              <strong style={{ color: rightAccent }}>{probabilityLabels.b}</strong>
+              <span>{opponentName}</span>
+            </div>
+          </div>
+          <div
+            className="companion-matchup-masthead__probability-bar"
+            style={{ gridTemplateColumns: `${probabilityA}% minmax(0, 1fr)`, '--matchup-masthead-left-accent': leftAccent, '--matchup-masthead-right-accent': rightAccent, '--matchup-masthead-seam': `${probabilityA}%` }}
+            role="img"
+            aria-label={`${myName} ${probabilityLabels.a} win probability; ${opponentName} ${probabilityLabels.b} win probability`}
+          >
+            <span />
+            <span />
+            <i aria-hidden="true" />
+          </div>
+        </div>
+      ) : (
+        <div className="companion-matchup-masthead__probability-empty" data-testid="matchup-forecast-summary">
+          <ChartLineUpIcon size={16} weight="bold" aria-hidden="true" />
+          <span>{loading ? 'Loading forecast…' : 'Estimated win chance unavailable'}</span>
+        </div>
+      )}
+
+      <div className="companion-matchup-masthead__meta" role={loading ? 'status' : undefined} data-testid={loading ? 'matchup-forecast-loading' : undefined}>
+        <span><InfoIcon size={14} weight="bold" aria-hidden="true" /> {sourceLabel ?? 'Forecast source unavailable'}</span>
+        {!isSettled && freshnessLabel ? <span><ClockIcon size={14} weight="bold" aria-hidden="true" /> {freshnessLabel}</span> : null}
+        <span title={isSettled ? 'Both teams have complete official starter points from the fantasy provider.' : 'Fallback estimates use a season average or position default and carry more uncertainty than a direct matchup projection.'}><ChartLineUpIcon size={14} weight="bold" aria-hidden="true" /> {isSettled ? confidenceLabel : `${coverageLabel ? `${coverageLabel} · ` : ''}${confidenceLabel}`}</span>
+      </div>
+      {winProbability && (
+        <details
+          className="companion-matchup-masthead__details"
+          data-testid="matchup-forecast-details"
+        >
+          <summary>
+            <InfoIcon size={14} weight="bold" aria-hidden="true" />
+            {isSettled ? 'Final details' : 'Forecast details'}
+          </summary>
+          <div className="companion-matchup-masthead__details-grid">
+            <div>
+              {isSettled ? 'Final score' : 'Projected final'}: <strong style={{ color: 'var(--color-label)' }}>{myName} {winProbability.expectedA.toFixed(1)}</strong> · <strong style={{ color: 'var(--color-label)' }}>{opponentName} {winProbability.expectedB.toFixed(1)}</strong>
+            </div>
+            <div>
+              {isSettled ? 'Final margin' : 'Expected edge'}: <strong style={{ color: 'var(--color-label)' }}>{leadName} by {margin}</strong>{isSettled ? ' · no points remaining' : ` · swing ±${winProbability.explanation?.swing?.toFixed?.(1) ?? '—'}`}
+            </div>
+            <div>{sourceLabel ?? 'Forecast source unavailable'}{!isSettled && freshnessLabel ? ` · ${freshnessLabel}` : ''}</div>
+            <div>{isSettled ? 'Every starter game is final or a confirmed bye, and the official fantasy score is locked.' : winProbability.mode === 'live' ? 'Remaining points use game-time estimates.' : 'Win chance compares the projected final scores.'}</div>
+          </div>
+        </details>
+      )}
+    </section>
   );
 }
 
@@ -1554,7 +2099,8 @@ function MatchupWeekPickerModal({ open, onClose, weekOptions, week, byeWeeks, pl
 
 // Sleeper flex/special slot names → short display labels
 const SLOT_LABELS = {
-  FLEX: 'FLX', REC_FLEX: 'FLX', WRRB_FLEX: 'FLX',
+  FLEX: 'W/R/T', REC_FLEX: 'W/R/T', WRRBTE_FLEX: 'W/R/T', WRT_FLEX: 'W/R/T',
+  WRRB_FLEX: 'W/R',
   SUPER_FLEX: 'SF', IDP_FLEX: 'IDP', DEF: 'DST',
 };
 
@@ -1568,7 +2114,7 @@ function HeadToHeadRow({ mine, opp, bench, slotPos, onSelectMine, onSelectOpp, o
 
   return (
     <div className="px-1.5 sm:px-4" style={{ opacity: bench ? 0.72 : 1 }}>
-      <div className="grid grid-cols-[minmax(0,1fr)_30px_minmax(0,1fr)] sm:grid-cols-[minmax(0,1fr)_44px_minmax(0,1fr)] items-stretch gap-1 sm:gap-2">
+      <div className="grid grid-cols-[minmax(0,1fr)_44px_minmax(0,1fr)] items-stretch gap-1 sm:gap-2">
       {/* My player — left */}
         <MatchupPlayerRow
           player={mine}
@@ -1588,14 +2134,14 @@ function HeadToHeadRow({ mine, opp, bench, slotPos, onSelectMine, onSelectOpp, o
               color: posColor,
               fontFamily: '"Barlow Condensed", sans-serif',
               fontSize: isCompactPhone ? '9px' : '11px',
-              minWidth: isCompactPhone ? 28 : 32,
-              minHeight: isCompactPhone ? 32 : 38,
+              minWidth: 44,
+              minHeight: 44,
               padding: isCompactPhone ? '2px 1px' : '3px 4px',
               lineHeight: 1,
               cursor: canCompare ? 'pointer' : 'default',
               letterSpacing: '0.08em',
             }}
-            aria-label={canCompare ? `Compare ${mine?.name} and ${opp?.name} in Trade Compare` : undefined}
+            aria-label={canCompare ? `Open tale of the tape for ${mine?.name} and ${opp?.name}` : undefined}
           >
             <span>{slotBadgeLabel}</span>
             {canCompare ? <span style={{ fontSize: isCompactPhone ? '7px' : '9px', lineHeight: 1, marginTop: 1 }}>⇄</span> : null}
@@ -1632,6 +2178,27 @@ function getCompactGameLabel(player) {
   return `${player.team}/${player.oppTeam}`;
 }
 
+function isPlayerGameFinal(player) {
+  return hasFinalMatchupGameEvidence([player]);
+}
+
+function getPlayerPerformanceTarget(player, actualScore, projectedPts) {
+  if (actualScore == null || projectedPts == null) return null;
+  if (isPlayerGameFinal(player)) return projectedPts;
+
+  const outlook = getStarterOutlook({
+    current: actualScore,
+    position: player.position,
+    projection: player.projection ?? null,
+    fallbackAvg: player.avgPPG,
+    fraction: getFallbackRemainingGameFraction({
+      scheduleEntry: player.scheduleEntry ?? null,
+      currentPoints: actualScore,
+    }),
+  });
+  return Number.isFinite(outlook.expectedAtNow) ? outlook.expectedAtNow : null;
+}
+
 function MatchupPlayerRow({ player, darkMode, compact = false, align = 'left', onSelect, nameFontSize = 13 }) {
   const isRight = align === 'right';
   if (!player || player.name === 'Empty') {
@@ -1656,27 +2223,69 @@ function MatchupPlayerRow({ player, darkMode, compact = false, align = 'left', o
   const matchupMeta = [player.position, compact ? getCompactGameLabel(player) : getGameLabel(player)]
     .filter(Boolean)
     .join(' ');
-  const rankText = player.weekRank ? `${player.weekRank.posLabel}${player.weekRank.rank}` : player.rank ? `${player.rank.posLabel}${player.rank.rank} season` : null;
+  const rankText = player.weekRank ? `${player.weekRank.posLabel}${player.weekRank.rank}` : player.rank ? `${player.rank.posLabel}${player.rank.rank} Overall` : null;
   const weatherText = player.weather ? formatWeather(player.weather) : null;
-  const projectionRangeText = !isBye && weekPts == null && projMin != null && projMax != null
+  const actualScore = !isBye && player.gameStarted ? (weekPts ?? 0) : null;
+  const finalGame = isPlayerGameFinal(player);
+  const performanceTarget = getPlayerPerformanceTarget(player, actualScore, projectedPts);
+  const performanceDelta = actualScore != null && performanceTarget != null
+    ? Math.round((actualScore - performanceTarget) * 10) / 10
+    : null;
+  const scoreTone = finalGame ? 'default' : getProjectionScoreTone(actualScore, performanceTarget);
+  const performanceTargetLabel = finalGame ? 'full-game projection' : 'expected pace target';
+  const scoreTitle = actualScore == null || finalGame || performanceDelta == null
+    ? undefined
+    : performanceDelta > 0.05
+      ? `${actualScore.toFixed(2)} points, ${performanceDelta.toFixed(1)} above ${performanceTargetLabel}`
+      : performanceDelta < -0.05
+        ? `${actualScore.toFixed(2)} points, ${Math.abs(performanceDelta).toFixed(1)} below ${performanceTargetLabel}`
+        : `${actualScore.toFixed(2)} points, in line with ${performanceTargetLabel}`;
+  const projectionRangeText = !isBye && !player.gameStarted && projMin != null && projMax != null
     ? `${projMin.toFixed(1)}-${projMax.toFixed(1)} range`
     : null;
-  const metricText = isBye ? null : weekPts == null
-    ? projectedPts != null ? `proj ${projectedPts.toFixed(1)}` : null
-    : weekPts.toFixed(2);
-  const metricLabel = !isBye && (weekPts != null || projectedPts != null) ? 'pts' : null;
-  const hasMetric = metricText != null;
-  const hasMetricSlot = hasMetric || isBye;
+  const isTeamDefense = isTeamDefensePosition(player.position);
+  const playerMetrics = !isBye ? [
+    (
+      <CompanionPlayerMetric
+        key="actual"
+        compact
+        align="end"
+        value={actualScore == null ? '—' : actualScore.toFixed(2)}
+        tone={scoreTone}
+        className={`companion-matchup-player-metric--actual${actualScore == null ? ' is-pending' : ''}`}
+        title={scoreTitle}
+      />
+    ),
+    projectedPts != null ? (
+      <CompanionPlayerMetric
+        key="projection"
+        compact
+        align="end"
+        value={projectedPts.toFixed(1)}
+        className="companion-matchup-player-metric--projection"
+        title="Full-game projection"
+      />
+    ) : null,
+  ].filter(Boolean) : [];
+  const scoreColumns = playerMetrics.length ? [
+    <div key="metrics" className="companion-matchup-player-metrics">
+      {playerMetrics}
+    </div>,
+  ] : null;
+  const hasMetricSlot = Boolean(scoreColumns) || isBye;
   const detailSegments = compact
     ? [rankText].filter(Boolean)
     : [rankText, weatherText, projectionRangeText].filter(Boolean);
   const rowAccent = player.teamTheme?.accent ?? 'var(--color-separator)';
+  const metricColumn = hasMetricSlot ? 'minmax(54px, auto)' : 'auto';
   const gridTemplate = compact
-    ? 'minmax(0, 1fr) minmax(34px, auto)'
-    : hasMetricSlot
-      ? '44px minmax(0, 1fr) auto 36px auto'
-      : '44px minmax(0, 1fr) auto auto';
-  const scoreFontSize = `${Math.max(compact ? 10 : 12, Math.min(compact ? 13 : 16, nameFontSize + 2))}px`;
+    ? isTeamDefense
+      ? `30px minmax(0, 1fr) ${metricColumn}`
+      : `minmax(0, 1fr) ${metricColumn}`
+    : isTeamDefense
+      ? `44px minmax(0, 1fr) ${metricColumn}`
+      : `44px minmax(0, 1fr) 36px ${metricColumn}`;
+  const scoreFontSize = `${Math.max(compact ? 12 : 14, Math.min(compact ? 15 : 17, nameFontSize + 4))}px`;
 
   return (
     <CompanionPlayerRow
@@ -1685,10 +2294,12 @@ function MatchupPlayerRow({ player, darkMode, compact = false, align = 'left', o
       compact={compact}
       interactive={Boolean(onSelect)}
       onClick={onSelect}
-      className="companion-matchup-player-row"
-      showAvatar={!compact}
+      showAccentRail={false}
+      className={`companion-matchup-player-row${isTeamDefense ? ' is-team-defense' : ''}`}
+      showAvatar={!compact || isTeamDefense}
+      useTeamLogoAsAvatar={isTeamDefense}
       showPosition={false}
-      showTeamLogo={!compact}
+      showTeamLogo={!compact && !isTeamDefense}
       metaSegments={[matchupMeta, ...detailSegments]}
       columns={isBye ? [
         <CompanionPlayerStatus
@@ -1696,15 +2307,7 @@ function MatchupPlayerRow({ player, darkMode, compact = false, align = 'left', o
           label="Bye Week"
           className="companion-matchup-bye-metric"
         />,
-      ] : hasMetric ? [
-        <CompanionPlayerMetric
-          key="score"
-          compact
-          align="end"
-          value={metricText}
-          label={compact ? null : metricLabel}
-        />,
-      ] : null}
+      ] : scoreColumns}
       gridTemplate={gridTemplate}
       columnGridTemplate={compact ? 'minmax(34px, auto)' : undefined}
       name={player.name}
@@ -1724,8 +2327,10 @@ function MatchupPlayerRow({ player, darkMode, compact = false, align = 'left', o
   );
 }
 
-function TeamScoreBreakdown({ teamName, playerIds, week, onClose }) {
+function TeamScoreBreakdown({ teamName, playerIds, playerPoints = null, teamTotal = null, scoringOverride = false, week, onClose }) {
+  const { darkMode } = useTheme();
   const { platform, weeklyStats, activeScoringSettings, players, season } = useSleeperBase();
+  const [view, setView] = useState('category');
   const [espnDerivedRowsState, setEspnDerivedRowsState] = useState({ key: '', rowsByPlayerId: {} });
   const playerIdsKey = useMemo(() => playerIds.join('|'), [playerIds]);
   const espnDerivedRowsKey = platform === 'espn' && players && week && playerIds.length
@@ -1742,7 +2347,10 @@ function TeamScoreBreakdown({ teamName, playerIds, week, onClose }) {
 
     const candidates = playerIds.filter((id) => {
       const player = players?.[id];
-      return player && isEspnFantasyGameLogPosition(player.position) && (player.espn_id || player.sourceIds?.espn);
+      const isTeamDefense = isTeamDefensePosition(player?.position);
+      return player
+        && isEspnFantasyGameLogPosition(player.position)
+        && (isTeamDefense ? player.team : (player.espn_id || player.sourceIds?.espn));
     });
     if (!candidates.length) return undefined;
 
@@ -1773,73 +2381,27 @@ function TeamScoreBreakdown({ teamName, playerIds, week, onClose }) {
     };
   }, [activeScoringSettings, espnDerivedRowsKey, playerIds, players, season, week]);
 
-  const { rows, total } = useMemo(() => {
-    if (!weeklyStats) return { rows: [], total: 0 };
-    const totals = new Map();
-    let exactTotal = 0;
-
-    const addRow = (key, label, statVal, pts, showStat = true) => {
-      if (Math.abs(pts) < 0.005) return;
-      const existing = totals.get(key);
-      if (existing) {
-        existing.pts += pts;
-        existing.statVal = showStat
-          ? ((existing.statVal ?? 0) + (statVal ?? 0))
-          : null;
-        return;
-      }
-      totals.set(key, {
-        key,
-        label,
-        statVal: showStat ? (statVal ?? 0) : null,
-        pts,
-      });
-    };
-
-    for (const id of playerIds) {
-      const weekly = weeklyStats[id] ?? [];
-      const officialEntry = weekly.find(w => w.week === week);
-      const derivedEntry = espnDerivedRowsByPlayerId[id] ?? null;
-      const entry = derivedEntry
-        ? mergeOfficialFantasyTotal(officialEntry, derivedEntry)
-        : officialEntry;
-      if (!entry) continue;
-      const position = players?.[id]?.position ?? null;
-      const breakdown = buildFantasyScoringBreakdown(entry, activeScoringSettings, position, {
-        preferRawStats: Boolean(derivedEntry),
-        adjustmentKey: 'other_adjustments',
-        adjustmentLabel: 'Other Scoring Adjustments',
-      });
-      exactTotal += breakdown.total;
-      for (const row of breakdown.rows) {
-        addRow(row.key, row.label, row.statVal, row.pts, row.statVal != null);
-      }
-    }
-
-    const rows = Array.from(totals.values())
-      .map(row => ({
-        ...row,
-        pts: Math.round(row.pts * 100) / 100,
-        statVal: row.statVal != null ? Math.round(row.statVal * 100) / 100 : null,
-      }))
-      .sort((a, b) => Math.abs(b.pts) - Math.abs(a.pts));
-
-    const breakdownTotal = rows.reduce((sum, row) => sum + row.pts, 0);
-    const remainder = Math.round((exactTotal - breakdownTotal) * 100) / 100;
-    if (Math.abs(remainder) >= 0.01) {
-      rows.push({
-        key: 'other_adjustments',
-        label: 'Other Scoring Adjustments',
-        statVal: null,
-        pts: remainder,
-      });
-    }
-
-    return {
-      rows,
-      total: Math.round(exactTotal * 100) / 100,
-    };
-  }, [weeklyStats, activeScoringSettings, playerIds, week, players, espnDerivedRowsByPlayerId]);
+  const breakdown = useMemo(() => buildFantasyMatchupScoringBreakdown({
+    playerIds,
+    playerPoints: scoringOverride ? null : playerPoints,
+    teamTotal,
+    week,
+    weeklyStats,
+    players,
+    scoringSettings: activeScoringSettings,
+    derivedRowsByPlayerId: espnDerivedRowsByPlayerId,
+  }), [
+    activeScoringSettings,
+    espnDerivedRowsByPlayerId,
+    playerIds,
+    playerPoints,
+    players,
+    scoringOverride,
+    teamTotal,
+    week,
+    weeklyStats,
+  ]);
+  const rows = view === 'category' ? breakdown.categoryRows : breakdown.playerRows;
 
   return (
     <Modal
@@ -1880,57 +2442,133 @@ function TeamScoreBreakdown({ teamName, playerIds, week, onClose }) {
             </CompanionSelectorButton>
           </div>
 
+      <div
+        className="shrink-0 px-5 py-3"
+        data-testid="team-score-breakdown-view"
+        style={{ borderBottom: '1px solid var(--color-separator)' }}
+      >
+        <CompanionSegmentedControl
+          value={view}
+          options={[
+            { value: 'category', label: 'By category' },
+            { value: 'player', label: 'By player' },
+          ]}
+          onChange={setView}
+          ariaLabel="Scoring breakdown view"
+          columns={2}
+        />
+      </div>
+
       {/* Column headers */}
       <div
-        className="flex items-center px-5 py-2 sticky top-0"
+        className="flex items-center px-5 py-2 shrink-0"
         style={{ background: 'var(--color-bg-secondary)', borderBottom: '1px solid var(--color-separator)' }}
       >
-        <span className="flex-1 text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>Category</span>
-        <span className="w-14 text-right text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>Value</span>
-        <span className="w-16 text-right text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>Pts</span>
+        {view === 'category' ? (
+          <>
+            <span className="flex-1 text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>Category</span>
+            <span className="w-14 text-right text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>Value</span>
+            <span className="w-16 text-right text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>Pts</span>
+          </>
+        ) : (
+          <>
+            <span className="flex-1 text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>Player</span>
+            <span className="w-20 text-right text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>Pts</span>
+          </>
+        )}
       </div>
 
       {/* Body */}
       <div className="overflow-y-auto flex-1">
         {rows.length === 0 ? (
           <div className="flex items-center justify-center py-16">
-            <span className="text-sm" style={{ color: 'var(--color-label-secondary)' }}>No stat data for Week {week}.</span>
+            <span className="text-sm" style={{ color: 'var(--color-label-secondary)' }}>No scoring data for Week {week}.</span>
           </div>
-        ) : (
-          <>
-            {rows.map(row => (
-              <div
-                key={row.key}
-                className="flex items-center px-5 py-2.5"
-                style={{ borderBottom: '1px solid var(--color-separator)' }}
-              >
-                <span className="flex-1 text-sm" style={{ color: 'var(--color-label)' }}>
-                  {row.label}
-                </span>
-                <span className="w-14 text-right text-sm tabular-nums" style={{ color: 'var(--color-label-secondary)' }}>
-                  {row.statVal == null ? '—' : Number.isInteger(row.statVal) ? row.statVal : row.statVal.toFixed(1)}
-                </span>
-                <span
-                  className="w-16 text-right text-sm font-semibold tabular-nums"
-                  style={{ color: row.pts < 0 ? 'var(--color-accent-red)' : 'var(--color-label)' }}
-                >
-                  {row.pts > 0 ? `+${row.pts.toFixed(2)}` : row.pts.toFixed(2)}
-                </span>
-              </div>
-            ))}
-
-            {/* Total row */}
+        ) : view === 'category' ? (
+          rows.map(row => (
             <div
-              className="flex items-center px-5 py-4"
-              style={{ background: 'var(--color-fill-secondary)', borderTop: '1px solid var(--color-separator)' }}
+              key={row.key}
+              className="flex items-center px-5 py-2.5"
+              style={{ borderBottom: '1px solid var(--color-separator)' }}
             >
-              <span className="flex-1 text-sm font-bold" style={{ color: 'var(--color-label)' }}>Total</span>
-              <span className="text-xl font-bold tabular-nums" style={{ color: 'var(--color-signature)' }}>
-                {total.toFixed(2)}
+              <span className="flex-1 text-sm" style={{ color: 'var(--color-label)' }}>
+                {row.label}
+              </span>
+              <span className="w-14 text-right text-sm tabular-nums" style={{ color: 'var(--color-label-secondary)' }}>
+                {row.statVal == null ? '—' : Number.isInteger(row.statVal) ? row.statVal : row.statVal.toFixed(1)}
+              </span>
+              <span
+                className="w-16 text-right text-sm font-semibold tabular-nums"
+                style={{ color: row.pts < 0 ? 'var(--color-accent-red)' : 'var(--color-label)' }}
+              >
+                {row.pts > 0 ? `+${row.pts.toFixed(2)}` : row.pts.toFixed(2)}
               </span>
             </div>
-          </>
+          ))
+        ) : (
+          rows.map((row) => {
+            if (row.isAdjustment) {
+              return (
+                <div
+                  key={row.id}
+                  className="flex items-center px-5 py-3"
+                  style={{ borderBottom: '1px solid var(--color-separator)' }}
+                >
+                  <span className="flex-1 text-sm" style={{ color: 'var(--color-label-secondary)' }}>{row.name}</span>
+                  <span className="w-20 text-right text-sm font-semibold tabular-nums" style={{ color: row.points < 0 ? 'var(--color-accent-red)' : 'var(--color-label)' }}>
+                    {row.points > 0 ? `+${row.points.toFixed(2)}` : row.points.toFixed(2)}
+                  </span>
+                </div>
+              );
+            }
+
+            const player = row.player ?? { id: row.id, full_name: row.name, position: row.position, team: row.team };
+            return (
+              <CompanionPlayerRow
+                key={row.id}
+                player={player}
+                name={row.name}
+                darkMode={darkMode}
+                compact
+                showPosition={false}
+                showTeamLogo={false}
+                showAccentRail={false}
+                metaSegments={row.position ? [row.position] : []}
+                columns={[
+                  <CompanionPlayerMetric
+                    key="points"
+                    compact
+                    align="end"
+                    value={row.points == null ? '—' : row.points.toFixed(2)}
+                    className={`team-score-breakdown-player-points${row.points == null ? ' is-pending' : ''}`}
+                  />,
+                ]}
+                status={row.pointSource === 'unavailable' ? (
+                  <CompanionPlayerStatus label="Unavailable" title="No reported player score or weekly stat line is available." />
+                ) : null}
+                gridTemplate="34px minmax(0, 1fr) minmax(58px, auto)"
+                className="team-score-breakdown-player-row"
+                style={{
+                  minHeight: 58,
+                  borderRadius: 0,
+                  borderBottom: '1px solid var(--color-separator)',
+                  padding: '7px 20px 7px 12px',
+                }}
+              />
+            );
+          })
         )}
+
+        {/* Total row */}
+        <div
+          className="flex items-center px-5 py-4"
+          style={{ background: 'var(--color-fill-secondary)', borderTop: '1px solid var(--color-separator)' }}
+        >
+          <span className="flex-1 text-sm font-bold" style={{ color: 'var(--color-label)' }}>Total</span>
+          <span className="text-xl font-bold tabular-nums" style={{ color: 'var(--color-signature)' }}>
+            {breakdown.total == null ? '—' : breakdown.total.toFixed(2)}
+          </span>
+        </div>
       </div>
     </Modal>
   );

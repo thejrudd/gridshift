@@ -173,6 +173,59 @@ test('Trade proposal snapshots preserve full asset identity and fingerprint keys
   assert.equal(getTradeAssetFingerprint({ type: 'pick', year: '2027', round: 2, originalRosterId: '1' }), 'pick:2027:2:1');
 });
 
+test('Trade proposal API preserves unavailable valuation fields as null', async () => {
+  const dataDir = temporaryDirectory();
+  const now = 10_000;
+  const config = enabledConfig(dataDir);
+  const store = createTradeProposalStore({ config, now: () => now });
+  const api = {
+    getLeagueBoundary: async () => boundary(),
+    getTransactions: async () => [],
+  };
+  const router = createTradeProposalRouter({ injectedConfig: config, store, sleeperApi: api, now: () => now });
+  const shareRouter = createTradeShareRouter({ injectedConfig: config, store, now: () => now });
+  try {
+    const session = await invoke(router, '/session', 'post', {
+      body: { leagueId: 'league-1', season: '2026', sleeperUserId: 'user-1', rosterId: '1' },
+    });
+    const rawSnapshot = snapshot();
+    rawSnapshot.sender.assets[0].value = null;
+    rawSnapshot.recipient.assets[0].value = 0;
+    rawSnapshot.totals = { sender: null, recipient: 0 };
+    rawSnapshot.verdict = { verdict: 'unavailable', gap: null, pct: null };
+
+    const created = await invoke(router, '/proposals', 'post', {
+      token: session.body.sessionToken,
+      body: {
+        leagueId: 'league-1',
+        season: '2026',
+        senderRosterId: '1',
+        recipientUserId: 'user-2',
+        recipientRosterId: '2',
+        snapshot: rawSnapshot,
+        expiryPreset: 'hour',
+      },
+    });
+    assert.equal(created.response.statusCode, 201);
+    const normalized = created.body.proposal.revision.snapshot;
+    assert.equal(normalized.sender.assets[0].value, null);
+    assert.equal(normalized.recipient.assets[0].value, 0);
+    assert.equal(normalized.totals.sender, null);
+    assert.equal(normalized.totals.recipient, 0);
+    assert.equal(normalized.verdict.gap, null);
+    assert.equal(normalized.verdict.pct, null);
+
+    const shareHtml = await invoke(shareRouter, '/:token', 'get', {
+      params: { token: created.body.shareToken },
+    });
+    assert.equal(shareHtml.response.statusCode, 200);
+    assert.doesNotMatch(shareHtml.response.sent, /Player One \(0\)/);
+  } finally {
+    store.close();
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
 test('Counter snapshots make the acting participant the new sender', () => {
   const value = buildTradeProposalSnapshotFromCurrentPerspective({
     leagueId: 'league-1',

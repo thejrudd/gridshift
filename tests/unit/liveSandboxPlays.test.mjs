@@ -173,12 +173,13 @@ test('real plays keep their own scoring when synthetic categories have a differe
     playCursor: new Map(),
   });
 
-  assert.deepEqual(events.map((event) => event.pts), [0.5, 0.4, 4.8]);
+  assert.deepEqual(events.map((event) => event.pts), [0.5, 0.44, 4.8, -0.04]);
   assert.equal(events.reduce((sum, event) => sum + event.pts, 0), 5.7);
   assert.deepEqual(events.map((event) => event.id), [
     'replay-play-rush-qb',
     'replay-play-pass-short-qb',
     'replay-play-pass-td-qb',
+    'qb-400-reconciliation',
   ]);
 });
 
@@ -189,7 +190,7 @@ test('sandbox replay emits partial player slices immediately and still groups a 
     ['wr', { stats: { rec: 0, rec_yd: 0 }, points: 0 }],
   ]);
   const next = new Map([
-    ['qb', { stats: { pass_cmp: 1, pass_yd: 19 }, points: 0.8 }],
+    ['qb', { stats: { pass_cmp: 1, pass_yd: 19 }, points: 0.76 }],
     ['wr', { stats: { rec: 1, rec_yd: 19 }, points: 2.9 }],
   ]);
   const meta = new Map([['qb', { position: 'QB' }], ['wr', { position: 'WR' }]]);
@@ -213,7 +214,7 @@ test('sandbox replay emits partial player slices immediately and still groups a 
   });
   assert.equal(incomplete.length, 2);
   assert.equal(incomplete.filter((event) => event.source === 'replay-play').length, 1);
-  assert.equal(incomplete.reduce((sum, event) => sum + event.pts, 0), 3.7);
+  assert.equal(incomplete.reduce((sum, event) => sum + event.pts, 0), 3.66);
   assert.equal(partialCursor.get('qb').size, 1);
 
   const complete = buildReplayDeltaEvents(previous, next, meta, {
@@ -227,8 +228,8 @@ test('sandbox replay emits partial player slices immediately and still groups a 
   assert.equal(grouped.length, 1);
   assert.equal(grouped[0].id, 'shared-shared-pass-a');
   assert.deepEqual(grouped[0].contributorIds, ['qb', 'wr']);
-  assert.deepEqual(grouped[0].contributors.map(({ pts }) => pts), [0.8, 2.9]);
-  assert.equal(grouped[0].pts, 3.7);
+  assert.deepEqual(grouped[0].contributors.map(({ pts }) => pts), [0.76, 2.9]);
+  assert.equal(grouped[0].pts, 3.66);
 });
 
 test('sandbox fixture builds and replays a raw Hurts to Brown provider row as one shared play', () => {
@@ -266,7 +267,7 @@ test('sandbox fixture builds and replays a raw Hurts to Brown provider row as on
     ['5859', { stats: { rec: 0, rec_yd: 0 }, points: 0 }],
   ]);
   const next = new Map([
-    ['6904', { stats: { pass_cmp: 1, pass_yd: 19 }, points: 0.8 }],
+    ['6904', { stats: { pass_cmp: 1, pass_yd: 19 }, points: 0.76 }],
     ['5859', { stats: { rec: 1, rec_yd: 19 }, points: 2.9 }],
   ]);
   const replayEvents = buildReplayDeltaEvents(previous, next, new Map([
@@ -281,7 +282,37 @@ test('sandbox fixture builds and replays a raw Hurts to Brown provider row as on
 
   assert.equal(grouped.length, 1);
   assert.deepEqual(grouped[0].contributorIds, ['6904', '5859']);
-  assert.deepEqual(grouped[0].contributors.map(({ pts }) => pts), [0.8, 2.9]);
+  assert.deepEqual(grouped[0].contributors.map(({ pts }) => pts), [0.76, 2.9]);
+});
+
+test('a rostered defender on another team does not absorb a same-initial passer', () => {
+  // Regression: only Byron Young (LAR, LB) and Jameson Williams (DET, WR) are
+  // rostered. A Panthers pass to A.Thielen ("B.Young pass short right to
+  // A.Thielen for 12 yards.") must not credit Byron Young — he's not a CAR
+  // player — and A.Thielen isn't rostered at all, so nothing should attach.
+  const starterRows = [
+    { id: 'byron', player: { full_name: 'Byron Young', team: 'LAR', position: 'LB' } },
+    { id: 'jameson', player: { full_name: 'Jameson Williams', team: 'DET', position: 'WR' } },
+  ];
+  const rawPlay = {
+    id: 'young-thielen-12',
+    type_slug: 'pass-reception',
+    team: { abbreviation: 'CAR' },
+    short_text: 'A. Thielen 12 Yd pass from B. Young',
+    text: 'B.Young pass short right to A.Thielen for 12 yards.',
+    stat_yardage: 12,
+    scoring_play: false,
+    period: 2,
+    clock_display: '6:40',
+  };
+  const events = buildPlayEvents(
+    { 'game-car': [rawPlay] },
+    buildStarterNameIndex(starterRows),
+    {},
+    new Map(starterRows.map(({ id, player }) => [id, player.position])),
+    new Map(),
+  );
+  assert.deepEqual(events, []);
 });
 
 test('provider stat coverage emits multiple same-category plays without count coupling', () => {
@@ -300,7 +331,7 @@ test('provider stat coverage emits multiple same-category plays without count co
 
   assert.notEqual(events, null);
   assert.equal(events.length, 2);
-  assert.deepEqual(events.map(({ pts }) => pts), [0.4, 0.8]);
+  assert.deepEqual(events.map(({ pts }) => pts), [0.44, 0.76]);
   assert.equal(cursor.get('qb').size, 2);
 });
 

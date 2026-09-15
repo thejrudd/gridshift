@@ -255,5 +255,5 @@ function ktc(mflid, playerName, position, value) {
 }
 
 export function ktcHtml() {
-  return `<html><body><script>var playersArray = ${JSON.stringify(ktcPlayers)};</script></body></html>`;
+  return `<html><body><script id="ktc-players" type="application/json">${JSON.stringify(ktcPlayers)}</script><script>var playersArray = JSON.parse(document.getElementById('ktc-players').textContent);</script></body></html>`;
 }

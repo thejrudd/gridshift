@@ -213,6 +213,14 @@ export const DEFAULT_SCORING = {
 const ROUND_2 = (value) => Math.round(value * 100) / 100;
 export const ESPN_APPLIED_STAT_FALLBACK_PREFIX = 'espn_stat_';
 
+const IDP_POSITIONS = new Set(['DL', 'DE', 'DT', 'LB', 'ILB', 'OLB', 'DB', 'CB', 'S', 'SS', 'FS']);
+const IDP_SCORING_KEYS = new Set([
+  'idp_tkl', 'idp_tkl_solo', 'idp_tkl_ast', 'idp_tkl_loss', 'idp_sack', 'idp_sack_yd',
+  'idp_int', 'idp_int_ret_yd', 'idp_int_td', 'idp_ff', 'idp_fr', 'idp_fr_yd', 'idp_fr_td',
+  'idp_def_td', 'idp_pd', 'idp_qbhit', 'idp_safety', 'idp_blk_kick',
+  'bonus_sack_2p', 'bonus_tkl_10p', 'idp_pass_def_3p',
+]);
+
 function normalizePosition(position) {
   const pos = String(position ?? '').toUpperCase();
   if (pos === 'DST' || pos === 'D/ST') return 'DEF';
@@ -604,7 +612,9 @@ function calcPointsWithSettings(stats, settings, position = null) {
 
   for (const [statKey, scoringKey] of Object.entries(STAT_TO_SCORING_KEY)) {
     const statVal = stats[statKey];
-    if (statVal && positionSettings[scoringKey]) {
+    const hasPosition = position != null && String(position).trim() !== '';
+    const idpEligible = !hasPosition || IDP_POSITIONS.has(normalizePosition(position));
+    if (statVal && positionSettings[scoringKey] && (!IDP_SCORING_KEYS.has(scoringKey) || idpEligible)) {
       pts += statVal * positionSettings[scoringKey];
     }
   }

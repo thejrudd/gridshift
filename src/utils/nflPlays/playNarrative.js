@@ -11,7 +11,7 @@
 // grammar returns `confident: false`, and the UI falls back to the raw NFL text
 // rather than showing an invented sentence or a wrong name.
 
-import { canonicalTeam } from './fieldGeometry.js';
+import { canonicalTeam, FIELD_SPOT_PATTERN } from './fieldSpots.js';
 
 export const PLAY_ROLES = Object.freeze({
   PASSER: 'passer',
@@ -212,7 +212,7 @@ function normalizeKickOutcome(outcome) {
   return text.toLowerCase();
 }
 
-const SPOT_TEXT = '([A-Z]{2,3}\\s+\\d{1,2})';
+const SPOT_TEXT = FIELD_SPOT_PATTERN;
 const ABBREV = "[A-Z][A-Za-z.'’-]*\\.[A-Za-z.'’-]+";
 
 /**
@@ -280,13 +280,18 @@ export function parsePenaltyClause(rawText) {
  */
 export function parseInterception(rawText) {
   const text = authoritativeText(rawText);
-  const picked = new RegExp(`INTERCEPTED by (${ABBREV}) at ${SPOT_TEXT}`, 'i').exec(text);
+  // The gamebook may insert a bracketed or parenthesized defensive attribution
+  // between the interceptor and the spot ("by J.Jobe [D.Lawrence] at SEA -3"
+  // or "by N.Pritchett (R.Thomas) at SEA 3"). It is not the interceptor and
+  // must not make the otherwise-complete play unparseable.
+  // Some feeds also prefix every player with their jersey number ("28-J.Jobe").
+  const picked = new RegExp(`INTERCEPTED by (?:\\d+-)?(${ABBREV})(?:\\s+(?:\\[[^\\]]+\\]|\\([^)]*\\)))? at ${SPOT_TEXT}`, 'i').exec(text);
   if (!picked) return null;
   const tail = text.slice(picked.index + picked[0].length);
   const returned = new RegExp(`\\bto ${SPOT_TEXT} for (-?\\d+) yards?`, 'i').exec(tail);
   return {
-    passer: new RegExp(`(${ABBREV}) pass`, 'i').exec(text)?.[1] ?? null,
-    intendedFor: new RegExp(`intended for (${ABBREV})`, 'i').exec(text)?.[1] ?? null,
+    passer: new RegExp(`(?:\\d+-)?(${ABBREV}) pass`, 'i').exec(text)?.[1] ?? null,
+    intendedFor: new RegExp(`intended for (?:\\d+-)?(${ABBREV})`, 'i').exec(text)?.[1] ?? null,
     depth: /\b(short|deep) (left|middle|right)\b/i.exec(text)?.[0]?.toLowerCase() ?? null,
     defender: picked[1],
     at: picked[2],
@@ -630,6 +635,10 @@ export function parsePlayNarrative(play) {
     sentence,
     actors,
     yards: negated ? null : (play.statYardage ?? parsed.yards ?? null),
+    distance: parsed.distance ?? null,
+    returnYards: parsed.returnYards ?? null,
+    good: parsed.good ?? null,
+    outcome: parsed.outcome ?? null,
     patResult: parsed.patResult ?? null,
     negated: Boolean(negated),
     penalty,

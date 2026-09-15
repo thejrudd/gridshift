@@ -4,14 +4,17 @@ import useMediaQuery from '../hooks/useMediaQuery';
 import { buildStatisticsStandings } from '../utils/statisticsStandings';
 import { getTeamVisualTheme } from '../utils/teamVisualTheme';
 
-const MOBILE_COLUMN_WIDTHS = ['8%', '22%', '14%', '13%', '13%', '15%', '15%'];
-const MOBILE_CELL_STYLE = {
-  padding: '8px 2px',
-  overflow: 'hidden',
-  letterSpacing: '0.02em',
-  textOverflow: 'clip',
-  whiteSpace: 'nowrap',
-};
+const SCOPE_LABELS = { division: 'Division', conference: 'Conference' };
+
+const COLUMNS = [
+  { key: 'rank', full: 'Rank', short: '#' },
+  { key: 'team', full: 'Team' },
+  { key: 'record', full: 'Record', short: 'Rec' },
+  { key: 'pct', full: 'Winning percentage', short: 'Pct' },
+  { key: 'division', full: 'Division record', short: 'Div' },
+  { key: 'conference', full: 'Conference record', short: 'Conf' },
+  { key: 'differential', full: 'Point differential', short: '+/-' },
+];
 
 const teamLogo = (teamId) => `https://a.espncdn.com/i/teamlogos/nfl/500/${String(teamId).toLowerCase()}.png`;
 
@@ -33,10 +36,6 @@ function formatDiff(value = 0) {
   return String(value);
 }
 
-function pluralize(count, singular, plural = `${singular}s`) {
-  return `${count} ${count === 1 ? singular : plural}`;
-}
-
 function getStandingRowStyle(team, darkMode) {
   const theme = getTeamVisualTheme(team?.id, darkMode, { logoSide: 'start' });
   if (!theme?.gradient) return undefined;
@@ -49,33 +48,22 @@ function getStandingRowStyle(team, darkMode) {
   };
 }
 
-function TeamIdentity({ team, compact = false }) {
+function TeamIdentity({ team, compact }) {
   const name = getTeamName(team);
   return (
-    <div
-      className={`statistics-standings-team${compact ? ' statistics-standings-team--compact' : ''}`}
-      aria-label={name}
-      style={compact ? { gap: '3px' } : undefined}
-    >
+    <div className="statistics-standings-team" aria-label={name}>
       {team?.id && (
         <img
           src={teamLogo(team.id)}
           alt=""
           className="statistics-standings-team-logo"
-          style={compact ? { width: '20px', height: '20px' } : undefined}
           loading="lazy"
           decoding="async"
-          onError={(event) => { event.currentTarget.style.display = 'none'; }}
+          onError={(event) => { event.currentTarget.style.visibility = 'hidden'; }}
         />
       )}
       <div className="statistics-standings-team-copy">
-        <abbr
-          className="statistics-standings-team-code"
-          title={name}
-          style={compact ? { fontSize: 'var(--type-label)', textDecoration: 'none' } : undefined}
-        >
-          {team?.id ?? 'TBD'}
-        </abbr>
+        <abbr className="statistics-standings-team-code" title={name}>{team?.id ?? 'TBD'}</abbr>
         {!compact && <span className="statistics-standings-team-name">{name}</span>}
       </div>
     </div>
@@ -84,86 +72,54 @@ function TeamIdentity({ team, compact = false }) {
 
 function StandingRow({ row, darkMode, compact }) {
   return (
-    <tr className="statistics-standings-row" style={getStandingRowStyle(row.team, darkMode)}>
-      <td style={compact ? MOBILE_CELL_STYLE : undefined}>
-        <span className="statistics-standings-rank">{row.rank}</span>
-      </td>
-      <td style={compact ? MOBILE_CELL_STYLE : undefined}>
-        <TeamIdentity team={row.team} compact={compact} />
-      </td>
-      <td className="statistics-standings-record" style={compact ? MOBILE_CELL_STYLE : undefined}>{formatRecord(row.wins, row.losses, row.ties)}</td>
-      <td style={compact ? MOBILE_CELL_STYLE : undefined}>{formatPct(row.winPct)}</td>
-      <td style={compact ? MOBILE_CELL_STYLE : undefined}>{formatRecord(row.divisionWins, row.divisionLosses, row.divisionTies)}</td>
-      <td style={compact ? MOBILE_CELL_STYLE : undefined}>{formatRecord(row.conferenceWins, row.conferenceLosses, row.conferenceTies)}</td>
-      <td style={compact ? MOBILE_CELL_STYLE : undefined}>{formatDiff(row.pointDifferential)}</td>
-    </tr>
+    <div className="statistics-standings-row" role="row" style={getStandingRowStyle(row.team, darkMode)}>
+      <div className="statistics-standings-cell" role="cell"><span className="statistics-standings-rank">{row.rank}</span></div>
+      <div className="statistics-standings-cell" role="cell"><TeamIdentity team={row.team} compact={compact} /></div>
+      <div className="statistics-standings-cell statistics-standings-record" role="cell">{formatRecord(row.wins, row.losses, row.ties)}</div>
+      <div className="statistics-standings-cell" role="cell">{formatPct(row.winPct)}</div>
+      <div className="statistics-standings-cell" role="cell">{formatRecord(row.divisionWins, row.divisionLosses, row.divisionTies)}</div>
+      <div className="statistics-standings-cell" role="cell">{formatRecord(row.conferenceWins, row.conferenceLosses, row.conferenceTies)}</div>
+      <div className="statistics-standings-cell" role="cell">{formatDiff(row.pointDifferential)}</div>
+    </div>
   );
 }
 
-function CompactHeading({ compact, full, short = full }) {
-  return compact ? <abbr title={full} style={{ textDecoration: 'none' }}>{short}</abbr> : full;
-}
-
-function StandingsTableCard({ group, darkMode, scope, compact }) {
+// One table per scope: the column header freezes at the top of the scroll
+// area, and each division/conference group header freezes just below it while
+// that group's rows scroll past underneath.
+//
+// This is built from divs with ARIA table roles instead of a real <table>
+// specifically so each group is a genuine block container — the same reason
+// Schedule's div-per-group kickoff headers hand off to each other for free.
+// A sticky cell inside a <tbody>/<tr> has no such containing block (table row
+// groups don't bound sticky descendants), so every group's header would lock
+// into the same slot and stack instead of releasing; a plain div doesn't have
+// that problem, and needs no JS to work around it.
+function StandingsSection({ scope, groups, darkMode, compact, abbreviate }) {
+  const scopeLabel = SCOPE_LABELS[scope] ?? scope;
   return (
-    <section className="statistics-standings-table-card">
-      <header className="statistics-standings-table-header">
-        <span>{group.label}</span>
-        <span>{pluralize(group.rows.length, 'team')}</span>
-      </header>
-      <div
-        className="statistics-standings-table-scroll"
-        style={compact ? { overflowX: 'hidden' } : undefined}
-      >
-        <table
-          className="statistics-standings-table"
-          aria-label={`${group.label} ${scope} standings`}
-          style={compact ? { minWidth: 0, tableLayout: 'fixed' } : undefined}
-        >
-          {compact && (
-            <colgroup>
-              {MOBILE_COLUMN_WIDTHS.map((width, index) => <col key={`${group.id}-column-${index}`} style={{ width }} />)}
-            </colgroup>
-          )}
-          <thead>
-            <tr>
-              <th style={compact ? MOBILE_CELL_STYLE : undefined}><CompactHeading compact={compact} full="Rank" short="#" /></th>
-              <th style={compact ? MOBILE_CELL_STYLE : undefined}>Team</th>
-              <th style={compact ? MOBILE_CELL_STYLE : undefined}><CompactHeading compact={compact} full="Record" short="Rec" /></th>
-              <th style={compact ? MOBILE_CELL_STYLE : undefined}><CompactHeading compact={compact} full="Winning percentage" short="Pct" /></th>
-              <th style={compact ? MOBILE_CELL_STYLE : undefined}><CompactHeading compact={compact} full="Division record" short="Div" /></th>
-              <th style={compact ? MOBILE_CELL_STYLE : undefined}><CompactHeading compact={compact} full="Conference record" short="Conf" /></th>
-              <th style={compact ? MOBILE_CELL_STYLE : undefined}><CompactHeading compact={compact} full="Point differential" short="+/-" /></th>
-            </tr>
-          </thead>
-          <tbody>
+    <section className="statistics-standings-section">
+      <div className="statistics-standings-table" role="table" aria-label={`${scopeLabel} standings`}>
+        <div className="statistics-standings-thead-row" role="row">
+          {COLUMNS.map((column) => (
+            <div key={column.key} className="statistics-standings-th" role="columnheader">
+              {abbreviate && column.short
+                ? <abbr title={column.full}>{column.short}</abbr>
+                : column.full}
+            </div>
+          ))}
+        </div>
+        {groups.map((group) => (
+          <div key={group.id} className="statistics-standings-group" role="rowgroup">
+            <div className="statistics-standings-group-row" role="row">
+              <div className="statistics-standings-group-name-cell" role="columnheader" aria-colspan={COLUMNS.length}>
+                <span className="statistics-standings-group-name">{group.label}</span>
+              </div>
+            </div>
             {group.rows.map((row) => (
               <StandingRow key={row.teamId} row={row} darkMode={darkMode} compact={compact} />
             ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  );
-}
-
-function StandingsPanel({ eyebrow, title, summary, groups, darkMode, scope, compact }) {
-  return (
-    <section className="statistics-standings-panel">
-      <header className="statistics-schedule-section-header">
-        <p className="statistics-schedule-eyebrow">{eyebrow}</p>
-        <h2>{title}</h2>
-        <span>{summary}</span>
-      </header>
-      <div className="statistics-standings-grid">
-        {groups.map((group) => (
-          <StandingsTableCard
-            key={group.id}
-            group={group}
-            darkMode={darkMode}
-            scope={scope}
-            compact={compact}
-          />
+          </div>
         ))}
       </div>
     </section>
@@ -172,52 +128,31 @@ function StandingsPanel({ eyebrow, title, summary, groups, darkMode, scope, comp
 
 export default function StatisticsStandings({ teams = [], scheduleData = {} }) {
   const { darkMode } = useTheme();
+  // Two independent narrowing steps: column labels abbreviate before the team
+  // column gets tight enough that the full team name would have to be clipped.
+  const abbreviate = useMediaQuery('(max-width: 1179px)');
   const compact = useMediaQuery('(max-width: 639px)');
   const standings = useMemo(
     () => buildStatisticsStandings({ teams, scheduleData }),
     [teams, scheduleData],
   );
-  const seasonLabel = standings.season ? `${standings.season}` : 'NFL';
-  const finalLabel = `${pluralize(standings.completedGames, 'final game')} - ${pluralize(standings.scheduledGames, 'scheduled game')}`;
 
   return (
     <div className="statistics-standings">
-      <header className="statistics-schedule-toolbar statistics-standings-toolbar">
-        <div className="statistics-schedule-toolbar-copy">
-          <p className="statistics-schedule-eyebrow">NFL standings</p>
-          <h1>{seasonLabel} Standings</h1>
-          <span>{finalLabel}</span>
-        </div>
-        <div className="statistics-standings-summary" aria-label="Standings summary">
-          <span>
-            <strong>{standings.divisionGroups.length}</strong>
-            Divisions
-          </span>
-          <span>
-            <strong>{standings.conferenceGroups.length}</strong>
-            Conferences
-          </span>
-        </div>
-      </header>
-
-      <StandingsPanel
-        eyebrow="Division table"
-        title="Division Standings"
-        summary={pluralize(standings.divisionGroups.length, 'division')}
+      <StandingsSection
+        scope="division"
         groups={standings.divisionGroups}
         darkMode={darkMode}
-        scope="division"
         compact={compact}
+        abbreviate={abbreviate}
       />
 
-      <StandingsPanel
-        eyebrow="Conference table"
-        title="Conference Standings"
-        summary={pluralize(standings.conferenceGroups.length, 'conference')}
+      <StandingsSection
+        scope="conference"
         groups={standings.conferenceGroups}
         darkMode={darkMode}
-        scope="conference"
         compact={compact}
+        abbreviate={abbreviate}
       />
     </div>
   );

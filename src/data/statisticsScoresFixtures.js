@@ -52,6 +52,14 @@ function team(id) {
   return TEAM_FIXTURES[id] ?? { id, name: id };
 }
 
+function fixtureQuarterSplit(periodValues) {
+  return {
+    source: 'fixture',
+    sourceLabel: 'Illustrative fixture quarter split',
+    periods: periodValues.map(([label, values]) => ({ label, values })),
+  };
+}
+
 const GAME_WINDOWS = [
   { slot: 'thursday-night', label: 'Thursday Night', day: 'Thu', time: '8:15 PM' },
   { slot: 'saturday', label: 'Saturday', day: 'Sat', time: '1:00 PM' },
@@ -381,33 +389,63 @@ export const SCORE_DETAIL_FIXTURE = {
   ],
   playerGroups: [
     { id: 'passing', label: 'Passing', columns: ['C/ATT', 'YDS', 'TD', 'INT', 'RTG'], rows: [
-      { team: 'DET', player: 'Jared Goff', values: ['20/27', '238', '2', '0', '112.4'] },
-      { team: 'MIN', player: 'J.J. McCarthy', values: ['16/25', '181', '1', '1', '82.3'] },
+      { team: 'DET', player: 'Jared Goff', values: ['20/27', '238', '2', '0', '112.4'], quarterValues: fixtureQuarterSplit([
+        ['Q1', ['8/11', '95', '1', '0', '120.8']], ['Q2', ['6/8', '67', '0', '0', '101.6']], ['Q3', ['6/8', '76', '1', '0', '120.8']], ['Q4', ['—', '—', '—', '—', '—']],
+      ]) },
+      { team: 'MIN', player: 'J.J. McCarthy', values: ['16/25', '181', '1', '1', '82.3'], quarterValues: fixtureQuarterSplit([
+        ['Q1', ['5/8', '62', '0', '1', '71.9']], ['Q2', ['6/9', '71', '1', '0', '103.2']], ['Q3', ['5/8', '48', '0', '0', '77.1']], ['Q4', ['—', '—', '—', '—', '—']],
+      ]) },
     ] },
     { id: 'rushing', label: 'Rushing', columns: ['CAR', 'YDS', 'AVG', 'TD', 'LONG'], rows: [
-      { team: 'DET', player: 'Jahmyr Gibbs', values: ['14', '82', '5.9', '1', '22'] },
-      { team: 'DET', player: 'David Montgomery', values: ['10', '51', '5.1', '0', '14'] },
-      { team: 'MIN', player: 'Aaron Jones', values: ['13', '64', '4.9', '1', '19'] },
+      { team: 'DET', player: 'Jahmyr Gibbs', values: ['14', '82', '5.9', '1', '22'], quarterValues: fixtureQuarterSplit([
+        ['Q1', ['5', '26', '5.2', '0', '11']], ['Q2', ['4', '28', '7.0', '1', '22']], ['Q3', ['5', '28', '5.6', '0', '12']], ['Q4', ['—', '—', '—', '—', '—']],
+      ]) },
+      { team: 'DET', player: 'David Montgomery', values: ['10', '51', '5.1', '0', '14'], quarterValues: fixtureQuarterSplit([
+        ['Q1', ['4', '18', '4.5', '0', '8']], ['Q2', ['3', '16', '5.3', '0', '7']], ['Q3', ['3', '17', '5.7', '0', '14']], ['Q4', ['—', '—', '—', '—', '—']],
+      ]) },
+      { team: 'MIN', player: 'Aaron Jones', values: ['13', '64', '4.9', '1', '19'], quarterValues: fixtureQuarterSplit([
+        ['Q1', ['5', '22', '4.4', '0', '10']], ['Q2', ['4', '21', '5.3', '1', '19']], ['Q3', ['4', '21', '5.3', '0', '8']], ['Q4', ['—', '—', '—', '—', '—']],
+      ]) },
     ] },
     { id: 'receiving', label: 'Receiving', columns: ['REC', 'TGT', 'YDS', 'AVG', 'TD'], rows: [
-      { team: 'DET', player: 'Amon-Ra St. Brown', values: ['7', '9', '96', '13.7', '1'] },
-      { team: 'MIN', player: 'Justin Jefferson', values: ['6', '8', '88', '14.7', '1'] },
+      { team: 'DET', player: 'Amon-Ra St. Brown', values: ['7', '9', '96', '13.7', '1'], quarterValues: fixtureQuarterSplit([
+        ['Q1', ['2', '3', '30', '15.0', '0']], ['Q2', ['3', '4', '41', '13.7', '1']], ['Q3', ['2', '2', '25', '12.5', '0']], ['Q4', ['—', '—', '—', '—', '—']],
+      ]) },
+      { team: 'MIN', player: 'Justin Jefferson', values: ['6', '8', '88', '14.7', '1'], quarterValues: fixtureQuarterSplit([
+        ['Q1', ['2', '3', '31', '15.5', '0']], ['Q2', ['2', '3', '27', '13.5', '0']], ['Q3', ['2', '2', '30', '15.0', '1']], ['Q4', ['—', '—', '—', '—', '—']],
+      ]) },
     ] },
     { id: 'defense', label: 'Defense', columns: ['TOT', 'SOLO', 'SACK', 'TFL', 'PD'], rows: [
-      { team: 'DET', player: 'Jack Campbell', values: ['9', '6', '1.0', '2', '1'] },
-      { team: 'MIN', player: 'Blake Cashman', values: ['8', '5', '0.0', '1', '1'] },
+      { team: 'DET', player: 'Jack Campbell', values: ['9', '6', '1.0', '2', '1'], quarterValues: fixtureQuarterSplit([
+        ['Q1', ['3', '2', '1.0', '1', '0']], ['Q2', ['3', '2', '0.0', '1', '1']], ['Q3', ['3', '2', '0.0', '0', '0']], ['Q4', ['—', '—', '—', '—', '—']],
+      ]) },
+      { team: 'MIN', player: 'Blake Cashman', values: ['8', '5', '0.0', '1', '1'], quarterValues: fixtureQuarterSplit([
+        ['Q1', ['3', '2', '0.0', '1', '0']], ['Q2', ['2', '1', '0.0', '0', '1']], ['Q3', ['3', '2', '0.0', '0', '0']], ['Q4', ['—', '—', '—', '—', '—']],
+      ]) },
     ] },
     { id: 'kicking', label: 'Kicking', columns: ['FG', 'LONG', 'XP', 'PTS'], rows: [
-      { team: 'DET', player: 'Jake Bates', values: ['1/1', '42', '3/3', '6'] },
-      { team: 'MIN', player: 'Will Reichard', values: ['1/1', '38', '2/2', '5'] },
+      { team: 'DET', player: 'Jake Bates', values: ['1/1', '42', '3/3', '6'], quarterValues: fixtureQuarterSplit([
+        ['Q1', ['0/0', '—', '1', '1']], ['Q2', ['1/1', '42', '1', '4']], ['Q3', ['0/0', '—', '1', '1']], ['Q4', ['—', '—', '—', '—']],
+      ]) },
+      { team: 'MIN', player: 'Will Reichard', values: ['1/1', '38', '2/2', '5'], quarterValues: fixtureQuarterSplit([
+        ['Q1', ['0/0', '—', '1', '1']], ['Q2', ['1/1', '38', '0', '3']], ['Q3', ['0/0', '—', '1', '1']], ['Q4', ['—', '—', '—', '—']],
+      ]) },
     ] },
     { id: 'punting', label: 'Punting', columns: ['PUNTS', 'AVG', 'IN 20', 'LONG'], rows: [
-      { team: 'DET', player: 'Jack Fox', values: ['2', '48.5', '1', '55'] },
-      { team: 'MIN', player: 'Ryan Wright', values: ['3', '46.0', '2', '51'] },
+      { team: 'DET', player: 'Jack Fox', values: ['2', '48.5', '1', '55'], quarterValues: fixtureQuarterSplit([
+        ['Q1', ['1', '55.0', '1', '55']], ['Q2', ['1', '42.0', '0', '42']], ['Q3', ['0', '—', '—', '—']], ['Q4', ['—', '—', '—', '—']],
+      ]) },
+      { team: 'MIN', player: 'Ryan Wright', values: ['3', '46.0', '2', '51'], quarterValues: fixtureQuarterSplit([
+        ['Q1', ['1', '51.0', '1', '51']], ['Q2', ['1', '44.0', '1', '44']], ['Q3', ['1', '43.0', '0', '43']], ['Q4', ['—', '—', '—', '—']],
+      ]) },
     ] },
     { id: 'returns', label: 'Returns', columns: ['RET', 'YDS', 'AVG', 'LONG'], rows: [
-      { team: 'DET', player: 'Kalif Raymond', values: ['2', '31', '15.5', '19'] },
-      { team: 'MIN', player: 'Myles Price', values: ['2', '43', '21.5', '24'] },
+      { team: 'DET', player: 'Kalif Raymond', values: ['2', '31', '15.5', '19'], quarterValues: fixtureQuarterSplit([
+        ['Q1', ['1', '12', '12.0', '12']], ['Q2', ['1', '19', '19.0', '19']], ['Q3', ['0', '—', '—', '—']], ['Q4', ['—', '—', '—', '—']],
+      ]) },
+      { team: 'MIN', player: 'Myles Price', values: ['2', '43', '21.5', '24'], quarterValues: fixtureQuarterSplit([
+        ['Q1', ['1', '19', '19.0', '19']], ['Q2', ['1', '24', '24.0', '24']], ['Q3', ['0', '—', '—', '—']], ['Q4', ['—', '—', '—', '—']],
+      ]) },
     ] },
   ],
   scoring: [

@@ -84,6 +84,7 @@ Read first: [[Fantasy Live]] (implementation rules — chart axis semantics, rep
 | `src/components/companion/live/LivePerformerRail.jsx`, `LiveVerdict.jsx`, `LiveAtoms.jsx`, `liveVisuals.js` | Supporting surfaces and atoms |
 | `src/utils/livePace.js` | Pace maths (`buildPaceSeries()`) |
 | `src/utils/livePlaysFeed.js` | Play → 0..1 game-progress axis (`getPlayProgress()`) |
+| `src/utils/liveReconciliation.js` | Plays reconciled against Sleeper: pending/confirmed status, residual adjustment, displayed totals, stat-update fallback |
 | `src/utils/liveWinProbability.js` | `explainWinProbability()`, `resolveStarterProjection()` |
 | `src/data/liveWinProbabilityModel.js` | Generated coefficient contract — never hand-edit |
 | `src/utils/liveFeedFilters.js` | League-derived filter groups and types |
@@ -93,7 +94,7 @@ Read first: [[Fantasy Live]] (implementation rules — chart axis semantics, rep
 | `server/liveHandlers.js` | Server-only credential, allowlist/session checks, proxy caching |
 | `src/index.css` | The `.fl-*` block |
 
-Rules: the chart x-axis is game progress, not wallclock. The week comes from Sleeper `/state/nfl` — never add a week picker to Live. Starter projections change only in `resolveStarterProjection()`. Full rules: [[Fantasy Live]].
+Rules: the chart x-axis is game progress, not wallclock. BDL plays are the only feed source in connected live and replay; Sleeper reconciles them and never writes a row of its own. The week comes from Sleeper `/state/nfl` — never add a week picker to Live. Starter projections change only in `resolveStarterProjection()`. Full rules: [[Fantasy Live]].
 
 ## Statistics Scores And NFL Plays
 
@@ -114,12 +115,15 @@ Read first: [[Statistics Scores]] before production data wiring.
 | `src/api/statisticsScoresApi.js` | Browser-to-sidecar Scores requests |
 | `server/statisticsScoresHandlers.js` | Provider selection, pagination/cache, ESPN snapshots, drilldown aggregation |
 | `src/utils/statisticsScoresProvider.js`, `src/utils/balldontlieNflScoreboard.js`, `src/utils/espnNflScoreboard.js` | Source eligibility, normalized scoreboard adapters |
+| `src/utils/statisticsPlayerQuarterStats.js` | Conservative play-derived quarter splits for expandable BALLDONTLIE player rows; the provider's full-game player totals remain authoritative |
+| `src/utils/statisticsPlayerSort.js` | Display-value parsing and stable ascending/descending sorting for Statistics Scores player groups |
 | `src/data/statisticsScoresFixtures.js` | Normalized local fixture contract |
 
 ### Shared play parsing and field graphics (NOT Statistics-owned — also feeds Fantasy Live)
 
 | File | Owns |
 | --- | --- |
+| `src/utils/nflPlays/fieldSpots.js` | Shared NFL gamebook spot grammar, signed end-zone coordinates, and canonical team abbreviations |
 | `src/utils/nflPlays/playNarrative.js` | Play text → sentence + actor list; add play types as grammars, never loosen the `confident: false` fallback |
 | `src/utils/nflPlays/playerNameIndex.js` | Name variants and ambiguity rules (`livePlaysFeed.buildStarterNameIndex` adapts it for Fantasy Live) |
 | `src/utils/nflPlays/participants.js` | ESPN per-game participant and headshot resolution |
@@ -162,6 +166,10 @@ Sleeper is the supported fantasy connection.
 
 ## League History, Standings, And Activity
 
+Individual player matchup views, recorded pregame comparisons, and Heatmap-based peer visuals: read [[Player Matchup Drilldown]]. `PlayerMatchupBreakdown.jsx` owns the dialog; `playerDefensePerformance.js` and `fantasyHeatmapData.js` own shared analysis; `useMatchupProjectionBaselines.js` owns local pregame capture.
+
+Fantasy Matchups: `CompanionMatchup.jsx` owns the player Tale of the Tape and the manager VS trigger. `MatchupRivalryModal.jsx` owns the manager history drilldown; `matchupRivalry.js` orients completed meetings, retains historical roster IDs, and derives starter-only high/low highlights. `App.jsx` shares historical season/week/roster navigation between this drilldown and League History. History loads only when the manager drilldown opens.
+
 | File | Owns |
 | --- | --- |
 | `src/utils/leagueHistory.js` | Season snapshot cache, participant identity, matchup/standings/bracket calculations, transaction normalization, record leaders, Draft Blueprint summaries |
@@ -192,6 +200,9 @@ Read first: [[Scoring Call Sites]] — every `calcPoints()` / `calcPointsFromTot
 | --- | --- |
 | `src/utils/scoringEngine.js` | Core scoring — start here; `importLeagueScoring()` for Sleeper imports |
 | `src/utils/projectionEngine.js` | Projections |
+| `src/utils/starterProjections.js` | Shared starter projection assembly and current/provider/prior-season fallback order |
+| `src/utils/fantasyProjections.js` | Server projection normalization, BDL stat crosswalk, and Sleeper identity matching |
+| `src/api/fantasyProjectionsApi.js` | Optional browser-to-sidecar BDL weekly projection request |
 | `src/utils/draftAssistant/projections.js` | Draft-context projections |
 | `src/utils/ktcApi.js` | KTC value adjustments |
 

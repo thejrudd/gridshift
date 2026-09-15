@@ -1,8 +1,16 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { getStatisticsScoresGameDetail, getStatisticsScoresStory } from '../../../api/statisticsScoresApi';
 import { useTheme } from '../../../context/ThemeContext';
+import { getTeamColorKey } from '../../../data/teamColors';
 import { getTeamVisualTheme, pickReadableForeground } from '../../../utils/teamVisualTheme';
 import { buildScoreDetailFromGame } from '../../../utils/balldontlieNflScoreboard';
+import { getStatisticsPlayerKey } from '../../../utils/statisticsPlayerQuarterStats';
+import {
+  getDefaultStatisticsPlayerSort,
+  normalizeStatisticsPlayerSort,
+  sortStatisticsPlayerRows,
+} from '../../../utils/statisticsPlayerSort';
+import { getNflTeamLogoUrl } from '../../../utils/companionAssetVisuals';
 import { getScoreNetworkLabel } from '../../../utils/statisticsBroadcasts';
 import { deriveEspnEventId, fetchGameParticipants } from '../../../utils/nflPlays/participants.js';
 import { getDriveNetYards, isFieldFlipped } from '../../../utils/nflPlays/fieldGeometry.js';
@@ -157,6 +165,7 @@ function ScoreHero({ game, detail, awayTheme, homeTheme }) {
   const final = detail.status === 'final';
   const awayLoser = final && detail.score.away < detail.score.home;
   const homeLoser = final && detail.score.home < detail.score.away;
+  const possession = detail.status === 'live' ? detail.possession : null;
   const centerForeground = pickReadableForeground([awayTheme?.gradientEnd, homeTheme?.gradientStart].filter(Boolean));
   const network = getScoreNetworkLabel({ ...game, network: detail.network }, { fallback: true });
 
@@ -182,7 +191,7 @@ function ScoreHero({ game, detail, awayTheme, homeTheme }) {
           side="away"
           record={game.records?.away}
           loser={awayLoser}
-          possession={detail.possession}
+          possession={possession}
         />
         <div className="scores-detail-status">
           {detail.status === 'live' && <span className="scores-live-dot" aria-hidden="true" />}
@@ -196,7 +205,7 @@ function ScoreHero({ game, detail, awayTheme, homeTheme }) {
           side="home"
           record={game.records?.home}
           loser={homeLoser}
-          possession={detail.possession}
+          possession={possession}
         />
       </div>
       <footer>
@@ -313,10 +322,123 @@ function TeamStats({ detail, awayTheme, homeTheme }) {
   );
 }
 
-function PlayerStats({ detail }) {
-  const [activeGroup, setActiveGroup] = useState(() => detail.playerGroups[0]?.id ?? '');
-  const group = detail.playerGroups.find((entry) => entry.id === activeGroup) ?? detail.playerGroups[0];
+function playerRowKey(row) {
+  return row.key ?? getStatisticsPlayerKey({
+    player: { full_name: row.player },
+    team: { abbreviation: row.team },
+  });
+}
+
+function playerDetailId(group, row) {
+  return `scores-player-quarter-${group.id}-${playerRowKey(row).replace(/[^a-z0-9]+/gi, '-')}`;
+}
+
+function PlayerTeamIdentity({ row }) {
+  const [logoFailed, setLogoFailed] = useState(false);
+  const teamKey = getTeamColorKey(row.team);
+  const logoUrl = teamKey && teamKey !== 'NFL' ? getNflTeamLogoUrl(teamKey) : null;
+  const teamName = row.teamName ?? row.team;
+  return (
+    <span className="scores-player-team-identity" title={teamName}>
+      <span className="scores-player-team-logo-slot" aria-hidden="true">
+        {logoUrl && !logoFailed && (
+          <img src={logoUrl} alt="" onError={() => setLogoFailed(true)} />
+        )}
+      </span>
+      <span className="scores-player-team-code">{row.team}</span>
+    </span>
+  );
+}
+
+function PlayerQuarterDetail({ row, group }) {
+  const split = row.quarterValues;
+  if (!split?.periods?.length) {
+    return (
+      <div className="scores-player-quarter-detail scores-player-quarter-detail--unavailable">
+        <strong>Quarter split unavailable</strong>
+        <p>{split?.message ?? 'This player is in the full-game totals, but the play feed does not provide a reliable quarter split.'}</p>
+      </div>
+    );
+  }
+
+  const sourceMessage = split.source === 'play-by-play'
+    ? 'Derived from play-by-play · full-game totals remain the provider box score.'
+    : split.sourceLabel ?? 'Quarter split from the local game detail.';
+  return (
+    <div className="scores-player-quarter-detail">
+      <div className="scores-player-quarter-detail-heading">
+        <div>
+          <span>Quarter split</span>
+          <strong>{row.player} · {row.teamName ?? row.team}</strong>
+        </div>
+        <small>{sourceMessage}</small>
+      </div>
+      <div className="scores-player-quarter-table-shell">
+        <table className="scores-player-quarter-table" aria-label={`${row.player} ${group.label} by quarter`}>
+          <thead>
+            <tr>
+              <th scope="col">Period</th>
+              {group.columns.map((column) => <th key={column} scope="col">{column}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {split.periods.map((period) => (
+              <tr key={period.label}>
+                <th scope="row">{period.label}</th>
+                {period.values.map((value, index) => <td key={`${period.label}-${group.columns[index]}`}>{value}</td>)}
+              </tr>
+            ))}
+            <tr className="is-total">
+              <th scope="row">Total</th>
+              {row.values.map((value, index) => <td key={`total-${group.columns[index]}`}>{value}</td>)}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function PlayerStats({ detail, selectedGroup = null, onGroupChange = null }) {
+  const playerGroups = detail.playerGroups ?? [];
+  const [localActiveGroup, setLocalActiveGroup] = useState(() => playerGroups[0]?.id ?? '');
+  const [sortByGroup, setSortByGroup] = useState(() => Object.fromEntries(
+    playerGroups.map((entry) => [entry.id, getDefaultStatisticsPlayerSort(entry)]),
+  ));
+  const [expandedPlayer, setExpandedPlayer] = useState(null);
+  const activeGroup = selectedGroup ?? localActiveGroup;
+  const group = playerGroups.find((entry) => entry.id === activeGroup) ?? playerGroups[0];
   const effectiveActiveGroup = group?.id ?? '';
+  const teamNames = new Map([detail.away, detail.home].filter(Boolean).map((team) => [team.id, team.name]));
+  const visibleRows = group
+    ? group.rows.map((row) => row.teamName
+      ? row
+      : { ...row, teamName: teamNames.get(row.team) ?? row.team })
+    : [];
+  const currentSort = group
+    ? normalizeStatisticsPlayerSort(group, sortByGroup[effectiveActiveGroup])
+    : null;
+  const sortedRows = group ? sortStatisticsPlayerRows(visibleRows, group, currentSort) : [];
+
+  const setSortColumn = (columnIndex) => {
+    if (!group) return;
+    setSortByGroup((current) => {
+      const previous = normalizeStatisticsPlayerSort(group, current[effectiveActiveGroup]);
+      const direction = previous.columnIndex === columnIndex
+        ? (previous.direction === 'desc' ? 'asc' : 'desc')
+        : 'desc';
+      return { ...current, [effectiveActiveGroup]: { columnIndex, direction } };
+    });
+  };
+
+  const setSortDirection = (direction) => {
+    if (!group) return;
+    setSortByGroup((current) => ({
+      ...current,
+      [effectiveActiveGroup]: { ...currentSort, direction },
+    }));
+  };
+
   if (!group) {
     return (
       <section className="scores-player-stats">
@@ -325,43 +447,138 @@ function PlayerStats({ detail }) {
       </section>
     );
   }
+  const activeSortColumn = group.columns[currentSort.columnIndex];
+  const activeSortDirection = currentSort.direction === 'desc' ? 'descending' : 'ascending';
   return (
     <section className="scores-player-stats">
-      <SectionHeading title="Player Statistics" meta="Complete box score" />
+      <SectionHeading title="Player Statistics" meta="Complete box score · select a player" />
       <div className="scores-player-category-rail" role="tablist" aria-label="Player statistic categories">
-        {detail.playerGroups.map((entry) => (
+        {playerGroups.map((entry) => (
           <button
             key={entry.id}
             type="button"
             role="tab"
             aria-selected={entry.id === effectiveActiveGroup}
             className={entry.id === effectiveActiveGroup ? 'is-active' : ''}
-            onClick={() => setActiveGroup(entry.id)}
+            onClick={() => {
+              if (selectedGroup == null) setLocalActiveGroup(entry.id);
+              setExpandedPlayer(null);
+              onGroupChange?.(entry.id);
+            }}
           >
             {entry.label}
           </button>
         ))}
       </div>
+      <div className="scores-player-sort-mobile">
+        <label htmlFor={`scores-player-sort-${group.id}`}>Sort by</label>
+        <select
+          id={`scores-player-sort-${group.id}`}
+          value={String(currentSort.columnIndex)}
+          onChange={(event) => setSortColumn(Number(event.target.value))}
+        >
+          {group.columns.map((column, index) => <option key={column} value={index}>{column}</option>)}
+        </select>
+        <button
+          type="button"
+          className="scores-player-sort-direction"
+          aria-label={`Sort ${group.label} by ${activeSortColumn} ${currentSort.direction === 'desc' ? 'ascending' : 'descending'}`}
+          title={`Sorted ${activeSortDirection}. Click to reverse.`}
+          onClick={() => setSortDirection(currentSort.direction === 'desc' ? 'asc' : 'desc')}
+        >
+          <span aria-hidden="true">{currentSort.direction === 'desc' ? '↓' : '↑'}</span>
+        </button>
+      </div>
       <div className="scores-player-table-shell">
         <table className="scores-player-table">
-          <thead><tr><th>Player</th>{group.columns.map((column) => <th key={column}>{column}</th>)}</tr></thead>
+          <thead>
+            <tr>
+              <th scope="col">Player</th>
+              {group.columns.map((column, index) => {
+                const active = currentSort.columnIndex === index;
+                const nextDirection = active && currentSort.direction === 'desc' ? 'ascending' : 'descending';
+                return (
+                  <th key={column} scope="col" aria-sort={active ? activeSortDirection : 'none'}>
+                    <button
+                      type="button"
+                      className="scores-player-sort-button"
+                      data-active={active}
+                      aria-label={`Sort ${group.label} by ${column} ${nextDirection}`}
+                      title={active ? `Sorted ${activeSortDirection}. Click to reverse.` : `Sort by ${column} ${nextDirection}.`}
+                      onClick={() => setSortColumn(index)}
+                    >
+                      <span>{column}</span>
+                      <span className="scores-player-sort-indicator" aria-hidden="true">{active ? (currentSort.direction === 'desc' ? '↓' : '↑') : '↕'}</span>
+                    </button>
+                  </th>
+                );
+              })}
+            </tr>
+          </thead>
           <tbody>
-            {group.rows.map((row) => (
-              <tr key={`${row.team}-${row.player}`}>
-                <th><span>{row.team}</span>{row.player}</th>
-                {row.values.map((value, index) => <td key={`${row.player}-${group.columns[index]}`}>{value}</td>)}
-              </tr>
-            ))}
+            {sortedRows.map((row) => {
+              const key = playerRowKey(row);
+              const expanded = expandedPlayer === key;
+              const detailId = playerDetailId(group, row);
+              return (
+                <Fragment key={key}>
+                  <tr className={expanded ? 'is-expanded' : ''}>
+                    <th scope="row">
+                      <button
+                        type="button"
+                        className="scores-player-row-toggle"
+                        aria-expanded={expanded}
+                        aria-controls={detailId}
+                        aria-label={`${expanded ? 'Collapse' : 'Expand'} ${row.player} ${row.teamName ?? row.team} ${group.label} stats`}
+                        onClick={() => setExpandedPlayer(expanded ? null : key)}
+                      >
+                        <PlayerTeamIdentity row={row} />
+                        <span className="scores-player-row-name"><strong>{row.player}</strong><small>{row.teamName ?? row.team}</small></span>
+                        <span className="scores-player-row-chevron" aria-hidden="true">{expanded ? '−' : '+'}</span>
+                      </button>
+                    </th>
+                    {row.values.map((value, index) => <td key={`${key}-${group.columns[index]}`}>{value}</td>)}
+                  </tr>
+                  {expanded && (
+                    <tr id={detailId} className="scores-player-detail-row">
+                      <td colSpan={group.columns.length + 1}><PlayerQuarterDetail row={row} group={group} /></td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
           </tbody>
         </table>
       </div>
       <div className="scores-player-cards">
-        {group.rows.map((row) => (
-          <article key={`mobile-${row.team}-${row.player}`}>
-            <header><span>{row.team}</span><strong>{row.player}</strong><b>{group.columns[0]} {row.values[0]}</b></header>
-            <p>{group.columns.slice(1).map((column, index) => `${column} ${row.values[index + 1]}`).join(' · ')}</p>
-          </article>
-        ))}
+        {sortedRows.map((row) => {
+          const key = playerRowKey(row);
+          const expanded = expandedPlayer === key;
+          const detailId = playerDetailId(group, row);
+          return (
+            <article key={`mobile-${key}`} className={expanded ? 'is-expanded' : ''}>
+              <header>
+                <button
+                  type="button"
+                  className="scores-player-card-toggle"
+                  aria-expanded={expanded}
+                  aria-controls={`${detailId}-mobile`}
+                  aria-label={`${expanded ? 'Collapse' : 'Expand'} ${row.player} ${row.teamName ?? row.team} ${group.label} stats`}
+                  onClick={() => setExpandedPlayer(expanded ? null : key)}
+                >
+                  <PlayerTeamIdentity row={row} />
+                  <strong>{row.player}</strong>
+                  <b>{group.columns[0]} {row.values[0]}</b>
+                  <span className="scores-player-row-chevron" aria-hidden="true">{expanded ? '−' : '+'}</span>
+                </button>
+              </header>
+              <p>{group.columns.slice(1).map((column, index) => `${column} ${row.values[index + 1]}`).join(' · ')}</p>
+              {expanded && (
+                <div id={`${detailId}-mobile`}><PlayerQuarterDetail row={row} group={group} /></div>
+              )}
+            </article>
+          );
+        })}
       </div>
     </section>
   );
@@ -553,10 +770,24 @@ function PlayByPlay({ detail, participants }) {
   );
 }
 
-export default function ScoresGameDrilldown({ game, fixtureDetail = null, onBack, initialSection = 'overview' }) {
+export default function ScoresGameDrilldown({
+  game,
+  fixtureDetail = null,
+  onBack,
+  initialSection = 'overview',
+  selectedSection = null,
+  selectedPlayerGroup = null,
+  onSectionChange = null,
+  onPlayerGroupChange = null,
+}) {
   const fixtureData = game.provider === 'fixture' || String(game.id).startsWith('fixture-');
   const detailsProvider = game.detailsProvider ?? game.provider;
-  const [section, setSection] = useState(initialSection);
+  const [localSection, setLocalSection] = useState(initialSection);
+  const section = selectedSection ?? localSection;
+  const changeSection = (nextSection) => {
+    if (selectedSection == null) setLocalSection(nextSection);
+    onSectionChange?.(nextSection);
+  };
   const gameKey = `${game.provider ?? 'espn'}:${game.bdlGameId ?? game.providerGameId ?? game.id}`;
   const [detailState, setDetailState] = useState({
     key: gameKey,
@@ -791,7 +1022,7 @@ export default function ScoresGameDrilldown({ game, fixtureDetail = null, onBack
               role="tab"
               aria-selected={section === entry.id}
               className={section === entry.id ? 'is-active' : ''}
-              onClick={() => setSection(entry.id)}
+              onClick={() => changeSection(entry.id)}
             >{entry.label}</button>
           ))}
         </nav>
@@ -799,7 +1030,13 @@ export default function ScoresGameDrilldown({ game, fixtureDetail = null, onBack
 
       {section === 'overview' && <Overview detail={detail} awayTheme={awayTheme} homeTheme={homeTheme} />}
       {section === 'team' && <TeamStats detail={detail} awayTheme={awayTheme} homeTheme={homeTheme} />}
-      {section === 'players' && <PlayerStats detail={detail} />}
+      {section === 'players' && (
+        <PlayerStats
+          detail={detail}
+          selectedGroup={selectedPlayerGroup}
+          onGroupChange={onPlayerGroupChange}
+        />
+      )}
       {section === 'scoring' && <ScoringSummary detail={detail} />}
       {section === 'plays' && <PlayByPlay detail={detail} participants={participants} />}
       {section === 'story' && (

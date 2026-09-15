@@ -9,10 +9,14 @@ const FANTASY_VIEW_ALIASES = new Map([
 ]);
 const LEAGUE_VIEWS = new Set(['standings', 'history', 'activity']);
 const TRADE_VIEWS = new Set(['agent', 'intelligence', 'upgrade', 'history', 'inbox']);
-const STATISTICS_VIEWS = new Set(['browser', 'team', 'player', 'schedule', 'scores', 'standings', 'game']);
+const STATISTICS_VIEWS = new Set(['browser', 'team', 'player', 'schedule', 'scores', 'standings']);
 const STATISTICS_MODES = new Set(['game', 'fantasy', 'visual']);
 const STATISTICS_SCHEDULE_MODES = new Set(['week', 'team']);
-const STATISTICS_SCHEDULE_FILTERS = new Set(['international', 'primetime', 'holiday']);
+const STATISTICS_SCHEDULE_FILTERS = new Set(['international', 'primetime', 'holiday', 'home', 'away']);
+const STATISTICS_SCORES_PHASES = new Set(['regular', 'preseason']);
+const STATISTICS_SCORES_POSTSEASON_WEEKS = new Set(['wc', 'div', 'conf', 'sb']);
+const STATISTICS_SCORES_SECTIONS = new Set(['overview', 'team', 'players', 'scoring', 'plays', 'story']);
+const STATISTICS_SCORES_PLAYER_GROUPS = new Set(['passing', 'rushing', 'receiving', 'defense', 'kicking', 'punting', 'returns']);
 const SCOUT_VIEWS = new Set(['prospects', 'picks', 'results']);
 const DRAFT_VIEWS = new Set(['war-room', 'my-board', 'results']);
 
@@ -30,7 +34,14 @@ const DEFAULT_ROUTE = {
   statisticsPlayerId: null,
   statisticsPlayerSlug: null,
   statisticsMode: 'game',
-  statisticsGameId: null,
+  statisticsScoresSeason: null,
+  statisticsScoresPhase: null,
+  statisticsScoresWeek: null,
+  statisticsScoresGameId: null,
+  statisticsScoresSection: 'overview',
+  statisticsScoresPlayerGroup: null,
+  statisticsScoresAwayTeamId: null,
+  statisticsScoresHomeTeamId: null,
   statisticsScheduleMode: null,
   statisticsScheduleWeek: null,
   statisticsScheduleTeamId: null,
@@ -135,6 +146,27 @@ function normalizeStatisticsScheduleWeek(week) {
   return normalizeWeek(week);
 }
 
+function normalizeStatisticsScoresSeason(season) {
+  if (season == null || season === '') return null;
+  const parsed = Number(season);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+function normalizeStatisticsScoresWeek(week) {
+  if (week == null || week === '') return null;
+  const normalized = String(week).trim().toLowerCase();
+  if (STATISTICS_SCORES_POSTSEASON_WEEKS.has(normalized)) return normalized;
+  const prefixedWeek = normalized.match(/^(?:pre|reg)-(\d+)$/)?.[1];
+  const numericWeek = prefixedWeek ?? (/^\d+$/.test(normalized) ? normalized : null);
+  if (!numericWeek) return null;
+  const parsed = Number(numericWeek);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+function normalizeStatisticsScoresPhase(phase) {
+  return normalizeLowerToken(phase, STATISTICS_SCORES_PHASES);
+}
+
 function sanitizeSlug(slug) {
   if (typeof slug !== 'string') return null;
   const value = slug.trim().toLowerCase();
@@ -207,7 +239,6 @@ export function normalizeAppRoute(route = {}) {
     const statisticsPlayerId = normalizePlayerId(route.statisticsPlayerId);
     const statisticsPlayerSlug = sanitizeSlug(route.statisticsPlayerSlug);
     const statisticsMode = normalizeStatisticsMode(route.statisticsMode);
-    const statisticsGameId = normalizePlayerId(route.statisticsGameId);
     const legacyScheduleFilter = normalizeLowerToken(route.statisticsScheduleMode, STATISTICS_SCHEDULE_FILTERS);
     const explicitScheduleFilter = normalizeLowerToken(route.statisticsScheduleFilter, STATISTICS_SCHEDULE_FILTERS);
     const statisticsScheduleMode = normalizeLowerToken(route.statisticsScheduleMode, STATISTICS_SCHEDULE_MODES)
@@ -237,19 +268,27 @@ export function normalizeAppRoute(route = {}) {
     }
 
     if (statisticsView === 'scores') {
+      const statisticsScoresSeason = normalizeStatisticsScoresSeason(route.statisticsScoresSeason);
+      const statisticsScoresPhase = normalizeStatisticsScoresPhase(route.statisticsScoresPhase);
+      const statisticsScoresWeek = normalizeStatisticsScoresWeek(route.statisticsScoresWeek);
+      const statisticsScoresGameId = normalizePlayerId(route.statisticsScoresGameId);
+      const statisticsScoresSection = statisticsScoresGameId
+        ? normalizeLowerToken(route.statisticsScoresSection, STATISTICS_SCORES_SECTIONS, 'overview')
+        : 'overview';
       return {
         ...DEFAULT_ROUTE,
         activeTab: 'statistics',
         statisticsView: 'scores',
-      };
-    }
-
-    if (statisticsView === 'game' && statisticsGameId) {
-      return {
-        ...DEFAULT_ROUTE,
-        activeTab: 'statistics',
-        statisticsView: 'game',
-        statisticsGameId,
+        statisticsScoresSeason,
+        statisticsScoresPhase,
+        statisticsScoresWeek,
+        statisticsScoresGameId,
+        statisticsScoresSection,
+        statisticsScoresPlayerGroup: statisticsScoresGameId && statisticsScoresSection === 'players'
+          ? normalizeLowerToken(route.statisticsScoresPlayerGroup, STATISTICS_SCORES_PLAYER_GROUPS)
+          : null,
+        statisticsScoresAwayTeamId: statisticsScoresGameId ? normalizeTeamId(route.statisticsScoresAwayTeamId) : null,
+        statisticsScoresHomeTeamId: statisticsScoresGameId ? normalizeTeamId(route.statisticsScoresHomeTeamId) : null,
       };
     }
 
@@ -440,13 +479,14 @@ export function parseAppRoute(pathname = '/', search = '') {
         return normalizeAppRoute({
           activeTab: 'statistics',
           statisticsView: 'scores',
-        });
-      }
-      if (statisticsSubview === 'game') {
-        return normalizeAppRoute({
-          activeTab: 'statistics',
-          statisticsView: 'game',
-          statisticsGameId: statisticsParam,
+          statisticsScoresSeason: parseQueryValue(searchParams, 'season'),
+          statisticsScoresPhase: parseQueryValue(searchParams, 'phase'),
+          statisticsScoresWeek: parseQueryValue(searchParams, 'week'),
+          statisticsScoresGameId: parseQueryValue(searchParams, 'game'),
+          statisticsScoresSection: parseQueryValue(searchParams, 'tab'),
+          statisticsScoresPlayerGroup: parseQueryValue(searchParams, 'group'),
+          statisticsScoresAwayTeamId: parseQueryValue(searchParams, 'awayTeam'),
+          statisticsScoresHomeTeamId: parseQueryValue(searchParams, 'homeTeam'),
         });
       }
       return normalizeAppRoute({ activeTab: 'statistics', statisticsView: 'browser' });
@@ -572,10 +612,20 @@ export function buildAppPath(route) {
         return '/statistics/standings';
       }
       if (normalized.statisticsView === 'scores') {
-        return '/statistics/scores';
-      }
-      if (normalized.statisticsView === 'game' && normalized.statisticsGameId) {
-        return `/statistics/game/${encodeURIComponent(normalized.statisticsGameId)}`;
+        return `/statistics/scores${buildQueryString([
+          ['season', normalized.statisticsScoresSeason],
+          ['phase', normalized.statisticsScoresPhase],
+          ['week', normalized.statisticsScoresWeek],
+          ['game', normalized.statisticsScoresGameId],
+          ['tab', normalized.statisticsScoresGameId && normalized.statisticsScoresSection !== 'overview'
+            ? normalized.statisticsScoresSection
+            : null],
+          ['group', normalized.statisticsScoresGameId && normalized.statisticsScoresSection === 'players'
+            ? normalized.statisticsScoresPlayerGroup
+            : null],
+          ['awayTeam', normalized.statisticsScoresGameId ? normalized.statisticsScoresAwayTeamId : null],
+          ['homeTeam', normalized.statisticsScoresGameId ? normalized.statisticsScoresHomeTeamId : null],
+        ])}`;
       }
       if (normalized.statisticsView === 'team' && normalized.statisticsTeamId) {
         return `/statistics/team/${encodeURIComponent(normalized.statisticsTeamId.toLowerCase())}`;
@@ -691,7 +741,14 @@ export function isSameAppRoute(a, b) {
     && left.statisticsPlayerId === right.statisticsPlayerId
     && left.statisticsPlayerSlug === right.statisticsPlayerSlug
     && left.statisticsMode === right.statisticsMode
-    && left.statisticsGameId === right.statisticsGameId
+    && left.statisticsScoresSeason === right.statisticsScoresSeason
+    && left.statisticsScoresPhase === right.statisticsScoresPhase
+    && left.statisticsScoresWeek === right.statisticsScoresWeek
+    && left.statisticsScoresGameId === right.statisticsScoresGameId
+    && left.statisticsScoresSection === right.statisticsScoresSection
+    && left.statisticsScoresPlayerGroup === right.statisticsScoresPlayerGroup
+    && left.statisticsScoresAwayTeamId === right.statisticsScoresAwayTeamId
+    && left.statisticsScoresHomeTeamId === right.statisticsScoresHomeTeamId
     && left.statisticsScheduleMode === right.statisticsScheduleMode
     && left.statisticsScheduleWeek === right.statisticsScheduleWeek
     && left.statisticsScheduleTeamId === right.statisticsScheduleTeamId

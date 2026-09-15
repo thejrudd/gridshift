@@ -28,7 +28,7 @@ export default function LivePerformerRail({ performers = [], focusId = null, onS
               initialsSize="var(--fl-rail-initials)"
               className="fl-rail__av"
             />
-            <span className="fl-rail__pv">{entry.pace.points.toFixed(1)}</span>
+            <span className="fl-rail__pv">{entry.pace.points.toFixed(2)}</span>
             <span className="fl-rail__nm">{lastNameOf(name) || name}</span>
           </button>
         );

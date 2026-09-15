@@ -55,6 +55,8 @@ test('field position is null when the play does not report it', () => {
 test('a possession string resolves to the same absolute position', () => {
   assert.equal(possessionTextToPercent('PHI 36', { homeTeam: 'PHI' }), 64);
   assert.equal(possessionTextToPercent('DAL 26', { homeTeam: 'PHI' }), 26);
+  assert.equal(possessionTextToPercent('PHI -3', { homeTeam: 'PHI' }), 103);
+  assert.equal(possessionTextToPercent('DAL -3', { homeTeam: 'PHI' }), -3);
   assert.equal(possessionTextToPercent('not a spot', { homeTeam: 'PHI' }), null);
 });
 
@@ -303,6 +305,31 @@ test('a turnover is drawn travelling the way the offense was going', () => {
   assert.equal(interception.dir, -1, 'CLE threw it');
   assert.equal(interception.start, 81, "CLE's own 19");
   assert.equal(interception.flag, 'int');
+});
+
+test('an end-zone interception uses the catch point instead of the touchback placement', () => {
+  const interception = getPlayTrajectory({
+    team: 'SEA',
+    typeSlug: 'pass-interception-return',
+    startDown: 3,
+    startDistance: 5,
+    startYardLine: 16,
+    endYardLine: 20,
+    endPossessionText: 'SEA 20',
+    statYardage: 0,
+    rawText: '(Shotgun) D.Maye pass deep right intended for M.Hollins INTERCEPTED by J.Jobe [D.Lawrence] at SEA -3. Touchback.',
+  }, { homeTeam: 'SEA', awayTeam: 'NE' });
+
+  assert.equal(interception.dir, 1, 'New England attacks Seattle’s end zone');
+  assert.equal(interception.start, 84, 'the snap is at the Seattle 16');
+  assert.deepEqual(interception.turnover, {
+    at: 103,
+    finish: 103,
+    returnYards: 0,
+    hasReturn: false,
+  });
+  assert.equal(interception.end, 103, 'the play ends at the pick, not the Seattle 20 touchback placement');
+  assert.equal(formatFieldSpot(interception.turnover.at, { homeTeam: 'SEA', awayTeam: 'NE' }), 'SEA -3');
 });
 
 test('a play that scored is gold, whatever put the points up', () => {

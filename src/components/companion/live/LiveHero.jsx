@@ -174,7 +174,7 @@ function CrossfadePortraits({ sideKey, portraits }) {
 
 function formatPoints(value) {
   const numeric = Number(value);
-  return Number.isFinite(numeric) ? numeric.toFixed(1) : '—';
+  return Number.isFinite(numeric) ? numeric.toFixed(2) : '—';
 }
 
 function ProbabilityValue({ label }) {
@@ -211,7 +211,7 @@ function HeroSide({ side, snapshotTotal, snapshotFigures = null, dimmed, onToggl
           <>
             <span aria-hidden="true" className="fl-hero__dot">·</span>
             <span className={vsPace >= 0 ? 'is-up' : 'is-down'}>
-              {vsPace >= 0 ? '+' : '−'}{Math.abs(vsPace).toFixed(1)} vs pace
+              {vsPace >= 0 ? '+' : '−'}{Math.abs(vsPace).toFixed(2)} vs pace
             </span>
           </>
         )}
@@ -328,7 +328,7 @@ function WinExplainer({ left, right, explain, id }) {
                 {mover.playerName || 'Starter'}
               </span>
               <b className={mover.paceDelta >= 0 ? 'is-up' : 'is-down'}>
-                {mover.paceDelta >= 0 ? '+' : '−'}{Math.abs(mover.paceDelta).toFixed(1)}
+                {mover.paceDelta >= 0 ? '+' : '−'}{Math.abs(mover.paceDelta).toFixed(2)}
               </b>
             </span>
           ))}
@@ -346,11 +346,11 @@ function WinExplainer({ left, right, explain, id }) {
         <>
           <div className="fl-winex__figures">
             <span>
-              <b>{explain.margin.toFixed(1)}</b>
+              <b>{explain.margin.toFixed(2)}</b>
               <span>Projected margin</span>
             </span>
             <span>
-              <b>± {explain.swing.toFixed(1)}</b>
+              <b>± {explain.swing.toFixed(2)}</b>
               <span>Typical swing left</span>
             </span>
             <span>
@@ -360,8 +360,8 @@ function WinExplainer({ left, right, explain, id }) {
           </div>
           <p className="fl-winex__note">
             {leader.isMine ? 'You are' : `${leader.initials} is`} projected to finish{' '}
-            {explain.margin.toFixed(1)} ahead, and the unplayed games can still move that by about{' '}
-            {explain.swing.toFixed(1)} either way. The win % is how often that lead survives.
+            {explain.margin.toFixed(2)} ahead, and the unplayed games can still move that by about{' '}
+            {explain.swing.toFixed(2)} either way. The win % is how often that lead survives.
           </p>
         </>
       )}

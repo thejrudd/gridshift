@@ -5,9 +5,12 @@ import {
   buildPlayEvents,
   buildStarterNameIndex,
   buildPlayStatDelta,
+  compareLiveFeedEvents,
   groupSharedPlayEvents,
+  matchPlayToStarters,
   mergePlayEvents,
   normalizePlay,
+  sortLiveFeedEvents,
 } from '../../src/utils/livePlaysFeed.js';
 
 const SCORING = {
@@ -127,6 +130,42 @@ test('an unparsed provider sentence retains the conservative text-matching fallb
   assert.deepEqual(event.stats, { rush_att: 1, rush_yd: 4 });
 });
 
+test('an unparsed mixed pass-fumble sentence does not turn a mentioned defender into a feed scorer', () => {
+  // The provider's compact text can combine the pass, fumble, and recovery in
+  // a shape outside the narrative grammar. B.Young in the official text is
+  // Bryce Young, not either rostered Byron Young. The Rams defender proves the
+  // wrong-team rejection; the Bears defender proves that a team match alone
+  // cannot invent the recovery role from B.Young's passing clause.
+  const rawPlay = {
+    id: 'young-mcmillan-fumble',
+    type_slug: 'fumble-recovery-opponent',
+    team: { abbreviation: 'CAR' },
+    short_text: 'Bryce Young Pass Complete for 21 Yds to Tetairoa McMillan Tetairoa McMillan Fumble Devin Bush 0 Yd Fumble Recovery',
+    text: 'B.Young pass short right to T.McMillan for 21 yards. T.McMillan FUMBLES, RECOVERED by CHI-D.Bush at CHI 31.',
+    stat_yardage: 21,
+    scoring_play: true,
+  };
+  const starters = [
+    { id: 'byron', player: { full_name: 'Byron Young', position: 'LB', team: 'LAR' } },
+    { id: 'byron-defense', player: { full_name: 'Byron Young', position: 'LB', team: 'CHI' } },
+  ];
+  const play = normalizePlay(rawPlay, 'game-chi-car');
+  play.offenseTeamAbbr = 'CAR';
+  play.defenseTeamAbbr = 'CHI';
+
+  assert.equal(play.narrative, null);
+  assert.deepEqual(matchPlayToStarters(play, buildStarterNameIndex(starters)), []);
+  assert.deepEqual(buildPlayEvents(
+    { 'game-chi-car': [rawPlay] },
+    buildStarterNameIndex(starters),
+    { idp_fr: 2 },
+    new Map([['byron', 'LB'], ['byron-defense', 'LB']]),
+    new Map([['game-chi-car', {
+      id: 'game-chi-car', visitor_team: { abbreviation: 'CAR' }, home_team: { abbreviation: 'CHI' },
+    }]]),
+  ), []);
+});
+
 test('a provider passing touchdown retains stat_yardage for both rostered scorers', () => {
   const play = normalizePlay(TOUCHDOWN, 'game-1');
   assert.equal(play.yards, 39);
@@ -141,9 +180,65 @@ test('a provider passing touchdown retains stat_yardage for both rostered scorer
 
   const quarterback = events.find((event) => event.playerId === 'winston');
   const receiver = events.find((event) => event.playerId === 'wandale');
-  assert.equal(quarterback.pts, 5.6);
+  assert.equal(quarterback.pts, 5.56);
   assert.equal(receiver.pts, 10.9);
   assert.equal(quarterback.sharedPlayId, receiver.sharedPlayId);
+});
+
+test('plays without wallclock use kickoff order across games', () => {
+  const oldGame = {
+    id: 'old-game',
+    date: '2026-09-14T17:00:00.000Z',
+    visitor_team: { abbreviation: 'NYG' },
+    home_team: { abbreviation: 'DAL' },
+  };
+  const liveGame = {
+    id: 'live-game',
+    date: '2026-09-15T17:00:00.000Z',
+    visitor_team: { abbreviation: 'NYG' },
+    home_team: { abbreviation: 'DAL' },
+  };
+  const oldPlay = { ...TOUCHDOWN, id: 'old-play', period: 4, clock: '1:00' };
+  const livePlay = { ...TOUCHDOWN, id: 'live-play', period: 2, clock: '10:00' };
+  const events = buildPlayEvents(
+    { 'old-game': [oldPlay], 'live-game': [livePlay] },
+    buildStarterNameIndex(STARTERS),
+    SCORING,
+    new Map([['winston', 'QB'], ['wandale', 'WR']]),
+    new Map([['old-game', oldGame], ['live-game', liveGame]]),
+  );
+
+  assert.equal(events[0].gameId, 'live-game');
+  assert.equal(events[events.length - 1].gameId, 'old-game');
+  assert.ok(events[0].order > events.at(-1).order);
+});
+
+test('the shared feed comparator keeps chart and feed order aligned', () => {
+  const events = sortLiveFeedEvents([
+    { id: 'old', progress: 0.25, at: 200 },
+    { id: 'new', progress: 0.75, at: 100 },
+  ]);
+  assert.deepEqual(events.map((event) => event.id), ['new', 'old']);
+  assert.equal(compareLiveFeedEvents(events[0], events[1]) < 0, true);
+});
+
+test('a zero-value provider scoring flag does not create a fantasy row', () => {
+  const events = buildPlayEvents(
+    { 'game-1': [{ ...TOUCHDOWN, id: 'zero-value', scoring_play: true }] },
+    buildStarterNameIndex(STARTERS),
+    {
+      pass_yd: 0,
+      pass_td: 0,
+      pass_cmp: 0,
+      pass_att: 0,
+      rec_yd: 0,
+      rec_td: 0,
+      rec: 0,
+    },
+    new Map([['winston', 'QB'], ['wandale', 'WR']]),
+    new Map(),
+  );
+  assert.deepEqual(events, []);
 });
 
 test('a completed pass uses the full league scoring profile before display rounding', () => {
@@ -166,7 +261,84 @@ test('a completed pass uses the full league scoring profile before display round
   );
 
   assert.deepEqual(quarterback.stats, { pass_yd: 14, pass_cmp: 1, pass_att: 1 });
-  assert.equal(quarterback.pts, 0.7);
+  assert.equal(quarterback.pts, 0.68);
+});
+
+test('structured end-down data credits first downs when provider text omits the label', () => {
+  const pass = normalizePlay({
+    id: 'structured-pass-first-down',
+    type_slug: 'pass-reception',
+    team: { abbreviation: 'NO' },
+    start_down: 2,
+    start_distance: 8,
+    end_down: 1,
+    end_distance: 10,
+    short_text: 'Ty Simpson Pass Complete for 14 Yds to Alex Bachman',
+    text: 'T.Simpson pass short right to A.Bachman for 14 yards.',
+    stat_yardage: 14,
+  }, 'game-no');
+  const rush = normalizePlay({
+    id: 'structured-rush-first-down',
+    type_slug: 'rush',
+    team: { abbreviation: 'NO' },
+    start_down: 3,
+    start_distance: 4,
+    end_down: 1,
+    end_distance: 10,
+    short_text: 'Ty Simpson 6 Yd Run',
+    text: 'T.Simpson scrambles right for 6 yards.',
+    stat_yardage: 6,
+  }, 'game-no');
+
+  assert.equal(buildPlayStatDelta(pass, 'passer').pass_fd, 1);
+  assert.equal(buildPlayStatDelta(pass, 'receiver').rec_fd, 1);
+  assert.equal(buildPlayStatDelta(rush, 'rusher').rush_fd, 1);
+});
+
+test('a made field goal carries cumulative yards over 30 for kicker scoring', () => {
+  [
+    { distance: 30, over30: 0 },
+    { distance: 31, over30: 1 },
+    { distance: 59, over30: 29 },
+  ].forEach(({ distance, over30 }) => {
+    const play = normalizePlay({
+      id: `field-goal-${distance}`,
+      type_slug: 'field-goal',
+      team: { abbreviation: 'BAL' },
+      short_text: `Justin Tucker ${distance} Yd Field Goal`,
+      text: `Justin Tucker ${distance} Yd Field Goal`,
+      scoring_play: true,
+    }, 'game-bal');
+
+    assert.deepEqual(buildPlayStatDelta(play, 'kicker'), {
+      fgm: 1,
+      fgm_yds: distance,
+      fgm_yds_over_30: over30,
+    });
+  });
+});
+
+test('a defensive fumble recovery does not attach to an offensive player in a trailing tackle clause', () => {
+  const play = {
+    id: 'fumble-jameson-attribution',
+    type_slug: 'fumble-recovery-opponent',
+    team: { abbreviation: 'PHI' },
+    short_text: 'Miles Sanders 1 Yd Rush Miles Sanders Fumble Quinyon Mitchell 6 Yd Fumble Recovery',
+    text: 'M.Sanders left guard to PHI 10 for 1 yard (J.Campbell; B.Young). FUMBLES (J.Campbell), RECOVERED by PHI-Q.Mitchell at PHI 10. Q.Mitchell to PHI 16 for 6 yards (J.Williams).',
+    stat_yardage: 6,
+    scoring_play: false,
+  };
+  const starters = [
+    { id: 'sanders', player: { full_name: 'Miles Sanders', position: 'RB', team: 'PHI' } },
+    { id: 'quinyon', player: { full_name: 'Quinyon Mitchell', position: 'DB', team: 'PHI' } },
+    { id: 'jameson', player: { full_name: 'Jameson Williams', position: 'WR', team: 'DAL' } },
+  ];
+  const normalized = normalizePlay(play, 'game-fumble');
+  const matches = matchPlayToStarters(normalized, buildStarterNameIndex(starters));
+
+  assert.equal(matches.some(({ playerId }) => playerId === 'jameson'), false);
+  assert.equal(matches.find(({ playerId }) => playerId === 'quinyon')?.role, 'defense');
+  assert.deepEqual(buildPlayStatDelta(normalized, 'defense'), { idp_fr: 1, idp_fr_yd: 6 });
 });
 
 test('an incompletion records an attempt and incompletion without pass or receiving yards', () => {
@@ -303,7 +475,7 @@ test('same-side contributors become one combined feed moment', () => {
   const grouped = groupSharedPlayEvents(events, () => 'a');
 
   assert.equal(grouped.length, 1);
-  assert.equal(grouped[0].pts, 16.5);
+  assert.equal(grouped[0].pts, 16.46);
   assert.deepEqual(grouped[0].contributorIds, ['winston', 'wandale']);
   assert.deepEqual(grouped[0].contributors.map((contributor) => contributor.position), ['QB', 'WR']);
 });
@@ -324,7 +496,7 @@ test('a shared play keeps one stable row id as same-side contributors arrive', (
   assert.equal(firstSnapshot[0].id, 'shared-nyg-td-1-a');
   assert.equal(nextSnapshot[0].id, firstSnapshot[0].id);
   assert.deepEqual(nextSnapshot[0].contributorIds, ['winston', 'wandale']);
-  assert.equal(nextSnapshot[0].pts, 16.5);
+  assert.equal(nextSnapshot[0].pts, 16.46);
 });
 
 test('shared snaps remain separate when contributors are on opposing fantasy sides', () => {
@@ -395,4 +567,68 @@ test('a matching stat snapshot hydrates a delayed provider play within the repla
   assert.equal(merged.play.id, 'provider-catch-1');
   assert.deepEqual(merged.playGame, { id: 'game-1' });
   assert.deepEqual(merged.stats, { rec: 1, rec_yd: 20 });
+});
+
+test('grouped contributors keep the reconciled scoring fields the expansion reads', () => {
+  // Connected live hands grouping rows whose `pts` is already the displayed
+  // total, with the play's own score moved to `rawPts`.
+  const shared = (playerId, extra) => ({
+    id: `play-td-${playerId}`,
+    sharedPlayId: 'snap-1',
+    playerId,
+    position: playerId === 'winston' ? 'QB' : 'WR',
+    kind: 'td',
+    mechanism: 'pass',
+    pts: extra.displayPts,
+    rawPts: extra.rawPts,
+    stats: { pass_td: 1 },
+    at: 1_000_000,
+    order: 10,
+    gameId: 'game-1',
+    source: 'play',
+    estimated: true,
+    ...extra,
+  });
+
+  const [grouped] = groupSharedPlayEvents([
+    shared('winston', {
+      rawPts: 4, adjustment: 0.3, displayPts: 4.3, status: 'confirmed', confirmedBy: 'stats',
+    }),
+    shared('wandale', {
+      rawPts: 6, adjustment: 0, displayPts: 6, status: 'pending', confirmedBy: null,
+    }),
+  ], () => 'viewer');
+
+  assert.equal(grouped.pts, 10.3);
+  assert.deepEqual(grouped.contributors.map(({
+    playerId, rawPts, adjustment, displayPts, status, confirmedBy,
+  }) => ({ playerId, rawPts, adjustment, displayPts, status, confirmedBy })), [
+    { playerId: 'winston', rawPts: 4, adjustment: 0.3, displayPts: 4.3, status: 'confirmed', confirmedBy: 'stats' },
+    { playerId: 'wandale', rawPts: 6, adjustment: 0, displayPts: 6, status: 'pending', confirmedBy: null },
+  ]);
+});
+
+test('demo and preseason rows gain no reconciler fields from grouping', () => {
+  const plain = (playerId) => ({
+    id: `demo-${playerId}`,
+    sharedPlayId: 'snap-demo',
+    playerId,
+    position: 'WR',
+    kind: 'pass',
+    pts: 2,
+    stats: { rec: 1, rec_yd: 10 },
+    at: 5,
+    source: 'play',
+    estimated: true,
+  });
+
+  const [grouped] = groupSharedPlayEvents([plain('a'), plain('b')], () => 'viewer');
+
+  grouped.contributors.forEach((contributor) => {
+    assert.equal(contributor.rawPts, undefined);
+    assert.equal(contributor.adjustment, undefined);
+    assert.equal(contributor.displayPts, undefined);
+    assert.equal(contributor.status, undefined);
+    assert.equal(contributor.confirmedBy, undefined);
+  });
 });

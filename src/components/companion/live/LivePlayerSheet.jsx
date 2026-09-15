@@ -18,12 +18,12 @@ const TABS = [['scoring', 'Scoring'], ['box', 'Box score'], ['plays', 'Plays']];
 
 function formatPoints(value) {
   const numeric = Number(value);
-  return Number.isFinite(numeric) ? numeric.toFixed(1) : '0.0';
+  return Number.isFinite(numeric) ? numeric.toFixed(2) : '0.00';
 }
 
 function formatSigned(value) {
   const numeric = Number(value) || 0;
-  return `${numeric >= 0 ? '+' : '−'}${Math.abs(numeric).toFixed(1)}`;
+  return `${numeric >= 0 ? '+' : '−'}${Math.abs(numeric).toFixed(2)}`;
 }
 
 /** Framed portrait: headshot → NFL mark → initials. */
@@ -87,9 +87,26 @@ export default function LivePlayerSheet({
   const stats = entry.row.detailStats ?? entry.row.mappedStats ?? entry.row.sleeperStats ?? null;
   const pace = entry.pace;
   const breakdown = stats
-    ? buildFantasyScoringBreakdown(stats, scoringSettings, position, { authoritativeTotal: pace.points })
+    ? buildFantasyScoringBreakdown(stats, scoringSettings, position, {
+        authoritativeTotal: pace.points,
+        adjustmentLabel: 'Sleeper scoring adjustment',
+      })
     : { rows: [], total: pace.points };
   const boxScore = buildLiveBoxScore(stats, position);
+  // How the displayed total was reached: Sleeper's last word, the plays it has
+  // not confirmed yet, and the residual pinned to the latest confirmed play.
+  // Only the reconciliation engine produces these; every other mode shows the
+  // scoring math alone.
+  const reconciliation = entry.row.reconciliation?.source === 'engine'
+    ? entry.row.reconciliation
+    : null;
+  const reconciliationNote = reconciliation && reconciliation.sleeperPoints != null
+    ? [
+        `Sleeper ${formatPoints(reconciliation.sleeperPoints)}`,
+        reconciliation.pendingPoints ? `pending ${formatSigned(reconciliation.pendingPoints)}` : null,
+        reconciliation.adjustment ? `adjustment ${formatSigned(reconciliation.adjustment)}` : null,
+      ].filter(Boolean).join(' · ')
+    : null;
   const ceiling = Math.max(pace.points, pace.pace, pace.projected, pace.liveProjected, 1) * 1.02;
 
   return (
@@ -192,6 +209,11 @@ export default function LivePlayerSheet({
                 <span className="fl-brow__l">Live total</span>
                 <span className="fl-brow__p" style={{ color: side.palette[0] }}>{formatPoints(breakdown.total)}</span>
               </div>
+              {reconciliationNote && (
+                <div className="fl-brow">
+                  <span className="fl-brow__d">{reconciliationNote}</span>
+                </div>
+              )}
             </>
           ) : (
             <div className="fl-empty">

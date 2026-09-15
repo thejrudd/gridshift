@@ -1,5 +1,5 @@
 // ── Fantasy Projection Engine ─────────────────────────────────────────────────
-import { calcPoints, calcPointsFromTotals, createPointsCalculator } from './scoringEngine';
+import { calcPoints, calcPointsFromTotals, createPointsCalculator } from './scoringEngine.js';
 
 const IDP_POSITIONS = new Set(['DL', 'LB', 'DB', 'DE', 'DT', 'CB', 'S', 'ILB', 'OLB', 'SS', 'FS']);
 const PASSING_POSITIONS = new Set(['QB', 'WR', 'TE']);
@@ -796,11 +796,12 @@ export function projectPlayer({
   defStrength,
   leagueAvg,           // optional pre-computed league avg PPG for this position
   skipOpponentLookup,  // when true, skip getOpponentStrength fallback if defStrength is null
+  priorWeeklyOverride,  // optional completed-history rows for preseason baselines
 }) {
-  if (!weeklyArr?.length) return null;
+  if (!weeklyArr?.length && !priorWeeklyOverride?.length) return null;
 
   // Only use games already played before the projected week, sorted chronologically
-  const priorWeekly = (week != null ? weeklyArr.filter(w => w.week < week) : weeklyArr)
+  const priorWeekly = (priorWeeklyOverride ?? (week != null ? weeklyArr.filter(w => w.week < week) : weeklyArr))
     .slice()
     .sort((a, b) => a.week - b.week);
 

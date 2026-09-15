@@ -23,29 +23,29 @@ export default function LiveVerdict({ left, right, verdict, winProbA, settled = 
     <div className="fl-verdict">
       {verdict.tied ? (
         <>
-          <span>Level at <span className="fl-verdict__n">{left.pace.total.toFixed(1)}</span></span>
+          <span>Level at <span className="fl-verdict__n">{left.pace.total.toFixed(2)}</span></span>
           <span className="fl-verdict__muted">
             — {shortLabel(projectedWinner)} {projectedWinner.isMine ? 'project' : 'projects'}{' '}
-            <span className="fl-verdict__n">+{verdict.projectedLead.toFixed(1)}</span> at this pace
+            <span className="fl-verdict__n">+{verdict.projectedLead.toFixed(2)}</span> at this pace
           </span>
         </>
       ) : verdict.flip ? (
         <>
           <span>
             {shortLabel(leader)} {leader.isMine ? 'lead' : 'leads'}{' '}
-            <span className="fl-verdict__n" style={{ color: leader.palette[0] }}>{verdict.lead.toFixed(1)}</span>
+            <span className="fl-verdict__n" style={{ color: leader.palette[0] }}>{verdict.lead.toFixed(2)}</span>
           </span>
           <span className="fl-verdict__muted" aria-hidden="true">—</span>
           <span className="fl-verdict__flip">
             {shortLabel(projectedWinner)} still {projectedWinner.isMine ? 'project' : 'projects'}{' '}
-            <span className="fl-verdict__n">+{verdict.projectedLead.toFixed(1)}</span>
+            <span className="fl-verdict__n">+{verdict.projectedLead.toFixed(2)}</span>
           </span>
         </>
       ) : (
         <>
           <span>{shortLabel(projectedWinner)} {projectedWinner.isMine ? 'are' : 'is'} pulling away</span>
           <span className="fl-verdict__muted">
-            — by <span className="fl-verdict__n">{verdict.projectedLead.toFixed(1)}</span> at this pace
+            — by <span className="fl-verdict__n">{verdict.projectedLead.toFixed(2)}</span> at this pace
           </span>
         </>
       )}

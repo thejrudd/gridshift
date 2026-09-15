@@ -62,7 +62,7 @@ const validatedPaths = [
   expectRoundTrip({ activeTab: 'statistics', statisticsView: 'schedule', statisticsScheduleMode: 'week', statisticsScheduleFilter: 'primetime' }, '/statistics/schedule?mode=week&filter=primetime'),
   expectRoundTrip({ activeTab: 'statistics', statisticsView: 'schedule', statisticsScheduleMode: 'team', statisticsScheduleTeamId: 'KC', statisticsScheduleFilter: 'holiday' }, '/statistics/schedule?mode=team&team=KC&filter=holiday'),
   expectRoundTrip({ activeTab: 'statistics', statisticsView: 'scores' }, '/statistics/scores'),
-  expectRoundTrip({ activeTab: 'statistics', statisticsView: 'game', statisticsGameId: '401872656' }, '/statistics/game/401872656'),
+  expectRoundTrip({ activeTab: 'statistics', statisticsView: 'scores', statisticsScoresSeason: 2026, statisticsScoresPhase: 'preseason', statisticsScoresWeek: 2, statisticsScoresGameId: '1393548', statisticsScoresSection: 'players', statisticsScoresPlayerGroup: 'rushing' }, '/statistics/scores?season=2026&phase=preseason&week=2&game=1393548&tab=players&group=rushing'),
   expectRoundTrip({ activeTab: 'fantasy', companionView: 'rosters' }, '/fantasy/rosters'),
   expectRoundTrip({ activeTab: 'fantasy', companionView: 'rankings', rankingsPosition: 'QB' }, '/fantasy/rankings?pos=QB'),
   expectRoundTrip({ activeTab: 'fantasy', companionView: 'heatmap' }, '/fantasy/heatmap'),

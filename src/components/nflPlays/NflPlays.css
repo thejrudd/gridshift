@@ -358,6 +358,7 @@
 .df-end { position: absolute; top: 50%; z-index: 6; display: flex; align-items: center; transform: translate(-50%, -50%); }
 .df-glyph { margin-left: -12px; }
 .df-end { margin-left: 10px; }
+.df-end.is-turnover { margin-left: 0; }
 
 /* The field is a picture; this is the same drive in a sentence. */
 .df-sr {

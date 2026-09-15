@@ -65,6 +65,68 @@ function getPlayerLabel(route, playerMeta) {
   return playerMeta?.displayName || titleFromSlug(route?.statisticsPlayerSlug) || 'Player';
 }
 
+const SCORES_SECTION_LABELS = {
+  overview: null,
+  team: 'Team Stats',
+  players: 'Players',
+  scoring: 'Scoring',
+  plays: 'Play-by-Play',
+  story: 'Game Story',
+};
+
+const SCORES_PLAYER_GROUP_LABELS = {
+  passing: 'Passing',
+  rushing: 'Rushing',
+  receiving: 'Receiving',
+  defense: 'Defense',
+  kicking: 'Kicking',
+  punting: 'Punting',
+  returns: 'Returns',
+};
+
+const SCORES_SECTION_DESCRIPTION_LABELS = {
+  overview: 'matchup details',
+  team: 'team statistics',
+  players: 'player details',
+  scoring: 'scoring plays',
+  plays: 'play-by-play',
+  story: 'the game story',
+};
+
+function getScoresWeekLabel(route) {
+  const week = route?.statisticsScoresWeek;
+  if (week == null || week === '') return null;
+  const normalizedWeek = String(week).trim().toLowerCase();
+  const postseasonLabel = {
+    wc: 'Wild Card',
+    div: 'Divisional',
+    conf: 'Conference',
+    sb: 'Super Bowl',
+  }[normalizedWeek];
+  if (postseasonLabel) return postseasonLabel;
+  const parsedWeek = Number(normalizedWeek);
+  if (!Number.isInteger(parsedWeek) || parsedWeek < 1) return null;
+  return route?.statisticsScoresPhase === 'preseason'
+    ? `Preseason Week ${parsedWeek}`
+    : `Week ${parsedWeek}`;
+}
+
+function getScoresRouteContext(route) {
+  const weekLabel = getScoresWeekLabel(route);
+  const sectionLabel = SCORES_SECTION_LABELS[route?.statisticsScoresSection] ?? null;
+  const playerGroupLabel = route?.statisticsScoresSection === 'players'
+    ? SCORES_PLAYER_GROUP_LABELS[route?.statisticsScoresPlayerGroup] ?? null
+    : null;
+  const context = [weekLabel, sectionLabel, playerGroupLabel].filter(Boolean);
+  if (route?.statisticsScoresGameId && !context.length) context.push('Matchup');
+  return {
+    titleSuffix: context.length ? ` · ${context.join(' · ')}` : '',
+    weekLabel,
+    sectionDescriptionLabel: SCORES_SECTION_DESCRIPTION_LABELS[route?.statisticsScoresSection]
+      ?? (route?.statisticsScoresGameId ? 'matchup details' : null),
+  };
+}
+
 export function getPageShareMetadata({ route = {}, season = DEFAULT_SEASON, teams = [], playerMeta = null } = {}) {
   const year = normalizedSeason(season);
   let title = `${year} NFL Season`;
@@ -102,6 +164,15 @@ export function getPageShareMetadata({ route = {}, season = DEFAULT_SEASON, team
       const team = teamLabel(teams, route.statisticsTeamId);
       title = `${team} · NFL Stats`;
       description = `Explore the ${team} schedule, results, and team statistics.`;
+    } else if (view === 'scores') {
+      const scoreYear = normalizedSeason(route.statisticsScoresSeason ?? season);
+      const scoreContext = getScoresRouteContext(route);
+      title = `NFL Scores${scoreContext.titleSuffix} · ${scoreYear}`;
+      description = route.statisticsScoresGameId
+        ? `Review this NFL matchup's ${scoreContext.sectionDescriptionLabel} in GridShift.`
+        : scoreContext.weekLabel
+          ? `Follow ${scoreContext.weekLabel} NFL scores in GridShift.`
+          : 'Track NFL scores in GridShift.';
     } else {
       const viewTitle = {
         browser: 'NFL Statistics',

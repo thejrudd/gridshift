@@ -8,6 +8,7 @@ import {
   getMatchupCustomPoints,
   getOfficialMatchupRowPoints,
   hasReconciledMatchup,
+  isLiveGame,
   isCompleteScheduleWeek,
   resolveStarterGameState,
 } from '../../src/utils/liveScoringFeed.js';
@@ -26,6 +27,16 @@ describe('live starter game-state resolution', () => {
       resolveStarterGameState({ game: { status: 'Final/OT' } }),
       { state: STARTER_GAME_STATE.OFFICIAL_FINAL, remainingFraction: 0, settled: true },
     );
+  });
+
+  it('recognizes raw BALLDONTLIE clock-quarter and state-form live statuses', () => {
+    assert.equal(isLiveGame({ status: '4:12 - 1st' }), true);
+    assert.equal(isLiveGame({ status: '9:58 - 2nd' }), true);
+    assert.equal(isLiveGame({ status: 'Scheduled', status_state: 'in_progress' }), true);
+    assert.equal(isLiveGame({ status: 'Scheduled', statusState: 'live' }), true);
+    assert.equal(isLiveGame({ status: '8:20 pm ET' }), false);
+    assert.equal(isLiveGame({ status: '0:00 - 4th', status_state: 'completed' }), false);
+    assert.equal(isLiveGame({ status: '4:12 - 1st', status_state: 'delayed' }), false);
   });
 
   it('accepts an explicit completed schedule entry as official finality', () => {

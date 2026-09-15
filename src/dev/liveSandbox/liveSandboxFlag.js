@@ -12,6 +12,7 @@ export const LIVE_SANDBOX_ENABLED = Boolean(
 // Which mode the sandbox opens in. The mode itself is switchable at runtime
 // from the sandbox panel — see liveSandboxMode.js — so this only sets the
 // starting point for a browser that has not chosen one yet.
-export const LIVE_SANDBOX_DEFAULT_MODE = import.meta.env.VITE_LIVE_SANDBOX_MODE === 'preseason'
-  ? 'preseason'
+const configuredMode = import.meta.env.VITE_LIVE_SANDBOX_MODE;
+export const LIVE_SANDBOX_DEFAULT_MODE = ['live', 'preseason'].includes(configuredMode)
+  ? configuredMode
   : 'replay';

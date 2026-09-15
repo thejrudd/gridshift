@@ -9,6 +9,7 @@ import {
   normalizePlayerName,
 } from '../../src/utils/nflPlays/playerNameIndex.js';
 import { buildStarterNameIndex } from '../../src/utils/livePlaysFeed.js';
+import { normalizeName } from '../../src/utils/liveScoringFeed.js';
 import { toParticipantIndex } from '../../src/utils/nflPlays/participants.js';
 import { normalizeBdlScorePlay } from '../../src/utils/balldontlieNflScoreboard.js';
 import { parsePlayNarrative } from '../../src/utils/nflPlays/playNarrative.js';
@@ -51,6 +52,25 @@ test('a shared surname is left unresolved rather than attributed to the wrong pl
   assert.equal(lookupPlayerByName(index, 'N.Smith')?.name, 'Nolan Smith Jr.');
 });
 
+test('a single owner is rejected when the requested team does not match', () => {
+  const index = buildPlayerNameIndex(ROSTER);
+  // Saquon Barkley is the only owner of "S.Barkley" in ROSTER, but he's PHI —
+  // asking for CAR must not fall back to the sole owner.
+  assert.equal(lookupPlayerByName(index, 'S.Barkley', { team: 'CAR' }), null);
+  assert.equal(lookupPlayerByName(index, 'S.Barkley', { team: 'PHI' })?.name, 'Saquon Barkley');
+});
+
+test('a single owner with no team on file still matches regardless of the requested team', () => {
+  const roster = [{ id: 1, name: 'Byron Young', team: null, position: 'LB' }];
+  const index = buildPlayerNameIndex(roster);
+  assert.equal(lookupPlayerByName(index, 'B.Young', { team: 'CAR' })?.name, 'Byron Young');
+});
+
+test('a lookup with no team requested keeps matching a sole owner regardless of team', () => {
+  const index = buildPlayerNameIndex(ROSTER);
+  assert.equal(lookupPlayerByName(index, 'S.Barkley')?.name, 'Saquon Barkley');
+});
+
 test('an unknown name resolves to nothing', () => {
   const index = buildPlayerNameIndex(ROSTER);
   assert.equal(lookupPlayerByName(index, 'Nobody Here'), null);
@@ -75,7 +95,60 @@ test('the Fantasy Live adapter keeps its existing index shape and behavior', () 
   // Ambiguous bare surnames are dropped; the initialed forms survive.
   assert.equal(index.index.get('smith'), undefined);
   assert.deepEqual(index.index.get('t smith'), ['b']);
-  assert.deepEqual(index.meta.get('a'), { team: 'PHI', position: 'RB' });
+  assert.deepEqual(index.meta.get('a'), { team: 'PHI', position: 'RB', normalizedName: 'saquon barkley' });
+});
+
+test('a rostered defender does not absorb a same-initial passer on another team', () => {
+  // The bug this exists to prevent: with only Byron Young (LAR, LB) rostered,
+  // a Panthers pass by Bryce Young ("B.Young") must not resolve to him.
+  const index = buildStarterNameIndex([
+    { id: 'byron', player: { full_name: 'Byron Young', team: 'LAR', position: 'LB' } },
+  ]);
+  assert.equal(lookupPlayerByName(index, 'B.Young', { team: 'CAR', normalize: normalizeName }), null);
+});
+
+const WILLIAMS_ROSTER = [
+  { id: 'jameson', name: 'Jameson Williams', team: 'DET', position: 'WR' },
+];
+
+test('a full first name does not fall back to a same-team, same-initial teammate', () => {
+  // The bug this exists to prevent: only Jameson Williams (DET) is rostered.
+  // "Dak Prescott found Javonte Williams for a 17-yard touchdown" named a
+  // different real player who shares Jameson's initial and last name — the
+  // team check alone doesn't catch this when both would be DET, so a full
+  // first name that doesn't exactly match must not fall through to the bare
+  // "j williams" initial key and grab the sole owner there.
+  const index = buildPlayerNameIndex(WILLIAMS_ROSTER, { normalize: normalizeName });
+  assert.equal(lookupPlayerByName(index, 'Javonte Williams', { team: 'DET', normalize: normalizeName }), null);
+});
+
+test('a full first name matches its own player exactly', () => {
+  const index = buildPlayerNameIndex(WILLIAMS_ROSTER, { normalize: normalizeName });
+  assert.equal(lookupPlayerByName(index, 'Jameson Williams', { team: 'DET', normalize: normalizeName })?.name, 'Jameson Williams');
+});
+
+test('an abbreviated initial still matches, unaffected by the full-first-name check', () => {
+  const index = buildPlayerNameIndex(WILLIAMS_ROSTER, { normalize: normalizeName });
+  assert.equal(lookupPlayerByName(index, 'J.Williams', { team: 'DET', normalize: normalizeName })?.name, 'Jameson Williams');
+});
+
+test('a hyphenated first name resolves both spelled out and abbreviated with an internal period', () => {
+  const roster = [{ id: 'stbrown', name: 'Amon-Ra St. Brown', team: 'DET', position: 'WR' }];
+  const index = buildPlayerNameIndex(roster, { normalize: normalizeName });
+  assert.equal(lookupPlayerByName(index, 'Amon-Ra St. Brown', { normalize: normalizeName })?.name, 'Amon-Ra St. Brown');
+  // "A.St. Brown" — the raw first token is just "A" (an initial split off by
+  // the period), so this must keep matching like any other abbreviation even
+  // though normalizeName's period-stripping merges "a" and "st" into "ast".
+  assert.equal(lookupPlayerByName(index, 'A.St. Brown', { normalize: normalizeName })?.name, 'Amon-Ra St. Brown');
+});
+
+test('the Fantasy Live adapter carries normalizedName through so the full-first-name check works end to end', () => {
+  const index = buildStarterNameIndex([
+    { id: 'jameson', player: { full_name: 'Jameson Williams', team: 'DET', position: 'WR' } },
+  ]);
+  assert.equal(lookupPlayerByName(index, 'Javonte Williams', { team: 'DET', normalize: normalizeName }), null);
+  assert.equal(lookupPlayerByName(index, 'Jameson Williams', { team: 'DET', normalize: normalizeName })?.normalizedName, 'jameson williams');
+  assert.equal(lookupPlayerByName(index, 'J.Williams', { team: 'DET', normalize: normalizeName })?.normalizedName, 'jameson williams');
 });
 
 test('an ESPN event id is derived from a play id, and rejected when the shape changes', () => {

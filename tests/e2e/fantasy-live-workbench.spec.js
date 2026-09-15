@@ -42,7 +42,7 @@ test.beforeEach(async ({ page }) => {
   }));
 });
 
-test('a shared same-roster play opens each contributor with only their points', async ({ page }) => {
+test('a shared same-roster play keeps each contributor in its own feed row', async ({ page }) => {
   await page.unroute('https://api.sleeper.app/v1/**');
   await installTradeFixtures(page, {
     players: {
@@ -51,7 +51,7 @@ test('a shared same-roster play opens each contributor with only their points', 
     },
   });
   await page.unroute('**/api/live/status');
-  await page.route('**/api/live/status', (route) => route.fulfill({
+  await page.route('**/api/live/status**', (route) => route.fulfill({
     status: 200,
     contentType: 'application/json',
     body: JSON.stringify({
@@ -65,7 +65,7 @@ test('a shared same-roster play opens each contributor with only their points', 
       session: { enabled: true, canDisable: true },
     }),
   }));
-  await page.route('**/api/live/game/*/plays', (route) => {
+  await page.route('**/api/live/game/*/plays**', (route) => {
     const gameId = route.request().url().match(/\/game\/([^/]+)\/plays/)?.[1];
     return route.fulfill({
       status: 200,
@@ -101,25 +101,34 @@ test('a shared same-roster play opens each contributor with only their points', 
 
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(FANTASY_LIVE_PRODUCTION_ROUTE);
+  const whatsNew = page.getByRole('button', { name: 'Dismiss', exact: true });
+  try {
+    await whatsNew.waitFor({ state: 'visible', timeout: 5_000 });
+    await whatsNew.click();
+  } catch {
+    // The upgrade modal is not shown for every fixture/browser profile.
+  }
 
-  const sharedRow = page.locator('.fl-play').filter({ hasText: 'Pocket Commander' }).filter({ hasText: 'Flex Receiver' });
-  await expect(sharedRow).toHaveCount(1);
-  await sharedRow.click();
+  const combinedRows = page.locator('.fl-play')
+    .filter({ has: page.locator('.fl-play__nm', { hasText: 'Pocket Commander' }) })
+    .filter({ has: page.locator('.fl-play__nm', { hasText: 'Flex Receiver' }) });
+  await expect(combinedRows).toHaveCount(0);
+
+  const quarterbackRow = page.locator('.fl-play').filter({
+    has: page.locator('.fl-play__nm', { hasText: 'Pocket Commander' }),
+  });
+  const receiverRow = page.locator('.fl-play').filter({
+    has: page.locator('.fl-play__nm', { hasText: 'Flex Receiver' }),
+  });
+  await expect(quarterbackRow).toHaveCount(1);
+  await expect(receiverRow).toHaveCount(1);
+
+  await quarterbackRow.click();
   await expect(page.locator('.fl-exp .dpb')).toBeVisible();
-  await expect(page.locator('.fl-exp .dpb-fantasy')).toHaveText(/^[+\u2212-]\d+\.\d$/);
+  await expect(page.locator('.fl-exp .fl-exp__ln.is-total .fl-exp__lv')).toHaveText('+5.56');
 
-  const qbBreakdown = page.getByRole('button', { name: 'Pocket Commander breakdown' });
-  const receiverBreakdown = page.getByRole('button', { name: 'Flex Receiver breakdown' });
-  await expect(qbBreakdown).toBeVisible();
-  await expect(receiverBreakdown).toBeVisible();
-
-  await receiverBreakdown.click();
-  await expect(page.locator('.fl-analysis-stage .fl-phead__name')).toHaveText('Flex Receiver');
-  await expect(page.locator('.fl-analysis-stage .fl-brow.is-selected .fl-brow__p')).toHaveText('+10.9');
-
-  await qbBreakdown.click();
-  await expect(page.locator('.fl-analysis-stage .fl-phead__name')).toHaveText('Pocket Commander');
-  await expect(page.locator('.fl-analysis-stage .fl-brow.is-selected .fl-brow__p')).toHaveText('+5.6');
+  await receiverRow.click();
+  await expect(page.locator('.fl-exp .fl-exp__ln.is-total .fl-exp__lv')).toHaveText('+10.90');
 });
 
 test('Fantasy Live shows an inactive-season state instead of a stale league week', async ({ page }) => {
@@ -471,6 +480,48 @@ test('desktop Live keeps the feed and chart side by side with synchronized repla
   await expect.poll(() => feed.evaluate((element) => element.scrollTop)).toBeLessThanOrEqual(1);
 });
 
+test('selecting a play in the feed selects the matching chart marker', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 960 });
+  // The status client scopes this request with leagueId; keep this focused
+  // fixture aligned with that query-bearing route.
+  await page.route('**/api/live/status**', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      ok: true,
+      live: {
+        enabled: true,
+        tier: 'paid',
+        mockPlaysEnabled: true,
+        accessCodeRequired: true,
+      },
+      session: { enabled: true, canDisable: true },
+    }),
+  }));
+  await page.goto(FANTASY_LIVE_PRODUCTION_ROUTE);
+
+  await expect.poll(() => page.locator('.fl-play').count()).toBeGreaterThan(8);
+  await expect.poll(() => page.locator('.fl-chart__mark').count()).toBeGreaterThan(2);
+
+  const eventId = await page.locator('.fl-play').evaluateAll((rows) => {
+    const markIds = new Set(Array.from(document.querySelectorAll('.fl-chart__mark'))
+      .map((mark) => mark.dataset.eventId));
+    return rows.find((row) => markIds.has(row.dataset.eventId))?.dataset.eventId ?? null;
+  });
+  expect(eventId).toBeTruthy();
+
+  const dismissUpdate = page.getByRole('button', { name: 'Dismiss update notice' });
+  if (await dismissUpdate.isVisible()) await dismissUpdate.click();
+  const dismissWhatsNew = page.getByRole('button', { name: 'Dismiss', exact: true });
+  if (await dismissWhatsNew.isVisible()) await dismissWhatsNew.click();
+  await page.locator(`.fl-play[data-event-id="${eventId}"]`).click();
+
+  const selectedMark = page.locator('.fl-chart__mark.is-selected');
+  await expect(selectedMark).toHaveCount(1);
+  await expect(selectedMark).toHaveAttribute('data-event-id', eventId);
+  await expect(page.locator(`.fl-play.is-selected[data-event-id="${eventId}"]`)).toHaveCount(1);
+});
+
 test('desktop Live fits the route viewport without document scrolling', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto(FANTASY_LIVE_PRODUCTION_ROUTE);
@@ -580,11 +631,33 @@ test('Fantasy Live sandbox can fill the completed demo week immediately', async 
     .catch(() => false);
   test.skip(!sandboxAvailable, 'Requires a server built with VITE_LIVE_SANDBOX=true.');
   await expect(fullWeek).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Live data' })).toBeVisible();
   await fullWeek.click();
 
   await expect(page.getByRole('slider', { name: 'Replay position' })).toHaveValue('1');
   await expect(page.locator('.live-sandbox-pct')).toHaveText('100%');
   await expect(fullWeek).toBeDisabled();
+});
+
+test('Fantasy Live sandbox can switch to the connected live data path', async ({ page }) => {
+  await page.goto('/fantasy/live');
+
+  const replay = page.getByRole('button', { name: 'Replay' });
+  const liveData = page.getByRole('button', { name: 'Live data' });
+  const sandboxAvailable = await liveData.waitFor({ state: 'attached', timeout: 3000 })
+    .then(() => true)
+    .catch(() => false);
+  test.skip(!sandboxAvailable, 'Requires a server built with VITE_LIVE_SANDBOX=true.');
+
+  await replay.click();
+  await expect(liveData).toBeEnabled();
+  await liveData.click();
+
+  await expect(liveData).toHaveAttribute('data-active', 'true');
+  await expect(page.locator('.live-sandbox-status')).toHaveText('Connected league — live routes');
+  // The fixture replay is Week 12; the connected test league is Week 7. This
+  // confirms the toggle left the synthetic league and returned to Sleeper.
+  await expect(page.locator('.fl-top__l')).toContainText('Live · Week 7');
 });
 
 test('Fantasy Live pace chart zooms and scrolls without moving the page', async ({ page }) => {
@@ -870,7 +943,9 @@ function liveGame(id, visitorTeam, homeTeam, visitorScore, homeScore, date) {
     home_team: { abbreviation: homeTeam },
     visitor_team_score: visitorScore,
     home_team_score: homeScore,
-    status: '3rd Quarter',
+    // Keep the fixture in the raw BALLDONTLIE shape. Statistics Scores
+    // normalizes this before rendering; Fantasy Live must classify it itself.
+    status: '06:42 - 3rd',
     period: 3,
     time: '06:42',
     date,

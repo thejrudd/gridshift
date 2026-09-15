@@ -124,6 +124,7 @@ function buildWeekGames(snapshot, throughWeek = null) {
           identity: identities.get(rosterId),
           starters: (row?.starters ?? []).map(key).filter(Boolean),
           players: (row?.players ?? []).map(key).filter(Boolean),
+          recordedPlayerPoints: row?.players_points ?? {},
           playerPoints: Object.fromEntries(Object.entries(row?.players_points ?? {}).map(([playerId, points]) => (
             [key(playerId), roundScore(points)]
           )).filter(([playerId]) => playerId)),
@@ -710,7 +711,8 @@ export function buildLeagueHistoryModel(snapshots = [], players = {}) {
 
   snapshots.forEach((snapshot) => {
     const identities = buildSeasonParticipantIdentities(snapshot);
-    const games = buildWeekGames(snapshot, getLatestFinalizedWeek(snapshot));
+    const finalizedWeek = getLatestFinalizedWeek(snapshot);
+    const games = finalizedWeek > 0 ? buildWeekGames(snapshot, finalizedWeek) : [];
     games.forEach((game) => {
       completedGames.push(game);
       [game.left, game.right].forEach((side) => {
@@ -771,12 +773,14 @@ export function buildLeagueHistoryModel(snapshots = [], players = {}) {
           games: 0,
           ties: 0,
           winsByParticipantId: Object.fromEntries(pairIds.map((id) => [id, 0])),
+          meetings: [],
         });
       }
       const rivalry = rivalryMap.get(rivalryKey);
       rivalry.games += 1;
       if (game.tied) rivalry.ties += 1;
       else rivalry.winsByParticipantId[game.winnerId] += 1;
+      rivalry.meetings.push(game);
     });
 
     (snapshot?.transactions ?? []).filter((transaction) => transaction?.status === 'complete').forEach((transaction) => {

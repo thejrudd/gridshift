@@ -28,9 +28,15 @@ const TYPE_ORDER = ['rush', 'pass', 'kick', 'penalty'];
 function playMix(trajectories) {
   const counts = trajectories.reduce((totals, geometry) => {
     totals[geometry.type] = (totals[geometry.type] ?? 0) + 1;
+    if (geometry.flag === 'int') totals.interceptions = (totals.interceptions ?? 0) + 1;
     return totals;
   }, {});
-  return TYPE_ORDER.filter((type) => counts[type]).map((type) => `${counts[type]} ${type}`).join(', ');
+  return TYPE_ORDER.filter((type) => counts[type]).map((type) => {
+    const interceptionNote = type === 'pass' && counts.interceptions
+      ? ` (${counts.interceptions} INT)`
+      : '';
+    return `${counts[type]} ${type}${interceptionNote}`;
+  }).join(', ');
 }
 
 /**
@@ -151,7 +157,7 @@ export function DriveField({
 }
 
 function DriveLane({ geometry, barColor, top, height, label, flipped = false }) {
-  const { dir, start, end, kick, firstDown, zero, yards, type, flag, scoring } = geometry;
+  const { dir, start, end, kick, turnover, firstDown, zero, yards, type, flag, scoring } = geometry;
   const color = playColor(geometry, barColor);
   const span = (a, b) => ({ left: `${Math.min(a, b)}%`, width: `${Math.max(Math.abs(b - a), 0.6)}%` });
   // `x` is the only place the mirror is applied; `drawDir` is the arrow the
@@ -171,6 +177,14 @@ function DriveLane({ geometry, barColor, top, height, label, flipped = false }) 
             <i className="df-ret" data-dir={drawDir > 0 ? 'l' : 'r'} style={span(x(kick.land), x(kick.finish))} />
           )}
         </>
+      ) : flag === 'int' && turnover ? (
+        <>
+          <i className="df-bar" data-type="pass" data-dir={drawDir > 0 ? 'r' : 'l'}
+            style={{ ...span(x(start), x(turnover.at)), '--c': color }} />
+          {turnover.hasReturn && (
+            <i className="df-ret" data-dir={drawDir > 0 ? 'l' : 'r'} style={span(x(turnover.at), x(turnover.finish))} />
+          )}
+        </>
       ) : zero ? (
         <i className="df-zero" style={{ left: `${x(start)}%`, '--c': color }} />
       ) : (
@@ -182,7 +196,12 @@ function DriveLane({ geometry, barColor, top, height, label, flipped = false }) 
       <span className="df-glyph" style={{ left: `${x(start)}%` }}>
         <TypeGlyph type={type} dir={drawDir} color={color} size={9} />
       </span>
-      <span className="df-end" style={{ left: `${x(kick ? kick.finish : end)}%` }}><OutcomeMark flag={flag} scoring={scoring} /></span>
+      <span
+        className={`df-end${flag === 'int' && turnover ? ' is-turnover' : ''}`}
+        style={{ left: `${x(flag === 'int' && turnover ? turnover.at : kick ? kick.finish : end)}%` }}
+      >
+        <OutcomeMark flag={flag} scoring={scoring} />
+      </span>
     </div>
   );
 }

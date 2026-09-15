@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { fetchPlayerProfile, fetchRoster, headshot } from '../utils/playerApi';
 import { matchesFilter, matchesJerseyNumber, parseSearchQuery } from '../utils/parseSearchQuery';
 import PlayerProfile from './PlayerProfile';
@@ -12,26 +12,16 @@ const POSITION_FILTERS = ['ALL', 'QB', 'RB', 'WR', 'TE', 'OL', 'DL', 'LB', 'DB',
 const CONFERENCES = [
   {
     name: 'AFC',
-    color: 'var(--color-accent)',
     divisions: ['AFC East', 'AFC North', 'AFC South', 'AFC West'],
   },
   {
     name: 'NFC',
-    color: 'var(--color-accent-red)',
     divisions: ['NFC East', 'NFC North', 'NFC South', 'NFC West'],
   },
 ];
 
-const TEAM_CARD_SHADOW = '0 10px 24px rgba(12,15,20,0.10), 0 3px 8px rgba(12,15,20,0.08)';
 const TEAM_LABEL_STYLE = { letterSpacing: '0.16em' };
 const TEAM_CARD_THEME_OPTIONS = { logoSide: 'start' };
-const cardTextSize = (base, text, { min, offset = 0, longAt, compactAt }) => {
-  const length = String(text || '').replace(/\s+/g, '').length;
-  let size = base + offset;
-  if (length >= longAt) size -= 2;
-  else if (length >= compactAt) size -= 1;
-  return Math.max(min, size);
-};
 
 function LoadingSpinner({ className = '' }) {
   return <Spinner size="sm" className={className} style={{ color: 'var(--color-accent)' }} />;
@@ -148,7 +138,6 @@ const PlayerBrowser = ({
 
   const searchRef = useRef(null);
   const debounceRef = useRef(null);
-  const gridWrapRef = useRef(null);
 
   const normalizedSelectedTeamId = typeof selectedTeamId === 'string'
     ? selectedTeamId.trim().toUpperCase()
@@ -156,43 +145,6 @@ const PlayerBrowser = ({
   const normalizedSelectedPlayerId = selectedPlayerId != null
     ? String(selectedPlayerId)
     : null;
-  const [cardFontSize, setCardFontSize] = useState(14);
-
-  useLayoutEffect(() => {
-    if (typeof window === 'undefined') return undefined;
-    if (statsView !== 'browser') return undefined;
-    const node = gridWrapRef.current;
-    if (!node) return undefined;
-
-    const measureNow = () => {
-      const width = node.getBoundingClientRect().width || 0;
-      const isDesktopGrid = window.innerWidth >= 640;
-      const columns = isDesktopGrid ? 4 : 2;
-      const gap = 12 * (columns - 1);
-      const sectionPadding = isDesktopGrid ? 40 : 32;
-      const cardWidth = columns > 0 ? (width - sectionPadding - gap) / columns : width;
-      const next = Math.max(9, Math.min(15, Math.floor(cardWidth * 0.07)));
-      setCardFontSize(Number.isFinite(next) ? next : 14);
-    };
-    let frame = 0;
-    const measure = () => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(measureNow);
-    };
-
-    measureNow();
-    const resizeObserver = new ResizeObserver(measure);
-    resizeObserver.observe(node);
-    if (document.fonts?.ready) document.fonts.ready.then(measure).catch(() => {});
-    window.addEventListener('resize', measure);
-
-    return () => {
-      cancelAnimationFrame(frame);
-      resizeObserver.disconnect();
-      window.removeEventListener('resize', measure);
-    };
-  }, [statsView, teams.length]);
-
   const teamLookup = useRef({});
   useEffect(() => {
     const map = {};
@@ -510,15 +462,8 @@ const PlayerBrowser = ({
   }
 
   return (
-    <div ref={gridWrapRef} className="space-y-6">
-      <div
-        className="rounded-xl p-4 space-y-3"
-        style={{
-          background: 'var(--color-bg-secondary)',
-          border: '1px solid var(--color-separator)',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06)',
-        }}
-      >
+    <div className="stats-browser">
+      <div className="space-y-3">
         <div ref={searchRef} className="relative">
           <div className="relative">
             <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: 'var(--color-label-tertiary)' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -599,58 +544,27 @@ const PlayerBrowser = ({
       </div>
 
       {CONFERENCES.map((conf) => (
-        <section
-          key={conf.name}
-          className="relative overflow-hidden rounded-2xl"
-          style={{
-            background: 'var(--color-bg-secondary)',
-            border: '1px solid var(--color-separator)',
-            boxShadow: TEAM_CARD_SHADOW,
-          }}
-        >
-          <div
-            className="pointer-events-none absolute right-4 top-2 text-5xl font-display tracking-[0.2em]"
-            style={{ color: conf.color, opacity: 0.08 }}
-            aria-hidden="true"
-          >
-            {conf.name}
-          </div>
-          <div className="px-4 py-4 sm:px-5" style={{ borderBottom: '1px solid var(--color-separator)' }}>
-            <div className="text-[length:var(--type-label)] font-semibold uppercase" style={{ ...TEAM_LABEL_STYLE, color: conf.color }}>
-              {conf.name}
-            </div>
-            <div className="mt-2 h-px w-20" style={{ background: conf.color, opacity: 0.55 }} />
-          </div>
-
-          <div className="space-y-5 px-4 py-4 sm:px-5">
-            {conf.divisions.map((division) => {
-              const divTeams = teams.filter((team) => team.division === division);
-              return (
-                <div key={division}>
-                  <div className="mb-3 flex items-center gap-3 px-1">
-                    <h3
-                      className="text-[length:var(--type-label)] font-semibold uppercase"
-                      style={{ ...TEAM_LABEL_STYLE, color: 'var(--color-label-tertiary)' }}
-                    >
-                      {division}
-                    </h3>
-                    <div className="h-px flex-1" style={{ background: 'var(--color-separator)' }} />
-                  </div>
-                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                    {divTeams.map((team) => (
-                      <TeamCard
-                        key={team.id}
-                        team={team}
-                        darkMode={darkMode}
-                        fontSize={cardFontSize}
-                        onClick={() => onNavigateTeam?.(team)}
-                      />
-                    ))}
-                  </div>
+        <section key={conf.name} className="stats-conference" aria-label={`${conf.name} teams`}>
+          {conf.divisions.map((division) => {
+            const divTeams = teams.filter((team) => team.division === division);
+            return (
+              <div key={division} className="stats-division">
+                <h3 className="stats-division__label" style={TEAM_LABEL_STYLE}>
+                  {division}
+                </h3>
+                <div className="stats-team-grid">
+                  {divTeams.map((team) => (
+                    <TeamCard
+                      key={team.id}
+                      team={team}
+                      darkMode={darkMode}
+                      onClick={() => onNavigateTeam?.(team)}
+                    />
+                  ))}
                 </div>
-              );
-            })}
-          </div>
+              </div>
+            );
+          })}
         </section>
       ))}
     </div>
@@ -665,7 +579,7 @@ const TrophyIcon = ({ size = 10 }) => (
   </svg>
 );
 
-const TeamCard = ({ team, onClick, darkMode = false, fontSize = 14 }) => {
+const TeamCard = ({ team, onClick, darkMode = false }) => {
   const teamKey = String(team.id).toLowerCase();
   const teamTheme = getTeamVisualTheme(team.id, darkMode, TEAM_CARD_THEME_OPTIONS);
   const gradient = teamTheme.gradient ?? 'linear-gradient(135deg, #1F2937 0%, #4B5563 100%)';
@@ -673,79 +587,66 @@ const TeamCard = ({ team, onClick, darkMode = false, fontSize = 14 }) => {
   const muted = teamTheme.gradientMuted ?? 'rgba(255,255,255,0.72)';
   const city = team.city || String(team.name || '').split(' ').slice(0, -1).join(' ');
   const nickname = team.nickname || String(team.name || '').split(' ').slice(-1)[0] || team.name;
-  const cityFontSize = cardTextSize(fontSize, city, { min: 7, offset: -2, longAt: 8, compactAt: 6 });
-  const nicknameFontSize = cardTextSize(fontSize, nickname, { min: 13, offset: 5, longAt: 9, compactAt: 8 });
 
   const isSuperBowl = SEASON_2025_CHAMPIONS.superBowl === teamKey;
   const isConf = !isSuperBowl && Object.values(SEASON_2025_CHAMPIONS.conference).includes(teamKey);
   const isDiv = !isSuperBowl && !isConf && SEASON_2025_CHAMPIONS.division[team.division] === teamKey;
   const goldColor = titleColor === '#FFFFFF' ? '#F5B700' : '#B8860B';
   const silverColor = titleColor === '#FFFFFF' ? 'rgba(255,255,255,0.90)' : 'rgba(12,15,20,0.75)';
+  // Honours ride one non-wrapping line, highest first, so a decorated team never
+  // stands taller than its division mates. Narrow cards show only the leading
+  // honour; the full list stays in title/aria-label.
+  const conferenceLabel = `${team.division?.startsWith('AFC') ? 'AFC' : 'NFC'} Champ`;
+  const honours = [];
+  if (isSuperBowl) honours.push({ label: 'SB LX', color: goldColor, trophy: true });
+  if (isSuperBowl || isConf) honours.push({ label: conferenceLabel, color: isSuperBowl ? goldColor : silverColor });
+  if (isSuperBowl || isConf || isDiv) honours.push({ label: 'Div Champ', color: muted });
+  const honourText = honours.map((item) => item.label).join(' · ');
 
   return (
     <button
       onClick={onClick}
-      className="group relative w-full overflow-hidden rounded-xl text-left transition-transform duration-150 active:scale-[0.98] sm:rounded-2xl"
-      style={{
-        minHeight: 'clamp(74px, 20vw, 112px)',
-        border: '1px solid var(--color-separator)',
-        boxShadow: TEAM_CARD_SHADOW,
-        background: 'var(--color-bg-secondary)',
-      }}
+      className="stats-team-card"
+      title={honourText ? `${team.name} — ${honourText}` : team.name}
+      aria-label={honourText ? `${team.name} — ${honourText}` : team.name}
     >
-      <div className="absolute inset-0" style={{ background: gradient }} />
-      <div
-        className="absolute inset-0"
-        style={{
-          background: teamTheme.gradientOverlay ?? 'transparent',
-        }}
-      />
-      <div className="relative flex h-full items-center gap-1.5 p-2 sm:gap-3 sm:p-3.5">
+      <span className="stats-team-card__wash" style={{ background: gradient }} aria-hidden="true" />
+      {teamTheme.gradientOverlay && (
+        <span className="stats-team-card__wash" style={{ background: teamTheme.gradientOverlay }} aria-hidden="true" />
+      )}
+      <span className="stats-team-card__body">
         <img
           src={`https://a.espncdn.com/i/teamlogos/nfl/500/${team.id.toLowerCase()}.png`}
-          alt={team.name}
-          className="h-10 w-10 shrink-0 object-contain sm:h-16 sm:w-16"
-          style={{ filter: 'drop-shadow(0 6px 12px rgba(0,0,0,0.22))' }}
-          onError={(e) => { e.target.style.display = 'none'; }}
+          alt=""
+          className="stats-team-card__logo"
+          onError={(e) => { e.target.style.visibility = 'hidden'; }}
         />
-        <div className="min-w-0 flex-1">
-          <div className="whitespace-nowrap font-semibold uppercase" style={{ ...TEAM_LABEL_STYLE, color: muted, fontSize: `${cityFontSize}px` }}>
+        <span className="stats-team-card__identity">
+          <span className="stats-team-card__city" style={{ color: muted }}>
             {city}
-          </div>
-          <div
-            className="whitespace-nowrap font-display"
-            style={{
-              color: titleColor,
-              fontSize: `${nicknameFontSize}px`,
-              lineHeight: 1,
-            }}
-          >
+          </span>
+          <span className="stats-team-card__nickname" style={{ color: titleColor }}>
             {nickname}
-          </div>
-          {(isSuperBowl || isConf || isDiv) && (
-            <div className="mt-1.5 flex flex-wrap gap-x-2 gap-y-0.5">
-              {isSuperBowl && (
-                <span className="flex items-center gap-0.5 text-[length:var(--type-micro)] font-bold uppercase" style={{ color: goldColor, letterSpacing: '0.08em' }}>
-                  <TrophyIcon size={9} />SB LX
+          </span>
+          {honours.length > 0 && (
+            <span className="stats-team-card__honours">
+              {honours.map((item, index) => (
+                <span
+                  key={item.label}
+                  className={`stats-team-card__honour${index > 0 ? ' stats-team-card__honour--extra' : ''}`}
+                  style={{ color: item.color }}
+                >
+                  {item.trophy && <TrophyIcon size={9} />}
+                  {item.label}
                 </span>
-              )}
-              {(isSuperBowl || isConf) && (
-                <span className="flex items-center gap-0.5 text-[length:var(--type-micro)] font-semibold uppercase" style={{ color: isSuperBowl ? goldColor : silverColor, letterSpacing: '0.08em' }}>
-                  {team.division?.startsWith('AFC') ? 'AFC' : 'NFC'} Champ
-                </span>
-              )}
-              {(isSuperBowl || isConf || isDiv) && (
-                <span className="flex items-center gap-0.5 text-[length:var(--type-micro)] font-semibold uppercase" style={{ color: muted, letterSpacing: '0.08em' }}>
-                  Div Champ
-                </span>
-              )}
-            </div>
+              ))}
+            </span>
           )}
-        </div>
-        <svg className="h-4 w-4 shrink-0" style={{ color: titleColor, opacity: 0.82 }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        </span>
+        <svg className="stats-team-card__chevron" style={{ color: titleColor }} fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
         </svg>
-      </div>
+      </span>
     </button>
   );
 };

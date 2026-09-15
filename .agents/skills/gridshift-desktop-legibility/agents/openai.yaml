@@ -1,0 +1,4 @@
+interface:
+  display_name: "GridShift Desktop Legibility"
+  short_description: "Audit and improve desktop readability"
+  default_prompt: "Use $gridshift-desktop-legibility to audit and improve this GridShift surface across laptop, short-height, and wide desktop viewports."

@@ -1,7 +1,7 @@
 // ── KTC API Utility ───────────────────────────────────────────────────────────
 // Fetches trade values from KeepTradeCut via a server-side proxy.
-// KTC embeds player data as a JS variable in page HTML; we extract it via
-// bracket counting (not regex) so nested arrays don't trip us up.
+// KTC embeds player data in page HTML. Current responses use a JSON data
+// script; older responses used a JS array literal that needs bracket counting.
 //
 // Proxy endpoint: /ktc-proxy/* (nginx proxy_pass in prod, Vite dev proxy in dev).
 // The proxy strips the Origin/Referer headers so KTC's CORS block doesn't apply.
@@ -13,16 +13,38 @@ const LOOKUP_CACHE = new WeakMap();
 // ── Array extraction ──────────────────────────────────────────────────────────
 
 /**
- * Extracts the playersArray value from KTC HTML using bracket counting.
- * Regex-only approaches fail when the array contains nested arrays.
+ * Extracts the playersArray value from KTC HTML.
+ *
+ * KTC currently stores the JSON in a dedicated application/json script and
+ * assigns it with JSON.parse(). Older responses placed the array literal
+ * directly after `playersArray =`, so keep the bracket-counting fallback for
+ * those responses. Regex-only approaches fail when the legacy array contains
+ * nested arrays.
  */
-function extractPlayersArray(html) {
-  // Find where the assignment starts
-  let idx = html.indexOf('playersArray = [');
-  if (idx === -1) idx = html.indexOf('playersArray=[');
-  if (idx === -1) throw new Error('Could not find playersArray in KTC response');
+export function extractPlayersArray(html) {
+  const scriptOpen = /<script\b([^>]*)>/gi;
+  let scriptMatch;
 
-  const arrayStart = html.indexOf('[', idx);
+  while ((scriptMatch = scriptOpen.exec(html)) !== null) {
+    const attributes = scriptMatch[1];
+    const idMatch = attributes.match(/\bid\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i);
+    const scriptId = idMatch?.[1] ?? idMatch?.[2] ?? idMatch?.[3];
+    if (scriptId !== 'ktc-players') continue;
+
+    const closingTagIndex = html.toLowerCase().indexOf('</script', scriptOpen.lastIndex);
+    if (closingTagIndex === -1) throw new Error('Could not find closing tag for KTC players data');
+
+    const json = html.slice(scriptOpen.lastIndex, closingTagIndex).trim();
+    const players = JSON.parse(json);
+    if (!Array.isArray(players)) throw new Error('KTC players data was not an array');
+    return players;
+  }
+
+  // Legacy response format: find where the assignment starts.
+  const assignment = /\bplayersArray\s*=\s*\[/m.exec(html);
+  if (!assignment) throw new Error('Could not find playersArray in KTC response');
+
+  const arrayStart = assignment.index + assignment[0].lastIndexOf('[');
   if (arrayStart === -1) throw new Error('Could not find opening [ for playersArray');
 
   let depth = 0;
