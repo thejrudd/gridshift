@@ -71,6 +71,7 @@ Use docs/Agent Workflow.md for the full routing rubric, output contracts, comple
 - docs/Where To Edit.md — feature-to-file routing and ownership map.
 - docs/Architecture Map.md — application boundaries and file ownership.
 - docs/Design System Quick Ref.md and docs/Design Tokens.md — Broadcast Editorial rules and tokens.
+- docs/Loading Motion.md — skeleton, reveal, and handoff knobs (duration, stagger, show after, minimum hold, easing, entrance, texture, order, handoff) with the Fantasy rollout status and the path to other sections.
 - docs/Agent Workflow.md — model, delegation, validation, completion, and routing-log rules.
 - docs/Release Workflow.md — commit, release, bug-tracker, What's New, and release-note gates; read only for release work.
 - docs/Companion Shared Rows.md — canonical Companion and Trade-adjacent rows.

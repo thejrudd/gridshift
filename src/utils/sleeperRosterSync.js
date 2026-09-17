@@ -1,5 +1,23 @@
 export const SLEEPER_ROSTER_REFRESH_INTERVAL_MS = 30_000;
 
+function getRosterSnapshot(rosters) {
+  try {
+    const normalize = (value) => {
+      if (Array.isArray(value)) return value.map(normalize);
+      if (!value || typeof value !== 'object') return value;
+      return Object.keys(value).sort().reduce((result, key) => {
+        result[key] = normalize(value[key]);
+        return result;
+      }, {});
+    };
+    return JSON.stringify(normalize(rosters));
+  } catch {
+    // A provider response should be JSON-safe, but keep the refresh path
+    // fail-open if a test double or future adapter returns a cyclic value.
+    return null;
+  }
+}
+
 /**
  * Keeps the selected Sleeper league's roster collection fresh without tying
  * polling behavior to a particular screen. Dependencies are injectable so the
@@ -19,6 +37,7 @@ export function createSleeperRosterSync({
   let stopped = true;
   let timerId = null;
   let inFlight = null;
+  let lastAppliedSnapshot;
 
   const isVisible = () => documentTarget?.visibilityState !== 'hidden';
   const isOnline = () => navigatorTarget?.onLine !== false;
@@ -46,7 +65,13 @@ export function createSleeperRosterSync({
     const request = Promise.resolve()
       .then(() => fetchRosters(leagueId))
       .then((nextRosters) => {
-        if (!stopped && Array.isArray(nextRosters)) applyRosters(nextRosters);
+        if (!stopped && Array.isArray(nextRosters)) {
+          const nextSnapshot = getRosterSnapshot(nextRosters);
+          if (nextSnapshot == null || nextSnapshot !== lastAppliedSnapshot) {
+            lastAppliedSnapshot = nextSnapshot;
+            applyRosters(nextRosters);
+          }
+        }
         return nextRosters;
       })
       .catch(() => null)

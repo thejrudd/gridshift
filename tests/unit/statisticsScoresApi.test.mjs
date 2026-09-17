@@ -8,6 +8,7 @@ import {
   getStatisticsScoresPreseason,
   getStatisticsScoresStatus,
   getStatisticsScoresStory,
+  getStatisticsScoresWeekExport,
 } from '../../src/api/statisticsScoresApi.js';
 
 async function captureRequest(run) {
@@ -64,6 +65,19 @@ test('Statistics Scores browser API requests BALLDONTLIE detail through the Scor
   assert.equal(plays.url, '/api/statistics/scores/game/1393548/plays');
   assert.deepEqual(detail.options.headers, { Accept: 'application/json' });
   assert.equal(JSON.stringify([detail, plays]).includes('server-key'), false);
+});
+
+test('Statistics Scores browser API requests the bounded week export without provider secrets', async () => {
+  const request = await captureRequest(() => getStatisticsScoresWeekExport({
+    season: 2026,
+    phase: 'regular',
+    week: 4,
+    detail: 'full_play_by_play',
+  }));
+
+  assert.equal(request.url, '/api/statistics/scores/week-export?season=2026&week=4&detail=full_play_by_play&phase=regular');
+  assert.deepEqual(request.options.headers, { Accept: 'application/json' });
+  assert.equal(request.url.includes('source='), false);
 });
 
 test('Statistics Scores browser API requests StoryStats through the server boundary', async () => {

@@ -172,6 +172,15 @@ export function getWeekFirstKickoffMs(week = {}) {
   return kickoffTimes[0] ?? null;
 }
 
+function getWeekLastKickoffMs(week = {}) {
+  const kickoffTimes = (week.games ?? [])
+    .map(getGameKickoffMs)
+    .filter((value) => value != null)
+    .sort((left, right) => left - right);
+
+  return kickoffTimes.at(-1) ?? null;
+}
+
 function getTimeMs(value) {
   if (value instanceof Date) {
     const time = value.getTime();
@@ -217,8 +226,12 @@ export function getDefaultScheduleWeek(schedule = {}, now = new Date()) {
   if (populatedWeeks.length === 0) return null;
 
   const weeksWithKickoff = populatedWeeks
-    .map((week) => ({ week: week.week, firstKickoffMs: getWeekFirstKickoffMs(week) }))
-    .filter((week) => week.firstKickoffMs != null)
+    .map((week) => ({
+      week: week.week,
+      firstKickoffMs: getWeekFirstKickoffMs(week),
+      lastKickoffMs: getWeekLastKickoffMs(week),
+    }))
+    .filter((week) => week.firstKickoffMs != null && week.lastKickoffMs != null)
     .sort((left, right) => left.firstKickoffMs - right.firstKickoffMs);
 
   if (weeksWithKickoff.length === 0) return populatedWeeks[0].week;
@@ -227,13 +240,14 @@ export function getDefaultScheduleWeek(schedule = {}, now = new Date()) {
   if (nowMs == null) return weeksWithKickoff[0].week;
   if (nowMs < weeksWithKickoff[0].firstKickoffMs) return weeksWithKickoff[0].week;
 
-  let activeWeek = weeksWithKickoff[0].week;
   for (const week of weeksWithKickoff) {
-    if (nowMs < week.firstKickoffMs) break;
-    activeWeek = week.week;
+    // A new NFL week becomes the default after the prior slate has finished,
+    // rather than waiting for the next week's first kickoff. This keeps the
+    // week rail on Week 2 during the gap between Monday night and Thursday.
+    if (nowMs <= week.lastKickoffMs) return week.week;
   }
 
-  return activeWeek;
+  return weeksWithKickoff.at(-1).week;
 }
 
 export function getWeekScheduleGames(schedule = {}, weekNumber) {

@@ -124,6 +124,48 @@ export function selectMatchupProjectionBaselines(all, { leagueId, season, week, 
     && record.scoringFingerprint === fingerprint).map(record => [record.playerId, record]));
 }
 
+export function summarizeRecordedPregameProjection(players, baselines) {
+  const rosterPlayers = (players ?? []).filter((player) => player?.id && player?.name !== 'Empty');
+  if (!rosterPlayers.length) return null;
+  const projectedPlayers = rosterPlayers
+    .map((player) => baselines?.[String(player.id)])
+    .filter((baseline) => ['balldontlie', 'sleeper'].includes(baseline?.projection?.factors?.source))
+    .map((baseline) => Number(baseline.projection.projected))
+    .filter(Number.isFinite);
+  if (!projectedPlayers.length) return null;
+  return {
+    total: Math.round(projectedPlayers.reduce((sum, value) => sum + value, 0) * 10) / 10,
+    projectedCount: projectedPlayers.length,
+    starterCount: rosterPlayers.length,
+    complete: projectedPlayers.length === rosterPlayers.length,
+  };
+}
+
+export function summarizeBdlProjection(players) {
+  return summarizeProjectionSources(players, new Set(['balldontlie']));
+}
+
+export function summarizeExternalProjection(players) {
+  return summarizeProjectionSources(players, new Set(['balldontlie', 'sleeper']));
+}
+
+function summarizeProjectionSources(players, sources) {
+  const rosterPlayers = (players ?? []).filter((player) => player?.id && player?.name !== 'Empty');
+  if (!rosterPlayers.length) return null;
+  const projectedPlayers = rosterPlayers
+    .map((player) => player.projection)
+    .filter((projection) => sources.has(projection?.factors?.source))
+    .map((projection) => Number(projection.projected))
+    .filter(Number.isFinite);
+  if (!projectedPlayers.length) return null;
+  return {
+    total: Math.round(projectedPlayers.reduce((sum, value) => sum + value, 0) * 10) / 10,
+    projectedCount: projectedPlayers.length,
+    starterCount: rosterPlayers.length,
+    complete: projectedPlayers.length === rosterPlayers.length,
+  };
+}
+
 export function clearMatchupProjectionBaselines({ storage } = {}) {
   memoryStore = {};
   const target = getStorage(storage);

@@ -498,7 +498,7 @@ function CategoryEdgeSummary({ summary, label, note }) {
 function PlayerSlot({ slotId, label, player, onPick, onClear, onViewPlayer, ktcValue, isKtcLeader, ktcNotFound }) {
   const { darkMode } = useTheme();
   const [isHovered, setIsHovered] = useState(false);
-  const teamTheme = player ? getTeamVisualTheme(player.teamId, darkMode) : null;
+  const teamTheme = player ? getTeamVisualTheme(player.teamId, darkMode, { logoSide: 'end' }) : null;
   const hasTeamGradient = Boolean(teamTheme?.gradient);
   const positionColor = getCompanionPositionColor(player?.position);
   const positionTextColor = positionColor ? getPositionTextColor(positionColor) : 'var(--color-label)';

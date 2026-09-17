@@ -1,5 +1,5 @@
 const PREDICTIONS_VIEWS = new Set(['predictions', 'playoffs']);
-const FANTASY_VIEWS = new Set(['rosters', 'rankings', 'live', 'matchups', 'waivers', 'heatmap', 'defenses', 'scoring']);
+const FANTASY_VIEWS = new Set(['rosters', 'rankings', 'live', 'matchups', 'injuries', 'waivers', 'heatmap', 'defenses', 'scoring']);
 const FANTASY_VIEW_ALIASES = new Map([
   ['roster', 'rosters'],
   ['league', 'rosters'],
@@ -359,7 +359,7 @@ export function normalizeAppRoute(route = {}) {
     }
 
     if (companionView === 'defenses') {
-      const defensePosition = normalizePosition(route.defensePosition) ?? 'QB';
+      const defensePosition = normalizePosition(route.defensePosition) ?? 'ALL';
       const defenseStatsByPosition = {
         ALL: new Set(['total_yd', 'total_td']),
         QB: new Set(['pass_yd', 'pass_td', 'rush_yd', 'rush_td']),
@@ -367,7 +367,7 @@ export function normalizeAppRoute(route = {}) {
         WR: new Set(['rec', 'rec_yd', 'rec_td', 'rush_yd', 'rush_td']),
         TE: new Set(['rec', 'rec_yd', 'rec_td', 'rush_yd', 'rush_td']),
       };
-      const normalizedDefensePosition = ['ALL', 'QB', 'RB', 'WR', 'TE'].includes(defensePosition) ? defensePosition : 'QB';
+      const normalizedDefensePosition = ['ALL', 'QB', 'RB', 'WR', 'TE'].includes(defensePosition) ? defensePosition : 'ALL';
       const defaultDefenseStatByPosition = {
         ALL: 'total_yd',
         QB: 'pass_yd',
@@ -375,7 +375,7 @@ export function normalizeAppRoute(route = {}) {
         WR: 'rec',
         TE: 'rec',
       };
-      const defaultDefenseStat = defaultDefenseStatByPosition[normalizedDefensePosition] ?? 'pass_yd';
+      const defaultDefenseStat = defaultDefenseStatByPosition[normalizedDefensePosition] ?? 'total_yd';
       normalized.defenseMode = normalizeLowerToken(route.defenseMode, new Set(['stats', 'fantasy']), 'stats');
       normalized.defensePosition = normalizedDefensePosition;
       normalized.defenseStat = normalizeLowerToken(route.defenseStat, defenseStatsByPosition[normalizedDefensePosition], defaultDefenseStat);
@@ -687,10 +687,10 @@ export function buildAppPath(route) {
           WR: 'rec',
           TE: 'rec',
         };
-        const defaultDefenseStat = defaultDefenseStatByPosition[normalized.defensePosition] ?? 'pass_yd';
+        const defaultDefenseStat = defaultDefenseStatByPosition[normalized.defensePosition] ?? 'total_yd';
         return `${basePath}${buildQueryString([
           ['mode', normalized.defenseMode !== 'stats' ? normalized.defenseMode : null],
-          ['pos', normalized.defensePosition !== 'QB' ? normalized.defensePosition : null],
+          ['pos', normalized.defensePosition !== 'ALL' ? normalized.defensePosition : null],
           ['stat', normalized.defenseStat !== defaultDefenseStat ? normalized.defenseStat : null],
           ['sort', normalized.defenseSort !== 'total' ? normalized.defenseSort : null],
           ['dir', normalized.defenseDir !== 'desc' ? normalized.defenseDir : null],

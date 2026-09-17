@@ -134,7 +134,11 @@ function buildPlayerGameRows(playerId, player, weeklyStats, scheduleMap, complet
     if (!opponent || opponent === team) continue;
     const points = Number(calcPoints(wEntry, scoringSettings, player?.position));
     if (!Number.isFinite(points)) continue;
-    rows.push({ week, team, opponent, points });
+    const homeValue = scheduleMap?.[week]?.[team]?.home ?? scheduleMap?.[String(week)]?.[team]?.home;
+    const isHome = homeValue === true || homeValue === 1 ? true
+      : homeValue === false || homeValue === 0 ? false
+        : null;
+    rows.push({ week, team, opponent, isHome, points });
   }
   return rows;
 }

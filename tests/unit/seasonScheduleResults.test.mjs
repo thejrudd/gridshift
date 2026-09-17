@@ -4,6 +4,7 @@ import {
   getStartedScheduleWeeks,
   getUnsettledScheduleWeeks,
   mergeSeasonScheduleResults,
+  mergeSeasonScheduleResultsIntoMap,
 } from '../../src/utils/seasonScheduleResults.js';
 
 const scoreboard = (events) => ({ events });
@@ -75,6 +76,62 @@ test('carries in-progress games without marking them final', () => {
   assert.equal(game.status, 'live');
   assert.equal(game.completed, false);
   assert.equal(game.awayScore, 7);
+});
+
+test('overlays hydrated game results into the separately cached matchup schedule', () => {
+  const scheduleMap = {
+    1: {
+      CLE: { kickoff: '2026-09-10T00:20:00.000Z', completed: false, opp: 'JAX', home: false },
+      JAX: { kickoff: '2026-09-10T00:20:00.000Z', completed: false, opp: 'CLE', home: true },
+    },
+  };
+  const merged = mergeSeasonScheduleResultsIntoMap(scheduleMap, {
+    season: 2026,
+    weeks: [{
+      week: 1,
+      games: [{
+        awayTeam: 'CLE',
+        homeTeam: 'JAX',
+        kickoff: '2026-09-10T00:20:00.000Z',
+        espnEventId: '401872656',
+        status: 'final',
+        statusDetail: 'Final',
+        completed: true,
+        awayScore: 10,
+        homeScore: 13,
+      }],
+    }],
+  }, '2026');
+
+  assert.notEqual(merged, scheduleMap);
+  assert.equal(merged[1].JAX.completed, true);
+  assert.equal(merged[1].JAX.status, 'final');
+  assert.equal(merged[1].JAX.ptsFor, 13);
+  assert.equal(merged[1].JAX.ptsAgainst, 10);
+  assert.equal(merged[1].CLE.completed, true);
+  assert.equal(merged[1].CLE.ptsFor, 10);
+  assert.equal(merged[1].CLE.ptsAgainst, 13);
+});
+
+test('does not overwrite a matchup schedule with an unhydrated scheduled game', () => {
+  const scheduleMap = { 1: { JAX: { kickoff: '2026-09-10T00:20:00.000Z', completed: false, opp: 'CLE' } } };
+  const schedule = {
+    season: 2026,
+    weeks: [{
+      week: 1,
+      games: [{
+        awayTeam: 'CLE',
+        homeTeam: 'JAX',
+        kickoff: '2026-09-10T00:20:00.000Z',
+        status: 'scheduled',
+        completed: false,
+        awayScore: null,
+        homeScore: null,
+      }],
+    }],
+  };
+
+  assert.equal(mergeSeasonScheduleResultsIntoMap(scheduleMap, schedule, 2026), scheduleMap);
 });
 
 test('returns the identical schedule reference when nothing changed', () => {

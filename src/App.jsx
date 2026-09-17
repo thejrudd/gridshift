@@ -101,16 +101,25 @@ const CompanionLeague = lazy(() => import('./components/companion/CompanionLeagu
 const CompanionStandings = lazy(() => import('./components/companion/CompanionStandings'));
 const CompanionHistory = lazy(() => import('./components/companion/CompanionHistory'));
 const CompanionActivity = lazy(() => import('./components/companion/CompanionActivity'));
-const CompanionMatchup = lazy(() => debugCompanionTimeAsync(
-  'CompanionMatchup chunk import',
-  () => import('./components/companion/CompanionMatchup'),
-));
+let companionMatchupChunkPromise = null;
+const loadCompanionMatchupChunk = () => {
+  if (!companionMatchupChunkPromise) {
+    companionMatchupChunkPromise = debugCompanionTimeAsync(
+      'CompanionMatchup chunk import',
+      () => import('./components/companion/CompanionMatchup'),
+    );
+  }
+  return companionMatchupChunkPromise;
+};
+const CompanionMatchup = lazy(loadCompanionMatchupChunk);
 const CompanionWaiver = lazy(() => debugCompanionTimeAsync(
   'CompanionWaiver chunk import',
   () => import('./components/companion/CompanionWaiver'),
 ));
 const CompanionHeatmap = lazy(() => import('./components/companion/CompanionHeatmap'));
 const CompanionDefense = lazy(() => import('./components/companion/CompanionDefense'));
+const CompanionInjuries = lazy(() => import('./components/companion/CompanionInjuries'));
+const GameWeekExportModal = lazy(() => import('./components/companion/GameWeekExportModal.jsx'));
 const CompanionTrade = lazy(() => import('./components/companion/CompanionTrade'));
 const TradeHistory = lazy(() => import('./components/companion/TradeHistory'));
 const TradeInbox = lazy(() => import('./components/companion/TradeInbox.jsx'));
@@ -555,6 +564,7 @@ function AppInner() {
     typeof window !== 'undefined' && /^#gs\d+\./.test(window.location.hash) ? window.location.hash : '',
   );
   const [actionSheetOpen, setActionSheetOpen] = useState(false);
+  const [gameWeekExportOpen, setGameWeekExportOpen] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
   const [displaySettingsOpen, setDisplaySettingsOpen] = useState(false);
   const [legalOpen, setLegalOpen] = useState(false);
@@ -647,6 +657,43 @@ function AppInner() {
   const statisticsScheduleFilter = appRoute.statisticsScheduleFilter;
   const predictionsTeamId = appRoute.predictionsTeamId;
   const companionView = appRoute.companionView;
+  const [matchupsVisited, setMatchupsVisited] = useState(
+    () => activeTab === 'fantasy' && companionView === 'matchups',
+  );
+
+  // Warm the route chunk while the Fantasy shell is idle. This removes the
+  // lazy-import wait before MatchupSkeleton can paint without eagerly running
+  // the Matchups data pipeline for users who never open the tab.
+  useEffect(() => {
+    if (activeTab !== 'fantasy' || !hasLeague || typeof window === 'undefined') return undefined;
+
+    let cancelled = false;
+    let idleId = null;
+    let timeoutId = null;
+    const prefetch = () => {
+      if (!cancelled) void loadCompanionMatchupChunk().catch(() => {});
+    };
+
+    if (typeof window.requestIdleCallback === 'function') {
+      idleId = window.requestIdleCallback(prefetch, { timeout: 1200 });
+    } else {
+      timeoutId = window.setTimeout(prefetch, 250);
+    }
+
+    return () => {
+      cancelled = true;
+      if (idleId != null && typeof window.cancelIdleCallback === 'function') {
+        window.cancelIdleCallback(idleId);
+      }
+      if (timeoutId != null) window.clearTimeout(timeoutId);
+    };
+  }, [activeTab, hasLeague]);
+
+  useEffect(() => {
+    if (activeTab === 'fantasy' && companionView === 'matchups') {
+      setMatchupsVisited(true);
+    }
+  }, [activeTab, companionView]);
 
   // The Fantasy Live dev sandbox supplies its own fixture league, so it renders
   // without a connected one. Dev-only; compiled out of production builds.
@@ -771,8 +818,8 @@ function AppInner() {
   const defenseRouteState = appRoute.companionView === 'defenses'
     ? {
         mode: appRoute.defenseMode ?? 'stats',
-        position: appRoute.defensePosition ?? 'QB',
-        stat: appRoute.defenseStat ?? 'pass_yd',
+        position: appRoute.defensePosition ?? 'ALL',
+        stat: appRoute.defenseStat ?? 'total_yd',
         sort: appRoute.defenseSort ?? 'total',
         dir: appRoute.defenseDir ?? 'desc',
         query: appRoute.defenseQuery ?? '',
@@ -1170,7 +1217,6 @@ function AppInner() {
         statsPlayerMeta: playerMeta,
       },
     });
-    window.location.assign(buildAppPath(playerRoute));
   }, [applyRoute, buildStatsBackContext]);
 
   const navigateToCompanionSleeperPlayer = useCallback(async (sleeperId, backLabel, resolvedPlayerMeta = null) => {
@@ -1633,6 +1679,8 @@ function AppInner() {
         onDisplay={() => setDisplaySettingsOpen(true)}
         onLegal={() => setLegalOpen(true)}
         onGuide={() => setGuideOpen(true)}
+        onStatsExport={() => setGameWeekExportOpen(true)}
+        canExportStats={hasLeague && platform === 'sleeper'}
         onExportJSON={handleExportJSON}
         onImportJSON={handleImportClick}
         onRandom={handleRandom}
@@ -2172,34 +2220,46 @@ function AppInner() {
                   />
                 </Suspense>
               )}
-              {companionView === 'matchups'   && (
-                <Suspense fallback={<SectionLoading label="Loading Matchup" />}>
-                  <CompanionMatchup
-                    onOpenHistoricalMatchup={openHistoricalMatchup}
-                    initialWeekRequest={matchupInitRequest}
-                    selectedWeek={appRoute.matchupWeek ?? null}
-                    onWeekChange={(week) => updateCompanionRoute({
-                      companionView: 'matchups',
-                      matchupWeek: week,
-                    }, { replace: true })}
-                    selectedRosterId={appRoute.matchupRosterId ?? null}
-                    onSelectedRosterChange={(rosterId) => updateCompanionRoute({
-                      companionView: 'matchups',
-                      matchupRosterId: rosterId ?? null,
-                    }, { replace: true })}
-                    onConsumeInitialWeekRequest={() => updateCompanionRoute({
-                      companionView: 'matchups',
-                      matchupWeek: appRoute.matchupWeek ?? null,
-                      matchupPlayerId: null,
-                    }, { replace: true })}
-                    onViewPlayer={(id, meta, options = {}) => {
-                      navigateToStatisticsPlayer({ id, ...meta }, {
-                        backLabel: 'Matchups',
-                        backRoute: appRoute,
-                        mode: options.mode ?? STATISTICS_MODES.FANTASY,
-                      });
-                    }}
-                  />
+              {matchupsVisited && (
+                <div
+                  hidden={companionView !== 'matchups'}
+                  aria-hidden={companionView !== 'matchups'}
+                >
+                  <Suspense fallback={<SectionLoading label="Loading Matchup" />}>
+                    <CompanionMatchup
+                      isActive={companionView === 'matchups'}
+                      onOpenHistoricalMatchup={openHistoricalMatchup}
+                      initialWeekRequest={matchupInitRequest}
+                      seasonSchedule={hydratedSeasonSchedule}
+                      selectedWeek={appRoute.matchupWeek ?? null}
+                      onWeekChange={(week) => updateCompanionRoute({
+                        companionView: 'matchups',
+                        matchupWeek: week,
+                      }, { replace: true })}
+                      selectedRosterId={appRoute.matchupRosterId ?? null}
+                      onSelectedRosterChange={(rosterId) => updateCompanionRoute({
+                        companionView: 'matchups',
+                        matchupRosterId: rosterId ?? null,
+                      }, { replace: true })}
+                      onConsumeInitialWeekRequest={() => updateCompanionRoute({
+                        companionView: 'matchups',
+                        matchupWeek: appRoute.matchupWeek ?? null,
+                        matchupPlayerId: null,
+                      }, { replace: true })}
+                      onViewPlayer={(id, meta, options = {}) => {
+                        navigateToStatisticsPlayer({ id, ...meta }, {
+                          backLabel: 'Matchups',
+                          backRoute: appRoute,
+                          mode: options.mode ?? STATISTICS_MODES.FANTASY,
+                        });
+                      }}
+                    />
+                  </Suspense>
+                </div>
+              )}
+              {companionView === 'injuries' && (
+                <Suspense fallback={<SectionLoading label="Loading Injuries" />}>
+                  <CompanionInjuries key={`${selectedLeagueId ?? 'none'}:${season ?? 'none'}`} />
                 </Suspense>
               )}
               {companionView === 'waivers'    && (
@@ -2336,6 +2396,11 @@ function AppInner() {
           onExportJSON={handleExportJSON}
           onImportJSON={handleImportClick}
           onAppTour={handleStartAppTour}
+          onStatsExport={() => {
+            setActionSheetOpen(false);
+            setGameWeekExportOpen(true);
+          }}
+          canExportStats={hasLeague && platform === 'sleeper'}
           onRandom={handleRandom}
           onReset={handleReset}
           onInstall={isInstallable && !isInstalled ? handleInstall : null}
@@ -2438,6 +2503,15 @@ function AppInner() {
       {legalOpen && (
         <Suspense fallback={<ModalLoading label="Loading legal information" />}>
           <LegalModal onClose={() => setLegalOpen(false)} />
+        </Suspense>
+      )}
+
+      {gameWeekExportOpen && (
+        <Suspense fallback={<ModalLoading label="Preparing stats export" />}>
+          <GameWeekExportModal
+            initialWeek={appRoute.matchupWeek ?? null}
+            onClose={() => setGameWeekExportOpen(false)}
+          />
         </Suspense>
       )}
 

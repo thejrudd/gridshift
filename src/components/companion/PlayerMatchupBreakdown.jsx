@@ -21,6 +21,7 @@ import {
   getNoteworthyWeather,
   getPlayerPerformanceTarget,
   getPlayerMatchupPhase,
+  groupFantasyBreakdownRows,
   matchupNumber,
   resolvePlayerDisplayProjection,
 } from '../../utils/playerMatchupPresentation.js';
@@ -224,7 +225,7 @@ export const STAT_LABELS = {
 };
 
 export const formatNumber = (value, digits = 1) => value == null ? '—' : Number(value).toFixed(digits);
-const formatStat = value => value == null ? '—' : Number.isInteger(value) ? String(value) : Number(value).toFixed(1);
+export const formatStat = value => value == null ? '—' : Number.isInteger(value) ? String(value) : Number(value).toFixed(1);
 export const signed = value => value == null ? '—' : `${value > 0 ? '+' : ''}${Number(value).toFixed(1)}`;
 const formatMatchupGameDate = (value) => {
   if (!value) return null;
@@ -321,26 +322,6 @@ function ProjectionOpponentDetails({ player, position }) {
   </details>;
 }
 
-function RankStrip({ label, result, peerLabel }) {
-  const hasRank = result?.rank != null && result?.peerCount > 1;
-  const percentile = hasRank ? (result.peerCount - result.rank) / (result.peerCount - 1) * 100 : null;
-  return (
-    <div className="matchup-rank-strip">
-      <div className="matchup-rank-strip__heading"><strong>{label}</strong>
-        <span>{result?.rank != null ? `${result.rank} of ${result.peerCount}` : 'Rank unavailable'}</span>
-      </div>
-      {hasRank && <>
-        <div className="matchup-rank-strip__track" role="img" aria-label={`${label}: rank ${result.rank} of ${result.peerCount} ${peerLabel}.`}>
-          <span className="matchup-rank-strip__marker" style={{ left: `${percentile}%` }} />
-        </div>
-        <div className="matchup-rank-strip__ends"><span>Lower fantasy PPG</span><span>Higher fantasy PPG</span></div>
-      </>}
-      <p className="matchup-performance-note">{formatNumber(result?.ppg)} fantasy pts/game · {result?.games ?? 0} qualifying games</p>
-      {!hasRank && <p className="matchup-performance-note">{result?.rankingUnavailableReason ?? ((result?.games ?? 0) < 3 ? 'Peer ranking requires at least 3 qualifying games.' : 'Not enough qualifying peers to plot a ranking.')}</p>}
-    </div>
-  );
-}
-
 function EvidenceGames({ rows = [] }) {
   if (!rows.length) return null;
   return <table className="matchup-performance-table matchup-performance-table--evidence">
@@ -349,33 +330,275 @@ function EvidenceGames({ rows = [] }) {
   </table>;
 }
 
+/* ── projected stat line ──
+   Claude Design "Player Drilldown — Splits Rework": the table stays, but the
+   rows are grouped and each one carries a proportional bar so the composition
+   of the projection is visible without reading every decimal. */
+
+const signedPoints = value => `${value > 0 ? '+' : ''}${Number(value).toFixed(2)}`;
+
+function ProjectionStatLine({ rows, total }) {
+  const groups = groupFantasyBreakdownRows(rows);
+  if (!groups.length) return null;
+  // Deductions are part of the composition, so the stack is scaled by gross
+  // points rather than by the positive groups alone. Sizing it on positives
+  // only would draw a projection that scores more than its own total.
+  const gains = groups.filter(group => group.sum > 0);
+  const deductions = groups.filter(group => group.sum < 0);
+  const stackGroups = [...gains, ...deductions];
+  const grossTotal = stackGroups.reduce((sum, group) => sum + Math.abs(group.sum), 0);
+  const widest = Math.max(...rows.map(row => Math.abs(row.pts)), 0.01);
+  return (
+    <div className="pmd-proj">
+      <div className="pmd-proj__head">
+        <span className="pmd-proj__eyebrow">Where the projected points come from</span>
+        <span className="pmd-proj__meta">Per game</span>
+      </div>
+      {grossTotal > 0 && <>
+        <div
+          className="pmd-pstack"
+          role="img"
+          aria-label={`Projected points by group: ${stackGroups.map(group => `${group.label} ${signedPoints(group.sum)}`).join(', ')}.`}
+        >
+          {stackGroups.map(group => (
+            <i
+              key={group.id}
+              data-group={group.id}
+              data-negative={group.sum < 0 ? 'true' : undefined}
+              style={{ width: `${(Math.abs(group.sum) / grossTotal) * 100}%` }}
+            />
+          ))}
+        </div>
+        <ul className="pmd-pkey">
+          {groups.map(group => (
+            <li key={group.id} data-negative={group.sum < 0 ? 'true' : undefined}>
+              <i data-group={group.id} aria-hidden="true" />
+              {group.label}
+              <em className="pmd-num">{signedPoints(group.sum)}</em>
+            </li>
+          ))}
+        </ul>
+      </>}
+      <table className="pmd-ptable">
+        <caption className="sr-only">Projected stat line</caption>
+        <thead>
+          <tr>
+            <th scope="col"><span className="sr-only">Stat</span></th>
+            <th scope="col"><span className="sr-only">Value</span></th>
+            <th scope="col"><span className="sr-only">Share of the projection</span></th>
+            <th scope="col"><span className="sr-only">Fantasy points</span></th>
+          </tr>
+        </thead>
+        {groups.map(group => (
+          <tbody key={group.id} data-group={group.id}>
+            <tr className="pmd-pgrp"><th scope="colgroup" colSpan={4}>{group.label}</th></tr>
+            {group.rows.map(row => (
+              <tr key={row.key ?? row.statKey}>
+                <th scope="row">{row.label}</th>
+                <td className="pmd-num">{formatStat(row.statVal)}</td>
+                <td className="pmd-pbar" aria-hidden="true">
+                  <i
+                    className={row.pts < 0 ? 'is-neg' : undefined}
+                    style={{ width: `${Math.max(2, (Math.abs(row.pts) / widest) * 100)}%` }}
+                  />
+                </td>
+                <td className={`pmd-num${row.pts < 0 ? ' matchup-negative' : ''}`}>{formatNumber(row.pts, 2)}</td>
+              </tr>
+            ))}
+          </tbody>
+        ))}
+        <tfoot>
+          <tr>
+            <th scope="row" colSpan={3}>Projected total</th>
+            <td className="pmd-num">{formatNumber(total, 2)}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  );
+}
+
+/* ── season & defense splits ──
+   One shared percentile axis for every rank instead of a stack of separate
+   sliders, the defense tiers as a single comparable graphic, and the repeated
+   qualifying-games caveat reduced to one line per section. */
+
+const SPLIT_TIER_LABELS = { strong: 'Strong', middle: 'Average', weak: 'Weak' };
+
+function getSplitPercentile(result) {
+  if (result?.rank == null || !(result?.peerCount > 1)) return null;
+  return (result.peerCount - result.rank) / (result.peerCount - 1);
+}
+
+function SplitRankRow({ label, value, result, peerLabel }) {
+  const percentile = getSplitPercentile(result);
+  const games = result?.games ?? 0;
+  const tone = percentile == null ? '' : percentile >= 0.75 ? ' is-high' : percentile <= 0.25 ? ' is-low' : '';
+  return (
+    <div className="pmd-prow">
+      <div className="pmd-prow__l">
+        <span>{label}</span>
+        <span className="pmd-num">{value}</span>
+      </div>
+      <div
+        className={`pmd-prow__t${percentile == null ? ' is-dim' : ''}`}
+        role="img"
+        aria-label={percentile == null
+          ? `${label}: rank unavailable on ${games} qualifying ${games === 1 ? 'game' : 'games'}.`
+          : `${label}: rank ${result.rank} of ${result.peerCount} ${peerLabel}.`}
+      >
+        <u />
+        {percentile != null && <i className={tone.trim()} style={{ left: `calc(${percentile * 100}% - 2px)` }} />}
+      </div>
+      <div className={`pmd-prow__r${percentile == null ? ' is-dim' : ' pmd-num'}`}>
+        {percentile == null ? `${games} of 3 games` : `${result.rank} / ${result.peerCount}`}
+      </div>
+    </div>
+  );
+}
+
+function SplitTiers({ metric, measureNoun }) {
+  const opponentTier = metric?.opponent?.bucket ?? null;
+  const highest = Math.max(...metric.buckets.map(bucket => bucket.ppg ?? 0), 1);
+  return (
+    <>
+      <div className="pmd-tiers">
+        {metric.buckets.map((bucket) => {
+          const isOpponent = bucket.id === opponentTier;
+          return (
+            <div
+              key={bucket.id}
+              className={`pmd-tier${isOpponent ? ' is-on' : ''}${bucket.ppg == null ? ' is-empty' : ''}`}
+            >
+              <div className="pmd-tier__l">
+                {SPLIT_TIER_LABELS[bucket.id] ?? bucket.label}
+                {isOpponent && metric.opponent?.team ? ` · ${metric.opponent.team}` : ''}
+              </div>
+              <div className={`pmd-tier__v pmd-num${bucket.ppg == null ? ' is-dim' : ''}`}>
+                {bucket.ppg == null ? '—' : formatNumber(bucket.ppg)}
+              </div>
+              <div className="pmd-tier__c">
+                {bucket.ppg == null ? null : <i style={{ height: `${Math.max(8, (bucket.ppg / highest) * 100)}%` }} />}
+              </div>
+              <div className="pmd-tier__s">
+                {bucket.games === 0 ? 'No games yet' : `${bucket.games} ${bucket.games === 1 ? 'game' : 'games'} · pts/g`}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {metric.opponent?.rank != null && <p className="pmd-oppline">
+        <span className="pmd-oppline__b">{metric.opponent.team} {(SPLIT_TIER_LABELS[metric.opponent.bucket] ?? '').toUpperCase()}</span>
+        <span>
+          <strong className="pmd-num">{metric.opponent.rank} of {metric.opponent.teamCount}</strong> defenses · {formatNumber(metric.opponent.perGame)} {measureNoun} allowed/game · {metric.opponent.games} {metric.opponent.games === 1 ? 'game' : 'games'}
+        </span>
+      </p>}
+    </>
+  );
+}
+
+function SplitPool({ opponent, measureNoun }) {
+  if (opponent?.rank == null || !opponent?.teamCount) return null;
+  const teamCount = opponent.teamCount;
+  const edge = Math.ceil(teamCount / 4);
+  const middle = teamCount - edge * 2;
+  return (
+    <>
+      <div className="pmd-pool" role="img" aria-label={`${opponent.team} ranks ${opponent.rank} of ${teamCount} defenses by ${measureNoun} allowed per game.`}>
+        {Array.from({ length: teamCount }, (unused, index) => index + 1).map((rank) => (
+          <i
+            key={rank}
+            className={rank === opponent.rank ? 'is-me' : rank <= edge ? 'is-s' : rank > teamCount - edge ? 'is-w' : 'is-a'}
+          />
+        ))}
+      </div>
+      <div className="pmd-poollab" style={{ gridTemplateColumns: `${edge}fr ${middle}fr ${edge}fr` }}>
+        <span>Strong · {edge}</span><span>Average · {middle}</span><span>Weak · {edge}</span>
+      </div>
+    </>
+  );
+}
+
+function SplitTierGames({ metric, measureNoun }) {
+  const teamCount = metric.opponent?.teamCount ?? null;
+  const edge = teamCount ? Math.ceil(teamCount / 4) : null;
+  const definition = {
+    strong: edge ? `Top quarter — fewest ${measureNoun} allowed (${edge} defenses)` : `Top quarter — fewest ${measureNoun} allowed`,
+    middle: edge ? `Middle half (${teamCount - edge * 2} defenses)` : 'Middle half',
+    weak: edge ? `Bottom quarter — most ${measureNoun} allowed (${edge} defenses)` : `Bottom quarter — most ${measureNoun} allowed`,
+  };
+  return (
+    <div className="pmd-exp">
+      {metric.buckets.map(bucket => (
+        <div className="pmd-exprow" key={bucket.id}>
+          <div className="pmd-exprow__head">
+            <span className="pmd-exprow__k">{SPLIT_TIER_LABELS[bucket.id] ?? bucket.label}</span>
+            <span className={`pmd-exprow__v${bucket.ppg == null ? ' is-dim' : ' pmd-num'}`}>
+              {bucket.ppg == null ? 'No games yet' : `${formatNumber(bucket.ppg)} pts/g`}
+            </span>
+          </div>
+          <div className="pmd-exprow__d">{definition[bucket.id] ?? bucket.label}</div>
+          {bucket.gameRows?.length > 0 && <details className="matchup-evidence">
+            <summary className="matchup-evidence__hint">View contributing games</summary>
+            <EvidenceGames rows={bucket.gameRows} />
+          </details>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function PlayerPeerContext({ model, season }) {
   const [metricId, setMetricId] = useState('receiving');
   const metric = model?.metrics?.find(item => item.id === metricId) ?? model?.metrics?.[0];
+  const measureNoun = metric?.id === 'rushing' ? 'rushing yards' : 'receiving yards';
   if (!model?.completedThroughWeek) return <p className="matchup-performance-note">Current-season rankings will appear after a complete NFL week and its player stats are available.</p>;
-  return <section className="matchup-peer-context" aria-label="Season and opponent rankings">
-    <div className="matchup-performance-section-heading"><h3>Among {model.peerLabel}</h3><span>{season} · through Week {model.completedThroughWeek}</span></div>
-    <RankStrip label="Season fantasy points per game" result={model.overall} peerLabel={model.peerLabel} />
-    {model.statRanks?.length > 0 && <>
-      <h3>Common stat rankings</h3>
-      {model.statRanks.map(result => <RankStrip key={result.key} label={result.label} result={result} peerLabel={model.peerLabel} />)}
-    </>}
-    {!!model.metrics?.length && <>
-      <h3>Performance by opposing defense</h3>
-      <CompanionSegmentedControl value={metric?.id} options={model.metrics.map(item => ({ value: item.id, label: item.label }))} onChange={setMetricId} ariaLabel="Defense measure" columns={2} />
-      <p className="matchup-performance-note">{metric?.definition}</p>
-      {metric?.opponent?.rank != null && <p className="matchup-opponent-measure"><strong>{metric.opponent.team}</strong> · {metric.opponent.rank} of {metric.opponent.teamCount} defenses · {formatNumber(metric.opponent.perGame)} yards allowed/game · {metric.opponent.games} games</p>}
-      {metric?.coverageReason && <p className="matchup-performance-note">{metric.coverageReason}</p>}
-      {!metric?.coverageReason && metric?.buckets?.map(bucket => <div key={`${metric.id}-${bucket.id}`} className="matchup-evidence">
-        <RankStrip label={`Against ${bucket.label.toLowerCase()} defenses`} result={bucket} peerLabel={model.peerLabel} />
-        {bucket.gameRows.length > 0 && <details>
-          <summary className="matchup-evidence__hint">View contributing games</summary>
-          <EvidenceGames rows={bucket.gameRows} />
-        </details>}
-      </div>)}
-      <p className="matchup-performance-note">Strong: fewest yards allowed (top quarter). Average: middle half. Weak: most yards allowed (bottom quarter). The same current-season classification is applied to every past opponent. Game counts describe the sample, not statistical confidence.</p>
-    </>}
-  </section>;
+  const rankRows = [
+    { key: 'overall', label: 'Fantasy pts/game', value: formatNumber(model.overall?.ppg), result: model.overall },
+    ...(model.statRanks ?? []).map(result => ({ key: result.key, label: result.label, value: formatNumber(result.ppg), result })),
+  ];
+  return (
+    <section className="matchup-peer-context" aria-label="Season and opponent rankings">
+      <div className="matchup-performance-section-heading">
+        <h3>Among {model.peerLabel}</h3>
+        <span>{season} · through Week {model.completedThroughWeek}</span>
+      </div>
+      <div className="pmd-peer">
+        {rankRows.map(row => <SplitRankRow key={row.key} label={row.label} value={row.value} result={row.result} peerLabel={model.peerLabel} />)}
+      </div>
+      <div className="pmd-paxis"><span>Bottom of position</span><span>Median</span><span>Top</span></div>
+      {model.overall?.rank == null && <p className="matchup-performance-note">
+        {model.overall?.rankingUnavailableReason ?? 'Ranks unlock at 3 qualifying games.'} The per-game values are real; the placement is not yet.
+      </p>}
+
+      {!!model.metrics?.length && <>
+        <h3>Scoring against defenses like this one</h3>
+        <CompanionSegmentedControl
+          value={metric?.id}
+          options={model.metrics.map(item => ({ value: item.id, label: item.label }))}
+          onChange={setMetricId}
+          ariaLabel="Defense measure"
+          columns={2}
+        />
+        {metric?.coverageReason
+          ? <p className="matchup-performance-note">{metric.coverageReason}</p>
+          : <>
+            <SplitTiers metric={metric} measureNoun={measureNoun} />
+            {metric.buckets.find(bucket => bucket.id === metric.opponent?.bucket)?.ppg == null && <p className="matchup-performance-note">
+              No qualifying games against a {SPLIT_TIER_LABELS[metric.opponent?.bucket]?.toLowerCase() ?? 'comparable'} defense yet this season. The tier split needs games before it can say anything.
+            </p>}
+
+            <h3>How the defense tiers are built</h3>
+            <p className="matchup-performance-note">{metric.definition} The strongest quarter is Strong, the middle half is Average and the weakest quarter is Weak; that current-season classification is applied to every opponent already faced this season.</p>
+            <SplitPool opponent={metric.opponent} measureNoun={measureNoun} />
+
+            <h3>Games in each tier</h3>
+            <SplitTierGames metric={metric} measureNoun={measureNoun} />
+            <p className="matchup-performance-note">Game counts describe the sample size, not statistical confidence.</p>
+          </>}
+      </>}
+    </section>
+  );
 }
 
 
@@ -461,7 +684,7 @@ function RankSlot({ model }) {
   return <section className="pmd-sec" data-slot="rank" aria-label={model.ariaLabel}>
     <div className="pmd-rank__row">
       <div className="pmd-rank__v pmd-num">{model.value}</div>
-      <div className="pmd-rank__meta">{model.title} · <strong>{model.detail}</strong><br />{model.note}</div>
+      <div className="pmd-rank__meta">{model.title}{model.detail && <> · <strong>{model.detail}</strong></>}{model.note && <><br />{model.note}</>}</div>
     </div>
     {model.position != null && <>
       <div className="pmd-rail" role="img" aria-label={model.ariaLabel}>
@@ -488,7 +711,7 @@ function Cells({ cells }) {
 
 function Ladder({ model }) {
   if (!model?.rows?.length) return null;
-  const maximum = getChartMaximum(model.rows.map(row => row.points), model.average);
+  const maximum = getChartMaximum(model.rows.flatMap(row => [row.points, row.target]), model.average);
   const averagePosition = getChartPosition(model.average, maximum);
   return <section className="pmd-sec" data-slot="ladder" aria-label={model.title}>
     <div className="pmd-eyebrow">{model.title}</div>
@@ -496,18 +719,25 @@ function Ladder({ model }) {
       {model.rows.map(row => {
         const points = matchupNumber(row.points);
         const position = getChartPosition(points, maximum);
-        const above = model.average == null || points == null ? null : points >= model.average;
+        const target = matchupNumber(row.target);
+        const targetPosition = getChartPosition(target, maximum);
+        const benchmark = target ?? matchupNumber(model.average);
+        const above = benchmark == null || points == null ? null : points >= benchmark;
         return <div className="pmd-lrow" key={`${row.week}-${row.opponent ?? row.opp ?? ''}`}>
           <div className="pmd-lrow__k">Wk {row.week} · {row.opponent ?? row.opp ?? '—'}</div>
           <div className="pmd-lrow__t" aria-hidden="true">
             {position != null && <i style={{ width: `${position}%`, background: above == null ? ACCENT : above ? POSITIVE : NEGATIVE }} />}
-            {averagePosition != null && <u style={{ left: `${averagePosition}%` }} />}
+            {averagePosition != null && <u className="is-average" style={{ left: `${averagePosition}%` }} />}
+            {targetPosition != null && <u className="is-target" style={{ left: `${targetPosition}%` }} />}
           </div>
-          <div className={`pmd-lrow__v pmd-num ${above == null ? '' : above ? 'pmd-up' : 'pmd-down'}`}>{formatNumber(points)}</div>
+          <div className={`pmd-lrow__v pmd-num ${above == null ? '' : above ? 'pmd-up' : 'pmd-down'}`} data-benchmark={benchmark == null ? undefined : formatNumber(benchmark)}>{formatNumber(points)}</div>
         </div>;
       })}
     </div>
-    {model.average != null && <div className="pmd-legend"><span><i className="is-tick" style={{ background: 'var(--color-label-tertiary)' }} />{model.averageLabel}</span></div>}
+    {(model.average != null || model.targetLabel) && <div className="pmd-legend">
+      {model.average != null && <span><i className="is-tick" style={{ background: 'var(--color-label-tertiary)' }} />{model.averageLabel}</span>}
+      {model.targetLabel && <span><i className="is-target" />{model.targetLabel}</span>}
+    </div>}
   </section>;
 }
 
@@ -629,7 +859,11 @@ function buildRankModel({ phase, rank, weekRank, position, week }) {
   const rankValue = matchupNumber(source?.rank);
   const peerCount = matchupNumber(source?.posCount);
   const label = source?.posLabel ?? position ?? '';
-  if (rankValue == null || peerCount == null || peerCount <= 0) {
+  const rankAudience = {
+    QB: 'QBs', RB: 'RBs', WR: 'WRs', TE: 'TEs', K: 'kickers',
+    DEF: 'defenses', DL: 'defensive linemen', LB: 'linebackers', DB: 'defensive backs',
+  }[String(label).toUpperCase()] ?? `${label || 'position'} players`;
+  if (rankValue == null) {
     return {
       value: '—',
       title: useWeek ? `Week ${week} finish` : 'Season points rank',
@@ -642,10 +876,10 @@ function buildRankModel({ phase, rank, weekRank, position, week }) {
   return {
     value: `${label}${rankValue}`,
     title: useWeek ? `Week ${week} finish` : 'Season points rank',
-    detail: `${formatOrdinal(rankValue)} of ${peerCount}`,
-    note: useWeek ? `${label || 'Position'} players this week` : 'by total season fantasy points',
+    detail: peerCount != null && peerCount > 0 ? `${formatOrdinal(rankValue)} of ${peerCount}` : `${formatOrdinal(rankValue)} among ${rankAudience}`,
+    note: useWeek ? null : 'by total season fantasy points',
     position: peerCount > 1 ? Math.max(0, Math.min(100, (rankValue - 1) / (peerCount - 1) * 100)) : null,
-    ariaLabel: `${useWeek ? `Week ${week} finish` : 'Season points rank'} ${rankValue} of ${peerCount} ${label} players.`,
+    ariaLabel: `${useWeek ? `Week ${week} finish` : 'Season points rank'} ${rankValue}${peerCount > 0 ? ` of ${peerCount}` : ''} ${label} players.`,
   };
 }
 
@@ -657,6 +891,9 @@ function buildPregameCells({ player, position, seasonBenchmark, opponentContext,
   const difference = allowed != null && leagueAllowed != null ? allowed - leagueAllowed : null;
   const season = matchupNumber(seasonBenchmark?.value);
   const wind = matchupNumber(player?.weather?.wind_kph);
+  const weather = player?.weather;
+  const hasWeatherData = weather != null && ['temp_c', 'wind_kph', 'precipitation_mm']
+    .some((key) => matchupNumber(weather[key]) != null);
   const indoor = player?.isIndoor === true;
   const cells = [
     {
@@ -687,11 +924,11 @@ function buildPregameCells({ player, position, seasonBenchmark, opponentContext,
       tone: CAUTION,
     });
   } else {
-    const formatted = formatWeather(player?.weather, false);
+    const formatted = hasWeatherData ? formatWeather(weather, false) : null;
     cells.push({
       label: 'Conditions',
-      value: formatted ?? '—',
-      detail: formatted ? 'No model flag' : 'Outdoor conditions unavailable',
+      value: formatted ?? 'Outdoor',
+      detail: formatted ? 'No significant weather impact' : 'Weather data unavailable',
       bar: formatted ? 0.25 : null,
       tone: ACCENT,
     });
@@ -724,7 +961,7 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, bas
     return () => clearInterval(timer);
   }, []);
   const player = players?.[playerId];
-  const scheduleEntry = scheduleMap?.[week]?.[player?.team] ?? enrichedPlayer?.scheduleEntry;
+  const scheduleEntry = enrichedPlayer?.scheduleEntry ?? scheduleMap?.[week]?.[player?.team] ?? null;
   const phase = getPlayerMatchupPhase({ scheduleEntry, gameStarted: enrichedPlayer?.gameStarted, now });
   const isPregame = phase === 'pregame';
   const position = player?.position ?? enrichedPlayer?.position ?? null;
@@ -850,11 +1087,21 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, bas
     ? buildPregameCells({ player: enrichedPlayer, position, seasonBenchmark, opponentContext, noteworthyWeather })
     : phase === 'final' ? buildFinalCells(breakdown) : null;
   const formRows = peerModel?.overall?.gameRows?.slice(-5).reverse() ?? [];
+  const recordedTarget = !isPregame && projectionView.recorded
+    ? matchupNumber(displayProjection?.projected)
+    : null;
+  const ladderRows = formRows.map(row => (
+    recordedTarget != null && Number(row.week) === Number(week)
+      ? { ...row, target: recordedTarget }
+      : row
+  ));
+  const hasVisibleRecordedTarget = ladderRows.some(row => matchupNumber(row.target) != null);
   const ladder = formRows.length ? {
     title: phase === 'pregame' ? 'Last 5 games vs season average' : 'Season to date vs season average',
-    rows: formRows,
+    rows: ladderRows,
     average: matchupNumber(peerModel?.overall?.ppg),
     averageLabel: `Season average ${formatNumber(peerModel?.overall?.ppg)}`,
+    targetLabel: hasVisibleRecordedTarget ? `Recorded pregame projection ${formatNumber(recordedTarget)}` : null,
   } : null;
 
   const weather = enrichedPlayer ? formatWeather(enrichedPlayer.weather, enrichedPlayer.isIndoor ?? false) : null;
@@ -892,7 +1139,7 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, bas
 
   return (
     <Modal onClose={onClose} mobileSheet ariaLabel="Player matchup breakdown"
-      containerClassName="matchup-breakdown-dialog w-full flex flex-col"
+      containerClassName="matchup-breakdown-dialog gridshift-reveal w-full flex flex-col"
       containerStyle={{ background: 'var(--color-bg)', border: '1px solid var(--color-separator)', maxWidth: '1280px', maxHeight: '90dvh' }}>
       <header className="pmd-hd" style={headerStyle}>
         <PlayerAvatar
@@ -949,7 +1196,7 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, bas
         </div>
       </div>
 
-      <div className="pmd-body" data-game-phase={phase}>
+      <div className="pmd-body gridshift-reveal gridshift-reveal--auto" data-game-phase={phase}>
         <Hero model={hero} />
         {headline && <section className="pmd-sec" data-slot="headline"><Emphasis parts={headline} /></section>}
         <RankSlot model={rankModel} />
@@ -966,7 +1213,7 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, bas
             <DiscRow label="Projected stat line" hint={hasProjectedStatLine ? undefined : 'Unavailable'}>
               {displayProjection && <>
                 {hasProjectedStatLine
-                  ? <PerformanceTable rows={projectedBreakdown.rows} projected />
+                  ? <ProjectionStatLine rows={projectedBreakdown.rows} total={projectedBreakdown.total} />
                   : <p className="matchup-performance-note">Detailed projected stats are unavailable for this projection source.</p>}
                 <ProjectionDetails projection={displayProjection} />
               </>}

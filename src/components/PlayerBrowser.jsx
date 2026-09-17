@@ -377,7 +377,7 @@ const PlayerBrowser = ({
           mode={selectedPlayerMode}
           leagueSeason={leagueSeason}
           onModeChange={onPlayerModeChange}
-          onBack={navBack?.onBack ?? (() => window.history.back())}
+          onBack={navBack?.onBack ?? onNavigateHome}
           backLabel={navBack?.label}
           onCompare={onComparePlayer}
           onBuildTrade={onBuildTrade}

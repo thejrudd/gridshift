@@ -16,6 +16,8 @@ export default function ActionSheet({
   onDisplay,
   onLegal,
   onAppTour,
+  onStatsExport,
+  canExportStats = false,
   onExportJSON,
   onImportJSON,
   onRandom,
@@ -33,6 +35,7 @@ export default function ActionSheet({
 }) {
   const hasPicks = predictionCount > 0;
   const isPredictions = activeTab === 'predictions';
+  const showStatsExport = activeTab === 'fantasy' && canExportStats && Boolean(onStatsExport);
   const showLeagueControls = Boolean(league);
   const showDraftSync = activeTab === 'draft' && Boolean(onDraftSync);
   const showPredictionsSync = activeTab === 'predictions' && Boolean(onDraftSync);
@@ -152,6 +155,12 @@ export default function ActionSheet({
           <ActionRow label="Display" onClick={onDisplay} />
           <Divider />
           <ActionRow label="Guide" onClick={onGuide} />
+          {showStatsExport && (
+            <>
+              <Divider />
+              <ActionRow label="Stats Export" onClick={onStatsExport} />
+            </>
+          )}
           <Divider />
           <ActionRow label="App Tour" onClick={onAppTour} />
           {isPredictions && (

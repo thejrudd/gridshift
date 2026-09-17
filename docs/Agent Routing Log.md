@@ -182,3 +182,69 @@ the routing rubric from observed total cost and quality.
   hook/ref debt (14 errors and 5 warnings).
 - Final status: Validated; detailed live UI acceptance remains a user-owned
   follow-up.
+
+## Entry 9 — 2026-09-15 — Fantasy Heatmap QB raw stat filters
+
+- Date and task: Add QB-only `Sacks Taken` and `INTs Thrown` filters backed by
+  raw `pass_sack` and `pass_int` weekly stats.
+- Parent model and effort: GPT-5 parent session; local default effort.
+- Delegated roles, models, and efforts: None; one coherent owner.
+- Validation tier and checks: Tier 2; focused Heatmap utility tests (11
+  passed), production build, no-watch Heatmap Playwright coverage (6 passed
+  across desktop and mobile plus 2 focused QB-filter checks), targeted ESLint,
+  and git diff --check.
+- Escalation or review: No independent review; the normal watched harness hit
+  EMFILE/EPIPE, and the no-watch preview/browser path required escalated local
+  listener access.
+- Rework, failure, or saved effort: The first browser run was blocked by the
+  fixture's delayed What's New modal; Heatmap tests now dismiss that unrelated
+  overlay before interaction. Targeted ESLint remains the existing
+  CompanionHeatmap hook/ref debt (5 errors and 2 warnings).
+- Final status: Validated; detailed live UI acceptance remains a user-owned
+  follow-up.
+
+## Entry 10 — 2026-09-15 — Fantasy Matchup stale live game status
+
+- Date and task: Keep the Fantasy Matchup player drilldown aligned with the
+  hydrated Statistics Scores result when its cached schedule still says live.
+- Parent model and effort: GPT-5 parent session; local default effort.
+- Delegated roles, models, and efforts: None; one coherent cross-surface owner.
+- Validation tier and checks: Tier 3; 1,090 unit tests, targeted ESLint for
+  the new and non-baseline-changed files, production build, git diff --check,
+  and a focused Chromium Playwright regression passed. CompanionMatchup still
+  reports its pre-existing React hook/ref lint debt (14 errors and 5 warnings).
+- Escalation or review: The watched harness hit EMFILE/EPIPE; the initial
+  no-watch browser launch hit macOS MachPortRendezvous permission denied, and
+  an escalated no-watch preview/browser run then passed the focused regression.
+- Rework, failure, or saved effort: The first browser fixture omitted the
+  endpoint's required `phase` field, so the hook correctly retained its stale
+  schedule; adding the contract field made the regression exercise the real
+  hydration path. Reused the existing App-level hydrated scoreboard and
+  overlaid only result metadata into the cached matchup map; no additional
+  provider request or identity rewrite was introduced.
+- Final status: Validated; detailed live UI acceptance remains a user-owned
+  follow-up.
+
+## Entry 11 — 2026-09-15 — Shared play-by-play normalization (Phase 1)
+
+- Date and task: Extract one BALLDONTLIE play-by-play semantic normalizer
+  (`src/utils/playByPlay/`) shared by Statistics Scores and Fantasy Live, and
+  delete the duplicated logic from both callers.
+- Parent model and effort: Delegated implementation owner; single writer for
+  the whole change set.
+- Delegated roles, models, and efforts: None; one coherent owner across two
+  callers and the shared module, with no independently separable work.
+- Validation tier and checks: 247 unit tests across the thirteen routed Live
+  and Scores files (236 baseline + 11 new), 166 further adjacent Scores/Live
+  tests, targeted ESLint on every changed and created file, and a passing
+  production build.
+- Escalation or review: None. Three user-signed decisions were carried in:
+  adopt the fuller possession rule for Fantasy Live, return description-less
+  plays from the canonical module, and delete `getPlayEventKind`.
+- Rework, failure, or saved effort: The two adapters keep their own idiosyncratic
+  provider-field unions (score coercion, description defaults, the Live `type`
+  union) rather than being forced onto one, which is what kept the 35 Statistics
+  Scores tests and every Live test passing unchanged. Only the new test file's
+  own expectations were adjusted during authoring.
+- Final status: Validated; detailed live UI acceptance remains a user-owned
+  follow-up.

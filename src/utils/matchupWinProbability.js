@@ -129,8 +129,8 @@ function buildSide(players, customPoints, now, { settledConfirmed = false, offic
   const sources = [...new Set(projectedStarters
     .map(({ player }) => player.projection?.factors?.source)
     .filter(Boolean))];
-  const bdlCollectionTimes = projectedStarters
-    .filter(({ player }) => player.projection?.factors?.source === 'balldontlie')
+  const projectionCollectionTimes = projectedStarters
+    .filter(({ player }) => ['balldontlie', 'sleeper'].includes(player.projection?.factors?.source))
     .map(({ player }) => Date.parse(player.projection?.factors?.providerCollectedAt ?? ''))
     .filter(Number.isFinite);
 
@@ -142,9 +142,9 @@ function buildSide(players, customPoints, now, { settledConfirmed = false, offic
     allSettled: Boolean(settledConfirmed) || (starterState.length > 0 && starterState.every(({ settled }) => settled)),
     anyStarted: starterState.some(({ state }) => state === 'liveEstimate' || state === 'officialFinal'),
     sources,
-    // Use the oldest BDL row as the freshness signal, which is the honest
-    // bound when a lineup is assembled from independently collected rows.
-    providerCollectedAt: bdlCollectionTimes.length ? new Date(Math.min(...bdlCollectionTimes)).toISOString() : null,
+    // Use the oldest external projection row as the freshness signal, which is
+    // the honest bound when a lineup is assembled from independently collected rows.
+    providerCollectedAt: projectionCollectionTimes.length ? new Date(Math.min(...projectionCollectionTimes)).toISOString() : null,
     usesLeagueScoring: projectedStarters.some(({ player }) => (
       player.projection?.factors?.scoringSource === 'gridshift-custom-scoring'
     )),

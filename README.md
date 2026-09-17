@@ -133,10 +133,13 @@ Draft Sync is an optional capability of the existing API sidecar, not a required
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) + optional Node API sidecar |
 
-## What's New in v8.9.5
+## What's New in v9.0.0
 
-- **War Room during live drafts** — Keep War Room available once a draft is underway instead of closing it when the draft starts.
-- **Consistent draft availability** — War Room and Board now share one availability rule; completed drafts still send you to Results.
+- **Fantasy Injuries** — Review rostered availability concerns with Sleeper status, optional server-side BALLDONTLIE designations, practice reports, freshness, and filters for fantasy team, position, NFL team, and player.
+- **Fantasy Matchup drilldowns** — Explore broadcast-style matchup previews, manager rivalry context, player comparisons, scoring breakdowns, projections, opponent difficulty, and responsive player detail.
+- **Fantasy and Statistics overhaul** — Refresh the Companion and Statistics surfaces with clearer hierarchy, loading handoffs, team identity, responsive controls, and denser data layouts.
+- **Matchup and Heatmap reliability** — Keep future matchup weeks and incomplete Heatmap weeks visible while automatic week selection follows the active NFL slate.
+- **Trade workflow reliability** — Repair the connected Trade flow so managers can complete proposals without losing required context or assets.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 

@@ -1,5 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { after, before } from 'node:test';
+import { createServer } from 'vite';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { normalizeSeasonSchedule } from '../../src/utils/seasonSchedule.js';
 import {
   buildHolidayScheduleRows,
@@ -17,9 +21,75 @@ import {
   scheduleGameMatchesFilter,
 } from '../../src/utils/statisticsSchedule.js';
 
+let viteServer;
+let StatisticsSchedule;
+
+before(async () => {
+  viteServer = await createServer({
+    configFile: false,
+    logLevel: 'error',
+    esbuild: { jsx: 'automatic' },
+    server: { middlewareMode: true, watch: null, hmr: false },
+    optimizeDeps: { noDiscovery: true },
+    plugins: [{
+      name: 'statistics-schedule-test-context',
+      enforce: 'pre',
+      resolveId(source) {
+        if (/\/context\/ThemeContext(?:\.jsx)?$/.test(source)) return '\0statistics-schedule-test-theme';
+      },
+      load(id) {
+        if (id === '\0statistics-schedule-test-theme') {
+          return 'export const useTheme = () => ({ darkMode: false, favoriteTeam: null });';
+        }
+      },
+    }],
+  });
+  StatisticsSchedule = (await viteServer.ssrLoadModule('/src/components/StatisticsSchedule.jsx')).default;
+});
+
+after(async () => {
+  await viteServer?.close();
+});
+
 const makeSchedule = (weeks) => ({
   season: 2026,
   weeks,
+});
+
+const scheduleRenderData = makeSchedule([
+  {
+    week: 1,
+    label: 'Week 1',
+    games: [{
+      id: 'w1',
+      awayTeam: 'DAL',
+      homeTeam: 'PHI',
+      kickoff: '2026-09-10T00:20:00Z',
+    }],
+  },
+]);
+
+const scheduleRenderTeams = [
+  { id: 'DAL', name: 'Dallas Cowboys', nickname: 'Cowboys', division: 'NFC East' },
+  { id: 'PHI', name: 'Philadelphia Eagles', nickname: 'Eagles', division: 'NFC East' },
+];
+
+function renderSchedule({ mode, teamId = null } = {}) {
+  return renderToStaticMarkup(createElement(StatisticsSchedule, {
+    teams: scheduleRenderTeams,
+    scheduleData: scheduleRenderData,
+    mode,
+    teamId,
+    onRouteChange() {},
+  }));
+}
+
+test('preseason control is only rendered for the By Week view', () => {
+  const weekMarkup = renderSchedule({ mode: 'week' });
+  const teamMarkup = renderSchedule({ mode: 'team', teamId: 'DAL' });
+
+  assert.match(weekMarkup, />Preseason<\/button>/);
+  assert.doesNotMatch(teamMarkup, />Preseason<\/button>/);
 });
 
 test('default schedule week is null for an empty schedule', () => {
@@ -40,13 +110,13 @@ test('default schedule week uses the first populated week before the season', ()
   assert.equal(getDefaultScheduleWeek(schedule, '2026-08-15T12:00:00Z'), 1);
 });
 
-test('default schedule week stays on the current week until the following week kickoff', () => {
+test('default schedule week advances after the prior slate has finished', () => {
   const schedule = makeSchedule([
     { week: 1, games: [{ id: 'w1', awayTeam: 'DAL', homeTeam: 'PHI', kickoff: '2026-09-10T00:20:00Z' }] },
     { week: 2, games: [{ id: 'w2', awayTeam: 'DAL', homeTeam: 'NYG', kickoff: '2026-09-17T00:15:00Z' }] },
   ]);
 
-  assert.equal(getDefaultScheduleWeek(schedule, '2026-09-16T20:00:00Z'), 1);
+  assert.equal(getDefaultScheduleWeek(schedule, '2026-09-16T20:00:00Z'), 2);
   assert.equal(getDefaultScheduleWeek(schedule, '2026-09-17T00:15:00Z'), 2);
 });
 

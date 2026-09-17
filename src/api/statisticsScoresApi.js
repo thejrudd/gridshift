@@ -92,6 +92,30 @@ export async function getStatisticsScoresLiveWeek({ season, phase, week, signal 
   return payload;
 }
 
+export async function getStatisticsScoresWeekExport({
+  season,
+  phase = 'regular',
+  week,
+  detail = 'box_score',
+  signal,
+} = {}) {
+  const params = appendPhase(new URLSearchParams({
+    season: String(season),
+    week: String(week),
+    detail: String(detail),
+  }), phase);
+  const response = await fetch(`/api/statistics/scores/week-export?${params}`, {
+    signal,
+    headers: { Accept: 'application/json' },
+  });
+  const payload = await parseScoresResponse(response, 'Could not load the NFL week export package.');
+  const expectedPhase = normalizePhase(phase);
+  if (expectedPhase && payload.phase !== expectedPhase) {
+    throw new Error('The Statistics Scores export response used the wrong NFL phase.');
+  }
+  return payload;
+}
+
 export async function getStatisticsScoresGamePlays(gameId, { signal } = {}) {
   const response = await fetch(`/api/statistics/scores/game/${encodeURIComponent(gameId)}/plays`, {
     signal,

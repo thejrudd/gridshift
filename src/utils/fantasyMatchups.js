@@ -3,6 +3,36 @@ function normalizeRosterId(value) {
   return String(value);
 }
 
+function isEmptyStarterSlot(value) {
+  const normalized = String(value ?? '').trim();
+  return normalized === '' || normalized === '0';
+}
+
+export function hasSleeperWeeklyStarterIds(matchup) {
+  const starters = Array.isArray(matchup?.starters) ? matchup.starters : [];
+  return starters.some((playerId) => !isEmptyStarterSlot(playerId));
+}
+
+/**
+ * Returns true when every non-empty starter ID has a local player record.
+ * Empty starter slots are valid inside an otherwise resolvable lineup, but an
+ * all-empty lineup is not enough to render player rows.
+ */
+export function isPublishedFantasyMatchupLineup(matchup, players) {
+  const starters = Array.isArray(matchup?.starters) ? matchup.starters : [];
+  const publishedStarters = starters.filter((playerId) => !isEmptyStarterSlot(playerId));
+  if (!publishedStarters.length) return false;
+  return publishedStarters.every((playerId) => players?.[String(playerId)]);
+}
+
+export function canUseFantasyRosterPreview(matchup, roster) {
+  return Boolean(
+    matchup
+    && !hasSleeperWeeklyStarterIds(matchup)
+    && hasSleeperWeeklyStarterIds(roster),
+  );
+}
+
 function getRosterName(roster, getUserDisplayName) {
   const ownerName = roster?.owner_id != null ? getUserDisplayName?.(roster.owner_id) : null;
   if (ownerName && ownerName !== 'Unknown') return ownerName;

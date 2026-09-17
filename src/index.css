@@ -110,6 +110,52 @@
   --bar-height-tab:        49px;
   /* Readable by JS via getComputedStyle for dynamic height calculations */
   --safe-area-inset-bottom: env(safe-area-inset-bottom, 0px);
+
+  /* ── Loading motion — the knobs behind every skeleton and reveal ─────────
+     Full glossary of what each one means: docs/Loading Motion.md.
+     The JS mirror lives in src/utils/loadingMotion.js and
+     tests/unit/loadingMotion.test.mjs fails if the two drift apart.
+     Values below are the settings signed off in the Rankings Loading tweaks
+     study; change them here and every wired surface follows. */
+
+  /* DURATION — how long one row's entrance animation runs, start to settled. */
+  --gs-load-duration: 500ms;
+  /* STAGGER — the gap between one row starting and the next one starting.
+     Row N begins at N x stagger. Zero means the whole list arrives together.
+     Tight on purpose: the cascade should read as one motion sweeping down the
+     list, not as rows queueing up. Much past ~40ms it starts to feel laboured. */
+  --gs-load-stagger: 20ms;
+  /* STAGGER CAP — the row index past which delay stops growing. Rows below the
+     fold would otherwise keep trickling in after the surface has settled. They
+     still animate; they just all share the cap's delay. */
+  --gs-load-stagger-cap: 7;
+  /* EASING — the speed curve of the entrance. --gs-load-ease is the one the
+     app uses (the standard Broadcast curve); the rest are named alternates
+     kept so a surface can opt into a different feel without inventing a curve. */
+  --gs-load-ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --gs-load-ease-overshoot: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --gs-load-ease-decelerate: cubic-bezier(0, 0, 0.2, 1);
+  --gs-load-ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  /* TEXTURE SPEED — one cycle of the skeleton's shimmer/pulse/build loop.
+     Which texture plays is picked per surface with [data-gs-texture]. */
+  --gs-load-texture-duration: 1600ms;
+  /* SHOW AFTER — how long a surface stays as bare structure before any
+     skeleton appears. Loads that finish inside this window never flash one. */
+  --gs-load-show-after: 120ms;
+  /* MINIMUM HOLD — once a skeleton is on screen it stays at least this long,
+     so a load that resolves a frame later does not strobe. */
+  --gs-load-min-hold: 240ms;
+  /* COALESCE GATE — grace period after the first data fragment lands. Anything
+     arriving inside it reveals on the same clock; later fragments come in as
+     their own quiet second wave instead of holding the list back. */
+  --gs-load-gate: 90ms;
+  /* HANDOFF FADE — how long the skeleton lingers under arriving content.
+     Used by the cross-fade and row-by-row handoffs. */
+  --gs-load-handoff-fade: 300ms;
+  /* RAILS — the accent bar on the left edge of a row grows after the row
+     itself has started, so the colour reads as a second beat, not a flash. */
+  --gs-load-rail-duration: 620ms;
+  --gs-load-rail-delay: 90ms;
 }
 
 html[data-display-size='compact'] {
@@ -1234,6 +1280,11 @@ body {
     text-align: center;
   }
 
+  .companion-subnav-tabs-shell .season-tab.companion-tab--team.companion-tab--injuries {
+    width: max-content;
+    min-width: 96px;
+  }
+
   .companion-subnav-tabs-shell .season-tab.companion-tab--league {
     box-sizing: border-box;
     width: 104px;
@@ -1365,44 +1416,116 @@ body {
   display: none;
 }
 
-/* Fantasy Matchups uses the available desktop measure for its control rail so
-   the matchup pager shares the masthead's left and right edges. The fixed
-   mobile/tablet widths preserve the existing compact browsing behavior. */
-.companion-matchup-controls__pager {
-  flex: 0 0 auto;
-  width: 348px;
-  min-width: 348px;
+.companion-matchup-controls__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 
-@media (max-width: 480px) {
-  .companion-matchup-controls__pager {
-    width: 252px;
-    min-width: 252px;
+/* Matchup controls are a compact action set, not a horizontal content rail.
+   On phones they wrap into two equal columns so the page keeps vertical-only
+   scrolling while every action remains reachable. */
+@media (max-width: 767px) {
+  .companion-matchup-controls__row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: stretch;
   }
+
+  .companion-matchup-controls__row > .companion-selector-button {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .companion-matchup-controls__row .companion-matchup-bench-trigger {
+    margin-left: 0;
+  }
+
+}
+
+.companion-matchup-picker-trigger {
+  min-width: 0;
+}
+
+.companion-matchup-bench-trigger {
+  margin-left: auto;
+}
+
+.matchup-picker-list {
+  display: grid;
+  gap: 8px;
+  max-height: min(60dvh, 520px);
+  overflow-y: auto;
+  padding: 12px;
+  overscroll-behavior: contain;
+}
+
+.matchup-picker-option {
+  width: 100%;
+  min-width: 0;
+  min-height: 76px;
+  padding: 8px 12px;
+  white-space: normal;
+}
+
+.companion-matchup-option__teams {
+  display: grid;
+  width: 100%;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+}
+
+.companion-matchup-option__team {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: inherit;
+  font-size: var(--type-label);
+  font-weight: 800;
+  line-height: 1.1;
+  text-align: center;
+}
+
+.companion-matchup-option__name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+
+.companion-matchup-option__avatar {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  border-radius: 999px;
+  object-fit: cover;
+}
+
+.companion-matchup-option__avatar--fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-fill-secondary);
+  color: var(--color-label-secondary);
+  font-size: var(--type-micro);
+  font-weight: 900;
 }
 
 @media (min-width: 1024px) {
-  .companion-matchup-controls__rail {
+  .companion-matchup-controls__row {
     --matchup-control-height: var(--control-height);
-    width: 100%;
   }
 
-  .companion-matchup-controls__rail .companion-selector-rail > .companion-selector-button,
-  .companion-matchup-controls__rail .companion-selector-rail > .companion-matchup-controls__pager,
-  .companion-matchup-controls__pager > button {
+  .companion-matchup-controls__row > .companion-selector-button {
     height: var(--matchup-control-height);
     min-height: var(--matchup-control-height);
-  }
-
-  .companion-matchup-controls__pager {
-    flex: 1 1 348px;
-    width: auto;
-    min-width: 0;
   }
 }
 
 @media (min-width: 1024px) and (pointer: coarse) {
-  .companion-matchup-controls__rail {
+  .companion-matchup-controls__row {
     --matchup-control-height: 44px;
   }
 }
@@ -1509,55 +1632,6 @@ body {
   gap: 8px;
 }
 
-.companion-heatmap-filter-toggle.companion-selector-button {
-  width: 40px;
-  min-width: 40px;
-  min-height: 40px;
-  padding: 0;
-  border-color: var(--color-label-quaternary);
-  background: var(--color-bg-secondary);
-  color: var(--color-label);
-  box-shadow: inset 0 -2px 0 var(--color-fill);
-}
-
-.companion-heatmap-filter-toggle.companion-selector-button.is-active {
-  border-color: var(--color-signature);
-  background: var(--color-bg-secondary);
-  color: var(--color-label);
-  box-shadow:
-    inset 0 2px 4px color-mix(in srgb, var(--color-label) 18%, transparent),
-    inset 0 -1px 0 var(--color-signature);
-}
-
-.companion-heatmap-filter-summary__rail {
-  display: flex;
-  min-width: 0;
-  flex: 1 1 auto;
-  align-items: center;
-  gap: 6px;
-  overflow-x: auto;
-  padding-bottom: 1px;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
-}
-
-.companion-heatmap-filter-summary__rail::-webkit-scrollbar {
-  display: none;
-}
-
-.companion-heatmap-filter-summary__chip {
-  flex: 0 0 auto;
-  border: 1px solid var(--color-separator);
-  border-radius: 7px;
-  background: var(--color-fill-secondary);
-  color: var(--color-label-secondary);
-  font-size: var(--type-label);
-  font-weight: 800;
-  line-height: 1;
-  padding: 6px 8px;
-  white-space: nowrap;
-}
-
 .companion-heatmap-filter-panel {
   padding-top: 10px;
 }
@@ -1608,10 +1682,10 @@ body {
 }
 
 .companion-defense-toolbar {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(220px, 320px);
-  gap: 14px;
-  align-items: start;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .companion-defense-filter-stack {
@@ -1622,7 +1696,33 @@ body {
 }
 
 .companion-defense-filter-toggle {
-  display: none;
+  display: flex;
+  min-width: 0;
+  min-height: 38px;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--color-separator);
+  border-radius: 8px;
+  background: var(--color-bg-secondary);
+  color: var(--color-label);
+  padding: 0 12px;
+  font-size: var(--type-label);
+  font-weight: 900;
+  transition: background 150ms cubic-bezier(0.32, 0.72, 0, 1), border-color 150ms cubic-bezier(0.32, 0.72, 0, 1), color 150ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.companion-defense-filter-toggle:hover {
+  border-color: var(--color-label-quaternary);
+  background: var(--color-fill-secondary);
+}
+
+.companion-defense-filter-toggle:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.companion-defense-filter-toggle:active {
+  opacity: 0.72;
 }
 
 .companion-defense-filter-stack .companion-selector-rail-row {
@@ -2017,9 +2117,7 @@ body {
     min-width: 0;
   }
 
-  .companion-defense-toolbar,
   .companion-defense-summary-row {
-    grid-template-columns: 1fr;
     flex-direction: column;
     align-items: stretch;
   }
@@ -2056,51 +2154,33 @@ body {
 }
 
 @media (pointer: coarse) {
-  .companion-heatmap-filter-toggle.companion-selector-button {
-    width: 44px;
-    min-width: 44px;
+  .companion-defense-filter-toggle {
+    min-height: 44px;
   }
 }
 
-@media (max-width: 767px) {
-  .companion-defense-filter-toggle {
-    display: flex;
-    min-height: 44px;
-    min-width: 0;
-    align-items: center;
-    gap: 8px;
-    border: 1px solid var(--color-separator);
-    border-radius: 8px;
-    background: var(--color-bg-secondary);
-    color: var(--color-label);
-    padding: 0 12px;
-    font-size: var(--type-label);
-    font-weight: 900;
-  }
+.companion-defense-filter-toggle svg {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-width: 1.8;
+}
 
-  .companion-defense-filter-toggle svg {
-    width: 20px;
-    height: 20px;
-    flex: 0 0 auto;
-    fill: none;
-    stroke: currentColor;
-    stroke-linecap: round;
-    stroke-width: 1.8;
-  }
+.companion-defense-filter-toggle__summary {
+  min-width: 0;
+  margin-left: auto;
+  overflow: hidden;
+  color: var(--color-label-secondary);
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
-  .companion-defense-filter-toggle__summary {
-    min-width: 0;
-    margin-left: auto;
-    overflow: hidden;
-    color: var(--color-label-secondary);
-    font-weight: 750;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .companion-defense-filter-stack.is-collapsed {
-    display: none;
-  }
+.companion-defense-filter-stack.is-collapsed {
+  display: none;
 }
 
 @media (max-width: 720px) {
@@ -2212,6 +2292,10 @@ body {
 .companion-selector-button:focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
+}
+
+.companion-selector-button.matchup-picker-option {
+  min-height: 76px;
 }
 
 /* Touch targets: chips must reach the 44px minimum under coarse pointers.
@@ -12879,6 +12963,422 @@ body {
   color: var(--color-label);
 }
 
+/* ─────────────────────────────────────────────────────────────
+   Fantasy stats export
+   ───────────────────────────────────────────────────────────── */
+
+.game-week-export-modal {
+  display: flex;
+  max-height: min(88vh, 760px);
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--color-separator);
+  border-radius: 16px;
+  color: var(--color-label);
+}
+
+.game-week-export__header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--density-space-lg);
+  padding: 24px;
+  border-bottom: 1px solid var(--color-separator);
+}
+
+.game-week-export__eyebrow,
+.game-week-export__section-label {
+  display: block;
+  color: var(--color-label-tertiary);
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-label);
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.game-week-export__eyebrow {
+  margin-bottom: 6px;
+  color: var(--color-signature);
+}
+
+.game-week-export__header h2 {
+  margin: 0;
+  color: var(--color-label);
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-heading-md);
+  font-weight: 900;
+  letter-spacing: -0.015em;
+  line-height: 1.05;
+  text-wrap: balance;
+}
+
+.game-week-export__header p {
+  max-width: 52ch;
+  margin: 7px 0 0;
+  color: var(--color-label-secondary);
+  font-size: var(--type-body);
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+
+.game-week-export__close {
+  display: inline-flex;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  align-items: center;
+  justify-content: center;
+  margin: -6px -6px 0 0;
+  border: 1px solid var(--color-separator);
+  border-radius: 999px;
+  background: var(--color-fill);
+  color: var(--color-label-secondary);
+  font-size: 24px;
+  line-height: 1;
+  transition: background 150ms cubic-bezier(0.32, 0.72, 0, 1), border-color 150ms cubic-bezier(0.32, 0.72, 0, 1), color 150ms cubic-bezier(0.32, 0.72, 0, 1), transform 120ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.game-week-export__close:hover,
+.game-week-export__close:focus-visible {
+  border-color: var(--color-label-quaternary);
+  background: var(--color-fill-secondary);
+  color: var(--color-label);
+}
+
+.game-week-export__close:focus-visible,
+.game-week-export__select-field select:focus-visible,
+.game-week-export__detail-field select:focus-visible,
+.game-week-export__check-row:focus-within,
+.game-week-export__secondary-button:focus-visible,
+.game-week-export__primary-button:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.game-week-export__close:active,
+.game-week-export__secondary-button:active,
+.game-week-export__primary-button:active {
+  transform: scale(0.98);
+}
+
+.game-week-export__body {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 20px 24px 24px;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.game-week-export__scope {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(148px, 180px);
+  align-items: end;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid var(--color-separator);
+  border-radius: 12px;
+  background: var(--color-fill-secondary);
+}
+
+.game-week-export__scope strong,
+.game-week-export__scope-note {
+  display: block;
+}
+
+.game-week-export__scope strong {
+  margin-top: 7px;
+  color: var(--color-label);
+  font-size: var(--type-emphasis);
+  font-weight: 800;
+}
+
+.game-week-export__scope-note {
+  margin-top: 3px;
+  color: var(--color-label-secondary);
+  font-size: var(--type-label);
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.game-week-export__select-field,
+.game-week-export__detail-field {
+  display: grid;
+  gap: 7px;
+  color: var(--color-label-secondary);
+  font-size: var(--type-label);
+  font-weight: 700;
+}
+
+.game-week-export__select-field select,
+.game-week-export__detail-field select {
+  min-height: 44px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid var(--color-separator);
+  border-radius: 8px;
+  background: var(--color-bg-secondary);
+  color: var(--color-label);
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.game-week-export__options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.game-week-export__check-row {
+  display: flex;
+  min-height: 64px;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 13px 14px;
+  border: 1px solid var(--color-separator);
+  border-radius: 10px;
+  background: var(--color-fill-tertiary);
+  cursor: pointer;
+}
+
+.game-week-export__check-row input {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  margin-top: 2px;
+  accent-color: var(--color-signature);
+}
+
+.game-week-export__check-row span {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.game-week-export__check-row strong {
+  color: var(--color-label);
+  font-size: var(--type-meta);
+  font-weight: 750;
+  line-height: 1.25;
+}
+
+.game-week-export__check-row small,
+.game-week-export__detail-field small {
+  color: var(--color-label-secondary);
+  font-size: var(--type-label);
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.game-week-export__detail-field {
+  margin-top: 14px;
+  padding: 14px;
+  border-top: 1px solid var(--color-separator);
+}
+
+.game-week-export__detail-field .game-week-export__section-label {
+  margin-bottom: 1px;
+}
+
+.game-week-export__progress,
+.game-week-export__result,
+.game-week-export__error {
+  margin-top: 16px;
+  border: 1px solid var(--color-separator);
+  border-radius: 10px;
+}
+
+.game-week-export__progress {
+  padding: 14px;
+  background: var(--color-fill-secondary);
+}
+
+.game-week-export__progress-header,
+.game-week-export__result-heading,
+.game-week-export__coverage-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.game-week-export__progress-header {
+  color: var(--color-label-secondary);
+  font-size: var(--type-meta);
+  font-weight: 700;
+}
+
+.game-week-export__progress-track {
+  height: 5px;
+  margin-top: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--color-fill);
+}
+
+.game-week-export__progress-value {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--color-signature);
+  transition: width 180ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.game-week-export__result {
+  padding: 14px;
+  background: color-mix(in srgb, var(--color-accent-green) 5%, var(--color-fill-secondary));
+}
+
+.game-week-export__result-heading > div {
+  display: grid;
+  gap: 5px;
+}
+
+.game-week-export__result-heading > div > strong {
+  color: var(--color-label);
+  font-size: var(--type-emphasis);
+}
+
+.game-week-export__result-badge {
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: var(--color-fill);
+  color: var(--color-label-secondary);
+  font-size: var(--type-label);
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.game-week-export__coverage {
+  display: grid;
+  gap: 7px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-separator);
+}
+
+.game-week-export__coverage-row {
+  color: var(--color-label-secondary);
+  font-size: var(--type-label);
+}
+
+.game-week-export__coverage-row strong.is-complete {
+  color: var(--color-accent-green);
+}
+
+.game-week-export__coverage-row strong.is-partial {
+  color: var(--color-signature);
+}
+
+.game-week-export__coverage-row strong.is-muted {
+  color: var(--color-label-tertiary);
+}
+
+.game-week-export__warning-note {
+  margin: 12px 0 0;
+  color: var(--color-label-secondary);
+  font-size: var(--type-label);
+  line-height: 1.35;
+}
+
+.game-week-export__error {
+  display: grid;
+  gap: 5px;
+  padding: 13px 14px;
+  border-color: color-mix(in srgb, var(--color-accent-red) 42%, var(--color-separator));
+  background: color-mix(in srgb, var(--color-accent-red) 7%, var(--color-bg-secondary));
+}
+
+.game-week-export__error strong {
+  color: var(--color-accent-red);
+  font-size: var(--type-meta);
+}
+
+.game-week-export__error span {
+  color: var(--color-label-secondary);
+  font-size: var(--type-label);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.game-week-export__footer {
+  display: flex;
+  flex: 0 0 auto;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 24px calc(14px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--color-separator);
+  background: var(--color-bg-secondary);
+}
+
+.game-week-export__secondary-button,
+.game-week-export__primary-button {
+  min-height: 44px;
+  padding: 10px 16px;
+  border: 1px solid var(--color-separator);
+  border-radius: 9px;
+  font-size: var(--type-meta);
+  font-weight: 750;
+  transition: background 150ms cubic-bezier(0.32, 0.72, 0, 1), border-color 150ms cubic-bezier(0.32, 0.72, 0, 1), color 150ms cubic-bezier(0.32, 0.72, 0, 1), transform 120ms cubic-bezier(0.32, 0.72, 0, 1), opacity 150ms;
+}
+
+.game-week-export__secondary-button {
+  background: var(--color-fill);
+  color: var(--color-label-secondary);
+}
+
+.game-week-export__primary-button {
+  border-color: var(--color-signature);
+  background: var(--color-signature);
+  color: var(--color-signature-fg);
+}
+
+.game-week-export__secondary-button:hover:not(:disabled),
+.game-week-export__secondary-button:focus-visible {
+  border-color: var(--color-label-quaternary);
+  background: var(--color-fill-secondary);
+  color: var(--color-label);
+}
+
+.game-week-export__primary-button:hover:not(:disabled),
+.game-week-export__primary-button:focus-visible {
+  background: color-mix(in srgb, var(--color-signature) 88%, var(--color-label));
+}
+
+.game-week-export__primary-button:disabled,
+.game-week-export__secondary-button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+@media (max-width: 560px) {
+  .game-week-export__header,
+  .game-week-export__body {
+    padding-inline: 20px;
+  }
+
+  .game-week-export__header {
+    padding-top: 20px;
+  }
+
+  .game-week-export__scope,
+  .game-week-export__options {
+    grid-template-columns: 1fr;
+  }
+
+  .game-week-export__footer {
+    padding-inline: 20px;
+  }
+
+  .game-week-export__secondary-button,
+  .game-week-export__primary-button {
+    flex: 1 1 0;
+  }
+}
+
 .page-share-sheet__content {
   padding: 24px;
 }
@@ -14211,9 +14711,9 @@ body {
   border-top: 1px solid var(--color-separator);
 }
 
-/* Color is wayfinding, not wallpaper: a resting row carries only its accent
-   edge and logo, and the full team gradient arrives on hover, focus, and for
-   the viewer's own team. */
+/* Keep team identity visible at rest; the contrast-safe foregrounds arrive
+   from the same team theme as the gradient. Interaction adds a restrained
+   glow so hover and keyboard focus read as imminent selection. */
 .statistics-schedule-team-option {
   display: grid;
   grid-template-columns: 28px 46px minmax(0, 1fr) auto;
@@ -14224,13 +14724,15 @@ body {
   padding: 8px 12px;
   border: 0;
   border-bottom: 1px solid var(--color-separator);
-  background: var(--color-bg-secondary);
-  color: var(--color-label);
+  background: var(--statistics-schedule-team-gradient, var(--color-bg-tertiary));
+  color: var(--statistics-schedule-team-gradient-fg, var(--color-label));
+  --statistics-schedule-team-option-muted: var(--statistics-schedule-team-gradient-muted, var(--color-label-tertiary));
   box-shadow: inset 3px 0 0 var(--statistics-schedule-row-accent, var(--color-separator));
   text-align: left;
   transition:
     background 160ms cubic-bezier(0.32, 0.72, 0, 1),
-    color 160ms cubic-bezier(0.32, 0.72, 0, 1);
+    color 160ms cubic-bezier(0.32, 0.72, 0, 1),
+    box-shadow 160ms cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 .statistics-schedule-team-option:last-child {
@@ -14297,12 +14799,11 @@ body {
 }
 
 .statistics-schedule-team-option:hover,
-.statistics-schedule-team-option:focus-visible,
-.statistics-schedule-team-option.is-favorite,
-.statistics-schedule-team-quickpicks .statistics-schedule-team-option {
-  --statistics-schedule-team-option-muted: var(--statistics-schedule-team-gradient-muted);
-  background: var(--statistics-schedule-team-gradient, var(--color-bg-tertiary));
-  color: var(--statistics-schedule-team-gradient-fg, var(--color-label));
+.statistics-schedule-team-option:focus-visible {
+  box-shadow:
+    inset 3px 0 0 var(--statistics-schedule-row-accent, var(--color-separator)),
+    0 0 0 1px color-mix(in srgb, var(--statistics-schedule-team-gradient-fg, var(--color-label)) 32%, transparent),
+    0 0 18px color-mix(in srgb, var(--statistics-schedule-row-accent, var(--color-separator)) 42%, transparent);
 }
 
 .statistics-schedule-team-option:focus-visible {
@@ -20023,20 +20524,6 @@ body {
   background: linear-gradient(180deg, rgba(12, 15, 20, 0.26), rgba(12, 15, 20, 0.03));
 }
 
-.companion-matchup-masthead__side-accent {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 4px;
-  background: var(--matchup-masthead-accent);
-}
-
-.companion-matchup-masthead__side.is-opponent .companion-matchup-masthead__side-accent {
-  right: 0;
-  left: auto;
-}
-
 .companion-matchup-masthead__team-name {
   display: block;
   max-width: 100%;
@@ -20048,6 +20535,42 @@ body {
   letter-spacing: 0.01em;
   line-height: 0.94;
   text-transform: uppercase;
+}
+
+.companion-matchup-masthead__team-summary {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  margin-top: 10px;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: var(--type-label);
+  line-height: 1;
+}
+
+.companion-matchup-masthead__side.is-opponent .companion-matchup-masthead__team-summary {
+  justify-content: flex-end;
+}
+
+.companion-matchup-masthead__team-record {
+  font-size: var(--type-label);
+  font-weight: 800;
+}
+
+.companion-matchup-masthead__team-points {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: var(--type-micro);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.companion-matchup-masthead__team-summary-separator {
+  display: inline-block;
+  margin: 0 3px;
+  font-style: normal;
 }
 
 .companion-matchup-masthead__score-label,
@@ -20076,6 +20599,24 @@ body {
   letter-spacing: 0.08em;
 }
 
+.companion-matchup-masthead__projection-delta {
+  margin-left: 2px;
+  color: rgba(255, 255, 255, 0.9);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.companion-matchup-masthead__bench-points {
+  margin-top: 4px;
+  color: rgba(255, 255, 255, 0.64);
+  font-size: var(--type-micro);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+}
+
 .companion-matchup-masthead__outcome {
   position: absolute;
   right: clamp(12px, 2vw, 24px);
@@ -20099,6 +20640,38 @@ body {
 
 .companion-matchup-masthead__outcome.is-loss {
   color: rgba(255, 68, 51, 0.3);
+}
+
+.companion-matchup-masthead__identity {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  color: rgba(255, 255, 255, 0.86);
+  font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif;
+  font-size: var(--type-label);
+  font-weight: 700;
+  line-height: 1;
+}
+
+.companion-matchup-masthead__side.is-opponent .companion-matchup-masthead__identity {
+  flex-direction: row-reverse;
+  justify-content: flex-start;
+}
+
+.companion-matchup-masthead__identity-avatar {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  flex: none;
+  place-items: center;
+  border: 1.5px solid var(--matchup-masthead-identity-accent, var(--color-accent));
+  border-radius: 50%;
+  background: rgba(12, 15, 20, 0.24);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: var(--type-label);
+  font-style: normal;
+  font-weight: 800;
 }
 
 .companion-matchup-masthead__axis {
@@ -20151,6 +20724,10 @@ body {
   gap: 12px;
 }
 
+.companion-matchup-masthead__probability-labels.is-settled {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
 .companion-matchup-masthead__probability-side {
   display: flex;
   min-width: 0;
@@ -20171,17 +20748,6 @@ body {
   line-height: 0.86;
 }
 
-.companion-matchup-masthead__probability-side span {
-  max-width: 100%;
-  overflow-wrap: anywhere;
-  color: var(--color-label-secondary);
-  font-size: var(--type-micro);
-  font-weight: 800;
-  letter-spacing: 0.1em;
-  line-height: 1.1;
-  text-transform: uppercase;
-}
-
 .companion-matchup-masthead__probability-center {
   display: flex;
   min-width: 0;
@@ -20195,14 +20761,6 @@ body {
   line-height: 1.1;
   text-align: center;
   text-transform: uppercase;
-}
-
-.companion-matchup-masthead__probability-center strong {
-  color: var(--color-label);
-  font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif;
-  font-size: var(--type-label);
-  letter-spacing: 0.04em;
-  text-transform: none;
 }
 
 .companion-matchup-masthead__probability-bar {
@@ -20246,22 +20804,6 @@ body {
   letter-spacing: 0.04em;
 }
 
-.companion-matchup-masthead__meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: 6px 14px;
-  padding: 9px clamp(12px, 3vw, 36px) 11px;
-  border-top: 1px solid var(--color-separator);
-  color: var(--color-label-secondary);
-  font-size: var(--type-label);
-  font-weight: 650;
-  line-height: 1.35;
-  text-align: center;
-}
-
-.companion-matchup-masthead__meta span,
 .companion-matchup-masthead__details summary {
   display: inline-flex;
   align-items: center;
@@ -20295,6 +20837,24 @@ body {
   padding: 0 16px 13px;
   font-size: var(--type-label);
   line-height: 1.45;
+}
+
+.companion-matchup-masthead__details-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px 14px;
+  color: var(--color-label-secondary);
+  font-size: var(--type-label);
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.companion-matchup-masthead__details-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
 
 /* Tale of the Tape: one hero and one continuous comparison sheet. */
@@ -20610,6 +21170,11 @@ body {
     font-size: clamp(32px, 10vw, 46px);
   }
 
+  .companion-matchup-masthead__identity-avatar {
+    width: 30px;
+    height: 30px;
+  }
+
   .companion-matchup-masthead__outcome {
     bottom: 8px;
     font-size: 44px;
@@ -20620,13 +21185,15 @@ body {
     gap: 6px;
   }
 
+  .companion-matchup-masthead__probability-labels.is-settled {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
   .companion-matchup-masthead__probability-side strong {
     font-size: clamp(26px, 8vw, 36px);
   }
 
-  .companion-matchup-masthead__probability-side span,
-  .companion-matchup-masthead__probability-center,
-  .companion-matchup-masthead__probability-center strong {
+  .companion-matchup-masthead__probability-center {
     font-size: 9px;
     letter-spacing: 0.06em;
   }
@@ -20653,7 +21220,7 @@ body {
 }
 
 @media (prefers-contrast: more) {
-  .companion-matchup-masthead__meta,
+  .companion-matchup-masthead__details-meta,
   .matchup-tale-of-tape-section-heading,
   .matchup-tale-of-tape-metric-label,
   .matchup-tale-of-tape-empty-note {
@@ -20768,7 +21335,7 @@ body {
 
 .companion-player-row.companion-matchup-player-row.is-compact {
   gap: 5px;
-  min-height: 48px;
+  min-height: 56px;
 }
 
 .companion-player-row.companion-matchup-player-row .companion-player-row__identity {
@@ -20875,6 +21442,32 @@ body {
 .companion-player-row.companion-matchup-player-row.is-compact .companion-player-row__meta-prefix + .companion-player-row__meta-item::before,
 .companion-player-row.companion-matchup-player-row.is-compact .companion-player-row__meta-item + .companion-player-row__meta-item::before {
   margin-right: 3px;
+}
+
+/* Each phone-side matchup card is only a fraction of the viewport. Let its
+   secondary game/rank facts wrap inside that card instead of retaining an
+   intrinsic one-line width that can push the comparison grid sideways. */
+@container (max-width: 180px) {
+  .companion-player-row.companion-matchup-player-row.is-compact .companion-player-row__meta {
+    flex-wrap: wrap;
+    align-content: center;
+    row-gap: 1px;
+    line-height: 1.12;
+    white-space: normal;
+  }
+
+  .companion-player-row.companion-matchup-player-row.is-compact .companion-player-row__meta-item {
+    overflow: visible;
+    overflow-wrap: anywhere;
+    text-overflow: clip;
+    white-space: normal;
+  }
+}
+
+.companion-matchup {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: clip;
 }
 
 @container (max-width: 330px) {
@@ -24059,11 +24652,30 @@ body {
   }
 }
 
-/* ── Loading skeletons (shared ui primitives) ─────────────────────────────── */
+/* ── Loading skeletons (shared ui primitives) ─────────────────────────────────
+   TEXTURE is the skeleton's idle animation — what a placeholder does while it
+   waits. `sweep` is the app default; a surface opts into another by setting
+   [data-gs-texture] on any ancestor of its skeletons. See docs/Loading Motion.md.
+
+     sweep   a highlight travels across the shape (default)
+     pulse   the whole shape breathes between dim and bright
+     build   a fill wipes in from the left each cycle
+     static  no animation — a flat fill, the reduced-motion resting state
+   ────────────────────────────────────────────────────────────────────────── */
 
 @keyframes gs-shimmer {
   from { background-position: 200% 0; }
   to   { background-position: -200% 0; }
+}
+
+@keyframes gs-skeleton-pulse {
+  0%, 100% { opacity: 0.45; }
+  50%      { opacity: 1; }
+}
+
+@keyframes gs-skeleton-build {
+  from { background-position: 100% 0; }
+  to   { background-position: 0 0; }
 }
 
 .gs-skeleton {
@@ -24074,11 +24686,29 @@ body {
     var(--color-fill-secondary) 60%
   );
   background-size: 200% 100%;
-  animation: gs-shimmer 1.6s ease-in-out infinite;
+  animation: gs-shimmer var(--gs-load-texture-duration) ease-in-out infinite;
+}
+
+[data-gs-texture='pulse'] .gs-skeleton {
+  background: var(--color-fill-secondary);
+  animation: gs-skeleton-pulse var(--gs-load-texture-duration) ease-in-out infinite;
+}
+
+[data-gs-texture='build'] .gs-skeleton {
+  background: linear-gradient(90deg, var(--color-fill) 0 50%, var(--color-fill-secondary) 50% 100%);
+  background-size: 200% 100%;
+  background-position: 100% 0;
+  animation: gs-skeleton-build var(--gs-load-texture-duration) var(--gs-load-ease) infinite;
+}
+
+[data-gs-texture='static'] .gs-skeleton {
+  background: var(--color-fill-secondary);
+  animation: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .gs-skeleton {
+  .gs-skeleton,
+  [data-gs-texture] .gs-skeleton {
     animation: none;
     background: var(--color-fill-secondary);
   }
@@ -26245,3 +26875,1414 @@ button.companion-matchup-masthead__axis:focus-visible {
 .matchup-rivalry-close:hover { background: var(--color-fill); }
 .matchup-rivalry-close:active { opacity: 0.7; }
 .matchup-rivalry-close:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+
+/* ── Fantasy injuries ─────────────────────────────────────────────────── */
+.fantasy-injuries-page {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.fantasy-injuries-source {
+  display: grid;
+  grid-template-columns: minmax(150px, auto) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px 20px;
+  min-width: 0;
+  margin-inline: clamp(12px, 2.4vw, 24px);
+  padding: 12px 0;
+  border-block: 1px solid var(--color-separator);
+}
+
+.fantasy-injuries-source__week,
+.fantasy-injuries-source__provider {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.fantasy-injuries-source__week > span,
+.fantasy-injuries-source__provider > span,
+.fantasy-injuries-evidence dt,
+.fantasy-injuries-practice-history h3 {
+  color: var(--color-label-tertiary);
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-label);
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.fantasy-injuries-source__week > strong {
+  color: var(--color-label);
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-heading-md);
+  font-weight: 850;
+  line-height: 1;
+}
+
+.fantasy-injuries-source__provider {
+  color: var(--color-label-secondary);
+  font-size: var(--type-meta);
+  font-weight: 650;
+}
+
+.fantasy-injuries-source__provider time {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fantasy-injuries-refresh,
+.fantasy-injuries-clear,
+.fantasy-injuries-empty-action {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-separator);
+  border-radius: 8px;
+  background: var(--color-fill);
+  color: var(--color-label);
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-label);
+  font-weight: 850;
+  letter-spacing: 0.06em;
+  padding: 8px 12px;
+  text-transform: uppercase;
+  transition: background 150ms cubic-bezier(0.32, 0.72, 0, 1), opacity 150ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.fantasy-injuries-refresh:hover:not(:disabled),
+.fantasy-injuries-clear:hover,
+.fantasy-injuries-empty-action:hover {
+  background: var(--color-fill-secondary);
+}
+
+.fantasy-injuries-refresh:disabled { cursor: wait; opacity: 0.56; }
+
+.fantasy-injuries-refresh:focus-visible,
+.fantasy-injuries-clear:focus-visible,
+.fantasy-injuries-empty-action:focus-visible,
+.fantasy-injuries-disclosure:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.fantasy-injuries-fallback {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 6px 10px;
+  margin-inline: clamp(12px, 2.4vw, 24px);
+  color: var(--color-label-secondary);
+  font-size: var(--type-meta);
+  line-height: 1.45;
+  text-align: center;
+}
+
+.fantasy-injuries-fallback strong { color: var(--color-label); }
+
+.fantasy-injuries-controls {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 10px;
+  padding-inline: clamp(12px, 2.4vw, 24px);
+}
+
+.fantasy-injuries-filter-toggle {
+  width: 100%;
+  justify-content: flex-start;
+  border-color: var(--color-label-quaternary);
+  background: var(--color-bg-secondary);
+  color: var(--color-label);
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.fantasy-injuries-filter-toggle.is-active {
+  border-color: var(--color-signature);
+  background: var(--color-signature);
+  color: var(--color-signature-fg);
+}
+
+.fantasy-injuries-filter-toggle svg {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+}
+
+.fantasy-injuries-filter-toggle__summary {
+  min-width: 0;
+  margin-inline-start: auto;
+  overflow: hidden;
+  color: var(--color-label-secondary);
+  font-family: var(--font-body, 'Figtree', sans-serif);
+  font-size: var(--type-meta);
+  font-weight: 700;
+  letter-spacing: normal;
+  text-overflow: ellipsis;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.fantasy-injuries-filter-toggle.is-active .fantasy-injuries-filter-toggle__summary {
+  color: color-mix(in srgb, var(--color-signature-fg) 78%, transparent);
+}
+
+/* Full-width Fantasy filter rail. The control is intentionally shared by
+   Rankings, Injuries, Heatmap, and Defense so the filter entry point reads as
+   one branded surface across the Fantasy views. */
+.companion-filter-toggle {
+  display: flex;
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  min-height: 58px;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+  padding: 0 20px;
+  border: 1px solid var(--color-label-quaternary);
+  border-radius: 12px;
+  background: var(--color-bg-secondary);
+  box-shadow: inset 0 -1px 0 var(--color-fill);
+  color: var(--color-label);
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-body);
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  text-align: left;
+  text-transform: uppercase;
+  transition: background 150ms cubic-bezier(0.32, 0.72, 0, 1), border-color 150ms cubic-bezier(0.32, 0.72, 0, 1), color 150ms cubic-bezier(0.32, 0.72, 0, 1), box-shadow 150ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.companion-filter-toggle:hover {
+  border-color: var(--color-label-tertiary);
+  background: var(--color-fill-secondary);
+}
+
+.companion-filter-toggle.is-active {
+  border-color: var(--color-signature);
+  background: color-mix(in srgb, var(--color-signature) 12%, var(--color-bg-secondary));
+  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--color-signature) 72%, transparent);
+  color: var(--color-label);
+}
+
+.companion-filter-toggle svg {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+}
+
+.companion-filter-toggle__summary {
+  min-width: 0;
+  margin-inline-start: auto;
+  overflow: hidden;
+  color: var(--color-label-secondary);
+  font-family: var(--font-body, 'Figtree', sans-serif);
+  font-size: var(--type-meta);
+  font-weight: 700;
+  letter-spacing: normal;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.companion-filter-toggle.is-active .companion-filter-toggle__summary {
+  color: var(--color-label-secondary);
+}
+
+@media (max-width: 560px) {
+  .companion-filter-toggle {
+    padding-inline: 16px;
+  }
+}
+
+.fantasy-waiver-filter-panel {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.fantasy-waiver-filter-panel.is-collapsed { display: none; }
+
+.fantasy-injuries-filter-panel {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.fantasy-injuries-filter-panel.is-collapsed { display: none; }
+
+.fantasy-injuries-controls__menus {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(220px, 340px)) minmax(220px, 1fr) auto;
+  align-items: start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.fantasy-injuries-controls__menus .companion-search-field { min-width: 0; }
+.fantasy-injuries-controls__menus .companion-search-field__input { font-size: 16px; }
+
+.fantasy-injuries-list {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding-inline: clamp(12px, 2.4vw, 24px);
+}
+
+.fantasy-injuries-row {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.fantasy-injuries-player-row { border-radius: 10px; }
+.fantasy-injuries-row.is-expanded .fantasy-injuries-player-row { border-end-start-radius: 0; border-end-end-radius: 0; }
+
+.fantasy-injuries-row__status {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.fantasy-injuries-practice-status.is-warning {
+  border-color: color-mix(in srgb, var(--color-accent-orange) 35%, var(--color-separator));
+  background: color-mix(in srgb, var(--color-accent-orange) 14%, transparent);
+  color: var(--color-accent-orange);
+}
+
+.fantasy-injuries-disclosure {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border: 1px solid var(--companion-player-subtle, var(--color-separator));
+  border-radius: 8px;
+  background: var(--companion-player-subtle, var(--color-fill-secondary));
+  color: var(--companion-player-fg, var(--color-label));
+  transition: background 150ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.fantasy-injuries-disclosure:hover { background: var(--color-fill); }
+.fantasy-injuries-disclosure svg { width: 18px; height: 18px; transition: transform 180ms cubic-bezier(0.32, 0.72, 0, 1); }
+.fantasy-injuries-disclosure[aria-expanded="true"] svg { transform: rotate(180deg); }
+
+.fantasy-injuries-evidence {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  padding: 14px 16px 16px;
+  border: 1px solid var(--color-separator);
+  border-top: 0;
+  border-end-start-radius: 10px;
+  border-end-end-radius: 10px;
+  background: var(--color-bg-secondary);
+}
+
+.fantasy-injuries-evidence__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px 18px;
+  margin: 0;
+}
+
+.fantasy-injuries-evidence__item { min-width: 0; }
+.fantasy-injuries-evidence dd {
+  margin: 4px 0 0;
+  color: var(--color-label);
+  font-size: var(--type-meta);
+  font-weight: 700;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.fantasy-injuries-practice-history h3 { margin: 0 0 8px; }
+.fantasy-injuries-practice-history ol { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.fantasy-injuries-practice-history li {
+  display: grid;
+  grid-template-columns: minmax(100px, auto) minmax(0, 1fr);
+  gap: 12px;
+  color: var(--color-label);
+  font-size: var(--type-meta);
+  font-weight: 700;
+}
+.fantasy-injuries-practice-history time { color: var(--color-label-secondary); }
+.fantasy-injuries-evidence__note { margin: 0; color: var(--color-label-secondary); font-size: var(--type-meta); line-height: 1.5; }
+
+@media (hover: none) and (pointer: coarse) {
+  .fantasy-injuries-refresh,
+  .fantasy-injuries-clear,
+  .fantasy-injuries-empty-action,
+  .fantasy-injuries-disclosure { min-width: 44px; min-height: 44px; }
+}
+
+@media (max-width: 920px) {
+  .fantasy-injuries-controls__menus { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .fantasy-injuries-controls__menus .companion-search-field { grid-column: 1 / -1; }
+  .fantasy-injuries-clear { justify-self: start; }
+}
+
+@media (max-width: 560px) {
+  .fantasy-injuries-source { grid-template-columns: minmax(0, 1fr) auto; }
+  .fantasy-injuries-source__provider { grid-column: 1 / -1; grid-row: 2; }
+  .fantasy-injuries-refresh { grid-column: 2; grid-row: 1; }
+  .fantasy-injuries-fallback { flex-direction: column; align-items: center; }
+  .fantasy-injuries-controls__menus { grid-template-columns: minmax(0, 1fr); }
+  .fantasy-injuries-controls__menus .companion-search-field { grid-column: auto; }
+}
+
+@media (max-width: 480px) {
+  .fantasy-injuries-player-row.is-compact {
+    align-items: center;
+    grid-template-rows: minmax(0, 1fr) 24px;
+    height: 88px;
+    min-height: 88px;
+  }
+  .fantasy-injuries-player-row.is-compact .companion-player-row__body {
+    min-height: 0;
+    overflow: hidden;
+  }
+  .fantasy-injuries-player-row.is-compact .companion-player-row__identity,
+  .fantasy-injuries-player-row.is-compact .companion-player-row__identity-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .fantasy-injuries-player-row.is-compact .companion-player-row__status-slot {
+    grid-column: 2 / 4;
+    grid-row: 2;
+    justify-content: flex-start;
+  }
+  .fantasy-injuries-player-row.is-compact .companion-player-row__actions {
+    grid-column: 4;
+    grid-row: 1 / span 2;
+    align-self: center;
+  }
+  .fantasy-injuries-player-row.is-compact .companion-player-row__meta {
+    flex-wrap: nowrap;
+    overflow: hidden;
+  }
+  .fantasy-injuries-player-row.is-compact .companion-player-row__meta-item {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .fantasy-injuries-evidence__grid { grid-template-columns: minmax(0, 1fr); }
+  .fantasy-injuries-practice-history li { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+}
+
+/* ============================================================================
+   Broadcast reveal — shared drilldown entrance
+   ----------------------------------------------------------------------------
+   One staggered reveal used by every drillable surface in Fantasy Matchup: the
+   preview panel, the team score breakdown, the player drilldown and the player
+   compare sheet. Sections lift in on a stagger driven by --matchup-preview-index,
+   hero panels wipe inward from their own edge, and the win-chance seam opens
+   from the centre. Everything rides the standard easing and is fully disabled
+   under prefers-reduced-motion.
+
+   Every timing below comes from the --gs-load-* tokens at the top of this file.
+   ENTRANCE is the gesture a row uses to arrive; pick one per surface with
+   [data-gs-entrance] on the reveal container:
+
+     lift    rises a few pixels while fading in (default)
+     fade    opacity only — the quietest option
+     wipe    uncovers left to right behind a clip edge
+     scale   settles up from 96.5%
+     slide   enters from the left
+
+   ORDER is which row goes first. It is an index transform, so it is applied in
+   JS (see revealIndex() in src/utils/loadingMotion.js) and handed to CSS as
+   --gs-reveal-index; the --auto variant below is always top down.
+   ========================================================================== */
+
+/* Fill mode is `backwards`, and the resting style is deliberately left alone.
+   The obvious way to write this — `opacity: 0` plus `forwards` — hands the
+   element's final appearance to an animation that then has to stay alive
+   forever to keep holding it. Every row in a long list keeps a filling
+   animation, and any frame that re-creates or drops one paints that row at the
+   base `opacity: 0`: a blink, cascading down the list in document order as
+   style recalc walks it. `backwards` inverts the ownership. The element's own
+   style is already correct, the animation only supplies the from-state during
+   its delay, and once it finishes it releases cleanly. */
+.gridshift-reveal__item {
+  animation: gridshift-reveal-in var(--gs-load-duration) var(--gs-load-ease) backwards;
+  animation-delay: calc(var(--gs-reveal-index, var(--matchup-preview-index, 0)) * var(--gs-load-stagger));
+}
+
+/* Auto-stagger: sections reveal in document order without index plumbing.
+   Used by the drilldowns whose section lists are built dynamically, and by the
+   Fantasy tab lists, where the row count is not known to the stylesheet. */
+.gridshift-reveal--auto > * {
+  animation: gridshift-reveal-in var(--gs-load-duration) var(--gs-load-ease) backwards;
+}
+.gridshift-reveal--auto > *:nth-child(1) { animation-delay: calc(0 * var(--gs-load-stagger)); }
+.gridshift-reveal--auto > *:nth-child(2) { animation-delay: calc(1 * var(--gs-load-stagger)); }
+.gridshift-reveal--auto > *:nth-child(3) { animation-delay: calc(2 * var(--gs-load-stagger)); }
+.gridshift-reveal--auto > *:nth-child(4) { animation-delay: calc(3 * var(--gs-load-stagger)); }
+.gridshift-reveal--auto > *:nth-child(5) { animation-delay: calc(4 * var(--gs-load-stagger)); }
+.gridshift-reveal--auto > *:nth-child(6) { animation-delay: calc(5 * var(--gs-load-stagger)); }
+.gridshift-reveal--auto > *:nth-child(7) { animation-delay: calc(6 * var(--gs-load-stagger)); }
+/* Past the cap every row shares one delay rather than trailing further down the
+   list. They still animate: skipping them entirely leaves the tail of a long
+   list sitting there fully painted while the top eight fade in, which reads as
+   the animation being slow and artificial rather than as a reveal.
+   Keep this multiplier equal to --gs-load-stagger-cap. */
+.gridshift-reveal--auto > *:nth-child(n+8) { animation-delay: calc(7 * var(--gs-load-stagger)); }
+
+/* ── entrance variants ─────────────────────────────────────────────────────
+   Applied to whichever items the container animates. Default (no attribute)
+   stays `lift`, so existing surfaces are unchanged. */
+.gridshift-reveal[data-gs-entrance='fade'] > .gridshift-reveal__item,
+.gridshift-reveal--auto[data-gs-entrance='fade'] > * { animation-name: gridshift-reveal-fade; }
+.gridshift-reveal[data-gs-entrance='wipe'] > .gridshift-reveal__item,
+.gridshift-reveal--auto[data-gs-entrance='wipe'] > * { animation-name: gridshift-reveal-wipe-left; }
+.gridshift-reveal[data-gs-entrance='scale'] > .gridshift-reveal__item,
+.gridshift-reveal--auto[data-gs-entrance='scale'] > * { animation-name: gridshift-reveal-scale; }
+.gridshift-reveal[data-gs-entrance='slide'] > .gridshift-reveal__item,
+.gridshift-reveal--auto[data-gs-entrance='slide'] > * { animation-name: gridshift-reveal-slide; }
+
+@keyframes gridshift-reveal-in {
+  from { opacity: 0; transform: translateY(9px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes gridshift-reveal-scale {
+  from { opacity: 0; transform: scale(0.965); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes gridshift-reveal-slide {
+  from { opacity: 0; transform: translateX(-16px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes gridshift-reveal-wipe-left {
+  from { opacity: 0; clip-path: inset(0 100% 0 0); }
+  to { opacity: 1; clip-path: inset(0); }
+}
+
+@keyframes gridshift-reveal-wipe-right {
+  from { opacity: 0; clip-path: inset(0 0 0 100%); }
+  to { opacity: 1; clip-path: inset(0); }
+}
+
+@keyframes gridshift-reveal-seam {
+  from { clip-path: inset(0 50% 0 50%); }
+  to { clip-path: inset(0); }
+}
+
+/* Bars whose width is set inline cannot animate to a keyframe width, so they
+   grow on scaleX from whichever edge they are anchored to. */
+@keyframes gridshift-reveal-grow {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+/* Markers sit on a transform of their own (translate to centre), so they may
+   only fade — animating transform here would fight their positioning. */
+@keyframes gridshift-reveal-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes gridshift-reveal-bar {
+  from { width: 0; }
+  to { width: var(--matchup-preview-bar, 0); }
+}
+
+/* ── drilldown graphics ──────────────────────────────────────────────────
+   The player drilldown and the compare sheet draw their bars and rails with
+   inline widths and positions. Growing the bars and fading the markers gives
+   them the same entrance as the preview's comparison rows without the JSX
+   having to hand any index or width down to the stylesheet. */
+
+.gridshift-reveal .pmd-cmp-v::after,
+.gridshift-reveal .pmd-bb__fill,
+.gridshift-reveal .pmd-cells i,
+.gridshift-reveal .pmd-lrow__t i {
+  animation: gridshift-reveal-grow var(--gs-load-rail-duration) var(--gs-load-ease) 180ms both;
+}
+.gridshift-reveal .pmd-cmp-v.is-left::after { transform-origin: right center; }
+.gridshift-reveal .pmd-cmp-v.is-right::after,
+.gridshift-reveal .pmd-bb__fill,
+.gridshift-reveal .pmd-cells i,
+.gridshift-reveal .pmd-lrow__t i { transform-origin: left center; }
+
+.gridshift-reveal .pmd-rail__mark,
+.gridshift-reveal .pmd-bb__band,
+.gridshift-reveal .pmd-bb__tick,
+.gridshift-reveal .pmd-lrow__t u,
+.gridshift-reveal .pmd-cmp-rank-player,
+.gridshift-reveal .matchup-rank-strip__marker {
+  animation: gridshift-reveal-fade 420ms var(--gs-load-ease) 520ms both;
+}
+
+/* The drilldown headers wipe in from their own edge, the gesture the preview's
+   title card uses. */
+.gridshift-reveal .pmd-hd { animation: gridshift-reveal-wipe-left var(--gs-load-rail-duration) var(--gs-load-ease) both; }
+.gridshift-reveal .pmd-cmp-hd { animation: gridshift-reveal-in var(--gs-load-duration) var(--gs-load-ease) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .gridshift-reveal .pmd-cmp-v::after,
+  .gridshift-reveal .pmd-bb__fill,
+  .gridshift-reveal .pmd-cells i,
+  .gridshift-reveal .pmd-lrow__t i,
+  .gridshift-reveal .pmd-rail__mark,
+  .gridshift-reveal .pmd-bb__band,
+  .gridshift-reveal .pmd-bb__tick,
+  .gridshift-reveal .pmd-lrow__t u,
+  .gridshift-reveal .pmd-cmp-rank-player,
+  .gridshift-reveal .matchup-rank-strip__marker,
+  .gridshift-reveal .pmd-hd,
+  .gridshift-reveal .pmd-cmp-hd {
+    animation: none;
+    opacity: 1;
+    transform: none;
+    clip-path: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gridshift-reveal--auto > *,
+  .gridshift-reveal__item,
+  .gridshift-reveal .matchup-preview__side,
+  .gridshift-reveal .matchup-preview__seam,
+  .gridshift-reveal .matchup-preview-cmp__value::before {
+    animation: none;
+    opacity: 1;
+    clip-path: none;
+    transform: none;
+  }
+  .gridshift-reveal .matchup-preview-cmp__value::before { width: var(--matchup-preview-bar, 0); }
+}
+
+/* ── Fantasy Matchup masthead ─────────────────────────────────────────────
+   The matchup page's masthead speaks the drilldowns' vocabulary, so the page
+   and the sheets it opens read as one family: the two team panels wipe inward
+   from their own outer edge, the VS axis between them opens from the centre,
+   and the win-chance bar grows outward from the seam where the two shares meet.
+   Knobs and definitions: docs/Loading Motion.md. */
+
+.gridshift-reveal .companion-matchup-masthead__side.is-mine {
+  animation: gridshift-reveal-wipe-left var(--gs-load-rail-duration) var(--gs-load-ease) both;
+}
+.gridshift-reveal .companion-matchup-masthead__side.is-opponent {
+  animation: gridshift-reveal-wipe-right var(--gs-load-rail-duration) var(--gs-load-ease) both;
+}
+.gridshift-reveal .companion-matchup-masthead__axis {
+  animation: gridshift-reveal-seam var(--gs-load-rail-duration) var(--gs-load-ease) both;
+}
+
+/* The bar's two shares are grid cells sized by percentage, so they cannot
+   animate to a keyframe width. They grow on scaleX instead, each anchored to
+   the seam, so the bar opens outward from the split rather than sweeping across
+   it. The seam marker carries a translate of its own for centring, so animating
+   its transform would fight its positioning — it may only fade, and the
+   percentage labels fade with it once the bar has settled. */
+.gridshift-reveal .companion-matchup-masthead__probability-bar > span:first-child {
+  transform-origin: right center;
+  animation: gridshift-reveal-grow var(--gs-load-rail-duration) var(--gs-load-ease) 180ms both;
+}
+.gridshift-reveal .companion-matchup-masthead__probability-bar > span:nth-child(2) {
+  transform-origin: left center;
+  animation: gridshift-reveal-grow var(--gs-load-rail-duration) var(--gs-load-ease) 180ms both;
+}
+.gridshift-reveal .companion-matchup-masthead__probability-bar > i,
+.gridshift-reveal .companion-matchup-masthead__probability-side strong {
+  animation: gridshift-reveal-fade 420ms var(--gs-load-ease) 520ms both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gridshift-reveal .companion-matchup-masthead__side.is-mine,
+  .gridshift-reveal .companion-matchup-masthead__side.is-opponent,
+  .gridshift-reveal .companion-matchup-masthead__axis,
+  .gridshift-reveal .companion-matchup-masthead__probability-bar > span:first-child,
+  .gridshift-reveal .companion-matchup-masthead__probability-bar > span:nth-child(2),
+  .gridshift-reveal .companion-matchup-masthead__probability-bar > i,
+  .gridshift-reveal .companion-matchup-masthead__probability-side strong {
+    animation: none;
+    opacity: 1;
+    clip-path: none;
+    transform: none;
+  }
+  /* The seam marker's centring translate is part of its layout, not motion. */
+  .gridshift-reveal .companion-matchup-masthead__probability-bar > i {
+    transform: translateX(-1px);
+  }
+}
+
+/* The dual-hero compare sheet wipes its two sides inward, the same gesture the
+   preview's title card uses, so the drilldowns read as one family. */
+.gridshift-reveal .pmd-cmp-hero.is-left { animation: gridshift-reveal-wipe-left var(--gs-load-rail-duration) var(--gs-load-ease) both; }
+.gridshift-reveal .pmd-cmp-hero.is-right { animation: gridshift-reveal-wipe-right var(--gs-load-rail-duration) var(--gs-load-ease) both; }
+@media (prefers-reduced-motion: reduce) {
+  .gridshift-reveal .pmd-cmp-hero.is-left,
+  .gridshift-reveal .pmd-cmp-hero.is-right { animation: none; opacity: 1; clip-path: none; }
+}
+
+/* ============================================================================
+   Loading swap — how a skeleton hands off to the content that replaces it
+   ----------------------------------------------------------------------------
+   HANDOFF is the transition between the placeholder and the real thing. Set it
+   per surface with [data-gs-handoff] on .gs-loadswap; the default is row-by-row.
+
+     cut          the skeleton is gone on the frame the content mounts
+     cross-fade   the whole skeleton block fades out under the arriving content
+     row-by-row   each skeleton row dissolves exactly as its own real row lifts
+                  in, so the list converts itself top to bottom
+
+   Structure the surface as:
+
+     <div class="gs-loadswap">
+       <div class="gs-loadswap__skeleton"> ...skeleton rows... </div>
+       <div class="gs-loadswap__content gridshift-reveal gridshift-reveal--auto">
+         ...real rows...
+       </div>
+     </div>
+
+   The skeleton layer only overlays once content is present (.is-handing-off);
+   before that it sits in normal flow and holds the surface's height. How long
+   it stays mounted afterwards is --gs-load-handoff-fade, applied in JS by
+   useLoadingReveal(). See docs/Loading Motion.md.
+   ========================================================================== */
+
+/* SHOW AFTER without JavaScript. A Suspense fallback cannot be delayed from
+   outside, so the route skeleton holds itself invisible for the show-after
+   window and then fades up. A chunk that resolves inside that window replaces
+   the fallback before a placeholder was ever painted. */
+.gs-section-skeleton {
+  animation: gridshift-reveal-fade var(--gs-load-duration) var(--gs-load-ease) var(--gs-load-show-after) backwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gs-section-skeleton { animation: none; opacity: 1; }
+}
+
+.gs-loadswap { position: relative; }
+
+.gs-loadswap__skeleton.is-handing-off {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* cross-fade — one block, one fade */
+.gs-loadswap[data-gs-handoff='cross-fade'] > .gs-loadswap__skeleton.is-handing-off {
+  animation: gridshift-reveal-out var(--gs-load-handoff-fade) linear both;
+}
+
+/* row-by-row (default) — each placeholder row leaves on the same clock its
+   real counterpart arrives on, so the two layers trade places in step. */
+.gs-loadswap:not([data-gs-handoff]) > .gs-loadswap__skeleton.is-handing-off > *,
+.gs-loadswap[data-gs-handoff='row-by-row'] > .gs-loadswap__skeleton.is-handing-off > * {
+  animation: gridshift-reveal-out var(--gs-load-duration) var(--gs-load-ease) both;
+}
+.gs-loadswap[data-gs-handoff='row-by-row'] > .gs-loadswap__skeleton.is-handing-off > *:nth-child(1),
+.gs-loadswap:not([data-gs-handoff]) > .gs-loadswap__skeleton.is-handing-off > *:nth-child(1) { animation-delay: calc(0 * var(--gs-load-stagger)); }
+.gs-loadswap[data-gs-handoff='row-by-row'] > .gs-loadswap__skeleton.is-handing-off > *:nth-child(2),
+.gs-loadswap:not([data-gs-handoff]) > .gs-loadswap__skeleton.is-handing-off > *:nth-child(2) { animation-delay: calc(1 * var(--gs-load-stagger)); }
+.gs-loadswap[data-gs-handoff='row-by-row'] > .gs-loadswap__skeleton.is-handing-off > *:nth-child(3),
+.gs-loadswap:not([data-gs-handoff]) > .gs-loadswap__skeleton.is-handing-off > *:nth-child(3) { animation-delay: calc(2 * var(--gs-load-stagger)); }
+.gs-loadswap[data-gs-handoff='row-by-row'] > .gs-loadswap__skeleton.is-handing-off > *:nth-child(4),
+.gs-loadswap:not([data-gs-handoff]) > .gs-loadswap__skeleton.is-handing-off > *:nth-child(4) { animation-delay: calc(3 * var(--gs-load-stagger)); }
+.gs-loadswap[data-gs-handoff='row-by-row'] > .gs-loadswap__skeleton.is-handing-off > *:nth-child(5),
+.gs-loadswap:not([data-gs-handoff]) > .gs-loadswap__skeleton.is-handing-off > *:nth-child(5) { animation-delay: calc(4 * var(--gs-load-stagger)); }
+.gs-loadswap[data-gs-handoff='row-by-row'] > .gs-loadswap__skeleton.is-handing-off > *:nth-child(6),
+.gs-loadswap:not([data-gs-handoff]) > .gs-loadswap__skeleton.is-handing-off > *:nth-child(6) { animation-delay: calc(5 * var(--gs-load-stagger)); }
+.gs-loadswap[data-gs-handoff='row-by-row'] > .gs-loadswap__skeleton.is-handing-off > *:nth-child(n+7),
+.gs-loadswap:not([data-gs-handoff]) > .gs-loadswap__skeleton.is-handing-off > *:nth-child(n+7) { animation-delay: calc(6 * var(--gs-load-stagger)); }
+
+/* cut — nothing to animate; JS unmounts the layer immediately. */
+.gs-loadswap[data-gs-handoff='cut'] > .gs-loadswap__skeleton.is-handing-off { display: none; }
+
+@keyframes gridshift-reveal-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gs-loadswap__skeleton.is-handing-off,
+  .gs-loadswap__skeleton.is-handing-off > * { animation: none; display: none; }
+}
+
+/* ── team rails ───────────────────────────────────────────────────────────
+   RAILS is the accent bar down the leading edge of a row. When a surface opts
+   in with .gridshift-reveal--rails, the bar grows from nothing a beat after
+   the row itself starts, so the team colour lands as its own gesture. */
+
+.gridshift-reveal--rails > * > .gs-reveal-rail,
+.gridshift-reveal--rails > .gs-reveal-rail {
+  transform: scaleY(0);
+  transform-origin: center;
+  animation: gridshift-reveal-rail var(--gs-load-rail-duration) var(--gs-load-ease) var(--gs-load-rail-delay) forwards;
+}
+
+@keyframes gridshift-reveal-rail {
+  from { transform: scaleY(0); }
+  to { transform: scaleY(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gridshift-reveal--rails > * > .gs-reveal-rail,
+  .gridshift-reveal--rails > .gs-reveal-rail { animation: none; transform: none; }
+}
+
+/* ============================================================================
+   Fantasy Matchup — preview panel
+   ========================================================================== */
+
+.matchup-preview-modal {
+  --matchup-preview-label-col: 124px;
+  --matchup-preview-gutter: 14px;
+  background: var(--color-bg);
+  color: var(--color-label);
+}
+.matchup-preview-modal.is-regular,
+.matchup-preview-modal.is-wide { --matchup-preview-label-col: 170px; }
+.matchup-preview-modal.is-wide { --matchup-preview-gutter: 20px; }
+.matchup-preview-modal.is-compact { --matchup-preview-label-col: 96px; --matchup-preview-gutter: 11px; }
+
+/* Stat numerals use the display face across GridShift (see .pmd-num and
+   .companion-matchup-masthead__score); the preview follows the same rule. */
+.matchup-preview__big b,
+.matchup-preview__odds-top b,
+.matchup-preview-cmp__number,
+.matchup-preview-watch__points b,
+.matchup-preview__series-side b,
+.matchup-preview__meeting-score,
+.matchup-preview__key i {
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+.matchup-preview__big b {
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.matchup-preview__unavailable {
+  padding: var(--density-space-lg);
+  text-align: center;
+  font-size: var(--type-meta);
+  color: var(--color-label-secondary);
+}
+
+.matchup-preview__header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px var(--matchup-preview-gutter);
+  background: var(--color-bg-secondary);
+  border-bottom: 1px solid var(--color-separator);
+}
+.matchup-preview__chip {
+  flex: none;
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-label);
+  font-weight: 800;
+  padding: 4px 8px;
+  border-radius: 5px;
+  background: var(--color-signature);
+  color: var(--color-signature-fg);
+  white-space: nowrap;
+}
+.matchup-preview__chip.is-live {
+  background: var(--color-accent-red);
+  color: #FFFFFF;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.matchup-preview__chip.is-live::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: matchup-preview-pulse 1.6s ease-in-out infinite;
+}
+@keyframes matchup-preview-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) {
+  .matchup-preview__chip.is-live::before { animation: none; }
+}
+.matchup-preview__when {
+  font-size: var(--type-meta);
+  font-weight: 600;
+  color: var(--color-label-secondary);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.matchup-preview__close {
+  margin-left: auto;
+  flex: none;
+  min-height: 28px;
+  min-width: 28px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  background: var(--color-fill);
+  color: var(--color-label);
+  font-size: var(--type-emphasis);
+  font-weight: 700;
+  border: 0;
+  cursor: pointer;
+  transition: background 150ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.matchup-preview__close:hover { background: var(--color-separator-opaque); }
+
+.matchup-preview__body {
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ── title card ─────────────────────────────────────────────────────────── */
+
+.matchup-preview__title {
+  flex: none;
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 92px minmax(0, 1fr);
+  min-height: clamp(148px, 18vw, 188px);
+  background: var(--color-fill-tertiary);
+  border-bottom: 1px solid var(--color-separator);
+  overflow: hidden;
+}
+.matchup-preview__side {
+  position: relative;
+  display: grid;
+  align-content: center;
+  min-height: 148px;
+  padding: 18px clamp(14px, 3vw, 36px) 22px;
+  min-width: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  color: var(--color-label);
+  isolation: isolate;
+}
+.matchup-preview__side.is-b { text-align: right; }
+.matchup-preview__side::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--matchup-preview-accent);
+}
+.matchup-preview__side::after {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(180deg, rgba(12, 15, 20, 0.03), rgba(12, 15, 20, 0.26));
+  content: '';
+  pointer-events: none;
+}
+.matchup-preview__side.is-b::after {
+  background: linear-gradient(180deg, rgba(12, 15, 20, 0.26), rgba(12, 15, 20, 0.03));
+}
+.gridshift-reveal .matchup-preview__side.is-a { animation: gridshift-reveal-wipe-left 620ms cubic-bezier(0.32, 0.72, 0, 1) both; }
+.gridshift-reveal .matchup-preview__side.is-b { animation: gridshift-reveal-wipe-right 620ms cubic-bezier(0.32, 0.72, 0, 1) both; }
+
+.matchup-preview__seed {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-label);
+  font-weight: 700;
+  color: var(--color-label);
+}
+.matchup-preview__side.is-b .matchup-preview__seed { flex-direction: row-reverse; }
+.matchup-preview__seed > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.matchup-preview__seed i {
+  width: 38px;
+  height: 38px;
+  flex: none;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: var(--type-label);
+  font-weight: 800;
+  font-style: normal;
+  background: rgba(0, 0, 0, 0.26);
+  border: 1.5px solid var(--matchup-preview-accent);
+  color: var(--color-label);
+}
+.matchup-preview__record {
+  margin-top: 10px;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: var(--type-label);
+  font-weight: 800;
+  line-height: 1;
+}
+.matchup-preview__big { margin-top: 11px; display: flex; align-items: flex-end; gap: 6px; }
+.matchup-preview__side.is-b .matchup-preview__big { justify-content: flex-end; }
+.matchup-preview__big b {
+  font-size: clamp(38px, 7vw, 58px);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 0.86;
+}
+.matchup-preview__big > span {
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-label);
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.72);
+  padding-bottom: 5px;
+}
+.matchup-preview__axis {
+  flex: none;
+  width: 92px;
+  min-height: 100%;
+}
+.matchup-preview__axis em {
+  font-style: normal;
+  font-size: var(--type-micro);
+  font-weight: 700;
+  color: var(--color-signature);
+  letter-spacing: 0.06em;
+}
+
+/* ── win-chance seam ────────────────────────────────────────────────────── */
+
+.matchup-preview__odds { padding: 13px var(--matchup-preview-gutter) 14px; border-bottom: 1px solid var(--color-separator); }
+.matchup-preview__odds-top {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-label);
+  font-weight: 700;
+  color: var(--color-label-secondary);
+}
+.matchup-preview__odds-top b { font-size: var(--type-emphasis); font-weight: 800; }
+.matchup-preview__odds-top > span { margin: 0 auto; font-weight: 600; }
+.matchup-preview__seam {
+  position: relative;
+  height: 12px;
+  margin-top: 10px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--color-fill-secondary);
+  display: grid;
+}
+.gridshift-reveal .matchup-preview__seam { animation: gridshift-reveal-seam 800ms cubic-bezier(0.32, 0.72, 0, 1) 300ms both; }
+.matchup-preview__seam i:first-child {
+  background: linear-gradient(90deg, color-mix(in oklab, var(--matchup-preview-left-accent) 55%, #0C0F14) 0%, var(--matchup-preview-left-accent) 100%);
+}
+.matchup-preview__seam i:last-child {
+  background: linear-gradient(90deg, var(--matchup-preview-right-accent) 0%, color-mix(in oklab, var(--matchup-preview-right-accent) 55%, #0C0F14) 100%);
+}
+.matchup-preview__odds-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 9px;
+  font-size: var(--type-label);
+  font-weight: 600;
+  color: var(--color-label-secondary);
+}
+.matchup-preview__band {
+  flex: none;
+  padding: 3px 7px;
+  border-radius: 5px;
+  background: var(--color-fill);
+  color: var(--color-label);
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-micro);
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+.matchup-preview__band.is-tossup { background: var(--color-signature); color: var(--color-signature-fg); }
+.matchup-preview__band.is-live { background: var(--color-accent-red); color: #FFFFFF; }
+
+/* ── lede + sections ────────────────────────────────────────────────────── */
+
+.matchup-preview__lede {
+  margin: 0;
+  padding: 15px var(--matchup-preview-gutter);
+  border-bottom: 1px solid var(--color-separator);
+  font-size: var(--type-emphasis);
+  line-height: 1.34;
+  font-weight: 600;
+  text-wrap: pretty;
+}
+.matchup-preview__lede em,
+.matchup-preview__key-text em { font-style: normal; font-weight: 800; color: var(--color-label); }
+
+.matchup-preview__section {
+  padding: var(--density-space-md) var(--matchup-preview-gutter);
+  border-bottom: 1px solid var(--color-separator);
+}
+.matchup-preview__section:last-child { border-bottom: 0; }
+.matchup-preview__eyebrow {
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-label);
+  font-weight: 700;
+  color: var(--color-label-secondary);
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.matchup-preview__note { margin-left: auto; font-weight: 600; text-align: right; }
+
+/* ── keys ───────────────────────────────────────────────────────────────── */
+
+.matchup-preview__keys { display: flex; flex-direction: column; gap: 11px; margin-top: 11px; }
+.matchup-preview__key { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 11px; align-items: start; }
+.matchup-preview__key > div { min-width: 0; }
+.matchup-preview__key i {
+  font-style: normal;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  flex: none;
+  background: var(--color-fill);
+  color: var(--color-label);
+  font-size: var(--type-micro);
+  font-weight: 800;
+}
+.matchup-preview__key-tag {
+  font-size: var(--type-micro);
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-label-secondary);
+}
+.matchup-preview__key-text {
+  margin: 4px 0 0;
+  font-size: var(--type-meta);
+  line-height: 1.44;
+  font-weight: 500;
+  color: var(--color-label);
+  text-wrap: pretty;
+}
+
+/* ── mirrored comparison rows ───────────────────────────────────────────── */
+
+.matchup-preview-cmp { margin-top: 9px; }
+.matchup-preview-cmp__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--matchup-preview-label-col) minmax(0, 1fr);
+  align-items: stretch;
+  border-top: 1px solid var(--color-separator);
+}
+.matchup-preview-cmp__row:first-child { border-top: 0; }
+.matchup-preview-cmp__value {
+  position: relative;
+  padding: 9px 11px 19px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+}
+.matchup-preview-cmp__value.has-no-bar { padding-bottom: 9px; }
+.matchup-preview-cmp__value::before {
+  content: "";
+  position: absolute;
+  bottom: 9px;
+  height: 5px;
+  width: var(--matchup-preview-bar, 0);
+  border-radius: 3px;
+  background: var(--matchup-preview-fill);
+}
+.gridshift-reveal .matchup-preview-cmp__value::before {
+  animation: gridshift-reveal-bar 700ms cubic-bezier(0.32, 0.72, 0, 1) calc(200ms + var(--matchup-preview-index, 0) * 60ms) both;
+}
+.matchup-preview-cmp__value.is-a {
+  align-items: flex-end;
+  text-align: right;
+  --matchup-preview-fill: var(--color-fill);
+}
+.matchup-preview-cmp__value.is-b {
+  align-items: flex-start;
+  --matchup-preview-fill: var(--color-fill);
+}
+.matchup-preview-cmp__value.is-a::before { right: 0; }
+.matchup-preview-cmp__value.is-b::before { left: 0; }
+.matchup-preview-cmp__value.is-a.is-leading { --matchup-preview-fill: var(--matchup-preview-left-accent, var(--color-accent)); }
+.matchup-preview-cmp__value.is-b.is-leading { --matchup-preview-fill: var(--matchup-preview-right-accent, var(--color-signature)); }
+.matchup-preview-cmp__number {
+  font-size: 21px;
+  line-height: 1;
+  font-weight: 700;
+  color: var(--color-label-secondary);
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  white-space: nowrap;
+}
+.matchup-preview-cmp__value.is-leading .matchup-preview-cmp__number { color: var(--color-label); }
+.matchup-preview-cmp__unit { font-size: var(--type-label); font-weight: 700; color: var(--color-label-secondary); }
+.matchup-preview-cmp__sub {
+  font-size: var(--type-label);
+  font-weight: 600;
+  color: var(--color-label-secondary);
+  margin-top: 4px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.matchup-preview-cmp__label {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  padding: 9px 4px;
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-label);
+  font-weight: 700;
+  color: var(--color-label-secondary);
+  background: var(--color-fill-secondary);
+  line-height: 1.25;
+}
+.matchup-preview-cmp__label small {
+  display: block;
+  font-size: var(--type-micro);
+  font-weight: 600;
+  margin-top: 2px;
+}
+
+/* ── players to watch ───────────────────────────────────────────────────── */
+
+.matchup-preview-watch { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; margin-top: 11px; }
+.matchup-preview-modal.is-regular .matchup-preview-watch,
+.matchup-preview-modal.is-wide .matchup-preview-watch { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 26px; }
+.matchup-preview-watch__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-label);
+  font-weight: 800;
+  color: var(--color-label);
+  padding-bottom: 8px;
+  border-bottom: 2px solid var(--matchup-preview-accent);
+}
+.matchup-preview-watch__head b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.matchup-preview-watch__head span { font-weight: 600; color: var(--color-label-secondary); white-space: nowrap; }
+.matchup-preview-watch__col.is-mirrored .matchup-preview-watch__head { flex-direction: row-reverse; }
+.matchup-preview-watch__list { display: flex; flex-direction: column; }
+.matchup-preview-watch__player {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--color-separator);
+}
+.matchup-preview-watch__player:last-child { border-bottom: 0; }
+.matchup-preview-watch__col.is-mirrored .matchup-preview-watch__player { grid-template-columns: auto minmax(0, 1fr) 28px; }
+.matchup-preview-watch__col.is-mirrored .matchup-preview-watch__pos { order: 3; }
+.matchup-preview-watch__col.is-mirrored .matchup-preview-watch__name { order: 2; text-align: right; }
+.matchup-preview-watch__col.is-mirrored .matchup-preview-watch__points { order: 1; text-align: left; }
+.matchup-preview-watch__pos {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-micro);
+  font-weight: 800;
+  background: var(--color-fill);
+  color: var(--color-label);
+}
+.matchup-preview-watch__name { min-width: 0; }
+.matchup-preview-watch__name b { display: block; font-size: var(--type-meta); font-weight: 700; line-height: 1.2; }
+.matchup-preview-watch__name > span {
+  display: block;
+  margin-top: 3px;
+  font-size: var(--type-label);
+  font-weight: 600;
+  color: var(--color-label-secondary);
+}
+.matchup-preview-watch__name em { font-style: normal; font-weight: 700; }
+.matchup-preview-watch__name em.is-good { color: var(--color-accent-green); }
+.matchup-preview-watch__name em.is-bad { color: var(--color-accent-red); }
+.matchup-preview-watch__name em.is-flat { color: var(--color-label-secondary); }
+.matchup-preview-watch__points { text-align: right; }
+.matchup-preview-watch__points b { font-size: 20px; line-height: 1; font-weight: 700; }
+.matchup-preview-watch__points > span {
+  display: block;
+  margin-top: 4px;
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-micro);
+  font-weight: 700;
+  color: var(--color-label-secondary);
+}
+
+/* ── rivalry strip ──────────────────────────────────────────────────────── */
+
+.matchup-preview__series {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  margin-top: 11px;
+  gap: 10px;
+}
+.matchup-preview__series-side { text-align: center; min-width: 0; }
+.matchup-preview__series-side b { display: block; font-size: 34px; line-height: 0.9; font-weight: 700; }
+.matchup-preview__series-side.is-a b { color: var(--matchup-preview-left-accent, var(--color-accent)); }
+.matchup-preview__series-side.is-b b { color: var(--matchup-preview-right-accent, var(--color-signature)); }
+.matchup-preview__series-side.is-dim b { color: var(--color-label-secondary); }
+.matchup-preview__series-side > span {
+  display: block;
+  margin-top: 5px;
+  font-size: var(--type-label);
+  font-weight: 600;
+  color: var(--color-label-secondary);
+}
+.matchup-preview__series-mid {
+  text-align: center;
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-label);
+  font-weight: 700;
+  color: var(--color-label-secondary);
+  line-height: 1.35;
+}
+.matchup-preview__series-mid > span { display: block; }
+.matchup-preview__meetings {
+  display: flex;
+  flex-direction: column;
+  margin-top: 13px;
+  border-top: 1px solid var(--color-separator);
+}
+.matchup-preview__meeting {
+  display: grid;
+  grid-template-columns: 82px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--color-separator);
+  font-size: var(--type-meta);
+}
+.matchup-preview__meeting-when {
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-label);
+  font-weight: 600;
+  color: var(--color-label-secondary);
+}
+.matchup-preview__meeting-score {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+}
+.matchup-preview__meeting-score i { font-style: normal; color: var(--color-label-tertiary); }
+.matchup-preview__meeting-score b { color: var(--color-label-secondary); font-weight: 700; justify-self: start; }
+.matchup-preview__meeting-score b.is-a { justify-self: end; }
+.matchup-preview__meeting-score b.is-winner { color: var(--color-label); }
+.matchup-preview__meeting-score b.is-winner.is-a { box-shadow: inset 0 -2px 0 var(--matchup-preview-left-accent, var(--color-accent)); }
+.matchup-preview__meeting-score b.is-winner.is-b { box-shadow: inset 0 -2px 0 var(--matchup-preview-right-accent, var(--color-signature)); }
+.matchup-preview__meeting-margin {
+  font-size: var(--type-label);
+  font-weight: 600;
+  color: var(--color-label-secondary);
+  white-space: nowrap;
+}
+.matchup-preview__more {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-label);
+  font-weight: 700;
+  color: var(--color-accent);
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.matchup-preview__more:hover { text-decoration: underline; }
+.matchup-preview__empty {
+  margin: 10px 0 0;
+  font-size: var(--type-meta);
+  font-weight: 500;
+  color: var(--color-label-secondary);
+  line-height: 1.44;
+}
+
+/* ── wide ───────────────────────────────────────────────────────────────── */
+
+.matchup-preview-modal.is-wide .matchup-preview__big b { font-size: clamp(38px, 7vw, 58px); }
+.matchup-preview-modal.is-wide .matchup-preview__axis { width: 92px; }
+.matchup-preview-modal.is-wide .matchup-preview__lede { font-size: var(--type-heading-sm); }
+.matchup-preview-modal.is-wide .matchup-preview__key-text { font-size: var(--type-body); }
+.matchup-preview-modal.is-wide .matchup-preview__series-side b { font-size: 44px; }
+.matchup-preview-modal.is-wide .matchup-preview-cmp__number { font-size: 26px; }
+
+/* ── compact ────────────────────────────────────────────────────────────── */
+
+.matchup-preview-modal.is-compact .matchup-preview__title { grid-template-columns: minmax(0, 1fr) 48px minmax(0, 1fr); }
+.matchup-preview-modal.is-compact .matchup-preview__big b { font-size: 30px; }
+.matchup-preview-modal.is-compact .matchup-preview__axis { width: 48px; }
+.matchup-preview-modal.is-compact .matchup-preview__seed i { width: 30px; height: 30px; }
+.matchup-preview-modal.is-compact .matchup-preview__record { margin-top: 7px; }
+.matchup-preview-modal.is-compact .matchup-preview__lede { font-size: var(--type-meta); line-height: 1.42; }
+.matchup-preview-modal.is-compact .matchup-preview-cmp__number { font-size: 19px; }
+.matchup-preview-modal.is-compact .matchup-preview__meeting { grid-template-columns: 70px minmax(0, 1fr); row-gap: 4px; }
+.matchup-preview-modal.is-compact .matchup-preview__meeting-margin { grid-column: 1 / -1; }
+
+@media (max-width: 767px) {
+  /* The mobile matchup masthead keeps the comparison cue readable without
+     competing with either team card. The desktop icon and forecast mode are
+     supporting labels, so mobile reduces the centre rail to VS alone. */
+  .companion-matchup-masthead .companion-matchup-masthead__score-grid {
+    grid-template-columns: minmax(0, 1fr) 48px minmax(0, 1fr);
+  }
+
+  .companion-matchup-masthead .companion-matchup-masthead__axis {
+    gap: 0;
+  }
+
+  .companion-matchup-masthead .companion-matchup-masthead__axis-icon,
+  .companion-matchup-masthead .companion-matchup-masthead__axis-mode {
+    display: none;
+  }
+
+  /* A mobile preview is a sheet, not a wider horizontal canvas. Keep every
+     child width-constrained so long identities cannot widen the sheet. */
+  .matchup-preview-modal.is-compact,
+  .matchup-preview-modal.is-compact .matchup-preview__header,
+  .matchup-preview-modal.is-compact .matchup-preview__title,
+  .matchup-preview-modal.is-compact .matchup-preview__body {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .matchup-preview-modal.is-compact .matchup-preview__body {
+    overflow-x: clip;
+  }
+}

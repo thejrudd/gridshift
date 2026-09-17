@@ -9,6 +9,7 @@ import {
   getAllWeeklyStats,
   aggregateSeasonStats,
   getMatchups,
+  getLiveMatchups,
   getTradedPicks,
   getLeagueDrafts,
 } from '../api/sleeperApi';
@@ -24,6 +25,7 @@ import {
 import { buildEspnDstResidualDebugRows, reconcileFantasyScore } from '../utils/fantasyScoreDiagnostics';
 import { clearPlayerCache, checkAndBustCacheIfNeeded } from '../utils/playerCache';
 import { createSleeperRosterSync } from '../utils/sleeperRosterSync';
+import { sanitizePersistedSleeperState } from '../utils/sleeperSeasonState.js';
 import {
   getSeasonStats as getCachedSeasonStats,
   setSeasonStats as putCachedSeasonStats,
@@ -96,7 +98,7 @@ function loadPersistedState() {
       if (state.season == null || AVAILABLE_SLEEPER_SEASONS.includes(String(state.season)) === false) state.season = DEFAULT_SEASON;
       if (!Array.isArray(state.availableSeasons)) state.availableSeasons = [];
       if (!state.leaguesBySeason || typeof state.leaguesBySeason !== 'object') state.leaguesBySeason = {};
-      return state;
+      return sanitizePersistedSleeperState(state);
     }
   } catch { /* ignore */ }
   return null;
@@ -272,6 +274,7 @@ export function FantasyProvider({ children }) {
 
   const statsAbortRef = useRef(null);
   const statsLoadBySeasonRef = useRef(new Map());
+  const leagueSnapshotVersionRef = useRef(0);
   // Mirror of statsBySeason readable inside loadSeasonStats without adding it
   // to that callback's hand-tuned dependency array.
   const statsBySeasonRef = useRef({});
@@ -292,6 +295,7 @@ export function FantasyProvider({ children }) {
   );
 
   const resetFantasyState = useCallback((nextPlatform = 'sleeper') => {
+    leagueSnapshotVersionRef.current += 1;
     setPlatform(nextPlatform);
     setSleeperUser(null);
     setLeagues([]);
@@ -340,6 +344,7 @@ export function FantasyProvider({ children }) {
   // ── Connection flow ─────────────────────────────────────────────────────────
 
   const discoverUserLeagueSeasons = useCallback(async (userId, preferredSeason = null) => {
+    const requestVersion = leagueSnapshotVersionRef.current;
     const seasonEntries = await Promise.all(
       AVAILABLE_SLEEPER_SEASONS.map(async (seasonKey) => {
         try {
@@ -350,6 +355,8 @@ export function FantasyProvider({ children }) {
         }
       }),
     );
+
+    if (requestVersion !== leagueSnapshotVersionRef.current) return null;
 
     const nextLeaguesBySeason = Object.fromEntries(seasonEntries);
     const nextAvailableSeasons = AVAILABLE_SLEEPER_SEASONS.filter((seasonKey) => (nextLeaguesBySeason[seasonKey]?.length ?? 0) > 0);
@@ -394,11 +401,14 @@ export function FantasyProvider({ children }) {
   }, [discoverUserLeagueSeasons, platform, resetFantasyState, season]);
 
   const loadLeagueSelection = useCallback(async (leagueId) => {
+    const requestVersion = leagueSnapshotVersionRef.current;
     const [leagueData, rostersData, usersData] = await Promise.all([
       getLeague(leagueId),
       getLeagueRosters(leagueId),
       getLeagueUsers(leagueId),
     ]);
+
+    if (requestVersion !== leagueSnapshotVersionRef.current) return null;
 
     setLeague(leagueData);
     setRosters(rostersData ?? []);
@@ -410,6 +420,14 @@ export function FantasyProvider({ children }) {
       const imported = importLeagueScoring(leagueData.scoring_settings);
       setScoringSettings({ ...DEFAULT_SCORING, ...imported });
     }
+  }, []);
+
+  const clearLeagueSnapshot = useCallback(() => {
+    leagueSnapshotVersionRef.current += 1;
+    setSelectedLeagueId(null);
+    setLeague(null);
+    setRosters([]);
+    setLeagueUsers([]);
   }, []);
 
   const applyEspnLeague = useCallback((normalized) => {
@@ -439,8 +457,9 @@ export function FantasyProvider({ children }) {
     qbOppSeasonRef.current = null;
   }, []);
 
-  const loadEspnLeagueSelection = useCallback(async (leagueId, leagueSeason = season, teamId = null) => {
+  const loadEspnLeagueSelection = useCallback(async (leagueId, leagueSeason = season, teamId = null, requestVersion = leagueSnapshotVersionRef.current) => {
     const payload = await getEspnLeague(leagueSeason, leagueId);
+    if (requestVersion !== leagueSnapshotVersionRef.current) return null;
     const normalized = normalizeEspnLeaguePayload(payload, { season: leagueSeason, leagueId, teamId });
     applyEspnLeague(normalized);
     return normalized;
@@ -491,6 +510,7 @@ export function FantasyProvider({ children }) {
         const targetLeague = leagues.find((item) => normalizeLeagueId(item.league_id) === normalizeLeagueId(leagueId));
         await loadEspnLeagueSelection(leagueId, String(targetLeague?.season ?? season));
       } else {
+        clearLeagueSnapshot();
         await loadLeagueSelection(leagueId);
       }
     } catch (err) {
@@ -499,7 +519,7 @@ export function FantasyProvider({ children }) {
     } finally {
       setConnectLoading(false);
     }
-  }, [leagues, loadEspnLeagueSelection, loadLeagueSelection, platform, season]);
+  }, [clearLeagueSnapshot, leagues, loadEspnLeagueSelection, loadLeagueSelection, platform, season]);
 
   const disconnect = useCallback(() => {
     if (platform === 'espn') void clearEspnSession().catch(() => {});
@@ -512,16 +532,20 @@ export function FantasyProvider({ children }) {
 
     setConnectError(null);
     setSeasonSwitching(targetSeason);
+    const initialSwitchVersion = leagueSnapshotVersionRef.current + 1;
+    leagueSnapshotVersionRef.current = initialSwitchVersion;
 
     if (platform === 'espn' && sleeperUser) {
       const leagueId = selectedLeagueId ?? league?.league_id ?? null;
       try {
         setConnectLoading(true);
         if (leagueId) {
-          await loadEspnLeagueSelection(leagueId, targetSeason);
+          await loadEspnLeagueSelection(leagueId, targetSeason, null, initialSwitchVersion);
+          if (initialSwitchVersion !== leagueSnapshotVersionRef.current) return;
           return;
         }
         const discovery = await getEspnLeagues(targetSeason).catch(() => ({ leagues: [], source: 'manual-fallback' }));
+        if (initialSwitchVersion !== leagueSnapshotVersionRef.current) return;
         const discoveredLeagues = discovery.leagues ?? [];
         setSeason(targetSeason);
         setLeagues(discoveredLeagues);
@@ -537,16 +561,25 @@ export function FantasyProvider({ children }) {
         setScheduleMap(null);
         setEspnMatchupsByWeek({});
       } catch (err) {
-        setConnectError(err.message ?? `Could not load ESPN ${targetSeason}.`);
+        if (initialSwitchVersion === leagueSnapshotVersionRef.current) {
+          setConnectError(err.message ?? `Could not load ESPN ${targetSeason}.`);
+        }
       }
       finally {
-        setConnectLoading(false);
-        setSeasonSwitching(null);
+        if (initialSwitchVersion === leagueSnapshotVersionRef.current) {
+          setConnectLoading(false);
+          setSeasonSwitching(null);
+        }
       }
       return;
     }
 
+    const previousLeague = league;
+    const previousSelectedLeagueId = selectedLeagueId;
+    clearLeagueSnapshot();
+    const switchVersion = leagueSnapshotVersionRef.current;
     setSeason(targetSeason);
+    setLeagues([]);
     setWeeklyStats(null);
     setSeasonStats(null);
     setStatsEnhancing(false);
@@ -558,6 +591,7 @@ export function FantasyProvider({ children }) {
         const cachedLeagues = leaguesBySeason[targetSeason];
         if (cachedLeagues == null) setConnectLoading(true);
         const userLeagues = cachedLeagues ?? await getLeaguesForUser(sleeperUser.user_id, targetSeason);
+        if (switchVersion !== leagueSnapshotVersionRef.current) return;
         const nextLeaguesBySeason = cachedLeagues == null
           ? { ...leaguesBySeason, [targetSeason]: userLeagues ?? [] }
           : leaguesBySeason;
@@ -568,25 +602,19 @@ export function FantasyProvider({ children }) {
           }
         }
         setLeagues(userLeagues ?? []);
-        const linkedLeague = findLinkedLeagueForSeason(league, userLeagues ?? [], nextLeaguesBySeason);
-        const stillExists = userLeagues?.find(l => normalizeLeagueId(l.league_id) === normalizeLeagueId(selectedLeagueId));
+        const linkedLeague = findLinkedLeagueForSeason(previousLeague, userLeagues ?? [], nextLeaguesBySeason);
+        const stillExists = userLeagues?.find(l => normalizeLeagueId(l.league_id) === normalizeLeagueId(previousSelectedLeagueId));
         const targetLeague = linkedLeague ?? stillExists;
         if (targetLeague) {
           await loadLeagueSelection(targetLeague.league_id);
         }
-        if (!targetLeague) {
-          setSelectedLeagueId(null);
-          setLeague(null);
-          setRosters([]);
-          setLeagueUsers([]);
-        }
       } catch { /* ignore */ }
       finally {
-        setConnectLoading(false);
+        if (switchVersion === leagueSnapshotVersionRef.current) setConnectLoading(false);
       }
     }
-    setSeasonSwitching(null);
-  }, [platform, sleeperUser, selectedLeagueId, leaguesBySeason, season, league, loadEspnLeagueSelection, loadLeagueSelection]);
+    if (switchVersion === leagueSnapshotVersionRef.current) setSeasonSwitching(null);
+  }, [clearLeagueSnapshot, platform, sleeperUser, selectedLeagueId, leaguesBySeason, season, league, loadEspnLeagueSelection, loadLeagueSelection]);
 
   useEffect(() => {
     if (platform !== 'sleeper') return;
@@ -597,7 +625,7 @@ export function FantasyProvider({ children }) {
     void (async () => {
       try {
         const discovered = await discoverUserLeagueSeasons(sleeperUser.user_id, season);
-        if (cancelled) return;
+        if (cancelled || !discovered) return;
 
         if (selectedLeagueId) {
           const stillExists = (discovered.leaguesBySeason[discovered.season] ?? []).some((item) => item.league_id === selectedLeagueId);
@@ -646,6 +674,8 @@ export function FantasyProvider({ children }) {
   // ── Stats loading ───────────────────────────────────────────────────────────
 
   const loadSeasonStats = useCallback(async () => {
+    const requestVersion = leagueSnapshotVersionRef.current;
+    const isCurrentRequest = () => requestVersion === leagueSnapshotVersionRef.current;
     if (platform === 'espn') {
       if (!selectedLeagueId || statsAbortRef.current) return;
 
@@ -666,7 +696,7 @@ export function FantasyProvider({ children }) {
         let completedWeeks = 0;
         const markWeekComplete = () => {
           completedWeeks += 1;
-          setStatsProgress(Math.round((completedWeeks / weeks.length) * 100));
+          if (isCurrentRequest()) setStatsProgress(Math.round((completedWeeks / weeks.length) * 100));
         };
         const [weeklyPayloads, playerPoolPayloads, nflSchedule] = await Promise.all([
           Promise.all(weeks.map(async (week) => {
@@ -737,14 +767,18 @@ export function FantasyProvider({ children }) {
             }
           : baseNormalized.league;
 
-        setPlayers(mergedPlayers);
-        setWeeklyStats(mergedWeeklyStats);
-        setSeasonStats(mergedSeasonStats);
-        if (mergedLeague) setLeague(mergedLeague);
-        if (nflSchedule) setScheduleMap(nflSchedule);
+        if (isCurrentRequest()) {
+          setPlayers(mergedPlayers);
+          setWeeklyStats(mergedWeeklyStats);
+          setSeasonStats(mergedSeasonStats);
+          if (mergedLeague) setLeague(mergedLeague);
+          if (nflSchedule) setScheduleMap(nflSchedule);
+        }
       } finally {
-        statsAbortRef.current = false;
-        setStatsLoading(false);
+        if (isCurrentRequest()) {
+          statsAbortRef.current = false;
+          setStatsLoading(false);
+        }
       }
       return;
     }
@@ -759,6 +793,7 @@ export function FantasyProvider({ children }) {
     // Completed seasons are final — their packages never expire.
     const isCompletedSeason = Number(seasonKey) < Number(AVAILABLE_SLEEPER_SEASONS[0]);
     const applyPackage = (pkg) => {
+      if (!isCurrentRequest()) return;
       setWeeklyStats(pkg.weeklyStats);
       setSeasonStats(pkg.seasonStats);
       setScheduleMap(pkg.scheduleMap ?? null);
@@ -769,6 +804,7 @@ export function FantasyProvider({ children }) {
     // (same trust model as loadStatsForSeason's statsBySeason check).
     const memHit = statsBySeasonRef.current[seasonKey];
     if (memHit?.weeklyStats) {
+      if (!isCurrentRequest()) return;
       applyPackage(memHit);
       setStatsEnhancing(true); // enhancement effect re-runs from cached ESPN data
       setStatsProgress(100);
@@ -792,14 +828,14 @@ export function FantasyProvider({ children }) {
           scheduleMap: cached.scheduleMap ?? null,
         };
         applyPackage(pkg);
-        setStatsProgress(100);
+        if (isCurrentRequest()) setStatsProgress(100);
         if (isCompletedSeason || Date.now() - cached.ts < CURRENT_SEASON_TTL) return;
       }
 
       const failedWeeks = [];
       const [weekly, schedule] = await Promise.all([
         getAllWeeklyStats(season, 18, (week, total) => {
-          setStatsProgress(Math.round((week / total) * 100));
+          if (isCurrentRequest()) setStatsProgress(Math.round((week / total) * 100));
         }, failedWeeks),
         fetchSeasonSchedule(season).catch(() => null),
       ]);
@@ -815,10 +851,12 @@ export function FantasyProvider({ children }) {
       }
     } catch (err) {
       console.error('Failed to load stats:', err);
-      setStatsEnhancing(false);
+      if (isCurrentRequest()) setStatsEnhancing(false);
     } finally {
-      statsAbortRef.current = false;
-      setStatsLoading(false);
+      if (isCurrentRequest()) {
+        statsAbortRef.current = false;
+        setStatsLoading(false);
+      }
     }
   }, [league, loadEspnLeagueSelection, platform, season, seasonStats, selectedLeagueId, weeklyStats]); // removed statsLoading — guarded by ref instead
 
@@ -1256,9 +1294,9 @@ export function FantasyProvider({ children }) {
     return linkedLeagueHistory.map((entry) => entry.season);
   }, [availableSeasons, linkedLeagueHistory, platform, season]);
 
-  const loadMatchups = useCallback(async (leagueId, week) => {
+  const loadMatchups = useCallback(async (leagueId, week, { fresh = false } = {}) => {
     if (platform === 'espn') return espnMatchupsByWeek?.[week] ?? [];
-    return getMatchups(leagueId, week);
+    return fresh ? getLiveMatchups(leagueId, week) : getMatchups(leagueId, week);
   }, [espnMatchupsByWeek, platform]);
 
   const getTradedPicksForLeague = useCallback(async (leagueId) => {

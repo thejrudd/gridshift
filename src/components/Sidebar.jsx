@@ -25,6 +25,8 @@ export default function Sidebar({
   onLegal,
   onAppTour,
   onGuide,
+  onStatsExport,
+  canExportStats = false,
   onExportJSON,
   onImportJSON,
   onRandom,
@@ -257,6 +259,9 @@ export default function Sidebar({
       <div className="sidebar-actions">
         <div className="sidebar-section-label">Actions</div>
         <SidebarAction label="Guide" onClick={onGuide} dataTour="app-guide" />
+        {activeTab === 'fantasy' && canExportStats && onStatsExport && (
+          <SidebarAction label="Stats Export" onClick={onStatsExport} />
+        )}
         {activeTab === 'predictions' && (
           <>
             <SidebarAction label="Backup" onClick={onExportJSON} />

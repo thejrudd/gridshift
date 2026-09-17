@@ -135,6 +135,32 @@ test('League archive routes render focused Sleeper states and content', async ({
   await expect(page).toHaveURL(/\/statistics\/player\/1006\/bench-runner/);
 });
 
+test('current Standings refreshes stale league finality metadata', async ({ page }) => {
+  const staleLeague = {
+    ...league,
+    settings: { ...league.settings, last_scored_leg: 0 },
+  };
+  const freshLeague = {
+    ...league,
+    settings: { ...league.settings, last_scored_leg: 1 },
+  };
+  await installTradeFixtures(page, {
+    persistedSleeperState: {
+      ...persistedSleeperState(),
+      league: staleLeague,
+      leagues: [staleLeague],
+      leaguesBySeason: { [freshLeague.season]: [staleLeague] },
+    },
+    league: freshLeague,
+    leaguesBySeason: { [freshLeague.season]: [staleLeague] },
+  });
+
+  await page.goto('/league/standings');
+  await expect(page.getByRole('heading', { name: '2026 Standings' })).toBeVisible();
+  await expect(page.getByText('Results through completed Week 1.')).toBeVisible();
+  await expect(page.getByText('No standings available for 2026 yet.')).toHaveCount(0);
+});
+
 test('historical Standings shows postseason-only final placement for the full league size', async ({ page }) => {
   const archivedLeague = {
     ...league,

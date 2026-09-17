@@ -3,7 +3,8 @@ import { FunnelSimpleIcon } from '@phosphor-icons/react/FunnelSimple';
 import { useSleeperBase, useSleeperStatsEnhancing } from '../../context/SleeperContext';
 import { useTheme } from '../../context/ThemeContext';
 import { calcPoints, DEFAULT_SCORING } from '../../utils/scoringEngine';
-import { getCachedOffenseAllowedTable } from '../../utils/fantasyHeatmapData.js';
+import { getCachedOffenseAllowedTable, getHeatmapOffenseStatValue } from '../../utils/fantasyHeatmapData.js';
+import { getFantasyLeagueMaxWeek } from '../../utils/fantasySeasonWeeks.js';
 import { STADIUMS } from '../../data/stadiums';
 import { TEAM_COLORS } from '../../data/teamColors';
 import { NFL_ODDS } from '../../data/odds';
@@ -14,6 +15,7 @@ import { CompanionSelectorButton } from './CompanionSelectorControls.jsx';
 import CompanionPlayerRow, { CompanionPlayerMetric, CompanionPlayerStatus } from './CompanionPlayerRow.jsx';
 import Modal from '../Modal.jsx';
 import SeasonHintBanner from '../ui/SeasonHintBanner';
+import LoadingSwap, { SkeletonRows } from '../ui/LoadingSwap.jsx';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -81,8 +83,10 @@ const MOBILE_FILTER_LABEL_WIDTH = HEATMAP_FILTER_LABEL_WIDTH;
 
 const STAT_MODES = [
   { id: 'pts',        label: 'Fantasy Pts' },
-  { id: 'rec_yd',     label: 'Rec Yds', scoringKeys: ['rec_yd'] },
-  { id: 'rush_yd',    label: 'Rush Yds', scoringKeys: ['rush_yd'] },
+  { id: 'pass_sack',  label: 'Sacks Taken', statKey: 'pass_sack', positions: ['QB'], valueLabel: 'sacks' },
+  { id: 'pass_int',   label: 'INTs Thrown', statKey: 'pass_int', positions: ['QB'], valueLabel: 'INTs' },
+  { id: 'rec_yd',     label: 'Rec Yds', statKey: 'rec_yd', scoringKeys: ['rec_yd'], valueLabel: 'yds' },
+  { id: 'rush_yd',    label: 'Rush Yds', statKey: 'rush_yd', scoringKeys: ['rush_yd'], valueLabel: 'yds' },
   { id: 'game_score', label: 'Score' },
   { id: 'vegas_odds', label: 'Spread' },
 ];
@@ -129,8 +133,16 @@ function modeMatchesPositions(mode, positions) {
   return mode.positions.some(position => positionSet.has(position));
 }
 
-function getAvailableOffenseStatModes(scoringSettings) {
-  return STAT_MODES.filter(mode => modeHasScoringValue(mode, scoringSettings));
+function modeMatchesOffensePosition(mode, position) {
+  if (!mode?.positions) return true;
+  return position !== 'ALL' && mode.positions.includes(position);
+}
+
+function getAvailableOffenseStatModes(scoringSettings, position) {
+  return STAT_MODES.filter(mode => (
+    modeHasScoringValue(mode, scoringSettings)
+    && modeMatchesOffensePosition(mode, position)
+  ));
 }
 
 function getAvailableDefenseStatModes(scoringSettings, defensePositions) {
@@ -553,6 +565,7 @@ const HeatmapCell = memo(function HeatmapCell({ cell }) {
   return (
     <td
       data-heatmap-week={cell.clickable ? cell.week : undefined}
+      data-heatmap-empty={cell.kind === 'empty' ? cell.week : undefined}
       style={cell.style}
     >
       {cell.kind === 'value' ? (
@@ -567,6 +580,8 @@ const HeatmapCell = memo(function HeatmapCell({ cell }) {
       ) : cell.kind === 'filtered' ? (
         <span style={HEATMAP_FILTERED_STYLE}>—</span>
       ) : cell.kind === 'dash' ? (
+        '—'
+      ) : cell.kind === 'empty' ? (
         '—'
       ) : null}
     </td>
@@ -656,7 +671,12 @@ const HeatmapTable = memo(function HeatmapTable({
             </div>
           </th>
           {weekHeaders.map(({ week, avg }) => (
-            <th key={week} style={styles.sortableHead} onClick={() => onSort(week)}>
+            <th
+              key={week}
+              data-heatmap-header-week={week}
+              style={styles.sortableHead}
+              onClick={() => onSort(week)}
+            >
               <div>
                 Wk {week}
                 <HeatmapSortIndicator active={sortKey === week} dir={sortDir} />
@@ -738,6 +758,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
   const previousIncomingRouteRef = useRef(null);
   const skipNextRouteEmitRef = useRef(false);
   const lastScoredLeg = Number(league?.settings?.last_scored_leg);
+  const maxFantasyWeek = useMemo(() => getFantasyLeagueMaxWeek(league), [league]);
   const leaguePositionFilters = useMemo(
     () => getLeaguePositionFilters(league?.roster_positions),
     [league?.roster_positions],
@@ -751,19 +772,25 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
     [leaguePositionFilters],
   );
   const offenseStatModes = useMemo(
-    () => getAvailableOffenseStatModes(activeScoringSettings),
-    [activeScoringSettings],
+    () => getAvailableOffenseStatModes(activeScoringSettings, pos),
+    [activeScoringSettings, pos],
   );
   const defenseStatModes = useMemo(
     () => getAvailableDefenseStatModes(activeScoringSettings, defensePositions),
     [activeScoringSettings, defensePositions],
   );
   const fantasySeasonWeeks = useMemo(() => {
-    const maxWeek = Number.isFinite(lastScoredLeg) && lastScoredLeg > 0
-      ? Math.min(lastScoredLeg, 18)
-      : 17;
+    // Desktop uses the league's complete matchup span so the grid preserves
+    // the season's shape: future empty weeks and scheduled team byes remain
+    // visible after the latest completed week. Mobile keeps its existing
+    // completed-week density and horizontal footprint.
+    const maxWeek = useMobilePreviewSheet
+      ? (Number.isFinite(lastScoredLeg) && lastScoredLeg > 0
+        ? Math.min(lastScoredLeg, 18)
+        : 17)
+      : maxFantasyWeek;
     return Array.from({ length: maxWeek }, (_, i) => i + 1);
-  }, [lastScoredLeg]);
+  }, [lastScoredLeg, maxFantasyWeek, useMobilePreviewSheet]);
 
   const localRouteState = useMemo(() => ({
     viewMode,
@@ -1212,10 +1239,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
         // Only show players who were on team T's own roster this week.
         if (playerTeam !== team) continue;
 
-        let val;
-        if (statMode === 'rec_yd')       val = wEntry.rec_yd  ?? 0;
-        else if (statMode === 'rush_yd') val = wEntry.rush_yd ?? 0;
-        else val = calcPoints(wEntry, activeScoringSettings, player.position);
+        const val = getHeatmapOffenseStatValue(wEntry, activeScoringSettings, player.position, statMode);
         if (val <= 0) continue;
         const breakdown = statMode === 'pts' ? getScoreBreakdown(wEntry, activeScoringSettings, player.position) : null;
         const name = player.full_name || `${player.first_name ?? ''} ${player.last_name ?? ''}`.trim() || playerId;
@@ -1474,6 +1498,9 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
         week,
         clickable: false,
         style,
+        // A missing stat/schedule entry is still a real week column. Keep it
+        // visible as an unknown value on every viewport; only valued cells
+        // remain drilldown targets.
         kind: isBye ? 'bye' : isFiltered ? 'filtered' : played ? 'dash' : 'empty',
       };
     });
@@ -1541,9 +1568,15 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
   const mobileFilterSummary = useMemo(() => {
     const phaseLabel = viewMode === 'defense' ? 'Defense' : 'Offense';
     const positionLabel = activePos === 'ALL' ? 'All' : activePos;
-    const summary = [phaseLabel, positionLabel, activeStatLabel, activeLocationLabel, activeScopeLabel];
+    const summary = [
+      { id: 'phase', label: phaseLabel },
+      { id: 'position', label: positionLabel },
+      { id: 'stat', label: activeStatLabel },
+      { id: 'location', label: activeLocationLabel },
+      { id: 'scope', label: activeScopeLabel },
+    ];
     if (statMode === 'vegas_odds') {
-      summary.push(vegasOddsView === 'ou' ? 'O/U' : 'Spread');
+      summary.push({ id: 'odds-result', label: vegasOddsView === 'ou' ? 'O/U' : 'Spread' });
     }
     return summary;
   }, [activeLocationLabel, activePos, activeScopeLabel, activeStatLabel, statMode, vegasOddsView, viewMode]);
@@ -1561,7 +1594,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
         <div className="companion-heatmap-filter-summary">
           <CompanionSelectorButton
             active={filtersOpen}
-            className="companion-heatmap-filter-toggle"
+            className="companion-filter-toggle companion-heatmap-filter-toggle"
             size="xs"
             onClick={() => setFiltersOpen(open => !open)}
             aria-label={filtersOpen ? 'Hide Filters' : 'Show Filters'}
@@ -1570,15 +1603,16 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
             aria-controls="companion-heatmap-filter-panel"
           >
             <FunnelSimpleIcon size={20} weight={filtersOpen ? 'fill' : 'regular'} aria-hidden="true" />
-            <span className="sr-only">{filtersOpen ? 'Hide Filters' : 'Show Filters'}</span>
-          </CompanionSelectorButton>
-          <div className="companion-heatmap-filter-summary__rail" aria-label="Active heatmap filters">
-            {mobileFilterSummary.map(item => (
-              <span key={item} className="companion-heatmap-filter-summary__chip">
-                {item}
+            <span>Filters</span>
+            <span className="companion-filter-toggle__summary" aria-hidden="true">
+              <span className="sr-only">
+                {mobileFilterSummary.map(item => (
+                  <span key={item.id} className="companion-heatmap-filter-summary__chip">{item.label}</span>
+                ))}
               </span>
-            ))}
-          </div>
+              {mobileFilterSummary.map(item => item.label).join(' · ')}
+            </span>
+          </CompanionSelectorButton>
           {statMode === 'vegas_odds' && (
             <div className="relative shrink-0">
               <button
@@ -1730,13 +1764,21 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
 
       <SeasonHintBanner isEmpty={!statsLoading && !hasHeatmapData} className="mx-4 mb-3" />
 
-      {!loaded ? (
-        <div className="flex items-center justify-center py-16 px-4">
-          <span className="text-sm" style={{ color: 'var(--color-label-secondary)' }}>
-            {statsEnhancing ? 'Preparing heatmap…' : 'Load season stats to see defensive rankings.'}
-          </span>
-        </div>
-      ) : (
+      {/* Loading motion: shared skeleton -> reveal handoff, on the `fade`
+          entrance. The heatmap grid scrolls under sticky week headers, and a
+          transform-based entrance would make the animating wrapper their
+          containing block for the length of the reveal. Opacity alone does not.
+          Knobs and definitions: docs/Loading Motion.md. */}
+      <LoadingSwap
+        loading={!loaded}
+        entrance="fade"
+        resetKey={`${league?.league_id ?? ''}:${sortKey}`}
+        skeleton={(
+          <div className="px-4">
+            <SkeletonRows count={1} height="18rem" />
+          </div>
+        )}
+      >
         <div className="companion-heatmap-scroll-frame">
           <div
             ref={tableContainerRef}
@@ -1764,7 +1806,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
             />
           </div>
         </div>
-      )}
+      </LoadingSwap>
 
       {/* Drilldown modal */}
       {drilldown && (
@@ -2028,7 +2070,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {drilldownPlayers.map(({ name, position, val, breakdown, playerId, teamSource }, i) => {
                   const valLabel = viewMode === 'offense'
-                    ? (statMode === 'rec_yd' || statMode === 'rush_yd' ? 'yds' : 'pts')
+                    ? (offenseStatModes.find(m => m.id === statMode)?.valueLabel ?? 'pts')
                     : (DEF_STAT_MODES.find(m => m.id === defStatMode)?.statKey
                         ? DEF_STAT_MODES.find(m => m.id === defStatMode)?.label.toLowerCase()
                         : 'pts');

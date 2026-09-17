@@ -14,6 +14,7 @@ import {
   weeklyStatsForWeek,
 } from '../fixtures/tradeFixtures.js';
 import { installTradeFixtures } from './tradeTestHarness.js';
+import { baselineScope, MATCHUP_PROJECTION_BASELINE_STORAGE_KEY, scoringFingerprint } from '../../src/utils/matchupProjectionBaseline.js';
 
 const MOBILE_VIEWPORTS = [
   { name: 'small-phone', width: 320, height: 568 },
@@ -38,6 +39,49 @@ const RESPONSIVE_ROUTES = [
 
 test.beforeEach(async ({ page }) => {
   await installTradeFixtures(page, responsiveFixtureOverrides());
+});
+
+test('Fantasy Matchups cold load follows the live Sleeper leg instead of last_scored_leg', async ({ page }) => {
+  const weekOneLeagueSnapshot = {
+    ...league,
+    settings: { ...league.settings, last_scored_leg: 1 },
+  };
+  const weekTwoState = {
+    season: TEST_SEASON,
+    season_type: 'regular',
+    week: 2,
+    leg: 2,
+    display_week: 1,
+    league_season: TEST_SEASON,
+  };
+  const matchupWeeksRequested = [];
+  const nflStateRequests = [];
+
+  await page.unroute('https://api.sleeper.app/v1/**');
+  await installTradeFixtures(page, {
+    league: weekOneLeagueSnapshot,
+    leaguesBySeason: { ...leaguesBySeason, [TEST_SEASON]: [weekOneLeagueSnapshot] },
+    nflState: weekTwoState,
+  });
+  await page.route('**/v1/state/nfl*', async (route) => {
+    nflStateRequests.push(route.request().url());
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(weekTwoState),
+    });
+  });
+  page.on('request', (request) => {
+    const match = new URL(request.url()).pathname.match(/\/matchups\/(\d+)$/);
+    if (match) matchupWeeksRequested.push(Number(match[1]));
+  });
+
+  await page.goto('/fantasy/matchups');
+
+  await expect.poll(() => nflStateRequests.length).toBe(1);
+  await expect.poll(() => matchupWeeksRequested).toContain(2);
+  expect(matchupWeeksRequested).not.toContain(1);
+  await expect(page.getByRole('button', { name: 'Choose matchup week. Week 2 selected.' })).toBeVisible();
 });
 
 test('preseason Fantasy Rankings keeps shared ADP rows and team logos visible', async ({ page }) => {
@@ -90,10 +134,105 @@ test('preseason Fantasy Rankings keeps shared ADP rows and team logos visible', 
 
   const dismissTour = page.getByRole('button', { name: 'Dismiss' });
   if (await dismissTour.count()) await dismissTour.click();
+  await page.getByRole('button', { name: /open rankings filters/i }).click();
   await page.getByRole('button', { name: /NFL Team All NFL Teams/ }).click();
   const teamMenu = page.getByRole('menu', { name: 'NFL team filter' });
   await expect(teamMenu.getByTestId('companion-menu-team-logo')).toHaveCount(1);
   await expect(teamMenu.getByTestId('companion-menu-team-logo')).toHaveAttribute('src', /teamlogos\/nfl\/500\/buf\.png$/);
+});
+
+test('Fantasy Rankings keeps filters and search behind the Filters chip', async ({ page }) => {
+  await page.goto('/fantasy/rankings');
+
+  const filterToggle = page.getByRole('button', { name: /rankings filters/i });
+  await expect(filterToggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.getByPlaceholder('Search players...')).toHaveCount(0);
+
+  await filterToggle.click();
+  await expect(filterToggle).toHaveAttribute('aria-expanded', 'true');
+  const search = page.getByPlaceholder('Search players...');
+  await expect(search).toBeVisible();
+  await search.fill('Pocket');
+
+  await filterToggle.click();
+  await expect(search).toHaveCount(0);
+  await filterToggle.click();
+  await expect(page.getByPlaceholder('Search players...')).toHaveValue('Pocket');
+});
+
+test('Fantasy Waivers keeps position and search behind the Filters rail', async ({ page }) => {
+  const waiverPlayerId = '401';
+  const responsiveFixtures = responsiveFixtureOverrides();
+  const idpLeague = {
+    ...responsiveFixtures.league,
+    scoring_settings: {
+      ...responsiveFixtures.league.scoring_settings,
+      idp_tkl_solo: 2,
+      idp_sack: 4,
+    },
+  };
+  const idpFixtureState = {
+    ...responsiveFixtures.persistedSleeperState,
+    league: idpLeague,
+    leagues: [idpLeague],
+    leaguesBySeason: { ...responsiveFixtures.leaguesBySeason, [TEST_SEASON]: [idpLeague] },
+  };
+  const fixturePlayers = {
+    ...responsiveFixtures.players,
+    [waiverPlayerId]: {
+      ...responsiveFixtures.players[101],
+      player_id: waiverPlayerId,
+      full_name: 'Pocket Free Agent',
+      first_name: 'Pocket',
+      last_name: 'Free Agent',
+      position: 'DE',
+      fantasy_positions: ['DE'],
+    },
+  };
+  await page.unroute('https://api.sleeper.app/v1/**');
+  await installTradeFixtures(page, {
+    ...responsiveFixtures,
+    league: idpLeague,
+    leaguesBySeason: idpFixtureState.leaguesBySeason,
+    persistedSleeperState: idpFixtureState,
+    players: fixturePlayers,
+  });
+  await page.route(`https://api.sleeper.app/v1/stats/nfl/regular/${TEST_SEASON}/**`, async (route) => {
+    const week = Number(new URL(route.request().url()).pathname.split('/').at(-1));
+    const stats = weeklyStatsForWeek(week);
+    stats[waiverPlayerId] = { week, gp: 1, idp_tkl_solo: 5, idp_sack: 1 };
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(stats),
+    });
+  });
+  await page.goto('/fantasy/waivers');
+  await page.getByRole('button', { name: 'Dismiss' }).click({ timeout: 3000 }).catch(() => {});
+
+  const waiverRow = page.locator('.companion-player-row').filter({ hasText: 'Pocket Free Agent' });
+  await expect(waiverRow).toBeVisible();
+  await expect(waiverRow.locator('.companion-player-row__metric-value').first()).not.toHaveText('-');
+
+  const filterToggle = page.getByRole('button', { name: /waiver filters/i });
+  const filterPanel = page.getByTestId('fantasy-waiver-filter-panel');
+  await expect(filterToggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(filterPanel).toBeHidden();
+  await expect(page.getByPlaceholder('Search players...')).toBeHidden();
+
+  await filterToggle.click();
+  await expect(filterToggle).toHaveAttribute('aria-expanded', 'true');
+  await expect(filterPanel).toBeVisible();
+  await expect(filterPanel.getByRole('button', { name: 'QB', exact: true })).toBeVisible();
+
+  const search = filterPanel.getByPlaceholder('Search players...');
+  await search.fill('Pocket');
+  await filterToggle.click();
+  await expect(filterPanel).toBeHidden();
+  await expect(filterToggle).toContainText('Search: Pocket');
+
+  await filterToggle.click();
+  await expect(search).toHaveValue('Pocket');
 });
 
 test('Fantasy player rows keep their hover glow when the accent rail is hidden', async ({ page }) => {
@@ -366,6 +505,7 @@ for (const viewport of MOBILE_VIEWPORTS) {
       await expectNoDocumentOverflow(page, route);
       await expectNoCompanionIdentityEllipsis(page, route);
       if (route === '/fantasy/matchups') {
+        await expectNoContentAreaHorizontalOverflow(page, route);
         await expectNoMatchupRowCrowding(page, route);
       }
     }
@@ -415,6 +555,22 @@ test('Fantasy Rosters labels submitted Sleeper keepers', async ({ page }) => {
     expect(geometry).not.toBeNull();
     expect(geometry.labelHeight).toBeLessThanOrEqual(geometry.metaHeight + 1);
   }
+});
+
+test('Fantasy Rosters staggers position headings and player rows individually', async ({ page }) => {
+  await page.goto('/fantasy/rosters?team=1');
+
+  const reveal = page.locator('.gs-loadswap__content');
+  await expect(reveal).toBeVisible();
+  const items = reveal.locator(':scope > *');
+  await expect(items).toHaveCount(10);
+  await expect(items.nth(0)).toContainText('QB');
+  await expect(items.nth(1).locator('.companion-roster-player-row')).toHaveCount(1);
+
+  const delays = await items.evaluateAll((elements) => (
+    elements.slice(0, 4).map((element) => getComputedStyle(element).animationDelay)
+  ));
+  expect(delays).toEqual(['0s', '0.02s', '0.04s', '0.06s']);
 });
 
 test('Fantasy Rosters shows seasonal positional rank beside season points', async ({ page }) => {
@@ -655,9 +811,14 @@ test('mobile Companion controls enforce prerequisites and keep compact interacti
   const defenseFilters = page.getByRole('button', { name: 'Filters' });
   await expect(defenseFilters).toHaveAttribute('aria-expanded', 'false');
   await expect(page.locator('#companion-defense-filter-stack')).toBeHidden();
+  await expect(page.getByPlaceholder('Search team')).toHaveCount(0);
   await defenseFilters.click();
   await expect(defenseFilters).toHaveAttribute('aria-expanded', 'true');
-  await expect(page.locator('#companion-defense-filter-stack')).toBeVisible();
+  const defenseFilterStack = page.locator('#companion-defense-filter-stack');
+  await expect(defenseFilterStack).toBeVisible();
+  await expect(defenseFilterStack.getByRole('button', { name: 'Game Stats', exact: true })).toHaveClass(/is-active/);
+  await expect(defenseFilterStack.getByRole('button', { name: 'All', exact: true })).toHaveClass(/is-active/);
+  await expect(defenseFilterStack.getByRole('button', { name: 'Total Yds', exact: true })).toHaveClass(/is-active/);
 
   await page.goto('/fantasy/heatmap');
   const firstHeatmapValue = page.locator('td[data-heatmap-week]').first();
@@ -669,6 +830,25 @@ test('mobile Companion controls enforce prerequisites and keep compact interacti
   expect(closeSize).toBeGreaterThanOrEqual(44);
   await closeHeatmap.click();
   await expect(closeHeatmap).toHaveCount(0);
+});
+
+test('Fantasy Defenses keeps filters and search behind the Filters chip at desktop widths', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/fantasy/defenses');
+
+  const filterToggle = page.getByRole('button', { name: 'Filters' });
+  const filterStack = page.locator('#companion-defense-filter-stack');
+  await expect(filterToggle).toBeVisible();
+  await expect(filterStack).toBeHidden();
+  await expect(page.getByPlaceholder('Search team')).toHaveCount(0);
+
+  await filterToggle.click();
+  await expect(filterStack).toBeVisible();
+  await expect(page.getByPlaceholder('Search team')).toBeVisible();
+
+  await filterToggle.click();
+  await expect(filterStack).toBeHidden();
+  await expect(page.getByPlaceholder('Search team')).toHaveCount(0);
 });
 
 test('roster draft-pick rows follow the league draft slots from top to bottom', async ({ page }) => {
@@ -696,6 +876,7 @@ test('player preview keeps one maximum-height body while switching statistic mod
 test('Heatmap mobile keeps filters collapsed above the grid', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 568 });
   await page.goto('/fantasy/heatmap');
+  await dismissWhatsNew(page);
 
   await expect(page.getByRole('button', { name: 'Show Filters' })).toBeVisible();
   await expect(page.locator('#companion-heatmap-filter-panel')).toHaveCount(0);
@@ -707,9 +888,29 @@ test('Heatmap mobile keeps filters collapsed above the grid', async ({ page }) =
   await expect(page.locator('#companion-heatmap-filter-panel')).toHaveCount(0);
 });
 
+test('Heatmap filter summary keeps one chip per filter after changes', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/fantasy/heatmap');
+  await dismissWhatsNew(page);
+
+  const summaryChips = page.locator('.companion-heatmap-filter-summary__chip');
+  await expect(summaryChips).toHaveCount(5);
+
+  await page.getByRole('button', { name: 'Show Filters' }).click();
+  await page.getByRole('button', { name: 'By Week', exact: true }).click();
+  await page.getByRole('button', { name: 'Hide Filters' }).click();
+  await expect(summaryChips).toHaveCount(5);
+
+  await page.getByRole('button', { name: 'Show Filters' }).click();
+  await page.getByRole('button', { name: 'Overall', exact: true }).click();
+  await page.getByRole('button', { name: 'Hide Filters' }).click();
+  await expect(summaryChips).toHaveCount(5);
+});
+
 test('Heatmap desktop keeps filters collapsed and groups controls in one row', async ({ page }) => {
   await page.setViewportSize({ width: 2560, height: 1440 });
   await page.goto('/fantasy/heatmap');
+  await dismissWhatsNew(page);
 
   const filterToggle = page.getByRole('button', { name: 'Show Filters' });
   await expect(filterToggle).toBeVisible();
@@ -729,6 +930,51 @@ test('Heatmap desktop keeps filters collapsed and groups controls in one row', a
   const firstGroupRect = await filterGroups.first().boundingBox();
   expect(resultRect?.y).toBe(firstGroupRect?.y);
   expect(resultRect?.x).toBeGreaterThan(firstGroupRect?.x ?? 0);
+});
+
+test('Heatmap keeps empty weeks visible across viewport sizes', async ({ page }) => {
+  const expectedDesktopWeekCount = Number(league.settings.playoff_week_start);
+  for (const viewport of [
+    { width: 390, height: 844 },
+    { width: 768, height: 1024 },
+    { width: 1440, height: 900 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto('/fantasy/heatmap');
+    await dismissWhatsNew(page);
+
+    const emptyCell = page.locator('td[data-heatmap-empty]').first();
+    await expect(emptyCell, `${viewport.width}×${viewport.height}`).toBeVisible();
+    await expect(emptyCell).toHaveText('—');
+
+    if (viewport.width >= 1024) {
+      const weekHeaders = page.locator('th[data-heatmap-header-week]');
+      await expect(weekHeaders, `${viewport.width}×${viewport.height}`).toHaveCount(expectedDesktopWeekCount);
+      await expect(weekHeaders.last().locator('div').first()).toHaveText(`Wk ${expectedDesktopWeekCount}`);
+    }
+  }
+});
+
+test('Heatmap exposes raw QB sack and interception filters', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/fantasy/heatmap?pos=RB');
+  await dismissWhatsNew(page);
+  await page.getByRole('button', { name: 'Show Filters' }).click();
+  await expect(page.getByRole('button', { name: 'Sacks Taken', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'INTs Thrown', exact: true })).toHaveCount(0);
+
+  await page.goto('/fantasy/heatmap?pos=QB');
+  await dismissWhatsNew(page);
+
+  await page.getByRole('button', { name: 'Show Filters' }).click();
+  await expect(page.getByRole('button', { name: 'Sacks Taken', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'INTs Thrown', exact: true })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Sacks Taken', exact: true }).click();
+  await expect(page.locator('td[data-heatmap-week]').first()).toHaveText(/^\d+\.0$/);
+
+  await page.getByRole('button', { name: 'INTs Thrown', exact: true }).click();
+  await expect(page.locator('td[data-heatmap-week]').first()).toHaveText(/^\d+\.0$/);
 });
 
 test('Matchup team scoring breakdown opens as a mobile bottom sheet', async ({ page }) => {
@@ -811,6 +1057,13 @@ test('Fantasy Matchups shows a Week 1 forecast from the optional BDL projection 
   await expect(page.getByTestId('matchup-forecast-opponent')).toBeVisible();
   await expect(page.getByTestId('matchup-win-probability')).toBeVisible();
   await expect(page.locator('.companion-matchup-masthead__outcome')).toHaveCount(0);
+  await expect(page.locator('.companion-matchup-masthead__team-name')).toHaveCount(2);
+  const mastheadIdentity = page.locator('.companion-matchup-masthead__identity');
+  await expect(mastheadIdentity).toHaveCount(2);
+  await expect(mastheadIdentity.nth(0)).toHaveText('1st seed');
+  await expect(mastheadIdentity.nth(1)).toHaveText('3rd seed');
+  await expect(page.locator('.companion-matchup-masthead__identity-avatar')).toHaveCount(2);
+  await expect(page.locator('.companion-matchup-masthead__probability-side span')).toHaveCount(0);
   const projectedMetricColors = await page.locator('.companion-matchup-player-metric--projection .companion-player-row__metric-value').evaluateAll((nodes) => {
     const toRgb = (value) => {
       const match = value.trim().match(/^#([0-9a-f]{6})$/i);
@@ -828,11 +1081,13 @@ test('Fantasy Matchups shows a Week 1 forecast from the optional BDL projection 
   expect(projectedMetricColors.every(({ actual, expected }) => actual === expected)).toBe(true);
   await expect(page.getByTestId('matchup-win-probability')).toContainText(/win/i);
   await expect(page.getByTestId('matchup-win-probability')).toContainText('BALLDONTLIE');
+  await expect(page.locator('.companion-matchup-masthead__meta')).toHaveCount(0);
   const dismissTour = page.getByRole('button', { name: 'Dismiss' });
   if (await dismissTour.count()) await dismissTour.click();
   await page.getByTestId('matchup-forecast-details').getByText('Forecast details').click();
   await expect(page.getByTestId('matchup-forecast-details')).toContainText('Projected final');
   await expect(page.getByTestId('matchup-forecast-details')).toContainText('Expected edge');
+  await expect(page.getByTestId('matchup-forecast-details').locator('.companion-matchup-masthead__details-meta')).toBeVisible();
   await expect(page.locator('.companion-matchup-player-metric--projection').first()).toBeVisible();
   await expect(page.locator('.companion-matchup-player-row .companion-player-row__metric-label').filter({ hasText: /pts/i })).toHaveCount(0);
   await expect(page.locator('.companion-matchup-player-row .companion-player-row__metric-label').filter({ hasText: /proj/i })).toHaveCount(0);
@@ -855,6 +1110,44 @@ test('Fantasy Matchups shows a Week 1 forecast from the optional BDL projection 
       : [Infinity];
   });
   expect(Math.max(...alignedEdges)).toBeLessThanOrEqual(1);
+
+  // The masthead's VS control opens the week preview, not the rivalry modal.
+  await page.locator('.companion-matchup-masthead__axis').click();
+  const preview = page.locator('.matchup-preview-modal');
+  await expect(preview).toBeVisible();
+  await expect(preview.locator('.matchup-preview__chip')).toContainText('Week 1 preview');
+  await expect(preview.locator('.matchup-preview__side')).toHaveCount(2);
+  await expect(preview.locator('.matchup-preview__seam')).toBeVisible();
+
+  // Keys are generated, never templated: each one belongs to a distinct family
+  // and carries plain text rather than markup.
+  const keys = preview.locator('.matchup-preview__key');
+  const keyCount = await keys.count();
+  expect(keyCount).toBeGreaterThan(0);
+  expect(keyCount).toBeLessThanOrEqual(3);
+  const keyTags = await preview.locator('.matchup-preview__key-tag').allTextContents();
+  expect(new Set(keyTags).size).toBe(keyTags.length);
+  for (const text of await preview.locator('.matchup-preview__key-text').allTextContents()) {
+    expect(text.trim().length).toBeGreaterThan(0);
+    expect(text).not.toContain('<em>');
+  }
+
+  // The broadcast reveal is bound, and the panel never scrolls sideways.
+  const motion = await preview.evaluate((node) => ({
+    section: getComputedStyle(node.querySelector('.matchup-preview__odds')).animationName,
+    hero: getComputedStyle(node.querySelector('.matchup-preview__side.is-a')).animationName,
+    overflow: node.querySelector('.matchup-preview__body').scrollWidth
+      - node.querySelector('.matchup-preview__body').clientWidth,
+  }));
+  expect(motion.section).toBe('gridshift-reveal-in');
+  expect(motion.hero).toBe('gridshift-reveal-wipe-left');
+  expect(motion.overflow).toBeLessThanOrEqual(1);
+
+  // The rivalry section hands off to the full rivalry history rather than
+  // replacing it.
+  await preview.getByRole('button', { name: /rivalry history|meetings/i }).click();
+  await expect(page.locator('.matchup-rivalry-modal')).toBeVisible();
+  await expect(preview).toHaveCount(0);
 });
 
 test('Fantasy Matchups locks a historical matchup after stale schedule metadata is reconciled', async ({ page }) => {
@@ -910,13 +1203,45 @@ test('Fantasy Matchups locks a historical matchup after stale schedule metadata 
     });
   });
 
+  const baselineEntries = matchupsForWeek(1)
+    .filter((row) => row.matchup_id === 1)
+    .flatMap((row) => row.starters)
+    .map((playerId, index) => {
+      const snapshot = {
+        leagueId: TEST_LEAGUE_ID,
+        season: TEST_SEASON,
+        week: '1',
+        playerId,
+        scoringFingerprint: scoringFingerprint(persistedSleeperState().scoringSettings),
+        capturedAt: Date.parse('2026-09-06T12:00:00.000Z'),
+        kickoff: '2026-09-07T10:00:00.000Z',
+        projection: { projected: 10 + index, factors: { source: 'balldontlie' } },
+      };
+      return [
+        `${MATCHUP_PROJECTION_BASELINE_STORAGE_KEY}${encodeURIComponent(baselineScope(snapshot))}:${snapshot.capturedAt}`,
+        snapshot,
+      ];
+    });
+  await page.addInitScript((entries) => {
+    entries.forEach(([key, value]) => window.localStorage.setItem(key, JSON.stringify(value)));
+  }, baselineEntries);
+
   await page.goto('/fantasy/matchups?week=1');
 
   await expect(page.getByTestId('matchup-win-probability')).toContainText('100%');
   await expect(page.getByTestId('matchup-win-probability')).toContainText('Final score locked');
-  await expect(page.getByTestId('matchup-win-probability')).toContainText('Final result');
+  await expect(page.getByTestId('matchup-win-probability')).not.toContainText('Final result');
+  await expect(page.locator('.companion-matchup-masthead__axis-mode')).toHaveCount(0);
+  await expect(page.locator('.companion-matchup-masthead__team-name')).toHaveCount(2);
+  await expect(page.locator('.companion-matchup-masthead__probability-center')).toHaveCount(0);
+  await expect(page.locator('.companion-matchup-masthead__probability-side span')).toHaveCount(0);
   await expect.poll(() => reconciliationUrls.some((url) => url.includes('_gridshift='))).toBe(true);
-  await expect(page.locator('.companion-matchup-masthead__projected-final')).toHaveCount(0);
+  await expect(page.locator('.companion-matchup-masthead__projected-final')).toHaveCount(2);
+  await expect(page.locator('.companion-matchup-masthead__projection-delta')).toHaveCount(2);
+  await expect(page.locator('.companion-matchup-masthead__projection-delta').first()).toHaveText('+19.9');
+  await expect(page.locator('.companion-matchup-masthead__bench-points')).toHaveCount(2);
+  await expect(page.locator('.companion-matchup-masthead__bench-points').first()).toHaveText('POINTS LEFT ON BENCH 5.7');
+  await expect(page.locator('.companion-matchup-masthead__bench-points').nth(1)).toHaveText('POINTS LEFT ON BENCH 6.2');
 
   const dismissTour = page.getByRole('button', { name: 'Dismiss' });
   if (await dismissTour.count()) await dismissTour.click();
@@ -936,9 +1261,11 @@ test('Fantasy Matchups desktop controls fill the masthead and show the bench by 
   for (const viewport of desktopViewports) {
     await page.setViewportSize(viewport);
     await page.goto('/fantasy/matchups?week=1');
+    await dismissWhatsNew(page);
 
     const benchRows = page.locator('.companion-matchup-bench-list .companion-matchup-player-row');
-    await expect(page.locator('.companion-matchup-controls__rail .companion-selector-rail')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Select matchup' })).toBeVisible();
+    await expect(page.locator('.companion-matchup-controls__rail')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Hide bench players' })).toBeVisible();
     await expect(benchRows.first()).toBeVisible();
 
@@ -951,29 +1278,20 @@ test('Fantasy Matchups desktop controls fill the masthead and show the bench by 
       };
 
       return {
-        rail: getRect('.companion-matchup-controls__rail .companion-selector-rail'),
         masthead: getRect('.companion-matchup-masthead'),
         week: getRect('.companion-matchup-week-trigger'),
-        pager: getRect('.companion-matchup-controls__pager'),
-        pagerButtons: [...document.querySelectorAll('.companion-matchup-controls__pager > button')].map((button) => {
-          const rect = button.getBoundingClientRect();
-          return { height: rect.height };
-        }),
+        matchupTrigger: getRect('.companion-matchup-picker-trigger'),
         bench: getRect('button[aria-label="Hide bench players"]'),
       };
     });
-
-    expect(geometry.rail).not.toBeNull();
     expect(geometry.masthead).not.toBeNull();
     expect(geometry.week).not.toBeNull();
-    expect(geometry.pager).not.toBeNull();
+    expect(geometry.matchupTrigger).not.toBeNull();
     expect(geometry.bench).not.toBeNull();
-    expect(Math.abs(geometry.rail.left - geometry.masthead.left)).toBeLessThanOrEqual(1);
-    expect(Math.abs(geometry.rail.right - geometry.masthead.right)).toBeLessThanOrEqual(1);
-    expect(new Set([geometry.week.height, geometry.pager.height, geometry.bench.height]).size).toBe(1);
-    expect(geometry.pagerButtons.every(({ height }) => Math.abs(height - geometry.week.height) <= 1)).toBe(true);
-    expect(Math.abs(geometry.bench.right - geometry.rail.right)).toBeLessThanOrEqual(1);
-    expect(geometry.pager.width).toBeGreaterThan(348);
+    expect(Math.abs(geometry.week.height - geometry.bench.height)).toBeLessThanOrEqual(1);
+    expect(Math.abs(geometry.week.height - geometry.matchupTrigger.height)).toBeLessThanOrEqual(1);
+    expect(geometry.matchupTrigger.width).toBeGreaterThan(0);
+    expect(Math.abs(geometry.bench.right - geometry.masthead.right)).toBeLessThanOrEqual(1);
   }
 
   const hideBench = page.getByRole('button', { name: 'Hide bench players' });
@@ -982,6 +1300,55 @@ test('Fantasy Matchups desktop controls fill the masthead and show the bench by 
   await expect(page.locator('.companion-matchup-bench-list')).toHaveCount(0);
   await page.getByRole('button', { name: 'Show bench players' }).click();
   await expect(page.locator('.companion-matchup-bench-list .companion-matchup-player-row').first()).toBeVisible();
+});
+
+test('Fantasy Matchups mobile keeps only VS in the axis and contains the preview sheet', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/fantasy/matchups?week=1');
+  await dismissWhatsNew(page);
+
+  const masthead = page.locator('.companion-matchup-masthead');
+  const axis = masthead.locator('.companion-matchup-masthead__axis');
+  await expect(axis.locator('.companion-matchup-masthead__axis-label')).toHaveText('VS');
+  await expect(axis.locator('.companion-matchup-masthead__axis-icon')).toBeHidden();
+  await expect(axis.locator('.companion-matchup-masthead__axis-mode')).toBeHidden();
+
+  await axis.click();
+  const preview = page.locator('.matchup-preview-modal');
+  await expect(preview).toBeVisible();
+
+  const geometry = await preview.evaluate((element) => {
+    const panel = element.getBoundingClientRect();
+    const title = element.querySelector('.matchup-preview__title')?.getBoundingClientRect();
+    const body = element.querySelector('.matchup-preview__body');
+    return {
+      panelRight: panel.right,
+      titleLeft: title?.left ?? Infinity,
+      titleRight: title?.right ?? -Infinity,
+      bodyOverflow: body ? body.scrollWidth - body.clientWidth : Infinity,
+    };
+  });
+
+  expect(geometry.panelRight).toBeLessThanOrEqual(390 + 1);
+  expect(geometry.titleLeft).toBeGreaterThanOrEqual(-1);
+  expect(geometry.titleRight).toBeLessThanOrEqual(390 + 1);
+  expect(geometry.bodyOverflow).toBeLessThanOrEqual(1);
+});
+
+test('Fantasy Matchups picker selects a whole matchup', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/fantasy/matchups?week=1');
+
+  const selectMatchup = page.getByRole('button', { name: 'Select matchup' });
+  await selectMatchup.click();
+
+  const thirdMatchup = page.getByRole('button', { name: /Select matchup: Third Team bye/ });
+  await expect(thirdMatchup).toBeVisible();
+  await thirdMatchup.evaluate((button) => button.click());
+
+  await expect(page).toHaveURL(/\/fantasy\/matchups\?week=1&team=3$/);
+  await expect(selectMatchup).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.getByText('Week 1 Bye', { exact: true })).toBeVisible();
 });
 
 test('Fantasy Matchups keeps D/ST projections in the row metric track', async ({ page }) => {
@@ -1131,7 +1498,7 @@ test('Fantasy Matchups keeps D/ST projections in the row metric track', async ({
   await expect(dstRows.nth(0).locator('.companion-player-row__identity-label')).toHaveText('Washington Commanders');
   await expect(dstRows.nth(0).locator('.companion-player-row__meta')).toContainText('DEF WAS @ PHI');
   await expect(dstRows.nth(1).locator('.companion-player-row__identity-label')).toHaveText('Cincinnati Bengals');
-  await expect(dstRows.nth(1).locator('.companion-player-row__meta')).toContainText('DEF TB @ CIN');
+  await expect(dstRows.nth(1).locator('.companion-player-row__meta')).toContainText('DEF CIN v. TB');
 
   const geometry = await dstRows.evaluateAll((rows) => rows.map((row) => {
     const rowRect = row.getBoundingClientRect();
@@ -1334,6 +1701,22 @@ test('Matchup week picker opens as a shared mobile selection sheet', async ({ pa
   await expectMobileSheetFillsBottom(sheet, viewport);
 });
 
+test('player statistics back button returns to the originating Fantasy view', async ({ page }) => {
+  await page.goto('/fantasy/rosters');
+  await dismissWhatsNew(page);
+
+  await page.getByRole('button', { name: 'Open Christopher Pocket Commander-Supercalifragilistic', exact: true }).click();
+  await expect(page).toHaveURL(/\/statistics\/player\/1001\/christopher-pocket-commander-supercalifragilistic/);
+
+  const backButton = page.getByRole('button', { name: 'Rosters', exact: true });
+  await expect(backButton).toBeVisible();
+  await backButton.click();
+
+  await expect(page).toHaveURL(/\/fantasy\/rosters/);
+  await expect(page.getByRole('button', { name: 'Open Christopher Pocket Commander-Supercalifragilistic', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Choose a league', exact: true })).toHaveCount(0);
+});
+
 async function expectMobileSheetFillsBottom(sheet, viewport) {
   const geometry = await sheet.evaluate((element) => {
     const rect = element.getBoundingClientRect();
@@ -1457,6 +1840,16 @@ async function expectContentScrollNear(contentArea, expectedScrollTop) {
   ).toBeLessThanOrEqual(expectedScrollTop + 2);
 }
 
+async function dismissWhatsNew(page) {
+  const dismissButton = page.getByRole('button', { name: 'Dismiss' });
+  const visible = await dismissButton.waitFor({ state: 'visible', timeout: 5_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (!visible) return;
+  await dismissButton.click();
+  await expect(dismissButton).toHaveCount(0);
+}
+
 function responsiveFixtureOverrides() {
   const responsiveLeague = {
     ...league,
@@ -1465,7 +1858,8 @@ function responsiveFixtureOverrides() {
     settings: {
       ...league.settings,
       draft_rounds: 8,
-      last_scored_leg: 6,
+      // Current-season progress must not limit the picker to completed weeks.
+      last_scored_leg: 1,
     },
   };
   const previewLeague = {

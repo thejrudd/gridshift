@@ -22,8 +22,8 @@ const NFL_FIXTURE_PAIRS = [
 
 const FUTURE_KICKOFF = '2099-10-22T17:00:00Z';
 
-function scoreboardForWeek(week, { currentCompleted = false, currentKickoff = FUTURE_KICKOFF } = {}) {
-  const completed = week < 6 || currentCompleted;
+function scoreboardForWeek(week, { currentCompleted = false, currentKickoff = FUTURE_KICKOFF, completedOverride = null } = {}) {
+  const completed = completedOverride ?? (week < 6 || currentCompleted);
   return { events: week >= 1 && week <= 6 ? NFL_FIXTURE_PAIRS.map(([away, home], index) => ({
     id: `${away.toLowerCase()}-${home.toLowerCase()}-week-${week}`,
     date: week < 6 ? `2026-09-${String(week + 1).padStart(2, '0')}T17:00:00Z` : currentKickoff,
@@ -37,8 +37,19 @@ function scoreboardForWeek(week, { currentCompleted = false, currentKickoff = FU
   })) : [] };
 }
 
-async function openPlayer(page, name = 'Pocket Commander') {
-  await page.goto('/fantasy/matchups?week=6');
+function scoreboardForAppHydration(week, options = {}) {
+  const scoreboard = scoreboardForWeek(week, options);
+  return {
+    ...scoreboard,
+    events: scoreboard.events.map((event) => ({
+      ...event,
+      status: event.competitions?.[0]?.status ?? null,
+    })),
+  };
+}
+
+async function openPlayer(page, name = 'Pocket Commander', week = 6) {
+  await page.goto(`/fantasy/matchups?week=${week}`);
   const dismissTour = page.getByRole('button', { name: 'Dismiss' });
   if (await dismissTour.count()) await dismissTour.click();
   await expect(page.locator('.companion-matchup-player-metric--projection').first()).toBeVisible();
@@ -176,6 +187,33 @@ test('final timeline retains signed estimates without changing the official zero
   await captureDrilldown(page, testInfo, '-final');
 });
 
+test('player drilldown adopts the fresh final status when its cached matchup schedule is stale', async ({ page }) => {
+  test.skip(!['desktop', 'mobile', 'chromium-desktop', 'chromium-mobile'].includes(test.info().project.name), 'Interaction covered at desktop and phone widths.');
+  await page.route('**/api/statistics/scores/espn-week*', async (route) => {
+    const week = Number(new URL(route.request().url()).searchParams.get('week'));
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        phase: 'regular',
+        scoreboard: scoreboardForAppHydration(week, { completedOverride: true, currentKickoff: '2026-09-10T17:00:00Z' }),
+      }),
+    });
+  });
+  await page.route('https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard*', async (route) => {
+    const week = Number(new URL(route.request().url()).searchParams.get('week'));
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(scoreboardForWeek(week, { completedOverride: false, currentKickoff: '2026-09-10T17:00:00Z' })),
+    });
+  });
+
+  const dialog = await openPlayer(page, 'Target Magnet', 1);
+  await expect(dialog.getByText('Final fantasy points', { exact: true })).toBeVisible();
+  await expect(dialog.locator('[data-game-phase="final"]')).toBeVisible();
+});
+
 test('player drilldown presents a responsive pregame start-sit briefing', async ({ page }, testInfo) => {
   const dialog = await openPlayer(page);
   await expect(dialog.getByText('Projected fantasy points')).toBeVisible();
@@ -222,7 +260,7 @@ test('player drilldown presents a responsive pregame start-sit briefing', async 
   await expect(dialog).toHaveCount(0);
 });
 
-test('player comparison aligns the game rail with the split hero and overlays the versus mark', async ({ page }, testInfo) => {
+test('player comparison aligns the game rail with the split hero without a center graphic', async ({ page }, testInfo) => {
   await page.goto('/fantasy/matchups?week=6');
   const dismissTour = page.getByRole('button', { name: 'Dismiss' });
   if (await dismissTour.count()) await dismissTour.click();
@@ -283,7 +321,7 @@ test('player comparison aligns the game rail with the split hero and overlays th
     return {
       heroColumns: heroes ? getComputedStyle(heroes).gridTemplateColumns.trim().split(/\s+/).length : 0,
       hasAxisColumn: Boolean(heroes?.querySelector('.pmd-cmp-axis')),
-      hasVersusMark: Boolean(heroes?.querySelector('.pmd-cmp-heroes__versus')),
+      hasCenterGraphic: Boolean(heroes?.querySelector('.pmd-cmp-heroes__versus')),
       heroLogoCount: heroes?.querySelectorAll('.pmd-cmp-hero-logo').length ?? 0,
       rankAvatarCount: element.querySelectorAll('.pmd-cmp-rank-avatar').length,
       rankPlayerCount: element.querySelectorAll('.pmd-cmp-rank-player').length,
@@ -320,7 +358,7 @@ test('player comparison aligns the game rail with the split hero and overlays th
 
   expect(geometry.heroColumns).toBe(2);
   expect(geometry.hasAxisColumn).toBe(false);
-  expect(geometry.hasVersusMark).toBe(true);
+  expect(geometry.hasCenterGraphic).toBe(false);
   expect(geometry.heroLogoCount).toBe(2);
   expect(geometry.rankAvatarCount).toBe(2);
   expect(geometry.rankPlayerCount).toBe(2);
@@ -355,4 +393,7 @@ test('player comparison aligns the game rail with the split hero and overlays th
   expect(geometry.neutralValueColor).not.toBe(geometry.signatureColor);
   expect(geometry.seasonFormEyebrow).toContain('Season form · through');
   await captureDrilldown(page, testInfo, '-compare-layout');
+
+  await dialog.getByRole('button', { name: 'View Pocket Commander statistics' }).click();
+  await expect(page).toHaveURL(/\/statistics\/player\/1001\/pocket-commander/);
 });

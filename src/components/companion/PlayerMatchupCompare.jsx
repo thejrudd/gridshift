@@ -22,18 +22,39 @@ import PlayerAvatar from '../shared/PlayerAvatar.jsx';
 import PlayerStatusBadge from './PlayerStatusBadge.jsx';
 import {
   buildPlayerProjectionBreakdown,
+  describePlayerNegativeStats,
+  describePlayerStandoutStat,
   getPlayerMatchupPhase,
   matchupNumber,
   resolvePlayerDisplayProjection,
 } from '../../utils/playerMatchupPresentation.js';
 import { buildPlayerDefensePerformance } from '../../utils/playerDefensePerformance.js';
 import {
-  STAT_LABELS, formatNumber, formatOrdinal, signed,
+  STAT_LABELS, formatNumber, formatOrdinal, formatStat, signed,
   getChartMaximum, getChartPosition, getOpponentEvidenceLabel, getSeasonBenchmark,
 } from './PlayerMatchupBreakdown.jsx';
 import './PlayerMatchupBreakdown.css';
 
 // ── per-side model ───────────────────────────────────────────────────────────
+
+function summarizeCompareHistory(rows) {
+  if (!rows?.length) return null;
+  const points = rows.map(row => matchupNumber(row?.points)).filter(value => value != null);
+  if (!points.length) return null;
+  return {
+    games: points.length,
+    average: points.reduce((sum, value) => sum + value, 0) / points.length,
+    high: Math.max(...points),
+    last: points[points.length - 1],
+  };
+}
+
+function buildCompareVenueHistory(gameRows) {
+  return {
+    home: summarizeCompareHistory(gameRows.filter(row => row.isHome === true)),
+    road: summarizeCompareHistory(gameRows.filter(row => row.isHome === false)),
+  };
+}
 
 function usePlayerCompareModel({ player, week, baseline, weeklyStats, activeScoringSettings, players, scheduleMap }) {
   const phase = getPlayerMatchupPhase({ scheduleEntry: player?.scheduleEntry, gameStarted: player?.gameStarted });
@@ -85,6 +106,8 @@ function usePlayerCompareModel({ player, week, baseline, weeklyStats, activeScor
 
   const gameRows = peerModel?.overall?.gameRows ?? [];
   const ladderRows = gameRows.slice(-5).reverse();
+  const recentHistory = summarizeCompareHistory(gameRows.slice(-3));
+  const venueHistory = buildCompareVenueHistory(gameRows);
   const seasonHigh = gameRows.length
     ? Math.max(...gameRows.map(row => matchupNumber(row.points)).filter(v => v != null))
     : null;
@@ -106,6 +129,9 @@ function usePlayerCompareModel({ player, week, baseline, weeklyStats, activeScor
     seasonBenchmark, opponentContext,
     rankValue, peerCount, rankLabel,
     ladderRows,
+    recentHistory,
+    venueHistory,
+    statRanks: peerModel?.statRanks ?? [],
     seasonAvg: matchupNumber(peerModel?.overall?.ppg),
     seasonPoints: matchupNumber(peerModel?.overall?.points),
     seasonHigh,
@@ -117,21 +143,6 @@ function usePlayerCompareModel({ player, week, baseline, weeklyStats, activeScor
 
 // ── verdict ───────────────────────────────────────────────────────────────────
 
-// Countable, narratively significant scoring events — the kind of stat that
-// explains *why* a score happened, unlike a yardage total that only explains
-// magnitude. Used to pick the one standout line the verdict calls out.
-const HIGHLIGHT_STATS = {
-  pass_td: (n) => `${n} passing touchdown${n === 1 ? '' : 's'}`,
-  rush_td: (n) => `${n} rushing touchdown${n === 1 ? '' : 's'}`,
-  rec_td: (n) => `${n} receiving touchdown${n === 1 ? '' : 's'}`,
-  pass_int: (n) => `${n} interception${n === 1 ? '' : 's'}`,
-  fgm: (n) => `${n} field goal${n === 1 ? '' : 's'}`,
-  idp_sack: (n) => `${n} sack${n === 1 ? '' : 's'}`,
-  idp_int: (n) => `${n} interception${n === 1 ? '' : 's'}`,
-  def_td: (n) => `${n} defensive touchdown${n === 1 ? '' : 's'}`,
-  ret_td: (n) => `${n} return touchdown${n === 1 ? '' : 's'}`,
-};
-
 const PRIMARY_TD_STAT_BY_POSITION = {
   QB: { key: 'pass_td', label: 'passing touchdown' },
   RB: { key: 'rush_td', label: 'rushing touchdown' },
@@ -139,16 +150,126 @@ const PRIMARY_TD_STAT_BY_POSITION = {
   TE: { key: 'rec_td', label: 'receiving touchdown' },
 };
 
-function describeStandoutStat(model) {
-  let best = null;
-  for (const [key, describe] of Object.entries(HIGHLIGHT_STATS)) {
-    const row = model.statByKey.get(key);
-    const statVal = matchupNumber(row?.statVal);
-    const pts = matchupNumber(row?.pts);
-    if (statVal == null || statVal <= 0 || pts == null || pts <= 0) continue;
-    if (!best || pts > best.pts) best = { pts, text: describe(statVal) };
-  }
-  return best?.text ?? null;
+function stableCompareStorySeed(left, right) {
+  const source = [left?.id, right?.id, left?.oppTeam, right?.oppTeam, left?.position].join('|');
+  return [...source].reduce((hash, character) => ((hash * 31) + character.charCodeAt(0)) >>> 0, 7);
+}
+
+const POSITION_NOUNS = {
+  QB: 'quarterbacks',
+  RB: 'running backs',
+  WR: 'wide receivers',
+  TE: 'tight ends',
+  K: 'kickers',
+  DEF: 'team defenses',
+};
+
+function buildComparePregameVerdict(winner, loser, diff) {
+  const position = winner.position ?? 'position';
+  const positionNoun = POSITION_NOUNS[position] ?? `${position} players`;
+  const winnerProjection = matchupNumber(winner.displayProjection?.projected) ?? matchupNumber(winner.heroValue);
+  const loserProjection = matchupNumber(loser.displayProjection?.projected) ?? matchupNumber(loser.heroValue);
+  if (winnerProjection == null || loserProjection == null) return null;
+  const opponent = winner.oppTeam;
+  const contextAllowed = matchupNumber(winner.opponentContext?.ptsAllowedPerGame);
+  const contextLeagueAverage = matchupNumber(winner.opponentContext?.leagueAveragePtsAllowed);
+  const contextDelta = matchupNumber(winner.opponentContext?.differenceFromLeagueAverage)
+    ?? (contextAllowed != null && contextLeagueAverage != null ? contextAllowed - contextLeagueAverage : null);
+  const allowed = matchupNumber(winner.opponentContext?.ptsAllowedPerGame);
+  const defenseRank = matchupNumber(winner.opponentContext?.rank);
+  const defenseCount = matchupNumber(winner.opponentContext?.teamCount);
+  const defenseQuarter = defenseCount != null ? Math.max(1, Math.ceil(defenseCount / 4)) : null;
+  const defenseTier = defenseRank != null && defenseQuarter != null
+    ? defenseRank <= defenseQuarter ? 'tough'
+      : defenseRank > defenseCount - defenseQuarter ? 'soft'
+        : null
+    : null;
+  const matchupInsight = opponent && defenseTier
+    ? `${defenseTier === 'tough' ? 'a tough' : 'a favorable'} ${position} draw against ${opponent} (#${defenseRank} of ${defenseCount} defenses)`
+    : opponent && allowed != null && contextDelta != null && Math.abs(contextDelta) >= 0.75
+      ? `${opponent} allowing ${allowed.toFixed(1)} fantasy points to ${positionNoun} per game, ${contextDelta > 0 ? 'above' : 'below'} the league average`
+      : null;
+
+  const seasonAverage = matchupNumber(winner.seasonAvg);
+  const seasonDelta = winnerProjection != null && seasonAverage != null ? winnerProjection - seasonAverage : null;
+  const seasonInsight = seasonDelta != null && Math.abs(seasonDelta) >= 0.5
+    ? `the ${winnerProjection.toFixed(1)} forecast landing ${Math.abs(seasonDelta).toFixed(1)} ${seasonDelta >= 0 ? 'above' : 'below'} their ${seasonAverage.toFixed(1)} season average`
+    : null;
+
+  const recent = winner.recentHistory;
+  const recentDelta = recent?.average != null && seasonAverage != null ? recent.average - seasonAverage : null;
+  const recentInsight = recent?.games >= 2
+    ? recentDelta != null && Math.abs(recentDelta) >= 0.75
+      ? `their last ${recent.games} games averaging ${recent.average.toFixed(1)} points, ${Math.abs(recentDelta).toFixed(1)} ${recentDelta >= 0 ? 'above' : 'below'} their season rate`
+      : `their last ${recent.games} games averaging ${recent.average.toFixed(1)} points`
+    : null;
+  const seasonHighInsight = recent?.games >= 2 && winner.seasonHigh != null && recent.high === winner.seasonHigh
+    ? `a ${winner.seasonHigh.toFixed(1)}-point season high in their recent form`
+    : null;
+
+  const currentVenue = winner.isHome === true ? winner.venueHistory?.home
+    : winner.isHome === false ? winner.venueHistory?.road
+      : null;
+  const otherVenue = winner.isHome === true ? winner.venueHistory?.road
+    : winner.isHome === false ? winner.venueHistory?.home
+      : null;
+  const venueLabel = winner.isHome === true ? 'home' : winner.isHome === false ? 'road' : null;
+  const venueInsight = currentVenue?.games >= 2
+    ? otherVenue?.games >= 2 && Math.abs(currentVenue.average - otherVenue.average) >= 0.75
+      ? `their ${currentVenue.average.toFixed(1)}-point average at ${venueLabel} versus ${otherVenue.average.toFixed(1)} at the other venue`
+      : `a ${currentVenue.average.toFixed(1)}-point average across ${currentVenue.games} ${venueLabel} games`
+    : null;
+
+  const statRank = (winner.statRanks ?? [])
+    .map(result => ({ ...result, rank: matchupNumber(result.rank), peerCount: matchupNumber(result.peerCount) }))
+    .filter(result => result.rank != null && result.peerCount != null && result.rank <= Math.min(3, result.peerCount))
+    .sort((a, b) => a.rank - b.rank)[0];
+  const statRankInsight = statRank
+    ? `a ${position}${statRank.rank} season rank in ${String(statRank.label).toLowerCase()}`
+    : null;
+
+  const winnerCeiling = matchupNumber(winner.rangeHigh);
+  const loserCeiling = matchupNumber(loser.rangeHigh);
+  const ceilingInsight = winnerCeiling != null && loserCeiling != null && winnerCeiling - loserCeiling >= 0.5
+    ? `a higher likely ceiling of ${winnerCeiling.toFixed(1)} points versus ${loserCeiling.toFixed(1)}`
+    : null;
+
+  const insights = [
+    matchupInsight ? { kind: 'defense', priority: defenseTier ? 4 : 3, text: matchupInsight } : null,
+    venueInsight ? { kind: 'venue-history', priority: 4, text: venueInsight } : null,
+    recentInsight ? { kind: 'recent-form', priority: recentDelta != null && Math.abs(recentDelta) >= 0.75 ? 3 : 2, text: recentInsight } : null,
+    seasonHighInsight ? { kind: 'stat-history', priority: 3, text: seasonHighInsight } : null,
+    statRankInsight ? { kind: 'stat-history', priority: 2, text: statRankInsight } : null,
+    seasonInsight ? { kind: 'season-average', priority: 2, text: seasonInsight } : null,
+    ceilingInsight ? { kind: 'ceiling', priority: 1, text: ceilingInsight } : null,
+    opponent ? {
+      kind: 'venue', priority: 1,
+      text: winner.isHome === true ? `a home date against ${opponent}`
+        : winner.isHome === false ? `a road date at ${opponent}`
+          : `a date against ${opponent}`,
+    } : null,
+  ].filter(Boolean).sort((a, b) => b.priority - a.priority);
+  const storySeed = stableCompareStorySeed(winner, loser);
+  const primaryPool = insights.slice(0, Math.min(4, insights.length));
+  const primary = primaryPool.length ? primaryPool[storySeed % primaryPool.length] : null;
+  const secondaryPool = insights.filter(insight => insight !== primary && insight.kind !== primary?.kind && insight.priority >= 2);
+  const eligibleSecondaryPool = secondaryPool.filter(insight => (primary?.text.length ?? 0) + insight.text.length <= 190);
+  const secondary = eligibleSecondaryPool.length && storySeed % 3 !== 1
+    ? eligibleSecondaryPool[(storySeed >>> 3) % eligibleSecondaryPool.length]
+    : null;
+  const leadTemplates = [
+    `${winner.name} has the stronger ${position} forecast: ${winnerProjection.toFixed(1)} to ${loserProjection.toFixed(1)}, a ${diff.toFixed(1)}-point edge`,
+    `The ${position} forecast leans ${winner.name}'s way by ${diff.toFixed(1)} points — ${winnerProjection.toFixed(1)} to ${loserProjection.toFixed(1)}`,
+    `${winner.name} owns a ${diff.toFixed(1)}-point projection edge over ${loser.name}`,
+    `This ${position} call tilts toward ${winner.name}: ${winnerProjection.toFixed(1)} against ${loserProjection.toFixed(1)}`,
+    `${winner.name} takes the ${position} projection lead by ${diff.toFixed(1)} points`,
+    `The numbers give ${winner.name} a ${diff.toFixed(1)}-point edge at ${position} — ${winnerProjection.toFixed(1)} to ${loserProjection.toFixed(1)}`,
+    `${winner.name} enters this one ${diff.toFixed(1)} projected points clear of ${loser.name}`,
+    `The pregame lean is ${winner.name}'s by ${diff.toFixed(1)} points at ${position}`,
+  ];
+  const lead = leadTemplates[stableCompareStorySeed(loser, winner) % leadTemplates.length];
+  const evidence = [primary, secondary].filter(Boolean).map((insight, index) => `${index === 0 ? 'with' : 'plus'} ${insight.text}`).join(', ');
+  return `${lead}${evidence ? `, ${evidence}` : ''}.`;
 }
 
 function buildCompareVerdict(left, right) {
@@ -173,8 +294,10 @@ function buildCompareVerdict(left, right) {
       }
     }
 
-    const standout = describeStandoutStat(winner);
+    const standout = describePlayerStandoutStat(winner);
     if (standout) sentence += ` with ${standout}`;
+    const winnerNegatives = describePlayerNegativeStats(winner);
+    if (winnerNegatives) sentence += ` despite ${winnerNegatives}`;
     sentence += '.';
 
     // A second sentence only when the trailing player had a genuinely bad
@@ -182,8 +305,10 @@ function buildCompareVerdict(left, right) {
     // their position's headline scoring stat.
     if (bothFinal) {
       const loserProjected = matchupNumber(loser.displayProjection?.projected);
+      const loserNegatives = describePlayerNegativeStats(loser);
+      if (loserNegatives) sentence += ` ${loser.name} was hurt by ${loserNegatives}.`;
       const primary = PRIMARY_TD_STAT_BY_POSITION[loser.position];
-      if (loserProjected != null && primary) {
+      if (!loserNegatives && loserProjected != null && primary) {
         const loserProjDelta = loser.heroValue - loserProjected;
         const loserHadNone = !(matchupNumber(loser.statByKey.get(primary.key)?.statVal) > 0);
         if (loserProjDelta <= -3 && loserHadNone) {
@@ -197,12 +322,9 @@ function buildCompareVerdict(left, right) {
 
   if (bothPregame && left.heroValue != null && right.heroValue != null && Math.abs(left.heroValue - right.heroValue) >= 0.3) {
     const winner = left.heroValue > right.heroValue ? left : right;
+    const loser = winner === left ? right : left;
     const diff = Math.abs(left.heroValue - right.heroValue);
-    const matchupNote = winner.opponentContext?.ptsAllowedPerGame != null && winner.opponentContext?.leagueAveragePtsAllowed != null
-      && winner.opponentContext.ptsAllowedPerGame > winner.opponentContext.leagueAveragePtsAllowed
-      ? `, drawing the softer matchup against ${winner.oppTeam}`
-      : '';
-    return `${winner.name} projects ${diff.toFixed(1)} higher${matchupNote}.`;
+    return buildComparePregameVerdict(winner, loser, diff);
   }
 
   return null;
@@ -342,7 +464,8 @@ function CompareHero({ player, side, darkMode, onViewStats }) {
     <Tag
       type={clickable ? 'button' : undefined}
       onClick={clickable ? onViewStats : undefined}
-      className={`pmd-cmp-hero is-${side}`}
+      aria-label={clickable ? `View ${player?.name ?? 'player'} statistics` : undefined}
+      className={`pmd-cmp-hero is-${side}${clickable ? ' focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]' : ''}`}
       style={style}
     >
       <PlayerAvatar player={player} name={player?.name} size={84} className="pmd-cmp-hero-avatar" />
@@ -426,7 +549,19 @@ export default function PlayerMatchupCompare({ left, right, week, slotLabel, lef
     ?? 'var(--color-accent-orange)';
 
   const hasRange = bothPregame && (leftModel.rangeLow != null || rightModel.rangeLow != null);
-  const canOpenStats = (player) => Boolean(onViewStats && player?.id);
+  const getStatsPlayerMeta = (player) => {
+    const raw = players?.[player?.id] ?? player;
+    const id = raw?.espn_id ?? raw?.espnId ?? player?.espnId ?? player?.id;
+    if (!onViewStats || id == null) return null;
+    return {
+      id: String(id),
+      displayName: player?.name ?? raw?.full_name ?? raw?.name,
+      teamId: raw?.team ?? player?.team ?? null,
+      position: raw?.position ?? player?.position ?? null,
+      experience: raw?.years_exp != null ? raw.years_exp + 1 : undefined,
+    };
+  };
+  const canOpenStats = (player) => Boolean(getStatsPlayerMeta(player));
 
   // Generalized stat-category comparison, keyed off whatever rows each side
   // actually has (final box score if the game has started, else the
@@ -453,7 +588,7 @@ export default function PlayerMatchupCompare({ left, right, week, slotLabel, lef
       onClose={onClose}
       mobileSheet
       ariaLabel={`Compare ${leftModel.name} and ${rightModel.name}`}
-      containerClassName="matchup-breakdown-dialog pmd-cmp-dialog flex flex-col"
+      containerClassName="matchup-breakdown-dialog pmd-cmp-dialog gridshift-reveal flex flex-col"
       containerStyle={{ background: 'var(--color-bg)', border: '1px solid var(--color-separator)', maxWidth: '900px', maxHeight: '90dvh' }}
     >
       <header className="pmd-cmp-hd">
@@ -466,15 +601,10 @@ export default function PlayerMatchupCompare({ left, right, week, slotLabel, lef
         </button>
       </header>
 
-      <div className="pmd-cmp-body" style={{ '--pmd-cmp-left-bar': leftTeamColor, '--pmd-cmp-right-bar': rightTeamColor }}>
+      <div className="pmd-cmp-body gridshift-reveal gridshift-reveal--auto" style={{ '--pmd-cmp-left-bar': leftTeamColor, '--pmd-cmp-right-bar': rightTeamColor }}>
         <div className="pmd-cmp-heroes">
-          <CompareHero player={left} side="left" darkMode={darkMode} onViewStats={canOpenStats(left) ? () => { onClose(); onViewStats(left.id); } : null} />
-          <CompareHero player={right} side="right" darkMode={darkMode} onViewStats={canOpenStats(right) ? () => { onClose(); onViewStats(right.id); } : null} />
-          <span className="pmd-cmp-heroes__versus" aria-hidden="true">
-            <svg viewBox="0 0 100 100" focusable="false">
-              <path d="M10 14 50 86 90 14" />
-            </svg>
-          </span>
+          <CompareHero player={left} side="left" darkMode={darkMode} onViewStats={canOpenStats(left) ? () => { const meta = getStatsPlayerMeta(left); onClose(); onViewStats(meta.id, meta); } : null} />
+          <CompareHero player={right} side="right" darkMode={darkMode} onViewStats={canOpenStats(right) ? () => { const meta = getStatsPlayerMeta(right); onClose(); onViewStats(meta.id, meta); } : null} />
         </div>
 
         <div className="pmd-cmp-games">
@@ -551,8 +681,8 @@ export default function PlayerMatchupCompare({ left, right, week, slotLabel, lef
                 <CompareRow
                   key={key}
                   label={label}
-                  valA={rowA?.statVal != null ? String(rowA.statVal) : '—'}
-                  valB={rowB?.statVal != null ? String(rowB.statVal) : '—'}
+                  valA={formatStat(rowA?.statVal)}
+                  valB={formatStat(rowB?.statVal)}
                   subA={ptsA != null ? `${signed(ptsA)} pts` : null}
                   subB={ptsB != null ? `${signed(ptsB)} pts` : null}
                   numA={ptsA} numB={ptsB}

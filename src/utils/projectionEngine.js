@@ -1,5 +1,10 @@
 // ── Fantasy Projection Engine ─────────────────────────────────────────────────
-import { calcPoints, calcPointsFromTotals, createPointsCalculator } from './scoringEngine.js';
+import {
+  calcPoints,
+  calcPointsFromTotals,
+  createPointsCalculator,
+  STAT_TO_SCORING_KEY,
+} from './scoringEngine.js';
 
 const IDP_POSITIONS = new Set(['DL', 'LB', 'DB', 'DE', 'DT', 'CB', 'S', 'ILB', 'OLB', 'SS', 'FS']);
 const PASSING_POSITIONS = new Set(['QB', 'WR', 'TE']);
@@ -33,6 +38,10 @@ const POSITION_RANK_CACHE = new WeakMap();
 const WEEKLY_POSITION_RANK_CACHE = new WeakMap();
 const DEFENSE_TABLE_CACHE = new WeakMap();
 const LEAGUE_AVG_BY_POS_CACHE = new WeakMap();
+const RECORDED_FANTASY_TOTAL_KEYS = new Set([
+  '_fantasyPoints', 'fantasy_points', 'appliedTotal',
+  'pts_ppr', 'pts_half_ppr', 'pts_std',
+]);
 
 function isCacheKeyable(value) {
   return value != null && (typeof value === 'object' || typeof value === 'function');
@@ -64,6 +73,30 @@ function addPositionAliases(valuesByPos) {
     }
   }
   return next;
+}
+
+/**
+ * Return whether a stats payload contains a recorded fantasy-stat value.
+ * A games-played marker alone is not enough: empty or unplayed placeholders
+ * must not enter a ranking pool. Zero-valued recorded stats still qualify.
+ */
+export function hasRecordedFantasyStats(stats, weeklyRows = null) {
+  if (!stats || typeof stats !== 'object') {
+    return Array.isArray(weeklyRows) && weeklyRows.some((row) => hasRecordedFantasyStats(row));
+  }
+
+  const hasRecordedStat = Object.entries(stats).some(([key, value]) => (
+    (key in STAT_TO_SCORING_KEY || RECORDED_FANTASY_TOTAL_KEYS.has(key))
+    && Number.isFinite(Number(value))
+  ));
+  if (hasRecordedStat) return true;
+
+  const contributions = stats._fantasyContributions;
+  if (contributions && typeof contributions === 'object' && Object.values(contributions).some((value) => Number.isFinite(Number(value)))) {
+    return true;
+  }
+
+  return Array.isArray(weeklyRows) && weeklyRows.some((row) => hasRecordedFantasyStats(row));
 }
 
 /**
@@ -102,8 +135,8 @@ export function computePositionalRanks(seasonStats, players, scoringSettings) {
     if (!p) continue;
     const pos = normalizePos(p.position);
     if (!pos) continue;
+    if (!hasRecordedFantasyStats(stats)) continue;
     const pts = calcFantasyPoints(stats, p.position);
-    if (pts <= 0) continue;
     if (!byPos[pos]) byPos[pos] = [];
     byPos[pos].push({ id, pts });
   }
@@ -147,8 +180,8 @@ export function computeWeeklyPositionalRanks(weeklyStats, players, scoringSettin
     if (!player) continue;
     const pos = normalizePos(player.position);
     if (!pos) continue;
+    if (!hasRecordedFantasyStats(weekEntry)) continue;
     const pts = calcFantasyPoints(weekEntry, player.position);
-    if (pts <= 0) continue;
     if (!byPos[pos]) byPos[pos] = [];
     byPos[pos].push({ id: playerId, pts });
   }
@@ -788,6 +821,7 @@ function getSnapFactor(weeklyArr, pos, recentWeeks = 4) {
  * @param {Object}   allWeeklyStats - Full season weekly stats for all players
  * @param {Object}   players     - Full player DB
  * @param {Object}   scoringSettings
+ * @param {number}   minimumGames - Minimum positive prior games; defaults to 2
  * @returns {{ projected: number, min: number, max: number, factors: Object } | null}
  */
 export function projectPlayer({
@@ -797,6 +831,7 @@ export function projectPlayer({
   leagueAvg,           // optional pre-computed league avg PPG for this position
   skipOpponentLookup,  // when true, skip getOpponentStrength fallback if defStrength is null
   priorWeeklyOverride,  // optional completed-history rows for preseason baselines
+  minimumGames = 2,     // callers with an explicit early-season surface may opt into one game
 }) {
   if (!weeklyArr?.length && !priorWeeklyOverride?.length) return null;
 
@@ -809,7 +844,10 @@ export function projectPlayer({
     .map(w => calcPoints(w, scoringSettings, pos))
     .filter(p => p > 0);
 
-  if (gamePts.length < 2) return null;
+  const requiredGameCount = Number.isFinite(Number(minimumGames))
+    ? Math.max(1, Math.floor(Number(minimumGames)))
+    : 2;
+  if (gamePts.length < requiredGameCount) return null;
 
   const seasonAvg = gamePts.reduce((s, p) => s + p, 0) / gamePts.length;
 

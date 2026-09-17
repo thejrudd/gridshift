@@ -482,4 +482,36 @@ export const WHATS_NEW = [
       },
     ],
   },
+  {
+    version: '9.0.0',
+    title: 'Fantasy Intelligence & Visual Overhaul',
+    features: [
+      {
+        id: 'fantasy-injuries',
+        name: 'Fantasy Injuries',
+        description: 'Review rostered availability concerns with optional weekly designation evidence and filters that keep fantasy and NFL context together.',
+        steps: [{
+          route: { activeTab: 'fantasy', companionView: 'injuries' },
+          anchor: '[data-tour="companion-view-injuries"]',
+          anchorMobile: null,
+          title: 'Open Fantasy Injuries',
+          body: 'Injuries collects your rostered availability concerns in one place. Filter by fantasy team, position, NFL team, or player, then expand a row for the evidence available for that week.',
+          placement: 'auto',
+        }],
+      },
+      {
+        id: 'fantasy-matchup-drilldowns',
+        name: 'Fantasy Matchup drilldowns',
+        description: 'Move from a weekly matchup into player comparisons, scoring detail, projections, opponent difficulty, and manager rivalry context.',
+        steps: [{
+          route: { activeTab: 'fantasy', companionView: 'matchups' },
+          anchor: '[data-tour="companion-view-matchup"]',
+          anchorMobile: null,
+          title: 'Explore Matchup detail',
+          body: 'Open Matchups to compare the weekly slate, inspect a player for scoring and opponent context, and use the matchup preview for a deeper read on the rivalry and forecast.',
+          placement: 'auto',
+        }],
+      },
+    ],
+  },
 ];

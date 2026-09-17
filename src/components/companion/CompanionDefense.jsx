@@ -22,13 +22,13 @@ import { getCompanionInitials, getCompanionPlayerImageUrl, getNflTeamLogoUrl } f
 import { isNflRegularSeasonStarted } from '../../utils/seasonAvailability.js';
 import Modal from '../Modal.jsx';
 import SeasonHintBanner from '../ui/SeasonHintBanner';
+import LoadingSwap, { SkeletonRows } from '../ui/LoadingSwap.jsx';
 import { CompanionSearchField, CompanionSelectorButton, CompanionSelectorRail } from './CompanionSelectorControls.jsx';
 import CompanionPlayerRow, { CompanionPlayerMetric } from './CompanionPlayerRow.jsx';
 
 const ALL_TEAMS = Object.keys(STADIUMS).sort();
 const ESPN_LOGO_KEY = { WAS: 'wsh' };
 const COMPACT_ROW_QUERY = '(max-width: 720px)';
-const COMPACT_FILTER_QUERY = '(max-width: 767px)';
 const MOBILE_DRILLDOWN_QUERY = '(max-width: 1023px)';
 const TEAM_DISPLAY_NAMES = {
   ARI: 'Arizona Cardinals',
@@ -187,7 +187,6 @@ export default function CompanionDefense({ routeState, onRouteStateChange }) {
   const statsEnhancing = useSleeperStatsEnhancing();
   const { darkMode } = useTheme();
   const compactRows = useMediaQuery(COMPACT_ROW_QUERY);
-  const compactFilters = useMediaQuery(COMPACT_FILTER_QUERY);
   const mobileDrilldown = useMediaQuery(MOBILE_DRILLDOWN_QUERY);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [selectedTeam, setSelectedTeam] = useState(null);
@@ -256,8 +255,8 @@ export default function CompanionDefense({ routeState, onRouteStateChange }) {
       {hasDefenseData && <div className="companion-defense-toolbar px-4 pb-3">
         <button
           type="button"
-          className="companion-defense-filter-toggle"
-          aria-expanded={!compactFilters || filtersOpen}
+          className={`companion-filter-toggle companion-defense-filter-toggle${filtersOpen ? ' is-active' : ''}`}
+          aria-expanded={filtersOpen}
           aria-controls="companion-defense-filter-stack"
           onClick={() => setFiltersOpen((open) => !open)}
         >
@@ -265,14 +264,14 @@ export default function CompanionDefense({ routeState, onRouteStateChange }) {
             <path d="M4 6h16M7 12h10M10 18h4" />
           </svg>
           <span>Filters</span>
-          <span className="companion-defense-filter-toggle__summary" aria-hidden="true">
-            {state.position === 'ALL' ? 'All' : state.position} · {state.mode === 'fantasy' ? 'Fantasy' : 'Game stats'}
+          <span className="companion-filter-toggle__summary companion-defense-filter-toggle__summary" aria-hidden="true">
+            {state.mode === 'fantasy' ? 'Fantasy' : 'Game stats'} · {state.position === 'ALL' ? 'All' : state.position} · {getDefenseRankingStatOption(state.position, state.stat).shortLabel}
           </span>
         </button>
 
         <div
           id="companion-defense-filter-stack"
-          className={`companion-defense-filter-stack${compactFilters && !filtersOpen ? ' is-collapsed' : ''}`}
+          className={`companion-defense-filter-stack${!filtersOpen ? ' is-collapsed' : ''}`}
         >
           <CompanionSelectorRail ariaLabel="Defense value mode">
             {[
@@ -321,14 +320,13 @@ export default function CompanionDefense({ routeState, onRouteStateChange }) {
               </CompanionSelectorButton>
             )}
           </CompanionSelectorRail>
-        </div>
-
-        <div className="companion-defense-search-wrap">
-          <CompanionSearchField
-            value={state.query}
-            onChange={(event) => updateRouteState({ query: event.target.value })}
-            placeholder="Search team"
-          />
+          <div className="companion-defense-search-wrap">
+            <CompanionSearchField
+              value={state.query}
+              onChange={(event) => updateRouteState({ query: event.target.value })}
+              placeholder="Search team"
+            />
+          </div>
         </div>
       </div>}
 
@@ -344,11 +342,10 @@ export default function CompanionDefense({ routeState, onRouteStateChange }) {
         <div className="companion-defense-empty">
           Defensive rankings will appear when the {season} NFL regular season begins.
         </div>
-      ) : loading ? (
-        <div className="companion-defense-empty">
-          {statsEnhancing ? 'Preparing defensive rankings...' : 'Load season stats to see defensive rankings.'}
-        </div>
       ) : (
+        /* Structure first: the table frame and its sort headers are present
+           from the first frame, and only the rows are placeholders. Loading
+           motion knobs: docs/Loading Motion.md. */
         <div className="companion-defense-table-frame">
           <div className="companion-defense-row-header">
             <span>Rank</span>
@@ -359,7 +356,13 @@ export default function CompanionDefense({ routeState, onRouteStateChange }) {
             </div>
             <span aria-hidden="true" />
           </div>
-          <div className="companion-defense-row-list">
+          <LoadingSwap
+            loading={loading}
+            resetKey={`${season}:${state.stat}:${state.mode}`}
+            className="companion-defense-row-list"
+            skeletonClassName="companion-defense-row-list"
+            skeleton={<SkeletonRows count={8} height="3.25rem" rowClassName="!rounded-none" />}
+          >
             {filteredRows.map(row => (
               <CompanionPlayerRow
                 key={row.team}
@@ -408,8 +411,8 @@ export default function CompanionDefense({ routeState, onRouteStateChange }) {
                 }}
               />
             ))}
-          </div>
-          {filteredRows.length === 0 && (
+          </LoadingSwap>
+          {!loading && filteredRows.length === 0 && (
             <div className="companion-defense-empty">No defenses match that team search.</div>
           )}
         </div>

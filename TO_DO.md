@@ -65,7 +65,6 @@ GridShift is a labor-of-love project: it should create something genuinely usefu
 - **Interactive week-by-week picks** - Extend the schedule surface with a week-first prediction flow so users can pick games directly from the full weekly slate instead of entering game picks only through a team drilldown.
 
 ### Fantasy Companion
-- **Optional BALLDONTLIE player designations** - Add the NFL player designations endpoint for week-scoped player availability, including the most recent practice report, game status, starter designation, and related fields. Keep the integration optional and server-side. See [BALLDONTLIE player designations](https://nfl.balldontlie.io/#player-designations).
 - **Team tendencies and usage projections** - Add team offense/defense rankings, sortable league/conference/division tables, fantasy matchup context, and the usage-based projection model. See `docs/Projection Usage Model Plan.md`.
 - **Rankings week filter** - Let users view weekly player performances while keeping Season as the default Rankings view.
 - **Fantasy-team identity in Rankings** - Show each rostered player's fantasy team when space allows and remove the redundant “Rostered” label in those layouts.

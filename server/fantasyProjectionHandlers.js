@@ -136,6 +136,10 @@ function normalizeProviderProjection(row) {
   };
 }
 
+export function isRequestedFantasyProjectionRow(row, season, week) {
+  return Number(row?.season) === Number(season) && Number(row?.week) === Number(week);
+}
+
 export async function fetchFantasyProjections({
   season,
   week,
@@ -161,7 +165,9 @@ export async function fetchFantasyProjections({
     season: parsed.season,
     week: parsed.week,
     data: Array.isArray(result.payload?.data)
-      ? result.payload.data.map(normalizeProviderProjection)
+      ? result.payload.data
+        .filter((row) => isRequestedFantasyProjectionRow(row, parsed.season, parsed.week))
+        .map(normalizeProviderProjection)
       : [],
     meta: result.payload?.meta ?? null,
     source: { ...FANTASY_PROJECTIONS_SOURCE },

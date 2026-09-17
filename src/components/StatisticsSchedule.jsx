@@ -1159,7 +1159,11 @@ export default function StatisticsSchedule({
   const selectedTeamId = normalizeScheduleTeamId(teamId);
   const routePreseasonWeek = getPreseasonWeekSelection(week);
   const routeRegularWeek = routePreseasonWeek ? null : normalizeScheduleWeek(week);
-  const preseasonRequested = includePreseason || Boolean(routePreseasonWeek);
+  // Preseason is a By Week scope. Keep it out of the By Team data path as
+  // well as hiding its control, so a prior By Week preference cannot make
+  // preseason rows appear without a visible way to change that scope.
+  const preseasonRequested = activeMode === STATISTICS_SCHEDULE_MODES.WEEK
+    && (includePreseason || Boolean(routePreseasonWeek));
   const preseasonScheduleData = preseasonState.season === scheduleSeason ? preseasonState.data : null;
   const regularWeekOptions = useMemo(
     () => buildWeekOptions(scheduleData, NFL_SEASON_PHASES.REGULAR),
@@ -1352,10 +1356,12 @@ export default function StatisticsSchedule({
             onClick={() => setMode(STATISTICS_SCHEDULE_MODES.TEAM)}
           />
         </div>
-        <IncludePreseasonControl
-          checked={preseasonRequested}
-          onChange={togglePreseason}
-        />
+        {activeMode === STATISTICS_SCHEDULE_MODES.WEEK && (
+          <IncludePreseasonControl
+            checked={preseasonRequested}
+            onChange={togglePreseason}
+          />
+        )}
         <span className="statistics-schedule-status">{scheduleStatusLabel}</span>
       </div>
 

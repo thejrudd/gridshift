@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSleeperBase } from '../../context/SleeperContext';
-import { getLiveMatchups, getNflState, getWeeklyStats } from '../../api/sleeperApi';
+import { getLiveMatchups, getNflState, getWeeklyProjections, getWeeklyStats } from '../../api/sleeperApi';
 import { calcPoints, calcPointsFromTotals } from '../../utils/scoringEngine';
 import { fetchSeasonSchedule } from '../../utils/playerApi.js';
 import { getCompanionInitials } from '../../utils/companionAssetVisuals.js';
@@ -41,6 +41,7 @@ import {
   projectFromGameInfo,
   resolveStarterGameInfo,
 } from '../../utils/starterProjections.js';
+import { mapSleeperProjectionsToPlayers } from '../../utils/sleeperProjections.js';
 import {
   appendWinProbPoint,
   buildWinProbHistoryKey,
@@ -671,6 +672,7 @@ export default function CompanionLive({ onViewPlayer = null }) {
   const [statsByGame, setStatsByGame] = useState({});
   const [sleeperStatsByPlayer, setSleeperStatsByPlayer] = useState({});
   const [sleeperStatsFetchedAt, setSleeperStatsFetchedAt] = useState(null);
+  const [sleeperProjectionMap, setSleeperProjectionMap] = useState(new Map());
   const [cumulativeMatchupsByWeek, setCumulativeMatchupsByWeek] = useState({});
   const [localScheduleMap, setLocalScheduleMap] = useState(null);
   const [liveError, setLiveError] = useState('');
@@ -1425,6 +1427,33 @@ export default function CompanionLive({ onViewPlayer = null }) {
 
   const activeScheduleMapForContext = scheduleMap ?? localScheduleMap;
 
+  useEffect(() => {
+    if (sandboxActive || platform !== 'sleeper' || !season || !week || !players) {
+      setSleeperProjectionMap((current) => (current.size ? new Map() : current));
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    let cancelled = false;
+    void getWeeklyProjections(season, week, controller.signal)
+      .then((rows) => {
+        if (cancelled) return;
+        setSleeperProjectionMap(mapSleeperProjectionsToPlayers({
+          players,
+          projectionRows: rows,
+          scoringSettings: activeScoringSettings,
+        }));
+      })
+      .catch((error) => {
+        if (!cancelled && error?.name !== 'AbortError') setSleeperProjectionMap(new Map());
+      });
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [activeScoringSettings, platform, players, sandboxActive, season, week]);
+
   // Shared projection context — the same assembly Companion Matchup uses, so
   // both tabs always show identical pre-kickoff projections.
   const projectionContext = useMemo(() => {
@@ -1435,8 +1464,9 @@ export default function CompanionLive({ onViewPlayer = null }) {
       scheduleMap: activeScheduleMapForContext,
       scoringSettings: activeScoringSettings,
       week,
+      sleeperProjections: sleeperProjectionMap,
     });
-  }, [activeScheduleMapForContext, activeScoringSettings, players, week, weeklyStats]);
+  }, [activeScheduleMapForContext, activeScoringSettings, players, sleeperProjectionMap, week, weeklyStats]);
 
   const starterInfoById = useMemo(() => {
     const map = new Map();
@@ -1880,7 +1910,7 @@ export default function CompanionLive({ onViewPlayer = null }) {
 
     (async () => {
       try {
-        for (const game of relevant) {
+        await Promise.allSettled(relevant.map(async (game) => {
           if (playRequestContextRef.current !== requestContext) return;
           const gameId = String(game.id);
           const marker = playsFetchedRef.current.get(gameId);
@@ -1894,7 +1924,7 @@ export default function CompanionLive({ onViewPlayer = null }) {
             : !marker
               || (final && !marker.final)
               || (!final && now - marker.at >= PLAYS_REFRESH_MIN_MS);
-          if (!shouldFetch) continue;
+          if (!shouldFetch) return;
           try {
             const payload = mockPlays
               ? {
@@ -1908,7 +1938,7 @@ export default function CompanionLive({ onViewPlayer = null }) {
             const data = payload?.data;
             // A transport failure is not a valid empty play slice. Keep the game
             // unmarked so the next snapshot refresh retries even while paused.
-            if (payload?.retryable) continue;
+            if (payload?.retryable) return;
             playsFetchedRef.current.set(gameId, { at: Date.now(), final, progress: sandbox?.progress });
             setPlaysByGame((prev) => ({
               ...prev,
@@ -1917,7 +1947,7 @@ export default function CompanionLive({ onViewPlayer = null }) {
           } catch {
             // Leave the marker unset so a later tick can retry.
           }
-        }
+        }));
       } finally {
         playFetchInFlightContextsRef.current.delete(requestContext);
       }

@@ -8,7 +8,9 @@ import {
   getDraftTradedPicks,
   getLeague,
   getLeagueDrafts,
+  getLiveLeague,
   getLeagueRosters,
+  getWeeklyProjections,
 } from '../../src/api/sleeperApi.js';
 
 describe('Sleeper stats aggregation', () => {
@@ -86,6 +88,48 @@ test('non-live Sleeper endpoints keep default fetch caching behavior', async () 
   try {
     await getLeague('league-1');
     assert.equal(calls[0].options.cache, undefined);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('weekly Sleeper projections use the public projection endpoint without credentials', async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push({ url: String(url), options });
+    return { ok: true, json: async () => [] };
+  };
+
+  try {
+    await getWeeklyProjections('2026', 2);
+    assert.equal(calls[0].url, 'https://api.sleeper.com/projections/nfl/2026/2?season_type=regular');
+    assert.equal(calls[0].options.cache, 'no-store');
+    assert.deepEqual(calls[0].options.headers, { Accept: 'application/json' });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('live Sleeper league metadata bypasses stale caches', async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push({ url: String(url), options });
+    return {
+      ok: true,
+      json: async () => ({}),
+    };
+  };
+
+  try {
+    await getLiveLeague('league-1');
+    assert.equal(calls[0].options.cache, 'no-store');
+    const url = new URL(calls[0].url);
+    assert.equal(url.pathname, '/v1/league/league-1');
+    assert.match(url.searchParams.get('_gridshift') ?? '', /^\d+-\d+$/);
   } finally {
     globalThis.fetch = originalFetch;
   }

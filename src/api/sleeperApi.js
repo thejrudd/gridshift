@@ -40,6 +40,14 @@ export function getLeague(leagueId) {
   return get(`/league/${leagueId}`);
 }
 
+/**
+ * Bypasses browser/intermediary caches for current league snapshots used by
+ * historical reconciliation.
+ */
+export function getLiveLeague(leagueId) {
+  return getLive(`/league/${leagueId}`);
+}
+
 export function getLeagueRosters(leagueId) {
   return getLive(`/league/${leagueId}/rosters`);
 }
@@ -124,6 +132,22 @@ export function getWeeklyStats(season, week) {
  */
 export function getPlayerSeasonStats(playerId, season) {
   return get(`/stats/nfl/player/${playerId}?season_type=regular&season=${season}&grouping=week`);
+}
+
+/**
+ * Fetch the public Sleeper weekly projection snapshot. Unlike the player
+ * directory, this endpoint carries the projected stat line for each player;
+ * callers score that line against the connected league's settings.
+ */
+export function getWeeklyProjections(season, week, signal) {
+  const params = new URLSearchParams({ season_type: 'regular' });
+  return fetch(
+    `https://api.sleeper.com/projections/nfl/${encodeURIComponent(season)}/${encodeURIComponent(week)}?${params}`,
+    { signal, headers: { Accept: 'application/json' }, cache: 'no-store' },
+  ).then((res) => {
+    if (!res.ok) throw new Error(`Sleeper projection API error: ${res.status}`);
+    return res.json();
+  });
 }
 
 

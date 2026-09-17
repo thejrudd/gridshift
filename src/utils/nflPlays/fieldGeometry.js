@@ -118,11 +118,19 @@ export function isNonSnapPlay(play) {
  * but the provider already files the play under the kicking team, and the ball
  * flies at the goal line rather than to a spot — `getKickGeometry` owns it.
  */
-function isPossessionChangingPlay(play) {
+export function isKickPossessionPlay(play) {
   const slug = String(play?.typeSlug ?? '').toLowerCase();
   if (!slug) return false;
   if (/kickoff|punt/.test(slug)) return true;
-  if (/field.?goal.?(?:missed|blocked)|blocked.?field.?goal/.test(slug)) return true;
+  return /field.?goal.?(?:missed|blocked)|blocked.?field.?goal/.test(slug);
+}
+
+function isPossessionChangingPlay(play) {
+  const slug = String(play?.typeSlug ?? '').toLowerCase();
+  if (!slug) return false;
+  // A kick is a possession change the two sides line up for: the kicking team
+  // is the offense and the coverage unit, the receiving team fields it.
+  if (isKickPossessionPlay(play)) return true;
   if (/interception/.test(slug)) return true;
   // `opp` covers both `-opp-` and `-opponent`; a slug uses one or the other.
   return /fumble/.test(slug) && /opp/.test(slug);

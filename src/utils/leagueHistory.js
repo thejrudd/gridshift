@@ -4,6 +4,7 @@ import {
   getLosersBracket,
   getMatchups,
   getTransactions,
+  getLiveLeague,
   getWinnersBracket,
 } from '../api/sleeperApi.js';
 import { cachedFetch } from './playerCache.js';
@@ -669,6 +670,20 @@ export function getSeasonChampion(snapshot) {
   const championship = brackets.championship.find((matchup) => matchup.placement === 1 && matchup.winner)
     ?? [...brackets.championship].sort((left, right) => right.round - left.round).find((matchup) => matchup.winner)
     ?? null;
+  const identities = buildSeasonParticipantIdentities(snapshot);
+  const metadataWinner = identities.get(key(snapshot?.league?.metadata?.latest_league_winner_roster_id)) ?? null;
+  if (metadataWinner) {
+    const matchingChampionship = brackets.championship.find((matchup) => (
+      matchup.winner?.id === metadataWinner.id
+      && matchup.placement === 1
+    )) ?? null;
+    return {
+      season: String(snapshot.season),
+      participant: metadataWinner,
+      runnerUp: matchingChampionship?.loser ?? null,
+      matchup: matchingChampionship,
+    };
+  }
   if (championship?.winner) {
     return {
       season: String(snapshot.season),
@@ -1036,7 +1051,15 @@ async function safeFetch(fetcher) {
 export async function fetchLeagueHistorySnapshot({ league, season, completed = false }) {
   const leagueId = key(league?.league_id);
   if (!leagueId) throw new Error('League history is missing a Sleeper league ID.');
-  const lastScoredLeg = number(league?.settings?.last_scored_leg, 0);
+  const refreshedLeague = completed ? null : await getLiveLeague(leagueId).catch(() => null);
+  const snapshotLeague = refreshedLeague?.league_id
+    ? {
+      ...league,
+      ...refreshedLeague,
+      settings: { ...(league?.settings ?? {}), ...(refreshedLeague.settings ?? {}) },
+    }
+    : league;
+  const lastScoredLeg = number(snapshotLeague?.settings?.last_scored_leg, 0);
   const matchupWeeks = completed
     ? LEAGUE_HISTORY_WEEKS
     : LEAGUE_HISTORY_WEEKS.filter((week) => week <= Math.max(1, lastScoredLeg));
@@ -1055,8 +1078,8 @@ export async function fetchLeagueHistorySnapshot({ league, season, completed = f
   });
   return {
     leagueId,
-    league,
-    season: String(season ?? league?.season ?? ''),
+    league: snapshotLeague,
+    season: String(season ?? snapshotLeague?.season ?? ''),
     completed,
     rosters: Array.isArray(rosters) ? rosters : [],
     users: Array.isArray(users) ? users : [],
@@ -1067,11 +1090,29 @@ export async function fetchLeagueHistorySnapshot({ league, season, completed = f
   };
 }
 
+function hasMatchupRows(snapshot) {
+  return Object.values(snapshot?.matchupsByWeek ?? {}).some((rows) => Array.isArray(rows) && rows.length > 0);
+}
+
+function shouldCacheLeagueHistorySnapshot(snapshot, completed) {
+  if (!completed) return getLatestFinalizedWeek(snapshot) > 0;
+  if (!hasMatchupRows(snapshot)) return false;
+  return getLatestFinalizedWeek(snapshot) > 0
+    && (key(snapshot?.league?.metadata?.latest_league_winner_roster_id)
+      || bracketHasEvidence(snapshot?.winnersBracket)
+      || bracketHasEvidence(snapshot?.losersBracket));
+}
+
 export function getLeagueHistorySnapshot({ league, season, completed = false }) {
   const ttl = completed ? Infinity : CURRENT_LEAGUE_HISTORY_TTL;
+  // Historical snapshots used to cache a transient empty bracket forever.
+  // Keep one generation for both paths so that the first load after this fix
+  // cannot reuse that poisoned permanent entry.
+  const cacheVersion = 'v2';
   return cachedFetch(
-    `league-history:v1:${league?.league_id}:${season}`,
+    `league-history:${cacheVersion}:${league?.league_id}:${season}`,
     () => fetchLeagueHistorySnapshot({ league, season, completed }),
     ttl,
+    (snapshot) => shouldCacheLeagueHistorySnapshot(snapshot, completed),
   );
 }

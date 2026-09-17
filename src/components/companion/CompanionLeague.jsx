@@ -25,6 +25,7 @@ import CompanionPlayerRow, {
 } from './CompanionPlayerRow.jsx';
 import StatsProgressBanner from '../ui/StatsProgressBanner';
 import UiEmptyState from '../ui/EmptyState';
+import LoadingSwap, { SkeletonRows } from '../ui/LoadingSwap.jsx';
 
 const POSITION_ORDER = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF', 'DL', 'LB', 'DB', 'DE', 'DT', 'CB', 'S'];
 const MAX_ROUNDS = 36; // generous cap — Sleeper dynasty startups can run 25+ rounds
@@ -513,6 +514,7 @@ function LeagueRosterView({ onTradePlayer, onViewPlayer = null, tradeDisabled = 
   const emptyRosterMessage = platform === 'espn'
     ? `No players on this ESPN roster for ${season} — switch to a completed season.`
     : 'No players on this roster.';
+  const rosterSkeletonCount = Math.min(Math.max(selectedRosterPlayerIds.length, 4), 8);
 
   return (
     <>
@@ -612,41 +614,52 @@ function LeagueRosterView({ onTradePlayer, onViewPlayer = null, tradeDisabled = 
         </div>
       </div>
 
-      {!players && <EmptyState message="Loading player database…" />}
-
-      {players && selectedRoster && (
-        POSITION_ORDER.filter(pos => grouped[pos]?.length).map(pos => (
-          <div key={pos} className="mb-4">
+      {/* Loading motion: shared skeleton -> reveal handoff. Position headings
+          and player rows are individual reveal items, so the roster fills in
+          the same readable cascade as the other Fantasy lists.
+          Knobs and definitions: docs/Loading Motion.md. */}
+      <LoadingSwap
+        loading={!players}
+        resetKey={selectedRosterId ?? ''}
+        skeleton={<SkeletonRows count={rosterSkeletonCount} height="4rem" className="mx-2 sm:mx-4" />}
+      >
+        {players && selectedRoster && POSITION_ORDER.filter(pos => grouped[pos]?.length).flatMap((pos, groupIndex) => {
+          const isOpponent = selectedRosterId !== myRosterData?.roster_id;
+          const isOwnRoster = selectedRosterId === myRosterData?.roster_id;
+          return [
             <div
-              className="mx-2 sm:mx-4 mb-0 px-4 py-2 text-xs font-bold uppercase tracking-widest"
+              key={`${pos}-heading`}
+              className={`mx-2 sm:mx-4 mb-0 px-4 py-2 text-xs font-bold uppercase tracking-widest${groupIndex > 0 ? ' mt-4' : ''}`}
               style={{
                 color: 'white',
                 background: POSITION_COLORS[pos] ?? 'var(--color-label-tertiary)',
               }}
             >
               {pos}
-            </div>
-            {grouped[pos].map(player => {
-              const isOpponent = selectedRosterId !== myRosterData?.roster_id;
-              const isOwnRoster = selectedRosterId === myRosterData?.roster_id;
-              return (
-                <LeagueResponsivePlayerRow key={player.id} player={player} layout={layout} isCompactPhone={isCompactPhone} statsPending={statsLoading} onSelect={() => {
+            </div>,
+            ...grouped[pos].map(player => (
+              <LeagueResponsivePlayerRow
+                key={player.id}
+                player={player}
+                layout={layout}
+                isCompactPhone={isCompactPhone}
+                statsPending={statsLoading}
+                onSelect={() => {
                   if (useMobilePreviewSheet) setSelectedPlayerId(player.id);
                   else onViewPlayer?.(player.id);
                 }}
-                  onTrade={
-                    onTradePlayer && isOpponent ? () => onTradePlayer(player.id, selectedRosterId, 'get')
-                    : onTradePlayer && isOwnRoster ? () => onTradePlayer(player.id, null, 'give')
-                    : null
-                  }
-                  tradeDisabled={tradeDisabled}
-                  tradeDisabledTitle={tradeDisabledTitle}
-                />
-              );
-            })}
-          </div>
-        ))
-      )}
+                onTrade={
+                  onTradePlayer && isOpponent ? () => onTradePlayer(player.id, selectedRosterId, 'get')
+                  : onTradePlayer && isOwnRoster ? () => onTradePlayer(player.id, null, 'give')
+                  : null
+                }
+                tradeDisabled={tradeDisabled}
+                tradeDisabledTitle={tradeDisabledTitle}
+              />
+            )),
+          ];
+        })}
+      </LoadingSwap>
 
       {players && rosterPlayers.length === 0 && !statsLoading && (
         <EmptyState message={emptyRosterMessage} />
