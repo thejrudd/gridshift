@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { DEFAULT_SCORING } from '../../src/utils/scoringEngine.js';
-import { getCachedOffenseAllowedTable } from '../../src/utils/fantasyHeatmapData.js';
+import { getCachedOffenseAllowedTable, getHeatmapOffenseStatValue } from '../../src/utils/fantasyHeatmapData.js';
 import { buildPlayerDefensePerformance } from '../../src/utils/playerDefensePerformance.js';
 
 function twoTeamSchedule(weeks) {
@@ -13,6 +13,29 @@ function twoTeamSchedule(weeks) {
 }
 
 describe('Fantasy Heatmap shared offense aggregation', () => {
+  it('aggregates QB sacks taken and interceptions thrown as raw stat modes', () => {
+    const players = {
+      qbA: { position: 'QB', team: 'BUF' },
+      qbB: { position: 'QB', team: 'LAC' },
+    };
+    const weeklyStats = {
+      qbA: [{ week: 1, team: 'BUF', pass_sack: 3, pass_int: 1 }],
+      qbB: [{ week: 1, team: 'LAC', pass_sack: 0, pass_int: 2 }],
+    };
+    const scheduleMap = {};
+
+    assert.equal(getHeatmapOffenseStatValue(weeklyStats.qbA[0], { pass_sack: 0 }, 'QB', 'pass_sack'), 3);
+    assert.equal(getHeatmapOffenseStatValue(weeklyStats.qbA[0], { pass_int: 0 }, 'QB', 'pass_int'), 1);
+    assert.deepEqual(
+      getCachedOffenseAllowedTable(weeklyStats, players, scheduleMap, DEFAULT_SCORING, 'pass_sack'),
+      { BUF: { QB: { 1: 3 } } },
+    );
+    assert.deepEqual(
+      getCachedOffenseAllowedTable(weeklyStats, players, scheduleMap, DEFAULT_SCORING, 'pass_int'),
+      { BUF: { QB: { 1: 1 } }, LAC: { QB: { 1: 2 } } },
+    );
+  });
+
   it('preserves Heatmap’s positive-only values and traded-player fallback team', () => {
     const players = {
       traded: { position: 'WR', team: 'NEW' },
@@ -41,14 +64,15 @@ describe('player defense performance', () => {
     const weeklyStats = { target: [{ week: 2, team: 'OFF', rush_yd: 40 }] };
     const scheduleMap = {
       2: {
-        OFF: { opp: 'DEF', completed: true },
-        DEF: { opp: 'OFF', completed: true },
+        OFF: { opp: 'DEF', completed: true, home: false },
+        DEF: { opp: 'OFF', completed: true, home: true },
         OTHER: { opp: 'THIRD', completed: false },
       },
     };
     const result = buildPlayerDefensePerformance({ playerId: 'target', weeklyStats, players, scheduleMap, currentWeek: 2, scoringSettings: DEFAULT_SCORING });
     assert.equal(result.completedThroughWeek, 2);
     assert.equal(result.overall.games, 1);
+    assert.equal(result.overall.gameRows[0].isHome, false);
   });
 
   it('uses only supplied fully completed weeks and retains negative actual fantasy performances', () => {

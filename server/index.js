@@ -3,6 +3,7 @@ import process from 'node:process';
 import { createBalldontlieGateway } from './balldontlieGateway.js';
 import { createFantasyAdpRouter } from './fantasyAdpHandlers.js';
 import { createFantasyProjectionsRouter } from './fantasyProjectionHandlers.js';
+import { createPlayerDesignationsRouter } from './playerDesignationHandlers.js';
 import { createLiveGameSnapshotStore } from './liveGameSnapshots.js';
 import { createLiveRouter, getLiveConfigStatus } from './liveHandlers.js';
 import { createStatisticsScoresRouter } from './statisticsScoresHandlers.js';
@@ -61,6 +62,7 @@ app.use('/api/statistics/scores', createStoryStatsRouter({
 }));
 app.use('/api/fantasy', createFantasyAdpRouter({ gateway: balldontlieGateway }));
 app.use('/api/fantasy', createFantasyProjectionsRouter({ gateway: balldontlieGateway }));
+app.use('/api/fantasy', createPlayerDesignationsRouter({ gateway: balldontlieGateway }));
 
 app.listen(port, host, () => {
   console.log(`GridShift API listening on ${host}:${port}`);

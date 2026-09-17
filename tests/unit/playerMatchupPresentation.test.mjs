@@ -5,10 +5,13 @@ import {
   buildPlayerOutlook,
   buildPlayerProjectionBreakdown,
   buildPlayerStatComparison,
+  describePlayerNegativeStats,
+  describePlayerStandoutStat,
   getNoteworthyWeather,
   getPlayerPerformanceTarget,
   getPlayerMatchupPhase,
   getRangeMarkerPosition,
+  groupFantasyBreakdownRows,
   matchupNumber,
 } from '../../src/utils/playerMatchupPresentation.js';
 
@@ -54,6 +57,26 @@ test('projection breakdown respects league scoring and position bonuses', () => 
   assert.ok(result.rows.some(row => row.key === 'bonus_rec_te'));
 });
 
+test('projected stat-line grouping keeps every row and routes bonuses to their stat family', () => {
+  const rows = [
+    { key: 'rush_yd', statKey: 'rush_yd', pts: 5.62 },
+    { key: 'rec_yd', statKey: 'rec_yd', pts: 2.16 },
+    { key: 'bonus_rush_40p', statKey: 'bonus_rush_40p', pts: 0.18 },
+    { key: 'bonus_rec_40p', statKey: 'bonus_rec_40p', pts: 0.17 },
+    { key: 'bonus_rush_rec_yd_100', statKey: 'bonus_rush_rec_yd_100', pts: 0.4 },
+    { key: 'fum_lost', statKey: 'fum_lost', pts: -0.09 },
+    { key: 'pass_int', statKey: 'pass_int', pts: -0.32 },
+    { key: 'scoring_adjustment', statKey: 'scoring_adjustment', pts: 0.02 },
+  ];
+  const groups = groupFantasyBreakdownRows(rows);
+  assert.deepEqual(groups.map(group => group.id), ['rushing', 'receiving', 'bonus', 'negative', 'model']);
+  assert.equal(groups.flatMap(group => group.rows).length, rows.length);
+  assert.equal(groups.find(group => group.id === 'rushing').sum, 5.8);
+  assert.equal(groups.find(group => group.id === 'negative').sum, -0.41);
+  assert.deepEqual(groups.find(group => group.id === 'bonus').rows.map(row => row.key), ['bonus_rush_rec_yd_100']);
+  assert.deepEqual(groupFantasyBreakdownRows([]), []);
+});
+
 test('stat comparison keeps unreported actuals and absent projected fields unavailable', () => {
   const actual = [{ statKey: 'pass_yd', label: 'Passing yards', statVal: 120 }, { statKey: 'scoring_adjustment', label: 'Adjustment', statVal: null }];
   const projected = [{ statKey: 'pass_yd', label: 'Passing yards', statVal: 240 }, { statKey: 'pass_td', label: 'Passing TD', statVal: 2 }];
@@ -64,6 +87,64 @@ test('stat comparison keeps unreported actuals and absent projected fields unava
   assert.equal(result[1].actual, 0);
   assert.equal(result[1].difference, -2);
   assert.equal(buildPlayerStatComparison(actual, [], true)[0].projected, null);
+});
+
+test('standout metric follows position and the authoritative scoring contribution', () => {
+  const quarterback = {
+    position: 'QB',
+    statByKey: new Map([
+      ['pass_td', { statVal: 2, pts: 8 }],
+      ['pass_yd', { statVal: 315, pts: 12.6 }],
+    ]),
+  };
+  const receiver = {
+    position: 'WR',
+    statByKey: new Map([
+      ['rec_td', { statVal: 1, pts: 6 }],
+      ['rec_yd', { statVal: 112, pts: 11.2 }],
+    ]),
+  };
+  const defender = {
+    position: 'LB',
+    statByKey: new Map([
+      ['idp_sack', { statVal: 1, pts: 4 }],
+      ['idp_tkl', { statVal: 9, pts: 9 }],
+    ]),
+  };
+  const teamDefense = {
+    position: 'DEF',
+    statByKey: new Map([
+      ['def_td', { statVal: 1, pts: 6 }],
+      ['sack', { statVal: 5, pts: 5 }],
+    ]),
+  };
+
+  assert.equal(describePlayerStandoutStat(quarterback), '315 passing yards');
+  assert.equal(describePlayerStandoutStat(receiver), '112 receiving yards');
+  assert.equal(describePlayerStandoutStat(defender), '9 tackles');
+  assert.equal(describePlayerStandoutStat(teamDefense), '1 defensive touchdown');
+});
+
+test('standout metric preserves missing and reported-zero semantics', () => {
+  assert.equal(describePlayerStandoutStat(null), null);
+  assert.equal(describePlayerStandoutStat({ position: 'QB', statByKey: new Map([['pass_td', { statVal: 0, pts: 0 }]]) }), null);
+  assert.equal(describePlayerStandoutStat({ position: 'WR', statByKey: new Map([['rec_yd', { statVal: null, pts: null }]]) }), null);
+  assert.equal(describePlayerStandoutStat({ position: 'QB', statByKey: new Map([['rec_td', { statVal: 3, pts: 18 }]]) }), null);
+  assert.equal(describePlayerStandoutStat({ position: 'QB', statByKey: new Map([['pass_yd', { statVal: 80, pts: null }]]) }), '80 passing yards');
+});
+
+test('negative recap metrics preserve factual sacks, interceptions, and missing data', () => {
+  const quarterback = {
+    position: 'QB',
+    statByKey: new Map([
+      ['pass_sack', { statVal: 4, pts: 0 }],
+      ['pass_int', { statVal: 1, pts: -2 }],
+    ]),
+  };
+  assert.equal(describePlayerNegativeStats(quarterback), '4 sacks and 1 interception');
+  assert.equal(describePlayerNegativeStats({ position: 'QB', statByKey: new Map([['pass_sack', { statVal: 0, pts: 0 }]]) }), null);
+  assert.equal(describePlayerNegativeStats({ position: 'RB', statByKey: new Map([['pass_int', { statVal: 1, pts: -2 }]]) }), null);
+  assert.equal(describePlayerNegativeStats({ position: 'QB', statByKey: new Map([['pass_sack', { statVal: null, pts: null }]]) }), null);
 });
 
 test('drilldown opponent context progressively replaces prior-season evidence without changing shared defense data', () => {

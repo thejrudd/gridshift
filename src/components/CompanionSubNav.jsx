@@ -8,6 +8,7 @@ const VIEWS = [
   { id: 'rankings',  label: 'Rankings', tabGroup: 'team' },
   { id: 'live',      label: 'Live', alpha: true },
   { id: 'matchups',  label: 'Matchups', tabGroup: 'team', tourId: 'matchup' },
+  { id: 'injuries',  label: 'Injuries', beta: true, tabGroup: 'team' },
   { id: 'waivers',   label: 'Waivers', tourId: 'waiver' },
   { id: 'heatmap',   label: 'Heatmap', tabGroup: 'team' },
   { id: 'defenses',  label: 'Defenses', tabGroup: 'team', tourId: 'defense' },
@@ -64,7 +65,7 @@ export default function CompanionSubNav({ activeView, onViewChange }) {
             onClick={() => onViewChange(id)}
             onKeyDown={(event) => handleTabKeyDown(event, index)}
             disabled={comingSoon}
-            className={`season-tab${tabGroup ? ` companion-tab--${tabGroup}` : ''}${activeView === id ? ' active' : ''}`}
+            className={`season-tab${tabGroup ? ` companion-tab--${tabGroup}` : ''}${id === 'injuries' ? ' companion-tab--injuries' : ''}${activeView === id ? ' active' : ''}`}
             data-tour={`companion-view-${tourId}`}
           >
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>

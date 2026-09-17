@@ -22,9 +22,15 @@ The hero's bullet bar shows the likely range as a band and a benchmark tick — 
 
 The rank slot is the player's rank by total season fantasy points before and during the game. Once the NFL week has fully concluded it switches to the already-computed weekly positional rank (`weekRank`) and is labelled **Week N finish**. Projected finish, starter-pool rank, and rank movement since kickoff are still not inferred.
 
-A five-game form ladder uses horizontal fantasy-point bars, green at or above the season average and red below it, with a clearly labelled season-average marker. The design study ticks each bar with that week's own projection; GridShift does not retain historical weekly projections, so the marker is the season average and the section is labelled accordingly rather than implying a per-week projection comparison. Usage trends are intentionally not presented.
+A five-game form ladder uses horizontal fantasy-point bars, green at or above the season average and red below it, with a clearly labelled season-average marker. GridShift does not retain historical weekly projections, so historical rows keep that season-average comparison. When a recorded pregame baseline exists for the selected week, that row also shows a distinct recorded-projection marker and its bar color compares the actual score with that target; the legend names both benchmarks. Usage trends are intentionally not presented.
 
 Disclosures are flat chevron rows carrying an optional summary value on the right. Deeper season, defense splits, projection methodology, opponent sample methodology, and scoring calculations remain collapsed behind them.
+
+Two of those expanded areas follow the Claude Design "Player Drilldown — Splits Rework" study.
+
+**Projected stat line.** The scoring rows stay exactly as `buildFantasyScoringBreakdown` produced them; `groupFantasyBreakdownRows()` in `playerMatchupPresentation.js` only decides which heading each row sits under. Groups read Passing, Rushing, Receiving, Kicking, Defense, Special teams, Bonuses, Negative plays, Model; a bonus follows the stat family it rewards, and a bonus spanning two families falls to Bonuses. A composition stack and key show the positive groups' share, each row carries a bar proportional to the largest absolute row, and the disclosed projected total closes the table. It remains a real table with a caption, column headers and row headers; the bars are decorative.
+
+**Season performance and defense splits.** Every rank shares one percentile axis instead of a separate slider per metric, so fantasy points per game and the common stat ranks are directly comparable, and the qualifying-games caveat appears once per section rather than on every row. The defense measure control comes first because it governs everything below it: the three tiers as one comparable graphic with the current opponent's tier highlighted, the opponent's placement in the full defense pool, then the contributing games per tier. Tier counts are derived from the same `ceil(teamCount / 4)` split the classification uses. Unavailable ranks and empty tiers stay explicitly unavailable; they are never drawn as zero.
 
 Blocks the design study specifies but GridShift cannot source — remaining opportunity, teammate cannibalization, snap share, live rank movement, per-week projection history — render as explicitly labelled dashed placeholders only when `VITE_DRILLDOWN_SLOTS=true` in a dev build (`src/utils/drilldownDevSlots.js`). They never ship to users and are never faked with invented values.
 
@@ -56,7 +62,7 @@ Lower allowed yardage ranks as stronger. The strongest quarter, middle half, and
 
 ## Player rankings and evidence
 
-The primary season-points rank comes from Fantasy Matchups' existing positional ranking and is always labelled **Season points rank** and **by total season fantasy points**. It is distinct from the deeper current-season fantasy-points-per-game analysis below.
+The primary season-points rank comes from Fantasy Matchups' existing positional ranking and is always labelled **Season points rank** and **by total season fantasy points**. Its pool includes only players with recorded fantasy-stat fields, but it retains valid zero and negative fantasy totals; players with no recorded fantasy stats are excluded rather than treated as zero. It is distinct from the deeper current-season fantasy-points-per-game analysis below.
 
 Player performance is fantasy points per qualifying game under active league scoring, using `calcPoints` with the player's position. It retains zero and negative fantasy games and requires a valid scheduled opponent. Explicit zero games played and bye/phantom rows are excluded. Ties share rank. These PPG rankings have a different, explicitly named metric from existing total-points positional finishes.
 
@@ -80,8 +86,8 @@ The callout is labelled **Higher projected option on your bench**, shows the can
 
 Focused automated coverage:
 
-- `tests/unit/playerMatchupPresentation.test.mjs`: own-kickoff phase, null/zero distinctions, projected league scoring, raw-stat comparison, early-season opponent blending, tied opponent ranks, five-level outlook inputs, outdoor-only weather promotion, and expected-range markers.
-- `tests/unit/playerMatchupRendering.test.mjs`: actual component server-render checks for the pregame briefing range/evidence/headline, labelled season-points rank, kickoff/injury/venue context, phase-derived live and final views with no switcher present, projection-cued final score, estimated-timeline disclosure, eligible bench option, unavailable points, and scoring detail. This does not establish browser geometry or interaction correctness.
+- `tests/unit/playerMatchupPresentation.test.mjs`: projected stat-line grouping, own-kickoff phase, null/zero distinctions, projected league scoring, raw-stat comparison, early-season opponent blending, tied opponent ranks, five-level outlook inputs, outdoor-only weather promotion, and expected-range markers.
+- `tests/unit/playerMatchupRendering.test.mjs`: actual component server-render checks for the pregame briefing range/evidence/headline, labelled season-points rank, kickoff/injury/venue context, phase-derived live and final views with no switcher present, projection-cued final score, estimated-timeline disclosure, eligible bench option, unavailable points, scoring detail, and the grouped projected stat line. This does not establish browser geometry or interaction correctness.
 - `tests/unit/playerMatchupTimeline.test.mjs`: supported feed normalization, signed contribution scoring, zero omission, coverage/error states, and official-total separation.
 - `tests/unit/playerMatchupBenchOption.test.mjs`: direct slot eligibility, 2.0-point threshold, future kickoff requirements, inactive/reserve exclusions, and single highest candidate selection.
 - `tests/unit/matchupProjectionBaseline.test.mjs`: pregame-only capture, latest observation, scope isolation, corrupt/blocked storage, retention, and interleaved observations.

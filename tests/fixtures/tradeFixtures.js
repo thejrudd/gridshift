@@ -152,20 +152,20 @@ export function persistedSleeperState() {
 export function weeklyStatsForWeek(week) {
   return Object.fromEntries(
     Object.entries({
-      101: { pass_yd: 260, pass_td: 2, pass_int: week % 5 === 0 ? 1 : 0, gp: 1 },
+      101: { pass_yd: 260, pass_td: 2, pass_int: week % 5 === 0 ? 1 : 0, pass_sack: week % 2 === 0 ? 2 : 1, gp: 1 },
       102: { rush_yd: 82, rush_td: week % 3 === 0 ? 1 : 0, rec: 3, rec_yd: 24, gp: 1 },
       103: { rec: 4, rec_yd: 48, rec_td: week % 4 === 0 ? 1 : 0, gp: 1 },
       104: { rec: 7, rec_yd: 92, rec_td: week % 3 === 0 ? 1 : 0, gp: 1 },
       105: { rec: 5, rec_yd: 44, gp: 1 },
       106: { rush_yd: 34, rec: 1, rec_yd: 8, gp: 1 },
       201: { rush_yd: 112, rush_td: week % 2 === 0 ? 1 : 0, rec: 4, rec_yd: 35, gp: 1 },
-      202: { pass_yd: 240, pass_td: 2, pass_int: 0, gp: 1 },
+      202: { pass_yd: 240, pass_td: 2, pass_int: 0, pass_sack: week % 3 === 0 ? 2 : 1, gp: 1 },
       203: { rec: 5, rec_yd: 58, gp: 1 },
       204: { rec: 4, rec_yd: 38, gp: 1 },
       205: { rush_yd: 28, rec: 1, rec_yd: 7, gp: 1 },
       206: { rec: 2, rec_yd: 22, gp: 1 },
       301: { rush_yd: 98, rush_td: week % 3 === 0 ? 1 : 0, rec: 2, rec_yd: 18, gp: 1 },
-      302: { pass_yd: 235, pass_td: 1, pass_int: 0, gp: 1 },
+      302: { pass_yd: 235, pass_td: 1, pass_int: 0, pass_sack: week % 4 === 0 ? 2 : 1, gp: 1 },
       303: { rec: 6, rec_yd: 68, gp: 1 },
       304: { rec: 3, rec_yd: 31, gp: 1 },
       305: { rush_yd: 21, gp: 1 },

@@ -71,9 +71,13 @@
   min-width: 0;
   overflow: hidden;
   color: var(--matchup-header-fg);
-  font-size: var(--type-heading-sm);
+  /* Same display face as .pmd-cmp-hero-name and the matchup masthead, so a
+     player's name reads identically wherever it heads a panel. */
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-heading-md);
   font-weight: 850;
-  line-height: 1.08;
+  letter-spacing: -0.01em;
+  line-height: 1.02;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -275,6 +279,7 @@
 .pmd-legend i { flex: none; width: 9px; height: 9px; border-radius: 2px; }
 .pmd-legend i.is-tick { width: 2px; height: 11px; border-radius: 1px; background: var(--color-label); }
 .pmd-legend i.is-band { background: var(--color-fill); }
+.pmd-legend i.is-target { width: 3px; height: 11px; border-radius: 1px; background: var(--color-signature); }
 
 /* ── headline ── */
 
@@ -401,6 +406,7 @@
 .pmd-lrow__t { position: relative; height: 9px; border-radius: 5px; background: var(--color-fill-secondary); }
 .pmd-lrow__t i { position: absolute; inset: 0 auto 0 0; border-radius: 5px; opacity: 0.85; }
 .pmd-lrow__t u { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--color-label-tertiary); }
+.pmd-lrow__t u.is-target { width: 3px; background: var(--color-signature); }
 .pmd-lrow__v { font-size: var(--type-meta); font-weight: 700; text-align: right; }
 
 /* ── play contributions ── */
@@ -571,40 +577,9 @@
 }
 
 .pmd-cmp-heroes {
-  position: relative;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   background: var(--color-fill);
-}
-
-.pmd-cmp-heroes__versus {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  z-index: 2;
-  display: block;
-  width: clamp(58px, 12cqw, 116px);
-  aspect-ratio: 1;
-  color: var(--color-label);
-  opacity: 0.34;
-  pointer-events: none;
-  transform: translate(-50%, -50%);
-  filter: drop-shadow(0 2px 5px color-mix(in srgb, var(--color-bg) 38%, transparent));
-}
-
-.pmd-cmp-heroes__versus svg {
-  display: block;
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-}
-
-.pmd-cmp-heroes__versus path {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 7;
-  stroke-linecap: square;
-  stroke-linejoin: miter;
 }
 
 .pmd-cmp-hero {
@@ -943,7 +918,7 @@
 
   .pmd-big { font-size: 68px; }
   .pmd-headline { font-size: 20px; }
-  .pmd-hd__name > strong { font-size: 22px; }
+  .pmd-hd__name > strong { font-size: 26px; }
   .pmd-strip { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
   .pmd-strip__row + .pmd-strip__row { margin-top: 0; }
   .pmd-ctx { flex: 0 1 auto; }
@@ -954,6 +929,11 @@
   .pmd-body { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 
   .pmd-body > [data-slot='hero'] { grid-column: span 2; }
+
+  /* Align the rank marker with the hero's projection bar. The rank copy stays
+     attached to the marker, but moves down with it instead of leaving a
+     second, unrelated horizontal rhythm at the top of the column. */
+  .pmd-body > [data-slot='rank'] .pmd-rank__row { margin-top: 55px; }
 
   /* A wide slot only gives up its third column when a companion card actually
      follows it; otherwise it stretches so no dead cell is left in the row. */
@@ -1068,6 +1048,228 @@
 .matchup-rank-strip__ends { color: var(--color-label-secondary); font-size: var(--type-label); }
 .matchup-evidence summary { cursor: pointer; list-style-position: inside; }
 .matchup-evidence__hint { display: block; padding-bottom: var(--density-space-sm); color: var(--color-label-secondary); font-size: var(--type-label); }
+/* ── projected stat line (Splits Rework study) ──
+   Grouped rows with a proportional bar per line and a composition stack on
+   top, so the shape of a projection reads before any individual decimal. */
+
+.pmd-proj { --pmd-tone: var(--color-accent); padding-top: var(--density-space-sm); }
+.pmd-proj__head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--density-space-md); }
+.pmd-proj__eyebrow { font-size: var(--type-label); font-weight: 700; color: var(--color-label-secondary); }
+.pmd-proj__meta { font-size: var(--type-label); font-weight: 600; color: var(--color-label-secondary); }
+
+/* Group tones stay inside the semantic palette; no feature-local hex values. */
+.pmd-proj [data-group='passing'] { --pmd-tone: var(--color-accent); }
+.pmd-proj [data-group='rushing'] { --pmd-tone: var(--color-accent-green); }
+.pmd-proj [data-group='receiving'] { --pmd-tone: var(--color-accent-orange); }
+.pmd-proj [data-group='kicking'] { --pmd-tone: var(--color-signature); }
+.pmd-proj [data-group='defense'] { --pmd-tone: var(--color-accent); }
+.pmd-proj [data-group='special'] { --pmd-tone: var(--color-signature); }
+.pmd-proj [data-group='bonus'] { --pmd-tone: var(--color-signature); }
+.pmd-proj [data-group='negative'] { --pmd-tone: var(--color-accent-red); }
+.pmd-proj [data-group='model'] { --pmd-tone: var(--color-label-tertiary); }
+
+.pmd-pstack {
+  display: flex;
+  gap: 2px;
+  height: 14px;
+  margin-top: var(--density-space-md);
+  border-radius: 4px;
+  background: var(--color-fill-secondary);
+  overflow: hidden;
+}
+.pmd-pstack i { display: block; min-width: 2px; background: var(--pmd-tone); }
+/* Deductions keep their group tone but read as taken away, not earned. */
+.pmd-pstack i[data-negative],
+.pmd-pkey li[data-negative] i {
+  background: repeating-linear-gradient(115deg, var(--pmd-tone) 0 4px, transparent 4px 8px);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--pmd-tone) 60%, transparent);
+}
+
+.pmd-pkey {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--density-space-sm) var(--density-space-lg);
+  margin: var(--density-space-md) 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--type-label);
+  font-weight: 600;
+  color: var(--color-label-secondary);
+}
+.pmd-pkey li { display: flex; align-items: center; gap: 6px; }
+.pmd-pkey i { width: 9px; height: 9px; flex: none; border-radius: 2px; background: var(--pmd-tone); }
+.pmd-pkey em { font-style: normal; font-weight: 700; color: var(--color-label); }
+
+.pmd-ptable { width: 100%; margin-top: var(--density-space-md); border-collapse: collapse; font-size: var(--type-label); }
+.pmd-ptable thead th { height: 0; padding: 0; border: 0; }
+.pmd-ptable tbody th,
+.pmd-ptable tbody td,
+.pmd-ptable tfoot th,
+.pmd-ptable tfoot td { padding: 5px 0; vertical-align: middle; }
+.pmd-ptable tbody > tr > th[scope='row'] { text-align: left; font-weight: 600; overflow-wrap: anywhere; }
+.pmd-ptable tbody td:not(.pmd-pbar) { width: 46px; text-align: right; font-weight: 600; color: var(--color-label-secondary); }
+.pmd-ptable tbody td:last-child { font-weight: 700; color: var(--color-label); }
+.pmd-ptable .pmd-pgrp > th {
+  padding: var(--density-space-md) 0 4px;
+  border-top: 1px solid var(--color-separator);
+  text-align: left;
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-label);
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-label-tertiary);
+}
+.pmd-ptable tbody:first-of-type .pmd-pgrp > th { padding-top: 0; border-top: 0; }
+.pmd-ptable .pmd-pbar { width: 76px; padding: 5px var(--density-space-sm); }
+.pmd-pbar > i {
+  display: block;
+  height: 7px;
+  min-width: 2px;
+  border-radius: 4px;
+  background: var(--pmd-tone);
+}
+.pmd-pbar > i.is-neg { background: var(--color-accent-red); }
+.pmd-ptable tfoot th {
+  padding-top: var(--density-space-md);
+  border-top: 1px solid var(--color-separator-opaque);
+  text-align: left;
+  font-size: var(--type-meta);
+  font-weight: 700;
+  color: var(--color-label-secondary);
+}
+.pmd-ptable tfoot td {
+  padding-top: var(--density-space-md);
+  border-top: 1px solid var(--color-separator-opaque);
+  text-align: right;
+  font-size: var(--type-heading-md);
+  font-weight: 700;
+}
+
+/* ── season & defense splits (Splits Rework study) ── */
+
+.pmd-peer { display: flex; flex-direction: column; gap: 9px; margin-top: var(--density-space-md); }
+
+.pmd-prow { display: grid; grid-template-columns: minmax(96px, 128px) minmax(0, 1fr) 68px; align-items: center; gap: var(--density-space-md); }
+.pmd-prow__l { display: flex; flex-direction: column; gap: 1px; min-width: 0; font-size: var(--type-label); font-weight: 700; }
+.pmd-prow__l > span:last-child { font-weight: 700; color: var(--color-label-secondary); }
+.pmd-prow__t {
+  position: relative;
+  height: 9px;
+  border-radius: 5px;
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--color-accent-red) 20%, transparent) 0%,
+    var(--color-fill-secondary) 50%,
+    color-mix(in srgb, var(--color-accent-green) 22%, transparent) 100%);
+}
+.pmd-prow__t::before,
+.pmd-prow__t::after { content: ''; position: absolute; top: 1px; bottom: 1px; width: 1px; background: var(--color-separator); }
+.pmd-prow__t::before { left: 25%; }
+.pmd-prow__t::after { left: 75%; }
+.pmd-prow__t u { position: absolute; top: 1px; bottom: 1px; left: 50%; width: 1px; background: var(--color-label-tertiary); }
+.pmd-prow__t i { position: absolute; top: -4px; width: 4px; height: 17px; border-radius: 2px; background: var(--color-accent); }
+.pmd-prow__t i.is-high { background: var(--color-accent-green); }
+.pmd-prow__t i.is-low { background: var(--color-accent-red); }
+.pmd-prow__t.is-dim { opacity: 0.45; }
+.pmd-prow__r { font-size: var(--type-meta); font-weight: 700; text-align: right; }
+.pmd-prow__r.is-dim { font-size: var(--type-label); font-weight: 600; color: var(--color-label-tertiary); }
+
+.pmd-paxis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: var(--density-space-md);
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-label);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-label-tertiary);
+}
+
+.pmd-tiers { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--density-space-sm); margin-top: var(--density-space-md); }
+.pmd-tier {
+  display: flex;
+  flex-direction: column;
+  gap: var(--density-space-sm);
+  padding: 9px 9px 10px;
+  border-radius: 9px;
+  background: var(--color-fill-secondary);
+}
+.pmd-tier.is-on { background: color-mix(in srgb, var(--color-signature) 11%, transparent); box-shadow: inset 0 0 0 1.5px var(--color-signature); }
+.pmd-tier.is-empty { background: repeating-linear-gradient(115deg, var(--color-fill-secondary) 0 6px, transparent 6px 12px); }
+.pmd-tier__l {
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-label);
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--color-label-secondary);
+}
+/* Signature yellow as text needs weighting toward the label color so the
+   highlighted tier stays legible on the light surface too. */
+.pmd-tier.is-on .pmd-tier__l { color: color-mix(in srgb, var(--color-signature) 55%, var(--color-label)); }
+.pmd-tier__v { font-size: var(--type-heading-md); font-weight: 700; line-height: 0.95; }
+.pmd-tier__v.is-dim { color: var(--color-label-tertiary); }
+.pmd-tier__c { display: flex; align-items: flex-end; height: 34px; }
+.pmd-tier__c i { display: block; width: 100%; border-radius: 3px 3px 0 0; background: var(--color-accent); opacity: 0.8; }
+.pmd-tier.is-on .pmd-tier__c i { background: var(--color-signature); opacity: 1; }
+.pmd-tier__s { font-size: var(--type-label); font-weight: 600; color: var(--color-label-tertiary); }
+
+.pmd-oppline {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--density-space-sm);
+  margin: var(--density-space-md) 0 0;
+  font-size: var(--type-label);
+  font-weight: 600;
+  color: var(--color-label-secondary);
+}
+.pmd-oppline strong { color: var(--color-label); font-weight: 700; }
+.pmd-oppline__b {
+  flex: none;
+  padding: 3px 7px;
+  border-radius: 5px;
+  background: var(--color-signature);
+  color: var(--color-signature-fg);
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-label);
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.pmd-pool { display: flex; align-items: flex-end; gap: 2px; margin-top: var(--density-space-md); }
+.pmd-pool i { flex: 1; height: 20px; border-radius: 2px; background: var(--color-fill); }
+.pmd-pool i.is-s { background: color-mix(in srgb, var(--color-accent) 34%, transparent); }
+.pmd-pool i.is-a { background: var(--color-fill); }
+.pmd-pool i.is-w { background: color-mix(in srgb, var(--color-accent-green) 30%, transparent); }
+.pmd-pool i.is-me { height: 30px; background: var(--color-signature); }
+.pmd-poollab {
+  display: grid;
+  margin-top: var(--density-space-sm);
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-label);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-label-tertiary);
+  text-align: center;
+}
+
+.pmd-exp { margin-top: 6px; }
+.pmd-exprow { padding: var(--density-space-md) 0; border-bottom: 1px solid var(--color-separator); }
+.pmd-exprow:last-child { border-bottom: 0; }
+.pmd-exprow__head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--density-space-md); }
+.pmd-exprow__k { font-size: var(--type-body); font-weight: 700; }
+.pmd-exprow__v { font-size: var(--type-emphasis); font-weight: 700; }
+.pmd-exprow__v.is-dim { font-size: var(--type-meta); font-weight: 600; color: var(--color-label-tertiary); }
+.pmd-exprow .matchup-evidence { margin-top: var(--density-space-sm); }
+.pmd-exprow__d { margin-top: 4px; font-size: var(--type-label); font-weight: 500; color: var(--color-label-secondary); }
+
+@container (max-width: 520px) {
+  .pmd-prow { grid-template-columns: minmax(84px, 108px) minmax(0, 1fr) 58px; }
+}
+
 .matchup-breakdown-dialog summary:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 
 @media (pointer: coarse) {
@@ -1102,7 +1304,12 @@
   .matchup-breakdown-dialog .pmd-legend,
   .matchup-breakdown-dialog .pmd-rail__ends,
   .matchup-breakdown-dialog .pmd-cell__s,
-  .matchup-breakdown-dialog .pmd-rank__meta { color: var(--color-label); }
+  .matchup-breakdown-dialog .pmd-rank__meta,
+  .matchup-breakdown-dialog .pmd-tier__s,
+  .matchup-breakdown-dialog .pmd-paxis,
+  .matchup-breakdown-dialog .pmd-poollab,
+  .matchup-breakdown-dialog .pmd-proj__meta,
+  .matchup-breakdown-dialog .pmd-ptable .pmd-pgrp > th { color: var(--color-label); }
 }
 
 @media (prefers-reduced-motion: reduce) {

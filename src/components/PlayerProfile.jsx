@@ -367,7 +367,7 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_
   const team = teams?.find(t => t.id === teamId);
   const teamRecord = getTeamRecord(teamId);
 
-  const teamTheme = teamId ? getTeamVisualTheme(teamId, darkMode) : null;
+  const teamTheme = teamId ? getTeamVisualTheme(teamId, darkMode, { logoSide: 'end' }) : null;
   const hasTeamGradient = Boolean(teamTheme?.gradient);
   const heroBg = hasTeamGradient ? teamTheme.gradient : 'var(--color-bg-secondary)';
   const heroAccent = teamTheme?.borderColor ?? getCompanionPositionColor(playerMeta.position) ?? 'var(--color-accent)';

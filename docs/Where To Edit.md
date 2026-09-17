@@ -10,8 +10,10 @@ Routing table: match the task to a section, open the listed files, and read the 
 | --- | --- |
 | Shell, tabs, sidebar, sub-navs, routing chrome | [Navigation And Layout](#navigation-and-layout) |
 | Display density, type tokens, page frames | [Display Size, Typography, And Wide Layouts](#display-size-typography-and-wide-layouts) |
+| Skeletons, loading placeholders, list reveal/stagger timing | [Loading Motion](#loading-motion) |
 | Prediction picks, playoff seeding, and share cards | [Predictions And Share Cards](#predictions-and-share-cards) |
 | Live fantasy scoring view (hero, pace chart, feed, win odds) | [Fantasy Live](#fantasy-live) |
+| Rostered weekly injuries and player designations | [Fantasy Injuries](#fantasy-injuries) |
 | NFL scoreboard, box scores, play-by-play visuals | [Statistics Scores And NFL Plays](#statistics-scores-and-nfl-plays) |
 | Provider gateway, quotas, caches, sidecar server | [Live Data Server, Budgets, And Scaling](#live-data-server-budgets-and-scaling) |
 | Sleeper connection and league loading | [Fantasy Connection And League Data](#fantasy-connection-and-league-data) |
@@ -56,6 +58,21 @@ Routing table: match the task to a section, open the listed files, and read the 
 
 Rules: apply exactly one page-frame class to new route roots. Never detect display DPI, use CSS `zoom`, or add transform-based whole-app scaling.
 
+## Loading Motion
+
+Read first: [[Loading Motion]] (glossary of every knob — duration, stagger, show after, minimum hold, easing, entrance, texture, order, handoff — plus Fantasy rollout status and the known per-tab limits).
+
+| File | Owns |
+| --- | --- |
+| `src/index.css` | `--gs-load-*` tokens, `.gs-skeleton` textures, `.gridshift-reveal*` entrances, `.gs-loadswap*` handoff |
+| `src/utils/loadingMotion.js` | JS mirror of the profile, order/index/delay helpers |
+| `src/hooks/useLoadingReveal.js` | The show-after / minimum-hold timing gate |
+| `src/components/ui/LoadingSwap.jsx` | `LoadingSwap`, `RevealList`, `SkeletonRows` |
+| `src/components/ui/Skeleton.jsx`, `src/components/ui/SectionSkeleton.jsx` | Placeholder shapes; the lazy-route Suspense fallback |
+| `tests/unit/loadingMotion.test.mjs` | CSS/JS token parity — fails if the two drift |
+
+Rules: retune in the tokens, never at a call site. A surface with sticky or fixed descendants inside the revealed subtree must use `entrance="fade"`, not the default `lift`. `loading` means "nothing to show yet", never "a request is in flight" — a populated list must never drop back to placeholders on a background refresh.
+
 ## Predictions And Share Cards
 
 | File | Owns |
@@ -83,7 +100,7 @@ Read first: [[Fantasy Live]] (implementation rules — chart axis semantics, rep
 | `src/components/companion/live/LivePlayerSheet.jsx` | Player drilldown record card |
 | `src/components/companion/live/LivePerformerRail.jsx`, `LiveVerdict.jsx`, `LiveAtoms.jsx`, `liveVisuals.js` | Supporting surfaces and atoms |
 | `src/utils/livePace.js` | Pace maths (`buildPaceSeries()`) |
-| `src/utils/livePlaysFeed.js` | Play → 0..1 game-progress axis (`getPlayProgress()`) |
+| `src/utils/livePlaysFeed.js` | Starter matching, feed events, play → 0..1 game-progress axis (`getPlayProgress()`); play normalization and stat deltas come from `playByPlay/` |
 | `src/utils/liveReconciliation.js` | Plays reconciled against Sleeper: pending/confirmed status, residual adjustment, displayed totals, stat-update fallback |
 | `src/utils/liveWinProbability.js` | `explainWinProbability()`, `resolveStarterProjection()` |
 | `src/data/liveWinProbabilityModel.js` | Generated coefficient contract — never hand-edit |
@@ -95,6 +112,18 @@ Read first: [[Fantasy Live]] (implementation rules — chart axis semantics, rep
 | `src/index.css` | The `.fl-*` block |
 
 Rules: the chart x-axis is game progress, not wallclock. BDL plays are the only feed source in connected live and replay; Sleeper reconciles them and never writes a row of its own. The week comes from Sleeper `/state/nfl` — never add a week picker to Live. Starter projections change only in `resolveStarterProjection()`. Full rules: [[Fantasy Live]].
+
+## Fantasy Injuries
+
+| File | Owns |
+| --- | --- |
+| `src/components/companion/CompanionInjuries.jsx` | Current-week report, component-local filters, provider/fallback states, row disclosures |
+| `src/utils/fantasyInjuries.js` | Roster/reserve/taxi assembly, concern merge, urgency order, owner/team filtering |
+| `src/utils/providerPlayerIdentity.js` | Shared provider name/team normalization and Injuries position-family matching |
+| `src/api/playerDesignationsApi.js` | Browser request to the fixed server designation route |
+| `server/playerDesignationHandlers.js` | Query validation, actionable-row sanitization, 24-page weekly snapshot policy |
+
+Rules: Sleeper roster status and BALLDONTLIE weekly status remain separate evidence. Match designations only through unique name + canonical NFL team + compatible position-family identity. A missing or `null` designation is unknown, including on bye weeks. `starter` and `did_not_play` are postgame facts, never projections. The current season/week comes only from Sleeper `/state/nfl`.
 
 ## Statistics Scores And NFL Plays
 
@@ -131,6 +160,8 @@ Read first: [[Statistics Scores]] before production data wiring.
 | `src/utils/nflPlays/playPresentation.js`, `latestPlayPresentation.js` | Shared outcome tags, compact scorecard projection |
 | `src/utils/nflPlays/playBeats.js` | Play as scrubbable timeline; `estimateAirYards()` positions the ball but must never appear as a number in beat text |
 | `src/utils/nflPlays/playSequenceContext.js` | Bounded cross-play inference (e.g. omitted passer on scoring-summary turnovers) |
+| `src/utils/playByPlay/normalizePlay.js` | Canonical BALLDONTLIE play shape shared by Statistics Scores and Fantasy Live, plus `resolveOffenseDefenseTeams()`; returns every raw row — filtering is the consumer's: [[Play-By-Play Normalization]] |
+| `src/utils/playByPlay/playStatDelta.js` | Per-play fantasy stat attribution, team-defense/IDP deltas, `estimatePlayPoints()`, `getPlayEventClassification()`, `PLAY_MATCH_STATS`; keys must match `scoringEngine.js` |
 | `src/components/nflPlays/` | `fieldPrimitives.jsx`, `PlayTrajectoryStrip.jsx`, `DriveField.jsx`, `DrivePlayback.jsx`, `WinProbabilityChart.jsx`, `NflPlays.css` — all field visuals go through `fieldX` and the shared kick helper |
 | `src/components/shared/PlayerAvatar.jsx` | Headshot → team mark → initials avatar (imported by Fantasy Live as `LiveAvatar`) |
 | `tests/fixtures/bdlNflPlays.json`, `tests/fixtures/espnGameParticipants.json` | Captured provider payloads — read these instead of re-deriving field shapes |
@@ -146,11 +177,12 @@ Read first: [[Live Data Server Architecture]] before changing provider cadence, 
 | `server/publicRequestGuard.js` | Bounded public Scores request/concurrency protection |
 | `server/liveHandlers.js` | Fantasy Live session/league boundary, gateway-backed route projection |
 | `server/statisticsScoresHandlers.js` | Public Scores provider selection, selected-week live lane, ESPN fallback |
+| `server/playerDesignationHandlers.js` | Fixed weekly player-designations request, sanitization, five-minute cache and 24-hour stale fallback |
 | `server/liveGameSnapshots.js` | Canonical provider play snapshot shared by Statistics and Fantasy Live |
-| `src/api/liveApi.js`, `src/api/statisticsScoresApi.js` | Client contracts for the two route groups |
+| `src/api/liveApi.js`, `src/api/statisticsScoresApi.js`, `src/api/playerDesignationsApi.js` | Browser-to-sidecar client contracts |
 | `src/components/companion/CompanionLive.jsx`, `src/components/statistics/scores/StatisticsScores.jsx` | Browser refresh triggers, visibility/offline behavior — neither owns provider play truth |
 | `.env.example`, `docker-compose.yml`, `nginx.conf`, `vite.config.js` | Secrets, sidecar topology, proxy boundaries |
-| `tests/unit/balldontlieGateway.test.mjs`, `publicRequestGuard.test.mjs`, `liveConfigStatus.test.mjs`, `statisticsScoresHandlers.test.mjs`, `providerAnchoredGameClock.test.mjs` + live/Scores E2E specs | Boundary coverage |
+| `tests/unit/balldontlieGateway.test.mjs`, `playerDesignationHandlers.test.mjs`, `publicRequestGuard.test.mjs`, `liveConfigStatus.test.mjs`, `statisticsScoresHandlers.test.mjs`, `providerAnchoredGameClock.test.mjs` + live/Scores/Injuries E2E specs | Boundary coverage |
 
 Rules: any change here must audit both Statistics Scores and Fantasy Live. Count every provider cursor page and retry. Keep browser throttling separate from the account-wide provider budget. No multiple sidecar replicas until the shared-store/leader phase ships.
 
@@ -168,7 +200,7 @@ Sleeper is the supported fantasy connection.
 
 Individual player matchup views, recorded pregame comparisons, and Heatmap-based peer visuals: read [[Player Matchup Drilldown]]. `PlayerMatchupBreakdown.jsx` owns the dialog; `playerDefensePerformance.js` and `fantasyHeatmapData.js` own shared analysis; `useMatchupProjectionBaselines.js` owns local pregame capture.
 
-Fantasy Matchups: `CompanionMatchup.jsx` owns the player Tale of the Tape and the manager VS trigger. `MatchupRivalryModal.jsx` owns the manager history drilldown; `matchupRivalry.js` orients completed meetings, retains historical roster IDs, and derives starter-only high/low highlights. `App.jsx` shares historical season/week/roster navigation between this drilldown and League History. History loads only when the manager drilldown opens.
+Fantasy Matchups: `CompanionMatchup.jsx` owns the player Tale of the Tape and the manager VS trigger. The VS trigger opens `MatchupPreviewModal.jsx`, the broadcast-style week preview; `matchupPreviewModel.js` normalizes starters, league rosters, the win-probability forecast and the rivalry into that panel's model, `matchupPreviewKeys.js` owns the Keys to the matchup detector engine, and `matchupPreviewKeyHistory.js` remembers which detectors fired for a pairing so keys rotate week to week. The preview's rivalry strip hands off to `MatchupRivalryModal.jsx`, which owns the manager history drilldown; `matchupRivalry.js` orients completed meetings, retains historical roster IDs, and derives starter-only high/low highlights. `App.jsx` shares historical season/week/roster navigation between this drilldown and League History. History loads only when the manager drilldown opens. The shared `gridshift-reveal` entrance in `src/index.css` staggers the drilldown panels (preview, team score breakdown, player drilldown, player compare); `gridshift-reveal--auto` is the index-free variant for dynamically built section lists.
 
 | File | Owns |
 | --- | --- |
@@ -200,9 +232,11 @@ Read first: [[Scoring Call Sites]] — every `calcPoints()` / `calcPointsFromTot
 | --- | --- |
 | `src/utils/scoringEngine.js` | Core scoring — start here; `importLeagueScoring()` for Sleeper imports |
 | `src/utils/projectionEngine.js` | Projections |
-| `src/utils/starterProjections.js` | Shared starter projection assembly and current/provider/prior-season fallback order |
+| `src/utils/starterProjections.js` | Shared starter projection assembly and BDL/Sleeper/current/prior-season fallback order |
 | `src/utils/fantasyProjections.js` | Server projection normalization, BDL stat crosswalk, and Sleeper identity matching |
+| `src/utils/sleeperProjections.js` | Sleeper weekly projection normalization and connected-league scoring |
 | `src/api/fantasyProjectionsApi.js` | Optional browser-to-sidecar BDL weekly projection request |
+| `src/api/sleeperApi.js` | Sleeper weekly projection request |
 | `src/utils/draftAssistant/projections.js` | Draft-context projections |
 | `src/utils/ktcApi.js` | KTC value adjustments |
 

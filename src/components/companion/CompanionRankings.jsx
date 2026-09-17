@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSleeperBase, useSleeperStatsProgress } from '../../context/SleeperContext';
 import { useTheme } from '../../context/ThemeContext';
 import { DEFAULT_SCORING, calcPointsFromTotals } from '../../utils/scoringEngine';
+import { hasRecordedFantasyStats } from '../../utils/projectionEngine.js';
 import CompanionPlayerPreviewSheet from './CompanionPlayerPreviewSheet';
 import useMediaQuery from '../../hooks/useMediaQuery.js';
 import {
@@ -40,7 +41,7 @@ import CompanionPlayerRow, {
   CompanionPlayerMetric,
 } from './CompanionPlayerRow.jsx';
 import StatsProgressBanner from '../ui/StatsProgressBanner';
-import { SkeletonCard } from '../ui/Skeleton';
+import LoadingSwap, { SkeletonRows } from '../ui/LoadingSwap.jsx';
 import SeasonHintBanner from '../ui/SeasonHintBanner';
 import EmptyState from '../ui/EmptyState.jsx';
 import RankingsImageExportModal from './RankingsImageExportModal.jsx';
@@ -376,7 +377,7 @@ export default function CompanionRankings({
 }) {
   const {
     players, loadPlayers,
-    seasonStats, loadSeasonStats,
+    seasonStats, weeklyStats, loadSeasonStats,
     statsLoading,
     activeScoringSettings,
     scoringOverride,
@@ -409,7 +410,7 @@ export default function CompanionRankings({
   const [teamMenuOpen, setTeamMenuOpen] = useState(false);
   const [selectedNflTeams, setSelectedNflTeams] = useState([]);
   const [nflTeamMenuOpen, setNflTeamMenuOpen] = useState(false);
-  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [imageExportOpen, setImageExportOpen] = useState(false);
   const [adpState, setAdpState] = useState({
     season: null,
@@ -497,8 +498,8 @@ export default function CompanionRankings({
     setSortBy('season');
   }, [actionSortOptions, sortBy]);
   useEffect(() => {
-    if (mobileSearchOpen) searchInputRef.current?.focus?.();
-  }, [mobileSearchOpen]);
+    if (filtersOpen && useMobilePreviewSheet) searchInputRef.current?.focus?.();
+  }, [filtersOpen, useMobilePreviewSheet]);
   useEffect(() => {
     const interval = window.setInterval(() => setRankingsAvailabilityDate(new Date()), 60_000);
     return () => window.clearInterval(interval);
@@ -619,7 +620,7 @@ export default function CompanionRankings({
         if (!positionMatchesLeagueFilter(pos, 'ALL', { stats, availableFilters: availablePositions })) return null;
 
         const pts = calcPointsFromTotals(stats, activeScoringSettings, p.position);
-        if (pts <= 0) return null;
+        if (!hasRecordedFantasyStats(stats, weeklyStats?.[id])) return null;
 
         const sortContribution = getActionSortContribution(stats, activeScoringSettings, sortPosition, selectedSortOption);
         if (sortBy !== 'season' && sortBy !== 'avg' && sortContribution.raw == null) return null;
@@ -657,7 +658,7 @@ export default function CompanionRankings({
         return applySortDirection(comparison, sortDir);
       })
       .map((player, i) => ({ ...player, overallRank: i + 1 }));
-  }, [players, seasonStats, activeScoringSettings, availablePositions, rosteredIds, darkMode, sortBy, selectedSortOption, sortValueMode, sortDir]);
+  }, [players, seasonStats, weeklyStats, activeScoringSettings, availablePositions, rosteredIds, darkMode, sortBy, selectedSortOption, sortValueMode, sortDir]);
 
   const sortedPlayers = isAdpMode ? adpSortedPlayers : scoringSortedPlayers;
   const allRanked = useMemo(() => rankPlayersByPosition(sortedPlayers), [sortedPlayers]);
@@ -694,6 +695,11 @@ export default function CompanionRankings({
 
   const nameColPx = useMemo(() => measureMaxNameWidth(ranked), [ranked]);
   const hasLoadedStats = Boolean(seasonStats);
+  // Rows are pending only while there is genuinely nothing to show: once rows
+  // exist, a background stats refresh keeps them on screen and hydrates cells
+  // in place rather than dropping the list back to placeholders.
+  const rowsPending = ranked.length === 0
+    && (isAdpMode ? adpLoading : (statsLoading || !seasonStats));
   const hasAnyScoringRankingsData = useMemo(() => {
     if (!players || !seasonStats) return false;
 
@@ -701,9 +707,9 @@ export default function CompanionRankings({
       const p = players[id];
       if (!p) return false;
       if (!positionMatchesLeagueFilter(p.position, 'ALL', { stats, availableFilters: availablePositions })) return false;
-      return calcPointsFromTotals(stats, activeScoringSettings, p.position) > 0;
+      return hasRecordedFantasyStats(stats, weeklyStats?.[id]);
     });
-  }, [activeScoringSettings, availablePositions, players, seasonStats]);
+  }, [activeScoringSettings, availablePositions, players, seasonStats, weeklyStats]);
   const hasAnyRankingsData = isAdpMode ? adpSortedPlayers.length > 0 : hasAnyScoringRankingsData;
   const hasRankingsData = sortedPlayers.some((player) => selectedFiltersMatchPlayer(player.position, player.stats, selectedFilters, availablePositions));
   const showRankingsControls = hasAnyRankingsData;
@@ -743,6 +749,10 @@ export default function CompanionRankings({
     : selectedFilters.map(getFilterChipLabel).join(' + ');
   const searchExportLabel = search.trim() ? ` · Search “${search.trim()}”` : '';
   const exportContextLabel = `${positionExportLabel} · ${rosterExportLabel}${searchExportLabel}`;
+  const activeFilterCount = selectedFilters.filter(filter => filter !== 'ALL').length
+    + (selectedRosterIds.length > 0 ? 1 : 0)
+    + (selectedNflTeams.length > 0 ? 1 : 0)
+    + (search.trim() ? 1 : 0);
 
   function getImageExportRows() {
     if (isAdpMode) {
@@ -889,46 +899,116 @@ export default function CompanionRankings({
 
       {/* Filters */}
       {showRankingsControls && (
-        <div className="px-4 pb-3 flex flex-col gap-2">
-          {/* Position chips */}
-          <CompanionSelectorRail ariaLabel="Rankings position filter">
-            {filterChips.map(pos => (
-              <CompanionSelectorButton
-                key={pos}
-                active={isFilterChipActive(pos, selectedFilters)}
-                onClick={(event) => {
-                  const nextFilters = getNextSelectedFilters(selectedFilters, pos, event);
-                  setSelectedFilters(nextFilters);
-                  const shouldSyncRoute = !(event.ctrlKey || event.metaKey)
-                    && (pos === 'ALL' || isValidLeaguePositionFilter(pos, availablePositions));
-                  if (shouldSyncRoute) {
-                    onPositionFilterChange?.(getPrimaryRouteFilter(nextFilters, availablePositions));
-                  }
-                }}
-              >
-                {getFilterChipLabel(pos)}
-              </CompanionSelectorButton>
-            ))}
-          </CompanionSelectorRail>
+        <div className="px-4 pb-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <CompanionSelectorButton
+              size="md"
+              className="companion-filter-toggle"
+              active={filtersOpen || activeFilterCount > 0}
+              onClick={() => setFiltersOpen(current => !current)}
+              aria-expanded={filtersOpen}
+              aria-controls="fantasy-rankings-filter-panel"
+              aria-label={filtersOpen
+                ? 'Close rankings filters'
+                : `Open rankings filters${activeFilterCount ? `. ${activeFilterCount} active` : ''}`}
+            >
+              <RankingsFilterIcon />
+              <span>Filters</span>
+              <span className="companion-filter-toggle__summary" aria-hidden="true">
+                {activeFilterCount > 0
+                  ? `${activeFilterCount} active`
+                  : (isAdpMode ? 'Average draft position' : 'All players')}
+              </span>
+            </CompanionSelectorButton>
+            {canExport && (
+              <RankingsExportMenu
+                compact={useMobilePreviewSheet}
+                className="ml-auto"
+                align="right"
+                onExport={handleExport}
+              />
+            )}
+          </div>
 
-          {useMobilePreviewSheet ? (
-            <>
-              {!isAdpMode && (
-                <RankingsMobileSortControls
-                  value={sortBy}
-                  options={sortOptions}
-                  sortValueMode={sortValueMode}
-                  showValueMode={isActionSort}
-                  onSortChange={(nextSort) => {
-                    setSortBy(nextSort);
-                    setSortDir('desc');
-                  }}
-                  onSortValueModeChange={setSortValueMode}
-                />
-              )}
-              <RankingsRankScopeToggle value={rankScope} onChange={setRankScope} />
-              {(rosterFilterOptions.length > 0 || nflTeamOptions.length > 0) && (
-                <div className="flex min-w-0 items-center gap-2">
+          {filtersOpen && (
+            <div id="fantasy-rankings-filter-panel" className="mt-2 flex flex-col gap-2">
+              {/* Position chips */}
+              <CompanionSelectorRail ariaLabel="Rankings position filter">
+                {filterChips.map(pos => (
+                  <CompanionSelectorButton
+                    key={pos}
+                    active={isFilterChipActive(pos, selectedFilters)}
+                    onClick={(event) => {
+                      const nextFilters = getNextSelectedFilters(selectedFilters, pos, event);
+                      setSelectedFilters(nextFilters);
+                      const shouldSyncRoute = !(event.ctrlKey || event.metaKey)
+                        && (pos === 'ALL' || isValidLeaguePositionFilter(pos, availablePositions));
+                      if (shouldSyncRoute) {
+                        onPositionFilterChange?.(getPrimaryRouteFilter(nextFilters, availablePositions));
+                      }
+                    }}
+                  >
+                    {getFilterChipLabel(pos)}
+                  </CompanionSelectorButton>
+                ))}
+              </CompanionSelectorRail>
+
+              {useMobilePreviewSheet ? (
+                <>
+                  {!isAdpMode && (
+                    <RankingsMobileSortControls
+                      value={sortBy}
+                      options={sortOptions}
+                      sortValueMode={sortValueMode}
+                      showValueMode={isActionSort}
+                      onSortChange={(nextSort) => {
+                        setSortBy(nextSort);
+                        setSortDir('desc');
+                      }}
+                      onSortValueModeChange={setSortValueMode}
+                    />
+                  )}
+                  <RankingsRankScopeToggle value={rankScope} onChange={setRankScope} />
+                  {(rosterFilterOptions.length > 0 || nflTeamOptions.length > 0) && (
+                    <div className="flex min-w-0 items-center gap-2">
+                      {rosterFilterOptions.length > 0 && (
+                        <CompanionFantasyTeamMenu
+                          open={teamMenuOpen}
+                          options={rosterFilterOptions}
+                          selectedIds={selectedRosterIds}
+                          selectedOptions={selectedRosterOptions}
+                          onOpenChange={(next) => { setTeamMenuOpen(next); if (next) setNflTeamMenuOpen(false); }}
+                          kicker="Fantasy Team"
+                          menuLabel="Fantasy team filter"
+                          className="flex-1"
+                          onChange={(nextRosterIds) => {
+                            setSelectedRosterIds(nextRosterIds);
+                            onRosterFilterChange?.(serializeRosterFilter(nextRosterIds));
+                          }}
+                        />
+                      )}
+                      {nflTeamOptions.length > 0 && (
+                        <CompanionFantasyTeamMenu
+                          open={nflTeamMenuOpen}
+                          options={nflTeamOptions}
+                          selectedIds={selectedNflTeams}
+                          selectedOptions={selectedNflTeamOptions}
+                          onOpenChange={(next) => { setNflTeamMenuOpen(next); if (next) setTeamMenuOpen(false); }}
+                          kicker="NFL Team"
+                          placeholder="All NFL Teams"
+                          allLabel="All NFL Teams"
+                          menuLabel="NFL team filter"
+                          pluralLabel="NFL Teams"
+                          className="flex-1"
+                          onChange={setSelectedNflTeams}
+                        />
+                      )}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="flex flex-wrap items-center gap-2">
+                  <RankingsRankScopeToggle value={rankScope} onChange={setRankScope} />
                   {rosterFilterOptions.length > 0 && (
                     <CompanionFantasyTeamMenu
                       open={teamMenuOpen}
@@ -938,7 +1018,6 @@ export default function CompanionRankings({
                       onOpenChange={(next) => { setTeamMenuOpen(next); if (next) setNflTeamMenuOpen(false); }}
                       kicker="Fantasy Team"
                       menuLabel="Fantasy team filter"
-                      className="flex-1"
                       onChange={(nextRosterIds) => {
                         setSelectedRosterIds(nextRosterIds);
                         onRosterFilterChange?.(serializeRosterFilter(nextRosterIds));
@@ -957,87 +1036,37 @@ export default function CompanionRankings({
                       allLabel="All NFL Teams"
                       menuLabel="NFL team filter"
                       pluralLabel="NFL Teams"
-                      className="flex-1"
                       onChange={setSelectedNflTeams}
                     />
                   )}
+                  {!isAdpMode && (
+                    <>
+                      <RankingsSortSelect
+                        value={sortBy}
+                        options={sortOptions}
+                        onChange={(nextSort) => {
+                          setSortBy(nextSort);
+                          setSortDir('desc');
+                        }}
+                      />
+                      {isActionSort && (
+                        <RankingsValueModeChips
+                          value={sortValueMode}
+                          onChange={setSortValueMode}
+                        />
+                      )}
+                    </>
+                  )}
                 </div>
               )}
-              <div className="flex min-w-0 items-center gap-2">
-                <RankingsSearchIconButton
-                  active={mobileSearchOpen || Boolean(search.trim())}
-                  onClick={() => setMobileSearchOpen(current => !current)}
-                />
-                {canExport && (
-                  <RankingsExportMenu compact align="right" onExport={handleExport} />
-                )}
-              </div>
-            </>
-          ) : (
-            <div className="flex flex-wrap items-center gap-2">
-              <RankingsRankScopeToggle value={rankScope} onChange={setRankScope} />
-              {rosterFilterOptions.length > 0 && (
-                <CompanionFantasyTeamMenu
-                  open={teamMenuOpen}
-                  options={rosterFilterOptions}
-                  selectedIds={selectedRosterIds}
-                  selectedOptions={selectedRosterOptions}
-                  onOpenChange={(next) => { setTeamMenuOpen(next); if (next) setNflTeamMenuOpen(false); }}
-                  kicker="Fantasy Team"
-                  menuLabel="Fantasy team filter"
-                  onChange={(nextRosterIds) => {
-                    setSelectedRosterIds(nextRosterIds);
-                    onRosterFilterChange?.(serializeRosterFilter(nextRosterIds));
-                  }}
-                />
-              )}
-              {nflTeamOptions.length > 0 && (
-                <CompanionFantasyTeamMenu
-                  open={nflTeamMenuOpen}
-                  options={nflTeamOptions}
-                  selectedIds={selectedNflTeams}
-                  selectedOptions={selectedNflTeamOptions}
-                  onOpenChange={(next) => { setNflTeamMenuOpen(next); if (next) setTeamMenuOpen(false); }}
-                  kicker="NFL Team"
-                  placeholder="All NFL Teams"
-                  allLabel="All NFL Teams"
-                  menuLabel="NFL team filter"
-                  pluralLabel="NFL Teams"
-                  onChange={setSelectedNflTeams}
-                />
-              )}
-              {!isAdpMode && (
-                <>
-                  <RankingsSortSelect
-                    value={sortBy}
-                    options={sortOptions}
-                    onChange={(nextSort) => {
-                      setSortBy(nextSort);
-                      setSortDir('desc');
-                    }}
-                  />
-                  {isActionSort && (
-                    <RankingsValueModeChips
-                      value={sortValueMode}
-                      onChange={setSortValueMode}
-                    />
-                  )}
-                </>
-              )}
-              {canExport && (
-                <RankingsExportMenu className="ml-auto" align="right" onExport={handleExport} />
-              )}
-            </div>
-          )}
 
-          {/* Search */}
-          {(!useMobilePreviewSheet || mobileSearchOpen || search.trim()) && (
-            <CompanionSearchField
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Search players..."
-              inputProps={{ ref: searchInputRef }}
-            />
+              <CompanionSearchField
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search players..."
+                inputProps={{ ref: searchInputRef }}
+              />
+            </div>
           )}
         </div>
       )}
@@ -1099,40 +1128,32 @@ export default function CompanionRankings({
         </div>
       )}
 
-      {isScoringMode && !seasonStats && !statsLoading && (
-        <div className="px-4 py-4 flex flex-col gap-3">
-          <SkeletonCard height="3.5rem" />
-          <SkeletonCard height="3.5rem" />
-          <SkeletonCard height="3.5rem" />
-        </div>
-      )}
-
-      {ranked.map((player) => (
-        <RankRow
-          key={player.id}
-          rank={player.rank}
-          player={player}
-          activeSortOption={selectedSortOption}
-          sortValueMode={sortValueMode}
-          rankingMode={isAdpMode ? 'adp' : 'scoring'}
-          hideAvgColumn={effectiveHideAvgColumn}
-          isCompactPhone={isCompactPhone}
-          nameColPx={nameColPx}
-          statsPending={statsLoading}
-          onSelect={() => {
-            if (useMobilePreviewSheet) setSelectedPlayerId(player.id);
-            else onViewPlayer?.(player.id);
-          }}
-        />
-      ))}
-
-      {adpLoading && (
-        <div className="px-4 py-4 flex flex-col gap-3">
-          <SkeletonCard height="3.5rem" />
-          <SkeletonCard height="3.5rem" />
-          <SkeletonCard height="3.5rem" />
-        </div>
-      )}
+      {/* Loading motion: the shared skeleton -> reveal handoff. Timing and
+          gesture come from the --gs-load-* tokens; see docs/Loading Motion.md. */}
+      <LoadingSwap
+        loading={rowsPending}
+        resetKey={`${selectedSeasonKey}:${isAdpMode ? 'adp' : 'scoring'}`}
+        skeleton={<SkeletonRows count={6} height="3.5rem" className="px-4 py-4" />}
+      >
+        {ranked.map((player) => (
+          <RankRow
+            key={player.id}
+            rank={player.rank}
+            player={player}
+            activeSortOption={selectedSortOption}
+            sortValueMode={sortValueMode}
+            rankingMode={isAdpMode ? 'adp' : 'scoring'}
+            hideAvgColumn={effectiveHideAvgColumn}
+            isCompactPhone={isCompactPhone}
+            nameColPx={nameColPx}
+            statsPending={statsLoading}
+            onSelect={() => {
+              if (useMobilePreviewSheet) setSelectedPlayerId(player.id);
+              else onViewPlayer?.(player.id);
+            }}
+          />
+        ))}
+      </LoadingSwap>
 
       {rankingsDataMode === 'unavailable' && (
         <EmptyState
@@ -1201,34 +1222,22 @@ function RankingsStatsLoadingBanner() {
   return <StatsProgressBanner progress={statsProgress} className="mx-4 mb-3" />;
 }
 
-function RankingsSearchIconButton({ active, onClick }) {
+function RankingsFilterIcon() {
   return (
-    <button
-      type="button"
-      aria-label="Search players"
-      aria-pressed={active}
-      onClick={onClick}
-      className="companion-rankings-search-toggle grid shrink-0 place-items-center transition-colors active:opacity-70"
-      style={{
-        background: active ? 'var(--color-signature)' : 'var(--color-fill)',
-        border: '1px solid var(--color-separator)',
-        color: active ? 'var(--color-signature-fg)' : 'var(--color-label-secondary)',
-      }}
+    <svg
+      aria-hidden="true"
+      className="h-4 w-4"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
     >
-      <svg
-        aria-hidden="true"
-        className="h-5 w-5"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2.4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <circle cx="11" cy="11" r="7" />
-        <path d="m20 20-3.5-3.5" />
-      </svg>
-    </button>
+      <path d="M4 6h16" />
+      <path d="M7 12h10" />
+      <path d="M10 18h4" />
+    </svg>
   );
 }
 
@@ -1573,7 +1582,7 @@ function RankRow({ rank, player, activeSortOption, sortValueMode, rankingMode = 
               ? formatRankingsMetric(getActionDisplayValue(player, sortValueMode, 'season'))
               : player.pts.toFixed(1)}
           label={!isAdpMode && hideAvgColumn && !isActionSort ? formatRankingsPpgLabel(player.avgPPG) : null}
-          pending={!isAdpMode && statsPending && !isActionSort && !(player.pts > 0)}
+          pending={!isAdpMode && statsPending && !isActionSort && player.pts == null}
           align="center"
         />,
       ].filter(Boolean)}

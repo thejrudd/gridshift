@@ -71,3 +71,16 @@ See [[Companion Shared Rows]] before changing Companion/Trade-adjacent selector 
 - Player status badges, `ROSTERED` labels, trend labels, and metric text on team gradients must use the shared local-contrast path (`PlayerStatusBadge`, `CompanionPlayerStatus`, `CompanionPlayerLocalContrastText`, or `CompanionPlayerMetric`). Do not hardcode text colors based only on light/dark mode or team accent.
 - Preserve row slots. Failed headshots should fall back to initials and failed logos should leave a spacer; never remove a grid cell with `display: none` because it can collapse player identity columns.
 - Wide player rows remain inside a data/workbench frame so the measured name column, adjacent logo/status slot, flexible spacer, metrics, and action stay visually anchored instead of drifting across ultrawide space.
+
+## Loading And Reveal Motion
+
+See [[Loading Motion]] for the full glossary and the Fantasy rollout status.
+
+- Every loading timing and gesture is a named `--gs-load-*` token in `src/index.css`, mirrored in `src/utils/loadingMotion.js`. Retune there, never at a call site.
+- Shipped profile: 500ms duration, 20ms stagger with the delay capped at row 7, broadcast easing, `lift` entrance, `sweep` texture, `row-by-row` handoff, 120ms show after, 240ms minimum hold.
+- Entrance animations fill `backwards` and never set a base `opacity: 0`. Handing a row's resting appearance to a filling animation makes any style recalc paint it invisible for a frame, which on a long list reads as a flicker cascading down the page.
+- Structure first. Tabs, filters, sort headers, column labels, and rank numbers render from the first frame; only unhydrated values shimmer. Never render a placeholder value (`0.0`, `—`) as if it were data.
+- Wire a surface with `LoadingSwap` (skeleton → content) or `RevealList` (entrance only). `loading` means "nothing to show yet" — a populated list must never drop back to placeholders on a background refresh.
+- A revealed subtree containing sticky or fixed descendants must use `entrance="fade"`. A transform-based entrance makes the animating wrapper their containing block for the length of the reveal.
+- Show after and minimum hold are a pair: the first stops a fast load from flashing a placeholder, the second stops a just-too-slow one from strobing.
+- All of it is disabled under `prefers-reduced-motion: reduce`.

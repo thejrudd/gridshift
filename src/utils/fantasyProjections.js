@@ -1,10 +1,11 @@
 import { calcPoints, getFlatScoringSettings } from './scoringEngine.js';
-import { getTeamAbbr, normalizeName } from './liveScoringFeed.js';
+import { getTeamAbbr } from './liveScoringFeed.js';
+import { normalizeProviderPlayerName, normalizeProviderTeam } from './providerPlayerIdentity.js';
 
 const IDP_POSITIONS = new Set(['DL', 'LB', 'DB', 'DE', 'DT', 'CB', 'S', 'ILB', 'OLB', 'SS', 'FS']);
 
 function normalizeProjectionName(name) {
-  return normalizeName(name).replace(/\s+(?:jr|sr|ii|iii|iv|v)$/i, '');
+  return normalizeProviderPlayerName(name);
 }
 
 function normalizePosition(position) {
@@ -35,7 +36,7 @@ function getProviderPosition(row) {
 }
 
 function getProviderTeam(row) {
-  return getTeamAbbr(row?.team?.abbreviation ?? row?.team?.short_name ?? row?.team?.name ?? row?.team);
+  return normalizeProviderTeam(row?.team?.abbreviation ?? row?.team?.short_name ?? row?.team?.name ?? row?.team);
 }
 
 function getSleeperTeam(player) {
@@ -309,6 +310,7 @@ export function mapFantasyProjectionsToSleeperPlayers({ players, projectionRows,
 export function getFantasyProjectionSourceLabel(projection) {
   const source = projection?.factors?.source;
   if (source === 'balldontlie') return 'BALLDONTLIE';
+  if (source === 'sleeper') return 'Sleeper';
   if (source === 'prior-season') return 'Prior season';
   if (source === 'current-season') return 'GridShift model';
   return null;

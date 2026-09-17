@@ -9,6 +9,7 @@ import {
   isTurnoverOnDowns,
 } from './nflPlays/fieldGeometry.js';
 import { enrichPlaySequenceContext } from './nflPlays/playSequenceContext.js';
+import { normalizeCanonicalPlay } from './playByPlay/normalizePlay.js';
 import { buildPlayerQuarterStats, getStatisticsPlayerKey } from './statisticsPlayerQuarterStats.js';
 
 export const BDL_SEASON_TYPES = Object.freeze({
@@ -484,8 +485,19 @@ function formatPlaySpot(play, team, game) {
       : '—';
 }
 
+/**
+ * Statistics Scores' play row.
+ *
+ * Provider-shape semantics — geometry, narrative inputs, the possession fields
+ * — come from the shared canonical normalizer in `playByPlay/normalizePlay.js`.
+ * Everything this function still computes itself is Statistics Scores
+ * presentation: the "Play unavailable" default, the down/spot/quarter strings,
+ * the rendered score, and `scoring`, which stays the provider's own
+ * `scoring_play` flag rather than Fantasy Live's text-inferred reading.
+ */
 export function normalizeBdlScorePlay(play, game) {
   if (!play) return null;
+  const canonical = normalizeCanonicalPlay(play, { gameId: game?.id ?? null });
   const description = firstString(play.text, play.short_text, 'Play unavailable') ?? 'Play unavailable';
   const down = play.start_down > 0
     ? `${ordinal(play.start_down)} & ${play.start_distance ?? '—'}`
@@ -508,29 +520,29 @@ export function normalizeBdlScorePlay(play, game) {
     // field/win-probability visuals. `*_yards_to_endzone`, `end_down_distance_text`,
     // and `end_possession_text` are absent from BALLDONTLIE's published OpenAPI spec
     // but present on every live play row, so every consumer must tolerate null.
-    typeSlug: firstString(play.type_slug, play.type_abbreviation),
-    shortText: firstString(play.short_text),
+    // Absolute yard lines are measured from the home goal line; unlike the
+    // `*_yards_to_endzone` pair they never change frame, so the field graphics
+    // read position from them first.
+    typeSlug: canonical.typeSlug,
+    shortText: canonical.shortText,
     rawText: firstString(play.text, play.short_text),
-    startDown: asNumberOrNull(play.start_down),
-    startDistance: asNumberOrNull(play.start_distance),
-    endDown: asNumberOrNull(play.end_down),
-    endDistance: asNumberOrNull(play.end_distance),
-    startYardsToEndzone: asNumberOrNull(play.start_yards_to_endzone),
-    endYardsToEndzone: asNumberOrNull(play.end_yards_to_endzone),
-    // Absolute yard lines, measured from the home goal line. Unlike the
-    // `*_yards_to_endzone` pair above these never change frame, so the field
-    // graphics read position from them first.
-    startYardLine: asNumberOrNull(play.start_yard_line),
-    endYardLine: asNumberOrNull(play.end_yard_line),
-    startPossessionText: firstString(play.start_possession_text),
-    endPossessionText: firstString(play.end_possession_text),
-    endDownDistanceText: firstString(play.end_down_distance_text),
-    statYardage: asNumberOrNull(play.stat_yardage),
+    startDown: canonical.startDown,
+    startDistance: canonical.startDistance,
+    endDown: canonical.endDown,
+    endDistance: canonical.endDistance,
+    startYardsToEndzone: canonical.startYardsToEndzone,
+    endYardsToEndzone: canonical.endYardsToEndzone,
+    startYardLine: canonical.startYardLine,
+    endYardLine: canonical.endYardLine,
+    startPossessionText: canonical.startPossessionText,
+    endPossessionText: canonical.endPossessionText,
+    endDownDistanceText: canonical.endDownDistanceText,
+    statYardage: canonical.statYardage,
     // GridShift may recover the passer on a provider summary-only pick-six
     // from earlier, positively identified passes in the same possession. This
     // is app-owned context, never presented as a provider-supplied field.
-    inferredPasserName: firstString(play.gridshift_inferred_passer_name),
-    homeWinProbability: asNumberOrNull(play.home_win_probability),
+    inferredPasserName: canonical.inferredPasserName,
+    homeWinProbability: canonical.homeWinProbability,
     awayScore: asScore(play.away_score),
     homeScore: asScore(play.home_score),
   };

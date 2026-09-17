@@ -9,6 +9,7 @@ import {
   buildLeagueHistoryModel,
   buildSeasonStandings,
   getLatestFinalizedWeek,
+  getLeagueHistorySnapshot,
   getSeasonChampion,
   normalizeActivityTransaction,
   normalizeSeasonBrackets,
@@ -511,6 +512,54 @@ test('builds lifetime leaderboard, rivalries, champions, and core record leaders
   assert.equal(model.records.largestStarterShare.share, 70);
   assert.equal(model.records.mostTrades.value, 1);
   assert.equal(model.records.mostWaiverAdds.participant.id, 'user-a');
+});
+
+test('uses Sleeper latest winner metadata when a completed bracket snapshot is empty', () => {
+  const snapshot = {
+    ...snapshot2024,
+    league: {
+      ...snapshot2024.league,
+      metadata: { latest_league_winner_roster_id: '2' },
+    },
+    winnersBracket: [],
+    losersBracket: [],
+  };
+
+  const champion = getSeasonChampion(snapshot);
+  assert.equal(champion.participant.id, 'user-b');
+  assert.equal(champion.participant.managerName, 'Blair');
+  assert.equal(champion.runnerUp, null);
+});
+
+test('does not permanently cache an incomplete completed-season snapshot', async () => {
+  const previousFetch = globalThis.fetch;
+  const previousLocalStorage = globalThis.localStorage;
+  const storage = new Map([
+    ['nfl_pc_league-history:v1:empty-history:2025', JSON.stringify({ ts: Date.now(), data: { stale: true } })],
+  ]);
+  let fetchCount = 0;
+  globalThis.localStorage = {
+    getItem: (cacheKey) => storage.get(cacheKey) ?? null,
+    setItem: (cacheKey, value) => storage.set(cacheKey, value),
+  };
+  globalThis.fetch = async () => {
+    fetchCount += 1;
+    return { ok: true, json: async () => [] };
+  };
+
+  try {
+    const league = { league_id: 'empty-history', season: '2025', settings: { last_scored_leg: 17 } };
+    await getLeagueHistorySnapshot({ league, season: '2025', completed: true });
+    await getLeagueHistorySnapshot({ league, season: '2025', completed: true });
+    assert.ok(fetchCount > 40, 'both attempts should fetch the incomplete snapshot instead of using a permanent cache');
+    assert.equal(storage.has('nfl_pc_league-history:v1:empty-history:2025'), true);
+    assert.equal(storage.has('nfl_pc_league-history:v2:empty-history:2025'), false);
+  } finally {
+    if (previousFetch) globalThis.fetch = previousFetch;
+    else delete globalThis.fetch;
+    if (previousLocalStorage) globalThis.localStorage = previousLocalStorage;
+    else delete globalThis.localStorage;
+  }
 });
 
 test('normalizes completed Sleeper activity with team and player context', () => {

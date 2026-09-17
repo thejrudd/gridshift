@@ -43,8 +43,8 @@ export const DEFENSE_RANKING_STAT_OPTIONS = {
 
 export const DEFAULT_DEFENSE_RANKING_STATE = {
   mode: 'stats',
-  position: 'QB',
-  stat: 'pass_yd',
+  position: 'ALL',
+  stat: 'total_yd',
   sort: 'total',
   dir: 'desc',
   query: '',

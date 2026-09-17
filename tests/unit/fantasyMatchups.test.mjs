@@ -3,7 +3,10 @@ import test from 'node:test';
 
 import {
   buildFantasyMatchupGroups,
+  canUseFantasyRosterPreview,
   findMatchupGroupIndexByRosterId,
+  hasSleeperWeeklyStarterIds,
+  isPublishedFantasyMatchupLineup,
 } from '../../src/utils/fantasyMatchups.js';
 
 const rosters = [
@@ -58,4 +61,40 @@ test('finds the matchup containing a selected roster', () => {
 
   assert.equal(findMatchupGroupIndexByRosterId(groups, '4'), 1);
   assert.equal(findMatchupGroupIndexByRosterId(groups, '999'), -1);
+});
+
+test('treats an all-placeholder future lineup as unpublished', () => {
+  assert.equal(isPublishedFantasyMatchupLineup({ starters: ['0', '0', ''] }, { 101: {} }), false);
+  assert.equal(isPublishedFantasyMatchupLineup({ starters: [] }, { 101: {} }), false);
+});
+
+test('accepts a lineup with known starters and intentional empty slots', () => {
+  assert.equal(isPublishedFantasyMatchupLineup({ starters: ['101', '0', '102'] }, {
+    101: {},
+    102: {},
+  }), true);
+});
+
+test('fails closed when a non-empty starter cannot be resolved', () => {
+  assert.equal(isPublishedFantasyMatchupLineup({ starters: ['101', 'missing-player'] }, { 101: {} }), false);
+});
+
+test('treats any non-placeholder Sleeper starter id as a published weekly lineup', () => {
+  assert.equal(hasSleeperWeeklyStarterIds({ starters: ['0', 'missing-player'] }), true);
+  assert.equal(hasSleeperWeeklyStarterIds({ starters: ['0', ''] }), false);
+});
+
+test('allows a current-roster preview when the weekly row is unresolved', () => {
+  assert.equal(canUseFantasyRosterPreview(
+    { starters: ['0', '0'] },
+    { starters: ['101', '102'] },
+  ), true);
+  assert.equal(canUseFantasyRosterPreview(
+    { starters: ['0', '0'] },
+    { starters: ['101', 'missing-player'] },
+  ), true);
+  assert.equal(canUseFantasyRosterPreview(
+    { starters: ['101', '102'] },
+    { starters: ['101', '102'] },
+  ), false);
 });

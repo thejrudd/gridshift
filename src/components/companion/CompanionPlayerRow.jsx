@@ -201,7 +201,17 @@ export default function CompanionPlayerRow({
   const position = getPlayerPosition(safePlayer);
   const team = getPlayerTeam(safePlayer);
   const isInteractive = interactive ?? Boolean(onClick);
-  const theme = team ? getTeamVisualTheme(team, darkMode, teamThemeOptions) : null;
+  // The shared row's team mark is on the right, while D/ST rows use the mark
+  // as the left-side avatar. NYG/NYJ need this placement to choose the
+  // readable side of their two-color gradient.
+  const resolvedTeamThemeOptions = teamThemeOptions ?? (
+    useTeamLogoAsAvatar
+      ? { logoSide: 'start' }
+      : showTeamLogo
+        ? { logoSide: 'end' }
+        : undefined
+  );
+  const theme = team ? getTeamVisualTheme(team, darkMode, resolvedTeamThemeOptions) : null;
   const hasTeamGradient = Boolean(theme?.gradient);
   const accentColor = theme?.borderColor ?? getCompanionPositionColor(position) ?? 'var(--color-accent)';
   const rowBg = hasTeamGradient ? theme.gradient : (theme?.tint ?? (selected ? 'var(--color-fill-secondary)' : 'var(--color-fill)'));

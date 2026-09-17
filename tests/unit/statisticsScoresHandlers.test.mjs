@@ -7,6 +7,7 @@ import {
   fetchStatisticsScoresLatestPlay,
   fetchStatisticsScoresGames,
   fetchStatisticsScoresLiveWeek,
+  fetchStatisticsScoresWeekExport,
   getStatisticsScoresConfigStatus,
   validateStatisticsScoresLiveWeekQuery,
 } from '../../server/statisticsScoresHandlers.js';
@@ -128,6 +129,60 @@ test('Statistics Scores detail treats provider empty arrays as valid partial cov
     plays: false,
     scoring: false,
   });
+});
+
+test('Statistics Scores week export keeps scoreboard coverage when detail is bounded', async () => {
+  const requests = [];
+  const result = await fetchStatisticsScoresWeekExport({
+    season: 2190,
+    phase: 'regular',
+    week: 4,
+    detail: 'box_score',
+    env: { ...TEST_BDL_ENV },
+    fetcher: async (url, options) => {
+      const requestUrl = new URL(url);
+      requests.push({ requestUrl, options });
+      if (requestUrl.pathname === '/nfl/v1/games') {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            data: [{
+              id: 21904,
+              week: 4,
+              status: 'Final',
+              date: '2190-09-30T17:00:00.000Z',
+              visitor_team: { abbreviation: 'BUF', full_name: 'Buffalo Bills' },
+              home_team: { abbreviation: 'NYJ', full_name: 'New York Jets' },
+              visitor_team_score: 21,
+              home_team_score: 17,
+            }],
+            meta: null,
+          }),
+        };
+      }
+      if (requestUrl.pathname === '/nfl/v1/games/21904') {
+        return { ok: true, status: 200, json: async () => ({ data: { id: 21904, status: 'Final' } }) };
+      }
+      if (requestUrl.pathname === '/nfl/v1/stats') {
+        return { ok: true, status: 200, json: async () => ({ data: [{ id: 'player-stat' }], meta: null }) };
+      }
+      if (requestUrl.pathname === '/nfl/v1/team_stats') {
+        return { ok: true, status: 200, json: async () => ({ data: [{ id: 'team-stat' }], meta: null }) };
+      }
+      throw new Error(`Unexpected request: ${requestUrl}`);
+    },
+  });
+
+  assert.equal(result.provider, 'balldontlie');
+  assert.equal(result.games.length, 1);
+  assert.equal(result.details.length, 1);
+  assert.deepEqual(result.coverage, {
+    scoreboard: 'complete',
+    boxScores: 'complete',
+    playByPlay: 'not_requested',
+  });
+  assert.equal(requests.some(({ requestUrl }) => requestUrl.pathname === '/nfl/v1/plays'), false);
 });
 
 test('Statistics Scores coalesces and caches the complete BALLDONTLIE detail request', async () => {

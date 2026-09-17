@@ -17,6 +17,7 @@ import { isWaiverEligiblePlayerRecord } from '../../utils/playerEligibility';
 import { resolveStatisticsPlayerMetaFromSleeperId } from '../../utils/playerDrilldown';
 import { debugCompanionLog, debugCompanionMeasure } from '../../utils/companionPerfDebug';
 import CompanionLoadingState from './CompanionLoadingState';
+import LoadingSwap, { SkeletonRows } from '../ui/LoadingSwap.jsx';
 import CompanionPlayerPreviewSheet from './CompanionPlayerPreviewSheet';
 import PlayerStatusBadge from './PlayerStatusBadge.jsx';
 import { getPlayerAvailabilityStatus } from '../../utils/playerAvailabilityStatus.js';
@@ -173,6 +174,7 @@ export default function CompanionWaiver({
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState('recent');
+  const [waiverFiltersOpen, setWaiverFiltersOpen] = useState(false);
   const [selectedPlayerId, setSelectedPlayerId] = useState(null);
   const debounceRef = useRef(null);
   const rankedCandidatesCacheRef = useRef({ key: '', value: [] });
@@ -260,7 +262,8 @@ export default function CompanionWaiver({
     [scheduleMap, week],
   );
 
-  const shouldProjectWaivers = sortBy === 'projected';
+  const shouldRankWaiversByProjection = sortBy === 'projected';
+  const canBuildWaiverProjections = Boolean(weeklyStats && players);
   const rankedCandidatesCacheKey = useMemo(() => {
     return [
       selectedLeagueId,
@@ -340,27 +343,27 @@ export default function CompanionWaiver({
         if (sortBy === 'season') return b.pts - a.pts || b.recentAvg - a.recentAvg;
         return b.recentAvg - a.recentAvg || b.pts - a.pts;
       })
-      .slice(0, shouldProjectWaivers ? 250 : 100), {
+      .slice(0, shouldRankWaiversByProjection ? 250 : 100), {
         rankedCount: rankedCandidates.length,
         activePosFilter,
         searchLength: q.length,
         sortBy,
-        shouldProjectWaivers,
+        shouldRankWaiversByProjection,
       });
-  }, [rankedCandidates, activePosFilter, search, sortBy, seasonStats, availablePositions, shouldProjectWaivers]);
+  }, [rankedCandidates, activePosFilter, search, sortBy, seasonStats, availablePositions, shouldRankWaiversByProjection]);
 
   const defenseTable = useMemo(() => {
-    if (!shouldProjectWaivers || !weeklyStats || !players) return null;
+    if (!canBuildWaiverProjections) return null;
     return debugCompanionMeasure('Waiver projection defense table', () => (
       buildDefenseTable(weeklyStats, players, scheduleMap, activeScoringSettings)
     ), {
       playerCount: Object.keys(players).length,
       weeklyStatCount: Object.keys(weeklyStats).length,
     });
-  }, [shouldProjectWaivers, weeklyStats, players, scheduleMap, activeScoringSettings]);
+  }, [canBuildWaiverProjections, weeklyStats, players, scheduleMap, activeScoringSettings]);
 
   const leagueAvgByPos = useMemo(() => {
-    if (!shouldProjectWaivers || !weeklyStats || !players) return {};
+    if (!canBuildWaiverProjections) return {};
     return debugCompanionMeasure('Waiver projection league averages', () => {
       const result = {};
       for (const pos of availablePositions) {
@@ -369,10 +372,10 @@ export default function CompanionWaiver({
       }
       return result;
     }, { availablePositions, week });
-  }, [shouldProjectWaivers, weeklyStats, players, activeScoringSettings, week, availablePositions]);
+  }, [canBuildWaiverProjections, weeklyStats, players, activeScoringSettings, week, availablePositions]);
 
   const available = useMemo(() => {
-    if (!shouldProjectWaivers || !defenseTable) {
+    if (!canBuildWaiverProjections || !defenseTable) {
       const visibleRowsCacheKey = getVisibleRowsCacheKey({
         filteredCandidates,
         week,
@@ -434,12 +437,13 @@ export default function CompanionWaiver({
           weather: null,
           allWeeklyStats: null,
           players: null,
-          activeScoringSettings,
+          scoringSettings: activeScoringSettings,
           scheduleMap,
           week,
           defStrength,
           leagueAvg: leagueAvgByPos[projectionPosition] ?? 0,
           skipOpponentLookup: true,
+          minimumGames: 1,
         });
 
         return {
@@ -449,6 +453,7 @@ export default function CompanionWaiver({
         };
       })
       .sort((a, b) => {
+        if (!shouldRankWaiversByProjection) return 0;
         const ap = a.projected ?? -1;
         const bp = b.projected ?? -1;
         return bp - ap || b.recentAvg - a.recentAvg;
@@ -466,7 +471,7 @@ export default function CompanionWaiver({
         candidateCount: filteredCandidates.length,
         week,
       });
-  }, [shouldProjectWaivers, filteredCandidates, defenseTable, week, scheduleWeekKey, activeScoringSettings, scheduleMap, leagueAvgByPos, darkMode, calcFantasyPoints]);
+  }, [canBuildWaiverProjections, shouldRankWaiversByProjection, filteredCandidates, defenseTable, week, scheduleWeekKey, activeScoringSettings, scheduleMap, leagueAvgByPos, darkMode, calcFantasyPoints]);
 
   const showWaiverPreparing = available.length === 0 && (
     statsLoading
@@ -476,6 +481,11 @@ export default function CompanionWaiver({
   const hasAnyWaiverData = rankedCandidates.length > 0;
   const showWaiverEmpty = available.length === 0 && !showWaiverPreparing && Boolean(seasonStats);
   const showWaiverControls = hasAnyWaiverData;
+  const hasActiveWaiverFilters = activePosFilter !== 'ALL' || Boolean(search.trim());
+  const waiverFilterSummary = [
+    activePosFilter === 'ALL' ? 'All positions' : getPositionFilterLabel(activePosFilter),
+    search.trim() ? `Search: ${search.trim()}` : null,
+  ].filter(Boolean).join(' · ');
   const openWaiverPlayer = useCallback(async (player) => {
     if (!player || !onViewPlayer) return;
 
@@ -497,31 +507,53 @@ export default function CompanionWaiver({
   return (
     <div className="page-frame-data pb-6">
       {showWaiverControls && (
-        <div className="px-4 pb-3 flex flex-col gap-2">
-          <CompanionSelectorRail ariaLabel="Waiver position filter">
-            {availablePositions.map(pos => (
-              <CompanionSelectorButton
-                key={pos}
-                active={activePosFilter === pos}
-                onClick={() => {
-                  onConsumeInitialPositionRequest?.();
-                  setPosFilter(pos);
-                  onPositionFilterChange?.(pos);
+        <div className="fantasy-waiver-controls px-4 pb-3">
+          <CompanionSelectorButton
+            className="companion-filter-toggle fantasy-waiver-filter-toggle"
+            active={waiverFiltersOpen || hasActiveWaiverFilters}
+            aria-expanded={waiverFiltersOpen}
+            aria-controls="fantasy-waiver-filter-panel"
+            aria-label={waiverFiltersOpen ? 'Hide waiver filters' : 'Show waiver filters'}
+            data-testid="fantasy-waiver-filter-toggle"
+            onClick={() => setWaiverFiltersOpen(open => !open)}
+          >
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M7 12h10m-7 6h4" />
+            </svg>
+            <span>Filters</span>
+            <span className="companion-filter-toggle__summary">{waiverFilterSummary}</span>
+          </CompanionSelectorButton>
+
+          <div
+            id="fantasy-waiver-filter-panel"
+            className={`fantasy-waiver-filter-panel${waiverFiltersOpen ? '' : ' is-collapsed'}`}
+            data-testid="fantasy-waiver-filter-panel"
+          >
+            <CompanionSelectorRail ariaLabel="Waiver position filter">
+              {availablePositions.map(pos => (
+                <CompanionSelectorButton
+                  key={pos}
+                  active={activePosFilter === pos}
+                  onClick={() => {
+                    onConsumeInitialPositionRequest?.();
+                    setPosFilter(pos);
+                    onPositionFilterChange?.(pos);
+                  }}
+                >
+                  {getPositionFilterLabel(pos)}
+                </CompanionSelectorButton>
+              ))}
+            </CompanionSelectorRail>
+            <CompanionSearchField
+              value={searchInput}
+              onChange={e => {
+                  setSearchInput(e.target.value);
+                  clearTimeout(debounceRef.current);
+                  debounceRef.current = setTimeout(() => setSearch(e.target.value), 200);
                 }}
-              >
-                {getPositionFilterLabel(pos)}
-              </CompanionSelectorButton>
-            ))}
-          </CompanionSelectorRail>
-          <CompanionSearchField
-            value={searchInput}
-            onChange={e => {
-                setSearchInput(e.target.value);
-                clearTimeout(debounceRef.current);
-                debounceRef.current = setTimeout(() => setSearch(e.target.value), 200);
-              }}
-            placeholder="Search players..."
-          />
+              placeholder="Search players..."
+            />
+          </div>
         </div>
       )}
 
@@ -549,29 +581,38 @@ export default function CompanionWaiver({
         </div>
       )}
 
-      {showWaiverPreparing && (
-        <CompanionLoadingState
-          title="Preparing waiver options..."
-          description="Loading league stats and active player records."
-        />
-      )}
-
-      {available.map(player => (
-        <ResponsiveWaiverRow
-          key={player.id}
-          player={player}
-          onSelect={() => {
-            if (useMobilePreviewSheet) {
-              setSelectedPlayerId(player.id);
-              return;
-            }
-            openWaiverPlayer(player);
-          }}
-          sortBy={sortBy}
-          layout={layout}
-          isCompactPhone={isCompactPhone}
-        />
-      ))}
+      {/* Loading motion: shared skeleton -> reveal handoff. Timing and gesture
+          come from the --gs-load-* tokens; see docs/Loading Motion.md. */}
+      <LoadingSwap
+        loading={showWaiverPreparing}
+        resetKey={`${selectedLeagueId ?? ''}:${season}`}
+        skeleton={(
+          <>
+            <CompanionLoadingState
+              title="Preparing waiver options..."
+              description="Loading league stats and active player records."
+            />
+            <SkeletonRows count={5} height="3.5rem" className="px-4 pb-4" />
+          </>
+        )}
+      >
+        {available.map(player => (
+          <ResponsiveWaiverRow
+            key={player.id}
+            player={player}
+            onSelect={() => {
+              if (useMobilePreviewSheet) {
+                setSelectedPlayerId(player.id);
+                return;
+              }
+              openWaiverPlayer(player);
+            }}
+            sortBy={sortBy}
+            layout={layout}
+            isCompactPhone={isCompactPhone}
+          />
+        ))}
+      </LoadingSwap>
 
       {showWaiverEmpty && (
         <div className="flex flex-col items-center justify-center px-6 py-16 text-center">

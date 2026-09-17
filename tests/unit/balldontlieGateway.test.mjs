@@ -150,6 +150,30 @@ test('BALLDONTLIE gateway coalesces matching paginated requests and accounts for
   assert.equal(gateway.getStatus().rateLimit.usedRequests, 2);
 });
 
+test('BALLDONTLIE gateway keeps the default 12-page cap and never caches a partial paginated payload', async () => {
+  let requestCount = 0;
+  const gateway = createBalldontlieGateway({
+    env: GOAT_ENV,
+    fetcher: async () => {
+      requestCount += 1;
+      return ok({ data: [{ id: requestCount }], meta: { next_cursor: `cursor-${requestCount}` } });
+    },
+  });
+
+  await assert.rejects(
+    gateway.request({
+      path: '/nfl/v1/games',
+      params: new URLSearchParams({ 'seasons[]': '2026' }),
+      paginate: true,
+      cacheTtlMs: 60_000,
+      lane: 'scores-live',
+    }),
+    (error) => error.statusCode === 502 && /pagination limit reached/i.test(error.message),
+  );
+  assert.equal(requestCount, 12);
+  assert.equal(gateway.getStatus().rateLimit.usedRequests, 12);
+});
+
 test('BALLDONTLIE gateway serves bounded stale data after an upstream failure', async () => {
   let nowMs = 1_000_000;
   let fail = false;

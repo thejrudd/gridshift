@@ -36,6 +36,43 @@ function getPlayoffEndWeek(settings) {
   return rounds ? playoffStart + rounds - 1 : playoffStart;
 }
 
+/**
+ * Resolve the active matchup week reported by a Sleeper league snapshot.
+ * `last_scored_leg` is the most recently completed week, so the active week
+ * is the following leg while the league is in season. Some snapshots expose
+ * the active leg directly; prefer that when available.
+ */
+export function getFantasyLeagueCurrentWeek(league) {
+  const settings = league?.settings ?? {};
+  const directWeek = [settings.leg, settings.week, league?.leg, league?.week]
+    .map(positiveInteger)
+    .find((value) => value != null);
+  if (directWeek != null) return directWeek;
+
+  const lastScoredLeg = Number(settings.last_scored_leg);
+  return Number.isFinite(lastScoredLeg) && lastScoredLeg >= 0
+    ? Math.floor(lastScoredLeg) + 1
+    : null;
+}
+
+/**
+ * Resolve Sleeper's live NFL week for a selected league season.
+ * `leg` is the fantasy-relevant regular-season week; `display_week` is a UI
+ * hint and can intentionally differ from the current NFL week.
+ */
+export function getSleeperCurrentWeek(state, season = null) {
+  const stateSeason = state?.league_season ?? state?.season;
+  if (
+    season != null
+    && stateSeason != null
+    && String(stateSeason) !== String(season)
+  ) return null;
+
+  return [state?.leg, state?.week]
+    .map(positiveInteger)
+    .find((value) => value != null) ?? null;
+}
+
 export function getFantasyLeagueMaxWeek(league) {
   const seasonWeekCount = getNflSeasonWeekCount(league);
   if (!league) return seasonWeekCount;

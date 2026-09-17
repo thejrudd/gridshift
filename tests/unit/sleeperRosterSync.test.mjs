@@ -66,9 +66,13 @@ describe('Sleeper roster synchronization', () => {
     const applied = [];
     let resolveFetch;
     let fetchCount = 0;
+    let rosterVersion = 1;
+    let buildRoster = () => [{ roster_id: 1, players: [`player-${rosterVersion}`] }];
     const fetchRosters = () => {
       fetchCount += 1;
-      return new Promise((resolve) => { resolveFetch = resolve; });
+      return new Promise((resolve) => {
+        resolveFetch = () => resolve(buildRoster());
+      });
     };
 
     const sync = createSleeperRosterSync({
@@ -89,7 +93,7 @@ describe('Sleeper roster synchronization', () => {
     const initialRequest = sync.refresh();
     assert.equal(fetchCount, 1);
 
-    resolveFetch([{ roster_id: 1, players: ['player-1'] }]);
+    resolveFetch();
     await initialRequest;
     assert.equal(applied.length, 1);
     assert.equal(scheduler.timers.size, 1);
@@ -97,6 +101,19 @@ describe('Sleeper roster synchronization', () => {
     assert.equal(timer.delay, SLEEPER_ROSTER_REFRESH_INTERVAL_MS);
     await flushPromises();
     assert.equal(fetchCount, 2);
+
+    buildRoster = () => [{ players: [`player-${rosterVersion}`], roster_id: 1 }];
+    resolveFetch();
+    await sync.refresh();
+    assert.equal(applied.length, 1, 'an unchanged roster snapshot should not restart downstream views');
+
+    rosterVersion = 2;
+    buildRoster = () => [{ roster_id: 1, players: [`player-${rosterVersion}`] }];
+    scheduler.runNext();
+    await flushPromises();
+    resolveFetch();
+    await sync.refresh();
+    assert.equal(applied.length, 2, 'a changed roster snapshot should still reach downstream views');
 
     sync.stop();
   });

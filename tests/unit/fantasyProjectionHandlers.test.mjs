@@ -6,6 +6,7 @@ import {
   buildFantasyProjectionsParams,
   createFantasyProjectionsRouter,
   fetchFantasyProjections,
+  isRequestedFantasyProjectionRow,
   validateFantasyProjectionsQuery,
 } from '../../server/fantasyProjectionHandlers.js';
 import { createBalldontlieGateway } from '../../server/balldontlieGateway.js';
@@ -98,6 +99,42 @@ test('Fantasy projections request the paginated weekly BDL endpoint and cache th
   assert.equal(first.data[0].stats.passing_yards, 200.5);
   assert.equal(first.freshness.refreshAfterMs, FANTASY_PROJECTIONS_CACHE_TTL_MS);
   assert.equal(second.cache.hit, true);
+});
+
+test('Fantasy projections reject season-level, wrong-week, and wrong-season rows', async () => {
+  const validRow = {
+    id: 12,
+    season: 2026,
+    week: 4,
+    player: { id: 38, first_name: 'Josh', last_name: 'Allen', position_abbreviation: 'QB' },
+    team: { id: 3, abbreviation: 'BUF' },
+    stats: { passing_yards: 200.5 },
+  };
+  const result = await fetchFantasyProjections({
+    season: 2026,
+    week: 4,
+    gateway: {
+      request: async () => ({
+        payload: {
+          data: [
+            validRow,
+            { ...validRow, id: 13, week: null, projected_games: 17, stats: { passing_yards: 5_000, passing_touchdowns: 40 } },
+            { ...validRow, id: 14, week: 5 },
+            { ...validRow, id: 15, season: 2025 },
+          ],
+          meta: { next_cursor: null },
+        },
+        cache: { hit: false },
+        freshness: { ageMs: 0, providerFetchedAt: new Date().toISOString() },
+        accounting: null,
+      }),
+    },
+  });
+
+  assert.equal(isRequestedFantasyProjectionRow(validRow, 2026, 4), true);
+  assert.equal(isRequestedFantasyProjectionRow({ ...validRow, week: null }, 2026, 4), false);
+  assert.deepEqual(result.data.map((row) => row.id), [12]);
+  assert.equal(result.data.some((row) => row.projected_games === 17), false);
 });
 
 test('Fantasy projections router returns a bounded public envelope without the provider key', async () => {

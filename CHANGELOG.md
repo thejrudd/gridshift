@@ -1364,3 +1364,16 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **War Room during live drafts** - Keep War Room fully available while a Sleeper draft room is active, matching Board, instead of closing it the moment the draft starts. Completed and historical post-draft league years still route to Results.
 - **Shared draft availability rule** - Give War Room and Board one availability predicate so the two views cannot drift apart again, and correct the unavailable copy to describe a finished draft rather than one that has started.
 - **Regression coverage and documentation** - Add focused live-draft and completed-draft War Room coverage and update the Draft reference.
+
+## v9.0.0 - Fantasy Intelligence & Visual Overhaul
+*2026-09-17*
+
+- **Fantasy Injuries** - Added a standalone, Sleeper-scoped injury workspace with rostered availability concerns, fantasy-team, position, NFL-team, and player filters, expandable evidence, and honest Sleeper-only fallback behavior when optional BALLDONTLIE designations are unavailable.
+- **Fantasy Matchup drilldowns** - Added broadcast-style matchup previews, manager rivalry context, player comparisons, detailed scoring breakdowns, projections, opponent difficulty, weekly rank context, and responsive player drilldowns.
+- **Fantasy and Statistics visual overhaul** - Refined Companion and Statistics hierarchy, loading transitions, team identity, responsive controls, mobile density, and data-surface readability across Fantasy and Statistics.
+- **Matchup and Schedule week selection** - Kept Matchup and Statistics Schedule aligned with the active week, preserved future matchup visibility, and handled season and slate transitions without leaving stale or empty selections.
+- **Heatmap completeness** - Kept incomplete and future weeks on the Heatmap axis, representing missing values as unknown instead of dropping the weeks as data arrives.
+- **Trade reliability** - Repaired Trade workflow state and connected proposal paths so managers can complete a trade without losing the selected partner or assets.
+- **Statistics Scores and Fantasy Live reliability** - Corrected signed-spot interception normalization, forward-pass replay attribution, final possession state, drive geometry, quarter interception counts, and drilldown scroll continuity.
+- **Current-season and ranking accuracy** - Refreshed stale current-season finality, preserved valid zero and negative participant scores, and kept raw QB Heatmap stat modes independent of fantasy scoring settings.
+- **Regression coverage and documentation** - Added focused unit, route, responsive, provider, loading-motion, and player-drilldown coverage, plus updated architecture, provider-boundary, and feature references.

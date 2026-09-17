@@ -8,16 +8,6 @@ Open bugs are listed first, deferred work next, fixed bugs below. Add new entrie
 
 | Bug | Status |
 |-----|--------|
-| Fantasy Matchups' individual player drilldown can overwhelm managers with raw scoring rows, bury opponent positional difficulty, and lose projection context after kickoff. | Fix implemented; awaiting manual usage verification and commit. |
-| League History counts unplayed matchups as completed ties when the current season has no finalized weeks, contaminating rivalry records and highlights. | Fix implemented; awaiting verification and commit. |
-| Statistics Scores' completed game-detail hero can keep showing the last possession as “Ball” after the game is final. | Fix implemented; awaiting verification and commit. |
-| Fantasy Matchups can keep a completed prior matchup at `>99%` instead of locking the winning side to `100%` when stale or missing schedule metadata leaves projected points in the outlook. | Fix implemented; awaiting verification and commit. |
-| Fantasy Matchups can show a current W/L marker before all starter games are final, presenting the live leader as a completed result. | Fix implemented; awaiting verification and commit. |
-| Fantasy Matchups use the global blue accent for projected player scores on team-colored rows, reducing the visual distinction between projected and actual points. | Fix implemented; awaiting verification and commit. |
-| Statistics Scores and Fantasy Live can misplace an interception in the end zone and omit its forward-pass replay when the NFL description uses a signed spot such as `SEA -3`, inserts a bracketed defensive attribution before the spot, and lacks a recognized compact summary. | Fix revised after manual verification; awaiting re-test and commit. |
-| Statistics Scores' drive overview places its interception marker at the post-play field position, omits turnovers from the field glossary, and does not make clear that an interception is already counted as a pass in the drive mix. | Fix implemented; awaiting manual verification and commit. |
-| Statistics Scores' game drilldown can jump back to the top while reading Play-by-Play because a background scoreboard refresh replaces the selected game object and is mistaken for opening a different game. | Fix implemented; awaiting manual verification and commit. |
-| Statistics Scores' quarter split can undercount interceptions when a provider play uses jersey-prefixed official names, even though the full-game passing row reports the correct total. | Fix implemented; awaiting verification and commit. |
 
 ---
 
@@ -490,3 +480,16 @@ Open bugs are listed first, deferred work next, fixed bugs below. Add new entrie
 | Fantasy Live preseason play values can ignore the connected league's scoring profile, and incompletions or penalty-negated passes can be credited as completed passes with positive fantasy points. | v8.6.1 |
 | Draft Board's Highlight conflicts toggle can show no warning between saved targets with the same bye week in keeper and dynasty leagues. | v8.6.1 |
 | Fantasy Rankings and Draft can omit valid BALLDONTLIE ADP when the provider includes a terminal generational suffix such as Jr., Sr., or III that Sleeper omits. | v8.6.2 |
+| Fantasy Matchups' individual player drilldown could overwhelm managers with raw scoring rows, bury opponent positional difficulty, and lose projection context after kickoff. | v9.0.0 |
+| League History counted unplayed matchups as completed ties when the current season had no finalized weeks, contaminating rivalry records and highlights. | v9.0.0 |
+| Statistics Scores' completed game-detail hero could keep showing the last possession as “Ball” after the game was final. | v9.0.0 |
+| Fantasy Matchups could show a current W/L marker before all starter games were final, presenting the live leader as a completed result. | v9.0.0 |
+| Fantasy Matchups used the global blue accent for projected player scores on team-colored rows, reducing the visual distinction between projected and actual points. | v9.0.0 |
+| Statistics Scores' drive overview placed its interception marker at the post-play field position, omitted turnovers from the field glossary, and did not make clear that an interception was already counted as a pass in the drive mix. | v9.0.0 |
+| Statistics Scores' game drilldown could jump back to the top while reading Play-by-Play because a background scoreboard refresh replaced the selected game object and was mistaken for opening a different game. | v9.0.0 |
+| Statistics Scores' quarter split could undercount interceptions when a provider play used jersey-prefixed official names, even though the full-game passing row reported the correct total. | v9.0.0 |
+| Fantasy Matchups' week selector could fail to keep the selected fantasy week in sync with the displayed matchup. | v9.0.0 |
+| Trade functionality could be unreliable across the Trade workflow, preventing managers from completing a trade. | v9.0.0 |
+| Fantasy Matchups could hide future or newly active matchup weeks until stale matchup data was refreshed, preventing managers from selecting and previewing the correct week. | v9.0.0 |
+| Fantasy Heatmap could drop incomplete or future weeks from its columns, changing the week axis as the season accumulated data instead of preserving the full season shape. | v9.0.0 |
+| Fantasy Matchup and Statistics Schedule week defaults could remain stale across NFL slate or season-scope changes, leaving the visible surface on the wrong week. | v9.0.0 |

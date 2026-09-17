@@ -256,6 +256,172 @@ export function getPlayerHeadlineStats(position, stats, rows = []) {
   }).slice(0, 4);
 }
 
+const PLAYER_STANDOUT_METRICS = {
+  QB: [
+    { key: 'pass_yd', singular: 'passing yard', plural: 'passing yards' },
+    { key: 'pass_td', singular: 'passing touchdown', plural: 'passing touchdowns' },
+    { key: 'pass_cmp', singular: 'completion', plural: 'completions' },
+    { key: 'rush_yd', singular: 'rushing yard', plural: 'rushing yards' },
+    { key: 'rush_td', singular: 'rushing touchdown', plural: 'rushing touchdowns' },
+  ],
+  RB: [
+    { key: 'rush_yd', singular: 'rushing yard', plural: 'rushing yards' },
+    { key: 'rush_td', singular: 'rushing touchdown', plural: 'rushing touchdowns' },
+    { key: 'rec_yd', singular: 'receiving yard', plural: 'receiving yards' },
+    { key: 'rec', singular: 'reception', plural: 'receptions' },
+    { key: 'rec_td', singular: 'receiving touchdown', plural: 'receiving touchdowns' },
+  ],
+  WR: [
+    { key: 'rec_yd', singular: 'receiving yard', plural: 'receiving yards' },
+    { key: 'rec', singular: 'reception', plural: 'receptions' },
+    { key: 'rec_td', singular: 'receiving touchdown', plural: 'receiving touchdowns' },
+    { key: 'rush_yd', singular: 'rushing yard', plural: 'rushing yards' },
+    { key: 'rush_td', singular: 'rushing touchdown', plural: 'rushing touchdowns' },
+  ],
+  TE: [
+    { key: 'rec_yd', singular: 'receiving yard', plural: 'receiving yards' },
+    { key: 'rec', singular: 'reception', plural: 'receptions' },
+    { key: 'rec_td', singular: 'receiving touchdown', plural: 'receiving touchdowns' },
+    { key: 'rush_yd', singular: 'rushing yard', plural: 'rushing yards' },
+    { key: 'rush_td', singular: 'rushing touchdown', plural: 'rushing touchdowns' },
+  ],
+  K: [
+    { key: 'fgm', singular: 'made field goal', plural: 'made field goals' },
+    { key: 'xpm', singular: 'made extra point', plural: 'made extra points' },
+  ],
+  DST: [
+    { key: 'def_td', singular: 'defensive touchdown', plural: 'defensive touchdowns' },
+    { key: 'sack', singular: 'sack', plural: 'sacks' },
+    { key: 'int', singular: 'interception', plural: 'interceptions' },
+    { key: 'safe', singular: 'safety', plural: 'safeties' },
+    { key: 'def_ff', singular: 'forced fumble', plural: 'forced fumbles' },
+  ],
+  DL: [
+    { key: 'idp_sack', singular: 'sack', plural: 'sacks' },
+    { key: 'idp_tkl', singular: 'tackle', plural: 'tackles' },
+    { key: 'idp_tkl_solo', singular: 'solo tackle', plural: 'solo tackles' },
+    { key: 'idp_int', singular: 'interception', plural: 'interceptions' },
+    { key: 'idp_ff', singular: 'forced fumble', plural: 'forced fumbles' },
+  ],
+  LB: [
+    { key: 'idp_tkl', singular: 'tackle', plural: 'tackles' },
+    { key: 'idp_sack', singular: 'sack', plural: 'sacks' },
+    { key: 'idp_tkl_solo', singular: 'solo tackle', plural: 'solo tackles' },
+    { key: 'idp_int', singular: 'interception', plural: 'interceptions' },
+    { key: 'idp_ff', singular: 'forced fumble', plural: 'forced fumbles' },
+  ],
+  DB: [
+    { key: 'idp_int', singular: 'interception', plural: 'interceptions' },
+    { key: 'idp_tkl', singular: 'tackle', plural: 'tackles' },
+    { key: 'idp_tkl_solo', singular: 'solo tackle', plural: 'solo tackles' },
+    { key: 'idp_pd', singular: 'pass breakup', plural: 'pass breakups' },
+    { key: 'idp_ff', singular: 'forced fumble', plural: 'forced fumbles' },
+  ],
+};
+
+const PLAYER_NEGATIVE_METRICS = {
+  QB: [
+    { key: 'pass_sack', singular: 'sack', plural: 'sacks' },
+    { key: 'pass_int', singular: 'interception', plural: 'interceptions' },
+    { key: 'fum_lost', singular: 'fumble lost', plural: 'fumbles lost' },
+  ],
+  RB: [
+    { key: 'fum_lost', singular: 'fumble lost', plural: 'fumbles lost' },
+  ],
+  WR: [
+    { key: 'fum_lost', singular: 'fumble lost', plural: 'fumbles lost' },
+  ],
+  TE: [
+    { key: 'fum_lost', singular: 'fumble lost', plural: 'fumbles lost' },
+  ],
+  K: [
+    { key: 'fgmiss', singular: 'missed field goal', plural: 'missed field goals' },
+    { key: 'xpmiss', singular: 'missed extra point', plural: 'missed extra points' },
+  ],
+  DST: [
+    { key: 'pts_allow', singular: 'point allowed', plural: 'points allowed' },
+  ],
+};
+
+function getStandoutMetricRow(statByKey, key) {
+  if (statByKey instanceof Map || typeof statByKey?.get === 'function') return statByKey.get(key);
+  return statByKey && typeof statByKey === 'object' ? statByKey[key] : null;
+}
+
+function formatStandoutMetricValue(value) {
+  return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(2)));
+}
+
+function getPlayerStandoutPosition(position) {
+  const value = String(position ?? '').toUpperCase();
+  if (['DST', 'D/ST', 'DEF', 'DEFENSE'].includes(value)) return 'DST';
+  if (value === 'PK') return 'K';
+  return normalizedPosition(value);
+}
+
+/**
+ * Describes one position-appropriate factual stat from a comparison model.
+ *
+ * `model.statByKey` is normally a Map of scoring-breakdown rows. A row must
+ * have a finite positive `statVal`; null, missing, and reported-zero values
+ * return no standout. When positive scored points are present, they choose
+ * the most consequential metric. Otherwise the configured position order is
+ * used.
+ * The result is ready to append to editorial copy, or null when no supported
+ * factual metric is available.
+ */
+export function describePlayerStandoutStat(model = {}) {
+  if (!model || typeof model !== 'object') return null;
+  const position = getPlayerStandoutPosition(model.position ?? model.player?.position);
+  const metrics = PLAYER_STANDOUT_METRICS[position];
+  if (!metrics || !model.statByKey) return null;
+
+  const candidates = metrics.flatMap((metric, order) => {
+    const row = getStandoutMetricRow(model.statByKey, metric.key);
+    const value = matchupNumber(row?.statVal);
+    const points = matchupNumber(row?.pts);
+    if (value == null || value <= 0 || (points != null && points < 0)) return [];
+    return [{ metric, value, points, order }];
+  });
+  if (!candidates.length) return null;
+
+  candidates.sort((left, right) => {
+    const leftHasPoints = left.points != null && left.points > 0;
+    const rightHasPoints = right.points != null && right.points > 0;
+    if (leftHasPoints !== rightHasPoints) return rightHasPoints - leftHasPoints;
+    if (leftHasPoints && right.points !== left.points) return right.points - left.points;
+    return left.order - right.order;
+  });
+
+  const { metric, value } = candidates[0];
+  return `${formatStandoutMetricValue(value)} ${value === 1 ? metric.singular : metric.plural}`;
+}
+
+/**
+ * Describes the factual negative signals that affected a player's result.
+ * These are stat events, not inferred narratives: an injury is intentionally
+ * omitted unless a separate, explicit injury event is available.
+ */
+export function describePlayerNegativeStats(model = {}, limit = 2) {
+  if (!model || typeof model !== 'object') return null;
+  const position = getPlayerStandoutPosition(model.position ?? model.player?.position);
+  const metrics = PLAYER_NEGATIVE_METRICS[position];
+  if (!metrics || !model.statByKey) return null;
+
+  const signals = metrics.flatMap((metric, order) => {
+    const row = getStandoutMetricRow(model.statByKey, metric.key);
+    const value = matchupNumber(row?.statVal);
+    if (value == null || value <= 0) return [];
+    return [{ metric, value, order }];
+  }).sort((left, right) => left.order - right.order)
+    .slice(0, Math.max(1, Number(limit) || 2));
+
+  if (!signals.length) return null;
+  return signals
+    .map(({ metric, value }) => `${formatStandoutMetricValue(value)} ${value === 1 ? metric.singular : metric.plural}`)
+    .reduce((result, item, index) => index === 0 ? item : `${result}${index === signals.length - 1 ? ' and ' : ', '}${item}`, '');
+}
+
 export function getPlayerOpponentDifficulty(percentile) {
   const value = matchupNumber(percentile);
   if (value == null) return null;
@@ -399,4 +565,70 @@ export function buildPlayerHeadlineParts({
     parts.push({ text: ` ${outlook.label}.` });
   }
   return parts;
+}
+
+/* ── projected stat-line grouping ──
+   Presentation only. The scoring rows themselves stay exactly as
+   `buildFantasyScoringBreakdown` produced them; this decides which heading a
+   row sits under and in what order the headings read, so the drilldown can
+   show the composition of a projection instead of one flat decimal list. */
+
+const BREAKDOWN_GROUPS = [
+  { id: 'passing', label: 'Passing' },
+  { id: 'rushing', label: 'Rushing' },
+  { id: 'receiving', label: 'Receiving' },
+  { id: 'kicking', label: 'Kicking' },
+  { id: 'defense', label: 'Defense' },
+  { id: 'special', label: 'Special teams' },
+  { id: 'bonus', label: 'Bonuses' },
+  { id: 'negative', label: 'Negative plays' },
+  { id: 'model', label: 'Model' },
+];
+
+const NEGATIVE_PLAY_KEYS = new Set(['fum', 'fum_lost', 'pass_int', 'pass_int_td', 'int_ret_td']);
+const MODEL_KEYS = new Set(['scoring_adjustment', 'projection_adjustment', 'fantasy_points_total']);
+const TEAM_RESULT_KEYS = new Set(['team_win', 'team_loss', 'team_tie']);
+
+export function getFantasyBreakdownGroupId(row) {
+  const key = String(row?.statKey ?? row?.key ?? '');
+  if (MODEL_KEYS.has(key)) return 'model';
+  if (NEGATIVE_PLAY_KEYS.has(key)) return 'negative';
+  // Bonuses follow the stat family they reward; a bonus spanning two families
+  // (rush + rec) has no single home, so it falls through to Bonuses.
+  const family = key.startsWith('bonus_') ? key.slice('bonus_'.length) : key;
+  if (family.startsWith('rush_rec')) return 'bonus';
+  if (family.startsWith('pass')) return 'passing';
+  if (family.startsWith('rush')) return 'rushing';
+  if (family === 'rec' || family.startsWith('rec')) return 'receiving';
+  if (family.startsWith('fg') || family.startsWith('xp')) return 'kicking';
+  if (family.startsWith('kr') || family.startsWith('pr') || family.startsWith('st_')
+    || family === 'ret_td' || family.startsWith('blk_kick')) return 'special';
+  if (family.startsWith('fum')) return 'negative';
+  if (family.startsWith('idp') || family.startsWith('def') || family.startsWith('sack')
+    || family.startsWith('tkl') || family.startsWith('pts_allow') || family.startsWith('yds_allow')
+    || ['int', 'int_ret_yd', 'safe', 'qb_hit'].includes(family)) return 'defense';
+  if (family.startsWith('fd_')) return 'bonus';
+  if (TEAM_RESULT_KEYS.has(family)) return 'defense';
+  return key.startsWith('bonus_') ? 'bonus' : 'model';
+}
+
+export function groupFantasyBreakdownRows(rows = []) {
+  const byGroup = new Map();
+  for (const row of rows) {
+    const id = getFantasyBreakdownGroupId(row);
+    if (!byGroup.has(id)) byGroup.set(id, []);
+    byGroup.get(id).push(row);
+  }
+  return BREAKDOWN_GROUPS
+    .filter(group => byGroup.has(group.id))
+    .map(group => {
+      const groupRows = byGroup.get(group.id)
+        .slice()
+        .sort((left, right) => Math.abs(right.pts) - Math.abs(left.pts));
+      return {
+        ...group,
+        rows: groupRows,
+        sum: Math.round(groupRows.reduce((total, row) => total + row.pts, 0) * 100) / 100,
+      };
+    });
 }

@@ -13,27 +13,27 @@ const TIER_PROFILES = Object.freeze({
   free: Object.freeze({
     tier: 'free',
     requestsPerMinute: 5,
-    capabilities: Object.freeze({ games: true, stats: false, teamStats: false, plays: false, fantasy: false }),
+    capabilities: Object.freeze({ games: true, stats: false, teamStats: false, plays: false, fantasy: false, designations: false }),
   }),
   'all-star': Object.freeze({
     tier: 'all-star',
     requestsPerMinute: 60,
-    capabilities: Object.freeze({ games: true, stats: true, teamStats: true, plays: false, fantasy: false }),
+    capabilities: Object.freeze({ games: true, stats: true, teamStats: true, plays: false, fantasy: false, designations: false }),
   }),
   goat: Object.freeze({
     tier: 'goat',
     requestsPerMinute: 600,
-    capabilities: Object.freeze({ games: true, stats: true, teamStats: true, plays: true, fantasy: true }),
+    capabilities: Object.freeze({ games: true, stats: true, teamStats: true, plays: true, fantasy: true, designations: true }),
   }),
   trial: Object.freeze({
     tier: 'trial',
     requestsPerMinute: 5,
-    capabilities: Object.freeze({ games: true, stats: true, teamStats: true, plays: true, fantasy: true }),
+    capabilities: Object.freeze({ games: true, stats: true, teamStats: true, plays: true, fantasy: true, designations: true }),
   }),
   unknown: Object.freeze({
     tier: 'unknown',
     requestsPerMinute: 5,
-    capabilities: Object.freeze({ games: false, stats: false, teamStats: false, plays: false, fantasy: false }),
+    capabilities: Object.freeze({ games: false, stats: false, teamStats: false, plays: false, fantasy: false, designations: false }),
   }),
 });
 
@@ -128,10 +128,12 @@ export function buildBalldontlieRequestKey({
   path,
   params,
   paginate = false,
+  maxPages = DEFAULT_MAX_PAGES,
   freshnessKey = 'default',
 }) {
   const canonicalParams = canonicalizeParams(params);
-  return `${credentialFingerprint}:${paginate ? 'pages' : 'resource'}:${freshnessKey}:${path}?${canonicalParams.toString()}`;
+  const resourceType = paginate ? `pages:${parsePositiveInteger(maxPages, DEFAULT_MAX_PAGES)}` : 'resource';
+  return `${credentialFingerprint}:${resourceType}:${freshnessKey}:${path}?${canonicalParams.toString()}`;
 }
 
 function parseRetryAfterMs(response, nowMs) {
@@ -328,7 +330,7 @@ export function createBalldontlieGateway({
     }
   }
 
-  async function fetchPayload({ path, params, paginate, lane }) {
+  async function fetchPayload({ path, params, paginate, maxPages, lane }) {
     if (!paginate) {
       const payload = await fetchPage(path, params, lane);
       return { payload, pageCount: 1 };
@@ -338,7 +340,7 @@ export function createBalldontlieGateway({
     let meta = null;
     let cursor = null;
     let pageCount = 0;
-    for (let page = 0; page < config.maxPages; page += 1) {
+    for (let page = 0; page < maxPages; page += 1) {
       const pageParams = new URLSearchParams(params);
       pageParams.set('per_page', String(DEFAULT_PER_PAGE));
       if (cursor) pageParams.set('cursor', String(cursor));
@@ -354,8 +356,18 @@ export function createBalldontlieGateway({
       else if (payload?.data != null) data.push(payload.data);
       meta = payload?.meta ?? null;
       const nextCursor = String(meta?.next_cursor ?? '').trim();
-      if (!nextCursor || nextCursor === String(cursor ?? '')) break;
+      if (!nextCursor || nextCursor === String(cursor ?? '')) {
+        cursor = null;
+        break;
+      }
       cursor = nextCursor;
+    }
+    if (cursor) {
+      const error = makeGatewayError('BALLDONTLIE pagination limit reached before the response was complete.', {
+        statusCode: 502,
+      });
+      error.upstreamRequests = pageCount;
+      throw error;
     }
     return { payload: { data, meta }, pageCount };
   }
@@ -422,6 +434,7 @@ export function createBalldontlieGateway({
     params = new URLSearchParams(),
     capability = 'games',
     paginate = false,
+    maxPages = config.maxPages,
     cacheTtlMs = 30_000,
     staleTtlMs = 120_000,
     refreshAfterMs = cacheTtlMs,
@@ -444,6 +457,7 @@ export function createBalldontlieGateway({
     }
     const safeCacheTtlMs = Math.max(0, Number(cacheTtlMs) || 0);
     const safeStaleTtlMs = Math.max(safeCacheTtlMs, Number(staleTtlMs) || safeCacheTtlMs);
+    const safeMaxPages = parsePositiveInteger(maxPages, config.maxPages);
     const resolvedFreshnessKey = freshnessKey
       ?? `fresh:${safeCacheTtlMs}:stale:${safeStaleTtlMs}`;
     const key = buildBalldontlieRequestKey({
@@ -451,6 +465,7 @@ export function createBalldontlieGateway({
       path,
       params,
       paginate,
+      maxPages: safeMaxPages,
       freshnessKey: resolvedFreshnessKey,
     });
     const requestNow = now();
@@ -484,7 +499,13 @@ export function createBalldontlieGateway({
 
     const pending = (async () => {
       try {
-        const { payload, pageCount } = await fetchPayload({ path, params, paginate, lane });
+        const { payload, pageCount } = await fetchPayload({
+          path,
+          params,
+          paginate,
+          maxPages: safeMaxPages,
+          lane,
+        });
         const fetchedAtMs = now();
         const payloadCacheTtlMs = typeof resolveCacheTtlMs === 'function'
           ? Math.max(0, Number(resolveCacheTtlMs(payload, safeCacheTtlMs)) || safeCacheTtlMs)

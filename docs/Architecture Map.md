@@ -42,6 +42,9 @@ Rule: browser zoom stays native — never app-level DPI detection or whole-page 
 - `FantasyProvider`, `useFantasyLeague`, `useFantasyStats`, and `useFantasy` are the platform-neutral entry points.
 - Sleeper is the only supported user-facing fantasy connection.
 - Persists normalized, non-secret fantasy state in localStorage.
+- Hydrates a league snapshot only when the persisted season, selected league ID,
+  and league season agree; interrupted season switches clear stale rosters/users
+  before Matchups can join weekly rows by season-local roster ID.
 - Loads league rosters, users, player database, weekly stats, aggregate season stats, matchups, and scoring settings through Sleeper.
 - Re-derives scoring settings from the selected league on startup, so newly supported scoring fields are picked up without re-selecting the league.
 - Performs Sleeper player/team/opponent enrichment for weekly stat rows via the three-pass algorithm below.
@@ -91,6 +94,7 @@ Entries resolved via Pass 1 or 2 are marked `_teamSource = 'espn'`; Pass 3 entri
 | `opportunityEngine.js` + `opportunity/` | Trade opportunity logic — `opportunityEngine.js` is the public facade, implementation modules under `src/utils/opportunity/` |
 | `liveScoringFeed.js`, `livePlaysFeed.js`, `liveWinProbability.js`, `livePace.js`, `fantasyTeamIdentity.js` | The live-scoring split. Per-module ownership and the projection/probability rules: [[Fantasy Live]] |
 | `nflPlays/` | Shared play-by-play parsing layer — see below |
+| `playByPlay/` | Canonical BALLDONTLIE play normalization and per-play stat attribution shared by Statistics Scores and Fantasy Live: [[Play-By-Play Normalization]] |
 
 ### Shared NFL Play Layer (`src/utils/nflPlays/` + `src/components/nflPlays/`)
 
@@ -100,7 +104,7 @@ Rules:
 
 - The field visuals (`fieldPrimitives.jsx`, `PlayTrajectoryStrip.jsx`, `DriveField.jsx`, `DrivePlayback.jsx`) share one 120-yard canvas through `fieldX`, and all kick geometry goes through `getKickGeometry`. A new field visual must reuse both rather than derive its own coordinates.
 - `playBeats.js` is the time layer over that geometry: one play as the ball's position over time plus the beats that fire as it travels, composing `getPlayTrajectory()` and `parsePlayNarrative()` without duplicating either. `DrivePlayback.jsx` is its only consumer and draws nothing the other field visuals don't already define.
-- Statistics Scores consumes this layer today; `livePlaysFeed.js` already routes its name index through `nflPlays/playerNameIndex.js`, but the rest of the Fantasy Live migration is still outstanding. New play-parsing work belongs here, never under a feature folder.
+- Both surfaces consume this layer. `src/utils/playByPlay/` sits on top of it and owns the canonical provider-row shape, the shared offense/defense rule, and per-play stat attribution; `livePlaysFeed.js` and `balldontlieNflScoreboard.js` are thin adapters over it: [[Play-By-Play Normalization]]. New play-parsing work belongs in one of these two layers, never under a feature folder.
 - `src/components/shared/PlayerAvatar.jsx` owns the headshot fallback chain for both surfaces and is re-exported as `LiveAvatar` for existing Fantasy Live call sites.
 
 ## Client/Server Boundary

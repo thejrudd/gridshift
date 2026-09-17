@@ -80,6 +80,7 @@ export function buildProjectionContext({
   leagueAvgByPos = null,
   historicalWeeklyStats = null,
   providerProjections = null,
+  sleeperProjections = null,
 }) {
   if (!weeklyStats || !players) return null;
   const resolvedDefenseTable = defenseTable
@@ -96,6 +97,7 @@ export function buildProjectionContext({
     leagueAvgByPos: resolvedLeagueAvg,
     historicalWeeklyStats,
     providerProjections,
+    sleeperProjections,
   };
 }
 
@@ -177,11 +179,12 @@ export function projectFromGameInfo(info, context, { weather = null, gateAvailab
         ...projectionArgs,
         weeklyArr: info.weekly,
         allWeeklyStats: context.weeklyStats,
-      })
+    })
     : null;
   const providerProjection = context.providerProjections?.get(info.playerId ?? info.id) ?? null;
+  const sleeperProjection = context.sleeperProjections?.get(info.playerId ?? info.id) ?? null;
   const historicalWeekly = context.historicalWeeklyStats?.[info.playerId ?? info.id] ?? [];
-  const historicalProjection = !providerProjection && !currentProjection && historicalWeekly.length
+  const historicalProjection = !providerProjection && !sleeperProjection && !currentProjection && historicalWeekly.length
     ? projectPlayer({
         ...projectionArgs,
         weeklyArr: historicalWeekly,
@@ -193,7 +196,7 @@ export function projectFromGameInfo(info, context, { weather = null, gateAvailab
         week: null,
       })
     : null;
-  const selectedProjection = providerProjection ?? currentProjection ?? historicalProjection;
+  const selectedProjection = providerProjection ?? sleeperProjection ?? currentProjection ?? historicalProjection;
   const projection = selectedProjection && !selectedProjection.factors?.source
     ? {
         ...selectedProjection,
@@ -204,7 +207,10 @@ export function projectFromGameInfo(info, context, { weather = null, gateAvailab
       }
     : selectedProjection;
   if (!projection) return null;
-  if (!gateAvailability) return projection;
+  // A current roster designation describes availability now, not the selected
+  // game's pregame state. Once kickoff evidence exists, preserve the projection
+  // published for that game instead of retroactively zeroing it.
+  if (!gateAvailability || info.gameStarted === true) return projection;
 
   const { factor, status } = getAvailabilityProjectionFactor(context.players?.[info.playerId ?? info.id]);
   if (factor === 1) return projection;

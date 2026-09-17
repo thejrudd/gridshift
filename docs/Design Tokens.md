@@ -121,3 +121,30 @@ weights and restrained tracking. Use Figtree for prose and descriptions. See
 | `--page-frame-workbench` | `1920px` | Trade, Draft, Scout, Compare, Matchup, Heatmap |
 
 Use `.page-frame-readable`, `.page-frame-data`, or `.page-frame-workbench` on the route root. Frames center themselves and preserve the normal mobile/tablet flow.
+
+## Loading Motion Tokens
+
+Declared at the end of `:root` in `src/index.css`, mirrored in
+`src/utils/loadingMotion.js`, parity-checked by `tests/unit/loadingMotion.test.mjs`.
+Definitions for each: [[Loading Motion]].
+
+| Token | Value | Controls |
+| --- | --- | --- |
+| `--gs-load-duration` | `500ms` | One row's entrance animation, start to settled |
+| `--gs-load-stagger` | `20ms` | Gap between consecutive rows starting |
+| `--gs-load-stagger-cap` | `7` | Row index past which the delay stops growing (rows past it still animate) |
+| `--gs-load-ease` | `cubic-bezier(0.32, 0.72, 0, 1)` | Entrance speed curve (the app standard) |
+| `--gs-load-ease-overshoot` | `cubic-bezier(0.34, 1.56, 0.64, 1)` | Named alternate — springy |
+| `--gs-load-ease-decelerate` | `cubic-bezier(0, 0, 0.2, 1)` | Named alternate — fast start, long glide |
+| `--gs-load-ease-standard` | `cubic-bezier(0.4, 0, 0.2, 1)` | Named alternate — neutral |
+| `--gs-load-texture-duration` | `1600ms` | One cycle of the skeleton's shimmer/pulse/build |
+| `--gs-load-show-after` | `120ms` | Bare structure before any placeholder appears |
+| `--gs-load-min-hold` | `240ms` | Floor a placeholder stays once it has appeared |
+| `--gs-load-gate` | `90ms` | Coalesce window for late data fragments (declared, not yet consumed) |
+| `--gs-load-handoff-fade` | `300ms` | How long the skeleton lingers under arriving content |
+| `--gs-load-rail-duration` | `620ms` | Leading accent bar grow |
+| `--gs-load-rail-delay` | `90ms` | Beat before the accent bar starts |
+
+Per-surface selectors, not tokens: `[data-gs-entrance]` (`lift` / `fade` / `wipe`
+/ `scale` / `slide`), `[data-gs-texture]` (`sweep` / `pulse` / `build` /
+`static`), `[data-gs-handoff]` (`cut` / `cross-fade` / `row-by-row`).

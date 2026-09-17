@@ -3,7 +3,7 @@
 // These helpers merge completed and in-progress results from the server-proxied
 // ESPN scoreboard back into the loaded season schedule. Game ids, weeks, and
 // matchups are never rewritten here: the prediction schedule fingerprint is
-// built from exactly those fields, so hydration must stay score-only.
+// built from exactly those fields, so hydration only updates result metadata.
 import { buildGamesByTeam, getScheduleMetadata } from './seasonSchedule.js';
 import { NFL_SEASON_PHASES, normalizeEspnScoreboardEvent } from './espnNflScoreboard.js';
 
@@ -53,6 +53,116 @@ function applyResult(game, result) {
     homeScore: result.homeScore,
     completed,
   };
+}
+
+const SCHEDULE_TEAM_ALIASES = Object.freeze({ JAC: 'JAX', WSH: 'WAS' });
+
+function normalizeScheduleTeam(value) {
+  const normalized = typeof value === 'string' ? value.trim().toUpperCase() : '';
+  return normalized ? SCHEDULE_TEAM_ALIASES[normalized] ?? normalized : null;
+}
+
+function isHydratedGameResult(game) {
+  const status = String(game?.status ?? '').trim().toLowerCase();
+  return game?.completed === true
+    || (status && status !== 'scheduled')
+    || game?.awayScore != null
+    || game?.homeScore != null;
+}
+
+function isFinalScheduleStatus(status) {
+  const normalized = String(status ?? '').trim().toLowerCase();
+  if (!normalized || normalized.includes('postponed')) return false;
+  return /(?:^|[_\s-])(?:final|complete|completed|post(?:-?game)?)(?:$|[_\s-])/.test(normalized);
+}
+
+function getScheduleResultEntry(game, side, existing = null) {
+  const awayTeam = normalizeScheduleTeam(game?.awayTeam);
+  const homeTeam = normalizeScheduleTeam(game?.homeTeam);
+  const team = side === 'home' ? homeTeam : awayTeam;
+  const opponent = side === 'home' ? awayTeam : homeTeam;
+  if (!team || !opponent) return null;
+
+  const kickoff = game?.kickoff ?? existing?.kickoff ?? null;
+  const score = side === 'home' ? game?.homeScore : game?.awayScore;
+  const opponentScore = side === 'home' ? game?.awayScore : game?.homeScore;
+  const status = game?.status ?? existing?.status ?? null;
+
+  return {
+    team,
+    entry: {
+      ...existing,
+      opp: opponent,
+      home: side === 'home',
+      kickoff,
+      date: game?.kickoff ? String(game.kickoff).slice(0, 10) : existing?.date ?? null,
+      status,
+      statusDetail: game?.statusDetail ?? existing?.statusDetail ?? null,
+      completed: game?.completed === true || isFinalScheduleStatus(status),
+      ptsFor: score ?? existing?.ptsFor ?? null,
+      ptsAgainst: opponentScore ?? existing?.ptsAgainst ?? null,
+      espnEventId: game?.espnEventId ?? existing?.espnEventId ?? null,
+    },
+  };
+}
+
+// Matchup rows historically receive a separately cached team schedule. Keep
+// that schedule's identity and static metadata, but apply the already-hydrated
+// scoreboard result so a stale `completed: false` cannot keep a finished game
+// in the live drilldown phase.
+export function mergeSeasonScheduleResultsIntoMap(scheduleMap, seasonSchedule, season = null) {
+  if (!scheduleMap || !seasonSchedule || (season != null && Number(seasonSchedule.season) !== Number(season))) {
+    return scheduleMap;
+  }
+
+  let mergedMap = scheduleMap;
+  let mapChanged = false;
+
+  for (const week of seasonSchedule.weeks ?? []) {
+    const weekNumber = Number(week?.week);
+    if (!Number.isInteger(weekNumber)) continue;
+
+    const weekKey = Object.prototype.hasOwnProperty.call(scheduleMap, weekNumber)
+      ? weekNumber
+      : String(weekNumber);
+    const baseWeek = scheduleMap[weekKey];
+    if (!baseWeek || typeof baseWeek !== 'object') continue;
+
+    let mergedWeek = baseWeek;
+    let weekChanged = false;
+
+    for (const game of week.games ?? []) {
+      if (!isHydratedGameResult(game)) continue;
+
+      for (const side of ['away', 'home']) {
+        const preview = getScheduleResultEntry(game, side, null);
+        if (!preview) continue;
+
+        const existing = baseWeek[preview.team] ?? null;
+        const nextEntry = getScheduleResultEntry(game, side, existing)?.entry;
+        if (!nextEntry) continue;
+
+        const keys = ['opp', 'home', 'kickoff', 'date', 'status', 'statusDetail', 'completed', 'ptsFor', 'ptsAgainst', 'espnEventId'];
+        const unchanged = existing && keys.every((key) => existing[key] === nextEntry[key]);
+        if (unchanged) continue;
+
+        if (!weekChanged) {
+          mergedWeek = { ...baseWeek };
+          weekChanged = true;
+        }
+        mergedWeek[preview.team] = nextEntry;
+      }
+    }
+
+    if (!weekChanged) continue;
+    if (!mapChanged) {
+      mergedMap = { ...scheduleMap };
+      mapChanged = true;
+    }
+    mergedMap[weekKey] = mergedWeek;
+  }
+
+  return mapChanged ? mergedMap : scheduleMap;
 }
 
 // resultsByWeek: Map<weekNumber, rawEspnScoreboardPayload>

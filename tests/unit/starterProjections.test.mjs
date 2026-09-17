@@ -72,6 +72,47 @@ test('shared starter projections prefer BDL over the local current-season model 
   assert.equal(projection.factors.source, 'balldontlie');
 });
 
+test('shared starter projections fall back to Sleeper when BDL is unavailable', () => {
+  const context = buildProjectionContext({
+    weeklyStats: {},
+    players: { 'lb-1': { full_name: 'Arvell Reese', position: 'LB', team: 'NYG' } },
+    scheduleMap: null,
+    scoringSettings: DEFAULT_SCORING,
+    week: 1,
+    sleeperProjections: new Map([['lb-1', {
+      projected: 9.0,
+      min: null,
+      max: null,
+      factors: { source: 'sleeper' },
+    }]]),
+  });
+
+  const projection = projectFromGameInfo({ ...playerInfo(), playerId: 'lb-1', id: 'lb-1', position: 'LB' }, context);
+  assert.equal(projection.projected, 9.0);
+  assert.equal(projection.factors.source, 'sleeper');
+});
+
+test('shared starter projections preserve an external projection after kickoff', () => {
+  const context = buildProjectionContext({
+    weeklyStats: {},
+    players: { 'de-1': { full_name: 'Myles Garrett', position: 'DE', team: 'LAR', status: 'Inactive' } },
+    scheduleMap: null,
+    scoringSettings: DEFAULT_SCORING,
+    week: 1,
+    sleeperProjections: new Map([['de-1', {
+      projected: 13.6,
+      min: null,
+      max: null,
+      factors: { source: 'sleeper' },
+    }]]),
+  });
+
+  const projection = projectFromGameInfo({
+    ...playerInfo(), playerId: 'de-1', id: 'de-1', position: 'DE', gameStarted: true,
+  }, context);
+  assert.equal(projection.projected, 13.6);
+});
+
 test('shared starter projections fall back to two positive prior-season games without BDL', () => {
   const historicalWeeklyStats = {
     'qb-1': [

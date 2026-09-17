@@ -5,7 +5,18 @@ import { calcPoints } from './scoringEngine.js';
 // produced the stat; callers that need what a defense conceded reverse the
 // completed schedule rather than changing this source contract.
 const OFFENSE_POS_SET = new Set(['QB', 'RB', 'WR', 'TE', 'K']);
+const DIRECT_OFFENSE_STAT_KEYS = new Set(['rec_yd', 'rush_yd', 'pass_sack', 'pass_int']);
 const HEATMAP_OFFENSE_TABLE_CACHE = new WeakMap();
+
+/**
+ * Resolve a Heatmap offense value from either a raw stat mode or the active
+ * league scoring profile. Raw modes intentionally stay independent of whether
+ * the league assigns fantasy points to that category.
+ */
+export function getHeatmapOffenseStatValue(wEntry, activeScoringSettings, position, statMode) {
+  if (DIRECT_OFFENSE_STAT_KEYS.has(statMode)) return wEntry?.[statMode] ?? 0;
+  return calcPoints(wEntry, activeScoringSettings, position);
+}
 
 /**
  * Resolve a player's team for a historical stat row using Heatmap's existing
@@ -76,10 +87,7 @@ export function getCachedOffenseAllowedTable(
     if (!OFFENSE_POS_SET.has(position)) continue;
 
     for (const wEntry of playerWeeks) {
-      let val;
-      if (statMode === 'rec_yd') val = wEntry.rec_yd ?? 0;
-      else if (statMode === 'rush_yd') val = wEntry.rush_yd ?? 0;
-      else val = calcPoints(wEntry, activeScoringSettings, position);
+      const val = getHeatmapOffenseStatValue(wEntry, activeScoringSettings, position, statMode);
       if (val <= 0) continue;
 
       let team = wEntry.team?.toUpperCase() ?? null;

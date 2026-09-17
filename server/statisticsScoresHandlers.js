@@ -309,6 +309,8 @@ export async function fetchStatisticsScoresLatestPlay({
 export async function fetchStatisticsScoresGameDetail({
   gameId,
   phase,
+  includePlays = true,
+  lane = 'background',
   fetcher = fetch,
   env = process.env,
   gateway,
@@ -333,6 +335,7 @@ export async function fetchStatisticsScoresGameDetail({
     cacheTtlMs: SCORE_CACHE_TTL_MS,
     staleTtlMs: 5 * 60_000,
     refreshAfterMs: SCORE_CACHE_TTL_MS,
+    lane,
     ...options,
   });
 
@@ -346,7 +349,7 @@ export async function fetchStatisticsScoresGameDetail({
   const teamRequest = resolvedGateway.supports('teamStats')
     ? requestResource({ path: '/nfl/v1/team_stats', params: teamParams, capability: 'teamStats', paginate: true })
     : Promise.resolve(null);
-  const playRequest = resolvedGateway.supports('plays')
+  const playRequest = includePlays && resolvedGateway.supports('plays')
     ? resolvedSnapshotStore.getPlays({ gameId: parsedGameId, seasonType })
     : Promise.resolve(null);
 
@@ -606,6 +609,244 @@ export async function fetchStatisticsScoresLiveWeek({
   };
 }
 
+async function mapWithConcurrency(items, limit, worker) {
+  const results = Array(items.length);
+  let nextIndex = 0;
+  const workerCount = Math.min(Math.max(1, Number(limit) || 1), items.length);
+
+  await Promise.all(Array.from({ length: workerCount }, async () => {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await worker(items[index], index);
+    }
+  }));
+
+  return results;
+}
+
+function buildWeekExportCoverage({ games, details, detailLevel, capabilities }) {
+  const gameCount = games.length;
+  const successfulDetails = details.filter((entry) => entry?.detail);
+  const boxScoreCount = successfulDetails.filter((entry) => (
+    entry.detail.coverage?.game === true
+      && (entry.detail.coverage?.teamStats === true || entry.detail.coverage?.playerStats === true)
+  )).length;
+  const playCount = successfulDetails.filter((entry) => entry.detail.coverage?.plays === true).length;
+  const statusFor = (count, supported) => {
+    if (!gameCount || !supported || !count) return 'unavailable';
+    return count === gameCount ? 'complete' : 'partial';
+  };
+
+  return {
+    scoreboard: gameCount ? 'complete' : 'unavailable',
+    boxScores: statusFor(boxScoreCount, capabilities.stats || capabilities.teamStats),
+    playByPlay: detailLevel === 'full_play_by_play'
+      ? statusFor(playCount, capabilities.plays)
+      : 'not_requested',
+  };
+}
+
+function buildWeekExportEspnResponse({
+  status,
+  fallback,
+  season,
+  phase,
+  week,
+  detailLevel = 'box_score',
+  fallbackReason = null,
+}) {
+  const capabilities = {
+    games: false,
+    stats: false,
+    teamStats: false,
+    plays: false,
+  };
+  return {
+    ...status,
+    provider: STATISTICS_SCORES_SOURCES.ESPN,
+    providerLabel: status.overrideApplied ? status.providerLabel : 'ESPN fallback',
+    season,
+    phase,
+    week,
+    detailLevel,
+    scoreboard: fallback.scoreboard ?? null,
+    games: [],
+    details: [],
+    capabilities,
+    coverage: {
+      scoreboard: fallback.scoreboard?.events?.length ? 'complete' : 'unavailable',
+      boxScores: 'unavailable',
+      playByPlay: 'unavailable',
+    },
+    fallbackReason,
+    meta: null,
+    cache: fallback.cache ?? null,
+    freshness: buildEspnFreshness(fallback, 8_000),
+    accounting: { scoreboard: { pageCount: 1, upstreamRequests: fallback.cache?.hit ? 0 : 1 }, details: { pageCount: 0, upstreamRequests: 0 } },
+  };
+}
+
+/**
+ * Build the bounded, provider-aware package used by Fantasy's Stats Export
+ * export. Scoreboard data remains useful when paid detail is unavailable, and
+ * each game detail failure is kept as coverage evidence instead of failing the
+ * entire week.
+ */
+export async function fetchStatisticsScoresWeekExport({
+  season,
+  phase,
+  week,
+  detail = 'box_score',
+  source,
+  fetcher = fetch,
+  env = process.env,
+  gateway,
+  snapshotStore,
+} = {}) {
+  const parsedSeason = parseSeason(season);
+  const parsedWeek = parseWeek(week);
+  if (!parsedSeason || !parsedWeek) {
+    const error = new Error('A valid NFL season and week are required.');
+    error.statusCode = 400;
+    throw error;
+  }
+  const resolvedPhase = normalizePhase(phase);
+  const detailLevel = String(detail).trim().toLowerCase() === 'full_play_by_play'
+    ? 'full_play_by_play'
+    : 'box_score';
+  const resolvedGateway = resolveGateway({ gateway, fetcher, env });
+  const resolvedSnapshotStore = resolveSnapshotStore({ snapshotStore, gateway: resolvedGateway });
+  const status = getStatisticsScoresConfigStatus(env, { source, gateway: resolvedGateway });
+
+  if (status.provider === STATISTICS_SCORES_SOURCES.FIXTURE) {
+    return {
+      ...status,
+      season: parsedSeason,
+      phase: resolvedPhase,
+      week: parsedWeek,
+      detailLevel,
+      scoreboard: null,
+      games: [],
+      details: [],
+      capabilities: { games: false, stats: false, teamStats: false, plays: false },
+      coverage: { scoreboard: 'unavailable', boxScores: 'unavailable', playByPlay: 'unavailable' },
+      fallbackReason: 'fixture-source-has-no-provider-package',
+      meta: null,
+      cache: null,
+      freshness: null,
+      accounting: { scoreboard: { pageCount: 0, upstreamRequests: 0 }, details: { pageCount: 0, upstreamRequests: 0 } },
+    };
+  }
+
+  if (status.provider !== STATISTICS_SCORES_SOURCES.BALLDONTLIE) {
+    const fallback = await fetchStatisticsScoresEspnWeek({
+      season: parsedSeason,
+      phase: resolvedPhase,
+      week: parsedWeek,
+      fetcher,
+    });
+    return buildWeekExportEspnResponse({
+      status,
+      fallback,
+      season: parsedSeason,
+      phase: resolvedPhase,
+      week: parsedWeek,
+      detailLevel,
+      fallbackReason: status.overrideApplied ? 'developer-source-espn' : 'no-balldontlie-key',
+    });
+  }
+
+  try {
+    const scoreboardResult = await resolvedGateway.request({
+      path: '/nfl/v1/games',
+      params: buildBdlLiveWeekParams(parsedSeason, resolvedPhase, parsedWeek),
+      capability: 'games',
+      paginate: false,
+      cacheTtlMs: SCORE_CACHE_TTL_MS,
+      staleTtlMs: 5 * 60_000,
+      refreshAfterMs: SCORE_CACHE_TTL_MS,
+      freshnessKey: `scores-export:${detailLevel}`,
+      lane: 'scores-export',
+    });
+    const games = Array.isArray(scoreboardResult.payload?.data) ? scoreboardResult.payload.data : [];
+    const capabilities = resolvedGateway.getStatus().capabilities;
+    const canRequestDetails = capabilities.stats || capabilities.teamStats || capabilities.plays;
+    const details = await mapWithConcurrency(games, 2, async (game) => {
+      const gameId = parseGameId(game?.id);
+      if (!gameId || !canRequestDetails) {
+        return {
+          gameId: gameId == null ? String(game?.id ?? '') : gameId,
+          status: 'not_requested',
+          detail: null,
+          error: null,
+        };
+      }
+      try {
+        const detailPayload = await fetchStatisticsScoresGameDetail({
+          gameId,
+          phase: resolvedPhase,
+          includePlays: detailLevel === 'full_play_by_play',
+          lane: 'scores-export',
+          fetcher,
+          env,
+          gateway: resolvedGateway,
+          snapshotStore: resolvedSnapshotStore,
+        });
+        return { gameId, status: 'complete', detail: detailPayload, error: null };
+      } catch (error) {
+        return {
+          gameId,
+          status: 'error',
+          detail: null,
+          error: error?.message ?? 'Could not load this game detail.',
+        };
+      }
+    });
+    return {
+      ...status,
+      provider: STATISTICS_SCORES_SOURCES.BALLDONTLIE,
+      season: parsedSeason,
+      phase: resolvedPhase,
+      week: parsedWeek,
+      detailLevel,
+      scoreboard: scoreboardResult.payload ?? null,
+      games,
+      details,
+      capabilities,
+      coverage: buildWeekExportCoverage({ games, details, detailLevel, capabilities }),
+      fallbackReason: null,
+      meta: scoreboardResult.payload?.meta ?? null,
+      cache: toCompatCache(scoreboardResult),
+      freshness: scoreboardResult.freshness,
+      accounting: {
+        scoreboard: scoreboardResult.accounting,
+        details: {
+          pageCount: details.reduce((sum, entry) => sum + (entry.detail?.accounting?.pageCount ?? 0), 0),
+          upstreamRequests: details.reduce((sum, entry) => sum + (entry.detail?.accounting?.upstreamRequests ?? 0), 0),
+        },
+      },
+    };
+  } catch (error) {
+    if (status.overrideApplied) throw error;
+    const fallback = await fetchStatisticsScoresEspnWeek({
+      season: parsedSeason,
+      phase: resolvedPhase,
+      week: parsedWeek,
+      fetcher,
+    });
+    return buildWeekExportEspnResponse({
+      status,
+      fallback,
+      season: parsedSeason,
+      phase: resolvedPhase,
+      week: parsedWeek,
+      detailLevel,
+      fallbackReason: error?.statusCode === 429 ? 'balldontlie-rate-limited' : 'balldontlie-unavailable',
+    });
+  }
+}
+
 function sendScoresError(res, error) {
   const response = res.status(error?.statusCode ?? 502).set('Cache-Control', 'no-store');
   if (error?.retryAfterMs != null) {
@@ -694,6 +935,24 @@ export function createStatisticsScoresRouter({
   router.get('/games', sendGames);
   // Keep the completed worktree's preseason route as a compatible alias.
   router.get('/preseason', sendGames);
+  router.get('/week-export', async (req, res) => {
+    try {
+      const payload = await fetchStatisticsScoresWeekExport({
+        season: req.query.season,
+        phase: req.query.phase,
+        week: req.query.week,
+        detail: req.query.detail,
+        source: req.query.source,
+        fetcher,
+        env,
+        gateway,
+        snapshotStore,
+      });
+      return res.set('Cache-Control', 'no-store').json({ ok: true, ...payload });
+    } catch (error) {
+      return sendScoresError(res, error);
+    }
+  });
   router.get('/game/:gameId/plays', async (req, res) => {
     try {
       const payload = await fetchStatisticsScoresGamePlays({

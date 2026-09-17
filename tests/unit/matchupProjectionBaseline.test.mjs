@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   baselineScope, captureMatchupProjectionBaseline, captureMatchupProjectionBaselines,
   getMatchupProjectionBaseline, getMatchupProjectionBaselines, selectMatchupProjectionBaselines,
-  clearMatchupProjectionBaselines, MATCHUP_PROJECTION_BASELINE_LIMIT, MATCHUP_PROJECTION_BASELINE_STORAGE_KEY,
+  summarizeBdlProjection, summarizeExternalProjection, summarizeRecordedPregameProjection, clearMatchupProjectionBaselines, MATCHUP_PROJECTION_BASELINE_LIMIT, MATCHUP_PROJECTION_BASELINE_STORAGE_KEY,
 } from '../../src/utils/matchupProjectionBaseline.js';
 
 function storage() { const data = new Map(); return { get length() { return data.size; }, key: index => [...data.keys()][index] ?? null, getItem: key => data.get(key) ?? null, setItem: (key, value) => data.set(key, value), removeItem: key => data.delete(key) }; }
@@ -80,6 +80,49 @@ test('batch capture retains each player in its own storage record', () => {
   captureMatchupProjectionBaselines({ ...options, storage: wrapped, players: ['P1', 'P2'].map(id => ({ id, projection: options.projection, scheduleEntry: options.scheduleEntry })) });
   assert.equal(writes, 2);
   assert.equal(Object.keys(selectMatchupProjectionBaselines(getMatchupProjectionBaselines({ storage: wrapped }), options)).length, 2);
+});
+
+test('summarized header projections require complete BALLDONTLIE coverage', () => {
+  const players = [{ id: 'P1', name: 'Provider Player' }, { id: 'P2', name: 'Fallback Player' }];
+  const baselines = {
+    P1: { projection: { projected: 12.4, factors: { source: 'balldontlie' } } },
+    P2: { projection: { projected: 18.7, factors: { source: 'current-season' } } },
+  };
+
+  const partial = summarizeRecordedPregameProjection(players, baselines);
+  assert.deepEqual(partial, { total: 12.4, projectedCount: 1, starterCount: 2, complete: false });
+  assert.equal(summarizeRecordedPregameProjection(players, {
+    ...baselines,
+    P2: { projection: { projected: 18.7, factors: { source: 'balldontlie' } } },
+  }).total, 31.1);
+  assert.equal(summarizeRecordedPregameProjection(players, {
+    P1: { projection: { projected: 12.4, factors: { source: 'current-season' } } },
+    P2: { projection: { projected: 18.7, factors: { source: 'prior-season' } } },
+  }), null);
+});
+
+test('summarizes the visible BDL player projections for a settled header', () => {
+  const players = [
+    { id: 'P1', name: 'Provider Player', projection: { projected: 12.4, factors: { source: 'balldontlie' } } },
+    { id: 'P2', name: 'Fallback Player', projection: { projected: 18.7, factors: { source: 'current-season' } } },
+  ];
+
+  assert.equal(summarizeBdlProjection(players).total, 12.4);
+  assert.equal(summarizeBdlProjection(players).complete, false);
+  assert.equal(summarizeBdlProjection([
+    ...players.slice(0, 1),
+    { ...players[1], projection: { projected: 18.7, factors: { source: 'balldontlie' } } },
+  ]).total, 31.1);
+  assert.equal(summarizeBdlProjection([
+    ...players.map((player) => ({ ...player, projection: { ...player.projection, factors: { source: 'prior-season' } } })),
+  ]), null);
+});
+
+test('summarizes mixed BDL and Sleeper external projections for a settled header', () => {
+  assert.deepEqual(summarizeExternalProjection([
+    { id: 'P1', name: 'BDL Player', projection: { projected: 12.4, factors: { source: 'balldontlie' } } },
+    { id: 'P2', name: 'Sleeper Player', projection: { projected: 9.0, factors: { source: 'sleeper' } } },
+  ]), { total: 21.4, projectedCount: 2, starterCount: 2, complete: true });
 });
 
 
