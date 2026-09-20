@@ -134,12 +134,10 @@ Draft Sync is an optional capability of the existing API sidecar, not a required
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) + optional Node API sidecar |
 
-## What's New in v9.0.1
+## What's New in v9.0.2
 
-- **Fantasy Schedule (Beta)** — Browse the whole season's pairings by week or by team, with byes, pending weeks, and rematches shown distinctly.
-- **Clearer matchup preview** — Live status, current scores, projected finals, and season records now match the main matchup header, with rivalry history built in.
-- **Fantasy Live accuracy** — More reliable play attribution, reconciliation with Sleeper, and week-settling logic.
-- **Defense averages and tour fixes** — Per-game defense averages count only games played, and finishing the What's New tour no longer freezes the page.
+- **Fantasy Schedule tour** — The What's New tour now walks through the Fantasy Schedule (Beta) view: the whole season's pairings by week or by team, with a jump into any week's Matchup.
+- **Past-season matchup results** — Matchups from completed weeks settle correctly even when a starter has since retired, become a free agent, or changed teams.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 
