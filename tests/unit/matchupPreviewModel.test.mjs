@@ -208,3 +208,169 @@ test('records the projection drift against the captured baseline', () => {
   assert.equal(stafford.baselineProjected, 14.1);
   assert.equal(stafford.projected, 19.2);
 });
+
+const NOW_MS = Date.parse('2026-09-20T18:00:00Z');
+const finalGame = { completed: true };
+const underwaySlots = () => [
+  {
+    slotPos: 'QB',
+    mine: player('Finished Star', 'QB', 15, { gameStarted: true, weekPts: 34.7, scheduleEntry: finalGame }),
+    opp: player('Waiting QB', 'QB', 20, { gameStarted: false, weekPts: 0, kickoff: '2026-09-21T20:25:00Z' }),
+  },
+  {
+    slotPos: 'RB',
+    mine: player('Waiting Back', 'RB', 14, { gameStarted: false, weekPts: 0, kickoff: '2026-09-21T17:00:00Z' }),
+    opp: player('Finished Back', 'RB', 9, { gameStarted: true, weekPts: 8.4, scheduleEntry: finalGame }),
+  },
+];
+
+test('a week with only final and unstarted games is underway, not live', () => {
+  const model = buildMatchupPreviewModel({ ...baseInput, nowMs: NOW_MS, phase: 'live', slots: underwaySlots() });
+  assert.equal(model.phase, 'live');
+  assert.equal(model.liveNow, false);
+  assert.equal(model.bigLabel, 'so far');
+  assert.equal(model.odds.mid, 'Estimated win chance');
+  assert.equal(model.odds.band, 'Week underway');
+  assert.equal(model.odds.bandTone, '');
+  assert.equal(model.watch.title, 'Top scorers so far');
+  assert.ok(model.nextKickoff);
+});
+
+test('a started, unfinished game makes the week live', () => {
+  const slotsWithLive = underwaySlots();
+  slotsWithLive[0].opp = player('Playing QB', 'QB', 20, { gameStarted: true, weekPts: 6.2, kickoff: '2026-09-20T17:00:00Z' });
+  const model = buildMatchupPreviewModel({ ...baseInput, nowMs: NOW_MS, phase: 'live', slots: slotsWithLive });
+  assert.equal(model.liveNow, true);
+  assert.equal(model.bigLabel, 'live');
+  assert.equal(model.odds.mid, 'Live win chance');
+  assert.equal(model.odds.band, 'In progress');
+  assert.equal(model.watch.title, 'Live movers');
+});
+
+test('movers list only starters whose games have started and never tags an unstarted game in progress', () => {
+  const model = buildMatchupPreviewModel({ ...baseInput, nowMs: NOW_MS, phase: 'live', slots: underwaySlots() });
+  const names = [...model.watch.a, ...model.watch.b].map((entry) => entry.name);
+  assert.deepEqual(names.sort(), ['Finished Back', 'Finished Star']);
+  for (const entry of [...model.watch.a, ...model.watch.b]) {
+    assert.match(entry.tag, /^Final · /);
+  }
+});
+
+test('a future kickoff outranks stat-row evidence, so the week stays a preview', () => {
+  const model = buildMatchupPreviewModel({
+    ...baseInput,
+    nowMs: Date.parse('2026-09-08T12:00:00Z'),
+    phase: 'live',
+    slots: [{
+      slotPos: 'QB',
+      mine: player('Zero Row', 'QB', 18, { gameStarted: true, weekPts: 0, kickoff: '2026-09-10T00:20:00Z' }),
+      opp: player('Zero Row Two', 'QB', 17, { gameStarted: true, weekPts: 0, kickoff: '2026-09-10T00:20:00Z' }),
+    }],
+  });
+  assert.equal(model.phase, 'pre');
+  assert.equal(model.liveNow, false);
+  assert.equal(model.bigLabel, 'projected');
+});
+
+test('the headline score and lede use the caller\'s live totals, not the projection', () => {
+  const model = buildMatchupPreviewModel({
+    ...baseInput,
+    nowMs: NOW_MS,
+    phase: 'live',
+    slots: underwaySlots(),
+    liveTotals: { a: 194.3, b: 143.0 },
+  });
+  assert.equal(model.big.a, 194.3);
+  assert.equal(model.big.b, 143);
+  assert.equal(model.liveMargin, 51.3);
+  const lede = model.lede.map((part) => part.text ?? part).join('');
+  assert.match(lede, /leads by 51\.3 pts/);
+  // Both sides' remaining projections appear so the lede reads consistently with the keys.
+  assert.match(lede, /20\.0 pts of projection still to play, against 14\.0 pts/);
+});
+
+test('a live headline without a real score is unavailable rather than the projection', () => {
+  const model = buildMatchupPreviewModel({ ...baseInput, nowMs: NOW_MS, phase: 'live', slots: underwaySlots() });
+  assert.equal(model.big.a, null);
+  assert.equal(model.big.b, null);
+});
+
+test('each mover carries its own unit: final games are final, unfinished games are live', () => {
+  const slotsWithLive = underwaySlots();
+  slotsWithLive[1].opp = player('Playing Back', 'RB', 9, { gameStarted: true, weekPts: 5.5, kickoff: '2026-09-20T17:00:00Z' });
+  const model = buildMatchupPreviewModel({ ...baseInput, nowMs: NOW_MS, phase: 'live', slots: slotsWithLive });
+  assert.equal(model.watch.a.find((entry) => entry.name === 'Finished Star').unit, 'final');
+  assert.equal(model.watch.b.find((entry) => entry.name === 'Playing Back').unit, 'live');
+  assert.equal('note' in model.watch, false);
+});
+
+test('carries the primary header\'s projected final, delta and season summary onto each side', () => {
+  const summary = { record: '1-0', pointsFor: '231.4', pointsAgainst: '226.9' };
+  const model = buildMatchupPreviewModel({
+    ...baseInput,
+    nowMs: NOW_MS,
+    phase: 'live',
+    slots: underwaySlots(),
+    liveTotals: { a: 120, b: 100 },
+    headerExtras: {
+      a: { projectedFinal: 130.24, projectionDelta: '−10.2', summary },
+      b: { projectedFinal: null, summary: null },
+    },
+  });
+  assert.equal(model.sides.a.projectedFinal, 130.2);
+  assert.equal(model.sides.a.projectionDelta, '−10.2');
+  assert.deepEqual(model.sides.a.summary, summary);
+  assert.equal(model.sides.b.projectedFinal, null);
+  assert.equal(model.sides.b.summary, null);
+});
+
+test('the live keys state both sides\' figures without contradicting the lede', () => {
+  const model = buildMatchupPreviewModel({
+    ...baseInput,
+    nowMs: NOW_MS,
+    phase: 'live',
+    slots: underwaySlots(),
+    liveTotals: { a: 194.3, b: 143 },
+    keyLimit: 8,
+  });
+  const text = (parts) => parts.map((part) => part.text ?? part).join('');
+  const comeback = model.keys.find((key) => key.tag === 'Still to come');
+  if (comeback) {
+    assert.match(text(comeback.parts), /51\.3 pts/);
+    assert.doesNotMatch(text(comeback.parts), /more left to play/);
+  }
+  for (const key of model.keys) {
+    assert.doesNotMatch(text(key.parts), /Sunday-night/);
+  }
+});
+
+test('a finished late game no longer counts toward the late-window projection', () => {
+  const model = buildMatchupPreviewModel({
+    ...baseInput,
+    nowMs: NOW_MS,
+    phase: 'live',
+    slots: [{
+      slotPos: 'QB',
+      mine: player('Done Late', 'QB', 20, { gameStarted: true, weekPts: 18, kickoff: '2026-09-20T21:25:00Z', scheduleEntry: { completed: true } }),
+      opp: player('Coming Late', 'QB', 15, { kickoff: '2026-09-21T00:20:00Z' }),
+    }],
+  });
+  assert.equal(model.sides.a.lateWindowProjection, null);
+  assert.equal(model.sides.b.lateWindowProjection, 15);
+});
+
+test('the comeback key states where the projected finish lands, in the trailing side\'s terms', () => {
+  const model = buildMatchupPreviewModel({
+    ...baseInput,
+    nowMs: NOW_MS,
+    phase: 'live',
+    slots: underwaySlots(),
+    liveTotals: { a: 100, b: 60 },
+    keyLimit: 8,
+  });
+  const comeback = model.keys.find((key) => key.tag === 'Still to come');
+  assert.ok(comeback);
+  const text = comeback.parts.map((part) => part.text ?? part).join('');
+  assert.match(text, /40\.0 pts/);
+  assert.match(text, /projected to score .* (more|fewer) than/);
+});

@@ -24,6 +24,7 @@ const SCORING = {
 };
 
 const POSITIONS = new Map([['wr1', 'WR'], ['rb1', 'RB'], ['qb1', 'QB']]);
+POSITIONS.set('lb1', 'LB');
 
 let playSeq = 0;
 
@@ -213,8 +214,83 @@ test('yardage confirms within 3, counting stats must be exact', () => {
   // The cumulative of already-confirmed plays is what the line must clear.
   assert.equal(playFitsStatLine(play, { rec: 2, rec_yd: 24 }, { rec: 1, rec_yd: 12 }), true);
   assert.equal(playFitsStatLine(play, { rec: 1, rec_yd: 24 }, { rec: 1, rec_yd: 12 }), false);
-  // Nothing in PLAY_MATCH_STATS to check against is not a confirmation.
-  assert.equal(playFitsStatLine({ stats: { idp_sack: 1 } }, { idp_sack: 1 }, {}), false);
+  assert.equal(playFitsStatLine({ stats: { idp_sack: 1 } }, { idp_sack: 1 }, {}), true);
+  assert.equal(playFitsStatLine({ stats: { idp_pd: 1 } }, { idp_pass_def: 1 }, {}), true);
+  assert.equal(playFitsStatLine({ stats: { idp_qbhit: 1 } }, { idp_qb_hit: 1 }, {}), true);
+});
+
+test('every scoring-engine IDP stat participates in surplus reconciliation', () => {
+  const stats = {
+    idp_tkl: 1,
+    idp_tkl_solo: 1,
+    idp_tkl_ast: 1,
+    idp_tkl_loss: 1,
+    idp_sack: 1,
+    idp_sack_yd: 4,
+    idp_int: 1,
+    idp_int_ret_yd: 4,
+    idp_int_td: 1,
+    idp_ff: 1,
+    idp_fr: 1,
+    idp_fr_yd: 4,
+    idp_fr_td: 1,
+    idp_def_td: 1,
+    idp_pd: 1,
+    idp_qbhit: 1,
+    idp_safety: 1,
+    idp_blk_kick: 1,
+    bonus_sack_2p: 1,
+    bonus_tkl_10p: 1,
+    idp_pass_def_3p: 1,
+  };
+  assert.deepEqual(computeStatSurplus(stats, {}), stats);
+  assert.deepEqual(computeStatSurplus({
+    idp_fum_rec: 1,
+    idp_fum_ret_yd: 4,
+    idp_pass_def: 1,
+    idp_qb_hit: 1,
+    idp_safe: 1,
+  }, {}), {
+    idp_fr: 1,
+    idp_fr_yd: 4,
+    idp_pd: 1,
+    idp_qbhit: 1,
+    idp_safety: 1,
+  });
+});
+
+test('unexplained IDP production becomes one scored stat-update row', () => {
+  const inputs = {
+    playEvents: [],
+    sleeperPointsById: { lb1: 8.5 },
+    sleeperStatsById: { lb1: { idp_sack: 1, idp_tkl_solo: 2, idp_tkl_ast: 1, idp_pass_def: 1 } },
+    scoringSettings: { idp_sack: 4, idp_tkl_solo: 1, idp_tkl_ast: 0.5, idp_pd: 2 },
+  };
+  let state = reconcileLivePlays(createReconciliationState(), {
+    ...inputs,
+    positionsById: POSITIONS,
+    sleeperStatsFetchedAt: 1000,
+    now: 1500,
+  });
+  state = reconcileLivePlays(state, {
+    ...inputs,
+    positionsById: POSITIONS,
+    sleeperStatsFetchedAt: 34000,
+    now: 34500,
+  });
+  const player = state.players.get('lb1');
+
+  assert.equal(player.fallbackEvents.length, 1);
+  assert.deepEqual(player.fallbackEvents[0].stats, {
+    idp_tkl_solo: 2,
+    idp_tkl_ast: 1,
+    idp_sack: 1,
+    idp_pd: 1,
+  });
+  assert.equal(player.fallbackEvents[0].pts, 8.5);
+  assert.equal(player.displayedPoints, 8.5);
+  assert.equal(player.displayedEventPoints, 8.5);
+  assert.equal(player.unattributedPoints, 0);
 });
 
 test('the residual is pinned to the latest confirmed play and recomputed each step', () => {
@@ -319,6 +395,54 @@ test('no fallback row when plays already explain the stat line', () => {
 
   assert.equal(state.players.get('wr1').fallbackEvents.length, 0);
   assert.equal(state.players.get('wr1').plays[0].status, 'confirmed');
+});
+
+test('visible event values exactly account for an authoritative total before and after fallback', () => {
+  const plays = [
+    makePlay({ stats: { rec: 1, rec_yd: 8 }, pts: 1.8, order: 10 }),
+    makePlay({ stats: { rec: 1, rec_yd: 12 }, pts: 2.2, order: 20 }),
+  ];
+  const inputs = {
+    sleeperPointsById: { wr1: 6 },
+    sleeperStatsById: { wr1: { rec: 3, rec_yd: 30 } },
+  };
+  let state = step(createReconciliationState(), {
+    ...inputs,
+    playEvents: plays,
+    sleeperStatsFetchedAt: 1000,
+    now: 1500,
+  });
+  let player = state.players.get('wr1');
+
+  assert.equal(player.displayedPoints, 6);
+  assert.equal(player.displayedEventPoints, 6);
+  assert.equal(player.unattributedPoints, 0);
+  assert.equal(
+    state.feedEvents
+      .filter((event) => event.playerId === 'wr1')
+      .reduce((total, event) => total + event.displayPts, 0),
+    6,
+  );
+
+  state = step(state, {
+    ...inputs,
+    playEvents: [],
+    sleeperStatsFetchedAt: 34000,
+    now: 34500,
+  });
+  player = state.players.get('wr1');
+
+  assert.equal(player.fallbackEvents.length, 1);
+  assert.deepEqual(player.fallbackEvents[0].stats, { rec: 1, rec_yd: 10 });
+  assert.equal(player.displayedPoints, 6);
+  assert.equal(player.displayedEventPoints, 6);
+  assert.equal(player.unattributedPoints, 0);
+  assert.equal(
+    state.feedEvents
+      .filter((event) => event.playerId === 'wr1')
+      .reduce((total, event) => total + event.displayPts, 0),
+    6,
+  );
 });
 
 test('a play arriving late retires the fallback row it duplicates', () => {
@@ -584,6 +708,8 @@ test('a play Sleeper never credited in a finished game stops counting', () => {
   assert.equal(player.plays[1].pts, -2, 'the play lost its own value');
   assert.equal(player.pendingPoints, 0);
   assert.equal(player.displayedPoints, 6, 'displayed total still disagrees with Sleeper');
+  assert.deepEqual(state.feedEvents.map((event) => event.id), [real.id]);
+  assert.ok(state.feedEvents.every((event) => event.displayPts !== 0));
 });
 
 test('a play pending past the TTL stops counting even while the game runs', () => {
@@ -607,6 +733,7 @@ test('a play pending past the TTL stops counting even while the game runs', () =
   assert.equal(player.plays[0].status, 'unconfirmed');
   assert.equal(player.plays[0].displayPts, 0);
   assert.equal(player.displayedPoints, 0);
+  assert.deepEqual(state.feedEvents, []);
 });
 
 test('a stale stat line never condemns a play', () => {

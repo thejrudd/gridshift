@@ -3,6 +3,11 @@ import { defineConfig, devices } from '@playwright/test';
 export default defineConfig({
   testDir: './tests/e2e',
   fullyParallel: false,
+  // The tour replays lazy-loaded views under a cold dev server, and skipping an
+  // unavailable anchor waits out the app's 10s anchor timeout, so the defaults
+  // (30s test / 5s expect) fail on timing rather than behavior.
+  timeout: 90_000,
+  expect: { timeout: 20_000 },
   reporter: [['list'], ['html', { open: 'never' }]],
   use: {
     baseURL: 'http://127.0.0.1:5174',

@@ -1,5 +1,5 @@
 const PREDICTIONS_VIEWS = new Set(['predictions', 'playoffs']);
-const FANTASY_VIEWS = new Set(['rosters', 'rankings', 'live', 'matchups', 'injuries', 'waivers', 'heatmap', 'defenses', 'scoring']);
+const FANTASY_VIEWS = new Set(['rosters', 'rankings', 'live', 'matchups', 'schedule', 'injuries', 'waivers', 'heatmap', 'defenses', 'scoring']);
 const FANTASY_VIEW_ALIASES = new Map([
   ['roster', 'rosters'],
   ['league', 'rosters'],
@@ -52,6 +52,9 @@ const DEFAULT_ROUTE = {
   rankingsRosterId: null,
   waiverPosition: null,
   matchupWeek: null,
+  scheduleMode: null,
+  scheduleWeek: null,
+  scheduleRosterId: null,
   matchupPlayerId: null,
   matchupRosterId: null,
   leagueSubview: null,
@@ -338,6 +341,12 @@ export function normalizeAppRoute(route = {}) {
       normalized.matchupRosterId = normalizePlayerId(route.matchupRosterId);
     }
 
+    if (companionView === 'schedule') {
+      normalized.scheduleMode = normalizeLowerToken(route.scheduleMode, new Set(['season', 'league']), 'season');
+      normalized.scheduleWeek = normalizeWeek(route.scheduleWeek);
+      normalized.scheduleRosterId = normalizePlayerId(route.scheduleRosterId);
+    }
+
     if (companionView === 'rosters') {
       normalized.leagueSubview = normalizeLowerToken(route.leagueSubview, new Set(['roster', 'picks']), 'roster');
       normalized.leagueRosterId = normalizePlayerId(route.leagueRosterId);
@@ -501,6 +510,9 @@ export function parseAppRoute(pathname = '/', search = '') {
         matchupWeek: parseQueryValue(searchParams, 'week'),
         matchupPlayerId: parseQueryValue(searchParams, 'player'),
         matchupRosterId: parseQueryValue(searchParams, 'team'),
+        scheduleMode: parseQueryValue(searchParams, 'mode'),
+        scheduleWeek: parseQueryValue(searchParams, 'week'),
+        scheduleRosterId: parseQueryValue(searchParams, 'team'),
         leagueSubview: parseQueryValue(searchParams, 'sub'),
         leagueRosterId: parseQueryValue(searchParams, 'team'),
         heatmapViewMode: parseQueryValue(searchParams, 'mode'),
@@ -540,6 +552,9 @@ export function parseAppRoute(pathname = '/', search = '') {
         matchupWeek: parseQueryValue(searchParams, 'week'),
         matchupPlayerId: parseQueryValue(searchParams, 'player'),
         matchupRosterId: parseQueryValue(searchParams, 'team'),
+        scheduleMode: parseQueryValue(searchParams, 'mode'),
+        scheduleWeek: parseQueryValue(searchParams, 'week'),
+        scheduleRosterId: parseQueryValue(searchParams, 'team'),
         leagueSubview: parseQueryValue(searchParams, 'sub'),
         leagueRosterId: parseQueryValue(searchParams, 'team'),
         heatmapViewMode: parseQueryValue(searchParams, 'mode'),
@@ -657,6 +672,13 @@ export function buildAppPath(route) {
           ['team', normalized.matchupRosterId],
         ])}`;
       }
+      if (normalized.companionView === 'schedule') {
+        return `${basePath}${buildQueryString([
+          ['mode', normalized.scheduleMode !== 'season' ? normalized.scheduleMode : null],
+          ['week', normalized.scheduleWeek],
+          ['team', normalized.scheduleRosterId],
+        ])}`;
+      }
       if (normalized.companionView === 'rosters') {
         return `${basePath}${buildQueryString([
           ['sub', normalized.leagueSubview !== 'roster' ? normalized.leagueSubview : null],
@@ -761,6 +783,9 @@ export function isSameAppRoute(a, b) {
     && left.matchupWeek === right.matchupWeek
     && left.matchupPlayerId === right.matchupPlayerId
     && left.matchupRosterId === right.matchupRosterId
+    && left.scheduleMode === right.scheduleMode
+    && left.scheduleWeek === right.scheduleWeek
+    && left.scheduleRosterId === right.scheduleRosterId
     && left.leagueSubview === right.leagueSubview
     && left.leagueRosterId === right.leagueRosterId
     && left.heatmapViewMode === right.heatmapViewMode

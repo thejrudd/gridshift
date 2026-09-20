@@ -114,13 +114,13 @@ import {
   subscribeToRewind,
   useLiveSandbox,
 } from '../../dev/liveSandbox';
+import { buildFantasyLiveRosterResults } from '../../utils/fantasyLiveRecord.js';
 
 const LIVE_REFRESH_MS = 5000;
 const FREE_TIER_REFRESH_MS = 60000;
 // Sleeper's weekly stat lines move only when a game is running, so they are
 // polled on their own slower cadence than the matchup/points refresh.
 const SLEEPER_STATS_REFRESH_MS = 30000;
-const MAX_FEED_EVENTS = 80;
 // A full Sunday slate, so every starter's game can supply play-by-play rather
 // than only the first handful.
 const MAX_PLAYS_GAMES = 16;
@@ -129,7 +129,8 @@ const RAIL_PERFORMER_LIMIT = 14;
 const FINAL_RECONCILIATION_RETRY_MS = 30000;
 
 function isFantasyFeedEvent(event) {
-  const points = Number(event?.rawPts ?? event?.pts);
+  if (event?.hiddenFromFeed || event?.status === 'unconfirmed') return false;
+  const points = Number(event?.displayPts ?? event?.pts);
   return Number.isFinite(points) && points !== 0;
 }
 
@@ -222,81 +223,6 @@ function getMatchupRowPoints(row) {
       return sum + (Number.isFinite(points) ? points : 0);
     }, 0);
   return starterPoints + getMatchupCustomPoints(row);
-}
-
-function addRosterCumulativeResult(totals, rosterId, result) {
-  if (rosterId == null) return;
-  const current = totals.get(rosterId) ?? {
-    pointsFor: 0,
-    pointsAgainst: 0,
-    wins: 0,
-    losses: 0,
-    ties: 0,
-  };
-  totals.set(rosterId, {
-    pointsFor: current.pointsFor + (Number.isFinite(result.pointsFor) ? result.pointsFor : 0),
-    pointsAgainst: current.pointsAgainst + (Number.isFinite(result.pointsAgainst) ? result.pointsAgainst : 0),
-    wins: current.wins + (Number(result.wins) || 0),
-    losses: current.losses + (Number(result.losses) || 0),
-    ties: current.ties + (Number(result.ties) || 0),
-  });
-}
-
-function buildCumulativeRosterResults(matchupsByWeek, throughWeek, currentSummaries = []) {
-  const totals = new Map();
-  const currentWeek = Number(throughWeek);
-  const currentPointsByRoster = new Map();
-
-  currentSummaries.forEach((summary) => {
-    const rosterId = getRosterIdFromMatchupRow(summary?.side?.row);
-    if (rosterId == null) return;
-    currentPointsByRoster.set(rosterId, Number(summary.total) || 0);
-  });
-
-  for (let weekIndex = 1; weekIndex <= currentWeek; weekIndex += 1) {
-    const rows = matchupsByWeek?.[weekIndex] ?? [];
-    const groups = new Map();
-    rows.forEach((row) => {
-      if (row?.matchup_id == null) return;
-      const key = Number(row.matchup_id);
-      const entry = groups.get(key) ?? [];
-      entry.push(row);
-      groups.set(key, entry);
-    });
-
-    groups.forEach((groupRows) => {
-      const scoringRows = groupRows
-        .map((row) => {
-          const rosterId = getRosterIdFromMatchupRow(row);
-          if (rosterId == null) return null;
-          const hasCurrentOverride = weekIndex === currentWeek && currentPointsByRoster.has(rosterId);
-          return {
-            rosterId,
-            pointsFor: hasCurrentOverride ? currentPointsByRoster.get(rosterId) : getMatchupRowPoints(row),
-          };
-        })
-        .filter(Boolean);
-      const hasScoredPoints = scoringRows.some((row) => row.pointsFor > 0);
-
-      scoringRows.forEach((row) => {
-        const rosterId = row.rosterId;
-        if (rosterId == null) return;
-        const opponentRows = scoringRows.filter((other) => other.rosterId !== rosterId);
-        const pointsAgainst = opponentRows.reduce((sum, other) => sum + other.pointsFor, 0);
-        const opponentHigh = Math.max(...opponentRows.map((other) => other.pointsFor), 0);
-        const shouldCountResult = hasScoredPoints && opponentRows.length > 0;
-        addRosterCumulativeResult(totals, rosterId, {
-          pointsFor: row.pointsFor,
-          pointsAgainst,
-          wins: shouldCountResult && row.pointsFor > opponentHigh ? 1 : 0,
-          losses: shouldCountResult && row.pointsFor < opponentHigh ? 1 : 0,
-          ties: shouldCountResult && row.pointsFor === opponentHigh ? 1 : 0,
-        });
-      });
-    });
-  }
-
-  return totals;
 }
 
 function getScheduleGlance(scheduleMap, week, teamAbbr, { hasGameEvidence = false } = {}) {
@@ -1019,6 +945,7 @@ export default function CompanionLive({ onViewPlayer = null }) {
     [getUserDisplayName, matchups, myRosterId, rosters],
   );
   const currentMatchup = matchupPairs[Math.min(matchupIndex, Math.max(0, matchupPairs.length - 1))] ?? null;
+  const activeScheduleMapForContext = scheduleMap ?? localScheduleMap;
 
   useEffect(() => {
     if (matchupIndex <= matchupPairs.length - 1) return;
@@ -1337,8 +1264,13 @@ export default function CompanionLive({ onViewPlayer = null }) {
   ]);
 
   const cumulativeResultsByRoster = useMemo(
-    () => buildCumulativeRosterResults(cumulativeMatchupsByWeek, week, rawSideSummaries),
-    [cumulativeMatchupsByWeek, rawSideSummaries, week],
+    () => buildFantasyLiveRosterResults({
+      matchupsByWeek: cumulativeMatchupsByWeek,
+      throughWeek: week,
+      scheduleMap: activeScheduleMapForContext,
+      players,
+    }),
+    [activeScheduleMapForContext, cumulativeMatchupsByWeek, players, week],
   );
 
   const sideSummaries = useMemo(() => (
@@ -1417,15 +1349,15 @@ export default function CompanionLive({ onViewPlayer = null }) {
       });
 
       if (events.length) {
-        // The feed keeps a bounded window because the chart derives its values
-        // from win-probability snapshots, so dropping old rows costs nothing.
-        setFeedEvents((current) => [...events, ...current].slice(0, MAX_FEED_EVENTS));
+        // Keep the complete canonical event history. The chart, feed, and
+        // player breakdowns all depend on older scoring rows remaining
+        // available; presentation-level virtualization can be added without
+        // changing this source stream.
+        setFeedEvents((current) => [...events, ...current]);
       }
     }
     snapshotRef.current = next;
   }, [activeScoringSettings, currentMatchup, lastUpdatedAt, liveGames, reconcilerEnabled, sideSummaries]);
-
-  const activeScheduleMapForContext = scheduleMap ?? localScheduleMap;
 
   useEffect(() => {
     if (sandboxActive || platform !== 'sleeper' || !season || !week || !players) {
@@ -1968,8 +1900,8 @@ export default function CompanionLive({ onViewPlayer = null }) {
   // `gameProgress` remains available for player/game calculations; `progress`
   // is the shared axis consumed by both the feed and the chart.
   const slateTimeline = useMemo(
-    () => buildDemoTimeline(sortRelevantGames(liveGames, matchupTeams)),
-    [liveGames, matchupTeams],
+    () => buildDemoTimeline(liveGames),
+    [liveGames],
   );
   const demoTimeline = demoFeedEnabled ? slateTimeline : null;
 
@@ -2131,10 +2063,12 @@ export default function CompanionLive({ onViewPlayer = null }) {
     // NFL snap can produce two fantasy rows (QB + receiver, or offense +
     // defense); collapsing them here hid that breakdown and gave the row the
     // timestamp/order of whichever contributor happened to be primary.
-    const ordered = sortLiveFeedEvents(withDemoEvents);
-    return reconcilerEnabled && !sandboxReplay
-      ? ordered.slice(0, MAX_FEED_EVENTS)
-      : ordered;
+    // An unconfirmed provider row remains in reconciliation state so a later
+    // Sleeper correction can reinstate it, but it is not a scored event once
+    // the engine has decided Sleeper does not own it. Its authoritative
+    // remainder is represented by the labeled stat-update row instead.
+    return sortLiveFeedEvents(withDemoEvents)
+      .filter((event) => event?.status !== 'unconfirmed');
   }, [
     activeScoringSettings,
     baseEntriesById,
@@ -2145,7 +2079,6 @@ export default function CompanionLive({ onViewPlayer = null }) {
     reconcilerEnabled,
     reconciliation,
     sandbox,
-    sandboxReplay,
     slateTimeline,
     sideSummaries,
   ]);

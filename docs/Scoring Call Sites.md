@@ -15,6 +15,36 @@ When making any change to scoring logic (new fields in `DEFAULT_SCORING`/`STAT_T
 | `src/context/SleeperContext.jsx` | Verify startup re-derives from `league.scoring_settings` via `importLeagueScoring` or `normalizeScoringProfile` |
 | `src/utils/espnBigPlayBonuses.js` / `src/context/SleeperContext.jsx` | ESPN-only scoring-play enrichment derives long TD counters and successful two-point conversions from NFL scoring plays; keep it behind `platform === 'espn'` so Sleeper calculations stay API-native |
 
+## Live Provider Play And Reconciliation Boundary
+
+Fantasy Live and Statistics Scores share the canonical provider semantics in
+`src/utils/playByPlay/normalizePlay.js`,
+`src/utils/nflPlays/playNarrative.js`, and
+`src/utils/playByPlay/playStatDelta.js`. Keep this boundary aligned with the
+scoring engine when adding or changing a stat key:
+
+- `parseDefensiveActors()` may emit an IDP role only when the provider's
+  narrative explicitly names that role and the resolved defense team supports
+  the attribution. A defender merely mentioned in a description is not a
+  fantasy event.
+- `buildPlayStatDelta()` must emit the same Sleeper stat keys that
+  `calcPoints()` consumes, including IDP tackles, sacks, interceptions, forced
+  fumbles, recoveries, pass defenses, quarterback hits, safeties, blocked kicks,
+  and defensive touchdowns where the active scoring profile supports them.
+- `PLAY_MATCH_STATS` in `playStatDelta.js` is the reconciliation coverage set,
+  not a second scoring profile. Every positive key used to confirm an
+  individual provider play or create a `Stat update` fallback must be covered,
+  including supported aliases in `liveReconciliation.js`.
+- `livePlaysFeed.js` remains the individual provider-row boundary. A shared NFL
+  snap may produce multiple player rows; `liveReconciliation.js` keeps
+  Sleeper-authoritative totals, pending/confirmed/unconfirmed state, and
+  incremental fallback retirement. It must preserve negative values and never
+  turn an unconfirmed estimate into a visible zero-point row.
+
+Statistics Scores consumes the same canonical normalizer and stat delta, so
+changes here require the relevant Statistics Scores normalization/stat-delta
+tests in addition to the focused Fantasy Live suite.
+
 ## Projection / Analytics Engine (pass `position` everywhere)
 
 | File | Function | What to check |

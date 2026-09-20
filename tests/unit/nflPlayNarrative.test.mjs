@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import { normalizeBdlScorePlay } from '../../src/utils/balldontlieNflScoreboard.js';
 import {
   PLAY_ROLES,
+  parseDefensiveActors,
   parseInterception,
   parsePenaltyClause,
   parsePlayNarrative,
@@ -52,6 +53,36 @@ test('a sack credits the defender and reports negative yardage', () => {
   assert.equal(narrative.sentence, 'Marshawn Kneeland sacked Jalen Hurts for a loss of 8 yards.');
   assert.deepEqual(actorNames(narrative, PLAY_ROLES.SACKER), ['Marshawn Kneeland']);
   assert.equal(narrative.yards, -8);
+});
+
+test('official text supplies explicit defensive actors when compact text changes', () => {
+  assert.deepEqual(
+    parseDefensiveActors('(Shotgun) J.Goff sacked at DET 18 for -7 yards (G.Rousseau).', { typeSlug: 'sack' })
+      .map(({ role, name }) => ({ role, name })),
+    [{ role: PLAY_ROLES.SACKER, name: 'G.Rousseau' }],
+  );
+  assert.deepEqual(
+    parseDefensiveActors('J.Allen up the middle to DET 40 for 4 yards (J.Campbell).')
+      .map(({ role, name }) => ({ role, name })),
+    [{ role: PLAY_ROLES.TACKLER, name: 'J.Campbell' }],
+  );
+});
+
+test('defensive clauses distinguish force, recovery, and return tackle credits', () => {
+  const actors = parseDefensiveActors(
+    'B.Young pass to T.McMillan. T.McMillan FUMBLES (J.Campbell), '
+      + 'RECOVERED by BUF-C.Bishop at BUF 20. C.Bishop to BUF 25 for 5 yards (A.Thielen).',
+  );
+
+  assert.deepEqual(actors.map(({ role, name, team = null }) => ({ role, name, team })), [
+    { role: PLAY_ROLES.FORCER, name: 'J.Campbell', team: null },
+    { role: PLAY_ROLES.RECOVERER, name: 'C.Bishop', team: 'BUF' },
+    { role: PLAY_ROLES.TACKLER, name: 'A.Thielen', team: null },
+  ]);
+});
+
+test('a defensive name without an explicit role fails closed', () => {
+  assert.deepEqual(parseDefensiveActors('Greg Rousseau was mentioned near the sideline.'), []);
 });
 
 test('a rushing touchdown reads as a score and carries the extra point', () => {
@@ -186,6 +217,7 @@ test('formation notes are not mistaken for tacklers', () => {
   assert.deepEqual(parseTacklers('(Shotgun) J.Williams up the middle to PHI 33 for 3 yards (A.Mukuba).'), ['A.Mukuba']);
   assert.deepEqual(parseTacklers('(No Huddle, Shotgun) D.Prescott pass incomplete short left to C.Lamb.'), []);
   assert.deepEqual(parseTacklers('K.Turpin to DAL 24 for 22 yards (J.Uche; J.Trotter).'), ['J.Uche', 'J.Trotter']);
+  assert.deepEqual(parseTacklers('T.McMillan FUMBLES (J.Campbell), RECOVERED by BUF-C.Bishop at BUF 20.'), []);
 });
 
 test('trailing clauses after the play are not scanned for tacklers', () => {

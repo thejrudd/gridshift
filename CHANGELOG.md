@@ -1377,3 +1377,14 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Statistics Scores and Fantasy Live reliability** - Corrected signed-spot interception normalization, forward-pass replay attribution, final possession state, drive geometry, quarter interception counts, and drilldown scroll continuity.
 - **Current-season and ranking accuracy** - Refreshed stale current-season finality, preserved valid zero and negative participant scores, and kept raw QB Heatmap stat modes independent of fantasy scoring settings.
 - **Regression coverage and documentation** - Added focused unit, route, responsive, provider, loading-motion, and player-drilldown coverage, plus updated architecture, provider-boundary, and feature references.
+
+## v9.0.1 - Fantasy Schedule & Matchup Clarity
+*2026-09-20*
+
+- **Fantasy Schedule (Beta)** - Added a season-long Schedule view under Fantasy with league and single-team modes, week-by-week pairings, distinct pending, bye, and unscheduled weeks, rematch context, and a jump into any week's Matchup.
+- **Matchup preview status and scores** - Corrected the matchup preview so it says live only while a starter's game is on the clock, shows the real current score instead of the projection, and no longer lists unplayed starters as scoring or in progress. Finished players read "final", and the preview includes each team's projected final, record, points for, and points against, matching the main matchup header.
+- **Matchup preview rivalry and keys** - Moved rivalry history into the preview with the series record, highlights, and latest meetings that open the source matchup, with a clear notice for seasons you were not part of, and reworded the late-game and comeback keys in plain language.
+- **Fantasy Live accuracy** - Tightened play-by-play attribution and Sleeper reconciliation so unconfirmed plays never render as zero-point rows, defensive roles need explicit provider evidence, the slate axis covers the full week, and the Live record only settles a week once every starter is final.
+- **Defense averages** - Companion Defense per-game averages now count only games a team has actually played, instead of every scheduled game in a week that has kicked off league-wide.
+- **What's New tour** - Finishing the tour on the Matchups view no longer freezes the page, and the tour end-to-end checks use timeouts that fit lazy-loaded views.
+- **Regression coverage and documentation** - Added focused coverage for the preview, schedule, Live record, defense averages, and reconciliation, and updated the Fantasy Live, scoring, and routing references.

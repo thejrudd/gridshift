@@ -106,8 +106,13 @@ export function buildVerdict(left, right) {
  * there. Modes: `top` (most points), `swing` (furthest above pace),
  * `recent` (most recent scoring play).
  */
+export function hasPositiveLivePoints(entry) {
+  const points = Number(entry?.pace?.points);
+  return Number.isFinite(points) && points > 0;
+}
+
 export function pickFeaturedStarter(entries = [], mode = 'top', latestEvent = null) {
-  const scored = entries.filter((entry) => entry.pace);
+  const scored = entries.filter(hasPositiveLivePoints);
   if (!scored.length) return null;
 
   if (mode === 'swing') {
@@ -466,7 +471,9 @@ export function getStarterReplayRemainingFraction(
 /** Both rosters merged and ranked by live points — the rail and leaderboard. */
 export function buildTopPerformers(sides = [], limit = 12) {
   return sides
-    .flatMap((side) => (side?.entries ?? []).map((entry) => ({ entry, side })))
+    .flatMap((side) => (side?.entries ?? [])
+      .filter(hasPositiveLivePoints)
+      .map((entry) => ({ entry, side })))
     .sort((left, right) => (right.entry.pace?.points ?? 0) - (left.entry.pace?.points ?? 0))
     .slice(0, limit);
 }

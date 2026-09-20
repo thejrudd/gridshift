@@ -602,12 +602,20 @@ const DETECTORS = [
       const theirs = num(side.remainingProjection);
       const opposing = num(other.remainingProjection);
       if (theirs == null || opposing == null) return null;
+      const gap = Math.abs(deficit);
+      const edge = theirs - opposing;
+      // Where the gap lands if each side's remaining players hit their projection.
+      const finalGap = gap - edge;
+      const moreFewer = edge >= 0 ? 'more' : 'fewer';
+      const finish = finalGap > 0.05 ? `${pts(finalGap)} behind` : finalGap < -0.05 ? `${pts(-finalGap)} ahead` : 'level';
       return {
-        salience: 0.45 + 0.3 * ramp(theirs - opposing, 0, 25),
+        salience: 0.45 + 0.3 * ramp(edge, 0, 25),
         tag: 'Still to come',
         variants: [
-          () => say`${side.name} trails by ${pts(Math.abs(deficit))} with ${pts(theirs)} of projection still on the field, against ${pts(opposing)} for ${other.name}.`,
-          () => say`The gap is ${pts(Math.abs(deficit))}, but ${side.name} has ${pts(theirs - opposing)} more left to play than ${other.name} does.`,
+          () => say`${side.name} trails by ${pts(gap)}. Their remaining players are projected to score ${pts(Math.abs(edge))} ${moreFewer} than ${other.name}'s, so they're projected to finish ${finish}.`,
+          ...(finalGap > 0.05
+            ? [() => say`On projections the gap goes from ${pts(gap)} to ${pts(finalGap)}: ${side.name}'s remaining players are projected to score ${pts(Math.abs(edge))} ${moreFewer} than ${other.name}'s.`]
+            : []),
         ],
       };
     },
@@ -704,12 +712,15 @@ const DETECTORS = [
       if (Math.abs(gap) < 8) return null;
       const side = context.sides[gap > 0 ? 'a' : 'b'];
       const other = context.sides[gap > 0 ? 'b' : 'a'];
+      const sideLate = gap > 0 ? lateA : lateB;
+      const otherLate = gap > 0 ? lateB : lateA;
+      // "Late" is the model's kickoffWindow: 4 PM ET and later, plus Monday.
       return {
         salience: 0.28 + 0.35 * ramp(Math.abs(gap), 8, 30),
         tag: 'How it ends',
         variants: [
-          () => say`${side.name} holds ${pts(Math.abs(gap))} more in the Sunday-night and Monday windows. If this is close on Sunday evening, ${other.name} is the one waiting.`,
-          () => say`The week stays open longer for ${side.name} — ${pts(gap > 0 ? lateA : lateB)} of projection in primetime against ${pts(gap > 0 ? lateB : lateA)}.`,
+          () => say`Late games still to come (4 PM ET kickoffs and Monday): ${side.name} has ${pts(sideLate)} projected, ${other.name} has ${pts(otherLate)}.`,
+          () => say`${side.name} has more of the week left to play late — ${pts(sideLate)} projected from 4 PM ET kickoffs and Monday, against ${pts(otherLate)} for ${other.name}.`,
         ],
       };
     },

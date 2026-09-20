@@ -5,6 +5,9 @@ import {
   applyObservedPointFallback,
   buildObservedPlayerPoints,
   buildPaceSeries,
+  buildTopPerformers,
+  hasPositiveLivePoints,
+  pickFeaturedStarter,
   preservePaceSeriesScores,
 } from '../../src/utils/livePace.js';
 import { resolveCurrentPlayerPoints } from '../../src/utils/liveScoringFeed.js';
@@ -81,6 +84,25 @@ test('events in agreement give the same answer either way', () => {
   const byOrder = build(ordered, { accumulateInOrder: true }).points.map((p) => p.a);
   const byClock = build(ordered, { accumulateInOrder: false }).points.map((p) => p.a);
   assert.deepEqual(byOrder, byClock);
+});
+
+test('leader surfaces exclude zero and negative players while feed values remain eligible', () => {
+  const entries = [
+    { id: 'zero', pace: { points: 0, vsPace: 0 } },
+    { id: 'negative', pace: { points: -2, vsPace: -2 } },
+    { id: 'positive', pace: { points: 4, vsPace: 1 } },
+  ];
+
+  assert.equal(hasPositiveLivePoints(entries[0]), false);
+  assert.equal(hasPositiveLivePoints(entries[1]), false);
+  assert.equal(hasPositiveLivePoints(entries[2]), true);
+  assert.equal(pickFeaturedStarter(entries, 'top').entry.id, 'positive');
+  assert.deepEqual(
+    buildTopPerformers([
+      { key: 'a', entries },
+    ], 10).map(({ entry }) => entry.id),
+    ['positive'],
+  );
 });
 
 test('the default is unchanged, so live scoring keeps its clock ordering', () => {

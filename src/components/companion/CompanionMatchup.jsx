@@ -30,7 +30,6 @@ import { buildFantasyMatchupScoringBreakdown } from '../../utils/fantasyMatchupB
 import { RevealList } from '../ui/LoadingSwap.jsx';
 import { Skeleton } from '../ui/Skeleton';
 import Modal from '../Modal';
-import MatchupRivalryModal from './MatchupRivalryModal';
 import MatchupPreviewModal from './MatchupPreviewModal';
 import { buildMatchupPreviewModel, formatFantasyRosterSeed, getFantasyRosterSeeds } from '../../utils/matchupPreviewModel.js';
 import { buildMatchupRivalry } from '../../utils/matchupRivalry.js';
@@ -293,7 +292,7 @@ export default function CompanionMatchup({
     weeklyStats, seasonStats, scheduleMap: baseScheduleMap, loadSeasonStats,
     statsBySeason, loadStatsForSeason,
     statsLoading, activeScoringSettings, scoringOverride,
-    myRoster, getUserDisplayName, leagueUsers, espnIdOverrides, loadMatchups, linkedLeagueHistory,
+    myRoster, getUserDisplayName, leagueUsers, espnIdOverrides, loadMatchups, linkedLeagueHistory, linkedLeagueSeasonOptions,
   } = useSleeperBase();
   const scheduleMap = useMemo(
     () => mergeSeasonScheduleResultsIntoMap(baseScheduleMap, seasonSchedule, season),
@@ -381,7 +380,6 @@ export default function CompanionMatchup({
   const [matchupSnapshotRevision, setMatchupSnapshotRevision] = useState(0);
   const [finalMatchupReconciliation, setFinalMatchupReconciliation] = useState({ key: '', status: 'idle', attempts: 0 });
   const [taleOfTape, setTaleOfTape] = useState(null);
-  const [rivalrySelection, setRivalrySelection] = useState(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [tapeHistoryState, setTapeHistoryState] = useState({ key: '', status: 'idle', model: null });
   const [isMineHeaderHovered, setIsMineHeaderHovered] = useState(false);
@@ -1019,20 +1017,6 @@ export default function CompanionMatchup({
     loadTaleOfTapeHistory(matchupHistoryKey);
   };
 
-  const openRivalry = () => {
-    const historyKey = `${selectedLeagueId}|${season}`;
-    setRivalrySelection({
-      historyKey,
-      leftManagerId: rosterOwnerById.get(String(leftSide?.rosterId)) ?? null,
-      rightManagerId: rosterOwnerById.get(String(rightSide?.rosterId)) ?? null,
-      leftName: myName,
-      rightName: opponentName,
-      leftPalette: myFantasyPalette,
-      rightPalette: opponentFantasyPalette,
-    });
-    loadTaleOfTapeHistory(historyKey);
-  };
-
   const enrichPlayer = useCallback((id, pointsMap = null) => {
     if (!id || !players) return null;
     const p = players[id];
@@ -1473,9 +1457,10 @@ export default function CompanionMatchup({
       officialStarterPlayers.flatMap((slot) => [slot.mine, slot.opp]),
       {
         scheduleWeekComplete: isCompleteScheduleWeek(matchupWeekSchedule),
+        scheduleWeekFinal: isFullGameWeekConcluded,
       },
     )
-  ), [matchupWeekSchedule, officialStarterPlayers]);
+  ), [isFullGameWeekConcluded, matchupWeekSchedule, officialStarterPlayers]);
   const finalMatchupReconciliationKey = selectedLeagueId && currentMatchupId != null
     ? `${selectedLeagueId}:${season}:${week}:${currentMatchupId}`
     : null;
@@ -1678,6 +1663,21 @@ export default function CompanionMatchup({
   const oppForecastTotal = matchupWinProbability?.expectedB ?? oppForecast?.total ?? null;
   const matchupIsSettled = Boolean(matchupWinProbability?.settled || matchupSettlementConfirmed);
 
+  const mineHeaderProjection = matchupIsSettled
+    ? recordedMinePregameProjection?.complete
+      ? recordedMinePregameProjection.total
+      : currentMineExternalProjection?.complete
+        ? currentMineExternalProjection.total
+        : myForecast?.total ?? null
+    : mineScoreIsLive && mineForecastTotal != null ? mineForecastTotal : null;
+  const oppHeaderProjection = matchupIsSettled
+    ? recordedOppPregameProjection?.complete
+      ? recordedOppPregameProjection.total
+      : currentOppExternalProjection?.complete
+        ? currentOppExternalProjection.total
+        : oppForecast?.total ?? null
+    : oppScoreIsLive && oppForecastTotal != null ? oppForecastTotal : null;
+
   // Preview panel model. Built only while the panel is open — it walks every
   // starter, the league's rosters and the linked-season rivalry.
   const previewPairingId = matchupPairingId(leftSide?.rosterId, rightSide?.rosterId);
@@ -1719,6 +1719,19 @@ export default function CompanionMatchup({
       slots: enrichedSlots,
       benches: { a: enrichedMyBench, b: enrichedOppBench },
       winProbability: matchupWinProbability,
+      liveTotals: matchupGameStarted ? { a: myDisplayPoints, b: oppDisplayPoints } : null,
+      headerExtras: {
+        a: {
+          projectedFinal: mineHeaderProjection,
+          projectionDelta: matchupIsSettled && mineScoreIsLive ? formatMatchupProjectionDelta(myDisplayPoints, mineHeaderProjection) : null,
+          summary: showTeamSummary ? myTeamSummary : null,
+        },
+        b: {
+          projectedFinal: oppHeaderProjection,
+          projectionDelta: matchupIsSettled && oppScoreIsLive ? formatMatchupProjectionDelta(oppDisplayPoints, oppHeaderProjection) : null,
+          summary: showTeamSummary ? opponentTeamSummary : null,
+        },
+      },
       baselines: projectionBaselines,
       rosters,
       rivalry: previewRivalry,
@@ -1735,6 +1748,8 @@ export default function CompanionMatchup({
     previewOpen, selectedLeagueId, season, week, matchupIsSettled, matchupGameStarted,
     leftSide, rightSide, myName, opponentName, myFantasyPalette, opponentFantasyPalette,
     enrichedSlots, enrichedMyBench, enrichedOppBench, matchupWinProbability, projectionBaselines,
+    myDisplayPoints, oppDisplayPoints, mineHeaderProjection, oppHeaderProjection, mineScoreIsLive, oppScoreIsLive,
+    showTeamSummary, myTeamSummary, opponentTeamSummary,
     rosters, previewRivalry, recordedMinePregameProjection, recordedOppPregameProjection,
     activeScoringSettings, previewPairingId, getUserDisplayName,
   ]);
@@ -1750,20 +1765,6 @@ export default function CompanionMatchup({
       ids: previewModel.keys.map((key) => key.detectorId),
     });
   }, [previewModel, selectedLeagueId, previewPairingId, week]);
-  const mineHeaderProjection = matchupIsSettled
-    ? recordedMinePregameProjection?.complete
-      ? recordedMinePregameProjection.total
-      : currentMineExternalProjection?.complete
-        ? currentMineExternalProjection.total
-        : myForecast?.total ?? null
-    : mineScoreIsLive && mineForecastTotal != null ? mineForecastTotal : null;
-  const oppHeaderProjection = matchupIsSettled
-    ? recordedOppPregameProjection?.complete
-      ? recordedOppPregameProjection.total
-      : currentOppExternalProjection?.complete
-        ? currentOppExternalProjection.total
-        : oppForecast?.total ?? null
-    : oppScoreIsLive && oppForecastTotal != null ? oppForecastTotal : null;
   const displayedMineScore = mineScoreIsLive
     ? myDisplayPoints.toFixed(2)
     : mineForecastTotal != null ? mineForecastTotal.toFixed(1) : '—';
@@ -2185,24 +2186,20 @@ export default function CompanionMatchup({
           model={previewModel}
           loading={tapeHistoryState.key !== matchupHistoryKey || ['idle', 'loading'].includes(tapeHistoryState.status)}
           rivalryStatus={tapeHistoryState.key === matchupHistoryKey ? tapeHistoryState.status : 'loading'}
-          onOpenRivalry={() => {
+          onOpenMeeting={onOpenHistoricalMatchup ? async (meeting) => {
+            const meetingSeason = String(meeting.season);
+            const partOfSeason = meetingSeason === String(season)
+              || (linkedLeagueSeasonOptions ?? []).some((option) => String(option) === meetingSeason);
+            if (!partOfSeason) {
+              throw new Error(`You can only open matchups from seasons you were part of. You weren't in this league in ${meetingSeason}.`);
+            }
+            await onOpenHistoricalMatchup({ season: meeting.season, week: meeting.week, rosterId: meeting.leftRosterId });
             setPreviewOpen(false);
-            openRivalry();
-          }}
+          } : undefined}
           onClose={() => setPreviewOpen(false)}
         />
       )}
 
-      {rivalrySelection && (
-        <MatchupRivalryModal
-          selection={rivalrySelection}
-          players={players}
-          onOpenMatchup={onOpenHistoricalMatchup}
-          historyState={tapeHistoryState.key === rivalrySelection.historyKey ? tapeHistoryState : { status: 'loading', model: null }}
-          onRetry={() => loadTaleOfTapeHistory(rivalrySelection.historyKey)}
-          onClose={() => setRivalrySelection(null)}
-        />
-      )}
       {weekPickerModal}
       {matchupPickerModal}
     </div>

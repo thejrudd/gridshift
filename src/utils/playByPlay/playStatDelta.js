@@ -11,6 +11,7 @@
 // an empty delta and it is the consumer's choice whether to drop it.
 
 import { calcPoints } from '../scoringEngine.js';
+import { PLAY_ROLES } from '../nflPlays/playNarrative.js';
 
 function firstFinite(...values) {
   for (const value of values) {
@@ -50,11 +51,82 @@ export function isFirstDownPlay(play) {
  * Approximate fantasy points for one player's involvement in one play,
  * scored through the league settings (position always passed — scoring rule).
  */
-export function estimatePlayPoints(play, role, position, scoringSettings, roleDetail = null) {
-  return Math.round(calcPoints(buildPlayStatDelta(play, role, roleDetail), scoringSettings, position) * 100) / 100;
+export function estimatePlayPoints(
+  play,
+  role,
+  position,
+  scoringSettings,
+  roleDetail = null,
+  attributionRoles = null,
+) {
+  return Math.round(
+    calcPoints(buildPlayStatDelta(play, role, roleDetail, attributionRoles), scoringSettings, position) * 100,
+  ) / 100;
 }
 
-export function buildPlayStatDelta(play, role, roleDetail = null) {
+function getSackYards(play, description) {
+  const providerYards = firstFinite(play.raw?.stat_yardage);
+  if (providerYards != null) return Math.abs(providerYards);
+  const describedYards = extractYardsFromText(description);
+  if (describedYards) return Math.abs(describedYards);
+  return Math.abs(firstFinite(play.yards) ?? 0);
+}
+
+function buildAttributedDefensiveDelta(play, attributionRoles) {
+  const roles = new Set(attributionRoles ?? []);
+  const delta = {};
+  const description = play.description;
+  const touchdown = play.scoring && (
+    /touchdown|return td/i.test(description)
+    || /touchdown|return-touchdown|return_td/.test(String(play.type ?? '').toLowerCase())
+  );
+  const returnYards = firstFinite(
+    play.narrative?.returnYards,
+    extractReturnYards(description),
+    play.yards,
+  ) ?? 0;
+  const sackYards = getSackYards(play, description);
+
+  // BDL play rows name tacklers but do not label the credit solo/assisted or
+  // expose a player-level tackle-for-loss flag. Keep the play at generic
+  // `idp_tkl`; Sleeper's authoritative stat line supplies those distinctions
+  // through reconciliation instead of us inferring them from punctuation or
+  // negative offensive yardage.
+  if (roles.has(PLAY_ROLES.TACKLER)) delta.idp_tkl = 1;
+  if (roles.has(PLAY_ROLES.SACKER)) {
+    delta.idp_sack = 1;
+    if (sackYards) delta.idp_sack_yd = sackYards;
+  }
+  if (roles.has(PLAY_ROLES.FORCER)) delta.idp_ff = 1;
+  if (roles.has(PLAY_ROLES.PASS_DEFENDER)) delta.idp_pd = 1;
+  if (roles.has(PLAY_ROLES.QB_HITTER)) delta.idp_qbhit = 1;
+  if (roles.has(PLAY_ROLES.SAFETY)) delta.idp_safety = 1;
+  if (roles.has(PLAY_ROLES.KICK_BLOCKER)) delta.idp_blk_kick = 1;
+
+  if (roles.has(PLAY_ROLES.INTERCEPTER)) {
+    delta.idp_int = 1;
+    if (returnYards) delta.idp_int_ret_yd = returnYards;
+    if (touchdown) {
+      delta.idp_def_td = 1;
+      delta.idp_int_td = 1;
+      if (returnYards >= 50) delta.bonus_def_int_td_50p = 1;
+    }
+  }
+
+  if (roles.has(PLAY_ROLES.RECOVERER)) {
+    delta.idp_fr = 1;
+    if (returnYards) delta.idp_fr_yd = returnYards;
+    if (touchdown) {
+      delta.idp_def_td = 1;
+      delta.idp_fr_td = 1;
+      if (returnYards >= 50) delta.bonus_def_fum_td_50p = 1;
+    }
+  }
+
+  return delta;
+}
+
+export function buildPlayStatDelta(play, role, roleDetail = null, attributionRoles = null) {
   const description = play.description;
   const yards = play.yards || extractYardsFromText(description) || 0;
   const type = String(play.type ?? '').toLowerCase();
@@ -119,7 +191,14 @@ export function buildPlayStatDelta(play, role, roleDetail = null) {
   } else if (role === 'team_defense') {
     return buildTeamDefensePlayDelta(play);
   } else if (role === 'defense') {
-    if (/sack/i.test(description)) delta.idp_sack = 1;
+    if (Array.isArray(attributionRoles) && attributionRoles.length) {
+      return buildAttributedDefensiveDelta(play, attributionRoles);
+    }
+    if (/sack/i.test(description)) {
+      delta.idp_sack = 1;
+      const sackYards = getSackYards(play, description);
+      if (sackYards) delta.idp_sack_yd = sackYards;
+    }
     if (/intercept/i.test(description)) delta.idp_int = 1;
     if (/forced fumble|fumble forced/i.test(description)) delta.idp_ff = 1;
     if (/fumble.*recover/i.test(description)) {
@@ -286,5 +365,11 @@ export const PLAY_MATCH_STATS = new Set([
   'rec', 'rec_yd', 'rec_fd', 'rec_td', 'rec_2pt',
   'kr_yd', 'kr_td', 'pr_yd', 'pr_td', 'ret_td',
   'fgm', 'fgmiss', 'xpm', 'xpmiss', 'fum_lost', 'fum_ret_td',
-  'fgm_yds', 'fgm_yds_over_30', 'idp_tkl', 'idp_tkl_solo', 'idp_tkl_ast',
+  'fgm_yds', 'fgm_yds_over_30',
+  'idp_tkl', 'idp_tkl_solo', 'idp_tkl_ast', 'idp_tkl_loss',
+  'idp_sack', 'idp_sack_yd',
+  'idp_int', 'idp_int_ret_yd', 'idp_int_td',
+  'idp_ff', 'idp_fr', 'idp_fr_yd', 'idp_fr_td', 'idp_def_td',
+  'idp_pd', 'idp_qbhit', 'idp_safety', 'idp_blk_kick',
+  'bonus_sack_2p', 'bonus_tkl_10p', 'idp_pass_def_3p',
 ]);
