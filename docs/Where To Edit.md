@@ -14,6 +14,7 @@ Routing table: match the task to a section, open the listed files, and read the 
 | Prediction picks, playoff seeding, and share cards | [Predictions And Share Cards](#predictions-and-share-cards) |
 | Live fantasy scoring view (hero, pace chart, feed, win odds) | [Fantasy Live](#fantasy-live) |
 | Rostered weekly injuries and player designations | [Fantasy Injuries](#fantasy-injuries) |
+| Season-long fantasy pairings by week | [Fantasy Schedule](#fantasy-schedule) |
 | NFL scoreboard, box scores, play-by-play visuals | [Statistics Scores And NFL Plays](#statistics-scores-and-nfl-plays) |
 | Provider gateway, quotas, caches, sidecar server | [Live Data Server, Budgets, And Scaling](#live-data-server-budgets-and-scaling) |
 | Sleeper connection and league loading | [Fantasy Connection And League Data](#fantasy-connection-and-league-data) |
@@ -125,6 +126,18 @@ Rules: the chart x-axis is game progress, not wallclock. BDL plays are the only 
 
 Rules: Sleeper roster status and BALLDONTLIE weekly status remain separate evidence. Match designations only through unique name + canonical NFL team + compatible position-family identity. A missing or `null` designation is unknown, including on bye weeks. `starter` and `did_not_play` are postgame facts, never projections. The current season/week comes only from Sleeper `/state/nfl`.
 
+## Fantasy Schedule
+
+| File | Owns |
+| --- | --- |
+| `src/components/companion/CompanionSchedule.jsx` | Season/league modes, team picker, week rail, completed/remaining filters, loading and empty states |
+| `src/utils/fantasySeasonSchedule.js` | Week bounds, roster season summaries, week grouping, per-roster rows, rematches, remaining-opponent average |
+| `src/utils/fantasyMatchups.js` | Shared pairing grouping (`buildFantasyMatchupGroups`) the schedule model builds on |
+| `src/utils/appRoutes.js` | `scheduleMode`, `scheduleWeek`, `scheduleRosterId` |
+| `src/index.css` | `.companion-schedule-*` table, pair, and week-group styles |
+
+Rules: the view fetches weeks 1 through the last regular-season week once per league/season and caches the result; playoff weeks are never fetched or seeded here. A week the provider has not returned is pending, a week returned without this roster is unscheduled, and a single-sided group is a bye — the three are distinct and none of them renders as another. A matchup is only treated as played when it is behind the league's current week and a side actually posted points, because unscored rows read 0. No result is forecast: the Edge column is the two teams' season points-per-game gap, and it is null whenever either side has no scored game.
+
 ## Statistics Scores And NFL Plays
 
 Read first: [[Statistics Scores]] before production data wiring.
@@ -200,7 +213,7 @@ Sleeper is the supported fantasy connection.
 
 Individual player matchup views, recorded pregame comparisons, and Heatmap-based peer visuals: read [[Player Matchup Drilldown]]. `PlayerMatchupBreakdown.jsx` owns the dialog; `playerDefensePerformance.js` and `fantasyHeatmapData.js` own shared analysis; `useMatchupProjectionBaselines.js` owns local pregame capture.
 
-Fantasy Matchups: `CompanionMatchup.jsx` owns the player Tale of the Tape and the manager VS trigger. The VS trigger opens `MatchupPreviewModal.jsx`, the broadcast-style week preview; `matchupPreviewModel.js` normalizes starters, league rosters, the win-probability forecast and the rivalry into that panel's model, `matchupPreviewKeys.js` owns the Keys to the matchup detector engine, and `matchupPreviewKeyHistory.js` remembers which detectors fired for a pairing so keys rotate week to week. The preview's rivalry strip hands off to `MatchupRivalryModal.jsx`, which owns the manager history drilldown; `matchupRivalry.js` orients completed meetings, retains historical roster IDs, and derives starter-only high/low highlights. `App.jsx` shares historical season/week/roster navigation between this drilldown and League History. History loads only when the manager drilldown opens. The shared `gridshift-reveal` entrance in `src/index.css` staggers the drilldown panels (preview, team score breakdown, player drilldown, player compare); `gridshift-reveal--auto` is the index-free variant for dynamically built section lists.
+Fantasy Matchups: `CompanionMatchup.jsx` owns the player Tale of the Tape and the manager VS trigger. The VS trigger opens `MatchupPreviewModal.jsx`, the broadcast-style week preview; `matchupPreviewModel.js` normalizes starters, league rosters, the win-probability forecast and the rivalry into that panel's model, `matchupPreviewKeys.js` owns the Keys to the matchup detector engine, and `matchupPreviewKeyHistory.js` remembers which detectors fired for a pairing so keys rotate week to week. The preview's rivalry section renders the series, highlights, and latest meetings inline; `matchupRivalry.js` orients completed meetings and retains historical roster IDs. Its game-state labels come from each starter's `gameState` (`final`, `live`, `upcoming`, `bye`): only a started, unfinished game is live, so the chip, win-chance label, and movers title say live only when `model.liveNow`. Headline scores come from the `liveTotals` the caller passes (the matchup's displayed points); the win-probability model carries projections only. The per-side projected final, projection delta, and record/PF/PA line come from `headerExtras`, built from the same values as the primary `MatchupMasthead` so the two headers agree. Rivalry meeting rows only open seasons in `linkedLeagueSeasonOptions`; otherwise the preview shows an inline notice instead of switching seasons. `App.jsx` shares historical season/week/roster navigation between this drilldown and League History. History loads only when the preview opens. The shared `gridshift-reveal` entrance in `src/index.css` staggers the drilldown panels (preview, team score breakdown, player drilldown, player compare); `gridshift-reveal--auto` is the index-free variant for dynamically built section lists.
 
 | File | Owns |
 | --- | --- |

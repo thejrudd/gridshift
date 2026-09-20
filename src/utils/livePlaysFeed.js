@@ -110,6 +110,7 @@ export function normalizePlay(raw, gameId, { inferredPasserName = null } = {}) {
     // the display sentence alone can give the primary play type to a kicker
     // who is named only in a trailing extra-point result.
     narrative,
+    defensiveActors: canonical.defensiveActors,
     // The provider row, kept intact. The feed only needs a sentence, but the
     // field visual reads structured geometry — down, distance, yards to the
     // end zone — that this normalisation deliberately flattens away.
@@ -163,7 +164,17 @@ function getFantasyRoleForActor(actorRole, playerMeta, play) {
   if (actorRole === PLAY_ROLES.KICKER) return 'kicker';
   if (actorRole === PLAY_ROLES.PUNTER) return 'punter';
   if (actorRole === PLAY_ROLES.RETURNER) return 'returner';
-  if ([PLAY_ROLES.SACKER, PLAY_ROLES.INTERCEPTER, PLAY_ROLES.RECOVERER, PLAY_ROLES.TACKLER].includes(actorRole)) {
+  if ([
+    PLAY_ROLES.SACKER,
+    PLAY_ROLES.INTERCEPTER,
+    PLAY_ROLES.FORCER,
+    PLAY_ROLES.RECOVERER,
+    PLAY_ROLES.TACKLER,
+    PLAY_ROLES.PASS_DEFENDER,
+    PLAY_ROLES.QB_HITTER,
+    PLAY_ROLES.SAFETY,
+    PLAY_ROLES.KICK_BLOCKER,
+  ].includes(actorRole)) {
     return isDefensivePosition(playerMeta?.position) ? 'defense' : null;
   }
   if (actorRole === PLAY_ROLES.FUMBLER) {
@@ -214,8 +225,19 @@ function getIndexedPlayerId(nameIndex, record) {
 }
 
 function matchNarrativeActors(play, nameIndex) {
-  const actors = play?.narrative?.actors;
-  if (!play?.narrative?.confident || !Array.isArray(actors)) return null;
+  const narrativeActors = play?.narrative?.confident && Array.isArray(play.narrative.actors)
+    ? play.narrative.actors
+    : [];
+  const defensiveActors = Array.isArray(play?.defensiveActors) ? play.defensiveActors : [];
+  if (!narrativeActors.length && !defensiveActors.length) return null;
+  const actors = [...narrativeActors];
+  defensiveActors.forEach((actor) => {
+    const duplicate = actors.some((candidate) => (
+      candidate.role === actor.role
+      && normalizeName(candidate.name) === normalizeName(actor.name)
+    ));
+    if (!duplicate) actors.push(actor);
+  });
 
   const matches = new Map();
   const teamDefenseMatches = nameIndex.teamDefenseIds?.get?.(play.defenseTeamAbbr);
@@ -248,18 +270,26 @@ function matchNarrativeActors(play, nameIndex) {
 
   actors.forEach((actor, textPos) => {
     const record = lookupPlayerByName(nameIndex, actor.name, {
-      team: getActorExpectedTeam(play, actor.role, kickReturn),
+      team: getTeamAbbr(actor.team) || getActorExpectedTeam(play, actor.role, kickReturn),
       normalize: normalizeName,
     });
     const playerId = getIndexedPlayerId(nameIndex, record);
-    if (!playerId || matches.has(playerId)) return;
+    if (!playerId) return;
     const role = getFantasyRoleForActor(actor.role, record, play);
     if (!role) return;
+    const existing = matches.get(playerId);
+    if (existing) {
+      if (role === 'defense' && !existing.attributionRoles.includes(actor.role)) {
+        existing.attributionRoles.push(actor.role);
+      }
+      return;
+    }
     matches.set(playerId, {
       playerId,
       role,
       textPos,
       detail: actor.detail ?? null,
+      attributionRoles: role === 'defense' ? [actor.role] : [],
     });
   });
 
@@ -272,7 +302,7 @@ function matchNarrativeActors(play, nameIndex) {
  */
 export function matchPlayToStarters(play, nameIndex) {
   const narrativeMatches = matchNarrativeActors(play, nameIndex);
-  if (narrativeMatches) return narrativeMatches;
+  if (play?.narrative?.confident && narrativeMatches) return narrativeMatches;
 
   const { index, meta, teamDefenseIds } = nameIndex;
   const normalizedDesc = ` ${normalizeName(play.description)} `;
@@ -283,9 +313,13 @@ export function matchPlayToStarters(play, nameIndex) {
     || /punt|kickoff|return(?:ed)? for|fair catch by/i.test(play.description);
   const matches = new Map(); // playerId -> position in text
 
+  (narrativeMatches ?? []).forEach((match) => matches.set(match.playerId, match));
+
   const teamDefenseMatches = teamDefenseIds?.get?.(play.defenseTeamAbbr);
   if (teamDefenseMatches && isTeamDefenseScoringPlay(play)) {
-    teamDefenseMatches.forEach((playerId) => matches.set(playerId, -1));
+    teamDefenseMatches.forEach((playerId) => {
+      if (!matches.has(playerId)) matches.set(playerId, -1);
+    });
   }
 
   index.forEach((owners, variant) => {
@@ -311,15 +345,21 @@ export function matchPlayToStarters(play, nameIndex) {
         return;
       }
       const existing = matches.get(playerId);
-      if (existing == null || at < existing) matches.set(playerId, at);
+      if (existing == null || (typeof existing === 'number' && at < existing)) matches.set(playerId, at);
     });
   });
 
   const isSack = /sack/i.test(play.description);
 
   return [...matches.entries()]
-    .sort((left, right) => left[1] - right[1])
-    .map(([playerId, textPos]) => {
+    .sort((left, right) => {
+      const leftPos = typeof left[1] === 'number' ? left[1] : left[1].textPos;
+      const rightPos = typeof right[1] === 'number' ? right[1] : right[1].textPos;
+      return leftPos - rightPos;
+    })
+    .map(([playerId, match]) => {
+      if (typeof match === 'object') return match;
+      const textPos = match;
       const playerMeta = meta.get(playerId) ?? {};
       let role = 'rusher';
       if (isKick && playerMeta.position === 'K') role = 'kicker';
@@ -329,7 +369,7 @@ export function matchPlayToStarters(play, nameIndex) {
       else if (isReturnPlay && !['K', 'P'].includes(playerMeta.position)) role = 'returner';
       else if (isPass) role = PASSER_POSITIONS.has(playerMeta.position) ? 'passer' : 'receiver';
       else if (isSack && PASSER_POSITIONS.has(playerMeta.position)) role = 'passer';
-      return { playerId, role, textPos, detail: null };
+      return { playerId, role, textPos, detail: null, attributionRoles: [] };
     });
 }
 
@@ -577,10 +617,10 @@ export function buildPlayEvents(playsByGame, nameIndex, scoringSettings, positio
       });
       play.defenseTeamAbbr = defenseTeam;
       play.offenseTeamAbbr = offenseTeam;
-      matchPlayToStarters(play, nameIndex).forEach(({ playerId, role, detail }) => {
+      matchPlayToStarters(play, nameIndex).forEach(({ playerId, role, detail, attributionRoles }) => {
         const position = positionsById.get(playerId) ?? 'FLEX';
-        const statDelta = buildPlayStatDelta(play, role, detail);
-        const pts = estimatePlayPoints(play, role, position, scoringSettings, detail);
+        const statDelta = buildPlayStatDelta(play, role, detail, attributionRoles);
+        const pts = estimatePlayPoints(play, role, position, scoringSettings, detail, attributionRoles);
         if (!Number.isFinite(pts) || pts === 0) return; // only fantasy-relevant involvements
         const classification = getPlayEventClassification(play, role, position, statDelta);
         events.push({

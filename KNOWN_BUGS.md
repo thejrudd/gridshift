@@ -15,6 +15,9 @@ Open bugs are listed first, deferred work next, fixed bugs below. Add new entrie
 
 | Bug | Fixed In |
 |-----|----------|
+| Companion → Defense per-game averages divide by every team's scheduled game in any week that has kicked off league-wide, so teams that have not yet played the in-progress week are averaged over one game too many. | v9.0.1 |
+| Matchup preview labels the whole week live once any game has started, tags starters whose games have not kicked off as in progress, shows the projected total instead of the current score, and computes its summary from a zero margin. | v9.0.1 |
+| Finishing the What's New tour on the Matchups view can freeze the page in an endless render loop. | v9.0.1 |
 | Draft War Room and Board could omit rostered candidates from the All Players scope when they were in a restricted draft pool, already recorded as draft/keeper picks, or beyond the capped ranked display window. | v8.9.4 |
 | Live Draft banner counts future keeper selections as completed turns, showing the wrong on-clock team, next team, and picks until your turn. | v8.9.4 |
 | Trade Agent cleared its in-progress partner and selected assets when navigating to another app section, forcing managers to rebuild a trade after viewing player details or another related surface. | v8.9.2 |

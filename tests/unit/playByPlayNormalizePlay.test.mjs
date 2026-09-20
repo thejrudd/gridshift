@@ -11,6 +11,7 @@ import {
 } from '../../src/utils/playByPlay/normalizePlay.js';
 import { buildPlayEvents, buildStarterNameIndex } from '../../src/utils/livePlaysFeed.js';
 import { calcPoints } from '../../src/utils/scoringEngine.js';
+import { PLAY_ROLES } from '../../src/utils/nflPlays/playNarrative.js';
 
 const GAME = { homeTeam: 'HOU', awayTeam: 'LV' };
 
@@ -242,7 +243,7 @@ test('team-defense scoring detection covers sacks, turnovers, safeties and break
 test('the individual defensive delta covers the full IDP key set', () => {
   const idp = (description, extra = {}) => buildPlayStatDelta(statPlay({ description, ...extra }), 'defense');
 
-  assert.deepEqual(idp('D.Hunter sacked F.Mendoza for -7 yards.'), { idp_sack: 1 });
+  assert.deepEqual(idp('D.Hunter sacked F.Mendoza for -7 yards.'), { idp_sack: 1, idp_sack_yd: 7 });
   assert.deepEqual(idp('W.Woodaz intercepted the pass.'), { idp_int: 1 });
   assert.deepEqual(idp('A.Thomas with a forced fumble.'), { idp_ff: 1 });
   assert.deepEqual(
@@ -274,6 +275,45 @@ test('the individual defensive delta covers the full IDP key set', () => {
   // Nothing specific in the sentence still credits the tackle rather than
   // silently dropping the involvement.
   assert.deepEqual(idp('Stopped after a short gain by A.Al-Shaair.'), { idp_tkl: 1 });
+});
+
+test('actor-specific defensive deltas do not copy one player\'s credit to another', () => {
+  const play = {
+    description: 'Runner FUMBLES, forced by J.Campbell and recovered by C.Bishop for 5 yards.',
+    type: 'fumble-recovery-opponent',
+    scoring: false,
+    yards: 5,
+    narrative: { returnYards: 5 },
+    raw: {},
+  };
+
+  assert.deepEqual(
+    buildPlayStatDelta(play, 'defense', null, [PLAY_ROLES.FORCER, PLAY_ROLES.TACKLER]),
+    { idp_tkl: 1, idp_ff: 1 },
+  );
+  assert.deepEqual(
+    buildPlayStatDelta(play, 'defense', null, [PLAY_ROLES.RECOVERER]),
+    { idp_fr: 1, idp_fr_yd: 5 },
+  );
+  assert.deepEqual(
+    buildPlayStatDelta({ ...play, description: 'Runner lost 5 yards.', yards: -5 }, 'defense', null, [PLAY_ROLES.TACKLER]),
+    { idp_tkl: 1 },
+    'negative offensive yardage is not player-level tackle-for-loss evidence',
+  );
+});
+
+test('canonical plays retain fail-closed defensive attribution alongside narrative parsing', () => {
+  const canonical = normalizeCanonicalPlay({
+    id: 'new-provider-sack',
+    type_slug: 'sack',
+    short_text: 'A provider shape the compact grammar does not know',
+    text: '(Shotgun) J.Goff sacked at DET 18 for -7 yards (G.Rousseau).',
+  });
+
+  assert.equal(canonical.narrative, null);
+  assert.deepEqual(canonical.defensiveActors.map(({ role, name }) => ({ role, name })), [
+    { role: PLAY_ROLES.SACKER, name: 'G.Rousseau' },
+  ]);
 });
 
 test('estimatePlayPoints is exactly the rounded scoring of the play stat delta', () => {

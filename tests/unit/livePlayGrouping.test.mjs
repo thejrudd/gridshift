@@ -166,6 +166,146 @@ test('an unparsed mixed pass-fumble sentence does not turn a mentioned defender 
   ), []);
 });
 
+test('explicit official defensive clauses survive an unknown compact provider shape', () => {
+  const game = {
+    id: 'buf-det',
+    visitor_team: { abbreviation: 'BUF' },
+    home_team: { abbreviation: 'DET' },
+  };
+  const plays = [
+    {
+      id: 'rousseau-sack',
+      type_slug: 'sack',
+      team: { abbreviation: 'DET' },
+      short_text: 'Unknown compact sack shape',
+      text: '(Shotgun) J.Goff sacked at DET 18 for -7 yards (G.Rousseau).',
+      stat_yardage: -7,
+    },
+    {
+      id: 'campbell-tackle',
+      type_slug: 'rush',
+      team: { abbreviation: 'BUF' },
+      short_text: 'Unknown compact rushing shape',
+      text: 'J.Allen up the middle to DET 40 for 4 yards (J.Campbell).',
+      stat_yardage: 4,
+    },
+    {
+      id: 'bishop-tackle',
+      type_slug: 'pass-reception',
+      team: { abbreviation: 'DET' },
+      short_text: 'Unknown compact receiving shape',
+      text: 'J.Goff pass short right to A.St.Brown for 10 yards (C.Bishop).',
+      stat_yardage: 10,
+    },
+  ];
+  const starters = [
+    { id: 'rousseau', player: { full_name: 'Greg Rousseau', position: 'DE', team: 'BUF' } },
+    { id: 'campbell', player: { full_name: 'Jack Campbell', position: 'LB', team: 'DET' } },
+    { id: 'bishop', player: { full_name: 'Cole Bishop', position: 'DB', team: 'BUF' } },
+  ];
+
+  const events = buildPlayEvents(
+    { 'buf-det': plays },
+    buildStarterNameIndex(starters),
+    { idp_sack: 4, idp_sack_yd: 0.1, idp_tkl: 1.5 },
+    new Map([['rousseau', 'DE'], ['campbell', 'LB'], ['bishop', 'DB']]),
+    new Map([['buf-det', game]]),
+  );
+
+  assert.deepEqual(
+    events
+      .map(({ playerId, stats, pts }) => ({ playerId, stats, pts }))
+      .sort((left, right) => left.playerId.localeCompare(right.playerId)),
+    [
+    { playerId: 'bishop', stats: { idp_tkl: 1 }, pts: 1.5 },
+    { playerId: 'campbell', stats: { idp_tkl: 1 }, pts: 1.5 },
+    { playerId: 'rousseau', stats: { idp_sack: 1, idp_sack_yd: 7 }, pts: 4.7 },
+    ],
+  );
+});
+
+test('an unfamiliar sentence with only a defensive name remains unattributed', () => {
+  const events = buildPlayEvents(
+    { game: [{
+      id: 'ambiguous-rousseau',
+      type_slug: 'unknown',
+      team: { abbreviation: 'DET' },
+      short_text: 'Unknown provider format',
+      text: 'Greg Rousseau was mentioned near the sideline.',
+    }] },
+    buildStarterNameIndex([
+      { id: 'rousseau', player: { full_name: 'Greg Rousseau', position: 'DE', team: 'BUF' } },
+    ]),
+    { idp_sack: 4, idp_tkl: 1.5 },
+    new Map([['rousseau', 'DE']]),
+    new Map([['game', {
+      id: 'game', visitor_team: { abbreviation: 'BUF' }, home_team: { abbreviation: 'DET' },
+    }]]),
+  );
+
+  assert.deepEqual(events, []);
+});
+
+test('explicit multi-role defenders and team defense each produce one row', () => {
+  const game = {
+    id: 'buf-det-fumble',
+    visitor_team: { abbreviation: 'BUF' },
+    home_team: { abbreviation: 'DET' },
+  };
+  const fumble = {
+    id: 'campbell-force-recovery',
+    type_slug: 'fumble-recovery-opponent',
+    team: { abbreviation: 'BUF' },
+    defense_team: { abbreviation: 'DET' },
+    short_text: 'Unknown compact fumble shape',
+    text: 'J.Allen to DET 20 for 2 yards. J.Allen FUMBLES (J.Campbell), '
+      + 'RECOVERED by DET-J.Campbell at DET 20.',
+    stat_yardage: 2,
+  };
+  const events = buildPlayEvents(
+    { 'buf-det-fumble': [fumble] },
+    buildStarterNameIndex([
+      { id: 'campbell', player: { full_name: 'Jack Campbell', position: 'LB', team: 'DET' } },
+      { id: 'det-dst', player: { full_name: 'Detroit Lions', position: 'DEF', team: 'DET' } },
+    ]),
+    { idp_ff: 2, idp_fr: 2, def_ff: 1 },
+    new Map([['campbell', 'LB'], ['det-dst', 'DEF']]),
+    new Map([['buf-det-fumble', game]]),
+  );
+
+  assert.equal(events.filter((event) => event.playerId === 'campbell').length, 1);
+  assert.deepEqual(events.find((event) => event.playerId === 'campbell')?.stats, {
+    idp_ff: 1,
+    idp_fr: 1,
+  });
+  assert.equal(events.filter((event) => event.playerId === 'det-dst').length, 1);
+  assert.deepEqual(events.find((event) => event.playerId === 'det-dst')?.stats, { def_ff: 1 });
+});
+
+test('named tacklers do not invent solo or assisted tackle distinctions', () => {
+  const events = buildPlayEvents(
+    { game: [{
+      id: 'shared-tackle',
+      type_slug: 'rush',
+      team: { abbreviation: 'BUF' },
+      short_text: 'James Cook 4 Yd Rush',
+      text: 'J.Cook up the middle to DET 40 for 4 yards (J.Campbell; B.Branch).',
+      stat_yardage: 4,
+    }] },
+    buildStarterNameIndex([
+      { id: 'campbell', player: { full_name: 'Jack Campbell', position: 'LB', team: 'DET' } },
+      { id: 'branch', player: { full_name: 'Brian Branch', position: 'DB', team: 'DET' } },
+    ]),
+    { idp_tkl_solo: 1, idp_tkl_ast: 0.5 },
+    new Map([['campbell', 'LB'], ['branch', 'DB']]),
+    new Map([['game', {
+      id: 'game', visitor_team: { abbreviation: 'BUF' }, home_team: { abbreviation: 'DET' },
+    }]]),
+  );
+
+  assert.deepEqual(events, []);
+});
+
 test('a provider passing touchdown retains stat_yardage for both rostered scorers', () => {
   const play = normalizePlay(TOUCHDOWN, 'game-1');
   assert.equal(play.yards, 39);

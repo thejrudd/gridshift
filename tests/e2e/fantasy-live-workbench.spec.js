@@ -3,6 +3,10 @@ import { installTradeFixtures } from './tradeTestHarness.js';
 import { players as fixturePlayers } from '../fixtures/tradeFixtures.js';
 
 const LIVE_GAMES = [
+  // This game is intentionally outside the selected matchup. It proves the
+  // chart reserves the complete NFL-week axis without making unrelated games
+  // count as matchup activity or triggering play requests for them.
+  liveGame('game-gb-min', 'GB', 'MIN', 7, 3, '2026-10-15T23:15:00.000Z'),
   liveGame('game-buf-kc', 'BUF', 'KC', 17, 14, '2026-10-18T17:00:00.000Z'),
   liveGame('game-det-dal', 'DET', 'DAL', 21, 20, '2026-10-18T20:25:00.000Z'),
   liveGame('game-mia-lac', 'MIA', 'LAC', 10, 13, '2026-10-19T00:20:00.000Z'),
@@ -350,6 +354,7 @@ test('desktop Live keeps the feed and chart side by side with synchronized repla
       feed: feed ? { top: feed.top, right: feed.right, height: feed.height } : null,
       controls: controls ? { top: controls.top, left: controls.left, height: controls.height } : null,
       futureWidth: Number(future?.getAttribute('width') ?? 0),
+      axisLabels: Array.from(element.querySelectorAll('.fl-chart__axis-label')).map((label) => label.textContent?.trim()),
     };
   });
   expect(chartGeometry.width).toBeGreaterThan(600);
@@ -364,6 +369,7 @@ test('desktop Live keeps the feed and chart side by side with synchronized repla
   expect(chartGeometry.plot.top).toBeGreaterThanOrEqual((chartGeometry.chart?.top ?? 0) - 1);
   expect(chartGeometry.plot.bottom).toBeLessThanOrEqual((chartGeometry.chart?.bottom ?? 0) + 1);
   expect(chartGeometry.futureWidth).toBeGreaterThan(0);
+  expect(chartGeometry.axisLabels).toEqual(expect.arrayContaining(['Thu', 'Sun', 'Mon']));
   expect(Math.abs(chartGeometry.feed.top - chartGeometry.controls.top)).toBeLessThanOrEqual(1);
   expect(Math.abs(chartGeometry.feed.right - chartGeometry.controls.left)).toBeLessThanOrEqual(1);
   expect(Math.abs(chartGeometry.feed.height - chartGeometry.controls.height)).toBeLessThanOrEqual(1);

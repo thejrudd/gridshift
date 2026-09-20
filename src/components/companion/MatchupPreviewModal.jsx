@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import Modal from '../Modal';
 import useMediaQuery from '../../hooks/useMediaQuery.js';
 import { fantasyHeroGradient } from '../../utils/fantasyTeamIdentity.js';
@@ -9,7 +9,7 @@ import { fantasyHeroGradient } from '../../utils/fantasyTeamIdentity.js';
  * derived on the model from buildMatchupPreviewModel.
  */
 
-const one = (value) => (Number.isFinite(Number(value)) ? Number(value).toFixed(1) : '—');
+const one = (value) => (value != null && value !== '' && Number.isFinite(Number(value)) ? Number(value).toFixed(1) : '—');
 
 function KeyText({ parts }) {
   return (
@@ -80,7 +80,7 @@ function WatchColumn({ side, accent, list, unit, summary, mirrored }) {
             </div>
             <div className="matchup-preview-watch__points">
               <b className="tabular-nums">{one(player.value)}</b>
-              <span>{unit}</span>
+              <span>{player.unit ?? unit}</span>
             </div>
           </div>
         ))}
@@ -89,11 +89,13 @@ function WatchColumn({ side, accent, list, unit, summary, mirrored }) {
   );
 }
 
+const MEETING_LIMIT = 5;
+
 export default function MatchupPreviewModal({
   model,
   loading = false,
   rivalryStatus = 'idle',
-  onOpenRivalry,
+  onOpenMeeting,
   onClose,
 }) {
   const isCompact = useMediaQuery('(max-width: 640px)');
@@ -104,6 +106,9 @@ export default function MatchupPreviewModal({
     a: model?.sides?.a?.palette?.[0] ?? 'var(--color-accent)',
     b: model?.sides?.b?.palette?.[0] ?? 'var(--color-signature)',
   }), [model]);
+
+  const [meetingNotice, setMeetingNotice] = useState(null);
+  const [openingMeeting, setOpeningMeeting] = useState(false);
 
   if (!model) {
     return (
@@ -119,13 +124,52 @@ export default function MatchupPreviewModal({
   const headerLine = model.phase === 'post'
     ? 'All starter games final'
     : model.phase === 'live'
-      ? 'Live scoring in progress'
+      ? model.liveNow
+        ? 'Live scoring in progress'
+        : model.nextKickoff
+          ? `No games live · next kickoff ${model.nextKickoff}`
+          : 'No games live right now'
       : model.firstKickoff
         ? `First kickoff ${model.firstKickoff}`
         : `${model.starterCount} starters`;
   const phaseChip = model.phase === 'post' ? `Final · Week ${model.week}`
-    : model.phase === 'live' ? `Live · Week ${model.week}`
+    : model.phase === 'live' ? (model.liveNow ? `Live · Week ${model.week}` : `Week ${model.week} · Underway`)
       : `Week ${model.week} preview`;
+
+  const openMeeting = async (meeting) => {
+    if (openingMeeting) return;
+    setOpeningMeeting(true);
+    setMeetingNotice(null);
+    try {
+      await onOpenMeeting(meeting);
+    } catch (error) {
+      setMeetingNotice(error?.message || 'This matchup could not be opened. Please try again.');
+    } finally {
+      setOpeningMeeting(false);
+    }
+  };
+
+  const teamLabel = (side) => sides[side === 'left' ? 'a' : 'b'].abbr ?? sides[side === 'left' ? 'a' : 'b'].name;
+  const moments = rivalry ? [
+    rivalry.closestMeeting && {
+      label: 'Closest meeting',
+      side: rivalry.closestMeeting.winner === 'right' ? 'b' : 'a',
+      value: rivalry.closestMeeting.margin === 0 ? 'Tied' : rivalry.closestMeeting.margin.toFixed(2),
+      detail: `${rivalry.closestMeeting.season} · Wk ${rivalry.closestMeeting.week}`,
+    },
+    rivalry.biggestWin && {
+      label: 'Biggest win',
+      side: rivalry.biggestWin.winner === 'right' ? 'b' : 'a',
+      value: rivalry.biggestWin.margin.toFixed(2),
+      detail: `${teamLabel(rivalry.biggestWin.winner)} · ${rivalry.biggestWin.season} Wk ${rivalry.biggestWin.week}`,
+    },
+    rivalry.highestScore && {
+      label: 'Highest score',
+      side: rivalry.highestScore.side === 'right' ? 'b' : 'a',
+      value: rivalry.highestScore.points.toFixed(2),
+      detail: `${teamLabel(rivalry.highestScore.side)} · ${rivalry.highestScore.season} Wk ${rivalry.highestScore.week}`,
+    },
+  ].filter(Boolean) : [];
 
   const renderSide = (key, degrees) => {
     const side = sides[key];
@@ -145,11 +189,31 @@ export default function MatchupPreviewModal({
             {identity && <span>{identity}</span>}
           </div>
         )}
-        {side.record && <div className="matchup-preview__record tabular-nums">{side.record}</div>}
+        {!side.summary && side.record && <div className="matchup-preview__record tabular-nums">{side.record}</div>}
         <div className="matchup-preview__big">
           <b className="tabular-nums">{one(model.big[key])}</b>
           <span>{model.bigLabel}</span>
         </div>
+        {side.projectedFinal != null && (
+          <span className="companion-matchup-masthead__projected-final">
+            Projected final {side.projectedFinal.toFixed(1)}
+            {side.projectionDelta && (
+              <span className="companion-matchup-masthead__projection-delta">{' · '}{side.projectionDelta}</span>
+            )}
+          </span>
+        )}
+        {side.summary && (
+          <span
+            className="companion-matchup-masthead__team-summary"
+            aria-label={`${side.name} season record ${side.summary.record}, points for ${side.summary.pointsFor}, points against ${side.summary.pointsAgainst}`}
+          >
+            <strong className="companion-matchup-masthead__team-record tabular-nums">{side.summary.record}</strong>
+            <i className="companion-matchup-masthead__team-summary-separator" aria-hidden="true">·</i>
+            <span className="companion-matchup-masthead__team-points tabular-nums">
+              PF {side.summary.pointsFor}<i className="companion-matchup-masthead__team-summary-separator" aria-hidden="true">·</i>PA {side.summary.pointsAgainst}
+            </span>
+          </span>
+        )}
       </div>
     );
   };
@@ -174,7 +238,7 @@ export default function MatchupPreviewModal({
       }}
     >
       <header className="matchup-preview__header">
-        <span className={`matchup-preview__chip${model.phase === 'live' ? ' is-live' : ''}`}>{phaseChip}</span>
+        <span className={`matchup-preview__chip${model.liveNow ? ' is-live' : ''}`}>{phaseChip}</span>
         <span className="matchup-preview__when">{headerLine}</span>
         <button type="button" className="matchup-preview__close" onClick={onClose} aria-label="Close matchup preview">×</button>
       </header>
@@ -256,7 +320,6 @@ export default function MatchupPreviewModal({
           <section className="matchup-preview__section gridshift-reveal__item" style={reveal()}>
             <div className="matchup-preview__eyebrow">
               {model.watch.title}
-              <span className="matchup-preview__note">{model.watch.note}</span>
             </div>
             <div className="matchup-preview-watch">
               <WatchColumn side={sides.a} accent={accents.a} list={model.watch.a} unit={model.watch.unit} summary={`${one(model.big.a)} ${model.bigLabel}`} />
@@ -310,29 +373,48 @@ export default function MatchupPreviewModal({
                   <span>{sides.b.name}</span>
                 </div>
               </div>
+              {moments.length > 0 && (
+                <div className="matchup-preview__moments">
+                  {moments.map((moment) => (
+                    <div className={`matchup-preview__moment is-${moment.side}`} key={moment.label}>
+                      <span>{moment.label}</span>
+                      <b className="tabular-nums">{moment.value}</b>
+                      <em>{moment.detail}</em>
+                    </div>
+                  ))}
+                </div>
+              )}
               <div className="matchup-preview__meetings">
-                {rivalry.meetings.slice(0, 4).map((meeting) => (
-                  <div className="matchup-preview__meeting" key={meeting.id}>
-                    <span className="matchup-preview__meeting-when">{meeting.season} · Wk {meeting.week}</span>
-                    <span className="matchup-preview__meeting-score tabular-nums">
-                      <b className={`is-a${meeting.winner === 'left' ? ' is-winner' : ''}`}>{meeting.leftPoints.toFixed(2)}</b>
-                      <i aria-hidden="true">–</i>
-                      <b className={`is-b${meeting.winner === 'right' ? ' is-winner' : ''}`}>{meeting.rightPoints.toFixed(2)}</b>
-                    </span>
-                    <span className="matchup-preview__meeting-margin">
-                      {meeting.winner
-                        ? `${meeting.winner === 'left' ? (sides.a.abbr ?? sides.a.name) : (sides.b.abbr ?? sides.b.name)} by ${meeting.margin.toFixed(2)}`
-                        : 'Tied'}
-                    </span>
-                  </div>
-                ))}
+                {rivalry.meetings.slice(0, MEETING_LIMIT).map((meeting) => {
+                  const openable = Boolean(onOpenMeeting && meeting.leftRosterId != null && meeting.rightRosterId != null);
+                  const Row = openable ? 'button' : 'div';
+                  return (
+                    <Row
+                      className={`matchup-preview__meeting${openable ? ' is-link' : ''}`}
+                      key={meeting.id}
+                      {...(openable ? { type: 'button', onClick: () => openMeeting(meeting), disabled: openingMeeting, 'aria-label': `Open ${meeting.season} week ${meeting.week} matchup` } : {})}
+                    >
+                      <span className="matchup-preview__meeting-when">{meeting.season} · Wk {meeting.week}</span>
+                      <span className="matchup-preview__meeting-score tabular-nums">
+                        <b className={`is-a${meeting.winner === 'left' ? ' is-winner' : ''}`}>{meeting.leftPoints.toFixed(2)}</b>
+                        <i aria-hidden="true">–</i>
+                        <b className={`is-b${meeting.winner === 'right' ? ' is-winner' : ''}`}>{meeting.rightPoints.toFixed(2)}</b>
+                      </span>
+                      <span className="matchup-preview__meeting-margin">
+                        {meeting.winner
+                          ? `${meeting.winner === 'left' ? (sides.a.abbr ?? sides.a.name) : (sides.b.abbr ?? sides.b.name)} by ${meeting.margin.toFixed(2)}`
+                          : 'Tied'}
+                        {openable && <span aria-hidden="true"> ↗</span>}
+                      </span>
+                    </Row>
+                  );
+                })}
               </div>
+              {meetingNotice && <p className="matchup-preview__notice" role="alert">{meetingNotice}</p>}
+              {rivalry.games > MEETING_LIMIT && (
+                <p className="matchup-preview__more-note">Latest {MEETING_LIMIT} of {rivalry.games} meetings</p>
+              )}
             </>
-          )}
-          {onOpenRivalry && (
-            <button type="button" className="matchup-preview__more" onClick={onOpenRivalry} aria-haspopup="dialog">
-              {rivalry && rivalry.games > 4 ? `Open all ${rivalry.games} meetings` : 'Open full rivalry history'} ↗
-            </button>
           )}
         </section>
       </div>

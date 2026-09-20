@@ -95,6 +95,7 @@ export default function TourOverlay({ entries, navigate, currentRoute, context =
   }, [entries]);
 
   const [stepIndex, setStepIndex] = useState(0);
+  const stepIndexRef = useRef(0);
   const [anchorRect, setAnchorRect] = useState(null); // null = resolving
   const [timedOut, setTimedOut] = useState(false);
   const anchorElRef = useRef(null);
@@ -124,16 +125,17 @@ export default function TourOverlay({ entries, navigate, currentRoute, context =
     onFinish();
   }, [onFinish, onStepChange]);
 
+  // Parent side effects must not run inside a state updater: React re-invokes
+  // updaters during render, so finishing from one re-entered AppInner forever.
   const advance = useCallback(() => {
-    setStepIndex((i) => {
-      if (i + 1 >= steps.length) {
-        onStepChange?.(null);
-        onFinish();
-        return i;
-      }
-      return i + 1;
-    });
-  }, [steps.length, onFinish, onStepChange]);
+    const next = stepIndexRef.current + 1;
+    if (next >= steps.length) {
+      finish();
+      return;
+    }
+    stepIndexRef.current = next;
+    setStepIndex(next);
+  }, [steps.length, finish]);
 
   useEffect(() => {
     onStepChange?.(step);

@@ -119,6 +119,7 @@ const CompanionWaiver = lazy(() => debugCompanionTimeAsync(
 const CompanionHeatmap = lazy(() => import('./components/companion/CompanionHeatmap'));
 const CompanionDefense = lazy(() => import('./components/companion/CompanionDefense'));
 const CompanionInjuries = lazy(() => import('./components/companion/CompanionInjuries'));
+const CompanionSchedule = lazy(() => import('./components/companion/CompanionSchedule'));
 const GameWeekExportModal = lazy(() => import('./components/companion/GameWeekExportModal.jsx'));
 const CompanionTrade = lazy(() => import('./components/companion/CompanionTrade'));
 const TradeHistory = lazy(() => import('./components/companion/TradeHistory'));
@@ -2256,6 +2257,34 @@ function AppInner() {
                     />
                   </Suspense>
                 </div>
+              )}
+              {companionView === 'schedule' && (
+                <Suspense fallback={<SectionLoading label="Loading Schedule" />}>
+                  <CompanionSchedule
+                    key={`${selectedLeagueId ?? 'none'}:${season ?? 'none'}`}
+                    mode={appRoute.scheduleMode ?? 'season'}
+                    week={appRoute.scheduleWeek}
+                    rosterId={appRoute.scheduleRosterId}
+                    onModeChange={(mode) => updateCompanionRoute({
+                      companionView: 'schedule',
+                      scheduleMode: mode,
+                      scheduleWeek: null,
+                    }, { replace: true })}
+                    onWeekChange={(week) => updateCompanionRoute({
+                      companionView: 'schedule',
+                      scheduleWeek: week,
+                    }, { replace: true })}
+                    onRosterChange={(rosterId) => updateCompanionRoute({
+                      companionView: 'schedule',
+                      scheduleRosterId: rosterId,
+                    }, { replace: true })}
+                    onOpenWeek={(week) => applyRoute({
+                      activeTab: 'fantasy',
+                      companionView: 'matchups',
+                      matchupWeek: week,
+                    })}
+                  />
+                </Suspense>
               )}
               {companionView === 'injuries' && (
                 <Suspense fallback={<SectionLoading label="Loading Injuries" />}>

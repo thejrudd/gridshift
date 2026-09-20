@@ -151,24 +151,37 @@ function getDefenseTeamForWeek(wEntry, player, playerWeeks, scheduleMap) {
   return fallbackTeam ? scheduleMap?.[wEntry.week]?.[fallbackTeam]?.opp?.toUpperCase() ?? null : null;
 }
 
-function buildStatWeeks(weeklyStats) {
-  const weeks = new Set();
-  for (const playerWeeks of Object.values(weeklyStats ?? {})) {
+function buildPlayedWeeksByTeam(weeklyStats, players, scheduleMap) {
+  const playedWeeks = new Map();
+  const addPlayedWeek = (team, week) => {
+    if (!team) return;
+    const normalizedTeam = String(team).toUpperCase();
+    if (!playedWeeks.has(normalizedTeam)) playedWeeks.set(normalizedTeam, new Set());
+    playedWeeks.get(normalizedTeam).add(week);
+  };
+
+  for (const [playerId, playerWeeks] of Object.entries(weeklyStats ?? {})) {
+    const player = players?.[playerId];
     for (const wEntry of playerWeeks ?? []) {
-      if (wEntry?.week != null) weeks.add(Number(wEntry.week));
+      const week = Number(wEntry?.week);
+      if (!Number.isFinite(week)) continue;
+      const offenseTeam = wEntry.team?.toUpperCase() ?? getFallbackPlayerTeam(player, playerWeeks ?? []);
+      if (!offenseTeam) continue;
+      addPlayedWeek(offenseTeam, week);
+      addPlayedWeek(scheduleMap?.[week]?.[offenseTeam]?.opp ?? wEntry.opp ?? null, week);
     }
   }
-  return weeks;
+  return playedWeeks;
 }
 
-function buildGamesByTeam(scheduleMap, teams, activeWeeks) {
+function buildGamesByTeam(scheduleMap, teams, playedWeeksByTeam) {
   const gamesByTeam = {};
   for (const team of teams) gamesByTeam[team] = new Set();
   for (const [week, weekData] of Object.entries(scheduleMap ?? {})) {
     const weekNumber = Number(week);
-    if (activeWeeks?.size && !activeWeeks.has(weekNumber)) continue;
     for (const team of Object.keys(weekData ?? {})) {
       const normalizedTeam = team.toUpperCase();
+      if (!playedWeeksByTeam?.get(normalizedTeam)?.has(weekNumber)) continue;
       if (!gamesByTeam[normalizedTeam]) gamesByTeam[normalizedTeam] = new Set();
       gamesByTeam[normalizedTeam].add(weekNumber);
     }
@@ -215,7 +228,7 @@ export function buildDefenseRankingRows({
     weekTotals: {},
     contributions: [],
   }]));
-  const gamesByTeam = buildGamesByTeam(scheduleMap, allTeams, buildStatWeeks(weeklyStats));
+  const gamesByTeam = buildGamesByTeam(scheduleMap, allTeams, buildPlayedWeeksByTeam(weeklyStats, players, scheduleMap));
   const allowedPositions = normalizedPosition === 'ALL'
     ? DEFENSE_RANKING_PLAYER_POSITIONS
     : [normalizedPosition];

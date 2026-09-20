@@ -46,6 +46,22 @@ function lookup(source, key) {
   return source[key];
 }
 
+const PLAY_MATCH_STAT_ALIASES = Object.freeze({
+  idp_fr: ['idp_fum_rec'],
+  idp_fr_yd: ['idp_fum_ret_yd'],
+  idp_pd: ['idp_pass_def'],
+  idp_qbhit: ['idp_qb_hit'],
+  idp_safety: ['idp_safe'],
+});
+
+function lookupMatchStat(source, key) {
+  const values = [key, ...(PLAY_MATCH_STAT_ALIASES[key] ?? [])]
+    .map((candidate) => lookup(source, candidate))
+    .filter((value) => value !== undefined && value !== null && value !== '')
+    .map(num);
+  return values.length ? Math.max(...values) : 0;
+}
+
 function toleranceFor(key) {
   return String(key).endsWith('_yd') ? YARDAGE_TOLERANCE : 0;
 }
@@ -94,7 +110,7 @@ export function playFitsStatLine(play, sleeperStats, confirmedCumulative) {
   // rather than confirmed on a vacuously true condition.
   if (!keys.length) return false;
   return keys.every((key) => (
-    num(lookup(sleeperStats, key)) + toleranceFor(key)
+    lookupMatchStat(sleeperStats, key) + toleranceFor(key)
       >= num(confirmedCumulative[key]) + num(play.stats[key])
   ));
 }
@@ -159,7 +175,7 @@ function confirmByPoints(pending, uncovered, markConfirmed) {
 export function computeStatSurplus(sleeperStats, coveredStats) {
   const surplus = {};
   PLAY_MATCH_STATS.forEach((key) => {
-    const gap = num(lookup(sleeperStats, key)) - num(coveredStats[key]);
+    const gap = lookupMatchStat(sleeperStats, key) - num(coveredStats[key]);
     if (gap > toleranceFor(key)) surplus[key] = gap;
   });
   return surplus;
@@ -476,18 +492,32 @@ export function reconcileLivePlays(previousState, inputs = {}) {
       return { ...row, adjustment: own, displayPts: round2(num(row.pts) + own) };
     });
 
+    const visibleEvents = [...outPlays, ...outRows].filter((event) => (
+      event.status !== 'unconfirmed' && num(event.displayPts) !== 0
+    ));
+    const displayedEventPoints = round2(visibleEvents.reduce((total, event) => (
+      total + num(event.displayPts)
+    ), 0));
+    // A newly observed authoritative total may precede both provider plays and
+    // the bounded stat-update fallback. Keep that temporary amount explicit;
+    // once a play or fallback exists this returns to zero, proving that the
+    // rendered event values exactly account for the displayed player total.
+    const unattributedPoints = round2(displayedPoints - displayedEventPoints);
+
     players.set(playerId, {
       playerId,
       position,
       sleeperPoints,
       pendingPoints,
       displayedPoints,
+      displayedEventPoints,
+      unattributedPoints,
       adjustment,
       plays: outPlays,
       fallbackEvents: outRows,
     });
 
-    feedEvents.push(...outPlays, ...outRows);
+    feedEvents.push(...visibleEvents);
   });
 
   feedEvents.sort((left, right) => (

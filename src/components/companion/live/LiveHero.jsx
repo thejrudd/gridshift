@@ -9,6 +9,7 @@ import { getLiveCutoutUrl, lastNameOf } from './liveVisuals.js';
 import { fantasyHeroGradient } from '../../../utils/fantasyTeamIdentity.js';
 import { getSleeperPlayerName } from '../../../utils/liveScoringFeed.js';
 import { formatWinProbabilityPair } from '../../../utils/liveWinProbability.js';
+import { hasPositiveLivePoints } from '../../../utils/livePace.js';
 
 // Portrait density follows the hero's actual inline size rather than the
 // viewport. That matters in the desktop shell, where the sidebar and an open
@@ -107,7 +108,7 @@ function useCrossfade(value, transitionKey) {
 
 function getTopScorers(side, limit = 3) {
   return [...(side?.entries ?? [])]
-    .filter((entry) => entry.pace)
+    .filter(hasPositiveLivePoints)
     .sort((left, right) => (right.pace?.points ?? 0) - (left.pace?.points ?? 0))
     .slice(0, limit);
 }

@@ -107,7 +107,12 @@ function gameIdentity(player) {
 
 /* ── starter normalization ───────────────────────────────────────────────── */
 
-function normalizeStarter(player, { slotLabel, baselines, scoreWeeklyEntry, scoringSettings }) {
+function futureKickoff(scheduleEntry, nowMs) {
+  const kickoffMs = Date.parse(String(scheduleEntry?.kickoff ?? ''));
+  return Number.isFinite(kickoffMs) && kickoffMs > nowMs;
+}
+
+function normalizeStarter(player, { slotLabel, baselines, scoreWeeklyEntry, scoringSettings, nowMs }) {
   if (!player?.id) return { id: null, isEmpty: true, slotLabel };
   const baseline = baselines?.[player.id]?.projection?.projected;
   const weeklyPoints = typeof scoreWeeklyEntry === 'function'
@@ -116,6 +121,7 @@ function normalizeStarter(player, { slotLabel, baselines, scoreWeeklyEntry, scor
       .filter((value) => value != null)
     : [];
   const { gameKey, gameLabel } = gameIdentity(player);
+  const gameFinal = player.scheduleEntry?.completed === true || player.scheduleEntry?.isFinal === true;
   return {
     id: player.id,
     isEmpty: !isRealPlayer(player),
@@ -129,7 +135,15 @@ function normalizeStarter(player, { slotLabel, baselines, scoreWeeklyEntry, scor
     isHome: player.isHome ?? null,
     isBye: player.isBye === true,
     gameStarted: player.gameStarted === true,
-    gameFinal: player.scheduleEntry?.completed === true || player.scheduleEntry?.isFinal === true,
+    gameFinal,
+    // A started game that is not final is the only "live" state. A published
+    // future kickoff outranks the shared `gameStarted` flag, which also trusts
+    // weekly stat rows that can exist (as zeros) before kickoff, so a game the
+    // schedule places in the future is always "upcoming".
+    gameState: player.isBye === true ? 'bye'
+      : gameFinal ? 'final'
+        : futureKickoff(player.scheduleEntry, nowMs) ? 'upcoming'
+          : player.gameStarted === true ? 'live' : 'upcoming',
     kickoffWindow: kickoffWindow(player.scheduleEntry),
     kickoffAt: player.scheduleEntry?.kickoff ?? player.scheduleEntry?.date ?? null,
     projected: round1(player.projection?.projected),
@@ -224,13 +238,14 @@ function benchUpgrade(starterList, bench) {
 /* ── side + slot assembly ────────────────────────────────────────────────── */
 
 function windowTotal(starterList, window) {
-  const matching = starterList.filter((starter) => starter.kickoffWindow === window && starter.projected != null);
+  // Only games still to be played count toward a window's remaining projection.
+  const matching = starterList.filter((starter) => starter.kickoffWindow === window && starter.projected != null && !starter.gameFinal);
   if (!matching.length) return null;
   return round1(matching.reduce((total, starter) => total + starter.projected, 0));
 }
 
 function buildSide({
-  key, identity, starterList, bench, leagueContext, winProbability, recordedProjectedTotal,
+  key, identity, starterList, bench, leagueContext, winProbability, recordedProjectedTotal, liveTotals,
 }) {
   const rosterId = String(identity?.rosterId ?? '');
   const leagueRow = leagueContext?.row.get(rosterId) ?? null;
@@ -259,7 +274,9 @@ function buildSide({
     starters: starterList,
     projectedTotal: projected.length ? round1(projected.reduce((total, starter) => total + starter.projected, 0)) : null,
     recordedProjectedTotal: round1(recordedProjectedTotal),
-    liveTotal: round1(key === 'a' ? winProbability?.actualA : winProbability?.actualB),
+    // The caller's displayed matchup score is the authority; the win-probability
+    // model does not carry actual totals of its own.
+    liveTotal: round1(liveTotals?.[key] ?? (key === 'a' ? winProbability?.actualA : winProbability?.actualB)),
     expectedTotal: round1(key === 'a' ? winProbability?.expectedA : winProbability?.expectedB),
     remainingProjection: remaining.length ? round1(remaining.reduce((total, starter) => total + starter.projected, 0)) : null,
     earlyWindowProjection: windowTotal(starterList, 'early'),
@@ -309,7 +326,9 @@ function buildLede(context, seed) {
     const lead = Math.abs(num(context.liveMargin) ?? 0);
     const ahead = (num(context.liveMargin) ?? 0) >= 0 ? context.sides.a : context.sides.b;
     const behind = ahead === context.sides.a ? context.sides.b : context.sides.a;
-    return say`${ahead.name} is ${pts(lead)} up with ${pts(behind.remainingProjection)} of projection still on the field for ${behind.name}.`;
+    if (lead < 0.05) return say`The score is level. ${ahead.name} has ${pts(ahead.remainingProjection)} of projection still to play, ${behind.name} ${pts(behind.remainingProjection)}.`;
+    if (ahead.remainingProjection == null || behind.remainingProjection == null) return say`${ahead.name} leads by ${pts(lead)}.`;
+    return say`${ahead.name} leads by ${pts(lead)}. ${behind.name} has ${pts(behind.remainingProjection)} of projection still to play, against ${pts(ahead.remainingProjection)} for ${ahead.name}.`;
   }
   const swing = num(context.swing);
   const variants = [
@@ -321,9 +340,9 @@ function buildLede(context, seed) {
   return variants[seed % variants.length]();
 }
 
-function oddsBand(probabilityA, phase, settled) {
+function oddsBand(probabilityA, phase, settled, liveNow) {
   if (settled) return { band: 'Final', tone: '' };
-  if (phase === 'live') return { band: 'In progress', tone: 'live' };
+  if (phase === 'live') return liveNow ? { band: 'In progress', tone: 'live' } : { band: 'Week underway', tone: '' };
   const edge = Math.abs(probabilityA - 50);
   if (edge < 6) return { band: 'Tossup', tone: 'tossup' };
   if (edge < 18) return { band: 'Slight edge', tone: '' };
@@ -341,6 +360,8 @@ export function buildMatchupPreviewModel({
   slots = [],
   benches = {},
   winProbability = null,
+  liveTotals = null,
+  headerExtras = null,
   baselines = null,
   rosters = null,
   rivalry = null,
@@ -350,6 +371,7 @@ export function buildMatchupPreviewModel({
   scoringSettings = null,
   recentKeyIds = [],
   keyLimit = 3,
+  nowMs = Date.now(),
 } = {}) {
   if (!sides?.a || !sides?.b) return null;
   const leagueContext = buildLeagueContext(rosters);
@@ -358,6 +380,7 @@ export function buildMatchupPreviewModel({
     baselines,
     scoreWeeklyEntry,
     scoringSettings,
+    nowMs,
   });
 
   const normalizedSlots = (slots ?? []).map((slot) => ({
@@ -375,6 +398,7 @@ export function buildMatchupPreviewModel({
     leagueContext,
     winProbability,
     recordedProjectedTotal: recordedProjectionTotals.a,
+    liveTotals,
   });
   const sideB = buildSide({
     key: 'b',
@@ -384,10 +408,26 @@ export function buildMatchupPreviewModel({
     leagueContext,
     winProbability,
     recordedProjectedTotal: recordedProjectionTotals.b,
+    liveTotals,
   });
 
+  // Header details the primary matchup header already derives (projected
+  // final, projection delta, season record/PF/PA) so the two headers agree.
+  for (const [sideKey, side] of [['a', sideA], ['b', sideB]]) {
+    const extras = headerExtras?.[sideKey] ?? null;
+    side.projectedFinal = round1(extras?.projectedFinal);
+    side.projectionDelta = extras?.projectionDelta ?? null;
+    side.summary = extras?.summary ?? null;
+  }
+
   const settled = Boolean(winProbability?.settled);
-  const resolvedPhase = settled ? 'post' : phase;
+  const starterStates = normalizedSlots
+    .flatMap((slot) => [slot.a, slot.b])
+    .filter((starter) => !starter.isEmpty);
+  // "Live" means scoring has begun. If no starter's game has actually started
+  // or finished, the week is still a preview whatever the caller's evidence says.
+  const anyScoring = starterStates.some((starter) => starter.gameState === 'live' || starter.gameState === 'final');
+  const resolvedPhase = settled ? 'post' : phase === 'live' && !anyScoring && starterStates.length ? 'pre' : phase;
   const probabilityA = Math.max(0, Math.min(100, num(winProbability?.probA) ?? 50));
   const starterCount = num(winProbability?.starterCount)
     ?? normalizedSlots.filter((slot) => !slot.a.isEmpty || !slot.b.isEmpty).length * 2;
@@ -418,9 +458,15 @@ export function buildMatchupPreviewModel({
     seedKey: `${leagueId}|${season}|${week}|${sideA.id}|${sideB.id}`,
   };
 
+  // "Live" phase means scoring has begun. It only means a game is on the clock
+  // when a starter's game has started and not finished; between kickoff windows
+  // the week is underway but nothing is live.
+  const liveNow = resolvedPhase === 'live' && starterStates.some((starter) => starter.gameState === 'live');
+  context.liveNow = liveNow;
+
   const seed = hashSeed(context.seedKey);
-  const band = oddsBand(probabilityA, resolvedPhase, settled);
-  const bigLabel = resolvedPhase === 'post' ? 'final' : resolvedPhase === 'live' ? 'live' : 'projected';
+  const band = oddsBand(probabilityA, resolvedPhase, settled, liveNow);
+  const bigLabel = resolvedPhase === 'post' ? 'final' : resolvedPhase === 'live' ? (liveNow ? 'live' : 'so far') : 'projected';
 
   return {
     ...context,
@@ -429,14 +475,16 @@ export function buildMatchupPreviewModel({
     lede: buildLede(context, seed),
     bigLabel,
     big: {
-      a: resolvedPhase === 'pre' ? sideA.expectedTotal ?? sideA.projectedTotal : sideA.liveTotal ?? sideA.expectedTotal,
-      b: resolvedPhase === 'pre' ? sideB.expectedTotal ?? sideB.projectedTotal : sideB.liveTotal ?? sideB.expectedTotal,
+      // Once scoring has begun the headline is the score, never a projection
+      // labelled as one; a missing score renders as unavailable.
+      a: resolvedPhase === 'pre' ? sideA.expectedTotal ?? sideA.projectedTotal : resolvedPhase === 'post' ? sideA.liveTotal ?? sideA.expectedTotal : sideA.liveTotal,
+      b: resolvedPhase === 'pre' ? sideB.expectedTotal ?? sideB.projectedTotal : resolvedPhase === 'post' ? sideB.liveTotal ?? sideB.expectedTotal : sideB.liveTotal,
     },
     odds: {
       probabilityA,
       labelA: `${Math.round(probabilityA)}%`,
       labelB: `${Math.round(100 - probabilityA)}%`,
-      mid: settled ? 'Share of points scored' : resolvedPhase === 'live' ? 'Live win chance' : 'Estimated win chance',
+      mid: settled ? 'Share of points scored' : liveNow ? 'Live win chance' : 'Estimated win chance',
       band: band.band,
       bandTone: band.tone,
       note: settled
@@ -445,20 +493,22 @@ export function buildMatchupPreviewModel({
     },
     watch: {
       unit: bigLabel,
-      note: resolvedPhase === 'pre' ? 'top three projected starters a side' : 'top three scorers a side',
-      title: resolvedPhase === 'post' ? 'Who decided it' : resolvedPhase === 'live' ? 'Live movers' : 'Players to watch',
+      title: resolvedPhase === 'post' ? 'Who decided it' : resolvedPhase === 'live' ? (liveNow ? 'Live movers' : 'Top scorers so far') : 'Players to watch',
       a: topStarters(sideA, resolvedPhase),
       b: topStarters(sideB, resolvedPhase),
     },
     seasonShape: buildSeasonShape(sideA, sideB, context.league),
     firstKickoff: firstKickoffLabel(normalizedSlots),
+    nextKickoff: firstKickoffLabel(normalizedSlots, (starter) => starter.gameState === 'upcoming'),
+    liveNow,
   };
 }
 
 /** Earliest kickoff across every starter, for the panel's header line. */
-function firstKickoffLabel(slots) {
+function firstKickoffLabel(slots, include = () => true) {
   const kickoffs = slots
     .flatMap((slot) => [slot.a, slot.b])
+    .filter((starter) => !starter?.isEmpty && include(starter))
     .map((starter) => Date.parse(String(starter?.kickoffAt ?? '')))
     .filter((value) => Number.isFinite(value));
   if (!kickoffs.length) return null;
@@ -471,13 +521,19 @@ function firstKickoffLabel(slots) {
 
 function topStarters(side, phase) {
   const value = (starter) => (phase === 'pre' ? starter.projected : starter.actual ?? starter.projected);
+  // Once scoring has begun the list ranks scorers, so a starter whose game has
+  // not kicked off has no score to rank and would only show a placeholder 0.0.
+  const hasScored = (starter) => phase === 'pre' || starter.gameState === 'live' || starter.gameState === 'final';
   return side.starters
-    .filter((starter) => !starter.isEmpty && value(starter) != null)
+    .filter((starter) => !starter.isEmpty && hasScored(starter) && value(starter) != null)
     .sort((left, right) => value(right) - value(left))
     .slice(0, 3)
     .map((starter) => ({
       ...starter,
       value: value(starter),
+      // A finished game cannot score any more, so only an unfinished game's
+      // points are "so far" / "live".
+      unit: phase === 'pre' ? 'projected' : starter.gameState === 'final' ? 'final' : 'live',
       tag: starterTag(starter, phase),
       tone: starterTone(starter, phase),
     }));
@@ -486,11 +542,12 @@ function topStarters(side, phase) {
 function starterTag(starter, phase) {
   if (phase !== 'pre') {
     const baseline = starter.baselineProjected ?? starter.projected;
-    if (starter.actual != null && baseline != null) {
+    const status = starter.gameState === 'final' ? 'Final' : starter.gameState === 'live' ? 'In progress' : 'Not started';
+    if (starter.gameState !== 'upcoming' && starter.actual != null && baseline != null) {
       const delta = starter.actual - baseline;
-      return `${starter.gameFinal ? 'Final' : 'In progress'} · ${delta >= 0 ? '+' : '−'}${Math.abs(delta).toFixed(1)} vs projection`;
+      return `${status} · ${delta >= 0 ? '+' : '−'}${Math.abs(delta).toFixed(1)} vs projection`;
     }
-    return starter.gameFinal ? 'Final' : 'In progress';
+    return status;
   }
   if (starter.isBye) return 'On bye';
   if (starter.opponentContext?.rank != null) {

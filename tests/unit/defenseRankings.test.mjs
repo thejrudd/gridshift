@@ -131,6 +131,50 @@ describe('defense rankings', () => {
     assert.deepEqual(rowsDesc.map(row => row.team), ['MIA', 'KC', 'BUF']);
   });
 
+  it('counts only games a defense has actually played when a week is in progress', () => {
+    const inProgressWeeklyStats = {
+      ...weeklyStats,
+      rb2: [
+        { week: 1, team: 'KC', opp: 'BUF', rush_att: 10, rush_yd: 50, rec: 3, rec_yd: 24 },
+        { week: 3, team: 'KC', opp: 'DEN', rush_att: 12, rush_yd: 60, rec: 2, rec_yd: 18 },
+      ],
+    };
+    const inProgressScheduleMap = {
+      ...scheduleMap,
+      3: {
+        KC: { opp: 'DEN', home: true },
+        DEN: { opp: 'KC', home: false },
+        BUF: { opp: 'MIA', home: false },
+        MIA: { opp: 'BUF', home: true },
+      },
+    };
+
+    const rows = buildDefenseRankingRows({
+      weeklyStats: inProgressWeeklyStats,
+      players,
+      scheduleMap: inProgressScheduleMap,
+      scoringSettings: DEFAULT_SCORING,
+      position: 'RB',
+      mode: 'stats',
+      stat: 'rush_yd',
+      teams: ['BUF', 'DEN', 'KC', 'MIA'],
+    });
+
+    // Week 3 has kicked off for KC/DEN only; MIA and BUF have not played it yet.
+    const den = rows.find(row => row.team === 'DEN');
+    assert.equal(den.games, 1);
+    assert.equal(den.total, 60);
+    assert.equal(den.avg, 60);
+
+    const mia = rows.find(row => row.team === 'MIA');
+    assert.equal(mia.games, 1);
+    assert.equal(mia.avg, 40);
+
+    const kc = rows.find(row => row.team === 'KC');
+    assert.equal(kc.games, 2);
+    assert.equal(kc.avg, 50);
+  });
+
   it('supports per-game average as a sortable metric', () => {
     const avgWeeklyStats = {
       ...weeklyStats,
@@ -175,7 +219,9 @@ describe('defense rankings', () => {
     assert.deepEqual(totalRows.slice(0, 3).map(row => row.team), ['KC', 'BUF', 'MIA']);
     assert.deepEqual(totalRows.slice(0, 3).map(row => row.strengthRank), [4, 3, 2]);
     assert.deepEqual(avgRows.slice(0, 3).map(row => row.team), ['KC', 'MIA', 'BUF']);
-    assert.deepEqual(avgRows.slice(0, 3).map(row => row.strengthRank), [4, 3, 2]);
+    assert.deepEqual(avgRows.slice(0, 3).map(row => row.strengthRank), [3, 2, 1]);
+    assert.equal(avgRows.find(row => row.team === 'DEN').games, 0);
+    assert.equal(avgRows.find(row => row.team === 'DEN').avg, null);
   });
 
   it('defaults each position to the first visible stat option', () => {

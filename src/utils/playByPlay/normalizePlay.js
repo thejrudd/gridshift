@@ -14,7 +14,7 @@
 //
 // See docs/Play-By-Play Normalization.md.
 
-import { parsePlayNarrative } from '../nflPlays/playNarrative.js';
+import { parseDefensiveActors, parsePlayNarrative } from '../nflPlays/playNarrative.js';
 import { getOffenseTeam, isKickPossessionPlay } from '../nflPlays/fieldGeometry.js';
 
 export {
@@ -204,6 +204,7 @@ export function normalizeCanonicalPlay(raw, {
     description: rawDescription,
     statYardage: firstFinite(raw.stat_yardage, raw.yards_gained, raw.yards, raw.net_yards),
   });
+  const defensiveActors = parseDefensiveActors(rawDescription, { typeSlug });
 
   const scoring = firstBoolean(raw.scoring_play, raw.touchdown);
   const wallclockMs = Date.parse(raw.wallclock ?? '');
@@ -221,6 +222,7 @@ export function normalizeCanonicalPlay(raw, {
     rawDescription,
     shortText,
     narrative: narrative?.confident ? narrative : null,
+    defensiveActors,
 
     team,
     offenseTeam: null,

@@ -17,6 +17,7 @@ An interactive web app for the 2026 NFL season — with full Sleeper fantasy lea
 - Sleeper integration — League connection, custom scoring, rosters, and season navigation.
 - Fantasy Live (Alpha) — Provider-backed live matchup scoring, win probability, moment-aware replay, shared-play attribution, scoring feeds, and player context for enabled Sleeper leagues.
 - Matchups — Cycle through every weekly league matchup with projections, ranks, weather, game context, and scoring details.
+- Schedule (Beta) — Season-long fantasy pairings by week or team, with byes, rematches, and a jump into any week's matchup.
 - Fantasy Scoring Blueprint — League-rule summaries, position strengths, detailed scoring references, and itemized real-game examples.
 - League analysis — Player stats, fantasy points allowed, team defense, heatmaps, and roster/draft capital.
 - League archive — Finalized standings, linked-season activity, lifetime leaderboards, champions, rivalries, and core records for Sleeper leagues.
@@ -133,13 +134,12 @@ Draft Sync is an optional capability of the existing API sidecar, not a required
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) + optional Node API sidecar |
 
-## What's New in v9.0.0
+## What's New in v9.0.1
 
-- **Fantasy Injuries** — Review rostered availability concerns with Sleeper status, optional server-side BALLDONTLIE designations, practice reports, freshness, and filters for fantasy team, position, NFL team, and player.
-- **Fantasy Matchup drilldowns** — Explore broadcast-style matchup previews, manager rivalry context, player comparisons, scoring breakdowns, projections, opponent difficulty, and responsive player detail.
-- **Fantasy and Statistics overhaul** — Refresh the Companion and Statistics surfaces with clearer hierarchy, loading handoffs, team identity, responsive controls, and denser data layouts.
-- **Matchup and Heatmap reliability** — Keep future matchup weeks and incomplete Heatmap weeks visible while automatic week selection follows the active NFL slate.
-- **Trade workflow reliability** — Repair the connected Trade flow so managers can complete proposals without losing required context or assets.
+- **Fantasy Schedule (Beta)** — Browse the whole season's pairings by week or by team, with byes, pending weeks, and rematches shown distinctly.
+- **Clearer matchup preview** — Live status, current scores, projected finals, and season records now match the main matchup header, with rivalry history built in.
+- **Fantasy Live accuracy** — More reliable play attribution, reconciliation with Sleeper, and week-settling logic.
+- **Defense averages and tour fixes** — Per-game defense averages count only games played, and finishing the What's New tour no longer freezes the page.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 
@@ -170,6 +170,7 @@ src/
 │   │   ├── CompanionLeague.jsx    # Canonical Rosters + nested Draft Picks view
 │   │   ├── CompanionRoster.jsx    # Legacy compatibility wrapper for Rosters
 │   │   ├── CompanionMatchup.jsx   # All weekly matchups: projections, cycling, breakdowns
+│   │   ├── CompanionSchedule.jsx  # Season-long fantasy pairings by week or team (Beta)
 │   │   ├── CompanionStandings.jsx # Finalized-week and historical fantasy standings/brackets
 │   │   ├── CompanionHistory.jsx   # Lifetime league record book and rivalries
 │   │   ├── CompanionActivity.jsx  # Selected-season filtered transaction ledger

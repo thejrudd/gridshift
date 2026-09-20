@@ -23,8 +23,13 @@ export const PLAY_ROLES = Object.freeze({
   TACKLER: 'tackler',
   SACKER: 'sacker',
   INTERCEPTER: 'intercepter',
+  FORCER: 'forcer',
   FUMBLER: 'fumbler',
   RECOVERER: 'recoverer',
+  PASS_DEFENDER: 'pass-defender',
+  QB_HITTER: 'qb-hitter',
+  SAFETY: 'safety',
+  KICK_BLOCKER: 'kick-blocker',
   PENALIZED: 'penalized',
 });
 
@@ -38,8 +43,13 @@ const ROLE_LABELS = Object.freeze({
   tackler: 'Tackle',
   sacker: 'Sack',
   intercepter: 'Intercept',
+  forcer: 'Forced fumble',
   fumbler: 'Fumble',
   recoverer: 'Recovery',
+  'pass-defender': 'Pass defended',
+  'qb-hitter': 'QB hit',
+  safety: 'Safety',
+  'kick-blocker': 'Blocked kick',
   penalized: 'Penalty',
 });
 
@@ -347,12 +357,106 @@ export function parseTacklers(rawText) {
   const action = String(rawText ?? '').split(
     /\n|\*\* Injury Update|The Replay Official|PENALTY on| was injured during the play/i,
   )[0];
-  const groups = action.match(/\(([^)]+)\)/g) ?? [];
+  const groups = [...action.matchAll(/\(([^)]+)\)/g)];
   for (let i = groups.length - 1; i >= 0; i -= 1) {
-    const parts = groups[i].slice(1, -1).split(';').map((part) => part.trim()).filter(Boolean);
+    const before = action.slice(0, groups[i].index);
+    // The parenthetical immediately after FUMBLES identifies who forced it;
+    // it is not a generic tackle group even though it uses the same initials.
+    if (/FUMBLES\s*$/i.test(before)) continue;
+    const parts = groups[i][1].split(';').map((part) => part.trim()).filter(Boolean);
     if (parts.length && parts.every((part) => TACKLER_PART.test(part))) return parts;
   }
   return [];
+}
+
+const DEFENSIVE_NAME = new RegExp(`^(?:\\d+-)?(?:${ABBREV}|${NAME})$`);
+
+function cleanDefensiveName(value) {
+  const name = String(value ?? '')
+    .trim()
+    .replace(/^[A-Z]{2,3}-/, '')
+    .replace(/^\d+-/, '')
+    .replace(/[.,;:]+$/, '')
+    .trim();
+  return DEFENSIVE_NAME.test(name) ? name : null;
+}
+
+/**
+ * Defensive credits that the official gamebook text states explicitly.
+ *
+ * This is deliberately separate from the compact-play grammar. A provider can
+ * introduce a new `short_text` shape while its official sentence still says
+ * exactly who made the sack, tackle, interception, force, or recovery. Only
+ * role-bearing clauses qualify; a defender who is merely mentioned elsewhere
+ * in an unfamiliar sentence is not returned.
+ */
+export function parseDefensiveActors(rawText, { typeSlug = null } = {}) {
+  const text = authoritativeText(rawText);
+  if (!text.trim()) return [];
+
+  const actors = [];
+  const seen = new Set();
+  const add = (role, rawName, extra = {}) => {
+    const name = cleanDefensiveName(rawName);
+    if (!name) return;
+    const key = `${role}:${name.toLowerCase()}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    actors.push({
+      role,
+      name,
+      abbreviated: name.includes('.'),
+      detail: null,
+      ...extra,
+    });
+  };
+
+  const interception = parseInterception(text);
+  if (interception?.defender) add(PLAY_ROLES.INTERCEPTER, interception.defender);
+  const summaryInterception = /^(.+?)\s+-?\d+\s+Yd Interception Return\b/i.exec(text.trim());
+  if (!interception && summaryInterception) {
+    add(PLAY_ROLES.INTERCEPTER, summaryInterception[1]);
+  }
+
+  const fumble = parseFumble(text);
+  if (fumble) {
+    String(fumble.forcedBy ?? '')
+      .split(';')
+      .map((name) => name.trim())
+      .filter(Boolean)
+      .forEach((name) => add(PLAY_ROLES.FORCER, name));
+    add(PLAY_ROLES.RECOVERER, fumble.recoveredBy, { team: canonicalTeam(fumble.recoveredByTeam) });
+  }
+
+  const tacklers = parseTacklers(text);
+  const sack = /\bsack(?:ed)?\b/i.test(`${typeSlug ?? ''} ${text}`);
+  if (sack) {
+    const byClause = /\bsacked by (.+?)(?:\s+for\b|\s+at\b|[.,]|$)/i.exec(text)?.[1] ?? null;
+    const subjectClause = /^(?:\([^)]*\)\s*)?(.+?)\s+sacked\s+(?!at\b|for\b)/i.exec(text)?.[1] ?? null;
+    const explicit = cleanDefensiveName(byClause) ?? cleanDefensiveName(subjectClause);
+    if (explicit) add(PLAY_ROLES.SACKER, explicit);
+    else tacklers.forEach((name) => add(PLAY_ROLES.SACKER, name));
+  } else {
+    tacklers.forEach((name) => add(PLAY_ROLES.TACKLER, name));
+  }
+
+  const tackledBy = /\btackled by (.+?)(?:[.,;]|$)/i.exec(text)?.[1] ?? null;
+  if (!tacklers.length && tackledBy) add(PLAY_ROLES.TACKLER, tackledBy);
+
+  const defendedBy = /(?:pass (?:defended|defensed|broken up)|broken up) by (.+?)(?:[.,;]|$)/i.exec(text)?.[1] ?? null;
+  if (defendedBy) add(PLAY_ROLES.PASS_DEFENDER, defendedBy);
+
+  const hitBy = /\b(?:quarterback|QB) hit by (.+?)(?:[.,;]|$)/i.exec(text)?.[1] ?? null;
+  if (hitBy) add(PLAY_ROLES.QB_HITTER, hitBy);
+
+  const blockedBy = /\b(?:kick|punt|field goal|extra point) blocked by (.+?)(?:[.,;]|$)/i.exec(text)?.[1] ?? null;
+  if (blockedBy) add(PLAY_ROLES.KICK_BLOCKER, blockedBy);
+
+  if (/\bsafety\b/i.test(text)) {
+    tacklers.forEach((name) => add(PLAY_ROLES.SAFETY, name));
+  }
+
+  return actors;
 }
 
 const DIRECTION = /\b(?:scrambles )?(?:up the middle|left end|right end|left tackle|right tackle|left guard|right guard|(?:short|deep) (?:left|middle|right))\b/i;

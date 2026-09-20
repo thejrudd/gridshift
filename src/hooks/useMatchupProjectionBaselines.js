@@ -13,7 +13,15 @@ export default function useMatchupProjectionBaselines({ leagueId, season, week, 
     const scope = { leagueId, season, week, scoringSettings };
     const refresh = () => {
       const baselines = selectMatchupProjectionBaselines(getMatchupProjectionBaselines(), scope);
-      if (!cancelled) setState({ scopeKey, baselines });
+      // Bail out when nothing changed: callers can pass a fresh `players` array
+      // every render, which re-runs this effect, and an unconditional new state
+      // object would then re-render forever.
+      if (!cancelled) {
+        setState((prev) => (prev.scopeKey === scopeKey
+          && JSON.stringify(prev.baselines) === JSON.stringify(baselines)
+          ? prev
+          : { scopeKey, baselines }));
+      }
     };
     captureMatchupProjectionBaselines({ ...scope, players });
     queueMicrotask(refresh);

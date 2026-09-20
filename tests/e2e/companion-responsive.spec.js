@@ -1111,7 +1111,7 @@ test('Fantasy Matchups shows a Week 1 forecast from the optional BDL projection 
   });
   expect(Math.max(...alignedEdges)).toBeLessThanOrEqual(1);
 
-  // The masthead's VS control opens the week preview, not the rivalry modal.
+  // The masthead's VS control opens the week preview.
   await page.locator('.companion-matchup-masthead__axis').click();
   const preview = page.locator('.matchup-preview-modal');
   await expect(preview).toBeVisible();
@@ -1143,11 +1143,11 @@ test('Fantasy Matchups shows a Week 1 forecast from the optional BDL projection 
   expect(motion.hero).toBe('gridshift-reveal-wipe-left');
   expect(motion.overflow).toBeLessThanOrEqual(1);
 
-  // The rivalry section hands off to the full rivalry history rather than
-  // replacing it.
-  await preview.getByRole('button', { name: /rivalry history|meetings/i }).click();
-  await expect(page.locator('.matchup-rivalry-modal')).toBeVisible();
-  await expect(preview).toHaveCount(0);
+  // The rivalry history lives inside the preview; there is no second dialog.
+  await expect(preview.getByText('The rivalry')).toBeVisible();
+  await expect(preview.getByRole('button', { name: /rivalry history|Open all/i })).toHaveCount(0);
+  await expect(page.locator('.matchup-rivalry-modal')).toHaveCount(0);
+  await expect(preview).toBeVisible();
 });
 
 test('Fantasy Matchups locks a historical matchup after stale schedule metadata is reconciled', async ({ page }) => {
