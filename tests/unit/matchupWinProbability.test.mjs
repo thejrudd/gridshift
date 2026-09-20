@@ -123,6 +123,18 @@ test('historical kickoff evidence waits through a game-length safety window', ()
   }), false);
 });
 
+test('a fully final schedule week settles starters with no schedule row of their own', () => {
+  const retired = player({ id: 'retired', started: false, scheduleEntry: null });
+  const played = player({ id: 'played', started: true, completed: true });
+
+  assert.equal(hasFinalMatchupGameEvidence([retired, played], { now }), false);
+  assert.equal(hasFinalMatchupGameEvidence([retired, played], {
+    scheduleWeekFinal: true,
+    now,
+  }), true);
+  assert.equal(hasFinalMatchupGameEvidence([], { scheduleWeekFinal: true, now }), false);
+});
+
 test('a reconciled historical matchup locks the winning side at exact certainty', () => {
   const result = buildMatchupWinProbability({
     myPlayers: [player({ id: 'mine', current: 159.67, started: true })],

@@ -1388,3 +1388,10 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Defense averages** - Companion Defense per-game averages now count only games a team has actually played, instead of every scheduled game in a week that has kicked off league-wide.
 - **What's New tour** - Finishing the tour on the Matchups view no longer freezes the page, and the tour end-to-end checks use timeouts that fit lazy-loaded views.
 - **Regression coverage and documentation** - Added focused coverage for the preview, schedule, Live record, defense averages, and reconciliation, and updated the Fantasy Live, scoring, and routing references.
+
+## v9.0.2 - Fantasy Schedule Tour & Past-Season Matchup Finality
+*2026-09-20*
+
+- **What's New tour for Fantasy Schedule** - Added the Fantasy Schedule (Beta) walkthrough that v9.0.1 shipped without, so updating from earlier versions now shows the tour step for the new Schedule view.
+- **Past-season matchup finality** - A matchup from a completed week now settles once the whole NFL slate is final, even when a starter has no schedule row of their own, such as a retired player, a free agent, or someone who changed teams since that season. Previously these matchups could stay unresolved.
+- **Regression coverage** - Added a unit test for settling starters with no schedule row of their own once the week's slate is final.

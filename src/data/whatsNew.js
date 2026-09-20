@@ -514,4 +514,23 @@ export const WHATS_NEW = [
       },
     ],
   },
+  {
+    version: '9.0.2',
+    title: 'Fantasy Schedule',
+    features: [
+      {
+        id: 'fantasy-schedule',
+        name: 'Fantasy Schedule (Beta)',
+        description: 'See every league pairing for the season by week or by team, with byes, upcoming weeks, and rematches, and jump into any week\'s Matchup.',
+        steps: [{
+          route: { activeTab: 'fantasy', companionView: 'schedule' },
+          anchor: '[data-tour="companion-view-schedule"]',
+          anchorMobile: null,
+          title: 'Open Fantasy Schedule',
+          body: 'Schedule lays out the whole season. View every league pairing week by week, or pick one team to follow its path, then open any week to jump straight into that Matchup.',
+          placement: 'auto',
+        }],
+      },
+    ],
+  },
 ];

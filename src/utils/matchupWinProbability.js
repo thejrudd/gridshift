@@ -43,16 +43,22 @@ function hasPassedHistoricalFinalityGrace(scheduleEntry, now) {
 /**
  * A matchup can finish before the fantasy week does. Every non-bye starter
  * needs explicit final game metadata, or an old kickoff as a bounded fallback
- * for stale schedule metadata. A missing/partial schedule remains unresolved;
+ * for stale schedule metadata. A missing/partial schedule remains unresolved
+ * unless the whole week's slate is officially final (`scheduleWeekFinal`);
  * the caller separately proves that the fantasy provider returned both final
  * team totals and every starter's official points before settling the result.
  */
 export function hasFinalMatchupGameEvidence(
   players = [],
-  { scheduleWeekComplete = false, now = Date.now() } = {},
+  { scheduleWeekComplete = false, scheduleWeekFinal = false, now = Date.now() } = {},
 ) {
   const starters = (players ?? []).filter((player) => player?.id && player?.name !== 'Empty');
   if (!starters.length) return false;
+  // Every game of a complete schedule week is official, so no starter can
+  // still be playing, even one with no schedule row of their own. Starters are
+  // matched to games by their *current* NFL team, which a past-season lineup
+  // often no longer has (free agents, retirees, players who moved).
+  if (scheduleWeekFinal) return true;
   return starters.every((player) => (
     (scheduleWeekComplete && player?.isBye === true)
     || isExplicitlyFinalScheduleEntry(player?.scheduleEntry)
