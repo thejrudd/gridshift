@@ -10,6 +10,7 @@ import {
   aggregateSeasonStats,
   getMatchups,
   getLiveMatchups,
+  getNflState,
   getTradedPicks,
   getLeagueDrafts,
 } from '../api/sleeperApi';
@@ -26,6 +27,7 @@ import { buildEspnDstResidualDebugRows, reconcileFantasyScore } from '../utils/f
 import { clearPlayerCache, checkAndBustCacheIfNeeded } from '../utils/playerCache';
 import { createSleeperRosterSync } from '../utils/sleeperRosterSync';
 import { sanitizePersistedSleeperState } from '../utils/sleeperSeasonState.js';
+import { getFantasyCurrentWeek } from '../utils/fantasySeasonWeeks.js';
 import {
   getSeasonStats as getCachedSeasonStats,
   setSeasonStats as putCachedSeasonStats,
@@ -268,6 +270,12 @@ export function FantasyProvider({ children }) {
   // UI state
   const [connectError, setConnectError] = useState(null);
   const [connectLoading, setConnectLoading] = useState(false);
+  // Sleeper's live NFL state is shared by every fantasy surface. It is not
+  // persisted because a cached week is exactly what makes current-week
+  // defaults drift after a slate rolls over.
+  const [nflState, setNflState] = useState(null);
+  const [nflStateLoading, setNflStateLoading] = useState(false);
+  const [nflStateError, setNflStateError] = useState('');
   // Target season string while a changeSeason() is in flight, else null —
   // drives pending states on every season-switch control.
   const [seasonSwitching, setSeasonSwitching] = useState(null);
@@ -275,6 +283,7 @@ export function FantasyProvider({ children }) {
   const statsAbortRef = useRef(null);
   const statsLoadBySeasonRef = useRef(new Map());
   const leagueSnapshotVersionRef = useRef(0);
+  const nflStateRequestRef = useRef(0);
   // Mirror of statsBySeason readable inside loadSeasonStats without adding it
   // to that callback's hand-tuned dependency array.
   const statsBySeasonRef = useRef({});
@@ -305,6 +314,9 @@ export function FantasyProvider({ children }) {
     setLeagueUsers([]);
     setAvailableSeasons([]);
     setLeaguesBySeason({});
+    setNflState(null);
+    setNflStateLoading(false);
+    setNflStateError('');
     setScoringSettings(DEFAULT_SCORING);
     setScoringOverride(null);
     setScoringOverridePaused(false);
@@ -322,6 +334,74 @@ export function FantasyProvider({ children }) {
     clearPlayerCache();
     void clearStatsCache();
   }, []);
+
+  const refreshNflState = useCallback(async ({ silent = false } = {}) => {
+    const requestId = nflStateRequestRef.current + 1;
+    nflStateRequestRef.current = requestId;
+
+    if (platform !== 'sleeper' || !selectedLeagueId || !season) {
+      if (!silent) {
+        setNflState(null);
+        setNflStateLoading(false);
+        setNflStateError('');
+      }
+      return null;
+    }
+
+    if (!silent) {
+      setNflStateLoading(true);
+      setNflStateError('');
+    }
+
+    try {
+      const payload = await getNflState();
+      if (requestId !== nflStateRequestRef.current) return null;
+      setNflState(payload ?? null);
+      setNflStateError('');
+      return payload ?? null;
+    } catch (error) {
+      if (requestId !== nflStateRequestRef.current) return null;
+      setNflStateError(error?.message ?? 'Could not confirm the current NFL week.');
+      return null;
+    } finally {
+      if (requestId === nflStateRequestRef.current) setNflStateLoading(false);
+    }
+  }, [platform, season, selectedLeagueId]);
+
+  // Refresh on connection, when the window regains focus, and periodically
+  // while the app remains open. This keeps every fantasy surface on the same
+  // rollover without each page issuing its own state request.
+  useEffect(() => {
+    if (platform !== 'sleeper' || !selectedLeagueId || !season) {
+      nflStateRequestRef.current += 1;
+      setNflState(null);
+      setNflStateLoading(false);
+      setNflStateError('');
+      return undefined;
+    }
+
+    void refreshNflState();
+    const refreshSilently = () => { void refreshNflState({ silent: true }); };
+    const intervalId = typeof window !== 'undefined'
+      ? window.setInterval(refreshSilently, 5 * 60 * 1000)
+      : null;
+    if (typeof window !== 'undefined') window.addEventListener('focus', refreshSilently);
+
+    return () => {
+      nflStateRequestRef.current += 1;
+      if (intervalId != null) window.clearInterval(intervalId);
+      if (typeof window !== 'undefined') window.removeEventListener('focus', refreshSilently);
+    };
+  }, [platform, refreshNflState, season, selectedLeagueId]);
+
+  const currentFantasyWeek = useMemo(
+    () => getFantasyCurrentWeek({
+      state: platform === 'sleeper' && selectedLeagueId ? nflState : null,
+      league,
+      season,
+    }),
+    [league, nflState, platform, season, selectedLeagueId],
+  );
 
   // Persist key state to localStorage
   useEffect(() => {
@@ -1330,6 +1410,11 @@ export function FantasyProvider({ children }) {
     connectError,
     connectLoading,
     seasonSwitching,
+    nflState,
+    nflStateLoading,
+    nflStateError,
+    refreshNflState,
+    currentFantasyWeek,
     isConnected,
     hasLeague,
     connect,
@@ -1369,6 +1454,11 @@ export function FantasyProvider({ children }) {
     connectError,
     connectLoading,
     seasonSwitching,
+    nflState,
+    nflStateLoading,
+    nflStateError,
+    refreshNflState,
+    currentFantasyWeek,
     isConnected,
     hasLeague,
     connect,

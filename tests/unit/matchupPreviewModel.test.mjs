@@ -82,6 +82,14 @@ test('aggregates slot groups and marks the leading side', () => {
   assert.equal(te.lead, 'b');
 });
 
+test('post-game movers carry the projection delta as a chip, without repeating the game state', () => {
+  const model = buildMatchupPreviewModel({ ...baseInput, nowMs: NOW_MS, phase: 'live', slots: underwaySlots() });
+  for (const entry of [...model.watch.a, ...model.watch.b]) {
+    assert.match(entry.chip, /^[+−]\d+\.\d vs projection$/);
+    assert.match(entry.tag, /^Final · /);
+  }
+});
+
 test('leaves a slot group total null when a starter has no projection', () => {
   const model = buildMatchupPreviewModel({
     ...baseInput,

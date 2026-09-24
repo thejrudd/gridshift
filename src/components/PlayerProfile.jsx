@@ -14,6 +14,7 @@ import { getFantasyLeagueMaxWeek } from '../utils/fantasySeasonWeeks.js';
 import { DEFAULT_SCORING, importLeagueScoring, normalizeScoringProfile } from '../utils/scoringEngine';
 import { getEspnTeamDefensePlayerId, normalizeEspnLeaguePayload } from '../utils/espnFantasyAdapter';
 import { getTeamVisualTheme } from '../utils/teamVisualTheme.js';
+import { rosterHasSleeperPlayer } from '../utils/fantasyOwnership.js';
 import {
   getCompanionInitials,
   getCompanionPositionColor,
@@ -112,14 +113,6 @@ function getStatusTone(status) {
   if (status.includes('Physic') || status.includes('PUP')) return 'info';
   if (status.includes('Suspend')) return 'neutral';
   return 'warning';
-}
-
-function rosterHasSleeperPlayer(roster, sleeperId) {
-  if (!roster || !sleeperId) return false;
-  const normalizedId = String(sleeperId);
-  return ['players', 'reserve', 'taxi'].some((field) => (
-    (roster[field] ?? []).some((playerId) => String(playerId) === normalizedId)
-  ));
 }
 
 function numericSeasonStatValue(value) {
@@ -307,12 +300,14 @@ function summarizeFantasyRow(row = {}) {
   };
 }
 
-const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_MODES.GAME, leagueSeason = CURRENT_SEASON, onModeChange, onBack, backLabel, onCompare, onBuildTrade, tradeDisabled = false, tradeDisabledTitle = 'Trade is not available for the connected platform.', onViewSchedule }) => {
+const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_MODES.GAME, leagueSeason = CURRENT_SEASON, onModeChange, onBack, backLabel, onCompare, onBuildTrade, tradeDisabled = false, tradeDisabledTitle = 'Trade is not available for the connected platform.', onViewSchedule, onOpenFantasyTeam }) => {
   const { getTeamRecord } = usePredictions();
   const {
     hasLeague,
     myRoster,
     rosters,
+    leagueUsers,
+    getUserDisplayName,
     activeScoringSettings,
     league,
     leagues,
@@ -468,9 +463,25 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_
     ?? sleeperId;
   const myRosterData = myRoster();
   const isOnMyRoster = rosterHasSleeperPlayer(myRosterData, sleeperId);
-  const playerOwnerRosterId = sleeperId && !isOnMyRoster
-    ? (rosters ?? []).find((roster) => rosterHasSleeperPlayer(roster, sleeperId))?.roster_id ?? null
+  const playerOwnerRoster = sleeperId && !isOnMyRoster
+    ? (rosters ?? []).find((roster) => rosterHasSleeperPlayer(roster, sleeperId)) ?? null
     : null;
+  const playerOwnerRosterId = playerOwnerRoster?.roster_id ?? null;
+  // The header used to say "Trade Target" and stop there, which named the
+  // opportunity but not the counterparty — you could open a trade from this
+  // page without ever learning whose player you were asking for. The chip now
+  // names the team and leads to it.
+  const playerOwnerLabel = playerOwnerRoster
+    ? (
+      (leagueUsers ?? []).find((user) => user.user_id === playerOwnerRoster.owner_id)
+        ?.metadata?.team_name
+      || getUserDisplayName?.(playerOwnerRoster.owner_id)
+      || `Team ${playerOwnerRosterId}`
+    )
+    : null;
+  const ownerChipRosterId = isOnMyRoster
+    ? myRosterData?.roster_id ?? null
+    : playerOwnerRosterId;
   const tradePartnerRosterId = playerOwnerRosterId != null
     && String(playerOwnerRosterId) !== String(myRosterData?.roster_id ?? '')
     ? playerOwnerRosterId
@@ -982,11 +993,41 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_
                 </span>
               )}
 
-              {hasLeague && sleeperId && (
-                <span className={`statistics-player-hero__roster-pill ${isOnMyRoster ? 'is-rostered' : 'is-target'}`}>
-                  <span className="statistics-player-hero__roster-dot" aria-hidden="true" />
-                  {isOnMyRoster ? 'On Your Roster' : 'Trade Target'}
-                </span>
+              {/* Who holds this player in the connected league, and the two
+                  places that leads. Naming the team is the point: the trade
+                  buttons below open a deal against a manager this page
+                  otherwise never identified. An unrostered player keeps a plain
+                  pill — there is nothing to navigate to. */}
+              {/* Rosters can still be loading; claiming "Free Agent" before
+                  they arrive would be wrong for most players. */}
+              {hasLeague && sleeperId && (rosters?.length ?? 0) > 0 && (
+                ownerChipRosterId != null && onOpenFantasyTeam ? (
+                  <span className={`statistics-player-hero__roster-pill is-linked ${isOnMyRoster ? 'is-rostered' : 'is-target'}`}>
+                    <span className="statistics-player-hero__roster-dot" aria-hidden="true" />
+                    <span className="statistics-player-hero__roster-owner">
+                      {isOnMyRoster ? 'On Your Roster' : playerOwnerLabel}
+                    </span>
+                    <button
+                      type="button"
+                      className="statistics-player-hero__roster-link"
+                      onClick={() => onOpenFantasyTeam({ rosterId: ownerChipRosterId, view: 'roster' })}
+                    >
+                      Roster
+                    </button>
+                    <button
+                      type="button"
+                      className="statistics-player-hero__roster-link"
+                      onClick={() => onOpenFantasyTeam({ rosterId: ownerChipRosterId, view: 'matchup' })}
+                    >
+                      Matchup
+                    </button>
+                  </span>
+                ) : (
+                  <span className={`statistics-player-hero__roster-pill ${isOnMyRoster ? 'is-rostered' : 'is-target'}`}>
+                    <span className="statistics-player-hero__roster-dot" aria-hidden="true" />
+                    {isOnMyRoster ? 'On Your Roster' : 'Free Agent'}
+                  </span>
+                )
               )}
             </div>
 

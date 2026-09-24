@@ -3,9 +3,8 @@ import { ChatCircleTextIcon } from '@phosphor-icons/react/ChatCircleText';
 import { CoffeeIcon } from '@phosphor-icons/react/Coffee';
 import { GithubLogoIcon } from '@phosphor-icons/react/GithubLogo';
 import { ShieldCheckIcon } from '@phosphor-icons/react/ShieldCheck';
+import { CURRENT_RELEASE_URL, GITHUB_REPOSITORY_URL } from '../utils/appLinks.js';
 
-const GITHUB_REPOSITORY_URL = 'https://github.com/thejrudd/nfl-predictor';
-const CURRENT_RELEASE_URL = `${GITHUB_REPOSITORY_URL}/releases/tag/v${__APP_VERSION__}`;
 
 export default function ActionSheet({
   onClose,

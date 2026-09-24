@@ -1,7 +1,7 @@
 {
   "name": "gridshift",
   "private": true,
-  "version": "9.0.2",
+  "version": "9.1.0",
   "description": "An interactive NFL season planner and fantasy football companion.",
   "license": "MIT",
   "repository": {
@@ -19,6 +19,8 @@
     "dev:client": "vite",
     "server": "node --env-file-if-exists=.env server/index.js",
     "build": "vite build",
+    "build:search-index": "node scripts/build-search-index.mjs",
+    "prebuild": "node scripts/build-search-index.mjs",
     "lint": "eslint .",
     "preview": "vite preview",
     "validate:routing": "node scripts/validate-routing.mjs",

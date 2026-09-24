@@ -124,6 +124,19 @@ export function selectMatchupProjectionBaselines(all, { leagueId, season, week, 
     && record.scoringFingerprint === fingerprint).map(record => [record.playerId, record]));
 }
 
+// Every recorded pregame projection for one player across the season, keyed by
+// week. Only weeks whose kickoff was observed pregame have a record, so callers
+// treat a missing week as "not recorded" rather than "no projection existed".
+export function selectPlayerProjectionBaselineWeeks(all, { leagueId, season, playerId, scoringSettings }) {
+  if (playerId == null) return {};
+  const fingerprint = scoringFingerprint(scoringSettings);
+  return Object.fromEntries(Object.values(all ?? {}).filter(record => record.leagueId === String(leagueId)
+    && record.season === String(season) && record.playerId === String(playerId)
+    && record.scoringFingerprint === fingerprint)
+    .map(record => [Number(record.week), Number(record.projection?.projected)])
+    .filter(([week, projected]) => Number.isFinite(week) && Number.isFinite(projected)));
+}
+
 export function summarizeRecordedPregameProjection(players, baselines) {
   const rosterPlayers = (players ?? []).filter((player) => player?.id && player?.name !== 'Empty');
   if (!rosterPlayers.length) return null;

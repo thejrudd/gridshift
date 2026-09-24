@@ -161,6 +161,11 @@ export default defineConfig(({ command }) => ({
         changeOrigin: true,
         secure: false,
       },
+      '/api/players': {
+        target: 'http://127.0.0.1:3001',
+        changeOrigin: true,
+        secure: false,
+      },
       '/api/draft-sync': {
         target: 'http://127.0.0.1:3001',
         changeOrigin: true,
@@ -211,6 +216,9 @@ export default defineConfig(({ command }) => ({
         'icons/maskable-icon-512x512.png',
         'logos/*.png',
         'nfl-data-2026.json',
+        // Global search reads this on a cold start. JSON is not covered by the
+        // default precache glob, so it has to be listed to survive offline.
+        'search-index.v1.json',
       ],
       manifest: {
         name: 'GridShift',
@@ -286,6 +294,20 @@ export default defineConfig(({ command }) => ({
               networkTimeoutSeconds: 8,
               expiration: { maxEntries: 100, maxAgeSeconds: 60 * 60 * 24 },
               cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+          // GridShift player payload cache (season stats, career stats, game
+          // logs). Network first so live data stays fresh; the cached copy
+          // serves offline, and completed-season responses are answered by
+          // the browser HTTP cache without touching the network.
+          {
+            urlPattern: /\/api\/players\//,
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'gridshift-player-data',
+              networkTimeoutSeconds: 10,
+              expiration: { maxEntries: 80, maxAgeSeconds: 60 * 60 * 24 * 30 },
+              cacheableResponse: { statuses: [200] },
             },
           },
           // ESPN Core API ($ref URLs — upgraded to https in playerApi.js)

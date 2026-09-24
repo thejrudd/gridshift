@@ -79,6 +79,7 @@ Use docs/Agent Workflow.md for the full routing rubric, output contracts, comple
 - docs/Fantasy Live.md — Fantasy Live chart, replay, probability, and filter rules.
 - docs/Trade Engine.md and docs/Trade Proposal Cards.md — Trade architecture and card contracts.
 - docs/Scout.md — Scout architecture, APIs, importers, production data, and routing.
+- docs/Global Search.md — global search vocabulary, matching rules, index measurements, and answer-resolver boundaries.
 - For QA, testing, validation, or regression-review tasks, use docs/Agent Workflow.md and the relevant feature references; do not load unrelated material.
 
 ## Design system — Broadcast Editorial

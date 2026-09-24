@@ -616,13 +616,17 @@ const PlayerStatsVisual = ({
   const statLabel = STAT_LABELS[activeSelectedStat] ?? activeSelectedStat;
   const positionGroupLabel = getPositionGroup(position) || 'Position';
   const offenseAxisLabel = getMetricModeLabel(activeOffenseMode, statLabel);
-  const defenseAxisLabel = getMetricModeLabel(activeDefenseMode, statLabel);
+  // "Sacks Taken" describes the QB; the opposing defense is measured by the sacks it records.
+  const defenseStatLabel = activeSelectedStat === 'pass_sack' && activeDefenseMode !== METRIC_MODES.FANTASY ? 'Sacks' : statLabel;
+  const defenseAxisLabel = getMetricModeLabel(activeDefenseMode, defenseStatLabel);
   const offenseCardLabel = activeOffenseMode === METRIC_MODES.FANTASY
     ? `Fantasy Points From ${statLabel}`
     : statLabel;
   const defenseCardLabel = activeDefenseMode === METRIC_MODES.FANTASY
     ? `Avg Fantasy Points From ${statLabel} To ${positionGroupLabel}`
-    : `Avg ${statLabel} To ${positionGroupLabel}`;
+    : activeSelectedStat === 'pass_sack'
+      ? `Avg Sacks On ${positionGroupLabel}s`
+      : `Avg ${statLabel} To ${positionGroupLabel}`;
   const isCompactChart = chartWidth < 640;
   const chartHeight = isCompactChart ? MOBILE_CHART_HEIGHT : CHART_HEIGHT;
   const chartMargins = isCompactChart ? MOBILE_CHART_MARGINS : CHART_MARGINS;

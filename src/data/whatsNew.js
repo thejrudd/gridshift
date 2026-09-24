@@ -533,4 +533,49 @@ export const WHATS_NEW = [
       },
     ],
   },
+  {
+    version: '9.1.0',
+    title: 'Global Search & NFL Matchup Intelligence',
+    features: [
+      {
+        id: 'global-search',
+        name: 'Global Search',
+        description: 'Find players, teams, games, fantasy rosters, app views, and commands from anywhere, with supported questions answered inline.',
+        steps: [{
+          route: { activeTab: 'fantasy', companionView: 'matchups' },
+          anchor: '[data-tour="global-search"]',
+          anchorMobile: null,
+          title: 'Search GridShift',
+          body: 'Press Cmd/Ctrl+K or open Search to find players, NFL teams, games, fantasy rosters, app views, and commands. Try a supported stats or standings question for an inline answer.',
+          placement: 'auto',
+        }],
+      },
+      {
+        id: 'fantasy-stat-accuracy',
+        name: 'Fantasy stat accuracy',
+        description: 'Keep Heatmap stat views and team-wide Defense totals consistent with the selected stats and underlying game production.',
+        steps: [{
+          route: { activeTab: 'fantasy', companionView: 'heatmap' },
+          anchor: '[data-tour="companion-view-heatmap"]',
+          anchorMobile: null,
+          title: 'Keep Fantasy stat totals consistent',
+          body: 'QB Sacks Taken and INTs Thrown now stay selected in the Heatmap route and shared links. Defense and Heatmap team totals also count passing production once.',
+          placement: 'auto',
+        }],
+      },
+      {
+        id: 'nfl-matchup-drilldown',
+        name: 'NFL matchup drill-in',
+        description: 'Open a scheduled game for pregame comparison, live context, and a final review of the matchup.',
+        steps: [{
+          route: { activeTab: 'statistics', statisticsView: 'schedule', statisticsScheduleMode: 'week' },
+          anchor: '[data-tour="statistics-view-schedule"]',
+          anchorMobile: null,
+          title: 'Open an NFL matchup',
+          body: 'In Statistics Schedule, view games by week or by team and open a regular-season matchup to compare the teams, follow the game, or review the final result.',
+          placement: 'auto',
+        }],
+      },
+    ],
+  },
 ];

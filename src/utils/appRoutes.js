@@ -46,7 +46,8 @@ const DEFAULT_ROUTE = {
   statisticsScheduleWeek: null,
   statisticsScheduleTeamId: null,
   statisticsScheduleFilter: null,
-  companionView: 'rosters',
+  statisticsScheduleGameId: null,
+  companionView: 'matchups',
   leagueView: 'standings',
   rankingsPosition: null,
   rankingsRosterId: null,
@@ -77,6 +78,9 @@ const DEFAULT_ROUTE = {
   defenseSort: null,
   defenseDir: null,
   defenseQuery: null,
+  defensePinnedTeams: null,
+  defenseReturnGameId: null,
+  defenseReturnTeamId: null,
   tradeView: 'agent',
   tradePlayerId: null,
   tradeSide: null,
@@ -92,6 +96,21 @@ function normalizeTeamId(teamId) {
   if (typeof teamId !== 'string') return null;
   const value = teamId.trim();
   return value ? value.toUpperCase() : null;
+}
+
+// A schedule game id is an opaque provider id (ESPN event id or schedule key);
+// only characters that survive a query string untouched are kept.
+function normalizeScheduleGameId(gameId) {
+  if (gameId == null) return null;
+  const value = String(gameId).trim();
+  return /^[A-Za-z0-9_.:-]{1,64}$/.test(value) ? value : null;
+}
+
+// Pinned defenses arrive as "KC,BUF"; keep up to two distinct team ids.
+function normalizePinnedTeams(value) {
+  const list = Array.isArray(value) ? value : typeof value === 'string' ? value.split(',') : [];
+  const teams = [...new Set(list.map(normalizeTeamId).filter((team) => team && /^[A-Z]{2,3}$/.test(team)))].slice(0, 2);
+  return teams.length ? teams.join(',') : null;
 }
 
 function normalizePlayerId(playerId) {
@@ -214,7 +233,7 @@ export function getDefaultRouteForTab(tab) {
       return { ...DEFAULT_ROUTE, activeTab: 'statistics', statisticsView: 'browser' };
     case 'fantasy':
     case 'companion':
-      return { ...DEFAULT_ROUTE, activeTab: 'fantasy', companionView: 'rosters' };
+      return { ...DEFAULT_ROUTE, activeTab: 'fantasy', companionView: 'matchups' };
     case 'league':
       return { ...DEFAULT_ROUTE, activeTab: 'league', leagueView: 'standings' };
     case 'trade':
@@ -259,6 +278,12 @@ export function normalizeAppRoute(route = {}) {
         statisticsScheduleWeek,
         statisticsScheduleTeamId,
         statisticsScheduleFilter,
+        // A drill-in needs enough route context to find its schedule row: a
+        // selected team in By Team, or a selected week in By Week.
+        statisticsScheduleGameId: (
+          (statisticsScheduleMode === 'team' && statisticsScheduleTeamId)
+          || (statisticsScheduleMode === 'week' && statisticsScheduleWeek != null)
+        ) ? normalizeScheduleGameId(route.statisticsScheduleGameId) : null,
       };
     }
 
@@ -356,7 +381,7 @@ export function normalizeAppRoute(route = {}) {
       normalized.heatmapViewMode = normalizeLowerToken(route.heatmapViewMode, new Set(['offense', 'defense']), 'offense');
       normalized.heatmapPosition = normalizePosition(route.heatmapPosition);
       normalized.heatmapDefensePosition = normalizePosition(route.heatmapDefensePosition);
-      normalized.heatmapStatMode = normalizeLowerToken(route.heatmapStatMode, new Set(['pts', 'rec_yd', 'rush_yd', 'game_score', 'vegas_odds']), 'pts');
+      normalized.heatmapStatMode = normalizeLowerToken(route.heatmapStatMode, new Set(['pts', 'rec_yd', 'rush_yd', 'pass_td', 'rec_td', 'rush_td', 'total_td', 'pass_sack', 'pass_int', 'game_score', 'vegas_odds']), 'pts');
       normalized.heatmapDefenseStatMode = normalizeLowerToken(route.heatmapDefenseStatMode, new Set(['pts', 'sack', 'int', 'def_td', 'safe', 'tkl_loss', 'qb_hit', 'idp_sack', 'idp_int', 'idp_ff', 'idp_tkl_loss', 'idp_pd', 'idp_qbhit', 'idp_def_td']), 'pts');
       normalized.heatmapScope = normalizeLowerToken(route.heatmapScope, new Set(['overall', 'week', 'team']), 'overall');
       normalized.heatmapLocation = normalizeLowerToken(route.heatmapLocation, new Set(['all', 'home', 'away']), 'all');
@@ -375,14 +400,16 @@ export function normalizeAppRoute(route = {}) {
         RB: new Set(['rush_att', 'rush_yd', 'rush_td', 'rec', 'rec_yd', 'rec_td']),
         WR: new Set(['rec', 'rec_yd', 'rec_td', 'rush_yd', 'rush_td']),
         TE: new Set(['rec', 'rec_yd', 'rec_td', 'rush_yd', 'rush_td']),
+        K: new Set(['fgm', 'fgmiss', 'xpm', 'xpmiss']),
       };
-      const normalizedDefensePosition = ['ALL', 'QB', 'RB', 'WR', 'TE'].includes(defensePosition) ? defensePosition : 'ALL';
+      const normalizedDefensePosition = ['ALL', 'QB', 'RB', 'WR', 'TE', 'K'].includes(defensePosition) ? defensePosition : 'ALL';
       const defaultDefenseStatByPosition = {
         ALL: 'total_yd',
         QB: 'pass_yd',
         RB: 'rush_att',
         WR: 'rec',
         TE: 'rec',
+        K: 'fgm',
       };
       const defaultDefenseStat = defaultDefenseStatByPosition[normalizedDefensePosition] ?? 'total_yd';
       normalized.defenseMode = normalizeLowerToken(route.defenseMode, new Set(['stats', 'fantasy']), 'stats');
@@ -391,6 +418,12 @@ export function normalizeAppRoute(route = {}) {
       normalized.defenseSort = normalizeLowerToken(route.defenseSort, new Set(['total', 'avg', 'team']), 'total');
       normalized.defenseDir = normalizeLowerToken(route.defenseDir, new Set(['asc', 'desc']), 'desc');
       normalized.defenseQuery = typeof route.defenseQuery === 'string' ? route.defenseQuery.trim() || null : null;
+      normalized.defensePinnedTeams = normalizePinnedTeams(route.defensePinnedTeams);
+      // A return trip needs both the team whose schedule was open and the game.
+      const returnGameId = normalizeScheduleGameId(route.defenseReturnGameId);
+      const returnTeamId = normalizeTeamId(route.defenseReturnTeamId);
+      normalized.defenseReturnGameId = returnGameId && returnTeamId ? returnGameId : null;
+      normalized.defenseReturnTeamId = returnGameId && returnTeamId ? returnTeamId : null;
     }
 
     return normalized;
@@ -476,6 +509,7 @@ export function parseAppRoute(pathname = '/', search = '') {
           statisticsScheduleWeek: parseQueryValue(searchParams, 'week'),
           statisticsScheduleTeamId: parseQueryValue(searchParams, 'team'),
           statisticsScheduleFilter: parseQueryValue(searchParams, 'filter'),
+          statisticsScheduleGameId: parseQueryValue(searchParams, 'game'),
         });
       }
       if (statisticsSubview === 'standings') {
@@ -533,6 +567,9 @@ export function parseAppRoute(pathname = '/', search = '') {
         defenseSort: parseQueryValue(searchParams, 'sort'),
         defenseDir: parseQueryValue(searchParams, 'dir'),
         defenseQuery: parseQueryValue(searchParams, 'q'),
+        defensePinnedTeams: parseQueryValue(searchParams, 'pin'),
+        defenseReturnGameId: parseQueryValue(searchParams, 'fromGame'),
+        defenseReturnTeamId: parseQueryValue(searchParams, 'fromTeam'),
       });
     case 'league':
       return normalizeAppRoute({ activeTab: 'league', leagueView: subview });
@@ -575,6 +612,9 @@ export function parseAppRoute(pathname = '/', search = '') {
         defenseSort: parseQueryValue(searchParams, 'sort'),
         defenseDir: parseQueryValue(searchParams, 'dir'),
         defenseQuery: parseQueryValue(searchParams, 'q'),
+        defensePinnedTeams: parseQueryValue(searchParams, 'pin'),
+        defenseReturnGameId: parseQueryValue(searchParams, 'fromGame'),
+        defenseReturnTeamId: parseQueryValue(searchParams, 'fromTeam'),
       });
     case 'trade':
       return normalizeAppRoute({
@@ -621,6 +661,7 @@ export function buildAppPath(route) {
           ['week', normalized.statisticsScheduleMode === 'week' ? normalized.statisticsScheduleWeek : null],
           ['team', normalized.statisticsScheduleMode === 'team' ? normalized.statisticsScheduleTeamId : null],
           ['filter', normalized.statisticsScheduleFilter],
+          ['game', normalized.statisticsScheduleGameId],
         ])}`;
       }
       if (normalized.statisticsView === 'standings') {
@@ -708,6 +749,7 @@ export function buildAppPath(route) {
           RB: 'rush_att',
           WR: 'rec',
           TE: 'rec',
+          K: 'fgm',
         };
         const defaultDefenseStat = defaultDefenseStatByPosition[normalized.defensePosition] ?? 'total_yd';
         return `${basePath}${buildQueryString([
@@ -717,6 +759,9 @@ export function buildAppPath(route) {
           ['sort', normalized.defenseSort !== 'total' ? normalized.defenseSort : null],
           ['dir', normalized.defenseDir !== 'desc' ? normalized.defenseDir : null],
           ['q', normalized.defenseQuery],
+          ['pin', normalized.defensePinnedTeams],
+          ['fromGame', normalized.defenseReturnGameId],
+          ['fromTeam', normalized.defenseReturnTeamId],
         ])}`;
       }
       return basePath;
@@ -775,6 +820,7 @@ export function isSameAppRoute(a, b) {
     && left.statisticsScheduleWeek === right.statisticsScheduleWeek
     && left.statisticsScheduleTeamId === right.statisticsScheduleTeamId
     && left.statisticsScheduleFilter === right.statisticsScheduleFilter
+    && left.statisticsScheduleGameId === right.statisticsScheduleGameId
     && left.companionView === right.companionView
     && left.leagueView === right.leagueView
     && left.rankingsPosition === right.rankingsPosition
@@ -806,6 +852,9 @@ export function isSameAppRoute(a, b) {
     && left.defenseSort === right.defenseSort
     && left.defenseDir === right.defenseDir
     && left.defenseQuery === right.defenseQuery
+    && left.defensePinnedTeams === right.defensePinnedTeams
+    && left.defenseReturnGameId === right.defenseReturnGameId
+    && left.defenseReturnTeamId === right.defenseReturnTeamId
     && left.tradeView === right.tradeView
     && left.tradePlayerId === right.tradePlayerId
     && left.tradeSide === right.tradeSide

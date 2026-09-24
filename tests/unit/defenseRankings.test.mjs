@@ -224,6 +224,31 @@ describe('defense rankings', () => {
     assert.equal(avgRows.find(row => row.team === 'DEN').avg, null);
   });
 
+  it('counts a passing touchdown or completion once in the All totals', () => {
+    const allPlayers = {
+      ...players,
+      wr1: { player_id: 'wr1', full_name: 'Road WR', position: 'WR', team: 'BUF' },
+    };
+    const allWeeklyStats = {
+      qb1: [{ week: 1, team: 'BUF', opp: 'KC', pass_yd: 250, pass_td: 2, rush_yd: 10, rush_td: 1 }],
+      wr1: [{ week: 1, team: 'BUF', opp: 'KC', rec: 5, rec_yd: 120, rec_td: 2 }],
+    };
+    const build = stat => buildDefenseRankingRows({
+      weeklyStats: allWeeklyStats,
+      players: allPlayers,
+      scheduleMap,
+      scoringSettings: DEFAULT_SCORING,
+      position: 'ALL',
+      mode: 'stats',
+      stat,
+      teams: ['BUF', 'KC'],
+    }).find(row => row.team === 'KC');
+
+    // 2 receiving TDs (the same two passing TDs) + 1 rushing TD.
+    assert.equal(build('total_td').total, 3);
+    assert.equal(build('total_yd').total, 130);
+  });
+
   it('defaults each position to the first visible stat option', () => {
     assert.equal(getDefaultDefenseRankingStat('QB'), 'pass_yd');
     assert.equal(getDefaultDefenseRankingStat('RB'), 'rush_att');

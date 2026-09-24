@@ -172,7 +172,14 @@ function SortHeader({ active, dir, children, onClick, align = 'right' }) {
   );
 }
 
-export default function CompanionDefense({ routeState, onRouteStateChange }) {
+export default function CompanionDefense({
+  routeState,
+  onRouteStateChange,
+  pinnedTeams = [],
+  returnMatchup = null,
+  onReturnToMatchup = null,
+  onClearMatchup = null,
+}) {
   const {
     hasLeague,
     season,
@@ -243,6 +250,20 @@ export default function CompanionDefense({ routeState, onRouteStateChange }) {
     return rows.filter(row => abbreviationMatches.has(row.team) || getTeamDisplayName(row.team).toUpperCase().includes(query));
   }, [rows, state.query]);
   const hasDefenseData = rows.some((row) => row.contributions.length > 0);
+  // Defenses opened from a Schedule matchup pin both teams above the list.
+  // They move rather than repeat, and keep their carried strength rank.
+  const pinnedKey = pinnedTeams.join(',');
+  const pinnedRows = useMemo(() => {
+    const wanted = pinnedKey ? pinnedKey.split(',') : [];
+    return wanted.map((team) => rows.find((row) => row.team === team)).filter(Boolean);
+  }, [pinnedKey, rows]);
+  const showPinned = pinnedRows.length > 0 && !state.query.trim();
+  const listRows = showPinned
+    ? filteredRows.filter((row) => !pinnedRows.includes(row))
+    : filteredRows;
+  const matchupOpponent = returnMatchup
+    ? pinnedTeams.find((team) => team !== returnMatchup.teamId) ?? null
+    : null;
   const selectedRow = useMemo(
     () => seasonStarted ? (rows.find(row => row.team === selectedTeam) ?? null) : null,
     [rows, seasonStarted, selectedTeam],
@@ -250,8 +271,71 @@ export default function CompanionDefense({ routeState, onRouteStateChange }) {
   const detailWeeks = useMemo(() => groupContributionsByWeek(selectedRow), [selectedRow]);
   const loading = seasonStarted && (!players || !weeklyStats || !scheduleMap || statsLoading || statsEnhancing);
 
+  const renderRow = (row, pinned = false) => (
+    <CompanionPlayerRow
+      key={`${pinned ? 'pin' : 'row'}-${row.team}`}
+      player={{
+        id: row.team,
+        name: getTeamDisplayName(row.team),
+        team: row.team,
+        position: 'DEF',
+        logoKey: (ESPN_LOGO_KEY[row.team] ?? row.team).toLowerCase(),
+      }}
+      darkMode={darkMode}
+      interactive
+      compact={compactRows}
+      showAccentRail={false}
+      showAvatar={false}
+      showPosition={false}
+      showTeamLogo={false}
+      identityAccessory={(
+        <img
+          className="companion-defense-inline-logo"
+          src={getTeamLogoUrl(row.team)}
+          alt=""
+          aria-hidden="true"
+          loading="lazy"
+          decoding="async"
+        />
+      )}
+      gridTemplate="44px minmax(0,1fr) minmax(164px, 224px) 12px"
+      compactGridTemplate="38px minmax(0,1fr) minmax(112px, 1fr) 12px"
+      columnGridTemplate={compactRows ? 'repeat(2, minmax(0, 1fr))' : '112px 112px'}
+      columns={[
+        <CompanionPlayerMetric key="total" value={formatDefenseRankingValue(row.total, { mode: state.mode, stat: state.stat })} label="Total" />,
+        <CompanionPlayerMetric key="avg" value={formatDefenseRankingValue(row.avg, { mode: state.mode, stat: state.stat, scope: 'avg' })} label="Per Game" />,
+      ]}
+      leading={(
+        <span className="companion-defense-rank">#{row.strengthRank}</span>
+      )}
+      trailing={<span className="companion-defense-row-chevron" aria-hidden="true">&gt;</span>}
+      onClick={() => setSelectedTeam(row.team)}
+      ariaLabel={`Open ${getTeamDisplayName(row.team)} defense details`}
+      className={`companion-defense-row${pinned ? ' is-pinned' : ''}`}
+      style={{
+        borderLeftWidth: 4,
+        borderRadius: 0,
+        borderBottom: '1px solid var(--color-separator)',
+      }}
+    />
+  );
+
   return (
     <div className="companion-defense-shell page-frame-data pb-6">
+      {returnMatchup && onReturnToMatchup && (
+        <div className="companion-defense-return mx-4 mb-3">
+          <button type="button" className="companion-defense-return__back" onClick={onReturnToMatchup}>
+            <span aria-hidden="true">←</span>
+            {matchupOpponent ? `Back to ${returnMatchup.teamId} vs ${matchupOpponent}` : 'Back to matchup'}
+          </button>
+          <span className="companion-defense-return__copy">Opened from Statistics › Schedule</span>
+          {onClearMatchup && (
+            <button type="button" className="companion-defense-return__clear" onClick={onClearMatchup} aria-label="Unpin matchup teams">
+              ×
+            </button>
+          )}
+        </div>
+      )}
       {hasDefenseData && <div className="companion-defense-toolbar px-4 pb-3">
         <button
           type="button"
@@ -363,54 +447,14 @@ export default function CompanionDefense({ routeState, onRouteStateChange }) {
             skeletonClassName="companion-defense-row-list"
             skeleton={<SkeletonRows count={8} height="3.25rem" rowClassName="!rounded-none" />}
           >
-            {filteredRows.map(row => (
-              <CompanionPlayerRow
-                key={row.team}
-                player={{
-                  id: row.team,
-                  name: getTeamDisplayName(row.team),
-                  team: row.team,
-                  position: 'DEF',
-                  logoKey: (ESPN_LOGO_KEY[row.team] ?? row.team).toLowerCase(),
-                }}
-                darkMode={darkMode}
-                interactive
-                compact={compactRows}
-                showAccentRail={false}
-                showAvatar={false}
-                showPosition={false}
-                showTeamLogo={false}
-                identityAccessory={(
-                  <img
-                    className="companion-defense-inline-logo"
-                    src={getTeamLogoUrl(row.team)}
-                    alt=""
-                    aria-hidden="true"
-                    loading="lazy"
-                    decoding="async"
-                  />
-                )}
-                gridTemplate="44px minmax(0,1fr) minmax(164px, 224px) 12px"
-                compactGridTemplate="38px minmax(0,1fr) minmax(112px, 1fr) 12px"
-                columnGridTemplate={compactRows ? 'repeat(2, minmax(0, 1fr))' : '112px 112px'}
-                columns={[
-                  <CompanionPlayerMetric key="total" value={formatDefenseRankingValue(row.total, { mode: state.mode, stat: state.stat })} label="Total" />,
-                  <CompanionPlayerMetric key="avg" value={formatDefenseRankingValue(row.avg, { mode: state.mode, stat: state.stat, scope: 'avg' })} label="Per Game" />,
-                ]}
-                leading={(
-                  <span className="companion-defense-rank">#{row.strengthRank}</span>
-                )}
-                trailing={<span className="companion-defense-row-chevron" aria-hidden="true">&gt;</span>}
-                onClick={() => setSelectedTeam(row.team)}
-                ariaLabel={`Open ${getTeamDisplayName(row.team)} defense details`}
-                className="companion-defense-row"
-                style={{
-                  borderLeftWidth: 4,
-                  borderRadius: 0,
-                  borderBottom: '1px solid var(--color-separator)',
-                }}
-              />
-            ))}
+            {showPinned && (
+              <div className="companion-defense-pinned" role="group" aria-label="Defenses in this matchup">
+                <div className="companion-defense-pinned__label">In this matchup</div>
+                {pinnedRows.map((row) => renderRow(row, true))}
+                <div className="companion-defense-pinned__label">All defenses</div>
+              </div>
+            )}
+            {listRows.map((row) => renderRow(row))}
           </LoadingSwap>
           {!loading && filteredRows.length === 0 && (
             <div className="companion-defense-empty">No defenses match that team search.</div>

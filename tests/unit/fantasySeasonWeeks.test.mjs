@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  getFantasyCurrentWeek,
   getFantasyLeagueCurrentWeek,
   getFantasyLeagueMaxWeek,
   getSleeperCurrentWeek,
@@ -26,6 +27,22 @@ test('live Sleeper state uses the current regular-season leg', () => {
 test('live Sleeper state does not use a stale display week or another season', () => {
   assert.equal(getSleeperCurrentWeek({ season: '2026', leg: 2, week: 2, display_week: 1 }, '2026'), 2);
   assert.equal(getSleeperCurrentWeek({ league_season: '2026', leg: 2 }, '2025'), null);
+});
+
+test('shared fantasy week prefers live Sleeper state over a stale league snapshot', () => {
+  assert.equal(getFantasyCurrentWeek({
+    season: '2026',
+    state: { season: '2026', leg: 3, week: 3, display_week: 2 },
+    league: { season: '2026', settings: { leg: 2, last_scored_leg: 1 } },
+  }), 3);
+});
+
+test('shared fantasy week keeps historical leagues on their own snapshot', () => {
+  assert.equal(getFantasyCurrentWeek({
+    season: '2025',
+    state: { season: '2026', leg: 3, week: 3 },
+    league: { season: '2025', settings: { last_scored_leg: 11 } },
+  }), 12);
 });
 
 test('sleeper league ends at the final playoff week', () => {

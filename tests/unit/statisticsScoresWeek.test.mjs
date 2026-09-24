@@ -2,7 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { STATISTICS_SCORES_PRESEASON_FIXTURE } from '../../src/data/statisticsScoresFixtures.js';
 import { NFL_SEASON_PHASES } from '../../src/utils/espnNflScoreboard.js';
-import { resolveStatisticsScoresCurrentWeekId } from '../../src/utils/statisticsScoresWeek.js';
+import {
+  resolveStatisticsScoresCurrentWeekId,
+  resolveStatisticsScoresWeekId,
+} from '../../src/utils/statisticsScoresWeek.js';
 
 function makeWeek(id, phase, kickoffs) {
   return {
@@ -55,6 +58,18 @@ test('preserves kickoff-based rollover for regular-season weeks', () => {
     phase: NFL_SEASON_PHASES.REGULAR,
     now: '2026-09-17T16:00:00.000Z',
   }), 'reg-1');
+});
+
+test('maps the shared fantasy current week to fixture and ESPN Scores IDs', () => {
+  const weeks = [
+    { id: 'reg-1', week: 1 },
+    { id: 'reg-3', week: 3 },
+    { id: 'reg-4', week: 4 },
+  ];
+
+  assert.equal(resolveStatisticsScoresWeekId(weeks, 3), 'reg-3');
+  assert.equal(resolveStatisticsScoresWeekId([{ id: '3' }], 3), '3');
+  assert.equal(resolveStatisticsScoresWeekId(weeks, 2), null);
 });
 
 test('falls back to the first available week when no games have valid kickoff dates', () => {

@@ -8,6 +8,7 @@ import {
   describePlayerNegativeStats,
   describePlayerStandoutStat,
   getNoteworthyWeather,
+  getPaceAdjustedProjection,
   getPlayerPerformanceTarget,
   getPlayerMatchupPhase,
   getRangeMarkerPosition,
@@ -204,4 +205,20 @@ test('weather promotion is outdoor-only and range markers clamp to the expected 
   assert.equal(getRangeMarkerPosition(15, 10, 20), 50);
   assert.equal(getRangeMarkerPosition(25, 10, 20), 100);
   assert.equal(getRangeMarkerPosition(null, 10, 20), null);
+});
+
+test('getPaceAdjustedProjection moves a live projection with pace and leaves other phases alone', () => {
+  const now = Date.parse('2026-09-13T18:00:00Z');
+  const scheduleEntry = { kickoff: '2026-09-13T17:00:00Z', completed: false };
+  const args = { phase: 'live', projected: 20, scheduleEntry, now };
+  const target = getPlayerPerformanceTarget({ ...args, total: 0 });
+  const onPace = getPaceAdjustedProjection({ ...args, total: target });
+  const ahead = getPaceAdjustedProjection({ ...args, total: target + 8 });
+  const behind = getPaceAdjustedProjection({ ...args, total: 0 });
+  assert.ok(Math.abs(onPace - 20) < 0.2);
+  assert.ok(ahead > onPace);
+  assert.ok(behind < onPace);
+  assert.equal(getPaceAdjustedProjection({ ...args, phase: 'pregame', total: 0 }), null);
+  assert.equal(getPaceAdjustedProjection({ ...args, phase: 'final', total: 22 }), null);
+  assert.equal(getPaceAdjustedProjection({ ...args, projected: null, total: 5 }), null);
 });

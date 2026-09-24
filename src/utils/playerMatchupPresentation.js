@@ -1,5 +1,6 @@
 import { buildFantasyScoringBreakdown } from './fantasyBreakdownRows.js';
 import { getFallbackRemainingGameFraction } from './liveScoringFeed.js';
+import { getPaceProjectedFinal, getStarterOutlook, PACE_PROJECTION_MODEL } from './liveWinProbability.js';
 
 const OUTLOOK_LEVELS = [
   { min: 0.55, label: 'Strong outlook', tone: 'strong' },
@@ -235,6 +236,32 @@ export function getPlayerPerformanceTarget({
     now,
   });
   return projection * (1 - remainingFraction);
+}
+
+/**
+ * Full-game projection for a player whose game is in progress, moved by how
+ * far ahead of or behind the elapsed-game pace they are: points so far plus
+ * the un-played share of the projection, adjusted by the pace gap. Returns
+ * null unless the game is live with a usable projection, so pregame and
+ * settled players keep the plain projection.
+ */
+export function getPaceAdjustedProjection({
+  phase,
+  total,
+  projected,
+  scheduleEntry = null,
+  now = Date.now(),
+} = {}) {
+  const projection = matchupNumber(projected);
+  if (phase !== 'live' || projection == null) return null;
+  const current = matchupNumber(total) ?? 0;
+  const outlook = getStarterOutlook({
+    current,
+    projection: { projected: projection },
+    fraction: getFallbackRemainingGameFraction({ scheduleEntry, currentPoints: current, now }),
+    model: PACE_PROJECTION_MODEL,
+  });
+  return getPaceProjectedFinal(outlook);
 }
 
 // The default stat line is football context, not every scoring rule. Preserve

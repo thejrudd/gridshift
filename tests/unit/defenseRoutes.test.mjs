@@ -22,3 +22,11 @@ test('Defense ranking filters remain explicit when a non-default position is sel
 
   assert.equal(buildAppPath(route), '/fantasy/defenses?pos=QB&stat=pass_td');
 });
+
+test('Heatmap offense stat chips survive route normalization', () => {
+  for (const stat of ['pass_td', 'rec_td', 'rush_td', 'total_td', 'pass_sack', 'pass_int']) {
+    const route = normalizeAppRoute({ activeTab: 'fantasy', companionView: 'heatmap', heatmapStatMode: stat });
+    assert.equal(buildAppPath(route), `/fantasy/heatmap?stat=${stat}`);
+    assert.equal(parseAppRoute('/fantasy/heatmap', `?stat=${stat}`).heatmapStatMode, stat);
+  }
+});

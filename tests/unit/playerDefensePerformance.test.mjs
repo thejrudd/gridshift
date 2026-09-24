@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { DEFAULT_SCORING } from '../../src/utils/scoringEngine.js';
-import { getCachedOffenseAllowedTable, getHeatmapOffenseStatValue } from '../../src/utils/fantasyHeatmapData.js';
-import { buildPlayerDefensePerformance } from '../../src/utils/playerDefensePerformance.js';
+import { getCachedOffenseAllowedTable, getHeatmapOffenseStatValue, resolveHeatmapOffenseStatMode } from '../../src/utils/fantasyHeatmapData.js';
+import { buildPlayerDefensePerformance, buildPlayerFormRows } from '../../src/utils/playerDefensePerformance.js';
 
 function twoTeamSchedule(weeks) {
   return Object.fromEntries(weeks.map((week) => [week, {
@@ -36,6 +36,36 @@ describe('Fantasy Heatmap shared offense aggregation', () => {
     );
   });
 
+  it('aggregates passing, rushing, receiving, and total touchdowns per position', () => {
+    const players = {
+      qb: { position: 'QB', team: 'BUF' },
+      wr: { position: 'WR', team: 'BUF' },
+      rb: { position: 'RB', team: 'BUF' },
+    };
+    const weeklyStats = {
+      qb: [{ week: 1, team: 'BUF', pass_td: 2, rush_td: 1 }],
+      wr: [{ week: 1, team: 'BUF', rec_td: 2 }],
+      rb: [{ week: 1, team: 'BUF', rush_td: 1, rec_td: 1 }],
+    };
+    const table = (statMode, position = 'QB') => getCachedOffenseAllowedTable(
+      weeklyStats,
+      players,
+      {},
+      DEFAULT_SCORING,
+      resolveHeatmapOffenseStatMode(statMode, position),
+    );
+
+    assert.deepEqual(table('pass_td'), { BUF: { QB: { 1: 2 } } });
+    assert.deepEqual(table('rush_td'), { BUF: { QB: { 1: 1 }, RB: { 1: 1 } } });
+    assert.deepEqual(table('rec_td'), { BUF: { WR: { 1: 2 }, RB: { 1: 1 } } });
+    // A QB's own total is passing + rushing.
+    assert.deepEqual(table('total_td', 'QB'), { BUF: { QB: { 1: 3 }, WR: { 1: 2 }, RB: { 1: 2 } } });
+    // ALL leaves passing out: the QB's 2 passing TDs are the WR's 2 receiving TDs.
+    assert.deepEqual(table('total_td', 'ALL'), { BUF: { QB: { 1: 1 }, WR: { 1: 2 }, RB: { 1: 2 } } });
+    assert.equal(resolveHeatmapOffenseStatMode('total_td', 'WR'), 'total_td');
+    assert.equal(resolveHeatmapOffenseStatMode('rush_td', 'ALL'), 'rush_td');
+  });
+
   it('preserves Heatmap’s positive-only values and traded-player fallback team', () => {
     const players = {
       traded: { position: 'WR', team: 'NEW' },
@@ -59,6 +89,26 @@ describe('Fantasy Heatmap shared offense aggregation', () => {
 });
 
 describe('player defense performance', () => {
+  it('keeps the selected player season form current when the schedule is not a full slate', () => {
+    const players = { target: { position: 'QB', team: 'OFF' } };
+    const weeklyStats = {
+      target: [
+        { week: 1, team: 'OFF', pass_yd: 250, gp: 1 },
+        { week: 2, team: 'OFF', pass_yd: 500, gp: 1 },
+      ],
+    };
+    const scheduleMap = {
+      1: { OFF: { opp: 'DEF', home: false }, DEF: { opp: 'OFF', home: true } },
+      2: { OFF: { opp: 'DEF', home: false }, DEF: { opp: 'OFF', home: true }, OTHER: { opp: 'THIRD', completed: false } },
+    };
+    const rows = buildPlayerFormRows({
+      playerId: 'target', player: players.target, weeklyStats, scheduleMap,
+      scoringSettings: { pass_yd: 0.04 }, throughWeek: 2,
+    });
+    assert.deepEqual(rows.map(row => row.week), [1, 2]);
+    assert.equal(rows.reduce((sum, row) => sum + row.points, 0) / rows.length, 15);
+  });
+
   it('includes the selected week once at least one game has finished', () => {
     const players = { target: { position: 'RB', team: 'OFF' } };
     const weeklyStats = { target: [{ week: 2, team: 'OFF', rush_yd: 40 }] };

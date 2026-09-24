@@ -892,7 +892,7 @@
 
 .scores-team-stat-groups { columns: 2; column-gap: 44px; }
 .scores-team-stat-group { break-inside: avoid; margin-bottom: 28px; }
-.scores-team-stat-group > h3 { padding-bottom: 7px; border-bottom: 2px solid var(--color-label); font-size: var(--type-label); letter-spacing: 0.12em; }
+.scores-team-stat-group > h3 { padding-bottom: 8px; border-bottom: 2px solid var(--color-label); font-size: var(--type-heading-md); letter-spacing: 0.08em; line-height: 1.1; }
 
 .scores-player-category-rail {
   display: flex;
@@ -960,7 +960,7 @@
   display: grid;
   width: 100%;
   min-height: 44px;
-  grid-template-columns: auto minmax(0, 1fr) 20px;
+  grid-template-columns: auto auto minmax(0, 1fr) 20px;
   align-items: center;
   gap: 9px;
   padding: 0;
@@ -978,13 +978,18 @@
 .scores-player-table tbody tr.is-expanded > th,
 .scores-player-table tbody tr.is-expanded > td { background: var(--color-fill-tertiary); }
 
-.scores-player-team-identity { display: inline-flex; min-width: 44px; align-items: center; gap: 6px; }
+/* Fixed width so the headshot column lines up whether the code is LV or DEN. */
+.scores-player-team-identity { display: inline-flex; width: 58px; align-items: center; gap: 6px; }
 .scores-player-team-logo-slot { display: grid; width: 24px; height: 24px; flex: 0 0 24px; place-items: center; }
 .scores-player-team-logo-slot img { display: block; width: 22px; height: 22px; object-fit: contain; }
 .scores-player-team-code { color: var(--color-label-tertiary); font-family: var(--font-display, 'Barlow Condensed', sans-serif); font-size: var(--type-micro); font-weight: 800; letter-spacing: 0.08em; }
 .scores-player-row-name { display: grid; min-width: 0; gap: 1px; }
 .scores-player-row-name > strong { min-width: 0; overflow-wrap: anywhere; }
-.scores-player-row-name > small { color: var(--color-label-tertiary); font-size: var(--type-micro); font-weight: 650; }
+.scores-player-row-name > small { display: flex; min-width: 0; align-items: center; gap: 6px; color: var(--color-label-tertiary); font-size: var(--type-micro); font-weight: 650; }
+.scores-player-face { box-shadow: 0 0 0 1px var(--color-separator); }
+/* Fantasy's position chip; its display face is scoped to the .fl root there. */
+.scores-player-stats .fl-pos { font-family: var(--font-display, 'Barlow Condensed', sans-serif); }
+.scores-player-card-name { display: flex; min-width: 0; align-items: center; gap: 6px; }
 .scores-player-row-chevron { color: var(--color-label-tertiary); font-family: var(--font-display, 'Barlow Condensed', sans-serif); font-size: var(--type-emphasis); font-weight: 600; line-height: 1; text-align: center; }
 
 .scores-player-detail-row > td { padding: 0 10px 14px; background: var(--color-fill-tertiary); text-align: left; }
@@ -1206,8 +1211,8 @@
   .scores-player-sort-mobile > select { min-width: 0; min-height: 44px; padding: 0 28px 0 10px; border: 1px solid var(--color-separator-opaque); background: var(--color-bg-secondary); color: var(--color-label); font-family: var(--font-display, 'Barlow Condensed', sans-serif); font-size: 16px; font-weight: 800; }
   .scores-player-cards > article { padding: 11px 0; border-bottom: 1px solid var(--color-separator); }
   .scores-player-cards > article > header { display: block; }
-  .scores-player-card-toggle { grid-template-columns: auto minmax(0, 1fr) auto 20px; gap: 8px; }
-  .scores-player-card-toggle > strong { min-width: 0; overflow-wrap: anywhere; font-size: var(--type-body); }
+  .scores-player-card-toggle { grid-template-columns: auto auto minmax(0, 1fr) auto 20px; gap: 8px; }
+  .scores-player-card-name > strong { min-width: 0; overflow-wrap: anywhere; font-size: var(--type-body); }
   .scores-player-card-toggle > b { font-family: var(--font-display, 'Barlow Condensed', sans-serif); font-size: var(--type-emphasis); font-variant-numeric: tabular-nums; white-space: nowrap; }
   .scores-player-cards > article > p { margin: 4px 0 0; color: var(--color-label-secondary); font-size: var(--type-label); font-variant-numeric: tabular-nums; }
   .scores-player-cards > article > div { padding-top: 10px; }

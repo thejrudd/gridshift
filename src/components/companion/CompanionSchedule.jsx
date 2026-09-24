@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useSleeperBase } from '../../context/SleeperContext.jsx';
 import {
   buildFantasyRematchMap,
@@ -9,7 +9,6 @@ import {
   getFantasyScheduleWeekBounds,
   getRemainingOpponentAverage,
 } from '../../utils/fantasySeasonSchedule.js';
-import { getFantasyLeagueCurrentWeek } from '../../utils/fantasySeasonWeeks.js';
 import {
   CompanionFantasyTeamMenu,
   CompanionSegmentedControl,
@@ -60,6 +59,57 @@ function YouPill() {
   return <span className="companion-schedule-you">You</span>;
 }
 
+function EdgeInfoHint() {
+  const [open, setOpen] = useState(false);
+  const buttonRef = useRef(null);
+  const tooltipId = useId();
+
+  useEffect(() => {
+    if (!open) return undefined;
+
+    const handlePointerDown = (event) => {
+      if (!buttonRef.current?.contains(event.target)) setOpen(false);
+    };
+    const handleKeyDown = (event) => {
+      if (event.key !== 'Escape') return;
+      setOpen(false);
+      buttonRef.current?.focus();
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <span className="companion-schedule-edge-hint">
+      <button
+        ref={buttonRef}
+        type="button"
+        className="companion-schedule-edge-hint__button"
+        aria-label="About the Edge column"
+        aria-expanded={open}
+        aria-controls={open ? tooltipId : undefined}
+        aria-describedby={open ? tooltipId : undefined}
+        onClick={() => setOpen((current) => !current)}
+        onBlur={() => setOpen(false)}
+      >
+        i
+      </button>
+      {open && (
+        <span id={tooltipId} role="tooltip" className="companion-schedule-edge-hint__tooltip">
+          On past weeks, this is the PPG gap before that matchup, using only earlier completed games.
+          Week 1 has no prior PPG, so its Edge is blank. Other current and future weeks use the latest season PPG.
+          Positive means the selected team averages more. It isn’t a prediction.
+        </span>
+      )}
+    </span>
+  );
+}
+
 /**
  * Fantasy Schedule.
  *
@@ -79,6 +129,7 @@ export default function CompanionSchedule({
 }) {
   const {
     platform, selectedLeagueId, league, season,
+    currentFantasyWeek,
     rosters, leagueUsers, getUserDisplayName, myRoster, loadMatchups,
   } = useSleeperBase();
 
@@ -89,7 +140,7 @@ export default function CompanionSchedule({
   const weekHeadingRefs = useRef(new Map());
 
   const bounds = useMemo(() => getFantasyScheduleWeekBounds(league), [league]);
-  const currentWeek = useMemo(() => getFantasyLeagueCurrentWeek(league), [league]);
+  const currentWeek = currentFantasyWeek;
   // `myRoster` is a selector on the league context, not a value.
   const myRosterId = normalizeRosterId(myRoster?.()?.roster_id);
   const selectedRosterId = normalizeRosterId(rosterId) ?? myRosterId;
@@ -323,6 +374,7 @@ export default function CompanionSchedule({
               managerByRosterId={managerByRosterId}
               summaryMap={summaryMap}
               selectedSummary={selectedSummary}
+              currentWeek={currentWeek}
               remainingOpponentAverage={remainingOpponentAverage}
               myRosterId={myRosterId}
               onOpenWeek={onOpenWeek}
@@ -373,6 +425,7 @@ function SeasonSchedule({
   managerByRosterId,
   summaryMap,
   selectedSummary,
+  currentWeek,
   remainingOpponentAverage,
   myRosterId,
   onOpenWeek,
@@ -411,17 +464,28 @@ function SeasonSchedule({
           <span role="columnheader" className="companion-schedule-head">Opponent</span>
           <span role="columnheader" className="companion-schedule-head companion-schedule-cell--end">Record</span>
           <span role="columnheader" className="companion-schedule-head companion-schedule-cell--end">Opp PPG</span>
-          <span role="columnheader" className="companion-schedule-head companion-schedule-cell--end">Edge</span>
+          <span role="columnheader" className="companion-schedule-head companion-schedule-cell--end companion-schedule-edge-heading">
+            Edge
+            <EdgeInfoHint />
+          </span>
         </div>
 
         {rows.map((row) => {
-          const opponentSummary = row.opponent
+          const currentOpponentSummary = row.opponent
             ? summaryMap.get(row.opponent.rosterId) ?? null
             : null;
-          const edge = row.isPlayed
-            ? null
-            : getFantasyScheduleEdge(selectedSummary, opponentSummary);
+          const usePregameSummary = row.week === 1 || (currentWeek != null && row.week < currentWeek);
+          const opponentSummary = usePregameSummary
+            ? row.opponentSummaryBefore
+            : currentOpponentSummary;
+          const edgeSummary = usePregameSummary ? row.selectedSummaryBefore : selectedSummary;
+          const edge = row.opponent
+            ? getFantasyScheduleEdge(edgeSummary, opponentSummary)
+            : null;
           const rematchWeek = rematchMap.get(row.week) ?? null;
+          const scoreLine = row.isPlayed && (row.pointsFor != null || row.pointsAgainst != null)
+            ? `Score · For ${row.pointsFor != null ? row.pointsFor.toFixed(1) : '—'} · Against ${row.pointsAgainst != null ? row.pointsAgainst.toFixed(1) : '—'}`
+            : null;
           const interactive = Boolean(onOpenWeek);
           const Cell = interactive ? 'button' : 'div';
 
@@ -458,45 +522,40 @@ function SeasonSchedule({
                           .filter(Boolean)
                           .join(' · ')}
                       </span>
+                      {scoreLine && (
+                        <span className="companion-schedule-team__meta">
+                          {scoreLine}
+                        </span>
+                      )}
                     </span>
                   </>
                 )}
               </span>
 
-              {row.isPlayed ? (
-                <>
-                  <span role="cell" className="companion-schedule-cell--end">
-                    <span
-                      className="companion-schedule-result"
-                      data-result={row.result ?? 'T'}
-                    >
-                      {row.result ?? 'T'}
-                    </span>
-                  </span>
-                  <span role="cell" className="companion-schedule-cell--end companion-schedule-figure">
-                    {row.pointsFor != null ? row.pointsFor.toFixed(1) : '—'}
-                  </span>
-                  <span role="cell" className="companion-schedule-cell--end companion-schedule-figure">
-                    {row.pointsAgainst != null ? row.pointsAgainst.toFixed(1) : '—'}
-                  </span>
-                </>
-              ) : (
-                <>
-                  <span role="cell" className="companion-schedule-cell--end companion-schedule-figure">
-                    {opponentSummary?.recordLabel ?? '—'}
-                  </span>
-                  <span role="cell" className="companion-schedule-cell--end companion-schedule-figure">
-                    {opponentSummary?.pointsPerGame != null ? opponentSummary.pointsPerGame.toFixed(1) : '—'}
-                  </span>
+              <span role="cell" className="companion-schedule-cell--end companion-schedule-record">
+                <span className="companion-schedule-figure companion-schedule-record__value">
+                  {opponentSummary?.recordLabel ?? '—'}
+                </span>
+                {row.isPlayed && row.result && (
                   <span
-                    role="cell"
-                    className="companion-schedule-cell--end companion-schedule-figure"
-                    style={{ color: edgeColor(edge) }}
+                    className="companion-schedule-result"
+                    data-result={row.result}
+                    aria-label={`Result ${row.result}`}
                   >
-                    {formatEdge(edge) ?? '—'}
+                    {row.result}
                   </span>
-                </>
-              )}
+                )}
+              </span>
+              <span role="cell" className="companion-schedule-cell--end companion-schedule-figure">
+                {opponentSummary?.pointsPerGame != null ? opponentSummary.pointsPerGame.toFixed(1) : '—'}
+              </span>
+              <span
+                role="cell"
+                className="companion-schedule-cell--end companion-schedule-figure"
+                style={{ color: edgeColor(edge) }}
+              >
+                {formatEdge(edge) ?? '—'}
+              </span>
             </Cell>
           );
         })}

@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react';
 import Modal from '../Modal';
 import useMediaQuery from '../../hooks/useMediaQuery.js';
+import { useTheme } from '../../context/ThemeContext';
 import { fantasyHeroGradient } from '../../utils/fantasyTeamIdentity.js';
+import CompanionPlayerRow, { CompanionPlayerMetric, CompanionPlayerStatus } from './CompanionPlayerRow.jsx';
 
 /**
  * Fantasy Matchup preview — the broadcast-style panel behind the masthead's
@@ -58,31 +60,66 @@ function CompareRow({ row, index }) {
   );
 }
 
-function WatchColumn({ side, accent, list, unit, summary, mirrored }) {
+const CHIP_TONE = { good: 'positive', bad: 'negative', flat: 'neutral' };
+const isTeamDefense = (position) => position === 'DEF' || position === 'DST';
+
+/**
+ * One starter as a shared player row: headshot, team gradient and logo come
+ * from CompanionPlayerRow, with the points label and the projection chip.
+ */
+function PreviewPlayerCard({ player, unit = null, darkMode }) {
+  const defense = isTeamDefense(player.position);
+  const opponent = player.opponentTeam ? `${player.isHome ? 'vs' : 'at'} ${player.opponentTeam}` : null;
+  const meta = [
+    player.position,
+    player.team,
+    opponent,
+    player.chip
+      ? <CompanionPlayerStatus key="chip" tone={CHIP_TONE[player.tone] ?? 'neutral'} localContrast={false} label={player.chip} title={player.tag ?? undefined} />
+      : null,
+  ].filter(Boolean);
+  const gridTemplate = ['44px', 'minmax(0, 1fr)', defense ? null : '30px', 'minmax(46px, auto)'].filter(Boolean).join(' ');
+
+  return (
+    <CompanionPlayerRow
+      player={player}
+      name={player.name}
+      darkMode={darkMode}
+      showAccentRail={false}
+      showPosition={false}
+      showTeamLogo={!defense}
+      useTeamLogoAsAvatar={defense}
+      metaSegments={meta}
+      columns={[
+        <CompanionPlayerMetric
+          key="points"
+          align="end"
+          value={one(player.value)}
+          label={unit}
+        />,
+      ]}
+      gridTemplate={gridTemplate}
+      className="matchup-preview-card"
+    />
+  );
+}
+
+function WatchColumn({ side, accent, list, unit, summary, darkMode }) {
   if (!list?.length) return null;
   return (
-    <div className={`matchup-preview-watch__col${mirrored ? ' is-mirrored' : ''}`} style={{ '--matchup-preview-accent': accent }}>
+    <div className="matchup-preview-watch__col" style={{ '--matchup-preview-accent': accent }}>
       <div className="matchup-preview-watch__head">
         <b>{side.name}</b>
         <span>{summary}</span>
       </div>
       <div className="matchup-preview-watch__list">
         {list.map((player) => (
-          <div className="matchup-preview-watch__player" key={player.id}>
-            <div className="matchup-preview-watch__pos">{player.slotLabel ?? player.position}</div>
-            <div className="matchup-preview-watch__name">
-              <b>{player.name}</b>
-              <span>
-                {[player.team, player.opponentTeam ? (player.isHome ? `vs ${player.opponentTeam}` : `at ${player.opponentTeam}`) : null]
-                  .filter(Boolean).join(' · ')}
-                {player.tag ? <> · <em className={`is-${player.tone}`}>{player.tag}</em></> : null}
-              </span>
-            </div>
-            <div className="matchup-preview-watch__points">
-              <b className="tabular-nums">{one(player.value)}</b>
-              <span>{player.unit ?? unit}</span>
-            </div>
-          </div>
+          <PreviewPlayerCard
+            key={player.id}
+            player={player}
+            unit={player.unit ?? unit}
+            darkMode={darkMode}
+          />
         ))}
       </div>
     </div>
@@ -100,6 +137,7 @@ export default function MatchupPreviewModal({
 }) {
   const isCompact = useMediaQuery('(max-width: 640px)');
   const isWide = useMediaQuery('(min-width: 1024px)');
+  const { darkMode } = useTheme();
   const size = isCompact ? 'compact' : isWide ? 'wide' : 'regular';
 
   const accents = useMemo(() => ({
@@ -122,7 +160,7 @@ export default function MatchupPreviewModal({
 
   const { sides, odds, rivalry } = model;
   const headerLine = model.phase === 'post'
-    ? 'All starter games final'
+    ? ''
     : model.phase === 'live'
       ? model.liveNow
         ? 'Live scoring in progress'
@@ -322,8 +360,8 @@ export default function MatchupPreviewModal({
               {model.watch.title}
             </div>
             <div className="matchup-preview-watch">
-              <WatchColumn side={sides.a} accent={accents.a} list={model.watch.a} unit={model.watch.unit} summary={`${one(model.big.a)} ${model.bigLabel}`} />
-              <WatchColumn side={sides.b} accent={accents.b} list={model.watch.b} unit={model.watch.unit} summary={`${one(model.big.b)} ${model.bigLabel}`} mirrored={!isCompact} />
+              <WatchColumn side={sides.a} accent={accents.a} list={model.watch.a} unit={model.watch.unit} summary={`${one(model.big.a)} ${model.bigLabel}`} darkMode={darkMode} />
+              <WatchColumn side={sides.b} accent={accents.b} list={model.watch.b} unit={model.watch.unit} summary={`${one(model.big.b)} ${model.bigLabel}`} darkMode={darkMode} />
             </div>
           </section>
         ) : null}

@@ -13,6 +13,9 @@ import {
 import { getNflTeamLogoUrl } from '../../../utils/companionAssetVisuals';
 import { getScoreNetworkLabel } from '../../../utils/statisticsBroadcasts';
 import { deriveEspnEventId, fetchGameParticipants } from '../../../utils/nflPlays/participants.js';
+import { lookupPlayerByName } from '../../../utils/nflPlays/playerNameIndex.js';
+import { PlayerAvatar } from '../../shared/PlayerAvatar.jsx';
+import { LivePosChip } from '../../companion/live/LiveAtoms.jsx';
 import { getDriveNetYards, isFieldFlipped } from '../../../utils/nflPlays/fieldGeometry.js';
 import { DriveField } from '../../nflPlays/DriveField.jsx';
 import { WinProbabilityChart } from '../../nflPlays/WinProbabilityChart.jsx';
@@ -350,6 +353,16 @@ function PlayerTeamIdentity({ row }) {
   );
 }
 
+// The box score names players but carries no image ids, so faces come from the
+// same per-game ESPN participant index the play feed uses. Only the headshot
+// fields are passed through: when a photo fails the avatar falls back to
+// initials rather than repeating the team logo that already leads the row.
+function PlayerFace({ row, size = 34 }) {
+  const participant = row.participant;
+  const player = participant ? { imageUrl: participant.imageUrl, espnId: participant.espnId } : {};
+  return <PlayerAvatar player={player} name={row.player} size={size} className="scores-player-face" />;
+}
+
 function PlayerQuarterDetail({ row, group }) {
   const split = row.quarterValues;
   if (!split?.periods?.length) {
@@ -399,7 +412,7 @@ function PlayerQuarterDetail({ row, group }) {
   );
 }
 
-function PlayerStats({ detail, selectedGroup = null, onGroupChange = null }) {
+function PlayerStats({ detail, participants = null, selectedGroup = null, onGroupChange = null }) {
   const playerGroups = detail.playerGroups ?? [];
   const [localActiveGroup, setLocalActiveGroup] = useState(() => playerGroups[0]?.id ?? '');
   const [sortByGroup, setSortByGroup] = useState(() => Object.fromEntries(
@@ -411,9 +424,15 @@ function PlayerStats({ detail, selectedGroup = null, onGroupChange = null }) {
   const effectiveActiveGroup = group?.id ?? '';
   const teamNames = new Map([detail.away, detail.home].filter(Boolean).map((team) => [team.id, team.name]));
   const visibleRows = group
-    ? group.rows.map((row) => row.teamName
-      ? row
-      : { ...row, teamName: teamNames.get(row.team) ?? row.team })
+    ? group.rows.map((row) => {
+      const participant = participants ? lookupPlayerByName(participants, row.player, { team: row.team }) : null;
+      return {
+        ...row,
+        teamName: row.teamName ?? teamNames.get(row.team) ?? row.team,
+        position: row.position ?? (participant?.position || null),
+        participant,
+      };
+    })
     : [];
   const currentSort = group
     ? normalizeStatisticsPlayerSort(group, sortByGroup[effectiveActiveGroup])
@@ -533,7 +552,11 @@ function PlayerStats({ detail, selectedGroup = null, onGroupChange = null }) {
                         onClick={() => setExpandedPlayer(expanded ? null : key)}
                       >
                         <PlayerTeamIdentity row={row} />
-                        <span className="scores-player-row-name"><strong>{row.player}</strong><small>{row.teamName ?? row.team}</small></span>
+                        <PlayerFace row={row} />
+                        <span className="scores-player-row-name">
+                          <strong>{row.player}</strong>
+                          <small>{row.position && <LivePosChip position={row.position} />}{row.teamName ?? row.team}</small>
+                        </span>
                         <span className="scores-player-row-chevron" aria-hidden="true">{expanded ? '−' : '+'}</span>
                       </button>
                     </th>
@@ -567,7 +590,11 @@ function PlayerStats({ detail, selectedGroup = null, onGroupChange = null }) {
                   onClick={() => setExpandedPlayer(expanded ? null : key)}
                 >
                   <PlayerTeamIdentity row={row} />
-                  <strong>{row.player}</strong>
+                  <PlayerFace row={row} size={30} />
+                  <span className="scores-player-card-name">
+                    {row.position && <LivePosChip position={row.position} />}
+                    <strong>{row.player}</strong>
+                  </span>
                   <b>{group.columns[0]} {row.values[0]}</b>
                   <span className="scores-player-row-chevron" aria-hidden="true">{expanded ? '−' : '+'}</span>
                 </button>
@@ -970,7 +997,7 @@ export default function ScoresGameDrilldown({
       window.removeEventListener('offline', handleOffline);
     };
   }, [detailsProvider, fixtureData, game.bdlGameId, game.phase, game.status, gameKey]);
-  // Player photos for the play feed. Best-effort and entirely non-blocking:
+  // Player photos for the play feed and box score. Best-effort and entirely non-blocking:
   // if ESPN is unreachable or the event id can't be derived, plays still render,
   // just without faces.
   const [participants, setParticipants] = useState(null);
@@ -1033,6 +1060,7 @@ export default function ScoresGameDrilldown({
       {section === 'players' && (
         <PlayerStats
           detail={detail}
+          participants={participants}
           selectedGroup={selectedPlayerGroup}
           onGroupChange={onPlayerGroupChange}
         />

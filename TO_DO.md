@@ -28,6 +28,15 @@ GridShift is a labor-of-love project: it should create something genuinely usefu
 
 ## Backlog (Unversioned)
 
+### Global Search
+
+Shipped: palette, query parsing, fuzzy index, entity results, commands, and inline answers for player stats, fantasy ranking, trade value, and leaders. See `docs/Global Search.md`.
+
+- **Live score and game-status answers** - Deliberately deferred from the first pass. "live score for seahawks", "who's playing now", "my live matchup". Backed by `/api/live`, `balldontlieNflScoreboard.js`, and `livePlaysFeed.js`; online-only, so the answer must degrade to a navigation link offline.
+- **League history and activity results** - Head-to-head vs a manager, past champions, recent transactions. Needs `leagueHistory.js` records in the index and only applies once a league is connected.
+- **Scout and draft prospect results** - 499 prospects and 257 draft results are already static and bundled, so indexing them is nearly free; left out of the first pass only to keep the ranking model narrow.
+- **Compare destination for "X vs Y"** - The parser already recognizes the comparison operator and returns both players. It cannot route anywhere because `CompareTab.jsx` and its four panels are not mounted in the app and have no route in `appRoutes.js`. If Compare is revived, search gains the destination with no change to the search layer.
+
 ### Scout
 
 - **Next-season fantasy projection layer for rookies** - Add a fantasy-facing projection surface for the upcoming NFL season so Scout can serve both standard rookie boards and IDP-aware formats without overloading the current prospect filters. Scope should cover offensive and IDP leagues, projection source-of-truth, display hierarchy, and how projections interact with draft status and college production.

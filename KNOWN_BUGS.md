@@ -15,6 +15,8 @@ Open bugs are listed first, deferred work next, fixed bugs below. Add new entrie
 
 | Bug | Fixed In |
 |-----|----------|
+| Companion → Heatmap's QB Sacks Taken and INTs Thrown stat chips snapped back to Fantasy Pts because the route normalizer dropped them, and links with those stats opened on Fantasy Pts. | v9.1.0 |
+| Companion → Defense counted each completed pass twice in the All position totals, once as the quarterback's passing yards/TDs and again as the receiver's receiving yards/TDs, inflating Total TDs and Total Yards; the Heatmap game box score's team TDs had the same double count. | v9.1.0 |
 | Companion → Defense per-game averages divide by every team's scheduled game in any week that has kicked off league-wide, so teams that have not yet played the in-progress week are averaged over one game too many. | v9.0.1 |
 | Matchup preview labels the whole week live once any game has started, tags starters whose games have not kicked off as in progress, shows the projected total instead of the current score, and computes its summary from a zero margin. | v9.0.1 |
 | Finishing the What's New tour on the Matchups view can freeze the page in an endless render loop. | v9.0.1 |

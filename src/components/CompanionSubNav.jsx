@@ -4,10 +4,10 @@ import useHorizontalScrollCue from '../hooks/useHorizontalScrollCue';
 import StatusBadge from './ui/StatusBadge';
 
 const VIEWS = [
+  { id: 'matchups',  label: 'Matchups', tabGroup: 'team', tourId: 'matchup' },
   { id: 'rosters',   label: 'Rosters', tabGroup: 'team', tourId: 'roster' },
   { id: 'rankings',  label: 'Rankings', tabGroup: 'team' },
   { id: 'live',      label: 'Live', alpha: true },
-  { id: 'matchups',  label: 'Matchups', tabGroup: 'team', tourId: 'matchup' },
   { id: 'schedule',  label: 'Schedule', beta: true, tabGroup: 'team' },
   { id: 'injuries',  label: 'Injuries', beta: true, tabGroup: 'team' },
   { id: 'waivers',   label: 'Waivers', tourId: 'waiver' },

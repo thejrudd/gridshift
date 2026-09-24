@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSleeperBase } from '../../context/SleeperContext';
-import { getLiveMatchups, getNflState, getWeeklyProjections, getWeeklyStats } from '../../api/sleeperApi';
+import { getLiveMatchups, getWeeklyProjections, getWeeklyStats } from '../../api/sleeperApi';
 import { calcPoints, calcPointsFromTotals } from '../../utils/scoringEngine';
 import { fetchSeasonSchedule } from '../../utils/playerApi.js';
 import { getCompanionInitials } from '../../utils/companionAssetVisuals.js';
@@ -543,6 +543,9 @@ export default function CompanionLive({ onViewPlayer = null }) {
     seasonStats,
     loadSeasonStats,
     espnIdOverrides,
+    nflState,
+    nflStateLoading,
+    nflStateError,
     // The sandbox supplies a synthetic league so Fantasy Live can run outside
     // the regular season; anything it omits falls through to the real context.
   } = {
@@ -556,9 +559,6 @@ export default function CompanionLive({ onViewPlayer = null }) {
 
   const isDesktop = useIsDesktop();
 
-  const [nflState, setNflState] = useState(null);
-  const [nflStateLoading, setNflStateLoading] = useState(true);
-  const [nflStateError, setNflStateError] = useState('');
   const [liveStatus, setLiveStatus] = useState(null);
   const effectiveNflState = sandbox?.nflState ?? nflState;
   // Primitive so the weather effect can depend on this without churning on
@@ -774,28 +774,6 @@ export default function CompanionLive({ onViewPlayer = null }) {
 
   useEffect(() => { loadPlayers(); }, [loadPlayers]);
   useEffect(() => { loadSeasonStats?.(); }, [loadSeasonStats]);
-
-  useEffect(() => {
-    let cancelled = false;
-    setNflStateLoading(true);
-    setNflStateError('');
-    getNflState()
-      .then((payload) => {
-        if (!cancelled) setNflState(payload ?? null);
-      })
-      .catch((error) => {
-        if (!cancelled) {
-          setNflState(null);
-          setNflStateError(error?.message ?? 'Could not confirm the current NFL week.');
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setNflStateLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   useEffect(() => {
     let cancelled = false;

@@ -97,10 +97,12 @@ function buildTradeOpportunityLayerCacheKey({
   weeklyStats,
   scoringSettings,
   myRosterId,
+  currentWeek,
 }) {
   return [
     selectedLeagueId ?? league?.league_id ?? '',
     season ?? league?.season ?? '',
+    currentWeek ?? '',
     myRosterId ?? '',
     (league?.roster_positions ?? []).join(','),
     buildRosterSignature(rosters),
@@ -199,6 +201,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
     platform,
     rosters, leagueUsers, myRoster,
     selectedLeagueId, league, season, getUserDisplayName,
+    currentFantasyWeek,
     sleeperUser,
     scoringSettings,
     getTradedPicksForLeague,
@@ -814,11 +817,13 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
       weeklyStats: analyticsWeeklyStats,
       scoringSettings,
       myRosterId: myRosterData?.roster_id ?? null,
+      currentWeek: currentFantasyWeek,
     });
   }, [
     tradeAnalyticsReady,
     selectedLeagueId,
     season,
+    currentFantasyWeek,
     league,
     rosters,
     sleeperPlayers,
@@ -842,6 +847,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
         myRosterId: myRosterData?.roster_id ?? null,
         targetRosterIds: null,
         rankMap,
+        currentWeek: currentFantasyWeek,
       }),
     );
   }, [
@@ -854,6 +860,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
     scoringSettings,
     myRosterData?.roster_id,
     rankMap,
+    currentFantasyWeek,
   ]);
   const isTradeAnalyticsLoading = Boolean(
     wantsTradeAnalytics && (

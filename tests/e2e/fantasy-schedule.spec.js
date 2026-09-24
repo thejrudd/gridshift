@@ -1,4 +1,10 @@
 import { expect, test } from '@playwright/test';
+import {
+  TEST_SEASON,
+  league,
+  leaguesBySeason,
+  persistedSleeperState,
+} from '../fixtures/tradeFixtures.js';
 import { installTradeFixtures } from './tradeTestHarness.js';
 
 // The fixture league runs a 14-week regular season (playoff_week_start 15) with
@@ -26,6 +32,42 @@ test('Schedule opens on the connected manager season and lists the remaining wee
 
   // Playoff weeks are stated, never seeded.
   await expect(page.getByText(/Week 15 · Playoffs/)).toBeVisible();
+});
+
+test('Schedule uses the shared live week when the league snapshot is stale', async ({ page }) => {
+  const staleLeague = {
+    ...league,
+    settings: { ...league.settings, last_scored_leg: 1 },
+  };
+  const staleState = {
+    ...persistedSleeperState(),
+    league: staleLeague,
+    leagues: [staleLeague],
+    leaguesBySeason: { ...leaguesBySeason, [TEST_SEASON]: [staleLeague] },
+  };
+
+  await page.unroute('https://api.sleeper.app/v1/**');
+  await installTradeFixtures(page, {
+    persistedSleeperState: staleState,
+    league: staleLeague,
+    leaguesBySeason: { ...leaguesBySeason, [TEST_SEASON]: [staleLeague] },
+    nflState: {
+      season: TEST_SEASON,
+      season_type: 'regular',
+      week: 3,
+      leg: 3,
+      display_week: 2,
+      league_season: TEST_SEASON,
+    },
+  });
+
+  await page.goto('/fantasy/schedule');
+
+  const table = page.getByRole('table', { name: 'Season schedule by week' });
+  const rows = table.locator('.companion-schedule-row:not(.companion-schedule-row--head)');
+  await expect(rows).toHaveCount(12);
+  await expect(rows.first().locator('.companion-schedule-week__number')).toHaveText('3');
+  await expect(rows.first()).toContainText('Now');
 });
 
 test('Season view shows played weeks with their real result once completed weeks are included', async ({ page }) => {

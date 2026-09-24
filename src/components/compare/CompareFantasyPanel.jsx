@@ -249,6 +249,7 @@ function buildStatRankMaps(statKeys, sleeperIdA, sleeperIdB, seasonStats, player
 export default function CompareFantasyPanel({ sleeperIdA, sleeperIdB, onEdgeSummaryChange }) {
   const {
     platform, hasLeague, players, league,
+    currentFantasyWeek,
     seasonStats, weeklyStats,
     scoringSettings, scheduleMap,
     statsLoading, loadSeasonStats,
@@ -261,11 +262,13 @@ export default function CompareFantasyPanel({ sleeperIdA, sleeperIdB, onEdgeSumm
   }, [seasonStats, statsLoading, loadSeasonStats]);
 
   const week = useMemo(() => {
-    const playoffStart = league?.settings?.playoff_week_start ?? 18;
-    const lastScored   = league?.settings?.last_scored_leg;
-    if (lastScored) return Math.min(lastScored + 1, playoffStart - 1);
-    return Math.max(1, playoffStart - 1);
-  }, [league]);
+    const playoffStart = Number(league?.settings?.playoff_week_start) || 18;
+    const finalRegularWeek = Math.max(1, playoffStart - 1);
+    const resolved = Number(currentFantasyWeek);
+    return Number.isFinite(resolved)
+      ? Math.min(Math.max(1, resolved), finalRegularWeek)
+      : finalRegularWeek;
+  }, [currentFantasyWeek, league]);
 
   const positionalRanks = useMemo(
     () => computePositionalRanks(seasonStats, players, scoringSettings),

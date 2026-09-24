@@ -8,6 +8,7 @@ Layer-by-layer ownership map: who owns which state, where domain logic lives, an
 
 - `src/main.jsx` bootstraps React, registers the service worker, and wraps the app with providers.
 - `src/App.jsx` is the effective router and shell coordinator. **There is no React Router.**
+- Global search mounts in App's overlay layer and navigates exclusively through `applyRoute`, like every other surface. It adds no routes of its own.
 - `src/index.css` defines the global design tokens and theme variables used by components.
 - `src/utils/pageShare.js` derives route-aware share titles/descriptions and updates the client document metadata; it deliberately does not serialize connected league state into public links.
 
@@ -46,6 +47,8 @@ Rule: browser zoom stays native — never app-level DPI detection or whole-page 
   and league season agree; interrupted season switches clear stale rosters/users
   before Matchups can join weekly rows by season-local roster ID.
 - Loads league rosters, users, player database, weekly stats, aggregate season stats, matchups, and scoring settings through Sleeper.
+- Owns the shared live Sleeper `/state/nfl` snapshot and refreshes it on selected-league load, window focus, and a five-minute interval; `currentFantasyWeek` is the season-aware current-week authority consumed by fantasy surfaces.
+- Live state wins for the active Sleeper season; historical seasons, ESPN, and a missing/unusable live snapshot fall back to the selected league snapshot. `last_scored_leg` remains a completed-data boundary, not the app-wide current-week source.
 - Re-derives scoring settings from the selected league on startup, so newly supported scoring fields are picked up without re-selecting the league.
 - Performs Sleeper player/team/opponent enrichment for weekly stat rows via the three-pass algorithm below.
 
@@ -74,7 +77,7 @@ Entries resolved via Pass 1 or 2 are marked `_teamSource = 'espn'`; Pass 3 entri
 | `src/components/nflPlays` | Shared surface-agnostic field/momentum graphics — see the shared play layer below |
 | `src/utils` | Most domain logic: scoring, projections, trade math, export shaping, search parsing — see below |
 | `src/api` | Thin wrappers for external data sources — see the client/server boundary below |
-| `server` | The GridShift sidecar: provider gateway, quotas, live-data route groups, and persistent league-scoped Trade proposal rooms — see below |
+| `server` | The GridShift sidecar: provider gateway, quotas, live-data route groups, persistent league-scoped Trade proposal rooms, and the ESPN player payload cache — see below |
 | `src/data` | Static datasets (team colors, honors, stadiums, team history); Scout datasets (`rookies.js`, `draftPicks.js`, `draftResults.js`, `rookieProduction.generated.js`, `rookieGameLogs.generated.js`); `liveWinProbabilityModel.js` (frozen generated coefficient contract) |
 | `scripts` | Scout importers (`import-scout-production.mjs`, `import-scout-game-logs.mjs`) call CFBD locally with `CFBD_API_KEY` and write generated data files. API keys must not enter the client bundle |
 
@@ -93,6 +96,7 @@ Entries resolved via Pass 1 or 2 are marked `_teamSource = 'espn'`; Pass 3 entri
 | `leagueHistory.js` | Shared Sleeper league-lineage data layer: loads and caches season rosters, users, matchups, transactions, and real bracket payloads; exposes normalized participants, finalized standings (named divisions, recent form), score-backed brackets, Toilet Bowl vs consolation progression, activity entries, history aggregates, record leaders, Draft Blueprint summaries. Stable participant identity uses Sleeper user ID with a season-roster fallback |
 | `opportunityEngine.js` + `opportunity/` | Trade opportunity logic — `opportunityEngine.js` is the public facade, implementation modules under `src/utils/opportunity/` |
 | `liveScoringFeed.js`, `livePlaysFeed.js`, `liveWinProbability.js`, `livePace.js`, `fantasyTeamIdentity.js` | The live-scoring split. Per-module ownership and the projection/probability rules: [[Fantasy Live]] |
+| `globalSearch/` | Global search — query vocabulary and parsing, typo correction, inverted indexes, ranking, IndexedDB record cache, route resolution, inline answers. Rules and measurements: [[Global Search]] |
 | `nflPlays/` | Shared play-by-play parsing layer — see below |
 | `playByPlay/` | Canonical BALLDONTLIE play normalization and per-play stat attribution shared by Statistics Scores and Fantasy Live: [[Play-By-Play Normalization]] |
 
@@ -133,6 +137,7 @@ Deep doc: [[Live Data Server Architecture]].
 | `tradeProposalStore.js` | Separate SQLite/WAL proposal database. Stores immutable revision payloads and event state; expired payloads are removed while a bounded tombstone remains for the retention window |
 | `tradeProposalCrypto.js`, `tradeProposalConfig.js` | HMAC token hashing, opaque proposal/session capabilities, bounded expiry/retention settings, and production secret/data-directory configuration |
 | `sleeperTradeApi.js` | Server-side read-only Sleeper boundary used to validate league membership/ownership and inspect completed transactions |
+| `playerDataHandlers.js`, `playerDataStore.js`, `playerDataUpstream.js`, `playerDataConfig.js` | Lazy SQLite cache of ESPN season stats, career stats, and game logs behind `/api/players`. All ESPN traffic goes through one throttled, circuit-broken upstream client; completed seasons are stored once and never refetched — see [[Where To Edit]] (ESPN Player Data And Profiles) |
 
 Rule: gateway state is process-local. Running multiple sidecar replicas would multiply upstream work until the shared-store/leader phase in [[Live Data Server Architecture]].
 
@@ -142,7 +147,7 @@ Rule: gateway state is process-local. Running multiple sidecar replicas would mu
 | --- | --- |
 | `package.json` | npm scripts; version drives PWA cache busting |
 | `vite.config.js` | React plugin, route-aware social/share HTML metadata in development and production entry files, PWA behavior, `__APP_VERSION__`, KTC proxy, and local sidecar proxies including Trade proposals/share metadata |
-| `nginx.conf` | Production proxying of `/api/live/`, `/api/statistics/scores/`, `/api/fantasy/`, `/api/draft-sync/`, `/api/predictions-sync/`, `/api/trade-proposals/`, and `/trade/share/` to the sidecar. Bearer credentials are forwarded and server-backed routes are `no-store` |
+| `nginx.conf` | Production proxying of `/api/live/`, `/api/statistics/scores/`, `/api/fantasy/`, `/api/players/`, `/api/draft-sync/`, `/api/predictions-sync/`, `/api/trade-proposals/`, and `/trade/share/` to the sidecar. Bearer credentials are forwarded and server-backed routes are `no-store`, except `/api/players/`, whose `Cache-Control` is set by the sidecar |
 | `docker-compose.yml`, `Dockerfile`, `Dockerfile.prebuilt`, `Dockerfile.server` | Deployment |
 
 ### Fantasy Matchups comparison and rivalry

@@ -129,15 +129,17 @@ Draft Sync is an optional capability of the existing API sidecar, not a required
 | Bento grid | react-grid-layout |
 | Share-card capture | Browser-native screenshot view |
 | Fantasy data | Sleeper API (client-side) |
-| Player data | ESPN public APIs (client-side) |
+| Player data | ESPN public APIs (server cache with direct browser fallback) |
 | Live data | Optional BALLDONTLIE NFL API via server-side GridShift API |
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) + optional Node API sidecar |
 
-## What's New in v9.0.2
+## What's New in v9.1.0
 
-- **Fantasy Schedule tour** — The What's New tour now walks through the Fantasy Schedule (Beta) view: the whole season's pairings by week or by team, with a jump into any week's Matchup.
-- **Past-season matchup results** — Matchups from completed weeks settle correctly even when a starter has since retired, become a free agent, or changed teams.
+- **Global Search** — Search players, NFL teams, games, fantasy rosters, app views, and commands from anywhere, with supported stats and standings questions answered inline.
+- **NFL matchup drill-ins** — Open a regular-season game from Statistics Schedule for pregame comparisons, live game context, or a final matchup review.
+- **Fantasy and Statistics accuracy** — Preserve Heatmap stat links and count passing production once in Defense totals and Heatmap box scores.
+- **Player data reliability** — Serve ESPN player history through the optional server cache, with direct browser fallback when the server cache is unavailable.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 

@@ -5,10 +5,10 @@
  * and a single roster's week-by-week season card.
  *
  * Every field is derived from data the provider already returns: pairings and
- * completed scores come from the weekly matchup rows, records and points come
- * from the roster snapshot. A week the provider has not paired yet stays
- * `null` rather than being guessed, and playoff weeks are never seeded here —
- * the bracket does not exist until the regular season ends.
+ * completed scores come from the weekly matchup rows, while current season
+ * summaries come from the roster snapshot. A week the provider has not paired
+ * yet stays `null` rather than being guessed, and playoff weeks are never
+ * seeded here — the bracket does not exist until the regular season ends.
  */
 
 import { buildFantasyMatchupGroups } from './fantasyMatchups.js';
@@ -111,6 +111,69 @@ export function getFantasyScheduleEdge(summary, opponentSummary) {
 }
 
 /**
+ * Reconstruct one roster's season record and PPG immediately before a week.
+ * Only completed earlier matchups contribute. If any earlier week is missing,
+ * unpaired, or not yet scored, the snapshot is unknown rather than partial.
+ */
+function getFantasyRosterSummaryBeforeWeek(weeks, rosterId, week) {
+  const target = normalizeRosterId(rosterId);
+  const cutoffWeek = num(week);
+  if (!target || cutoffWeek == null) return null;
+
+  let wins = 0;
+  let losses = 0;
+  let ties = 0;
+  let gamesPlayed = 0;
+  let pointsFor = 0;
+  let expectedWeek = 1;
+
+  for (const entry of weeks ?? []) {
+    const entryWeek = num(entry?.week);
+    if (entryWeek == null) return null;
+    if (entryWeek >= cutoffWeek) break;
+    if (entryWeek !== expectedWeek) return null;
+    expectedWeek += 1;
+    if (!Array.isArray(entry.groups)) return null;
+
+    const group = entry.groups.find((candidate) => (
+      (candidate.sides ?? []).some((side) => side.rosterId === target)
+    ));
+    if (!group) return null;
+
+    const side = group.sides.find((candidate) => candidate.rosterId === target);
+    if (!side) return null;
+
+    const opponents = group.sides.filter((candidate) => candidate.rosterId !== target);
+    if (opponents.length === 0) continue;
+    if (opponents.length !== 1 || !group.isPlayed) return null;
+
+    const points = num(side.row?.points);
+    const opponentPoints = num(opponents[0].row?.points);
+    if (points == null || opponentPoints == null) return null;
+
+    pointsFor += points;
+    gamesPlayed += 1;
+    if (points > opponentPoints) wins += 1;
+    else if (points < opponentPoints) losses += 1;
+    else ties += 1;
+  }
+
+  if (expectedWeek !== cutoffWeek) return null;
+
+  const roundedPointsFor = round1(pointsFor);
+  return {
+    rosterId: target,
+    wins,
+    losses,
+    ties,
+    gamesPlayed,
+    recordLabel: ties ? `${wins}-${losses}-${ties}` : `${wins}-${losses}`,
+    pointsFor: roundedPointsFor,
+    pointsPerGame: gamesPlayed > 0 ? round1(pointsFor / gamesPlayed) : null,
+  };
+}
+
+/**
  * A week's matchup row carries `points` once the provider has scored it.
  * Before that every side reads 0, which is indistinguishable from a real
  * shutout, so a week is only treated as played when it is behind the league's
@@ -170,6 +233,16 @@ export function buildFantasyScheduleWeeks({
 export function buildFantasyRosterScheduleRows(weeks, rosterId) {
   const target = normalizeRosterId(rosterId);
   if (!target) return [];
+  const historyCache = new Map();
+  const summaryBeforeWeek = (id, week) => {
+    if (!id) return null;
+    const key = `${week}:${id}`;
+    if (!historyCache.has(key)) {
+      historyCache.set(key, getFantasyRosterSummaryBeforeWeek(weeks, id, week));
+    }
+    return historyCache.get(key);
+  };
+
   return (weeks ?? []).map((entry) => {
     const base = {
       week: entry.week,
@@ -208,6 +281,8 @@ export function buildFantasyRosterScheduleRows(weeks, rosterId) {
       isPlayed: group.isPlayed,
       side,
       opponent,
+      selectedSummaryBefore: summaryBeforeWeek(target, entry.week),
+      opponentSummaryBefore: summaryBeforeWeek(opponent?.rosterId, entry.week),
       pointsFor,
       pointsAgainst,
       result,

@@ -15,6 +15,7 @@ export default function CompanionOpportunity({ onOpenTrade, onOpenWaiver }) {
     leagueUsers,
     rosters,
     scoringSettings,
+    currentFantasyWeek,
     statsLoading,
     myRoster,
     getUserDisplayName,
@@ -71,7 +72,8 @@ export default function CompanionOpportunity({ onOpenTrade, onOpenWaiver }) {
     scoringSettings,
     scheduleMap,
     myRosterId: myRosterData?.roster_id ?? null,
-  }), [league, rosters, players, seasonStats, weeklyStats, scoringSettings, scheduleMap, myRosterData]);
+    currentWeek: currentFantasyWeek,
+  }), [currentFantasyWeek, league, rosters, players, seasonStats, weeklyStats, scoringSettings, scheduleMap, myRosterData]);
 
   const activeAnalysis = activeRosterId != null
     ? (opportunityData.analysesByRosterId?.[activeRosterId] ?? null)

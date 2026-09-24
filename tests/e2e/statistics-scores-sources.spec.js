@@ -1,4 +1,11 @@
 import { expect, test } from '@playwright/test';
+import {
+  TEST_SEASON,
+  league,
+  leaguesBySeason,
+  persistedSleeperState,
+} from '../fixtures/tradeFixtures.js';
+import { installTradeFixtures } from './tradeTestHarness.js';
 
 const MOBILE_STATISTICS_VIEWPORTS = [
   { name: 'small phone', width: 320, height: 568 },
@@ -101,6 +108,38 @@ test('Statistics Scores switches among local fixture, ESPN, and BALLDONTLIE sour
   await expect(page.getByText('Statistics Scores is not configured with a server-side BALLDONTLIE API key.')).toBeVisible();
   await expect(sourceControl.getByRole('button', { name: 'BALLDONTLIE API' })).toHaveAttribute('aria-pressed', 'true');
   expect(espnRequests).toBe(espnCountBeforeBdl);
+});
+
+test('connected Scores uses the shared live fantasy week for its Now marker', async ({ page }) => {
+  const staleLeague = {
+    ...league,
+    settings: { ...league.settings, last_scored_leg: 1 },
+  };
+  const staleState = {
+    ...persistedSleeperState(),
+    league: staleLeague,
+    leagues: [staleLeague],
+    leaguesBySeason: { ...leaguesBySeason, [TEST_SEASON]: [staleLeague] },
+  };
+
+  await installTradeFixtures(page, {
+    persistedSleeperState: staleState,
+    league: staleLeague,
+    leaguesBySeason: { ...leaguesBySeason, [TEST_SEASON]: [staleLeague] },
+    nflState: {
+      season: TEST_SEASON,
+      season_type: 'regular',
+      week: 3,
+      leg: 3,
+      display_week: 2,
+      league_season: TEST_SEASON,
+    },
+  });
+
+  await page.goto('/statistics/scores');
+
+  await expect(page.getByRole('tab', { name: 'W3 Now' })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('tab', { name: 'W2 Week' })).toHaveAttribute('aria-selected', 'false');
 });
 
 test('the developer fixture opens the fully populated comparison drilldown without provider requests', async ({ page }) => {

@@ -1,12 +1,36 @@
 import { calcPoints } from './scoringEngine.js';
+import { isFinalScheduleGame } from './statisticsSchedule.js';
 
 // This is intentionally the same offensive-player set and positive-only
 // aggregation that powers the Fantasy Heatmap. It is keyed by the offense that
 // produced the stat; callers that need what a defense conceded reverse the
 // completed schedule rather than changing this source contract.
 const OFFENSE_POS_SET = new Set(['QB', 'RB', 'WR', 'TE', 'K']);
-const DIRECT_OFFENSE_STAT_KEYS = new Set(['rec_yd', 'rush_yd', 'pass_sack', 'pass_int']);
+const DIRECT_OFFENSE_STAT_KEYS = new Set(['rec_yd', 'rush_yd', 'pass_td', 'rec_td', 'rush_td', 'pass_sack', 'pass_int']);
 const HEATMAP_OFFENSE_TABLE_CACHE = new WeakMap();
+
+/**
+ * Count games that belong in a Heatmap per-game average. The season schedule
+ * intentionally includes future opponents, so schedule-entry presence is not
+ * enough evidence that a game should be part of the denominator. A finalized
+ * game still counts when the selected stat is zero or missing from the row.
+ */
+export function getHeatmapCompletedGameCount(scheduleMap, team, weeks, matchesLocation = () => true) {
+  return (weeks ?? []).reduce((count, week) => {
+    if (!matchesLocation(team, week)) return count;
+    const weekSchedule = scheduleMap?.[week] ?? scheduleMap?.[String(week)] ?? null;
+    const scheduleEntry = weekSchedule?.[team] ?? weekSchedule?.[String(team)] ?? null;
+    return count + (isFinalScheduleGame(scheduleEntry) ? 1 : 0);
+  }, 0);
+}
+
+/**
+ * Table stat mode for the selected position. Summing every position's Total TD in the ALL
+ * view would count each passing TD twice (QB and receiver), so ALL uses 'scored_td'.
+ */
+export function resolveHeatmapOffenseStatMode(statMode, position) {
+  return statMode === 'total_td' && position === 'ALL' ? 'scored_td' : statMode;
+}
 
 /**
  * Resolve a Heatmap offense value from either a raw stat mode or the active
@@ -14,6 +38,14 @@ const HEATMAP_OFFENSE_TABLE_CACHE = new WeakMap();
  * the league assigns fantasy points to that category.
  */
 export function getHeatmapOffenseStatValue(wEntry, activeScoringSettings, position, statMode) {
+  // Total TD is per position: a QB is credited with their passing TDs, everyone else
+  // with the TDs they scored. 'scored_td' is the ALL-view variant that leaves passing out,
+  // because each passing TD is already the receiver's rec_td.
+  if (statMode === 'scored_td') return (wEntry?.rush_td ?? 0) + (wEntry?.rec_td ?? 0);
+  if (statMode === 'total_td') {
+    const scored = (wEntry?.rush_td ?? 0) + (wEntry?.rec_td ?? 0);
+    return position === 'QB' ? scored + (wEntry?.pass_td ?? 0) : scored;
+  }
   if (DIRECT_OFFENSE_STAT_KEYS.has(statMode)) return wEntry?.[statMode] ?? 0;
   return calcPoints(wEntry, activeScoringSettings, position);
 }

@@ -9,6 +9,7 @@ Routing table: match the task to a section, open the listed files, and read the 
 | Task involves | Section |
 | --- | --- |
 | Shell, tabs, sidebar, sub-navs, routing chrome | [Navigation And Layout](#navigation-and-layout) |
+| Global search palette, query parsing, search index | [Global Search](#global-search) |
 | Display density, type tokens, page frames | [Display Size, Typography, And Wide Layouts](#display-size-typography-and-wide-layouts) |
 | Skeletons, loading placeholders, list reveal/stagger timing | [Loading Motion](#loading-motion) |
 | Prediction picks, playoff seeding, and share cards | [Predictions And Share Cards](#predictions-and-share-cards) |
@@ -16,6 +17,7 @@ Routing table: match the task to a section, open the listed files, and read the 
 | Rostered weekly injuries and player designations | [Fantasy Injuries](#fantasy-injuries) |
 | Season-long fantasy pairings by week | [Fantasy Schedule](#fantasy-schedule) |
 | NFL scoreboard, box scores, play-by-play visuals | [Statistics Scores And NFL Plays](#statistics-scores-and-nfl-plays) |
+| NFL matchup drill-in from a team's schedule (unit vs unit, live tracker, Defenses hand-off) | [Statistics Schedule Matchup Drill-In](#statistics-schedule-matchup-drill-in) |
 | Provider gateway, quotas, caches, sidecar server | [Live Data Server, Budgets, And Scaling](#live-data-server-budgets-and-scaling) |
 | Sleeper connection and league loading | [Fantasy Connection And League Data](#fantasy-connection-and-league-data) |
 | League history, season standings, transactions | [League History, Standings, And Activity](#league-history-standings-and-activity) |
@@ -29,6 +31,27 @@ Routing table: match the task to a section, open the listed files, and read the 
 | Share cards, export/import, shareable images | [Export / Import / Shareable Image](#export--import--shareable-image) |
 | GridShift Trade rooms, proposals, expiring links, counters, acceptance, decline, Sleeper handoff, completion, reconciliation | [Trade Proposal Rooms](#trade-proposal-rooms) |
 | Build, PWA, Docker, deployment | [Build, PWA, And Deployment](#build-pwa-and-deployment) |
+
+## Global Search
+
+Read first: [[Global Search]] (measurements, the load-bearing matching rules, and how to extend the vocabulary).
+
+| File | Owns |
+| --- | --- |
+| `src/utils/globalSearch/vocabulary.js` | Canonical phrase table — teams, positions, divisions, stats, timeframes, intents, commands |
+| `src/utils/globalSearch/parseIntent.js` | Query to slots |
+| `src/utils/globalSearch/correct.js` | Bounded typo correction |
+| `src/utils/globalSearch/tokenIndex.js` | Exact / prefix / trigram indexes |
+| `src/utils/globalSearch/rank.js` | Slot filtering, scoring, grouping |
+| `src/utils/globalSearch/persist.js` | IndexedDB record cache |
+| `src/utils/globalSearch/resolveRoute.js` | Result to route object |
+| `src/utils/globalSearch/entities/*.js` | Per-source record adapters |
+| `src/utils/globalSearch/answers/*.js` | Inline answer resolvers (read-only over existing engines) |
+| `src/hooks/useGlobalSearch.js` | Open state, Cmd/Ctrl+K, index lifecycle |
+| `src/components/search/*.jsx` | Palette, result row, answer card, guide |
+| `scripts/build-search-index.mjs` | Generates `public/search-index.v1.json` at `prebuild` |
+
+`src/utils/parseSearchQuery.js` re-exports `SEARCH_PATTERNS` from the shared vocabulary; the player browser and global search must not drift apart.
 
 ## Navigation And Layout
 
@@ -136,7 +159,22 @@ Rules: Sleeper roster status and BALLDONTLIE weekly status remain separate evide
 | `src/utils/appRoutes.js` | `scheduleMode`, `scheduleWeek`, `scheduleRosterId` |
 | `src/index.css` | `.companion-schedule-*` table, pair, and week-group styles |
 
-Rules: the view fetches weeks 1 through the last regular-season week once per league/season and caches the result; playoff weeks are never fetched or seeded here. A week the provider has not returned is pending, a week returned without this roster is unscheduled, and a single-sided group is a bye — the three are distinct and none of them renders as another. A matchup is only treated as played when it is behind the league's current week and a side actually posted points, because unscored rows read 0. No result is forecast: the Edge column is the two teams' season points-per-game gap, and it is null whenever either side has no scored game.
+Rules: the view fetches weeks 1 through the last regular-season week once per league/season and caches the result; playoff weeks are never fetched or seeded here. Its default current week comes from `useSleeperLeague().currentFantasyWeek`, which is backed by the shared live Sleeper `/state/nfl` snapshot with a selected-league fallback. A week the provider has not returned is pending, a week returned without this roster is unscheduled, and a single-sided group is a bye — the three are distinct and none of them renders as another. A matchup is only treated as played when it is behind the league's current week and a side actually posted points, because unscored rows read 0. Past rows show the opponent's record and PPG entering that week, plus the result when scored; their Edge is the pregame PPG gap. Week 1 starts at 0–0 and has no prior PPG or Edge. If any earlier matchup is missing or unscored, historical values remain unavailable rather than partial. Other current and future rows use the latest roster summaries, and completed scores are labeled explicitly as points for/against.
+
+## Statistics Schedule Matchup Drill-In
+
+| File | Owns |
+| --- | --- |
+| `src/components/StatisticsSchedule.jsx` | By Team and regular-season By Week row hit areas, route open/close (`statisticsScheduleGameId`), history hand-off before leaving for Defenses or Game Stats |
+| `src/components/statistics/schedule/NflMatchupModal.jsx` | Pregame / live / final panel, ESPN summary polling, unit and tracker panels |
+| `src/components/statistics/schedule/NflMatchupModal.css` | `.nfl-matchup-*` pieces on top of the shared `.matchup-preview-*` frame |
+| `src/utils/nflMatchupModel.js` | Season summaries, glance rows, unit panels, edge rule, keys, ESPN summary normalizer, pace tracker |
+| `src/utils/defenseRankings.js` | `MATCHUP_UNITS`, `buildUnitMatchupTable()` (offense produced / defense allowed per game, ranked) |
+| `server/nflTeamStatsHandlers.js`, `src/api/statisticsScoresApi.js` | `/api/statistics/scores/team-stats` ESPN season team statistics, flattened and cached |
+| `src/components/companion/CompanionDefense.jsx`, `src/App.jsx`, `src/utils/appRoutes.js` | Pinned matchup defenses (`pin`), Back to matchup (`fromGame`, `fromTeam`) |
+| `tests/unit/nflMatchupDrillIn.test.mjs` | Routes, unit table, model, and sidecar coverage |
+
+Rules: NFL-only — no fantasy points and no betting lines. The team whose schedule is open is always the left column; By Week opens with the away team on the left. Regular-season games open from both schedule modes. Live and completed matchups link to Statistics Scores, including when the ESPN summary has not yet changed the scheduled kickoff to an in-progress status. Unit rank #1 is the strongest unit on both sides of the ball (offense: most produced per game; defense: fewest allowed per game); an edge needs a rank gap of 8+. Unit ranks and the Defenses links need a connected league for the same season (they use the league's season player stats); without one the section says so. Live and final numbers come from ESPN's game summary, refreshed every 30 seconds while live; live pace scales the game to 60 minutes, and final compares against the defense's average entering the week with ranks shown before → after. The panel body waits for all three sources (game summary, team stats, unit ranks) and enters as one beat, capped at 2.5s; see [[Loading Motion]].
 
 ## Statistics Scores And NFL Plays
 
@@ -146,7 +184,7 @@ Read first: [[Statistics Scores]] before production data wiring.
 
 | File | Owns |
 | --- | --- |
-| `src/components/statistics/scores/StatisticsScores.jsx` | Route state, masthead, season selector, week rail |
+| `src/components/statistics/scores/StatisticsScores.jsx` | Route state, masthead, season selector, week rail; current-season connected-league `Now` marker reads shared `currentFantasyWeek` |
 | `src/components/statistics/scores/ScoresSeasonBoard.jsx` | Hero week + peek layout, chronological kickoff groups |
 | `src/components/statistics/scores/GameScorebug.jsx` | Scheduled/live/final/favorite/delayed/offline/unavailable states |
 | `src/components/statistics/scores/LatestPlayStrip.jsx` | Compact live latest-play row (from the selected-week canonical live snapshot) |
@@ -203,17 +241,17 @@ Rules: any change here must audit both Statistics Scores and Fantasy Live. Count
 
 | File | Owns |
 | --- | --- |
-| `src/context/SleeperContext.jsx` | League/roster state — widest blast radius in the app |
+| `src/context/SleeperContext.jsx` | League/roster state, shared live NFL state, and the season-aware `currentFantasyWeek` — widest blast radius in the app |
 | `src/api/sleeperApi.js` | Sleeper API client |
 | `src/components/companion/CompanionConnect.jsx` | Connect flow |
 
-Sleeper is the supported fantasy connection.
+Sleeper is the supported fantasy connection. Current-week consumers should use `currentFantasyWeek` from this context rather than re-deriving from `last_scored_leg` or issuing their own `/state/nfl` request. Completed-week analytics may continue to use `last_scored_leg` when they explicitly need a settled-data boundary.
 
 ## League History, Standings, And Activity
 
 Individual player matchup views, recorded pregame comparisons, and Heatmap-based peer visuals: read [[Player Matchup Drilldown]]. `PlayerMatchupBreakdown.jsx` owns the dialog; `playerDefensePerformance.js` and `fantasyHeatmapData.js` own shared analysis; `useMatchupProjectionBaselines.js` owns local pregame capture.
 
-Fantasy Matchups: `CompanionMatchup.jsx` owns the player Tale of the Tape and the manager VS trigger. The VS trigger opens `MatchupPreviewModal.jsx`, the broadcast-style week preview; `matchupPreviewModel.js` normalizes starters, league rosters, the win-probability forecast and the rivalry into that panel's model, `matchupPreviewKeys.js` owns the Keys to the matchup detector engine, and `matchupPreviewKeyHistory.js` remembers which detectors fired for a pairing so keys rotate week to week. The preview's rivalry section renders the series, highlights, and latest meetings inline; `matchupRivalry.js` orients completed meetings and retains historical roster IDs. Its game-state labels come from each starter's `gameState` (`final`, `live`, `upcoming`, `bye`): only a started, unfinished game is live, so the chip, win-chance label, and movers title say live only when `model.liveNow`. Headline scores come from the `liveTotals` the caller passes (the matchup's displayed points); the win-probability model carries projections only. The per-side projected final, projection delta, and record/PF/PA line come from `headerExtras`, built from the same values as the primary `MatchupMasthead` so the two headers agree. Rivalry meeting rows only open seasons in `linkedLeagueSeasonOptions`; otherwise the preview shows an inline notice instead of switching seasons. `App.jsx` shares historical season/week/roster navigation between this drilldown and League History. History loads only when the preview opens. The shared `gridshift-reveal` entrance in `src/index.css` staggers the drilldown panels (preview, team score breakdown, player drilldown, player compare); `gridshift-reveal--auto` is the index-free variant for dynamically built section lists.
+Fantasy Matchups: `CompanionMatchup.jsx` owns the player Tale of the Tape and the manager VS trigger. While games are live, a player row's projection and the header's `Projected final` are pace-adjusted with `PACE_PROJECTION_MODEL` in `liveWinProbability.js` (display-only 0.5 carryover; win probability stays on the neutral model). Rows use `getPaceAdjustedProjection()`; the header uses `paceExpectedA/B` from `buildMatchupWinProbability()`, which sums the same rounded per-player values (finished games count their actual points). Pregame and final rows keep the plain full-game projection. The VS trigger opens `MatchupPreviewModal.jsx`, the broadcast-style week preview; `matchupPreviewModel.js` normalizes starters, league rosters, the win-probability forecast and the rivalry into that panel's model, `matchupPreviewKeys.js` owns the Keys to the matchup detector engine, and `matchupPreviewKeyHistory.js` remembers which detectors fired for a pairing so keys rotate week to week. The preview's rivalry section renders the series, highlights, and latest meetings inline; `matchupRivalry.js` orients completed meetings and retains historical roster IDs. Its game-state labels come from each starter's `gameState` (`final`, `live`, `upcoming`, `bye`): only a started, unfinished game is live, so the chip, win-chance label, and movers title say live only when `model.liveNow`. Headline scores come from the `liveTotals` the caller passes (the matchup's displayed points); the win-probability model carries projections only. The per-side projected final, projection delta, and record/PF/PA line come from `headerExtras`, built from the same values as the primary `MatchupMasthead` so the two headers agree. The preview's "Who decided it" / movers section renders starters as shared `CompanionPlayerRow` cards (`PreviewPlayerCard`), and each mover carries `chip`, the projection delta on its own; "Where the rosters lead" stays the mirrored comparison rows. Rivalry meeting rows only open seasons in `linkedLeagueSeasonOptions`; otherwise the preview shows an inline notice instead of switching seasons. `App.jsx` shares historical season/week/roster navigation between this drilldown and League History. History loads only when the preview opens. The shared `gridshift-reveal` entrance in `src/index.css` staggers the drilldown panels (preview, team score breakdown, player drilldown, player compare); `gridshift-reveal--auto` is the index-free variant for dynamically built section lists.
 
 | File | Owns |
 | --- | --- |
@@ -228,11 +266,28 @@ Fantasy Matchups: `CompanionMatchup.jsx` owns the player Tale of the Tape and th
 
 ## ESPN Player Data And Profiles
 
+Season stats, career stats, and game logs are stored server-side after one ESPN fetch. `playerApi.js` asks the sidecar's `/api/players/*` first and falls back to ESPN directly when the sidecar is unreachable, answers with a non-JSON page, or declines a request (400, for example seasons before `GRIDSHIFT_PLAYER_DATA_MIN_SEASON`). Only the sidecar's own JSON 404 means "ESPN has no data".
+
+- **Lazy only.** The server contacts ESPN only when a user opens a player-season it has no fresh copy of. There is no seed, backfill, or scheduled job.
+- **Completed seasons are final** and never refetched. The current season refreshes on a one-hour TTL, incrementally: only games not already stored are fetched. Career stats refresh on 24 hours. A completed season ESPN has no stats for is remembered for 30 days.
+- **ESPN politeness** lives in `playerDataUpstream.js`: at most 2 concurrent requests server-wide (`GRIDSHIFT_PLAYER_DATA_UPSTREAM_CONCURRENCY`), a minimum gap between request starts, in-flight coalescing per key, and a circuit breaker that stops all ESPN calls after a 429/403 or a run of 5xx/timeouts and backs off exponentially. While it is open the sidecar serves stored data (marked `X-GridShift-Stale`) and the browser falls back to its own ESPN calls.
+- **Career repair is defender-only.** ESPN's career endpoint reports 0 tackles for loss, so `espnPlayerFetch.js` rebuilds it from per-season stats. One athlete lookup decides whether the player is a defender and starts the lookups at their debut season; non-defenders skip it. If that lookup fails it runs in full. On the server those per-season lookups are background requests that queue behind the page's own.
+- **Team data is shared.** Team abbreviation lookups and team schedules are the same for every player on a team, so the sidecar fetches them once (permanently for completed seasons, 5 minutes for the current one) and reuses them across players.
+- **Incomplete data is never stored.** If any per-game, schedule, or team lookup fails transiently, the response carries `X-GridShift-Incomplete` and is neither persisted server-side nor cached in the browser.
+- **Disk** is bounded by `GRIDSHIFT_PLAYER_DATA_MAX_BYTES` (default 1 GB); least recently read rows are evicted and simply refetched on demand. `/api/health` reports `playerData` rows, bytes, and breaker state.
+- **Browser cache** is IndexedDB (`playerDataCache.js`), not `localStorage`: completed-season entries never expire and survive app-version busts, live entries are wiped on a release, and an expired entry is served if the refresh fails (offline). Bump `PLAYER_DATA_SCHEMA_VERSION` (or the key version) when a payload shape changes; the server keys (`stats_v2_`, `gamelog_v11_`) must change together so old rows are not served.
+
 | File | Owns |
 | --- | --- |
-| `src/utils/playerApi.js` | ESPN player fetching |
+| `src/utils/espnPlayerFetch.js` | Pure ESPN season stats, career stats (with the tackles-for-loss repair), and game-log waterfall shared by the browser and the sidecar; `fetchImpl` is injected and results report `incomplete` |
+| `src/utils/playerApi.js` | Player fetching: sidecar first, direct ESPN fallback; rosters, profiles, bios, depth charts, team defense, schedules |
+| `src/utils/playerDataCache.js` | IndexedDB payload cache for season stats, career stats, and game logs |
+| `src/utils/playerCache.js` | `localStorage` cache for rosters, bios, and smaller ESPN responses; release version bust |
+| `server/playerDataHandlers.js` | `/api/players` routes, freshness rules, stale fallback, negative cache, incremental game-log refresh |
+| `server/playerDataStore.js` | SQLite store (`player-data.sqlite` on the data volume): gzip bodies, size cap, least-recently-read eviction |
+| `server/playerDataUpstream.js` | The only path to ESPN: concurrency limit, request spacing, circuit breaker |
+| `server/playerDataConfig.js` | `GRIDSHIFT_PLAYER_DATA_*` settings |
 | `src/utils/playerMetrics.js` | Derived metrics |
-| `src/utils/playerCache.js` | Caching |
 | `src/components/PlayerBrowser.jsx` | Search/browse UI |
 | `src/components/PlayerProfile.jsx` | Profile view |
 | `src/components/PlayerStatTable.jsx` | Stat tables |

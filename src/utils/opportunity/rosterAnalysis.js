@@ -10,11 +10,19 @@ import {
 import { average, comparePlayers, getRosterPlayerIds, percentile, toFixedNumber } from './opportunityShared';
 import { buildOpportunityCards } from './opportunityCards';
 
-export function getAnalysisWeek(league) {
+export function getAnalysisWeek(league, currentWeek = null) {
   const playoffStart = league?.settings?.playoff_week_start ?? 18;
-  const lastScored = league?.settings?.last_scored_leg;
-  if (lastScored) return Math.min(lastScored + 1, playoffStart - 1);
-  return Math.max(1, playoffStart - 1);
+  const finalRegularWeek = Math.max(1, Number(playoffStart) - 1);
+  const liveWeek = Number(currentWeek);
+  if (Number.isInteger(liveWeek) && liveWeek > 0) {
+    return Math.min(liveWeek, finalRegularWeek);
+  }
+
+  const lastScored = Number(league?.settings?.last_scored_leg);
+  if (Number.isFinite(lastScored) && lastScored >= 0) {
+    return Math.min(Math.floor(lastScored) + 1, finalRegularWeek);
+  }
+  return finalRegularWeek;
 }
 
 export function buildRosterPlayers(roster, players, seasonStats, weeklyStats, scoringSettings, rankMap) {
@@ -193,10 +201,11 @@ export function buildRosterOpportunityLayer({
   myRosterId = null,
   targetRosterIds = null,
   rankMap: precomputedRankMap = null,
+  currentWeek = null,
 }) {
   if (!league || !rosters?.length || !players || !seasonStats || !weeklyStats) {
     return {
-      analysisWeek: getAnalysisWeek(league),
+      analysisWeek: getAnalysisWeek(league, currentWeek),
       analysesByRosterId: {},
       allAnalysesByRosterId: {},
       rosterAnalyses: [],
@@ -218,7 +227,7 @@ export function buildRosterOpportunityLayer({
   const defenseTable = scheduleMap
     ? buildDefenseTable(weeklyStats, players, scheduleMap, scoringSettings)
     : null;
-  const analysisWeek = getAnalysisWeek(league);
+  const analysisWeek = getAnalysisWeek(league, currentWeek);
   const availableByPos = buildAvailablePlayersByPos(rosters, players, seasonStats, weeklyStats, scoringSettings);
 
   const rosterAnalyses = rosters.map((roster) => {

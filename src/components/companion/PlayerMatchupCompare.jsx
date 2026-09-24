@@ -17,6 +17,7 @@ import { getTeamColorKey } from '../../data/teamColors.js';
 import { getNflTeamLogoUrl } from '../../utils/companionAssetVisuals.js';
 import { getTeamVisualTheme } from '../../utils/teamVisualTheme.js';
 import { buildFantasyScoringBreakdown } from '../../utils/fantasyBreakdownRows.js';
+import { areCompatibleProviderIdentities, getProviderPlayerIdentity } from '../../utils/providerPlayerIdentity.js';
 import Modal from '../Modal';
 import PlayerAvatar from '../shared/PlayerAvatar.jsx';
 import PlayerStatusBadge from './PlayerStatusBadge.jsx';
@@ -28,7 +29,10 @@ import {
   matchupNumber,
   resolvePlayerDisplayProjection,
 } from '../../utils/playerMatchupPresentation.js';
-import { buildPlayerDefensePerformance } from '../../utils/playerDefensePerformance.js';
+import { buildPlayerDefensePerformance, buildPlayerFormRows } from '../../utils/playerDefensePerformance.js';
+import {
+  getMatchupProjectionBaselines, selectPlayerProjectionBaselineWeeks,
+} from '../../utils/matchupProjectionBaseline.js';
 import {
   STAT_LABELS, formatNumber, formatOrdinal, formatStat, signed,
   getChartMaximum, getChartPosition, getOpponentEvidenceLabel, getSeasonBenchmark,
@@ -43,6 +47,7 @@ function summarizeCompareHistory(rows) {
   if (!points.length) return null;
   return {
     games: points.length,
+    points: points.reduce((sum, value) => sum + value, 0),
     average: points.reduce((sum, value) => sum + value, 0) / points.length,
     high: Math.max(...points),
     last: points[points.length - 1],
@@ -56,14 +61,72 @@ function buildCompareVenueHistory(gameRows) {
   };
 }
 
-function usePlayerCompareModel({ player, week, baseline, weeklyStats, activeScoringSettings, players, scheduleMap }) {
+function resolveComparePlayerId(player, players) {
+  const sourceId = player?.id;
+  if (sourceId == null || !players) return sourceId ?? null;
+
+  const directId = String(sourceId);
+  const directPlayer = players[directId] ?? null;
+  const displayIdentity = getProviderPlayerIdentity({
+    name: player?.name ?? player?.displayName ?? player?.full_name,
+    team: player?.team ?? player?.teamId ?? player?.teamName,
+    position: player?.position,
+  });
+  if (!displayIdentity) return directId;
+
+  const identityFor = (candidate) => getProviderPlayerIdentity({
+    name: candidate?.name ?? candidate?.displayName ?? candidate?.full_name
+      ?? [candidate?.first_name, candidate?.last_name].filter(Boolean).join(' '),
+    team: candidate?.team ?? candidate?.teamId ?? candidate?.teamName,
+    position: candidate?.position,
+  });
+  const directIdentity = identityFor(directPlayer);
+  if (directPlayer && (!directIdentity || areCompatibleProviderIdentities(directIdentity, displayIdentity))) {
+    return directId;
+  }
+
+  const identityMatch = Object.entries(players).find(([candidateId, candidate]) => (
+    candidateId !== directId && areCompatibleProviderIdentities(identityFor(candidate), displayIdentity)
+  ));
+  return identityMatch?.[0] ?? directId;
+}
+
+function buildCompareDisplayPlayer(player, players, resolvedPlayerId) {
+  const rawPlayer = players?.[resolvedPlayerId];
+  if (!rawPlayer || String(player?.id) === String(resolvedPlayerId)) return player;
+  return {
+    ...rawPlayer,
+    ...player,
+    id: resolvedPlayerId,
+    name: player?.name ?? player?.displayName ?? rawPlayer.full_name ?? rawPlayer.name ?? rawPlayer.displayName,
+    team: player?.team ?? player?.teamId ?? rawPlayer.team,
+    position: player?.position ?? rawPlayer.position,
+  };
+}
+
+function usePlayerCompareModel({ player, week, baseline, weeklyStats, activeScoringSettings, players, scheduleMap, leagueId, season }) {
+  const resolvedPlayerId = useMemo(() => resolveComparePlayerId({
+    id: player?.id,
+    name: player?.name,
+    displayName: player?.displayName,
+    full_name: player?.full_name,
+    team: player?.team,
+    teamId: player?.teamId,
+    teamName: player?.teamName,
+    position: player?.position,
+  }, players), [player?.displayName, player?.full_name, player?.id, player?.name, player?.position, player?.team, player?.teamId, player?.teamName, players]);
+  const comparePlayer = buildCompareDisplayPlayer(player, players, resolvedPlayerId);
+  const resolvedBaseline = baseline?.playerId != null
+    && String(baseline.playerId) !== String(resolvedPlayerId)
+    ? null
+    : baseline;
   const phase = getPlayerMatchupPhase({ scheduleEntry: player?.scheduleEntry, gameStarted: player?.gameStarted });
   const isPregame = phase === 'pregame';
   const position = player?.position ?? null;
 
   const weekEntry = (() => {
-    if (!player?.id || isPregame) return null;
-    const entry = weeklyStats?.[player.id]?.find(w => w.week === week) ?? null;
+    if (!resolvedPlayerId || isPregame) return null;
+    const entry = weeklyStats?.[resolvedPlayerId]?.find(w => w.week === week) ?? null;
     const fallbackPoints = matchupNumber(player?.weekPts);
     if (entry) return entry;
     if (!Number.isFinite(fallbackPoints)) return null;
@@ -77,8 +140,8 @@ function usePlayerCompareModel({ player, week, baseline, weeklyStats, activeScor
   }, [weekEntry, activeScoringSettings, position]);
 
   const projectionView = useMemo(
-    () => resolvePlayerDisplayProjection({ isPregame, projection: player?.projection ?? null, baseline }),
-    [isPregame, player?.projection, baseline],
+    () => resolvePlayerDisplayProjection({ isPregame, projection: player?.projection ?? null, baseline: resolvedBaseline }),
+    [isPregame, player?.projection, resolvedBaseline],
   );
   const displayProjection = projectionView.projection;
   const projectedBreakdown = useMemo(
@@ -87,11 +150,44 @@ function usePlayerCompareModel({ player, week, baseline, weeklyStats, activeScor
   );
 
   const peerModel = useMemo(() => buildPlayerDefensePerformance({
-    playerId: player?.id, oppTeam: player?.oppTeam, weeklyStats, players, scheduleMap,
+    playerId: resolvedPlayerId, oppTeam: player?.oppTeam, weeklyStats, players, scheduleMap,
     currentWeek: week, scoringSettings: activeScoringSettings ?? DEFAULT_SCORING,
-  }), [player?.id, player?.oppTeam, weeklyStats, players, scheduleMap, week, activeScoringSettings]);
+  }), [activeScoringSettings, player?.oppTeam, players, resolvedPlayerId, scheduleMap, week, weeklyStats]);
 
-  const seasonBenchmark = getSeasonBenchmark({ player, peerModel, projection: displayProjection });
+  // Peer rankings and defense tiers remain gated by a complete NFL slate, but
+  // the selected player's own season form can use every valid weekly row up to
+  // the selected week. Otherwise a partial provider schedule makes the visible
+  // PPG/total/high/games rows undercount the player while the matchup is already
+  // showing those games elsewhere.
+  const formThroughWeek = Number.isFinite(Number(week))
+    ? phase === 'final' ? Number(week) : Number(week) - 1
+    : null;
+  const formGameRows = useMemo(() => buildPlayerFormRows({
+    playerId: resolvedPlayerId,
+    player: players?.[resolvedPlayerId] ?? { position: player?.position, team: player?.team },
+    weeklyStats,
+    scheduleMap,
+    scoringSettings: activeScoringSettings ?? DEFAULT_SCORING,
+    throughWeek: formThroughWeek,
+  }), [activeScoringSettings, formThroughWeek, player?.position, player?.team, players, resolvedPlayerId, scheduleMap, weeklyStats]);
+  const gameRows = useMemo(
+    () => formGameRows.length ? formGameRows : (peerModel?.overall?.gameRows ?? []),
+    [formGameRows, peerModel?.overall?.gameRows],
+  );
+  const formSummary = summarizeCompareHistory(gameRows);
+  const formPeerModel = peerModel
+    ? {
+      ...peerModel,
+      overall: {
+        ...peerModel.overall,
+        games: formSummary?.games ?? 0,
+        points: formSummary?.points ?? 0,
+        ppg: formSummary?.average ?? null,
+        gameRows,
+      },
+    }
+    : peerModel;
+  const seasonBenchmark = getSeasonBenchmark({ player: comparePlayer, peerModel: formPeerModel, projection: displayProjection });
   const opponentContext = player?.opponentFantasyContext ?? (player?.defStrength ? {
     ...player.defStrength, team: player?.oppTeam, position,
     currentGames: player.defStrength.gamesAnalyzed, evidenceKind: 'current',
@@ -104,8 +200,39 @@ function usePlayerCompareModel({ player, week, baseline, weeklyStats, activeScor
   const peerCount = matchupNumber(player?.rank?.posCount);
   const rankLabel = player?.rank?.posLabel ?? position ?? '';
 
-  const gameRows = peerModel?.overall?.gameRows ?? [];
   const ladderRows = gameRows.slice(-5).reverse();
+
+  // Season average as it stood after each week, so the ladder's benchmark moves
+  // with the season instead of judging Week 1 against a full-season number.
+  const averageByWeek = useMemo(() => {
+    const map = new Map();
+    let running = 0;
+    gameRows.forEach((row, index) => {
+      running += matchupNumber(row.points) ?? 0;
+      map.set(row.week, running / (index + 1));
+    });
+    return map;
+  }, [gameRows]);
+
+  // Projections are only known for weeks this league was open pregame, so weeks
+  // without a recorded baseline simply carry no projection marker.
+  const recordedProjectionsByWeek = useMemo(() => selectPlayerProjectionBaselineWeeks(
+    getMatchupProjectionBaselines(),
+    { leagueId, season, playerId: resolvedPlayerId, scoringSettings: activeScoringSettings ?? DEFAULT_SCORING },
+  ), [leagueId, season, resolvedPlayerId, activeScoringSettings]);
+
+  const projectionByWeek = useMemo(() => {
+    const map = new Map(Object.entries(recordedProjectionsByWeek).map(([key, value]) => [Number(key), value]));
+    const baselineWeek = Number(resolvedBaseline?.week);
+    const baselineProjection = matchupNumber(resolvedBaseline?.projection?.projected);
+    if (Number.isFinite(baselineWeek) && baselineProjection != null) map.set(baselineWeek, baselineProjection);
+    const current = matchupNumber(displayProjection?.projected);
+    // A current pregame projection is a valid going-into-that-week marker. An
+    // available estimate on a started/final game is not a reconstructable
+    // historical baseline and must not be presented as one.
+    if (isPregame && current != null && !map.has(Number(week))) map.set(Number(week), current);
+    return map;
+  }, [displayProjection?.projected, isPregame, recordedProjectionsByWeek, resolvedBaseline, week]);
   const recentHistory = summarizeCompareHistory(gameRows.slice(-3));
   const venueHistory = buildCompareVenueHistory(gameRows);
   const seasonHigh = gameRows.length
@@ -119,7 +246,7 @@ function usePlayerCompareModel({ player, week, baseline, weeklyStats, activeScor
     : null;
 
   return {
-    id: player?.id, name: player?.name, position, team: player?.team,
+    id: resolvedPlayerId, name: comparePlayer?.name, position: comparePlayer?.position ?? position, team: comparePlayer?.team,
     availabilityStatus: player?.availabilityStatus, oppTeam: player?.oppTeam, isHome: player?.isHome,
     phase, isPregame, finalScore,
     weather: player?.weather, isIndoor: player?.isIndoor,
@@ -129,15 +256,17 @@ function usePlayerCompareModel({ player, week, baseline, weeklyStats, activeScor
     seasonBenchmark, opponentContext,
     rankValue, peerCount, rankLabel,
     ladderRows,
+    averageByWeek,
+    projectionByWeek,
     recentHistory,
     venueHistory,
     statRanks: peerModel?.statRanks ?? [],
-    seasonAvg: matchupNumber(peerModel?.overall?.ppg),
-    seasonPoints: matchupNumber(peerModel?.overall?.points),
+    seasonAvg: formSummary?.average ?? matchupNumber(peerModel?.overall?.ppg),
+    seasonPoints: formSummary?.points ?? matchupNumber(peerModel?.overall?.points),
     seasonHigh,
-    gamesPlayed: matchupNumber(peerModel?.overall?.games),
+    gamesPlayed: formSummary?.games ?? matchupNumber(peerModel?.overall?.games),
     statByKey,
-    player,
+    player: comparePlayer,
   };
 }
 
@@ -423,7 +552,45 @@ function CompareLadder({ left, right }) {
   if (!weeks.length) return null;
   const byWeekLeft = new Map(left.ladderRows.map(r => [r.week, r.points]));
   const byWeekRight = new Map(right.ladderRows.map(r => [r.week, r.points]));
-  const maximum = getChartMaximum(weeks.map(w => byWeekLeft.get(w)), weeks.map(w => byWeekRight.get(w)));
+  // Reference lines move week to week: the season average as it stood after
+  // that week, and the projection that was on record going into it. Each side
+  // reads against its own benchmarks, never the other player's.
+  const benchmarksFor = (model, week) => ({
+    average: matchupNumber(model.averageByWeek?.get(week)),
+    projection: matchupNumber(model.projectionByWeek?.get(week)),
+  });
+  const allBenchmarks = weeks.flatMap(week => [benchmarksFor(left, week), benchmarksFor(right, week)]);
+  const maximum = getChartMaximum(
+    weeks.map(w => byWeekLeft.get(w)), weeks.map(w => byWeekRight.get(w)),
+    allBenchmarks.map(b => b.average), allBenchmarks.map(b => b.projection),
+  );
+  const hasAverage = allBenchmarks.some(b => b.average != null);
+  const hasProjection = allBenchmarks.some(b => b.projection != null);
+  const leftBar = 'var(--pmd-cmp-left-bar, var(--color-accent))';
+  const rightBar = 'var(--pmd-cmp-right-bar, var(--color-accent-orange))';
+
+  const renderTrack = (model, week, side, value, bar) => {
+    const { average, projection } = benchmarksFor(model, week);
+    const averagePosition = getChartPosition(average, maximum);
+    const projectionPosition = getChartPosition(projection, maximum);
+    const edge = side === 'left' ? 'right' : 'left';
+    return (
+      <div className={`pmd-cmp-fcell is-${side}`}>
+        <div className={`pmd-cmp-ftrack is-${side}`}>
+          <i style={{ width: `${getChartPosition(value, maximum) ?? 0}%`, background: bar }} />
+          {averagePosition != null && <u style={{ [edge]: `${averagePosition}%` }} />}
+          {projectionPosition != null && <u className="is-target" style={{ [edge]: `${projectionPosition}%` }} />}
+        </div>
+        <div className="pmd-cmp-fmarks pmd-num">
+          {average != null && <span className="is-average" style={{ [edge]: `${averagePosition}%` }}>{formatNumber(average)}</span>}
+          {projection != null
+            ? <span className="is-target" style={{ [edge]: `${projectionPosition}%` }}>{formatNumber(projection)}</span>
+            : hasProjection && <span className="is-target is-unavailable" title="Projection not recorded" aria-label="Projection not recorded">—</span>}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <section className="pmd-sec">
       <div className="pmd-eyebrow">Recent form{' · '}<span>fantasy points by week</span></div>
@@ -436,14 +603,20 @@ function CompareLadder({ left, right }) {
           return (
             <div className="pmd-cmp-lrow" key={week}>
               <div className={`pmd-cmp-lrow-v is-left pmd-num${leftLeading ? ' is-leading' : ''}`}>{formatNumber(a)}</div>
-              <div className="pmd-cmp-ftrack is-left"><i style={{ width: `${getChartPosition(a, maximum) ?? 0}%`, background: 'var(--pmd-cmp-left-bar, var(--color-accent))' }} /></div>
+              {renderTrack(left, week, 'left', a, leftBar)}
               <div className="pmd-cmp-lrow-k pmd-cond">Wk {week}</div>
-              <div className="pmd-cmp-ftrack is-right"><i style={{ width: `${getChartPosition(b, maximum) ?? 0}%`, background: 'var(--pmd-cmp-right-bar, var(--color-accent-orange))' }} /></div>
+              {renderTrack(right, week, 'right', b, rightBar)}
               <div className={`pmd-cmp-lrow-v pmd-num${rightLeading ? ' is-leading' : ''}`}>{formatNumber(b)}</div>
             </div>
           );
         })}
       </div>
+      {(hasAverage || hasProjection) && (
+        <div className="pmd-legend pmd-cmp-legend">
+          {hasAverage && <span><i className="is-tick" />Season average through that week</span>}
+          {hasProjection && <span><i className="is-target" />Projection going into that week</span>}
+        </div>
+      )}
     </section>
   );
 }
@@ -525,11 +698,11 @@ function CompareGameChip({ model }) {
 // ── main ─────────────────────────────────────────────────────────────────────
 
 export default function PlayerMatchupCompare({ left, right, week, slotLabel, leftBaseline = null, rightBaseline = null, onClose, onViewStats }) {
-  const { players, weeklyStats, activeScoringSettings, scheduleMap } = useSleeperBase();
+  const { players, weeklyStats, activeScoringSettings, scheduleMap, selectedLeagueId, season } = useSleeperBase();
   const { darkMode } = useTheme();
 
-  const leftModel = usePlayerCompareModel({ player: left, week, baseline: leftBaseline, weeklyStats, activeScoringSettings, players, scheduleMap });
-  const rightModel = usePlayerCompareModel({ player: right, week, baseline: rightBaseline, weeklyStats, activeScoringSettings, players, scheduleMap });
+  const leftModel = usePlayerCompareModel({ player: left, week, baseline: leftBaseline, weeklyStats, activeScoringSettings, players, scheduleMap, leagueId: selectedLeagueId, season });
+  const rightModel = usePlayerCompareModel({ player: right, week, baseline: rightBaseline, weeklyStats, activeScoringSettings, players, scheduleMap, leagueId: selectedLeagueId, season });
 
   if (!left?.id || !right?.id || left.name === 'Empty' || right.name === 'Empty') return null;
 
@@ -603,8 +776,8 @@ export default function PlayerMatchupCompare({ left, right, week, slotLabel, lef
 
       <div className="pmd-cmp-body gridshift-reveal gridshift-reveal--auto" style={{ '--pmd-cmp-left-bar': leftTeamColor, '--pmd-cmp-right-bar': rightTeamColor }}>
         <div className="pmd-cmp-heroes">
-          <CompareHero player={left} side="left" darkMode={darkMode} onViewStats={canOpenStats(left) ? () => { const meta = getStatsPlayerMeta(left); onClose(); onViewStats(meta.id, meta); } : null} />
-          <CompareHero player={right} side="right" darkMode={darkMode} onViewStats={canOpenStats(right) ? () => { const meta = getStatsPlayerMeta(right); onClose(); onViewStats(meta.id, meta); } : null} />
+          <CompareHero player={leftModel.player} side="left" darkMode={darkMode} onViewStats={canOpenStats(leftModel.player) ? () => { const meta = getStatsPlayerMeta(leftModel.player); onClose(); onViewStats(meta.id, meta); } : null} />
+          <CompareHero player={rightModel.player} side="right" darkMode={darkMode} onViewStats={canOpenStats(rightModel.player) ? () => { const meta = getStatsPlayerMeta(rightModel.player); onClose(); onViewStats(meta.id, meta); } : null} />
         </div>
 
         <div className="pmd-cmp-games">

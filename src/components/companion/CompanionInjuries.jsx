@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import { getPlayerDesignations } from '../../api/playerDesignationsApi.js';
-import { getNflState } from '../../api/sleeperApi.js';
 import { useSleeperLeague, useSleeperStats } from '../../context/SleeperContext.jsx';
 import { useTheme } from '../../context/ThemeContext.jsx';
 import { getTeamColorKey } from '../../data/teamColors.js';
@@ -200,6 +199,9 @@ export default function CompanionInjuries() {
     season,
     seasonSwitching,
     connectLoading,
+    nflState,
+    nflStateLoading,
+    nflStateError,
     rosters,
     leagueUsers,
     sleeperUser,
@@ -249,11 +251,19 @@ export default function CompanionInjuries() {
       await Promise.resolve();
       if (cancelled) return;
       setSourceState((current) => ({ ...current, status: 'loading', error: null }));
-      let nflState = null;
-      try {
-        nflState = await getNflState();
-      } catch (error) {
-        if (!cancelled) setSourceState({ status: 'unavailable', nflState: null, response: null, error });
+      if (nflStateLoading || !nflState) {
+        if (!cancelled && nflStateLoading) {
+          setSourceState((current) => ({ ...current, status: 'loading', nflState: null, error: null }));
+        } else if (!cancelled) {
+          setSourceState({
+            status: 'unavailable',
+            nflState: null,
+            response: null,
+            error: nflStateError
+              ? new Error(nflStateError)
+              : new Error('Current NFL week unavailable.'),
+          });
+        }
         return;
       }
 
@@ -305,6 +315,9 @@ export default function CompanionInjuries() {
     };
   }, [
     leagueSnapshotReady,
+    nflState,
+    nflStateError,
+    nflStateLoading,
     platform,
     players,
     refreshKey,
@@ -388,6 +401,7 @@ export default function CompanionInjuries() {
     !players
     || connectLoading
     || seasonSwitching != null
+    || nflStateLoading
     || (leagueSnapshotReady && !sourceState.nflState && (sourceState.status === 'idle' || sourceState.status === 'loading'))
   );
   const currentWeekUnavailable = sourceState.status === 'unavailable' && !currentSeasonReady;

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   baselineScope, captureMatchupProjectionBaseline, captureMatchupProjectionBaselines,
   getMatchupProjectionBaseline, getMatchupProjectionBaselines, selectMatchupProjectionBaselines,
+  selectPlayerProjectionBaselineWeeks,
   summarizeBdlProjection, summarizeExternalProjection, summarizeRecordedPregameProjection, clearMatchupProjectionBaselines, MATCHUP_PROJECTION_BASELINE_LIMIT, MATCHUP_PROJECTION_BASELINE_STORAGE_KEY,
 } from '../../src/utils/matchupProjectionBaseline.js';
 
@@ -136,4 +137,26 @@ test('interleaved tabs retain unrelated players and newer observations', () => {
   assert.equal(getMatchupProjectionBaseline(options, { storage: options.storage }).projection.projected, 18);
   assert.ok(getMatchupProjectionBaseline({ ...options, playerId: 'P2' }, { storage: options.storage }));
   assert.equal(options.storage.length, 2);
+});
+
+test('per-week selection returns one player\'s recorded weeks and isolates every other scope field', () => {
+  const store = storage();
+  const weeks = [
+    { week: 1, kickoff: '2026-09-13T12:00:00Z', now: '2026-09-12T12:00:00Z', projected: 10.5 },
+    { week: 2, kickoff: '2026-09-20T12:00:00Z', now: '2026-09-19T12:00:00Z', projected: 14.2 },
+  ];
+  for (const entry of weeks) {
+    captureMatchupProjectionBaseline(base({
+      storage: store, week: entry.week, projection: { projected: entry.projected },
+      scheduleEntry: { kickoff: entry.kickoff, completed: false }, nowMs: Date.parse(entry.now),
+    }));
+  }
+  // A different player in a recorded week must not leak into the first player's ladder.
+  captureMatchupProjectionBaseline(base({ storage: store, playerId: 'P2', projection: { projected: 99 } }));
+  const scope = { leagueId: 'L1', season: 2026, playerId: 'P1', scoringSettings: { rec: 1, pass_yd: 0.04 } };
+  const all = getMatchupProjectionBaselines({ storage: store });
+  assert.deepEqual(selectPlayerProjectionBaselineWeeks(all, scope), { 1: 10.5, 2: 14.2 });
+  for (const change of [{ leagueId: 'L2' }, { season: 2025 }, { playerId: null }, { scoringSettings: { rec: 0.5 } }]) {
+    assert.deepEqual(selectPlayerProjectionBaselineWeeks(all, { ...scope, ...change }), {});
+  }
 });

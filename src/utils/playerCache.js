@@ -1,9 +1,12 @@
+import { clearAllPlayerData, clearLivePlayerData } from './playerDataCache.js';
+
 const PREFIX = 'nfl_pc_';
 
 export const TTL = {
   roster:     24 * 60 * 60 * 1000,  // 24 hours
   stats:       1 * 60 * 60 * 1000,  // 1 hour (current season)
   bio:        24 * 60 * 60 * 1000,  // 24 hours
+  career:     24 * 60 * 60 * 1000,  // 24 hours (totals move during the season)
   historical: Infinity,              // Never expires — past seasons are final
 };
 
@@ -41,10 +44,16 @@ export async function cachedFetch(key, fetchFn, ttl, shouldCache) {
   return data;
 }
 
-export function clearPlayerCache() {
+function clearLocalPlayerCache() {
   Object.keys(localStorage)
     .filter(k => k.startsWith(PREFIX))
     .forEach(k => localStorage.removeItem(k));
+}
+
+export function clearPlayerCache() {
+  clearLocalPlayerCache();
+  // Season stats, career stats, and game logs live in IndexedDB.
+  void clearAllPlayerData();
 }
 
 // Stored outside the nfl_pc_ prefix so it survives clearPlayerCache().
@@ -52,15 +61,19 @@ const VERSION_KEY = 'nfl_pc_version';
 
 /**
  * Called once at app startup. If the stored cache version doesn't match the
- * current build version, wipe all player cache entries so stale data from a
- * prior version is never served. Updates the stored version afterward.
+ * current build version, wipe the localStorage player cache and the live
+ * (non-final) IndexedDB payloads so stale data from a prior version is never
+ * served. Completed-season payloads are kept. Updates the stored version afterward.
  */
 export function checkAndBustCacheIfNeeded() {
   try {
     const stored = localStorage.getItem(VERSION_KEY);
     const current = __APP_VERSION__;
     if (stored !== current) {
-      clearPlayerCache();
+      clearLocalPlayerCache();
+      // A release must not force every completed season to be refetched, so
+      // only live (current-season, career) payloads are wiped from IndexedDB.
+      void clearLivePlayerData();
       localStorage.setItem(VERSION_KEY, current);
     }
   } catch { /* ignore — Safari private mode, quota errors, etc. */ }

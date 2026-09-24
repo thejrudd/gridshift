@@ -28,6 +28,10 @@ import { ONBOARDING_TOUR } from './data/onboardingTour';
 import { ONBOARDING_PHASE } from './utils/onboardingTour';
 import UpdateBanner from './components/UpdateBanner';
 import NavBar from './components/NavBar';
+import useGlobalSearch from './hooks/useGlobalSearch';
+import { resolveResultRoute } from './utils/globalSearch/resolveRoute';
+import { CURRENT_RELEASE_URL } from './utils/appLinks';
+import { buildFantasyOwnership } from './utils/fantasyOwnership';
 import BottomTabBar from './components/BottomTabBar';
 import SeasonSubNav from './components/SeasonSubNav';
 import StatisticsSubNav from './components/StatisticsSubNav';
@@ -83,6 +87,7 @@ const ExportPreview = lazy(() => import('./components/ExportPreview'));
 const PredictionsRedesign = lazy(() => import('./components/predictions/PredictionsRedesign'));
 const Guide = lazy(() => import('./components/Guide'));
 const WhatsNewModal = lazy(() => import('./components/WhatsNewModal'));
+const GlobalSearchPalette = lazy(() => import('./components/search/GlobalSearchPalette'));
 const OnboardingWelcomeModal = lazy(() => import('./components/OnboardingWelcomeModal'));
 const TourOverlay = lazy(() => import('./components/tour/TourOverlay'));
 const PlayerBrowser = lazy(() => import('./components/PlayerBrowser'));
@@ -490,14 +495,52 @@ function AppInner() {
     league,
     linkedLeagueSeasonOptions,
     scoringOverridePaused,
+    activeScoringSettings,
     sleeperUser,
+    rosters,
+    leagueUsers,
+    getUserDisplayName,
+    myRoster,
+    currentFantasyWeek,
   } = useFantasyLeague();
   const {
     statsLoading,
     seasonStats,
+    weeklyStats,
     players: sleeperPlayers,
     espnIdOverrides,
   } = useFantasyStats();
+
+  // Global search. The index is built lazily on first open and never triggers a
+  // fetch of its own — see useGlobalSearch.
+  const searchLeague = useMemo(
+    () => (hasLeague ? { rosters, leagueUsers, getUserDisplayName } : null),
+    [hasLeague, rosters, leagueUsers, getUserDisplayName],
+  );
+  const {
+    open: searchOpen,
+    openSearch,
+    closeSearch,
+    index: searchIndex,
+    status: searchStatus,
+  } = useGlobalSearch({ league: searchLeague, sleeperPlayers, espnIdOverrides });
+  const [searchNotice, setSearchNotice] = useState(null);
+  const [searchResolvingId, setSearchResolvingId] = useState(null);
+
+  // Who rosters whom, built once per league rather than scanned per keystroke.
+  // With no league this is an empty map, and the palette then says nothing about
+  // ownership rather than calling everyone a free agent.
+  const searchFantasyOwnership = useMemo(() => (
+    hasLeague
+      ? buildFantasyOwnership({
+        rosters,
+        leagueUsers,
+        getUserDisplayName,
+        myRosterId: myRoster()?.roster_id ?? null,
+      })
+      : null
+  ), [getUserDisplayName, hasLeague, leagueUsers, myRoster, rosters]);
+
   const currentLeagueSeason = [...linkedLeagueSeasonOptions]
     .map((value) => String(value))
     .sort((left, right) => Number(right) - Number(left))[0] ?? String(season);
@@ -1179,9 +1222,46 @@ function AppInner() {
       ...appRoute,
       activeTab: 'statistics',
       statisticsView: 'schedule',
+      // An open matchup drill-in only survives changes that name it again.
+      statisticsScheduleGameId: null,
       ...patch,
     }, options);
   }, [appRoute, applyRoute]);
+
+  // Schedule NFL matchup drill-in → Fantasy › Defenses, pre-filtered to the
+  // unit, with both teams pinned and a way back to the same matchup.
+  const navigateToMatchupDefenses = useCallback(({
+    position = 'ALL',
+    stat = null,
+    pinnedTeams = [],
+    returnGameId = null,
+    returnTeamId = null,
+  } = {}) => {
+    applyRoute({
+      activeTab: 'fantasy',
+      companionView: 'defenses',
+      defenseMode: 'stats',
+      defensePosition: position,
+      defenseStat: stat,
+      defenseSort: 'avg',
+      defenseDir: 'desc',
+      defenseQuery: null,
+      defensePinnedTeams: pinnedTeams.join(','),
+      defenseReturnGameId: returnGameId,
+      defenseReturnTeamId: returnTeamId,
+    });
+  }, [applyRoute]);
+
+  const returnToScheduleMatchup = useCallback(() => {
+    if (!appRoute.defenseReturnGameId || !appRoute.defenseReturnTeamId) return;
+    applyRoute({
+      activeTab: 'statistics',
+      statisticsView: 'schedule',
+      statisticsScheduleMode: 'team',
+      statisticsScheduleTeamId: appRoute.defenseReturnTeamId,
+      statisticsScheduleGameId: appRoute.defenseReturnGameId,
+    });
+  }, [appRoute.defenseReturnGameId, appRoute.defenseReturnTeamId, applyRoute]);
 
   const updateStatisticsScoresRoute = useCallback((patch, options = {}) => {
     applyRoute({
@@ -1240,6 +1320,28 @@ function AppInner() {
     });
   }, [appRoute, espnIdOverrides, navigateToStatisticsPlayer, sleeperPlayers]);
 
+  // Schedule matchup drill-in → player statistics (NFL game stats, not fantasy).
+  // Back returns to the schedule with the same matchup open.
+  const navigateScheduleMatchupPlayer = useCallback(async (player) => {
+    const backLabel = 'Matchup';
+    if (player?.sleeperId) {
+      const playerMeta = await resolveStatisticsPlayerMetaFromSleeperId(player.sleeperId, sleeperPlayers, espnIdOverrides);
+      if (playerMeta) {
+        navigateToStatisticsPlayer(playerMeta, { backLabel, backRoute: appRoute, mode: STATISTICS_MODES.GAME });
+        return;
+      }
+    }
+    if (player?.espnId) {
+      navigateToStatisticsPlayer({
+        id: String(player.espnId),
+        espnId: String(player.espnId),
+        displayName: player.name ?? '',
+        position: player.position ?? '',
+        teamId: player.team ?? null,
+      }, { backLabel, backRoute: appRoute, mode: STATISTICS_MODES.GAME });
+    }
+  }, [appRoute, espnIdOverrides, navigateToStatisticsPlayer, sleeperPlayers]);
+
   const navigateDraftPlayerToStatistics = useCallback(async (sleeperId) => {
     if (!sleeperId) return;
     const token = draftPlayerOpenTokenRef.current + 1;
@@ -1272,6 +1374,115 @@ function AppInner() {
       if (draftPlayerOpenTokenRef.current === token) setStatsDrilldownPending(null);
     }
   }, [appRoute, espnIdOverrides, navigateToStatisticsPlayer, sleeperPlayers]);
+
+  // Detach the palette's `_sheet` history entry before routing away from it.
+  //
+  // Modal's useSheetHistory consumes that entry with a deferred history.back()
+  // when it unmounts. A search result resolves asynchronously, so without this
+  // the deferred back fires *after* the new route is pushed and silently undoes
+  // it. Same reason openHistoricalMatchup detaches before switching seasons.
+  const detachSearchSheetEntry = useCallback(() => {
+    const historyState = readHistoryState();
+    if (!historyState._sheet) return;
+    window.history.replaceState({ ...historyState, _sheet: null }, '', window.location.href);
+  }, [readHistoryState]);
+
+  // Search results navigate through applyRoute like everything else. Player
+  // results may need a roster lookup first when Sleeper has no ESPN id for them,
+  // which is the same fallback the Companion drilldowns use.
+  // The index carries an ESPN id for only about a third of players, so the rest
+  // need a roster lookup before they can be routed. The palette stays open while
+  // that resolves: closing first made a slow or failed lookup look like the tap
+  // did nothing at all.
+  const handleSearchNavigate = useCallback(async (entry) => {
+    if (!entry?.record) {
+      closeSearch();
+      return;
+    }
+
+    setSearchNotice(null);
+    setSearchResolvingId(entry.record.id);
+
+    const { route, playerMeta } = await resolveResultRoute(entry, {});
+
+    setSearchResolvingId(null);
+
+    if (!route) {
+      // Never fail silently — say so, in the palette, with the result still up.
+      setSearchNotice(
+        entry.record.kind === 'player'
+          ? `Couldn't open ${entry.record.label}. No stats page is available for them yet.`
+          : "Couldn't open that result.",
+      );
+      return;
+    }
+
+    detachSearchSheetEntry();
+    closeSearch();
+
+    if (playerMeta) {
+      navigateToStatisticsPlayer(playerMeta, { backLabel: 'Search', backRoute: appRoute });
+      return;
+    }
+    applyRoute(route);
+  }, [
+    appRoute,
+    applyRoute,
+    closeSearch,
+    detachSearchSheetEntry,
+    navigateToStatisticsPlayer,
+  ]);
+
+  const handleSearchCommand = useCallback((commandId) => {
+    if (commandId === 'league.connect') detachSearchSheetEntry();
+    closeSearch();
+    switch (commandId) {
+      case 'theme.toggle': toggleDarkMode(); break;
+      case 'display': setDisplaySettingsOpen(true); break;
+      case 'guide': setGuideOpen(true); break;
+      case 'league.switch': setLeagueSwitcherOpen(true); break;
+      case 'league.connect': applyRoute({ activeTab: 'fantasy', companionView: 'rosters' }); break;
+      case 'whatsNew': window.open(CURRENT_RELEASE_URL, '_blank', 'noopener,noreferrer'); break;
+      case 'export': setGameWeekExportOpen(true); break;
+      default: break;
+    }
+  }, [applyRoute, closeSearch, detachSearchSheetEntry, toggleDarkMode]);
+
+  // The Statistics player header's ownership chip: open the team that rosters
+  // this player, either at their roster or at the week's matchup.
+  const openFantasyTeamFromStats = useCallback(({ rosterId, view } = {}) => {
+    if (rosterId == null) return;
+    applyRoute(view === 'matchup'
+      ? {
+        activeTab: 'fantasy',
+        companionView: 'matchups',
+        matchupRosterId: String(rosterId),
+      }
+      : {
+        activeTab: 'fantasy',
+        companionView: 'rosters',
+        leagueSubview: 'roster',
+        leagueRosterId: String(rosterId),
+      });
+  }, [applyRoute]);
+
+  // A secondary destination offered by a result — a player's fantasy roster or
+  // matchup, or the team behind a leaders card. These carry a complete route
+  // already, so unlike a player result there is nothing to resolve first.
+  const handleSearchRoute = useCallback((route) => {
+    if (!route) return;
+    detachSearchSheetEntry();
+    closeSearch();
+    applyRoute(route);
+  }, [applyRoute, closeSearch, detachSearchSheetEntry]);
+
+  // A row inside a leaders answer routes exactly like a player result would.
+  const handleSearchSelectPlayerId = useCallback((sleeperId) => {
+    if (!sleeperId) return;
+    detachSearchSheetEntry();
+    closeSearch();
+    void navigateToCompanionSleeperPlayer(String(sleeperId), 'Search');
+  }, [closeSearch, detachSearchSheetEntry, navigateToCompanionSleeperPlayer]);
 
   const openTradeProposalPlayer = useCallback((asset) => {
     if (!asset?.id) return;
@@ -1445,6 +1656,47 @@ function AppInner() {
   );
   const predictionTeams = predictionScheduleModel.teams;
   const predictionSchedule = predictionScheduleModel.schedule;
+
+  // Data the inline answer resolvers may read. Every field is something the app
+  // already holds; a missing one makes the relevant resolver return null and the
+  // result falls back to a plain navigation row.
+  //
+  // Declared here rather than beside the rest of the search state because it
+  // depends on the hydrated prediction schedule built just above — referencing
+  // that earlier would hit the temporal dead zone on every render.
+  const searchAnswerData = useMemo(() => ({
+    weeklyStats,
+    players: sleeperPlayers,
+    scoring: activeScoringSettings,
+    fantasyOwnership: searchFantasyOwnership,
+    // Team identity (division, conference) and the hydrated schedule, which is
+    // everything the standings, scope and team-stat resolvers need. Both are
+    // already built for the Statistics and Predictions views; search reads
+    // them, and the resolvers derive their own numbers without fetching.
+    nflTeams: predictionTeams.length ? predictionTeams : (scheduleData?.teams ?? []),
+    nflSchedule: predictionSchedule,
+    fantasyLeague: hasLeague
+      ? { rosters, leagueUsers, getUserDisplayName, myRosterId: myRoster()?.roster_id ?? null }
+      : null,
+    // The league's own active week, so "last week" means the most recently
+    // completed one rather than a calendar guess.
+    currentWeek: currentFantasyWeek,
+  }), [
+    activeScoringSettings,
+    currentFantasyWeek,
+    getUserDisplayName,
+    hasLeague,
+    league,
+    leagueUsers,
+    myRoster,
+    predictionSchedule,
+    predictionTeams,
+    rosters,
+    scheduleData?.teams,
+    searchFantasyOwnership,
+    sleeperPlayers,
+    weeklyStats,
+  ]);
 
   useEffect(() => {
     setPredictionSyncActive(activeTab === 'predictions');
@@ -1680,6 +1932,7 @@ function AppInner() {
         onDisplay={() => setDisplaySettingsOpen(true)}
         onLegal={() => setLegalOpen(true)}
         onGuide={() => setGuideOpen(true)}
+        onSearchOpen={openSearch}
         onStatsExport={() => setGameWeekExportOpen(true)}
         canExportStats={hasLeague && platform === 'sleeper'}
         onExportJSON={handleExportJSON}
@@ -1708,6 +1961,7 @@ function AppInner() {
           darkMode={darkMode}
           onToggleDarkMode={toggleDarkMode}
           onMenuOpen={() => setActionSheetOpen(true)}
+          onSearchOpen={openSearch}
           seasonSelector={hasLeague && (activeTab === 'fantasy' || activeTab === 'league' || activeTab === 'trade' || activeTab === 'draft') ? (
             <SeasonChip
               season={season}
@@ -1985,8 +2239,11 @@ function AppInner() {
                 week={statisticsScheduleWeek}
                 teamId={statisticsScheduleTeamId}
                 filter={statisticsScheduleFilter}
+                gameId={appRoute.statisticsScheduleGameId}
                 onRouteChange={updateStatisticsScheduleRoute}
                 onViewGameStats={navigateToStatisticsGame}
+                onOpenDefenses={hasLeague ? navigateToMatchupDefenses : null}
+                onOpenPlayer={navigateScheduleMatchupPlayer}
               />
             </Suspense>
           )}
@@ -2036,6 +2293,7 @@ function AppInner() {
               onNavigatePlayer={navigateToStatisticsPlayer}
               onViewSchedule={navigateToStatisticsScheduleTeam}
               onPlayerModeChange={updateStatisticsMode}
+              onOpenFantasyTeam={openFantasyTeamFromStats}
               tradeDisabled={tradeDisabled}
               tradeDisabledTitle={tradeDisabledTitle}
               onBuildTrade={(initialTrade) => {
@@ -2330,6 +2588,17 @@ function AppInner() {
                 <Suspense fallback={<SectionLoading label="Loading Defense" />}>
                   <CompanionDefense
                     routeState={defenseRouteState}
+                    pinnedTeams={appRoute.defensePinnedTeams ? appRoute.defensePinnedTeams.split(',') : []}
+                    returnMatchup={appRoute.defenseReturnGameId && appRoute.defenseReturnTeamId
+                      ? { teamId: appRoute.defenseReturnTeamId, gameId: appRoute.defenseReturnGameId }
+                      : null}
+                    onReturnToMatchup={returnToScheduleMatchup}
+                    onClearMatchup={() => updateCompanionRoute({
+                      companionView: 'defenses',
+                      defensePinnedTeams: null,
+                      defenseReturnGameId: null,
+                      defenseReturnTeamId: null,
+                    }, { replace: true })}
                     onRouteStateChange={(nextState) => updateCompanionRoute({
                       companionView: 'defenses',
                       defenseMode: nextState.mode,
@@ -2404,6 +2673,26 @@ function AppInner() {
 
       {statsDrilldownPending && (
         <RouteLoadingOverlay label={statsDrilldownPending.label} />
+      )}
+
+      {/* ── Global search palette (Cmd/Ctrl+K) ───────────────── */}
+      {searchOpen && (
+        <Suspense fallback={<ModalLoading label="Loading search" />}>
+          <GlobalSearchPalette
+            index={searchIndex}
+            status={searchStatus}
+            darkMode={darkMode}
+            onClose={closeSearch}
+            onNavigate={handleSearchNavigate}
+            onCommand={handleSearchCommand}
+            onSelectPlayerId={handleSearchSelectPlayerId}
+            onRoute={handleSearchRoute}
+            answerData={searchAnswerData}
+            notice={searchNotice}
+            onClearNotice={() => setSearchNotice(null)}
+            resolvingId={searchResolvingId}
+          />
+        </Suspense>
       )}
 
       {/* ── Action Sheet (mobile menu) ───────────────────────── */}
