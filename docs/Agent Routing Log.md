@@ -248,3 +248,21 @@ the routing rubric from observed total cost and quality.
   own expectations were adjusted during authoring.
 - Final status: Validated; detailed live UI acceptance remains a user-owned
   follow-up.
+
+## Entry 12 — 2026-09-24 — Search and By Week Statistics Schedule matchup drill-in
+
+- Date and task: Open upcoming search game results in the Statistics Schedule
+  matchup drill-in, enable the same drill-in from regular-season By Week rows,
+  and link live/completed matchups to Statistics Scores.
+- Parent model and effort: GPT-6 parent session; default effort.
+- Delegated roles, models, and efforts: Two GPT-6 Luna/low read-only route
+  investigators for search navigation and By Week schedule behavior.
+- Validation tier and checks: Tier 2; targeted route/component review and
+  `git diff --check` passed. Tests and browser usage were not run; live UI
+  testing remains user-owned as requested.
+- Escalation or review: No escalation or independent review; parallel tracing
+  confirmed the existing By Team-only route gate and Score hand-off contract.
+- Rework, failure, or saved effort: Kept live/final search results on Scores,
+  preserved modal history behavior, and used the away team as the left side
+  for By Week drill-ins.
+- Final status: Implemented; user live check remains.

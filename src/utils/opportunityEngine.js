@@ -27,6 +27,7 @@ export function analyzeAreasOfOpportunity({
   pickValueMap = null,
   ktcPlayers = [],
   leagueType = '1qb',
+  currentWeek = null,
 }) {
   const opportunityLayer = buildRosterOpportunityLayer({
     league,
@@ -38,6 +39,7 @@ export function analyzeAreasOfOpportunity({
     scheduleMap,
     myRosterId,
     targetRosterIds,
+    currentWeek,
   });
 
   const { analysesByRosterId, tradeProposals, surplusTradeProposals } = buildPartnerTradeIntelligence({

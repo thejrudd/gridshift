@@ -143,6 +143,49 @@ function buildPlayerGameRows(playerId, player, weeklyStats, scheduleMap, complet
   return rows;
 }
 
+/**
+ * Returns the selected player's own available season form, independent of the
+ * league-wide completed-week gate used for peer ranks and defense tiers.
+ *
+ * A weekly stats row is the participation evidence here. An explicit zero
+ * games-played value still excludes the row, while a reported zero fantasy
+ * score remains a valid game. This is intentionally a presentation contract:
+ * callers decide the last week they are allowed to show, so a live selected
+ * week can stay out of the season average until it settles.
+ */
+export function buildPlayerFormRows({
+  playerId,
+  player,
+  weeklyStats = {},
+  scheduleMap = {},
+  scoringSettings = {},
+  throughWeek = null,
+} = {}) {
+  const playerWeeks = Array.isArray(weeklyStats?.[playerId]) ? weeklyStats[playerId] : [];
+  const lastWeek = asWeek(throughWeek);
+  return playerWeeks
+    .map((wEntry) => {
+      const week = asWeek(wEntry?.week);
+      if (week == null || (lastWeek != null && week > lastWeek)) return null;
+      const gamesPlayed = wEntry?.gp ?? wEntry?.games_played ?? wEntry?.gamesPlayed;
+      if (gamesPlayed != null && Number(gamesPlayed) === 0) return null;
+      const team = getHeatmapPlayerGameTeam(wEntry, player, playerWeeks);
+      const scheduleWeek = scheduleMap?.[week] ?? scheduleMap?.[String(week)] ?? {};
+      const scheduleEntry = team ? scheduleWeek?.[team] ?? scheduleWeek?.[String(team)] ?? null : null;
+      const opponent = normalizedTeam(scheduleEntry?.opp ?? wEntry?.opp);
+      if (!team || !opponent || opponent === team) return null;
+      const points = Number(calcPoints(wEntry, scoringSettings, player?.position));
+      if (!Number.isFinite(points)) return null;
+      const homeValue = scheduleEntry?.home ?? wEntry?.home;
+      const isHome = homeValue === true || homeValue === 1 ? true
+        : homeValue === false || homeValue === 0 ? false
+          : null;
+      return { week, team, opponent, isHome, points };
+    })
+    .filter(Boolean)
+    .sort((left, right) => left.week - right.week);
+}
+
 function buildDefenseRows({ metric, completedWeeks, weeklyStats, players, scheduleMap, scoringSettings }) {
   const offenseTable = getCachedOffenseAllowedTable(
     weeklyStats,

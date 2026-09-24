@@ -873,7 +873,7 @@
 .pmd-cmp-lrow {
   display: grid;
   grid-template-columns: 40px minmax(0, 1fr) 52px minmax(0, 1fr) 40px;
-  align-items: center;
+  align-items: start;
   gap: 7px;
 }
 
@@ -885,6 +885,20 @@
 .pmd-cmp-ftrack i { position: absolute; top: 0; bottom: 0; border-radius: 5px; opacity: 0.85; }
 .pmd-cmp-ftrack.is-left i { right: 0; }
 .pmd-cmp-ftrack.is-right i { left: 0; }
+.pmd-cmp-ftrack u { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--color-label-tertiary); }
+.pmd-cmp-ftrack u.is-target { width: 3px; background: var(--color-signature); }
+.pmd-cmp-fcell { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+/* Nudge the track onto the centerline of the week's point value beside it,
+   which the benchmark caption below would otherwise pull out of line. */
+.pmd-cmp-fcell > .pmd-cmp-ftrack { margin-top: 4px; }
+.pmd-cmp-fmarks { position: relative; height: 1.15em; font-size: var(--type-label); font-weight: 700; line-height: 1; }
+.pmd-cmp-fmarks > span { position: absolute; top: 0; white-space: nowrap; transform: translateX(-50%); }
+.pmd-cmp-fcell.is-left .pmd-cmp-fmarks > span { transform: translateX(50%); }
+.pmd-cmp-fmarks .is-average { color: var(--color-label-tertiary); }
+.pmd-cmp-fmarks .is-target { color: var(--color-signature); }
+.pmd-cmp-fmarks .is-unavailable { left: 50%; color: var(--color-label-tertiary); transform: translateX(-50%); }
+.pmd-cmp-legend { justify-content: center; }
+.pmd-cmp-legend i.is-tick { background: var(--color-label-tertiary); }
 
 @container (min-width: 640px) {
   .pmd-cmp-row { grid-template-columns: minmax(0, 1fr) 150px minmax(0, 1fr); }

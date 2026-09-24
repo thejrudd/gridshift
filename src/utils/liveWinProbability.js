@@ -11,6 +11,21 @@ const HISTORY_VERSION = 3;
 const HISTORY_PREFIX = 'gs_live_winprob_v3:';
 const HISTORY_MAX_KEYS = 8;
 
+// Display-only setting for pace-adjusted projections (player rows and the
+// matchup header total). It moves what is shown as a player's projected final
+// with how far ahead of or behind the elapsed-game pace they are. Win
+// probability keeps LIVE_WIN_PROBABILITY_MODEL's neutral coefficient. The
+// model's carryover clamp still caps the adjustment at half of what remains.
+export const PACE_PROJECTION_MODEL = Object.freeze({
+  ...LIVE_WIN_PROBABILITY_MODEL,
+  mean: { ...LIVE_WIN_PROBABILITY_MODEL.mean, paceCarryover: 0.5 },
+});
+
+/** Projected final for one starter's outlook, rounded the way the UI shows it. */
+export function getPaceProjectedFinal(outlook) {
+  return round1((Number(outlook?.current) || 0) + (Number(outlook?.remainingProj) || 0));
+}
+
 export const POSITION_DEFAULT_PROJECTION = {
   QB: 17, RB: 12, WR: 12, TE: 8, K: 8, DEF: 7,
   DL: 8, LB: 8, DB: 8, DE: 8, DT: 8, ILB: 8, OLB: 8, CB: 8, S: 8, SS: 8, FS: 8,

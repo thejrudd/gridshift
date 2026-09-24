@@ -6,7 +6,9 @@ import {
   computeSideOutlook,
   computeWinProbability,
   explainWinProbability,
+  getPaceProjectedFinal,
   getStarterOutlook,
+  PACE_PROJECTION_MODEL,
 } from './liveWinProbability.js';
 import { getFallbackRemainingGameFraction } from './liveScoringFeed.js';
 
@@ -104,7 +106,25 @@ function buildSide(players, customPoints, now, { settledConfirmed = false, offic
     playerName: player.name,
     state,
   })));
+  // Pace-adjusted projected final, summed the way each player row shows it:
+  // a player with game time left contributes their rounded pace-adjusted
+  // projection, and a finished game contributes its actual points.
+  const paceOutlooks = starterState.map(({ player, state, fraction }) => getStarterOutlook({
+    current: player.weekPts,
+    position: player.position,
+    projection: player.projection ?? null,
+    fallbackAvg: player.avgPPG,
+    fraction,
+    playerId: player.id,
+    playerName: player.name,
+    state,
+    model: PACE_PROJECTION_MODEL,
+  }));
+  const paceStarterTotal = paceOutlooks.reduce((sum, entry) => (
+    sum + (entry.fraction > 0 ? getPaceProjectedFinal(entry) : entry.current)
+  ), 0);
   const numericCustomPoints = Number(customPoints);
+  const paceProjectedTotal = round1(paceStarterTotal + (Number.isFinite(numericCustomPoints) ? numericCustomPoints : 0));
   const adjustedOutlook = Number.isFinite(numericCustomPoints) && numericCustomPoints !== 0
     ? { ...outlook, current: outlook.current + numericCustomPoints }
     : outlook;
@@ -142,6 +162,7 @@ function buildSide(players, customPoints, now, { settledConfirmed = false, offic
 
   return {
     outlook: finalOutlook,
+    paceProjectedTotal,
     starterCount: starters.length,
     explicitProjectionCount: projectedStarters.length,
     unresolvedCount: starterState.filter(({ state }) => state === 'unresolved').length,
@@ -216,5 +237,9 @@ export function buildMatchupWinProbability({
     usesLeagueScoring: mine.usesLeagueScoring || opponent.usesLeagueScoring,
     expectedA: round1(result.expectedA),
     expectedB: round1(result.expectedB),
+    // Display-only: what the header shows as each side's projected final while
+    // games are live. Win probability above stays on the neutral model.
+    paceExpectedA: mine.paceProjectedTotal,
+    paceExpectedB: opponent.paceProjectedTotal,
   };
 }

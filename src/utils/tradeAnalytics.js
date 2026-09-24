@@ -75,6 +75,7 @@ export function buildTradeAnalyticsSnapshot({
   leagueType,
   includePlayerTradeValues = false,
   includeOpportunityLayer = false,
+  currentWeek = null,
 }) {
   // Keep current-season production as the only input to KTC-backed player
   // adjustments, ranks, and pick calibration. Prior-season production is a
@@ -214,6 +215,7 @@ export function buildTradeAnalyticsSnapshot({
         myRosterId,
         targetRosterIds,
         rankMap,
+        currentWeek,
       })
     : null;
 

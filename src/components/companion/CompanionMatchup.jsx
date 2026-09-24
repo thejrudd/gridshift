@@ -16,7 +16,7 @@ import { summarizeExternalProjection, summarizeRecordedPregameProjection } from 
 import { STADIUMS, WEEK_DATES_2025 } from '../../data/stadiums';
 import { fetchGameWeather, formatWeather } from '../../api/weatherApi';
 import { getFantasyProjections } from '../../api/fantasyProjectionsApi.js';
-import { getLiveMatchups, getNflState, getWeeklyProjections } from '../../api/sleeperApi';
+import { getLiveMatchups, getWeeklyProjections } from '../../api/sleeperApi';
 import {
   getFantasyProjectionSourceLabel,
   mapFantasyProjectionsToSleeperPlayers,
@@ -24,7 +24,7 @@ import {
 import { mapSleeperProjectionsToPlayers } from '../../utils/sleeperProjections.js';
 import PlayerMatchupBreakdown from './PlayerMatchupBreakdown';
 import useMatchupProjectionBaselines from '../../hooks/useMatchupProjectionBaselines.js';
-import { buildDrilldownOpponentContext } from '../../utils/playerMatchupPresentation.js';
+import { buildDrilldownOpponentContext, getPaceAdjustedProjection } from '../../utils/playerMatchupPresentation.js';
 import { isEspnFantasyGameLogPosition, loadEspnFantasyGameLogWeekRow } from '../../utils/espnFantasyGameLogRows.js';
 import { buildFantasyMatchupScoringBreakdown } from '../../utils/fantasyMatchupBreakdown.js';
 import { RevealList } from '../ui/LoadingSwap.jsx';
@@ -70,7 +70,7 @@ import { getLeagueHistorySnapshot, buildLeagueHistoryModel } from '../../utils/l
 import { isFullGameWeekComplete } from '../../utils/matchupTaleOfTape.js';
 import PlayerMatchupCompare from './PlayerMatchupCompare.jsx';
 import { mergeSeasonScheduleResultsIntoMap } from '../../utils/seasonScheduleResults.js';
-import { getFantasyLeagueCurrentWeek, getFantasyLeagueMaxWeek, getSleeperCurrentWeek } from '../../utils/fantasySeasonWeeks.js';
+import { getFantasyLeagueMaxWeek } from '../../utils/fantasySeasonWeeks.js';
 
 const TOTAL_WEEKS = 18;
 const COMPACT_PHONE_QUERY = '(max-width: 480px)';
@@ -288,6 +288,7 @@ export default function CompanionMatchup({
   const statsEnhancing = useSleeperStatsEnhancing();
   const {
     platform, selectedLeagueId, league, season,
+    currentFantasyWeek,
     rosters, players, loadPlayers,
     weeklyStats, seasonStats, scheduleMap: baseScheduleMap, loadSeasonStats,
     statsBySeason, loadStatsForSeason,
@@ -318,46 +319,19 @@ export default function CompanionMatchup({
     [totalWeeks],
   );
 
-  const [currentLeagueWeek, setCurrentLeagueWeek] = useState(null);
-  // Default to Sleeper's active league week; retain a league-season fallback
-  // when the live league snapshot is unavailable or out of scope.
-  const activeDefaultWeek = currentLeagueWeek ?? defaultWeek;
+  // The context owns the live Sleeper state and its season-aware fallback, so
+  // Matchups and the other fantasy surfaces cannot drift onto different weeks.
+  const activeDefaultWeek = currentFantasyWeek ?? defaultWeek;
+  const selectedRouteWeek = selectedWeek == null
+    ? null
+    : clampMatchupWeek(selectedWeek, totalWeeks, activeDefaultWeek);
   const [week, setWeek] = useState(() => selectedWeek == null ? null : clampMatchupWeek(selectedWeek, totalWeeks, defaultWeek));
   const [requestedWeek, setRequestedWeek] = useState(() => selectedWeek == null ? null : clampMatchupWeek(selectedWeek, totalWeeks, defaultWeek));
 
   useEffect(() => {
-    if (!selectedLeagueId || !season) {
-      setCurrentLeagueWeek(null);
-      return undefined;
-    }
-
-    let cancelled = false;
-    setCurrentLeagueWeek(null);
-    getNflState()
-      .then((state) => {
-        if (cancelled) return;
-        const resolvedWeek = getSleeperCurrentWeek(state, season) ?? getFantasyLeagueCurrentWeek(league);
-        setCurrentLeagueWeek(resolvedWeek);
-        // A bare Matchups route has no intentional week selection. Apply the
-        // live Sleeper leg directly instead of waiting for a second state
-        // effect, which can retain a prior week during cold-load hydration.
-        if (selectedWeek == null && !initialWeekRequest?.week) {
-          setRequestedWeek(clampMatchupWeek(resolvedWeek, totalWeeks, defaultWeek));
-        }
-      })
-      .catch(() => {
-        if (cancelled) return;
-        const fallbackWeek = getFantasyLeagueCurrentWeek(league);
-        setCurrentLeagueWeek(fallbackWeek);
-        if (selectedWeek == null && !initialWeekRequest?.week) {
-          setRequestedWeek(clampMatchupWeek(fallbackWeek, totalWeeks, defaultWeek));
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [defaultWeek, initialWeekRequest?.week, league, season, selectedLeagueId, selectedWeek, totalWeeks]);
+    if (selectedWeek != null || initialWeekRequest?.week || activeDefaultWeek == null) return;
+    setRequestedWeek(clampMatchupWeek(activeDefaultWeek, totalWeeks, defaultWeek));
+  }, [activeDefaultWeek, defaultWeek, initialWeekRequest?.week, selectedWeek, totalWeeks]);
 
   const [matchups, setMatchups] = useState(null);
   const [matchupRefreshTick, setMatchupRefreshTick] = useState(0);
@@ -550,7 +524,10 @@ export default function CompanionMatchup({
 
   const userRosterData = myRoster();
   const userRosterId = userRosterData?.roster_id ?? null;
-  const visibleMatchups = isLeagueSnapshotReady ? matchups : null;
+  // Matchups stays mounted while another Companion view is open. Keep cached
+  // rows hidden until they belong to the week selected by the route.
+  const routeWeekMatchesLoaded = selectedRouteWeek == null || Number(week) === Number(selectedRouteWeek);
+  const visibleMatchups = isLeagueSnapshotReady && routeWeekMatchesLoaded ? matchups : null;
 
   useEffect(() => {
     setSelectedRosterIdState(selectedRosterId);
@@ -612,8 +589,8 @@ export default function CompanionMatchup({
   const opponentInitials = buildTeamInitials(opponentName);
   const myTeamSummary = useMemo(() => getRosterSeasonSummary(myRosterData), [myRosterData]);
   const opponentTeamSummary = useMemo(() => getRosterSeasonSummary(opponentRoster), [opponentRoster]);
-  const showTeamSummary = Number.isFinite(Number(currentLeagueWeek))
-    && Number(week) === Number(currentLeagueWeek);
+  const showTeamSummary = Number.isFinite(Number(currentFantasyWeek))
+    && Number(week) === Number(currentFantasyWeek);
   const leftIsUser = Boolean(leftSide?.isUser);
   const rightIsUser = Boolean(rightSide?.isUser);
   const fantasyPaletteSlots = useMemo(() => buildFantasyPaletteSlots(rosters), [rosters]);
@@ -1374,7 +1351,14 @@ export default function CompanionMatchup({
   }, [matchupSnapshotGate, matchupSnapshotKey, snapshotOptionalDataReady]);
 
   const hasMatchupSnapshot = matchupSnapshot?.key === matchupSnapshotKey;
-  const hasAnyMatchupSnapshot = Boolean(matchupSnapshot);
+  // A stored snapshot is reusable only for the same league, season, week, and matchup.
+  const hasCompatibleMatchupSnapshot = Boolean(
+    matchupSnapshot
+    && String(matchupSnapshot.leagueId ?? '') === String(selectedLeagueId ?? '')
+    && String(matchupSnapshot.season ?? '') === String(season ?? '')
+    && Number(matchupSnapshot.week) === Number(week)
+    && String(matchupSnapshot.matchupKey ?? '') === String(selectedMatchupGroup?.key ?? ''),
+  );
   useEffect(() => {
     if (
       matchupSnapshotGate.key !== matchupSnapshotKey
@@ -1383,12 +1367,16 @@ export default function CompanionMatchup({
     ) return;
     setMatchupSnapshot({
       key: matchupSnapshotKey,
+      leagueId: selectedLeagueId,
+      season,
+      week,
+      matchupKey: selectedMatchupGroup?.key ?? '',
       starterSlots,
       enrichedSlots: liveEnrichedSlots,
       enrichedMyBench: liveEnrichedMyBench,
       enrichedOppBench: liveEnrichedOppBench,
     });
-  }, [hasMatchupSnapshot, liveEnrichedMyBench, liveEnrichedOppBench, liveEnrichedSlots, matchupSnapshotGate, matchupSnapshotKey, starterSlots]);
+  }, [hasMatchupSnapshot, liveEnrichedMyBench, liveEnrichedOppBench, liveEnrichedSlots, matchupSnapshotGate, matchupSnapshotKey, season, selectedLeagueId, selectedMatchupGroup?.key, starterSlots, week]);
 
   const renderedStarterSlots = hasMatchupSnapshot ? matchupSnapshot.starterSlots : starterSlots;
   const enrichedSlots = hasMatchupSnapshot ? matchupSnapshot.enrichedSlots : liveEnrichedSlots;
@@ -1669,14 +1657,14 @@ export default function CompanionMatchup({
       : currentMineExternalProjection?.complete
         ? currentMineExternalProjection.total
         : myForecast?.total ?? null
-    : mineScoreIsLive && mineForecastTotal != null ? mineForecastTotal : null;
+    : mineScoreIsLive && mineForecastTotal != null ? (matchupWinProbability?.paceExpectedA ?? mineForecastTotal) : null;
   const oppHeaderProjection = matchupIsSettled
     ? recordedOppPregameProjection?.complete
       ? recordedOppPregameProjection.total
       : currentOppExternalProjection?.complete
         ? currentOppExternalProjection.total
         : oppForecast?.total ?? null
-    : oppScoreIsLive && oppForecastTotal != null ? oppForecastTotal : null;
+    : oppScoreIsLive && oppForecastTotal != null ? (matchupWinProbability?.paceExpectedB ?? oppForecastTotal) : null;
 
   // Preview panel model. Built only while the panel is open — it walks every
   // starter, the league's rosters and the linked-season rivalry.
@@ -1846,7 +1834,7 @@ export default function CompanionMatchup({
       || playerCount === 0
       || !insightsRequested
       || !hasAdvancedStats
-      || (!hasMatchupSnapshot && !hasAnyMatchupSnapshot)
+      || (!hasMatchupSnapshot && !hasCompatibleMatchupSnapshot)
       || (hasStarterIds && !hasRenderableStarterRows && !hasUnavailableMatchupLineup)
     );
 
@@ -2854,6 +2842,18 @@ function MatchupPlayerRow({ player, lineupUnavailable = false, darkMode, compact
       : performanceDelta < -0.05
         ? `${actualScore.toFixed(2)} points, ${Math.abs(performanceDelta).toFixed(1)} below ${performanceTargetLabel}`
         : `${actualScore.toFixed(2)} points, in line with ${performanceTargetLabel}`;
+  const paceAdjustedProjection = !finalGame
+    ? getPaceAdjustedProjection({
+      phase: actualScore != null ? 'live' : 'pregame',
+      total: actualScore,
+      projected: projectedPts,
+      scheduleEntry: player.scheduleEntry ?? null,
+    })
+    : null;
+  const displayedProjection = paceAdjustedProjection ?? projectedPts;
+  const projectionTitle = paceAdjustedProjection == null
+    ? 'Full-game projection'
+    : `Projection adjusted for pace (${projectedPts.toFixed(1)} before kickoff)`;
   const projectionRangeText = !isBye && !player.gameStarted && projMin != null && projMax != null
     ? `${projMin.toFixed(1)}-${projMax.toFixed(1)} range`
     : null;
@@ -2870,14 +2870,14 @@ function MatchupPlayerRow({ player, lineupUnavailable = false, darkMode, compact
         title={scoreTitle}
       />
     ),
-    projectedPts != null ? (
+    displayedProjection != null ? (
       <CompanionPlayerMetric
         key="projection"
         compact
         align="end"
-        value={projectedPts.toFixed(1)}
+        value={displayedProjection.toFixed(1)}
         className="companion-matchup-player-metric--projection"
-        title="Full-game projection"
+        title={projectionTitle}
       />
     ) : null,
   ].filter(Boolean) : [];

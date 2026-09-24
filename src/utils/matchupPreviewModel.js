@@ -484,7 +484,7 @@ export function buildMatchupPreviewModel({
       probabilityA,
       labelA: `${Math.round(probabilityA)}%`,
       labelB: `${Math.round(100 - probabilityA)}%`,
-      mid: settled ? 'Share of points scored' : liveNow ? 'Live win chance' : 'Estimated win chance',
+      mid: settled ? '' : liveNow ? 'Live win chance' : 'Estimated win chance',
       band: band.band,
       bandTone: band.tone,
       note: settled
@@ -535,19 +535,27 @@ function topStarters(side, phase) {
       // points are "so far" / "live".
       unit: phase === 'pre' ? 'projected' : starter.gameState === 'final' ? 'final' : 'live',
       tag: starterTag(starter, phase),
+      // The card shows the game state as its points label, so the chip carries
+      // only the comparison; before kickoff that is the opponent-rank tag.
+      chip: starterDelta(starter, phase) ?? (phase === 'pre' ? starterTag(starter, phase) : null),
       tone: starterTone(starter, phase),
     }));
 }
 
+/** "+15.7 vs projection" once a game has scored; null before or without a baseline. */
+function starterDelta(starter, phase) {
+  if (phase === 'pre' || starter.gameState === 'upcoming') return null;
+  const baseline = starter.baselineProjected ?? starter.projected;
+  if (starter.actual == null || baseline == null) return null;
+  const delta = starter.actual - baseline;
+  return `${delta >= 0 ? '+' : '−'}${Math.abs(delta).toFixed(1)} vs projection`;
+}
+
 function starterTag(starter, phase) {
   if (phase !== 'pre') {
-    const baseline = starter.baselineProjected ?? starter.projected;
     const status = starter.gameState === 'final' ? 'Final' : starter.gameState === 'live' ? 'In progress' : 'Not started';
-    if (starter.gameState !== 'upcoming' && starter.actual != null && baseline != null) {
-      const delta = starter.actual - baseline;
-      return `${status} · ${delta >= 0 ? '+' : '−'}${Math.abs(delta).toFixed(1)} vs projection`;
-    }
-    return status;
+    const delta = starterDelta(starter, phase);
+    return delta ? `${status} · ${delta}` : status;
   }
   if (starter.isBye) return 'On bye';
   if (starter.opponentContext?.rank != null) {

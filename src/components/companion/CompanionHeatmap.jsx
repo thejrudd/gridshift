@@ -3,7 +3,7 @@ import { FunnelSimpleIcon } from '@phosphor-icons/react/FunnelSimple';
 import { useSleeperBase, useSleeperStatsEnhancing } from '../../context/SleeperContext';
 import { useTheme } from '../../context/ThemeContext';
 import { calcPoints, DEFAULT_SCORING } from '../../utils/scoringEngine';
-import { getCachedOffenseAllowedTable, getHeatmapOffenseStatValue } from '../../utils/fantasyHeatmapData.js';
+import { getCachedOffenseAllowedTable, getHeatmapCompletedGameCount, getHeatmapOffenseStatValue, resolveHeatmapOffenseStatMode } from '../../utils/fantasyHeatmapData.js';
 import { getFantasyLeagueMaxWeek } from '../../utils/fantasySeasonWeeks.js';
 import { STADIUMS } from '../../data/stadiums';
 import { TEAM_COLORS } from '../../data/teamColors';
@@ -83,10 +83,16 @@ const MOBILE_FILTER_LABEL_WIDTH = HEATMAP_FILTER_LABEL_WIDTH;
 
 const STAT_MODES = [
   { id: 'pts',        label: 'Fantasy Pts' },
-  { id: 'pass_sack',  label: 'Sacks Taken', statKey: 'pass_sack', positions: ['QB'], valueLabel: 'sacks' },
-  { id: 'pass_int',   label: 'INTs Thrown', statKey: 'pass_int', positions: ['QB'], valueLabel: 'INTs' },
+  { id: 'pass_sack',  label: 'Sacks Taken', statKey: 'pass_sack', positions: ['QB'], valueLabel: 'sacks', lowerIsBetter: true },
+  { id: 'pass_int',   label: 'INTs Thrown', statKey: 'pass_int', positions: ['QB'], valueLabel: 'INTs', lowerIsBetter: true },
   { id: 'rec_yd',     label: 'Rec Yds', statKey: 'rec_yd', scoringKeys: ['rec_yd'], valueLabel: 'yds' },
   { id: 'rush_yd',    label: 'Rush Yds', statKey: 'rush_yd', scoringKeys: ['rush_yd'], valueLabel: 'yds' },
+  { id: 'pass_td',    label: 'Pass TD', statKey: 'pass_td', positions: ['QB'], scoringKeys: ['pass_td'], valueLabel: 'TDs' },
+  { id: 'rec_td',     label: 'Rec TD', statKey: 'rec_td', positions: ['RB', 'WR', 'TE'], includeAll: true, scoringKeys: ['rec_td'], valueLabel: 'TDs' },
+  { id: 'rush_td',    label: 'Rush TD', statKey: 'rush_td', positions: ['QB', 'RB', 'WR', 'TE'], includeAll: true, scoringKeys: ['rush_td'], valueLabel: 'TDs' },
+  // A QB's total includes their passing TDs; the ALL view leaves passing out so each
+  // TD pass is counted once, as the receiver's Rec TD (see resolveHeatmapOffenseStatMode).
+  { id: 'total_td',   label: 'Total TD', statKey: 'total_td', positions: ['QB', 'RB', 'WR', 'TE'], includeAll: true, scoringKeys: ['pass_td', 'rush_td', 'rec_td'], valueLabel: 'TDs' },
   { id: 'game_score', label: 'Score' },
   { id: 'vegas_odds', label: 'Spread' },
 ];
@@ -135,7 +141,8 @@ function modeMatchesPositions(mode, positions) {
 
 function modeMatchesOffensePosition(mode, position) {
   if (!mode?.positions) return true;
-  return position !== 'ALL' && mode.positions.includes(position);
+  if (position === 'ALL') return mode.includeAll === true;
+  return mode.positions.includes(position);
 }
 
 function getAvailableOffenseStatModes(scoringSettings, position) {
@@ -941,8 +948,8 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
     if (statsEnhancing) return null;
     if (!weeklyStats || !players || !scheduleMap) return null;
     if (statMode === 'game_score' || statMode === 'vegas_odds') return {};
-    return getCachedOffenseAllowedTable(weeklyStats, players, scheduleMap, activeScoringSettings, statMode);
-  }, [statsEnhancing, weeklyStats, players, scheduleMap, activeScoringSettings, statMode]);
+    return getCachedOffenseAllowedTable(weeklyStats, players, scheduleMap, activeScoringSettings, resolveHeatmapOffenseStatMode(statMode, pos));
+  }, [statsEnhancing, weeklyStats, players, scheduleMap, activeScoringSettings, statMode, pos]);
 
   // Defense-scored table: keyed by the defensive player's own team
   const defenseScoredTable = useMemo(() => {
@@ -1013,7 +1020,9 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
           }
         }
         const total = Object.values(weekPts).reduce((s, v) => s + v, 0);
-        const weeksPlayed = scheduleMap ? fantasySeasonWeeks.filter(w => scheduleMap[w]?.[team] != null && weekMatchesLocation(team, w)).length : Object.keys(weekPts).length;
+        const weeksPlayed = scheduleMap
+          ? getHeatmapCompletedGameCount(scheduleMap, team, fantasySeasonWeeks, weekMatchesLocation)
+          : Object.keys(weekPts).length;
         const avg = weeksPlayed > 0 && Object.keys(weekPts).length > 0 ? total / weeksPlayed : null;
         return { team, weekPts, avg };
       });
@@ -1037,7 +1046,9 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
         }
       }
       const total = Object.values(weekData).reduce((s, v) => s + v, 0);
-        const weeksPlayed = scheduleMap ? fantasySeasonWeeks.filter(w => scheduleMap[w]?.[team] != null && weekMatchesLocation(team, w)).length : Object.keys(weekData).length;
+      const weeksPlayed = scheduleMap
+        ? getHeatmapCompletedGameCount(scheduleMap, team, fantasySeasonWeeks, weekMatchesLocation)
+        : Object.keys(weekData).length;
       const avg = weeksPlayed > 0 && Object.keys(weekData).length > 0 ? total / weeksPlayed : null;
       return { team, weekPts: weekData, avg };
     });
@@ -1158,6 +1169,9 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
     return { overallMin, overallMax, weekMin, weekMax, teamMin, teamMax, avgMin, avgMax };
   }, [baseRows, viewMode, fantasySeasonWeeks]);
 
+  const lowerIsBetterStat = viewMode === 'offense'
+    && Boolean(STAT_MODES.find(mode => mode.id === statMode)?.lowerIsBetter);
+
   const cellBg = useCallback((pts, team, week) => {
     if (pts == null) return undefined;
 
@@ -1184,9 +1198,11 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
       min = heatRanges.overallMin; max = heatRanges.overallMax;
     }
     if (min == null || max == null) return undefined;
+    // Negative plays (sacks taken, INTs thrown): a higher count is worse, so it runs red.
+    const flip = (t) => (lowerIsBetterStat ? 1 - t : t);
     if (max === min) {
       if (pts === 0) return undefined;
-      const t = pts > 0 ? 1 : 0;
+      const t = flip(pts > 0 ? 1 : 0);
       if (useTeamColors && favoriteTeam && TEAM_COLORS[favoriteTeam]) {
         const tc = TEAM_COLORS[favoriteTeam];
         const hexLow  = darkMode ? (tc.darkSecondary ?? tc.secondary) : tc.secondary;
@@ -1195,8 +1211,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
       }
       return heatColor(t);
     }
-    const raw = (pts - min) / (max - min);
-    const t = raw;
+    const t = flip((pts - min) / (max - min));
     if (useTeamColors && favoriteTeam && TEAM_COLORS[favoriteTeam]) {
       const tc = TEAM_COLORS[favoriteTeam];
       const hexLow  = darkMode ? (tc.darkSecondary ?? tc.secondary) : tc.secondary;
@@ -1204,7 +1219,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
       return heatColorTeam(t, hexLow, hexHigh);
     }
     return heatColor(t);
-  }, [darkMode, favoriteTeam, heatRanges, heatmapScope, statMode, useTeamColors, vegasOddsView]);
+  }, [darkMode, favoriteTeam, heatRanges, heatmapScope, lowerIsBetterStat, statMode, useTeamColors, vegasOddsView]);
 
   // ── Drilldown players ──────────────────────────────────────────────────────
 
@@ -1239,7 +1254,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
         // Only show players who were on team T's own roster this week.
         if (playerTeam !== team) continue;
 
-        const val = getHeatmapOffenseStatValue(wEntry, activeScoringSettings, player.position, statMode);
+        const val = getHeatmapOffenseStatValue(wEntry, activeScoringSettings, player.position, resolveHeatmapOffenseStatMode(statMode, activePos));
         if (val <= 0) continue;
         const breakdown = statMode === 'pts' ? getScoreBreakdown(wEntry, activeScoringSettings, player.position) : null;
         const name = player.full_name || `${player.first_name ?? ''} ${player.last_name ?? ''}`.trim() || playerId;
@@ -1323,7 +1338,8 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
         const tds = (wEntry.pass_td ?? 0) + (wEntry.rush_td ?? 0) + (wEntry.rec_td ?? 0) + (wEntry.ret_td ?? 0) + (wEntry.st_td ?? 0);
         totals.passYds += wEntry.pass_yd ?? 0;
         totals.rushYds += wEntry.rush_yd ?? 0;
-        totals.tds += tds;
+        // Team TDs skip pass_td: each passing TD is already the receiver's rec_td.
+        totals.tds += (wEntry.rush_td ?? 0) + (wEntry.rec_td ?? 0) + (wEntry.ret_td ?? 0) + (wEntry.st_td ?? 0);
         totals.int += wEntry.pass_int ?? 0;
         totals.fum += wEntry.fum_lost ?? 0;
         totals.sacks += wEntry.pass_sack ?? 0;

@@ -59,6 +59,7 @@ Use `CompanionPlayerRow` for player rows in:
 - Companion Rankings
 - Companion Waiver
 - Companion Matchup player rows
+- Matchup preview "Who decided it" / movers cards (`PreviewPlayerCard` in `MatchupPreviewModal.jsx`): the shared row with the position folded into the meta line; the projection chip is a `CompanionPlayerStatus` with `localContrast={false}` on a theme-surface backing so its semantic tone stays readable on any team gradient. "Where the rosters lead" stays the mirrored number/bar comparison.
 - Heatmap player drilldown/performer lists
 - Trade roster picker, roster browse, and Upgrade Finder mover rows
 

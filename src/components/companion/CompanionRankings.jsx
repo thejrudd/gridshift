@@ -410,6 +410,7 @@ export default function CompanionRankings({
   const [teamMenuOpen, setTeamMenuOpen] = useState(false);
   const [selectedNflTeams, setSelectedNflTeams] = useState([]);
   const [nflTeamMenuOpen, setNflTeamMenuOpen] = useState(false);
+  const [freeAgentsOnly, setFreeAgentsOnly] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [imageExportOpen, setImageExportOpen] = useState(false);
   const [adpState, setAdpState] = useState({
@@ -562,8 +563,7 @@ export default function CompanionRankings({
   const rosteredIds = useMemo(() => {
     const ids = new Set();
     for (const r of rosters) {
-      for (const id of (r.players || [])) ids.add(id);
-      for (const id of (r.reserve || [])) ids.add(id);
+      for (const id of getRosterPlayerIds(r)) ids.add(id);
     }
     return ids;
   }, [rosters]);
@@ -682,6 +682,7 @@ export default function CompanionRankings({
     const q = search.trim().toLowerCase();
     const filtered = allRanked.filter(p => {
       if (!selectedFiltersMatchPlayer(p.position, p.stats, selectedFilters, availablePositions)) return false;
+      if (freeAgentsOnly && p.isRostered) return false;
       if (selectedRosterPlayerIds && !selectedRosterPlayerIds.has(String(p.id))) return false;
       if (selectedNflTeamSet.size && !selectedNflTeamSet.has(p.team)) return false;
       if (!q) return true;
@@ -691,7 +692,7 @@ export default function CompanionRankings({
       rank: rankScope === 'position' ? player.positionRank : player.overallRank,
     }));
     return selectedRosterIds.length || selectedNflTeamSet.size || q ? filtered : filtered.slice(0, 100);
-  }, [allRanked, availablePositions, rankScope, search, selectedFilters, selectedRosterIds.length, selectedRosterPlayerIds, selectedNflTeamSet]);
+  }, [allRanked, availablePositions, rankScope, search, selectedFilters, selectedRosterIds.length, selectedRosterPlayerIds, selectedNflTeamSet, freeAgentsOnly]);
 
   const nameColPx = useMemo(() => measureMaxNameWidth(ranked), [ranked]);
   const hasLoadedStats = Boolean(seasonStats);
@@ -741,9 +742,9 @@ export default function CompanionRankings({
     : getRankingsSortLabel({ sortBy, sortDir, selectedSortOption, sortValueMode });
   const canExport = ranked.length > 0;
 
-  const rosterExportLabel = selectedRosterOptions.length
-    ? selectedRosterOptions.map(r => r.name).join(', ')
-    : 'All rosters';
+  const rosterExportLabel = freeAgentsOnly
+    ? 'Unrostered players'
+    : (selectedRosterOptions.length ? selectedRosterOptions.map(r => r.name).join(', ') : 'All rosters');
   const positionExportLabel = selectedFilters.includes('ALL')
     ? 'All positions'
     : selectedFilters.map(getFilterChipLabel).join(' + ');
@@ -752,6 +753,7 @@ export default function CompanionRankings({
   const activeFilterCount = selectedFilters.filter(filter => filter !== 'ALL').length
     + (selectedRosterIds.length > 0 ? 1 : 0)
     + (selectedNflTeams.length > 0 ? 1 : 0)
+    + (freeAgentsOnly ? 1 : 0)
     + (search.trim() ? 1 : 0);
 
   function getImageExportRows() {
@@ -968,7 +970,10 @@ export default function CompanionRankings({
                       onSortValueModeChange={setSortValueMode}
                     />
                   )}
-                  <RankingsRankScopeToggle value={rankScope} onChange={setRankScope} />
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    <RankingsRankScopeToggle value={rankScope} onChange={setRankScope} />
+                    <RankingsFreeAgentsToggle value={freeAgentsOnly} onChange={setFreeAgentsOnly} />
+                  </div>
                   {(rosterFilterOptions.length > 0 || nflTeamOptions.length > 0) && (
                     <div className="flex min-w-0 items-center gap-2">
                       {rosterFilterOptions.length > 0 && (
@@ -1009,6 +1014,7 @@ export default function CompanionRankings({
               ) : (
                 <div className="flex flex-wrap items-center gap-2">
                   <RankingsRankScopeToggle value={rankScope} onChange={setRankScope} />
+                  <RankingsFreeAgentsToggle value={freeAgentsOnly} onChange={setFreeAgentsOnly} />
                   {rosterFilterOptions.length > 0 && (
                     <CompanionFantasyTeamMenu
                       open={teamMenuOpen}
@@ -1465,6 +1471,20 @@ function RankingsRankScopeToggle({ value, size = 'md', onChange }) {
         </CompanionSelectorButton>
       ))}
     </div>
+  );
+}
+
+function RankingsFreeAgentsToggle({ value, size = 'md', onChange }) {
+  return (
+    <CompanionSelectorButton
+      size={size}
+      active={value}
+      className="shrink-0"
+      aria-label={value ? 'Showing unrostered players only. Show all players' : 'Showing all players. Show unrostered players only'}
+      onClick={() => onChange(!value)}
+    >
+      Unrostered Only
+    </CompanionSelectorButton>
   );
 }
 

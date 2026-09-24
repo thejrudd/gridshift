@@ -15,7 +15,9 @@ function normalizeEspnId(id) {
   return String(id);
 }
 
-function normalizePlayerName(name) {
+// Exported for the search index, which must normalize names the same way this
+// module matches them so a search hit and a drilldown agree on identity.
+export function normalizePlayerName(name) {
   return String(name ?? '')
     .toLowerCase()
     .normalize('NFD')

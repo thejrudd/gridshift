@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildAppPath, parseAppRoute, normalizeAppRoute } from '../src/utils/appRoutes.js';
+import { buildAppPath, getDefaultRouteForTab, parseAppRoute, normalizeAppRoute } from '../src/utils/appRoutes.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = resolve(__filename, '..');
@@ -28,6 +28,12 @@ assert(
   nginxConf.includes('location /api/fantasy/ {')
     && nginxConf.includes('proxy_pass http://gridshift-api:3001/api/fantasy/;'),
   'nginx.conf is missing the Fantasy API sidecar proxy',
+);
+
+assert(
+  nginxConf.includes('location /api/players/ {')
+    && nginxConf.includes('proxy_pass http://gridshift-api:3001/api/players/;'),
+  'nginx.conf is missing the player data cache sidecar proxy',
 );
 
 const serverDockerfile = readFileSync(resolve(root, 'Dockerfile.server'), 'utf8');
@@ -87,6 +93,10 @@ const validatedPaths = [
   expectRoundTrip({ activeTab: 'scout', scoutView: 'picks' }, '/scout/picks'),
   expectRoundTrip({ activeTab: 'scout', scoutView: 'results' }, '/scout/results'),
 ];
+
+assert(buildAppPath(parseAppRoute('/')) === '/fantasy/matchups', 'Expected app root to open Fantasy Matchups');
+assert(buildAppPath(parseAppRoute('/fantasy')) === '/fantasy/matchups', 'Expected bare Fantasy route to open Matchups');
+assert(buildAppPath(getDefaultRouteForTab('fantasy')) === '/fantasy/matchups', 'Expected the Fantasy tab default to be Matchups');
 
 const legacyDefenseSackPath = buildAppPath(parseAppRoute('/companion/defense', '?stat=pass_sack'));
 assert(legacyDefenseSackPath === '/fantasy/defenses', `Expected legacy QB sack defense stat to normalize away, got ${legacyDefenseSackPath}`);

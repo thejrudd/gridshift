@@ -9,6 +9,7 @@ import useMediaQuery from '../../../hooks/useMediaQuery';
 import useHorizontalScrollCue from '../../../hooks/useHorizontalScrollCue';
 import HorizontalScrollCue from '../../HorizontalScrollCue';
 import SeasonPhaseToggle from '../SeasonPhaseToggle';
+import { useFantasyLeague } from '../../../context/SleeperContext.jsx';
 import {
   NFL_SEASON_PHASES,
   fetchEspnPreseason,
@@ -28,7 +29,10 @@ import {
   STATISTICS_SCORES_PROVIDERS,
 } from '../../../utils/statisticsScoresProvider';
 import { isStatisticsScoresDrilldownStatus } from '../../../utils/statisticsScoresDrilldown';
-import { resolveStatisticsScoresCurrentWeekId } from '../../../utils/statisticsScoresWeek';
+import {
+  resolveStatisticsScoresCurrentWeekId,
+  resolveStatisticsScoresWeekId,
+} from '../../../utils/statisticsScoresWeek';
 import ScoresSeasonBoard from './ScoresSeasonBoard';
 import ScoresGameDrilldown from './ScoresGameDrilldown';
 import './StatisticsScores.css';
@@ -246,6 +250,14 @@ export default function StatisticsScores({
   onRouteChange = null,
 }) {
   const desktop = useMediaQuery('(min-width: 1024px)');
+  const {
+    platform: fantasyPlatform,
+    selectedLeagueId: fantasyLeagueId,
+    season: fantasySeason,
+    nflState,
+    nflStateError,
+    currentFantasyWeek,
+  } = useFantasyLeague();
   const showPlayByPlayTourDemo = tourDemoMode === 'statistics-scores-play-by-play';
   const [tourFixture, setTourFixture] = useState(null);
   const [fixtureCatalog, setFixtureCatalog] = useState(null);
@@ -297,11 +309,31 @@ export default function StatisticsScores({
     },
     [preseasonState.data, regularState.data, seasonPhase],
   );
+  const sharedFantasyCurrentWeekId = useMemo(() => {
+    if (
+      seasonPhase !== NFL_SEASON_PHASES.REGULAR
+      || !fantasyLeagueId
+      || String(fantasySeason) !== String(season)
+    ) return null;
+
+    return resolveStatisticsScoresWeekId(weeks, currentFantasyWeek);
+  }, [currentFantasyWeek, fantasyLeagueId, fantasySeason, season, seasonPhase, weeks]);
+  // Do not canonicalize the bare Scores route from a persisted league week
+  // before the shared live state has had a chance to replace it. Otherwise a
+  // stale Week 2 snapshot can become an explicit `?week=2` route and keep the
+  // page there even after Sleeper reports Week 3.
+  const sharedFantasyCurrentWeekPending = seasonPhase === NFL_SEASON_PHASES.REGULAR
+    && fantasyPlatform === 'sleeper'
+    && Boolean(fantasyLeagueId)
+    && String(fantasySeason) === String(season)
+    && !nflState
+    && !nflStateError;
   const currentWeekId = seasonPhase === NFL_SEASON_PHASES.PRESEASON
     ? resolveStatisticsScoresCurrentWeekId(weeks, { phase: seasonPhase })
-    : currentSeason && activeProvider === STATISTICS_SCORES_PROVIDERS.FIXTURE
-      ? regularState.data?.currentWeekId ?? null
-      : resolveStatisticsScoresCurrentWeekId(weeks, { phase: seasonPhase });
+    : sharedFantasyCurrentWeekId
+      ?? (currentSeason && activeProvider === STATISTICS_SCORES_PROVIDERS.FIXTURE
+        ? regularState.data?.currentWeekId ?? null
+        : resolveStatisticsScoresCurrentWeekId(weeks, { phase: seasonPhase }));
   const routedGame = useMemo(
     () => findScoresGame(weeks, routeGameId, routeWeek, routeAwayTeamId, routeHomeTeamId),
     [routeAwayTeamId, routeGameId, routeHomeTeamId, routeWeek, weeks],
@@ -420,7 +452,13 @@ export default function StatisticsScores({
   }, [activeProvider, developerSource, season, seasonPhase, sourceState.status]);
 
   useEffect(() => {
-    if (!onRouteChange || sourceState.status !== 'ready' || activeState.status !== 'ready' || !selectedWeek) return;
+    if (
+      !onRouteChange
+      || sharedFantasyCurrentWeekPending
+      || sourceState.status !== 'ready'
+      || activeState.status !== 'ready'
+      || !selectedWeek
+    ) return;
 
     const canonicalPhase = seasonPhase;
     const canonicalGameId = selectedGameRouteId;
@@ -448,7 +486,7 @@ export default function StatisticsScores({
         statisticsScoresHomeTeamId: null,
       }, { replace: true });
     }
-  }, [activeState.status, onRouteChange, routeGameId, routePhase, routePlayerGroup, routeSeason, routeSection, routeWeek, season, seasonPhase, selectedGame, selectedGameRouteId, selectedWeek, sourceState.status]);
+  }, [activeState.status, onRouteChange, routeGameId, routePhase, routePlayerGroup, routeSeason, routeSection, routeWeek, season, seasonPhase, selectedGame, selectedGameRouteId, selectedWeek, sharedFantasyCurrentWeekPending, sourceState.status]);
 
   useEffect(() => {
     if (activeProvider === STATISTICS_SCORES_PROVIDERS.FIXTURE

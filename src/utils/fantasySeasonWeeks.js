@@ -73,6 +73,18 @@ export function getSleeperCurrentWeek(state, season = null) {
     .find((value) => value != null) ?? null;
 }
 
+/**
+ * Resolve the current fantasy week for a selected league.
+ *
+ * Sleeper's live NFL state is the authority for the active season. The league
+ * snapshot remains the fallback for historical seasons, ESPN, and a temporary
+ * state endpoint failure. Keeping that fallback here means callers do not
+ * each have to decide whether a live week belongs to the selected season.
+ */
+export function getFantasyCurrentWeek({ state = null, league = null, season = null } = {}) {
+  return getSleeperCurrentWeek(state, season) ?? getFantasyLeagueCurrentWeek(league);
+}
+
 export function getFantasyLeagueMaxWeek(league) {
   const seasonWeekCount = getNflSeasonWeekCount(league);
   if (!league) return seasonWeekCount;

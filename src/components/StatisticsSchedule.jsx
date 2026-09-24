@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import HorizontalScrollCue from './HorizontalScrollCue';
 import useHorizontalScrollCue from '../hooks/useHorizontalScrollCue';
@@ -34,6 +34,8 @@ import {
   scheduleHasGames,
 } from '../utils/statisticsSchedule';
 import { getScoreNetworkLabel } from '../utils/statisticsBroadcasts';
+
+const NflMatchupModal = lazy(() => import('./statistics/schedule/NflMatchupModal.jsx'));
 
 const SCHEDULE_MODE_STORAGE_KEY = 'gridshift.statisticsScheduleMode';
 const DIVISION_ORDER = [
@@ -260,6 +262,40 @@ function getGameStatsEventId(game = {}) {
   return game.espnEventId || game.eventId || null;
 }
 
+// The route carries the ESPN event id when the schedule has one, else the
+// schedule's own game id.
+function getMatchupRouteId(row) {
+  return row?.game?.espnEventId ?? row?.game?.eventId ?? row?.game?.id ?? row?.id ?? null;
+}
+
+function getSyntheticGameId(game, season, week) {
+  const awayTeamId = getScheduleGameTeamId(game, 'away');
+  const homeTeamId = getScheduleGameTeamId(game, 'home');
+  if (season == null || week == null || !awayTeamId || !homeTeamId) return null;
+  return `${season}-W${week}-${awayTeamId}-${homeTeamId}`;
+}
+
+function rowMatchesRouteGame(row, gameId, season = null) {
+  if (!row || row.isBye || gameId == null) return false;
+  return [
+    row.id,
+    row.game?.espnEventId,
+    row.game?.eventId,
+    row.game?.id,
+    getSyntheticGameId(row.game, season, row.week),
+  ]
+    .some((value) => value != null && String(value) === String(gameId));
+}
+
+// Leaving the drill-in for another route (Defenses, Game Stats) must not leave
+// the modal's history entry armed, or Back from there would pop it twice.
+function detachSheetHistoryEntry() {
+  const state = window.history.state;
+  if (state && typeof state === 'object' && state._sheet) {
+    window.history.replaceState({ ...state, _sheet: null }, '', window.location.href);
+  }
+}
+
 function GameResultBadge({ game, selectedTeamId = null }) {
   if (!isFinalScheduleGame(game)) return null;
 
@@ -464,18 +500,27 @@ function TeamIdentity({ team, fallbackId, compact = false }) {
   );
 }
 
-function GameRow({ game, teamsById, darkMode, season, phase, week, onViewGameStats }) {
+function GameRow({ game, teamsById, darkMode, season, phase, week, onViewGameStats, onOpenMatchup = null }) {
   const awayTeamId = getScheduleGameTeamId(game, 'away');
   const homeTeamId = getScheduleGameTeamId(game, 'home');
   const awayTeam = teamsById.get(awayTeamId);
   const homeTeam = teamsById.get(homeTeamId);
   const rowPresentation = getMatchupRowPresentation(awayTeamId, homeTeamId, darkMode);
+  const openable = Boolean(onOpenMatchup) && phase !== NFL_SEASON_PHASES.PRESEASON;
 
   return (
     <article
-      className="statistics-schedule-game-row"
+      className={`statistics-schedule-game-row${openable ? ' is-openable' : ''}`}
       style={rowPresentation.style}
     >
+      {openable && (
+        <button
+          type="button"
+          className="statistics-schedule-row-open"
+          onClick={() => onOpenMatchup({ game, week, phase })}
+          aria-label={`Open matchup: ${getTeamName(awayTeam, awayTeamId)} at ${getTeamName(homeTeam, homeTeamId)}, Week ${week}`}
+        />
+      )}
       <div className="statistics-schedule-row-meta">
         <span>{formatKickoffDate(game.kickoff)}</span>
         <strong>{formatKickoffTime(game.kickoff)}</strong>
@@ -506,6 +551,7 @@ function WeekScheduleView({
   darkMode,
   season,
   onViewGameStats,
+  onOpenMatchup = null,
 }) {
   const weekScrubberRef = useRef(null);
   const weekScrollCue = useHorizontalScrollCue(weekScrubberRef, [weekOptions.length, activeWeek]);
@@ -577,6 +623,7 @@ function WeekScheduleView({
                   phase={selectedWeekOption?.phase}
                   week={selectedWeekOption?.week}
                   onViewGameStats={onViewGameStats}
+                  onOpenMatchup={onOpenMatchup}
                 />
               ))}
             </div>
@@ -963,7 +1010,7 @@ function TeamScheduleHeaderIdentity({ team, gameCount, byeCount }) {
   );
 }
 
-function TeamScheduleRow({ row, team, opponent, darkMode, season, onViewGameStats, preseason = false }) {
+function TeamScheduleRow({ row, team, opponent, darkMode, season, onViewGameStats, onOpenMatchup = null, preseason = false }) {
   const awayTeamId = getScheduleGameTeamId(row.game, 'away');
   const homeTeamId = getScheduleGameTeamId(row.game, 'home');
   const rowTheme = getTeamVisualTheme(team?.id, darkMode, { logoSide: 'start' });
@@ -977,11 +1024,21 @@ function TeamScheduleRow({ row, team, opponent, darkMode, season, onViewGameStat
       }
     : getMatchupRowPresentation(awayTeamId, homeTeamId, darkMode);
 
+  const openable = Boolean(onOpenMatchup) && !row.isBye && !preseason;
+
   return (
     <article
-      className={`statistics-schedule-team-row${row.isBye ? ' is-bye' : ''}`}
+      className={`statistics-schedule-team-row${row.isBye ? ' is-bye' : ''}${openable ? ' is-openable' : ''}`}
       style={rowPresentation.style}
     >
+      {openable && (
+        <button
+          type="button"
+          className="statistics-schedule-row-open"
+          onClick={() => onOpenMatchup(row)}
+          aria-label={`Open matchup: ${getTeamName(team)} ${row.isAway ? 'at' : 'vs'} ${getTeamName(opponent, row.opponentTeamId)}, ${row.weekLabel ?? `Week ${row.week}`}`}
+        />
+      )}
       <div className="statistics-schedule-row-meta">
         <span>{row.weekLabel ?? `Week ${row.week}`}</span>
         {row.isBye ? <strong>{preseason ? 'No game' : 'Bye'}</strong> : <strong>{formatKickoffTime(row.game?.kickoff)}</strong>}
@@ -1030,6 +1087,7 @@ function TeamScheduleView({
   darkMode,
   season,
   onViewGameStats,
+  onOpenMatchup = null,
   favoriteTeamId,
   recentTeamId,
 }) {
@@ -1108,6 +1166,7 @@ function TeamScheduleView({
               darkMode={darkMode}
               season={season}
               onViewGameStats={onViewGameStats}
+              onOpenMatchup={onOpenMatchup}
               preseason={row.phase === NFL_SEASON_PHASES.PRESEASON}
             />
           ))}
@@ -1139,8 +1198,11 @@ export default function StatisticsSchedule({
   week = null,
   teamId = null,
   filter = null,
+  gameId = null,
   onRouteChange,
   onViewGameStats,
+  onOpenDefenses = null,
+  onOpenPlayer = null,
 }) {
   const { darkMode, favoriteTeam } = useTheme();
   const scheduleSeason = scheduleData?.season ?? new Date().getFullYear();
@@ -1199,6 +1261,88 @@ export default function StatisticsSchedule({
     () => (recentTeamId === favoriteTeamId ? null : resolveTeamId(recentTeamId, teamsById)),
     [recentTeamId, favoriteTeamId, teamsById],
   );
+  const matchupRow = useMemo(() => {
+    if (gameId == null) return null;
+    if (activeMode === STATISTICS_SCHEDULE_MODES.TEAM) {
+      if (!selectedTeamId) return null;
+      return buildTeamScheduleRows(scheduleData, selectedTeamId)
+        .find((row) => rowMatchesRouteGame(row, gameId, scheduleSeason)) ?? null;
+    }
+    if (activeMode !== STATISTICS_SCHEDULE_MODES.WEEK) return null;
+    const selectedWeekOption = weekOptions.find((entry) => entry.selection === activeWeek);
+    if (!selectedWeekOption || selectedWeekOption.phase !== NFL_SEASON_PHASES.REGULAR) return null;
+    const game = selectedWeekOption.games.find((entry) => rowMatchesRouteGame({
+      id: entry.id,
+      game: entry,
+      week: selectedWeekOption.week,
+    }, gameId, scheduleSeason));
+    if (!game) return null;
+    const awayTeamId = getScheduleGameTeamId(game, 'away');
+    const homeTeamId = getScheduleGameTeamId(game, 'home');
+    return {
+      game,
+      week: selectedWeekOption.week,
+      phase: selectedWeekOption.phase,
+      teamId: awayTeamId,
+      opponentTeamId: homeTeamId,
+      isAway: true,
+    };
+  }, [activeMode, activeWeek, gameId, scheduleData, scheduleSeason, selectedTeamId, weekOptions]);
+  const scheduleRoutePatch = activeMode === STATISTICS_SCHEDULE_MODES.TEAM
+    ? {
+        statisticsScheduleMode: STATISTICS_SCHEDULE_MODES.TEAM,
+        statisticsScheduleWeek: null,
+        statisticsScheduleTeamId: selectedTeamId,
+        statisticsScheduleFilter: requestedFilter === STATISTICS_SCHEDULE_FILTERS.ALL ? null : requestedFilter,
+      }
+    : {
+        statisticsScheduleMode: STATISTICS_SCHEDULE_MODES.WEEK,
+        statisticsScheduleWeek: activeWeek,
+        statisticsScheduleTeamId: null,
+        statisticsScheduleFilter: requestedFilter === STATISTICS_SCHEDULE_FILTERS.ALL ? null : requestedFilter,
+      };
+  // Opening replaces the current entry; the modal pushes its own history entry,
+  // so Back closes it without leaving an extra "open" step behind.
+  const openMatchup = (row) => {
+    const routeGameId = getMatchupRouteId(row)
+      ?? getSyntheticGameId(row?.game, scheduleSeason, row?.week);
+    if (!routeGameId) return;
+    onRouteChange?.({ ...scheduleRoutePatch, statisticsScheduleGameId: String(routeGameId) }, { replace: true });
+  };
+  const closeMatchup = () => {
+    if (window.history.state?._sheet) {
+      // Pop the modal's own entry; its popstate listener calls back in here.
+      window.history.back();
+      return;
+    }
+    onRouteChange?.({ ...scheduleRoutePatch, statisticsScheduleGameId: null }, { replace: true });
+  };
+  const matchupTeamId = selectedTeamId ?? matchupRow?.teamId ?? null;
+  const openMatchupDefenses = onOpenDefenses && matchupRow && matchupTeamId
+    ? (request) => {
+      detachSheetHistoryEntry();
+      onOpenDefenses({ ...request, returnGameId: String(gameId), returnTeamId: matchupTeamId });
+    }
+    : null;
+  const openMatchupPlayer = onOpenPlayer && matchupRow
+    ? (player) => {
+      detachSheetHistoryEntry();
+      onOpenPlayer(player);
+    }
+    : null;
+  const openMatchupGameStats = onViewGameStats && matchupRow
+    ? (game) => {
+      detachSheetHistoryEntry();
+      onViewGameStats({
+        ...game,
+        season: scheduleSeason,
+        phase: matchupRow.phase ?? NFL_SEASON_PHASES.REGULAR,
+        week: matchupRow.week,
+        awayTeamId: getScheduleGameTeamId(game, 'away'),
+        homeTeamId: getScheduleGameTeamId(game, 'home'),
+      });
+    }
+    : null;
   const preseasonStatus = !preseasonRequested
     ? 'idle'
     : preseasonScheduleData
@@ -1395,6 +1539,7 @@ export default function StatisticsSchedule({
           darkMode={darkMode}
           season={scheduleSeason}
           onViewGameStats={onViewGameStats}
+          onOpenMatchup={openMatchup}
           favoriteTeamId={favoriteTeamId}
           recentTeamId={resolvedRecentTeamId}
         />
@@ -1409,7 +1554,27 @@ export default function StatisticsSchedule({
           darkMode={darkMode}
           season={scheduleSeason}
           onViewGameStats={onViewGameStats}
+          onOpenMatchup={openMatchup}
         />
+      )}
+
+      {matchupRow && (
+        <Suspense fallback={null}>
+          <NflMatchupModal
+            game={matchupRow.game}
+            week={matchupRow.week}
+            teamId={selectedTeamId ?? matchupRow.teamId}
+            opponentId={matchupRow.opponentTeamId}
+            isAway={matchupRow.isAway}
+            teamsById={teamsById}
+            schedule={scheduleData}
+            season={scheduleSeason}
+            onClose={closeMatchup}
+            onOpenDefenses={openMatchupDefenses}
+            onViewGameStats={openMatchupGameStats}
+            onOpenPlayer={openMatchupPlayer}
+          />
+        </Suspense>
       )}
     </div>
   );

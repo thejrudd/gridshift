@@ -1395,3 +1395,12 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **What's New tour for Fantasy Schedule** - Added the Fantasy Schedule (Beta) walkthrough that v9.0.1 shipped without, so updating from earlier versions now shows the tour step for the new Schedule view.
 - **Past-season matchup finality** - A matchup from a completed week now settles once the whole NFL slate is final, even when a starter has no schedule row of their own, such as a retired player, a free agent, or someone who changed teams since that season. Previously these matchups could stay unresolved.
 - **Regression coverage** - Added a unit test for settling starters with no schedule row of their own once the week's slate is final.
+
+## v9.1.0 - Global Search & NFL Matchup Intelligence
+*2026-09-24*
+
+- **Global Search** - Added an offline-first search palette available with Cmd/Ctrl+K, the desktop sidebar, and mobile navigation. Search players, NFL teams, games and weeks, fantasy teams, app views, and commands; supported player-stat, standings, ranking, trade-value, and league-leader questions can return inline answers.
+- **NFL matchup drill-ins** - Open regular-season games from Statistics Schedule by week or team. The matchup view covers pregame comparisons, live score and game situation, and final results with leaders and unit performance.
+- **Player data reliability** - Route ESPN player game logs and career data through an optional bounded server cache, while retaining the direct browser path when the cache is unavailable.
+- **Fantasy and Statistics accuracy** - Keep Heatmap QB Sacks Taken and INTs Thrown routes intact, and count passing production once in All-position Defense totals and Heatmap team box scores.
+- **Regression coverage and documentation** - Add focused search, NFL matchup, server player-data, Heatmap, and Defense coverage and update the related feature and architecture references.

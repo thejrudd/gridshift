@@ -5,9 +5,16 @@ import { CoffeeIcon } from '@phosphor-icons/react/Coffee';
 import { GithubLogoIcon } from '@phosphor-icons/react/GithubLogo';
 import { ShieldCheckIcon } from '@phosphor-icons/react/ShieldCheck';
 import StatusBadge from './ui/StatusBadge';
+import { CURRENT_RELEASE_URL, GITHUB_REPOSITORY_URL } from '../utils/appLinks.js';
 
-const GITHUB_REPOSITORY_URL = 'https://github.com/thejrudd/nfl-predictor';
-const CURRENT_RELEASE_URL = `${GITHUB_REPOSITORY_URL}/releases/tag/v${__APP_VERSION__}`;
+
+// The hint has to match the platform's actual modifier, or it tells the user to
+// press a key that does nothing. Server-side and pre-hydration it falls back to
+// the Ctrl form rather than guessing.
+const SEARCH_SHORTCUT_HINT = typeof navigator !== 'undefined'
+  && /Mac|iPhone|iPad|iPod/.test(navigator.platform ?? navigator.userAgent ?? '')
+  ? '\u2318K'
+  : 'Ctrl K';
 
 export default function Sidebar({
   activeTab,
@@ -25,6 +32,7 @@ export default function Sidebar({
   onLegal,
   onAppTour,
   onGuide,
+  onSearchOpen,
   onStatsExport,
   canExportStats = false,
   onExportJSON,
@@ -134,6 +142,24 @@ export default function Sidebar({
             </svg>
           </button>
         )}
+        {onSearchOpen && (
+          <button
+            type="button"
+            onClick={onSearchOpen}
+            className="global-search-trigger--sidebar"
+            data-tour="global-search"
+            aria-label="Search GridShift"
+            title="Search GridShift"
+          >
+            <svg width="18" height="18" className="sidebar-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <circle cx="11" cy="11" r="7" />
+              <line x1="16.5" y1="16.5" x2="21" y2="21" />
+            </svg>
+            <span className="global-search-trigger__label">Search</span>
+            <span className="global-search-trigger__hint">{SEARCH_SHORTCUT_HINT}</span>
+          </button>
+        )}
+
         <SidebarNavItem
           active={activeTab === 'fantasy'}
           onClick={() => onTabChange('fantasy')}

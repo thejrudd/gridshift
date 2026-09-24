@@ -8,6 +8,27 @@ const NFL_CALENDAR_DAY_FORMATTER = new Intl.DateTimeFormat('en-US', {
   day: '2-digit',
 });
 
+/**
+ * Find the normalized Scores week ID for a fantasy week number.
+ *
+ * ESPN-backed weeks use `reg-N` IDs while the development fixture uses the
+ * plain `N` form. Keeping that translation here lets a connected Scores view
+ * consume the shared fantasy current-week value without coupling the context
+ * to a provider-specific scoreboard shape.
+ */
+export function resolveStatisticsScoresWeekId(weeks, fantasyWeek) {
+  const weekNumber = Number(fantasyWeek);
+  if (!Number.isInteger(weekNumber) || weekNumber < 1) return null;
+  const target = String(weekNumber);
+
+  return weeks.find((week) => {
+    const id = String(week?.id ?? '');
+    return Number(week?.week) === weekNumber
+      || id === target
+      || id.replace(/^(?:pre|reg)-/, '') === target;
+  })?.id ?? null;
+}
+
 function getNflCalendarDay(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;

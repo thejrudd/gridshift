@@ -4,9 +4,11 @@ import {
   TEST_SEASON,
   matchupsForWeek,
   players,
+  persistedSleeperState,
   weeklyStatsForWeek,
 } from '../fixtures/tradeFixtures.js';
 import { installTradeFixtures } from './tradeTestHarness.js';
+import { baselineScope, scoringFingerprint } from '../../src/utils/matchupProjectionBaseline.js';
 
 const OPPONENT_BY_TEAM = {
   BUF: 'CLE', LAC: 'BAL', PHI: 'PIT',
@@ -396,4 +398,61 @@ test('player comparison aligns the game rail with the split hero without a cente
 
   await dialog.getByRole('button', { name: 'View Pocket Commander statistics' }).click();
   await expect(page).toHaveURL(/\/statistics\/player\/1001\/pocket-commander/);
+});
+
+test('player comparison anchors recorded projection labels below each side of the form rail', async ({ page }) => {
+  const scoringSettings = persistedSleeperState().scoringSettings;
+  const fingerprint = scoringFingerprint(scoringSettings);
+  const kickoff = '2026-09-03T17:00:00Z';
+  const capturedAt = Date.parse(kickoff) - 60 * 60 * 1000;
+  const records = ['101', '202'].map((playerId, index) => {
+    const record = {
+      leagueId: TEST_LEAGUE_ID,
+      season: TEST_SEASON,
+      week: '1',
+      playerId,
+      scoringFingerprint: fingerprint,
+      projection: { projected: index === 0 ? 16.8 : 19.4 },
+      capturedAt,
+      kickoff,
+    };
+    const scope = baselineScope(record);
+    return {
+      key: `gridshift-matchup-projection-baselines-v2:${encodeURIComponent(scope)}:${capturedAt}`,
+      record,
+    };
+  });
+  await page.addInitScript((initialRecords) => {
+    initialRecords.forEach(({ key, record }) => window.localStorage.setItem(key, JSON.stringify(record)));
+  }, records);
+
+  await page.goto('/fantasy/matchups?week=6');
+  const dismissTour = page.getByRole('button', { name: 'Dismiss' });
+  if (await dismissTour.count()) await dismissTour.click();
+  await expect(page.locator('.companion-matchup-player-metric--projection').first()).toBeVisible();
+  await page.getByRole('button', { name: /Open tale of the tape for/ }).first().click();
+  const dialog = page.getByRole('dialog', { name: /Compare / });
+  await expect(dialog).toBeVisible();
+  const formRow = dialog.locator('.pmd-cmp-lrow').filter({ hasText: 'Wk 1' });
+  await expect(formRow.locator('.pmd-cmp-fmarks .is-target:not(.is-unavailable)')).toHaveCount(2);
+
+  const geometry = await formRow.evaluate((row) => {
+    const sideGeometry = (side) => {
+      const track = row.querySelector(`.pmd-cmp-fcell.is-${side} .pmd-cmp-ftrack`);
+      const tick = row.querySelector(`.pmd-cmp-fcell.is-${side} .pmd-cmp-ftrack .is-target`);
+      const label = row.querySelector(`.pmd-cmp-fcell.is-${side} .pmd-cmp-fmarks .is-target`);
+      const trackRect = track?.getBoundingClientRect();
+      const tickRect = tick?.getBoundingClientRect();
+      const labelRect = label?.getBoundingClientRect();
+      return {
+        belowTrack: Boolean(trackRect && labelRect && labelRect.top >= trackRect.bottom - 1),
+        alignedToTick: Boolean(tickRect && labelRect && Math.abs((tickRect.left + tickRect.width / 2) - (labelRect.left + labelRect.width / 2)) <= 2),
+      };
+    };
+    return { left: sideGeometry('left'), right: sideGeometry('right') };
+  });
+  expect(geometry.left.belowTrack).toBe(true);
+  expect(geometry.left.alignedToTick).toBe(true);
+  expect(geometry.right.belowTrack).toBe(true);
+  expect(geometry.right.alignedToTick).toBe(true);
 });

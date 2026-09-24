@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { getPaceAdjustedProjection } from '../../src/utils/playerMatchupPresentation.js';
 import {
   buildMatchupWinProbability,
   hasFinalMatchupGameEvidence,
@@ -163,4 +164,33 @@ test('a final-looking schedule with a leading score locks in ahead of official s
 
   assert.equal(result.settled, true);
   assert.equal(result.probA, 100);
+});
+
+test('Live pace-adjusted team projection equals the sum of the player-row projections', () => {
+  const later = Date.parse('2026-09-07T11:00:00.000Z');
+  const live = (id, projected, current) => player({ id, projected, current, started: true });
+  const finished = player({ id: 'done', projected: 10, current: 14.26, started: true, completed: true });
+  const upcoming = player({ id: 'later', projected: 9.44, scheduleEntry: { kickoff: '2026-09-07T20:00:00.000Z', completed: false } });
+  const mine = [live('a', 20, 13), live('b', 12, 0), finished, upcoming];
+  const result = buildMatchupWinProbability({
+    myPlayers: mine,
+    opponentPlayers: [live('c', 15, 6)],
+    myCustomPoints: 2,
+    now: later,
+  });
+  const rowValue = (p) => {
+    if (p.scheduleEntry.completed) return p.weekPts;
+    if (!p.gameStarted) return Math.round(p.projection.projected * 10) / 10;
+    return getPaceAdjustedProjection({
+      phase: 'live',
+      total: p.weekPts,
+      projected: p.projection.projected,
+      scheduleEntry: p.scheduleEntry,
+      now: later,
+    });
+  };
+  const rowSum = Math.round((mine.reduce((sum, p) => sum + rowValue(p), 0) + 2) * 10) / 10;
+  assert.equal(result.paceExpectedA, rowSum);
+  // The neutral model behind win probability is unchanged by pace.
+  assert.notEqual(result.paceExpectedA, result.expectedA);
 });

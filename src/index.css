@@ -540,6 +540,7 @@ body {
 }
 
 .sidebar-nav {
+  --sidebar-inset: 18px;
   flex-shrink: 0;
   padding: 4px 0;
 }
@@ -550,7 +551,7 @@ body {
   align-items: center;
   gap: 10px;
   width: 100%;
-  padding: 11px 18px;
+  padding: 11px var(--sidebar-inset);
   font-size: var(--type-meta);
   font-weight: 600;
   color: var(--color-label-secondary);
@@ -870,8 +871,12 @@ body {
     padding-block: 2px;
   }
 
+  .sidebar-nav {
+    --sidebar-inset: 16px;
+  }
+
   .sidebar-nav-item {
-    padding: 7px 16px;
+    padding: 7px var(--sidebar-inset);
     line-height: 1.2;
   }
 
@@ -1824,6 +1829,70 @@ body {
 .companion-defense-row-header__metrics > * {
   text-align: right;
 }
+
+/* Defenses opened from a Schedule matchup: a way back, and both teams pinned. */
+.companion-defense-return {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-separator);
+  border-radius: var(--radius-panel, 8px);
+  background: var(--color-bg-secondary);
+}
+.companion-defense-return__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--control-height, 40px);
+  padding: 0 12px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--color-signature);
+  color: var(--color-signature-fg);
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-meta);
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.companion-defense-return__copy {
+  min-width: 0;
+  font-size: var(--type-label);
+  font-weight: 600;
+  color: var(--color-label-secondary);
+}
+.companion-defense-return__clear {
+  margin-left: auto;
+  min-width: 32px;
+  min-height: 32px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--color-fill);
+  color: var(--color-label);
+  font-size: var(--type-emphasis);
+  font-weight: 700;
+  cursor: pointer;
+}
+.companion-defense-return__back:focus-visible,
+.companion-defense-return__clear:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+@media (pointer: coarse) {
+  .companion-defense-return__clear { min-width: 44px; min-height: 44px; }
+}
+.companion-defense-pinned { display: block; }
+.companion-defense-pinned__label {
+  padding: 8px 14px 6px;
+  border-bottom: 1px solid var(--color-separator);
+  background: var(--color-fill-tertiary);
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-micro);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-label-secondary);
+}
+.companion-defense-pinned__label:first-child { color: var(--color-label); }
 
 .companion-defense-row-list {
   display: flex;
@@ -13705,6 +13774,56 @@ body {
   white-space: nowrap;
 }
 
+/* ── Ownership chip ────────────────────────────────────────────────────────
+   Names the fantasy team that holds this player and offers its two
+   destinations inline. The links live inside the pill rather than in the action
+   row below because the fact and what to do about it are one thought: the page
+   already had trade buttons that opened a deal against a manager it never
+   named. */
+
+.statistics-player-hero__roster-pill.is-linked {
+  gap: 2px;
+  padding: 2px 3px 2px 8px;
+}
+
+.statistics-player-hero__roster-owner {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.statistics-player-hero__roster-link {
+  min-height: 20px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--statistics-hero-subtle, var(--color-fill));
+  color: inherit;
+  font-size: inherit;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  line-height: 1;
+  transition: opacity 160ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.statistics-player-hero__roster-link:hover {
+  opacity: 0.75;
+}
+
+/* Coarse pointers get the full target; the pill grows with them rather than
+   leaving two 20px taps inside it. */
+@media (pointer: coarse) {
+  .statistics-player-hero__roster-pill.is-linked {
+    min-height: 44px;
+    padding: 4px 5px 4px 12px;
+  }
+
+  .statistics-player-hero__roster-link {
+    min-height: 36px;
+    padding: 4px 12px;
+  }
+}
+
 .statistics-player-hero__pill.is-positive {
   border-color: color-mix(in srgb, var(--color-accent-green) 44%, var(--statistics-hero-subtle));
   background: color-mix(in srgb, var(--color-accent-green) 16%, var(--statistics-hero-subtle));
@@ -14365,6 +14484,38 @@ body {
 .statistics-schedule-game-row:hover,
 .statistics-schedule-team-row:hover {
   background: var(--statistics-schedule-row-hover-bg, var(--color-bg-tertiary));
+}
+
+/* By Team and regular-season By Week rows open the NFL matchup drill-in. A
+   full-row button sits under each row's content while its own controls remain
+   clickable above. */
+.statistics-schedule-team-row.is-openable,
+.statistics-schedule-game-row.is-openable {
+  position: relative;
+  cursor: pointer;
+}
+.statistics-schedule-row-open {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.statistics-schedule-row-open:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+.statistics-schedule-team-row.is-openable > :not(.statistics-schedule-row-open),
+.statistics-schedule-game-row.is-openable > :not(.statistics-schedule-row-open) {
+  position: relative;
+  z-index: 1;
+  pointer-events: none;
+}
+.statistics-schedule-team-row.is-openable .statistics-schedule-game-stats-button,
+.statistics-schedule-game-row.is-openable .statistics-schedule-game-stats-button {
+  pointer-events: auto;
 }
 
 .statistics-schedule-row-meta {
@@ -27516,7 +27667,6 @@ button.companion-matchup-masthead__axis:focus-visible {
 .matchup-preview__big b,
 .matchup-preview__odds-top b,
 .matchup-preview-cmp__number,
-.matchup-preview-watch__points b,
 .matchup-preview__series-side b,
 .matchup-preview__meeting-score,
 .matchup-preview__key i {
@@ -27942,55 +28092,44 @@ button.companion-matchup-masthead__axis:focus-visible {
 }
 .matchup-preview-watch__head b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .matchup-preview-watch__head span { font-weight: 600; color: var(--color-label-secondary); white-space: nowrap; }
-.matchup-preview-watch__col.is-mirrored .matchup-preview-watch__head { flex-direction: row-reverse; }
-.matchup-preview-watch__list { display: flex; flex-direction: column; }
-.matchup-preview-watch__player {
-  display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) auto;
-  gap: 10px;
-  align-items: center;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--color-separator);
+.matchup-preview-watch__list { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+
+/* ── player cards ───────────────────────────────────────────────────────────
+   The movers list renders starters through the shared CompanionPlayerRow, so the
+   team gradient, headshot, logo and contrast come from that layer. These rules
+   only size the cards for the preview and give the points the display face. */
+
+.matchup-preview-card {
+  min-height: 60px;
+  padding: 8px 12px 8px 10px;
+  border-radius: 10px;
+  gap: 9px;
 }
-.matchup-preview-watch__player:last-child { border-bottom: 0; }
-.matchup-preview-watch__col.is-mirrored .matchup-preview-watch__player { grid-template-columns: auto minmax(0, 1fr) 28px; }
-.matchup-preview-watch__col.is-mirrored .matchup-preview-watch__pos { order: 3; }
-.matchup-preview-watch__col.is-mirrored .matchup-preview-watch__name { order: 2; text-align: right; }
-.matchup-preview-watch__col.is-mirrored .matchup-preview-watch__points { order: 1; text-align: left; }
-.matchup-preview-watch__pos {
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
-  display: grid;
-  place-items: center;
-  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
-  font-size: var(--type-micro);
+.matchup-preview-card .companion-player-row__identity-label {
+  font-size: var(--type-meta);
   font-weight: 800;
-  background: var(--color-fill);
-  color: var(--color-label);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.matchup-preview-watch__name { min-width: 0; }
-.matchup-preview-watch__name b { display: block; font-size: var(--type-meta); font-weight: 700; line-height: 1.2; }
-.matchup-preview-watch__name > span {
-  display: block;
-  margin-top: 3px;
-  font-size: var(--type-label);
-  font-weight: 600;
-  color: var(--color-label-secondary);
+.matchup-preview-card .companion-player-row__identity { min-width: 0; }
+/* Meta segments stay whole and wrap instead of ellipsizing; the projection chip takes its own line. */
+.matchup-preview-card .companion-player-row__meta { flex-wrap: wrap; row-gap: 4px; overflow: visible; }
+.matchup-preview-card .companion-player-row__meta-item { flex: none; max-width: 100%; overflow: visible; }
+.matchup-preview-card .companion-player-row__meta-item:has(.companion-player-row__status) { flex: 0 0 100%; }
+.matchup-preview-card .companion-player-row__meta-item:has(.companion-player-row__status)::before { content: none; }
+/* Team gradients can be any hue, so the semantic tone sits on a theme surface instead of the gradient. */
+.matchup-preview-card .companion-player-row__status {
+  background: color-mix(in srgb, var(--color-bg) 88%, transparent);
+  border-color: transparent;
+  text-shadow: none;
 }
-.matchup-preview-watch__name em { font-style: normal; font-weight: 700; }
-.matchup-preview-watch__name em.is-good { color: var(--color-accent-green); }
-.matchup-preview-watch__name em.is-bad { color: var(--color-accent-red); }
-.matchup-preview-watch__name em.is-flat { color: var(--color-label-secondary); }
-.matchup-preview-watch__points { text-align: right; }
-.matchup-preview-watch__points b { font-size: 20px; line-height: 1; font-weight: 700; }
-.matchup-preview-watch__points > span {
-  display: block;
-  margin-top: 4px;
+.matchup-preview-card .companion-player-row__status.is-neutral { color: var(--color-label-secondary); }
+.matchup-preview-card .companion-player-row__metric-value {
   font-family: var(--font-display, 'Barlow Condensed', sans-serif);
-  font-size: var(--type-micro);
-  font-weight: 700;
-  color: var(--color-label-secondary);
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: 0;
 }
 
 /* ── rivalry strip ──────────────────────────────────────────────────────── */
@@ -28212,6 +28351,98 @@ button.matchup-preview__meeting:focus-visible { outline: 2px solid var(--color-a
   color: var(--color-label-secondary);
 }
 
+.companion-schedule-edge-heading {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.companion-schedule-edge-hint {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+}
+
+.companion-schedule-edge-hint__button {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--color-separator);
+  border-radius: 50%;
+  background: var(--color-fill);
+  color: var(--color-label-secondary);
+  font-family: var(--font-body, sans-serif);
+  font-size: var(--type-label);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0;
+  text-transform: none;
+  cursor: pointer;
+  transition:
+    background 150ms cubic-bezier(0.32, 0.72, 0, 1),
+    color 150ms cubic-bezier(0.32, 0.72, 0, 1),
+    transform 120ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.companion-schedule-edge-hint__button[aria-expanded='true'] {
+  background: var(--color-fill-secondary);
+  color: var(--color-label);
+}
+
+.companion-schedule-edge-hint__button:focus-visible {
+  outline: 2px solid var(--color-signature);
+  outline-offset: 2px;
+}
+
+.companion-schedule-edge-hint__button:active {
+  transform: scale(0.96);
+}
+
+@media (hover: hover) {
+  .companion-schedule-edge-hint__button:hover {
+    background: var(--color-fill-secondary);
+    color: var(--color-label);
+  }
+}
+
+.companion-schedule-edge-hint__tooltip {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 10;
+  width: min(260px, calc(100vw - 32px));
+  padding: 10px 12px;
+  border: 1px solid var(--color-separator);
+  border-radius: 8px;
+  background: var(--color-bg-secondary);
+  color: var(--color-label);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--color-label) 18%, transparent);
+  font-family: var(--font-body, sans-serif);
+  font-size: var(--type-body);
+  font-weight: 400;
+  line-height: 1.4;
+  letter-spacing: normal;
+  text-align: left;
+  text-transform: none;
+  white-space: normal;
+}
+
+@media (pointer: coarse) {
+  .companion-schedule-edge-heading {
+    gap: 2px;
+    letter-spacing: 0.1em;
+  }
+
+  .companion-schedule-edge-hint__button {
+    width: 44px;
+    height: 44px;
+  }
+}
+
 .companion-schedule-figure,
 .companion-schedule-stat__value,
 .companion-schedule-week__number {
@@ -28322,6 +28553,19 @@ button.matchup-preview__meeting:focus-visible { outline: 2px solid var(--color-a
 .companion-schedule-cell--end {
   justify-self: end;
   text-align: right;
+}
+
+.companion-schedule-record {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  min-width: 0;
+}
+
+.companion-schedule-record__value {
+  white-space: nowrap;
 }
 
 .companion-schedule-week {
@@ -28585,5 +28829,841 @@ button.matchup-preview__meeting:focus-visible { outline: 2px solid var(--color-a
 
   .companion-schedule-pair__center {
     justify-content: flex-start;
+  }
+}
+
+/* ── Global search palette ──────────────────────────────────────────────────
+   One search surface reachable from anywhere. Structure mirrors the compare
+   picker sheet: fixed header, scrolling middle, fixed footer, so the input and
+   the shortcut hints stay put while results scroll. */
+
+.global-search-panel {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 620px;
+  height: 72vh;
+  max-height: 680px;
+  overflow: hidden;
+}
+
+.global-search {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+
+.global-search__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--color-separator);
+  /* Opaque: results scroll beneath this. */
+  background: var(--color-bg-secondary);
+  flex-shrink: 0;
+}
+
+.global-search__icon {
+  color: var(--color-label-tertiary);
+  flex-shrink: 0;
+}
+
+.global-search__input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--color-label);
+  /* 16px minimum: anything smaller makes iOS Safari zoom on focus. */
+  font-size: 16px;
+  line-height: 1.4;
+  outline: none;
+  appearance: none;
+}
+
+.global-search__input::placeholder {
+  color: var(--color-label-tertiary);
+}
+
+.global-search__input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.global-search__clear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  color: var(--color-label-secondary);
+  background: var(--color-fill);
+  font-size: 18px;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: opacity 200ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.global-search__clear:active {
+  opacity: 0.6;
+}
+
+.global-search__correction {
+  padding: 8px 16px;
+  font-size: 0.8125rem;
+  color: var(--color-label-secondary);
+  background: var(--color-fill-secondary);
+  border-bottom: 1px solid var(--color-separator);
+  flex-shrink: 0;
+}
+
+.global-search__correction strong {
+  color: var(--color-label);
+  font-weight: 600;
+}
+
+.global-search__results {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.global-search__group {
+  padding-bottom: 4px;
+}
+
+.global-search__group-label {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 10px 16px 6px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  /* Quaternary is a 20%-alpha hairline tone meant for dividers and disabled
+     glyphs. On uppercase 11px text it fell under every contrast floor we hold
+     the rest of the app to, which is what made the palette read as washed out
+     next to the surfaces it sits over. */
+  color: var(--color-label-secondary);
+  /* Opaque so rows scrolling under the sticky label stay hidden. */
+  background: var(--color-bg-secondary);
+}
+
+.global-search__empty {
+  padding: 32px 16px;
+  text-align: center;
+  font-size: 0.875rem;
+  color: var(--color-label-secondary);
+}
+
+.global-search-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  /* 44px minimum target for coarse pointers. */
+  min-height: 52px;
+  padding: 8px 16px;
+  text-align: left;
+  background: transparent;
+  transition: background 160ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.global-search-row.is-active,
+.global-search-row:hover {
+  background: var(--color-fill);
+}
+
+.global-search-row__avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  flex-shrink: 0;
+  overflow: hidden;
+  background: var(--color-fill);
+  color: var(--color-label-secondary);
+  font-family: var(--font-display, inherit);
+  font-size: 0.9375rem;
+  font-weight: 700;
+}
+
+.global-search-row__logo {
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+}
+
+.global-search-row__avatar--appView,
+.global-search-row__avatar--command {
+  background: var(--color-fill-secondary);
+  border: 1px solid var(--color-separator);
+  color: var(--color-label-secondary);
+}
+
+/* ── Per-kind marks ─────────────────────────────────────────────────────────
+   Searching a team used to return a column of that team's logo, once per row,
+   which told the eye nothing about what any row was. Shape now carries the
+   kind: a player is a round face, a team is its squared mark, a game is the two
+   crests playing it, a fantasy team is its initials, a destination is a glyph.
+   Team colour still comes from getTeamVisualTheme — no gradients are defined
+   here. */
+
+/* The headshot is PlayerAvatar, which is a circle. The ring keeps a dark
+   headshot from dissolving into a dark team gradient. */
+.global-search-row__headshot {
+  box-shadow: inset 0 0 0 1px var(--color-separator);
+}
+
+.global-search-row__avatar-pair {
+  position: relative;
+  display: block;
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+}
+
+.global-search-row__avatar-pair .global-search-row__avatar {
+  position: absolute;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+}
+
+.global-search-row__avatar-pair .global-search-row__avatar img {
+  width: 18px;
+  height: 18px;
+}
+
+.global-search-row__avatar-pair .is-away {
+  top: 0;
+  left: 0;
+}
+
+/* The home crest overlaps, and its outline is what keeps the two readable as
+   two rather than as one smudged mark. */
+.global-search-row__avatar-pair .is-home {
+  right: 0;
+  bottom: 0;
+  box-shadow: 0 0 0 2px var(--color-bg-secondary);
+}
+
+.global-search-row__text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+
+.global-search-row__label {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--color-label);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.global-search-row__sublabel {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--color-label-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.global-search-row__badge {
+  flex-shrink: 0;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--color-fill-secondary);
+  border: 1px solid var(--color-separator);
+  color: var(--color-label-secondary);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.global-search__footer {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--color-separator);
+  background: var(--color-bg-secondary);
+  color: var(--color-label-tertiary);
+  font-size: 0.6875rem;
+  flex-shrink: 0;
+  /* Fixed bottom UI has to clear the home indicator. */
+  padding-bottom: calc(10px + env(safe-area-inset-bottom));
+}
+
+.global-search__footer kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  margin-right: 3px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--color-fill);
+  color: var(--color-label-secondary);
+  font-family: inherit;
+  font-size: 0.6875rem;
+}
+
+/* The keyboard hints describe interactions a touch device does not have. */
+@media (pointer: coarse) {
+  .global-search__footer {
+    display: none;
+  }
+}
+
+/* ── Guide (empty state) ──────────────────────────────────────────────────── */
+
+.global-search-guide {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 16px;
+}
+
+.global-search-guide__intro {
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--color-label-tertiary);
+}
+
+.global-search-guide__label {
+  margin-bottom: 8px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-label-quaternary);
+}
+
+.global-search-guide__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.global-search-guide__chip {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--color-fill);
+  color: var(--color-label-secondary);
+  font-size: 0.75rem;
+  font-weight: 500;
+  transition: opacity 200ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.global-search-guide__chip:active {
+  opacity: 0.6;
+}
+
+/* ── Triggers ─────────────────────────────────────────────────────────────── */
+
+/* Inset pill: icon and shortcut hint sit on the same vertical lines as the
+   .sidebar-nav-item icons (inset + 4px border) and BETA badges (inset). */
+.global-search-trigger--sidebar {
+  --search-margin: calc(var(--sidebar-inset) - 6px);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: calc(100% - 2 * var(--search-margin));
+  min-height: 40px;
+  margin: 6px var(--search-margin) 10px;
+  padding: 8px 6px 8px 10px;
+  border-radius: 10px;
+  background: var(--color-fill-secondary);
+  color: var(--color-label-tertiary);
+  font-size: var(--type-meta);
+  transition: background 200ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.global-search-trigger--sidebar:hover {
+  background: var(--color-fill);
+}
+
+.global-search-trigger__hint {
+  margin-left: auto;
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: var(--color-fill);
+  color: var(--color-label-quaternary);
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.sidebar-collapsed .global-search-trigger__label,
+.sidebar-collapsed .global-search-trigger__hint {
+  display: none;
+}
+
+.sidebar-collapsed .global-search-trigger--sidebar {
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin: 0 auto 4px;
+  padding: 0;
+  border-radius: 12px;
+}
+
+/* ── Global search answer card ──────────────────────────────────────────────
+   Shown above the result list when a query asks something the cached data can
+   answer outright. */
+
+.global-search-answer {
+  margin: 12px 16px 8px;
+  padding: 14px;
+  border: 1px solid var(--color-separator);
+  border-radius: 14px;
+  background: var(--color-fill-secondary);
+}
+
+.global-search-answer__header {
+  margin-bottom: 12px;
+}
+
+.global-search-answer__title {
+  font-family: var(--font-display, inherit);
+  font-size: 1.0625rem;
+  font-weight: 700;
+  color: var(--color-label);
+  line-height: 1.2;
+}
+
+.global-search-answer__subtitle {
+  margin-top: 2px;
+  font-size: 0.75rem;
+  color: var(--color-label-secondary);
+}
+
+.global-search-answer__values {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+}
+
+.global-search-answer__value {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.global-search-answer__value-number {
+  font-family: var(--font-display, inherit);
+  font-size: 1.375rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--color-label);
+  font-variant-numeric: tabular-nums;
+}
+
+.global-search-answer__value-label {
+  font-size: 0.6875rem;
+  color: var(--color-label-secondary);
+}
+
+.global-search-answer__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.global-search-answer__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  text-align: left;
+  transition: background 160ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.global-search-answer__row:hover {
+  background: var(--color-fill);
+}
+
+.global-search-answer__rank {
+  flex-shrink: 0;
+  min-width: 22px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--color-label-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.global-search-answer__row-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.global-search-answer__row-label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-label);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.global-search-answer__row-sublabel {
+  font-size: 0.6875rem;
+  color: var(--color-label-secondary);
+}
+
+.global-search-answer__row-value {
+  flex-shrink: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-label-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.global-search-answer__footnote {
+  margin-top: 10px;
+  font-size: 0.6875rem;
+  color: var(--color-label-tertiary);
+}
+
+/* Failure and in-flight states for a search result being opened. A result that
+   needs a roster lookup before it can be routed must never look inert. */
+
+.global-search__notice {
+  padding: 10px 16px;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--color-label-secondary);
+  background: var(--color-fill-secondary);
+  border-bottom: 1px solid var(--color-separator);
+  flex-shrink: 0;
+}
+
+.global-search-row.is-resolving {
+  background: var(--color-fill);
+}
+
+.global-search-row__spinner {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--color-separator);
+  border-top-color: var(--color-label-tertiary);
+  animation: global-search-spin 700ms linear infinite;
+}
+
+@keyframes global-search-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .global-search-row__spinner {
+    animation-duration: 2s;
+  }
+}
+
+/* ── Expanding search result ────────────────────────────────────────────────
+   The active result expands in place to show what is already known about it.
+
+   Nothing here animates. The earlier version animated the first expansion after
+   a query changed and then swapped instantly between neighbours, which looked
+   considered but put a transition between pointing at a row and the row
+   responding. Pointing is the highest-frequency action in this surface, and a
+   palette that answers on the same frame is worth more than the transition was.
+
+   The active row is marked with a signature rail rather than background alone,
+   so the selection is still legible the instant it moves. */
+
+.global-search-row-shell {
+  position: relative;
+}
+
+.global-search-row-shell.is-active {
+  background: var(--color-fill);
+}
+
+.global-search-row-shell.is-active::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 3px;
+  background: var(--color-signature);
+}
+
+.global-search-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 2px 16px 14px 64px;
+}
+
+.global-search-detail__facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 20px;
+}
+
+.global-search-detail__fact-label {
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--color-label-tertiary);
+}
+
+.global-search-detail__fact-value {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--color-label);
+}
+
+.global-search-detail__fact-detail {
+  font-size: 0.6875rem;
+  font-weight: 400;
+  color: var(--color-label-secondary);
+}
+
+.global-search-detail__stats {
+  padding-top: 10px;
+  border-top: 1px solid var(--color-separator);
+}
+
+.global-search-detail__stats-label {
+  margin-bottom: 8px;
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--color-label-tertiary);
+}
+
+.global-search-detail__stat-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.global-search-detail__stat {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.global-search-detail__stat-number {
+  font-family: var(--font-display, inherit);
+  font-size: 1.0625rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--color-label);
+  font-variant-numeric: tabular-nums;
+}
+
+.global-search-detail__stat-label {
+  font-size: 0.625rem;
+  color: var(--color-label-secondary);
+}
+
+/* ── Fantasy ownership on a player result ──────────────────────────────────
+   Names the team that rosters the player and offers the two places that fact
+   leads. Buttons, not links: the row itself still opens the stats page. */
+
+.global-search-detail__fantasy {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--color-separator);
+}
+
+.global-search-detail__owner {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px 3px 8px;
+  border-radius: 999px;
+  background: var(--color-fill-secondary);
+  border: 1px solid var(--color-separator);
+  color: var(--color-label);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.global-search-detail__owner-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-label-tertiary);
+}
+
+.global-search-detail__owner.is-mine {
+  background: var(--color-signature);
+  border-color: var(--color-signature);
+  color: var(--color-signature-fg);
+}
+
+.global-search-detail__owner.is-mine .global-search-detail__owner-dot {
+  background: var(--color-signature-fg);
+}
+
+.global-search-detail__action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  /* 44px is the coarse-pointer floor; on a phone the detail row is the one
+     place these buttons are tapped rather than clicked. */
+  min-height: 28px;
+  padding: 4px 8px 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--color-separator);
+  background: transparent;
+  color: var(--color-label-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  transition: background 160ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.global-search-detail__action:hover {
+  background: var(--color-fill);
+  color: var(--color-label);
+}
+
+@media (pointer: coarse) {
+  .global-search-detail__action {
+    min-height: 44px;
+    padding: 4px 14px 4px 16px;
+  }
+}
+
+/* ── Standings table in an answer card ─────────────────────────────────────
+   Divs with ARIA table roles over a shared grid template, the same shape as
+   the Standings section. A <table> would fight the card's narrow column on a
+   phone; a grid row narrows to its own template and keeps the numbers aligned
+   down the card. */
+
+.global-search-answer__table {
+  display: flex;
+  flex-direction: column;
+  margin-top: 4px;
+}
+
+.global-search-answer__table-head,
+.global-search-answer__table-row {
+  display: grid;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  text-align: left;
+}
+
+.global-search-answer__table-head {
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--color-separator);
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--color-label-tertiary);
+}
+
+.global-search-answer__table-head > span:not(:nth-child(-n + 2)),
+.global-search-answer__table-value {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.global-search-answer__table-row {
+  /* 44px on coarse pointers via the media query below; a mouse row stays
+     tighter so a division fits without scrolling. */
+  min-height: 34px;
+  border-radius: 8px;
+  background: transparent;
+  transition: background 160ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.global-search-answer__table-row:hover {
+  background: var(--color-fill);
+}
+
+.global-search-answer__table-team {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.global-search-answer__table-value {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--color-label);
+}
+
+@media (pointer: coarse) {
+  .global-search-answer__table-row {
+    min-height: 44px;
+  }
+}
+
+.global-search-answer__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.global-search-answer__more {
+  min-height: 28px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--color-separator);
+  background: transparent;
+  color: var(--color-label-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  transition: background 160ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.global-search-answer__more:hover {
+  background: var(--color-fill);
+  color: var(--color-label);
+}
+
+@media (pointer: coarse) {
+  .global-search-answer__more {
+    min-height: 44px;
+    padding: 4px 18px;
+  }
+}
+
+/* The detail indent lines up with the label, not the avatar. On a phone that
+   indent costs too much of the width, so the detail runs full-bleed instead. */
+@media (max-width: 480px) {
+  .global-search-detail {
+    padding-left: 16px;
   }
 }

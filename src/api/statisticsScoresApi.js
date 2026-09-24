@@ -157,3 +157,15 @@ export async function getStatisticsScoresPreseason({ season, source, signal } = 
   });
   return parseScoresResponse(response, 'Could not load BALLDONTLIE preseason scores.');
 }
+
+// ESPN season team statistics for the Schedule NFL matchup drill-in, through
+// the sidecar cache. Resolves to `{ team, season, stats }` where `stats` is
+// keyed "<category>.<stat>".
+export async function getNflTeamSeasonStats({ team, season, signal } = {}) {
+  const params = new URLSearchParams({ team: String(team ?? ''), season: String(season ?? '') });
+  const response = await fetch(`/api/statistics/scores/team-stats?${params}`, {
+    signal,
+    headers: { Accept: 'application/json' },
+  });
+  return parseScoresResponse(response, 'Could not load ESPN team statistics.');
+}

@@ -1080,6 +1080,7 @@ function makePlayerGroup(id, label, columns, rows, keys, values, primaryKey, qua
         team: playerTeam(row),
         teamName: playerTeamName(row),
         player: playerName(row),
+        position: firstString(row?.player?.position_abbreviation)?.toUpperCase() ?? null,
         values: values(row),
         quarterValues: quarterStats?.byPlayer?.[key]?.[id] ?? null,
       };

@@ -120,6 +120,7 @@ const PlayerBrowser = ({
   onPlayerModeChange,
   onComparePlayer,
   onBuildTrade,
+  onOpenFantasyTeam,
   tradeDisabled = false,
   tradeDisabledTitle = 'Trade is not available for the connected platform.',
 }) => {
@@ -384,6 +385,7 @@ const PlayerBrowser = ({
           tradeDisabled={tradeDisabled}
           tradeDisabledTitle={tradeDisabledTitle}
           onViewSchedule={selectedPlayer.teamId ? () => onViewSchedule?.(selectedPlayer.teamId) : undefined}
+          onOpenFantasyTeam={onOpenFantasyTeam}
         />
       );
     }

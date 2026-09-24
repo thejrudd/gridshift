@@ -1,10 +1,10 @@
 import { calcPoints } from './scoringEngine.js';
 
-export const DEFENSE_RANKING_POSITIONS = ['ALL', 'QB', 'RB', 'WR', 'TE'];
+export const DEFENSE_RANKING_POSITIONS = ['ALL', 'QB', 'RB', 'WR', 'TE', 'K'];
 const DEFENSE_RANKING_PLAYER_POSITIONS = ['QB', 'RB', 'WR', 'TE'];
-const WHOLE_NUMBER_STATS = new Set(['pass_td', 'pass_int', 'rush_td', 'rush_att', 'rec', 'rec_td', 'total_td']);
+const WHOLE_NUMBER_STATS = new Set(['pass_td', 'pass_int', 'rush_td', 'rush_att', 'rec', 'rec_td', 'total_td', 'fgm', 'fgmiss', 'xpm', 'xpmiss']);
 const LOW_FREQUENCY_AVERAGE_STATS = new Set(['pass_td', 'pass_int', 'rush_td', 'rec_td']);
-const VOLUME_AVERAGE_STATS = new Set(['rush_att', 'rec']);
+const VOLUME_AVERAGE_STATS = new Set(['rush_att', 'rec', 'fgm', 'fgmiss', 'xpm', 'xpmiss']);
 
 export const DEFENSE_RANKING_STAT_OPTIONS = {
   ALL: [
@@ -38,6 +38,12 @@ export const DEFENSE_RANKING_STAT_OPTIONS = {
     { id: 'rec_td', label: 'Receiving TDs', shortLabel: 'Rec TD' },
     { id: 'rush_yd', label: 'Rushing Yards', shortLabel: 'Rush Yds' },
     { id: 'rush_td', label: 'Rushing TDs', shortLabel: 'Rush TD' },
+  ],
+  K: [
+    { id: 'fgm', label: 'Field Goals Made', shortLabel: 'FG Made' },
+    { id: 'fgmiss', label: 'Field Goals Missed', shortLabel: 'FG Miss' },
+    { id: 'xpm', label: 'Extra Points Made', shortLabel: 'XP Made' },
+    { id: 'xpmiss', label: 'Extra Points Missed', shortLabel: 'XP Miss' },
   ],
 };
 
@@ -124,10 +130,12 @@ function getPlayerName(player, playerId) {
 
 function getDefenseStatValue(wEntry, stat) {
   switch (stat) {
+    // Passing is excluded from the ALL totals: each completed pass is already the receiver's
+    // rec_yd/rec_td, so adding the QB's pass_yd/pass_td would count it twice.
     case 'total_yd':
-      return Number(wEntry.pass_yd ?? 0) + Number(wEntry.rush_yd ?? 0) + Number(wEntry.rec_yd ?? 0);
+      return Number(wEntry.rush_yd ?? 0) + Number(wEntry.rec_yd ?? 0);
     case 'total_td':
-      return Number(wEntry.pass_td ?? 0) + Number(wEntry.rush_td ?? 0) + Number(wEntry.rec_td ?? 0);
+      return Number(wEntry.rush_td ?? 0) + Number(wEntry.rec_td ?? 0);
     default:
       return Number(wEntry[stat] ?? 0);
   }
@@ -317,4 +325,97 @@ export function filterDefenseRankingRows(rows, query) {
   const value = String(query ?? '').trim().toUpperCase();
   if (!value) return rows;
   return rows.filter(row => row.team.includes(value));
+}
+
+
+// ── Unit vs unit (Statistics › Schedule NFL matchup drill-in) ────────────────
+// Each unit is measured the same way on both sides of the ball: an offense's
+// production and the same number a defense allowed, per game played. Offense
+// rank 1 = most produced; defense rank 1 = fewest allowed, so #1 is always the
+// strongest unit.
+
+const UNIT_SKILL_POSITIONS = ['QB', 'RB', 'WR', 'TE'];
+
+export const MATCHUP_UNITS = Object.freeze([
+  { id: 'PASS', label: 'Pass game', sub: 'Pass yds / game', positions: UNIT_SKILL_POSITIONS, value: (w) => Number(w.pass_yd ?? 0), defense: { position: 'QB', stat: 'pass_yd' } },
+  { id: 'RUN', label: 'Run game', sub: 'Rush yds / game', positions: UNIT_SKILL_POSITIONS, value: (w) => Number(w.rush_yd ?? 0), defense: { position: 'RB', stat: 'rush_yd' } },
+  { id: 'QB', label: 'QB', sub: 'QB pass yds / game', positions: ['QB'], value: (w) => Number(w.pass_yd ?? 0), defense: { position: 'QB', stat: 'pass_yd' } },
+  { id: 'RB', label: 'RB', sub: 'RB scrimmage yds / game', positions: ['RB'], value: (w) => Number(w.rush_yd ?? 0) + Number(w.rec_yd ?? 0), defense: { position: 'RB', stat: 'rush_yd' } },
+  { id: 'WR', label: 'WR', sub: 'WR rec yds / game', positions: ['WR'], value: (w) => Number(w.rec_yd ?? 0), defense: { position: 'WR', stat: 'rec_yd' } },
+  { id: 'TE', label: 'TE', sub: 'TE rec yds / game', positions: ['TE'], value: (w) => Number(w.rec_yd ?? 0), defense: { position: 'TE', stat: 'rec_yd' } },
+  { id: 'K', label: 'K', sub: 'FG made / game', positions: ['K'], value: (w) => Number(w.fgm ?? 0), defense: { position: 'K', stat: 'fgm' } },
+]);
+
+function rankUnitRows(rows, side, unitId) {
+  const ranked = rows
+    .filter((row) => row[side][unitId].avg != null)
+    .sort((a, b) => {
+      const delta = side === 'offense'
+        ? b[side][unitId].avg - a[side][unitId].avg
+        : a[side][unitId].avg - b[side][unitId].avg;
+      return delta || a.team.localeCompare(b.team);
+    });
+  ranked.forEach((row, index) => { row[side][unitId].rank = index + 1; });
+}
+
+/**
+ * Per-team offense-produced and defense-allowed averages and ranks for every
+ * matchup unit. `throughWeek` (inclusive) limits the sample, so a finished
+ * game can compare ranks entering the week with ranks after it.
+ */
+export function buildUnitMatchupTable({
+  weeklyStats,
+  players,
+  scheduleMap,
+  teams = [],
+  throughWeek = null,
+}) {
+  const maxWeek = Number.isFinite(Number(throughWeek)) && throughWeek != null ? Number(throughWeek) : Infinity;
+  const inRange = (week) => Number.isFinite(week) && week <= maxWeek;
+  const allTeams = teams.map((team) => String(team).toUpperCase());
+  const played = buildPlayedWeeksByTeam(weeklyStats, players, scheduleMap);
+  for (const weeks of played.values()) {
+    for (const week of [...weeks]) if (!inRange(week)) weeks.delete(week);
+  }
+  const gamesByTeam = buildGamesByTeam(scheduleMap, allTeams, played);
+  const emptySide = () => Object.fromEntries(MATCHUP_UNITS.map((unit) => [unit.id, { total: 0, avg: null, rank: null }]));
+  const byTeam = new Map(allTeams.map((team) => [team, { team, games: 0, offense: emptySide(), defense: emptySide() }]));
+  const ensure = (team) => {
+    if (!byTeam.has(team)) byTeam.set(team, { team, games: 0, offense: emptySide(), defense: emptySide() });
+    return byTeam.get(team);
+  };
+
+  for (const [playerId, playerWeeks] of Object.entries(weeklyStats ?? {})) {
+    const player = players?.[playerId];
+    if (!player) continue;
+    for (const wEntry of playerWeeks ?? []) {
+      const week = Number(wEntry?.week);
+      if (!inRange(week)) continue;
+      const offenseTeam = wEntry.team?.toUpperCase() ?? getFallbackPlayerTeam(player, playerWeeks ?? []);
+      const defenseTeam = getDefenseTeamForWeek(wEntry, player, playerWeeks ?? [], scheduleMap);
+      for (const unit of MATCHUP_UNITS) {
+        if (!unit.positions.includes(player.position)) continue;
+        const value = unit.value(wEntry);
+        if (!Number.isFinite(value) || value === 0) continue;
+        if (offenseTeam) ensure(offenseTeam).offense[unit.id].total += value;
+        if (defenseTeam) ensure(defenseTeam).defense[unit.id].total += value;
+      }
+    }
+  }
+
+  const rows = [...byTeam.values()];
+  for (const row of rows) {
+    row.games = gamesByTeam[row.team]?.size ?? 0;
+    for (const side of ['offense', 'defense']) {
+      for (const unit of MATCHUP_UNITS) {
+        const entry = row[side][unit.id];
+        entry.avg = row.games > 0 ? entry.total / row.games : null;
+      }
+    }
+  }
+  for (const unit of MATCHUP_UNITS) {
+    rankUnitRows(rows, 'offense', unit.id);
+    rankUnitRows(rows, 'defense', unit.id);
+  }
+  return new Map(rows.map((row) => [row.team, row]));
 }

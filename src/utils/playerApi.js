@@ -1,51 +1,29 @@
 import { cachedFetch, TTL } from './playerCache.js';
+import {
+  ESPN_BASE,
+  ESPN_CORE,
+  buildMetaMap,
+  extractTeamIdFromRef,
+  fetchEspnTeamAbbrev as fetchEspnTeamAbbrevWith,
+  fetchPlayerCareerStatsRaw,
+  fetchPlayerGameLogRaw,
+  fetchPlayerSeasonStatsRaw,
+  getCurrentSeason,
+  parseCompetitorScore,
+  toEspnTeamId,
+} from './espnPlayerFetch.js';
+import { cachedPlayerData } from './playerDataCache.js';
 
-const ESPN_BASE = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl';
-const ESPN_CORE = 'https://sports.core.api.espn.com/v2/sports/football/leagues/nfl';
-// GridShift's league year runs from March through February, matching the
-// season range used by SleeperContext. Keep statistics consumers aligned with
-// the active fantasy season instead of leaving a stale calendar-year literal.
-const CURRENT_SEASON = (() => {
-  const now = new Date();
-  return now.getMonth() >= 2 ? now.getFullYear() : now.getFullYear() - 1;
-})();
-const CAREER_STAT_REPAIR_START_SEASON = 2006;
+const CURRENT_SEASON = getCurrentSeason();
 
-// Some app IDs differ from ESPN's roster endpoint slug
-const TEAM_ESPN_ID = {
-  WSH: 'wsh',
-  WAS: 'wsh',  // Sleeper uses WAS, ESPN uses WSH
-  LAR: 'lar',
-  NE:  'ne',
-  LV:  'lv',
-  LAC: 'lac',
-  NYG: 'nyg',
-  NYJ: 'nyj',
-  NO:  'no',
-  TB:  'tb',
-  KC:  'kc',
-  SF:  'sf',
-  GB:  'gb',
-  JAX: 'jax',  // Sleeper uses JAX (ESPN abbreviation is JAC but API slug is jax)
-};
-const toEspnTeamId = id => TEAM_ESPN_ID[id] ?? id.toLowerCase();
 const APP_TEAM_ABBR_TO_ESPN_ABBR = { WAS: 'WSH' };
 
-async function fetchEspnTeamAbbrev(teamId) {
-  if (!teamId) return null;
-  try {
-    const res = await fetch(`${ESPN_CORE}/teams/${teamId}?lang=en&region=us`);
-    if (!res.ok) return null;
-    const teamData = await res.json();
-    return teamData.abbreviation ?? null;
-  } catch {
-    return null;
-  }
-}
+// Route every ESPN call through the current global fetch (tests and the
+// service worker can swap it) instead of capturing a reference at import time.
+const browserFetch = (url, init) => fetch(url, init);
 
-function extractTeamIdFromRef(ref) {
-  if (typeof ref !== 'string') return null;
-  return ref.match(/teams\/(\d+)/)?.[1] ?? null;
+async function fetchEspnTeamAbbrev(teamId) {
+  return fetchEspnTeamAbbrevWith(browserFetch, teamId);
 }
 
 // Headshot URL — will 404 for some players; handle with onError
@@ -123,6 +101,55 @@ export async function fetchPlayerProfile(playerId) {
   }, TTL.bio);
 }
 
+// Player payloads (season stats, career stats, game logs) come from the
+// GridShift API sidecar, which fetches each one from ESPN once and stores it.
+// If the sidecar is unreachable or declines a request, the browser falls back
+// to the same ESPN calls directly, so profiles keep working without it.
+const PLAYER_DATA_API = '/api/players';
+const PLAYER_DATA_SERVER_COOLDOWN_MS = 60 * 1000;
+let playerDataServerDownUntil = 0;
+
+function markPlayerDataServerDown() {
+  playerDataServerDownUntil = Date.now() + PLAYER_DATA_SERVER_COOLDOWN_MS;
+}
+
+/**
+ * Resolves to null when the caller should fall back to ESPN directly,
+ * { notFound: true } when the sidecar reports ESPN has no such data, or
+ * { data, incomplete } on success. `incomplete` also covers a stale copy
+ * served while ESPN was failing, so neither is stored as permanent.
+ */
+async function fetchFromPlayerDataServer(path) {
+  if (Date.now() < playerDataServerDownUntil) return null;
+  try {
+    const res = await browserFetch(`${PLAYER_DATA_API}${path}`);
+    const isJson = (res.headers?.get?.('content-type') ?? '').includes('json');
+    // Only the sidecar's own JSON 404 means "ESPN has no data". A bare 404
+    // (an older API without this route, a misrouted proxy) is an outage.
+    if (res.status === 404 && isJson) return { notFound: true };
+    if (!res.ok) {
+      // 400 means this request is outside what the sidecar serves (for example
+      // seasons before its minimum); anything else means it is unavailable.
+      if (res.status !== 400) markPlayerDataServerDown();
+      return null;
+    }
+    // Without the sidecar (dev server, misrouted proxy) the SPA fallback answers
+    // with index.html; treat that like an outage rather than a parse error.
+    if (!isJson) {
+      markPlayerDataServerDown();
+      return null;
+    }
+    return {
+      data: await res.json(),
+      incomplete: res.headers.get('X-GridShift-Incomplete') === '1'
+        || res.headers.get('X-GridShift-Stale') === '1',
+    };
+  } catch {
+    markPlayerDataServerDown();
+    return null;
+  }
+}
+
 /**
  * Fetch season stats for a player.
  * season: 4-digit year for a specific season, or null for the current season.
@@ -135,130 +162,17 @@ export async function fetchPlayerStats(playerId, season = null) {
   const cacheKey = `stats_v2_${playerId}_${s}`;
   const ttl = isHistorical ? TTL.historical : TTL.stats;
 
-  return cachedFetch(cacheKey, async () => {
-    const url = `${ESPN_CORE}/seasons/${s}/types/2/athletes/${playerId}/statistics/0?lang=en&region=us`;
-    const res = await fetch(url);
+  return cachedPlayerData(cacheKey, async () => {
+    const viaServer = await fetchFromPlayerDataServer(`/${playerId}/stats/${s}`);
+    if (viaServer?.notFound) throw new Error('Stats fetch failed: 404');
+    if (viaServer) return viaServer;
+
+    const res = await fetchPlayerSeasonStatsRaw(browserFetch, playerId, s);
     if (!res.ok) throw new Error(`Stats fetch failed: ${res.status}`);
-    return res.json();
-  }, ttl);
+    return { data: res.data };
+  }, { ttl, final: isHistorical });
 }
 
-function getCareerStatEntry(statsJson, statName) {
-  const categories = statsJson?.splits?.categories ?? [];
-  for (const category of categories) {
-    const entry = (category.stats ?? []).find(stat => stat.name === statName);
-    if (entry) return entry;
-  }
-  return null;
-}
-
-function getStatValue(statsJson, statName) {
-  const value = getCareerStatEntry(statsJson, statName)?.value;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function setCareerStatValue(statsJson, statName, value) {
-  const entry = getCareerStatEntry(statsJson, statName);
-  if (!entry) return;
-  entry.value = value;
-  entry.displayValue = Number(value).toLocaleString('en-US', {
-    maximumFractionDigits: 1,
-  });
-}
-
-async function fetchSeasonStatValue(playerId, season, statName) {
-  try {
-    const stats = await fetchPlayerStats(playerId, season);
-    return getStatValue(stats, statName) ?? 0;
-  } catch {
-    return 0;
-  }
-}
-
-async function repairCareerDefensiveStats(playerId, careerStats) {
-  const tfl = getStatValue(careerStats, 'tacklesForLoss');
-  const sacks = getStatValue(careerStats, 'sacks');
-  const tackles = getStatValue(careerStats, 'totalTackles');
-  const shouldRepairTfl = tfl === 0 && ((sacks ?? 0) > 0 || (tackles ?? 0) > 0);
-
-  if (!shouldRepairTfl) return careerStats;
-
-  const seasons = Array.from(
-    { length: CURRENT_SEASON - CAREER_STAT_REPAIR_START_SEASON + 1 },
-    (_, i) => CAREER_STAT_REPAIR_START_SEASON + i
-  );
-  const values = await Promise.all(
-    seasons.map(season => fetchSeasonStatValue(playerId, season, 'tacklesForLoss'))
-  );
-  const total = values.reduce((sum, value) => sum + value, 0);
-
-  if (total > 0) setCareerStatValue(careerStats, 'tacklesForLoss', total);
-  return careerStats;
-}
-
-// Playoff week number → round label
-function playoffRoundLabel(weekNum) {
-  // Week 4 is the bye between Conference Championships and the Super Bowl
-  return { 1: 'Wild Card', 2: 'Divisional', 3: 'Conf. Champ.', 5: 'Super Bowl' }[weekNum] ?? 'Playoffs';
-}
-
-// Build an eventId → meta map from a site-API schedule response
-function parseCompetitorScore(competitor, completed) {
-  if (!completed) return null;
-  const score = competitor?.score;
-  if (score === null || score === undefined || score === '') return null;
-  const raw = typeof score === 'object'
-    ? (score.value ?? score.displayValue)
-    : score;
-  const parsed = Number(raw);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function displayCompetitorScore(competitor) {
-  const score = competitor?.score;
-  if (score === null || score === undefined || score === '') return '?';
-  if (typeof score === 'object') return score.displayValue ?? score.value ?? '?';
-  return score;
-}
-
-function getCompetitorResult(myComp, oppComp, completed) {
-  if (!completed) return '-';
-  const myScore = parseCompetitorScore(myComp, completed);
-  const oppScore = parseCompetitorScore(oppComp, completed);
-  if (Number.isFinite(myScore) && Number.isFinite(oppScore)) {
-    if (myScore > oppScore) return 'W';
-    if (myScore < oppScore) return 'L';
-    return 'T';
-  }
-
-  const winner = myComp?.winner;
-  return winner === true ? 'W' : winner === false ? 'L' : '-';
-}
-
-function buildMetaMap(schedData, teamAbbrev, isPostseason) {
-  const map = {};
-  for (const event of (schedData.events ?? [])) {
-    const comp = event.competitions?.[0];
-    if (!comp) continue;
-    const myComp  = comp.competitors?.find(c => c.team?.abbreviation === teamAbbrev);
-    const oppComp = comp.competitors?.find(c => c.team?.abbreviation !== teamAbbrev);
-    if (!myComp || !oppComp) continue;
-    const away   = myComp.homeAway === 'away';
-    const completed = comp.status?.type?.completed ?? false;
-    map[event.id] = {
-      week:        event.week?.number ?? null,
-      opponent:    `${away ? '@' : 'vs '}${oppComp.team?.abbreviation ?? '?'}`,
-      result:      getCompetitorResult(myComp, oppComp, completed),
-      score:       `${displayCompetitorScore(myComp)}-${displayCompetitorScore(oppComp)}`,
-      myTeam:      myComp.team?.abbreviation ?? null,
-      isPostseason,
-      roundLabel:  isPostseason ? playoffRoundLabel(event.week?.number) : null,
-      completed,
-    };
-  }
-  return map;
-}
 
 const TEAM_DEFENSE_STAT_LABELS = {
   gamesPlayed: 'Games',
@@ -1060,109 +974,24 @@ export async function fetchGameLog(playerId, teamId, season) {
   const isHistorical = season < CURRENT_SEASON;
   const ttl = isHistorical ? TTL.historical : TTL.stats;
 
-  return cachedFetch(`gamelog_v11_${playerId}_${season}`, async () => {
-    const abbrev = teamId?.toUpperCase?.() ?? null;
+  return cachedPlayerData(`gamelog_v11_${playerId}_${season}`, async (stale) => {
+    const query = teamId ? `?team=${encodeURIComponent(teamId)}` : '';
+    const viaServer = await fetchFromPlayerDataServer(`/${playerId}/gamelog/${season}${query}`);
+    if (viaServer && !viaServer.notFound) return viaServer;
 
-    // Step 1: Fetch the eventlog first — needed to resolve the actual team for this season.
-    // The passed-in teamId is the player's *current* team, which may differ for historical seasons.
-    const logRes = await fetch(`${ESPN_CORE}/seasons/${season}/athletes/${playerId}/eventlog?lang=en&region=us`);
-    if (!logRes.ok) return [];
-
-    const logData = await logRes.json();
-    const rawItems = logData.events?.items ?? [];
-    const items = Array.isArray(rawItems) ? rawItems : Object.values(rawItems);
-
-    // Extract ESPN numeric competitor ID from any regular-season stats $ref
-    // e.g. ".../competitors/25/roster/..." → "25"  (25 = SEA's ESPN team ID)
-    let espnCompetitorId = null;
-    for (const item of items) {
-      const m = (item.statistics?.$ref ?? '').match(/competitors\/(\d+)\/roster/);
-      if (m) { espnCompetitorId = m[1]; break; }
-    }
-
-    // Step 2: Resolve the actual team abbreviation for this season.
-    // The competitor ID in the stats $ref URL is ESPN's persistent numeric team ID.
-    // Fetching /teams/{id} returns the abbreviation directly (unlike the competitor endpoint,
-    // which wraps team data in a $ref pointer and would silently return undefined).
-    let actualAbbrev = abbrev;
-    if (espnCompetitorId) {
-      actualAbbrev = await fetchEspnTeamAbbrev(espnCompetitorId) ?? abbrev;
-    }
-    if (!actualAbbrev) return [];
-
-    // Step 3: Fetch the correct team's schedule (reg + post) in parallel
-    const [schedRes, postSchedRes] = await Promise.all([
-      fetch(`${ESPN_BASE}/teams/${toEspnTeamId(actualAbbrev)}/schedule?season=${season}&seasontype=2`),
-      fetch(`${ESPN_BASE}/teams/${toEspnTeamId(actualAbbrev)}/schedule?season=${season}&seasontype=3`),
-    ]);
-
-    // Build metadata maps using the resolved team abbreviation
-    const regMeta  = schedRes.ok      ? buildMetaMap(await schedRes.json(),      actualAbbrev, false) : {};
-    const postMeta = postSchedRes.ok  ? buildMetaMap(await postSchedRes.json(),  actualAbbrev, true)  : {};
-
-    // Regular-season per-game stats (via eventlog $refs), including inactive/DNP games
-    const regGamesRaw = await Promise.all(items.map(async (item) => {
-      // Get event ID from stats $ref or event $ref (inactive games may lack stats $ref)
-      const statsRef = item.statistics?.$ref;
-      const eventRef = item.event?.$ref ?? '';
-      const eventId = statsRef?.match(/events\/(\d+)/)?.[1]
-        ?? eventRef.match(/events\/(\d+)/)?.[1];
-      if (!eventId) return null;
-
-      if (!item.played) {
-        // Include completed games where the player was inactive
-        const meta = regMeta[eventId];
-        if (!meta?.completed) return null;
-        return { eventId, meta: { ...meta, isInactive: true }, statsJson: null };
-      }
-
-      if (!statsRef) return null;
-      try {
-        // ESPN Core $ref URLs use http:// — upgrade to https:// to avoid mixed-content
-        // blocking when the app is served over HTTPS.
-        const secureRef = statsRef.replace(/^http:\/\//, 'https://');
-        const res = await fetch(secureRef);
-        if (!res.ok) return null;
-        return { eventId, meta: regMeta[eventId] ?? {}, statsJson: await res.json() };
-      } catch { return null; }
-    }));
-
-    const regGames = regGamesRaw.filter(Boolean);
-
-    // Insert synthetic BYE rows for missing week numbers between 1 and the highest week played
-    const coveredWeeks = new Set(regGames.map(g => g.meta?.week).filter(w => w != null));
-    const maxWeek = coveredWeeks.size > 0 ? Math.max(...coveredWeeks) : 0;
-    for (let w = 1; w <= maxWeek; w++) {
-      if (!coveredWeeks.has(w)) {
-        regGames.push({
-          eventId: `bye_${w}`,
-          meta: { week: w, opponent: 'BYE', result: '-', score: '', myTeam: actualAbbrev, isBye: true },
-          statsJson: null,
-        });
-      }
-    }
-
-    // Sort regular-season games by week number
-    regGames.sort((a, b) => (a.meta?.week ?? 99) - (b.meta?.week ?? 99));
-
-    // Postseason per-game stats (constructed URL — eventlog can't be filtered by seasontype)
-    const postGames = espnCompetitorId
-      ? await Promise.all(
-          Object.entries(postMeta)
-            .filter(([, m]) => m.completed)
-            .map(async ([eventId, meta]) => {
-              try {
-                const url = `${ESPN_CORE}/events/${eventId}/competitions/${eventId}/competitors/${espnCompetitorId}/roster/${playerId}/statistics/0?lang=en&region=us`;
-                const res = await fetch(url);
-                if (!res.ok) return null;
-                return { eventId, meta, statsJson: await res.json() };
-              } catch { return null; }
-            })
-        )
-      : [];
-
-    return [...regGames, ...postGames.filter(Boolean)];
-  }, ttl, (games) => Array.isArray(games) && games.length > 0);
+    // A previously stored copy lets a refresh skip games that are already final.
+    const { games, incomplete } = await fetchPlayerGameLogRaw(browserFetch, {
+      playerId,
+      teamId,
+      season,
+      existingGames: Array.isArray(stale) ? stale : null,
+    });
+    return { data: games, incomplete };
+  }, {
+    ttl,
+    final: isHistorical,
+    shouldCache: (games) => Array.isArray(games) && games.length > 0,
+  });
 }
 
 /**
@@ -1170,13 +999,18 @@ export async function fetchGameLog(playerId, teamId, season) {
  * Uses the /statistics/0 endpoint on the core API.
  */
 export async function fetchPlayerCareerStats(playerId) {
-  return cachedFetch(`stats_v2_${playerId}_career`, async () => {
-    const url = `${ESPN_CORE}/athletes/${playerId}/statistics/0?lang=en&region=us`;
-    const res = await fetch(url);
+  return cachedPlayerData(`stats_v2_${playerId}_career`, async () => {
+    const viaServer = await fetchFromPlayerDataServer(`/${playerId}/career`);
+    if (viaServer?.notFound) throw new Error('Career stats fetch failed: 404');
+    if (viaServer) return viaServer;
+
+    const res = await fetchPlayerCareerStatsRaw(browserFetch, playerId, {
+      currentSeason: CURRENT_SEASON,
+      getSeasonStats: fetchPlayerStats,
+    });
     if (!res.ok) throw new Error(`Career stats fetch failed: ${res.status}`);
-    const careerStats = await res.json();
-    return repairCareerDefensiveStats(playerId, careerStats);
-  }, TTL.historical);
+    return { data: res.data };
+  }, { ttl: TTL.career });
 }
 
 /**
@@ -1396,6 +1230,16 @@ export async function fetchEventScoringPlays(eventId) {
     TTL.historical,
     (data) => Array.isArray(data) && data.length > 0,
   );
+}
+
+// Full ESPN game summary (score, situation, drives, box score, scoring plays)
+// for the Schedule NFL matchup drill-in. Never cached: live games refresh it.
+export async function fetchEspnGameSummary(eventId, { signal } = {}) {
+  if (!eventId) return null;
+  const url = `${ESPN_BASE}/summary?event=${encodeURIComponent(eventId)}`;
+  const res = await browserFetch(url, { signal, cache: 'no-store' });
+  if (!res.ok) throw new Error(`ESPN game summary returned ${res.status}.`);
+  return res.json();
 }
 
 export { CURRENT_SEASON, toEspnTeamId };
