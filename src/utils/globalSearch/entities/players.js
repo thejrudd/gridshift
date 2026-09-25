@@ -7,6 +7,7 @@
 // the result set, not a word to fuzzy-match against.
 
 import { KIND_PLAYER, makeRecord, nameTokens } from './record.js';
+import { normalizePlayerMeasurements } from '../../playerMeasurements.js';
 
 // Positions worth indexing for a player who is not on a roster. A free agent
 // kicker is a plausible waiver search; a free agent guard is not.
@@ -69,6 +70,7 @@ export function buildPlayerRecords(playersById = {}, { espnIdOverrides = {} } = 
     const position = String(player.position ?? '').toUpperCase();
     const jersey = player.number != null ? String(player.number) : '';
     const espnId = player.espn_id ?? espnIdOverrides?.[sleeperId] ?? null;
+    const measurements = normalizePlayerMeasurements(player);
 
     records.push(makeRecord({
       kind: KIND_PLAYER,
@@ -83,6 +85,7 @@ export function buildPlayerRecords(playersById = {}, { espnIdOverrides = {} } = 
         team,
         position,
         jersey,
+        ...measurements,
         injuryStatus: player.injury_status ?? null,
       },
     }));
@@ -114,6 +117,10 @@ export function mergeEspnRoster(records, roster = [], teamId) {
     const tokens = nameTokens(entry.displayName);
     const key = tokens[tokens.length - 1] ?? entry.displayName.toLowerCase();
     const existingIndex = byName.get(key);
+    const measurements = normalizePlayerMeasurements({
+      height: entry.height ?? entry.displayHeight,
+      weight: entry.weight ?? entry.displayWeight,
+    });
 
     if (existingIndex !== undefined) {
       const existing = merged[existingIndex];
@@ -123,6 +130,8 @@ export function mergeEspnRoster(records, roster = [], teamId) {
           ...existing.meta,
           espnId: entry.id != null ? String(entry.id) : existing.meta?.espnId ?? null,
           jersey: entry.jersey ? String(entry.jersey) : existing.meta?.jersey ?? '',
+          height: existing.meta?.height ?? measurements.height,
+          weight: existing.meta?.weight ?? measurements.weight,
           team,
         },
       };
@@ -142,6 +151,7 @@ export function mergeEspnRoster(records, roster = [], teamId) {
         team,
         position: String(entry.position ?? '').toUpperCase(),
         jersey: entry.jersey ? String(entry.jersey) : '',
+        ...measurements,
         injuryStatus: entry.status ?? null,
       },
     }));
@@ -156,7 +166,7 @@ export function mergeEspnRoster(records, roster = [], teamId) {
 // ships a tuple per player instead and rebuilds the rest at load, which is far
 // cheaper than shipping what we can compute.
 
-const PACKED_FIELDS = ['id', 'name', 'team', 'position', 'jersey', 'espnId', 'weight'];
+const PACKED_FIELDS = ['id', 'name', 'team', 'position', 'jersey', 'espnId', 'rankWeight', 'height', 'playerWeight'];
 
 export function packPlayerRecords(records) {
   return records
@@ -169,25 +179,29 @@ export function packPlayerRecords(records) {
       record.meta?.jersey ?? '',
       record.meta?.espnId ?? '',
       Math.round((record.weight ?? 0) * 1000) / 1000,
+      record.meta?.height ?? '',
+      record.meta?.weight ?? '',
     ]);
 }
 
 export function unpackPlayerRecords(packed = []) {
   return packed.map((tuple) => {
-    const [id, name, team, position, jersey, espnId, weight] = tuple;
+    const [id, name, team, position, jersey, espnId, rankWeight, height, playerWeight] = tuple;
     return makeRecord({
       kind: KIND_PLAYER,
       id,
       label: name,
       sublabel: [position, team].filter(Boolean).join(' · '),
       tokens: nameTokens(name),
-      weight: weight ?? 0,
+      weight: rankWeight ?? 0,
       meta: {
         sleeperId: String(id).startsWith('espn:') ? null : String(id),
         espnId: espnId || null,
         team: team || null,
         position: position || '',
         jersey: jersey || '',
+        height: normalizePlayerMeasurements({ height }).height,
+        weight: normalizePlayerMeasurements({ weight: playerWeight }).weight,
         injuryStatus: null,
       },
     });

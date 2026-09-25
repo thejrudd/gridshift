@@ -986,10 +986,12 @@
 .scores-player-row-name { display: grid; min-width: 0; gap: 1px; }
 .scores-player-row-name > strong { min-width: 0; overflow-wrap: anywhere; }
 .scores-player-row-name > small { display: flex; min-width: 0; align-items: center; gap: 6px; color: var(--color-label-tertiary); font-size: var(--type-micro); font-weight: 650; }
+.scores-player-row-name > .scores-player-measurements { display: block; }
 .scores-player-face { box-shadow: 0 0 0 1px var(--color-separator); }
 /* Fantasy's position chip; its display face is scoped to the .fl root there. */
 .scores-player-stats .fl-pos { font-family: var(--font-display, 'Barlow Condensed', sans-serif); }
-.scores-player-card-name { display: flex; min-width: 0; align-items: center; gap: 6px; }
+.scores-player-card-name { display: grid; min-width: 0; gap: 2px; }
+.scores-player-card-name__main { display: flex; min-width: 0; align-items: center; gap: 6px; }
 .scores-player-row-chevron { color: var(--color-label-tertiary); font-family: var(--font-display, 'Barlow Condensed', sans-serif); font-size: var(--type-emphasis); font-weight: 600; line-height: 1; text-align: center; }
 
 .scores-player-detail-row > td { padding: 0 10px 14px; background: var(--color-fill-tertiary); text-align: left; }
@@ -1212,9 +1214,10 @@
   .scores-player-cards > article { padding: 11px 0; border-bottom: 1px solid var(--color-separator); }
   .scores-player-cards > article > header { display: block; }
   .scores-player-card-toggle { grid-template-columns: auto auto minmax(0, 1fr) auto 20px; gap: 8px; }
-  .scores-player-card-name > strong { min-width: 0; overflow-wrap: anywhere; font-size: var(--type-body); }
+  .scores-player-card-name__main > strong { min-width: 0; overflow-wrap: anywhere; font-size: var(--type-body); }
   .scores-player-card-toggle > b { font-family: var(--font-display, 'Barlow Condensed', sans-serif); font-size: var(--type-emphasis); font-variant-numeric: tabular-nums; white-space: nowrap; }
   .scores-player-cards > article > p { margin: 4px 0 0; color: var(--color-label-secondary); font-size: var(--type-label); font-variant-numeric: tabular-nums; }
+  .scores-player-card-measurements { display: block; color: var(--color-label-tertiary); font-size: var(--type-micro); font-weight: 650; }
   .scores-player-cards > article > div { padding-top: 10px; }
   .scores-player-cards .scores-player-quarter-detail-heading { align-items: flex-start; flex-direction: column; gap: 4px; }
   .scores-player-cards .scores-player-quarter-detail-heading > small { max-width: none; text-align: left; }

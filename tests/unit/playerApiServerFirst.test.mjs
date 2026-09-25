@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, describe, it, mock } from 'node:test';
-import { fetchGameLog, fetchPlayerCareerStats, fetchPlayerStats } from '../../src/utils/playerApi.js';
+import { fetchGameLog, fetchPlayerCareerStats, fetchPlayerProfile, fetchPlayerStats } from '../../src/utils/playerApi.js';
 
 // playerApi remembers for a minute that the GridShift API is down. Date is
 // mocked so each test can start with that cooldown lapsed.
@@ -39,6 +39,20 @@ const htmlResponse = () => ({
 const isEspn = (url) => url.startsWith('https://');
 
 describe('player stats: GridShift API first, ESPN as fallback', () => {
+  it('normalizes height and weight from the ESPN player profile', async () => {
+    const calls = stubFetch(() => jsonResponse({
+      id: '9021',
+      displayName: 'Test Player',
+      displayHeight: `6' 4\"`,
+      displayWeight: '220 lbs',
+    }));
+
+    const profile = await fetchPlayerProfile('9021');
+    assert.equal(profile.height, '6′ 4″');
+    assert.equal(profile.weight, '220 lb');
+    assert.deepEqual(calls, ['https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/athletes/9021?lang=en&region=us']);
+  });
+
   it('uses the API payload and makes no ESPN call', async () => {
     const calls = stubFetch(() => jsonResponse(ESPN_STATS));
     const stats = await fetchPlayerStats('9001', 2024);

@@ -276,11 +276,12 @@ Season stats, career stats, and game logs are stored server-side after one ESPN 
 - **Incomplete data is never stored.** If any per-game, schedule, or team lookup fails transiently, the response carries `X-GridShift-Incomplete` and is neither persisted server-side nor cached in the browser.
 - **Disk** is bounded by `GRIDSHIFT_PLAYER_DATA_MAX_BYTES` (default 1 GB); least recently read rows are evicted and simply refetched on demand. `/api/health` reports `playerData` rows, bytes, and breaker state.
 - **Browser cache** is IndexedDB (`playerDataCache.js`), not `localStorage`: completed-season entries never expire and survive app-version busts, live entries are wiped on a release, and an expired entry is served if the refresh fails (offline). Bump `PLAYER_DATA_SCHEMA_VERSION` (or the key version) when a payload shape changes; the server keys (`stats_v2_`, `gamelog_v11_`) must change together so old rows are not served.
+- **Profile and roster metadata** uses the `localStorage` cache in `playerCache.js`. Version the `player_profile_*` and `roster_*` keys when normalized bio or roster fields change so cached entries acquire new fields.
 
 | File | Owns |
 | --- | --- |
 | `src/utils/espnPlayerFetch.js` | Pure ESPN season stats, career stats (with the tackles-for-loss repair), and game-log waterfall shared by the browser and the sidecar; `fetchImpl` is injected and results report `incomplete` |
-| `src/utils/playerApi.js` | Player fetching: sidecar first, direct ESPN fallback; rosters, profiles, bios, depth charts, team defense, schedules |
+| `src/utils/playerApi.js` | Player fetching: sidecar first, direct ESPN fallback; rosters, profiles and bio measurements, depth charts, team defense, schedules |
 | `src/utils/playerDataCache.js` | IndexedDB payload cache for season stats, career stats, and game logs |
 | `src/utils/playerCache.js` | `localStorage` cache for rosters, bios, and smaller ESPN responses; release version bust |
 | `server/playerDataHandlers.js` | `/api/players` routes, freshness rules, stale fallback, negative cache, incremental game-log refresh |

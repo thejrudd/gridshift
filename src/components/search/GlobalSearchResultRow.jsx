@@ -15,6 +15,7 @@
 
 import GlobalSearchDetail from './GlobalSearchDetail.jsx';
 import PlayerAvatar from '../shared/PlayerAvatar.jsx';
+import { formatPlayerMeasurements } from '../../utils/playerMeasurements.js';
 import { getTeamVisualTheme } from '../../utils/teamVisualTheme.js';
 import { getCompanionInitials } from '../../utils/companionAssetVisuals.js';
 import {
@@ -164,6 +165,9 @@ export default function GlobalSearchResultRow({
 }) {
   const { record } = entry;
   const badge = badgeFor(record);
+  const measurements = record.kind === KIND_PLAYER
+    ? formatPlayerMeasurements(record.meta, { compact: true })
+    : null;
   const hasDetail = active
     && Boolean(detail?.facts?.length || detail?.stats || detail?.fantasy);
 
@@ -183,6 +187,9 @@ export default function GlobalSearchResultRow({
           <span className="global-search-row__label">{record.label}</span>
           {record.sublabel ? (
             <span className="global-search-row__sublabel">{record.sublabel}</span>
+          ) : null}
+          {measurements ? (
+            <span className="global-search-row__measurements">{measurements}</span>
           ) : null}
         </span>
         {resolving ? (

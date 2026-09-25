@@ -11,6 +11,7 @@ import {
 import { enrichPlaySequenceContext } from './nflPlays/playSequenceContext.js';
 import { normalizeCanonicalPlay } from './playByPlay/normalizePlay.js';
 import { buildPlayerQuarterStats, getStatisticsPlayerKey } from './statisticsPlayerQuarterStats.js';
+import { formatPlayerHeight, formatPlayerWeight } from './playerMeasurements.js';
 
 export const BDL_SEASON_TYPES = Object.freeze({
   [NFL_SEASON_PHASES.PRESEASON]: 1,
@@ -1081,6 +1082,8 @@ function makePlayerGroup(id, label, columns, rows, keys, values, primaryKey, qua
         teamName: playerTeamName(row),
         player: playerName(row),
         position: firstString(row?.player?.position_abbreviation)?.toUpperCase() ?? null,
+        height: formatPlayerHeight(row?.player?.height),
+        weight: formatPlayerWeight(row?.player?.weight),
         values: values(row),
         quarterValues: quarterStats?.byPlayer?.[key]?.[id] ?? null,
       };

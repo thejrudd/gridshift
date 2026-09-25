@@ -17,8 +17,8 @@ const STORE = 'records';
 // at build time: a persisted v1 slice would keep routing most players nowhere,
 // because the app version alone would not invalidate it. Version 3 does the same
 // for game records, which gained `espnEventId` so a played game can open its
-// Scores page.
-export const SEARCH_CACHE_SCHEMA_VERSION = 3;
+// Scores page. Version 4 adds player height and weight to the compact record.
+export const SEARCH_CACHE_SCHEMA_VERSION = 4;
 
 // Slice keys. Each is written and read independently so the live player slice
 // can supersede the static one without touching the rest.

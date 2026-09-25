@@ -4,6 +4,7 @@ import { matchesFilter, matchesJerseyNumber, parseSearchQuery } from '../utils/p
 import PlayerProfile from './PlayerProfile';
 import TeamPage from './TeamPage';
 import { getTeamVisualTheme } from '../utils/teamVisualTheme';
+import { formatPlayerHeight, formatPlayerWeight, formatPlayerMeasurements } from '../utils/playerMeasurements.js';
 import { useSleeperStats } from '../context/SleeperContext';
 import Spinner from './ui/Spinner';
 
@@ -70,6 +71,8 @@ function buildPlayerMeta(player = {}, fallback = {}) {
     experience: player.experience ?? fallback.experience,
     status: player.status || fallback.status || '',
     teamId: player.teamId || fallback.teamId || null,
+    height: formatPlayerHeight(player.height) ?? formatPlayerHeight(fallback.height),
+    weight: formatPlayerWeight(player.weight) ?? formatPlayerWeight(fallback.weight),
   };
 }
 
@@ -93,6 +96,8 @@ function normalizeSleeperSearchResult(sleeperId, player = {}, espnIdOverrides = 
     jersey: player.number ?? '',
     position: player.position ?? '',
     positionName: '',
+    height: formatPlayerHeight(player.height),
+    weight: formatPlayerWeight(player.weight),
     experience: player.years_exp != null ? player.years_exp + 1 : undefined,
     status: player.status ?? player.injury_status ?? (isRetired ? 'Retired' : ''),
     teamId,
@@ -507,24 +512,32 @@ const PlayerBrowser = ({
               {searchResults.length === 0 && !searchLoading && (
                 <p className="px-4 py-3 text-sm italic" style={{ color: 'var(--color-label-tertiary)' }}>No players found.</p>
               )}
-              {searchResults.map((player) => (
-                <button
-                  key={player.id}
-                  onClick={() => handleSelectPlayer(player)}
-                  className="w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors duration-150 active:opacity-80"
-                  style={{ '--hover-bg': 'var(--color-fill)' }}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--color-fill)'; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = ''; }}
-                >
-                  <PlayerThumbnail id={player.id} name={player.displayName} />
-                  <div className="min-w-0">
-                    <div className="font-semibold text-sm truncate" style={{ color: 'var(--color-label)' }}>{player.displayName}</div>
-                    <div className="text-xs" style={{ color: 'var(--color-label-tertiary)' }}>
-                      {player.position}{player.jersey ? ` · #${player.jersey}` : ''}{player.teamName ? ` · ${player.teamName}` : ''}
+              {searchResults.map((player) => {
+                const measurements = formatPlayerMeasurements(player);
+                return (
+                  <button
+                    key={player.id}
+                    onClick={() => handleSelectPlayer(player)}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors duration-150 active:opacity-80"
+                    style={{ '--hover-bg': 'var(--color-fill)' }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--color-fill)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = ''; }}
+                  >
+                    <PlayerThumbnail id={player.id} name={player.displayName} />
+                    <div className="min-w-0">
+                      <div className="font-semibold text-sm truncate" style={{ color: 'var(--color-label)' }}>{player.displayName}</div>
+                      <div className="text-xs" style={{ color: 'var(--color-label-tertiary)' }}>
+                        {player.position}{player.jersey ? ` · #${player.jersey}` : ''}{player.teamName ? ` · ${player.teamName}` : ''}
+                      </div>
+                      {measurements && (
+                        <div className="text-xs" style={{ color: 'var(--color-label-tertiary)' }}>
+                          {measurements}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                </button>
-              ))}
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
