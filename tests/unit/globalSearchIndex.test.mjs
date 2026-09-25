@@ -13,7 +13,12 @@ import {
   trigramsOf,
 } from '../../src/utils/globalSearch/tokenIndex.js';
 import { makeRecord, nameTokens } from '../../src/utils/globalSearch/entities/record.js';
-import { buildPlayerRecords } from '../../src/utils/globalSearch/entities/players.js';
+import {
+  buildPlayerRecords,
+  mergeEspnRoster,
+  packPlayerRecords,
+  unpackPlayerRecords,
+} from '../../src/utils/globalSearch/entities/players.js';
 import { buildNflTeamRecords } from '../../src/utils/globalSearch/entities/nflTeams.js';
 import { buildGameRecords, buildWeekRecords } from '../../src/utils/globalSearch/entities/games.js';
 import { buildFantasyTeamRecords } from '../../src/utils/globalSearch/entities/fantasyTeams.js';
@@ -147,6 +152,34 @@ test('player records index names only, with team and jersey as metadata', () => 
   assert.ok(record.tokens.includes('jsn'));
   assert.equal(record.tokens.includes('sea'), false, 'team is a slot filter, not a search token');
   assert.equal(record.tokens.includes('11'), false, 'jersey is a slot filter, not a search token');
+});
+
+test('player measurements survive the compact offline search-index round trip', () => {
+  const [record] = buildPlayerRecords({
+    1: {
+      full_name: 'Jaxon Smith-Njigba', team: 'SEA', position: 'WR', number: 11,
+      search_rank: 8, active: true, height: `6' 2\"`, weight: '205',
+    },
+  });
+  const [restored] = unpackPlayerRecords(packPlayerRecords([record]));
+
+  assert.equal(restored.meta.height, '6′ 2″');
+  assert.equal(restored.meta.weight, '205 lb');
+  assert.equal(restored.weight, record.weight, 'physical weight does not replace search ranking weight');
+});
+
+test('ESPN roster measurements fill directory gaps without replacing existing values', () => {
+  const [existing] = buildPlayerRecords({
+    1: { full_name: 'Jaxon Smith-Njigba', team: 'SEA', position: 'WR', active: true, height: `6' 1\"` },
+  });
+  const [merged] = mergeEspnRoster([existing], [{
+    id: '4426515', displayName: 'Jaxon Smith-Njigba', position: 'WR',
+    displayHeight: `6' 2\"`, displayWeight: '198 lbs',
+  }], 'SEA');
+
+  assert.equal(merged.meta.height, '6′ 1″');
+  assert.equal(merged.meta.weight, '198 lb');
+  assert.equal(merged.meta.espnId, '4426515');
 });
 
 test('every rostered player is indexed, not just fantasy positions', () => {

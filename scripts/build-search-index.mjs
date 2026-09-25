@@ -20,6 +20,7 @@ import { fileURLToPath } from 'node:url';
 
 import { buildStaticRecords } from '../src/utils/globalSearch/buildIndex.js';
 import { buildPlayerRecords, packPlayerRecords } from '../src/utils/globalSearch/entities/players.js';
+import { formatPlayerHeight, formatPlayerWeight } from '../src/utils/playerMeasurements.js';
 import { normalizePlayerName } from '../src/utils/playerDrilldown.js';
 
 const root = resolve(fileURLToPath(import.meta.url), '../..');
@@ -70,15 +71,17 @@ async function fetchEspnRoster(team) {
 }
 
 /**
- * Fill in missing ESPN ids by matching each team's roster on normalized name.
+ * Fill missing ESPN ids and measurements by matching each team's roster on normalized name.
  *
  * Uses the same normalizer the app matches with, so an id found here and an id
  * found at runtime agree. Same-name teammates are separated by position.
  */
-async function enrichWithEspnIds(records) {
+async function enrichPlayerRecordsFromEspnRoster(records) {
   const missingByTeam = new Map();
   for (const record of records) {
-    if (record.meta?.espnId || !record.meta?.team) continue;
+    const missingId = !record.meta?.espnId;
+    const missingMeasurements = !record.meta?.height || !record.meta?.weight;
+    if ((!missingId && !missingMeasurements) || !record.meta?.team) continue;
     const bucket = missingByTeam.get(record.meta.team);
     if (bucket) bucket.push(record);
     else missingByTeam.set(record.meta.team, [record]);
@@ -114,8 +117,12 @@ async function enrichWithEspnIds(records) {
         ? candidates[0]
         : candidates.find((a) => String(a.position?.abbreviation ?? '').toUpperCase() === position)
           ?? candidates[0];
-      record.meta.espnId = String(match.id);
-      filled += 1;
+      if (!record.meta.espnId) {
+        record.meta.espnId = String(match.id);
+        filled += 1;
+      }
+      record.meta.height ??= formatPlayerHeight(match.displayHeight ?? match.height);
+      record.meta.weight ??= formatPlayerWeight(match.displayWeight ?? match.weight);
     }
   }
 
@@ -138,7 +145,7 @@ async function main() {
       console.log(`Indexed ${playerRecords.length} players from ${Object.keys(players).length} directory entries.`);
 
       const before = playerRecords.filter((record) => record.meta?.espnId).length;
-      const filled = await enrichWithEspnIds(playerRecords);
+      const filled = await enrichPlayerRecordsFromEspnRoster(playerRecords);
       const after = before + filled;
       console.log(
         `ESPN ids: ${before} from Sleeper, +${filled} from rosters = ${after}`

@@ -15,6 +15,7 @@ import { DEFAULT_SCORING, importLeagueScoring, normalizeScoringProfile } from '.
 import { getEspnTeamDefensePlayerId, normalizeEspnLeaguePayload } from '../utils/espnFantasyAdapter';
 import { getTeamVisualTheme } from '../utils/teamVisualTheme.js';
 import { rosterHasSleeperPlayer } from '../utils/fantasyOwnership.js';
+import { formatPlayerMeasurements } from '../utils/playerMeasurements.js';
 import {
   getCompanionInitials,
   getCompanionPositionColor,
@@ -901,6 +902,7 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_
   const heroMetaSegments = [
     playerMeta.positionName || playerMeta.position,
     team?.name,
+    formatPlayerMeasurements(playerMeta),
     rookieLabel,
     teamRecord
       ? `${teamRecord.wins}–${teamRecord.losses}${teamRecord.ties > 0 ? `–${teamRecord.ties}` : ''}`

@@ -29081,6 +29081,15 @@ button.matchup-preview__meeting:focus-visible { outline: 2px solid var(--color-a
   text-overflow: ellipsis;
 }
 
+.global-search-row__measurements {
+  color: var(--color-label-tertiary);
+  font-size: var(--type-micro);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .global-search-row__badge {
   flex-shrink: 0;
   padding: 3px 8px;

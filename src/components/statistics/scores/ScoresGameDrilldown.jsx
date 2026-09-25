@@ -12,6 +12,7 @@ import {
 } from '../../../utils/statisticsPlayerSort';
 import { getNflTeamLogoUrl } from '../../../utils/companionAssetVisuals';
 import { getScoreNetworkLabel } from '../../../utils/statisticsBroadcasts';
+import { formatPlayerMeasurements } from '../../../utils/playerMeasurements.js';
 import { deriveEspnEventId, fetchGameParticipants } from '../../../utils/nflPlays/participants.js';
 import { lookupPlayerByName } from '../../../utils/nflPlays/playerNameIndex.js';
 import { PlayerAvatar } from '../../shared/PlayerAvatar.jsx';
@@ -539,6 +540,7 @@ function PlayerStats({ detail, participants = null, selectedGroup = null, onGrou
               const key = playerRowKey(row);
               const expanded = expandedPlayer === key;
               const detailId = playerDetailId(group, row);
+              const measurements = formatPlayerMeasurements(row, { compact: true });
               return (
                 <Fragment key={key}>
                   <tr className={expanded ? 'is-expanded' : ''}>
@@ -556,6 +558,7 @@ function PlayerStats({ detail, participants = null, selectedGroup = null, onGrou
                         <span className="scores-player-row-name">
                           <strong>{row.player}</strong>
                           <small>{row.position && <LivePosChip position={row.position} />}{row.teamName ?? row.team}</small>
+                          {measurements && <small className="scores-player-measurements">{measurements}</small>}
                         </span>
                         <span className="scores-player-row-chevron" aria-hidden="true">{expanded ? '−' : '+'}</span>
                       </button>
@@ -578,6 +581,7 @@ function PlayerStats({ detail, participants = null, selectedGroup = null, onGrou
           const key = playerRowKey(row);
           const expanded = expandedPlayer === key;
           const detailId = playerDetailId(group, row);
+          const measurements = formatPlayerMeasurements(row, { compact: true });
           return (
             <article key={`mobile-${key}`} className={expanded ? 'is-expanded' : ''}>
               <header>
@@ -592,8 +596,11 @@ function PlayerStats({ detail, participants = null, selectedGroup = null, onGrou
                   <PlayerTeamIdentity row={row} />
                   <PlayerFace row={row} size={30} />
                   <span className="scores-player-card-name">
-                    {row.position && <LivePosChip position={row.position} />}
-                    <strong>{row.player}</strong>
+                    <span className="scores-player-card-name__main">
+                      {row.position && <LivePosChip position={row.position} />}
+                      <strong>{row.player}</strong>
+                    </span>
+                    {measurements && <small className="scores-player-card-measurements">{measurements}</small>}
                   </span>
                   <b>{group.columns[0]} {row.values[0]}</b>
                   <span className="scores-player-row-chevron" aria-hidden="true">{expanded ? '−' : '+'}</span>

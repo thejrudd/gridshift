@@ -31,7 +31,10 @@ const SEASON_SCHEDULE = {
 const index = composeIndex({
   staticRecords: buildStaticRecords({ scheduleData: SCHEDULE_DATA, seasonSchedule: SEASON_SCHEDULE }),
   playerRecords: buildPlayerRecords({
-    1: { full_name: 'Indexed Receiver', team: 'SEA', position: 'WR', number: 11, search_rank: 5, active: true },
+    1: {
+      full_name: 'Indexed Receiver', team: 'SEA', position: 'WR', number: 11,
+      search_rank: 5, active: true, height: `6' 2\"`, weight: '205',
+    },
   }),
 });
 
@@ -48,6 +51,7 @@ test('a player shows position, number, next game, and bye', () => {
 
   assert.equal(valueFor(detail, 'Position'), 'WR');
   assert.equal(valueFor(detail, 'Number'), '#11');
+  assert.equal(labelsOf(detail).includes('Height'), false, 'measurements are already visible on the player result row');
   assert.equal(valueFor(detail, 'Bye'), 'Week 2', 'the week with no scheduled game');
   assert.ok(labelsOf(detail).some((label) => label.startsWith('Next · Week 3')));
 });

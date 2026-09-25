@@ -1404,3 +1404,10 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Player data reliability** - Route ESPN player game logs and career data through an optional bounded server cache, while retaining the direct browser path when the cache is unavailable.
 - **Fantasy and Statistics accuracy** - Keep Heatmap QB Sacks Taken and INTs Thrown routes intact, and count passing production once in All-position Defense totals and Heatmap team box scores.
 - **Regression coverage and documentation** - Add focused search, NFL matchup, server player-data, Heatmap, and Defense coverage and update the related feature and architecture references.
+
+## v9.1.1 - Player Measurements
+*2026-09-25*
+
+- **Player measurements** - Show player height and weight in Statistics profiles and box-score rows, Player Browser suggestions, and global search results when provider data is available.
+- **Search index and data coverage** - Enrich the offline player index from existing ESPN roster data and normalize provider measurements consistently across player surfaces.
+- **Regression coverage and documentation** - Add focused measurement, search-index, profile, and box-score coverage and update the related feature references.

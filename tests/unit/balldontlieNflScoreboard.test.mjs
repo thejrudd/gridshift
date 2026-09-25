@@ -494,11 +494,14 @@ test('builds the real drilldown contract from BALLDONTLIE team, player, and play
     visitor_team_q3: 0,
     visitor_team_q4: 10,
   });
-  const player = (firstName, lastName, team, values) => ({
-    player: { first_name: firstName, last_name: lastName },
-    team: { abbreviation: team },
-    ...values,
-  });
+  const player = (firstName, lastName, team, values) => {
+    const { player: playerMeta = {}, ...stats } = values;
+    return {
+      player: { first_name: firstName, last_name: lastName, ...playerMeta },
+      team: { abbreviation: team },
+      ...stats,
+    };
+  };
   const providerDetail = {
     game: {
       ...game,
@@ -532,6 +535,7 @@ test('builds the real drilldown contract from BALLDONTLIE team, player, and play
         passing_completions: 20, passing_attempts: 29, passing_yards: 250,
         passing_touchdowns: 2, passing_interceptions: 1, qb_rating: 104.2,
         rushing_attempts: 8, rushing_yards: 55, yards_per_rush_attempt: 6.9,
+        player: { height: `6' 2\"`, weight: '205 lbs' },
       }),
       player('Patrick', 'Mahomes', 'KC', {
         passing_completions: 22, passing_attempts: 34, passing_yards: 240,
@@ -587,6 +591,8 @@ test('builds the real drilldown contract from BALLDONTLIE team, player, and play
   assert.equal(detail.leaders.find((entry) => entry.label === 'Passing').away, 'L. Jackson · 250 YDS, 2 TD');
   assert.deepEqual(detail.playerGroups.find((entry) => entry.id === 'passing').columns, ['C/ATT', 'YDS', 'TD', 'INT', 'RTG']);
   assert.deepEqual(detail.playerGroups.find((entry) => entry.id === 'passing').rows[0].values, ['20/29', '250', '2', '1', '104.2']);
+  assert.equal(detail.playerGroups.find((entry) => entry.id === 'passing').rows[0].height, '6′ 2″');
+  assert.equal(detail.playerGroups.find((entry) => entry.id === 'passing').rows[0].weight, '205 lb');
   assert.equal(detail.statGroups.find((entry) => entry.id === 'defense').stats.find((entry) => entry.label === 'Passing yards allowed').away, 240);
   assert.equal(detail.statGroups.find((entry) => entry.id === 'defense').stats.find((entry) => entry.label === 'Sacks').home, 2);
   assert.equal(detail.scoring[0].quarter, '1st');

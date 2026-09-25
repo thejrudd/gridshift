@@ -34,9 +34,9 @@ Re-measure and update these whenever the index shape changes.
 
 | | |
 | --- | --- |
-| Artifact size | 316 KB raw, 74 KB gzipped |
-| Records | 3,351 — 359 static + 2,992 players |
-| Players openable with no lookup | 92% (882 ids from Sleeper + 1,861 backfilled from ESPN rosters) |
+| Artifact size | 385.4 KB raw, 84.7 KB gzipped |
+| Records | 3,370 — 359 static + 3,011 players |
+| Players openable with no lookup | 92% (890 ids from Sleeper + 1,871 backfilled from ESPN rosters) |
 | Hydrate + index build | ~42 ms for the full corpus |
 | Query latency | 0–9 ms |
 | Palette chunk | 39 KB (lazy). It carries `scoringEngine` and `statisticsStandings` for the answer resolvers, which is most of it; the shared `PlayerAvatar` adds 48 bytes on top of that. |
@@ -174,17 +174,20 @@ Each connected fantasy roster is searchable by team name, Sleeper manager
 display name, and username; each match opens the same roster result. The active
 result expands in place to show what is already known about it — a player's
 position, number, next opponent with kickoff, and bye week; a team's division
-and schedule facts; a game's matchup, kickoff, and broadcast. A cached stat line
-is added when the app happens to have one. A fantasy-team result also shows its
+and schedule facts; a game's matchup, kickoff, and broadcast. Player rows also
+show height and weight when those values are available. A cached stat line is
+added when the app happens to have one. A fantasy-team result also shows its
 manager and the roster's current-season record, points for, points against, and
 points per game when those values are available.
 
 `buildResultDetail` in `detail.js` reads the result record and data the app
-already holds. Fantasy-team totals use `getFantasyRosterSeasonSummary` over the
-connected league's current roster snapshot. **It never fetches.** Missing point
-totals and averages stay omitted rather than being filled with zero, and a
-result with no cached stats shows fewer fields rather than a spinner, which is
-what keeps the palette instant.
+already holds. Player measurements travel in the compact player record so they
+are available on the first offline launch. Fantasy-team totals use
+`getFantasyRosterSeasonSummary` over the connected league's current roster
+snapshot. **It never fetches.** Missing measurements, point totals, and averages
+stay omitted rather than being filled with placeholders, and a result with no
+cached stats shows fewer fields rather than a spinner, which is what keeps the
+palette instant.
 
 Commands and destinations do not expand. Their row already says everything;
 expanding one would only echo the label back.

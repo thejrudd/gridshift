@@ -13,6 +13,7 @@ import {
   toEspnTeamId,
 } from './espnPlayerFetch.js';
 import { cachedPlayerData } from './playerDataCache.js';
+import { formatPlayerHeight, formatPlayerWeight } from './playerMeasurements.js';
 
 const CURRENT_SEASON = getCurrentSeason();
 
@@ -47,15 +48,17 @@ function normalizePlayer(athlete, teamId) {
     experience:  athlete.experience?.years ?? 0,
     status:      athlete.status?.type?.description ?? 'Active',
     teamId,
+    height:      formatPlayerHeight(athlete.displayHeight ?? athlete.height),
+    weight:      formatPlayerWeight(athlete.displayWeight ?? athlete.weight),
   };
 }
 
 /**
  * Fetch the roster for a team.
- * Returns normalized player array: { id, displayName, jersey, position, experience, status, teamId }
+ * Returns normalized player array with bio measurements when ESPN supplies them.
  */
 export async function fetchRoster(teamId) {
-  return cachedFetch(`roster_v3_${teamId}`, async () => {
+  return cachedFetch(`roster_v4_${teamId}`, async () => {
     const url = `${ESPN_BASE}/teams/${toEspnTeamId(teamId)}/roster`;
     const res = await fetch(url);
     if (!res.ok) throw new Error(`Roster fetch failed: ${res.status}`);
@@ -81,7 +84,7 @@ export async function fetchRoster(teamId) {
  * Works for current rostered players, free agents, and many recent retirees.
  */
 export async function fetchPlayerProfile(playerId) {
-  return cachedFetch(`player_profile_v1_${playerId}`, async () => {
+  return cachedFetch(`player_profile_v2_${playerId}`, async () => {
     const url = `${ESPN_CORE}/athletes/${playerId}?lang=en&region=us`;
     const res = await fetch(url);
     if (!res.ok) throw new Error(`Player profile fetch failed: ${res.status}`);
@@ -97,6 +100,8 @@ export async function fetchPlayerProfile(playerId) {
       experience: athlete.experience?.years,
       status: athlete.status?.name ?? athlete.status?.type ?? '',
       teamId: teamAbbrev,
+      height: formatPlayerHeight(athlete.displayHeight ?? athlete.height),
+      weight: formatPlayerWeight(athlete.displayWeight ?? athlete.weight),
     };
   }, TTL.bio);
 }

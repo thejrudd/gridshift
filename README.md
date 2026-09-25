@@ -134,12 +134,9 @@ Draft Sync is an optional capability of the existing API sidecar, not a required
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) + optional Node API sidecar |
 
-## What's New in v9.1.0
+## What's New in v9.1.1
 
-- **Global Search** — Search players, NFL teams, games, fantasy rosters, app views, and commands from anywhere, with supported stats and standings questions answered inline.
-- **NFL matchup drill-ins** — Open a regular-season game from Statistics Schedule for pregame comparisons, live game context, or a final matchup review.
-- **Fantasy and Statistics accuracy** — Preserve Heatmap stat links and count passing production once in Defense totals and Heatmap box scores.
-- **Player data reliability** — Serve ESPN player history through the optional server cache, with direct browser fallback when the server cache is unavailable.
+- **Player measurements** — View height and weight on Statistics player profiles and box-score rows, Player Browser suggestions, and global search results when provider data is available.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 
