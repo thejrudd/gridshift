@@ -266,3 +266,66 @@ the routing rubric from observed total cost and quality.
   preserved modal history behavior, and used the away team as the left side
   for By Week drill-ins.
 - Final status: Implemented; user live check remains.
+
+## Entry 13 — 2026-09-29 — Fantasy Heatmap mobile weeks and average
+
+- Date and task: Show the latest finalized Heatmap week on mobile and calculate
+  per-game averages from finalized weeks only.
+- Parent model and effort: GPT-6 parent session; default effort.
+- Delegated roles, models, and efforts: Two GPT-6 Luna/low read-only
+  investigators traced mobile week selection and average aggregation.
+- Validation tier and checks: Tier 2; production build passed, and the focused
+  fixture-backed mobile Chromium regression passed across mobile and desktop
+  viewports. `git diff --check` and utility/E2E ESLint passed; the component
+  ESLint check reported its existing 5 hook errors and 2 warnings.
+- Escalation or review: The watched dev server hit EMFILE/EPIPE; a built
+  no-watch preview required local network escalation, then the browser check
+  passed. No independent code review was needed.
+- Rework, failure, or saved effort: The first browser assertion included the
+  opponent abbreviation with the score; targeting the score element fixed the
+  assertion. A generated static search index was restored after the offline
+  build emitted an incomplete player slice.
+- Final status: Validated; live-league UI acceptance remains a user-owned
+  follow-up.
+
+## Entry 14 — 2026-09-30 — Fantasy Rankings filter retention and multi-position
+
+- Date and task: Support Ctrl/Cmd-click position combinations and retain all
+  Rankings filters through Fantasy Schedule and Statistics player navigation.
+- Parent model and effort: GPT-6 parent session; default effort.
+- Delegated roles, models, and efforts: Two read-only route/filter investigators;
+  one investigator also reviewed the route and history changes after edits.
+- Validation tier and checks: Tier 3 route/state change; `git diff --check`
+  passed. No tests or browser usage were run for this Rankings change.
+- Escalation or review: Independent read-only review found and helped close
+  league/season snapshot and asynchronous player-return edge cases.
+- Rework, failure, or saved effort: Kept single-position URLs compatible,
+  added canonical multi-position and filter query state, and scoped implicit
+  return snapshots to the active league and season.
+- Final status: Implemented; automated regression and browser acceptance remain
+  pending.
+
+## Entry 15 — 2026-09-30 — Fantasy Heatmap future opponent drilldown
+
+- Date and task: Show future opponents and upcoming mobile weeks by default
+  with an optional toggle, open a selected matchup in the position-aware modal, and
+  list active matching NFL players with selected-stat totals and per-game
+  averages in the Rosters-style metric, plus Statistics navigation.
+- Parent model and effort: GPT-6 parent session; default effort.
+- Delegated roles, models, and efforts: None.
+- Validation tier and checks: Tier 3 route/state and UI change; production
+  Vite build and `git diff --check` passed. Focused ESLint still reports the
+  component's existing 5 hook errors and existing dependency warnings. No tests
+  or browser usage were run; live UI acceptance remains user-owned.
+- Escalation or review: Route normalization and all parse/build/App handoffs
+  were traced locally. No independent review was performed.
+- Rework, failure, or saved effort: Kept the toggle as an opt-out, made its
+  default on mobile and in route normalization, applied location filtering to
+  future markers, used the completed-week player form helper to calculate
+  completed-week fantasy totals and PPG initially; then corrected the drilldown
+  to calculate totals and averages for the selected stat with stat-specific
+  per-game labels,
+  and reused the shared Companion player row for direct Statistics navigation.
+  A scoped style keeps the Fantasy Pts/G label visible when compact rows would
+  otherwise hide metric labels.
+- Final status: Implemented; live UI acceptance remains pending.

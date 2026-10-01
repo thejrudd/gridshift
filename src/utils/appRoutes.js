@@ -19,6 +19,12 @@ const STATISTICS_SCORES_SECTIONS = new Set(['overview', 'team', 'players', 'scor
 const STATISTICS_SCORES_PLAYER_GROUPS = new Set(['passing', 'rushing', 'receiving', 'defense', 'kicking', 'punting', 'returns']);
 const SCOUT_VIEWS = new Set(['prospects', 'picks', 'results']);
 const DRAFT_VIEWS = new Set(['war-room', 'my-board', 'results']);
+const RANKINGS_POSITION_FILTERS = ['OFFENSE', 'DEFENSE', 'QB', 'RB', 'WR', 'TE', 'K', 'DEF', 'DL', 'LB', 'DB', 'TST', 'STP'];
+const RANKINGS_SORTS = new Set([
+  'season', 'avg', 'pass_yd', 'pass_td', 'pass_int', 'pass_sack', 'rush_yd', 'rush_td',
+  'rush_att', 'rec', 'rec_yd', 'rec_td', 'fum_lost', 'fgm', 'fgmiss', 'xpm', 'xpmiss',
+  'idp_tkl', 'idp_tkl_loss', 'idp_sack', 'idp_int', 'idp_ff', 'idp_fr', 'idp_pd',
+]);
 
 function normalizeCompanionView(view) {
   const aliased = FANTASY_VIEW_ALIASES.get(view) ?? view;
@@ -51,6 +57,13 @@ const DEFAULT_ROUTE = {
   leagueView: 'standings',
   rankingsPosition: null,
   rankingsRosterId: null,
+  rankingsQuery: null,
+  rankingsNflTeams: null,
+  rankingsSort: null,
+  rankingsSortDir: null,
+  rankingsValueMode: null,
+  rankingsRankScope: null,
+  rankingsUnrosteredOnly: null,
   waiverPosition: null,
   matchupWeek: null,
   scheduleMode: null,
@@ -61,6 +74,7 @@ const DEFAULT_ROUTE = {
   leagueSubview: null,
   leagueRosterId: null,
   heatmapViewMode: null,
+  heatmapFutureOpponents: null,
   heatmapPosition: null,
   heatmapDefensePosition: null,
   heatmapStatMode: null,
@@ -122,6 +136,37 @@ function normalizePlayerId(playerId) {
 function normalizePosition(position) {
   if (typeof position !== 'string') return null;
   const value = position.trim().toUpperCase();
+  return value || null;
+}
+
+function normalizeRankingsPositions(positions) {
+  const values = Array.isArray(positions)
+    ? positions.flatMap((value) => String(value ?? '').split(','))
+    : typeof positions === 'string'
+      ? positions.split(',')
+      : [];
+  const tokens = [...new Set(values.map((value) => value.trim().toUpperCase()).filter(Boolean))];
+  if (!tokens.length || tokens.includes('ALL')) return null;
+  const selected = new Set(tokens.filter((value) => RANKINGS_POSITION_FILTERS.includes(value)));
+  if (!selected.size) return null;
+  return RANKINGS_POSITION_FILTERS.filter((value) => selected.has(value)).join(',');
+}
+
+function normalizeRankingsNflTeams(teams) {
+  const values = Array.isArray(teams)
+    ? teams.flatMap((value) => String(value ?? '').split(','))
+    : typeof teams === 'string'
+      ? teams.split(',')
+      : [];
+  const normalized = [...new Set(values
+    .map((value) => value.trim().toUpperCase())
+    .filter((value) => /^[A-Z]{2,3}$/.test(value)))].slice(0, 32);
+  return normalized.length ? normalized.join(',') : null;
+}
+
+function normalizeRankingsQuery(query) {
+  if (typeof query !== 'string') return null;
+  const value = query.slice(0, 160);
   return value || null;
 }
 
@@ -352,8 +397,15 @@ export function normalizeAppRoute(route = {}) {
     };
 
     if (companionView === 'rankings') {
-      normalized.rankingsPosition = normalizePosition(route.rankingsPosition);
+      normalized.rankingsPosition = normalizeRankingsPositions(route.rankingsPosition);
       normalized.rankingsRosterId = normalizePlayerId(route.rankingsRosterId);
+      normalized.rankingsQuery = normalizeRankingsQuery(route.rankingsQuery);
+      normalized.rankingsNflTeams = normalizeRankingsNflTeams(route.rankingsNflTeams);
+      normalized.rankingsSort = normalizeLowerToken(route.rankingsSort, RANKINGS_SORTS, 'season');
+      normalized.rankingsSortDir = normalizeLowerToken(route.rankingsSortDir, new Set(['asc', 'desc']), 'desc');
+      normalized.rankingsValueMode = normalizeLowerToken(route.rankingsValueMode, new Set(['fantasy', 'raw']), 'fantasy');
+      normalized.rankingsRankScope = normalizeLowerToken(route.rankingsRankScope, new Set(['overall', 'position']), 'overall');
+      normalized.rankingsUnrosteredOnly = normalizeBooleanFlag(route.rankingsUnrosteredOnly) === '1';
     }
 
     if (companionView === 'waivers') {
@@ -379,10 +431,11 @@ export function normalizeAppRoute(route = {}) {
 
     if (companionView === 'heatmap') {
       normalized.heatmapViewMode = normalizeLowerToken(route.heatmapViewMode, new Set(['offense', 'defense']), 'offense');
+      normalized.heatmapFutureOpponents = normalizeBooleanFlag(route.heatmapFutureOpponents) ?? '1';
       normalized.heatmapPosition = normalizePosition(route.heatmapPosition);
       normalized.heatmapDefensePosition = normalizePosition(route.heatmapDefensePosition);
-      normalized.heatmapStatMode = normalizeLowerToken(route.heatmapStatMode, new Set(['pts', 'rec_yd', 'rush_yd', 'pass_td', 'rec_td', 'rush_td', 'total_td', 'pass_sack', 'pass_int', 'game_score', 'vegas_odds']), 'pts');
-      normalized.heatmapDefenseStatMode = normalizeLowerToken(route.heatmapDefenseStatMode, new Set(['pts', 'sack', 'int', 'def_td', 'safe', 'tkl_loss', 'qb_hit', 'idp_sack', 'idp_int', 'idp_ff', 'idp_tkl_loss', 'idp_pd', 'idp_qbhit', 'idp_def_td']), 'pts');
+      normalized.heatmapStatMode = normalizeLowerToken(route.heatmapStatMode, new Set(['pts', 'pts_allowed', 'rec_yd', 'rush_yd', 'pass_td', 'rec_td', 'rush_td', 'total_td', 'pass_sack', 'pass_int', 'game_score', 'vegas_odds']), 'pts');
+      normalized.heatmapDefenseStatMode = normalizeLowerToken(route.heatmapDefenseStatMode, new Set(['pts', 'pts_allowed', 'sack', 'int', 'def_td', 'safe', 'tkl_loss', 'qb_hit', 'idp_sack', 'idp_int', 'idp_ff', 'idp_tkl_loss', 'idp_pd', 'idp_qbhit', 'idp_def_td']), 'pts');
       normalized.heatmapScope = normalizeLowerToken(route.heatmapScope, new Set(['overall', 'week', 'team']), 'overall');
       normalized.heatmapLocation = normalizeLowerToken(route.heatmapLocation, new Set(['all', 'home', 'away']), 'all');
       normalized.heatmapSortKey = normalizeHeatmapSortKey(route.heatmapSortKey) ?? 'avg';
@@ -540,6 +593,13 @@ export function parseAppRoute(pathname = '/', search = '') {
         companionView: subview,
         rankingsPosition: parseQueryValue(searchParams, 'pos'),
         rankingsRosterId: parseQueryValue(searchParams, 'team'),
+        rankingsQuery: parseQueryValue(searchParams, 'q'),
+        rankingsNflTeams: parseQueryValue(searchParams, 'nfl'),
+        rankingsSort: parseQueryValue(searchParams, 'sort'),
+        rankingsSortDir: parseQueryValue(searchParams, 'dir'),
+        rankingsValueMode: parseQueryValue(searchParams, 'value'),
+        rankingsRankScope: parseQueryValue(searchParams, 'scope'),
+        rankingsUnrosteredOnly: parseQueryValue(searchParams, 'unrostered'),
         waiverPosition: parseQueryValue(searchParams, 'position'),
         matchupWeek: parseQueryValue(searchParams, 'week'),
         matchupPlayerId: parseQueryValue(searchParams, 'player'),
@@ -550,6 +610,7 @@ export function parseAppRoute(pathname = '/', search = '') {
         leagueSubview: parseQueryValue(searchParams, 'sub'),
         leagueRosterId: parseQueryValue(searchParams, 'team'),
         heatmapViewMode: parseQueryValue(searchParams, 'mode'),
+        heatmapFutureOpponents: parseQueryValue(searchParams, 'future'),
         heatmapPosition: parseQueryValue(searchParams, 'pos'),
         heatmapDefensePosition: parseQueryValue(searchParams, 'defPos'),
         heatmapStatMode: parseQueryValue(searchParams, 'stat'),
@@ -585,6 +646,13 @@ export function parseAppRoute(pathname = '/', search = '') {
         companionView: subview,
         rankingsPosition: parseQueryValue(searchParams, 'pos'),
         rankingsRosterId: parseQueryValue(searchParams, 'team'),
+        rankingsQuery: parseQueryValue(searchParams, 'q'),
+        rankingsNflTeams: parseQueryValue(searchParams, 'nfl'),
+        rankingsSort: parseQueryValue(searchParams, 'sort'),
+        rankingsSortDir: parseQueryValue(searchParams, 'dir'),
+        rankingsValueMode: parseQueryValue(searchParams, 'value'),
+        rankingsRankScope: parseQueryValue(searchParams, 'scope'),
+        rankingsUnrosteredOnly: parseQueryValue(searchParams, 'unrostered'),
         waiverPosition: parseQueryValue(searchParams, 'position'),
         matchupWeek: parseQueryValue(searchParams, 'week'),
         matchupPlayerId: parseQueryValue(searchParams, 'player'),
@@ -595,6 +663,7 @@ export function parseAppRoute(pathname = '/', search = '') {
         leagueSubview: parseQueryValue(searchParams, 'sub'),
         leagueRosterId: parseQueryValue(searchParams, 'team'),
         heatmapViewMode: parseQueryValue(searchParams, 'mode'),
+        heatmapFutureOpponents: parseQueryValue(searchParams, 'future'),
         heatmapPosition: parseQueryValue(searchParams, 'pos'),
         heatmapDefensePosition: parseQueryValue(searchParams, 'defPos'),
         heatmapStatMode: parseQueryValue(searchParams, 'stat'),
@@ -699,6 +768,13 @@ export function buildAppPath(route) {
         return `${basePath}${buildQueryString([
           ['pos', normalized.rankingsPosition],
           ['team', normalized.rankingsRosterId],
+          ['q', normalized.rankingsQuery],
+          ['nfl', normalized.rankingsNflTeams],
+          ['sort', normalized.rankingsSort !== 'season' ? normalized.rankingsSort : null],
+          ['dir', normalized.rankingsSortDir !== 'desc' ? normalized.rankingsSortDir : null],
+          ['value', normalized.rankingsValueMode !== 'fantasy' ? normalized.rankingsValueMode : null],
+          ['scope', normalized.rankingsRankScope !== 'overall' ? normalized.rankingsRankScope : null],
+          ['unrostered', normalized.rankingsUnrosteredOnly ? '1' : null],
         ])}`;
       }
       if (normalized.companionView === 'waivers') {
@@ -729,6 +805,7 @@ export function buildAppPath(route) {
       if (normalized.companionView === 'heatmap') {
         return `${basePath}${buildQueryString([
           ['mode', normalized.heatmapViewMode !== 'offense' ? normalized.heatmapViewMode : null],
+          ['future', normalized.heatmapFutureOpponents !== '1' ? normalized.heatmapFutureOpponents : null],
           ['pos', normalized.heatmapPosition],
           ['defPos', normalized.heatmapDefensePosition],
           ['stat', normalized.heatmapStatMode !== 'pts' ? normalized.heatmapStatMode : null],
@@ -825,6 +902,13 @@ export function isSameAppRoute(a, b) {
     && left.leagueView === right.leagueView
     && left.rankingsPosition === right.rankingsPosition
     && left.rankingsRosterId === right.rankingsRosterId
+    && left.rankingsQuery === right.rankingsQuery
+    && left.rankingsNflTeams === right.rankingsNflTeams
+    && left.rankingsSort === right.rankingsSort
+    && left.rankingsSortDir === right.rankingsSortDir
+    && left.rankingsValueMode === right.rankingsValueMode
+    && left.rankingsRankScope === right.rankingsRankScope
+    && left.rankingsUnrosteredOnly === right.rankingsUnrosteredOnly
     && left.waiverPosition === right.waiverPosition
     && left.matchupWeek === right.matchupWeek
     && left.matchupPlayerId === right.matchupPlayerId
@@ -835,6 +919,7 @@ export function isSameAppRoute(a, b) {
     && left.leagueSubview === right.leagueSubview
     && left.leagueRosterId === right.leagueRosterId
     && left.heatmapViewMode === right.heatmapViewMode
+    && left.heatmapFutureOpponents === right.heatmapFutureOpponents
     && left.heatmapPosition === right.heatmapPosition
     && left.heatmapDefensePosition === right.heatmapDefensePosition
     && left.heatmapStatMode === right.heatmapStatMode
