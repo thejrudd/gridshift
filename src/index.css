@@ -2006,6 +2006,13 @@ body {
   font-weight: 700;
 }
 
+.companion-defense-modal-header-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
 .companion-defense-modal-header button {
   min-height: 32px;
   flex: 0 0 auto;
@@ -2055,57 +2062,48 @@ body {
   background: var(--color-bg);
 }
 
-.companion-defense-week-card {
-  background: var(--color-bg-secondary);
-  border: 1px solid var(--color-separator);
-  border-radius: 8px;
-  overflow: hidden;
-  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.12);
+.companion-defense-modal-section-label {
+  padding: 8px 2px 6px;
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-micro);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-label-secondary);
 }
 
-.companion-defense-week-card + .companion-defense-week-card {
-  margin-top: 10px;
+.companion-defense-upcoming {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-bottom: 14px;
 }
 
-.companion-defense-week-card__header,
-.companion-defense-contrib-row {
+.companion-defense-upcoming-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
-  align-items: center;
-}
-
-.companion-defense-week-card__header {
-  background: var(--color-bg-tertiary);
-  color: var(--color-label);
-  padding: 11px 12px;
-  font-size: var(--type-meta);
-  font-weight: 900;
-}
-
-.companion-defense-week-card__matchup {
-  display: grid;
-  min-width: 0;
   grid-template-columns: 30px minmax(0, 1fr);
   align-items: center;
   gap: 9px;
+  background: var(--color-bg-tertiary);
+  padding: 10px 12px;
+  border-radius: 6px;
 }
 
-.companion-defense-week-card__matchup img {
+.companion-defense-upcoming-row img {
   width: 30px;
   height: 30px;
   object-fit: contain;
   filter: drop-shadow(0 3px 8px rgba(0, 0, 0, 0.22));
 }
 
-.companion-defense-week-card__matchup > div {
+.companion-defense-upcoming-row > div {
   display: flex;
   min-width: 0;
   flex-direction: column;
   gap: 2px;
 }
 
-.companion-defense-week-card__matchup span {
+.companion-defense-upcoming-row span {
   color: var(--color-label-secondary);
   font-size: var(--type-label);
   font-weight: 850;
@@ -2113,7 +2111,7 @@ body {
   text-transform: uppercase;
 }
 
-.companion-defense-week-card__matchup strong {
+.companion-defense-upcoming-row strong {
   overflow: hidden;
   color: var(--color-label);
   font-size: var(--type-meta);
@@ -2123,23 +2121,157 @@ body {
   white-space: nowrap;
 }
 
-.companion-defense-week-card__header > strong {
+.companion-defense-week-group + .companion-defense-week-group {
+  margin-top: 4px;
+  border-top: 1px solid var(--color-separator);
+}
+
+.companion-defense-week-header,
+.companion-defense-contrib-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.companion-defense-week-header {
+  background: var(--color-bg-tertiary);
+  color: var(--color-label);
+  padding: 11px 12px;
+  font-size: var(--type-meta);
+  font-weight: 900;
+}
+
+.companion-defense-week-header__matchup {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 30px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+}
+
+.companion-defense-week-header__matchup img {
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
+  filter: drop-shadow(0 3px 8px rgba(0, 0, 0, 0.22));
+}
+
+.companion-defense-week-header__matchup > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.companion-defense-week-header__matchup span {
+  color: var(--color-label-secondary);
+  font-size: var(--type-label);
+  font-weight: 850;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.companion-defense-week-header__matchup strong {
+  overflow: hidden;
+  color: var(--color-label);
+  font-size: var(--type-meta);
+  font-weight: 900;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.companion-defense-week-header > strong {
   color: var(--color-label);
   font-size: var(--type-body);
   font-weight: 950;
 }
 
+.companion-defense-week-header__opponent-line {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.companion-defense-week-header__opponent-line strong {
+  flex: 0 1 auto;
+  min-width: 0;
+  line-height: 1;
+}
+
+/* Scoped to the opponent-line wrapper: a bare `.companion-defense-strength-chip`
+   loses to the `.companion-defense-week-header__matchup span` / `.companion-
+   defense-upcoming-row span` descendant rules on equal-or-lower specificity,
+   which silently swapped in their font-size/weight/transform and broke the
+   sizing this rule expects to control. */
+.companion-defense-week-header__opponent-line .companion-defense-strength-chip {
+  overflow: hidden;
+  flex: 0 0 auto;
+  color: var(--color-label-secondary);
+  font-size: var(--type-micro);
+  font-weight: 700;
+  line-height: 1;
+  text-overflow: ellipsis;
+  text-transform: none;
+  white-space: nowrap;
+}
+
 .companion-defense-contrib-list {
-  background: var(--color-bg-secondary);
+  background: transparent;
 }
 
 .companion-defense-contrib-row {
   grid-template-columns: 34px minmax(0, 1fr) auto;
+  width: 100%;
+  border: none;
   border-top: 1px solid var(--color-separator);
+  background: transparent;
   color: var(--color-label);
   padding: 8px 12px;
+  font-family: inherit;
   font-size: var(--type-meta);
   font-weight: 800;
+  text-align: left;
+  cursor: pointer;
+}
+
+.companion-defense-contrib-row:hover:not(:disabled),
+.companion-defense-contrib-row:focus-visible {
+  background: var(--color-fill-tertiary);
+}
+
+.companion-defense-contrib-row:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+
+.companion-defense-contrib-row:disabled {
+  cursor: default;
+}
+
+.companion-defense-contrib-info {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.companion-defense-contrib-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.companion-defense-contrib-meta {
+  overflow: hidden;
+  color: var(--color-label-secondary);
+  font-size: var(--type-micro);
+  font-weight: 700;
+  text-overflow: ellipsis;
+  text-transform: none;
+  white-space: nowrap;
 }
 
 .companion-defense-contrib-avatar {
@@ -2158,12 +2290,6 @@ body {
   color: var(--color-label-secondary);
   font-size: var(--type-label);
   font-weight: 950;
-}
-
-.companion-defense-contrib-row span:not(.companion-defense-contrib-avatar) {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 @media (max-width: 1023px) {
@@ -21650,6 +21776,24 @@ body {
   .companion-player-row__metric-kicker {
     display: none;
   }
+}
+
+.companion-player-row.companion-heatmap-future-player-row .companion-player-row__metric-label {
+  display: block;
+  color: var(--companion-player-value-fg, var(--color-label-secondary));
+  letter-spacing: 0.04em;
+}
+
+.companion-player-row.companion-heatmap-future-player-row .companion-player-row__identity {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.companion-player-row.companion-heatmap-future-player-row .companion-player-row__identity-accessory {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
 }
 
 @container (max-width: 290px) {

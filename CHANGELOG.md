@@ -1411,3 +1411,11 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Player measurements** - Show player height and weight in Statistics profiles and box-score rows, Player Browser suggestions, and global search results when provider data is available.
 - **Search index and data coverage** - Enrich the offline player index from existing ESPN roster data and normalize provider measurements consistently across player surfaces.
 - **Regression coverage and documentation** - Add focused measurement, search-index, profile, and box-score coverage and update the related feature references.
+
+## v9.2.0 - Heatmap Matchups & Rankings Filters
+*2026-10-02*
+
+- **Heatmap future matchups** - Show upcoming opponents and weeks, open a selected matchup, and review active players with totals and per-game averages for the selected statistic.
+- **Rankings filters and navigation** - Combine position filters and preserve Rankings selections when moving through Fantasy Schedule and Statistics player views, while resetting stale filters when league or season context changes.
+- **Defense rankings** - Improve position-aware opponent production rankings and team per-game comparisons.
+- **Regression coverage** - Add route, Heatmap data, and responsive coverage for the updated Fantasy surfaces.

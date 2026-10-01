@@ -7,19 +7,23 @@ import {
   DEFAULT_DEFENSE_RANKING_STATE,
   DEFENSE_RANKING_POSITIONS,
   buildDefenseRankingRows,
+  buildOffenseStrengthRanking,
   filterDefenseRankingRows,
   formatDefenseRankingValue,
   getDefaultDefenseRankingStat,
   getDefenseRankingStatOption,
   getDefenseRankingStatOptions,
+  getDefenseStatValue,
   normalizeDefenseRankingDir,
   normalizeDefenseRankingMode,
   normalizeDefenseRankingPosition,
   normalizeDefenseRankingSort,
   normalizeDefenseRankingStat,
 } from '../../utils/defenseRankings.js';
+import { calcPoints } from '../../utils/scoringEngine.js';
 import { getCompanionInitials, getCompanionPlayerImageUrl, getNflTeamLogoUrl } from '../../utils/companionAssetVisuals.js';
 import { isNflRegularSeasonStarted } from '../../utils/seasonAvailability.js';
+import { getTeamVisualTheme } from '../../utils/teamVisualTheme.js';
 import Modal from '../Modal.jsx';
 import SeasonHintBanner from '../ui/SeasonHintBanner';
 import LoadingSwap, { SkeletonRows } from '../ui/LoadingSwap.jsx';
@@ -127,6 +131,77 @@ function getDefenseSummaryText({ valueLabel, sort, dir, query }) {
   return `${valueLabel} - season to date - ${sortPhrase}${queryPhrase}`;
 }
 
+// Every remaining scheduled opponent for a team, read straight off the season
+// scheduleMap. A week absent from a team's entries is a bye, not a game.
+function getUpcomingGames(scheduleMap, team, currentWeek) {
+  if (!scheduleMap || !team) return [];
+  const afterWeek = Number.isFinite(currentWeek) ? currentWeek : 0;
+  const weeks = Object.keys(scheduleMap)
+    .map(Number)
+    .filter((week) => Number.isFinite(week) && week > afterWeek)
+    .sort((a, b) => a - b);
+  const games = [];
+  for (const week of weeks) {
+    const entry = scheduleMap[week]?.[team];
+    if (!entry?.opp) continue;
+    games.push({ week, opponent: entry.opp.toUpperCase(), home: Boolean(entry.home) });
+  }
+  return games;
+}
+
+// A contributor's own season line, independent of which defense they faced —
+// used for the "season average" shown beside their value against this defense.
+function getPlayerStatSeasonAverage(playerId, players, weeklyStats, mode, stat, scoringSettings) {
+  const player = players?.[playerId];
+  const weeks = weeklyStats?.[playerId];
+  if (!player || !weeks?.length) return null;
+  let total = 0;
+  let games = 0;
+  for (const wEntry of weeks) {
+    const value = mode === 'fantasy'
+      ? calcPoints(wEntry, scoringSettings, player.position)
+      : getDefenseStatValue(wEntry, stat);
+    if (!Number.isFinite(value)) continue;
+    total += value;
+    games += 1;
+  }
+  return games > 0 ? total / games : null;
+}
+
+// Season-long fantasy PPG and within-position rank for every player who has
+// appeared in weeklyStats, built once per season/scoring so each contribution
+// row can look itself up rather than recomputing a full ranking per row.
+function buildPlayerFantasyRankings(weeklyStats, players, scoringSettings) {
+  const seasonByPlayer = new Map();
+  for (const [playerId, weeks] of Object.entries(weeklyStats ?? {})) {
+    const player = players?.[playerId];
+    if (!player?.position) continue;
+    let total = 0;
+    let games = 0;
+    for (const wEntry of weeks ?? []) {
+      const points = calcPoints(wEntry, scoringSettings, player.position);
+      if (!Number.isFinite(points)) continue;
+      total += points;
+      games += 1;
+    }
+    if (games === 0) continue;
+    seasonByPlayer.set(playerId, { position: player.position, total, ppg: total / games });
+  }
+
+  const byPosition = new Map();
+  for (const [playerId, data] of seasonByPlayer) {
+    if (!byPosition.has(data.position)) byPosition.set(data.position, []);
+    byPosition.get(data.position).push([playerId, data.total]);
+  }
+  const rankByPlayerId = new Map();
+  for (const list of byPosition.values()) {
+    list.sort((a, b) => b[1] - a[1]);
+    list.forEach(([playerId], index) => rankByPlayerId.set(playerId, index + 1));
+  }
+
+  return { seasonByPlayer, rankByPlayerId };
+}
+
 function groupContributionsByWeek(row) {
   if (!row) return [];
   const byWeek = new Map();
@@ -179,6 +254,8 @@ export default function CompanionDefense({
   returnMatchup = null,
   onReturnToMatchup = null,
   onClearMatchup = null,
+  onOpenTeamSchedule = null,
+  onViewPlayer = null,
 }) {
   const {
     hasLeague,
@@ -190,6 +267,7 @@ export default function CompanionDefense({
     loadPlayers,
     loadSeasonStats,
     activeScoringSettings,
+    currentFantasyWeek,
   } = useSleeperBase();
   const statsEnhancing = useSleeperStatsEnhancing();
   const { darkMode } = useTheme();
@@ -269,6 +347,58 @@ export default function CompanionDefense({
     [rows, seasonStarted, selectedTeam],
   );
   const detailWeeks = useMemo(() => groupContributionsByWeek(selectedRow), [selectedRow]);
+  const upcomingGames = useMemo(
+    () => getUpcomingGames(scheduleMap, selectedRow?.team, currentFantasyWeek),
+    [scheduleMap, selectedRow, currentFantasyWeek],
+  );
+  const selectedTeamTheme = useMemo(
+    () => (selectedRow ? getTeamVisualTheme(selectedRow.team, darkMode) : null),
+    [selectedRow, darkMode],
+  );
+  const playerFantasyRankings = useMemo(
+    () => buildPlayerFantasyRankings(weeklyStats, players, activeScoringSettings),
+    [weeklyStats, players, activeScoringSettings],
+  );
+  // Each past week's opponent strength is a snapshot entering that week (i.e.
+  // through the prior week), so a week 1 blowout can't retroactively look like
+  // a top-ranked offense once the full season is in. Upcoming games only have
+  // "now" to show, and are expected to keep moving as the season plays out.
+  const opponentStrengthByWeek = useMemo(() => {
+    const map = new Map();
+    if (!weeklyStats || !players) return map;
+    const enteringWeeks = new Set(detailWeeks.map((week) => week.week - 1));
+    for (const throughWeek of enteringWeeks) {
+      map.set(throughWeek, buildOffenseStrengthRanking({
+        weeklyStats,
+        players,
+        scheduleMap,
+        scoringSettings: activeScoringSettings,
+        position: state.position,
+        mode: state.mode,
+        stat: state.stat,
+        teams: ALL_TEAMS,
+        throughWeek,
+      }));
+    }
+    return map;
+  }, [detailWeeks, weeklyStats, players, scheduleMap, activeScoringSettings, state.position, state.mode, state.stat]);
+  const currentOpponentStrength = useMemo(() => {
+    if (!weeklyStats || !players || upcomingGames.length === 0) return null;
+    return buildOffenseStrengthRanking({
+      weeklyStats,
+      players,
+      scheduleMap,
+      scoringSettings: activeScoringSettings,
+      position: state.position,
+      mode: state.mode,
+      stat: state.stat,
+      teams: ALL_TEAMS,
+      throughWeek: currentFantasyWeek,
+    });
+  }, [upcomingGames, weeklyStats, players, scheduleMap, activeScoringSettings, state.position, state.mode, state.stat, currentFantasyWeek]);
+  const statShortLabel = state.mode === 'fantasy'
+    ? 'Fantasy'
+    : getDefenseRankingStatOption(state.position, state.stat).shortLabel;
   const loading = seasonStarted && (!players || !weeklyStats || !scheduleMap || statsLoading || statsEnhancing);
 
   const renderRow = (row, pinned = false) => (
@@ -474,7 +604,10 @@ export default function CompanionDefense({
             boxShadow: '0 24px 80px rgba(0,0,0,0.35)',
           }}
         >
-          <div className="companion-defense-modal-header">
+          <div
+            className="companion-defense-modal-header"
+            style={selectedTeamTheme?.gradient ? { background: selectedTeamTheme.gradient } : undefined}
+          >
             <div className="companion-defense-modal-title-row">
               <img
                 src={getTeamLogoUrl(selectedRow.team)}
@@ -484,11 +617,37 @@ export default function CompanionDefense({
                 decoding="async"
               />
               <div>
-                <h3>{getTeamDisplayName(selectedRow.team)}</h3>
-                <p>{activeStatLabel} - weekly breakdown</p>
+                <h3 style={selectedTeamTheme?.gradient ? { color: selectedTeamTheme.gradientForeground } : undefined}>
+                  {getTeamDisplayName(selectedRow.team)}
+                </h3>
+                <p style={selectedTeamTheme?.gradient ? { color: selectedTeamTheme.gradientMuted } : undefined}>
+                  {activeStatLabel} - weekly breakdown
+                </p>
               </div>
             </div>
-            <button type="button" onClick={() => setSelectedTeam(null)} aria-label="Close defense details">Close</button>
+            <div className="companion-defense-modal-header-actions">
+              {onOpenTeamSchedule && (
+                <button
+                  type="button"
+                  onClick={() => onOpenTeamSchedule(selectedRow.team)}
+                  style={selectedTeamTheme?.gradient
+                    ? { background: selectedTeamTheme.gradientSubtle, color: selectedTeamTheme.gradientForeground }
+                    : undefined}
+                >
+                  Schedule
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setSelectedTeam(null)}
+                aria-label="Close defense details"
+                style={selectedTeamTheme?.gradient
+                  ? { background: selectedTeamTheme.gradientSubtle, color: selectedTeamTheme.gradientForeground }
+                  : undefined}
+              >
+                Close
+              </button>
+            </div>
           </div>
           <div className="companion-defense-modal-stats">
             <span><strong>#{selectedRow.strengthRank}</strong>Rank</span>
@@ -496,38 +655,130 @@ export default function CompanionDefense({
             <span><strong>{formatDefenseRankingValue(selectedRow.avg, { mode: state.mode, stat: state.stat, scope: 'avg' })}</strong>Per Game</span>
           </div>
           <div className="companion-defense-modal-body">
-            {detailWeeks.length > 0 ? detailWeeks.map(week => (
-              <div key={week.week} className="companion-defense-week-card">
-                <div className="companion-defense-week-card__header">
-                  <div className="companion-defense-week-card__matchup">
-                    {week.opponent && (
+            {detailWeeks.length > 0 && (
+              <div className="companion-defense-modal-section-label">Weekly breakdown</div>
+            )}
+            {detailWeeks.length > 0 ? detailWeeks.map(week => {
+              const oppTheme = week.opponent ? getTeamVisualTheme(week.opponent, darkMode) : null;
+              const oppStrength = week.opponent
+                ? opponentStrengthByWeek.get(week.week - 1)?.get(week.opponent)
+                : null;
+              return (
+                <div key={week.week} className="companion-defense-week-group">
+                  <div
+                    className="companion-defense-week-header"
+                    style={oppTheme?.gradient ? { background: oppTheme.gradient } : undefined}
+                  >
+                    <div className="companion-defense-week-header__matchup">
+                      {week.opponent && (
+                        <img
+                          src={getTeamLogoUrl(week.opponent)}
+                          alt=""
+                          aria-hidden="true"
+                          loading="lazy"
+                          decoding="async"
+                        />
+                      )}
+                      <div>
+                        <span style={oppTheme?.gradient ? { color: oppTheme.gradientMuted } : undefined}>Week {week.week}</span>
+                        <div className="companion-defense-week-header__opponent-line">
+                          <strong style={oppTheme?.gradient ? { color: oppTheme.gradientForeground } : undefined}>
+                            {week.opponent ? `vs ${getTeamDisplayName(week.opponent)}` : 'Opponent unavailable'}
+                          </strong>
+                          {oppStrength?.rank != null && (
+                            <span
+                              className="companion-defense-strength-chip"
+                              style={oppTheme?.gradient ? { color: oppTheme.gradientMuted } : undefined}
+                              title={`${getTeamDisplayName(week.opponent)} ranked #${oppStrength.rank} in ${statShortLabel} offense entering Week ${week.week}`}
+                            >
+                              #{oppStrength.rank} {statShortLabel}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <strong style={oppTheme?.gradient ? { color: oppTheme.gradientForeground } : undefined}>
+                      {formatDefenseRankingValue(week.total, { mode: state.mode, stat: state.stat })}
+                    </strong>
+                  </div>
+                  <div className="companion-defense-contrib-list">
+                    {week.players.map(player => {
+                      const playerId = player.sleeperId ?? player.playerId;
+                      const seasonAvg = getPlayerStatSeasonAverage(
+                        playerId, players, weeklyStats, state.mode, state.stat, activeScoringSettings,
+                      );
+                      const ranking = playerFantasyRankings.seasonByPlayer.get(playerId);
+                      const posRank = playerFantasyRankings.rankByPlayerId.get(playerId);
+                      const metaParts = [
+                        seasonAvg != null && `${formatDefenseRankingValue(seasonAvg, { mode: state.mode, stat: state.stat, scope: 'avg' })} avg`,
+                        ranking?.ppg != null && `${ranking.ppg.toFixed(1)} PPG`,
+                        posRank != null && `${player.position}${posRank}`,
+                      ].filter(Boolean);
+                      return (
+                        <button
+                          type="button"
+                          key={`${week.week}-${playerId}-${player.playerName}`}
+                          className="companion-defense-contrib-row"
+                          onClick={() => onViewPlayer?.(playerId)}
+                          disabled={!onViewPlayer || !playerId}
+                        >
+                          <DefenseContributionAvatar player={player} />
+                          <div className="companion-defense-contrib-info">
+                            <span className="companion-defense-contrib-name">{player.playerName}</span>
+                            {metaParts.length > 0 && (
+                              <span className="companion-defense-contrib-meta">{metaParts.join(' · ')}</span>
+                            )}
+                          </div>
+                          <strong>{formatDefenseRankingValue(player.value, { mode: state.mode, stat: state.stat })}</strong>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            }) : (
+              <div className="companion-defense-empty">No weekly contributions are available for this selection.</div>
+            )}
+            {upcomingGames.length > 0 && (
+              <div className="companion-defense-upcoming">
+                <div className="companion-defense-modal-section-label">Upcoming</div>
+                {upcomingGames.map((game) => {
+                  const oppTheme = getTeamVisualTheme(game.opponent, darkMode);
+                  const oppStrength = currentOpponentStrength?.get(game.opponent);
+                  return (
+                    <div
+                      key={`upcoming-${game.week}`}
+                      className="companion-defense-upcoming-row"
+                      style={oppTheme.gradient ? { background: oppTheme.gradient } : undefined}
+                    >
                       <img
-                        src={getTeamLogoUrl(week.opponent)}
+                        src={getTeamLogoUrl(game.opponent)}
                         alt=""
                         aria-hidden="true"
                         loading="lazy"
                         decoding="async"
                       />
-                    )}
-                    <div>
-                      <span>Week {week.week}</span>
-                      <strong>{week.opponent ? `vs ${getTeamDisplayName(week.opponent)}` : 'Opponent unavailable'}</strong>
+                      <div>
+                        <span style={oppTheme.gradient ? { color: oppTheme.gradientMuted } : undefined}>Week {game.week}</span>
+                        <div className="companion-defense-week-header__opponent-line">
+                          <strong style={oppTheme.gradient ? { color: oppTheme.gradientForeground } : undefined}>
+                            {game.home ? 'vs' : 'at'} {getTeamDisplayName(game.opponent)}
+                          </strong>
+                          {oppStrength?.rank != null && (
+                            <span
+                              className="companion-defense-strength-chip"
+                              style={oppTheme.gradient ? { color: oppTheme.gradientMuted } : undefined}
+                              title={`${getTeamDisplayName(game.opponent)} currently ranked #${oppStrength.rank} in ${statShortLabel} offense — subject to change as the season continues`}
+                            >
+                              #{oppStrength.rank} {statShortLabel}
+                            </span>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                  <strong>{formatDefenseRankingValue(week.total, { mode: state.mode, stat: state.stat })}</strong>
-                </div>
-                <div className="companion-defense-contrib-list">
-                  {week.players.map(player => (
-                    <div key={`${week.week}-${player.playerId}-${player.playerName}`} className="companion-defense-contrib-row">
-                      <DefenseContributionAvatar player={player} />
-                      <span>{player.playerName}</span>
-                      <strong>{formatDefenseRankingValue(player.value, { mode: state.mode, stat: state.stat })}</strong>
-                    </div>
-                  ))}
-                </div>
+                  );
+                })}
               </div>
-            )) : (
-              <div className="companion-defense-empty">No weekly contributions are available for this selection.</div>
             )}
           </div>
         </Modal>

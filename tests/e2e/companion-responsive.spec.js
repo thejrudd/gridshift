@@ -919,7 +919,7 @@ test('Heatmap desktop keeps filters collapsed and groups controls in one row', a
 
   await filterToggle.click();
   const filterGroups = page.locator('#companion-heatmap-filter-panel .companion-heatmap-filter-group');
-  await expect(filterGroups).toHaveCount(6);
+  await expect(filterGroups).toHaveCount(7);
 
   const groupTops = await filterGroups.evaluateAll((groups) => (
     groups.map((group) => Math.round(group.getBoundingClientRect().top))
@@ -930,6 +930,84 @@ test('Heatmap desktop keeps filters collapsed and groups controls in one row', a
   const firstGroupRect = await filterGroups.first().boundingBox();
   expect(resultRect?.y).toBe(firstGroupRect?.y);
   expect(resultRect?.x).toBeGreaterThan(firstGroupRect?.x ?? 0);
+});
+
+test('Heatmap mobile shows future weeks by default and averages finalized games only', async ({ page }) => {
+  const base = responsiveFixtureOverrides();
+  const heatmapLeague = {
+    ...base.league,
+    settings: { ...base.league.settings, last_scored_leg: 2 },
+  };
+  const heatmapLeaguesBySeason = {
+    ...base.leaguesBySeason,
+    [TEST_SEASON]: base.leaguesBySeason[TEST_SEASON].map((item) => (
+      item.league_id === heatmapLeague.league_id ? heatmapLeague : item
+    )),
+  };
+  const heatmapState = {
+    ...base.persistedSleeperState,
+    league: heatmapLeague,
+    leagues: base.persistedSleeperState.leagues.map((item) => (
+      item.league_id === heatmapLeague.league_id ? heatmapLeague : item
+    )),
+    leaguesBySeason: heatmapLeaguesBySeason,
+  };
+
+  await page.unroute('https://api.sleeper.app/v1/**');
+  await installTradeFixtures(page, {
+    ...base,
+    league: heatmapLeague,
+    leaguesBySeason: heatmapLeaguesBySeason,
+    persistedSleeperState: heatmapState,
+  });
+  await page.route(`https://api.sleeper.app/v1/stats/nfl/regular/${TEST_SEASON}/*`, async (route) => {
+    const week = Number(new URL(route.request().url()).pathname.split('/').at(-1));
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(week <= 4 ? weeklyStatsForWeek(week) : {}),
+    });
+  });
+  await page.route('https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard*', async (route) => {
+    const week = Number(new URL(route.request().url()).searchParams.get('week'));
+    const completed = week <= 3;
+    const events = week <= 4 ? [{
+      id: `heatmap-week-${week}`,
+      date: `2026-09-${13 + (week - 1) * 7}T18:00:00.000Z`,
+      week: { number: week },
+      competitions: [{
+        status: { type: { completed } },
+        competitors: [
+          { homeAway: 'away', team: { abbreviation: 'SF', id: '25' }, score: completed ? '20' : '' },
+          { homeAway: 'home', team: { abbreviation: 'LAR', id: '14' }, score: completed ? '17' : '' },
+        ],
+      }],
+    }] : [];
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ events }),
+    });
+  });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/fantasy/heatmap');
+  await dismissWhatsNew(page);
+
+  const weekHeaders = page.locator('th[data-heatmap-header-week]');
+  const expectedWeekCount = Number(heatmapLeague.settings.playoff_week_start);
+  await expect(weekHeaders).toHaveCount(expectedWeekCount);
+  await expect(weekHeaders.last()).toContainText(`Wk ${expectedWeekCount}`);
+
+  const sanFranciscoRow = page.locator('tbody tr').filter({ hasText: /^SF/ });
+  await expect(sanFranciscoRow).toHaveCount(1);
+  await expect(sanFranciscoRow.locator('td[data-heatmap-week="3"] div').first()).toHaveText('9.4');
+  await expect(sanFranciscoRow.locator('td').last()).toHaveText('9.40');
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(weekHeaders).toHaveCount(Number(heatmapLeague.settings.playoff_week_start));
+  await expect(sanFranciscoRow.locator('td[data-heatmap-week="4"] div').first()).toHaveText('9.4');
+  await expect(sanFranciscoRow.locator('td').last()).toHaveText('9.40');
 });
 
 test('Heatmap keeps empty weeks visible across viewport sizes', async ({ page }) => {

@@ -479,6 +479,9 @@ function AppInner() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [appRoute, setAppRoute] = useState(() => parseAppRoute(window.location.pathname, window.location.search));
+  const rankingsFilterSnapshotRef = useRef(
+    normalizeAppRoute({ ...appRoute, activeTab: 'fantasy', companionView: 'rankings' }),
+  );
   const [statsNavBack, setStatsNavBack] = useState(null); // { label, onBack } | null — contextual back from external nav
   const [statsDrilldownPending, setStatsDrilldownPending] = useState(null);
   const draftPlayerOpenTokenRef = useRef(0);
@@ -503,6 +506,13 @@ function AppInner() {
     myRoster,
     currentFantasyWeek,
   } = useFantasyLeague();
+  const rankingsFilterContextKey = hasLeague && selectedLeagueId && league && !seasonSwitching
+    ? `${platform ?? ''}:${selectedLeagueId}:${season ?? ''}`
+    : null;
+  const rankingsFilterIdentityRef = useRef({
+    key: rankingsFilterContextKey,
+    initialized: Boolean(rankingsFilterContextKey),
+  });
   const {
     statsLoading,
     seasonStats,
@@ -846,6 +856,7 @@ function AppInner() {
   const heatmapRouteState = appRoute.companionView === 'heatmap'
     ? {
         viewMode: appRoute.heatmapViewMode ?? 'offense',
+        showFutureOpponents: appRoute.heatmapFutureOpponents === '1',
         position: appRoute.heatmapPosition ?? 'ALL',
         defensePosition: appRoute.heatmapDefensePosition ?? 'ALL',
         statMode: appRoute.heatmapStatMode ?? 'pts',
@@ -876,9 +887,17 @@ function AppInner() {
 
   const applyRoute = useCallback((nextRoute, { replace = false, state = null } = {}) => {
     const normalized = normalizeAppRoute(nextRoute);
+    if (normalized.activeTab === 'fantasy' && normalized.companionView === 'rankings') {
+      rankingsFilterSnapshotRef.current = normalized;
+    }
     const nextPath = buildAppPath(normalized);
     const currentState = readHistoryState();
     const nextState = { ...currentState, ...(state ?? {}), _nav: 'app' };
+    if (normalized.activeTab === 'fantasy' && normalized.companionView === 'rankings') {
+      if (rankingsFilterContextKey) nextState.rankingsContextIdentity = rankingsFilterContextKey;
+    } else {
+      delete nextState.rankingsContextIdentity;
+    }
     const samePath = nextPath === `${window.location.pathname}${window.location.search}`;
 
     if (replace) {
@@ -890,7 +909,7 @@ function AppInner() {
     startRouteTransition(() => {
       setAppRoute((prev) => (isSameAppRoute(prev, normalized) ? prev : normalized));
     });
-  }, [readHistoryState, startRouteTransition]);
+  }, [rankingsFilterContextKey, readHistoryState, startRouteTransition]);
 
   const openHistoricalMatchup = useCallback(async ({ season: recordSeason, week, rosterId }) => {
     const historyState = readHistoryState();
@@ -993,8 +1012,57 @@ function AppInner() {
   }, [applyRoute]);
 
   const navigateCompanionView = useCallback((view) => {
+    if (view === 'rankings') {
+      const identity = rankingsFilterIdentityRef.current;
+      if (rankingsFilterContextKey && identity.initialized && identity.key !== rankingsFilterContextKey) {
+        identity.key = rankingsFilterContextKey;
+        rankingsFilterSnapshotRef.current = normalizeAppRoute({ activeTab: 'fantasy', companionView: 'rankings' });
+      } else if (rankingsFilterContextKey && !identity.initialized) {
+        identity.key = rankingsFilterContextKey;
+        identity.initialized = true;
+      }
+      applyRoute(rankingsFilterSnapshotRef.current);
+      return;
+    }
     applyRoute({ activeTab: 'fantasy', companionView: view });
-  }, [applyRoute]);
+  }, [applyRoute, rankingsFilterContextKey]);
+
+  const updateRankingsRoute = useCallback((patch) => {
+    const identity = rankingsFilterIdentityRef.current;
+    let baseRoute = rankingsFilterSnapshotRef.current;
+    if (rankingsFilterContextKey && identity.initialized && identity.key !== rankingsFilterContextKey) {
+      identity.key = rankingsFilterContextKey;
+      baseRoute = normalizeAppRoute({ activeTab: 'fantasy', companionView: 'rankings' });
+    } else if (rankingsFilterContextKey && !identity.initialized) {
+      identity.key = rankingsFilterContextKey;
+      identity.initialized = true;
+    }
+    const nextRoute = normalizeAppRoute({
+      ...baseRoute,
+      activeTab: 'fantasy',
+      companionView: 'rankings',
+      ...patch,
+    });
+    rankingsFilterSnapshotRef.current = nextRoute;
+    applyRoute(nextRoute, { replace: true });
+  }, [applyRoute, rankingsFilterContextKey]);
+
+  useEffect(() => {
+    if (rankingsFilterContextKey) {
+      const identity = rankingsFilterIdentityRef.current;
+      if (!identity.initialized) {
+        identity.key = rankingsFilterContextKey;
+        identity.initialized = true;
+      } else if (identity.key !== rankingsFilterContextKey) {
+        identity.key = rankingsFilterContextKey;
+        const defaultRoute = normalizeAppRoute({ activeTab: 'fantasy', companionView: 'rankings' });
+        rankingsFilterSnapshotRef.current = defaultRoute;
+        if (appRoute.activeTab === 'fantasy' && appRoute.companionView === 'rankings') {
+          applyRoute(defaultRoute, { replace: true });
+        }
+      }
+    }
+  }, [appRoute, applyRoute, rankingsFilterContextKey]);
 
   const updateCompanionRoute = useCallback((patch, options = {}) => {
     applyRoute({ ...appRoute, activeTab: 'fantasy', ...patch }, options);
@@ -1008,6 +1076,7 @@ function AppInner() {
     pendingHeatmapRoutePatchRef.current = {
       companionView: 'heatmap',
       heatmapViewMode: nextState.viewMode,
+      heatmapFutureOpponents: nextState.showFutureOpponents ? '1' : '0',
       heatmapPosition: nextState.position === 'ALL' ? null : nextState.position,
       heatmapDefensePosition: nextState.defensePosition === 'ALL' ? null : nextState.defensePosition,
       heatmapStatMode: nextState.statMode,
@@ -1150,13 +1219,20 @@ function AppInner() {
     }
   }, []);
 
-  const buildStatsBackContext = useCallback((label, backRoute) => {
+  const buildStatsBackContext = useCallback((label, backRoute, backContextIdentity = null) => {
     if (!label || !backRoute) return null;
     const normalizedBackRoute = normalizeAppRoute(backRoute);
     return {
       label,
       onBack: () => {
-        applyRoute(normalizedBackRoute);
+        const identity = rankingsFilterIdentityRef.current;
+        const shouldResetRankings = normalizedBackRoute.activeTab === 'fantasy'
+          && normalizedBackRoute.companionView === 'rankings'
+          && identity.initialized
+          && identity.key !== backContextIdentity;
+        applyRoute(shouldResetRankings
+          ? normalizeAppRoute({ activeTab: 'fantasy', companionView: 'rankings' })
+          : normalizedBackRoute);
         setStatsNavBack(null);
       },
     };
@@ -1272,12 +1348,30 @@ function AppInner() {
     }, options);
   }, [appRoute, applyRoute]);
 
-  const navigateToStatisticsPlayer = useCallback((player, { backLabel = null, backRoute = null, mode = STATISTICS_MODES.GAME } = {}) => {
+  const navigateToStatisticsPlayer = useCallback((player, {
+    backLabel = null,
+    backRoute = null,
+    backContextIdentity = undefined,
+    mode = STATISTICS_MODES.GAME,
+  } = {}) => {
     if (!player?.id) return;
 
     const playerMeta = buildStatisticsPlayerMeta(player);
     if (!playerMeta?.id) return;
-    const nextBackContext = buildStatsBackContext(backLabel, backRoute);
+    let currentState = readHistoryState();
+    if (currentState._sheet) {
+      // A player selection can finish asynchronously while a modal is open.
+      // Clear its history marker before pushing the player route so the modal's
+      // deferred cleanup cannot pop back over the new destination.
+      currentState = { ...currentState, _sheet: null };
+      window.history.replaceState(currentState, '', window.location.href);
+    }
+    const resolvedBackContextIdentity = backContextIdentity !== undefined
+      ? backContextIdentity
+      : backRoute?.activeTab === 'fantasy' && backRoute.companionView === 'rankings'
+        ? rankingsFilterIdentityRef.current.key
+        : null;
+    const nextBackContext = buildStatsBackContext(backLabel, backRoute, resolvedBackContextIdentity);
 
     setStatsDrilldownPending({
       playerId: playerMeta.id,
@@ -1295,16 +1389,24 @@ function AppInner() {
       state: {
         statsBackLabel: backLabel ?? null,
         statsBackRoute: backRoute ? normalizeAppRoute(backRoute) : null,
+        statsBackContextIdentity: resolvedBackContextIdentity,
         statsPlayerMeta: playerMeta,
       },
     });
-  }, [applyRoute, buildStatsBackContext]);
+  }, [applyRoute, buildStatsBackContext, readHistoryState]);
 
   const navigateToCompanionSleeperPlayer = useCallback(async (sleeperId, backLabel, resolvedPlayerMeta = null) => {
+    const backRoute = appRoute.activeTab === 'fantasy' && appRoute.companionView === 'rankings'
+      ? rankingsFilterSnapshotRef.current
+      : appRoute;
+    const backContextIdentity = backRoute.activeTab === 'fantasy' && backRoute.companionView === 'rankings'
+      ? rankingsFilterIdentityRef.current.key
+      : null;
     if (resolvedPlayerMeta?.id) {
       navigateToStatisticsPlayer(resolvedPlayerMeta, {
         backLabel,
-        backRoute: appRoute,
+        backRoute,
+        backContextIdentity,
         mode: STATISTICS_MODES.FANTASY,
       });
       return;
@@ -1315,7 +1417,8 @@ function AppInner() {
 
     navigateToStatisticsPlayer(playerMeta, {
       backLabel,
-      backRoute: appRoute,
+      backRoute,
+      backContextIdentity,
       mode: STATISTICS_MODES.FANTASY,
     });
   }, [appRoute, espnIdOverrides, navigateToStatisticsPlayer, sleeperPlayers]);
@@ -1539,7 +1642,24 @@ function AppInner() {
 
   useEffect(() => {
     const onPopState = () => {
-      setAppRoute(parseAppRoute(window.location.pathname, window.location.search));
+      let nextRoute = parseAppRoute(window.location.pathname, window.location.search);
+      if (nextRoute.activeTab === 'fantasy' && nextRoute.companionView === 'rankings') {
+        const identity = rankingsFilterIdentityRef.current;
+        const savedIdentity = window.history.state?.rankingsContextIdentity;
+        if (identity.initialized && savedIdentity && savedIdentity !== identity.key) {
+          nextRoute = normalizeAppRoute({ activeTab: 'fantasy', companionView: 'rankings' });
+          const currentState = window.history.state && typeof window.history.state === 'object'
+            ? window.history.state
+            : {};
+          window.history.replaceState({
+            ...currentState,
+            rankingsContextIdentity: identity.key,
+            _nav: 'app',
+          }, '', buildAppPath(nextRoute));
+        }
+        rankingsFilterSnapshotRef.current = nextRoute;
+      }
+      setAppRoute(nextRoute);
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
@@ -1553,7 +1673,11 @@ function AppInner() {
 
     const currentState = readHistoryState();
     if (currentState.statsBackLabel && currentState.statsBackRoute) {
-      setStatsNavBack(buildStatsBackContext(currentState.statsBackLabel, currentState.statsBackRoute));
+      setStatsNavBack(buildStatsBackContext(
+        currentState.statsBackLabel,
+        currentState.statsBackRoute,
+        currentState.statsBackContextIdentity,
+      ));
       return;
     }
 
@@ -2452,14 +2576,14 @@ function AppInner() {
                   <CompanionRankings
                     positionFilter={rankingsPosition}
                     rosterFilter={rankingsRosterId}
-                    onPositionFilterChange={(position) => updateCompanionRoute({
-                      companionView: 'rankings',
-                      rankingsPosition: position === 'ALL' ? null : position,
-                    }, { replace: true })}
-                    onRosterFilterChange={(rosterId) => updateCompanionRoute({
-                      companionView: 'rankings',
-                      rankingsRosterId: rosterId,
-                    }, { replace: true })}
+                    queryFilter={appRoute.rankingsQuery}
+                    nflTeamFilter={appRoute.rankingsNflTeams}
+                    sortFilter={appRoute.rankingsSort ?? 'season'}
+                    sortDirFilter={appRoute.rankingsSortDir ?? 'desc'}
+                    valueModeFilter={appRoute.rankingsValueMode ?? 'fantasy'}
+                    rankScopeFilter={appRoute.rankingsRankScope ?? 'overall'}
+                    unrosteredOnlyFilter={appRoute.rankingsUnrosteredOnly ?? false}
+                    onRouteStateChange={updateRankingsRoute}
                     onViewPlayer={(playerOrMeta, playerMeta) => {
                       const resolvedMeta = playerMeta ?? (typeof playerOrMeta === 'object' ? playerOrMeta : null);
                       const sleeperId = resolvedMeta?.sleeperId ?? playerOrMeta;
@@ -2593,6 +2717,10 @@ function AppInner() {
                       ? { teamId: appRoute.defenseReturnTeamId, gameId: appRoute.defenseReturnGameId }
                       : null}
                     onReturnToMatchup={returnToScheduleMatchup}
+                    onOpenTeamSchedule={navigateToStatisticsScheduleTeam}
+                    onViewPlayer={(sleeperId) => {
+                      void navigateToCompanionSleeperPlayer(sleeperId, 'Defenses');
+                    }}
                     onClearMatchup={() => updateCompanionRoute({
                       companionView: 'defenses',
                       defensePinnedTeams: null,

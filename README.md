@@ -134,9 +134,11 @@ Draft Sync is an optional capability of the existing API sidecar, not a required
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) + optional Node API sidecar |
 
-## What's New in v9.1.1
+## What's New in v9.2.0
 
-- **Player measurements** — View height and weight on Statistics player profiles and box-score rows, Player Browser suggestions, and global search results when provider data is available.
+- **Heatmap matchup tools** — See upcoming opponents across the season, open future matchups, and review active players using the selected statistic.
+- **Rankings filters** — Combine position selections and keep Rankings filters when opening Schedule or Statistics player views.
+- **Defense rankings** — Refine opponent production and per-game comparisons across defensive position groups.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 

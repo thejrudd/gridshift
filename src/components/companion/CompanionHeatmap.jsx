@@ -3,8 +3,12 @@ import { FunnelSimpleIcon } from '@phosphor-icons/react/FunnelSimple';
 import { useSleeperBase, useSleeperStatsEnhancing } from '../../context/SleeperContext';
 import { useTheme } from '../../context/ThemeContext';
 import { calcPoints, DEFAULT_SCORING } from '../../utils/scoringEngine';
-import { getCachedOffenseAllowedTable, getHeatmapCompletedGameCount, getHeatmapOffenseStatValue, resolveHeatmapOffenseStatMode } from '../../utils/fantasyHeatmapData.js';
+import { buildHeatmapMatchupRatings, getCachedOffenseAllowedTable, getHeatmapCompletedGameWeeks, getHeatmapLatestCompletedWeek, getHeatmapOffenseStatValue, resolveHeatmapOffenseStatMode, sortHeatmapRowsByMatchupRank } from '../../utils/fantasyHeatmapData.js';
 import { getFantasyLeagueMaxWeek } from '../../utils/fantasySeasonWeeks.js';
+import { isFinalScheduleGame } from '../../utils/statisticsSchedule.js';
+import { buildPlayerFormRows } from '../../utils/playerDefensePerformance.js';
+import { resolveStatisticsPlayerMetaFromSleeperId } from '../../utils/playerDrilldown.js';
+import { isWaiverEligiblePlayerRecord } from '../../utils/playerEligibility.js';
 import { STADIUMS } from '../../data/stadiums';
 import { TEAM_COLORS } from '../../data/teamColors';
 import { NFL_ODDS } from '../../data/odds';
@@ -12,7 +16,7 @@ import useMediaQuery from '../../hooks/useMediaQuery';
 import { getLeaguePositionFilters, getPositionFilterLabel } from '../../utils/leaguePositions';
 import CompanionPlayerPreviewSheet from './CompanionPlayerPreviewSheet';
 import { CompanionSelectorButton } from './CompanionSelectorControls.jsx';
-import CompanionPlayerRow, { CompanionPlayerMetric, CompanionPlayerStatus } from './CompanionPlayerRow.jsx';
+import CompanionPlayerRow, { CompanionPlayerLocalContrastText, CompanionPlayerMetric, CompanionPlayerStatus } from './CompanionPlayerRow.jsx';
 import Modal from '../Modal.jsx';
 import SeasonHintBanner from '../ui/SeasonHintBanner';
 import LoadingSwap, { SkeletonRows } from '../ui/LoadingSwap.jsx';
@@ -82,7 +86,8 @@ const HEATMAP_FILTER_LABEL_WIDTH = 62;
 const MOBILE_FILTER_LABEL_WIDTH = HEATMAP_FILTER_LABEL_WIDTH;
 
 const STAT_MODES = [
-  { id: 'pts',        label: 'Fantasy Pts' },
+  { id: 'pts',        label: 'Fantasy Pts Scored' },
+  { id: 'pts_allowed', label: 'Fantasy Pts Allowed' },
   { id: 'pass_sack',  label: 'Sacks Taken', statKey: 'pass_sack', positions: ['QB'], valueLabel: 'sacks', lowerIsBetter: true },
   { id: 'pass_int',   label: 'INTs Thrown', statKey: 'pass_int', positions: ['QB'], valueLabel: 'INTs', lowerIsBetter: true },
   { id: 'rec_yd',     label: 'Rec Yds', statKey: 'rec_yd', scoringKeys: ['rec_yd'], valueLabel: 'yds' },
@@ -104,7 +109,8 @@ const ODDS_SEASON = Object.keys(NFL_ODDS).length
   : null;
 
 const DEF_STAT_MODES = [
-  { id: 'pts',          label: 'Fantasy Pts', statKey: null },
+  { id: 'pts',          label: 'Fantasy Pts Scored', statKey: null },
+  { id: 'pts_allowed',  label: 'Fantasy Pts Allowed', statKey: null },
   { id: 'sack',         label: 'DST Sacks',   statKey: 'sack', positions: ['DEF'], scoringKeys: ['sack'] },
   { id: 'int',          label: 'DST INT',     statKey: 'int', positions: ['DEF'], scoringKeys: ['int'] },
   { id: 'def_td',       label: 'DST TD',      statKey: 'def_td', positions: ['DEF'], scoringKeys: ['def_td'] },
@@ -120,11 +126,36 @@ const DEF_STAT_MODES = [
   { id: 'idp_def_td',   label: 'TD',          statKey: 'idp_def_td', positions: ['DL', 'LB', 'DB'], scoringKeys: ['idp_def_td'] },
 ];
 
+const FUTURE_STAT_AVERAGE_LABELS = {
+  pass_sack: 'Sacks/G',
+  pass_int: 'INT/G',
+  rec_yd: 'Yds/G',
+  rush_yd: 'Yds/G',
+  pass_td: 'TD/G',
+  rec_td: 'TD/G',
+  rush_td: 'TD/G',
+  total_td: 'TD/G',
+  sack: 'Sacks/G',
+  int: 'INT/G',
+  def_td: 'TD/G',
+  safe: 'Safeties/G',
+  tkl_loss: 'TFL/G',
+  qb_hit: 'QB Hit/G',
+  idp_sack: 'Sacks/G',
+  idp_int: 'INT/G',
+  idp_ff: 'FF/G',
+  idp_tkl_loss: 'TFL/G',
+  idp_pd: 'Pass Def/G',
+  idp_qbhit: 'QB Hit/G',
+  idp_def_td: 'TD/G',
+};
+
 const DEF_STAT_FILTERS = [
   DEF_STAT_MODES[0],
+  DEF_STAT_MODES[1],
   STAT_MODES.find(mode => mode.id === 'game_score'),
   STAT_MODES.find(mode => mode.id === 'vegas_odds'),
-  ...DEF_STAT_MODES.slice(1),
+  ...DEF_STAT_MODES.slice(2),
 ].filter(Boolean);
 
 function modeHasScoringValue(mode, scoringSettings) {
@@ -563,6 +594,20 @@ function fmtSpreadLine(value) {
   return value > 0 ? `+${n}` : n;
 }
 
+function formatOrdinalRank(rank) {
+  const remainder = rank % 100;
+  const suffix = remainder >= 11 && remainder <= 13
+    ? 'th'
+    : rank % 10 === 1
+      ? 'st'
+      : rank % 10 === 2
+        ? 'nd'
+        : rank % 10 === 3
+          ? 'rd'
+          : 'th';
+  return `${rank}${suffix}`;
+}
+
 function HeatmapSortIndicator({ active, dir }) {
   if (!active) return null;
   return <span style={{ marginLeft: '3px', opacity: 0.7 }}>{dir === 'desc' ? '↓' : '↑'}</span>;
@@ -573,6 +618,8 @@ const HeatmapCell = memo(function HeatmapCell({ cell }) {
     <td
       data-heatmap-week={cell.clickable ? cell.week : undefined}
       data-heatmap-empty={cell.kind === 'empty' ? cell.week : undefined}
+      data-heatmap-future-opponent={cell.kind === 'opponent' ? 'true' : undefined}
+      title={cell.title}
       style={cell.style}
     >
       {cell.kind === 'value' ? (
@@ -588,6 +635,13 @@ const HeatmapCell = memo(function HeatmapCell({ cell }) {
         <span style={HEATMAP_FILTERED_STYLE}>—</span>
       ) : cell.kind === 'dash' ? (
         '—'
+      ) : cell.kind === 'opponent' ? (
+        <>
+          <div>{cell.primary}</div>
+          {cell.secondary && (
+            <div style={HEATMAP_CELL_SECONDARY_STYLE}>{cell.secondary}</div>
+          )}
+        </>
       ) : cell.kind === 'empty' ? (
         '—'
       ) : null}
@@ -601,7 +655,11 @@ const HeatmapRow = memo(function HeatmapRow({ row, showAvg, onCellDrilldown }) {
     if (!target) return;
     const cell = target.closest('td[data-heatmap-week]');
     if (!cell || !event.currentTarget.contains(cell)) return;
-    onCellDrilldown(row.team, Number(cell.dataset.heatmapWeek));
+    onCellDrilldown(
+      row.team,
+      Number(cell.dataset.heatmapWeek),
+      cell.dataset.heatmapFutureOpponent === 'true',
+    );
   }, [onCellDrilldown, row.team]);
 
   return (
@@ -725,6 +783,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
   const {
     weeklyStats,
     players,
+    rosters,
     scheduleMap,
     activeScoringSettings,
     espnIdOverrides,
@@ -734,6 +793,15 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
     league,
   } = useSleeperBase();
   const statsEnhancing = useSleeperStatsEnhancing();
+  const rosteredPlayerIds = useMemo(() => {
+    const ids = new Set();
+    for (const roster of rosters ?? []) {
+      for (const field of ['players', 'reserve', 'taxi']) {
+        for (const playerId of roster?.[field] ?? []) ids.add(String(playerId));
+      }
+    }
+    return ids;
+  }, [rosters]);
   useEffect(() => { loadPlayers(); }, [loadPlayers]);
   useEffect(() => {
     if ((weeklyStats && scheduleMap) || statsLoading) return;
@@ -749,10 +817,18 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
   const [defStatMode, setDefStatMode]   = useState('pts');
   const [heatmapScope, setHeatmapScope] = useState('overall');
   const [locationFilter, setLocationFilter] = useState('all'); // 'all' | 'home' | 'away'
+  const [showFutureOpponents, setShowFutureOpponents] = useState(true);
+  const [matchupWindow, setMatchupWindow] = useState('season');
   const [sortKey, setSortKey] = useState('avg');
   const [sortDir, setSortDir] = useState('desc');
   const [teamSort, setTeamSort] = useState('alpha');
   const [drilldown, setDrilldown] = useState(null); // { team, week }
+  const [futurePlayerNavigationId, setFuturePlayerNavigationId] = useState(null);
+  const [futurePlayerNavigationError, setFuturePlayerNavigationError] = useState(null);
+  const futurePlayerNavigationTokenRef = useRef(0);
+  useEffect(() => () => {
+    futurePlayerNavigationTokenRef.current += 1;
+  }, []);
   const [previewPlayerId, setPreviewPlayerId] = useState(null);
   const [useTeamColors, setUseTeamColors] = useState(false);
   const [vegasOddsView, setVegasOddsView] = useState('spread'); // 'spread' | 'ou'
@@ -766,6 +842,10 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
   const skipNextRouteEmitRef = useRef(false);
   const lastScoredLeg = Number(league?.settings?.last_scored_leg);
   const maxFantasyWeek = useMemo(() => getFantasyLeagueMaxWeek(league), [league]);
+  const latestCompletedFantasyWeek = useMemo(() => {
+    const seasonWeeks = Array.from({ length: maxFantasyWeek }, (_, index) => index + 1);
+    return getHeatmapLatestCompletedWeek(scheduleMap, seasonWeeks);
+  }, [maxFantasyWeek, scheduleMap]);
   const leaguePositionFilters = useMemo(
     () => getLeaguePositionFilters(league?.roster_positions),
     [league?.roster_positions],
@@ -788,16 +868,18 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
   );
   const fantasySeasonWeeks = useMemo(() => {
     // Desktop uses the league's complete matchup span so the grid preserves
-    // the season's shape: future empty weeks and scheduled team byes remain
-    // visible after the latest completed week. Mobile keeps its existing
-    // completed-week density and horizontal footprint.
-    const maxWeek = useMobilePreviewSheet
-      ? (Number.isFinite(lastScoredLeg) && lastScoredLeg > 0
-        ? Math.min(lastScoredLeg, 18)
-        : 17)
+    // the season's shape. Keep the same full span on mobile so upcoming
+    // opponents and bye weeks are visible by default.
+    const leagueWeeks = Array.from({ length: maxFantasyWeek }, (_, i) => i + 1);
+    const latestCompletedWeek = getHeatmapLatestCompletedWeek(scheduleMap, leagueWeeks);
+    const fallbackWeek = Number.isFinite(lastScoredLeg) && lastScoredLeg > 0
+      ? Math.min(lastScoredLeg, maxFantasyWeek)
+      : Math.min(17, maxFantasyWeek);
+    const maxWeek = useMobilePreviewSheet && !showFutureOpponents
+      ? (latestCompletedWeek ?? fallbackWeek)
       : maxFantasyWeek;
     return Array.from({ length: maxWeek }, (_, i) => i + 1);
-  }, [lastScoredLeg, maxFantasyWeek, useMobilePreviewSheet]);
+  }, [lastScoredLeg, maxFantasyWeek, scheduleMap, showFutureOpponents, useMobilePreviewSheet]);
 
   const localRouteState = useMemo(() => ({
     viewMode,
@@ -807,6 +889,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
     defenseStatMode: defStatMode,
     scope: heatmapScope,
     location: locationFilter,
+    showFutureOpponents,
     sortKey,
     sortDir,
     teamSort,
@@ -820,6 +903,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
     defStatMode,
     heatmapScope,
     locationFilter,
+    showFutureOpponents,
     sortKey,
     sortDir,
     teamSort,
@@ -837,6 +921,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
       defenseStatMode: routeState.defenseStatMode ?? 'pts',
       scope: routeState.scope ?? 'overall',
       location: routeState.location ?? 'all',
+      showFutureOpponents: Boolean(routeState.showFutureOpponents ?? true),
       sortKey: routeState.sortKey ?? 'avg',
       sortDir: routeState.sortDir ?? 'desc',
       teamSort: routeState.teamSort ?? 'alpha',
@@ -861,6 +946,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
     setDefStatMode(normalizedIncomingRouteState.defenseStatMode);
     setHeatmapScope(normalizedIncomingRouteState.scope);
     setLocationFilter(normalizedIncomingRouteState.location);
+    setShowFutureOpponents(normalizedIncomingRouteState.showFutureOpponents);
     setSortKey(normalizedIncomingRouteState.sortKey);
     setSortDir(normalizedIncomingRouteState.sortDir);
     setTeamSort(normalizedIncomingRouteState.teamSort);
@@ -948,14 +1034,16 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
     if (statsEnhancing) return null;
     if (!weeklyStats || !players || !scheduleMap) return null;
     if (statMode === 'game_score' || statMode === 'vegas_odds') return {};
-    return getCachedOffenseAllowedTable(weeklyStats, players, scheduleMap, activeScoringSettings, resolveHeatmapOffenseStatMode(statMode, pos));
+    const offenseStatMode = statMode === 'pts_allowed' ? 'pts' : statMode;
+    return getCachedOffenseAllowedTable(weeklyStats, players, scheduleMap, activeScoringSettings, resolveHeatmapOffenseStatMode(offenseStatMode, pos));
   }, [statsEnhancing, weeklyStats, players, scheduleMap, activeScoringSettings, statMode, pos]);
 
   // Defense-scored table: keyed by the defensive player's own team
   const defenseScoredTable = useMemo(() => {
     if (statsEnhancing) return null;
     if (!weeklyStats || !players || !scheduleMap) return null;
-    return getCachedDefenseScoredTable(weeklyStats, players, scheduleMap, activeScoringSettings, defStatMode);
+    const defenseStatMode = defStatMode === 'pts_allowed' ? 'pts' : defStatMode;
+    return getCachedDefenseScoredTable(weeklyStats, players, scheduleMap, activeScoringSettings, defenseStatMode);
   }, [statsEnhancing, weeklyStats, players, scheduleMap, activeScoringSettings, defStatMode]);
 
   const activeTable = viewMode === 'offense' ? offenseAllowedTable : defenseScoredTable;
@@ -966,7 +1054,23 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
     () => new Set(activePositions.filter(position => position !== 'ALL')),
     [activePositions],
   );
-  const isGameStatMode = SHARED_GAME_STAT_MODES.has(statMode);
+  const isGameStatMode = SHARED_GAME_STAT_MODES.has(viewMode === 'offense' ? statMode : defStatMode);
+  const isFantasyPointsAllowed = viewMode === 'offense'
+    ? statMode === 'pts_allowed'
+    : !isGameStatMode && defStatMode === 'pts_allowed';
+
+  const matchupOffenseTable = useMemo(() => {
+    if (statsEnhancing || !weeklyStats || !players || !scheduleMap) return null;
+    const offenseStatMode = statMode === 'pts_allowed' ? 'pts' : statMode;
+    const resolvedStatMode = resolveHeatmapOffenseStatMode(offenseStatMode, pos);
+    return getCachedOffenseAllowedTable(weeklyStats, players, scheduleMap, activeScoringSettings, resolvedStatMode);
+  }, [statsEnhancing, weeklyStats, players, scheduleMap, activeScoringSettings, statMode, pos]);
+
+  const matchupDefenseTable = useMemo(() => {
+    if (statsEnhancing || !weeklyStats || !players || !scheduleMap) return null;
+    const defenseStatMode = defStatMode === 'pts_allowed' ? 'pts' : defStatMode;
+    return getCachedDefenseScoredTable(weeklyStats, players, scheduleMap, activeScoringSettings, defenseStatMode);
+  }, [statsEnhancing, weeklyStats, players, scheduleMap, activeScoringSettings, defStatMode]);
 
   // ── Rows ───────────────────────────────────────────────────────────────────
 
@@ -977,6 +1081,29 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
     if (!entry) return false;
     return locationFilter === 'home' ? entry.home === true : entry.home === false;
   }, [locationFilter, scheduleMap]);
+
+  const matchupRatings = useMemo(() => {
+    if (isGameStatMode) return {};
+    const scoringTable = viewMode === 'offense' ? matchupOffenseTable : matchupDefenseTable;
+    const positions = viewMode === 'offense' ? offensePositions : defensePositions;
+    if (!scoringTable) return {};
+    return buildHeatmapMatchupRatings({
+      positionTable: scoringTable,
+      scheduleMap,
+      teams: ALL_TEAMS,
+      positions: positions.filter(position => position !== 'ALL'),
+      weeks: fantasySeasonWeeks,
+      window: matchupWindow,
+    });
+  }, [defensePositions, defStatMode, fantasySeasonWeeks, isGameStatMode, matchupDefenseTable, matchupOffenseTable, matchupWindow, offensePositions, scheduleMap, statMode, viewMode]);
+
+  const isFutureMatchupWeek = useCallback((week) => {
+    const weekSchedule = scheduleMap?.[week] ?? scheduleMap?.[String(week)] ?? null;
+    const games = Object.values(weekSchedule ?? {});
+    return games.length > 0
+      && games.every(game => !isFinalScheduleGame(game))
+      && games.some(game => Boolean(game?.opp));
+  }, [scheduleMap]);
 
   const baseRows = useMemo(() => {
     // Vegas Odds mode:
@@ -1019,11 +1146,11 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
             if (entry?.ptsAgainst != null && weekMatchesLocation(team, w)) weekPts[w] = entry.ptsAgainst;
           }
         }
-        const total = Object.values(weekPts).reduce((s, v) => s + v, 0);
-        const weeksPlayed = scheduleMap
-          ? getHeatmapCompletedGameCount(scheduleMap, team, fantasySeasonWeeks, weekMatchesLocation)
-          : Object.keys(weekPts).length;
-        const avg = weeksPlayed > 0 && Object.keys(weekPts).length > 0 ? total / weeksPlayed : null;
+        const completedWeeks = scheduleMap
+          ? getHeatmapCompletedGameWeeks(scheduleMap, team, fantasySeasonWeeks, weekMatchesLocation)
+          : Object.keys(weekPts);
+        const total = completedWeeks.reduce((sum, week) => sum + (weekPts[week] ?? 0), 0);
+        const avg = completedWeeks.length > 0 ? total / completedWeeks.length : null;
         return { team, weekPts, avg };
       });
     }
@@ -1032,27 +1159,31 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
     return ALL_TEAMS.map(team => {
       let weekData = {};
       if (activeTable) {
-        const teamData = activeTable[team] ?? {};
-        if (activePos === 'ALL') {
-          for (const p of posList) {
-            for (const [w, v] of Object.entries(teamData[p] ?? {})) {
-              if (weekMatchesLocation(team, w)) weekData[w] = (weekData[w] ?? 0) + v;
-            }
-          }
-        } else {
-          for (const [w, v] of Object.entries(teamData[activePos] ?? {})) {
-            if (weekMatchesLocation(team, w)) weekData[w] = v;
-          }
+        // Allowed modes credit the opponent's same-position fantasy points to
+        // the team defending against them.
+        for (const week of fantasySeasonWeeks) {
+          if (!weekMatchesLocation(team, week)) continue;
+          const scoringTeam = isFantasyPointsAllowed
+            ? scheduleMap?.[week]?.[team]?.opp?.toUpperCase()
+            : team;
+          if (!scoringTeam) continue;
+          const teamData = activeTable[scoringTeam] ?? {};
+          const positions = activePos === 'ALL' ? posList : [activePos];
+          const value = positions.reduce(
+            (sum, position) => sum + (teamData[position]?.[week] ?? 0),
+            0,
+          );
+          if (value > 0) weekData[week] = value;
         }
       }
-      const total = Object.values(weekData).reduce((s, v) => s + v, 0);
-      const weeksPlayed = scheduleMap
-        ? getHeatmapCompletedGameCount(scheduleMap, team, fantasySeasonWeeks, weekMatchesLocation)
-        : Object.keys(weekData).length;
-      const avg = weeksPlayed > 0 && Object.keys(weekData).length > 0 ? total / weeksPlayed : null;
+      const completedWeeks = scheduleMap
+        ? getHeatmapCompletedGameWeeks(scheduleMap, team, fantasySeasonWeeks, weekMatchesLocation)
+        : Object.keys(weekData);
+      const total = completedWeeks.reduce((sum, week) => sum + (weekData[week] ?? 0), 0);
+      const avg = completedWeeks.length > 0 ? total / completedWeeks.length : null;
       return { team, weekPts: weekData, avg };
     });
-  }, [activeTable, activePos, activePositions, viewMode, statMode, scheduleMap, weekMatchesLocation, vegasOddsView, fantasySeasonWeeks]);
+  }, [activeTable, activePos, activePositions, viewMode, statMode, defStatMode, isFantasyPointsAllowed, scheduleMap, weekMatchesLocation, vegasOddsView, fantasySeasonWeeks]);
 
   const rows = useMemo(() => {
     if (sortKey === 'team') {
@@ -1067,6 +1198,13 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
         return a.team.localeCompare(b.team);
       });
     }
+    const sortByMatchupRank = !isGameStatMode
+      && activePos !== 'ALL'
+      && showFutureOpponents
+      && isFutureMatchupWeek(sortKey);
+    if (sortByMatchupRank) {
+      return sortHeatmapRowsByMatchupRank(baseRows, matchupRatings, sortKey, activePos, sortDir);
+    }
     return [...baseRows].sort((a, b) => {
       const aVal = sortKey === 'avg' ? a.avg : a.weekPts[sortKey];
       const bVal = sortKey === 'avg' ? b.avg : b.weekPts[sortKey];
@@ -1075,7 +1213,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
       if (bVal == null) return -1;
       return sortDir === 'desc' ? bVal - aVal : aVal - bVal;
     });
-  }, [baseRows, sortKey, sortDir, teamSort]);
+  }, [activePos, baseRows, isFutureMatchupWeek, isGameStatMode, matchupRatings, showFutureOpponents, sortKey, sortDir, teamSort]);
 
   // Computed from ALL_TEAMS (module constant) with empty deps so it never
   // recomputes when sort/filter state changes — keeps column width stable.
@@ -1118,8 +1256,15 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
 
   const handleSort = useCallback((key) => {
     if (sortKey === key) setSortDir(d => d === 'desc' ? 'asc' : 'desc');
-    else { setSortKey(key); setSortDir('desc'); }
-  }, [sortKey]);
+    else {
+      setSortKey(key);
+      const shouldSortByMatchupRank = !isGameStatMode
+        && activePos !== 'ALL'
+        && showFutureOpponents
+        && isFutureMatchupWeek(key);
+      setSortDir(shouldSortByMatchupRank ? 'asc' : 'desc');
+    }
+  }, [activePos, isFutureMatchupWeek, isGameStatMode, showFutureOpponents, sortKey]);
 
   const resetSort = useCallback(() => {
     setSortKey('avg');
@@ -1132,8 +1277,18 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
     setSortKey('team');
   }, []);
 
-  const handleCellDrilldown = useCallback((team, week) => {
-    setDrilldown({ team, week });
+  const handleCellDrilldown = useCallback((team, week, isFutureOpponent = false) => {
+    futurePlayerNavigationTokenRef.current += 1;
+    setFuturePlayerNavigationId(null);
+    setFuturePlayerNavigationError(null);
+    setDrilldown({ team, week, isFutureOpponent });
+  }, []);
+
+  const handleDrilldownClose = useCallback(() => {
+    futurePlayerNavigationTokenRef.current += 1;
+    setFuturePlayerNavigationId(null);
+    setFuturePlayerNavigationError(null);
+    setDrilldown(null);
   }, []);
 
   // ── Column averages ────────────────────────────────────────────────────────
@@ -1227,10 +1382,18 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
     if (!drilldown || !weeklyStats || !players) return [];
     if (isGameStatMode) return []; // box score mode
     const { team, week } = drilldown;
+    const pointsAllowed = viewMode === 'offense'
+      ? statMode === 'pts_allowed'
+      : defStatMode === 'pts_allowed';
+    const scoringTeam = pointsAllowed
+      ? scheduleMap?.[week]?.[team]?.opp?.toUpperCase()
+      : team;
+    if (!scoringTeam) return [];
     const results = [];
 
     if (viewMode === 'offense') {
       const matchPos = activePos === 'ALL' ? null : activePos;
+      const offenseStatMode = statMode === 'pts_allowed' ? 'pts' : statMode;
       for (const [playerId, playerWeeks] of Object.entries(weeklyStats)) {
         const player = players[playerId];
         if (!player) continue;
@@ -1251,20 +1414,23 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
         }
         if (!playerTeam) continue;
 
-        // Only show players who were on team T's own roster this week.
-        if (playerTeam !== team) continue;
+        // Show the selected team's own scorers, or its opponent's scorers for Allowed.
+        if (playerTeam !== scoringTeam) continue;
 
-        const val = getHeatmapOffenseStatValue(wEntry, activeScoringSettings, player.position, resolveHeatmapOffenseStatMode(statMode, activePos));
+        const val = getHeatmapOffenseStatValue(wEntry, activeScoringSettings, player.position, resolveHeatmapOffenseStatMode(offenseStatMode, activePos));
         if (val <= 0) continue;
-        const breakdown = statMode === 'pts' ? getScoreBreakdown(wEntry, activeScoringSettings, player.position) : null;
+        const breakdown = statMode === 'pts' || statMode === 'pts_allowed'
+          ? getScoreBreakdown(wEntry, activeScoringSettings, player.position)
+          : null;
         const name = player.full_name || `${player.first_name ?? ''} ${player.last_name ?? ''}`.trim() || playerId;
         const teamSource = wEntry._teamSource ?? 'fallback';
         results.push({ playerId, name, position: player.position, val, breakdown, teamSource });
       }
     } else {
-      // Defense scored: players who scored FOR that team
+      // Defense positions use the same own-team versus opponent attribution.
       const matchNorm = activePos === 'ALL' ? null : activePos;
-      const defMode = DEF_STAT_MODES.find(m => m.id === defStatMode);
+      const effectiveDefStatMode = defStatMode === 'pts_allowed' ? 'pts' : defStatMode;
+      const defMode = DEF_STAT_MODES.find(m => m.id === effectiveDefStatMode);
       const getDefVal = defMode?.statKey
         ? (wEntry) => getModeStatValue(wEntry, defMode)
         : (wEntry, pos) => calcPoints(wEntry, activeScoringSettings, pos);
@@ -1286,11 +1452,13 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
           const enhancedEntry = playerWeeks.find(w => w._teamSource === 'espn' && w.team);
           playerTeam = enhancedEntry?.team?.toUpperCase() ?? player.team?.toUpperCase();
         }
-        if (playerTeam !== team) continue;
+        if (playerTeam !== scoringTeam) continue;
 
         const val = getDefVal(wEntry, player.position);
         if (val <= 0) continue;
-        const breakdown = defStatMode === 'pts' ? getScoreBreakdown(wEntry, activeScoringSettings, player.position) : null;
+        const breakdown = effectiveDefStatMode === 'pts'
+          ? getScoreBreakdown(wEntry, activeScoringSettings, player.position)
+          : null;
         const name = player.full_name || `${player.first_name ?? ''} ${player.last_name ?? ''}`.trim() || playerId;
         const teamSource = wEntry._teamSource ?? 'fallback';
         results.push({ playerId, name, position: player.position, val, breakdown, teamSource });
@@ -1299,6 +1467,132 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
 
     return results.sort((a, b) => b.val - a.val);
   }, [drilldown, weeklyStats, players, viewMode, activePos, activePositionSet, statMode, defStatMode, activeScoringSettings, scheduleMap, isGameStatMode]);
+
+  const futureOpponentPlayers = useMemo(() => {
+    if (!drilldown?.isFutureOpponent || isGameStatMode || !players) return [];
+
+    const { team, week } = drilldown;
+    const fantasyPointsMode = viewMode === 'offense'
+      ? statMode === 'pts' || statMode === 'pts_allowed'
+      : defStatMode === 'pts' || defStatMode === 'pts_allowed';
+    const offenseMetricMode = statMode === 'pts_allowed' ? 'pts' : statMode;
+    const defenseMetricMode = defStatMode === 'pts_allowed' ? 'pts' : defStatMode;
+    const effectiveOffenseMetricMode = resolveHeatmapOffenseStatMode(offenseMetricMode, activePos);
+    const defenseMetric = DEF_STAT_MODES.find(mode => mode.id === defenseMetricMode);
+    const metricLabel = viewMode === 'offense'
+      ? (offenseStatModes.find(mode => mode.id === statMode)?.label ?? 'selected stat')
+      : (defenseStatModes.find(mode => mode.id === defStatMode)?.label ?? 'selected stat');
+    const averageLabel = fantasyPointsMode
+      ? 'PPG'
+      : (FUTURE_STAT_AVERAGE_LABELS[viewMode === 'offense' ? offenseMetricMode : defenseMetricMode] ?? 'Per game');
+    const pointsAllowed = viewMode === 'offense'
+      ? statMode === 'pts_allowed'
+      : defStatMode === 'pts_allowed';
+    const scheduledOpponent = scheduleMap?.[week]?.[team]?.opp?.toUpperCase();
+    const scoringTeam = pointsAllowed ? scheduledOpponent : team;
+    if (!scoringTeam) return [];
+
+    const results = [];
+    for (const [playerId, player] of Object.entries(players)) {
+      if (!isWaiverEligiblePlayerRecord(player)) continue;
+      if (player.team?.toUpperCase() !== scoringTeam) continue;
+
+      const rawPosition = String(player.position ?? '').toUpperCase();
+      const position = viewMode === 'offense' ? rawPosition : normDefPos(rawPosition);
+      if (!position || !activePositionSet.has(position)) continue;
+      if (activePos !== 'ALL' && position !== activePos) continue;
+
+      const gameRows = latestCompletedFantasyWeek == null
+        ? []
+        : buildPlayerFormRows({
+            playerId,
+            player,
+            weeklyStats,
+            scheduleMap,
+            scoringSettings: activeScoringSettings,
+            throughWeek: latestCompletedFantasyWeek,
+          });
+      const weeklyEntries = new Map((weeklyStats?.[playerId] ?? []).map(entry => [Number(entry.week), entry]));
+      const metricValues = gameRows.map(row => {
+        if (fantasyPointsMode) return row.points;
+        const entry = weeklyEntries.get(Number(row.week));
+        if (!entry) return null;
+        return viewMode === 'offense'
+          ? getHeatmapOffenseStatValue(entry, activeScoringSettings, player.position, effectiveOffenseMetricMode)
+          : (defenseMetric?.statKey
+            ? getModeStatValue(entry, defenseMetric)
+            : calcPoints(entry, activeScoringSettings, player.position));
+      }).filter(value => Number.isFinite(Number(value))).map(Number);
+      const totalMetric = metricValues.length
+        ? metricValues.reduce((total, value) => total + value, 0)
+        : null;
+      const avgMetric = metricValues.length ? totalMetric / metricValues.length : null;
+      const name = player.full_name || `${player.first_name ?? ''} ${player.last_name ?? ''}`.trim() || playerId;
+      results.push({
+        playerId,
+        name,
+        position: rawPosition,
+        team: scoringTeam,
+        isRostered: rosteredPlayerIds.has(String(playerId)),
+        totalMetric,
+        avgMetric,
+        averageLabel,
+        metricLabel,
+        fantasyPointsMode,
+      });
+    }
+
+    return results.sort((left, right) => {
+      if (left.avgMetric == null && right.avgMetric != null) return 1;
+      if (left.avgMetric != null && right.avgMetric == null) return -1;
+      return (right.avgMetric ?? 0) - (left.avgMetric ?? 0) || left.name.localeCompare(right.name);
+    });
+  }, [
+    drilldown,
+    isGameStatMode,
+    players,
+    viewMode,
+    statMode,
+    defStatMode,
+    scheduleMap,
+    activePositionSet,
+    activePos,
+    latestCompletedFantasyWeek,
+    weeklyStats,
+    activeScoringSettings,
+    rosteredPlayerIds,
+  ]);
+
+  const handleFuturePlayerStatsClick = useCallback(async (playerId) => {
+    if (!onViewPlayer) return;
+    if (futurePlayerNavigationId) return;
+    const token = futurePlayerNavigationTokenRef.current + 1;
+    futurePlayerNavigationTokenRef.current = token;
+    setFuturePlayerNavigationId(playerId);
+    setFuturePlayerNavigationError(null);
+    try {
+      const playerMeta = await resolveStatisticsPlayerMetaFromSleeperId(playerId, players, espnIdOverrides);
+      if (futurePlayerNavigationTokenRef.current !== token) return;
+      if (!playerMeta) {
+        const playerName = players?.[playerId]?.full_name || 'This player';
+        setFuturePlayerNavigationError(`Couldn't open ${playerName}. No statistics profile is available yet.`);
+        setFuturePlayerNavigationId(null);
+        return;
+      }
+      onViewPlayer(playerMeta.id, playerMeta);
+    } catch {
+      if (futurePlayerNavigationTokenRef.current === token) {
+        const playerName = players?.[playerId]?.full_name || 'This player';
+        setFuturePlayerNavigationError(`Couldn't open ${playerName}. Try again in a moment.`);
+      }
+    } finally {
+      if (futurePlayerNavigationTokenRef.current === token) setFuturePlayerNavigationId(null);
+    }
+  }, [espnIdOverrides, futurePlayerNavigationId, onViewPlayer, players]);
+
+  const drilldownPlayerCount = drilldown?.isFutureOpponent && !isGameStatMode
+    ? futureOpponentPlayers.length
+    : drilldownPlayers.length;
 
   // ── Game box score (Game Score stat mode) ─────────────────────────────────
 
@@ -1457,11 +1751,17 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
 
     const cells = fantasySeasonWeeks.map((week) => {
       const pts = weekPts[week];
-      const played = scheduleMap?.[week]?.[team] != null;
+      const scheduleGame = scheduleMap?.[week]?.[team] ?? null;
+      const played = scheduleGame != null;
       const matchesLoc = weekMatchesLocation(team, week);
       const isBye = weekGameCounts[week] > 0 && !played;
       const isFiltered = played && !matchesLoc;
-      const clickable = pts != null && !isFiltered;
+      const hasFutureOpponent = showFutureOpponents
+        && scheduleGame?.opp
+        && !isFinalScheduleGame(scheduleGame)
+        && pts == null
+        && !isFiltered;
+      const clickable = (pts != null || hasFutureOpponent) && !isFiltered;
       const style = {
         ...heatmapStyles.cell,
         background: pts != null && !isFiltered ? cellBg(pts, team, week) : rowBg,
@@ -1510,13 +1810,58 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
         };
       }
 
+      if (hasFutureOpponent) {
+        const opponent = String(scheduleGame.opp).toUpperCase();
+        const location = scheduleGame.home === true ? 'vs' : scheduleGame.home === false ? '@' : opponent;
+        const matchupRating = !isGameStatMode && activePos !== 'ALL'
+          ? matchupRatings?.[week]?.[team]?.[activePos]
+          : null;
+        const matchupLabel = scheduleGame.home == null
+          ? `${team} and ${opponent}`
+          : `${team} ${scheduleGame.home === false ? 'at' : 'vs'} ${opponent}`;
+        const sampleLabel = matchupWindow === 'recent' ? 'Last 4 completed games' : 'Season to date';
+        const positionLabel = getPositionFilterLabel(activePos);
+        const matchupPositionLabel = viewMode === 'defense'
+          ? (activePos === 'DEF' ? 'D/ST' : `IDP ${positionLabel}`)
+          : positionLabel;
+        const pointsAllowedPositionLabel = activePos === 'DEF'
+          ? 'opposing D/STs'
+          : `opposing IDP ${positionLabel} players`;
+        const title = matchupRating
+          ? [
+              `Week ${week} · ${matchupLabel}`,
+              viewMode === 'offense'
+                ? `${team} ${positionLabel} offense ranks ${formatOrdinalRank(matchupRating.teamRank)} by fantasy points scored (${matchupRating.teamAverage.toFixed(1)} PPG)`
+                : `${team} ${matchupPositionLabel} ranks ${formatOrdinalRank(matchupRating.teamRank)} by fantasy points scored (${matchupRating.teamAverage.toFixed(1)} PPG)`,
+              viewMode === 'offense'
+                ? `${opponent} defense vs ${positionLabel}: ranks ${formatOrdinalRank(matchupRating.defenseRank)} by points allowed (${matchupRating.opponentPointsAllowedAverage.toFixed(1)} PPG)`
+                : `${opponent} offense ranks ${formatOrdinalRank(matchupRating.opponentPointsAllowedRank)} by fantasy points allowed to ${pointsAllowedPositionLabel} (${matchupRating.opponentPointsAllowedAverage.toFixed(1)} PPG; 1st allows most)`,
+              `${formatOrdinalRank(matchupRating.rank)} most favorable matchup for ${matchupPositionLabel} in Week ${week}`,
+              `Sample: ${sampleLabel}`,
+            ].join('\n')
+          : `Week ${week} · ${matchupLabel}`;
+        return {
+          week,
+          clickable,
+          style,
+          kind: 'opponent',
+          primary: matchupRating ? `#${matchupRating.rank}` : location,
+          secondary: scheduleGame.home == null
+            ? null
+            : matchupRating
+              ? `${location} ${opponent}`
+              : opponent,
+          title,
+        };
+      }
+
       return {
         week,
         clickable: false,
         style,
         // A missing stat/schedule entry is still a real week column. Keep it
-        // visible as an unknown value on every viewport; only valued cells
-        // remain drilldown targets.
+        // visible as an unknown value on every viewport; valued cells and
+        // explicitly shown future matchups remain drilldown targets.
         kind: isBye ? 'bye' : isFiltered ? 'filtered' : played ? 'dash' : 'empty',
       };
     });
@@ -1555,6 +1900,11 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
     heatmapStyles,
     rows,
     scheduleMap,
+    showFutureOpponents,
+    matchupRatings,
+    matchupWindow,
+    activePos,
+    isGameStatMode,
     showAvg,
     sortKey,
     statMode,
@@ -1594,8 +1944,14 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
     if (statMode === 'vegas_odds') {
       summary.push({ id: 'odds-result', label: vegasOddsView === 'ou' ? 'O/U' : 'Spread' });
     }
+    if (showFutureOpponents) {
+      summary.push({ id: 'future-opponents', label: 'Future Opponents' });
+    }
+    if (!isGameStatMode && activePos !== 'ALL') {
+      summary.push({ id: 'matchup-window', label: matchupWindow === 'recent' ? 'Matchup L4' : 'Matchup YTD' });
+    }
     return summary;
-  }, [activeLocationLabel, activePos, activeScopeLabel, activeStatLabel, statMode, vegasOddsView, viewMode]);
+  }, [activeLocationLabel, activePos, activeScopeLabel, activeStatLabel, isGameStatMode, matchupWindow, showFutureOpponents, statMode, vegasOddsView, viewMode]);
 
   const showFilterPanel = filtersOpen;
 
@@ -1612,6 +1968,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
             active={filtersOpen}
             className="companion-filter-toggle companion-heatmap-filter-toggle"
             size="xs"
+            data-tour="heatmap-future-opponents-filters"
             onClick={() => setFiltersOpen(open => !open)}
             aria-label={filtersOpen ? 'Hide Filters' : 'Show Filters'}
             title={filtersOpen ? 'Hide heatmap filters' : 'Show heatmap filters'}
@@ -1729,6 +2086,36 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
             ))}
           </FilterGroup>
 
+          <FilterGroup label="Schedule" labelWidth={heatmapFilterLabelWidth}>
+            <Btn
+              active={showFutureOpponents}
+              onClick={() => setShowFutureOpponents(show => !show)}
+              title="Show upcoming matchups in empty week cells"
+            >
+              Future Opponents
+            </Btn>
+          </FilterGroup>
+
+          {!isGameStatMode && activePos !== 'ALL' && (
+            <FilterGroup label="Matchup Stats" labelWidth={heatmapFilterLabelWidth}>
+              {[
+                { id: 'season', label: 'Season to date' },
+                { id: 'recent', label: 'Recent · 4 games' },
+              ].map(option => (
+                <Btn
+                  key={option.id}
+                  active={matchupWindow === option.id}
+                  onClick={() => setMatchupWindow(option.id)}
+                  title={option.id === 'recent'
+                    ? 'Rank future matchups using each team’s last four completed games, or fewer early in the season.'
+                    : 'Rank future matchups using each team’s completed games this season.'}
+                >
+                  {option.label}
+                </Btn>
+              ))}
+            </FilterGroup>
+          )}
+
           <FilterGroup label="Color" labelWidth={heatmapFilterLabelWidth}>
             {HEATMAP_SCOPES.map(s => {
               const disabled = statMode === 'vegas_odds';
@@ -1827,7 +2214,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
       {/* Drilldown modal */}
       {drilldown && (
         <Modal
-          onClose={() => setDrilldown(null)}
+          onClose={handleDrilldownClose}
           mobileSheet
           ariaLabel="Heatmap drilldown"
           containerClassName="companion-heatmap-drilldown-panel"
@@ -1953,7 +2340,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
                           {viewMode === 'offense'
                             ? offenseStatModes.find(m => m.id === statMode)?.label
                             : defenseStatModes.find(m => m.id === defStatMode)?.label}
-                          {' · '}{drilldownPlayers.length} player{drilldownPlayers.length !== 1 ? 's' : ''}
+                          {' · '}{drilldownPlayerCount} player{drilldownPlayerCount !== 1 ? 's' : ''}
                         </>
                     }
                   </div>
@@ -1961,7 +2348,90 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
               );
             })()}
 
-            {isGameStatMode ? (
+            {drilldown.isFutureOpponent && !isGameStatMode ? (
+              <>
+                <div style={{ fontSize: 'var(--type-label)', color: 'var(--color-label-tertiary)', padding: '0 0 12px' }}>
+                  No Week {drilldown.week} scores yet.
+                  {statsLoading && !weeklyStats
+                    ? ' Loading selected-stat totals and per-game averages.'
+                    : latestCompletedFantasyWeek != null
+                      ? ` ${activeStatLabel} totals and per-game averages through Week ${latestCompletedFantasyWeek}.`
+                      : ' Selected-stat totals and per-game averages will appear after the first completed week.'}
+                </div>
+                {futurePlayerNavigationId && (
+                  <div aria-live="polite" style={{ fontSize: 'var(--type-label)', color: 'var(--color-label-secondary)', padding: '0 0 10px' }}>
+                    Opening {players?.[futurePlayerNavigationId]?.full_name || 'player'} statistics…
+                  </div>
+                )}
+                {futurePlayerNavigationError && (
+                  <div role="alert" style={{ fontSize: 'var(--type-label)', color: 'var(--color-label-secondary)', padding: '0 0 10px' }}>
+                    {futurePlayerNavigationError}
+                  </div>
+                )}
+                {futureOpponentPlayers.length === 0 ? (
+                  <div style={{ fontSize: 'var(--type-label)', color: 'var(--color-label-tertiary)', padding: '8px 0 16px' }}>
+                    No players at this position are listed for this team.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {futureOpponentPlayers.map(({ playerId, name, position, team, isRostered, totalMetric, avgMetric, averageLabel, metricLabel: playerMetricLabel, fantasyPointsMode }) => {
+                      const canNav = Boolean(onViewPlayer);
+                      const isOpeningStats = futurePlayerNavigationId === playerId;
+                      return (
+                        <div
+                          key={playerId}
+                          style={{ padding: '8px 12px', borderRadius: 10, background: 'var(--color-fill)' }}
+                        >
+                          <CompanionPlayerRow
+                            player={{ ...(players?.[playerId] ?? {}), id: playerId, name, position, team }}
+                            darkMode={darkMode}
+                            compact
+                            className="companion-heatmap-future-player-row"
+                            showAccentRail={false}
+                            showTeamLogo={false}
+                            interactive={canNav}
+                            disabled={Boolean(futurePlayerNavigationId)}
+                            onClick={canNav ? () => { void handleFuturePlayerStatsClick(playerId); } : undefined}
+                            metaSegments={[
+                              team,
+                            ]}
+                            identityAccessory={isRostered ? (
+                              <CompanionPlayerLocalContrastText
+                                className="text-[length:var(--type-micro)] font-bold uppercase tracking-[0.12em] leading-none"
+                                title="Rostered"
+                              >
+                                R
+                              </CompanionPlayerLocalContrastText>
+                            ) : null}
+                            columns={[
+                              <CompanionPlayerMetric
+                                key="future-stat-average"
+                                compact
+                                align="end"
+                                value={totalMetric == null
+                                  ? '—'
+                                  : fantasyPointsMode
+                                    ? totalMetric.toFixed(1)
+                                    : Math.round(totalMetric).toLocaleString()}
+                                label={avgMetric == null ? `— ${averageLabel}` : `${avgMetric.toFixed(1)} ${averageLabel}`}
+                                title={`Total ${playerMetricLabel.toLowerCase()} and average ${playerMetricLabel.toLowerCase()} per game through the latest completed week.`}
+                                pending={(statsLoading && !weeklyStats) || isOpeningStats}
+                              />,
+                            ]}
+                            gridTemplate="34px auto minmax(0, 1fr) auto"
+                            style={{
+                              minHeight: 52,
+                              borderRadius: 0,
+                              borderLeftWidth: 3,
+                            }}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
+            ) : isGameStatMode ? (
               /* ── Box Score ── */
               gameBoxScore ? (
                 <>
@@ -2075,12 +2545,12 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
                 </>
               ) : (
                 <div style={{ fontSize: 'var(--type-label)', color: 'var(--color-label-tertiary)', padding: '16px 0' }}>
-                  No score data available.
+                  {drilldown.isFutureOpponent ? 'No weekly scores yet.' : 'No score data available.'}
                 </div>
               )
             ) : drilldownPlayers.length === 0 ? (
               <div style={{ fontSize: 'var(--type-label)', color: 'var(--color-label-tertiary)', padding: '16px 0' }}>
-                No data found for this matchup.
+                {drilldown.isFutureOpponent ? 'No weekly scores yet.' : 'No data found for this matchup.'}
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>

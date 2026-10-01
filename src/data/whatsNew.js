@@ -578,4 +578,23 @@ export const WHATS_NEW = [
       },
     ],
   },
+  {
+    version: '9.2.0',
+    title: 'Heatmap Matchups & Rankings Filters',
+    features: [
+      {
+        id: 'heatmap-future-matchups',
+        name: 'Heatmap future matchups',
+        description: 'See upcoming opponents and open matchup details with active players measured by the selected stat.',
+        steps: [{
+          route: { activeTab: 'fantasy', companionView: 'heatmap' },
+          anchor: '[data-tour="heatmap-future-opponents-filters"]',
+          anchorMobile: null,
+          title: 'Explore upcoming matchups',
+          body: 'Open Heatmap filters to show upcoming opponents across the season. Select a future matchup to review active players and their totals or per-game averages for the chosen stat.',
+          placement: 'auto',
+        }],
+      },
+    ],
+  },
 ];

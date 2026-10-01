@@ -128,7 +128,7 @@ function getPlayerName(player, playerId) {
   return player?.full_name || `${player?.first_name ?? ''} ${player?.last_name ?? ''}`.trim() || playerId;
 }
 
-function getDefenseStatValue(wEntry, stat) {
+export function getDefenseStatValue(wEntry, stat) {
   switch (stat) {
     // Passing is excluded from the ALL totals: each completed pass is already the receiver's
     // rec_yd/rec_td, so adding the QB's pass_yd/pass_td would count it twice.
@@ -327,6 +327,76 @@ export function filterDefenseRankingRows(rows, query) {
   return rows.filter(row => row.team.includes(value));
 }
 
+/**
+ * Every team's own offensive rank at producing the given stat, as a snapshot
+ * through `throughWeek` (inclusive). Mirrors buildDefenseRankingRows' allowed
+ * side but attributes production to the offense's own team instead of the
+ * opponent, so a past week's opponent strength can be read as it stood at the
+ * time rather than diluted or inflated by the full season since.
+ */
+export function buildOffenseStrengthRanking({
+  weeklyStats,
+  players,
+  scheduleMap,
+  scoringSettings,
+  position = DEFAULT_DEFENSE_RANKING_STATE.position,
+  mode = DEFAULT_DEFENSE_RANKING_STATE.mode,
+  stat = DEFAULT_DEFENSE_RANKING_STATE.stat,
+  teams = [],
+  throughWeek = null,
+}) {
+  const normalizedPosition = normalizeDefenseRankingPosition(position);
+  const normalizedMode = normalizeDefenseRankingMode(mode);
+  const normalizedStat = normalizeDefenseRankingStat(stat, normalizedPosition);
+  const allTeams = teams.map(team => String(team).toUpperCase());
+  const maxWeek = Number.isFinite(Number(throughWeek)) && throughWeek != null ? Number(throughWeek) : Infinity;
+  const allowedPositions = normalizedPosition === 'ALL'
+    ? DEFENSE_RANKING_PLAYER_POSITIONS
+    : [normalizedPosition];
+
+  const playedWeeksByTeam = buildPlayedWeeksByTeam(weeklyStats, players, scheduleMap);
+  const limitedPlayedWeeksByTeam = new Map(
+    [...playedWeeksByTeam].map(([team, weeks]) => [team, new Set([...weeks].filter((week) => week <= maxWeek))]),
+  );
+  const gamesByTeam = buildGamesByTeam(scheduleMap, allTeams, limitedPlayedWeeksByTeam);
+
+  const totalByTeam = new Map(allTeams.map((team) => [team, 0]));
+  for (const [playerId, playerWeeks] of Object.entries(weeklyStats ?? {})) {
+    const player = players?.[playerId];
+    if (!player || !allowedPositions.includes(player.position)) continue;
+
+    for (const wEntry of playerWeeks ?? []) {
+      const week = Number(wEntry.week);
+      if (!Number.isFinite(week) || week > maxWeek) continue;
+      const offenseTeam = wEntry.team?.toUpperCase() ?? getFallbackPlayerTeam(player, playerWeeks);
+      if (!offenseTeam) continue;
+
+      const value = normalizedMode === 'fantasy'
+        ? calcPoints(wEntry, scoringSettings, player.position)
+        : getDefenseStatValue(wEntry, normalizedStat);
+      if (!Number.isFinite(value) || value <= 0) continue;
+
+      totalByTeam.set(offenseTeam, (totalByTeam.get(offenseTeam) ?? 0) + value);
+    }
+  }
+
+  const rows = allTeams.map((team) => {
+    const games = gamesByTeam[team]?.size ?? 0;
+    const total = totalByTeam.get(team) ?? 0;
+    return { team, total, games, avg: games > 0 ? total / games : null };
+  });
+
+  // Offense strength ranks descending — rank 1 produces the most.
+  const ranked = [...rows].sort((a, b) => {
+    if (a.avg == null && b.avg == null) return a.team.localeCompare(b.team);
+    if (a.avg == null) return 1;
+    if (b.avg == null) return -1;
+    return (b.avg - a.avg) || a.team.localeCompare(b.team);
+  });
+  const rankByTeam = new Map(ranked.map((row, index) => [row.team, row.avg != null ? index + 1 : null]));
+
+  return new Map(rows.map((row) => [row.team, { ...row, rank: rankByTeam.get(row.team) }]));
+}
 
 // ── Unit vs unit (Statistics › Schedule NFL matchup drill-in) ────────────────
 // Each unit is measured the same way on both sides of the ball: an offense's
