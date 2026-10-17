@@ -47,6 +47,9 @@ export default function GameWeekExportModal({ initialWeek = null, onClose }) {
   const [includeHistory, setIncludeHistory] = useState(true);
   const [includeMarketValues, setIncludeMarketValues] = useState(true);
   const [nflDetail, setNflDetail] = useState('box_score');
+  const [exportMode, setExportMode] = useState('full');
+  const fantasyPointsOnly = exportMode === 'fantasy_points_only';
+  const resultFantasyPointsOnly = result?.scope?.mode === 'fantasy_points_only';
 
   const handleClose = () => {
     if (busy) cancel();
@@ -55,21 +58,24 @@ export default function GameWeekExportModal({ initialWeek = null, onClose }) {
 
   const handleExport = async () => {
     try {
-      await runExport({ week, includeHistory, includeMarketValues, nflDetail });
+      await runExport({ week, includeHistory, includeMarketValues, nflDetail, exportMode });
     } catch {
       // The hook owns the visible error state. Keep the sheet open so the user
       // can change the scope or retry without losing their selections.
     }
   };
 
-  const coverageRows = result ? [
+  const coverageRows = result ? (resultFantasyPointsOnly ? [
+    ['Player fantasy points', result.coverage?.weeklyPlayerStats?.status],
+    ['Team scores and outcomes', result.coverage?.fantasyMatchups?.status],
+  ] : [
     ['Player stats', result.coverage?.weeklyPlayerStats?.status],
     ['Fantasy outcomes', result.coverage?.fantasyMatchups?.status],
     ['NFL scoreboard', result.coverage?.nflGames?.status],
     ['NFL box scores', result.coverage?.nflBoxScores],
     ['League records', result.coverage?.leagueHistory?.status],
     ['Market values', result.coverage?.marketValues?.status],
-  ] : [];
+  ]) : [];
 
   return (
     <Modal
@@ -84,8 +90,9 @@ export default function GameWeekExportModal({ initialWeek = null, onClose }) {
           <span className="game-week-export__eyebrow">Fantasy / Actions</span>
           <h2>Stats Export</h2>
           <p>
-            Download one stable JSON handoff with the week&apos;s fantasy evidence,
-            records, NFL context, and source coverage for your LLM.
+            {fantasyPointsOnly
+              ? 'Download player fantasy totals, individual scores, team scores, and matchup outcomes for the selected week.'
+              : 'Download the week’s fantasy evidence, records, NFL context, and source coverage as a JSON file.'}
           </p>
         </div>
         <button
@@ -121,41 +128,58 @@ export default function GameWeekExportModal({ initialWeek = null, onClose }) {
           </label>
         </div>
 
-        <div className="game-week-export__options">
-          <label className="game-week-export__check-row">
-            <input
-              type="checkbox"
-              checked={includeHistory}
-              onChange={(event) => setIncludeHistory(event.target.checked)}
-              disabled={busy}
-            />
-            <span>
-              <strong>League history and records</strong>
-              <small>Include linked seasons, standings, champions, rivalries, and record book evidence.</small>
-            </span>
-          </label>
-          <label className="game-week-export__check-row">
-            <input
-              type="checkbox"
-              checked={includeMarketValues}
-              onChange={(event) => setIncludeMarketValues(event.target.checked)}
-              disabled={busy}
-            />
-            <span>
-              <strong>Current market values</strong>
-              <small>Include a point-in-time KeepTradeCut snapshot when the source is available.</small>
-            </span>
-          </label>
-        </div>
-
         <label className="game-week-export__detail-field">
-          <span className="game-week-export__section-label">NFL detail</span>
-          <select value={nflDetail} onChange={(event) => setNflDetail(event.target.value)} disabled={busy}>
-            <option value="box_score">Scoreboard + box scores</option>
-            <option value="full_play_by_play">Scoreboard + box scores + play-by-play</option>
+          <span className="game-week-export__section-label">Export contents</span>
+          <select value={exportMode} onChange={(event) => setExportMode(event.target.value)} disabled={busy}>
+            <option value="full">Full stats export</option>
+            <option value="fantasy_points_only">Fantasy points only</option>
           </select>
-          <small>Paid provider capabilities and local quota can make detail partial; coverage is recorded in the file.</small>
+          <small>
+            {fantasyPointsOnly
+              ? 'Includes weekly and season-to-date player totals, individual roster scores, team scores, and matchup results. NFL stats, league history, and market values are excluded.'
+              : 'Includes fantasy player stats, league records, NFL game data, and optional market values.'}
+          </small>
         </label>
+
+        {!fantasyPointsOnly && (
+          <>
+            <div className="game-week-export__options">
+              <label className="game-week-export__check-row">
+                <input
+                  type="checkbox"
+                  checked={includeHistory}
+                  onChange={(event) => setIncludeHistory(event.target.checked)}
+                  disabled={busy}
+                />
+                <span>
+                  <strong>League history and records</strong>
+                  <small>Include linked seasons, standings, champions, rivalries, and record book evidence.</small>
+                </span>
+              </label>
+              <label className="game-week-export__check-row">
+                <input
+                  type="checkbox"
+                  checked={includeMarketValues}
+                  onChange={(event) => setIncludeMarketValues(event.target.checked)}
+                  disabled={busy}
+                />
+                <span>
+                  <strong>Current market values</strong>
+                  <small>Include a point-in-time KeepTradeCut snapshot when the source is available.</small>
+                </span>
+              </label>
+            </div>
+
+            <label className="game-week-export__detail-field">
+              <span className="game-week-export__section-label">NFL detail</span>
+              <select value={nflDetail} onChange={(event) => setNflDetail(event.target.value)} disabled={busy}>
+                <option value="box_score">Scoreboard + box scores</option>
+                <option value="full_play_by_play">Scoreboard + box scores + play-by-play</option>
+              </select>
+              <small>Paid provider capabilities and local quota can make detail partial; coverage is recorded in the file.</small>
+            </label>
+          </>
+        )}
 
         {busy && (
           <div className="game-week-export__progress" role="status" aria-live="polite">
@@ -183,10 +207,14 @@ export default function GameWeekExportModal({ initialWeek = null, onClose }) {
           <div className="game-week-export__result" role="status" aria-live="polite">
             <div className="game-week-export__result-heading">
               <div>
-                <span className="game-week-export__section-label">Bundle ready</span>
-                <strong>JSON downloaded</strong>
+                <span className="game-week-export__section-label">Export ready</span>
+                <strong>{resultFantasyPointsOnly ? 'Fantasy points downloaded' : 'JSON downloaded'}</strong>
               </div>
-              <span className="game-week-export__result-badge">{result.storylineSignals?.length ?? 0} signals</span>
+              <span className="game-week-export__result-badge">
+                {resultFantasyPointsOnly
+                  ? `${result.fantasy?.playerTotals?.length ?? 0} players`
+                  : `${result.storylineSignals?.length ?? 0} signals`}
+              </span>
             </div>
             <div className="game-week-export__coverage" aria-label="Export coverage">
               {coverageRows.map(([label, value]) => (

@@ -117,7 +117,7 @@ weights and restrained tracking. Use Figtree for prose and descriptions. See
 | Frame | Maximum | Intended surfaces |
 |---|---:|---|
 | `--page-frame-readable` | `1200px` | Settings, scoring, instructional/detail content |
-| `--page-frame-data` | `1600px` | Rosters, rankings, waiver, schedules, standings, history, activity |
+| `--page-frame-data` | `1600px` | Rosters, rankings, schedules, standings, history, activity |
 | `--page-frame-workbench` | `1920px` | Trade, Draft, Scout, Compare, Matchup, Heatmap |
 
 Use `.page-frame-readable`, `.page-frame-data`, or `.page-frame-workbench` on the route root. Frames center themselves and preserve the normal mobile/tablet flow.

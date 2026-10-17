@@ -383,7 +383,6 @@ export default function CompanionSchedule({
           ) : (
             <LeagueSchedule
               weeks={weeks}
-              summaryMap={summaryMap}
               myRosterId={myRosterId}
               onlyMine={onlyMine}
               onOpenWeek={onOpenWeek}
@@ -566,7 +565,6 @@ function SeasonSchedule({
 
 function LeagueSchedule({
   weeks,
-  summaryMap,
   myRosterId,
   onlyMine,
   onOpenWeek,
@@ -614,8 +612,15 @@ function LeagueSchedule({
           ) : (
             entry.visibleGroups.map((group) => {
               const [left, right] = group.sides;
-              const leftSummary = left ? summaryMap.get(left.rosterId) ?? null : null;
-              const rightSummary = right ? summaryMap.get(right.rosterId) ?? null : null;
+              const leftPoints = Number(left?.row?.points);
+              const rightPoints = Number(right?.row?.points);
+              const scored = group.isPlayed && Number.isFinite(leftPoints) && Number.isFinite(rightPoints);
+              const leftResult = scored
+                ? (leftPoints > rightPoints ? 'W' : leftPoints < rightPoints ? 'L' : 'T')
+                : null;
+              const rightResult = scored
+                ? (rightPoints > leftPoints ? 'W' : rightPoints < leftPoints ? 'L' : 'T')
+                : null;
               const interactive = Boolean(onOpenWeek);
               const Row = interactive ? 'button' : 'div';
               return (
@@ -627,24 +632,26 @@ function LeagueSchedule({
                 >
                   <PairSide
                     side={left}
-                    summary={leftSummary}
                     myRosterId={myRosterId}
                     align="end"
                     played={group.isPlayed}
+                    result={leftResult}
                   />
                   <span className="companion-schedule-pair__center">
                     {right ? (
-                      <span className="companion-schedule-pair__vs">vs</span>
+                      <span className="companion-schedule-pair__vs">
+                        {leftResult === 'T' ? 'Tie' : 'vs'}
+                      </span>
                     ) : (
                       <span className="companion-schedule-pair__vs">Bye</span>
                     )}
                   </span>
                   <PairSide
                     side={right}
-                    summary={rightSummary}
                     myRosterId={myRosterId}
                     align="start"
                     played={group.isPlayed}
+                    result={rightResult}
                   />
                 </Row>
               );
@@ -656,25 +663,27 @@ function LeagueSchedule({
   );
 }
 
-function PairSide({ side, summary, myRosterId, align, played }) {
+function PairSide({ side, myRosterId, align, played, result }) {
   if (!side) return <span className="companion-schedule-pair__side" />;
   const isMe = side.rosterId === myRosterId;
   const points = played && side.row?.points != null ? Number(side.row.points) : null;
+  const scoreMeta = points != null && (
+    <span className="companion-schedule-team__meta companion-schedule-pair__meta">
+      {points.toFixed(1)} pts{result === 'W' && <span className="companion-schedule-winner">Win</span>}
+    </span>
+  );
   return (
-    <span className={`companion-schedule-pair__side companion-schedule-pair__side--${align}`}>
+    <span
+      className={`companion-schedule-pair__side companion-schedule-pair__side--${align}`}
+      data-result={result ?? undefined}
+    >
       {align === 'end' && (
         <span className="companion-schedule-team__copy companion-schedule-team__copy--end">
           <span className="companion-schedule-team__name">
             {isMe && <YouPill />}
             {side.name}
           </span>
-          <span className="companion-schedule-team__meta">
-            {played && points != null
-              ? `${points.toFixed(1)} pts`
-              : summary
-                ? `${summary.recordLabel}${summary.pointsPerGame != null ? ` · ${summary.pointsPerGame.toFixed(1)} PPG` : ''}`
-                : ''}
-          </span>
+          {scoreMeta}
         </span>
       )}
       <TeamMark name={side.name} isMe={isMe} />
@@ -684,13 +693,7 @@ function PairSide({ side, summary, myRosterId, align, played }) {
             {side.name}
             {isMe && <YouPill />}
           </span>
-          <span className="companion-schedule-team__meta">
-            {played && points != null
-              ? `${points.toFixed(1)} pts`
-              : summary
-                ? `${summary.recordLabel}${summary.pointsPerGame != null ? ` · ${summary.pointsPerGame.toFixed(1)} PPG` : ''}`
-                : ''}
-          </span>
+          {scoreMeta}
         </span>
       )}
     </span>

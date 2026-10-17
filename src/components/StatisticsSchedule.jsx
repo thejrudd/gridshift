@@ -33,7 +33,9 @@ import {
   scheduleGameMatchesFilter,
   scheduleHasGames,
 } from '../utils/statisticsSchedule';
+import { buildStatisticsStandings } from '../utils/statisticsStandings.js';
 import { getScoreNetworkLabel } from '../utils/statisticsBroadcasts';
+import { getTeamAbbr } from '../utils/liveScoringFeed.js';
 
 const NflMatchupModal = lazy(() => import('./statistics/schedule/NflMatchupModal.jsx'));
 
@@ -275,8 +277,17 @@ function getSyntheticGameId(game, season, week) {
   return `${season}-W${week}-${awayTeamId}-${homeTeamId}`;
 }
 
+// Synthetic ids from other pages may spell a team differently (WAS vs WSH, LA vs LAR);
+// compare them with both teams normalized to one abbreviation.
+function canonicalSyntheticId(value) {
+  const match = /^(\d{4})-W(\d+)-([A-Za-z]{2,3})-([A-Za-z]{2,3})$/.exec(String(value ?? ''));
+  return match ? `${match[1]}-W${Number(match[2])}-${getTeamAbbr(match[3])}-${getTeamAbbr(match[4])}` : null;
+}
+
 function rowMatchesRouteGame(row, gameId, season = null) {
   if (!row || row.isBye || gameId == null) return false;
+  const routeSynthetic = canonicalSyntheticId(gameId);
+  if (routeSynthetic && routeSynthetic === canonicalSyntheticId(getSyntheticGameId(row.game, season, row.week))) return true;
   return [
     row.id,
     row.game?.espnEventId,
@@ -478,7 +489,7 @@ function IncludePreseasonControl({ checked, onChange }) {
   );
 }
 
-function TeamIdentity({ team, fallbackId, compact = false }) {
+function TeamIdentity({ team, fallbackId, compact = false, recordLabel = null }) {
   const code = getTeamCode(team, fallbackId);
   return (
     <div className={`statistics-schedule-team-identity${compact ? ' statistics-schedule-team-identity--compact' : ''}`}>
@@ -494,13 +505,21 @@ function TeamIdentity({ team, fallbackId, compact = false }) {
       )}
       <div className="statistics-schedule-team-copy">
         <span className="statistics-schedule-team-code">{code}</span>
+        {recordLabel && (
+          <span
+            className="statistics-schedule-team-record"
+            aria-label={`Record entering selected week: ${recordLabel}`}
+          >
+            {recordLabel}
+          </span>
+        )}
         {!compact && <span className="statistics-schedule-team-name">{getTeamName(team, fallbackId)}</span>}
       </div>
     </div>
   );
 }
 
-function GameRow({ game, teamsById, darkMode, season, phase, week, onViewGameStats, onOpenMatchup = null }) {
+function GameRow({ game, teamsById, recordByTeamId, darkMode, season, phase, week, onViewGameStats, onOpenMatchup = null }) {
   const awayTeamId = getScheduleGameTeamId(game, 'away');
   const homeTeamId = getScheduleGameTeamId(game, 'home');
   const awayTeam = teamsById.get(awayTeamId);
@@ -526,9 +545,19 @@ function GameRow({ game, teamsById, darkMode, season, phase, week, onViewGameSta
         <strong>{formatKickoffTime(game.kickoff)}</strong>
       </div>
       <div className="statistics-schedule-matchup">
-        <TeamIdentity team={awayTeam} fallbackId={awayTeamId} compact />
+        <TeamIdentity
+          team={awayTeam}
+          fallbackId={awayTeamId}
+          compact
+          recordLabel={recordByTeamId?.get(awayTeamId) ?? null}
+        />
         <span className="statistics-schedule-at">{game.neutralSite ? 'vs' : '@'}</span>
-        <TeamIdentity team={homeTeam} fallbackId={homeTeamId} compact />
+        <TeamIdentity
+          team={homeTeam}
+          fallbackId={homeTeamId}
+          compact
+          recordLabel={recordByTeamId?.get(homeTeamId) ?? null}
+        />
       </div>
       <div className="statistics-schedule-row-detail">
         <GameResultBadge game={game} />
@@ -544,6 +573,7 @@ function GameRow({ game, teamsById, darkMode, season, phase, week, onViewGameSta
 function WeekScheduleView({
   weekOptions,
   teamsById,
+  scheduleData,
   activeWeek,
   activeFilter,
   onWeekChange,
@@ -562,6 +592,42 @@ function WeekScheduleView({
   const filterLabel = getFilterLabel(activeFilter);
   const filterAvailability = getFilterAvailability(allGames);
   const viewingPreseason = selectedWeekOption?.phase === NFL_SEASON_PHASES.PRESEASON;
+  const recordByTeamId = useMemo(() => {
+    if (!selectedWeekOption) return null;
+    const cutoffWeek = viewingPreseason ? 1 : selectedWeekOption.week;
+    const latestCompletedWeekByTeam = new Map(
+      [...teamsById.keys()].map((teamId) => [teamId, 0]),
+    );
+    const scheduleWeeks = getScheduleWeeks(scheduleData);
+    scheduleWeeks.forEach((entry) => {
+      (entry.games ?? []).forEach((game) => {
+        if (!isFinalScheduleGame(game)) return;
+        if (getScheduleGameScore(game, 'away') == null || getScheduleGameScore(game, 'home') == null) return;
+        [getScheduleGameTeamId(game, 'away'), getScheduleGameTeamId(game, 'home')]
+          .filter((teamId) => teamId && teamsById.has(teamId))
+          .forEach((teamId) => {
+            latestCompletedWeekByTeam.set(
+              teamId,
+              Math.max(latestCompletedWeekByTeam.get(teamId) ?? 0, entry.week),
+            );
+          });
+      });
+    });
+    const scheduleBeforeWeek = {
+      ...scheduleData,
+      weeks: scheduleWeeks.filter((entry) => entry.week < cutoffWeek),
+    };
+    const standings = buildStatisticsStandings({
+      teams: [...teamsById.values()],
+      scheduleData: scheduleBeforeWeek,
+    });
+    return new Map(standings.rows.map((row) => [
+      row.teamId,
+      cutoffWeek <= (latestCompletedWeekByTeam.get(row.teamId) ?? 0) + 1
+        ? (row.ties > 0 ? `${row.wins}-${row.losses}-${row.ties}` : `${row.wins}-${row.losses}`)
+        : null,
+    ]));
+  }, [scheduleData, selectedWeekOption, teamsById, viewingPreseason]);
 
   return (
     <div className="statistics-schedule-view">
@@ -618,6 +684,7 @@ function WeekScheduleView({
                   key={game.id}
                   game={game}
                   teamsById={teamsById}
+                  recordByTeamId={recordByTeamId}
                   darkMode={darkMode}
                   season={season}
                   phase={selectedWeekOption?.phase}
@@ -1547,6 +1614,7 @@ export default function StatisticsSchedule({
         <WeekScheduleView
           weekOptions={weekOptions}
           teamsById={teamsById}
+          scheduleData={scheduleData}
           activeWeek={activeWeek}
           activeFilter={activeFilter}
           onWeekChange={selectWeek}

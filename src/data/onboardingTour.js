@@ -13,7 +13,7 @@ export const ONBOARDING_TOUR = [
           anchor: '[data-tour="tab-companion"]',
           anchorMobile: null,
           title: 'Manage your fantasy teams',
-          body: 'Review rosters, rankings, matchups, waivers, heatmaps, defenses, and scoring settings in one connected workspace.',
+          body: 'Review rosters, rankings, matchups, heatmaps, defenses, and scoring settings in one connected workspace. Rankings also includes unrostered players and their projections.',
           placement: 'auto',
         }],
       },

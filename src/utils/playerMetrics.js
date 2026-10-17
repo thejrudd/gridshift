@@ -602,6 +602,7 @@ export function getGameLogColumns(position) {
     case 'QB':
       return {
         standard: [
+          { label: 'Snap%', key: 'snapPct', decimals: 1, suffix: '%' },
           { label: 'Att',  key: 'passingAttempts' },
           { label: 'Cmp',  key: 'completions' },
           { label: 'PASS', key: 'passingYards' },
@@ -619,15 +620,16 @@ export function getGameLogColumns(position) {
     case 'RB':
       return {
         standard: [
+          { label: 'Snap%', key: 'snapPct', decimals: 1, suffix: '%' },
           { label: 'Car',  key: 'rushingAttempts' },
           { label: 'Rec',  key: 'receptions' },
           { label: 'RUSH', key: 'rushingYards' },
+          { label: 'YPC',  key: 'yardsPerRushAttempt', decimals: 1 },
           { label: 'REC',  key: 'receivingYards' },
           { label: 'TD',   key: 'rushingTouchdowns' },
           { label: 'FUM',  key: 'fumbles' },
         ],
         advanced: [
-          { label: 'YPC',  key: 'yardsPerRushAttempt', decimals: 1 },
           { label: 'YAC',  key: 'receivingYardsAfterCatch', decimals: 1 },
         ],
       };
@@ -635,21 +637,23 @@ export function getGameLogColumns(position) {
     case 'TE':
       return {
         standard: [
+          { label: 'Snap%', key: 'snapPct', decimals: 1, suffix: '%' },
           { label: 'Tgt',  key: 'receivingTargets' },
           { label: 'Rec',  key: 'receptions' },
           { label: 'REC',  key: 'receivingYards' },
+          { label: 'YAC',  key: 'receivingYardsAfterCatch', decimals: 1 },
           { label: 'TD',   key: 'receivingTouchdowns' },
           { label: 'FUM',  key: 'fumbles' },
         ],
         advanced: [
           { label: 'YPR',  key: 'yardsPerReception', decimals: 1 },
-          { label: 'YAC',  key: 'receivingYardsAfterCatch', decimals: 1 },
         ],
       };
     case 'DL':
     case 'LB':
       return {
         standard: [
+          { label: 'Snap%', key: 'snapPct', decimals: 1, suffix: '%' },
           { label: 'Tkl',   key: 'totalTackles' },
           { label: 'Sacks', key: 'sacks', decimals: 1 },
           { label: 'TFL',   key: 'tacklesForLoss', decimals: 1 },
@@ -663,6 +667,7 @@ export function getGameLogColumns(position) {
     case 'DB':
       return {
         standard: [
+          { label: 'Snap%', key: 'snapPct', decimals: 1, suffix: '%' },
           { label: 'Tkl',  key: 'totalTackles' },
           { label: 'INT',  key: 'interceptions' },
           { label: 'PD',   key: 'passesDefended' },
@@ -696,6 +701,7 @@ export function getGameLogColumns(position) {
     case 'K':
       return {
         standard: [
+          { label: 'Snap%', key: 'snapPct', decimals: 1, suffix: '%' },
           { label: 'FGM', key: 'fieldGoalsMade' },
           { label: 'FGA', key: 'fieldGoalAttempts' },
           { label: 'Lng', key: 'longFieldGoalMade', suffix: ' yd' }, // confirmed API name
@@ -707,6 +713,7 @@ export function getGameLogColumns(position) {
     case 'P':
       return {
         standard: [
+          { label: 'Snap%', key: 'snapPct', decimals: 1, suffix: '%' },
           { label: 'Punts', key: 'punts' },
           { label: 'Avg',   key: 'grossAvgPuntYards', decimals: 1 }, // confirmed API name
           { label: 'Net',   key: 'netAvgPuntYards', decimals: 1 },   // confirmed API name
@@ -718,7 +725,13 @@ export function getGameLogColumns(position) {
         ],
       };
     default:
-      return { standard: [{ label: 'Games', key: 'gamesPlayed' }], advanced: [] };
+      return {
+        standard: [
+          { label: 'Snap%', key: 'snapPct', decimals: 1, suffix: '%' },
+          { label: 'Games', key: 'gamesPlayed' },
+        ],
+        advanced: [],
+      };
   }
 }
 

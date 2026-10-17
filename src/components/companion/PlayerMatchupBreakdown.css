@@ -767,13 +767,13 @@
 
 .pmd-cmp-rank-plot {
   position: relative;
-  min-height: 112px;
   margin-top: 14px;
 }
 
 .pmd-cmp-rank-scale {
-  position: absolute;
-  inset: 14px var(--pmd-cmp-rank-gutter, clamp(64px, 8cqw, 72px)) 0;
+  position: relative;
+  height: 44px;
+  margin: 14px var(--pmd-cmp-rank-gutter, clamp(64px, 8cqw, 72px)) 0;
 }
 
 .pmd-cmp-rank-scale .pmd-rail {
@@ -808,7 +808,7 @@
   top: 0;
   z-index: 1;
   width: 0;
-  height: 98px;
+  height: 44px;
 }
 
 .pmd-cmp-rank-avatar {
@@ -820,27 +820,42 @@
   transform: translateX(-50%);
 }
 
+.pmd-cmp-rank-callouts {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: clamp(12px, 4cqw, 32px);
+  margin: 8px var(--pmd-cmp-rank-gutter, clamp(64px, 8cqw, 72px)) 0;
+}
+
+.pmd-cmp-rank-callout {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+  border-color: var(--pmd-cmp-player-color, var(--color-accent));
+}
+
+.pmd-cmp-rank-callout.is-left {
+  align-items: flex-start;
+  border-left: 2px solid;
+  padding-left: 8px;
+  text-align: left;
+}
+
+.pmd-cmp-rank-callout.is-right {
+  align-items: flex-end;
+  border-right: 2px solid;
+  padding-right: 8px;
+  text-align: right;
+}
+
 .pmd-cmp-rank-player__name {
-  position: static;
-  width: 100%;
+  max-width: 100%;
   color: var(--color-label);
   font-size: var(--type-label);
   font-weight: 700;
   line-height: 1.05;
   overflow-wrap: anywhere;
-}
-
-.pmd-cmp-rank-player__identity {
-  position: absolute;
-  top: 48px;
-  left: 0;
-  display: flex;
-  width: min(120px, 30cqw);
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  text-align: center;
-  transform: translateX(-50%);
 }
 
 .pmd-cmp-rank-player__rank {
@@ -853,18 +868,6 @@
 }
 
 .pmd-cmp-rank-player__rank.is-leading { color: var(--color-signature); }
-
-.pmd-cmp-rank-player.is-near-start .pmd-cmp-rank-player__identity {
-  align-items: flex-start;
-  text-align: left;
-  transform: none;
-}
-
-.pmd-cmp-rank-player.is-near-end .pmd-cmp-rank-player__identity {
-  align-items: flex-end;
-  text-align: right;
-  transform: translateX(-100%);
-}
 
 /* ── mirrored form ladder ── */
 
@@ -892,8 +895,9 @@
    which the benchmark caption below would otherwise pull out of line. */
 .pmd-cmp-fcell > .pmd-cmp-ftrack { margin-top: 4px; }
 .pmd-cmp-fmarks { position: relative; height: 1.15em; font-size: var(--type-label); font-weight: 700; line-height: 1; }
-.pmd-cmp-fmarks > span { position: absolute; top: 0; white-space: nowrap; transform: translateX(-50%); }
-.pmd-cmp-fcell.is-left .pmd-cmp-fmarks > span { transform: translateX(50%); }
+.pmd-cmp-fmarks > span { position: absolute; top: 0; left: clamp(18px, var(--pmd-cmp-label-x, 50%), calc(100% - 18px)); white-space: nowrap; transform: translateX(-50%); }
+.pmd-cmp-fmarks.is-collision { height: 2.3em; }
+.pmd-cmp-fmarks.is-collision > .is-target { top: 1.15em; }
 .pmd-cmp-fmarks .is-average { color: var(--color-label-tertiary); }
 .pmd-cmp-fmarks .is-target { color: var(--color-signature); }
 .pmd-cmp-fmarks .is-unavailable { left: 50%; color: var(--color-label-tertiary); transform: translateX(-50%); }

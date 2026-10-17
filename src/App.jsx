@@ -1061,6 +1061,15 @@ function AppInner() {
     applyRoute({ ...appRoute, activeTab: 'fantasy', ...patch }, options);
   }, [appRoute, applyRoute]);
 
+  const openFantasyInjuriesPlayer = useCallback((playerId) => {
+    if (playerId == null || playerId === '') return;
+    applyRoute({
+      activeTab: 'fantasy',
+      companionView: 'injuries',
+      injuriesPlayerId: String(playerId),
+    });
+  }, [applyRoute]);
+
   const navigateLeagueView = useCallback((view) => {
     applyRoute({ activeTab: 'league', leagueView: view });
   }, [applyRoute]);
@@ -1260,13 +1269,15 @@ function AppInner() {
     });
   }, [applyRoute]);
 
-  const navigateToStatisticsScheduleTeam = useCallback((teamId) => {
+  // An optional game id opens that matchup's drill-in on the team's schedule.
+  const navigateToStatisticsScheduleTeam = useCallback((teamId, gameId = null) => {
     if (!teamId) return;
     applyRoute({
       activeTab: 'statistics',
       statisticsView: 'schedule',
       statisticsScheduleMode: 'team',
       statisticsScheduleTeamId: teamId,
+      statisticsScheduleGameId: gameId,
     });
   }, [applyRoute]);
 
@@ -1280,7 +1291,8 @@ function AppInner() {
       statisticsScoresPhase: game?.phase ?? null,
       statisticsScoresWeek: game?.week ?? null,
       statisticsScoresGameId: String(gameId),
-      statisticsScoresSection: 'team',
+      // The player dashboard opens a play's game on Play-by-Play; every other caller opens Team.
+      statisticsScoresSection: game?.section ?? 'team',
       statisticsScoresAwayTeamId: game?.awayTeamId ?? null,
       statisticsScoresHomeTeamId: game?.homeTeamId ?? null,
     });
@@ -1414,6 +1426,15 @@ function AppInner() {
       backContextIdentity,
       mode: STATISTICS_MODES.FANTASY,
     });
+  }, [appRoute, espnIdOverrides, navigateToStatisticsPlayer, sleeperPlayers]);
+
+  // Player dashboard rank strip → another player's statistics page. Back returns
+  // to the player the dot was on.
+  const navigateStatisticsPlayerBySleeperId = useCallback(async (sleeperId, backLabel) => {
+    const playerMeta = await resolveStatisticsPlayerMetaFromSleeperId(sleeperId, sleeperPlayers, espnIdOverrides);
+    if (!playerMeta) return false;
+    navigateToStatisticsPlayer(playerMeta, { backLabel, backRoute: appRoute, mode: STATISTICS_MODES.GAME });
+    return true;
   }, [appRoute, espnIdOverrides, navigateToStatisticsPlayer, sleeperPlayers]);
 
   // Schedule matchup drill-in → player statistics (NFL game stats, not fantasy).
@@ -2389,6 +2410,7 @@ function AppInner() {
               <StatisticsStandings
                 teams={predictionTeams}
                 scheduleData={predictionSchedule}
+                onOpenSchedule={navigateToStatisticsScheduleTeam}
               />
             </Suspense>
           )}
@@ -2408,7 +2430,9 @@ function AppInner() {
               onNavigateHome={navigateToStatisticsHome}
               onNavigateTeam={navigateToStatisticsTeam}
               onNavigatePlayer={navigateToStatisticsPlayer}
+              onOpenPlayerBySleeperId={navigateStatisticsPlayerBySleeperId}
               onViewSchedule={navigateToStatisticsScheduleTeam}
+              onViewGameStats={navigateToStatisticsGame}
               onPlayerModeChange={updateStatisticsMode}
               onOpenFantasyTeam={openFantasyTeamFromStats}
               tradeDisabled={tradeDisabled}
@@ -2628,6 +2652,7 @@ function AppInner() {
                         matchupWeek: appRoute.matchupWeek ?? null,
                         matchupPlayerId: null,
                       }, { replace: true })}
+                      onOpenInjuries={openFantasyInjuriesPlayer}
                       onViewPlayer={(id, meta, options = {}) => {
                         navigateToStatisticsPlayer({ id, ...meta }, {
                           backLabel: 'Matchups',
@@ -2669,7 +2694,14 @@ function AppInner() {
               )}
               {companionView === 'injuries' && (
                 <Suspense fallback={<SectionLoading label="Loading Injuries" />}>
-                  <CompanionInjuries key={`${selectedLeagueId ?? 'none'}:${season ?? 'none'}`} />
+                  <CompanionInjuries
+                    key={`${selectedLeagueId ?? 'none'}:${season ?? 'none'}`}
+                    initialPlayerId={appRoute.injuriesPlayerId}
+                    onClearPlayerTarget={() => updateCompanionRoute({
+                      companionView: 'injuries',
+                      injuriesPlayerId: null,
+                    }, { replace: true })}
+                  />
                 </Suspense>
               )}
               {companionView === 'heatmap'   && (

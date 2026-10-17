@@ -137,7 +137,9 @@ Deep doc: [[Live Data Server Architecture]].
 | `tradeProposalStore.js` | Separate SQLite/WAL proposal database. Stores immutable revision payloads and event state; expired payloads are removed while a bounded tombstone remains for the retention window |
 | `tradeProposalCrypto.js`, `tradeProposalConfig.js` | HMAC token hashing, opaque proposal/session capabilities, bounded expiry/retention settings, and production secret/data-directory configuration |
 | `sleeperTradeApi.js` | Server-side read-only Sleeper boundary used to validate league membership/ownership and inspect completed transactions |
-| `playerDataHandlers.js`, `playerDataStore.js`, `playerDataUpstream.js`, `playerDataConfig.js` | Lazy SQLite cache of ESPN season stats, career stats, and game logs behind `/api/players`. All ESPN traffic goes through one throttled, circuit-broken upstream client; completed seasons are stored once and never refetched — see [[Where To Edit]] (ESPN Player Data And Profiles) |
+| `teamSeasonHandlers.js` | Statistics team dashboard: one team's finished games from Scores game details, standings, and league unit ranks from all team-game stat lines — see [[Team Dashboard]] |
+| `playerSeasonHandlers.js` | Statistics player dashboard: one player's finished games from Scores game details, and league rank pools from Sleeper's public weekly stats, each cached in process — see [[Player Dashboard]] |
+| `playerDataHandlers.js`, `playerDataStore.js`, `playerDataUpstream.js`, `playerDataConfig.js` | Lazy SQLite cache of ESPN season stats, career stats, and game logs plus nflverse snap-count enrichments behind `/api/players`. ESPN traffic goes through one throttled, circuit-broken upstream client; completed-season payloads are stored once and never refetched — see [[Where To Edit]] (ESPN Player Data And Profiles) |
 
 Rule: gateway state is process-local. Running multiple sidecar replicas would multiply upstream work until the shared-store/leader phase in [[Live Data Server Architecture]].
 

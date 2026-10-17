@@ -51,7 +51,7 @@ function getStandingRowStyle(team, darkMode) {
 function TeamIdentity({ team, compact }) {
   const name = getTeamName(team);
   return (
-    <div className="statistics-standings-team" aria-label={name}>
+    <span className="statistics-standings-team">
       {team?.id && (
         <img
           src={teamLogo(team.id)}
@@ -62,17 +62,30 @@ function TeamIdentity({ team, compact }) {
           onError={(event) => { event.currentTarget.style.visibility = 'hidden'; }}
         />
       )}
-      <div className="statistics-standings-team-copy">
+      <span className="statistics-standings-team-copy">
         <abbr className="statistics-standings-team-code" title={name}>{team?.id ?? 'TBD'}</abbr>
         {!compact && <span className="statistics-standings-team-name">{name}</span>}
-      </div>
-    </div>
+      </span>
+    </span>
   );
 }
 
-function StandingRow({ row, darkMode, compact }) {
+function StandingRow({ row, darkMode, compact, onOpenSchedule }) {
+  const teamName = getTeamName(row.team);
   return (
-    <div className="statistics-standings-row" role="row" style={getStandingRowStyle(row.team, darkMode)}>
+    <div
+      className="statistics-standings-row"
+      role="row"
+      tabIndex={row.teamId ? 0 : undefined}
+      aria-label={row.teamId ? `View ${teamName} schedule` : undefined}
+      style={getStandingRowStyle(row.team, darkMode)}
+      onClick={() => row.teamId && onOpenSchedule?.(row.teamId)}
+      onKeyDown={(event) => {
+        if (!row.teamId || (event.key !== 'Enter' && event.key !== ' ')) return;
+        event.preventDefault();
+        onOpenSchedule?.(row.teamId);
+      }}
+    >
       <div className="statistics-standings-cell" role="cell"><span className="statistics-standings-rank">{row.rank}</span></div>
       <div className="statistics-standings-cell" role="cell"><TeamIdentity team={row.team} compact={compact} /></div>
       <div className="statistics-standings-cell statistics-standings-record" role="cell">{formatRecord(row.wins, row.losses, row.ties)}</div>
@@ -95,7 +108,7 @@ function StandingRow({ row, darkMode, compact }) {
 // groups don't bound sticky descendants), so every group's header would lock
 // into the same slot and stack instead of releasing; a plain div doesn't have
 // that problem, and needs no JS to work around it.
-function StandingsSection({ scope, groups, darkMode, compact, abbreviate }) {
+function StandingsSection({ scope, groups, darkMode, compact, abbreviate, onOpenSchedule }) {
   const scopeLabel = SCOPE_LABELS[scope] ?? scope;
   return (
     <section className="statistics-standings-section">
@@ -117,7 +130,7 @@ function StandingsSection({ scope, groups, darkMode, compact, abbreviate }) {
               </div>
             </div>
             {group.rows.map((row) => (
-              <StandingRow key={row.teamId} row={row} darkMode={darkMode} compact={compact} />
+              <StandingRow key={row.teamId} row={row} darkMode={darkMode} compact={compact} onOpenSchedule={onOpenSchedule} />
             ))}
           </div>
         ))}
@@ -126,7 +139,7 @@ function StandingsSection({ scope, groups, darkMode, compact, abbreviate }) {
   );
 }
 
-export default function StatisticsStandings({ teams = [], scheduleData = {} }) {
+export default function StatisticsStandings({ teams = [], scheduleData = {}, onOpenSchedule }) {
   const { darkMode } = useTheme();
   // Two independent narrowing steps: column labels abbreviate before the team
   // column gets tight enough that the full team name would have to be clipped.
@@ -145,6 +158,7 @@ export default function StatisticsStandings({ teams = [], scheduleData = {} }) {
         darkMode={darkMode}
         compact={compact}
         abbreviate={abbreviate}
+        onOpenSchedule={onOpenSchedule}
       />
 
       <StandingsSection
@@ -153,6 +167,7 @@ export default function StatisticsStandings({ teams = [], scheduleData = {} }) {
         darkMode={darkMode}
         compact={compact}
         abbreviate={abbreviate}
+        onOpenSchedule={onOpenSchedule}
       />
     </div>
   );

@@ -3,7 +3,7 @@
 
 import { useMemo } from 'react';
 import { getPicksForRoster, valueDraftPick } from '../../utils/tradeEngine';
-import { fmtKtcValue } from '../../utils/ktcApi';
+import { fmtTradeValue } from '../../utils/tradeValueScale';
 import { compareDraftPickAssets } from '../../utils/draftPickDisplay';
 import Modal from '../Modal';
 
@@ -105,11 +105,11 @@ export default function TradePickPicker({
                   <div className="flex flex-col items-end shrink-0 gap-0.5">
                     <span className="text-sm font-bold tabular-nums"
                       style={{ color: pick.val != null ? 'var(--color-label)' : 'var(--color-label-quaternary)' }}>
-                      {fmtKtcValue(pick.val)}
+                      {fmtTradeValue(pick.val)}
                     </span>
                     {pick.val != null && currentTotal != null && (
                       <span className="text-xs tabular-nums" style={{ color: 'var(--color-accent)' }}>
-                        → {fmtKtcValue(currentTotal + pick.val)}
+                        → {fmtTradeValue(currentTotal + pick.val)}
                       </span>
                     )}
                   </div>

@@ -18,6 +18,7 @@ import {
   getTradeProposalTerminalEvent,
   getSleeperLeagueUrl,
   hasTradeProposalAssets,
+  isLegacyTradeProposalValueScale,
   swapTradeProposalPerspective,
 } from '../../src/utils/tradeProposal.js';
 
@@ -166,6 +167,8 @@ test('Trade proposal storage failures return a stable kind without filesystem de
 
 test('Trade proposal snapshots preserve full asset identity and fingerprint keys', () => {
   const value = snapshot();
+  assert.equal(value.valueScaleId, 'fantasy-viability-0-100-v2');
+  assert.equal(isLegacyTradeProposalValueScale(value), false);
   assert.equal(value.schemaVersion, 1);
   assert.equal(value.sender.assets[0].label, 'Player One');
   assert.equal(value.recipient.assets[0].fromRosterId, '2');
@@ -214,12 +217,35 @@ test('Trade proposal API preserves unavailable valuation fields as null', async 
     assert.equal(normalized.totals.recipient, 0);
     assert.equal(normalized.verdict.gap, null);
     assert.equal(normalized.verdict.pct, null);
+    assert.equal(normalized.valueScaleId, 'fantasy-viability-0-100-v2');
 
     const shareHtml = await invoke(shareRouter, '/:token', 'get', {
       params: { token: created.body.shareToken },
     });
     assert.equal(shareHtml.response.statusCode, 200);
     assert.doesNotMatch(shareHtml.response.sent, /Player One \(0\)/);
+
+    const legacySnapshot = snapshot();
+    legacySnapshot.valueScaleId = 'league-utility-0-100-v1';
+    legacySnapshot.sender.assets = [{
+      type: 'pick', label: '2027 1st', year: '2027', round: 1,
+      originalRosterId: '1', fromRosterId: '1', toRosterId: '2', value: 75,
+    }];
+    const legacyCreated = await invoke(router, '/proposals', 'post', {
+      token: session.body.sessionToken,
+      body: {
+        leagueId: 'league-1',
+        season: '2026',
+        senderRosterId: '1',
+        recipientUserId: 'user-2',
+        recipientRosterId: '2',
+        snapshot: legacySnapshot,
+        expiryPreset: 'hour',
+      },
+    });
+    assert.equal(legacyCreated.response.statusCode, 201);
+    assert.equal(legacyCreated.body.proposal.revision.snapshot.valueScaleId, 'league-utility-0-100-v1');
+    assert.equal(legacyCreated.body.proposal.revision.snapshot.sender.assets[0].value, 75);
   } finally {
     store.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
@@ -253,11 +279,18 @@ test('Trade proposal display perspective swaps manager sides and totals without 
   assert.equal(value.recipient.assets[0].id, 'player-1');
   assert.equal(value.totals.sender, 95);
   assert.equal(value.totals.recipient, 100);
+  assert.equal(value.valueScaleId, 'fantasy-viability-0-100-v2');
+  const legacy = swapTradeProposalPerspective({ ...snapshot(), valueScaleId: undefined });
+  assert.equal(legacy.valueScaleId, null);
+  assert.equal(isLegacyTradeProposalValueScale(legacy), true);
+  const versionedLegacy = swapTradeProposalPerspective({ ...snapshot(), valueScaleId: 'league-utility-0-100-v1' });
+  assert.equal(versionedLegacy.valueScaleId, 'league-utility-0-100-v1');
+  assert.equal(isLegacyTradeProposalValueScale(versionedLegacy), true);
 });
 
 test('Trade proposal display helpers keep current values separate from the sent snapshot', () => {
   const asset = { type: 'player', id: 'player-1', value: 100 };
-  assert.equal(getTradeProposalAssetValue(asset, () => 112), 112);
+  assert.equal(getTradeProposalAssetValue(asset, () => 112), 100);
   assert.equal(getTradeProposalAssetValue(asset, () => null), 100);
   assert.deepEqual(getTradeProposalCountdown('2026-01-01T12:00:05.000Z', Date.UTC(2026, 0, 1, 12)), {
     expired: false,
