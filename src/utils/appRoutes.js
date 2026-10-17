@@ -71,6 +71,7 @@ const DEFAULT_ROUTE = {
   scheduleRosterId: null,
   matchupPlayerId: null,
   matchupRosterId: null,
+  injuriesPlayerId: null,
   leagueSubview: null,
   leagueRosterId: null,
   heatmapViewMode: null,
@@ -420,6 +421,10 @@ export function normalizeAppRoute(route = {}) {
       normalized.matchupRosterId = normalizePlayerId(route.matchupRosterId);
     }
 
+    if (companionView === 'injuries') {
+      normalized.injuriesPlayerId = normalizePlayerId(route.injuriesPlayerId);
+    }
+
     if (companionView === 'schedule') {
       normalized.scheduleMode = normalizeLowerToken(route.scheduleMode, new Set(['season', 'league']), 'season');
       normalized.scheduleWeek = normalizeWeek(route.scheduleWeek);
@@ -606,6 +611,7 @@ export function parseAppRoute(pathname = '/', search = '') {
         matchupWeek: parseQueryValue(searchParams, 'week'),
         matchupPlayerId: parseQueryValue(searchParams, 'player'),
         matchupRosterId: parseQueryValue(searchParams, 'team'),
+        injuriesPlayerId: parseQueryValue(searchParams, 'player'),
         scheduleMode: parseQueryValue(searchParams, 'mode'),
         scheduleWeek: parseQueryValue(searchParams, 'week'),
         scheduleRosterId: parseQueryValue(searchParams, 'team'),
@@ -659,6 +665,7 @@ export function parseAppRoute(pathname = '/', search = '') {
         matchupWeek: parseQueryValue(searchParams, 'week'),
         matchupPlayerId: parseQueryValue(searchParams, 'player'),
         matchupRosterId: parseQueryValue(searchParams, 'team'),
+        injuriesPlayerId: parseQueryValue(searchParams, 'player'),
         scheduleMode: parseQueryValue(searchParams, 'mode'),
         scheduleWeek: parseQueryValue(searchParams, 'week'),
         scheduleRosterId: parseQueryValue(searchParams, 'team'),
@@ -786,6 +793,11 @@ export function buildAppPath(route) {
           ['team', normalized.matchupRosterId],
         ])}`;
       }
+      if (normalized.companionView === 'injuries') {
+        return `${basePath}${buildQueryString([
+          ['player', normalized.injuriesPlayerId],
+        ])}`;
+      }
       if (normalized.companionView === 'schedule') {
         return `${basePath}${buildQueryString([
           ['mode', normalized.scheduleMode !== 'season' ? normalized.scheduleMode : null],
@@ -909,6 +921,7 @@ export function isSameAppRoute(a, b) {
     && left.matchupWeek === right.matchupWeek
     && left.matchupPlayerId === right.matchupPlayerId
     && left.matchupRosterId === right.matchupRosterId
+    && left.injuriesPlayerId === right.injuriesPlayerId
     && left.scheduleMode === right.scheduleMode
     && left.scheduleWeek === right.scheduleWeek
     && left.scheduleRosterId === right.scheduleRosterId

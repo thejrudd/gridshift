@@ -15,6 +15,10 @@ Open bugs are listed first, deferred work next, fixed bugs below. Add new entrie
 
 | Bug | Fixed In |
 |-----|----------|
+| Trade values dropped players with a realistic role or recent production to 0 when current and prior samples were sparse, such as after a single game. | v9.3.0 |
+| A KTC value of 0 was treated as a real market price instead of an unvalued placeholder, lowering player values and letting a partial trade total read as fair. | v9.3.0 |
+| Compare Trade and Companion Trade could show different scores for the same player because they did not share one player-value scale. | v9.3.0 |
+| IDP, kicker, and D/ST Trade values came from a separate market-scale conversion that was inconsistent with offensive player values. | v9.3.0 |
 | Companion → Heatmap's QB Sacks Taken and INTs Thrown stat chips snapped back to Fantasy Pts because the route normalizer dropped them, and links with those stats opened on Fantasy Pts. | v9.1.0 |
 | Companion → Defense counted each completed pass twice in the All position totals, once as the quarterback's passing yards/TDs and again as the receiver's receiving yards/TDs, inflating Total TDs and Total Yards; the Heatmap game box score's team TDs had the same double count. | v9.1.0 |
 | Companion → Defense per-game averages divide by every team's scheduled game in any week that has kicked off league-wide, so teams that have not yet played the in-progress week are averaged over one game too many. | v9.0.1 |

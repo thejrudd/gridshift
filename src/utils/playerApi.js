@@ -13,6 +13,7 @@ import {
   toEspnTeamId,
 } from './espnPlayerFetch.js';
 import { cachedPlayerData } from './playerDataCache.js';
+import { fetchPlayerSnapCounts as fetchNflversePlayerSnapCounts } from './snapCounts.js';
 import { formatPlayerHeight, formatPlayerWeight } from './playerMeasurements.js';
 
 const CURRENT_SEASON = getCurrentSeason();
@@ -124,7 +125,7 @@ function markPlayerDataServerDown() {
  * { data, incomplete } on success. `incomplete` also covers a stale copy
  * served while ESPN was failing, so neither is stored as permanent.
  */
-async function fetchFromPlayerDataServer(path) {
+async function fetchFromPlayerDataServer(path, { markDown = true } = {}) {
   if (Date.now() < playerDataServerDownUntil) return null;
   try {
     const res = await browserFetch(`${PLAYER_DATA_API}${path}`);
@@ -135,13 +136,13 @@ async function fetchFromPlayerDataServer(path) {
     if (!res.ok) {
       // 400 means this request is outside what the sidecar serves (for example
       // seasons before its minimum); anything else means it is unavailable.
-      if (res.status !== 400) markPlayerDataServerDown();
+      if (res.status !== 400 && markDown) markPlayerDataServerDown();
       return null;
     }
     // Without the sidecar (dev server, misrouted proxy) the SPA fallback answers
     // with index.html; treat that like an outage rather than a parse error.
     if (!isJson) {
-      markPlayerDataServerDown();
+      if (markDown) markPlayerDataServerDown();
       return null;
     }
     return {
@@ -150,7 +151,7 @@ async function fetchFromPlayerDataServer(path) {
         || res.headers.get('X-GridShift-Stale') === '1',
     };
   } catch {
-    markPlayerDataServerDown();
+    if (markDown) markPlayerDataServerDown();
     return null;
   }
 }
@@ -999,6 +1000,20 @@ export async function fetchGameLog(playerId, teamId, season) {
   });
 }
 
+/** Fetch position-agnostic snap participation percentages for one player. */
+export async function fetchPlayerSnapCounts(playerId, season) {
+  const s = Number(season);
+  const isHistorical = s < CURRENT_SEASON;
+  if (!Number.isInteger(s) || s < 2012 || !/^\d{1,10}$/.test(String(playerId))) return [];
+
+  return cachedPlayerData(`snap_v1_${playerId}_${s}`, async () => {
+    const viaServer = await fetchFromPlayerDataServer(`/${playerId}/snaps/${s}`, { markDown: false });
+    if (viaServer?.notFound) return { data: [] };
+    if (viaServer) return viaServer;
+    return { data: await fetchNflversePlayerSnapCounts(s, playerId, browserFetch) };
+  }, { ttl: isHistorical ? TTL.historical : TTL.stats, final: isHistorical });
+}
+
 /**
  * Fetch career stats (all-time totals) for a player.
  * Uses the /statistics/0 endpoint on the core API.
@@ -1060,6 +1075,30 @@ export async function fetchDepthChart(teamId) {
       }
     }
     return rankMap;
+  }, TTL.roster);
+}
+
+/**
+ * The team's depth chart by unit, keeping ESPN's slots and order:
+ * [{ name: '3WR 1TE', slots: [{ key: 'wr', abbr: 'WR', name: 'Wide Receiver', athletes: [{ id, name }] }] }].
+ * fetchDepthChart above flattens this to a best rank per player.
+ */
+export async function fetchDepthChartUnits(teamId) {
+  return cachedFetch(`depthchart_units_v3_${teamId}`, async () => {
+    // ESPN's depth chart sends no CORS header, so the sidecar fetches it.
+    const res = await fetch(`/api/statistics/teams/depth-chart?team=${encodeURIComponent(toEspnTeamId(teamId))}`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data.depthchart ?? []).map((group) => ({
+      name: group.name ?? '',
+      slots: Object.entries(group.positions ?? {}).map(([key, slot]) => ({
+        key,
+        // Receiver spots come as wr1, wr2, wr3, each with its own backups; label them that way.
+        abbr: /^wr\d$/.test(key) ? key.toUpperCase() : slot.position?.abbreviation ?? key.toUpperCase(),
+        name: slot.position?.displayName ?? '',
+        athletes: (slot.athletes ?? []).map((athlete) => ({ id: String(athlete.id ?? ''), name: athlete.displayName ?? '' })).filter((athlete) => athlete.id),
+      })),
+    }));
   }, TTL.roster);
 }
 

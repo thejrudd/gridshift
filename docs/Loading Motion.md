@@ -155,7 +155,6 @@ future retune automatically.
 | --- | --- | --- |
 | Rankings | `src/components/companion/CompanionRankings.jsx` | Full skeleton → reveal. Consolidated the two separate ad-hoc skeleton blocks (scoring-mode and ADP-mode) into one gate. |
 | Rosters | `src/components/companion/CompanionLeague.jsx` | Full skeleton → reveal. Position headings and player rows are individual reveal items, so the roster cascades in the same readable sequence as Rankings. |
-| Waivers | `src/components/companion/CompanionWaiver.jsx` | Full skeleton → reveal. The existing centered "Preparing waiver options…" copy is retained *above* the placeholder rows rather than instead of them. |
 | Injuries | `src/components/companion/CompanionInjuries.jsx` | Full skeleton → reveal, replacing the "Loading injury report…" empty state. |
 | Defenses | `src/components/companion/CompanionDefense.jsx` | Full skeleton → reveal, and restructured to be structure-first: the table frame and its sort headers now render during loading instead of being replaced by a centered message. |
 | Heatmap | `src/components/companion/CompanionHeatmap.jsx` | Skeleton → reveal on the **`fade`** entrance, not `lift`. See [Known Limits](#known-limits). |

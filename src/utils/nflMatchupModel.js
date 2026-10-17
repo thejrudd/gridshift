@@ -356,11 +356,15 @@ export function normalizeEspnGameSummary(summary) {
   if (!summary || typeof summary !== 'object') return null;
   const competition = summary?.header?.competitions?.[0] ?? {};
   const statusType = competition?.status?.type ?? {};
+  const normalizeTeamAbbreviation = (value) => {
+    const abbreviation = String(value ?? '').toUpperCase();
+    return abbreviation === 'WSH' ? 'WAS' : abbreviation;
+  };
   const teams = {};
   for (const competitor of competition?.competitors ?? []) {
-    const abbr = String(competitor?.team?.abbreviation ?? '').toUpperCase();
+    const abbr = normalizeTeamAbbreviation(competitor?.team?.abbreviation);
     if (!abbr) continue;
-    teams[abbr === 'WSH' ? 'WAS' : abbr] = {
+    teams[abbr] = {
       espnId: competitor?.team?.id != null ? String(competitor.team.id) : competitor?.id != null ? String(competitor.id) : null,
       homeAway: competitor?.homeAway ?? null,
       score: finite(competitor?.score),
@@ -372,8 +376,8 @@ export function normalizeEspnGameSummary(summary) {
   const abbrByEspnId = new Map(Object.entries(teams).map(([abbr, team]) => [team.espnId, abbr]));
   const teamFromRef = (value) => {
     if (!value) return null;
-    const direct = String(value?.abbreviation ?? '').toUpperCase();
-    if (direct) return direct === 'WSH' ? 'WAS' : direct;
+    const direct = normalizeTeamAbbreviation(value?.abbreviation);
+    if (direct) return direct;
     const id = value?.id != null ? String(value.id) : String(value).match(/teams\/(\d+)/)?.[1] ?? String(value);
     return abbrByEspnId.get(id) ?? null;
   };
@@ -463,6 +467,13 @@ export function normalizeEspnGameSummary(summary) {
   };
 }
 
+/** Read an ESPN team map with either ESPN's or the schedule's abbreviation. */
+export function getEspnTeamEntry(teamMap, teamId) {
+  const abbreviation = String(teamId ?? '').toUpperCase();
+  const alternate = abbreviation === 'WSH' ? 'WAS' : abbreviation === 'WAS' ? 'WSH' : null;
+  return teamMap?.[abbreviation] ?? (alternate ? teamMap?.[alternate] : null) ?? null;
+}
+
 function sumPlayers(rows, key, positions = null) {
   let total = 0;
   let found = false;
@@ -480,8 +491,8 @@ const hasPositions = (groups) => Object.values(groups ?? {}).some((rows) => (row
 
 /** One team's in-game production per matchup unit from a normalized summary. */
 export function getGameUnitValues(game, teamId) {
-  const groups = game?.playersByTeam?.[teamId] ?? {};
-  const stats = game?.teamStats?.[teamId] ?? {};
+  const groups = getEspnTeamEntry(game?.playersByTeam, teamId) ?? {};
+  const stats = getEspnTeamEntry(game?.teamStats, teamId) ?? {};
   const positional = hasPositions(groups);
   const passing = groups.passing ?? [];
   const rushing = groups.rushing ?? [];
@@ -547,8 +558,8 @@ export function buildGameTrackerPanel({ game, table, tableAfter = null, offenseT
 
 /** Pair of team-stat rows for this game from the summary's team box score. */
 export function buildGameTeamStatRows(game, leftTeam, rightTeam) {
-  const a = game?.teamStats?.[leftTeam] ?? {};
-  const b = game?.teamStats?.[rightTeam] ?? {};
+  const a = getEspnTeamEntry(game?.teamStats, leftTeam) ?? {};
+  const b = getEspnTeamEntry(game?.teamStats, rightTeam) ?? {};
   const num = (value) => finite(String(value ?? '').replace(/,/g, ''));
   const pairRate = (value) => { const [made, att] = splitPair(value); return made != null && att ? made / att : null; };
   const pairFirst = (value) => splitPair(value)[0];
@@ -585,7 +596,7 @@ export function buildGameTeamStatRows(game, leftTeam, rightTeam) {
 
 /** Top passer, rusher and receiver for one side of a game box score. */
 export function buildGameLeaders(game, teamId) {
-  const groups = game?.playersByTeam?.[teamId] ?? {};
+  const groups = getEspnTeamEntry(game?.playersByTeam, teamId) ?? {};
   const top = (rows, key) => [...(rows ?? [])]
     .map((row) => ({ row, value: finite(String(row.values?.[key] ?? '').replace(/,/g, '')) }))
     .filter((entry) => entry.value != null)

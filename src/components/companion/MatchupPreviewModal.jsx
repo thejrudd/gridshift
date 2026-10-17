@@ -13,6 +13,43 @@ import CompanionPlayerRow, { CompanionPlayerMetric, CompanionPlayerStatus } from
 
 const one = (value) => (value != null && value !== '' && Number.isFinite(Number(value)) ? Number(value).toFixed(1) : '—');
 
+function parseHexRgb(value) {
+  const match = String(value ?? '').match(/^#([\da-f]{6})$/i);
+  if (!match) return null;
+  return [0, 2, 4].map((offset) => Number.parseInt(match[1].slice(offset, offset + 2), 16));
+}
+
+function colorDistance(first, second) {
+  const a = parseHexRgb(first);
+  const b = parseHexRgb(second);
+  if (!a || !b) return 1;
+  return Math.sqrt(a.reduce((sum, channel, index) => sum + (channel - b[index]) ** 2, 0)) / Math.sqrt(3 * 255 ** 2);
+}
+
+// Roster palette slots are normally distinct, but a partial roster response can
+// fall back to the same primary. Keep the hero gradients untouched and choose
+// the secondary only for shared comparison cues when it separates the sides.
+function resolveFantasyTeamAccents(leftPalette, rightPalette) {
+  const leftPrimary = leftPalette?.[0] ?? 'var(--color-accent)';
+  const leftSecondary = leftPalette?.[1] ?? leftPrimary;
+  const rightPrimary = rightPalette?.[0] ?? 'var(--color-signature)';
+  const rightSecondary = rightPalette?.[1] ?? rightPrimary;
+
+  if (colorDistance(leftPrimary, rightPrimary) >= 0.28) {
+    return { a: leftPrimary, b: rightPrimary };
+  }
+
+  const candidates = [
+    { a: leftPrimary, b: rightSecondary },
+    { a: leftSecondary, b: rightPrimary },
+  ];
+  candidates.sort((a, b) => colorDistance(b.a, b.b) - colorDistance(a.a, a.b));
+  const best = candidates[0];
+  return colorDistance(best.a, best.b) > colorDistance(leftPrimary, rightPrimary)
+    ? best
+    : { a: leftPrimary, b: rightPrimary };
+}
+
 function KeyText({ parts }) {
   return (
     <>
@@ -35,13 +72,25 @@ function CompareRow({ row, index }) {
     leadsA = row.lowerWins ? aValue < bValue : aValue > bValue;
     leadsB = !leadsA;
   }
-  const max = Math.max(Math.abs(aValue ?? 0), Math.abs(bValue ?? 0)) || 1;
+  const hasComparablePair = Number.isFinite(aValue) && Number.isFinite(bValue);
+  const combinedValue = hasComparablePair ? Math.abs(aValue) + Math.abs(bValue) : 0;
   const bars = row.numeric !== false;
+  const barPct = (value) => {
+    if (!bars || !hasComparablePair) return 0;
+    if (combinedValue === 0) return 50;
+    return Math.abs(value) / combinedValue * 100;
+  };
 
   const cell = (side, display, sub, leads, value) => (
     <div
       className={`matchup-preview-cmp__value is-${side}${leads ? ' is-leading' : ''}${bars ? '' : ' has-no-bar'}`}
-      style={{ '--matchup-preview-bar': bars ? `${Math.round(Math.abs(value ?? 0) / max * 100)}%` : 0, '--matchup-preview-index': index }}
+      style={{
+        '--matchup-preview-bar': `${barPct(value)}%`,
+        '--matchup-preview-fill': side === 'a'
+          ? 'var(--matchup-preview-left-bar-accent, var(--matchup-preview-left-accent, var(--color-accent)))'
+          : 'var(--matchup-preview-right-bar-accent, var(--matchup-preview-right-accent, var(--color-signature)))',
+        '--matchup-preview-index': index,
+      }}
     >
       <div className="matchup-preview-cmp__number tabular-nums">
         <span>{typeof display === 'number' ? display.toFixed(1) : display}</span>
@@ -140,10 +189,10 @@ export default function MatchupPreviewModal({
   const { darkMode } = useTheme();
   const size = isCompact ? 'compact' : isWide ? 'wide' : 'regular';
 
-  const accents = useMemo(() => ({
-    a: model?.sides?.a?.palette?.[0] ?? 'var(--color-accent)',
-    b: model?.sides?.b?.palette?.[0] ?? 'var(--color-signature)',
-  }), [model]);
+  const accents = useMemo(() => resolveFantasyTeamAccents(
+    model?.sides?.a?.palette,
+    model?.sides?.b?.palette,
+  ), [model]);
 
   const [meetingNotice, setMeetingNotice] = useState(null);
   const [openingMeeting, setOpeningMeeting] = useState(false);
@@ -273,6 +322,12 @@ export default function MatchupPreviewModal({
         overflow: 'hidden',
         '--matchup-preview-left-accent': accents.a,
         '--matchup-preview-right-accent': accents.b,
+        '--matchup-preview-left-bar-accent': darkMode
+          ? `color-mix(in srgb, ${accents.a} 58%, var(--color-label))`
+          : accents.a,
+        '--matchup-preview-right-bar-accent': darkMode
+          ? `color-mix(in srgb, ${accents.b} 58%, var(--color-label))`
+          : accents.b,
       }}
     >
       <header className="matchup-preview__header">

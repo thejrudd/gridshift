@@ -13,6 +13,8 @@ import { createSleeperTradeApi } from './sleeperTradeApi.js';
 import { createTradeProposalStore } from './tradeProposalStore.js';
 
 const SCHEMA_VERSION = 1;
+const TRADE_VALUE_SCALE_ID = 'fantasy-viability-0-100-v2';
+const LEGACY_TRADE_VALUE_SCALE_IDS = new Set(['league-utility-0-100-v1']);
 const MAX_ID_LENGTH = 160;
 const MAX_LABEL_LENGTH = 180;
 const MAX_ASSETS_PER_SIDE = 50;
@@ -244,6 +246,10 @@ function normalizeSnapshot(rawSnapshot, maps, sender, recipient, { requireAssets
   if (rawSnapshot.schemaVersion != null && Number(rawSnapshot.schemaVersion) !== SCHEMA_VERSION) {
     throw requestError('This trade proposal format is not supported by the server.', 400);
   }
+  if (rawSnapshot.valueScaleId != null && rawSnapshot.valueScaleId !== TRADE_VALUE_SCALE_ID
+    && !LEGACY_TRADE_VALUE_SCALE_IDS.has(rawSnapshot.valueScaleId)) {
+    throw requestError('This trade proposal value scale is not supported by the server.', 400);
+  }
   const senderSide = normalizeSide(rawSnapshot.sender, sender, recipient);
   const recipientSide = normalizeSide(rawSnapshot.recipient, recipient, sender);
   if ((senderSide.assets.length + recipientSide.assets.length === 0) && requireAssets) {
@@ -263,6 +269,10 @@ function normalizeSnapshot(rawSnapshot, maps, sender, recipient, { requireAssets
   const verdict = isRecord(rawSnapshot.verdict) ? rawSnapshot.verdict : {};
   return {
     schemaVersion: SCHEMA_VERSION,
+    valueScaleId: rawSnapshot.valueScaleId === TRADE_VALUE_SCALE_ID
+      || LEGACY_TRADE_VALUE_SCALE_IDS.has(rawSnapshot.valueScaleId)
+      ? rawSnapshot.valueScaleId
+      : null,
     leagueId: String(maps.league.league_id),
     season: String(maps.league.season),
     sender: senderSide,

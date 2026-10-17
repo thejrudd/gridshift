@@ -92,6 +92,9 @@ Shipped: palette, query parsing, fuzzy index, entity results, commands, and inli
 
 ### Player Info
 
+- **Team dashboard follow-ups** - Postseason games and a Regular season / Playoffs switch; past-season depth charts (ESPN serves only the current one); kicker fantasy points by distance once a box-score source carries kick distances. See [Team Dashboard](docs/Team%20Dashboard.md).
+- **Player dashboard follow-ups** - Persist the per-game and Sleeper-week caches across sidecar restarts; add postseason games; deep-link a play into the Scores replay instead of opening the game's play-by-play list; remove the incomplete-pass pass-defensed workaround once `parseDefensiveActors` is fixed.
+
 - **Player Info & Rosters - Expanded** - Interesting tidbits and facts, team history and records, career length (starting year), player rankings.
 - **Flavor text for player cards** - Fun (and sometimes not so fun) facts about certain players, that function like flavor text on a trading card.
 

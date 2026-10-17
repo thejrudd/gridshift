@@ -80,6 +80,8 @@ Use docs/Agent Workflow.md for the full routing rubric, output contracts, comple
 - docs/Trade Engine.md and docs/Trade Proposal Cards.md — Trade architecture and card contracts.
 - docs/Scout.md — Scout architecture, APIs, importers, production data, and routing.
 - docs/Global Search.md — global search vocabulary, matching rules, index measurements, and answer-resolver boundaries.
+- docs/Player Dashboard.md — Statistics player page tabs: data routes, identity resolution, play credit, rank pools, opponent context, and UI rules.
+- docs/Team Dashboard.md — Statistics team page: position leaders, depth chart, season tabs, data route, fantasy scoring, and UI rules.
 - For QA, testing, validation, or regression-review tasks, use docs/Agent Workflow.md and the relevant feature references; do not load unrelated material.
 
 ## Design system — Broadcast Editorial

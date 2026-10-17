@@ -191,7 +191,7 @@ function InjuryRow({ row, darkMode, compact, expanded, onToggle }) {
   );
 }
 
-export default function CompanionInjuries() {
+export default function CompanionInjuries({ initialPlayerId = null, onClearPlayerTarget = null } = {}) {
   const {
     platform,
     selectedLeagueId,
@@ -377,26 +377,6 @@ export default function CompanionInjuries() {
   const currentUserOption = fantasyTeamOptions.find((option) => option.isMe);
   const defaultRosterIds = currentUserOption ? [currentUserOption.id] : [];
   const rosterIds = rosterFilter.scope === filterScope ? rosterFilter.ids : defaultRosterIds;
-  const nflTeamOptions = useMemo(() => (
-    [...new Set(report.map((row) => row.team).filter(Boolean))].sort().map((team) => ({
-      id: team,
-      name: team,
-      logoUrl: getNflTeamLogoUrl(getTeamColorKey(team)),
-    }))
-  ), [report]);
-  const filteredReport = useMemo(() => filterFantasyInjuryReport(report, {
-    position: position === 'ALL' ? null : position,
-    rosterIds,
-    nflTeams,
-    playerQuery,
-  }), [nflTeams, playerQuery, position, report, rosterIds]);
-  const filtering = position !== 'ALL' || rosterIds.length > 0 || nflTeams.length > 0 || playerQuery.trim() !== '';
-  const activeFilterCount = [
-    position !== 'ALL',
-    rosterIds.length > 0,
-    nflTeams.length > 0,
-    playerQuery.trim() !== '',
-  ].filter(Boolean).length;
   const loading = platform === 'sleeper' && (
     !players
     || connectLoading
@@ -404,11 +384,69 @@ export default function CompanionInjuries() {
     || nflStateLoading
     || (leagueSnapshotReady && !sourceState.nflState && (sourceState.status === 'idle' || sourceState.status === 'loading'))
   );
+  const routeTargetId = String(initialPlayerId ?? '').trim() || null;
+  const routeTargetPlayer = routeTargetId ? players?.[routeTargetId] ?? null : null;
+  const routeTargetPlayerName = routeTargetPlayer?.full_name
+    || [routeTargetPlayer?.first_name, routeTargetPlayer?.last_name].filter(Boolean).join(' ')
+    || 'This player';
+  const routeTargetRow = routeTargetId
+    ? report.find((row) => String(row.playerId) === routeTargetId) ?? null
+    : null;
+  const routeTargetPending = Boolean(routeTargetId && !routeTargetRow && (
+    loading
+    || !reportScopeReady
+    || ['idle', 'loading'].includes(sourceState.status)
+  ));
+  const routeTargetNotFound = Boolean(routeTargetId && !routeTargetRow && !routeTargetPending);
+  const displayedPosition = routeTargetRow?.position ?? routeTargetPlayer?.position ?? position;
+  const displayedRosterIds = routeTargetRow ? [String(routeTargetRow.rosterId)] : rosterIds;
+  const displayedNflTeams = routeTargetRow?.team ? [routeTargetRow.team] : nflTeams;
+  const displayedPlayerQuery = routeTargetId
+    ? routeTargetRow?.displayName ?? routeTargetPlayerName
+    : playerQuery;
+  const routeTargetRosterId = routeTargetRow?.rosterId == null ? null : String(routeTargetRow.rosterId);
+  const filterRosterIdsWithoutRouteTarget = (ids) => (
+    routeTargetId && routeTargetRosterId && !rosterIds.includes(routeTargetRosterId)
+      ? ids.filter((id) => String(id) !== routeTargetRosterId)
+      : ids
+  );
+  const filterNflTeamsWithoutRouteTarget = (teams) => (
+    routeTargetId && routeTargetRow?.team && !nflTeams.includes(routeTargetRow.team)
+      ? teams.filter((team) => team !== routeTargetRow.team)
+      : teams
+  );
+  const nflTeamOptions = useMemo(() => (
+    [...new Set(report.map((row) => row.team).filter(Boolean))].sort().map((team) => ({
+      id: team,
+      name: team,
+      logoUrl: getNflTeamLogoUrl(getTeamColorKey(team)),
+    }))
+  ), [report]);
+  const filteredReport = useMemo(() => routeTargetId
+    ? routeTargetRow ? [routeTargetRow] : []
+    : filterFantasyInjuryReport(report, {
+      position: position === 'ALL' ? null : position,
+      rosterIds,
+      nflTeams,
+      playerQuery,
+    }), [nflTeams, playerQuery, position, report, rosterIds, routeTargetId, routeTargetRow]);
+  const filtering = Boolean(routeTargetId) || position !== 'ALL' || rosterIds.length > 0 || nflTeams.length > 0 || playerQuery.trim() !== '';
+  const activeFilterCount = routeTargetId ? 1 : [
+    position !== 'ALL',
+    rosterIds.length > 0,
+    nflTeams.length > 0,
+    playerQuery.trim() !== '',
+  ].filter(Boolean).length;
   const currentWeekUnavailable = sourceState.status === 'unavailable' && !currentSeasonReady;
   const week = sourceState.nflState?.week ?? null;
   const freshnessTime = formatTimestamp(sourceState.response?.freshness?.providerFetchedAt);
 
+  const clearPlayerTarget = () => {
+    if (initialPlayerId) onClearPlayerTarget?.();
+  };
+
   const clearFilters = () => {
+    clearPlayerTarget();
     setPosition('ALL');
     setRosterFilter({ scope: filterScope, ids: [] });
     setNflTeams([]);
@@ -517,9 +555,9 @@ export default function CompanionInjuries() {
           data-testid="fantasy-injuries-filter-panel"
         >
           <CompanionSelectorRail label="Position" ariaLabel="Filter injuries by position">
-            <CompanionSelectorButton active={position === 'ALL'} onClick={() => setPosition('ALL')}>All</CompanionSelectorButton>
+            <CompanionSelectorButton active={displayedPosition === 'ALL'} onClick={() => { clearPlayerTarget(); setPosition('ALL'); }}>All</CompanionSelectorButton>
             {positionOptions.map((option) => (
-              <CompanionSelectorButton key={option} active={position === option} onClick={() => setPosition(option)}>
+              <CompanionSelectorButton key={option} active={displayedPosition === option} onClick={() => { clearPlayerTarget(); setPosition(option); }}>
                 {option}
               </CompanionSelectorButton>
             ))}
@@ -529,12 +567,15 @@ export default function CompanionInjuries() {
             <CompanionFantasyTeamMenu
               open={fantasyMenuOpen}
               options={fantasyTeamOptions}
-              selectedIds={rosterIds}
+              selectedIds={displayedRosterIds}
               onOpenChange={(open) => {
                 setFantasyMenuOpen(open);
                 if (open) setNflMenuOpen(false);
               }}
-              onChange={(ids) => setRosterFilter({ scope: filterScope, ids })}
+              onChange={(ids) => {
+                clearPlayerTarget();
+                setRosterFilter({ scope: filterScope, ids: filterRosterIdsWithoutRouteTarget(ids) });
+              }}
               placeholder="All Fantasy Teams"
               allLabel="All Fantasy Teams"
               kicker="Fantasy Team"
@@ -543,12 +584,15 @@ export default function CompanionInjuries() {
             <CompanionFantasyTeamMenu
               open={nflMenuOpen}
               options={nflTeamOptions}
-              selectedIds={nflTeams}
+              selectedIds={displayedNflTeams}
               onOpenChange={(open) => {
                 setNflMenuOpen(open);
                 if (open) setFantasyMenuOpen(false);
               }}
-              onChange={setNflTeams}
+              onChange={(ids) => {
+                clearPlayerTarget();
+                setNflTeams(filterNflTeamsWithoutRouteTarget(ids));
+              }}
               placeholder="All NFL Teams"
               allLabel="All NFL Teams"
               kicker="NFL Team"
@@ -556,8 +600,8 @@ export default function CompanionInjuries() {
               pluralLabel="NFL Teams"
             />
             <CompanionSearchField
-              value={playerQuery}
-              onChange={(event) => setPlayerQuery(event.target.value)}
+              value={displayedPlayerQuery}
+              onChange={(event) => { clearPlayerTarget(); setPlayerQuery(event.target.value); }}
               placeholder="Search players"
               inputProps={{ 'aria-label': 'Search injuries by player' }}
             />
@@ -571,13 +615,20 @@ export default function CompanionInjuries() {
       {!loading && currentWeekUnavailable && (
         <EmptyState title="Current NFL week unavailable." hint="The injury report is paused until Sleeper provides the current season and week." />
       )}
-      {!loading && report.length === 0 && sourceState.status === 'ready' && (
+      {!loading && !routeTargetPending && routeTargetNotFound && (
+        <EmptyState
+          title={`${routeTargetPlayerName} isn't listed in this week's injury report.`}
+          hint="The current report has no entry for this player. Missing injury data is unknown and does not confirm the player is healthy."
+          action={<button type="button" className="fantasy-injuries-empty-action" onClick={clearFilters}>Show all concerns</button>}
+        />
+      )}
+      {!loading && !routeTargetId && report.length === 0 && sourceState.status === 'ready' && (
         <EmptyState title="No rostered concerns this week." hint="No actionable Sleeper status or unique weekly designation was found." />
       )}
-      {!loading && report.length === 0 && sourceState.status === 'unavailable' && (
+      {!loading && !routeTargetId && report.length === 0 && sourceState.status === 'unavailable' && (
         <EmptyState title="No Sleeper roster concerns found." hint="BALLDONTLIE is unavailable, so unmatched and missing designations remain unknown." />
       )}
-      {!loading && report.length > 0 && filteredReport.length === 0 && (
+      {!loading && !routeTargetPending && !routeTargetId && report.length > 0 && filteredReport.length === 0 && (
         <EmptyState
           title="No concerns match these filters."
           hint="Clear one or more filters to return to the full report."
@@ -586,12 +637,12 @@ export default function CompanionInjuries() {
       )}
       {/* Loading motion: shared skeleton -> reveal handoff. Timing and gesture
           come from the --gs-load-* tokens; see docs/Loading Motion.md. */}
-      {(loading || filteredReport.length > 0) && (
+      {(loading || routeTargetPending || filteredReport.length > 0) && (
         <LoadingSwap
-          loading={loading}
-          resetKey={`${platform}:${week ?? ''}`}
+          loading={loading || routeTargetPending}
+          resetKey={`${platform}:${week ?? ''}:${routeTargetId ?? ''}`}
           role="region"
-          aria-label={loading ? 'Loading injury report' : `${filteredReport.length} rostered injury concerns`}
+          aria-label={loading || routeTargetPending ? 'Loading injury report' : `${filteredReport.length} rostered injury concerns`}
           className="fantasy-injuries-list"
           skeletonClassName="fantasy-injuries-list"
           skeleton={<SkeletonRows count={5} height="3.75rem" />}

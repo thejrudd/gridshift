@@ -1,4 +1,10 @@
 export const TRADE_PROPOSAL_SCHEMA_VERSION = 1;
+export const TRADE_PROPOSAL_VALUE_SCALE_ID = 'fantasy-viability-0-100-v2';
+const LEGACY_TRADE_PROPOSAL_VALUE_SCALE_IDS = new Set(['league-utility-0-100-v1']);
+
+export function isLegacyTradeProposalValueScale(snapshot) {
+  return snapshot?.valueScaleId !== TRADE_PROPOSAL_VALUE_SCALE_ID;
+}
 
 export const TRADE_EXPIRY_OPTIONS = Object.freeze([
   { id: 'hour', label: '1 hour' },
@@ -79,6 +85,7 @@ export function buildTradeProposalSnapshot({
   recipientAssets = [],
   totals = {},
   verdict = {},
+  valueScaleId = TRADE_PROPOSAL_VALUE_SCALE_ID,
 } = {}) {
   const normalizedSender = normalizeParticipant(sender, sender?.rosterId);
   const normalizedRecipient = normalizeParticipant(recipient, recipient?.rosterId);
@@ -86,6 +93,10 @@ export function buildTradeProposalSnapshot({
   normalizedRecipient.assets = recipientAssets.map((asset) => normalizeTradeProposalAsset(asset, normalizedRecipient.rosterId, normalizedSender.rosterId)).filter(Boolean);
   return {
     schemaVersion: TRADE_PROPOSAL_SCHEMA_VERSION,
+    valueScaleId: valueScaleId === TRADE_PROPOSAL_VALUE_SCALE_ID
+      || LEGACY_TRADE_PROPOSAL_VALUE_SCALE_IDS.has(valueScaleId)
+      ? valueScaleId
+      : null,
     leagueId: cleanId(leagueId),
     season: cleanText(season),
     sender: normalizedSender,
@@ -164,6 +175,7 @@ export function swapTradeProposalPerspective(snapshot) {
     recipientAssets: snapshot.sender.assets,
     totals: { sender: snapshot.totals?.recipient, recipient: snapshot.totals?.sender },
     verdict: snapshot.verdict,
+    valueScaleId: snapshot.valueScaleId ?? null,
   });
 }
 
@@ -244,9 +256,7 @@ export function getTradeProposalDisplayStatus({ status, sleeperOutcome = 'unknow
   return { label: 'Awaiting response', tone: 'awaiting' };
 }
 
-export function getTradeProposalAssetValue(asset, valueResolver = null) {
-  const resolved = valueResolver?.(asset);
-  if (resolved != null && Number.isFinite(Number(resolved))) return Number(resolved);
+export function getTradeProposalAssetValue(asset) {
   return normalizeValue(asset?.value ?? asset?.val);
 }
 

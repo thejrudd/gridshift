@@ -1,5 +1,6 @@
-import { findKtcPlayerFromSleeper, getKtcValue, productionAdjustedValue } from './ktcApi.js';
+import { findKtcPlayerFromSleeper, getKtcValue } from './ktcApi.js';
 import { calcPointsFromTotals } from './scoringEngine.js';
+import { combineTradeValueSignals, normalizeKtcMarketValues, TRADE_VALUE_SCALE_ID } from './tradeValueScale.js';
 
 // When a player has no redraft (fantasy) KTC value, we fall back to their
 // dynasty value and apply this discount. Dynasty values are inflated by
@@ -30,12 +31,14 @@ export function computeTradePlayerValueDetail({
   adjustedDynastyKtcPlayers,
   leagueType,
   seasonStats,
+  weeklyStats,
   scoringSettings,
-  positionalAvgPPG,
-  positionalValuePerPPG,
   rankMap,
   mergedIDPMap,
-  blendWeight = 0.50,
+  leagueUtilityValueMap,
+  ktcMarketValueMap,
+  dynastyMarketValueMap,
+  currentContextMap,
 }) {
   const player = players?.[id];
   if (!player) return null;
@@ -45,58 +48,58 @@ export function computeTradePlayerValueDetail({
     ? null
     : findKtcPlayerFromSleeper(id, players, adjustedKtcPlayers ?? []);
   let rawVal = usesGeneratedValue ? null : getKtcValue(ktc, leagueType);
+  // KTC's zero is also used as an unvalued placeholder. Treat it as missing
+  // so a redraft player can use the existing dynasty fallback and so a
+  // placeholder never becomes a real 0 Trade value.
+  if (rawVal != null && Number(rawVal) <= 0) rawVal = null;
   let dynastyFallback = false;
 
   if (!usesGeneratedValue && rawVal == null && adjustedDynastyKtcPlayers?.length) {
     const dynastyKtc = findKtcPlayerFromSleeper(id, players, adjustedDynastyKtcPlayers);
     const dynastyVal = getKtcValue(dynastyKtc, leagueType);
-    if (dynastyVal != null) {
+    if (dynastyVal != null && Number(dynastyVal) > 0) {
       rawVal = Math.round(dynastyVal * DYNASTY_FALLBACK_MULT);
       dynastyFallback = true;
     }
   }
 
-  const isEstimated = rawVal == null && mergedIDPMap?.has(id);
-  if (isEstimated) rawVal = mergedIDPMap.get(id);
-  // Loaded market data does not establish a zero for an unlisted player.
-  // Return before rank arithmetic: JavaScript would coerce null * multiplier
-  // to zero, especially for ranked players below the production game minimum.
-  if (rawVal == null) return null;
-
   const stats = seasonStats?.[id];
   const pts = stats ? calcPointsFromTotals(stats, scoringSettings, player.position) : null;
-  const gp = stats?.gp ?? 0;
+  const gp = Number(stats?.gp ?? stats?.games_played ?? weeklyStats?.[id]?.length ?? 0);
   const avgPPG = pts != null && gp ? pts / gp : null;
   const rankInfo = rankMap?.[id] ?? null;
-
-  let value;
-  if (isEstimated) {
-    value = rawVal;
-  } else if (dynastyFallback && gp >= 3 && avgPPG != null && positionalValuePerPPG?.[player.position] != null) {
-    value = Math.round(avgPPG * positionalValuePerPPG[player.position]);
-  } else {
-    value = productionAdjustedValue(rawVal, avgPPG, positionalAvgPPG?.[player.position], blendWeight);
-  }
-
-  // Every position receives the same light positional-finish adjustment.
-  // Generated IDP/DST/kicker values already originate in league-scored PPG; applying
-  // the shared rank modifier keeps their relative finish treatment aligned
-  // with KTC-backed offensive players.
-  if (rankInfo?.rank != null && rankInfo?.posCount > 1) {
-    const percentile = 1 - (rankInfo.rank - 1) / (rankInfo.posCount - 1);
-    value = Math.round(value * (0.88 + 0.24 * percentile));
-  }
-
+  const localUtilityScore = leagueUtilityValueMap?.get(id) ?? mergedIDPMap?.get(id) ?? null;
+  const selectedKtcMarketMap = ktcMarketValueMap ?? normalizeKtcMarketValues(adjustedKtcPlayers, leagueType);
+  const selectedDynastyMarketMap = dynastyMarketValueMap ?? normalizeKtcMarketValues(adjustedDynastyKtcPlayers, leagueType);
+  const directMarketScore = selectedKtcMarketMap?.get(ktc) ?? null;
+  const dynastyMarketScore = dynastyFallback
+    ? selectedDynastyMarketMap?.get(findKtcPlayerFromSleeper(id, players, adjustedDynastyKtcPlayers ?? []))
+    : null;
+  const marketScore = usesGeneratedValue
+    ? null
+    : (directMarketScore ?? (Number.isFinite(dynastyMarketScore)
+      ? Math.round(dynastyMarketScore * DYNASTY_FALLBACK_MULT)
+      : null));
+  const value = combineTradeValueSignals(localUtilityScore, marketScore);
   if (value == null) return null;
+  const isEstimated = !Number.isFinite(localUtilityScore) || !Number.isFinite(marketScore);
+  if (usesGeneratedValue && Number.isFinite(localUtilityScore)) rawVal = localUtilityScore;
 
   return {
     value,
     rawVal,
+    marketScore,
+    utilityScore: Number.isFinite(localUtilityScore) ? localUtilityScore : null,
+    valueScale: TRADE_VALUE_SCALE_ID,
     pts,
     avgPPG,
     rankInfo,
     dynastyFallback,
     isEstimated,
+    valueSource: Number.isFinite(localUtilityScore)
+      ? (Number.isFinite(marketScore) ? 'fantasy-viability+market' : 'fantasy-viability')
+      : (Number.isFinite(marketScore) ? 'market-estimate' : 'unavailable'),
+    currentContext: currentContextMap?.get(String(id)) ?? null,
     ktcEntry: ktc ?? null,
   };
 }

@@ -225,9 +225,9 @@ export default function CompareTab({ teams, initialPlayerA, initialPlayerB, onPl
   const minYear = firstYearA !== null && firstYearB !== null
     ? Math.min(firstYearA, firstYearB)
     : (firstYearA ?? firstYearB ?? 2018);
-  const visibleYears = (playerA || playerB)
+  const visibleYears = useMemo(() => (playerA || playerB)
     ? Array.from({ length: CURRENT_SEASON - minYear + 1 }, (_, i) => CURRENT_SEASON - i)
-    : [];
+    : [], [minYear, playerA, playerB]);
   const selectedYearAvailable = selectedYear === 'career' || visibleYears.includes(selectedYear);
 
   useEffect(() => {
@@ -704,7 +704,7 @@ function PlayerSlot({ slotId, label, player, onPick, onClear, onViewPlayer, ktcV
                 className="trade-compare__slot-value-number text-sm font-bold tabular-nums"
                 style={{ color: valueForeground }}
               >
-                {ktcValue != null ? ktcValue.toLocaleString() : 'Not in KTC'}
+                {ktcValue != null ? ktcValue.toLocaleString() : 'Unavailable'}
               </span>
             </div>
           )}

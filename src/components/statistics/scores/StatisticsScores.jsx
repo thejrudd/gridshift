@@ -334,23 +334,27 @@ export default function StatisticsScores({
       ?? (currentSeason && activeProvider === STATISTICS_SCORES_PROVIDERS.FIXTURE
         ? regularState.data?.currentWeekId ?? null
         : resolveStatisticsScoresCurrentWeekId(weeks, { phase: seasonPhase }));
+  const visibleWeeks = useMemo(() => {
+    const currentIndex = weeks.findIndex((week) => week.id === currentWeekId);
+    return currentIndex < 0 ? weeks : weeks.slice(0, currentIndex + 1);
+  }, [currentWeekId, weeks]);
   const routedGame = useMemo(
-    () => findScoresGame(weeks, routeGameId, routeWeek, routeAwayTeamId, routeHomeTeamId),
-    [routeAwayTeamId, routeGameId, routeHomeTeamId, routeWeek, weeks],
+    () => findScoresGame(visibleWeeks, routeGameId, routeWeek, routeAwayTeamId, routeHomeTeamId),
+    [routeAwayTeamId, routeGameId, routeHomeTeamId, routeWeek, visibleWeeks],
   );
   const routedGameWeek = useMemo(
     () => routedGame
-      ? weeks.find((week) => (week.games ?? []).some((game) => game === routedGame)) ?? null
+      ? visibleWeeks.find((week) => (week.games ?? []).some((game) => game === routedGame)) ?? null
       : null,
-    [routedGame, weeks],
+    [routedGame, visibleWeeks],
   );
   const selectedWeek = useMemo(
     () => routedGameWeek
-      ?? findScoresWeek(weeks, routeWeek)
-      ?? weeks.find((week) => week.id === currentWeekId)
-      ?? weeks[0]
+      ?? findScoresWeek(visibleWeeks, routeWeek)
+      ?? visibleWeeks.find((week) => week.id === currentWeekId)
+      ?? visibleWeeks[0]
       ?? null,
-    [currentWeekId, routeWeek, routedGameWeek, weeks],
+    [currentWeekId, routeWeek, routedGameWeek, visibleWeeks],
   );
   const liveCount = selectedWeek?.games.filter((game) => ['live', 'halftime', 'delayed'].includes(game.status)).length ?? 0;
   const selectedWeekNumber = Number.isInteger(selectedWeek?.week) ? selectedWeek.week : null;
@@ -686,7 +690,8 @@ export default function StatisticsScores({
   const routePhaseValue = seasonPhase;
 
   const selectWeek = (nextWeekId) => {
-    const nextWeek = weeks.find((week) => week.id === nextWeekId) ?? null;
+    const nextWeek = visibleWeeks.find((week) => week.id === nextWeekId) ?? null;
+    if (!nextWeek) return;
     onRouteChange?.({
       statisticsScoresSeason: season,
       statisticsScoresPhase: routePhaseValue,
@@ -734,7 +739,7 @@ export default function StatisticsScores({
 
   const openGame = (game) => {
     if (!canOpenGame || game.detailsAvailable === false || !isStatisticsScoresDrilldownStatus(game.status)) return;
-    const gameWeek = weeks.find((week) => week.games.some((entry) => entry.id === game.id));
+    const gameWeek = visibleWeeks.find((week) => week.games.some((entry) => entry.id === game.id));
     onRouteChange?.({
       statisticsScoresSeason: season,
       statisticsScoresPhase: routePhaseValue,
@@ -858,14 +863,14 @@ export default function StatisticsScores({
       ) : selectedWeek ? (
         <>
           <WeekRail
-            weeks={weeks}
+            weeks={visibleWeeks}
             selectedWeekId={selectedWeek.id}
             currentWeekId={currentWeekId}
             onSelectWeek={selectWeek}
           />
 
           <ScoresSeasonBoard
-            weeks={weeks}
+            weeks={visibleWeeks}
             selectedWeekId={selectedWeek.id}
             displayedWeek={scorecardWeek}
             desktop={desktop}

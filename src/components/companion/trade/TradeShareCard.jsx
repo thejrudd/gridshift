@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react';
-import { fmtKtcValue } from '../../../utils/ktcApi';
+import { fmtTradeValue } from '../../../utils/tradeValueScale';
 import { getDraftPickLabel } from '../../../utils/draftPickDisplay';
 import {
   formatTradeProposalExpiry,
   formatTradeProposalEventTime,
-  getTradeProposalAssetValue,
   getTradeProposalCountdown,
   getTradeProposalDisplayStatus,
   getTradeProposalExpiryLabel,
   getTradeProposalTerminalEvent,
+  isLegacyTradeProposalValueScale,
   swapTradeProposalPerspective,
 } from '../../../utils/tradeProposal';
 import CompanionAssetRow from '../CompanionAssetRow';
@@ -29,7 +29,7 @@ function getAssetLabel(asset) {
   return asset?.label || asset?.name || 'Asset';
 }
 
-function TradeShareAsset({ asset, darkMode, valueResolver, onOpenPlayer }) {
+function TradeShareAsset({ asset, darkMode, onOpenPlayer }) {
   const isPlayer = asset?.type === 'player';
   const isPick = asset?.type === 'pick';
   const meta = isPlayer
@@ -37,7 +37,7 @@ function TradeShareAsset({ asset, darkMode, valueResolver, onOpenPlayer }) {
     : isPick ? null : 'Waiver budget';
   const label = getAssetLabel(asset);
   const normalizedAsset = { ...asset, label };
-  const value = getTradeProposalAssetValue(asset, valueResolver);
+  const value = asset?.value ?? asset?.val ?? null;
   const leading = !isPlayer && !isPick
     ? <span className="trade-share-card__faab-mark" aria-hidden="true">$</span>
     : null;
@@ -54,7 +54,7 @@ function TradeShareAsset({ asset, darkMode, valueResolver, onOpenPlayer }) {
         metaPrefix=""
         metaSegments={meta ? [meta] : []}
         valueKicker="Value"
-        valueLabel={value != null ? fmtKtcValue(value) : '—'}
+        valueLabel={value != null ? fmtTradeValue(value) : '—'}
         className="trade-share-card__asset-row"
         teamThemeOptions={{ logoSide: 'end' }}
         interactive={isPlayer && Boolean(onOpenPlayer)}
@@ -65,7 +65,7 @@ function TradeShareAsset({ asset, darkMode, valueResolver, onOpenPlayer }) {
   );
 }
 
-function TradeAssetGroup({ assets, label, tone, counterpartyName, darkMode, valueResolver, onOpenPlayer }) {
+function TradeAssetGroup({ assets, label, tone, counterpartyName, darkMode, onOpenPlayer }) {
   const relationship = tone === 'send' ? 'To' : 'From';
 
   return (
@@ -76,14 +76,14 @@ function TradeAssetGroup({ assets, label, tone, counterpartyName, darkMode, valu
       </div>
       <ul className="trade-share-card__assets">
         {(assets ?? []).length > 0
-          ? (assets ?? []).map((asset, index) => <TradeShareAsset key={`${asset.id ?? asset.type}:${index}`} asset={asset} darkMode={darkMode} valueResolver={valueResolver} onOpenPlayer={onOpenPlayer} />)
+          ? (assets ?? []).map((asset, index) => <TradeShareAsset key={`${asset.id ?? asset.type}:${index}`} asset={asset} darkMode={darkMode} onOpenPlayer={onOpenPlayer} />)
           : <li className="trade-share-card__empty">No listed assets</li>}
       </ul>
     </div>
   );
 }
 
-function TradeSide({ side, otherSide, darkMode, valueResolver, onOpenPlayer }) {
+function TradeSide({ side, otherSide, darkMode, onOpenPlayer }) {
   const counterpartyName = otherSide?.name || 'Other manager';
 
   return (
@@ -93,19 +93,11 @@ function TradeSide({ side, otherSide, darkMode, valueResolver, onOpenPlayer }) {
         <span>{side?.teamName || 'Team'}</span>
       </div>
       <div className="trade-share-card__asset-groups">
-        <TradeAssetGroup assets={side?.assets} label="SENDS" tone="send" counterpartyName={counterpartyName} darkMode={darkMode} valueResolver={valueResolver} onOpenPlayer={onOpenPlayer} />
-        <TradeAssetGroup assets={otherSide?.assets} label="RECEIVES" tone="receive" counterpartyName={counterpartyName} darkMode={darkMode} valueResolver={valueResolver} onOpenPlayer={onOpenPlayer} />
+        <TradeAssetGroup assets={side?.assets} label="SENDS" tone="send" counterpartyName={counterpartyName} darkMode={darkMode} onOpenPlayer={onOpenPlayer} />
+        <TradeAssetGroup assets={otherSide?.assets} label="RECEIVES" tone="receive" counterpartyName={counterpartyName} darkMode={darkMode} onOpenPlayer={onOpenPlayer} />
       </div>
     </section>
   );
-}
-
-function getDisplayedSideTotal(side, fallback, valueResolver) {
-  if (!valueResolver || !Array.isArray(side?.assets)) return fallback;
-  const values = side.assets.map((asset) => getTradeProposalAssetValue(asset, valueResolver));
-  return values.every((value) => value != null)
-    ? values.reduce((total, value) => total + value, 0)
-    : fallback;
 }
 
 export default function TradeShareCard({
@@ -122,13 +114,13 @@ export default function TradeShareCard({
   sleeperOutcome = 'unknown',
   viewerIsCurrentAuthor = false,
   viewerUserId = null,
-  valueResolver = null,
   onOpenPlayer = null,
 }) {
   const [nowMs, setNowMs] = useState(() => Date.now());
   const displaySnapshot = getViewerRelativeSnapshot(snapshot, viewerUserId);
-  const senderTotal = getDisplayedSideTotal(displaySnapshot?.sender, displaySnapshot?.totals?.sender, valueResolver);
-  const recipientTotal = getDisplayedSideTotal(displaySnapshot?.recipient, displaySnapshot?.totals?.recipient, valueResolver);
+  const senderTotal = displaySnapshot?.totals?.sender ?? null;
+  const recipientTotal = displaySnapshot?.totals?.recipient ?? null;
+  const isLegacyScale = isLegacyTradeProposalValueScale(displaySnapshot);
   const senderName = displaySnapshot?.sender?.name || displaySnapshot?.sender?.teamName || 'Sender';
   const recipientName = displaySnapshot?.recipient?.name || displaySnapshot?.recipient?.teamName || 'Recipient';
   const displayStatus = getTradeProposalDisplayStatus({ status, sleeperOutcome, viewerIsCurrentAuthor });
@@ -152,6 +144,7 @@ export default function TradeShareCard({
           <h1>{senderName} <span aria-hidden="true">↔</span> {recipientName}</h1>
           <p className="trade-share-card__subtitle">Trade Proposal</p>
           <p className="trade-share-card__context">{snapshot?.season || 'Season'} · {expiryLabel ? `Expires ${expiryLabel}${senderTimeZone ? ' · sender time' : ''}` : terminalEvent?.label ?? `${getTradeProposalExpiryLabel(expiryPreset)} to respond`}</p>
+          <p className="trade-share-card__context">{isLegacyScale ? 'Legacy value scale · values captured when sent' : 'Values use the 0–100 player scale · side totals can exceed 100'}</p>
           {terminalEvent
             ? <p className="trade-share-card__countdown is-terminal" role="status">{terminalEvent.label}{terminalEventTime ? <> · <time dateTime={new Date(terminalEvent.timestamp).toISOString()}>{terminalEventTime}</time></> : null}</p>
             : countdown && <p className={`trade-share-card__countdown${countdown.expired ? ' is-expired' : ''}`} role="status" aria-live="polite">{countdown.expired ? 'Expired' : `Expires in ${countdown.label}`}</p>}
@@ -160,15 +153,15 @@ export default function TradeShareCard({
       </header>
 
       <div className="trade-share-card__sides">
-        <TradeSide side={displaySnapshot?.sender} otherSide={displaySnapshot?.recipient} darkMode={SHARE_CARD_DARK_MODE} valueResolver={valueResolver} onOpenPlayer={onOpenPlayer} />
+        <TradeSide side={displaySnapshot?.sender} otherSide={displaySnapshot?.recipient} darkMode={SHARE_CARD_DARK_MODE} onOpenPlayer={onOpenPlayer} />
         <div className="trade-share-card__exchange" aria-hidden="true">⇄</div>
-        <TradeSide side={displaySnapshot?.recipient} otherSide={displaySnapshot?.sender} darkMode={SHARE_CARD_DARK_MODE} valueResolver={valueResolver} onOpenPlayer={onOpenPlayer} />
+        <TradeSide side={displaySnapshot?.recipient} otherSide={displaySnapshot?.sender} darkMode={SHARE_CARD_DARK_MODE} onOpenPlayer={onOpenPlayer} />
       </div>
 
       <footer className="trade-share-card__footer">
         <div className="trade-share-card__totals">
-          <span><b>{senderTotal != null ? fmtKtcValue(senderTotal) : '—'}</b> offered</span>
-          <span><b>{recipientTotal != null ? fmtKtcValue(recipientTotal) : '—'}</b> requested</span>
+          <span><b>{senderTotal != null ? fmtTradeValue(senderTotal) : '—'}</b> offered</span>
+          <span><b>{recipientTotal != null ? fmtTradeValue(recipientTotal) : '—'}</b> requested</span>
         </div>
         {qrImage && (
           <div className="trade-share-card__qr-wrap">

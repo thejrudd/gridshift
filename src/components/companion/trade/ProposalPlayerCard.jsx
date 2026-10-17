@@ -1,5 +1,5 @@
 import { useTheme } from '../../../context/ThemeContext';
-import { fmtKtcValue } from '../../../utils/ktcApi';
+import { fmtTradeValue } from '../../../utils/tradeValueScale';
 import { normalizeIDPPos } from '../../../utils/idpEngine';
 import useCardGlow from '../../../hooks/useCardGlow.jsx';
 import { teamPalette } from './tradeUiHelpers';
@@ -309,7 +309,7 @@ export default function ProposalPlayerCard({ player = null, palette = null, pick
                 className="tabular-nums text-2xl font-bold leading-none"
                 style={{ color: 'var(--color-label)', fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.02em' }}
               >
-                {primaryPick.value != null ? fmtKtcValue(primaryPick.value) : '—'}
+                {primaryPick.value != null ? fmtTradeValue(primaryPick.value) : '—'}
               </div>
               <div
                 className="mt-0.5 text-[length:var(--type-label)] font-bold uppercase leading-none lg:text-[length:var(--type-label)]"
@@ -347,7 +347,7 @@ export default function ProposalPlayerCard({ player = null, palette = null, pick
               className="text-sm lg:text-[length:var(--type-heading-sm)] font-bold tabular-nums leading-tight"
               style={{ color: 'var(--color-label)', fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.02em' }}
             >
-              {primaryPick.value != null ? fmtKtcValue(primaryPick.value) : '—'}
+                {primaryPick.value != null ? fmtTradeValue(primaryPick.value) : '—'}
             </span>
           </div>
 
@@ -486,7 +486,7 @@ export default function ProposalPlayerCard({ player = null, palette = null, pick
                 className="tabular-nums text-2xl font-bold leading-none"
                 style={{ color: 'var(--color-label)', fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.02em' }}
               >
-                {primary.value != null ? fmtKtcValue(primary.value) : '—'}
+                {primary.value != null ? fmtTradeValue(primary.value) : '—'}
               </div>
               <div
                 className="mt-0.5 text-[length:var(--type-label)] font-bold uppercase leading-none lg:text-[length:var(--type-label)]"
@@ -543,7 +543,7 @@ export default function ProposalPlayerCard({ player = null, palette = null, pick
           <div className="flex items-center justify-center py-1 lg:py-1.5 shrink-0">
             <span className="text-sm lg:text-[length:var(--type-heading-sm)] font-bold tabular-nums leading-tight"
               style={{ color: 'var(--color-label)' }}>
-              {fmtKtcValue(primary.value)}
+              {fmtTradeValue(primary.value)}
             </span>
           </div>
         )}

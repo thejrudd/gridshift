@@ -162,7 +162,7 @@ test('a soft intent term never filters real entities out', () => {
 });
 
 test('a destination is reachable by name', () => {
-  assert.equal(flatLabels('waiver wire')[0], 'Waivers');
+  assert.equal(flatLabels('waiver wire')[0], 'Unrostered players');
   assert.equal(flatLabels('injuries')[0], 'Injuries');
   assert.equal(flatLabels('my matchup')[0], 'Matchups');
 });

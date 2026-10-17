@@ -2,7 +2,7 @@
 import { memo, useState, useEffect, useMemo, useCallback, useDeferredValue, useRef } from 'react';
 import { useSleeperStats } from '../../../context/SleeperContext';
 import { useTheme } from '../../../context/ThemeContext';
-import { fmtKtcValue } from '../../../utils/ktcApi';
+import { fmtTradeValue } from '../../../utils/tradeValueScale';
 import { sumTradeValues } from '../../../utils/tradeValue';
 import { compareDraftPickAssets, getDraftPickLabel } from '../../../utils/draftPickDisplay';
 import useMediaQuery from '../../../hooks/useMediaQuery.js';
@@ -58,7 +58,7 @@ function ProposalAssetRow({ asset, darkMode, onOpenPlayer }) {
         teamThemeOptions={TRADE_LOGO_SIDE_THEME_OPTIONS}
         metaSegments={[]}
         valueKicker="Value"
-        valueLabel={value != null ? fmtKtcValue(value) : '—'}
+        valueLabel={value != null ? fmtTradeValue(value) : '—'}
       />
     );
   }
@@ -77,11 +77,11 @@ function ProposalAssetRow({ asset, darkMode, onOpenPlayer }) {
       className="trade-selection-row--proposal"
       teamThemeOptions={TRADE_LOGO_SIDE_THEME_OPTIONS}
       interactive={isInteractive}
-      title={[asset.name, ...metaSegments, `Value ${fmtKtcValue(value)}`].join(' · ')}
+      title={[asset.name, ...metaSegments, `Value ${fmtTradeValue(value)}`].join(' · ')}
       ariaLabel={isInteractive ? `Open player stats for ${asset.name}` : undefined}
       metaSegments={metaSegments.length ? metaSegments : ['Player']}
       valueKicker="Value"
-      valueLabel={value != null ? fmtKtcValue(value) : '—'}
+      valueLabel={value != null ? fmtTradeValue(value) : '—'}
       onClick={isInteractive ? onOpenPlayer : null}
     />
   );
@@ -596,7 +596,7 @@ const TradeProposalItem = memo(function TradeProposalItem({
             className="shrink-0 text-lg font-bold tabular-nums leading-none"
             style={{ color: 'var(--color-label)', fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.04em' }}
           >
-            {fmtKtcValue(tone === 'give' ? outgoingTotal : incomingTotal)}
+            {fmtTradeValue(tone === 'give' ? outgoingTotal : incomingTotal)}
           </span>
         </div>
         <div className="flex flex-col gap-1.5 md:hidden">
@@ -787,7 +787,7 @@ const TradeProposalItem = memo(function TradeProposalItem({
               <span className="inline-block px-3 py-0.5 rounded-full text-[length:var(--type-label)] font-bold uppercase tracking-[0.12em]"
                 style={{ background: 'var(--color-accent-red)', color: '#fff' }}>Give</span>
               <span className="text-sm font-bold tabular-nums md:hidden" style={{ color: 'var(--color-label)', fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.04em' }}>
-                {fmtKtcValue(outgoingTotal)}
+                {fmtTradeValue(outgoingTotal)}
               </span>
             </div>
           )}
@@ -860,7 +860,7 @@ const TradeProposalItem = memo(function TradeProposalItem({
               <span className="inline-block px-3 py-0.5 rounded-full text-[length:var(--type-label)] font-bold uppercase tracking-[0.12em]"
                 style={{ background: 'var(--color-accent-green)', color: '#fff' }}>Get</span>
               <span className="text-sm font-bold tabular-nums md:hidden" style={{ color: 'var(--color-label)', fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.04em' }}>
-                {fmtKtcValue(incomingTotal)}
+                {fmtTradeValue(incomingTotal)}
               </span>
             </div>
           )}

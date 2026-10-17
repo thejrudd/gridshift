@@ -64,8 +64,7 @@ tests in addition to the focused Fantasy Live suite.
 |---|---|
 | `src/components/companion/CompanionRoster.jsx` | `calcPointsFromTotals` and `getAvgPPG` — both pass `p.position` |
 | `src/components/companion/CompanionLeague.jsx` | `calcPointsFromTotals` and `getAvgPPG` — both pass `p.position` |
-| `src/components/companion/CompanionRankings.jsx` | `calcPointsFromTotals` — passes `p.position` |
-| `src/components/companion/CompanionWaiver.jsx` | `calcPointsFromTotals`, `getRecentAvg`, inline `calcPoints` — all pass `pos` |
+| `src/components/companion/CompanionRankings.jsx` | `calcPointsFromTotals`, `createPointsCalculator`, and projected player scoring — all pass the player's position |
 | `src/components/companion/CompanionMatchup.jsx` | `calcPoints` in weekly ranks loop and `enrichPlayer` — both pass `p.position`; `getAvgPPG` passes `p.position` |
 | `src/components/companion/CompanionDefense.jsx` | `defenseScoredTable` getValue callback `(wEntry, pos)` — called as `getValue(wEntry, player.position)` |
 | `src/components/companion/PlayerWeeklySheet.jsx` | `calcPoints` — passes `player?.position` |
@@ -74,6 +73,14 @@ tests in addition to the focused Fantasy Live suite.
 | `src/utils/fantasyValueRanks.js` | Season rank distributions for Fantasy Values — scoring-agnostic, but new stat options must arrive through the caller's option-row builder to be rankable |
 | `src/components/companion/LeagueScoringBadge.jsx` | Use `getFlatScoringSettings()` before reading display multipliers |
 | `src/components/companion/trade/ValuationInfoSheet.jsx` | Read new scoring settings fields; add `AdjustmentRow` entries; update KTC baseline list |
+
+## Statistics Player Dashboard
+
+| File | What to check |
+| --- | --- |
+| `src/components/statistics/player/PlayList.jsx` | Per-play points, the per-stat breakdown, and the filtered total all call `calcPoints(play.fs, scoring, position)` with the dashboard group (QB, RB, WR, TE, K, DL, LB, DB) as the position. `play.fs` is `buildPlayStatDelta` output from the server, so new per-play stat keys come from `playStatDelta.js` |
+| `src/components/statistics/player/PlayList.jsx` — `STAT_LABELS` | Add a label for any new per-play stat key so the breakdown reads in plain language |
+| `src/utils/teamSeason/teamDashboardModel.js` — `linePoints` | Team dashboard fantasy points: `calcPoints(lineToFantasyStats(line), scoring, position)` with the player's group (QB, RB, WR, TE, K). `lineToFantasyStats` maps BALLDONTLIE box fields to scoring keys; add a field there when a new scoring key has a box-score source |
 
 ## Compare Tab Components
 

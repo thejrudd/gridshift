@@ -11,6 +11,8 @@ import { createUpstreamClient } from './playerDataUpstream.js';
 import { createLiveGameSnapshotStore } from './liveGameSnapshots.js';
 import { createLiveRouter, getLiveConfigStatus } from './liveHandlers.js';
 import { createStatisticsScoresRouter } from './statisticsScoresHandlers.js';
+import { createPlayerSeasonRouter } from './playerSeasonHandlers.js';
+import { createTeamSeasonRouter } from './teamSeasonHandlers.js';
 import { createNflTeamStatsRouter } from './nflTeamStatsHandlers.js';
 import { createStoryStatsRouter, createStoryStatsService } from './storyStatsHandlers.js';
 import { createStoryStatsScheduler } from './storyStatsScheduler.js';
@@ -76,6 +78,14 @@ app.use('/api/live', createLiveRouter({
 // Mounted before the Scores router so `/team-stats` never reaches its handlers.
 app.use('/api/statistics/scores/team-stats', createNflTeamStatsRouter());
 app.use('/api/statistics/scores', createStatisticsScoresRouter({
+  gateway: balldontlieGateway,
+  snapshotStore: liveGameSnapshotStore,
+}));
+app.use('/api/statistics/players', createPlayerSeasonRouter({
+  gateway: balldontlieGateway,
+  snapshotStore: liveGameSnapshotStore,
+}));
+app.use('/api/statistics/teams', createTeamSeasonRouter({
   gateway: balldontlieGateway,
   snapshotStore: liveGameSnapshotStore,
 }));
