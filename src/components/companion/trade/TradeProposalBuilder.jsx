@@ -1,12 +1,11 @@
 /* eslint-disable react-hooks/static-components */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTheme } from '../../../context/ThemeContext';
-import { fmtKtcValue } from '../../../utils/ktcApi';
+import { fmtTradeValue, getTradeCurrentContextLabels } from '../../../utils/tradeValueScale';
 import { getPicksForRoster, valueDraftPick } from '../../../utils/tradeEngine';
 import { getDraftPickLabel } from '../../../utils/draftPickDisplay';
 import CompanionAssetRow from '../CompanionAssetRow.jsx';
 import { CompanionSelectorButton, CompanionSelectorRail } from '../CompanionSelectorControls.jsx';
-import Spinner from '../../ui/Spinner';
 import {
   POSITION_COLORS,
 } from './tradeUiHelpers';
@@ -23,6 +22,7 @@ function getTradeAssetMetaSegments(item) {
   const segments = [
     [item.position, item.team].filter(Boolean).join(' · '),
     item.rankInfo ? `#${item.rankInfo.rank} ${item.rankInfo.posLabel}` : null,
+    ...getTradeCurrentContextLabels(item.currentContext),
   ];
   return segments.filter(Boolean);
 }
@@ -47,8 +47,8 @@ function TradeSideAssetRow({ item, darkMode, onOpenPlayer, onRemove }) {
       metaPrefix=""
       metaSegments={metaSegments}
       valueKicker={valueKicker}
-      valueLabel={`${valueIsEstimated ? '~' : ''}${fmtKtcValue(value)}`}
-      valueTitle={item.idpFallback ? 'Estimated from season production (no KTC data)' : undefined}
+      valueLabel={`${valueIsEstimated ? '~' : ''}${fmtTradeValue(value)}`}
+      valueTitle={item.idpFallback ? 'Estimated from available league production or normalized market context' : undefined}
       onClick={isInteractive ? onOpenPlayer : null}
       onRemove={onRemove}
       removeLabel={`Remove ${item.label}`}
@@ -246,7 +246,7 @@ function BroadcastScoreboard({ yourTotal, theirTotal, yourName, yourAvatar, part
       ? 'Add players with available values to compare'
     : v === 'fair'
       ? 'Trade values are balanced'
-      : `${fmtKtcValue(safeGap)} gap · ${safePct}% ${v === 'favors_you' ? 'your way' : 'their way'}`;
+      : `${fmtTradeValue(safeGap)} gap · ${safePct}% ${v === 'favors_you' ? 'your way' : 'their way'}`;
   const df = "var(--font-display, 'Barlow Condensed', sans-serif)";
   const ticks = [-64, 0, 64].map((deg) => {
     const rad = (deg * Math.PI) / 180;
@@ -276,7 +276,7 @@ function BroadcastScoreboard({ yourTotal, theirTotal, yourName, yourAvatar, part
       <div className="trade-scoreboard__team-copy" style={{ display: 'flex', flexDirection: 'column', alignItems: align === 'right' ? 'flex-end' : 'flex-start', gap: 2, minWidth: 0, textAlign: align === 'right' ? 'right' : 'left' }}>
         <span className="trade-scoreboard__team-name" style={{ fontFamily: "'Figtree', sans-serif", fontWeight: 700, fontSize: 'var(--type-body)', lineHeight: 1.1, color: 'rgba(255,255,255,0.78)', maxWidth: 210, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
         <span className="trade-scoreboard__team-total" style={{ fontFamily: df, fontWeight: 800, fontSize: 40, lineHeight: 0.92, fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.01em', color: '#fff' }}>
-          {hasItems ? (Number.isFinite(total) ? fmtKtcValue(total) : '—') : '0'}
+          {hasItems ? (Number.isFinite(total) ? fmtTradeValue(total) : '—') : '0'}
         </span>
       </div>
       {align === 'right' && <Avatar hash={avatar} name={name} align={align} />}
@@ -612,7 +612,7 @@ function RosterShelf({
                 style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 7px', borderRadius: 7, border: inTrade ? '1px dashed var(--color-separator)' : '1px solid var(--color-separator)', background: 'var(--color-bg)', opacity: inTrade ? 0.35 : 1, cursor: inTrade ? 'default' : 'grab', textAlign: 'left', width: '100%' }}>
                 <span style={{ fontSize: 'var(--type-label)', fontWeight: 700, padding: '1px 6px', borderRadius: 3, background: 'rgba(245,183,0,0.12)', color: '#F5B700', flexShrink: 0, letterSpacing: '0.04em' }}>PICK</span>
                 <span style={{ flex: 1, minWidth: 0, fontSize: 'var(--type-label)', fontWeight: 600, color: 'var(--color-label)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
-                <span style={{ fontSize: 'var(--type-label)', fontWeight: 700, color: shelfPickValues.get(pick.key) != null ? 'var(--color-label-secondary)' : 'var(--color-label-quaternary)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{fmtKtcValue(shelfPickValues.get(pick.key))}</span>
+                <span style={{ fontSize: 'var(--type-label)', fontWeight: 700, color: shelfPickValues.get(pick.key) != null ? 'var(--color-label-secondary)' : 'var(--color-label-quaternary)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{fmtTradeValue(shelfPickValues.get(pick.key))}</span>
                 {!inTrade && (
                   <span style={{ fontSize: 'var(--type-micro)', fontWeight: 800, letterSpacing: '0.08em', color: 'var(--color-signature)', flexShrink: 0 }}>ADD</span>
                 )}
@@ -647,7 +647,7 @@ function RosterShelf({
                 {shelfPlayerName(p)}
               </span>
               {val != null && (
-                <span style={{ fontSize: 'var(--type-label)', fontWeight: 700, color: 'var(--color-label-secondary)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{fmtKtcValue(val)}</span>
+                <span style={{ fontSize: 'var(--type-label)', fontWeight: 700, color: 'var(--color-label-secondary)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{fmtTradeValue(val)}</span>
               )}
               {!isInTrade && (
                 <span style={{ fontSize: 'var(--type-micro)', fontWeight: 800, letterSpacing: '0.08em', color: 'var(--color-signature)', flexShrink: 0 }}>ADD</span>
@@ -775,7 +775,7 @@ function MobileRosterShelf({
                 style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 10px', borderRadius: 10, border: inTrade ? '1px dashed var(--color-separator)' : '1px solid var(--color-separator)', background: 'var(--color-bg)', opacity: inTrade ? 0.4 : 1, cursor: inTrade ? 'default' : 'pointer', textAlign: 'left', width: '100%', minHeight: 44 }}>
                 <span style={{ fontSize: 'var(--type-label)', fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: 'rgba(245,183,0,0.12)', color: '#F5B700', flexShrink: 0, fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.06em' }}>PICK</span>
                 <span style={{ flex: 1, minWidth: 0, fontSize: 'var(--type-meta)', fontWeight: 600, color: 'var(--color-label)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
-                <span style={{ fontSize: 'var(--type-label)', fontWeight: 700, color: shelfPickValues.get(pick.key) != null ? 'var(--color-label-secondary)' : 'var(--color-label-quaternary)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{fmtKtcValue(shelfPickValues.get(pick.key))}</span>
+                <span style={{ fontSize: 'var(--type-label)', fontWeight: 700, color: shelfPickValues.get(pick.key) != null ? 'var(--color-label-secondary)' : 'var(--color-label-quaternary)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{fmtTradeValue(shelfPickValues.get(pick.key))}</span>
                 {!inTrade && (
                   <span style={{ fontSize: 'var(--type-micro)', fontWeight: 800, letterSpacing: '0.08em', color: 'var(--color-signature)', flexShrink: 0 }}>ADD</span>
                 )}
@@ -806,7 +806,7 @@ function MobileRosterShelf({
               <span style={{ flex: 1, minWidth: 0, fontSize: 'var(--type-meta)', fontWeight: 600, color: 'var(--color-label)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {shelfPlayerName(p)}
               </span>
-              <span style={{ fontSize: 'var(--type-label)', fontWeight: 700, color: val != null ? 'var(--color-label-secondary)' : 'var(--color-label-quaternary)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{fmtKtcValue(val)}</span>
+              <span style={{ fontSize: 'var(--type-label)', fontWeight: 700, color: val != null ? 'var(--color-label-secondary)' : 'var(--color-label-quaternary)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{fmtTradeValue(val)}</span>
               {!isInTrade && (
                 <span style={{ fontSize: 'var(--type-micro)', fontWeight: 800, letterSpacing: '0.08em', color: 'var(--color-signature)', flexShrink: 0 }}>ADD</span>
               )}
@@ -857,8 +857,6 @@ export default function TradeProposalBuilder({
   applySuggestion,
   yourSide,
   theirSide,
-  ktcLoading,
-  ktcError,
   removePlayer,
   removePick,
   setPickerOpen,
@@ -948,7 +946,7 @@ export default function TradeProposalBuilder({
                         ? (suggestions.deficitSide === 'yours' ? 'theirs' : 'yours')
                         : suggestions.deficitSide;
                       const favoredLabel = currentSurplusSide === 'theirs' ? 'You' : 'Them';
-                      const remainingLabel = isNearEven ? 'Near-even trade' : `Favors ${favoredLabel} · ${fmtKtcValue(absRemaining)}`;
+                      const remainingLabel = isNearEven ? 'Near-even trade' : `Favors ${favoredLabel} · ${fmtTradeValue(absRemaining)}`;
                       const smeta = SUGGEST_ACTION_META[opt.action] ?? SUGGEST_ACTION_META.add;
                       let descLine;
                       if (opt.action === 'add') descLine = `Add to ${opt.side === 'yours' ? 'Your' : 'Their'} Side: ${opt.items.map(it => it.label).join(' + ')}`;
@@ -1000,8 +998,7 @@ export default function TradeProposalBuilder({
                       onShareTrade={onShareTrade}
                       attribution={attribution}
                     />
-                    {!ktcLoading && !ktcError ? (
-                      <>
+                    <>
                         <div className="trade-plates-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)' }}>
                           <TradePlate
                             side="yours"
@@ -1033,25 +1030,7 @@ export default function TradeProposalBuilder({
                           </div>
                         )}
                         {suggestBlock}
-                      </>
-                    ) : (
-                      <div className="mx-4 mt-4 rounded-xl px-4 py-4 flex flex-col gap-1.5" style={{ background: 'var(--color-fill)' }}>
-                        {ktcLoading ? (
-                          <div className="flex items-center gap-2.5">
-                            <Spinner />
-                            <span className="text-sm font-medium" style={{ color: 'var(--color-label-secondary)' }}>Loading trade values…</span>
-                          </div>
-                        ) : (
-                          <>
-                            <span className="text-sm font-semibold" style={{ color: 'var(--color-label)' }}>Trade values unavailable</span>
-                            <span className="text-xs leading-relaxed" style={{ color: 'var(--color-label-tertiary)' }}>
-                              The KeepTradeCut proxy could not be reached. Trade values require the nginx proxy in production.
-                            </span>
-                            <span className="text-xs font-mono mt-1" style={{ color: 'var(--color-label-quaternary)' }}>{ktcError}</span>
-                          </>
-                        )}
-                      </div>
-                    )}
+                    </>
                   </div>
                 </div>
 
@@ -1072,8 +1051,7 @@ export default function TradeProposalBuilder({
                     onShareTrade={onShareTrade}
                     attribution={attribution}
                   />
-                  {!ktcLoading && !ktcError ? (
-                    <>
+                  <>
                       <TradePlate
                         side="yours"
                         items={yourSide.items}
@@ -1104,22 +1082,7 @@ export default function TradeProposalBuilder({
                       )}
                       {suggestBlock}
                       <MobileRosterShelf {...sharedShelfProps} />
-                    </>
-                  ) : (
-                    <div className="mx-4 mt-4 rounded-xl px-4 py-4 flex flex-col gap-1.5" style={{ background: 'var(--color-fill)' }}>
-                      {ktcLoading ? (
-                        <div className="flex items-center gap-2.5">
-                          <Spinner />
-                          <span className="text-sm font-medium" style={{ color: 'var(--color-label-secondary)' }}>Loading trade values…</span>
-                        </div>
-                      ) : (
-                        <>
-                          <span className="text-sm font-semibold" style={{ color: 'var(--color-label)' }}>Trade values unavailable</span>
-                          <span className="text-xs font-mono mt-1" style={{ color: 'var(--color-label-quaternary)' }}>{ktcError}</span>
-                        </>
-                      )}
-                    </div>
-                  )}
+                  </>
                 </div>
               </>
             );

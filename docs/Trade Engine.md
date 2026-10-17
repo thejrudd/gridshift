@@ -19,7 +19,19 @@ The app has four different Trade surfaces:
 
 Agent, Intelligence, Upgrades, History, and Proposals are current-season surfaces. When a prior linked-league season is selected, the Trade section remains visible and navigable but shows a current-season hint with a one-tap switch back to the latest linked-league season. Trade actions from roster/player views and proposal polling remain unavailable until then. Historical league data and finalized transaction records remain available through the League views.
 
-These surfaces share some underlying valuation inputs, but they do not all use the exact same pipeline.
+These surfaces share a canonical player-value map and use one fantasy-viability scale. Ranking, opportunity context, and pick uncertainty remain separate inputs to their own workflows.
+
+## Player and pick value scale
+
+Every player is valued from 0–100. A score of 0 means no realistic path to playing time, 50 means the average fantasy-viable player, and 100 means a league-leading player overall. Production under the active scoring settings and expected role are balanced for offense, IDP, kickers, and D/ST. Fantasy production is compared across supported positions, while role evidence is compared within position and weighted by confidence when data is sparse. League starter slots add mild position-scarcity context. There is no replacement-player cutoff; an asset with a plausible path to playing time remains above zero when evidence supports it.
+
+KTC is a peer market signal with a 25% weight when available. Positive KTC values are normalized into a 0–100 percentile score; a raw value of 0 remains an unvalued placeholder. If either production or role is missing, available local evidence is used; KTC can also provide an estimate when local inputs are absent. Missing KTC never blocks local valuation. Missing all evidence leaves an asset unavailable instead of assigning a misleading zero. Market trends may still show KTC's original history, separate from Trade's player scale.
+
+Redraft values reflect this season. Dynasty values also consider the prior completed season. Recent weekly opportunity and fresh BDL weekly projections can establish expected role; BDL is optional and never a valuation prerequisite. Missing keys, unsupported capabilities, stale data, and failed responses are optional-context gaps. Injury and practice designations are current context. Postgame starter and did-not-play fields are deliberately omitted because they are not future lineup projections.
+
+Redraft pick values use the canonical Trade values of the scoring-aware neutral draft pool, summarized by round and discounted for uncertainty. If that pool is not usable, normalized KTC percentiles can supply the pick estimate. Dynasty picks use normalized KTC pick baselines where available. Pick values use the same 0–100 range, but trade-side totals add assets and can exceed 100. FAAB is checked for ownership and feasibility only; it has no numeric Trade value.
+
+New proposal snapshots identify `fantasy-viability-0-100-v2`. Snapshots from the prior `league-utility-0-100-v1` scale and snapshots with no scale identifier are legacy; proposal cards preserve the values captured when sent and label them as legacy. Proposal cards never recalculate a stored asset against current values.
 
 ## GridShift Trade Proposal Rooms
 
@@ -47,6 +59,8 @@ Only the accepting manager sees the `What to do next` handoff: re-create the sam
   Fetches and caches weekly Sleeper transactions by league season, filters to completed trades, and normalizes manager, player, draft-pick, and FAAB movement.
 - `src/utils/tradeValue.js`
   Shared player trade-value detail builder. This is the common source for blended trade values used across Trade surfaces.
+- `src/components/compare/CompareTradePanel.jsx`
+  Two-player Trade comparison. Its displayed player scores use the same fantasy-viability map and normalized KTC context as Companion Trade; KTC trend and source values remain separate market context.
 - `src/utils/tradeAnalytics.js`
   Precomputes Trade analytics snapshots: positional averages, value-per-PPG, IDP/DST/kicker computed values, and the optional opportunity layer.
 - `src/utils/tradeEngine.js`
@@ -60,30 +74,27 @@ Only the accepting manager sees the `What to do next` handoff: re-create the sam
 
 ### Shared inputs
 
-Most Trade flows start from the same source data:
+Most Trade flows start from these local and optional market inputs:
 - the active fantasy provider's normalized league and rosters
 - normalized player map
 - season stats / weekly stats
 - scoring settings
-- adjusted KTC datasets
+- adjusted KTC datasets, when available
 - current draft pick ownership
 
 Sleeper is the supported fantasy provider for players and draft picks.
 
 ### Shared valuation layer
 
-`tradeValue.js` computes a `value` for each player by blending:
-- adjusted KTC value when available
-- production context from scoring + season stats
-- positional rank adjustment
-- dynasty fallback when redraft KTC is missing
-- IDP/DST/kicker estimated value when KTC has no direct entry
+`tradeValue.js` computes a `value` for each player from:
+- fantasy production under active scoring and expected role, with confidence weighting for sparse evidence
+- mild scarcity context from active league starter slots
+- a normalized KTC peer signal weighted at 25% when available
+- current-season production and role for redraft, plus prior-season evidence for dynasty
 
 This shared value is what reduced earlier drift between Agent, Intelligence, and Upgrade surfaces.
 
-KTC does not publish IDP or kicker market values. Every Trade player value is evaluated with the selected league's scoring settings. Explicit DL/LB/DB roster slots and IDP flex slots (`IDP_FLEX`, `FLEX_IDP`, or `DP`) enable production-based values for the relevant IDP groups; a `DEF` slot enables D/ST, and a `K` slot enables kickers. Trade does not use KTC rows for these generated positions, including zero-valued placeholder rows that could otherwise suppress the GridShift estimate through a name match. Trade loads the immediately prior completed season in the background whenever one of those generated-value paths is available. For each generated IDP, D/ST, or kicker value, it first requires current-season production of at least three recorded games and positive league-scored points; if that player does not qualify, it applies the current league scoring to that player's prior-season production and uses it only when it meets the same threshold. Otherwise the value remains unavailable (`—`). Current production always wins for an individually qualified player. Prior-season data never substitutes for current-season offensive KTC production adjustments, ranks, pick calibration, or opportunity analysis.
-
-Generated IDP, D/ST, and kicker values convert league-scored PPG into the same market scale as offensive player values, then receive the shared positional-finish adjustment. They are not hard-capped at 10,000: KTC-backed offensive values can exceed that number, so a generated value may do so only when the league's scoring and production justify it. Production-backed values require three recorded games; missing or insufficient production remains unavailable (`—`) and is never converted to zero. Intelligence and Upgrade assets that receive the canonical player-value map preserve that same unavailable state when an entry is missing; only the standalone opportunity fallback without a canonical map may use its local heuristic estimate. A trade side containing an unavailable asset cannot receive a fairness verdict until all of its assets have values.
+KTC does not publish IDP or kicker market values, so their values come from local scoring and role evidence. Explicit DL/LB/DB roster slots and IDP flex slots (`IDP_FLEX`, `FLEX_IDP`, or `DP`) enable values for the relevant IDP groups; a `DEF` slot enables D/ST, and a `K` slot enables kickers. Trade ignores KTC rows for these positions, including zero-valued placeholders. All positions use the same production-and-role approach; no replacement threshold or minimum games requirement can force a viable player to zero. Unknown evidence remains unavailable (`—`). A trade side containing an unavailable asset cannot receive a fairness verdict until all of its assets have values.
 
 ### Agent flow
 

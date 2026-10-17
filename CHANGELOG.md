@@ -1427,3 +1427,14 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Waivers in Rankings** - Bring free agents into Rankings with a projected-points sort and unrostered-only filter. Legacy Waivers links keep their selected position and open the corresponding Rankings view.
 - **Tour route handling** - Keep a What's New tour on its destination if the previous view's initial route state finishes syncing late.
 - **Regression coverage** - Add route and Heatmap data coverage for the updated Fantasy surfaces.
+
+## v9.3.0 - Player & Team Dashboards
+*2026-10-16*
+
+- **Player dashboard** - The Statistics player page now opens on a play-by-play dashboard with tabs for the player's position: Overview, Passing, Rushing, Receiving, Kicking, Pass rush, Tackling, Coverage, and Every play. Seasons keeps the season-by-season page, with Game Stats, Fantasy Values, Visual, and career rows. Every play shows per-play fantasy points under your league's scoring.
+- **Team dashboard** - The Statistics team page leads with a team hero (record with home and away split, division place, Super Bowls, division titles, and a next-game link), then position leaders with depth-chart standing, ESPN's depth chart, and Season, Player stats, League ranks, and Full roster tabs for the last three seasons.
+- **Unified Trade values** - Every player is valued on one 0-100 fantasy-viability scale from production under your scoring and expected role, with a 25% weight on a normalized KTC market signal. Players with a realistic role or recent production no longer fall to zero on sparse samples, KTC zero placeholders are treated as unvalued so a partial total is never called fair, and IDP, kicker, and D/ST values use the same scale. Trade-side totals may exceed 100; sent proposals keep their captured values and label older scales as legacy.
+- **Compare Trade consistency** - Two-player Compare Trade scores now match Companion Trade for the same player.
+- **Injuries deep links** - Injuries can open directly on a player.
+- **Server and routing** - Added `/api/statistics/players/` and `/api/statistics/teams/` endpoints with matching nginx routes and a longer read timeout for cold seasons.
+- **Regression coverage and documentation** - Added coverage for the player and team dashboard models, trade value scale and injury slot rules, plus Player Dashboard, Team Dashboard, Trade Engine, and Independent Fantasy Platform Plan references.

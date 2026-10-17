@@ -5,6 +5,7 @@
 import { findKtcDraftPickBaseline, getKtcValue } from './ktcApi.js';
 import { getDraftPickDisplayInfo } from './draftPickDisplay.js';
 import { resolveTradePlayerValueDetail, sumTradeValues } from './tradeValue.js';
+import { normalizeKtcMarketValue, normalizeKtcMarketValues } from './tradeValueScale.js';
 
 // ── Redraft pick valuation ────────────────────────────────────────────────────
 
@@ -61,25 +62,28 @@ function normalizeCalibrationPool(calibrationPool) {
  * @param {Array}  ktcPlayers - KTC player dataset (redraft-format values)
  * @param {number} leagueSize - Number of teams (picks per round)
  * @param {string} leagueType - '1qb' | 'sf'
- * @param {{ calibrationPool?: Array<{rank: number, value: number|null}>, fallbackValueMultiplier?: number }} options
+ * @param {{ calibrationPool?: Array<{rank: number, value: number|null}> }} options
  * @returns {{ [round: number]: number }}
  */
 export function computeRedraftPickValues(
   ktcPlayers,
   leagueSize,
   leagueType,
-  { calibrationPool = null, fallbackValueMultiplier = 1 } = {},
+  { calibrationPool = null } = {},
 ) {
-  if (!ktcPlayers?.length || !leagueSize) return {};
-
-  // All non-RDP players sorted by value desc
-  const ranked = ktcPlayers
-    .filter(k => k.position !== 'RDP')
-    .map(k => getKtcValue(k, leagueType) ?? 0)
-    .filter(v => v > 0)
-    .sort((a, b) => b - a);
+  if (!leagueSize) return {};
 
   const normalizedCalibrationPool = normalizeCalibrationPool(calibrationPool);
+  const marketValues = normalizeKtcMarketValues(ktcPlayers, leagueType);
+  const calibrationValues = normalizedCalibrationPool.map((candidate) => candidate.value).filter(Number.isFinite).sort((a, b) => b - a);
+  const ranked = calibrationValues.length
+    ? calibrationValues
+    : (ktcPlayers ?? [])
+      .filter(k => k.position !== 'RDP')
+      .map(k => marketValues.get(k))
+      .filter(Number.isFinite)
+      .sort((a, b) => b - a);
+  if (!ranked.length) return {};
   const map = {};
 
   for (let round = 1; round <= 25; round++) {
@@ -93,8 +97,7 @@ export function computeRedraftPickValues(
     const calibrationBucket = normalizedCalibrationPool.slice(start, start + leagueSize);
     const calibrated = getCalibrationRoundValue(calibrationBucket);
     const roundValue = calibrated ?? median(bucket);
-    const multiplier = calibrated == null ? fallbackValueMultiplier : 1;
-    map[round] = Math.round(roundValue * discount * multiplier);
+    map[round] = Math.max(0, Math.min(100, Math.round(roundValue * discount)));
   }
 
   return map;
@@ -225,7 +228,8 @@ export function valueDraftPick(
   } else {
     ktcEntry = findKtcDraftPickBaseline(pick?.year, pick?.round, ktcPlayers);
     const baseValue = getKtcValue(ktcEntry, leagueType);
-    val = baseValue != null ? Math.round(baseValue * pickYearDiscount(pick.year, currentSeason)) : null;
+    const normalizedMarketValue = normalizeKtcMarketValue(baseValue, ktcPlayers, leagueType);
+    val = normalizedMarketValue != null ? Math.round(normalizedMarketValue * pickYearDiscount(pick.year, currentSeason)) : null;
   }
 
   return {
@@ -247,6 +251,7 @@ function buildPlayerTradeItem(playerId, player, detail) {
     position: player?.position ?? '',
     team: player?.team ?? '',
     val: detail?.value ?? null,
+    valueSource: detail?.valueSource ?? 'unavailable',
     dynastyFallback: detail?.dynastyFallback ?? false,
     idpFallback: detail?.isEstimated ?? false,
     type: 'player',
@@ -274,7 +279,7 @@ function buildDraftPickTradeItem(pick, valuation, { includeKtcEntry = false } = 
 // ── Trade valuation ───────────────────────────────────────────────────────────
 
 /**
- * Compute the total KTC value for a set of players + picks on one side of a trade.
+ * Compute the total Trade value for a set of players + picks on one side.
  *
  * @param {string[]} playerIds      - Sleeper player IDs on this side
  * @param {Array}    pickItems      - Pick objects: { year, round, fromRosterId }
@@ -530,7 +535,7 @@ export function suggestPackage({ gap, deficitSide, deficitCandidates, deficitIte
 export function buildCandidatePool(
   rosterId, rosters, excludeIds, excludePickKeys,
   sleeperPlayers, ktcPlayers, leagueType, rosterPicks, slots, pickValueMap, currentSeason,
-  { dynastyKtcPlayers, seasonStats, scoringSettings, positionalValuePerPPG, positionalAvgPPG, rankMap, idpValueMap, playerTradeValueDetailsMap, league = null, drafts = [] } = {},
+  { dynastyKtcPlayers, seasonStats, scoringSettings, rankMap, idpValueMap, playerTradeValueDetailsMap, league = null, drafts = [] } = {},
 ) {
   const candidates = [];
   const roster = rosters.find(r => String(r.roster_id) === String(rosterId));
@@ -551,11 +556,8 @@ export function buildCandidatePool(
       leagueType,
       seasonStats,
       scoringSettings,
-      positionalAvgPPG,
-      positionalValuePerPPG,
       rankMap,
       mergedIDPMap: idpValueMap,
-      blendWeight: 0.50,
     });
     const val = detail?.value ?? null;
     const pos = sp?.position ?? '';

@@ -121,21 +121,18 @@ export default function ValuationInfoSheet({ format, leagueType, scoringSettings
           <section className="flex flex-col gap-2">
             <h3 className="text-xs font-bold uppercase tracking-widest"
               style={{ color: 'var(--color-label-tertiary)', letterSpacing: '0.08em' }}>
-              KeepTradeCut (KTC)
+              GridShift player value · 0–100
             </h3>
             <p className="text-sm leading-relaxed" style={{ color: 'var(--color-label)' }}>
-              Trade values are sourced from{' '}
-              <span className="font-semibold">KeepTradeCut</span>, a community-driven
-              platform where dynasty managers submit real trade offers to establish
-              consensus market values. KTC-backed values use its <span className="font-semibold">0–10,000</span> scale;
-              scoring-derived defensive values can exceed that range when your league's
-              scoring and production support it.
+              GridShift values players by fantasy production and expected role, using your league's scoring and
+              starter slots. A 0 means no realistic path to playing time, 50 is the average fantasy-viable player,
+              and 100 is a league-leading player overall. Trade-side totals can exceed 100.
             </p>
             <p className="text-sm leading-relaxed" style={{ color: 'var(--color-label-secondary)' }}>
-              KTC publishes separate value sets for{' '}
-              <span className="font-semibold">Dynasty vs Redraft</span> leagues and{' '}
-              <span className="font-semibold">1QB vs Superflex</span> formats. This app
-              automatically selects the correct set based on your league's Sleeper settings.
+              Production and role are balanced, with mild position scarcity based on league starter slots. When
+              local evidence exists, KTC adds a 25% market signal; if local evidence is missing, KTC can provide
+              an estimate. The local model still works without KTC. Redraft reflects this
+              season, while dynasty includes prior-season evidence. BDL projections can add optional current context.
             </p>
             <div className="rounded-xl px-3 py-2.5 flex gap-4"
               style={{ background: 'var(--color-fill)' }}>
@@ -148,19 +145,19 @@ export default function ValuationInfoSheet({ format, leagueType, scoringSettings
           <section className="flex flex-col gap-2">
             <h3 className="text-xs font-bold uppercase tracking-widest"
               style={{ color: 'var(--color-label-tertiary)', letterSpacing: '0.08em' }}>
-              KTC Baseline Assumptions
+              Current-context sources
             </h3>
             <p className="text-sm leading-relaxed" style={{ color: 'var(--color-label-secondary)' }}>
-              KTC's community values are built from a broad mix of leagues. Their implicit baseline is:
+              Market values can reflect manager behavior and news that raw statistics do not show. Fresh BALLDONTLIE weekly projections,
+              injury designations, and practice reports may appear as current context beside a player. They do not change the 0–100 score.
+              BALLDONTLIE credentials and data are optional; missing, stale, or unavailable responses cannot block valuation.
             </p>
             <div className="flex flex-col gap-1">
               {[
-                ['Reception scoring', '½ PPR (0.5 pts/catch)'],
-                ['Passing touchdowns', '4 pts per TD'],
-                ['Position reception bonuses', 'None'],
-                ['Rushing-attempt scoring', 'None'],
-                ['Big-play TD/completion bonuses', 'None'],
-                ['Roster construction', '1 TE, standard flex'],
+                ['Production sample', 'At least 3 games for local utility'],
+                ['Replacement level', 'Starter demand × league size'],
+                ['Market influence', 'Bounded secondary adjustment'],
+                ['BDL availability', 'Optional, never required'],
               ].map(([label, val]) => (
                 <div key={label} className="flex items-center justify-between py-1.5 px-3 rounded-lg"
                   style={{ background: 'var(--color-fill)' }}>
@@ -175,12 +172,12 @@ export default function ValuationInfoSheet({ format, leagueType, scoringSettings
           <section className="flex flex-col gap-2">
             <h3 className="text-xs font-bold uppercase tracking-widest"
               style={{ color: 'var(--color-label-tertiary)', letterSpacing: '0.08em' }}>
-              Your League's Adjustments
+              Market Context Adjustments
             </h3>
             <p className="text-sm leading-relaxed" style={{ color: 'var(--color-label-secondary)' }}>
               {isAdjusted
-                ? 'Your league\'s scoring settings differ from KTC\'s baseline. Positional multipliers are applied automatically based on the live settings fetched from Sleeper:'
-                : 'Your league\'s settings match KTC\'s baseline closely — no adjustments are applied.'}
+                ? 'League settings can adjust the KTC input before its market percentile is calculated. These adjustments affect only the secondary market signal; the local player score uses your scoring and roster settings directly.'
+                : 'No additional market adjustment is applied. Local player values still use your scoring and roster settings directly.'}
             </p>
 
             {/* Scoring settings */}
@@ -405,9 +402,9 @@ export default function ValuationInfoSheet({ format, leagueType, scoringSettings
                 Defensive Scoring
               </h3>
             <p className="text-sm leading-relaxed" style={{ color: 'var(--color-label-secondary)' }}>
-                Defensive values are based on <span className="font-semibold">production scored with your Sleeper settings</span>,
-                then translated onto the same value-per-PPG scale as offensive players. Before the season has
-                usable production, GridShift uses the most recently completed season with your current scoring rules.
+                Defensive players use the same 0–100 fantasy-viability scale as offense. Production is scored with your
+                league settings and balanced with expected role. Redraft uses this season; dynasty also considers the prior
+                season. A missing key, stale response, or unavailable provider never blocks local values.
               </p>
               <div className="rounded-xl px-3 py-2.5 flex gap-4"
                 style={{ background: 'var(--color-fill)' }}>
@@ -460,43 +457,19 @@ export default function ValuationInfoSheet({ format, leagueType, scoringSettings
             </section>
           )}
 
-          {/* Season performance adjustments section */}
+          {/* Utility explanation */}
           <section className="flex flex-col gap-3">
             <h3 className="text-xs font-bold uppercase tracking-widest"
               style={{ color: 'var(--color-label-tertiary)', letterSpacing: '0.08em' }}>
-              Season Performance Adjustments
+              Production and expected role
             </h3>
-              <p className="text-sm leading-relaxed" style={{ color: 'var(--color-label-secondary)' }}>
-              After scoring multipliers are applied, two additional layers adjust each player's
-              value based on <span className="font-semibold">how they perform under your league's scoring</span>.
-              Before the season begins, these use the most recently completed season; current-season production
-              takes over once it is available.
+            <p className="text-sm leading-relaxed" style={{ color: 'var(--color-label-secondary)' }}>
+              Fantasy production is compared across supported positions, while role evidence is compared within
+              position and combined. Recent
+              opportunity, available projections, and league starter demand help identify viable players. Sparse
+              evidence is weighted by confidence. A player with no useful evidence stays unavailable rather than
+              being assigned a misleading zero; zero is reserved for a player with no realistic path to playing time.
             </p>
-            <div className="flex flex-col gap-3">
-              <div className="flex flex-col gap-1">
-                <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-label-tertiary)' }}>PPG Adjustment</span>
-                <p className="text-sm leading-relaxed" style={{ color: 'var(--color-label-secondary)' }}>
-                  Each player's average PPG is compared to the positional average in your league.
-                  Players scoring above average gain value; below-average players lose value.
-                  Range: <span className="font-semibold">×0.80 floor → ×1.40 ceiling</span>, with a 50% blend weight
-                  so KTC consensus still anchors the result. Applies to players with direct KTC rankings only —
-                  dynasty-fallback players are already 100% PPG-driven.
-                </p>
-              </div>
-              <div className="flex flex-col gap-1">
-                <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-label-tertiary)' }}>Total Points Rank Adjustment</span>
-                <p className="text-sm leading-relaxed" style={{ color: 'var(--color-label-secondary)' }}>
-                  After the PPG adjustment, a ±12% nudge is applied based on each player's
-                  positional rank by <span className="font-semibold">total points</span> (PPG × games played) in your league.
-                  Rank #1 at the position receives +12%; the median rank is unchanged; last rank receives −12%.
-                  Players with no recorded stats are unaffected.
-                </p>
-              </div>
-              <p className="text-xs leading-relaxed" style={{ color: 'var(--color-label-tertiary)' }}>
-                These two adjustments compound. A top-ranked, high-PPG player can be ~20–30% above
-                their raw KTC value; a low-ranked, low-PPG player can be ~20–25% below.
-              </p>
-            </div>
           </section>
 
           {/* Draft picks section */}
@@ -507,11 +480,8 @@ export default function ValuationInfoSheet({ format, leagueType, scoringSettings
             </h3>
             {format === 'dynasty' ? (
               <p className="text-sm leading-relaxed" style={{ color: 'var(--color-label-secondary)' }}>
-                Dynasty picks use a <span className="font-semibold">round-level KTC RDP baseline</span> built from
-                the available market values for that round. Sleeper does not provide a reliable future slot for
-                a tradable pick, so values are <span className="font-semibold">not adjusted</span> by
-                league scoring settings, as KTC community consensus already prices future asset value
-                on a scoring-agnostic basis. A separate future-year discount still applies.
+                Dynasty pick baselines are converted to the same 0–100 range as player values using their market percentile.
+                A future-year discount still applies because later picks are farther from use.
               </p>
             ) : (
               <>

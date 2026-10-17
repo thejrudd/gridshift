@@ -1,9 +1,14 @@
-import { useState, useEffect, useMemo } from 'react';
-import { fetchRoster, fetchDepthChart, headshot } from '../utils/playerApi';
+import { useState, useEffect } from 'react';
+import { fetchRoster, fetchDepthChartUnits, CURRENT_SEASON } from '../utils/playerApi';
 import { TEAM_COLORS } from '../data/teamColors.js';
 import { TEAM_HISTORY } from '../data/teamHistory.js';
 import { useTheme } from '../context/ThemeContext';
-import { hexLuminance } from '../utils/teamVisualTheme';
+import { getLegibleTeamColor, getTeamVisualTheme, hexLuminance } from '../utils/teamVisualTheme';
+import { useSleeperLeague } from '../context/SleeperContext';
+import TeamDashboard from './statistics/team/TeamDashboard.jsx';
+import TeamHero from './statistics/team/TeamHero.jsx';
+import { useTeamSeasonDashboard } from '../hooks/useTeamSeasonDashboard.js';
+import { getTeamAbbr } from '../utils/liveScoringFeed.js';
 
 // ── Color helpers (duplicated from PlayerProfile to keep components self-contained) ──
 
@@ -14,80 +19,16 @@ function darkenHex(hex, amount = 0.28) {
   return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
 }
 
-// ── Position groupings ────────────────────────────────────────────────────────
-
-const POSITION_GROUPS = [
-  { label: 'Quarterbacks',    positions: ['QB'] },
-  { label: 'Running Backs',   positions: ['RB', 'FB', 'HB'] },
-  { label: 'Wide Receivers',  positions: ['WR'] },
-  { label: 'Tight Ends',      positions: ['TE'] },
-  { label: 'Offensive Line',  positions: ['OT', 'OG', 'C', 'OL', 'G', 'T'] },
-  { label: 'Defensive Line',  positions: ['DE', 'DT', 'NT', 'DL', 'ED'] },
-  { label: 'Linebackers',     positions: ['LB', 'ILB', 'OLB', 'MLB'] },
-  { label: 'Defensive Backs', positions: ['CB', 'S', 'SS', 'FS', 'DB'] },
-  { label: 'Kickers',         positions: ['K'] },
-  { label: 'Specialists',     positions: ['P', 'LS'] },
-];
-
-const hasPosition = (...positions) => p => positions.includes(p.position);
-
-const STARTER_SECTIONS = [
-  {
-    id: 'offense',
-    label: 'Offense',
-    slots: [
-      { label: 'QB', match: hasPosition('QB') },
-      { label: 'RB', match: hasPosition('RB', 'FB', 'HB') },
-      { label: 'WR', match: hasPosition('WR') },
-      { label: 'WR', match: hasPosition('WR') },
-      { label: 'WR', match: hasPosition('WR') },
-      { label: 'TE', match: hasPosition('TE') },
-      { label: 'LT', match: hasPosition('OT', 'T') },
-      { label: 'LG', match: hasPosition('OG', 'G') },
-      { label: 'C', match: hasPosition('C') },
-      { label: 'RG', match: hasPosition('OG', 'G') },
-      { label: 'RT', match: hasPosition('OT', 'T') },
-    ],
-  },
-  {
-    id: 'defense',
-    label: 'Defense',
-    slots: [
-      { label: 'EDGE', match: hasPosition('ED', 'EDGE', 'DE', 'OLB') },
-      { label: 'DL', match: hasPosition('DT', 'NT', 'DL', 'DE') },
-      { label: 'DL', match: hasPosition('DT', 'NT', 'DL', 'DE') },
-      { label: 'EDGE', match: hasPosition('ED', 'EDGE', 'DE', 'OLB') },
-      { label: 'LB', match: hasPosition('LB', 'ILB', 'OLB', 'MLB') },
-      { label: 'LB', match: hasPosition('LB', 'ILB', 'OLB', 'MLB') },
-      { label: 'LB', match: hasPosition('LB', 'ILB', 'OLB', 'MLB') },
-      { label: 'CB', match: hasPosition('CB') },
-      { label: 'CB', match: hasPosition('CB') },
-      { label: 'S', match: hasPosition('S', 'SS', 'FS') },
-      { label: 'S', match: hasPosition('S', 'SS', 'FS') },
-    ],
-  },
-  {
-    id: 'special',
-    label: 'Special Teams',
-    slots: [
-      { label: 'K', match: hasPosition('K') },
-      { label: 'P', match: hasPosition('P') },
-      { label: 'LS', match: hasPosition('LS') },
-    ],
-  },
-];
-
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function TeamPage({ team, onBack, onSelectPlayer, onViewSchedule }) {
+export default function TeamPage({ team, onBack, onSelectPlayer, onViewSchedule, onViewScheduleGame, onViewGameStats }) {
   const { darkMode } = useTheme();
 
+  const { hasLeague, activeScoringSettings, league } = useSleeperLeague();
   const [roster, setRoster]       = useState(null);
-  const [depthChart, setDepthChart] = useState({});
+  const [depthUnits, setDepthUnits] = useState([]);
   const [loading, setLoading]     = useState(true);
   const [loadError, setLoadError] = useState(null);
-  const [expandedGroups, setExpandedGroups] = useState(new Set());
-  const [starterTab, setStarterTab] = useState(STARTER_SECTIONS[0].id);
 
   const teamKey = team.id.toLowerCase();
   const palette = TEAM_COLORS[teamKey];
@@ -98,64 +39,25 @@ export default function TeamPage({ team, onBack, onSelectPlayer, onViewSchedule 
   const heroOnBg   = hexLuminance(heroBg) > 0.3 ? '#0C0F14' : '#FFFFFF';
   const heroMuted  = heroOnBg === '#FFFFFF' ? 'rgba(255,255,255,0.65)' : 'rgba(12,15,20,0.60)';
   const podBg      = heroOnBg === '#FFFFFF' ? 'rgba(255,255,255,0.12)' : 'rgba(12,15,20,0.10)';
-  const tabOnAccent = hexLuminance(heroAccent) > 0.55 ? '#0C0F14' : '#FFFFFF';
-  const franchiseNote = useMemo(() => {
-    const facts = history?.facts ?? [];
-    if (facts.length === 0) return null;
-    return facts[Math.floor(Math.random() * facts.length)];
-  }, [history, teamKey]);
 
   useEffect(() => {
     setLoading(true);
     Promise.all([
       fetchRoster(team.id),
-      fetchDepthChart(team.id).catch(() => ({})),
+      fetchDepthChartUnits(team.id).catch(() => []),
     ])
-      .then(([players, dc]) => { setRoster(players); setDepthChart(dc); })
+      .then(([players, units]) => { setRoster(players); setDepthUnits(units); })
       .catch(() => setLoadError('Failed to load roster.'))
       .finally(() => setLoading(false));
   }, [team.id]);
 
-  const toggleGroup = (label) =>
-    setExpandedGroups(prev => {
-      const next = new Set(prev);
-      next.has(label) ? next.delete(label) : next.add(label);
-      return next;
-    });
-
-  const starterSections = useMemo(() => {
-    if (!roster) return STARTER_SECTIONS.map(section => ({ ...section, players: [] }));
-
-    const byDepth = [...roster].sort((a, b) => {
-      const da = depthChart[a.id] ?? Infinity;
-      const db = depthChart[b.id] ?? Infinity;
-      if (da !== db) return da - db;
-      const ra = a.rosterOrder ?? Infinity;
-      const rb = b.rosterOrder ?? Infinity;
-      if (ra !== rb) return ra - rb;
-      return (b.experience ?? 0) - (a.experience ?? 0);
-    });
-
-    return STARTER_SECTIONS.map(section => {
-      const used = new Set();
-      const players = section.slots.map((slot, index) => {
-        const player = byDepth.find(p => slot.match(p) && !used.has(p.id));
-        if (player) used.add(player.id);
-        return { slotId: `${slot.label}-${index}`, label: slot.label, player };
-      });
-      return { ...section, players };
-    });
-  }, [depthChart, roster]);
-
-  const activeStarterSection = starterSections.find(section => section.id === starterTab) ?? starterSections[0];
-
-  // Full roster grouped by position, sorted by depth chart rank within each group
-  const rosterGroups = POSITION_GROUPS.map(group => ({
-    ...group,
-    players: (roster ?? [])
-      .filter(p => group.positions.includes(p.position))
-      .sort((a, b) => (depthChart[a.id] ?? Infinity) - (depthChart[b.id] ?? Infinity)),
-  })).filter(g => g.players.length > 0);
+  // Play-by-play starts with 2022; offer the last three seasons from there.
+  const seasonOptions = [CURRENT_SEASON, CURRENT_SEASON - 1, CURRENT_SEASON - 2].filter((year) => year >= 2022);
+  // The hero and the dashboard share one season and one team-season fetch.
+  const [season, setSeason] = useState(seasonOptions[0]);
+  const teamAbbr = getTeamAbbr(team.id);
+  const seasonData = useTeamSeasonDashboard({ season, team: teamAbbr });
+  const dashboardColor = getLegibleTeamColor(getTeamVisualTheme(team.id, darkMode)?.primary, darkMode);
 
   return (
     <div className="space-y-5">
@@ -172,150 +74,29 @@ export default function TeamPage({ team, onBack, onSelectPlayer, onViewSchedule 
         Statistics
       </button>
 
-      {/* ── Hero card ─────────────────────────────────────────────────────── */}
-      <div
-        className="rounded-xl overflow-hidden shadow-lg relative"
-        style={{
-          background: `linear-gradient(135deg, ${heroBg} 0%, ${darkenHex(heroBg, 0.35)} 100%)`,
-          borderLeft: `4px solid ${heroAccent}`,
+      <TeamHero
+        team={team}
+        teamAbbr={teamAbbr}
+        history={history}
+        season={season}
+        seasonData={seasonData.status === 'ready' ? seasonData.data : null}
+        darkMode={darkMode}
+        colors={{
+          '--statistics-team-hero-bg': heroBg,
+          '--statistics-team-hero-bg-end': darkenHex(heroBg, 0.35),
+          '--statistics-team-hero-accent': heroAccent,
+          '--statistics-team-hero-on': heroOnBg,
+          '--statistics-team-hero-muted': heroMuted,
+          '--statistics-team-hero-pod': podBg,
         }}
-      >
-        {/* City map background — full-bleed, very low opacity */}
-        <img
-          src={`/maps/${teamKey}.png`}
-          aria-hidden="true"
-          className="absolute inset-0 w-full h-full object-cover pointer-events-none"
-          style={{ opacity: 0.12, mixBlendMode: 'luminosity' }}
-          onError={e => { e.target.style.display = 'none'; }}
-        />
-
-        {/* Watermark logo — desktop only */}
-        <div
-          className="absolute inset-y-0 right-0 hidden sm:flex items-center pointer-events-none"
-          aria-hidden="true"
-          style={{ paddingRight: '20px' }}
-        >
-          <img
-            src={`https://a.espncdn.com/i/teamlogos/nfl/500/${teamKey}.png`}
-            alt=""
-            style={{ width: '180px', height: '180px', objectFit: 'contain', opacity: 0.11 }}
-            onError={e => { e.target.style.display = 'none'; }}
-          />
-        </div>
-
-        <div className="p-6 relative">
-          <div className="statistics-team-hero__layout">
-            <div className="statistics-team-hero__main">
-              {/* Team identity */}
-              <div className="flex items-center gap-4 min-w-0">
-                <img
-                  src={`https://a.espncdn.com/i/teamlogos/nfl/500/${teamKey}.png`}
-                  alt={team.name}
-                  className="w-16 h-16 object-contain shrink-0"
-                  onError={e => { e.target.style.display = 'none'; }}
-                />
-                <div className="min-w-0">
-                  <h1
-                    className="font-display font-bold leading-none"
-                    style={{ fontSize: '26px', letterSpacing: '0.06em', color: heroOnBg }}
-                  >
-                    {team.name.toUpperCase()}
-                  </h1>
-                  {history && (
-                    <p style={{ fontSize: '13px', color: heroMuted, marginTop: '3px' }}>
-                      {history.city}, {history.state} · Est. {history.founded} · {history.stadium}
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              {/* Championship pods */}
-              {history && (
-                <div className="flex flex-wrap gap-3">
-                  <ChampPod
-                    count={history.superBowls}
-                    label={history.superBowls === 1 ? 'Super Bowl' : 'Super Bowls'}
-                    note={history.superBowlYears.length > 0 ? history.superBowlYears.join(', ') : null}
-                    icon="🏆"
-                    onBg={heroOnBg}
-                    muted={heroMuted}
-                    podBg={podBg}
-                  />
-                  <ChampPod
-                    count={history.conferenceGameAppearances}
-                    label={history.conferenceGameAppearances === 1 ? 'Conf. Game App' : 'Conf. Game Apps'}
-                    icon="🏅"
-                    onBg={heroOnBg}
-                    muted={heroMuted}
-                    podBg={podBg}
-                  />
-                  <ChampPod
-                    count={history.divisionTitles}
-                    label={history.divisionTitles === 1 ? 'Div. Title' : 'Div. Titles'}
-                    icon="📋"
-                    onBg={heroOnBg}
-                    muted={heroMuted}
-                    podBg={podBg}
-                  />
-                  {history.superBowlAppearances > history.superBowls && (
-                    <ChampPod
-                      count={history.superBowlAppearances}
-                      label={history.superBowlAppearances === 1 ? 'SB Appearance' : 'SB Appearances'}
-                      icon="🎖️"
-                      onBg={heroOnBg}
-                      muted={heroMuted}
-                      podBg={podBg}
-                    />
-                  )}
-                </div>
-              )}
-            </div>
-
-            {onViewSchedule && (
-              <div className="statistics-team-hero__action-wrap">
-                <button
-                  type="button"
-                  onClick={onViewSchedule}
-                  className="statistics-team-hero__schedule-button"
-                  style={{
-                    border: `1px solid ${heroMuted}`,
-                    background: podBg,
-                    color: heroOnBg,
-                  }}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                    <rect x="4" y="5" width="16" height="15" rx="2" stroke="currentColor" strokeWidth="1.8" />
-                    <path d="M8 3v4M16 3v4M4 10h16M8 14h2M13 14h3M8 17h2M13 17h3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-                  </svg>
-                  View Schedule
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* ── Franchise note ───────────────────────────────────────────────── */}
-      {franchiseNote && (
-        <div
-          className="rounded-xl p-5"
-          style={{ background: 'var(--color-bg-secondary)', borderLeft: `3px solid ${heroAccent}` }}
-        >
-          <h2
-            className="text-[length:var(--type-label)] font-bold uppercase tracking-widest mb-3"
-            style={{ color: heroAccent }}
-          >
-            Franchise Note
-          </h2>
-          <p
-            className="flex gap-2.5 text-sm leading-relaxed"
-            style={{ color: 'var(--color-label-secondary)' }}
-          >
-            <span style={{ color: heroAccent, flexShrink: 0, fontWeight: 700 }}>—</span>
-            <span>{franchiseNote}</span>
-          </p>
-        </div>
-      )}
+        onViewSchedule={onViewSchedule}
+        onOpenNextGame={onViewScheduleGame && seasonData.status === 'ready' ? (next) => {
+          // Statistics Schedule finds the row by season, week, and both teams.
+          const away = next.home ? next.opp : teamAbbr;
+          const home = next.home ? teamAbbr : next.opp;
+          onViewScheduleGame(`${seasonData.data.season ?? season}-W${next.week}-${away}-${home}`);
+        } : null}
+      />
 
       {/* ── Loading / error ───────────────────────────────────────────────── */}
       {loading && (
@@ -330,243 +111,24 @@ export default function TeamPage({ team, onBack, onSelectPlayer, onViewSchedule 
       )}
 
       {roster && (
-        <>
-          {/* ── Projected starters ───────────────────────────────────────── */}
-          <section>
-            <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-              <h2
-                className="text-[length:var(--type-label)] font-bold uppercase tracking-widest"
-                style={{ color: heroAccent }}
-              >
-                Projected Starters
-              </h2>
-              <div
-                className="inline-flex rounded-lg p-1"
-                style={{ background: 'var(--color-bg-secondary)' }}
-              >
-                {starterSections.map(section => {
-                  const active = section.id === activeStarterSection.id;
-                  return (
-                    <button
-                      key={section.id}
-                      type="button"
-                      onClick={() => setStarterTab(section.id)}
-                      className="rounded-md px-3 py-1.5 text-[length:var(--type-label)] font-bold uppercase tracking-wider transition-colors"
-                      style={{
-                        background: active ? heroAccent : 'transparent',
-                        color: active ? tabOnAccent : 'var(--color-label-secondary)',
-                      }}
-                    >
-                      {section.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-            <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-11 gap-2">
-              {activeStarterSection.players.map(slot => (
-                <StarterCard
-                  key={`${activeStarterSection.id}-${slot.slotId}`}
-                  slot={slot}
-                  accentColor={heroAccent}
-                  onClick={() => slot.player && onSelectPlayer(slot.player)}
-                />
-              ))}
-            </div>
-          </section>
-
-          {/* ── Full roster by position ───────────────────────────────────── */}
-          <section>
-            <h2
-              className="text-[length:var(--type-label)] font-bold uppercase tracking-widest mb-3"
-              style={{ color: heroAccent }}
-            >
-              Full Roster
-            </h2>
-            <div className="space-y-2">
-              {rosterGroups.map(group => (
-                <RosterGroup
-                  key={group.label}
-                  group={group}
-                  expanded={expandedGroups.has(group.label)}
-                  onToggle={() => toggleGroup(group.label)}
-                  accentColor={heroAccent}
-                  onSelectPlayer={onSelectPlayer}
-                />
-              ))}
-            </div>
-          </section>
-        </>
-      )}
-    </div>
-  );
-}
-
-// ── Sub-components ────────────────────────────────────────────────────────────
-
-function ChampPod({ count, label, note, icon, onBg, muted, podBg }) {
-  return (
-    <div
-      className="flex items-center gap-2.5 rounded-lg px-3 py-2"
-      style={{ background: podBg }}
-    >
-      <span className="text-xl leading-none" aria-hidden="true">{icon}</span>
-      <div>
-        <div className="text-lg font-bold leading-none" style={{ color: onBg }}>{count}</div>
-        <div className="text-[length:var(--type-label)] font-semibold uppercase tracking-wider" style={{ color: muted }}>
-          {label}
-        </div>
-        {note && (
-          <div className="text-[length:var(--type-micro)] tabular-nums" style={{ color: muted, marginTop: '1px' }}>
-            {note}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function StarterCard({ slot, accentColor, onClick }) {
-  const [imgErr, setImgErr] = useState(false);
-  const player = slot.player;
-  const initials = player
-    ? (player.displayName ?? '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
-    : '';
-  const lastName = player
-    ? player.displayName?.split(' ').slice(1).join(' ') || player.displayName
-    : 'Open';
-
-  return (
-    <button
-      onClick={onClick}
-      disabled={!player}
-      className="flex flex-col items-center rounded-xl p-2.5 text-center transition-opacity active:opacity-60 w-full"
-      style={{
-        background: 'var(--color-bg-secondary)',
-        opacity: player ? 1 : 0.62,
-      }}
-    >
-      {!player ? (
-        <div
-          className="w-12 h-12 rounded-full flex items-center justify-center mb-1.5"
-          style={{ background: 'var(--color-fill)' }}
-        >
-          <span className="text-xs font-bold" style={{ color: 'var(--color-label-quaternary)' }}>
-            —
-          </span>
-        </div>
-      ) : imgErr ? (
-        <div
-          className="w-12 h-12 rounded-full flex items-center justify-center mb-1.5"
-          style={{ background: accentColor ? `${accentColor}22` : 'var(--color-fill)' }}
-        >
-          <span className="text-xs font-bold" style={{ color: accentColor ?? 'var(--color-label-secondary)' }}>
-            {initials}
-          </span>
-        </div>
-      ) : (
-        <img
-          src={headshot(player.id)}
-          alt={player.displayName}
-          className="w-12 h-12 rounded-full object-cover mb-1.5"
-          style={{ background: 'var(--color-fill)' }}
-          onError={() => setImgErr(true)}
+        <TeamDashboard
+          team={team}
+          roster={roster}
+          depthUnits={depthUnits}
+          seasonOptions={seasonOptions}
+          season={season}
+          onSeasonChange={setSeason}
+          seasonData={seasonData}
+          darkMode={darkMode}
+          meColor={dashboardColor?.color ?? null}
+          meForeground={dashboardColor?.foreground ?? null}
+          leagueScoring={hasLeague ? activeScoringSettings : null}
+          leagueName={league?.name ?? null}
+          onSelectPlayer={onSelectPlayer}
+          onViewGameStats={onViewGameStats}
         />
       )}
-      <div
-        className="text-[length:var(--type-micro)] font-bold uppercase tracking-wider mb-0.5"
-        style={{ color: accentColor ?? 'var(--color-label-tertiary)' }}
-      >
-        {slot.label}
-      </div>
-      <div
-        className="text-[length:var(--type-label)] font-semibold leading-tight w-full truncate"
-        style={{ color: player ? 'var(--color-label)' : 'var(--color-label-tertiary)' }}
-      >
-        {lastName}
-      </div>
-    </button>
-  );
-}
-
-function RosterGroup({ group, expanded, onToggle, accentColor, onSelectPlayer }) {
-  return (
-    <div
-      className="border border-[color:var(--color-separator)] rounded-lg overflow-hidden"
-      style={expanded && accentColor ? { borderLeftColor: accentColor, borderLeftWidth: '3px' } : undefined}
-    >
-      {/* Group header */}
-      <button
-        onClick={onToggle}
-        className="w-full flex items-center justify-between px-4 py-3 bg-[color:var(--color-fill-secondary)] hover:bg-[color:var(--color-fill)] transition-colors text-left"
-      >
-        <span
-          className="font-semibold text-sm shrink-0"
-          style={{ color: 'var(--color-label)' }}
-        >
-          {group.label}
-        </span>
-        <div className="flex items-center gap-2">
-          <span className="text-xs tabular-nums" style={{ color: 'var(--color-label-tertiary)' }}>
-            {group.players.length}
-          </span>
-          <svg
-            className={`w-4 h-4 transition-transform ${expanded ? 'rotate-180' : ''}`}
-            style={{ color: 'var(--color-label-tertiary)' }}
-            fill="none" viewBox="0 0 24 24" stroke="currentColor"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
-        </div>
-      </button>
-
-      {/* Player rows */}
-      {expanded && (
-        <div className="bg-[color:var(--color-bg-secondary)] divide-y divide-[color:var(--color-separator)]">
-          {group.players.map(player => (
-            <button
-              key={player.id}
-              onClick={() => onSelectPlayer(player)}
-              className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-[color:var(--color-fill-secondary)] text-left transition-colors"
-            >
-              <PlayerThumb id={player.id} name={player.displayName} />
-              <div className="flex-1 min-w-0">
-                <div className="font-semibold text-sm truncate" style={{ color: 'var(--color-label)' }}>
-                  {player.displayName}
-                </div>
-                <div className="text-xs" style={{ color: 'var(--color-label-tertiary)' }}>
-                  {player.position}{player.jersey ? ` · #${player.jersey}` : ''}
-                </div>
-              </div>
-              <svg
-                className="w-4 h-4 shrink-0"
-                style={{ color: 'var(--color-label-quaternary)' }}
-                fill="none" viewBox="0 0 24 24" stroke="currentColor"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </button>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
 
-function PlayerThumb({ id, name }) {
-  const [err, setErr] = useState(false);
-  const initials = (name ?? '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
-  return err ? (
-    <div className="w-8 h-8 rounded-full bg-[color:var(--color-fill)] flex items-center justify-center shrink-0">
-      <span className="text-[length:var(--type-label)] font-bold text-[color:var(--color-label-tertiary)]">{initials}</span>
-    </div>
-  ) : (
-    <img
-      src={headshot(id)}
-      alt=""
-      className="w-8 h-8 rounded-full object-cover shrink-0"
-      style={{ background: 'var(--color-fill)' }}
-      onError={() => setErr(true)}
-    />
-  );
-}

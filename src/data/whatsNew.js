@@ -597,4 +597,36 @@ export const WHATS_NEW = [
       },
     ],
   },
+  {
+    version: '9.3.0',
+    title: 'Player & Team Dashboards',
+    features: [
+      {
+        id: 'statistics-player-dashboard',
+        name: 'Player dashboard',
+        description: 'Open any player for a play-by-play dashboard built for their position, with fantasy points under your league scoring.',
+        steps: [{
+          route: { activeTab: 'statistics', statisticsView: 'player', statisticsPlayerId: '3139477', statisticsPlayerSlug: 'patrick-mahomes' },
+          anchor: '[data-tour="statistics-player-dashboard-tabs"]',
+          anchorMobile: null,
+          title: 'Explore a player season',
+          body: 'Each player opens on an Overview, with tabs for their position and Every play. Seasons keeps the season-by-season stats and career rows.',
+          placement: 'auto',
+        }],
+      },
+      {
+        id: 'statistics-team-dashboard',
+        name: 'Team dashboard',
+        description: 'See a team\'s leaders, depth chart, schedule, standings, and league ranks in one place.',
+        steps: [{
+          route: { activeTab: 'statistics', statisticsView: 'team', statisticsTeamId: 'KC' },
+          anchor: '[data-tour="statistics-team-dashboard-tabs"]',
+          anchorMobile: null,
+          title: 'Dive into a team season',
+          body: 'Pick a season, then switch between Season, Player stats, League ranks, and Full roster. Position leaders and the depth chart sit above the tabs.',
+          placement: 'auto',
+        }],
+      },
+    ],
+  },
 ];

@@ -1,5 +1,5 @@
 // ── CompanionTrade ────────────────────────────────────────────────────────────
-// Trade workflow: build and evaluate trade proposals using KTC values.
+// Trade workflow: build and evaluate proposals using fantasy-viability values with optional market context.
 // Lives under the Trade section; uses Sleeper rosters and draft pick data.
 //
 // === FILE SECTIONS ===
@@ -12,9 +12,15 @@ import { useTheme } from '../../context/ThemeContext';
 import { fetchKtcPlayers, computeKtcMultipliers, applyKtcMultipliers, findKtcPlayerFromSleeper } from '../../utils/ktcApi';
 import { fetchLeagueLogsMarketForLeague } from '../../api/leagueLogsApi';
 import { getFantasyAdp } from '../../api/fantasyAdpApi';
+import { getFantasyProjections } from '../../api/fantasyProjectionsApi.js';
+import { getPlayerDesignations } from '../../api/playerDesignationsApi.js';
+import { getNflState } from '../../api/sleeperApi.js';
 import { buildDraftAssistantViewModel } from '../../utils/draftAssistant';
 import { mapFantasyAdpToSleeperPlayers } from '../../utils/fantasyAdp';
 import { getFantasyRankingsDataMode } from '../../utils/seasonAvailability';
+import { mapFantasyProjectionsToSleeperPlayers } from '../../utils/fantasyProjections.js';
+import { normalizeProviderTeam } from '../../utils/providerPlayerIdentity.js';
+import { buildTradeCurrentContextMap } from '../../utils/tradeValueScale.js';
 import {
   buildRosterPicks,
   valueSide,
@@ -27,7 +33,6 @@ import {
 import { buildPartnerTradeIntelligence, buildRosterOpportunityLayer, findLeagueWideUpgradeGroups } from '../../utils/opportunityEngine';
 import { buildTradeAnalyticsSnapshot } from '../../utils/tradeAnalytics';
 import { computeTradePlayerValueDetail, sumTradeValues } from '../../utils/tradeValue';
-import { hasGeneratedProductionTradeValues } from '../../utils/idpEngine';
 import TradeRosterPicker from './TradeRosterPicker';
 import TradePickPicker from './TradePickPicker';
 import PlayerStatsModal from '../PlayerStatsModal';
@@ -241,10 +246,12 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
   });
   const tradeAdpEligible = getFantasyRankingsDataMode(season) === 'adp';
   const previousSeasonKey = getPreviousSeasonKey(season);
-  const needsGeneratedProductionFallback = hasGeneratedProductionTradeValues(league?.roster_positions);
+  const needsPriorSeasonTradeData = format === 'dynasty';
+  const priorSeasonBundle = previousSeasonKey ? statsBySeason?.[previousSeasonKey] ?? null : null;
   const priorSeasonStats = previousSeasonKey
-    ? statsBySeason?.[previousSeasonKey]?.seasonStats ?? null
+    ? priorSeasonBundle?.seasonStats ?? null
     : null;
+  const priorWeeklyStats = priorSeasonBundle?.weeklyStats ?? null;
   const valuationSeasonStats = seasonStats;
   const valuationWeeklyStats = weeklyStats;
 
@@ -263,8 +270,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
   // KTC data
   const [ktcPlayers, setKtcPlayers]             = useState(null);
   const [dynastyKtcPlayers, setDynastyKtcPlayers] = useState(null); // full dynasty list for fallback
-  const [ktcLoading, setKtcLoading] = useState(false);
-  const [ktcError, setKtcError]     = useState(null);
+  const [tradeCurrentContextMap, setTradeCurrentContextMap] = useState(() => new Map());
 
   // Draft picks data
   const [tradedPicks, setTradedPicks] = useState(null);
@@ -378,8 +384,8 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
   // ── Data loading ────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    setKtcLoading(true);
-    setKtcError(null);
+    setKtcPlayers(null);
+    setDynastyKtcPlayers(null);
 
     // Always fetch dynasty data alongside the format-specific data.
     // Dynasty is needed for two reasons:
@@ -400,9 +406,11 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
           setKtcPlayers(formatPlayers);
           setDynastyKtcPlayers(null);
         }
-        setKtcLoading(false);
       })
-      .catch(e => { setKtcError(e.message); setKtcLoading(false); });
+      .catch(() => {
+        setKtcPlayers([]);
+        setDynastyKtcPlayers([]);
+      });
   }, [format]);
 
   useEffect(() => {
@@ -507,16 +515,78 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
   }, [statsRequested, seasonStats, statsLoading, loadSeasonStats]);
 
   useEffect(() => {
+    if (!statsRequested || platform !== 'sleeper' || !sleeperPlayers || !rosters?.length) {
+      setTradeCurrentContextMap(new Map());
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    let cancelled = false;
+    setTradeCurrentContextMap(new Map());
+
+    const loadOptionalBdlContext = async () => {
+      try {
+        const nflState = await getNflState();
+        const bdlSeason = Number(nflState?.season);
+        const bdlWeek = Number(nflState?.week);
+        if (bdlSeason !== Number(season) || !Number.isInteger(bdlWeek) || bdlWeek < 1 || bdlWeek > 18) return;
+
+        const rosteredPlayerIds = new Set((rosters ?? []).flatMap((roster) => [
+          ...(roster?.players ?? []), ...(roster?.reserve ?? []), ...(roster?.taxi ?? []),
+        ].map(String)));
+        const teams = [...new Set([...rosteredPlayerIds]
+          .map((id) => normalizeProviderTeam(sleeperPlayers[id]?.team))
+          .filter(Boolean))].sort();
+        if (!teams.length) return;
+
+        const [projectionResult, designationResult] = await Promise.allSettled([
+          getFantasyProjections({ season: bdlSeason, week: bdlWeek, signal: controller.signal }),
+          getPlayerDesignations({ season: bdlSeason, week: bdlWeek, teams, signal: controller.signal }),
+        ]);
+        if (cancelled) return;
+
+        const projectionPayload = projectionResult.status === 'fulfilled' ? projectionResult.value : null;
+        const designationPayload = designationResult.status === 'fulfilled' ? designationResult.value : null;
+        const projectionFresh = projectionPayload?.freshness?.stale === false;
+        const designationsFresh = designationPayload?.freshness?.stale === false;
+        const projections = projectionFresh
+          ? mapFantasyProjectionsToSleeperPlayers({
+              players: sleeperPlayers,
+              projectionRows: projectionPayload.data,
+              scoringSettings,
+            })
+          : new Map();
+        const designations = designationsFresh ? (designationPayload.data ?? []) : [];
+        setTradeCurrentContextMap(buildTradeCurrentContextMap({
+          players: sleeperPlayers,
+          projections,
+          projectionFresh,
+          designations,
+          designationsFresh,
+        }));
+      } catch {
+        if (!cancelled) setTradeCurrentContextMap(new Map());
+      }
+    };
+
+    void loadOptionalBdlContext();
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [platform, rosters, scoringSettings, season, sleeperPlayers, statsRequested]);
+
+  useEffect(() => {
     if (
       !statsRequested
       || platform !== 'sleeper'
-      || !needsGeneratedProductionFallback
+      || !needsPriorSeasonTradeData
       || !previousSeasonKey
       || priorSeasonStats
     ) return;
 
-    // Generated IDP/D/ST/kicker values can independently fall back to the
-    // prior completed season; current KTC-backed player values never do.
+    // Dynasty uses the prior completed season for a multi-year production and
+    // role view. Redraft only needs it for generated defensive/kicker fallback.
     void loadStatsForSeason(previousSeasonKey).catch(() => null);
   }, [
     loadStatsForSeason,
@@ -524,7 +594,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
     priorSeasonStats,
     previousSeasonKey,
     statsRequested,
-    needsGeneratedProductionFallback,
+    needsPriorSeasonTradeData,
   ]);
 
   useEffect(() => {
@@ -675,8 +745,8 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
     [tradedPicks, rosters, league, season, draftRounds],
   );
 
-  // League-specific KTC adjustments — applied once to the raw array so all
-  // downstream code (pickers, value bars, trade math) sees tuned numbers.
+  // League-specific market adjustments keep KTC's normalized signal aligned
+  // with this league's scoring while local values use production and role.
   const ktcMultipliers = useMemo(
     () => computeKtcMultipliers(scoringSettings, league?.roster_positions),
     [scoringSettings, league],
@@ -695,8 +765,9 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
 
   // Whether any meaningful adjustment was applied (for UI attribution label)
   const isAdjusted = useMemo(
-    () => Object.values(ktcMultipliers).some(v => Math.abs(v - 1) > 0.01),
-    [ktcMultipliers],
+    () => Boolean((adjustedKtcPlayers?.length || adjustedDynastyKtcPlayers?.length)
+      && Object.values(ktcMultipliers).some(v => Math.abs(v - 1) > 0.01)),
+    [adjustedDynastyKtcPlayers, adjustedKtcPlayers, ktcMultipliers],
   );
 
   // Sort rosters: my team first, then alphabetically (excluding self for partner list)
@@ -724,14 +795,17 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
       seasonStats,
       priorSeasonStats,
       weeklyStats: analyticsWeeklyStats,
+      priorWeeklyStats,
       scoringSettings,
       scheduleMap: null,
       myRosterId: myRosterData?.roster_id ?? null,
       adjustedKtcPlayers,
       adjustedDynastyKtcPlayers,
       leagueType,
+      format,
       includePlayerTradeValues: tradeAnalyticsReady,
       includeOpportunityLayer: false,
+      currentContextMap: tradeCurrentContextMap,
     }), [
     league,
     rosters,
@@ -739,11 +813,14 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
     seasonStats,
     priorSeasonStats,
     analyticsWeeklyStats,
+    priorWeeklyStats,
     scoringSettings,
     myRosterData?.roster_id,
     adjustedKtcPlayers,
     adjustedDynastyKtcPlayers,
     leagueType,
+    format,
+    tradeCurrentContextMap,
     tradeAnalyticsReady,
   ]);
   const {
@@ -754,6 +831,9 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
     hasIDP,
     hasDST,
     mergedIDPMap,
+    leagueUtilityValueMap,
+    ktcMarketValueMap,
+    dynastyMarketValueMap,
     playerTradeValueDetailsMap,
     playerTradeValueMap,
   } = tradeAnalyticsSnapshot;
@@ -769,11 +849,12 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
         leagueType,
         seasonStats: valuationSeasonStats,
         scoringSettings,
-        positionalAvgPPG,
-        positionalValuePerPPG,
         rankMap,
         mergedIDPMap,
-        blendWeight: 0.50,
+        leagueUtilityValueMap,
+        ktcMarketValueMap,
+        dynastyMarketValueMap,
+        currentContextMap: tradeCurrentContextMap,
       });
       return {
         rank: candidate.rank,
@@ -789,22 +870,23 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
     leagueType,
     valuationSeasonStats,
     scoringSettings,
-    positionalAvgPPG,
-    positionalValuePerPPG,
     rankMap,
     mergedIDPMap,
+    leagueUtilityValueMap,
+    ktcMarketValueMap,
+    dynastyMarketValueMap,
+    tradeCurrentContextMap,
   ]);
 
   // Redraft picks use one league-scored, round-level baseline. The pick's
   // current owner must not change its value because Sleeper does not assign a
   // reliable future slot before the draft.
   const pickValueMap = useMemo(() => {
-    if (format !== 'redraft' || !adjustedKtcPlayers?.length || !rosters?.length) return null;
-    return computeRedraftPickValues(adjustedKtcPlayers, rosters.length, leagueType, {
+    if (format !== 'redraft' || !rosters?.length || (!adjustedKtcPlayers?.length && !draftPickCalibrationPool?.length)) return null;
+    return computeRedraftPickValues(adjustedKtcPlayers ?? [], rosters.length, leagueType, {
       calibrationPool: draftPickCalibrationPool,
-      fallbackValueMultiplier: leagueAvgMult,
     });
-  }, [format, adjustedKtcPlayers, leagueType, rosters, draftPickCalibrationPool, leagueAvgMult]);
+  }, [format, adjustedKtcPlayers, leagueType, rosters, draftPickCalibrationPool]);
   const tradeOpportunityLayerCacheKey = useMemo(() => {
     if (!tradeAnalyticsReady) return null;
     return buildTradeOpportunityLayerCacheKey({
@@ -966,11 +1048,6 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
     setStatsModalPlayer(meta);
   }, [resolvePlayerModalMeta]);
 
-  const getTradeShareAssetValue = useCallback((asset) => {
-    if (asset?.type !== 'player') return null;
-    return playerTradeValueMap?.get(String(asset.id)) ?? null;
-  }, [playerTradeValueMap]);
-
   const openTradeSharePlayer = useCallback((asset) => {
     if (asset?.type !== 'player') return;
     const meta = resolvePlayerModalMeta({
@@ -1131,11 +1208,12 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
         leagueType,
         seasonStats: valuationSeasonStats,
         scoringSettings,
-        positionalAvgPPG,
-        positionalValuePerPPG,
         rankMap,
         mergedIDPMap,
-        blendWeight: 0.50,
+        leagueUtilityValueMap,
+        ktcMarketValueMap,
+        dynastyMarketValueMap,
+        currentContextMap: tradeCurrentContextMap,
       });
       const adjVal = fallbackTradeValueDetail?.value ?? playerTradeValueMap?.get(it.id) ?? it.val;
       const avgPPG = fallbackTradeValueDetail?.avgPPG != null
@@ -1151,6 +1229,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
         ktcEntry,
         dynastyFallback: fallbackTradeValueDetail?.dynastyFallback ?? it.dynastyFallback ?? false,
         idpFallback: fallbackTradeValueDetail?.isEstimated ?? it.idpFallback ?? false,
+        currentContext: fallbackTradeValueDetail?.currentContext ?? null,
       };
     });
     const adjTotal = sumTradeValues(enriched.map((it) => it.adjVal ?? it.val));
@@ -1158,7 +1237,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
   }
 
   // Value calculations — show player cards immediately once sleeperPlayers is loaded,
-  // even if KTC hasn't resolved yet (values show "—" until KTC finishes).
+  // even if KTC hasn't resolved yet (local utility values remain available).
   const yourSide = useMemo(() => {
     if (!showTradeBuilder || !sleeperPlayers) return { total: 0, items: [] };
     const side = valueSide(yourPlayers, yourPicks, sleeperPlayers, adjustedKtcPlayers ?? [], leagueType, rosters, pickValueMap, season, adjustedDynastyKtcPlayers, mergedIDPMap, playerTradeValueDetailsMap, league, leagueDrafts);
@@ -1298,14 +1377,12 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
     setTradeShareError('');
   }, []);
   const suggestionBasePools = useMemo(() => {
-    if (!showTradeBuilder || !adjustedKtcPlayers || !myRosterData?.roster_id || !partnerRosterId) return null;
+    if (!showTradeBuilder || !myRosterData?.roster_id || !partnerRosterId) return null;
 
     const dynFallbackOpts = {
       dynastyKtcPlayers: adjustedDynastyKtcPlayers,
       seasonStats: valuationSeasonStats,
       scoringSettings,
-      positionalValuePerPPG,
-      positionalAvgPPG,
       rankMap,
       idpValueMap: mergedIDPMap,
       playerTradeValueDetailsMap,
@@ -1351,8 +1428,6 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
     adjustedDynastyKtcPlayers,
     valuationSeasonStats,
     scoringSettings,
-    positionalValuePerPPG,
-    positionalAvgPPG,
     rankMap,
     mergedIDPMap,
     playerTradeValueDetailsMap,
@@ -1428,7 +1503,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
   }, [onViewChange, picksEnabled, startPartnerSwitchTransition]);
 
   const handleSuggest = useCallback(() => {
-    if (!adjustedKtcPlayers || !partnerRosterId || !suggestionBasePools) return;
+    if (!partnerRosterId || !suggestionBasePools) return;
     if (!Number.isFinite(yourSide.total) || !Number.isFinite(theirSide.total)) return;
     const gap = Math.abs(yourSide.total - theirSide.total);
     if (gap <= 0) return;
@@ -1464,7 +1539,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
       surplusCandidates,
     });
     setSuggestions({ options, deficitSide });
-  }, [adjustedKtcPlayers, partnerRosterId, suggestionBasePools, yourSide, theirSide,
+  }, [partnerRosterId, suggestionBasePools, yourSide, theirSide,
       yourPlayers, theirPlayers, yourPicks, theirPicks]);
 
   const applySuggestion = useCallback((option) => {
@@ -1603,6 +1678,9 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
           scoringSettings={scoringSettings}
           myRosterId={myRosterData?.roster_id}
           mergedIDPMap={mergedIDPMap}
+          leagueUtilityValueMap={leagueUtilityValueMap}
+          ktcMarketValueMap={ktcMarketValueMap}
+          dynastyMarketValueMap={dynastyMarketValueMap}
           getUserDisplayName={getUserDisplayName}
           rosters={rosters}
           ownerNameByRosterId={ownerNameByRosterId}
@@ -1678,8 +1756,6 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
             applySuggestion={applySuggestion}
             yourSide={yourSide}
             theirSide={theirSide}
-            ktcLoading={ktcLoading}
-            ktcError={ktcError}
             removePlayer={removePlayer}
             removePick={removePick}
             setPickerOpen={setTradePickerOpen}
@@ -1696,8 +1772,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
           />
 
           {/* ── Search all rostered players (mobile only) ───────────────── */}
-          {!ktcLoading && !ktcError && (
-            <div className="lg:hidden px-4 mt-3">
+          <div className="lg:hidden px-4 mt-3">
               <button
                 onClick={() => setTradePickerOpen({ side: 'theirs', type: 'player', allRosters: true })}
                 className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold transition-colors"
@@ -1708,8 +1783,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
                 </svg>
                 Search All Rostered Players
               </button>
-            </div>
-          )}
+          </div>
 
           {/* ── Value trends ────────────────────────────────────────────── */}
           {hasItems && (
@@ -1743,7 +1817,7 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
               style={{ background: 'var(--color-fill)', color: 'var(--color-label-tertiary)', lineHeight: 1.5 }}>
               <span style={{ color: 'var(--color-label-secondary)', fontWeight: 600 }}>~ DYN est.</span>
               {' '}One or more players aren't listed in KTC's {format === 'dynasty' ? 'dynasty' : 'redraft'} rankings.
-              Their value is estimated from season performance calibrated against KTC-ranked players, or from dynasty rankings when stats are unavailable.
+              Their value uses production, expected role, and optional normalized market context. Sparse evidence is confidence-weighted.
             </div>
           )}
 
@@ -1827,9 +1901,10 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
           currentTotal={pickerOpen.side === 'yours' ? yourSide.total : theirSide.total}
           activeRosterId={pickerOpen.side === 'yours' ? myRosterData?.roster_id : partnerRosterId}
           mergedIDPMap={mergedIDPMap}
+          leagueUtilityValueMap={leagueUtilityValueMap}
+          ktcMarketValueMap={ktcMarketValueMap}
+          dynastyMarketValueMap={dynastyMarketValueMap}
           sharedRankMap={rankMap}
-          sharedPositionalAvgPPG={positionalAvgPPG}
-          sharedPositionalValuePerPPG={positionalValuePerPPG}
           sharedPlayerTradeValueDetailsMap={playerTradeValueDetailsMap}
           onSelect={result => addPlayer(pickerOpen.side, result)}
           onClose={() => setPickerOpen(null)}
@@ -1876,14 +1951,15 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
           ownerNameByRosterId={ownerNameByRosterId}
           seasonStats={valuationSeasonStats}
           scoringSettings={scoringSettings}
-          positionalAvgPPG={positionalAvgPPG}
-          positionalValuePerPPG={positionalValuePerPPG}
           rankMap={rankMap}
           playerTradeValueDetailsMap={playerTradeValueDetailsMap}
           theirPlayers={theirPlayers}
           theirPicks={theirPicks}
           theirSideItems={theirSide.items}
           mergedIDPMap={mergedIDPMap}
+          leagueUtilityValueMap={leagueUtilityValueMap}
+          ktcMarketValueMap={ktcMarketValueMap}
+          dynastyMarketValueMap={dynastyMarketValueMap}
           hasIDP={hasIDP}
           hasDST={hasDST}
           onAddPlayer={id => addPlayer('theirs', { id, rosterId: rosterModalRosterId })}
@@ -1904,7 +1980,6 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
           result={tradeShareResult}
           error={tradeShareError}
           viewerUserId={sleeperUser?.user_id}
-          valueResolver={getTradeShareAssetValue}
           onOpenPlayer={openTradeSharePlayer}
           onOpenProposals={() => onViewChange?.('inbox')}
         />
@@ -1922,11 +1997,11 @@ function TradeValueAttribution({ format, leagueType, isAdjusted, onInfoClick, on
         style={{ color: onDark ? 'rgba(255,255,255,0.46)' : 'var(--color-label-quaternary)' }}
       >
         Values from{' '}
-        <span className="font-medium" style={{ color: onDark ? 'rgba(255,255,255,0.68)' : 'var(--color-label-tertiary)' }}>KeepTradeCut</span>
+        <span className="font-medium" style={{ color: onDark ? 'rgba(255,255,255,0.68)' : 'var(--color-label-tertiary)' }}>GridShift league utility · 0–100</span>
         {' · '}{format === 'dynasty' ? 'Dynasty' : 'Redraft'}
         {' · '}{leagueType === 'sf' ? 'Superflex' : '1QB'}
         {isAdjusted && (
-          <span style={{ color: 'var(--color-accent)' }}>{' · '}League-adjusted</span>
+          <span style={{ color: 'var(--color-accent)' }}>{' · '}Market context adjusted</span>
         )}
       </span>
       <button

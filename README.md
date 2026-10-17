@@ -134,10 +134,11 @@ Draft Sync is an optional capability of the existing API sidecar, not a required
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) + optional Node API sidecar |
 
-## What's New in v9.2.1
+## What's New in v9.3.0
 
-- **Heatmap matchup sorting** — Sort weeks with games left by matchup rank; finished and bye teams follow by points scored, and the grid sizes to the window after loading.
-- **Waivers in Rankings** — Review free agents with projected points, the four-week average, and an unrostered-only filter; legacy Waivers links keep their selected position.
+- **Player dashboard** — Play-by-play tabs by position, with per-play fantasy points under your league's scoring.
+- **Team dashboard** — A team hero, position leaders, depth chart, and season, player, league-rank, and roster tabs.
+- **Consistent Trade values** — One 0–100 scale across players, picks, IDP, kickers, and D/ST, shared by Compare Trade and Companion Trade.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 

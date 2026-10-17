@@ -38,10 +38,11 @@ import useCardGlow from '../../hooks/useCardGlow.jsx';
 import useMediaQuery from '../../hooks/useMediaQuery.js';
 import { getPlayerRowTeamTheme } from '../../utils/playerRowTheme';
 import { getPlayerAvailabilityStatus } from '../../utils/playerAvailabilityStatus.js';
+import { getSleeperAvatarUrl, POSITION_COLORS } from '../../utils/companionAssetVisuals.js';
 import { debugCompanionLog, debugCompanionMeasure, debugCompanionTimeAsync } from '../../utils/companionPerfDebug';
 import { CompanionSelectorButton, CompanionSegmentedControl } from './CompanionSelectorControls.jsx';
-import { POSITION_COLORS } from '../../utils/companionAssetVisuals.js';
 import CompanionPlayerRow, { CompanionPlayerMetric, CompanionPlayerStatus } from './CompanionPlayerRow.jsx';
+import PlayerStatusBadge from './PlayerStatusBadge.jsx';
 import PlayerAvatar from '../shared/PlayerAvatar.jsx';
 import { buildFantasyPaletteSlots, fantasyHeroGradient, getFantasyTeamPalette } from '../../utils/fantasyTeamIdentity.js';
 import { ArrowsLeftRightIcon } from '@phosphor-icons/react/ArrowsLeftRight';
@@ -272,6 +273,7 @@ function getMatchupForecastSourceLabel(winProbability) {
 
 export default function CompanionMatchup({
   onViewPlayer,
+  onOpenInjuries = null,
   onComparePlayers = null,
   onOpenHistoricalMatchup = null,
   isActive = true,
@@ -931,6 +933,14 @@ export default function CompanionMatchup({
     () => new Map((rosters ?? []).map((roster) => [String(roster?.roster_id), roster?.owner_id ?? null])),
     [rosters],
   );
+
+  const getOwnerAvatarUrl = (side) => {
+    const rosterId = side?.rosterId ?? side?.roster?.roster_id;
+    const ownerId = side?.roster?.owner_id ?? rosterOwnerById.get(String(rosterId ?? ''));
+    return getSleeperAvatarUrl(leagueUserById.get(String(ownerId ?? ''))?.avatar);
+  };
+  const myAvatarUrl = getOwnerAvatarUrl(leftSide);
+  const opponentAvatarUrl = getOwnerAvatarUrl(rightSide);
 
   const loadTaleOfTapeHistory = useCallback((historyKey) => {
     if (platform !== 'sleeper' || !historyKey || !linkedLeagueHistory?.length) {
@@ -2035,6 +2045,8 @@ export default function CompanionMatchup({
           opponentSeedLabel={opponentSeedLabel}
           myInitials={myInitials}
           opponentInitials={opponentInitials}
+          myAvatarUrl={myAvatarUrl}
+          opponentAvatarUrl={opponentAvatarUrl}
           myTeamSummary={myTeamSummary}
           opponentTeamSummary={opponentTeamSummary}
           showTeamSummary={showTeamSummary}
@@ -2088,6 +2100,7 @@ export default function CompanionMatchup({
                 oppLineupUnavailable={opponentLineupUnavailable}
                 slotPos={slot.slotPos}
                 sharedPlayerNameFontSize={sharedPlayerNameFontSize}
+                onOpenInjuries={platform === 'sleeper' ? onOpenInjuries : null}
                 onComparePlayers={slot.mine && slot.opp ? () => openTaleOfTape(slot.mine, slot.opp, slot.slotPos) : null}
                 onSelectMine={() => slot.mine?.id && setSelectedPlayer({ id: slot.mine.id, projection: slot.mine.projection ?? null, enriched: slot.mine })}
                 onSelectOpp={() => slot.opp?.id && setSelectedPlayer({ id: slot.opp.id, projection: slot.opp.projection ?? null, enriched: slot.opp })}
@@ -2120,6 +2133,7 @@ export default function CompanionMatchup({
                         opp={enrichedOppBench[i] ?? null}
                         bench
                         sharedPlayerNameFontSize={sharedPlayerNameFontSize}
+                        onOpenInjuries={platform === 'sleeper' ? onOpenInjuries : null}
                         onSelectMine={() => enrichedMyBench[i]?.id && setSelectedPlayer({ id: enrichedMyBench[i].id, projection: enrichedMyBench[i].projection ?? null, enriched: enrichedMyBench[i] })}
                         onSelectOpp={() => enrichedOppBench[i]?.id && setSelectedPlayer({ id: enrichedOppBench[i].id, projection: enrichedOppBench[i].projection ?? null, enriched: enrichedOppBench[i] })}
                       />
@@ -2268,6 +2282,8 @@ function MatchupMasthead({
   opponentSeedLabel,
   myInitials,
   opponentInitials,
+  myAvatarUrl,
+  opponentAvatarUrl,
   myTeamSummary,
   opponentTeamSummary,
   showTeamSummary = false,
@@ -2334,6 +2350,7 @@ function MatchupMasthead({
     name,
     seedLabel,
     initials,
+    avatarUrl,
     score,
     scoreLabel,
     projectedFinal,
@@ -2375,9 +2392,22 @@ function MatchupMasthead({
       }}
     >
       {glow.borderOverlay}
-      {(seedLabel || initials) && (
+      {(seedLabel || initials || avatarUrl) && (
         <span className="companion-matchup-masthead__identity">
-          {initials && <i className="companion-matchup-masthead__identity-avatar" aria-hidden="true">{initials}</i>}
+          {(initials || avatarUrl) && (
+            <i className="companion-matchup-masthead__identity-avatar" aria-hidden="true">
+              {initials}
+              {avatarUrl && (
+                <img
+                  src={avatarUrl}
+                  alt=""
+                  loading="lazy"
+                  decoding="async"
+                  onError={(event) => { event.currentTarget.style.display = 'none'; }}
+                />
+              )}
+            </i>
+          )}
           {seedLabel && <span>{seedLabel}</span>}
         </span>
       )}
@@ -2430,13 +2460,13 @@ function MatchupMasthead({
       data-testid={winProbability ? 'matchup-win-probability' : undefined}
     >
       <div className="companion-matchup-masthead__score-grid">
-        {renderScoreSide({ name: myName, seedLabel: mySeedLabel, initials: myInitials, score: myScore, scoreLabel: myScoreLabel, projectedFinal: myProjectedFinal, teamSummary: myTeamSummary, showTeamSummary, benchPoints: myBenchPoints, isUser: leftIsUser, outcome: matchupOutcome.mine, side: 'mine', accent: leftAccent, background: leftBackground, onClick: onOpenMine, onMouseMove: myHeaderGlow.glowHandlers.onMouseMove, hovered: isMineHeaderHovered, setHovered: setIsMineHeaderHovered, glow: myHeaderGlow })}
+        {renderScoreSide({ name: myName, seedLabel: mySeedLabel, initials: myInitials, avatarUrl: myAvatarUrl, score: myScore, scoreLabel: myScoreLabel, projectedFinal: myProjectedFinal, teamSummary: myTeamSummary, showTeamSummary, benchPoints: myBenchPoints, isUser: leftIsUser, outcome: matchupOutcome.mine, side: 'mine', accent: leftAccent, background: leftBackground, onClick: onOpenMine, onMouseMove: myHeaderGlow.glowHandlers.onMouseMove, hovered: isMineHeaderHovered, setHovered: setIsMineHeaderHovered, glow: myHeaderGlow })}
         <button type="button" className="companion-matchup-masthead__axis" onClick={onOpenPreview} aria-label={`Open matchup preview: ${myName} versus ${opponentName}`} aria-haspopup="dialog">
           <span className="companion-matchup-masthead__axis-icon"><ArrowsLeftRightIcon size={17} weight="bold" aria-hidden="true" /></span>
           <span className="companion-matchup-masthead__axis-label">VS</span>
           {winProbability && !isSettled ? <span className="companion-matchup-masthead__axis-mode">{modeLabel}</span> : null}
         </button>
-        {renderScoreSide({ name: opponentName, seedLabel: opponentSeedLabel, initials: opponentInitials, score: opponentScore, scoreLabel: opponentScoreLabel, projectedFinal: opponentProjectedFinal, teamSummary: opponentTeamSummary, showTeamSummary, benchPoints: opponentBenchPoints, isUser: rightIsUser, outcome: matchupOutcome.opp, side: 'opponent', accent: rightAccent, background: rightBackground, onClick: onOpenOpponent, onMouseMove: opponentHeaderGlow.glowHandlers.onMouseMove, hovered: isOpponentHeaderHovered, setHovered: setIsOpponentHeaderHovered, glow: opponentHeaderGlow })}
+        {renderScoreSide({ name: opponentName, seedLabel: opponentSeedLabel, initials: opponentInitials, avatarUrl: opponentAvatarUrl, score: opponentScore, scoreLabel: opponentScoreLabel, projectedFinal: opponentProjectedFinal, teamSummary: opponentTeamSummary, showTeamSummary, benchPoints: opponentBenchPoints, isUser: rightIsUser, outcome: matchupOutcome.opp, side: 'opponent', accent: rightAccent, background: rightBackground, onClick: onOpenOpponent, onMouseMove: opponentHeaderGlow.glowHandlers.onMouseMove, hovered: isOpponentHeaderHovered, setHovered: setIsOpponentHeaderHovered, glow: opponentHeaderGlow })}
       </div>
 
       {winProbability ? (
@@ -2667,7 +2697,7 @@ const SLOT_LABELS = {
   SUPER_FLEX: 'SF', IDP_FLEX: 'IDP', DEF: 'DST',
 };
 
-function HeadToHeadRow({ mine, opp, bench, slotPos, mineLineupUnavailable = false, oppLineupUnavailable = false, onSelectMine, onSelectOpp, onComparePlayers, sharedPlayerNameFontSize }) {
+function HeadToHeadRow({ mine, opp, bench, slotPos, mineLineupUnavailable = false, oppLineupUnavailable = false, onSelectMine, onSelectOpp, onComparePlayers, onOpenInjuries, sharedPlayerNameFontSize }) {
   const { darkMode } = useTheme();
   const isCompactPhone = useMediaQuery(COMPACT_PHONE_QUERY);
   const slotLabel = slotPos ? (SLOT_LABELS[slotPos] ?? slotPos) : (mine?.position ?? opp?.position ?? '?');
@@ -2685,6 +2715,7 @@ function HeadToHeadRow({ mine, opp, bench, slotPos, mineLineupUnavailable = fals
           darkMode={darkMode}
           compact={isCompactPhone}
           onSelect={onSelectMine}
+          onOpenInjuries={onOpenInjuries}
           nameFontSize={sharedPlayerNameFontSize}
         />
 
@@ -2719,6 +2750,7 @@ function HeadToHeadRow({ mine, opp, bench, slotPos, mineLineupUnavailable = fals
         darkMode={darkMode}
         compact={isCompactPhone}
         onSelect={onSelectOpp}
+        onOpenInjuries={onOpenInjuries}
         nameFontSize={sharedPlayerNameFontSize}
         align="right"
       />
@@ -2764,7 +2796,7 @@ function getPlayerPerformanceTarget(player, actualScore, projectedPts) {
   return Number.isFinite(outlook.expectedAtNow) ? outlook.expectedAtNow : null;
 }
 
-function MatchupPlayerRow({ player, lineupUnavailable = false, darkMode, compact = false, align = 'left', onSelect, nameFontSize = 13 }) {
+function MatchupPlayerRow({ player, lineupUnavailable = false, darkMode, compact = false, align = 'left', onSelect, onOpenInjuries = null, nameFontSize = 13 }) {
   const isRight = align === 'right';
   if (lineupUnavailable) {
     return (
@@ -2890,15 +2922,35 @@ function MatchupPlayerRow({ player, lineupUnavailable = false, darkMode, compact
   const detailSegments = compact
     ? [rankText].filter(Boolean)
     : [rankText, weatherText, projectionRangeText].filter(Boolean);
+  const injuryStatus = player.availabilityStatus
+    ? onOpenInjuries && player.id != null
+      ? (
+        <button
+          type="button"
+          className="companion-player-row__action companion-matchup-injury-link"
+          aria-label={`View ${player.name}'s ${player.availabilityStatus} status in Fantasy Injuries`}
+          title={`View ${player.name} in Fantasy Injuries`}
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpenInjuries(player.id);
+          }}
+          onKeyDown={(event) => event.stopPropagation()}
+        >
+          <PlayerStatusBadge status={player.availabilityStatus} compact={compact} localContrast={false} />
+        </button>
+      )
+      : <PlayerStatusBadge status={player.availabilityStatus} compact={compact} localContrast={false} />
+    : null;
   const rowAccent = player.teamTheme?.accent ?? 'var(--color-separator)';
   const metricColumn = hasMetricSlot ? 'minmax(54px, auto)' : 'auto';
-  const gridTemplate = compact
+  const baseGridTemplate = compact
     ? isTeamDefense
       ? `30px minmax(0, 1fr) ${metricColumn}`
       : `minmax(0, 1fr) ${metricColumn}`
     : isTeamDefense
       ? `44px minmax(0, 1fr) ${metricColumn}`
       : `44px minmax(0, 1fr) 36px ${metricColumn}`;
+  const gridTemplate = injuryStatus ? `${baseGridTemplate} auto` : baseGridTemplate;
   const scoreFontSize = `${Math.max(compact ? 12 : 14, Math.min(compact ? 15 : 17, nameFontSize + 3))}px`;
 
   return (
@@ -2922,8 +2974,10 @@ function MatchupPlayerRow({ player, lineupUnavailable = false, darkMode, compact
           className="companion-matchup-bye-metric"
         />,
       ] : scoreColumns}
+      status={injuryStatus}
       gridTemplate={gridTemplate}
       columnGridTemplate={compact ? 'minmax(34px, auto)' : undefined}
+      separateAction={Boolean(onOpenInjuries && player.availabilityStatus && player.id != null)}
       name={player.name}
       style={{
         borderRadius: 0,

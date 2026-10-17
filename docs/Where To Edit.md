@@ -20,8 +20,11 @@ Routing table: match the task to a section, open the listed files, and read the 
 | NFL matchup drill-in from a team's schedule (unit vs unit, live tracker, Defenses hand-off) | [Statistics Schedule Matchup Drill-In](#statistics-schedule-matchup-drill-in) |
 | Provider gateway, quotas, caches, sidecar server | [Live Data Server, Budgets, And Scaling](#live-data-server-budgets-and-scaling) |
 | Sleeper connection and league loading | [Fantasy Connection And League Data](#fantasy-connection-and-league-data) |
+| Independent leagues, membership, commissioner controls, roster mutations, IR policies, waivers, chat/DMs | [Independent Fantasy Platform](#independent-fantasy-platform) |
 | League history, season standings, transactions | [League History, Standings, And Activity](#league-history-standings-and-activity) |
 | ESPN player search, profiles, stat tables | [ESPN Player Data And Profiles](#espn-player-data-and-profiles) |
+| Player page tabs: Overview, position tabs, Every play | [Statistics Player Dashboard](#statistics-player-dashboard) |
+| Team page: position leaders, depth chart, Season / Player stats / League ranks / Full roster | [Statistics Team Dashboard](#statistics-team-dashboard) |
 | Fantasy point calculation or projections | [Scoring And Projections](#scoring-and-projections) |
 | Compare tab panels | [Compare Tab](#compare-tab) |
 | Trade values, proposals, picks, KTC, IDP | [Trade Value, Picks, And KTC](#trade-value-picks-and-ktc) |
@@ -237,6 +240,19 @@ Read first: [[Live Data Server Architecture]] before changing provider cadence, 
 
 Rules: any change here must audit both Statistics Scores and Fantasy Live. Count every provider cursor page and retry. Keep browser throttling separate from the account-wide provider budget. No multiple sidecar replicas until the shared-store/leader phase ships.
 
+## Independent Fantasy Platform
+
+Read first: [[Independent Fantasy Platform Plan]]. It owns pilot scope, agreed rules, stages, open decisions, and implementation/validation status. Update it in the same pass whenever those change; keep proposals distinct from approved behavior.
+
+The existing shared fantasy entry points are in `src/context/SleeperContext.jsx`. Reuse League Activity (`src/components/companion/CompanionActivity.jsx`, `src/utils/leagueHistory.js`, `src/hooks/useLeagueHistoryData.js`) through an independent event-loading boundary. Existing provider caches and display fallbacks are not authoritative league state.
+
+| File | Owns |
+| --- | --- |
+| `src/utils/independentInjurySlotRules.js` | Pure agreed IR eligibility, settings validation, and action restrictions; accepts explicit verified status codes/server-derived roster facts, not provider display fallbacks |
+| `tests/unit/independentInjurySlotRules.test.mjs` | Focused default/toggle, unknown-status, execution-time acquisition, strict corrective-move, and invalid-input scenarios |
+
+Add engine/API ownership here as later implementation lands.
+
 ## Fantasy Connection And League Data
 
 | File | Owns |
@@ -268,6 +284,8 @@ Fantasy Matchups: `CompanionMatchup.jsx` owns the player Tale of the Tape and th
 
 Season stats, career stats, and game logs are stored server-side after one ESPN fetch. `playerApi.js` asks the sidecar's `/api/players/*` first and falls back to ESPN directly when the sidecar is unreachable, answers with a non-JSON page, or declines a request (400, for example seasons before `GRIDSHIFT_PLAYER_DATA_MIN_SEASON`). Only the sidecar's own JSON 404 means "ESPN has no data".
 
+Snap percentages are an optional game-log enrichment from nflverse's PFR snap-count release (2012 onward), joined to ESPN athlete IDs through nflverse's player-ID table. Offensive, defensive, and special-teams shares are retained; the profile table selects the player's primary phase by position and leaves unmatched games blank. This separate request never blocks ESPN game-log rendering. In compact player game history, Snap% leads the standard columns and per-game rate stats stay under More Stats.
+
 - **Lazy only.** The server contacts ESPN only when a user opens a player-season it has no fresh copy of. There is no seed, backfill, or scheduled job.
 - **Completed seasons are final** and never refetched. The current season refreshes on a one-hour TTL, incrementally: only games not already stored are fetched. Career stats refresh on 24 hours. A completed season ESPN has no stats for is remembered for 30 days.
 - **ESPN politeness** lives in `playerDataUpstream.js`: at most 2 concurrent requests server-wide (`GRIDSHIFT_PLAYER_DATA_UPSTREAM_CONCURRENCY`), a minimum gap between request starts, in-flight coalescing per key, and a circuit breaker that stops all ESPN calls after a 429/403 or a run of 5xx/timeouts and backs off exponentially. While it is open the sidecar serves stored data (marked `X-GridShift-Stale`) and the browser falls back to its own ESPN calls.
@@ -282,6 +300,7 @@ Season stats, career stats, and game logs are stored server-side after one ESPN 
 | --- | --- |
 | `src/utils/espnPlayerFetch.js` | Pure ESPN season stats, career stats (with the tackles-for-loss repair), and game-log waterfall shared by the browser and the sidecar; `fetchImpl` is injected and results report `incomplete` |
 | `src/utils/playerApi.js` | Player fetching: sidecar first, direct ESPN fallback; rosters, profiles and bio measurements, depth charts, team defense, schedules |
+| `src/utils/snapCounts.js` | nflverse snap-count CSV parsing, ESPN-to-PFR ID matching, and position-aware per-game percentage selection |
 | `src/utils/playerDataCache.js` | IndexedDB payload cache for season stats, career stats, and game logs |
 | `src/utils/playerCache.js` | `localStorage` cache for rosters, bios, and smaller ESPN responses; release version bust |
 | `server/playerDataHandlers.js` | `/api/players` routes, freshness rules, stale fallback, negative cache, incremental game-log refresh |
@@ -289,9 +308,45 @@ Season stats, career stats, and game logs are stored server-side after one ESPN 
 | `server/playerDataUpstream.js` | The only path to ESPN: concurrency limit, request spacing, circuit breaker |
 | `server/playerDataConfig.js` | `GRIDSHIFT_PLAYER_DATA_*` settings |
 | `src/utils/playerMetrics.js` | Derived metrics |
-| `src/components/PlayerBrowser.jsx` | Search/browse UI |
+| `src/components/PlayerBrowser.jsx` | Stats landing (division grid + 2025 honors rail; search lives in global search), player/team route resolution |
 | `src/components/PlayerProfile.jsx` | Profile view |
 | `src/components/PlayerStatTable.jsx` | Stat tables |
+
+## Statistics Player Dashboard
+
+Read first: [[Player Dashboard]]. Play credit reuses Fantasy Live's attribution path; per-play points are listed in [[Scoring Call Sites]].
+
+| File | Owns |
+| --- | --- |
+| `server/playerSeasonHandlers.js` | `/api/statistics/players/season` and `/pools`: Sleeper weekly-stat caching, team-by-week and Sleeper ID resolution, per-game detail fan-out and caching |
+| `src/utils/playerSeason/leaguePools.js` | Sleeper weekly rows → season rank pools per group and team-week offense lines |
+| `src/utils/playerSeason/playerSeasonGames.js` | One game's detail → the player's box line, team stats, win-probability series, and credited plays |
+| `src/utils/playerSeason/dashboardModel.js` | Rank metrics and pool rules per group, aggregations, play kinds, opponent context and ranks |
+| `src/hooks/usePlayerSeasonDashboard.js`, `src/api/playerSeasonApi.js` | Loading both payloads; swapping in the rank group's pools |
+| `src/components/statistics/player/PlayerDashboard.jsx` | Tabs per group, season picker, game and player navigation; Seasons hosts the existing profile content |
+| `src/components/statistics/player/OverviewTab.jsx` | Stat rail, game cards with win-probability lines, opponent scatter, rank strips |
+| `src/components/statistics/player/OffenseTabs.jsx`, `DefenseTabs.jsx` | Passing, Rushing, Receiving, Kicking; Pass rush, Tackling, Coverage |
+| `src/components/statistics/player/PlayList.jsx` | Play rows and Every play filters, multi-select, and per-play fantasy points |
+| `src/components/statistics/player/FieldMap.jsx`, `DashboardParts.jsx`, `DashboardTip.jsx`, `dashboardUi.js` | Field map, shared chart parts, the tap/hover tooltip, non-component helpers |
+| `src/index.css` (`.player-dash-*`) | Dashboard styles |
+
+## Statistics Team Dashboard
+
+Read first: [[Team Dashboard]]. It reuses the player dashboard's components and styles.
+
+| File | Owns |
+| --- | --- |
+| `server/teamSeasonHandlers.js` | `/api/statistics/teams/season`: the team's games from Scores game details, schedule, standings, league unit ranks, game caching |
+| `src/utils/teamSeason/teamSeasonModel.js` | One game for a team (box lines, team stats, quarters, drives, scoring plays), standings, unit ranks |
+| `src/utils/teamSeason/teamDashboardModel.js` | Season totals, fantasy scoring of box lines, depth-chart roles and starter/backup labels, leader specs, name linking |
+| `src/utils/playerApi.js` — `fetchDepthChartUnits` | ESPN depth chart by unit and slot, in order |
+| `src/hooks/useTeamSeasonDashboard.js`, `src/api/teamSeasonApi.js` | Loading the team season |
+| `src/components/TeamPage.jsx` | Hero; mounts the dashboard |
+| `src/components/statistics/team/TeamHero.jsx` | Team hero: identity, season record and division pods, franchise honors, View Schedule, next game |
+| `src/components/statistics/team/TeamDashboard.jsx` | Season picker, fantasy switch, tabs, name linking, game and player navigation |
+| `src/components/statistics/team/TeamTop.jsx` | Position leader cards and the depth chart (formation and table) |
+| `src/components/statistics/team/TeamTabs.jsx`, `TeamCharts.jsx` | Season, Player stats, League ranks, Full roster; results tape, quarter bars, drive bars, trends, spark bars |
+| `src/index.css` (`.team-dash-*`) | Team dashboard styles |
 
 ## Scoring And Projections
 
@@ -309,7 +364,7 @@ Read first: [[Scoring Call Sites]] — every `calcPoints()` / `calcPointsFromTot
 | `src/utils/draftAssistant/projections.js` | Draft-context projections |
 | `src/utils/ktcApi.js` | KTC value adjustments |
 
-Consumers to audit after any scoring change: `CompanionRoster.jsx`, `CompanionLeague.jsx`, `CompanionRankings.jsx`, `CompanionWaiver.jsx`, `CompanionMatchup.jsx`, `CompanionHeatmap.jsx`, `CompanionDefense.jsx`, `PlayerWeeklySheet.jsx`, `CompanionScoring.jsx`, `CompanionTrade.jsx` (all in `src/components/companion/`), plus `src/components/compare/CompareFantasyPanel.jsx` and `CompareTradePanel.jsx`.
+Consumers to audit after any scoring change: `CompanionRoster.jsx`, `CompanionLeague.jsx`, `CompanionRankings.jsx`, `CompanionMatchup.jsx`, `CompanionHeatmap.jsx`, `CompanionDefense.jsx`, `PlayerWeeklySheet.jsx`, `CompanionScoring.jsx`, `CompanionTrade.jsx` (all in `src/components/companion/`), plus `src/components/compare/CompareFantasyPanel.jsx` and `CompareTradePanel.jsx`.
 
 ## Compare Tab
 
