@@ -160,7 +160,7 @@ test('Fantasy Rankings keeps filters and search behind the Filters chip', async 
   await expect(page.getByPlaceholder('Search players...')).toHaveValue('Pocket');
 });
 
-test('Fantasy Waivers keeps position and search behind the Filters rail', async ({ page }) => {
+test('legacy Fantasy Waivers opens projected Rankings filtered to available players', async ({ page }) => {
   const waiverPlayerId = '401';
   const responsiveFixtures = responsiveFixtureOverrides();
   const idpLeague = {
@@ -207,29 +207,38 @@ test('Fantasy Waivers keeps position and search behind the Filters rail', async 
       body: JSON.stringify(stats),
     });
   });
-  await page.goto('/fantasy/waivers');
+  await page.goto('/fantasy/waivers?position=DL');
   await page.getByRole('button', { name: 'Dismiss' }).click({ timeout: 3000 }).catch(() => {});
 
-  const waiverRow = page.locator('.companion-player-row').filter({ hasText: 'Pocket Free Agent' });
-  await expect(waiverRow).toBeVisible();
-  await expect(waiverRow.locator('.companion-player-row__metric-value').first()).not.toHaveText('-');
+  await expect(page).toHaveURL(/\/fantasy\/rankings\?pos=DL&sort=projected&unrostered=1$/);
+  await expect(page.getByRole('tab', { name: 'Waivers' })).toHaveCount(0);
+  await expect(page.getByRole('tab', { name: 'Rankings' })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByText(/Week \d+ projections · League scoring · Matchup context where available/)).toBeVisible();
 
-  const filterToggle = page.getByRole('button', { name: /waiver filters/i });
-  const filterPanel = page.getByTestId('fantasy-waiver-filter-panel');
+  const freeAgentRow = page.locator('.companion-player-row').filter({ hasText: 'Pocket Free Agent' });
+  await expect(freeAgentRow).toBeVisible();
+  await expect(freeAgentRow.locator('.companion-player-row__metric-value').first()).not.toHaveText('—');
+  await expect(freeAgentRow.locator('.companion-player-row__metric-value').last()).not.toHaveText('—');
+
+  const filterToggle = page.getByRole('button', { name: /rankings filters/i });
   await expect(filterToggle).toHaveAttribute('aria-expanded', 'false');
-  await expect(filterPanel).toBeHidden();
   await expect(page.getByPlaceholder('Search players...')).toBeHidden();
 
   await filterToggle.click();
   await expect(filterToggle).toHaveAttribute('aria-expanded', 'true');
-  await expect(filterPanel).toBeVisible();
-  await expect(filterPanel.getByRole('button', { name: 'QB', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Showing unrostered players only. Show all players' })).toBeVisible();
+  if ((page.viewportSize()?.width ?? 0) < 1024) {
+    await expect(page.getByRole('group', { name: 'Rankings sort options' }).getByRole('button', { name: 'Projected', exact: true }))
+      .toHaveAttribute('aria-pressed', 'true');
+  } else {
+    await expect(page.getByRole('button', { name: 'Sort rankings by Projected Points' })).toBeVisible();
+  }
 
-  const search = filterPanel.getByPlaceholder('Search players...');
+  const search = page.getByPlaceholder('Search players...');
   await search.fill('Pocket');
   await filterToggle.click();
-  await expect(filterPanel).toBeHidden();
-  await expect(filterToggle).toContainText('Search: Pocket');
+  await expect(filterToggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(search).toBeHidden();
 
   await filterToggle.click();
   await expect(search).toHaveValue('Pocket');

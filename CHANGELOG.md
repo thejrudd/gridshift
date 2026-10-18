@@ -1419,3 +1419,11 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Rankings filters and navigation** - Combine position filters and preserve Rankings selections when moving through Fantasy Schedule and Statistics player views, while resetting stale filters when league or season context changes.
 - **Defense rankings** - Improve position-aware opponent production rankings and team per-game comparisons.
 - **Regression coverage** - Add route, Heatmap data, and responsive coverage for the updated Fantasy surfaces.
+
+## v9.2.1 - Heatmap Sorting & Rankings Waivers
+*2026-10-18*
+
+- **Heatmap matchup sorting** - Sort weeks with games still to play by matchup rank; finished and bye teams sort below ranked teams by points scored. The grid sizes to the window once data loads.
+- **Waivers in Rankings** - Bring free agents into Rankings with a projected-points sort and unrostered-only filter. Legacy Waivers links keep their selected position and open the corresponding Rankings view.
+- **Tour route handling** - Keep a What's New tour on its destination if the previous view's initial route state finishes syncing late.
+- **Regression coverage** - Add route and Heatmap data coverage for the updated Fantasy surfaces.

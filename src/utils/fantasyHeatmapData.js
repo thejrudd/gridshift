@@ -184,7 +184,15 @@ export function sortHeatmapRowsByMatchupRank(rows, matchupRatings, week, positio
   return [...(rows ?? [])].sort((left, right) => {
     const leftRank = rankFor(left.team);
     const rightRank = rankFor(right.team);
-    if (leftRank == null && rightRank == null) return 0;
+    if (leftRank == null && rightRank == null) {
+      // Unranked (finished or bye) teams stay below the ranked ones, ordered by what they scored.
+      const leftPoints = left.weekPts?.[week];
+      const rightPoints = right.weekPts?.[week];
+      if (leftPoints == null && rightPoints == null) return 0;
+      if (leftPoints == null) return 1;
+      if (rightPoints == null) return -1;
+      return rightPoints - leftPoints;
+    }
     if (leftRank == null) return 1;
     if (rightRank == null) return -1;
     return direction === 'desc' ? rightRank - leftRank : leftRank - rightRank;

@@ -134,19 +134,18 @@ Draft Sync is an optional capability of the existing API sidecar, not a required
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) + optional Node API sidecar |
 
-## What's New in v9.2.0
+## What's New in v9.2.1
 
-- **Heatmap matchup tools** — See upcoming opponents across the season, open future matchups, and review active players using the selected statistic.
-- **Rankings filters** — Combine position selections and keep Rankings filters when opening Schedule or Statistics player views.
-- **Defense rankings** — Refine opponent production and per-game comparisons across defensive position groups.
+- **Heatmap matchup sorting** — Sort weeks with games left by matchup rank; finished and bye teams follow by points scored, and the grid sizes to the window after loading.
+- **Waivers in Rankings** — Review free agents with projected points, the four-week average, and an unrostered-only filter; legacy Waivers links keep their selected position.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Roadmap
 
-- Sleeper Player Data Caching — Server-side daily `/players/nfl` snapshots and client snapshot reuse.
-- Scout Rookie Projection Layer — Add next-season rookie projections for standard and IDP-focused draft prep.
-- Live-data platform — Extend the shared, tier-aware Statistics Scores and Fantasy Live gateway with league ingest lifecycle, optional league-managed keys, and shared infrastructure for multi-instance scale. See [the architecture and rollout plan](docs/Live%20Data%20Server%20Architecture.md).
+- **v9.3 — Trade values re-work**
+- **v9.4 — Statistics Dashboards, player dashboards**
+- **v9.5 — Scoring and Fantasy Live dashboard overhaul**
 
 ## Project Structure
 
@@ -175,7 +174,6 @@ src/
 │   │   ├── CompanionActivity.jsx  # Selected-season filtered transaction ledger
 │   │   ├── CompanionHeatmap.jsx   # Heatmap: pts allowed/scored per team/week with drilldowns
 │   │   ├── CompanionDefense.jsx   # Defense rankings by stats/fantasy points allowed
-│   │   ├── CompanionWaiver.jsx    # Waiver wire view
 │   │   ├── CompanionScoring.jsx   # Scoring settings viewer (synced from league)
 │   │   └── PlayerMatchupBreakdown.jsx  # Per-player stat → fantasy point breakdown modal
 │   ├── PlayerBrowser.jsx          # Team/roster browser with position filter and search

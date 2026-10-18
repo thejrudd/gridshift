@@ -1020,6 +1020,13 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
     computeGridMaxHeight();
   }, [computeGridMaxHeight, filtersOpen]);
 
+  // The scroller mounts only after loading finishes, so measure it on attach;
+  // a mount-time measurement alone would leave the 60vh fallback in place.
+  const setTableContainerRef = useCallback((node) => {
+    tableContainerRef.current = node;
+    if (node) computeGridMaxHeight();
+  }, [computeGridMaxHeight]);
+
   // Lock page scroll so only the grid scrolls (applies on all viewport sizes)
   useEffect(() => {
     const prev = document.body.style.overflowY;
@@ -1100,9 +1107,8 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
   const isFutureMatchupWeek = useCallback((week) => {
     const weekSchedule = scheduleMap?.[week] ?? scheduleMap?.[String(week)] ?? null;
     const games = Object.values(weekSchedule ?? {});
-    return games.length > 0
-      && games.every(game => !isFinalScheduleGame(game))
-      && games.some(game => Boolean(game?.opp));
+    // A week is rank-sortable while any game is still to play; finished games sort to the bottom.
+    return games.some(game => Boolean(game?.opp) && !isFinalScheduleGame(game));
   }, [scheduleMap]);
 
   const baseRows = useMemo(() => {
@@ -2184,7 +2190,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
       >
         <div className="companion-heatmap-scroll-frame">
           <div
-            ref={tableContainerRef}
+            ref={setTableContainerRef}
             className="companion-heatmap-table-scroller"
             style={{
               overflowX: 'auto',
