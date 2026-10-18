@@ -117,10 +117,6 @@ const loadCompanionMatchupChunk = () => {
   return companionMatchupChunkPromise;
 };
 const CompanionMatchup = lazy(loadCompanionMatchupChunk);
-const CompanionWaiver = lazy(() => debugCompanionTimeAsync(
-  'CompanionWaiver chunk import',
-  () => import('./components/companion/CompanionWaiver'),
-));
 const CompanionHeatmap = lazy(() => import('./components/companion/CompanionHeatmap'));
 const CompanionDefense = lazy(() => import('./components/companion/CompanionDefense'));
 const CompanionInjuries = lazy(() => import('./components/companion/CompanionInjuries'));
@@ -839,9 +835,6 @@ function AppInner() {
       hasSleeperPlayers: sleeperPlayerCount > 0,
     });
   }, [activeTab, companionView, selectedLeagueId, season, hasLeague, statsLoading, seasonStats, sleeperPlayerCount]);
-  const waiverInitRequest = appRoute.companionView === 'waivers' && appRoute.waiverPosition
-    ? { position: appRoute.waiverPosition }
-    : null;
   const matchupInitRequest = appRoute.companionView === 'matchups' && (appRoute.matchupWeek || appRoute.matchupPlayerId)
     ? { week: appRoute.matchupWeek, playerId: appRoute.matchupPlayerId }
     : null;
@@ -2530,7 +2523,13 @@ function AppInner() {
                 }}
                 onOpenWaiver={(position) => {
                   if (!position) return;
-                  applyRoute({ activeTab: 'fantasy', companionView: 'waivers', waiverPosition: position });
+                  applyRoute({
+                    activeTab: 'fantasy',
+                    companionView: 'rankings',
+                    rankingsPosition: position,
+                    rankingsSort: 'projected',
+                    rankingsUnrosteredOnly: true,
+                  });
                 }}
                 prewarmAnalytics={tradeAnalyticsPrewarmRequested}
                 view={tradeView}
@@ -2671,26 +2670,6 @@ function AppInner() {
               {companionView === 'injuries' && (
                 <Suspense fallback={<SectionLoading label="Loading Injuries" />}>
                   <CompanionInjuries key={`${selectedLeagueId ?? 'none'}:${season ?? 'none'}`} />
-                </Suspense>
-              )}
-              {companionView === 'waivers'    && (
-                <Suspense fallback={<SectionLoading label="Loading Waiver" />}>
-                  <CompanionWaiver
-                    initialPositionRequest={waiverInitRequest}
-                    positionFilter={appRoute.waiverPosition ?? 'ALL'}
-                    onPositionFilterChange={(position) => updateCompanionRoute({
-                      companionView: 'waivers',
-                      waiverPosition: position === 'ALL' ? null : position,
-                    }, { replace: true })}
-                    onConsumeInitialPositionRequest={() => {}}
-                    onViewPlayer={(id, meta) => {
-                      navigateToStatisticsPlayer({ id, ...meta }, {
-                        backLabel: 'Waivers',
-                        backRoute: appRoute,
-                        mode: STATISTICS_MODES.FANTASY,
-                      });
-                    }}
-                  />
                 </Suspense>
               )}
               {companionView === 'heatmap'   && (

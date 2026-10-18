@@ -168,7 +168,7 @@ export const WHATS_NEW = [
             anchor: '[data-tour="tab-companion"]',
             anchorMobile: null,
             title: 'Companion is now Fantasy',
-            body: 'Your former Companion home is now Fantasy. Rosters, Rankings, Matchups, Waivers, Defenses, and league scoring tools remain here.',
+            body: 'Your former Companion home is now Fantasy. Rosters, Rankings, Matchups, Defenses, and league scoring tools remain here. Rankings includes unrostered players and their projections.',
             placement: 'auto',
           },
           {

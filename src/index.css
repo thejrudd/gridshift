@@ -270,7 +270,6 @@ textarea {
   :where(
     .companion-roster,
     .companion-rankings,
-    .companion-waiver,
     .statistics-schedule,
     .statistics-standings,
     .predictions-redesign,
@@ -27254,15 +27253,6 @@ button.companion-matchup-masthead__axis:focus-visible {
     padding-inline: 16px;
   }
 }
-
-.fantasy-waiver-filter-panel {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.fantasy-waiver-filter-panel.is-collapsed { display: none; }
 
 .fantasy-injuries-filter-panel {
   display: flex;

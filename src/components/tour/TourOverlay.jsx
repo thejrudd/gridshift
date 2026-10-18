@@ -141,16 +141,15 @@ export default function TourOverlay({ entries, navigate, currentRoute, context =
     onStepChange?.(step);
   }, [stepIndex, step?.demoMode, onStepChange]);
 
-  // Navigate for the current step when its route differs from the app's.
+  // Keep the current step's destination authoritative until the tour advances.
+  // Initial route state from the previous view can settle after this effect
+  // runs and otherwise pull the app away from the tour's first destination.
   useEffect(() => {
     if (!step?.route) return;
     const differs = Object.entries(step.route)
       .some(([key, value]) => currentRoute?.[key] !== value);
     if (differs) navigate(step.route, { replace: true });
-    // Only re-run when the step changes — currentRoute updating to match
-    // the requested route must not re-trigger navigation.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stepIndex]);
+  }, [currentRoute, navigate, step, stepIndex]);
 
   // Resolve the anchor element by polling each frame (covers lazy-loaded
   // views appearing after navigation), with a timeout that skips the step.

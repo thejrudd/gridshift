@@ -229,8 +229,12 @@ const GUIDE_CONTENT = {
         description: 'Rankings uses your league scoring to sort all fantasy-relevant players with true overall or positional ranks.',
       },
       {
-        title: 'Filter and sort',
-        description: 'Reshape the list with position chips, fantasy team filters, search, rank scope, and stat sorts. Toggle stat sorts between Fantasy Value and Game Stats when both apply.',
+        title: 'Find unrostered players',
+        description: 'Use Unrostered Only with position filters and search to focus on available players. Other sorts can compare fantasy value with game stats.',
+      },
+      {
+        title: 'Compare projected points',
+        description: 'Projected Points uses league scoring and upcoming opponent context where available. Review the four-week average and recent trend alongside it.',
       },
       {
         title: 'Export the view',
@@ -257,28 +261,6 @@ const GUIDE_CONTENT = {
       {
         title: 'Inspect players',
         description: 'Tap a starter or bench row for projection, matchup difficulty, weekly stats, and a path to the full profile.',
-      },
-    ],
-  },
-
-  companion_waiver: {
-    title: 'WAIVERS',
-    steps: [
-      {
-        title: 'Find free agents',
-        description: 'Waiver lists players not rostered in your league and ranks them by recent form, season output, or projection.',
-      },
-      {
-        title: 'Narrow results',
-        description: 'Use position chips and search; projected sorting adds upcoming opponent and schedule context where available.',
-      },
-      {
-        title: 'Read signals',
-        description: 'Hot/cold tags, projected points, season points, and four-week average help prioritize adds.',
-      },
-      {
-        title: 'Open players',
-        description: 'Tap a row for preview or full profile when ESPN data is matched.',
       },
     ],
   },
@@ -592,7 +574,6 @@ function getGuideKey({
     const legacyView = {
       rosters: 'roster',
       matchups: 'matchup',
-      waivers: 'waiver',
       defenses: 'defense',
     }[companionView] ?? companionView;
     return `companion_${legacyView}`;

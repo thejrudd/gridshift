@@ -1,10 +1,11 @@
 const PREDICTIONS_VIEWS = new Set(['predictions', 'playoffs']);
-const FANTASY_VIEWS = new Set(['rosters', 'rankings', 'live', 'matchups', 'schedule', 'injuries', 'waivers', 'heatmap', 'defenses', 'scoring']);
+const FANTASY_VIEWS = new Set(['rosters', 'rankings', 'live', 'matchups', 'schedule', 'injuries', 'heatmap', 'defenses', 'scoring']);
 const FANTASY_VIEW_ALIASES = new Map([
   ['roster', 'rosters'],
   ['league', 'rosters'],
   ['matchup', 'matchups'],
-  ['waiver', 'waivers'],
+  ['waiver', 'rankings'],
+  ['waivers', 'rankings'],
   ['defense', 'defenses'],
 ]);
 const LEAGUE_VIEWS = new Set(['standings', 'history', 'activity']);
@@ -21,7 +22,7 @@ const SCOUT_VIEWS = new Set(['prospects', 'picks', 'results']);
 const DRAFT_VIEWS = new Set(['war-room', 'my-board', 'results']);
 const RANKINGS_POSITION_FILTERS = ['OFFENSE', 'DEFENSE', 'QB', 'RB', 'WR', 'TE', 'K', 'DEF', 'DL', 'LB', 'DB', 'TST', 'STP'];
 const RANKINGS_SORTS = new Set([
-  'season', 'avg', 'pass_yd', 'pass_td', 'pass_int', 'pass_sack', 'rush_yd', 'rush_td',
+  'season', 'avg', 'projected', 'pass_yd', 'pass_td', 'pass_int', 'pass_sack', 'rush_yd', 'rush_td',
   'rush_att', 'rec', 'rec_yd', 'rec_td', 'fum_lost', 'fgm', 'fgmiss', 'xpm', 'xpmiss',
   'idp_tkl', 'idp_tkl_loss', 'idp_sack', 'idp_int', 'idp_ff', 'idp_fr', 'idp_pd',
 ]);
@@ -64,7 +65,6 @@ const DEFAULT_ROUTE = {
   rankingsValueMode: null,
   rankingsRankScope: null,
   rankingsUnrosteredOnly: null,
-  waiverPosition: null,
   matchupWeek: null,
   scheduleMode: null,
   scheduleWeek: null,
@@ -389,6 +389,7 @@ export function normalizeAppRoute(route = {}) {
   }
 
   if (activeTab === 'fantasy') {
+    const legacyWaiversRoute = route.companionView === 'waivers' || route.companionView === 'waiver';
     const companionView = normalizeCompanionView(route.companionView);
     const normalized = {
       ...DEFAULT_ROUTE,
@@ -397,19 +398,20 @@ export function normalizeAppRoute(route = {}) {
     };
 
     if (companionView === 'rankings') {
-      normalized.rankingsPosition = normalizeRankingsPositions(route.rankingsPosition);
+      normalized.rankingsPosition = normalizeRankingsPositions(
+        legacyWaiversRoute
+          ? route.waiverPosition ?? route.rankingsPosition
+          : route.rankingsPosition,
+      );
       normalized.rankingsRosterId = normalizePlayerId(route.rankingsRosterId);
       normalized.rankingsQuery = normalizeRankingsQuery(route.rankingsQuery);
       normalized.rankingsNflTeams = normalizeRankingsNflTeams(route.rankingsNflTeams);
-      normalized.rankingsSort = normalizeLowerToken(route.rankingsSort, RANKINGS_SORTS, 'season');
+      normalized.rankingsSort = normalizeLowerToken(route.rankingsSort, RANKINGS_SORTS, legacyWaiversRoute ? 'projected' : 'season');
       normalized.rankingsSortDir = normalizeLowerToken(route.rankingsSortDir, new Set(['asc', 'desc']), 'desc');
       normalized.rankingsValueMode = normalizeLowerToken(route.rankingsValueMode, new Set(['fantasy', 'raw']), 'fantasy');
       normalized.rankingsRankScope = normalizeLowerToken(route.rankingsRankScope, new Set(['overall', 'position']), 'overall');
-      normalized.rankingsUnrosteredOnly = normalizeBooleanFlag(route.rankingsUnrosteredOnly) === '1';
-    }
-
-    if (companionView === 'waivers') {
-      normalized.waiverPosition = normalizePosition(route.waiverPosition);
+      normalized.rankingsUnrosteredOnly = legacyWaiversRoute
+        || normalizeBooleanFlag(route.rankingsUnrosteredOnly) === '1';
     }
 
     if (companionView === 'matchups') {
@@ -777,11 +779,6 @@ export function buildAppPath(route) {
           ['unrostered', normalized.rankingsUnrosteredOnly ? '1' : null],
         ])}`;
       }
-      if (normalized.companionView === 'waivers') {
-        return `${basePath}${buildQueryString([
-          ['position', normalized.waiverPosition],
-        ])}`;
-      }
       if (normalized.companionView === 'matchups') {
         return `${basePath}${buildQueryString([
           ['week', normalized.matchupWeek],
@@ -909,7 +906,6 @@ export function isSameAppRoute(a, b) {
     && left.rankingsValueMode === right.rankingsValueMode
     && left.rankingsRankScope === right.rankingsRankScope
     && left.rankingsUnrosteredOnly === right.rankingsUnrosteredOnly
-    && left.waiverPosition === right.waiverPosition
     && left.matchupWeek === right.matchupWeek
     && left.matchupPlayerId === right.matchupPlayerId
     && left.matchupRosterId === right.matchupRosterId

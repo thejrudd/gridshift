@@ -208,4 +208,22 @@ describe('Fantasy Heatmap future matchup ratings', () => {
       ['B', 'A', 'C'],
     );
   });
+  it('puts finished games below the remaining ranked games, ordered by points scored', () => {
+    const rows = [
+      { team: 'A', weekPts: { 8: 12 } },
+      { team: 'B', weekPts: {} },
+      { team: 'C', weekPts: { 8: 25 } },
+      { team: 'D', weekPts: {} },
+    ];
+    const ratings = { 8: { B: { TE: { rank: 2 } }, D: { TE: { rank: 1 } } } };
+
+    for (const direction of ['asc', 'desc']) {
+      const order = sortHeatmapRowsByMatchupRank(rows, ratings, 8, 'TE', direction).map(row => row.team);
+      assert.deepEqual(order.slice(2), ['C', 'A']);
+    }
+    assert.deepEqual(
+      sortHeatmapRowsByMatchupRank(rows, ratings, 8, 'TE', 'asc').slice(0, 2).map(row => row.team),
+      ['D', 'B'],
+    );
+  });
 });

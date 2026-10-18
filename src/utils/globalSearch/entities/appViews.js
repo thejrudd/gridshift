@@ -14,7 +14,7 @@ const VIEWS = [
   { id: 'fantasy.matchups', label: 'Matchups', section: 'Fantasy', aliases: ['matchup', 'my matchup', 'head to head'], route: { activeTab: 'fantasy', companionView: 'matchups' } },
   { id: 'fantasy.live', label: 'Live', section: 'Fantasy', aliases: ['live scoring', 'scoreboard'], route: { activeTab: 'fantasy', companionView: 'live' } },
   { id: 'fantasy.rankings', label: 'Rankings', section: 'Fantasy', aliases: ['ranks', 'player rankings'], route: { activeTab: 'fantasy', companionView: 'rankings' } },
-  { id: 'fantasy.waivers', label: 'Waivers', section: 'Fantasy', aliases: ['waiver wire', 'free agents', 'pickups'], route: { activeTab: 'fantasy', companionView: 'waivers' } },
+  { id: 'fantasy.freeAgents', label: 'Unrostered players', section: 'Fantasy', aliases: ['waivers', 'waiver wire', 'free agents', 'pickups'], route: { activeTab: 'fantasy', companionView: 'rankings', rankingsSort: 'projected', rankingsUnrosteredOnly: true } },
   { id: 'fantasy.injuries', label: 'Injuries', section: 'Fantasy', aliases: ['injury report', 'hurt'], route: { activeTab: 'fantasy', companionView: 'injuries' } },
   { id: 'fantasy.schedule', label: 'Fantasy schedule', section: 'Fantasy', aliases: ['league schedule'], route: { activeTab: 'fantasy', companionView: 'schedule' } },
   { id: 'fantasy.heatmap', label: 'Heatmap', section: 'Fantasy', aliases: ['defense heatmap', 'coverage colors'], route: { activeTab: 'fantasy', companionView: 'heatmap' } },

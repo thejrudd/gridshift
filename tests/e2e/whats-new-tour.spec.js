@@ -115,6 +115,7 @@ test(HISTORICAL_TOUR_TEST, async ({ page }) => {
   await whatsNew.getByRole('button', { name: 'Show me' }).click();
 
   const tour = page.getByRole('dialog', { name: 'Feature tour' });
+  await expect(page).toHaveURL(/\/fantasy\/defenses$/);
   // Trade surfaces are current-season only. When this historical fixture
   // reaches the old Trade History content step, the tour skips its unavailable
   // anchor before continuing to the draft-history copy.

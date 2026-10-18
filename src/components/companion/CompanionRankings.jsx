@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSleeperBase, useSleeperStatsProgress } from '../../context/SleeperContext';
 import { useTheme } from '../../context/ThemeContext';
-import { DEFAULT_SCORING, calcPointsFromTotals } from '../../utils/scoringEngine';
-import { hasRecordedFantasyStats } from '../../utils/projectionEngine.js';
+import { DEFAULT_SCORING, calcPointsFromTotals, createPointsCalculator } from '../../utils/scoringEngine';
+import { buildDefenseTable, getDefenseStrength, getLeagueAvgPPG, hasRecordedFantasyStats, projectPlayer } from '../../utils/projectionEngine.js';
+import { STADIUMS } from '../../data/stadiums.js';
 import CompanionPlayerPreviewSheet from './CompanionPlayerPreviewSheet';
 import useMediaQuery from '../../hooks/useMediaQuery.js';
 import {
@@ -22,6 +23,7 @@ import {
 } from '../../utils/rankingsExport';
 import { getScoringProfile } from '../../utils/scoringGuide.js';
 import { getPlayerAvailabilityContext } from '../../utils/playerAvailabilityStatus.js';
+import { isWaiverEligiblePlayerRecord } from '../../utils/playerEligibility.js';
 import { getFantasyRankingsDataMode } from '../../utils/seasonAvailability.js';
 import { getFantasyAdp } from '../../api/fantasyAdpApi.js';
 import { getFantasyAdpPlayersForLeague, getFantasyAdpSnapshotUpdatedAt } from '../../utils/fantasyAdp.js';
@@ -38,6 +40,7 @@ import useMenuEscapeClose from '../../hooks/useMenuEscapeClose';
 import CompanionPlayerRow, {
   CompanionPlayerLocalContrastText,
   CompanionPlayerMetric,
+  CompanionPlayerStatus,
 } from './CompanionPlayerRow.jsx';
 import StatsProgressBanner from '../ui/StatsProgressBanner';
 import LoadingSwap, { SkeletonRows } from '../ui/LoadingSwap.jsx';
@@ -49,12 +52,14 @@ const HIDE_AVG_QUERY = '(max-width: 900px)';
 const MOBILE_SHEET_QUERY = '(max-width: 1023px)';
 const RANKINGS_ROW_GAP = 10;
 const MISSING_SORT_VALUE = 1_000_000_000;
+const PROJECTION_POSITIONS = new Set(['QB', 'RB', 'WR', 'TE', 'K', 'DL', 'LB', 'DB']);
 const GROUP_FILTERS = {
   OFFENSE: ['QB', 'RB', 'WR', 'TE', 'K'],
   DEFENSE: ['DEF', 'DL', 'LB', 'DB'],
 };
 const BASE_SORT_OPTIONS = [
   { id: 'season', label: 'Season Points' },
+  { id: 'projected', label: 'Projected Points', shortLabel: 'Projected' },
 ];
 const RANK_SCOPE_OPTIONS = [
   { id: 'overall', label: 'Overall' },
@@ -204,6 +209,54 @@ function rankPlayersByPosition(players) {
   });
 }
 
+function getRecentAverage(weekly, calcFantasyPoints, position, count = 4) {
+  if (!weekly?.length) return null;
+
+  const recent = [];
+  for (const stats of weekly) {
+    const week = Number(stats?.week);
+    if (!Number.isFinite(week)) continue;
+    let insertAt = recent.length;
+    while (insertAt > 0 && recent[insertAt - 1].week < week) insertAt -= 1;
+    recent.splice(insertAt, 0, { week, stats });
+    if (recent.length > count) recent.pop();
+  }
+
+  if (!recent.length) return null;
+  const total = recent.reduce((sum, entry) => sum + calcFantasyPoints(entry.stats, position), 0);
+  return Math.round((total / recent.length) * 10) / 10;
+}
+
+function getRankingsTrendState(recentAvg, seasonAvg) {
+  if (!(recentAvg > 0 && seasonAvg > 0)) return 'neutral';
+  if (recentAvg >= seasonAvg * 1.25 && recentAvg - seasonAvg >= 2) return 'hot';
+  if (recentAvg <= seasonAvg * 0.75 && seasonAvg - recentAvg >= 2) return 'cold';
+  return 'neutral';
+}
+
+function getProjectionScheduleContext(player, week, scheduleMap) {
+  const team = String(player.team ?? '').toUpperCase();
+  const matchup = scheduleMap?.[week]?.[team];
+  const opponent = matchup?.opp ?? null;
+  const isHome = matchup?.home ?? null;
+  const venueTeam = isHome === true ? team : isHome === false ? opponent : null;
+  return {
+    opponent,
+    isHome,
+    isIndoor: venueTeam ? (STADIUMS[venueTeam]?.indoor ?? false) : false,
+  };
+}
+
+function compareProjectedValues(a, b) {
+  const aMissing = a.projected == null || !Number.isFinite(a.projected);
+  const bMissing = b.projected == null || !Number.isFinite(b.projected);
+  if (aMissing || bMissing) {
+    if (aMissing && bMissing) return 0;
+    return aMissing ? MISSING_SORT_VALUE : -MISSING_SORT_VALUE;
+  }
+  return b.projected - a.projected;
+}
+
 function getActionSortOptionsForFilters(selectedFilters, availablePositions) {
   const expandedFilters = getExpandedPositionFilters(selectedFilters, availablePositions);
   if (!expandedFilters.length || expandedFilters.length === availablePositions.filter(pos => pos !== 'ALL').length) return ACTION_SORT_OPTIONS;
@@ -322,6 +375,7 @@ function normalizeMappedAdpPlayer(entry, players) {
 function getRankingsSortLabel({ sortBy, sortDir, selectedSortOption, sortValueMode }) {
   let method = 'Season Points';
   if (sortBy === 'avg') method = 'Average Points Per Game';
+  else if (sortBy === 'projected') method = 'Projected Points';
   else if (sortBy !== 'season') {
     method = `${selectedSortOption.label} · ${sortValueMode === 'raw' ? 'Game Stats' : 'Fantasy Value'}`;
   }
@@ -398,6 +452,7 @@ export default function CompanionRankings({
   const {
     players, loadPlayers,
     seasonStats, weeklyStats, loadSeasonStats,
+    scheduleMap,
     statsLoading,
     activeScoringSettings,
     scoringOverride,
@@ -406,6 +461,7 @@ export default function CompanionRankings({
     leagueUsers,
     league,
     season,
+    currentFantasyWeek,
     myRoster,
     getUserDisplayName,
   } = useSleeperBase();
@@ -413,6 +469,7 @@ export default function CompanionRankings({
   const isCompactPhone = useMediaQuery(COMPACT_PHONE_QUERY);
   const useMobilePreviewSheet = useMediaQuery(MOBILE_SHEET_QUERY);
   const hideAvgColumn = useMediaQuery(HIDE_AVG_QUERY);
+  const calcFantasyPoints = useMemo(() => createPointsCalculator(activeScoringSettings), [activeScoringSettings]);
   const [rankingsAvailabilityDate, setRankingsAvailabilityDate] = useState(() => new Date());
   const rankingsDataMode = getFantasyRankingsDataMode(season, rankingsAvailabilityDate);
   const isAdpMode = rankingsDataMode === 'adp';
@@ -503,7 +560,16 @@ export default function CompanionRankings({
     [activeScoringSettings, availablePositions, selectedFilters],
   );
   const selectedSortOption = useMemo(() => getSortOptionById(sortBy), [sortBy]);
-  const isActionSort = !isAdpMode && sortBy !== 'season' && sortBy !== 'avg';
+  const isProjectedSort = !isAdpMode && sortBy === 'projected';
+  const isActionSort = !isAdpMode && sortBy !== 'season' && sortBy !== 'avg' && !isProjectedSort;
+  const projectionWeek = useMemo(() => {
+    const playoffStart = Number(league?.settings?.playoff_week_start) || 18;
+    const finalRegularWeek = Math.max(1, playoffStart - 1);
+    const resolved = Number(currentFantasyWeek);
+    return Number.isFinite(resolved)
+      ? Math.min(Math.max(1, resolved), finalRegularWeek)
+      : finalRegularWeek;
+  }, [currentFantasyWeek, league]);
 
   useEffect(() => {
     const nextFilters = parsePositionFilterList(positionFilter);
@@ -534,7 +600,7 @@ export default function CompanionRankings({
   useEffect(() => { setRankScope(rankScopeFilter); }, [rankScopeFilter]);
   useEffect(() => { setFreeAgentsOnly(unrosteredOnlyFilter); }, [unrosteredOnlyFilter]);
   useEffect(() => {
-    if (sortBy === 'season' || sortBy === 'avg') return;
+    if (sortBy === 'season' || sortBy === 'avg' || sortBy === 'projected') return;
     if (actionSortOptions.some(option => option.id === sortBy)) return;
     setSortBy('season');
     onRouteStateChange?.({ rankingsSort: 'season' });
@@ -620,6 +686,17 @@ export default function CompanionRankings({
     return ids;
   }, [rosters]);
 
+  const projectionInputs = useMemo(() => {
+    if (!isProjectedSort || !weeklyStats || !players) return null;
+    const defenseTable = buildDefenseTable(weeklyStats, players, scheduleMap, activeScoringSettings);
+    const leagueAvgByPos = {};
+    for (const position of availablePositions) {
+      if (position === 'ALL' || !PROJECTION_POSITIONS.has(position)) continue;
+      leagueAvgByPos[position] = getLeagueAvgPPG(position, weeklyStats, players, activeScoringSettings, projectionWeek);
+    }
+    return { defenseTable, leagueAvgByPos };
+  }, [activeScoringSettings, availablePositions, isProjectedSort, players, projectionWeek, scheduleMap, weeklyStats]);
+
   const adpSourceReady = isAdpMode
     && adpState.season === selectedSeasonKey
     && adpState.status === 'ready';
@@ -675,9 +752,48 @@ export default function CompanionRankings({
         if (!hasRecordedFantasyStats(stats, weeklyStats?.[id])) return null;
 
         const sortContribution = getActionSortContribution(stats, activeScoringSettings, sortPosition, selectedSortOption);
-        if (sortBy !== 'season' && sortBy !== 'avg' && sortContribution.raw == null) return null;
+        if (sortBy !== 'season' && sortBy !== 'avg' && sortBy !== 'projected' && sortContribution.raw == null) return null;
 
         const availability = getPlayerAvailabilityContext(p);
+        const weekly = weeklyStats?.[id] ?? [];
+        const recentAvg = isProjectedSort
+          ? getRecentAverage(weekly, calcFantasyPoints, pos)
+          : null;
+        let projected = null;
+        let projectedOpponent = null;
+        let projectedHome = null;
+        if (isProjectedSort) {
+          const scheduleContext = getProjectionScheduleContext(p, projectionWeek, scheduleMap);
+          projectedOpponent = scheduleContext.opponent;
+          projectedHome = scheduleContext.isHome;
+          if (
+            projectionInputs?.defenseTable
+            && PROJECTION_POSITIONS.has(sortPosition)
+            && weekly.length >= 2
+          ) {
+            const defStrength = projectedOpponent
+              ? getDefenseStrength(projectionInputs.defenseTable, projectedOpponent, sortPosition, projectionWeek)
+              : null;
+            const projection = projectPlayer({
+              weeklyArr: weekly,
+              pos: sortPosition,
+              oppTeam: projectedOpponent,
+              isHome: projectedHome,
+              isIndoor: scheduleContext.isIndoor,
+              weather: null,
+              allWeeklyStats: null,
+              players: null,
+              scoringSettings: activeScoringSettings,
+              scheduleMap,
+              week: projectionWeek,
+              defStrength,
+              leagueAvg: projectionInputs.leagueAvgByPos[sortPosition] ?? 0,
+              skipOpponentLookup: true,
+              minimumGames: 1,
+            });
+            projected = projection?.projected ?? null;
+          }
+        }
 
         return {
           id,
@@ -686,6 +802,12 @@ export default function CompanionRankings({
           team: p.team || 'FA',
           pts,
           avgPPG: stats?.gp ? pts / stats.gp : null,
+          waiverEligible: isProjectedSort ? isWaiverEligiblePlayerRecord(p) : true,
+          recentAvg,
+          projected,
+          projectedOpponent,
+          projectedHome,
+          trendState: isProjectedSort ? getRankingsTrendState(recentAvg, stats?.gp ? pts / stats.gp : null) : 'neutral',
           stats,
           sortContribution,
           sortGames: Number(stats?.gp) || null,
@@ -702,7 +824,12 @@ export default function CompanionRankings({
           comparison = (b.avgPPG ?? -Infinity) - (a.avgPPG ?? -Infinity);
           if (comparison !== 0) return applySortDirection(comparison, sortDir);
         }
-        if (sortBy !== 'season') {
+        if (sortBy === 'projected') {
+          comparison = compareProjectedValues(a, b);
+          if (comparison !== 0) return applySortDirection(comparison, sortDir, { preserveMissingLast: true });
+          comparison = (b.recentAvg ?? -Infinity) - (a.recentAvg ?? -Infinity);
+          if (comparison !== 0) return comparison;
+        } else if (sortBy !== 'season') {
           comparison = compareActionSortValues(a, b, selectedSortOption, sortValueMode);
           if (comparison !== 0) return applySortDirection(comparison, sortDir, { preserveMissingLast: true });
         }
@@ -710,7 +837,7 @@ export default function CompanionRankings({
         return applySortDirection(comparison, sortDir);
       })
       .map((player, i) => ({ ...player, overallRank: i + 1 }));
-  }, [players, seasonStats, weeklyStats, activeScoringSettings, availablePositions, rosteredIds, darkMode, sortBy, selectedSortOption, sortValueMode, sortDir]);
+  }, [players, seasonStats, weeklyStats, activeScoringSettings, availablePositions, rosteredIds, darkMode, sortBy, selectedSortOption, sortValueMode, sortDir, isProjectedSort, calcFantasyPoints, projectionInputs, projectionWeek, scheduleMap]);
 
   const sortedPlayers = isAdpMode ? adpSortedPlayers : scoringSortedPlayers;
   const allRanked = useMemo(() => rankPlayersByPosition(sortedPlayers), [sortedPlayers]);
@@ -735,6 +862,7 @@ export default function CompanionRankings({
     const filtered = allRanked.filter(p => {
       if (!selectedFiltersMatchPlayer(p.position, p.stats, selectedFilters, availablePositions)) return false;
       if (freeAgentsOnly && p.isRostered) return false;
+      if (isProjectedSort && freeAgentsOnly && !p.waiverEligible) return false;
       if (selectedRosterPlayerIds && !selectedRosterPlayerIds.has(String(p.id))) return false;
       if (selectedNflTeamSet.size && !selectedNflTeamSet.has(p.team)) return false;
       if (!q) return true;
@@ -744,7 +872,7 @@ export default function CompanionRankings({
       rank: rankScope === 'position' ? player.positionRank : player.overallRank,
     }));
     return selectedRosterIds.length || selectedNflTeamSet.size || q ? filtered : filtered.slice(0, 100);
-  }, [allRanked, availablePositions, rankScope, search, selectedFilters, selectedRosterIds.length, selectedRosterPlayerIds, selectedNflTeamSet, freeAgentsOnly]);
+  }, [allRanked, availablePositions, isProjectedSort, rankScope, search, selectedFilters, selectedRosterIds.length, selectedRosterPlayerIds, selectedNflTeamSet, freeAgentsOnly]);
 
   const nameColPx = useMemo(() => measureMaxNameWidth(ranked), [ranked]);
   const hasLoadedStats = Boolean(seasonStats);
@@ -825,13 +953,18 @@ export default function CompanionRankings({
     }
 
     const isAverageSort = sortBy === 'avg';
-    const metricLabel = isActionSort
+    const metricLabel = isProjectedSort
+      ? 'Projected Points'
+      : isActionSort
       ? `${selectedSortOption.shortLabel ?? selectedSortOption.label}${sortValueMode === 'fantasy' ? ' Pts' : ''}`
       : isAverageSort ? 'Avg PPG' : 'Season Pts';
     const rows = ranked.map((player) => {
       let primaryValue = player.pts != null ? player.pts.toFixed(1) : '—';
       let secondaryValue = player.avgPPG != null ? `${player.avgPPG.toFixed(1)} PPG` : null;
-      if (isAverageSort) {
+      if (isProjectedSort) {
+        primaryValue = player.projected != null ? player.projected.toFixed(1) : '—';
+        secondaryValue = player.recentAvg != null ? `${player.recentAvg.toFixed(1)} four-week avg` : null;
+      } else if (isAverageSort) {
         primaryValue = player.avgPPG != null ? player.avgPPG.toFixed(1) : '—';
         secondaryValue = player.pts != null ? `${player.pts.toFixed(1)} season pts` : null;
       } else if (isActionSort) {
@@ -899,6 +1032,11 @@ export default function CompanionRankings({
       columns.push({ key: 'statTotal', label: `${statLabel}${valueModeSuffix}` });
       columns.push({ key: 'statPerGame', label: `${statLabel}/G` });
     }
+    if (!isAdpMode && isProjectedSort) {
+      columns.push({ key: 'projected', label: 'Projected Points' });
+      columns.push({ key: 'fourWeekAvg', label: '4-Wk Avg' });
+      columns.push({ key: 'opponent', label: 'Opponent' });
+    }
     const rows = ranked.map((p) => {
       if (isAdpMode) {
         return {
@@ -919,6 +1057,13 @@ export default function CompanionRankings({
         seasonPts: p.pts != null ? p.pts.toFixed(1) : '',
         avgPpg: p.avgPPG != null ? p.avgPPG.toFixed(1) : '',
       };
+      if (isProjectedSort) {
+        row.projected = p.projected != null ? p.projected.toFixed(1) : '';
+        row.fourWeekAvg = p.recentAvg != null ? p.recentAvg.toFixed(1) : '';
+        row.opponent = p.projectedOpponent
+          ? `${p.projectedHome ? 'vs' : '@'} ${p.projectedOpponent}`
+          : '';
+      }
       if (isActionSort) {
         row.statTotal = formatRankingsMetric(getActionDisplayValue(p, sortValueMode, 'season'));
         row.statPerGame = formatRankingsMetric(getActionDisplayValue(p, sortValueMode, 'avg'));
@@ -1157,6 +1302,12 @@ export default function CompanionRankings({
       )}
       {isScoringMode && statsLoading && <RankingsStatsLoadingBanner />}
 
+      {isProjectedSort && isScoringMode && (
+        <div className="mx-4 mb-3 text-[length:var(--type-label)]" style={{ color: 'var(--color-label-tertiary)' }}>
+          Week {projectionWeek} projections · League scoring · Matchup context where available
+        </div>
+      )}
+
       {/* Column headers */}
       {showRankingsTable && (
         <div
@@ -1174,7 +1325,7 @@ export default function CompanionRankings({
           <div />
           {!effectiveHideAvgColumn && (
             <SortHeader
-              label={isActionSort ? 'Per Game' : 'Avg PPG'}
+              label={isProjectedSort ? '4-Wk Avg' : isActionSort ? 'Per Game' : 'Avg PPG'}
               active={sortBy === 'avg'}
               direction={sortDir}
               onClick={() => {
@@ -1190,7 +1341,7 @@ export default function CompanionRankings({
             <span className="text-center">ADP</span>
           ) : (
             <SortHeader
-              label={isActionSort ? (selectedSortOption.shortLabel ?? selectedSortOption.label) : 'Season'}
+              label={isProjectedSort ? 'Projected' : isActionSort ? (selectedSortOption.shortLabel ?? selectedSortOption.label) : 'Season'}
               active={sortBy !== 'avg'}
               direction={sortDir}
               onClick={() => {
@@ -1220,6 +1371,7 @@ export default function CompanionRankings({
             player={player}
             activeSortOption={selectedSortOption}
             sortValueMode={sortValueMode}
+            projectedSort={isProjectedSort}
             rankingMode={isAdpMode ? 'adp' : 'scoring'}
             hideAvgColumn={effectiveHideAvgColumn}
             isCompactPhone={isCompactPhone}
@@ -1593,16 +1745,34 @@ function SortHeader({ label, active, direction = 'desc', onClick }) {
   );
 }
 
-function RankRow({ rank, player, activeSortOption, sortValueMode, rankingMode = 'scoring', onSelect, hideAvgColumn, isCompactPhone, nameColPx, statsPending = false }) {
+function RankRow({ rank, player, activeSortOption, sortValueMode, projectedSort = false, rankingMode = 'scoring', onSelect, hideAvgColumn, isCompactPhone, nameColPx, statsPending = false }) {
   const { darkMode } = useTheme();
   const isAdpMode = rankingMode === 'adp';
-  const isActionSort = !isAdpMode && activeSortOption?.id !== 'season';
+  const trendLabel = player.trendState === 'hot' ? 'HOT' : player.trendState === 'cold' ? 'COLD' : null;
+  const isActionSort = !isAdpMode && activeSortOption?.id !== 'season' && activeSortOption?.id !== 'projected';
   const columnGridTemplate = hideAvgColumn ? 'auto 80px' : 'auto 64px 80px';
   const nameCol = nameColPx ? `minmax(0,${nameColPx}px)` : 'minmax(0,1fr)';
   const rowTemplate = isCompactPhone
     ? '32px 44px minmax(0,1fr) minmax(0,1fr) 12px'
     : `32px 44px ${nameCol} minmax(0,1fr) 12px`;
-  const metaSegments = [player.position, player.team];
+  const metaSegments = [
+    player.position,
+    player.team,
+    projectedSort && hideAvgColumn && player.recentAvg != null ? `4-Wk ${player.recentAvg.toFixed(1)}` : null,
+    projectedSort && player.projectedOpponent
+      ? `${player.projectedHome ? 'vs' : '@'} ${player.projectedOpponent}`
+    : null,
+  ].filter(Boolean);
+  const trendStatus = projectedSort && trendLabel ? (
+    <CompanionPlayerStatus
+      tone={player.trendState === 'hot' ? 'positive' : 'negative'}
+      className="text-center"
+      localContrast
+      title={player.trendState === 'hot' ? 'Recent points are rising' : 'Recent points are cooling'}
+    >
+      {trendLabel}
+    </CompanionPlayerStatus>
+  ) : null;
 
   return (
     <CompanionPlayerRow
@@ -1647,22 +1817,30 @@ function RankRow({ rank, player, activeSortOption, sortValueMode, rankingMode = 
             ) : null}
           </div>
           {!isCompactPhone && (
-            <PlayerStatusLogoCluster
-              logoKey={player.teamTheme.logoKey}
-              status={player.availabilityStatus}
-              detail={player.availabilityDetail}
-              className="justify-start"
-            />
+            <div className="min-w-0 flex items-center justify-start gap-1.5">
+              {trendStatus}
+              <PlayerStatusLogoCluster
+                logoKey={player.teamTheme.logoKey}
+                status={player.availabilityStatus}
+                detail={player.availabilityDetail}
+                className="justify-start"
+              />
+            </div>
           )}
-          {isCompactPhone && player.availabilityStatus && (
-            <PlayerStatusBadge status={player.availabilityStatus} compact />
+          {isCompactPhone && (trendStatus || player.availabilityStatus) && (
+            <div className="flex min-w-0 items-center gap-1.5">
+              {trendStatus}
+              {player.availabilityStatus && <PlayerStatusBadge status={player.availabilityStatus} compact />}
+            </div>
           )}
         </div>,
         !hideAvgColumn && (
           <CompanionPlayerMetric
             key="avg"
-            value={isActionSort ? formatRankingsMetric(getActionDisplayValue(player, sortValueMode, 'avg')) : (player.avgPPG != null ? player.avgPPG.toFixed(1) : '—')}
-            pending={statsPending && !isActionSort && player.avgPPG == null}
+            value={projectedSort
+              ? formatRankingsMetric(player.recentAvg)
+              : isActionSort ? formatRankingsMetric(getActionDisplayValue(player, sortValueMode, 'avg')) : (player.avgPPG != null ? player.avgPPG.toFixed(1) : '—')}
+            pending={statsPending && (projectedSort ? player.recentAvg == null : !isActionSort && player.avgPPG == null)}
             align="center"
           />
         ),
@@ -1670,11 +1848,13 @@ function RankRow({ rank, player, activeSortOption, sortValueMode, rankingMode = 
           key="season"
           value={isAdpMode
             ? formatAdpValue(player.adp)
+            : projectedSort
+              ? formatRankingsMetric(player.projected)
             : isActionSort
               ? formatRankingsMetric(getActionDisplayValue(player, sortValueMode, 'season'))
               : player.pts.toFixed(1)}
-          label={!isAdpMode && hideAvgColumn && !isActionSort ? formatRankingsPpgLabel(player.avgPPG) : null}
-          pending={!isAdpMode && statsPending && !isActionSort && player.pts == null}
+          label={!isAdpMode && hideAvgColumn && projectedSort ? 'Week proj.' : !isAdpMode && hideAvgColumn && !isActionSort ? formatRankingsPpgLabel(player.avgPPG) : null}
+          pending={!isAdpMode && statsPending && !isActionSort && (projectedSort ? player.projected == null : player.pts == null)}
           align="center"
         />,
       ].filter(Boolean)}
