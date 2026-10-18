@@ -62,6 +62,7 @@ import { buildMatchupWinProbability, hasFinalMatchupGameEvidence } from '../../u
 import { formatWinProbabilityPair, getStarterOutlook } from '../../utils/liveWinProbability.js';
 import {
   getFallbackRemainingGameFraction,
+  getMatchupCustomPoints,
   getOfficialMatchupRowPoints,
   hasReconciledMatchup,
   isCompleteScheduleWeek,
@@ -811,7 +812,7 @@ export default function CompanionMatchup({
   ]);
 
   // When a scoring override is active, sum recalculated starter points instead of
-  // using Sleeper's pre-computed matchup.points (which reflect the league's own scoring).
+  // using Sleeper's pre-computed matchup score (custom_points overrides points).
   const calcStarterTotal = useCallback((starters) => {
     if (!starters?.length || !players || !weeklyStats) return null;
     let total = 0;
@@ -828,13 +829,15 @@ export default function CompanionMatchup({
   }, [players, weeklyStats, week, activeScoringSettings]);
 
   const myDisplayPoints = useMemo(() => {
-    if (!scoringOverride) return myMatchup?.points ?? null;
-    return calcStarterTotal(myMatchup?.starters) ?? myMatchup?.points ?? null;
+    const officialPoints = getOfficialMatchupRowPoints(myMatchup);
+    if (!scoringOverride) return officialPoints;
+    return calcStarterTotal(myMatchup?.starters) ?? officialPoints;
   }, [scoringOverride, myMatchup, calcStarterTotal]);
 
   const oppDisplayPoints = useMemo(() => {
-    if (!scoringOverride) return opponentMatchup?.points ?? null;
-    return calcStarterTotal(opponentMatchup?.starters) ?? opponentMatchup?.points ?? null;
+    const officialPoints = getOfficialMatchupRowPoints(opponentMatchup);
+    if (!scoringOverride) return officialPoints;
+    return calcStarterTotal(opponentMatchup?.starters) ?? officialPoints;
   }, [scoringOverride, opponentMatchup, calcStarterTotal]);
   const positionalRanks = useMemo(() => {
     if (!hasAdvancedStats) return {};
@@ -1624,8 +1627,8 @@ export default function CompanionMatchup({
     buildMatchupWinProbability({
       myPlayers: enrichedSlots.map((slot) => slot.mine),
       opponentPlayers: enrichedSlots.map((slot) => slot.opp),
-      myCustomPoints: myMatchup?.custom_points,
-      opponentCustomPoints: opponentMatchup?.custom_points,
+      myCustomPoints: getMatchupCustomPoints(myMatchup),
+      opponentCustomPoints: getMatchupCustomPoints(opponentMatchup),
       settledConfirmed: matchupSettlementConfirmed,
       officialPoints: !scoringOverride && hasCompleteOfficialMatchupPoints
         ? {
