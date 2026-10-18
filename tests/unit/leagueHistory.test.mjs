@@ -243,7 +243,7 @@ test('models Sleeper playoff links with byes, resolved scores, and separate plac
   assert.equal(secondRound.team2Score, 120);
 });
 
-test('includes Sleeper commissioner score adjustments in standings and toilet-bowl scores', () => {
+test('uses Sleeper custom_points overrides in standings and toilet-bowl scores', () => {
   const snapshot = {
     season: '2025',
     completed: true,
@@ -258,12 +258,12 @@ test('includes Sleeper commissioner score adjustments in standings and toilet-bo
     ],
     matchupsByWeek: {
       16: [
-        { matchup_id: 1, roster_id: 1, points: 139.8, custom_points: -0.1 },
-        { matchup_id: 1, roster_id: 2, points: 113.11, custom_points: -0.5 },
+        { matchup_id: 1, roster_id: 1, points: 139.8, custom_points: 145.25 },
+        { matchup_id: 1, roster_id: 2, points: 113.11, custom_points: 120 },
       ],
       17: [
-        { matchup_id: 1, roster_id: 1, points: 139.8, custom_points: -0.1 },
-        { matchup_id: 1, roster_id: 2, points: 113.11, custom_points: -0.5 },
+        { matchup_id: 1, roster_id: 1, points: 139.8, custom_points: 145.25 },
+        { matchup_id: 1, roster_id: 2, points: 113.11, custom_points: 120 },
       ],
     },
     winnersBracket: [],
@@ -272,14 +272,43 @@ test('includes Sleeper commissioner score adjustments in standings and toilet-bo
   };
 
   const standings = buildSeasonStandings(snapshot, { historical: true });
-  assert.deepEqual(standings.rows.map((row) => row.pointsFor), [139.7, 112.61]);
+  assert.deepEqual(standings.rows.map((row) => row.pointsFor), [145.25, 120]);
 
   const brackets = normalizeSeasonBrackets(snapshot);
   assert.equal(brackets.losersBracketType, 'toilet-bowl');
   assert.deepEqual(
     [brackets.consolation[0].team1Score, brackets.consolation[0].team2Score],
-    [139.7, 112.61],
+    [145.25, 120],
   );
+});
+
+test('uses the custom team-score override once in lifetime records', () => {
+  const snapshot = {
+    season: '2026',
+    completed: true,
+    league: { settings: { last_scored_leg: 1 } },
+    users: [
+      { user_id: 'override-a', display_name: 'Manager A', metadata: { team_name: 'High Score' } },
+      { user_id: 'override-b', display_name: 'Manager B', metadata: { team_name: 'Second Score' } },
+    ],
+    rosters: [
+      { roster_id: 1, owner_id: 'override-a' },
+      { roster_id: 2, owner_id: 'override-b' },
+    ],
+    matchupsByWeek: {
+      1: [
+        { matchup_id: 1, roster_id: 1, points: 212.515, custom_points: 212.515 },
+        { matchup_id: 1, roster_id: 2, points: 172.46, custom_points: 172.46 },
+      ],
+    },
+    winnersBracket: [],
+    losersBracket: [],
+    transactions: [],
+  };
+
+  const model = buildLeagueHistoryModel([snapshot]);
+  assert.equal(model.records.highestScore.score, 212.52);
+  assert.equal(model.records.highestCombinedScore.value, 384.98);
 });
 
 test('models the seven-team CTRL+ALT+DEFEAT Toilet Bowl as one linked bracket with a first-round bye', () => {

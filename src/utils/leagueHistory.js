@@ -9,6 +9,7 @@ import {
 } from '../api/sleeperApi.js';
 import { cachedFetch } from './playerCache.js';
 import { getNflRegularSeasonStartTimestamp } from './nflSeason.js';
+import { getOfficialMatchupRowPoints } from './liveScoringFeed.js';
 
 export const LEAGUE_HISTORY_WEEKS = Array.from({ length: 18 }, (_, index) => index + 1);
 export const LEAGUE_HISTORY_TRANSACTION_ROUNDS = Array.from({ length: 19 }, (_, index) => index);
@@ -34,7 +35,7 @@ function roundScore(value) {
 }
 
 function matchupScore(row) {
-  return roundScore(number(row?.points) + number(row?.custom_points));
+  return roundScore(getOfficialMatchupRowPoints(row));
 }
 
 function teamName(roster, user, rosterId) {

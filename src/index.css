@@ -25658,7 +25658,6 @@ button.trade-history-asset-card:focus-visible {
   margin-bottom: clamp(28px, 4vw, 52px);
 }
 
-.league-history-eyebrow,
 .league-history-section__heading > span,
 .league-record-tile__label,
 .league-bracket-round__label {
@@ -25962,16 +25961,8 @@ button.trade-history-asset-card:focus-visible {
   margin-bottom: 20px;
 }
 
-.league-history-eyebrow {
-  color: var(--color-signature);
-  font-family: 'Barlow Condensed', sans-serif;
-  font-size: var(--type-label);
-  font-weight: 750;
-  letter-spacing: 0.18em;
-}
-
 .league-history-heading h1 {
-  margin-top: 3px;
+  margin-top: 0;
   font-size: clamp(38px, 5vw, 58px);
   line-height: 0.95;
   letter-spacing: -0.01em;

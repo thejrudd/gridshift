@@ -200,7 +200,6 @@ export default function CompanionHistory({ onOpenMatchup = null }) {
     <div className="league-history-page" data-tour="league-history-content">
       <header className="league-history-heading">
         <div>
-          <span className="league-history-eyebrow">Record book</span>
           <h1>League History</h1>
           <p><strong>{history.snapshots.length} linked season{history.snapshots.length === 1 ? '' : 's'}</strong> through {history.season} · completed Sleeper events only.</p>
         </div>

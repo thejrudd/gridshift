@@ -2,9 +2,12 @@ import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } fro
 import { FunnelSimpleIcon } from '@phosphor-icons/react/FunnelSimple';
 import { useSleeperBase, useSleeperStatsEnhancing } from '../../context/SleeperContext';
 import { useTheme } from '../../context/ThemeContext';
+import { getStatisticsScoresEspnWeek } from '../../api/statisticsScoresApi.js';
 import { calcPoints, DEFAULT_SCORING } from '../../utils/scoringEngine';
 import { buildHeatmapMatchupRatings, getCachedOffenseAllowedTable, getHeatmapCompletedGameWeeks, getHeatmapLatestCompletedWeek, getHeatmapOffenseStatValue, resolveHeatmapOffenseStatMode, sortHeatmapRowsByMatchupRank } from '../../utils/fantasyHeatmapData.js';
 import { getFantasyLeagueMaxWeek } from '../../utils/fantasySeasonWeeks.js';
+import { normalizeEspnScoreboardEvent, NFL_SEASON_PHASES } from '../../utils/espnNflScoreboard.js';
+import { resolveFantasyLiveAvailability } from '../../utils/fantasyLiveAvailability.js';
 import { isFinalScheduleGame } from '../../utils/statisticsSchedule.js';
 import { buildPlayerFormRows } from '../../utils/playerDefensePerformance.js';
 import { resolveStatisticsPlayerMetaFromSleeperId } from '../../utils/playerDrilldown.js';
@@ -38,6 +41,8 @@ const HEATMAP_METRIC_PRIMARY_SAMPLES = ['99-99', '999.9', '+10.5', '-10.5', 'PU'
 const HEATMAP_METRIC_SECONDARY_SAMPLES = ['O/U 70.5', 'WAS', 'JAX'];
 const HEATMAP_METRIC_HEADER_SAMPLES = ['Wk 18', 'AVG'];
 const MOBILE_SHEET_QUERY = '(max-width: 1023px)';
+const HEATMAP_LIVE_POLL_MS = 60_000;
+const EMPTY_HEATMAP_LIVE_TEAMS = new Set();
 
 function getHeatmapMetricColWidth() {
   if (typeof document === 'undefined') return 44;
@@ -201,7 +206,7 @@ function getModeStatValue(wEntry, mode) {
   return 0;
 }
 
-function getCachedDefenseScoredTable(weeklyStats, players, scheduleMap, activeScoringSettings, defStatMode) {
+function getCachedDefenseScoredTable(weeklyStats, players, scheduleMap, activeScoringSettings, defStatMode, includeNonPositiveWeek = null) {
   let byPlayers = HEATMAP_DEFENSE_TABLE_CACHE.get(weeklyStats);
   if (!byPlayers) {
     byPlayers = new WeakMap();
@@ -226,7 +231,8 @@ function getCachedDefenseScoredTable(weeklyStats, players, scheduleMap, activeSc
     byScoring.set(activeScoringSettings, byMode);
   }
 
-  if (byMode.has(defStatMode)) return byMode.get(defStatMode);
+  const cacheKey = JSON.stringify([defStatMode, includeNonPositiveWeek]);
+  if (byMode.has(cacheKey)) return byMode.get(cacheKey);
 
   const defMode = DEF_STAT_MODES.find(m => m.id === defStatMode);
   const getValue = defMode?.statKey
@@ -241,17 +247,25 @@ function getCachedDefenseScoredTable(weeklyStats, players, scheduleMap, activeSc
     if (defMode?.positions && !defMode.positions.includes(normalizedPosition)) continue;
     for (const wEntry of playerWeeks) {
       const val = getValue(wEntry, player.position);
-      if (val <= 0) continue;
       const team = (wEntry.team || player.team)?.toUpperCase();
       if (!team) continue;
-      if (scheduleMap && !scheduleMap[wEntry.week]?.[team]) continue;
+      const scheduleEntry = scheduleMap?.[wEntry.week]?.[team];
+      if (scheduleMap && !scheduleEntry) continue;
+      const isCompletedGame = isFinalScheduleGame(scheduleEntry);
+      const isIncludedLiveWeek = includeNonPositiveWeek != null
+        && Number(wEntry.week) === Number(includeNonPositiveWeek);
+      if (
+        !Number.isFinite(val)
+        || (val < 0 && !isCompletedGame && !isIncludedLiveWeek)
+        || (val === 0 && !isIncludedLiveWeek)
+      ) continue;
       if (!table[team]) table[team] = {};
       if (!table[team][normalizedPosition]) table[team][normalizedPosition] = {};
       table[team][normalizedPosition][wEntry.week] = (table[team][normalizedPosition][wEntry.week] ?? 0) + val;
     }
   }
 
-  byMode.set(defStatMode, table);
+  byMode.set(cacheKey, table);
   return table;
 }
 
@@ -617,11 +631,32 @@ const HeatmapCell = memo(function HeatmapCell({ cell }) {
   return (
     <td
       data-heatmap-week={cell.clickable ? cell.week : undefined}
+      data-heatmap-column-week={cell.week}
       data-heatmap-empty={cell.kind === 'empty' ? cell.week : undefined}
       data-heatmap-future-opponent={cell.kind === 'opponent' ? 'true' : undefined}
+      data-heatmap-live={cell.liveGame ? 'true' : undefined}
       title={cell.title}
       style={cell.style}
     >
+      {cell.liveGame && (
+        <span
+          className="companion-heatmap-live-indicator"
+          role="img"
+          aria-label="Live game"
+          title="Live game"
+          style={{
+            position: 'absolute',
+            top: '2px',
+            right: '3px',
+            width: '6px',
+            height: '6px',
+            border: '1px solid var(--color-bg)',
+            borderRadius: '50%',
+            background: 'var(--color-accent-red)',
+            boxSizing: 'content-box',
+          }}
+        />
+      )}
       {cell.kind === 'value' ? (
         <>
           <div>{cell.primary}</div>
@@ -790,7 +825,12 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
     loadPlayers,
     loadSeasonStats,
     statsLoading,
+    refreshLiveWeeklyStats,
     league,
+    season,
+    nflState,
+    platform,
+    selectedLeagueId,
   } = useSleeperBase();
   const statsEnhancing = useSleeperStatsEnhancing();
   const rosteredPlayerIds = useMemo(() => {
@@ -807,6 +847,102 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
     if ((weeklyStats && scheduleMap) || statsLoading) return;
     loadSeasonStats();
   }, [weeklyStats, scheduleMap, statsLoading, loadSeasonStats]);
+  const liveWeekAvailability = useMemo(() => resolveFantasyLiveAvailability({
+    nflState,
+    leagueSeason: league?.season ?? season,
+  }), [league?.season, nflState, season]);
+  const activeLiveWeek = liveWeekAvailability.active ? liveWeekAvailability.week : null;
+  const activeLiveSeason = liveWeekAvailability.active ? Number(nflState?.season) : null;
+  const [liveGameState, setLiveGameState] = useState(null);
+  const liveGameTeams = liveGameState?.season === activeLiveSeason && liveGameState?.week === activeLiveWeek
+    ? liveGameState.teams
+    : EMPTY_HEATMAP_LIVE_TEAMS;
+  const liveStatsScopeKey = activeLiveSeason && activeLiveWeek && platform && selectedLeagueId
+    ? `${platform}:${selectedLeagueId}:${activeLiveSeason}:${activeLiveWeek}`
+    : null;
+  const [liveStatsRefreshKey, setLiveStatsRefreshKey] = useState(null);
+  const liveStatsReadyWeek = liveStatsScopeKey && liveStatsRefreshKey === liveStatsScopeKey
+    ? activeLiveWeek
+    : null;
+  const hasWeeklyStatsPackage = weeklyStats != null;
+
+  useEffect(() => {
+    if (!activeLiveSeason || !activeLiveWeek) return undefined;
+
+    const controller = new AbortController();
+    let cancelled = false;
+    let timer = null;
+
+    const scheduleRefresh = (delay) => {
+      if (cancelled) return;
+      if (timer != null) window.clearTimeout(timer);
+      timer = window.setTimeout(loadScoreboard, Math.max(1_000, delay));
+    };
+
+    const loadScoreboard = async () => {
+      try {
+        const payload = await getStatisticsScoresEspnWeek({
+          season: activeLiveSeason,
+          phase: NFL_SEASON_PHASES.REGULAR,
+          week: activeLiveWeek,
+          signal: controller.signal,
+        });
+        if (cancelled) return;
+
+        const games = (payload?.scoreboard?.events ?? [])
+          .map((event) => normalizeEspnScoreboardEvent(event, { phase: NFL_SEASON_PHASES.REGULAR }))
+          .filter(Boolean);
+        const liveTeams = new Set();
+        for (const game of games) {
+          if (game.status === 'live' || game.status === 'halftime') {
+            liveTeams.add(game.awayTeam);
+            liveTeams.add(game.homeTeam);
+          }
+        }
+        setLiveGameState({ season: activeLiveSeason, week: activeLiveWeek, teams: liveTeams });
+
+        const now = Date.now();
+        const unsettledStartedGame = games.some((game) => {
+          if (game.status === 'final' || game.status === 'postponed') return false;
+          const kickoffTime = Date.parse(game.kickoff);
+          return Number.isFinite(kickoffTime) && kickoffTime <= now;
+        });
+        if (liveTeams.size > 0 || unsettledStartedGame) {
+          void refreshLiveWeeklyStats(activeLiveSeason, activeLiveWeek)
+            .then((refreshedStats) => {
+              if (
+                !cancelled
+                && refreshedStats != null
+                && hasWeeklyStatsPackage
+                && !statsLoading
+                && liveStatsScopeKey
+              ) setLiveStatsRefreshKey(liveStatsScopeKey);
+            })
+            .catch(() => {});
+        }
+        if (unsettledStartedGame) {
+          scheduleRefresh(HEATMAP_LIVE_POLL_MS);
+          return;
+        }
+
+        const nextKickoff = games
+          .filter((game) => game.status === 'scheduled' || game.status === 'delayed')
+          .map((game) => Date.parse(game.kickoff))
+          .filter((kickoffTime) => Number.isFinite(kickoffTime) && kickoffTime > now)
+          .sort((left, right) => left - right)[0];
+        if (nextKickoff != null) scheduleRefresh(nextKickoff - now);
+      } catch (error) {
+        if (!cancelled && error?.name !== 'AbortError') scheduleRefresh(HEATMAP_LIVE_POLL_MS);
+      }
+    };
+
+    void loadScoreboard();
+    return () => {
+      cancelled = true;
+      controller.abort();
+      if (timer != null) window.clearTimeout(timer);
+    };
+  }, [activeLiveSeason, activeLiveWeek, hasWeeklyStatsPackage, liveStatsScopeKey, refreshLiveWeeklyStats, statsLoading]);
   const { favoriteTeam, darkMode } = useTheme();
   const useMobilePreviewSheet = useMediaQuery(MOBILE_SHEET_QUERY);
 
@@ -1042,16 +1178,16 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
     if (!weeklyStats || !players || !scheduleMap) return null;
     if (statMode === 'game_score' || statMode === 'vegas_odds') return {};
     const offenseStatMode = statMode === 'pts_allowed' ? 'pts' : statMode;
-    return getCachedOffenseAllowedTable(weeklyStats, players, scheduleMap, activeScoringSettings, resolveHeatmapOffenseStatMode(offenseStatMode, pos));
-  }, [statsEnhancing, weeklyStats, players, scheduleMap, activeScoringSettings, statMode, pos]);
+    return getCachedOffenseAllowedTable(weeklyStats, players, scheduleMap, activeScoringSettings, resolveHeatmapOffenseStatMode(offenseStatMode, pos), liveStatsReadyWeek);
+  }, [statsEnhancing, weeklyStats, players, scheduleMap, activeScoringSettings, statMode, pos, liveStatsReadyWeek]);
 
   // Defense-scored table: keyed by the defensive player's own team
   const defenseScoredTable = useMemo(() => {
     if (statsEnhancing) return null;
     if (!weeklyStats || !players || !scheduleMap) return null;
     const defenseStatMode = defStatMode === 'pts_allowed' ? 'pts' : defStatMode;
-    return getCachedDefenseScoredTable(weeklyStats, players, scheduleMap, activeScoringSettings, defenseStatMode);
-  }, [statsEnhancing, weeklyStats, players, scheduleMap, activeScoringSettings, defStatMode]);
+    return getCachedDefenseScoredTable(weeklyStats, players, scheduleMap, activeScoringSettings, defenseStatMode, liveStatsReadyWeek);
+  }, [statsEnhancing, weeklyStats, players, scheduleMap, activeScoringSettings, defStatMode, liveStatsReadyWeek]);
 
   const activeTable = viewMode === 'offense' ? offenseAllowedTable : defenseScoredTable;
   const activePositions = viewMode === 'offense' ? offensePositions : defensePositions;
@@ -1179,7 +1315,12 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
             (sum, position) => sum + (teamData[position]?.[week] ?? 0),
             0,
           );
-          if (value > 0) weekData[week] = value;
+          const isCompletedGame = isFinalScheduleGame(scheduleMap?.[week]?.[team]);
+          const isRefreshedLiveGame = Number(week) === Number(liveStatsReadyWeek)
+            && liveGameTeams.has(team);
+          if (value > 0 || (value < 0 && (isCompletedGame || isRefreshedLiveGame)) || isRefreshedLiveGame) {
+            weekData[week] = value;
+          }
         }
       }
       const completedWeeks = scheduleMap
@@ -1189,7 +1330,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
       const avg = completedWeeks.length > 0 ? total / completedWeeks.length : null;
       return { team, weekPts: weekData, avg };
     });
-  }, [activeTable, activePos, activePositions, viewMode, statMode, defStatMode, isFantasyPointsAllowed, scheduleMap, weekMatchesLocation, vegasOddsView, fantasySeasonWeeks]);
+  }, [activeTable, activePos, activePositions, viewMode, statMode, defStatMode, isFantasyPointsAllowed, scheduleMap, weekMatchesLocation, vegasOddsView, fantasySeasonWeeks, liveStatsReadyWeek, liveGameTeams]);
 
   const rows = useMemo(() => {
     if (sortKey === 'team') {
@@ -1388,6 +1529,8 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
     if (!drilldown || !weeklyStats || !players) return [];
     if (isGameStatMode) return []; // box score mode
     const { team, week } = drilldown;
+    const allowNegativePlayerValues = isFinalScheduleGame(scheduleMap?.[week]?.[team])
+      || (Number(week) === Number(liveStatsReadyWeek) && liveGameTeams.has(team));
     const pointsAllowed = viewMode === 'offense'
       ? statMode === 'pts_allowed'
       : defStatMode === 'pts_allowed';
@@ -1424,7 +1567,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
         if (playerTeam !== scoringTeam) continue;
 
         const val = getHeatmapOffenseStatValue(wEntry, activeScoringSettings, player.position, resolveHeatmapOffenseStatMode(offenseStatMode, activePos));
-        if (val <= 0) continue;
+        if (val <= 0 && !(val < 0 && allowNegativePlayerValues)) continue;
         const breakdown = statMode === 'pts' || statMode === 'pts_allowed'
           ? getScoreBreakdown(wEntry, activeScoringSettings, player.position)
           : null;
@@ -1461,7 +1604,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
         if (playerTeam !== scoringTeam) continue;
 
         const val = getDefVal(wEntry, player.position);
-        if (val <= 0) continue;
+        if (val <= 0 && !(val < 0 && allowNegativePlayerValues)) continue;
         const breakdown = effectiveDefStatMode === 'pts'
           ? getScoreBreakdown(wEntry, activeScoringSettings, player.position)
           : null;
@@ -1472,7 +1615,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
     }
 
     return results.sort((a, b) => b.val - a.val);
-  }, [drilldown, weeklyStats, players, viewMode, activePos, activePositionSet, statMode, defStatMode, activeScoringSettings, scheduleMap, isGameStatMode]);
+  }, [drilldown, weeklyStats, players, viewMode, activePos, activePositionSet, statMode, defStatMode, activeScoringSettings, scheduleMap, isGameStatMode, liveStatsReadyWeek, liveGameTeams]);
 
   const futureOpponentPlayers = useMemo(() => {
     if (!drilldown?.isFutureOpponent || isGameStatMode || !players) return [];
@@ -1762,6 +1905,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
       const matchesLoc = weekMatchesLocation(team, week);
       const isBye = weekGameCounts[week] > 0 && !played;
       const isFiltered = played && !matchesLoc;
+      const isLiveGame = Number(week) === activeLiveWeek && liveGameTeams.has(team) && !isFiltered;
       const hasFutureOpponent = showFutureOpponents
         && scheduleGame?.opp
         && !isFinalScheduleGame(scheduleGame)
@@ -1770,6 +1914,12 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
       const clickable = (pts != null || hasFutureOpponent) && !isFiltered;
       const style = {
         ...heatmapStyles.cell,
+        ...(isLiveGame ? {
+          position: 'relative',
+          // Reserve a small top corner for the marker while keeping the same
+          // total vertical padding and fixed cell height.
+          padding: `10px ${HEATMAP_METRIC_PAD_X}px 0px`,
+        } : {}),
         background: pts != null && !isFiltered ? cellBg(pts, team, week) : rowBg,
         color: pts != null && !isFiltered ? '#000' : 'var(--color-label-secondary)',
         cursor: clickable ? 'pointer' : 'default',
@@ -1785,6 +1935,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
             clickable,
             style,
             kind: 'value',
+            liveGame: isLiveGame,
             primary: ownScore != null ? `${Math.round(ownScore)}-${oppScore}` : fmtHeatmapNumber(pts),
             secondary: ownScore != null ? `${team}·${scheduleMap[week][team].opp}` : null,
           };
@@ -1797,6 +1948,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
             clickable,
             style,
             kind: 'value',
+            liveGame: isLiveGame,
             primary: vegasOddsView === 'ou' ? fmtSignedMargin(pts) : fmtSpreadLine(oddsEntry?.spread),
             secondary: vegasOddsView === 'ou'
               ? (oddsEntry?.total != null ? `O/U ${oddsEntry.total}` : null)
@@ -1809,6 +1961,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
           clickable,
           style,
           kind: 'value',
+          liveGame: isLiveGame,
           primary: viewMode === 'defense' && defStatModeHasStatKey
             ? fmtHeatmapNumber(pts)
             : pts.toFixed(1),
@@ -1851,6 +2004,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
           clickable,
           style,
           kind: 'opponent',
+          liveGame: isLiveGame,
           primary: matchupRating ? `#${matchupRating.rank}` : location,
           secondary: scheduleGame.home == null
             ? null
@@ -1865,6 +2019,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
         week,
         clickable: false,
         style,
+        liveGame: isLiveGame,
         // A missing stat/schedule entry is still a real week column. Keep it
         // visible as an unknown value on every viewport; valued cells and
         // explicitly shown future matchups remain drilldown targets.
@@ -1919,6 +2074,8 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
     viewMode,
     weekGameCounts,
     weekMatchesLocation,
+    activeLiveWeek,
+    liveGameTeams,
   ]);
 
   const activeStatLabel = useMemo(() => {

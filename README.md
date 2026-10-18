@@ -138,6 +138,8 @@ Draft Sync is an optional capability of the existing API sidecar, not a required
 
 - **Heatmap matchup sorting** — Sort weeks with games left by matchup rank; finished and bye teams follow by points scored, and the grid sizes to the window after loading.
 - **Waivers in Rankings** — Review free agents with projected points, the four-week average, and an unrostered-only filter; legacy Waivers links keep their selected position.
+- **Live Heatmap refresh** — Current-week scores refresh during NFL games, with a live marker on active matchups.
+- **Consistent fantasy scores** — Sleeper's custom team-score override is shared across historical matchup views and exports.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 

@@ -9,6 +9,7 @@ import {
   getFantasyScheduleWeekBounds,
   getRemainingOpponentAverage,
 } from '../../utils/fantasySeasonSchedule.js';
+import { getOfficialMatchupRowPoints } from '../../utils/liveScoringFeed.js';
 import {
   CompanionFantasyTeamMenu,
   CompanionSegmentedControl,
@@ -659,7 +660,7 @@ function LeagueSchedule({
 function PairSide({ side, summary, myRosterId, align, played }) {
   if (!side) return <span className="companion-schedule-pair__side" />;
   const isMe = side.rosterId === myRosterId;
-  const points = played && side.row?.points != null ? Number(side.row.points) : null;
+  const points = played ? getOfficialMatchupRowPoints(side.row) : null;
   return (
     <span className={`companion-schedule-pair__side companion-schedule-pair__side--${align}`}>
       {align === 'end' && (

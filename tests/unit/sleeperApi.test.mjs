@@ -9,6 +9,7 @@ import {
   getLeague,
   getLeagueDrafts,
   getLiveLeague,
+  getLiveWeeklyStats,
   getLeagueRosters,
   getWeeklyProjections,
 } from '../../src/api/sleeperApi.js';
@@ -130,6 +131,31 @@ test('live Sleeper league metadata bypasses stale caches', async () => {
     const url = new URL(calls[0].url);
     assert.equal(url.pathname, '/v1/league/league-1');
     assert.match(url.searchParams.get('_gridshift') ?? '', /^\d+-\d+$/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('live Sleeper weekly stats bypass stale caches', async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  const payload = { 'player-1': { rec: 5, rec_yd: 72 } };
+
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push({ url: String(url), options });
+    return { ok: true, json: async () => payload };
+  };
+
+  try {
+    assert.deepEqual(await getLiveWeeklyStats('2026', 7), payload);
+    assert.deepEqual(await getLiveWeeklyStats('2026', 7), payload);
+    assert.deepEqual(calls.map((call) => call.options.cache), ['no-store', 'no-store']);
+    calls.forEach((call) => {
+      const url = new URL(call.url);
+      assert.equal(url.pathname, '/v1/stats/nfl/regular/2026/7');
+      assert.match(url.searchParams.get('_gridshift') ?? '', /^\d+-\d+$/);
+    });
+    assert.notEqual(calls[0].url, calls[1].url);
   } finally {
     globalThis.fetch = originalFetch;
   }

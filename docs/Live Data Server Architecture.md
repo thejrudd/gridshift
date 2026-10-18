@@ -55,6 +55,7 @@ Current browser refresh behavior also differs from the target:
 
 - Statistics Scores uses a narrow BALLDONTLIE selected-week snapshot at the server-advertised cadence when the configured profile and effective limit support it; ESPN remains the explicit fallback. BALLDONTLIE detail refreshes every 30 seconds.
 - Fantasy Live uses a coarse Free-versus-paid stats cadence and submits matchup-shaped game ID sets. Its play feed now reads the same canonical eight-second per-game snapshots as Statistics Scores; similar leagues can still produce different stats cache keys.
+- Fantasy Heatmap and Fantasy Live send live current-week fantasy player stats through one coalesced `SleeperContext` refresh action. It reads from the selected fantasy provider (Sleeper or an ESPN-connected league) and updates the shared weekly stats map; it does not turn the public ESPN scoreboard fallback into a fantasy-stat provider or make BALLDONTLIE required.
 - `GRIDSHIFT_LIVE_MAX_REQ_PER_MIN` limits incoming Fantasy Live requests per league/client, not the deployment's total BALLDONTLIE request volume.
 - StoryStats requests are game-scoped and phase-scoped. Production automation discovers regular-season primetime games, waits until one hour before kickoff for pregame, requests at most one live story for each observed regulation period rather than polling on the play cadence, and requests postgame after a final score. Development keeps the Game Story section as a manual trigger. The default local guard allows 10 StoryStats requests per API key per UTC day.
 
