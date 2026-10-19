@@ -1427,6 +1427,9 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Waivers in Rankings** - Bring free agents into Rankings with a projected-points sort and unrostered-only filter. Legacy Waivers links keep their selected position and open the corresponding Rankings view.
 - **Tour route handling** - Keep a What's New tour on its destination if the previous view's initial route state finishes syncing late.
 - **Regression coverage** - Add route and Heatmap data coverage for the updated Fantasy surfaces.
+- **Live Heatmap refresh** - Refresh current-week fantasy stats while NFL games are live and mark teams with an active game.
+- **Official fantasy scores** - Use Sleeper's `custom_points` override consistently across League History, Matchups, Schedule, Live records, and weekly exports.
+- **League History cleanup** - Remove the redundant “Record book” eyebrow above the page title.
 
 ## v9.3.0 - Player & Team Dashboards
 *2026-10-16*

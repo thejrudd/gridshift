@@ -13,6 +13,7 @@
 
 import { buildFantasyMatchupGroups } from './fantasyMatchups.js';
 import { getFantasyLeagueMaxWeek } from './fantasySeasonWeeks.js';
+import { getOfficialMatchupRowPoints, getSleeperCustomPointsOverride } from './liveScoringFeed.js';
 
 // Number(null) is 0 and Number('') is 0, so absent values must be rejected
 // before coercion or a missing total silently counts as a zero.
@@ -147,8 +148,8 @@ function getFantasyRosterSummaryBeforeWeek(weeks, rosterId, week) {
     if (opponents.length === 0) continue;
     if (opponents.length !== 1 || !group.isPlayed) return null;
 
-    const points = num(side.row?.points);
-    const opponentPoints = num(opponents[0].row?.points);
+    const points = num(getOfficialMatchupRowPoints(side.row));
+    const opponentPoints = num(getOfficialMatchupRowPoints(opponents[0].row));
     if (points == null || opponentPoints == null) return null;
 
     pointsFor += points;
@@ -174,15 +175,17 @@ function getFantasyRosterSummaryBeforeWeek(weeks, rosterId, week) {
 }
 
 /**
- * A week's matchup row carries `points` once the provider has scored it.
+ * A week's matchup row carries its official score once the provider has scored it.
  * Before that every side reads 0, which is indistinguishable from a real
  * shutout, so a week is only treated as played when it is behind the league's
- * current week AND at least one side actually posted points.
+ * current week AND at least one side actually posted points or an override.
  */
 function resolveWeekResult(group, currentWeek, week) {
   const isPast = num(currentWeek) != null && week < currentWeek;
-  const totals = (group?.sides ?? []).map((side) => num(side?.row?.points));
-  const scored = totals.some((total) => total != null && total > 0);
+  const sides = group?.sides ?? [];
+  const totals = sides.map((side) => num(getOfficialMatchupRowPoints(side?.row)));
+  const hasCustomOverride = sides.some((side) => getSleeperCustomPointsOverride(side?.row) != null);
+  const scored = hasCustomOverride || totals.some((total) => total != null && total > 0);
   return isPast && scored;
 }
 
@@ -266,8 +269,8 @@ export function buildFantasyRosterScheduleRows(weeks, rosterId) {
 
     const side = group.sides.find((candidate) => candidate.rosterId === target) ?? null;
     const opponent = group.sides.find((candidate) => candidate.rosterId !== target) ?? null;
-    const pointsFor = round1(num(side?.row?.points));
-    const pointsAgainst = round1(num(opponent?.row?.points));
+    const pointsFor = round1(num(getOfficialMatchupRowPoints(side?.row)));
+    const pointsAgainst = round1(num(getOfficialMatchupRowPoints(opponent?.row)));
     let result = null;
     if (group.isPlayed && pointsFor != null && pointsAgainst != null) {
       if (pointsFor > pointsAgainst) result = 'W';

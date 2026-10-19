@@ -257,11 +257,13 @@ Add engine/API ownership here as later implementation lands.
 
 | File | Owns |
 | --- | --- |
-| `src/context/SleeperContext.jsx` | League/roster state, shared live NFL state, and the season-aware `currentFantasyWeek` — widest blast radius in the app |
+| `src/context/SleeperContext.jsx` | League/roster state, shared live NFL state, the coalesced current-week fantasy-stat refresh, and the season-aware `currentFantasyWeek` — widest blast radius in the app |
 | `src/api/sleeperApi.js` | Sleeper API client |
 | `src/components/companion/CompanionConnect.jsx` | Connect flow |
 
 Sleeper is the supported fantasy connection. Current-week consumers should use `currentFantasyWeek` from this context rather than re-deriving from `last_scored_leg` or issuing their own `/state/nfl` request. Completed-week analytics may continue to use `last_scored_leg` when they explicitly need a settled-data boundary.
+
+Historical and official weekly fantasy team scores use `getOfficialMatchupRowPoints()` from `src/utils/liveScoringFeed.js`. A present Sleeper `custom_points` value replaces `points`; League History, Matchups, Schedule, Live records, and weekly exports use this shared source. Projection models apply only the difference between the override and the base `points` value.
 
 ## League History, Standings, And Activity
 

@@ -414,18 +414,35 @@ export function resolveStarterGameState({
 }
 
 export function getMatchupCustomPoints(row) {
-  const rawAdjustment = row?.custom_points;
-  if (rawAdjustment == null || rawAdjustment === '') return 0;
-  const adjustment = Number(rawAdjustment);
-  return Number.isFinite(adjustment) ? adjustment : 0;
+  // Live projections already include Sleeper's `points`; apply only the gap
+  // from that base to the authoritative custom score.
+  const customPoints = getSleeperCustomPointsOverride(row);
+  if (customPoints == null) return 0;
+  const rawPoints = row?.points;
+  if (rawPoints == null || rawPoints === '' || typeof rawPoints === 'boolean') return 0;
+  if (typeof rawPoints === 'string' && rawPoints.trim() === '') return 0;
+  const points = Number(rawPoints);
+  return Number.isFinite(points) ? customPoints - points : 0;
+}
+
+export function getSleeperCustomPointsOverride(row) {
+  const rawCustomPoints = row?.custom_points;
+  if (rawCustomPoints == null || rawCustomPoints === '' || typeof rawCustomPoints === 'boolean') return null;
+  if (typeof rawCustomPoints === 'string' && rawCustomPoints.trim() === '') return null;
+  const customPoints = Number(rawCustomPoints);
+  return Number.isFinite(customPoints) ? customPoints : null;
 }
 
 export function getOfficialMatchupRowPoints(row) {
+  const customPointsOverride = getSleeperCustomPointsOverride(row);
+  if (customPointsOverride != null) return customPointsOverride;
+
   const rawPoints = row?.points;
-  if (rawPoints == null || rawPoints === '') return null;
+  if (rawPoints == null || rawPoints === '' || typeof rawPoints === 'boolean') return null;
+  if (typeof rawPoints === 'string' && rawPoints.trim() === '') return null;
   const points = Number(rawPoints);
   if (!Number.isFinite(points)) return null;
-  return points + getMatchupCustomPoints(row);
+  return points;
 }
 
 export function hasCompleteOfficialStarterPoints(row) {

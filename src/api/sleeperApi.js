@@ -125,6 +125,14 @@ export function getWeeklyStats(season, week) {
 }
 
 /**
+ * Fetch the current week's player stats without browser or intermediary cache
+ * reuse. Live fantasy surfaces share this snapshot through SleeperContext.
+ */
+export function getLiveWeeklyStats(season, week) {
+  return getLive(`/stats/nfl/regular/${season}/${week}`);
+}
+
+/**
  * Fetch per-player weekly stats for a full season.
  * Unlike the bulk endpoint, this per-player response includes game-time
  * metadata: opp, team, home, gp — making it reliable for defense table builds.
