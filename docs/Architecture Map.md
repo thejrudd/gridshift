@@ -48,6 +48,7 @@ Rule: browser zoom stays native — never app-level DPI detection or whole-page 
   before Matchups can join weekly rows by season-local roster ID.
 - Loads league rosters, users, player database, weekly stats, aggregate season stats, matchups, and scoring settings through Sleeper.
 - Owns the shared live Sleeper `/state/nfl` snapshot and refreshes it on selected-league load, window focus, and a five-minute interval; `currentFantasyWeek` is the season-aware current-week authority consumed by fantasy surfaces.
+- Owns a coalesced live current-week player-stat refresh for the selected fantasy provider. Heatmap and Fantasy Live trigger it when their existing live-game checks are active; the resulting weekly rows update the shared stats map used across fantasy surfaces.
 - Live state wins for the active Sleeper season; historical seasons, ESPN, and a missing/unusable live snapshot fall back to the selected league snapshot. `last_scored_leg` remains a completed-data boundary, not the app-wide current-week source.
 - Re-derives scoring settings from the selected league on startup, so newly supported scoring fields are picked up without re-selecting the league.
 - Performs Sleeper player/team/opponent enrichment for weekly stat rows via the three-pass algorithm below.

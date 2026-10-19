@@ -2,6 +2,7 @@ import { normalizeBdlScoreboardGame } from './balldontlieNflScoreboard.js';
 import { normalizeEspnScoreboardEvent } from './espnNflScoreboard.js';
 import { buildFantasyMatchupScoringBreakdown } from './fantasyMatchupBreakdown.js';
 import { buildLeagueHistoryModel, buildSeasonStandings } from './leagueHistory.js';
+import { getOfficialMatchupRowPoints, getSleeperCustomPointsOverride } from './liveScoringFeed.js';
 import { calcPoints, calcPointsFromTotals } from './scoringEngine.js';
 
 export const GAME_WEEK_EXPORT_FORMAT = 'gridshift-stats-export';
@@ -135,10 +136,8 @@ function getOfficialPlayerPoints(playerPoints, playerId) {
 }
 
 function getOfficialTeamPoints(row) {
-  if (!row || !Object.prototype.hasOwnProperty.call(row, 'points')) return null;
-  const points = finiteNumber(row.points);
-  if (points == null) return null;
-  return round(points + (finiteNumber(row.custom_points) ?? 0));
+  const points = getOfficialMatchupRowPoints(row);
+  return points == null ? null : round(points);
 }
 
 function getRawStats(row) {
@@ -485,7 +484,9 @@ function buildFantasyTeamPerformances({
         matchupId,
         score: getOfficialTeamPoints(row),
         scoreSource: getOfficialTeamPoints(row) != null
-          ? 'sleeper.matchups.points+custom_points'
+          ? getSleeperCustomPointsOverride(row) != null
+            ? 'sleeper.matchups.custom_points'
+            : 'sleeper.matchups.points'
           : 'unavailable',
         ...teamRows,
         rawMatchupRow: toSerializable(row),

@@ -1103,6 +1103,7 @@ export default function CompanionRankings({
             <CompanionSelectorButton
               size="md"
               className="companion-filter-toggle"
+              data-tour="rankings-waiver-filters"
               active={filtersOpen || activeFilterCount > 0}
               onClick={() => setFiltersOpen(current => !current)}
               aria-expanded={filtersOpen}

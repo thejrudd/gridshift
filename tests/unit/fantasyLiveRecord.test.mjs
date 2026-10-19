@@ -92,6 +92,34 @@ test('Live record includes the current matchup after final evidence arrives', ()
   });
 });
 
+test('Live record uses custom_points overrides as official team scores', () => {
+  const rows = matchupRows(1, 425.03, 344.92);
+  rows[0].custom_points = 212.515;
+  rows[1].custom_points = 172.46;
+
+  const results = buildFantasyLiveRosterResults({
+    matchupsByWeek: { 1: rows },
+    throughWeek: 1,
+    scheduleMap: { 1: schedule(true) },
+    players,
+  });
+
+  assert.deepEqual(results.get(1), {
+    pointsFor: 212.515,
+    pointsAgainst: 172.46,
+    wins: 1,
+    losses: 0,
+    ties: 0,
+  });
+  assert.deepEqual(results.get(2), {
+    pointsFor: 172.46,
+    pointsAgainst: 212.515,
+    wins: 0,
+    losses: 1,
+    ties: 0,
+  });
+});
+
 test('Live record stays unresolved when official starter points are incomplete', () => {
   const rows = matchupRows(1, 30, 20);
   delete rows[0].players_points.p1;

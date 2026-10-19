@@ -598,6 +598,25 @@ export const WHATS_NEW = [
     ],
   },
   {
+    version: '9.2.1',
+    title: 'Heatmap Sorting & Rankings Waivers',
+    features: [
+      {
+        id: 'rankings-waivers',
+        name: 'Waivers in Rankings',
+        description: 'Find free agents with projected points and the unrostered-only filter in Rankings.',
+        steps: [{
+          route: { activeTab: 'fantasy', companionView: 'rankings', rankingsSort: 'projected', rankingsUnrosteredOnly: true },
+          anchor: '[data-tour="rankings-waiver-filters"]',
+          anchorMobile: null,
+          title: 'Waiver tools are in Rankings',
+          body: 'Your waiver tools are still here. Open Filters, then choose Unrostered Only to see free agents. Projected Points helps sort them for waiver decisions.',
+          placement: 'auto',
+        }],
+      },
+    ],
+  },
+  {
     version: '9.3.0',
     title: 'Player & Team Dashboards',
     features: [

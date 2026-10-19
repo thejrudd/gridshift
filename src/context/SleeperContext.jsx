@@ -7,6 +7,7 @@ import {
   getLeagueUsers,
   getAllPlayers,
   getAllWeeklyStats,
+  getLiveWeeklyStats,
   aggregateSeasonStats,
   getMatchups,
   getLiveMatchups,
@@ -42,6 +43,8 @@ checkAndBustCacheIfNeeded();
 checkAndBustStatsCacheIfNeeded();
 
 const ESPN_SCORE_HELPER_VERSION = 'espn-score-debug-2026-05-20-v9';
+const LIVE_WEEKLY_STATS_CACHE_MS = 25_000;
+const MAX_LIVE_WEEKLY_STATS_CACHE_ENTRIES = 32;
 
 const SleeperLeagueContext = createContext(null);
 const SleeperStatsContext = createContext(null);
@@ -282,12 +285,19 @@ export function FantasyProvider({ children }) {
 
   const statsAbortRef = useRef(null);
   const statsLoadBySeasonRef = useRef(new Map());
+  const liveWeeklyStatsRequestsRef = useRef(new Map());
   const leagueSnapshotVersionRef = useRef(0);
   const nflStateRequestRef = useRef(0);
   // Mirror of statsBySeason readable inside loadSeasonStats without adding it
   // to that callback's hand-tuned dependency array.
   const statsBySeasonRef = useRef({});
   useEffect(() => { statsBySeasonRef.current = statsBySeason; }, [statsBySeason]);
+  const weeklyStatsRef = useRef(weeklyStats);
+  useEffect(() => { weeklyStatsRef.current = weeklyStats; }, [weeklyStats]);
+  const seasonStatsRef = useRef(seasonStats);
+  useEffect(() => { seasonStatsRef.current = seasonStats; }, [seasonStats]);
+  const statsLoadingRef = useRef(statsLoading);
+  useEffect(() => { statsLoadingRef.current = statsLoading; }, [statsLoading]);
   const qbOppSeasonRef = useRef(null); // tracks which season QB opp data has been merged
   const espnStatsRefreshKeyRef = useRef(null);
   const enhancementRunRef = useRef({
@@ -1029,6 +1039,139 @@ export function FantasyProvider({ children }) {
     return request;
   }, [season, weeklyStats, seasonStats, scheduleMap, statsBySeason]);
 
+  const refreshLiveWeeklyStats = useCallback(async (requestedSeason = season, requestedWeek) => {
+    const seasonKey = String(requestedSeason ?? '').trim();
+    const week = Number(requestedWeek);
+    if (
+      !selectedLeagueId
+      || !seasonKey
+      || seasonKey !== String(season)
+      || !Number.isInteger(week)
+      || week < 1
+      || !['sleeper', 'espn'].includes(platform)
+    ) return null;
+
+    const providerKey = `${platform}:${selectedLeagueId}:${seasonKey}:${week}`;
+    const refreshCache = liveWeeklyStatsRequestsRef.current;
+    const now = Date.now();
+    const trimRefreshCache = (protectedKey = null) => {
+      const trimmedAt = Date.now();
+      for (const [key, entry] of refreshCache) {
+        if (!entry.promise && (!entry.rawStats || trimmedAt - entry.fetchedAt >= LIVE_WEEKLY_STATS_CACHE_MS)) {
+          refreshCache.delete(key);
+        }
+      }
+      while (refreshCache.size > MAX_LIVE_WEEKLY_STATS_CACHE_ENTRIES) {
+        const oldestSettledKey = [...refreshCache.entries()].find(([key, entry]) => (
+          key !== protectedKey && !entry.promise
+        ))?.[0];
+        if (!oldestSettledKey) break;
+        refreshCache.delete(oldestSettledKey);
+      }
+    };
+    const applyWeekRows = (weekRows) => {
+      if (!weeklyStatsRef.current || statsLoadingRef.current) return false;
+
+      const nextWeeklyStats = mergeWeeklyStatsMaps(weeklyStatsRef.current, weekRows);
+      weeklyStatsRef.current = nextWeeklyStats;
+      const aggregatedWeeklyStats = aggregateSeasonStats(nextWeeklyStats);
+      const nextSeasonStats = platform === 'sleeper'
+        ? aggregatedWeeklyStats
+        : { ...(seasonStatsRef.current ?? {}), ...aggregatedWeeklyStats };
+      seasonStatsRef.current = nextSeasonStats;
+
+      const existingPackage = statsBySeasonRef.current[seasonKey];
+      let nextStatsBySeason = statsBySeasonRef.current;
+      if (existingPackage?.weeklyStats) {
+        nextStatsBySeason = {
+          ...statsBySeasonRef.current,
+          [seasonKey]: {
+            ...existingPackage,
+            weeklyStats: nextWeeklyStats,
+            seasonStats: nextSeasonStats ?? existingPackage.seasonStats,
+          },
+        };
+        statsBySeasonRef.current = nextStatsBySeason;
+      }
+
+      startTransition(() => {
+        setWeeklyStats(nextWeeklyStats);
+        setSeasonStats(nextSeasonStats);
+        if (existingPackage?.weeklyStats) setStatsBySeason(nextStatsBySeason);
+      });
+      return true;
+    };
+    trimRefreshCache();
+    const cachedRequest = refreshCache.get(providerKey);
+    if (cachedRequest?.promise) return cachedRequest.promise;
+    if (cachedRequest?.rawStats && now - cachedRequest.fetchedAt < LIVE_WEEKLY_STATS_CACHE_MS) {
+      const cachedWeekRows = Object.fromEntries(Object.entries(cachedRequest.rawStats).map(([playerId, stats]) => (
+        [playerId, [{ week, ...(stats ?? {}) }]]
+      )));
+      applyWeekRows(cachedWeekRows);
+      return cachedRequest.rawStats;
+    }
+
+    const requestVersion = leagueSnapshotVersionRef.current;
+    const requestLeagueId = selectedLeagueId;
+    const requestPlatform = platform;
+    const entry = cachedRequest ?? { fetchedAt: 0, rawStats: null, promise: null };
+    const request = (async () => {
+      try {
+        let weekRows = {};
+        let rawStats = {};
+        if (requestPlatform === 'sleeper') {
+          rawStats = await getLiveWeeklyStats(seasonKey, week) ?? {};
+          weekRows = Object.fromEntries(Object.entries(rawStats).map(([playerId, stats]) => (
+            [playerId, [{ week, ...(stats ?? {}) }]]
+          )));
+        } else {
+          const payload = await getEspnLeague(seasonKey, requestLeagueId, undefined, {
+            scoringPeriodId: week,
+            matchupPeriodId: week,
+          });
+          const normalized = normalizeEspnLeaguePayload(payload, {
+            season: seasonKey,
+            leagueId: requestLeagueId,
+            scoringPeriodId: week,
+          });
+          weekRows = Object.fromEntries(Object.entries(normalized.weeklyStats ?? {}).flatMap(([playerId, rows]) => {
+            const row = (rows ?? []).find((entry) => Number(entry?.week) === week);
+            if (!row) return [];
+            const { week: _rowWeek, ...stats } = row;
+            return [[playerId, [{ week, ...stats }]]];
+          }));
+          rawStats = Object.fromEntries(Object.entries(weekRows).map(([playerId, rows]) => {
+            const { week: _rowWeek, ...stats } = rows[0];
+            return [playerId, stats];
+          }));
+        }
+
+        if (
+          requestVersion !== leagueSnapshotVersionRef.current
+          || requestLeagueId !== selectedLeagueId
+          || requestPlatform !== platform
+          || seasonKey !== String(season)
+        ) return null;
+
+        applyWeekRows(weekRows);
+
+        entry.rawStats = rawStats;
+        entry.fetchedAt = Date.now();
+        refreshCache.set(providerKey, entry);
+        return rawStats;
+      } finally {
+        entry.promise = null;
+        trimRefreshCache(providerKey);
+      }
+    });
+
+    entry.promise = request;
+    refreshCache.set(providerKey, entry);
+    trimRefreshCache(providerKey);
+    return request;
+  }, [platform, season, selectedLeagueId]);
+
   // Three-pass stats enhancement — see docs/Architecture Map.md › SleeperContext
   useEffect(() => {
     if (platform !== 'sleeper') return;
@@ -1485,6 +1628,7 @@ export function FantasyProvider({ children }) {
     loadPlayers,
     loadSeasonStats,
     loadStatsForSeason,
+    refreshLiveWeeklyStats,
   }), [
     players,
     weeklyStats,
@@ -1496,6 +1640,7 @@ export function FantasyProvider({ children }) {
     loadPlayers,
     loadSeasonStats,
     loadStatsForSeason,
+    refreshLiveWeeklyStats,
   ]);
 
   useEffect(() => {

@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 
 import {
   buildHeatmapMatchupRatings,
+  getCachedOffenseAllowedTable,
   getHeatmapCompletedGameCount,
   sortHeatmapRowsByMatchupRank,
 } from '../../src/utils/fantasyHeatmapData.js';
@@ -32,6 +33,40 @@ describe('Fantasy Heatmap game averages', () => {
       )),
       1,
     );
+  });
+});
+
+describe('Fantasy Heatmap completed and live values', () => {
+  it('keeps completed negative values, hides completed zero values, and includes live zero or negative values', () => {
+    const weeklyStats = {
+      negative: [{ week: 7, team: 'LAR', rush_yd: -3 }],
+      zero: [{ week: 7, team: 'ATL', rush_yd: 0 }],
+      historicalNegative: [{ week: 6, team: 'LAR', rush_yd: -4 }],
+    };
+    const players = {
+      negative: { position: 'QB', team: 'LAR' },
+      zero: { position: 'QB', team: 'ATL' },
+      historicalNegative: { position: 'QB', team: 'LAR' },
+    };
+    const scheduleMap = {
+      6: { LAR: { opp: 'SF', completed: true } },
+      7: { LAR: { opp: 'SF' }, ATL: { opp: 'TB' } },
+    };
+    const scoringSettings = {};
+
+    const historicalTable = getCachedOffenseAllowedTable(
+      weeklyStats, players, scheduleMap, scoringSettings, 'rush_yd',
+    );
+    const liveTable = getCachedOffenseAllowedTable(
+      weeklyStats, players, scheduleMap, scoringSettings, 'rush_yd', 7,
+    );
+
+    assert.equal(historicalTable.LAR.QB[6], -4);
+    assert.equal(historicalTable.LAR.QB[7], undefined);
+    assert.equal(historicalTable.ATL, undefined);
+    assert.equal(liveTable.LAR.QB[7], -3);
+    assert.equal(liveTable.LAR.QB[6], -4);
+    assert.equal(liveTable.ATL.QB[7], 0);
   });
 });
 
