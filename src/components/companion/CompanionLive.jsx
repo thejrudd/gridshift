@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSleeperBase } from '../../context/SleeperContext';
-import { getLiveMatchups, getWeeklyProjections, getWeeklyStats } from '../../api/sleeperApi';
+import { getLiveMatchups, getWeeklyProjections } from '../../api/sleeperApi';
 import { calcPoints, calcPointsFromTotals } from '../../utils/scoringEngine';
 import { fetchSeasonSchedule } from '../../utils/playerApi.js';
 import { getCompanionInitials } from '../../utils/companionAssetVisuals.js';
@@ -532,6 +532,7 @@ export default function CompanionLive({ onViewPlayer = null }) {
     players,
     loadPlayers,
     loadMatchups,
+    refreshLiveWeeklyStats,
     // Sandbox-only: the replay's synthesized Sleeper stat lines stand in for
     // getWeeklyStats(). The connected context does not define it.
     loadWeeklyStats,
@@ -1065,6 +1066,11 @@ export default function CompanionLive({ onViewPlayer = null }) {
   // fetch once otherwise. Replay reads the synthesized stream on every tick,
   // because its clock — not wall time — is what advances the slate.
   useEffect(() => {
+    if (sandboxActive && !sandboxReplay) {
+      setSleeperStatsByPlayer({});
+      setSleeperStatsFetchedAt(null);
+      return undefined;
+    }
     if (platform !== 'sleeper' || !selectedLeagueId || !season || !week) {
       setSleeperStatsByPlayer({});
       setSleeperStatsFetchedAt(null);
@@ -1073,7 +1079,7 @@ export default function CompanionLive({ onViewPlayer = null }) {
     let cancelled = false;
     const load = () => (sandboxReplay && loadWeeklyStats
       ? loadWeeklyStats(season, week)
-      : getWeeklyStats(season, week))
+      : refreshLiveWeeklyStats(season, week))
       .then((rows) => {
         if (cancelled) return;
         setSleeperStatsByPlayer(rows ?? {});
@@ -1101,6 +1107,8 @@ export default function CompanionLive({ onViewPlayer = null }) {
     loadWeeklyStats,
     matchupLiveGameCount,
     platform,
+    refreshLiveWeeklyStats,
+    sandboxActive,
     sandboxReplay,
     season,
     selectedLeagueId,

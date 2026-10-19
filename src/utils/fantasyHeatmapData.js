@@ -1,10 +1,10 @@
 import { calcPoints } from './scoringEngine.js';
 import { isFinalScheduleGame } from './statisticsSchedule.js';
 
-// This is intentionally the same offensive-player set and positive-only
-// aggregation that powers the Fantasy Heatmap. It is keyed by the offense that
-// produced the stat; callers that need what a defense conceded reverse the
-// completed schedule rather than changing this source contract.
+// This is intentionally the same offensive-player set and aggregation that
+// powers the Fantasy Heatmap. Completed games retain negative values; the
+// active live week also retains negative values and opts into zero values. It
+// is keyed by the offense that produced the stat.
 const OFFENSE_POS_SET = new Set(['QB', 'RB', 'WR', 'TE', 'K']);
 const DIRECT_OFFENSE_STAT_KEYS = new Set(['rec_yd', 'rush_yd', 'pass_td', 'rec_td', 'rush_td', 'pass_sack', 'pass_int']);
 const HEATMAP_OFFENSE_TABLE_CACHE = new WeakMap();
@@ -253,8 +253,9 @@ export function getHeatmapPlayerGameTeam(wEntry, player, playerWeeks = []) {
 }
 
 /**
- * Aggregate positive offensive Heatmap values by the offense that produced
- * them: { [offenseTeam]: { [position]: { [week]: value } } }.
+ * Aggregate offensive Heatmap values by the offense that produced them:
+ * completed games retain negative values, and an optional live week also keeps
+ * negative and zero values. Shape: { [offenseTeam]: { [position]: { [week]: value } } }.
  *
  * Keep this contract deliberately stable. The Heatmap displays offense output;
  * a defense-allowed view is derived by following the reciprocal schedule entry.
@@ -265,6 +266,7 @@ export function getCachedOffenseAllowedTable(
   scheduleMap,
   activeScoringSettings,
   statMode,
+  includeNonPositiveWeek = null,
 ) {
   let byPlayers = HEATMAP_OFFENSE_TABLE_CACHE.get(weeklyStats);
   if (!byPlayers) {
@@ -290,7 +292,8 @@ export function getCachedOffenseAllowedTable(
     byScoring.set(activeScoringSettings, byStatMode);
   }
 
-  if (byStatMode.has(statMode)) return byStatMode.get(statMode);
+  const cacheKey = JSON.stringify([statMode, includeNonPositiveWeek]);
+  if (byStatMode.has(cacheKey)) return byStatMode.get(cacheKey);
 
   const table = {};
   const fallbackSeasonTeam = {};
@@ -308,8 +311,6 @@ export function getCachedOffenseAllowedTable(
 
     for (const wEntry of playerWeeks) {
       const val = getHeatmapOffenseStatValue(wEntry, activeScoringSettings, position, statMode);
-      if (val <= 0) continue;
-
       let team = wEntry.team?.toUpperCase() ?? null;
       if (!team) {
         team = fallbackSeasonTeam[playerId];
@@ -320,10 +321,19 @@ export function getCachedOffenseAllowedTable(
         }
       }
       if (!team) continue;
+      const scheduleEntry = scheduleMap?.[wEntry.week]?.[team];
+      const isCompletedGame = isFinalScheduleGame(scheduleEntry);
+      const isIncludedLiveWeek = includeNonPositiveWeek != null
+        && Number(wEntry.week) === Number(includeNonPositiveWeek);
+      if (
+        !Number.isFinite(val)
+        || (val < 0 && !isCompletedGame && !isIncludedLiveWeek)
+        || (val === 0 && !isIncludedLiveWeek)
+      ) continue;
       addVal(team, position, wEntry.week, val);
     }
   }
 
-  byStatMode.set(statMode, table);
+  byStatMode.set(cacheKey, table);
   return table;
 }

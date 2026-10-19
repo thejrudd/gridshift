@@ -118,6 +118,26 @@ test('Scored weeks carry a result; the current week does not', () => {
   assert.equal(rows[2].isCurrent, true);
 });
 
+test('historical schedule scores and pregame summaries use custom_points overrides', () => {
+  const weeks = buildWeeks({
+    weeks: {
+      ...matchupsByWeek,
+      1: [
+        { roster_id: 1, matchup_id: 1, points: 425.03, custom_points: 212.515 },
+        { roster_id: 2, matchup_id: 1, points: 344.92, custom_points: 172.46 },
+        { roster_id: 3, matchup_id: 2, points: 140 },
+        { roster_id: 4, matchup_id: 2, points: 88.4 },
+      ],
+    },
+  });
+  const rows = buildFantasyRosterScheduleRows(weeks, '1');
+
+  assert.equal(rows[0].result, 'W');
+  assert.equal(rows[0].pointsFor, 212.5);
+  assert.equal(rows[0].pointsAgainst, 172.5);
+  assert.equal(rows[1].selectedSummaryBefore.pointsFor, 212.5);
+});
+
 test('A week that never loaded is pending, not a bye', () => {
   const weeks = buildWeeks({ weeks: { ...matchupsByWeek, 4: null } });
   const rows = buildFantasyRosterScheduleRows(weeks, '1');

@@ -1042,6 +1042,115 @@ test('Heatmap keeps empty weeks visible across viewport sizes', async ({ page })
   }
 });
 
+test('Heatmap marks only live-game team cells in the active fantasy week', async ({ page }) => {
+  const scoreboardRequests = [];
+  const liveStatsRequests = [];
+  await page.route(`https://api.sleeper.app/v1/stats/nfl/regular/${TEST_SEASON}/7*`, async (route) => {
+    const url = new URL(route.request().url());
+    if (!url.searchParams.has('_gridshift')) {
+      await route.fallback();
+      return;
+    }
+    liveStatsRequests.push(url.href);
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ 105: { rec: 5, rec_yd: 90, gp: 1 } }),
+    });
+  });
+  await page.route('**/api/statistics/scores/espn-week**', async (route) => {
+    const url = new URL(route.request().url());
+    const season = Number(url.searchParams.get('season'));
+    const week = Number(url.searchParams.get('week'));
+    scoreboardRequests.push({ season, week });
+
+    const events = week === 7 ? [
+      {
+        id: 'live-sf-lar',
+        date: '2026-10-18T18:00:00.000Z',
+        status: { type: { state: 'in', name: 'STATUS_IN_PROGRESS', description: 'In Progress' } },
+        competitions: [{
+          competitors: [
+            { homeAway: 'away', team: { abbreviation: 'SF' }, score: '14' },
+            { homeAway: 'home', team: { abbreviation: 'LAR' }, score: '10' },
+          ],
+        }],
+      },
+      {
+        id: 'scheduled-kc-phi',
+        date: '2026-10-19T00:20:00.000Z',
+        status: { type: { state: 'pre', name: 'STATUS_SCHEDULED', description: 'Scheduled' } },
+        competitions: [{
+          competitors: [
+            { homeAway: 'away', team: { abbreviation: 'KC' }, score: '' },
+            { homeAway: 'home', team: { abbreviation: 'PHI' }, score: '' },
+          ],
+        }],
+      },
+    ] : [];
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ok: true,
+        season,
+        phase: 'regular',
+        week,
+        scoreboard: { events },
+      }),
+    });
+  });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/fantasy/heatmap');
+  await dismissWhatsNew(page);
+
+  const liveCells = page.locator('td[data-heatmap-live="true"]');
+  await expect.poll(() => scoreboardRequests.some(({ season, week }) => season === Number(TEST_SEASON) && week === 7)).toBe(true);
+  await expect(liveCells).toHaveCount(2);
+  await expect.poll(() => liveStatsRequests.length).toBeGreaterThan(0);
+  await expect(
+    page.locator('tbody tr').filter({ hasText: /^SF/ }).locator('td[data-heatmap-column-week="7"]'),
+  ).toContainText('14');
+  await expect(page.getByRole('img', { name: 'Live game', exact: true })).toHaveCount(2);
+  await expect(page.locator('td[data-heatmap-column-week="6"][data-heatmap-live="true"]')).toHaveCount(0);
+  await expect.poll(() => liveCells.evaluateAll((cells) => (
+    cells.every((cell) => cell.dataset.heatmapColumnWeek === '7')
+  ))).toBe(true);
+
+  for (const team of ['SF', 'LAR']) {
+    const row = page.locator('tbody tr').filter({ hasText: new RegExp(`^${team}`) });
+    const cell = row.locator('td[data-heatmap-live="true"]');
+    await expect(cell).toHaveAttribute('data-heatmap-live', 'true');
+    await expect(cell.getByRole('img', { name: 'Live game' })).toHaveCount(1);
+    await expect(cell.getByRole('img', { name: 'Live game' })).toBeVisible();
+    if (team === 'LAR') await expect(cell).toContainText('0.0');
+    const geometry = await cell.evaluate((element) => {
+      const cellRect = element.getBoundingClientRect();
+      const marker = element.querySelector('.companion-heatmap-live-indicator');
+      const markerRect = marker.getBoundingClientRect();
+      const primaryRect = element.querySelector('div')?.getBoundingClientRect() ?? null;
+      return {
+        cellHeight: cellRect.height,
+        markerBackground: getComputedStyle(marker).backgroundColor,
+        contained: markerRect.top >= cellRect.top
+          && markerRect.left >= cellRect.left
+          && markerRect.right <= cellRect.right
+          && markerRect.bottom <= cellRect.bottom,
+        clearsText: !primaryRect || markerRect.bottom <= primaryRect.top,
+      };
+    });
+    expect(Math.abs(geometry.cellHeight - 40)).toBeLessThan(1);
+    expect(geometry.markerBackground).toBe('rgb(224, 39, 15)');
+    expect(geometry.contained).toBe(true);
+    expect(geometry.clearsText).toBe(true);
+  }
+
+  const scheduledCells = page.locator('tbody tr').filter({ hasText: /^KC/ }).locator('td[data-heatmap-column-week="7"]');
+  await expect(scheduledCells.locator('.companion-heatmap-live-indicator')).toHaveCount(0);
+});
+
 test('Heatmap exposes raw QB sack and interception filters', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/fantasy/heatmap?pos=RB');
