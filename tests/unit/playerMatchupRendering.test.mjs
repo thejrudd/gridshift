@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'vite';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { formatStatisticsScoresLocalKickoff } from '../../src/utils/statisticsScoresTime.js';
 
 let server;
 let Breakdown;
@@ -179,9 +180,12 @@ test('pregame recent form uses current-season results as soon as any week comple
 });
 
 test('known kickoff appears in the fixed phase strip', () => {
-  const html = render({ kickoff: '2099-09-12T17:00:00Z' });
-  assert.ok(html.includes('pmd-ctx--lead'));
-  assert.ok(html.includes('GMT'));
+  const kickoff = '2099-09-12T17:00:00Z';
+  const html = render({ kickoff });
+  // The strip formats kickoff in the runtime's local timezone, so compare
+  // against the shared formatter rather than a fixed zone name.
+  const expected = formatStatisticsScoresLocalKickoff(kickoff);
+  assert.ok(html.includes(`pmd-ctx--lead pmd-num">${expected}<`));
 });
 
 test('final score is cued against its projection and keeps the estimate disclosed', () => {
