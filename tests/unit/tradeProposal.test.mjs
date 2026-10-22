@@ -167,7 +167,7 @@ test('Trade proposal storage failures return a stable kind without filesystem de
 
 test('Trade proposal snapshots preserve full asset identity and fingerprint keys', () => {
   const value = snapshot();
-  assert.equal(value.valueScaleId, 'fantasy-viability-0-100-v2');
+  assert.equal(value.valueScaleId, 'fantasy-baseline-0-100-v3');
   assert.equal(isLegacyTradeProposalValueScale(value), false);
   assert.equal(value.schemaVersion, 1);
   assert.equal(value.sender.assets[0].label, 'Player One');
@@ -217,7 +217,7 @@ test('Trade proposal API preserves unavailable valuation fields as null', async 
     assert.equal(normalized.totals.recipient, 0);
     assert.equal(normalized.verdict.gap, null);
     assert.equal(normalized.verdict.pct, null);
-    assert.equal(normalized.valueScaleId, 'fantasy-viability-0-100-v2');
+    assert.equal(normalized.valueScaleId, 'fantasy-baseline-0-100-v3');
 
     const shareHtml = await invoke(shareRouter, '/:token', 'get', {
       params: { token: created.body.shareToken },
@@ -279,13 +279,16 @@ test('Trade proposal display perspective swaps manager sides and totals without 
   assert.equal(value.recipient.assets[0].id, 'player-1');
   assert.equal(value.totals.sender, 95);
   assert.equal(value.totals.recipient, 100);
-  assert.equal(value.valueScaleId, 'fantasy-viability-0-100-v2');
+  assert.equal(value.valueScaleId, 'fantasy-baseline-0-100-v3');
   const legacy = swapTradeProposalPerspective({ ...snapshot(), valueScaleId: undefined });
   assert.equal(legacy.valueScaleId, null);
   assert.equal(isLegacyTradeProposalValueScale(legacy), true);
   const versionedLegacy = swapTradeProposalPerspective({ ...snapshot(), valueScaleId: 'league-utility-0-100-v1' });
   assert.equal(versionedLegacy.valueScaleId, 'league-utility-0-100-v1');
   assert.equal(isLegacyTradeProposalValueScale(versionedLegacy), true);
+  const priorScale = swapTradeProposalPerspective({ ...snapshot(), valueScaleId: 'fantasy-viability-0-100-v2' });
+  assert.equal(priorScale.valueScaleId, 'fantasy-viability-0-100-v2');
+  assert.equal(isLegacyTradeProposalValueScale(priorScale), true);
 });
 
 test('Trade proposal display helpers keep current values separate from the sent snapshot', () => {

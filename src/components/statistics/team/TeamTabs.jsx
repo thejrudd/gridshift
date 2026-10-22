@@ -1,23 +1,44 @@
 import { useState } from 'react';
 import { fmt, ordinal, passerRating } from '../../../utils/playerSeason/dashboardModel.js';
-import { gameWon, lineFor } from '../../../utils/teamSeason/teamDashboardModel.js';
-import { RankStrips, SectionHead, TeamMark } from '../player/DashboardParts.jsx';
-import { DriveBars, QuarterBars, ResultsTape, SparkBars, TrendTiles } from './TeamCharts.jsx';
+import { gameWon, quarterPoints, scoringBreakdown, scoringPartsOf } from '../../../utils/teamSeason/teamDashboardModel.js';
+import { FilterChip, RankStrips, SectionHead, TeamMark } from '../player/DashboardParts.jsx';
+import { tipAttrs } from '../player/dashboardUi.js';
+import { DriveBars, QuarterBars, ResultsTape, TrendTiles } from './TeamCharts.jsx';
 
 const z = (value) => Number(value) || 0;
 const sum = (values) => values.reduce((total, value) => total + (Number(value) || 0), 0);
-const fmtDate = (iso) => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-const fmtKickoff = (iso) => new Date(iso).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
 /* ---------- Season ---------- */
 
 export function SeasonTab({ data, team, teamName, darkMode, onOpenGame }) {
+  const [pickQuarter, setPickQuarter] = useState(null);
+  const [pickType, setPickType] = useState(null);
   const games = data.games;
   const teams = data.teams ?? {};
   const me = teams[team] ?? {};
   const rank = (key) => data.ranks.find((entry) => entry.key === key)?.vals.find((entry) => entry.t === team);
-  const kpis = [['Points per game', 'pts'], ['Allowed per game', 'ptsA'], ['Yards per game', 'yds'], ['Yards allowed per game', 'ydsA']]
-    .map(([label, key]) => ({ label, key, entry: rank(key), count: data.ranks.find((entry) => entry.key === key)?.vals.length ?? 32 }));
+  // Each figure's hover lists the game-by-game values behind the average.
+  const signed = (v, dp) => `${v > 0 ? '+' : ''}${fmt(v, dp)}`;
+  const rate = (made, tries) => (tries ? (100 * z(made)) / tries : null);
+  const kpis = [
+    ['Points per game', 'pts', (game) => game.pf, (v) => `${fmt(v)} points`],
+    ['Allowed per game', 'ptsA', (game) => game.pa, (v) => `${fmt(v)} points allowed`],
+    ['Yards per game', 'yds', (game) => game.ts.me?.total_yards, (v) => `${fmt(v)} yards`],
+    ['Yards allowed per game', 'ydsA', (game) => game.ts.opp?.total_yards, (v) => `${fmt(v)} yards allowed`],
+    ['Point differential', 'diff', (game) => game.pf - game.pa, (v) => `${signed(v)} points`],
+    ['Turnover differential', 'tod', (game) => (game.ts.me ? z(game.ts.opp?.turnovers) - z(game.ts.me.turnovers) : null), (v) => `${signed(v)} turnovers`],
+    ['Third-down rate', 'td3', (game) => rate(game.ts.me?.third_down_conversions, game.ts.me?.third_down_attempts), (v) => `${fmt(v)}%`],
+    ['Red-zone scoring', 'rz', (game) => rate(game.ts.me?.red_zone_scores, game.ts.me?.red_zone_attempts), (v) => `${fmt(v)}%`],
+  ].map(([label, key, valueOf, perGame]) => {
+    const metric = data.ranks.find((entry) => entry.key === key);
+    return { label, key, valueOf, perGame, metric, entry: rank(key), count: metric?.vals.length ?? 32 };
+  });
+  // Differentials read with a sign; rates carry their suffix.
+  const kpiFigure = ({ key, metric, entry }) => (key === 'diff' || key === 'tod' ? signed(entry.v, metric.dp) : `${fmt(entry.v, metric.dp)}${metric.suffix}`);
+  const kpiTip = (kpi) => tipAttrs(`${kpi.label} · by game`, [
+    ...games.filter((game) => kpi.valueOf(game) != null).map((game) => `W${game.week} ${game.home ? 'vs' : '@'} ${game.opp} · ${kpi.perGame(kpi.valueOf(game))} · ${gameWon(game) ? 'W' : game.pf === game.pa ? 'T' : 'L'} ${game.pf}–${game.pa}`),
+    kpi.entry ? `${kpi.key === 'tod' ? 'Season' : 'Average'} ${kpiFigure(kpi)} · ${ordinal(kpi.entry.r)} of ${kpi.count}` : null,
+  ]);
 
   const divisionRows = data.standings
     .filter((row) => teams[row.t]?.conf === me.conf && teams[row.t]?.div === me.div)
@@ -35,22 +56,13 @@ export function SeasonTab({ data, team, teamName, darkMode, onOpenGame }) {
     ['Won the turnover battle', games.filter((game) => z(game.ts.opp?.turnovers) > z(game.ts.me?.turnovers))],
   ].filter(([, list]) => list.length);
 
-  const quarters = [0, 1, 2, 3, 4].map((index) => ({
-    q: index < 4 ? `Q${index + 1}` : 'OT',
-    f: sum(games.map((game) => game.qf[index])),
-    a: sum(games.map((game) => game.qa[index])),
-  })).filter((quarter) => quarter.q !== 'OT' || quarter.f || quarter.a);
-
-  const scored = {};
-  for (const game of games) {
-    for (const play of game.scoring.filter((entry) => entry.side === 'me')) {
-      const entry = (scored[play.type] ??= { n: 0, pts: 0 });
-      entry.n += 1;
-      entry.pts += play.pts;
-    }
-  }
-  const scoredOrder = ['Passing TD', 'Rushing TD', 'Field goal', 'Defensive TD', 'Return TD', 'Safety', 'Other'].filter((type) => scored[type]);
-  const scoredMax = Math.max(...scoredOrder.map((type) => scored[type].pts), 1);
+  // Points by quarter and How they scored filter each other: a quarter narrows
+  // the scoring rows, and a way of scoring narrows the quarter bars.
+  const parts = scoringPartsOf(games);
+  const hasOvertime = quarterPoints(parts).some((quarter) => quarter.q === 'OT' && (quarter.f || quarter.a));
+  const quarters = quarterPoints(parts, pickType).filter((quarter) => quarter.q !== 'OT' || hasOvertime);
+  const scored = scoringBreakdown(parts, pickQuarter);
+  const scoredMax = Math.max(...scored.map((row) => row.pts), 1);
 
   const bucket = (result) => (['Touchdown', 'Field goal', 'Downs', 'Turnover', 'Punt'].includes(result) ? result : 'Other');
   const driveRows = [[`${teamName} offense`, 'me'], ['Opponent offenses', 'opp']].map(([label, side]) => {
@@ -74,17 +86,17 @@ export function SeasonTab({ data, team, teamName, darkMode, onOpenGame }) {
 
   return (
     <div className="player-dash-panel">
-      <div className="player-dash-block">
-        <SectionHead title="Team stats" meta={`League ranks from ${data.leagueGames} finished games`} />
-        <div className="player-dash-rail team-dash-kpis">
-          {kpis.map(({ label, key, entry, count }) => (
-            <div key={key} className="player-dash-kpi">
-              <span className="player-dash-eyebrow">{label}</span>
-              <span className="player-dash-kpi__value">{entry ? fmt(entry.v, 1) : '–'}</span>
-              <span className="player-dash-kpi__rank">{entry ? <><b>{ordinal(entry.r)}</b> of {count}</> : 'Not ranked yet'}</span>
-            </div>
-          ))}
-        </div>
+      <div className="player-dash-rail team-dash-kpis">
+        {kpis.map((kpi) => {
+          const { label, key, entry, count } = kpi;
+          return (
+          <div key={key} className="player-dash-kpi team-dash-kpi-tip" tabIndex={0} {...kpiTip(kpi)}>
+            <span className="player-dash-eyebrow">{label}</span>
+            <span className="player-dash-kpi__value">{entry ? kpiFigure(kpi) : '–'}</span>
+            <span className="player-dash-kpi__rank">{entry ? <><b>{ordinal(entry.r)}</b> of {count}</> : 'Not ranked yet'}</span>
+          </div>
+          );
+        })}
       </div>
 
       <div className="player-dash-block">
@@ -98,38 +110,7 @@ export function SeasonTab({ data, team, teamName, darkMode, onOpenGame }) {
         <ResultsTape games={games} schedule={data.schedule} teamName={teamName} darkMode={darkMode} onOpenGame={onOpenGame} />
       </div>
 
-      <div className="player-dash-grid is-wide-left">
-        <div className="player-dash-block">
-          <SectionHead title="Schedule & results" meta={`${games.length} played · ${data.schedule.length} to go`} />
-          <div className="team-dash-log">
-            {games.map((game) => {
-              const mine = game.ts.me ?? {};
-              const theirs = game.ts.opp ?? {};
-              const line = mine.total_yards
-                ? `${fmt(mine.total_yards)} yds to ${fmt(theirs.total_yards)} · ${z(mine.turnovers)} giveaway${z(mine.turnovers) === 1 ? '' : 's'}, ${z(theirs.turnovers)} takeaway${z(theirs.turnovers) === 1 ? '' : 's'}`
-                : '';
-              return (
-                <button key={game.id} type="button" className="team-dash-log__row" onClick={() => onOpenGame(game, 'team')}>
-                  <span className="team-dash-log__week">Wk {game.week}<small>{fmtDate(game.date)}</small></span>
-                  <span className="team-dash-log__who"><span className="player-dash-faint">{game.home ? 'vs' : '@'}</span><TeamMark abbr={game.opp} darkMode={darkMode} size={20} /><span>{teams[game.opp]?.name ?? game.opp}</span></span>
-                  <span className="team-dash-log__result">
-                    <span className={`player-dash-pill ${gameWon(game) ? 'is-win' : 'is-loss'}`}>{gameWon(game) ? 'W' : game.pf === game.pa ? 'T' : 'L'}</span>
-                    {game.pf}–{game.pa}{game.ot ? <small> OT</small> : null}
-                  </span>
-                  <span className="team-dash-log__line">{[line, game.summary].filter(Boolean).join(' · ')}</span>
-                </button>
-              );
-            })}
-            {data.schedule.map((game, index) => (
-              <div key={game.id} className="team-dash-log__row is-upcoming">
-                <span className="team-dash-log__week">Wk {game.week}<small>{fmtDate(game.date)}</small></span>
-                <span className="team-dash-log__who"><span className="player-dash-faint">{game.home ? 'vs' : '@'}</span><TeamMark abbr={game.opp} darkMode={darkMode} size={20} /><span>{teams[game.opp]?.name ?? game.opp}</span></span>
-                <span className="team-dash-log__result">{index === 0 ? <span className="player-dash-tag is-strong">Next</span> : <span className="player-dash-faint">Upcoming</span>}</span>
-                <span className="team-dash-log__line">{fmtKickoff(game.date)}{game.venue ? ` · ${game.venue}` : ''}</span>
-              </div>
-            ))}
-          </div>
-        </div>
+      <div className="player-dash-grid">
         <div className="player-dash-block">
           <SectionHead title="Division standings" meta="Regular season" />
           <div className="player-dash-table-wrap">
@@ -146,6 +127,8 @@ export function SeasonTab({ data, team, teamName, darkMode, onOpenGame }) {
               </tbody>
             </table>
           </div>
+        </div>
+        <div className="player-dash-block">
           <SectionHead title="Splits" />
           <div className="player-dash-splits">
             {splits.map(([label, list]) => (
@@ -164,21 +147,36 @@ export function SeasonTab({ data, team, teamName, darkMode, onOpenGame }) {
         <div className="player-dash-grid">
           <div className="player-dash-block">
             <h3 className="player-dash-subhead">Points by quarter</h3>
-            <QuarterBars quarters={quarters} teamName={teamName} />
+            <QuarterBars
+              quarters={quarters}
+              teamName={teamName}
+              selected={pickQuarter}
+              onSelect={(quarter) => setPickQuarter((current) => (current === quarter ? null : quarter))}
+              filter={pickType ? <FilterChip label={pickType} onClear={() => setPickType(null)} /> : <span>Select a quarter to see how those points were scored</span>}
+            />
           </div>
           <div className="player-dash-block">
             <h3 className="player-dash-subhead">How they scored</h3>
             <div className="player-dash-surface">
+              <div className="player-dash-legend team-dash-filter-row">
+                {pickQuarter ? <FilterChip label={pickQuarter} onClear={() => setPickQuarter(null)} /> : <span>Select a way of scoring to see it by quarter</span>}
+              </div>
               <div className="player-dash-splits is-bare">
-                {scoredOrder.map((type) => (
-                  <div key={type} className="player-dash-split team-dash-scored">
-                    <span>{type}</span>
-                    <span className="team-dash-scored__track"><i style={{ width: `${(scored[type].pts / scoredMax) * 100}%` }} /></span>
-                    <span className="team-dash-scored__value"><b>{scored[type].pts}</b> <span className="player-dash-meta">pts · {scored[type].n}</span></span>
-                  </div>
+                {scored.map((row) => (
+                  <button
+                    key={row.type}
+                    type="button"
+                    className={`player-dash-split team-dash-scored team-dash-pick ${pickType === row.type ? 'is-picked' : pickType ? 'is-dim' : ''}`}
+                    aria-pressed={pickType === row.type}
+                    onClick={() => setPickType((current) => (current === row.type ? null : row.type))}
+                  >
+                    <span>{row.type}</span>
+                    <span className="team-dash-scored__track"><i style={{ width: `${(row.pts / scoredMax) * 100}%` }} /></span>
+                    <span className="team-dash-scored__value"><b>{row.pts}</b> <span className="player-dash-meta">pts · {row.attempts != null ? `${row.made} of ${row.attempts}` : row.plays}</span></span>
+                  </button>
                 ))}
               </div>
-              <p className="player-dash-coverage">Points include the extra point or two-point try that followed. Count is the number of scoring plays.</p>
+              <p className="player-dash-coverage">Touchdowns count 6 points; the extra point or two-point try after each is its own row, made of attempted. Defensive scores are defensive touchdowns and safeties.</p>
             </div>
           </div>
         </div>
@@ -247,42 +245,11 @@ function SortableTable({ table, rows, title, onOpen }) {
   );
 }
 
-export function PlayersTab({ totals, games, fantasy, openByEntry }) {
-  const top = (key) => totals.filter((entry) => entry[key]).sort((a, b) => b[key] - a[key])[0];
-  const leaders = [
-    ['Passing yards', 'passing_yards', (a) => `${fmt(a.passing_completions)}/${fmt(a.passing_attempts)} · ${z(a.passing_touchdowns)} TD · ${z(a.passing_interceptions)} INT`],
-    ['Rushing yards', 'rushing_yards', (a) => `${fmt(a.rushing_attempts)} carries · ${fmt(z(a.rushing_yards) / (a.rushing_attempts || 1), 1)} avg · ${z(a.rushing_touchdowns)} TD`],
-    ['Receiving yards', 'receiving_yards', (a) => `${fmt(a.receptions)} catches on ${fmt(a.receiving_targets)} targets · ${z(a.receiving_touchdowns)} TD`],
-    ['Tackles', 'total_tackles', (a) => `${z(a.solo_tackles)} solo · ${z(a.tackles_for_loss)} for loss`],
-    ['Sacks', 'defensive_sacks', (a) => `${z(a.qb_hits)} QB hits · ${z(a.tackles_for_loss)} for loss`],
-    ['Interceptions', 'defensive_interceptions', (a) => `${z(a.interception_yards)} return yards · ${z(a.passes_defended)} passes defended`],
-  ];
+export function PlayersTab({ totals, fantasy, openByEntry, leaders }) {
   const tables = fantasy ? [FANTASY_TABLE, ...TABLES] : TABLES;
   return (
     <div className="player-dash-panel">
-      <div className="player-dash-block">
-        <SectionHead title="Team leaders" meta="Select a player for his stats page" />
-        <div className="team-dash-leaders">
-          {leaders.map(([category, key, sub]) => {
-            const entry = top(key);
-            if (!entry) return null;
-            const dp = key === 'defensive_sacks' ? 1 : 0;
-            const open = openByEntry(entry);
-            const body = (
-              <>
-                <span className="player-dash-eyebrow">{category}</span>
-                <span className="team-dash-leaders__value">{fmt(entry[key], dp)}</span>
-                <span className="team-dash-leaders__who">{entry.n} <span className="player-dash-faint">{entry.pos}</span></span>
-                <span className="player-dash-meta">{sub(entry)}</span>
-                <SparkBars points={games.map((game) => ({ game, v: lineFor(game, entry.id)?.[key] ?? 0 }))} format={(v) => fmt(v, dp)} label={category} />
-              </>
-            );
-            return open
-              ? <button key={key} type="button" className="team-dash-leaders__cell" onClick={open}>{body}</button>
-              : <div key={key} className="team-dash-leaders__cell">{body}</div>;
-          })}
-        </div>
-      </div>
+      {leaders}
       {tables.map((table) => {
         const rows = totals.filter(table.has);
         if (!rows.length) return null;
@@ -315,64 +282,3 @@ export function RanksTab({ data, team, teamName }) {
     </div>
   );
 }
-
-/* ---------- Full roster ---------- */
-
-const ROSTER_GROUPS = [
-  ['Quarterbacks', ['QB']], ['Running backs', ['RB', 'FB', 'HB']], ['Wide receivers', ['WR']], ['Tight ends', ['TE']],
-  ['Offensive line', ['OT', 'OG', 'C', 'G', 'T', 'OL']], ['Defensive line', ['DE', 'DT', 'NT', 'DL', 'ED', 'EDGE']],
-  ['Linebackers', ['LB', 'ILB', 'OLB', 'MLB']], ['Defensive backs', ['CB', 'S', 'SS', 'FS', 'DB']], ['Specialists', ['K', 'P', 'LS', 'PK']],
-];
-
-function keyLine(entry, fantasy) {
-  const parts = [];
-  if (entry.passing_attempts) parts.push(`${fmt(entry.passing_yards)} pass yds, ${z(entry.passing_touchdowns)} TD`);
-  if (z(entry.rushing_attempts) >= 3) parts.push(`${fmt(entry.rushing_yards)} rush yds`);
-  if (entry.receptions) parts.push(`${entry.receptions} rec, ${fmt(entry.receiving_yards)} yds`);
-  if (entry.total_tackles) parts.push(`${entry.total_tackles} tkl`);
-  if (entry.defensive_sacks) parts.push(`${fmt(entry.defensive_sacks, 1)} sacks`);
-  if (entry.defensive_interceptions) parts.push(`${entry.defensive_interceptions} INT`);
-  if (entry.field_goal_attempts) parts.push(`${z(entry.field_goals_made)}/${entry.field_goal_attempts} FG`);
-  if (entry.punts) parts.push(`${entry.punts} punts, ${fmt(z(entry.punt_yards) / entry.punts, 1)} avg`);
-  const line = parts.slice(0, 2).join(' · ') || 'Appeared in the box score';
-  return fantasy && entry.fp != null ? `${fmt(entry.fp, 1)} fantasy pts · ${line}` : line;
-}
-
-export function RosterTab({ roster, totalsByEspnId, depthText, fantasy, season, onOpenPlayer }) {
-  return (
-    <div className="player-dash-panel">
-      <div className="player-dash-block">
-        <SectionHead title="Full roster" meta={`${roster.length} players · current roster`} />
-        <p className="player-dash-coverage">From ESPN&apos;s current roster. Stat lines cover {season} box scores; players without one show their depth-chart spot.</p>
-      </div>
-      {ROSTER_GROUPS.map(([label, positions]) => {
-        const players = roster.filter((player) => positions.includes(String(player.position ?? '').toUpperCase()))
-          .sort((a, b) => (Number(a.jersey) || 99) - (Number(b.jersey) || 99));
-        if (!players.length) return null;
-        return (
-          <div key={label} className="player-dash-block">
-            <SectionHead title={label} meta={String(players.length)} />
-            <div className="team-dash-roster">
-              {players.map((player) => {
-                const entry = totalsByEspnId[player.id];
-                const depth = depthText(player.id);
-                return (
-                  <button key={player.id} type="button" className="team-dash-roster__card" onClick={() => onOpenPlayer(player)}>
-                    <span className="team-dash-roster__name">{player.displayName} <span className="player-dash-faint">#{player.jersey}</span></span>
-                    <span className="player-dash-meta">
-                      {[player.position, [player.height, player.weight].filter(Boolean).join(', '), player.experience ? `${ordinal(player.experience + 1)} season` : 'Rookie'].filter(Boolean).join(' · ')}
-                    </span>
-                    <span className="team-dash-roster__line">
-                      {entry ? keyLine(entry, fantasy) : depth ? `Depth chart: ${depth}` : <span className="player-dash-faint">No stats yet</span>}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-

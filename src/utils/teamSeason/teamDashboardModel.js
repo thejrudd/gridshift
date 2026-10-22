@@ -133,6 +133,7 @@ export const LEADER_SPECS = {
   CB: { label: 'Cornerback', score: (a) => 2 * z(a.passes_defended) + 4 * z(a.defensive_interceptions) + 0.3 * z(a.total_tackles), stat: 'passes_defended', unit: 'passes defended', line: (a) => `${z(a.defensive_interceptions)} INT · ${z(a.total_tackles)} tackles` },
   S: { label: 'Safety', score: (a) => z(a.total_tackles) + 4 * z(a.defensive_interceptions) + z(a.passes_defended), stat: 'total_tackles', unit: 'tackles', line: (a) => `${z(a.defensive_interceptions)} INT · ${z(a.passes_defended)} passes defended` },
   K: { label: 'Kicker', score: (a) => z(a.total_points) + z(a.field_goal_attempts), stat: 'total_points', unit: 'points', line: (a) => `${z(a.field_goals_made)}/${z(a.field_goal_attempts)} field goals · long ${a.long_field_goal_made ?? '–'} · ${z(a.extra_points_made)} extra points` },
+  INT: { label: 'Interceptions', score: (a) => z(a.defensive_interceptions), stat: 'defensive_interceptions', unit: 'INT', line: (a) => `${z(a.interception_yards)} return yards · ${z(a.passes_defended)} passes defended` },
   P: { label: 'Punter', score: (a) => z(a.punts), stat: 'punt_avg', unit: 'yds per punt', dp: 1, line: (a) => `${z(a.punts)} punts · ${z(a.punts_inside_20)} inside the 20 · long ${a.long_punt ?? '–'}` },
 };
 export const FANTASY_ROLES = new Set(['QB', 'RB', 'WR', 'TE', 'K']);
@@ -150,4 +151,46 @@ export function depthStanding(slots = [], role, slotAthletes) {
     slot,
     text: backup ? `${ordinal} at ${slot.a}${ahead ? `, behind ${lastName(ahead)}` : ''}` : `Starter at ${slot.a}`,
   };
+}
+
+/* ---------- Scoring breakdown ---------- */
+
+export const QUARTERS = ['Q1', 'Q2', 'Q3', 'Q4', 'OT'];
+export const SCORING_ROWS = ['Passing TD', 'Rushing TD', 'Field goal', 'Extra point', 'Two-point conversion', 'Defensive scores', 'Return TD'];
+const TRY_ROWS = new Set(['Extra point', 'Two-point conversion']);
+// Rows that show even at zero, so a missing kind of score reads as none rather than as left out.
+const ALWAYS_ROWS = new Set(['Extra point', 'Two-point conversion', 'Defensive scores']);
+
+/**
+ * Every scoring play split into its parts: the score itself and the try after a
+ * touchdown. Games cached before tries were read keep their total on the play.
+ */
+export function scoringPartsOf(games = []) {
+  return games.flatMap((game) => (game.scoring ?? []).flatMap((play) => {
+    const quarter = QUARTERS[Math.min(play.q, 5) - 1] ?? 'OT';
+    const type = play.type === 'Defensive TD' || play.type === 'Safety' ? 'Defensive scores' : play.type;
+    const parts = [{ side: play.side, quarter, type, pts: play.playPts ?? play.pts, made: true }];
+    if (play.try) parts.push({ side: play.side, quarter, type: play.try, pts: z(play.tryPts), made: Boolean(play.tryGood) });
+    return parts;
+  }));
+}
+
+/** The team's points by way of scoring, for the season or one quarter. Tries count made of attempted. */
+export function scoringBreakdown(parts = [], quarter = null) {
+  const mine = parts.filter((part) => part.side === 'me' && (!quarter || part.quarter === quarter));
+  return SCORING_ROWS.map((type) => {
+    const list = mine.filter((part) => part.type === type);
+    const made = list.filter((part) => part.made).length;
+    const isTry = TRY_ROWS.has(type);
+    return { type, pts: list.reduce((total, part) => total + part.pts, 0), plays: isTry ? made : list.length, made: isTry ? made : null, attempts: isTry ? list.length : null };
+  }).filter((row) => row.plays || row.attempts || ALWAYS_ROWS.has(row.type));
+}
+
+/** Points by quarter for the team and its opponents, in total or for one way of scoring. */
+export function quarterPoints(parts = [], type = null) {
+  return QUARTERS.map((quarter) => {
+    const list = parts.filter((part) => part.quarter === quarter && (!type || part.type === type));
+    const sum = (side) => list.filter((part) => part.side === side).reduce((total, part) => total + part.pts, 0);
+    return { q: quarter, f: sum('me'), a: sum('opp') };
+  });
 }

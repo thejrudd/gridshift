@@ -260,7 +260,19 @@ const GUIDE_CONTENT = {
       },
       {
         title: 'Inspect players',
-        description: 'Tap a starter or bench row for projection, matchup difficulty, weekly stats, and a path to the full profile.',
+        description: 'Tap a starter or bench row for projection, matchup difficulty, weekly stats, and a path to the full profile. On desktop, hover a starter for their season before kickoff, this game while it is live, or a summary once it ends.',
+      },
+      {
+        title: 'Replay the week',
+        description: 'The replay bar opens at live for the current week, or at the final whistle for an earlier week. Drag it, use the step buttons, or press play to watch the matchup unfold; Back to live (or Back to final) returns to the end.',
+      },
+      {
+        title: 'Win chance and lead',
+        description: 'Once the first starter in your matchup kicks off, the chart replaces the win chance bar. Win chance is your estimated chance to win after every scoring play; Lead shows how far ahead or behind you are. Tap the chart to jump to that moment.',
+      },
+      {
+        title: 'Scoring plays',
+        description: 'Open the Scoring plays tab next to Lineup. Each play shows its fantasy points and how much it moved your win chance. Tap a play to rewind the whole page to just after it.',
       },
     ],
   },

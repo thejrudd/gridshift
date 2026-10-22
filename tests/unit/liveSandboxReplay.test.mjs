@@ -305,7 +305,7 @@ test('staggered games keep their real order on the slate axis', () => {
   assert.ok(lateStart >= earlyEnd, `late game started at ${lateStart}, before ${earlyEnd}`);
 });
 
-test('a busy Sunday receives consecutive chart room instead of sharing one wall-clock interval', () => {
+test('games that kick off together share one window sized by how many games it holds', () => {
   const sundayGames = Array.from({ length: 14 }, (_, index) => makeGame({
     id: `sun-${index + 1}`,
     date: '2025-11-23T18:00:00.000Z',
@@ -316,6 +316,7 @@ test('a busy Sunday receives consecutive chart room instead of sharing one wall-
     makeGame({ id: 'mon', date: '2025-11-25T01:15:00.000Z' }),
   ];
 
+  // Weights: Thursday 1.5 (single-game floor), Sunday 14, Monday 1.5 → 17.
   const thursdayEnd = getSlateProgressForGameProgress(games, 'thu', 1);
   const sundayStart = getSlateProgressForGameProgress(games, 'sun-1', 0);
   const sundayEnd = getSlateProgressForGameProgress(games, 'sun-14', 1);
@@ -323,19 +324,17 @@ test('a busy Sunday receives consecutive chart room instead of sharing one wall-
 
   assert.equal(thursdayEnd, sundayStart);
   assert.equal(sundayEnd, mondayStart);
-  assert.equal(thursdayEnd, 1 / games.length);
-  assert.equal(sundayEnd, (games.length - 1) / games.length);
+  assert.equal(thursdayEnd, 1.5 / 17);
+  assert.equal(sundayEnd, 15.5 / 17);
 
-  sundayGames.slice(1).forEach((game, index) => {
-    const previous = sundayGames[index];
-    assert.equal(
-      getSlateProgressForGameProgress(games, previous.id, 1),
-      getSlateProgressForGameProgress(games, game.id, 0),
-    );
+  // Concurrent Sunday games occupy the same span rather than a queue.
+  sundayGames.forEach((game) => {
+    assert.equal(getSlateProgressForGameProgress(games, game.id, 0), sundayStart);
+    assert.equal(getSlateProgressForGameProgress(games, game.id, 1), sundayEnd);
   });
 });
 
-test('chart NOW follows the furthest started scheduled game, not the active-clock fraction', () => {
+test('chart NOW follows the furthest started game on the kickoff-window axis', () => {
   const sundayGames = Array.from({ length: 14 }, (_, index) => makeGame({
     id: `sun-${index + 1}`,
     date: '2025-11-23T18:00:00.000Z',
@@ -346,9 +345,9 @@ test('chart NOW follows the furthest started scheduled game, not the active-cloc
     makeGame({ id: 'mon', date: '2025-11-25T01:15:00.000Z' }),
   ];
 
-  // At 50% of the active Sunday block, every Sunday game is half played. The
-  // rightmost one therefore reaches 15/16 of the scheduled chart axis.
-  assert.equal(getReplayChartProgress(games, 0.5), 0.90625);
+  // At 50% of the active Sunday block every Sunday game is half played, which
+  // is the middle of the Sunday window: (1.5 + 7) / 17.
+  assert.equal(getReplayChartProgress(games, 0.5), 8.5 / 17);
   assert.equal(getReplayChartProgress(games, 1), 1);
 });
 

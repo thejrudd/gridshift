@@ -192,7 +192,8 @@ export default function PlayerDashboard({
     }
   };
 
-  if (!group) return seasonsContent;
+  // Positions without a group show Seasons alone; the wrapper still supplies the dashboard tokens it uses.
+  if (!group) return <div className="player-dash" style={style}>{seasonsContent}</div>;
 
   const lastWeek = seasonData?.games?.at(-1)?.week;
   return (

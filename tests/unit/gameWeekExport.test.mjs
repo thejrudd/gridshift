@@ -71,6 +71,27 @@ test('builds an LLM-ready selected-week bundle with authoritative zeroes and rec
   assert.equal(JSON.stringify(bundle).includes('[Circular]'), false);
 });
 
+test('uses Sleeper custom_points as the official team-score override in weekly exports', () => {
+  const bundle = buildGameWeekExport({
+    season: '2026',
+    fantasyWeek: 1,
+    league,
+    rosters,
+    leagueUsers: users,
+    matchupRows: [
+      { roster_id: 1, matchup_id: 1, points: 212.515, custom_points: 212.515, players: [], starters: [] },
+      { roster_id: 2, matchup_id: 1, points: 172.46, custom_points: 172.46, players: [], starters: [] },
+    ],
+    includeRaw: false,
+  });
+
+  const teamsByRosterId = Object.fromEntries(bundle.fantasy.teamPerformances.map((team) => [team.rosterId, team]));
+  assert.deepEqual([teamsByRosterId['1'].score, teamsByRosterId['2'].score], [212.52, 172.46]);
+  assert.deepEqual(bundle.fantasy.outcomes[0].scores, { 1: 212.52, 2: 172.46 });
+  assert.equal(teamsByRosterId['1'].scoreSource, 'sleeper.matchups.custom_points');
+  assert.equal(bundle.fantasy.records.selectedWeek.highestCombinedScore.combinedScore, 384.98);
+});
+
 test('builds a fantasy-points-only export with player totals, individual scores, and matchup results', () => {
   const bundle = buildGameWeekExport({
     season: '2026',
@@ -114,27 +135,6 @@ test('builds a fantasy-points-only export with player totals, individual scores,
   assert.equal('raw' in bundle, false);
   assert.equal('nfl' in bundle, false);
   assert.equal('storylineSignals' in bundle, false);
-});
-
-test('uses Sleeper custom_points as the official team-score override in weekly exports', () => {
-  const bundle = buildGameWeekExport({
-    season: '2026',
-    fantasyWeek: 1,
-    league,
-    rosters,
-    leagueUsers: users,
-    matchupRows: [
-      { roster_id: 1, matchup_id: 1, points: 212.515, custom_points: 212.515, players: [], starters: [] },
-      { roster_id: 2, matchup_id: 1, points: 172.46, custom_points: 172.46, players: [], starters: [] },
-    ],
-    includeRaw: false,
-  });
-
-  const teams = Object.fromEntries(bundle.fantasy.teamPerformances.map((team) => [team.rosterId, team]));
-  assert.equal(teams['1'].score, 212.52);
-  assert.equal(teams['2'].score, 172.46);
-  assert.equal(teams['1'].scoreSource, 'sleeper.matchups.custom_points');
-  assert.equal(bundle.fantasy.outcomes[0].scores['1'], 212.52);
 });
 
 test('serializes repeated references without mistaking them for cycles', () => {

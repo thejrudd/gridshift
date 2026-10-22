@@ -23,6 +23,7 @@ import { normalizeProviderTeam } from '../../utils/providerPlayerIdentity.js';
 import { buildTradeCurrentContextMap } from '../../utils/tradeValueScale.js';
 import {
   buildRosterPicks,
+  isSeasonDraftComplete,
   valueSide,
   evaluateTrade,
   suggestPackage,
@@ -246,7 +247,8 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
   });
   const tradeAdpEligible = getFantasyRankingsDataMode(season) === 'adp';
   const previousSeasonKey = getPreviousSeasonKey(season);
-  const needsPriorSeasonTradeData = format === 'dynasty';
+  // Last season is every player's starting point in redraft and dynasty values.
+  const needsPriorSeasonTradeData = true;
   const priorSeasonBundle = previousSeasonKey ? statsBySeason?.[previousSeasonKey] ?? null : null;
   const priorSeasonStats = previousSeasonKey
     ? priorSeasonBundle?.seasonStats ?? null
@@ -585,8 +587,8 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
       || priorSeasonStats
     ) return;
 
-    // Dynasty uses the prior completed season for a multi-year production and
-    // role view. Redraft only needs it for generated defensive/kicker fallback.
+    // The prior completed season gives every player a starting point that this
+    // season's games then move; dynasty also weighs it for a multi-year view.
     void loadStatsForSeason(previousSeasonKey).catch(() => null);
   }, [
     loadStatsForSeason,
@@ -741,8 +743,10 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
   // ── Derived data ────────────────────────────────────────────────────────────
 
   const { slots, rosterPicks } = useMemo(
-    () => buildRosterPicks(tradedPicks, rosters, league, season, draftRounds),
-    [tradedPicks, rosters, league, season, draftRounds],
+    () => buildRosterPicks(tradedPicks, rosters, league, season, draftRounds, {
+      currentSeasonDrafted: isSeasonDraftComplete(league, leagueDrafts, season),
+    }),
+    [tradedPicks, rosters, league, season, draftRounds, leagueDrafts],
   );
 
   // League-specific market adjustments keep KTC's normalized signal aligned
@@ -1997,7 +2001,7 @@ function TradeValueAttribution({ format, leagueType, isAdjusted, onInfoClick, on
         style={{ color: onDark ? 'rgba(255,255,255,0.46)' : 'var(--color-label-quaternary)' }}
       >
         Values from{' '}
-        <span className="font-medium" style={{ color: onDark ? 'rgba(255,255,255,0.68)' : 'var(--color-label-tertiary)' }}>GridShift league utility · 0–100</span>
+        <span className="font-medium" style={{ color: onDark ? 'rgba(255,255,255,0.68)' : 'var(--color-label-tertiary)' }}>GridShift player value · 0–100</span>
         {' · '}{format === 'dynasty' ? 'Dynasty' : 'Redraft'}
         {' · '}{leagueType === 'sf' ? 'Superflex' : '1QB'}
         {isAdjusted && (

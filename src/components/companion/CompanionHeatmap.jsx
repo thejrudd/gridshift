@@ -4,6 +4,7 @@ import { useSleeperBase, useSleeperStatsEnhancing } from '../../context/SleeperC
 import { useTheme } from '../../context/ThemeContext';
 import { getStatisticsScoresEspnWeek } from '../../api/statisticsScoresApi.js';
 import { calcPoints, DEFAULT_SCORING } from '../../utils/scoringEngine';
+import { buildFantasyScoringBreakdown } from '../../utils/fantasyBreakdownRows.js';
 import { buildHeatmapMatchupRatings, getCachedOffenseAllowedTable, getHeatmapCompletedGameWeeks, getHeatmapLatestCompletedWeek, getHeatmapOffenseStatValue, resolveHeatmapOffenseStatMode, sortHeatmapRowsByMatchupRank } from '../../utils/fantasyHeatmapData.js';
 import { getFantasyLeagueMaxWeek } from '../../utils/fantasySeasonWeeks.js';
 import { normalizeEspnScoreboardEvent, NFL_SEASON_PHASES } from '../../utils/espnNflScoreboard.js';
@@ -300,143 +301,9 @@ const TEAM_SORT_OPTIONS = [
   { id: 'division', label: 'Div' },
 ];
 
-// Stat breakdown labels (statKey → display label + whether to show raw value)
-const BREAKDOWN_DEFS = [
-  // Passing
-  { statKey: 'pass_yd',           scoringKey: 'pass_yd',           label: 'Pass Yds',         showStat: true  },
-  { statKey: 'pass_td',           scoringKey: 'pass_td',           label: 'Pass TD',          showStat: true  },
-  { statKey: 'pass_int',          scoringKey: 'pass_int',          label: 'INT Thrown',       showStat: true  },
-  { statKey: 'pass_2pt',          scoringKey: 'pass_2pt',          label: 'Pass 2PT',         showStat: true  },
-  { statKey: 'pass_sack',         scoringKey: 'pass_sack',         label: 'Sacked',           showStat: true  },
-  { statKey: 'pass_cmp',          scoringKey: 'pass_cmp',          label: 'Completions',      showStat: true  },
-  { statKey: 'pass_inc',          scoringKey: 'pass_inc',          label: 'Incompletions',    showStat: true  },
-  { statKey: 'pass_fd',           scoringKey: 'pass_fd',           label: 'Pass 1st Downs',   showStat: true  },
-  // Rushing
-  { statKey: 'rush_yd',           scoringKey: 'rush_yd',           label: 'Rush Yds',         showStat: true  },
-  { statKey: 'rush_td',           scoringKey: 'rush_td',           label: 'Rush TD',          showStat: true  },
-  { statKey: 'rush_2pt',          scoringKey: 'rush_2pt',          label: 'Rush 2PT',         showStat: true  },
-  { statKey: 'rush_fd',           scoringKey: 'rush_fd',           label: 'Rush 1st Downs',   showStat: true  },
-  { statKey: 'rush_att',          scoringKey: 'rush_att',          label: 'Rush Att',         showStat: true  },
-  // Receiving
-  { statKey: 'rec',               scoringKey: 'rec',               label: 'Receptions',       showStat: true  },
-  { statKey: 'rec_yd',            scoringKey: 'rec_yd',            label: 'Rec Yds',          showStat: true  },
-  { statKey: 'rec_td',            scoringKey: 'rec_td',            label: 'Rec TD',           showStat: true  },
-  { statKey: 'rec_2pt',           scoringKey: 'rec_2pt',           label: 'Rec 2PT',          showStat: true  },
-  { statKey: 'rec_fd',            scoringKey: 'rec_fd',            label: 'Rec 1st Downs',    showStat: true  },
-  // Misc
-  { statKey: 'fum_lost',          scoringKey: 'fum_lost',          label: 'Fum Lost',         showStat: true  },
-  { statKey: 'ret_td',            scoringKey: 'ret_td',            label: 'Return TD',        showStat: true  },
-  { statKey: 'st_td',             scoringKey: 'st_td',             label: 'ST TD',            showStat: true  },
-  { statKey: 'kr_td',             scoringKey: 'kr_td',             label: 'Kick Ret TD',      showStat: true  },
-  { statKey: 'pr_td',             scoringKey: 'pr_td',             label: 'Punt Ret TD',      showStat: true  },
-  { statKey: 'blk_kick',          scoringKey: 'blk_kick',          label: 'Blk Kick',         showStat: true  },
-  { statKey: 'blk_kick_ret_td',   scoringKey: 'blk_kick_ret_td',   label: 'Blk Kick TD',      showStat: true  },
-  // Bonuses
-  { statKey: 'bonus_pass_yd_300', scoringKey: 'bonus_pass_yd_300', label: '300+ Pass Yd Bonus', showStat: false },
-  { statKey: 'bonus_pass_yd_400', scoringKey: 'bonus_pass_yd_400', label: '400+ Pass Yd Bonus', showStat: false },
-  { statKey: 'bonus_rush_yd_100', scoringKey: 'bonus_rush_yd_100', label: '100+ Rush Yd Bonus', showStat: false },
-  { statKey: 'bonus_rush_yd_200', scoringKey: 'bonus_rush_yd_200', label: '200+ Rush Yd Bonus', showStat: false },
-  { statKey: 'bonus_rec_yd_100',  scoringKey: 'bonus_rec_yd_100',  label: '100+ Rec Yd Bonus',  showStat: false },
-  { statKey: 'bonus_rec_yd_200',  scoringKey: 'bonus_rec_yd_200',  label: '200+ Rec Yd Bonus',  showStat: false },
-  // Kicker
-  { statKey: 'fgm',               scoringKey: 'fgm',               label: 'FG Made',          showStat: true  },
-  { statKey: 'fgm_0_19',          scoringKey: 'fgm_0_19',          label: 'FG 0–19',          showStat: true  },
-  { statKey: 'fgm_20_29',         scoringKey: 'fgm_20_29',         label: 'FG 20–29',         showStat: true  },
-  { statKey: 'fgm_30_39',         scoringKey: 'fgm_30_39',         label: 'FG 30–39',         showStat: true  },
-  { statKey: 'fgm_0_39',          scoringKey: 'fgm_0_39',          label: 'FG 0–39',          showStat: true  },
-  { statKey: 'fgm_40_49',         scoringKey: 'fgm_40_49',         label: 'FG 40–49',         showStat: true  },
-  { statKey: 'fgm_50_59',         scoringKey: 'fgm_50_59',         label: 'FG 50–59',         showStat: true  },
-  { statKey: 'fgm_60p',           scoringKey: 'fgm_60p',           label: 'FG 60+',           showStat: true  },
-  { statKey: 'fgmiss',            scoringKey: 'fgmiss',            label: 'FG Miss',          showStat: true  },
-  { statKey: 'fgmiss_0_39',       scoringKey: 'fgmiss_0_39',       label: 'FG Miss 0–39',     showStat: true  },
-  { statKey: 'xpm',               scoringKey: 'xpm',               label: 'XP Made',          showStat: true  },
-  { statKey: 'xpmiss',            scoringKey: 'xpmiss',            label: 'XP Miss',          showStat: true  },
-  // IDP
-  { statKey: 'idp_tkl',           scoringKey: 'idp_tkl',           label: 'Tackles',          showStat: true  },
-  { statKey: 'idp_tkl_solo',      scoringKey: 'idp_tkl_solo',      label: 'Solo Tackles',     showStat: true  },
-  { statKey: 'idp_tkl_ast',       scoringKey: 'idp_tkl_ast',       label: 'Ast Tackles',      showStat: true  },
-  { statKey: 'idp_tkl_loss',      scoringKey: 'idp_tkl_loss',      label: 'TFL',              showStat: true  },
-  { statKey: 'idp_sack',          scoringKey: 'idp_sack',          label: 'Sacks',            showStat: true  },
-  { statKey: 'idp_int',           scoringKey: 'idp_int',           label: 'INT',              showStat: true  },
-  { statKey: 'idp_ff',            scoringKey: 'idp_ff',            label: 'Forced Fum',       showStat: true  },
-  { statKey: 'idp_fr',            scoringKey: 'idp_fr',            label: 'Fum Rec',          showStat: true  },
-  { statKey: 'idp_pd',            scoringKey: 'idp_pd',            label: 'Pass Def',         showStat: true  },
-  { statKey: 'idp_qbhit',         scoringKey: 'idp_qbhit',         label: 'QB Hits',          showStat: true  },
-  { statKey: 'idp_safety',        scoringKey: 'idp_safety',        label: 'Safety',           showStat: true  },
-  { statKey: 'idp_def_td',        scoringKey: 'idp_def_td',        label: 'Def TD',           showStat: true  },
-  { statKey: 'idp_blk_kick',      scoringKey: 'idp_blk_kick',      label: 'Blk Kick',         showStat: true  },
-  // D/ST
-  { statKey: 'def_td',            scoringKey: 'def_td',            label: 'D/ST TD',          showStat: true  },
-  { statKey: 'def_2pt',           scoringKey: 'def_2pt',           label: 'D/ST 2PT',         showStat: true  },
-  { statKey: 'def_int_td',        scoringKey: 'def_int_td',        label: 'D/ST INT TD',      showStat: true  },
-  { statKey: 'def_fum_td',        scoringKey: 'def_fum_td',        label: 'D/ST Fum TD',      showStat: true  },
-  { statKey: 'def_ff',            scoringKey: 'def_ff',            label: 'D/ST Forced Fum',  showStat: true  },
-  { statKey: 'def_3_and_out',     scoringKey: 'def_3_and_out',     label: '3-and-Out',        showStat: true  },
-  { statKey: 'def_4_and_stop',    scoringKey: 'def_4_and_stop',    label: '4th Down Stop',    showStat: true  },
-  { statKey: 'def_forced_punts',  scoringKey: 'def_forced_punts',  label: 'Forced Punt',      showStat: true  },
-  { statKey: 'def_pass_def',      scoringKey: 'def_pass_def',      label: 'D/ST Pass Def',    showStat: true  },
-  { statKey: 'def_st_tkl_solo',   scoringKey: 'def_st_tkl_solo',   label: 'D/ST ST Tackle',   showStat: true  },
-  { statKey: 'def_kr_yd',         scoringKey: 'def_kr_yd',         label: 'D/ST KR Yds',      showStat: true  },
-  { statKey: 'def_pr_yd',         scoringKey: 'def_pr_yd',         label: 'D/ST PR Yds',      showStat: true  },
-  { statKey: 'sack',              scoringKey: 'sack',              label: 'D/ST Sack',        showStat: true  },
-  { statKey: 'sack_yd',           scoringKey: 'sack_yd',           label: 'D/ST Sack Yds',    showStat: true  },
-  { statKey: 'int',               scoringKey: 'int',               label: 'D/ST INT',         showStat: true  },
-  { statKey: 'int_ret_yd',        scoringKey: 'int_ret_yd',        label: 'INT Return Yds',   showStat: true  },
-  { statKey: 'safe',              scoringKey: 'safe',              label: 'D/ST Safety',      showStat: true  },
-  { statKey: 'tkl',               scoringKey: 'tkl',               label: 'D/ST Tackles',     showStat: true  },
-  { statKey: 'tkl_solo',          scoringKey: 'tkl_solo',          label: 'D/ST Solo Tkl',    showStat: true  },
-  { statKey: 'tkl_ast',           scoringKey: 'tkl_ast',           label: 'D/ST Ast Tkl',     showStat: true  },
-  { statKey: 'tkl_loss',          scoringKey: 'tkl_loss',          label: 'D/ST TFL',         showStat: true  },
-  { statKey: 'qb_hit',            scoringKey: 'qb_hit',            label: 'D/ST QB Hit',      showStat: true  },
-  { statKey: 'pts_allow',         scoringKey: 'pts_allow',         label: 'Points Allowed',   showStat: true  },
-  { statKey: 'pts_allow_0',       scoringKey: 'pts_allow_0',       label: 'Shutout',          showStat: false },
-  { statKey: 'pts_allow_1_6',     scoringKey: 'pts_allow_1_6',     label: '1-6 Pts Allowed',  showStat: false },
-  { statKey: 'pts_allow_7_13',    scoringKey: 'pts_allow_7_13',    label: '7-13 Pts Allowed', showStat: false },
-  { statKey: 'pts_allow_14_17',   scoringKey: 'pts_allow_14_17',   label: '14-17 Pts Allowed', showStat: false },
-  { statKey: 'pts_allow_18_21',   scoringKey: 'pts_allow_18_21',   label: '18-21 Pts Allowed', showStat: false },
-  { statKey: 'pts_allow_22_27',   scoringKey: 'pts_allow_22_27',   label: '22-27 Pts Allowed', showStat: false },
-  { statKey: 'pts_allow_14_20',   scoringKey: 'pts_allow_14_20',   label: '14-20 Pts Allowed', showStat: false },
-  { statKey: 'pts_allow_21_27',   scoringKey: 'pts_allow_21_27',   label: '21-27 Pts Allowed', showStat: false },
-  { statKey: 'pts_allow_28_34',   scoringKey: 'pts_allow_28_34',   label: '28-34 Pts Allowed', showStat: false },
-  { statKey: 'pts_allow_35_45',   scoringKey: 'pts_allow_35_45',   label: '35-45 Pts Allowed', showStat: false },
-  { statKey: 'pts_allow_46p',     scoringKey: 'pts_allow_46p',     label: '46+ Pts Allowed',  showStat: false },
-  { statKey: 'pts_allow_35p',     scoringKey: 'pts_allow_35p',     label: '35+ Pts Allowed',  showStat: false },
-  { statKey: 'yds_allow',         scoringKey: 'yds_allow',         label: 'Yards Allowed',    showStat: true  },
-  { statKey: 'yds_allow_0_100',   scoringKey: 'yds_allow_0_100',   label: '0-100 Yds Allowed', showStat: false },
-  { statKey: 'yds_allow_100_199', scoringKey: 'yds_allow_100_199', label: '100-199 Yds Allowed', showStat: false },
-  { statKey: 'yds_allow_200_299', scoringKey: 'yds_allow_200_299', label: '200-299 Yds Allowed', showStat: false },
-  { statKey: 'yds_allow_300_349', scoringKey: 'yds_allow_300_349', label: '300-349 Yds Allowed', showStat: false },
-  { statKey: 'yds_allow_350_399', scoringKey: 'yds_allow_350_399', label: '350-399 Yds Allowed', showStat: false },
-  { statKey: 'yds_allow_400_449', scoringKey: 'yds_allow_400_449', label: '400-449 Yds Allowed', showStat: false },
-  { statKey: 'yds_allow_450_499', scoringKey: 'yds_allow_450_499', label: '450-499 Yds Allowed', showStat: false },
-  { statKey: 'yds_allow_500_549', scoringKey: 'yds_allow_500_549', label: '500-549 Yds Allowed', showStat: false },
-  { statKey: 'yds_allow_550p',    scoringKey: 'yds_allow_550p',    label: '550+ Yds Allowed', showStat: false },
-];
-
-function getScoreBreakdown(wEntry, activeScoringSettings, position = null) {
-  const settings = { ...DEFAULT_SCORING, ...activeScoringSettings };
-  const items = [];
-  for (const { statKey, scoringKey, label, showStat } of BREAKDOWN_DEFS) {
-    const statVal = wEntry[statKey];
-    if (!statVal || !settings[scoringKey]) continue;
-    const pts = statVal * settings[scoringKey];
-    if (Math.abs(pts) < 0.005) continue;
-    items.push({ label, statVal: showStat ? statVal : null, pts });
-  }
-  // Position-specific reception bonuses
-  if (position && wEntry.rec) {
-    const bonusKey = position === 'TE' ? 'bonus_rec_te' : position === 'RB' ? 'bonus_rec_rb' : position === 'WR' ? 'bonus_rec_wr' : null;
-    if (bonusKey && settings[bonusKey]) {
-      const pts = wEntry.rec * settings[bonusKey];
-      if (Math.abs(pts) >= 0.005) items.push({ label: `${position} Rec Bonus`, statVal: wEntry.rec, pts });
-    }
-  }
-  // Per-carry bonus
-  if (position === 'RB' && wEntry.rush_att && settings.bonus_rush_att) {
-    const pts = wEntry.rush_att * settings.bonus_rush_att;
-    if (Math.abs(pts) >= 0.005) items.push({ label: 'Carry Bonus', statVal: wEntry.rush_att, pts });
-  }
-  return items.sort((a, b) => Math.abs(b.pts) - Math.abs(a.pts));
+// Shared scoring breakdown, reconciled to the same total the drilldown header shows.
+function getScoreBreakdown(wEntry, activeScoringSettings, position, total) {
+  return buildFantasyScoringBreakdown(wEntry, activeScoringSettings, position, { authoritativeTotal: total }).rows;
 }
 
 // Multi-stop heatmap: dark red → orange → yellow → green
@@ -1569,7 +1436,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
         const val = getHeatmapOffenseStatValue(wEntry, activeScoringSettings, player.position, resolveHeatmapOffenseStatMode(offenseStatMode, activePos));
         if (val <= 0 && !(val < 0 && allowNegativePlayerValues)) continue;
         const breakdown = statMode === 'pts' || statMode === 'pts_allowed'
-          ? getScoreBreakdown(wEntry, activeScoringSettings, player.position)
+          ? getScoreBreakdown(wEntry, activeScoringSettings, player.position, val)
           : null;
         const name = player.full_name || `${player.first_name ?? ''} ${player.last_name ?? ''}`.trim() || playerId;
         const teamSource = wEntry._teamSource ?? 'fallback';
@@ -1606,7 +1473,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
         const val = getDefVal(wEntry, player.position);
         if (val <= 0 && !(val < 0 && allowNegativePlayerValues)) continue;
         const breakdown = effectiveDefStatMode === 'pts'
-          ? getScoreBreakdown(wEntry, activeScoringSettings, player.position)
+          ? getScoreBreakdown(wEntry, activeScoringSettings, player.position, val)
           : null;
         const name = player.full_name || `${player.first_name ?? ''} ${player.last_name ?? ''}`.trim() || playerId;
         const teamSource = wEntry._teamSource ?? 'fallback';

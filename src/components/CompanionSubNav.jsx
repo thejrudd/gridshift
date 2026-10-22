@@ -7,7 +7,6 @@ const VIEWS = [
   { id: 'matchups',  label: 'Matchups', tabGroup: 'team', tourId: 'matchup' },
   { id: 'rosters',   label: 'Rosters', tabGroup: 'team', tourId: 'roster' },
   { id: 'rankings',  label: 'Rankings', tabGroup: 'team' },
-  { id: 'live',      label: 'Live', alpha: true },
   { id: 'schedule',  label: 'Schedule', beta: true, tabGroup: 'team' },
   { id: 'injuries',  label: 'Injuries', beta: true, tabGroup: 'team' },
   { id: 'heatmap',   label: 'Heatmap', tabGroup: 'team' },

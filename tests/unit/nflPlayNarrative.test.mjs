@@ -267,3 +267,22 @@ test('a kickoff landing-zone placement is parsed without invented penalty yards'
   assert.match(narrative.sentence, /placed at LV 40/i);
   assert.doesNotMatch(narrative.sentence, /0 yards/i);
 });
+
+test('a kneel-down reads as taking a knee, not as a run stopped for a loss', () => {
+  const kneel = normalizedPlays(423945).find((play) => /kneels to DAL 34/.test(play.rawDescription ?? play.description ?? ''));
+  assert.ok(kneel, 'fixture kneel-down');
+  const narrative = parsePlayNarrative(kneel);
+  assert.equal(narrative.sentence, 'Jalen Hurts took a knee for a loss of 1 yard.');
+  assert.equal(narrative.label, 'Kneel');
+  assert.equal(narrative.playKind, 'rush');
+});
+
+test('a run for a loss says stopped, and a tackler named Kneeland is not a kneel-down', () => {
+  const narrative = parsePlayNarrative({
+    typeSlug: 'rush',
+    shortText: 'Saquon Barkley -2 Yd Rush',
+    rawText: 'S.Barkley right end to PHI 23 for -2 yards (M.Kneeland).',
+  });
+  assert.equal(narrative.sentence, 'Saquon Barkley was stopped for a loss of 2 yards, tackled by M.Kneeland.');
+  assert.equal(narrative.label, 'Rush');
+});

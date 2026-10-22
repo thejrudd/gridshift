@@ -124,15 +124,17 @@ export default function ValuationInfoSheet({ format, leagueType, scoringSettings
               GridShift player value · 0–100
             </h3>
             <p className="text-sm leading-relaxed" style={{ color: 'var(--color-label)' }}>
-              GridShift values players by fantasy production and expected role, using your league's scoring and
-              starter slots. A 0 means no realistic path to playing time, 50 is the average fantasy-viable player,
-              and 100 is a league-leading player overall. Trade-side totals can exceed 100.
+              GridShift values players by what losing them would cost you in this league: points per game over what
+              the waiver wire offers at their position, with full credit for outscoring the last starter. About 15 is
+              waiver-wire level, 50 is your league's median starter, and 100 is a league-leading player. A 0 means no
+              realistic path to playing time. Trade-side totals can exceed 100.
             </p>
             <p className="text-sm leading-relaxed" style={{ color: 'var(--color-label-secondary)' }}>
-              Production and role are balanced, with mild position scarcity based on league starter slots. When
-              local evidence exists, KTC adds a 25% market signal; if local evidence is missing, KTC can provide
-              an estimate. The local model still works without KTC. Redraft reflects this
-              season, while dynasty includes prior-season evidence. BDL projections can add optional current context.
+              Production carries most of the score, with share of team snaps as expected role and a mild discount
+              for current injury status. When local evidence exists, KTC adds a 25% market signal; if local evidence
+              is missing, KTC can provide an estimate. The local model still works without KTC. Last season is each
+              player's starting point, and this season's games move it; dynasty leans on last season more. BDL
+              projections can add optional evidence.
             </p>
             <div className="rounded-xl px-3 py-2.5 flex gap-4"
               style={{ background: 'var(--color-fill)' }}>
@@ -148,14 +150,15 @@ export default function ValuationInfoSheet({ format, leagueType, scoringSettings
               Current-context sources
             </h3>
             <p className="text-sm leading-relaxed" style={{ color: 'var(--color-label-secondary)' }}>
-              Market values can reflect manager behavior and news that raw statistics do not show. Fresh BALLDONTLIE weekly projections,
-              injury designations, and practice reports may appear as current context beside a player. They do not change the 0–100 score.
+              Market values can reflect manager behavior and news that raw statistics do not show. Fresh BALLDONTLIE weekly projections
+              count as extra production evidence, and injury designations apply a small discount. Practice reports appear as context only.
               BALLDONTLIE credentials and data are optional; missing, stale, or unavailable responses cannot block valuation.
             </p>
             <div className="flex flex-col gap-1">
               {[
-                ['Production sample', 'At least 3 games for local utility'],
-                ['Replacement level', 'Starter demand × league size'],
+                ['Starter line', 'Last starter for your league size and lineup'],
+                ['Waiver line', 'Best unrostered players at the position'],
+                ['Production sample', 'Short samples count less, more so for defenders and kickers'],
                 ['Market influence', 'Bounded secondary adjustment'],
                 ['BDL availability', 'Optional, never required'],
               ].map(([label, val]) => (
@@ -402,9 +405,10 @@ export default function ValuationInfoSheet({ format, leagueType, scoringSettings
                 Defensive Scoring
               </h3>
             <p className="text-sm leading-relaxed" style={{ color: 'var(--color-label-secondary)' }}>
-                Defensive players use the same 0–100 fantasy-viability scale as offense. Production is scored with your
-                league settings and balanced with expected role. Redraft uses this season; dynasty also considers the prior
-                season. A missing key, stale response, or unavailable provider never blocks local values.
+                Defensive players use the same 0–100 scale as offense. Production is scored with your league settings
+                and measured against the starter and waiver lines at the same position, so a deep defensive pool does not
+                inflate values. Positions with many viable unrostered defenders score lower. Last season is the starting point, so a short hot or cold start counts only partly. A missing key, stale
+                response, or unavailable provider never blocks local values.
               </p>
               <div className="rounded-xl px-3 py-2.5 flex gap-4"
                 style={{ background: 'var(--color-fill)' }}>
@@ -464,11 +468,14 @@ export default function ValuationInfoSheet({ format, leagueType, scoringSettings
               Production and expected role
             </h3>
             <p className="text-sm leading-relaxed" style={{ color: 'var(--color-label-secondary)' }}>
-              Fantasy production is compared across supported positions, while role evidence is compared within
-              position and combined. Recent
-              opportunity, available projections, and league starter demand help identify viable players. Sparse
-              evidence is weighted by confidence. A player with no useful evidence stays unavailable rather than
-              being assigned a misleading zero; zero is reserved for a player with no realistic path to playing time.
+              Every position uses one curve: points per game over that position's waiver line, with half credit up to
+              the last starter and full credit beyond it. Your bench size, position limits, and who is already rostered
+              set how deep the waiver wire is. Expected role is the
+              share of team snaps in recent games, or opportunity volume when snaps are not reported. Each player starts
+              from last season's scoring, and this season's games move it by an amount measured from past seasons for
+              each position. Rookies start from the waiver line. A player with no useful
+              evidence stays unavailable rather than being assigned a misleading zero; zero is reserved for a player
+              with no realistic path to playing time.
             </p>
           </section>
 

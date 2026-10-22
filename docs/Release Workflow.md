@@ -22,8 +22,16 @@ After committing, do not run git push. The user pushes manually.
    and obtain explicit user confirmation before moving any entry to Fixed.
 3. Do not move version-specific bugs to Fixed based only on implementation
    assumptions.
-4. Run the required validation and the historical What's New tour gate.
-5. Cross-check release metadata against the actual diff.
+4. Review the proposed commit/release scope and its diff. Give the user a
+   concise list of genuinely new user-facing capabilities in that scope; do
+   not count enhancements or bug fixes as new features. Ask them to confirm or
+   correct the list. If there are no new features, say so and ask them to
+   confirm that there are none. Do not start the What's New tour gate until
+   the user confirms the feature list or confirms that there are no new
+   features.
+5. Run the required validation and, after that confirmation, the historical
+   What's New tour gate.
+6. Cross-check release metadata against the actual diff.
 
 ## Version-bump checklist
 
@@ -43,8 +51,18 @@ src/components/Sidebar.jsx unless the Sidebar implementation itself changes.
 
 ### What's New
 
-For feature releases, ask the user which shipped changes should receive in-app
-What's New tour coverage.
+Before editing src/data/whatsNew.js or running either tour validation command,
+inspect the proposed commit/release scope and its diff. Present the candidate
+list of genuinely new user-facing capabilities; do not count enhancements or
+bug fixes as new features. Ask the user to confirm or correct the list. If no
+new features are present, explicitly say so and ask the user to confirm that
+there are none. Wait for that confirmation before adding or changing What's New
+entries or starting the tour gate.
+
+For feature releases, include which confirmed shipped features the user wants
+covered by the in-app What's New tour in the same confirmation. Do not infer
+tour coverage from the size of the diff. If the user's correction leaves the
+feature list or tour coverage ambiguous, resolve that before proceeding.
 
 Append the new version entry to src/data/whatsNew.js; entries remain oldest
 first.
@@ -70,8 +88,10 @@ anchors, or copy. Patch and bug-fix versions do not receive What's New entries.
 
 ## Historical What's New tour gate
 
-Before every commit, invoke the validate-gridshift-tour skill and validate the
-complete historical tour, not only the target release.
+After the user confirms the new-feature list or confirms that there are no new
+features, invoke the validate-gridshift-tour skill and validate the complete
+historical tour, not only the target release. Never run the tour validation
+commands before that confirmation.
 
 The gate must:
 

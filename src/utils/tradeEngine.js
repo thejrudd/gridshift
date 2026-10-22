@@ -116,6 +116,18 @@ export function pickYearDiscount(year, currentSeason) {
 // ── Draft pick ownership ──────────────────────────────────────────────────────
 
 /**
+ * Whether the league's draft for `season` has already happened.
+ * Uses the season's Sleeper draft status, falling back to league status.
+ */
+export function isSeasonDraftComplete(league, drafts, season) {
+  const seasonKey = String(season ?? '');
+  const seasonDrafts = (drafts ?? []).filter((draft) => String(draft?.season ?? '') === seasonKey);
+  if (seasonDrafts.some((draft) => draft?.status === 'complete')) return true;
+  if (String(league?.season ?? '') !== seasonKey) return false;
+  return ['in_season', 'post_season', 'complete'].includes(league?.status);
+}
+
+/**
  * Build the full draft pick ownership map for all rosters.
  * Extracted from CompanionLeague — used by both League Picks view and Trade Agent.
  *
@@ -124,10 +136,13 @@ export function pickYearDiscount(year, currentSeason) {
  * @param {object} league      - From useSleeper().league
  * @param {string} season      - Current season string (e.g. "2025")
  * @param {number} draftRounds - Max rounds from getLeagueDrafts (null = use fallback)
+ * @param {object} [options]
+ * @param {boolean} [options.currentSeasonDrafted] - True once this season's draft is done;
+ *   its picks are spent, so only future years remain tradable.
  * @returns {{ slots, years, rosterPicks }}
  *   rosterPicks[rosterId][slotKey] = { ownStatus: 'own'|'traded_away', acquired: number[] }
  */
-export function buildRosterPicks(tradedPicks, rosters, league, season, draftRounds) {
+export function buildRosterPicks(tradedPicks, rosters, league, season, draftRounds, { currentSeasonDrafted = false } = {}) {
   if (!tradedPicks || !rosters || !league) return { slots: [], years: [], rosterPicks: {} };
 
   const maxRoundsFromData = tradedPicks.reduce((max, p) => Math.max(max, p.round), 0);
@@ -139,8 +154,12 @@ export function buildRosterPicks(tradedPicks, rosters, league, season, draftRoun
     String(baseYear + 2),
     String(baseYear + 3),
   ]);
-  for (const p of tradedPicks) yearSet.add(p.season);
-  if (tradedPicks.some(p => p.season === season)) yearSet.add(season);
+  // Sleeper keeps returning spent traded picks after a draft, so only keep
+  // years that are still ahead of us.
+  for (const p of tradedPicks) {
+    const pickYear = parseInt(p.season);
+    if (pickYear > baseYear || (pickYear === baseYear && !currentSeasonDrafted)) yearSet.add(String(p.season));
+  }
   const years = [...yearSet].sort();
 
   const slots = [];

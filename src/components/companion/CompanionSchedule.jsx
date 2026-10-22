@@ -613,9 +613,9 @@ function LeagueSchedule({
           ) : (
             entry.visibleGroups.map((group) => {
               const [left, right] = group.sides;
-              const leftPoints = Number(left?.row?.points);
-              const rightPoints = Number(right?.row?.points);
-              const scored = group.isPlayed && Number.isFinite(leftPoints) && Number.isFinite(rightPoints);
+              const leftPoints = getOfficialMatchupRowPoints(left?.row);
+              const rightPoints = getOfficialMatchupRowPoints(right?.row);
+              const scored = group.isPlayed && leftPoints != null && rightPoints != null;
               const leftResult = scored
                 ? (leftPoints > rightPoints ? 'W' : leftPoints < rightPoints ? 'L' : 'T')
                 : null;

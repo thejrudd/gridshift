@@ -6,7 +6,7 @@ const SPARK_W = 240;
 const SPARK_H = 56;
 
 /** Per-game bars with a dashed season-average line. */
-export function SparkBars({ points, format, label, onSelect }) {
+export function SparkBars({ points, format, label, subject, onSelect, selectHint = 'Select to open this game' }) {
   if (!points.length) return null;
   const gap = 2;
   const width = Math.max(2, (SPARK_W - gap * (points.length - 1)) / points.length);
@@ -34,8 +34,12 @@ export function SparkBars({ points, format, label, onSelect }) {
             rx="1.5"
             className={point.v < 0 ? 'is-negative' : ''}
             style={onSelect ? { cursor: 'pointer' } : undefined}
-            onClick={onSelect ? () => onSelect(point.game) : undefined}
-            {...tipAttrs(`Week ${point.game.week} ${point.game.home ? 'vs' : '@'} ${point.game.opp}`, `${label}: ${format(point.v)}`)}
+            // Bars can sit inside a clickable card; the bar's own game wins.
+            onClick={onSelect ? (event) => { event.stopPropagation(); onSelect(point.game); } : undefined}
+            {...tipAttrs(
+              `${subject ? `${subject} · ` : ''}Week ${point.game.week} ${point.game.home ? 'vs' : '@'} ${point.game.opp}`,
+              [`${label}: ${format(point.v)}`, onSelect ? selectHint : null],
+            )}
           />
         );
       })}
@@ -103,23 +107,32 @@ export function ResultsTape({ games, schedule, teamName, darkMode, onOpenGame })
   );
 }
 
-export function QuarterBars({ quarters, teamName }) {
+/** Points per quarter for the team and its opponents. Selecting a quarter filters How they scored. */
+export function QuarterBars({ quarters, teamName, selected, onSelect, filter }) {
   const max = Math.max(...quarters.map((quarter) => Math.max(quarter.f, quarter.a)), 1);
   return (
     <div className="player-dash-surface">
-      <div className="player-dash-legend">
+      <div className="player-dash-legend team-dash-filter-row">
         <span><i />{teamName}</span>
         <span><i className="is-gave" />Opponents</span>
+        {filter}
       </div>
       <div className="team-dash-qbars">
         {quarters.map((quarter) => (
-          <div key={quarter.q} className="team-dash-qbars__col">
+          <button
+            key={quarter.q}
+            type="button"
+            className={`team-dash-qbars__col team-dash-pick ${selected === quarter.q ? 'is-picked' : selected ? 'is-dim' : ''}`}
+            aria-pressed={selected === quarter.q}
+            aria-label={`${quarter.q}: ${teamName} ${quarter.f}, opponents ${quarter.a}`}
+            onClick={() => onSelect?.(quarter.q)}
+          >
             <div className="team-dash-qbars__pair">
-              <div className="is-me" style={{ height: `${(quarter.f / max) * 100}%` }} {...tipAttrs(quarter.q, `${teamName} scored ${quarter.f}`)}><span>{quarter.f}</span></div>
-              <div className="is-opp" style={{ height: `${(quarter.a / max) * 100}%` }} {...tipAttrs(quarter.q, `Opponents scored ${quarter.a}`)}><span>{quarter.a}</span></div>
+              <div className="is-me" style={{ height: `${(quarter.f / max) * 100}%` }}><span>{quarter.f}</span></div>
+              <div className="is-opp" style={{ height: `${(quarter.a / max) * 100}%` }}><span>{quarter.a}</span></div>
             </div>
             <span className="team-dash-qbars__label">{quarter.q}</span>
-          </div>
+          </button>
         ))}
       </div>
     </div>

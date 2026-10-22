@@ -15,6 +15,7 @@ import { DEFAULT_SCORING, importLeagueScoring, normalizeScoringProfile } from '.
 import { getEspnTeamDefensePlayerId, normalizeEspnLeaguePayload } from '../utils/espnFantasyAdapter';
 import { getLegibleTeamColor, getTeamVisualTheme } from '../utils/teamVisualTheme.js';
 import PlayerDashboard from './statistics/player/PlayerDashboard.jsx';
+import { Segmented } from './statistics/player/DashboardParts.jsx';
 import { dashboardGroup } from '../utils/playerSeason/dashboardModel.js';
 import { rosterHasSleeperPlayer } from '../utils/fantasyOwnership.js';
 import { formatPlayerMeasurements } from '../utils/playerMeasurements.js';
@@ -1188,60 +1189,39 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_
         onViewGameStats={onViewGameStats}
         onOpenPlayerBySleeperId={onOpenPlayerBySleeperId}
         seasonsContent={(
-          <div className="space-y-6">
-            <div
-              className="flex flex-col items-stretch justify-between gap-3 rounded-xl px-3 py-3 sm:flex-row sm:items-center"
-              style={{
-                background: 'var(--color-bg-secondary)',
-                border: '1px solid var(--color-separator)',
-                opacity: hasLeague ? 1 : 0.72,
-              }}
-            >
-                <div className="min-w-0 sm:flex-1">
-                  <div className="text-[length:var(--type-label)] font-bold uppercase tracking-[0.18em]" style={{ color: 'var(--color-label-tertiary)' }}>
-                    {activeMode === STATISTICS_MODES.VISUAL ? 'Weekly Visual' : 'Stat Mode'}
-                  </div>
-                  <div className="text-xs mt-0.5" style={{ color: 'var(--color-label-secondary)' }}>
-                    {activeMode === STATISTICS_MODES.VISUAL
-                      ? 'Compare weekly output with opponent averages allowed to the same position.'
-                      : hasLeague
-                        ? (canUseFantasyForActiveYear ? "Using the expanded season's linked league scoring." : 'Fantasy Values are available for seasons with linked league scoring.')
-                        : `Connect a ${fantasyPlatformLabel} league to unlock Fantasy Values.`}
-                  </div>
-                </div>
-              <div className={`grid w-full min-w-0 rounded-lg p-1 sm:w-auto sm:flex-initial ${isDefensiveStatisticsProfile ? 'grid-cols-2 sm:min-w-[240px]' : 'grid-cols-3 sm:min-w-[360px]'}`} style={{ background: 'var(--color-fill)' }}>
-                {MODE_OPTIONS.filter((option) => !(isDefensiveStatisticsProfile && option.id === STATISTICS_MODES.VISUAL)).map((option) => {
-                  const selected = activeMode === option.id;
-                  const disabled =
-                    (option.id === STATISTICS_MODES.FANTASY && !canUseFantasyForActiveYear)
-                    || (option.id === STATISTICS_MODES.VISUAL && !canUseVisualForActiveYear);
-                  return (
-                    <button
-                      key={option.id}
-                      type="button"
-                      onClick={() => { if (!disabled) onModeChange?.(option.id); }}
-                      disabled={disabled}
-                      className="min-h-11 px-2 py-1.5 text-xs font-bold leading-tight transition-colors disabled:cursor-not-allowed sm:min-h-0"
-                      style={{
-                        color: selected ? 'var(--color-signature-fg)' : 'var(--color-label-secondary)',
-                        background: selected ? 'var(--color-signature)' : 'transparent',
-                        borderRadius: '6px',
-                        opacity: disabled ? 0.45 : 1,
-                      }}
-                      aria-pressed={selected}
-                      title={disabled ? 'This mode is available for linked league seasons.' : undefined}
-                    >
-                      {option.label}
-                    </button>
-                  );
-                })}
-              </div>
+          <div className="player-stats-seasons">
+            <div className="player-stats-seasons__bar">
+              <span className="player-dash-meta min-w-0">
+                {activeMode === STATISTICS_MODES.VISUAL
+                  ? 'Compare weekly output with opponent averages allowed to the same position.'
+                  : hasLeague
+                    ? (canUseFantasyForActiveYear ? "Using the expanded season's linked league scoring." : 'Fantasy Values are available for seasons with linked league scoring.')
+                    : `Connect a ${fantasyPlatformLabel} league to unlock Fantasy Values.`}
+              </span>
+              <Segmented
+                label="Stat mode"
+                value={activeMode}
+                onChange={(id) => onModeChange?.(id)}
+                options={MODE_OPTIONS
+                  .filter((option) => !(isDefensiveStatisticsProfile && option.id === STATISTICS_MODES.VISUAL))
+                  .map((option) => {
+                    const disabled =
+                      (option.id === STATISTICS_MODES.FANTASY && !canUseFantasyForActiveYear)
+                      || (option.id === STATISTICS_MODES.VISUAL && !canUseVisualForActiveYear);
+                    return {
+                      id: option.id,
+                      label: option.label,
+                      disabled,
+                      title: disabled ? 'This mode is available for linked league seasons.' : undefined,
+                    };
+                  })}
+              />
             </div>
 
             {/* Stats accordion */}
-            <div className="space-y-2">
+            <div className="player-stats-seasons__list">
               {activeMode === STATISTICS_MODES.VISUAL ? (
-                <Suspense fallback={<div className="rounded-xl p-5 text-sm" style={{ background: 'var(--color-bg-secondary)', border: '1px solid var(--color-separator)', color: 'var(--color-label-secondary)' }}>Loading visual chart...</div>}>
+                <Suspense fallback={<p className="player-dash-state">Loading visual chart...</p>}>
                   <PlayerStatsVisual
                     sleeperId={activeFantasyPlayerId ?? sleeperId}
                     position={playerMeta.position}
@@ -1252,10 +1232,7 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_
                   />
                 </Suspense>
               ) : showRookiePlaceholder ? (
-                <RookieSeasonPlaceholder
-                  honorsByYear={honorsByYear}
-                  accentColor={heroAccent ?? heroBg}
-                />
+                <RookieSeasonPlaceholder honorsByYear={honorsByYear} />
               ) : (
                 <>
                   {visibleYears.map(year => {
@@ -1334,15 +1311,12 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_
   );
 };
 
-const RookieSeasonPlaceholder = ({ honorsByYear, accentColor }) => {
+const RookieSeasonPlaceholder = ({ honorsByYear }) => {
   const allHonors = Object.values(honorsByYear).flat();
   return (
-    <div
-      className="border border-[color:var(--color-separator)] rounded-lg overflow-hidden"
-      style={accentColor ? { borderLeftColor: accentColor, borderLeftWidth: '3px' } : undefined}
-    >
-      <div className="px-4 py-3 bg-[color:var(--color-fill-secondary)] flex items-center gap-2 flex-wrap">
-        <span className="font-semibold">Rookie Season</span>
+    <div className="player-dash-state">
+      <div className="flex items-center justify-center gap-2 flex-wrap">
+        <span className="player-dash-subhead">Rookie Season</span>
         <span className="inline-flex items-center px-1.5 py-0.5 rounded border text-[length:var(--type-label)] font-bold uppercase tracking-wide bg-tint-green-strong text-[color:var(--color-accent-green)] border-tint-green">
           First Year
         </span>
@@ -1352,7 +1326,7 @@ const RookieSeasonPlaceholder = ({ honorsByYear, accentColor }) => {
           </div>
         )}
       </div>
-      <div className="bg-[color:var(--color-bg-secondary)] px-4 py-8 text-center">
+      <div className="mt-3">
         <p className="text-sm font-medium" style={{ color: 'var(--color-label-secondary)' }}>
           No NFL stats yet
         </p>
