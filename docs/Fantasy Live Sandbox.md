@@ -1,5 +1,7 @@
 # Fantasy Live Sandbox
 
+> The Fantasy Live tab was retired; the sandbox now drives the live layer in Fantasy Matchups (`src/hooks/useMatchupLiveFeed.js`, shown through `FantasyBaseOverride`). Names below that referred to `CompanionLive` now mean that hook. Current behavior: [[Fantasy Live]].
+
 A development-only harness for exercising Fantasy Live outside the NFL regular
 season. It substitutes a synthetic fantasy league built from a real, completed
 NFL week and replays that week forward on a scrubbable clock.
@@ -147,14 +149,14 @@ well as forwards:
 `liveSandboxClock.js` owns progress, play/pause, and speed at module scope. The
 panel's **Full** action stops playback and jumps progress directly to 100%,
 making the entire demo week available without waiting for the accelerated
-clock. Its `version` counter triggers a fresh slice in `CompanionLive`, but it
+clock. Its `version` counter triggers a fresh slice in `useMatchupLiveFeed`, but it
 is excluded from request identity so a 500 ms clock tick cannot cancel slower
 hydration for the same matchup.
 
 ### The feed and pace chart accumulate
 
 The sandbox turns the demo play feed **off** (`demoFeedEnabled` in
-`CompanionLive`). That path — `buildDemoTimeline` plus
+`useMatchupLiveFeed`). That path — `buildDemoTimeline` plus
 `buildSharedDemoScoringEvents` — synthesises a whole week of scoring from the
 starters' current totals, which renders the feed and pace chart fully populated
 the moment the page loads. With it off, both build from real observed activity:
@@ -339,6 +341,19 @@ Measured across a replay, the leading ray holds a constant y while its value
 climbs 131.4 → 164.2 → 241.1 → 244.8, and the trailing ray moves only relative
 to it.
 
+### Game state comes from the replay, not the season schedule
+
+The replayed week is a real, completed week, so the season schedule marks every
+game `completed` and its kickoffs are long past on the wall clock. In replay,
+`starterGameStateById` (`useMatchupLiveFeed`) ignores the schedule's
+`completed` flag and measures the fallback remaining-game fraction against the
+replay instant, so game state comes from the replay's game feed and clock.
+Before this, every starter read as final and settled at any replay moment: the
+rows showed nobody yet to finish, and `settledConfirmed` switched the side
+totals (header and chart) to the sliced Sleeper points while the rows kept the
+displayed totals (Sleeper plus pending plays), so mid-replay the header trailed
+the rows.
+
 ### Scrubbing into the middle of a week
 
 `buildDeltaEvents()` skips any player it has no previous entry for, so an empty
@@ -487,7 +502,7 @@ offers **Proj scale** / **Score scale**:
   the chart. The pace rays run off the top; their gutter labels are clamped and
   separated so they stay readable.
 
-`LivePaceChart` takes this as a `scaleMode` prop defaulting to `projection`.
+The retired `LivePaceChart` read this as a `scaleMode` prop; the Matchups chart scales its Lead axis to the margin seen so far and does not use the panel's scale toggle.
 Only the sandbox ever passes anything else, so production rendering is
 untouched — the toggle exists to compare the two before deciding whether the
 alternative is worth shipping.
@@ -519,7 +534,7 @@ just produces failures, so the lookup is skipped rather than attempted.
 ### Rewinding
 
 Scrubbing backwards fires a rewind signal (`subscribeToRewind`), and
-`CompanionLive` drops the accumulated feed, fetched plays, and win-probability
+`useMatchupLiveFeed` drops the accumulated feed, fetched plays, and win-probability
 trail — all of it describes a part of the week no longer reached.
 
 The stat baseline needs one extra guard. After a rewind the previous fetch's
@@ -543,7 +558,7 @@ index, scoring, delta feed, pace chart, win probability — runs unmodified:
 | `src/dev/liveSandbox/LiveSandboxPanel.jsx` | Play/pause, scrub, speed, and full-week controls |
 | `src/dev/liveSandbox/production-stub.js` | Inert stand-in aliased in at build time |
 
-`CompanionLive` merges the sandbox over `useSleeperBase()`, so anything the
+`useMatchupLiveFeed` merges the sandbox over `useSleeperBase()`, so anything the
 sandbox omits falls through to the real context. `App.jsx` allows the
 `/fantasy/live` route past the connect gate when the sandbox is active.
 

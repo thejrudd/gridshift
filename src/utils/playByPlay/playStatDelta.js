@@ -59,9 +59,18 @@ export function estimatePlayPoints(
   roleDetail = null,
   attributionRoles = null,
 ) {
-  return Math.round(
-    calcPoints(buildPlayStatDelta(play, role, roleDetail, attributionRoles), scoringSettings, position) * 100,
-  ) / 100;
+  const delta = buildPlayStatDelta(play, role, roleDetail, attributionRoles);
+  let points = calcPoints(delta, scoringSettings, position);
+  // A tackle stays a generic `idp_tkl` in the stat delta (the text does not say
+  // solo or assisted, and the delta is what Sleeper confirms against). Most IDP
+  // leagues pay solo and assisted tackles rather than `idp_tkl`, which would
+  // price the tackle at 0 and drop the play from the feed. Price it the way the
+  // league does instead: one tackler named reads as solo, several as assisted.
+  if ((Number(delta.idp_tkl) || 0) > 0 && !(Number(scoringSettings?.idp_tkl) || 0)) {
+    const tacklers = (play?.defensiveActors ?? []).filter((actor) => actor.role === PLAY_ROLES.TACKLER).length;
+    points += calcPoints({ [tacklers > 1 ? 'idp_tkl_ast' : 'idp_tkl_solo']: 1 }, scoringSettings, position);
+  }
+  return Math.round(points * 100) / 100;
 }
 
 function getSackYards(play, description) {

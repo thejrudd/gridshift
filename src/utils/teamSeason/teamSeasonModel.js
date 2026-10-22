@@ -55,6 +55,30 @@ function scoringType(type) {
   return 'Other';
 }
 
+const TOUCHDOWN_TYPES = new Set(['Passing TD', 'Rushing TD', 'Defensive TD', 'Return TD']);
+const PLAY_POINTS = { 'Field goal': 3, Safety: 2 };
+
+/**
+ * A scoring play split into the score itself and the try after a touchdown,
+ * read from the play text ("extra point is GOOD", "TWO-POINT CONVERSION
+ * ATTEMPT … ATTEMPT SUCCEEDS"). The feed folds the try into the play's score.
+ */
+export function scoringParts(type, text, pts) {
+  const upper = String(text ?? '').toUpperCase();
+  const touchdown = TOUCHDOWN_TYPES.has(type);
+  const playPts = touchdown ? 6 : PLAY_POINTS[type] ?? pts;
+  if (!touchdown) return { playPts, try: null, tryGood: null, tryPts: 0 };
+  if (/TWO-POINT/.test(upper)) {
+    const good = /ATTEMPT SUCCEEDS/.test(upper);
+    return { playPts, try: 'Two-point conversion', tryGood: good, tryPts: good ? 2 : 0 };
+  }
+  if (/EXTRA POINT/.test(upper)) {
+    const good = /EXTRA POINT IS GOOD/.test(upper);
+    return { playPts, try: 'Extra point', tryGood: good, tryPts: good ? 1 : 0 };
+  }
+  return { playPts, try: null, tryGood: null, tryPts: Math.max(0, pts - 6) };
+}
+
 /**
  * One finished game, from the team's side: box lines for its players, both
  * team stat lines, quarter scores, how every drive ended, and every scoring play.
@@ -114,8 +138,9 @@ export function buildTeamGame(detail, teamAbbr) {
     const me = isHome ? raw?.home_score : raw?.away_score;
     const them = isHome ? raw?.away_score : raw?.home_score;
     if (raw?.scoring_play && me != null && them != null) {
-      if (me > lastMe) scoring.push({ side: 'me', type: scoringType(type), pts: me - lastMe, q: raw.period });
-      if (them > lastOpp) scoring.push({ side: 'opp', type: scoringType(type), pts: them - lastOpp, q: raw.period });
+      const kind = scoringType(type);
+      if (me > lastMe) scoring.push({ side: 'me', type: kind, pts: me - lastMe, q: raw.period, ...scoringParts(kind, raw.text, me - lastMe) });
+      if (them > lastOpp) scoring.push({ side: 'opp', type: kind, pts: them - lastOpp, q: raw.period, ...scoringParts(kind, raw.text, them - lastOpp) });
     }
     if (me != null) lastMe = Math.max(lastMe, me);
     if (them != null) lastOpp = Math.max(lastOpp, them);

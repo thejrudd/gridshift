@@ -257,7 +257,7 @@ test('Fantasy player rows keep their hover glow when the accent rail is hidden',
   await expect.poll(() => row.evaluate((element) => getComputedStyle(element).boxShadow)).not.toBe('none');
 });
 
-test('Trade falls back to prior-production IDP after an insufficient current season', async ({ page }) => {
+test('Trade values an IDP player from a short current-season sample', async ({ page }) => {
   const idpPlayerId = 'idp-401';
   const priorSeason = String(Number(TEST_SEASON) - 1);
   const preseasonLeague = {
@@ -325,7 +325,12 @@ test('Trade falls back to prior-production IDP after an insufficient current sea
   const idpShelfCard = page.getByTestId(`trade-shelf-yours-player-${idpPlayerId}`).filter({ visible: true });
   await expect(idpShelfCard).toBeVisible();
   await expect(idpShelfCard).toContainText('Production Linebacker');
-  await expect(idpShelfCard).toContainText('3,840');
+  // A one-game IDP sample still earns a bounded 0–100 value, never the old raw scale or "—".
+  const value = Number(await idpShelfCard.evaluate((row) => [...row.querySelectorAll('span')]
+    .find((span) => /^\d+$/.test(span.textContent?.trim() ?? '') && getComputedStyle(span).fontVariantNumeric.includes('tabular'))
+    ?.textContent?.trim()));
+  expect(value).toBeGreaterThan(0);
+  expect(value).toBeLessThanOrEqual(100);
 });
 
 test('Trade remains available but shows a current-season hint for previous linked league seasons', async ({ page }) => {
@@ -1446,7 +1451,7 @@ test('Fantasy Matchups locks a historical matchup after stale schedule metadata 
   await expect(page.getByTestId('matchup-forecast-details')).toContainText('no points remaining');
 });
 
-test('Fantasy Matchups desktop controls fill the masthead and show the bench by default', async ({ page }) => {
+test('Fantasy Matchups desktop controls fill the masthead and always show the bench', async ({ page }) => {
   const desktopViewports = [
     { width: 1280, height: 720 },
     { width: 1440, height: 600 },
@@ -1462,7 +1467,8 @@ test('Fantasy Matchups desktop controls fill the masthead and show the bench by 
     const benchRows = page.locator('.companion-matchup-bench-list .companion-matchup-player-row');
     await expect(page.getByRole('button', { name: 'Select matchup' })).toBeVisible();
     await expect(page.locator('.companion-matchup-controls__rail')).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Hide bench players' })).toBeVisible();
+    // The bench is always on; there is no toggle.
+    await expect(page.getByRole('button', { name: /bench players/i })).toHaveCount(0);
     await expect(benchRows.first()).toBeVisible();
 
     const geometry = await page.evaluate(() => {
@@ -1477,25 +1483,14 @@ test('Fantasy Matchups desktop controls fill the masthead and show the bench by 
         masthead: getRect('.companion-matchup-masthead'),
         week: getRect('.companion-matchup-week-trigger'),
         matchupTrigger: getRect('.companion-matchup-picker-trigger'),
-        bench: getRect('button[aria-label="Hide bench players"]'),
       };
     });
     expect(geometry.masthead).not.toBeNull();
     expect(geometry.week).not.toBeNull();
     expect(geometry.matchupTrigger).not.toBeNull();
-    expect(geometry.bench).not.toBeNull();
-    expect(Math.abs(geometry.week.height - geometry.bench.height)).toBeLessThanOrEqual(1);
     expect(Math.abs(geometry.week.height - geometry.matchupTrigger.height)).toBeLessThanOrEqual(1);
     expect(geometry.matchupTrigger.width).toBeGreaterThan(0);
-    expect(Math.abs(geometry.bench.right - geometry.masthead.right)).toBeLessThanOrEqual(1);
   }
-
-  const hideBench = page.getByRole('button', { name: 'Hide bench players' });
-  await hideBench.click();
-  await expect(page.getByRole('button', { name: 'Show bench players' })).toBeVisible();
-  await expect(page.locator('.companion-matchup-bench-list')).toHaveCount(0);
-  await page.getByRole('button', { name: 'Show bench players' }).click();
-  await expect(page.locator('.companion-matchup-bench-list .companion-matchup-player-row').first()).toBeVisible();
 });
 
 test('Fantasy Matchups mobile keeps only VS in the axis and contains the preview sheet', async ({ page }) => {
@@ -2156,3 +2151,56 @@ function renamePlayer(player, fullName) {
     full_name: fullName,
   };
 }
+
+test('Rankings leaves unavailable players and backup quarterbacks without a weekly projection', async ({ page }) => {
+  const projectionPlayers = {
+    ...players,
+    101: {
+      ...players[101],
+      first_name: 'Drew',
+      last_name: 'Lock',
+      full_name: 'Drew Lock',
+      depth_chart_order: 2,
+    },
+    103: {
+      ...players[103],
+      first_name: 'Edgerrin',
+      last_name: 'Cooper',
+      full_name: 'Edgerrin Cooper',
+      injury_status: 'Out',
+      injury_body_part: 'Achilles',
+    },
+    202: {
+      ...players[202],
+      first_name: 'Case',
+      last_name: 'Keenum',
+      full_name: 'Case Keenum',
+      depth_chart_order: 3,
+    },
+  };
+  await page.route('https://api.sleeper.app/v1/players/nfl', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(projectionPlayers),
+    });
+  });
+  await page.goto('/fantasy/rankings');
+  await dismissWhatsNew(page);
+
+  await page.getByRole('button', { name: 'Open rankings filters' }).click();
+  await page.getByRole('button', { name: /Sort rankings by Season Points/ }).click();
+  await page.getByRole('listbox', { name: 'Rankings sort options' })
+    .getByRole('option', { name: 'Projected Points', exact: true })
+    .click();
+
+  const projectionValue = (name) => page.locator('.companion-player-row')
+    .filter({ hasText: name })
+    .locator('.companion-player-row__metric-value')
+    .last();
+
+  await expect(projectionValue('Drew Lock')).toHaveText('—');
+  await expect(projectionValue('Case Keenum')).toHaveText('—');
+  await expect(projectionValue('Edgerrin Cooper')).toHaveText('—');
+  await expect(projectionValue('Third Quarterback')).toHaveText(/^\d+\.\d$/);
+});

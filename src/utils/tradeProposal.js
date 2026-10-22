@@ -1,6 +1,6 @@
 export const TRADE_PROPOSAL_SCHEMA_VERSION = 1;
-export const TRADE_PROPOSAL_VALUE_SCALE_ID = 'fantasy-viability-0-100-v2';
-const LEGACY_TRADE_PROPOSAL_VALUE_SCALE_IDS = new Set(['league-utility-0-100-v1']);
+export const TRADE_PROPOSAL_VALUE_SCALE_ID = 'fantasy-baseline-0-100-v3';
+const LEGACY_TRADE_PROPOSAL_VALUE_SCALE_IDS = new Set(['league-utility-0-100-v1', 'fantasy-viability-0-100-v2']);
 
 export function isLegacyTradeProposalValueScale(snapshot) {
   return snapshot?.valueScaleId !== TRADE_PROPOSAL_VALUE_SCALE_ID;

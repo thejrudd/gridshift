@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSleeperBase } from '../../context/SleeperContext';
 import { useTheme } from '../../context/ThemeContext';
 import { DEFAULT_SCORING } from '../../utils/scoringEngine';
@@ -12,21 +12,32 @@ import { buildFantasyScoringBreakdown, mergeOfficialFantasyTotal } from '../../u
 import { isEspnFantasyGameLogPosition, loadEspnFantasyGameLogWeekRow } from '../../utils/espnFantasyGameLogRows.js';
 import Modal from '../Modal';
 import PlayerAvatar from '../shared/PlayerAvatar.jsx';
-import { CompanionSegmentedControl } from './CompanionSelectorControls.jsx';
 import PlayerStatusBadge from './PlayerStatusBadge.jsx';
 import {
-  buildPlayerHeadlineParts,
-  buildPlayerOutlook,
   buildPlayerProjectionBreakdown,
-  getNoteworthyWeather,
+  getPaceAdjustedProjection,
   getPlayerPerformanceTarget,
   getPlayerMatchupPhase,
-  groupFantasyBreakdownRows,
   matchupNumber,
   resolvePlayerDisplayProjection,
 } from '../../utils/playerMatchupPresentation.js';
 import { buildPlayerDefensePerformance } from '../../utils/playerDefensePerformance.js';
+import { computeWeeklyPositionalRanks } from '../../utils/projectionEngine.js';
 import { buildPlayerMatchupBenchOption } from '../../utils/playerMatchupBenchOption.js';
+import {
+  DRILLDOWN_FORM_WEEKS,
+  buildDrilldownStatLine,
+  buildDrilldownWeeks,
+  buildNextWeekPreview,
+  buildProjectionBridge,
+  buildScoringPace,
+  buildWeekCategoryShift,
+  getDrilldownElapsedFraction,
+  getStatLinePoints,
+  selectDrilldownStatKeys,
+} from '../../utils/playerDrilldownModel.js';
+import { BridgeChart, CategoryShiftChart, OutlookChart, PaceChart, RankStrip, Ring, StatLineBars, TierChart, WeekColumns } from './drilldown/DrilldownCharts.jsx';
+import { fmt, sgn, statTone } from './drilldown/drilldownChartUtils.js';
 import { usePlayerMatchupTimeline } from '../../hooks/usePlayerMatchupTimeline.js';
 import { DRILLDOWN_DEV_SLOTS_ENABLED } from '../../utils/drilldownDevSlots.js';
 import './PlayerMatchupBreakdown.css';
@@ -233,6 +244,17 @@ const formatMatchupGameDate = (value) => {
   if (Number.isNaN(date.getTime())) return null;
   return date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
 };
+// A date-only fallback ("2025-11-23") is a calendar day, not UTC midnight, so
+// it is read in local time. One outside the league season (Sep–Feb) is a
+// placeholder from another year and is not shown.
+const formatSeasonGameDate = (value, season) => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value ?? ''));
+  if (!match) return null;
+  const [year, month, day] = match.slice(1).map(Number);
+  const seasonYear = Number(season);
+  if (Number.isFinite(seasonYear) && !(year === seasonYear || (year === seasonYear + 1 && month <= 2))) return null;
+  return new Date(year, month - 1, day).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+};
 export const formatOrdinal = value => {
   const number = Number(value);
   if (!Number.isFinite(number)) return '—';
@@ -240,20 +262,6 @@ export const formatOrdinal = value => {
   const suffix = mod100 >= 11 && mod100 <= 13 ? 'th' : ({ 1: 'st', 2: 'nd', 3: 'rd' }[number % 10] ?? 'th');
   return `${number}${suffix}`;
 };
-
-function PerformanceTable({ rows, projected = false }) {
-  return (
-    <table className="matchup-performance-table">
-      <caption>{projected ? 'Projected stat line' : 'Fantasy scoring breakdown'}</caption>
-      <thead><tr><th scope="col">Stat</th><th scope="col">Value</th><th scope="col">Fantasy pts</th></tr></thead>
-      <tbody>{rows.map(row => <tr key={row.key ?? row.statKey}>
-        <th scope="row">{row.label}</th><td>{formatStat(row.statVal)}</td>
-        <td className={row.pts < 0 ? 'matchup-negative' : undefined}>{formatNumber(row.pts, 2)}</td>
-      </tr>)}</tbody>
-    </table>
-  );
-}
-
 
 export function getSeasonBenchmark({ player, peerModel, projection }) {
   if (matchupNumber(peerModel?.overall?.ppg) != null && (peerModel?.overall?.games ?? 0) > 0) {
@@ -289,6 +297,7 @@ export function getOpponentEvidenceLabel(context) {
 }
 
 
+// Shared with PlayerMatchupCompare.jsx.
 export function getChartMaximum(...values) {
   const finiteValues = values.flat().map(matchupNumber).filter(value => value != null && value >= 0);
   const maximum = finiteValues.length ? Math.max(...finiteValues) : 0;
@@ -301,492 +310,88 @@ export function getChartPosition(value, maximum) {
   return Math.max(0, Math.min(100, numeric / maximum * 100));
 }
 
-
-
-
-
-
-function ProjectionOpponentDetails({ player, position }) {
-  const opponentContext = player?.opponentFantasyContext ?? (player?.defStrength ? {
-    ...player.defStrength,
-    team: player?.oppTeam,
-    position,
-    currentGames: player.defStrength.gamesAnalyzed,
-    evidenceKind: 'current',
-  } : null);
-  if (!opponentContext) return null;
-  return <details className="matchup-opponent-details"><summary>Opponent sample and ranking methodology</summary>
-    <p>{getOpponentEvidenceLabel(opponentContext)}. Rank 1 is the fewest fantasy points allowed to this position under the active league scoring.</p>
-    {opponentContext.evidenceKind === 'blended' && <p>Current season: {formatNumber(opponentContext.currentPtsAllowedPerGame)} across {opponentContext.currentGames} games · Prior season: {formatNumber(opponentContext.priorPtsAllowedPerGame)} across {opponentContext.priorGames} games. The prior-season share phases out after four current games.</p>}
-    {opponentContext.evidenceKind === 'prior' && <p>This estimate uses {opponentContext.priorGames} prior-season games because current-season evidence is not yet established.</p>}
-  </details>;
-}
-
-function EvidenceGames({ rows = [] }) {
-  if (!rows.length) return null;
-  return <table className="matchup-performance-table matchup-performance-table--evidence">
-    <caption>Contributing games</caption><thead><tr><th scope="col">Week</th><th scope="col">Opponent</th><th scope="col">Fantasy pts</th></tr></thead>
-    <tbody>{rows.map(row => <tr key={row.week}><th scope="row">{row.week}</th><td>{row.opponent ?? row.opp}</td><td>{formatNumber(row.points, 2)}</td></tr>)}</tbody>
-  </table>;
-}
-
-/* ── projected stat line ──
-   Claude Design "Player Drilldown — Splits Rework": the table stays, but the
-   rows are grouped and each one carries a proportional bar so the composition
-   of the projection is visible without reading every decimal. */
-
-const signedPoints = value => `${value > 0 ? '+' : ''}${Number(value).toFixed(2)}`;
-
-function ProjectionStatLine({ rows, total }) {
-  const groups = groupFantasyBreakdownRows(rows);
-  if (!groups.length) return null;
-  // Deductions are part of the composition, so the stack is scaled by gross
-  // points rather than by the positive groups alone. Sizing it on positives
-  // only would draw a projection that scores more than its own total.
-  const gains = groups.filter(group => group.sum > 0);
-  const deductions = groups.filter(group => group.sum < 0);
-  const stackGroups = [...gains, ...deductions];
-  const grossTotal = stackGroups.reduce((sum, group) => sum + Math.abs(group.sum), 0);
-  const widest = Math.max(...rows.map(row => Math.abs(row.pts)), 0.01);
-  return (
-    <div className="pmd-proj">
-      <div className="pmd-proj__head">
-        <span className="pmd-proj__eyebrow">Where the projected points come from</span>
-        <span className="pmd-proj__meta">Per game</span>
-      </div>
-      {grossTotal > 0 && <>
-        <div
-          className="pmd-pstack"
-          role="img"
-          aria-label={`Projected points by group: ${stackGroups.map(group => `${group.label} ${signedPoints(group.sum)}`).join(', ')}.`}
-        >
-          {stackGroups.map(group => (
-            <i
-              key={group.id}
-              data-group={group.id}
-              data-negative={group.sum < 0 ? 'true' : undefined}
-              style={{ width: `${(Math.abs(group.sum) / grossTotal) * 100}%` }}
-            />
-          ))}
-        </div>
-        <ul className="pmd-pkey">
-          {groups.map(group => (
-            <li key={group.id} data-negative={group.sum < 0 ? 'true' : undefined}>
-              <i data-group={group.id} aria-hidden="true" />
-              {group.label}
-              <em className="pmd-num">{signedPoints(group.sum)}</em>
-            </li>
-          ))}
-        </ul>
-      </>}
-      <table className="pmd-ptable">
-        <caption className="sr-only">Projected stat line</caption>
-        <thead>
-          <tr>
-            <th scope="col"><span className="sr-only">Stat</span></th>
-            <th scope="col"><span className="sr-only">Value</span></th>
-            <th scope="col"><span className="sr-only">Share of the projection</span></th>
-            <th scope="col"><span className="sr-only">Fantasy points</span></th>
-          </tr>
-        </thead>
-        {groups.map(group => (
-          <tbody key={group.id} data-group={group.id}>
-            <tr className="pmd-pgrp"><th scope="colgroup" colSpan={4}>{group.label}</th></tr>
-            {group.rows.map(row => (
-              <tr key={row.key ?? row.statKey}>
-                <th scope="row">{row.label}</th>
-                <td className="pmd-num">{formatStat(row.statVal)}</td>
-                <td className="pmd-pbar" aria-hidden="true">
-                  <i
-                    className={row.pts < 0 ? 'is-neg' : undefined}
-                    style={{ width: `${Math.max(2, (Math.abs(row.pts) / widest) * 100)}%` }}
-                  />
-                </td>
-                <td className={`pmd-num${row.pts < 0 ? ' matchup-negative' : ''}`}>{formatNumber(row.pts, 2)}</td>
-              </tr>
-            ))}
-          </tbody>
-        ))}
-        <tfoot>
-          <tr>
-            <th scope="row" colSpan={3}>Projected total</th>
-            <td className="pmd-num">{formatNumber(total, 2)}</td>
-          </tr>
-        </tfoot>
-      </table>
-    </div>
-  );
-}
-
-/* ── season & defense splits ──
-   One shared percentile axis for every rank instead of a stack of separate
-   sliders, the defense tiers as a single comparable graphic, and the repeated
-   qualifying-games caveat reduced to one line per section. */
-
-const SPLIT_TIER_LABELS = { strong: 'Strong', middle: 'Average', weak: 'Weak' };
-
-function getSplitPercentile(result) {
-  if (result?.rank == null || !(result?.peerCount > 1)) return null;
-  return (result.peerCount - result.rank) / (result.peerCount - 1);
-}
-
-function SplitRankRow({ label, value, result, peerLabel }) {
-  const percentile = getSplitPercentile(result);
-  const games = result?.games ?? 0;
-  const tone = percentile == null ? '' : percentile >= 0.75 ? ' is-high' : percentile <= 0.25 ? ' is-low' : '';
-  return (
-    <div className="pmd-prow">
-      <div className="pmd-prow__l">
-        <span>{label}</span>
-        <span className="pmd-num">{value}</span>
-      </div>
-      <div
-        className={`pmd-prow__t${percentile == null ? ' is-dim' : ''}`}
-        role="img"
-        aria-label={percentile == null
-          ? `${label}: rank unavailable on ${games} qualifying ${games === 1 ? 'game' : 'games'}.`
-          : `${label}: rank ${result.rank} of ${result.peerCount} ${peerLabel}.`}
-      >
-        <u />
-        {percentile != null && <i className={tone.trim()} style={{ left: `calc(${percentile * 100}% - 2px)` }} />}
-      </div>
-      <div className={`pmd-prow__r${percentile == null ? ' is-dim' : ' pmd-num'}`}>
-        {percentile == null ? `${games} of 3 games` : `${result.rank} / ${result.peerCount}`}
-      </div>
-    </div>
-  );
-}
-
-function SplitTiers({ metric, measureNoun }) {
-  const opponentTier = metric?.opponent?.bucket ?? null;
-  const highest = Math.max(...metric.buckets.map(bucket => bucket.ppg ?? 0), 1);
-  return (
-    <>
-      <div className="pmd-tiers">
-        {metric.buckets.map((bucket) => {
-          const isOpponent = bucket.id === opponentTier;
-          return (
-            <div
-              key={bucket.id}
-              className={`pmd-tier${isOpponent ? ' is-on' : ''}${bucket.ppg == null ? ' is-empty' : ''}`}
-            >
-              <div className="pmd-tier__l">
-                {SPLIT_TIER_LABELS[bucket.id] ?? bucket.label}
-                {isOpponent && metric.opponent?.team ? ` · ${metric.opponent.team}` : ''}
-              </div>
-              <div className={`pmd-tier__v pmd-num${bucket.ppg == null ? ' is-dim' : ''}`}>
-                {bucket.ppg == null ? '—' : formatNumber(bucket.ppg)}
-              </div>
-              <div className="pmd-tier__c">
-                {bucket.ppg == null ? null : <i style={{ height: `${Math.max(8, (bucket.ppg / highest) * 100)}%` }} />}
-              </div>
-              <div className="pmd-tier__s">
-                {bucket.games === 0 ? 'No games yet' : `${bucket.games} ${bucket.games === 1 ? 'game' : 'games'} · pts/g`}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-      {metric.opponent?.rank != null && <p className="pmd-oppline">
-        <span className="pmd-oppline__b">{metric.opponent.team} {(SPLIT_TIER_LABELS[metric.opponent.bucket] ?? '').toUpperCase()}</span>
-        <span>
-          <strong className="pmd-num">{metric.opponent.rank} of {metric.opponent.teamCount}</strong> defenses · {formatNumber(metric.opponent.perGame)} {measureNoun} allowed/game · {metric.opponent.games} {metric.opponent.games === 1 ? 'game' : 'games'}
-        </span>
-      </p>}
-    </>
-  );
-}
-
-function SplitPool({ opponent, measureNoun }) {
-  if (opponent?.rank == null || !opponent?.teamCount) return null;
-  const teamCount = opponent.teamCount;
-  const edge = Math.ceil(teamCount / 4);
-  const middle = teamCount - edge * 2;
-  return (
-    <>
-      <div className="pmd-pool" role="img" aria-label={`${opponent.team} ranks ${opponent.rank} of ${teamCount} defenses by ${measureNoun} allowed per game.`}>
-        {Array.from({ length: teamCount }, (unused, index) => index + 1).map((rank) => (
-          <i
-            key={rank}
-            className={rank === opponent.rank ? 'is-me' : rank <= edge ? 'is-s' : rank > teamCount - edge ? 'is-w' : 'is-a'}
-          />
-        ))}
-      </div>
-      <div className="pmd-poollab" style={{ gridTemplateColumns: `${edge}fr ${middle}fr ${edge}fr` }}>
-        <span>Strong · {edge}</span><span>Average · {middle}</span><span>Weak · {edge}</span>
-      </div>
-    </>
-  );
-}
-
-function SplitTierGames({ metric, measureNoun }) {
-  const teamCount = metric.opponent?.teamCount ?? null;
-  const edge = teamCount ? Math.ceil(teamCount / 4) : null;
-  const definition = {
-    strong: edge ? `Top quarter — fewest ${measureNoun} allowed (${edge} defenses)` : `Top quarter — fewest ${measureNoun} allowed`,
-    middle: edge ? `Middle half (${teamCount - edge * 2} defenses)` : 'Middle half',
-    weak: edge ? `Bottom quarter — most ${measureNoun} allowed (${edge} defenses)` : `Bottom quarter — most ${measureNoun} allowed`,
-  };
-  return (
-    <div className="pmd-exp">
-      {metric.buckets.map(bucket => (
-        <div className="pmd-exprow" key={bucket.id}>
-          <div className="pmd-exprow__head">
-            <span className="pmd-exprow__k">{SPLIT_TIER_LABELS[bucket.id] ?? bucket.label}</span>
-            <span className={`pmd-exprow__v${bucket.ppg == null ? ' is-dim' : ' pmd-num'}`}>
-              {bucket.ppg == null ? 'No games yet' : `${formatNumber(bucket.ppg)} pts/g`}
-            </span>
-          </div>
-          <div className="pmd-exprow__d">{definition[bucket.id] ?? bucket.label}</div>
-          {bucket.gameRows?.length > 0 && <details className="matchup-evidence">
-            <summary className="matchup-evidence__hint">View contributing games</summary>
-            <EvidenceGames rows={bucket.gameRows} />
-          </details>}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function PlayerPeerContext({ model, season }) {
-  const [metricId, setMetricId] = useState('receiving');
-  const metric = model?.metrics?.find(item => item.id === metricId) ?? model?.metrics?.[0];
-  const measureNoun = metric?.id === 'rushing' ? 'rushing yards' : 'receiving yards';
-  if (!model?.completedThroughWeek) return <p className="matchup-performance-note">Current-season rankings will appear after a complete NFL week and its player stats are available.</p>;
-  const rankRows = [
-    { key: 'overall', label: 'Fantasy pts/game', value: formatNumber(model.overall?.ppg), result: model.overall },
-    ...(model.statRanks ?? []).map(result => ({ key: result.key, label: result.label, value: formatNumber(result.ppg), result })),
-  ];
-  return (
-    <section className="matchup-peer-context" aria-label="Season and opponent rankings">
-      <div className="matchup-performance-section-heading">
-        <h3>Among {model.peerLabel}</h3>
-        <span>{season} · through Week {model.completedThroughWeek}</span>
-      </div>
-      <div className="pmd-peer">
-        {rankRows.map(row => <SplitRankRow key={row.key} label={row.label} value={row.value} result={row.result} peerLabel={model.peerLabel} />)}
-      </div>
-      <div className="pmd-paxis"><span>Bottom of position</span><span>Median</span><span>Top</span></div>
-      {model.overall?.rank == null && <p className="matchup-performance-note">
-        {model.overall?.rankingUnavailableReason ?? 'Ranks unlock at 3 qualifying games.'} The per-game values are real; the placement is not yet.
-      </p>}
-
-      {!!model.metrics?.length && <>
-        <h3>Scoring against defenses like this one</h3>
-        <CompanionSegmentedControl
-          value={metric?.id}
-          options={model.metrics.map(item => ({ value: item.id, label: item.label }))}
-          onChange={setMetricId}
-          ariaLabel="Defense measure"
-          columns={2}
-        />
-        {metric?.coverageReason
-          ? <p className="matchup-performance-note">{metric.coverageReason}</p>
-          : <>
-            <SplitTiers metric={metric} measureNoun={measureNoun} />
-            {metric.buckets.find(bucket => bucket.id === metric.opponent?.bucket)?.ppg == null && <p className="matchup-performance-note">
-              No qualifying games against a {SPLIT_TIER_LABELS[metric.opponent?.bucket]?.toLowerCase() ?? 'comparable'} defense yet this season. The tier split needs games before it can say anything.
-            </p>}
-
-            <h3>How the defense tiers are built</h3>
-            <p className="matchup-performance-note">{metric.definition} The strongest quarter is Strong, the middle half is Average and the weakest quarter is Weak; that current-season classification is applied to every opponent already faced this season.</p>
-            <SplitPool opponent={metric.opponent} measureNoun={measureNoun} />
-
-            <h3>Games in each tier</h3>
-            <SplitTierGames metric={metric} measureNoun={measureNoun} />
-            <p className="matchup-performance-note">Game counts describe the sample size, not statistical confidence.</p>
-          </>}
-      </>}
-    </section>
-  );
-}
-
-
-
-
-function ProjectionDetails({ projection }) {
-  const factors = projection?.factors;
-  if (!factors) return null;
-  const source = factors.source === 'balldontlie' ? 'BALLDONTLIE projection' : factors.source === 'prior-season' ? 'GridShift projection using prior-season history' : 'GridShift projection';
-  const adjustments = [
-    ['Matchup', factors.oppFactor], ['Home / away', factors.locationFactor],
-    ['Weather', factors.weatherFactor],
-    ['Availability', factors.availabilityFactor],
-  ].filter(([, value]) => matchupNumber(value) != null);
-  return <div className="matchup-projection-details__content">
-    <h3>Projection source and expected range</h3>
-    <p>{source}. {factors.source === 'balldontlie' ? 'Available projected stats are translated using the active league scoring.' : 'Historical scoring is adjusted for the available matchup, venue, weather, and availability inputs.'}</p>
-    <p>The expected range applies this projection to the player’s historical 25th-to-75th-percentile scoring profile. It describes a likely band, not a guaranteed floor or ceiling.</p>
-    {adjustments.length > 0 && <dl>{adjustments.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{formatNumber(value, 2)}×</dd></div>)}</dl>}
-    {(factors.recentBase != null || factors.seasonBase != null) && <p>Recent average: {formatNumber(factors.recentBase)} · Season average: {formatNumber(factors.seasonBase)}</p>}
-  </div>;
-}
-
-/* ── design slots ──
-   One slot order at every width, selected entirely by game phase. There is no
-   performance view switcher: pregame shows the projection briefing, live shows
-   accumulating points and play contributions, final shows the settled result. */
+/* ── drilldown body ──
+   Claude Design "Player Drilldown Dashboard": one hero row (key number +
+   phase chart), then evidence sections in a two-column grid at wide widths.
+   Game phase alone selects the content; there is no view switcher. */
 
 export const ACCENT = 'var(--color-accent)';
 export const POSITIVE = 'var(--color-accent-green)';
 export const NEGATIVE = 'var(--color-accent-red)';
 export const CAUTION = 'var(--color-accent-orange)';
 
-function Emphasis({ parts }) {
-  if (!parts?.length) return null;
-  return <p className="pmd-headline">
-    {parts.map((part, index) => (part.emphasis
-      ? <em key={index}>{part.text}</em>
-      : <span key={index}>{part.text}</span>))}
-  </p>;
-}
+const TIER_LABELS = { strong: 'Strong', middle: 'Average', weak: 'Weak' };
+const SHORT_STAT_LABELS = {
+  rec: 'rec', rec_yd: 'rec yds', rec_td: 'rec TD', rush_yd: 'rush yds', rush_td: 'rush TD', rush_att: 'att',
+  pass_yd: 'pass yds', pass_td: 'pass TD', pass_int: 'INT', pass_cmp: 'cmp', fgm: 'FG', xpm: 'XP', fum_lost: 'fum lost',
+};
 
-function BulletBar({ value, tick, tickLabel, band, bandLabel, tone }) {
-  const maximum = getChartMaximum(value, tick, band?.[1]);
-  const valuePosition = getChartPosition(value, maximum);
-  const tickPosition = getChartPosition(tick, maximum);
-  const lowPosition = getChartPosition(band?.[0], maximum);
-  const highPosition = getChartPosition(band?.[1], maximum);
-  const hasBand = lowPosition != null && highPosition != null && highPosition > lowPosition;
-  if (valuePosition == null && tickPosition == null) return null;
-  return <>
-    <div className="pmd-bb" aria-hidden="true">
-      {hasBand && <span className="pmd-bb__band" style={{ left: `${lowPosition}%`, width: `${highPosition - lowPosition}%` }} />}
-      {valuePosition != null && <span className="pmd-bb__fill" style={{ width: `${valuePosition}%`, background: tone }} />}
-      {tickPosition != null && <span className="pmd-bb__tick" style={{ left: `${tickPosition}%` }} />}
-    </div>
-    <div className="pmd-legend">
-      {tickPosition != null && tickLabel && <span><i className="is-tick" />{tickLabel}</span>}
-      {hasBand && bandLabel && <span><i className="is-band" />{bandLabel}</span>}
-    </div>
-  </>;
-}
+const formatCount = value => value == null ? '—' : Number.isInteger(Number(value)) ? String(Number(value)) : Number(value).toFixed(1);
+const matchupLabel = (opponent, isHome) => opponent ? `${isHome === false ? 'at' : 'vs'} ${opponent}` : 'Opponent unavailable';
+const mean = values => {
+  const finite = values.filter(value => Number.isFinite(value));
+  return finite.length ? finite.reduce((sum, value) => sum + value, 0) / finite.length : null;
+};
 
-function Hero({ model }) {
-  if (!model) return null;
-  return <section className="pmd-sec" data-slot="hero" aria-label={model.overline}>
-    <div className="pmd-eyebrow">{model.overline}</div>
-    <div className="pmd-hero__top">
-      <strong className={`pmd-big pmd-num ${model.delta ? `pmd-${model.delta.tone}` : 'pmd-flat'}`}>{formatNumber(model.value, model.digits ?? 1)}</strong>
-      <span className="pmd-unit pmd-cond">PTS</span>
-      {model.delta && <div className="pmd-delta">
-        <div className={`pmd-delta__v pmd-num pmd-${model.delta.tone}`}>{model.delta.v}</div>
-        <div className="pmd-delta__l">{model.delta.l}</div>
-      </div>}
-    </div>
-    <BulletBar {...model.bar} />
-    {model.note && <p className="matchup-performance-note">{model.note}</p>}
+function Section({ title, meta, proposed = false, span = false, slot, children, label }) {
+  return <section className={`pdd-sec${span ? ' is-span' : ''}`} data-slot={slot} aria-label={label ?? (typeof title === 'string' ? title : undefined)}>
+    <h3 className="pdd-sec__h">
+      <span>{title}{proposed && <span className="pdd-tag">Preview</span>}</span>
+      {meta && <span className="pdd-sec__m">{meta}</span>}
+    </h3>
+    {children}
   </section>;
 }
 
-function RankSlot({ model }) {
-  if (!model) return null;
-  return <section className="pmd-sec" data-slot="rank" aria-label={model.ariaLabel}>
-    <div className="pmd-rank__row">
-      <div className="pmd-rank__v pmd-num">{model.value}</div>
-      <div className="pmd-rank__meta">{model.title}{model.detail && <> · <strong>{model.detail}</strong></>}{model.note && <><br />{model.note}</>}</div>
-    </div>
-    {model.position != null && <>
-      <div className="pmd-rail" role="img" aria-label={model.ariaLabel}>
-        <span className="pmd-rail__mark" style={{ left: `calc(${model.position}% - 2px)` }} />
-      </div>
-      <div className="pmd-rail__ends"><span>Best in position</span><span>Worst</span></div>
-    </>}
-  </section>;
+function Legend({ items }) {
+  return <div className="pdd-lg">{items.filter(Boolean).map(item => <span key={item.label}><i className={item.kind} style={item.style} />{item.label}</span>)}</div>;
 }
 
-function Cells({ cells }) {
-  if (!cells?.length) return null;
-  return <div className="pmd-cells" data-slot="cells" style={{ '--pmd-cells': cells.length }}>
-    {cells.map(cell => <div className="pmd-cell" key={cell.label}>
-      <div className="pmd-cell__l">{cell.label}</div>
-      <div className="pmd-cell__v pmd-num">{cell.value}</div>
-      <div className="pmd-cell__s">{cell.detail}</div>
-      {cell.bar != null && <div className="pmd-mbar" aria-hidden="true">
-        <i style={{ width: `${Math.max(0, Math.min(1, cell.bar)) * 100}%`, background: cell.tone }} />
-      </div>}
+function PlayList({ events }) {
+  return <div className="pmd-plays">
+    {events.map(event => <div className={`pmd-play${event.kind === 'td' ? ' is-td' : ''}`} key={event.id}>
+      <div className="pmd-play__t pmd-num">{event.glance?.clock || '—'}</div>
+      <div className="pmd-play__d">{event.desc}</div>
+      <div className={`pmd-play__p pmd-num ${event.pts < 0 ? 'pmd-down' : 'pmd-up'}`}>{signed(event.pts)}</div>
     </div>)}
   </div>;
 }
 
-function Ladder({ model }) {
-  if (!model?.rows?.length) return null;
-  const maximum = getChartMaximum(model.rows.flatMap(row => [row.points, row.target]), model.average);
-  const averagePosition = getChartPosition(model.average, maximum);
-  return <section className="pmd-sec" data-slot="ladder" aria-label={model.title}>
-    <div className="pmd-eyebrow">{model.title}</div>
-    <div className="pmd-ladder">
-      {model.rows.map(row => {
-        const points = matchupNumber(row.points);
-        const position = getChartPosition(points, maximum);
-        const target = matchupNumber(row.target);
-        const targetPosition = getChartPosition(target, maximum);
-        const benchmark = target ?? matchupNumber(model.average);
-        const above = benchmark == null || points == null ? null : points >= benchmark;
-        return <div className="pmd-lrow" key={`${row.week}-${row.opponent ?? row.opp ?? ''}`}>
-          <div className="pmd-lrow__k">Wk {row.week} · {row.opponent ?? row.opp ?? '—'}</div>
-          <div className="pmd-lrow__t" aria-hidden="true">
-            {position != null && <i style={{ width: `${position}%`, background: above == null ? ACCENT : above ? POSITIVE : NEGATIVE }} />}
-            {averagePosition != null && <u className="is-average" style={{ left: `${averagePosition}%` }} />}
-            {targetPosition != null && <u className="is-target" style={{ left: `${targetPosition}%` }} />}
-          </div>
-          <div className={`pmd-lrow__v pmd-num ${above == null ? '' : above ? 'pmd-up' : 'pmd-down'}`} data-benchmark={benchmark == null ? undefined : formatNumber(benchmark)}>{formatNumber(points)}</div>
-        </div>;
-      })}
-    </div>
-    {(model.average != null || model.targetLabel) && <div className="pmd-legend">
-      {model.average != null && <span><i className="is-tick" style={{ background: 'var(--color-label-tertiary)' }} />{model.averageLabel}</span>}
-      {model.targetLabel && <span><i className="is-target" />{model.targetLabel}</span>}
-    </div>}
-  </section>;
-}
-
 function Plays({ model }) {
   if (!model || model.status === 'idle') return null;
-  const events = model.events ?? [];
-  return <section className="pmd-sec" data-slot="plays" aria-label="Estimated play contributions">
-    <div className="pmd-eyebrow">What earned the points{model.stale ? ' · latest available play data' : ''}</div>
+  const events = (model.events ?? []).slice().sort((left, right) => (right.order ?? 0) - (left.order ?? 0));
+  return <Section title="Scoring plays" meta={events.length ? `${events.length} ${events.length === 1 ? 'play' : 'plays'}` : null} label="Estimated play contributions" span>
     {model.status === 'loading'
-      ? <p className="matchup-performance-note">Loading estimated play contributions…</p>
+      ? <p className="matchup-performance-note">Loading scoring plays…</p>
       : events.length > 0
-        ? <div className="pmd-plays">
-          {events.map(event => <div className="pmd-play" key={event.id}>
-            <div className="pmd-play__t pmd-num">{event.glance?.clock ?? '—'}</div>
-            <div className="pmd-play__d">{event.desc}</div>
-            <div className={`pmd-play__p pmd-num ${event.pts < 0 ? 'pmd-down' : 'pmd-up'}`}>{signed(event.pts)}</div>
-          </div>)}
-        </div>
-        : <p className="matchup-performance-note">{model.message ?? 'Estimated play contributions are unavailable for this game.'}</p>}
-    <p className="matchup-performance-note">Estimated play contributions; bonuses, corrections and missing plays can differ from the official total.</p>
-  </section>;
+        ? <PlayList events={events} />
+        : <p className="matchup-performance-note">{model.message ?? 'Scoring plays are unavailable for this game.'}</p>}
+  </Section>;
 }
 
 function Swap({ option, onView }) {
   if (!option || !onView) return null;
   const candidate = option.player;
   const name = candidate?.full_name ?? candidate?.name ?? 'Bench player';
-  return <div className="pmd-wrap" data-slot="swap">
-    <section className="pmd-swap" aria-label="Higher projected bench option">
-      <div className="pmd-swap__h">Higher projected option on your bench</div>
-      <button type="button" className="pmd-swap__b" onClick={() => onView(candidate.id)} aria-label={`View ${name} bench comparison`}>
-        <PlayerAvatar player={candidate} name={name} size={34} />
-        <span className="pmd-swap__identity">
-          <span className="pmd-swap__n">{name}</span>
-          <span className="pmd-swap__s">{[candidate.position, candidate.team, option.slot].filter(Boolean).join(' · ')}</span>
-        </span>
-        {candidate.availabilityStatus && <PlayerStatusBadge status={candidate.availabilityStatus} compact />}
-        <span className="pmd-swap__v">
-          <strong className="pmd-num">{formatNumber(option.projected)}</strong>
-          <small>+{formatNumber(option.improvement)} projected pts</small>
-        </span>
-      </button>
-    </section>
-  </div>;
+  return <Section title="Better bench option" span label="Better bench option">
+    <button type="button" className="pmd-swap__b" onClick={() => onView(candidate.id)} aria-label={`View ${name} bench comparison`}>
+      <PlayerAvatar player={candidate} name={name} size={40} />
+      <span className="pmd-swap__identity">
+        <span className="pmd-swap__n">{name}</span>
+        <span className="pmd-swap__s">{[candidate.position, candidate.team, option.slot].filter(Boolean).join(' · ')}</span>
+      </span>
+      {candidate.availabilityStatus && <PlayerStatusBadge status={candidate.availabilityStatus} compact />}
+      <span className="pmd-swap__v">
+        <strong className="pmd-num">{formatNumber(option.projected)}</strong>
+        <small>+{formatNumber(option.improvement)}</small>
+      </span>
+    </button>
+  </Section>;
 }
 
 function DevSlot({ items }) {
   if (!DRILLDOWN_DEV_SLOTS_ENABLED || !items?.length) return null;
-  return <div className="pmd-wrap" data-slot="slot">
+  return <div className="pdd-sec is-span" data-slot="slot">
     <div className="pmd-slot">
       <div className="pmd-slot__l">{'// not wired yet'}</div>
       <div className="pmd-slot__i">{items.map(item => <div key={item}>{item}</div>)}</div>
@@ -794,35 +399,29 @@ function DevSlot({ items }) {
   </div>;
 }
 
-function DiscRow({ label, hint, children }) {
+function DiscRow({ label, children }) {
   if (!children) return null;
   return <details>
-    <summary>{label}{hint && <span className="pmd-disc__hint">{hint}</span>}</summary>
+    <summary>{label}</summary>
     <div className="pmd-disc__body">{children}</div>
   </details>;
 }
 
 function buildHeroModel({ phase, total, projectionView, seasonBenchmark, performanceTarget = null }) {
   const projected = matchupNumber(projectionView?.projection?.projected);
-  const low = matchupNumber(projectionView?.projection?.min);
-  const high = matchupNumber(projectionView?.projection?.max);
-  const band = low != null && high != null && high > low ? [low, high] : null;
-  const bandLabel = band ? `Likely range ${formatNumber(low)}–${formatNumber(high)}` : null;
   const season = matchupNumber(seasonBenchmark?.value);
 
   if (phase === 'pregame') {
     if (projected == null) return null;
+    const difference = season != null ? projected - season : null;
     return {
       overline: 'Projected fantasy points',
       value: projected,
-      delta: null,
-      bar: {
-        value: projected,
-        tick: season,
-        tickLabel: season != null ? `${seasonBenchmark.label} ${formatNumber(season)}` : null,
-        band,
-        bandLabel,
-        tone: ACCENT,
+      tone: 'flat',
+      delta: difference == null ? null : {
+        v: signed(difference),
+        l: `vs ${formatNumber(season)} ${seasonBenchmark.label.toLowerCase()}`,
+        tone: difference >= 0 ? 'up' : 'down',
       },
     };
   }
@@ -834,19 +433,12 @@ function buildHeroModel({ phase, total, projectionView, seasonBenchmark, perform
     overline: phase === 'final' ? 'Final fantasy points' : 'Fantasy points so far',
     value: scored,
     digits: 2,
+    tone: difference == null ? 'flat' : difference >= 0 ? 'up' : 'down',
     note: scored == null ? 'Actual scoring has not been reported for this player.' : null,
     delta: difference == null ? null : {
       v: signed(difference),
       l: `vs ${formatNumber(target)} ${phase === 'final' ? 'projected' : 'expected pace'}`,
       tone: difference >= 0 ? 'up' : 'down',
-    },
-    bar: {
-      value: scored,
-      tick: projected,
-      tickLabel: projected != null ? `${projectionView.label} ${formatNumber(projected)}` : null,
-      band,
-      bandLabel,
-      tone: difference == null ? ACCENT : difference >= 0 ? POSITIVE : NEGATIVE,
     },
   };
 }
@@ -863,97 +455,154 @@ function buildRankModel({ phase, rank, weekRank, position, week }) {
     QB: 'QBs', RB: 'RBs', WR: 'WRs', TE: 'TEs', K: 'kickers',
     DEF: 'defenses', DL: 'defensive linemen', LB: 'linebackers', DB: 'defensive backs',
   }[String(label).toUpperCase()] ?? `${label || 'position'} players`;
-  if (rankValue == null) {
-    return {
-      value: '—',
-      title: useWeek ? `Week ${week} finish` : 'Season points rank',
-      detail: 'Not established',
-      note: 'A rank appears once positional scoring data is available.',
-      position: null,
-      ariaLabel: 'Rank not established',
-    };
-  }
+  const title = useWeek ? `Week ${week} finish` : 'Season rank';
+  if (rankValue == null) return { title, value: '—', detail: 'Not established' };
   return {
+    title,
     value: `${label}${rankValue}`,
-    title: useWeek ? `Week ${week} finish` : 'Season points rank',
-    detail: peerCount != null && peerCount > 0 ? `${formatOrdinal(rankValue)} of ${peerCount}` : `${formatOrdinal(rankValue)} among ${rankAudience}`,
-    note: useWeek ? null : 'by total season fantasy points',
-    position: peerCount > 1 ? Math.max(0, Math.min(100, (rankValue - 1) / (peerCount - 1) * 100)) : null,
-    ariaLabel: `${useWeek ? `Week ${week} finish` : 'Season points rank'} ${rankValue}${peerCount > 0 ? ` of ${peerCount}` : ''} ${label} players.`,
+    detail: peerCount != null && peerCount > 0 ? `of ${peerCount}` : `${formatOrdinal(rankValue)} among ${rankAudience}`,
   };
 }
 
-function buildPregameCells({ player, position, seasonBenchmark, opponentContext, noteworthyWeather }) {
-  const allowed = matchupNumber(opponentContext?.ptsAllowedPerGame);
-  const leagueAllowed = matchupNumber(opponentContext?.leagueAveragePtsAllowed);
-  const rank = matchupNumber(opponentContext?.rank);
-  const teamCount = matchupNumber(opponentContext?.teamCount);
-  const difference = allowed != null && leagueAllowed != null ? allowed - leagueAllowed : null;
-  const season = matchupNumber(seasonBenchmark?.value);
-  const wind = matchupNumber(player?.weather?.wind_kph);
-  const weather = player?.weather;
-  const hasWeatherData = weather != null && ['temp_c', 'wind_kph', 'precipitation_mm']
-    .some((key) => matchupNumber(weather[key]) != null);
-  const indoor = player?.isIndoor === true;
-  const cells = [
-    {
-      label: player?.oppTeam ? `${player.oppTeam} vs ${position}` : `Opponent vs ${position}`,
-      value: rank != null ? `#${rank}` : formatNumber(allowed),
-      detail: allowed != null
-        ? `${formatNumber(allowed)} pts allowed/game${leagueAllowed != null ? ` · ${formatNumber(leagueAllowed)} league average` : ''}`
-        : getOpponentEvidenceLabel(opponentContext),
-      bar: rank != null && teamCount ? rank / teamCount : null,
-      tone: difference == null ? ACCENT : difference >= 0 ? POSITIVE : NEGATIVE,
-    },
-    {
-      label: seasonBenchmark.label,
-      value: formatNumber(season),
-      detail: seasonBenchmark.source,
-      bar: season != null ? Math.min(1, season / getChartMaximum(season)) : null,
-      tone: ACCENT,
-    },
+function KeyTiles({ tiles }) {
+  const visible = tiles.filter(Boolean);
+  if (!visible.length) return null;
+  return <div className="pdd-mk">
+    {visible.map(tile => {
+      const content = <>
+        <span className="pmd-eyebrow">{tile.label}</span>
+        <b className={`pmd-num${tile.tone ? ` pdd-${tile.tone}` : ''}`}>{tile.value}{tile.em && <em className={`pdd-${tile.em.tone}`}>{tile.em.text}</em>}</b>
+        {tile.detail && <span>{tile.detail}</span>}
+      </>;
+      return tile.onClick
+        ? <button key={tile.label} type="button" className="pdd-mk__btn" aria-label={tile.ariaLabel} title={tile.title} onClick={tile.onClick}>{content}</button>
+        : <div key={tile.label}>{content}</div>;
+    })}
+  </div>;
+}
+
+function PointsPopover({ title, line }) {
+  if (!line) return null;
+  const rows = [
+    ...line.items.filter(item => item.pts !== 0 || item.value),
+    ...(line.other != null ? [{ key: 'other', label: 'Other scoring', value: null, pts: line.other }] : []),
   ];
-  if (indoor) {
-    cells.push({ label: 'Conditions', value: 'Indoor', detail: 'Weather not applied', bar: 0, tone: ACCENT });
-  } else if (noteworthyWeather) {
-    cells.push({
-      label: 'Weather risk',
-      value: wind != null ? String(Math.round(wind)) : 'Flagged',
-      detail: wind != null ? 'km/h wind — flagged by model' : noteworthyWeather.label,
-      bar: 0.72,
-      tone: CAUTION,
-    });
-  } else {
-    const formatted = hasWeatherData ? formatWeather(weather, false) : null;
-    cells.push({
-      label: 'Conditions',
-      value: formatted ?? 'Outdoor',
-      detail: formatted ? 'No significant weather impact' : 'Weather data unavailable',
-      bar: formatted ? 0.25 : null,
-      tone: ACCENT,
-    });
-  }
-  return cells;
+  return <div className="pdd-tip pdd-tip--bd" role="dialog" aria-label={title}>
+    <b>{title}</b>
+    <div className="pdd-bdt">
+      {rows.map(row => <span key={row.key} className="pdd-bdt__r">
+        <span>{row.label}</span>
+        <span className="pdd-bdt__s pmd-num">{row.value == null ? '' : formatCount(row.value)}</span>
+        <span className="pdd-bdt__p pmd-num">{row.pts < 0 ? signed(row.pts) : formatNumber(row.pts)}</span>
+      </span>)}
+      <span className="pdd-bdt__r is-total"><span>Total</span><span /><span className="pdd-bdt__p pmd-num">{formatNumber(line.total)}</span></span>
+    </div>
+  </div>;
 }
 
-function buildFinalCells(rows) {
-  const scoring = rows.filter(row => matchupNumber(row.pts) != null && row.pts !== 0);
-  if (!scoring.length) return null;
-  const ranked = [...scoring].sort((a, b) => Math.abs(b.pts) - Math.abs(a.pts)).slice(0, 3);
-  const maximum = Math.max(...ranked.map(row => Math.abs(row.pts)));
-  return ranked.map(row => ({
-    label: row.label,
-    value: formatStat(row.statVal),
-    detail: `${signed(row.pts)} pts`,
-    bar: maximum > 0 ? Math.abs(row.pts) / maximum : null,
-    tone: row.pts < 0 ? NEGATIVE : row.pts > 0 ? POSITIVE : ACCENT,
+function Hero({ model, popover, tiles }) {
+  const [open, setOpen] = useState(false);
+  const pointer = useRef('mouse');
+  if (!model) return <div className="pdd-k"><KeyTiles tiles={tiles} /></div>;
+  const digits = model.digits ?? 1;
+  const bigClass = `pmd-big pmd-num pmd-${model.tone}`;
+  // Hover reveals the breakdown with a mouse; touch toggles it with a tap and
+  // keyboard focus opens it, matching the design's tooltip behavior.
+  return <div className="pdd-k">
+    <span className="pmd-eyebrow">{model.overline}</span>
+    {popover && model.value != null
+      ? <button
+        type="button"
+        className={`${bigClass} pdd-big--btn`}
+        aria-expanded={open}
+        aria-label={`${formatNumber(model.value, digits)} points. Show where the points come from.`}
+        onPointerDown={(event) => { pointer.current = event.pointerType; }}
+        onPointerEnter={(event) => { if (event.pointerType === 'mouse') setOpen(true); }}
+        onPointerLeave={(event) => { if (event.pointerType === 'mouse') setOpen(false); }}
+        onClick={() => { if (pointer.current !== 'mouse') setOpen(current => !current); else setOpen(true); }}
+        onFocus={(event) => { if (event.currentTarget.matches?.(':focus-visible')) setOpen(true); }}
+        onBlur={() => setOpen(false)}
+        onKeyDown={(event) => { if (event.key === 'Escape') setOpen(false); }}
+      >{formatNumber(model.value, digits)}<small>PTS</small></button>
+      : <strong className={bigClass}>{formatNumber(model.value, digits)}<small>PTS</small></strong>}
+    {open && popover}
+    {model.delta && <span className={`pdd-dl pmd-${model.delta.tone}`}><span className="pmd-num">{model.delta.v}</span> <span>{model.delta.l}</span></span>}
+    {model.note && <p className="matchup-performance-note">{model.note}</p>}
+    <KeyTiles tiles={tiles} />
+  </div>;
+}
+
+function averageLine(lines) {
+  const valid = lines.filter(Boolean);
+  if (!valid.length) return null;
+  const first = valid[0];
+  return {
+    items: first.items.map((item, index) => ({
+      ...item,
+      value: mean(valid.map(line => matchupNumber(line.items[index]?.value))),
+      pts: mean(valid.map(line => line.items[index]?.pts ?? 0)) ?? 0,
+    })),
+    other: mean(valid.map(line => line.other ?? 0)),
+    total: mean(valid.map(line => line.total)),
+  };
+}
+
+function statRows(line, reference = null) {
+  if (!line) return [];
+  const rows = line.items.map((item, index) => ({
+    key: item.key,
+    label: item.label,
+    small: item.value == null ? null : formatCount(Math.round(item.value * 10) / 10),
+    pts: item.pts,
+    tone: statTone(index, item.pts),
+    ref: reference ? reference.items[index]?.pts ?? null : null,
   }));
+  if (line.other != null || reference?.other) {
+    rows.push({ key: 'other', label: 'Other scoring', small: null, pts: line.other ?? 0, tone: 'var(--color-label-tertiary)', ref: reference ? reference.other ?? 0 : null });
+  }
+  return rows;
 }
 
-export default function PlayerMatchupBreakdown({ playerId, week, projection, baseline = null, enrichedPlayer, onClose, onViewStats, benchComparison = null, onViewBenchPlayer }) {
+function lineSummary(line) {
+  return line?.items
+    .filter(item => item.value)
+    .slice(0, 3)
+    .map(item => `${formatCount(item.value)} ${SHORT_STAT_LABELS[item.key] ?? item.label}`)
+    .join(' · ') || null;
+}
+
+function NextWeekSection({ playerId, players, weeklyStats, scheduleMap, scoring, week, position }) {
+  const nextWeek = useMemo(
+    () => buildNextWeekPreview({ playerId, players, weeklyStats, scheduleMap, scoringSettings: scoring, week }),
+    [playerId, players, weeklyStats, scheduleMap, scoring, week],
+  );
+  if (!nextWeek) return null;
+  const next = nextWeek.opponentContext;
+  return <Section title="Next week" meta={nextWeek.bye ? `W${nextWeek.week} · bye` : `W${nextWeek.week} · ${matchupLabel(nextWeek.opponent, nextWeek.isHome)}`}>
+    {nextWeek.bye
+      ? <p className="matchup-performance-note">Bye week — no game scheduled.</p>
+      : <>
+        <KeyTiles tiles={[
+          { label: 'Early estimate', value: formatNumber(nextWeek.projected), detail: 'GridShift model' },
+          next?.rank != null && { label: `${nextWeek.opponent} vs ${position}`, value: `#${next.rank}`, detail: `of ${next.teamCount} · ${formatNumber(next.ptsAllowedPerGame)} pts allowed/game` },
+        ]} />
+        {next?.rank != null && <RankStrip
+          rank={next.rank}
+          teamCount={next.teamCount}
+          caption={next.rank <= next.teamCount / 2 ? 'Tougher than avg' : 'Softer than avg'}
+          ariaLabel={`${nextWeek.opponent} ranks ${next.rank} of ${next.teamCount} by fantasy points allowed to ${position}s.`}
+        />}
+      </>}
+  </Section>;
+}
+
+export default function PlayerMatchupBreakdown({ playerId, week, projection, baseline = null, enrichedPlayer, onClose, onViewStats, onViewScheduleGame = null, onOpenInjuries = null, benchComparison = null, onViewBenchPlayer }) {
   const { platform, players, weeklyStats, activeScoringSettings, espnIdOverrides, season, scheduleMap, selectedLeagueId } = useSleeperBase();
   const { darkMode } = useTheme();
   const [espnDerivedWeekEntryState, setEspnDerivedWeekEntryState] = useState({ key: '', row: null });
+  // `source` is the chart that picked the week: only a Recent form pick also
+  // swaps the projection build for that week's scoring.
+  const [link, setLink] = useState({ week: null, stat: null, use: null, source: null });
 
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -966,6 +615,7 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, bas
   const isPregame = phase === 'pregame';
   const position = player?.position ?? enrichedPlayer?.position ?? null;
   const espnId = player?.espn_id ?? espnIdOverrides?.[playerId];
+  const scoring = activeScoringSettings ?? DEFAULT_SCORING;
 
   const teamTheme = getTeamVisualTheme(player?.team, darkMode);
   const headerStyle = {
@@ -1021,20 +671,20 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, bas
 
   const { breakdown, total } = useMemo(() => {
     if (!weekEntry) return { breakdown: [], total: null };
-    const scoringSettings = activeScoringSettings ?? DEFAULT_SCORING;
-    const result = buildFantasyScoringBreakdown(weekEntry, scoringSettings, position, {
+    const result = buildFantasyScoringBreakdown(weekEntry, scoring, position, {
       preferRawStats: Boolean(espnDerivedWeekEntry),
       adjustmentLabel: platform === 'espn' ? 'Official Scoring Adjustment' : 'Scoring Adjustment',
     });
     return { breakdown: result.rows, total: result.total };
-  }, [weekEntry, activeScoringSettings, position, espnDerivedWeekEntry, platform]);
+  }, [weekEntry, scoring, position, espnDerivedWeekEntry, platform]);
 
   const projectionView = useMemo(() => resolvePlayerDisplayProjection({ isPregame, projection, baseline }), [baseline, isPregame, projection]);
   const displayProjection = projectionView.projection;
-  const projectedBreakdown = useMemo(() => buildPlayerProjectionBreakdown(displayProjection, activeScoringSettings ?? DEFAULT_SCORING, position), [displayProjection, activeScoringSettings, position]);
-  const peerModel = useMemo(() => buildPlayerDefensePerformance({ playerId, oppTeam: enrichedPlayer?.oppTeam, weeklyStats, players, scheduleMap, currentWeek: week, scoringSettings: activeScoringSettings ?? DEFAULT_SCORING }), [playerId, enrichedPlayer?.oppTeam, weeklyStats, players, scheduleMap, week, activeScoringSettings]);
+  const projectedValue = matchupNumber(displayProjection?.projected);
+  const projectedBreakdown = useMemo(() => buildPlayerProjectionBreakdown(displayProjection, scoring, position), [displayProjection, scoring, position]);
+  const peerModel = useMemo(() => buildPlayerDefensePerformance({ playerId, oppTeam: enrichedPlayer?.oppTeam, weeklyStats, players, scheduleMap, currentWeek: week, scoringSettings: scoring }), [playerId, enrichedPlayer?.oppTeam, weeklyStats, players, scheduleMap, week, scoring]);
   const timeline = usePlayerMatchupTimeline({
-    enabled: phase === 'live',
+    enabled: phase === 'live' || phase === 'final',
     phase,
     leagueId: selectedLeagueId,
     platform,
@@ -1044,7 +694,7 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, bas
     players,
     team: player?.team,
     opponent: enrichedPlayer?.oppTeam,
-    scoringSettings: activeScoringSettings ?? DEFAULT_SCORING,
+    scoringSettings: scoring,
   });
   const benchOption = buildPlayerMatchupBenchOption({ context: benchComparison, now });
 
@@ -1056,53 +706,52 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, bas
     currentGames: enrichedPlayer.defStrength.gamesAnalyzed,
     evidenceKind: 'current',
   } : null);
-  const noteworthyWeather = getNoteworthyWeather({ weather: enrichedPlayer?.weather, isIndoor: enrichedPlayer?.isIndoor, position });
-  const outlook = buildPlayerOutlook({
-    projection: displayProjection?.projected,
-    seasonAverage: seasonBenchmark.value,
-    opponentContext,
-    availabilityStatus: enrichedPlayer?.availabilityStatus,
-    noteworthyWeather,
-  });
-
-  const performanceTarget = getPlayerPerformanceTarget({
-    phase,
-    total,
-    projected: displayProjection?.projected,
-    scheduleEntry,
-    now,
-  });
+  const performanceTarget = getPlayerPerformanceTarget({ phase, total, projected: projectedValue, scheduleEntry, now });
   const hero = buildHeroModel({ phase, total, projectionView, seasonBenchmark, performanceTarget });
-  const headline = buildPlayerHeadlineParts({
-    phase,
-    total,
-    projected: displayProjection?.projected,
-    performanceTarget,
-    seasonAverage: seasonBenchmark.value,
-    opponentContext,
-    outlook,
-  });
   const rankModel = buildRankModel({ phase, rank: enrichedPlayer?.rank, weekRank: enrichedPlayer?.weekRank, position, week });
-  const cells = isPregame
-    ? buildPregameCells({ player: enrichedPlayer, position, seasonBenchmark, opponentContext, noteworthyWeather })
-    : phase === 'final' ? buildFinalCells(breakdown) : null;
-  const formRows = peerModel?.overall?.gameRows?.slice(-5).reverse() ?? [];
-  const recordedTarget = !isPregame && projectionView.recorded
-    ? matchupNumber(displayProjection?.projected)
+
+  /* ── weekly evidence: one set of rows feeds the form chart, the stat line and the bridge ── */
+  const tierMetric = peerModel?.metrics?.find(metric => metric.id === (position === 'RB' ? 'rushing' : 'receiving')) ?? peerModel?.metrics?.[0] ?? null;
+  const tierByWeek = useMemo(() => new Map((tierMetric?.buckets ?? []).flatMap(bucket => (bucket.gameRows ?? []).map(row => [Number(row.week), bucket.id]))), [tierMetric]);
+  const settledPoints = phase === 'final' ? matchupNumber(total) : null;
+  const weeks = useMemo(() => buildDrilldownWeeks({
+    gameRows: peerModel?.overall?.gameRows ?? [],
+    weeklyEntries: weeklyStats?.[playerId] ?? [],
+    scoringSettings: scoring,
+    position,
+    currentWeek: week,
+    current: settledPoints == null ? null : { points: settledPoints, rows: breakdown, entry: weekEntry, opponent: enrichedPlayer?.oppTeam ?? null, isHome: enrichedPlayer?.isHome ?? null },
+    tierByWeek,
+  }), [peerModel, weeklyStats, playerId, scoring, position, week, settledPoints, breakdown, weekEntry, enrichedPlayer?.oppTeam, enrichedPlayer?.isHome, tierByWeek]);
+  const recent = useMemo(() => weeks.prior.slice(-(DRILLDOWN_FORM_WEEKS - 1)), [weeks]);
+  const currentRows = weeks.current?.rows ?? breakdown;
+  const projectedRows = projectedBreakdown?.rows;
+  const statKeys = useMemo(() => selectDrilldownStatKeys([
+    ...recent.map(row => row.rows),
+    projectedRows ?? [],
+    currentRows,
+  ]), [recent, projectedRows, currentRows]);
+  const lineByWeek = new Map([...weeks.prior, ...(weeks.current ? [weeks.current] : [])]
+    .map(row => [row.week, buildDrilldownStatLine({ rows: row.rows, entry: row.entry, statKeys, total: row.points })]));
+  const projectedLine = projectedBreakdown?.rows?.length
+    ? buildDrilldownStatLine({ rows: projectedBreakdown.rows, entry: displayProjection?.projectedStats, statKeys, total: projectedValue })
     : null;
-  const ladderRows = formRows.map(row => (
-    recordedTarget != null && Number(row.week) === Number(week)
-      ? { ...row, target: recordedTarget }
-      : row
-  ));
-  const hasVisibleRecordedTarget = ladderRows.some(row => matchupNumber(row.target) != null);
-  const ladder = formRows.length ? {
-    title: phase === 'pregame' ? 'Last 5 games vs season average' : 'Season to date vs season average',
-    rows: ladderRows,
-    average: matchupNumber(peerModel?.overall?.ppg),
-    averageLabel: `Season average ${formatNumber(peerModel?.overall?.ppg)}`,
-    targetLabel: hasVisibleRecordedTarget ? `Recorded pregame projection ${formatNumber(recordedTarget)}` : null,
-  } : null;
+  const actualLine = !isPregame && weekEntry ? buildDrilldownStatLine({ rows: breakdown, entry: weekEntry, statKeys, total }) : null;
+  const seasonLine = averageLine(weeks.prior.map(row => lineByWeek.get(row.week)));
+  const bridge = isPregame ? buildProjectionBridge({ projection: displayProjection, projectedRows: projectedBreakdown?.rows ?? [], priorWeeks: weeks.prior }) : null;
+
+  const elapsed = getDrilldownElapsedFraction({ phase, scheduleEntry, total, now });
+  const estimate = getPaceAdjustedProjection({ phase, total, projected: projectedValue, scheduleEntry, now });
+  const pace = phase === 'pregame' ? null : buildScoringPace({
+    events: timeline.events,
+    phase,
+    elapsed,
+    total,
+    projected: projectedValue,
+    low: displayProjection?.min,
+    high: displayProjection?.max,
+    estimate,
+  });
 
   const weather = enrichedPlayer ? formatWeather(enrichedPlayer.weather, enrichedPlayer.isIndoor ?? false) : null;
   const teamScore = matchupNumber(enrichedPlayer?.scheduleEntry?.ptsFor);
@@ -1113,7 +762,7 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, bas
   // A settled game does not need its kickoff time, only the day it was played.
   const kickoff = (finalScore ? formatMatchupGameDate(enrichedPlayer?.scheduleEntry?.kickoff) : null)
     ?? formatStatisticsScoresLocalKickoff(enrichedPlayer?.scheduleEntry?.kickoff)
-    ?? enrichedPlayer?.gameDate
+    ?? formatSeasonGameDate(enrichedPlayer?.gameDate, season)
     ?? null;
   const opponentLogo = enrichedPlayer?.oppTeam ? getNflTeamLogoUrl(String(enrichedPlayer.oppTeam).toLowerCase()) : null;
   const opponentLine = [
@@ -1135,12 +784,396 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, bas
     }, { mode: statisticsMode });
   };
 
-  const hasProjectedStatLine = projectedBreakdown?.rows?.some(row => row.statVal != null);
+  // The phase strip's matchup opens the same NFL game on Statistics › Schedule.
+  const scheduleTeam = player?.team ? String(player.team).toUpperCase() : null;
+  const scheduleOpponent = enrichedPlayer?.oppTeam ? String(enrichedPlayer.oppTeam).toUpperCase() : null;
+  const scheduleIsHome = typeof enrichedPlayer?.isHome === 'boolean' ? enrichedPlayer.isHome
+    : typeof enrichedPlayer?.scheduleEntry?.home === 'boolean' ? enrichedPlayer.scheduleEntry.home : null;
+  const scheduleGameId = season && week != null && scheduleTeam && scheduleOpponent && scheduleIsHome != null
+    ? `${season}-W${week}-${scheduleIsHome ? scheduleOpponent : scheduleTeam}-${scheduleIsHome ? scheduleTeam : scheduleOpponent}`
+    : null;
+  const canOpenScheduleGame = Boolean(onViewScheduleGame && scheduleGameId);
+  const openScheduleGame = () => {
+    if (!canOpenScheduleGame) return;
+    onClose();
+    onViewScheduleGame({ week: Number(week), gameId: scheduleGameId });
+  };
+
+  // An injury designation opens the player's entry on Fantasy › Injuries.
+  const availabilityStatus = enrichedPlayer?.availabilityStatus ?? null;
+  const canOpenInjuries = Boolean(onOpenInjuries && availabilityStatus && playerId != null);
+  const openInjuries = () => {
+    if (!canOpenInjuries) return;
+    onClose();
+    onOpenInjuries(playerId);
+  };
+
+  /* ── linked week chart + stat line ── */
+  const weekResult = (row) => {
+    const entry = scheduleMap?.[row.week]?.[row.entry?.team ?? player?.team] ?? null;
+    const own = matchupNumber(entry?.ptsFor);
+    const other = matchupNumber(entry?.ptsAgainst);
+    if (own == null || other == null) return null;
+    return `${own > other ? 'W' : own < other ? 'L' : 'T'} ${own}–${other}`;
+  };
+  const columnsSource = isPregame ? recent : phase === 'final' ? [...recent, ...(weeks.current ? [weeks.current] : [])] : [];
+  const selectedWeek = link.week ?? Number(week);
+  const metricFor = row => (link.use === 'snaps' ? row.snapShare : getStatLinePoints(lineByWeek.get(row.week), link.stat));
+  const columns = columnsSource.map(row => ({
+    week: row.week,
+    opp: row.opponent,
+    value: metricFor(row),
+    current: phase === 'final' && row.week === Number(week),
+    ariaLabel: `Week ${row.week} ${matchupLabel(row.opponent, row.isHome)}${phase === 'final' && row.week === Number(week) ? ', this week' : ''}`,
+  }));
+  if (isPregame && projectedValue != null) {
+    columns.push({
+      week: Number(week),
+      opp: enrichedPlayer?.oppTeam ?? null,
+      value: link.use ? null : projectedLine ? getStatLinePoints(projectedLine, link.stat) : link.stat ? null : projectedValue,
+      ghost: true,
+      ariaLabel: `Week ${week} ${matchupLabel(enrichedPlayer?.oppTeam, enrichedPlayer?.isHome)}, projected`,
+    });
+  }
+  const columnAverage = link.use === 'snaps'
+    ? mean(weeks.prior.map(row => row.snapShare))
+    : mean(weeks.prior.map(row => getStatLinePoints(lineByWeek.get(row.week), link.stat)));
+  const statLabel = link.stat === 'other' ? 'Other scoring' : statKeys.find(key => key.key === link.stat)?.label;
+  const formMeta = link.use === 'snaps' ? 'snap share by week' : statLabel ? `${statLabel} pts by week` : isPregame ? `last ${recent.length} + this week` : `last ${columns.length} ${columns.length === 1 ? 'game' : 'games'}`;
+  const selectedRow = [...weeks.prior, ...(weeks.current ? [weeks.current] : [])].find(row => row.week === selectedWeek) ?? null;
+  const selectedIsProjection = isPregame && selectedWeek === Number(week);
+  const selectedIsCurrent = phase === 'final' && selectedWeek === Number(week);
+  const selectedLine = selectedIsProjection ? projectedLine : selectedIsCurrent ? actualLine ?? lineByWeek.get(selectedWeek) : lineByWeek.get(selectedWeek) ?? null;
+  const referenceLine = phase === 'final' ? (selectedIsCurrent ? projectedLine : seasonLine) : null;
+  const lineMax = Math.max(
+    ...columnsSource.map(row => lineByWeek.get(row.week)?.total ?? 0),
+    projectedLine?.total ?? 0,
+    referenceLine?.total ?? 0,
+    1,
+  );
+  const selectWeek = weekNumber => setLink(current => ({ ...current, week: weekNumber, source: 'form' }));
+  // Likely outcome games toggle: picking the selected game again returns to this week.
+  const pickGame = source => weekNumber => setLink(current => (
+    current.week === weekNumber ? { ...current, week: null, source: null } : { ...current, week: weekNumber, source }
+  ));
+  const selectStat = key => setLink(current => ({ ...current, stat: !key || current.stat === key ? null : key, use: null }));
+  const selectUse = key => setLink(current => ({ ...current, use: current.use === key ? null : key, stat: null }));
+  // Before kickoff, a played week picked in Recent form or Likely outcome
+  // drives the hero, rank and outcome views, and the tier chart highlights
+  // that week's defense tier.
+  const pastRow = isPregame && !selectedIsProjection ? selectedRow : null;
+  const pastWeek = pastRow?.week ?? null;
+  // computeWeeklyPositionalRanks caches each week's ranks itself.
+  const pastWeekRank = pastWeek == null ? null : computeWeeklyPositionalRanks(weeklyStats, players, scoring, pastWeek)?.[playerId] ?? null;
+  const selectedMeta = selectedIsProjection
+    ? `W${week} · ${matchupLabel(enrichedPlayer?.oppTeam, enrichedPlayer?.isHome)}`
+    : selectedRow ? [`W${selectedRow.week}`, matchupLabel(selectedRow.opponent, selectedRow.isHome), weekResult(selectedRow)].filter(Boolean).join(' · ') : null;
+
+  /* ── hero tiles and popover ── */
+  const priorAverage = mean(weeks.prior.map(row => row.points));
+  // The settled season average is the same benchmark as the season-average figures elsewhere.
+  const withCurrentAverage = weeks.current ? matchupNumber(seasonBenchmark.value) ?? mean([...weeks.prior.map(row => row.points), weeks.current.points]) : null;
+  const shownRank = pastRow ? buildRankModel({ phase: 'final', rank: null, weekRank: pastWeekRank, position, week: pastRow.week }) : rankModel;
+  const rankTile = { label: shownRank.title, value: shownRank.value, detail: shownRank.detail };
+  const benchmarkValue = matchupNumber(seasonBenchmark.value);
+  const pastDifference = pastRow && benchmarkValue != null ? pastRow.points - benchmarkValue : null;
+  const heroModel = pastRow ? {
+    overline: `Week ${pastRow.week} fantasy points`,
+    value: pastRow.points,
+    tone: 'flat',
+    delta: pastDifference == null ? null : {
+      v: signed(pastDifference),
+      l: `vs ${formatNumber(benchmarkValue)} ${seasonBenchmark.label.toLowerCase()}`,
+      tone: pastDifference >= 0 ? 'up' : 'down',
+    },
+  } : hero;
+  const tiles = isPregame ? [
+    rankTile,
+    {
+      label: 'Status',
+      value: availabilityStatus ?? 'Active',
+      tone: availabilityStatus ? 'caution' : 'up',
+      detail: availabilityStatus ? 'Injury designation' : 'No injury tag',
+      ...(canOpenInjuries && {
+        onClick: openInjuries,
+        ariaLabel: `Status ${availabilityStatus}. View ${player?.full_name ?? 'this player'} in Fantasy Injuries`,
+        title: 'View in Fantasy Injuries',
+      }),
+    },
+  ] : phase === 'live' ? [
+    estimate != null && { label: 'Est. finish', value: formatNumber(estimate), detail: 'pace-adjusted' },
+  ] : [
+    rankTile,
+    withCurrentAverage != null && priorAverage != null && {
+      label: 'Season avg',
+      value: formatNumber(withCurrentAverage),
+      em: { text: `${withCurrentAverage >= priorAverage ? '▲' : '▼'}${formatNumber(Math.abs(withCurrentAverage - priorAverage))}`, tone: withCurrentAverage >= priorAverage ? 'up' : 'down' },
+      detail: `was ${formatNumber(priorAverage)}`,
+    },
+  ];
+  const popoverLine = pastRow ? lineByWeek.get(pastRow.week) : isPregame ? projectedLine : actualLine;
+  const popover = popoverLine
+    ? <PointsPopover line={popoverLine} title={pastRow ? `Where the Week ${pastRow.week} points came from` : isPregame ? 'Where the projection comes from' : phase === 'final' ? 'Where the points came from' : 'Where the live points come from'} />
+    : null;
+
+  /* ── chart beside the hero ── */
+  const outlookGames = recent.map((row) => {
+    const line = lineByWeek.get(row.week);
+    const tier = row.tier ? `${TIER_LABELS[row.tier]} defense` : null;
+    const result = weekResult(row);
+    return {
+      week: row.week,
+      points: row.points,
+      title: `W${row.week} · ${matchupLabel(row.opponent, row.isHome)}`,
+      lines: [lineSummary(line), [tier, result].filter(Boolean).join(' · ')].filter(Boolean),
+      ariaLabel: `Week ${row.week} ${matchupLabel(row.opponent, row.isHome)}: ${formatNumber(row.points)} points${tier ? `, ${tier.toLowerCase()}` : ''}${result ? `, ${result}` : ''}. Select to filter by this game.`,
+    };
+  });
+  const low = matchupNumber(displayProjection?.min);
+  const high = matchupNumber(displayProjection?.max);
+  const band = low != null && high != null && high > low;
+  const seasonValue = matchupNumber(seasonBenchmark.value);
+  // Without a play feed (no provider key, or the feed is down) every point is
+  // unmatched, so play-only cues stay hidden instead of reading as stat updates.
+  const playsLoaded = timeline.status === 'ready' || timeline.status === 'empty';
+  const paceLegend = pace && [
+    { label: 'Points', kind: 'ln' },
+    projectedValue != null && { label: 'Projection pace', kind: 'dash' },
+    phase === 'live' && pace.low != null && pace.high != null && { label: 'Likely range', kind: 'sw', style: { background: 'var(--color-drilldown-band)' } },
+    playsLoaded && { label: 'TD', kind: 'dot', style: { background: 'var(--color-accent)' } },
+  ];
+  let heroChart = null;
+  let outcomeSection = null;
+  // With no past games and no likely range the outcome scale would only repeat
+  // the hero's projection-vs-average line, so it is left out.
+  if (isPregame && projectedValue != null && (outlookGames.length > 0 || band)) {
+    outcomeSection = <Section key="outcome" title="Likely outcome" meta={outlookGames.length ? 'Select a game to filter' : null}>
+      <OutlookChart
+        games={outlookGames}
+        projected={projectedValue}
+        average={seasonValue}
+        low={low}
+        high={high}
+        selectedWeek={pastWeek}
+        onSelect={pickGame('outcome')}
+        ariaLabel={`Projection ${formatNumber(projectedValue)}${band ? `, likely range ${formatNumber(low)} to ${formatNumber(high)}` : ''}${seasonValue != null ? `, ${seasonBenchmark.label.toLowerCase()} ${formatNumber(seasonValue)}` : ''}`}
+      />
+      <Legend items={[
+        outlookGames.length > 0 && { label: 'Past games', kind: 'dot', style: { background: 'var(--color-label-tertiary)' } },
+        band && { label: `Likely range ${formatNumber(low)}–${formatNumber(high)}`, kind: 'sw', style: { background: 'var(--color-drilldown-band)' } },
+        seasonValue != null && { label: `${seasonBenchmark.label} ${formatNumber(seasonValue)}`, kind: 'dash' },
+      ]} />
+    </Section>;
+  } else if (phase === 'live') {
+    heroChart = <Section title="Scoring pace" meta={projectedValue != null ? `proj ${formatNumber(projectedValue)}` : null}>
+      {pace
+        ? <PaceChart pace={pace} ariaLabel={`${formatNumber(total)} points${projectedValue != null ? ` against a ${formatNumber(projectedValue)} projection` : ''}`} />
+        : <p className="matchup-performance-note">{timeline.status === 'loading' ? 'Loading the scoring pace…' : 'The scoring pace needs a projection or play data for this game.'}</p>}
+      {paceLegend && <Legend items={paceLegend} />}
+      {playsLoaded && pace?.unexplained ? <p className="matchup-performance-note">{signed(pace.unexplained)} pts at now are stat updates not matched to a play.</p> : null}
+    </Section>;
+  } else if (phase === 'final') {
+    heroChart = <Section title="Game flow" meta={projectedValue != null ? `proj ${formatNumber(projectedValue)}` : null}>
+      {pace?.marks?.length
+        ? <PaceChart pace={pace} ariaLabel={`Finished with ${formatNumber(total)} points${projectedValue != null ? ` against a ${formatNumber(projectedValue)} projection` : ''}`} />
+        : <p className="matchup-performance-note">{timeline.status === 'loading' ? 'Loading the game flow…' : timeline.message ?? 'Play-by-play is unavailable for this game.'}</p>}
+      {pace?.marks?.length > 0 && <Legend items={paceLegend} />}
+      {pace?.marks?.length > 0 && pace.unexplained ? <p className="matchup-performance-note">{signed(pace.unexplained)} pts are stat corrections not matched to a play.</p> : null}
+    </Section>;
+  }
+
+  /* ── stat rings (live / final) ── */
+  const ringItems = !isPregame && projectedLine && actualLine
+    ? projectedLine.items.map((item, index) => ({ item, actual: actualLine.items[index] })).filter(({ item }) => item.value > 0).slice(0, 4)
+    : [];
+
+  /* ── evidence sections ── */
+  const sections = [];
+  let buildSection = null;
+  const weekShift = pastRow && link.source === 'form' ? buildWeekCategoryShift({ week: pastRow, priorWeeks: weeks.prior }) : null;
+  if (weekShift) {
+    const column = `W${pastRow.week}`;
+    buildSection = <Section key="build" title={`Week ${pastRow.week} build`} meta={`season avg → ${column} pts`}>
+      <CategoryShiftChart
+        categories={weekShift.categories}
+        average={weekShift.average}
+        projected={weekShift.projected}
+        columns={{ average: 'Avg', projected: column }}
+        ariaLabel={[
+          ...weekShift.categories.map(category => `${category.label} ${formatNumber(category.average)} average, ${formatNumber(category.projected)} in week ${pastRow.week}`),
+          `Total ${formatNumber(weekShift.average)} average, ${formatNumber(weekShift.projected)} in week ${pastRow.week}`,
+        ].join('; ')}
+      />
+      <Legend items={[
+        { label: 'Season avg', kind: 'dot', style: { background: 'var(--color-label-secondary)' } },
+        { label: 'Above avg', kind: 'dot', style: { background: 'var(--color-accent-green)' } },
+        { label: 'Below avg', kind: 'dot', style: { background: 'var(--color-accent-red)' } },
+      ]} />
+    </Section>;
+  } else if (isPregame && bridge) {
+    buildSection = (bridge.kind === 'provider' && bridge.categories?.length
+      ? <Section key="build" title="Projection build" meta="season avg → projected pts">
+        <CategoryShiftChart
+          categories={bridge.categories}
+          average={bridge.average}
+          projected={bridge.projected}
+          ariaLabel={[
+            ...bridge.categories.map(category => `${category.label} ${formatNumber(category.average)} average, ${formatNumber(category.projected)} projected`),
+            `Total ${formatNumber(bridge.average)} average, ${formatNumber(bridge.projected)} projected`,
+          ].join('; ')}
+        />
+        <Legend items={[
+          { label: 'Season avg', kind: 'dot', style: { background: 'var(--color-label-secondary)' } },
+          { label: 'Projected higher', kind: 'dot', style: { background: 'var(--color-accent-green)' } },
+          { label: 'Projected lower', kind: 'dot', style: { background: 'var(--color-accent-red)' } },
+        ]} />
+      </Section>
+      : <Section key="build" title="Projection build" meta={bridge.kind === 'provider' ? null : bridge.sourceLabel}>
+        <BridgeChart steps={bridge.steps} ariaLabel={bridge.steps.map(step => `${step.label} ${step.kind ? formatNumber(step.value) : signed(step.value)}`).join(', ')} />
+      </Section>);
+  }
+  // Tiers with no games in any of them would draw three empty columns.
+  const tiersAvailable = Boolean(tierMetric && !tierMetric.coverageReason && tierMetric.buckets?.some(bucket => bucket.games > 0));
+  let tierSection = null;
+  if (isPregame && (tiersAvailable || opponentContext?.rank != null)) {
+    const opponentName = enrichedPlayer?.oppTeam ?? 'Opponent';
+    tierSection = (<Section key="tiers" title="Vs defense tier" meta={tiersAvailable ? `pts per game · ${tierMetric.label.toLowerCase()}` : null}>
+      {tiersAvailable && <TierChart
+        buckets={tierMetric.buckets.map((bucket) => {
+          const label = TIER_LABELS[bucket.id] ?? bucket.label;
+          const games = bucket.gameRows ?? [];
+          return {
+            id: bucket.id,
+            label,
+            ppg: bucket.ppg,
+            games: bucket.games,
+            tipTitle: `${label} defenses · ${bucket.games} ${bucket.games === 1 ? 'game' : 'games'}`,
+            tipValue: bucket.ppg == null ? null : `${formatNumber(bucket.ppg)} pts per game`,
+            lines: games.map(row => `W${row.week} ${matchupLabel(row.opponent, row.isHome)} · ${formatNumber(row.points)} pts`),
+            ariaLabel: `${label} defenses: ${bucket.ppg == null ? 'no games' : `${formatNumber(bucket.ppg)} points per game`}${games.length ? `. ${games.map(row => `Week ${row.week} ${matchupLabel(row.opponent, row.isHome)} ${formatNumber(row.points)}`).join(', ')}` : ''}`,
+          };
+        })}
+        highlight={pastRow ? pastRow.tier ?? tierByWeek.get(pastRow.week) ?? null : tierMetric.opponent?.bucket}
+        highlightTeam={pastRow ? pastRow.opponent : tierMetric.opponent?.team}
+        ariaLabel={tierMetric.buckets.map(bucket => `${TIER_LABELS[bucket.id] ?? bucket.label} defenses ${bucket.ppg == null ? 'no games' : formatNumber(bucket.ppg)}`).join(', ')}
+      />}
+      {opponentContext?.rank != null && <>
+        <RankStrip
+          rank={opponentContext.rank}
+          teamCount={opponentContext.teamCount}
+          caption={`${opponentName} ${formatOrdinal(opponentContext.rank)} of ${opponentContext.teamCount} vs ${position}`}
+          ariaLabel={`${opponentName} ranks ${opponentContext.rank} of ${opponentContext.teamCount} by fantasy points allowed to ${position}s.`}
+        />
+      </>}
+    </Section>);
+  }
+  // A form chart needs at least one played game; the projected column alone
+  // repeats the hero number.
+  const formSection = columnsSource.length > 0 && <Section key="form" slot="form" title={isPregame ? 'Recent form' : 'Season trend'} meta={formMeta}>
+    <WeekColumns
+      columns={columns}
+      average={columnAverage}
+      format={link.use ? (value => `${Math.round(value)}%`) : fmt}
+      yMax={link.use ? 100 : null}
+      selectedWeek={selectedWeek}
+      onSelect={selectWeek}
+      ariaLabel={`${isPregame ? 'Recent games and this week’s projection' : 'Recent games including this week'} against the season average. Select a week to see its stat line.`}
+    />
+    <Legend items={[
+      { label: 'Above avg', kind: 'sw', style: { background: 'var(--color-accent-green)' } },
+      { label: 'Below', kind: 'sw', style: { background: 'var(--color-accent-red)' } },
+      isPregame ? { label: 'Projected', kind: 'sw is-ghost' } : { label: 'This week', kind: 'sw is-current' },
+      { label: 'Select a week or stat to filter', kind: 'none' },
+    ]} />
+  </Section>;
+  const statTitle = isPregame ? (selectedIsProjection ? 'Projected stat line' : 'Stat line') : selectedIsCurrent ? (referenceLine ? 'Points vs projection' : 'Stat line') : 'Points vs season avg';
+  const statSection = selectedLine && (isPregame || phase === 'final') && <Section key="statline" title={statTitle} meta={selectedMeta}>
+    <StatLineBars
+      rows={statRows(selectedLine, referenceLine)}
+      total={{ pts: selectedLine.total, ref: referenceLine?.total ?? null }}
+      max={lineMax}
+      selected={link.stat}
+      onSelect={selectStat}
+      ticks={Boolean(referenceLine)}
+      ariaLabel={`${statTitle}. Select a stat to show it by week.`}
+    />
+    {referenceLine && <Legend items={[
+      { label: 'Actual', kind: 'sw', style: { background: 'var(--color-drilldown-stat-1)' } },
+      { label: selectedIsCurrent ? 'Projected' : 'Season avg', kind: 'tick' },
+    ]} />}
+  </Section>;
+  if (isPregame) {
+    // The projected stat line leads beside the hero number, then the outcome,
+    // form and opponent evidence, with the projection build after them.
+    heroChart = statSection || null;
+    sections.push(outcomeSection, formSection, tierSection, buildSection);
+  } else if (phase === 'final') sections.push(statSection, formSection);
+  else sections.push(formSection, statSection);
+
+  const allWeeks = [...weeks.prior, ...(weeks.current ? [weeks.current] : [])];
+  if (phase === 'final' && allWeeks.some(row => row.snapShare != null)) {
+    const share = selectedRow?.snapShare ?? null;
+    const average = mean(weeks.prior.map(row => row.snapShare));
+    const difference = share != null && average != null ? share - average : null;
+    const near = difference != null && Math.abs(difference) < 1;
+    const versus = difference == null ? 'no season average' : near ? 'at avg' : `${sgn(difference, 0)} vs avg`;
+    const tone = difference == null || near ? 'var(--color-signature)' : difference > 0 ? POSITIVE : NEGATIVE;
+    sections.push(<Section key="usage" title="Usage" meta={`W${selectedWeek} · vs season avg`}>
+      <div className={`pdd-rings${link.use ? ' is-filtered' : ''}`}>
+        <button
+          type="button"
+          className="pdd-rt pdd-rt--btn"
+          aria-pressed={link.use === 'snaps'}
+          onClick={() => selectUse('snaps')}
+          aria-label={`Snaps: ${share == null ? 'unavailable' : `${share}%`} snap share, ${versus}, week ${selectedWeek}. ${link.use === 'snaps' ? 'Showing' : 'Show'} by week.`}
+        >
+          <Ring value={share ?? 0} max={100} text={share == null ? '—' : `${share}%`} tone={tone} />
+          <span><span className="pdd-rt__l">Snaps</span><span className="pdd-rt__s">snap share · {versus}</span></span>
+        </button>
+      </div>
+      <Legend items={[
+        { label: 'Above avg', kind: 'sw', style: { background: POSITIVE } },
+        { label: 'Near avg', kind: 'sw', style: { background: 'var(--color-signature)' } },
+        { label: 'Below', kind: 'sw', style: { background: NEGATIVE } },
+      ]} />
+    </Section>);
+  }
+  if (phase === 'final') {
+    sections.push(<NextWeekSection key="next" playerId={playerId} players={players} weeklyStats={weeklyStats} scheduleMap={scheduleMap} scoring={scoring} week={week} position={position} />);
+  }
+  if (phase === 'live') sections.push(<Plays key="plays" model={timeline} />);
+  if (isPregame && benchOption && onViewBenchPlayer) sections.push(<Swap key="swap" option={benchOption} onView={onViewBenchPlayer} />);
+  const visibleSections = sections.filter(Boolean);
+  const devItems = phase === 'live'
+    ? ['Live positional rank and movement since kickoff', 'Teammate target share — who else is eating', 'Remaining opportunity estimate']
+    : phase === 'final' ? ['Route and target share by week', 'Per-week projection history for the season trend'] : null;
+  const projectionSource = displayProjection?.factors?.source;
+  const projectionMethod = <>
+    <p>{projectedValue == null
+      ? 'No projection is available for this player this week.'
+      : projectionSource === 'balldontlie'
+      ? 'BALLDONTLIE’s projected stat line, scored with your league’s scoring.'
+      : projectionSource === 'sleeper'
+        ? 'Sleeper’s projected stat line, scored with your league’s scoring.'
+        : 'Season scoring adjusted for recent form, matchup, weather and availability, using your league’s scoring.'}</p>
+    {band && <p>The likely range is the 25th–75th percentile outcome, not a floor or ceiling.</p>}
+    {bridge && <p>{bridge.kind === 'provider'
+      ? 'Projection build compares the season-average points in each scoring category with the projected points. Turnovers cost points, so they sit below zero; a smaller deduction is an improvement.'
+      : 'Projection build applies the adjustments in order; each bar is the change at that step.'}</p>}
+  </>;
+  const opponentAllowed = matchupNumber(opponentContext?.ptsAllowedPerGame);
+  const opponentLeague = matchupNumber(opponentContext?.leagueAveragePtsAllowed);
+  const tierEdge = tierMetric?.opponent?.teamCount ? Math.ceil(tierMetric.opponent.teamCount / 4) : null;
+  const opponentMethod = opponentContext || tiersAvailable ? <>
+    {opponentContext && <p>{enrichedPlayer?.oppTeam ?? 'Opponent'}, {getOpponentEvidenceLabel(opponentContext).toLowerCase()}.{opponentAllowed != null ? ` ${formatNumber(opponentAllowed)} pts allowed per game to ${position}s${opponentLeague != null ? ` against a ${formatNumber(opponentLeague)} league average` : ''}.` : ''}</p>}
+    {tiersAvailable && <p>Tiers split the league into the toughest {tierEdge ?? 'quarter'}, middle {tierEdge ? tierMetric.opponent.teamCount - tierEdge * 2 : 'half'} and easiest {tierEdge ?? 'quarter'} defenses by {tierMetric.label.toLowerCase()}.</p>}
+  </> : null;
+  const sortedEvents = (timeline.events ?? []).slice().sort((left, right) => (right.order ?? 0) - (left.order ?? 0));
 
   return (
     <Modal onClose={onClose} mobileSheet ariaLabel="Player matchup breakdown"
       containerClassName="matchup-breakdown-dialog gridshift-reveal w-full flex flex-col"
-      containerStyle={{ background: 'var(--color-bg)', border: '1px solid var(--color-separator)', maxWidth: '1280px', maxHeight: '90dvh' }}>
+      containerStyle={{ background: 'var(--color-bg)', border: '1px solid var(--color-separator)', maxWidth: '1100px', maxHeight: '90dvh' }}>
       <header className="pmd-hd" style={headerStyle}>
         <PlayerAvatar
           player={{ ...player, ...enrichedPlayer, id: playerId }}
@@ -1182,66 +1215,73 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, bas
           </span>
           {kickoff && <span className="pmd-ctx pmd-ctx--lead pmd-num">{kickoff}</span>}
         </div>
-        <div className="pmd-strip__row">
-          <span className="pmd-logo">
-            {opponentLogo && <img src={opponentLogo} alt="" aria-hidden="true" onError={(event) => { event.currentTarget.hidden = true; }} />}
-          </span>
-          {finalScore
-            ? <span className="pmd-ctx">
-              {finalScore.teamScore >= finalScore.opponentScore
-                ? <><strong>{finalScore.team} {finalScore.teamScore}</strong> · {finalScore.opponent} {finalScore.opponentScore}</>
-                : <>{finalScore.team} {finalScore.teamScore} · <strong>{finalScore.opponent} {finalScore.opponentScore}</strong></>}
-            </span>
-            : <span className="pmd-ctx">{opponentLine}</span>}
-        </div>
+        {(() => {
+          const matchup = <>
+            {opponentLogo && <span className="pmd-logo">
+              <img src={opponentLogo} alt="" aria-hidden="true" onError={(event) => { event.currentTarget.hidden = true; }} />
+            </span>}
+            {finalScore
+              ? <span className="pmd-ctx">
+                {finalScore.teamScore >= finalScore.opponentScore
+                  ? <><strong>{finalScore.team} {finalScore.teamScore}</strong> · {finalScore.opponent} {finalScore.opponentScore}</>
+                  : <>{finalScore.team} {finalScore.teamScore} · <strong>{finalScore.opponent} {finalScore.opponentScore}</strong></>}
+              </span>
+              : <span className="pmd-ctx">{opponentLine}</span>}
+          </>;
+          return canOpenScheduleGame
+            ? <button type="button" className="pmd-strip__row pmd-strip__link" onClick={openScheduleGame}>
+              {matchup}
+              <span className="sr-only">Open this game in Statistics Schedule</span>
+              <svg className="pmd-strip__chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
+            </button>
+            : <div className="pmd-strip__row">{matchup}</div>;
+        })()}
       </div>
 
       <div className="pmd-body gridshift-reveal gridshift-reveal--auto" data-game-phase={phase}>
-        <Hero model={hero} />
-        {headline && <section className="pmd-sec" data-slot="headline"><Emphasis parts={headline} /></section>}
-        <RankSlot model={rankModel} />
-        <Cells cells={cells} />
-        {phase === 'live' && <Plays model={timeline} />}
-        <Ladder model={ladder} />
-        {isPregame && <Swap option={benchOption} onView={onViewBenchPlayer} />}
-        {!isPregame && <DevSlot items={phase === 'live'
-          ? ['Remaining opportunity estimate', 'Teammate cannibalization — who else is eating', 'Live positional rank and movement since kickoff']
-          : ['Snap share and usage rate', 'What this means for next week', 'Per-week projection history for the form ladder']} />}
-
-        <div className="pmd-disc" data-slot="disc">
-          {isPregame ? <>
-            <DiscRow label="Projected stat line" hint={hasProjectedStatLine ? undefined : 'Unavailable'}>
-              {displayProjection && <>
-                {hasProjectedStatLine
-                  ? <ProjectionStatLine rows={projectedBreakdown.rows} total={projectedBreakdown.total} />
-                  : <p className="matchup-performance-note">Detailed projected stats are unavailable for this projection source.</p>}
-                <ProjectionDetails projection={displayProjection} />
-              </>}
-            </DiscRow>
-            <DiscRow label="Opponent sample & method" hint={opponentContext ? getOpponentEvidenceLabel(opponentContext) : undefined}>
-              {opponentContext && <ProjectionOpponentDetails player={enrichedPlayer} position={position} />}
-            </DiscRow>
-          </> : <>
-            <DiscRow label="Full scoring breakdown" hint={breakdown.length ? `${breakdown.length} scoring lines` : undefined}>
-              {breakdown.length ? <PerformanceTable rows={breakdown} /> : null}
-            </DiscRow>
-            <DiscRow
-              label={projectionView.recorded ? 'Pregame projection & range' : 'Projection & expected range'}
-              hint={matchupNumber(displayProjection?.projected) != null ? formatNumber(displayProjection.projected) : undefined}
-            >
-              {displayProjection && <>
-                <p className="matchup-performance-note">
-                  {projectionView.recorded
-                    ? `Recorded before kickoff · ${new Date(baseline.capturedAt).toLocaleString()}`
-                    : 'Available estimate; the original pregame projection was not recorded.'}
-                </p>
-                <ProjectionDetails projection={displayProjection} />
-              </>}
-            </DiscRow>
+        <div className="pdd-bd">
+          <div className={`pdd-hero${heroChart ? '' : ' is-solo'}`}>
+            <Hero model={heroModel} popover={popover} tiles={tiles} />
+            {heroChart}
+          </div>
+          {ringItems.length > 0 && <>
+            <div className="pdd-rule" />
+            <div className="pdd-rings" role="list" aria-label="Stat line against the projection">
+              {ringItems.map(({ item, actual }) => {
+                const value = actual?.value ?? 0;
+                const target = Math.round(item.value * 10) / 10;
+                const tone = phase === 'final' ? (value >= item.value ? POSITIVE : NEGATIVE) : 'var(--color-signature)';
+                return <div className="pdd-rt" role="listitem" key={item.key} aria-label={`${item.label}: ${formatCount(value)} of ${formatCount(target)} projected`}>
+                  <Ring value={value} max={item.value} text={formatCount(value)} tone={tone} />
+                  <span><span className="pdd-rt__l">{item.label}</span><span className="pdd-rt__s">of {formatCount(target)} proj</span></span>
+                </div>;
+              })}
+            </div>
           </>}
-          <DiscRow label="Season performance & defense splits">
-            <PlayerPeerContext model={peerModel} season={season} />
-          </DiscRow>
+          {visibleSections.length > 0 && <>
+            <div className="pdd-rule" />
+            <div className="pdd-cols">{visibleSections}<DevSlot items={devItems} /></div>
+          </>}
+
+          <div className="pmd-disc" data-slot="disc">
+            {isPregame ? <>
+              <DiscRow label="How projections work">{projectionMethod}</DiscRow>
+              {opponentMethod && <DiscRow label="Opponent sample">{opponentMethod}</DiscRow>}
+            </> : <>
+              {phase === 'final' && sortedEvents.length > 0 && <DiscRow label={`All scoring plays · ${sortedEvents.length}`}>
+                <PlayList events={sortedEvents} />
+              </DiscRow>}
+              {projectedValue != null && <DiscRow label={`${projectionView.recorded ? 'Pregame projection' : 'Available estimate'} · ${formatNumber(projectedValue)}`}>
+                <p>{projectionView.recorded
+                  ? `Recorded before kickoff · ${new Date(baseline.capturedAt).toLocaleString()}.`
+                  : 'Available estimate; the original pregame projection was not recorded.'}</p>
+                {projectionMethod}
+              </DiscRow>}
+              {phase === 'live' && <DiscRow label="About play points">
+                <p>Play points are estimates. Bonuses and stat corrections can change the official total.</p>
+              </DiscRow>}
+            </>}
+          </div>
         </div>
       </div>
     </Modal>

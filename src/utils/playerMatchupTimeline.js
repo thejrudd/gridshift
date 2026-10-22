@@ -55,6 +55,8 @@ export async function loadPlayerMatchupTimeline(options, api = defaultApi) {
   if (!team || !opponent || !players?.[playerId]) return unavailable('The NFL matchup could not be confirmed for this player.');
   let status = await api.getLiveStatus({ leagueId });
   checkAbort();
+  // A server without a BALLDONTLIE key has no play feed at all; that is setup, not league access.
+  if (status.live?.apiKeyReady === false) return unavailable('Play-by-play isn’t set up on this server, so scoring plays can’t be shown.');
   if (status.live?.enabled !== true || status.live?.leagueAllowed !== true) {
     return unavailable('The play timeline is unavailable for this league. Fantasy Live access is required.');
   }

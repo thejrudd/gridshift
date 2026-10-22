@@ -1071,7 +1071,7 @@ function TradeCompareAttribution({ format, leagueType }) {
     <div className="trade-compare__attribution text-xs text-center" data-testid="trade-compare-attribution" style={{ color: 'var(--color-label-quaternary)' }}>
       Values from{' '}
       <span className="font-medium" style={{ color: 'var(--color-label-tertiary)' }}>
-        GridShift league utility · 0–100
+        GridShift player value · 0–100
       </span>{' '}
       · {format === 'dynasty' ? 'Dynasty' : 'Redraft'} · {leagueType === 'sf' ? 'Superflex' : '1QB'} · KTC secondary
     </div>

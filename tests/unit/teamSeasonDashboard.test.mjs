@@ -1,13 +1,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildStandings, buildTeamGame, buildTeamRanks, upcomingGames } from '../../src/utils/teamSeason/teamSeasonModel.js';
+import { buildStandings, buildTeamGame, buildTeamRanks, scoringParts, upcomingGames } from '../../src/utils/teamSeason/teamSeasonModel.js';
 import {
   depthIndex,
   depthStanding,
   fantasyScoring,
   linePoints,
   nameKey,
+  quarterPoints,
   roleOf,
+  scoringBreakdown,
+  scoringPartsOf,
   seasonTotals,
 } from '../../src/utils/teamSeason/teamDashboardModel.js';
 import { createTeamSeasonService } from '../../server/teamSeasonHandlers.js';
@@ -66,7 +69,7 @@ const DETAIL = {
   plays: [
     { period: 1, clock_display: '15:00', type_slug: 'kickoff', text: 'kicks off', team: SF },
     { period: 1, clock_display: '14:50', type_slug: 'rush', text: 'K.Walker up the middle to SEA 30 for 5 yards.', team: SEA, start_down: 1, home_score: 0, away_score: 0 },
-    { period: 1, clock_display: '12:00', type_slug: 'passing-touchdown', text: 'S.Darnold pass short right to J.Smith-Njigba for 20 yards, TOUCHDOWN.', team: SEA, scoring_play: true, home_score: 7, away_score: 0 },
+    { period: 1, clock_display: '12:00', type_slug: 'passing-touchdown', text: 'S.Darnold pass short right to J.Smith-Njigba for 20 yards, TOUCHDOWN. J.Myers extra point is GOOD, Center-C.Stoll.', team: SEA, scoring_play: true, home_score: 7, away_score: 0 },
     { period: 1, clock_display: '11:55', type_slug: 'kickoff', text: 'kicks off', team: SEA },
     { period: 1, clock_display: '11:50', type_slug: 'rush', text: 'C.McCaffrey left end to SF 30 for 4 yards.', team: SF, start_down: 1, home_score: 7, away_score: 0 },
     // BALLDONTLIE names the team that ends up with the ball on a kick; the shared rule flips it back to the punting offense.
@@ -83,8 +86,16 @@ test('a team game carries its box lines, quarter scores, drives, and scoring pla
   assert.equal(game.lines[0].n, 'Sam Darnold');
   assert.equal(game.ts.me.total_yards, 350);
   assert.deepEqual(game.drives.map((drive) => [drive.tm, drive.r]), [['me', 'Touchdown'], ['opp', 'Punt']]);
-  assert.deepEqual(game.scoring, [{ side: 'me', type: 'Passing TD', pts: 7, q: 1 }]);
+  assert.deepEqual(game.scoring, [{ side: 'me', type: 'Passing TD', pts: 7, q: 1, playPts: 6, try: 'Extra point', tryGood: true, tryPts: 1 }]);
   assert.equal(buildTeamGame(DETAIL, 'KC'), null);
+});
+
+test('scoring parts split each touchdown from the try that followed', () => {
+  assert.deepEqual(scoringParts('Rushing TD', 'TOUCHDOWN. B.Aubrey extra point is No Good, Center-T.Sieg.', 6), { playPts: 6, try: 'Extra point', tryGood: false, tryPts: 0 });
+  assert.deepEqual(scoringParts('Passing TD', 'TOUCHDOWN. TWO-POINT CONVERSION ATTEMPT. G.Smith pass to S.Shepard is complete. ATTEMPT SUCCEEDS.', 8), { playPts: 6, try: 'Two-point conversion', tryGood: true, tryPts: 2 });
+  assert.deepEqual(scoringParts('Passing TD', 'TOUCHDOWN. TWO-POINT CONVERSION ATTEMPT. T.Shough pass to B.Lance is incomplete. ATTEMPT FAILS.', 6), { playPts: 6, try: 'Two-point conversion', tryGood: false, tryPts: 0 });
+  assert.deepEqual(scoringParts('Field goal', 'J.Bates 54 yard field goal is GOOD.', 3), { playPts: 3, try: null, tryGood: null, tryPts: 0 });
+  assert.deepEqual(scoringParts('Safety', 'Sacked in the end zone, SAFETY.', 2), { playPts: 2, try: null, tryGood: null, tryPts: 0 });
 });
 
 test('overtime is flagged from the team’s overtime score', () => {
@@ -162,4 +173,22 @@ test('the depth chart route validates the team and caches ESPN’s answer', asyn
   assert.equal(first.depthchart[0].name, 'Base 4-3 D');
   assert.deepEqual(second, first);
   assert.equal(calls, 1);
+});
+
+test('the scoring breakdown splits tries from touchdowns and filters by quarter and type', () => {
+  const games = [{ scoring: [
+    { side: 'me', type: 'Passing TD', pts: 7, q: 1, playPts: 6, try: 'Extra point', tryGood: true, tryPts: 1 },
+    { side: 'me', type: 'Rushing TD', pts: 6, q: 2, playPts: 6, try: 'Two-point conversion', tryGood: false, tryPts: 0 },
+    { side: 'me', type: 'Field goal', pts: 3, q: 2, playPts: 3, try: null, tryGood: null, tryPts: 0 },
+    { side: 'opp', type: 'Safety', pts: 2, q: 5, playPts: 2, try: null, tryGood: null, tryPts: 0 },
+  ] }];
+  const parts = scoringPartsOf(games);
+  const season = scoringBreakdown(parts);
+  assert.deepEqual(season.map((row) => [row.type, row.pts]), [['Passing TD', 6], ['Rushing TD', 6], ['Field goal', 3], ['Extra point', 1], ['Two-point conversion', 0], ['Defensive scores', 0]]);
+  assert.deepEqual([season[4].made, season[4].attempts], [0, 1]);
+  assert.deepEqual(scoringBreakdown(parts, 'Q2').map((row) => [row.type, row.pts]), [['Rushing TD', 6], ['Field goal', 3], ['Extra point', 0], ['Two-point conversion', 0], ['Defensive scores', 0]]);
+  assert.deepEqual(quarterPoints(parts).map((row) => [row.q, row.f, row.a]), [['Q1', 7, 0], ['Q2', 9, 0], ['Q3', 0, 0], ['Q4', 0, 0], ['OT', 0, 2]]);
+  assert.deepEqual(quarterPoints(parts, 'Defensive scores').map((row) => row.a), [0, 0, 0, 0, 2]);
+  // A game cached before tries were read keeps its whole score on the play.
+  assert.equal(scoringBreakdown(scoringPartsOf([{ scoring: [{ side: 'me', type: 'Passing TD', pts: 7, q: 1 }] }]))[0].pts, 7);
 });

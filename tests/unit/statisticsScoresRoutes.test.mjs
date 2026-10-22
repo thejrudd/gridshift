@@ -45,3 +45,22 @@ test('Statistics Scores drops drilldown-only state when no matchup is selected',
   assert.equal(route.statisticsScoresPlayerGroup, null);
   assert.equal(buildAppPath(route), '/statistics/scores?season=2026&week=7');
 });
+
+test('Statistics Scores sends retired Scoring tab links to Overview', () => {
+  const route = parseAppRoute('/statistics/scores', '?season=2026&week=7&game=1393548&tab=scoring');
+
+  assert.equal(route.statisticsScoresSection, 'overview');
+  assert.equal(buildAppPath(route), '/statistics/scores?season=2026&week=7&game=1393548');
+});
+
+test('Statistics Scores routes carry a focused player only on Players', () => {
+  const path = '/statistics/scores?season=2026&week=3&game=1393548&tab=players&group=receiving&player=4567';
+  const route = parseAppRoute('/statistics/scores', '?season=2026&week=3&game=1393548&tab=players&group=receiving&player=4567');
+
+  assert.equal(route.statisticsScoresPlayerId, '4567');
+  assert.equal(buildAppPath(route), path);
+
+  const overview = parseAppRoute('/statistics/scores', '?season=2026&week=3&game=1393548&tab=team&player=4567');
+  assert.equal(overview.statisticsScoresPlayerId, null);
+  assert.equal(buildAppPath(overview), '/statistics/scores?season=2026&week=3&game=1393548&tab=team');
+});

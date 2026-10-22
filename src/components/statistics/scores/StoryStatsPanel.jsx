@@ -164,6 +164,33 @@ function StoryItem({ story, index }) {
   );
 }
 
+// The fallback when StoryStats has nothing for this game: a recap built from
+// the play-by-play, presented as its own labeled block so it is never mistaken
+// for provider editorial content.
+function PlayRecap({ recap }) {
+  return (
+    <div className="scores-story-recap" aria-label="Recap from the play-by-play">
+      <p className="scores-story-recap-source">Recap from the play-by-play</p>
+      {recap.sections.length ? (
+        <ol className="scores-story-list">
+          {recap.sections.map((section) => (
+            <li key={section.id} className="scores-story-item">
+              <article aria-label={section.heading}>
+                <h3 className="scores-story-item-title">{section.heading}</h3>
+                {section.paragraphs.map((paragraph) => (
+                  <p key={paragraph} className="scores-story-item-body">{paragraph}</p>
+                ))}
+              </article>
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <p className="scores-story-state is-idle" role="status">{recap.note}</p>
+      )}
+    </div>
+  );
+}
+
 function LoadingState({ hasStories }) {
   if (hasStories) {
     return (
@@ -219,6 +246,8 @@ function ErrorState({ error, onRetry }) {
  * @param {{ remaining?: number, limit?: number, message?: string, resetAt?: string }|string} [props.quota]
  *   Request-budget metadata. No credential data is accepted or displayed.
  * @param {() => void} [props.onRetry] Retry callback for an error state.
+ * @param {{ sections: Array<{ id: string, heading: string, paragraphs: string[] }>, note: string|null }|null} [props.recap]
+ *   Play-by-play recap shown whenever StoryStats has no story for the game.
  */
 export default function StoryStatsPanel({
   stories = [],
@@ -230,6 +259,7 @@ export default function StoryStatsPanel({
   context,
   quota,
   onRetry,
+  recap = null,
 }) {
   const headingId = `scores-story-heading-${useId().replace(/:/g, '')}`;
   const resolvedStatus = VALID_STATUSES.has(status) ? status : 'idle';
@@ -242,6 +272,7 @@ export default function StoryStatsPanel({
   );
   const hasStories = normalizedStories.length > 0;
   const requestQuota = quotaText(quota);
+  const showRecap = Boolean(recap) && !hasStories && resolvedStatus !== 'loading';
 
   return (
     <section
@@ -263,21 +294,23 @@ export default function StoryStatsPanel({
 
       {resolvedStatus === 'loading' && <LoadingState hasStories={hasStories} />}
       {resolvedStatus === 'error' && <ErrorState error={error} onRetry={onRetry} />}
-      {resolvedStatus === 'unavailable' && (
+      {resolvedStatus === 'unavailable' && !showRecap && (
         <p className="scores-story-state is-unavailable" role="status">
           Game stories are unavailable right now.
         </p>
       )}
-      {resolvedStatus === 'ready' && !hasStories && (
+      {resolvedStatus === 'ready' && !hasStories && !showRecap && (
         <p className="scores-story-state is-empty" role="status" aria-live="polite">
           {emptyMessage(fallbackPhase)}
         </p>
       )}
-      {resolvedStatus === 'idle' && !hasStories && (
+      {resolvedStatus === 'idle' && !hasStories && !showRecap && (
         <p className="scores-story-state is-idle" role="status" aria-live="polite">
           {emptyMessage(fallbackPhase)}
         </p>
       )}
+
+      {showRecap && <PlayRecap recap={recap} />}
 
       {hasStories && (
         <ol className="scores-story-list" aria-label="Game stories">

@@ -174,6 +174,24 @@ describe('canonical trade values', () => {
     assert.equal(pool.find((item) => item.id === '102').val, detail.value);
   });
 
+  it('drops current-season picks once that draft is complete', () => {
+    const season = Number(TEST_SEASON);
+    const picks = [
+      { season: String(season - 1), round: 1, roster_id: 1, owner_id: 2 },
+      { season: String(season), round: 1, roster_id: 1, owner_id: 2 },
+    ];
+    const before = modules.tradeEngine.buildRosterPicks(picks, rosters, league, TEST_SEASON, 3);
+    assert.ok(before.years.includes(String(season)));
+    assert.ok(!before.years.includes(String(season - 1)));
+
+    const after = modules.tradeEngine.buildRosterPicks(picks, rosters, league, TEST_SEASON, 3, { currentSeasonDrafted: true });
+    assert.deepEqual(after.years, [season + 1, season + 2, season + 3].map(String));
+
+    assert.equal(modules.tradeEngine.isSeasonDraftComplete({}, [{ season: TEST_SEASON, status: 'complete' }], TEST_SEASON), true);
+    assert.equal(modules.tradeEngine.isSeasonDraftComplete({ season: TEST_SEASON, status: 'pre_draft' }, [], TEST_SEASON), false);
+    assert.equal(modules.tradeEngine.isSeasonDraftComplete({ season: TEST_SEASON, status: 'in_season' }, [], TEST_SEASON), true);
+  });
+
   it('uses valueDraftPick for owned pick values', () => {
     const { rosterPicks } = modules.tradeEngine.buildRosterPicks(tradedPicks, rosters, league, TEST_SEASON, 3);
     const pick = rosterPicks[1]['2027|1'].ownStatus === 'own'
@@ -471,6 +489,7 @@ describe('canonical trade values', () => {
     });
 
     assert.equal(firstPick.value, secondPick.value);
-    assert.equal(firstPick.value, 82);
+    // Picks are not in the player percentile list, so they rank by the players below them.
+    assert.equal(firstPick.value, 85);
   });
 });

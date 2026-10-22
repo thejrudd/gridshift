@@ -86,7 +86,7 @@ Entries resolved via Pass 1 or 2 are marked `_teamSource = 'espn'`; Pass 3 entri
 
 - `CompanionStandings.jsx`, `CompanionHistory.jsx`, and `CompanionActivity.jsx` power the top-level League routes. Their page-level loading, unavailable, error, and empty reasons stay centered and unframed.
 - Trade keeps `CompanionTrade.jsx` as the public route component, with extracted Agent/Intelligence/Upgrade leaf modules in `src/components/companion/trade/`.
-- Fantasy Live: `CompanionLive.jsx` owns the route's data plumbing (session, snapshots, projections, win probability, persisted replay selection, play feed) and composes presentation from `src/components/companion/live/`. Full file ownership and implementation rules: [[Fantasy Live]].
+- Fantasy Live (the live layer in Fantasy Matchups; the separate tab is retired): `src/hooks/useMatchupLiveFeed.js` owns the data plumbing (session, snapshots, projections, win probability, play feed, chart series); `CompanionMatchup.jsx` owns replay state and composes the replay bar, chart, scoring plays and hover cards from `src/components/companion/matchup/`. Full file ownership and implementation rules: [[Fantasy Live]].
 - Shared player/asset selector rendering lives here: `CompanionPlayerRow.jsx`, `CompanionAssetRow.jsx`, and `CompanionSelectorControls.jsx` are the canonical row/control primitives for Companion and Trade-adjacent picker surfaces. Read [[Companion Shared Rows]] before changing player-row styling, team logos, status badges, or selector controls.
 
 ### `src/utils` domain modules
@@ -110,7 +110,7 @@ Rules:
 - The field visuals (`fieldPrimitives.jsx`, `PlayTrajectoryStrip.jsx`, `DriveField.jsx`, `DrivePlayback.jsx`) share one 120-yard canvas through `fieldX`, and all kick geometry goes through `getKickGeometry`. A new field visual must reuse both rather than derive its own coordinates.
 - `playBeats.js` is the time layer over that geometry: one play as the ball's position over time plus the beats that fire as it travels, composing `getPlayTrajectory()` and `parsePlayNarrative()` without duplicating either. `DrivePlayback.jsx` is its only consumer and draws nothing the other field visuals don't already define.
 - Both surfaces consume this layer. `src/utils/playByPlay/` sits on top of it and owns the canonical provider-row shape, the shared offense/defense rule, and per-play stat attribution; `livePlaysFeed.js` and `balldontlieNflScoreboard.js` are thin adapters over it: [[Play-By-Play Normalization]]. New play-parsing work belongs in one of these two layers, never under a feature folder.
-- `src/components/shared/PlayerAvatar.jsx` owns the headshot fallback chain for both surfaces and is re-exported as `LiveAvatar` for existing Fantasy Live call sites.
+- `src/components/shared/PlayerAvatar.jsx` owns the headshot fallback chain shared by Statistics and fantasy surfaces.
 
 ## Client/Server Boundary
 

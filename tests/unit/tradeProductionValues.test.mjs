@@ -290,7 +290,7 @@ describe('production-backed Trade values and unavailable assets', () => {
     assert.deepEqual(proposal.sender.assets.map((asset) => asset.value), [null, null]);
     assert.equal(proposal.totals.sender, null);
     assert.equal(proposal.totals.recipient, 0);
-    assert.equal(proposal.valueScaleId, 'fantasy-viability-0-100-v2');
+    assert.equal(proposal.valueScaleId, 'fantasy-baseline-0-100-v3');
     assert.equal(proposal.verdict.gap, null);
     const swapped = swapTradeProposalPerspective(JSON.parse(JSON.stringify(proposal)));
     assert.equal(getTradeProposalAssetValue(swapped.recipient.assets[0]), null);
@@ -308,7 +308,7 @@ describe('production-backed Trade values and unavailable assets', () => {
     });
 
     assert.ok(companionValue > 0);
-    assert.equal(proposal.valueScaleId, 'fantasy-viability-0-100-v2');
+    assert.equal(proposal.valueScaleId, 'fantasy-baseline-0-100-v3');
     assert.equal(getTradeProposalAssetValue(proposal.sender.assets[0], () => companionValue + 10), companionValue);
   });
 });

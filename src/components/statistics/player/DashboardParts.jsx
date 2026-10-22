@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef } from 'react';
 import { getNflTeamLogoUrl } from '../../../utils/companionAssetVisuals.js';
 import { getTeamVisualTheme } from '../../../utils/teamVisualTheme.js';
 import { fmt, ordinal } from '../../../utils/playerSeason/dashboardModel.js';
@@ -32,6 +33,75 @@ export function SectionHead({ title, meta, children }) {
   );
 }
 
+/** Chip naming an active cross-filter; selecting it clears that filter. */
+export function FilterChip({ label, onClear }) {
+  return (
+    <button type="button" className="player-dash-chip team-dash-filter-chip" aria-pressed="true" aria-label={`Clear the ${label} filter`} onClick={onClear}>
+      {label} ×
+    </button>
+  );
+}
+
+const TWEEN_MS = 420;
+// Standard easing cubic-bezier(0.32, 0.72, 0, 1), solved for y at time t.
+function broadcastEase(t) {
+  const bezier = (a, b, u) => 3 * a * u * (1 - u) ** 2 + 3 * b * u * u * (1 - u) + u ** 3;
+  let lo = 0;
+  let hi = 1;
+  for (let i = 0; i < 20; i += 1) {
+    const mid = (lo + hi) / 2;
+    if (bezier(0.32, 0, mid) < t) lo = mid; else hi = mid;
+  }
+  return bezier(0.72, 1, (lo + hi) / 2);
+}
+const reducedMotion = () => typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
+const parseLead = (text) => {
+  const match = /^([−-]?)(\d[\d,]*(?:\.\d+)?)(.*)$/s.exec(text);
+  if (!match) return null;
+  return { sign: match[1], value: Number(match[2].replace(/,/g, '')) * (match[1] ? -1 : 1), digits: match[2].split('.')[1]?.length ?? 0, rest: match[3] };
+};
+const formatLead = ({ sign, digits, rest }, value) => {
+  const number = Math.abs(value).toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+  return `${value < 0 && Number(number.replace(/,/g, '')) !== 0 ? sign || '-' : ''}${number}${rest}`;
+};
+
+/**
+ * Text whose leading number counts to its new value when it changes ("13.8",
+ * "37%", "1,204"). The first render shows the value as-is; non-numeric text
+ * ("–") swaps immediately. Frames write the span directly, so a count costs no re-renders.
+ */
+export function Tween({ text }) {
+  const value = String(text ?? '');
+  const span = useRef(null);
+  const shown = useRef(null);
+  // The span has no React children: frames own its text, so React never holds a stale text node.
+  useLayoutEffect(() => {
+    const el = span.current;
+    const lead = parseLead(value);
+    const from = shown.current;
+    shown.current = lead?.value ?? null;
+    if (!el) return undefined;
+    if (!lead || from == null || from === lead.value || reducedMotion()) {
+      el.textContent = value;
+      return undefined;
+    }
+    const start = performance.now();
+    let frame = 0;
+    const paint = (now) => {
+      const progress = Math.min(1, (now - start) / TWEEN_MS);
+      shown.current = from + (lead.value - from) * broadcastEase(progress);
+      el.textContent = progress < 1 ? formatLead(lead, shown.current) : value;
+      if (progress < 1) frame = requestAnimationFrame(paint);
+    };
+    paint(start);
+    // Frames pause in hidden tabs; land on the final value regardless.
+    const settle = setTimeout(() => { cancelAnimationFrame(frame); shown.current = lead.value; el.textContent = value; }, TWEEN_MS + 80);
+    return () => { cancelAnimationFrame(frame); clearTimeout(settle); };
+  }, [value]);
+  return <span ref={span} />;
+}
+
 export function Segmented({ label, options, value, onChange, size = 'md' }) {
   return (
     <div className={`player-dash-seg is-${size}`} role="group" aria-label={label}>
@@ -40,6 +110,8 @@ export function Segmented({ label, options, value, onChange, size = 'md' }) {
           key={option.id}
           type="button"
           aria-pressed={value === option.id}
+          disabled={option.disabled}
+          title={option.title}
           onClick={() => onChange(option.id)}
           {...(option.tip ? tipAttrs(option.label, option.tip) : {})}
         >
@@ -132,14 +204,17 @@ export function RateRows({ rows, selected, onSelect }) {
         >
           <span className="player-dash-rate__label">{row.label}</span>
           <span className="player-dash-rate__track"><i style={{ width: `${Math.max(0, Math.min(100, row.fill))}%` }} /></span>
-          <span className="player-dash-rate__value"><b>{row.value}</b>{row.detail ? ` · ${row.detail}` : ''}</span>
+          <span className="player-dash-rate__value"><b><Tween text={row.value} /></b>{row.detail ? ` · ${row.detail}` : ''}</span>
         </button>
       ))}
     </div>
   );
 }
 
-/** Share rows: who he threw to, who threw to him, which QBs he got to. */
+/**
+ * Share rows: who he threw to, who threw to him, which QBs he got to. Rows with
+ * `empty` stay in place, dimmed, so a cross-filter shrinks bars instead of reordering them.
+ */
 export function ShareTree({ rows, selected, onSelect, outerLabel, innerLabel }) {
   const max = Math.max(...rows.map((row) => row.outer), 1);
   if (!rows.length) return <div className="player-dash-empty">No plays charted yet.</div>;
@@ -147,7 +222,7 @@ export function ShareTree({ rows, selected, onSelect, outerLabel, innerLabel }) 
     <>
       <div className="player-dash-tree">
         {rows.map((row) => (
-          <button key={row.key} type="button" className="player-dash-tree__row" aria-pressed={selected === row.key} onClick={() => onSelect?.(row.key)}>
+          <button key={row.key} type="button" className={`player-dash-tree__row ${row.empty ? 'is-empty' : ''}`} aria-pressed={selected === row.key} onClick={() => onSelect?.(row.key)}>
             <span className="player-dash-tree__name">
               <span className="player-dash-tree__full">{row.name}</span>
               {row.sub && <small>{row.sub}</small>}
@@ -156,7 +231,7 @@ export function ShareTree({ rows, selected, onSelect, outerLabel, innerLabel }) 
               <b style={{ width: `${(row.outer / max) * 100}%` }} />
               <i style={{ width: `${(row.inner / max) * 100}%` }} />
             </span>
-            <span className="player-dash-tree__value"><b>{row.value}</b>{row.detail ? ` ${row.detail}` : ''}</span>
+            <span className="player-dash-tree__value"><b><Tween text={row.value} /></b>{row.detail ? ` ${row.detail}` : ''}</span>
           </button>
         ))}
       </div>
@@ -189,7 +264,7 @@ export function ZoneField({ zones, selected, onSelect, metricControl, footnote }
         onClick={() => onSelect?.(selected === key ? null : key)}
         {...tipAttrs(zone.tipTitle ?? key.replace('-', ' '), zone.tip)}
       >
-        <span className="player-dash-zone__big">{zone.big ?? '–'}</span>
+        <span className="player-dash-zone__big"><Tween text={zone.big ?? '–'} /></span>
         <span className="player-dash-zone__small">{zone.small ?? ''}</span>
       </button>
     );

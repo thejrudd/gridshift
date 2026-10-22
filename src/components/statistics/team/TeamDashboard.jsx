@@ -12,9 +12,9 @@ import {
 import { DashboardTipProvider } from '../player/DashboardTip.jsx';
 import { Switch } from '../player/DashboardParts.jsx';
 import { DepthChart, PositionLeaders } from './TeamTop.jsx';
-import { PlayersTab, RanksTab, RosterTab, SeasonTab } from './TeamTabs.jsx';
+import { PlayersTab, RanksTab, SeasonTab } from './TeamTabs.jsx';
 
-const TABS = [['season', 'Season'], ['players', 'Player stats'], ['ranks', 'League ranks'], ['roster', 'Full roster']];
+const TABS = [['season', 'Season'], ['players', 'Players'], ['depth', 'Depth'], ['ranks', 'League']];
 const TAB_KEY = 'gridshift.statistics.teamTab';
 const FANTASY_KEY = 'gridshift.statistics.teamFantasy';
 const FORMAT_KEY = 'gridshift.statistics.teamFantasyFormat';
@@ -23,9 +23,9 @@ const read = (storage, key) => { try { return storage.getItem(key); } catch { re
 const write = (storage, key, value) => { try { storage.setItem(key, value); } catch { /* storage is optional */ } };
 
 /**
- * Statistics team page body: position leaders and the depth chart up top
- * (the season summary lives in the page hero, TeamHero.jsx),
- * then Season, Player stats, League ranks, and Full roster tabs.
+ * Statistics team page body under the hero (TeamHero.jsx): the season and
+ * fantasy toolbar, then Season, Players (position leaders and stat tables),
+ * Depth (the current depth chart), and League (unit ranks) tabs.
  */
 export default function TeamDashboard({
   team,
@@ -87,18 +87,8 @@ export default function TeamDashboard({
     const player = rosterByName[nameKey(entry.n)];
     return player ? () => openPlayer(player) : null;
   }, [openPlayer, rosterByName]);
-  const totalsByEspnId = useMemo(() => {
-    const out = {};
-    for (const entry of totals) {
-      const player = rosterByName[nameKey(entry.n)];
-      if (player) out[player.id] = entry;
-    }
-    return out;
-  }, [rosterByName, totals]);
-  const depthText = useCallback((espnId) => (depth.index[espnId] ?? [])
-    .map((slot) => `${['', '1st', '2nd', '3rd'][slot.rank] ?? `${slot.rank}th`} at ${slot.a}`).join(' · '), [depth]);
 
-  const openGame = useCallback((game, section = 'team') => {
+  const openGame = useCallback((game, section = 'team', { playerGroup = null, playerId = null } = {}) => {
     onViewGameStats?.({
       id: game.id,
       season,
@@ -107,6 +97,8 @@ export default function TeamDashboard({
       awayTeamId: game.home ? game.opp : teamAbbr,
       homeTeamId: game.home ? teamAbbr : game.opp,
       section,
+      playerGroup,
+      playerId,
     });
   }, [onViewGameStats, season, teamAbbr]);
 
@@ -127,8 +119,9 @@ export default function TeamDashboard({
   const style = { '--player-dash-me': meColor || 'var(--color-accent)', '--player-dash-me-fg': meForeground || 'var(--color-bg)' };
 
   const renderPanel = () => {
-    if (tab === 'roster') {
-      return <RosterTab roster={roster ?? []} totalsByEspnId={totalsByEspnId} depthText={depthText} fantasy={fantasy} season={season} onOpenPlayer={openPlayer} />;
+    if (tab === 'depth') {
+      if (!(depthUnits?.length > 0)) return <div className="player-dash-state" role="status">No depth chart is available for this team right now.</div>;
+      return <div className="player-dash-panel"><DepthChart units={depthUnits} rosterById={rosterById} onOpenPlayer={openPlayer} /></div>;
     }
     if (data.status === 'loading' || data.status === 'idle') return <div className="player-dash-state" role="status">Loading the {season} season…</div>;
     if (data.status === 'error') return <div className="player-dash-state" role="status">{data.error}</div>;
@@ -138,7 +131,14 @@ export default function TeamDashboard({
     }
     if (tab === 'players') {
       if (!games.length) return <div className="player-dash-state" role="status">No {season} box scores yet.</div>;
-      return <PlayersTab totals={totals} games={games} fantasy={fantasy} openByEntry={openByEntry} />;
+      return (
+        <PlayersTab
+          totals={totals}
+          fantasy={fantasy}
+          openByEntry={openByEntry}
+          leaders={<PositionLeaders totals={totals} games={games} depth={depth} resolve={resolve} fantasy={fantasy} onOpenGame={openGame} />}
+        />
+      );
     }
     return <RanksTab data={data.data} team={teamAbbr} teamName={teamName} />;
   };
@@ -166,13 +166,6 @@ export default function TeamDashboard({
             </select>
           ))}
         </div>
-
-        {data.status === 'ready' && games.length > 0 && (
-          <PositionLeaders totals={totals} games={games} depth={depth} resolve={resolve} fantasy={fantasy} season={season} lastWeek={lastWeek} />
-        )}
-        {(depthUnits?.length ?? 0) > 0 && (
-          <DepthChart units={depthUnits} rosterById={rosterById} onOpenPlayer={openPlayer} season={season} />
-        )}
 
         <div className="player-dash-nav">
           <div className="player-dash-tabs" role="tablist" aria-label="Team sections" data-tour="statistics-team-dashboard-tabs" onKeyDown={onTabKey}>

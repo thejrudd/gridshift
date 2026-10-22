@@ -30,6 +30,7 @@ test-results/
 blob-report/
 .playwright/
 playwright/.cache/
+playwright-report-drilldown/
 
 !playwright.config.js
 !tests/
@@ -53,6 +54,7 @@ tests/unit/*
 !tests/fixtures/
 tests/fixtures/*
 !tests/fixtures/tradeFixtures.js
+!tests/drilldown/
 
 # Local docs drafts
 docs/archive/Historical Release Notes Drafts.md

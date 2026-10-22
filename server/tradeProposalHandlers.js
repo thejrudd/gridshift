@@ -13,8 +13,8 @@ import { createSleeperTradeApi } from './sleeperTradeApi.js';
 import { createTradeProposalStore } from './tradeProposalStore.js';
 
 const SCHEMA_VERSION = 1;
-const TRADE_VALUE_SCALE_ID = 'fantasy-viability-0-100-v2';
-const LEGACY_TRADE_VALUE_SCALE_IDS = new Set(['league-utility-0-100-v1']);
+const TRADE_VALUE_SCALE_ID = 'fantasy-baseline-0-100-v3';
+const LEGACY_TRADE_VALUE_SCALE_IDS = new Set(['league-utility-0-100-v1', 'fantasy-viability-0-100-v2']);
 const MAX_ID_LENGTH = 160;
 const MAX_LABEL_LENGTH = 180;
 const MAX_ASSETS_PER_SIDE = 50;

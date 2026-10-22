@@ -43,7 +43,6 @@ test('pregame renders the projection briefing with no performance view switcher'
   assert.match(html, /data-game-phase="pregame"/);
   assert.match(html, /Projected fantasy points/);
   assert.match(html, /16\.8/);
-  assert.match(html, /Weather data unavailable/);
   assert.doesNotMatch(html, /Game has not started|Fantasy points so far|Player performance view/);
 });
 
@@ -64,39 +63,24 @@ test('pregame briefing surfaces outlook, expected range, opponent comparison, in
   });
   assert.match(html, /Likely range/);
   assert.match(html, /12\.0–24\.0/);
-  assert.match(html, /#3/);
-  assert.match(html, /14\.0 pts allowed\/game · 17\.0 league average/);
-  assert.match(html, /Season points rank/);
-  assert.match(html, /by total season fantasy points/);
+  assert.match(html, /CLE 3rd of 32 vs QB/);
+  assert.match(html, /14\.0 pts allowed per game to QBs against a 17\.0 league average/);
+  assert.match(html, /Season rank/);
+  assert.match(html, /QB7/);
   assert.match(html, /Questionable/);
   assert.match(html, /Test Field · Jacksonville · 68°F/);
-  assert.match(html, /No significant weather impact/);
-  // the headline restates the visible projection and opponent evidence
-  assert.match(html, /pmd-headline/);
-  assert.match(html, /season average/);
+  assert.match(html, /vs 15\.0 season average/);
+  // legacy briefing pieces are gone: headline sentence, conditions tile, ladder
+  assert.doesNotMatch(html, /pmd-headline|No significant weather impact|by total season fantasy points/);
 });
 
-test('the projected stat line groups its rows under a running projected total', () => {
+test('the projected stat line shows the projection by stat with its total', () => {
   const html = render({ kickoff: '2099-09-12T17:00:00Z', projection: { projected: 16.8, projectedStats: { pass_yd: 250 } } });
-  assert.match(html, /pmd-ptable/);
-  assert.match(html, /data-group="passing"/);
-  assert.match(html, /data-group="model"/);
+  assert.match(html, /Projected stat line/);
   assert.match(html, /Pass Yards/);
-  assert.match(html, /Projected total/);
-  assert.match(html, /16\.80/);
-});
-
-test('the projected composition stack is scaled by gross points so deductions are visible', () => {
-  const html = render({
-    kickoff: '2099-09-12T17:00:00Z',
-    scoring: { pass_yd: 0.04, fum_lost: -2 },
-    projection: { projected: 8, projectedStats: { pass_yd: 250, fum_lost: 1 } },
-  });
-  // 10.00 gained and 2.00 lost: passing takes 10 of 12 gross points, not all of them.
-  assert.match(html, /data-group="passing" style="width:83\.3/);
-  assert.match(html, /data-group="negative" data-negative="true" style="width:16\.6/);
-  assert.match(html, /Projected total/);
-  assert.match(html, /8\.00/);
+  assert.match(html, />10\.0</);
+  assert.match(html, />16\.8</);
+  assert.doesNotMatch(html, /pmd-ptable|Projected total/);
 });
 
 test('final derives its own view from game phase, with no switcher to choose', () => {
@@ -113,7 +97,7 @@ test('final without a projection still reports the score and says so', () => {
   assert.match(html, /data-game-phase="final"/);
   assert.doesNotMatch(html, /Player performance view/);
   assert.match(html, /12\.32/);
-  assert.match(html, /No projection was available to compare against/);
+  assert.doesNotMatch(html, /projected<\/span>|Points vs projection/);
 });
 
 test('actual scoring unavailable stays unavailable instead of becoming zero', () => {
@@ -124,9 +108,9 @@ test('actual scoring unavailable stays unavailable instead of becoming zero', ()
 
 test('actual stat rows retain league-scored performance detail', () => {
   const html = render({ kickoff: '2020-09-12T17:00:00Z', completed: true, weeklyStats: { player: [{ week: 1, pass_yd: 250 }] } });
-  assert.match(html, /Fantasy scoring breakdown/);
   assert.match(html, /Pass Yards/);
-  assert.match(html, /10\.00/);
+  assert.match(html, />10\.0</);
+  assert.doesNotMatch(html, /Fantasy scoring breakdown|Full scoring breakdown/);
 });
 
 test('pregame keeps recent completed results below the decision briefing', () => {
@@ -148,15 +132,18 @@ test('pregame keeps recent completed results below the decision briefing', () =>
     player: Array.from({ length: 5 }, (_, index) => ({ week: index + 1, pass_yd: 225 + index * 10, opp: 'CLE', team: 'JAX' })),
   };
   const html = render({ kickoff: '2099-10-22T17:00:00Z', week: 6, scheduleMap, weeklyStats, projection: { projected: 15, min: 12, max: 18 } });
-  assert.match(html, /Last 5 games vs season average/);
-  assert.match(html, /Wk 5 · CLE/);
-  assert.match(html, /Season average/);
+  assert.match(html, /Recent form/);
+  assert.match(html, /last 5 \+ this week/);
+  assert.match(html, /aria-label="Week 5 at CLE"/);
+  assert.match(html, /aria-label="Week 6 vs CLE, projected"/);
+  assert.match(html, /Week 5 at CLE: \d+\.\d points/);
+  assert.match(html, />Avg \d/);
 });
 
 // The ladder is current-season only by design: no prior-season backfill. What
 // matters is that it starts using current-season results as soon as they exist,
 // rather than waiting for a full five-game sample.
-test('pregame ladder uses current-season results as soon as any week completes', () => {
+test('pregame recent form uses current-season results as soon as any week completes', () => {
   const pairs = [
     ['JAX', 'CLE'], ['BUF', 'MIA'], ['BAL', 'PIT'], ['CIN', 'HOU'], ['IND', 'TEN'],
     ['KC', 'DEN'], ['LV', 'LAC'], ['DAL', 'PHI'], ['NYG', 'WAS'], ['CHI', 'GB'],
@@ -180,14 +167,15 @@ test('pregame ladder uses current-season results as soon as any week completes',
   };
   const html = render({ kickoff: '2099-10-22T17:00:00Z', week: 3, scheduleMap, weeklyStats, projection: { projected: 15, min: 12, max: 18 } });
   assert.match(html, /data-game-phase="pregame"/);
-  assert.match(html, /Last 5 games vs season average/);
-  // both completed weeks are plotted, newest first
-  assert.match(html, /Wk 2 · CLE/);
-  assert.match(html, /Wk 1 · CLE/);
-  // the season-average marker is present on a two-game sample
-  assert.match(html, /Season average \d/);
+  assert.match(html, /Recent form/);
+  // both completed weeks are plotted beside this week's projection
+  assert.match(html, /aria-label="Week 1 at CLE"/);
+  assert.match(html, /aria-label="Week 2 at CLE"/);
+  assert.match(html, /aria-label="Week 3 vs CLE, projected"/);
+  // the season-average line is present on a two-game sample
+  assert.match(html, />Avg \d/);
   // and nothing is invented for weeks that have not been played
-  assert.doesNotMatch(html, /Wk 3 · /);
+  assert.doesNotMatch(html, /aria-label="Week 3 at CLE"/);
 });
 
 test('known kickoff appears in the fixed phase strip', () => {
@@ -222,7 +210,7 @@ test('final keeps a weekly rank visible when the available rank has no peer coun
   assert.doesNotMatch(html, /Week 1 finish.*Not established/);
 });
 
-test('recorded selected-week projection gets its own ladder target marker', () => {
+test('a recorded pregame projection is the settled week’s benchmark', () => {
   const scheduleMap = {
     1: { JAX: { kickoff: '2020-09-05T17:00:00Z', completed: true, opp: 'CLE', home: false }, CLE: { kickoff: '2020-09-05T17:00:00Z', completed: true, opp: 'JAX', home: true } },
     2: { JAX: { kickoff: '2020-09-12T17:00:00Z', completed: true, opp: 'CLE', home: false }, CLE: { kickoff: '2020-09-12T17:00:00Z', completed: true, opp: 'JAX', home: true } },
@@ -240,16 +228,19 @@ test('recorded selected-week projection gets its own ladder target marker', () =
     projection: { projected: 17.1 },
     baseline: { capturedAt: '2020-09-12T16:00:00Z', projection: { projected: 17.1 } },
   });
-  assert.match(html, /Recorded pregame projection 17\.1/);
-  assert.match(html, /class="pmd-lrow__v pmd-num pmd-down" data-benchmark="17\.1"/);
+  assert.match(html, /vs 17\.1 projected/);
+  assert.match(html, /Pregame projection · 17\.1/);
+  assert.match(html, /Season trend/);
+  assert.match(html, /aria-label="Week 2 vs CLE, this week"/);
 });
 
 test('a live game shows estimated play contributions with their disclosure', () => {
   // kickoff passed, game not yet complete
   const html = render({ kickoff: '2020-09-12T17:00:00Z', completed: false, points: 12, enriched: { gameStarted: true } });
   assert.match(html, /data-game-phase="live"/);
-  assert.match(html, /What earned the points/);
-  assert.match(html, /Estimated play contributions; bonuses, corrections and missing plays can differ from the official total/);
+  assert.match(html, /Scoring plays/);
+  assert.match(html, /About play points/);
+  assert.match(html, /Play points are estimates\. Bonuses and stat corrections can change the official total\./);
 });
 
 test('a live hero compares its score with expected pace instead of the full-game projection', () => {
@@ -275,7 +266,7 @@ test('a settled game drops the play timeline and reports the final NFL score', (
     scheduleMap: { 1: { JAX: { kickoff: '2020-09-12T17:00:00Z', completed: true, opp: 'CLE', ptsFor: 28, ptsAgainst: 24 } } },
   });
   assert.match(html, /data-game-phase="final"/);
-  assert.doesNotMatch(html, /What earned the points/);
+  assert.doesNotMatch(html, /About play points/);
   assert.match(html, /<strong>JAX 28<\/strong> · CLE 24/);
 });
 
@@ -298,7 +289,7 @@ test('drilldown honors a refreshed final entry when its context schedule is stal
   });
 
   assert.match(html, /data-game-phase="final"/);
-  assert.doesNotMatch(html, /What earned the points/);
+  assert.doesNotMatch(html, /About play points/);
   assert.match(html, /<strong>JAX 28<\/strong> · CLE 24/);
 });
 
@@ -316,7 +307,79 @@ test('pregame surfaces one eligible higher projected bench option', () => {
     },
     onViewBenchPlayer() {},
   });
-  assert.match(html, /Higher projected option on your bench/);
+  assert.match(html, /Better bench option/);
   assert.match(html, /View Bench Quarterback bench comparison/);
-  assert.match(html, /\+2\.4 projected pts/);
+  assert.match(html, /\+2\.4</);
+});
+
+function completedSchedule(weeks, upcoming = null) {
+  const pairs = [
+    ['JAX', 'CLE'], ['BUF', 'MIA'], ['BAL', 'PIT'], ['CIN', 'HOU'], ['IND', 'TEN'],
+    ['KC', 'DEN'], ['LV', 'LAC'], ['DAL', 'PHI'], ['NYG', 'WAS'], ['CHI', 'GB'],
+    ['DET', 'MIN'], ['ATL', 'CAR'], ['LAR', 'SEA'],
+  ];
+  return Object.fromEntries(Array.from({ length: weeks }, (_, index) => {
+    const week = index + 1;
+    const open = upcoming != null && week >= upcoming;
+    const kickoff = open ? '2099-10-22T17:00:00Z' : `2026-09-${String(week + 1).padStart(2, '0')}T17:00:00Z`;
+    const games = Object.fromEntries(pairs.flatMap(([away, home]) => [
+      [away, { kickoff, completed: !open, opp: home, home: false, ...(open ? {} : { ptsFor: 20, ptsAgainst: 17 }) }],
+      [home, { kickoff, completed: !open, opp: away, home: true, ...(open ? {} : { ptsFor: 17, ptsAgainst: 20 }) }],
+    ]));
+    return [week, games];
+  }));
+}
+const seasonRows = count => Array.from({ length: count }, (_, index) => ({ week: index + 1, pass_yd: 220 + index * 15, pass_td: index % 2, opp: 'CLE', team: 'JAX', off_snp: 60 + index, tm_off_snp: 64 }));
+
+test('a BALLDONTLIE projection bridges from the season average by scoring category', () => {
+  const html = render({
+    kickoff: '2099-10-22T17:00:00Z', week: 4, scheduleMap: completedSchedule(4, 4), weeklyStats: { player: seasonRows(3) },
+    scoring: { pass_yd: 0.04, pass_td: 4 },
+    projection: { projected: 14.4, projectedStats: { pass_yd: 260, pass_td: 1 }, factors: { source: 'balldontlie' } },
+  });
+  assert.match(html, /Projection build/);
+  assert.doesNotMatch(html, /BALLDONTLIE projection/);
+  assert.match(html, /season avg → projected pts/);
+  assert.match(html, /Projection build compares the season-average points in each scoring category/);
+  assert.match(html, />Passing</);
+  assert.match(html, />Total</);
+});
+
+test('the GridShift model bridge applies its factors in a fixed order', () => {
+  const html = render({
+    kickoff: '2099-10-22T17:00:00Z', week: 4, scheduleMap: completedSchedule(4, 4), weeklyStats: { player: seasonRows(3) },
+    projection: { projected: 9.6, min: 7, max: 12, factors: { source: 'current-season', seasonBase: 10, recentBase: 11, recentWeight: 0.5, shrunkBase: 10.4, oppFactor: 0.92, weatherFactor: 1, snapFactor: 1, locationFactor: 1 } },
+  });
+  assert.match(html, /GridShift model/);
+  const order = ['Season avg', 'Recent form', 'Matchup', 'Weather', 'Projection'].map(label => html.indexOf(`>${label}</text>`));
+  assert.ok(order.every(index => index > 0), 'every bridge step is drawn');
+  assert.deepEqual(order, order.slice().sort((a, b) => a - b));
+  assert.doesNotMatch(html, />Away game</);
+});
+
+test('final shows the stat line against its projection, usage and next week', () => {
+  const weeklyStats = { player: seasonRows(3) };
+  const html = render({
+    kickoff: '2026-09-04T17:00:00Z', completed: true, week: 3, points: 12.4, weeklyStats,
+    scheduleMap: completedSchedule(4, 4),
+    projection: { projected: 11, projectedStats: { pass_yd: 250, pass_td: 1 } },
+    scoring: { pass_yd: 0.04, pass_td: 4 },
+  });
+  assert.match(html, /data-game-phase="final"/);
+  assert.match(html, /Points vs projection/);
+  assert.match(html, /Season trend/);
+  assert.match(html, /Usage/);
+  assert.match(html, /snap share/);
+  assert.match(html, /Next week/);
+  assert.match(html, /Early estimate/);
+  assert.match(html, /GridShift model/);
+});
+
+test('a live game draws the scoring pace against the projection', () => {
+  const html = render({ kickoff: new Date(Date.now() - 45 * 60 * 1000).toISOString(), points: 6.2, projection: { projected: 14, min: 10, max: 18 } });
+  assert.match(html, /data-game-phase="live"/);
+  assert.match(html, /Scoring pace/);
+  assert.match(html, /role="slider"/);
+  assert.match(html, /Est\. finish/);
+  assert.doesNotMatch(html, /Season rank/);
 });
