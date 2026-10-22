@@ -148,11 +148,14 @@ function roleTeam(role, play, context) {
 }
 
 function buildPlayerIndex(players) {
-  const rows = players.map((row) => ({
+  return indexRosterRows(players.map((row) => ({
     key: getStatisticsPlayerKey(row),
     name: playerName(row),
     team: canonicalTeam(playerTeam(row)),
-  }));
+  })));
+}
+
+function indexRosterRows(rows) {
   const byTeamAlias = new Map();
   const byAlias = new Map();
 
@@ -520,6 +523,50 @@ export function buildPlayerQuarterStats({
   ]));
 
   return { byPlayer, periods: orderedPeriods.map(periodLabel) };
+}
+
+/**
+ * Every play with its actors matched to box-score rows, using the same name
+ * matching as the quarter split so a play is credited the same way everywhere.
+ *
+ * `roster` is the already-normalized box score: `{ key, name, team }` per row,
+ * where `key` is the row's own key. Plays the parser cannot read confidently
+ * keep an empty actor list rather than a guess; consumers decide whether to
+ * use them. `matchName` resolves names the narrative does not list as actors,
+ * such as the flagged player in a penalty clause.
+ */
+export function attributePlays({ plays = [], roster = [], homeTeam = null, awayTeam = null } = {}) {
+  const context = { homeTeam, awayTeam };
+  const index = indexRosterRows(roster.map((row) => ({ ...row, team: canonicalTeam(row.team) })));
+  const entries = plays.map((play) => {
+    const narrative = parsePlayNarrative(play);
+    const intercepted = isInterception(play, narrative);
+    const pickParse = intercepted ? parseInterception(play?.rawText || play?.description) : null;
+    const usable = (narrative.confident || Boolean(pickParse?.passer)) && !narrative.administrative;
+    const actors = usable ? playerActorMap(narrative, play, context, index) : [];
+    const offenseTeam = canonicalTeam(getOffenseTeam(
+      { ...play, team: normalizedPlayTeam(play) },
+      { homeTeam: canonicalTeam(homeTeam), awayTeam: canonicalTeam(awayTeam) },
+    ));
+    return {
+      play,
+      narrative,
+      actors,
+      offenseTeam,
+      defenseTeam: otherTeam(offenseTeam, context),
+      negated: Boolean(narrative.negated),
+      administrative: Boolean(narrative.administrative),
+      pass: actors.length > 0 && isPass(play, narrative, actors),
+      rush: actors.length > 0 && isRush(play, narrative, actors),
+      interception: intercepted,
+      incomplete: isIncomplete(play, narrative),
+      touchdown: touchdown(play, narrative),
+    };
+  });
+  return {
+    entries,
+    matchName: (name, team) => (name ? matchActor({ name }, team, index) : null),
+  };
 }
 
 export const STATISTICS_PLAYER_QUARTER_CATEGORIES = CATEGORY_IDS;

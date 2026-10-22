@@ -16,12 +16,13 @@ import {
   recAgg,
   runAgg,
 } from '../../../utils/playerSeason/dashboardModel.js';
-import { RateRows, SectionHead, Segmented, ShareTree, SplitTable, ZoneField } from './DashboardParts.jsx';
+import { FilterChip, RateRows, SectionHead, Segmented, ShareTree, SplitTable, Tween, ZoneField } from './DashboardParts.jsx';
 import { LANES, tipAttrs, ZONES } from './dashboardUi.js';
 import { FieldMap } from './FieldMap.jsx';
 import { PlayListBlock } from './PlayList.jsx';
 
 const zoneLabel = (key) => key.replace('-', ' ');
+const zoneOf = (play) => `${play.pd}-${play.pdir}`;
 const scoreBefore = (play) => (play.bm ?? 0) - (play.bo ?? 0);
 
 function situationGroups(team, { formation = true } = {}) {
@@ -50,6 +51,28 @@ function SelectionList({ label, count, onClear, ...listProps }) {
 const DROPBACK_KINDS = [['Completion', 'is-c1'], ['Scramble', 'is-c2'], ['Sack', 'is-c3'], ['Incompletion', 'is-c4'], ['Interception', 'is-c5']];
 const dropbackKind = (play) => (isSackTaken(play) ? 'Sack' : isRun(play) ? 'Scramble' : isInterception(play) ? 'Interception' : isCatch(play) ? 'Completion' : 'Incompletion');
 
+function targetCounts(passes) {
+  const targets = {};
+  for (const play of passes) {
+    if (!isPassAttempt(play) || play.tgt == null) continue;
+    const entry = (targets[play.tgt] ??= { key: play.tgt, t: 0, c: 0, y: 0, td: 0 });
+    entry.t += 1;
+    if (isCatch(play)) { entry.c += 1; entry.y += play.y ?? 0; }
+    if (play.t === 'passing-touchdown') entry.td += 1;
+  }
+  return targets;
+}
+
+function FilterChips({ filters, hint }) {
+  return (
+    <span className="player-dash-filter-chips">
+      {filters.length
+        ? filters.map((filter) => <FilterChip key={filter.label} label={filter.label} onClear={filter.clear} />)
+        : <span className="player-dash-meta">{hint}</span>}
+    </span>
+  );
+}
+
 export function PassingTab({ plays, box, team, people, initialZone, listProps }) {
   const [zone, setZone] = useState(initialZone ?? null);
   const [metric, setMetric] = useState('ya');
@@ -59,8 +82,19 @@ export function PassingTab({ plays, box, team, people, initialZone, listProps })
   const passes = useMemo(() => plays.filter((play) => isPassAttempt(play) || isSackTaken(play)), [plays]);
   const dropbacks = useMemo(() => plays.filter(isDropback), [plays]);
 
+  // Cross-filter: each chart counts the plays that pass every other chart's selection,
+  // so its own selection stays visible against the rest of its options.
+  const tests = {
+    zone: (play) => !zone || zoneOf(play) === zone,
+    target: (play) => target == null || play.tgt === target,
+    result: (play) => !result || dropbackKind(play) === result,
+    down: (play) => !down || play.dn === down,
+  };
+  const except = (skip) => (play) => Object.entries(tests).every(([key, test]) => key === skip || test(play));
+
+  const zonePasses = passes.filter(except('zone'));
   const zones = Object.fromEntries(ZONES.map((key) => {
-    const agg = passAgg(passes.filter((play) => `${play.pd}-${play.pdir}` === key));
+    const agg = passAgg(zonePasses.filter((play) => zoneOf(play) === key));
     const value = metric === 'ya' ? agg.ya : metric === 'pct' ? agg.pct : agg.att;
     const big = metric === 'ya' ? fmt(agg.ya, 1) : metric === 'pct' ? (agg.pct == null ? '–' : `${fmt(agg.pct)}%`) : fmt(agg.att);
     return [key, {
@@ -72,49 +106,53 @@ export function PassingTab({ plays, box, team, people, initialZone, listProps })
   }));
   const charted = passAgg(passes);
 
-  const targets = {};
-  for (const play of passes.filter(isPassAttempt)) {
-    if (play.tgt == null) continue;
-    const entry = (targets[play.tgt] ??= { key: play.tgt, t: 0, c: 0, y: 0, td: 0 });
-    entry.t += 1;
-    if (isCatch(play)) { entry.c += 1; entry.y += play.y ?? 0; }
-    if (play.t === 'passing-touchdown') entry.td += 1;
-  }
+  // Rows keep the season order; a filter shrinks or empties them in place.
+  const seasonOrder = useMemo(() => targetCounts(passes), [passes]);
+  const targets = targetCounts(passes.filter(except('target')));
   const targetTotal = Object.values(targets).reduce((total, entry) => total + entry.t, 0);
-  const treeRows = Object.values(targets).sort((a, b) => b.t - a.t || b.y - a.y).map((entry) => ({
-    key: entry.key,
-    name: people?.[entry.key]?.n ?? 'Unknown',
-    sub: people?.[entry.key]?.pos ?? '',
-    outer: entry.t,
-    inner: entry.c,
-    value: entry.y,
-    detail: `yds · ${entry.c}/${entry.t}${entry.td ? ` · ${entry.td} TD` : ''}`,
-    tip: `${entry.t} targets (${fmt((100 * entry.t) / (targetTotal || 1))}% of charted) · ${entry.c} caught`,
-  }));
+  const treeRows = Object.values(seasonOrder).sort((a, b) => b.t - a.t || b.y - a.y).map(({ key }) => {
+    const entry = targets[key] ?? { t: 0, c: 0, y: 0, td: 0 };
+    return {
+      key,
+      name: people?.[key]?.n ?? 'Unknown',
+      sub: people?.[key]?.pos ?? '',
+      outer: entry.t,
+      inner: entry.c,
+      value: entry.y,
+      detail: `yds · ${entry.c}/${entry.t}${entry.td ? ` · ${entry.td} TD` : ''}`,
+      tip: `${entry.t} targets (${fmt((100 * entry.t) / (targetTotal || 1))}% of charted) · ${entry.c} caught`,
+      empty: !entry.t,
+    };
+  });
 
-  const counts = Object.fromEntries(DROPBACK_KINDS.map(([kind]) => [kind, dropbacks.filter((play) => dropbackKind(play) === kind).length]));
+  const resultPlays = dropbacks.filter(except('result'));
+  const counts = Object.fromEntries(DROPBACK_KINDS.map(([kind]) => [kind, resultPlays.filter((play) => dropbackKind(play) === kind).length]));
+  const downPlays = dropbacks.filter(except('down'));
   const downRows = [1, 2, 3, 4].map((d) => {
-    const subset = dropbacks.filter((play) => play.dn === d);
+    const subset = downPlays.filter((play) => play.dn === d);
     const agg = passAgg(subset);
     const moved = subset.filter(movedChains).length;
-    return subset.length ? {
+    // Downs the season never reached stay hidden; a filter that empties one keeps the row at zero.
+    if (!dropbacks.some((play) => play.dn === d)) return null;
+    return {
       key: d,
       label: ordinal(d),
-      fill: (100 * moved) / subset.length,
-      value: `${fmt((100 * moved) / subset.length)}%`,
+      fill: subset.length ? (100 * moved) / subset.length : 0,
+      value: subset.length ? `${fmt((100 * moved) / subset.length)}%` : '–',
       detail: `moved chains · ${subset.length} plays`,
       tipTitle: `${ordinal(d)} down`,
       tip: [`${moved} of ${subset.length} dropbacks gained a first down or scored`, `${agg.cmp}/${agg.att} passing · ${fmt(agg.ya, 1)} yds per attempt · ${agg.sk} sacks`],
-    } : null;
+    };
   }).filter(Boolean);
 
-  const selected = dropbacks.filter((play) => (
-    (!zone || `${play.pd}-${play.pdir}` === zone)
-    && (target == null || play.tgt === target)
-    && (!result || dropbackKind(play) === result)
-    && (!down || play.dn === down)
-  ));
-  const selectionLabel = [zone && zoneLabel(zone), target != null && (people?.[target]?.n ?? ''), result && `${result.toLowerCase()}s`, down && `${ordinal(down)} down`].filter(Boolean).join(' · ');
+  const selected = dropbacks.filter(except(null));
+  const filters = [
+    zone && { label: zoneLabel(zone), clear: () => setZone(null) },
+    target != null && { label: people?.[target]?.n ?? 'Unknown', clear: () => setTarget(null) },
+    result && { label: `${result}s`, clear: () => setResult(null) },
+    down && { label: `${ordinal(down)} down`, clear: () => setDown(null) },
+  ].filter(Boolean);
+  const selectionLabel = filters.map((filter) => filter.label).join(' · ');
   const clear = () => { setZone(null); setTarget(null); setResult(null); setDown(null); };
 
   const groups = situationGroups(team).map(([label, rows]) => ({
@@ -136,7 +174,9 @@ export function PassingTab({ plays, box, team, people, initialZone, listProps })
     <div className="player-dash-panel">
       <div className="player-dash-grid is-wide-left">
         <div className="player-dash-block">
-          <SectionHead title="Passing chart" />
+          <SectionHead title="Passing chart">
+            <FilterChips filters={filters} hint="Select a zone, result, down, or receiver to filter every chart" />
+          </SectionHead>
           <ZoneField
             zones={zones}
             selected={zone}
@@ -147,27 +187,28 @@ export function PassingTab({ plays, box, team, people, initialZone, listProps })
                 <span className="player-dash-ramp">Lower<i />Higher</span>
               </div>
             )}
-            footnote={`${charted.att} of ${box.passing_attempts ?? charted.att} attempts charted · select a zone for its throws`}
+            footnote={`${charted.att} of ${box.passing_attempts ?? charted.att} attempts charted · select a zone to filter the other charts`}
           />
           <SectionHead title="Dropback results" />
           <div className="player-dash-stackbar" role="group" aria-label="Dropback results">
-            {DROPBACK_KINDS.map(([kind, tone]) => counts[kind] ? (
+            {DROPBACK_KINDS.map(([kind, tone]) => (
               <button
                 key={kind}
                 type="button"
-                className={`player-dash-stackbar__seg ${tone}`}
-                style={{ flex: counts[kind] }}
+                className={`player-dash-stackbar__seg ${tone} ${counts[kind] ? '' : 'is-empty'}`}
+                style={{ flexGrow: counts[kind] }}
                 aria-pressed={result === kind}
                 aria-label={`${kind}s: ${counts[kind]}`}
+                tabIndex={counts[kind] || result === kind ? undefined : -1}
                 onClick={() => setResult(result === kind ? null : kind)}
-                {...tipAttrs(`${kind}s`, [`${counts[kind]} of ${dropbacks.length} dropbacks (${fmt((100 * counts[kind]) / (dropbacks.length || 1))}%)`, 'Select to list them'])}
+                {...tipAttrs(`${kind}s`, [`${counts[kind]} of ${resultPlays.length} dropbacks (${fmt((100 * counts[kind]) / (resultPlays.length || 1))}%)`, 'Select to filter the other charts'])}
               >
-                {counts[kind] / (dropbacks.length || 1) >= 0.07 ? counts[kind] : ''}
+                {counts[kind] / (resultPlays.length || 1) >= 0.07 ? <Tween text={counts[kind]} /> : ''}
               </button>
-            ) : null)}
+            ))}
           </div>
           <div className="player-dash-legend">
-            {DROPBACK_KINDS.map(([kind, tone]) => <span key={kind}><i className={tone} />{kind} {counts[kind]}</span>)}
+            {DROPBACK_KINDS.map(([kind, tone]) => <span key={kind}><i className={tone} />{kind} <Tween text={counts[kind]} /></span>)}
           </div>
           <SectionHead title="By down" />
           <RateRows rows={downRows} selected={down} onSelect={(key) => setDown(down === key ? null : key)} />
@@ -316,8 +357,11 @@ export function ReceivingTab({ plays, season, box, team, people, listProps }) {
   const [metric, setMetric] = useState('ypt');
   const [passer, setPasser] = useState(null);
   const targets = plays.filter(isTarget);
+  // Cross-filter: the target map counts the selected passer's throws; the passer rows count the selected zone's.
+  const passerOf = (play) => play.qb ?? 'unknown';
+  const zoneTargets = targets.filter((play) => passer == null || passerOf(play) === passer);
   const zones = Object.fromEntries(ZONES.map((key) => {
-    const agg = recAgg(targets.filter((play) => `${play.pd}-${play.pdir}` === key));
+    const agg = recAgg(zoneTargets.filter((play) => zoneOf(play) === key));
     const value = metric === 'ypt' ? agg.ypt : metric === 'pct' ? agg.pct : agg.tgt;
     const big = !agg.tgt ? '–' : metric === 'ypt' ? fmt(agg.ypt, 1) : metric === 'pct' ? `${fmt(agg.pct)}%` : fmt(agg.tgt);
     return [key, { value: agg.tgt ? value : null, big, small: `${agg.rec}/${agg.tgt}${agg.td ? ` · ${agg.td} TD` : ''}`, tip: `${agg.rec}/${agg.tgt} caught · ${agg.y} yds${agg.td ? ` · ${agg.td} TD` : ''}` }];
@@ -331,25 +375,36 @@ export function ReceivingTab({ plays, season, box, team, people, listProps }) {
   });
   const maxShare = Math.max(...shareRows.map((row) => row.rate), 0.1);
 
-  const passers = {};
-  for (const play of targets) {
-    const key = play.qb ?? 'unknown';
-    const entry = (passers[key] ??= { key, t: 0, c: 0, y: 0 });
-    entry.t += 1;
-    if (isCatch(play)) { entry.c += 1; entry.y += play.y ?? 0; }
-  }
-  const passerRows = Object.values(passers).sort((a, b) => b.t - a.t).map((entry) => ({
-    key: entry.key,
-    name: people?.[entry.key]?.n ?? 'Unknown passer',
-    sub: people?.[entry.key]?.pos ?? '',
-    outer: entry.t,
-    inner: entry.c,
-    value: entry.y,
-    detail: `yds · ${entry.c}/${entry.t}`,
-    tip: `${entry.t} targets · ${entry.c} caught · ${entry.y} yds`,
-  }));
-  const selected = targets.filter((play) => (!zone || `${play.pd}-${play.pdir}` === zone) && (passer == null || (play.qb ?? 'unknown') === passer));
-  const selectionLabel = [zone && zoneLabel(zone), passer != null && (people?.[passer]?.n ?? '')].filter(Boolean).join(' · ');
+  const passerCounts = (subset) => {
+    const passers = {};
+    for (const play of subset) {
+      const entry = (passers[passerOf(play)] ??= { key: passerOf(play), t: 0, c: 0, y: 0 });
+      entry.t += 1;
+      if (isCatch(play)) { entry.c += 1; entry.y += play.y ?? 0; }
+    }
+    return passers;
+  };
+  const passers = passerCounts(targets.filter((play) => !zone || zoneOf(play) === zone));
+  const passerRows = Object.values(passerCounts(targets)).sort((a, b) => b.t - a.t).map(({ key }) => {
+    const entry = passers[key] ?? { t: 0, c: 0, y: 0 };
+    return {
+      key,
+      name: people?.[key]?.n ?? 'Unknown passer',
+      sub: people?.[key]?.pos ?? '',
+      outer: entry.t,
+      inner: entry.c,
+      value: entry.y,
+      detail: `yds · ${entry.c}/${entry.t}`,
+      tip: `${entry.t} targets · ${entry.c} caught · ${entry.y} yds`,
+      empty: !entry.t,
+    };
+  });
+  const selected = targets.filter((play) => (!zone || zoneOf(play) === zone) && (passer == null || passerOf(play) === passer));
+  const filters = [
+    zone && { label: zoneLabel(zone), clear: () => setZone(null) },
+    passer != null && { label: people?.[passer]?.n ?? 'Unknown passer', clear: () => setPasser(null) },
+  ].filter(Boolean);
+  const selectionLabel = filters.map((filter) => filter.label).join(' · ');
 
   return (
     <div className="player-dash-panel">
@@ -358,7 +413,9 @@ export function ReceivingTab({ plays, season, box, team, people, listProps }) {
       </div>
       <div className="player-dash-grid is-wide-left">
         <div className="player-dash-block">
-          <SectionHead title="Target map" />
+          <SectionHead title="Target map">
+            <FilterChips filters={filters} hint="Select a zone or passer to filter both charts" />
+          </SectionHead>
           <ZoneField
             zones={zones}
             selected={zone}

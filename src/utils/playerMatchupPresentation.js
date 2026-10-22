@@ -600,7 +600,7 @@ export function buildPlayerHeadlineParts({
    row sits under and in what order the headings read, so the drilldown can
    show the composition of a projection instead of one flat decimal list. */
 
-const BREAKDOWN_GROUPS = [
+export const BREAKDOWN_GROUPS = [
   { id: 'passing', label: 'Passing' },
   { id: 'rushing', label: 'Rushing' },
   { id: 'receiving', label: 'Receiving' },
@@ -608,7 +608,7 @@ const BREAKDOWN_GROUPS = [
   { id: 'defense', label: 'Defense' },
   { id: 'special', label: 'Special teams' },
   { id: 'bonus', label: 'Bonuses' },
-  { id: 'negative', label: 'Negative plays' },
+  { id: 'negative', label: 'Turnovers' },
   { id: 'model', label: 'Model' },
 ];
 

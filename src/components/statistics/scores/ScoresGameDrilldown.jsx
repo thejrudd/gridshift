@@ -4,7 +4,10 @@ import { useTheme } from '../../../context/ThemeContext';
 import { getTeamColorKey } from '../../../data/teamColors';
 import { getTeamVisualTheme, pickReadableForeground } from '../../../utils/teamVisualTheme';
 import { buildScoreDetailFromGame } from '../../../utils/balldontlieNflScoreboard';
+import { buildGameRecap } from '../../../utils/statisticsGameRecap.js';
 import { getStatisticsPlayerKey } from '../../../utils/statisticsPlayerQuarterStats';
+import { TEAM_STAT_BREAKDOWN_BY_LABEL, buildTeamStatBreakdown } from '../../../utils/statisticsTeamStatBreakdown.js';
+import { buildPlayStatGroups, mergeStatGroups } from '../../../utils/statisticsScoresPlayStats.js';
 import {
   getDefaultStatisticsPlayerSort,
   normalizeStatisticsPlayerSort,
@@ -17,17 +20,22 @@ import { deriveEspnEventId, fetchGameParticipants } from '../../../utils/nflPlay
 import { lookupPlayerByName } from '../../../utils/nflPlays/playerNameIndex.js';
 import { PlayerAvatar } from '../../shared/PlayerAvatar.jsx';
 import { LivePosChip } from '../../companion/live/LiveAtoms.jsx';
-import { getDriveNetYards, isFieldFlipped } from '../../../utils/nflPlays/fieldGeometry.js';
+import { getDriveNetYards, isFieldFlipped, isNonSnapPlay, teamLogo } from '../../../utils/nflPlays/fieldGeometry.js';
 import { DriveField } from '../../nflPlays/DriveField.jsx';
-import { WinProbabilityChart } from '../../nflPlays/WinProbabilityChart.jsx';
 import { PlayCard } from './PlayCard.jsx';
 import StoryStatsPanel from './StoryStatsPanel.jsx';
+import ScoresOverview, { DetailUnavailable, DrivePanel, SectionHeading } from './ScoresOverview.jsx';
+import { PlayerSeasonCard, PregameOverview, SeasonGameLog } from './ScoresPregame.jsx';
+import { getTeamSeason } from '../../../api/teamSeasonApi.js';
+import { fetchRoster } from '../../../utils/playerApi.js';
+import { nameKey } from '../../../utils/teamSeason/teamDashboardModel.js';
+import { buildMatchupRanks, buildPlayerSeasonCard, buildRecentForm, buildSeasonLeaders, buildSeasonStatGroups, buildSeasonStatLookup, seasonRecord } from '../../../utils/statisticsScoresSeasonContext.js';
+import { detailCoverageMessage, driveMeta, playClockLabel, playSentence, quarterLabel } from './scoresDetailFormat.js';
 
 const SECTIONS = [
   { id: 'overview', label: 'Overview' },
   { id: 'team', label: 'Team Stats' },
   { id: 'players', label: 'Players' },
-  { id: 'scoring', label: 'Scoring' },
   { id: 'plays', label: 'Play-by-Play' },
   { id: 'story', label: 'Game Story' },
 ];
@@ -36,10 +44,27 @@ const SECTIONS = [
 // play cadence keeps this feed aligned without multiplying upstream box-score
 // work.
 const LIVE_DETAIL_REFRESH_INTERVAL_MS = 8_000;
+// Plays from the dev fixture carry no provider id; the clock and text identify them.
+const playFilterKey = (play) => play.id ?? `${play.period}-${play.time}-${play.description}`;
+
+// A play earns the "Big plays" filter when it scores, changes possession on a
+// turnover, gains 20 or more yards, or moves win probability by 6 points.
+function bigPlayIds(drives) {
+  const ids = new Set();
+  let previous = null;
+  for (const play of drives.flatMap((drive) => drive.plays)) {
+    const probability = Number.isFinite(play.homeWinProbability) ? play.homeWinProbability : null;
+    const swing = probability != null && previous != null ? Math.abs(probability - previous) : 0;
+    if (probability != null) previous = probability;
+    const text = `${play.type ?? ''} ${play.description ?? ''}`;
+    const turnover = /intercept/i.test(text) || /fumble/i.test(text) && /recovered by/i.test(text);
+    const gain = Number(play.statYardage);
+    if (play.scoring || turnover || gain >= 20 || swing >= 0.06) ids.add(playFilterKey(play));
+  }
+  return ids;
+}
 const STORY_STATS_PREGAME_WINDOW_MS = 60 * 60_000;
 const STORY_STATS_LIVE_STATUSES = new Set(['live', 'halftime', 'delayed']);
-
-const teamLogo = (teamId) => `https://a.espncdn.com/i/teamlogos/nfl/500/${String(teamId).toLowerCase()}.png`;
 
 function resolveStoryStatsContext({ provider, bdlGameId, status, kickoff, livePeriod }, gameKey, nowMs = Date.now()) {
   if (provider !== 'balldontlie' || !bdlGameId) {
@@ -101,29 +126,7 @@ function statWinner(stat) {
   return away > home ? 'away' : 'home';
 }
 
-function SectionHeading({ title, meta, action }) {
-  return (
-    <header className="scores-section-heading">
-      <h2>{title}</h2>
-      {meta && <span>{meta}</span>}
-      {action}
-    </header>
-  );
-}
-
-function DetailUnavailable({ children }) {
-  return <p className="scores-detail-unavailable">{children}</p>;
-}
-
-function detailCoverageMessage(detail, fallback) {
-  if (detail.coverage?.detailStatus === 'loading') return 'Loading live game detail from BALLDONTLIE…';
-  if (detail.coverage?.detailStatus === 'error') {
-    return detail.coverage.detailError ?? 'BALLDONTLIE game detail could not be loaded.';
-  }
-  return fallback;
-}
-
-function StatAdvantageRail({ stat, awayId, homeId, awayColor, homeColor }) {
+function StatAdvantageRail({ stat, awayId, homeId, awayColor, homeColor, expanded = null, onToggle = null }) {
   const awayValue = Math.max(0, getNumericRatio(stat, 'away'));
   const homeValue = Math.max(0, getNumericRatio(stat, 'home'));
   const combinedValue = awayValue + homeValue;
@@ -131,41 +134,69 @@ function StatAdvantageRail({ stat, awayId, homeId, awayColor, homeColor }) {
   const homeShare = 100 - awayShare;
   const winner = statWinner(stat);
 
+  const expandable = typeof onToggle === 'function';
+  const Rail = expandable ? 'button' : 'div';
   return (
-    <div className="scores-stat-rail">
-      <div className="scores-stat-rail-values">
+    <Rail
+      className={`scores-stat-rail${expandable ? ' is-expandable' : ''}`}
+      {...(expandable ? { type: 'button', 'aria-expanded': Boolean(expanded), onClick: onToggle } : {})}
+    >
+      <span className="scores-stat-rail-values">
         <strong className={winner === 'away' ? 'is-advantage' : winner === 'home' ? 'is-dimmed' : ''}>{stat.away}</strong>
-        <span>{stat.label}</span>
+        <span>{stat.label}{expandable && <i className="scores-stat-rail-chevron" aria-hidden="true">{expanded ? '−' : '+'}</i>}</span>
         <strong className={winner === 'home' ? 'is-advantage' : winner === 'away' ? 'is-dimmed' : ''}>{stat.home}</strong>
-      </div>
-      <div
+      </span>
+      <span
         className="scores-stat-rail-track"
         role="img"
         aria-label={`${stat.label}: ${awayId} ${stat.away}, ${Math.round(awayShare)} percent; ${homeId} ${stat.home}, ${Math.round(homeShare)} percent`}
       >
         <span className="is-away" style={{ width: `${awayShare}%`, background: awayColor }} />
         <span className="is-home" style={{ width: `${homeShare}%`, background: homeColor }} />
-      </div>
+      </span>
       {stat.note && <small>{stat.note}</small>}
-    </div>
+    </Rail>
   );
 }
 
-function DetailTeam({ team, score, side, record, loser, possession }) {
+// "Tampa Bay Buccaneers" reads as "Buccaneers" in the hero; every NFL nickname
+// is the final word, and the full name stays available to assistive tech.
+function teamNickname(name) {
+  const words = String(name ?? '').trim().split(/\s+/);
+  return words.length > 1 ? words.at(-1) : name;
+}
+
+function DetailTeam({ team, score, side, record, loser, possession, timeouts = null, onOpenTeam = null }) {
+  const hasBall = possession === team.id;
+  // With a team route available the whole side opens that team's stats page.
+  const Root = onOpenTeam ? 'button' : 'div';
   return (
-    <div className={`scores-detail-team is-${side}${loser ? ' is-loser' : ''}`}>
+    <Root
+      className={`scores-detail-team is-${side}${loser ? ' is-loser' : ''}${onOpenTeam ? ' is-link' : ''}`}
+      {...(onOpenTeam ? { type: 'button', onClick: () => onOpenTeam(team), title: `Open ${team.name} team stats` } : {})}
+    >
       <img src={teamLogo(team.id)} alt="" />
       <div>
         <span>{side === 'away' ? 'Away' : 'Home'}</span>
-        <strong>{team.name}</strong>
-        <b>{team.id}{record ? ` · ${record}` : ''}{possession === team.id ? ' · Ball' : ''}</b>
+        <strong title={team.name} aria-label={team.name}>{teamNickname(team.name)}</strong>
+        <b>{team.id}{record ? ` · ${record}` : ''}</b>
+        {(hasBall || Number.isFinite(timeouts)) && (
+          <span className="scores-detail-team-state">
+            {Number.isFinite(timeouts) && (
+              <span className="scores-detail-timeouts" role="img" aria-label={`${timeouts} timeouts left`}>
+                {[0, 1, 2].map((index) => <i key={index} className={index < timeouts ? '' : 'is-used'} />)}
+              </span>
+            )}
+            {hasBall && <span className="scores-detail-ball" role="img" aria-label={`${team.name} have the ball`} />}
+          </span>
+        )}
       </div>
-      <em>{score ?? '—'}</em>
-    </div>
+      {score != null && <em>{score}</em>}
+    </Root>
   );
 }
 
-function ScoreHero({ game, detail, awayTheme, homeTheme }) {
+function ScoreHero({ game, detail, awayTheme, homeTheme, records = null, onOpenTeam = null }) {
   const final = detail.status === 'final';
   const awayLoser = final && detail.score.away < detail.score.home;
   const homeLoser = final && detail.score.home < detail.score.away;
@@ -193,9 +224,11 @@ function ScoreHero({ game, detail, awayTheme, homeTheme }) {
           team={detail.away}
           score={detail.score.away}
           side="away"
-          record={game.records?.away}
+          record={game.records?.away ?? records?.away}
           loser={awayLoser}
           possession={possession}
+          timeouts={detail.status === 'live' ? game.live?.awayTimeouts : null}
+          onOpenTeam={onOpenTeam}
         />
         <div className="scores-detail-status">
           {detail.status === 'live' && <span className="scores-live-dot" aria-hidden="true" />}
@@ -207,9 +240,11 @@ function ScoreHero({ game, detail, awayTheme, homeTheme }) {
           team={detail.home}
           score={detail.score.home}
           side="home"
-          record={game.records?.home}
+          record={game.records?.home ?? records?.home}
           loser={homeLoser}
           possession={possession}
+          timeouts={detail.status === 'live' ? game.live?.homeTimeouts : null}
+          onOpenTeam={onOpenTeam}
         />
       </div>
       <footer>
@@ -221,107 +256,203 @@ function ScoreHero({ game, detail, awayTheme, homeTheme }) {
   );
 }
 
-function LineScore({ detail }) {
-  if (!detail.quarterLabels.length || !detail.lineScore.away.length || !detail.lineScore.home.length) {
-    return <DetailUnavailable>Quarter-by-quarter scoring is not included in this provider response.</DetailUnavailable>;
+// Box-score groups to try, in order, when a Team Stats player opens Players.
+const TEAM_STAT_PLAYER_GROUPS = {
+  totalYards: ['rushing', 'receiving'],
+  passingYards: ['receiving', 'passing'],
+  rushingYards: ['rushing'],
+  firstDowns: ['rushing', 'receiving'],
+  thirdDown: ['rushing', 'receiving', 'passing'],
+  fourthDown: ['rushing', 'receiving', 'passing'],
+  offensivePlays: ['rushing', 'receiving', 'passing'],
+  successRate: ['rushing', 'receiving', 'passing'],
+  explosivePasses: ['receiving'],
+  explosiveRuns: ['rushing'],
+  goalToGo: ['receiving', 'rushing'],
+  fieldGoals: ['kicking'],
+  kickReturns: ['returns', 'receiving', 'rushing'],
+  puntReturns: ['returns', 'receiving', 'rushing'],
+  netPunting: ['punting'],
+  redZone: ['receiving', 'rushing', 'kicking'],
+  sacks: ['defense'],
+  takeaways: ['defense'],
+  turnovers: ['passing', 'rushing', 'receiving'],
+  penalties: ['defense', 'receiving', 'rushing', 'passing'],
+};
+
+function boxScoreRoster(detail) {
+  const roster = new Map();
+  for (const group of detail.playerGroups ?? []) {
+    for (const row of group.rows ?? []) {
+      const key = playerRowKey(row);
+      if (!roster.has(key)) roster.set(key, { key, name: row.player, team: row.team, position: row.position ?? null, groups: [] });
+      roster.get(key).groups.push(group.id);
+    }
+  }
+  return roster;
+}
+
+function TeamStatPlayers({ id, breakdown, detail, roster, participants, awayColor, homeColor, onOpenPlayer, season = null }) {
+  const sides = [['away', detail.away, awayColor], ['home', detail.home, homeColor]];
+  const all = sides.flatMap(([, team]) => breakdown?.[team.id] ?? []);
+  const max = Math.max(1, ...all.map((row) => Math.abs(row.sort)));
+  return (
+    <div className="scores-stat-players" data-tour="statistics-scores-team-breakdown">
+      {sides.map(([side, team, color]) => {
+        const rows = breakdown?.[team.id] ?? [];
+        return (
+          <div key={side} className={`scores-stat-players-team is-${side}`}>
+            <div className="scores-stat-players-head">
+              <img src={teamLogo(team.id)} alt="" />{team.name}
+              {season?.[team.id] && (
+                <span className="scores-stat-players-season">
+                  Season {season[team.id].average}
+                  {season[team.id].rank != null && <span className={`scores-rank-chip${season[team.id].rank <= 10 ? ' is-top' : ''}`}>#{season[team.id].rank} in NFL</span>}
+                </span>
+              )}
+            </div>
+            {rows.length ? rows.map((row) => {
+              const info = roster.get(row.key);
+              // Players missing from the box score arrive with the official text's
+              // abbreviated name; the game's participant index spells it out.
+              const participant = participants && (info?.name || row.name)
+                ? lookupPlayerByName(participants, info?.name ?? row.name, { team: info?.team ?? row.key.split(':')[0] })
+                : null;
+              const name = info?.name ?? participant?.name ?? row.name ?? row.key.split(':')[1];
+              const position = info?.position ?? participant?.position ?? null;
+              const group = (TEAM_STAT_PLAYER_GROUPS[id] ?? []).find((entry) => info?.groups.includes(entry)) ?? info?.groups[0] ?? null;
+              const content = (
+                <>
+                  <PlayerAvatar player={participant ? { imageUrl: participant.imageUrl, espnId: participant.espnId } : {}} name={name} size={30} className="scores-player-face" />
+                  <span className="scores-stat-players-name">
+                    <strong title={name}>{name}</strong>
+                    <small>{position && <LivePosChip position={position} />}{row.detail && <span>{row.detail}</span>}</small>
+                  </span>
+                  <b>{row.value}</b>
+                  <span className="scores-stat-players-bar" aria-hidden="true"><i style={{ width: `${(Math.abs(row.sort) / max) * 100}%`, background: color }} /></span>
+                </>
+              );
+              return group ? (
+                <button key={row.key} type="button" className="scores-stat-players-row" onClick={() => onOpenPlayer(group, row.key)}>{content}</button>
+              ) : (
+                <div key={row.key} className="scores-stat-players-row">{content}</div>
+              );
+            }) : <p className="scores-stat-players-none">None</p>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function TeamStats({ detail, awayTheme, homeTheme, participants = null, onOpenPlayer = null, seasonGroups = null, seasonLookup = null, onOpenGame = null, initialOpenStat = null }) {
+  const [openStat, setOpenStat] = useState(initialOpenStat);
+  const played = detail.status !== 'scheduled';
+  const roster = useMemo(() => boxScoreRoster(detail), [detail]);
+  const breakdown = useMemo(() => (played ? buildTeamStatBreakdown({
+    plays: detail.drives.flatMap((drive) => drive.plays.map((play) => ({ ...play, driveId: drive.id }))),
+    roster: [...roster.values()],
+    homeTeam: detail.home.id,
+    awayTeam: detail.away.id,
+  }) : null), [detail, roster, played]);
+  // Rows the score feed does not carry, counted from the play-by-play.
+  const liveGroups = useMemo(() => (played ? mergeStatGroups(detail.statGroups, buildPlayStatGroups({
+    drives: detail.drives,
+    roster: [...roster.values()],
+    homeTeam: detail.home.id,
+    awayTeam: detail.away.id,
+  })) : detail.statGroups), [detail, roster, played]);
+  const awayColor = awayTheme?.borderColor ?? awayTheme?.color;
+  const homeColor = homeTheme?.borderColor ?? homeTheme?.color;
+  // Before kickoff the rows are season averages, and a row opens its game log.
+  const pregame = !played && seasonGroups?.length > 0;
+  const groups = pregame ? seasonGroups : liveGroups;
+  if (!groups.length) {
+    return <DetailUnavailable>{detailCoverageMessage(detail, 'Team statistics are not included in this score feed.')}</DetailUnavailable>;
   }
   return (
-    <div className="scores-line-score-shell">
-      <table className="scores-line-score" aria-label="Score by quarter">
-        <thead><tr><th scope="col">Team</th>{detail.quarterLabels.map((label) => <th key={label} scope="col">{label}</th>)}</tr></thead>
-        <tbody>
-          {[['away', detail.away], ['home', detail.home]].map(([side, team]) => (
-            <tr key={side}>
-              <th scope="row"><img src={teamLogo(team.id)} alt="" />{team.id}</th>
-              {detail.lineScore[side].map((score, index) => <td key={`${side}-${detail.quarterLabels[index]}`}>{score}</td>)}
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="scores-team-stats">
+      <h2 className="scores-visually-hidden">Team Stats</h2>
+      <div className="scores-team-stat-groups">
+        {groups.map((group) => (
+          <section key={group.id} className="scores-team-stat-group">
+            <h3>{group.label}</h3>
+            {group.stats.map((stat) => {
+              // Expandable only when the play-by-play credited someone, so a row
+              // never opens onto two empty lists.
+              const candidate = breakdown ? TEAM_STAT_BREAKDOWN_BY_LABEL[stat.label] : null;
+              const id = pregame
+                ? (stat.season ? stat.label : null)
+                : candidate && Object.values(breakdown[candidate] ?? {}).some((rows) => rows.length) ? candidate : null;
+              const open = Boolean(id) && openStat === id;
+              return (
+                <Fragment key={stat.label}>
+                  <StatAdvantageRail
+                    stat={stat}
+                    awayId={detail.away.id}
+                    homeId={detail.home.id}
+                    awayColor={awayColor}
+                    homeColor={homeColor}
+                    expanded={open}
+                    onToggle={id ? () => setOpenStat(open ? null : id) : null}
+                  />
+                  {open && pregame && (
+                    <SeasonGameLog stat={stat} detail={detail} awayColor={awayColor} homeColor={homeColor} onOpenGame={onOpenGame} />
+                  )}
+                  {open && !pregame && (
+                    <TeamStatPlayers
+                      id={id}
+                      breakdown={breakdown[id]}
+                      detail={detail}
+                      roster={roster}
+                      participants={participants}
+                      awayColor={awayColor}
+                      homeColor={homeColor}
+                      onOpenPlayer={(groupId, key) => onOpenPlayer?.(groupId, key)}
+                      season={seasonLookup?.get(stat.label) ?? null}
+                    />
+                  )}
+                </Fragment>
+              );
+            })}
+          </section>
+        ))}
+      </div>
     </div>
   );
 }
 
-function Leaders({ detail }) {
+// The newest play, directly under the hero, while the game is on or just ended.
+function LatestPlay({ detail, onSelectPlay }) {
+  if (detail.status === 'scheduled') return null;
+  const play = detail.drives.flatMap((drive) => drive.plays).filter((entry) => entry.id && !isNonSnapPlay(entry)).at(-1);
+  if (!play) return null;
   return (
-    <div className="scores-detail-leaders">
-      {detail.leaders.map((leader) => (
-        <article key={leader.label}>
-          <span>{leader.label}</span>
-          <div><img src={teamLogo(detail.away.id)} alt="" /><strong>{leader.away}</strong></div>
-          <div><img src={teamLogo(detail.home.id)} alt="" /><strong>{leader.home}</strong></div>
-        </article>
-      ))}
+    <div className="scores-detail-latest">
+      <span>{detail.status === 'final' ? 'Final play' : 'Latest play'}</span>
+      <button type="button" onClick={() => onSelectPlay(play.id)}>
+        <time>{playClockLabel(play)}</time>
+        <img src={teamLogo(play.team)} alt="" />
+        <span>{playSentence(play)}</span>
+      </button>
     </div>
   );
 }
 
-function Overview({ detail, awayTheme, homeTheme }) {
-  const primaryStats = detail.statGroups.flatMap((group) => group.stats).slice(0, 10);
-  const allPlays = detail.drives.flatMap((drive) => drive.plays);
+function FocusChip({ detail, selection, onClear }) {
+  let label = null;
+  if (selection.playId) {
+    const play = detail.drives.flatMap((drive) => drive.plays).find((entry) => entry.id === selection.playId);
+    if (play) label = playClockLabel(play);
+  } else if (selection.driveId) {
+    const drive = detail.drives.find((entry) => entry.id === selection.driveId);
+    if (drive) label = `${drive.team} drive${drive.plays[0] ? `, ${playClockLabel(drive.plays[0]).split(' ')[0]}` : ''}`;
+  }
+  if (!label) return null;
   return (
-    <div className="scores-detail-overview">
-      {allPlays.some((play) => play.homeWinProbability != null) && (
-        <>
-          <SectionHeading title="Win Probability" meta="Derived from play-by-play" />
-          <WinProbabilityChart
-            plays={allPlays}
-            homeTeam={detail.home.id}
-            awayTeam={detail.away.id}
-            homeColor={homeTheme?.color ?? null}
-            gameStatus={detail.status}
-          />
-        </>
-      )}
-
-      <SectionHeading title="Line Score" />
-      <LineScore detail={detail} />
-
-      <SectionHeading title="Leaders" />
-      {detail.leaders.length ? <Leaders detail={detail} /> : <DetailUnavailable>{detailCoverageMessage(detail, 'Player leaders are not included in this score feed.')}</DetailUnavailable>}
-
-      <SectionHeading title="Matchup" meta={`${detail.away.id} left · ${detail.home.id} right`} />
-      {primaryStats.length ? (
-        <div className="scores-stat-grid">
-          {primaryStats.map((stat) => (
-            <StatAdvantageRail
-              key={stat.label}
-              stat={stat}
-              awayId={detail.away.id}
-              homeId={detail.home.id}
-              awayColor={awayTheme?.borderColor ?? awayTheme?.color}
-              homeColor={homeTheme?.borderColor ?? homeTheme?.color}
-            />
-          ))}
-        </div>
-      ) : <DetailUnavailable>{detailCoverageMessage(detail, 'Team comparison data is not included in this score feed.')}</DetailUnavailable>}
-    </div>
-  );
-}
-
-function TeamStats({ detail, awayTheme, homeTheme }) {
-  return (
-    <div>
-      <SectionHeading title="Team Stats" meta={`${detail.away.id} left · ${detail.home.id} right`} />
-      {detail.statGroups.length ? (
-        <div className="scores-team-stat-groups">
-          {detail.statGroups.map((group) => (
-            <section key={group.id} className="scores-team-stat-group">
-              <h3>{group.label}</h3>
-              {group.stats.map((stat) => (
-                <StatAdvantageRail
-                  key={stat.label}
-                  stat={stat}
-                  awayId={detail.away.id}
-                  homeId={detail.home.id}
-                  awayColor={awayTheme?.borderColor ?? awayTheme?.color}
-                  homeColor={homeTheme?.borderColor ?? homeTheme?.color}
-                />
-              ))}
-            </section>
-          ))}
-        </div>
-      ) : <DetailUnavailable>{detailCoverageMessage(detail, 'Team statistics are not included in this score feed.')}</DetailUnavailable>}
+    <div className="scores-focus-chip" role="status">
+      <span>Viewing {label}</span>
+      <button type="button" onClick={onClear}>{detail.status === 'live' ? 'Back to live' : 'Clear'}</button>
     </div>
   );
 }
@@ -375,18 +506,8 @@ function PlayerQuarterDetail({ row, group }) {
     );
   }
 
-  const sourceMessage = split.source === 'play-by-play'
-    ? 'Derived from play-by-play · full-game totals remain the provider box score.'
-    : split.sourceLabel ?? 'Quarter split from the local game detail.';
   return (
     <div className="scores-player-quarter-detail">
-      <div className="scores-player-quarter-detail-heading">
-        <div>
-          <span>Quarter split</span>
-          <strong>{row.player} · {row.teamName ?? row.team}</strong>
-        </div>
-        <small>{sourceMessage}</small>
-      </div>
       <div className="scores-player-quarter-table-shell">
         <table className="scores-player-quarter-table" aria-label={`${row.player} ${group.label} by quarter`}>
           <thead>
@@ -413,13 +534,65 @@ function PlayerQuarterDetail({ row, group }) {
   );
 }
 
-function PlayerStats({ detail, participants = null, selectedGroup = null, onGroupChange = null }) {
+// Desktop drill-in: the quarter rows sit in the player table itself so each
+// period lines up under the same column as the player's full-game total.
+function PlayerQuarterRows({ row, group, detailId }) {
+  const split = row.quarterValues;
+  const colSpan = group.columns.length + 1;
+  if (!split?.periods?.length) {
+    return (
+      <tr id={detailId} className="scores-player-detail-row">
+        <td colSpan={colSpan}><PlayerQuarterDetail row={row} group={group} /></td>
+      </tr>
+    );
+  }
+  return (
+    <>
+      <tr id={detailId} className="scores-player-detail-row scores-player-quarter-row is-heading">
+        <th scope="col">Period</th>
+        {group.columns.map((column) => <th key={column} scope="col">{column}</th>)}
+      </tr>
+      {split.periods.map((period) => (
+        <tr key={period.label} className="scores-player-detail-row scores-player-quarter-row">
+          <th scope="row">{period.label}</th>
+          {period.values.map((value, index) => <td key={`${period.label}-${group.columns[index]}`}>{value}</td>)}
+        </tr>
+      ))}
+      <tr className="scores-player-detail-row scores-player-quarter-row is-total">
+        <th scope="row">Total</th>
+        {row.values.map((value, index) => <td key={`total-${group.columns[index]}`}>{value}</td>)}
+      </tr>
+    </>
+  );
+}
+
+function PlayerStats({ detail, participants = null, selectedGroup = null, onGroupChange = null, focus = null }) {
   const playerGroups = detail.playerGroups ?? [];
   const [localActiveGroup, setLocalActiveGroup] = useState(() => playerGroups[0]?.id ?? '');
   const [sortByGroup, setSortByGroup] = useState(() => Object.fromEntries(
     playerGroups.map((entry) => [entry.id, getDefaultStatisticsPlayerSort(entry)]),
   ));
-  const [expandedPlayer, setExpandedPlayer] = useState(null);
+  // A route focus names only the provider player id; the row key adds the team.
+  const focusKey = focus?.key ?? (focus?.playerId
+    ? playerGroups.flatMap((entry) => entry.rows).find((row) => row.key?.endsWith(`:id-${focus.playerId}`))?.key ?? null
+    : null);
+  const [expandedPlayer, setExpandedPlayer] = useState(focusKey);
+  // Rows can arrive after Players mounts; expand the focus once it resolves.
+  const [appliedFocusKey, setAppliedFocusKey] = useState(focusKey);
+  if (focusKey && focusKey !== appliedFocusKey) {
+    setAppliedFocusKey(focusKey);
+    setExpandedPlayer(focusKey);
+  }
+  // A player opened from Overview, Team Stats, or a team dashboard chart
+  // arrives expanded (Players remounts on every tab switch, so the initial
+  // state carries the focus); this only brings that row into view.
+  useEffect(() => {
+    if (!focusKey) return;
+    // The table row and the phone card share the key; scroll the visible one.
+    const nodes = typeof document !== 'undefined' ? document.querySelectorAll(`[data-player-key="${CSS.escape(focusKey)}"]`) : [];
+    const node = [...nodes].find((entry) => entry.getClientRects().length > 0);
+    node?.scrollIntoView?.({ block: 'center' });
+  }, [focus, focusKey]);
   const activeGroup = selectedGroup ?? localActiveGroup;
   const group = playerGroups.find((entry) => entry.id === activeGroup) ?? playerGroups[0];
   const effectiveActiveGroup = group?.id ?? '';
@@ -471,7 +644,7 @@ function PlayerStats({ detail, participants = null, selectedGroup = null, onGrou
   const activeSortDirection = currentSort.direction === 'desc' ? 'descending' : 'ascending';
   return (
     <section className="scores-player-stats">
-      <SectionHeading title="Player Statistics" meta="Complete box score · select a player" />
+      <h2 className="scores-visually-hidden">Player Statistics</h2>
       <div className="scores-player-category-rail" role="tablist" aria-label="Player statistic categories">
         {playerGroups.map((entry) => (
           <button
@@ -543,7 +716,7 @@ function PlayerStats({ detail, participants = null, selectedGroup = null, onGrou
               const measurements = formatPlayerMeasurements(row, { compact: true });
               return (
                 <Fragment key={key}>
-                  <tr className={expanded ? 'is-expanded' : ''}>
+                  <tr className={expanded ? 'is-expanded' : ''} data-player-key={key}>
                     <th scope="row">
                       <button
                         type="button"
@@ -565,11 +738,7 @@ function PlayerStats({ detail, participants = null, selectedGroup = null, onGrou
                     </th>
                     {row.values.map((value, index) => <td key={`${key}-${group.columns[index]}`}>{value}</td>)}
                   </tr>
-                  {expanded && (
-                    <tr id={detailId} className="scores-player-detail-row">
-                      <td colSpan={group.columns.length + 1}><PlayerQuarterDetail row={row} group={group} /></td>
-                    </tr>
-                  )}
+                  {expanded && <PlayerQuarterRows row={row} group={group} detailId={detailId} />}
                 </Fragment>
               );
             })}
@@ -583,7 +752,7 @@ function PlayerStats({ detail, participants = null, selectedGroup = null, onGrou
           const detailId = playerDetailId(group, row);
           const measurements = formatPlayerMeasurements(row, { compact: true });
           return (
-            <article key={`mobile-${key}`} className={expanded ? 'is-expanded' : ''}>
+            <article key={`mobile-${key}`} className={expanded ? 'is-expanded' : ''} data-player-key={key}>
               <header>
                 <button
                   type="button"
@@ -618,57 +787,11 @@ function PlayerStats({ detail, participants = null, selectedGroup = null, onGrou
   );
 }
 
-function ScoringSummary({ detail }) {
-  const quarters = [...new Set(detail.scoring.map((play) => play.quarter))];
-  return (
-    <section className="scores-scoring-summary">
-      <SectionHeading title="Scoring Plays" meta="Chronological by quarter" />
-      {quarters.length ? quarters.map((quarter) => (
-        <section key={quarter} className="scores-scoring-quarter">
-          <h3>{quarter} Quarter</h3>
-          <div>
-            {detail.scoring.filter((play) => play.quarter === quarter).map((play) => (
-              <article key={`${play.quarter}-${play.time}-${play.title}`}>
-                <time>{play.time}</time>
-                <img src={teamLogo(play.team)} alt="" />
-                <div><strong>{play.title}</strong><span>{play.detail}</span></div>
-                <b>{play.score}</b>
-              </article>
-            ))}
-          </div>
-        </section>
-      )) : <DetailUnavailable>{detailCoverageMessage(detail, 'Scoring-play detail is not included in this score feed.')}</DetailUnavailable>}
-    </section>
-  );
-}
-
-const QUARTER_LABEL = { 1: '1st quarter', 2: '2nd quarter', 3: '3rd quarter', 4: '4th quarter' };
-
-function quarterLabel(play) {
-  const period = Number(play?.period);
-  if (!Number.isFinite(period) || period < 1) return null;
-  return QUARTER_LABEL[period] ?? 'Overtime';
-}
-
-function driveMeta(drive) {
-  const opening = drive.plays[0];
-  // `playCount` is the offensive snaps; `plays` also carries clock stoppages
-  // and the kickoff that ends a scoring drive.
-  const snaps = drive.playCount ?? drive.plays.length;
-  const count = `${snaps} ${snaps === 1 ? 'play' : 'plays'}`;
-  const yards = drive.netYards != null ? ` · ${drive.netYards} yds` : '';
-  const openingQuarter = opening
-    ? quarterLabel(opening)
-      ?? (typeof opening.quarter === 'string' ? opening.quarter : null)
-      ?? (typeof drive.quarter === 'string' ? drive.quarter : null)
-    : null;
-  const from = opening ? ` · from ${opening.time}${openingQuarter ? ` ${openingQuarter}` : ''}` : '';
-  return `${count}${yards}${from}`;
-}
-
-function PlayByPlay({ detail, participants }) {
+function PlayByPlay({ detail, participants, selection = null, onSelectDrive = () => {} }) {
   const { darkMode } = useTheme();
   const [filter, setFilter] = useState('all');
+  const [bigOnly, setBigOnly] = useState(false);
+  const bigPlays = useMemo(() => bigPlayIds(detail.drives), [detail.drives]);
   // The kickoff-first order the design specifies is right for a game you're
   // reading back. While a game is in progress the newest play is the one you
   // came for, so the feed flips rather than making you scroll to the bottom.
@@ -695,8 +818,17 @@ function PlayByPlay({ detail, participants }) {
   }
 
   const context = { homeTeam: detail.home.id, awayTeam: detail.away.id };
+  // The drive panel above the feed follows the same focus as Overview's.
+  const panelDrives = detail.drives.map((drive) => ({ ...drive, netYards: getDriveNetYards(drive.plays, context) }));
+  const liveDriveId = live ? panelDrives.at(-1)?.id ?? null : null;
+  const shownDriveId = (selection?.playId
+    ? panelDrives.find((drive) => drive.plays.some((play) => play.id === selection.playId))?.id
+    : selection?.driveId) ?? panelDrives.at(-1)?.id ?? null;
+  const playFiltered = bigOnly;
+  const keepPlay = (play) => bigPlays.has(playFilterKey(play));
   const drives = (filter === 'all' ? detail.drives : detail.drives.filter((drive) => drive.team === filter))
-    .map((drive) => ({ ...drive, netYards: getDriveNetYards(drive.plays, context) }));
+    .map((drive) => ({ ...drive, netYards: getDriveNetYards(drive.plays, context), shownPlays: playFiltered ? drive.plays.filter(keepPlay) : drive.plays }))
+    .filter((drive) => !playFiltered || drive.shownPlays.length);
   const displayedDrives = live ? [...drives].reverse() : drives;
 
   const toggleDrive = (driveId) => {
@@ -722,6 +854,18 @@ function PlayByPlay({ detail, participants }) {
   }
 
   return (
+    <>
+      {panelDrives.length > 0 && (
+        <DrivePanel
+          detail={detail}
+          drives={panelDrives}
+          shownDriveId={shownDriveId}
+          liveDriveId={liveDriveId}
+          participants={participants}
+          themes={{ away: awayTheme, home: homeTheme }}
+          onSelectDrive={onSelectDrive}
+        />
+      )}
     <section className="scores-play-feed" data-tour="statistics-scores-play-by-play">
       <SectionHeading
         title="Play Feed"
@@ -734,14 +878,17 @@ function PlayByPlay({ detail, participants }) {
             <img src={teamLogo(team.id)} alt="" />{team.id}
           </button>
         ))}
+        <span className="scores-play-filter-gap" aria-hidden="true" />
+        <button type="button" aria-pressed={bigOnly} onClick={() => setBigOnly((value) => !value)}>Big plays</button>
       </div>
+      {playFiltered && !drives.length && <p className="scores-detail-unavailable">No plays match these filters.</p>}
       <div className="scores-drive-list">
         {displayedDrives.map((drive) => {
-          const open = expanded.has(drive.id);
+          const open = playFiltered || expanded.has(drive.id);
           const attacking = drive.team === detail.home.id ? homeTheme : awayTheme;
           const barColor = attacking.accentColor ?? attacking.color ?? 'var(--color-accent)';
           const marker = markers.get(drive.id);
-          const plays = live ? [...drive.plays].reverse() : drive.plays;
+          const plays = live ? [...drive.shownPlays].reverse() : drive.shownPlays;
           // Teams change ends every quarter. The drive's opening play settles
           // the orientation for the whole drive, including a drive that runs
           // across a quarter break, so the field and its play strips agree.
@@ -801,6 +948,7 @@ function PlayByPlay({ detail, participants }) {
         )}
       </div>
     </section>
+    </>
   );
 }
 
@@ -811,8 +959,17 @@ export default function ScoresGameDrilldown({
   initialSection = 'overview',
   selectedSection = null,
   selectedPlayerGroup = null,
+  focusPlayerId = null,
   onSectionChange = null,
   onPlayerGroupChange = null,
+  season = null,
+  onOpenGame = null,
+  onOpenStatisticsPlayer = null,
+  onOpenStatisticsTeam = null,
+  // Tour previews: both teams' season payloads instead of the season route,
+  // and a Team Stats row to open on arrival.
+  fixtureSeasons = null,
+  initialTeamStat = null,
 }) {
   const fixtureData = game.provider === 'fixture' || String(game.id).startsWith('fixture-');
   const detailsProvider = game.detailsProvider ?? game.provider;
@@ -1033,6 +1190,108 @@ export default function ScoresGameDrilldown({
       }),
     [fixtureData, fixtureDetail, game, visibleDetailState],
   );
+  const recap = useMemo(() => (section === 'story' ? buildGameRecap(detail) : null), [detail, section]);
+  // One play or drive in focus across the Overview sections. It belongs to the
+  // matchup, so opening a different game starts unfocused.
+  const [selection, setSelection] = useState({ key: gameKey, playId: null, driveId: null });
+  const visibleSelection = selection.key === gameKey ? selection : { key: gameKey, playId: null, driveId: null };
+  const selectPlay = (playId) => setSelection((current) => ({
+    key: gameKey,
+    playId: current.key === gameKey && current.playId === playId ? null : playId,
+    driveId: null,
+  }));
+  const selectDrive = (driveId) => setSelection({ key: gameKey, playId: null, driveId });
+  const clearSelection = () => setSelection({ key: gameKey, playId: null, driveId: null });
+  const [playerFocus, setPlayerFocus] = useState(() => (focusPlayerId ? { playerId: focusPlayerId, at: 0 } : null));
+  const seasonYear = season ?? game.season ?? null;
+  const pregameSeason = game.status === 'scheduled';
+  // Before kickoff the season drives the Overview and Team Stats; once the game
+  // is on, it only adds season averages and ranks to Team Stats, so it waits
+  // until that tab opens.
+  const seasonEligible = !fixtureData && game.phase !== 'preseason' && Boolean(seasonYear) && Boolean(game.away?.id && game.home?.id);
+  const [seasonWanted, setSeasonWanted] = useState(null);
+  const seasonKeyCandidate = fixtureSeasons
+    ? `fixture:${game.id}`
+    : seasonEligible ? `${seasonYear}:${game.away.id}:${game.home.id}` : null;
+  if (seasonKeyCandidate && !pregameSeason && section === 'team' && seasonWanted !== seasonKeyCandidate) setSeasonWanted(seasonKeyCandidate);
+  const seasonKey = seasonKeyCandidate && (pregameSeason || seasonWanted === seasonKeyCandidate) ? seasonKeyCandidate : null;
+  const [fetchedSeasonState, setSeasonState] = useState({ key: null, status: 'idle', away: null, home: null, error: null });
+  const seasonState = useMemo(() => (fixtureSeasons
+    ? { key: seasonKey, status: 'ready', away: fixtureSeasons.away, home: fixtureSeasons.home, error: null }
+    : fetchedSeasonState), [fixtureSeasons, seasonKey, fetchedSeasonState]);
+  useEffect(() => {
+    if (!seasonKey || fixtureSeasons) return undefined;
+    const controller = new AbortController();
+    Promise.all([
+      getTeamSeason({ season: seasonYear, team: game.away.id, signal: controller.signal }),
+      getTeamSeason({ season: seasonYear, team: game.home.id, signal: controller.signal }),
+    ]).then(([away, home]) => {
+      setSeasonState({ key: seasonKey, status: 'ready', away, home, error: null });
+    }).catch((error) => {
+      if (error.name === 'AbortError') return;
+      setSeasonState({ key: seasonKey, status: 'error', away: null, home: null, error: error.message });
+    });
+    return () => controller.abort();
+  }, [seasonKey, fixtureSeasons, seasonYear, game.away?.id, game.home?.id]);
+  const seasonContext = useMemo(() => {
+    if (!seasonKey || !pregameSeason) return null;
+    if (seasonState.key !== seasonKey) return { status: 'loading' };
+    if (seasonState.status !== 'ready') return { status: seasonState.status, error: seasonState.error };
+    const input = { away: game.away.id, home: game.home.id, awaySeason: seasonState.away, homeSeason: seasonState.home };
+    return {
+      status: 'ready',
+      ranks: buildMatchupRanks(input),
+      form: { [game.away.id]: buildRecentForm(seasonState.away), [game.home.id]: buildRecentForm(seasonState.home) },
+      leaders: buildSeasonLeaders(input),
+      statGroups: buildSeasonStatGroups(input),
+      records: { away: seasonRecord(seasonState.away, game.away.id), home: seasonRecord(seasonState.home, game.home.id) },
+      seasons: { [game.away.id]: seasonState.away, [game.home.id]: seasonState.home },
+    };
+  }, [seasonKey, pregameSeason, seasonState, game.away?.id, game.home?.id]);
+  const seasonLookup = useMemo(() => {
+    if (!seasonKey || pregameSeason || seasonState.key !== seasonKey || seasonState.status !== 'ready') return null;
+    return buildSeasonStatLookup(
+      { away: game.away.id, home: game.home.id, awaySeason: seasonState.away, homeSeason: seasonState.home },
+      { excludeGameId: game.bdlGameId ?? null },
+    );
+  }, [seasonKey, pregameSeason, seasonState, game.away?.id, game.home?.id, game.bdlGameId]);
+  const openSeasonGame = (entry) => onOpenGame?.({ gameId: entry.id, week: entry.week });
+  // ESPN rosters before kickoff: season leaders' photos and the ESPN id the
+  // Statistics player page is keyed by. Best-effort; leaders show initials and
+  // no "Full stats" link without them.
+  const [espnRosters, setEspnRosters] = useState({ key: null, byTeam: {} });
+  useEffect(() => {
+    if (!seasonKey || !pregameSeason || fixtureSeasons) return undefined;
+    let cancelled = false;
+    const teams = [game.away.id, game.home.id];
+    Promise.all(teams.map((team) => fetchRoster(team).catch(() => []))).then((rosters) => {
+      if (cancelled) return;
+      const byTeam = Object.fromEntries(teams.map((team, index) => [
+        team,
+        new Map((rosters[index] ?? []).map((player) => [nameKey(player.displayName), player])),
+      ]));
+      setEspnRosters({ key: seasonKey, byTeam });
+    });
+    return () => { cancelled = true; };
+  }, [seasonKey, pregameSeason, fixtureSeasons, game.away?.id, game.home?.id]);
+  const espnFor = (team, name) => (espnRosters.key === seasonKey ? espnRosters.byTeam[team]?.get(nameKey(name)) ?? null : null);
+  const [cardPlayer, setCardPlayer] = useState(null);
+  const playerCard = useMemo(() => {
+    if (!cardPlayer || seasonContext?.status !== 'ready') return null;
+    return buildPlayerSeasonCard(seasonContext.seasons[cardPlayer.team], cardPlayer.id);
+  }, [cardPlayer, seasonContext]);
+  // One route update: the group change already lands on Players, and a second
+  // section change would rebuild the route from the stale Overview state and
+  // drop the group.
+  const openPlayers = (groupId, playerKey = null) => {
+    setPlayerFocus(playerKey ? { key: playerKey, at: Date.now() } : null);
+    if (onPlayerGroupChange) {
+      if (selectedSection == null) setLocalSection('players');
+      onPlayerGroupChange(groupId);
+    } else {
+      changeSection('players');
+    }
+  };
   if (!detail) {
     return <p className="statistics-scores-state">Loading fixture comparison…</p>;
   }
@@ -1041,11 +1300,14 @@ export default function ScoresGameDrilldown({
 
   return (
     <div className="statistics-scores-detail page-frame-data">
-      <button type="button" className="scores-detail-back" onClick={onBack}>
-        <span aria-hidden="true">←</span> Back to Scores
-      </button>
+      <div className="scores-detail-topbar">
+        <button type="button" className="scores-detail-back" onClick={onBack}>
+          <span aria-hidden="true">←</span> Back to Scores
+        </button>
+      </div>
 
-      <ScoreHero game={game} detail={detail} awayTheme={awayTheme} homeTheme={homeTheme} />
+      <ScoreHero game={game} detail={detail} awayTheme={awayTheme} homeTheme={homeTheme} records={seasonContext?.records ?? null} onOpenTeam={fixtureData ? null : onOpenStatisticsTeam} />
+      <LatestPlay detail={detail} onSelectPlay={(playId) => { changeSection('overview'); selectPlay(playId); }} />
 
       <div className="scores-detail-tabs-shell">
         <nav className="scores-detail-tabs" role="tablist" aria-label="Game detail sections">
@@ -1062,18 +1324,71 @@ export default function ScoresGameDrilldown({
         </nav>
       </div>
 
-      {section === 'overview' && <Overview detail={detail} awayTheme={awayTheme} homeTheme={homeTheme} />}
-      {section === 'team' && <TeamStats detail={detail} awayTheme={awayTheme} homeTheme={homeTheme} />}
+      {section === 'overview' && seasonContext && (
+        <PregameOverview
+          detail={detail}
+          context={seasonContext}
+          colors={{
+            away: awayTheme?.borderColor ?? awayTheme?.color ?? 'var(--color-label-secondary)',
+            home: homeTheme?.borderColor ?? homeTheme?.color ?? 'var(--color-label)',
+          }}
+          onOpenGame={openSeasonGame}
+          espnFor={espnFor}
+          onOpenPlayer={(entry) => setCardPlayer({ id: entry.id, team: entry.team, name: entry.name })}
+        />
+      )}
+      {playerCard && (
+        <PlayerSeasonCard
+          card={playerCard}
+          team={cardPlayer.team}
+          teamName={cardPlayer.team === detail.away.id ? detail.away.name : detail.home.name}
+          espnPlayer={espnFor(cardPlayer.team, cardPlayer.name)}
+          onClose={() => setCardPlayer(null)}
+          onOpenGame={openSeasonGame}
+          onOpenStatistics={onOpenStatisticsPlayer ? (player) => {
+            setCardPlayer(null);
+            onOpenStatisticsPlayer({ id: player.id, displayName: player.displayName, position: player.position, team: cardPlayer.team });
+          } : null}
+        />
+      )}
+      {section === 'overview' && !seasonContext && (
+        <>
+          <FocusChip detail={detail} selection={visibleSelection} onClear={clearSelection} />
+          <ScoresOverview
+            detail={detail}
+            awayTheme={awayTheme}
+            homeTheme={homeTheme}
+            participants={participants}
+            selection={visibleSelection}
+            onSelectPlay={selectPlay}
+            onSelectDrive={selectDrive}
+            onOpenPlayers={openPlayers}
+          />
+        </>
+      )}
+      {section === 'team' && (
+        <TeamStats
+          detail={detail}
+          awayTheme={awayTheme}
+          homeTheme={homeTheme}
+          participants={participants}
+          onOpenPlayer={openPlayers}
+          seasonGroups={seasonContext?.statGroups ?? null}
+          seasonLookup={seasonLookup}
+          initialOpenStat={initialTeamStat}
+          onOpenGame={openSeasonGame}
+        />
+      )}
       {section === 'players' && (
         <PlayerStats
           detail={detail}
           participants={participants}
+          focus={playerFocus}
           selectedGroup={selectedPlayerGroup}
           onGroupChange={onPlayerGroupChange}
         />
       )}
-      {section === 'scoring' && <ScoringSummary detail={detail} />}
-      {section === 'plays' && <PlayByPlay detail={detail} participants={participants} />}
+      {section === 'plays' && <PlayByPlay detail={detail} participants={participants} selection={visibleSelection} onSelectDrive={selectDrive} />}
       {section === 'story' && (
         <StoryStatsPanel
           stories={visibleStoryState.stories}
@@ -1084,6 +1399,7 @@ export default function ScoresGameDrilldown({
           statusLabel={detail.statusLabel}
           quota={visibleStoryState.quota}
           onRetry={() => setStoryRetry((current) => current + 1)}
+          recap={recap}
         />
       )}
     </div>

@@ -5,7 +5,7 @@ The v8.5 Statistics Scores Beta combines a development/test-only regular-season 
 ## Route And Ownership
 
 - Route: `/statistics/scores`
-- Canonical share state: `/statistics/scores?season=2026&phase=preseason&week=2&game=1393548&tab=players&group=rushing`; the phase is explicit so a shared link is not changed by the recipient's local preseason preference, while Overview and unused player-category defaults are omitted
+- Canonical share state: `/statistics/scores?season=2026&phase=preseason&week=2&game=1393548&tab=players&group=rushing`; the phase is explicit so a shared link is not changed by the recipient's local preseason preference, while Overview and unused player-category defaults are omitted. On Players, `player=<provider id>` opens that player's quarter split expanded (team dashboard chart bars link this way); other tabs drop it
 - Route parser and canonical URL builder: `src/utils/appRoutes.js`; `game` is the provider-stable matchup ID, `tab` is the drilldown section, and `group` is the optional Players category
 - Navigation: `src/components/StatisticsSubNav.jsx`
 - Screen orchestration and week rail: `src/components/statistics/scores/StatisticsScores.jsx`
@@ -20,6 +20,10 @@ The v8.5 Statistics Scores Beta combines a development/test-only regular-season 
 - Matchup scorebug and compact peek scorebug: `src/components/statistics/scores/GameScorebug.jsx`
 - Inline live latest-play row: `src/components/statistics/scores/LatestPlayStrip.jsx`; its data arrives in the canonical selected-week live snapshot
 - Game drilldown: `src/components/statistics/scores/ScoresGameDrilldown.jsx`
+- Overview dashboard (scoring, win probability, drive in focus, leaders): `src/components/statistics/scores/ScoresOverview.jsx`; shared drilldown formatting: `src/components/statistics/scores/scoresDetailFormat.js`
+- Team Stats player breakdowns: `src/utils/statisticsTeamStatBreakdown.js` (play attribution shared through `attributePlays()` in `src/utils/statisticsPlayerQuarterStats.js`)
+- Pregame season context: `src/utils/statisticsScoresSeasonContext.js`; pregame Overview and Team Stats game log: `src/components/statistics/scores/ScoresPregame.jsx`
+- Game Story fallback recap: `src/utils/statisticsGameRecap.js`
 - StoryStats request boundary: `server/storyStatsHandlers.js`; browser contract: `src/api/statisticsScoresApi.js`
 - StoryStats presentation: `src/components/statistics/scores/StoryStatsPanel.jsx`
 - Feature styling: `src/components/statistics/scores/StatisticsScores.css`
@@ -29,9 +33,75 @@ The v8.5 Statistics Scores Beta combines a development/test-only regular-season 
 
 In development and test environments, the desktop default is the Claude **Hero week + peek** design: the selected week starts with one **Live** section for live, halftime, and delayed games, followed by calendar-day sections in chronological order. Calendar headings use the NFL's `America/New_York` day boundary so UTC kickoff timestamps cannot place Friday games under Thursday. Scheduled scorebug metadata instead formats the raw kickoff in the user's browser timezone and includes that timezone's short label; this keeps local dates and times unambiguous even when a game crosses the NFL calendar-day boundary. Compact Previous and next available week summaries follow the selected slate. Scores shows weeks through the current week; use Statistics Schedule to browse future matchups. Mobile shows only the selected week beneath the shared horizontal week rail. Production does not bundle or display the placeholder slate.
 
-The drilldown contains Overview, Team Stats, Players, Scoring, Play-by-Play, and an optional **Game Story** section. The selected season, phase, week, matchup, drilldown tab, and Players category are reflected in the canonical Scores query state, so a copied URL restores the same matchup context after a reload. Entering a different matchup resets the page to the top, while background scoreboard refreshes preserve the reader's scroll position within the current matchup. Scheduled BALLDONTLIE games are drilldown-openable so the StoryStats pregame window can be exposed before kickoff. Player statistics use full tables on wider screens and priority cards on mobile. For provider-backed games, the Scores sidecar aggregates BALLDONTLIE's game, team-stat, player-stat, and play responses into the same normalized detail contract used by the development fixture. BALLDONTLIE play rows are grouped into display drives by the team that ran each play; the provider supplies individual plays rather than a documented drive object. See Drive Grouping below. ESPN-only scorebugs remain visible and live-updating but do not expose a drilldown because ESPN does not supply the required detail contract.
+The drilldown contains Overview, Team Stats, Players, Play-by-Play, and **Game Story**. Scoring is part of Overview; a retired `tab=scoring` link opens Overview. The selected season, phase, week, matchup, drilldown tab, and Players category are reflected in the canonical Scores query state, so a copied URL restores the same matchup context after a reload. Entering a different matchup resets the page to the top, while background scoreboard refreshes preserve the reader's scroll position within the current matchup. Scheduled BALLDONTLIE games are drilldown-openable so the StoryStats pregame window can be exposed before kickoff. Player statistics use full tables on wider screens and priority cards on mobile. For provider-backed games, the Scores sidecar aggregates BALLDONTLIE's game, team-stat, player-stat, and play responses into the same normalized detail contract used by the development fixture. BALLDONTLIE play rows are grouped into display drives by the team that ran each play; the provider supplies individual plays rather than a documented drive object. See Drive Grouping below. ESPN-only scorebugs remain visible and live-updating but do not expose a drilldown because ESPN does not supply the required detail contract.
 
 Player rows include height and weight from the BALLDONTLIE player object when supplied. Height is displayed in feet and inches and weight in pounds, beneath the player's name and position in both the wide table and mobile cards. Missing measurements are omitted.
+
+### Game Dashboard
+
+The hero shows team nicknames (the full name stays in the accessible label), a possession marker while live, and timeouts only when the source supplies them; BALLDONTLIE does not, so they appear only for a future source that does. A **Latest play** row (**Final play** once the game ends) sits under the hero and opens that play in Overview.
+
+Overview is ordered Scoring, Win probability, Drive, Leaders:
+
+- **Scoring** — line score, a timeline with the away team's scores above the line and the home team's below, and the scoring plays in order. Sentences come from the shared play narrative; an unparsed play shows its provider text.
+- **Win probability** — BALLDONTLIE's per-play `home_win_probability`, home above the midline. Live games mark the four biggest swings and pulse the newest point; finished games number the five biggest swings in game order. The settling of a finished game's last point is not counted as a swing, and swings closer than a marker's width are skipped. Hover shows the play; clicking selects it. There is no pregame win probability: BALLDONTLIE supplies none before the first play, and Scores does not use betting data. This is a Scores-owned chart; the shared `WinProbabilityChart` stays unchanged for Fantasy Live.
+- **Drive** — the shared `DriveField` (stacked view and play-by-play replay) for the drive in focus, with a drive picker. While live it defaults to the current drive. Beside each lane sits its down and a short note ("Mahomes to Worthy"); on a live drive a final lane draws the next snap — the line of scrimmage, the line to gain (none on goal to go), and the ball labeled with the down and distance — with a **Next** row such as "3rd & 3 at BUF 48". The notes column drops below 760px. These are opt-in `DriveField` props (`laneNote`, `nextSnap`) that Fantasy Live does not pass. The same panel (`DrivePanel` in `ScoresOverview.jsx`) opens Play-by-Play, sharing Overview's drive focus.
+- **Leaders** — passing, rushing, receiving, tackles, sacks, and passes defended, side by side from the player box score; a leader opens the matching Players category with that player expanded.
+
+Selecting a play (timeline, scoring list, win-probability point, latest play) or a drive focuses it across Overview and shows a **Viewing** chip with **Back to live** (live) or **Clear**. The focus belongs to the matchup and resets when another game opens; it is not part of the shared URL.
+
+### Pregame
+
+Before kickoff the drilldown loads both teams' seasons from `/api/statistics/teams/season` (the Statistics team dashboard route, `server/teamSeasonHandlers.js`, through `src/api/teamSeasonApi.js`), so pregame adds no BALLDONTLIE requests of its own; that route's games and league unit ranks are cached server-side. `src/utils/statisticsScoresSeasonContext.js` turns the two payloads into the pregame views, and `src/components/statistics/scores/ScoresPregame.jsx` draws them:
+
+- **Hero** — each team's record from that payload's standings when the scoreboard row has none; no score is drawn until there is one.
+- **Overview** — **Matchup ranks** grouped by which team has the ball (scoring, passing, rushing, third-down, and red-zone offense against the matching defense; rank 1 is the strongest unit on both sides; the better rank in each pair is highlighted); **Recent form**, the last five finished games, each opening that game with a hover/focus preview of the score, total yards, and turnovers; **Season leaders** at QB, RB, WR, TE, DL, LB, CB, S, K, and P, summed from the finished games' player lines and ranked by the position's headline stat.
+- **Player card** — a season leader opens a card with season tiles and a newest-first game log from the same payload (`buildPlayerSeasonCard`); an opponent opens that game. Both teams' ESPN rosters (`fetchRoster`) supply leader photos and the ESPN id, and **Full stats** opens the Statistics player page with a **Game** back link. Without a roster match the card shows initials and no link.
+- **Team Stats** — season averages under the live labels; each row opens a game log with the week in the middle, the away team's games left and the home team's mirrored right, byes marked, and each team's NFL rank where the route ranks that stat. An opponent opens that game.
+
+There is no pregame win probability: BALLDONTLIE publishes it per play only, and nothing is estimated in its place. Preseason games and fixture data show the regular pregame drilldown without season context.
+
+Team lookups in the season payload compare through `getTeamAbbr()`, because the score feed spells Washington WSH and the season route WAS.
+
+### Team Stats Player Breakdowns
+
+Once a game has started, a Team Stats row expands into the players behind it (`src/utils/statisticsTeamStatBreakdown.js`). The provider total on the rail stays authoritative; the breakdown credits players from the play-by-play through `attributePlays()` in `src/utils/statisticsPlayerQuarterStats.js`, the same box-score name matching as the Players quarter split. A row is expandable only when the play-by-play credited someone, and choosing a player opens their Players category with the row expanded.
+
+| Stat | Credited to |
+|---|---|
+| Total, passing, rushing yards | Ball carriers and receivers on completions (sack losses have no owner, so passing and total yards can sum short of the net figure) |
+| First downs | The ball carrier or receiver on a converting snap (penalty first downs have no owner) |
+| Third and fourth down | The ball carrier, target, or sacked passer on the snap; a conversion is a touchdown or a new first down without a turnover, and on fourth down the gain must reach the line to gain |
+| Red zone | Touchdown scorers on drives with a snap inside the 20, matching BALLDONTLIE's `red_zone_scores` (touchdowns only) |
+| Sacks, takeaways, turnovers | Sackers, interceptors and fumble recoverers, passers and the player who lost the ball; turnovers are also read from the official text, and a return fumble is charged to the returner's team |
+| Penalties | Every accepted flag in each play's official text, with the call and yards; a player missing from the box score (usually an offensive lineman) keeps the text's name, and a flag on the club is listed as Team |
+| Offensive plays | The player with the ball on each scrimmage snap |
+| Success rate | The player with the ball; success is 40% of the distance on first down, 60% on second, all of it on third or fourth, or a touchdown |
+| Passes and runs of 20+ yards | The receiver or rusher |
+| Goal-to-go touchdowns | Touchdown scorers on drives with a goal-to-go snap |
+| Field goals | The kicker, with each distance |
+| Kick and punt return average | The returner, with returns and yards |
+| Net punting | The punter |
+
+Yards per play, yards allowed, time of possession, the Drives rows, and points in the final two minutes have no single owner and do not expand. Before kickoff the rows are not expandable.
+
+**Season context.** When Team Stats opens on a live or final game, the drilldown loads both teams' seasons (the pregame route, once per matchup), and an expanded row's team headers show that team's season average (this game left out) and NFL rank where the route ranks the stat (`buildSeasonStatLookup`). Rows counted from the play-by-play have no season figure.
+
+### Team Stats From The Play-by-Play
+
+`src/utils/statisticsScoresPlayStats.js` adds rows the score feed does not carry, merged into the provider groups (`mergeStatGroups`): **Offense** success rate and passes and runs of 20+ yards; **Situational** goal-to-go touchdowns; a **Drives** group (points and yards per drive, three-and-outs, average start); **Possession** points in the final 2:00 of each half; and a **Special teams** group (field goals, kick and punt return average, net punting). Snaps are classified from the play type and parsed narrative, not matched players, so a team count never depends on box-score name matching. Drive points are the offense's own score change across the possession. Net punting is gross minus the return, less 20 on a touchback; the gross distance is read from the official text because the shared grammar reads "punts 49 yards to CLV 1, … downed by" as zero. A row appears only when the plays support it for at least one team.
+
+### NFL Stats Only
+
+The game drilldown shows NFL statistics only: no fantasy points, projections, or roster highlights. Fantasy scoring for a game lives in Fantasy Live.
+
+### Play-by-Play Filters
+
+Beside the team filter, **Big plays** keeps scoring plays, turnovers, gains of 20 or more yards, and plays that moved win probability by 6 points or more. While it is on, drives without a matching play are hidden and the rest open showing only the matching plays.
+
+### Game Story Recap
+
+When StoryStats has no story for the game (none generated, out of daily requests, unavailable, or failed), Game Story shows a recap built from the play-by-play. It costs nothing and calls no AI service: each scoring play and turnover reuses the shared play narrative sentence, each finished quarter closes with the score, and a final game leads with the result and the score that gave the winner the lead for good. A live game recaps only finished quarters. The recap is labeled "Recap from the play-by-play" so it is never mistaken for StoryStats content. On-demand StoryStats requests also return stories for non-primetime games, so the recap is the fallback, not the usual path.
 
 ### StoryStats Beta
 
@@ -118,6 +188,10 @@ The development launcher runs the API sidecar in Node watch mode, so later serve
 | Selected-week Live extraction and NFL Eastern calendar-day grouping, including UTC-midnight and legacy fixture-window regressions. | `tests/unit/statisticsScoresGrouping.test.mjs` | `node --test tests/unit/statisticsScoresGrouping.test.mjs` |
 | The local source selector keeps Fixture provider-free, preserves the ESPN eight-second path, receives game clock and Latest Play together from the BALLDONTLIE live-week route, keeps the verified clock unchanged between provider snapshots, preserves provider game identity for a preseason drilldown, reproduces the Aug. 13 rollover, and stays contained on a narrow phone. | `tests/e2e/statistics-scores-sources.spec.js` | `npx playwright test tests/e2e/statistics-scores-sources.spec.js` |
 | Drilldown game-state eligibility accepts final, live, halftime, and delayed games while rejecting scheduled, postponed, partial, offline, and unavailable states. | `tests/unit/statisticsScoresDrilldown.test.mjs` | `node --test tests/unit/statisticsScoresDrilldown.test.mjs` |
+| Team Stats breakdowns credit yards, flags (including players missing from the box score), and conversions from captured BALLDONTLIE plays. | `tests/unit/statisticsScoresBreakdown.test.mjs` | `node --test tests/unit/statisticsScoresBreakdown.test.mjs` |
+| Pregame records, matchup ranks by possession, recent form, season leaders, the player card, season-average Team Stats rows with ranks and game logs, and live season averages that leave the game out are built from the team season payload, including a team the season route spells differently (WAS/WSH). | `tests/unit/statisticsScoresSeasonContext.test.mjs` | `node --test tests/unit/statisticsScoresSeasonContext.test.mjs` |
+| Drive-panel lane notes give the down and who did what (goal to go as G, name suffixes skipped), and the live next snap sits where the last play left the ball with its line to gain. | `tests/unit/statisticsScoresDriveNotes.test.mjs` | `node --test tests/unit/statisticsScoresDriveNotes.test.mjs` |
+| Play-by-play Team Stats rows: drive points add up to the final score, kicks and returns read from the official text, success rate and explosive plays count snaps only, rows merge into the provider groups in order, and kicking breakdowns credit the kicker, returner, and punter. | `tests/unit/statisticsScoresPlayStats.test.mjs` | `node --test tests/unit/statisticsScoresPlayStats.test.mjs` |
 | Full unit regression across all three data paths and their downstream consumers. | All unit tests | `npm run test:unit` |
 
 ## Fixture Contract

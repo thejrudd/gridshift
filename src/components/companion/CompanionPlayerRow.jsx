@@ -317,7 +317,7 @@ export default function CompanionPlayerRow({
       } : undefined}
       role={role ?? (hasSeparateAction ? 'group' : isInteractive ? 'button' : undefined)}
       tabIndex={hasSeparateAction ? undefined : tabIndex ?? (isInteractive && !disabled ? 0 : undefined)}
-      title={rowTitle}
+      title={rowTitle || undefined}
       aria-label={hasSeparateAction ? `Matchup player: ${label}` : ariaLabel ?? (isInteractive ? `Open ${label}` : undefined)}
       aria-disabled={disabled || undefined}
     >

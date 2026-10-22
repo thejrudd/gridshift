@@ -12,7 +12,7 @@ const VIEWS = [
   // ── Fantasy ───────────────────────────────────────────────────────────────
   { id: 'fantasy.rosters', label: 'Rosters', section: 'Fantasy', aliases: ['roster', 'my team', 'lineup'], route: { activeTab: 'fantasy', companionView: 'rosters' } },
   { id: 'fantasy.matchups', label: 'Matchups', section: 'Fantasy', aliases: ['matchup', 'my matchup', 'head to head'], route: { activeTab: 'fantasy', companionView: 'matchups' } },
-  { id: 'fantasy.live', label: 'Live', section: 'Fantasy', aliases: ['live scoring', 'scoreboard'], route: { activeTab: 'fantasy', companionView: 'live' } },
+  { id: 'fantasy.live', label: 'Live replay', section: 'Fantasy', aliases: ['live scoring', 'scoreboard', 'fantasy live', 'win chance', 'scoring plays'], route: { activeTab: 'fantasy', companionView: 'matchups' } },
   { id: 'fantasy.rankings', label: 'Rankings', section: 'Fantasy', aliases: ['ranks', 'player rankings'], route: { activeTab: 'fantasy', companionView: 'rankings' } },
   { id: 'fantasy.freeAgents', label: 'Unrostered players', section: 'Fantasy', aliases: ['waivers', 'waiver wire', 'free agents', 'pickups'], route: { activeTab: 'fantasy', companionView: 'rankings', rankingsSort: 'projected', rankingsUnrosteredOnly: true } },
   { id: 'fantasy.injuries', label: 'Injuries', section: 'Fantasy', aliases: ['injury report', 'hurt'], route: { activeTab: 'fantasy', companionView: 'injuries' } },

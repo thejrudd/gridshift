@@ -91,8 +91,8 @@ export function buildTradeAnalyticsSnapshot({
   currentWeek = null,
   currentContextMap = null,
 }) {
-  // Redraft uses current-season evidence. Dynasty's local valuation function
-  // blends in the prior completed season for a multi-year outlook.
+  // Both formats start each player from the prior completed season and let
+  // current-season games move that starting point; dynasty weighs it more.
   const rankMap = computePositionalRanks(seasonStats, players, scoringSettings);
   const positionalAvgPPG = computePositionalAvgPPG(rosters, seasonStats, players, scoringSettings);
   const positionalValuePerPPG = computePositionalValuePerPPG(

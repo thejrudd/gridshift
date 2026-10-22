@@ -158,11 +158,11 @@ future retune automatically.
 | Injuries | `src/components/companion/CompanionInjuries.jsx` | Full skeleton → reveal, replacing the "Loading injury report…" empty state. |
 | Defenses | `src/components/companion/CompanionDefense.jsx` | Full skeleton → reveal, and restructured to be structure-first: the table frame and its sort headers now render during loading instead of being replaced by a centered message. |
 | Heatmap | `src/components/companion/CompanionHeatmap.jsx` | Skeleton → reveal on the **`fade`** entrance, not `lift`. See [Known Limits](#known-limits). |
-| Matchups | `src/components/companion/CompanionMatchup.jsx` | Structure-first skeleton (`MatchupSkeleton`) replacing the old centred "Preparing matchup…" sentence, the masthead reveal below, and `RevealList` on the head-to-head starter rows. All keyed by league/season/week/opponent so every week change replays them. |
+| Matchups | `src/components/companion/CompanionMatchup.jsx` | Structure-first skeleton (`MatchupSkeleton`) replacing the old centred "Preparing matchup…" sentence, the masthead reveal below, and `RevealList` on the head-to-head starter rows. All keyed by league/season/week/opponent so every week change replays them. After kickoff the live layer (replay bar, chart, Lineup / Scoring plays tabs, plays list) joins the same beat; see Known Limits. |
 | All lazy Fantasy routes | `src/components/ui/SectionSkeleton.jsx` | The Suspense fallback holds itself invisible for *show after* and then fades up, so a chunk that resolves inside that window paints no placeholder at all. This is show-after implemented in pure CSS, because a Suspense fallback cannot be delayed from outside. |
 | Every existing `.gs-skeleton` | `src/index.css` | All placeholders app-wide now read the texture tokens. This is the one part of the change that is not Fantasy-scoped — the primitive is shared. |
 | Statistics Schedule drill-in | `src/components/statistics/schedule/NflMatchupModal.jsx` | Coalesced reveal: the header opens at once, and the body holds a static `.gs-section-skeleton` stand-in until the ESPN game summary, ESPN team stats, and league unit ranks have all settled, then mounts and enters as one beat. Capped at 2.5s (`REVEAL_MAX_WAIT_MS`); a source still loading after the cap keeps its in-place skeleton. Latched per game, so live polling never replays it. First cross-section use of the pattern. |
-| Matchup drilldowns | `src/index.css` | The pre-existing `.gridshift-reveal` block (preview panel, team score breakdown, player drilldown, player compare) was refactored onto the tokens. Its computed values are unchanged — it was already 500ms / 70ms / broadcast — so those surfaces look identical but now follow a retune. |
+| Matchup drilldowns | `src/index.css` | The pre-existing `.gridshift-reveal` block (preview panel, team scoring drilldown, player drilldown, player compare) was refactored onto the tokens. Its computed values are unchanged — it was already 500ms / 70ms / broadcast — so those surfaces look identical but now follow a retune. |
 
 ### The Matchup Masthead
 
@@ -214,11 +214,18 @@ the shipped markup.
   is out of proportion to a second-beat colour gesture. The knob is built and
   documented (`.gridshift-reveal--rails` + a `.gs-reveal-rail` child element) and
   works for any surface that renders its rail as a real element.
-- **Live is not wired.** `CompanionLive` is a realtime surface with its own
-  documented motion language (`--fl-*`), a session gate rather than a data load,
-  and no skeletons today. Arrival motion for a feed that is continuously
-  updating is a different design question from arrival motion for a list that
-  loads once. See [[Fantasy Live]].
+- **The Matchups live layer reveals once, then stays still.** The page holds
+  `MatchupSkeleton` for the live hook's first answer (capped at 2.5s), then the
+  replay bar and tabs fade and the scoring plays stagger,
+  only while `.is-revealing` is on the page frame (800ms after page load, a
+  week or matchup change, or a return to Matchups). It is a continuously
+  updating feed, so rows that mount after that window appear without motion,
+  and the inactive Lineup / Scoring plays panel is hidden without
+  `display: none` so a tab switch never replays the rows. The chart is the
+  exception to "one beat": its data (every started game's plays) can lag the
+  page, so it keeps a placeholder until that data is complete (capped at 10s)
+  and wipes in on its own mount, rather than redrawing as each game lands.
+  See [[Fantasy Live]].
 - **Scoring is not wired.** It is a settings surface. Its loading states are
   per-control spinners on individual actions, not a list arriving; there is
   nothing for a staggered reveal to act on.

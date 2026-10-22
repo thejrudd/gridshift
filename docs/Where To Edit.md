@@ -13,7 +13,7 @@ Routing table: match the task to a section, open the listed files, and read the 
 | Display density, type tokens, page frames | [Display Size, Typography, And Wide Layouts](#display-size-typography-and-wide-layouts) |
 | Skeletons, loading placeholders, list reveal/stagger timing | [Loading Motion](#loading-motion) |
 | Prediction picks, playoff seeding, and share cards | [Predictions And Share Cards](#predictions-and-share-cards) |
-| Live fantasy scoring view (hero, pace chart, feed, win odds) | [Fantasy Live](#fantasy-live) |
+| Live layer in Matchups (replay bar, win chance chart, scoring plays, hover cards) | [Fantasy Live](#fantasy-live) |
 | Rostered weekly injuries and player designations | [Fantasy Injuries](#fantasy-injuries) |
 | Season-long fantasy pairings by week | [Fantasy Schedule](#fantasy-schedule) |
 | NFL scoreboard, box scores, play-by-play visuals | [Statistics Scores And NFL Plays](#statistics-scores-and-nfl-plays) |
@@ -24,7 +24,7 @@ Routing table: match the task to a section, open the listed files, and read the 
 | League history, season standings, transactions | [League History, Standings, And Activity](#league-history-standings-and-activity) |
 | ESPN player search, profiles, stat tables | [ESPN Player Data And Profiles](#espn-player-data-and-profiles) |
 | Player page tabs: Overview, position tabs, Every play | [Statistics Player Dashboard](#statistics-player-dashboard) |
-| Team page: position leaders, depth chart, Season / Player stats / League ranks / Full roster | [Statistics Team Dashboard](#statistics-team-dashboard) |
+| Team page: Season / Players (position leaders, stat tables) / Depth / League tabs | [Statistics Team Dashboard](#statistics-team-dashboard) |
 | Fantasy point calculation or projections | [Scoring And Projections](#scoring-and-projections) |
 | Compare tab panels | [Compare Tab](#compare-tab) |
 | Trade values, proposals, picks, KTC, IDP | [Trade Value, Picks, And KTC](#trade-value-picks-and-ktc) |
@@ -116,29 +116,33 @@ Rules: retune in the tokens, never at a call site. A surface with sticky or fixe
 
 ## Fantasy Live
 
-Read first: [[Fantasy Live]] (implementation rules — chart axis semantics, replay, win probability, play filter, state boundaries). Server-side behavior: [[Live Data Server Architecture]].
+The live layer inside Fantasy Matchups (the separate Live tab was retired; `/fantasy/live` redirects to Matchups). Read first: [[Fantasy Live]] (axis, replay, chart, plays, hover cards, carried-over data rules). Server-side behavior: [[Live Data Server Architecture]].
 
 | File | Owns |
 | --- | --- |
-| `src/components/companion/CompanionLive.jsx` | Route state, session gate, matchup chip rail, filter state, pace/palette derivations |
-| `src/components/companion/live/LiveHero.jsx` | Split hero, top scorers, cut-out headshots, win plate, odds rail |
-| `src/components/companion/live/LivePaceChart.jsx` | Pace chart, milestone selection, zoom/scrub |
-| `src/components/companion/live/LiveFeed.jsx` | Play feed, side filter, scoring-math expansion, `LiveFeedPlayFilter` chips |
-| `src/components/companion/live/LivePlayerSheet.jsx` | Player drilldown record card |
-| `src/components/companion/live/LivePerformerRail.jsx`, `LiveVerdict.jsx`, `LiveAtoms.jsx`, `liveVisuals.js` | Supporting surfaces and atoms |
-| `src/utils/livePace.js` | Pace maths (`buildPaceSeries()`) |
-| `src/utils/livePlaysFeed.js` | Starter matching, feed events, play → 0..1 game-progress axis (`getPlayProgress()`); play normalization and stat deltas come from `playByPlay/` |
+| `src/hooks/useMatchupLiveFeed.js` | Live pipeline: session, BDL polling, Sleeper reconciliation, projections, win probability, pace series |
+| `src/utils/matchupSlateAxis.js` | Kickoff-window x-axis (`buildSlateAxis`) |
+| `src/utils/matchupReplay.js` | Pure "as of" helpers: replay frame, game state at a moment, play filter, hover-card mode |
+| `src/components/companion/CompanionMatchup.jsx` | Mounts the layer; replay/selection/filter state; masthead and rows following live or the replay moment |
+| `src/components/companion/matchup/MatchupReplayBar.jsx` | Sticky replay bar |
+| `src/components/companion/matchup/MatchupLiveChart.jsx` | Win chance / Lead chart, scrub, play selection |
+| `src/components/companion/matchup/MatchupScoringPlays.jsx` | Scoring plays list and Both/Mine/Theirs/Big plays filters |
+| `src/components/companion/matchup/MatchupPlayerHoverCard.jsx` | Desktop starter hover card (season / live / final) |
+| `src/components/companion/TeamScoringDrilldown.jsx` / `.css` | Team scoring drilldown from a team scorecard (Projection board / Scoreboard / Beat or missed) |
+| `src/components/companion/matchup/MatchupPointSourcesCard.jsx`, `src/utils/matchupPointSources.js` | Scorecard hover card: points by position (projected pregame, scored so far live, official vs projection final), summing to the masthead total |
+| `src/utils/teamScoringDrilldownModel.js` | Team drilldown model: lineup spots, grouped projected/actual categories, totals matching the masthead |
+| `src/utils/livePlaysFeed.js` | Starter matching, feed events, play → 0..1 game progress (`getPlayProgress()`); play normalization and stat deltas come from `playByPlay/` |
 | `src/utils/liveReconciliation.js` | Plays reconciled against Sleeper: pending/confirmed status, residual adjustment, displayed totals, stat-update fallback |
 | `src/utils/liveWinProbability.js` | `explainWinProbability()`, `resolveStarterProjection()` |
 | `src/data/liveWinProbabilityModel.js` | Generated coefficient contract — never hand-edit |
-| `src/utils/liveFeedFilters.js` | League-derived filter groups and types |
-| `src/utils/fantasyTeamIdentity.js` | Per-roster identity colours |
-| `src/utils/liveDemoTimeline.js`, `src/utils/liveDemoPlays.js` | Mock play-by-play |
+| `src/utils/livePace.js` | Pace maths and `buildPaceSeries()` (chart points) |
+| `src/utils/liveFeedFilters.js` | `getBigPlayThreshold()` |
 | `src/api/liveApi.js` | Browser-to-sidecar live requests |
 | `server/liveHandlers.js` | Server-only credential, allowlist/session checks, proxy caching |
-| `src/index.css` | The `.fl-*` block |
+| `src/dev/liveSandbox/*` | Dev-only replay league, shown in Matchups through `FantasyBaseOverride` |
+| `src/index.css` | The `.matchup-live*` / `.matchup-replay*` / `.matchup-play*` / `.matchup-hover-card*` block |
 
-Rules: the chart x-axis is game progress, not wallclock. BDL plays are the only feed source in connected live and replay; Sleeper reconciles them and never writes a row of its own. The week comes from Sleeper `/state/nfl` — never add a week picker to Live. Starter projections change only in `resolveStarterProjection()`. Full rules: [[Fantasy Live]].
+Rules: the current NFL week and earlier weeks of that season (finished weeks load once, open at the final whistle, never poll); every Matchups drill-in stays as it is. The x-axis is kickoff windows sized by game count. BDL plays are the only feed source; Sleeper reconciles them and never writes a row of its own. The week comes from Sleeper `/state/nfl`. Starter projections change only in `resolveStarterProjection()`. Full rules: [[Fantasy Live]].
 
 ## Fantasy Injuries
 
@@ -162,7 +166,7 @@ Rules: Sleeper roster status and BALLDONTLIE weekly status remain separate evide
 | `src/utils/appRoutes.js` | `scheduleMode`, `scheduleWeek`, `scheduleRosterId` |
 | `src/index.css` | `.companion-schedule-*` table, pair, and week-group styles |
 
-Rules: the view fetches weeks 1 through the last regular-season week once per league/season and caches the result; playoff weeks are never fetched or seeded here. Its default current week comes from `useSleeperLeague().currentFantasyWeek`, which is backed by the shared live Sleeper `/state/nfl` snapshot with a selected-league fallback. A week the provider has not returned is pending, a week returned without this roster is unscheduled, and a single-sided group is a bye — the three are distinct and none of them renders as another. A matchup is only treated as played when it is behind the league's current week and a side actually posted points, because unscored rows read 0. Past rows show the opponent's record and PPG entering that week, plus the result when scored; their Edge is the pregame PPG gap. Week 1 starts at 0–0 and has no prior PPG or Edge. If any earlier matchup is missing or unscored, historical values remain unavailable rather than partial. Other current and future rows use the latest roster summaries, and completed scores are labeled explicitly as points for/against.
+Rules: the view fetches weeks 1 through the last regular-season week once per league/season and caches the result; playoff weeks are never fetched or seeded here. Its default current week comes from `useSleeperLeague().currentFantasyWeek`, which is backed by the shared live Sleeper `/state/nfl` snapshot with a selected-league fallback. A week the provider has not returned is pending, a week returned without this roster is unscheduled, and a single-sided group is a bye — the three are distinct and none of them renders as another. A matchup is only treated as played when it is behind the league's current week and a side has an official score from `getOfficialMatchupRowPoints()` (Sleeper `custom_points` replaces `points`), because unscored rows read 0. Past rows show the opponent's record and PPG entering that week, plus the result when scored; their Edge is the pregame PPG gap. Week 1 starts at 0–0 and has no prior PPG or Edge. If any earlier matchup is missing or unscored, historical values remain unavailable rather than partial. Other current and future rows use the latest roster summaries, and completed scores are labeled explicitly as points for/against.
 
 ## Statistics Schedule Matchup Drill-In
 
@@ -191,7 +195,12 @@ Read first: [[Statistics Scores]] before production data wiring.
 | `src/components/statistics/scores/ScoresSeasonBoard.jsx` | Hero week + peek layout, chronological kickoff groups |
 | `src/components/statistics/scores/GameScorebug.jsx` | Scheduled/live/final/favorite/delayed/offline/unavailable states |
 | `src/components/statistics/scores/LatestPlayStrip.jsx` | Compact live latest-play row (from the selected-week canonical live snapshot) |
-| `src/components/statistics/scores/ScoresGameDrilldown.jsx` | Overview, Team Stats, Players, Scoring, Play-by-Play |
+| `src/components/statistics/scores/ScoresGameDrilldown.jsx` | Drilldown shell: hero, latest play, tabs, selection focus, Team Stats, Players, Play-by-Play |
+| `src/components/statistics/scores/ScoresOverview.jsx`, `scoresDetailFormat.js` | Overview dashboard (scoring, win probability, drive, leaders) and shared drilldown formatting |
+| `src/utils/statisticsTeamStatBreakdown.js` | Team Stats player breakdowns (who produced each team stat, penalties by player) |
+| `src/utils/statisticsScoresPlayStats.js` | Scores Team Stats rows counted from the play-by-play (success rate, explosive plays, goal-to-go, drives, special teams, late-half points) |
+| `src/utils/statisticsScoresSeasonContext.js`, `src/components/statistics/scores/ScoresPregame.jsx` | Scores pregame: matchup ranks, recent form, season leaders and player card, season Team Stats and game logs, and live Team Stats season averages and ranks, from the team season route |
+| `src/utils/statisticsGameRecap.js` | Game Story fallback recap built from the play-by-play |
 | `src/components/statistics/scores/StoryStatsPanel.jsx`, `server/storyStatsHandlers.js`, `server/storyStatsScheduler.js` | Optional Game Story section, fixed stats/editorial StoryStats requests, automatic production primetime warming, and daily beta guard |
 | `src/components/statistics/scores/PlayCard.jsx` | One play row: sentence, trajectory strip, per-player breakdown |
 | `src/components/statistics/scores/StatisticsScores.css` | Feature-owned responsive styling |
@@ -217,7 +226,7 @@ Read first: [[Statistics Scores]] before production data wiring.
 | `src/utils/playByPlay/normalizePlay.js` | Canonical BALLDONTLIE play shape shared by Statistics Scores and Fantasy Live, plus `resolveOffenseDefenseTeams()`; returns every raw row — filtering is the consumer's: [[Play-By-Play Normalization]] |
 | `src/utils/playByPlay/playStatDelta.js` | Per-play fantasy stat attribution, team-defense/IDP deltas, `estimatePlayPoints()`, `getPlayEventClassification()`, `PLAY_MATCH_STATS`; keys must match `scoringEngine.js` |
 | `src/components/nflPlays/` | `fieldPrimitives.jsx`, `PlayTrajectoryStrip.jsx`, `DriveField.jsx`, `DrivePlayback.jsx`, `WinProbabilityChart.jsx`, `NflPlays.css` — all field visuals go through `fieldX` and the shared kick helper |
-| `src/components/shared/PlayerAvatar.jsx` | Headshot → team mark → initials avatar (imported by Fantasy Live as `LiveAvatar`) |
+| `src/components/shared/PlayerAvatar.jsx` | Headshot → team mark → initials avatar (uses `live/liveVisuals.js` image sources) |
 | `tests/fixtures/bdlNflPlays.json`, `tests/fixtures/espnGameParticipants.json` | Captured provider payloads — read these instead of re-deriving field shapes |
 
 ## Live Data Server, Budgets, And Scaling
@@ -232,9 +241,10 @@ Read first: [[Live Data Server Architecture]] before changing provider cadence, 
 | `server/liveHandlers.js` | Fantasy Live session/league boundary, gateway-backed route projection |
 | `server/statisticsScoresHandlers.js` | Public Scores provider selection, selected-week live lane, ESPN fallback |
 | `server/playerDesignationHandlers.js` | Fixed weekly player-designations request, sanitization, five-minute cache and 24-hour stale fallback |
-| `server/liveGameSnapshots.js` | Canonical provider play snapshot shared by Statistics and Fantasy Live |
+| `server/liveGameSnapshots.js` | Canonical provider play snapshot shared by Statistics and Fantasy Live; finished games served from the play archive |
+| `server/livePlaysArchive.js` | SQLite archive of finished games' play-by-play (see [[Live Data Server Architecture]]) |
 | `src/api/liveApi.js`, `src/api/statisticsScoresApi.js`, `src/api/playerDesignationsApi.js` | Browser-to-sidecar client contracts |
-| `src/components/companion/CompanionLive.jsx`, `src/components/statistics/scores/StatisticsScores.jsx` | Browser refresh triggers, visibility/offline behavior — neither owns provider play truth |
+| `src/hooks/useMatchupLiveFeed.js`, `src/components/statistics/scores/StatisticsScores.jsx` | Browser refresh triggers, visibility/offline behavior — neither owns provider play truth |
 | `.env.example`, `docker-compose.yml`, `nginx.conf`, `vite.config.js` | Secrets, sidecar topology, proxy boundaries |
 | `tests/unit/balldontlieGateway.test.mjs`, `playerDesignationHandlers.test.mjs`, `publicRequestGuard.test.mjs`, `liveConfigStatus.test.mjs`, `statisticsScoresHandlers.test.mjs`, `providerAnchoredGameClock.test.mjs` + live/Scores/Injuries E2E specs | Boundary coverage |
 
@@ -263,13 +273,11 @@ Add engine/API ownership here as later implementation lands.
 
 Sleeper is the supported fantasy connection. Current-week consumers should use `currentFantasyWeek` from this context rather than re-deriving from `last_scored_leg` or issuing their own `/state/nfl` request. Completed-week analytics may continue to use `last_scored_leg` when they explicitly need a settled-data boundary.
 
-Historical and official weekly fantasy team scores use `getOfficialMatchupRowPoints()` from `src/utils/liveScoringFeed.js`. A present Sleeper `custom_points` value replaces `points`; League History, Matchups, Schedule, Live records, and weekly exports use this shared source. Projection models apply only the difference between the override and the base `points` value.
-
 ## League History, Standings, And Activity
 
 Individual player matchup views, recorded pregame comparisons, and Heatmap-based peer visuals: read [[Player Matchup Drilldown]]. `PlayerMatchupBreakdown.jsx` owns the dialog; `playerDefensePerformance.js` and `fantasyHeatmapData.js` own shared analysis; `useMatchupProjectionBaselines.js` owns local pregame capture.
 
-Fantasy Matchups: `CompanionMatchup.jsx` owns the player Tale of the Tape and the manager VS trigger. While games are live, a player row's projection and the header's `Projected final` are pace-adjusted with `PACE_PROJECTION_MODEL` in `liveWinProbability.js` (display-only 0.5 carryover; win probability stays on the neutral model). Rows use `getPaceAdjustedProjection()`; the header uses `paceExpectedA/B` from `buildMatchupWinProbability()`, which sums the same rounded per-player values (finished games count their actual points). Pregame and final rows keep the plain full-game projection. The VS trigger opens `MatchupPreviewModal.jsx`, the broadcast-style week preview; `matchupPreviewModel.js` normalizes starters, league rosters, the win-probability forecast and the rivalry into that panel's model, `matchupPreviewKeys.js` owns the Keys to the matchup detector engine, and `matchupPreviewKeyHistory.js` remembers which detectors fired for a pairing so keys rotate week to week. The preview's rivalry section renders the series, highlights, and latest meetings inline; `matchupRivalry.js` orients completed meetings and retains historical roster IDs. Its game-state labels come from each starter's `gameState` (`final`, `live`, `upcoming`, `bye`): only a started, unfinished game is live, so the chip, win-chance label, and movers title say live only when `model.liveNow`. Headline scores come from the `liveTotals` the caller passes (the matchup's displayed points); the win-probability model carries projections only. The per-side projected final, projection delta, and record/PF/PA line come from `headerExtras`, built from the same values as the primary `MatchupMasthead` so the two headers agree. The preview's "Who decided it" / movers section renders starters as shared `CompanionPlayerRow` cards (`PreviewPlayerCard`), and each mover carries `chip`, the projection delta on its own; "Where the rosters lead" stays the mirrored comparison rows. Rivalry meeting rows only open seasons in `linkedLeagueSeasonOptions`; otherwise the preview shows an inline notice instead of switching seasons. `App.jsx` shares historical season/week/roster navigation between this drilldown and League History. History loads only when the preview opens. The shared `gridshift-reveal` entrance in `src/index.css` staggers the drilldown panels (preview, team score breakdown, player drilldown, player compare); `gridshift-reveal--auto` is the index-free variant for dynamically built section lists.
+Fantasy Matchups: `CompanionMatchup.jsx` owns the player Tale of the Tape and the manager VS trigger. While games are live, a player row's projection and the header's `Projected final` are pace-adjusted with `PACE_PROJECTION_MODEL` in `liveWinProbability.js` (display-only 0.5 carryover; win probability stays on the neutral model). Rows use `getPaceAdjustedProjection()`; the header uses `paceExpectedA/B` from `buildMatchupWinProbability()`, which sums the same rounded per-player values (finished games count their actual points). Pregame and final rows keep the plain full-game projection. The VS trigger opens `MatchupPreviewModal.jsx`, the broadcast-style week preview; `matchupPreviewModel.js` normalizes starters, league rosters, the win-probability forecast and the rivalry into that panel's model, `matchupPreviewKeys.js` owns the Keys to the matchup detector engine, and `matchupPreviewKeyHistory.js` remembers which detectors fired for a pairing so keys rotate week to week. The preview's rivalry section renders the series, highlights, and latest meetings inline; `matchupRivalry.js` orients completed meetings and retains historical roster IDs. Its game-state labels come from each starter's `gameState` (`final`, `live`, `upcoming`, `bye`): only a started, unfinished game is live, so the chip, win-chance label, and movers title say live only when `model.liveNow`. Headline scores come from the `liveTotals` the caller passes (the matchup's displayed points); the win-probability model carries projections only. The per-side projected final, projection delta, and record/PF/PA line come from `headerExtras`, built from the same values as the primary `MatchupMasthead` so the two headers agree. The preview's "Who decided it" / movers section renders starters as shared `CompanionPlayerRow` cards (`PreviewPlayerCard`), and each mover carries `chip`, the projection delta on its own; "Where the rosters lead" stays the mirrored comparison rows. Rivalry meeting rows only open seasons in `linkedLeagueSeasonOptions`; otherwise the preview shows an inline notice instead of switching seasons. `App.jsx` shares historical season/week/roster navigation between this drilldown and League History. History loads only when the preview opens. The shared `gridshift-reveal` entrance in `src/index.css` staggers the drilldown panels (preview, team scoring drilldown, player drilldown, player compare); `gridshift-reveal--auto` is the index-free variant for dynamically built section lists.
 
 | File | Owns |
 | --- | --- |
@@ -281,6 +289,8 @@ Fantasy Matchups: `CompanionMatchup.jsx` owns the player Tale of the Tape and th
 | `src/components/companion/LeagueHistoryIcon.jsx` | Shared archive glyph |
 | `src/components/companion/LeagueHistoryState.jsx` | Shared centered loading/unavailable/error/empty treatment |
 | `src/components/LeagueSubNav.jsx`, `src/utils/appRoutes.js`, `src/App.jsx` | League tab registration, `/league/*` routing, legacy `/companion/*` aliases, lazy mounting |
+
+Historical Sleeper team totals must come from `getOfficialMatchupRowPoints()` in `src/utils/liveScoringFeed.js`; `custom_points` overrides `points`. League History, Schedule, Matchups, Live, and exports should reuse this source instead of recalculating a team total.
 
 ## ESPN Player Data And Profiles
 
@@ -347,7 +357,7 @@ Read first: [[Team Dashboard]]. It reuses the player dashboard's components and 
 | `src/components/statistics/team/TeamHero.jsx` | Team hero: identity, season record and division pods, franchise honors, View Schedule, next game |
 | `src/components/statistics/team/TeamDashboard.jsx` | Season picker, fantasy switch, tabs, name linking, game and player navigation |
 | `src/components/statistics/team/TeamTop.jsx` | Position leader cards and the depth chart (formation and table) |
-| `src/components/statistics/team/TeamTabs.jsx`, `TeamCharts.jsx` | Season, Player stats, League ranks, Full roster; results tape, quarter bars, drive bars, trends, spark bars |
+| `src/components/statistics/team/TeamTabs.jsx`, `TeamCharts.jsx` | Season, Players, League tabs; results tape, quarter bars and scoring filters, drive bars, trends, spark bars |
 | `src/index.css` (`.team-dash-*`) | Team dashboard styles |
 
 ## Scoring And Projections

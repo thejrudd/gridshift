@@ -1,8 +1,8 @@
 import { calcPointsFromTotals } from './scoringEngine.js';
 import { getProviderIdentityKey, getProviderPlayerIdentity } from './providerPlayerIdentity.js';
 
-export const LEGACY_TRADE_VALUE_SCALE_IDS = Object.freeze(['league-utility-0-100-v1']);
-export const TRADE_VALUE_SCALE_ID = 'fantasy-viability-0-100-v2';
+export const LEGACY_TRADE_VALUE_SCALE_IDS = Object.freeze(['league-utility-0-100-v1', 'fantasy-viability-0-100-v2']);
+export const TRADE_VALUE_SCALE_ID = 'fantasy-baseline-0-100-v3';
 export const TRADE_VALUE_SCALE_MIN = 0;
 export const TRADE_VALUE_SCALE_MAX = 100;
 
@@ -194,25 +194,211 @@ function roleVolume(position, stats) {
   return null;
 }
 
-function rankScores(entries) {
-  const sorted = entries.filter((entry) => Number.isFinite(entry.value))
-    .sort((left, right) => right.value - left.value);
-  const result = new Map();
-  if (!sorted.length) return result;
-  if (sorted.length === 1) {
-    result.set(sorted[0].id, 50);
-    return result;
+const SNAP_FIELDS = {
+  QB: ['off_snp', 'tm_off_snp'], RB: ['off_snp', 'tm_off_snp'], WR: ['off_snp', 'tm_off_snp'], TE: ['off_snp', 'tm_off_snp'],
+  DL: ['def_snp', 'tm_def_snp'], LB: ['def_snp', 'tm_def_snp'], DB: ['def_snp', 'tm_def_snp'],
+};
+const RECENT_ROLE_WEEKS = 4;
+
+/**
+ * Share of team snaps over the team's most recent games, with the number of
+ * team games observed, or null when snaps are not reported. Games the player
+ * sat out still count, so an inactive player shows a zero share.
+ */
+function snapShare(position, rows = [], totals = null) {
+  const [ownKey, teamKey] = SNAP_FIELDS[normalizeTradePositionGroup(position)] ?? [];
+  if (!ownKey) return null;
+  const recent = rows.filter((row) => Number(row?.[teamKey]) > 0)
+    .sort((left, right) => Number(left?.week ?? 0) - Number(right?.week ?? 0))
+    .slice(-RECENT_ROLE_WEEKS);
+  const source = recent.length ? recent : (Number(totals?.[teamKey]) > 0 ? [totals] : []);
+  const teamSnaps = source.reduce((sum, row) => sum + Number(row[teamKey]), 0);
+  if (!teamSnaps) return null;
+  const ownSnaps = source.reduce((sum, row) => sum + (Number(row?.[ownKey]) || 0), 0);
+  return {
+    share: Math.max(0, Math.min(1, ownSnaps / teamSnaps)),
+    games: recent.length || Math.max(1, Number(totals?.gp) || 0),
+  };
+}
+
+function quantile(values, q) {
+  const sorted = values.filter(Number.isFinite).sort((left, right) => left - right);
+  if (!sorted.length) return null;
+  const position = (sorted.length - 1) * q;
+  const lower = Math.floor(position);
+  const upper = Math.ceil(position);
+  return sorted[lower] + (sorted[upper] - sorted[lower]) * (position - lower);
+}
+
+/**
+ * Fill every team's lineup the way managers would: dedicated slots first, then
+ * flex slots (narrowest first) with the best remaining eligible player. The
+ * last player started at each position is that position's baseline, so
+ * superflex and IDP flex demand move the baselines without hand tuning.
+ */
+function computePositionBaselines(pointsByGroup, rosterPositions, teams) {
+  const sorted = new Map(POSITION_GROUPS.map((group) => [
+    group,
+    [...(pointsByGroup.get(group) ?? [])].sort((left, right) => right - left),
+  ]));
+  const started = Object.fromEntries(POSITION_GROUPS.map((group) => [group, 0]));
+  const flexSlots = [];
+  for (const rawSlot of Array.isArray(rosterPositions) ? rosterPositions : []) {
+    const groups = SLOT_GROUPS[String(rawSlot ?? '').trim().toUpperCase()];
+    if (!groups?.length) continue;
+    if (groups.length === 1) started[groups[0]] += teams;
+    else flexSlots.push(groups);
   }
-  let index = 0;
-  while (index < sorted.length) {
-    let end = index + 1;
-    while (end < sorted.length && sorted[end].value === sorted[index].value) end += 1;
-    const averageIndex = (index + end - 1) / 2;
-    const score = Math.round(1 + 99 * (1 - averageIndex / (sorted.length - 1)));
-    for (let cursor = index; cursor < end; cursor += 1) result.set(sorted[cursor].id, score);
-    index = end;
+  flexSlots.sort((left, right) => left.length - right.length);
+  // A position that only reaches the lineup through flex, with nobody good
+  // enough to start there, is measured against that flex slot's cutoff.
+  const flexCutoff = new Map();
+  for (const groups of flexSlots) {
+    for (let team = 0; team < teams; team += 1) {
+      let best = null;
+      for (const group of groups) {
+        const next = sorted.get(group)[started[group]];
+        if (Number.isFinite(next) && (best == null || next > sorted.get(best)[started[best]])) best = group;
+      }
+      if (!best) continue;
+      const filled = sorted.get(best)[started[best]];
+      started[best] += 1;
+      for (const group of groups) flexCutoff.set(group, Math.min(flexCutoff.get(group) ?? Infinity, filled));
+    }
   }
-  return result;
+  const baselines = new Map();
+  for (const group of POSITION_GROUPS) {
+    const points = sorted.get(group);
+    const starters = Math.min(started[group], points.length);
+    if (starters > 0) baselines.set(group, { points: points[starters - 1], starterCount: starters });
+    else if (points.length && flexCutoff.has(group)) baselines.set(group, { points: flexCutoff.get(group), starterCount: 0 });
+  }
+  return baselines;
+}
+
+const WAIVER_SAMPLE = 3;
+const MIN_ROSTERED_SHARE = 0.5;
+// A free agent who is Doubtful, Out, or on a reserve list cannot replace anyone this week.
+const WAIVER_MIN_AVAILABILITY = 0.95;
+// Managers rarely bench a second kicker or D/ST, so estimated bench depth skips them.
+const UNBENCHED_GROUPS = new Set(['K', 'DEF']);
+
+function rosteredPlayerIds(rosters) {
+  const ids = new Set();
+  for (const roster of rosters) {
+    for (const key of ['players', 'reserve', 'taxi']) {
+      for (const id of roster?.[key] ?? []) if (id != null) ids.add(String(id));
+    }
+  }
+  return ids;
+}
+
+function positionLimit(settings, group) {
+  const limits = Object.entries(GROUP_ALIASES)
+    .filter(([, aliasGroup]) => aliasGroup === group)
+    .map(([alias]) => Number(settings?.[`position_limit_${alias.toLowerCase()}`]))
+    .filter((limit) => Number.isFinite(limit) && limit > 0);
+  return limits.length ? Math.max(...limits) : null;
+}
+
+/**
+ * The waiver line is what a manager can add for free at each position: the
+ * average of the best few players nobody has rostered. With roster data it
+ * comes straight from the league; without it (or while rosters are under half
+ * full), bench spots are spread across
+ * positions in proportion to starter slots (kickers and D/ST excluded, and
+ * capped by any position limit) to estimate how deep each position is
+ * rostered. Free agents' short samples are trusted like everyone else's. The
+ * line can sit above the starter line when managers leave better players on
+ * waivers than some of the ones they start.
+ */
+function computeWaiverLines({ poolByGroup, baselines, rosters, league }) {
+  const teams = rosters.length;
+  const slots = (Array.isArray(league?.roster_positions) ? league.roster_positions : [])
+    .map((slot) => String(slot ?? '').trim().toUpperCase());
+  const benchSlots = slots.filter((slot) => slot === 'BN').length;
+  // A league still drafting (or a mock) has empty rosters that would make every
+  // player look freely available, so real rosters count once at least half full.
+  const capacity = teams * slots.filter((slot) => slot === 'BN' || SLOT_GROUPS[slot]).length;
+  const leagueRostered = rosteredPlayerIds(rosters);
+  const rostered = leagueRostered.size >= capacity * MIN_ROSTERED_SHARE ? leagueRostered : new Set();
+  const benchedStartersPerTeam = [...baselines]
+    .filter(([group]) => !UNBENCHED_GROUPS.has(group))
+    .reduce((sum, [, { starterCount }]) => sum + starterCount, 0) / teams;
+  const waiverLines = new Map();
+  for (const [group, baseline] of baselines) {
+    const pool = [...(poolByGroup.get(group) ?? [])].sort((left, right) => right.ppg - left.ppg);
+    let available;
+    if (rostered.size) {
+      available = pool.filter((entry) => !rostered.has(entry.id) && entry.available);
+    } else {
+      const benchShare = benchedStartersPerTeam > 0 && !UNBENCHED_GROUPS.has(group)
+        ? benchSlots * baseline.starterCount / benchedStartersPerTeam
+        : 0;
+      const limit = positionLimit(league?.settings, group);
+      const depth = Math.round(baseline.starterCount + benchShare);
+      available = pool.slice(limit ? Math.min(depth, teams * limit) : depth).filter((entry) => entry.available);
+    }
+    const sample = available.slice(0, WAIVER_SAMPLE);
+    if (!sample.length) {
+      waiverLines.set(group, Math.min(pool.at(-1)?.ppg ?? 0, baseline.points));
+      continue;
+    }
+    const rawLine = sample.reduce((sum, entry) => sum + entry.ppg, 0) / sample.length;
+    waiverLines.set(group, sample.reduce((sum, entry) => sum + rawLine + (entry.ppg - rawLine) * entry.trust, 0) / sample.length);
+  }
+  return waiverLines;
+}
+
+// Points between the waiver line and the starter line only help when a player
+// fills in or covers a starter, so they count at half weight. Points above the
+// starter line count in full. Points below the waiver line are negative: a
+// free agent would do as well.
+const BENCH_WEIGHT = 0.5;
+
+function valueOverWaivers(points, starterLine, waiverLine) {
+  if (waiverLine >= starterLine) return points - waiverLine;
+  if (points >= starterLine) return points - starterLine + BENCH_WEIGHT * (starterLine - waiverLine);
+  if (points >= waiverLine) return BENCH_WEIGHT * (points - waiverLine);
+  return points - waiverLine;
+}
+
+// One curve for every position, fixed at three points: the waiver line
+// scores 15, the league's median starter scores 50, and the 95th-percentile
+// starter scores 90. Positions with plenty of viable free agents sit lower,
+// and nobody hits a hard zero cutoff.
+const WAIVER_SCORE = 15;
+const TOP_STARTER_SCORE = 90;
+const TOP_STARTER_QUANTILE = 0.95;
+const MIN_CURVE_SPREAD = 0.25;
+
+function buildProductionCurve(starterValues) {
+  const median = Math.max(0, quantile(starterValues, 0.5) ?? 0);
+  const top = Math.max(median, quantile(starterValues, TOP_STARTER_QUANTILE) ?? median);
+  const lowSpread = Math.max(MIN_CURVE_SPREAD, median / Math.log(100 / WAIVER_SCORE - 1));
+  const highSpread = Math.max(MIN_CURVE_SPREAD, (top - median) / Math.log(TOP_STARTER_SCORE / (100 - TOP_STARTER_SCORE)));
+  // A logistic centered on the median starter scores exactly 50 there.
+  return (value) => {
+    const spread = value < median ? lowSpread : highSpread;
+    return 100 / (1 + Math.exp((median - value) / spread));
+  };
+}
+
+// Mild current-availability discount. Dynasty spans several seasons, so a
+// current absence carries half the redraft discount.
+const AVAILABILITY_FACTORS = {
+  QUESTIONABLE: 0.97, DOUBTFUL: 0.9, OUT: 0.85, SUS: 0.8, SUSPENDED: 0.8, IR: 0.7, PUP: 0.7, NFI: 0.7,
+};
+const RESERVE_STATUS_PATTERN = /INJURED RESERVE|PHYSICALLY UNABLE|NON[- ]FOOTBALL/;
+
+export function getTradeAvailabilityFactor(player, context = null, format = 'redraft') {
+  const designation = String(context?.gameStatus ?? player?.injury_status ?? '').trim().toUpperCase();
+  const rosterStatus = String(player?.status ?? '').trim().toUpperCase();
+  const factor = Math.min(
+    AVAILABILITY_FACTORS[designation] ?? 1,
+    RESERVE_STATUS_PATTERN.test(rosterStatus) ? AVAILABILITY_FACTORS.IR : 1,
+  );
+  return format === 'dynasty' ? 1 - (1 - factor) / 2 : factor;
 }
 
 function confidenceAdjusted(score, confidence) {
@@ -230,11 +416,39 @@ function weightedMean(signals) {
   return weight ? total / weight : null;
 }
 
+// A fresh weekly projection counts as two games of evidence.
+const PROJECTION_GAMES = 2;
+// Points above or below the lines are trusted as games / (games + c), where
+// c = (1 - rho) / rho and rho is the measured game-to-game reliability of
+// fantasy scoring at the position: odd-week vs. even-week points per game for
+// regular players in 2024 and 2025 (selected by playing time, not points),
+// stepped up to one game with Spearman-Brown, geometric mean of both seasons.
+const STABILITY_GAMES = { QB: 5, RB: 1.5, WR: 2, TE: 1.5, LB: 4, DL: 5, DB: 20, K: 30, DEF: 30 };
+const PRODUCTION_WEIGHT = 60;
+const FULL_PHASE_GROUPS = new Set(['K', 'DEF']);
+
+// Last season is each player's starting point once it has a quarter-season
+// sample. Both numbers below were fitted per position on 2023->2024 and
+// 2024->2025 (games with 15+ snaps, 20+ for quarterbacks): PRIOR_WORTH_GAMES
+// is how many current-season games last season is worth when blending it with
+// weeks 1-7 to predict weeks 8-18, and CARRYOVER is the share of that blended
+// edge over the position that actually held up for the rest of the season.
+const MIN_PRIOR_GAMES = 4;
+const PRIOR_WORTH_GAMES = { QB: 5, RB: 6, WR: 3.5, TE: 4, K: 10.5, DEF: 2.5, DL: 9.5, LB: 6.5, DB: 12 };
+const CARRYOVER = { QB: 0.5, RB: 0.95, WR: 0.8, TE: 0.95, K: 0.35, DEF: 0.7, DL: 0.85, LB: 0.65, DB: 0.45 };
+
+function sampleTrust(evidence) {
+  return evidence.currentEvidence / (evidence.currentEvidence + STABILITY_GAMES[evidence.group]);
+}
+const ROLE_WEIGHT = 15;
+
 /**
- * Build the local production-and-role portion of the Trade score. Production
- * is ranked across supported fantasy positions, role is ranked within position,
- * then values receive a light starter-slot scarcity signal.
- * No replacement player or replacement PPG is calculated.
+ * Build the local production-and-role portion of the Trade score.
+ * Production is points per game over the position's waiver line, with full
+ * credit above the league's starter line, on one cross-position curve. Role
+ * is the share of team snaps (or opportunity volume when snaps are
+ * unreported), relative to a typical starter at the position. A mild injury
+ * discount applies last.
  */
 export function computeFantasyViabilityTradeValues({
   players,
@@ -252,18 +466,16 @@ export function computeFantasyViabilityTradeValues({
   if (!players || !scoringSettings || !Array.isArray(rosters) || !rosters.length) return result;
 
   const starterCounts = getStarterEquivalents(league?.roster_positions);
-  const productionEntries = [];
-  const roleEntries = new Map(POSITION_GROUPS.map((group) => [group, []]));
-  const projectionEntries = new Map(POSITION_GROUPS.map((group) => [group, []]));
   const evidenceById = new Map();
+  let maxGames = 0;
 
   for (const [id, player] of Object.entries(players)) {
     const group = normalizeTradePositionGroup(player?.position);
     if (!group || starterCounts[group] <= 0) continue;
     const currentStats = seasonStats?.[id] ?? null;
     const currentWeeks = weeklyStats?.[id] ?? [];
-    const priorStats = format === 'dynasty' ? priorSeasonStats?.[id] ?? null : null;
-    const priorWeeks = format === 'dynasty' ? priorWeeklyStats?.[id] ?? [] : [];
+    const priorStats = priorSeasonStats?.[id] ?? null;
+    const priorWeeks = priorWeeklyStats?.[id] ?? [];
     const currentGames = gamesPlayed(currentStats, currentWeeks);
     const priorGames = gamesPlayed(priorStats, priorWeeks);
     const currentPoints = currentStats && currentGames > 0
@@ -272,70 +484,137 @@ export function computeFantasyViabilityTradeValues({
     const priorPoints = priorStats && priorGames > 0
       ? calcPointsFromTotals(priorStats, scoringSettings, player.position) / priorGames
       : null;
-    const ppg = weightedMean([[currentPoints, 1], [priorPoints, 1]]);
-    if (Number.isFinite(ppg)) productionEntries.push({ id: String(id), value: ppg });
+    const sampleGames = currentGames;
+    const projection = Number(currentContextMap?.get(String(id))?.weeklyProjection);
+    const hasProjection = Number.isFinite(projection) && projection > 0;
+    const currentEvidence = currentGames + (hasProjection ? PROJECTION_GAMES : 0);
+    const currentPpg = weightedMean([[currentPoints, currentGames], [projection, hasProjection ? PROJECTION_GAMES : 0]]);
+    // Dynasty's multi-year view weighs last season at least as much as this one.
+    const hasPrior = Number.isFinite(priorPoints) && priorGames >= MIN_PRIOR_GAMES;
+    const redraftPriorWeight = hasPrior ? Math.min(PRIOR_WORTH_GAMES[group], priorGames) : 0;
+    const priorWeight = hasPrior && format === 'dynasty' ? Math.max(redraftPriorWeight, currentEvidence) : redraftPriorWeight;
 
+    const currentSnaps = snapShare(player.position, currentWeeks, currentStats);
+    const priorSnaps = snapShare(player.position, priorWeeks, priorStats);
     const currentVolume = currentWeeks.length
       ? weightedMean(currentWeeks.map((row) => [roleVolume(player.position, row), 1]))
       : currentStats && currentGames > 0 ? (roleVolume(player.position, currentStats) ?? 0) / currentGames : null;
     const priorVolume = priorWeeks.length
       ? weightedMean(priorWeeks.map((row) => [roleVolume(player.position, row), 1]))
       : priorStats && priorGames > 0 ? (roleVolume(player.position, priorStats) ?? 0) / priorGames : null;
-    const roleValue = weightedMean([[currentVolume, 1], [priorVolume, 1]]);
-    const roleGames = Math.max(currentGames, priorGames);
-    const roleConfidence = Math.min(1, roleGames / 4);
-    if (Number.isFinite(roleValue) && roleValue > 0) roleEntries.get(group).push({ id: String(id), value: roleValue });
 
-    const projection = Number(currentContextMap?.get(String(id))?.weeklyProjection);
-    if (Number.isFinite(projection) && projection > 0) projectionEntries.get(group).push({ id: String(id), value: projection });
+    maxGames = Math.max(maxGames, sampleGames);
     evidenceById.set(String(id), {
       group,
-      ppg,
-      productionConfidence: Math.min(1, Math.max(currentGames, priorGames) / 4),
-      roleValue,
-      roleConfidence,
-      projection,
+      currentPpg,
+      currentEvidence,
+      priorPoints: hasPrior ? priorPoints : null,
+      priorWeight,
+      sampleGames,
+      hasProjection,
+      currentSnaps,
+      priorSnaps,
+      currentVolume,
+      priorVolume,
+      availability: getTradeAvailabilityFactor(player, currentContextMap?.get(String(id)), format),
+      canPlayNow: getTradeAvailabilityFactor(player, currentContextMap?.get(String(id))) >= WAIVER_MIN_AVAILABILITY,
     });
   }
 
-  const productionRanks = new Map();
-  const roleRanks = new Map();
-  const projectionRanks = new Map();
-  for (const [id, score] of rankScores(productionEntries)) productionRanks.set(id, score);
-  for (const group of POSITION_GROUPS) {
-    for (const [id, score] of rankScores(roleEntries.get(group))) roleRanks.set(id, score);
-    for (const [id, score] of rankScores(projectionEntries.get(group))) projectionRanks.set(id, score);
+  // Once games are underway, a healthy player who has not played this season
+  // does not coast on last season's points or snaps.
+  for (const evidence of evidenceById.values()) {
+    const priorCounts = maxGames === 0 || evidence.currentEvidence > 0 || !evidence.canPlayNow;
+    evidence.priorCounts = priorCounts && evidence.priorWeight > 0;
+    evidence.pooledPpg = weightedMean([
+      [evidence.priorPoints, evidence.priorCounts ? evidence.priorWeight : 0],
+      [evidence.currentPpg, evidence.currentEvidence],
+    ]);
+    const priorRole = priorCounts ? 1 : 0;
+    evidence.share = weightedMean([[evidence.currentSnaps?.share, 1], [evidence.priorSnaps?.share, priorRole]]);
+    evidence.volume = weightedMean([[evidence.currentVolume, 1], [evidence.priorVolume, priorRole]]);
+    const roleGames = Math.max(evidence.currentSnaps?.games ?? 0, priorRole ? evidence.priorSnaps?.games ?? 0 : 0, evidence.sampleGames);
+    evidence.roleConfidence = Math.min(1, roleGames / RECENT_ROLE_WEEKS);
   }
 
-  const activeScarcityEntries = POSITION_GROUPS
-    .filter((group) => starterCounts[group] > 0)
-    .map((group) => ({ id: group, value: starterCounts[group] }));
-  const scarcityRanks = rankScores(activeScarcityEntries);
-  const scarcityByGroup = new Map(POSITION_GROUPS.map((group) => [group, scarcityRanks.get(group) ?? 50]));
+  // One-game samples can rank a fill-in ahead of real starters, so the lines
+  // use players with at least two games this season once it has that many.
+  const baselineSample = Math.min(2, maxGames);
+  const playingNow = (evidence) => evidence.sampleGames >= baselineSample || evidence.hasProjection;
+  const sharesByGroup = new Map(POSITION_GROUPS.map((group) => [group, []]));
+  const volumesByGroup = new Map(POSITION_GROUPS.map((group) => [group, []]));
+  for (const evidence of evidenceById.values()) {
+    if (evidence.share > 0) sharesByGroup.get(evidence.group).push(evidence.share);
+    if (evidence.volume > 0) volumesByGroup.get(evidence.group).push(evidence.volume);
+  }
+  const computeLines = (pointsOf, trustOf) => {
+    const poolByGroup = new Map(POSITION_GROUPS.map((group) => [group, []]));
+    for (const [id, evidence] of evidenceById) {
+      const points = pointsOf(evidence);
+      if (!Number.isFinite(points) || !playingNow(evidence)) continue;
+      poolByGroup.get(evidence.group).push({ id, ppg: points, trust: trustOf(evidence), available: evidence.canPlayNow });
+    }
+    const pointsByGroup = new Map([...poolByGroup].map(([group, pool]) => [group, pool.map((entry) => entry.ppg)]));
+    const baselines = computePositionBaselines(pointsByGroup, league?.roster_positions, rosters.length);
+    return { baselines, waiverLines: computeWaiverLines({ poolByGroup, baselines, rosters, league }) };
+  };
+  // A returning player's blend keeps the measured share of its edge over the
+  // position's starter line. A player without a recent season settles toward
+  // this season's waiver line, the level any manager can reach for free, in
+  // proportion to games played.
+  const firstPass = computeLines((evidence) => evidence.pooledPpg, (evidence) => (evidence.priorCounts ? CARRYOVER[evidence.group] : sampleTrust(evidence)));
+  for (const evidence of evidenceById.values()) {
+    const starterLine = firstPass.baselines.get(evidence.group)?.points;
+    const waiverLine = firstPass.waiverLines.get(evidence.group);
+    if (!Number.isFinite(evidence.pooledPpg)) evidence.ppg = null;
+    else if (evidence.priorCounts) {
+      evidence.ppg = Number.isFinite(starterLine)
+        ? starterLine + (evidence.pooledPpg - starterLine) * CARRYOVER[evidence.group]
+        : evidence.pooledPpg;
+    } else {
+      evidence.ppg = Number.isFinite(waiverLine) ? waiverLine + (evidence.pooledPpg - waiverLine) * sampleTrust(evidence) : null;
+    }
+  }
+  // Starter and waiver lines then come from everyone's settled scoring, so a
+  // free agent's short hot streak does not set the bar for the position.
+  const { baselines, waiverLines } = computeLines((evidence) => evidence.ppg, () => 1);
+  const trustedValue = (evidence) => {
+    const baseline = baselines.get(evidence.group);
+    if (!baseline || !Number.isFinite(evidence.ppg)) return null;
+    return valueOverWaivers(evidence.ppg, baseline.points, waiverLines.get(evidence.group));
+  };
+  const starterValues = [];
+  for (const evidence of evidenceById.values()) {
+    const baseline = baselines.get(evidence.group);
+    if (!baseline || !(evidence.ppg >= baseline.points) || !playingNow(evidence)) continue;
+    starterValues.push(trustedValue(evidence));
+  }
+  const productionCurve = buildProductionCurve(starterValues);
+  // A typical starter's role (90th percentile at the position) counts as a full role.
+  const fullShare = new Map(POSITION_GROUPS.map((group) => [group, quantile(sharesByGroup.get(group), 0.9)]));
+  const fullVolume = new Map(POSITION_GROUPS.map((group) => [group, quantile(volumesByGroup.get(group), 0.9)]));
 
   for (const [id, evidence] of evidenceById) {
-    const productionScore = productionRanks.has(id)
-      ? confidenceAdjusted(productionRanks.get(id), evidence.productionConfidence)
-      : null;
-    const localRoleScore = roleRanks.has(id)
-      ? confidenceAdjusted(roleRanks.get(id), evidence.roleConfidence)
-      : null;
-    const projectionScore = projectionRanks.get(id) ?? null;
-    const roleScore = weightedMean([
-      [localRoleScore, evidence.roleConfidence],
-      [projectionScore, Number.isFinite(evidence.projection) ? 1 : 0],
-    ]);
-    if (!Number.isFinite(productionScore) && !Number.isFinite(roleScore)) continue;
-    const scarcityScore = starterCounts[evidence.group] > 0 ? scarcityByGroup.get(evidence.group) : null;
-    // 35% production, 35% role, and 5% mild starter-slot scarcity make up the
-    // 75% local portion. Missing evidence is redistributed across available
-    // local signals; KTC supplies the separate 25% when present.
+    const value = trustedValue(evidence);
+    const productionScore = Number.isFinite(value) ? productionCurve(value) : null;
+    const shareNorm = fullShare.get(evidence.group);
+    const volumeNorm = fullVolume.get(evidence.group);
+    const rawRole = Number.isFinite(evidence.share) && shareNorm > 0
+      ? 100 * Math.min(1, evidence.share / shareNorm)
+      : evidence.volume > 0 && volumeNorm > 0 ? 100 * Math.min(1, evidence.volume / volumeNorm) : null;
+    // Every rostered kicker and D/ST plays its whole phase, so role adds no
+    // playing-time signal there; it only stands in when production is missing.
+    const roleCounts = !FULL_PHASE_GROUPS.has(evidence.group) || !Number.isFinite(productionScore);
+    const roleScore = Number.isFinite(rawRole) && roleCounts ? confidenceAdjusted(rawRole, evidence.roleConfidence) : null;
+    // Missing evidence is redistributed across the available local signals;
+    // KTC supplies the separate 25% when present.
     const score = weightedMean([
-      [productionScore, 35],
-      [roleScore, 35],
-      [scarcityScore, 5],
+      [productionScore, PRODUCTION_WEIGHT],
+      [roleScore, ROLE_WEIGHT],
     ]);
-    if (Number.isFinite(score)) result.set(id, Math.max(1, Math.min(100, Math.round(score))));
+    if (Number.isFinite(score)) {
+      result.set(id, Math.max(1, Math.min(100, Math.round(score * evidence.availability))));
+    }
   }
 
   return result;
@@ -386,8 +665,10 @@ export function normalizeKtcMarketValue(value, ktcPlayers, leagueType = '1qb') {
   if (peers.length < 2) return null;
   const less = peers.filter((candidate) => candidate < numeric).length;
   const equal = peers.filter((candidate) => candidate === numeric).length;
-  const rankFromBottom = less + (equal - 1) / 2;
-  return Math.round(1 + 99 * rankFromBottom / (peers.length - 1));
+  // A value outside the peer list (a pick below every player) has no tie to
+  // average, so it ranks by the players beneath it and stays within 1–100.
+  const rankFromBottom = less + Math.max(0, equal - 1) / 2;
+  return Math.max(1, Math.min(100, Math.round(1 + 99 * rankFromBottom / (peers.length - 1))));
 }
 
 export function combineTradeValueSignals(utilityScore, marketScore) {
