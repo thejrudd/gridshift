@@ -134,7 +134,10 @@ export function createLiveGameSnapshotStore({
       try { row = archive.get(key); } catch { row = null; }
       // Verified rows are permanent: no provider call at all.
       if (row?.verified) return archivedSnapshot(row, ids);
-      const finished = await getFinishedGame(parsedGameId);
+      // Only finished games are archived, so a stored row needs no status
+      // check: inside the correction window it is served as stored.
+      if (row && now() - row.gameEndedAt < PLAY_CORRECTION_WINDOW_MS) return archivedSnapshot(row, ids);
+      const finished = row ? { endedAt: row.gameEndedAt } : await getFinishedGame(parsedGameId);
       if (finished) {
         const correctionsSettled = now() - finished.endedAt >= PLAY_CORRECTION_WINDOW_MS;
         // Archived inside the correction window: serve it until the window

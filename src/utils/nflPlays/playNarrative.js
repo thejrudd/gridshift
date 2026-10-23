@@ -270,7 +270,8 @@ export function parsePenaltyClause(rawText) {
     name: match[2]?.trim() || null,
     infraction: match[3].trim(),
     yards: match[4] == null ? null : Number(match[4]),
-    declined: /, ?Penalty declined/i.test(text),
+    // "…, Penalty declined" or "…, Offensive Holding, declined."
+    declined: /,\s*(?:Penalty\s+)?declined\b/i.test(text),
     enforcedAt: enforcement?.[1] ?? null,
     noPlay: /-\s*No Play/i.test(text),
   };
@@ -319,9 +320,48 @@ export function parseInterception(rawText) {
  *
  * `forcedBy` is optional: a ball that came loose on its own names no one.
  */
+// What the gamebook can put between "FUMBLES" and the recovery: who forced it,
+// a bracketed quarterback hit, and a "touched at" spot.
+const FUMBLE_FORCE = '(?:\\s*\\(([^)]+)\\))?(?:\\s*\\[[^\\]]*\\])?';
+const FUMBLE_BETWEEN = '(?:,\\s*touched at [A-Z]{2,3} \\d+)?';
+
+function firstAbbreviatedName(text) {
+  // The carrier is the first name in the description, once the formation note
+  // that sometimes opens it is out of the way.
+  return new RegExp(`(${ABBREV})`).exec(text.replace(/^\s*\([^)]*\)\s*/, ''))?.[1] ?? null;
+}
+
+/**
+ * Any fumble in the official description, recovered or not: who had the ball,
+ * who forced it, and which team came up with it (null when it went out of
+ * bounds or the text does not say). parseFumble below is the narrower reading,
+ * a recovery with its spot and return.
+ */
+export function parseFumbleCredit(rawText) {
+  const text = authoritativeText(rawText);
+  const fumble = new RegExp(`FUMBLES${FUMBLE_FORCE}`, 'i').exec(text);
+  if (!fumble) return null;
+  const recovery = /RECOVERED by ([A-Z]{2,3})-/i.exec(text.slice(fumble.index));
+  // The ball carrier opens the sentence that ends in FUMBLES — on a kick that
+  // is the returner ("W.Lutz kicks ... R.Shaheed to SEA 44 ... FUMBLES"), not
+  // the kicker who opens the description — unless that sentence is a
+  // completed pass, where it is the receiver.
+  const before = text.slice(0, fumble.index);
+  const sentenceStarts = [...before.matchAll(new RegExp(`(?:^|\\.\\s+)(?:\\([^)]*\\)\\s*)?(${ABBREV})`, 'g'))];
+  const sentence = before.slice(sentenceStarts.at(-1)?.index ?? 0);
+  const receiver = /\bsacked\b/i.test(sentence)
+    ? null
+    : new RegExp(`\\bpass\\b[^.]*?\\bto (${ABBREV})`, 'i').exec(sentence)?.[1] ?? null;
+  return {
+    fumbledBy: receiver ?? sentenceStarts.at(-1)?.[1] ?? firstAbbreviatedName(text),
+    forcedBy: fumble[1]?.trim() || null,
+    recoveredByTeam: recovery ? canonicalTeam(recovery[1]) : null,
+  };
+}
+
 export function parseFumble(rawText) {
   const text = authoritativeText(rawText);
-  const lost = new RegExp(`FUMBLES(?:\\s*\\(([^)]+)\\))?,?\\s*RECOVERED by ([A-Z]{2,3})-(${ABBREV}) at ${SPOT_TEXT}`, 'i').exec(text);
+  const lost = new RegExp(`FUMBLES${FUMBLE_FORCE}${FUMBLE_BETWEEN},?\\s*RECOVERED by ([A-Z]{2,3})-(${ABBREV}) at ${SPOT_TEXT}`, 'i').exec(text);
   if (!lost) return null;
   const tail = text.slice(lost.index + lost[0].length);
   const returned = new RegExp(`\\bto ${SPOT_TEXT} for (?:(-?\\d+) yards?|no gain)`, 'i').exec(tail);
@@ -329,7 +369,7 @@ export function parseFumble(rawText) {
     // The carrier is the first name in the description, once the formation note
     // that sometimes opens it is out of the way. Scanning the whole string
     // instead picked up a tackler out of the parenthetical before "FUMBLES".
-    fumbledBy: new RegExp(`(${ABBREV})`).exec(text.replace(/^\s*\([^)]*\)\s*/, ''))?.[1] ?? null,
+    fumbledBy: firstAbbreviatedName(text),
     forcedBy: lost[1]?.trim() || null,
     recoveredByTeam: lost[2],
     recoveredBy: lost[3],
@@ -363,10 +403,27 @@ export function parseTacklers(rawText) {
     // The parenthetical immediately after FUMBLES identifies who forced it;
     // it is not a generic tackle group even though it uses the same initials.
     if (/FUMBLES\s*$/i.test(before)) continue;
-    const parts = groups[i][1].split(';').map((part) => part.trim()).filter(Boolean);
+    // "(A; B)" is an assisted tackle and "(A, B)" a shared one (a split
+    // sack, say). Both name two defenders.
+    const parts = groups[i][1].split(/[;,]/).map((part) => part.trim()).filter(Boolean);
     if (parts.length && parts.every((part) => TACKLER_PART.test(part))) return parts;
   }
   return [];
+}
+
+/**
+ * Quarterback hits from the official description: the gamebook writes the
+ * defender who hit the passer in square brackets ("... for 2 yards (Y.Diaby)
+ * [T.Smith]."). Read from the action itself, before any trailing clause.
+ */
+export function parseQuarterbackHitters(rawText) {
+  const action = String(rawText ?? '').split(
+    /\n|\*\* Injury Update|The Replay Official|PENALTY on| was injured during the play/i,
+  )[0];
+  return [...action.matchAll(/\[([^\]]+)\]/g)]
+    .flatMap((group) => group[1].split(/[;,]/))
+    .map((part) => part.trim())
+    .filter((part) => TACKLER_PART.test(part));
 }
 
 const DEFENSIVE_NAME = new RegExp(`^(?:\\d+-)?(?:${ABBREV}|${NAME})$`);
@@ -419,35 +476,45 @@ export function parseDefensiveActors(rawText, { typeSlug = null } = {}) {
   }
 
   const fumble = parseFumble(text);
-  if (fumble) {
-    String(fumble.forcedBy ?? '')
+  const fumbleCredit = parseFumbleCredit(text);
+  if (fumbleCredit) {
+    String(fumbleCredit.forcedBy ?? '')
       .split(';')
       .map((name) => name.trim())
       .filter(Boolean)
       .forEach((name) => add(PLAY_ROLES.FORCER, name));
-    add(PLAY_ROLES.RECOVERER, fumble.recoveredBy, { team: canonicalTeam(fumble.recoveredByTeam) });
   }
+  if (fumble) add(PLAY_ROLES.RECOVERER, fumble.recoveredBy, { team: canonicalTeam(fumble.recoveredByTeam) });
 
   const tacklers = parseTacklers(text);
   const sack = /\bsack(?:ed)?\b/i.test(`${typeSlug ?? ''} ${text}`);
-  if (sack) {
+  // On an incomplete pass the parenthetical names the defender who broke it
+  // up ("... incomplete short right to C.Otton (K.Benton)."), not a tackler.
+  const incomplete = !sack && (/incompletion/i.test(String(typeSlug ?? '')) || /\bpass incomplete\b/i.test(text));
+  if (incomplete) {
+    tacklers.forEach((name) => add(PLAY_ROLES.PASS_DEFENDER, name));
+  } else if (sack) {
     const byClause = /\bsacked by (.+?)(?:\s+for\b|\s+at\b|[.,]|$)/i.exec(text)?.[1] ?? null;
     const subjectClause = /^(?:\([^)]*\)\s*)?(.+?)\s+sacked\s+(?!at\b|for\b)/i.exec(text)?.[1] ?? null;
     const explicit = cleanDefensiveName(byClause) ?? cleanDefensiveName(subjectClause);
-    if (explicit) add(PLAY_ROLES.SACKER, explicit);
+    // "(sack split by Z.Allen and N.Bonitto)": a half sack each.
+    const split = new RegExp(`sack split by (${ABBREV}) and (${ABBREV})`, 'i').exec(text);
+    if (split) [split[1], split[2]].forEach((name) => add(PLAY_ROLES.SACKER, name));
+    else if (explicit) add(PLAY_ROLES.SACKER, explicit);
     else tacklers.forEach((name) => add(PLAY_ROLES.SACKER, name));
   } else {
     tacklers.forEach((name) => add(PLAY_ROLES.TACKLER, name));
   }
 
   const tackledBy = /\btackled by (.+?)(?:[.,;]|$)/i.exec(text)?.[1] ?? null;
-  if (!tacklers.length && tackledBy) add(PLAY_ROLES.TACKLER, tackledBy);
+  if (!tacklers.length && tackledBy && !incomplete) add(PLAY_ROLES.TACKLER, tackledBy);
 
   const defendedBy = /(?:pass (?:defended|defensed|broken up)|broken up) by (.+?)(?:[.,;]|$)/i.exec(text)?.[1] ?? null;
   if (defendedBy) add(PLAY_ROLES.PASS_DEFENDER, defendedBy);
 
   const hitBy = /\b(?:quarterback|QB) hit by (.+?)(?:[.,;]|$)/i.exec(text)?.[1] ?? null;
   if (hitBy) add(PLAY_ROLES.QB_HITTER, hitBy);
+  parseQuarterbackHitters(text).forEach((name) => add(PLAY_ROLES.QB_HITTER, name));
 
   const blockedBy = /\b(?:kick|punt|field goal|extra point) blocked by (.+?)(?:[.,;]|$)/i.exec(text)?.[1] ?? null;
   if (blockedBy) add(PLAY_ROLES.KICK_BLOCKER, blockedBy);
@@ -458,6 +525,8 @@ export function parseDefensiveActors(rawText, { typeSlug = null } = {}) {
 
   return actors;
 }
+
+const SCRIMMAGE_KINDS = new Set(['pass', 'rush', 'passing-touchdown', 'fumble']);
 
 const DIRECTION = /\b(?:scrambles )?(?:up the middle|left end|right end|left tackle|right tackle|left guard|right guard|(?:short|deep) (?:left|middle|right))\b/i;
 
@@ -472,6 +541,45 @@ function parseDirection(rawText) {
  * "Rush, No Gain", "for Loss of 3 Yds to", "for 1 Yd to". Normalizing them to a
  * signed number keeps the grammar table small instead of doubling every rule.
  */
+/**
+ * A touchdown's try written into the same row: short_text appends it in
+ * parentheses ("Kyle Pitts Sr. 10 Yd pass from Michael Penix Jr. (Michael
+ * Penix Jr. Pass to Zachariah Branch for Two-Point Conversion)", "... 1 Yd Rush
+ * (Two-Point Pass Conversion Failed)"). It is a separate down with its own
+ * players, so it is taken out before the base grammar runs and returned on its
+ * own. `good` is null for a shape this parser does not know.
+ */
+const TWO_POINT_CLAUSE = /\s*\(([^()]*Two-Point[^()]*)\)/i;
+
+function splitTwoPointClause(shortText) {
+  const match = TWO_POINT_CLAUSE.exec(shortText);
+  if (!match) return { base: shortText, conversion: null };
+  const base = `${shortText.slice(0, match.index)}${shortText.slice(match.index + match[0].length)}`.trim();
+  const clause = match[1].trim();
+  if (/\bfailed\b/i.test(clause)) return { base, conversion: { good: false, actors: [] } };
+  const pass = rx(`(${NAME}) Pass to (${NAME}) for Two-Point Conversion`).exec(clause);
+  if (pass) {
+    return {
+      base,
+      conversion: {
+        good: true,
+        actors: [
+          { role: PLAY_ROLES.PASSER, name: pass[1], abbreviated: false, detail: null },
+          { role: PLAY_ROLES.RECEIVER, name: pass[2], abbreviated: false, detail: null },
+        ],
+      },
+    };
+  }
+  const run = rx(`(${NAME}) (?:Run|Rush) for Two-Point Conversion`).exec(clause);
+  if (run) {
+    return {
+      base,
+      conversion: { good: true, actors: [{ role: PLAY_ROLES.RUSHER, name: run[1], abbreviated: false, detail: null }] },
+    };
+  }
+  return { base, conversion: { good: null, actors: [] } };
+}
+
 function canonicalizeShortText(shortText) {
   return shortText
     // ESPN/BDL replace some defensive-touchdown play descriptions with the
@@ -669,7 +777,8 @@ export function parsePlayNarrative(play) {
     return { confident: true, administrative: true, playKind: slug, label, sentence, actors: [], yards: null, penalty: null };
   }
 
-  const shortText = String(play.shortText ?? '').trim().replace(/\s+/g, ' ');
+  const { base: playShortText, conversion } = splitTwoPointClause(String(play.shortText ?? '').trim().replace(/\s+/g, ' '));
+  const shortText = playShortText;
   const rawText = String(play.rawText ?? play.description ?? '');
   const penalty = parsePenaltyClause(rawText);
   if (!shortText) return { confident: false, actors: [], sentence: null, playKind: slug, administrative: false, penalty };
@@ -687,8 +796,9 @@ export function parsePlayNarrative(play) {
 
   if (!matched) {
     // A penalty that wiped out the play has no base grammar of its own. It is
-    // still fully describable from the penalty clause alone.
-    if (penalty) {
+    // still fully describable from the penalty clause alone. A declined flag
+    // changed nothing, so it never stands in for the play.
+    if (penalty && !penalty.declined) {
       const placement = penalty.yards == null && penalty.enforcedAt
         ? `, placed at ${penalty.enforcedAt}`
         : `, ${yardPhrase(penalty.yards)}`;
@@ -733,9 +843,12 @@ export function parsePlayNarrative(play) {
   // A flag that wipes the play out entirely has to be said out loud — the
   // action sentence on its own would read as though the yards counted.
   const negated = penalty && /No Play/i.test(rawText);
+  const tryResult = conversion?.good === true ? ' Two-point try good.'
+    : conversion?.good === false ? ' Two-point try failed.'
+      : '';
   const sentence = finishSentence(negated
     ? `${built} Wiped out by ${penalty.infraction.toLowerCase()} on ${penalty.team}.`
-    : built);
+    : `${built}${tryResult}`);
 
   return {
     confident: true,
@@ -745,6 +858,11 @@ export function parsePlayNarrative(play) {
     sentence,
     actors,
     yards: negated ? null : (play.statYardage ?? parsed.yards ?? null),
+    // The yards the ball carrier or receiver is credited with. The provider's
+    // stat_yardage nets in an accepted penalty ("ran for 8, holding enforced
+    // behind the run" credits 2 but reads -18); short_text states the credit.
+    creditedYards: negated || !SCRIMMAGE_KINDS.has(kind) || !Number.isFinite(parsed.yards) ? null : parsed.yards,
+    conversion: negated ? null : conversion,
     distance: parsed.distance ?? null,
     returnYards: parsed.returnYards ?? null,
     good: parsed.good ?? null,

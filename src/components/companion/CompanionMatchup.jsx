@@ -2707,6 +2707,7 @@ function CompanionMatchupView({
               scrollRequest={playScrollRequest}
               sideColors={liveSideColors}
               revealing={liveRevealing}
+              scoringSettings={activeScoringSettings}
             />
           </div>
         </div>

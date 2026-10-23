@@ -44,6 +44,15 @@ export function isFirstDownPlay(play) {
   if (incomplete || negated || /\bintercept/i.test(String(play?.type ?? '')) || /\bsack\b/i.test(description)) {
     return false;
   }
+  // With a flag on the play the new set of downs may be the penalty's (an
+  // automatic first down), not the player's. They earned it only if their own
+  // credited yards reached the line to gain.
+  const penalty = play?.narrative?.penalty;
+  const credited = firstFinite(play?.narrative?.creditedYards);
+  const distance = firstFinite(raw.start_distance, raw.startDistance);
+  if (penalty && !penalty.declined && credited != null && distance != null) {
+    return endDown === 1 && credited >= distance;
+  }
   return endDown === 1;
 }
 
@@ -58,19 +67,36 @@ export function estimatePlayPoints(
   scoringSettings,
   roleDetail = null,
   attributionRoles = null,
+  credit = null,
 ) {
-  const delta = buildPlayStatDelta(play, role, roleDetail, attributionRoles);
+  const delta = buildPlayStatDelta(play, role, roleDetail, attributionRoles, credit);
   let points = calcPoints(delta, scoringSettings, position);
   // A tackle stays a generic `idp_tkl` in the stat delta (the text does not say
   // solo or assisted, and the delta is what Sleeper confirms against). Most IDP
   // leagues pay solo and assisted tackles rather than `idp_tkl`, which would
   // price the tackle at 0 and drop the play from the feed. Price it the way the
   // league does instead: one tackler named reads as solo, several as assisted.
-  if ((Number(delta.idp_tkl) || 0) > 0 && !(Number(scoringSettings?.idp_tkl) || 0)) {
-    const tacklers = (play?.defensiveActors ?? []).filter((actor) => actor.role === PLAY_ROLES.TACKLER).length;
-    points += calcPoints({ [tacklers > 1 ? 'idp_tkl_ast' : 'idp_tkl_solo']: 1 }, scoringSettings, position);
-  }
+  const tackleKey = getPricedTackleKey(play, delta, scoringSettings);
+  if (tackleKey) points += calcPoints({ [tackleKey]: 1 }, scoringSettings, position);
   return Math.round(points * 100) / 100;
+}
+
+/**
+ * The key a play's generic tackle is priced as, or null when the league pays
+ * `idp_tkl` itself (or the play has no tackle): one defender credited with the
+ * stop reads as solo, several as assisted. Shared by the estimate and by the
+ * scoring-play breakdown so the two always agree.
+ */
+export function getPricedTackleKey(play, delta, scoringSettings) {
+  if (!((Number(delta?.idp_tkl) || 0) > 0) || (Number(scoringSettings?.idp_tkl) || 0)) return null;
+  return countTacklers(play) > 1 ? 'idp_tkl_ast' : 'idp_tkl_solo';
+}
+
+// Defenders credited with the stop: tacklers, or the sackers on a sack.
+function countTacklers(play) {
+  const actors = play?.defensiveActors ?? [];
+  const sackers = actors.filter((actor) => actor.role === PLAY_ROLES.SACKER).length;
+  return sackers || actors.filter((actor) => actor.role === PLAY_ROLES.TACKLER).length;
 }
 
 function getSackYards(play, description) {
@@ -95,16 +121,28 @@ function buildAttributedDefensiveDelta(play, attributionRoles) {
     play.yards,
   ) ?? 0;
   const sackYards = getSackYards(play, description);
+  const stoppers = countTacklers(play);
+  const alone = stoppers === 1;
 
-  // BDL play rows name tacklers but do not label the credit solo/assisted or
-  // expose a player-level tackle-for-loss flag. Keep the play at generic
-  // `idp_tkl`; Sleeper's authoritative stat line supplies those distinctions
-  // through reconciliation instead of us inferring them from punctuation or
-  // negative offensive yardage.
-  if (roles.has(PLAY_ROLES.TACKLER)) delta.idp_tkl = 1;
+  // BDL play rows name tacklers but do not label the credit solo/assisted.
+  // Keep the play at generic `idp_tkl` (estimatePlayPoints prices it solo or
+  // assisted by how many are named). A tackle for loss is credited only to a
+  // lone tackler behind the line, the way Sleeper's lines report it; a shared
+  // stop for loss carries none there.
+  if (roles.has(PLAY_ROLES.TACKLER)) {
+    delta.idp_tkl = 1;
+    const carried = firstFinite(play.narrative?.creditedYards);
+    if (alone && carried != null && carried < 0 && play.narrative?.playKind !== 'incompletion') delta.idp_tkl_loss = 1;
+  }
+  // A sack is also a tackle and a quarterback hit in Sleeper's stat lines, and
+  // a lone sacker's is a tackle for loss. A shared sack is half each.
   if (roles.has(PLAY_ROLES.SACKER)) {
-    delta.idp_sack = 1;
-    if (sackYards) delta.idp_sack_yd = sackYards;
+    const share = alone ? 1 : 0.5;
+    delta.idp_sack = share;
+    if (sackYards) delta.idp_sack_yd = Math.round(sackYards * share * 10) / 10;
+    delta.idp_tkl = 1;
+    delta.idp_qbhit = 1;
+    if (alone && sackYards > 0) delta.idp_tkl_loss = 1;
   }
   if (roles.has(PLAY_ROLES.FORCER)) delta.idp_ff = 1;
   if (roles.has(PLAY_ROLES.PASS_DEFENDER)) delta.idp_pd = 1;
@@ -135,9 +173,35 @@ function buildAttributedDefensiveDelta(play, attributionRoles) {
   return delta;
 }
 
-export function buildPlayStatDelta(play, role, roleDetail = null, attributionRoles = null) {
+const TWO_POINT_KEYS = Object.freeze({ passer: 'pass_2pt', receiver: 'rec_2pt', rusher: 'rush_2pt' });
+const TWO_POINT_TEXT = /two.?point conversion|2.?point conversion/i;
+
+/**
+ * `credit` carries what the matcher learned beyond the player's role:
+ * - `conversion: { role, only }` when the player took part in the successful
+ *   two-point try written into the same row as a touchdown — `only` when the
+ *   try is their whole involvement (the try's receiver), otherwise it is
+ *   credited on top of their part in the touchdown (a passer who threw both);
+ * - `fumble: { lost }` when this player is the one the gamebook says fumbled.
+ */
+export function buildPlayStatDelta(play, role, roleDetail = null, attributionRoles = null, credit = null) {
+  const conversion = credit?.conversion ?? null;
+  const conversionKey = conversion ? TWO_POINT_KEYS[conversion.role] : null;
+  if (conversion?.only) return conversionKey ? { [conversionKey]: 1 } : {};
+  const delta = buildInvolvementDelta(play, role, roleDetail, attributionRoles, credit?.fumble ?? null);
+  if (conversionKey) delta[conversionKey] = (delta[conversionKey] ?? 0) + 1;
+  return delta;
+}
+
+function buildInvolvementDelta(play, role, roleDetail, attributionRoles, fumble) {
   const description = play.description;
   const yards = play.yards || extractYardsFromText(description) || 0;
+  // Rushing and receiving credit. An accepted penalty is netted into the
+  // provider's yardage, so the narrative's credited yards win when one exists.
+  const creditedYards = firstFinite(play.narrative?.creditedYards);
+  const scrimmageYards = play.narrative?.penalty && !play.narrative.penalty.declined && creditedYards != null
+    ? creditedYards
+    : yards;
   const type = String(play.type ?? '').toLowerCase();
   const kickContext = [
     type,
@@ -150,8 +214,11 @@ export function buildPlayStatDelta(play, role, roleDetail = null, attributionRol
     /touchdown|return td/i.test(description)
     || /touchdown|return-touchdown|return_td/.test(type)
   );
+  // A row that is itself a two-point try. A touchdown row that also carries
+  // its try ("... TOUCHDOWN. TWO-POINT CONVERSION ATTEMPT ...") is scored as
+  // the touchdown; the try's players are credited through `conversion`.
   const twoPoint = /two.?point|2.?point/.test(type)
-    || /two.?point conversion|2.?point conversion/i.test(description);
+    || (TWO_POINT_TEXT.test(description) && !/touchdown/i.test(description.split(TWO_POINT_TEXT)[0]));
   const incomplete = play.narrative?.playKind === 'incompletion'
     || type.includes('incompletion')
     || /\bincomplete\b/i.test(description);
@@ -189,6 +256,7 @@ export function buildPlayStatDelta(play, role, roleDetail = null, attributionRol
     const kickoff = type.includes('kickoff') || /kickoff/i.test(description);
     if (kickoff) delta.kr_yd = yards;
     else delta.pr_yd = yards;
+    addFumble(delta, fumble);
     if (touchdown) {
       delta.ret_td = 1;
       if (kickoff) delta.kr_td = 1;
@@ -198,7 +266,7 @@ export function buildPlayStatDelta(play, role, roleDetail = null, attributionRol
     // Punt distance belongs to the kicking play, not a fantasy rushing line.
     return {};
   } else if (role === 'team_defense') {
-    return buildTeamDefensePlayDelta(play);
+    return buildTeamDefensePlayDelta(play, roleDetail);
   } else if (role === 'defense') {
     if (Array.isArray(attributionRoles) && attributionRoles.length) {
       return buildAttributedDefensiveDelta(play, attributionRoles);
@@ -240,54 +308,85 @@ export function buildPlayStatDelta(play, role, roleDetail = null, attributionRol
       delta.pass_int = 1;
     } else if (/sack/i.test(description)) {
       delta.pass_sack = 1;
+      addFumble(delta, fumble);
     } else if (incomplete) {
       delta.pass_att = 1;
       delta.pass_inc = 1;
     } else {
-      delta.pass_yd = yards;
+      delta.pass_yd = scrimmageYards;
       delta.pass_cmp = 1;
       delta.pass_att = 1;
       if (touchdown) delta.pass_td = 1;
       if (firstDown) delta.pass_fd = 1;
-      if (touchdown && yards >= 40) delta.pass_td_40p = 1;
-      if (touchdown && yards >= 50) delta.pass_td_50p = 1;
-      if (yards >= 40) delta.pass_cmp_40p = 1;
+      if (touchdown && scrimmageYards >= 40) delta.pass_td_40p = 1;
+      if (touchdown && scrimmageYards >= 50) delta.pass_td_50p = 1;
+      if (scrimmageYards >= 40) delta.pass_cmp_40p = 1;
     }
   } else if (role === 'receiver') {
     if (twoPoint) {
       delta.rec_2pt = 1;
-    } else if (incomplete) {
+    } else if (incomplete || /intercept/i.test(description)) {
+      // The intended receiver of a pick caught nothing.
       return delta;
     } else {
+      addFumble(delta, fumble);
       delta.rec = 1;
-      delta.rec_yd = yards;
+      delta.rec_yd = scrimmageYards;
       if (touchdown) delta.rec_td = 1;
       if (firstDown) delta.rec_fd = 1;
-      if (touchdown && yards >= 40) delta.rec_td_40p = 1;
-      if (touchdown && yards >= 50) delta.rec_td_50p = 1;
-      if (yards >= 40) delta.rec_40p = 1;
+      if (touchdown && scrimmageYards >= 40) delta.rec_td_40p = 1;
+      if (touchdown && scrimmageYards >= 50) delta.rec_td_50p = 1;
+      if (scrimmageYards >= 40) delta.rec_40p = 1;
     }
   } else {
     if (twoPoint) {
       delta.rush_2pt = 1;
     } else {
-      if (/fumble/i.test(description) && /lost|recovered by/i.test(description)) delta.fum_lost = 1;
+      if (fumble) addFumble(delta, fumble);
+      else if (/fumble/i.test(description) && /lost|recovered by/i.test(description)) delta.fum_lost = 1;
       delta.rush_att = 1;
-      delta.rush_yd = yards;
+      delta.rush_yd = scrimmageYards;
       if (touchdown) delta.rush_td = 1;
       if (firstDown) delta.rush_fd = 1;
-      if (touchdown && yards >= 40) delta.rush_td_40p = 1;
-      if (touchdown && yards >= 50) delta.rush_td_50p = 1;
-      if (yards >= 40) delta.rush_40p = 1;
+      if (touchdown && scrimmageYards >= 40) delta.rush_td_40p = 1;
+      if (touchdown && scrimmageYards >= 50) delta.rush_td_50p = 1;
+      if (scrimmageYards >= 40) delta.rush_40p = 1;
     }
   }
 
   return delta;
 }
 
-export function buildTeamDefensePlayDelta(play) {
+// Special teams for a team defense, which some leagues score instead of (or as
+// well as) takeaways: the receiving side's kick and punt return yards, and the
+// kicking side's coverage tackles. `detail` says which side this team was.
+export const TEAM_DEFENSE_RETURN = 'return';
+export const TEAM_DEFENSE_COVERAGE = 'coverage';
+
+function getKickReturnYards(play) {
+  return firstFinite(play?.narrative?.returnYards);
+}
+
+function isPuntPlay(play) {
+  return /punt/i.test(`${play?.type ?? ''} ${play?.narrative?.playKind ?? ''}`);
+}
+
+// Every fumble counts in `fum`; one the other side recovered is also lost.
+function addFumble(delta, fumble) {
+  if (!fumble) return;
+  delta.fum = 1;
+  if (fumble.lost) delta.fum_lost = 1;
+}
+
+export function buildTeamDefensePlayDelta(play, detail = null) {
+  if (detail === TEAM_DEFENSE_COVERAGE) return { def_st_tkl_solo: 1 };
   const description = play.description;
   const delta = {};
+  if (detail === TEAM_DEFENSE_RETURN) {
+    const returnYards = getKickReturnYards(play);
+    if (returnYards) delta[isPuntPlay(play) ? 'def_pr_yd' : 'def_kr_yd'] = returnYards;
+    return delta;
+  }
   const touchdown = play.scoring && /touchdown/i.test(description);
   const interception = /intercept|picked off|pick six/i.test(description);
   const fumble = /fumble/i.test(description);

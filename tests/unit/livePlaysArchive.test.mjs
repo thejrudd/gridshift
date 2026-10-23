@@ -66,11 +66,12 @@ test('a recently finished game is served from the archive, refetched once after 
   await store.getPlays({ gameId: 7 });
   assert.deepEqual(gateway.calls, { status: 1, plays: 1 });
 
-  // Inside the window: the archived copy is served (only the cheap status check runs).
+  // Inside the window: the archived copy is served with no provider call at
+  // all — an archived game is known to be final, so not even a status check.
   clock.advance(10 * HOUR);
   const inside = await store.getPlays({ gameId: 7 });
   assert.equal(inside.cache.archived, true);
-  assert.equal(gateway.calls.plays, 1);
+  assert.deepEqual(gateway.calls, { status: 1, plays: 1 });
 
   // A correction lands; after the window the play list is refetched once.
   scenario.plays = makePlays(3, 'corrected');

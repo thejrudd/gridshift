@@ -7,7 +7,7 @@
 // tolerates alternates.
 
 import { getTeamAbbr, normalizeName } from './liveScoringFeed.js';
-import { PLAY_ROLES } from './nflPlays/playNarrative.js';
+import { PLAY_ROLES, parseFumbleCredit } from './nflPlays/playNarrative.js';
 import { buildPlayerNameIndex, lookupPlayerByName } from './nflPlays/playerNameIndex.js';
 import { enrichPlaySequenceContext } from './nflPlays/playSequenceContext.js';
 import {
@@ -17,11 +17,14 @@ import {
 } from './playByPlay/normalizePlay.js';
 import {
   PLAY_MATCH_STATS,
+  TEAM_DEFENSE_COVERAGE,
+  TEAM_DEFENSE_RETURN,
   buildPlayStatDelta,
   estimatePlayPoints,
   getPlayEventClassification,
   isTeamDefenseScoringPlay,
 } from './playByPlay/playStatDelta.js';
+import { calcPoints } from './scoringEngine.js';
 
 // Statistics Scores and Fantasy Live share one provider-shape normalizer and
 // one stat-attribution owner. Re-exported here because these are Fantasy Live's
@@ -36,6 +39,18 @@ export {
 } from './playByPlay/playStatDelta.js';
 
 const MAX_DESC_LENGTH = 140;
+
+// normalizeName (which keeps generational suffixes) with the suffixes then
+// dropped. Play text abbreviates "Kyle Pitts Sr." as "K.Pitts", so a kept
+// suffix made the indexed short forms "k sr" / "ksr": every Jr./Sr./II starter
+// went unmatched wherever the provider abbreviated them — every tackle, every
+// sentence the narrative parser could not read.
+function normalizeStarterName(value) {
+  return normalizeName(value)
+    .replace(/\b(?:jr|sr|ii|iii|iv|v)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 const GAME_DURATION_MS = 3 * 60 * 60 * 1000 + 10 * 60 * 1000;
 
 function firstString(...values) {
@@ -138,10 +153,10 @@ export function buildStarterNameIndex(rows) {
       position: String(player.position ?? '').toUpperCase(),
     }));
 
-  // normalizeName rather than the shared default: Fantasy Live matches against
-  // play text normalized the same way, and that normalizer leaves generational
-  // suffixes in place. Changing it here would change matching behavior.
-  const { index, meta, teamDefenseIds } = buildPlayerNameIndex(entries, { normalize: normalizeName });
+  // normalizeStarterName rather than the shared default: Fantasy Live matches
+  // against play text normalized the same way (periods deleted, so "K.Pitts"
+  // reads "kpitts"), which the shared normalizer would split differently.
+  const { index, meta, teamDefenseIds } = buildPlayerNameIndex(entries, { normalize: normalizeStarterName });
   return {
     index,
     // normalizedName carries through: lookupPlayerByName reads it back off
@@ -234,7 +249,7 @@ function matchNarrativeActors(play, nameIndex) {
   defensiveActors.forEach((actor) => {
     const duplicate = actors.some((candidate) => (
       candidate.role === actor.role
-      && normalizeName(candidate.name) === normalizeName(actor.name)
+      && normalizeStarterName(candidate.name) === normalizeStarterName(actor.name)
     ));
     if (!duplicate) actors.push(actor);
   });
@@ -253,7 +268,7 @@ function matchNarrativeActors(play, nameIndex) {
   if (play.inferredPasserName) {
     const record = lookupPlayerByName(nameIndex, play.inferredPasserName, {
       team: play.offenseTeamAbbr,
-      normalize: normalizeName,
+      normalize: normalizeStarterName,
     });
     const playerId = getIndexedPlayerId(nameIndex, record);
     if (playerId) {
@@ -268,10 +283,29 @@ function matchNarrativeActors(play, nameIndex) {
 
   const kickReturn = isKickReturnPlay(play);
 
+  // Special teams for team defenses: the receiving side's return yards, and a
+  // coverage tackle for the kicking side when one defender made the stop.
+  if (kickReturn && play?.narrative?.confident) {
+    const returnYards = Number(play.narrative.returnYards);
+    if (Number.isFinite(returnYards) && returnYards !== 0) {
+      nameIndex.teamDefenseIds?.get?.(play.defenseTeamAbbr)?.forEach((playerId) => {
+        const existing = matches.get(playerId);
+        if (existing) existing.detail = TEAM_DEFENSE_RETURN;
+        else matches.set(playerId, { playerId, role: 'team_defense', textPos: -1, detail: TEAM_DEFENSE_RETURN });
+      });
+      const coverage = defensiveActors.filter((actor) => actor.role === PLAY_ROLES.TACKLER);
+      if (coverage.length === 1) {
+        nameIndex.teamDefenseIds?.get?.(play.offenseTeamAbbr)?.forEach((playerId) => {
+          if (!matches.has(playerId)) matches.set(playerId, { playerId, role: 'team_defense', textPos: -1, detail: TEAM_DEFENSE_COVERAGE });
+        });
+      }
+    }
+  }
+
   actors.forEach((actor, textPos) => {
     const record = lookupPlayerByName(nameIndex, actor.name, {
       team: getTeamAbbr(actor.team) || getActorExpectedTeam(play, actor.role, kickReturn),
-      normalize: normalizeName,
+      normalize: normalizeStarterName,
     });
     const playerId = getIndexedPlayerId(nameIndex, record);
     if (!playerId) return;
@@ -293,7 +327,52 @@ function matchNarrativeActors(play, nameIndex) {
     });
   });
 
+  // A successful two-point try in the same row: its passer, receiver, or
+  // rusher is credited for the try, on top of any part in the touchdown.
+  const conversion = play?.narrative?.conversion;
+  if (conversion?.good === true) {
+    conversion.actors.forEach((actor, index) => {
+      const record = lookupPlayerByName(nameIndex, actor.name, {
+        team: play.offenseTeamAbbr,
+        normalize: normalizeStarterName,
+      });
+      const playerId = getIndexedPlayerId(nameIndex, record);
+      const role = playerId ? getFantasyRoleForActor(actor.role, record, play) : null;
+      if (!role) return;
+      const existing = matches.get(playerId);
+      if (existing) existing.conversion = { role, only: false };
+      else {
+        matches.set(playerId, {
+          playerId,
+          role,
+          textPos: actors.length + index,
+          detail: null,
+          attributionRoles: [],
+          conversion: { role, only: true },
+        });
+      }
+    });
+  }
+
   return [...matches.values()].sort((left, right) => left.textPos - right.textPos);
+}
+
+// Who fumbled, and whether the other side came up with it. A fumble is charged
+// to that player's own involvement in the play (the sack, the run, the catch,
+// the return) rather than inferred from the word "fumble" in the sentence.
+function withFumbleCredit(matches, play, nameIndex) {
+  const fumble = parseFumbleCredit(play?.raw?.text ?? play?.description);
+  if (!fumble?.fumbledBy) return matches;
+  const record = lookupPlayerByName(nameIndex, fumble.fumbledBy, {
+    team: isKickReturnPlay(play) ? play.defenseTeamAbbr : play.offenseTeamAbbr,
+    normalize: normalizeStarterName,
+  });
+  const playerId = getIndexedPlayerId(nameIndex, record);
+  return matches.map((match) => (
+    match.playerId === playerId && ['passer', 'rusher', 'receiver', 'returner'].includes(match.role)
+      ? { ...match, fumble: { lost: Boolean(fumble.recoveredByTeam && record.team && fumble.recoveredByTeam !== record.team) } }
+      : match
+  ));
 }
 
 /**
@@ -302,12 +381,16 @@ function matchNarrativeActors(play, nameIndex) {
  */
 export function matchPlayToStarters(play, nameIndex) {
   const narrativeMatches = matchNarrativeActors(play, nameIndex);
-  if (play?.narrative?.confident && narrativeMatches) return narrativeMatches;
+  if (play?.narrative?.confident && narrativeMatches) return withFumbleCredit(narrativeMatches, play, nameIndex);
 
   const { index, meta, teamDefenseIds } = nameIndex;
-  const normalizedDesc = ` ${normalizeName(play.description)} `;
+  // A touchdown row can carry its two-point try. That try's players are not
+  // part of the touchdown, so the scan stops where the try begins.
+  const normalizedDesc = ` ${normalizeStarterName(String(play.description ?? '').split(/two.?point conversion attempt/i)[0])} `;
   const type = play.type;
-  const isPass = type.includes('pass') || /pass (?:complete|incomplete|to)/i.test(play.description);
+  // Gamebook passes read "pass short right to ..." / "pass deep left to ...",
+  // and a catch-and-fumble row is typed as the fumble, not the pass.
+  const isPass = type.includes('pass') || /\bpass (?:complete|incomplete|to|short|deep)\b/i.test(play.description);
   const isKick = type.includes('field') || type.includes('extra') || /field goal|extra point|\bPAT\b/i.test(play.description);
   const isReturnPlay = type.includes('punt') || type.includes('kickoff')
     || /punt|kickoff|return(?:ed)? for|fair catch by/i.test(play.description);
@@ -351,7 +434,7 @@ export function matchPlayToStarters(play, nameIndex) {
 
   const isSack = /sack/i.test(play.description);
 
-  return [...matches.entries()]
+  return withFumbleCredit([...matches.entries()]
     .sort((left, right) => {
       const leftPos = typeof left[1] === 'number' ? left[1] : left[1].textPos;
       const rightPos = typeof right[1] === 'number' ? right[1] : right[1].textPos;
@@ -370,7 +453,7 @@ export function matchPlayToStarters(play, nameIndex) {
       else if (isPass) role = PASSER_POSITIONS.has(playerMeta.position) ? 'passer' : 'receiver';
       else if (isSack && PASSER_POSITIONS.has(playerMeta.position)) role = 'passer';
       return { playerId, role, textPos, detail: null, attributionRoles: [] };
-    });
+    }), play, nameIndex);
 }
 
 function isTeamDefensePosition(position) {
@@ -556,8 +639,39 @@ export function parseGlanceProgress(clock) {
  * Builds feed events from raw plays for the matchup's starters.
  * `positionsById`: Map playerId -> position. `gamesById`: Map gameId -> BDL game.
  */
+// Single-game threshold bonuses. A stat line reports them as flags, so the play
+// that carries a player across the line earns the bonus (and a play that drops
+// them back under, a negative run say, gives it back). Without this the bonus
+// only reached the feed as a residual on whichever play happened to be last.
+const MILESTONE_BONUSES = [
+  ['bonus_pass_yd_300', (s) => s.pass_yd, 300],
+  ['bonus_pass_yd_400', (s) => s.pass_yd, 400],
+  ['bonus_pass_cmp_25', (s) => s.pass_cmp, 25],
+  ['bonus_rush_yd_100', (s) => s.rush_yd, 100],
+  ['bonus_rush_yd_200', (s) => s.rush_yd, 200],
+  ['bonus_rush_att_20', (s) => s.rush_att, 20],
+  ['bonus_rec_yd_100', (s) => s.rec_yd, 100],
+  ['bonus_rec_yd_200', (s) => s.rec_yd, 200],
+  ['bonus_rush_rec_yd_100', (s) => s.rush_yd + s.rec_yd, 100],
+  ['bonus_rush_rec_yd_200', (s) => s.rush_yd + s.rec_yd, 200],
+  ['bonus_sack_2p', (s) => s.idp_sack, 2],
+  ['bonus_tkl_10p', (s) => s.idp_tkl, 10],
+  ['idp_pass_def_3p', (s) => s.idp_pd, 3],
+];
+const MILESTONE_STATS = ['pass_yd', 'pass_cmp', 'rush_yd', 'rush_att', 'rec_yd', 'idp_sack', 'idp_tkl', 'idp_pd'];
+
+function crossedMilestones(before, after) {
+  const crossed = {};
+  MILESTONE_BONUSES.forEach(([key, read, threshold]) => {
+    const change = Number(read(after) >= threshold) - Number(read(before) >= threshold);
+    if (change) crossed[key] = change;
+  });
+  return crossed;
+}
+
 export function buildPlayEvents(playsByGame, nameIndex, scoringSettings, positionsById, gamesById) {
   const events = [];
+  const milestoneTotals = new Map();
   const gameIds = Object.keys(playsByGame ?? {}).sort((leftId, rightId) => {
     const left = gamesById?.get?.(String(leftId));
     const right = gamesById?.get?.(String(rightId));
@@ -617,10 +731,25 @@ export function buildPlayEvents(playsByGame, nameIndex, scoringSettings, positio
       });
       play.defenseTeamAbbr = defenseTeam;
       play.offenseTeamAbbr = offenseTeam;
-      matchPlayToStarters(play, nameIndex).forEach(({ playerId, role, detail, attributionRoles }) => {
+      matchPlayToStarters(play, nameIndex).forEach(({ playerId, role, detail, attributionRoles, conversion, fumble }) => {
         const position = positionsById.get(playerId) ?? 'FLEX';
-        const statDelta = buildPlayStatDelta(play, role, detail, attributionRoles);
-        const pts = estimatePlayPoints(play, role, position, scoringSettings, detail, attributionRoles);
+        const credit = { conversion, fumble };
+        const statDelta = buildPlayStatDelta(play, role, detail, attributionRoles, credit);
+        let pts = estimatePlayPoints(play, role, position, scoringSettings, detail, attributionRoles, credit);
+        // Running game totals, kept even for plays worth nothing on their own
+        // (a no-gain carry still counts toward 20 carries).
+        const totalsKey = `${gameId}:${playerId}`;
+        const before = milestoneTotals.get(totalsKey)
+          ?? Object.fromEntries(MILESTONE_STATS.map((key) => [key, 0]));
+        const after = { ...before };
+        MILESTONE_STATS.forEach((key) => { after[key] += Number(statDelta[key]) || 0; });
+        milestoneTotals.set(totalsKey, after);
+        Object.entries(crossedMilestones(before, after)).forEach(([key, change]) => {
+          const bonus = calcPoints({ [key]: 1 }, scoringSettings, position);
+          if (!bonus) return;
+          statDelta[key] = change;
+          pts = Math.round((pts + change * bonus) * 100) / 100;
+        });
         if (!Number.isFinite(pts) || pts === 0) return; // only fantasy-relevant involvements
         const classification = getPlayEventClassification(play, role, position, statDelta);
         events.push({

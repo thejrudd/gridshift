@@ -88,6 +88,8 @@ app.get('/api/health', (_req, res) => {
 app.use('/api/live', createLiveRouter({
   gateway: balldontlieGateway,
   snapshotStore: liveGameSnapshotStore,
+  // Also escrows finished weeks' game lists and finished games' player stats.
+  archive: livePlaysArchive,
 }));
 // Mounted before the Scores router so `/team-stats` never reaches its handlers.
 app.use('/api/statistics/scores/team-stats', createNflTeamStatsRouter());
