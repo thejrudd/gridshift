@@ -65,6 +65,14 @@ test('non-allowlisted, unsupported and locked sessions never request provider ga
   assert.equal(api.calls.length, 0);
 });
 
+test('a server without a BALLDONTLIE key explains the missing play feed and requests nothing else', async () => {
+  const api = fakeApi({ ...access, live: { ...access.live, enabled: false, apiKeyReady: false }, session: { enabled: false } });
+  const result = await loadPlayerMatchupTimeline(options, api);
+  assert.equal(result.status, 'unavailable');
+  assert.match(result.message, /isn’t set up on this server/);
+  assert.deepEqual(api.calls.map(([name]) => name), ['status']);
+});
+
 test('allowlisted no-code leagues follow existing session setup and request only resolved BDL game', async () => {
   const api = fakeApi({ ...access, session: { enabled: false } });
   const result = await loadPlayerMatchupTimeline(options, api);

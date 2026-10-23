@@ -1,6 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
 import { getSleeperLeagueUrl, hasTradeProposalAssets } from '../../utils/tradeProposal';
-import useTradeProposalValues from '../../hooks/useTradeProposalValues';
 import TradeShareCard from './trade/TradeShareCard';
 import './trade/tradeInbox.css';
 
@@ -80,7 +79,6 @@ export default function TradeInbox({ inbox, userId, onAccept, onCounter, onDecli
   }, [events]);
   const proposals = inbox?.proposals ?? [];
   const [pendingAction, setPendingAction] = useState(null);
-  const { getAssetValue } = useTradeProposalValues();
   const runAction = useCallback(async (action, proposal, actionName) => {
     if (!action || pendingAction) return;
     setPendingAction({ proposalId: proposal.id, action: actionName });
@@ -138,7 +136,6 @@ export default function TradeInbox({ inbox, userId, onAccept, onCounter, onDecli
                   sleeperOutcome={proposal.sleeperOutcome}
                   viewerIsCurrentAuthor={viewerIsCurrentAuthor}
                   viewerUserId={userId}
-                  valueResolver={getAssetValue}
                   onOpenPlayer={onOpenPlayer}
                 />
                 : <div className="trade-inbox__details-error" role="alert">Trade details are unavailable. Refresh Proposals before trying to counter this proposal.</div>}

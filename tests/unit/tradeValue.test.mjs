@@ -67,6 +67,11 @@ after(async () => {
 });
 
 describe('canonical trade values', () => {
+  it('keeps individual assets on 0–100 while allowing trade-side totals to exceed 100', () => {
+    assert.equal(modules.tradeValue.sumTradeValues([100, 85]), 185);
+    assert.equal(modules.tradeValue.sumTradeValues([100, null]), null);
+  });
+
   it('uses computeTradePlayerValueDetail for Trade Agent valueSide output', () => {
     const detail = modules.tradeValue.computeTradePlayerValueDetail({
       id: '102',
@@ -86,6 +91,43 @@ describe('canonical trade values', () => {
 
     assert.equal(side.items[0].val, detail.value);
     assert.equal(side.total, detail.value);
+  });
+
+  it('treats a zero KTC placeholder as unavailable and can use the dynasty fallback', () => {
+    const redraftKtc = [
+      { mflid: '1002', playerName: 'Volume Runner', position: 'RB', oneQBValues: { value: 0 }, superflexValues: { value: 0 } },
+      { mflid: 'other', playerName: 'Other Runner', position: 'RB', oneQBValues: { value: 100 }, superflexValues: { value: 100 } },
+    ];
+    const dynastyKtc = [
+      { mflid: '1002', playerName: 'Volume Runner', position: 'RB', oneQBValues: { value: 1000 }, superflexValues: { value: 1000 } },
+      { mflid: 'other', playerName: 'Other Runner', position: 'RB', oneQBValues: { value: 2000 }, superflexValues: { value: 2000 } },
+    ];
+    const detail = modules.tradeValue.computeTradePlayerValueDetail({
+      id: '102',
+      players,
+      adjustedKtcPlayers: redraftKtc,
+      adjustedDynastyKtcPlayers: dynastyKtc,
+      leagueType: '1qb',
+      seasonStats: {},
+      scoringSettings: inputs.scoringSettings,
+      rankMap: {},
+    });
+
+    assert.equal(detail.dynastyFallback, true);
+    assert.equal(detail.valueSource, 'market-estimate');
+    assert.ok(detail.value > 0);
+
+    const unavailable = modules.tradeValue.computeTradePlayerValueDetail({
+      id: '102',
+      players,
+      adjustedKtcPlayers: redraftKtc,
+      adjustedDynastyKtcPlayers: [],
+      leagueType: '1qb',
+      seasonStats: {},
+      scoringSettings: inputs.scoringSettings,
+      rankMap: {},
+    });
+    assert.equal(unavailable, null);
   });
 
   it('uses the same player values in candidate pools', () => {
@@ -130,6 +172,24 @@ describe('canonical trade values', () => {
     );
 
     assert.equal(pool.find((item) => item.id === '102').val, detail.value);
+  });
+
+  it('drops current-season picks once that draft is complete', () => {
+    const season = Number(TEST_SEASON);
+    const picks = [
+      { season: String(season - 1), round: 1, roster_id: 1, owner_id: 2 },
+      { season: String(season), round: 1, roster_id: 1, owner_id: 2 },
+    ];
+    const before = modules.tradeEngine.buildRosterPicks(picks, rosters, league, TEST_SEASON, 3);
+    assert.ok(before.years.includes(String(season)));
+    assert.ok(!before.years.includes(String(season - 1)));
+
+    const after = modules.tradeEngine.buildRosterPicks(picks, rosters, league, TEST_SEASON, 3, { currentSeasonDrafted: true });
+    assert.deepEqual(after.years, [season + 1, season + 2, season + 3].map(String));
+
+    assert.equal(modules.tradeEngine.isSeasonDraftComplete({}, [{ season: TEST_SEASON, status: 'complete' }], TEST_SEASON), true);
+    assert.equal(modules.tradeEngine.isSeasonDraftComplete({ season: TEST_SEASON, status: 'pre_draft' }, [], TEST_SEASON), false);
+    assert.equal(modules.tradeEngine.isSeasonDraftComplete({ season: TEST_SEASON, status: 'in_season' }, [], TEST_SEASON), true);
   });
 
   it('uses valueDraftPick for owned pick values', () => {
@@ -183,6 +243,7 @@ describe('canonical trade values', () => {
 
   it('uses prior completed-season production for preseason IDP estimates', () => {
     const idpPlayerId = 'idp-101';
+    const replacementId = 'idp-102';
     const idpPlayers = {
       ...players,
       [idpPlayerId]: {
@@ -191,13 +252,18 @@ describe('canonical trade values', () => {
         position: 'LB',
         team: 'BUF',
       },
+      [replacementId]: {
+        player_id: replacementId,
+        full_name: 'Replacement Linebacker',
+        position: 'LB',
+        team: 'NYJ',
+      },
     };
-    const idpRosters = rosters.map((roster) => roster.roster_id === 1
-      ? { ...roster, players: [...roster.players, idpPlayerId] }
-      : roster);
+    const idpRosters = [{ roster_id: 1, players: [idpPlayerId, replacementId] }];
     const priorSeasonStats = {
       ...inputs.seasonStats,
       [idpPlayerId]: { gp: 17, idp_tkl: 112, idp_sack: 4 },
+      [replacementId]: { gp: 17, idp_tkl: 20, idp_sack: 0 },
     };
     const idpLeague = {
       ...league,
@@ -214,7 +280,8 @@ describe('canonical trade values', () => {
       rosters: idpRosters,
       players: idpPlayers,
       seasonStats: null,
-      idpSeasonStats: priorSeasonStats,
+      priorSeasonStats,
+      format: 'dynasty',
       scoringSettings: idpScoring,
       adjustedKtcPlayers: ktcPlayers,
       adjustedDynastyKtcPlayers: ktcPlayers,
@@ -276,7 +343,7 @@ describe('canonical trade values', () => {
     assert.equal(detail, null);
   });
 
-  it('applies league scoring to both KTC-backed offense and generated IDP values', () => {
+  it('keeps KTC market-only fallback scores within the shared player scale', () => {
     const scoringPlayers = {
       wr: {
         player_id: 'wr',
@@ -298,6 +365,12 @@ describe('canonical trade values', () => {
       position: 'WR',
       oneQBValues: { value: 5000 },
       superflexValues: { value: 5000 },
+    }, {
+      mflid: 'wr-2',
+      playerName: 'Reception Peer',
+      position: 'WR',
+      oneQBValues: { value: 2500 },
+      superflexValues: { value: 2500 },
     }];
     const stats = {
       wr: { gp: 10, rec: 100, rec_yd: 1000 },
@@ -335,45 +408,47 @@ describe('canonical trade values', () => {
     const lowIDP = modules.idpEngine.computeIDPValues(scoringPlayers, stats, lowScoring, ['LB']);
     const highIDP = modules.idpEngine.computeIDPValues(scoringPlayers, stats, highScoring, ['LB']);
 
-    assert.ok(highOffense.value > lowOffense.value);
+    assert.ok(lowOffense.value >= 0 && lowOffense.value <= 100);
+    assert.ok(highOffense.value >= 0 && highOffense.value <= 100);
+    assert.equal(lowOffense.valueSource, 'market-estimate');
+    assert.equal(lowOffense.isEstimated, true);
     assert.ok(highIDP.get('lb') > lowIDP.get('lb'));
   });
 
-  it('does not cap a scoring-derived IDP value below an offensive value above 10,000', () => {
-    const values = modules.idpEngine.computeIDPValues(
-      {
-        lb: { player_id: 'lb', full_name: 'Elite Linebacker', position: 'LB', team: 'BUF' },
-      },
-      {
-        lb: { gp: 10, idp_tkl: 500 },
-      },
-      { ...DEFAULT_SCORING, idp_tkl: 1 },
-      ['LB'],
-    );
-
-    assert.ok(values.get('lb') > 10_000);
+  it('normalizes and discounts dynasty-market fallback without changing its captured source', () => {
+    const playerId = '102';
+    const dynastyEntry = ktcPlayers.find((entry) => entry.mflid === players[playerId].mflid);
+    const detail = modules.tradeValue.computeTradePlayerValueDetail({
+      id: playerId,
+      players,
+      adjustedKtcPlayers: [],
+      adjustedDynastyKtcPlayers: ktcPlayers,
+      leagueType: '1qb',
+      seasonStats: null,
+      scoringSettings: inputs.scoringSettings,
+    });
+    assert.equal(detail.dynastyFallback, true);
+    assert.ok(detail.marketScore >= 0 && detail.marketScore <= 60);
+    assert.equal(detail.value, detail.marketScore);
   });
 
   it('calibrates one flat redraft pick value per round from canonical player values', () => {
     const calibrationPool = [
-      { rank: 1, value: 1000 },
-      { rank: 2, value: 1500 },
-      { rank: 3, value: 2000 },
+      { rank: 1, value: 70 },
+      { rank: 2, value: 60 },
+      { rank: 3, value: 50 },
     ];
     const calibrated = modules.tradeEngine.computeRedraftPickValues(ktcPlayers, 3, '1qb', {
       calibrationPool,
-      fallbackValueMultiplier: 1.4,
     });
 
-    // The full round median is already on the Trade scale, so only the 7%
-    // first-round uncertainty discount applies.
-    assert.equal(calibrated[1], 1395);
+    assert.equal(calibrated[1], 56);
   });
 
   it('keeps early picks close to their expected player range while discounting later rounds more', () => {
     const calibrationPool = Array.from({ length: 32 }, (_, index) => ({
       rank: index + 1,
-      value: 10_000 - index * 100,
+      value: 95 - index * 2,
     }));
     const values = modules.tradeEngine.computeRedraftPickValues(ktcPlayers, 16, '1qb', {
       calibrationPool,
@@ -381,17 +456,15 @@ describe('canonical trade values', () => {
 
     // Every pick in a round uses the full round's median, then receives the
     // round's selection-risk discount.
-    assert.equal(values[2], Math.round(7_700 * 0.87));
-    assert.equal(values[1], Math.round(9_300 * 0.93));
+    assert.equal(values[2], Math.round(49 * 0.87));
+    assert.equal(values[1], Math.round(81 * 0.93));
   });
 
   it('falls back to adjusted KTC round values when the calibration round is too sparse', () => {
     const fallback = modules.tradeEngine.computeRedraftPickValues(ktcPlayers, 3, '1qb', {
-      fallbackValueMultiplier: 1.2,
     });
     const sparse = modules.tradeEngine.computeRedraftPickValues(ktcPlayers, 3, '1qb', {
       calibrationPool: [{ rank: 1, value: null }],
-      fallbackValueMultiplier: 1.2,
     });
 
     assert.equal(sparse[1], fallback[1]);
@@ -416,6 +489,7 @@ describe('canonical trade values', () => {
     });
 
     assert.equal(firstPick.value, secondPick.value);
-    assert.equal(firstPick.value, 3870);
+    // Picks are not in the player percentile list, so they rank by the players below them.
+    assert.equal(firstPick.value, 85);
   });
 });

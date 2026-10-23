@@ -51,10 +51,16 @@ function playMix(trajectories) {
  * @param flipped    Mirror the canvas — the quarter's teams changed ends.
  * @param participants Box-score name index, passed through to playback so it
  *                     can expand abbreviated names and attach headshots.
+ * @param laneNote   Optional: a short { down, text } note printed beside each
+ *                   lane. Statistics Scores uses it; Fantasy Live does not.
+ * @param nextSnap   Optional: the snap still to come in a live drive —
+ *                   { at, firstDown, label, text } with yard lines on the same
+ *                   0-100 scale as the lanes. Draws the line of scrimmage, the
+ *                   line to gain, and the ball in a final lane.
  */
 export function DriveField({
   plays = [], drive, homeTeam, awayTeam, awayTheme, homeTheme, barColor, playLabel, flipped = false,
-  participants = null,
+  participants = null, laneNote = null, nextSnap = null,
 }) {
   // The stacked overview is the default: it answers "what shape was this drive"
   // in one look. Playback answers "what happened, in order" and costs time, so
@@ -121,8 +127,9 @@ export function DriveField({
       ) : (
         <>
 
+        <div className={`df-split${laneNote ? ' has-notes' : ''}`}>
         <div className="df-fieldwrap">
-          <div className="df-field" style={{ height: `${lanes.length * LANE_HEIGHT + FIELD_PAD}px` }}>
+          <div className="df-field" style={{ height: `${(lanes.length + (nextSnap ? 1 : 0)) * LANE_HEIGHT + FIELD_PAD}px` }}>
             <RedZones />
             <FieldLines />
             <EndZone side="left" team={leftTeam} theme={leftTheme} />
@@ -140,9 +147,37 @@ export function DriveField({
                   label={playLabel?.(play) ?? play.description}
                 />
               ))}
+              {nextSnap && (
+                <>
+                  <i className="df-los" style={{ left: `${fieldX(nextSnap.at, flipped)}%` }} />
+                  {nextSnap.firstDown != null && <i className="df-togain" style={{ left: `${fieldX(nextSnap.firstDown, flipped)}%` }} />}
+                  <div className="df-lane df-next" style={{ top: `${lanes.length * LANE_HEIGHT}px`, height: `${LANE_HEIGHT}px` }}>
+                    <i className="df-nextball" style={{ left: `${fieldX(nextSnap.at, flipped)}%` }} />
+                    {nextSnap.label && (
+                      <b className="df-nextlabel" data-side={drawsRight ? 'l' : 'r'} style={{ left: `${fieldX(nextSnap.at, flipped)}%` }}>{nextSnap.label}</b>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           </div>
           <YardAxis leftTeam={leftTeam} rightTeam={rightTeam} />
+        </div>
+        {laneNote && (
+          <ol className="df-notes" aria-label="Plays in this drive">
+            {lanes.map(({ play }, index) => {
+              const note = laneNote(play);
+              return (
+                <li key={play.id ?? index} style={{ height: `${LANE_HEIGHT}px` }} title={play.description}>
+                  <b>{note?.down ?? ''}</b><span>{note?.text ?? play.type ?? ''}</span>
+                </li>
+              );
+            })}
+            {nextSnap?.text && (
+              <li className="is-next" style={{ height: `${LANE_HEIGHT}px` }}><b>Next</b><span>{nextSnap.text}</span></li>
+            )}
+          </ol>
+        )}
         </div>
 
         <FieldLegend barColor={barColor} />

@@ -24,12 +24,26 @@ All colors defined as CSS custom properties in `src/index.css`. The `.dark` clas
 | `--color-accent-orange` | `#E07800` | `#FF8C1A` |
 | `--color-live-defense` | `#526071` | `#64748B` |
 | `--color-live-defense-fg` | `#FFFFFF` | `#FFFFFF` |
+| `--color-scoring-passing` | `#1A6EFF` | `#5AADFF` |
+| `--color-scoring-rushing` | `#00A844` | `#2ED578` |
+| `--color-scoring-receiving` | `#E07800` | `#FF8C1A` |
+| `--color-scoring-bonus` | `#8A4DFF` | `#A780FF` |
+| `--color-scoring-kicking` | `#C99600` | `#F5B700` |
+| `--color-scoring-special` | `#0E9E94` | `#2CCFC2` |
+| `--color-scoring-dst` | `#D6337F` | `#FF6FB5` |
+| `--color-scoring-idp` | `#8B6A45` | `#C8A27A` |
+| `--color-scoring-negative` | `#E0270F` | `#FF4433` |
+| `--color-scoring-other` | `rgba(12, 15, 20, 0.35)` | `rgba(228, 235, 244, 0.35)` |
 | `--color-signature` | `#F5B700` | `#F5B700` (same both modes) |
 | `--color-signature-fg` | `#0C0F14` | `#0C0F14` (same both modes) |
+| `--color-drilldown-stat-1` … `-4` | `#1A6EFF` · `#0E9E94` · `#8A4DFF` · `#E07800` | `#5AADFF` · `#2CCFC2` · `#A780FF` · `#FF8C1A` |
+| `--color-drilldown-band` | `rgba(245,183,0,0.22)` | `rgba(245,183,0,0.20)` |
 | `--bar-bg` | `rgba(242,241,236,0.88)` | `rgba(12,15,20,0.90)` |
 | `--bar-border` | `rgba(12,15,20,0.12)` | `rgba(228,235,244,0.10)` |
 | `--bar-height-nav` | `44px` | — |
 | `--bar-height-tab` | `49px` | — |
+
+The `--color-drilldown-*` tokens belong to the player matchup drilldown only: a stat-category series for stat-line rows (green and red stay reserved for above/below a benchmark) and the signature-tinted likely-range band.
 
 ### Text Contrast Semantics
 
@@ -117,7 +131,7 @@ weights and restrained tracking. Use Figtree for prose and descriptions. See
 | Frame | Maximum | Intended surfaces |
 |---|---:|---|
 | `--page-frame-readable` | `1200px` | Settings, scoring, instructional/detail content |
-| `--page-frame-data` | `1600px` | Rosters, rankings, waiver, schedules, standings, history, activity |
+| `--page-frame-data` | `1600px` | Rosters, rankings, schedules, standings, history, activity |
 | `--page-frame-workbench` | `1920px` | Trade, Draft, Scout, Compare, Matchup, Heatmap |
 
 Use `.page-frame-readable`, `.page-frame-data`, or `.page-frame-workbench` on the route root. Frames center themselves and preserve the normal mobile/tablet flow.

@@ -26,6 +26,14 @@ GridShift is a labor-of-love project: it should create something genuinely usefu
 - **Draft tab load-time optimization** - Keep Draft tab switching responsive by reusing cached draft sync state and matching Draft model builds across War Room, Board, and Results instead of rebuilding everything on every tab return.
 - **Reduce Heatmap `loadSeasonStats` fetch time** - Companion -> Heatmap now avoids blocking on pass-2 enhancement and uses a faster local offense table builder, but the next likely optimization is reducing the raw `loadSeasonStats` fetch cost. This is a different class of optimization and riskier because it touches the shared season-stats loading path.
 
+## Matchups Live Layer (follow-up)
+
+The live layer, team scoring drilldown, and player breakdown redesign shipped in v9.3.0. See [Fantasy Live](docs/Fantasy%20Live.md) and [Player Matchup Drilldown](docs/Player%20Matchup%20Drilldown.md).
+
+- **Real-data validation** — Check the layer, the team scoring drilldown, and the player breakdown during a live game window with an allowlisted league (pending/confirmed plays, residual adjustments, the 5s/30s polling cadence, settled finals), and a finished earlier week (plays matched for starters traded since that week, final totals agreeing with Sleeper).
+- **Compact-phone starter row heights** — At 480px and below, long names wrap inside the shared `CompanionPlayerRow`, so rows vary in height (56–75px at 360px). Decide whether the shared row should keep one height there.
+- **Rewind responsiveness** — Selecting a play re-renders the whole matchup (about 290ms with the sandbox league). Profile with a real league and trim if it is noticeable.
+
 ## Backlog (Unversioned)
 
 ### Global Search
@@ -91,6 +99,9 @@ Shipped: palette, query parsing, fuzzy index, entity results, commands, and inli
 - **Prediction outcome grading** - Compare a saved, season-stamped prediction snapshot with the completed NFL season, explain what was right or wrong, and award a transparent letter grade. Reuse the v8.8 snapshot schema so exported/shared picks and later grading evaluate the same committed prediction set.
 
 ### Player Info
+
+- **Team dashboard follow-ups** - Postseason games and a Regular season / Playoffs switch; past-season depth charts (ESPN serves only the current one); kicker fantasy points by distance once a box-score source carries kick distances. See [Team Dashboard](docs/Team%20Dashboard.md).
+- **Player dashboard follow-ups** - Persist the per-game and Sleeper-week caches across sidecar restarts; add postseason games; deep-link a play into the Scores replay instead of opening the game's play-by-play list; remove the incomplete-pass pass-defensed workaround once `parseDefensiveActors` is fixed.
 
 - **Player Info & Rosters - Expanded** - Interesting tidbits and facts, team history and records, career length (starting year), player rankings.
 - **Flavor text for player cards** - Fun (and sometimes not so fun) facts about certain players, that function like flavor text on a trading card.

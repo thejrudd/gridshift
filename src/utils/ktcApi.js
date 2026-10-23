@@ -227,6 +227,20 @@ export function fmtKtcValue(val) {
  * @param {Array}  ktcPlayers     - Array from fetchKtcPlayers()
  * @returns KTC player entry or null
  */
+const SLEEPER_NAME_COUNT_CACHE = new WeakMap();
+
+function getSleeperNameCounts(sleeperPlayers) {
+  const cached = SLEEPER_NAME_COUNT_CACHE.get(sleeperPlayers);
+  if (cached) return cached;
+  const counts = new Map();
+  for (const player of Object.values(sleeperPlayers ?? {})) {
+    const name = normName(player?.full_name ?? `${player?.first_name ?? ''} ${player?.last_name ?? ''}`);
+    if (name) counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+  SLEEPER_NAME_COUNT_CACHE.set(sleeperPlayers, counts);
+  return counts;
+}
+
 export function findKtcPlayerFromSleeper(sleeperId, sleeperPlayers, ktcPlayers) {
   const sp = sleeperPlayers?.[sleeperId];
   if (!sp || !ktcPlayers?.length) return null;
@@ -246,7 +260,10 @@ export function findKtcPlayerFromSleeper(sleeperId, sleeperPlayers, ktcPlayers) 
   const byNamePos = lookup.byNamePos.get(`${name}|${pos}`);
   if (byNamePos) return byNamePos;
 
-  // 3. Name only fallback
+  // 3. Name only fallback, when no other Sleeper player shares the name. A
+  // shared name (Kenneth Walker the WR vs. Kenneth Walker III the RB once
+  // suffixes are stripped) must not inherit the other player's value.
+  if ((getSleeperNameCounts(sleeperPlayers).get(name) ?? 0) > 1) return null;
   return lookup.byName.get(name) ?? null;
 }
 

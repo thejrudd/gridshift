@@ -114,6 +114,17 @@ function subtleForForeground(foreground) {
     : 'rgba(12,15,20,0.12)';
 }
 
+/**
+ * A team color that reads against the page in either theme. Dark-mode team
+ * primaries too dark for the page are lifted toward the light foreground; the
+ * returned foreground is whichever of the two text colors reads on it.
+ */
+export function getLegibleTeamColor(hex, darkMode = false) {
+  if (!hex) return null;
+  const color = darkMode && hexLuminance(hex) < 0.14 ? mixHex(hex, '#F2F1EC', 0.5) : hex;
+  return { color, foreground: pickReadableForeground([color]) };
+}
+
 export function getTeamVisualTheme(team, darkMode = false, options = {}) {
   const {
     logoSide = undefined,

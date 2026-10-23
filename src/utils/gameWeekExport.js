@@ -5,8 +5,8 @@ import { buildLeagueHistoryModel, buildSeasonStandings } from './leagueHistory.j
 import { getOfficialMatchupRowPoints, getSleeperCustomPointsOverride } from './liveScoringFeed.js';
 import { calcPoints, calcPointsFromTotals } from './scoringEngine.js';
 
-export const GAME_WEEK_EXPORT_FORMAT = 'gridshift-game-week-roast';
-export const GAME_WEEK_EXPORT_SCHEMA_VERSION = 1;
+export const GAME_WEEK_EXPORT_FORMAT = 'gridshift-stats-export';
+export const GAME_WEEK_EXPORT_SCHEMA_VERSION = 2;
 
 const WEEK_METADATA_KEYS = new Set([
   'week',
@@ -633,6 +633,84 @@ function buildOutcomes(teamPerformances) {
   });
 }
 
+function buildFantasyPointsOnlyPayload(output) {
+  const teams = output.fantasy.teamPerformances;
+  return {
+    format: output.format,
+    schemaVersion: output.schemaVersion,
+    generatedAt: output.generatedAt,
+    scope: {
+      platform: output.scope.platform,
+      leagueId: output.scope.leagueId,
+      leagueName: output.scope.leagueName,
+      season: output.scope.season,
+      fantasyWeek: output.scope.fantasyWeek,
+      mode: 'fantasy_points_only',
+    },
+    sources: { fantasy: output.sources.fantasy },
+    coverage: {
+      weeklyPlayerStats: output.coverage.weeklyPlayerStats,
+      fantasyMatchups: output.coverage.fantasyMatchups,
+    },
+    league: {
+      identity: output.league.identity,
+      scoringSettings: output.league.scoringSettings,
+    },
+    fantasy: {
+      playerTotals: output.fantasy.weeklyPlayerStats.map((player) => ({
+        playerId: player.playerId,
+        name: player.name,
+        position: player.position,
+        nflTeam: player.nflTeam,
+        week: player.week,
+        weeklyFantasyPoints: player.fantasyPoints,
+        weeklyFantasyPointsSource: player.fantasyPointsSource,
+        weeklyRank: player.weeklyRank,
+        weeklyPositionRank: player.weeklyPositionRank,
+        seasonToDate: player.seasonToDate,
+        seasonRank: player.seasonRank,
+        seasonPositionRank: player.seasonPositionRank,
+      })),
+      individualScores: teams.flatMap((team) => team.players.map((player) => ({
+        playerId: player.playerId,
+        name: player.name,
+        position: player.position,
+        rosterId: team.rosterId,
+        teamName: team.teamName,
+        matchupId: team.matchupId,
+        points: player.points,
+        pointsSource: player.pointsSource,
+        starter: player.starter,
+        bench: player.bench,
+        reserve: player.reserve,
+        lineupSlot: player.lineupSlot,
+      }))),
+      teamScores: teams.map((team) => ({
+        rosterId: team.rosterId,
+        managerName: team.managerName,
+        teamName: team.teamName,
+        matchupId: team.matchupId,
+        score: team.score,
+        scoreSource: team.scoreSource,
+        opponentRosterId: team.opponentRosterId,
+        opponentTeamName: team.opponentTeamName,
+        opponentScore: team.opponentScore,
+        result: team.result,
+        margin: team.margin,
+        week: team.week,
+      })),
+      matchupOutcomes: output.fantasy.outcomes,
+    },
+    warnings: output.warnings,
+    assumptions: [
+      'Sleeper matchup team totals and players_points are authoritative when present.',
+      'Unavailable values are null; valid provider-reported zeroes remain zero.',
+      'Season-to-date fantasy points are calculated from weekly stats and the selected scoring settings.',
+      'Each score includes a source label so reported and calculated points remain distinguishable.',
+    ],
+  };
+}
+
 function buildHistorySection({ historySnapshots, currentSnapshot, players }) {
   const selectedStandings = buildSeasonStandings(currentSnapshot);
   const snapshots = [
@@ -815,6 +893,7 @@ export function buildGameWeekExport({
   sources = {},
   warnings = [],
   includeRaw = true,
+  exportMode = 'full',
 } = {}) {
   const normalizedSeason = String(season ?? league?.season ?? '');
   const normalizedFantasyWeek = Number(fantasyWeek);
@@ -940,7 +1019,7 @@ export function buildGameWeekExport({
       fantasyWeek: normalizedFantasyWeek,
       nflPhase,
       nflWeek: Number(nflWeek),
-      mode: 'roast_week',
+      mode: 'full_stats',
       historyScope: historySnapshots.length ? 'linked_league_seasons_through_selected_season' : 'selected_season_only',
       finalizedThroughWeek: history.finalizedThroughWeek,
     },
@@ -1004,6 +1083,10 @@ export function buildGameWeekExport({
       },
       nfl: toSerializable(nflBundle),
     };
+  }
+
+  if (exportMode === 'fantasy_points_only') {
+    return toSerializable(buildFantasyPointsOnlyPayload(output));
   }
 
   return toSerializable(output);

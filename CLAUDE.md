@@ -80,6 +80,8 @@ Use docs/Agent Workflow.md for the full routing rubric, output contracts, comple
 - docs/Trade Engine.md and docs/Trade Proposal Cards.md — Trade architecture and card contracts.
 - docs/Scout.md — Scout architecture, APIs, importers, production data, and routing.
 - docs/Global Search.md — global search vocabulary, matching rules, index measurements, and answer-resolver boundaries.
+- docs/Player Dashboard.md — Statistics player page tabs: data routes, identity resolution, play credit, rank pools, opponent context, and UI rules.
+- docs/Team Dashboard.md — Statistics team page: position leaders, depth chart, season tabs, data route, fantasy scoring, and UI rules.
 - For QA, testing, validation, or regression-review tasks, use docs/Agent Workflow.md and the relevant feature references; do not load unrelated material.
 
 ## Design system — Broadcast Editorial
@@ -113,8 +115,10 @@ Use docs/Agent Workflow.md for the full routing rubric, output contracts, comple
 ## API and release boundaries
 
 - BALLDONTLIE, CFBD/CollegeFootballData, and similar paid credentials are secrets. Keep requests server-side and never expose keys in the client bundle.
+- BALLDONTLIE (BDL) is optional. Any feature that adds or extends a BDL dependency must also be designed and tested for a server with no BDL API key and for an unreachable provider: fall back to Sleeper or GridShift data, or show a plain unavailable message. Keep provider names out of fallback copy, and add no-key coverage alongside the feature's tests (for the player drilldown, the harness's `?bdl=0` mode in tests/drilldown/player-drilldown.spec.js).
 - Never auto-commit, bump versions, push, deploy, or perform external writes unless the user explicitly requests that action.
 - Read docs/Release Workflow.md before committing, preparing a release, changing release metadata, or generating release notes.
+- Before running the What's New tour gate for a commit, present the genuinely new user-facing capabilities in the proposed commit scope (or say there are none) and wait for the user's confirmation.
 
 ## User-facing copy
 

@@ -23,10 +23,9 @@ import {
 } from '../../utils/fantasyProjections.js';
 import { mapSleeperProjectionsToPlayers } from '../../utils/sleeperProjections.js';
 import PlayerMatchupBreakdown from './PlayerMatchupBreakdown';
+import TeamScoringDrilldown from './TeamScoringDrilldown.jsx';
 import useMatchupProjectionBaselines from '../../hooks/useMatchupProjectionBaselines.js';
 import { buildDrilldownOpponentContext, getPaceAdjustedProjection } from '../../utils/playerMatchupPresentation.js';
-import { isEspnFantasyGameLogPosition, loadEspnFantasyGameLogWeekRow } from '../../utils/espnFantasyGameLogRows.js';
-import { buildFantasyMatchupScoringBreakdown } from '../../utils/fantasyMatchupBreakdown.js';
 import { RevealList } from '../ui/LoadingSwap.jsx';
 import { Skeleton } from '../ui/Skeleton';
 import Modal from '../Modal';
@@ -38,10 +37,11 @@ import useCardGlow from '../../hooks/useCardGlow.jsx';
 import useMediaQuery from '../../hooks/useMediaQuery.js';
 import { getPlayerRowTeamTheme } from '../../utils/playerRowTheme';
 import { getPlayerAvailabilityStatus } from '../../utils/playerAvailabilityStatus.js';
+import { getSleeperAvatarUrl, POSITION_COLORS } from '../../utils/companionAssetVisuals.js';
 import { debugCompanionLog, debugCompanionMeasure, debugCompanionTimeAsync } from '../../utils/companionPerfDebug';
-import { CompanionSelectorButton, CompanionSegmentedControl } from './CompanionSelectorControls.jsx';
-import { POSITION_COLORS } from '../../utils/companionAssetVisuals.js';
+import { CompanionSelectorButton } from './CompanionSelectorControls.jsx';
 import CompanionPlayerRow, { CompanionPlayerMetric, CompanionPlayerStatus } from './CompanionPlayerRow.jsx';
+import PlayerStatusBadge from './PlayerStatusBadge.jsx';
 import PlayerAvatar from '../shared/PlayerAvatar.jsx';
 import { buildFantasyPaletteSlots, fantasyHeroGradient, getFantasyTeamPalette } from '../../utils/fantasyTeamIdentity.js';
 import { ArrowsLeftRightIcon } from '@phosphor-icons/react/ArrowsLeftRight';
@@ -64,17 +64,38 @@ import {
   getFallbackRemainingGameFraction,
   getMatchupCustomPoints,
   getOfficialMatchupRowPoints,
+  getSleeperPlayerName,
   hasReconciledMatchup,
   isCompleteScheduleWeek,
 } from '../../utils/liveScoringFeed.js';
 import { getLeagueHistorySnapshot, buildLeagueHistoryModel } from '../../utils/leagueHistory.js';
 import { isFullGameWeekComplete } from '../../utils/matchupTaleOfTape.js';
 import PlayerMatchupCompare from './PlayerMatchupCompare.jsx';
+import useMatchupLiveFeed from '../../hooks/useMatchupLiveFeed.js';
+import MatchupReplayBar from './matchup/MatchupReplayBar.jsx';
+import MatchupLiveChart from './matchup/MatchupLiveChart.jsx';
+import MatchupScoringPlays from './matchup/MatchupScoringPlays.jsx';
+import MatchupPlayerHoverCard from './matchup/MatchupPlayerHoverCard.jsx';
+import MatchupPointSourcesCard from './matchup/MatchupPointSourcesCard.jsx';
+import { buildMatchupPointSources, buildMatchupScoredSources } from '../../utils/matchupPointSources.js';
+import { buildReplayFrame, getGameStateAt } from '../../utils/matchupReplay.js';
+import { FantasyBaseOverride } from '../../context/SleeperContext';
+import { LIVE_SANDBOX_ENABLED, LiveSandboxPanel, useLiveSandbox } from '../../dev/liveSandbox';
 import { mergeSeasonScheduleResultsIntoMap } from '../../utils/seasonScheduleResults.js';
 import { getFantasyLeagueMaxWeek } from '../../utils/fantasySeasonWeeks.js';
 
 const TOTAL_WEEKS = 18;
 const COMPACT_PHONE_QUERY = '(max-width: 480px)';
+// The page holds its skeleton for the live layer's first answer, at most this
+// long, so the masthead, chart and rows arrive as one beat (docs/Loading Motion.md).
+const LIVE_LAYER_MAX_WAIT_MS = 2500;
+// The chart has its own, longer wait: past the page's cap it keeps a
+// placeholder until every started game's plays are in, so it draws once
+// instead of filling in game by game.
+const LIVE_CHART_MAX_WAIT_MS = 10000;
+// Long enough for the shared reveal (duration + capped stagger) to finish.
+// After it, rows that mount (plays arriving, scrubbing) appear without motion.
+const LIVE_REVEAL_WINDOW_MS = 800;
 const MATCHUP_RESPONSE_CACHE = new Map();
 const MATCHUP_RESPONSE_IN_FLIGHT = new Map();
 const MATCHUP_RESPONSE_CACHE_LIMIT = 12;
@@ -271,8 +292,32 @@ function getMatchupForecastSourceLabel(winProbability) {
   return 'GridShift fallback estimate';
 }
 
-export default function CompanionMatchup({
+// In dev, the Live sandbox's synthetic league can stand in for the connected
+// one so the live layer is testable outside game windows. Production renders
+// the view directly (the sandbox is compiled out).
+export default function CompanionMatchup(props) {
+  const sandbox = useLiveSandbox();
+  const connected = useSleeperBase();
+  // The sandbox league has one replayable week. Any other week the route names
+  // belongs to the connected league. (Pinning the view to the sandbox week
+  // instead left it waiting forever on a week the route no longer named.)
+  const showSandboxLeague = Boolean(sandbox) && (
+    props.selectedWeek == null || Number(props.selectedWeek) === Number(sandbox.base.currentFantasyWeek)
+  );
+  return (
+    <FantasyBaseOverride value={showSandboxLeague ? sandbox.base : null}>
+      <CompanionMatchupView {...props} liveSandboxStandsIn={showSandboxLeague} />
+      {LIVE_SANDBOX_ENABLED && (
+        <LiveSandboxPanel canUseLiveData={Boolean(connected.platform === 'sleeper' && connected.selectedLeagueId && connected.league)} />
+      )}
+    </FantasyBaseOverride>
+  );
+}
+
+function CompanionMatchupView({
   onViewPlayer,
+  onViewScheduleGame = null,
+  onOpenInjuries = null,
   onComparePlayers = null,
   onOpenHistoricalMatchup = null,
   isActive = true,
@@ -283,6 +328,7 @@ export default function CompanionMatchup({
   onSelectedRosterChange = null,
   onConsumeInitialWeekRequest = null,
   seasonSchedule = null,
+  liveSandboxStandsIn = false,
 }) {
   const { darkMode } = useTheme();
   const isCompactPhone = useMediaQuery(COMPACT_PHONE_QUERY);
@@ -336,11 +382,12 @@ export default function CompanionMatchup({
 
   const [matchups, setMatchups] = useState(null);
   const [matchupRefreshTick, setMatchupRefreshTick] = useState(0);
+  // Returning to the Matchups tab replays the live layer's reveal.
+  const [activationCount, setActivationCount] = useState(0);
   const [matchupLoading, setMatchupLoading] = useState(false);
   const handledMatchupRefreshTickRef = useRef(0);
   const hasMatchupsRef = useRef(false);
   const wasMatchupActiveRef = useRef(isActive);
-  const [showBench, setShowBench] = useState(true);
   const [showWeekPicker, setShowWeekPicker] = useState(false);
   const [showMatchupPicker, setShowMatchupPicker] = useState(false);
   const [selectedRosterIdState, setSelectedRosterIdState] = useState(selectedRosterId);
@@ -401,6 +448,7 @@ export default function CompanionMatchup({
     if (!wasMatchupActiveRef.current) {
       wasMatchupActiveRef.current = true;
       setMatchupRefreshTick((current) => current + 1);
+      setActivationCount((current) => current + 1);
     }
     return undefined;
   }, [isActive]);
@@ -744,15 +792,6 @@ export default function CompanionMatchup({
     matchupSideCount === 1
     || isRosterFantasyByeWeek(visibleMatchups, myRosterId)
   );
-  const myBreakdownPlayerIds = useMemo(() => {
-    const starters = (myMatchup?.starters ?? []).filter(Boolean);
-    if (starters.length) return starters;
-    return (myMatchup?.players ?? []).filter(Boolean);
-  }, [myMatchup]);
-  const opponentBreakdownPlayerIds = useMemo(
-    () => (opponentMatchup?.starters ?? []).filter(Boolean),
-    [opponentMatchup],
-  );
 
   useEffect(() => {
     if (platform !== 'espn' || !selectedLeagueId || !myRosterId) {
@@ -934,6 +973,14 @@ export default function CompanionMatchup({
     () => new Map((rosters ?? []).map((roster) => [String(roster?.roster_id), roster?.owner_id ?? null])),
     [rosters],
   );
+
+  const getOwnerAvatarUrl = (side) => {
+    const rosterId = side?.rosterId ?? side?.roster?.roster_id;
+    const ownerId = side?.roster?.owner_id ?? rosterOwnerById.get(String(rosterId ?? ''));
+    return getSleeperAvatarUrl(leagueUserById.get(String(ownerId ?? ''))?.avatar);
+  };
+  const myAvatarUrl = getOwnerAvatarUrl(leftSide);
+  const opponentAvatarUrl = getOwnerAvatarUrl(rightSide);
 
   const loadTaleOfTapeHistory = useCallback((historyKey) => {
     if (platform !== 'sleeper' || !historyKey || !linkedLeagueHistory?.length) {
@@ -1772,6 +1819,342 @@ export default function CompanionMatchup({
     return getUnifiedPlayerNameFontSize(labels, isCompactPhone);
   }, [enrichedMyBench, enrichedOppBench, enrichedSlots, isCompactPhone]);
 
+  // ── Live layer: replay bar, win chance / lead chart, scoring plays ───────
+  // The current NFL week, or an earlier week of the same season replayed from
+  // its plays, and only for leagues with a live session. Future weeks and
+  // everything else render exactly as before. Rules: docs/Fantasy Live.md.
+  const isLiveLayerWeek = currentFantasyWeek != null && Number(week) >= 1 && Number(week) <= Number(currentFantasyWeek);
+  const opponentRosterId = opponentMatchup?.roster_id ?? rightSide?.rosterId ?? null;
+  const live = useMatchupLiveFeed({
+    enabled: platform === 'sleeper' && isLiveLayerWeek,
+    matchupId: currentMatchupId,
+    week: isLiveLayerWeek ? Number(week) : null,
+    allowSandbox: liveSandboxStandsIn,
+  });
+  // Before any starter in this matchup kicks off there is no progress to show:
+  // the page keeps the plain masthead and its estimated win chance bar.
+  const liveLayerActive = Boolean(live.active && live.started && !live.axis.isEmpty && live.series.length);
+  const matchupIdentityKey = `${selectedLeagueId ?? ''}:${season}:${week}:${currentMatchupId ?? ''}`;
+
+  // Hold the skeleton for the live layer's first answer (capped), so the page
+  // does not paint plain Matchups and then jump to the live layout.
+  const [liveWaitExpiredKey, setLiveWaitExpiredKey] = useState(null);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setLiveWaitExpiredKey(matchupIdentityKey), LIVE_LAYER_MAX_WAIT_MS);
+    return () => window.clearTimeout(timer);
+  }, [matchupIdentityKey]);
+  // Latched per matchup: once the first answer is in, a later refetch (the
+  // hook's context changes as players load) never sends the page back to the
+  // skeleton.
+  const [liveReadyKey, setLiveReadyKey] = useState(null);
+  if (live.ready && liveReadyKey !== matchupIdentityKey) setLiveReadyKey(matchupIdentityKey);
+  const liveLayerPending = platform === 'sleeper'
+    && isLiveLayerWeek
+    && !live.ready
+    && liveReadyKey !== matchupIdentityKey
+    && liveWaitExpiredKey !== matchupIdentityKey;
+
+  // The chart mounts once its data is complete (or the page's wait expired),
+  // then stays for this matchup: a game kicking off later briefly leaves its
+  // plays outstanding, and that must not swap the chart back to a placeholder.
+  const [liveChartKey, setLiveChartKey] = useState(null);
+  const [liveChartWaitExpiredKey, setLiveChartWaitExpiredKey] = useState(null);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setLiveChartWaitExpiredKey(matchupIdentityKey), LIVE_CHART_MAX_WAIT_MS);
+    return () => window.clearTimeout(timer);
+  }, [matchupIdentityKey]);
+  const liveChartDataReady = live.feedReady || liveChartWaitExpiredKey === matchupIdentityKey;
+  if (liveLayerActive && liveChartDataReady && liveChartKey !== matchupIdentityKey) setLiveChartKey(matchupIdentityKey);
+  const showLiveChart = liveChartDataReady || liveChartKey === matchupIdentityKey;
+
+  // The live layer reveals on page load, a week or matchup change, and a
+  // return to the Matchups tab; never on a Lineup / Scoring plays switch.
+  const liveRevealKey = `${matchupIdentityKey}:${activationCount}`;
+  const [liveRevealDoneKey, setLiveRevealDoneKey] = useState(null);
+  useEffect(() => {
+    if (!liveLayerActive) return undefined;
+    const timer = window.setTimeout(() => setLiveRevealDoneKey(liveRevealKey), LIVE_REVEAL_WINDOW_MS);
+    return () => window.clearTimeout(timer);
+  }, [liveLayerActive, liveRevealKey]);
+  const liveRevealing = liveLayerActive && liveRevealDoneKey !== liveRevealKey;
+  const liveMineKey = live.sideKeyByRosterId[myRosterId] ?? 'a';
+  const [replayAt, setReplayAt] = useState(null);
+  const [selectedPlayId, setSelectedPlayId] = useState(null);
+  const [playScrollRequest, setPlayScrollRequest] = useState(0);
+  const [chartView, setChartView] = useState('wp');
+  const [playSide, setPlaySide] = useState('all');
+  const [bigPlaysOnly, setBigPlaysOnly] = useState(false);
+  const [liveTab, setLiveTab] = useState('lineup');
+  const [hoverTarget, setHoverTarget] = useState(null);
+  const pageFrameRef = useRef(null);
+  const hoverTimersRef = useRef({ show: null, hide: null });
+  const effectiveReplayAt = liveLayerActive ? replayAt : null;
+
+  // A matchup is its own navigation context: never carry a replay moment, a
+  // selected play, filters or a hover card across matchups or weeks.
+  useEffect(() => {
+    setReplayAt(null);
+    setSelectedPlayId(null);
+    setPlaySide('all');
+    setBigPlaysOnly(false);
+    setHoverTarget(null);
+    setLiveTab('lineup');
+  }, [selectedMatchupGroup?.key, week]);
+
+  const liveSideColors = useMemo(() => ({
+    mine: myFantasyPalette?.[0] ?? 'var(--color-accent)',
+    opp: opponentFantasyPalette?.[0] ?? 'var(--color-signature)',
+  }), [myFantasyPalette, opponentFantasyPalette]);
+
+  const starterById = useMemo(() => {
+    const map = new Map();
+    enrichedSlots.forEach((slot) => {
+      if (slot.mine?.id) map.set(String(slot.mine.id), { player: slot.mine, side: 'mine' });
+      if (slot.opp?.id) map.set(String(slot.opp.id), { player: slot.opp, side: 'opp' });
+    });
+    return map;
+  }, [enrichedSlots]);
+
+  // Feed events oriented to this page: whose side, the player's name, the
+  // change in *your* win chance, and the player's running total after it.
+  const liveEvents = useMemo(() => {
+    if (!liveLayerActive) return [];
+    const seriesIndex = new Map();
+    live.series.forEach((point, index) => { if (point.eventId) seriesIndex.set(point.eventId, index); });
+    const winMine = (point) => {
+      const p = Number(point?.p);
+      return Number.isFinite(p) ? (liveMineKey === 'a' ? p : 100 - p) : null;
+    };
+    const running = new Map();
+    return [...live.events]
+      .sort((left, right) => (Number(left.progress) || 0) - (Number(right.progress) || 0))
+      .map((event) => {
+        const side = Number(event.rosterId) === Number(myRosterId) ? 'mine'
+          : Number(event.rosterId) === Number(opponentRosterId) ? 'opp' : null;
+        const index = seriesIndex.get(event.id);
+        const after = index != null ? live.series[index] : null;
+        const before = index > 0 ? live.series[index - 1] : null;
+        const swing = after && before && winMine(after) != null && winMine(before) != null ? winMine(after) - winMine(before) : null;
+        const total = (running.get(String(event.playerId)) ?? 0) + (Number(event.pts) || 0);
+        running.set(String(event.playerId), total);
+        return {
+          ...event,
+          side,
+          playerName: starterById.get(String(event.playerId))?.player?.name ?? getSleeperPlayerName(players?.[event.playerId] ?? {}),
+          // Play rows carry their text as `desc`; stat-update rows as `description`.
+          description: event.desc ?? event.description ?? '',
+          swingMine: swing,
+          runningTotal: total,
+        };
+      })
+      .filter((event) => event.side);
+  }, [live.events, live.series, liveLayerActive, liveMineKey, myRosterId, opponentRosterId, players, starterById]);
+
+  const liveFrame = useMemo(() => (liveLayerActive
+    ? buildReplayFrame({ series: live.series, events: liveEvents, mineKey: liveMineKey, at: effectiveReplayAt })
+    : null), [effectiveReplayAt, live.series, liveEvents, liveLayerActive, liveMineKey]);
+
+  // A starter's game state at the replay moment (or now).
+  const liveGameStateFor = useCallback((playerId) => {
+    const resolution = live.starterGameStateById.get(String(playerId));
+    // resolveStarterGameState: scheduled | live | officialFinal | confirmedBye | unresolved.
+    const liveState = resolution?.state === 'live' ? 'live'
+      : resolution?.state === 'officialFinal' || resolution?.state === 'confirmedBye' ? 'final'
+        : 'pre';
+    return getGameStateAt({
+      axis: live.axis,
+      gameId: resolution?.game?.id,
+      at: effectiveReplayAt,
+      liveState,
+      liveProgress: 1 - (Number(resolution?.remainingFraction) || 0),
+    });
+  }, [effectiveReplayAt, live.axis, live.starterGameStateById]);
+
+  // The live feed's displayed total per starter right now: Sleeper's points
+  // plus plays it has not confirmed yet (docs/Fantasy Live.md). One number for
+  // the rows, the masthead, the chart and the plays.
+  const liveDisplayedPoints = useMemo(() => {
+    const map = new Map();
+    Object.values(live.sidesByRosterId ?? {}).forEach((side) => side.entries.forEach((entry) => {
+      if (Number.isFinite(Number(entry.row?.points))) map.set(String(entry.id), Number(entry.row.points));
+    }));
+    return map;
+  }, [live.sidesByRosterId]);
+
+  // Rows follow the live layer: live totals now, or the replay moment's.
+  const displaySlots = useMemo(() => {
+    if (!liveLayerActive || !liveFrame) return enrichedSlots;
+    const follow = (player) => {
+      if (!player?.id || player.name === 'Empty' || player.isBye) return player;
+      const { state } = liveGameStateFor(player.id);
+      const points = effectiveReplayAt == null
+        ? liveDisplayedPoints.get(String(player.id)) ?? player.weekPts ?? 0
+        : liveFrame.pointsByPlayer.get(String(player.id)) ?? 0;
+      return { ...player, weekPts: state === 'pre' ? null : points, gameStarted: state !== 'pre' };
+    };
+    return enrichedSlots.map((slot) => ({ ...slot, mine: follow(slot.mine), opp: follow(slot.opp) }));
+  }, [effectiveReplayAt, enrichedSlots, liveDisplayedPoints, liveFrame, liveGameStateFor, liveLayerActive]);
+
+  const liveYetToFinish = useMemo(() => {
+    if (!liveLayerActive) return null;
+    const count = (side) => enrichedSlots
+      .map((slot) => slot[side])
+      .filter((player) => player?.id && player.name !== 'Empty' && !player.isBye && liveGameStateFor(player.id).state !== 'final')
+      .length;
+    return { mine: count('mine'), opp: count('opp') };
+  }, [enrichedSlots, liveGameStateFor, liveLayerActive]);
+
+  // One side's lineup for the team scoring drilldown, in league roster order.
+  // It follows the live layer's current points and game states (not a replay
+  // moment), so its categories line up with the stat lines it explains.
+  const teamDrilldownSpots = useMemo(() => {
+    if (!selectedTeam) return [];
+    const side = selectedTeam === 'mine' ? 'mine' : 'opp';
+    return enrichedSlots.map((slot) => {
+      const player = slot?.[side] ?? null;
+      const slotLabel = SLOT_LABELS[slot?.slotPos] ?? slot?.slotPos ?? player?.position ?? null;
+      if (!player?.id || player.name === 'Empty') return { slotPos: slot?.slotPos ?? null, slotLabel, player: null };
+      const resolution = liveLayerActive ? live.starterGameStateById.get(String(player.id)) : null;
+      if (!resolution) return { slotPos: slot.slotPos, slotLabel, player, state: null, points: player.weekPts };
+      const state = player.isBye ? 'bye'
+        : resolution.state === 'live' ? 'live'
+          : resolution.state === 'officialFinal' || resolution.state === 'confirmedBye' ? 'final'
+            : player.gameStarted ? 'live' : 'pre';
+      const fraction = Number(resolution.remainingFraction);
+      return {
+        slotPos: slot.slotPos,
+        slotLabel,
+        player,
+        state,
+        points: state === 'pre' ? null : liveDisplayedPoints.get(String(player.id)) ?? player.weekPts ?? 0,
+        remainingFraction: Number.isFinite(fraction) ? fraction : null,
+      };
+    });
+  }, [enrichedSlots, live.starterGameStateById, liveDisplayedPoints, liveLayerActive, selectedTeam]);
+
+  // `source` 'list' marks a click in the plays list itself, which never asks
+  // the list to scroll; chart and hover-card selections jump the list to it.
+  const selectLivePlay = useCallback((playId, source = null) => {
+    if (!playId) return;
+    const event = liveEvents.find((candidate) => candidate.id === playId);
+    if (!event) return;
+    if (selectedPlayId === playId) {
+      setSelectedPlayId(null);
+      return;
+    }
+    setSelectedPlayId(playId);
+    // Rewind the whole page to the moment right after this play.
+    const position = Number(event.progress);
+    setReplayAt(Number.isFinite(position) && position < live.nowProgress - 1e-6 ? position : null);
+    if (playSide !== 'all' && playSide !== event.side) setPlaySide('all');
+    if (bigPlaysOnly) setBigPlaysOnly(false);
+    if (source !== 'list') setPlayScrollRequest((request) => request + 1);
+  }, [bigPlaysOnly, live.nowProgress, liveEvents, playSide, selectedPlayId]);
+
+  const seekLive = useCallback((position) => {
+    setReplayAt(position);
+    if (position == null) setSelectedPlayId(null);
+  }, []);
+
+  // Desktop hover cards on starter rows: 120ms to open, instant between rows.
+  const hoverOpenIdRef = useRef(null);
+  useEffect(() => { hoverOpenIdRef.current = hoverTarget?.id ?? null; }, [hoverTarget]);
+  // `point` is the pointer's position when a mouse opened the card (the card
+  // then follows the pointer itself); keyboard focus leaves it null and the
+  // card sits by the row.
+  const showHoverCard = useCallback((element, point = null) => {
+    const id = element?.dataset?.hoverPlayer;
+    if (!id) return;
+    window.clearTimeout(hoverTimersRef.current.hide);
+    if (hoverOpenIdRef.current === id) return;
+    window.clearTimeout(hoverTimersRef.current.show);
+    if (hoverOpenIdRef.current) {
+      hoverOpenIdRef.current = id;
+      setHoverTarget({ id, anchor: element, point });
+      return;
+    }
+    hoverTimersRef.current.show = window.setTimeout(() => {
+      hoverOpenIdRef.current = id;
+      setHoverTarget({ id, anchor: element, point });
+    }, 120);
+  }, []);
+  const hideHoverCard = useCallback(() => {
+    window.clearTimeout(hoverTimersRef.current.show);
+    window.clearTimeout(hoverTimersRef.current.hide);
+    hoverTimersRef.current.hide = window.setTimeout(() => {
+      hoverOpenIdRef.current = null;
+      setHoverTarget(null);
+    }, 80);
+  }, []);
+  useEffect(() => () => {
+    window.clearTimeout(hoverTimersRef.current.show);
+    window.clearTimeout(hoverTimersRef.current.hide);
+  }, []);
+  // Gated on the event, not a `(hover: hover)` media query: some desktop
+  // browsers (Edge on touch-capable machines) report no hover while the
+  // pointer is still a mouse. Touch and pen never open the card.
+  const hoverHandlers = {
+    onPointerOver: (event) => {
+      if (event.pointerType && event.pointerType !== 'mouse') return;
+      const element = event.target.closest?.('[data-hover-player]');
+      if (element) showHoverCard(element, { x: event.clientX, y: event.clientY });
+    },
+    onPointerOut: (event) => {
+      const element = event.target.closest?.('[data-hover-player]');
+      if (!element || element.contains(event.relatedTarget)) return;
+      hideHoverCard();
+    },
+    onFocus: (event) => {
+      // Keyboard focus only; a tap or click also focuses the row.
+      if (!event.target.matches?.(':focus-visible')) return;
+      const element = event.target.closest?.('[data-hover-player]');
+      if (element) showHoverCard(element);
+    },
+    onBlur: hideHoverCard,
+    onClickCapture: () => {
+      window.clearTimeout(hoverTimersRef.current.show);
+      hoverOpenIdRef.current = null;
+      setHoverTarget(null);
+    },
+  };
+
+  const hoverCardData = useMemo(() => {
+    if (!hoverTarget) return null;
+    const entry = starterById.get(String(hoverTarget.id));
+    if (!entry) return null;
+    const { player, side } = entry;
+    let state;
+    let progress = 0;
+    if (liveLayerActive) {
+      ({ state, progress } = liveGameStateFor(player.id));
+    } else {
+      state = isPlayerGameFinal(player) ? 'final' : player.gameStarted ? 'live' : 'pre';
+      progress = state === 'final' ? 1 : 0;
+    }
+    const plays = liveLayerActive
+      ? liveEvents.filter((event) => String(event.playerId) === String(player.id)
+        && (effectiveReplayAt == null || Number(event.progress) <= effectiveReplayAt + 1e-6))
+      : [];
+    const points = liveLayerActive
+      ? liveFrame?.pointsByPlayer.get(String(player.id)) ?? 0
+      : Number(player.weekPts) || 0;
+    const quarterClock = () => {
+      if (effectiveReplayAt == null) {
+        const latest = plays[plays.length - 1];
+        return latest?.glance?.clock ?? 'In progress';
+      }
+      const quarter = Math.min(4, Math.floor(progress * 4) + 1);
+      const seconds = Math.floor((1 - ((progress * 4) % 1)) * 900);
+      return `Q${quarter} ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+    };
+    const gameLabel = getGameLabel(player) ?? '';
+    const liveGame = live.starterGameStateById.get(String(player.id))?.game;
+    const kickoffWindow = liveGame ? live.axis.windowByGameId.get(String(liveGame.id)) : null;
+    const kickoffLabel = kickoffWindow ? `Kicks off ${kickoffWindow.longLabel}` : gameLabel;
+    const clockLabel = state === 'live' ? quarterClock() : state === 'final' ? gameLabel : kickoffLabel;
+    return { player, side, state, progress, plays, points, clockLabel };
+  }, [effectiveReplayAt, hoverTarget, live.axis, live.starterGameStateById, liveEvents, liveFrame, liveGameStateFor, liveLayerActive, starterById]);
+
   useEffect(() => {
     const requestedPlayerId = initialWeekRequest?.playerId;
     const requestedWeek = Number(initialWeekRequest?.week ?? week);
@@ -1839,10 +2222,11 @@ export default function CompanionMatchup({
       || !hasAdvancedStats
       || (!hasMatchupSnapshot && !hasCompatibleMatchupSnapshot)
       || (hasStarterIds && !hasRenderableStarterRows && !hasUnavailableMatchupLineup)
+      || liveLayerPending
     );
 
   const matchupControls = selectedLeagueId && !hasNoMatchup && (hasStarterIds || hasRenderableStarterRows) ? (
-    <div className="companion-matchup-controls companion-matchup-controls__row mx-2 sm:mx-4 mb-3">
+    <div className="companion-matchup-controls companion-matchup-controls__row mx-2 sm:mx-4 mb-3" data-tour="matchup-live-layer">
       <CompanionSelectorButton
         onClick={() => setShowWeekPicker(true)}
         size="sm"
@@ -1887,22 +2271,6 @@ export default function CompanionMatchup({
             <path d="M21 20v-6h-6" />
           </svg>
           {matchupLoading ? 'Refreshing…' : 'Refresh now'}
-        </CompanionSelectorButton>
-      )}
-      {!isByeMatchup && (
-        <CompanionSelectorButton
-          onClick={() => setShowBench(v => !v)}
-          active={showBench}
-          size="sm"
-          aria-label={showBench ? 'Hide bench players' : 'Show bench players'}
-          className="companion-matchup-bench-trigger"
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M3 7h18" />
-            <path d="M6 12h12" />
-            <path d="M9 17h6" />
-          </svg>
-          {showBench ? 'Bench On' : 'Show Bench'}
         </CompanionSelectorButton>
       )}
     </div>
@@ -1981,13 +2349,14 @@ export default function CompanionMatchup({
           onOpenBreakdown={() => setSelectedTeam('mine')}
         />
         {selectedTeam === 'mine' && (
-          <TeamScoreBreakdown
+          <TeamScoringDrilldown
             teamName={myName}
-            playerIds={myBreakdownPlayerIds}
-            playerPoints={scoringOverride ? null : myPointsMap}
-            teamTotal={myDisplayPoints}
-            scoringOverride={scoringOverride}
             week={week}
+            spots={teamDrilldownSpots}
+            settled={matchupIsSettled}
+            teamPoints={liveLayerActive && !matchupIsSettled ? null : myDisplayPoints}
+            baselines={projectionBaselines}
+            platformLabel={fantasyPlatformLabel}
             onClose={() => setSelectedTeam(null)}
           />
         )}
@@ -2022,67 +2391,15 @@ export default function CompanionMatchup({
     );
   }
 
-  return (
-    <div className="page-frame-workbench companion-matchup pb-6">
-      <SeasonHintBanner capability="current-only" feature="Weekly matchups" className="mx-2 sm:mx-4 mb-3" />
-      {/* Integrated matchup masthead: score, probability, and provenance share one visual field. */}
-      <div className="mb-4">
-        {matchupControls}
-        {/* Keyed on the matchup identity so the masthead's wipe and the win-chance
-            bar's grow replay on every week or opponent change, not just on mount. */}
-        <MatchupMasthead
-          key={`${selectedLeagueId ?? ''}:${season}:${week}:${opponentName}`}
-          myName={myName}
-          opponentName={opponentName}
-          mySeedLabel={mySeedLabel}
-          opponentSeedLabel={opponentSeedLabel}
-          myInitials={myInitials}
-          opponentInitials={opponentInitials}
-          myTeamSummary={myTeamSummary}
-          opponentTeamSummary={opponentTeamSummary}
-          showTeamSummary={showTeamSummary}
-          myPalette={myFantasyPalette}
-          opponentPalette={opponentFantasyPalette}
-          myScore={displayedMineScore}
-          opponentScore={displayedOppScore}
-          myScoreLabel={matchupWinProbability?.settled ? 'Final score' : mineScoreIsLive ? 'Live score' : mineForecastTotal != null ? 'Projected points' : 'Score pending'}
-          opponentScoreLabel={matchupWinProbability?.settled ? 'Final score' : oppScoreIsLive ? 'Live score' : oppForecastTotal != null ? 'Projected points' : 'Score pending'}
-          myProjectedFinal={mineHeaderProjection}
-          opponentProjectedFinal={oppHeaderProjection}
-          showProjectionDelta={matchupIsSettled}
-          myBenchPoints={mineBenchPoints}
-          opponentBenchPoints={oppBenchPoints}
-          showBenchPoints={matchupIsSettled}
-          leftIsUser={leftIsUser}
-          rightIsUser={rightIsUser}
-          matchupOutcome={matchupOutcome}
-          myForecast={myForecast}
-          oppForecast={oppForecast}
-          winProbability={matchupWinProbability}
-          loading={
-            (providerProjectionState.status === 'loading' || sleeperProjectionState.status === 'loading')
-            && !myForecast
-            && !oppForecast
-          }
-          onOpenPreview={openPreview}
-          onOpenMine={() => setSelectedTeam('mine')}
-          onOpenOpponent={() => setSelectedTeam('opp')}
-          myHeaderGlow={mineHeaderGlow}
-          opponentHeaderGlow={oppHeaderGlow}
-          isMineHeaderHovered={isMineHeaderHovered}
-          isOpponentHeaderHovered={isOppHeaderHovered}
-          setIsMineHeaderHovered={setIsMineHeaderHovered}
-          setIsOpponentHeaderHovered={setIsOppHeaderHovered}
-        />
-      </div>
-
+  const startersContent = (
+    <>
           {/* Head-to-head starter rows. Loading motion: reveal only — the slots
               are already in hand by the time this page mounts, so there is
               nothing to place-hold, but the rows still arrive on the shared
               stagger and replay on every week/matchup move.
               Knobs and definitions: docs/Loading Motion.md. */}
           <RevealList resetKey={`${selectedLeagueId ?? ''}:${season}:${week}:${opponentName}`}>
-            {enrichedSlots.map((slot, i) => (
+            {displaySlots.map((slot, i) => (
               <HeadToHeadRow
                 key={i}
                 mine={slot.mine}
@@ -2091,6 +2408,8 @@ export default function CompanionMatchup({
                 oppLineupUnavailable={opponentLineupUnavailable}
                 slotPos={slot.slotPos}
                 sharedPlayerNameFontSize={sharedPlayerNameFontSize}
+                showProgress={liveLayerActive}
+                onOpenInjuries={platform === 'sleeper' ? onOpenInjuries : null}
                 onComparePlayers={slot.mine && slot.opp ? () => openTaleOfTape(slot.mine, slot.opp, slot.slotPos) : null}
                 onSelectMine={() => slot.mine?.id && setSelectedPlayer({ id: slot.mine.id, projection: slot.mine.projection ?? null, enriched: slot.mine })}
                 onSelectOpp={() => slot.opp?.id && setSelectedPlayer({ id: slot.opp.id, projection: slot.opp.projection ?? null, enriched: slot.opp })}
@@ -2112,7 +2431,8 @@ export default function CompanionMatchup({
               >
                 Bench
               </div>
-              {showBench && (() => {
+              {/* The bench is always shown. */}
+              {(() => {
                 const len = Math.max(enrichedMyBench.length, enrichedOppBench.length);
                 return (
                   <div className="companion-matchup-bench-list">
@@ -2123,6 +2443,7 @@ export default function CompanionMatchup({
                         opp={enrichedOppBench[i] ?? null}
                         bench
                         sharedPlayerNameFontSize={sharedPlayerNameFontSize}
+                        onOpenInjuries={platform === 'sleeper' ? onOpenInjuries : null}
                         onSelectMine={() => enrichedMyBench[i]?.id && setSelectedPlayer({ id: enrichedMyBench[i].id, projection: enrichedMyBench[i].projection ?? null, enriched: enrichedMyBench[i] })}
                         onSelectOpp={() => enrichedOppBench[i]?.id && setSelectedPlayer({ id: enrichedOppBench[i].id, projection: enrichedOppBench[i].projection ?? null, enriched: enrichedOppBench[i] })}
                       />
@@ -2132,6 +2453,282 @@ export default function CompanionMatchup({
               })()}
             </>
           )}
+    </>
+  );
+  const replayingMasthead = Boolean(liveLayerActive && effectiveReplayAt != null && liveFrame);
+  // A settled matchup keeps its official final, except while scrubbing back
+  // through it, when the masthead follows the replay moment like the rows do.
+  const liveMasthead = Boolean(liveLayerActive && liveFrame && (!matchupWinProbability?.settled || replayingMasthead));
+  // The scorecard hover card splits whatever the header shows by position:
+  // pregame the projected total (from the same starter outlooks), live the
+  // score so far (from the rows' points, following a replay moment), final
+  // the official score against the projection the header compares it with.
+  // (Below the early returns, so a plain value rather than a memo; it walks
+  // only the starters.)
+  const mastheadPhase = !liveMasthead && matchupWinProbability?.mode === 'pregame' && !mineScoreIsLive && !oppScoreIsLive
+    ? 'pregame'
+    : matchupIsSettled && !liveMasthead && mineScoreIsLive && oppScoreIsLive
+      ? 'final'
+      : liveMasthead || (mineScoreIsLive && oppScoreIsLive)
+        ? 'live'
+        : null;
+  const mastheadStateFor = (player) => {
+    if (liveLayerActive) return liveGameStateFor(player.id).state;
+    if (player.scheduleEntry?.completed === true) return 'final';
+    return player.gameStarted ? 'live' : 'pre';
+  };
+  // Mirrors the header's projected-final precedence for a settled side.
+  const mastheadProjectionFor = (recorded, external) => (player) => (
+    recorded?.complete ? projectionBaselines?.[String(player.id)]?.projection?.projected
+      : external?.complete ? player.projection?.projected
+        : null
+  );
+  const buildScoredSide = (side, score, projectedFinal, bench, recorded, external) => buildMatchupScoredSources(
+    (mastheadPhase === 'live' ? displaySlots : enrichedSlots).map((slot) => slot[side]),
+    score,
+    {
+      phase: mastheadPhase,
+      stateFor: mastheadStateFor,
+      projectionFor: mastheadProjectionFor(recorded, external),
+      projectedFinal,
+      bench,
+    },
+  );
+  const mastheadPointSources = mastheadPhase === 'pregame'
+    ? {
+        mine: buildMatchupPointSources(matchupWinProbability.mine?.outlook, matchupWinProbability.expectedA),
+        opponent: buildMatchupPointSources(matchupWinProbability.opponent?.outlook, matchupWinProbability.expectedB),
+      }
+    : mastheadPhase
+      ? {
+          mine: buildScoredSide(
+            'mine',
+            liveMasthead ? liveFrame.mine : myDisplayPoints,
+            liveMasthead ? liveFrame.expectedMine ?? mineHeaderProjection : mineHeaderProjection,
+            enrichedMyBench,
+            recordedMinePregameProjection,
+            currentMineExternalProjection,
+          ),
+          opponent: buildScoredSide(
+            'opp',
+            liveMasthead ? liveFrame.opp : oppDisplayPoints,
+            liveMasthead ? liveFrame.expectedOpp ?? oppHeaderProjection : oppHeaderProjection,
+            enrichedOppBench,
+            recordedOppPregameProjection,
+            currentOppExternalProjection,
+          ),
+        }
+      : null;
+  const mastheadWinProbability = liveMasthead && matchupWinProbability
+    ? {
+        ...matchupWinProbability,
+        probA: liveFrame.winMine ?? matchupWinProbability.probA,
+        expectedA: liveFrame.expectedMine ?? matchupWinProbability.expectedA,
+        expectedB: liveFrame.expectedOpp ?? matchupWinProbability.expectedB,
+        settled: false,
+        mode: 'live',
+      }
+    : matchupWinProbability;
+
+  return (
+    <div
+      ref={pageFrameRef}
+      className={`page-frame-workbench companion-matchup pb-6${liveLayerActive ? ' matchup-live' : ''}${liveRevealing ? ' is-revealing' : ''}`}
+    >
+      <SeasonHintBanner capability="current-only" feature="Weekly matchups" className="mx-2 sm:mx-4 mb-3" />
+      {/* Integrated matchup masthead: score, probability, and provenance share one visual field. */}
+      {liveLayerActive ? matchupControls : null}
+      {/* The replay bar is a direct child of the page frame so it stays pinned
+          for the whole page (a sticky element cannot leave its parent). */}
+      {liveLayerActive && (
+          <MatchupReplayBar
+            axis={live.axis}
+            livePosition={live.nowProgress}
+            at={effectiveReplayAt}
+            onSeek={seekLive}
+            playTimes={[...new Set(liveEvents.map((event) => Number(event.progress)).filter(Number.isFinite))].sort((left, right) => left - right)}
+            liveGameCount={live.matchupLiveGameCount}
+            updatedAt={live.status.lastUpdatedAt}
+            final={live.historical}
+          />
+      )}
+      <div className="mb-4">
+        {liveLayerActive ? null : matchupControls}
+        {/* Keyed on the matchup identity so the masthead's wipe and the win-chance
+            bar's grow replay on every week or opponent change, not just on mount. */}
+        <MatchupMasthead
+          key={`${selectedLeagueId ?? ''}:${season}:${week}:${opponentName}`}
+          myName={myName}
+          opponentName={opponentName}
+          mySeedLabel={mySeedLabel}
+          opponentSeedLabel={opponentSeedLabel}
+          myInitials={myInitials}
+          opponentInitials={opponentInitials}
+          myAvatarUrl={myAvatarUrl}
+          opponentAvatarUrl={opponentAvatarUrl}
+          myTeamSummary={myTeamSummary}
+          opponentTeamSummary={opponentTeamSummary}
+          showTeamSummary={showTeamSummary}
+          myPalette={myFantasyPalette}
+          opponentPalette={opponentFantasyPalette}
+          myScore={liveMasthead ? liveFrame.mine.toFixed(2) : displayedMineScore}
+          opponentScore={liveMasthead ? liveFrame.opp.toFixed(2) : displayedOppScore}
+          myScoreLabel={replayingMasthead ? 'Score at this moment' : liveMasthead ? 'Live score' : matchupWinProbability?.settled ? 'Final score' : mineScoreIsLive ? 'Live score' : mineForecastTotal != null ? 'Projected points' : 'Score pending'}
+          opponentScoreLabel={replayingMasthead ? 'Score at this moment' : liveMasthead ? 'Live score' : matchupWinProbability?.settled ? 'Final score' : oppScoreIsLive ? 'Live score' : oppForecastTotal != null ? 'Projected points' : 'Score pending'}
+          myProjectedFinal={liveMasthead ? liveFrame.expectedMine ?? mineHeaderProjection : mineHeaderProjection}
+          opponentProjectedFinal={liveMasthead ? liveFrame.expectedOpp ?? oppHeaderProjection : oppHeaderProjection}
+          showProjectionDelta={matchupIsSettled && !replayingMasthead}
+          myBenchPoints={mineBenchPoints}
+          opponentBenchPoints={oppBenchPoints}
+          showBenchPoints={matchupIsSettled && !replayingMasthead}
+          leftIsUser={leftIsUser}
+          rightIsUser={rightIsUser}
+          matchupOutcome={matchupOutcome}
+          myForecast={myForecast}
+          oppForecast={oppForecast}
+          winProbability={mastheadWinProbability}
+          loading={
+            (providerProjectionState.status === 'loading' || sleeperProjectionState.status === 'loading')
+            && !myForecast
+            && !oppForecast
+          }
+          onOpenPreview={openPreview}
+          onOpenMine={() => setSelectedTeam('mine')}
+          onOpenOpponent={() => setSelectedTeam('opp')}
+          myHeaderGlow={mineHeaderGlow}
+          opponentHeaderGlow={oppHeaderGlow}
+          isMineHeaderHovered={isMineHeaderHovered}
+          isOpponentHeaderHovered={isOppHeaderHovered}
+          setIsMineHeaderHovered={setIsMineHeaderHovered}
+          setIsOpponentHeaderHovered={setIsOppHeaderHovered}
+          showProbabilityBar={!liveLayerActive}
+          myPointSources={mastheadPointSources?.mine ?? null}
+          opponentPointSources={mastheadPointSources?.opponent ?? null}
+        />
+      </div>
+
+      {liveLayerActive ? (
+        // After kickoff: the win chance / lead chart runs the full width above
+        // Lineup and Scoring plays tabs, so it stays in view on both.
+        <div className="matchup-live__body">
+          <section className="matchup-live-section matchup-live-chart-section" data-panel="lead" aria-labelledby="matchup-chart-title">
+            <div className="matchup-live-label">
+              <h2 id="matchup-chart-title">{chartView === 'lead' ? 'Lead' : 'Win chance'}</h2>
+              <div className="matchup-live-label__controls matchup-live-segmented" role="group" aria-label="Chart view">
+                <button type="button" className="matchup-live-chip" aria-pressed={chartView === 'wp'} onClick={() => setChartView('wp')}>Win chance</button>
+                <button type="button" className="matchup-live-chip" aria-pressed={chartView === 'lead'} onClick={() => setChartView('lead')}>Lead</button>
+              </div>
+            </div>
+            {/* Drawn once its data is complete (capped by the page's wait), so
+                it arrives whole and wipes in rather than filling in game by
+                game. */}
+            {showLiveChart ? (
+            <MatchupLiveChart
+              key={matchupIdentityKey}
+              view={chartView}
+              axis={live.axis}
+              series={live.series}
+              events={liveEvents}
+              mineKey={liveMineKey}
+              livePosition={live.nowProgress}
+              final={live.historical}
+              at={effectiveReplayAt}
+              selectedPlayId={selectedPlayId}
+              mineColor={liveSideColors.mine}
+              oppColor={liveSideColors.opp}
+              mineName={myName}
+              oppName={opponentName}
+              onSeek={seekLive}
+              onSelectPlay={selectLivePlay}
+            />
+            ) : (
+              <Skeleton className="matchup-live-chart__placeholder w-full rounded-xl" />
+            )}
+          </section>
+          <div className="matchup-live-tabs" role="tablist" aria-label="Matchup sections">
+            {[['lineup', 'Lineup'], ['plays', 'Scoring plays']].map(([id, label]) => (
+              <button
+                key={id}
+                id={`matchup-tab-${id}`}
+                type="button"
+                role="tab"
+                aria-selected={liveTab === id}
+                aria-controls={`matchup-panel-${id}`}
+                className={`season-tab${liveTab === id ? ' active' : ''}`}
+                onClick={() => setLiveTab(id)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {/* Both panels stay mounted and in layout; the inactive one is
+              collapsed and inert rather than display:none, which would restart
+              the row reveal on every tab switch. */}
+          <section
+            className={`matchup-live-section${liveTab !== 'lineup' ? ' is-inactive' : ''}`}
+            data-panel="lineup"
+            id="matchup-panel-lineup"
+            role="tabpanel"
+            aria-labelledby="matchup-tab-lineup"
+            inert={liveTab !== 'lineup'}
+          >
+            <div className="matchup-live-label">
+              <h2 id="matchup-starters-title">Starters</h2>
+              {liveYetToFinish && (
+                <span className="matchup-live-label__scope">{`Yet to finish · You ${liveYetToFinish.mine} · Them ${liveYetToFinish.opp}`}</span>
+              )}
+            </div>
+            <div {...hoverHandlers}>
+              {startersContent}
+            </div>
+          </section>
+          <div
+            className={`matchup-live-panel${liveTab !== 'plays' ? ' is-inactive' : ''}`}
+            id="matchup-panel-plays"
+            role="tabpanel"
+            aria-labelledby="matchup-tab-plays"
+            inert={liveTab !== 'plays'}
+          >
+            <MatchupScoringPlays
+              events={liveEvents}
+              at={effectiveReplayAt}
+              axis={live.axis}
+              side={playSide}
+              bigOnly={bigPlaysOnly}
+              bigPlayThreshold={live.bigPlayThreshold}
+              selectedPlayId={selectedPlayId}
+              onSideChange={setPlaySide}
+              onBigOnlyChange={setBigPlaysOnly}
+              onSelectPlay={selectLivePlay}
+              scrollRequest={playScrollRequest}
+              sideColors={liveSideColors}
+              revealing={liveRevealing}
+            />
+          </div>
+        </div>
+      ) : (
+        <div {...hoverHandlers}>
+          {startersContent}
+        </div>
+      )}
+      {hoverCardData && (
+        <MatchupPlayerHoverCard
+          anchor={hoverTarget?.anchor}
+          point={hoverTarget?.point ?? null}
+          containerRef={pageFrameRef}
+          player={hoverCardData.player}
+          side={hoverCardData.side}
+          state={hoverCardData.state}
+          gameProgress={hoverCardData.progress}
+          clockLabel={hoverCardData.clockLabel}
+          points={hoverCardData.points}
+          plays={hoverCardData.plays}
+          weeklyRows={hoverCardData.player.weekly ?? weeklyStats?.[hoverCardData.player.id] ?? []}
+          week={week}
+          scoringSettings={activeScoringSettings}
+          sideColor={liveSideColors[hoverCardData.side]}
+        />
+      )}
       {selectedPlayer && (
         <PlayerMatchupBreakdown
           key={`${selectedLeagueId}:${season}:${week}:${selectedPlayer.id}`}
@@ -2144,17 +2741,20 @@ export default function CompanionMatchup({
           onViewBenchPlayer={(playerId) => setSelectedPlayer({ id: playerId })}
           onClose={() => setSelectedPlayer(null)}
           onViewStats={onViewPlayer}
+          onViewScheduleGame={onViewScheduleGame}
+          onOpenInjuries={platform === 'sleeper' ? onOpenInjuries : null}
         />
       )}
 
       {selectedTeam && (
-        <TeamScoreBreakdown
+        <TeamScoringDrilldown
           teamName={selectedTeam === 'mine' ? myName : opponentName}
-          playerIds={selectedTeam === 'mine' ? myBreakdownPlayerIds : opponentBreakdownPlayerIds}
-          playerPoints={scoringOverride ? null : selectedTeam === 'mine' ? myPointsMap : oppPointsMap}
-          teamTotal={selectedTeam === 'mine' ? myDisplayPoints : oppDisplayPoints}
-          scoringOverride={scoringOverride}
           week={week}
+          spots={teamDrilldownSpots}
+          settled={matchupIsSettled}
+          teamPoints={liveLayerActive && !matchupIsSettled ? null : selectedTeam === 'mine' ? myDisplayPoints : oppDisplayPoints}
+          baselines={projectionBaselines}
+          platformLabel={fantasyPlatformLabel}
           onClose={() => setSelectedTeam(null)}
         />
       )}
@@ -2271,6 +2871,8 @@ function MatchupMasthead({
   opponentSeedLabel,
   myInitials,
   opponentInitials,
+  myAvatarUrl,
+  opponentAvatarUrl,
   myTeamSummary,
   opponentTeamSummary,
   showTeamSummary = false,
@@ -2302,7 +2904,23 @@ function MatchupMasthead({
   isOpponentHeaderHovered,
   setIsMineHeaderHovered,
   setIsOpponentHeaderHovered,
+  // Once the matchup has kicked off the full-width win chance chart replaces
+  // the estimated win chance bar.
+  showProbabilityBar = true,
+  myPointSources = null,
+  opponentPointSources = null,
 }) {
+  const frameRef = useRef(null);
+  const mineSideRef = useRef(null);
+  const opponentSideRef = useRef(null);
+  // The point-sources card opens like the player hover cards: a mouse pointer
+  // or keyboard focus, never touch, pen or a tap's focus. Not gated on a
+  // `(hover: hover)` query, which some desktop browsers fail with a mouse in
+  // use. A click hides it while the team drilldown opens.
+  const [sourcesOpenSide, setSourcesOpenSide] = useState(null);
+  const pointSourcesSide = sourcesOpenSide === 'mine' && myPointSources ? 'mine'
+    : sourcesOpenSide === 'opponent' && opponentPointSources ? 'opponent'
+      : null;
   const probabilityLabels = formatWinProbabilityPair(winProbability?.probA, { settled: winProbability?.settled });
   const isSettled = Boolean(winProbability?.settled);
   const modeLabel = winProbability?.mode === 'live' ? 'Live outlook' : 'Pregame forecast';
@@ -2337,6 +2955,7 @@ function MatchupMasthead({
     name,
     seedLabel,
     initials,
+    avatarUrl,
     score,
     scoreLabel,
     projectedFinal,
@@ -2353,6 +2972,8 @@ function MatchupMasthead({
     hovered,
     setHovered,
     glow,
+    sideRef,
+    hasPointSources,
   }) => {
     const projectionDelta = showProjectionDelta
       ? formatMatchupProjectionDelta(score, projectedFinal)
@@ -2360,16 +2981,27 @@ function MatchupMasthead({
 
     return (
       <button
+      ref={sideRef}
       type="button"
       aria-label={`${name} scoring breakdown${isUser ? ', your team' : ''}`}
+      aria-describedby={hasPointSources && pointSourcesSide === side ? 'matchup-point-sources' : undefined}
       data-testid={side === 'mine' ? 'matchup-forecast-mine' : 'matchup-forecast-opponent'}
+      data-tour={side === 'mine' ? 'matchup-team-scoring' : undefined}
       className={`companion-matchup-scorecard companion-matchup-masthead__side is-${side}`}
-      onClick={onClick}
+      onClick={(event) => { setSourcesOpenSide(null); onClick?.(event); }}
       onMouseMove={onMouseMove}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      onFocus={() => setHovered(true)}
-      onBlur={() => setHovered(false)}
+      onPointerEnter={(event) => { if (event.pointerType === 'mouse') setSourcesOpenSide(side); }}
+      onPointerLeave={(event) => { if (event.pointerType === 'mouse') setSourcesOpenSide((open) => (open === side ? null : open)); }}
+      onFocus={(event) => {
+        setHovered(true);
+        if (event.currentTarget.matches?.(':focus-visible')) setSourcesOpenSide(side);
+      }}
+      onBlur={() => {
+        setHovered(false);
+        setSourcesOpenSide((open) => (open === side ? null : open));
+      }}
       style={{
         background,
         '--matchup-masthead-identity-accent': accent,
@@ -2378,9 +3010,22 @@ function MatchupMasthead({
       }}
     >
       {glow.borderOverlay}
-      {(seedLabel || initials) && (
+      {(seedLabel || initials || avatarUrl) && (
         <span className="companion-matchup-masthead__identity">
-          {initials && <i className="companion-matchup-masthead__identity-avatar" aria-hidden="true">{initials}</i>}
+          {(initials || avatarUrl) && (
+            <i className="companion-matchup-masthead__identity-avatar" aria-hidden="true">
+              {initials}
+              {avatarUrl && (
+                <img
+                  src={avatarUrl}
+                  alt=""
+                  loading="lazy"
+                  decoding="async"
+                  onError={(event) => { event.currentTarget.style.display = 'none'; }}
+                />
+              )}
+            </i>
+          )}
           {seedLabel && <span>{seedLabel}</span>}
         </span>
       )}
@@ -2427,22 +3072,23 @@ function MatchupMasthead({
   };
 
   return (
+    <div ref={frameRef} className="companion-matchup-masthead-frame">
     <section
       className="companion-matchup-masthead gridshift-reveal mx-2 mb-3 sm:mx-4"
       aria-label={isSettled ? 'Final matchup result' : winProbability?.mode === 'live' ? 'Live matchup win chance' : 'Matchup forecast'}
       data-testid={winProbability ? 'matchup-win-probability' : undefined}
     >
       <div className="companion-matchup-masthead__score-grid">
-        {renderScoreSide({ name: myName, seedLabel: mySeedLabel, initials: myInitials, score: myScore, scoreLabel: myScoreLabel, projectedFinal: myProjectedFinal, teamSummary: myTeamSummary, showTeamSummary, benchPoints: myBenchPoints, isUser: leftIsUser, outcome: matchupOutcome.mine, side: 'mine', accent: leftAccent, background: leftBackground, onClick: onOpenMine, onMouseMove: myHeaderGlow.glowHandlers.onMouseMove, hovered: isMineHeaderHovered, setHovered: setIsMineHeaderHovered, glow: myHeaderGlow })}
+        {renderScoreSide({ name: myName, seedLabel: mySeedLabel, initials: myInitials, avatarUrl: myAvatarUrl, score: myScore, scoreLabel: myScoreLabel, projectedFinal: myProjectedFinal, teamSummary: myTeamSummary, showTeamSummary, benchPoints: myBenchPoints, isUser: leftIsUser, outcome: matchupOutcome.mine, side: 'mine', accent: leftAccent, background: leftBackground, onClick: onOpenMine, onMouseMove: myHeaderGlow.glowHandlers.onMouseMove, hovered: isMineHeaderHovered, setHovered: setIsMineHeaderHovered, glow: myHeaderGlow, sideRef: mineSideRef, hasPointSources: Boolean(myPointSources) })}
         <button type="button" className="companion-matchup-masthead__axis" onClick={onOpenPreview} aria-label={`Open matchup preview: ${myName} versus ${opponentName}`} aria-haspopup="dialog">
           <span className="companion-matchup-masthead__axis-icon"><ArrowsLeftRightIcon size={17} weight="bold" aria-hidden="true" /></span>
           <span className="companion-matchup-masthead__axis-label">VS</span>
           {winProbability && !isSettled ? <span className="companion-matchup-masthead__axis-mode">{modeLabel}</span> : null}
         </button>
-        {renderScoreSide({ name: opponentName, seedLabel: opponentSeedLabel, initials: opponentInitials, score: opponentScore, scoreLabel: opponentScoreLabel, projectedFinal: opponentProjectedFinal, teamSummary: opponentTeamSummary, showTeamSummary, benchPoints: opponentBenchPoints, isUser: rightIsUser, outcome: matchupOutcome.opp, side: 'opponent', accent: rightAccent, background: rightBackground, onClick: onOpenOpponent, onMouseMove: opponentHeaderGlow.glowHandlers.onMouseMove, hovered: isOpponentHeaderHovered, setHovered: setIsOpponentHeaderHovered, glow: opponentHeaderGlow })}
+        {renderScoreSide({ name: opponentName, seedLabel: opponentSeedLabel, initials: opponentInitials, avatarUrl: opponentAvatarUrl, score: opponentScore, scoreLabel: opponentScoreLabel, projectedFinal: opponentProjectedFinal, teamSummary: opponentTeamSummary, showTeamSummary, benchPoints: opponentBenchPoints, isUser: rightIsUser, outcome: matchupOutcome.opp, side: 'opponent', accent: rightAccent, background: rightBackground, onClick: onOpenOpponent, onMouseMove: opponentHeaderGlow.glowHandlers.onMouseMove, hovered: isOpponentHeaderHovered, setHovered: setIsOpponentHeaderHovered, glow: opponentHeaderGlow, sideRef: opponentSideRef, hasPointSources: Boolean(opponentPointSources) })}
       </div>
 
-      {winProbability ? (
+      {!showProbabilityBar ? null : winProbability ? (
         <div className="companion-matchup-masthead__probability" data-testid="matchup-forecast-summary">
           <div className={`companion-matchup-masthead__probability-labels${isSettled ? ' is-settled' : ''}`}>
             <div className="companion-matchup-masthead__probability-side is-left">
@@ -2501,6 +3147,17 @@ function MatchupMasthead({
         </details>
       )}
     </section>
+    {pointSourcesSide && (
+      <MatchupPointSourcesCard
+        id="matchup-point-sources"
+        sources={pointSourcesSide === 'mine' ? myPointSources : opponentPointSources}
+        side={pointSourcesSide}
+        anchorRef={pointSourcesSide === 'mine' ? mineSideRef : opponentSideRef}
+        frameRef={frameRef}
+        accent={pointSourcesSide === 'mine' ? leftAccent : rightAccent}
+      />
+    )}
+    </div>
   );
 }
 
@@ -2670,7 +3327,19 @@ const SLOT_LABELS = {
   SUPER_FLEX: 'SF', IDP_FLEX: 'IDP', DEF: 'DST',
 };
 
-function HeadToHeadRow({ mine, opp, bench, slotPos, mineLineupUnavailable = false, oppLineupUnavailable = false, onSelectMine, onSelectOpp, onComparePlayers, sharedPlayerNameFontSize }) {
+// A thin bar under a starter row filling toward their projection (live layer).
+function MatchupProgressBar({ player, align }) {
+  const projected = Number(player?.projection?.projected);
+  if (!player?.id || player.name === 'Empty' || player.isBye || !Number.isFinite(projected) || projected <= 0) return null;
+  const share = Math.max(0, Math.min(1, (Number(player.weekPts) || 0) / projected));
+  return (
+    <span className={`matchup-row-progress is-${align}`} aria-hidden="true">
+      <i style={{ width: `${share * 100}%` }} />
+    </span>
+  );
+}
+
+function HeadToHeadRow({ mine, opp, bench, slotPos, mineLineupUnavailable = false, oppLineupUnavailable = false, onSelectMine, onSelectOpp, onComparePlayers, onOpenInjuries, sharedPlayerNameFontSize, showProgress = false }) {
   const { darkMode } = useTheme();
   const isCompactPhone = useMediaQuery(COMPACT_PHONE_QUERY);
   const slotLabel = slotPos ? (SLOT_LABELS[slotPos] ?? slotPos) : (mine?.position ?? opp?.position ?? '?');
@@ -2682,14 +3351,18 @@ function HeadToHeadRow({ mine, opp, bench, slotPos, mineLineupUnavailable = fals
     <div className="px-1.5 sm:px-4" style={{ opacity: bench ? 0.72 : 1 }}>
       <div className="grid grid-cols-[minmax(0,1fr)_44px_minmax(0,1fr)] items-stretch gap-1 sm:gap-2">
       {/* My player — left */}
-        <MatchupPlayerRow
-          player={mine}
-          lineupUnavailable={mineLineupUnavailable}
-          darkMode={darkMode}
-          compact={isCompactPhone}
-          onSelect={onSelectMine}
-          nameFontSize={sharedPlayerNameFontSize}
-        />
+        <div className="matchup-row-cell" data-hover-player={!bench && mine?.id ? mine.id : undefined}>
+          <MatchupPlayerRow
+            player={mine}
+            lineupUnavailable={mineLineupUnavailable}
+            darkMode={darkMode}
+            compact={isCompactPhone}
+            onSelect={onSelectMine}
+            onOpenInjuries={onOpenInjuries}
+            nameFontSize={sharedPlayerNameFontSize}
+          />
+          {showProgress && <MatchupProgressBar player={mine} align="left" />}
+        </div>
 
       {/* Position badge — center */}
         <div className="relative z-[1] flex items-center justify-center">
@@ -2711,20 +3384,23 @@ function HeadToHeadRow({ mine, opp, bench, slotPos, mineLineupUnavailable = fals
             aria-label={canCompare ? `Open tale of the tape for ${mine?.name} and ${opp?.name}` : undefined}
           >
             <span>{slotBadgeLabel}</span>
-            {canCompare ? <span style={{ fontSize: isCompactPhone ? '7px' : '9px', lineHeight: 1, marginTop: 1 }}>⇄</span> : null}
           </button>
         </div>
 
       {/* Opponent — right (mirrored) */}
-      <MatchupPlayerRow
-        player={opp}
-        lineupUnavailable={oppLineupUnavailable}
-        darkMode={darkMode}
-        compact={isCompactPhone}
-        onSelect={onSelectOpp}
-        nameFontSize={sharedPlayerNameFontSize}
-        align="right"
-      />
+      <div className="matchup-row-cell" data-hover-player={!bench && opp?.id ? opp.id : undefined}>
+        <MatchupPlayerRow
+          player={opp}
+          lineupUnavailable={oppLineupUnavailable}
+          darkMode={darkMode}
+          compact={isCompactPhone}
+          onSelect={onSelectOpp}
+          onOpenInjuries={onOpenInjuries}
+          nameFontSize={sharedPlayerNameFontSize}
+          align="right"
+        />
+        {showProgress && <MatchupProgressBar player={opp} align="right" />}
+      </div>
       </div>
     </div>
   );
@@ -2767,7 +3443,7 @@ function getPlayerPerformanceTarget(player, actualScore, projectedPts) {
   return Number.isFinite(outlook.expectedAtNow) ? outlook.expectedAtNow : null;
 }
 
-function MatchupPlayerRow({ player, lineupUnavailable = false, darkMode, compact = false, align = 'left', onSelect, nameFontSize = 13 }) {
+function MatchupPlayerRow({ player, lineupUnavailable = false, darkMode, compact = false, align = 'left', onSelect, onOpenInjuries = null, nameFontSize = 13 }) {
   const isRight = align === 'right';
   if (lineupUnavailable) {
     return (
@@ -2829,22 +3505,12 @@ function MatchupPlayerRow({ player, lineupUnavailable = false, darkMode, compact
     .filter(Boolean)
     .join(' ');
   const rankText = player.weekRank ? `${player.weekRank.posLabel}${player.weekRank.rank}` : player.rank ? `${player.rank.posLabel}${player.rank.rank} Overall` : null;
-  const weatherText = player.weather ? formatWeather(player.weather) : null;
   const actualScore = !isBye && player.gameStarted ? (weekPts ?? 0) : null;
   const finalGame = isPlayerGameFinal(player);
+  // Weather only matters before and during a game, not once it is over.
+  const weatherText = player.weather && !finalGame ? formatWeather(player.weather) : null;
   const performanceTarget = getPlayerPerformanceTarget(player, actualScore, projectedPts);
-  const performanceDelta = actualScore != null && performanceTarget != null
-    ? Math.round((actualScore - performanceTarget) * 10) / 10
-    : null;
   const scoreTone = finalGame ? 'default' : getProjectionScoreTone(actualScore, performanceTarget);
-  const performanceTargetLabel = finalGame ? 'full-game projection' : 'expected pace target';
-  const scoreTitle = actualScore == null || finalGame || performanceDelta == null
-    ? undefined
-    : performanceDelta > 0.05
-      ? `${actualScore.toFixed(2)} points, ${performanceDelta.toFixed(1)} above ${performanceTargetLabel}`
-      : performanceDelta < -0.05
-        ? `${actualScore.toFixed(2)} points, ${Math.abs(performanceDelta).toFixed(1)} below ${performanceTargetLabel}`
-        : `${actualScore.toFixed(2)} points, in line with ${performanceTargetLabel}`;
   const paceAdjustedProjection = !finalGame
     ? getPaceAdjustedProjection({
       phase: actualScore != null ? 'live' : 'pregame',
@@ -2854,9 +3520,6 @@ function MatchupPlayerRow({ player, lineupUnavailable = false, darkMode, compact
     })
     : null;
   const displayedProjection = paceAdjustedProjection ?? projectedPts;
-  const projectionTitle = paceAdjustedProjection == null
-    ? 'Full-game projection'
-    : `Projection adjusted for pace (${projectedPts.toFixed(1)} before kickoff)`;
   const projectionRangeText = !isBye && !player.gameStarted && projMin != null && projMax != null
     ? `${projMin.toFixed(1)}-${projMax.toFixed(1)} range`
     : null;
@@ -2870,7 +3533,6 @@ function MatchupPlayerRow({ player, lineupUnavailable = false, darkMode, compact
         value={actualScore == null ? '—' : actualScore.toFixed(2)}
         tone={scoreTone}
         className={`companion-matchup-player-metric--actual${actualScore == null ? ' is-pending' : ''}`}
-        title={scoreTitle}
       />
     ),
     displayedProjection != null ? (
@@ -2880,7 +3542,6 @@ function MatchupPlayerRow({ player, lineupUnavailable = false, darkMode, compact
         align="end"
         value={displayedProjection.toFixed(1)}
         className="companion-matchup-player-metric--projection"
-        title={projectionTitle}
       />
     ) : null,
   ].filter(Boolean) : [];
@@ -2893,8 +3554,29 @@ function MatchupPlayerRow({ player, lineupUnavailable = false, darkMode, compact
   const detailSegments = compact
     ? [rankText].filter(Boolean)
     : [rankText, weatherText, projectionRangeText].filter(Boolean);
+  const injuryStatus = player.availabilityStatus
+    ? onOpenInjuries && player.id != null
+      ? (
+        <button
+          type="button"
+          className="companion-player-row__action companion-matchup-injury-link"
+          aria-label={`View ${player.name}'s ${player.availabilityStatus} status in Fantasy Injuries`}
+          title={`View ${player.name} in Fantasy Injuries`}
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpenInjuries(player.id);
+          }}
+          onKeyDown={(event) => event.stopPropagation()}
+        >
+          <PlayerStatusBadge status={player.availabilityStatus} compact={compact} localContrast={false} />
+        </button>
+      )
+      : <PlayerStatusBadge status={player.availabilityStatus} compact={compact} localContrast={false} />
+    : null;
   const rowAccent = player.teamTheme?.accent ?? 'var(--color-separator)';
   const metricColumn = hasMetricSlot ? 'minmax(54px, auto)' : 'auto';
+  // The status badge rides beside the name rather than taking its own trailing
+  // column, so the team logo and score columns stay aligned across every row.
   const gridTemplate = compact
     ? isTeamDefense
       ? `30px minmax(0, 1fr) ${metricColumn}`
@@ -2925,9 +3607,12 @@ function MatchupPlayerRow({ player, lineupUnavailable = false, darkMode, compact
           className="companion-matchup-bye-metric"
         />,
       ] : scoreColumns}
+      identityAccessory={injuryStatus}
       gridTemplate={gridTemplate}
       columnGridTemplate={compact ? 'minmax(34px, auto)' : undefined}
+      separateAction={Boolean(onOpenInjuries && player.availabilityStatus && player.id != null)}
       name={player.name}
+      title=""
       style={{
         borderRadius: 0,
         borderLeftWidth: isRight ? 1 : 4,
@@ -2941,253 +3626,6 @@ function MatchupPlayerRow({ player, lineupUnavailable = false, darkMode, compact
         '--matchup-player-score-size': scoreFontSize,
       }}
     />
-  );
-}
-
-function TeamScoreBreakdown({ teamName, playerIds, playerPoints = null, teamTotal = null, scoringOverride = false, week, onClose }) {
-  const { darkMode } = useTheme();
-  const { platform, weeklyStats, activeScoringSettings, players, season } = useSleeperBase();
-  const [view, setView] = useState('category');
-  const [espnDerivedRowsState, setEspnDerivedRowsState] = useState({ key: '', rowsByPlayerId: {} });
-  const playerIdsKey = useMemo(() => playerIds.join('|'), [playerIds]);
-  const espnDerivedRowsKey = platform === 'espn' && players && week && playerIds.length
-    ? [season, week, playerIdsKey].join('|')
-    : '';
-  const espnDerivedRowsByPlayerId = useMemo(() => (
-    espnDerivedRowsState.key === espnDerivedRowsKey
-      ? espnDerivedRowsState.rowsByPlayerId
-      : {}
-  ), [espnDerivedRowsKey, espnDerivedRowsState]);
-
-  useEffect(() => {
-    if (!espnDerivedRowsKey) return undefined;
-
-    const candidates = playerIds.filter((id) => {
-      const player = players?.[id];
-      const isTeamDefense = isTeamDefensePosition(player?.position);
-      return player
-        && isEspnFantasyGameLogPosition(player.position)
-        && (isTeamDefense ? player.team : (player.espn_id || player.sourceIds?.espn));
-    });
-    if (!candidates.length) return undefined;
-
-    let cancelled = false;
-    void Promise.all(candidates.map(async (id) => {
-      try {
-        const row = await loadEspnFantasyGameLogWeekRow({
-          playerId: id,
-          player: players[id],
-          season,
-          scoringSettings: activeScoringSettings,
-          week,
-        });
-        return [id, row ?? null];
-      } catch {
-        return [id, null];
-      }
-    })).then((entries) => {
-      if (cancelled) return;
-      setEspnDerivedRowsState({
-        key: espnDerivedRowsKey,
-        rowsByPlayerId: Object.fromEntries(entries.filter(([, row]) => row)),
-      });
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [activeScoringSettings, espnDerivedRowsKey, playerIds, players, season, week]);
-
-  const breakdown = useMemo(() => buildFantasyMatchupScoringBreakdown({
-    playerIds,
-    playerPoints: scoringOverride ? null : playerPoints,
-    teamTotal,
-    week,
-    weeklyStats,
-    players,
-    scoringSettings: activeScoringSettings,
-    derivedRowsByPlayerId: espnDerivedRowsByPlayerId,
-  }), [
-    activeScoringSettings,
-    espnDerivedRowsByPlayerId,
-    playerIds,
-    playerPoints,
-    players,
-    scoringOverride,
-    teamTotal,
-    week,
-    weeklyStats,
-  ]);
-  const rows = view === 'category' ? breakdown.categoryRows : breakdown.playerRows;
-
-  return (
-    <Modal
-      onClose={onClose}
-      mobileSheet
-      ariaLabel={`${teamName} scoring breakdown`}
-      containerClassName="team-score-breakdown-sheet"
-      containerStyle={{
-        background: 'var(--color-bg-secondary)',
-        maxWidth: '480px',
-        maxHeight: '80vh',
-        display: 'flex',
-        flexDirection: 'column',
-        '--modal-mobile-sheet-max-height': 'min(86dvh, calc(100dvh - env(safe-area-inset-top) - 8px))',
-      }}
-    >
-      {/* Header */}
-      <div className="flex items-center gap-3 px-5 pt-4 pb-3 shrink-0" style={{ borderBottom: '1px solid var(--color-separator)' }}>
-            <div className="flex-1 min-w-0">
-              <div className="font-bold text-base truncate" style={{ color: 'var(--color-label)' }}>
-                {teamName}
-              </div>
-              <div className="text-xs mt-0.5" style={{ color: 'var(--color-label-tertiary)' }}>
-                Week {week} · Scoring Breakdown
-              </div>
-            </div>
-            <CompanionSelectorButton
-              size="xs"
-              variant="ghost"
-              aria-label="Close scoring breakdown"
-              onClick={onClose}
-              className="shrink-0"
-              style={{ width: 30, height: 30, padding: 0 }}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
-                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-              </svg>
-            </CompanionSelectorButton>
-          </div>
-
-      <div
-        className="shrink-0 px-5 py-3"
-        data-testid="team-score-breakdown-view"
-        style={{ borderBottom: '1px solid var(--color-separator)' }}
-      >
-        <CompanionSegmentedControl
-          value={view}
-          options={[
-            { value: 'category', label: 'By category' },
-            { value: 'player', label: 'By player' },
-          ]}
-          onChange={setView}
-          ariaLabel="Scoring breakdown view"
-          columns={2}
-        />
-      </div>
-
-      {/* Column headers */}
-      <div
-        className="flex items-center px-5 py-2 shrink-0"
-        style={{ background: 'var(--color-bg-secondary)', borderBottom: '1px solid var(--color-separator)' }}
-      >
-        {view === 'category' ? (
-          <>
-            <span className="flex-1 text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>Category</span>
-            <span className="w-14 text-right text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>Value</span>
-            <span className="w-16 text-right text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>Pts</span>
-          </>
-        ) : (
-          <>
-            <span className="flex-1 text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>Player</span>
-            <span className="w-20 text-right text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-label-tertiary)' }}>Pts</span>
-          </>
-        )}
-      </div>
-
-      {/* Body */}
-      <div className="overflow-y-auto flex-1 gridshift-reveal gridshift-reveal--auto">
-        {rows.length === 0 ? (
-          <div className="flex items-center justify-center py-16">
-            <span className="text-sm" style={{ color: 'var(--color-label-secondary)' }}>No scoring data for Week {week}.</span>
-          </div>
-        ) : view === 'category' ? (
-          rows.map(row => (
-            <div
-              key={row.key}
-              className="flex items-center px-5 py-2.5"
-              style={{ borderBottom: '1px solid var(--color-separator)' }}
-            >
-              <span className="flex-1 text-sm" style={{ color: 'var(--color-label)' }}>
-                {row.label}
-              </span>
-              <span className="w-14 text-right text-sm tabular-nums" style={{ color: 'var(--color-label-secondary)' }}>
-                {row.statVal == null ? '—' : Number.isInteger(row.statVal) ? row.statVal : row.statVal.toFixed(1)}
-              </span>
-              <span
-                className="w-16 text-right text-sm font-semibold tabular-nums"
-                style={{ color: row.pts < 0 ? 'var(--color-accent-red)' : 'var(--color-label)' }}
-              >
-                {row.pts > 0 ? `+${row.pts.toFixed(2)}` : row.pts.toFixed(2)}
-              </span>
-            </div>
-          ))
-        ) : (
-          rows.map((row) => {
-            if (row.isAdjustment) {
-              return (
-                <div
-                  key={row.id}
-                  className="flex items-center px-5 py-3"
-                  style={{ borderBottom: '1px solid var(--color-separator)' }}
-                >
-                  <span className="flex-1 text-sm" style={{ color: 'var(--color-label-secondary)' }}>{row.name}</span>
-                  <span className="w-20 text-right text-sm font-semibold tabular-nums" style={{ color: row.points < 0 ? 'var(--color-accent-red)' : 'var(--color-label)' }}>
-                    {row.points > 0 ? `+${row.points.toFixed(2)}` : row.points.toFixed(2)}
-                  </span>
-                </div>
-              );
-            }
-
-            const player = row.player ?? { id: row.id, full_name: row.name, position: row.position, team: row.team };
-            return (
-              <CompanionPlayerRow
-                key={row.id}
-                player={player}
-                name={row.name}
-                darkMode={darkMode}
-                compact
-                showPosition={false}
-                showTeamLogo={false}
-                showAccentRail={false}
-                metaSegments={row.position ? [row.position] : []}
-                columns={[
-                  <CompanionPlayerMetric
-                    key="points"
-                    compact
-                    align="end"
-                    value={row.points == null ? '—' : row.points.toFixed(2)}
-                    className={`team-score-breakdown-player-points${row.points == null ? ' is-pending' : ''}`}
-                  />,
-                ]}
-                status={row.pointSource === 'unavailable' ? (
-                  <CompanionPlayerStatus label="Unavailable" title="No reported player score or weekly stat line is available." />
-                ) : null}
-                gridTemplate="34px minmax(0, 1fr) minmax(58px, auto)"
-                className="team-score-breakdown-player-row"
-                style={{
-                  minHeight: 58,
-                  borderRadius: 0,
-                  borderBottom: '1px solid var(--color-separator)',
-                  padding: '7px 20px 7px 12px',
-                }}
-              />
-            );
-          })
-        )}
-
-        {/* Total row */}
-        <div
-          className="flex items-center px-5 py-4"
-          style={{ background: 'var(--color-fill-secondary)', borderTop: '1px solid var(--color-separator)' }}
-        >
-          <span className="flex-1 text-sm font-bold" style={{ color: 'var(--color-label)' }}>Total</span>
-          <span className="text-xl font-bold tabular-nums" style={{ color: 'var(--color-signature)' }}>
-            {breakdown.total == null ? '—' : breakdown.total.toFixed(2)}
-          </span>
-        </div>
-      </div>
-    </Modal>
   );
 }
 

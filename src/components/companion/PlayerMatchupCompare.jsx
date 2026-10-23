@@ -8,7 +8,7 @@
 // Replaces the flatter Tale of the Tape modal at the same call site
 // (CompanionMatchup.jsx's per-slot "Compare" action).
 
-import { useMemo } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useSleeperBase } from '../../context/SleeperContext';
 import { useTheme } from '../../context/ThemeContext';
 import { DEFAULT_SCORING } from '../../utils/scoringEngine';
@@ -59,6 +59,43 @@ function buildCompareVenueHistory(gameRows) {
     home: summarizeCompareHistory(gameRows.filter(row => row.isHome === true)),
     road: summarizeCompareHistory(gameRows.filter(row => row.isHome === false)),
   };
+}
+
+function parseHexRgb(value) {
+  const match = String(value ?? '').match(/^#([\da-f]{6})$/i);
+  if (!match) return null;
+  return [0, 2, 4].map((offset) => Number.parseInt(match[1].slice(offset, offset + 2), 16));
+}
+
+function colorDistance(first, second) {
+  const a = parseHexRgb(first);
+  const b = parseHexRgb(second);
+  if (!a || !b) return 1;
+  return Math.sqrt(a.reduce((sum, channel, index) => sum + (channel - b[index]) ** 2, 0)) / Math.sqrt(3 * 255 ** 2);
+}
+
+// A position matchup can put two blue-primary NFL teams side by side. Keep the
+// left player's primary color when it is distinct, otherwise promote whichever
+// secondary color makes the two sides easiest to separate at a glance.
+function resolveComparisonTeamColors(leftTheme, rightTheme) {
+  const leftPrimary = leftTheme?.primary ?? leftTheme?.accentColor ?? 'var(--color-accent)';
+  const leftSecondary = leftTheme?.secondary ?? leftPrimary;
+  const rightPrimary = rightTheme?.primary ?? rightTheme?.accentColor ?? 'var(--color-accent-orange)';
+  const rightSecondary = rightTheme?.secondary ?? rightPrimary;
+
+  if (colorDistance(leftPrimary, rightPrimary) >= 0.28) {
+    return { left: leftPrimary, right: rightPrimary };
+  }
+
+  const candidates = [
+    { left: leftPrimary, right: rightSecondary },
+    { left: leftSecondary, right: rightPrimary },
+  ];
+  candidates.sort((a, b) => colorDistance(b.left, b.right) - colorDistance(a.left, a.right));
+  const best = candidates[0];
+  return colorDistance(best.left, best.right) > colorDistance(leftPrimary, rightPrimary)
+    ? best
+    : { left: leftPrimary, right: rightPrimary };
 }
 
 function resolveComparePlayerId(player, players) {
@@ -466,8 +503,13 @@ function CompareRow({ label, sub, valA, valB, numA, numB, higher = 'better', neu
   const canCompare = !neutral && finite(numA) && finite(numB) && numA !== numB;
   const aLead = canCompare && (higher === 'lower' ? numA < numB : numA > numB);
   const bLead = canCompare && !aLead;
-  const barMax = Math.max(Math.abs(numA ?? 0), Math.abs(numB ?? 0)) || 1;
-  const barPct = (v) => (!neutral && !nobar && finite(v)) ? `${Math.min(1, Math.abs(v) / barMax) * 100}%` : '0%';
+  const hasComparablePair = finite(numA) && finite(numB);
+  const combinedValue = hasComparablePair ? Math.abs(numA) + Math.abs(numB) : 0;
+  const barPct = (value) => {
+    if (neutral || nobar || !hasComparablePair) return '0%';
+    if (combinedValue === 0) return '50%';
+    return `${Math.abs(value) / combinedValue * 100}%`;
+  };
 
   return (
     <div className="pmd-cmp-row">
@@ -494,10 +536,10 @@ function CompareRow({ label, sub, valA, valB, numA, numB, higher = 'better', neu
 }
 
 function CompareRankRail({ left, right }) {
-  if (!left.rankValue || !right.rankValue || !left.peerCount || !right.peerCount || left.rankLabel !== right.rankLabel) return null;
+  const hasComparableRanks = Boolean(left.rankValue && right.rankValue && left.peerCount && right.peerCount && left.rankLabel === right.rankLabel);
   const leftPos = Math.max(0, Math.min(100, (left.rankValue - 1) / Math.max(1, left.peerCount - 1) * 100));
   const rightPos = Math.max(0, Math.min(100, (right.rankValue - 1) / Math.max(1, right.peerCount - 1) * 100));
-  const markerEdgeClass = (position) => position <= 8 ? ' is-near-start' : position >= 92 ? ' is-near-end' : '';
+  if (!hasComparableRanks) return null;
   const leftLeading = left.rankValue < right.rankValue;
   const rightLeading = right.rankValue < left.rankValue;
   return (
@@ -508,7 +550,7 @@ function CompareRankRail({ left, right }) {
         <div className="pmd-cmp-rank-scale">
           <div className="pmd-rail" role="img" aria-label={`${left.name} ranks ${formatOrdinal(left.rankValue)}, ${right.name} ranks ${formatOrdinal(right.rankValue)}, from best to worst of ${left.peerCount} ${left.rankLabel} players.`} />
           <div
-            className={`pmd-cmp-rank-player is-left${markerEdgeClass(leftPos)}`}
+            className="pmd-cmp-rank-player is-left"
             style={{ left: `${leftPos}%`, '--pmd-cmp-player-color': 'var(--pmd-cmp-left-bar, var(--color-accent))' }}
           >
             <PlayerAvatar
@@ -518,13 +560,9 @@ function CompareRankRail({ left, right }) {
               className="pmd-cmp-rank-avatar"
               background="var(--color-fill-secondary)"
             />
-            <span className="pmd-cmp-rank-player__identity">
-              <span className="pmd-cmp-rank-player__name">{left.name}</span>
-              <span className={`pmd-cmp-rank-player__rank pmd-num${leftLeading ? ' is-leading' : ''}`}>{left.rankLabel}{left.rankValue}</span>
-            </span>
           </div>
           <div
-            className={`pmd-cmp-rank-player is-right${markerEdgeClass(rightPos)}`}
+            className="pmd-cmp-rank-player is-right"
             style={{ left: `${rightPos}%`, '--pmd-cmp-player-color': 'var(--pmd-cmp-right-bar, var(--color-accent-orange))' }}
           >
             <PlayerAvatar
@@ -534,19 +572,49 @@ function CompareRankRail({ left, right }) {
               className="pmd-cmp-rank-avatar"
               background="var(--color-fill-secondary)"
             />
-            <span className="pmd-cmp-rank-player__identity">
-              <span className="pmd-cmp-rank-player__name">{right.name}</span>
-              <span className={`pmd-cmp-rank-player__rank pmd-num${rightLeading ? ' is-leading' : ''}`}>{right.rankLabel}{right.rankValue}</span>
-            </span>
           </div>
         </div>
         <span className="pmd-cmp-rank-boundary is-worst" aria-hidden="true">Worst</span>
+        <div className="pmd-cmp-rank-callouts">
+          <div className="pmd-cmp-rank-callout is-left" style={{ '--pmd-cmp-player-color': 'var(--pmd-cmp-left-bar, var(--color-accent))' }}>
+            <span className="pmd-cmp-rank-player__name">{left.name}</span>
+            <span className={`pmd-cmp-rank-player__rank pmd-num${leftLeading ? ' is-leading' : ''}`}>{left.rankLabel}{left.rankValue}</span>
+          </div>
+          <div className="pmd-cmp-rank-callout is-right" style={{ '--pmd-cmp-player-color': 'var(--pmd-cmp-right-bar, var(--color-accent-orange))' }}>
+            <span className="pmd-cmp-rank-player__name">{right.name}</span>
+            <span className={`pmd-cmp-rank-player__rank pmd-num${rightLeading ? ' is-leading' : ''}`}>{right.rankLabel}{right.rankValue}</span>
+          </div>
+        </div>
       </div>
     </section>
   );
 }
 
 function CompareLadder({ left, right }) {
+  const ladderRef = useRef(null);
+  const [collidingLabels, setCollidingLabels] = useState(() => new Set());
+  useLayoutEffect(() => {
+    const measure = () => {
+      const next = new Set();
+      ladderRef.current?.querySelectorAll('.pmd-cmp-fmarks[data-collision-key]').forEach(cell => {
+        const average = cell.querySelector('.is-average');
+        const projection = cell.querySelector('.is-target:not(.is-unavailable)');
+        if (!average || !projection) return;
+        const a = average.getBoundingClientRect();
+        const p = projection.getBoundingClientRect();
+        if (a.left < p.right + 3 && p.left < a.right + 3) next.add(cell.dataset.collisionKey);
+      });
+      setCollidingLabels(current => {
+        if (current.size === next.size && [...current].every(key => next.has(key))) return current;
+        return next;
+      });
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined' || !ladderRef.current) return undefined;
+    const observer = new ResizeObserver(measure);
+    observer.observe(ladderRef.current);
+    return () => observer.disconnect();
+  });
   if (!left.ladderRows.length && !right.ladderRows.length) return null;
   const weeks = Array.from(new Set([...left.ladderRows.map(r => r.week), ...right.ladderRows.map(r => r.week)])).sort((a, b) => b - a).slice(0, 5);
   if (!weeks.length) return null;
@@ -581,10 +649,10 @@ function CompareLadder({ left, right }) {
           {averagePosition != null && <u style={{ [edge]: `${averagePosition}%` }} />}
           {projectionPosition != null && <u className="is-target" style={{ [edge]: `${projectionPosition}%` }} />}
         </div>
-        <div className="pmd-cmp-fmarks pmd-num">
-          {average != null && <span className="is-average" style={{ [edge]: `${averagePosition}%` }}>{formatNumber(average)}</span>}
+        <div className={`pmd-cmp-fmarks pmd-num${collidingLabels.has(`${week}:${side}`) ? ' is-collision' : ''}`} data-collision-key={`${week}:${side}`}>
+          {average != null && <span className="is-average" style={{ '--pmd-cmp-label-x': `${side === 'left' ? 100 - averagePosition : averagePosition}%` }}>{formatNumber(average)}</span>}
           {projection != null
-            ? <span className="is-target" style={{ [edge]: `${projectionPosition}%` }}>{formatNumber(projection)}</span>
+            ? <span className="is-target" style={{ '--pmd-cmp-label-x': `${side === 'left' ? 100 - projectionPosition : projectionPosition}%` }}>{formatNumber(projection)}</span>
             : hasProjection && <span className="is-target is-unavailable" title="Projection not recorded" aria-label="Projection not recorded">—</span>}
         </div>
       </div>
@@ -594,7 +662,7 @@ function CompareLadder({ left, right }) {
   return (
     <section className="pmd-sec">
       <div className="pmd-eyebrow">Recent form{' · '}<span>fantasy points by week</span></div>
-      <div className="pmd-cmp-ladder">
+      <div className="pmd-cmp-ladder" ref={ladderRef}>
         {weeks.map(week => {
           const a = matchupNumber(byWeekLeft.get(week));
           const b = matchupNumber(byWeekRight.get(week));
@@ -623,13 +691,13 @@ function CompareLadder({ left, right }) {
 
 // ── hero ─────────────────────────────────────────────────────────────────────
 
-function CompareHero({ player, side, darkMode, onViewStats }) {
+function CompareHero({ player, side, darkMode, accent, onViewStats }) {
   const teamTheme = getTeamVisualTheme(player?.team, darkMode);
   const style = {
     background: teamTheme?.gradient ?? 'var(--color-fill-secondary)',
     color: teamTheme?.gradientFullForeground ?? 'var(--color-label)',
     '--pmd-cmp-hero-muted': teamTheme?.gradientFullMuted ?? 'var(--color-label-secondary)',
-    '--pmd-cmp-hero-accent': teamTheme?.accentColor ?? 'var(--color-accent)',
+    '--pmd-cmp-hero-accent': accent ?? teamTheme?.accentColor ?? 'var(--color-accent)',
   };
   const clickable = Boolean(onViewStats);
   const Tag = clickable ? 'button' : 'div';
@@ -714,12 +782,15 @@ export default function PlayerMatchupCompare({ left, right, week, slotLabel, lef
   const rightTeamTheme = getTeamVisualTheme(rightModel.team, darkMode);
   // Bars sit on the neutral comparison canvas, so use the mode-appropriate
   // readable team treatment rather than the hero-only foreground accent.
-  const leftTeamColor = (darkMode ? leftTeamTheme?.accentColor : leftTeamTheme?.borderColor)
-    ?? leftTeamTheme?.color
-    ?? 'var(--color-accent)';
-  const rightTeamColor = (darkMode ? rightTeamTheme?.accentColor : rightTeamTheme?.borderColor)
-    ?? rightTeamTheme?.color
-    ?? 'var(--color-accent-orange)';
+  const comparisonTeamColors = resolveComparisonTeamColors(leftTeamTheme, rightTeamTheme);
+  const leftTeamColor = comparisonTeamColors.left;
+  const rightTeamColor = comparisonTeamColors.right;
+  const leftBarColor = darkMode
+    ? `color-mix(in srgb, ${leftTeamColor} 58%, var(--color-label))`
+    : leftTeamColor;
+  const rightBarColor = darkMode
+    ? `color-mix(in srgb, ${rightTeamColor} 58%, var(--color-label))`
+    : rightTeamColor;
 
   const hasRange = bothPregame && (leftModel.rangeLow != null || rightModel.rangeLow != null);
   const getStatsPlayerMeta = (player) => {
@@ -774,10 +845,10 @@ export default function PlayerMatchupCompare({ left, right, week, slotLabel, lef
         </button>
       </header>
 
-      <div className="pmd-cmp-body gridshift-reveal gridshift-reveal--auto" style={{ '--pmd-cmp-left-bar': leftTeamColor, '--pmd-cmp-right-bar': rightTeamColor }}>
+      <div className="pmd-cmp-body gridshift-reveal gridshift-reveal--auto" style={{ '--pmd-cmp-left-bar': leftBarColor, '--pmd-cmp-right-bar': rightBarColor }}>
         <div className="pmd-cmp-heroes">
-          <CompareHero player={leftModel.player} side="left" darkMode={darkMode} onViewStats={canOpenStats(leftModel.player) ? () => { const meta = getStatsPlayerMeta(leftModel.player); onClose(); onViewStats(meta.id, meta); } : null} />
-          <CompareHero player={rightModel.player} side="right" darkMode={darkMode} onViewStats={canOpenStats(rightModel.player) ? () => { const meta = getStatsPlayerMeta(rightModel.player); onClose(); onViewStats(meta.id, meta); } : null} />
+          <CompareHero player={leftModel.player} side="left" darkMode={darkMode} accent={leftBarColor} onViewStats={canOpenStats(leftModel.player) ? () => { const meta = getStatsPlayerMeta(leftModel.player); onClose(); onViewStats(meta.id, meta); } : null} />
+          <CompareHero player={rightModel.player} side="right" darkMode={darkMode} accent={rightBarColor} onViewStats={canOpenStats(rightModel.player) ? () => { const meta = getStatsPlayerMeta(rightModel.player); onClose(); onViewStats(meta.id, meta); } : null} />
         </div>
 
         <div className="pmd-cmp-games">

@@ -1,7 +1,7 @@
 /* eslint-disable react-hooks/refs */
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useTheme } from '../../../context/ThemeContext';
-import { fmtKtcValue } from '../../../utils/ktcApi';
+import { fmtTradeValue, getTradeCurrentContextLabels } from '../../../utils/tradeValueScale';
 import { getPicksForRoster, valueDraftPick } from '../../../utils/tradeEngine';
 import { compareDraftPickAssets } from '../../../utils/draftPickDisplay';
 import { computeTradePlayerValueDetail } from '../../../utils/tradeValue';
@@ -21,9 +21,9 @@ export default function RosterBrowseModal({
   roster, partnerName,
   sleeperPlayers, adjustedKtcPlayers, adjustedDynastyKtcPlayers, leagueType,
   rosterPicks, slots, season, league, drafts, pickValueMap, rosters, ownerNameByRosterId,
-  seasonStats, scoringSettings, positionalAvgPPG, positionalValuePerPPG, rankMap, playerTradeValueDetailsMap,
+  seasonStats, scoringSettings, rankMap, playerTradeValueDetailsMap,
   theirPlayers, theirPicks, theirSideItems,
-  mergedIDPMap, hasIDP, hasDST,
+  mergedIDPMap, leagueUtilityValueMap, ktcMarketValueMap, dynastyMarketValueMap, hasIDP, hasDST,
   onAddPlayer, onAddPick, onClose,
 }) {
   const { darkMode } = useTheme();
@@ -44,12 +44,13 @@ export default function RosterBrowseModal({
     adjustedKtcPlayers,
     adjustedDynastyKtcPlayers,
     mergedIDPMap,
+    leagueUtilityValueMap,
+    ktcMarketValueMap,
+    dynastyMarketValueMap,
     leagueType,
     theirSideItemMap,
     seasonStats,
     scoringSettings,
-    positionalAvgPPG,
-    positionalValuePerPPG,
     rankMap,
     playerTradeValueDetailsMap,
   ]);
@@ -81,11 +82,11 @@ export default function RosterBrowseModal({
         leagueType,
         seasonStats,
         scoringSettings,
-        positionalAvgPPG,
-        positionalValuePerPPG,
         rankMap,
         mergedIDPMap,
-        blendWeight: 0.50,
+        leagueUtilityValueMap,
+        ktcMarketValueMap,
+        dynastyMarketValueMap,
       });
       if (detail) {
         val = detail.value;
@@ -102,10 +103,11 @@ export default function RosterBrowseModal({
       val,
       isEstimated: sharedTradeValue?.isEstimated ?? idpFallback,
       dynastyFallback,
+      currentContext: sharedTradeValue?.currentContext ?? null,
     };
     rosterBrowsePlayerCacheRef.current.set(id, next);
     return next;
-  }, [sleeperPlayers, theirSideItemMap, playerTradeValueDetailsMap, seasonStats, scoringSettings, adjustedKtcPlayers, leagueType, adjustedDynastyKtcPlayers, mergedIDPMap, positionalValuePerPPG, positionalAvgPPG, rankMap]);
+  }, [sleeperPlayers, theirSideItemMap, playerTradeValueDetailsMap, seasonStats, scoringSettings, adjustedKtcPlayers, leagueType, adjustedDynastyKtcPlayers, mergedIDPMap, leagueUtilityValueMap, ktcMarketValueMap, dynastyMarketValueMap, rankMap]);
 
   // Player list sorted by adjusted value descending
   const players = useMemo(() => {
@@ -201,13 +203,16 @@ export default function RosterBrowseModal({
                   disabled={isAdded}
                   compact
                   teamThemeOptions={TRADE_LOGO_SIDE_THEME_OPTIONS}
-                  metaSegments={[p.team].filter(Boolean)}
+                  metaSegments={[
+                    p.team,
+                    ...getTradeCurrentContextLabels(p.currentContext),
+                  ].filter(Boolean)}
                   columns={[
                     <CompanionPlayerMetric
                       key="value"
-                      value={`${valuePrefix}${fmtKtcValue(p.val)}`}
+                      value={`${valuePrefix}${fmtTradeValue(p.val)}`}
                       kicker={p.dynastyFallback ? 'DYN est.' : null}
-                      title={p.isEstimated ? 'Estimated from season production (no KTC data)' : undefined}
+                      title={p.isEstimated ? 'Estimated from available league production or normalized market context' : undefined}
                     />,
                   ]}
                   actions={isAdded ? (
@@ -280,7 +285,7 @@ export default function RosterBrowseModal({
                     {pick.val != null && (
                       <span className="text-sm font-bold tabular-nums shrink-0"
                         style={{ color: 'var(--color-label-secondary)' }}>
-                        {fmtKtcValue(pick.val)}
+                        {fmtTradeValue(pick.val)}
                       </span>
                     )}
                     {isAdded ? (

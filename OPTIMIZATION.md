@@ -370,7 +370,6 @@ Tasks:
   - ExportPreview
   - CompanionDefense
   - CompanionMatchup
-  - CompanionWaiver
 - Keep the shell, nav, and current visible section lightweight
 - Move export-only dependencies behind export entry points
 - Remove global imports that are only required for export surfaces

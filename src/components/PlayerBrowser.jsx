@@ -1,14 +1,11 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { fetchPlayerProfile, fetchRoster, headshot } from '../utils/playerApi';
-import { matchesFilter, matchesJerseyNumber, parseSearchQuery } from '../utils/parseSearchQuery';
+import { useState, useEffect } from 'react';
+import { fetchPlayerProfile, fetchRoster } from '../utils/playerApi';
 import PlayerProfile from './PlayerProfile';
 import TeamPage from './TeamPage';
 import { getTeamVisualTheme } from '../utils/teamVisualTheme';
-import { formatPlayerHeight, formatPlayerWeight, formatPlayerMeasurements } from '../utils/playerMeasurements.js';
+import { formatPlayerHeight, formatPlayerWeight } from '../utils/playerMeasurements.js';
 import { useSleeperStats } from '../context/SleeperContext';
 import Spinner from './ui/Spinner';
-
-const POSITION_FILTERS = ['ALL', 'QB', 'RB', 'WR', 'TE', 'OL', 'DL', 'LB', 'DB', 'K', 'P'];
 
 const CONFERENCES = [
   {
@@ -21,7 +18,6 @@ const CONFERENCES = [
   },
 ];
 
-const TEAM_LABEL_STYLE = { letterSpacing: '0.16em' };
 const TEAM_CARD_THEME_OPTIONS = { logoSide: 'start' };
 
 function LoadingSpinner({ className = '' }) {
@@ -70,41 +66,10 @@ function buildPlayerMeta(player = {}, fallback = {}) {
     positionName: player.positionName || fallback.positionName || '',
     experience: player.experience ?? fallback.experience,
     status: player.status || fallback.status || '',
+    injuryStatus: player.injuryStatus || player.injury_status || fallback.injuryStatus || fallback.injury_status || fallback.status || '',
     teamId: player.teamId || fallback.teamId || null,
     height: formatPlayerHeight(player.height) ?? formatPlayerHeight(fallback.height),
     weight: formatPlayerWeight(player.weight) ?? formatPlayerWeight(fallback.weight),
-  };
-}
-
-function getSleeperDisplayName(player = {}) {
-  return player.full_name || `${player.first_name ?? ''} ${player.last_name ?? ''}`.trim();
-}
-
-function normalizeSleeperSearchResult(sleeperId, player = {}, espnIdOverrides = {}, teams = []) {
-  const espnId = player.espn_id ?? espnIdOverrides?.[sleeperId] ?? null;
-  const displayName = getSleeperDisplayName(player);
-  if (!espnId || !displayName) return null;
-
-  const teamId = player.team?.toLowerCase?.() ?? null;
-  const team = teamId ? teams.find((item) => item.id.toLowerCase() === teamId) : null;
-  const isRetired = player.active === false && !teamId;
-
-  return {
-    id: String(espnId),
-    sleeperId: String(sleeperId),
-    displayName,
-    jersey: player.number ?? '',
-    position: player.position ?? '',
-    positionName: '',
-    height: formatPlayerHeight(player.height),
-    weight: formatPlayerWeight(player.weight),
-    experience: player.years_exp != null ? player.years_exp + 1 : undefined,
-    status: player.status ?? player.injury_status ?? (isRetired ? 'Retired' : ''),
-    teamId,
-    teamName: team?.name ?? (teamId ? teamId.toUpperCase() : (isRetired ? 'Retired' : 'Free Agent')),
-    source: 'sleeper',
-    active: player.active,
-    searchRank: Number(player.search_rank),
   };
 }
 
@@ -121,7 +86,9 @@ const PlayerBrowser = ({
   onNavigateHome,
   onNavigateTeam,
   onNavigatePlayer,
+  onOpenPlayerBySleeperId,
   onViewSchedule,
+  onViewGameStats,
   onPlayerModeChange,
   onComparePlayer,
   onBuildTrade,
@@ -129,21 +96,13 @@ const PlayerBrowser = ({
   tradeDisabled = false,
   tradeDisabledTitle = 'Trade is not available for the connected platform.',
 }) => {
-  const { loadPlayers, espnIdOverrides } = useSleeperStats();
+  const { loadPlayers } = useSleeperStats();
   const [resolvedPlayer, setResolvedPlayer] = useState(() => (
     selectedPlayerMeta && selectedPlayerId ? buildPlayerMeta(selectedPlayerMeta, { id: selectedPlayerId }) : null
   ));
   const [playerLoading, setPlayerLoading] = useState(false);
   const [playerLoadError, setPlayerLoadError] = useState(null);
 
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState([]);
-  const [searchLoading, setSearchLoading] = useState(false);
-  const [showSearchDropdown, setShowSearchDropdown] = useState(false);
-  const [positionFilter, setPositionFilter] = useState('ALL');
-
-  const searchRef = useRef(null);
-  const debounceRef = useRef(null);
 
   const normalizedSelectedTeamId = typeof selectedTeamId === 'string'
     ? selectedTeamId.trim().toUpperCase()
@@ -151,15 +110,6 @@ const PlayerBrowser = ({
   const normalizedSelectedPlayerId = selectedPlayerId != null
     ? String(selectedPlayerId)
     : null;
-  const teamLookup = useRef({});
-  useEffect(() => {
-    const map = {};
-    for (const team of teams) {
-      const id = team.id.toLowerCase();
-      map[id] = { name: team.name, division: team.division, conference: team.division?.split(' ')[0] ?? '' };
-    }
-    teamLookup.current = map;
-  }, [teams]);
 
   const selectedTeam = statsView === 'team'
     ? (teams.find((team) => team.id.toUpperCase() === normalizedSelectedTeamId) ?? null)
@@ -193,9 +143,32 @@ const PlayerBrowser = ({
     if (statsView !== 'player' || !normalizedSelectedPlayerId) return;
 
     let cancelled = false;
+    let cancelInjuryLookup = () => {};
     const initialMeta = selectedPlayerMeta
       ? buildPlayerMeta(selectedPlayerMeta, { id: normalizedSelectedPlayerId })
       : null;
+
+    // Roster/profile payloads can be ESPN-shaped and omit Sleeper's current
+    // injury designation. Resolve it independently so the header can enrich
+    // either route metadata or the ESPN profile without delaying the profile.
+    if (initialMeta && !initialMeta.injuryStatus) {
+      let cancelledInjuryLookup = false;
+      loadPlayers().then((sleeperPlayers) => {
+        if (cancelledInjuryLookup || !sleeperPlayers) return;
+        const sleeperEntry = initialMeta.sleeperId
+          ? sleeperPlayers[initialMeta.sleeperId]
+          : Object.values(sleeperPlayers).find((candidate) => (
+            String(candidate?.espn_id ?? candidate?.espnId ?? '') === normalizedSelectedPlayerId
+          ));
+        const injuryStatus = sleeperEntry?.injury_status ?? sleeperEntry?.injuryStatus ?? '';
+        if (!injuryStatus) return;
+        setResolvedPlayer((current) => current?.id === normalizedSelectedPlayerId
+          ? { ...current, injuryStatus }
+          : current);
+      }).catch(() => null);
+      // The enclosing effect cleanup also cancels the lookup below.
+      cancelInjuryLookup = () => { cancelledInjuryLookup = true; };
+    }
     setPlayerLoading(true);
     setPlayerLoadError(null);
 
@@ -208,7 +181,10 @@ const PlayerBrowser = ({
         const profile = await fetchPlayerProfile(normalizedSelectedPlayerId);
         if (cancelled) return;
         if (profile?.id) {
-          setResolvedPlayer(buildPlayerMeta(profile, initialMeta ?? { id: normalizedSelectedPlayerId }));
+          setResolvedPlayer((current) => buildPlayerMeta(profile, {
+            ...(initialMeta ?? { id: normalizedSelectedPlayerId }),
+            injuryStatus: current?.injuryStatus || initialMeta?.injuryStatus,
+          }));
           setPlayerLoading(false);
           setPlayerLoadError(null);
           return;
@@ -224,7 +200,10 @@ const PlayerBrowser = ({
           const match = roster.find((player) => String(player.id) === normalizedSelectedPlayerId);
           if (!match) continue;
 
-          setResolvedPlayer(buildPlayerMeta(match, initialMeta ?? { id: normalizedSelectedPlayerId }));
+          setResolvedPlayer((current) => buildPlayerMeta(match, {
+            ...(initialMeta ?? { id: normalizedSelectedPlayerId }),
+            injuryStatus: current?.injuryStatus || initialMeta?.injuryStatus,
+          }));
           setPlayerLoading(false);
           setPlayerLoadError(null);
           return;
@@ -236,7 +215,10 @@ const PlayerBrowser = ({
       if (cancelled) return;
       setPlayerLoading(false);
       if (initialMeta) {
-        setResolvedPlayer(initialMeta);
+        setResolvedPlayer((current) => buildPlayerMeta(initialMeta, {
+          ...initialMeta,
+          injuryStatus: current?.injuryStatus || initialMeta.injuryStatus,
+        }));
         setPlayerLoadError(null);
       } else {
         setResolvedPlayer(null);
@@ -244,132 +226,12 @@ const PlayerBrowser = ({
       }
     })();
 
-    return () => { cancelled = true; };
-  }, [statsView, normalizedSelectedPlayerId, selectedPlayerMeta, teams]);
-
-  const handleSearchInput = useCallback((e) => {
-    const q = e.target.value;
-    setSearchQuery(q);
-    setShowSearchDropdown(true);
-
-    clearTimeout(debounceRef.current);
-    if (q.trim().length < 1) {
-      setSearchResults([]);
-      setSearchLoading(false);
-      return;
-    }
-    setSearchLoading(true);
-    debounceRef.current = setTimeout(async () => {
-      try {
-        const filters = parseSearchQuery(q);
-        const hasFilters = filters.pos.size || filters.team.size
-          || filters.div.size || filters.conf.size || filters.number.size || filters.name.length;
-        if (!hasFilters) {
-          setSearchResults([]);
-          setSearchLoading(false);
-          return;
-        }
-
-        const [allRosters, sleeperPlayers] = await Promise.all([
-          Promise.all(
-            teams.map((team) => (
-              fetchRoster(team.id)
-                .then((players) => players.map((player) => ({
-                  ...player,
-                  teamId: team.id.toLowerCase(),
-                  teamName: team.name,
-                  source: 'roster',
-                })))
-                .catch(() => [])
-            )),
-          ),
-          loadPlayers().catch(() => null),
-        ]);
-
-        const lookup = teamLookup.current;
-        const effectivePos = filters.pos.size > 0
-          ? filters.pos
-          : (positionFilter !== 'ALL' ? new Set([positionFilter]) : new Set());
-
-        const matchesSearchFilters = (player) => {
-          if (filters.name.length > 0) {
-            const name = player.displayName.toLowerCase();
-            if (!filters.name.every((term) => name.includes(term))) return false;
-          }
-          if (effectivePos.size > 0) {
-            if (![...effectivePos].some((pos) => matchesFilter(player.position, pos))) return false;
-          }
-          if (filters.number.size > 0
-            && ![...filters.number].some((number) => matchesJerseyNumber(player.jersey, number))) return false;
-          const teamInfo = player.teamId ? lookup[player.teamId] : null;
-          if (filters.team.size > 0 && (!player.teamId || !filters.team.has(player.teamId))) return false;
-          if (filters.div.size > 0 && (!teamInfo || !filters.div.has(teamInfo.division))) return false;
-          if (filters.conf.size > 0 && (!teamInfo || !filters.conf.has(teamInfo.conference))) return false;
-          return true;
-        };
-
-        const rosterResults = allRosters
-          .flat()
-          .filter(matchesSearchFilters);
-
-        const sleeperResults = sleeperPlayers
-          ? Object.entries(sleeperPlayers)
-            .map(([sleeperId, player]) => normalizeSleeperSearchResult(sleeperId, player, espnIdOverrides, teams))
-            .filter(Boolean)
-            .filter(matchesSearchFilters)
-          : [];
-
-        const deduped = new Map();
-        for (const player of [...rosterResults, ...sleeperResults]) {
-          const existing = deduped.get(player.id);
-          if (!existing || existing.source !== 'roster') deduped.set(player.id, player);
-        }
-
-        const results = [...deduped.values()]
-          .sort((left, right) => {
-            const leftName = left.displayName.toLowerCase();
-            const rightName = right.displayName.toLowerCase();
-            const queryName = filters.name.join(' ');
-            const leftStarts = queryName && leftName.startsWith(queryName) ? 0 : 1;
-            const rightStarts = queryName && rightName.startsWith(queryName) ? 0 : 1;
-            if (leftStarts !== rightStarts) return leftStarts - rightStarts;
-            const leftRoster = left.source === 'roster' ? 0 : 1;
-            const rightRoster = right.source === 'roster' ? 0 : 1;
-            if (leftRoster !== rightRoster) return leftRoster - rightRoster;
-            const leftRank = Number.isFinite(left.searchRank) ? left.searchRank : 999999;
-            const rightRank = Number.isFinite(right.searchRank) ? right.searchRank : 999999;
-            if (leftRank !== rightRank) return leftRank - rightRank;
-            return left.displayName.localeCompare(right.displayName);
-          })
-          .slice(0, 30);
-        setSearchResults(results);
-      } catch (err) {
-        console.error('[PlayerBrowser search] error:', err);
-        setSearchResults([]);
-      } finally {
-        setSearchLoading(false);
-      }
-    }, 400);
-  }, [espnIdOverrides, loadPlayers, teams, positionFilter]);
-
-  useEffect(() => {
-    const handler = (e) => {
-      if (searchRef.current && !searchRef.current.contains(e.target)) {
-        setShowSearchDropdown(false);
-      }
+    return () => {
+      cancelled = true;
+      if (typeof cancelInjuryLookup === 'function') cancelInjuryLookup();
     };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
+  }, [loadPlayers, statsView, normalizedSelectedPlayerId, selectedPlayerMeta, teams]);
 
-  useEffect(() => () => clearTimeout(debounceRef.current), []);
-
-  const handleSelectPlayer = useCallback((player) => {
-    onNavigatePlayer?.(player);
-    setShowSearchDropdown(false);
-    setSearchQuery('');
-    setSearchResults([]);
-  }, [onNavigatePlayer]);
 
   if (statsView === 'player') {
     if (selectedPlayer) {
@@ -390,6 +252,8 @@ const PlayerBrowser = ({
           tradeDisabled={tradeDisabled}
           tradeDisabledTitle={tradeDisabledTitle}
           onViewSchedule={selectedPlayer.teamId ? () => onViewSchedule?.(selectedPlayer.teamId) : undefined}
+          onViewGameStats={onViewGameStats}
+          onOpenPlayerBySleeperId={onOpenPlayerBySleeperId}
           onOpenFantasyTeam={onOpenFantasyTeam}
         />
       );
@@ -436,8 +300,10 @@ const PlayerBrowser = ({
         <TeamPage
           team={selectedTeam}
           onBack={onNavigateHome}
-          onSelectPlayer={handleSelectPlayer}
+          onSelectPlayer={onNavigatePlayer}
           onViewSchedule={() => onViewSchedule?.(selectedTeam.id)}
+          onViewScheduleGame={(gameId) => onViewSchedule?.(selectedTeam.id, gameId)}
+          onViewGameStats={onViewGameStats}
         />
       );
     }
@@ -470,119 +336,148 @@ const PlayerBrowser = ({
 
   return (
     <div className="stats-browser">
-      <div className="space-y-3">
-        <div ref={searchRef} className="relative">
-          <div className="relative">
-            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: 'var(--color-label-tertiary)' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={handleSearchInput}
-              onFocus={() => searchQuery.length >= 1 && setShowSearchDropdown(true)}
-              placeholder="Search player, team, position, or #number…"
-              aria-label="Search NFL players"
-              className="w-full pl-9 pr-4 py-2 rounded-lg text-base focus:outline-none"
-              style={{
-                background: 'var(--color-bg-tertiary)',
-                border: '1px solid var(--color-separator)',
-                color: 'var(--color-label)',
-                '--tw-ring-color': 'var(--color-accent)',
-              }}
-            />
-            {searchLoading && (
-              <LoadingSpinner className="absolute right-3 top-1/2 -translate-y-1/2" />
-            )}
-          </div>
-
-          <p className="mt-2 text-[length:var(--type-label)]" style={{ color: 'var(--color-label-tertiary)' }}>
-            Try “Raiders 29” or “29 TE”; terms can be in any order.
-          </p>
-
-          {showSearchDropdown && searchQuery.length >= 1 && (
-            <div
-              className="absolute z-20 left-0 right-0 top-full mt-1 rounded-xl overflow-hidden max-h-72 overflow-y-auto"
-              style={{
-                background: 'var(--color-bg-secondary)',
-                border: '1px solid var(--color-separator)',
-                boxShadow: '0 4px 12px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.04)',
-              }}
-            >
-              {searchResults.length === 0 && !searchLoading && (
-                <p className="px-4 py-3 text-sm italic" style={{ color: 'var(--color-label-tertiary)' }}>No players found.</p>
-              )}
-              {searchResults.map((player) => {
-                const measurements = formatPlayerMeasurements(player);
-                return (
-                  <button
-                    key={player.id}
-                    onClick={() => handleSelectPlayer(player)}
-                    className="w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors duration-150 active:opacity-80"
-                    style={{ '--hover-bg': 'var(--color-fill)' }}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--color-fill)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = ''; }}
-                  >
-                    <PlayerThumbnail id={player.id} name={player.displayName} />
-                    <div className="min-w-0">
-                      <div className="font-semibold text-sm truncate" style={{ color: 'var(--color-label)' }}>{player.displayName}</div>
-                      <div className="text-xs" style={{ color: 'var(--color-label-tertiary)' }}>
-                        {player.position}{player.jersey ? ` · #${player.jersey}` : ''}{player.teamName ? ` · ${player.teamName}` : ''}
-                      </div>
-                      {measurements && (
-                        <div className="text-xs" style={{ color: 'var(--color-label-tertiary)' }}>
-                          {measurements}
-                        </div>
-                      )}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        <div className="player-browser-position-rail" aria-label="Player positions">
-          {POSITION_FILTERS.map((pos) => (
-            <button
-              key={pos}
-              onClick={() => setPositionFilter(pos)}
-              className="px-2.5 py-0.5 rounded-lg text-xs font-semibold transition-colors duration-150 active:scale-95"
-              style={positionFilter === pos
-                ? { background: 'var(--color-signature)', color: 'var(--color-signature-fg)' }
-                : { background: 'var(--color-fill)', color: 'var(--color-label-secondary)' }}
-            >
-              {pos}
-            </button>
+      <div className="stats-desk">
+        <div className="stats-desk__teams">
+          {CONFERENCES.map((conf) => (
+            <section key={conf.name} className="stats-conference" aria-labelledby={`stats-conference-${conf.name}`}>
+              <h2 id={`stats-conference-${conf.name}`} className="stats-conference__label">{conf.name}</h2>
+              <div className="stats-division-grid">
+                {conf.divisions.map((division) => (
+                  <div key={division} className="stats-division" role="group" aria-label={division}>
+                    <h3 className="stats-division__label" aria-hidden="true">
+                      {division.split(' ')[1]}
+                    </h3>
+                    {teams.filter((team) => team.division === division).map((team) => (
+                      <TeamCard
+                        key={team.id}
+                        team={team}
+                        darkMode={darkMode}
+                        onClick={() => onNavigateTeam?.(team)}
+                      />
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </section>
           ))}
         </div>
+        <SeasonHonors teams={teams} onNavigateTeam={onNavigateTeam} darkMode={darkMode} />
       </div>
-
-      {CONFERENCES.map((conf) => (
-        <section key={conf.name} className="stats-conference" aria-label={`${conf.name} teams`}>
-          {conf.divisions.map((division) => {
-            const divTeams = teams.filter((team) => team.division === division);
-            return (
-              <div key={division} className="stats-division">
-                <h3 className="stats-division__label" style={TEAM_LABEL_STYLE}>
-                  {division}
-                </h3>
-                <div className="stats-team-grid">
-                  {divTeams.map((team) => (
-                    <TeamCard
-                      key={team.id}
-                      team={team}
-                      darkMode={darkMode}
-                      onClick={() => onNavigateTeam?.(team)}
-                    />
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-        </section>
-      ))}
     </div>
+  );
+};
+
+function teamNameParts(team) {
+  const city = team.city || String(team.name || '').split(' ').slice(0, -1).join(' ');
+  const nickname = team.nickname || String(team.name || '').split(' ').slice(-1)[0] || team.name;
+  return { city, nickname };
+}
+
+const TeamLogo = ({ teamId, className }) => (
+  <img
+    src={`https://a.espncdn.com/i/teamlogos/nfl/500/${String(teamId).toLowerCase()}.png`}
+    alt=""
+    className={className}
+    onError={(e) => { e.target.style.visibility = 'hidden'; }}
+  />
+);
+
+const TeamCard = ({ team, onClick, darkMode = false }) => {
+  const teamTheme = getTeamVisualTheme(team.id, darkMode, TEAM_CARD_THEME_OPTIONS);
+  const gradient = teamTheme.gradient ?? 'linear-gradient(135deg, #1F2937 0%, #4B5563 100%)';
+  const titleColor = teamTheme.gradientForeground ?? '#FFFFFF';
+  const muted = teamTheme.gradientMuted ?? 'rgba(255,255,255,0.72)';
+  const { city, nickname } = teamNameParts(team);
+
+  return (
+    <button type="button" onClick={onClick} className="stats-team-card" aria-label={team.name}>
+      <span className="stats-team-card__wash" style={{ background: gradient }} aria-hidden="true" />
+      {teamTheme.gradientOverlay && (
+        <span className="stats-team-card__wash" style={{ background: teamTheme.gradientOverlay }} aria-hidden="true" />
+      )}
+      <span className="stats-team-card__body">
+        <TeamLogo teamId={team.id} className="stats-team-card__logo" />
+        <span className="stats-team-card__identity">
+          <span className="stats-team-card__city" style={{ color: muted }}>{city}</span>
+          <span className="stats-team-card__nickname" style={{ color: titleColor }}>{nickname}</span>
+        </span>
+      </span>
+    </button>
+  );
+};
+
+// Season honors live in one rail so no team card repeats them.
+const SeasonHonors = ({ teams, onNavigateTeam, darkMode = false }) => {
+  const findTeam = (key) => teams.find((team) => team.id.toLowerCase() === key) ?? null;
+  const champion = findTeam(SEASON_2025_CHAMPIONS.superBowl);
+  const conferenceChampions = Object.entries(SEASON_2025_CHAMPIONS.conference)
+    .map(([conference, key]) => ({ tag: conference.toUpperCase(), team: findTeam(key) }))
+    .filter((entry) => entry.team);
+  const divisionChampions = Object.entries(SEASON_2025_CHAMPIONS.division)
+    .map(([division, key]) => ({ tag: division, team: findTeam(key) }))
+    .filter((entry) => entry.team);
+  if (!champion && !conferenceChampions.length && !divisionChampions.length) return null;
+
+  const championTheme = champion ? getTeamVisualTheme(champion.id, darkMode, TEAM_CARD_THEME_OPTIONS) : null;
+  const championName = champion ? teamNameParts(champion) : null;
+
+  const renderRow = ({ tag, team }) => (
+    <li key={`${tag}-${team.id}`}>
+      <button type="button" className="stats-honors__row" onClick={() => onNavigateTeam?.(team)} aria-label={`${team.name}, ${tag} champion`}>
+        <TeamLogo teamId={team.id} className="stats-honors__logo" />
+        <span className="stats-honors__name">{teamNameParts(team).nickname}</span>
+        <span className="stats-honors__tag">{tag}</span>
+      </button>
+    </li>
+  );
+
+  return (
+    <aside className="stats-honors" aria-labelledby="stats-honors-title">
+      <div className="stats-honors__heading">
+        <span className="stats-honors__eyebrow">2025 season</span>
+        <h2 id="stats-honors-title" className="stats-honors__title">Honors</h2>
+      </div>
+      {champion && (
+        <button
+          type="button"
+          className="stats-honors__champion"
+          onClick={() => onNavigateTeam?.(champion)}
+          aria-label={`${champion.name}, Super Bowl LX champions`}
+        >
+          <span className="stats-team-card__wash" style={{ background: championTheme?.gradient ?? undefined }} aria-hidden="true" />
+          {championTheme?.gradientOverlay && (
+            <span className="stats-team-card__wash" style={{ background: championTheme.gradientOverlay }} aria-hidden="true" />
+          )}
+          <span className="stats-honors__champion-body" style={{ color: championTheme?.gradientForeground ?? '#FFFFFF' }}>
+            <span className="stats-honors__champion-label" style={{ color: championTheme?.gradientMuted ?? undefined }}>
+              <TrophyIcon size={12} />
+              Super Bowl LX champions
+            </span>
+            <span className="stats-honors__champion-team">
+              <TeamLogo teamId={champion.id} className="stats-honors__champion-logo" />
+              <span className="stats-honors__champion-name">
+                <span style={{ color: championTheme?.gradientMuted ?? undefined }}>{championName.city}</span>
+                <strong>{championName.nickname}</strong>
+              </span>
+            </span>
+          </span>
+        </button>
+      )}
+      <div className="stats-honors__groups">
+        {conferenceChampions.length > 0 && (
+          <div className="stats-honors__group">
+            <h3 className="stats-honors__group-label">Conference champions</h3>
+            <ul className="stats-honors__list">{conferenceChampions.map(renderRow)}</ul>
+          </div>
+        )}
+        {divisionChampions.length > 0 && (
+          <div className="stats-honors__group">
+            <h3 className="stats-honors__group-label">Division champions</h3>
+            <ul className="stats-honors__list">{divisionChampions.map(renderRow)}</ul>
+          </div>
+        )}
+      </div>
+    </aside>
   );
 };
 
@@ -593,90 +488,5 @@ const TrophyIcon = ({ size = 10 }) => (
     <line x1="6" y1="15" x2="10" y2="15" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
   </svg>
 );
-
-const TeamCard = ({ team, onClick, darkMode = false }) => {
-  const teamKey = String(team.id).toLowerCase();
-  const teamTheme = getTeamVisualTheme(team.id, darkMode, TEAM_CARD_THEME_OPTIONS);
-  const gradient = teamTheme.gradient ?? 'linear-gradient(135deg, #1F2937 0%, #4B5563 100%)';
-  const titleColor = teamTheme.gradientForeground ?? '#FFFFFF';
-  const muted = teamTheme.gradientMuted ?? 'rgba(255,255,255,0.72)';
-  const city = team.city || String(team.name || '').split(' ').slice(0, -1).join(' ');
-  const nickname = team.nickname || String(team.name || '').split(' ').slice(-1)[0] || team.name;
-
-  const isSuperBowl = SEASON_2025_CHAMPIONS.superBowl === teamKey;
-  const isConf = !isSuperBowl && Object.values(SEASON_2025_CHAMPIONS.conference).includes(teamKey);
-  const isDiv = !isSuperBowl && !isConf && SEASON_2025_CHAMPIONS.division[team.division] === teamKey;
-  const goldColor = titleColor === '#FFFFFF' ? '#F5B700' : '#B8860B';
-  const silverColor = titleColor === '#FFFFFF' ? 'rgba(255,255,255,0.90)' : 'rgba(12,15,20,0.75)';
-  // Honours ride one non-wrapping line, highest first, so a decorated team never
-  // stands taller than its division mates. Narrow cards show only the leading
-  // honour; the full list stays in title/aria-label.
-  const conferenceLabel = `${team.division?.startsWith('AFC') ? 'AFC' : 'NFC'} Champ`;
-  const honours = [];
-  if (isSuperBowl) honours.push({ label: 'SB LX', color: goldColor, trophy: true });
-  if (isSuperBowl || isConf) honours.push({ label: conferenceLabel, color: isSuperBowl ? goldColor : silverColor });
-  if (isSuperBowl || isConf || isDiv) honours.push({ label: 'Div Champ', color: muted });
-  const honourText = honours.map((item) => item.label).join(' · ');
-
-  return (
-    <button
-      onClick={onClick}
-      className="stats-team-card"
-      title={honourText ? `${team.name} — ${honourText}` : team.name}
-      aria-label={honourText ? `${team.name} — ${honourText}` : team.name}
-    >
-      <span className="stats-team-card__wash" style={{ background: gradient }} aria-hidden="true" />
-      {teamTheme.gradientOverlay && (
-        <span className="stats-team-card__wash" style={{ background: teamTheme.gradientOverlay }} aria-hidden="true" />
-      )}
-      <span className="stats-team-card__body">
-        <img
-          src={`https://a.espncdn.com/i/teamlogos/nfl/500/${team.id.toLowerCase()}.png`}
-          alt=""
-          className="stats-team-card__logo"
-          onError={(e) => { e.target.style.visibility = 'hidden'; }}
-        />
-        <span className="stats-team-card__identity">
-          <span className="stats-team-card__city" style={{ color: muted }}>
-            {city}
-          </span>
-          <span className="stats-team-card__nickname" style={{ color: titleColor }}>
-            {nickname}
-          </span>
-          {honours.length > 0 && (
-            <span className="stats-team-card__honours">
-              {honours.map((item, index) => (
-                <span
-                  key={item.label}
-                  className={`stats-team-card__honour${index > 0 ? ' stats-team-card__honour--extra' : ''}`}
-                  style={{ color: item.color }}
-                >
-                  {item.trophy && <TrophyIcon size={9} />}
-                  {item.label}
-                </span>
-              ))}
-            </span>
-          )}
-        </span>
-        <svg className="stats-team-card__chevron" style={{ color: titleColor }} fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-        </svg>
-      </span>
-    </button>
-  );
-};
-
-const PlayerThumbnail = ({ id, name, size = 'sm' }) => {
-  const [err, setErr] = useState(false);
-  const initials = (name ?? '?').split(' ').map((word) => word[0]).join('').slice(0, 2).toUpperCase();
-  const cls = size === 'lg' ? 'w-12 h-12' : 'w-8 h-8';
-  return err ? (
-    <div className={`${cls} rounded-full flex items-center justify-center shrink-0`} style={{ background: 'var(--color-fill)' }}>
-      <span className="text-[length:var(--type-label)] font-bold" style={{ color: 'var(--color-label-tertiary)' }}>{initials}</span>
-    </div>
-  ) : (
-    <img src={headshot(id)} alt="" className={`${cls} rounded-full object-cover shrink-0`} style={{ background: 'var(--color-fill)' }} onError={() => setErr(true)} />
-  );
-};
 
 export default PlayerBrowser;

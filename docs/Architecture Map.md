@@ -86,7 +86,7 @@ Entries resolved via Pass 1 or 2 are marked `_teamSource = 'espn'`; Pass 3 entri
 
 - `CompanionStandings.jsx`, `CompanionHistory.jsx`, and `CompanionActivity.jsx` power the top-level League routes. Their page-level loading, unavailable, error, and empty reasons stay centered and unframed.
 - Trade keeps `CompanionTrade.jsx` as the public route component, with extracted Agent/Intelligence/Upgrade leaf modules in `src/components/companion/trade/`.
-- Fantasy Live: `CompanionLive.jsx` owns the route's data plumbing (session, snapshots, projections, win probability, persisted replay selection, play feed) and composes presentation from `src/components/companion/live/`. Full file ownership and implementation rules: [[Fantasy Live]].
+- Fantasy Live (the live layer in Fantasy Matchups; the separate tab is retired): `src/hooks/useMatchupLiveFeed.js` owns the data plumbing (session, snapshots, projections, win probability, play feed, chart series); `CompanionMatchup.jsx` owns replay state and composes the replay bar, chart, scoring plays and hover cards from `src/components/companion/matchup/`. Full file ownership and implementation rules: [[Fantasy Live]].
 - Shared player/asset selector rendering lives here: `CompanionPlayerRow.jsx`, `CompanionAssetRow.jsx`, and `CompanionSelectorControls.jsx` are the canonical row/control primitives for Companion and Trade-adjacent picker surfaces. Read [[Companion Shared Rows]] before changing player-row styling, team logos, status badges, or selector controls.
 
 ### `src/utils` domain modules
@@ -110,7 +110,7 @@ Rules:
 - The field visuals (`fieldPrimitives.jsx`, `PlayTrajectoryStrip.jsx`, `DriveField.jsx`, `DrivePlayback.jsx`) share one 120-yard canvas through `fieldX`, and all kick geometry goes through `getKickGeometry`. A new field visual must reuse both rather than derive its own coordinates.
 - `playBeats.js` is the time layer over that geometry: one play as the ball's position over time plus the beats that fire as it travels, composing `getPlayTrajectory()` and `parsePlayNarrative()` without duplicating either. `DrivePlayback.jsx` is its only consumer and draws nothing the other field visuals don't already define.
 - Both surfaces consume this layer. `src/utils/playByPlay/` sits on top of it and owns the canonical provider-row shape, the shared offense/defense rule, and per-play stat attribution; `livePlaysFeed.js` and `balldontlieNflScoreboard.js` are thin adapters over it: [[Play-By-Play Normalization]]. New play-parsing work belongs in one of these two layers, never under a feature folder.
-- `src/components/shared/PlayerAvatar.jsx` owns the headshot fallback chain for both surfaces and is re-exported as `LiveAvatar` for existing Fantasy Live call sites.
+- `src/components/shared/PlayerAvatar.jsx` owns the headshot fallback chain shared by Statistics and fantasy surfaces.
 
 ## Client/Server Boundary
 
@@ -138,7 +138,9 @@ Deep doc: [[Live Data Server Architecture]].
 | `tradeProposalStore.js` | Separate SQLite/WAL proposal database. Stores immutable revision payloads and event state; expired payloads are removed while a bounded tombstone remains for the retention window |
 | `tradeProposalCrypto.js`, `tradeProposalConfig.js` | HMAC token hashing, opaque proposal/session capabilities, bounded expiry/retention settings, and production secret/data-directory configuration |
 | `sleeperTradeApi.js` | Server-side read-only Sleeper boundary used to validate league membership/ownership and inspect completed transactions |
-| `playerDataHandlers.js`, `playerDataStore.js`, `playerDataUpstream.js`, `playerDataConfig.js` | Lazy SQLite cache of ESPN season stats, career stats, and game logs behind `/api/players`. All ESPN traffic goes through one throttled, circuit-broken upstream client; completed seasons are stored once and never refetched — see [[Where To Edit]] (ESPN Player Data And Profiles) |
+| `teamSeasonHandlers.js` | Statistics team dashboard: one team's finished games from Scores game details, standings, and league unit ranks from all team-game stat lines — see [[Team Dashboard]] |
+| `playerSeasonHandlers.js` | Statistics player dashboard: one player's finished games from Scores game details, and league rank pools from Sleeper's public weekly stats, each cached in process — see [[Player Dashboard]] |
+| `playerDataHandlers.js`, `playerDataStore.js`, `playerDataUpstream.js`, `playerDataConfig.js` | Lazy SQLite cache of ESPN season stats, career stats, and game logs plus nflverse snap-count enrichments behind `/api/players`. ESPN traffic goes through one throttled, circuit-broken upstream client; completed-season payloads are stored once and never refetched — see [[Where To Edit]] (ESPN Player Data And Profiles) |
 
 Rule: gateway state is process-local. Running multiple sidecar replicas would multiply upstream work until the shared-store/leader phase in [[Live Data Server Architecture]].
 

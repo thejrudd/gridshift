@@ -192,6 +192,7 @@ export default function CompanionPlayerRow({
   role = undefined,
   tabIndex = undefined,
   teamThemeOptions = undefined,
+  separateAction = false,
 }) {
   const [isHovered, setIsHovered] = useState(false);
   const [failedAvatarUrl, setFailedAvatarUrl] = useState(null);
@@ -201,6 +202,7 @@ export default function CompanionPlayerRow({
   const position = getPlayerPosition(safePlayer);
   const team = getPlayerTeam(safePlayer);
   const isInteractive = interactive ?? Boolean(onClick);
+  const hasSeparateAction = separateAction && isInteractive && !disabled;
   // The shared row's team mark is on the right, while D/ST rows use the mark
   // as the left-side avatar. NYG/NYJ need this placement to choose the
   // readable side of their two-color gradient.
@@ -282,11 +284,12 @@ export default function CompanionPlayerRow({
         selected ? 'is-selected' : '',
         disabled ? 'is-disabled' : '',
         hasTeamGradient ? 'has-team-gradient' : '',
+        hasSeparateAction ? 'has-separate-action' : '',
         className,
       ].filter(Boolean).join(' ')}
       data-testid={dataTestId}
       style={rootStyle}
-      onClick={isInteractive ? activate : undefined}
+      onClick={isInteractive && !hasSeparateAction ? activate : undefined}
       onMouseMove={isInteractive ? glowHandlers.onMouseMove : undefined}
       onMouseEnter={(event) => {
         setIsHovered(true);
@@ -306,16 +309,16 @@ export default function CompanionPlayerRow({
         setIsHovered(false);
         glowHandlers.onMouseLeave?.(event);
       }}
-      onKeyDown={isInteractive ? (event) => {
+      onKeyDown={isInteractive && !hasSeparateAction ? (event) => {
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault();
           activate(event);
         }
       } : undefined}
-      role={role ?? (isInteractive ? 'button' : undefined)}
-      tabIndex={tabIndex ?? (isInteractive && !disabled ? 0 : undefined)}
-      title={rowTitle}
-      aria-label={ariaLabel ?? (isInteractive ? `Open ${label}` : undefined)}
+      role={role ?? (hasSeparateAction ? 'group' : isInteractive ? 'button' : undefined)}
+      tabIndex={hasSeparateAction ? undefined : tabIndex ?? (isInteractive && !disabled ? 0 : undefined)}
+      title={rowTitle || undefined}
+      aria-label={hasSeparateAction ? `Matchup player: ${label}` : ariaLabel ?? (isInteractive ? `Open ${label}` : undefined)}
       aria-disabled={disabled || undefined}
     >
       {borderOverlay}
@@ -324,6 +327,14 @@ export default function CompanionPlayerRow({
           className="companion-player-row__gradient-overlay"
           style={{ background: theme.gradientOverlay }}
           aria-hidden="true"
+        />
+      )}
+      {hasSeparateAction && (
+        <button
+          type="button"
+          className="companion-player-row__primary-action"
+          aria-label={ariaLabel ?? `Open ${label}`}
+          onClick={activate}
         />
       )}
       {showSelectionMark && (

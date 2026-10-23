@@ -1,9 +1,11 @@
 const PREDICTIONS_VIEWS = new Set(['predictions', 'playoffs']);
-const FANTASY_VIEWS = new Set(['rosters', 'rankings', 'live', 'matchups', 'schedule', 'injuries', 'heatmap', 'defenses', 'scoring']);
+const FANTASY_VIEWS = new Set(['rosters', 'rankings', 'matchups', 'schedule', 'injuries', 'heatmap', 'defenses', 'scoring']);
 const FANTASY_VIEW_ALIASES = new Map([
   ['roster', 'rosters'],
   ['league', 'rosters'],
   ['matchup', 'matchups'],
+  // Fantasy Live was folded into Matchups (live replay layer); keep old links working.
+  ['live', 'matchups'],
   ['waiver', 'rankings'],
   ['waivers', 'rankings'],
   ['defense', 'defenses'],
@@ -16,7 +18,8 @@ const STATISTICS_SCHEDULE_MODES = new Set(['week', 'team']);
 const STATISTICS_SCHEDULE_FILTERS = new Set(['international', 'primetime', 'holiday', 'home', 'away']);
 const STATISTICS_SCORES_PHASES = new Set(['regular', 'preseason']);
 const STATISTICS_SCORES_POSTSEASON_WEEKS = new Set(['wc', 'div', 'conf', 'sb']);
-const STATISTICS_SCORES_SECTIONS = new Set(['overview', 'team', 'players', 'scoring', 'plays', 'story']);
+// Scoring now lives inside Overview; an old `tab=scoring` link falls back to it.
+const STATISTICS_SCORES_SECTIONS = new Set(['overview', 'team', 'players', 'plays', 'story']);
 const STATISTICS_SCORES_PLAYER_GROUPS = new Set(['passing', 'rushing', 'receiving', 'defense', 'kicking', 'punting', 'returns']);
 const SCOUT_VIEWS = new Set(['prospects', 'picks', 'results']);
 const DRAFT_VIEWS = new Set(['war-room', 'my-board', 'results']);
@@ -47,6 +50,7 @@ const DEFAULT_ROUTE = {
   statisticsScoresGameId: null,
   statisticsScoresSection: 'overview',
   statisticsScoresPlayerGroup: null,
+  statisticsScoresPlayerId: null,
   statisticsScoresAwayTeamId: null,
   statisticsScoresHomeTeamId: null,
   statisticsScheduleMode: null,
@@ -71,6 +75,7 @@ const DEFAULT_ROUTE = {
   scheduleRosterId: null,
   matchupPlayerId: null,
   matchupRosterId: null,
+  injuriesPlayerId: null,
   leagueSubview: null,
   leagueRosterId: null,
   heatmapViewMode: null,
@@ -360,6 +365,10 @@ export function normalizeAppRoute(route = {}) {
         statisticsScoresPlayerGroup: statisticsScoresGameId && statisticsScoresSection === 'players'
           ? normalizeLowerToken(route.statisticsScoresPlayerGroup, STATISTICS_SCORES_PLAYER_GROUPS)
           : null,
+        // The player whose quarter split opens expanded on Players.
+        statisticsScoresPlayerId: statisticsScoresGameId && statisticsScoresSection === 'players'
+          ? normalizePlayerId(route.statisticsScoresPlayerId)
+          : null,
         statisticsScoresAwayTeamId: statisticsScoresGameId ? normalizeTeamId(route.statisticsScoresAwayTeamId) : null,
         statisticsScoresHomeTeamId: statisticsScoresGameId ? normalizeTeamId(route.statisticsScoresHomeTeamId) : null,
       };
@@ -418,6 +427,10 @@ export function normalizeAppRoute(route = {}) {
       normalized.matchupWeek = normalizeWeek(route.matchupWeek);
       normalized.matchupPlayerId = normalizePlayerId(route.matchupPlayerId);
       normalized.matchupRosterId = normalizePlayerId(route.matchupRosterId);
+    }
+
+    if (companionView === 'injuries') {
+      normalized.injuriesPlayerId = normalizePlayerId(route.injuriesPlayerId);
     }
 
     if (companionView === 'schedule') {
@@ -583,6 +596,7 @@ export function parseAppRoute(pathname = '/', search = '') {
           statisticsScoresGameId: parseQueryValue(searchParams, 'game'),
           statisticsScoresSection: parseQueryValue(searchParams, 'tab'),
           statisticsScoresPlayerGroup: parseQueryValue(searchParams, 'group'),
+          statisticsScoresPlayerId: parseQueryValue(searchParams, 'player'),
           statisticsScoresAwayTeamId: parseQueryValue(searchParams, 'awayTeam'),
           statisticsScoresHomeTeamId: parseQueryValue(searchParams, 'homeTeam'),
         });
@@ -606,6 +620,7 @@ export function parseAppRoute(pathname = '/', search = '') {
         matchupWeek: parseQueryValue(searchParams, 'week'),
         matchupPlayerId: parseQueryValue(searchParams, 'player'),
         matchupRosterId: parseQueryValue(searchParams, 'team'),
+        injuriesPlayerId: parseQueryValue(searchParams, 'player'),
         scheduleMode: parseQueryValue(searchParams, 'mode'),
         scheduleWeek: parseQueryValue(searchParams, 'week'),
         scheduleRosterId: parseQueryValue(searchParams, 'team'),
@@ -659,6 +674,7 @@ export function parseAppRoute(pathname = '/', search = '') {
         matchupWeek: parseQueryValue(searchParams, 'week'),
         matchupPlayerId: parseQueryValue(searchParams, 'player'),
         matchupRosterId: parseQueryValue(searchParams, 'team'),
+        injuriesPlayerId: parseQueryValue(searchParams, 'player'),
         scheduleMode: parseQueryValue(searchParams, 'mode'),
         scheduleWeek: parseQueryValue(searchParams, 'week'),
         scheduleRosterId: parseQueryValue(searchParams, 'team'),
@@ -750,6 +766,9 @@ export function buildAppPath(route) {
           ['group', normalized.statisticsScoresGameId && normalized.statisticsScoresSection === 'players'
             ? normalized.statisticsScoresPlayerGroup
             : null],
+          ['player', normalized.statisticsScoresGameId && normalized.statisticsScoresSection === 'players'
+            ? normalized.statisticsScoresPlayerId
+            : null],
           ['awayTeam', normalized.statisticsScoresGameId ? normalized.statisticsScoresAwayTeamId : null],
           ['homeTeam', normalized.statisticsScoresGameId ? normalized.statisticsScoresHomeTeamId : null],
         ])}`;
@@ -784,6 +803,11 @@ export function buildAppPath(route) {
           ['week', normalized.matchupWeek],
           ['player', normalized.matchupPlayerId],
           ['team', normalized.matchupRosterId],
+        ])}`;
+      }
+      if (normalized.companionView === 'injuries') {
+        return `${basePath}${buildQueryString([
+          ['player', normalized.injuriesPlayerId],
         ])}`;
       }
       if (normalized.companionView === 'schedule') {
@@ -888,6 +912,7 @@ export function isSameAppRoute(a, b) {
     && left.statisticsScoresGameId === right.statisticsScoresGameId
     && left.statisticsScoresSection === right.statisticsScoresSection
     && left.statisticsScoresPlayerGroup === right.statisticsScoresPlayerGroup
+    && left.statisticsScoresPlayerId === right.statisticsScoresPlayerId
     && left.statisticsScoresAwayTeamId === right.statisticsScoresAwayTeamId
     && left.statisticsScoresHomeTeamId === right.statisticsScoresHomeTeamId
     && left.statisticsScheduleMode === right.statisticsScheduleMode
@@ -909,6 +934,7 @@ export function isSameAppRoute(a, b) {
     && left.matchupWeek === right.matchupWeek
     && left.matchupPlayerId === right.matchupPlayerId
     && left.matchupRosterId === right.matchupRosterId
+    && left.injuriesPlayerId === right.injuriesPlayerId
     && left.scheduleMode === right.scheduleMode
     && left.scheduleWeek === right.scheduleWeek
     && left.scheduleRosterId === right.scheduleRosterId

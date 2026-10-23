@@ -7,13 +7,13 @@ import { copyText } from '../../../utils/pageShare';
 import { DEFAULT_TRADE_EXPIRY, getTradeProposalExpiryLabel, TRADE_EXPIRY_OPTIONS } from '../../../utils/tradeProposal';
 import TradeShareCard from './TradeShareCard';
 
-function ScreenshotView({ snapshot, shareUrl, qrImage, expiresAt, senderTimeZone, expiryPreset, status, sleeperOutcome, viewerUserId, valueResolver, onOpenPlayer, onClose }) {
+function ScreenshotView({ snapshot, shareUrl, qrImage, expiresAt, senderTimeZone, expiryPreset, status, sleeperOutcome, viewerUserId, onOpenPlayer, onClose }) {
   useBodyScrollLock();
   useSheetHistory(true, onClose);
   return (
     <div className="trade-share-screenshot" role="dialog" aria-modal="true" aria-label="Trade proposal screenshot view">
       <div className="trade-share-screenshot__stage">
-        <TradeShareCard snapshot={snapshot} shareUrl={shareUrl} qrImage={qrImage} expiresAt={expiresAt} senderTimeZone={senderTimeZone} expiryPreset={expiryPreset} status={status} sleeperOutcome={sleeperOutcome} viewerIsCurrentAuthor viewerUserId={viewerUserId} valueResolver={valueResolver} onOpenPlayer={onOpenPlayer} />
+        <TradeShareCard snapshot={snapshot} shareUrl={shareUrl} qrImage={qrImage} expiresAt={expiresAt} senderTimeZone={senderTimeZone} expiryPreset={expiryPreset} status={status} sleeperOutcome={sleeperOutcome} viewerIsCurrentAuthor viewerUserId={viewerUserId} onOpenPlayer={onOpenPlayer} />
       </div>
       <div className="trade-share-screenshot__controls">
         <div><strong>Trade image ready</strong><span>Use your device screenshot controls to export this card.</span></div>
@@ -23,7 +23,7 @@ function ScreenshotView({ snapshot, shareUrl, qrImage, expiresAt, senderTimeZone
   );
 }
 
-export default function TradeShareSheet({ snapshot, mode = 'send', onSubmit, onClose, submitting = false, result = null, error = '', viewerUserId = null, valueResolver = null, onOpenPlayer = null, onOpenProposals = null }) {
+export default function TradeShareSheet({ snapshot, mode = 'send', onSubmit, onClose, submitting = false, result = null, error = '', viewerUserId = null, onOpenPlayer = null, onOpenProposals = null }) {
   const [expiryPreset, setExpiryPreset] = useState(DEFAULT_TRADE_EXPIRY);
   const [qrImage, setQrImage] = useState('');
   const [copyState, setCopyState] = useState('Share link');
@@ -59,7 +59,7 @@ export default function TradeShareSheet({ snapshot, mode = 'send', onSubmit, onC
   }, [shareUrl]);
 
   if (screenshotOpen && shareUrl) {
-    return <ScreenshotView snapshot={result?.proposal?.revision?.snapshot ?? snapshot} shareUrl={shareUrl} qrImage={qrImage} expiresAt={result?.expiresAt ?? result?.proposal?.expiresAt} senderTimeZone={result?.proposal?.revision?.senderTimeZone} expiryPreset={expiryPreset} status={result?.proposal?.status ?? 'pending'} sleeperOutcome={result?.proposal?.sleeperOutcome} viewerUserId={viewerUserId} valueResolver={valueResolver} onOpenPlayer={onOpenPlayer} onClose={() => setScreenshotOpen(false)} />;
+    return <ScreenshotView snapshot={result?.proposal?.revision?.snapshot ?? snapshot} shareUrl={shareUrl} qrImage={qrImage} expiresAt={result?.expiresAt ?? result?.proposal?.expiresAt} senderTimeZone={result?.proposal?.revision?.senderTimeZone} expiryPreset={expiryPreset} status={result?.proposal?.status ?? 'pending'} sleeperOutcome={result?.proposal?.sleeperOutcome} viewerUserId={viewerUserId} onOpenPlayer={onOpenPlayer} onClose={() => setScreenshotOpen(false)} />;
   }
 
   return (
@@ -69,7 +69,7 @@ export default function TradeShareSheet({ snapshot, mode = 'send', onSubmit, onC
         <button type="button" onClick={onClose} aria-label="Close trade sharing">×</button>
       </header>
       <div className="trade-share-modal__body">
-        <div className="trade-share-modal__preview"><TradeShareCard snapshot={result?.proposal?.revision?.snapshot ?? snapshot} shareUrl={shareUrl} qrImage={qrImage} expiresAt={result?.expiresAt ?? result?.proposal?.expiresAt} senderTimeZone={result?.proposal?.revision?.senderTimeZone} expiryPreset={expiryPreset} status={result?.proposal?.status ?? 'pending'} sleeperOutcome={result?.proposal?.sleeperOutcome} viewerIsCurrentAuthor viewerUserId={viewerUserId} valueResolver={valueResolver} onOpenPlayer={onOpenPlayer} /></div>
+        <div className="trade-share-modal__preview"><TradeShareCard snapshot={result?.proposal?.revision?.snapshot ?? snapshot} shareUrl={shareUrl} qrImage={qrImage} expiresAt={result?.expiresAt ?? result?.proposal?.expiresAt} senderTimeZone={result?.proposal?.revision?.senderTimeZone} expiryPreset={expiryPreset} status={result?.proposal?.status ?? 'pending'} sleeperOutcome={result?.proposal?.sleeperOutcome} viewerIsCurrentAuthor viewerUserId={viewerUserId} onOpenPlayer={onOpenPlayer} /></div>
         <div className="trade-share-modal__controls">
           {!result && <>
             <label htmlFor="trade-proposal-expiry">Expires</label>

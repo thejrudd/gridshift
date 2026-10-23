@@ -27,6 +27,7 @@ import { isWaiverEligiblePlayerRecord } from '../../utils/playerEligibility.js';
 import { getFantasyRankingsDataMode } from '../../utils/seasonAvailability.js';
 import { getFantasyAdp } from '../../api/fantasyAdpApi.js';
 import { getFantasyAdpPlayersForLeague, getFantasyAdpSnapshotUpdatedAt } from '../../utils/fantasyAdp.js';
+import { getRankingsProjectionEligibility } from '../../utils/rankingsProjectionEligibility.js';
 import PlayerStatusBadge, { PlayerStatusLogoCluster } from './PlayerStatusBadge.jsx';
 import {
   CompanionFantasyTeamMenu,
@@ -766,8 +767,15 @@ export default function CompanionRankings({
           const scheduleContext = getProjectionScheduleContext(p, projectionWeek, scheduleMap);
           projectedOpponent = scheduleContext.opponent;
           projectedHome = scheduleContext.isHome;
+          const projectionEligibility = getRankingsProjectionEligibility({
+            player: p,
+            position: sortPosition,
+            week: projectionWeek,
+            scheduleMap,
+          });
           if (
-            projectionInputs?.defenseTable
+            projectionEligibility.eligible
+            && projectionInputs?.defenseTable
             && PROJECTION_POSITIONS.has(sortPosition)
             && weekly.length >= 2
           ) {
@@ -791,7 +799,9 @@ export default function CompanionRankings({
               skipOpponentLookup: true,
               minimumGames: 1,
             });
-            projected = projection?.projected ?? null;
+            projected = projection?.projected == null
+              ? null
+              : Math.round(projection.projected * projectionEligibility.availabilityFactor * 10) / 10;
           }
         }
 

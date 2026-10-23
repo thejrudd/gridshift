@@ -150,10 +150,10 @@ describe('schedule and final matchup evidence', () => {
     ];
 
     assert.equal(getOfficialMatchupRowPoints(rows[0]), 96.4);
+    assert.ok(Math.abs(getMatchupCustomPoints(rows[0]) + 4.8) < 1e-9);
     assert.equal(getOfficialMatchupRowPoints({ points: 101.2 }), 101.2);
-    assert.equal(getOfficialMatchupRowPoints({ points: 101.2, custom_points: 0 }), 0);
-    assert.ok(Math.abs(getMatchupCustomPoints({ points: 101.2, custom_points: 96.4 }) + 4.8) < 1e-9);
     assert.equal(getMatchupCustomPoints({ points: 101.2 }), 0);
+    assert.equal(getOfficialMatchupRowPoints({ points: 101.2, custom_points: 0 }), 0);
     assert.equal(getMatchupCustomPoints({ points: 101.2, custom_points: 0 }), -101.2);
     assert.equal(hasReconciledMatchup(rows, 4), true);
     assert.equal(hasReconciledMatchup([
