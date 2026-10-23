@@ -267,7 +267,7 @@ export function buildPlayerGame(detail, subject) {
       s: play.description || text,
       raw: text,
       r: role,
-      fs: match ? buildPlayStatDelta(play, match.role, match.detail, match.attributionRoles) : {},
+      fs: match ? buildPlayStatDelta(play, match.role, match.detail, match.attributionRoles, { conversion: match.conversion, fumble: match.fumble }) : {},
       sg: /Shotgun/.test(text) ? 1 : 0,
       nh: /No Huddle/i.test(text) ? 1 : 0,
     };

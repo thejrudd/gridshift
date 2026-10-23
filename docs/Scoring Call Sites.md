@@ -38,6 +38,44 @@ scoring engine when adding or changing a stat key:
   the player's position). Without this a solo/assisted IDP league priced every
   tackle at 0 and the play never reached the feed. The estimate is display
   only; Sleeper's line settles the exact total through reconciliation.
+- IDP credits follow the gamebook's own markers: the parenthetical after an
+  incomplete pass names a pass defender (`idp_pd`), square brackets name a
+  quarterback hit (`idp_qbhit`), and "(A, B)" is a shared stop like "(A; B)".
+  A sack is also a tackle and a quarterback hit (`idp_tkl`, `idp_qbhit`); a
+  lone sacker, or a lone tackler stopping the carrier behind the line, also
+  gets `idp_tkl_loss`. "Sack split by A and B" is `idp_sack: 0.5` each, with
+  no tackle for loss — the way Sleeper's lines carry them.
+- Penalty yards never count toward a player. On a play with an accepted
+  penalty, rushing and receiving yards come from the narrative's
+  `creditedYards` (short_text, the official credit), because the provider's
+  `stat_yardage` nets the penalty in. A flag after the play (face mask,
+  roughing, taunting) leaves the player the whole gain; an offensive foul
+  during the play behind where it ended (holding, an illegal block) credits
+  yards only to the spot of the foul ("ran for 8, holding enforced behind the
+  run" credits 2; the provider reads -18). Checked against Sleeper's totals for
+  every affected player in a week. The same credited yards decide a first down
+  (`isFirstDownPlay()`: an automatic first down from a defensive flag is not
+  the player's) and a fourth-down conversion (`isTurnoverOnDowns()`, shared
+  with Statistics Scores' drives).
+- The scoring-play hover (`buildPlayPointsBreakdown()` in
+  `src/utils/matchupPlayBreakdown.js`) scores a play's stat delta through
+  `buildFantasyScoringBreakdown()` with the player's position, and prices a
+  generic tackle with the same `getPricedTackleKey()` as
+  `estimatePlayPoints()`, so the card and the estimate never disagree.
+- A touchdown row that carries its two-point try is scored as the touchdown;
+  the try's passer, receiver or rusher get `pass_2pt` / `rec_2pt` /
+  `rush_2pt` only when it succeeded (`credit.conversion` from the matcher).
+  A fumble is charged to the ball carrier the gamebook names (`fum`, plus
+  `fum_lost` when the other side recovered; `credit.fumble`), never inferred
+  from the word "fumble".
+- Team defenses score special teams through `buildTeamDefensePlayDelta()`'s
+  `detail`: the receiving side's `def_kr_yd` / `def_pr_yd` and the kicking
+  side's `def_st_tkl_solo` when one coverage tackler is named.
+- Single-game threshold bonuses (`bonus_rush_att_20`, `bonus_pass_yd_300`,
+  `bonus_rec_yd_100`, `bonus_tkl_10p`, `bonus_sack_2p`, `idp_pass_def_3p`, and
+  the rest of `MILESTONE_BONUSES` in `livePlaysFeed.js`) are added to the play
+  that carries the player across the line, priced through `calcPoints()` with
+  the position, and taken back by a play that drops them under it.
 - `liveReconciliation.js` treats tackles as one family (`idp_tkl`, or
   `idp_tkl_solo` + `idp_tkl_ast`): plays confirm, fallback rows are sized, and
   fallback rows retire on the tackle count, and a fallback row mirrors the

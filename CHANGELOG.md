@@ -1462,3 +1462,13 @@ All notable changes, oldest first. Add new entries at the bottom.
 
 - **Player and team pages** - Statistics player and team pages showed "season data is unavailable" once any game in the season had its play-by-play archived, and Scores game pages failed for those games. Archived plays now report that no provider requests were made, so game details build normally.
 - **Regression coverage** - Added coverage for game details served from archived plays.
+
+## v9.3.3 - Live Scoring Accuracy
+*2026-10-23*
+
+- **Scoring play breakdown** - Hovering a scoring play in Matchups (or focusing it from the keyboard) shows where its points came from: each stat scored through your league's settings, plus any adjustment that matched the play to the official total. The card follows the mouse like the starter cards.
+- **Live data stays on the server** - Finished games' player stats and finished weeks' game lists are now stored on the GridShift server alongside their play-by-play: served from disk during the 48-hour correction window, refetched once after it, then permanent. Live data is refetched from the provider at most every 5 seconds per game however many people are watching, so the provider's rate limit no longer runs out on busy Sundays. Player stats were previously re-read for every finished game on every poll.
+- **Win chance chart and scoring plays** - The chart no longer loads flat with no scoring plays: a week's game list no longer freezes for hours after Thursday's game ends, a finished week retries plays that failed to load, and the live section stays off (plain Matchups) while the server cannot supply play-by-play or has no live data configured.
+- **Play values** - Scoring plays now match the official fantasy scoring far more closely. Penalty yards no longer count toward a player (a flag after the play keeps the full gain; a foul during the play credits yards to its spot); touchdowns followed by a two-point try keep the touchdown; players with Jr./Sr./II names and starters sharing an initial and surname are matched; fumbles, passes defended, quarterback hits, split sacks and tackles for loss are credited as the stat lines show them; team defenses score special-teams return yards and coverage tackles; and game bonuses such as 20 carries or 100 yards land on the play that reaches them.
+- **Win chance on every play** - Every scoring play shows its change in your win chance, with a decimal below 1%.
+- **Regression coverage** - Added coverage for the server archive, play pricing, penalties, and the scoring play breakdown.

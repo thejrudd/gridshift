@@ -1,4 +1,5 @@
-import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { useMemo, useRef } from 'react';
+import { usePointerFollow } from './usePointerFollow.js';
 import { calcPoints } from '../../../utils/scoringEngine';
 import { getHoverCardMode } from '../../../utils/matchupReplay.js';
 
@@ -71,10 +72,6 @@ function signed(value, digits = 2) {
   return `${numeric >= 0 ? '+' : '−'}${Math.abs(numeric).toFixed(digits)}`;
 }
 
-// Gap between the pointer and the card's nearest corner.
-const POINTER_OFFSET = 16;
-const EDGE_MARGIN = 8;
-
 export default function MatchupPlayerHoverCard({
   anchor,
   point = null,
@@ -92,16 +89,6 @@ export default function MatchupPlayerHoverCard({
   sideColor,
 }) {
   const cardRef = useRef(null);
-  const pointerRef = useRef(point);
-  // The `point` prop is where the pointer opened the card; it only changes when
-  // the card opens for another row. Re-renders (live ticks, content updates)
-  // must not snap the card back to it, so it is adopted once per new value.
-  const adoptedPointRef = useRef(point);
-  // Which side of the pointer the card sits on. Chosen when the card opens and
-  // kept while it still fits, so small moves near an edge never flip it back
-  // and forth.
-  const sideRef = useRef({ x: null, y: null });
-  const frameRequestRef = useRef(0);
   const mode = getHoverCardMode(state);
   const projected = Number(player?.projection?.projected);
   const hasProjection = Number.isFinite(projected);
@@ -132,80 +119,22 @@ export default function MatchupPlayerHoverCard({
     return weekRow ? sumStats([weekRow]) : null;
   }, [mode, plays, week, weeklyRows]);
 
-  // With a mouse the card follows the pointer: below-right of it, flipped left
-  // or above near the page frame's right edge or the window's bottom. Moves
-  // write the position straight to the card, so following the pointer never
-  // re-renders the matchup. From keyboard focus it sits below (or above) the
-  // row, aligned to the row's outer edge.
-  const place = () => {
-    const card = cardRef.current;
-    const container = containerRef?.current;
-    if (!card || !container) return;
-    const frame = container.getBoundingClientRect();
-    const width = card.offsetWidth;
-    const height = card.offsetHeight;
-    let left;
-    let top;
-    const pointer = pointerRef.current;
-    if (pointer) {
-      const fitsRight = pointer.x + POINTER_OFFSET + width <= frame.right - EDGE_MARGIN;
-      const fitsLeft = pointer.x - POINTER_OFFSET - width >= frame.left + EDGE_MARGIN;
-      const fitsBelow = pointer.y + POINTER_OFFSET + height <= window.innerHeight - EDGE_MARGIN;
-      const fitsAbove = pointer.y - POINTER_OFFSET - height >= EDGE_MARGIN;
-      const sides = sideRef.current;
-      if (sides.x === 'right' ? !fitsRight && fitsLeft : sides.x === 'left' ? !fitsLeft && fitsRight : true) {
-        sides.x = fitsRight || !fitsLeft ? 'right' : 'left';
-      }
-      if (sides.y === 'below' ? !fitsBelow && fitsAbove : sides.y === 'above' ? !fitsAbove && fitsBelow : true) {
-        sides.y = fitsBelow || !fitsAbove ? 'below' : 'above';
-      }
-      left = sides.x === 'right' ? pointer.x + POINTER_OFFSET : pointer.x - POINTER_OFFSET - width;
-      top = sides.y === 'below' ? pointer.y + POINTER_OFFSET : pointer.y - POINTER_OFFSET - height;
-      top = Math.max(EDGE_MARGIN, top);
-    } else if (anchor) {
+  // With a mouse the card follows the pointer (usePointerFollow); from
+  // keyboard focus it sits below (or above) the row, aligned to the row's
+  // outer edge.
+  usePointerFollow({
+    cardRef,
+    point,
+    getFrame: () => containerRef?.current?.getBoundingClientRect() ?? null,
+    placeWithoutPointer: ({ width, height }) => {
+      if (!anchor) return null;
       const row = anchor.getBoundingClientRect();
-      left = side === 'opp' ? row.right - width : row.left;
-      top = row.bottom + 6 + height <= window.innerHeight ? row.bottom + 6 : row.top - 6 - height;
-    } else {
-      return;
-    }
-    left = Math.max(EDGE_MARGIN, Math.min(frame.width - width - EDGE_MARGIN, left - frame.left));
-    card.style.left = `${left}px`;
-    card.style.top = `${top - frame.top}px`;
-    card.style.visibility = 'visible';
-  };
-
-  // Re-place when the card opens for another row or its content changes size.
-  useLayoutEffect(() => {
-    if (point && point !== adoptedPointRef.current) {
-      adoptedPointRef.current = point;
-      pointerRef.current = point;
-      sideRef.current = { x: null, y: null };
-    }
-    place();
+      return {
+        left: side === 'opp' ? row.right - width : row.left,
+        top: row.bottom + 6 + height <= window.innerHeight ? row.bottom + 6 : row.top - 6 - height,
+      };
+    },
   });
-
-  useEffect(() => {
-    if (!point) return undefined;
-    const onMove = (event) => {
-      if (event.pointerType && event.pointerType !== 'mouse') return;
-      pointerRef.current = { x: event.clientX, y: event.clientY };
-      // One placement per frame, however fast pointer events arrive.
-      if (frameRequestRef.current) return;
-      frameRequestRef.current = window.requestAnimationFrame(() => {
-        frameRequestRef.current = 0;
-        place();
-      });
-    };
-    window.addEventListener('pointermove', onMove, { passive: true });
-    return () => {
-      window.removeEventListener('pointermove', onMove);
-      window.cancelAnimationFrame(frameRequestRef.current);
-      frameRequestRef.current = 0;
-    };
-    // `place` reads refs and props at call time; resubscribing per render is unnecessary.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [Boolean(point)]);
 
   const target = mode === 'live' && hasProjection ? projected * Math.max(0, Math.min(1, gameProgress)) : projected;
   const difference = hasProjection && mode !== 'season' ? points - target : null;

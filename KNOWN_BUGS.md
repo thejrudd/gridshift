@@ -15,6 +15,9 @@ Open bugs are listed first, deferred work next, fixed bugs below. Add new entrie
 
 | Bug | Fixed In |
 |-----|----------|
+| Matchups' win chance chart sometimes loaded flat with no scoring plays: player stats were re-fetched from the live data provider on every poll, exhausting its rate limit, and a week's game list froze for hours once Thursday's game ended. | v9.3.3 |
+| Matchups scoring plays priced some plays wrongly: penalty yards counted toward the player (a 2-yard run showed −1.38), touchdowns with a two-point try lost the touchdown, Jr./Sr. players and starters sharing an initial and surname went unmatched, and team defense special-teams scoring was missing. | v9.3.3 |
+| Matchups scoring plays only showed a win chance change when it was 1% or more. | v9.3.3 |
 | Statistics player and team pages showed "season data is unavailable", and Scores game pages failed, once a game's play-by-play was served from the on-disk archive. | v9.3.2 |
 | Matchups' win chance chart stayed blank at kickoff and the live win chance barely moved during a game whose live feed reported the quarter and clock only in its status text. | v9.3.1 |
 | Matchups' win chance chart loaded slowly because the live layer rebuilt the league defense table on load and on every live stat refresh. | v9.3.1 |

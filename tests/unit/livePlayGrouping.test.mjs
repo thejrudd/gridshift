@@ -219,7 +219,13 @@ test('explicit official defensive clauses survive an unknown compact provider sh
     [
     { playerId: 'bishop', stats: { idp_tkl: 1 }, pts: 1.5 },
     { playerId: 'campbell', stats: { idp_tkl: 1 }, pts: 1.5 },
-    { playerId: 'rousseau', stats: { idp_sack: 1, idp_sack_yd: 7 }, pts: 4.7 },
+    // A lone sack is also a tackle, a quarterback hit and a tackle for loss,
+    // the way Sleeper's stat lines carry it.
+    {
+      playerId: 'rousseau',
+      stats: { idp_sack: 1, idp_sack_yd: 7, idp_tkl: 1, idp_qbhit: 1, idp_tkl_loss: 1 },
+      pts: 6.2,
+    },
     ],
   );
 });

@@ -1,8 +1,15 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { filterScoringPlays } from '../../../utils/matchupReplay.js';
+import { buildPlayPointsBreakdown } from '../../../utils/matchupPlayBreakdown.js';
+import MatchupPlayPointsCard from './MatchupPlayPointsCard.jsx';
 
 // The Matchups scoring plays list: newest first, up to the replay moment.
 // Clicking a play rewinds the page to it. Rules: docs/Fantasy Live.md.
+
+// Hover card timing, matching the starter-row cards: 120ms to open, instant
+// between rows.
+const POINTS_CARD_OPEN_MS = 120;
+const POINTS_CARD_ID = 'matchup-play-points';
 
 const SIDE_OPTIONS = [
   { id: 'all', label: 'Both' },
@@ -13,6 +20,15 @@ const SIDE_OPTIONS = [
 function signed(value, digits = 2) {
   const numeric = Number(value) || 0;
   return `${numeric >= 0 ? '+' : '−'}${Math.abs(numeric).toFixed(digits)}`;
+}
+
+// Every play shows its change in your win chance: whole points from 1% up, a
+// tenth below that (most single plays move it by less than 1%), and 0% when
+// it did not move.
+function formatSwing(value) {
+  const magnitude = Math.abs(value);
+  if (magnitude < 0.05) return 'Win 0%';
+  return `Win ${signed(value, magnitude < 1 ? 1 : 0)}%`;
 }
 
 export default function MatchupScoringPlays({
@@ -31,9 +47,16 @@ export default function MatchupScoringPlays({
   // True only during the page's reveal window: rows stagger in with the rest
   // of Matchups, and rows that mount later (scrubbing, new plays) do not move.
   revealing = false,
+  // The league's scoring, for the per-play points breakdown.
+  scoringSettings = null,
 }) {
   const listRef = useRef(null);
   const handledScrollRef = useRef(scrollRequest);
+  // `{ id, anchor, point }`: the play, the points cell the card sits under from
+  // keyboard focus, and where the mouse opened it (the card then follows it).
+  const [pointsTarget, setPointsTarget] = useState(null);
+  const pointsOpenRef = useRef(null);
+  const pointsTimerRef = useRef(null);
   // Every play up to live stays listed while replaying, so a selected play
   // never becomes a ceiling: the ones after the replay moment are dimmed and
   // still reachable by scrolling up.
@@ -55,6 +78,41 @@ export default function MatchupScoringPlays({
     const row = list.querySelector(`[data-play-id="${CSS.escape(String(selectedPlayId))}"]`);
     row?.scrollIntoView({ block: 'center' });
   }, [scrollRequest, selectedPlayId]);
+
+  // Points breakdown card. Mouse and keyboard only, like every Matchups hover
+  // card: gated on the event's pointer type (not a hover media query), never
+  // opened by touch, pen or a tap's focus, and closed by a click or a scroll.
+  const showPoints = (playId, row, point = null) => {
+    globalThis.clearTimeout(pointsTimerRef.current);
+    if (pointsOpenRef.current === playId) return;
+    const target = { id: playId, anchor: row.querySelector('.matchup-play__points') ?? row, point };
+    if (pointsOpenRef.current) {
+      pointsOpenRef.current = playId;
+      setPointsTarget(target);
+      return;
+    }
+    pointsTimerRef.current = globalThis.setTimeout(() => {
+      pointsOpenRef.current = playId;
+      setPointsTarget(target);
+    }, POINTS_CARD_OPEN_MS);
+  };
+  const hidePoints = () => {
+    globalThis.clearTimeout(pointsTimerRef.current);
+    pointsOpenRef.current = null;
+    setPointsTarget(null);
+  };
+  useEffect(() => () => globalThis.clearTimeout(pointsTimerRef.current), []);
+  useEffect(() => {
+    if (!pointsTarget) return undefined;
+    const close = () => {
+      pointsOpenRef.current = null;
+      setPointsTarget(null);
+    };
+    globalThis.addEventListener('scroll', close, { capture: true, passive: true });
+    return () => globalThis.removeEventListener('scroll', close, { capture: true });
+  }, [pointsTarget]);
+  // A filter change can take the hovered play out of the list.
+  const pointsEvent = pointsTarget ? shown.find((event) => event.id === pointsTarget.id) ?? null : null;
 
   return (
     <section className="matchup-live-section" id="matchup-scoring-plays" data-panel="plays" aria-labelledby="matchup-scoring-plays-title">
@@ -97,7 +155,17 @@ export default function MatchupScoringPlays({
                 data-play-id={event.id}
                 aria-pressed={selected}
                 aria-label={`${event.playerName}, ${event.description ?? ''}, ${signed(event.pts)} points${after ? ', after this moment' : ''}. Replay from this play.`}
-                onClick={() => onSelectPlay(event.id, 'list')}
+                aria-describedby={pointsEvent?.id === event.id ? POINTS_CARD_ID : undefined}
+                onClick={() => {
+                  hidePoints();
+                  onSelectPlay(event.id, 'list');
+                }}
+                onPointerEnter={(pointer) => {
+                  if (pointer.pointerType === 'mouse') showPoints(event.id, pointer.currentTarget, { x: pointer.clientX, y: pointer.clientY });
+                }}
+                onPointerLeave={(pointer) => { if (pointer.pointerType === 'mouse') hidePoints(); }}
+                onFocus={(focus) => { if (focus.currentTarget.matches?.(':focus-visible')) showPoints(event.id, focus.currentTarget); }}
+                onBlur={hidePoints}
               >
                 <span className="matchup-play__main">
                   <span className="matchup-play__who">
@@ -110,8 +178,8 @@ export default function MatchupScoringPlays({
                 </span>
                 <span className="matchup-play__points">
                   {signed(event.pts)}
-                  {Number.isFinite(Number(event.swingMine)) && Math.abs(Number(event.swingMine)) >= 1 && (
-                    <small>{`Win ${signed(event.swingMine, 0)}%`}</small>
+                  {Number.isFinite(Number(event.swingMine)) && (
+                    <small>{formatSwing(Number(event.swingMine))}</small>
                   )}
                 </span>
               </button>
@@ -119,6 +187,15 @@ export default function MatchupScoringPlays({
           );
         })}
       </ul>
+      {pointsEvent && (
+        <MatchupPlayPointsCard
+          id={POINTS_CARD_ID}
+          breakdown={buildPlayPointsBreakdown(pointsEvent, scoringSettings)}
+          anchor={pointsTarget.anchor}
+          point={pointsTarget.point}
+          accent={sideColors[pointsEvent.side]}
+        />
+      )}
     </section>
   );
 }
