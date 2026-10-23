@@ -11,6 +11,8 @@ import {
   getStatisticsScoresConfigStatus,
   validateStatisticsScoresLiveWeekQuery,
 } from '../../server/statisticsScoresHandlers.js';
+import { createLiveGameSnapshotStore } from '../../server/liveGameSnapshots.js';
+import { createLivePlaysArchive } from '../../server/livePlaysArchive.js';
 
 const TEST_BDL_ENV = Object.freeze({
   GRIDSHIFT_BDL_API_KEY: 'server-key',
@@ -677,4 +679,29 @@ test('selected-week live Scores falls back to ESPN after a BALLDONTLIE outage', 
   assert.equal(result.provider, 'espn');
   assert.equal(result.fallbackReason, 'balldontlie-unavailable');
   assert.deepEqual(requests, ['api.balldontlie.io', 'site.api.espn.com']);
+});
+
+test('Statistics Scores detail serves archived plays without breaking request accounting', async () => {
+  const archive = createLivePlaysArchive({ databasePath: ':memory:', config: { maxBytes: 1024 * 1024 } });
+  archive.put('887769:2', { data: [{ id: 'p1', period: 1, clock_display: '10:00', text: 'Archived snap.' }] }, {
+    gameEndedAt: Date.parse('2026-10-01T00:00:00.000Z'),
+    verified: true,
+  });
+  const fetcher = async (url) => {
+    const requestUrl = new URL(url);
+    if (requestUrl.pathname === '/nfl/v1/games/887769') {
+      return { ok: true, status: 200, json: async () => ({ data: { id: 887769, status: 'Final' } }) };
+    }
+    return { ok: true, status: 200, json: async () => ({ data: [], meta: { next_cursor: null } }) };
+  };
+  const env = { ...TEST_BDL_ENV };
+  const { createBalldontlieGateway } = await import('../../server/balldontlieGateway.js');
+  const gateway = createBalldontlieGateway({ env, fetcher });
+  const snapshotStore = createLiveGameSnapshotStore({ gateway, archive });
+
+  const result = await fetchStatisticsScoresGameDetail({ gameId: 887769, phase: 'regular', gateway, snapshotStore });
+
+  assert.equal(result.plays.length, 1);
+  assert.equal(Number.isFinite(result.accounting.pageCount), true);
+  assert.equal(Number.isFinite(result.accounting.upstreamRequests), true);
 });

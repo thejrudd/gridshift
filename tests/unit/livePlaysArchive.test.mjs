@@ -55,6 +55,7 @@ test('a game final for over 48 hours is fetched once and then served from the ar
   const second = await store.getPlays({ gameId: 7 });
   assert.equal(second.plays.length, 4);
   assert.equal(second.cache.archived, true);
+  assert.deepEqual(second.accounting, { pageCount: 0, upstreamRequests: 0 });
   assert.deepEqual(gateway.calls, { status: 1, plays: 1 }, 'a verified row asks the provider nothing');
 });
 
