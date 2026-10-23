@@ -134,9 +134,9 @@ Draft Sync is an optional capability of the existing API sidecar, not a required
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) + optional Node API sidecar |
 
-## What's New in v9.3.1
+## What's New in v9.3.2
 
-- **Live win chance** — The Matchups win chance chart keeps moving through a live game and draws sooner when the page loads.
+- **Player and team pages** — Statistics player and team pages, and Scores game pages, load again for games whose play-by-play has been archived.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 

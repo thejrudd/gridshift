@@ -15,6 +15,7 @@ Open bugs are listed first, deferred work next, fixed bugs below. Add new entrie
 
 | Bug | Fixed In |
 |-----|----------|
+| Statistics player and team pages showed "season data is unavailable", and Scores game pages failed, once a game's play-by-play was served from the on-disk archive. | v9.3.2 |
 | Matchups' win chance chart stayed blank at kickoff and the live win chance barely moved during a game whose live feed reported the quarter and clock only in its status text. | v9.3.1 |
 | Matchups' win chance chart loaded slowly because the live layer rebuilt the league defense table on load and on every live stat refresh. | v9.3.1 |
 | Trade values dropped players with a realistic role or recent production to 0 when current and prior samples were sparse, such as after a single game. | v9.3.0 |
