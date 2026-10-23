@@ -248,7 +248,9 @@ test('a live game shows estimated play contributions with their disclosure', () 
 });
 
 test('a live hero compares its score with expected pace instead of the full-game projection', () => {
-  const kickoff = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  // 90 minutes into the 4-hour fallback window: 14.2 * 0.375 = 5.325, clear of
+  // a rounding boundary so clock drift between test and render cannot flip it.
+  const kickoff = new Date(Date.now() - 90 * 60 * 1000).toISOString();
   const html = render({
     kickoff,
     points: 6.46,
@@ -258,7 +260,7 @@ test('a live hero compares its score with expected pace instead of the full-game
   assert.match(html, /data-game-phase="live"/);
   assert.match(html, /pmd-big pmd-num pmd-up/);
   assert.doesNotMatch(html, /pmd-big pmd-num pmd-down/);
-  assert.match(html, /vs 3\.5 expected pace/);
+  assert.match(html, /vs 5\.3 expected pace/);
   assert.doesNotMatch(html, /vs 14\.2 full-game projection/);
 });
 
