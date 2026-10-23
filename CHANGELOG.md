@@ -1456,3 +1456,9 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Live win chance progress** - The Matchups win chance chart, replay bar, and live win chance now follow a game's clock when the live feed reports the quarter and time only in its status (such as "11:27 - 3rd"). Previously every such game counted as just kicked off, so the chart stayed blank at kickoff and the win chance barely moved.
 - **Faster live chart load** - The live layer reuses the defense table and league averages Matchups already built instead of rebuilding them on load and on every live stat refresh.
 - **Regression coverage and documentation** - Added coverage for clock-only game statuses, made the kickoff phase-strip and live expected-pace tests independent of timezone and rounding, and updated the Fantasy Live reference.
+
+## v9.3.2 - Archived Play-by-Play Fix
+*2026-10-22*
+
+- **Player and team pages** - Statistics player and team pages showed "season data is unavailable" once any game in the season had its play-by-play archived, and Scores game pages failed for those games. Archived plays now report that no provider requests were made, so game details build normally.
+- **Regression coverage** - Added coverage for game details served from archived plays.

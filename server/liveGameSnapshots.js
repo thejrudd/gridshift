@@ -96,6 +96,9 @@ export function createLiveGameSnapshotStore({
         refreshAfterMs: 0,
         nextRefreshAt: null,
       },
+      // Served from disk: no provider page was read. Callers sum this across
+      // a game's requests, so it must never be missing.
+      accounting: { pageCount: 0, upstreamRequests: 0 },
     });
   }
 
