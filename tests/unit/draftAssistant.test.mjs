@@ -762,6 +762,7 @@ test('draft player drilldown resolves null ESPN ids from team roster matches', a
     experience: 0,
     jersey: '17',
     status: 'Active',
+    injuryStatus: '',
   });
 });
 

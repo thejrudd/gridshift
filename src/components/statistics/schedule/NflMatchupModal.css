@@ -6,6 +6,20 @@
 
 .nfl-matchup-modal { --nfl-matchup-display: var(--font-display, 'Barlow Condensed', sans-serif); }
 
+/* Both sides carry their team's identity, including the non-leading value. */
+.nfl-matchup-modal .matchup-preview-cmp__value.is-a {
+  --matchup-preview-fill: var(--matchup-preview-left-accent, var(--color-accent));
+}
+.nfl-matchup-modal .matchup-preview-cmp__value.is-b {
+  --matchup-preview-fill: var(--matchup-preview-right-accent, var(--color-signature));
+}
+.dark .nfl-matchup-modal .matchup-preview-cmp__value.is-a {
+  --matchup-preview-fill: color-mix(in srgb, var(--matchup-preview-left-accent, var(--color-accent)) 58%, var(--color-label));
+}
+.dark .nfl-matchup-modal .matchup-preview-cmp__value.is-b {
+  --matchup-preview-fill: color-mix(in srgb, var(--matchup-preview-right-accent, var(--color-signature)) 58%, var(--color-label));
+}
+
 /* ── title card ─────────────────────────────────────────────────────────── */
 
 .nfl-matchup-side { color: #FFFFFF; gap: 0; }

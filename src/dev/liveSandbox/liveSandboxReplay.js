@@ -13,10 +13,7 @@ import {
   mapBdlStatsToGridShift,
 } from '../../utils/liveScoringFeed.js';
 import { calcPoints } from '../../utils/scoringEngine.js';
-import {
-  buildDemoTimeline,
-  mapGameProgressToDemoTimeline,
-} from '../../utils/liveDemoTimeline.js';
+import { buildSlateAxis } from '../../utils/matchupSlateAxis.js';
 export { splitDeltaIntoPlays } from '../../utils/livePlaySplitting.js';
 
 // A regulation game occupies roughly this much wall-clock time.
@@ -256,16 +253,14 @@ export function getReplayProgressAtInstant(games, instantMs) {
 // Converts a position inside one game onto the chart's shared slate axis.
 //
 // Replay slicing still uses merged active intervals so its clock lands on live
-// football. The chart cannot use that clock: concurrent Sunday games would all
-// receive the same x range and collapse into a vertical wall. Give every
-// scheduled game one consecutive segment in kickoff order instead, preserving
-// game-day order while making busy days proportionally navigable.
+// football. The chart uses the Matchups kickoff-window axis instead
+// (matchupSlateAxis.js): games that kick off together share a window, sized by
+// how many games it holds.
 export function getSlateProgressForGameProgress(games, gameId, gameProgress) {
   const game = (games ?? []).find((entry) => String(entry.id) === String(gameId));
   const kickoff = getGameKickoffMs(game);
   if (kickoff == null || !Number.isFinite(Number(gameProgress))) return null;
-  const gameWindow = buildDemoTimeline(games).gameWindows.get(String(game.id));
-  return mapGameProgressToDemoTimeline(gameProgress, gameWindow);
+  return buildSlateAxis(games).gamePosition(game.id, gameProgress);
 }
 
 // The replay clock remains an active-football clock for slicing concurrent
@@ -277,14 +272,13 @@ export function getReplayChartProgress(games = [], progress = 0) {
   const fallback = clamp01(progress);
   const instant = getReplayInstant(games, fallback);
   if (instant == null) return fallback;
-  const timeline = buildDemoTimeline(games);
+  const axis = buildSlateAxis(games);
   let latest = 0;
   let mapped = false;
   (games ?? []).forEach((game) => {
     const gameProgress = getGameProgress(game, instant);
     if (!(gameProgress > 0)) return;
-    const window = timeline.gameWindows.get(String(game.id));
-    const slate = mapGameProgressToDemoTimeline(gameProgress, window);
+    const slate = axis.gamePosition(game.id, gameProgress);
     if (!Number.isFinite(Number(slate))) return;
     mapped = true;
     latest = Math.max(latest, Number(slate));

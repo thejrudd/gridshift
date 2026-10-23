@@ -571,7 +571,7 @@ function yardModifier(yards) {
   return `${article(yards)} ${Math.abs(yards)}-yard`;
 }
 
-function buildSentence(kind, parsed, { touchdown, tacklerNames, penalty }) {
+function buildSentence(kind, parsed, { touchdown, tacklerNames, penalty, kneel = false }) {
   const [first, second] = parsed.actors;
   const gain = parsed.yards;
   const tackle = tacklerNames.length
@@ -591,7 +591,10 @@ function buildSentence(kind, parsed, { touchdown, tacklerNames, penalty }) {
         : `${first.name} threw it away incomplete.`;
     case 'rush':
       if (touchdown) return `${first.name} ran it in from ${yardPhrase(gain)} out.`;
-      if (gain < 0) return `${first.name} was dropped for a loss of ${yardPhrase(gain)}${tackle}.`;
+      // A kneel-down is scored as a run, but it is a deliberate clock play.
+      if (kneel) return `${first.name} took a knee${gain < 0 ? ` for a loss of ${yardPhrase(gain)}` : ''}.`;
+      // "Stopped", not "dropped": a lost-yardage run must not read as a dropped pass.
+      if (gain < 0) return `${first.name} was stopped for a loss of ${yardPhrase(gain)}${tackle}.`;
       if (gain === 0) return `${first.name} was stopped for no gain${tackle}.`;
       return `${first.name} ran for ${yardPhrase(gain)}${tackle}.`;
     case 'sack':
@@ -707,7 +710,10 @@ export function parsePlayNarrative(play) {
 
   const { kind, parsed } = matched;
   const touchdown = slug.includes('touchdown') || /TOUCHDOWN/.test(rawText);
-  const tacklerNames = kind === 'incompletion' || kind === 'sack' ? [] : parseTacklers(rawText);
+  // The compact text spells a kneel-down as an ordinary "-1 Yd Rush"; only the
+  // gamebook sentence ("J.Love kneels to GB 34 for -1 yards.") says otherwise.
+  const kneel = kind === 'rush' && !touchdown && /\bkneels?\b/i.test(rawText);
+  const tacklerNames = kind === 'incompletion' || kind === 'sack' || kneel ? [] : parseTacklers(rawText);
   const direction = parseDirection(rawText);
 
   const actors = [
@@ -721,7 +727,7 @@ export function parsePlayNarrative(play) {
     if (carrier && !carrier.detail) carrier.detail = direction;
   }
 
-  const built = buildSentence(kind, parsed, { touchdown, tacklerNames, penalty });
+  const built = buildSentence(kind, parsed, { touchdown, tacklerNames, penalty, kneel });
   if (!built) return { confident: false, actors: [], sentence: null, playKind: slug, administrative: false, penalty };
 
   // A flag that wipes the play out entirely has to be said out loud — the
@@ -735,7 +741,7 @@ export function parsePlayNarrative(play) {
     confident: true,
     administrative: false,
     playKind: touchdown && kind !== 'field-goal' ? 'touchdown' : kind,
-    label: touchdown && kind !== 'field-goal' ? 'Touchdown' : (KIND_LABELS[kind] ?? 'Play'),
+    label: touchdown && kind !== 'field-goal' ? 'Touchdown' : kneel ? 'Kneel' : (KIND_LABELS[kind] ?? 'Play'),
     sentence,
     actors,
     yards: negated ? null : (play.statYardage ?? parsed.yards ?? null),

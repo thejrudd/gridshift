@@ -156,6 +156,16 @@ export default defineConfig(({ command }) => ({
         changeOrigin: true,
         secure: false,
       },
+      '/api/statistics/players': {
+        target: 'http://127.0.0.1:3001',
+        changeOrigin: true,
+        secure: false,
+      },
+      '/api/statistics/teams': {
+        target: 'http://127.0.0.1:3001',
+        changeOrigin: true,
+        secure: false,
+      },
       '/api/fantasy': {
         target: 'http://127.0.0.1:3001',
         changeOrigin: true,

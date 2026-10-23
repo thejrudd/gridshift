@@ -1,12 +1,10 @@
 import TradeShareCard from './trade/TradeShareCard';
 import { hasTradeProposalAssets } from '../../utils/tradeProposal';
-import useTradeProposalValues from '../../hooks/useTradeProposalValues';
 import './trade/tradeInbox.css';
 
 export default function TradeShareLanding({ shareToken, sharedData, loading = false, error = '', canClaim = false, claimLoading = false, onClaim, onOpenProposals, viewerUserId = null, onOpenPlayer = null }) {
   const proposal = sharedData?.proposal;
   const snapshot = proposal?.revision?.snapshot ?? (proposal?.sender ? { season: proposal.season, sender: proposal.sender, recipient: proposal.recipient, totals: {}, verdict: {} } : null);
-  const { getAssetValue } = useTradeProposalValues();
   const viewerIsCurrentAuthor = String(proposal?.revision?.authorUserId ?? '') === String(viewerUserId ?? '');
   return (
     <div className="page-frame-readable trade-inbox trade-share-landing">
@@ -27,7 +25,6 @@ export default function TradeShareLanding({ shareToken, sharedData, loading = fa
           sleeperOutcome={proposal.sleeperOutcome}
           viewerIsCurrentAuthor={viewerIsCurrentAuthor}
           viewerUserId={viewerUserId}
-          valueResolver={canClaim ? getAssetValue : null}
           onOpenPlayer={canClaim ? onOpenPlayer : null}
         />
         : !loading && !error && <div className="trade-inbox__details-error" role="alert">Trade details are unavailable or this proposal has expired.</div>}

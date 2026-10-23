@@ -7,9 +7,9 @@
 // so CompanionTrade can auto-set the trade partner.
 
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
-import { findKtcPlayerFromSleeper, getKtcValue, fmtKtcValue, productionAdjustedValue } from '../../utils/ktcApi';
+import { fmtTradeValue, getTradeCurrentContextLabels } from '../../utils/tradeValueScale';
 import { resolveTradePlayerValueDetail } from '../../utils/tradeValue';
-import { computePositionalRanks, computePositionalAvgPPG, computePositionalValuePerPPG } from '../../utils/projectionEngine';
+import { computePositionalRanks } from '../../utils/projectionEngine';
 import { matchesFilter, matchesJerseyNumber, parseSearchQuery } from '../../utils/parseSearchQuery';
 import { getTeamColorKey } from '../../data/teamColors';
 import { getTeamVisualTheme } from '../../utils/teamVisualTheme';
@@ -160,6 +160,7 @@ function toPickerTradeValueMeta(detail, fallbackRankInfo = null) {
     pts: detail?.pts ?? null,
     avgPPG: detail?.avgPPG != null ? Math.round(detail.avgPPG * 10) / 10 : null,
     rankInfo: detail?.rankInfo ?? fallbackRankInfo,
+    currentContext: detail?.currentContext ?? null,
   };
 }
 
@@ -206,12 +207,13 @@ export default function TradeRosterPicker({
   getUserDisplayName,    // needed for all-rosters mode owner labels
   myRosterId,            // to label/include own roster in all-rosters mode
   includeOwnRoster,      // when true (all-rosters mode), include own roster in results
-  currentTotal,          // current KTC total for this side of the trade
+  currentTotal,          // current Trade total for this side of the trade
   activeRosterId,        // roster currently selected for this trade side
   mergedIDPMap,          // production-based fallback values for IDP / D/ST players
+  leagueUtilityValueMap,
+  ktcMarketValueMap,
+  dynastyMarketValueMap,
   sharedRankMap,
-  sharedPositionalAvgPPG,
-  sharedPositionalValuePerPPG,
   sharedPlayerTradeValueDetailsMap,
   onSelect,              // (playerId) for locked mode, ({ id, rosterId }) for all-rosters mode
   onClose,
@@ -230,21 +232,6 @@ export default function TradeRosterPicker({
   const rankMap = useMemo(
     () => sharedRankMap ?? computePositionalRanks(seasonStats, sleeperPlayers, scoringSettings),
     [sharedRankMap, seasonStats, sleeperPlayers, scoringSettings],
-  );
-
-  // Average PPG per position — used to calibrate per-player production multipliers
-  const positionalAvgPPG = useMemo(
-    () => sharedPositionalAvgPPG ?? computePositionalAvgPPG(rosters, seasonStats, sleeperPlayers, scoringSettings),
-    [sharedPositionalAvgPPG, rosters, seasonStats, sleeperPlayers, scoringSettings],
-  );
-
-  // KTC value per PPG for each position — used to estimate dynasty-fallback player values
-  const positionalValuePerPPG = useMemo(
-    () => sharedPositionalValuePerPPG ?? computePositionalValuePerPPG(
-      rosters, sleeperPlayers, ktcPlayers, leagueType,
-      seasonStats, scoringSettings, findKtcPlayerFromSleeper, getKtcValue, productionAdjustedValue,
-    ),
-    [sharedPositionalValuePerPPG, rosters, sleeperPlayers, ktcPlayers, leagueType, seasonStats, scoringSettings],
   );
 
   // Build a map: playerId → rosterId (which roster owns this player)
@@ -365,11 +352,12 @@ export default function TradeRosterPicker({
     leagueType,
     sharedPlayerTradeValueDetailsMap,
     mergedIDPMap,
+    leagueUtilityValueMap,
+    ktcMarketValueMap,
+    dynastyMarketValueMap,
     seasonStats,
     scoringSettings,
     rankMap,
-    positionalAvgPPG,
-    positionalValuePerPPG,
   ]);
 
   const getEnrichedPlayerMeta = useCallback((player) => {
@@ -385,11 +373,11 @@ export default function TradeRosterPicker({
       leagueType,
       seasonStats,
       scoringSettings,
-      positionalAvgPPG,
-      positionalValuePerPPG,
       rankMap,
       mergedIDPMap,
-      blendWeight: 0.50,
+      leagueUtilityValueMap,
+      ktcMarketValueMap,
+      dynastyMarketValueMap,
     });
     const next = toPickerTradeValueMeta(detail, rankMap[player.id] ?? null);
     enrichedPlayerCacheRef.current.set(player.id, next);
@@ -401,11 +389,12 @@ export default function TradeRosterPicker({
     leagueType,
     sharedPlayerTradeValueDetailsMap,
     mergedIDPMap,
+    leagueUtilityValueMap,
+    ktcMarketValueMap,
+    dynastyMarketValueMap,
     seasonStats,
     scoringSettings,
     rankMap,
-    positionalAvgPPG,
-    positionalValuePerPPG,
   ]);
 
   const players = useMemo(() => (
@@ -497,10 +486,11 @@ export default function TradeRosterPicker({
     const optionalMeta = [
       player.rankInfo ? `#${player.rankInfo.rank} ${player.rankInfo.posLabel}` : null,
       player.avgPPG != null ? `${player.avgPPG.toFixed(1)} avg` : null,
+      ...getTradeCurrentContextLabels(player.currentContext),
     ].filter(Boolean).slice(0, pickerFit.optionalMetaCount);
     const valuePrefix = (player.dynastyFallback || player.idpFallback) ? '~' : '';
     const estimateLabel = player.dynastyFallback ? 'DYN est.' : player.idpFallback ? 'est.' : null;
-    const additiveTotal = showsAdditiveTotal(player) && currentTotal > 0 ? `→ ${fmtKtcValue(currentTotal + player.val)}` : null;
+    const additiveTotal = showsAdditiveTotal(player) && currentTotal > 0 ? `→ ${fmtTradeValue(currentTotal + player.val)}` : null;
 
     return (
       <CompanionPlayerRow
@@ -529,10 +519,10 @@ export default function TradeRosterPicker({
         columns={[
           <CompanionPlayerMetric
             key="value"
-            value={`${valuePrefix}${fmtKtcValue(player.val)}`}
+            value={`${valuePrefix}${fmtTradeValue(player.val)}`}
             label={additiveTotal}
             kicker={estimateLabel}
-            title={player.idpFallback ? 'Estimated from season production (no KTC data)' : undefined}
+            title={player.idpFallback ? 'Estimated from available league production or normalized market context' : undefined}
           />,
         ]}
         status={player.availabilityStatus ? (
@@ -575,7 +565,7 @@ export default function TradeRosterPicker({
         }}
       />
     );
-  }, [currentTotal, darkMode, handleSelect, pickerFit.optionalMetaCount, shouldVirtualize, showsAdditiveTotal]);
+  }, [currentTotal, darkMode, handleSelect, isAllMode, pickerFit.optionalMetaCount, shouldVirtualize, showsAdditiveTotal]);
 
   return (
     <Modal

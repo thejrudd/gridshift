@@ -13,7 +13,10 @@ import { STATISTICS_MODES } from '../utils/playerDrilldown';
 import { getFantasyLeagueMaxWeek } from '../utils/fantasySeasonWeeks.js';
 import { DEFAULT_SCORING, importLeagueScoring, normalizeScoringProfile } from '../utils/scoringEngine';
 import { getEspnTeamDefensePlayerId, normalizeEspnLeaguePayload } from '../utils/espnFantasyAdapter';
-import { getTeamVisualTheme } from '../utils/teamVisualTheme.js';
+import { getLegibleTeamColor, getTeamVisualTheme } from '../utils/teamVisualTheme.js';
+import PlayerDashboard from './statistics/player/PlayerDashboard.jsx';
+import { Segmented } from './statistics/player/DashboardParts.jsx';
+import { dashboardGroup } from '../utils/playerSeason/dashboardModel.js';
 import { rosterHasSleeperPlayer } from '../utils/fantasyOwnership.js';
 import { formatPlayerMeasurements } from '../utils/playerMeasurements.js';
 import {
@@ -301,7 +304,7 @@ function summarizeFantasyRow(row = {}) {
   };
 }
 
-const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_MODES.GAME, leagueSeason = CURRENT_SEASON, onModeChange, onBack, backLabel, onCompare, onBuildTrade, tradeDisabled = false, tradeDisabledTitle = 'Trade is not available for the connected platform.', onViewSchedule, onOpenFantasyTeam }) => {
+const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_MODES.GAME, leagueSeason = CURRENT_SEASON, onModeChange, onBack, backLabel, onCompare, onBuildTrade, tradeDisabled = false, tradeDisabledTitle = 'Trade is not available for the connected platform.', onViewSchedule, onViewGameStats, onOpenPlayerBySleeperId, onOpenFantasyTeam }) => {
   const { getTeamRecord } = usePredictions();
   const {
     hasLeague,
@@ -358,6 +361,9 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_
 
   // Per-season honor badges: { '2024': ['NFL MVP', 'Pro Bowl', '1st Team All-Pro'], ... }
   const [honorsByYear, setHonorsByYear] = useState({});
+
+  // Season shown in the play-by-play dashboard tabs; null follows the newest available season.
+  const [dashboardSeasonOverride, setDashboardSeason] = useState(null);
 
   const { darkMode } = useTheme();
   const team = teams?.find(t => t.id === teamId);
@@ -899,6 +905,19 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_
   const activeMode = mode === STATISTICS_MODES.VISUAL
     ? (canUseVisualForActiveYear ? STATISTICS_MODES.VISUAL : STATISTICS_MODES.GAME)
     : (canUseFantasyForActiveYear ? mode : STATISTICS_MODES.GAME);
+  // Play-by-play dashboard: the selected season and the league scoring that
+  // prices each play. Provider play-by-play starts with the 2022 season.
+  const dashboardSeasonOptions = visibleYears.filter((year) => year >= 2022 && year <= CURRENT_SEASON).slice(0, 3);
+  const dashboardSeason = dashboardSeasonOverride ?? dashboardSeasonOptions[0] ?? defaultStatsSeason;
+  const dashboardScoring = fantasyScoringByYear[String(dashboardSeason)] ?? null;
+  const dashboardTeamColor = getLegibleTeamColor(teamTheme?.primary, darkMode);
+  const dashboardFantasy = dashboardScoring && dashboardGroup(playerMeta.position)
+    ? {
+        scoring: dashboardScoring,
+        position: dashboardGroup(playerMeta.position),
+        leagueName: fantasyLeagueByYear[String(dashboardSeason)]?.name || 'your league',
+      }
+    : null;
   const heroMetaSegments = [
     playerMeta.positionName || playerMeta.position,
     team?.name,
@@ -994,7 +1013,6 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_
                   {playerMeta.status}
                 </span>
               )}
-
               {/* Who holds this player in the connected league, and the two
                   places that leads. Naming the team is the point: the trade
                   buttons below open a deal against a manager this page
@@ -1030,6 +1048,11 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_
                     {isOnMyRoster ? 'On Your Roster' : 'Free Agent'}
                   </span>
                 )
+              )}
+              {playerMeta.injuryStatus && playerMeta.injuryStatus !== 'Active' && playerMeta.injuryStatus !== playerMeta.status && (
+                <span className={`statistics-player-hero__pill is-${getStatusTone(playerMeta.injuryStatus)}`}>
+                  {playerMeta.injuryStatus}
+                </span>
               )}
             </div>
 
@@ -1152,154 +1175,148 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_
         </div>
       </div>
 
-      <div
-        className="flex flex-col items-stretch justify-between gap-3 rounded-xl px-3 py-3 sm:flex-row sm:items-center"
-        style={{
-          background: 'var(--color-bg-secondary)',
-          border: '1px solid var(--color-separator)',
-          opacity: hasLeague ? 1 : 0.72,
-        }}
-      >
-          <div className="min-w-0 sm:flex-1">
-            <div className="text-[length:var(--type-label)] font-bold uppercase tracking-[0.18em]" style={{ color: 'var(--color-label-tertiary)' }}>
-              {activeMode === STATISTICS_MODES.VISUAL ? 'Weekly Visual' : 'Stat Mode'}
+      <PlayerDashboard
+        playerMeta={playerMeta}
+        sleeperId={sleeperId}
+        teamAbbr={teamDefenseTeamId}
+        season={dashboardSeason}
+        seasonOptions={dashboardSeasonOptions}
+        onSeasonChange={setDashboardSeason}
+        darkMode={darkMode}
+        meColor={dashboardTeamColor?.color ?? null}
+        meForeground={dashboardTeamColor?.foreground ?? null}
+        fantasy={dashboardFantasy}
+        onViewGameStats={onViewGameStats}
+        onOpenPlayerBySleeperId={onOpenPlayerBySleeperId}
+        seasonsContent={(
+          <div className="player-stats-seasons">
+            <div className="player-stats-seasons__bar">
+              <span className="player-dash-meta min-w-0">
+                {activeMode === STATISTICS_MODES.VISUAL
+                  ? 'Compare weekly output with opponent averages allowed to the same position.'
+                  : hasLeague
+                    ? (canUseFantasyForActiveYear ? "Using the expanded season's linked league scoring." : 'Fantasy Values are available for seasons with linked league scoring.')
+                    : `Connect a ${fantasyPlatformLabel} league to unlock Fantasy Values.`}
+              </span>
+              <Segmented
+                label="Stat mode"
+                value={activeMode}
+                onChange={(id) => onModeChange?.(id)}
+                options={MODE_OPTIONS
+                  .filter((option) => !(isDefensiveStatisticsProfile && option.id === STATISTICS_MODES.VISUAL))
+                  .map((option) => {
+                    const disabled =
+                      (option.id === STATISTICS_MODES.FANTASY && !canUseFantasyForActiveYear)
+                      || (option.id === STATISTICS_MODES.VISUAL && !canUseVisualForActiveYear);
+                    return {
+                      id: option.id,
+                      label: option.label,
+                      disabled,
+                      title: disabled ? 'This mode is available for linked league seasons.' : undefined,
+                    };
+                  })}
+              />
             </div>
-            <div className="text-xs mt-0.5" style={{ color: 'var(--color-label-secondary)' }}>
-              {activeMode === STATISTICS_MODES.VISUAL
-                ? 'Compare weekly output with opponent averages allowed to the same position.'
-                : hasLeague
-                  ? (canUseFantasyForActiveYear ? "Using the expanded season's linked league scoring." : 'Fantasy Values are available for seasons with linked league scoring.')
-                  : `Connect a ${fantasyPlatformLabel} league to unlock Fantasy Values.`}
+
+            {/* Stats accordion */}
+            <div className="player-stats-seasons__list">
+              {activeMode === STATISTICS_MODES.VISUAL ? (
+                <Suspense fallback={<p className="player-dash-state">Loading visual chart...</p>}>
+                  <PlayerStatsVisual
+                    sleeperId={activeFantasyPlayerId ?? sleeperId}
+                    position={playerMeta.position}
+                    playerTeam={playerMeta.teamId ?? teamId}
+                    initialSeason={activeExpandedYear !== 'career' ? String(activeExpandedYear) : String(defaultVisibleYear)}
+                    seasonOptions={visibleYears.map((year) => String(year))}
+                    fantasyScoringByYear={fantasyScoringByYear}
+                  />
+                </Suspense>
+              ) : showRookiePlaceholder ? (
+                <RookieSeasonPlaceholder honorsByYear={honorsByYear} />
+              ) : (
+                <>
+                  {visibleYears.map(year => {
+                    const yearKey = String(year);
+                    const yearActiveRowsMatch = !needsEspnProfileFantasyRows && yearKey === String(activeStatsSeason)
+                      ? findFantasyRowsForPlayer(activeSleeperWeeklyStats, fantasyPlayerIdCandidates)
+                      : null;
+                    const activeSeasonRows = yearActiveRowsMatch?.rows;
+                    const fantasyStatsPlayerId = yearActiveRowsMatch?.playerId ?? activeFantasyPlayerId;
+                    const hasFantasyScoring = Boolean(fantasyScoringByYear[yearKey]);
+                    const fantasyRows = fantasyRowsByYear[yearKey] ?? activeSeasonRows;
+                    const fantasyRowsProp = hasFantasyScoring && fantasyRows !== undefined
+                      ? fantasyRows
+                      : undefined;
+                    const shouldLoadFantasyRows = Boolean(
+                      expandedYears[year]
+                      && fantasyStatsPlayerId
+                      && hasFantasyScoring
+                      && fantasyRows === undefined
+                    );
+
+                    return (
+                      <PlayerStatTable
+                        key={year}
+                        year={year}
+                        playerId={playerId}
+                        statsJson={statsByYear[year] ?? null}
+                        position={playerMeta.position}
+                        sleeperId={fantasyStatsPlayerId}
+                        expanded={!!expandedYears[year]}
+                        onToggle={() => toggleYear(year)}
+                        loading={!!loadingYears[year]}
+                        error={errorYears[year] ?? null}
+                        gameLog={gameLogByYear[year] ?? null}
+                        gameLogLoading={!!loadingGameLog[year]}
+                        honors={honorsByYear[yearKey] ?? []}
+                        playerName={playerMeta.displayName}
+                        accentColor={heroAccent ?? heroBg}
+                        textAccentColor={statsTextAccent}
+                        displayMode={activeMode}
+                        fantasySeason={year}
+                        fantasyAvailable={hasFantasyScoring}
+                        fantasyScoringSettings={fantasyScoringByYear[yearKey] ?? null}
+                        fantasyMaxWeek={getFantasyLeagueMaxWeek(fantasyLeagueByYear[yearKey])}
+                        fantasyWeeklyRows={fantasyRowsProp}
+                        fantasyRowsLoading={!!loadingFantasyYears[yearKey] || shouldLoadFantasyRows}
+                        onViewGameStats={onViewGameStats}
+                      />
+                    );
+                  })}
+                  <PlayerStatTable
+                    key="career"
+                    year="career"
+                    playerId={playerId}
+                    statsJson={careerStats}
+                    position={playerMeta.position}
+                    sleeperId={sleeperId}
+                    expanded={!!expandedYears['career']}
+                    onToggle={toggleCareer}
+                    loading={careerLoading}
+                    error={careerError}
+                    playerName={playerMeta.displayName}
+                    accentColor={heroAccent ?? heroBg}
+                    textAccentColor={statsTextAccent}
+                    displayMode={activeMode}
+                    fantasySeason={activeStatsSeason}
+                    fantasyAvailable={false}
+                  />
+                </>
+              )}
             </div>
           </div>
-        <div className={`grid w-full min-w-0 rounded-lg p-1 sm:w-auto sm:flex-initial ${isDefensiveStatisticsProfile ? 'grid-cols-2 sm:min-w-[240px]' : 'grid-cols-3 sm:min-w-[360px]'}`} style={{ background: 'var(--color-fill)' }}>
-          {MODE_OPTIONS.filter((option) => !(isDefensiveStatisticsProfile && option.id === STATISTICS_MODES.VISUAL)).map((option) => {
-            const selected = activeMode === option.id;
-            const disabled =
-              (option.id === STATISTICS_MODES.FANTASY && !canUseFantasyForActiveYear)
-              || (option.id === STATISTICS_MODES.VISUAL && !canUseVisualForActiveYear);
-            return (
-              <button
-                key={option.id}
-                type="button"
-                onClick={() => { if (!disabled) onModeChange?.(option.id); }}
-                disabled={disabled}
-                className="min-h-11 px-2 py-1.5 text-xs font-bold leading-tight transition-colors disabled:cursor-not-allowed sm:min-h-0"
-                style={{
-                  color: selected ? 'var(--color-signature-fg)' : 'var(--color-label-secondary)',
-                  background: selected ? 'var(--color-signature)' : 'transparent',
-                  borderRadius: '6px',
-                  opacity: disabled ? 0.45 : 1,
-                }}
-                aria-pressed={selected}
-                title={disabled ? 'This mode is available for linked league seasons.' : undefined}
-              >
-                {option.label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Stats accordion */}
-      <div className="space-y-2">
-        {activeMode === STATISTICS_MODES.VISUAL ? (
-          <Suspense fallback={<div className="rounded-xl p-5 text-sm" style={{ background: 'var(--color-bg-secondary)', border: '1px solid var(--color-separator)', color: 'var(--color-label-secondary)' }}>Loading visual chart...</div>}>
-            <PlayerStatsVisual
-              sleeperId={activeFantasyPlayerId ?? sleeperId}
-              position={playerMeta.position}
-              playerTeam={playerMeta.teamId ?? teamId}
-              initialSeason={activeExpandedYear !== 'career' ? String(activeExpandedYear) : String(defaultVisibleYear)}
-              seasonOptions={visibleYears.map((year) => String(year))}
-              fantasyScoringByYear={fantasyScoringByYear}
-            />
-          </Suspense>
-        ) : showRookiePlaceholder ? (
-          <RookieSeasonPlaceholder
-            honorsByYear={honorsByYear}
-            accentColor={heroAccent ?? heroBg}
-          />
-        ) : (
-          <>
-            {visibleYears.map(year => {
-              const yearKey = String(year);
-              const yearActiveRowsMatch = !needsEspnProfileFantasyRows && yearKey === String(activeStatsSeason)
-                ? findFantasyRowsForPlayer(activeSleeperWeeklyStats, fantasyPlayerIdCandidates)
-                : null;
-              const activeSeasonRows = yearActiveRowsMatch?.rows;
-              const fantasyStatsPlayerId = yearActiveRowsMatch?.playerId ?? activeFantasyPlayerId;
-              const hasFantasyScoring = Boolean(fantasyScoringByYear[yearKey]);
-              const fantasyRows = fantasyRowsByYear[yearKey] ?? activeSeasonRows;
-              const fantasyRowsProp = hasFantasyScoring && fantasyRows !== undefined
-                ? fantasyRows
-                : undefined;
-              const shouldLoadFantasyRows = Boolean(
-                expandedYears[year]
-                && fantasyStatsPlayerId
-                && hasFantasyScoring
-                && fantasyRows === undefined
-              );
-
-              return (
-                <PlayerStatTable
-                  key={year}
-                  year={year}
-                  statsJson={statsByYear[year] ?? null}
-                  position={playerMeta.position}
-                  sleeperId={fantasyStatsPlayerId}
-                  expanded={!!expandedYears[year]}
-                  onToggle={() => toggleYear(year)}
-                  loading={!!loadingYears[year]}
-                  error={errorYears[year] ?? null}
-                  gameLog={gameLogByYear[year] ?? null}
-                  gameLogLoading={!!loadingGameLog[year]}
-                  honors={honorsByYear[yearKey] ?? []}
-                  playerName={playerMeta.displayName}
-                  accentColor={heroAccent ?? heroBg}
-                  textAccentColor={statsTextAccent}
-                  displayMode={activeMode}
-                  fantasySeason={year}
-                  fantasyAvailable={hasFantasyScoring}
-                  fantasyScoringSettings={fantasyScoringByYear[yearKey] ?? null}
-                  fantasyMaxWeek={getFantasyLeagueMaxWeek(fantasyLeagueByYear[yearKey])}
-                  fantasyWeeklyRows={fantasyRowsProp}
-                  fantasyRowsLoading={!!loadingFantasyYears[yearKey] || shouldLoadFantasyRows}
-                />
-              );
-            })}
-            <PlayerStatTable
-              key="career"
-              year="career"
-              statsJson={careerStats}
-              position={playerMeta.position}
-              sleeperId={sleeperId}
-              expanded={!!expandedYears['career']}
-              onToggle={toggleCareer}
-              loading={careerLoading}
-              error={careerError}
-              playerName={playerMeta.displayName}
-              accentColor={heroAccent ?? heroBg}
-              textAccentColor={statsTextAccent}
-              displayMode={activeMode}
-              fantasySeason={activeStatsSeason}
-              fantasyAvailable={false}
-            />
-          </>
         )}
-      </div>
+      />
     </div>
   );
 };
 
-const RookieSeasonPlaceholder = ({ honorsByYear, accentColor }) => {
+const RookieSeasonPlaceholder = ({ honorsByYear }) => {
   const allHonors = Object.values(honorsByYear).flat();
   return (
-    <div
-      className="border border-[color:var(--color-separator)] rounded-lg overflow-hidden"
-      style={accentColor ? { borderLeftColor: accentColor, borderLeftWidth: '3px' } : undefined}
-    >
-      <div className="px-4 py-3 bg-[color:var(--color-fill-secondary)] flex items-center gap-2 flex-wrap">
-        <span className="font-semibold">Rookie Season</span>
+    <div className="player-dash-state">
+      <div className="flex items-center justify-center gap-2 flex-wrap">
+        <span className="player-dash-subhead">Rookie Season</span>
         <span className="inline-flex items-center px-1.5 py-0.5 rounded border text-[length:var(--type-label)] font-bold uppercase tracking-wide bg-tint-green-strong text-[color:var(--color-accent-green)] border-tint-green">
           First Year
         </span>
@@ -1309,7 +1326,7 @@ const RookieSeasonPlaceholder = ({ honorsByYear, accentColor }) => {
           </div>
         )}
       </div>
-      <div className="bg-[color:var(--color-bg-secondary)] px-4 py-8 text-center">
+      <div className="mt-3">
         <p className="text-sm font-medium" style={{ color: 'var(--color-label-secondary)' }}>
           No NFL stats yet
         </p>

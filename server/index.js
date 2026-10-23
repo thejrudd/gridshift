@@ -9,8 +9,11 @@ import { createPlayerDataRouter, createPlayerDataService } from './playerDataHan
 import { createPlayerDataStore } from './playerDataStore.js';
 import { createUpstreamClient } from './playerDataUpstream.js';
 import { createLiveGameSnapshotStore } from './liveGameSnapshots.js';
+import { createLivePlaysArchive, getLivePlaysArchiveConfig } from './livePlaysArchive.js';
 import { createLiveRouter, getLiveConfigStatus } from './liveHandlers.js';
 import { createStatisticsScoresRouter } from './statisticsScoresHandlers.js';
+import { createPlayerSeasonRouter } from './playerSeasonHandlers.js';
+import { createTeamSeasonRouter } from './teamSeasonHandlers.js';
 import { createNflTeamStatsRouter } from './nflTeamStatsHandlers.js';
 import { createStoryStatsRouter, createStoryStatsService } from './storyStatsHandlers.js';
 import { createStoryStatsScheduler } from './storyStatsScheduler.js';
@@ -23,7 +26,20 @@ const port = Number(process.env.PORT ?? process.env.GRIDSHIFT_API_PORT ?? 3001);
 const host = process.env.HOST ?? process.env.GRIDSHIFT_API_HOST ?? '0.0.0.0';
 const trustProxyHops = Math.max(0, Number.parseInt(process.env.GRIDSHIFT_TRUST_PROXY_HOPS ?? '0', 10) || 0);
 const balldontlieGateway = createBalldontlieGateway();
-const liveGameSnapshotStore = createLiveGameSnapshotStore({ gateway: balldontlieGateway });
+// Finished games' play-by-play is archived on disk and shared by every league,
+// matchup and Statistics Scores view. A store that cannot open (unwritable
+// volume) must not take the API down; plays then follow the short-lived
+// provider cache as before.
+const livePlaysArchiveConfig = getLivePlaysArchiveConfig();
+let livePlaysArchive = null;
+if (livePlaysArchiveConfig.enabled) {
+  try {
+    livePlaysArchive = createLivePlaysArchive({ config: livePlaysArchiveConfig });
+  } catch (error) {
+    console.error('Play-by-play archive disabled:', error?.message ?? error);
+  }
+}
+const liveGameSnapshotStore = createLiveGameSnapshotStore({ gateway: balldontlieGateway, archive: livePlaysArchive });
 const storyStatsService = createStoryStatsService({
   storyStatsGateway: balldontlieGateway,
   dailyLimit: Number(process.env.GRIDSHIFT_STORY_STATS_DAILY_LIMIT ?? 10),
@@ -76,6 +92,14 @@ app.use('/api/live', createLiveRouter({
 // Mounted before the Scores router so `/team-stats` never reaches its handlers.
 app.use('/api/statistics/scores/team-stats', createNflTeamStatsRouter());
 app.use('/api/statistics/scores', createStatisticsScoresRouter({
+  gateway: balldontlieGateway,
+  snapshotStore: liveGameSnapshotStore,
+}));
+app.use('/api/statistics/players', createPlayerSeasonRouter({
+  gateway: balldontlieGateway,
+  snapshotStore: liveGameSnapshotStore,
+}));
+app.use('/api/statistics/teams', createTeamSeasonRouter({
   gateway: balldontlieGateway,
   snapshotStore: liveGameSnapshotStore,
 }));

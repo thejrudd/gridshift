@@ -119,6 +119,26 @@ function loadDeveloperFixtures() {
   return developerFixturesPromise;
 }
 
+const TOUR_PREVIEWS = {
+  'statistics-scores-play-by-play': {
+    section: 'plays',
+    load: (fixtures) => ({ game: fixtures.STATISTICS_SCORES_TOUR_GAME, detail: fixtures.STATISTICS_SCORES_TOUR_DETAIL }),
+  },
+  'statistics-scores-team-breakdown': {
+    section: 'team',
+    teamStat: 'totalYards',
+    load: (fixtures) => ({ game: fixtures.STATISTICS_SCORES_TOUR_TEAM_GAME, detail: fixtures.STATISTICS_SCORES_TOUR_TEAM_DETAIL }),
+  },
+  'statistics-scores-pregame': {
+    section: 'overview',
+    load: (fixtures) => ({
+      game: fixtures.STATISTICS_SCORES_TOUR_PREGAME_GAME,
+      detail: fixtures.STATISTICS_SCORES_TOUR_PREGAME_DETAIL,
+      seasons: fixtures.STATISTICS_SCORES_TOUR_SEASONS,
+    }),
+  },
+};
+
 function loadTourFixtures() {
   tourFixturesPromise ??= import('../../../data/statisticsScoresTourDemo');
   return tourFixturesPromise;
@@ -245,9 +265,12 @@ export default function StatisticsScores({
   routeGameId = null,
   routeSection = 'overview',
   routePlayerGroup = null,
+  routePlayerId = null,
   routeAwayTeamId = null,
   routeHomeTeamId = null,
   onRouteChange = null,
+  onOpenPlayer = null,
+  onOpenTeam = null,
 }) {
   const desktop = useMediaQuery('(min-width: 1024px)');
   const {
@@ -258,7 +281,9 @@ export default function StatisticsScores({
     nflStateError,
     currentFantasyWeek,
   } = useFantasyLeague();
-  const showPlayByPlayTourDemo = tourDemoMode === 'statistics-scores-play-by-play';
+  // Each tour preview opens a fixture drilldown on the section it describes.
+  const tourPreview = TOUR_PREVIEWS[tourDemoMode] ?? null;
+  const showTourPreview = Boolean(tourPreview);
   const [tourFixture, setTourFixture] = useState(null);
   const [fixtureCatalog, setFixtureCatalog] = useState(null);
   const fixtureSeason = fixtureCatalog?.regular.season ?? PRODUCTION_SEASON;
@@ -281,7 +306,7 @@ export default function StatisticsScores({
   const espnBroadcastRequests = useRef(new Map());
 
   useEffect(() => {
-    if (!showPlayByPlayTourDemo) {
+    if (!showTourPreview) {
       setTourFixture(null);
       return undefined;
     }
@@ -289,14 +314,11 @@ export default function StatisticsScores({
     let cancelled = false;
     loadTourFixtures().then((fixtures) => {
       if (cancelled) return;
-      setTourFixture({
-        game: fixtures.STATISTICS_SCORES_TOUR_GAME,
-        detail: fixtures.STATISTICS_SCORES_TOUR_DETAIL,
-      });
+      setTourFixture({ mode: tourDemoMode, ...tourPreview.load(fixtures) });
     });
 
     return () => { cancelled = true; };
-  }, [showPlayByPlayTourDemo]);
+  }, [showTourPreview, tourDemoMode, tourPreview]);
 
   const currentSeason = season === fixtureSeason;
   const activeProvider = DEVELOPER_SOURCE_ENABLED
@@ -334,23 +356,27 @@ export default function StatisticsScores({
       ?? (currentSeason && activeProvider === STATISTICS_SCORES_PROVIDERS.FIXTURE
         ? regularState.data?.currentWeekId ?? null
         : resolveStatisticsScoresCurrentWeekId(weeks, { phase: seasonPhase }));
+  const visibleWeeks = useMemo(() => {
+    const currentIndex = weeks.findIndex((week) => week.id === currentWeekId);
+    return currentIndex < 0 ? weeks : weeks.slice(0, currentIndex + 1);
+  }, [currentWeekId, weeks]);
   const routedGame = useMemo(
-    () => findScoresGame(weeks, routeGameId, routeWeek, routeAwayTeamId, routeHomeTeamId),
-    [routeAwayTeamId, routeGameId, routeHomeTeamId, routeWeek, weeks],
+    () => findScoresGame(visibleWeeks, routeGameId, routeWeek, routeAwayTeamId, routeHomeTeamId),
+    [routeAwayTeamId, routeGameId, routeHomeTeamId, routeWeek, visibleWeeks],
   );
   const routedGameWeek = useMemo(
     () => routedGame
-      ? weeks.find((week) => (week.games ?? []).some((game) => game === routedGame)) ?? null
+      ? visibleWeeks.find((week) => (week.games ?? []).some((game) => game === routedGame)) ?? null
       : null,
-    [routedGame, weeks],
+    [routedGame, visibleWeeks],
   );
   const selectedWeek = useMemo(
     () => routedGameWeek
-      ?? findScoresWeek(weeks, routeWeek)
-      ?? weeks.find((week) => week.id === currentWeekId)
-      ?? weeks[0]
+      ?? findScoresWeek(visibleWeeks, routeWeek)
+      ?? visibleWeeks.find((week) => week.id === currentWeekId)
+      ?? visibleWeeks[0]
       ?? null,
-    [currentWeekId, routeWeek, routedGameWeek, weeks],
+    [currentWeekId, routeWeek, routedGameWeek, visibleWeeks],
   );
   const liveCount = selectedWeek?.games.filter((game) => ['live', 'halftime', 'delayed'].includes(game.status)).length ?? 0;
   const selectedWeekNumber = Number.isInteger(selectedWeek?.week) ? selectedWeek.week : null;
@@ -644,13 +670,16 @@ export default function StatisticsScores({
     document.querySelector('.content-area')?.scrollTo({ top: 0, behavior: 'auto' });
   }, [selectedGameRouteId]);
 
-  if (showPlayByPlayTourDemo) {
-    if (!tourFixture) return <p className="statistics-scores-state">Loading play-by-play preview…</p>;
+  if (showTourPreview) {
+    if (tourFixture?.mode !== tourDemoMode) return <p className="statistics-scores-state">Loading game preview…</p>;
     return (
       <ScoresGameDrilldown
+        key={tourDemoMode}
         game={tourFixture.game}
         fixtureDetail={tourFixture.detail}
-        initialSection="plays"
+        fixtureSeasons={tourFixture.seasons ?? null}
+        initialSection={tourPreview.section}
+        initialTeamStat={tourPreview.teamStat ?? null}
         onBack={() => {}}
       />
     );
@@ -666,6 +695,7 @@ export default function StatisticsScores({
           : null}
         selectedSection={routeSection}
         selectedPlayerGroup={routePlayerGroup}
+        focusPlayerId={routePlayerId}
         onSectionChange={(section) => onRouteChange?.({
           statisticsScoresSection: section,
           statisticsScoresPlayerGroup: section === 'players' ? routePlayerGroup : null,
@@ -673,12 +703,26 @@ export default function StatisticsScores({
         onPlayerGroupChange={(group) => onRouteChange?.({
           statisticsScoresSection: 'players',
           statisticsScoresPlayerGroup: group,
+          statisticsScoresPlayerId: null,
         }, { replace: true })}
         onBack={() => onRouteChange?.({
           statisticsScoresGameId: null,
           statisticsScoresSection: 'overview',
           statisticsScoresPlayerGroup: null,
+          statisticsScoresPlayerId: null,
         }, { replace: true })}
+        season={season}
+        onOpenStatisticsPlayer={onOpenPlayer}
+        onOpenStatisticsTeam={onOpenTeam}
+        onOpenGame={({ gameId, week }) => onRouteChange?.({
+          statisticsScoresSeason: season,
+          statisticsScoresPhase: seasonPhase,
+          statisticsScoresWeek: Number(week),
+          statisticsScoresGameId: String(gameId),
+          statisticsScoresSection: 'overview',
+          statisticsScoresPlayerGroup: null,
+          statisticsScoresPlayerId: null,
+        })}
       />
     );
   }
@@ -686,7 +730,8 @@ export default function StatisticsScores({
   const routePhaseValue = seasonPhase;
 
   const selectWeek = (nextWeekId) => {
-    const nextWeek = weeks.find((week) => week.id === nextWeekId) ?? null;
+    const nextWeek = visibleWeeks.find((week) => week.id === nextWeekId) ?? null;
+    if (!nextWeek) return;
     onRouteChange?.({
       statisticsScoresSeason: season,
       statisticsScoresPhase: routePhaseValue,
@@ -694,6 +739,7 @@ export default function StatisticsScores({
       statisticsScoresGameId: null,
       statisticsScoresSection: 'overview',
       statisticsScoresPlayerGroup: null,
+      statisticsScoresPlayerId: null,
     }, { replace: true });
   };
 
@@ -711,6 +757,7 @@ export default function StatisticsScores({
       statisticsScoresGameId: null,
       statisticsScoresSection: 'overview',
       statisticsScoresPlayerGroup: null,
+      statisticsScoresPlayerId: null,
     }, { replace: true });
   };
 
@@ -729,12 +776,13 @@ export default function StatisticsScores({
       statisticsScoresGameId: null,
       statisticsScoresSection: 'overview',
       statisticsScoresPlayerGroup: null,
+      statisticsScoresPlayerId: null,
     });
   };
 
   const openGame = (game) => {
     if (!canOpenGame || game.detailsAvailable === false || !isStatisticsScoresDrilldownStatus(game.status)) return;
-    const gameWeek = weeks.find((week) => week.games.some((entry) => entry.id === game.id));
+    const gameWeek = visibleWeeks.find((week) => week.games.some((entry) => entry.id === game.id));
     onRouteChange?.({
       statisticsScoresSeason: season,
       statisticsScoresPhase: routePhaseValue,
@@ -742,6 +790,7 @@ export default function StatisticsScores({
       statisticsScoresGameId: scoresGameRouteId(game),
       statisticsScoresSection: 'overview',
       statisticsScoresPlayerGroup: null,
+      statisticsScoresPlayerId: null,
     });
   };
 
@@ -788,6 +837,7 @@ export default function StatisticsScores({
                     statisticsScoresGameId: null,
                     statisticsScoresSection: 'overview',
                     statisticsScoresPlayerGroup: null,
+                    statisticsScoresPlayerId: null,
                   });
                 }}
                 aria-label="Season"
@@ -858,14 +908,14 @@ export default function StatisticsScores({
       ) : selectedWeek ? (
         <>
           <WeekRail
-            weeks={weeks}
+            weeks={visibleWeeks}
             selectedWeekId={selectedWeek.id}
             currentWeekId={currentWeekId}
             onSelectWeek={selectWeek}
           />
 
           <ScoresSeasonBoard
-            weeks={weeks}
+            weeks={visibleWeeks}
             selectedWeekId={selectedWeek.id}
             displayedWeek={scorecardWeek}
             desktop={desktop}

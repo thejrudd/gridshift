@@ -58,13 +58,31 @@ function buildSandboxNflState(fixture) {
   };
 }
 
+// Season totals (with games played) from the fixture's weekly stat lines, so
+// Fantasy Matchups' readiness gate and projections have what they read.
+function buildSandboxSeasonStats(fixture) {
+  const totals = {};
+  Object.entries(fixture.weeklyStats ?? {}).forEach(([playerId, weeks]) => {
+    const row = { gp: 0 };
+    (weeks ?? []).forEach((week) => {
+      row.gp += 1;
+      Object.entries(week ?? {}).forEach(([key, value]) => {
+        if (key === 'week' || !Number.isFinite(Number(value))) return;
+        row[key] = (row[key] ?? 0) + Number(value);
+      });
+    });
+    totals[playerId] = row;
+  });
+  return totals;
+}
+
 function buildDisplayNameLookup(fixture) {
   const byId = new Map(fixture.users.map((user) => [user.user_id, user.display_name]));
   return (userId) => byId.get(userId) ?? '';
 }
 
 // Replaces the connected-league half of useSleeperBase(). Only the fields
-// Fantasy Live actually reads are provided; the caller merges this over the
+// Fantasy Matchups' live layer reads are provided; the caller merges this over the
 // real context value, so anything omitted falls through to the real one.
 // Replay mode has a live-derived matchup/stat stream (rule 10); every other
 // mode serves the fixture's own stored values, unchanged.
@@ -89,13 +107,15 @@ function buildSandboxBase(fixture, mode) {
     loadMatchups: async (_leagueId, week) => {
       if (Number(week) !== Number(fixture.week)) return [];
       if (!isReplay) return matchups;
+      await sandboxLiveSource.ensureSandboxSession(league.league_id);
       return (await sandboxLiveSource.getSleeperReplaySlice(fixture)).matchups;
     },
-    // Lets CompanionLive read the synthesized weekly stat lines in place of
+    // Lets the Matchups live layer read the synthesized weekly stat lines in place of
     // the real getWeeklyStats(season, week) Sleeper API call in replay mode.
     loadWeeklyStats: async (_season, week) => {
       if (Number(week) !== Number(fixture.week)) return {};
       if (!isReplay) return fixture.weeklyStats ?? {};
+      await sandboxLiveSource.ensureSandboxSession(league.league_id);
       return (await sandboxLiveSource.getSleeperReplaySlice(fixture)).weeklyStats;
     },
     loadPlayers: async () => players,
@@ -105,6 +125,16 @@ function buildSandboxBase(fixture, mode) {
     weeklyStats: fixture.weeklyStats ?? {},
     myRoster: () => rosters[0],
     espnIdOverrides: {},
+    // Fields Fantasy Matchups reads when the sandbox league stands in for the
+    // connected one (FantasyBaseOverride).
+    currentFantasyWeek: fixture.week,
+    seasonStats: buildSandboxSeasonStats(fixture),
+    loadSeasonStats: async () => buildSandboxSeasonStats(fixture),
+    statsLoading: false,
+    leagueUsers: fixture.users,
+    nflState: buildSandboxNflState(fixture),
+    linkedLeagueHistory: [],
+    linkedLeagueSeasonOptions: [],
   };
 }
 
@@ -122,15 +152,11 @@ export function useLiveSandbox() {
   const clock = useReplayClock();
   const mode = useSandboxMode();
   return useMemo(() => {
-    // Automated production-path checks can opt out even when the developer's
-    // local server has the replay harness enabled. This stays inside the
-    // dev-only sandbox module and is absent from production bundles.
-    const disabledForRoute = typeof window !== 'undefined'
-      && new URLSearchParams(window.location.search).get('liveSandbox') === 'off';
-    // Live data mode deliberately falls through to CompanionLive's connected
+    // `?liveSandbox=off` is applied in liveSandboxFlag.js (LIVE_SANDBOX_ENABLED).
+    // Live data mode deliberately falls through to the connected
     // league and the normal API source. The panel remains mounted so the
     // developer can switch back without restarting Vite.
-    if (!LIVE_SANDBOX_ENABLED || disabledForRoute || mode === 'live') return null;
+    if (!LIVE_SANDBOX_ENABLED || mode === 'live') return null;
     const built = BUILT[mode] ?? BUILT.replay;
     return {
       mode,

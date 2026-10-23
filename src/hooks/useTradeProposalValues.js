@@ -3,7 +3,6 @@ import { useSleeperLeague, useSleeperStats } from '../context/SleeperContext';
 import { applyKtcMultipliers, computeKtcMultipliers, fetchKtcPlayers } from '../utils/ktcApi';
 import { buildTradeAnalyticsSnapshot } from '../utils/tradeAnalytics';
 import { detectLeagueType } from '../utils/tradeEngine';
-import { hasGeneratedProductionTradeValues } from '../utils/idpEngine';
 
 function getPreviousSeasonKey(season) {
   const seasonYear = Number(season);
@@ -16,16 +15,19 @@ function getKtcFormat(league) {
 
 export default function useTradeProposalValues() {
   const { platform, league, rosters, season, scoringSettings } = useSleeperLeague();
-  const { players, seasonStats, statsBySeason, loadPlayers, loadSeasonStats, loadStatsForSeason, statsLoading } = useSleeperStats();
+  const { players, seasonStats, weeklyStats, statsBySeason, loadPlayers, loadSeasonStats, loadStatsForSeason, statsLoading } = useSleeperStats();
   const [ktcPlayers, setKtcPlayers] = useState(null);
   const [dynastyKtcPlayers, setDynastyKtcPlayers] = useState(null);
 
   const format = getKtcFormat(league);
   const leagueType = detectLeagueType(league);
   const previousSeasonKey = getPreviousSeasonKey(season);
-  const needsGeneratedProductionFallback = hasGeneratedProductionTradeValues(league?.roster_positions);
+  const needsPriorSeasonData = format === 'dynasty';
   const priorSeasonStats = previousSeasonKey
     ? statsBySeason?.[previousSeasonKey]?.seasonStats ?? null
+    : null;
+  const priorWeeklyStats = previousSeasonKey
+    ? statsBySeason?.[previousSeasonKey]?.weeklyStats ?? null
     : null;
 
   useEffect(() => {
@@ -62,9 +64,9 @@ export default function useTradeProposalValues() {
   }, [loadSeasonStats, platform, seasonStats, statsLoading]);
 
   useEffect(() => {
-    if (platform !== 'sleeper' || !needsGeneratedProductionFallback || !previousSeasonKey || priorSeasonStats) return;
+    if (platform !== 'sleeper' || !needsPriorSeasonData || !previousSeasonKey || priorSeasonStats) return;
     void loadStatsForSeason(previousSeasonKey).catch(() => null);
-  }, [loadStatsForSeason, needsGeneratedProductionFallback, platform, previousSeasonKey, priorSeasonStats]);
+  }, [loadStatsForSeason, needsPriorSeasonData, platform, previousSeasonKey, priorSeasonStats]);
 
   const adjustedKtcPlayers = useMemo(
     () => applyKtcMultipliers(ktcPlayers, computeKtcMultipliers(scoringSettings, league?.roster_positions)),
@@ -79,13 +81,16 @@ export default function useTradeProposalValues() {
     rosters,
     players,
     seasonStats,
+    weeklyStats,
     priorSeasonStats,
+    priorWeeklyStats,
     scoringSettings,
     adjustedKtcPlayers,
     adjustedDynastyKtcPlayers,
     leagueType,
+    format,
     includePlayerTradeValues: true,
-  }), [adjustedDynastyKtcPlayers, adjustedKtcPlayers, league, leagueType, players, priorSeasonStats, rosters, scoringSettings, seasonStats]);
+  }), [adjustedDynastyKtcPlayers, adjustedKtcPlayers, format, league, leagueType, players, priorSeasonStats, priorWeeklyStats, rosters, scoringSettings, seasonStats, weeklyStats]);
 
   const getAssetValue = useCallback((asset) => {
     if (asset?.type !== 'player') return null;

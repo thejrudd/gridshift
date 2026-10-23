@@ -1855,6 +1855,25 @@ export function useFantasyStats() {
   return ctx;
 }
 
+// Dev-only: lets the Live sandbox's synthetic league stand in for the connected
+// one under a single subtree (Fantasy Matchups), so its drill-ins read the same
+// league. `value` null renders children unchanged. Never used in production:
+// the sandbox returns null there.
+export function FantasyBaseOverride({ value, children }) {
+  const league = useContext(SleeperLeagueContext);
+  const stats = useContext(SleeperStatsContext);
+  const leagueValue = useMemo(() => (value ? { ...league, ...value } : league), [league, value]);
+  const statsValue = useMemo(() => (value ? { ...stats, ...value } : stats), [stats, value]);
+  if (!value) return children;
+  return (
+    <SleeperLeagueContext.Provider value={leagueValue}>
+      <SleeperStatsContext.Provider value={statsValue}>
+        {children}
+      </SleeperStatsContext.Provider>
+    </SleeperLeagueContext.Provider>
+  );
+}
+
 export function useFantasyBase() {
   return { ...useFantasyLeague(), ...useFantasyStats() };
 }

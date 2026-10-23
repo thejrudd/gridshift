@@ -19,7 +19,31 @@ The app has four different Trade surfaces:
 
 Agent, Intelligence, Upgrades, History, and Proposals are current-season surfaces. When a prior linked-league season is selected, the Trade section remains visible and navigable but shows a current-season hint with a one-tap switch back to the latest linked-league season. Trade actions from roster/player views and proposal polling remain unavailable until then. Historical league data and finalized transaction records remain available through the League views.
 
-These surfaces share some underlying valuation inputs, but they do not all use the exact same pipeline.
+These surfaces share a canonical player-value map and use one fantasy-viability scale. Ranking, opportunity context, and pick uncertainty remain separate inputs to their own workflows.
+
+## Player and pick value scale
+
+Every player is valued from 0–100 by what losing them would cost a manager in this league. About 15 is what the waiver wire offers at the position, 50 is the league's median starter, 90 is a top-5% starter, and 0 means no realistic path to playing time. The same approach applies to offense, IDP, kickers, and D/ST.
+
+- **Production (60 of the 75 local points).** Points per game under the active scoring settings, measured against two lines per position:
+  - **Starter line:** the last player who would start at that position if every team filled its lineup. Dedicated slots fill first, then flex slots (narrowest first) with the best remaining eligible player, so league size, superflex, IDP flex, and deeper lineups move it without hand tuning. A position that reaches the lineup only through flex, with nobody good enough to start there, uses that flex slot's cutoff.
+  - **Waiver line:** the average of the three best players at the position whom nobody has rostered (`players`, `reserve`, and `taxi` all count as rostered), with their short samples trusted like everyone else's. Free agents who are Doubtful, Out, suspended, or on a reserve list are skipped because they cannot replace anyone this week. Actual rosters are used once the league holds at least half of its lineup-plus-bench capacity. Before that (a league still drafting, a mock, or missing roster data), bench spots (`BN`) are spread across positions in proportion to starter slots, except kickers and D/ST, and capped by Sleeper's `settings.position_limit_<position>` (for example `position_limit_dl`), to estimate how deep each position is rostered. The waiver line can sit above the starter line when managers leave better players on waivers than some they start; points are then measured against the waiver line alone.
+  - **Value over waivers:** points above the starter line count in full, points between the waiver and starter lines count at half weight (they help only as a fill-in or as cover for a starter), and points below the waiver line are negative. When a position has plenty of viable free agents, its waiver line sits close to its starter line and every player there is worth less in a trade.
+  - **Starting point (last season):** a player with 4+ games last season starts from last season's points per game, blended with this season's games. Both numbers were fitted per position on 2023→2024 and 2024→2025 under a 16-team IDP league's scoring, using games with 15+ snaps (20+ for QBs): how many current-season games last season is worth when predicting weeks 8–18 from weeks 1–7 (QB 5, RB 6, WR 3.5, TE 4, K 10.5, D/ST 2.5, DL 9.5, LB 6.5, DB 12), and the share of the blended edge over the position's starter line that actually held up (QB 0.5, RB 0.95, WR 0.8, TE 0.95, K 0.35, D/ST 0.7, DL 0.85, LB 0.65, DB 0.45). Blending beat this-season-only at every position. Dynasty weighs last season at least as much as this season's games. Once games are underway, a player who has not played this season keeps last season only when an injury designation (Doubtful, Out, IR, PUP, NFI, suspended) explains the absence; otherwise neither last season's points nor its snaps count.
+  - **No recent season:** rookies and players without 4+ games last season settle toward the waiver line in proportion to games played, as games / (games + c). Each position's c comes from measured game-to-game reliability of fantasy scoring: odd-week vs. even-week points per game for regular players in 2024 and 2025 (selected by playing time, not points, to avoid selection bias), stepped up to one game with Spearman-Brown, c = (1 − ρ) / ρ, geometric mean of both seasons: QB 5, RB 1.5, WR 2, TE 1.5, LB 4, DL 5, DB 20, K 30, D/ST 30. A player who was active but did not play counts as a zero-point game. Both lines are computed from these settled numbers, so a free agent's short hot streak does not set the bar, and they ignore players with fewer than two games this season once the season has that many.
+  - **Curve:** one logistic curve for every position, fixed at the waiver line (15), the league's median starter (50), and the 95th-percentile starter (90). Players below the waiver line approach zero smoothly instead of being cut off.
+- **Role (15 of the 75 local points).** Share of team snaps over the team's four most recent games (offensive snaps for QB/RB/WR/TE, defensive snaps for IDP); a game the player sat out counts as zero. A share at or above the position's 90th percentile counts as a full role. When snaps are not reported, opportunity volume (attempts, targets, tackles and splash plays, kicks, D/ST plays) is used the same way. Kickers and D/ST get no role credit because every rostered one plays its whole phase; their volume stands in only when production is missing. Role is pulled toward the middle when fewer than four team games are available.
+- **Availability.** A mild current-status discount applies to the local score: Questionable ×0.97, Doubtful ×0.90, Out ×0.85, Suspended ×0.80, and IR/PUP/NFI ×0.70. Dynasty halves the discount. A fresh BDL game status takes precedence over the provider's injury designation.
+
+Missing production or role is redistributed to the available local signal. There is no hard replacement-player cutoff; an asset with a plausible path to playing time stays above zero when evidence supports it.
+
+KTC is a peer market signal with a 25% weight when available. Players match KTC by MFL ID, then name and position; a name-only match is used only when no other Sleeper player shares the normalized name, so a suffix-stripped namesake (a WR "Kenneth Walker" vs. RB Kenneth Walker III) never inherits another player's value. Positive KTC values are normalized into a 0–100 percentile score; a raw value of 0 remains an unvalued placeholder. If either production or role is missing, the available local evidence is used; KTC can also provide an estimate when local inputs are absent. Missing KTC never blocks local valuation. Missing all evidence leaves an asset unavailable instead of assigning a misleading zero. Market trends may still show KTC's original history, separate from Trade's player scale.
+
+Both formats load the prior completed season as each player's starting point; dynasty weighs it more. A fresh BDL weekly projection counts as two games of production evidence, blended with the season's points per game; BDL is optional and never a valuation prerequisite. Missing keys, unsupported capabilities, stale data, and failed responses are optional-context gaps. Injury designations apply the availability discount above; practice reports remain display context. Postgame starter and did-not-play fields are deliberately omitted because they are not future lineup projections.
+
+Redraft pick values use the canonical Trade values of the scoring-aware neutral draft pool, summarized by round and discounted for uncertainty. If that pool is not usable, normalized KTC percentiles can supply the pick estimate. Dynasty picks use normalized KTC pick baselines where available. Pick values use the same 0–100 range, but trade-side totals add assets and can exceed 100. FAAB is checked for ownership and feasibility only; it has no numeric Trade value.
+
+New proposal snapshots identify `fantasy-baseline-0-100-v3`. Snapshots from the prior `fantasy-viability-0-100-v2` and `league-utility-0-100-v1` scales and snapshots with no scale identifier are legacy; proposal cards preserve the values captured when sent and label them as legacy. Proposal cards never recalculate a stored asset against current values.
 
 ## GridShift Trade Proposal Rooms
 
@@ -47,6 +71,8 @@ Only the accepting manager sees the `What to do next` handoff: re-create the sam
   Fetches and caches weekly Sleeper transactions by league season, filters to completed trades, and normalizes manager, player, draft-pick, and FAAB movement.
 - `src/utils/tradeValue.js`
   Shared player trade-value detail builder. This is the common source for blended trade values used across Trade surfaces.
+- `src/components/compare/CompareTradePanel.jsx`
+  Two-player Trade comparison. Its displayed player scores use the same fantasy-viability map and normalized KTC context as Companion Trade; KTC trend and source values remain separate market context.
 - `src/utils/tradeAnalytics.js`
   Precomputes Trade analytics snapshots: positional averages, value-per-PPG, IDP/DST/kicker computed values, and the optional opportunity layer.
 - `src/utils/tradeEngine.js`
@@ -60,30 +86,29 @@ Only the accepting manager sees the `What to do next` handoff: re-create the sam
 
 ### Shared inputs
 
-Most Trade flows start from the same source data:
+Most Trade flows start from these local and optional market inputs:
 - the active fantasy provider's normalized league and rosters
 - normalized player map
 - season stats / weekly stats
 - scoring settings
-- adjusted KTC datasets
+- adjusted KTC datasets, when available
 - current draft pick ownership
 
 Sleeper is the supported fantasy provider for players and draft picks.
 
 ### Shared valuation layer
 
-`tradeValue.js` computes a `value` for each player by blending:
-- adjusted KTC value when available
-- production context from scoring + season stats
-- positional rank adjustment
-- dynasty fallback when redraft KTC is missing
-- IDP/DST/kicker estimated value when KTC has no direct entry
+`tradeValue.js` computes a `value` for each player from:
+- fantasy production over each position's waiver line, with full credit above the league's starter line and half credit between the two, trusted by sample size and position stability
+- league size, lineup slots, bench spots, position limits, and who is actually rostered, through the starter and waiver lines
+- expected role from snap share (or opportunity volume when snaps are unreported)
+- a mild availability discount from current injury status
+- a normalized KTC peer signal weighted at 25% when available
+- current-season production and role for redraft, plus prior-season evidence for dynasty
 
 This shared value is what reduced earlier drift between Agent, Intelligence, and Upgrade surfaces.
 
-KTC does not publish IDP or kicker market values. Every Trade player value is evaluated with the selected league's scoring settings. Explicit DL/LB/DB roster slots and IDP flex slots (`IDP_FLEX`, `FLEX_IDP`, or `DP`) enable production-based values for the relevant IDP groups; a `DEF` slot enables D/ST, and a `K` slot enables kickers. Trade does not use KTC rows for these generated positions, including zero-valued placeholder rows that could otherwise suppress the GridShift estimate through a name match. Trade loads the immediately prior completed season in the background whenever one of those generated-value paths is available. For each generated IDP, D/ST, or kicker value, it first requires current-season production of at least three recorded games and positive league-scored points; if that player does not qualify, it applies the current league scoring to that player's prior-season production and uses it only when it meets the same threshold. Otherwise the value remains unavailable (`—`). Current production always wins for an individually qualified player. Prior-season data never substitutes for current-season offensive KTC production adjustments, ranks, pick calibration, or opportunity analysis.
-
-Generated IDP, D/ST, and kicker values convert league-scored PPG into the same market scale as offensive player values, then receive the shared positional-finish adjustment. They are not hard-capped at 10,000: KTC-backed offensive values can exceed that number, so a generated value may do so only when the league's scoring and production justify it. Production-backed values require three recorded games; missing or insufficient production remains unavailable (`—`) and is never converted to zero. Intelligence and Upgrade assets that receive the canonical player-value map preserve that same unavailable state when an entry is missing; only the standalone opportunity fallback without a canonical map may use its local heuristic estimate. A trade side containing an unavailable asset cannot receive a fairness verdict until all of its assets have values.
+KTC does not publish IDP or kicker market values, so their values come from local scoring and role evidence. Explicit DL/LB/DB roster slots and IDP flex slots (`IDP_FLEX`, `FLEX_IDP`, or `DP`) enable values for the relevant IDP groups; a `DEF` slot enables D/ST, and a `K` slot enables kickers. Trade ignores KTC rows for these positions, including zero-valued placeholders. All positions use the same baseline-and-role approach on one curve, so a top defender is compared with offense by points over its own position's starter and waiver lines rather than by rank within a deep defensive pool. IDP positions where many viable defenders go unrostered score lower. No hard replacement threshold or minimum games requirement can force a viable player to zero. Unknown evidence remains unavailable (`—`). A trade side containing an unavailable asset cannot receive a fairness verdict until all of its assets have values.
 
 ### Agent flow
 
@@ -281,6 +306,7 @@ Known design behavior:
 - Proposal pick cards sort chronologically within each side of a trade: year, then round. Player cards keep their generated order; pick cards are sorted among the pick group.
 - Draft pick labels must use `draftPickDisplay.js`, not duplicated string formatting. Sleeper's traded-pick data identifies a tradable asset by season and round; Trade surfaces therefore display only year plus round and never infer a future slot from standings or draft setup metadata.
 - Draft pick values must use `valueDraftPick(...)`, not duplicated redraft discounts or KTC RDP lookup. Pass KTC players and league type into proposal engines so dynasty/fallback pick values match Trade Agent.
+- Once the current season's draft is complete (Sleeper draft status, else league status `in_season`/`post_season`/`complete`), `buildRosterPicks(...)` offers only future-year picks; Sleeper keeps returning spent traded picks, so they are filtered out.
 - All tradable picks display only year plus round. Actual used draft results, if needed in a historical surface later, should come from Sleeper's completed draft-picks records rather than being inferred in the Trade model.
 - `Use Surplus` is structurally player-first; do not expose UI options that imply unsupported pick-only outgoing behavior there
 - `Fix Needs` can use picks, but proposal selection must explicitly protect pick-inclusive and pick-only shapes if the product wants them visible
