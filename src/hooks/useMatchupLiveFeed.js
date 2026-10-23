@@ -276,7 +276,13 @@ function buildMockLivePlays(game, rows = []) {
  *   live session, the week is the current or an earlier one and the matchup
  *   was found. `historical` marks an earlier, finished week.
  */
-export default function useMatchupLiveFeed({ enabled = true, matchupId = null, week: requestedWeek = null, allowSandbox = true } = {}) {
+export default function useMatchupLiveFeed({
+  enabled = true,
+  matchupId = null,
+  week: requestedWeek = null,
+  allowSandbox = true,
+  projectionTables = null,
+} = {}) {
   // Dev-only. Returns null in production, where the whole module is dropped.
   const sandboxState = useLiveSandbox();
   const sandbox = allowSandbox ? sandboxState : null;
@@ -798,6 +804,16 @@ export default function useMatchupLiveFeed({ enabled = true, matchupId = null, w
   }, [activeScoringSettings, players, sandboxActive, season, week]);
 
   // Same projection assembly Matchups uses, so both read identical numbers.
+  // Matchups passes the defense table and league averages it already built.
+  // Rebuilding them here took a few hundred ms on every players or stat-line
+  // change (each live stat refresh), so reuse them whenever they were built
+  // from the same data this hook reads.
+  const sharedProjectionTables = projectionTables?.defenseTable
+    && projectionTables.weeklyStats === weeklyStats
+    && projectionTables.players === players
+    && projectionTables.scoringSettings === activeScoringSettings
+    ? projectionTables
+    : null;
   const projectionContext = useMemo(() => {
     if (!week || !weeklyStats || !players) return null;
     return buildProjectionContext({
@@ -806,9 +822,11 @@ export default function useMatchupLiveFeed({ enabled = true, matchupId = null, w
       scheduleMap: activeScheduleMapForContext,
       scoringSettings: activeScoringSettings,
       week,
+      defenseTable: sharedProjectionTables?.defenseTable ?? null,
+      leagueAvgByPos: sharedProjectionTables?.leagueAvgByPos ?? null,
       sleeperProjections: sleeperProjectionMap,
     });
-  }, [activeScheduleMapForContext, activeScoringSettings, players, sleeperProjectionMap, week, weeklyStats]);
+  }, [activeScheduleMapForContext, activeScoringSettings, players, sharedProjectionTables, sleeperProjectionMap, week, weeklyStats]);
 
   const starterInfoById = useMemo(() => {
     const map = new Map();

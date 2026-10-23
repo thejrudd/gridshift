@@ -15,6 +15,8 @@ Open bugs are listed first, deferred work next, fixed bugs below. Add new entrie
 
 | Bug | Fixed In |
 |-----|----------|
+| Matchups' win chance chart stayed blank at kickoff and the live win chance barely moved during a game whose live feed reported the quarter and clock only in its status text. | v9.3.1 |
+| Matchups' win chance chart loaded slowly because the live layer rebuilt the league defense table on load and on every live stat refresh. | v9.3.1 |
 | Trade values dropped players with a realistic role or recent production to 0 when current and prior samples were sparse, such as after a single game. | v9.3.0 |
 | A KTC value of 0 was treated as a real market price instead of an unvalued placeholder, lowering player values and letting a partial trade total read as fair. | v9.3.0 |
 | Compare Trade and Companion Trade could show different scores for the same player because they did not share one player-value scale. | v9.3.0 |

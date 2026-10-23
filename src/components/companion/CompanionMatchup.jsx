@@ -1825,11 +1825,15 @@ function CompanionMatchupView({
   // everything else render exactly as before. Rules: docs/Fantasy Live.md.
   const isLiveLayerWeek = currentFantasyWeek != null && Number(week) >= 1 && Number(week) <= Number(currentFantasyWeek);
   const opponentRosterId = opponentMatchup?.roster_id ?? rightSide?.rosterId ?? null;
+  const liveProjectionTables = useMemo(() => (defenseTable
+    ? { weeklyStats, players, scoringSettings: activeScoringSettings, defenseTable, leagueAvgByPos }
+    : null), [activeScoringSettings, defenseTable, leagueAvgByPos, players, weeklyStats]);
   const live = useMatchupLiveFeed({
     enabled: platform === 'sleeper' && isLiveLayerWeek,
     matchupId: currentMatchupId,
     week: isLiveLayerWeek ? Number(week) : null,
     allowSandbox: liveSandboxStandsIn,
+    projectionTables: liveProjectionTables,
   });
   // Before any starter in this matchup kicks off there is no progress to show:
   // the page keeps the plain masthead and its estimated win chance bar.

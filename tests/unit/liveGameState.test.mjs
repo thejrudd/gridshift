@@ -5,6 +5,8 @@ import { getLiveMatchups } from '../../src/api/sleeperApi.js';
 import {
   STARTER_GAME_STATE,
   getFallbackRemainingGameFraction,
+  getGameClock,
+  getGameGlance,
   getMatchupCustomPoints,
   getOfficialMatchupRowPoints,
   hasReconciledMatchup,
@@ -12,6 +14,7 @@ import {
   isCompleteScheduleWeek,
   resolveStarterGameState,
 } from '../../src/utils/liveScoringFeed.js';
+import { getRemainingGameFraction } from '../../src/utils/liveWinProbability.js';
 
 describe('live starter game-state resolution', () => {
   it('distinguishes scheduled, live, and officially final games', () => {
@@ -37,6 +40,17 @@ describe('live starter game-state resolution', () => {
     assert.equal(isLiveGame({ status: '8:20 pm ET' }), false);
     assert.equal(isLiveGame({ status: '0:00 - 4th', status_state: 'completed' }), false);
     assert.equal(isLiveGame({ status: '4:12 - 1st', status_state: 'delayed' }), false);
+  });
+
+  it('reads the quarter and clock from a clock-first status when period and time are empty', () => {
+    const game = { status: '11:27 - 3rd', period: null, time: null, visitor_team: { abbreviation: 'NE' }, home_team: { abbreviation: 'CHI' } };
+    assert.deepEqual(getGameClock(game), { period: 3, time: '11:27' });
+    // 11:27 left in the 3rd: (4 - 3 + 687/900) / 4 of the game still to play.
+    assert.equal(getRemainingGameFraction(game), (1 + 687 / 900) / 4);
+    assert.equal(getGameGlance(game).clock, 'Q3 11:27');
+    // Explicit fields still win over the status text.
+    assert.deepEqual(getGameClock({ status: '11:27 - 3rd', period: 4, time: '2:00' }), { period: 4, time: '2:00' });
+    assert.deepEqual(getGameClock({ status: 'Scheduled' }), { period: null, time: null });
   });
 
   it('accepts an explicit completed schedule entry as official finality', () => {

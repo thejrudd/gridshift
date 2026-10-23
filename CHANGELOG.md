@@ -1449,3 +1449,10 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Injuries deep links** - Injuries can open directly on a player.
 - **Server and routing** - Added `/api/statistics/players/` and `/api/statistics/teams/` endpoints with matching nginx routes and a longer read timeout for cold seasons. Finished games' play-by-play is archived on disk and shared by Matchups and Scores, and `/fantasy/live` now opens Matchups.
 - **Regression coverage and documentation** - Added coverage for the player and team dashboard models, Scores Team Stats breakdowns, play-by-play rows, and season context, the Matchups replay, slate axis, point sources, team scoring and player drilldowns, the play-by-play archive, Rankings projection eligibility, trade value scale and injury slot rules, plus Player Dashboard, Team Dashboard, Statistics Scores, Fantasy Live, Player Matchup Drilldown, Trade Engine, and Independent Fantasy Platform Plan references.
+
+## v9.3.1 - Live Win Chance Fix
+*2026-10-22*
+
+- **Live win chance progress** - The Matchups win chance chart, replay bar, and live win chance now follow a game's clock when the live feed reports the quarter and time only in its status (such as "11:27 - 3rd"). Previously every such game counted as just kicked off, so the chart stayed blank at kickoff and the win chance barely moved.
+- **Faster live chart load** - The live layer reuses the defense table and league averages Matchups already built instead of rebuilding them on load and on every live stat refresh.
+- **Regression coverage and documentation** - Added coverage for clock-only game statuses, made the kickoff phase-strip and live expected-pace tests independent of timezone and rounding, and updated the Fantasy Live reference.
