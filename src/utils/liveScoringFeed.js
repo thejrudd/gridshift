@@ -290,6 +290,24 @@ export function getGameStatusText(game) {
   return raw || 'Scheduled';
 }
 
+const CLOCK_QUARTER_STATUS = /^(\d{1,2}:\d{2})\s*(?:-|·)\s*(\d+)(?:st|nd|rd|th)(?:\s+(?:q|quarter))?$/i;
+
+/**
+ * A game's quarter and time left. A live game may carry them only in a
+ * clock-first status ("11:27 - 3rd") with `period` and `time` left empty, so
+ * read the status when the fields are missing. `period` is null when unknown.
+ */
+export function getGameClock(game) {
+  const match = CLOCK_QUARTER_STATUS.exec(String(game?.status ?? '').trim());
+  const explicitPeriod = game?.period == null || game.period === '' ? Number.NaN : Number(game.period);
+  const parsedPeriod = Number(match?.[2]);
+  const period = Number.isFinite(explicitPeriod) && explicitPeriod > 0
+    ? explicitPeriod
+    : Number.isFinite(parsedPeriod) && parsedPeriod > 0 ? parsedPeriod : null;
+  const explicitTime = String(game?.time ?? '').trim();
+  return { period, time: explicitTime || match?.[1] || null };
+}
+
 export function isLiveGame(game) {
   const status = getRawGameStatus(game);
   const state = getRawGameStatusState(game);
@@ -299,7 +317,7 @@ export function isLiveGame(game) {
   // BALLDONTLIE's raw Games response can expose an in-progress game as a
   // clock-first status such as "4:12 - 1st". Statistics Scores normalizes that
   // shape before rendering, while Fantasy Live consumes the raw response.
-  const clockQuarterStatus = /^\d{1,2}:\d{2}\s*(?:-|·)\s*\d+(?:st|nd|rd|th)(?:\s+(?:q|quarter))?$/i.test(status);
+  const clockQuarterStatus = CLOCK_QUARTER_STATUS.test(status);
   return state === 'in progress'
     || state === 'live'
     || state === 'in'
@@ -477,10 +495,10 @@ export function getGameGlance(game) {
   const away = getTeamAbbr(game.visitor_team);
   const home = getTeamAbbr(game.home_team);
   const live = isLiveGame(game);
-  const period = Number(game.period);
-  const timeLeft = String(game.time ?? '').trim();
+  const { period, time } = getGameClock(game);
+  const timeLeft = time ?? '';
   let clock = getGameStatusText(game);
-  if (live && Number.isFinite(period) && period > 0) {
+  if (live && period != null) {
     clock = `Q${period}${timeLeft ? ` ${timeLeft}` : ''}`;
   } else if (isFinalGame(game)) {
     clock = 'Final';

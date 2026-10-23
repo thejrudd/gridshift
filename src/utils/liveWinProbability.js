@@ -3,7 +3,7 @@
 // chart. Pure functions; the component supplies projections (via the shared
 // starterProjections module) and NFL game state (via liveScoringFeed helpers).
 
-import { isFinalGame, isLiveGame } from './liveScoringFeed.js';
+import { getGameClock, isFinalGame, isLiveGame } from './liveScoringFeed.js';
 import { LIVE_WIN_PROBABILITY_MODEL } from '../data/liveWinProbabilityModel.js';
 
 const OT_REMAINING_FRACTION = 0.04;
@@ -111,12 +111,12 @@ export function getRemainingGameFraction(game, { hasGameThisWeek = true } = {}) 
   if (!isLiveGame(game)) return 1;
 
   const status = String(game.status ?? '').toLowerCase();
-  const period = Number(game.period);
-  if (Number.isFinite(period) && period >= 5) return OT_REMAINING_FRACTION;
+  const { period, time } = getGameClock(game);
+  if (period != null && period >= 5) return OT_REMAINING_FRACTION;
   if (status.includes('half')) return 0.5;
-  if (!Number.isFinite(period) || period < 1) return 1;
+  if (period == null) return 1;
 
-  const clockSeconds = parseClockToSeconds(game.time) ?? 450; // mid-quarter default
+  const clockSeconds = parseClockToSeconds(time) ?? 450; // mid-quarter default
   return Math.min(1, Math.max(0, (4 - period + clockSeconds / 900) / 4));
 }
 

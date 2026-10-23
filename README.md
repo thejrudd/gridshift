@@ -134,13 +134,9 @@ Draft Sync is an optional capability of the existing API sidecar, not a required
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) + optional Node API sidecar |
 
-## What's New in v9.3.0
+## What's New in v9.3.1
 
-- **Player dashboard** — Play-by-play tabs by position, with per-play fantasy points under your league's scoring.
-- **Team dashboard** — A team hero with Season, Players, Depth, and League tabs.
-- **Fantasy Live in Matchups** — Replay, win chance, and scoring plays now live in Matchups, with a team scoring drilldown and a redesigned player breakdown.
-- **Scores game dashboard** — A pregame matchup preview, Team Stats that expand into the players behind each number, and new drive and special-teams stats.
-- **Consistent Trade values** — One 0–100 scale measured against each position's starter and waiver lines, shared by Compare Trade and Companion Trade.
+- **Live win chance** — The Matchups win chance chart keeps moving through a live game and draws sooner when the page loads.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 
