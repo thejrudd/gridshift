@@ -89,6 +89,7 @@ const SLEEPER_STATS_REFRESH_MS = 30000;
 // than only the first handful.
 const MAX_PLAYS_GAMES = 16;
 const PLAYS_REFRESH_MIN_MS = 8_000;
+const PLAYS_RETRY_MS = 4_000;
 const FINAL_RECONCILIATION_RETRY_MS = 30000;
 const NO_GAMES = Object.freeze([]);
 const NO_PLAYS = Object.freeze({});
@@ -379,6 +380,11 @@ export default function useMatchupLiveFeed({
   const [loadingLive, setLoadingLive] = useState(false);
   const [sessionLoading, setSessionLoading] = useState(false);
   const [lastUpdatedAt, setLastUpdatedAt] = useState(null);
+  // Bumped to re-run the play fetch after a failed request in a finished week,
+  // which has no live tick to retry it.
+  const [playsRetryVersion, setPlaysRetryVersion] = useState(0);
+  // The play request context whose last attempt failed, cleared by a clean one.
+  const [failedPlayContext, setFailedPlayContext] = useState(null);
   const [feedEvents, setFeedEvents] = useState([]);
   const [weatherMap, setWeatherMap] = useState({});
   const [playsState, setPlaysState] = useState({ key: null, byGame: NO_PLAYS });
@@ -402,6 +408,9 @@ export default function useMatchupLiveFeed({
   const playsFetchedRef = useRef(new Map());
   const liveSnapshotInFlightContextsRef = useRef(new Set());
   const playFetchInFlightContextsRef = useRef(new Set());
+  const playsRetryTimerRef = useRef(null);
+  // Play request contexts whose feed has been complete at least once.
+  const feedShownContextsRef = useRef(new Set());
   const playRequestContextRef = useRef(null);
   const weatherPendingRef = useRef(new Set());
   const liveSnapshotRequestRef = useRef(0);
@@ -1132,6 +1141,7 @@ export default function useMatchupLiveFeed({
       { mock: mockPlays, maxGames: MAX_PLAYS_GAMES },
     );
 
+    let failed = false;
     (async () => {
       try {
         await Promise.allSettled(relevant.map(async (game) => {
@@ -1166,14 +1176,27 @@ export default function useMatchupLiveFeed({
             storeGamePlays(requestFeedKey, gameId, fetchedPlays);
           } catch {
             // Leave the marker unset so a later tick can retry.
+            failed = true;
           }
         }));
       } finally {
         playFetchInFlightContextsRef.current.delete(requestContext);
       }
+      if (playRequestContextRef.current === requestContext) {
+        setFailedPlayContext((current) => (failed ? requestContext : current === requestContext ? null : current));
+      }
+      // A finished week never polls, so without this a request that failed
+      // (a busy provider, a dropped connection) left the chart flat and the
+      // plays list empty until the page was reloaded.
+      if (failed && historical && playRequestContextRef.current === requestContext) {
+        window.clearTimeout(playsRetryTimerRef.current);
+        playsRetryTimerRef.current = window.setTimeout(() => setPlaysRetryVersion((version) => version + 1), PLAYS_RETRY_MS);
+      }
     })();
     return undefined;
-  }, [currentMatchup, demoFeedEnabled, feedKey, lastUpdatedAt, liveGames, liveSource, liveStatus, matchupTeams, playRequestContextKey, sandbox, sideSummaries, storeGamePlays]);
+  }, [currentMatchup, demoFeedEnabled, feedKey, historical, lastUpdatedAt, liveGames, liveSource, liveStatus, matchupTeams, playRequestContextKey, playsRetryVersion, sandbox, sideSummaries, storeGamePlays]);
+
+  useEffect(() => () => window.clearTimeout(playsRetryTimerRef.current), []);
 
   const gamesById = useMemo(() => {
     const map = new Map();
@@ -1247,6 +1270,17 @@ export default function useMatchupLiveFeed({
   }, [demoFeedEnabled, liveGames, matchupTeams, playsByGame, playsExpected]);
   const statLineLoaded = !reconcilerEnabled || (sandboxActive && !sandboxReplay) || sleeperStatsFetchedAt != null;
   const feedReady = Boolean(currentMatchup) && playsLoaded && statLineLoaded;
+  if (feedReady) feedShownContextsRef.current.add(playRequestContextKey);
+  // Play-by-play comes only from the GridShift server. When it cannot supply
+  // it (the server or its provider is down, or out of requests) the live layer
+  // stays off and Matchups reads as it does without live scoring, rather than
+  // drawing a flat chart with no plays. Requests keep retrying; once the feed
+  // has been complete for this matchup a later failure keeps the last good
+  // plays instead of taking the layer away.
+  const playsUnavailable = playsExpected
+    && !playsLoaded
+    && failedPlayContext === playRequestContextKey
+    && !feedShownContextsRef.current.has(playRequestContextKey);
 
   // Reconciliation step (effect, not memo: the rows it scores must never feed
   // back into the plays it reads).
@@ -1455,10 +1489,11 @@ export default function useMatchupLiveFeed({
 
   const platformLabel = platform === 'espn' ? 'ESPN' : 'Sleeper';
   const sessionEnabled = Boolean(liveStatus?.session?.enabled);
+  const liveConfigured = Boolean(liveStatus?.live?.enabled);
   return {
     // Shown only when the league has a live session, the week is the current
     // or an earlier one, and the followed matchup was found.
-    active: Boolean(week && sessionEnabled && currentMatchup),
+    active: Boolean(week && sessionEnabled && liveConfigured && currentMatchup && !playsUnavailable),
     // Whether any starter in this matchup has kicked off.
     started: matchupStarted,
     // The first answer is in: no live layer applies, the session check came
@@ -1470,6 +1505,7 @@ export default function useMatchupLiveFeed({
       || statusError
       || (liveStatus && !liveStatus.session?.enabled)
       || liveError
+      || playsUnavailable
       || (gamesLoadedContext === liveSnapshotContextKey && !matchupsLoading && (feedReady || !currentMatchup)),
     ),
     // The chart's data is complete (see above).

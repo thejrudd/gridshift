@@ -63,6 +63,8 @@ export function getNameVariants(normalizedName) {
  */
 export function buildPlayerNameIndex(entries, { normalize = normalizePlayerName } = {}) {
   const variantOwners = new Map();
+  // Bare surnames ("young"), the only variants dropped when shared.
+  const bareVariants = new Set();
   const meta = new Map();
   const teamDefenseIds = new Map();
 
@@ -79,6 +81,8 @@ export function buildPlayerNameIndex(entries, { normalize = normalizePlayerName 
       teamDefenseIds.set(team, owners);
     }
 
+    const parts = normalized.split(' ').filter(Boolean);
+    if (parts.length >= 2) bareVariants.add(parts[parts.length - 1]);
     getNameVariants(normalized).forEach((variant) => {
       const owners = variantOwners.get(variant) ?? new Set();
       owners.add(entry.id);
@@ -87,8 +91,11 @@ export function buildPlayerNameIndex(entries, { normalize = normalizePlayerName 
   });
 
   const index = new Map();
+  // "B.Young" normalizes to the glued "byoung", which Byron and Bryce Young
+  // share just as they share "b young"; keep it and let the caller's team
+  // check tell them apart, or neither can ever be matched from short text.
   variantOwners.forEach((owners, variant) => {
-    if (owners.size > 1 && !variant.includes(' ')) return;
+    if (owners.size > 1 && bareVariants.has(variant)) return;
     index.set(variant, [...owners]);
   });
   return { index, meta, teamDefenseIds };

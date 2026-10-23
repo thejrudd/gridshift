@@ -177,7 +177,15 @@ export function isTurnoverOnDowns(play) {
   if (/penalty/.test(slug)) return false;
   // Nor is a play that put points on the board, whatever the down fields say.
   if (play?.scoring === true) return false;
-  const gained = Number(play?.statYardage);
+  // A flag enforced after the snap (an offensive foul after a fourth-down
+  // conversion, say) is netted into the provider's yardage, so a play that
+  // gained the distance can read as short of it. The narrative's credited
+  // yards are what the offense actually gained.
+  const penalty = play?.narrative?.penalty;
+  const credited = Number(play?.narrative?.creditedYards);
+  const gained = penalty && !penalty.declined && play?.narrative?.creditedYards != null && Number.isFinite(credited)
+    ? credited
+    : Number(play?.statYardage);
   const needed = Number(play?.startDistance);
   if (!Number.isFinite(gained) || !Number.isFinite(needed) || needed <= 0) return false;
   return Number(play?.startDown) === 4 && Number(play?.endDown) === 1 && gained < needed;

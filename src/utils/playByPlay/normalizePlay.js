@@ -107,6 +107,8 @@ function readGeometryFields(play) {
     startDown: asNumberOrNull(pick('startDown', 'start_down')),
     startDistance: asNumberOrNull(pick('startDistance', 'start_distance')),
     endDown: asNumberOrNull(pick('endDown', 'end_down')),
+    // Credited yards on a play with an accepted penalty (see isTurnoverOnDowns).
+    narrative: play?.narrative ?? null,
   };
 }
 

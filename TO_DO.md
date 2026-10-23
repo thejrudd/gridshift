@@ -30,7 +30,7 @@ GridShift is a labor-of-love project: it should create something genuinely usefu
 
 The live layer, team scoring drilldown, and player breakdown redesign shipped in v9.3.0. See [Fantasy Live](docs/Fantasy%20Live.md) and [Player Matchup Drilldown](docs/Player%20Matchup%20Drilldown.md).
 
-- **Real-data validation** — Check the layer, the team scoring drilldown, and the player breakdown during a live game window with an allowlisted league (pending/confirmed plays, residual adjustments, the 5s/30s polling cadence, settled finals), and a finished earlier week (plays matched for starters traded since that week, final totals agreeing with Sleeper).
+- **Real-data validation** — Check the layer, the team scoring drilldown, and the player breakdown during a live game window with an allowlisted league (pending/confirmed plays, residual adjustments, the 5s/30s polling cadence, settled finals). Finished weeks were checked in v9.3.3: play totals against Sleeper for every starter in a week, with the remaining gaps settled by reconciliation.
 - **Compact-phone starter row heights** — At 480px and below, long names wrap inside the shared `CompanionPlayerRow`, so rows vary in height (56–75px at 360px). Decide whether the shared row should keep one height there.
 - **Rewind responsiveness** — Selecting a play re-renders the whole matchup (about 290ms with the sandbox league). Profile with a real league and trim if it is noticeable.
 

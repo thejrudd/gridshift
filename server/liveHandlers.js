@@ -3,8 +3,10 @@ import crypto from 'node:crypto';
 import process from 'node:process';
 import express from 'express';
 import { createBalldontlieGateway } from './balldontlieGateway.js';
+import { readThroughFinishedArchive } from './finishedGameArchive.js';
 import { createLiveGameSnapshotStore } from './liveGameSnapshots.js';
 import { parseCookies } from './sessionCrypto.js';
+import { isFinalGame } from '../src/utils/liveScoringFeed.js';
 
 export const LIVE_SESSION_COOKIE = 'gridshift_live_session';
 export const LIVE_SESSION_TTL_SECONDS = 60 * 60 * 24 * 7;
@@ -12,6 +14,10 @@ const LIVE_SESSION_SECRET_ERROR = 'GRIDSHIFT_LIVE_COOKIE_SECRET or GRIDSHIFT_SES
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_BUCKETS = new Map();
 const DEFAULT_PER_PAGE = 100;
+// The fastest a live response is refetched from the provider, however many
+// viewers poll it. Browsers poll every 5s, so provider traffic is bounded by
+// the number of live games, not by the number of people watching them.
+const LIVE_PROVIDER_REFRESH_FLOOR_MS = 5_000;
 
 function hasValue(value) {
   return typeof value === 'string' && value.trim().length > 0;
@@ -295,19 +301,22 @@ function buildGameScopedParams(gameId, query = {}) {
   return { normalizedGameId, params };
 }
 
-function buildMultiGameStatsParams(query = {}) {
-  const gameIds = splitCsvParam(query.gameIds ?? query.game_ids)
+function parseMultiGameIds(query = {}) {
+  const gameIds = [...new Set(splitCsvParam(query.gameIds ?? query.game_ids)
     .map((value) => sanitizeIntegerParam(value))
-    .filter((value) => value != null);
+    .filter((value) => value != null))];
   if (!gameIds.length) {
     const error = new Error('At least one valid BALLDONTLIE game ID is required.');
     error.statusCode = 400;
     throw error;
   }
+  return gameIds;
+}
 
+function buildGameStatsParams(gameId) {
   const params = new URLSearchParams();
   params.set('per_page', String(DEFAULT_PER_PAGE));
-  gameIds.forEach((gameId) => params.append('game_ids[]', String(gameId)));
+  params.append('game_ids[]', String(gameId));
   return params;
 }
 
@@ -322,11 +331,20 @@ function groupStatsByGameId(rows = []) {
   }, {});
 }
 
+// A response is cached for the long final TTL only when every game it covers
+// is over. A week's game list starts with Thursday's game, so reading the
+// first row alone froze Sunday's statuses (and their plays) for hours once
+// Thursday finished. Stats rows carry their game as `row.game`.
 function getCacheTtlMs(payload = null) {
-  const status = String(payload?.data?.status ?? payload?.data?.[0]?.status ?? '').toLowerCase();
-  const finalTtlMs = getLiveConfigStatus().finalTtlMs;
-  if (status.includes('final') || status.includes('complete')) return finalTtlMs;
-  return getLiveConfigStatus().cacheTtlMs;
+  const data = payload?.data;
+  const rows = Array.isArray(data) ? data : data ? [data] : [];
+  const games = rows.map((row) => (row?.status != null ? row : row?.game)).filter(Boolean);
+  const allFinal = games.length > 0 && games.length === rows.length && games.every((game) => isFinalGame(game));
+  return allFinal ? getLiveConfigStatus().finalTtlMs : getLiveRefreshTtlMs();
+}
+
+function getLiveRefreshTtlMs() {
+  return Math.max(getLiveConfigStatus().cacheTtlMs, LIVE_PROVIDER_REFRESH_FLOOR_MS);
 }
 
 function buildLiveResponse(payload, cacheInfo, session, gatewayStatus = null) {
@@ -344,6 +362,8 @@ function buildLiveResponse(payload, cacheInfo, session, gatewayStatus = null) {
       hit: Boolean(cacheInfo?.hit),
       coalesced: Boolean(cacheInfo?.coalesced),
       stale: Boolean(cacheInfo?.stale),
+      // Served from the finished-game archive on disk, not the provider.
+      archived: Boolean(cacheInfo?.archived),
       ageMs: cacheInfo?.ageMs ?? 0,
       ttlMs: cacheInfo?.ttlMs ?? getLiveConfigStatus().cacheTtlMs,
       fetchedAt: cacheInfo?.fetchedAt ?? new Date().toISOString(),
@@ -367,15 +387,20 @@ function sendLiveError(res, error, fallbackMessage) {
 export function createLiveRouter({
   gateway: injectedGateway,
   snapshotStore: injectedSnapshotStore,
+  // The on-disk archive of finished games (livePlaysArchive.js). Finished
+  // weeks' game lists and finished games' player stats are escrowed there, so
+  // a finished game is read from the provider a bounded number of times ever.
+  archive = null,
   fetcher = fetch,
   env = process.env,
+  now = () => Date.now(),
 } = {}) {
   const router = express.Router();
   const gateway = injectedGateway ?? createBalldontlieGateway({ fetcher, env });
-  const snapshotStore = injectedSnapshotStore ?? createLiveGameSnapshotStore({ gateway });
+  const snapshotStore = injectedSnapshotStore ?? createLiveGameSnapshotStore({ gateway, archive });
 
   async function fetchCachedBdl(endpoint, params, capability) {
-    const baseTtlMs = getLiveConfigStatus().cacheTtlMs;
+    const baseTtlMs = getLiveRefreshTtlMs();
     const result = await gateway.request({
       path: endpoint,
       params,
@@ -428,14 +453,18 @@ export function createLiveRouter({
     }
 
     const sessionMatchesRequestedLeague = liveSessionMatchesLeague(session, requestedLeagueId, req.query.provider ?? 'sleeper');
+    const config = getLiveConfigStatus();
     res.set('Cache-Control', 'no-store').json({
       ok: true,
       live: {
-        ...getLiveConfigStatus(),
+        ...config,
         ...gateway.getStatus(),
         leagueAllowed,
       },
-      session: session && sessionMatchesRequestedLeague
+      // A session cookie outlives the server's configuration (it lasts a
+      // week). Without a BALLDONTLIE key every live request would fail, so a
+      // session only counts while live scoring is configured.
+      session: session && sessionMatchesRequestedLeague && config.enabled
         ? buildSessionStatus(session)
         : { enabled: false },
     });
@@ -510,7 +539,12 @@ export function createLiveRouter({
       const session = requireLiveSession(req);
       requireRateLimit(req, session);
       const params = buildLiveGamesParams(req.query);
-      const { payload, cacheInfo } = await fetchCachedBdl('/nfl/v1/games', params, 'games');
+      const { payload, cacheInfo } = await readThroughFinishedArchive({
+        archive,
+        now,
+        key: `games:${new URLSearchParams([...params].sort(([a, x], [b, y]) => a.localeCompare(b) || x.localeCompare(y))).toString()}`,
+        fetchFresh: () => fetchCachedBdl('/nfl/v1/games', params, 'games'),
+      });
       return res.set('Cache-Control', 'no-store').json(buildLiveResponse(payload, cacheInfo, session, gateway.getStatus()));
     } catch (error) {
       return sendLiveError(res, error, 'Could not load live games.');
@@ -538,13 +572,40 @@ export function createLiveRouter({
     }
   });
 
+  function fetchGameStats(gameId) {
+    return readThroughFinishedArchive({
+      archive,
+      now,
+      key: `stats:${gameId}`,
+      fetchFresh: () => fetchCachedBdl('/nfl/v1/stats', buildGameStatsParams(gameId), 'stats'),
+    });
+  }
+
+  // One provider request (and cache entry) per game rather than one for the
+  // whole set: a finished game's stats are then cached for the long final TTL
+  // and shared by every matchup and viewer, so only live games are refetched.
+  // A combined request was keyed by the exact game set, never outlived the 1s
+  // live TTL, and re-read every page of finished games on each poll.
   router.get('/player-stats', async (req, res) => {
     try {
       const session = requireLiveSession(req);
       requireRateLimit(req, session);
-      const params = buildMultiGameStatsParams(req.query);
-      const { payload, cacheInfo } = await fetchCachedBdl('/nfl/v1/stats', params, 'stats');
-      const response = buildLiveResponse(payload, cacheInfo, session, gateway.getStatus());
+      const gameIds = parseMultiGameIds(req.query);
+      const results = await Promise.all(gameIds.map((gameId) => fetchGameStats(gameId)));
+      const data = results.flatMap((result) => (Array.isArray(result.payload?.data) ? result.payload.data : []));
+      const infos = results.map((result) => result.cacheInfo);
+      const oldest = infos.reduce((worst, info) => (info.ageMs > worst.ageMs ? info : worst), infos[0]);
+      const cacheInfo = {
+        hit: infos.every((info) => info.hit),
+        coalesced: infos.some((info) => info.coalesced),
+        stale: infos.some((info) => info.stale),
+        archived: infos.every((info) => info.archived),
+        ageMs: oldest.ageMs,
+        ttlMs: Math.min(...infos.map((info) => info.ttlMs)),
+        fetchedAt: oldest.fetchedAt,
+        freshness: oldest.freshness,
+      };
+      const response = buildLiveResponse({ data, meta: null }, cacheInfo, session, gateway.getStatus());
       return res.set('Cache-Control', 'no-store').json({
         ...response,
         games: groupStatsByGameId(response.data),
@@ -558,9 +619,8 @@ export function createLiveRouter({
     try {
       const session = requireLiveSession(req);
       requireRateLimit(req, session);
-      const { normalizedGameId, params } = buildGameScopedParams(req.params.gameId, req.query);
-      params.append('game_ids[]', String(normalizedGameId));
-      const { payload, cacheInfo } = await fetchCachedBdl('/nfl/v1/stats', params, 'stats');
+      const { normalizedGameId } = buildGameScopedParams(req.params.gameId, req.query);
+      const { payload, cacheInfo } = await fetchGameStats(normalizedGameId);
       return res.set('Cache-Control', 'no-store').json(buildLiveResponse(payload, cacheInfo, session, gateway.getStatus()));
     } catch (error) {
       return sendLiveError(res, error, 'Could not load live player stats.');

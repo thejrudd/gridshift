@@ -154,3 +154,80 @@ describe('Fantasy Live placeholder-data boundary', () => {
     assert.equal(cleared.response.statusCode, 200);
   });
 });
+
+describe('Fantasy Live provider caching', () => {
+  async function startSession(router) {
+    const started = await invoke(router, '/session', 'post', {
+      body: { leagueId: 'league-73', provider: 'sleeper' },
+    });
+    return started.response.headers['set-cookie'].split(';', 1)[0];
+  }
+
+  function useLiveEnv() {
+    process.env.NODE_ENV = 'test';
+    process.env.GRIDSHIFT_BDL_API_KEY = 'test-key';
+    process.env.GRIDSHIFT_LIVE_ALLOWED_LEAGUE_IDS = 'league-73';
+    process.env.GRIDSHIFT_SESSION_SECRET = 'test-secret';
+    delete process.env.GRIDSHIFT_LIVE_COOKIE_SECRET;
+    delete process.env.GRIDSHIFT_LIVE_ACCESS_CODE;
+  }
+
+  function recordingGateway(payloadFor) {
+    const calls = [];
+    return {
+      calls,
+      getStatus: () => ({}),
+      request: async (options) => {
+        calls.push(options);
+        return {
+          payload: payloadFor(options),
+          cache: { hit: false, coalesced: false, stale: false },
+          freshness: { ageMs: 0, providerFetchedAt: new Date(0).toISOString() },
+        };
+      },
+    };
+  }
+
+  it('requests player stats one game at a time, caching finished games for the final TTL', async () => {
+    useLiveEnv();
+    const finalGame = { id: 11, status: 'Final' };
+    const liveGame = { id: 12, status: '2nd Qtr' };
+    const gateway = recordingGateway((options) => {
+      const gameId = Number(options.params.get('game_ids[]'));
+      const game = gameId === 11 ? finalGame : liveGame;
+      return { data: [{ player: { id: gameId * 10 }, game }] };
+    });
+    const router = createLiveRouter({ gateway, snapshotStore: {} });
+    const cookie = await startSession(router);
+
+    const { body } = await invoke(router, '/player-stats', 'get', {
+      query: { gameIds: '11,12,11' },
+      headers: { cookie },
+    });
+
+    assert.equal(body.ok, true);
+    assert.deepEqual(gateway.calls.map((call) => call.params.getAll('game_ids[]')), [['11'], ['12']]);
+    assert.deepEqual(Object.keys(body.games).sort(), ['11', '12']);
+    const [finalCall, liveCall] = gateway.calls;
+    const config = getLiveConfigStatus();
+    assert.equal(finalCall.resolveCacheTtlMs({ data: [{ game: finalGame }] }), config.finalTtlMs);
+    // A live game's stats are refetched at most every 5 seconds, however many poll.
+    assert.equal(liveCall.resolveCacheTtlMs({ data: [{ game: liveGame }] }), Math.max(config.cacheTtlMs, 5_000));
+  });
+
+  it('keeps a week of games on the short TTL until every game is final', async () => {
+    useLiveEnv();
+    const gateway = recordingGateway(() => ({ data: [] }));
+    const router = createLiveRouter({ gateway, snapshotStore: {} });
+    const cookie = await startSession(router);
+    await invoke(router, '/games', 'get', { query: { season: '2026', week: '7' }, headers: { cookie } });
+
+    const resolve = gateway.calls[0].resolveCacheTtlMs;
+    const config = getLiveConfigStatus();
+    // Thursday's game is final and listed first; Sunday's are still to come.
+    const liveTtl = Math.max(config.cacheTtlMs, 5_000);
+    assert.equal(resolve({ data: [{ status: 'Final' }, { status: '10/25 - 1:00 PM EDT' }] }), liveTtl);
+    assert.equal(resolve({ data: [{ status: 'Final' }, { status: 'Final/OT' }] }), config.finalTtlMs);
+    assert.equal(resolve({ data: [] }), liveTtl);
+  });
+});
