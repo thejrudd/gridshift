@@ -9,6 +9,7 @@ import {
   getCurrentSeason,
 } from '../src/utils/espnPlayerFetch.js';
 import { UpstreamUnavailableError } from './playerDataUpstream.js';
+import { buildPlayerSnapCounts, parseCsv } from '../src/utils/snapCounts.js';
 
 const gzipAsync = promisify(gzip);
 const gunzipAsync = promisify(gunzip);
@@ -29,7 +30,7 @@ function readJson(result) {
  * live rows expire on a TTL. If ESPN fails, an expired row is served (marked
  * stale) rather than an error. Nothing is fetched ahead of a request.
  */
-export function createPlayerDataService({ store, upstream, config, now = () => Date.now() }) {
+export function createPlayerDataService({ store, upstream, config, now = () => Date.now(), snapFetchImpl = fetch }) {
   const inflight = new Map();
   const negative = new Map();
 
@@ -42,6 +43,34 @@ export function createPlayerDataService({ store, upstream, config, now = () => D
   // schedule is kept briefly because scores and completion flags move.
   const shared = new Map();
   const sharedPending = new Map();
+  const snapSeasonCache = new Map();
+
+  async function getSnapSeasonTables(season) {
+    const cached = snapSeasonCache.get(season);
+    if (cached?.pending) return cached.pending;
+    if (cached && cached.expiresAt > now()) return cached.data;
+
+    const pending = (async () => {
+      const base = 'https://github.com/nflverse/nflverse-data/releases/download';
+      const [playersResponse, snapsResponse] = await Promise.all([
+        snapFetchImpl(`${base}/players/players.csv`, { signal: AbortSignal.timeout(15_000) }),
+        snapFetchImpl(`${base}/snap_counts/snap_counts_${season}.csv`, { signal: AbortSignal.timeout(15_000) }),
+      ]);
+      if (!playersResponse.ok || !snapsResponse.ok) throw new Error('NFL snap-count data is unavailable.');
+      const [playersText, snapsText] = await Promise.all([playersResponse.text(), snapsResponse.text()]);
+      const data = { players: parseCsv(playersText), snaps: parseCsv(snapsText) };
+      snapSeasonCache.set(season, {
+        data,
+        expiresAt: season < currentSeason() ? Infinity : now() + 5 * 60 * 1000,
+      });
+      return data;
+    })().catch((error) => {
+      snapSeasonCache.delete(season);
+      throw error;
+    });
+    snapSeasonCache.set(season, { pending, expiresAt: Infinity });
+    return pending;
+  }
 
   function sharedTtlMs(url) {
     if (/\/teams\/\d+\?/.test(url)) return Infinity;
@@ -225,10 +254,23 @@ export function createPlayerDataService({ store, upstream, config, now = () => D
     });
   }
 
+  async function getSnapCounts(playerId, season) {
+    return resolve({
+      key: `snap_v1_${playerId}_${season}`,
+      season,
+      ttlMs: config.liveTtlMs,
+      produce: async () => {
+        const { players, snaps } = await getSnapSeasonTables(season);
+        return { data: buildPlayerSnapCounts(players, snaps, playerId) };
+      },
+    });
+  }
+
   return {
     getStats,
     getCareer,
     getGameLog,
+    getSnapCounts,
     getStatus() {
       return {
         enabled: true,
@@ -333,6 +375,15 @@ export function createPlayerDataRouter({ service, config }) {
       return sendError(res, 400, 'invalid_team');
     }
     await sendResult(req, res, await service.getGameLog(playerId, season, team ?? null));
+  }));
+
+  router.get('/:playerId/snaps/:season', handle(async (req, res) => {
+    const playerId = parsePlayerId(req.params.playerId, res);
+    if (playerId == null) return;
+    if (!SEASON_PATTERN.test(String(req.params.season))) return sendError(res, 400, 'invalid_season');
+    const season = Number(req.params.season);
+    if (season < 2012 || season > getCurrentSeason()) return sendError(res, 400, 'unsupported_season');
+    await sendResult(req, res, await service.getSnapCounts(playerId, season));
   }));
 
   return router;

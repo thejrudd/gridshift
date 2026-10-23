@@ -31,6 +31,17 @@ scoring engine when adding or changing a stat key:
   `calcPoints()` consumes, including IDP tackles, sacks, interceptions, forced
   fumbles, recoveries, pass defenses, quarterback hits, safeties, blocked kicks,
   and defensive touchdowns where the active scoring profile supports them.
+- A tackle stays generic `idp_tkl` in the stat delta, because provider text
+  does not say solo or assisted. `estimatePlayPoints()` prices it the league's
+  way when the league does not pay `idp_tkl`: one tackler named as
+  `idp_tkl_solo`, several as `idp_tkl_ast` (each through `calcPoints()` with
+  the player's position). Without this a solo/assisted IDP league priced every
+  tackle at 0 and the play never reached the feed. The estimate is display
+  only; Sleeper's line settles the exact total through reconciliation.
+- `liveReconciliation.js` treats tackles as one family (`idp_tkl`, or
+  `idp_tkl_solo` + `idp_tkl_ast`): plays confirm, fallback rows are sized, and
+  fallback rows retire on the tackle count, and a fallback row mirrors the
+  tackle keys Sleeper reported so it scores exactly as Sleeper's line would.
 - `PLAY_MATCH_STATS` in `playStatDelta.js` is the reconciliation coverage set,
   not a second scoring profile. Every positive key used to confirm an
   individual provider play or create a `Stat update` fallback must be covered,
@@ -64,9 +75,11 @@ tests in addition to the focused Fantasy Live suite.
 |---|---|
 | `src/components/companion/CompanionRoster.jsx` | `calcPointsFromTotals` and `getAvgPPG` — both pass `p.position` |
 | `src/components/companion/CompanionLeague.jsx` | `calcPointsFromTotals` and `getAvgPPG` — both pass `p.position` |
-| `src/components/companion/CompanionRankings.jsx` | `calcPointsFromTotals` — passes `p.position` |
-| `src/components/companion/CompanionWaiver.jsx` | `calcPointsFromTotals`, `getRecentAvg`, inline `calcPoints` — all pass `pos` |
+| `src/components/companion/CompanionRankings.jsx` | `calcPointsFromTotals`, `createPointsCalculator`, and projected player scoring — all pass the player's position |
 | `src/components/companion/CompanionMatchup.jsx` | `calcPoints` in weekly ranks loop and `enrichPlayer` — both pass `p.position`; `getAvgPPG` passes `p.position` |
+| `src/components/companion/matchup/MatchupPlayerHoverCard.jsx` | Season view scores each prior week with `calcPoints(row, scoringSettings, player.position)` |
+| `src/utils/teamScoringDrilldownModel.js` | Team scoring drilldown: projected categories via `buildPlayerProjectionBreakdown(projection, scoring, position)` and actual categories via `buildFantasyMatchupScoringBreakdown()` (which passes each starter's position); no direct `calcPoints` call |
+| `src/hooks/useMatchupLiveFeed.js` | Live layer pipeline (moved from the retired `CompanionLive.jsx`): `calcPoints` for BDL and Sleeper stat lines and `calcPointsFromTotals` for season fallbacks all pass the starter's position |
 | `src/components/companion/CompanionDefense.jsx` | `defenseScoredTable` getValue callback `(wEntry, pos)` — called as `getValue(wEntry, player.position)` |
 | `src/components/companion/PlayerWeeklySheet.jsx` | `calcPoints` — passes `player?.position` |
 | `src/components/companion/CompanionScoring.jsx` | `STAT_GROUPS` — add any new scoring field so it's visible in UI |
@@ -74,6 +87,14 @@ tests in addition to the focused Fantasy Live suite.
 | `src/utils/fantasyValueRanks.js` | Season rank distributions for Fantasy Values — scoring-agnostic, but new stat options must arrive through the caller's option-row builder to be rankable |
 | `src/components/companion/LeagueScoringBadge.jsx` | Use `getFlatScoringSettings()` before reading display multipliers |
 | `src/components/companion/trade/ValuationInfoSheet.jsx` | Read new scoring settings fields; add `AdjustmentRow` entries; update KTC baseline list |
+
+## Statistics Player Dashboard
+
+| File | What to check |
+| --- | --- |
+| `src/components/statistics/player/PlayList.jsx` | Per-play points, the per-stat breakdown, and the filtered total all call `calcPoints(play.fs, scoring, position)` with the dashboard group (QB, RB, WR, TE, K, DL, LB, DB) as the position. `play.fs` is `buildPlayStatDelta` output from the server, so new per-play stat keys come from `playStatDelta.js` |
+| `src/components/statistics/player/PlayList.jsx` — `STAT_LABELS` | Add a label for any new per-play stat key so the breakdown reads in plain language |
+| `src/utils/teamSeason/teamDashboardModel.js` — `linePoints` | Team dashboard fantasy points: `calcPoints(lineToFantasyStats(line), scoring, position)` with the player's group (QB, RB, WR, TE, K). `lineToFantasyStats` maps BALLDONTLIE box fields to scoring keys; add a field there when a new scoring key has a box-score source |
 
 ## Compare Tab Components
 

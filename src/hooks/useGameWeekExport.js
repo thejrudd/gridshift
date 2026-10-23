@@ -230,6 +230,7 @@ export default function useGameWeekExport() {
     includeHistory = true,
     includeMarketValues = true,
     nflDetail = 'box_score',
+    exportMode = 'full',
   } = {}) => {
     if (platform !== 'sleeper' || !selectedLeagueId || !league) {
       throw new Error('Connect a Sleeper league before exporting stats.');
@@ -237,6 +238,7 @@ export default function useGameWeekExport() {
 
     const normalizedWeek = Number(week);
     const normalizedSeason = String(season ?? league.season ?? '');
+    const fantasyPointsOnly = exportMode === 'fantasy_points_only';
     if (!Number.isInteger(normalizedWeek) || normalizedWeek < 1 || normalizedWeek > 22) {
       throw new Error('Choose a valid fantasy week before exporting.');
     }
@@ -333,7 +335,7 @@ export default function useGameWeekExport() {
       throwIfAborted(controller.signal);
       update({ progress: { label: 'Loading fantasy matchup outcomes', completed: 3, total: 5 } });
 
-      if (includeHistory) {
+      if (includeHistory && !fantasyPointsOnly) {
         const eligibleEntries = (linkedLeagueHistory ?? [])
           .filter((entry) => Number(entry.season) <= Number(normalizedSeason))
           .sort((left, right) => Number(left.season) - Number(right.season));
@@ -380,24 +382,26 @@ export default function useGameWeekExport() {
       }
       throwIfAborted(controller.signal);
 
-      update({ progress: { label: 'Loading NFL scoreboard and detail', completed: 3, total: 5 } });
-      try {
-        nflBundle = await getStatisticsScoresWeekExport({
-          season: normalizedSeason,
-          phase: 'regular',
-          week: normalizedWeek,
-          detail: nflDetail,
-          signal: controller.signal,
-        });
-      } catch (error) {
-        if (isAbortError(error)) throw error;
-        nflError = error;
-        warnings.push(`NFL package unavailable: ${error?.message ?? 'unknown error'}`);
+      if (!fantasyPointsOnly) {
+        update({ progress: { label: 'Loading NFL scoreboard and detail', completed: 3, total: 5 } });
+        try {
+          nflBundle = await getStatisticsScoresWeekExport({
+            season: normalizedSeason,
+            phase: 'regular',
+            week: normalizedWeek,
+            detail: nflDetail,
+            signal: controller.signal,
+          });
+        } catch (error) {
+          if (isAbortError(error)) throw error;
+          nflError = error;
+          warnings.push(`NFL package unavailable: ${error?.message ?? 'unknown error'}`);
+        }
       }
       throwIfAborted(controller.signal);
-      update({ progress: { label: 'Loading NFL scoreboard and detail', completed: 4, total: 5 } });
+      update({ progress: { label: fantasyPointsOnly ? 'Preparing fantasy points' : 'Loading NFL scoreboard and detail', completed: 4, total: 5 } });
 
-      if (includeMarketValues) {
+      if (includeMarketValues && !fantasyPointsOnly) {
         try {
           const playerIds = new Set([
             ...Object.keys(fullWeeklyStats),
@@ -448,6 +452,8 @@ export default function useGameWeekExport() {
         currentMatchupsByWeek,
         nflBundle,
         marketValuesByPlayer,
+        exportMode: fantasyPointsOnly ? 'fantasy_points_only' : 'full',
+        includeRaw: !fantasyPointsOnly,
         coverage: {
           weeklyPlayerStats: {
             status: selectedWeekStatsSucceeded ? 'complete' : Object.keys(rawWeeklyStatsByPlayer).length ? 'partial' : 'unavailable',
@@ -458,13 +464,13 @@ export default function useGameWeekExport() {
             status: matchupSucceeded ? 'complete' : 'unavailable',
             rows: currentMatchups.length,
           },
-          nflGames: {
+          nflGames: fantasyPointsOnly ? { status: 'not_requested', games: 0 } : {
             status: nflBundle?.coverage?.scoreboard ?? 'unavailable',
             games: nflBundle?.games?.length ?? 0,
           },
-          nflBoxScores: nflBundle?.coverage?.boxScores ?? 'unavailable',
-          nflPlayByPlay: nflBundle?.coverage?.playByPlay ?? 'unavailable',
-          leagueHistory: includeHistory
+          nflBoxScores: fantasyPointsOnly ? 'not_requested' : nflBundle?.coverage?.boxScores ?? 'unavailable',
+          nflPlayByPlay: fantasyPointsOnly ? 'not_requested' : nflBundle?.coverage?.playByPlay ?? 'unavailable',
+          leagueHistory: includeHistory && !fantasyPointsOnly
             ? {
                 status: historyLoadedCount === historyRequestedCount && historySelectedLoaded
                   ? 'complete'
@@ -477,7 +483,7 @@ export default function useGameWeekExport() {
                 ],
               }
             : { status: 'not_requested', seasons: [] },
-          marketValues: includeMarketValues
+          marketValues: includeMarketValues && !fantasyPointsOnly
             ? {
                 status: Object.keys(marketValuesByPlayer).length ? 'complete' : 'unavailable',
                 players: Object.keys(marketValuesByPlayer).length,
@@ -486,7 +492,11 @@ export default function useGameWeekExport() {
         },
         sources: {
           fantasy: {
-            endpoints: ['Sleeper weekly stats', 'Sleeper matchups', 'Sleeper league history'],
+            endpoints: [
+              'Sleeper weekly stats',
+              'Sleeper matchups',
+              ...(includeHistory && !fantasyPointsOnly ? ['Sleeper league history'] : []),
+            ],
             selectedWeekFetchedAt: exportStartedAt,
           },
           nflScoreboard: nflBundle ? {
@@ -506,7 +516,8 @@ export default function useGameWeekExport() {
           ...(marketValueError ? [`Market value error: ${marketValueError.message}`] : []),
         ],
       });
-      const filename = `gridshift-${slugify(league.name)}-${normalizedSeason}-week-${normalizedWeek}-stats.json`;
+      const fileSuffix = fantasyPointsOnly ? 'fantasy-points' : 'stats';
+      const filename = `gridshift-${slugify(league.name)}-${normalizedSeason}-week-${normalizedWeek}-${fileSuffix}.json`;
       downloadGameWeekExport(result, filename);
       if (isCurrent()) {
         setState({

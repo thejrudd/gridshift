@@ -259,6 +259,49 @@ test('every scoring-engine IDP stat participates in surplus reconciliation', () 
   });
 });
 
+test('tackles reconcile as a count against a solo / assisted Sleeper line', () => {
+  // Plays carry generic idp_tkl; Sleeper reports the split.
+  const sleeper = { idp_tkl_solo: 3, idp_tkl_ast: 1 };
+  const tackle = (order) => makePlay({ playerId: 'lb1', position: 'LB', stats: { idp_tkl: 1 }, pts: 1, order });
+  assert.equal(playFitsStatLine(tackle(1), sleeper, { idp_tkl: 3 }), true);
+  assert.equal(playFitsStatLine(tackle(1), sleeper, { idp_tkl: 4 }), false);
+  // Two tackles covered by plays leave two uncovered, split in Sleeper's ratio.
+  assert.deepEqual(computeStatSurplus(sleeper, { idp_tkl: 2 }), { idp_tkl_solo: 2 });
+  assert.deepEqual(computeStatSurplus(sleeper, { idp_tkl: 4 }), {});
+});
+
+test('tackle plays retire a stand-in row\'s solo / assisted tackles without double counting', () => {
+  const scoring = { idp_tkl_solo: 1.5, idp_tkl_ast: 0.75 };
+  // A settled LB: the stand-in row covers the whole line before plays arrive.
+  let state = reconcileLivePlays(createReconciliationState(), {
+    playEvents: [],
+    sleeperPointsById: { lb1: 5.25 },
+    sleeperStatsById: { lb1: { idp_tkl_solo: 3, idp_tkl_ast: 1 } },
+    sleeperStatsFetchedAt: 1000,
+    scoringSettings: scoring,
+    positionsById: POSITIONS,
+    settledPlayerIds: ['lb1'],
+    now: 1500,
+  });
+  assert.equal(state.players.get('lb1').fallbackEvents[0].pts, 5.25);
+  const plays = [1, 2, 3, 4].map((order) => makePlay({ playerId: 'lb1', position: 'LB', stats: { idp_tkl: 1 }, pts: order === 4 ? 0.75 : 1.5, order }));
+  state = reconcileLivePlays(state, {
+    playEvents: plays,
+    sleeperPointsById: { lb1: 5.25 },
+    sleeperStatsById: { lb1: { idp_tkl_solo: 3, idp_tkl_ast: 1 } },
+    sleeperStatsFetchedAt: 1000,
+    scoringSettings: scoring,
+    positionsById: POSITIONS,
+    settledPlayerIds: ['lb1'],
+    now: 2000,
+  });
+  const player = state.players.get('lb1');
+  assert.equal(player.fallbackEvents.length, 0, 'four tackle plays retire the four-tackle row');
+  assert.equal(player.displayedPoints, 5.25);
+  const feedTotal = state.feedEvents.filter((event) => event.playerId === 'lb1').reduce((total, event) => total + event.displayPts, 0);
+  assert.equal(Math.round(feedTotal * 100) / 100, 5.25);
+});
+
 test('unexplained IDP production becomes one scored stat-update row', () => {
   const inputs = {
     playEvents: [],
@@ -381,6 +424,147 @@ test('an unexplained stat line becomes a row only after the grace period', () =>
   // The row explains the whole stat line, so nothing is left over.
   assert.equal(state.players.get('wr1').adjustment, 0);
   assert.equal(state.players.get('wr1').displayedPoints, 5);
+});
+
+test('a settled starter gets the stat-update row on first sight, with no grace period', () => {
+  // A finished game is fetched once; waiting for a second fetch 30s later
+  // would leave these points off the feed until the matchup's final close.
+  const state = step(createReconciliationState(), {
+    playEvents: [],
+    sleeperPointsById: { wr1: 5 },
+    sleeperStatsById: { wr1: { rec: 2, rec_yd: 30 } },
+    sleeperStatsFetchedAt: 1000,
+    settledPlayerIds: ['wr1'],
+    now: 1500,
+  });
+  const [row] = state.players.get('wr1').fallbackEvents;
+  assert.equal(row.source, 'stat-update');
+  assert.equal(row.displayPts, 5);
+  assert.equal(state.players.get('wr1').unattributedPoints, 0);
+  assert.equal(state.feedEvents.reduce((total, event) => total + event.displayPts, 0), 5);
+});
+
+test('a settled starter with points but no stat line still lands every point on a feed row', () => {
+  const state = step(createReconciliationState(), {
+    playEvents: [],
+    sleeperPointsById: { rb1: 11.4 },
+    sleeperStatsById: {},
+    sleeperStatsFetchedAt: 1000,
+    settledPlayerIds: ['rb1'],
+    now: 1500,
+  });
+  const player = state.players.get('rb1');
+  assert.equal(player.fallbackEvents.length, 1);
+  assert.equal(player.fallbackEvents[0].displayPts, 11.4);
+  assert.equal(player.unattributedPoints, 0);
+});
+
+test('a settled starter whose plays explain only part of Sleeper still totals Sleeper on the feed', () => {
+  const play = makePlay({ playerId: 'wr1', stats: { rec: 1, rec_yd: 12 }, pts: 2.2, order: 10 });
+  const state = step(createReconciliationState(), {
+    playEvents: [play],
+    sleeperPointsById: { wr1: 9.6 },
+    sleeperStatsById: { wr1: { rec: 3, rec_yd: 46 } },
+    sleeperStatsFetchedAt: 1000,
+    settledPlayerIds: ['wr1'],
+    finalGameIds: ['game-1'],
+    now: 1500,
+  });
+  const player = state.players.get('wr1');
+  assert.equal(player.unattributedPoints, 0);
+  assert.equal(Math.round(state.feedEvents.reduce((total, event) => total + event.displayPts, 0) * 100) / 100, 9.6);
+});
+
+test('plays arriving after a points-only row replace it instead of counting twice', () => {
+  // Step 1: settled with Sleeper points and no stat line or plays yet.
+  let state = step(createReconciliationState(), {
+    playEvents: [],
+    sleeperPointsById: { rb1: 12.6 },
+    sleeperStatsById: {},
+    sleeperStatsFetchedAt: 1000,
+    settledPlayerIds: ['rb1'],
+    finalGameIds: ['game-1'],
+    now: 1500,
+  });
+  assert.equal(state.players.get('rb1').fallbackEvents.length, 1);
+
+  // Step 2: that game's plays arrive and explain the same points.
+  const plays = [
+    makePlay({ playerId: 'rb1', position: 'RB', stats: { rush_yd: 6 }, pts: 0.6, order: 10 }),
+    makePlay({ playerId: 'rb1', position: 'RB', stats: { rush_yd: 60, rush_td: 1 }, pts: 12, order: 20 }),
+  ];
+  state = step(state, {
+    playEvents: plays,
+    sleeperPointsById: { rb1: 12.6 },
+    sleeperStatsById: {},
+    sleeperStatsFetchedAt: 1000,
+    settledPlayerIds: ['rb1'],
+    finalGameIds: ['game-1'],
+    now: 2000,
+  });
+  const player = state.players.get('rb1');
+  assert.equal(player.fallbackEvents.length, 0, 'the stand-in row is retired');
+  assert.equal(player.pendingPoints, 0, 'the plays confirm rather than sit on top');
+  assert.equal(player.displayedPoints, 12.6);
+  const feedTotal = state.feedEvents
+    .filter((event) => event.playerId === 'rb1')
+    .reduce((total, event) => total + event.displayPts, 0);
+  assert.equal(Math.round(feedTotal * 100) / 100, 12.6);
+});
+
+test('a settled starter\'s stat line never goes stale, so a play Sleeper never credited stays out', () => {
+  const credited = makePlay({ playerId: 'wr1', stats: { rec: 1, rec_yd: 10 }, pts: 2, order: 10 });
+  const invented = makePlay({ playerId: 'wr1', stats: { rec: 1, rec_yd: 30 }, pts: 4, order: 20 });
+  const inputs = {
+    playEvents: [credited, invented],
+    sleeperPointsById: { wr1: 2 },
+    sleeperStatsById: { wr1: { rec: 1, rec_yd: 10 } },
+    sleeperStatsFetchedAt: 1000,
+    settledPlayerIds: ['wr1'],
+    finalGameIds: ['game-1'],
+  };
+  let state = step(createReconciliationState(), { ...inputs, now: 1500 });
+  // Minutes later, with no new fetch (a finished week fetches once).
+  state = step(state, { ...inputs, now: 600000 });
+  const player = state.players.get('wr1');
+  assert.equal(player.pendingPoints, 0);
+  assert.equal(player.displayedPoints, 2);
+  const feedTotal = state.feedEvents.filter((event) => event.playerId === 'wr1').reduce((total, event) => total + event.displayPts, 0);
+  assert.equal(Math.round(feedTotal * 100) / 100, 2);
+});
+
+test('a settled starter without a stat line keeps every play visible and totals Sleeper exactly', () => {
+  // Estimated tackle points run past Sleeper's official 4.5.
+  const tackles = [1, 2, 3, 4].map((order) => makePlay({ playerId: 'lb1', position: 'LB', stats: { idp_tkl: 1 }, pts: 1.5, order }));
+  const state = step(createReconciliationState(), {
+    playEvents: tackles,
+    sleeperPointsById: { lb1: 4.5 },
+    sleeperStatsById: {},
+    sleeperStatsFetchedAt: 1000,
+    settledPlayerIds: ['lb1'],
+    finalGameIds: ['game-1'],
+    now: 1500,
+  });
+  const player = state.players.get('lb1');
+  assert.equal(player.pendingPoints, 0, 'nothing pending on top of a final total');
+  assert.equal(player.displayedPoints, 4.5);
+  const rows = state.feedEvents.filter((event) => event.playerId === 'lb1');
+  assert.equal(rows.length, 4, 'every tackle stays in the feed');
+  // The overshoot is spread across the plays, not dumped on the last one.
+  rows.forEach((row) => assert.ok(row.displayPts > 1 && row.displayPts < 1.5));
+  assert.equal(Math.round(rows.reduce((total, event) => total + event.displayPts, 0) * 100) / 100, 4.5);
+});
+
+test('an unsettled starter still waits out the grace period', () => {
+  const state = step(createReconciliationState(), {
+    playEvents: [],
+    sleeperPointsById: { wr1: 5 },
+    sleeperStatsById: { wr1: { rec: 2, rec_yd: 30 } },
+    sleeperStatsFetchedAt: 1000,
+    settledPlayerIds: [],
+    now: 1500,
+  });
+  assert.equal(state.players.get('wr1').fallbackEvents.length, 0);
 });
 
 test('no fallback row when plays already explain the stat line', () => {

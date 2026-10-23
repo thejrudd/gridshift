@@ -80,6 +80,9 @@ Use docs/Agent Workflow.md for the full routing rubric, output contracts, comple
 - docs/Trade Engine.md and docs/Trade Proposal Cards.md — Trade architecture and card contracts.
 - docs/Scout.md — Scout architecture, APIs, importers, production data, and routing.
 - docs/Global Search.md — global search vocabulary, matching rules, index measurements, and answer-resolver boundaries.
+- docs/Player Dashboard.md — Statistics player page tabs: data routes, identity resolution, play credit, rank pools, opponent context, and UI rules.
+- docs/Team Dashboard.md — Statistics team page: position leaders, depth chart, season tabs, data route, fantasy scoring, and UI rules.
+- docs/Independent Fantasy Platform Plan.md — agreed direction, proposals, open questions, architecture, phases, validation, and implementation status for the independent fantasy platform.
 - For QA, testing, validation, or regression-review tasks, use docs/Agent Workflow.md and the relevant feature references; do not load unrelated material.
 
 ## Design system — Broadcast Editorial
@@ -107,14 +110,17 @@ Use docs/Agent Workflow.md for the full routing rubric, output contracts, comple
 - Trade valuation, proposal, ranking, upgrade, or explanation changes require docs/Trade Engine.md in the same pass and user-facing fantasy language in the UI.
 - Trade proposal-card changes require docs/Trade Proposal Cards.md.
 - Companion or Trade-adjacent row changes require docs/Companion Shared Rows.md and the shared primitives.
+- Independent fantasy platform work requires reading docs/Independent Fantasy Platform Plan.md before implementation; update it in the same pass whenever agreed scope, rules, architecture, phases, validation, or implementation status changes. Keep agreed decisions distinct from proposals and open questions, and do not describe planned features as implemented.
 - Filtered ranked lists calculate rank before filtering and render the carried rank.
 - productionAdjustedValue preserves null propagation and returns ktcVal rather than converting missing values to zero.
 
 ## API and release boundaries
 
 - BALLDONTLIE, CFBD/CollegeFootballData, and similar paid credentials are secrets. Keep requests server-side and never expose keys in the client bundle.
+- BALLDONTLIE (BDL) is optional. Any feature that adds or extends a BDL dependency must also be designed and tested for a server with no BDL API key and for an unreachable provider: fall back to Sleeper or GridShift data, or show a plain unavailable message. Keep provider names out of fallback copy, and add no-key coverage alongside the feature's tests (for the player drilldown, the harness's `?bdl=0` mode in tests/drilldown/player-drilldown.spec.js).
 - Never auto-commit, bump versions, push, deploy, or perform external writes unless the user explicitly requests that action.
 - Read docs/Release Workflow.md before committing, preparing a release, changing release metadata, or generating release notes.
+- Before running the What's New tour gate for a commit, present the genuinely new user-facing capabilities in the proposed commit scope (or say there are none) and wait for the user's confirmation.
 
 ## User-facing copy
 

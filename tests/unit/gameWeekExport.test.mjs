@@ -8,7 +8,7 @@ import {
 
 const league = {
   league_id: 'league-1',
-  name: 'The Roast League',
+  name: 'Test League',
   roster_positions: ['QB'],
   settings: { last_scored_leg: 1 },
 };
@@ -58,8 +58,9 @@ test('builds an LLM-ready selected-week bundle with authoritative zeroes and rec
   });
 
   const player = bundle.fantasy.weeklyPlayerStats.find((row) => row.playerId === 'player-1');
-  assert.equal(bundle.format, 'gridshift-game-week-roast');
-  assert.equal(bundle.scope.mode, 'roast_week');
+  assert.equal(bundle.format, 'gridshift-stats-export');
+  assert.equal(bundle.schemaVersion, 2);
+  assert.equal(bundle.scope.mode, 'full_stats');
   assert.equal(player.fantasyPoints, 0);
   assert.equal(player.fantasyPointsSource, 'sleeper.players_points');
   assert.equal(player.weeklyRank, 2);
@@ -84,11 +85,56 @@ test('uses Sleeper custom_points as the official team-score override in weekly e
     includeRaw: false,
   });
 
-  const teams = Object.fromEntries(bundle.fantasy.teamPerformances.map((team) => [team.rosterId, team]));
-  assert.equal(teams['1'].score, 212.52);
-  assert.equal(teams['2'].score, 172.46);
-  assert.equal(teams['1'].scoreSource, 'sleeper.matchups.custom_points');
-  assert.equal(bundle.fantasy.outcomes[0].scores['1'], 212.52);
+  const teamsByRosterId = Object.fromEntries(bundle.fantasy.teamPerformances.map((team) => [team.rosterId, team]));
+  assert.deepEqual([teamsByRosterId['1'].score, teamsByRosterId['2'].score], [212.52, 172.46]);
+  assert.deepEqual(bundle.fantasy.outcomes[0].scores, { 1: 212.52, 2: 172.46 });
+  assert.equal(teamsByRosterId['1'].scoreSource, 'sleeper.matchups.custom_points');
+  assert.equal(bundle.fantasy.records.selectedWeek.highestCombinedScore.combinedScore, 384.98);
+});
+
+test('builds a fantasy-points-only export with player totals, individual scores, and matchup results', () => {
+  const bundle = buildGameWeekExport({
+    season: '2026',
+    fantasyWeek: 1,
+    league,
+    rosters,
+    leagueUsers: users,
+    players: {
+      'player-1': { full_name: 'Player One', position: 'QB', team: 'BUF' },
+      'player-2': { full_name: 'Player Two', position: 'QB', team: 'NYJ' },
+    },
+    weeklyStatsByPlayer: {
+      'player-1': [{ week: 1, pass_yd: 0, gp: 1 }],
+      'player-2': [{ week: 1, pass_yd: 100, gp: 1 }],
+    },
+    rawWeeklyStatsByPlayer: {
+      'player-1': { week: 1, pass_yd: 0, gp: 1 },
+      'player-2': { week: 1, pass_yd: 100, gp: 1 },
+    },
+    seasonStatsByPlayer: {
+      'player-1': { pass_yd: 0, gp: 1 },
+      'player-2': { pass_yd: 100, gp: 1 },
+    },
+    scoringSettings: { pass_yd: 0.04 },
+    matchupRows: [
+      { roster_id: 1, matchup_id: 1, players: ['player-1'], starters: ['player-1'], players_points: { 'player-1': 0 }, points: 0 },
+      { roster_id: 2, matchup_id: 1, players: ['player-2'], starters: ['player-2'], players_points: { 'player-2': 4 }, points: 4 },
+    ],
+    exportMode: 'fantasy_points_only',
+  });
+
+  assert.equal(bundle.format, 'gridshift-stats-export');
+  assert.equal(bundle.schemaVersion, 2);
+  assert.equal(bundle.scope.mode, 'fantasy_points_only');
+  assert.equal(bundle.fantasy.playerTotals.find((row) => row.playerId === 'player-1').weeklyFantasyPoints, 0);
+  assert.equal(bundle.fantasy.playerTotals.find((row) => row.playerId === 'player-1').seasonToDate.fantasyPoints, 0);
+  assert.equal(bundle.fantasy.individualScores.find((row) => row.playerId === 'player-2').points, 4);
+  assert.equal(bundle.fantasy.teamScores.find((row) => row.rosterId === '1').score, 0);
+  assert.equal(bundle.fantasy.teamScores.find((row) => row.rosterId === '2').result, 'win');
+  assert.equal(bundle.fantasy.matchupOutcomes[0].winnerRosterId, '2');
+  assert.equal('raw' in bundle, false);
+  assert.equal('nfl' in bundle, false);
+  assert.equal('storylineSignals' in bundle, false);
 });
 
 test('serializes repeated references without mistaking them for cycles', () => {

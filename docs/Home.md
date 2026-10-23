@@ -7,6 +7,7 @@ Use this note as the entry point.
 ## Jump Links
 
 - [[Architecture Map]]
+- [[Independent Fantasy Platform Plan]]
 - [[Where To Edit]]
 - [[Design System Quick Ref]]
 - [[Design Tokens]]

@@ -967,3 +967,33 @@
      rather than relying on the background behind it. */
   box-shadow: 0 0 0 1.5px rgb(255 255 255 / 0.85);
 }
+
+/* Opt-in extras (Statistics Scores): a short note beside each lane, and the
+   live next snap — line of scrimmage, line to gain, and the ball. The notes
+   column drops out where the field would get too narrow to read. */
+.df-split.has-notes { display: grid; grid-template-columns: minmax(0, 1fr) 250px; gap: 0 20px; align-items: start; }
+.df-notes { margin: 0; padding: 8px 0 0; list-style: none; min-width: 0; }
+.df-notes li { display: grid; grid-template-columns: 44px minmax(0, 1fr); align-items: center; gap: 10px; font-size: var(--type-meta); }
+.df-notes b { color: var(--color-label-tertiary); font-family: var(--font-display, 'Barlow Condensed', sans-serif); font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.df-notes span { overflow: hidden; color: var(--color-label); text-overflow: ellipsis; white-space: nowrap; }
+.df-notes li.is-next b, .df-notes li.is-next span { color: var(--color-label); font-weight: 800; }
+@media (max-width: 759px) {
+  .df-split.has-notes { grid-template-columns: minmax(0, 1fr); }
+  .df-notes { display: none; }
+}
+.df-los, .df-togain { position: absolute; top: 0; bottom: 0; z-index: 4; width: 3px; transform: translateX(-50%); pointer-events: none; }
+.df-los { background: var(--color-accent); }
+.df-togain { background: var(--color-signature); }
+.df-nextball {
+  position: absolute;
+  top: 50%;
+  z-index: 6;
+  width: 16px;
+  height: 11px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #A6572F, #743A1C);
+  box-shadow: 0 0 0 1.5px rgba(0, 0, 0, 0.35);
+  transform: translate(-50%, -50%);
+}
+.df-nextlabel { position: absolute; top: 50%; z-index: 6; color: var(--color-label); font-family: var(--font-display, 'Barlow Condensed', sans-serif); font-size: var(--type-meta); font-weight: 800; white-space: nowrap; transform: translate(calc(-100% - 12px), -50%); }
+.df-nextlabel[data-side="r"] { transform: translate(12px, -50%); }

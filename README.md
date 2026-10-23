@@ -10,12 +10,12 @@ An interactive web app for the 2026 NFL season — with full Sleeper fantasy lea
 
 - Predictions — Game picks, constraints, standings, playoff seeding, share-card exports, and portable shared snapshots.
 - Statistics — Schedules, standings, team/player profiles, game logs, honors, and scoring breakdowns.
-- Statistics Scores (Beta) — Provider-backed current-season regular and preseason scoreboards with live clocks, Latest Play, plain-language play-by-play, and animated drive replay; broader historical archive coverage continues to expand.
+- Statistics Scores (Beta) — Provider-backed current-season regular and preseason scoreboards with live clocks, Latest Play, a game dashboard with pregame matchup previews and player-level Team Stats, plain-language play-by-play, and animated drive replay; broader historical archive coverage continues to expand.
 
 ### Fantasy & League
 
 - Sleeper integration — League connection, custom scoring, rosters, and season navigation.
-- Fantasy Live (Alpha) — Provider-backed live matchup scoring, win probability, moment-aware replay, shared-play attribution, scoring feeds, and player context for enabled Sleeper leagues.
+- Fantasy Live (Alpha) — Live scoring inside Matchups for enabled Sleeper leagues: a replay bar, win chance and lead chart, scoring plays, and player hover cards.
 - Matchups — Cycle through every weekly league matchup with projections, ranks, weather, game context, and scoring details.
 - Schedule (Beta) — Season-long fantasy pairings by week or team, with byes, rematches, and a jump into any week's matchup.
 - Fantasy Scoring Blueprint — League-rule summaries, position strengths, detailed scoring references, and itemized real-game examples.
@@ -134,19 +134,18 @@ Draft Sync is an optional capability of the existing API sidecar, not a required
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) + optional Node API sidecar |
 
-## What's New in v9.2.1
+## What's New in v9.3.0
 
-- **Heatmap matchup sorting** — Sort weeks with games left by matchup rank; finished and bye teams follow by points scored, and the grid sizes to the window after loading.
-- **Waivers in Rankings** — Review free agents with projected points, the four-week average, and an unrostered-only filter; legacy Waivers links keep their selected position.
-- **Live Heatmap refresh** — Current-week scores refresh during NFL games, with a live marker on active matchups.
-- **Consistent fantasy scores** — Sleeper's custom team-score override is shared across historical matchup views and exports.
+- **Player dashboard** — Play-by-play tabs by position, with per-play fantasy points under your league's scoring.
+- **Team dashboard** — A team hero with Season, Players, Depth, and League tabs.
+- **Fantasy Live in Matchups** — Replay, win chance, and scoring plays now live in Matchups, with a team scoring drilldown and a redesigned player breakdown.
+- **Scores game dashboard** — A pregame matchup preview, Team Stats that expand into the players behind each number, and new drive and special-teams stats.
+- **Consistent Trade values** — One 0–100 scale measured against each position's starter and waiver lines, shared by Compare Trade and Companion Trade.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Roadmap
 
-- **v9.3 — Trade values re-work**
-- **v9.4 — Statistics Dashboards, player dashboards**
 - **v9.5 — Scoring and Fantasy Live dashboard overhaul**
 
 ## Project Structure
@@ -169,6 +168,7 @@ src/
 │   │   ├── CompanionConnect.jsx   # Sleeper connect + league selection flow
 │   │   ├── CompanionLeague.jsx    # Canonical Rosters + nested Draft Picks view
 │   │   ├── CompanionRoster.jsx    # Legacy compatibility wrapper for Rosters
+│   │   ├── CompanionRankings.jsx  # League rankings, free agents, and weekly projections
 │   │   ├── CompanionMatchup.jsx   # All weekly matchups: projections, cycling, breakdowns
 │   │   ├── CompanionSchedule.jsx  # Season-long fantasy pairings by week or team (Beta)
 │   │   ├── CompanionStandings.jsx # Finalized-week and historical fantasy standings/brackets

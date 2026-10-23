@@ -282,7 +282,7 @@ test('explicit multi-role defenders and team defense each produce one row', () =
   assert.deepEqual(events.find((event) => event.playerId === 'det-dst')?.stats, { def_ff: 1 });
 });
 
-test('named tacklers do not invent solo or assisted tackle distinctions', () => {
+test('named tacklers stay a generic tackle in the stat line but are priced the league\'s way', () => {
   const events = buildPlayEvents(
     { game: [{
       id: 'shared-tackle',
@@ -303,7 +303,31 @@ test('named tacklers do not invent solo or assisted tackle distinctions', () => 
     }]]),
   );
 
-  assert.deepEqual(events, []);
+  // A league that pays solo / assisted tackles (not `idp_tkl`) still sees the
+  // play: two tacklers named price as assisted. The stat line stays generic —
+  // the text does not say solo or assisted, so Sleeper confirms on the count.
+  assert.deepEqual(events.map((event) => event.playerId).sort(), ['branch', 'campbell']);
+  events.forEach((event) => {
+    assert.deepEqual(event.stats, { idp_tkl: 1 });
+    assert.equal(event.pts, 0.5);
+  });
+});
+
+test('a single named tackler prices as solo, and a league paying idp_tkl uses only that', () => {
+  const play = {
+    id: 'solo-tackle',
+    type_slug: 'rush',
+    team: { abbreviation: 'BUF' },
+    text: 'J.Cook up the middle to DET 40 for 4 yards (J.Campbell).',
+    stat_yardage: 4,
+  };
+  const index = buildStarterNameIndex([{ id: 'campbell', player: { full_name: 'Jack Campbell', position: 'LB', team: 'DET' } }]);
+  const positions = new Map([['campbell', 'LB']]);
+  const games = new Map([['game', { id: 'game', visitor_team: { abbreviation: 'BUF' }, home_team: { abbreviation: 'DET' } }]]);
+  const [splitLeague] = buildPlayEvents({ game: [play] }, index, { idp_tkl_solo: 1.5, idp_tkl_ast: 0.75 }, positions, games);
+  assert.equal(splitLeague.pts, 1.5);
+  const [genericLeague] = buildPlayEvents({ game: [play] }, index, { idp_tkl: 1, idp_tkl_solo: 1.5 }, positions, games);
+  assert.equal(genericLeague.pts, 1);
 });
 
 test('a provider passing touchdown retains stat_yardage for both rostered scorers', () => {

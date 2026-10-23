@@ -10,6 +10,8 @@ import {
   getLiveGamePlays as fetchLiveGamePlays,
   getLiveGames as fetchLiveGames,
   getLivePlayerStatsForGames as fetchLivePlayerStats,
+  getLiveStatus as fetchLiveStatus,
+  startLiveSession,
 } from '../../api/liveApi';
 import { getTeamAbbr } from '../../utils/liveScoringFeed.js';
 import { getClockState } from './liveSandboxClock';
@@ -40,6 +42,20 @@ const cache = {
 // request per game, so a failed fetch must wait before trying again — retrying
 // on every clock tick would hold the limiter open and never recover.
 const PLAYS_RETRY_COOLDOWN_MS = 8000;
+
+// The live routes need the browser session the live layer normally starts.
+// Fantasy Matchups can ask for the sandbox league's matchups before that has
+// happened, so the sandbox starts it itself (allowlisted league, same call).
+let sessionPromise = null;
+export function ensureSandboxSession(leagueId) {
+  sessionPromise ??= fetchLiveStatus({ leagueId })
+    .then((status) => (status?.session?.enabled ? status : startLiveSession({ leagueId, provider: 'sleeper' })))
+    .catch((error) => {
+      sessionPromise = null;
+      throw error;
+    });
+  return sessionPromise;
+}
 
 function currentProgress() {
   return getClockState().progress;

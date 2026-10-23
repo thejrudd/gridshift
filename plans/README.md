@@ -3,6 +3,7 @@
 | # | Plan | Severity | Status |
 | --- | --- | --- | --- |
 | 001 | [Add centered-modal entrance transitions](001-centered-modal-entrance-transition.md) | MEDIUM | TODO |
+| 003 | [Team scoring drilldown](003-team-scoring-drilldown.md) | MEDIUM | IMPLEMENTED |
 
 ## Recommended order
 

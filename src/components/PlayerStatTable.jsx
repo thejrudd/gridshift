@@ -14,7 +14,8 @@ import {
   isEspnAppliedStatFallbackKey,
   STAT_TO_SCORING_KEY,
 } from '../utils/scoringEngine';
-import { fetchEventScoringPlays } from '../utils/playerApi';
+import { selectGameSnapPercentage } from '../utils/snapCounts';
+import { fetchEventScoringPlays, fetchPlayerSnapCounts } from '../utils/playerApi';
 import {
   applyEspnBigPlayBonusesToWeeklyStats,
   getEspnScoringPlayBigPlayBonuses,
@@ -23,6 +24,7 @@ import {
 import { reconcileDstAppliedFantasyStats } from '../utils/fantasyScoreDiagnostics';
 import useMediaQuery from '../hooks/useMediaQuery.js';
 import Spinner from './ui/Spinner';
+import { Switch } from './statistics/player/DashboardParts.jsx';
 
 // Extract a formatted stat value from a per-game statsJson
 function statVal(statsJson, key, decimals = 0, suffix = '') {
@@ -73,6 +75,7 @@ function gameStatDisplayVal(statsJson, col) {
 }
 
 const POINT_EPSILON = 0.005;
+const EMPTY_SNAP_COUNTS = Object.freeze([]);
 const FANTASY_TOTAL_POINTS_KEY = 'fantasy_total_points';
 const ESPN_UNMAPPED_FANTASY_KEY = 'espn_unmapped_scoring';
 const PLAYER_TABLE_FANTASY_DEBUG_VERSION = 'player-table-fantasy-debug-2026-05-20-v13';
@@ -1925,6 +1928,7 @@ function getCandidateSeasonTotal(weeks, totals, scoringSettings, candidatePositi
 
 const PlayerStatTable = ({
   year,
+  playerId = null,
   statsJson,
   position,
   sleeperId = null,
@@ -1945,11 +1949,13 @@ const PlayerStatTable = ({
   fantasyWeeklyRows = undefined,
   fantasyRowsLoading = false,
   fantasyMaxWeek = null,
+  onViewGameStats = null,
 }) => {
   const [showMoreStats, setShowMoreStats] = useState(false);
   const [highlightColumnHighs, setHighlightColumnHighs] = useState(false);
   const [highlightColumnLows, setHighlightColumnLows] = useState(false);
   const [scoringPlayBonusesState, setScoringPlayBonusesState] = useState({ key: null, bonusesByWeek: {} });
+  const [snapCountsState, setSnapCountsState] = useState({ key: null, rows: [] });
   const fantasyDebugToken = useId();
   const isMobileFantasyLayout = useMediaQuery('(max-width: 1023px)');
   const { hasLeague, activeScoringSettings, season: leagueStatsSeason } = useSleeperLeague();
@@ -1965,6 +1971,20 @@ const PlayerStatTable = ({
   const attemptedRankSeasonsRef = useRef(new Set());
 
   const label = year === 'career' ? 'Career' : `${year} Season`;
+  const snapCountKey = `${playerId ?? ''}:${year}`;
+
+  useEffect(() => {
+    if (!expanded || year === 'career' || positionGroup(position) === 'DEF' || Number(year) < 2012 || !playerId || !gameLog?.length) return undefined;
+    let cancelled = false;
+    fetchPlayerSnapCounts(playerId, Number(year))
+      .then((rows) => {
+        if (!cancelled) setSnapCountsState({ key: snapCountKey, rows: Array.isArray(rows) ? rows : [] });
+      })
+      .catch(() => {
+        if (!cancelled) setSnapCountsState({ key: snapCountKey, rows: [] });
+      });
+    return () => { cancelled = true; };
+  }, [expanded, gameLog, playerId, position, snapCountKey, year]);
   const canShowFantasyValue = (fantasyAvailable ?? (String(year) === String(fantasySeason))) && hasLeague && !!(fantasyScoringSettings ?? activeScoringSettings);
   const scoringSettings = useMemo(
     () => {
@@ -2093,9 +2113,35 @@ const PlayerStatTable = ({
     () => buildGameLogFromFantasyRows(sleeperWeeklyRows, position),
     [position, sleeperWeeklyRows],
   );
-  const displayGameLog = isTeamDefenseFantasyPosition && (!Array.isArray(gameLog) || gameLog.length === 0)
+  const activeSnapCounts = snapCountsState.key === snapCountKey ? snapCountsState.rows : EMPTY_SNAP_COUNTS;
+  const gameLogWithSnapCounts = useMemo(() => {
+    if (!activeSnapCounts.length || !Array.isArray(gameLog)) return gameLog;
+    return gameLog.map((game) => {
+      const percentage = selectGameSnapPercentage(game, activeSnapCounts, position, Number(year));
+      if (percentage === null) return game;
+      const categories = game?.statsJson?.splits?.categories ?? [];
+      const snapStat = {
+        name: 'snapPct',
+        value: percentage,
+        displayValue: `${percentage}%`,
+        displayName: 'Snap%',
+        shortDisplayName: 'Snap%',
+      };
+      return {
+        ...game,
+        statsJson: {
+          ...game.statsJson,
+          splits: {
+            ...game.statsJson?.splits,
+            categories: [...categories, { name: 'usage', stats: [snapStat] }],
+          },
+        },
+      };
+    });
+  }, [activeSnapCounts, gameLog, position, year]);
+  const displayGameLog = isTeamDefenseFantasyPosition && (!Array.isArray(gameLogWithSnapCounts) || gameLogWithSnapCounts.length === 0)
     ? fallbackTeamDefenseGameLog
-    : gameLog;
+    : gameLogWithSnapCounts;
   const { standard, advanced } = useMemo(() => {
     if (!displayStatsJson) return { standard: [], advanced: [] };
     const map = buildStatMap(displayStatsJson);
@@ -2429,7 +2475,8 @@ const PlayerStatTable = ({
   const hasGameLogMoreStats = useMemo(() => {
     if (showFantasyOnly || year === 'career' || !displayGameLog || displayGameLog.length === 0) return false;
     const { standard: standardGameCols, advanced: advancedGameCols } = getGameLogColumns(position);
-    const coreCols = buildAttainedGameLogColumns(displayGameLog, standardGameCols);
+    const coreCols = buildAttainedGameLogColumns(displayGameLog, standardGameCols)
+      .filter((column) => standardGameCols.some((preset) => preset.key === column.key));
     const allCols = buildAttainedGameLogColumns(displayGameLog, [...standardGameCols, ...advancedGameCols]);
     return allCols.length > coreCols.length;
   }, [displayGameLog, position, showFantasyOnly, year]);
@@ -2447,17 +2494,16 @@ const PlayerStatTable = ({
     : (showFantasyOnly ? 'No fantasy values are available for this season.' : 'No stats available for this season.');
 
   return (
-    <div
-      className="border border-[color:var(--color-separator)] rounded-lg overflow-hidden transition-all"
-      style={expanded && accentColor ? { borderLeftColor: accentColor, borderLeftWidth: '3px' } : undefined}
-    >
+    <div className="player-stats-season">
       {/* Accordion header */}
       <button
+        type="button"
         onClick={onToggle}
-        className="w-full flex items-center justify-between px-4 py-3 bg-[color:var(--color-fill-secondary)] hover:bg-[color:var(--color-fill)] transition-colors text-left"
+        aria-expanded={expanded}
+        className="player-stats-season__head"
       >
         <div className="flex items-center gap-2 min-w-0">
-          <span className="font-semibold shrink-0">
+          <span className="player-dash-subhead shrink-0">
             {label}
           </span>
           {honors.length > 0 && (
@@ -2481,57 +2527,56 @@ const PlayerStatTable = ({
 
       {/* Stat content */}
       {expanded && (
-        <div className="bg-[color:var(--color-bg-secondary)]">
+        <div className="player-stats-season__body">
           {error ? (
-            <p className="px-4 py-3 text-sm text-[color:var(--color-accent-red)] italic">{error}</p>
+            <p className="py-3 text-sm text-[color:var(--color-accent-red)] italic">{error}</p>
           ) : loading ? (
-            <p className="px-4 py-3 text-sm text-[color:var(--color-label-tertiary)] italic">Loading stats…</p>
+            <p className="py-3 text-sm text-[color:var(--color-label-tertiary)] italic">Loading stats…</p>
           ) : showFantasyOnly && (sleeperStatsLoading || fantasyRowsLoading || isWaitingForEspnFantasyGameLog) && displaySections.length === 0 ? (
-            <p className="px-4 py-3 text-sm text-[color:var(--color-label-tertiary)] italic">Loading fantasy values...</p>
+            <p className="py-3 text-sm text-[color:var(--color-label-tertiary)] italic">Loading fantasy values...</p>
           ) : displaySections.length === 0 ? (
-            <p className="px-4 py-3 text-sm text-[color:var(--color-label-tertiary)] italic">
+            <p className="py-3 text-sm text-[color:var(--color-label-tertiary)] italic">
               {emptyStateMessage}
             </p>
           ) : (
             <>
               {/* Season totals — grouped by category */}
-              <div className="px-4 py-3 border-b border-[color:var(--color-separator)]">
+              <div className="pb-4">
                 {hasTableControls && (
-                  <div className="mb-3 pb-3 border-b border-[color:var(--color-separator)] flex flex-wrap gap-x-5 gap-y-2">
+                  <div className="mb-3 flex flex-wrap gap-x-5 gap-y-1">
                     {hasMoreStats && (
-                      <StatTableSwitch
+                      <Switch
                         checked={showMoreStats}
                         label="More Stats"
-                        accentColor={readableAccentColor}
                         onChange={() => setShowMoreStats(v => !v)}
                       />
                     )}
                     {hasHighlightableGameLog && (
-                      <StatTableSwitch
+                      <Switch
                         checked={highlightColumnHighs}
                         label="Column Highs"
-                        accentColor={readableAccentColor}
                         onChange={() => setHighlightColumnHighs(v => !v)}
                       />
                     )}
                     {hasHighlightableGameLog && (
-                      <StatTableSwitch
+                      <Switch
                         checked={highlightColumnLows}
                         label="Column Lows"
-                        accentColor="var(--color-accent-red)"
+                        className="is-low"
                         onChange={() => setHighlightColumnLows(v => !v)}
                       />
                     )}
                   </div>
                 )}
 
-                <StatSections sections={displaySections} accentColor={readableAccentColor} />
+                <StatSections sections={displaySections} />
               </div>
 
               {/* Game-by-game log (not shown for career row) */}
               {year !== 'career' && (
                 <GameLog
                   gameLog={displayGameLog}
+                  season={year}
                   gameLogLoading={gameLogLoading}
                   position={position}
                   showMoreStats={showMoreStats}
@@ -2544,6 +2589,7 @@ const PlayerStatTable = ({
                   fantasyLoading={sleeperStatsLoading}
                   highlightColumnHighs={highlightColumnHighs}
                   highlightColumnLows={highlightColumnLows}
+                  onViewGameStats={onViewGameStats}
                 />
               )}
             </>
@@ -2553,29 +2599,6 @@ const PlayerStatTable = ({
     </div>
   );
 };
-
-const StatTableSwitch = ({ checked, label, accentColor, onChange }) => (
-  <button
-    type="button"
-    role="switch"
-    aria-checked={checked}
-    onClick={onChange}
-    className="flex items-center gap-2 group"
-  >
-    <span
-      className={`relative inline-flex h-4 w-7 shrink-0 rounded-full border transition-colors duration-200 ${!checked ? 'bg-[color:var(--color-fill)] border-[color:var(--color-separator-opaque)]' : ''}`}
-      style={checked && accentColor ? { background: accentColor, borderColor: accentColor } : undefined}
-    >
-      <span className={`absolute left-0.5 top-1/2 h-3 w-3 -translate-y-1/2 rounded-full bg-white shadow transition-transform duration-200 ${checked ? 'translate-x-3' : 'translate-x-0'}`} />
-    </span>
-    <span
-      className={`text-xs font-semibold transition-colors ${!checked ? 'text-[color:var(--color-label-tertiary)] group-hover:text-[color:var(--color-label-secondary)]' : ''}`}
-      style={checked && accentColor ? { color: accentColor } : undefined}
-    >
-      {label}
-    </span>
-  </button>
-);
 
 // Color config for each award/honor type
 const HONOR_CONFIG = {
@@ -2631,24 +2654,16 @@ function formatRankTitle(rank, positionRank) {
   return parts.length > 0 ? parts.join(' · ') : undefined;
 }
 
-const StatSections = ({ sections, accentColor }) => (
+const StatSections = ({ sections }) => (
   <div className="space-y-4">
     {sections.map(({ heading, rows }) => (
       <div key={heading}>
-        <div
-          className="text-[length:var(--type-label)] font-bold uppercase tracking-widest pb-1 mb-2 border-b"
-          style={accentColor
-            ? { color: accentColor, borderBottomColor: `${accentColor}40` }
-            : { color: undefined, borderBottomColor: undefined }
-          }
-        >
-          <span className={accentColor ? '' : 'text-[color:var(--color-label-tertiary)]'}>{heading}</span>
-        </div>
+        <div className="player-dash-eyebrow player-stats-group__head mb-2">{heading}</div>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-x-6 gap-y-2">
           {rows.map(({ key, label, value, valueSuffix, rank, positionRank }) => {
             const rankMeta = formatRankMeta(rank, positionRank);
             return (
-              <div key={key ?? label} className="flex flex-col">
+              <div key={key ?? label} className="player-stats-group__stat flex flex-col">
                 <span className="text-[length:var(--type-label)] uppercase tracking-wider text-[color:var(--color-label-tertiary)] font-semibold">{label}</span>
                 <div className="flex flex-wrap items-baseline gap-x-1">
                   <span className="text-base font-bold text-[color:var(--color-label)]">{value}</span>
@@ -2704,7 +2719,7 @@ function SortableGameLogHeader({
     >
       <button
         type="button"
-        className={`group flex min-w-0 max-w-full items-center gap-0.5 rounded-sm uppercase transition-colors hover:text-[color:var(--color-label-secondary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)] ${
+        className={`group relative z-0 flex w-full min-w-0 max-w-full items-center gap-0.5 rounded-sm uppercase transition-colors hover:text-[color:var(--color-label-secondary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)] ${
           align === 'center' ? 'mx-auto justify-center text-center' : 'justify-start text-left'
         }`}
         aria-label={ariaLabel}
@@ -2719,6 +2734,7 @@ function SortableGameLogHeader({
 
 const GameLog = ({
   gameLog,
+  season,
   gameLogLoading,
   position,
   showMoreStats = false,
@@ -2731,12 +2747,14 @@ const GameLog = ({
   fantasyLoading = false,
   highlightColumnHighs = false,
   highlightColumnLows = false,
+  onViewGameStats = null,
 }) => {
   const tableContainerRef = useRef(null);
   const [sortConfig, setSortConfig] = useState(null);
   const { standard: standardGameCols, advanced: advancedGameCols } = useMemo(() => getGameLogColumns(position), [position]);
   const coreGameStatColumns = useMemo(
-    () => buildAttainedGameLogColumns(gameLog, standardGameCols),
+    () => buildAttainedGameLogColumns(gameLog, standardGameCols)
+      .filter((column) => standardGameCols.some((preset) => preset.key === column.key)),
     [gameLog, standardGameCols],
   );
   const allGameStatColumns = useMemo(() => {
@@ -2772,8 +2790,8 @@ const GameLog = ({
     ? MOBILE_COMPACT_GAME_IDENTITY_WIDTHS
     : EXPANDED_GAME_IDENTITY_WIDTHS;
   const expandedGameStatWidth = isMobileGameLogLayout
-    ? MOBILE_COMPACT_GAME_STAT_WIDTH
-    : EXPANDED_GAME_STAT_WIDTH;
+    ? 88
+    : 104;
   const compactGameIdentityWidths = isMobileGameLogLayout
     ? MOBILE_COMPACT_GAME_IDENTITY_WIDTHS
     : COMPACT_GAME_IDENTITY_WIDTHS;
@@ -2786,7 +2804,7 @@ const GameLog = ({
   const baseHeaderClass = useTightIdentitySpacing
     ? 'px-1 py-2 text-left font-semibold text-[color:var(--color-label-tertiary)] uppercase whitespace-nowrap text-[length:var(--type-micro)] lg:text-[length:var(--type-label)] tracking-normal lg:tracking-[0.04em]'
     : 'px-2 py-2 text-left font-semibold text-[color:var(--color-label-tertiary)] uppercase whitespace-nowrap text-[length:var(--type-micro)] lg:text-[length:var(--type-label)] tracking-normal lg:tracking-[0.04em]';
-  const statHeaderClass = 'px-1 py-2 text-center align-middle font-semibold text-[color:var(--color-label-tertiary)] uppercase text-[length:var(--type-micro)] lg:text-[length:var(--type-label)] tracking-normal lg:tracking-[0.04em] overflow-hidden';
+  const statHeaderClass = `px-1 py-2 text-center align-middle font-semibold text-[color:var(--color-label-tertiary)] uppercase text-[length:var(--type-micro)] lg:text-[length:var(--type-label)] tracking-normal lg:tracking-[0.04em] ${expandedGameStats ? '' : 'overflow-hidden'}`;
   const baseCellClass = useTightIdentitySpacing
     ? 'px-1 py-1.5 align-middle whitespace-nowrap'
     : 'px-1 sm:px-2 py-1.5 align-middle whitespace-nowrap';
@@ -2829,9 +2847,9 @@ const GameLog = ({
       : undefined;
   const freezeIdentityColumns = expandedGameStats && !isMobileGameLogLayout;
   const getStickyIdentityStyle = (index) => freezeIdentityColumns
-    ? { left: `${stickyIdentityLefts[index]}px`, zIndex: 20 }
+    ? { ...identityColStyles[index], left: `${stickyIdentityLefts[index]}px`, zIndex: 30 }
     : undefined;
-  const getStickyIdentityClass = (index, baseClass, rowBackgroundClass = 'bg-[color:var(--color-bg-secondary)]') => {
+  const getStickyIdentityClass = (index, baseClass, rowBackgroundClass = 'bg-[color:var(--color-bg)]') => {
     if (!freezeIdentityColumns) return baseClass;
     const separator = index === 3 ? ' shadow-[8px_0_12px_-12px_rgba(15,23,42,0.45)]' : '';
     return `${baseClass} sticky ${rowBackgroundClass}${separator}`;
@@ -2978,7 +2996,7 @@ const GameLog = ({
           </colgroup>
         )}
         <thead>
-          <tr className="bg-[color:var(--color-fill-secondary)]">
+          <tr>
             {[
               { key: 'week', title: 'Week', text: 'Wk' },
               { key: 'team', title: 'Team', text: 'Team' },
@@ -2987,11 +3005,11 @@ const GameLog = ({
             ].map((header, index) => (
               <th
                 key={header.key}
-                className={getStickyIdentityClass(index, baseHeaderClass, 'bg-[color:var(--color-fill-secondary)]')}
+                className={getStickyIdentityClass(index, `${baseHeaderClass.replace(/^px-2/, 'px-1')} overflow-hidden`, 'bg-[color:var(--color-bg)]')}
                 style={getStickyIdentityStyle(index)}
                 title={header.title}
               >
-                {header.text}
+                <span className="block min-w-0 max-w-full overflow-hidden text-ellipsis whitespace-nowrap">{header.text}</span>
               </th>
             ))}
             {cols.map(col => {
@@ -3008,10 +3026,10 @@ const GameLog = ({
                   onClick={() => handleSort(col.key, col)}
                   align="center"
                 >
-                  <span className="flex min-w-0 max-w-full flex-col items-center justify-center gap-0.5 text-center leading-[1.05]">
-                    <span className="block max-w-full whitespace-normal break-normal [overflow-wrap:normal]">{primaryLabel}</span>
+                  <span className="flex min-w-0 max-w-full flex-1 flex-col items-center justify-center gap-0.5 text-center leading-[1.05]">
+                    <span className="block max-w-full whitespace-normal break-words [overflow-wrap:anywhere]">{primaryLabel}</span>
                     {secondaryLabel && (
-                      <span className="block max-w-full whitespace-normal break-normal [overflow-wrap:normal]">{secondaryLabel}</span>
+                      <span className="block max-w-full whitespace-normal break-words [overflow-wrap:anywhere]">{secondaryLabel}</span>
                     )}
                   </span>
                 </SortableGameLogHeader>
@@ -3064,6 +3082,19 @@ const GameLog = ({
               : (meta.week ?? i + 1);
             const opponentLabel = meta.opponent ?? '—';
             const resultLabel = result !== '-' ? `${result} ${meta.score ?? ''}` : '—';
+            const canOpenInScores = Boolean(onViewGameStats && meta.completed && !isPost && game.eventId);
+            const openInScores = () => onViewGameStats?.({
+              eventId: String(game.eventId),
+              season: Number(season),
+              phase: 'regular',
+              week: Number(meta.week),
+              awayTeamId: String(meta.opponent ?? '').startsWith('@')
+                ? meta.myTeam
+                : String(meta.opponent ?? '').replace(/^vs\s*/i, ''),
+              homeTeamId: String(meta.opponent ?? '').startsWith('@')
+                ? String(meta.opponent).slice(1)
+                : meta.myTeam,
+            });
 
             const dimText = isInactive ? 'opacity-60' : '';
             const fantasyPointsByKey = fantasyOnly
@@ -3106,13 +3137,29 @@ const GameLog = ({
                     )}
                   </tr>
                 )}
-                <tr key={game.eventId ?? i} className={`transition-colors ${rowBg} ${dimText}`}>
+                <tr
+                  key={game.eventId ?? i}
+                  className={`transition-colors ${rowBg} ${dimText} ${canOpenInScores ? 'cursor-pointer hover:bg-[color:var(--color-fill-secondary)]' : ''}`}
+                  onClick={canOpenInScores ? openInScores : undefined}
+                >
                   <td
                     className={getStickyIdentityClass(0, `${baseCellClass} text-[color:var(--color-label-tertiary)] tabular-nums text-[length:var(--type-label)]`)}
                     style={getStickyIdentityStyle(0)}
                     title={String(weekLabel)}
                   >
-                    {weekLabel}
+                    {canOpenInScores ? (
+                      <button
+                        type="button"
+                        className="rounded-sm text-inherit underline decoration-transparent underline-offset-2 transition-colors hover:decoration-current focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)]"
+                        aria-label={`Open Week ${weekLabel} game stats in Statistics Scores`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          openInScores();
+                        }}
+                      >
+                        {weekLabel}
+                      </button>
+                    ) : weekLabel}
                   </td>
                   <td
                     className={getStickyIdentityClass(1, `${baseCellClass} font-medium text-[color:var(--color-label-secondary)] text-[length:var(--type-label)]`)}
@@ -3178,14 +3225,14 @@ const GameLog = ({
         </table>
       </div>
       {shouldShowScrollIndicators && scrollIndicators.left && (
-        <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center bg-gradient-to-r from-[color:var(--color-bg-secondary)] via-[color:color-mix(in_srgb,var(--color-bg-secondary)_85%,transparent)] to-transparent pl-2 pr-8">
+        <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center bg-gradient-to-r from-[color:var(--color-bg)] via-[color:color-mix(in_srgb,var(--color-bg)_85%,transparent)] to-transparent pl-2 pr-8">
           <div className="flex h-7 w-7 items-center justify-center rounded-full border border-[color:var(--color-separator)] bg-[color:color-mix(in_srgb,var(--color-bg-secondary)_95%,transparent)] text-[color:var(--color-label-secondary)] shadow-sm">
             <span className="text-lg leading-none" aria-hidden="true">‹</span>
           </div>
         </div>
       )}
       {shouldShowScrollIndicators && scrollIndicators.right && (
-        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center bg-gradient-to-l from-[color:var(--color-bg-secondary)] via-[color:color-mix(in_srgb,var(--color-bg-secondary)_85%,transparent)] to-transparent pl-8 pr-2">
+        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center bg-gradient-to-l from-[color:var(--color-bg)] via-[color:color-mix(in_srgb,var(--color-bg)_85%,transparent)] to-transparent pl-8 pr-2">
           <div className="flex h-7 w-7 items-center justify-center rounded-full border border-[color:var(--color-separator)] bg-[color:color-mix(in_srgb,var(--color-bg-secondary)_95%,transparent)] text-[color:var(--color-label-secondary)] shadow-sm">
             <span className="text-lg leading-none" aria-hidden="true">›</span>
           </div>

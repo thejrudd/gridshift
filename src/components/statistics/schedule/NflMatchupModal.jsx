@@ -11,6 +11,7 @@ import { getCompanionPlayerImageUrls, getNflTeamLogoUrl } from '../../../utils/c
 import { getScoreNetworkLabel } from '../../../utils/statisticsBroadcasts';
 import { buildUnitMatchupTable } from '../../../utils/defenseRankings.js';
 import { isNflRegularSeasonStarted } from '../../../utils/seasonAvailability.js';
+import { getDefaultScheduleWeek } from '../../../utils/statisticsSchedule.js';
 import {
   buildGameLeaders,
   buildGameTeamStatRows,
@@ -23,6 +24,7 @@ import {
   formatRecord,
   formatSigned,
   formatUnitValue,
+  getEspnTeamEntry,
   getRankTier,
   normalizeEspnGameSummary,
   resolveMatchupPhase,
@@ -71,10 +73,48 @@ function initials(name) {
   return String(name ?? '').split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || '—';
 }
 
-function useTeamColors(teamId, darkMode, degrees) {
+function parseHexRgb(value) {
+  const match = String(value ?? '').match(/^#([\da-f]{6})$/i);
+  if (!match) return null;
+  return [0, 2, 4].map((offset) => Number.parseInt(match[1].slice(offset, offset + 2), 16));
+}
+
+function colorDistance(first, second) {
+  const a = parseHexRgb(first);
+  const b = parseHexRgb(second);
+  if (!a || !b) return 1;
+  return Math.sqrt(a.reduce((sum, channel, index) => sum + (channel - b[index]) ** 2, 0)) / Math.sqrt(3 * 255 ** 2);
+}
+
+function resolveTeamAccents(left, right, darkMode) {
+  const leftTheme = getTeamVisualTheme(left, darkMode);
+  const rightTheme = getTeamVisualTheme(right, darkMode);
+  const leftPrimary = leftTheme?.primary ?? leftTheme?.accentColor ?? '#FFFFFF';
+  const leftSecondary = leftTheme?.secondary ?? leftPrimary;
+  const rightPrimary = rightTheme?.primary ?? rightTheme?.accentColor ?? '#FFFFFF';
+  const rightSecondary = rightTheme?.secondary ?? rightPrimary;
+
+  if (colorDistance(leftPrimary, rightPrimary) >= 0.28) {
+    return { [left]: leftPrimary, [right]: rightPrimary };
+  }
+
+  // Keep one team on its primary color; switch the other to its secondary
+  // color to avoid making both teams look alike.
+  const alternatives = [
+    { [left]: leftPrimary, [right]: rightSecondary },
+    { [left]: leftSecondary, [right]: rightPrimary },
+  ];
+  alternatives.sort((a, b) => colorDistance(b[left], b[right]) - colorDistance(a[left], a[right]));
+  const best = alternatives[0];
+  return colorDistance(best[left], best[right]) > colorDistance(leftPrimary, rightPrimary)
+    ? best
+    : { [left]: leftPrimary, [right]: rightPrimary };
+}
+
+function useTeamColors(teamId, darkMode, degrees, accentOverride) {
   return useMemo(() => {
     const theme = getTeamVisualTheme(teamId, darkMode);
-    const accent = theme?.accentColor ?? theme?.color ?? null;
+    const accent = accentOverride ?? theme?.accentColor ?? theme?.color ?? null;
     return {
       accent: accent ?? 'var(--color-accent)',
       ink: accent && accent.startsWith('#') ? fantasyTeamInk(accent) : 'var(--color-label)',
@@ -82,7 +122,7 @@ function useTeamColors(teamId, darkMode, degrees) {
         ? fantasyHeroGradient(theme.primary, theme.secondary ?? theme.primary, degrees)
         : 'var(--color-fill-secondary)',
     };
-  }, [teamId, darkMode, degrees]);
+  }, [teamId, darkMode, degrees, accentOverride]);
 }
 
 // ── Data hooks ───────────────────────────────────────────────────────────────
@@ -154,8 +194,8 @@ function useGameSummary(game) {
   return { ...current, settled };
 }
 
-function useTeamSeasonStats(left, right, season) {
-  const key = `${season}:${left}:${right}`;
+function useTeamSeasonStats(left, right, season, asOfWeek = null) {
+  const key = `${season}:${left}:${right}:${asOfWeek ?? 'latest'}`;
   const [state, setState] = useState({ key: null, byTeam: {}, status: 'loading' });
   useEffect(() => {
     if (!season || !left || !right) return undefined;
@@ -178,7 +218,7 @@ function useTeamSeasonStats(left, right, season) {
  * data Fantasy › Defenses ranks. `before` covers weeks before this game,
  * `after` includes it.
  */
-function useUnitTables(season, week) {
+function useUnitTables(season, week, pregameThroughWeek = null) {
   const {
     hasLeague,
     season: leagueSeason,
@@ -206,9 +246,10 @@ function useUnitTables(season, week) {
     Object.values(scheduleMap ?? {}).forEach((weekData) => Object.keys(weekData ?? {}).forEach((team) => set.add(team.toUpperCase())));
     return [...set].sort();
   }, [scheduleMap]);
+  const beforeThroughWeek = pregameThroughWeek ?? week - 1;
   const before = useMemo(
-    () => (ready ? buildUnitMatchupTable({ weeklyStats, players, scheduleMap, teams, throughWeek: week - 1 }) : null),
-    [players, ready, scheduleMap, teams, week, weeklyStats],
+    () => (ready ? buildUnitMatchupTable({ weeklyStats, players, scheduleMap, teams, throughWeek: beforeThroughWeek }) : null),
+    [beforeThroughWeek, players, ready, scheduleMap, teams, weeklyStats],
   );
   const after = useMemo(
     () => (ready ? buildUnitMatchupTable({ weeklyStats, players, scheduleMap, teams, throughWeek: week }) : null),
@@ -234,6 +275,19 @@ function Eyebrow({ children, note }) {
   );
 }
 
+function getPairedShares(a, b) {
+  const hasA = Number.isFinite(a);
+  const hasB = Number.isFinite(b);
+  const valueA = hasA ? Math.abs(a) : 0;
+  const valueB = hasB ? Math.abs(b) : 0;
+  const total = valueA + valueB;
+  if (total > 0) {
+    const shareA = Math.round((valueA / total) * 100);
+    return [shareA / 100, (100 - shareA) / 100];
+  }
+  return [hasA ? 0.5 : 0, hasB ? 0.5 : 0];
+}
+
 /** Mirrored comparison row: shared with the Fantasy Matchup preview's styling. */
 function CompareRow({ row, index }) {
   const { aValue, bValue } = row;
@@ -243,20 +297,20 @@ function CompareRow({ row, index }) {
     leadsA = row.lowerWins ? aValue < bValue : aValue > bValue;
     leadsB = !leadsA;
   }
-  const max = Math.max(Math.abs(aValue ?? 0), Math.abs(bValue ?? 0)) || 1;
-  const cell = (side, display, leads, value) => (
+  const [shareA, shareB] = getPairedShares(aValue, bValue);
+  const cell = (side, display, leads) => (
     <div
       className={`matchup-preview-cmp__value is-${side}${leads ? ' is-leading' : ''}`}
-      style={{ '--matchup-preview-bar': `${Math.round((Math.abs(value ?? 0) / max) * 100)}%`, '--matchup-preview-index': index }}
+      style={{ '--matchup-preview-bar': `${Math.round((side === 'a' ? shareA : shareB) * 100)}%`, '--matchup-preview-index': index }}
     >
       <div className="matchup-preview-cmp__number tabular-nums"><span>{display}</span></div>
     </div>
   );
   return (
     <div className="matchup-preview-cmp__row">
-      {cell('a', row.a, leadsA, aValue)}
+      {cell('a', row.a, leadsA)}
       <div className="matchup-preview-cmp__label">{row.label}</div>
-      {cell('b', row.b, leadsB, bValue)}
+      {cell('b', row.b, leadsB)}
     </div>
   );
 }
@@ -364,11 +418,12 @@ function UnitPanel({ rows, leftTeam, colors, onOpenDefense }) {
           const b = leftIsOffense ? row.defense : row.offense;
           const leadsA = a.rank != null && b.rank != null && a.rank < b.rank;
           const leadsB = a.rank != null && b.rank != null && b.rank < a.rank;
+          const [shareA, shareB] = getPairedShares(a.avg, b.avg);
           const edgeTeam = row.edge === 'offense' ? offenseTeam : row.edge === 'defense' ? defenseTeam : null;
-          const cell = (side, entry, leads) => (
+          const cell = (side, entry, leads, share) => (
             <div
               className={`matchup-preview-cmp__value is-${side}${leads ? ' is-leading' : ''}`}
-              style={{ '--matchup-preview-bar': entry.rank != null ? `${Math.round(((33 - entry.rank) / 32) * 100)}%` : '0%', '--matchup-preview-index': index }}
+              style={{ '--matchup-preview-bar': `${Math.round(share * 100)}%`, '--matchup-preview-index': index }}
             >
               <div className="matchup-preview-cmp__number tabular-nums"><span>{formatUnitValue(row.unit.id, entry.avg)}</span></div>
               <div className="matchup-preview-cmp__sub nfl-matchup-cmp__sub"><RankChip rank={entry.rank} /></div>
@@ -376,7 +431,7 @@ function UnitPanel({ rows, leftTeam, colors, onOpenDefense }) {
           );
           return (
             <div className="matchup-preview-cmp__row" key={row.unit.id}>
-              {cell('a', a, leadsA)}
+              {cell('a', a, leadsA, shareA)}
               <div className="matchup-preview-cmp__label nfl-matchup-unit">
                 <UnitLink unit={row.unit} defenseTeam={defenseTeam} onOpen={onOpenDefense} />
                 <small>{row.unit.sub}</small>
@@ -385,7 +440,7 @@ function UnitPanel({ rows, leftTeam, colors, onOpenDefense }) {
                   colorSet={edgeTeam ? colors[edgeTeam] : null}
                 />
               </div>
-              {cell('b', b, leadsB)}
+              {cell('b', b, leadsB, shareB)}
             </div>
           );
         })}
@@ -411,11 +466,11 @@ function TrackerPanel({ rows, leftTeam, colors, live, onOpenDefense }) {
       <div className="matchup-preview-cmp nfl-matchup-cmp">
         {rows.map((row, index) => {
           const compare = live ? (row.pace ?? row.value) : row.value;
-          const max = Math.max(compare ?? 0, row.defenseAvg ?? 0) || 1;
+          const [gameShare, averageShare] = getPairedShares(compare, row.defenseAvg);
           const gameCell = (side) => (
             <div
               className={`matchup-preview-cmp__value is-${side} is-leading`}
-              style={{ '--matchup-preview-bar': `${Math.round(((compare ?? 0) / max) * 100)}%`, '--matchup-preview-index': index }}
+              style={{ '--matchup-preview-bar': `${Math.round(gameShare * 100)}%`, '--matchup-preview-index': index }}
             >
               <div className="matchup-preview-cmp__number tabular-nums"><span>{row.unit.id === 'K' ? row.value : Math.round(row.value)}</span></div>
               <div className="matchup-preview-cmp__sub">
@@ -426,7 +481,7 @@ function TrackerPanel({ rows, leftTeam, colors, live, onOpenDefense }) {
           const avgCell = (side) => (
             <div
               className={`matchup-preview-cmp__value is-${side}`}
-              style={{ '--matchup-preview-bar': `${Math.round(((row.defenseAvg ?? 0) / max) * 100)}%`, '--matchup-preview-index': index }}
+              style={{ '--matchup-preview-bar': `${Math.round(averageShare * 100)}%`, '--matchup-preview-index': index }}
             >
               <div className="matchup-preview-cmp__number tabular-nums"><span>{formatUnitValue(row.unit.id, row.defenseAvg)}</span></div>
               <div className="matchup-preview-cmp__sub nfl-matchup-cmp__sub">
@@ -521,8 +576,8 @@ function Leaders({ columns, onOpenPlayer }) {
 }
 
 function LineScore({ game, left, right, colors }) {
-  const a = game?.teams?.[left];
-  const b = game?.teams?.[right];
+  const a = getEspnTeamEntry(game?.teams, left);
+  const b = getEspnTeamEntry(game?.teams, right);
   if (!a?.linescores?.length && !b?.linescores?.length) return null;
   const periods = Math.max(4, a?.linescores?.length ?? 0, b?.linescores?.length ?? 0);
   const labels = Array.from({ length: periods }, (_, index) => (index < 4 ? String(index + 1) : periods === 5 ? 'OT' : `OT${index - 3}`));
@@ -671,11 +726,22 @@ export default function NflMatchupModal({
   const isCompact = useMediaQuery('(max-width: 640px)');
   const isWide = useMediaQuery('(min-width: 1024px)');
   const { darkMode } = useTheme();
+  const {
+    currentFantasyWeek: sharedFantasyWeek,
+    hasLeague,
+    season: leagueSeason,
+  } = useSleeperBase();
+  const [clockMs, setClockMs] = useState(() => Date.now());
+  useEffect(() => {
+    const intervalId = window.setInterval(() => setClockMs(Date.now()), 60_000);
+    return () => window.clearInterval(intervalId);
+  }, []);
   const size = isCompact ? 'compact' : isWide ? 'wide' : 'regular';
   const left = teamId;
   const right = opponentId;
-  const leftColors = useTeamColors(left, darkMode, 135);
-  const rightColors = useTeamColors(right, darkMode, 225);
+  const teamAccents = useMemo(() => resolveTeamAccents(left, right, darkMode), [left, right, darkMode]);
+  const leftColors = useTeamColors(left, darkMode, 135, teamAccents[left]);
+  const rightColors = useTeamColors(right, darkMode, 225, teamAccents[right]);
   const colors = useMemo(() => ({ [left]: leftColors, [right]: rightColors }), [left, leftColors, right, rightColors]);
   const leftTeam = teamsById?.get(left) ?? null;
   const rightTeam = teamsById?.get(right) ?? null;
@@ -685,20 +751,33 @@ export default function NflMatchupModal({
   const summary = useGameSummary(game);
   const live = summary.data;
   const phase = resolveMatchupPhase(game, live);
+  const dateBasedWeek = useMemo(
+    () => getDefaultScheduleWeek(schedule, new Date(clockMs)),
+    [clockMs, schedule],
+  );
+  const connectedWeek = hasLeague && String(leagueSeason) === String(season)
+    ? Number(sharedFantasyWeek)
+    : null;
+  const currentDataWeek = Number.isInteger(connectedWeek) && connectedWeek >= 1
+    ? connectedWeek
+    : dateBasedWeek;
+  const statsThroughWeek = currentDataWeek == null
+    ? Math.max(0, week - 1)
+    : Math.max(0, Math.min(Number(week), currentDataWeek));
   const kickoffMs = Date.parse(game?.kickoff ?? '');
   const canOpenScores = phase !== 'pre'
     || (Number.isFinite(kickoffMs) && kickoffMs <= Date.now());
-  const teamStats = useTeamSeasonStats(left, right, season);
-  const units = useUnitTables(season, week);
+  const teamStats = useTeamSeasonStats(left, right, season, phase === 'pre' ? statsThroughWeek : null);
+  const units = useUnitTables(season, week, phase === 'pre' ? statsThroughWeek : null);
   const revealed = useCoalescedReveal(
     summary.settled && teamStats.status !== 'loading' && units.status !== 'loading',
     `${season}:${week}:${left}:${right}:${getEventId(game) ?? ''}`,
   );
 
   const recordBefore = useMemo(() => ({
-    [left]: buildTeamSeasonSummary(schedule, left, { beforeWeek: week }),
-    [right]: buildTeamSeasonSummary(schedule, right, { beforeWeek: week }),
-  }), [left, right, schedule, week]);
+    [left]: buildTeamSeasonSummary(schedule, left, { beforeWeek: week, throughWeek: phase === 'pre' ? statsThroughWeek : week - 1 }),
+    [right]: buildTeamSeasonSummary(schedule, right, { beforeWeek: week, throughWeek: phase === 'pre' ? statsThroughWeek : week - 1 }),
+  }), [left, phase, right, schedule, statsThroughWeek, week]);
   const recordAfter = useMemo(() => ({
     [left]: buildTeamSeasonSummary(schedule, left, { throughWeek: week }),
     [right]: buildTeamSeasonSummary(schedule, right, { throughWeek: week }),
@@ -735,7 +814,7 @@ export default function NflMatchupModal({
   const network = getScoreNetworkLabel(game ?? {}, { fallback: false });
   const venue = formatVenue(game?.location ?? game?.venue);
   const weekLabel = `Week ${week}`;
-  const scoreFor = (team) => live?.teams?.[team]?.score ?? null;
+  const scoreFor = (team) => getEspnTeamEntry(live?.teams, team)?.score ?? null;
   const headerChip = phase === 'final'
     ? `Final · ${weekLabel}`
     : phase === 'live'
@@ -757,9 +836,10 @@ export default function NflMatchupModal({
     const showScore = phase !== 'pre' && scoreFor(key) != null;
     const otherScore = scoreFor(key === left ? right : left);
     const lost = phase === 'final' && showScore && otherScore != null && scoreFor(key) < otherScore;
-    const hasBall = phase === 'live' && live?.situation?.possessionTeam === key;
+    const hasBall = phase === 'live' && Boolean(getEspnTeamEntry({ [key]: true }, live?.situation?.possessionTeam));
+    const liveTeam = getEspnTeamEntry(live?.teams, key);
     const timeouts = phase === 'live'
-      ? (live?.teams?.[key]?.homeAway === 'home' ? live?.situation?.homeTimeouts : live?.situation?.awayTimeouts)
+      ? (liveTeam?.homeAway === 'home' ? live?.situation?.homeTimeouts : live?.situation?.awayTimeouts)
       : null;
     const result = phase === 'final' ? record.results.find((entry) => entry.week === week)?.result ?? null : null;
     const line = phase === 'pre'
@@ -808,15 +888,15 @@ export default function NflMatchupModal({
 
   const leaderColumns = phase === 'pre'
     ? (units.status === 'ready' ? [
-      { team: left, name: leftName, accent: leftColors.accent, players: buildTeamSeasonLeaders({ weeklyStats: units.weeklyStats, players: units.players, teamId: left, throughWeek: week - 1 }) },
-      { team: right, name: rightName, accent: rightColors.accent, players: buildTeamSeasonLeaders({ weeklyStats: units.weeklyStats, players: units.players, teamId: right, throughWeek: week - 1 }) },
+      { team: left, name: leftName, accent: leftColors.accent, players: buildTeamSeasonLeaders({ weeklyStats: units.weeklyStats, players: units.players, teamId: left, throughWeek: statsThroughWeek }) },
+      { team: right, name: rightName, accent: rightColors.accent, players: buildTeamSeasonLeaders({ weeklyStats: units.weeklyStats, players: units.players, teamId: right, throughWeek: statsThroughWeek }) },
     ] : null)
     : (live ? [
       { team: left, name: leftName, accent: leftColors.accent, players: buildGameLeaders(live, left) },
       { team: right, name: rightName, accent: rightColors.accent, players: buildGameLeaders(live, right) },
     ] : null);
   const gameStatRows = phase !== 'pre' && live ? buildGameTeamStatRows(live, left, right) : [];
-  const leftIsHome = live?.teams?.[left]?.homeAway ? live.teams[left].homeAway === 'home' : !isAway;
+  const leftIsHome = getEspnTeamEntry(live?.teams, left)?.homeAway ? getEspnTeamEntry(live?.teams, left).homeAway === 'home' : !isAway;
   const scoreLine = (play) => (leftIsHome
     ? `${play.homeScore ?? '–'}–${play.awayScore ?? '–'}`
     : `${play.awayScore ?? '–'}–${play.homeScore ?? '–'}`);
@@ -858,6 +938,12 @@ export default function NflMatchupModal({
             {renderSide(right, rightTeam, rightColors, 'end')}
           </div>
 
+          {phase === 'pre' && (
+            <p className="matchup-preview__more-note nfl-matchup-through-week">
+              {`Values through week ${statsThroughWeek}`}
+            </p>
+          )}
+
           {summary.error && phase !== 'pre' && !live && (
             <p className="matchup-preview__notice" role="status">Live game data from ESPN is unavailable right now.</p>
           )}
@@ -888,9 +974,9 @@ export default function NflMatchupModal({
                   <ol className="nfl-matchup-plays">
                     {live.scoringPlays.map((play) => (
                       <li key={play.id} className="nfl-matchup-play">
-                        <span className="nfl-matchup-play__when">{`Q${play.period ?? '–'} ${play.clock ?? ''}`}</span>
-                        {play.team && colors[play.team] ? (
-                          <span className="nfl-matchup-team-chip" style={{ background: colors[play.team].accent, color: colors[play.team].ink }}>{play.team}</span>
+                    <span className="nfl-matchup-play__when">{`Q${play.period ?? '–'} ${play.clock ?? ''}`}</span>
+                        {play.team && getEspnTeamEntry(colors, play.team) ? (
+                          <span className="nfl-matchup-team-chip" style={{ background: getEspnTeamEntry(colors, play.team).accent, color: getEspnTeamEntry(colors, play.team).ink }}>{play.team === 'WAS' && right === 'WSH' ? right : play.team}</span>
                         ) : <span />}
                         <span className="nfl-matchup-play__text">{play.text}</span>
                         <span className="nfl-matchup-play__score tabular-nums">{scoreLine(play)}</span>
@@ -943,7 +1029,7 @@ export default function NflMatchupModal({
 
           {phase === 'pre' && glance.length > 0 && (
             <section className="matchup-preview__section gridshift-reveal__item" style={reveal()}>
-              <Eyebrow note={teamStats.status === 'loading' ? 'Loading ESPN team stats…' : 'Season to date · leader’s bar in team color'}>
+              <Eyebrow note={teamStats.status === 'loading' ? 'Loading ESPN team stats…' : 'Season to date · bars show share of combined total'}>
                 Season at a glance
               </Eyebrow>
               <div className="matchup-preview-cmp">
@@ -954,7 +1040,7 @@ export default function NflMatchupModal({
 
           {gameStatRows.length > 0 && (
             <section className="matchup-preview__section gridshift-reveal__item" style={reveal()}>
-              <Eyebrow note={phase === 'final' ? 'Final' : 'This game'}>Team stats</Eyebrow>
+              <Eyebrow note={`${phase === 'final' ? 'Final' : 'This game'} · bars show share of combined total`}>Team stats</Eyebrow>
               <div className="matchup-preview-cmp">
                 {gameStatRows.map((row, index) => <CompareRow key={row.id} row={row} index={index} />)}
               </div>
@@ -964,10 +1050,10 @@ export default function NflMatchupModal({
           <section className="matchup-preview__section gridshift-reveal__item" style={reveal()}>
             <Eyebrow
               note={phase === 'pre'
-                ? 'NFL rank of 32 · #1 = strongest unit · edge = gap of 8+'
+                ? 'NFL rank · #1 strongest · 8-rank edge · bars show paired share'
                 : phase === 'live'
-                  ? 'Pace = this game scaled to 60 minutes, against each defense’s average entering the week'
-                  : 'This game against each defense’s average entering the week · rank before → after'}
+                  ? 'Pace is scaled to 60 minutes against each defense’s average · bars show share of paired values'
+                  : 'This game vs defense average entering week · rank before → after · bars show paired share'}
             >
               {phase === 'pre' ? 'Unit vs unit' : phase === 'live' ? 'Matchup tracker' : 'How the matchup played out'}
             </Eyebrow>

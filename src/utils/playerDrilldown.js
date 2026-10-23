@@ -142,5 +142,6 @@ export function buildStatisticsPlayerMeta(player = {}, fallback = {}) {
     experience: player.experience ?? fallback.experience,
     jersey: player.jersey ?? player.number ?? fallback.jersey ?? '',
     status: player.status ?? player.injury_status ?? fallback.status ?? '',
+    injuryStatus: player.injuryStatus ?? player.injury_status ?? fallback.injuryStatus ?? fallback.injury_status ?? fallback.status ?? '',
   };
 }

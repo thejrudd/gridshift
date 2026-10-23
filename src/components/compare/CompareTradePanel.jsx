@@ -1,11 +1,19 @@
 // ── CompareTradePanel ─────────────────────────────────────────────────────────
-// v5.5 — Trade Agent: live KeepTradeCut values for the two compared players.
+// Compare two players with the shared GridShift Trade value scale and market context.
 
 import { useEffect, useMemo, useState } from 'react';
-import { fetchKtcPlayers, findKtcPlayer, getKtcValue, fmtKtcValue, productionAdjustedValue } from '../../utils/ktcApi';
+import { fetchKtcPlayers, findKtcPlayer, getKtcValue, fmtKtcValue, applyKtcMultipliers, computeKtcMultipliers } from '../../utils/ktcApi';
 import { useSleeperBase } from '../../context/SleeperContext';
 import { calcPointsFromTotals } from '../../utils/scoringEngine';
-import { computePositionalRanks, buildDefenseTable, computePositionalAvgPPG } from '../../utils/projectionEngine';
+import { computePositionalRanks, buildDefenseTable } from '../../utils/projectionEngine';
+import { computeTradePlayerValueDetail } from '../../utils/tradeValue';
+import { buildTradeAnalyticsSnapshot } from '../../utils/tradeAnalytics';
+import {
+  combineTradeValueSignals,
+  fmtTradeValue,
+  normalizeKtcMarketValue,
+  normalizeKtcMarketValues,
+} from '../../utils/tradeValueScale';
 
 function detectLeagueFormat(league) {
   return league?.settings?.type === 2 ? 'dynasty' : 'redraft';
@@ -125,6 +133,7 @@ const STAT_LABEL = {
   rush_td: 'Rush TDs', rush_yd: 'Rush Yds',
   rec_td:  'Rec TDs',  rec_yd:  'Rec Yds', rec: 'Receptions',
 };
+const EMPTY_TRADE_VALUE_MAP = new Map();
 
 // Build { [statKey]: { [playerId]: rank } } by fantasy pts earned from each stat.
 // Stats with zero scoring multiplier in this league are excluded.
@@ -233,40 +242,35 @@ function ktcTrend7d(ktcEntry, leagueType) {
   return vals?.overall7DayTrend ?? null;
 }
 
-// Find one player per position whose KTC value is closest to `gap`.
-// Returns up to `maxResults` entries sorted by closeness, one per position group.
-function findPlayerEquivs(gap, ktcPlayers, leagueType, maxResults = 3) {
-  if (!gap || !ktcPlayers?.length) return [];
-  const nonPicks = ktcPlayers.filter(k => k.position !== 'RDP' && k.playerName && k.position);
-  if (!nonPicks.length) return [];
-
-  const getVal = k => leagueType === 'sf'
-    ? (k.superflexValues?.value ?? k.oneQBValues?.value ?? 0)
-    : (k.oneQBValues?.value ?? 0);
-
-  const POS_LABEL = { QB: 'quarterback', RB: 'running back', WR: 'wide receiver', TE: 'tight end' };
-
+// Find one rostered player per position whose canonical Trade value is closest
+// to the gap, so the equivalents use the same units as the comparison itself.
+function findPlayerEquivs(gap, playerValues, excludedIds = [], maxResults = 3) {
+  if (!gap || !playerValues?.size) return [];
+  const POS_LABEL = {
+    QB: 'quarterback', RB: 'running back', WR: 'wide receiver', TE: 'tight end',
+    DL: 'defensive lineman', LB: 'linebacker', DB: 'defensive back', DEF: 'defense', K: 'kicker',
+  };
   // Best (closest to gap) match per position, within ±35%
   const byPosition = {};
-  for (const k of nonPicks) {
-    const v = getVal(k);
-    if (v <= 0) continue;
+  for (const [id, candidate] of playerValues) {
+    const { player, value: v } = candidate;
+    if (excludedIds.includes(String(id)) || !player?.position || !Number.isFinite(v) || v <= 0) continue;
     const dist = Math.abs(v - gap) / gap;
     if (dist > 0.35) continue;
-    const pos = k.position;
+    const pos = player.position.toUpperCase();
     if (!byPosition[pos] || dist < byPosition[pos].dist) {
-      byPosition[pos] = { k, v, dist };
+      byPosition[pos] = { player, v, dist };
     }
   }
 
   return Object.entries(byPosition)
     .sort(([, a], [, b]) => a.dist - b.dist)
     .slice(0, maxResults)
-    .map(([pos, { k, v }]) => {
-      const posPeers = nonPicks
-        .filter(p => p.position === pos)
-        .sort((a, b) => getVal(b) - getVal(a));
-      const posRank = posPeers.findIndex(p => p.playerName === k.playerName) + 1;
+    .map(([pos, { player, v }]) => {
+      const posPeers = [...playerValues.values()]
+        .filter(candidate => candidate.player?.position?.toUpperCase() === pos && Number.isFinite(candidate.value))
+        .sort((a, b) => b.value - a.value);
+      const posRank = posPeers.findIndex(candidate => String(candidate.player.id) === String(player.id)) + 1;
       const total   = posPeers.length;
       const posLabel = POS_LABEL[pos] ?? pos.toLowerCase();
       // Percentile-based tiers so labels scale correctly across deep position groups (WR, RB)
@@ -275,12 +279,12 @@ function findPlayerEquivs(gap, ktcPlayers, leagueType, maxResults = 3) {
       else if (posRank <= Math.ceil(total * 0.20)) tier = 'high-end';
       else if (posRank <= Math.ceil(total * 0.45)) tier = 'mid-tier';
       else                                          tier = 'depth';
-      return { name: k.playerName, val: v, tier, posLabel };
+      return { name: player.full_name ?? player.displayName ?? 'Player', val: v, tier, posLabel };
     });
 }
 
-// Find the RDP (draft pick) entry in the KTC list whose value is closest to `gap`
-function findPickEquiv(gap, ktcPlayers, leagueType) {
+// Find a KTC draft-pick estimate whose player-scale percentile is closest to `gap`.
+function findPickEquiv(gap, ktcPlayers, pickMarketPlayers, leagueType) {
   if (!gap || !ktcPlayers?.length) return null;
   const rdp = ktcPlayers.filter(k => k.position === 'RDP' && k.playerName);
   if (!rdp.length) return null;
@@ -290,7 +294,7 @@ function findPickEquiv(gap, ktcPlayers, leagueType) {
   // Find closest by absolute value distance, only consider picks within 60% of gap
   let best = null, bestDist = Infinity;
   for (const k of rdp) {
-    const v = getVal(k);
+    const v = normalizeKtcMarketValue(getVal(k), pickMarketPlayers, leagueType);
     if (v <= 0) continue;
     const dist = Math.abs(v - gap);
     if (dist < bestDist && dist / gap < 0.6) {
@@ -298,29 +302,64 @@ function findPickEquiv(gap, ktcPlayers, leagueType) {
       best = k;
     }
   }
-  return best ? { name: best.playerName, val: getVal(best) } : null;
+  return best ? { name: best.playerName, val: normalizeKtcMarketValue(getVal(best), pickMarketPlayers, leagueType) } : null;
 }
 
 // ── CompareTradePanel ─────────────────────────────────────────────────────────
 
 export default function CompareTradePanel({ playerA, playerB, sleeperPlayerA, sleeperPlayerB, onBuildTrade, onValuesChange }) {
-  const { league, hasLeague, seasonStats, weeklyStats, scoringSettings, players, scheduleMap, statsLoading, loadSeasonStats, loadPlayers } = useSleeperBase();
-  const [ktcPlayers, setKtcPlayers] = useState(null);
-  const [loading, setLoading]       = useState(false);
-  const [error, setError]           = useState(null);
+  const { league, rosters, hasLeague, seasonStats, weeklyStats, statsBySeason, scoringSettings, players, scheduleMap, statsLoading, loadSeasonStats, loadStatsForSeason, loadPlayers } = useSleeperBase();
+  const [ktcData, setKtcData] = useState({ format: null, players: [], dynastyPlayers: [] });
 
   const format     = detectLeagueFormat(league);
   const leagueType = detectLeagueType(league);
   const hasAny     = playerA || playerB;
-  const showLoading = loading || (hasAny && !ktcPlayers && !error);
+  const ktcPlayers = useMemo(() => ktcData.format === format ? ktcData.players : [], [ktcData, format]);
+  const dynastyKtcPlayers = useMemo(() => ktcData.format === format ? ktcData.dynastyPlayers : [], [ktcData, format]);
+  const ktcMultipliers = useMemo(() => computeKtcMultipliers(scoringSettings, league?.roster_positions), [scoringSettings, league]);
+  const adjustedKtcPlayers = useMemo(() => applyKtcMultipliers(ktcPlayers, ktcMultipliers), [ktcPlayers, ktcMultipliers]);
+  const adjustedDynastyKtcPlayers = useMemo(() => applyKtcMultipliers(dynastyKtcPlayers, ktcMultipliers), [dynastyKtcPlayers, ktcMultipliers]);
+  const ktcMarketValueMap = useMemo(() => normalizeKtcMarketValues(adjustedKtcPlayers, leagueType), [adjustedKtcPlayers, leagueType]);
+  const dynastyMarketValueMap = useMemo(() => normalizeKtcMarketValues(adjustedDynastyKtcPlayers, leagueType), [adjustedDynastyKtcPlayers, leagueType]);
+  const previousSeasonKey = Number.isInteger(Number(league?.season)) ? String(Number(league.season) - 1) : null;
+  const priorSeasonStats = previousSeasonKey ? statsBySeason?.[previousSeasonKey]?.seasonStats ?? null : null;
+  const priorWeeklyStats = previousSeasonKey ? statsBySeason?.[previousSeasonKey]?.weeklyStats ?? null : null;
+  const tradeSnapshot = useMemo(() => buildTradeAnalyticsSnapshot({
+    players,
+    seasonStats,
+    weeklyStats,
+    priorSeasonStats,
+    priorWeeklyStats,
+    scoringSettings,
+    league,
+    rosters,
+    adjustedKtcPlayers,
+    adjustedDynastyKtcPlayers,
+    leagueType,
+    format,
+    includePlayerTradeValues: true,
+  }), [players, seasonStats, weeklyStats, priorSeasonStats, priorWeeklyStats, scoringSettings, league, rosters, adjustedKtcPlayers, adjustedDynastyKtcPlayers, leagueType, format]);
+  const leagueUtilityValueMap = tradeSnapshot.leagueUtilityValueMap ?? EMPTY_TRADE_VALUE_MAP;
+  const playerTradeValueDetailsMap = tradeSnapshot.playerTradeValueDetailsMap;
 
   useEffect(() => {
     if (!hasAny) return;
-    setLoading(true);
-    setError(null);
-    fetchKtcPlayers(format)
-      .then((p) => { setKtcPlayers(p); setLoading(false); })
-      .catch((err) => { setError(err.message); setLoading(false); });
+    const fetches = [fetchKtcPlayers(format)];
+    if (format !== 'dynasty') fetches.push(fetchKtcPlayers('dynasty').catch(() => []));
+    Promise.all(fetches)
+      .then(([formatPlayers, dynastyPlayers]) => {
+        const dynastyPool = dynastyPlayers ?? (format === 'dynasty' ? formatPlayers : []);
+        setKtcData({
+          format,
+          players: format === 'dynasty'
+            ? (formatPlayers ?? [])
+            : [...(formatPlayers ?? []), ...dynastyPool.filter((entry) => entry.position === 'RDP')],
+          dynastyPlayers: dynastyPool.filter((entry) => entry.position !== 'RDP'),
+        });
+      })
+      .catch(() => {
+        setKtcData({ format, players: [], dynastyPlayers: [] });
+      })
   }, [format, hasAny]);
 
   // Auto-load Sleeper stats when players are selected and stats aren't loaded yet
@@ -330,15 +369,14 @@ export default function CompareTradePanel({ playerA, playerB, sleeperPlayerA, sl
     if (!seasonStats) loadSeasonStats();
   }, [hasLeague, hasAny, statsLoading, players, seasonStats]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    if (format !== 'dynasty' || !previousSeasonKey || priorSeasonStats) return;
+    void loadStatsForSeason(previousSeasonKey).catch(() => null);
+  }, [format, loadStatsForSeason, previousSeasonKey, priorSeasonStats]);
+
   // Positional rank map (same computation as CompanionTrade)
   const rankMap = useMemo(
     () => computePositionalRanks(seasonStats, players, scoringSettings),
-    [seasonStats, players, scoringSettings]
-  );
-
-  // Average PPG per position across all players with stats — anchors production multipliers
-  const positionalAvgPPG = useMemo(
-    () => computePositionalAvgPPG(null, seasonStats, players, scoringSettings),
     [seasonStats, players, scoringSettings]
   );
 
@@ -368,29 +406,57 @@ export default function CompareTradePanel({ playerA, playerB, sleeperPlayerA, sl
     [weeklyStats, players, scheduleMap, scoringSettings]
   );
 
-  // Compute values (safe when ktcPlayers or players are null)
-  const ktcA = (ktcPlayers && playerA) ? findKtcPlayer(playerA, ktcPlayers, sleeperPlayerA) : null;
-  const ktcB = (ktcPlayers && playerB) ? findKtcPlayer(playerB, ktcPlayers, sleeperPlayerB) : null;
+  // KTC remains market context; comparison scores come from the shared
+  // fantasy-viability model and remain available if the KTC request fails.
+  const ktcA = playerA ? findKtcPlayer(playerA, adjustedKtcPlayers, sleeperPlayerA) : null;
+  const ktcB = playerB ? findKtcPlayer(playerB, adjustedKtcPlayers, sleeperPlayerB) : null;
+  const makeDetail = (sleeperPlayer) => {
+    const id = String(sleeperPlayer?.player_id ?? sleeperPlayer?.id ?? '');
+    if (!id || !players?.[id]) return null;
+    return playerTradeValueDetailsMap?.get(id) ?? computeTradePlayerValueDetail({
+      id,
+      players,
+      adjustedKtcPlayers,
+      adjustedDynastyKtcPlayers,
+      leagueType,
+      seasonStats,
+      weeklyStats,
+      priorSeasonStats,
+      priorWeeklyStats,
+      format,
+      scoringSettings,
+      leagueUtilityValueMap,
+      ktcMarketValueMap,
+      dynastyMarketValueMap,
+    });
+  };
+  const detailA = makeDetail(sleeperPlayerA);
+  const detailB = makeDetail(sleeperPlayerB);
+  const ktcContextA = ktcA ?? detailA?.ktcEntry ?? null;
+  const ktcContextB = ktcB ?? detailB?.ktcEntry ?? null;
+  const rawValA = detailA?.rawVal ?? getKtcValue(ktcA, leagueType);
+  const rawValB = detailB?.rawVal ?? getKtcValue(ktcB, leagueType);
+  const utilityScoreA = detailA?.utilityScore ?? leagueUtilityValueMap.get(String(sleeperPlayerA?.player_id ?? '')) ?? null;
+  const utilityScoreB = detailB?.utilityScore ?? leagueUtilityValueMap.get(String(sleeperPlayerB?.player_id ?? '')) ?? null;
+  const marketScoreA = detailA?.marketScore ?? ktcMarketValueMap.get(ktcA) ?? null;
+  const marketScoreB = detailB?.marketScore ?? ktcMarketValueMap.get(ktcB) ?? null;
+  const valA = detailA?.value ?? combineTradeValueSignals(utilityScoreA, marketScoreA);
+  const valB = detailB?.value ?? combineTradeValueSignals(utilityScoreB, marketScoreB);
 
-  // Apply per-player production adjustment (35% blend toward PPG vs positional avg)
-  const rawValA = getKtcValue(ktcA, leagueType);
-  const rawValB = getKtcValue(ktcB, leagueType);
-
-  const ppgA = (() => {
-    const stats = playerA?.id ? seasonStats?.[playerA.id] : null;
-    const pts = stats ? calcPointsFromTotals(stats, scoringSettings, playerA?.position) : null;
-    return pts != null && stats?.gp ? pts / stats.gp : null;
-  })();
-  const ppgB = (() => {
-    const stats = playerB?.id ? seasonStats?.[playerB.id] : null;
-    const pts = stats ? calcPointsFromTotals(stats, scoringSettings, playerB?.position) : null;
-    return pts != null && stats?.gp ? pts / stats.gp : null;
-  })();
-
-  const valA = productionAdjustedValue(rawValA, ppgA, positionalAvgPPG[playerA?.position]);
-  const valB = productionAdjustedValue(rawValB, ppgB, positionalAvgPPG[playerB?.position]);
-
+  const candidateTradeValues = useMemo(() => {
+    const result = new Map();
+    for (const roster of rosters ?? []) {
+      for (const idValue of [...(roster.players ?? []), ...(roster.reserve ?? [])]) {
+        const id = String(idValue);
+        if (result.has(id) || !players?.[id]) continue;
+        const detail = playerTradeValueDetailsMap?.get(id);
+        if (Number.isFinite(detail?.value)) result.set(id, { player: { ...players[id], id }, value: detail.value });
+      }
+    }
+    return result;
+  }, [rosters, players, playerTradeValueDetailsMap]);
   const bothKnown = valA != null && valB != null;
+  const showLoading = statsLoading && !seasonStats && !bothKnown;
   const maxVal    = bothKnown ? Math.max(valA, valB) : null;
   const gap       = bothKnown ? Math.abs(valA - valB) : null;
   const pct       = bothKnown && maxVal > 0 ? Math.round((gap / maxVal) * 100) : null;
@@ -399,10 +465,10 @@ export default function CompareTradePanel({ playerA, playerB, sleeperPlayerA, sl
     ? (valA > valB ? 'A' : valA < valB ? 'B' : 'equal')
     : null;
 
-  const notFoundA = !!ktcPlayers && !!playerA && ktcA === null;
-  const notFoundB = !!ktcPlayers && !!playerB && ktcB === null;
+  const notFoundA = !!playerA && !Number.isFinite(valA);
+  const notFoundB = !!playerB && !Number.isFinite(valB);
 
-  // Notify parent of current KTC values so PlayerSlot can render them inline
+  // Notify PlayerSlot of current GridShift values for its inline comparison.
   useEffect(() => {
     onValuesChange?.({ valA, valB, leader, maxVal, notFoundA, notFoundB });
   }, [valA, valB, leader, maxVal, notFoundA, notFoundB]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -417,21 +483,25 @@ export default function CompareTradePanel({ playerA, playerB, sleeperPlayerA, sl
 
   const analysis = bothKnown ? (() => {
     const tier         = fairnessTier(pct);
-    const pickEquiv    = leader !== 'equal' ? findPickEquiv(gap, ktcPlayers, leagueType) : null;
-    const playerEquivs = leader !== 'equal' ? findPlayerEquivs(gap, ktcPlayers, leagueType) : [];
+    const pickEquiv    = leader !== 'equal'
+      ? findPickEquiv(gap, adjustedKtcPlayers, adjustedDynastyKtcPlayers, leagueType)
+      : null;
+    const playerEquivs = leader !== 'equal'
+      ? findPlayerEquivs(gap, candidateTradeValues, [sleeperPlayerA?.player_id, sleeperPlayerB?.player_id].filter(Boolean).map(String))
+      : [];
 
-    const ageA  = ktcA?.age ? Math.floor(ktcA.age) : null;
-    const ageB  = ktcB?.age ? Math.floor(ktcB.age) : null;
+    const ageA  = ktcContextA?.age ? Math.floor(ktcContextA.age) : null;
+    const ageB  = ktcContextB?.age ? Math.floor(ktcContextB.age) : null;
     // KTC position is used for dynasty window / prime years / context blurbs.
-    const ktcPosA = ktcA?.position ?? null;
-    const ktcPosB = ktcB?.position ?? null;
+    const ktcPosA = ktcContextA?.position ?? null;
+    const ktcPosB = ktcContextB?.position ?? null;
     // Sleeper position is used for stat lookups because it matches the ranking tables.
     const sleeperPosA = sleeperPlayerA?.position?.toUpperCase() ?? null;
     const sleeperPosB = sleeperPlayerB?.position?.toUpperCase() ?? null;
     const posA = sleeperPosA ?? ktcPosA;
     const posB = sleeperPosB ?? ktcPosB;
-    const t7A   = ktcTrend7d(ktcA, leagueType);
-    const t7B   = ktcTrend7d(ktcB, leagueType);
+    const t7A   = ktcTrend7d(ktcContextA, leagueType);
+    const t7B   = ktcTrend7d(ktcContextB, leagueType);
 
     const winA    = ageA != null ? dynastyWindow(ageA, ktcPosA) : null;
     const winB    = ageB != null ? dynastyWindow(ageB, ktcPosB) : null;
@@ -515,8 +585,6 @@ export default function CompareTradePanel({ playerA, playerB, sleeperPlayerA, sl
     <div className="trade-compare px-4 py-4 flex flex-col gap-5">
       {showLoading ? (
         <TradeCompareState kind="loading" />
-      ) : error ? (
-        <TradeCompareState kind="error" error={error} />
       ) : (
         <>
           {playerA && playerB && bothKnown && analysis && (
@@ -543,10 +611,12 @@ export default function CompareTradePanel({ playerA, playerB, sleeperPlayerA, sl
               />
               <TradeContextGrid
                 analysis={analysis}
-                valA={valA}
-                valB={valB}
                 rawValA={rawValA}
                 rawValB={rawValB}
+                utilityScoreA={utilityScoreA}
+                utilityScoreB={utilityScoreB}
+                marketScoreA={marketScoreA}
+                marketScoreB={marketScoreB}
                 format={format}
                 leagueType={leagueType}
                 statsLoading={statsLoading}
@@ -577,33 +647,13 @@ export default function CompareTradePanel({ playerA, playerB, sleeperPlayerA, sl
 
 // ── Render Sections ──────────────────────────────────────────────────────────
 
-function TradeCompareState({ kind, error, playerA, playerB, notFoundA, notFoundB }) {
+function TradeCompareState({ kind, playerA, playerB, notFoundA, notFoundB }) {
   if (kind === 'loading') {
     return (
       <div className="trade-compare__state trade-compare__state--loading flex items-center justify-center py-8 gap-3"
         style={{ color: 'var(--color-label-tertiary)' }}>
         <Spinner />
-        <span className="text-sm">Loading KTC data…</span>
-      </div>
-    );
-  }
-
-  if (kind === 'error') {
-    return (
-      <div
-        className="trade-compare__state trade-compare__state--error rounded-xl px-4 py-4 flex flex-col gap-1.5"
-        style={{ background: 'var(--color-fill)' }}
-      >
-        <span className="text-sm font-semibold" style={{ color: 'var(--color-label)' }}>
-          KTC data unavailable
-        </span>
-        <span className="text-xs leading-relaxed" style={{ color: 'var(--color-label-tertiary)' }}>
-          The KeepTradeCut proxy could not be reached. This feature requires the Docker
-          deployment — it is not available in local dev mode without the nginx proxy.
-        </span>
-        <span className="text-xs font-mono mt-1" style={{ color: 'var(--color-label-quaternary)' }}>
-          {error}
-        </span>
+        <span className="text-sm">Loading league stats…</span>
       </div>
     );
   }
@@ -631,8 +681,8 @@ function TradeCompareState({ kind, error, playerA, playerB, notFoundA, notFoundB
       </span>
       <span className="text-xs leading-relaxed" style={{ color: 'var(--color-label-tertiary)' }}>
         {missingNames.length
-          ? `No KeepTradeCut match was found for ${missingNames.join(' or ')}.`
-          : 'KeepTradeCut values are still unavailable for this comparison.'}
+          ? `Current production and normalized market data are insufficient to value ${missingNames.join(' or ')}.`
+          : 'Current production and normalized market data are insufficient to value these players.'}
       </span>
     </div>
   );
@@ -659,7 +709,7 @@ function TradeCompareScoreboard({ playerA, playerB, valA, valB, leader, gap, pct
             {verdict}
           </span>
           <span className="trade-compare-scoreboard__gap text-xs" style={{ color: 'var(--color-label-tertiary)' }}>
-            {gap === 0 ? 'No value gap' : `${fmtKtcValue(gap)} gap`}
+            {gap === 0 ? 'No value gap' : `${fmtTradeValue(gap)} gap`}
           </span>
           <span className="trade-compare-scoreboard__pct text-[length:var(--type-label)] uppercase tracking-widest" style={{ color: 'var(--color-label-quaternary)' }}>
             {pct != null ? `${pct}% of top side` : 'Gap pending'}
@@ -679,7 +729,7 @@ function ScoreboardSide({ align, name, value, isLeader }) {
         {name ?? 'Player'}
       </span>
       <span className="trade-compare-scoreboard__value text-3xl font-extrabold tabular-nums" style={{ color: 'var(--color-label)' }}>
-        {fmtKtcValue(value)}
+        {fmtTradeValue(value)}
       </span>
     </div>
   );
@@ -716,9 +766,9 @@ function BalanceInsightPanel({ leader, leaderName, trailerName, gap, pct, tier, 
         <>
           <p className="trade-compare-balance__sentence text-sm leading-relaxed" style={{ color: 'var(--color-label)' }}>
             <span className="font-semibold">{leaderName}</span> has{' '}
-            <span className="font-semibold">{fmtKtcValue(gap)}</span> more value.
+            <span className="font-semibold">{fmtTradeValue(gap)}</span> more value.
             To balance this trade, the <span className="font-medium">{trailerName?.split(' ').slice(-1)[0]}</span> side
-            needs to add roughly <span className="font-semibold">{fmtKtcValue(gap)}</span> in additional asset value.
+            needs to add roughly <span className="font-semibold">{fmtTradeValue(gap)}</span> in additional asset value.
           </p>
 
           {(playerEquivs.length > 0 || pickEquiv) && (
@@ -749,7 +799,7 @@ function ValueEquivalents({ playerEquivs, pickEquiv }) {
           <span className="font-semibold" style={{ color: 'var(--color-label)' }}>
             {eq.name}
           </span>
-          {' '}({fmtKtcValue(eq.val)})
+          {' '}({fmtTradeValue(eq.val)})
         </EquivalentRow>
       ))}
       {pickEquiv && (
@@ -758,7 +808,7 @@ function ValueEquivalents({ playerEquivs, pickEquiv }) {
           <span className="font-semibold" style={{ color: 'var(--color-label)' }}>
             {pickEquiv.name}
           </span>
-          {' '}({fmtKtcValue(pickEquiv.val)})
+          {' '}({fmtTradeValue(pickEquiv.val)})
         </EquivalentRow>
       )}
     </div>
@@ -787,7 +837,7 @@ function EquivalentRow({ icon, children }) {
   );
 }
 
-function TradeContextGrid({ analysis, valA, valB, rawValA, rawValB, format, leagueType, statsLoading, seasonStats }) {
+function TradeContextGrid({ analysis, rawValA, rawValB, utilityScoreA, utilityScoreB, marketScoreA, marketScoreB, format, leagueType, statsLoading, seasonStats }) {
   const hasTrend = (analysis.t7A != null && Math.abs(analysis.t7A) >= 5) || (analysis.t7B != null && Math.abs(analysis.t7B) >= 5);
   const hasFantasy = analysis.rankA || analysis.rankB || analysis.perfA || analysis.perfB;
   const hasDefense = analysis.vsDefA || analysis.vsDefB;
@@ -804,14 +854,19 @@ function TradeContextGrid({ analysis, valA, valB, rawValA, rawValB, format, leag
       </div>
 
       <div className="trade-compare-context__grid flex flex-col gap-3">
-        <ContextCard title="Market">
+        <ContextCard title="Value Breakdown">
           <OutlookRow
-            label="Adj Value"
-            left={<MetricValue>{fmtKtcValue(valA)}</MetricValue>}
-            right={<MetricValue>{fmtKtcValue(valB)}</MetricValue>}
+            label="Local utility"
+            left={<MetricValue>{fmtTradeValue(utilityScoreA)}</MetricValue>}
+            right={<MetricValue>{fmtTradeValue(utilityScoreB)}</MetricValue>}
           />
           <OutlookRow
-            label="KTC Base"
+            label="KTC percentile"
+            left={<MetricValue>{fmtTradeValue(marketScoreA)}</MetricValue>}
+            right={<MetricValue>{fmtTradeValue(marketScoreB)}</MetricValue>}
+          />
+          <OutlookRow
+            label="KTC source"
             left={<MetricValue>{fmtKtcValue(rawValA)}</MetricValue>}
             right={<MetricValue>{fmtKtcValue(rawValB)}</MetricValue>}
           />
@@ -1016,9 +1071,9 @@ function TradeCompareAttribution({ format, leagueType }) {
     <div className="trade-compare__attribution text-xs text-center" data-testid="trade-compare-attribution" style={{ color: 'var(--color-label-quaternary)' }}>
       Values from{' '}
       <span className="font-medium" style={{ color: 'var(--color-label-tertiary)' }}>
-        KeepTradeCut
+        GridShift player value · 0–100
       </span>{' '}
-      · {format === 'dynasty' ? 'Dynasty' : 'Redraft'} · {leagueType === 'sf' ? 'Superflex' : '1QB'}
+      · {format === 'dynasty' ? 'Dynasty' : 'Redraft'} · {leagueType === 'sf' ? 'Superflex' : '1QB'} · KTC secondary
     </div>
   );
 }

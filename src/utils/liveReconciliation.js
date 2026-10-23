@@ -54,7 +54,18 @@ const PLAY_MATCH_STAT_ALIASES = Object.freeze({
   idp_safety: ['idp_safe'],
 });
 
+// Tackles are one family: a play carries generic `idp_tkl`, while a Sleeper
+// line may report `idp_tkl`, `idp_tkl_solo` + `idp_tkl_ast`, or all three.
+const TACKLE_KEYS = ['idp_tkl', 'idp_tkl_solo', 'idp_tkl_ast'];
+
+function tackleTotal(source) {
+  const generic = num(lookup(source, 'idp_tkl'));
+  const split = num(lookup(source, 'idp_tkl_solo')) + num(lookup(source, 'idp_tkl_ast'));
+  return Math.max(generic, split);
+}
+
 function lookupMatchStat(source, key) {
+  if (key === 'idp_tkl') return tackleTotal(source);
   const values = [key, ...(PLAY_MATCH_STAT_ALIASES[key] ?? [])]
     .map((candidate) => lookup(source, candidate))
     .filter((value) => value !== undefined && value !== null && value !== '')
@@ -175,9 +186,26 @@ function confirmByPoints(pending, uncovered, markConfirmed) {
 export function computeStatSurplus(sleeperStats, coveredStats) {
   const surplus = {};
   PLAY_MATCH_STATS.forEach((key) => {
+    if (TACKLE_KEYS.includes(key)) return;
     const gap = lookupMatchStat(sleeperStats, key) - num(coveredStats[key]);
     if (gap > toleranceFor(key)) surplus[key] = gap;
   });
+  // Tackles are compared as a count, since a play only knows a tackle
+  // happened. The uncovered count mirrors whichever keys Sleeper reported, so
+  // the row prices it exactly as Sleeper's own line would: the generic total,
+  // and the solo / assisted split in Sleeper's proportion. The residual
+  // settles any rounding.
+  const covered = tackleTotal(coveredStats);
+  const genericGap = num(lookup(sleeperStats, 'idp_tkl')) - covered;
+  if (genericGap > 0) surplus.idp_tkl = genericGap;
+  const solo = num(lookup(sleeperStats, 'idp_tkl_solo'));
+  const assisted = num(lookup(sleeperStats, 'idp_tkl_ast'));
+  const splitGap = solo + assisted - covered;
+  if (splitGap > 0) {
+    const soloShare = Math.min(splitGap, Math.round((splitGap * solo) / (solo + assisted)));
+    if (soloShare > 0) surplus.idp_tkl_solo = soloShare;
+    if (splitGap - soloShare > 0) surplus.idp_tkl_ast = splitGap - soloShare;
+  }
   return surplus;
 }
 
@@ -248,9 +276,28 @@ export function retireCoveredFallbacks(rows, playStats, scoringSettings, positio
   });
   if (!Object.keys(remaining).length) return rows;
 
+  // A play's tackles draw from a row's tackle family, whichever keys it holds.
+  let tacklesLeft = TACKLE_KEYS.reduce((total, key) => total + num(remaining[key]), 0);
+  TACKLE_KEYS.forEach((key) => { delete remaining[key]; });
+
   const kept = [];
   rows.forEach((row) => {
     const stats = { ...row.stats };
+    if (tacklesLeft > 0) {
+      const take = Math.min(tacklesLeft, tackleTotal(stats));
+      if (take > 0) {
+        tacklesLeft -= take;
+        if (num(stats.idp_tkl) > 0) stats.idp_tkl = Math.max(0, num(stats.idp_tkl) - take);
+        let split = take;
+        ['idp_tkl_solo', 'idp_tkl_ast'].forEach((key) => {
+          const used = Math.min(split, num(stats[key]));
+          if (used > 0) {
+            stats[key] = num(stats[key]) - used;
+            split -= used;
+          }
+        });
+      }
+    }
     Object.keys(remaining).forEach((key) => {
       const take = Math.min(remaining[key], num(stats[key]));
       if (take <= 0) return;
@@ -286,10 +333,15 @@ export function reconcileLivePlays(previousState, inputs = {}) {
     scoringSettings = null,
     positionsById = null,
     finalGameIds = null,
+    // Starters whose game is officially over. No more plays will arrive for
+    // them, so a stat-line surplus needs no grace period, and Sleeper points
+    // that nothing explains still get a row to land on (rule 13).
+    settledPlayerIds = null,
     now = 0,
   } = inputs;
 
   const finalGames = new Set([...(finalGameIds ?? [])].map((id) => String(id)));
+  const settledPlayers = new Set([...(settledPlayerIds ?? [])].map((id) => String(id)));
 
   const plays = new Map(previous.plays);
   const firstSeen = new Map(previous.firstSeen);
@@ -298,6 +350,10 @@ export function reconcileLivePlays(previousState, inputs = {}) {
   const fallbackSeq = new Map(previous.fallbackSeq);
   const surplusWatch = new Map(previous.surplusWatch);
   const adjustments = new Map();
+  // Last step's residuals, minus any whose row a newly arrived play retires
+  // below: a residual that no longer sits on a row must not keep blocking the
+  // play that replaces it from confirming.
+  const carriedAdjustments = new Map(previous.adjustments);
 
   // Ingest. A play id already seen keeps its first-seen record, so replaying
   // the same poll twice changes nothing.
@@ -310,8 +366,18 @@ export function reconcileLivePlays(previousState, inputs = {}) {
     firstSeen.set(event.id, now);
     // Plays that finally arrive for a stat line already explained by a
     // fallback row retire it (spec rule 6).
-    const rows = fallbacks.get(event.playerId);
+    let rows = fallbacks.get(event.playerId);
     if (!rows?.length) return;
+    // A points-only row (rule 13) stood in for plays that had not arrived; the
+    // first real play retires it and its residual.
+    if (rows.some((row) => row.pointsOnly)) {
+      rows = rows.filter((row) => !row.pointsOnly);
+      carriedAdjustments.delete(event.playerId);
+      if (!rows.length) {
+        fallbacks.delete(event.playerId);
+        return;
+      }
+    }
     const position = lookup(positionsById, event.playerId) ?? event.position ?? 'FLEX';
     const kept = retireCoveredFallbacks(rows, event.stats, scoringSettings, position);
     if (kept.length) fallbacks.set(event.playerId, kept);
@@ -378,10 +444,14 @@ export function reconcileLivePlays(previousState, inputs = {}) {
 
     let pending = ownPlays.filter((play) => !confirmedIds.has(play.id));
     const unconfirmedIds = new Set();
+    const settled = settledPlayers.has(String(playerId));
+    // A settled starter's stat line is final: it never goes stale, however
+    // long ago it was fetched (a finished week fetches it once).
+    const lineFresh = Boolean(sleeperStatsById) && (statsFresh || settled);
 
     // Before Sleeper says anything about a player every play stays pending.
     if (hasSleeperPoints) {
-      if (statsFresh && sleeperStats) {
+      if (lineFresh && sleeperStats) {
         pending = confirmByStatLine(pending, sleeperStats, confirmedCumulative, markConfirmed);
         // Rule 12. Whatever is still pending against a stat line that has had
         // a fair chance to contain it is not Sleeper's and never will be, so
@@ -390,7 +460,7 @@ export function reconcileLivePlays(previousState, inputs = {}) {
         // every step, so a Sleeper correction reinstates the play.
         pending.forEach((play) => {
           const expired = now - num(firstSeen.get(play.id)) >= PENDING_TTL_MS;
-          const gameOver = play.gameId != null && finalGames.has(String(play.gameId));
+          const gameOver = settled || (play.gameId != null && finalGames.has(String(play.gameId)));
           if (expired || gameOver) unconfirmedIds.add(play.id);
         });
         pending = pending.filter((play) => !unconfirmedIds.has(play.id));
@@ -404,13 +474,23 @@ export function reconcileLivePlays(previousState, inputs = {}) {
       // The previous step's residual is already-explained Sleeper points; only
       // what neither a confirmed play nor that residual covers is available to
       // confirm pending plays against.
-      const uncovered = round2(sleeperPoints - confirmedPoints - num(previous.adjustments.get(playerId)));
+      const uncovered = round2(sleeperPoints - confirmedPoints - num(carriedAdjustments.get(playerId)));
       confirmByPoints(pending, uncovered, markConfirmed);
+      // Rule 14. A settled starter's numbers will not move again, so nothing
+      // stays pending (pending counts on top of Sleeper, which in a finished
+      // game only overshoots the official total). Whatever survived the stat
+      // line and the points walk is confirmed; the residual on the latest
+      // confirmed play then makes the player's rows total Sleeper exactly.
+      if (settled) {
+        pending.forEach((play) => {
+          if (!confirmedIds.has(play.id)) markConfirmed(play, 'final');
+        });
+      }
     }
 
     // Fallback rows (spec rule 6). Only ever from a fresh stat line, and only
     // for stats no play — pending or confirmed — accounts for.
-    if (statsFresh && sleeperStats) {
+    if (lineFresh && sleeperStats) {
       const covered = {};
       // An unconfirmed play never happened as far as this player's line is
       // concerned, so it cannot explain away a real Sleeper surplus.
@@ -419,7 +499,9 @@ export function reconcileLivePlays(previousState, inputs = {}) {
       });
       rows.forEach((row) => addStats(covered, row.stats));
       const surplus = computeStatSurplus(sleeperStats, covered);
-      const advanced = advanceSurplusWatch(surplusWatch.get(playerId) ?? null, surplus, fetchIdentity);
+      const advanced = settledPlayers.has(String(playerId))
+        ? { watch: null, emit: Object.keys(surplus).length > 0 }
+        : advanceSurplusWatch(surplusWatch.get(playerId) ?? null, surplus, fetchIdentity);
       if (advanced.watch) surplusWatch.set(playerId, advanced.watch);
       else surplusWatch.delete(playerId);
       if (advanced.emit) {
@@ -437,6 +519,35 @@ export function reconcileLivePlays(previousState, inputs = {}) {
         rows = [...rows, row];
         fallbacks.set(playerId, rows);
       }
+    }
+
+    // Rule 13. A settled starter with Sleeper points but no confirmed play and
+    // no row (no stat line, every play unmatched or unconfirmed) would leave
+    // those points off every feed row, so the chart and the replay would only
+    // reach them at the final close. A points-only row carries the residual
+    // instead, placed at the end of that player's game.
+    if (
+      settledPlayers.has(String(playerId))
+      && hasSleeperPoints
+      && sleeperPoints !== 0
+      && !rows.length
+      && !ownPlays.some((play) => confirmedIds.has(play.id))
+    ) {
+      const seq = (fallbackSeq.get(playerId) ?? 0) + 1;
+      fallbackSeq.set(playerId, seq);
+      rows = [{
+        ...buildFallbackEvent({
+          playerId,
+          position,
+          stats: {},
+          pts: 0,
+          seq,
+          now,
+          gameId: ownPlays[0]?.gameId ?? null,
+        }),
+        pointsOnly: true,
+      }];
+      fallbacks.set(playerId, rows);
     }
 
     const confirmedPlays = ownPlays.filter((play) => confirmedIds.has(play.id));
@@ -461,10 +572,33 @@ export function reconcileLivePlays(previousState, inputs = {}) {
     const residualRowId = residualPlayId || (rows.length ? rows[rows.length - 1].id : null);
     adjustments.set(playerId, adjustment);
 
+    // Rule 15. A settled starter whose estimated plays overshoot Sleeper (a
+    // negative residual) has the correction spread across their positive
+    // confirmed plays in proportion to each play's points, instead of landing
+    // on the last one, where it would zero or flip that play and leave the
+    // line too high for the whole game. Rows stay positive and the running
+    // total tracks the official one throughout. A positive residual still
+    // lands on the latest confirmed play.
+    const spreadById = new Map();
+    const positivePlays = confirmedPlays.filter((play) => num(play.pts) > 0);
+    const positiveSum = positivePlays.reduce((total, play) => total + num(play.pts), 0);
+    if (settled && adjustment < 0 && positiveSum > 0 && positiveSum + adjustment >= 0) {
+      let assigned = 0;
+      positivePlays.forEach((play, index) => {
+        const share = index === positivePlays.length - 1
+          ? round2(adjustment - assigned)
+          : round2((adjustment * num(play.pts)) / positiveSum);
+        assigned = round2(assigned + share);
+        spreadById.set(play.id, share);
+      });
+    }
+
     const outPlays = ownPlays.map((play) => {
       const isConfirmed = confirmedIds.has(play.id);
       const isUnconfirmed = unconfirmedIds.has(play.id);
-      const own = isConfirmed && play.id === residualPlayId ? adjustment : 0;
+      const own = spreadById.size
+        ? (isConfirmed ? spreadById.get(play.id) ?? 0 : 0)
+        : isConfirmed && play.id === residualPlayId ? adjustment : 0;
       let playStatus = 'pending';
       if (isConfirmed) playStatus = 'confirmed';
       else if (isUnconfirmed) playStatus = 'unconfirmed';
@@ -488,7 +622,7 @@ export function reconcileLivePlays(previousState, inputs = {}) {
       : round2(pendingPoints);
 
     const outRows = rows.map((row) => {
-      const own = row.id === residualRowId ? adjustment : 0;
+      const own = !spreadById.size && row.id === residualRowId ? adjustment : 0;
       return { ...row, adjustment: own, displayPts: round2(num(row.pts) + own) };
     });
 
