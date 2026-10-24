@@ -364,6 +364,9 @@ function buildLiveResponse(payload, cacheInfo, session, gatewayStatus = null) {
       stale: Boolean(cacheInfo?.stale),
       // Served from the finished-game archive on disk, not the provider.
       archived: Boolean(cacheInfo?.archived),
+      // Provider requests this response cost (0 when served from a cache or
+      // the archive). Read by the browser's live-load trace.
+      providerRequests: Number(cacheInfo?.providerRequests) || 0,
       ageMs: cacheInfo?.ageMs ?? 0,
       ttlMs: cacheInfo?.ttlMs ?? getLiveConfigStatus().cacheTtlMs,
       fetchedAt: cacheInfo?.fetchedAt ?? new Date().toISOString(),
@@ -396,6 +399,19 @@ export function createLiveRouter({
   now = () => Date.now(),
 } = {}) {
   const router = express.Router();
+  // Time spent in this process per response, as a Server-Timing header: the
+  // browser's Network panel and the live-load trace (companionDebug.liveReport)
+  // separate it from time on the wire.
+  router.use((req, res, next) => {
+    const startedAt = process.hrtime.bigint();
+    const json = res.json.bind(res);
+    res.json = (body) => {
+      const ms = Number(process.hrtime.bigint() - startedAt) / 1e6;
+      if (!res.headersSent) res.set('Server-Timing', `app;dur=${ms.toFixed(1)}`);
+      return json(body);
+    };
+    next();
+  });
   const gateway = injectedGateway ?? createBalldontlieGateway({ fetcher, env });
   const snapshotStore = injectedSnapshotStore ?? createLiveGameSnapshotStore({ gateway, archive });
 
@@ -417,6 +433,7 @@ export function createLiveRouter({
       payload: result.payload,
       cacheInfo: {
         ...result.cache,
+        providerRequests: result.accounting?.upstreamRequests ?? 0,
         ageMs: result.freshness.ageMs,
         ttlMs: getCacheTtlMs(result.payload),
         fetchedAt: result.freshness.providerFetchedAt,
@@ -561,6 +578,7 @@ export function createLiveRouter({
       const payload = { data: snapshot.plays, meta: snapshot.meta };
       const cacheInfo = {
         ...snapshot.cache,
+        providerRequests: snapshot.accounting?.upstreamRequests ?? 0,
         ageMs: snapshot.freshness.ageMs,
         ttlMs: snapshotStore.refreshMs,
         fetchedAt: snapshot.freshness.providerFetchedAt,
@@ -600,6 +618,7 @@ export function createLiveRouter({
         coalesced: infos.some((info) => info.coalesced),
         stale: infos.some((info) => info.stale),
         archived: infos.every((info) => info.archived),
+        providerRequests: infos.reduce((sum, info) => sum + (Number(info.providerRequests) || 0), 0),
         ageMs: oldest.ageMs,
         ttlMs: Math.min(...infos.map((info) => info.ttlMs)),
         fetchedAt: oldest.fetchedAt,

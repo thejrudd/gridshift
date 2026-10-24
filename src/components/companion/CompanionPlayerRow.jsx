@@ -165,6 +165,8 @@ export default function CompanionPlayerRow({
   showAvatar = true,
   useTeamLogoAsAvatar = false,
   showPosition = true,
+  // 'column' gives the chip its own grid slot; 'identity' sets it beside the name.
+  positionPlacement = 'column',
   showTeamLogo = true,
   showSelectionMark = false,
   showAccentRail = true,
@@ -275,6 +277,20 @@ export default function CompanionPlayerRow({
 
   if (!player) return null;
 
+  const positionInline = positionPlacement === 'identity';
+  const positionChip = showPosition ? (
+    <span
+      className={`companion-player-row__position${positionInline ? ' companion-player-row__position--inline' : ''}`}
+      style={{
+        background: positionColor ?? rowSubtle,
+        color: positionTextColor,
+        boxShadow: positionColor && !positionInline ? '0 4px 10px rgba(0,0,0,0.16)' : 'none',
+      }}
+    >
+      {position || '-'}
+    </span>
+  ) : null;
+
   return (
     <div
       className={[
@@ -369,21 +385,11 @@ export default function CompanionPlayerRow({
           </div>
         )
       )}
-      {showPosition && (
-        <span
-          className="companion-player-row__position"
-          style={{
-            background: positionColor ?? rowSubtle,
-            color: positionTextColor,
-            boxShadow: positionColor ? '0 4px 10px rgba(0,0,0,0.16)' : 'none',
-          }}
-        >
-          {position || '-'}
-        </span>
-      )}
+      {!positionInline && positionChip}
       <div className="companion-player-row__body">
         <div className="companion-player-row__identity" style={{ color: rowForeground }}>
           <span className="companion-player-row__identity-label">{label}</span>
+          {positionInline && positionChip}
           {identityAccessory ? (
             <span className="companion-player-row__identity-accessory">
               {identityAccessory}

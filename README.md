@@ -134,11 +134,11 @@ Draft Sync is an optional capability of the existing API sidecar, not a required
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) + optional Node API sidecar |
 
-## What's New in v9.3.3
+## What's New in v9.3.4
 
-- **Scoring play breakdown** — Hover a scoring play in Matchups to see where its points came from.
-- **Live scoring accuracy** — Scoring plays match official fantasy scoring far more closely, and every play shows its win chance change.
-- **Faster, steadier live data** — Finished games are stored on the server, so the win chance chart loads with its scoring plays instead of a flat line.
+- **Mobile Matchups cards** — Player photo, name with a position chip, and the game, at one height whether or not a player is injured.
+- **Scoring plays on touch** — Tap a play's points to see where they came from.
+- **No sideways scrolling** — Statistics player and team pages scroll vertically only on phones.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 
