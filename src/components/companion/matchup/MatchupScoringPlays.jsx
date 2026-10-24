@@ -57,6 +57,9 @@ export default function MatchupScoringPlays({
   const [pointsTarget, setPointsTarget] = useState(null);
   const pointsOpenRef = useRef(null);
   const pointsTimerRef = useRef(null);
+  // The pointer that started the current press: a touch or pen tap on the
+  // points opens the card instead of replaying from the play.
+  const pressPointerRef = useRef('mouse');
   // Every play up to live stays listed while replaying, so a selected play
   // never becomes a ceiling: the ones after the replay moment are dimmed and
   // still reachable by scrolling up.
@@ -79,9 +82,10 @@ export default function MatchupScoringPlays({
     row?.scrollIntoView({ block: 'center' });
   }, [scrollRequest, selectedPlayId]);
 
-  // Points breakdown card. Mouse and keyboard only, like every Matchups hover
-  // card: gated on the event's pointer type (not a hover media query), never
-  // opened by touch, pen or a tap's focus, and closed by a click or a scroll.
+  // Points breakdown card. A mouse hover or keyboard focus opens it like every
+  // Matchups hover card: gated on the event's pointer type (not a hover media
+  // query), never by a tap's focus, and closed by a click or a scroll. Touch
+  // and pen open it by tapping the play's points (togglePointsFromTap).
   const showPoints = (playId, row, point = null) => {
     globalThis.clearTimeout(pointsTimerRef.current);
     if (pointsOpenRef.current === playId) return;
@@ -101,6 +105,17 @@ export default function MatchupScoringPlays({
     pointsOpenRef.current = null;
     setPointsTarget(null);
   };
+  // Touch and pen open the card on a tap of the play's points, at once and
+  // under them; tapping them again (or anywhere else) closes it.
+  const togglePointsFromTap = (playId, row) => {
+    globalThis.clearTimeout(pointsTimerRef.current);
+    if (pointsOpenRef.current === playId) {
+      hidePoints();
+      return;
+    }
+    pointsOpenRef.current = playId;
+    setPointsTarget({ id: playId, anchor: row.querySelector('.matchup-play__points') ?? row, point: null, tapped: true });
+  };
   useEffect(() => () => globalThis.clearTimeout(pointsTimerRef.current), []);
   useEffect(() => {
     if (!pointsTarget) return undefined;
@@ -108,8 +123,15 @@ export default function MatchupScoringPlays({
       pointsOpenRef.current = null;
       setPointsTarget(null);
     };
+    const closeOnOutsidePress = (pointer) => {
+      if (!pointsTarget.anchor?.contains(pointer.target)) close();
+    };
     globalThis.addEventListener('scroll', close, { capture: true, passive: true });
-    return () => globalThis.removeEventListener('scroll', close, { capture: true });
+    if (pointsTarget.tapped) globalThis.addEventListener('pointerdown', closeOnOutsidePress, { capture: true });
+    return () => {
+      globalThis.removeEventListener('scroll', close, { capture: true });
+      globalThis.removeEventListener('pointerdown', closeOnOutsidePress, { capture: true });
+    };
   }, [pointsTarget]);
   // A filter change can take the hovered play out of the list.
   const pointsEvent = pointsTarget ? shown.find((event) => event.id === pointsTarget.id) ?? null : null;
@@ -156,7 +178,12 @@ export default function MatchupScoringPlays({
                 aria-pressed={selected}
                 aria-label={`${event.playerName}, ${event.description ?? ''}, ${signed(event.pts)} points${after ? ', after this moment' : ''}. Replay from this play.`}
                 aria-describedby={pointsEvent?.id === event.id ? POINTS_CARD_ID : undefined}
-                onClick={() => {
+                onPointerDown={(pointer) => { pressPointerRef.current = pointer.pointerType; }}
+                onClick={(click) => {
+                  if (pressPointerRef.current !== 'mouse' && click.target.closest?.('.matchup-play__points')) {
+                    togglePointsFromTap(event.id, click.currentTarget);
+                    return;
+                  }
                   hidePoints();
                   onSelectPlay(event.id, 'list');
                 }}
@@ -177,7 +204,7 @@ export default function MatchupScoringPlays({
                   <span className="matchup-play__meta">{meta}</span>
                 </span>
                 <span className="matchup-play__points">
-                  {signed(event.pts)}
+                  <span className="matchup-play__points-value">{signed(event.pts)}</span>
                   {Number.isFinite(Number(event.swingMine)) && (
                     <small>{formatSwing(Number(event.swingMine))}</small>
                   )}

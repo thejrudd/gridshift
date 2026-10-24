@@ -1453,24 +1453,45 @@ body {
 }
 
 /* Matchup controls are a compact action set, not a horizontal content rail.
-   On phones they wrap into two equal columns so the page keeps vertical-only
-   scrolling while every action remains reachable. */
+   On phones the week and matchup pickers share the row equally and the
+   refresh icon keeps its square, so the page keeps vertical-only scrolling. */
 @media (max-width: 767px) {
   .companion-matchup-controls__row {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
     align-items: stretch;
   }
 
   .companion-matchup-controls__row > .companion-selector-button {
-    width: 100%;
+    flex: 1 1 0;
     min-width: 0;
   }
 
+  .companion-matchup-controls__row > .companion-matchup-refresh-trigger {
+    flex: 0 0 auto;
+  }
 }
 
 .companion-matchup-picker-trigger {
   min-width: 0;
+}
+
+/* Icon-only refresh: a square at the row's control height. */
+.companion-matchup-controls__row > .companion-matchup-refresh-trigger {
+  aspect-ratio: 1;
+  padding: 0;
+}
+
+.companion-matchup-refresh-trigger.is-refreshing svg {
+  animation: companion-matchup-refresh-spin 900ms linear infinite;
+}
+
+@keyframes companion-matchup-refresh-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .companion-matchup-refresh-trigger.is-refreshing svg {
+    animation: none;
+  }
 }
 
 .matchup-picker-list {
@@ -12789,6 +12810,18 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
 /* Team stat KPIs: four across */
 @media (min-width: 640px) { .player-dash-rail.team-dash-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 
+/* Below lg the content area has no side padding, so the hairline grids bleed
+   left only (clipping the first rule there); a right bleed would widen the
+   page. The player and team pages scroll vertically only; their own rails,
+   tapes and tables still scroll sideways. */
+@media (max-width: 1023px) {
+  .player-dash-rail,
+  .player-dash-games,
+  .team-dash-trends { margin-right: 0; }
+
+  .statistics-detail-page { min-width: 0; overflow-x: clip; }
+}
+
 /* Sortable tables */
 .team-dash-sortable thead th button {
   min-height: 32px;
@@ -19818,6 +19851,7 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
   align-items: baseline;
   min-width: 0;
   margin-top: 10px;
+  white-space: nowrap;
   color: rgba(255, 255, 255, 0.8);
   font-size: var(--type-label);
   line-height: 1;
@@ -20447,6 +20481,22 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
   .companion-matchup-masthead__side {
     min-height: 136px;
     padding: 13px 9px 18px;
+    container-type: inline-size;
+  }
+
+  /* Record · PF · PA stays one line: tighter tracking, and the size caps to
+     the side's width so four-digit totals still fit a narrow phone. */
+  .companion-matchup-masthead__team-record {
+    font-size: min(var(--type-label), 7.2cqi);
+  }
+
+  .companion-matchup-masthead__team-points {
+    font-size: min(var(--type-micro), 6.2cqi);
+    letter-spacing: 0.02em;
+  }
+
+  .companion-matchup-masthead__team-summary-separator {
+    margin: 0 2px;
   }
 
   .companion-matchup-masthead__team-name {
@@ -20631,6 +20681,7 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
 .companion-matchup-player-row .companion-player-row__identity-accessory .companion-matchup-injury-link {
   position: relative;
   min-width: 0;
+  min-height: 0;
   height: auto;
   pointer-events: auto;
 }
@@ -20813,6 +20864,58 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
     text-overflow: clip;
     white-space: normal;
   }
+}
+
+/* Phone matchup cards: photo, then the name with its position chip (and any
+   status badge) flowing inline, then the game. Inline flow lets a long name
+   wrap instead of truncating, and keeps every card the same height. */
+.companion-player-row.companion-matchup-player-row.is-compact .companion-player-row__identity,
+.companion-player-row.companion-matchup-player-row.is-compact.is-team-defense .companion-player-row__identity {
+  display: block;
+  overflow: visible;
+  white-space: normal;
+  text-overflow: clip;
+}
+
+.companion-player-row.companion-matchup-player-row.is-compact .companion-player-row__identity-label,
+.companion-player-row.companion-matchup-player-row.is-compact.is-team-defense .companion-player-row__identity-label {
+  display: inline;
+  overflow: visible;
+  overflow-wrap: normal;
+  white-space: normal;
+  text-overflow: clip;
+}
+
+.companion-player-row.companion-matchup-player-row.is-compact.is-team-defense .companion-player-row__body {
+  overflow: visible;
+  white-space: normal;
+}
+
+.companion-player-row.companion-matchup-player-row.is-compact .companion-player-row__position--inline {
+  display: inline-flex;
+  min-width: 0;
+  min-height: 0;
+  margin-left: 4px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-size: max(9px, var(--matchup-player-name-size, 9px));
+  letter-spacing: 0.04em;
+  vertical-align: middle;
+}
+
+.companion-player-row.companion-matchup-player-row.is-compact .companion-player-row__identity-accessory {
+  display: inline-flex;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
+.companion-player-row.companion-matchup-player-row.is-compact .companion-matchup-player-metrics {
+  min-width: 36px;
+}
+
+/* A name line pushed to two lines by its chips still fits the 56px card. */
+.companion-player-row.companion-matchup-player-row.is-compact .companion-player-row__meta {
+  margin-top: 2px;
 }
 
 .companion-matchup {
@@ -21539,6 +21642,23 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
 }
 
 .matchup-play.is-negative .matchup-play__points { color: var(--color-accent-red); }
+
+/* On touch the points are their own tap target (the full row height) for the
+   points card; the dotted underline marks them as tappable. */
+@media (pointer: coarse) {
+  .matchup-play__points {
+    align-self: stretch;
+    align-content: center;
+    margin-left: -12px;
+    padding-left: 12px;
+  }
+
+  .matchup-play__points-value {
+    text-decoration: underline dotted;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+  }
+}
 
 /* Desktop hover card */
 .matchup-hover-card {

@@ -38,6 +38,7 @@ function archivedResult(row, now) {
       coalesced: false,
       stale: false,
       archived: true,
+      providerRequests: 0,
       ageMs: Math.max(0, t - row.fetchedAt),
       ttlMs: 0,
       fetchedAt: new Date(row.fetchedAt).toISOString(),

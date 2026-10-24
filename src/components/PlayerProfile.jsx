@@ -929,7 +929,7 @@ const PlayerProfile = ({ playerId, playerMeta, teamId, teams, mode = STATISTICS_
   ].filter(Boolean);
 
   return (
-    <div className="space-y-6">
+    <div className="statistics-detail-page space-y-6">
       {/* Back button */}
       <button
         onClick={onBack}

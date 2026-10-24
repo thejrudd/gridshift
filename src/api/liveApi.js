@@ -1,3 +1,5 @@
+import { traceLiveRequest } from '../utils/liveLoadTrace.js';
+
 async function parseLiveResponse(response, fallbackMessage) {
   let payload = null;
   try {
@@ -15,6 +17,22 @@ async function parseLiveResponse(response, fallbackMessage) {
   return payload;
 }
 
+// One path for every live data request, so the live-load trace
+// (companionDebug.liveReport) times each the same way.
+async function requestLive(route, url, init, fallbackMessage) {
+  const startedAt = performance.now();
+  let response = null;
+  try {
+    response = await fetch(url, init);
+    const payload = await parseLiveResponse(response, fallbackMessage);
+    traceLiveRequest({ route, startedAt, response, payload });
+    return payload;
+  } catch (error) {
+    traceLiveRequest({ route, startedAt, response, error });
+    throw error;
+  }
+}
+
 function buildQueryString(params = {}) {
   const searchParams = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => {
@@ -26,15 +44,14 @@ function buildQueryString(params = {}) {
 }
 
 export async function getLiveStatus({ leagueId } = {}) {
-  const response = await fetch(`/api/live/status${buildQueryString({ leagueId })}`, {
+  return requestLive('status', `/api/live/status${buildQueryString({ leagueId })}`, {
     credentials: 'include',
     headers: { Accept: 'application/json' },
-  });
-  return parseLiveResponse(response, 'Could not load GridShift Live status.');
+  }, 'Could not load GridShift Live status.');
 }
 
 export async function startLiveSession({ leagueId, provider = 'sleeper', accessCode = '' } = {}) {
-  const response = await fetch('/api/live/session', {
+  return requestLive('session', '/api/live/session', {
     method: 'POST',
     credentials: 'include',
     headers: {
@@ -42,8 +59,7 @@ export async function startLiveSession({ leagueId, provider = 'sleeper', accessC
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({ leagueId, provider, accessCode }),
-  });
-  return parseLiveResponse(response, 'Could not enable GridShift Live.');
+  }, 'Could not enable GridShift Live.');
 }
 
 export async function clearLiveSession() {
@@ -56,35 +72,31 @@ export async function clearLiveSession() {
 }
 
 export async function getLiveGames({ season, week, date, seasonType, signal } = {}) {
-  const response = await fetch(`/api/live/games${buildQueryString({ season, week, date, seasonType })}`, {
+  return requestLive(`games week ${week ?? '?'}`, `/api/live/games${buildQueryString({ season, week, date, seasonType })}`, {
     credentials: 'include',
     headers: { Accept: 'application/json' },
     signal,
-  });
-  return parseLiveResponse(response, 'Could not load live games.');
+  }, 'Could not load live games.');
 }
 
 export async function getLiveGamePlays(gameId, { signal, seasonType } = {}) {
-  const response = await fetch(`/api/live/game/${encodeURIComponent(gameId)}/plays${buildQueryString({ seasonType })}`, {
+  return requestLive(`plays game ${gameId}`, `/api/live/game/${encodeURIComponent(gameId)}/plays${buildQueryString({ seasonType })}`, {
     credentials: 'include',
     headers: { Accept: 'application/json' },
     signal,
-  });
-  return parseLiveResponse(response, 'Could not load live plays.');
+  }, 'Could not load live plays.');
 }
 
 export async function getLivePlayerStatsForGames(gameIds = []) {
-  const response = await fetch(`/api/live/player-stats${buildQueryString({ gameIds: gameIds.join(',') })}`, {
+  return requestLive(`player stats (${gameIds.length} games)`, `/api/live/player-stats${buildQueryString({ gameIds: gameIds.join(',') })}`, {
     credentials: 'include',
     headers: { Accept: 'application/json' },
-  });
-  return parseLiveResponse(response, 'Could not load live player stats.');
+  }, 'Could not load live player stats.');
 }
 
 export async function getLiveGamePlayerStats(gameId) {
-  const response = await fetch(`/api/live/game/${encodeURIComponent(gameId)}/player-stats`, {
+  return requestLive(`player stats game ${gameId}`, `/api/live/game/${encodeURIComponent(gameId)}/player-stats`, {
     credentials: 'include',
     headers: { Accept: 'application/json' },
-  });
-  return parseLiveResponse(response, 'Could not load live player stats.');
+  }, 'Could not load live player stats.');
 }
